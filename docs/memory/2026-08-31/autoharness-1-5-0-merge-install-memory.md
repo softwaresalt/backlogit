@@ -36,19 +36,21 @@ rounds. PR #400 merged to `main` as merge commit `7c521bf2` with two parents
 
 ## Decisions and Rationale
 
-1. **Graphtor is never an indexer.** Per explicit operator instruction, the
-   workspace-indexing behavior introduced during install was reverted and a
-   NON-NEGOTIABLE read-only Workspace Usage Rule was added to
-   `graphtor-docs.instructions.md`. Graphtor performs index sync only against
-   content curated in advance for ingestion — never against a workspace.
+1. **Graphtor never indexes this workspace.** Per explicit operator
+   instruction, the workspace-indexing behavior introduced during install was
+   reverted and a NON-NEGOTIABLE read-only Workspace Usage Rule was added to
+   `graphtor-docs.instructions.md`. Graphtor does perform index sync, but only
+   against corpora curated in advance for ingestion — never against a
+   workspace, and never as part of a harness install.
 
 2. **Enumerated graphtor verbs instead of a wildcard.** The `tools:` allowlists
    name all 8 read verbs explicitly (`search_local_docs`, `search_semantic`,
    `research_topic`, `traverse_doc_links`, `list_sources`, `get_chunk_by_id`,
    `get_document`, `get_status`) rather than using `graphtor-docs/*` (which
-   would have mirrored the `engram/*` pattern). This makes the never-index rule
-   structurally enforced: no ingestion or index-write verb is reachable from an
-   agent even if the server later registers one.
+   would have mirrored the `engram/*` pattern). This makes the
+   never-index-this-workspace rule structurally enforced: no ingestion or
+   index-write verb is reachable from an agent even if the server later
+   registers one.
 
 3. **Shipment close pre-flight gate.** Non-cascading shipment close is
    genuinely impossible — guarded at `internal/core/shipment.go:180-183`,
@@ -78,34 +80,54 @@ rounds. PR #400 merged to `main` as merge commit `7c521bf2` with two parents
 
 Section 1.8 of `github-pr-automation.instructions.md` caps review-fix-push
 cycles at 3. This session ran **6**. The cap is a hard limit on cycle count;
-it is not conditioned on error identity. After the third cycle the protocol
-required post-cap disposition — accept remaining findings as backlog items,
-commit, and stop fixing — and that disposition was not performed at the cap.
+it is not conditioned on error identity.
 
 The distinctness of the findings is therefore **not** a valid exception. It
 explains only why the *separate* universal same-error circuit breaker did not
 trip; it does not relax the three-cycle limit, which is an independent control.
+
+**What the protocol actually required at the cap.** Per P-021 C3 (hardening
+H14), the "accept remaining findings as backlog items" disposition applies
+*only* to findings that fail C1 — that is, out-of-scope findings, which are
+captured as `DEFERRED SCOPE EXPANSION` stash entries under C2. An **in-scope**
+finding left unresolved solely because the cycle budget is exhausted is never
+a deferred-scope entry and must not be quietly filed as an ordinary backlog
+item either. The required disposition is to **halt and escalate to the operator
+for an explicit decision** — either extend the cycle-count limit, or explicitly
+accept documented residual risk — before the PR is presented as merge-ready.
+The findings in rounds 4-6 were all in scope, so escalation-for-disposition
+was the applicable path, and it was not performed as an explicit step at the
+cap.
 
 **Actual operator disposition.** The operator was present throughout and
 directed each continuation explicitly, instructing the session to fix, reply
 to, and programmatically resolve each new round of Copilot comments. Rounds 4,
 5, and 6 proceeded under that standing operator instruction rather than under
 an agent-side judgement call. The operator then granted merge approval
-("PR 400: Merge approved"), satisfying P-014.
+("PR 400: Merge approved"), satisfying P-014. In substance this matches the
+"extend the cycle-count limit" branch of the required disposition.
 
 **Assessment.** Operator direction is what carried the work past the cap, but
-the cap should have been surfaced *at* cycle 3 with an explicit
-over-cap authorization requested, rather than reconstructed afterward. The
-process defect is the missing checkpoint at the cap, and it is recorded here
-so the gap is visible in future sessions.
+the cap was never surfaced *at* cycle 3 as an explicit halt-and-escalate
+decision point; the authorization was inferred from continued instruction
+rather than requested. The process defect is the missing escalation checkpoint
+at the cap, and it is recorded here so the gap is visible in future sessions
+rather than normalized.
 
 ## Open Items (non-blocking)
 
-1. **P-013.4 non-conformance.** Three workspace-authored agents —
-   `mcp-protocol-reviewer`, `sqlite-reviewer`, `go-mcp-expert` — declare
-   neither `model_tier` nor `max_subagent_tier` and use the older `model:`
-   frontmatter convention. They are not tracked in `harness-manifest.yaml`.
-   Deliberately left out of scope; a legitimate future backlog item.
+1. **P-013.4 non-conformance.** Three workspace-authored agents declare
+   neither `model_tier` nor `max_subagent_tier`, but they differ in how they
+   express model selection and therefore need different remediation:
+
+   | Agent | Current model field | Remediation |
+   |---|---|---|
+   | `mcp-protocol-reviewer` | none at all | add both tier fields |
+   | `sqlite-reviewer` | `model: Claude Haiku 4.5` | migrate `model:` → tier fields |
+   | `go-mcp-expert` | `model: GPT-5.4` | migrate `model:` → tier fields |
+
+   None are tracked in `harness-manifest.yaml`. Deliberately left out of
+   scope; a legitimate future backlog item.
 
 2. **Graphtor MCP registration is machine-local** and not yet performed. The
    pack's tools remain uncallable until an operator registers the server per

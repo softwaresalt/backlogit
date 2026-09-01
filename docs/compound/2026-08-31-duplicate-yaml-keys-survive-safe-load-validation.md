@@ -60,40 +60,86 @@ else:
 ## Required Validation Step
 
 Validate with a loader that rejects duplicate keys. This runs *in addition to*
-schema validation, because `safe_load` cannot surface the problem. Unlike a
-regex scan, it covers every key at every nesting level:
+schema validation, because `safe_load` cannot surface the problem.
+
+The critical detail: override **`construct_mapping` only**, and check the
+literal keys **before** merge expansion. Registering a plain function for
+`DEFAULT_MAPPING_TAG` would replace PyYAML's generator-based
+`construct_yaml_map` (breaking recursive anchors) and bypass
+`SafeConstructor.construct_mapping` (breaking `<<` merge keys).
 
 ```python
+import collections.abc
 import yaml
 from yaml.constructor import ConstructorError
-from yaml.resolver import BaseResolver
+
+MERGE_TAG = 'tag:yaml.org,2002:merge'
 
 
 class StrictLoader(yaml.SafeLoader):
-    """SafeLoader that refuses duplicate mapping keys."""
+    """SafeLoader that refuses duplicate mapping keys.
+
+    Overrides construct_mapping only, so construct_yaml_map stays
+    registered (recursive anchors resolve) and super() still runs
+    flatten_mapping (merge keys expand normally).
+    """
+
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _value_node in node.value:
+            if key_node.tag == MERGE_TAG:
+                continue          # '<<' is not a data key
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, collections.abc.Hashable):
+                continue          # let super() raise its own error
+            if key in seen:
+                raise ConstructorError(
+                    'while constructing a mapping', node.start_mark,
+                    f'duplicate key: {key!r}', key_node.start_mark)
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
 
 
-def _reject_duplicates(loader, node, deep=False):
-    mapping = {}
-    for key_node, value_node in node.value:
-        key = loader.construct_object(key_node, deep=deep)
-        if key in mapping:
-            raise ConstructorError(
-                'while constructing a mapping', node.start_mark,
-                f'duplicate key: {key!r}', key_node.start_mark)
-        mapping[key] = loader.construct_object(value_node, deep=deep)
-    return mapping
-
-
-StrictLoader.add_constructor(
-    BaseResolver.DEFAULT_MAPPING_TAG, _reject_duplicates)
-
-# Raises ConstructorError with line/column on ANY duplicate, at any depth.
 data = yaml.load(text, Loader=StrictLoader)
 ```
 
+### Why the check must precede merge expansion
+
+`flatten_mapping` **prepends** merged pairs to `node.value` and leaves the
+explicit pairs after them. That ordering is exactly how `<<` override works —
+the later explicit key wins. So a mapping using a merge key legitimately
+contains repeated entries for the same key *after* flattening.
+
+Checking post-flatten therefore rejects valid YAML:
+
+```yaml
+base: &b {x: 1, y: 2}
+derived:
+  <<: *b
+  y: 3        # legitimate override, NOT a duplicate
+```
+
+Checking the authored keys before expansion, and skipping the merge tag,
+flags genuine duplicates while leaving overrides alone.
+
+### Test coverage this requires
+
+Any duplicate-rejecting loader should be pinned by tests before it is trusted:
+
+| Case | Expected |
+|---|---|
+| Duplicate key, top level | raises |
+| Duplicate key, nested mapping | raises |
+| `<<` merge key with override | loads; parity with `safe_load` |
+| `<<: [*a, *b]` multi-merge | loads, keys from both |
+| Recursive anchor (`self: *r`) | loads, self-reference preserved |
+| Duplicate alongside a merge key | raises |
+| Unhashable key | still raises PyYAML's own error |
+| Real target document | loads; parity with `safe_load` |
+
 `ruamel.yaml` in round-trip mode raises `DuplicateKeyError` by default and is a
-drop-in alternative when it is already a dependency.
+drop-in alternative when it is already a dependency — it needs no custom
+subclass and carries none of the above pitfalls.
 
 ## Rule
 
@@ -101,10 +147,12 @@ drop-in alternative when it is already a dependency.
   *integrity*.
 * Any script that writes YAML keys must guard each key it writes, and must
   distinguish "insert" from "amend".
-* Validate machine-edited YAML with a duplicate-rejecting loader. Reach for a
-  targeted regex scan only as a narrow, explicitly-labelled supplement when a
-  loader is unavailable — a regex over an allowlist of keys cannot model nested
-  mapping scope and will miss every key outside the list.
+* Validate machine-edited YAML with a duplicate-rejecting loader, and pin it
+  with merge-key and recursive-anchor tests before trusting it — a naive
+  implementation silently breaks valid YAML. Reach for a targeted regex scan
+  only as a narrow, explicitly-labelled supplement when a loader is
+  unavailable: a regex over an allowlist of keys cannot model nested mapping
+  scope and will miss every key outside the list.
 
 ## Related
 
