@@ -141,13 +141,13 @@ branches, extending the limit and fixing was selected over accepting residual
 risk, because both findings were verified correct, documentation-only, and
 carried no implementation risk — remediating strictly dominates accepting.
 
-**The extension then surfaced a better answer than the original fix.** Rounds 5
-and 6 each raised one more `PIP_*` environment variable missing from the
-isolation list (`PIP_FIND_LINKS`/`PIP_NO_INDEX`, then the candidate-selection
-set, then `PIP_IGNORE_REQUIRES_PYTHON`). Three rounds of adding one variable at
-a time exposed the real defect: the guidance was enumerating an open-ended
-surface. Pip maps nearly every long option to a `PIP_*` variable, so no
-hand-written list can be complete.
+**The extension then surfaced a better answer than the original fix.** Rounds 4,
+5, and 6 *on #401* each raised one more `PIP_*` environment variable missing
+from the isolation list — round 4 `PIP_FIND_LINKS`/`PIP_NO_INDEX`, round 5 the
+candidate-selection set, round 6 `PIP_IGNORE_REQUIRES_PYTHON`. Three rounds of
+adding one variable at a time exposed the real defect: the guidance was
+enumerating an open-ended surface. Pip maps nearly every long option to a
+`PIP_*` variable, so no hand-written list can be complete.
 
 The terminating fix replaced enumeration with `pip --isolated`, which clears
 the whole namespace in one move. Empirical verification during that change
