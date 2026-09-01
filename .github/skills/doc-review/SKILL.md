@@ -118,7 +118,14 @@ For each file with a `---` frontmatter block:
 2. Parse the YAML. Any parse error is a P1 finding.
 3. Verify required keys are present per file type:
    * Agent files: `name`, `description`
-   * Skill files: `name`, `description`
+   * Skill files: `description` (required). `name` is **optional** — this
+     workspace's skill schema is description-only, and 14 of the 25 installed
+     skills (`brainstorm`, `build-feature`, `operational-closure`,
+     `compact-context`, `compound`, `compound-refresh`, `deliberate`,
+     `file-lock`, `fix-ci`, `impl-plan`, `plan-harden`, `runtime-verification`,
+     `safety-modes`, `skill-search`) deliberately omit it. Do **not** raise a
+     finding for a missing skill `name`; requiring it would flag every one of
+     those valid skills as P1.
    * Instruction files: `description`
    * Template files: at minimum `description` or `name`
 
@@ -146,11 +153,30 @@ multi-H1 (structural ambiguity); manual when context is unclear
 Scan all Markdown links, `applyTo` glob values, and explicit file path
 references in documentation:
 
+**Disabled-capability-pack exemption (evaluate first).** Before raising any
+missing-target finding, check whether the reference is guarded by an explicit
+capability-pack condition — for example "When the `agent-intercom` capability
+pack is installed, see `.github/instructions/agent-intercom.instructions.md`".
+Read the enabled set from `capability_packs` in `.autoharness/config.yaml`. If
+the guarding pack is **not** in that set, the target is *expected* to be absent
+and the reference is **not** broken: emit nothing, or at most a P3 advisory.
+Raising P1 here would report a correctly-configured workspace as broken on
+every run.
+
+This is not hypothetical in this workspace: `agent-intercom` is not an enabled
+pack, so `.github/instructions/agent-intercom.instructions.md` is intentionally
+not installed, while `AGENTS.md` and the `brainstorm`, `build-feature`,
+`deliberate`, `fix-ci`, `impl-plan`, `operational-closure`, `plan-harden`, and
+`runtime-verification` skills plus `_ship` and `_stage` all retain conditional
+references to it by design. Only an **unguarded** reference to a missing file is
+a real finding.
+
 1. For each internal link `[text](path)` or `[text](path#anchor)`:
    * Verify the target file exists relative to the workspace root or the
      referring file.
    * If the file exists but the anchor is missing: P2 finding.
-   * If the file is missing entirely: P1 finding.
+   * If the file is missing entirely **and the reference is not covered by the
+     disabled-capability-pack exemption above**: P1 finding.
 2. For agent definition references in skill tables or AGENTS.md:
    * Verify the referenced agent file exists in `.github/agents/`.
 3. For skill references in agent protocols or instruction files:
@@ -160,13 +186,16 @@ references in documentation:
 ```text
 Missing file: P1 — manual
 Missing anchor only: P2 — advisory
+Missing target guarded by a disabled capability pack: exempt (P3 advisory at most)
 ```
 
 ### Check 5 — Stale Content Detection (P2)
 
 Identify content that references:
 
-* Files or paths that no longer exist in the workspace.
+* Files or paths that no longer exist in the workspace. The Check 4
+  disabled-capability-pack exemption applies here too: a path that is absent
+  because its capability pack is not enabled is not stale content.
 * Commands that no longer appear in the project toolchain
   (`go build ./cmd/backlogit`, `go test ./...`, `golangci-lint run`).
 * Backlog item IDs mentioned as "active" but archived.

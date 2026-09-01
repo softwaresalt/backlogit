@@ -3,7 +3,8 @@ name: Adversarial Review
 description: "Multi-model parallel review using independent reviewer agents with different models, assembled into a consensus report with confidence-weighted findings and remediation queue. Supports a first-class anchor reviewer route, alternate model providers (e.g., Gemini), an optional `mode` input (`autofix` default, or read-only `report-only`), and a post-remediation re-review phase."
 maturity: stable
 tools: read, agent, search, edit
-max_subagent_tier: 1
+model_tier: 3
+max_subagent_tier: 3
 reasoning_effort: "high"
 model_provider: "anthropic"
 model_family: "claude-opus-4.8"

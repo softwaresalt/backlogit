@@ -207,9 +207,9 @@ artifacts:
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
-    checksum: "7b04c412e7922527057168dc48ce1c8be9e9a4eef8f9ae20a8c8314ead34cb7e"
+    checksum: "af877d06af2cc4c508df8f5769a4977c22e2fe241b87f0cf1b96802c9c763354"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). Same empty-substitution defect as the companion instruction file, across 7 locations including the reviewer routing table. Replaced with symbolic config key paths. Do not auto-revert."
+    drift_reason: "Copilot review fix (PR #400). Same empty-substitution defect as the companion instruction file, across 7 locations including the reviewer routing table. Replaced with symbolic config key paths. Do not auto-revert. Round-3 fix: added `model_tier: 3` and raised `max_subagent_tier` from 1 to 3; the agent's own routing is claude-opus-4.8 (tier3) and its dispatch tables require Tier 2 and Tier 3 reviewers, which a ceiling of 1 made a P-013.2 violation."
   - path: ".github/instructions/adversarial-review.instructions.md"
     primitive: 6
     template: "templates/instructions/adversarial-review.instructions.md.tmpl"
@@ -414,9 +414,9 @@ artifacts:
   - path: ".github/skills/doc-review/SKILL.md"
     primitive: 8
     template: "templates/skills/doc-review/SKILL.md.tmpl"
-    checksum: "c1e2192471bdf511577ae796e3658a790c6a8499ec1e41a1dfd18512161d3cc3"
+    checksum: "aeb4689c700f0b893c6f6f1dcd0e6e99ec931eaa3fcebfa6d6543aefdcd54231"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). The skill unconditionally required a `ping` call at session start, but agent-intercom is not in capability_packs for this workspace, so doc-review would open with a nonexistent tool call and report an intentionally absent optional pack as degraded. Made communication conditional using the same wording the review skill already uses. Do not auto-revert."
+    drift_reason: "Copilot review fix (PR #400). The skill unconditionally required a `ping` call at session start, but agent-intercom is not in capability_packs for this workspace, so doc-review would open with a nonexistent tool call and report an intentionally absent optional pack as degraded. Made communication conditional using the same wording the review skill already uses. Do not auto-revert. Round-3 fix: made skill `name` optional in Check 2 (14 of 25 installed skills omit it) and added a disabled-capability-pack exemption to Checks 4 and 5 so conditional references to the intentionally-absent agent-intercom instruction file are not reported as broken."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass); alternate doc-review route bound 2026-08-31. ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY resolve to google / gemini-3.1-pro-preview from config.yaml model_routing.alt_doc_review. Google is deliberately a third provider (tiers are Anthropic, escalation is OpenAI) so the documentation review pass is least likely to share blind spots with whichever model authored the docs. Clear either field in config.yaml AND in variables_used to fall back to Tier 2."
   - path: "scripts/pre-commit-markdownlint.ps1"
     primitive: 6
@@ -967,4 +967,10 @@ tuning_history:
       - ".github/instructions/adversarial-review.instructions.md"
       - ".github/agents/review/adversarial-review.agent.md"
       - ".github/workflows/ci.yml"
+      - ".autoharness/harness-manifest.yaml"
+  - at: "2026-08-31T00:00:00Z"
+    summary: "Copilot review round 3 on PR #400. Raised the adversarial-review tier ceiling from 1 to 3 and added the missing model_tier, so its required Tier 2 and Tier 3 reviewer dispatch is no longer a P-013.2 violation. Made skill `name` optional in doc-review Check 2, since 14 of the 25 installed skills omit it and the previous rule flagged every one of them. Added a disabled-capability-pack exemption to doc-review Checks 4 and 5 so the conditional references to the intentionally-absent agent-intercom instruction file are no longer reported as broken links or stale content."
+    artifacts:
+      - ".github/agents/review/adversarial-review.agent.md"
+      - ".github/skills/doc-review/SKILL.md"
       - ".autoharness/harness-manifest.yaml"
