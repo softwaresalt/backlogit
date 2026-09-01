@@ -26,6 +26,19 @@ If the workspace does not have a monitoring system, record the monitoring plan
 as a structured checklist in the closure artifact and flag it as a manual
 observation requirement.
 
+## Releasability Evidence Contract
+
+Monitoring plans, pre-deploy audits, observation windows, and rollback triggers
+are releasability evidence — not free-form side notes. When this pack is active:
+
+* translate monitoring and rollback requirements into explicit releasability
+  evidence entries that operational-closure can mark `READY`,
+  `READY_WITH_CONDITIONS`, or `BLOCKED`
+* keep validator evidence visible so operators can see which pre-merge runtime
+  checks already passed before relying on post-deploy observation
+* if monitoring or rollback data is incomplete, record the missing evidence
+  explicitly rather than weakening the readiness decision
+
 ## Pre-Deploy Audit Checklist
 
 Before merge or deployment of any release unit with runtime, migration, or
@@ -55,19 +68,6 @@ After deployment or merge of runtime-affecting work:
 * rollback triggers MUST name the metric, threshold, or symptom
 * rollback procedure MUST be documented before merge, not improvised after
   a failure
-
-## Releasability Evidence Contract
-
-Monitoring plans, pre-deploy audits, observation windows, and rollback triggers
-are releasability evidence — not free-form side notes. When this pack is active:
-
-* translate monitoring and rollback requirements into explicit releasability
-  evidence entries that operational-closure can mark `READY`,
-  `READY_WITH_CONDITIONS`, or `BLOCKED`
-* keep validator evidence visible so operators can see which pre-merge runtime
-  checks already passed before relying on post-deploy observation
-* if monitoring or rollback data is incomplete, record the missing evidence
-  explicitly rather than weakening the readiness decision
 
 ## Closure Integration
 

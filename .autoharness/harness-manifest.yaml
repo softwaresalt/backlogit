@@ -219,7 +219,7 @@ artifacts:
   - path: ".github/instructions/release-observability.instructions.md"
     primitive: 6
     template: "templates/instructions/release-observability.instructions.md.tmpl"
-    checksum: "dd6370de558aff24959a56ec2b360c157e9ede6e844f71227db4d45e84021a9d"
+    checksum: "2f8c77791341b66821711b4303de283e8bc83b5a0c33bd4e156235a84dd360f7"
   - path: ".github/skills/file-lock/SKILL.md"
     primitive: 5
     template: "templates/skills/file-lock/SKILL.md.tmpl"
