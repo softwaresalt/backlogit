@@ -536,16 +536,16 @@ drift_report:
         - "AGENTS.md"
         - ".github/copilot-instructions.md"
     - category: "growth"
-      description: "Registered graphtor-docs in .mcp.json and made .graphtor/config/sources.yaml shareable in .gitignore. The pack's absence from .mcp.json - not any harness gap - is why it had no reachable tool surface. Note the pre-existing .engram/ negation pattern is silently broken for the same reason git cannot re-include a file under an excluded directory, leaving .engram/registry.yaml untracked; left as-is, out of scope."
+      description: "Registered graphtor-docs in .mcp.json with `serve --read-only`, because inside a workspace graphtor-docs is used exclusively in a read-only manner. Its absence from .mcp.json - not any harness gap - is why the pack had no reachable tool surface. .mcp.json is gitignored and machine-local, matching the five pre-existing server registrations. No source registry, index, or ingestion state is configured or committed from this workspace."
       affected_artifacts:
         - ".mcp.json"
-        - ".gitignore"
-        - ".graphtor/config/sources.yaml"
-    - category: "degrading"
-      description: "KNOWN LIMITATION - the graphtor-docs index is empty. graphtor-docs enforces a docline v1 contract requiring source_path, but schemas/docline/base-frontmatter-v1.schema.json requires only title/source/ingested_at/doc_type and treats source_path as optional; zero repository files populate it, so all 932 docs files fail ingestion and `graphtor-docs sync` exposes no lenient mode. Agents take the documented not-indexed fallback path in graphtor-docs.instructions.md. Closing the gap requires a deliberate docline migration across roughly 900 documents and was not performed as part of pack enablement."
+    - category: "growth"
+      description: "SCOPE NOTE - graphtor-docs never indexes a workspace. It serves a documentation corpus curated in advance for ingestion, and in-workspace usage is read-only retrieval against that corpus. Pack enablement therefore installs instructions, overlays, and the read-only MCP registration only; it configures no sources, performs no sync, and commits no .graphtor/ state. .graphtor/ remains entirely gitignored tool-managed state per its original .gitignore entry. A NON-NEGOTIABLE Workspace Usage Rule encoding this was added to graphtor-docs.instructions.md (drift_allowed) and mirrored into the AGENTS.md, copilot-instructions.md, and constitution graphtor overlays."
       affected_artifacts:
-        - ".graphtor/config/sources.yaml"
         - ".github/instructions/graphtor-docs.instructions.md"
+        - ".github/instructions/constitution.instructions.md"
+        - "AGENTS.md"
+        - ".github/copilot-instructions.md"
   checksum_scan:
     manifest_present: true
     ignore_file: ".autoharness/drift-ignore"

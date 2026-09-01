@@ -227,6 +227,7 @@ When the workspace enabled the `graphtor-docs` capability pack:
 * use `traverse_doc_links` to follow related documentation and `list_sources` to confirm indexed coverage
 * if the server is unavailable or sources are not indexed, fall back to grep, glob, or direct file reading and note reduced confidence
 * treat `.graphtor/` generated artifacts as tool-managed state rather than files to hand-edit casually
+* use graphtor-docs **read-only** in this workspace and **never index the workspace** — never run `graphtor-docs sync`, never register this repository as a source, and never treat index sync as part of harness install or tune
 
 ## Remote Operator Integration
 

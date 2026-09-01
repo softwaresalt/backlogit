@@ -157,11 +157,11 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "8324ef652eb56a4fac0f24799eac74325821a4c4cc318ad6c2d493ee59bed320"
+    checksum: "22bc7b970f3fd6ee7154d484638f2d4f52a4a5dca5dad6ef4fe9f483a3c1baf3"
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
-    checksum: "9b95e280ceb8f45ac3b92f249ff3748256af21fc71db2fc1d4228281ededdd9f"
+    checksum: "4674a13d7e28f87ef787b4487588465b5d18b0443599cf92097029e3e2083334"
   - path: ".github/skills/plan-harden/SKILL.md"
     primitive: 4
     template: "templates/skills/plan-harden/SKILL.md.tmpl"
@@ -193,11 +193,13 @@ artifacts:
   - path: ".github/instructions/graphtor-docs.instructions.md"
     primitive: 6
     template: "templates/instructions/graphtor-docs.instructions.md.tmpl"
-    checksum: "4ac8ea3d32fabc6a96e875fe3b9afa4bac8e517221d3f2ab2b716481c9318020"
+    checksum: "35737e996871fdaf6d8de0e09e8f7a85ae35542274d1968a7a82f41c4702cbef"
+    drift_allowed: true
+    drift_reason: "Operator-mandated workspace customization: adds a NON-NEGOTIABLE Workspace Usage Rule pinning graphtor-docs to read-only and forbidding workspace indexing (no sync, no repository source registration, index sync is never part of harness install or tune). The upstream template's Source Configuration paragraph permits source management as a task; this workspace does not. Do not auto-revert."
   - path: ".github/instructions/constitution.instructions.md"
     primitive: 1
     template: "templates/foundation/constitution.instructions.md.tmpl"
-    checksum: "8e49985ac156432a7c637c1849992a919a9938f7e17c22237cdeeed246c4cdcd"
+    checksum: "90924a2a3facdea5d094e0c2d1df6a9e6d474fa0905faba34e11b1454d818cf4"
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
@@ -907,7 +909,7 @@ tuning_history:
       - ".autoharness/harness-manifest.yaml"
       - ".github/skills/doc-review/SKILL.md"
   - at: "2026-08-31T21:15:00-07:00"
-    summary: "Operator-directed capability-pack enablement: continuous-learning and graphtor-docs (both previously excluded). Enabled both in config.yaml capability_packs and added the continuous_learning block (directory .autoharness/continuous-learning, capture_hooks false, environment_adapter none, promotion_threshold 5, matching the already-installed instruction) and the graphtor_docs block; both validate against the config JSON schema. Added matching graphtor_docs and continuous_learning blocks to workspace-profile.yaml because the two variable families resolve from different sources: CONTINUOUS_LEARNING_* from config.yaml but GRAPHTOR_SOURCES_PATH/GRAPHTOR_BINARY_PATH from the profile via _resolve_graphtor_*. Installed the new .github/instructions/graphtor-docs.instructions.md (all eight MCP tools present) and re-rendered continuous-learning.instructions.md to schema-accurate capture_hooks/environment_adapter values, splicing the previously-installed capture trigger list back in as an explicit manual-capture section rather than discarding it. Expanded BOTH the capability-pack-routes and capability-pack-deferral blocks in capability-pack-enforcement.instructions.md together and removed the now-false note claiming graphtor-docs is not installed. Added the graphtor-docs capability overlay to AGENTS.md (plus the agent-engram + graphtor-docs interaction-rules row), .github/copilot-instructions.md, and constitution.instructions.md (the constitution template carries a graphtor overlay that had been skipped while the pack was disabled). Stage/Ship graphtor weaving already satisfied the assertion. Registered graphtor-docs in .mcp.json (graphtor-docs serve --config ${workspace_folder}/.graphtor/config/sources.yaml) - its absence there, not the harness, is why the pack had no reachable tool surface. Corrected .gitignore so .graphtor/config/sources.yaml is shareable instead of machine-local; the pre-existing .engram/ negation pattern is silently broken for the same reason (git cannot re-include a file under an excluded directory) and .engram/registry.yaml is consequently untracked - left as-is, out of scope. Populated the source registry with the repository docs/ corpus, excluding archive/ and memory/ to mirror `backlogit docs scope`. KNOWN LIMITATION: the index is still empty. graphtor-docs enforces a docline v1 contract requiring source_path, but backlogit's schemas/docline/base-frontmatter-v1.schema.json requires only title/source/ingested_at/doc_type and treats source_path as optional - zero files in the repo populate it, so all 932 files fail ingestion. graphtor-docs sync exposes no lenient mode. Agents therefore take the documented not-indexed fallback path in graphtor-docs.instructions.md. Closing that gap needs a deliberate docline migration across ~900 docs and was NOT performed here. Registered the previously untracked constitution.instructions.md as a manifest artifact so future tunes can detect drift on it, refreshed LF-normalized SHA-256 checksums for every changed artifact, updated the stale CAPABILITY_PACKS variable (manifest seeds variable derivation ahead of config, so leaving it would have regressed future renders), and added CONTINUOUS_LEARNING_*/GRAPHTOR_* bindings."
+    summary: "Operator-directed capability-pack enablement: continuous-learning and graphtor-docs (both previously excluded). Enabled both in config.yaml capability_packs and added the continuous_learning block (directory .autoharness/continuous-learning, capture_hooks false, environment_adapter none, promotion_threshold 5, matching the already-installed instruction) and the graphtor_docs block; both validate against the config JSON schema. Added matching graphtor_docs and continuous_learning blocks to workspace-profile.yaml because the two variable families resolve from different sources: CONTINUOUS_LEARNING_* from config.yaml but GRAPHTOR_SOURCES_PATH/GRAPHTOR_BINARY_PATH from the profile via _resolve_graphtor_*. Installed the new .github/instructions/graphtor-docs.instructions.md (all eight MCP tools present) and re-rendered continuous-learning.instructions.md to schema-accurate capture_hooks/environment_adapter values, splicing the previously-installed capture trigger list back in as an explicit manual-capture section rather than discarding it. Expanded BOTH the capability-pack-routes and capability-pack-deferral blocks in capability-pack-enforcement.instructions.md together and removed the now-false note claiming graphtor-docs is not installed. Added the graphtor-docs capability overlay to AGENTS.md (plus the agent-engram + graphtor-docs interaction-rules row), .github/copilot-instructions.md, and constitution.instructions.md (the constitution template carries a graphtor overlay that had been skipped while the pack was disabled). Stage/Ship graphtor weaving already satisfied the assertion. Registered graphtor-docs in .mcp.json (graphtor-docs serve --read-only) - its absence there, not the harness, is why the pack had no reachable tool surface. Registered the previously untracked constitution.instructions.md as a manifest artifact so future tunes can detect drift on it, refreshed LF-normalized SHA-256 checksums for every changed artifact, updated the stale CAPABILITY_PACKS variable (manifest seeds variable derivation ahead of config, so leaving it would have regressed future renders), and added CONTINUOUS_LEARNING_*/GRAPHTOR_* bindings."
     artifacts:
       - ".autoharness/config.yaml"
       - ".autoharness/workspace-profile.yaml"
@@ -919,5 +921,15 @@ tuning_history:
       - "AGENTS.md"
       - ".github/copilot-instructions.md"
       - ".mcp.json"
+  - at: "2026-08-31T22:30:00-07:00"
+    summary: "Operator correction: graphtor-docs never indexes a workspace. The preceding entry had registered the repository docs/ corpus as a graphtor local source and run graphtor-docs sync; both were wrong. Operator direction is that graphtor performs index sync only against content curated in advance for ingestion, never against a workspace, and that in-workspace usage is exclusively read-only. Reverted in full: .graphtor/config/sources.yaml restored to sources: [] and git rm --cached so it is untracked again; .gitignore restored to the single blanket .graphtor/ entry, dropping the negation pattern that had made sources.yaml shareable; .mcp.json changed to serve --read-only, which forces every database to ReadOnly posture regardless of resolved sources and has no force-read-write counterpart. The failed sync had still written a phantom backlogit-docs source row (zero chunks) into the derived .graphtor/graph.db, and the graphtor CLI exposes no source-removal verb; rather than run another sync to prune it - itself the forbidden operation - the database was backed up to .autoharness/backups/graphtor-db-revert-2026-08-31/ and removed so graphtor recreates it clean. graphtor-docs status now reports no sources configured, matching the pre-existing state. Leaving the row would have misrepresented the workspace as indexed, which is the exact inference the read-only rule prevents. The docline source_path contract-mismatch analysis recorded in the preceding entry is withdrawn as a finding: it described a real field difference but framed it as a blocker against a goal that was never valid, so no ~900-document migration is pending and no operator decision is outstanding. Retrieval degradation with no curated corpus bound is expected behavior, and agents take the documented fallback path in graphtor-docs.instructions.md. Pack enablement itself stands - instructions, overlays, routing and the read-only registration are unchanged. Added a NON-NEGOTIABLE Workspace Usage Rule to graphtor-docs.instructions.md (marked drift_allowed) because the upstream template's Source Configuration paragraph permits source management as a task and would otherwise leave the same mistake reachable; mirrored the read-only / never-index rule into the AGENTS.md, copilot-instructions.md, and constitution.instructions.md graphtor overlays, and refreshed their LF-normalized checksums."
+    artifacts:
+      - ".autoharness/harness-manifest.yaml"
+      - ".autoharness/workspace-profile.yaml"
+      - ".autoharness/tuning-reports/2026-08-31-merge-install-report.md"
+      - ".github/instructions/graphtor-docs.instructions.md"
+      - ".github/instructions/constitution.instructions.md"
+      - "AGENTS.md"
+      - ".github/copilot-instructions.md"
+      - ".mcp.json"
       - ".gitignore"
-      - ".graphtor/config/sources.yaml"

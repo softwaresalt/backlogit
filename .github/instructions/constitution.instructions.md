@@ -148,9 +148,17 @@ questions, MUST verify server reachability and index freshness before trusting r
 not hand-edit tool-managed `.graphtor/` artifacts as a substitute for re-indexing or configuration
 updates.
 
+Agents MUST use graphtor-docs in a **read-only** manner inside this workspace and MUST NOT index
+the workspace. graphtor-docs performs an index sync only against content curated in advance for
+ingestion; a workspace is never such a corpus. Running `graphtor-docs sync`, registering this
+repository as a documentation source, or treating index sync as part of a harness install or tune
+is forbidden.
+
 **Rationale**: graphtor-docs exists to resolve domain concepts and referenced APIs from an indexed
 local documentation corpus. Defaulting immediately to broad web search or raw file scanning wastes
-context budget and discards the retrieval leverage the overlay was meant to provide.
+context budget and discards the retrieval leverage the overlay was meant to provide. Conversely,
+indexing the workspace itself misrepresents ad-hoc repository content as a curated corpus and
+inverts the read-only contract the overlay depends on.
 
 ### IX. Git-Friendly Persistence
 

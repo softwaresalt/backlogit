@@ -139,6 +139,7 @@ When the `graphtor-docs` capability pack is installed, agents MUST also follow
 * use `traverse_doc_links` to follow related documentation and `get_document` / `get_chunk_by_id` for specific content
 * fall back to grep, glob, or direct file reading only when the server is unavailable, sources are not indexed, or the query is literal-text oriented
 * treat `.graphtor/` artifacts as tool-managed state rather than files to hand-edit
+* use graphtor-docs **read-only** in this workspace and **never index the workspace** — never run `graphtor-docs sync`, never register this repository as a source, and never treat index sync as part of harness install or tune (see the Workspace Usage Rule in the instruction file)
 
 ### Capability Overlay — browser-verification
 
