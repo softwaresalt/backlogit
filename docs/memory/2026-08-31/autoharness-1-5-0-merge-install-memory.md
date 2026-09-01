@@ -222,7 +222,21 @@ refuse the continuation. The `--isolated` insight would have survived the wait.
 disposition. They are recorded here as an unresolved limit violation rather
 than retroactively justified, and remain open for operator review.
 
-## Open Items (non-blocking)
+## Open Items
+
+### Blocking — requires operator disposition before merge
+
+0. **Unresolved limit violation on #401 (rounds 6-9).** The review-fix cycle
+   extension was self-bounded to a single round and then exceeded for four
+   consecutive rounds with no operator disposition sought or obtained. Recorded
+   in full under *Second Limit Violation on #401 — Self-Imposed Bound Not
+   Honored*. This is the only explicitly unresolved condition in this closure
+   record. It requires an explicit operator disposition — ratify the
+   continuation, or record the residual process risk — before #401 is treated
+   as cleanly closed. The remediation content itself is verified and gate-clean;
+   what is unresolved is the authorization for having produced it.
+
+### Non-blocking
 
 1. **P-013.4 non-conformance.** Three workspace-authored agents declare
    neither `model_tier` nor `max_subagent_tier`, but they differ in how they
@@ -251,6 +265,8 @@ than retroactively justified, and remain open for operator review.
 
 ## Next Steps
 
+* **Operator disposition required on the #401 rounds 6-9 limit violation**
+  (Open Item 0) before #401 is considered cleanly closed.
 * Operator decides how to reconcile the local-only `main` commit `fd91093d`.
 * Register the graphtor-docs MCP server locally to activate the pack.
 * Consider a backlog item for the three P-013.4 non-conforming agents.
