@@ -128,6 +128,19 @@ When the `backlogit` capability pack is installed, agents MUST also follow
 * record meaningful comments and commit associations for traceability
 * refresh the backlog index after out-of-band edits before trusting query results
 
+### Capability Overlay — graphtor-docs
+
+When the `graphtor-docs` capability pack is installed, agents MUST also follow
+`.github/instructions/graphtor-docs.instructions.md` and the corresponding
+`Capability Overlay` section in `.github/instructions/constitution.instructions.md`:
+
+* prefer graphtor-docs indexed retrieval (`search_local_docs`, `search_semantic`, `research_topic`) for conceptual, API-oriented, or documentation questions before broad web search or raw file scanning
+* verify server reachability and index freshness with `get_status` / `list_sources` before relying on results
+* use `traverse_doc_links` to follow related documentation and `get_document` / `get_chunk_by_id` for specific content
+* fall back to grep, glob, or direct file reading only when the server is unavailable, sources are not indexed, or the query is literal-text oriented
+* treat `.graphtor/` artifacts as tool-managed state rather than files to hand-edit
+* use graphtor-docs **read-only** in this workspace and **never index the workspace** — never run `graphtor-docs sync`, never register this repository as a source, and never treat index sync as part of harness install or tune (see the Workspace Usage Rule in the instruction file)
+
 ### Capability Overlay — browser-verification
 
 When the `browser-verification` capability pack is installed, agents MUST also follow
@@ -146,7 +159,10 @@ When the `continuous-learning` capability pack is installed, agents MUST also fo
 `.github/instructions/continuous-learning.instructions.md` and treat recurring observed
 practice as a first-class input to harness evolution:
 
-* capture normalized observations under `docs/learnings/`
+* capture normalized observations under `.autoharness/continuous-learning/` (the
+  directory configured in `.autoharness/config.yaml`), keeping observations,
+  instincts, and learned artifacts in the single store the pack's instruction
+  file defines — never a second, parallel location
 * keep hook capture environment-specific and optional rather than assuming one IDE workflow
 * use `observe`, `learn`, and `evolve` to cluster recurring practice into instincts and learned artifacts
 * promote learned rules only when multiple corroborating observations justify them
@@ -198,6 +214,7 @@ precedence rules to resolve conflicts:
 |---|---|
 | agent-intercom + backlogit | Query backlogit first for task state; format the result using intercom broadcast rules for remote operator choice |
 | agent-engram + any other overlay | Engram is a discovery method; other overlays are independent. Use engram for search, other overlays for their domain |
+| agent-engram + graphtor-docs | Both are indexed retrieval overlays; prefer engram for code/symbol/graph discovery and graphtor-docs for documentation and API concept lookup |
 | strict-safety + any overlay | Classify risky actions via strict-safety first; then route approval through the appropriate overlay (intercom if available, else local) |
 | strict-safety + concurrency | Log lock conflicts as `ActionResult: blocked` when strict-safety is enabled |
 | backlogit + strict-safety | Persist strict-safety decisions via backlogit checkpoints when checkpoint operations are supported |
@@ -278,10 +295,10 @@ gofmt -l .
    test harness before implementation begins.
 2. **Backlog-driven planning**: All task tracking uses the configured backlog workspace and registry-backed operations; do not invent parallel task stores.
 3. **Single active implementation branch/worktree**: Each feature or chore uses one dedicated implementation branch in one active worktree (P-016). Do not split implementation, backlog execution, PR preparation, or closure across parallel branches/worktrees. Only explicit Stage-owned spike/research worktrees are exempt, and they cannot perform implementation, template/source/config mutation, shipment claim, PR preparation, or Ship execution.
-4. **Dark factory mode (P-017)**: Activate only through the exact trigger `Run pipeline in dark mode`, `Run pipeline in dark factory mode`, or the `/feature-flow-dark` prompt shim. Dark mode must record `DARK_MODE_ACTIVE`, stay bounded to the declared scope, preserve P-001 / P-009 / P-014 / P-016, keep local review readiness authoritative, emit required visibility events, and complete post-merge closure before the scope is considered complete.
+4. **Dark factory mode (P-017)**: Activate only through the exact trigger `Run pipeline in dark mode`, `Run pipeline in dark factory mode`, or the `/feature-flow-dark` prompt shim. Dark mode must record `DARK_MODE_ACTIVE`, stay bounded to the declared scope, preserve P-001 / P-009 / P-014 / P-016, keep local review readiness authoritative, emit required visibility events, and complete post-merge closure (including required post-merge context compaction under P-020) before the scope is considered complete.
 5. **Commit discipline**: Conventional commits format (`feat:`, `fix:`, `docs:`, `test:`).
 6. **No dead code**: Placeholder modules replaced or removed before completion.
-7. **Closure before forgetfulness**: Runtime verification and operational closure happen before work is considered fully absorbed.
+7. **Closure before forgetfulness**: Runtime verification and operational closure happen before work is considered fully absorbed. Required post-merge context compaction (**P-020**) is a mandatory closure gate — Ship invokes the compact-context skill at every post-merge closure.
 
 ### Task Granularity (NON-NEGOTIABLE)
 

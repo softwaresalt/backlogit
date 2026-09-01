@@ -180,7 +180,10 @@ When the workspace enabled the `browser-verification` capability pack:
 
 When the workspace enabled the `continuous-learning` capability pack:
 
-* store observation state under `docs/learnings/`
+* store observation state under `.autoharness/continuous-learning/` (the
+  directory configured in `.autoharness/config.yaml`), matching
+  `.github/instructions/continuous-learning.instructions.md` — do not write
+  observations to a second, parallel store
 * keep hook capture optional and environment-specific; manual capture is still valid
 * use `observe` to capture recurring workflow signals, `learn` to infer instincts, and `evolve` to promote mature patterns into `learned-*` artifacts
 * do not harden a rule into a learned instruction or skill until it has enough corroborating observations to justify the promotion
@@ -216,6 +219,18 @@ When the workspace enabled the `adversarial-review` capability pack:
 * assemble consensus-weighted findings (HIGH / MEDIUM / LOW confidence)
 * treat HIGH-confidence P0/P1 findings as gate-blocking
 * feed remediation queue entries into backlog
+
+### graphtor-docs
+
+When the workspace enabled the `graphtor-docs` capability pack:
+
+* follow `.github/instructions/graphtor-docs.instructions.md`
+* verify the graphtor-docs server / MCP surface is reachable and sources are indexed before depending on indexed documentation retrieval
+* prefer `search_local_docs`, `search_semantic`, and `research_topic` for conceptual, API-oriented, or documentation questions before broad web search or raw file scans
+* use `traverse_doc_links` to follow related documentation and `list_sources` to confirm indexed coverage
+* if the server is unavailable or sources are not indexed, fall back to grep, glob, or direct file reading and note reduced confidence
+* treat `.graphtor/` generated artifacts as tool-managed state rather than files to hand-edit casually
+* use graphtor-docs **read-only** in this workspace and **never index the workspace** — never run `graphtor-docs sync`, never register this repository as a source, and never treat index sync as part of harness install or tune
 
 ## Remote Operator Integration
 

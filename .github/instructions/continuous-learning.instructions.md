@@ -23,15 +23,23 @@ Treat this directory as harness-managed state.
 
 Hook capture is optional and environment-specific:
 
-* `capture_hooks`: `- After compound knowledge capture (compound skill completion)
-- After CI fix resolution (fix-ci skill, 3+ attempts)
-- After review findings with P0/P1 severity
-- After operational closure with incident findings`
-* `environment_adapter`: `Observations stored in .autoharness/continuous-learning/observations/, instincts in .autoharness/continuous-learning/instincts/, evolved artifacts in .autoharness/continuous-learning/learned/. File format: Markdown with YAML frontmatter for searchability.`
+* `capture_hooks`: `false`
+* `environment_adapter`: `none`
 
 If hooks are unavailable or disabled, capture observations through manual
 workflow steps, review findings, runtime verification artifacts, memory files,
 or operator-supplied context instead.
+
+### Manual capture points (workspace-specific)
+
+This workspace has no hook capture adapter installed, so `capture_hooks` is
+`false` and `environment_adapter` is `none`. Capture observations manually at
+these recurring workflow boundaries:
+
+* after compound knowledge capture (compound skill completion)
+* after CI fix resolution (fix-ci skill, 3+ attempts)
+* after review findings with P0/P1 severity
+* after operational closure with incident findings
 
 ## Observation Hygiene
 

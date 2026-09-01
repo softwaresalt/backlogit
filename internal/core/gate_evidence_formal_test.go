@@ -375,8 +375,6 @@ func TestGateEvidence_FormalGateRequired_RealWorktreeUnresolvedHead_Refuses(t *t
 	assert.Equal(t, "active", statusOf(t, ws, id), "task must not complete with formal evidence bound to an unresolved HEAD in a real work tree")
 }
 
-
-
 // TestNextGateEvidenceCounter_ConcurrentAllocationsAreUnique verifies the
 // dedicated counter-allocation lock: N goroutines racing to allocate a counter
 // for the SAME item produce N distinct, gapless values with no duplicates
@@ -511,7 +509,6 @@ func asTestInt64(v any) (int64, bool) {
 		return 0, false
 	}
 }
-
 
 // unsetTestEnv removes an environment variable for the duration of the test,
 // restoring any prior value afterward via t.Cleanup.
