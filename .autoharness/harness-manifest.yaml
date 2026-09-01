@@ -157,11 +157,15 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "22bc7b970f3fd6ee7154d484638f2d4f52a4a5dca5dad6ef4fe9f483a3c1baf3"
+    checksum: "52a10cc0f1e5fab6a843acb23425cacb4a783a6620ef79cc5d783ae452637b0f"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). The upstream continuous-learning overlay hardcodes docs/learnings/, conflicting with the configured continuous_learning.directory (.autoharness/continuous-learning) that the pack's own instruction file uses, which would let agents write observations to two different stores. Aligned to the configured directory. Do not auto-revert."
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
-    checksum: "4674a13d7e28f87ef787b4487588465b5d18b0443599cf92097029e3e2083334"
+    checksum: "9f9380ccf3027743846dab35b4f8490fcd15a65b152cd78f5b157c8be28d47b1"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Same continuous-learning storage-path conflict as AGENTS.md; aligned to the configured continuous_learning.directory. Do not auto-revert."
   - path: ".github/skills/plan-harden/SKILL.md"
     primitive: 4
     template: "templates/skills/plan-harden/SKILL.md.tmpl"
@@ -203,11 +207,15 @@ artifacts:
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
-    checksum: "dcaf9e0ce0909a6c781af01eb271423c7022de3d691fdf432f1ec95be3c76bab"
+    checksum: "7b04c412e7922527057168dc48ce1c8be9e9a4eef8f9ae20a8c8314ead34cb7e"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Same empty-substitution defect as the companion instruction file, across 7 locations including the reviewer routing table. Replaced with symbolic config key paths. Do not auto-revert."
   - path: ".github/instructions/adversarial-review.instructions.md"
     primitive: 6
     template: "templates/instructions/adversarial-review.instructions.md.tmpl"
-    checksum: "d062dc9a6c3e9e7870a77cebb3accf36f222b6a1ebb4fb163aaab412f29dbedf"
+    checksum: "949efd890554f4e2c2fb467e65187fc80685aa167a2c8bddb852b90e2f7e016a"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). ALT_REVIEW_PROVIDER / ALT_REVIEW_FAMILY resolve to empty strings when no alternate route is configured, so the rendered text lost the setting names entirely and read 'When `` and `` are configured'. Replaced with the symbolic config key paths plus an explicit note that both are unset here. Do not auto-revert."
   - path: ".github/instructions/circuit-breaker.instructions.md"
     primitive: 6
     template: "templates/instructions/circuit-breaker.instructions.md.tmpl"
@@ -267,7 +275,9 @@ artifacts:
   - path: ".github/instructions/role-enforcement.instructions.md"
     primitive: 5
     template: "templates/instructions/role-enforcement.instructions.md.tmpl"
-    checksum: "fd3af24626eeecda69699937a395f898017f592546156d45a76edf76013f2a85"
+    checksum: "b017a7bc47c10a5bed1faf626676acd58048021a8e50a7c7e849b87a9db2f346"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Upstream asserts skills 'do not spawn subagents', which contradicts the installed review and plan-review skills that both declare an explicit 1-hop persona-subagent contract. Narrowed the claim to model-route inheritance and explicitly permitted coordinator skills to spawn subagents when their own Subagent Depth Constraint says so. Do not auto-revert."
   - path: ".github/instructions/github-pr-automation.instructions.md"
     primitive: 4
     template: "templates/instructions/github-pr-automation.instructions.md.tmpl"
@@ -412,7 +422,9 @@ artifacts:
   - path: "scripts/pre-commit-markdownlint.sh"
     primitive: 6
     template: "templates/scripts/pre-commit-markdownlint.sh.tmpl"
-    checksum: "66d223e8102f82f52d9c4f89b36255660ea29026acd99772c2768c8ec98ea8f4"
+    checksum: "0a5e4f3f441597c47679a7c88cc5ab83db20bb61fa321fef9039606bb5f78c1b"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Upstream filters staged files with grep -zE, a GNU extension unavailable in BSD/macOS grep; combined with the trailing || true it silently collected zero files and skipped linting entirely on those machines. The pathspec is now applied by git itself, which is portable and preserves NUL-delimited output. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Opt-in; see the .ps1 counterpart note. Passes bash -n."
   - path: "scripts/pre-commit-pipeline-topology.ps1"
     primitive: 6
@@ -427,12 +439,16 @@ artifacts:
   - path: "scripts/pre-push-quality-gates.ps1"
     primitive: 6
     template: "templates/scripts/pre-push-quality-gates.ps1.tmpl"
-    checksum: "ea72b78090f0c9d286d41d612dc0a29dda07013be57082f9f6d66c173c5c5896"
+    checksum: "7dea315196283603e96fb3c282a3daf0a630d885cbeff0f41342482e4c465e4b"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Same defect and same remedy as the .sh variant: gofmt -l leaves $LASTEXITCODE at 0, so Invoke-Gate could never fail. Replaced with a dedicated Invoke-FormatGate that is line-ending insensitive. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). P-019 local pre-push gates rendered with this workspace's Go commands (go test ./..., go vet ./..., golangci-lint run, gofmt -l ., go build ./cmd/backlogit). Opt-in."
   - path: "scripts/pre-push-quality-gates.sh"
     primitive: 6
     template: "templates/scripts/pre-push-quality-gates.sh.tmpl"
-    checksum: "d9b4005b54ca1a74e75c2ecda936eae353bc105f33aa0c9121027cc14387c7b3"
+    checksum: "0b9fcac0da7eaf85a25e89b659dc6e8bb1daa188edf7aea1d134e8e6f1585758"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Upstream renders the format gate as run_gate 'Format' 'gofmt' 'gofmt -l .', but gofmt -l always exits 0 so the gate could never fail and silently passed unformatted code. Replaced with a dedicated run_format_gate that inspects gofmt output and compares against CR-stripped source, making it line-ending insensitive so a CRLF working tree (core.autocrlf=true) does not produce 371 false positives. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Opt-in; passes bash -n."
   - path: "scripts/ci-topology-check.sh"
     primitive: 6
@@ -452,7 +468,8 @@ artifacts:
   - path: "start.sh"
     primitive: 6
     template: "templates/scripts/start.sh.tmpl"
-    checksum: "71acb66d824d5d3ff01e22cf9d4d07e36206e92c09be6e8d534231be6c3d6a4c"
+    checksum: "7567627c335f01d2a1639dee2e0bce744537c31ac0f5b746e07d70a75589f420"
+    drift_reason: "Two deliberate upstream divergences. (1) The template's final exec uses \"${copilot_arguments[@]:-}\", which under set -u expands an EMPTY array to one empty-string word and passes a spurious empty argument to copilot; rendered instead with ${copilot_arguments[@]+\"${copilot_arguments[@]}\"}. (2) Copilot review fix (PR #400): the template emits a graphtor-docs sync branch guarded by _sidecar_enabled. graphtor-docs is READ-ONLY inside a workspace and NEVER indexes one, so that branch was removed outright rather than left unreachable via enabled_sidecars, where re-enabling the sidecar would silently reactivate workspace ingestion. Do not auto-revert."
     drift_allowed: true
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). LF line endings; sidecars rendered as (\"backlogit\" \"engram\"). DELIBERATE UPSTREAM DIVERGENCE (do not revert on a future auto-tune): the template's final exec line uses \"${copilot_arguments[@]:-}\", which under set -u expands an EMPTY array to one empty-string word and passes a spurious empty argument to copilot (empirically confirmed). Rendered instead with the set -u-safe idiom ${copilot_arguments[@]+\"${copilot_arguments[@]}\"}. Report upstream; drop this divergence once the template is fixed."
 variables_used:
@@ -933,3 +950,17 @@ tuning_history:
       - ".github/copilot-instructions.md"
       - ".mcp.json"
       - ".gitignore"
+  - at: "2026-08-31T23:45:00-07:00"
+    summary: "Copilot review remediation for PR #400 (autoharness 1.5.0 merge-install). Eight review findings fixed and marked drift_allowed so a future tune cannot silently revert them. (1) start.sh: removed the graphtor-docs workspace-sync branch outright rather than leaving it gated, because graphtor-docs is read-only inside a workspace and never ingests one. (2,3) pre-push quality gates (.sh and .ps1): the format gate invoked gofmt -l, which always exits 0, so the gate could never fail; replaced with dedicated format-gate routines that inspect gofmt output and compare against CR-stripped source so a CRLF working tree does not yield false positives. (4) pre-commit-markdownlint.sh: replaced the GNU-only grep -zE filter, which silently linted zero files on BSD/macOS, with a git pathspec. (5) AGENTS.md and copilot-instructions.md: aligned the continuous-learning storage path to the configured continuous_learning.directory instead of a hardcoded docs/learnings. (6) role-enforcement.instructions.md: narrowed the incorrect claim that skills never spawn subagents to model-route inheritance only, since review and plan-review both declare a 1-hop persona contract. (7) adversarial-review instruction and agent files: restored symbolic alt-review config key paths where unset template variables had rendered empty code spans. (8) ci.yml: pinned the autoharness install to the latest published version so the release-gate job cannot drift onto an unvetted release. Also fixed a genuine pre-existing gofmt violation in internal/core/gate_evidence_formal_test.go that only surfaced once the format gate became enforcing."
+    artifacts:
+      - "start.sh"
+      - "scripts/pre-push-quality-gates.sh"
+      - "scripts/pre-push-quality-gates.ps1"
+      - "scripts/pre-commit-markdownlint.sh"
+      - "AGENTS.md"
+      - ".github/copilot-instructions.md"
+      - ".github/instructions/role-enforcement.instructions.md"
+      - ".github/instructions/adversarial-review.instructions.md"
+      - ".github/agents/review/adversarial-review.agent.md"
+      - ".github/workflows/ci.yml"
+      - ".autoharness/harness-manifest.yaml"

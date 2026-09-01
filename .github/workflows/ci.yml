@@ -224,6 +224,16 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install autoharness
-        run: pip install autoharness
+        # Pinned deliberately. An unpinned `pip install autoharness` resolves
+        # whatever PyPI publishes as latest on every run, so a later release
+        # could change pipeline-topology gate semantics — or break this job —
+        # with no change to this repository.
+        #
+        # Pinned to 1.4.11, the highest version published to PyPI. Note this is
+        # NOT the 1.5.0 that was merge-installed into this workspace: 1.5.0 is
+        # git-sourced and unpublished, so `==1.5.0` would fail to resolve here.
+        # 1.4.11 is the version this job has actually been running and passing
+        # with. Bump this pin to 1.5.0 once 1.5.0 is published to PyPI.
+        run: pip install 'autoharness==1.4.11'
       - name: Run CI topology-check entrypoint
         run: bash scripts/ci-topology-check.sh
