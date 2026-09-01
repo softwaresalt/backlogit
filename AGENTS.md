@@ -159,7 +159,10 @@ When the `continuous-learning` capability pack is installed, agents MUST also fo
 `.github/instructions/continuous-learning.instructions.md` and treat recurring observed
 practice as a first-class input to harness evolution:
 
-* capture normalized observations under `docs/learnings/`
+* capture normalized observations under `.autoharness/continuous-learning/` (the
+  directory configured in `.autoharness/config.yaml`), keeping observations,
+  instincts, and learned artifacts in the single store the pack's instruction
+  file defines — never a second, parallel location
 * keep hook capture environment-specific and optional rather than assuming one IDE workflow
 * use `observe`, `learn`, and `evolve` to cluster recurring practice into instincts and learned artifacts
 * promote learned rules only when multiple corroborating observations justify them

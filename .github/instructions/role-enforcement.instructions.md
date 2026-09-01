@@ -78,14 +78,37 @@ All P-010 violations are first-class observability events:
 
 ## Skill-Delegation Model Inheritance (P-013.5)
 
-Skills are leaf executors: they do not declare their own `model_family` /
-`model_provider` / `reasoning_effort` frontmatter and they do not spawn
-subagents. A skill invoked by an agent (Stage, Ship, Orchestrator, or an
-elective agent) runs **inside the invoking agent's already-routed session** —
-it inherits whatever model that agent resolved and declared per its own
-invocation directive (P-013.5). This applies uniformly when invoking agents
-**and** their skill workflows: the routing decision is made once, at
-agent-invocation time, not re-resolved per skill call.
+Skills do not declare their own `model_family` / `model_provider` /
+`reasoning_effort` frontmatter. A skill invoked by an agent (Stage, Ship,
+Orchestrator, or an elective agent) runs **inside the invoking agent's
+already-routed session** — it inherits whatever model that agent resolved and
+declared per its own invocation directive (P-013.5). This applies uniformly
+when invoking agents **and** their skill workflows: the routing decision is
+made once, at agent-invocation time, not re-resolved per skill call.
+
+This is a claim about **model-route inheritance only**. It is NOT a
+prohibition on delegation. A skill MAY spawn subagents when its own
+`## Subagent Depth Constraint` section explicitly says so, and the invoking
+agent MUST NOT refuse such a skill on the basis of this section. Two installed
+coordinator skills declare exactly that contract:
+
+| Skill | Declared depth contract |
+|---|---|
+| `review` | review skill → persona subagent (1 hop) |
+| `plan-review` | plan-review skill → persona subagent (1 hop) |
+
+Every other installed skill declares itself a leaf executor (`Maximum depth: 0`,
+or an equivalent "MUST NOT spawn its own subagents" statement). Persona
+subagents spawned by a coordinator skill are themselves always leaf executors
+and MUST NOT spawn further subagents.
+
+Route inheritance still holds across that one permitted hop: a spawned persona
+subagent inherits the invoking agent's resolved session route unless an
+explicit alternate route applies (for example the adversarial-review anchor and
+alternate reviewer slots, or the `alt_doc_review` route the configuration binds
+to the `doc-review` skill's review pass). Those alternate routes are resolved
+from `.autoharness/config.yaml`, not declared in skill frontmatter, so the
+"skills do not declare their own routing frontmatter" rule above is unaffected.
 
 Before invoking any skill, the invoking agent MUST confirm and propagate its
 own current routing state for the session — either "resolved" or explicitly

@@ -47,11 +47,16 @@ Anchor Reviewer from the report.
 
 ## Alternate Model Provider Support
 
-When `` and `` are configured,
+When `model_routing.alt_review.model_provider` and
+`model_routing.alt_review.model_family` are configured,
 one reviewer slot (Reviewer-B, the Tier 2 slot by default) is reassigned to
 the alternate provider and family. This allows a Gemini model, a different
 Anthropic family, or any registered provider to participate in the reviewer
 pool without requiring additional reviewer count.
+
+Both keys are currently unset in this workspace's `.autoharness/config.yaml`,
+so no alternate route is active and Reviewer-B uses standard Tier 2 routing.
+Set both keys to enable the feature; leaving either empty disables it.
 
 **Escalation path**: If the standard tier routing set produces repeated
 disagreements (no consensus after 3 invocations on the same change), consider

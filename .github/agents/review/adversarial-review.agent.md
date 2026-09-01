@@ -46,10 +46,12 @@ without replacing Tier 1/2/3 diversity. If the anchor route cannot be dispatched
 record a declared fallback and continue only when the remaining reviewer pool still
 satisfies the consensus minimum.
 
-Alternate model provider support (`` / ``)
+Alternate model provider support (`model_routing.alt_review.model_provider` /
+`model_routing.alt_review.model_family`)
 allows reviewer slots to be assigned to Gemini or other providers outside the standard
 tier routing set, ensuring reviewer diversity is not limited to a single provider's
-model family.
+model family. Both keys are unset in this workspace, so Reviewer-B stays on the
+standard Tier 2 route until an operator configures them.
 
 ## When to Use
 
@@ -97,10 +99,11 @@ model family.
   assigning an Anchor Reviewer slot. When unset, use the count-specific mapping
   in Phase 1 so every accepted reviewer count has a deterministic slot map.
 * `alt_provider`: (Optional) Alternate model provider name (e.g., `google`).
-  Overrides `` for this invocation. When set, one reviewer
-  slot is assigned to the alternate provider.
+  Overrides `model_routing.alt_review.model_provider` for this invocation. When
+  set, one reviewer slot is assigned to the alternate provider.
 * `alt_family`: (Optional) Alternate model family (e.g., `gemini-2.5-flash`).
-  Overrides `` for this invocation. Paired with `alt_provider`.
+  Overrides `model_routing.alt_review.model_family` for this invocation. Paired
+  with `alt_provider`.
 * `anchor_provider`: (Optional) Anchor reviewer provider. Overrides
   `openai` for this invocation.
 * `anchor_family`: (Optional) Anchor reviewer model family. Overrides
@@ -175,7 +178,8 @@ returned to the caller in the response body and the caller owns any persistence.
      and family are non-empty and dispatchable, launch the Anchor Reviewer as a
      separate slot, pass the reasoning effort when non-empty, and identify it
      separately in the report.
-   * Read `` and `` (or `alt_provider`
+   * Read `model_routing.alt_review.model_provider` and
+     `model_routing.alt_review.model_family` (or `alt_provider`
      / `alt_family` input overrides).
    * If both alternate values are non-empty: replace one non-anchor reviewer slot
      with the alternate provider. Replace Reviewer-B (Tier 2 slot) by default to
@@ -190,7 +194,7 @@ returned to the caller in the response body and the caller owns any persistence.
 |---|---|---|---|
 | Anchor Reviewer | Anchor review route | `gpt-5.6-sol` via `openai` with `high` when non-empty | unchanged; if unavailable, declared fallback |
 | Reviewer-A | Tier 1 (fast/cheap) | `claude-haiku-4.5` | unchanged |
-| Reviewer-B | Tier 2 (standard) | `claude-sonnet-4.6` | `` via `` |
+| Reviewer-B | Tier 2 (standard) | `claude-sonnet-4.6` | `model_routing.alt_review.model_family` via `model_routing.alt_review.model_provider` (both unset in this workspace) |
 | Reviewer-C | Tier 3 (frontier) | `claude-opus-4.8` | unchanged |
 | Reviewer-D | Tier 1 or Tier 2 variant | different from A/B/C | unchanged |
 | Reviewer-E (5 reviewers without anchor) | Tier 2 or Tier 3 variant | different from A/B/C/D | unchanged |
@@ -198,7 +202,7 @@ returned to the caller in the response body and the caller owns any persistence.
 When `openai` or `gpt-5.6-sol` is empty or the
 route cannot be dispatched, all standard reviewer slots still use tier routing and
 the report records the Anchor Reviewer declared fallback. When
-`` is non-empty, Reviewer-B is routed to the alternate
+`model_routing.alt_review.model_provider` is non-empty, Reviewer-B is routed to the alternate
 provider. This ensures reviewer diversity is not limited to a single provider's
 model family while keeping the Anchor Reviewer separate.
 
@@ -364,7 +368,7 @@ re-review loop run in this agent — no further delegation.
 * When `openai` is set, the Anchor Reviewer must use that
   provider's model family unless the provider is unavailable; if unavailable, log
   the declared fallback separately and continue only when consensus minimums hold
-* When `` is set, at least one non-anchor reviewer must use the alternate
+* When `model_routing.alt_review.model_provider` is set, at least one non-anchor reviewer must use the alternate
   provider; failure to route when the provider and family are both configured and
   reachable is a configuration error; if the provider is unreachable at runtime,
   fall back to the Tier 2 standard model, log the fallback, and continue

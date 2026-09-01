@@ -180,7 +180,10 @@ When the workspace enabled the `browser-verification` capability pack:
 
 When the workspace enabled the `continuous-learning` capability pack:
 
-* store observation state under `docs/learnings/`
+* store observation state under `.autoharness/continuous-learning/` (the
+  directory configured in `.autoharness/config.yaml`), matching
+  `.github/instructions/continuous-learning.instructions.md` — do not write
+  observations to a second, parallel store
 * keep hook capture optional and environment-specific; manual capture is still valid
 * use `observe` to capture recurring workflow signals, `learn` to infer instincts, and `evolve` to promote mature patterns into `learned-*` artifacts
 * do not harden a rule into a learned instruction or skill until it has enough corroborating observations to justify the promotion
