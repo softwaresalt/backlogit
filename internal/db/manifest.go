@@ -28,6 +28,9 @@ const (
 	FileKindLog
 	// FileKindConfig covers workspace configuration files such as config.yaml.
 	FileKindConfig
+	// FileKindProvenanceCorrections covers archive/provenance_corrections.jsonl,
+	// the append-only stash provenance correction log.
+	FileKindProvenanceCorrections
 	// FileKindOther covers files that do not match any recognised category.
 	FileKindOther
 )
@@ -121,6 +124,10 @@ func ClassifyFile(relPath string) FileKind {
 		if artifactDirs[dir] {
 			return FileKindArtifact
 		}
+	}
+
+	if relPath == "archive/provenance_corrections.jsonl" {
+		return FileKindProvenanceCorrections
 	}
 
 	return FileKindOther

@@ -72,6 +72,7 @@ stash follow-up work for later planning.
 * [backlogit move](backlogit_move.md)	 - Change artifact status
 * [backlogit query](backlogit_query.md)	 - Execute a read-only SQL query against the index
 * [backlogit queue](backlogit_queue.md)	 - Manage the work queue
+* [backlogit reconcile](backlogit_reconcile.md)	 - Reconcile archived items by correcting their lifecycle status
 * [backlogit search](backlogit_search.md)	 - Full-text search across artifacts
 * [backlogit shipment](backlogit_shipment.md)	 - Manage shipment work groups
 * [backlogit stash](backlogit_stash.md)	 - Manage the deferred work stash

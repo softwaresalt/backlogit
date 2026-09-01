@@ -27,6 +27,7 @@ be planned later and harvested into formal work items when ready.`,
 	cmd.AddCommand(newStashEditCommand(cwd))
 	cmd.AddCommand(newStashArchiveCommand(cwd))
 	cmd.AddCommand(newStashHarvestCommand(cwd))
+	cmd.AddCommand(newStashCorrectCommand(cwd))
 	return cmd
 }
 

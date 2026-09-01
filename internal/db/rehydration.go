@@ -1,8 +1,10 @@
 package db
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -588,6 +590,18 @@ func rehydrateStash(ctx context.Context, workspacePath string, database *sql.DB,
 	if err := RehydrateStashIndex(ctx, database, activeEntries, harvested); err != nil {
 		return 0, err
 	}
+
+	// Apply provenance corrections: read provenance_corrections.jsonl and
+	// override stash_links for any corrected entries so that the canonical
+	// delivery artifact is returned instead of the historical harvest.
+	correctionsPath := filepath.Join(workspacePath, "archive", "provenance_corrections.jsonl")
+	if err := applyProvenanceCorrections(ctx, database, correctionsPath); err != nil {
+		// Non-fatal: log the error but do not fail the rehydration. The
+		// stash_links index remains usable; only the correction overrides
+		// are missing. The operator can re-sync after inspecting the file.
+		slog.WarnContext(ctx, "apply provenance corrections: partial rehydration",
+			"path", correctionsPath, "error", err)
+	}
 	return len(activeEntries), nil
 }
 
@@ -637,4 +651,110 @@ func stashRecordFromArtifact(artifact *models.Artifact) (StashRecord, bool) {
 	linkedAt := artifact.UpdatedAt
 	record.LinkedAt = &linkedAt
 	return record, true
+}
+
+// provenanceCorrection is the on-disk record written by core.CorrectStashProvenance.
+// Redeclared here to avoid a db->core import cycle.
+type provenanceCorrection struct {
+	StashID                     string `json:"stash_id"`
+	HistoricalArtifactID        string `json:"historical_artifact_id"`
+	CanonicalDeliveryArtifactID string `json:"canonical_delivery_artifact_id"`
+	Reason                      string `json:"reason"`
+	Actor                       string `json:"actor"`
+	CorrectedAt                 string `json:"corrected_at"`
+	EventType                   string `json:"event_type"`
+}
+
+// applyProvenanceCorrections reads provenance_corrections.jsonl and updates
+// the stash_links table so that corrected stash entries resolve to their
+// canonical delivery artifact rather than the historical auto-harvest target.
+// A missing corrections file is not an error. A malformed line causes the
+// function to return an error (fail-closed), consistent with
+// readProvenanceCorrections in stash_provenance.go (thread iV).
+func applyProvenanceCorrections(ctx context.Context, database *sql.DB, correctionsPath string) error {
+	// Reject symlinks at the file leaf to prevent path traversal through a planted
+	// provenance_corrections.jsonl symlink during rehydration/merge-sync.
+	if linfo, lstatErr := os.Lstat(correctionsPath); lstatErr == nil && linfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("provenance corrections file %q is a symlink; refusing to read through it", correctionsPath)
+	}
+	f, err := os.Open(correctionsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("open provenance corrections: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	// Collect the last correction per stash_id (later entries override earlier
+	// ones so a sequence of corrections converges to the final canonical state).
+	final := make(map[string]provenanceCorrection)
+	scanner := bufio.NewScanner(f)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		raw := scanner.Bytes()
+		if len(raw) == 0 {
+			continue
+		}
+		var c provenanceCorrection
+		if jsonErr := json.Unmarshal(raw, &c); jsonErr != nil {
+			return fmt.Errorf("provenance corrections line %d: malformed JSON: %w", lineNum, jsonErr)
+		}
+		if c.StashID != "" && c.CanonicalDeliveryArtifactID != "" {
+			final[c.StashID] = c
+		}
+	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		return fmt.Errorf("scan provenance corrections: %w", scanErr)
+	}
+
+	if len(final) == 0 {
+		return nil
+	}
+
+	// Apply corrections inside a single transaction.
+	return RetryWrite(ctx, func() error {
+		tx, txErr := database.BeginTx(ctx, nil)
+		if txErr != nil {
+			return fmt.Errorf("begin provenance corrections tx: %w", txErr)
+		}
+		defer tx.Rollback() //nolint:errcheck
+
+		now := time.Now().UTC()
+		const updateLinkSQL = `INSERT INTO stash_links (stash_id, item_id, linked_at)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(stash_id) DO UPDATE SET
+		   item_id = excluded.item_id,
+		   linked_at = excluded.linked_at`
+		const verifySQL = `SELECT json_extract(custom_fields, '$.source_stash_id') FROM items WHERE id = ?`
+		for _, c := range final {
+			// Re-validate the invariant from CorrectStashProvenance: the canonical
+			// artifact must exist and have source_stash_id == stashID. A Git-merged
+			// or tampered record must not publish an arbitrary canonical link.
+			var storedStashID string
+			verifyErr := tx.QueryRowContext(ctx, verifySQL, c.CanonicalDeliveryArtifactID).Scan(&storedStashID)
+			if verifyErr != nil {
+				// Canonical artifact not found in DB: skip this correction rather than
+				// publishing a dangling link. The operator can re-sync after the artifact
+				// is indexed.
+				slog.WarnContext(ctx, "provenance correction: canonical artifact not indexed; skipping override",
+					"stash_id", c.StashID, "canonical", c.CanonicalDeliveryArtifactID)
+				continue
+			}
+			if storedStashID != c.StashID {
+				// source_stash_id mismatch: skip to prevent publishing an arbitrary link.
+				slog.WarnContext(ctx, "provenance correction: source_stash_id mismatch; skipping override",
+					"stash_id", c.StashID, "canonical", c.CanonicalDeliveryArtifactID,
+					"stored_source_stash_id", storedStashID)
+				continue
+			}
+			if _, execErr := tx.ExecContext(ctx, updateLinkSQL,
+				c.StashID, c.CanonicalDeliveryArtifactID, now.Format(time.RFC3339Nano),
+			); execErr != nil {
+				return fmt.Errorf("apply provenance correction %s: %w", c.StashID, execErr)
+			}
+		}
+		return tx.Commit()
+	})
 }
