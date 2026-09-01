@@ -80,15 +80,14 @@ Clear the *namespace*, not the members. Pip ships a first-class flag for
 exactly this:
 
 ```bash
-pip --isolated index versions <package> \
-    --index-url https://pypi.org/simple --no-cache-dir
+pip --isolated index versions <package> --no-cache-dir
 ```
 
 `--isolated` runs pip "ignoring environment variables and user configuration",
-which neutralizes the entire `PIP_*` surface in one move — no enumeration, no
-shell-specific `unset` loop, and identical syntax on POSIX and PowerShell.
+which neutralizes the entire `PIP_*` surface in one move — no enumeration and
+no shell-specific `unset` loop.
 
-### `--isolated` alone is still not enough
+### `--isolated` alone is not enough
 
 Verified empirically, and this is the part that is easy to get wrong:
 
@@ -96,12 +95,12 @@ Verified empirically, and this is the part that is easy to get wrong:
 |---|---|
 | `pip index versions autoharness` | 1.4.11 |
 | `pip --isolated index versions autoharness` | **1.4.11** |
-| `pip --isolated index versions autoharness --index-url https://pypi.org/simple` | **1.5.0** |
+| `PIP_CONFIG_FILE=<null> pip --isolated index versions autoharness` | **1.5.0** |
 | `https://pypi.org/pypi/autoharness/json` → `.info.version` | 1.5.0 |
 
 `--isolated` ignores environment variables and **user** configuration — but not
-**global** or **site** configuration. On this machine `pip config debug` located
-the proxy in the global scope:
+**global** or **site** configuration files. On this machine `pip config debug`
+located the proxy in the global scope, where `--isolated` does not reach:
 
 ```text
 global:
@@ -110,15 +109,48 @@ user:
   C:\Users\<user>\pip\pip.ini, exists: False
 ```
 
-So `--isolated` stripped the environment and still returned the stale 1.4.11.
-Only adding an explicit `--index-url` — which outranks the surviving global
-config — produced 1.5.0, matching the canonical registry.
+`--index-url` does not close that gap either: it replaces only the *primary*
+index, so a global or site `extra-index-url`, `find-links`, or `no-index` still
+participates in resolution.
 
-**Both flags are required, and they do different jobs:** `--isolated` removes
-the open-ended environment and user-config surface; explicit `--index-url`
-overrides the global/site config that `--isolated` leaves standing. Use
-`pip config debug` to see which scope actually holds a setting rather than
-assuming `--isolated` covered it.
+### The one variable `--isolated` does not strip
+
+`PIP_CONFIG_FILE` is the config-file *selector*, and pip still honors it in
+isolated mode. Pointing it at the platform null device suppresses **every**
+config-file scope — global, site, and user — which is precisely the gap
+`--isolated` leaves open. That is why row 3 of the table above returns 1.5.0
+without any `--index-url` at all.
+
+Combine all three for a comparison that is actually canonical-only:
+
+```bash
+# POSIX shells (bash, zsh)
+PIP_CONFIG_FILE=/dev/null pip --isolated index versions <package> \
+    --index-url https://pypi.org/simple --no-cache-dir
+```
+
+```powershell
+# PowerShell (the null device is 'nul' on Windows)
+$env:PIP_CONFIG_FILE = 'nul'
+pip --isolated index versions <package> `
+    --index-url https://pypi.org/simple --no-cache-dir
+Remove-Item Env:PIP_CONFIG_FILE -ErrorAction SilentlyContinue
+```
+
+Each part does a distinct job, and none is redundant:
+
+| Part | Neutralizes |
+|---|---|
+| `PIP_CONFIG_FILE=<null device>` | all config files: global, site, and user |
+| `--isolated` | the entire `PIP_*` environment surface and user config |
+| `--index-url https://pypi.org/simple` | states the intended index explicitly rather than relying on the default |
+
+The null device is `/dev/null` on POSIX and `nul` on Windows; for a
+shell-agnostic value use `python -c "import os; print(os.devnull)"`.
+
+Use `pip config debug` to see which scope actually holds a setting rather than
+assuming a flag covered it — that command is what located the global-scope
+proxy here.
 
 ## Why It Bites
 
@@ -148,15 +180,20 @@ Note also that `gh run list` includes the Copilot reviewer run (job
 * Treat a discovered maximum version as **index-scoped**, not absolute. Know
   which index answered before you pin.
 * Cross-check the maximum against the canonical registry endpoint when the pin
-  gates CI. Isolate with **`pip --isolated ... --index-url https://pypi.org/simple`** —
-  both parts are required. `--isolated` clears the open-ended `PIP_*` and
-  user-config surface; explicit `--index-url` overrides the global/site config
-  that `--isolated` leaves in place.
+  gates CI. Isolate with all three of
+  **`PIP_CONFIG_FILE=<null device>`**, **`pip --isolated`**, and an explicit
+  **`--index-url https://pypi.org/simple`**. None is redundant: the selector
+  kills every config-file scope, `--isolated` kills the `PIP_*` environment
+  surface, and `--index-url` states the intended index. `--isolated` alone
+  leaves global and site config active, and `--index-url` alone replaces only
+  the primary index — a global `extra-index-url` or `find-links` survives both.
 * Do not isolate a config surface by enumerating its members. Pip maps nearly
   every long option to a `PIP_*` variable, so any `unset` list is a snapshot
   that is already incomplete and rots as the tool gains options. Prefer a
   namespace-clearing switch; where none exists, say plainly which subset was
   neutralized rather than implying the whole surface was.
+* Use `pip config debug` to see which scope holds a setting before assuming a
+  flag neutralized it.
 * When any job sets `continue-on-error`, verify the *per-job* conclusion rather
   than the workflow run conclusion.
 * An automated reviewer repeating the same version claim is not corroboration —
