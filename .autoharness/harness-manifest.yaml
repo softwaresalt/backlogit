@@ -199,8 +199,7 @@ artifacts:
     template: "templates/instructions/graphtor-docs.instructions.md.tmpl"
     checksum: "21d199523e8f98c6227b3b062048b95a752f46efebac496bf9e0b70ac48a2227"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). Added a reproducible MCP registration snippet (serve --read-only) and documented that the eight read verbs are granted by name in the stage/ship/orchestrator allowlists, so an enabled pack is actually callable instead of silently degrading. Do not auto-revert."
-    drift_reason: "Operator-mandated workspace customization: adds a NON-NEGOTIABLE Workspace Usage Rule pinning graphtor-docs to read-only and forbidding workspace indexing (no sync, no repository source registration, index sync is never part of harness install or tune). The upstream template's Source Configuration paragraph permits source management as a task; this workspace does not. Do not auto-revert."
+    drift_reason: "Operator-mandated workspace customization: adds a NON-NEGOTIABLE Workspace Usage Rule pinning graphtor-docs to read-only and forbidding workspace indexing (no sync, no repository source registration, index sync is never part of harness install or tune). The upstream template's Source Configuration paragraph permits source management as a task; this workspace does not. Round-4 fix (PR #400): added a reproducible MCP registration snippet (serve --read-only) and documented that the eight read verbs are granted by name in the stage/ship/orchestrator allowlists, so an enabled pack is actually callable instead of silently degrading. Do not auto-revert."
   - path: ".github/instructions/constitution.instructions.md"
     primitive: 1
     template: "templates/foundation/constitution.instructions.md.tmpl"
@@ -405,12 +404,16 @@ artifacts:
   - path: ".github/agents/review/correctness-reviewer.agent.md"
     primitive: 8
     template: "templates/agents/review/correctness-reviewer.agent.md.tmpl"
-    checksum: "7ee2ab41d43d9ebb3fcf0c576e8209787df21ca0e348fdcb8c4e098020511484"
+    checksum: "2c90794b1603d57444b2d8d883f97c1dd3a8c6bb62cbc393ae31f258476a45c8"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Added the missing `model_tier: 1`. P-013.4 requires every agent definition to declare both integer tier fields; this persona declared only `max_subagent_tier`, matching neither the policy nor its sibling Tier-1 personas. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Tier-1 routing rendered as reasoning_effort=low / provider=anthropic / family=claude-haiku-4.5, matching config.model_routing.tier1 and the lowercase convention of the newest installed personas. Placed in .github/agents/review/ to match this workspace's established persona layout (the deterministic verifier passes against that layout)."
   - path: ".github/agents/review/maintainability-reviewer.agent.md"
     primitive: 8
     template: "templates/agents/review/maintainability-reviewer.agent.md.tmpl"
-    checksum: "cafabdeaf5833c057f393ccedc32ac521f85f9f3b965c93b25d12d2750e82322"
+    checksum: "e712cb0adb5690ab2fdf3a6f92b7c507e198a0474aea56912bcf4a253cb51b53"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Added the missing `model_tier: 1`. P-013.4 requires every agent definition to declare both integer tier fields; this persona declared only `max_subagent_tier`, matching neither the policy nor its sibling Tier-1 personas. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Same tier-1 rendering and layout rationale as correctness-reviewer."
   - path: ".github/skills/brainstorm/SKILL.md"
     primitive: 2
@@ -421,9 +424,9 @@ artifacts:
   - path: ".github/skills/doc-review/SKILL.md"
     primitive: 8
     template: "templates/skills/doc-review/SKILL.md.tmpl"
-    checksum: "7ba550d5d5b76564e3f3d339749de2954fe76ce86a94c6542ac1e1e7554e7f93"
+    checksum: "7cce50b954b107e8b43581e1e7d040d0c35f8d83b77529444b732257e5a9957d"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). The skill unconditionally required a `ping` call at session start, but agent-intercom is not in capability_packs for this workspace, so doc-review would open with a nonexistent tool call and report an intentionally absent optional pack as degraded. Made communication conditional using the same wording the review skill already uses. Do not auto-revert. Round-3 fix: made skill `name` optional in Check 2 (14 of 25 installed skills omit it) and added a disabled-capability-pack exemption to Checks 4 and 5 so conditional references to the intentionally-absent agent-intercom instruction file are not reported as broken. Round-4 fix: the gated_auto action class named agent-intercom as its default owner, which is unavailable here and contradicted the skill's own Operator Communication section; retargeted to the local strict-safety decision gate with intercom as the installed-only route."
+    drift_reason: "Copilot review fix (PR #400). The skill unconditionally required a `ping` call at session start, but agent-intercom is not in capability_packs for this workspace, so doc-review would open with a nonexistent tool call and report an intentionally absent optional pack as degraded. Made communication conditional using the same wording the review skill already uses. Do not auto-revert. Round-3 fix: made skill `name` optional in Check 2 (14 of 25 installed skills omit it) and added a disabled-capability-pack exemption to Checks 4 and 5 so conditional references to the intentionally-absent agent-intercom instruction file are not reported as broken. Round-4 fix: the gated_auto action class named agent-intercom as its default owner, which is unavailable here and contradicted the skill's own Operator Communication section; retargeted to the local strict-safety decision gate with intercom as the installed-only route. Round-5 fix: the tier-annotation check asserted there is no `model_tier` frontmatter field and verified only `max_subagent_tier`, which is the opposite of P-013.4; it now requires both integer fields."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass); alternate doc-review route bound 2026-08-31. ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY resolve to google / gemini-3.1-pro-preview from config.yaml model_routing.alt_doc_review. Google is deliberately a third provider (tiers are Anthropic, escalation is OpenAI) so the documentation review pass is least likely to share blind spots with whichever model authored the docs. Clear either field in config.yaml AND in variables_used to fall back to Tier 2."
   - path: "scripts/pre-commit-markdownlint.ps1"
     primitive: 6
@@ -991,3 +994,10 @@ tuning_history:
       - ".github/skills/doc-review/SKILL.md"
       - ".github/agents/review/adversarial-review.agent.md"
       - ".autoharness/harness-manifest.yaml"
+  - at: "2026-09-01T04:00:00Z"
+    summary: "Copilot review round 5 on PR #400. Repaired a duplicate drift_reason key introduced by the round-4 manifest pass on the graphtor-docs instruction entry, where the new rationale was appended alongside the pre-existing operator-mandated one instead of merged; PyYAML silently kept only the latter, so the round-4 rationale was being dropped. Merged both into a single key and added a duplicate-key scan to the validation loop. Added the missing model_tier: 1 to correctness-reviewer and maintainability-reviewer, which declared only max_subagent_tier. Corrected the doc-review tier-annotation check, which asserted there is no model_tier frontmatter field and verified only max_subagent_tier — the exact opposite of P-013.4."
+    artifacts:
+      - ".autoharness/harness-manifest.yaml"
+      - ".github/agents/review/correctness-reviewer.agent.md"
+      - ".github/agents/review/maintainability-reviewer.agent.md"
+      - ".github/skills/doc-review/SKILL.md"

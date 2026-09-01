@@ -3,6 +3,7 @@ name: Correctness Reviewer
 description: "Reviews code changes for logic errors, edge cases, state bugs, and invariant violations"
 maturity: stable
 tools: read, search
+model_tier: 1
 max_subagent_tier: 1
 reasoning_effort: "low"
 model_provider: "anthropic"

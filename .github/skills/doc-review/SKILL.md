@@ -218,16 +218,18 @@ Action class: advisory — missing recommended fields do not block but
 degrade runtime behavior or tooling integration
 ```
 
-Agent files additionally carry one **required** structured tier field:
+Agent files additionally carry two **required** structured tier fields:
 
-* Agent files: `max_subagent_tier` is present as an integer. Per P-013.4 an
-  agent that omits it is non-conformant. (The base tier is config-resolved via
-  `model_routing`; there is no `model_tier` frontmatter field.)
+* Agent files: `model_tier` and `max_subagent_tier` are both present as
+  integers. Per P-013.4 (`.github/policies/workflow-policies.md`), an agent that
+  declares only the opaque `model_routing` string and omits either structured
+  field is non-conformant. Check both — verifying only `max_subagent_tier`
+  silently passes an agent that declares no tier of its own.
 
 ```text
-Action class: manual — a missing `max_subagent_tier` is a P-013.4 conformance
-finding, not an advisory nit; surface it for correction before the next
-verification pass
+Action class: manual — a missing `model_tier` or `max_subagent_tier` is a
+P-013.4 conformance finding, not an advisory nit; surface it for correction
+before the next verification pass
 ```
 
 ## Workflow

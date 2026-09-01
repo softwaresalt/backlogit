@@ -3,6 +3,7 @@ name: Maintainability Reviewer
 description: "Reviews code changes for unnecessary complexity, coupling, dead paths, and premature abstraction"
 maturity: stable
 tools: read, search
+model_tier: 1
 max_subagent_tier: 1
 reasoning_effort: "low"
 model_provider: "anthropic"
