@@ -84,8 +84,10 @@ pip --isolated index versions <package> --no-cache-dir
 ```
 
 `--isolated` runs pip "ignoring environment variables and user configuration",
-which neutralizes the entire `PIP_*` surface in one move — no enumeration and
-no shell-specific `unset` loop.
+which neutralizes the `PIP_*` surface in one move — no enumeration and no
+shell-specific `unset` loop. The one deliberate exception is `PIP_CONFIG_FILE`,
+which pip still honors in isolated mode; that exception is what the next
+section relies on.
 
 ### `--isolated` alone is not enough
 
@@ -158,7 +160,7 @@ Each part does a distinct job, and none is redundant:
 | Part | Neutralizes |
 |---|---|
 | `PIP_CONFIG_FILE=<null device>` | all config files: global, site, and user |
-| `--isolated` | the entire `PIP_*` environment surface and user config |
+| `--isolated` | the `PIP_*` environment surface (except `PIP_CONFIG_FILE`) and user config |
 | `--index-url https://pypi.org/simple` | states the intended index explicitly rather than relying on the default |
 
 The null device is `/dev/null` on POSIX and `nul` on Windows; for a
@@ -199,8 +201,10 @@ Note also that `gh run list` includes the Copilot reviewer run (job
   gates CI. Isolate with all three of
   **`PIP_CONFIG_FILE=<null device>`**, **`pip --isolated`**, and an explicit
   **`--index-url https://pypi.org/simple`**. None is redundant: the selector
-  kills every config-file scope, `--isolated` kills the `PIP_*` environment
-  surface, and `--index-url` states the intended index. `--isolated` alone
+  kills every config-file scope, `--isolated` kills the rest of the `PIP_*`
+  environment surface — it deliberately still honors `PIP_CONFIG_FILE`, which
+  is what makes the selector work — and `--index-url` states the intended
+  index. `--isolated` alone
   leaves global and site config active, and `--index-url` alone replaces only
   the primary index — a global `extra-index-url` or `find-links` survives both.
 * Do not isolate a config surface by enumerating its members. Pip maps nearly
