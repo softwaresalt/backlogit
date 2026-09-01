@@ -35,8 +35,22 @@ the skill falls back to Tier 2 defaults.
 
 ## Agent-Intercom Communication
 
-Call `ping` at session start. If agent-intercom is reachable, broadcast at
-every step. If unreachable, warn that operator visibility is degraded.
+**When the `agent-intercom` capability pack is installed**, call `ping` at session
+start and broadcast every event in the table below. If the pack is installed but
+unreachable, warn the user that operator visibility is degraded.
+
+**When the `agent-intercom` capability pack is NOT installed** (the current state
+of this workspace), do not call `ping` and do not attempt a broadcast. Emit the
+same events as self-contained entries in the local session output — same prefixes,
+same content — so the doc-review trail stays legible without a remote channel. An
+intentionally absent optional pack is **not** a degraded state and MUST NOT be
+reported as one. Any step that would otherwise wait on an intercom approval or
+clarification flow uses the local strict-safety operator-approval path in
+`.github/instructions/strict-safety.instructions.md` instead. Missing intercom
+never implies approval: if an approval signal is absent or ambiguous, halt.
+
+Throughout this skill, "broadcast" means "broadcast when agent-intercom is
+installed, otherwise record to local session output."
 
 | Event | Level | Message prefix |
 |---|---|---|

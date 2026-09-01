@@ -541,9 +541,57 @@ completion.
      above — do not reload) in place of steps 1–10, then proceed to
      post-mode.
    * **SAFE_CLOSE selected** (default, including any classifier error,
-     ambiguity, or unresolved precondition) → continue to step 1 below
+     ambiguity, or unresolved precondition) → run the (d) pre-flight gate
+     below, and only then continue to step 1
      (step 1's own manifest load is idempotent with (a) above — reuse the
      already-loaded manifest rather than issuing a second call).
+   d. **Shipment-record close-capability pre-flight gate (runs before any
+      mutation).** Safe-close's step 8 must move the live shipment record to
+      `status: shipped` **without** cascading. Backlogit currently exposes no
+      such operation, so this gate MUST be evaluated here — before the step 4
+      archival loop mutates anything — rather than discovered at step 8, when
+      the manifest items are already archived and the shipment is left
+      partially closed.
+
+      Determine whether a **governed non-cascading shipment-close operation**
+      is available in this workspace. As of the version installed here, it is
+      **not**:
+
+      * `backlogit move <shipment_id> --status shipped` and the MCP
+        `move_item` equivalent are refused **unconditionally** with
+        `ErrShipmentShippedRequiresEnvelope`
+        (`internal/core/shipment.go` guard 1, `internal/core/gate_transition.go`,
+        and the create seam in `internal/core/artifacts.go`). The refusal is
+        gate-independent and is **not** bypassable with `--force`.
+      * `ShipShipment` (`backlogit shipment ship`, MCP
+        `backlogit_ship_shipment`) is the **only** path to `shipped`, and it
+        cascades: it returns untouched descendants to backlog and archives the
+        released artifacts. That is precisely the destructive behavior
+        safe-close exists to avoid.
+
+      **Therefore, when no governed non-cascading close operation exists and
+      Step 0(c) did not select `CASCADE`, halt immediately with
+      `RECONCILE_BLOCKED_NO_NONCASCADING_CLOSE`** — before archiving any
+      manifest item. Emit the blocker in the safe-close report with the
+      shipment ID, the manifest item IDs, the protected set, and the reason.
+      Do **NOT**:
+
+      * fall back to `backlogit_ship_shipment` to "just finish" — that is the
+        cascade, and Step 0(c) already determined this manifest does not
+        qualify for it;
+      * archive manifest items and then halt at step 8, leaving a partially
+        closed shipment;
+      * leave the shipment record `active` while its members are archived.
+
+      Escalate to the operator: the shipment requires either a governed
+      non-cascading shipment-close operation, or a manifest that qualifies for
+      the P-015 fully-covered-root cascade path. Both are outside this skill's
+      authority to synthesize.
+
+      If a future backlogit version does expose a governed non-cascading
+      shipment-close operation, this gate passes and step 8 uses that
+      operation by name. Re-verify against the installed version rather than
+      assuming either outcome from this text.
 
 1. **Load manifest** via `backlogit_get_shipment(shipment_id)`. Extract the
    `items` list. These IDs are the **only** artifacts safe-close may move or
@@ -623,8 +671,19 @@ completion.
    protected set is intact in `.backlogit/queue/`.
 
 8. **Close the shipment record itself** (single artifact, non-cascading; authoritative order):
-   * Move **ONLY** the live shipment record to `status: shipped` via the generic,
-     non-cascading `backlogit move <shipment_id> --status shipped`.
+   * This step is reachable **only** when the Step 0(d) pre-flight gate passed,
+     i.e. a **governed non-cascading shipment-close operation** exists in the
+     installed backlogit version. If it does not, Step 0(d) already halted with
+     `RECONCILE_BLOCKED_NO_NONCASCADING_CLOSE` before any archival ran, and
+     control never arrives here.
+   * Move **ONLY** the live shipment record to `status: shipped` using that
+     governed non-cascading operation, by name.
+
+     **Do NOT use `backlogit move <shipment_id> --status shipped` or the MCP
+     `move_item` equivalent.** Both are refused unconditionally with
+     `ErrShipmentShippedRequiresEnvelope`; they cannot close a shipment and
+     never could. Do **not** substitute `backlogit_ship_shipment` — that is the
+     cascade this mode exists to avoid.
    * Re-read and verify the live shipment record now reports `status: shipped`. If the
      record remains `active`, is already `archived`, is missing, or resolves to any other
      shape, halt fail-closed with `RECONCILE_FAIL_SHIPMENT_RECORD_LIVE_STATUS`. Do **NOT**
@@ -648,6 +707,10 @@ completion.
       and the protected set intact → `recommendation: CLOSED`. Proceed to post-mode.
     * Any cascade detected → `recommendation: HALT — cascade detected, revert required`
       (see step 6). Do not proceed to the commit step.
+    * Step 0(d) pre-flight gate failed → `recommendation: HALT —
+      RECONCILE_BLOCKED_NO_NONCASCADING_CLOSE`. No artifact was mutated, so no
+      revert is required. Do not proceed to the commit step; escalate to the
+      operator per Step 0(d).
 
 ### Cascade Close Sub-Procedure (P-015 verified fully-covered-root exception ONLY)
 

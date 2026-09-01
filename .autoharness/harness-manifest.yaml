@@ -325,7 +325,9 @@ artifacts:
   - path: ".github/skills/shipment-reconcile/SKILL.md"
     primitive: 4
     template: "templates/skills/shipment-reconcile/SKILL.md.tmpl"
-    checksum: "a44afd60efbae25daceac5eaddd69aef466f3105cee5f1dbc0e75a6d151857e9"
+    checksum: "7f52a30c8469a96af554965fbcf84c1216a7b2672bc9aac7243117fc10531eed"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). Safe-close step 8 instructed agents to run `backlogit move <shipment_id> --status shipped`, which this codebase refuses unconditionally with ErrShipmentShippedRequiresEnvelope (internal/core/shipment.go guard 1, gate_transition.go, artifacts.go create seam); ShipShipment is the only path to shipped and it cascades. Because that step ran after manifest items were archived, every safe-close attempt would have left a partially closed shipment before halting. Added a Step 0(d) close-capability pre-flight gate that halts with RECONCILE_BLOCKED_NO_NONCASCADING_CLOSE before any mutation, and rewrote step 8 to name the governed non-cascading operation rather than an operation that cannot succeed. Do not auto-revert."
   - path: ".github/prompts/stage-grouping-analysis.prompt.md"
     primitive: 4
     template: "templates/prompts/stage-grouping-analysis.prompt.md.tmpl"
@@ -412,7 +414,9 @@ artifacts:
   - path: ".github/skills/doc-review/SKILL.md"
     primitive: 8
     template: "templates/skills/doc-review/SKILL.md.tmpl"
-    checksum: "9c399d4638d169ebe06651b133158dca2918d36cdc8a32def1f5592a0273ff2c"
+    checksum: "c1e2192471bdf511577ae796e3658a790c6a8499ec1e41a1dfd18512161d3cc3"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #400). The skill unconditionally required a `ping` call at session start, but agent-intercom is not in capability_packs for this workspace, so doc-review would open with a nonexistent tool call and report an intentionally absent optional pack as degraded. Made communication conditional using the same wording the review skill already uses. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass); alternate doc-review route bound 2026-08-31. ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY resolve to google / gemini-3.1-pro-preview from config.yaml model_routing.alt_doc_review. Google is deliberately a third provider (tiers are Anthropic, escalation is OpenAI) so the documentation review pass is least likely to share blind spots with whichever model authored the docs. Clear either field in config.yaml AND in variables_used to fall back to Tier 2."
   - path: "scripts/pre-commit-markdownlint.ps1"
     primitive: 6
