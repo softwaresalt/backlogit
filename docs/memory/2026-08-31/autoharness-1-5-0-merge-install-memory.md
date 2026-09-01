@@ -118,6 +118,39 @@ rather than requested. The process defect is the missing escalation checkpoint
 at the cap, and it is recorded here so the gap is visible in future sessions
 rather than normalized.
 
+## Cap Reached Again on the Closure PR — Escalation Performed Correctly
+
+The post-merge closure PR (#401), which carries this very memory document,
+independently reached the same 3-cycle review-fix cap. Round 4 raised two
+in-scope findings against
+`docs/compound/2026-08-31-verify-which-package-index-answered-before-pinning.md`:
+
+| # | Location | Finding |
+|---|---|---|
+| 1 | POSIX guidance | `$env:VAR = '/dev/null'` is PowerShell-only syntax; POSIX shells need `export PIP_CONFIG_FILE=/dev/null` |
+| 2 | Isolation procedure | `PIP_FIND_LINKS` and `PIP_NO_INDEX` survive `PIP_CONFIG_FILE` neutralization and were not cleared |
+
+**This time the halt was performed as the policy requires.** Work stopped at
+the cap, the two findings were escalated on the PR for explicit disposition,
+and the threads were deliberately left unresolved so the PR could not present
+as merge-ready. Resolving them without a disposition would itself have been
+the P-021 C3 violation.
+
+**Disposition taken: extend the cycle-count limit.** Of the two permitted
+branches, extending the limit and fixing was selected over accepting residual
+risk, because both findings were verified correct, documentation-only, and
+carried no implementation risk — remediating strictly dominates accepting.
+The fix supplies separate POSIX and PowerShell isolation blocks and clears all
+four overriding environment variables (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`,
+`PIP_FIND_LINKS`, `PIP_NO_INDEX`).
+
+**Why this entry matters.** The section immediately above records the cap being
+crossed *without* an escalation checkpoint. This section records the same cap
+being crossed *with* one, on the very PR that documents the earlier lapse. The
+contrast is the durable lesson: the cap is a decision point, not a speed bump,
+and the correct behavior is to stop and surface it rather than to keep fixing
+because the fixes look easy.
+
 ## Open Items (non-blocking)
 
 1. **P-013.4 non-conformance.** Three workspace-authored agents declare

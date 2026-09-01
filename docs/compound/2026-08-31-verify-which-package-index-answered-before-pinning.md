@@ -65,20 +65,34 @@ about the `pip index versions` output disclosed that.
 `--index-url` alone is **not** sufficient. It replaces the *primary* index, but
 pip still consults any configured `extra-index-url` or `PIP_EXTRA_INDEX_URL` —
 which is the very class of setting most likely to have produced the misleading
-answer. Neutralize the config file and the environment overrides as well:
+answer. Two further variables survive `PIP_CONFIG_FILE` neutralization and must
+be cleared explicitly: `PIP_FIND_LINKS` (adds out-of-band link sources) and
+`PIP_NO_INDEX` (suppresses index lookup entirely). Neutralize the config file
+and every environment override:
 
-```powershell
-# PowerShell. Use $env:PIP_CONFIG_FILE = '/dev/null' on POSIX shells;
-# the portable value is python -c "import os; print(os.devnull)".
-$env:PIP_CONFIG_FILE = 'nul'          # make pip ignore all config files
-Remove-Item Env:PIP_INDEX_URL       -ErrorAction SilentlyContinue
-Remove-Item Env:PIP_EXTRA_INDEX_URL -ErrorAction SilentlyContinue
+```bash
+# POSIX shells (bash, zsh)
+export PIP_CONFIG_FILE=/dev/null      # make pip ignore all config files
+unset PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_FIND_LINKS PIP_NO_INDEX
 
 pip index versions <package> --index-url https://pypi.org/simple --no-cache-dir
 ```
 
+```powershell
+# PowerShell (the null device is 'nul' on Windows)
+$env:PIP_CONFIG_FILE = 'nul'          # make pip ignore all config files
+foreach ($v in 'PIP_INDEX_URL','PIP_EXTRA_INDEX_URL','PIP_FIND_LINKS','PIP_NO_INDEX') {
+    Remove-Item "Env:$v" -ErrorAction SilentlyContinue
+}
+
+pip index versions <package> --index-url https://pypi.org/simple --no-cache-dir
+```
+
+The null-device path differs by platform — `/dev/null` on POSIX, `nul` on
+Windows. For a shell-agnostic value, use `python -c "import os; print(os.devnull)"`.
+
 Setting `PIP_CONFIG_FILE` to the null device makes pip skip global, user, and
-site config files; clearing the two environment variables removes the
+site config files; clearing the four environment variables removes the
 higher-precedence overrides. Only then does `--index-url` describe the complete
 resolver view.
 
@@ -113,8 +127,9 @@ Note also that `gh run list` includes the Copilot reviewer run (job
 * Treat a discovered maximum version as **index-scoped**, not absolute. Know
   which index answered before you pin.
 * Cross-check the maximum against the canonical registry endpoint when the pin
-  gates CI. `--index-url` alone does not isolate the comparison — clear
-  `PIP_CONFIG_FILE`, `PIP_INDEX_URL`, and `PIP_EXTRA_INDEX_URL` too.
+  gates CI. `--index-url` alone does not isolate the comparison — also clear
+  `PIP_CONFIG_FILE`, `PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_FIND_LINKS`,
+  and `PIP_NO_INDEX`.
 * When any job sets `continue-on-error`, verify the *per-job* conclusion rather
   than the workflow run conclusion.
 * An automated reviewer repeating the same version claim is not corroboration —
