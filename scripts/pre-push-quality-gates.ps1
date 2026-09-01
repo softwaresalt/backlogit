@@ -83,10 +83,59 @@ function Invoke-Gate {
     }
 }
 
+# Format gate (P-019) — deliberately NOT routed through Invoke-Gate.
+#
+# Two reasons the generic helper cannot express this gate:
+#
+#   1. `gofmt -l` prints the names of unformatted files to stdout but always
+#      exits 0, so $LASTEXITCODE stays 0 and Invoke-Gate can never fail on it.
+#      The gate silently permits unformatted code through the push gate.
+#
+#   2. gofmt always emits LF. Under a CRLF working tree (core.autocrlf=true)
+#      every .go file differs from gofmt's output and the gate becomes 100%
+#      false-positive. Comparing gofmt's output against the CR-stripped source
+#      makes the check line-ending insensitive, so it reports genuine
+#      formatting defects only — matching what CI sees on an LF checkout.
+function Invoke-FormatGate {
+    if (-not (Get-Command gofmt -ErrorAction SilentlyContinue)) {
+        Write-Warning "'gofmt' not found — skipping Format gate."
+        return
+    }
+
+    Write-Host "[Format] gofmt (line-ending insensitive)"
+
+    $offenders = [System.Collections.Generic.List[string]]::new()
+    foreach ($file in @(& git ls-files -- '*.go')) {
+        if ([string]::IsNullOrWhiteSpace($file)) { continue }
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+
+        $source = ([IO.File]::ReadAllText($file)) -replace "`r`n", "`n"
+
+        # Round-trip through a temp file so gofmt sees LF input; its own output
+        # is already LF, making the comparison line-ending insensitive.
+        $tmp = Join-Path ([IO.Path]::GetTempPath()) ("gofmt-gate-" + [guid]::NewGuid().ToString('N') + ".go")
+        try {
+            [IO.File]::WriteAllText($tmp, $source)
+            $formatted = (& gofmt $tmp 2>$null) -join "`n"
+            if ($formatted.TrimEnd("`n") -ne $source.TrimEnd("`n")) {
+                $offenders.Add($file)
+            }
+        }
+        finally {
+            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    if ($offenders.Count -gt 0) {
+        Write-Error "Format gate failed — push blocked (P-019). Unformatted files (run 'gofmt -w' on each):`n  $($offenders -join "`n  ")"
+        $script:Failed = $true
+    }
+}
+
 Write-Host "Running local pre-push quality gates..."
 
 Invoke-Gate "Lint" "golangci-lint" "golangci-lint run"
-Invoke-Gate "Format" "gofmt" "gofmt -l ."
+Invoke-FormatGate
 Invoke-Gate "Typecheck" "go" "go vet ./..."
 Invoke-Gate "Test" "go" "go test ./..."
 Invoke-Gate "Build" "go" "go test -run=^$ -count=1 ./..."

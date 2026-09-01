@@ -79,10 +79,52 @@ run_gate() {
   fi
 }
 
+# Format gate (P-019) — deliberately NOT routed through run_gate.
+#
+# Two reasons the generic helper cannot express this gate:
+#
+#   1. `gofmt -l` prints the names of unformatted files to stdout but always
+#      exits 0. run_gate keys off exit status, so a `gofmt -l .` gate can never
+#      fail and silently permits unformatted code through the push gate.
+#
+#   2. gofmt always emits LF. Under a CRLF working tree (core.autocrlf=true on
+#      Windows) every .go file therefore differs from gofmt's output and the
+#      gate becomes 100% false-positive. Comparing gofmt's output against the
+#      CR-stripped source makes the check line-ending insensitive, so it
+#      reports genuine formatting defects only — matching what CI sees on an
+#      LF checkout.
+#
+# Reads the file list via process substitution rather than a pipe so that
+# FAILED is set in this shell rather than in a subshell.
+run_format_gate() {
+  if ! command -v gofmt >/dev/null 2>&1; then
+    echo "WARNING: 'gofmt' not found — skipping Format gate." >&2
+    return 0
+  fi
+
+  echo "[Format] gofmt (line-ending insensitive)"
+
+  local offenders=""
+  local f
+  while IFS= read -r -d '' f; do
+    [ -f "$f" ] || continue
+    if [ "$(gofmt <"$f" 2>/dev/null)" != "$(tr -d '\r' <"$f")" ]; then
+      offenders="${offenders}  ${f}"$'\n'
+    fi
+  done < <(git ls-files -z -- '*.go')
+
+  if [ -n "$offenders" ]; then
+    echo "ERROR: Format gate failed — push blocked (P-019)." >&2
+    echo "Unformatted files (run 'gofmt -w' on each):" >&2
+    printf '%s' "$offenders" >&2
+    FAILED=1
+  fi
+}
+
 echo "Running local pre-push quality gates..."
 
 run_gate "Lint" "golangci-lint" "golangci-lint run"
-run_gate "Format" "gofmt" "gofmt -l ."
+run_format_gate
 run_gate "Typecheck" "go" "go vet ./..."
 run_gate "Test" "go" "go test ./..."
 run_gate "Build" "go" "go test -run=^$ -count=1 ./..."

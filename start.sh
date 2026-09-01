@@ -117,17 +117,20 @@ if _sidecar_enabled "engram" && command -v engram >/dev/null 2>&1; then
 	fi
 fi
 
-if _sidecar_enabled "graphtor-docs"; then
-	graphtor_docs_exe=""
-	if command -v graphtor-docs >/dev/null 2>&1; then
-		graphtor_docs_exe="graphtor-docs"
-	elif [[ -x "$script_dir/.graphtor/bin/graphtor-docs" ]]; then
-		graphtor_docs_exe="$script_dir/.graphtor/bin/graphtor-docs"
-	fi
-	if [[ -n "$graphtor_docs_exe" ]]; then
-		"$graphtor_docs_exe" sync || echo "Warning: graphtor-docs sync failed (non-fatal)" >&2
-	fi
-fi
+# NOTE: graphtor-docs deliberately has NO startup step here.
+#
+# graphtor-docs is used inside a workspace in a strictly READ-ONLY manner and
+# NEVER indexes a workspace. It serves corpora that were curated and ingested
+# in advance, out of band; `graphtor-docs sync` against this repository is a
+# forbidden operation (see the NON-NEGOTIABLE Workspace Usage Rule in
+# .github/instructions/graphtor-docs.instructions.md).
+#
+# The upstream start.sh template emits a `graphtor-docs sync` branch guarded by
+# _sidecar_enabled "graphtor-docs". That branch is removed rather than merely
+# left unreachable via enabled_sidecars, so that re-enabling the sidecar (or a
+# re-render that resolves the enabled pack correctly) cannot silently reactivate
+# workspace ingestion. The MCP server is launched read-only from .mcp.json
+# (`serve --read-only`); no launcher-side sync step is wanted.
 
 # ai_tools.copilot_cli.args from .autoharness/config.yaml -- extra arguments
 # always passed before the operator's own argv (e.g. ["--remote"]).

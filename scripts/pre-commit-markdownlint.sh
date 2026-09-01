@@ -12,11 +12,17 @@ set -uo pipefail
 # Run from repo root so repo-root-relative paths from git are valid
 cd "$(git rev-parse --show-toplevel)"
 
-# Collect staged .md files using NUL delimiters (handles spaces in paths)
+# Collect staged .md files using NUL delimiters (handles spaces in paths).
+#
+# The pathspec is applied by Git itself rather than by `grep -zE '\.md$'`:
+# `grep -z` is a GNU extension and is unavailable in BSD/macOS grep, where the
+# trailing `|| true` would mask the failure and silently collect ZERO files,
+# skipping the lint entirely. Git's own pathspec is portable and preserves the
+# NUL-delimited output of -z.
 STAGED_MD_FILES=()
 while IFS= read -r -d '' f; do
   STAGED_MD_FILES+=("$f")
-done < <(git diff --cached --name-only -z --diff-filter=ACMR | grep -zE '\.md$' || true)
+done < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.md')
 
 if [ ${#STAGED_MD_FILES[@]} -eq 0 ]; then
   exit 0
