@@ -267,7 +267,7 @@ Reaching it is a halt, not an input to a fresh judgement call.
 
 ## Open Items
 
-### Resolved at merge
+### Resolved by operator disposition (2026-09-01)
 
 0. **Limit violation on #401 (rounds 6-12) — dispositioned 2026-09-01.** The
    review-fix cycle extension was self-bounded to a single round and then
