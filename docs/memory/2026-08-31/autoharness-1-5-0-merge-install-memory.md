@@ -55,7 +55,11 @@ rounds. PR #400 merged to `main` as merge commit `7c521bf2` with two parents
 3. **Shipment close pre-flight gate.** Non-cascading shipment close is
    genuinely impossible — guarded at `internal/core/shipment.go:180-183`,
    `gate_transition.go:110-114` (not `--force`-bypassable), and
-   `artifacts.go:247-250`. The fix was a pre-flight gate
+   `artifacts.go:535-539` (the locked generic-update path, which refuses a
+   `shipped` status transition outside the `ShipShipment` envelope). Note that
+   `artifacts.go:247-250` is a *different* guard — the create seam, which only
+   rejects `shipped` as an initial status — and does not gate a close
+   transition. The fix was a pre-flight gate
    (`RECONCILE_BLOCKED_NO_NONCASCADING_CLOSE`) that halts before mutating,
    rather than a runtime failure mid-close.
 

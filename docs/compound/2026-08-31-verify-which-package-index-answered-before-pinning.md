@@ -31,8 +31,9 @@ The job immediately began failing with `Unknown gate subcommand:
 pipeline-topology`. That subcommand does not exist before 1.5.0.
 
 The canonical registry showed the real published maximum was `1.5.0` — the
-version already installed locally. The configured index had answered with a
-lagging view. The pin was corrected and the job went green.
+version already installed locally. The configured index was a corporate proxy
+feed (`packagefeedproxy.microsoft.io`) that had not yet surfaced the release.
+The pin was corrected and the job went green.
 
 ## Verifying the Answer
 
@@ -42,16 +43,47 @@ Show which index is actually in play, then cross-check:
 # 1. What index will pip query?
 pip config list                       # look for global.index-url / extra-index-url
 python -m pip config debug            # includes env vars and config file precedence
-
-# 2. What does the canonical registry say?
-(Invoke-RestMethod 'https://pypi.org/pypi/<package>/json').info.version
-
-# 3. Force the comparison explicitly
-pip index versions <package> --index-url https://pypi.org/simple
 ```
 
-Environment variables (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`) override config
-files and are the usual source of a surprising answer.
+In the environment where this failure occurred, that first command was the
+whole story:
+
+```text
+global.index-url='https://packagefeedproxy.microsoft.io/pypi/simple/'
+```
+
+The configured index was a corporate proxy feed, not canonical PyPI. Nothing
+about the `pip index versions` output disclosed that.
+
+```powershell
+# 2. What does the canonical registry say?
+(Invoke-RestMethod 'https://pypi.org/pypi/<package>/json').info.version
+```
+
+### Forcing a genuinely isolated comparison
+
+`--index-url` alone is **not** sufficient. It replaces the *primary* index, but
+pip still consults any configured `extra-index-url` or `PIP_EXTRA_INDEX_URL` —
+which is the very class of setting most likely to have produced the misleading
+answer. Neutralize the config file and the environment overrides as well:
+
+```powershell
+# PowerShell. Use $env:PIP_CONFIG_FILE = '/dev/null' on POSIX shells;
+# the portable value is python -c "import os; print(os.devnull)".
+$env:PIP_CONFIG_FILE = 'nul'          # make pip ignore all config files
+Remove-Item Env:PIP_INDEX_URL       -ErrorAction SilentlyContinue
+Remove-Item Env:PIP_EXTRA_INDEX_URL -ErrorAction SilentlyContinue
+
+pip index versions <package> --index-url https://pypi.org/simple --no-cache-dir
+```
+
+Setting `PIP_CONFIG_FILE` to the null device makes pip skip global, user, and
+site config files; clearing the two environment variables removes the
+higher-precedence overrides. Only then does `--index-url` describe the complete
+resolver view.
+
+Run against the same package that produced the bad pin, this returned
+`LATEST: 1.5.0` — the value the proxy feed had been withholding.
 
 ## Why It Bites
 
@@ -81,7 +113,8 @@ Note also that `gh run list` includes the Copilot reviewer run (job
 * Treat a discovered maximum version as **index-scoped**, not absolute. Know
   which index answered before you pin.
 * Cross-check the maximum against the canonical registry endpoint when the pin
-  gates CI.
+  gates CI. `--index-url` alone does not isolate the comparison — clear
+  `PIP_CONFIG_FILE`, `PIP_INDEX_URL`, and `PIP_EXTRA_INDEX_URL` too.
 * When any job sets `continue-on-error`, verify the *per-job* conclusion rather
   than the workflow run conclusion.
 * An automated reviewer repeating the same version claim is not corroboration —
