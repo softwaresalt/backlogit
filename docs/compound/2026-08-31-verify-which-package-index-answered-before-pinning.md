@@ -131,11 +131,27 @@ PIP_CONFIG_FILE=/dev/null pip --isolated index versions <package> \
 
 ```powershell
 # PowerShell (the null device is 'nul' on Windows)
-$env:PIP_CONFIG_FILE = 'nul'
-pip --isolated index versions <package> `
-    --index-url https://pypi.org/simple --no-cache-dir
-Remove-Item Env:PIP_CONFIG_FILE -ErrorAction SilentlyContinue
+$had  = Test-Path Env:PIP_CONFIG_FILE
+$prev = if ($had) { $env:PIP_CONFIG_FILE } else { $null }
+try {
+    $env:PIP_CONFIG_FILE = 'nul'
+    pip --isolated index versions <package> `
+        --index-url https://pypi.org/simple --no-cache-dir
+}
+finally {
+    if ($had) { $env:PIP_CONFIG_FILE = $prev }
+    else      { Remove-Item Env:PIP_CONFIG_FILE -ErrorAction SilentlyContinue }
+}
 ```
+
+The two shells differ in an important way here. The POSIX form is a *prefix
+assignment*, which scopes the variable to that single command and leaves the
+caller's environment untouched automatically. PowerShell has no equivalent, so
+the value must be saved and restored explicitly — and restoring means putting
+back a prior value if one existed, not blindly deleting the variable. A bare
+`Remove-Item Env:PIP_CONFIG_FILE` at the end would silently discard a
+`PIP_CONFIG_FILE` the caller had deliberately set, changing pip's behavior for
+the rest of the session.
 
 Each part does a distinct job, and none is redundant:
 

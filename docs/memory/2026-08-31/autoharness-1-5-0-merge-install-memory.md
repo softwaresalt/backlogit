@@ -154,13 +154,28 @@ the whole namespace in one move. Empirical verification during that change
 produced a second, sharper finding: `--isolated` **alone still returned the
 stale 1.4.11**, because it ignores environment variables and *user* config but
 not *global* config — and `pip config debug` showed the proxy feed configured
-at global scope. Only `--isolated` combined with an explicit
-`--index-url https://pypi.org/simple` returned 1.5.0, matching the canonical
-registry. Both flags are required and they do different jobs.
+at global scope.
+
+Round 7 then closed the last gap. Leaning on `--index-url` to outrank the
+surviving global config was wrong: `--index-url` replaces only the *primary*
+index, so a global or site `extra-index-url`, `find-links`, or `no-index` would
+still have participated. `PIP_CONFIG_FILE` turned out to be the missing piece —
+pip still honors that selector in isolated mode, and pointing it at the platform
+null device suppresses every config-file scope. Verified directly: `--isolated`
+alone returned 1.4.11, and `PIP_CONFIG_FILE=<null>` plus `--isolated` returned
+1.5.0 with no `--index-url` present at all.
+
+The final recipe is three parts, none redundant — `PIP_CONFIG_FILE=<null device>`
+(all config scopes), `--isolated` (the whole `PIP_*` environment surface), and
+an explicit `--index-url https://pypi.org/simple` (states the intended index).
+Round 8 added the last refinement: the PowerShell form must save and restore any
+pre-existing `PIP_CONFIG_FILE` rather than deleting it, since PowerShell has no
+equivalent of the POSIX single-command prefix assignment.
 
 Had the disposition been "accept residual risk", the document would have
 shipped with an incomplete list *and* without the `--isolated` insight that
-makes the list unnecessary.
+makes the list unnecessary — and without the config-scope correction that
+`--isolated` alone does not deliver.
 
 **Why this entry matters.** The section immediately above records the cap being
 crossed *without* an escalation checkpoint. This section records the same cap
