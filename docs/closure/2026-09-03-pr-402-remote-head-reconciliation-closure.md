@@ -38,7 +38,7 @@ local review record and separate operator approval.
 | Recovery state | Satisfied | 0 active and 0 quarantine-required checkpoints |
 | Pipeline state | Satisfied | 0 active and 0 queued shipments |
 | Compaction | Done | Verbose release memory archived and replaced by a traceable compacted summary |
-| Closure branch local review | Satisfied | Review found `P0=0`, `P1=0`; the PR body carries the authoritative reviewed HEAD after each push |
+| Closure branch local review | External gate | PR #403 body carries the authoritative current-HEAD review record; this static closure file does not assert merge readiness |
 | Closure branch approval | Pending | Separate operator approval is required before the closure PR may merge |
 
 ## Invariants to Preserve
