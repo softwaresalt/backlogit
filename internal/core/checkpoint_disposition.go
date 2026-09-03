@@ -295,7 +295,7 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 			Apply: func(context.Context) error {
 				// 153.002-T (A12BBAFA): create-only path — refuses to clobber a
 				// pre-existing sidecar (prior quarantine evidence must be preserved).
-				return writeDispositionSidecarCreateOnly(sidecarPath, sidecarData)
+				return writeDispositionSidecarCreateOnly(sidecarPath, sidecarData, ws)
 			},
 		},
 	})
@@ -319,20 +319,53 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 // writeDispositionSidecarCreateOnly creates path and writes data to it using
 // O_EXCL (create-only) semantics, refusing to clobber an existing sidecar.
 // It returns an error wrapping os.ErrExist when path already exists, which
-// QuarantineCheckpoint maps to ErrCheckpointDestinationOccupied (153.002-T /
-// S1 U2). The sidecar is a create-once evidence record: a pre-existing sidecar
-// must never be silently overwritten, as that would erase prior quarantine evidence.
-func writeDispositionSidecarCreateOnly(path string, data []byte) error {
+// QuarantineCheckpoint maps to ErrCheckpointDestinationOccupied.
+//
+// Self-cleaning on failure: if Write or Close fails after the O_EXCL open
+// succeeds, the partial file is removed before returning to prevent a false
+// permanent EEXIST on subsequent quarantine retries of the same target
+// (153.002-T / S1 U2, adversarial-review F3 remediation).
+//
+// Durable writes: when WorkspaceDurableWrites(ws) is true, the file and its
+// parent directory are fsynced (file before dir) to match moveNoReplace's
+// fsync protocol and prevent loss of the disposition record on crash.
+// Post-commit fsync failures are classified ErrWriteIndeterminate: the write
+// succeeded, but durability is uncertain.
+func writeDispositionSidecarCreateOnly(path string, data []byte, ws *Workspace) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err // *os.PathError wrapping os.ErrExist when file exists
 	}
+	durable := ws != nil && WorkspaceDurableWrites(ws)
+
 	_, writeErr := f.Write(data)
+	if durable && writeErr == nil {
+		// Fsync the file before closing to ensure data bytes are durable.
+		if syncErr := f.Sync(); syncErr != nil {
+			writeErr = syncErr
+		}
+	}
 	closeErr := f.Close()
+
+	// On any write/sync/close failure after the O_EXCL open, remove the
+	// partial file so it does not permanently block future quarantine retries.
 	if writeErr != nil {
+		_ = os.Remove(path)
 		return writeErr
 	}
-	return closeErr
+	if closeErr != nil {
+		_ = os.Remove(path)
+		return closeErr
+	}
+
+	// Fsync the parent directory after a successful write+close to make the
+	// new dirent durable (POSIX; skipped on Windows per durable_fs.go convention).
+	if durable {
+		if dirSyncErr := fsyncDirIfDurable(filepath.Dir(path), true); dirSyncErr != nil {
+			return fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, dirSyncErr)
+		}
+	}
+	return nil
 }
 
 // osRemove is the seam for os.Remove used in moveNoReplace; tests override it
