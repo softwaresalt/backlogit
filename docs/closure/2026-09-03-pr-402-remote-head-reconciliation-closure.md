@@ -38,7 +38,8 @@ local review record and separate operator approval.
 | Recovery state | Satisfied | 0 active and 0 quarantine-required checkpoints |
 | Pipeline state | Satisfied | 0 active and 0 queued shipments |
 | Compaction | Done | Verbose release memory archived and replaced by a traceable compacted summary |
-| Closure branch review | Pending | Current-HEAD P-014 review must pass before the closure PR is merge-ready |
+| Closure branch local review | Satisfied | Review found `P0=0`, `P1=0`; the PR body carries the authoritative reviewed HEAD after each push |
+| Closure branch approval | Pending | Separate operator approval is required before the closure PR may merge |
 
 ## Invariants to Preserve
 
@@ -105,9 +106,12 @@ cycle observes backlog state inconsistent with this closure.
 checkpoint registry becomes invalid as a direct consequence of merge commit
 `58931978`.
 
-**Procedure**: Stop pipeline claims, open a dedicated rollback pull request
-that reverts merge commit `58931978`, run the checkpoint and backlog integrity
-checks, and merge only after normal review and CI gates pass.
+**Procedure**: Stop pipeline claims and identify the smallest affected artifact
+or checkpoint record. Open a dedicated repair pull request that restores only
+that target from a verified good Git blob while preserving the 9 quarantine
+and 16 abandonment dispositions. Run checkpoint and backlog integrity checks,
+then merge only after normal review and CI gates pass. Do not revert the entire
+PR #402 merge because that would recreate the invalid recovery state.
 
 ## Validation Window
 

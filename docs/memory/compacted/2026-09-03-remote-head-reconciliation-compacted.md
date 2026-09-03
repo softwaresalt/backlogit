@@ -40,10 +40,11 @@ surface.
 
 ## Continuation
 
-Post-merge closure continues on `chore/post-merge-closure-402`. The initial
-closure commit was `295e685bdde75a8c2fd96fa609347779ee30b1fc`.
-Current-HEAD closure review, a closure PR, and separate operator merge approval
-remain required. No backlog item is blocked.
+Post-merge closure continues in PR #403 from
+`chore/post-merge-closure-402`. The initial closure commit was
+`295e685bdde75a8c2fd96fa609347779ee30b1fc`. The PR body is authoritative
+for the current reviewed HEAD after each push. Separate operator merge approval
+remains required. No backlog item is blocked.
 
 The verbose source is archived at
 `docs/archive/memory/2026-09-03/remote-head-reconciliation-memory.md`.
