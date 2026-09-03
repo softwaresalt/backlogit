@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,6 +40,53 @@ func SaveMemory(_ context.Context, memoriesPath string, key string, summary stri
 	return os.Rename(tmp, memoriesPath)
 }
 
+// maxCheckpointStateDumpSize is the fail-closed maximum allowed size for a
+// checkpoint state_dump. Checkpoints are git-tracked; an unbounded write is
+// a permanent, irreversible exposure of potentially large or sensitive data
+// (153.003-T / S1 U3, 6CE00B88 decision).
+const maxCheckpointStateDumpSize = 65536 // 64 KiB
+
+// checkpointSecretPrefixes is the heuristic set of known secret-material
+// prefixes scanned at the checkpoint-context write boundary. Any match
+// causes a fail-closed rejection before writing. The list covers the most
+// common accidental-exposure patterns; a full key-allowlist is deferred
+// (recorded open follow-up, YAGNI).
+var checkpointSecretPrefixes = []string{
+	"ghp_", "gho_", "ghs_", "ghu_", // GitHub token prefixes
+	"AKIA",       // AWS access key ID
+	"sk-",        // OpenAI and generic secret-key prefix
+	"AIza",       // Google API key
+	"SG.",        // SendGrid API key
+	"xox",        // Slack token prefix
+	"eyJ",        // JWT (Base64-encoded '{"')
+	"-----BEGIN", // PEM-encoded private key or certificate
+}
+
+// checkStateDumpSize returns ErrCheckpointStateDumpTooLarge when data exceeds
+// maxCheckpointStateDumpSize. The error message MUST NOT include payload bytes
+// (Constitution III: checkpoint context may contain sensitive data).
+func checkStateDumpSize(data []byte) error {
+	if len(data) > maxCheckpointStateDumpSize {
+		return fmt.Errorf("%w: dump is %d bytes, limit is %d",
+			backlogiterrors.ErrCheckpointStateDumpTooLarge, len(data), maxCheckpointStateDumpSize)
+	}
+	return nil
+}
+
+// checkStateDumpSecrets returns ErrCheckpointStateDumpSecretDetected when
+// data contains a heuristically detected secret pattern. It does NOT include
+// the matched pattern or payload bytes in the error message (Constitution III).
+func checkStateDumpSecrets(data []byte) error {
+	s := string(data)
+	for _, prefix := range checkpointSecretPrefixes {
+		if strings.Contains(s, prefix) {
+			return fmt.Errorf("%w: detected pattern indicates possible secret material; redact before creating a checkpoint",
+				backlogiterrors.ErrCheckpointStateDumpSecretDetected)
+		}
+	}
+	return nil
+}
+
 // CreateCheckpoint writes a timestamped state dump to the checkpoints directory.
 // If the state dump contains a V1 schema (schema_version=1), it is parsed and
 // validated before writing. Missing created_at, updated_at, and status fields
@@ -69,6 +117,9 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 	// (Constitution III: checkpoint context may contain sensitive data).
 	if !json.Valid(data) {
 		return CreateCheckpointResult{}, &backlogiterrors.CheckpointMalformedInputError{}
+	}
+	if err := checkStateDumpSize(data); err != nil {
+		return CreateCheckpointResult{}, err
 	}
 
 	// Probe for V1 schema.
@@ -124,6 +175,10 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 		if marshalErr != nil {
 			return CreateCheckpointResult{}, fmt.Errorf("marshal v1 checkpoint: %w", marshalErr)
 		}
+	}
+
+	if err := checkStateDumpSecrets(data); err != nil {
+		return CreateCheckpointResult{}, err
 	}
 
 	// 148-F / U3: route through the seam so tests can simulate ErrWriteIndeterminate
