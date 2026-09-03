@@ -111,3 +111,13 @@ a prior harvest link that these plain-archived entries lack. Provenance backfill
 therefore remains a recorded TOOLING BLOCKER pending a governed backfill operation
 for plain-archived entries.
 
+Separately, entry `A2C91FE5` has a **duplicate append-only archive history**: it
+appears twice in `.backlogit/archive/stash.jsonl` (lines 211 and 220). This is a
+distinct defect from the missing `source_stash_id` — the duplicate archive record
+is not explained or remediated by provenance backfill. The governed
+provenance-repair path (`backlogit stash correct`) also requires a prior harvest
+these entries lack, and destructive de-duplication of append-only archive history
+is not exposed as a governed operation; hand-editing the JSONL/cache is forbidden.
+The `A2C91FE5` duplicate-archive defect is therefore likewise a recorded TOOLING
+BLOCKER (tracked with follow-up `156F65EB`), not silently dropped.
+

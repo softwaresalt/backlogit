@@ -98,7 +98,11 @@ The prior PASS record is retained only as invalidated history. It omitted mandat
 <!-- plan-review-attempt: 2 -->
 
 dispatch_mode: multi-agent-dispatch
-decision: ADVISORY
+decision: FAIL
+
+Gate note: the controlling Go P1×2 (baseline-overlay seam; workspace-contained
+immutable base runner) are unresolved, so under the any-unresolved-P1 rule this
+verdict is FAIL, not ADVISORY. Only a re-review after remediation can downgrade it.
 
 personas:
 * Constitution Reviewer (`claude-opus-4.8`)
@@ -109,7 +113,7 @@ personas:
 * Security Reviewer (`gpt-5.6-terra`) when risk-triggered for the plan
 * Learnings Researcher over `docs/compound/`
 
-Controlling P1 findings:
+Controlling P1 findings (unresolved — force FAIL):
 * The baseline runner cannot execute newly added test files at the base commit without a defined overlay or fault-injection seam.
 * The isolated checkout must resolve the base ref to an immutable SHA and stay inside a sanctioned workspace-contained ignored directory.
 * Evidence needs producer, task, commit, and anti-replay authenticity binding before downstream applicability filtering.

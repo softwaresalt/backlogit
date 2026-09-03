@@ -108,7 +108,7 @@ personas:
 
 Security Reviewer was not risk-triggered for this plan; all other mandatory personas ran.
 
-Controlling P1 findings:
+Controlling P2/P3 findings (no P1 — consistent with the ADVISORY verdict):
 * P-006 hardening was missing for the external/cross-repo dependency signal, although the in-repo work is docs-only.
 * U2 could previously close by confirming local wording instead of proving the upstream template was actually updated.
 * Completion now requires upstream PR/commit evidence or the item remains active/blocked pending upstream delivery.

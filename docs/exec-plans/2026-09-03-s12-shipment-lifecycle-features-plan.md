@@ -48,11 +48,11 @@ Constitution Check: pass
 
 ### U2 — Queued-record forward-repair operation (BE32CAE2)
 * Scope: operator-only, CLI-only, audited break-glass mirroring the `repair_member_evidence` / `force_cli_only` contract. Because "CLI-only" is a surface boundary and NOT an authorization boundary in an autonomous harness, the verb is additionally gated behind an enforced interactive-TTY / explicit operator-confirmation token so "operator-only" is technically enforced, not surface-implied; non-interactive/agent invocation is denied by default. Inspection-gated: proceeds only when shipment.status == queued AND all non-descoped members advanced consistently beyond queued; ambiguous/mixed/incompatible states rejected with explanation. Forward-only (queued->active), shipment-record-only (no member/parent mutation, no ClaimShipment replay), atomic and concurrency-safe, emitting append-only structured before/after/result evidence with operator justification. Explicitly EXCLUDES DD957688. Recognizes the U1 `parked` state (a parked shipment is not an eligible repair pre-state).
-* Acceptance: repairs a genuine under-advanced queued record forward-only; rejects ambiguous pre-states AND parked shipments; never mutates members/parents; requires an enforced operator-confirmation signal (non-interactive invocation denied); emits append-only before/after/result evidence; MCP surface intentionally absent (documented). Independent of U1.
+* Acceptance: repairs a genuine under-advanced queued record forward-only; rejects ambiguous pre-states AND parked shipments; never mutates members/parents; requires an enforced operator-confirmation signal (non-interactive invocation denied); emits append-only before/after/result evidence; MCP surface intentionally absent (documented). Depends on U1: U2's acceptance rejects the `parked` state introduced by U1, so U1 must exist and be testable first.
 
 ## Dependency Graph
 
-U1 and U2 independent (different lifecycle concerns). Order: U1, U2.
+U1 -> U2 (U2 depends on U1: U2's acceptance rejects the `parked` state that U1 introduces, so U2 cannot be built or verified until U1 exists). Order: U1, then U2.
 
 ## Runtime Verification and Closure
 

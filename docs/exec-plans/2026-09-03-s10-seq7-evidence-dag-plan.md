@@ -96,7 +96,7 @@ The prior PASS record is retained only as invalidated history. It omitted mandat
 
 ## Plan Review
 
-<!-- plan-review-attempt: 2 -->
+<!-- plan-review-attempt: 3 -->
 
 dispatch_mode: multi-agent-dispatch
 decision: FAIL

@@ -53,9 +53,9 @@ verdict recorded here.
 | S2 | **FAIL** | Nil slices still marshal as `null` after removing `omitempty`; PlanMigration lacks the per-file findings channel required by report-and-continue; P-006 hardening is missing for an in-scope report-contract change |
 | S3 | **FAIL** | P-006 hardening gap for additive MCP tool, CLI error envelope, and `JSONRPCError.data`; `unknown_fields` reflection needs bounds/escaping |
 | S4 | **FAIL** | Program-wide versioned evidence contract mislabeled hardening-absent; wrong-module ownership; no versioning/compatibility policy; S5-S8 producers not bound |
-| S6 | **FAIL** | Advertised fuzzing has no target, seed corpus, budget, or task; two analyzers are underspecified as bounded AST checks |
+| S6 | **FAIL** | Two analyzers (`success-after-audit-warning`; `uncancellable-lock timeout`) are underspecified as bounded AST checks. Fuzzing truthfulness REMEDIATED: S6 U-fuzz unit + harvested task `158.008-T` added to shipment `140-S` |
 | S8 | **FAIL** | Realized decomposition violation; S8/S10 engine-ownership and forward-reference inconsistency; fail-open gate configuration risk |
-| S9 | **READY_WITH_FOLLOWUPS** | Baseline-overlay seam and workspace-contained immutable base runner need definition; evidence authenticity binding needs follow-up |
+| S9 | **FAIL** | Unresolved Go P1×2 (baseline-overlay seam; workspace-contained immutable base runner) force FAIL under the any-unresolved-P1 gate rule; evidence authenticity binding is an additional follow-up |
 | S10 | **FAIL** | Review-record integrity gap; waiver authorization spoofable and incompletely guarded; evidence authenticity absent; U3 is over-scoped |
 | S12 | **FAIL** | U2 depends on U1 parked state despite being declared independent; TTY/token authorization is spoofable and not enforced at the shared transition choke point; parked state not integrated into the closed taxonomy |
 | S13 | **READY_WITH_FOLLOWUPS** | External-dependency hardening note required; U2 acceptance must require actual upstream delivery evidence or remain active/blocked |
@@ -69,7 +69,7 @@ verdict recorded here.
 | S4 | FAIL(P1) | FAIL(P1×2) | PASS(P3) | ADV(P3) | FAIL(P1×3) | n/a | **FAIL** |
 | S6 | ADV(P2) | FAIL(P1) | FAIL(P1) | PASS | ADV(P2) | n/a | **FAIL** |
 | S8 | FAIL(P1) | ADV(P2) | FAIL(P1) | FAIL(P1) | FAIL(P1) | FAIL(P1) | **FAIL** |
-| S9 | ADV(P2) | FAIL(P1×2) | PASS | PASS(P3) | PASS | ADV(P2) | **ADVISORY** |
+| S9 | ADV(P2) | FAIL(P1×2) | PASS | PASS(P3) | PASS | ADV(P2) | **FAIL** |
 | S10 | ADV(P2) | FAIL(P1×3) | FAIL(P1) | FAIL(P1) | FAIL(P1×2) | FAIL(P1×3) | **FAIL** |
 | S12 | ADV(P2) | FAIL(P1×2) | PASS | FAIL(P1) | FAIL(P1) | FAIL(P1×2) | **FAIL** |
 | S13 | ADV(P2) | PASS | PASS | ADV(P3) | PASS | n/a | **ADVISORY** |
@@ -98,7 +98,7 @@ No P0 findings were reported.
 | 12 | S8 | U3 acceptance that S10 and this gate call the same engine is unverifiable at S8 ship time; engine ownership contract is contradictory | **MEDIUM** | Correctness and Architecture |
 | 13 | S8 | Fail-closed gate can fail open through per-rule flags or report-only mode; no all-entry-point assembly choke guard | **MEDIUM** | Security |
 | 14 | S2 | PlanMigration has no per-file findings channel to satisfy report-and-continue | **MEDIUM** | Go and Architecture |
-| 15 | S6 | Advertised fuzzing is unbacked by a fuzz target, seed corpus, execution budget, or task | **MEDIUM** | Scope P1 and Constitution P2 |
+| 15 | S6 | Advertised fuzzing unbacked — **REMEDIATED**: S6 U-fuzz unit (`FuzzCompatibilityCorpusDecode`, seed corpus, bounded budget) + harvested task `158.008-T` added to shipment `140-S` | **MEDIUM (resolved)** | Scope P1 and Constitution P2 |
 | 16 | S6 | `success-after-audit-warning` and `uncancellable-lock timeout` analyzers likely need CFG/SSA, not bounded AST-only checks | **MEDIUM** | Go |
 | 17 | S4 | Literal cross-surface comparison is impossible because exit code is CLI-only; driver seam using process globals is not parallel-test-safe | **MEDIUM** | Go |
 | 18 | S3 | P-006 hardening gap for the new MCP tool, structured error envelope, and JSON-RPC data field | **MEDIUM** | Constitution; documented gate rule |
@@ -107,7 +107,16 @@ No P0 findings were reported.
 
 ## Overall verdict
 
-Overall staging-run verdict: **BLOCKED**. S2, S3, S4, S6, S8, S10, and S12 are
-FAIL. S9 and S13 are READY_WITH_FOLLOWUPS. The prior uniform-PASS record is
-contradicted by the genuine mandatory-persona re-dispatch and is no longer a
-valid gate record.
+Overall staging-run verdict: **BLOCKED (8 FAIL / 1 READY_WITH_FOLLOWUPS)**. S2,
+S3, S4, S6, S8, S9, S10, and S12 are FAIL — each retains at least one unresolved
+P1, and under the plan-review gate any unresolved P1 forces FAIL. S13 is
+READY_WITH_FOLLOWUPS (P2/P3 only). The prior uniform-PASS record is contradicted
+by the genuine mandatory-persona re-dispatch and is no longer a valid gate record.
+
+Enforcement note: this BLOCKED verdict is a Stage plan-review gate **record**.
+`ClaimShipment` does not currently inspect plan-review records, so this record
+does not by itself prevent a failed-plan shipment from being claimed once its
+separate closure/topology blocker clears; the untriaged follow-up `FF6D467A` is
+not an execution dependency. Deterministic enforcement of plan-review verdicts at
+claim time is the scope of the S11 workflow-policy-enforcement-engine feature
+(`163-F`); until it ships, these FAIL verdicts must be honored by process.
