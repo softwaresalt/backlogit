@@ -75,13 +75,17 @@ Created `docs/closure/134-S-p002-incident-post-merge-closure.md`:
 
 ## P-020 Note
 
-This correction predates a current compact-context threshold. No memory
-checkpoint accumulation from this session requires compaction. Compact-context
-invoked with target: all; result: no candidates above threshold.
+Compact-context invoked with `target: memory` for post-merge closure of PR #406.
+Memory count was 49 files (above 40-file threshold), 533 KB (above 500 KB threshold).
+
+**Result:** 19 stage-pr377-cycle-* files (cycles 17-37, 180 KB) archived to
+`docs/archive/memory/`. Compacted summary created at
+`docs/memory/compacted/2026-09-03-stage-pr377-cycles-compacted.md`.
+Memory count reduced from 49 to 30 files (below threshold).
 
 ## Next Steps
 
-- 135-S pre-claim gate passes → Stage can safely claim 135-S
+- 135-S pre-claim gate passes → **Ship** can safely claim 135-S (Stage plans, Ship claims)
 - FC-5 forward control tracked as queued feature 163-F / shipment 145-S
 - P1 latent migration risk (normalizer/gate conflict for top-level fields):
   advisory stash item for future resolution
