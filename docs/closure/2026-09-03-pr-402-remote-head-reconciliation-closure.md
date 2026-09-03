@@ -1,14 +1,18 @@
 ---
 chunk_strategy: h1-h2-h3
-compaction_status: done
 description: "Post-merge operational closure for checkpoint and remote-head reconciliation in PR 402"
 doc_type: closure
+docline:
+  backlogit:
+    compaction_status: done
+    schema_version: "1.0"
+ingested_at: "2026-09-03T05:27:18Z"
 schema_version: "1.0"
 source: docs/closure/2026-09-03-pr-402-remote-head-reconciliation-closure.md
 title: "PR 402 Remote-Head Reconciliation Closure"
 ---
 
-## Closure Status
+## Merged Release Status
 
 **READY**
 
@@ -17,19 +21,24 @@ PR #402 merged into `main` as merge commit
 unit changes repository and backlog state only; it does not change a deployed
 runtime surface.
 
+This status describes the already-merged release unit. It does not authorize
+merging the post-merge closure branch. That branch requires a current-HEAD
+local review record and separate operator approval.
+
 ## Releasability Evidence
 
 | Evidence | Status | Detail |
 |---|---|---|
-| Reviewed HEAD | Satisfied | `0b4575a3b805f749e604567cd872c65f5acd9f42` |
-| Local review | Satisfied | `READY`, `P0=0`, `P1=0` |
-| Hosted review | Satisfied | Current-HEAD Copilot review completed; 5 threads resolved |
-| CI | Satisfied | All required checks passed |
+| PR #402 reviewed HEAD | Satisfied | `0b4575a3b805f749e604567cd872c65f5acd9f42` |
+| PR #402 local review | Satisfied | `READY`, `P0=0`, `P1=0` |
+| PR #402 hosted review | Satisfied | Current-HEAD Copilot review completed; 5 threads resolved |
+| PR #402 CI | Satisfied | All required checks passed |
 | Merge strategy | Satisfied | Normal merge commit; squash and rebase disabled |
 | Main ancestry | Satisfied | Reviewed HEAD is an ancestor of `origin/main` |
 | Recovery state | Satisfied | 0 active and 0 quarantine-required checkpoints |
 | Pipeline state | Satisfied | 0 active and 0 queued shipments |
-| Compaction | Done | Zero eligible artifacts after scan of docs/memory, docs/exec-plans, and docs/closure; no archival changes were needed or made |
+| Compaction | Done | Verbose release memory archived and replaced by a traceable compacted summary |
+| Closure branch review | Pending | Current-HEAD P-014 review must pass before the closure PR is merge-ready |
 
 ## Invariants to Preserve
 
@@ -69,6 +78,9 @@ Merge-only. The change is absorbed when `origin/main` contains merge commit
 | Merge PR #402 into `main` through a merge commit | moderate | Operator requested returning the branch to `main` | applied |
 | Quarantine 9 malformed checkpoint payloads | high | Operator explicitly approved checkpoint disposition | applied |
 | Abandon 16 obsolete valid checkpoints | moderate | Operator explicitly approved checkpoint disposition | applied |
+| Revert the destructive artifact-removal commit through normal Git history | moderate | Operator requested full branch reconciliation; rollback remains a normal revert | applied |
+| Remove the redundant scratch test and machine-local Copilot settings file | moderate | Operator requested completion of review findings; both removals remain recoverable from Git | applied |
+| Archive verbose post-merge memory during P-020 compaction | moderate | Operator requested finishing the merge and required closure; original remains under `docs/archive/memory/` | applied |
 
 ## Monitoring Plan
 
