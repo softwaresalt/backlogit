@@ -63,7 +63,7 @@ U1 -> U2 -> U3. Single Go test-infra domain per unit.
 Framework is a verification surface; closure = it runs in CI over the declared
 ops. No production behavior change (declarations describe existing behavior).
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: absent (test infra + declarations).
 * security/auth/permission/compliance-sensitive: absent.

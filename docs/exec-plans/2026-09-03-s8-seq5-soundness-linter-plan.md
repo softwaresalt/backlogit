@@ -72,7 +72,7 @@ Rollback trigger: disable the offending rule flag or revert to report-only.
 Ownership: harness maintainers. Validation window: report-only until the seeded
 sound/unsound plan corpus is green.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: absent.
 * security/auth/permission/compliance-sensitive: absent.

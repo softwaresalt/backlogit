@@ -77,7 +77,7 @@ Rollback trigger: ship the DAG in report-only mode; disable a node family flag i
 it false-blocks. Ownership: harness maintainers. Validation window: report-only
 until the seeded shipment corpus is green.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: PRESENT — defines a shipment DAG contract (additive to shipment schema).
 * security/auth/permission/compliance-sensitive: PRESENT-minor — waiver/override authority must be audited.

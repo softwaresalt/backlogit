@@ -96,7 +96,7 @@ regression is caught by the RED/compat tests before merge. Ownership: checkpoint
 subsystem maintainers. Open follow-up: checkpoint-context key-allowlist (deferred,
 YAGNI) recorded for a future decision.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: PRESENT — U4 removes a public summary field (compat-gated by U4 acceptance).
 * security/auth/permission/compliance-sensitive: PRESENT — U1 symlink traversal, U3 unredacted durable state.

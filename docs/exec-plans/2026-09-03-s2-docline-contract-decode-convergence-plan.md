@@ -58,7 +58,7 @@ U1 and U2 are independent (different files/behaviors). Order: U1, U2.
 U1 changes JSON output of migrate report; U2 changes PlanMigration behavior on
 malformed input. Verification via table tests. Closure: regression tests.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: PRESENT-minor — U1 makes a promised array always present (contract-restoring, not breaking).
 * security/auth/permission/compliance-sensitive: absent.

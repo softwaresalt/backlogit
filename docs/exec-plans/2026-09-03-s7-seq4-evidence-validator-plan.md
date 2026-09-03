@@ -77,7 +77,7 @@ Rollback trigger: validator is read-only; disable the failing rule/check if a
 false positive appears. Ownership: harness maintainers. Validation window: run in
 report mode against recent PRs/shipments before enforcing.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: absent.
 * security/auth/permission/compliance-sensitive: PRESENT-minor — consumes GitHub tokens/read scope; must not log secrets.

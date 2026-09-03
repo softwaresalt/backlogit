@@ -71,7 +71,7 @@ records repaired/rejected. Closure: repair audit evidence schema documented.
 Rollback trigger: repair is forward-only and shipment-record-only; a bad
 invocation is bounded to one shipment record and auditable. Ownership: operators.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: PRESENT — new parked state + new CLI repair verb.
 * security/auth/permission/compliance-sensitive: PRESENT — operator break-glass state repair.

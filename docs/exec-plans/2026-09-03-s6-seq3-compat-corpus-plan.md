@@ -63,7 +63,7 @@ U1 -> U2 (shared runner); U3 independent analyzer track. Single domain per unit.
 Verification surface = corpus runner + analyzers in CI. Closure = green corpus +
 analyzers on the check target. No production behavior change.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: absent.
 * security/auth/permission/compliance-sensitive: absent.

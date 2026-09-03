@@ -95,7 +95,7 @@ rollout, disable the offending gate flag; the engine ships report-only before
 enforcing. Ownership: harness maintainers. Validation window: report-only until
 the seed incident-replay corpus is green.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: PRESENT — workflow-policy registry graph + evidence artifacts across CLI/MCP/agent surfaces.
 * security/auth/permission/compliance-sensitive: PRESENT — audited overrides, evidence integrity, gate bypass surface.

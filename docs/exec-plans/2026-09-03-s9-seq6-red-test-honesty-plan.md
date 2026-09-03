@@ -63,7 +63,7 @@ U1 -> U2 -> U3. Single domain per unit.
 Verification surface: gate run over seeded honest/dishonest reds. Closure: gate
 green in CI; evidence schema documented for S10/S11 consumers.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: PRESENT-minor — emits against the shared S4 U4 evidence-artifact contract (S9 is a producer, not the schema owner); additive.
 * security/auth/permission/compliance-sensitive: absent.

@@ -68,7 +68,7 @@ consumed by S5-S11. Single skill domain (Go test infrastructure) per unit.
 Harness is itself a verification surface; closure = the harness runs in CI and
 the seed corpus is green. No production runtime change.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: absent (test infra).
 * security/auth/permission/compliance-sensitive: absent.

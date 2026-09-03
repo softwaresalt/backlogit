@@ -61,7 +61,7 @@ U1, U2, U3 independent. Order: U1, U2, U3.
 No runtime surface. Verification: docs-lint gate. Closure: documentation reflects
 practice and accepted boundaries.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: absent (docs only).
 * security/auth/permission/compliance-sensitive: absent.

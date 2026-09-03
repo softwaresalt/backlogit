@@ -68,7 +68,7 @@ U1-U3 change CLI/MCP runtime surfaces (error envelopes, new tool); U4 changes
 governance metadata. Verification: cross-surface parity tests + registry drift
 test. Closure: parity fixtures are the durable closure artifact.
 
-#### Plan Hardening Signals (REQUIRED)
+### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: PRESENT — new MCP tool + CLI error envelope + JSONRPCError data field (all additive/backward-compatible).
 * security/auth/permission/compliance-sensitive: absent.
