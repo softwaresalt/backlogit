@@ -3,6 +3,7 @@ bin/
 logs/
 .vscode/
 .copilot/
+.github/copilot/settings.local.json
 .mcp.json
 
 # Local environment files (secrets) — never commit. Only .env.example may be tracked.
