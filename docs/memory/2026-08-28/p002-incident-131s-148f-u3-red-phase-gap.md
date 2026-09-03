@@ -9,14 +9,14 @@ title: "P-002 Incident — 131-S / 148-F / U3 red-phase gap"
 
 # P-002 Incident Record — 131-S / 148-F / U3
 
-**Incident type**: P-002 TDD red-phase gap  
-**Shipment**: 131-S (Checkpoint create/write path security hardening)  
-**Feature**: 148-F  
-**Task in question**: 148.002-T (U3: Classify syncWriteFileAtomic outcomes on checkpoint create)  
-**Harness file in question**: `internal/events/checkpoint_u3_harness_test.go`  
-**Detected by**: Orchestrator post-completion audit  
-**Recorded by**: Ship agent (read-only audit session)  
-**Date**: 2026-08-28  
+**Incident type**: P-002 TDD red-phase gap
+**Shipment**: 131-S (Checkpoint create/write path security hardening)
+**Feature**: 148-F
+**Task in question**: 148.002-T (U3: Classify syncWriteFileAtomic outcomes on checkpoint create)
+**Harness file in question**: `internal/events/checkpoint_u3_harness_test.go`
+**Detected by**: Orchestrator post-completion audit
+**Recorded by**: Ship agent (read-only audit session)
+**Date**: 2026-08-28
 
 ## Factual Evidence
 
@@ -147,4 +147,3 @@ The orchestrator asks whether 131-S needs a "formal return-from-shipped decision
 The appropriate action is: formally document the P-002 gap (this incident),
 require Stage to amend the plan/process for subsequent groups, and prevent
 Groups 2/3/4 from shipping until this process gap is acknowledged and addressed.
-

@@ -1,4 +1,12 @@
-# Adversarial Review: 130-S Checkpoint Top-Level Key Disposition (PR #377, Cycle 11)
+---
+chunk_strategy: h1-h2-h3
+description: "Adversarial review findings for shipment 130-S checkpoint top-level key disposition"
+doc_type: closure
+ingested_at: "2026-09-03T03:35:16Z"
+schema_version: "1.0"
+source: docs/closure/2026-08-24-130-s-adversarial-review.md
+title: "Adversarial Review: 130-S Checkpoint Top-Level Key Disposition (PR #377, Cycle 11)"
+---
 
 **Date**: 2026-08-24
 **Reviewers**: 3 independent models (Tier 1: gemini-3.7-flash, Tier 2: claude-sonnet-4.6, Tier 3: claude-sonnet-5)

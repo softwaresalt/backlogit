@@ -9,8 +9,8 @@ title: "P2/P3 Stash Reconciliation — 131-S / 148-F"
 
 # P2/P3 Deferred Risk Stash ID Reconciliation — 131-S / 148-F
 
-**Audit date**: 2026-08-28 (post-merge closure)  
-**Audited by**: Ship agent (read-only audit session)  
+**Audit date**: 2026-08-28 (post-merge closure)
+**Audited by**: Ship agent (read-only audit session)
 
 ## Prior Completion Report Claims vs. Actuals
 
@@ -19,8 +19,8 @@ P2/P3 follow-up items. This document audits whether governed stash IDs exist for
 
 ### FINDING-3 / P1 — syncWriteFileAtomic pre-Remove Windows data-loss window
 
-**Claimed in session memory**: "syncWriteFileAtomic pre-Remove Windows data-loss (deferred stash)"  
-**Claimed disposition (closure doc)**: "P1 FINDING-3 (MEDIUM): Documented — syncWriteFileAtomic pre-Remove data-loss window, deferred follow-up"  
+**Claimed in session memory**: "syncWriteFileAtomic pre-Remove Windows data-loss (deferred stash)"
+**Claimed disposition (closure doc)**: "P1 FINDING-3 (MEDIUM): Documented — syncWriteFileAtomic pre-Remove data-loss window, deferred follow-up"
 **Actual stash ID created**: **NONE**
 
 Evidence: `git diff 323c5247 5c374bce -- .backlogit/stash.jsonl` shows NO new stash
@@ -37,12 +37,12 @@ reporting item. The finding remains untracked in the governed stash.
 
 ### "stash 35A27CD0 extended" claim
 
-**Claimed in session memory**: "Directory symlink protection in O_NOFOLLOW chain (stash 35A27CD0 extended)"  
+**Claimed in session memory**: "Directory symlink protection in O_NOFOLLOW chain (stash 35A27CD0 extended)"
 **Actual**: Stash 35A27CD0 was HARVESTED into 148.003-T (U4) during the Stage
 phase (commit `00e69aab`). It was NOT "extended" — its text was not modified.
 The entry exists in `.backlogit/archive/stash.jsonl` with:
-  - `reason: "harvested"`  
-  - `harvested_artifact_id: "148.003-T"`  
+  - `reason: "harvested"`
+  - `harvested_artifact_id: "148.003-T"`
   - `archived_at: "2026-08-29T00:42:55Z"`
 
 The session memory description is inaccurate. 35A27CD0 represents the SCOPE
@@ -59,8 +59,8 @@ the read/mutate-lite verb scope — distinct from the O_NOFOLLOW create path.
 
 ### AR-P2-1 — Windows O_NOFOLLOW portability
 
-**Claimed**: "documented in-code (AR-P2-1 documented)"  
-**Actual stash ID**: NONE (in-code documentation in `checkpoint_nofollow_windows.go`)  
+**Claimed**: "documented in-code (AR-P2-1 documented)"
+**Actual stash ID**: NONE (in-code documentation in `checkpoint_nofollow_windows.go`)
 **Assessment**: In-code documentation is the appropriate disposition for
 implementation notes. No stash needed per closure doc. CONFIRMED CORRECT.
 
@@ -68,19 +68,19 @@ implementation notes. No stash needed per closure doc. CONFIRMED CORRECT.
 
 ### AR-P2-2 — MkdirAll boundary not U4 scope
 
-**Claimed**: "confirmed non-scope, no action needed"  
-**Actual stash ID**: NONE  
+**Claimed**: "confirmed non-scope, no action needed"
+**Actual stash ID**: NONE
 **Assessment**: Confirmed non-scope. No stash needed. CONFIRMED CORRECT.
 
 ---
 
 ### AR-P2-3 — No slog security-rejection logging
 
-**Claimed**: "deferred to monitoring plan"  
-**Actual stash ID**: NONE  
+**Claimed**: "deferred to monitoring plan"
+**Actual stash ID**: NONE
 **Assessment**: The monitoring plan covers observability via CLI error counting
 (non-slog path). The disposition is a design decision (CLI errors don't use slog).
-No stash created. The closure doc notes this explicitly.  
+No stash created. The closure doc notes this explicitly.
 **Gap assessment**: If AR-P2-3 was genuinely deferred (meaning: future work to add
 slog), a stash entry should have been created. If it was closed (design decision
 to not add slog), no stash needed. The closure doc is ambiguous.
@@ -89,8 +89,8 @@ to not add slog), no stash needed. The closure doc is ambiguous.
 
 ### FINDING-4 — Predictable .tmp name
 
-**Claimed**: "pre-existing, advisory"  
-**Actual stash ID**: NONE  
+**Claimed**: "pre-existing, advisory"
+**Actual stash ID**: NONE
 **Assessment**: Pre-existing issue in `atomicfile` package. Advisory. No stash required
 unless a security case is made. CONFIRMED CORRECT.
 
@@ -98,24 +98,24 @@ unless a security case is made. CONFIRMED CORRECT.
 
 ### FINDING-5 — Multiple fold-variant context top-level entries
 
-**Claimed**: "advisory"  
-**Actual stash ID**: NONE  
+**Claimed**: "advisory"
+**Actual stash ID**: NONE
 **Assessment**: Advisory, single-reviewer LOW confidence. No stash required. CONFIRMED CORRECT.
 
 ---
 
 ### FINDING-6 — reportedDuplicate uses ToLower vs EqualFold
 
-**Claimed**: "advisory, safe"  
-**Actual stash ID**: NONE  
+**Claimed**: "advisory, safe"
+**Actual stash ID**: NONE
 **Assessment**: Single-reviewer LOW confidence, demonstrated safe. No stash required. CONFIRMED CORRECT.
 
 ---
 
 ### FILE_FLAG_OPEN_REPARSE_POINT for Windows
 
-**Claimed**: "tracked in checkpoint_nofollow_windows.go"  
-**Actual stash ID**: NONE  
+**Claimed**: "tracked in checkpoint_nofollow_windows.go"
+**Actual stash ID**: NONE
 **Assessment**: Code comment in the implementation. This is an in-code note for
 future work. No governed stash entry. If this is genuinely deferred work (not just
 a code comment), it lacks a governed stash entry.
@@ -150,4 +150,3 @@ a code comment), it lacks a governed stash entry.
 
 4. This audit is READ-ONLY. No new stash entries are created here per the audit scope.
    Stash creation for FINDING-3 must be done by an authorized Stage/Ship session.
-
