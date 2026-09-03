@@ -1,0 +1,7 @@
+{
+  "filename": "checkpoint-20260426-045333.json",
+  "disposition": "quarantined",
+  "reason": "Legacy schema-invalid checkpoint blocks fail-closed recovery enumeration; operator approved quarantine on 2026-09-01",
+  "operator": "redmond\\dewilliams",
+  "disposition_at": "2026-09-02T05:53:17.706927Z"
+}
