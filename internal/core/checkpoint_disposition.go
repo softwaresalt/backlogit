@@ -29,7 +29,7 @@ const (
 //
 // AbandonCheckpoint refuses to operate on a malformed (unparseable or
 // schema-invalid) target, returning ErrCheckpointUseQuarantine so the caller
-// can retry with QuarantineCheckpoint instead — the two verbs are disjoint by
+// can retry with QuarantineCheckpoint instead â€” the two verbs are disjoint by
 // design (see docs/design-docs/checkpoint-administrative-disposition.md).
 //
 // An already-abandoned checkpoint is treated as an idempotent no-op: the
@@ -39,7 +39,7 @@ const (
 //
 // reason and operator must both be non-empty; operator is never defaulted to
 // a fixed identity such as "backlogit". ew must be a real, non-nil
-// *events.EventWriter — callers must never pass nil (the MCP server passes
+// *events.EventWriter â€” callers must never pass nil (the MCP server passes
 // its shared writer; the CLI constructs a per-invocation writer via
 // NewWorkspaceEventWriter, mirroring AssociateCommit's established pattern).
 func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWriter, filename, reason, operator string) error {
@@ -84,12 +84,12 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 	// BEFORE the already-abandoned short-circuit: a file carrying
 	// disposition:"abandoned" plus an unmodeled key would otherwise return
 	// nil here while U5's widened quarantine accepts it and U6 reports
-	// NeedsQuarantine:true — three surfaces disagreeing about one file. It
+	// NeedsQuarantine:true â€” three surfaces disagreeing about one file. It
 	// is a non-writing refusal, so nothing is lost by refusing earlier. It
 	// remains strictly before appendCheckpointDispositionAudit, preserving
 	// the shipped audit-then-mutate ordering. The guarded seam (U14b) does
 	// not satisfy this unit: it refuses the same document at the *write*
-	// step, which is after the audit append and the short-circuit — this
+	// step, which is after the audit append and the short-circuit â€” this
 	// gate is what makes the refusal audit-free and short-circuit-proof.
 	if confErr := events.CheckConformingTopLevelNamespace(data); confErr != nil {
 		return confErr
@@ -104,7 +104,7 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 	// The U6 contract requires an active checkpoint (the already-abandoned
 	// case above is the sole idempotent exception). Any other status (e.g.
 	// "resolved") is a state conflict, not a silent transition to
-	// "abandoned" — refuse rather than rewrite a checkpoint that was never
+	// "abandoned" â€” refuse rather than rewrite a checkpoint that was never
 	// active in the first place.
 	if cp.Status != "active" {
 		return fmt.Errorf("%w: status=%s", blerrors.ErrCheckpointNotActive, cp.Status)
@@ -124,7 +124,7 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 	// succeed before any marshal or write. This introduces no new
 	// verb-facing sentinel and changes no ordering: the audit append and
 	// the already-abandoned / not-active checks above still run first,
-	// against the same initial read — the seam refuses an untrustworthy
+	// against the same initial read â€” the seam refuses an untrustworthy
 	// document at the write step, which is after those checks.
 	// abandonCheckpointMutate additionally re-checks active status against
 	// the seam's own fresh read (see its doc comment). NormalizeSeamMalformedVerdict
@@ -154,7 +154,7 @@ func AbandonCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWrite
 // passes to RewriteCheckpointFile. It is a named function (rather than an
 // inline closure) so a test can invoke RewriteCheckpointFile with this exact
 // production logic directly, against a checkpoint whose on-disk content
-// reflects a state RewriteCheckpointFile's own independent read observes —
+// reflects a state RewriteCheckpointFile's own independent read observes â€”
 // which may differ from what AbandonCheckpoint's earlier classification read
 // observed if a concurrent ResolveCheckpoint won the race in between (147-F,
 // found during 130-S adversarial review). The active-status re-check below
@@ -188,7 +188,7 @@ func abandonCheckpointMutate(reason, operator string, now time.Time) func(*event
 // concurrently-created destination (ErrCheckpointDestinationOccupied). A
 // disposition sidecar record is written as an idempotent upsert alongside the
 // quarantined file. If the sidecar write fails after the move succeeds, the
-// move is rolled back and diagnostics are logged — nothing is left
+// move is rolled back and diagnostics are logged â€” nothing is left
 // half-quarantined.
 //
 // reason and operator must both be non-empty; operator is never defaulted to
@@ -271,6 +271,9 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		return fmt.Errorf("quarantine checkpoint: marshal disposition sidecar: %w", err)
 	}
 	sidecarPath := events.CheckpointDispositionSidecarPath(destPath)
+	if len(sidecarData) == 0 {
+		return atomicfile.WriteFileAtomic(sidecarPath, sidecarData)
+	}
 
 	err = MutationEnvelope(ctx, []MutationStep{
 		{
@@ -290,7 +293,9 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		{
 			Name: "write-disposition-sidecar",
 			Apply: func(context.Context) error {
-				return atomicfile.WriteFileAtomic(sidecarPath, sidecarData)
+				// 153.002-T (A12BBAFA): create-only path — refuses to clobber a
+				// pre-existing sidecar (prior quarantine evidence must be preserved).
+				return writeDispositionSidecarCreateOnly(sidecarPath, sidecarData)
 			},
 		},
 	})
@@ -302,13 +307,32 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointDestinationOccupied, baseName)
 		}
 		// A combined unwind failure from moveNoReplace means both src and dst
-		// may exist — outcome is indeterminate.
+		// may exist â€” outcome is indeterminate.
 		if errors.Is(err, blerrors.ErrWriteIndeterminate) {
 			return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
 		}
 		return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
 	}
 	return nil
+}
+
+// writeDispositionSidecarCreateOnly creates path and writes data to it using
+// O_EXCL (create-only) semantics, refusing to clobber an existing sidecar.
+// It returns an error wrapping os.ErrExist when path already exists, which
+// QuarantineCheckpoint maps to ErrCheckpointDestinationOccupied (153.002-T /
+// S1 U2). The sidecar is a create-once evidence record: a pre-existing sidecar
+// must never be silently overwritten, as that would erase prior quarantine evidence.
+func writeDispositionSidecarCreateOnly(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err // *os.PathError wrapping os.ErrExist when file exists
+	}
+	_, writeErr := f.Write(data)
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
 }
 
 // osRemove is the seam for os.Remove used in moveNoReplace; tests override it
