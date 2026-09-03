@@ -338,7 +338,7 @@ modes all argue for an operator-initiated command over a reviewable plan.
 #### Configuration home
 
 **Decision.** Do **not** extend `migration.yaml`. Introduce a sibling
-target-mapping schema at `.backlog/integrations/azure-devops.yaml`, loaded by a
+target-mapping schema at `{workspace}/integrations/azure-devops.yaml`, loaded by a
 new `config.AzureDevOpsConfig`. `migration.yaml` is left byte-unchanged.
 
 **Reason.** The evidence is structural, not stylistic.
@@ -415,7 +415,7 @@ repository already accepts for `status`, `commit`, and `dependencies`; the
 values are last-write-wins and are self-healing because `verify` re-derives
 `rev` and `content_hash` from the remote and the local body.
 
-**Rejected.** A `.backlog/integrations/azure-devops/state.jsonl` ledger
+**Rejected.** A `{workspace}/integrations/azure-devops/state.jsonl` ledger
 (introduces a second durable store, a second merge semantic, and unbounded
 growth for state that is naturally one record per artifact); storing identity
 in SQLite (gitignored and rebuilt, so identity would be lost on every clone).
@@ -504,7 +504,7 @@ retry of an indeterminate create.
 `backlogit ado discover` reads `workitemtypes`, `workitemtypes/{type}/states`,
 `workitemtypes/{type}/fields`, `fields`, and `classificationnodes` for areas
 and iterations, and caches the snapshot in gitignored
-`.backlog/runtime/ado-discovery.json`. `plan` **fails closed** when the mapping
+`{workspace}/runtime/ado-discovery.json`. `plan` **fails closed** when the mapping
 references a work item type, state, field reference name, area path, or
 iteration path that the snapshot does not contain.
 
@@ -589,7 +589,7 @@ the correct local pattern: `os.ExpandEnv` over configured values, with no
 secret in the config file.
 
 **Rejected.** A `--pat` flag; a config-file token with a warning comment; a
-credential file under `.backlog/`.
+credential file under the configured workspace storage root.
 
 #### Extension seam for Jira and GitHub
 
@@ -663,7 +663,7 @@ artifacts and emit no deletion action); unbounded retry.
   compensation across the remote boundary means deleting a work item that may
   already carry human edits, and because the envelope's own contract states
   that a possibly-applied durable write must not be compensated.
-* **A JSONL sync-state ledger under `.backlog/integrations/`.** Abandoned in
+* **A JSONL sync-state ledger under `{workspace}/integrations/`.** Abandoned in
   favor of frontmatter plus the existing per-item log: it would have introduced
   a third durable store, a new Git merge semantic, and unbounded growth for
   state that is naturally one record per artifact.

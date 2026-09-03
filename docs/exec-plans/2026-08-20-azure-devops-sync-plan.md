@@ -1214,10 +1214,14 @@ Depends on: U3, U14.
 Files: `internal/extsync/text.go`, `go.mod` plus `go.sum` (promote
 `blackfriday/v2` to direct).
 Tests: Markdown renders to HTML; a body containing `<script>alert(1)</script>`
-and `<img src=x onerror=alert(1)>` renders inert with the tags escaped; an empty
-body yields an omitted field rather than an empty paragraph.
-Acceptance: the renderer is configured so raw inline HTML is escaped, never
-passed through. The invariant "rendered HTML contains no raw passthrough HTML"
+and `<img src=x onerror=alert(1)>` renders inert with the tags escaped; links
+using active schemes such as `javascript:` and `data:` are rejected or rendered
+without an active `href`; an empty body yields an omitted field rather than an
+empty paragraph.
+Acceptance: the renderer escapes raw inline HTML and enables
+`blackfriday.HTML_SAFELINK` (or equivalent explicit URL-scheme validation), so
+neither raw HTML nor unsafe link destinations pass through. The invariant
+"rendered HTML contains no raw passthrough HTML or active unsafe-scheme link"
 is testable and is listed in the protected invariants.
 
 **U20 — Tag composition.**
