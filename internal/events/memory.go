@@ -62,13 +62,19 @@ const maxCheckpointStateDumpSize = 65536 // 64 KiB
 // "-----BEGIN" and longer patterns that are unlikely to appear as word
 // substrings remain unanchored.
 var checkpointSecretPrefixes = []string{
-	`"ghp_`, `"gho_`, `"ghs_`, `"ghu_`, // GitHub token prefixes (anchored)
+	`"ghp_`, `"gho_`, `"ghs_`, `"ghu_`,         // GitHub OAuth / server / user tokens (anchored)
+	`"github_pat_`,                               // GitHub fine-grained PAT (anchored)
+	`"ghr_`,                                      // GitHub refresh token (anchored)
 	`"AKIA`,  // AWS access key ID (anchored)
 	`"sk-`,   // OpenAI / generic secret-key prefix (anchored — avoids "task-", "risk-")
 	`"AIza`,  // Google API key (anchored)
 	`"SG.`,   // SendGrid API key (anchored)
 	`"xoxb-`, `"xoxp-`, `"xoxe-`, `"xoxa-`, // Slack token variants (anchored, specific)
-	`"eyJ`,   // JWT / base64-encoded JSON (anchored)
+	// "eyJ" (JWT prefix) is intentionally ABSENT from the raw scan: a 3-char JSON
+	// string value starting with "eyJ" (e.g. {"note":"eyJ"}) would be a false positive.
+	// JWT detection is handled exclusively by containsJWTPrefix in the decoded pass,
+	// which requires a word boundary AND a minimum payload length (Copilot re-review
+	// PRRT_kwDORzozKM6fBih6).
 	`-----BEGIN`, // PEM-encoded private key or certificate (unanchored — distinct pattern)
 }
 
@@ -161,7 +167,9 @@ func decodedStringContainsSecret(s string) bool {
 	// positives are negligible, and embedding (e.g. "Bearer ghp_abc") must
 	// also be caught.
 	for _, prefix := range []string{
-		"ghp_", "gho_", "ghs_", "ghu_", // GitHub tokens
+		"ghp_", "gho_", "ghs_", "ghu_",   // GitHub OAuth / server / user tokens
+		"github_pat_",                      // GitHub fine-grained PAT
+		"ghr_",                             // GitHub refresh token
 		"AKIA",  // AWS access key ID
 		"AIza",  // Google API key
 		"SG.",   // SendGrid

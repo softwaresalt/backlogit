@@ -204,7 +204,22 @@ func TestCreateCheckpoint_U3_S1_HoneyJarNotRejected(t *testing.T) {
 	assert.NotEmpty(t, result.Path)
 }
 
-// TestCreateCheckpoint_U3_S1_RealJWTRejected asserts that a real JWT token
+// TestCreateCheckpoint_U3_S1_FinegrainedPATRejected (153.003-T / S1 U3,
+// Copilot 4th review PRRT_kwDORzozKM6fBihb) asserts that GitHub fine-grained
+// PAT (github_pat_) and refresh token (ghr_) formats are also detected.
+func TestCreateCheckpoint_U3_S1_FinegrainedPATRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-fgpat","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"token":"github_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"}}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.Error(t, err, "GitHub fine-grained PAT must be rejected")
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointStateDumpSecretDetected),
+		"error must satisfy errors.Is(err, ErrCheckpointStateDumpSecretDetected), got: %v", err)
+
+	assertNoCheckpointWritten(t, dir)
+}
 // (long eyJ-prefixed string with word boundary) IS rejected.
 func TestCreateCheckpoint_U3_S1_RealJWTRejected(t *testing.T) {
 	dir := t.TempDir()

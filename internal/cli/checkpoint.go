@@ -86,7 +86,14 @@ The context object is the OPEN counterpart: shipment_id, feature_id,
 task_ids, and branch are modeled, but any other key you supply there
 survives the create round-trip unchanged. The written path and context_keys
 (the exact list of context key names persisted to disk) are returned as
-JSON.`,
+JSON.
+
+WRITE CONSTRAINTS (153.003-T / S1 U3): the state_dump must not exceed
+64 KiB. It must not contain a heuristically detected secret pattern such as
+a GitHub token (ghp_, gho_, ghs_, ghu_, github_pat_, ghr_), AWS key (AKIA),
+OpenAI key (sk-), or PEM-encoded key material (-----BEGIN). These guards
+are fail-closed and apply to both V1 and legacy paths. Redact all secrets
+before creating a checkpoint.`,
 		Example: `  backlogit checkpoint create --state-dump '{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","context":{"shipment_id":"129-S","pr_number":372}}'`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := context.Background()
