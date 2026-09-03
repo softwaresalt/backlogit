@@ -6,7 +6,7 @@ chunk_strategy: h1-h2-h3
 # `backlogit docs migrate --apply` against this file; doing so would fold these
 # fields under docline: and silently re-break the 135-S predecessor-closure gate.
 closure_status: READY
-compaction_status: done
+compaction_status: degraded
 description: "Topology gate registration for 134-S/152-F post-merge closure — machine-readable predecessor-closure record. Authoritative narrative and P-002 incident disposition are in docs/closure/2026-08-30-152f-134s-p002-incident-closure.md."
 doc_type: closure
 docline:
@@ -73,8 +73,8 @@ relabeled by this gate-registration file.
 | P-002 breach | `acknowledged_historical_incident` — INC-P002-152F-134S |
 | P-002 compliance claim | NONE — breach is not claimed compliant |
 | Operator acknowledgement | PR #398 — 2026-08-30 ✅ |
-| FC-5 forward control | Active — deferred to stash A2C91FE5 (not a closure precondition) |
-| Compaction | Done — closure documentation complete; docline incident marker: INC-P002-152F-134S |
+| FC-5 forward control | Active — harvested to queued feature `163-F` (S11 plan); not a closure precondition |
+| Compaction | Degraded — compact-context invocation not verifiably recorded for this historical closure (original PR #396, 2026-08-30) |
 
 ## Closure Status
 
@@ -90,8 +90,10 @@ for a specific historical incident only. It is not a policy change, not a waiver
 and not a precedent.
 
 FC-5 (forward control: deterministic harness-wide workflow-policy enforcement
-engine, stash A2C91FE5) is an active standing obligation deferred to future Stage
-deliberation. It is not a closure precondition for 134-S.
+engine) has been deliberated via `064-DL` and harvested into queued feature
+`163-F` (shipment 135-S, S11 plan at
+`docs/exec-plans/2026-09-03-s11-workflow-policy-enforcement-engine-plan.md`).
+It is not a closure precondition for 134-S.
 
 ## Gate Registration Rationale
 
