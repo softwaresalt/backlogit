@@ -48,11 +48,11 @@ Constitution Check: pass
 
 ### U2 — Queued-record forward-repair operation (BE32CAE2)
 * Scope: operator-only, CLI-only, audited break-glass mirroring the `repair_member_evidence` / `force_cli_only` contract. Because "CLI-only" is a surface boundary and NOT an authorization boundary in an autonomous harness, the verb is additionally gated behind an enforced interactive-TTY / explicit operator-confirmation token so "operator-only" is technically enforced, not surface-implied; non-interactive/agent invocation is denied by default. Inspection-gated: proceeds only when shipment.status == queued AND all non-descoped members advanced consistently beyond queued; ambiguous/mixed/incompatible states rejected with explanation. Forward-only (queued->active), shipment-record-only (no member/parent mutation, no ClaimShipment replay), atomic and concurrency-safe, emitting append-only structured before/after/result evidence with operator justification. Explicitly EXCLUDES DD957688. Recognizes the U1 `parked` state (a parked shipment is not an eligible repair pre-state).
-* Acceptance: repairs a genuine under-advanced queued record forward-only; rejects ambiguous pre-states AND parked shipments; never mutates members/parents; requires an enforced operator-confirmation signal (non-interactive invocation denied); emits append-only before/after/result evidence; MCP surface intentionally absent (documented). Independent of U1.
+* Acceptance: repairs a genuine under-advanced queued record forward-only; rejects ambiguous pre-states AND parked shipments; never mutates members/parents; requires an enforced operator-confirmation signal (non-interactive invocation denied); emits append-only before/after/result evidence; MCP surface intentionally absent (documented). Depends on U1: U2's acceptance rejects the `parked` state introduced by U1, so U1 must exist and be testable first.
 
 ## Dependency Graph
 
-U1 and U2 independent (different lifecycle concerns). Order: U1, U2.
+U1 -> U2 (U2 depends on U1: U2's acceptance rejects the `parked` state that U1 introduces, so U2 cannot be built or verified until U1 exists). Order: U1, then U2.
 
 ## Runtime Verification and Closure
 
@@ -81,16 +81,32 @@ invocation is bounded to one shipment record and auditable. Ownership: operators
 
 Requires plan hardening: yes
 
-## Plan Review
+## Prior Plan Review (invalidated)
 
 dispatch_mode: multi-agent-dispatch
-decision: PASS
+decision: INVALIDATED
 
-Personas dispatched: Correctness Reviewer (always-on), Architecture Strategist (always-on), Security Reviewer (operator break-glass trigger). Plan hardening was REQUIRED and is SATISFIED (## Plan Hardening present).
+The prior PASS record is retained only as invalidated history. It omitted mandatory personas and is superseded by the genuine multi-agent Plan Review below.
 
-Findings and remediation:
-- Security P2 (CLI-only is a surface boundary, not an authorization boundary, so an autonomous agent could invoke the forward-repair verb): REMEDIATED — U2 now gates the verb behind an enforced interactive-TTY / operator-confirmation token; non-interactive/agent invocation denied by default; evidence append-only.
-- Architecture P3 (new parked state introduced after S10/S11 gates ship; evaluators may not recognize it): REMEDIATED — U2 recognizes the U1 parked state (parked is not an eligible repair pre-state); parked filtering is defined in U1.
-- Correctness: clean — U2 pre-state gate faithfully matches the BE32CAE2 ledger decision.
+## Plan Review
 
-No P0/P1. No residual blocking items.
+<!-- plan-review-attempt: 2 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: FAIL
+
+personas:
+* Constitution Reviewer (`claude-opus-4.8`)
+* Go Reviewer, anchor (`gpt-5.6-sol`, effort high)
+* Scope Boundary Auditor (`gemini-3.7-flash`)
+* Correctness Reviewer (`claude-sonnet-4.6`)
+* Architecture Strategist (`grok-4.6`)
+* Security Reviewer (`gpt-5.6-terra`) when risk-triggered for the plan
+* Learnings Researcher over `docs/compound/`
+
+Controlling P1 findings:
+* U2 is declared independent even though it depends on U1's parked state; the dependency graph must be U1 -> U2.
+* TTY or self-asserted token authorization is spoofable and cannot protect the break-glass transition.
+* CLI-only does not enforce operator-only; the shared `queued -> active` transition choke point must reject bypass paths.
+* The new `parked` state is not integrated into the closed shipment status taxonomy consumed by already-planned gates.
+* No named atomic repair seam exists across Markdown, SQLite cache, and JSONL audit evidence.

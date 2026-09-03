@@ -63,6 +63,19 @@ U1 -> U2 -> U3. Single domain per unit.
 Verification surface: gate run over seeded honest/dishonest reds. Closure: gate
 green in CI; evidence schema documented for S10/S11 consumers.
 
+## Plan Hardening
+
+| ProposedAction | ActionRisk | Mitigation |
+|---|---|---|
+| Emit red/green evidence against the S4 U4 shared contract | Medium — evidence feeds later S10/S11 gates | Treat S9 as an additive producer only; validate emitted artifacts against the S4-owned schema and reject unknown schema versions |
+| Run newly added tests against baseline code | High — new test files do not exist at the base commit and can false-green without a defined overlay seam | Resolve the base ref to an immutable SHA; apply only test-file changes over baseline production code in a workspace-contained ignored directory, or use a defined fault-injection path |
+| Record evidence for later gating | Medium — forged or replayed evidence can satisfy downstream gates | Bind evidence to producer identity, task ID, commit SHA, and schema version before applicability filtering |
+
+Rollback: leave the gate report-only if the baseline overlay seam cannot be made
+deterministic. Compatibility: S9 does not own the evidence schema and must follow
+S4 U4. Ownership: S9 owns red-test honesty production; S4 owns schema; S10/S11
+consume authenticated evidence.
+
 ### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: PRESENT-minor — emits against the shared S4 U4 evidence-artifact contract (S9 is a producer, not the schema owner); additive.
@@ -71,17 +84,37 @@ green in CI; evidence schema documented for S10/S11 consumers.
 * external integration/operator checkpoint/external dependency: absent.
 * high runtime/rollout/rollback risk: absent.
 
-Requires plan hardening: no
+Requires plan hardening: yes
+
+## Prior Plan Review (invalidated)
+
+dispatch_mode: multi-agent-dispatch
+decision: INVALIDATED
+
+The prior PASS record is retained only as invalidated history. It omitted mandatory personas and is superseded by the genuine multi-agent Plan Review below.
 
 ## Plan Review
 
+<!-- plan-review-attempt: 2 -->
+
 dispatch_mode: multi-agent-dispatch
-decision: PASS
+decision: FAIL
 
-Personas dispatched: Correctness Reviewer (always-on), Architecture Strategist (always-on); Adversarial Review re-review (post-remediation). Plan hardening NOT required (Requires plan hardening: no). This plan initially FAILED on a P1 and PASSED after remediation.
+Gate note: the controlling Go P1×2 (baseline-overlay seam; workspace-contained
+immutable base runner) are unresolved, so under the any-unresolved-P1 rule this
+verdict is FAIL, not ADVISORY. Only a re-review after remediation can downgrade it.
 
-Findings and remediation:
-- Architecture P1 (U3 became the de-facto owner of the shared evidence schema consumed by S10/S11): REMEDIATED — U3 now emits against the shared S4 U4 evidence-artifact contract; S9 is a producer, not the schema owner; conformance test added. Adversarial re-review verdict: RESOLVED.
-- Correctness: clean — U1->U2->U3 sound; four dishonest-red classes each map to a rejection rule.
+personas:
+* Constitution Reviewer (`claude-opus-4.8`)
+* Go Reviewer, anchor (`gpt-5.6-sol`, effort high)
+* Scope Boundary Auditor (`gemini-3.7-flash`)
+* Correctness Reviewer (`claude-sonnet-4.6`)
+* Architecture Strategist (`grok-4.6`)
+* Security Reviewer (`gpt-5.6-terra`) when risk-triggered for the plan
+* Learnings Researcher over `docs/compound/`
 
-Plan-review cycle: attempt 1 FAIL (P1) -> remediated -> attempt 2 RESOLVED. No residual P0/P1.
+Controlling P1 findings (unresolved — force FAIL):
+* The baseline runner cannot execute newly added test files at the base commit without a defined overlay or fault-injection seam.
+* The isolated checkout must resolve the base ref to an immutable SHA and stay inside a sanctioned workspace-contained ignored directory.
+* Evidence needs producer, task, commit, and anti-replay authenticity binding before downstream applicability filtering.
+* The hardening mismatch is mitigated because S9 is an additive producer and S4 owns the schema, but the section is now recorded explicitly.

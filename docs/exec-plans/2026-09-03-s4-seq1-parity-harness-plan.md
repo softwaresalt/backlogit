@@ -68,25 +68,57 @@ consumed by S5-S11. Single skill domain (Go test infrastructure) per unit.
 Harness is itself a verification surface; closure = the harness runs in CI and
 the seed corpus is green. No production runtime change.
 
+## Plan Hardening
+
+| ProposedAction | ActionRisk | Mitigation |
+|---|---|---|
+| Define the program-wide versioned fault-line evidence contract | High — S5-S11 depend on this schema and skew can invalidate later gates | Own the contract in a standalone foundation package, include `schema_version`, unknown-version rejection, canonical serialization, non-nil collections, and a compatibility/skew policy |
+| Capture CLI, MCP, and internal/event dimensions in one harness | Medium — literal equality is impossible for CLI-only dimensions such as exit code | Use dimension-aware captures with applicability markers instead of a single literal cross-surface comparison |
+| Execute CLI/MCP/internal scenarios from tests | Medium — process globals such as `os.Args` and `os.Stdout` are not parallel-test-safe | Use subprocess execution or injected runners; do not mutate shared globals in parallel tests |
+| Bind S5-S8 as future evidence producers | High — consumers may assume producers exist before their plans actually emit artifacts | Document producer obligations for S5-S8 and require conformance tests when each producer is implemented |
+
+Rollback: keep the contract in report-only/conformance-test use until all
+producer obligations are implemented. Compatibility: versioned artifacts must be
+readable by S10/S11 only when the schema version is known. Ownership: the shared
+foundation package owns the schema; detector plans are producers, not owners.
+
 ### Plan Hardening Signals (REQUIRED)
 
-* public API/schema/contract change: absent (test infra).
+* public API/schema/contract change: PRESENT — shared versioned evidence-artifact contract consumed by S5-S11.
 * security/auth/permission/compliance-sensitive: absent.
 * migration/backfill/destructive/irreversible: absent.
 * external integration/operator checkpoint/external dependency: absent.
-* high runtime/rollout/rollback risk: absent.
+* high runtime/rollout/rollback risk: PRESENT-minor — broad harness-gate rollout and producer/consumer skew risk.
 
-Requires plan hardening: no
+Requires plan hardening: yes
+
+## Prior Plan Review (invalidated)
+
+dispatch_mode: multi-agent-dispatch
+decision: INVALIDATED
+
+The prior PASS record is retained only as invalidated history. It omitted mandatory personas and is superseded by the genuine multi-agent Plan Review below.
 
 ## Plan Review
 
+<!-- plan-review-attempt: 2 -->
+
 dispatch_mode: multi-agent-dispatch
-decision: PASS
+decision: FAIL
 
-Personas dispatched: Correctness Reviewer (always-on), Architecture Strategist (always-on). Plan hardening NOT required (Requires plan hardening: no).
+personas:
+* Constitution Reviewer (`claude-opus-4.8`)
+* Go Reviewer, anchor (`gpt-5.6-sol`, effort high)
+* Scope Boundary Auditor (`gemini-3.7-flash`)
+* Correctness Reviewer (`claude-sonnet-4.6`)
+* Architecture Strategist (`grok-4.6`)
+* Security Reviewer (`gpt-5.6-terra`) when risk-triggered for the plan
+* Learnings Researcher over `docs/compound/`
 
-Findings and remediation:
-- Architecture P2 (billed as program foundation but did not own the shared evidence-artifact contract that S10 needs from every detector): REMEDIATED — added U4 defining the single shared, versioned fault-line evidence-artifact contract that S5-S9 emit against and S10/S11 consume.
-- Correctness P3 (U3 permitted closing with an undocumented remaining red): REMEDIATED — U3 now requires any remaining red to be triaged to an existing tracked defect.
+Security Reviewer was not risk-triggered for this plan; all other mandatory personas ran.
 
-No P0/P1. Resolves the cross-plan evidence-contract P1 raised against S9/S10.
+Controlling P1 findings:
+* The plan mislabeled a program-wide versioned evidence contract as hardening-absent even though S5-S11 consume it.
+* The shared contract has wrong-module ownership, no versioning or compatibility policy, and unbound S5-S8 producers.
+* Literal cross-surface comparison is impossible for CLI-only dimensions such as exit code; captures need applicability markers.
+* The driver seam based on `os.Args`/`os.Stdout` globals is not parallel-test-safe.

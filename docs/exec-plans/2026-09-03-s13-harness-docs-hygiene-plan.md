@@ -45,8 +45,8 @@ Constitution Check: pass
 * Acceptance: the documented scope vocabulary and body-length guidance match observed practice; docs-lint passes.
 
 ### U2 — Upstream checkpoint-context continuity wording (360A183F)
-* Scope: upstream the checkpoint-context Continuity Protocol wording (schema_version 1: arbitrary keys nested under `context`; top level + progress closed; rejected-create means retry-nested; context is unredacted git-tracked durable state that must not carry secrets) into backlogit.instructions.md.tmpl. CROSS-REPO CAVEAT: the `.tmpl` may live in the upstream autoharness harness repo (read-only here); if so, this unit is executed there, and the durable in-repo statement remains the U4b create_checkpoint MCP tool description.
-* Acceptance: the continuity wording exists in the template (or the cross-repo caveat is recorded and the in-repo MCP tool description confirmed as the durable statement); docs-lint passes on any in-repo edit.
+* Scope: upstream the checkpoint-context Continuity Protocol wording (schema_version 1: arbitrary keys nested under `context`; top level + progress closed; rejected-create means retry-nested; context is unredacted git-tracked durable state that must not carry secrets) into backlogit.instructions.md.tmpl. CROSS-REPO CAVEAT: the `.tmpl` may live in the upstream autoharness harness repo (read-only here); if so, this unit remains active or blocked until actual upstream delivery is proven.
+* Acceptance: completion requires actual upstream delivery evidence, such as an upstream PR or commit reference showing the template change. If that evidence is unavailable, the item stays active or blocked pending upstream work; it is not closeable merely by confirming an already-existing local MCP tool description. Docs-lint passes on any in-repo edit.
 
 ### U3 — Record plugin-bundle P-002 scope boundary (633818E1)
 * Scope: record, as an accepted scope boundary, that the P-002/P-002.1-P-002.5 harness-satisfied contract is intentionally NOT propagated to plugin/agents/ship.agent.md or plugin/skills/build-feature/SKILL.md (per 101-F plugin/.github non-synchronization). No code change.
@@ -61,6 +61,18 @@ U1, U2, U3 independent. Order: U1, U2, U3.
 No runtime surface. Verification: docs-lint gate. Closure: documentation reflects
 practice and accepted boundaries.
 
+## Plan Hardening
+
+| ProposedAction | ActionRisk | Mitigation |
+|---|---|---|
+| Upstream checkpoint-context continuity wording to the harness template | Medium — the authoritative template may live in a different repository and cannot be completed by local confirmation alone | Completion requires actual upstream delivery evidence, such as an upstream PR or commit reference; without that evidence, the item remains active or blocked pending upstream work |
+| Keep in-repo fallback wording accurate | Low — local docs can falsely imply upstream completion | Record local MCP/tool-description wording only as fallback evidence, never as proof that the upstream template changed |
+
+Rollback: revert any in-repo docs-only wording if the upstream template adopts a
+different final contract. Compatibility: no runtime or Go surface changes in this
+repository. Ownership: in-repo docs are owned here; upstream template delivery is
+owned by the upstream harness repository and must be cited explicitly.
+
 ### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: absent (docs only).
@@ -69,17 +81,34 @@ practice and accepted boundaries.
 * external integration/operator checkpoint/external dependency: PRESENT-minor — U2 may target an upstream read-only repo (caveat recorded, not acted on here).
 * high runtime/rollout/rollback risk: absent.
 
-Requires plan hardening: no
+Requires plan hardening: yes
+
+## Prior Plan Review (invalidated)
+
+dispatch_mode: multi-agent-dispatch
+decision: INVALIDATED
+
+The prior PASS record is retained only as invalidated history. It omitted mandatory personas and is superseded by the genuine multi-agent Plan Review below.
 
 ## Plan Review
 
+<!-- plan-review-attempt: 2 -->
+
 dispatch_mode: multi-agent-dispatch
-decision: PASS
+decision: ADVISORY
 
-Personas dispatched: Correctness Reviewer (always-on), Architecture Strategist (always-on). No security trigger (docs-only). Plan hardening NOT required (Requires plan hardening: no).
+personas:
+* Constitution Reviewer (`claude-opus-4.8`)
+* Go Reviewer, anchor (`gpt-5.6-sol`, effort high)
+* Scope Boundary Auditor (`gemini-3.7-flash`)
+* Correctness Reviewer (`claude-sonnet-4.6`)
+* Architecture Strategist (`grok-4.6`)
+* Security Reviewer (`gpt-5.6-terra`) when risk-triggered for the plan
+* Learnings Researcher over `docs/compound/`
 
-Findings and remediation:
-- Correctness P3 (U2 could close as a no-op when the .tmpl lives upstream): REMEDIATED — U2 acceptance requires the in-repo fallback (confirm the create_checkpoint MCP tool description is the durable statement) as a verifiable step; cross-repo caveat recorded.
-- Architecture: clean — three independent docs edits, cohesion-separated.
+Security Reviewer was not risk-triggered for this plan; all other mandatory personas ran.
 
-No P0/P1/P2. No residual blocking items.
+Controlling P2/P3 findings (no P1 — consistent with the ADVISORY verdict):
+* P-006 hardening was missing for the external/cross-repo dependency signal, although the in-repo work is docs-only.
+* U2 could previously close by confirming local wording instead of proving the upstream template was actually updated.
+* Completion now requires upstream PR/commit evidence or the item remains active/blocked pending upstream delivery.
