@@ -122,9 +122,11 @@ var (
 
 	// ErrCheckpointStateDumpSecretDetected indicates the checkpoint state_dump
 	// contains a heuristically detected secret pattern (known API-key prefix
-	// or high-entropy token) at the create-boundary write guard (153.003-T /
-	// S1 U3). Checkpoints are git-tracked; writing secret material is an
+	// or PEM key header) at the create-boundary write guard (153.003-T / S1
+	// U3). Checkpoints are git-tracked; writing secret material is an
 	// irreversible exposure — the fail-closed guard rejects without writing.
+	// The heuristic scans for known prefixes only (no entropy analysis); a
+	// full key-allowlist is deferred as a recorded open follow-up.
 	ErrCheckpointStateDumpSecretDetected = errors.New("backlogit: checkpoint state_dump contains possible secret material")
 )
 

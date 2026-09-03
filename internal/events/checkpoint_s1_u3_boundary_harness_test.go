@@ -204,6 +204,30 @@ func TestCreateCheckpoint_U3_S1_HoneyJarNotRejected(t *testing.T) {
 	assert.NotEmpty(t, result.Path)
 }
 
+// TestCreateCheckpoint_U3_S1_DuplicateKeyEscapeRejected (153.003-T / S1 U3,
+// Copilot PRRT_kwDORzozKM6fCnxo) asserts that a legacy dump with a
+// Unicode-escaped secret in an EARLIER duplicate key occurrence is still
+// rejected. json.Unmarshal into a map would collapse the first occurrence
+// (the escape) to the safe second occurrence; token-stream scanning catches
+// both in source order.
+func TestCreateCheckpoint_U3_S1_DuplicateKeyEscapeRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	// A legacy (non-V1) dump with duplicate "token" keys:
+	// first occurrence contains \u0067hp_secret (decodes to ghp_secret),
+	// second occurrence contains a safe value.
+	// json.Unmarshal into a map would keep only "safe_value", missing the secret.
+	stateDump := `{"data":"\u0067hp_SECRETVALUE1234567890abcdef1234", "data":"safe_value"}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.Error(t, err, "legacy dump with Unicode-escaped secret in earlier duplicate key must be rejected")
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointStateDumpSecretDetected),
+		"error must satisfy errors.Is(err, ErrCheckpointStateDumpSecretDetected), got: %v", err)
+
+	assertNoCheckpointWritten(t, dir)
+}
+
 // TestCreateCheckpoint_U3_S1_FinegrainedPATRejected (153.003-T / S1 U3,
 // Copilot 4th review PRRT_kwDORzozKM6fBihb) asserts that GitHub fine-grained
 // PAT (github_pat_) and refresh token (ghr_) formats are also detected.
@@ -220,6 +244,8 @@ func TestCreateCheckpoint_U3_S1_FinegrainedPATRejected(t *testing.T) {
 
 	assertNoCheckpointWritten(t, dir)
 }
+
+// TestCreateCheckpoint_U3_S1_RealJWTRejected asserts that a real JWT token
 // (long eyJ-prefixed string with word boundary) IS rejected.
 func TestCreateCheckpoint_U3_S1_RealJWTRejected(t *testing.T) {
 	dir := t.TempDir()

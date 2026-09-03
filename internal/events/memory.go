@@ -1,9 +1,11 @@
 package events
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -114,49 +116,45 @@ func checkStateDumpSecrets(data []byte) error {
 	return nil
 }
 
-// checkDecodedJSONStringsForSecrets walks all string values in data (decoded
-// as JSON) and returns ErrCheckpointStateDumpSecretDetected if any value
-// starts with a known secret prefix. It is best-effort: if data is not valid
-// JSON, this pass is silently skipped (the caller already ran json.Valid).
-// Error messages contain no payload bytes (Constitution III).
+// checkDecodedJSONStringsForSecrets scans all JSON string tokens in data in
+// SOURCE ORDER using a token stream, returning ErrCheckpointStateDumpSecretDetected
+// if any string token (key or value) contains a known secret pattern after
+// JSON decoding (e.g. \u0067hp_secret → ghp_secret).
+//
+// Token-stream scanning is required — json.Unmarshal into a map collapses
+// duplicate keys to the last occurrence, so a legacy dump with a
+// Unicode-escaped secret in an earlier duplicate entry and a safe value in
+// the last occurrence would pass the map-based check while its original
+// secret-bearing bytes are written verbatim (Copilot PRRT_kwDORzozKM6fCnxo).
+//
+// If data is not valid JSON, this pass is silently skipped (the caller
+// already ran json.Valid). Error messages contain no payload bytes (Constitution III).
 func checkDecodedJSONStringsForSecrets(data []byte) error {
-	var root interface{}
-	if err := json.Unmarshal(data, &root); err != nil {
-		return nil // not valid JSON; pass 1 (raw scan) already ran on same bytes
-	}
-	return walkJSONForSecretStrings(root)
-}
-
-// walkJSONForSecretStrings recursively walks v and returns
-// ErrCheckpointStateDumpSecretDetected if any string key OR value contains
-// a known decoded secret pattern (Copilot re-review: keys are also checked
-// to close the Unicode-escape key bypass, e.g. \u0067hp_TOKEN as a key).
-func walkJSONForSecretStrings(v interface{}) error {
-	switch val := v.(type) {
-	case string:
-		if decodedStringContainsSecret(val) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil // invalid token; fail open (raw scan already ran)
+		}
+		s, ok := tok.(string)
+		if !ok {
+			continue
+		}
+		// Each string token (key OR value) is scanned in source order,
+		// so duplicate keys are all evaluated, including earlier ones that
+		// map-based decoding would discard in favor of the last-wins entry.
+		if decodedStringContainsSecret(s) {
 			return fmt.Errorf("%w: detected pattern indicates possible secret material; redact before creating a checkpoint",
 				backlogiterrors.ErrCheckpointStateDumpSecretDetected)
-		}
-	case map[string]interface{}:
-		for k, vv := range val {
-			if decodedStringContainsSecret(k) {
-				return fmt.Errorf("%w: detected pattern indicates possible secret material; redact before creating a checkpoint",
-					backlogiterrors.ErrCheckpointStateDumpSecretDetected)
-			}
-			if err := walkJSONForSecretStrings(vv); err != nil {
-				return err
-			}
-		}
-	case []interface{}:
-		for _, vv := range val {
-			if err := walkJSONForSecretStrings(vv); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
 }
+
+
 
 // decodedStringContainsSecret reports whether s contains a secret-material
 // pattern from a decoded JSON string value. Most patterns use strings.Contains
