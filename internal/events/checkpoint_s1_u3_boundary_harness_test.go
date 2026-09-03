@@ -187,6 +187,40 @@ func TestCreateCheckpoint_U3_S1_BearerSkProjRejected(t *testing.T) {
 	assertNoCheckpointWritten(t, dir)
 }
 
+// TestCreateCheckpoint_U3_S1_HoneyJarNotRejected (153.003-T / S1 U3,
+// adversarial-review Copilot re-review PRRT_kwDORzozKM6fBPXn) asserts that
+// common English words containing "eyJ" (like "honeyJar") are NOT rejected
+// as JWT false positives. The word-boundary+length check gates eyJ detection.
+func TestCreateCheckpoint_U3_S1_HoneyJarNotRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	// "honeyJar" and "moneyJam" contain "eyJ" but should not trigger JWT detection.
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-honeyjars","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"items":["honeyJar","moneyJamRecipe"],"note":"coneyJunction"}}`
+
+	result, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.NoError(t, err,
+		"words containing 'eyJ' (honeyJar, moneyJam, etc.) must NOT be rejected as JWT false positives")
+	assert.NotEmpty(t, result.Path)
+}
+
+// TestCreateCheckpoint_U3_S1_RealJWTRejected asserts that a real JWT token
+// (long eyJ-prefixed string with word boundary) IS rejected.
+func TestCreateCheckpoint_U3_S1_RealJWTRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	// A token starting with eyJ (JWT header) at a word boundary with enough length.
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-jwt","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"}}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.Error(t, err, "real JWT token starting with eyJ must be rejected")
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointStateDumpSecretDetected),
+		"error must satisfy errors.Is(err, ErrCheckpointStateDumpSecretDetected), got: %v", err)
+
+	assertNoCheckpointWritten(t, dir)
+}
+
 // TestCreateCheckpoint_U3_S1_ErrorDoesNotLeakPayload asserts that the error
 // message for an oversized or secret-containing dump does not include the raw
 // payload (Constitution III: checkpoint context may contain sensitive data).

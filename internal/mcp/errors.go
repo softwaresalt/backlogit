@@ -145,6 +145,8 @@ func checkpointUnknownFields(fields []string) *mcplib.CallToolResult {
 //	ErrArchiveShippedRequiresEvent    | archive_shipped_requires_event        | 409
 //	ErrCheckpointUnknownField         | validation_failed (+ unknown_fields)  | 422
 //	ErrCheckpointMalformedInput       | validation_failed                     | 422
+//	ErrCheckpointStateDumpTooLarge    | validation_failed                     | 422
+//	ErrCheckpointStateDumpSecretDetected | validation_failed                  | 422
 //	ErrCheckpointDuplicateContextKey  | validation_failed (+ dup keys)        | 422
 //	ErrValidation                     | validation_failed                     | 422
 //	ErrInvalidLinkType                | validation_failed                     | 422
@@ -201,6 +203,17 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		// 148-F / U1: state_dump is not valid JSON. Mapped to validation_failed
 		// (not internal_error) so callers can distinguish a client-supplied
 		// malformed payload from a server-side fault.
+		return ValidationFailed(err.Error())
+	case errors.Is(err, corerrors.ErrCheckpointStateDumpTooLarge):
+		// 153.003-T / S1 U3: state_dump exceeds the 64 KiB fail-closed size
+		// limit. Mapped to validation_failed so MCP callers can distinguish this
+		// client-input rejection from a server-side fault.
+		return ValidationFailed(err.Error())
+	case errors.Is(err, corerrors.ErrCheckpointStateDumpSecretDetected):
+		// 153.003-T / S1 U3: state_dump contains a heuristically detected
+		// secret pattern. Mapped to validation_failed so callers can distinguish
+		// this client-input rejection from a server-side fault. The error message
+		// contains no payload bytes (Constitution III).
 		return ValidationFailed(err.Error())
 	case errors.Is(err, corerrors.ErrCheckpointDuplicateContextKey):
 		// 148-F / U2: context object carries duplicate or case-fold-aliased

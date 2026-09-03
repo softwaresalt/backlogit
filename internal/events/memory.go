@@ -122,15 +122,9 @@ func checkDecodedJSONStringsForSecrets(data []byte) error {
 }
 
 // walkJSONForSecretStrings recursively walks v and returns
-// ErrCheckpointStateDumpSecretDetected if any string value contains a
-// known decoded secret prefix (checkpointDecodedSecretPrefixes).
-//
-// For most prefixes, strings.Contains is used (the patterns are distinctive
-// enough that false positives are rare in checkpoint context values, and
-// embedded secrets like "Bearer ghp_abc" would be missed by HasPrefix).
-// For "sk-" specifically, a word-boundary check prevents false positives on
-// "task-001" (prev char 'a' is word char → not matched) while still catching
-// "Bearer sk-proj-abc" (prev char ' ' is non-word → matched).
+// ErrCheckpointStateDumpSecretDetected if any string key OR value contains
+// a known decoded secret pattern (Copilot re-review: keys are also checked
+// to close the Unicode-escape key bypass, e.g. \u0067hp_TOKEN as a key).
 func walkJSONForSecretStrings(v interface{}) error {
 	switch val := v.(type) {
 	case string:
@@ -139,7 +133,11 @@ func walkJSONForSecretStrings(v interface{}) error {
 				backlogiterrors.ErrCheckpointStateDumpSecretDetected)
 		}
 	case map[string]interface{}:
-		for _, vv := range val {
+		for k, vv := range val {
+			if decodedStringContainsSecret(k) {
+				return fmt.Errorf("%w: detected pattern indicates possible secret material; redact before creating a checkpoint",
+					backlogiterrors.ErrCheckpointStateDumpSecretDetected)
+			}
 			if err := walkJSONForSecretStrings(vv); err != nil {
 				return err
 			}
@@ -168,12 +166,17 @@ func decodedStringContainsSecret(s string) bool {
 		"AIza",  // Google API key
 		"SG.",   // SendGrid
 		"xoxb-", "xoxp-", "xoxe-", "xoxa-", // Slack tokens
-		"eyJ",        // JWT
 		"-----BEGIN", // PEM header
 	} {
 		if strings.Contains(s, prefix) {
 			return true
 		}
+	}
+	// "eyJ" (JWT Base64 prefix) requires a word boundary AND a minimum payload
+	// length of 20 chars after the prefix; bare "eyJ" in "honeyJar" would match
+	// without the boundary check (Copilot re-review PRRT_kwDORzozKM6fBPXn).
+	if containsJWTPrefix(s) {
+		return true
 	}
 	// "sk-" requires a word-boundary: the character immediately preceding
 	// "sk-" must not be a letter, digit, or hyphen. This allows sk-proj-abc
@@ -200,6 +203,34 @@ func containsSecretSKPrefix(s string) bool {
 			continue
 		}
 		return true // word boundary: space, colon, comma, etc.
+	}
+	return false
+}
+
+// containsJWTPrefix reports whether s contains "eyJ" with a word boundary
+// (start of string or non-word char before it) AND at least 20 characters
+// after the prefix (a plausible minimum JWT token length). This prevents
+// false-positives on words like "honeyJar" that contain "eyJ" but are not JWTs.
+func containsJWTPrefix(s string) bool {
+	const prefix = "eyJ"
+	const minPayloadLen = 20
+	for i := 0; i+len(prefix) <= len(s); i++ {
+		if !strings.HasPrefix(s[i:], prefix) {
+			continue
+		}
+		// Word boundary: at start of string OR preceded by a non-word char.
+		if i > 0 {
+			prev := s[i-1]
+			if (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') ||
+				(prev >= '0' && prev <= '9') || prev == '_' {
+				continue
+			}
+		}
+		// Minimum length check: must have at least minPayloadLen chars after prefix.
+		if len(s)-(i+len(prefix)) < minPayloadLen {
+			continue
+		}
+		return true
 	}
 	return false
 }
@@ -236,6 +267,14 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 		return CreateCheckpointResult{}, &backlogiterrors.CheckpointMalformedInputError{}
 	}
 	if err := checkStateDumpSize(data); err != nil {
+		return CreateCheckpointResult{}, err
+	}
+	// 153.003-T (S1 U3 / Copilot suppressed finding): scan for secret patterns
+	// BEFORE any V1 validation that echoes caller-supplied field names in its
+	// error message. Without this early placement, checkClosedSchemaNamespace
+	// could return CheckpointUnknownFieldError{Fields: ["ghp_<secret>"]} before
+	// the scan runs, leaking the key name in the error message.
+	if err := checkStateDumpSecrets(data); err != nil {
 		return CreateCheckpointResult{}, err
 	}
 

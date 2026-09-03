@@ -299,16 +299,24 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		},
 	})
 	if err != nil {
-		// MutationPartialError.Unwrap returns Cause, so errors.Is traverses
-		// through to the underlying *os.LinkError / syscall errno raised by
-		// moveNoReplace's os.Link when the destination already exists.
-		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointDestinationOccupied, baseName)
-		}
-		// A combined unwind failure from moveNoReplace means both src and dst
-		// may exist — outcome is indeterminate.
+		// 153.002-T (Copilot re-review finding PRRT_kwDORzozKM6fBPWi): check for
+		// indeterminate/double-fault BEFORE checking os.ErrExist. A double-fault
+		// wraps ErrWriteIndeterminate (compensation also failed); joining
+		// ErrWriteIndeterminate with an ErrExist cause would match both checks —
+		// but ErrWriteIndeterminate is the correct surface because it means the
+		// source may not have been restored, and the caller must not treat this as
+		// a clean "destination occupied" outcome.
 		if errors.Is(err, blerrors.ErrWriteIndeterminate) {
 			return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
+		}
+		// MutationPartialError.Unwrap returns Cause, so errors.Is traverses
+		// through to the underlying *os.LinkError / syscall errno raised by
+		// moveNoReplace's os.Link when the destination already exists, OR by
+		// writeDispositionSidecarCreateOnly's os.Link when the sidecar already
+		// exists. In both cases the compensation has successfully restored the
+		// source, so this is a clean collision (no indeterminate state).
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointDestinationOccupied, baseName)
 		}
 		return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
 	}
