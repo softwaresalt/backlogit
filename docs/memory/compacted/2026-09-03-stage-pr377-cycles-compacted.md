@@ -47,10 +47,13 @@ The deliberation covered:
   cannot compile against a declaration its dependency will add, so it must wait until the
   dependency's wave is complete.
 - **Semantics**: Each wave's harnesses are scaffolded simultaneously (all red at once), then
-  driven green one task at a time against scoped commands. At wave-convergence (Step 4.6),
-  compile, vet, lint, format, and all declared scoped commands run unconditionally; the
-  **unfiltered full suite** runs only when `open_red_deliverables_k` is empty (mandatory at
-  final closure, deferred otherwise to avoid absorbing real failures as expected-red).
+  driven green one task at a time against scoped commands — **except red-deliverable tasks**,
+  which complete while intentionally RED (their declared `red_selector_command` must still
+  fail at Step 4.6; the green-makers close the red in a later wave). At wave-convergence
+  (Step 4.6): compile, vet, lint, format, and all declared scoped commands run
+  unconditionally; still-open red-deliverable selectors are re-confirmed RED; newly closed
+  selectors are re-confirmed GREEN; the **unfiltered full suite** runs only when
+  `open_red_deliverables_k` is empty (mandatory at final closure, deferred otherwise).
 - **Benefit**: Ordered execution without loss of test-first invariant; halts deterministically
   on `WAVE_NO_PROGRESS`, `WAVE_CYCLE_DETECTED`, `WAVE_MEMBER_BLOCKED`.
 
@@ -122,3 +125,32 @@ The deliberation covered:
 
 ---
 *Compacted on 2026-09-03. Original cycle files archived to docs/archive/memory/*
+
+## Archive Mapping
+
+The following files were moved from `docs/memory/` to `docs/archive/memory/` by this
+compaction. References in `docs/exec-plans/2026-08-24-checkpoint-toplevel-key-disposition-plan.md`
+(lines 4309, 4385, 5977) and any other repository artifact that cites the original paths
+should be resolved against the archive location below.
+
+| Original path | Archived path |
+|---|---|
+| `docs/memory/2026-08-25/stage-pr377-cycle-17-formal-decomposition-memory.md` | `docs/archive/memory/stage-pr377-cycle-17-formal-decomposition-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-18-remediation-memory.md` | `docs/archive/memory/stage-pr377-cycle-18-remediation-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-19-advisory-closure-memory.md` | `docs/archive/memory/stage-pr377-cycle-19-advisory-closure-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-20-test-lifecycle-remediation-memory.md` | `docs/archive/memory/stage-pr377-cycle-20-test-lifecycle-remediation-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-21-harness-exempt-ship-adapter-memory.md` | `docs/archive/memory/stage-pr377-cycle-21-harness-exempt-ship-adapter-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-22-p002-consumer-contract-memory.md` | `docs/archive/memory/stage-pr377-cycle-22-p002-consumer-contract-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-23-exempt-execution-contract-memory.md` | `docs/archive/memory/stage-pr377-cycle-23-exempt-execution-contract-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-24-p2-fold-memory.md` | `docs/archive/memory/stage-pr377-cycle-24-p2-fold-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-25-advisory-closure-memory.md` | `docs/archive/memory/stage-pr377-cycle-25-advisory-closure-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-26-thread-closure-memory.md` | `docs/archive/memory/stage-pr377-cycle-26-thread-closure-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-29-declaration-withdrawal-and-waves-memory.md` | `docs/archive/memory/stage-pr377-cycle-29-declaration-withdrawal-and-waves-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-30-advisory-closure-memory.md` | `docs/archive/memory/stage-pr377-cycle-30-advisory-closure-memory.md` |
+| `docs/memory/2026-08-25/stage-pr377-cycle-31-p1-thread-closure-memory.md` | `docs/archive/memory/stage-pr377-cycle-31-p1-thread-closure-memory.md` |
+| `docs/memory/2026-08-26/stage-pr377-cycle-32-contract-correction-memory.md` | `docs/archive/memory/stage-pr377-cycle-32-contract-correction-memory.md` |
+| `docs/memory/2026-08-26/stage-pr377-cycle-33-review-remediation-memory.md` | `docs/archive/memory/stage-pr377-cycle-33-review-remediation-memory.md` |
+| `docs/memory/2026-08-26/stage-pr377-cycle-34-snapshot-correction-memory.md` | `docs/archive/memory/stage-pr377-cycle-34-snapshot-correction-memory.md` |
+| `docs/memory/2026-08-26/stage-pr377-cycle-35-planning-data-correction-memory.md` | `docs/archive/memory/stage-pr377-cycle-35-planning-data-correction-memory.md` |
+| `docs/memory/2026-08-26/stage-pr377-cycle-36-advisory-closure-memory.md` | `docs/archive/memory/stage-pr377-cycle-36-advisory-closure-memory.md` |
+| `docs/memory/2026-08-26/stage-pr377-cycle-37-review-remediation-memory.md` | `docs/archive/memory/stage-pr377-cycle-37-review-remediation-memory.md` |
