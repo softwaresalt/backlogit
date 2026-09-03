@@ -73,7 +73,7 @@ relabeled by this gate-registration file.
 | P-002 breach | `acknowledged_historical_incident` — INC-P002-152F-134S |
 | P-002 compliance claim | NONE — breach is not claimed compliant |
 | Operator acknowledgement | PR #398 — 2026-08-30 ✅ |
-| FC-5 forward control | Active — harvested to queued feature `163-F` (S11 plan); not a closure precondition |
+| FC-5 forward control | Active — harvested to queued feature `163-F` (145-S, S11 plan); not a closure precondition |
 | Compaction | Degraded — compact-context invocation not verifiably recorded for this historical closure (original PR #396, 2026-08-30) |
 
 ## Closure Status
@@ -91,7 +91,7 @@ and not a precedent.
 
 FC-5 (forward control: deterministic harness-wide workflow-policy enforcement
 engine) has been deliberated via `064-DL` and harvested into queued feature
-`163-F` (shipment 135-S, S11 plan at
+`163-F` (shipment 145-S, S11 plan at
 `docs/exec-plans/2026-09-03-s11-workflow-policy-enforcement-engine-plan.md`).
 It is not a closure precondition for 134-S.
 
