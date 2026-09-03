@@ -411,36 +411,6 @@ type CheckpointSummary struct {
 	RemediationIntent *RemediationIntent `json:"remediation_intent"`
 }
 
-// MarshalJSON preserves CheckpointSummary's current JSON shape while deriving
-// the deprecated remediation_command wire field from RemediationIntent. The
-// struct field is removed in U4, but existing JSON consumers continue to see
-// the compatibility key until they migrate fully to remediation_intent.
-func (s CheckpointSummary) MarshalJSON() ([]byte, error) {
-	type checkpointSummaryAlias CheckpointSummary
-	type checkpointSummaryWire struct {
-		checkpointSummaryAlias
-		RemediationCommand string `json:"remediation_command,omitempty"`
-	}
-
-	wire := checkpointSummaryWire{checkpointSummaryAlias: checkpointSummaryAlias(s)}
-	wire.RemediationCommand = checkpointSummaryLegacyRemediationCommand(s.RemediationIntent)
-	return json.Marshal(wire)
-}
-
-func checkpointSummaryLegacyRemediationCommand(intent *RemediationIntent) string {
-	if intent == nil || intent.Verb != "quarantine" || intent.TargetFilename == "" {
-		return ""
-	}
-	return fmt.Sprintf("backlogit checkpoint quarantine %s --reason %s",
-		checkpointSummaryShellQuoteSingle(intent.TargetFilename),
-		checkpointSummaryShellQuoteSingle("<reason>"))
-}
-
-func checkpointSummaryShellQuoteSingle(s string) string {
-	const escapedQuote = `'\''`
-	return "'" + strings.ReplaceAll(s, "'", escapedQuote) + "'"
-}
-
 // RemediationIntent describes what an operator must do to dispose of a
 // checkpoint that cannot be safely rewritten. It carries no shell text and is
 // not runnable: TargetFilename is a bare, already-validated filename, never a
