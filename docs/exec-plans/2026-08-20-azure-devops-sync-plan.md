@@ -2035,7 +2035,8 @@ A change that breaks one of these is a stop condition, not a review finding.
    symbol exists in `internal/ado`. Asserted by U47.
 7. **Archive provenance and `item_links` survive every link-record write.**
    Asserted by U24.
-8. **Rendered HTML contains no raw passthrough HTML.** Asserted by U19.
+8. **Rendered HTML contains no raw passthrough HTML or active unsafe-scheme
+   link.** Asserted by U19.
 9. **The correlation key is immutable and well-formed.**
    `custom_fields.external.key` is minted once as 32 lowercase hexadecimal
    characters and never rewritten, including across an artifact ID rewrite.
