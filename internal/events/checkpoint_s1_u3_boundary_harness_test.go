@@ -204,6 +204,36 @@ func TestCreateCheckpoint_U3_S1_HoneyJarNotRejected(t *testing.T) {
 	assert.NotEmpty(t, result.Path)
 }
 
+// TestCreateCheckpoint_U3_S1_SGPrefixFalsePositiveNotRejected (153.003-T / S1 U3,
+// Copilot PRRT_kwDORzozKM6fDJgC) asserts that "MSG.txt" and similar strings
+// containing "SG." as an internal substring are NOT rejected (word-boundary fix).
+func TestCreateCheckpoint_U3_S1_SGPrefixFalsePositiveNotRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-msg","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"files":["MSG.txt","messages.json","MESSAGING-API"]}}`
+
+	result, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.NoError(t, err,
+		"MSG.txt and other SG.-containing words must NOT be rejected (word-boundary fix)")
+	assert.NotEmpty(t, result.Path)
+}
+
+// TestCreateCheckpoint_U3_S1_AKIAPrefixFalsePositiveNotRejected (153.003-T /
+// S1 U3, Copilot PRRT_kwDORzozKM6fDJgC) asserts that "SLOVAKIA" and similar
+// strings containing "AKIA" as an internal substring are NOT rejected.
+func TestCreateCheckpoint_U3_S1_AKIAPrefixFalsePositiveNotRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-slovakia","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"country":"SLOVAKIA","note":"opaque-akiavariable"}}`
+
+	result, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.NoError(t, err,
+		"SLOVAKIA and other AKIA-containing words must NOT be rejected (word-boundary fix)")
+	assert.NotEmpty(t, result.Path)
+}
+
 // TestCreateCheckpoint_U3_S1_DuplicateKeyEscapeRejected (153.003-T / S1 U3,
 // Copilot PRRT_kwDORzozKM6fCnxo) asserts that a legacy dump with a
 // Unicode-escaped secret in an EARLIER duplicate key occurrence is still

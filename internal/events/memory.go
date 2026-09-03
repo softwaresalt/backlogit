@@ -157,40 +157,52 @@ func checkDecodedJSONStringsForSecrets(data []byte) error {
 
 
 // decodedStringContainsSecret reports whether s contains a secret-material
-// pattern from a decoded JSON string value. Most patterns use strings.Contains
-// to catch both prefix and embedded occurrences; "sk-" requires a word-boundary
-// check so "task-001" is not falsely rejected.
+// pattern from a decoded JSON string value. ALL patterns use word-boundary
+// detection to prevent false positives on ordinary words and filenames
+// (e.g. "SLOVAKIA" contains "AKIA" but is not an AWS key; "MSG.txt" contains
+// "SG." but is not a SendGrid API key — Copilot PRRT_kwDORzozKM6fDJgC).
 func decodedStringContainsSecret(s string) bool {
-	// Patterns safe for Contains: distinctive enough that mid-word false
-	// positives are negligible, and embedding (e.g. "Bearer ghp_abc") must
-	// also be caught.
 	for _, prefix := range []string{
-		"ghp_", "gho_", "ghs_", "ghu_",   // GitHub OAuth / server / user tokens
-		"github_pat_",                      // GitHub fine-grained PAT
-		"ghr_",                             // GitHub refresh token
-		"AKIA",  // AWS access key ID
+		"ghp_", "gho_", "ghs_", "ghu_",       // GitHub OAuth / server / user tokens
+		"github_pat_",                          // GitHub fine-grained PAT
+		"ghr_",                                 // GitHub refresh token
+		"AKIA",  // AWS access key ID (word-boundary: "SLOVAKIA" must not match)
 		"AIza",  // Google API key
-		"SG.",   // SendGrid
-		"xoxb-", "xoxp-", "xoxe-", "xoxa-", // Slack tokens
-		"-----BEGIN", // PEM header
+		"SG.",   // SendGrid (word-boundary: "MSG.txt" must not match)
+		"xoxb-", "xoxp-", "xoxe-", "xoxa-",   // Slack tokens
+		"-----BEGIN",                           // PEM header
 	} {
-		if strings.Contains(s, prefix) {
+		if containsAtWordBoundary(s, prefix) {
 			return true
 		}
 	}
-	// "eyJ" (JWT Base64 prefix) requires a word boundary AND a minimum payload
-	// length of 20 chars after the prefix; bare "eyJ" in "honeyJar" would match
-	// without the boundary check (Copilot re-review PRRT_kwDORzozKM6fBPXn).
 	if containsJWTPrefix(s) {
 		return true
 	}
-	// "sk-" requires a word-boundary: the character immediately preceding
-	// "sk-" must not be a letter, digit, or hyphen. This allows sk-proj-abc
-	// (standalone), Bearer sk-proj-abc (space-preceded), but rejects task-001
-	// (preceded by 'a') and risky-setting (preceded by 'i').
 	return containsSecretSKPrefix(s)
 }
 
+// containsAtWordBoundary reports whether s contains prefix at a position that
+// is either the start of the string or preceded by a non-word character
+// ([a-zA-Z0-9_]). This prevents false positives where a short prefix appears
+// as an internal substring of a normal word.
+func containsAtWordBoundary(s, prefix string) bool {
+	for i := 0; i+len(prefix) <= len(s); i++ {
+		if !strings.HasPrefix(s[i:], prefix) {
+			continue
+		}
+		if i == 0 {
+			return true // start of string
+		}
+		prev := s[i-1]
+		if (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') ||
+			(prev >= '0' && prev <= '9') || prev == '_' {
+			continue // preceded by word char; not a token start
+		}
+		return true // word boundary: space, colon, comma, etc.
+	}
+	return false
+}
 // containsSecretSKPrefix reports whether s contains "sk-" preceded by a
 // word boundary (start of string or a non-[a-zA-Z0-9_-] character).
 func containsSecretSKPrefix(s string) bool {
