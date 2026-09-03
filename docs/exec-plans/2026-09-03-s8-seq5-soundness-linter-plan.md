@@ -45,8 +45,8 @@ Constitution Check: pass
 * Acceptance: over-budget and multi-responsibility units are flagged; a sound plan passes; budgets are configurable.
 
 ### U2 — Consistency and duplication checks
-* Scope: dependency consistency, unique-or-intentionally-related titles, canonical procedures, no contradiction with originating decisions or sibling tasks, impossible-test detection, duplicated-work detection, missing-artifact detection, independent-verifiability. Each check class is distinct logic, so to respect the 2-hour rule and single-responsibility this unit is harvested as ONE subtask PER check class, each with a seeded case; they share the rule-engine scaffolding from U1. Reference/anchor resolution shares one resolver with S7 U3.
-* Acceptance: each defect class flags a seeded case and passes clean input; each lands as an independently verifiable subtask.
+* Scope: dependency consistency, unique-or-intentionally-related titles, canonical procedures, no contradiction with originating decisions or sibling tasks, impossible-test detection, duplicated-work detection, missing-artifact detection, and independent-verifiability. The truthful decomposition is eight independently verifiable tasks: `160.002-T` dependency consistency, `160.005-T` title uniqueness, `160.006-T` canonical procedures, `160.007-T` decision-contradiction, `160.003-T` impossible-test, `160.008-T` duplicate-work, `160.009-T` missing-artifact, and `160.010-T` independent-verifiability (note: `160.004-T` is the U3 gate-integration task, not a check class). They share the rule-engine scaffolding from U1. Reference/anchor resolution shares one resolver with S7 U3.
+* Acceptance: each defect class flags a seeded case and passes clean input; completion evidence maps to the eight task IDs above, one independently verifiable task per check class.
 
 ### U3 — Pre-assembly gate integration (report-only first)
 * Scope: expose the soundness engine as a library and wire it as a pre-shipment-assembly gate so unsound decomposition halts before a shipment is built. Ships REPORT-ONLY first with per-rule enable flags before it fail-closed blocks assembly. The same engine library is invoked by the S10 "plan/task soundness" DAG node executor (single implementation, two call sites) to avoid divergent enforcement paths.
@@ -82,16 +82,31 @@ sound/unsound plan corpus is green.
 
 Requires plan hardening: yes
 
-## Plan Review
+## Prior Plan Review (invalidated)
 
 dispatch_mode: multi-agent-dispatch
-decision: PASS
+decision: INVALIDATED
 
-Personas dispatched: Correctness Reviewer (always-on), Architecture Strategist (always-on). Plan hardening became REQUIRED after remediation and is SATISFIED (## Plan Hardening added).
+The prior PASS record is retained only as invalidated history. It omitted mandatory personas and is superseded by the genuine multi-agent Plan Review below.
 
-Findings and remediation:
-- Correctness P2 (U2 packed ~8 defect classes into one unit): REMEDIATED — U2 harvested as one subtask per check class.
-- Correctness P2 (U3 fail-closed assembly-blocking gate declared low-risk / no hardening — inconsistent with S10/S11): REMEDIATED — added ## Plan Hardening, report-only rollout with per-rule enable flags, and flipped Requires plan hardening: yes.
-- Architecture P3 (soundness logic enforced twice: S8 U3 gate + S10 node): REMEDIATED — single engine library invoked by both call sites.
+## Plan Review
 
-No P0/P1. No residual blocking items.
+<!-- plan-review-attempt: 2 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: FAIL
+
+personas:
+* Constitution Reviewer (`claude-opus-4.8`)
+* Go Reviewer, anchor (`gpt-5.6-sol`, effort high)
+* Scope Boundary Auditor (`gemini-3.7-flash`)
+* Correctness Reviewer (`claude-sonnet-4.6`)
+* Architecture Strategist (`grok-4.6`)
+* Security Reviewer (`gpt-5.6-terra`) when risk-triggered for the plan
+* Learnings Researcher over `docs/compound/`
+
+Controlling P1 findings:
+* The realized decomposition violated the 2-hour rule: the report verified `160.002-T` and `160.003-T` each bundled four check classes.
+* U3's acceptance that S10 and this gate call the same engine is unverifiable at S8 ship time and creates a false-green path.
+* S8 and S10 describe contradictory engine/evidence integration contracts.
+* Per-rule enable flags and report-only fallback can fail open unless the assembly transition is guarded at the shared choke point.

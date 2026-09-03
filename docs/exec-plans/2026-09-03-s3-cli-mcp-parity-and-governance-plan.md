@@ -68,6 +68,20 @@ U1-U3 change CLI/MCP runtime surfaces (error envelopes, new tool); U4 changes
 governance metadata. Verification: cross-surface parity tests + registry drift
 test. Closure: parity fixtures are the durable closure artifact.
 
+## Plan Hardening
+
+| ProposedAction | ActionRisk | Mitigation |
+|---|---|---|
+| Add a new `backlogit_docs_classify` MCP tool | Medium — new MCP surface changes the public tool catalog | Keep the tool additive, mirror CLI classification semantics, and add cross-surface parity tests |
+| Add structured CLI JSON-RPC error `data` for checkpoint unknown fields | Medium — agent-facing error envelopes become more structured | Preserve the existing `WrapError` API; ensure legacy errors omit `data` instead of emitting `null`; add byte-level JSON tests for both legacy and structured paths |
+| Reflect caller-supplied `unknown_fields` values | Medium — unbounded key echo can amplify output or expose sensitive key names | Bound count and size, JSON-escape/control-character-safe output, and avoid logging raw secret-like values beyond field names |
+
+Rollback: disable the new MCP registration and keep the structured `data` field
+behind the shared builder call path if compatibility issues appear. Compatibility:
+all surfaces remain additive and backward-compatible when `data` is omitted for
+legacy errors. Ownership: transport-neutral DTOs belong in a leaf package that can
+consume `internal/errors`, not in an MCP- or CLI-owned presentation package.
+
 ### Plan Hardening Signals (REQUIRED)
 
 * public API/schema/contract change: PRESENT — new MCP tool + CLI error envelope + JSONRPCError data field (all additive/backward-compatible).
@@ -76,18 +90,32 @@ test. Closure: parity fixtures are the durable closure artifact.
 * external integration/operator checkpoint/external dependency: absent.
 * high runtime/rollout/rollback risk: absent — additive parity work.
 
-Requires plan hardening: no
+Requires plan hardening: yes
+
+## Prior Plan Review (invalidated)
+
+dispatch_mode: multi-agent-dispatch
+decision: INVALIDATED
+
+The prior PASS record is retained only as invalidated history. It omitted mandatory personas and is superseded by the genuine multi-agent Plan Review below.
 
 ## Plan Review
 
+<!-- plan-review-attempt: 2 -->
+
 dispatch_mode: multi-agent-dispatch
-decision: PASS
+decision: FAIL
 
-Personas dispatched: Correctness Reviewer (always-on), Architecture Strategist (always-on), Security Reviewer (parity/governance trigger). Plan hardening NOT required (Requires plan hardening: no).
+personas:
+* Constitution Reviewer (`claude-opus-4.8`)
+* Go Reviewer, anchor (`gpt-5.6-sol`, effort high)
+* Scope Boundary Auditor (`gemini-3.7-flash`)
+* Correctness Reviewer (`claude-sonnet-4.6`)
+* Architecture Strategist (`grok-4.6`)
+* Security Reviewer (`gpt-5.6-terra`) when risk-triggered for the plan
+* Learnings Researcher over `docs/compound/`
 
-Findings:
-- Correctness: clean — all four members mapped (U1=EB93E236, U2=63E810D9, U3=5672D73E, U4=5F4E0FC3); U2->U1 dependency sound; governance scope matches the 5F4E0FC3 ledger decision.
-- Architecture: clean — shared response builder factored once (U1) and consumed by both surfaces; additive `data` field.
-- Security: clean — additive structured-error envelope, new classify tool, governance metadata; unknown_fields echoes caller-supplied key names only; no auth/injection/traversal surface introduced.
-
-No P0/P1/P2. No residual items.
+Controlling P1 findings:
+* P-006 hardening was missing despite a new MCP tool, CLI error envelope, and `JSONRPCError.data` public contract signal.
+* The transport-neutral builder package owner was unspecified and must not couple MCP to CLI presentation internals.
+* `unknown_fields` reflects attacker-controlled key names and needs count, size, and control-character bounds.

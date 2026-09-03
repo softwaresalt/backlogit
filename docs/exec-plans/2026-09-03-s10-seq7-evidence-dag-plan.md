@@ -87,18 +87,34 @@ until the seeded shipment corpus is green.
 
 Requires plan hardening: yes
 
-## Plan Review
+## Prior Plan Review (invalidated)
 
 dispatch_mode: multi-agent-dispatch
-decision: PASS
+decision: INVALIDATED
 
-Personas dispatched: Correctness Reviewer (always-on), Architecture Strategist (always-on), Security Reviewer (waiver/override authority + review-ready gate trigger); Adversarial Review re-review (post-remediation). Plan hardening was REQUIRED and is SATISFIED. This plan initially FAILED on P1 findings and PASSED after two remediation passes.
+The prior PASS record is retained only as invalidated history. It omitted mandatory personas and is superseded by the genuine multi-agent Plan Review below.
 
-Findings and remediation:
-- Architecture P1 (S10 and S11 each built a full graph-evaluation engine — duplication/drift): REMEDIATED — U1 owns the single shared graph-evaluation/evidence-binding core exposed as a library; S11 consumes it.
-- Architecture P1 (S10 consumed S4-S9 as evidence producers but no shared evidence interface existed): REMEDIATED — U1/U2 consume the shared S4 U4 evidence-artifact contract.
-- Architecture P2 (S10 U3 and S11 U4 both gated review-ready): REMEDIATED — S10 terminal-node set declared the authoritative gate; S11 composes policy nodes into it.
-- Security P2 (waiver authority recorded but not authorized): REMEDIATED — waivers validated against an authorization policy with append-only tamper-evident records.
-- Adversarial re-review NEW P1 (S10 waiver path lacked the authenticated/agent-denied boundary S11 overrides carry, becoming a bypass route): REMEDIATED — U3 waivers now require an independently authenticated out-of-band principal; self-asserted and agent/non-interactive waiver issuance is denied by default (denial path tested), mirroring S11 U3.
+## Plan Review
 
-Plan-review cycle: attempt 1 FAIL (P1) -> remediated -> attempt 2 (new consistency P1) -> remediated. No residual P0/P1.
+<!-- plan-review-attempt: 2 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: FAIL
+
+personas:
+* Constitution Reviewer (`claude-opus-4.8`)
+* Go Reviewer, anchor (`gpt-5.6-sol`, effort high)
+* Scope Boundary Auditor (`gemini-3.7-flash`)
+* Correctness Reviewer (`claude-sonnet-4.6`)
+* Architecture Strategist (`grok-4.6`)
+* Security Reviewer (`gpt-5.6-terra`) when risk-triggered for the plan
+* Learnings Researcher over `docs/compound/`
+
+Controlling P1 findings:
+* Review-record integrity failed: attempt-2 surfaced a new P1 and the plan was edited without a recorded final re-review; this section records the genuine attempt-2/attempt-3 verdict and it remains FAIL.
+* Waiver authorization remains spoofable when TTY can satisfy the gate; cryptographic, independently verified authority must be required and guarded at every waiver entry point.
+* Evidence is forgeable without producer/task/commit authenticity and anti-replay checks before applicability filtering.
+* U3 is over-scoped and must split gate/incremental evaluation, waiver/authentication, tamper-evidence storage, query/visualization, and versioning.
+* Detector integration patterns conflict: U4 artifacts, U2 executors, and S8 library calls cannot all be authoritative.
+
+This is the recorded final re-review for the prior attempt-2 new-P1 remediation path. The genuine attempt-2/attempt-3 verdict remains FAIL; no PASS is claimed.

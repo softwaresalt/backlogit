@@ -9,55 +9,105 @@ title: "Dark-Factory Adversarial Plan-Review Evidence — 2026-09-03"
 
 # Dark-Factory Adversarial Plan-Review Evidence — 2026-09-03
 
-Preserves the plan-review gate evidence for the 13 shipment plans (S1-S13). The
-per-plan verdicts live in each plan's `## Plan Review` section; this is the
-consolidated record. Operator required multi-persona + adversarial review before
-implementation PRs; that requirement is satisfied at the plan gate here (code-
-level adversarial review remains Ship's responsibility per role boundary).
+dispatch_mode: multi-agent-dispatch
 
-## Dispatch
+This record replaces the prior uniform-PASS record. The re-dispatch was required
+because the prior record omitted mandatory personas and therefore was invalid as a
+plan-review gate. The genuine report executed the mandatory persona set with
+cross-model diversity, including the OpenAI `gpt-5.6-sol` Go anchor, across the
+nine target plans: S2, S3, S4, S6, S8, S9, S10, S12, and S13.
 
-- Mode: `multi-agent-dispatch` (real reviewer sub-agents), recorded on every plan.
-- Always-on personas: Correctness Reviewer, Architecture Strategist.
-- Triggered persona: Security Reviewer over security-touching plans (S1, S3, S7, S10, S11, S12).
-- Post-remediation Adversarial Review re-review over the P1-failing plans (S9, S10, S11).
+Overall verdict: **BLOCKED** — 7 FAIL / 2 READY_WITH_FOLLOWUPS. No target plan
+survived as a clean PASS.
 
-## Gate outcomes
+## Persona × Model dispatch
 
-| Plan | Initial | Final | Hardening | Notable P1/P2 remediated |
-|------|---------|-------|-----------|--------------------------|
-| S1 | ADVISORY | PASS | yes/satisfied | P2 symlink parent-dir traversal + TOCTOU (full-path resolve); P2 secret control (fail-closed scan) |
-| S2 | ADVISORY | PASS | no | P2 unmerged decode-helper prereq (precondition + fallback) |
-| S3 | PASS | PASS | no | clean |
-| S4 | ADVISORY | PASS | no | P2 missing shared evidence contract (added U4) |
-| S5 | PASS | PASS | no | clean |
-| S6 | ADVISORY | PASS | no | P2 five-analyzer bundling over 2h (per-analyzer subtasks) |
-| S7 | ADVISORY | PASS | yes/satisfied | P2 evidence/rule bundling (subtasks); P2 GitHub dup (single source); P3 token/anchor |
-| S8 | ADVISORY | PASS | yes/satisfied | P2 8-check bundling (subtasks); P2 hardening inconsistency (report-only gate) |
-| S9 | FAIL(P1) | PASS | no | P1 evidence-schema ownership (emit against S4 U4) — re-review RESOLVED |
-| S10 | FAIL(P1) | PASS | yes/satisfied | P1 duplicate graph engine + evidence interface; re-review NEW P1 waiver auth (authenticated/agent-denied) |
-| S11 | FAIL(P1) | PASS | yes/satisfied | P1 self-asserted override bypass (authenticated out-of-band); P1 duplicate graph engine (consume S10 core) |
-| S12 | ADVISORY | PASS | yes/satisfied | P2 CLI-only != operator-only (enforced TTY/confirmation); P3 parked-state recognition |
-| S13 | PASS | PASS | no | P3 U2 no-op risk (verifiable in-repo fallback) |
+| Persona (mandatory) | Model | Provider | Dispatch |
+|---|---|---|---|
+| Constitution Reviewer | `claude-opus-4.8` | Anthropic | full 9-plan pass |
+| Go Reviewer (anchor) | `gpt-5.6-sol` (effort high) | OpenAI | full 9-plan pass |
+| Scope Boundary Auditor | `gemini-3.7-flash` | Google | full 9-plan pass |
+| Correctness Reviewer | `claude-sonnet-4.6` | Anthropic | full 9-plan pass |
+| Architecture Strategist | `grok-4.6` | xAI | full 9-plan pass |
+| Security Reviewer | `gpt-5.6-terra` | OpenAI | risk-triggered pass over S3, S8, S9, S10, and S12 |
+| Learnings Researcher | research/explore | local docs/compound | 10 learnings mapped |
 
-## Cross-plan architecture resolutions (program S4-S11)
+Five distinct model families were used: Anthropic opus and sonnet, OpenAI sol
+and terra, Google gemini, and xAI grok. The anchor route was dispatched. The
+report also recorded that initially blocked review-persona slots were
+re-dispatched as non-review analysis agents on the same distinct models, so the
+mandatory cross-model fact-finding requirement was preserved.
 
-1. Single shared fault-line evidence-artifact contract owned by S4 U4; all detectors (S5-S9) emit against it; S10/S11 consume it.
-2. Single shared graph-evaluation/evidence-binding core owned by S10 U1; S11 consumes it as a library and adds only policy node types — no duplicate engine.
-3. S10 terminal-node DAG is the authoritative review-ready gate; S11 composes policy nodes into it (no competing gate).
-4. S7 is the single GitHub/git evidence-derivation source; S11 routes review-complete/CI-pass through it.
-5. One soundness engine library (S8) invoked by both the pre-assembly gate and the S10 node.
+## Re-dispatch reason
 
-## Residual risks (non-blocking, carried forward)
+The invalidated record captured only Correctness and Architecture, with Security
+on some plans. It omitted the mandatory Constitution, Go anchor, Scope Boundary,
+and Learnings passes that surfaced controlling P1 findings. The omitted passes
+changed the gate result from the prior false uniform PASS to the genuine BLOCKED
+verdict recorded here.
 
-- S1: checkpoint-context key-allowlist deferred (YAGNI) — recorded open follow-up above the enforced fail-closed secret-scan floor.
-- S2 U2: scope expands to introduce the shared decode helper if 146-F U8 has not landed at execution time.
-- S7/S11: external GitHub API availability — handled by declared-degradation, never a false pass.
-- Program gates (S8/S10/S11) ship report-only before fail-closed enforcement; incremental rollout required before enablement.
+## Per-plan gate verdicts
 
-## Plan-review cycle accounting
+| Plan | Verdict | Controlling findings |
+|---|---|---|
+| S2 | **FAIL** | Nil slices still marshal as `null` after removing `omitempty`; PlanMigration lacks the per-file findings channel required by report-and-continue; P-006 hardening is missing for an in-scope report-contract change |
+| S3 | **FAIL** | P-006 hardening gap for additive MCP tool, CLI error envelope, and `JSONRPCError.data`; `unknown_fields` reflection needs bounds/escaping |
+| S4 | **FAIL** | Program-wide versioned evidence contract mislabeled hardening-absent; wrong-module ownership; no versioning/compatibility policy; S5-S8 producers not bound |
+| S6 | **FAIL** | Advertised fuzzing has no target, seed corpus, budget, or task; two analyzers are underspecified as bounded AST checks |
+| S8 | **FAIL** | Realized decomposition violation; S8/S10 engine-ownership and forward-reference inconsistency; fail-open gate configuration risk |
+| S9 | **READY_WITH_FOLLOWUPS** | Baseline-overlay seam and workspace-contained immutable base runner need definition; evidence authenticity binding needs follow-up |
+| S10 | **FAIL** | Review-record integrity gap; waiver authorization spoofable and incompletely guarded; evidence authenticity absent; U3 is over-scoped |
+| S12 | **FAIL** | U2 depends on U1 parked state despite being declared independent; TTY/token authorization is spoofable and not enforced at the shared transition choke point; parked state not integrated into the closed taxonomy |
+| S13 | **READY_WITH_FOLLOWUPS** | External-dependency hardening note required; U2 acceptance must require actual upstream delivery evidence or remain active/blocked |
 
-S9, S10, S11 each: attempt 1 FAIL (P1) -> in-scope remediation -> attempt 2 re-review.
-S10 attempt 2 surfaced one new consistency P1 (waiver auth boundary), remediated by
-mirroring the already-accepted S11 authenticated/agent-denied override control. All
-within the 2-cycle limit. No plan remains at FAIL.
+## Consolidated Persona Manifest
+
+| Plan | Constitution (opus-4.8) | Go (sol) | Scope (gemini-3.7) | Correctness (sonnet-4.6) | Architecture (grok-4.6) | Security (terra) | Gate |
+|---|---|---|---|---|---|---|---|
+| S2 | FAIL(P1) | FAIL(P1×2) | PASS | ADV(P2) | ADV(P2) | n/a | **FAIL** |
+| S3 | FAIL(P1) | ADV(P2) | PASS | PASS | ADV(P2) | ADV(P2) | **FAIL** |
+| S4 | FAIL(P1) | FAIL(P1×2) | PASS(P3) | ADV(P3) | FAIL(P1×3) | n/a | **FAIL** |
+| S6 | ADV(P2) | FAIL(P1) | FAIL(P1) | PASS | ADV(P2) | n/a | **FAIL** |
+| S8 | FAIL(P1) | ADV(P2) | FAIL(P1) | FAIL(P1) | FAIL(P1) | FAIL(P1) | **FAIL** |
+| S9 | ADV(P2) | FAIL(P1×2) | PASS | PASS(P3) | PASS | ADV(P2) | **ADVISORY** |
+| S10 | ADV(P2) | FAIL(P1×3) | FAIL(P1) | FAIL(P1) | FAIL(P1×2) | FAIL(P1×3) | **FAIL** |
+| S12 | ADV(P2) | FAIL(P1×2) | PASS | FAIL(P1) | FAIL(P1) | FAIL(P1×2) | **FAIL** |
+| S13 | ADV(P2) | PASS | PASS | ADV(P3) | PASS | n/a | **ADVISORY** |
+
+All mandatory personas ran on distinct models. Security was risk-triggered where
+applicable. Learnings were applied across the run and informed the controlling
+findings.
+
+## Confidence-weighted P0/P1 remediation queue
+
+No P0 findings were reported.
+
+| # | Plan | P1 finding | Confidence | Evidence |
+|---|---|---|---|---|
+| 1 | S8 | Harvested `160.002-T` and `160.003-T` each bundled four check classes; re-split one independently verifiable task per check class | **HIGH** | Independent queue verification in the report; Constitution and Scope concurred |
+| 2 | S10 | Review-record integrity: attempt-2 surfaced a new P1, then the plan was edited with no recorded final re-review; the prior PASS was unconfirmed | **HIGH** | Correctness finding; named suspect |
+| 3 | S10 | Waiver authorization spoofable: `TTY OR token` lets PTY confirmation suffice; token must be required, independently verified, and enforced at all waiver entry points | **HIGH** | Go and Security; compound learnings on authenticated filtering and all-entry-point guards |
+| 4 | S12 | U1/U2 declared independent even though U2 depends on U1 parked state; graph must be U1 -> U2 | **HIGH** | Correctness and Architecture; named suspect |
+| 5 | S12 | TTY/token authorization spoofable and not enforced at shared `queued -> active` transition choke point | **HIGH** | Go and Security |
+| 6 | S4 | Program-wide versioned evidence contract mislabeled hardening-absent; wrong-module ownership; no versioning; S5-S8 producers unbound | **HIGH** | Constitution, Architecture, and Go |
+| 7 | S10 | U3 is over-scoped: gate, incremental evaluation, waiver authorization, authentication store, tamper store, visualization, and versioning must be split | **HIGH** | Go, Scope, and Constitution |
+| 8 | S2 | Removing `omitempty` is insufficient because nil slices marshal as `null`; normalize to non-nil `[]` and assert array presence directly | **MED-HIGH** | Go and omitempty compound learning |
+| 9 | S12 | No named atomic repair seam across Markdown, SQLite cache, and JSONL; parked transition table incomplete | **MEDIUM** | Go and Architecture |
+| 10 | S10 | Incremental evaluation, tamper evidence, and append atomicity are undesigned | **MEDIUM** | Go |
+| 11 | S10/S9 | Evidence is forgeable without producer, task, and commit authenticity binding before applicability filtering | **MEDIUM** | Security |
+| 12 | S8 | U3 acceptance that S10 and this gate call the same engine is unverifiable at S8 ship time; engine ownership contract is contradictory | **MEDIUM** | Correctness and Architecture |
+| 13 | S8 | Fail-closed gate can fail open through per-rule flags or report-only mode; no all-entry-point assembly choke guard | **MEDIUM** | Security |
+| 14 | S2 | PlanMigration has no per-file findings channel to satisfy report-and-continue | **MEDIUM** | Go and Architecture |
+| 15 | S6 | Advertised fuzzing is unbacked by a fuzz target, seed corpus, execution budget, or task | **MEDIUM** | Scope P1 and Constitution P2 |
+| 16 | S6 | `success-after-audit-warning` and `uncancellable-lock timeout` analyzers likely need CFG/SSA, not bounded AST-only checks | **MEDIUM** | Go |
+| 17 | S4 | Literal cross-surface comparison is impossible because exit code is CLI-only; driver seam using process globals is not parallel-test-safe | **MEDIUM** | Go |
+| 18 | S3 | P-006 hardening gap for the new MCP tool, structured error envelope, and JSON-RPC data field | **MEDIUM** | Constitution; documented gate rule |
+| 19 | S2 | P-006 hardening gap for the in-scope report-contract change | **MEDIUM** | Constitution |
+| 20 | S9 | Baseline runner cannot execute newly added test files at base without an overlay seam; containment is unresolved | **LOW-MED** | Go |
+
+## Overall verdict
+
+Overall staging-run verdict: **BLOCKED**. S2, S3, S4, S6, S8, S10, and S12 are
+FAIL. S9 and S13 are READY_WITH_FOLLOWUPS. The prior uniform-PASS record is
+contradicted by the genuine mandatory-persona re-dispatch and is no longer a
+valid gate record.

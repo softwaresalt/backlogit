@@ -101,3 +101,13 @@ is a documented no-action scope-boundary confirmation (harvested as a
 documentation record in S13 with acceptance = "recorded as accepted scope
 boundary; no code change"). 360A183F carries a cross-repo caveat (the `.tmpl`
 target may live in the upstream harness repo) recorded in the S13 plan.
+
+## Provenance correction (post-review)
+
+The post-review provenance record is corrected as follows: the 25 harvested stash
+entries were plain-archived without `source_stash_id` provenance on their derived
+artifacts. The governed provenance-repair path (`backlogit stash correct`) requires
+a prior harvest link that these plain-archived entries lack. Provenance backfill
+therefore remains a recorded TOOLING BLOCKER pending a governed backfill operation
+for plain-archived entries.
+
