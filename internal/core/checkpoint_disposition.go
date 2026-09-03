@@ -235,7 +235,7 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		// leave it with no disposition path at all (the deadlock this unit
 		// closes). Only a target that is ALSO conforming is refused with
 		// ErrCheckpointUseAbandon; the verbatim moveNoReplace path, audit
-		// ordering, sidecar upsert, and MutationEnvelope compensation below
+		// ordering, sidecar create-only write, and MutationEnvelope compensation below
 		// are unchanged either way.
 		if confErr := events.CheckConformingTopLevelNamespace(data); confErr == nil {
 			return blerrors.ErrCheckpointUseAbandon

@@ -204,6 +204,25 @@ func TestCreateCheckpoint_U3_S1_HoneyJarNotRejected(t *testing.T) {
 	assert.NotEmpty(t, result.Path)
 }
 
+// TestCreateCheckpoint_U3_S1_HyphenPrecededSkProjRejected (153.003-T / S1 U3,
+// Copilot PRRT_kwDORzozKM6fDzYk) asserts that a sk- token preceded by a hyphen
+// (e.g. "openai-key-sk-proj-...") IS detected. Hyphen is a boundary character,
+// not a word character, so the key token starts properly after it.
+func TestCreateCheckpoint_U3_S1_HyphenPrecededSkProjRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	// "openai-key-sk-proj-..." has sk- preceded by a hyphen, not a letter.
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-hyphen-sk","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"api":"openai-key-sk-proj-XXXXXXXXXXXXX1234567890abcdef12345"}}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.Error(t, err, "sk- preceded by a hyphen must be detected (hyphen is a boundary, not a word char)")
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointStateDumpSecretDetected),
+		"error must satisfy errors.Is(err, ErrCheckpointStateDumpSecretDetected), got: %v", err)
+
+	assertNoCheckpointWritten(t, dir)
+}
+
 // TestCreateCheckpoint_U3_S1_SGPrefixFalsePositiveNotRejected (153.003-T / S1 U3,
 // Copilot PRRT_kwDORzozKM6fDJgC) asserts that "MSG.txt" and similar strings
 // containing "SG." as an internal substring are NOT rejected (word-boundary fix).

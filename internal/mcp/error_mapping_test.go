@@ -159,6 +159,47 @@ func TestDomainError_Unknown_MapsToInternal(t *testing.T) {
 	}
 }
 
+// TestDomainError_StateDumpGuards_MapsToValidation verifies that the new
+// 153.003-T (S1 U3) state_dump sentinel errors map to validation_failed
+// (not internal_error) so MCP callers distinguish client-input rejections
+// from server-side faults (Copilot PRRT_kwDORzozKM6fDzZU).
+func TestDomainError_StateDumpGuards_MapsToValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "ErrCheckpointStateDumpTooLarge", err: corerrors.ErrCheckpointStateDumpTooLarge},
+		{name: "wrapped ErrCheckpointStateDumpTooLarge", err: fmt.Errorf("wrap: %w", corerrors.ErrCheckpointStateDumpTooLarge)},
+		{name: "ErrCheckpointStateDumpSecretDetected", err: corerrors.ErrCheckpointStateDumpSecretDetected},
+		{name: "wrapped ErrCheckpointStateDumpSecretDetected", err: fmt.Errorf("wrap: %w", corerrors.ErrCheckpointStateDumpSecretDetected)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, "validation_failed", domainErrorType(t, tt.err),
+				"%s must map to validation_failed, not fall through to internal", tt.name)
+		})
+	}
+}
+
+// TestDomainError_CheckpointTargetUnsafe_MapsCorrectly verifies that
+// ErrCheckpointTargetUnsafe maps to checkpoint_target_unsafe in domainError
+// (153.001-T / S1 U1 — Copilot PRRT_kwDORzozKM6fDzZU).
+func TestDomainError_CheckpointTargetUnsafe_MapsCorrectly(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "ErrCheckpointTargetUnsafe", err: corerrors.ErrCheckpointTargetUnsafe},
+		{name: "wrapped ErrCheckpointTargetUnsafe", err: fmt.Errorf("path check failed: %w", corerrors.ErrCheckpointTargetUnsafe)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, "checkpoint_target_unsafe", domainErrorType(t, tt.err),
+				"%s must map to checkpoint_target_unsafe, not fall through to internal", tt.name)
+		})
+	}
+}
+
 // TestDomainError_MessageContainsOpOnInternal verifies the op prefix is present
 // in the message field for InternalError results.
 func TestDomainError_MessageContainsOpOnInternal(t *testing.T) {

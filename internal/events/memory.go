@@ -204,7 +204,11 @@ func containsAtWordBoundary(s, prefix string) bool {
 	return false
 }
 // containsSecretSKPrefix reports whether s contains "sk-" preceded by a
-// word boundary (start of string or a non-[a-zA-Z0-9_-] character).
+// word boundary (start of string or a non-[a-zA-Z0-9_] character). Hyphen
+// is intentionally NOT treated as a word character here: "openai-key-sk-proj-..."
+// has a hyphen before "sk-" and that IS a secret token start, while "task-001"
+// has 'a' before "sk-" (word char → rejected). This matches containsAtWordBoundary's
+// convention (Copilot PRRT_kwDORzozKM6fDzYk).
 func containsSecretSKPrefix(s string) bool {
 	const prefix = "sk-"
 	for i := 0; i+len(prefix) <= len(s); i++ {
@@ -215,12 +219,12 @@ func containsSecretSKPrefix(s string) bool {
 			return true // at start of string
 		}
 		prev := s[i-1]
-		// Reject if preceded by a word character (letter, digit, underscore, hyphen).
+		// Reject if preceded by a letter, digit, or underscore — not by a hyphen.
 		if (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') ||
-			(prev >= '0' && prev <= '9') || prev == '_' || prev == '-' {
+			(prev >= '0' && prev <= '9') || prev == '_' {
 			continue
 		}
-		return true // word boundary: space, colon, comma, etc.
+		return true // word boundary: space, colon, hyphen, comma, etc.
 	}
 	return false
 }
