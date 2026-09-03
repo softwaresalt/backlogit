@@ -32,6 +32,14 @@ import (
 // schema-valid document that simply does not match a filter is still
 // dropped as usual.
 func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointFilter) ([]CheckpointSummary, error) {
+	// 153.001-T (302EFF07 / Copilot 5th-review): validate the checkpointDir
+	// itself is not a symlink before globbing. If the directory is a symlink,
+	// glob follows it and readCheckpointFileNoFollow sees regular files (not
+	// symlinks), so the per-file no-follow guard alone is insufficient to
+	// prevent exposure of out-of-workspace checkpoint metadata.
+	if info, lerr := os.Lstat(checkpointDir); lerr == nil && info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%w: checkpoint directory is a symlink", backlogiterrors.ErrCheckpointTargetUnsafe)
+	}
 	pattern := filepath.Join(checkpointDir, "checkpoint-*.json")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
@@ -383,6 +391,10 @@ func resolveCheckpointMutate(filename string) func(*CheckpointV1) error {
 func CleanupCheckpoints(_ context.Context, checkpointDir string, retentionDays int) (CleanupResult, error) {
 	if retentionDays <= 0 {
 		return CleanupResult{}, fmt.Errorf("retentionDays must be > 0, got %d", retentionDays)
+	}
+	// 153.001-T: same checkpointDir symlink guard as ListCheckpoints.
+	if info, lerr := os.Lstat(checkpointDir); lerr == nil && info.Mode()&os.ModeSymlink != 0 {
+		return CleanupResult{}, fmt.Errorf("%w: checkpoint directory is a symlink", backlogiterrors.ErrCheckpointTargetUnsafe)
 	}
 
 	archiveDir := filepath.Join(filepath.Dir(checkpointDir), "archive", "checkpoints")
