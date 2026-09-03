@@ -168,8 +168,14 @@ func (s *Server) RegisterTools() {
 				"counterpart: shipment_id, feature_id, task_ids, and branch are modeled, but any other key you "+
 				"supply there survives the create round-trip unchanged. A legacy state_dump (no schema_version, "+
 				"or a value other than 1) is written verbatim with no schema validation. The successful result "+
-				"reports context_keys: the exact list of context key names persisted to disk."),
-			mcplib.WithString("state_dump", mcplib.Required(), mcplib.Description("JSON state dump to persist")),
+				"reports context_keys: the exact list of context key names persisted to disk. "+
+				"WRITE CONSTRAINTS (153.003-T / S1 U3): the state_dump must not exceed 64 KiB (validation_failed "+
+				"on oversize); it must not contain a heuristically detected secret pattern such as a GitHub "+
+				"token (ghp_, gho_, ghs_, ghu_, github_pat_, ghr_), AWS key (AKIA), OpenAI key (sk-), or "+
+				"PEM-encoded key material (-----BEGIN). These constraints apply to both V1 and legacy paths "+
+				"and are fail-closed: a matching dump is rejected without writing. Redact all secrets before "+
+				"creating a checkpoint."),
+			mcplib.WithString("state_dump", mcplib.Required(), mcplib.Description("JSON state dump to persist (max 64 KiB; must not contain secret material)")),
 		),
 		s.handleCreateCheckpoint,
 	)
@@ -1188,7 +1194,10 @@ func (s *Server) handleListCheckpoints(ctx context.Context, request mcplib.CallT
 
 	summaries, err := events.ListCheckpoints(ctx, checkpointDir, filter)
 	if err != nil {
-		return InternalError(fmt.Sprintf("list checkpoints: %v", err)), nil
+		// 153.001-T: use domainError so ErrCheckpointTargetUnsafe (symlinked
+		// or unsafe checkpoint directory) maps to checkpoint_target_unsafe,
+		// not internal_error.
+		return domainError("list checkpoints", err), nil
 	}
 
 	// "quarantined" is fixed at 0: 136-F/U9 made listing strictly read-only,
@@ -1293,7 +1302,8 @@ func (s *Server) handleCleanupCheckpoints(ctx context.Context, request mcplib.Ca
 
 	cleanupResult, err := events.CleanupCheckpoints(ctx, checkpointDir, retentionDays)
 	if err != nil {
-		return InternalError(fmt.Sprintf("cleanup checkpoints: %v", err)), nil
+		// 153.001-T: use domainError so ErrCheckpointTargetUnsafe maps properly.
+		return domainError("cleanup checkpoints", err), nil
 	}
 	return toolResultJSON(cleanupResult)
 }

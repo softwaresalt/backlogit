@@ -32,9 +32,13 @@ const checkpointDispositionSidecarSuffix = ".disposition.json"
 // CheckpointDispositionRecord is the sidecar record written alongside (or, for
 // quarantine, into the quarantine destination directory alongside) a
 // checkpoint file to describe an administrative disposition action. It is
-// written as "<checkpoint-filename>.disposition.json" and is an idempotent
-// upsert: re-running the same disposition overwrites the sidecar with
-// identical content rather than erroring.
+// written as "<checkpoint-filename>.disposition.json".
+//
+// 153.002-T (S1 U2): The quarantine sidecar is a CREATE-ONLY write (not an
+// idempotent upsert). Re-running QuarantineCheckpoint when a sidecar already
+// exists at the destination returns ErrCheckpointDestinationOccupied rather
+// than silently overwriting the prior quarantine evidence. Do not assume the
+// operation is safely retryable; check the returned error first.
 type CheckpointDispositionRecord struct {
 	// Filename is the basename of the checkpoint file the sidecar describes.
 	Filename string `json:"filename"`

@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 )
@@ -186,10 +185,13 @@ func abandonCheckpointMutate(reason, operator string, now time.Time) func(*event
 // rewrite) to WorkspaceStorageRoot(ws.RootPath)/archive/checkpoints via an
 // atomic link-then-remove sequence that cannot silently clobber a
 // concurrently-created destination (ErrCheckpointDestinationOccupied). A
-// disposition sidecar record is written as an idempotent upsert alongside the
-// quarantined file. If the sidecar write fails after the move succeeds, the
-// move is rolled back and diagnostics are logged — nothing is left
-// half-quarantined.
+// disposition sidecar record is written as a CREATE-ONLY file at the
+// quarantine destination (153.002-T / S1 U2): it cannot overwrite prior
+// quarantine evidence. A collision is surfaced as
+// ErrCheckpointDestinationOccupied — NOT an idempotent success. A post-link
+// fsync failure returns ErrWriteIndeterminate: both the move and the sidecar
+// are committed, durability is uncertain, and the operation should NOT be
+// retried blindly.
 //
 // reason and operator must both be non-empty; operator is never defaulted to
 // a fixed identity such as "backlogit". ew must be a real, non-nil
@@ -233,7 +235,7 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		// leave it with no disposition path at all (the deadlock this unit
 		// closes). Only a target that is ALSO conforming is refused with
 		// ErrCheckpointUseAbandon; the verbatim moveNoReplace path, audit
-		// ordering, sidecar upsert, and MutationEnvelope compensation below
+		// ordering, sidecar create-only write, and MutationEnvelope compensation below
 		// are unchanged either way.
 		if confErr := events.CheckConformingTopLevelNamespace(data); confErr == nil {
 			return blerrors.ErrCheckpointUseAbandon
@@ -290,23 +292,99 @@ func QuarantineCheckpoint(ctx context.Context, ws *Workspace, ew *events.EventWr
 		{
 			Name: "write-disposition-sidecar",
 			Apply: func(context.Context) error {
-				return atomicfile.WriteFileAtomic(sidecarPath, sidecarData)
+				// 153.002-T (A12BBAFA): atomic temp-then-link create-only path —
+				// refuses to clobber a pre-existing sidecar (prior quarantine
+				// evidence must be preserved). Uses a temp file + os.Link for
+				// atomicity: the final sidecar path is never visible in a partial
+				// state, and os.Link fails with EEXIST if a sidecar already exists.
+				return writeDispositionSidecarCreateOnly(sidecarPath, sidecarData, ws)
 			},
 		},
 	})
 	if err != nil {
-		// MutationPartialError.Unwrap returns Cause, so errors.Is traverses
-		// through to the underlying *os.LinkError / syscall errno raised by
-		// moveNoReplace's os.Link when the destination already exists.
-		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointDestinationOccupied, baseName)
-		}
-		// A combined unwind failure from moveNoReplace means both src and dst
-		// may exist — outcome is indeterminate.
+		// 153.002-T (Copilot re-review finding PRRT_kwDORzozKM6fBPWi): check for
+		// indeterminate/double-fault BEFORE checking os.ErrExist. A double-fault
+		// wraps ErrWriteIndeterminate (compensation also failed); joining
+		// ErrWriteIndeterminate with an ErrExist cause would match both checks —
+		// but ErrWriteIndeterminate is the correct surface because it means the
+		// source may not have been restored, and the caller must not treat this as
+		// a clean "destination occupied" outcome.
 		if errors.Is(err, blerrors.ErrWriteIndeterminate) {
 			return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
 		}
+		// MutationPartialError.Unwrap returns Cause, so errors.Is traverses
+		// through to the underlying *os.LinkError / syscall errno raised by
+		// moveNoReplace's os.Link when the destination already exists, OR by
+		// writeDispositionSidecarCreateOnly's os.Link when the sidecar already
+		// exists. In both cases the compensation has successfully restored the
+		// source, so this is a clean collision (no indeterminate state).
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%w: %s", blerrors.ErrCheckpointDestinationOccupied, baseName)
+		}
 		return fmt.Errorf("quarantine checkpoint %s: %w", baseName, err)
+	}
+	return nil
+}
+
+// writeDispositionSidecarCreateOnly atomically creates path with data, refusing
+// to clobber an existing sidecar file (153.002-T / S1 U2).
+//
+// Implementation: writes to a same-directory temp file, fsyncs it (when
+// durable_writes is enabled), then installs it at path via os.Link (which
+// fails atomically with EEXIST if path already exists). This ensures the
+// final sidecar path is never visible in a partial write state — a crash
+// between write and link leaves only a temp file, which can be cleaned up.
+// The temp file is always removed on any failure path (and after a successful
+// link, since the content is now at path).
+//
+// Returns a *os.PathError wrapping os.ErrExist when path already exists so
+// QuarantineCheckpoint's errors.Is(err, os.ErrExist) check maps it to
+// ErrCheckpointDestinationOccupied. Post-commit directory fsync failures are
+// classified ErrWriteIndeterminate (adversarial-review Copilot findings #4/#5
+// remediation).
+func writeDispositionSidecarCreateOnly(path string, data []byte, ws *Workspace) error {
+	dir := filepath.Dir(path)
+	durable := ws != nil && WorkspaceDurableWrites(ws)
+
+	// Step 1: write to a temp file in the same directory.
+	tmp, err := os.CreateTemp(dir, ".sidecar-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp sidecar: %w", err)
+	}
+	tmpName := tmp.Name()
+	// Always remove the temp file; after a successful link it is redundant.
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp sidecar: %w", err)
+	}
+
+	if durable {
+		if err := tmp.Sync(); err != nil {
+			_ = tmp.Close()
+			// Sync failed before commit: not-applied classification is correct.
+			return fmt.Errorf("%w: fsync temp sidecar: %w", blerrors.ErrWriteNotApplied, err)
+		}
+	}
+
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp sidecar: %w", err)
+	}
+
+	// Step 2: atomically install the temp file at the final path. os.Link
+	// fails with EEXIST (wrapped in *os.LinkError) if path already exists,
+	// which satisfies errors.Is(err, os.ErrExist) for the caller's EEXIST check.
+	if err := os.Link(tmpName, path); err != nil {
+		return err
+	}
+
+	// Step 3: fsync the parent directory after a successful link.
+	if durable {
+		if dirSyncErr := fsyncDirIfDurable(dir, true); dirSyncErr != nil {
+			// The sidecar is already at path; durability is uncertain.
+			return fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, dirSyncErr)
+		}
 	}
 	return nil
 }

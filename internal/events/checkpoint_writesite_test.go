@@ -115,15 +115,21 @@ func containsSubstring(s, substr string) bool {
 // the seam's own atomic replace (RewriteCheckpointFile, routed through
 // atomicfile.WriteFileAtomicWithOptions with DurableWrites: true since the
 // 130-S adversarial-review mode/durability fix) and the excluded
-// verbatim-move / create sites (QuarantineCheckpoint's disposition-sidecar
-// write, CreateCheckpoint's new-file write), none of which are gated by
-// this seam by design (147-F / U11 scope boundary). moveNoReplace and
-// CleanupCheckpoints use os.Link/os.Rename rather than any of the three
-// enumerated write forms, so they never appear in this set.
+// verbatim-move / create sites (CreateCheckpoint's new-file write and
+// QuarantineCheckpoint's disposition-sidecar write), none of which are gated
+// by this seam by design (147-F / U11 scope boundary).
+//
+// After 153.002-T (S1 U2), QuarantineCheckpoint's disposition-sidecar write
+// uses writeDispositionSidecarCreateOnly, whose function name does not contain
+// "Checkpoint" and is therefore not enumerated by this scan — the helper is
+// explicitly excluded from the seam-guard coverage, matching the existing
+// verbatim-move exclusion.
+//
+// moveNoReplace and CleanupCheckpoints use os.Link/os.Rename rather than any
+// of the three enumerated write forms, so they never appear in this set.
 var checkpointDirWriteAllowlist = map[string]bool{
 	"checkpoint_rewrite.go:RewriteCheckpointFile:atomicfile.WriteFileAtomicWithOptions": true,
 	"memory.go:CreateCheckpoint:syncWriteFileAtomicHook":                                true,
-	"checkpoint_disposition.go:QuarantineCheckpoint:atomicfile.WriteFileAtomic":         true,
 }
 
 // TestU2fGuard_EnumeratedCallSiteSetEqualsAllowlist asserts the enumerated

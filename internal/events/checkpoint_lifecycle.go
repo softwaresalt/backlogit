@@ -19,7 +19,7 @@ import (
 // ListCheckpoints is read-only (136-F/U9): it NEVER moves, deletes, or rewrites
 // any checkpoint file, and it never fails due to a disposition- or audit-related
 // error. Files that fail to parse are surfaced with NeedsQuarantine=true and a
-// RemediationCommand an operator or agent can run to quarantine the file via
+// structured RemediationIntent describing how to quarantine the file via
 // QuarantineCheckpoint. Prior to 136-F, ListCheckpoints physically quarantined
 // unparseable files as a side effect of listing; that side effect has been
 // removed so listing can never mutate workspace state.
@@ -32,6 +32,12 @@ import (
 // schema-valid document that simply does not match a filter is still
 // dropped as usual.
 func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointFilter) ([]CheckpointSummary, error) {
+	// 153.001-T (302EFF07 / Copilot 5th+6th-review): validate the checkpointDir
+	// itself is not a symlink or reparse point before globbing. On Windows,
+	// junctions (ModeIrregular) would not be caught by ModeSymlink alone.
+	if info, lerr := os.Lstat(checkpointDir); lerr == nil && (info.Mode()&os.ModeSymlink != 0 || isPathSymlinkOrReparse(checkpointDir)) {
+		return nil, fmt.Errorf("%w: checkpoint directory is a symlink or reparse point", backlogiterrors.ErrCheckpointTargetUnsafe)
+	}
 	pattern := filepath.Join(checkpointDir, "checkpoint-*.json")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
@@ -43,7 +49,10 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 
 	for _, path := range matches {
 		filename := filepath.Base(path)
-		data, readErr := os.ReadFile(path)
+		// 153.001-T (302EFF07 / Copilot re-review): use the no-follow read so a
+		// symlinked file in the checkpoint directory is surfaced as a read error
+		// rather than silently exposing metadata from an out-of-workspace target.
+		data, readErr := readCheckpointFileNoFollow(path)
 		if readErr != nil {
 			slog.Warn("checkpoint read failed", "file", filename, "error", readErr)
 			continue
@@ -55,10 +64,9 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 			// instead of physically moving the file. QuarantineCheckpoint
 			// (136-F/U7) performs the actual move when invoked explicitly.
 			summaries = append(summaries, CheckpointSummary{
-				Filename:           filename,
-				ValidationErr:      parseErr.Error(),
-				NeedsQuarantine:    true,
-				RemediationCommand: remediationQuarantineCommand(filename),
+				Filename:        filename,
+				ValidationErr:   parseErr.Error(),
+				NeedsQuarantine: true,
 				RemediationIntent: &RemediationIntent{
 					Verb:             "quarantine",
 					TargetFilename:   filename,
@@ -85,7 +93,6 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 		if valErr != nil {
 			summary.ValidationErr = valErr.Error()
 			summary.NeedsQuarantine = true
-			summary.RemediationCommand = remediationQuarantineCommand(filename)
 			summary.RemediationIntent = &RemediationIntent{
 				Verb:             "quarantine",
 				TargetFilename:   filename,
@@ -100,8 +107,8 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 		// sees both reasons. Publishes structured RemediationIntent, never a
 		// command string — internal/events has no knowledge of the caller's
 		// working directory (cycle-17 gate finding H1). The parse-failure
-		// branch above and the schema-invalid RemediationCommand population
-		// are untouched; this unit adds no new RemediationCommand emission.
+		// and schema-invalid branches above already publish only structured
+		// remediation metadata; this unit adds no executable command string.
 		// When a document is both schema-invalid and non-conforming, this
 		// branch runs after the validity branch and overwrites Reason with
 		// "non_conforming", matching the ValidationErr append order that
@@ -172,7 +179,7 @@ func GetCheckpoint(_ context.Context, checkpointDir, filename string) (*Checkpoi
 		return nil, err
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := readCheckpointFileNoFollow(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointNotFound, filename)
@@ -241,7 +248,7 @@ func GetCheckpointResult(_ context.Context, checkpointDir, filename string) (*Ch
 		return nil, err
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := readCheckpointFileNoFollow(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointNotFound, filename)
@@ -298,7 +305,7 @@ func ResolveCheckpoint(ctx context.Context, checkpointDir, filename string) erro
 		return err
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := readCheckpointFileNoFollow(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointNotFound, filename)
@@ -383,8 +390,25 @@ func CleanupCheckpoints(_ context.Context, checkpointDir string, retentionDays i
 	if retentionDays <= 0 {
 		return CleanupResult{}, fmt.Errorf("retentionDays must be > 0, got %d", retentionDays)
 	}
+	// 153.001-T: same checkpointDir symlink/reparse-point guard as ListCheckpoints.
+	if info, lerr := os.Lstat(checkpointDir); lerr == nil && (info.Mode()&os.ModeSymlink != 0 || isPathSymlinkOrReparse(checkpointDir)) {
+		return CleanupResult{}, fmt.Errorf("%w: checkpoint directory is a symlink or reparse point", backlogiterrors.ErrCheckpointTargetUnsafe)
+	}
 
 	archiveDir := filepath.Join(filepath.Dir(checkpointDir), "archive", "checkpoints")
+	// 153.001-T (Copilot PRRT_kwDORzozKM6fEVLC): validate the archive destination
+	// components are not symlinks or reparse points before MkdirAll creates them.
+	// This closes the same symlink/reparse-point escape vector that
+	// QuarantineCheckpoint already guards via rejectSymlinkedDir.
+	archiveBase := filepath.Join(filepath.Dir(checkpointDir), "archive")
+	if info, lerr := os.Lstat(archiveBase); lerr == nil &&
+		(info.Mode()&os.ModeSymlink != 0 || isPathSymlinkOrReparse(archiveBase)) {
+		return CleanupResult{}, fmt.Errorf("%w: archive directory is a symlink or reparse point", backlogiterrors.ErrCheckpointTargetUnsafe)
+	}
+	if info, lerr := os.Lstat(archiveDir); lerr == nil &&
+		(info.Mode()&os.ModeSymlink != 0 || isPathSymlinkOrReparse(archiveDir)) {
+		return CleanupResult{}, fmt.Errorf("%w: archive checkpoints directory is a symlink or reparse point", backlogiterrors.ErrCheckpointTargetUnsafe)
+	}
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		return CleanupResult{}, fmt.Errorf("create archive dir: %w", err)
 	}
@@ -400,7 +424,10 @@ func CleanupCheckpoints(_ context.Context, checkpointDir string, retentionDays i
 
 	for _, path := range matches {
 		filename := filepath.Base(path)
-		data, readErr := os.ReadFile(path)
+		// 153.001-T (302EFF07 / Copilot re-review): use the no-follow read so a
+		// symlinked file in the checkpoint directory is surfaced as a skip/error
+		// rather than silently exposing metadata from an out-of-workspace target.
+		data, readErr := readCheckpointFileNoFollow(path)
 		if readErr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("read %s: %v", filename, readErr))
 			result.SkippedCount++
@@ -463,25 +490,6 @@ func validateCheckpointFilename(filename string) error {
 	return nil
 }
 
-// remediationQuarantineCommand builds a shell-safe "checkpoint quarantine"
-// remediation command string for filename. Both the filename and the
-// "<reason>" placeholder are single-quoted (with embedded single quotes
-// escaped) so the advertised command is safe to run verbatim in a POSIX
-// shell even if filename contains spaces or shell metacharacters, and so the
-// literal "<reason>" placeholder is never interpreted as input redirection
-// when copy-pasted unmodified.
-func remediationQuarantineCommand(filename string) string {
-	return fmt.Sprintf("backlogit checkpoint quarantine %s --reason %s", shellQuoteSingle(filename), shellQuoteSingle("<reason>"))
-}
-
-// shellQuoteSingle wraps s in single quotes for safe inclusion in a POSIX
-// shell command line, escaping any embedded single quotes using the standard
-// close-quote/escaped-quote/reopen-quote idiom.
-func shellQuoteSingle(s string) string {
-	const escapedQuote = `'\''`
-	return "'" + strings.ReplaceAll(s, "'", escapedQuote) + "'"
-}
-
 // ensurePathContained verifies that resolved path is under the expected dir.
 func ensurePathContained(dir, path string) error {
 	absDir, err := filepath.Abs(dir)
@@ -494,6 +502,51 @@ func ensurePathContained(dir, path string) error {
 	}
 	if !strings.HasPrefix(absPath, absDir+string(filepath.Separator)) && absPath != absDir {
 		return fmt.Errorf("%w: path escapes checkpoint directory", backlogiterrors.ErrCheckpointInvalid)
+	}
+
+	// 153.001-T (302EFF07): reject symlinks at any component of the path
+	// chain from dir (inclusive) to path (inclusive), preventing both the
+	// leaf-symlink and intermediate-dir-symlink escape vectors.
+	if err := rejectSymlinksInPathChain(absDir, absPath); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// rejectSymlinksInPathChain checks every filesystem path component from base
+// (inclusive) to path (inclusive). If any existing component is a symlink or
+// a non-symlink reparse point (on Windows, junctions reported as ModeIrregular
+// rather than ModeSymlink), it returns a wrapped ErrCheckpointTargetUnsafe.
+// A missing component (os.ErrNotExist) stops the walk without error — the
+// caller's subsequent read will surface the absence. Permission, I/O, or
+// transient errors are propagated fail-closed.
+func rejectSymlinksInPathChain(base, path string) error {
+	current := path
+	for {
+		info, lerr := os.Lstat(current)
+		if lerr == nil {
+			// Check ModeSymlink AND reparse points (Windows junctions are
+			// reported as ModeIrregular on Go 1.24, not ModeSymlink).
+			if info.Mode()&os.ModeSymlink != 0 || isPathSymlinkOrReparse(current) {
+				return fmt.Errorf("%w: path component is a symlink or reparse point", backlogiterrors.ErrCheckpointTargetUnsafe)
+			}
+		}
+		if lerr != nil {
+			if os.IsNotExist(lerr) {
+				return nil
+			}
+			return fmt.Errorf("%w: cannot verify path component is not a symlink: %w",
+				backlogiterrors.ErrCheckpointTargetUnsafe, lerr)
+		}
+		if current == base {
+			break
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
 	}
 	return nil
 }

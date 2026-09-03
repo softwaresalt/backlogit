@@ -394,19 +394,13 @@ type CheckpointSummary struct {
 	// Deprecated: ListCheckpoints (136-F/U9) no longer performs the physical
 	// quarantine move as a side effect of listing. This field is retained for
 	// backward JSON-shape compatibility and stays false on the read-only list
-	// path; use NeedsQuarantine and RemediationCommand instead to detect and
+	// path; use NeedsQuarantine and RemediationIntent instead to detect and
 	// act on malformed checkpoints.
 	Quarantined bool `json:"quarantined,omitempty"`
 	// NeedsQuarantine is true when the checkpoint file failed to parse and is a
 	// quarantine candidate. ListCheckpoints never moves the file itself
-	// (136-F/U9); callers must run the remediation command to quarantine it.
+	// (136-F/U9); callers must use RemediationIntent to quarantine it.
 	NeedsQuarantine bool `json:"needs_quarantine,omitempty"`
-	// RemediationCommand is the exact CLI invocation an operator or agent can
-	// run to quarantine this checkpoint when NeedsQuarantine is true.
-	//
-	// Deprecated: use RemediationIntent; RemediationCommand is an unbound
-	// command string and will be removed.
-	RemediationCommand string `json:"remediation_command,omitempty"`
 	// RemediationIntent describes, as structured non-executable data, what an
 	// operator must do to dispose of a checkpoint that cannot be safely
 	// rewritten. It is populated on every quarantine-candidate branch

@@ -143,8 +143,11 @@ func checkpointUnknownFields(fields []string) *mcplib.CallToolResult {
 //	ErrChildrenNotTerminal            | conflict                              | 409
 //	ErrShipmentShippedRequiresEnv…    | shipment_shipped_requires_envelope    | 409
 //	ErrArchiveShippedRequiresEvent    | archive_shipped_requires_event        | 409
+//	ErrCheckpointTargetUnsafe        | checkpoint_target_unsafe              | 422
 //	ErrCheckpointUnknownField         | validation_failed (+ unknown_fields)  | 422
 //	ErrCheckpointMalformedInput       | validation_failed                     | 422
+//	ErrCheckpointStateDumpTooLarge    | validation_failed                     | 422
+//	ErrCheckpointStateDumpSecretDetected | validation_failed                  | 422
 //	ErrCheckpointDuplicateContextKey  | validation_failed (+ dup keys)        | 422
 //	ErrValidation                     | validation_failed                     | 422
 //	ErrInvalidLinkType                | validation_failed                     | 422
@@ -202,6 +205,17 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		// (not internal_error) so callers can distinguish a client-supplied
 		// malformed payload from a server-side fault.
 		return ValidationFailed(err.Error())
+	case errors.Is(err, corerrors.ErrCheckpointStateDumpTooLarge):
+		// 153.003-T / S1 U3: state_dump exceeds the 64 KiB fail-closed size
+		// limit. Mapped to validation_failed so MCP callers can distinguish this
+		// client-input rejection from a server-side fault.
+		return ValidationFailed(err.Error())
+	case errors.Is(err, corerrors.ErrCheckpointStateDumpSecretDetected):
+		// 153.003-T / S1 U3: state_dump contains a heuristically detected
+		// secret pattern. Mapped to validation_failed so callers can distinguish
+		// this client-input rejection from a server-side fault. The error message
+		// contains no payload bytes (Constitution III).
+		return ValidationFailed(err.Error())
 	case errors.Is(err, corerrors.ErrCheckpointDuplicateContextKey):
 		// 148-F / U2: context object carries duplicate or case-fold-aliased
 		// member names. Mapped to validation_failed with the offending keys
@@ -233,6 +247,13 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		// A durable write definitely did not apply (a pre-rename failure);
 		// the target is untouched and the write is safe to retry.
 		return makeErrorResult("write_not_applied", fmt.Sprintf("%s: %v", op, err))
+	case errors.Is(err, corerrors.ErrCheckpointTargetUnsafe):
+		// 153.001-T (S1 U1): a checkpoint path failed confinement validation
+		// (symlink, reparse point, or path-escape). Mapped to checkpoint_target_unsafe
+		// so MCP callers for list/get/resolve/cleanup can distinguish a rejected
+		// unsafe path from a server-side fault. checkpointDispositionError already
+		// handles this for abandon/quarantine; domainError covers the read-path verbs.
+		return makeErrorResult("checkpoint_target_unsafe", fmt.Sprintf("%s: %v", op, err))
 	default:
 		return InternalError(fmt.Sprintf("%s: %v", op, err))
 	}

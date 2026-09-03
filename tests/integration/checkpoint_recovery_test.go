@@ -126,7 +126,10 @@ func TestCheckpointRecoveryFlow_QuarantineCorrupt(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, output, "valid-session")
 	assert.Contains(t, output, "needs_quarantine")
-	assert.Contains(t, output, "remediation_command")
+	// U4 (153.004-T): remediation_command is removed; callers must use remediation_intent.
+	assert.Contains(t, output, "remediation_intent")
+	assert.NotContains(t, output, "remediation_command",
+		"remediation_command must no longer be emitted after U4 removal")
 
 	// List must never physically move the corrupt file.
 	quarantineDir := filepath.Join(root, ".backlogit", "quarantine", "checkpoints")

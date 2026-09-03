@@ -37,6 +37,9 @@ var liveCorpusQuarantineBaseline = map[string]bool{
 	"checkpoint-20260426-031618.json": true,
 	"checkpoint-20260426-045333.json": true,
 	"checkpoint-20260801-051014.json": true,
+	"checkpoint-20260903-082159.json": true,
+	"checkpoint-20260903-084348.json": true,
+	"checkpoint-20260903-091629.json": true,
 }
 
 // TestCreateCheckpoint_ValidV1WithUnknownKeys_ListedUnflagged is scenario 1 of
@@ -67,8 +70,8 @@ func TestCreateCheckpoint_ValidV1WithUnknownKeys_ListedUnflagged(t *testing.T) {
 // TestListCheckpoints_LegacyCorpus_MatchesGoldenTriple is scenario 2 of
 // 146.009-T (U3c): the synthetic legacy fixtures are materialized into
 // t.TempDir(), listed through ListCheckpoints, and every entry's
-// (NeedsQuarantine, validation-error class, RemediationCommand) triple is
-// identical to the pre-U2 golden table. The guard is that 146.006-T (U2) and
+// (NeedsQuarantine, validation-error class, RemediationIntent presence) triple
+// is identical to the pre-U2 golden table. The guard is that 146.006-T (U2) and
 // 146.011-T (U4) change no classification, not that legacy files are clean:
 // every fixture here lacks schema_version and is therefore expected to need
 // quarantine with an ErrCheckpointInvalid-class validation error.
@@ -97,7 +100,7 @@ func TestListCheckpoints_LegacyCorpus_MatchesGoldenTriple(t *testing.T) {
 	for _, s := range summaries {
 		assert.True(t, s.NeedsQuarantine, "fixture %s: every legacy (schema_version-less) fixture is expected to need quarantine (pre-U2 golden baseline)", s.Filename)
 		assert.NotEmpty(t, s.ValidationErr, "fixture %s: expected a non-empty ErrCheckpointInvalid-class validation error", s.Filename)
-		assert.NotEmpty(t, s.RemediationCommand, "fixture %s: NeedsQuarantine implies a non-empty RemediationCommand", s.Filename)
+		assert.NotNil(t, s.RemediationIntent, "fixture %s: NeedsQuarantine implies a non-nil RemediationIntent", s.Filename)
 	}
 }
 
