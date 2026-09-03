@@ -41,7 +41,11 @@ func RewriteCheckpointFile(
 		return err
 	}
 
-	data, err := os.ReadFile(path)
+	// 153.001-T (302EFF07 / adversarial-review F1 remediation): use the
+	// no-follow read to close the TOCTOU race between ensurePathContained's
+	// Lstat-based pre-check and the actual read. On Unix this is O_NOFOLLOW
+	// (kernel-level protection); on Windows it is best-effort post-open Lstat.
+	data, err := readCheckpointFileNoFollow(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointNotFound, filename)
@@ -72,18 +76,10 @@ func RewriteCheckpointFile(
 	}
 
 	// 147-F: re-verify the on-disk bytes immediately before committing the
-	// replacement (found during 130-S adversarial review). The conformance
-	// verdict above is computed from data, read at the top of this
-	// function; without this check, a concurrent writer could add an
-	// unmodeled key (or otherwise mutate the file) after that read and have
-	// it silently overwritten by this seam's write, recreating the exact
-	// evidence-loss condition the seam exists to prevent. This mirrors
-	// moveNoReplace's classify-then-move content re-check (136.014-T) for
-	// the rewrite path; like that check, it narrows rather than eliminates
-	// the race (a writer could still land between this re-read and the
-	// write below) — full closure requires an advisory lock, tracked as
-	// future work alongside the same residual on the quarantine path.
-	current, err := os.ReadFile(path)
+	// replacement (found during 130-S adversarial review). Also uses
+	// readCheckpointFileNoFollow to maintain the no-follow invariant for
+	// this second read (153.001-T / adversarial-review F1 remediation).
+	current, err := readCheckpointFileNoFollow(path)
 	if err != nil {
 		return fmt.Errorf("re-read checkpoint %s before write: %w", filename, err)
 	}

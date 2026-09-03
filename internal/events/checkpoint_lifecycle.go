@@ -170,7 +170,7 @@ func GetCheckpoint(_ context.Context, checkpointDir, filename string) (*Checkpoi
 		return nil, err
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := readCheckpointFileNoFollow(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointNotFound, filename)
@@ -239,7 +239,7 @@ func GetCheckpointResult(_ context.Context, checkpointDir, filename string) (*Ch
 		return nil, err
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := readCheckpointFileNoFollow(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointNotFound, filename)
@@ -296,7 +296,7 @@ func ResolveCheckpoint(ctx context.Context, checkpointDir, filename string) erro
 		return err
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := readCheckpointFileNoFollow(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("%w: %s", backlogiterrors.ErrCheckpointNotFound, filename)
