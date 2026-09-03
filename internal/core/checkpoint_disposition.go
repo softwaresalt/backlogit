@@ -185,10 +185,13 @@ func abandonCheckpointMutate(reason, operator string, now time.Time) func(*event
 // rewrite) to WorkspaceStorageRoot(ws.RootPath)/archive/checkpoints via an
 // atomic link-then-remove sequence that cannot silently clobber a
 // concurrently-created destination (ErrCheckpointDestinationOccupied). A
-// disposition sidecar record is written as an idempotent upsert alongside the
-// quarantined file. If the sidecar write fails after the move succeeds, the
-// move is rolled back and diagnostics are logged — nothing is left
-// half-quarantined.
+// disposition sidecar record is written as a CREATE-ONLY file at the
+// quarantine destination (153.002-T / S1 U2): it cannot overwrite prior
+// quarantine evidence. A collision is surfaced as
+// ErrCheckpointDestinationOccupied — NOT an idempotent success. A post-link
+// fsync failure returns ErrWriteIndeterminate: both the move and the sidecar
+// are committed, durability is uncertain, and the operation should NOT be
+// retried blindly.
 //
 // reason and operator must both be non-empty; operator is never defaulted to
 // a fixed identity such as "backlogit". ew must be a real, non-nil

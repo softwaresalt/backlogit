@@ -100,9 +100,15 @@ resolved abandoned` so an abandoned checkpoint is unambiguously terminal.
 disposition record is written as a sidecar file rather than inline: given a
 quarantined checkpoint at `<archive>/checkpoints/<filename>`, the sidecar is
 written at `<archive>/checkpoints/<filename>.disposition.json`
-(`events.CheckpointDispositionSidecarPath`). The sidecar write is an
-idempotent upsert: re-running quarantine with the same inputs overwrites the
-sidecar with identical content.
+(`events.CheckpointDispositionSidecarPath`).
+
+**153.002-T (S1 U2) — the sidecar write is CREATE-ONLY (not an idempotent
+upsert)**: re-running quarantine on the same filename while a sidecar already
+exists at the destination returns `ErrCheckpointDestinationOccupied`, not a
+silent success. A post-link fsync failure returns `ErrWriteIndeterminate`,
+meaning both the move and sidecar are committed but durability is uncertain;
+do NOT blindly retry on that outcome. Prior semantics ("idempotent upsert")
+are superseded by this contract.
 
 ## Audit Ordering and Failure Classes
 
