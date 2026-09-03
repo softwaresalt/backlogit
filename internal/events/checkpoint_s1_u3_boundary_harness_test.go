@@ -204,6 +204,27 @@ func TestCreateCheckpoint_U3_S1_HoneyJarNotRejected(t *testing.T) {
 	assert.NotEmpty(t, result.Path)
 }
 
+// TestCreateCheckpoint_U3_S1_UnderscorePrecededGhpRejected (153.003-T / S1 U3,
+// Copilot PRRT_kwDORzozKM6fEI53) asserts that a distinctive prefix like ghp_
+// preceded by an underscore (e.g. "token_ghp_secret") IS still detected.
+// Distinctive prefixes use strings.Contains (not word-boundary) so
+// underscore-prefixed occurrences are not missed.
+func TestCreateCheckpoint_U3_S1_UnderscorePrecededGhpRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	// "token_ghp_..." has ghp_ preceded by underscore, which would be missed
+	// by word-boundary matching but is caught by strings.Contains.
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-underscore","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"key":"token_ghp_1234567890abcdef1234567890abcdef12"}}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.Error(t, err, "ghp_ preceded by underscore must be detected (distinctive prefix uses Contains)")
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointStateDumpSecretDetected),
+		"error must satisfy errors.Is(err, ErrCheckpointStateDumpSecretDetected), got: %v", err)
+
+	assertNoCheckpointWritten(t, dir)
+}
+
 // TestCreateCheckpoint_U3_S1_HyphenPrecededSkProjRejected (153.003-T / S1 U3,
 // Copilot PRRT_kwDORzozKM6fDzYk) asserts that a sk- token preceded by a hyphen
 // (e.g. "openai-key-sk-proj-...") IS detected. Hyphen is a boundary character,

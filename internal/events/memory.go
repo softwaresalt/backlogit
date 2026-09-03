@@ -157,31 +157,46 @@ func checkDecodedJSONStringsForSecrets(data []byte) error {
 
 
 // decodedStringContainsSecret reports whether s contains a secret-material
-// pattern from a decoded JSON string value. ALL patterns use word-boundary
-// detection to prevent false positives on ordinary words and filenames
-// (e.g. "SLOVAKIA" contains "AKIA" but is not an AWS key; "MSG.txt" contains
-// "SG." but is not a SendGrid API key — Copilot PRRT_kwDORzozKM6fDJgC).
+// pattern from a decoded JSON string value.
+//
+// Pattern classification (Copilot PRRT_kwDORzozKM6fEI53):
+//   - Distinctive prefixes (ghp_, github_pat_, etc.) use strings.Contains so
+//     embedded occurrences like "token_ghp_secret" are detected even when
+//     the prefix is underscore-preceded.
+//   - Collision-prone short patterns (AKIA, AIza, SG.) use word-boundary
+//     matching to avoid false positives on common words like SLOVAKIA/MSG.txt.
+//   - sk- and eyJ have dedicated helpers with specialized boundary rules.
 func decodedStringContainsSecret(s string) bool {
+	// Distinctive prefixes: use unanchored Contains so embeddings (e.g.
+	// "token_ghp_secret", "auth_ghr_xxx") are not missed.
 	for _, prefix := range []string{
-		"ghp_", "gho_", "ghs_", "ghu_",       // GitHub OAuth / server / user tokens
-		"github_pat_",                          // GitHub fine-grained PAT
-		"ghr_",                                 // GitHub refresh token
-		"AKIA",  // AWS access key ID (word-boundary: "SLOVAKIA" must not match)
-		"AIza",  // Google API key
-		"SG.",   // SendGrid (word-boundary: "MSG.txt" must not match)
-		"xoxb-", "xoxp-", "xoxe-", "xoxa-",   // Slack tokens
-		"-----BEGIN",                           // PEM header
+		"ghp_", "gho_", "ghs_", "ghu_",   // GitHub OAuth / server / user tokens
+		"github_pat_",                      // GitHub fine-grained PAT
+		"ghr_",                             // GitHub refresh token
+		"xoxb-", "xoxp-", "xoxe-", "xoxa-", // Slack tokens
+		"-----BEGIN",                       // PEM header (distinctive; never mid-word)
+	} {
+		if strings.Contains(s, prefix) {
+			return true
+		}
+	}
+	// Collision-prone short patterns: use word-boundary to avoid false positives
+	// on common words (SLOVAKIA→AKIA, MSG.txt→SG., etc.).
+	for _, prefix := range []string{
+		"AKIA", // AWS access key ID (SLOVAKIA contains it)
+		"AIza", // Google API key
+		"SG.",  // SendGrid (MSG.txt contains it)
 	} {
 		if containsAtWordBoundary(s, prefix) {
 			return true
 		}
 	}
+	// sk- and eyJ use dedicated helpers with their own boundary rules.
 	if containsJWTPrefix(s) {
 		return true
 	}
 	return containsSecretSKPrefix(s)
 }
-
 // containsAtWordBoundary reports whether s contains prefix at a position that
 // is either the start of the string or preceded by a non-word character
 // ([a-zA-Z0-9_]). This prevents false positives where a short prefix appears
