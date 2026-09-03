@@ -32,13 +32,11 @@ import (
 // schema-valid document that simply does not match a filter is still
 // dropped as usual.
 func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointFilter) ([]CheckpointSummary, error) {
-	// 153.001-T (302EFF07 / Copilot 5th-review): validate the checkpointDir
-	// itself is not a symlink before globbing. If the directory is a symlink,
-	// glob follows it and readCheckpointFileNoFollow sees regular files (not
-	// symlinks), so the per-file no-follow guard alone is insufficient to
-	// prevent exposure of out-of-workspace checkpoint metadata.
-	if info, lerr := os.Lstat(checkpointDir); lerr == nil && info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("%w: checkpoint directory is a symlink", backlogiterrors.ErrCheckpointTargetUnsafe)
+	// 153.001-T (302EFF07 / Copilot 5th+6th-review): validate the checkpointDir
+	// itself is not a symlink or reparse point before globbing. On Windows,
+	// junctions (ModeIrregular) would not be caught by ModeSymlink alone.
+	if info, lerr := os.Lstat(checkpointDir); lerr == nil && (info.Mode()&os.ModeSymlink != 0 || isPathSymlinkOrReparse(checkpointDir)) {
+		return nil, fmt.Errorf("%w: checkpoint directory is a symlink or reparse point", backlogiterrors.ErrCheckpointTargetUnsafe)
 	}
 	pattern := filepath.Join(checkpointDir, "checkpoint-*.json")
 	matches, err := filepath.Glob(pattern)
@@ -392,9 +390,9 @@ func CleanupCheckpoints(_ context.Context, checkpointDir string, retentionDays i
 	if retentionDays <= 0 {
 		return CleanupResult{}, fmt.Errorf("retentionDays must be > 0, got %d", retentionDays)
 	}
-	// 153.001-T: same checkpointDir symlink guard as ListCheckpoints.
-	if info, lerr := os.Lstat(checkpointDir); lerr == nil && info.Mode()&os.ModeSymlink != 0 {
-		return CleanupResult{}, fmt.Errorf("%w: checkpoint directory is a symlink", backlogiterrors.ErrCheckpointTargetUnsafe)
+	// 153.001-T: same checkpointDir symlink/reparse-point guard as ListCheckpoints.
+	if info, lerr := os.Lstat(checkpointDir); lerr == nil && (info.Mode()&os.ModeSymlink != 0 || isPathSymlinkOrReparse(checkpointDir)) {
+		return CleanupResult{}, fmt.Errorf("%w: checkpoint directory is a symlink or reparse point", backlogiterrors.ErrCheckpointTargetUnsafe)
 	}
 
 	archiveDir := filepath.Join(filepath.Dir(checkpointDir), "archive", "checkpoints")
@@ -504,36 +502,36 @@ func ensurePathContained(dir, path string) error {
 }
 
 // rejectSymlinksInPathChain checks every filesystem path component from base
-// (inclusive) to path (inclusive) using os.Lstat. If any existing component
-// is a symlink it returns a wrapped ErrCheckpointTargetUnsafe. A missing
-// component (os.ErrNotExist) stops the walk without error — the caller's
-// subsequent read will surface the absence. Permission, I/O, or transient
-// errors are propagated fail-closed: an inaccessible component cannot be
-// proven symlink-free, so the chain is rejected (adversarial-review Copilot
-// finding #1 remediation, 153.001-T).
+// (inclusive) to path (inclusive). If any existing component is a symlink or
+// a non-symlink reparse point (on Windows, junctions reported as ModeIrregular
+// rather than ModeSymlink), it returns a wrapped ErrCheckpointTargetUnsafe.
+// A missing component (os.ErrNotExist) stops the walk without error — the
+// caller's subsequent read will surface the absence. Permission, I/O, or
+// transient errors are propagated fail-closed.
 func rejectSymlinksInPathChain(base, path string) error {
 	current := path
 	for {
 		info, lerr := os.Lstat(current)
-		if lerr == nil && info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%w: path component is a symlink", backlogiterrors.ErrCheckpointTargetUnsafe)
+		if lerr == nil {
+			// Check ModeSymlink AND reparse points (Windows junctions are
+			// reported as ModeIrregular on Go 1.24, not ModeSymlink).
+			if info.Mode()&os.ModeSymlink != 0 || isPathSymlinkOrReparse(current) {
+				return fmt.Errorf("%w: path component is a symlink or reparse point", backlogiterrors.ErrCheckpointTargetUnsafe)
+			}
 		}
 		if lerr != nil {
 			if os.IsNotExist(lerr) {
-				// Component not found; stop. Caller's read will surface absence.
 				return nil
 			}
-			// Permission, I/O, or transient error — fail closed: an inaccessible
-			// component cannot be verified as symlink-free.
 			return fmt.Errorf("%w: cannot verify path component is not a symlink: %w",
 				backlogiterrors.ErrCheckpointTargetUnsafe, lerr)
 		}
 		if current == base {
-			break // all components including base checked
+			break
 		}
 		parent := filepath.Dir(current)
 		if parent == current {
-			break // filesystem root reached
+			break
 		}
 		current = parent
 	}
