@@ -96,7 +96,7 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 		// Conformance check (147-F / U6): runs regardless of valErr, so a
 		// document can fail both validation and conformance and the operator
 		// sees both reasons. Publishes structured RemediationIntent, never a
-		// command string â€” internal/events has no knowledge of the caller's
+		// command string — internal/events has no knowledge of the caller's
 		// working directory (cycle-17 gate finding H1). The parse-failure
 		// and schema-invalid branches above already publish only structured
 		// remediation metadata; this unit adds no executable command string.
@@ -193,7 +193,7 @@ func GetCheckpoint(_ context.Context, checkpointDir, filename string) (*Checkpoi
 // CheckpointReadResult is the structured read result for a checkpoint,
 // carrying conformance and remediation metadata alongside the parsed
 // document (147-F / U15). This declaration adds no conformance evaluation,
-// no intent population, and no offender projection of its own â€” every field
+// no intent population, and no offender projection of its own — every field
 // beyond Checkpoint and Valid starts at its zero value here; U6b's
 // production delta populates them from a live read.
 type CheckpointReadResult struct {
@@ -208,13 +208,13 @@ type CheckpointReadResult struct {
 // GetCheckpointResult reads and validates a specific checkpoint file,
 // returning a CheckpointReadResult. It reads the file's bytes exactly once
 // and derives parsing, validation, and conformance all from that same
-// snapshot (147-F, found during 130-S adversarial review) â€” an earlier
+// snapshot (147-F, found during 130-S adversarial review) — an earlier
 // version called GetCheckpoint (which performs its own internal read) and
 // then re-read the same path a second time to run the conformance check.
 // If the file changed between those two reads, the returned Checkpoint and
 // conformance metadata could describe different byte sequences; if the
 // second read failed, the result was misreported as conforming rather than
-// surfacing the read error. On error, the error is returned unwrapped â€” a
+// surfacing the read error. On error, the error is returned unwrapped — a
 // read is not a rewrite, so ErrCheckpointInvalid still resolves via
 // errors.Is and QuarantineIsRemedy(err) is false; there is nothing to
 // refuse (147-F / U15).
@@ -224,8 +224,8 @@ type CheckpointReadResult struct {
 // CheckConformingTopLevelNamespace against the same bytes that produced
 // Checkpoint (147-F / U6b). NonConformingFields is recovered via errors.As
 // from the conformance verdict and produced by
-// CheckpointNonConformingError.BoundedFieldPaths â€” never re-derived or
-// re-capped here â€” so `checkpoint get` stays an atomic, bounded, per-file
+// CheckpointNonConformingError.BoundedFieldPaths — never re-derived or
+// re-capped here — so `checkpoint get` stays an atomic, bounded, per-file
 // offender source with machine-checkable truncation metadata. valid
 // retains its existing (schema-valid) meaning; conforming is reported as a
 // distinct field so no existing consumer's contract silently changes.
@@ -307,7 +307,7 @@ func ResolveCheckpoint(ctx context.Context, checkpointDir, filename string) erro
 	cp, err := ParseCheckpoint(data)
 	if err != nil {
 		// 147-F: multi-%w so both errors.Is(err, ErrCheckpointUseQuarantine)
-		// and errors.Is(err, ErrCheckpointCorrupt) hold â€” matching the same
+		// and errors.Is(err, ErrCheckpointCorrupt) hold — matching the same
 		// disposition-refusal shape the schema-invalid-but-parseable class
 		// gets below, so the two "does not parse" / "parses but
 		// schema-invalid" rows of the four-class contract stay identical in
@@ -329,7 +329,7 @@ func ResolveCheckpoint(ctx context.Context, checkpointDir, filename string) erro
 	}
 
 	// 147-F / U3: refuse a schema-invalid document rather than replacing it
-	// with a fabricated skeleton. Multi-%w (not %v â€” Q2) so both
+	// with a fabricated skeleton. Multi-%w (not %v — Q2) so both
 	// errors.Is(err, ErrCheckpointUseQuarantine) and errors.Is(err,
 	// ErrCheckpointInvalid) hold: the caller learns both the remedy verb and
 	// the underlying validation-class reason. This gate does not write; the
@@ -359,7 +359,7 @@ func ResolveCheckpoint(ctx context.Context, checkpointDir, filename string) erro
 // passes to RewriteCheckpointFile. It is a named function (rather than an
 // inline closure) so a test can invoke RewriteCheckpointFile with this exact
 // production logic directly, against a checkpoint whose on-disk content
-// reflects a state RewriteCheckpointFile's own independent read observes â€”
+// reflects a state RewriteCheckpointFile's own independent read observes —
 // which may differ from what ResolveCheckpoint's earlier classification read
 // observed if a concurrent AbandonCheckpoint won the race in between (147-F,
 // found during 130-S adversarial review). The disposition re-check below is
@@ -488,8 +488,11 @@ func ensurePathContained(dir, path string) error {
 // rejectSymlinksInPathChain checks every filesystem path component from base
 // (inclusive) to path (inclusive) using os.Lstat. If any existing component
 // is a symlink it returns a wrapped ErrCheckpointTargetUnsafe. A missing
-// component stops the walk without error — the caller's subsequent read will
-// surface the absence naturally.
+// component (os.ErrNotExist) stops the walk without error — the caller's
+// subsequent read will surface the absence. Permission, I/O, or transient
+// errors are propagated fail-closed: an inaccessible component cannot be
+// proven symlink-free, so the chain is rejected (adversarial-review Copilot
+// finding #1 remediation, 153.001-T).
 func rejectSymlinksInPathChain(base, path string) error {
 	current := path
 	for {
@@ -498,8 +501,14 @@ func rejectSymlinksInPathChain(base, path string) error {
 			return fmt.Errorf("%w: path component is a symlink", backlogiterrors.ErrCheckpointTargetUnsafe)
 		}
 		if lerr != nil {
-			// Component not found; stop. Caller's read will surface absence.
-			return nil
+			if os.IsNotExist(lerr) {
+				// Component not found; stop. Caller's read will surface absence.
+				return nil
+			}
+			// Permission, I/O, or transient error — fail closed: an inaccessible
+			// component cannot be verified as symlink-free.
+			return fmt.Errorf("%w: cannot verify path component is not a symlink: %w",
+				backlogiterrors.ErrCheckpointTargetUnsafe, lerr)
 		}
 		if current == base {
 			break // all components including base checked

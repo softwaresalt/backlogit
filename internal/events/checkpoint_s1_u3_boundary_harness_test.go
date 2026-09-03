@@ -132,6 +132,26 @@ func TestCreateCheckpoint_U3_S1_TaskIDNotRejectedAsFalsePositive(t *testing.T) {
 	assert.NotEmpty(t, result.Path)
 }
 
+// TestCreateCheckpoint_U3_S1_UnicodeEscapeBypassRejected (153.003-T / S1 U3,
+// adversarial-review Copilot finding #3) asserts that a secret encoded as a
+// Unicode escape sequence (e.g. \u0067hp_ for ghp_) is detected and rejected.
+// The raw-byte scan would miss this; the decoded-value pass catches it.
+func TestCreateCheckpoint_U3_S1_UnicodeEscapeBypassRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	// \u0067 = 'g', so \u0067hp_ decodes to ghp_ after JSON parsing.
+	// Raw-byte scan sees "\u0067hp_" not "ghp_" — only the decoded pass catches this.
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-escape","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"token":"\u0067hp_1234567890abcdef1234567890abcdef12"}}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.Error(t, err, "Unicode-escape-encoded secret must be rejected by the decoded-value pass")
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointStateDumpSecretDetected),
+		"error must satisfy errors.Is(err, ErrCheckpointStateDumpSecretDetected), got: %v", err)
+
+	assertNoCheckpointWritten(t, dir)
+}
+
 // TestCreateCheckpoint_U3_S1_ErrorDoesNotLeakPayload asserts that the error
 // message for an oversized or secret-containing dump does not include the raw
 // payload (Constitution III: checkpoint context may contain sensitive data).

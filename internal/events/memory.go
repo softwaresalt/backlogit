@@ -83,15 +83,89 @@ func checkStateDumpSize(data []byte) error {
 	return nil
 }
 
+// checkpointDecodedSecretPrefixes is the set of secret-material prefixes
+// checked against DECODED JSON string values (as opposed to the raw-byte
+// prefixes in checkpointSecretPrefixes, which are anchored to JSON string
+// delimiters to reduce false positives). Decoded-value matching uses
+// strings.HasPrefix against the actual content of each string value, so
+// anchoring to a JSON delimiter is unnecessary — a value that STARTS with
+// one of these patterns is a candidate secret, regardless of how it was
+// JSON-encoded. The decoded scan supplements the raw-byte scan to close the
+// Unicode-escape bypass (\u0067hp_ decodes to ghp_ but does not match the
+// raw pattern "ghp_). sk- is included here because HasPrefix("task-001","sk-")
+// is false (task-001 does not START with sk-), eliminating the false-positive
+// risk that the raw unanchored scan had.
+var checkpointDecodedSecretPrefixes = []string{
+	"ghp_", "gho_", "ghs_", "ghu_", // GitHub tokens
+	"AKIA",   // AWS access key ID
+	"sk-",    // OpenAI / generic secret-key (HasPrefix is safe — task-001 doesn't start with sk-)
+	"AIza",   // Google API key
+	"SG.",    // SendGrid
+	"xoxb-", "xoxp-", "xoxe-", "xoxa-", // Slack tokens
+	"eyJ",    // JWT
+	"-----BEGIN", // PEM headers
+}
+
 // checkStateDumpSecrets returns ErrCheckpointStateDumpSecretDetected when
 // data contains a heuristically detected secret pattern. It does NOT include
 // the matched pattern or payload bytes in the error message (Constitution III).
+//
+// Two passes: (1) raw-byte scan against JSON-anchored prefixes; (2) decoded
+// JSON string scan against start-of-value prefixes. The decoded pass closes
+// the Unicode-escape bypass (e.g. \u0067hp_ → ghp_) on the legacy write path
+// (adversarial-review Copilot finding #3 remediation, 153.003-T).
 func checkStateDumpSecrets(data []byte) error {
+	// Pass 1: raw byte scan (fast; catches most cases).
 	s := string(data)
 	for _, prefix := range checkpointSecretPrefixes {
 		if strings.Contains(s, prefix) {
 			return fmt.Errorf("%w: detected pattern indicates possible secret material; redact before creating a checkpoint",
 				backlogiterrors.ErrCheckpointStateDumpSecretDetected)
+		}
+	}
+	// Pass 2: decoded JSON string values (closes Unicode-escape bypass).
+	if err := checkDecodedJSONStringsForSecrets(data); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkDecodedJSONStringsForSecrets walks all string values in data (decoded
+// as JSON) and returns ErrCheckpointStateDumpSecretDetected if any value
+// starts with a known secret prefix. It is best-effort: if data is not valid
+// JSON, this pass is silently skipped (the caller already ran json.Valid).
+// Error messages contain no payload bytes (Constitution III).
+func checkDecodedJSONStringsForSecrets(data []byte) error {
+	var root interface{}
+	if err := json.Unmarshal(data, &root); err != nil {
+		return nil // not valid JSON; pass 1 (raw scan) already ran on same bytes
+	}
+	return walkJSONForSecretStrings(root)
+}
+
+// walkJSONForSecretStrings recursively walks v and returns
+// ErrCheckpointStateDumpSecretDetected if any string value starts with a
+// known decoded secret prefix (checkpointDecodedSecretPrefixes).
+func walkJSONForSecretStrings(v interface{}) error {
+	switch val := v.(type) {
+	case string:
+		for _, prefix := range checkpointDecodedSecretPrefixes {
+			if strings.HasPrefix(val, prefix) {
+				return fmt.Errorf("%w: detected pattern indicates possible secret material; redact before creating a checkpoint",
+					backlogiterrors.ErrCheckpointStateDumpSecretDetected)
+			}
+		}
+	case map[string]interface{}:
+		for _, vv := range val {
+			if err := walkJSONForSecretStrings(vv); err != nil {
+				return err
+			}
+		}
+	case []interface{}:
+		for _, vv := range val {
+			if err := walkJSONForSecretStrings(vv); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
