@@ -126,7 +126,7 @@ func TestListCheckpoints_FilterByMaxAge(t *testing.T) {
 
 // TestListCheckpoints_FlagsBadFilesReadOnly asserts the 136-F/U9 read-only
 // contract: ListCheckpoints never moves, deletes, or rewrites a malformed
-// checkpoint file. It surfaces NeedsQuarantine and a RemediationCommand so a
+// checkpoint file. It surfaces NeedsQuarantine and a RemediationIntent so a
 // caller can explicitly invoke QuarantineCheckpoint instead.
 func TestListCheckpoints_FlagsBadFilesReadOnly(t *testing.T) {
 	root := t.TempDir()
@@ -141,7 +141,10 @@ func TestListCheckpoints_FlagsBadFilesReadOnly(t *testing.T) {
 	assert.Len(t, summaries, 1)
 	assert.NotEmpty(t, summaries[0].ValidationErr)
 	assert.True(t, summaries[0].NeedsQuarantine)
-	assert.Contains(t, summaries[0].RemediationCommand, "checkpoint quarantine 'checkpoint-bad.json'")
+	if assert.NotNil(t, summaries[0].RemediationIntent) {
+		assert.Equal(t, "quarantine", summaries[0].RemediationIntent.Verb)
+		assert.Equal(t, "checkpoint-bad.json", summaries[0].RemediationIntent.TargetFilename)
+	}
 	assert.False(t, summaries[0].Quarantined, "list must never physically quarantine")
 
 	// The file must remain in place: ListCheckpoints is read-only.
@@ -423,34 +426,6 @@ func TestCleanupCheckpoints_MixedEligibility(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, result.ArchivedCount)
 	assert.Equal(t, 1, result.SkippedCount)
-}
-
-// TestListCheckpoints_RemediationCommandIsShellSafe is the follow-up
-// regression to TestListCheckpoints_FlagsBadFilesReadOnly: the advertised
-// remediation command must be safe to run verbatim in a POSIX shell even
-// when the checkpoint filename contains shell metacharacters, and the
-// "<reason>" placeholder must not be interpreted as input redirection.
-func TestListCheckpoints_RemediationCommandIsShellSafe(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, ".backlogit", "checkpoints")
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-
-	// A filename containing a space and a single quote and a redirection
-	// metacharacter, still matching the checkpoint-*.json glob.
-	weirdName := "checkpoint-weird 'name' & rm -rf.json"
-	require.NoError(t, os.WriteFile(filepath.Join(dir, weirdName), []byte("not-json{"), 0o644))
-
-	summaries, err := ListCheckpoints(context.Background(), dir, CheckpointFilter{})
-	require.NoError(t, err)
-	require.Len(t, summaries, 1)
-
-	cmd := summaries[0].RemediationCommand
-	// The filename must appear fully single-quoted (embedded quotes escaped),
-	// never bare — a bare filename with spaces/metacharacters would not be
-	// safely copy-pastable into a shell.
-	assert.Contains(t, cmd, "'checkpoint-weird '\\''name'\\'' & rm -rf.json'")
-	// The reason placeholder must be quoted so "<" is never live redirection.
-	assert.Contains(t, cmd, "--reason '<reason>'")
 }
 
 // TestResolveCheckpoint_NoHTMLEscape verifies that ResolveCheckpoint writes
