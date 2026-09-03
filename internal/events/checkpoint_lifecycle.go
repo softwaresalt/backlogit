@@ -396,6 +396,19 @@ func CleanupCheckpoints(_ context.Context, checkpointDir string, retentionDays i
 	}
 
 	archiveDir := filepath.Join(filepath.Dir(checkpointDir), "archive", "checkpoints")
+	// 153.001-T (Copilot PRRT_kwDORzozKM6fEVLC): validate the archive destination
+	// components are not symlinks or reparse points before MkdirAll creates them.
+	// This closes the same symlink/reparse-point escape vector that
+	// QuarantineCheckpoint already guards via rejectSymlinkedDir.
+	archiveBase := filepath.Join(filepath.Dir(checkpointDir), "archive")
+	if info, lerr := os.Lstat(archiveBase); lerr == nil &&
+		(info.Mode()&os.ModeSymlink != 0 || isPathSymlinkOrReparse(archiveBase)) {
+		return CleanupResult{}, fmt.Errorf("%w: archive directory is a symlink or reparse point", backlogiterrors.ErrCheckpointTargetUnsafe)
+	}
+	if info, lerr := os.Lstat(archiveDir); lerr == nil &&
+		(info.Mode()&os.ModeSymlink != 0 || isPathSymlinkOrReparse(archiveDir)) {
+		return CleanupResult{}, fmt.Errorf("%w: archive checkpoints directory is a symlink or reparse point", backlogiterrors.ErrCheckpointTargetUnsafe)
+	}
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		return CleanupResult{}, fmt.Errorf("create archive dir: %w", err)
 	}
