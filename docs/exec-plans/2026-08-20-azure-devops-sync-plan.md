@@ -986,7 +986,7 @@ telemetry row.
 | Optimistic concurrency | `test` on `/rev` as first patch op unless the frozen action carries the plan-time `skip_revision_test` | U10, U11, U22, U23 |
 | Drift detection at plan time | Batch read `System.Rev`, compare to stored rev | U12, U22 |
 | Plan is a frozen execution contract | Resolved payloads plus binding digests, content-addressed id | U23, U29, U31 |
-| Partial failure is artifact-atomic | Per-artifact loop; envelope only for the local triple | U33, U34, U35 |
+| Partial failure is artifact-atomic | Per-artifact loop; envelope only for the local triple | U33c, U34, U35 |
 | Indeterminate never retried | Typed remote classification by terminal cause, indeterminacy dominant, plus `pending_verify` | U8, U9, U36 |
 | Resume is safe | Frontmatter-authoritative resume, correlation re-resolution | U37 |
 | Pending work is semantically confirmed | `verify` compares remote fields to the frozen payload | U38 |
@@ -1373,21 +1373,39 @@ a stale lease past its TTL is reclaimable.
 Acceptance: the lease follows the existing task-lock pattern and its scope
 (one shared workspace) is stated in the error message.
 
-**U33 — RED harness for the apply loop.**
-Files: `internal/core/external_sync_apply.go` (signature-only stub),
-`internal/core/external_sync_apply_test.go`.
+**U33a — RED source-shape harness for the apply entry point.**
+Files: `internal/core/external_sync_apply_shape_test.go`.
+Tests: parse `internal/core/external_sync_apply.go` with `go/parser` and assert
+that `ApplyExternalSyncPlan` exists with the reviewed context, workspace,
+plan-ID, provider, event-writer, and option signature.
+Acceptance: the harness imports no undeclared production identifier, compiles
+before the production file exists, and fails on an assertion that names the
+missing declaration. It lands before U33b.
+Depends on: U14, U23, U24, U28.
+
+**U33b — Apply entry-point declaration.**
+Files: `internal/core/external_sync_apply.go`.
+Acceptance: land only the exact declaration gated by U33a, with a
+declaration-only not-implemented error path and no provider call, file write,
+event append, retry, or loop behavior. U33a turns green. The placeholder is not
+exposed through CLI or MCP and is replaced by U34 only after U33c's behavior
+harness has landed red.
+Depends on: U33a.
+
+**U33c — RED behavior harness for the apply loop.**
+Files: `internal/core/external_sync_apply_test.go`.
 Tests, driven by a fake `extsync.Provider`: a failure on artifact 2 leaves
 artifact 1 applied; a `remote_drift` result records `conflict` and continues; a
 successful create writes all three local representations.
-Acceptance: the stub returns `errors.New("not implemented")` so the harness
-**compiles and fails on assertions** rather than failing to build. A test file
-referencing an undefined symbol produces a build error, which is a different and
-unverifiable signal.
-Depends on: U14, U23, U24, U28.
+Acceptance: the behavior harness lands strictly after U33b and before U34. It
+compiles against the declared entry point and fails on assertions against the
+declaration-only error path; it never relies on an undefined-symbol build
+failure as red evidence.
+Depends on: U33b.
 
 **U34 — Apply loop: ordering and provider invocation.**
 Files: `internal/core/external_sync_apply.go`.
-Acceptance: U33's ordering and continuation assertions turn green; the loop
+Acceptance: U33c's ordering and continuation assertions turn green; the loop
 consumes only frozen plan payloads and synthesizes no action; the entry point is
 `core.ApplyExternalSyncPlan(ctx, ws, planID string, prov extsync.Provider, ew *events.EventWriter, opts ...ExternalSyncOption)`
 with `WithResume()` and `WithBypassRules()`, applied before validated required
@@ -1396,7 +1414,7 @@ fields so an option cannot override an invariant. There is deliberately **no**
 decided and approved at plan time (U23, U43), and the loop reads it rather than
 being able to set it. A test asserts that the emitted patch document carries the
 `/rev` test whenever the frozen action does not set `skip_revision_test`.
-Depends on: U32, U33.
+Depends on: U32, U33c.
 
 **U35 — Local write triple and envelope semantics.**
 Files: `internal/core/external_sync_local.go`, `external_sync_local_test.go`.
@@ -1670,8 +1688,8 @@ U24 ─┬─► U25
      ├─► U28
      └─► U39 ◄── U27
 U16, U22, U29, U30 ─► U31
-U14, U23, U24, U28 ─► U33 ─┐
-U32 ───────────────────────┴─► U34 ─┬─► U35 ─► U36 ─► U38
+U14, U23, U24, U28 ─► U33a ─► U33b ─► U33c ─┐
+U32 ─────────────────────────────────────────┴─► U34 ─┬─► U35 ─► U36 ─► U38
                                     ├─► U37
                                     ├─► U46
                                     └─► U48 ◄── U6
@@ -1688,7 +1706,7 @@ conditional unit U51, so the acyclicity claim is honest.
 
 Three independent front lines can proceed in parallel: configuration (U1-U4),
 the REST leaf (U5-U13), and pure mapping (U17-U21). They converge at U22 and
-again at U33.
+again at U33c.
 
 ## Decisions and Rationale
 
@@ -1893,7 +1911,7 @@ it means the error-classification table is unproven.
 | Principle | Verdict | Note |
 |---|---|---|
 | I. Safety-First Go | pass | Go 1.24; no `unsafe`; every error wraps with `%w`; new sentinels and the typed `ExternalWriteError` live in `internal/errors` |
-| II. Test-First Development (NON-NEGOTIABLE) | pass | Every unit is test-first; U33 is an explicit RED harness with a signature-only stub so it compiles and fails on assertions rather than on the build |
+| II. Test-First Development (NON-NEGOTIABLE) | pass | Every unit is test-first; U33a lands a compiling source-shape RED before the declaration, U33b lands only the gated declaration, U33c lands the behavior RED against that declaration, and U34 implements the behavior |
 | III. Workspace Isolation and Security Boundaries | pass | Paths resolve through `SafeResolve` and `WorkspaceStorageRoot` and are normalized with `filepath.Abs`; the PAT is environment-only, prefix-restricted, and redacted; the target host is allowlisted |
 | IV. CLI Workspace Containment (NON-NEGOTIABLE) | pass | Every file written is inside the workspace tree; the only out-of-tree effect is the intended Azure DevOps REST call, which is the feature |
 | V. Structured Observability | pass | Four JSONL event types, telemetry counters, and structured `plan`, `apply`, `plans`, `status`, and `verify` payloads with closed vocabularies |
@@ -2186,7 +2204,7 @@ entry point.
 Not adopted, with rationale: extracting a separate external-sync application
 service now (recorded as a future seam instead — it is a refactor without a
 second consumer, which Principle VI resists), and deferring the `Provider`
-interface entirely until a second provider exists (the fake provider in U33 is a
+interface entirely until a second provider exists (the fake provider in U33c is a
 genuine test seam that the interface exists to serve).
 
 ### Residual follow-ups
