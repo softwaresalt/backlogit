@@ -83,39 +83,17 @@ func checkStateDumpSize(data []byte) error {
 	return nil
 }
 
-// checkpointDecodedSecretPrefixes is the set of secret-material prefixes
-// checked against DECODED JSON string values (as opposed to the raw-byte
-// prefixes in checkpointSecretPrefixes, which are anchored to JSON string
-// delimiters to reduce false positives). Decoded-value matching uses
-// strings.HasPrefix against the actual content of each string value, so
-// anchoring to a JSON delimiter is unnecessary — a value that STARTS with
-// one of these patterns is a candidate secret, regardless of how it was
-// JSON-encoded. The decoded scan supplements the raw-byte scan to close the
-// Unicode-escape bypass (\u0067hp_ decodes to ghp_ but does not match the
-// raw pattern "ghp_). sk- is included here because HasPrefix("task-001","sk-")
-// is false (task-001 does not START with sk-), eliminating the false-positive
-// risk that the raw unanchored scan had.
-var checkpointDecodedSecretPrefixes = []string{
-	"ghp_", "gho_", "ghs_", "ghu_", // GitHub tokens
-	"AKIA",   // AWS access key ID
-	"sk-",    // OpenAI / generic secret-key (HasPrefix is safe — task-001 doesn't start with sk-)
-	"AIza",   // Google API key
-	"SG.",    // SendGrid
-	"xoxb-", "xoxp-", "xoxe-", "xoxa-", // Slack tokens
-	"eyJ",    // JWT
-	"-----BEGIN", // PEM headers
-}
-
 // checkStateDumpSecrets returns ErrCheckpointStateDumpSecretDetected when
 // data contains a heuristically detected secret pattern. It does NOT include
 // the matched pattern or payload bytes in the error message (Constitution III).
 //
 // Two passes: (1) raw-byte scan against JSON-anchored prefixes; (2) decoded
-// JSON string scan against start-of-value prefixes. The decoded pass closes
-// the Unicode-escape bypass (e.g. \u0067hp_ → ghp_) on the legacy write path
-// (adversarial-review Copilot finding #3 remediation, 153.003-T).
+// JSON string scan using Contains/word-boundary logic. The decoded pass closes
+// the Unicode-escape bypass (e.g. \u0067hp_ → ghp_) and catches embedded
+// secrets like "Bearer ghp_abc" (adversarial-review Copilot re-review
+// remediation, 153.003-T).
 func checkStateDumpSecrets(data []byte) error {
-	// Pass 1: raw byte scan (fast; catches most cases).
+	// Pass 1: raw byte scan (fast; catches most common cases).
 	s := string(data)
 	for _, prefix := range checkpointSecretPrefixes {
 		if strings.Contains(s, prefix) {
@@ -144,16 +122,21 @@ func checkDecodedJSONStringsForSecrets(data []byte) error {
 }
 
 // walkJSONForSecretStrings recursively walks v and returns
-// ErrCheckpointStateDumpSecretDetected if any string value starts with a
+// ErrCheckpointStateDumpSecretDetected if any string value contains a
 // known decoded secret prefix (checkpointDecodedSecretPrefixes).
+//
+// For most prefixes, strings.Contains is used (the patterns are distinctive
+// enough that false positives are rare in checkpoint context values, and
+// embedded secrets like "Bearer ghp_abc" would be missed by HasPrefix).
+// For "sk-" specifically, a word-boundary check prevents false positives on
+// "task-001" (prev char 'a' is word char → not matched) while still catching
+// "Bearer sk-proj-abc" (prev char ' ' is non-word → matched).
 func walkJSONForSecretStrings(v interface{}) error {
 	switch val := v.(type) {
 	case string:
-		for _, prefix := range checkpointDecodedSecretPrefixes {
-			if strings.HasPrefix(val, prefix) {
-				return fmt.Errorf("%w: detected pattern indicates possible secret material; redact before creating a checkpoint",
-					backlogiterrors.ErrCheckpointStateDumpSecretDetected)
-			}
+		if decodedStringContainsSecret(val) {
+			return fmt.Errorf("%w: detected pattern indicates possible secret material; redact before creating a checkpoint",
+				backlogiterrors.ErrCheckpointStateDumpSecretDetected)
 		}
 	case map[string]interface{}:
 		for _, vv := range val {
@@ -169,6 +152,56 @@ func walkJSONForSecretStrings(v interface{}) error {
 		}
 	}
 	return nil
+}
+
+// decodedStringContainsSecret reports whether s contains a secret-material
+// pattern from a decoded JSON string value. Most patterns use strings.Contains
+// to catch both prefix and embedded occurrences; "sk-" requires a word-boundary
+// check so "task-001" is not falsely rejected.
+func decodedStringContainsSecret(s string) bool {
+	// Patterns safe for Contains: distinctive enough that mid-word false
+	// positives are negligible, and embedding (e.g. "Bearer ghp_abc") must
+	// also be caught.
+	for _, prefix := range []string{
+		"ghp_", "gho_", "ghs_", "ghu_", // GitHub tokens
+		"AKIA",  // AWS access key ID
+		"AIza",  // Google API key
+		"SG.",   // SendGrid
+		"xoxb-", "xoxp-", "xoxe-", "xoxa-", // Slack tokens
+		"eyJ",        // JWT
+		"-----BEGIN", // PEM header
+	} {
+		if strings.Contains(s, prefix) {
+			return true
+		}
+	}
+	// "sk-" requires a word-boundary: the character immediately preceding
+	// "sk-" must not be a letter, digit, or hyphen. This allows sk-proj-abc
+	// (standalone), Bearer sk-proj-abc (space-preceded), but rejects task-001
+	// (preceded by 'a') and risky-setting (preceded by 'i').
+	return containsSecretSKPrefix(s)
+}
+
+// containsSecretSKPrefix reports whether s contains "sk-" preceded by a
+// word boundary (start of string or a non-[a-zA-Z0-9_-] character).
+func containsSecretSKPrefix(s string) bool {
+	const prefix = "sk-"
+	for i := 0; i+len(prefix) <= len(s); i++ {
+		if !strings.HasPrefix(s[i:], prefix) {
+			continue
+		}
+		if i == 0 {
+			return true // at start of string
+		}
+		prev := s[i-1]
+		// Reject if preceded by a word character (letter, digit, underscore, hyphen).
+		if (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') ||
+			(prev >= '0' && prev <= '9') || prev == '_' || prev == '-' {
+			continue
+		}
+		return true // word boundary: space, colon, comma, etc.
+	}
+	return false
 }
 
 // CreateCheckpoint writes a timestamped state dump to the checkpoints directory.

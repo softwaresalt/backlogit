@@ -152,6 +152,41 @@ func TestCreateCheckpoint_U3_S1_UnicodeEscapeBypassRejected(t *testing.T) {
 	assertNoCheckpointWritten(t, dir)
 }
 
+// TestCreateCheckpoint_U3_S1_EmbeddedSecretRejected (153.003-T / S1 U3,
+// adversarial-review Copilot re-review finding) asserts that a secret
+// embedded within a longer value (e.g. "Bearer ghp_abc") is also rejected.
+// HasPrefix would miss this; the Contains-based decoded scan catches it.
+func TestCreateCheckpoint_U3_S1_EmbeddedSecretRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	// "Bearer ghp_..." pattern: secret is NOT at the start of the value.
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-embedded","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"auth":"Bearer ghp_1234567890abcdef1234567890abcdef12"}}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.Error(t, err, "embedded secret (Bearer ghp_...) must be rejected")
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointStateDumpSecretDetected),
+		"error must satisfy errors.Is(err, ErrCheckpointStateDumpSecretDetected), got: %v", err)
+
+	assertNoCheckpointWritten(t, dir)
+}
+
+// TestCreateCheckpoint_U3_S1_BearerSkProjRejected asserts that a sk- prefix
+// preceded by a space (word-boundary) in the decoded value is also rejected.
+func TestCreateCheckpoint_U3_S1_BearerSkProjRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-bearer-sk","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"api_key":"key Bearer sk-proj-XXXXX1234567890abcdef"}}`
+
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.Error(t, err, "sk- after a space (word boundary) must be rejected")
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointStateDumpSecretDetected),
+		"error must satisfy errors.Is(err, ErrCheckpointStateDumpSecretDetected), got: %v", err)
+
+	assertNoCheckpointWritten(t, dir)
+}
+
 // TestCreateCheckpoint_U3_S1_ErrorDoesNotLeakPayload asserts that the error
 // message for an oversized or secret-containing dump does not include the raw
 // payload (Constitution III: checkpoint context may contain sensitive data).

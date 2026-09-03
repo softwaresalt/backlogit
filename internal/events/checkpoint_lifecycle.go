@@ -43,7 +43,10 @@ func ListCheckpoints(_ context.Context, checkpointDir string, filter CheckpointF
 
 	for _, path := range matches {
 		filename := filepath.Base(path)
-		data, readErr := os.ReadFile(path)
+		// 153.001-T (302EFF07 / Copilot re-review): use the no-follow read so a
+		// symlinked file in the checkpoint directory is surfaced as a read error
+		// rather than silently exposing metadata from an out-of-workspace target.
+		data, readErr := readCheckpointFileNoFollow(path)
 		if readErr != nil {
 			slog.Warn("checkpoint read failed", "file", filename, "error", readErr)
 			continue
@@ -398,7 +401,10 @@ func CleanupCheckpoints(_ context.Context, checkpointDir string, retentionDays i
 
 	for _, path := range matches {
 		filename := filepath.Base(path)
-		data, readErr := os.ReadFile(path)
+		// 153.001-T (302EFF07 / Copilot re-review): use the no-follow read so a
+		// symlinked file in the checkpoint directory is surfaced as a skip/error
+		// rather than silently exposing metadata from an out-of-workspace target.
+		data, readErr := readCheckpointFileNoFollow(path)
 		if readErr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("read %s: %v", filename, readErr))
 			result.SkippedCount++
