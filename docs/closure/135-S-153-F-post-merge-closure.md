@@ -15,7 +15,7 @@ docline:
     schema_version: "1.0"
 ingested_at: "2026-09-03T22:58:00Z"
 schema_version: "1.0"
-source: docs/closure/135-S-post-merge-closure.md
+source: docs/closure/135-S-153-F-post-merge-closure.md
 title: "135-S / 153-F Post-Merge Closure Gate Registration"
 ---
 
@@ -70,17 +70,14 @@ frontmatter because the topology gate reads them at that location. Running
 | `3F06493B` | openat2/directory-FD-relative read for full TOCTOU closure (P-021 C1 deferred) | Queued for Stage triage |
 | `7B71AD77` | CleanupCheckpoints read-classify-then-rename TOCTOU — pre-existing, not introduced by 135-S | Queued for Stage triage |
 
-## Provenance Gaps (non-blocking)
+## Provenance Notes
 
-- `153-F` and tasks `153.001-T` through `153.006-T` lack `source_stash_id` /
-  `source_deliberation_id` in their archive records — Stage harvest did not write
-  these provenance fields. The shipment itself ran clean (`ShipShipment` event log:
-  `shipped → archived`, no `mutation_partial`).
-- Deliberation `061-DL` remains `queued` — it has no `canonical_delivery_artifact_id`
-  link to `153-F`. Stage remediation required (Stage PR #410 follow-up).
-
-Neither gap is a closure precondition. Both are Stage-owned and recorded above for
-traceability.
+- `153-F` and tasks `153.001-T` through `153.006-T` lack `source_stash_id` in their
+  archive records — Stage harvest did not write these provenance fields. Non-blocking.
+- Deliberation `061-DL` is now **archived** (Stage PR #410, 2026-09-03) with an
+  `informs` link to `153-F`. The original provenance gap (missing
+  `source_deliberation_id` on `153-F`) is a historical record gap only; the
+  deliberation's disposition is resolved.
 
 ## Closure Status
 
@@ -103,4 +100,5 @@ closure of 135-S was complete on 2026-09-03; this file adds the machine-readable
 gate recognition without altering any historical evidence.
 
 The correction is the minimum change required: a new file that satisfies the gate's
-naming glob and provides the two required frontmatter fields.
+naming glob (`135-S-*-post-merge-closure.md`) and provides the two required
+frontmatter fields (`closure_status: READY`, `compaction_status: done`).
