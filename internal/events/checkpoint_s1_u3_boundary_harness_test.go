@@ -112,6 +112,26 @@ func TestCreateCheckpoint_U3_S1_NormalContextAccepted(t *testing.T) {
 	assert.NotEmpty(t, result.Path)
 }
 
+// TestCreateCheckpoint_U3_S1_TaskIDNotRejectedAsFalsePositive (153.003-T /
+// S1 U3, adversarial-review F5 regression) asserts that ordinary task-ID
+// references in context are NOT rejected. The unanchored "sk-" prefix is a
+// substring of "task-" (t-a-s-k-hyphen), which is pervasive in this tool.
+// After anchoring to `"sk-` (JSON string start), task-related content must
+// not false-positive.
+func TestCreateCheckpoint_U3_S1_TaskIDNotRejectedAsFalsePositive(t *testing.T) {
+	dir := t.TempDir()
+
+	// Contains common task-management vocabulary with "sk-" as a substring
+	// of "task-" and other domain words.
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"u3-s1-task-ids","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","context":{"task_ids":["task-001","task-002"],"note":"risky-setting disk-check risk-averse"}}`
+
+	result, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+
+	require.NoError(t, err,
+		"task IDs and domain vocabulary containing 'sk-' as a substring must NOT be rejected as false positives (F5 fix)")
+	assert.NotEmpty(t, result.Path)
+}
+
 // TestCreateCheckpoint_U3_S1_ErrorDoesNotLeakPayload asserts that the error
 // message for an oversized or secret-containing dump does not include the raw
 // payload (Constitution III: checkpoint context may contain sensitive data).

@@ -51,15 +51,25 @@ const maxCheckpointStateDumpSize = 65536 // 64 KiB
 // causes a fail-closed rejection before writing. The list covers the most
 // common accidental-exposure patterns; a full key-allowlist is deferred
 // (recorded open follow-up, YAGNI).
+//
+// Patterns are anchored to a JSON-string-start boundary (a literal '"'
+// character) to reduce false positives on common substrings: "sk-" alone
+// would match "task-", "risk-", "desk-" etc., which are pervasive in this
+// task-management tool's domain vocabulary. Anchoring to `"sk-` matches
+// only a JSON string VALUE or KEY that begins with sk-, not words that
+// merely contain those characters.
+//
+// "-----BEGIN" and longer patterns that are unlikely to appear as word
+// substrings remain unanchored.
 var checkpointSecretPrefixes = []string{
-	"ghp_", "gho_", "ghs_", "ghu_", // GitHub token prefixes
-	"AKIA",       // AWS access key ID
-	"sk-",        // OpenAI and generic secret-key prefix
-	"AIza",       // Google API key
-	"SG.",        // SendGrid API key
-	"xox",        // Slack token prefix
-	"eyJ",        // JWT (Base64-encoded '{"')
-	"-----BEGIN", // PEM-encoded private key or certificate
+	`"ghp_`, `"gho_`, `"ghs_`, `"ghu_`, // GitHub token prefixes (anchored)
+	`"AKIA`,  // AWS access key ID (anchored)
+	`"sk-`,   // OpenAI / generic secret-key prefix (anchored — avoids "task-", "risk-")
+	`"AIza`,  // Google API key (anchored)
+	`"SG.`,   // SendGrid API key (anchored)
+	`"xoxb-`, `"xoxp-`, `"xoxe-`, `"xoxa-`, // Slack token variants (anchored, specific)
+	`"eyJ`,   // JWT / base64-encoded JSON (anchored)
+	`-----BEGIN`, // PEM-encoded private key or certificate (unanchored — distinct pattern)
 }
 
 // checkStateDumpSize returns ErrCheckpointStateDumpTooLarge when data exceeds
@@ -174,6 +184,14 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 		data, marshalErr = jsonutil.MarshalReadable(cp)
 		if marshalErr != nil {
 			return CreateCheckpointResult{}, fmt.Errorf("marshal v1 checkpoint: %w", marshalErr)
+		}
+		// 153.003-T (S1 U3 / adversarial-review F4 remediation): re-check the
+		// size against the final re-marshaled bytes, not the raw input. V1 auto-
+		// population (created_at, updated_at, status defaults) may grow the
+		// buffer past the fail-closed limit. This second check runs against the
+		// exact bytes that will be written to disk.
+		if sizeErr := checkStateDumpSize(data); sizeErr != nil {
+			return CreateCheckpointResult{}, sizeErr
 		}
 	}
 
