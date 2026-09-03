@@ -42,12 +42,15 @@ The deliberation covered:
 ### Wave-Scoped Scheduler (P-002.6)
 - **Enforced**: Harness-architect is invoked **once per dependency-ready wave** (not once
   across all harness instances). Wave k = tasks in `queued` state whose every dependency is
-  `done`. Tasks with unfinished dependencies are explicitly excluded from each wave to prevent
-  the one-pass deadlock: a later task's harness cannot compile against a declaration its
-  dependency will add, so it must wait until the dependency's wave is complete.
+  in **terminal-success** (`done` or `archived`). Tasks with unfinished dependencies are
+  explicitly excluded from each wave to prevent the one-pass deadlock: a later task's harness
+  cannot compile against a declaration its dependency will add, so it must wait until the
+  dependency's wave is complete.
 - **Semantics**: Each wave's harnesses are scaffolded simultaneously (all red at once), then
-  driven green one task at a time against scoped commands. The full suite runs only at
-  wave-convergence (Step 4.6), after every member is done.
+  driven green one task at a time against scoped commands. At wave-convergence (Step 4.6),
+  compile, vet, lint, format, and all declared scoped commands run unconditionally; the
+  **unfiltered full suite** runs only when `open_red_deliverables_k` is empty (mandatory at
+  final closure, deferred otherwise to avoid absorbing real failures as expected-red).
 - **Benefit**: Ordered execution without loss of test-first invariant; halts deterministically
   on `WAVE_NO_PROGRESS`, `WAVE_CYCLE_DETECTED`, `WAVE_MEMBER_BLOCKED`.
 
@@ -112,7 +115,10 @@ The deliberation covered:
 ## Cycle Coverage
 - Cycles 17-27: Decomposition and initial contract work
 - Cycles 28-35: Remediation and corrections
-- Cycles 36-37: Final validation and merge preparation
+- Cycles 36-37: Review remediation; **cycle 37 ended with two unresolved findings** — not a
+  clean merge state. Cycle 38 resolved both findings and produced the merge-ready state.
+  Cycle 38's record is in the plan artifact (not in the archived memory set, which ends at
+  cycle 37). PR #377 was merged after cycle 38.
 
 ---
 *Compacted on 2026-09-03. Original cycle files archived to docs/archive/memory/*
