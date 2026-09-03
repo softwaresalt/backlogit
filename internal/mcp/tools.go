@@ -1194,7 +1194,10 @@ func (s *Server) handleListCheckpoints(ctx context.Context, request mcplib.CallT
 
 	summaries, err := events.ListCheckpoints(ctx, checkpointDir, filter)
 	if err != nil {
-		return InternalError(fmt.Sprintf("list checkpoints: %v", err)), nil
+		// 153.001-T: use domainError so ErrCheckpointTargetUnsafe (symlinked
+		// or unsafe checkpoint directory) maps to checkpoint_target_unsafe,
+		// not internal_error.
+		return domainError("list checkpoints", err), nil
 	}
 
 	// "quarantined" is fixed at 0: 136-F/U9 made listing strictly read-only,
@@ -1299,7 +1302,8 @@ func (s *Server) handleCleanupCheckpoints(ctx context.Context, request mcplib.Ca
 
 	cleanupResult, err := events.CleanupCheckpoints(ctx, checkpointDir, retentionDays)
 	if err != nil {
-		return InternalError(fmt.Sprintf("cleanup checkpoints: %v", err)), nil
+		// 153.001-T: use domainError so ErrCheckpointTargetUnsafe maps properly.
+		return domainError("cleanup checkpoints", err), nil
 	}
 	return toolResultJSON(cleanupResult)
 }
