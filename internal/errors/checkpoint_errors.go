@@ -113,6 +113,19 @@ var (
 	// supplied a context object with duplicate or case-fold-aliased member names.
 	// Use errors.As to recover *CheckpointDuplicateContextKeyError.
 	ErrCheckpointDuplicateContextKey = errors.New("backlogit: checkpoint context carries duplicate or aliased key(s)")
+
+	// ErrCheckpointStateDumpTooLarge indicates the checkpoint state_dump
+	// exceeds the fail-closed size limit at the create-boundary write guard
+	// (153.003-T / S1 U3). Checkpoints are git-tracked; an unbounded write
+	// is a permanent, irreversible exposure of potentially sensitive data.
+	ErrCheckpointStateDumpTooLarge = errors.New("backlogit: checkpoint state_dump exceeds maximum allowed size")
+
+	// ErrCheckpointStateDumpSecretDetected indicates the checkpoint state_dump
+	// contains a heuristically detected secret pattern (known API-key prefix
+	// or high-entropy token) at the create-boundary write guard (153.003-T /
+	// S1 U3). Checkpoints are git-tracked; writing secret material is an
+	// irreversible exposure — the fail-closed guard rejects without writing.
+	ErrCheckpointStateDumpSecretDetected = errors.New("backlogit: checkpoint state_dump contains possible secret material")
 )
 
 // CheckpointUnknownFieldError is returned when a checkpoint create request
