@@ -55,9 +55,9 @@ Constitution Check: pass
 * Acceptance: each of the five analyzers flags a seeded violation and passes clean code; each is wired into the check target; each lands as an independently verifiable subtask.
 
 ### U-fuzz — Bounded compatibility fuzz target
-* Scope: add the Go fuzz target function `FuzzCompatibilityCorpusDecode` that drives the compatibility corpus decoder through malformed/truncated JSON/YAML, duplicate or case-folded keys, CRLF/LF variants, oversized-token boundaries, and old-version fixtures using the same runner semantics as U1. The committed seed corpus lives under `tests/testdata/compat-corpus/fuzz/` and contains only minimal non-secret fixtures derived from the deterministic corpus.
-* Execution budget: CI runs the target with a bounded budget, for example `go test ./... -run=^$ -fuzz=FuzzCompatibilityCorpusDecode -fuzztime=30s`, or an equivalent fixed-count local harness if CI cannot run Go fuzzing directly.
-* Acceptance: the seed corpus is committed; the fuzz target is crash-free over the configured budget; any discovered crashing input is minimized, committed to the corpus, and converted into a deterministic regression before the unit closes. Independent fuzzing unit.
+* Scope: add the Go fuzz target `FuzzCompatibilityCorpusDecode` in a single owning package (`internal/faultline/compatcorpus`) that drives the compatibility corpus decoder through malformed/truncated JSON/YAML, duplicate or case-folded keys, CRLF/LF variants, oversized-token boundaries, and old-version fixtures, reusing U1's corpus-runner semantics. Seeds use Go's package-local built-in fuzz corpus directory `internal/faultline/compatcorpus/testdata/fuzz/FuzzCompatibilityCorpusDecode/` (the single canonical seed location), augmented via `f.Add` from the deterministic corpus; only minimal non-secret fixtures.
+* Execution budget: CI runs the target against its single owning package with a bounded budget: `go test -run=^$ -fuzz=^FuzzCompatibilityCorpusDecode$ -fuzztime=30s ./internal/faultline/compatcorpus` (Go's `-fuzz` requires exactly one package, so `./...` is not used), or an equivalent fixed-count local harness if CI cannot run Go fuzzing directly.
+* Acceptance: the package-local seed corpus is committed; the fuzz target is crash-free over the configured budget; any discovered crashing input is minimized, committed to the corpus, and converted into a deterministic regression before the unit closes. Depends on U1 (reuses U1's corpus runner).
 
 ## Dependency Graph
 
