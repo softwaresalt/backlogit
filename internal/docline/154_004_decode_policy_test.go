@@ -165,9 +165,14 @@ func TestU2cFindingStructurallyEquivalentToLintTree(t *testing.T) {
 	assert.NotContains(t, planFinding.Fix, "unclosed",
 		"Finding.Fix must not carry the raw YAML body bytes beyond the parser message")
 
-	// LintTree regression: its Finding.Fix must not have changed.
-	assert.Equal(t, lintDecodeErr.Fix, lintDecodeErr.Fix,
-		"LintTree's own Finding.Fix must not change (regression guard; byte-equal)")
+	// LintTree regression guard: its Finding.Fix must still contain
+	// ErrFrontmatterDecode after U2c's changes to normalize.go. The Fix is
+	// produced by decodeDoc (unchanged by U2c); this asserts against the actual
+	// Fix string rather than against itself.
+	assert.Contains(t, lintDecodeErr.Fix, ErrFrontmatterDecode.Error(),
+		"LintTree's Finding.Fix must still contain ErrFrontmatterDecode after U2c")
+	assert.NotEmpty(t, lintDecodeErr.Fix,
+		"LintTree's Finding.Fix must be non-empty after U2c")
 }
 
 // TestU2cEndToEnd_MixedCorpus_ApplyRejectedViaErrPlanHasFindings is the

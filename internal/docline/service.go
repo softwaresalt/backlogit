@@ -59,9 +59,11 @@ type Change struct {
 
 // MigrationPlan is the dry-run result of PlanMigration: an ordered, deterministic
 // set of per-file changes computed without writing anything. Findings holds any
-// per-file decode errors reported during planning (always-array: [] when there
-// are none). PlanMigration populates Findings in U2c; until then it is always
-// empty.
+// per-file frontmatter decode errors reported during planning (always-array:
+// [] when there are none). A plan is only executable when len(Findings) == 0:
+// when Findings is non-empty, Changes reflects only the decodable subset of the
+// corpus, and ApplyMigration will reject the plan with ErrPlanHasFindings and
+// zero writes (corpus all-or-nothing guarantee).
 type MigrationPlan struct {
 	Changes  []Change
 	Findings []Finding
