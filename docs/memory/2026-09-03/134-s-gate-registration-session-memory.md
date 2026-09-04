@@ -80,7 +80,7 @@ Memory count was 49 files (above 40-file threshold), 533 KB (above 500 KB thresh
 
 **Result:** 19 stage-pr377-cycle-* files (cycles 17-37, 180 KB) archived to
 `docs/archive/memory/`. Compacted summary created at
-`docs/memory/compacted/2026-09-03-stage-pr377-cycles-compacted.md`.
+`docs/archive/memory/2026-09-03-stage-pr377-cycles-compacted.md`.
 Memory count reduced from 49 to 30 files (below threshold).
 
 ## Next Steps

@@ -99,7 +99,7 @@ so delegation of that objective was prohibited for this turn.
 |---|---|
 | Deliberation | `docs/decisions/2026-08-24-checkpoint-toplevel-key-disposition-deliberation.md` |
 | Implementation plan | `docs/exec-plans/2026-08-24-checkpoint-toplevel-key-disposition-plan.md` |
-| Compaction roll-up | `docs/memory/compacted/2026-07-10-shipped-units-072S-087F-rollup-compacted.md` |
+| Compaction roll-up | `docs/archive/memory/2026-07-10-shipped-units-072S-087F-rollup-compacted.md` |
 
 ## Backlog state
 
