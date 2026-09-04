@@ -43,6 +43,15 @@ var (
 	// failure is per-file data malformation: LintTree reports it as a finding
 	// and continues scanning the rest of the corpus rather than aborting.
 	ErrFrontmatterDecode = errors.New("docline: frontmatter decode failed")
+	// ErrPlanHasFindings indicates that a MigrationPlan carries per-file
+	// findings (e.g. frontmatter decode errors surfaced during planning).
+	// ApplyMigration rejects such a plan with zero writes to preserve the
+	// all-or-nothing corpus guarantee: a corpus containing decode errors must
+	// not be partially migrated, because the caller cannot know whether the
+	// malformed files were intended to be in scope. The sentinel is distinct
+	// from ErrFrontmatterDecode (which is per-file/planning) so callers can
+	// distinguish a plan-level rejection from a planning-time parse failure.
+	ErrPlanHasFindings = errors.New("docline: migration plan carries per-file findings; apply refused")
 )
 
 // RuleDecodeError is the Finding.Rule value reported when a document's

@@ -55,16 +55,28 @@ type ChangeReport struct {
 	BodyBytesChanged bool   `json:"body_bytes_changed"`
 }
 
-// MigrateReport is the pinned migration result envelope. Applied/Skipped are
-// present only for an apply (they are nil for a dry-run plan).
+// MigrateReport is the pinned migration result envelope. Applied and Skipped
+// are always-present arrays: they are [] (never null or absent) for both a
+// dry-run plan (res == nil) and a zero-apply result (res != nil, empty sets).
+// This is the always-an-array contract: downstream consumers must not
+// distinguish null from empty — both encode "nothing happened" as [].
+// Findings holds per-file frontmatter decode errors reported during PlanMigration
+// (always-array: [] when there are none).
 type MigrateReport struct {
-	DryRun  bool           `json:"dry_run"`
-	Changes []ChangeReport `json:"changes"`
-	Applied []string       `json:"applied,omitempty"`
-	Skipped []string       `json:"skipped,omitempty"`
+	DryRun   bool            `json:"dry_run"`
+	Changes  []ChangeReport  `json:"changes"`
+	Applied  []string        `json:"applied"`
+	Skipped  []string        `json:"skipped"`
+	Findings []FindingReport `json:"findings"`
 }
 
 // NewMigrateReport builds a MigrateReport from a plan and optional apply result.
+// Applied and Skipped are always initialised to non-nil empty slices so they
+// marshal as [] rather than null — satisfying the always-an-array contract for
+// both the dry-run (res == nil) and zero-apply (res != nil, empty results)
+// cases. When res is non-nil and carries non-nil slices, those are used instead.
+// Findings is similarly always-array: it is initialised from plan.Findings so a
+// zero-findings plan marshals "findings":[] never null or absent.
 func NewMigrateReport(plan MigrationPlan, res *Result, dryRun bool) MigrateReport {
 	changes := make([]ChangeReport, 0, len(plan.Changes))
 	for _, c := range plan.Changes {
@@ -74,10 +86,30 @@ func NewMigrateReport(plan MigrationPlan, res *Result, dryRun bool) MigrateRepor
 			BodyBytesChanged: c.BodyBytesChanged,
 		})
 	}
-	report := MigrateReport{DryRun: dryRun, Changes: changes}
+	findings := make([]FindingReport, 0, len(plan.Findings))
+	for _, f := range plan.Findings {
+		findings = append(findings, FindingReport{
+			File:     f.File,
+			Field:    f.Field,
+			Rule:     f.Rule,
+			Severity: string(f.Severity),
+			Fix:      f.Fix,
+		})
+	}
+	report := MigrateReport{
+		DryRun:   dryRun,
+		Changes:  changes,
+		Applied:  []string{},
+		Skipped:  []string{},
+		Findings: findings,
+	}
 	if res != nil {
-		report.Applied = res.Applied
-		report.Skipped = res.Skipped
+		if res.Applied != nil {
+			report.Applied = res.Applied
+		}
+		if res.Skipped != nil {
+			report.Skipped = res.Skipped
+		}
 	}
 	return report
 }

@@ -58,9 +58,15 @@ type Change struct {
 }
 
 // MigrationPlan is the dry-run result of PlanMigration: an ordered, deterministic
-// set of per-file changes computed without writing anything.
+// set of per-file changes computed without writing anything. Findings holds any
+// per-file frontmatter decode errors reported during planning (always-array:
+// [] when there are none). A plan is only executable when len(Findings) == 0:
+// when Findings is non-empty, Changes reflects only the decodable subset of the
+// corpus, and ApplyMigration will reject the plan with ErrPlanHasFindings and
+// zero writes (corpus all-or-nothing guarantee).
 type MigrationPlan struct {
-	Changes []Change
+	Changes  []Change
+	Findings []Finding
 }
 
 // Result reports the outcome of ApplyMigration.
@@ -123,7 +129,10 @@ func PlanMigration(opts Options) (MigrationPlan, error) {
 		return MigrationPlan{}, err
 	}
 
-	changes := make([]Change, 0, len(files))
+	var plan MigrationPlan
+	plan.Changes = make([]Change, 0, len(files))
+	plan.Findings = make([]Finding, 0)
+
 	for _, rel := range files {
 		abs, err := core.SafeResolve(opts.Root, rel)
 		if err != nil {
@@ -135,7 +144,22 @@ func PlanMigration(opts Options) (MigrationPlan, error) {
 		}
 		normalized, err := Normalize(rel, raw, NormalizeOptions{Now: opts.Now})
 		if err != nil {
-			return MigrationPlan{}, fmt.Errorf("docline.PlanMigration: normalize %s: %w", rel, err)
+			// Use the shared decode-failure policy (classifyDecodeFailure +
+			// applyDecodeFailure) to handle Normalize errors in the same way
+			// LintTree handles decodeDoc errors: a frontmatter decode failure
+			// becomes a decode_error Finding and the scan continues; a
+			// containment or read/IO failure is fatal.
+			//
+			// Path-asymmetry note: containment (SafeResolve → ErrPathEscapesWorkspace)
+			// and read/IO (os.ReadFile) failures are handled by the PRE-Normalize
+			// early returns above and never reach this branch — they stay fatal.
+			// Only the frontmatter-decode case flows through applyDecodeFailure here.
+			findings, fatal := applyDecodeFailure(err, rel)
+			if fatal != nil {
+				return MigrationPlan{}, fmt.Errorf("docline.PlanMigration: normalize %s: %w", rel, fatal)
+			}
+			plan.Findings = append(plan.Findings, findings...)
+			continue
 		}
 
 		c := Change{
@@ -152,9 +176,9 @@ func PlanMigration(opts Options) (MigrationPlan, error) {
 		default:
 			c.Action = ActionUpdate
 		}
-		changes = append(changes, c)
+		plan.Changes = append(plan.Changes, c)
 	}
-	return MigrationPlan{Changes: changes}, nil
+	return plan, nil
 }
 
 // ApplyMigration writes the planned changes atomically (temp + rename) and is
@@ -164,8 +188,22 @@ func PlanMigration(opts Options) (MigrationPlan, error) {
 // change cannot leave earlier files partially migrated. As a final TOCTOU guard,
 // every target is re-read at apply time and the apply aborts with ErrConcurrentEdit
 // (zero writes) if any on-disk bytes diverged from the plan-time Before.
+//
+// If the plan carries any per-file Findings (decode errors surfaced during
+// planning), ApplyMigration returns ErrPlanHasFindings immediately with zero
+// writes. A corpus containing decode errors must not be partially migrated:
+// the malformed files were dropped from plan.Changes and would be silently
+// skipped by an unguarded apply.
 func ApplyMigration(plan MigrationPlan, opts Options) (Result, error) {
 	var res Result
+
+	// Guard: reject a findings-bearing plan before any preflight or write.
+	// This preserves the all-or-nothing corpus guarantee when PlanMigration
+	// has reported decode errors: the valid subset must never be silently
+	// migrated around the malformed files.
+	if len(plan.Findings) > 0 {
+		return res, fmt.Errorf("docline.ApplyMigration: %w", ErrPlanHasFindings)
+	}
 
 	// Preflight: validate every non-noop change before writing anything. A body
 	// mutation or path escape on any change aborts the whole apply with zero
@@ -331,13 +369,12 @@ func classifyDecodeFailure(err error) (decodeFailureKind, error) {
 	}
 }
 
-// applyDecodeFailure holds LintTree's decode-failure POLICY and is the ONLY
-// function LintTree's per-file body may call for a decodeDoc failure: a
-// frontmatter decode failure becomes a single decode_error Finding and a nil
-// error (the scan continues); a containment or read/I-O failure is returned
-// unchanged as a fatal error (the scan aborts). classifyDecodeFailure itself
-// stays policy-neutral so it can be reused by a consumer that wants a
-// different policy for the same three-way split.
+// applyDecodeFailure holds the shared decode-failure policy used by both
+// LintTree and PlanMigration: a frontmatter decode failure becomes a single
+// decode_error Finding with a nil error (the scan continues); a containment
+// or read/I-O failure is returned unchanged as a fatal error (the scan aborts).
+// classifyDecodeFailure itself stays policy-neutral so it can be reused by any
+// consumer that wants a different policy for the same three-way split.
 func applyDecodeFailure(err error, rel string) ([]Finding, error) {
 	kind, cause := classifyDecodeFailure(err)
 	if kind != decodeFailureFrontmatter {
