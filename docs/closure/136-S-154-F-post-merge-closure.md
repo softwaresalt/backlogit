@@ -92,6 +92,6 @@ frontmatter fields (`closure_status: READY`, `compaction_status: done`).
 
 - Implementation delivered and merged via PR #415 (merge commit `ee30d77f`)
 - Post-merge closure branch created, bookkeeping committed, and merged via PR #416 (merge commit `7f8130d2`)
-- Shipment 136-S and all 6 member artifacts (154-F + 154.001-T through 154.004-T) are in `archived` state in `.backlogit/archive/`
+- Shipment 136-S and all 5 member artifacts (154-F + 154.001-T through 154.004-T) are in `archived` state in `.backlogit/archive/`
 - P-007 archive integrity verified (no deletions)
 - P-020 compact-context invoked and recorded in PR #416
