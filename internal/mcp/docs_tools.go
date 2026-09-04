@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -94,6 +95,13 @@ func (s *Server) handleDocsMigrate(_ context.Context, request mcplib.CallToolReq
 		}
 		res, err := docline.ApplyMigration(plan, opts)
 		if err != nil {
+			if errors.Is(err, docline.ErrPlanHasFindings) {
+				// Return a structured, non-InternalError result with the findings.
+				// The distinct error-type "plan_has_findings" lets agents
+				// disambiguate a corpus-content rejection (findings in plan)
+				// from a --path validation failure.
+				return planHasFindingsResult(plan), nil
+			}
 			if errors.Is(err, docline.ErrPathEscapesWorkspace) {
 				return ValidationFailed(err.Error()), nil
 			}
@@ -114,6 +122,42 @@ func (s *Server) handleDocsMigrate(_ context.Context, request mcplib.CallToolReq
 
 func (s *Server) handleDocsScope(_ context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	return toolResultJSON(docline.Scope())
+}
+
+// planHasFindingsResult builds a structured MCP error result for a plan that
+// carries per-file findings. The error_type is "plan_has_findings" (distinct
+// from "validation_failed" so agents can disambiguate a corpus-content rejection
+// from a --path/validation rejection) and the response carries a discrete
+// top-level findings array via a dedicated struct — not flattened into message.
+func planHasFindingsResult(plan docline.MigrationPlan) *mcplib.CallToolResult {
+	type planHasFindingsResponse struct {
+		Error    string                  `json:"error"`
+		Message  string                  `json:"message"`
+		Findings []docline.FindingReport `json:"findings"`
+	}
+	findings := make([]docline.FindingReport, 0, len(plan.Findings))
+	for _, f := range plan.Findings {
+		findings = append(findings, docline.FindingReport{
+			File:     f.File,
+			Field:    f.Field,
+			Rule:     f.Rule,
+			Severity: string(f.Severity),
+			Fix:      f.Fix,
+		})
+	}
+	resp := planHasFindingsResponse{
+		Error: "plan_has_findings",
+		Message: fmt.Sprintf(
+			"migration plan carries %d per-file finding(s); apply refused to preserve corpus all-or-nothing guarantee",
+			len(plan.Findings),
+		),
+		Findings: findings,
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return InternalError(fmt.Sprintf("marshal plan_has_findings response: %v", err))
+	}
+	return mcplib.NewToolResultError(string(data))
 }
 
 // applyNotPermitted returns a structured MCP error for a gated apply.

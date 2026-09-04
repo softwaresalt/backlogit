@@ -13,14 +13,18 @@ import (
 	"github.com/softwaresalt/backlogit/internal/docline"
 )
 
-// 154.003-T (U2b) MCP harness: handleDocsMigrate with apply=true on a corpus
-// that causes ApplyMigration to return ErrPlanHasFindings must return an
-// IsError:true result with error field == "plan_has_findings" (NOT
-// "validation_failed", NOT "internal") and a discrete top-level "findings"
-// array via a dedicated response struct.
+// 154.003-T (U2b) MCP harness.
 //
-// RED until docs_tools.go maps errors.Is(err, ErrPlanHasFindings) to IsError:true
-// with error_type "plan_has_findings" and a discrete findings array.
+// TestU2bMCPGuard_PlanHasFindingsHelperShape is the unit-level acceptance test
+// for planHasFindingsResult: it must return IsError:true, error=="plan_has_findings"
+// (NOT "validation_failed" or "internal"), and a discrete top-level findings array.
+// This test is reachable pre-U2c (pure unit test of the new MCP helper).
+//
+// RED until planHasFindingsResult is implemented in docs_tools.go.
+//
+// The end-to-end integration test (full pipeline with a real malformed corpus,
+// PlanMigration report-and-continue + ApplyMigration rejection) lives in the
+// Wave 3 harness (154_004_decode_policy_test.go) because it also requires U2c.
 
 // writeMCPGuardFixture writes content to root/rel, creating parent dirs.
 func writeMCPGuardFixture(t *testing.T, root, rel, content string) {
@@ -30,52 +34,33 @@ func writeMCPGuardFixture(t *testing.T, root, rel, content string) {
 	require.NoError(t, os.WriteFile(abs, []byte(content), 0o644))
 }
 
-// TestU2bMCPGuard_PlanHasFindingsResultShape verifies that when
-// handleDocsMigrate is called with apply=true on a corpus that leads to
-// plan.Findings being non-empty (after U2c wires report-and-continue), the
-// MCP response has IsError:true, error=="plan_has_findings" (not
-// "validation_failed" or "internal"), and a top-level "findings" array.
-//
-// Pre-U2b: the handler does not map ErrPlanHasFindings, so it returns
-// InternalError or ValidationFailed → error-type assertions fail RED ✓.
-// Pre-U2c: PlanMigration hard-aborts on the malformed file so plan.Findings is
-// never populated; the plan_has_findings guard is never triggered → test would
-// still fail RED (wrong error type or no error at all).
-// Post-U2b+U2c: full path is wired and all assertions pass GREEN.
-func TestU2bMCPGuard_PlanHasFindingsResultShape(t *testing.T) {
-	t.Setenv(docsApplyAllowEnv, "1")
-	root := t.TempDir()
-	s := NewServerForRoot(root)
+// TestU2bMCPGuard_PlanHasFindingsHelperShape verifies the planHasFindingsResult
+// helper function directly (reachable pre-U2c). RED before U2b adds the helper.
+func TestU2bMCPGuard_PlanHasFindingsHelperShape(t *testing.T) {
+	t.Parallel()
 
-	// A malformed-frontmatter file alongside a valid file: once U2c wires
-	// report-and-continue, PlanMigration will populate plan.Findings with a
-	// decode_error Finding for broken.md, and ApplyMigration will return
-	// ErrPlanHasFindings (U2b guard). Pre-U2c, PlanMigration hard-aborts on
-	// broken.md and the handler returns InternalError.
-	writeMCPGuardFixture(t, root, "docs/decisions/broken.md",
-		"---\ntitle: [unclosed yaml\n---\nBody.\n")
-	writeMCPGuardFixture(t, root, "docs/decisions/good.md",
-		"---\ndoc_type: decision\nsource: docs/decisions/good.md\ntitle: Good\n---\nBody.\n")
-
-	req := mcplib.CallToolRequest{}
-	req.Params.Arguments = map[string]any{
-		"apply": true,
-		"path":  "docs/decisions",
+	plan := docline.MigrationPlan{
+		Findings: []docline.Finding{
+			{
+				File:     "docs/decisions/broken.md",
+				Rule:     docline.RuleDecodeError,
+				Severity: docline.SeverityError,
+				Fix:      "malformed frontmatter",
+			},
+		},
 	}
-	res, err := s.handleDocsMigrate(t.Context(), req)
-	require.NoError(t, err)
+	res := planHasFindingsResult(plan)
 	require.NotNil(t, res)
 
-	// The result must be an error result.
-	require.True(t, res.IsError,
-		"handleDocsMigrate must return IsError:true when plan has findings")
+	// The result must be an error (IsError == true).
+	require.True(t, res.IsError, "planHasFindingsResult must return IsError:true")
 
-	// The error field must be plan_has_findings — not validation_failed or internal.
 	tc, ok := res.Content[0].(mcplib.TextContent)
 	require.True(t, ok, "result content must be TextContent")
 	var payload map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal([]byte(tc.Text), &payload))
 
+	// error field must be plan_has_findings.
 	var errorType string
 	require.NoError(t, json.Unmarshal(payload["error"], &errorType))
 	assert.Equal(t, "plan_has_findings", errorType,
@@ -83,12 +68,12 @@ func TestU2bMCPGuard_PlanHasFindingsResultShape(t *testing.T) {
 	assert.NotEqual(t, "internal", errorType,
 		"ErrPlanHasFindings must not fall through to InternalError")
 
-	// The response must carry a discrete top-level findings array (not flattened
-	// into message).
+	// The response must carry a discrete top-level findings array.
 	findingsRaw, hasFindingsKey := payload["findings"]
-	require.True(t, hasFindingsKey,
-		"response must carry a top-level 'findings' field (not flattened into message)")
+	require.True(t, hasFindingsKey, "response must carry a top-level 'findings' field")
 	var findings []docline.FindingReport
-	require.NoError(t, json.Unmarshal(findingsRaw, &findings),
-		"findings field must be a JSON array of FindingReport objects")
+	require.NoError(t, json.Unmarshal(findingsRaw, &findings))
+	require.Len(t, findings, 1)
+	assert.Equal(t, "docs/decisions/broken.md", findings[0].File)
+	assert.Equal(t, docline.RuleDecodeError, findings[0].Rule)
 }

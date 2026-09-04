@@ -168,8 +168,22 @@ func PlanMigration(opts Options) (MigrationPlan, error) {
 // change cannot leave earlier files partially migrated. As a final TOCTOU guard,
 // every target is re-read at apply time and the apply aborts with ErrConcurrentEdit
 // (zero writes) if any on-disk bytes diverged from the plan-time Before.
+//
+// If the plan carries any per-file Findings (decode errors surfaced during
+// planning), ApplyMigration returns ErrPlanHasFindings immediately with zero
+// writes. A corpus containing decode errors must not be partially migrated:
+// the malformed files were dropped from plan.Changes and would be silently
+// skipped by an unguarded apply.
 func ApplyMigration(plan MigrationPlan, opts Options) (Result, error) {
 	var res Result
+
+	// Guard: reject a findings-bearing plan before any preflight or write.
+	// This preserves the all-or-nothing corpus guarantee when PlanMigration
+	// has reported decode errors: the valid subset must never be silently
+	// migrated around the malformed files.
+	if len(plan.Findings) > 0 {
+		return res, fmt.Errorf("docline.ApplyMigration: %w", ErrPlanHasFindings)
+	}
 
 	// Preflight: validate every non-noop change before writing anything. A body
 	// mutation or path escape on any change aborts the whole apply with zero

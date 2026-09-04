@@ -13,7 +13,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/docline"
 )
 
-// errLintViolations is returned by `docs lint` when the tree has violations so
+// errLintViolations is returned
 // the process exits non-zero (CI-friendly) after the findings are printed.
 var errLintViolations = errors.New("docline: frontmatter violations found")
 
@@ -134,6 +134,17 @@ func newDocsMigrateCommand(cwd *string) *cobra.Command {
 				}
 				res, err := docline.ApplyMigration(plan, opts)
 				if err != nil {
+					if errors.Is(err, docline.ErrPlanHasFindings) {
+						// Render the migrate report (including findings) before
+						// returning the rejection signal, mirroring the
+						// errLintViolations render-then-signal pattern: the caller
+						// sees the findings in text/JSON output first, then the
+						// non-zero exit signals rejection.
+						if renderErr := writeMigrateResult(cmd, format, plan, nil, false); renderErr != nil {
+							return renderErr
+						}
+						return docline.ErrPlanHasFindings
+					}
 					return err
 				}
 				return writeMigrateResult(cmd, format, plan, &res, false)
@@ -201,6 +212,9 @@ func newDocsClassifyCommand(cwd *string) *cobra.Command {
 
 // writeMigrateResult renders a migration plan (and optional apply result). The
 // JSON form uses the shared docline report types for CLI↔MCP parity.
+// In text mode, plan.Findings are rendered after the changes list, mirroring
+// the printLintText format, so decode errors surfaced during planning are
+// visible in the human-readable output.
 func writeMigrateResult(cmd *cobra.Command, format string, plan docline.MigrationPlan, res *docline.Result, dryRun bool) error {
 	outFormat, err := resolveFormat(cmd.OutOrStdout(), format)
 	if err != nil {
@@ -218,6 +232,12 @@ func writeMigrateResult(cmd *cobra.Command, format string, plan docline.Migratio
 	}
 	for _, c := range plan.Changes {
 		fmt.Fprintf(out, "  %-6s %s\n", c.Action, c.File)
+	}
+	if len(plan.Findings) > 0 {
+		fmt.Fprintf(out, "docline migrate: %d finding(s)\n", len(plan.Findings))
+		for _, f := range plan.Findings {
+			fmt.Fprintf(out, "  %s [%s] %s: %s\n", f.File, f.Rule, f.Field, f.Fix)
+		}
 	}
 	if res != nil {
 		fmt.Fprintf(out, "applied=%d skipped=%d\n", len(res.Applied), len(res.Skipped))

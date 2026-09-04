@@ -1,0 +1,7 @@
+{
+  "filename": "checkpoint-20260904-194037.json",
+  "disposition": "quarantined",
+  "reason": "ship agent created checkpoint without V1 schema fields (missing schema_version, status, created_at); replaced by valid V1 checkpoint",
+  "operator": "ship",
+  "disposition_at": "2026-09-04T20:18:17.9920187Z"
+}
