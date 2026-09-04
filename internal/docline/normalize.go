@@ -20,7 +20,12 @@ type NormalizeOptions struct {
 func Normalize(relPath string, raw []byte, opts NormalizeOptions) ([]byte, error) {
 	md, err := Decode(raw)
 	if err != nil {
-		return nil, fmt.Errorf("docline.Normalize: decode %s: %w", relPath, err)
+		// Two-%w wrap (Go >= 1.20; go.mod declares go 1.24.0): the discriminator
+		// ErrFrontmatterDecode is wrapped alongside the original decode cause so
+		// classifyDecodeFailure can select on errors.Is(err, ErrFrontmatterDecode)
+		// while the underlying YAML error is still recoverable for diagnostics.
+		// This mirrors the two-%w pattern already used in decodeDoc.
+		return nil, fmt.Errorf("docline.Normalize: decode %s: %w: %w", relPath, ErrFrontmatterDecode, err)
 	}
 
 	fm := md.Frontmatter

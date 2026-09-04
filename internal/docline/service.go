@@ -127,7 +127,10 @@ func PlanMigration(opts Options) (MigrationPlan, error) {
 		return MigrationPlan{}, err
 	}
 
-	changes := make([]Change, 0, len(files))
+	var plan MigrationPlan
+	plan.Changes = make([]Change, 0, len(files))
+	plan.Findings = make([]Finding, 0)
+
 	for _, rel := range files {
 		abs, err := core.SafeResolve(opts.Root, rel)
 		if err != nil {
@@ -139,7 +142,22 @@ func PlanMigration(opts Options) (MigrationPlan, error) {
 		}
 		normalized, err := Normalize(rel, raw, NormalizeOptions{Now: opts.Now})
 		if err != nil {
-			return MigrationPlan{}, fmt.Errorf("docline.PlanMigration: normalize %s: %w", rel, err)
+			// Use the shared decode-failure policy (classifyDecodeFailure +
+			// applyDecodeFailure) to handle Normalize errors in the same way
+			// LintTree handles decodeDoc errors: a frontmatter decode failure
+			// becomes a decode_error Finding and the scan continues; a
+			// containment or read/IO failure is fatal.
+			//
+			// Path-asymmetry note: containment (SafeResolve → ErrPathEscapesWorkspace)
+			// and read/IO (os.ReadFile) failures are handled by the PRE-Normalize
+			// early returns above and never reach this branch — they stay fatal.
+			// Only the frontmatter-decode case flows through applyDecodeFailure here.
+			findings, fatal := applyDecodeFailure(err, rel)
+			if fatal != nil {
+				return MigrationPlan{}, fmt.Errorf("docline.PlanMigration: normalize %s: %w", rel, fatal)
+			}
+			plan.Findings = append(plan.Findings, findings...)
+			continue
 		}
 
 		c := Change{
@@ -156,9 +174,9 @@ func PlanMigration(opts Options) (MigrationPlan, error) {
 		default:
 			c.Action = ActionUpdate
 		}
-		changes = append(changes, c)
+		plan.Changes = append(plan.Changes, c)
 	}
-	return MigrationPlan{Changes: changes}, nil
+	return plan, nil
 }
 
 // ApplyMigration writes the planned changes atomically (temp + rename) and is
