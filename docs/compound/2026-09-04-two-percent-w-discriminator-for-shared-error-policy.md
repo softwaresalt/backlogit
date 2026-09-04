@@ -77,9 +77,11 @@ return nil, fmt.Errorf("docline.Normalize: decode %s: %w: %w", relPath, ErrFront
 ```
 
 This is purely additive — the original YAML cause (`err`) is still the second
-`%w` and remains reachable via `errors.As`. Existing `errors.Is(err, err)` calls
-on the YAML error are unaffected. Verified: the gen-docs caller of `Normalize`
-does not `errors.Is` on the YAML cause.
+`%w` and remains reachable via `errors.As`. Go's multi-error unwrap tree
+preserves both wrapped values, so callers can still extract the underlying
+YAML cause (e.g. for diagnostics) while the new sentinel is now testable with
+`errors.Is`. Verified: the gen-docs caller of `Normalize`
+does not test on the YAML cause type.
 
 ## Generalized rule
 

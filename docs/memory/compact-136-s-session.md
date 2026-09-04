@@ -23,7 +23,7 @@ All 4 tasks in M done. PR #415 merged at ee30d77f. 136-S archived.
 
 ## Deferred Items
 
-854C7DDD, 86A0B65B, B4676755, 0F67B2F9, F8E6D5CA (stash active, low priority)
+854C7DDD, 86A0B65B, B4676755, 0F67B2F9, F8E6D5CA (stash active, medium priority)
 
 ## Restart Cursor
 

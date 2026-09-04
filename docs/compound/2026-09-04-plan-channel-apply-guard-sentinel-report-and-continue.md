@@ -102,10 +102,12 @@ If U2c lands before U2b:
 - `ApplyMigration` has no guard, applies the valid subset
 - This is the silent partial-apply bug
 
-If U2b lands without U2a:
-- `ErrPlanHasFindings` checks `len(plan.Findings) > 0`
-- `plan.Findings` doesn't exist — all plans have empty findings (no-op guard)
-- The guard is effectively dead code until U2a lands
+### If U2b lands without U2a
+
+Without U2a, `MigrationPlan` has no `Findings []Finding` field. The U2b
+guard references `len(plan.Findings)`, which is a **compile error** — the
+guard cannot compile, let alone run. This makes the dependency concrete:
+U2b is syntactically impossible without U2a, not merely a logical no-op.
 
 The canonical order is U2a → U2b → U2c. In the backlog, U2b depends on U2a,
 and U2c depends on U2b (explicit `depends_on` edges).
