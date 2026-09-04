@@ -94,4 +94,4 @@ frontmatter fields (`closure_status: READY`, `compaction_status: done`).
 - Post-merge closure branch created, bookkeeping committed, and merged via PR #416 (merge commit `7f8130d2`)
 - Shipment 136-S and all 5 member artifacts (154-F + 154.001-T through 154.004-T) are in `archived` state in `.backlogit/archive/`
 - P-007 archive integrity verified (no deletions)
-- P-020 compact-context invoked and recorded in PR #416
+- P-020 compact-context invoked: narrative summaries in PR #416 (`compact-136-s-session.md`, `ship-136-s-closure-20260904.md`); threshold-remediating 27-file relocation and auditable compaction record (`compact-context-report-20260904.md`) in PR #417
