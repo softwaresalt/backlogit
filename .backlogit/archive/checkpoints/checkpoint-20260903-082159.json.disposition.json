@@ -1,0 +1,7 @@
+{
+  "filename": "checkpoint-20260903-082159.json",
+  "disposition": "quarantined",
+  "reason": "Schema-invalid non-V1 Stage checkpoint (schema_version=0 fails CheckpointV1.SchemaVersion 'eq'; created_at zero-value 0001-01-01 fails 'required') rejected by current checkpoint get/list APIs as needs_quarantine=schema_invalid. Dark-factory 2026-09-03 grouping-complete residue requiring PR #404/#405 disposition. Operator softwaresalt approved 2026-09-04.",
+  "operator": "softwaresalt",
+  "disposition_at": "2026-09-04T17:18:06.7610237Z"
+}
