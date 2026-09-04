@@ -58,7 +58,7 @@ frontmatter because the topology gate reads them at that location. Running
 | Implementation PR #415 | All required CI checks passed; all Copilot threads resolved (3 review cycles) ✅ |
 | Closure PR #416 | All CI checks passed; all Copilot threads resolved (2 review cycles) ✅ |
 | P-007 archive integrity | No archive deletions — verified ✅ |
-| P-020 compaction | `docs/memory/compact-136-s-session.md` and `docs/memory/ship-136-s-closure-20260904.md` committed in PR #416 ✅ |
+| P-020 compaction | PR #416 (`docs/memory/compact-136-s-session.md`, `docs/memory/ship-136-s-closure-20260904.md`) recorded the compaction intent; the threshold-remediating 27-file relocation was completed in PR #417, which also committed `docs/memory/compact-context-report-20260904.md` as the auditable compaction record ✅ |
 | Compact summary | `docs/memory/compact-136-s-session.md` ✅ |
 | Closure memory | `docs/memory/ship-136-s-closure-20260904.md` ✅ |
 | Backlog index resync | `backlogit sync` run post-archival ✅ |

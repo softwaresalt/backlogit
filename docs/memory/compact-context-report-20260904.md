@@ -26,10 +26,15 @@ These were all logically archived before this session (placed in `compacted/` or
 
 | Metric | Before | After |
 |---|---|---|
-| Total files in docs/memory/ tree (tracked) | 61 | 33 |
-| Untracked Stage-owned files in working tree | 2 | 2 (preserved, not committed) |
+| Tracked files in docs/memory/ tree | 59 | 33 |
+| Untracked Stage-owned files (working tree only) | 2 | 2 (preserved, not committed) |
+| Total observable (tracked + untracked) | 61 | 35 |
 | max_files threshold | 40 | 40 |
-| Status | **EXCEEDED** | **OK** |
+| Tracked status | **EXCEEDED** | **OK** |
+
+Note: The 61-file trigger count included 2 untracked Stage-owned files. The tracked
+base before this PR was 59; after the 27-file relocation + 1 new report, it is 33.
+The 2 Stage-owned files are not part of this PR.
 
 ## Preserved Active State
 
