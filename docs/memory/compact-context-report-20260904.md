@@ -26,20 +26,21 @@ These were all logically archived before this session (placed in `compacted/` or
 
 | Metric | Before | After |
 |---|---|---|
-| Total files in docs/memory/ tree | 61 | 34 |
+| Total files in docs/memory/ tree (tracked) | 61 | 33 |
+| Untracked Stage-owned files in working tree | 2 | 2 (preserved, not committed) |
 | max_files threshold | 40 | 40 |
 | Status | **EXCEEDED** | **OK** |
 
 ## Preserved Active State
 
-The following files were intentionally preserved (not archived):
+The following files were intentionally preserved (not archived). The two Stage-owned files marked "untracked" are present in the operator's working tree but are NOT committed in this PR — they are operator-managed artifacts that must not be staged, committed, or deleted by Ship.
 
 - All dated subdirectory files from 2026-08-20 through 2026-09-04
 - `compact-135-s-session.md`, `ship-135-s-*.md` (135-S recent closure)
 - `compact-136-s-session.md`, `ship-136-s-closure-20260904.md` (136-S active closure)
 - `ship-135-s-wave-complete-20260903-092349.md`
-- `2026-09-03-stage-pr404-405-remediation-closure.md` (Stage-owned, untracked)
-- `2026-09-04-stage-s2-136s-replan-closure.md` (Stage-owned, untracked)
+- `2026-09-03-stage-pr404-405-remediation-closure.md` (Stage-owned, **untracked**, not committed)
+- `2026-09-04-stage-s2-136s-replan-closure.md` (Stage-owned, **untracked**, not committed)
 
 ## Restart Cursor
 
