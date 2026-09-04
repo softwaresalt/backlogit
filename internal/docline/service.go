@@ -367,13 +367,12 @@ func classifyDecodeFailure(err error) (decodeFailureKind, error) {
 	}
 }
 
-// applyDecodeFailure holds LintTree's decode-failure POLICY and is the ONLY
-// function LintTree's per-file body may call for a decodeDoc failure: a
-// frontmatter decode failure becomes a single decode_error Finding and a nil
-// error (the scan continues); a containment or read/I-O failure is returned
-// unchanged as a fatal error (the scan aborts). classifyDecodeFailure itself
-// stays policy-neutral so it can be reused by a consumer that wants a
-// different policy for the same three-way split.
+// applyDecodeFailure holds the shared decode-failure policy used by both
+// LintTree and PlanMigration: a frontmatter decode failure becomes a single
+// decode_error Finding with a nil error (the scan continues); a containment
+// or read/I-O failure is returned unchanged as a fatal error (the scan aborts).
+// classifyDecodeFailure itself stays policy-neutral so it can be reused by any
+// consumer that wants a different policy for the same three-way split.
 func applyDecodeFailure(err error, rel string) ([]Finding, error) {
 	kind, cause := classifyDecodeFailure(err)
 	if kind != decodeFailureFrontmatter {

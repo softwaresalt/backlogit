@@ -22,11 +22,11 @@ import (
 // ErrPlanHasFindings → handler maps to plan_has_findings → GREEN.
 
 // writeMCPU2cFixture writes content to root/rel, creating parent dirs.
+// Reuses writeMCPGuardFixture's body; consolidation into a shared test helper
+// is a P2-5 follow-up from the U2b adversarial review.
 func writeMCPU2cFixture(t *testing.T, root, rel, content string) {
 	t.Helper()
-	abs := filepath.Join(root, filepath.FromSlash(rel))
-	require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o755))
-	require.NoError(t, os.WriteFile(abs, []byte(content), 0o644))
+	writeMCPGuardFixture(t, root, rel, content)
 }
 
 // TestU2cMCP_MixedCorpus_ApplyReturnsPlanHasFindings is the end-to-end MCP

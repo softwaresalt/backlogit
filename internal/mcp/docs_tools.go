@@ -36,7 +36,13 @@ func (s *Server) registerDocsTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_docs_migrate",
-			mcplib.WithDescription("Plan (default) or apply an idempotent, body-preserving frontmatter migration. apply=true is gated server-side and requires an explicit scoped path."),
+			mcplib.WithDescription("Plan (default) or apply an idempotent, body-preserving frontmatter migration. "+
+				"apply=true is gated server-side and requires an explicit scoped path. "+
+				"Both plan and apply responses include a 'findings' array (always-array, [] when empty) "+
+				"for per-file frontmatter decode errors encountered during planning. "+
+				"If the plan carries findings, apply returns a structured error "+
+				"with error_type 'plan_has_findings', IsError:true, and a discrete top-level "+
+				"'findings' array — apply writes zero files (corpus all-or-nothing guarantee)."),
 			mcplib.WithString("path", mcplib.Description("Repo-relative sub-path (required when apply=true)")),
 			mcplib.WithBoolean("apply", mcplib.Description("Write changes (default false). Gated by the BACKLOGIT_DOCS_ALLOW_APPLY environment flag.")),
 		),

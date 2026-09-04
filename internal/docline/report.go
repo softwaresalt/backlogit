@@ -60,9 +60,8 @@ type ChangeReport struct {
 // dry-run plan (res == nil) and a zero-apply result (res != nil, empty sets).
 // This is the always-an-array contract: downstream consumers must not
 // distinguish null from empty — both encode "nothing happened" as [].
-// Findings holds per-file decode errors reported during planning (always-array:
-// [] when there are none). U2c populates this field from PlanMigration; until
-// then it is always [].
+// Findings holds per-file frontmatter decode errors reported during PlanMigration
+// (always-array: [] when there are none).
 type MigrateReport struct {
 	DryRun   bool            `json:"dry_run"`
 	Changes  []ChangeReport  `json:"changes"`

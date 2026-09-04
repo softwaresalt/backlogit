@@ -13,7 +13,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/docline"
 )
 
-// errLintViolations is returned
+// errLintViolations is returned by `docs lint` when the tree has violations so
 // the process exits non-zero (CI-friendly) after the findings are printed.
 var errLintViolations = errors.New("docline: frontmatter violations found")
 
@@ -106,9 +106,13 @@ func newDocsMigrateCommand(cwd *string) *cobra.Command {
 	var apply, yes bool
 	var format, path string
 	cmd := &cobra.Command{
-		Use:          "migrate",
-		Short:        "Plan (default) or apply an idempotent frontmatter migration",
-		SilenceUsage: true,
+		Use:   "migrate",
+		Short: "Plan (default) or apply an idempotent frontmatter migration",
+		// Suppress Cobra's own error and usage noise so the findings/report
+		// payload (JSON or text) stays clean for CI consumers. Mirrors the
+		// approach in newDocsLintCommand.
+		SilenceErrors: true,
+		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			root, err := resolveDocsRoot(cwd)
 			if err != nil {
@@ -140,7 +144,9 @@ func newDocsMigrateCommand(cwd *string) *cobra.Command {
 						// errLintViolations render-then-signal pattern: the caller
 						// sees the findings in text/JSON output first, then the
 						// non-zero exit signals rejection.
-						if renderErr := writeMigrateResult(cmd, format, plan, nil, false); renderErr != nil {
+						// dryRun=true: nothing was written; rendering as an apply
+						// would misrepresent the outcome to callers.
+						if renderErr := writeMigrateResult(cmd, format, plan, nil, true); renderErr != nil {
 							return renderErr
 						}
 						return docline.ErrPlanHasFindings
