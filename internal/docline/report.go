@@ -60,11 +60,15 @@ type ChangeReport struct {
 // dry-run plan (res == nil) and a zero-apply result (res != nil, empty sets).
 // This is the always-an-array contract: downstream consumers must not
 // distinguish null from empty — both encode "nothing happened" as [].
+// Findings holds per-file decode errors reported during planning (always-array:
+// [] when there are none). U2c populates this field from PlanMigration; until
+// then it is always [].
 type MigrateReport struct {
-	DryRun  bool           `json:"dry_run"`
-	Changes []ChangeReport `json:"changes"`
-	Applied []string       `json:"applied"`
-	Skipped []string       `json:"skipped"`
+	DryRun   bool            `json:"dry_run"`
+	Changes  []ChangeReport  `json:"changes"`
+	Applied  []string        `json:"applied"`
+	Skipped  []string        `json:"skipped"`
+	Findings []FindingReport `json:"findings"`
 }
 
 // NewMigrateReport builds a MigrateReport from a plan and optional apply result.
@@ -72,6 +76,8 @@ type MigrateReport struct {
 // marshal as [] rather than null — satisfying the always-an-array contract for
 // both the dry-run (res == nil) and zero-apply (res != nil, empty results)
 // cases. When res is non-nil and carries non-nil slices, those are used instead.
+// Findings is similarly always-array: it is initialised from plan.Findings so a
+// zero-findings plan marshals "findings":[] never null or absent.
 func NewMigrateReport(plan MigrationPlan, res *Result, dryRun bool) MigrateReport {
 	changes := make([]ChangeReport, 0, len(plan.Changes))
 	for _, c := range plan.Changes {
@@ -81,11 +87,22 @@ func NewMigrateReport(plan MigrationPlan, res *Result, dryRun bool) MigrateRepor
 			BodyBytesChanged: c.BodyBytesChanged,
 		})
 	}
+	findings := make([]FindingReport, 0, len(plan.Findings))
+	for _, f := range plan.Findings {
+		findings = append(findings, FindingReport{
+			File:     f.File,
+			Field:    f.Field,
+			Rule:     f.Rule,
+			Severity: string(f.Severity),
+			Fix:      f.Fix,
+		})
+	}
 	report := MigrateReport{
-		DryRun:  dryRun,
-		Changes: changes,
-		Applied: []string{},
-		Skipped: []string{},
+		DryRun:   dryRun,
+		Changes:  changes,
+		Applied:  []string{},
+		Skipped:  []string{},
+		Findings: findings,
 	}
 	if res != nil {
 		if res.Applied != nil {
