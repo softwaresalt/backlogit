@@ -97,3 +97,25 @@ missing assertion, not a missing empty-case fixture.
   identically.
 - This is agent-facing (MCP) parity, so an absent-vs-`[]` drift directly degrades
   agent consumers that expect a stable key.
+
+## Extended application (136-S / U1)
+
+`MigrateReport.Applied` and `MigrateReport.Skipped` in
+`internal/docline/report.go` had the same bug: both used `omitempty` and
+`NewMigrateReport` did not initialize them to non-nil slices. The dry-run
+(`res==nil`) and zero-apply (`res!=nil, empty`) cases both produced absent keys
+instead of `[]`. Fix: drop `omitempty`; initialize `Applied: []string{}` and
+`Skipped: []string{}` before the `res` guard; assert the empty case by JSON-decoding
+and asserting the key is present AND is `[]` (not null or absent).
+The constructor test pattern:
+```go
+var decoded map[string]json.RawMessage
+require.NoError(t, json.Unmarshal(raw, &decoded))
+appliedRaw, ok := decoded["applied"]
+require.True(t, ok, "applied key must be present")
+assert.Equal(t, "[]", string(appliedRaw), "applied must be [] not null")
+```
+Note: also check the non-nil initialization logic for `res != nil` but empty
+slices — the guard `if res != nil { report.Applied = res.Applied }` copies a nil
+slice, restoring the null. The guard must check `if res.Applied != nil {
+report.Applied = res.Applied }` to preserve the non-nil default.
