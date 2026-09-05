@@ -1,5 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 description: Shared input validation and bounded error response patterns for CLI/MCP surface parity
 doc_type: learning
 docline:
