@@ -208,6 +208,13 @@ func newDocsClassifyCommand(cwd *string) *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveDocsRoot(cwd)
+			if err != nil {
+				return err
+			}
+			if err := docline.ValidateClassifyPath(root, args[0]); err != nil {
+				return err
+			}
 			dt := docline.Classify(args[0])
 			fmt.Fprintln(cmd.OutOrStdout(), string(dt))
 			return nil

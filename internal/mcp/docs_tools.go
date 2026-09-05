@@ -54,6 +54,18 @@ func (s *Server) registerDocsTools() {
 		),
 		s.handleDocsScope,
 	)
+	s.addTool(
+		mcplib.NewTool("backlogit_docs_classify",
+			mcplib.WithDescription("Return the doc_type for a repo-relative path. "+
+				"Classification is purely path-based (longest-prefix directory match). "+
+				"Returns a JSON object {\"doc_type\": \"<value>\"} for the classified path."),
+			mcplib.WithString("path",
+				mcplib.Required(),
+				mcplib.Description("Repo-relative POSIX path to classify (must be relative, not absolute)"),
+			),
+		),
+		s.handleDocsClassify,
+	)
 }
 
 func (s *Server) handleDocsLint(_ context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -128,6 +140,25 @@ func (s *Server) handleDocsMigrate(_ context.Context, request mcplib.CallToolReq
 
 func (s *Server) handleDocsScope(_ context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	return toolResultJSON(docline.Scope())
+}
+
+// docsClassifyResponse is the JSON payload returned by backlogit_docs_classify.
+type docsClassifyResponse struct {
+	DocType string `json:"doc_type"`
+}
+
+// handleDocsClassify implements the backlogit_docs_classify MCP tool. It
+// validates the path via docline.ValidateClassifyPath (shared with the CLI) and
+// returns the classified doc_type as {"doc_type": "<value>"}.
+func (s *Server) handleDocsClassify(_ context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	path, _ := request.Params.Arguments["path"].(string)
+	if strings.TrimSpace(path) == "" {
+		return ValidationFailed("classify path must not be empty"), nil
+	}
+	if err := docline.ValidateClassifyPath(s.RootPath, path); err != nil {
+		return ValidationFailed(err.Error()), nil
+	}
+	return toolResultJSON(docsClassifyResponse{DocType: string(docline.Classify(path))})
 }
 
 // planHasFindingsResult builds a structured MCP error result for a plan that

@@ -1,8 +1,12 @@
 package docline
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/softwaresalt/backlogit/internal/core"
 )
 
 // uriSchemeRE matches a leading RFC 3986 scheme followed by "://" (e.g.
@@ -43,4 +47,38 @@ func Classify(relPath string) DocType {
 // normalize deterministically across platforms.
 func DeriveSource(relPath string) string {
 	return toPOSIX(relPath)
+}
+
+// ValidateClassifyPath validates path before classification. It explicitly
+// rejects:
+//
+//   - empty or whitespace-only paths,
+//   - absolute paths (leading / or \ on any platform),
+//   - volume- or UNC-qualified paths (C:\, D:/, \\host),
+//
+// and then calls core.SafeResolve for traversal/escape validation.
+//
+// This function is called by BOTH the CLI and MCP surfaces to enforce identical
+// input rejection (155.003-T / U3). core.SafeResolve validates only the joined
+// result and does not reject empty or absolute raw path inputs before joining,
+// so the explicit checks above are required to cover those cases.
+func ValidateClassifyPath(root string, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return errors.New("classify path must not be empty")
+	}
+	// Reject absolute paths (leading / or \).
+	if path[0] == '/' || path[0] == '\\' {
+		return fmt.Errorf("classify path must be relative, got absolute path: %q", path)
+	}
+	// Reject volume-qualified (C:\ or C:/) and UNC (\\host) forms.
+	// The UNC case (\\) is already caught by the backslash check above,
+	// but the volume-letter check is platform-neutral and covers both slash forms.
+	if len(path) >= 2 && path[1] == ':' {
+		return fmt.Errorf("classify path must be relative, got volume-qualified path: %q", path)
+	}
+	// After explicit raw-input checks, call SafeResolve for traversal/escape.
+	if _, err := core.SafeResolve(root, path); err != nil {
+		return err
+	}
+	return nil
 }
