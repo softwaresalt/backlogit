@@ -19,6 +19,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
 	"github.com/softwaresalt/backlogit/internal/version"
 )
@@ -78,7 +79,20 @@ func Execute() error {
 		if cmdPath == "" {
 			cmdPath = "backlogit"
 		}
-		b, wrapErr := format.WrapError(cmdPath, format.ErrCodeServerError, err.Error())
+		b, wrapErr := func() ([]byte, error) {
+			var unknownField *corerrors.CheckpointUnknownFieldError
+			if errors.As(err, &unknownField) {
+				bounded := unknownField.BoundedFields()
+				data := map[string]any{
+					"unknown_fields":           bounded.Paths,
+					"unknown_fields_truncated": bounded.Truncated,
+					"unknown_fields_omitted":   bounded.OmittedPaths,
+					"unknown_fields_shortened": bounded.TruncatedPaths,
+				}
+				return format.WrapErrorData(cmdPath, format.ErrCodeServerError, unknownField.Error(), data)
+			}
+			return format.WrapError(cmdPath, format.ErrCodeServerError, err.Error())
+		}()
 		if wrapErr != nil {
 			// Marshaling failed; fall back to a minimal valid JSON-RPC error envelope.
 			b = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%q,"error":{"code":%d,"message":%q}}`,
