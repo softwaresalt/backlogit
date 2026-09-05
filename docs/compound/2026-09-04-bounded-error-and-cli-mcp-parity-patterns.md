@@ -21,7 +21,7 @@ title: S3 — Bounded error projection and CLI/MCP shared validation patterns
 ## Context
 
 Shipped in 137-S (S3). Resolves two parity gaps: (1) unbounded checkpoint unknown-field
-error responses on CLI and MCP, and (2) absent MCP equivalent for acklogit docs classify.
+error responses on CLI and MCP, and (2) absent MCP equivalent for acklogit docs classify.
 
 ## Key Patterns Learned
 

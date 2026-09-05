@@ -69,5 +69,5 @@ Archived by backlogit_ship_shipment: 155-F, 155.001-T through 155.005-T, 062-DL 
 
 ## Compaction Status
 
-pending (will be updated after compact-context invocation)
+done — compact-context completed; see docs/memory/compact-137-s-session.md
 
