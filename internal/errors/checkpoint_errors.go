@@ -142,27 +142,11 @@ type CheckpointUnknownFieldError struct {
 
 // Error returns the formatted error string for CheckpointUnknownFieldError,
 // routing through the bounded field set so the message is capped in both
-// count and byte length (155.001-T / U1a).
+// count and byte length (155.001-T / U1a). Quoting and truncation annotation
+// are delegated to formatBoundedFieldSet so this render site cannot drift from
+// CheckpointNonConformingError.FieldPathsForDisplay().
 func (e *CheckpointUnknownFieldError) Error() string {
-	set := e.BoundedFields()
-	quoted := make([]string, 0, len(set.Paths))
-	for _, p := range set.Paths {
-		quoted = append(quoted, strconv.Quote(p))
-	}
-	display := strings.Join(quoted, ", ")
-	if set.Truncated {
-		var clauses []string
-		if set.OmittedPaths > 0 {
-			clauses = append(clauses, fmt.Sprintf("%d more omitted", set.OmittedPaths))
-		}
-		if set.TruncatedPaths > 0 {
-			clauses = append(clauses, fmt.Sprintf("%d shortened", set.TruncatedPaths))
-		}
-		if len(clauses) > 0 {
-			display = fmt.Sprintf("%s (%s)", display, strings.Join(clauses, ", "))
-		}
-	}
-	return "backlogit: checkpoint carries unknown schema field(s): " + display
+	return "backlogit: checkpoint carries unknown schema field(s): " + formatBoundedFieldSet(e.BoundedFields())
 }
 
 // BoundedFields returns the bounded, raw machine projection of the offending
@@ -328,15 +312,15 @@ func capFieldPathBytes(path string, maxBytes int) (string, bool) {
 	return path[:cut], true
 }
 
-// FieldPathsForDisplay renders BoundedFieldPaths() for human consumption:
-// each path is escaped via strconv.Quote and joined with ", ", followed by
-// an explicit clause when the set is truncated (e.g. "(5 more omitted, 1
-// shortened)"). This is the only place quoting or escaping happens — no
-// machine surface may call it, and no human surface may print Paths
-// directly (147-F / U1c, cycle-16 gate finding H4).
-func (e *CheckpointNonConformingError) FieldPathsForDisplay() string {
-	set := e.BoundedFieldPaths()
-
+// formatBoundedFieldSet renders a BoundedFieldPathSet for human consumption:
+// each path is escaped via strconv.Quote and joined with ", ", followed by an
+// explicit clause when the set is truncated (e.g. "(5 more omitted, 1
+// shortened)"). This is the single quoting and escaping site for bounded field
+// sets — no machine surface may call it, and no human surface may print Paths
+// directly (147-F / U1c, cycle-16 gate finding H4; extracted as shared helper
+// in 155.001-T / U1a so CheckpointUnknownFieldError.Error() and
+// CheckpointNonConformingError.FieldPathsForDisplay() share one render site).
+func formatBoundedFieldSet(set BoundedFieldPathSet) string {
 	quoted := make([]string, 0, len(set.Paths))
 	for _, p := range set.Paths {
 		quoted = append(quoted, strconv.Quote(p))
@@ -357,6 +341,12 @@ func (e *CheckpointNonConformingError) FieldPathsForDisplay() string {
 		return display
 	}
 	return fmt.Sprintf("%s (%s)", display, strings.Join(clauses, ", "))
+}
+
+// FieldPathsForDisplay renders BoundedFieldPaths() for human consumption
+// via the shared formatBoundedFieldSet helper.
+func (e *CheckpointNonConformingError) FieldPathsForDisplay() string {
+	return formatBoundedFieldSet(e.BoundedFieldPaths())
 }
 
 // CheckpointMalformedInputError is returned (148-F / U1) when a checkpoint

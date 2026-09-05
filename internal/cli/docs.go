@@ -204,7 +204,7 @@ func newDocsScopeCommand(cwd *string) *cobra.Command {
 func newDocsClassifyCommand(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "classify <path>",
-		Short:        "Print the derived doc_type for a repo-relative path",
+		Short:        "Print the derived doc_type for a repo-relative path (JSON output)",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -216,8 +216,14 @@ func newDocsClassifyCommand(cwd *string) *cobra.Command {
 				return err
 			}
 			dt := docline.Classify(args[0])
-			fmt.Fprintln(cmd.OutOrStdout(), string(dt))
-			return nil
+			// Emit a JSON object so --jsonrpc consumers receive {"result":{"doc_type":"..."}}
+			// matching the MCP backlogit_docs_classify shape. Plain-text output would be
+			// wrapped as {"result":"guide"} (string scalar) by PersistentPostRunE, diverging
+			// from the MCP structured shape (155.003-T / U3 parity review C1/P1).
+			type classifyResult struct {
+				DocType string `json:"doc_type"`
+			}
+			return writeDocsJSON(cmd.OutOrStdout(), classifyResult{DocType: string(dt)})
 		},
 	}
 	return cmd

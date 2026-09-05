@@ -152,9 +152,10 @@ type docsClassifyResponse struct {
 // returns the classified doc_type as {"doc_type": "<value>"}.
 func (s *Server) handleDocsClassify(_ context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	path, _ := request.Params.Arguments["path"].(string)
-	if strings.TrimSpace(path) == "" {
-		return ValidationFailed("classify path must not be empty"), nil
-	}
+	// ValidateClassifyPath is the single source of truth for all input rejection
+	// on both the CLI and MCP surfaces (155.003-T / U3). The redundant pre-check
+	// for empty/blank was removed to prevent the error message from diverging
+	// between surfaces if ValidateClassifyPath's message is ever revised.
 	if err := docline.ValidateClassifyPath(s.RootPath, path); err != nil {
 		return ValidationFailed(err.Error()), nil
 	}
