@@ -71,7 +71,6 @@ var cliOnlyIntentional = []string{
 	"backlogit manifest",
 	"backlogit migrate",
 	"backlogit status",
-	"backlogit docs classify",
 	"backlogit queue bulk-status",
 	"backlogit queue move",
 	"backlogit telemetry branch",
@@ -648,6 +647,10 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 			name: "checkpoint_quarantine_disposition", mcp: "backlogit_quarantine_checkpoint",
 			cli: "backlogit checkpoint quarantine {{filename}} --reason {{reason}} --operator {{operator}}",
 		},
+		"create_checkpoint": {
+			name: "checkpoint_create", mcp: "backlogit_create_checkpoint",
+			cli: "backlogit checkpoint create --state-dump {{state_dump}}",
+		},
 	}
 	for operation, contract := range requiredGoverned {
 		op, found := governed[operation]
@@ -841,6 +844,65 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				assert.False(t, cliState.Cache, "op %q: CLI dependency must be removed from the cache", opName)
 				assert.False(t, cliState.Frontmatter, "op %q: CLI dependency must be removed from frontmatter", opName)
 				assert.Equal(t, cliState, mcpState, "op %q: dependency state must match across surfaces", opName)
+
+			case "create_checkpoint":
+				// Both surfaces route through events.CreateCheckpoint.
+				// Observable state: a V1 checkpoint file is written and parseable,
+				// with matching agent/session_id/phase/status across surfaces.
+				root, ws := setupGovernedWorkspace(t)
+				const stateDump = `{"schema_version":1,"agent":"ship","session_id":"gov-cp-parity","phase":"build"}`
+
+				// CLI surface: backlogit checkpoint create --state-dump routes through
+				// newCheckpointCreateCmd RunE → events.CreateCheckpoint.
+				var cliOut bytes.Buffer
+				cliCmd := NewRootCommand()
+				cliCmd.SetOut(&cliOut)
+				cliCmd.SetErr(new(bytes.Buffer))
+				cliCmd.SetArgs([]string{"--cwd", root, "checkpoint", "create", "--state-dump", stateDump})
+				require.NoError(t, cliCmd.Execute(), "op %q: CLI surface must succeed for a valid dump", opName)
+
+				var cliResp map[string]any
+				require.NoError(t, json.Unmarshal(cliOut.Bytes(), &cliResp),
+					"op %q: CLI response must be valid JSON", opName)
+				cliPath, _ := cliResp["path"].(string)
+				require.NotEmpty(t, cliPath, "op %q: CLI must return a non-empty checkpoint path", opName)
+
+				cliFileData, err := os.ReadFile(cliPath)
+				require.NoError(t, err, "op %q: CLI checkpoint file must be readable", opName)
+				cliCP, err := events.ParseCheckpoint(cliFileData)
+				require.NoError(t, err, "op %q: CLI checkpoint must be a parseable V1 document", opName)
+
+				// MCP surface: backlogit_create_checkpoint routes through
+				// handleCreateCheckpoint → events.CreateCheckpoint.
+				server := mcpinternal.NewServer(ws)
+				mcpReq := mcplib.CallToolRequest{}
+				mcpReq.Params.Name = "backlogit_create_checkpoint"
+				mcpReq.Params.Arguments = map[string]any{"state_dump": stateDump}
+				mcpResult, mcpErr := server.InvokeTool(context.Background(), "backlogit_create_checkpoint", mcpReq)
+				require.NoError(t, mcpErr, "op %q: MCP surface must not return a transport error", opName)
+				require.NotNil(t, mcpResult, "op %q: MCP surface must return a result", opName)
+				require.False(t, mcpResult.IsError, "op %q: MCP surface must succeed for a valid dump: %v", opName, mcpResult.Content)
+
+				mcpTC, ok := mcpResult.Content[0].(mcplib.TextContent)
+				require.True(t, ok, "op %q: MCP result must be TextContent", opName)
+				var mcpResp map[string]any
+				require.NoError(t, json.Unmarshal([]byte(mcpTC.Text), &mcpResp),
+					"op %q: MCP response must be valid JSON", opName)
+				mcpPath, _ := mcpResp["path"].(string)
+				require.NotEmpty(t, mcpPath, "op %q: MCP must return a non-empty checkpoint path", opName)
+
+				mcpFileData, err := os.ReadFile(mcpPath)
+				require.NoError(t, err, "op %q: MCP checkpoint file must be readable", opName)
+				mcpCP, err := events.ParseCheckpoint(mcpFileData)
+				require.NoError(t, err, "op %q: MCP checkpoint must be a parseable V1 document", opName)
+
+				// Parity assertions: observable state must be identical across surfaces.
+				assert.Equal(t, "ship", cliCP.Agent, "op %q: CLI checkpoint must preserve agent", opName)
+				assert.Equal(t, "active", cliCP.Status, "op %q: CLI status must default to active", opName)
+				assert.Equal(t, cliCP.Agent, mcpCP.Agent, "op %q: agent must match across surfaces", opName)
+				assert.Equal(t, cliCP.SessionID, mcpCP.SessionID, "op %q: session_id must match across surfaces", opName)
+				assert.Equal(t, cliCP.Phase, mcpCP.Phase, "op %q: phase must match across surfaces", opName)
+				assert.Equal(t, cliCP.Status, mcpCP.Status, "op %q: status must match across surfaces", opName)
 
 			default:
 				t.Fatalf("governed op %q mcp_tool=%q: no behavioral fixture defined; add one to registry_parity_test.go", opName, op.MCPTool)

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -137,4 +138,85 @@ func TestBacklogitCreateCheckpoint_DescriptionNamesEveryReflectedKey(t *testing.
 	for _, k := range keys {
 		assert.Contains(t, desc, k, "the registered description must enumerate reflection-derived legal key %q", k)
 	}
+}
+
+// TestU1a_MCPCheckpointUnknownFieldsThreeScalarsAlwaysPresent asserts that a
+// checkpoint create rejection for unknown fields returns the three always-present
+// scalar fields unknown_fields_truncated, unknown_fields_omitted,
+// unknown_fields_shortened in the JSON response (155.001-T / U1a). These fields
+// must appear even when the field set is small (non-truncated) so callers can
+// read them without conditional presence checks.
+func TestU1a_MCPCheckpointUnknownFieldsThreeScalarsAlwaysPresent(t *testing.T) {
+	s, _ := setupBugFixServer(t)
+	ctx := context.Background()
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_create_checkpoint"
+	request.Params.Arguments = map[string]any{
+		"state_dump": `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","novel_key":"v"}`,
+	}
+
+	result, err := s.handleCreateCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError, "must return an error result")
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcplib.TextContent).Text), &body))
+	require.Equal(t, "validation_failed", body["error"])
+
+	// Verify all three scalars are present (non-omitempty, always serialised).
+	_, hasTruncated := body["unknown_fields_truncated"]
+	assert.True(t, hasTruncated, "unknown_fields_truncated must always be present (non-omitempty)")
+	_, hasOmitted := body["unknown_fields_omitted"]
+	assert.True(t, hasOmitted, "unknown_fields_omitted must always be present (non-omitempty)")
+	_, hasShortened := body["unknown_fields_shortened"]
+	assert.True(t, hasShortened, "unknown_fields_shortened must always be present (non-omitempty)")
+}
+
+// TestU1a_MCPCheckpointUnknownFieldsBoundedArrayAndMessage asserts that the
+// unknown_fields array in the MCP response is the bounded projection (not raw),
+// and the three scalars reflect the truncation when the field count exceeds the
+// cap (155.001-T / U1a).
+func TestU1a_MCPCheckpointUnknownFieldsBoundedArrayAndMessage(t *testing.T) {
+	s, _ := setupBugFixServer(t)
+	ctx := context.Background()
+
+	// Build a state_dump with 20 unknown fields (exceeds cap of 16).
+	extra := make([]string, 20)
+	for i := range extra {
+		extra[i] = fmt.Sprintf(`"unknown_%02d":"v"`, i)
+	}
+	dump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",` +
+		strings.Join(extra, ",") + `}`
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = "backlogit_create_checkpoint"
+	request.Params.Arguments = map[string]any{"state_dump": dump}
+
+	result, err := s.handleCreateCheckpoint(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcplib.TextContent).Text), &body))
+	require.Equal(t, "validation_failed", body["error"])
+
+	fields, ok := body["unknown_fields"].([]any)
+	require.True(t, ok, "unknown_fields must be an array")
+	assert.LessOrEqual(t, len(fields), 16, "unknown_fields array must be bounded at cap 16")
+	assert.True(t, body["unknown_fields_truncated"].(bool), "unknown_fields_truncated must be true when N>cap")
+	omitted := body["unknown_fields_omitted"].(float64)
+	assert.Greater(t, omitted, float64(0), "unknown_fields_omitted must be >0 when truncated")
+
+	// Message must also be bounded: assert it does NOT contain a field beyond
+	// the cap (e.g., "unknown_17") and DOES contain the omission annotation so
+	// the output-amplification regression is provably protected (Copilot review).
+	msg, _ := body["message"].(string)
+	require.NotEmpty(t, msg, "message must be present")
+	assert.NotContains(t, msg, "unknown_17",
+		"message must be bounded — field beyond cap must not appear in message")
+	assert.Contains(t, msg, "omitted",
+		"bounded message must contain omission annotation when N > cap")
 }

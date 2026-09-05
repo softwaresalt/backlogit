@@ -188,7 +188,7 @@ repo never fabricates them.
 | `backlogit docs migrate [--path P]` | `backlogit_docs_migrate` | **Dry-run by default**: prints the planned changes without writing. |
 | `backlogit docs migrate --apply --yes --path P` | `backlogit_docs_migrate apply=true` | Writes changes atomically. Requires an explicit scoped path; refuses a whole-tree apply. |
 | `backlogit docs scope` | `backlogit_docs_scope` | Prints the active scope globs, taxonomy, and profiles. |
-| `backlogit docs classify <path>` | — | Prints the derived `doc_type` for a path. |
+| `backlogit docs classify <path>` | `backlogit_docs_classify` | Returns the derived `doc_type` for a repo-relative path. Both surfaces validate via `ValidateClassifyPath` (rejects empty, absolute, volume/UNC, and dot-segment paths). |
 
 The migration is **idempotent** (running it twice yields no further changes) and
 **body-preserving** (only the frontmatter block is rewritten; the markdown body

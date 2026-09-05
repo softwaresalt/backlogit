@@ -47,7 +47,7 @@ inspect the active scope, and classify a path's doc_type.
 ### SEE ALSO
 
 * [backlogit](backlogit.md)	 - Backlogit — AI-native agile workspace
-* [backlogit docs classify](backlogit_docs_classify.md)	 - Print the derived doc_type for a repo-relative path
+* [backlogit docs classify](backlogit_docs_classify.md)	 - Print the derived doc_type for a repo-relative path (JSON output)
 * [backlogit docs lint](backlogit_docs_lint.md)	 - Validate in-scope documentation frontmatter (retains non-zero exit on violations)
 * [backlogit docs migrate](backlogit_docs_migrate.md)	 - Plan (default) or apply an idempotent frontmatter migration
 * [backlogit docs scope](backlogit_docs_scope.md)	 - Print the active docline scope, profiles, and taxonomy

@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'Grounded audit matrix mapping all 56 registered backlogit MCP tools to their cobra CLI commands with drift classification and true-gap disposition.'
+description: 'Grounded audit matrix mapping all 57 registered backlogit MCP tools to their cobra CLI commands with drift classification and true-gap disposition.'
 doc_type: review
 docline:
     author: ship-skill
@@ -15,7 +15,7 @@ title: 'CLI/MCP Command Parity Audit Matrix (phase-1 078-F; phase-2 079-S closes
 
 ## Overview
 
-This matrix audits all 56 registered MCP tools in the backlogit manifest against
+This matrix audits all 57 registered MCP tools in the backlogit manifest against
 the cobra CLI command tree and the `.autoharness/backlog-registry.yaml` fallback
 map. Every row is grounded against the running binary rather than inferred from
 source alone, so a tool that the manifest advertises but the CLI never exposes is
@@ -42,7 +42,7 @@ is now enforced in code.
 
 ## The Matrix
 
-The table below lists all 56 registered MCP tools. `CLI Command` shows the mapped
+The table below lists all 57 registered MCP tools. `CLI Command` shows the mapped
 cobra command, or `— (mcp_only)` when the tool is intentionally or provisionally
 MCP-only. `Classification` records the parity disposition after the phase-1
 corrections landed.
@@ -91,6 +91,7 @@ corrections landed.
 | `backlogit_docs_lint` | `backlogit docs lint` | `missing-fixed` | MCP and CLI both existed; registry row added in U2 |
 | `backlogit_docs_migrate` | `backlogit docs migrate` | `missing-fixed` | MCP and CLI both existed; registry row added in U2 |
 | `backlogit_docs_scope` | `backlogit docs scope` | `missing-fixed` | MCP and CLI both existed; registry row added in U2 |
+| `backlogit_docs_classify` | `backlogit docs classify` | `gap-filled-phase-3` | New MCP tool + shared containment helper added in 155.003-T U3 |
 | `backlogit_add_to_shipment` | `backlogit shipment add` | `gap-filled` | True gap; new CLI verb added this phase (U3) |
 | `backlogit_create_checkpoint` | `backlogit checkpoint create` | `gap-filled` | True gap; new CLI verb added this phase (U6) |
 | `backlogit_add_link` | `backlogit link add` | `gap-filled-phase-2` | Built in 079-S U1 over `core.AddArtifactLink`; flag-parity verified by the U6 drift assertion |
@@ -107,8 +108,8 @@ corrections landed.
 | `backlogit_merge_sync` | `— (mcp_only)` | `deferred-phase-3` | Write-by-default merge-aware sync; a CLI verb needs Rule-4 safety design before it can be flipped; still `mcp_only` |
 
 Row totals by classification: 30 parity + 9 stale-fixed + 3 missing-fixed +
-2 gap-filled (phase-1) + 10 gap-filled-phase-2 + 1 intentional-mcp-only-permanent +
-1 deferred-phase-3 = 56.
+2 gap-filled (phase-1) + 10 gap-filled-phase-2 + 1 gap-filled-phase-3 +
+1 intentional-mcp-only-permanent + 1 deferred-phase-3 = 57.
 
 ## True Gap Disposition
 

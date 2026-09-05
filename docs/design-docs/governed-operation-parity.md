@@ -112,7 +112,7 @@ asserts **behavioral** (not merely surface) parity for governed operations:
   canonical governed operation names cannot be moved to an unrelated row or accidentally removed).
 * For each governed operation with both a `mcp_tool` and `cli_command`, both surfaces are executed
   against equivalent fixtures and their observable persisted state is asserted identical.
-* The current governed set covers commit association, checkpoint abandon/quarantine, comment append,
+* The current governed set covers commit association, checkpoint abandon/quarantine, checkpoint create, comment append,
   and dependency add/remove; each new marker must have a named behavioral fixture before it can be
   added to the registry.
 * A DENYLIST approach covers output-only fields that differ by design (message/author on the CLI
@@ -124,13 +124,14 @@ The following fields in `.autoharness/backlog-registry.yaml` carry this contract
 
 | Field | Applies to | Meaning |
 |---|---|---|
-| `governed: true` | `track_commit`, `append_comment`, `add_dependency`, `remove_dependency`, `abandon_checkpoint`, `quarantine_checkpoint` | Marks an operation as covered by behavioral parity |
+| `governed: true` | `track_commit`, `append_comment`, `add_dependency`, `remove_dependency`, `abandon_checkpoint`, `quarantine_checkpoint`, `create_checkpoint` | Marks an operation as covered by behavioral parity |
 | `governed_name: commit_association` | `track_commit` | Canonical name for the commit-association gate |
 | `governed_name: comment_append` | `append_comment` | Requires parity for JSONL and indexed comment events |
 | `governed_name: dependency_add` | `add_dependency` | Requires parity for persisted dependency edges |
 | `governed_name: dependency_remove` | `remove_dependency` | Requires parity for dependency-edge removal |
 | `governed_name: checkpoint_abandon_disposition` | `abandon_checkpoint` | Requires parity for valid checkpoint disposition |
 | `governed_name: checkpoint_quarantine_disposition` | `quarantine_checkpoint` | Requires parity for malformed checkpoint quarantine |
+| `governed_name: checkpoint_create` | `create_checkpoint` | Requires parity for V1 checkpoint creation across CLI and MCP surfaces |
 | `cli_param_gaps.message` | `track_commit` | Documents that CLI stores empty string |
 | `cli_param_gaps.author` | `track_commit` | Documents that CLI stores empty string |
 | `cli_only_flags.force-gates.human_terminal_only` | `update_task` | Gate-forcing is operator-only |
