@@ -51,6 +51,30 @@ func TestU3_ValidateClassifyPathRejectsUNC(t *testing.T) {
 	assert.Contains(t, err.Error(), "relative")
 }
 
+// TestU3_ValidateClassifyPathRejectsDotSegments asserts that non-canonical paths with "."
+// or ".." segments are rejected, preventing misclassification (Copilot review thread 2).
+// SafeResolve accepts in-root dot segments since they do not escape; ValidateClassifyPath
+// must explicitly reject them to prevent e.g. "docs/decisions/../reviews/x.md" being
+// classified as "decision" instead of "review".
+func TestU3_ValidateClassifyPathRejectsDotSegments(t *testing.T) {
+	root := t.TempDir()
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"double-dot traversal", "docs/decisions/../reviews/x.md"},
+		{"leading dot-segment", "./docs/foo.md"},
+		{"single dot in middle", "docs/./reviews/x.md"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := docline.ValidateClassifyPath(root, tc.path)
+			require.Error(t, err, "dot-segment path %q must be rejected", tc.path)
+			assert.Contains(t, err.Error(), "dot-segment", "error message must mention dot-segment")
+		})
+	}
+}
+
 // TestU3_ValidateClassifyPathAcceptsRelative asserts that a valid relative path passes.
 func TestU3_ValidateClassifyPathAcceptsRelative(t *testing.T) {
 	root := t.TempDir()
@@ -59,7 +83,12 @@ func TestU3_ValidateClassifyPathAcceptsRelative(t *testing.T) {
 }
 
 // TestU3_ClassifyParityMCPEquivalesCLI asserts that ValidateClassifyPath followed by
-// Classify produces consistent results regardless of surface (CLI/MCP parity).
+// Classify produces consistent results across both surfaces. The shared helper is tested
+// here; actual CLI and MCP surface invocations are covered in internal/cli/ and
+// internal/mcp/ to avoid cross-package import concerns in this package.
+// Cross-surface rejection parity (empty, absolute, volume/UNC, traversal, dot-segment)
+// is verified in TestU3_DocsClassify* in internal/mcp/docs_classify_u3_test.go and
+// TestU3_CLI* in internal/cli/ test files.
 func TestU3_ClassifyParityMCPEquivalesCLI(t *testing.T) {
 	root := t.TempDir()
 	tests := []struct {
@@ -72,7 +101,7 @@ func TestU3_ClassifyParityMCPEquivalesCLI(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
-			// ValidateClassifyPath is called by BOTH CLI and MCP — test the shared path.
+			// Both CLI and MCP call ValidateClassifyPath then Classify.
 			err := docline.ValidateClassifyPath(root, tc.path)
 			require.NoError(t, err, "valid relative path should not fail containment check")
 			dt := docline.Classify(tc.path)
@@ -80,3 +109,4 @@ func TestU3_ClassifyParityMCPEquivalesCLI(t *testing.T) {
 		})
 	}
 }
+

@@ -67,11 +67,12 @@ func TestU4_CreateCheckpointGoverned(t *testing.T) {
 
 	// -------------------------------------------------------------------------
 	// Step 2: Invoke the REGISTERED MCP handler via the authoritative tool name.
-	// Using callToolForTest routes through the in-process MCP dispatch loop, so
-	// the registry mapping (mcp_tool: backlogit_create_checkpoint) is exercised
-	// rather than calling core.CreateCheckpoint directly.
+	// Using setupRealMCPServerWithRoot returns an explicit workspace root so we
+	// can assert that the MCP surface independently persisted a checkpoint there,
+	// and distinguish it from the CLI workspace below (Copilot review thread 1:
+	// separate workspaces prevent second-precision filename collisions).
 	// -------------------------------------------------------------------------
-	s := setupRealMCPServer(t)
+	s, mcpRoot := setupRealMCPServerWithRoot(t)
 
 	const validDump = `{"schema_version":1,"agent":"ship","session_id":"u4-governed","phase":"build"}`
 
@@ -79,8 +80,11 @@ func TestU4_CreateCheckpointGoverned(t *testing.T) {
 	mcpData := callToolAndParseJSON(t, s, mcpTool, map[string]any{
 		"state_dump": validDump,
 	})
-	assert.NotEmpty(t, mcpData["path"],
-		"MCP %s must return a non-empty checkpoint path for a valid dump", mcpTool)
+	mcpPath, _ := mcpData["path"].(string)
+	require.NotEmpty(t, mcpPath, "MCP %s must return a non-empty checkpoint path for a valid dump", mcpTool)
+	// The returned path must be inside the MCP workspace, not the CLI workspace.
+	assert.Contains(t, filepath.ToSlash(mcpPath), filepath.ToSlash(mcpRoot),
+		"MCP checkpoint path must be within the MCP workspace root")
 
 	// Error path: invalid agent must be rejected.
 	const badDump = `{"schema_version":1,"agent":"invalid-agent","session_id":"u4","phase":"build"}`
@@ -92,14 +96,13 @@ func TestU4_CreateCheckpointGoverned(t *testing.T) {
 		"MCP %s must reject a state_dump with an invalid agent", mcpTool)
 
 	// -------------------------------------------------------------------------
-	// Step 3: Invoke the REGISTERED CLI handler.
-	// Using cli.NewRootCommand() and executing "checkpoint create --state-dump"
-	// routes through the actual Cobra handler, so the registry mapping
-	// (cli_command: backlogit checkpoint create --state-dump {{state_dump}}) is
-	// exercised rather than calling core.CreateCheckpoint directly.
+	// Step 3: Invoke the REGISTERED CLI handler in a SEPARATE workspace.
+	// Using a distinct cliRoot from mcpRoot guarantees the CLI surface
+	// independently persists a checkpoint without any risk of path collision with
+	// the MCP workspace above (Copilot review thread 1).
 	// -------------------------------------------------------------------------
-	root := t.TempDir()
-	backlogitDir := filepath.Join(root, ".backlogit")
+	cliRoot := t.TempDir()
+	backlogitDir := filepath.Join(cliRoot, ".backlogit")
 	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
 	require.NoError(t, config.WriteDefaults(backlogitDir))
 
@@ -107,14 +110,19 @@ func TestU4_CreateCheckpointGoverned(t *testing.T) {
 	var cliOut bytes.Buffer
 	rootCmd.SetOut(&cliOut)
 	rootCmd.SetErr(new(bytes.Buffer))
-	rootCmd.SetArgs([]string{"--cwd", root, "checkpoint", "create", "--state-dump", validDump})
+	rootCmd.SetArgs([]string{"--cwd", cliRoot, "checkpoint", "create", "--state-dump", validDump})
 	require.NoError(t, rootCmd.Execute(),
 		"CLI checkpoint create must succeed for a valid state dump")
 
 	var cliData map[string]any
 	require.NoError(t, json.Unmarshal(cliOut.Bytes(), &cliData))
-	assert.NotEmpty(t, cliData["path"],
-		"CLI checkpoint create must return a non-empty checkpoint path")
+	cliPath, _ := cliData["path"].(string)
+	require.NotEmpty(t, cliPath, "CLI checkpoint create must return a non-empty checkpoint path")
+	// The CLI path must be inside the CLI workspace, not the MCP workspace.
+	assert.Contains(t, filepath.ToSlash(cliPath), filepath.ToSlash(cliRoot),
+		"CLI checkpoint path must be within the CLI workspace root, not the MCP workspace")
+	assert.NotContains(t, filepath.ToSlash(cliPath), filepath.ToSlash(mcpRoot),
+		"CLI checkpoint path must be in a distinct workspace from the MCP checkpoint")
 }
 
 // findRegistry walks up from the test's working directory looking for

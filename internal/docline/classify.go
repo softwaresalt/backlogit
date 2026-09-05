@@ -55,6 +55,12 @@ func DeriveSource(relPath string) string {
 //   - empty or whitespace-only paths,
 //   - absolute paths (leading / or \ on any platform),
 //   - volume- or UNC-qualified paths (C:\, D:/, \\host),
+//   - non-canonical dot-segment paths ("." or ".." components): SafeResolve
+//     accepts in-root dot segments since the joined result does not escape,
+//     but a caller that passes the original lexical path to Classify would get
+//     a wrong type (e.g., "docs/decisions/../reviews/x.md" classified as
+//     "decision" instead of "review"). Rejecting these segments here prevents
+//     silent misclassification on both surfaces.
 //
 // and then calls core.SafeResolve for traversal/escape validation.
 //
@@ -75,6 +81,13 @@ func ValidateClassifyPath(root string, path string) error {
 	// but the volume-letter check is platform-neutral and covers both slash forms.
 	if len(path) >= 2 && path[1] == ':' {
 		return fmt.Errorf("classify path must be relative, got volume-qualified path: %q", path)
+	}
+	// Reject non-canonical dot-segment components so a lexical path like
+	// "docs/decisions/../reviews/x.md" cannot be misclassified as "decision".
+	for _, seg := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if seg == "." || seg == ".." {
+			return fmt.Errorf("classify path must not contain dot-segment components: %q", path)
+		}
 	}
 	// After explicit raw-input checks, call SafeResolve for traversal/escape.
 	if _, err := core.SafeResolve(root, path); err != nil {

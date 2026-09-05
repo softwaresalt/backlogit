@@ -207,5 +207,16 @@ func TestU1a_MCPCheckpointUnknownFieldsBoundedArrayAndMessage(t *testing.T) {
 	require.True(t, ok, "unknown_fields must be an array")
 	assert.LessOrEqual(t, len(fields), 16, "unknown_fields array must be bounded at cap 16")
 	assert.True(t, body["unknown_fields_truncated"].(bool), "unknown_fields_truncated must be true when N>cap")
-	assert.Greater(t, body["unknown_fields_omitted"].(float64), float64(0), "unknown_fields_omitted must be >0 when truncated")
+	omitted := body["unknown_fields_omitted"].(float64)
+	assert.Greater(t, omitted, float64(0), "unknown_fields_omitted must be >0 when truncated")
+
+	// Message must also be bounded: assert it does NOT contain a field beyond
+	// the cap (e.g., "unknown_17") and DOES contain the omission annotation so
+	// the output-amplification regression is provably protected (Copilot review).
+	msg, _ := body["message"].(string)
+	require.NotEmpty(t, msg, "message must be present")
+	assert.NotContains(t, msg, "unknown_17",
+		"message must be bounded — field beyond cap must not appear in message")
+	assert.Contains(t, msg, "omitted",
+		"bounded message must contain omission annotation when N > cap")
 }
