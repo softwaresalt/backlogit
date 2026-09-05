@@ -1,4 +1,4 @@
-﻿---
+---
 chunk_strategy: h1-h2-h3
 description: Shared input validation and bounded error response patterns for CLI/MCP surface parity
 doc_type: learning
@@ -12,7 +12,7 @@ docline:
         - parity
         - bounded-output
         - s3
-source: docs/closure/2026-09-04-137s-post-merge-closure.md
+source: docs/closure/137-S-155-F-post-merge-closure.md
 title: S3 — Bounded error projection and CLI/MCP shared validation patterns
 ---
 

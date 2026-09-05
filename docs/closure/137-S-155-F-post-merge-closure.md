@@ -1,14 +1,21 @@
-﻿---
-schema_version: "1.0"
-doc_type: closure
-title: "Post-merge closure: 137-S CLI/MCP parity"
-shipment: 137-S
-feature: 155-F
-merge_commit: "967a1bf449d6dc3ce61512ab4fc0dc3358f3d782"
-merge_pr: 420
-closed_at: "2026-09-05T02:42:00Z"
-releasability: READY
+---
+chunk_strategy: h1-h2-h3
+# gate-required: closure_status and compaction_status MUST remain at the top level
+# of this frontmatter. The autoharness pipeline-topology gate reads them via
+# fm.get("closure_status") and fm.get("compaction_status"). Do NOT run
+# `backlogit docs migrate --apply` against this file.
+closure_status: READY
 compaction_status: done
+description: "Topology gate registration for 137-S/155-F post-merge closure — S3 CLI/MCP parity (structured errors, docs_classify, create_checkpoint governance)."
+doc_type: closure
+docline:
+  backlogit:
+    gate_registration: true
+    schema_version: "1.0"
+ingested_at: "2026-09-05T02:53:00Z"
+schema_version: "1.0"
+source: docs/closure/137-S-155-F-post-merge-closure.md
+title: "137-S / 155-F Post-Merge Closure Gate Registration"
 ---
 
 # Post-Merge Closure: 137-S — S3 CLI/MCP Parity
@@ -70,4 +77,3 @@ Archived by backlogit_ship_shipment: 155-F, 155.001-T through 155.005-T, 062-DL 
 ## Compaction Status
 
 done — compact-context completed; see docs/memory/compact-137-s-session.md
-
