@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Print the derived doc_type for a repo-relative path
+description: Print the derived doc_type for a repo-relative path (JSON output)
 doc_type: reference
 ingested_at: "2026-06-26T02:27:58Z"
 schema_version: "1.0"
@@ -10,7 +10,7 @@ title: backlogit docs classify
 
 ## backlogit docs classify
 
-Print the derived doc_type for a repo-relative path
+Print the derived doc_type for a repo-relative path (JSON output)
 
 ```text
 backlogit docs classify <path> [flags]
