@@ -1,4 +1,4 @@
----
+﻿---
 schema_version: "1.0"
 doc_type: closure
 title: "Post-merge closure: 137-S CLI/MCP parity"
@@ -6,7 +6,7 @@ shipment: 137-S
 feature: 155-F
 merge_commit: "967a1bf449d6dc3ce61512ab4fc0dc3358f3d782"
 merge_pr: 420
-closed_at: "2026-09-04T19:35:00-07:00"
+closed_at: "2026-09-05T02:42:00Z"
 releasability: READY
 compaction_status: done
 ---

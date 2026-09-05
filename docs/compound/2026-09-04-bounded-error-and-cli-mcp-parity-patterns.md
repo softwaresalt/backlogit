@@ -1,4 +1,4 @@
----
+﻿---
 chunk_strategy: h1-h2-h3
 description: Shared input validation and bounded error response patterns for CLI/MCP surface parity
 doc_type: learning
@@ -40,19 +40,19 @@ internal/mcp (CLI → MCP imports) or internal/cli/format (MCP → CLI would be 
 **Problem**: Multiple Error() and FieldPathsForDisplay() methods duplicated the
 same strconv.Quote + join + truncation-clause rendering of a BoundedFieldPathSet.
 
-**Pattern**: Extract ormatBoundedFieldSet(BoundedFieldPathSet) string as an unexported
+**Pattern**: Extract ormatBoundedFieldSet(BoundedFieldPathSet) string as an unexported
 package-level helper. Every human-readable render delegates to it. The doc comment on the
 helper is "the single quoting/escaping site" so no future method re-invents it.
 
-### 3. rrors.As in Execute() for Structured CLI JSON-RPC Data
+### 3. rrors.As in Execute() for Structured CLI JSON-RPC Data
 
-**Pattern**: In internal/cli/root.go Execute(), before the generic ormat.WrapError,
-add rrors.As checks for typed errors that need structured data. The caller must
-%w-wrap the error at every intermediate call site (not %v). ormat.WrapErrorData
-takes ny data with json:"data,omitempty", and a reflect-based typed-nil guard
+**Pattern**: In internal/cli/root.go Execute(), before the generic ormat.WrapError,
+add rrors.As checks for typed errors that need structured data. The caller must
+%w-wrap the error at every intermediate call site (not %v). ormat.WrapErrorData
+takes ny data with json:"data,omitempty", and a reflect-based typed-nil guard
 prevents data:null when a typed-nil interface is passed.
 
-**Gotcha**: omitempty on an ny field omits a nil interface but NOT a non-nil
+**Gotcha**: omitempty on an ny field omits a nil interface but NOT a non-nil
 interface wrapping a typed-nil pointer/map. Use eflect.ValueOf(data).Kind() + IsNil()
 to normalize before marshaling.
 
