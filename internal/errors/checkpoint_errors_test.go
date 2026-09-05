@@ -456,3 +456,55 @@ func TestU1bGuard_MultiByteRuneBoundaryCutIsValidUTF8(t *testing.T) {
 	assert.True(t, set.Truncated)
 	assert.Equal(t, 1, set.TruncatedPaths)
 }
+
+// TestU1a_CheckpointUnknownFieldErrorBoundedFieldsDeclared asserts
+// checkpoint_errors.go declares BoundedFields() BoundedFieldPathSet on
+// *CheckpointUnknownFieldError (155.001-T / U1a).
+func TestU1a_CheckpointUnknownFieldErrorBoundedFieldsDeclared(t *testing.T) {
+	file := parseCheckpointErrorsSource(t)
+	methodDecl := findMethodOn(file, "CheckpointUnknownFieldError", "BoundedFields")
+	if !assert.NotNil(t, methodDecl, "BoundedFields is not declared on *CheckpointUnknownFieldError in checkpoint_errors.go") {
+		return
+	}
+	assert.Empty(t, methodDecl.Type.Params.List, "BoundedFields must take no parameters")
+	if assert.Len(t, methodDecl.Type.Results.List, 1, "BoundedFields must return exactly one value") {
+		resultType, ok := methodDecl.Type.Results.List[0].Type.(*ast.Ident)
+		assert.True(t, ok && resultType.Name == "BoundedFieldPathSet",
+			"BoundedFields must return BoundedFieldPathSet, got: %v", methodDecl.Type.Results.List[0].Type)
+	}
+}
+
+// TestU1a_CheckpointUnknownFieldErrorErrorNotRawJoin asserts Error() does not
+// call strings.Join directly on the raw Fields slice — it must route through
+// bounded render to prevent output amplification (155.001-T / U1a).
+func TestU1a_CheckpointUnknownFieldErrorErrorNotRawJoin(t *testing.T) {
+	file := parseCheckpointErrorsSource(t)
+	methodDecl := findMethodOn(file, "CheckpointUnknownFieldError", "Error")
+	if !assert.NotNil(t, methodDecl, "CheckpointUnknownFieldError has no Error() method") {
+		return
+	}
+	// Look for a direct strings.Join call on the Fields field in the body.
+	usesRawJoin := false
+	ast.Inspect(methodDecl.Body, func(n ast.Node) bool {
+		callExpr, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := callExpr.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Join" {
+			return true
+		}
+		// Check if first argument is e.Fields directly.
+		if len(callExpr.Args) > 0 {
+			if selArg, ok := callExpr.Args[0].(*ast.SelectorExpr); ok {
+				if selArg.Sel.Name == "Fields" {
+					usesRawJoin = true
+				}
+			}
+		}
+		return true
+	})
+	assert.False(t, usesRawJoin,
+		"CheckpointUnknownFieldError.Error() uses strings.Join(e.Fields, ...) directly; "+
+			"it must route through bounded render to prevent output amplification (U1a)")
+}

@@ -140,9 +140,37 @@ type CheckpointUnknownFieldError struct {
 	Fields []string
 }
 
-// Error returns the formatted error string for CheckpointUnknownFieldError.
+// Error returns the formatted error string for CheckpointUnknownFieldError,
+// routing through the bounded field set so the message is capped in both
+// count and byte length (155.001-T / U1a).
 func (e *CheckpointUnknownFieldError) Error() string {
-	return "backlogit: checkpoint carries unknown schema field(s): " + strings.Join(e.Fields, ", ")
+	set := e.BoundedFields()
+	quoted := make([]string, 0, len(set.Paths))
+	for _, p := range set.Paths {
+		quoted = append(quoted, strconv.Quote(p))
+	}
+	display := strings.Join(quoted, ", ")
+	if set.Truncated {
+		var clauses []string
+		if set.OmittedPaths > 0 {
+			clauses = append(clauses, fmt.Sprintf("%d more omitted", set.OmittedPaths))
+		}
+		if set.TruncatedPaths > 0 {
+			clauses = append(clauses, fmt.Sprintf("%d shortened", set.TruncatedPaths))
+		}
+		if len(clauses) > 0 {
+			display = fmt.Sprintf("%s (%s)", display, strings.Join(clauses, ", "))
+		}
+	}
+	return "backlogit: checkpoint carries unknown schema field(s): " + display
+}
+
+// BoundedFields returns the bounded, raw machine projection of the offending
+// key paths. This is the only sanctioned source of machine offender data for
+// the create-error path; callers must not re-derive bounds from Fields directly
+// (155.001-T / U1a).
+func (e *CheckpointUnknownFieldError) BoundedFields() BoundedFieldPathSet {
+	return boundFieldPaths(e.Fields)
 }
 
 // Unwrap returns ErrCheckpointUnknownField so errors.Is matches through this
@@ -240,7 +268,15 @@ type BoundedFieldPathSet struct {
 // source of machine offender data: no other surface may re-derive a list
 // from Fields or apply its own cap (147-F / U1b).
 func (e *CheckpointNonConformingError) BoundedFieldPaths() BoundedFieldPathSet {
-	sorted := dedupeSortedFieldPaths(e.Fields)
+	return boundFieldPaths(e.Fields)
+}
+
+// boundFieldPaths builds a BoundedFieldPathSet from an arbitrary slice of
+// field paths, applying the standard count and byte-length caps. It is the
+// shared kernel behind CheckpointNonConformingError.BoundedFieldPaths and
+// CheckpointUnknownFieldError.BoundedFields (155.001-T / U1a).
+func boundFieldPaths(fields []string) BoundedFieldPathSet {
+	sorted := dedupeSortedFieldPaths(fields)
 
 	result := BoundedFieldPathSet{}
 	limit := len(sorted)

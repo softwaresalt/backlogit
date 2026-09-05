@@ -29,13 +29,19 @@ type workspaceRootAmbiguousResponse struct {
 // checkpointUnknownFieldsResponse is the structured MCP error shape for a
 // checkpoint create request rejected by the closed CheckpointV1 top-level /
 // nested-progress schema namespace (146.011-T / U4). UnknownFields names
-// every offending key path (e.g. "unexpected_key" or
+// the bounded projection of offending key paths (e.g. "unexpected_key" or
 // "progress.unexpected_key"), sorted and de-duplicated, so a caller does not
-// need to parse Message to recover the offending fields.
+// need to parse Message to recover the offending fields. The three scalar
+// fields UnknownFieldsTruncated, UnknownFieldsOmitted, and UnknownFieldsShortened
+// carry truncation metadata without omitempty so callers can read them
+// unconditionally (155.001-T / U1a).
 type checkpointUnknownFieldsResponse struct {
-	Error         string   `json:"error"`
-	Message       string   `json:"message"`
-	UnknownFields []string `json:"unknown_fields"`
+	Error                  string   `json:"error"`
+	Message                string   `json:"message"`
+	UnknownFields          []string `json:"unknown_fields"`
+	UnknownFieldsTruncated bool     `json:"unknown_fields_truncated"`
+	UnknownFieldsOmitted   int      `json:"unknown_fields_omitted"`
+	UnknownFieldsShortened int      `json:"unknown_fields_shortened"`
 }
 
 type mutationPartialResponse struct {
@@ -112,13 +118,18 @@ func InternalError(detail string) *mcplib.CallToolResult {
 
 // checkpointUnknownFields returns a dedicated MCP error for a checkpoint
 // create request rejected by the closed schema namespace (146.011-T / U4,
-// 146.012-T / U4b). fields is the sorted, de-duplicated set of offending key
-// paths (e.g. "unexpected_key" or "progress.unexpected_key").
-func checkpointUnknownFields(fields []string) *mcplib.CallToolResult {
+// 146.012-T / U4b, 155.001-T / U1a). The response is built from
+// e.BoundedFields() so both the array and the three scalar truncation
+// metadata fields are bounded at their source.
+func checkpointUnknownFields(e *corerrors.CheckpointUnknownFieldError) *mcplib.CallToolResult {
+	bounded := e.BoundedFields()
 	resp := checkpointUnknownFieldsResponse{
-		Error:         "validation_failed",
-		Message:       "checkpoint carries unknown schema field(s): " + strings.Join(fields, ", "),
-		UnknownFields: append([]string(nil), fields...),
+		Error:                  "validation_failed",
+		Message:                e.Error(),
+		UnknownFields:          bounded.Paths,
+		UnknownFieldsTruncated: bounded.Truncated,
+		UnknownFieldsOmitted:   bounded.OmittedPaths,
+		UnknownFieldsShortened: bounded.TruncatedPaths,
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {
@@ -197,7 +208,7 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		// field list, mirroring the WorkspaceRootAmbiguous precedent above.
 		var typed *corerrors.CheckpointUnknownFieldError
 		if errors.As(err, &typed) {
-			return checkpointUnknownFields(typed.Fields)
+			return checkpointUnknownFields(typed)
 		}
 		return ValidationFailed(err.Error())
 	case errors.Is(err, corerrors.ErrCheckpointMalformedInput):
