@@ -70,7 +70,7 @@ NOT fabricate a normal `shipment_status_changed -> shipped` event.
 
 ### D5 — Idempotency
 
-**Decision:** persist `custom_fields.shipment_reconciliation_idempotency_key` AND `shipment_reconciliation_evidence_digest`; a same-key replay is a NO-OP ONLY when `archived_status: shipped` AND a fully-valid readable `shipment_reconciled_shipped` event matches AND the incoming evidence-digest matches the persisted one; frontmatter-shipped-but-event-missing → RESUME the event append only; a different/absent key, or a key match with a different evidence-digest, against a reconciled record fails closed (conflict). See the plan's total state classifier for the exhaustive rule.
+**Decision:** persist `custom_fields.shipment_reconciliation_idempotency_key`, the CANONICAL PREPARED EVENT PAYLOAD (`shipment_reconciliation_prepared_event`), AND `shipment_reconciliation_event_digest` (over the complete payload); a same-key replay is a NO-OP ONLY when `archived_status: shipped` AND a fully-valid readable event matches AND the incoming COMPLETE-EVENT digest matches the persisted one; frontmatter-shipped-but-event-missing → RESUME by appending the persisted canonical payload verbatim; a different/absent key, or a key match with a different complete-event digest, fails closed (conflict). See the plan's total state classifier for the exhaustive rule.
 
 ### D6 — Atomicity, concurrency, rollback, indeterminate writes
 
