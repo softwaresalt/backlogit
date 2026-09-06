@@ -1,0 +1,156 @@
+---
+chunk_strategy: h1-h2-h3
+description: "Execution plan: governed archived-shipment reconciliation to shipped (#423)"
+doc_type: plan
+schema_version: "1.0"
+source: docs/exec-plans/2026-09-05-423-archived-shipment-reconciliation-to-shipped-plan.md
+title: "Execution Plan — Governed archived-shipment reconciliation to shipped (#423)"
+---
+
+# Execution Plan — Governed archived-shipment reconciliation to shipped (#423)
+
+**Covering feature:** Governed archived-shipment reconciliation to shipped
+**Stash member:** 055D507E (critical)
+**Source deliberation:** `docs/decisions/2026-09-05-423-archived-shipment-reconciliation-to-shipped.md`
+**Issue:** softwaresalt/backlogit#423
+
+## Problem Frame
+
+Repair a legacy shipment archived directly from `active` (so `status: archived`,
+`archived_status: active`, no `shipment_status_changed -> shipped` event) to a
+governed `shipped` archived state, WITHOUT fabricating a normal shipping event.
+Reuse the #394 `ReconcileArchivedLifecycle` governed mechanics; keep the general
+`reconcile` allowlist unchanged; append a DISTINCT `shipment_reconciled_shipped`
+event; verify (never infer) evidence; fail closed; idempotent; dry-run.
+
+Constitution Check: pass — Go-only, test-first, workspace-isolated, destructive-approval
+respected (operator-authorized CLI, dry-run default-safe), structured observability
+(distinct durable event), single-responsibility (reuses #394 primitives, adds a
+shipment-scoped surface). No new external dependency.
+
+## Implementation Units
+
+> **Design correction (adversarial review cycle 1, consensus P0):** the operation MUST NOT reuse `UnarchiveItem → set status shipped → ArchiveItem`. `ArchiveItem` runs `archiveShippedEventPreflight` (144-F guard 2, `archive.go`), which refuses to archive a shipment at status `shipped` unless `shippedEventPresence` (which counts ONLY `shipment_status_changed`) finds a normal shipped event — the exact event #423 is forbidden to synthesize — and the round-trip opens a non-atomic live-queue window. The primitive therefore performs an **IN-PLACE ATOMIC frontmatter edit of the archive file** (`.backlogit/archive/<id>.md`), keeping `status: archived` and setting `archived_status: shipped`, never entering the live queue and never invoking the `ArchiveItem` preflight.
+
+### U1 — Core atomic primitive: `ReconcileShipmentToShipped` (in-place, locked, idempotent, rollback-safe)
+* Scope: `func ReconcileShipmentToShipped(ctx, ws *Workspace, req ShipmentShippedReconcileRequest) (*ShipmentShippedReconcileResult, error)` in NEW `internal/core/shipment_reconcile.go`. `ShipmentShippedReconcileRequest{ ShipmentID, Reason, Actor, IdempotencyKey, MergeSHA, ClosureEvidencePath string; EvidenceRefs []string; DryRun bool }`. Mechanics:
+  - **Locking + ordering:** acquire the shipment **membership lock** (defense-in-depth; `status: archived` already refuses membership mutation), then the **artifact mutation lock** for the shipment id AND every manifest member (`lockArtifactMutations(shipmentID + NormalizeShipmentItems(shipment))`, sorted — the artifact lock is the AUTHORITATIVE, id-keyed, relocation-stable lock). Do NOT outer-acquire the item-log lock: `appendShipmentEventErr` OWNS `LockItemLogCrossProcess` (non-reentrant), so pass the locked ctx into the append and let it acquire — never hold+drop it around the append. Documented stable order: membership → artifact → (append-owned) item-log (matches `ShipShipment`; reverse deadlocks). Membership lock is NOT reentrant — take it once.
+  - **Post-lock re-validation (TOCTOU):** membership + shipment artifact locks are taken first; the SLOW evidence I/O (git reachability under `boundedHelperTimeout`, closure handle open+read+hash) runs BEFORE acquiring the MEMBER artifact locks (so member locks are NOT held across slow bounded I/O, avoiding `ErrTaskBusy`/`ErrGateInProgress` contention windows). Then acquire the sorted member artifact lock-set and RE-CHECK every member is terminal with NO slow I/O between that re-check and the write; re-run the idempotency/conflict scan under the held locks (mirroring `ShipShipment` re-gating). Members are READ for terminality only, under their locks, and are NEVER mutated.
+  - **State classifier (ONE ordered, TOTAL, mutually-exclusive decision; ONE shared full validator = readable + path-safe + newline-terminated + raw `item_id`/key/target/`evidence_digest`/before+evidence all match).** Evaluated under lock over the FULL event log + frontmatter:
+    0. log UNREADABLE or path-unsafe (fails the `shippedEventPresence` containment/readability contract) → **`indeterminate`** (highest priority; never fall through).
+    1. a `shipment_reconciled_shipped` event IS present:
+       (1a) `archived_status != shipped` → **conflict** (torn/inconsistent: event without shipped state);
+       (1b) `archived_status == shipped` AND EXACTLY ONE such event, FULLY-VALID, its key == stored frontmatter key == `req.IdempotencyKey`, AND NO `shipment_status_changed{shipped}` present → **no_op** (already reconciled; return persisted metadata);
+       (1c) otherwise (malformed / duplicate / foreign-or-different key / also-carries a normal shipped event) → **conflict**.
+    2. NO `shipment_reconciled_shipped` event present:
+       (2a) a `shipment_status_changed{shipped}` event IS present → **conflict** (a normally-shipped record — nothing to repair; and if `archived_status != shipped` it is also torn);
+       (2b) no normal shipped event AND `archived_status == shipped` AND stored frontmatter key == `req.IdempotencyKey` → **resume the EVENT APPEND ONLY** (a genuinely incomplete prior run of THIS op — frontmatter written, event lost);
+       (2c) no normal shipped event AND `archived_status == shipped` AND (stored key absent or `!= req.IdempotencyKey`) → **conflict**;
+       (2d) no normal shipped event AND `archived_status != shipped` → the NORMAL repair path: run the full precondition gate (U2) then the in-place edit.
+    Every (log-readability × frontmatter-state × key × event-presence/validity) input lands in exactly one branch. U2's conflict scan (below) references THIS classifier — it is not a second, divergent check.
+  - **In-place edit (no unarchive):** locate the archive file via `FindArtifactPath`, then BIND the mutation to a validated archive-directory HANDLE: open the `.backlogit/archive/` directory, verify REAL-PATH containment + regular-file for the target via the handle (fstat/final-path), and perform the temp-create + atomic rename through reparse-safe relative handle operations (openat/renameat-style on POSIX; equivalent no-follow handle ops on Windows) so a concurrent parent-directory symlink/junction swap cannot redirect the write outside the workspace. Snapshot the file BYTES **and the SQLite index row**, then atomically `replaceFileWithOptions` the shipment frontmatter to set `archived_status: shipped` + `custom_fields.shipment_reconciliation_idempotency_key` + reconciliation metadata (keeping `status: archived`), then `UpsertItem`. NOTE: `archived_status` is NOT projected into the SQLite index (the index omits it); Markdown frontmatter is the source of truth for the repaired state, so ALL downstream recognition (doctor, predecessor probe) MUST read `archived_status` from Markdown — the index snapshot/restore is DEFENSIVE-ONLY (covers `custom_fields`/`updated_at`). Manifest members are READ for terminality but their files are NEVER rewritten; covering-feature/parent artifacts are NEVER read or rewritten (all byte-for-byte preserved).
+  - **Completion = frontmatter shipped AND a readable, newline-terminated, fully-valid event present.** Frontmatter edit is atomic; the event append (U3) is the LAST step and MUST be DURABLE: use a dedicated always-fsync-backed reconciliation appender (NOT the default non-durable `appendFast` path, which skips fsync and could report success on page-cache data lost by a crash) that owns ONE cross-process, HANDLE-BOUND critical section: open the logs-directory HANDLE with no-follow/reparse-safe semantics, open/create the lock sidecar AND the JSONL RELATIVE to that verified handle (reject non-regular or reparse-point targets), then `LockItemLogCrossProcess` → RAW-BYTES missing-final-newline / partial-tail check (a newline-less trailing line means an incomplete prior write → fail closed to `indeterminate`, never concatenate) → fsync-backed `AppendEvent` → exact RE-READ+VALIDATE of the appended event (shared full validator) — all through the SAME verified handle so a concurrent logs-dir/JSONL symlink-junction swap cannot redirect the append or make the re-read inspect a different file → unlock. Do NOT outer-acquire the item-log lock elsewhere (avoids the non-reentrant deadlock). CLASSIFY every append error: `ErrWriteNotApplied` (proven-not-written) on the FIRST attempt → roll back BOTH the frontmatter file snapshot AND the SQLite index row: `UpsertItem(snapshot)` when a pre-write row existed, but DELETE the row when the snapshot recorded NO pre-existing row (so rollback restores the true prior absent-row state, not a synthesized row), surfacing a rollback failure as `indeterminate`; `ErrWriteIndeterminate` or unclassified → `outcome: indeterminate` with operator guidance, NO second append. On validated success return `outcome: reconciled`/`no_op`. A later invocation re-reads and, per idempotency (b), resumes the event append only when readable+newline-terminated log lacks any reconcile/shipped event and the stored key matches. The forward-recovery signal is NEVER a second append; doctor `detectMissingShippedEvents` (fires for `archived_status: shipped` without a readable, newline-terminated normal/reconcile event) is the durable detector.
+  - **Rollback:** on clean frontmatter-write or index-upsert failure, restore BOTH the file snapshot and the index row (`UpsertItem(snapshot)`); on mid-transaction conflict abort BEFORE any write. Rollback triggers documented in U5 docs.
+* Acceptance: a fixture archived shipment (`status: archived`, `archived_status: active`) is reconciled so the archive-file frontmatter reads `status: archived` + `archived_status: shipped`; the record NEVER appears in `.backlogit/queue/`; members/parent bytes unchanged (pre/post hash); result `outcome: reconciled` with before/after; injected frontmatter-write failure restores file+index with no partial state; injected FIRST-attempt `ErrWriteNotApplied` (after frontmatter+`UpsertItem` ran) restores the exact pre-write file bytes AND the index row — UPSERTing a pre-existing row or DELETING when no row pre-existed — with NO event; injected indeterminate event append yields `outcome: indeterminate` (no second append); a partial newline-less log tail fails closed to `indeterminate`; a concurrent same-key reconcile is serialized to one write + one event (no double-append); a TABLE-DRIVEN state-ladder matrix (crossing shipped/non-shipped frontmatter × matching/absent/different key × readable/path-safe vs unreadable/path-unsafe log × absent/valid/invalid/duplicate/foreign normal+reconcile events) asserts exactly one outcome per input and that every conflict/indeterminate path performs NO write. Depends on U2 + U3.
+* Files: `internal/core/shipment_reconcile.go` (+ unit tests). Single responsibility (atomic core primitive incl. locking/idempotency/rollback).
+
+### U2 — Preconditions + shipment-BOUND evidence verification (fail-closed, verified not inferred)
+* Scope: precondition gate invoked by U1 under lock, BEFORE any write, evaluated after the idempotency short-circuit. Verify: (1) id is a SHIPMENT (`artifact_type: shipment`) resolved UNDER `.backlogit/archive/`; (2) `status == archived` AND `archived_status` ∈ exported `supportedLegacyShippedPreStates = {ShipmentActive}` (v1) — else `ErrUnsupportedLegacyPreState`; (3) NO conflicting history — evaluated by the SAME shared state classifier defined in U1 (not a divergent check): reaching this gate means the classifier selected branch (2d) — `archived_status != shipped`, no reconcile event, no normal shipped event — so any `shipment_status_changed{status: shipped}` or any `shipment_reconciled_shipped` already routed to conflict/no_op/resume upstream; here it re-confirms no such event appeared under lock → else `ErrShipmentReconcileConflict`; (4) the manifest is NON-EMPTY and EVERY member is terminal (`done`) — `NormalizeShipmentItems` + member-status read; an empty manifest is REJECTED; **v1 has NO operator descoping** (a legacy `active->archived` shipment has no authoritative descoped set — descoping is deferred to a future version that binds provenance); (5) **delivery-merge evidence bound to the shipment:** `MergeSHA` validated against the repo git-object-name pattern (`isGitObjectName`) BEFORE any git call, git executed under `boundedHelperTimeout`, and the commit MUST be REACHABLE from a CONFIGURED TRUSTED REF (a documented trusted-ref allowlist; default the repository default branch) — not merely any existing object; (6) **closure evidence bound to the shipment (handle-safe):** `ClosureEvidencePath` resolved with REAL-PATH containment under the workspace root, OPENED with no-follow / reparse-safe semantics, and validated via the OPENED HANDLE (fstat / final-path: regular file, non-empty, still contained) so all I/O is bound to the validated object (defeats a concurrent symlink/junction swap between check and read); the closure is a STRUCTURED record parsed strictly that MUST enumerate (a) this shipment id, (b) the same `MergeSHA`, and (c) the FULL manifest member set MATCHING the actual manifest (`NormalizeShipmentItems`) — any id/SHA/manifest-set mismatch fails closed. The `evidence_digest` = hash(shipment-id + merge-sha + manifest-digest + canonical CONTENT-HASH of the closure bytes read through the handle) is carried into the event and the idempotency comparison. **Trust model (operator-authorized APPROVAL workflow, documented — not cryptographic delivery proof):** reconstructing lost historical delivery state inherently relies on operator authorization; backlogit has NO signing/attestation trust anchor and #423 does NOT authorize building one. This capability is therefore an OPERATOR-AUTHORIZED APPROVAL workflow: the evidence binding (trusted-ref-reachable merge + strict structured closure enumerating shipment-id/merge-sha/manifest-set + content-hash in `evidence_digest`) provides strong INTEGRITY and BINDING so a false repair requires BOTH a real merge reachable from a trusted ref AND a fabricated manifest-matching closure; an optional `--second-approver` (distinct from `--actor`) records a SECOND self-asserted approver in the durable event for audit; `actor` and `second_approver` are UNAUTHENTICATED, SELF-ASSERTED audit attributes — this CLI does NOT enforce cryptographic two-person control, so any policy-level two-party requirement MUST be enforced by an external procedural wrapper (the flags make the approval legible + audited, not machine-enforced); and every repair is fully AUDITED via the durable event + content hash. The RESIDUAL is explicit and accepted: a workspace writer who can hand-edit files could forge a FULLY CONSISTENT frontmatter + event pair (as they could forge any file-based state) — the doctor recognizer + event validation reject BARE, malformed, stale, duplicate, or key-mismatched records but CANNOT detect a fully consistent forgery; cryptographic authenticity (signed/MAC attestation with an EXTERNAL trust anchor, e.g. CI/release-system) is a SEPARATE security-infrastructure capability DEFERRED beyond #423 (captured as follow-up stash 866FDC8C), not a gate on this legacy-repair capability. The doctor recognizer and event validation provide CONSISTENCY validation, not cryptographic authenticity. Any ambiguity/partial/conflict → typed sentinel (`ErrShipmentReconcileConflict`, `ErrShipmentReconcileEvidence`, `ErrUnsupportedLegacyPreState`).
+* Acceptance: table-driven tests — each precondition failure returns its typed error and performs NO write; empty-manifest rejected; non-terminal member rejected; `MergeSHA` that is malformed / unresolvable / unreachable rejected; closure path that is missing / outside root / symlink-escape / non-regular / empty / not-referencing-the-shipment rejected; happy path (evidence proves delivery of the shipment) passes. Independent unit.
+* Files: `internal/core/shipment_reconcile_preconditions.go` (+ test). Single responsibility (precondition/evidence verification).
+
+### U3 — Distinct durable event + doctor-LOCAL recognition (shared guard preserved)
+* Scope: define `EventShipmentReconciledShipped = "shipment_reconciled_shipped"`, appended via `appendShipmentEventErr` (cross-process locked). Delta: `{ before: {status, archived_status}, after: {archived_status: "shipped"}, reason, actor, second_approver, idempotency_key, evidence: { merge_sha, closure_evidence, manifest_digest, member_terminal_ids, closure_content_hash, evidence_digest } }`. It is NEVER `shipment_status_changed`. Doctor recognition is a **doctor-LOCAL** branch that SUPPRESSES the `detectMissingShippedEvents` finding ONLY when the shipment carries `archived_status: shipped` AND a FULLY-VALIDATED `shipment_reconciled_shipped` event that matches the artifact id (validated against the RAW serialized `item_id` in the JSONL line, NOT a value backfilled by `ReadAllEvents` from the filename), the stored `custom_fields.shipment_reconciliation_idempotency_key`, the target state, the canonical `evidence_digest`, and the required before/evidence fields, AND whose record is newline-terminated — a bare, malformed, stale, duplicate, or key-mismatched event does NOT suppress the finding; a FULLY CONSISTENT hand-forged frontmatter+event pair is NOT detectable here (the accepted residual documented in U2's trust model — CONSISTENCY validation, not cryptographic authenticity). The reconcile-event scan REUSES the `shippedEventPresence` path-safety contract (log-path containment + readable/unreadable distinction): an unreadable or path-unsafe log is treated as presence-unknown and RETAINS the finding, never silently suppresses it. This is done WITHOUT broadening the shared `shippedEventPresence` (which is also consumed by `archiveShippedEventPreflight`/144-F guard 2 and MUST stay strict, so a hand-set `status: shipped` + hand-appended reconcile event can never bypass the archive envelope). Normal-transition presence (`shipment_status_changed -> shipped`) and governed-repair presence remain SEPARATE classifications; history/topology consumers MUST NOT receive the reconciliation event as a normal transition.
+* Acceptance: event appended with the exact distinct type + delta; `shippedEventPresence` for the reconciled record remains FALSE (no normal shipped event synthesized) and `archiveShippedEventPreflight` is unchanged; doctor reports NO missing-shipped-event finding for the reconciled record via the doctor-local branch; a doctor/negative test proves guard 2 is not weakened. Depends on U2. Single responsibility (event + doctor recognition).
+* Files: `internal/core/shipment_reconcile.go` (event), `internal/core/doctor.go` (doctor-local recognition) (+ tests).
+
+### U4 — CLI command `shipment reconcile-shipped` + dry-run + inspection
+* Scope: add `newShipmentReconcileShippedCmd` under the `shipment` group (`internal/cli/shipment.go`), invocation `backlogit shipment reconcile-shipped <id>`, flags `--reason` (required), `--actor` (required), `--idempotency-key` (required), `--merge-sha` (required), `--closure-evidence` (required), `--second-approver` (optional, distinct from `--actor`), `--evidence-ref` (repeatable, optional), `--dry-run`. (No `--descoped` in v1 — see U2.4.) Constructs `ShipmentShippedReconcileRequest`, calls `core.ReconcileShipmentToShipped`. `--dry-run` runs the full precondition evaluation + prints planned before/after + planned event and makes NO writes (exit 0). Exit codes via `internal/cli.ExitCodeFor` (typed rejects → non-zero governance/validation codes; success/no_op → 0; indeterminate → distinct non-zero). CLI-only; no MCP tool.
+* Acceptance: CLI test via fresh cobra command + `SetArgs`/`SetOut` (no `os.Args`/`os.Stdout`): each required-flag omission errors; `--dry-run` produces the inspection report with zero file changes; success path reports the reconciled outcome; a reject path maps to the expected exit code. Depends on U1. Single responsibility (CLI surface).
+* Files: `internal/cli/shipment.go` (+ CLI test).
+
+### U5 — Integration test (graphtor 048-S-shaped fixture) + operator docs
+* Scope: an integration test in `tests/` builds a LOCAL fixture matching the legacy `active -> archived` shipment shape (mirroring graphtor `048-S`: archived shipment `archived_status: active`, all manifest members `done`, a delivery-merge SHA reachable in the test repo, a closure-evidence file that references the shipment + merge SHA) in a temp workspace, runs the full CLI happy path + representative reject paths (unsupported pre-state, non-terminal member, unbound/unresolvable evidence, conflict), and the idempotent-replay + dry-run paths. It asserts the discriminating post-conditions: doctor reports NO missing-shipped-event finding, and a predecessor-status probe that READS `archived_status` from Markdown resolves `shipped` (NOT a backlogit-core status predicate, which treats `archived` literally and would pass vacuously — see review note). Do NOT modify `softwaresalt/graphtor-docs`. Add operator docs: preconditions, evidence-binding requirements, idempotency, dry-run, **rollback triggers**, and **indeterminate-write** behavior.
+* Acceptance: `go test ./tests/...` passes success + reject + replay + dry-run scenarios and the two discriminating post-conditions; docs lint passes. Depends on U1-U4. Single responsibility (integration + docs).
+* Files: `tests/shipment_reconcile_shipped_test.go`, `docs/` operator note (+ any CLI reference update).
+
+## Dependency Graph (TDD ordering)
+
+U2 (preconditions/evidence) and U3 (event/doctor recognition) are the foundation;
+U1 (atomic core primitive — in-place edit + locking + idempotency + rollback +
+indeterminate handling) depends on U2 + U3; U4 (CLI) depends on the HARDENED U1;
+U5 (integration + docs) depends on U1-U4. TDD: each unit lands its failing test
+first (harness before code). Order: U2, U3 → U1 → U4 → U5.
+
+Backlog mapping (harvest): 167.001-T (U2), 167.002-T (U3), 167.003-T (U1),
+167.004-T (U4), 167.005-T (U5). Deps: 167.003→{167.001,167.002};
+167.004→167.003; 167.005→{167.003,167.004}. (U1 is a single atomic unit —
+locking/idempotency/rollback are NOT split from the mutation, so the CLI never
+wires an unhardened primitive.)
+
+## Composability with S12 (164.002-T)
+
+#423 reuses the #394 governed reconciliation primitives directly and is NOT
+blocked by 164-F/164.002-T (queued→active forward repair). No dependency edge is
+created to 164-F. #423 is ordered AHEAD of 164-F by priority (critical: reliability
++ audit integrity; unblocks graphtor `049-S`). Contracts stay composable: the
+shipment-scoped validation/idempotency/event helpers are factored so a later S12
+`queued->active` repair can reuse them without conflating live-queue and
+archived-historical semantics.
+
+## Runtime Verification and Closure
+
+Closure = the new command reconciles the graphtor-048-S-shaped fixture to
+`archived_status: shipped` with a distinct `shipment_reconciled_shipped` event,
+doctor reports no missing-shipped-event finding, reject/idempotent/dry-run paths
+behave per acceptance, and the repaired record satisfies a predecessor-status
+check. No production runtime change beyond the new governed operation.
+
+## Plan Hardening
+
+| ProposedAction | ActionRisk | Mitigation |
+|---|---|---|
+| Write `shipped` to an archived shipment record | High — bypasses the governed ShipShipment envelope; audit-integrity sensitive | Shipment-scoped command with STRICTER preconditions than general reconcile; general `reconcile` allowlist unchanged; distinct `shipment_reconciled_shipped` event (never `shipment_status_changed`); dry-run default-safe; operator-authorized; verified (not inferred) merge + closure + member-terminal + conflict-scan evidence; fail closed on ambiguity |
+| Append a shipped-repair event | Medium — a synthetic normal-shipping event would corrupt doctor/topology history (`doctor.go:680-699` says never synthesize) | Emit ONLY the distinct `shipment_reconciled_shipped` event with before/after/evidence; doctor recognizes it in a doctor-LOCAL branch WITHOUT broadening the shared `shippedEventPresence` (kept strict for `archiveShippedEventPreflight`/144-F); normal-transition vs governed-repair stay separate classifications; history/topology consumers never receive the marker as a normal transition |
+| Multi-step in-place edit + event append | Medium — partial writes / indeterminate event append / stale SQLite index | Membership → artifact → item-log lock order; post-lock re-validation (TOCTOU); atomic `replaceFileWithOptions` IN PLACE on the archive file (NO unarchive round-trip, NO live-queue window, NO `ArchiveItem` 144-F preflight collision); snapshot+restore covers file bytes AND the SQLite index row (`UpsertItem`); event append is last, non-atomic → `ErrWriteIndeterminate` returns `indeterminate` outcome, NEVER a second append; completion requires frontmatter-shipped AND event-present, so a later replay resumes only the missing event |
+| Evidence binding | High — an arbitrary existing commit + any non-empty file could otherwise mark an undelivered shipment shipped | Evidence must PROVE delivery of THIS shipment: `MergeSHA` validated with `isGitObjectName` + reachable from a CONFIGURED TRUSTED REF (allowlist; default the repo default branch) + `boundedHelperTimeout`; `ClosureEvidencePath` real-path contained + opened no-follow/reparse-safe + handle-validated (fstat/final-path regular non-empty), parsed as a STRUCTURED record that enumerates the shipment id + same `MergeSHA` + the FULL manifest member set matching `NormalizeShipmentItems` (any mismatch fails closed); non-empty manifest; NO operator descoping in v1; `evidence_digest` includes the canonical CONTENT-HASH of the closure bytes; residual operator-attestation trust for legacy repair explicitly documented + fully audited |
+| Idempotent replay | Low/Medium — double-apply, wrong-result replay, or a concealed missing audit event | Idempotency check runs FIRST (before pre-state/conflict scan), under lock; `custom_fields.shipment_reconciliation_idempotency_key`; same-key no-op requires BOTH `archived_status: shipped` AND a matching readable `shipment_reconciled_shipped` event (frontmatter-only → resume event append, not a silent no-op); different/absent-key against reconciled = conflict fail-closed |
+| Reuse graphtor 048-S as acceptance | Low — cross-repo mutation risk | Synthesize a LOCAL fixture matching the 048-S shape; NEVER modify `softwaresalt/graphtor-docs` |
+
+Rollback: on frontmatter re-archive failure restore the pre-mutation snapshot;
+on mid-transaction conflict abort before any write; on indeterminate event write
+report `indeterminate` with operator remediation. Compatibility: general
+`reconcile` unchanged; only additive shipment-scoped surface + one new event type.
+Ownership: `internal/core/shipment_reconcile.go` owns the primitive; CLI owns the
+surface; doctor recognizes the event.
+
+### Plan Hardening Signals (REQUIRED)
+
+* destructive / state-repair on delivered records: PRESENT — writes `shipped` to an archived shipment.
+* security/audit/permission/compliance-sensitive: PRESENT — audit-integrity of shipped history; operator-authorized; distinct durable event; no synthetic history.
+* concurrency-sensitive: PRESENT — membership lock + cross-process event lock + snapshot/rollback + indeterminate-write.
+* public API/schema/contract change: PRESENT — new CLI command, new core primitive, new event type; general reconcile contract explicitly preserved.
+
+Requires plan hardening: yes
+
+## Plan Review
+
+<!-- plan-review-attempt: 3 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+personas (cross-model, 4 review cycles):
+* Security Reviewer (`gpt-5.6-sol`, high) — c1 FAIL → c2 FAIL → c3 FAIL → c4 PASS-WITH-REMEDIATION (only residual = out-of-scope-deferred cryptographic authenticity)
+* Correctness Reviewer (`claude-opus-4.8` / `gpt-5.6-terra`, high) — c1 FAIL → c2 PASS-WR → c3 PASS-WR → c4 FAIL (ladder totality) → c5 remediation applied
+* Concurrency Reviewer (`grok-4.6`, high) — c1 FAIL → c2 PASS-WR → c3 PASS-WR (member-TOCTOU + lock ownership resolved)
+* Architecture Strategist (`gemini-3.8-flash`, high) — c1 PASS-WITH-REMEDIATION
+
+Cycle 1 (FAIL): consensus P0 — `UnarchiveItem→shipped→ArchiveItem` blocked by `archiveShippedEventPreflight` (144-F) + non-atomic live-queue window → in-place atomic archive-file edit.
+Cycle 2 (Security FAIL): idempotency branch not key-gated; member-TOCTOU; evidence not delivery-proving; indeterminate partial-line; doctor recognizer under-validated; handle-level path TOCTOU → all remediated.
+Cycle 3 (Security FAIL): SEC-01 (unsigned operator closure) + doctor-spoof require cryptographic attestation with an EXTERNAL trust anchor — a NEW security-infrastructure capability #423 does NOT authorize. In-scope fixes adopted (durable fsync appender + single handle-bound critical section + partial-tail detection + append-error classification + re-read; raw `item_id` validation; newline-termination; shared full validator; handle-bound archive mutation; I/O-before-member-locks). Trust model REFRAMED (per the reviewer's own alternative) as an operator-authorized APPROVAL workflow + optional `--second-approver` + full audit; residual forgery-by-workspace-writer documented + ACCEPTED; cryptographic authenticity DEFERRED as follow-up stash **866FDC8C** (P-021 scope-boundary disposition — the residual is inherent to any file-based state a workspace writer can edit).
+Cycle 4 (Security PASS-WR — only out-of-scope crypto residual remains; Correctness FAIL — shipped-state ladder not total/mutually-exclusive) → cycle-5 remediation: rewrote the idempotency ordering as ONE ordered, TOTAL, mutually-exclusive STATE CLASSIFIER (branches 0/1a-c/2a-d) shared by no-op/resume/conflict/precondition + doctor; `ErrWriteNotApplied` rollback restores file AND index (upsert-or-delete by snapshot row-presence); handle-bound event-log critical section; `--second-approver`/`actor` documented as unauthenticated self-asserted audit attributes (no machine-enforced two-person control); table-driven state-ladder + `ErrWriteNotApplied` test matrix added.
+
+Scope disposition (P-021): the ONLY unresolved review item is cryptographic authenticity (SEC-01 / doctor-spoof), whose remediation (external-trust-anchor signing/MAC attestation) is a separate security-infrastructure capability NOT authorized by #423 (which requests an operator-authorized repair). It is captured as deferred follow-up **866FDC8C**, documented as an accepted+audited residual, and is NOT a gate on this legacy-repair capability.
+
+Readiness: READY. Same-contract governed-repair capability; the sole unresolved review item (cryptographic authenticity) is an out-of-scope, documented, deferred follow-up (866FDC8C), not a gate. Cleared for harvest.
