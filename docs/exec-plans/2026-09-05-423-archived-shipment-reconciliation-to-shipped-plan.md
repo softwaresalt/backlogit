@@ -107,16 +107,16 @@ the fs primitives split into `167.006` (atomic writer) and `167.011` (item-log l
 each depending on `167.003` and each split across build-tagged platform files;
 `167.007` (durable appender) depends on `167.006` + `167.011` + `167.002`; `167.008`
 (reconciliation transaction) CONSUMES `167.010` (classifier) + `167.001` (evidence) +
-`167.014` (precondition gate) + `167.007` (appender); U4 (CLI) depends on `167.008`;
+`167.014` (precondition gate) + `167.007` (appender) + `167.016` (snapshot/rollback) + the reconcile-local safety chain `167.017`→`167.019`→`167.020`; U4 (CLI) depends on `167.008`;
 U5 (integration) depends on `167.008` + U4; `167.009` (operator docs) depends on
 `167.008`; `167.013` (Windows CI) depends on `167.006` + `167.011`; `167.015`
-(BLOCKING operator-ratification gate) depends on `167.004` + `167.009` and blocks
+(BLOCKING operator-ratification gate) depends on `167.004` + `167.009` + `167.014` and blocks
 148-S closure. This is an ACYCLIC DAG — the classifier lives in an earlier dependency
 (`167.010`) that both `167.014` and the transaction consume, and the scalar
 request-identity digest the classifier compares is materialized by the transaction
 (from request scalars, no closure read) BEFORE the classifier call, so no unit depends
-on its own dependent. Order: {167.003, 167.012} → 167.002 → 167.010 → 167.001 →
-167.014 → {167.006, 167.011} → 167.007 → {167.008 (consumes 167.016)} → {167.004, 167.009} →
+on its own dependent. Dependency-free roots: {167.003, 167.012, 167.017}. Order: {167.003, 167.012, 167.017} → 167.002 → 167.010 → 167.001 →
+167.014 → {167.006, 167.011} → 167.007 → {167.017 → 167.019 → 167.020} → {167.008 (consumes 167.016/017/019/020)} → {167.004, 167.009} →
 {167.005, 167.013, 167.015}.
 
 Backlog mapping (harvest): 167.003-T (U1 declarations), 167.012-T (config),
@@ -128,7 +128,7 @@ Backlog mapping (harvest): 167.003-T (U1 declarations), 167.012-T (config),
 167.001→{167.002,167.012}; 167.014→{167.010,167.001}; 167.006→167.003; 167.011→{167.003,167.017};
 167.007→{167.006,167.011,167.002}; 167.008→{167.007,167.001,167.010,167.014,167.016,167.017,167.019,167.020}; 167.016→{167.003,167.006}; 167.011→{167.003,167.017}; 167.019→167.017; 167.020→{167.016,167.017,167.019}; the reconcile-local safety chain (167.017 stable C-lock identity -> 167.019 reload/CAS -> 167.020 reconcile-scoped concurrency suite; plus 167.016 snapshot/rollback) blocks 167.008;
 167.004→167.008; 167.005→{167.008,167.004}; 167.009→167.008;
-167.013→{167.006,167.011}; 167.015→{167.004,167.009}. Note: the `167.006`/`167.011`
+167.013→{167.006,167.011}; 167.015→{167.004,167.009,167.014}. Dependency-free roots: 167.003, 167.012, 167.017. Note: the `167.006`/`167.011`
 Windows-specific handle code MUST be exercised by the `167.013` Windows CI job (the
 current ubuntu-only matrix would otherwise leave the security-sensitive Windows paths
 build-only-verified). `167.015` is a BLOCKING governance gate on 148-S closure
