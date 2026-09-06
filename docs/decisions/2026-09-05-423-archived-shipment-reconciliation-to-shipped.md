@@ -48,11 +48,13 @@ NOT fabricate a normal `shipment_status_changed -> shipped` event.
 
 ## Decisions
 
+> **SUPERSEDED MECHANICS NOTE (adversarial review cycle 1 P0):** the "unarchive → update → re-archive" mechanics originally sketched below (D1, D4, D6) were REJECTED during plan review — `ArchiveItem`'s `archiveShippedEventPreflight` (144-F) refuses to archive a `shipped` shipment without a synthetic `shipment_status_changed` event, and the round-trip opens a non-atomic live-queue window. The APPROVED design (see the linked plan) performs an **IN-PLACE ATOMIC edit of the archive file** (`.backlogit/archive/<id>.md`): keep `status: archived`, set `archived_status: shipped` via `replaceFileWithOptions` + `UpsertItem`, never entering the live queue and never calling `UnarchiveItem`/`ArchiveItem`. Where the decisions below say "re-archive"/"unarchive", read "in-place archive-file edit" per the plan.
+
 ### D1 — Surface: dedicated shipment-scoped CLI command (not a general-reconcile extension)
 
 **Options:** (a) extend `reconcile` to allow `shipped` behind shipment-specific guards; (b) a NEW dedicated CLI subcommand under `shipment`.
 
-**Decision: (b)** — `backlogit shipment reconcile-shipped <id>` (CLI-only, operator-authorized). It REUSES the #394 governed reconciliation PRIMITIVES (archived-frontmatter validation, idempotency metadata, unarchive/update/re-archive, distinct durable event, indeterminate-write handling) but enforces STRICTER shipment-specific preconditions and appends a DISTINCT shipment-reconciliation event. The general `reconcile` allowlist stays UNCHANGED (still rejects `shipped`). Rationale: broadening the general allowlist would weaken a deliberately strict gate and risk ungoverned `shipped` writes on ordinary items; a dedicated command keeps the strict shipment envelope and matches the issue's "shipment-specific (or strictly guarded extension)".
+**Decision: (b)** — `backlogit shipment reconcile-shipped <id>` (CLI-only, operator-authorized). It REUSES the #394 governed reconciliation CONVENTIONS (archived-frontmatter validation, idempotency metadata, distinct durable event, indeterminate-write handling) but performs an IN-PLACE archive-file edit (NOT unarchive/update/re-archive — see the superseded-mechanics note above) and enforces STRICTER shipment-specific preconditions and appends a DISTINCT shipment-reconciliation event. The general `reconcile` allowlist stays UNCHANGED (still rejects `shipped`). Rationale: broadening the general allowlist would weaken a deliberately strict gate and risk ungoverned `shipped` writes on ordinary items; a dedicated command keeps the strict shipment envelope and matches the issue's "shipment-specific (or strictly guarded extension)".
 
 ### D2 — Distinct durable event, never a synthetic normal-shipping event
 
@@ -64,7 +66,7 @@ NOT fabricate a normal `shipment_status_changed -> shipped` event.
 
 ### D4 — Repaired shape preserves predecessor semantics + member/parent bytes
 
-**Decision:** the shipment is re-archived with `status: archived`, `archived_status: shipped` (so downstream predecessor-status checks observe `shipped` from the archived record). Manifest members and the covering feature/parent are NOT mutated — byte-for-byte preserved. Only the shipment's own frontmatter (`archived_status`, reconciliation metadata) changes.
+**Decision:** the shipment archive file is edited IN PLACE to `status: archived`, `archived_status: shipped` (so downstream predecessor-status checks observe `shipped` from the archived record) — NOT unarchived/re-archived (see superseded-mechanics note). Manifest members and the covering feature/parent are NOT mutated — byte-for-byte preserved. Only the shipment's own frontmatter (`archived_status`, reconciliation metadata) changes.
 
 ### D5 — Idempotency
 
@@ -72,7 +74,7 @@ NOT fabricate a normal `shipment_status_changed -> shipped` event.
 
 ### D6 — Atomicity, concurrency, rollback, indeterminate writes
 
-**Decision:** hold the shipment membership lock across the whole transition; use atomic `replaceFileWithOptions` for the shipment frontmatter rewrite; snapshot the shipment file before mutation and restore on clean failure (mirror `restoreShipArtifacts`/reconcile clean-failure re-archive). The event append is the LAST, non-atomic step: on `ErrWriteIndeterminate` (`stream.go:207-210`) the op reports an indeterminate result and emits a forward-recovery marker (mirror `lifecycle_reconciliation_forward_recovery`) rather than silently succeeding. **Rollback triggers** (documented): frontmatter re-archive failure → restore snapshot; conflicting-history discovered mid-transaction → abort before write; indeterminate event write → indeterminate result + operator remediation guidance.
+**Decision:** membership → shipment artifact → (slow evidence I/O) → member artifact locks across the transition; atomic `replaceFileWithOptions` for the IN-PLACE shipment archive-file rewrite; snapshot the shipment file BYTES and the SQLite index row before mutation and restore both on clean failure. The event append is the LAST step via a DURABLE fsync-backed appender in a single handle-bound critical section: on `ErrWriteIndeterminate` (`stream.go:207-210`) report an indeterminate result (NO second append); on `ErrWriteNotApplied` roll back file+index; doctor `detectMissingShippedEvents` is the durable detector (no synthetic forward-recovery event to the same log). **Rollback triggers** (documented): frontmatter write/index-upsert failure → restore snapshot; conflicting-history discovered under lock → abort before write; indeterminate event write → indeterminate result + operator remediation guidance. (Full mechanics + the total state classifier are in the plan.)
 
 ### D7 — Dry-run / inspection + fail-closed
 
