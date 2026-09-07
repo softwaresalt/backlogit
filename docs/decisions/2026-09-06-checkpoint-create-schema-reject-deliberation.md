@@ -112,9 +112,15 @@ reject anything else (missing/0/unsupported/malformed) with a typed error **befo
 write site. Add a single boolean opt-in (`allowLegacyImport`) to the core signature (via a
 small options value to keep the governed signature stable and extensible). CLI adds a
 `--allow-legacy-import` migration-only flag; MCP adds an optional `allow_legacy_import`
-parameter. When the opt-in is set, legacy-shaped dumps (missing/zero `schema_version`) are
-accepted through the existing verbatim path; unsupported/future versions and malformed JSON
-are still rejected even under the opt-in.
+parameter. When the opt-in is set, a legacy-shaped dump (absent or integer-literal
+`0` `schema_version`) is **upgraded to a canonical CheckpointV1 and re-validated —
+never written verbatim**: the upgrade coerces `schema_version` to `1` and defaults
+timestamps/status, and the record is written only if it then passes full V1
+validation. Records that cannot be deterministically upgraded (missing required V1
+identity such as `agent`/`session_id`, `consumer`-style legacy fields needing
+remapping, or foreign top-level members that violate the closed namespace) are
+**fail-closed rejected** even under the opt-in — as are unsupported/future versions,
+wrong-typed/ambiguous `schema_version`, and malformed JSON.
 
 * **Pros**: One authoritative behavior change in the shared core; CLI/MCP stay thin and in
   parity; opt-in is narrow and legible; preserves all existing guards; rejection stays

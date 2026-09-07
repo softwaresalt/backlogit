@@ -21,42 +21,87 @@ state dump by a `schema_version` probe and runs full CheckpointV1 validation **o
 `legacyContextKeys` branch. The resulting file is subsequently rejected by
 `ValidateCheckpoint` and flagged for quarantine by `GetCheckpoint`/`ListCheckpoints`,
 inverting the write/read contract. The fix inverts the default: reject non-V1 dumps
-pre-write, and gate the legacy verbatim path behind an explicit migration-only opt-in,
-consistently across the shared core function, the CLI `checkpoint create` command, and the
-MCP `backlogit_create_checkpoint` tool (a `governed: true` operation pair).
+pre-write, and gate a legacy-**import** path (**upgrade-or-reject, never verbatim**) behind
+an explicit migration-only opt-in, consistently across the shared core function, the CLI
+`checkpoint create` command, and the MCP `backlogit_create_checkpoint` tool (a
+`governed: true` operation pair).
 
 ## Requirements Trace
 
 | Requirement (from deliberation) | Implementation action | Unit |
 |---|---|---|
 | Reject schema-less/non-V1 by default | Invert classification in `CreateCheckpoint`; typed pre-write rejection | U2 |
-| Legacy import behind explicit opt-in | Add `allowLegacyImport` to core signature (options value) | U1, U2 |
+| Legacy import behind explicit opt-in | Add `allowLegacyImport` to core signature (variadic option) | U1, U2 |
+| Actionable rejection taxonomy | Two sentinels — `ErrCheckpointSchemaRejected` (legacy-eligible → opt-in remediation) vs `ErrCheckpointSchemaUnsupported` (unsupported/malformed/non-upgradable → NO opt-in remediation) | U1, U2, U3, U4 |
 | Cover shared core function | `internal/events/memory.go` | U2 |
 | Cover CLI `checkpoint create` | `--allow-legacy-import` flag, wired to core | U3 |
-| Cover MCP `backlogit_create_checkpoint` | optional `allow_legacy_import` param + handler | U4 |
-| Cover schemas/tool-descriptions/docs | tool description + CLI reference + design docs | U4, U5 |
-| Strict pre-write validation; no file on reject | keep classification before `syncWriteFileAtomicHook`; assert no file | U1, U2 |
+| Cover MCP `backlogit_create_checkpoint` | bounded sentinel→MCP error mapping in `internal/mcp/errors.go` (U4); optional `allow_legacy_import` param + tool schema/description + registry entry + parity fixtures (U6) | U4, U6 |
+| Cover schemas/tool-descriptions/docs | tool description + registry (U6) + CLI reference + design docs (U5) | U5, U6 |
+| Strict pre-write validation; no file on reject | keep classification before `syncWriteFileAtomicHook`; assert no file | U2 |
 | Preserve size/secret/dup-key/closed-namespace | leave pre-branch and V1-branch guards intact | U2 |
-| Explicit semantics: missing/zero/unsupported/malformed/legacy | encode matrix in tests + behavior | U1, U2 |
-| CLI/MCP parity | single core option; registry-dispatching parity fixtures | U3, U4 |
+| Explicit semantics: missing/zero/unsupported/malformed/legacy | encode matrix as the U2 behavior harness + behavior | U2 |
+| CLI/MCP parity | single core option; registry-dispatching parity fixtures | U3, U4, U6 |
 
 ### Semantics matrix (authoritative)
 
 | `schema_version` | Default (no opt-in) | With opt-in (migration only) |
 |---|---|---|
 | `1` valid V1 | Accept (existing V1 path) | Accept (opt-in inert) |
-| missing | **REJECT**, no file | **Upgrade→validate→write** (coerce to `1`, populate defaults, run V1 validation); else **REJECT**, no file |
-| `0` | **REJECT**, no file | **Upgrade→validate→write** (same as missing); else **REJECT**, no file |
-| unsupported/future (`2`, negative) | **REJECT**, no file | **REJECT**, no file |
-| wrong-typed / ambiguous (`"0"`, `null`, non-integral, out-of-range, **duplicate** `schema_version` members) | **REJECT**, no file | **REJECT**, no file |
-| malformed JSON | **REJECT**, no file | **REJECT**, no file |
+| missing | **REJECT**, no file — `ErrCheckpointSchemaRejected` **if the record is in the Upgrade window** (remediation: enable opt-in — it will then succeed); else `ErrCheckpointSchemaUnsupported` (no opt-in remediation) | **Deterministic upgrade→validate→write** if in the Upgrade window; otherwise **REJECT**, no file — `ErrCheckpointSchemaUnsupported` |
+| `0` (single integer-literal) | same as missing (window-conditioned sentinel) | same as missing |
+| unsupported/future (`2`, negative) | **REJECT**, no file — `ErrCheckpointSchemaUnsupported` | **REJECT**, no file — `ErrCheckpointSchemaUnsupported` (opt-in does not apply) |
+| wrong-typed / ambiguous (`"0"`, `null`, non-integral, out-of-range, **duplicate** `schema_version` members) | **REJECT**, no file — `ErrCheckpointSchemaUnsupported` | **REJECT**, no file — `ErrCheckpointSchemaUnsupported` |
+| malformed JSON | **REJECT**, no file — malformed-input error | **REJECT**, no file — malformed-input error |
 
-Legacy eligibility is defined precisely: an **absent** `schema_version` member, or **exactly
-one** `schema_version` member whose raw JSON token is the **integer literal `0`**. Anything
-else (string `"0"`, `null`, `1.5`, overflow, or duplicate members) is NOT a legacy shape and
-is rejected on both paths before the write site. Legacy import is **upgrade-or-reject, never
-verbatim**: a successful import always produces a record readable by
-`GetCheckpoint`/`ListCheckpoints` without quarantine.
+**Legacy eligibility (shape gate)** is defined precisely: an **absent** `schema_version`
+member, or **exactly one** `schema_version` member whose raw JSON token is the **integer
+literal `0`**. Because `encoding/json` collapses duplicate object keys (last-wins), the
+"exactly one member" test and the top-level `schema_version` probe are done with a
+**`json.Decoder.Token()` stream scan** (reuse the existing `objectMemberKeys` pattern in
+`internal/events/checkpoint_schema.go`), NOT a `json.RawMessage`/struct decode — a
+`json.RawMessage` capture cannot see a duplicated member. Anything else (string `"0"`, `null`,
+`1.5`, overflow, or duplicate members) is NOT a legacy shape and is rejected on both paths
+before the write site as `ErrCheckpointSchemaUnsupported`.
+
+**Upgrade window (deterministic, fail-closed) — evaluated on BOTH paths.** Passing the shape
+gate is necessary but not sufficient; the same window predicate is evaluated whether or not the
+opt-in is set, so the **default-path sentinel is actionable**: an in-window legacy shape yields
+`ErrCheckpointSchemaRejected` (enabling the opt-in *will* succeed), and an out-of-window legacy
+shape yields `ErrCheckpointSchemaUnsupported` (enabling the opt-in cannot help). The upgrade
+coerces `schema_version → 1`, then runs the **same** V1 path (create-time defaults +
+closed-namespace + duplicate-key + `ValidateCheckpoint` + canonical marshal), writing only if
+the result is a valid CheckpointV1. Window membership (deterministic):
+
+* **required present**: `agent ∈ {ship,stage}`, non-empty `session_id`, non-empty `phase`, and
+  a **closed** top-level namespace (no foreign top-level members)
+  (`internal/events/checkpoint_schema.go:21-57`);
+* **defaultable-when-absent (validated only if present)**: `created_at`/`updated_at` (default
+  to now) and `status` (default to `active`; if present it must be an allowed non-`abandoned`
+  value).
+
+Records requiring field remapping or identity synthesis are **fail-closed rejected**
+(`ErrCheckpointSchemaUnsupported`). Grounded in the actual corpus:
+
+* the repository legacy corpus
+  (`internal/events/testdata/legacy-corpus/fixture-{a,b,c}.json`) uses `consumer` instead of
+  `agent`, omits `session_id`, and carries top-level `shipment_id`/`feature_id`/`decisions`/… —
+  these violate the closed namespace and lack required identity, so they are **not** upgradable
+  and are rejected;
+* the checkpoint archived by this PR
+  (`.backlogit/archive/checkpoints/checkpoint-20260906-231751.json`) lacks
+  `schema_version`/`session_id`/`status`/`created_at`/`updated_at` and carries top-level
+  `findings`/`next_step` — likewise **not** upgradable, rejected.
+
+**No identity is ever synthesized.** `agent` and `session_id` anchor the fail-closed
+crash-resumption trust boundary, so a record missing either is rejected, never guessed. The
+migration claim is therefore **narrow and honest**: the opt-in rescues a record that is already
+V1-valid except for a missing/`0` `schema_version` (and defaultable timestamps/status); it does
+**not** promise to migrate arbitrary historical dumps. A broader corpus-remapping migration
+(aliasing `consumer→agent`, relocating top-level members into the open `context` namespace,
+deterministically deriving `session_id`) is explicitly **out of scope** for this fix and is
+captured as a separate deferred migration feature (see Risks). Every successful import is
+readable by `GetCheckpoint`/`ListCheckpoints` without quarantine; no legacy dump is ever written
+verbatim.
 
 Preserved unconditionally before the write site: input size limit, secret scan. Duplicate-
 key and closed-namespace checks apply exactly as today on the V1 path (and on the upgraded
@@ -64,71 +109,114 @@ legacy-import path, which runs the same V1 validation).
 
 ## Implementation Units
 
-### U1 — Declarations & test harness (execution posture: test-first / scaffolding)
+### U1 — Source-shape AST harness + declarations (execution posture: declaration; harness-first)
 
-* **What**: Introduce the create-time opt-in and rejection vocabulary and the failing test
-  harness that encodes the semantics matrix, with **no behavior change yet**.
-  * Add the create-time opt-in via **variadic functional options** so existing 3-arg
-    callers compile unchanged and the opt-in is added incrementally:
-    `CreateCheckpoint(ctx, dir, dump, opts ...CreateCheckpointOption)` with
-    `WithAllowLegacyImport()` in `internal/events`. The zero-option call is strict-by-
-    default. (Variadic options — not a mandatory struct param — avoid a repo-wide
-    compilation break at U2; see Decisions.)
-  * Add a dedicated create-time sentinel error (e.g. `ErrCheckpointSchemaRejected`) in
-    `internal/errors/checkpoint_errors.go`. Its message is **surface-neutral** (e.g.
-    "schema-less/non-V1 checkpoint rejected; legacy import must be explicitly enabled") —
-    it MUST NOT hard-code a surface-specific token; each surface appends its own
-    `--allow-legacy-import` / `allow_legacy_import` remediation in its error-mapping layer.
-    When a cause is preserved, wrap with the two-`%w` discriminator form
-    (`fmt.Errorf("...: %w: %w", ErrCheckpointSchemaRejected, cause)`) so the sentinel stays
-    `errors.Is`-detectable AND the cause stays traversable. Reuse the existing
-    malformed-input error for malformed JSON.
-  * Add test fixtures + shared assertion scaffolding in a focused
-    `internal/events/checkpoint_create_schema_test.go` that reuse the existing
-    `assertNoCheckpointWritten` helper (first confirm it uses `t.Helper()` and asserts the
-    checkpoint dir is **empty**, not merely a specific filename absent) and encode the
-    matrix rows as a table (tests reference the new options/error and are expected to fail
-    until U2). These tests override package-global seams, so they MUST NOT use
-    `t.Parallel()`.
-* **Files** (< 3 production): `internal/errors/checkpoint_errors.go`,
-  `internal/events/checkpoint_create_options.go` (new; keeps the options + sentinel wiring
-  out of `checkpoint_schema.go`); test file `internal/events/checkpoint_create_schema_test.go`
-  (test file, excluded from the production-file budget).
-* **Tests / verify**: package compiles; new sentinel + options exist; harness present
-  (red). `go build ./...` and `go vet ./internal/events/...` pass.
-* **Milestone**: contract + red harness in place.
+* **What**: Land the create-time opt-in and rejection **vocabulary** only — **no behavior**.
+  Per the mandatory ordering (`workflow-policies.md:123-143`,
+  `harness-architect/SKILL.md:221-234`): a **source-shape (`go/ast`) harness lands first** and
+  gates the declaration; **no production stub** is written; the declaration lands second and
+  turns the harness green. The semantics-matrix **behavior** harness is NOT in this task — it is
+  owned by U2, in a strictly later wave, against the landed declaration.
+  * Declarations to land (the deliverable):
+    * a `CreateCheckpointOption` type + `WithAllowLegacyImport()` constructor in a new
+      `internal/events/checkpoint_create_options.go`, AND the **signature-only** change to
+      `CreateCheckpoint` in `internal/events/memory.go` — widen it to
+      `CreateCheckpoint(ctx, dir, dump, opts ...CreateCheckpointOption)`. This U1 edit to
+      `memory.go` is **declaration only**: the variadic parameter is added (and, if referenced
+      at all, only stored/ignored) while the **existing body behavior is unchanged** — it is NOT
+      a stub, and NO behavior branch on `opts` is added here (that is U2). Because Go has no
+      overloading, the signature necessarily lives in `memory.go`; existing 3-arg callers compile
+      unchanged (variadic); the zero-option call is strict-by-default (see Decisions).
+    * **Two** create-time sentinels in `internal/errors/checkpoint_errors.go`, both
+      **surface-neutral** (no hard-coded surface token):
+      * `ErrCheckpointSchemaRejected` — a **legacy-eligible** dump rejected because the opt-in
+        was off; each surface appends its own `--allow-legacy-import` / `allow_legacy_import`
+        remediation in its error-mapping layer (remediation is **actionable**: enabling the
+        opt-in is the correct next step).
+      * `ErrCheckpointSchemaUnsupported` — an **unsupported / future / wrong-typed / ambiguous /
+        non-deterministically-upgradable** dump rejected; this class is rejected on BOTH paths
+        and carries **no** opt-in remediation (enabling the opt-in cannot help), so surfaces MUST
+        NOT append the opt-in token to it.
+      When a cause is preserved, wrap with the two-`%w` discriminator
+      (`fmt.Errorf("...: %w: %w", sentinel, cause)`) so the sentinel stays `errors.Is`-detectable
+      AND the cause stays traversable. Reuse the existing malformed-input error for malformed JSON.
+  * **Source-shape harness** (red until the declaration lands): a `go/ast` test that parses
+    `internal/events/checkpoint_create_options.go`, `internal/events/memory.go`, and
+    `internal/errors/checkpoint_errors.go` and asserts the shapes are present — the
+    `CreateCheckpointOption` type, the `WithAllowLegacyImport()` constructor, the variadic
+    `CreateCheckpoint(..., opts ...CreateCheckpointOption)` signature (parsed from `memory.go`),
+    and both sentinel identifiers. It asserts **shape only** (no behavior, no file I/O), so it
+    compiles against the pre-declaration tree and needs no stub — and it gates the signature that
+    U1 actually lands.
+* **Files** (3 small declaration files): `internal/errors/checkpoint_errors.go`,
+  `internal/events/checkpoint_create_options.go` (new), and `internal/events/memory.go`
+  (**signature-only** widening — no behavior change; U2 owns the body). Test file
+  `internal/events/checkpoint_create_shape_test.go` (source-shape AST harness; excluded from the
+  production-file budget). The `memory.go` touch is a trivial declaration edit, so the unit stays
+  within the 2-hour envelope; its behavior change is isolated to U2.
+* **Tests / verify**: source-shape harness is red before the declaration and green after; `go
+  build ./...` and `go vet ./internal/events/...` pass. **No behavior test in this task.**
+* **Milestone**: declaration (options type, `WithAllowLegacyImport`, widened signature, two
+  sentinels) + source-shape harness landed; no production stub ahead of the harness that gates it;
+  no behavior admitted.
 
-### U2 — Core reject-by-default behavior (execution posture: test-first)
+### U2 — Behavior harness + core reject-by-default / bounded upgrade (execution posture: test-first)
 
-* **What**: Invert `CreateCheckpoint` classification. Require `schema_version == 1` by
-  default; when the dump is missing/`0`/unsupported/wrong-typed/malformed, reject with the
-  appropriate typed error **before** `syncWriteFileAtomicHook`. Classify `schema_version`
-  from the **raw JSON token** (e.g. `json.RawMessage`/`json.Number`), not an `int`
-  zero-value probe, so a present-but-wrong-typed or duplicated member is distinguished from
-  an absent one and rejected rather than silently collapsing to `0`. When the
-  `WithAllowLegacyImport()` option is set AND the dump is a legacy shape (absent member or a
-  single integer-literal `0`), **upgrade** it: coerce `schema_version` to `1`, run the SAME
-  V1 path (populate `created_at`/`updated_at`/`status`, closed-namespace, duplicate-key,
-  `ValidateCheckpoint`, canonical marshal) and write only if it validates; otherwise reject
-  with no file. Never write a legacy dump verbatim. Still reject unsupported/future
-  versions, wrong-typed/ambiguous members, and malformed JSON even under the opt-in.
-  Preserve the pre-branch size + secret guards and the V1-branch duplicate-key/closed-
-  namespace checks unchanged, and keep the `TestSyncWriteFileAtomic_NoPreRemoveInAST` guard
-  green (no Windows pre-Remove near the write site).
-* **Files** (< 3): `internal/events/memory.go` and the U1 test file turning green. The
-  variadic-options seam means **no** CLI/MCP call-site edits are required in U2 (they compile
-  unchanged); the surfaces opt in during U3/U4. No helper split-out is planned (deterministic
-  single-file core change).
-* **Tests / verify** (table-driven, matrix rows as one focused scenario set): default
-  rejects missing/`0`/unsupported/wrong-typed/malformed with **no file**; opt-in upgrades
-  missing/`0` to a valid V1 that is then **readable by `GetCheckpoint`/`ListCheckpoints`
-  without quarantine**; opt-in still rejects unsupported/future/wrong-typed/malformed and a
-  legacy shape that cannot be made valid; valid V1 unchanged; size/secret/dup-key/closed-
-  namespace regressions still fire; a producer-level `errors.Is(err, ErrCheckpointSchemaRejected)`
-  assertion on core output (independent of surface tests). Tests overriding global seams do
-  not use `t.Parallel()`. `go test ./internal/events/...` green.
-* **Milestone**: core behavior correct; no-file on every rejection path; every successful
-  legacy import is a valid, readable V1 record.
+* **What**: In a strictly later wave than U1's declaration, land the **semantics-matrix behavior
+  harness** (red) against the landed declaration, then invert `CreateCheckpoint` **behavior** in
+  `internal/events/memory.go` to turn it green (the widened **signature** already landed in U1;
+  U2 changes only the body/behavior). Behavior turned green by this task and retained as a
+  green-step regression guard. Require `schema_version == 1` by default; when the dump is
+  missing/`0`/unsupported/wrong-typed/malformed, reject **before** `syncWriteFileAtomicHook` with
+  the appropriate typed sentinel, choosing it from the **same Upgrade-window predicate on both
+  paths**: `ErrCheckpointSchemaRejected` for a legacy shape that IS in the Upgrade window (so the
+  default-path remediation "enable the opt-in" is actionable), `ErrCheckpointSchemaUnsupported`
+  for an out-of-window legacy shape and for unsupported/future/wrong-typed/ambiguous, and the
+  existing malformed-input error for malformed JSON. Classify `schema_version` with a
+  **`json.Decoder.Token()` stream scan** (reuse the `objectMemberKeys` pattern in
+  `internal/events/checkpoint_schema.go`) capturing the raw token via `json.RawMessage` — **not**
+  `json.Number`, and **not** an `int` zero-value probe or a struct/`map` decode (those collapse
+  duplicate keys last-wins) — so a present-but-wrong-typed value OR a **duplicated** top-level
+  `schema_version` member is rejected rather than collapsing to `0`. When `WithAllowLegacyImport()`
+  is set AND the dump is in the **Upgrade window** (legacy shape AND `agent ∈ {ship,stage}`,
+  non-empty `session_id`, non-empty `phase` all present AND **no** foreign top-level members;
+  `created_at`/`updated_at`/`status` are defaultable-when-absent and validated only if present),
+  **upgrade**: coerce `schema_version → 1`, default timestamps + `status`, run the SAME V1 path
+  (closed-namespace, duplicate-key, `ValidateCheckpoint`, canonical marshal), and write only if it
+  validates. A legacy shape **outside** the Upgrade window (needing field remapping such as
+  `consumer→agent`, identity synthesis, or top-level relocation) is **fail-closed rejected** with
+  `ErrCheckpointSchemaUnsupported` and **no file** — identity (`agent`/`session_id`) is **never**
+  synthesized. Never write a legacy dump verbatim. Preserve the pre-branch size + secret guards and
+  the V1-branch duplicate-key/closed-namespace checks unchanged, and keep
+  `TestSyncWriteFileAtomic_NoPreRemoveInAST` green (no Windows pre-Remove near the write site).
+  * **Update existing tests that assumed schema-less / verbatim success** (they encode the OLD
+    contract and MUST be revised to reject-by-default): `internal/events/memory_test.go`
+    (`TestCreateCheckpoint_WritesFile`, which writes `{"state":"test"}`),
+    `internal/events/checkpoint_readpath_test.go` (`TestCreateCheckpoint_LegacyDumpWrittenVerbatim`),
+    and `internal/events/checkpoint_u1_harness_test.go`
+    (`TestCreateCheckpoint_U1_ValidLegacyJSON_PassesThrough`); and any legacy-corpus fixture relied
+    on for verbatim success. Each becomes a reject-with-no-file assertion (or an opt-in
+    Upgrade-window success assertion where the fixture qualifies).
+* **Files**: `internal/events/memory.go` (production) plus the U2 behavior test file
+  (`internal/events/checkpoint_create_schema_test.go`, reusing the existing
+  `assertNoCheckpointWritten` helper — first confirm it uses `t.Helper()` and asserts the
+  checkpoint dir is **empty**) and the three existing test files above turning to the new contract.
+  The variadic-options seam means **no** CLI/MCP call-site edits are required in U2 (they compile
+  unchanged); the surfaces opt in during U3/U4/U6.
+* **Tests / verify** (table-driven matrix, no `t.Parallel()` on global-seam tests): default rejects
+  missing/`0` as `ErrCheckpointSchemaRejected`, unsupported/future/wrong-typed as
+  `ErrCheckpointSchemaUnsupported`, and malformed as the malformed-input error — each with **no
+  file**; opt-in upgrades an Upgrade-window record to a valid V1 that is then **readable by
+  `GetCheckpoint`/`ListCheckpoints` without quarantine**; opt-in still fail-closed rejects an
+  out-of-window legacy shape (e.g. a corpus fixture with `consumer`/no-`session_id`) as
+  `ErrCheckpointSchemaUnsupported`; valid V1 unchanged; size/secret/dup-key/closed-namespace
+  regressions still fire. **Producer-level** `errors.Is(err, ErrCheckpointSchemaRejected)` and
+  `errors.Is(err, ErrCheckpointSchemaUnsupported)` (and `errors.As` where a cause is preserved) are
+  asserted here, on the CORE return value — this is the only layer where the Go error chain is
+  intact (see U4 for why the MCP layer asserts the mapped error instead). `go test ./internal/events/...`
+  green.
+* **Milestone**: core behavior correct; no-file on every rejection path; every successful legacy
+  import is a valid, readable V1 record; the three legacy-success tests now encode the strict contract.
 * **Depends on**: U1.
 
 ### U3 — CLI surface (execution posture: test-first)
@@ -137,42 +225,78 @@ legacy-import path, which runs the same V1 validation).
   `newCheckpointCreateCmd` (`internal/cli/checkpoint.go`); pass `WithAllowLegacyImport()`
   into the core when set; keep `--state-dump` required; update the command long-help to state
   the new default-reject behavior and that the flag is for migration only (remove the
-  "written verbatim" advertisement). The CLI error-mapping layer appends the
-  `--allow-legacy-import` remediation to the surface-neutral sentinel message.
-* **Files** (< 3): `internal/cli/checkpoint.go`, `internal/cli/checkpoint_create_test.go`
+  "written verbatim" advertisement), and convey the **same compact opt-in scope** the MCP tool
+  description carries (accepts only in-window legacy shapes; future/unsupported/wrong-typed/
+  malformed and remap/identity records remain rejected; import upgrades to valid V1, never
+  verbatim) so both governed-pair surfaces present symmetric in-surface decision context. The
+  CLI error-mapping layer appends the `--allow-legacy-import` remediation **only** to
+  `ErrCheckpointSchemaRejected` (legacy-eligible); it MUST NOT append the flag to
+  `ErrCheckpointSchemaUnsupported` (enabling the flag cannot help).
+* **Files** (≤ 2): `internal/cli/checkpoint.go`, `internal/cli/checkpoint_create_test.go`
   (or `checkpoint_create_shape_test.go`).
 * **Tests / verify**: CLI create without flag rejects a schema-less dump (non-zero exit,
-  sentinel preserved through the `%w` wrap, no file); with `--allow-legacy-import` a legacy
-  dump is imported and readable; flag defaults to false. Use real `cli.NewRootCommand()`
-  dispatch. `go test ./internal/cli/...` green.
+  `ErrCheckpointSchemaRejected` preserved through the `%w` wrap, no file); with
+  `--allow-legacy-import` an Upgrade-window dump is imported and readable; an out-of-window
+  legacy dump still fails (`ErrCheckpointSchemaUnsupported`, no flag remediation); flag defaults
+  to false. Use real `cli.NewRootCommand()` dispatch. `go test ./internal/cli/...` green.
 * **Milestone**: CLI parity with core; flag off by default.
 * **Depends on**: U2.
 
-### U4 — MCP surface & tool schema/description (execution posture: test-first)
+### U4 — MCP sentinel→error mapping (execution posture: test-first)
 
-* **What**: Add an optional `allow_legacy_import` boolean parameter to the
-  `backlogit_create_checkpoint` tool schema; parse it in `handleCreateCheckpoint`
-  (`internal/mcp/tools.go`) and pass `WithAllowLegacyImport()` into the core; update the
-  tool description to (a) state the changed default ("default changed: non-V1 dumps now
-  rejected"), (b) convey the opt-in scope compactly (accepts only legacy shapes — absent or
-  integer-literal `0` `schema_version`; future/unsupported/wrong-typed/malformed remain
-  rejected; import upgrades to valid V1), and (c) drop the "written verbatim with no schema
-  validation" text. The MCP sentinel-to-error mapping is **mandatory (not "if needed")**:
-  `ErrCheckpointSchemaRejected` maps to a bounded validation-class MCP error carrying the
-  sentinel-equivalent code, and the MCP error-mapping layer appends the `allow_legacy_import`
-  remediation (NOT the CLI flag spelling). Preserve the sentinel via `%w` so
-  `errors.Is`/`errors.As` resolve through the handler.
-* **Files** (< 3): `internal/mcp/tools.go`, `tests/contract/checkpoint_tools_test.go` (or
-  `internal/mcp/checkpoint_create_strict_test.go`).
-* **Tests / verify**: MCP create without the param rejects a schema-less dump and writes no
-  file, surfacing the bounded sentinel-equivalent error code (parity assertion on error
-  class, not just accept/reject outcome); with `allow_legacy_import: true` a legacy dump is
-  imported and readable; default false. Use in-process registered-tool dispatch
-  (`callToolForTest`) with a separate `t.TempDir()` per surface. `go test ./internal/mcp/...
-  ./tests/contract/...` green.
-* **Milestone**: MCP parity with core + CLI (accept/reject AND error class); governed-parity
-  fixtures dispatch the registered handler.
-* **Depends on**: U2. (Parallel with U3.)
+* **What**: Map the core sentinels to bounded MCP errors in `internal/mcp/errors.go`, where
+  `domainError` and its mapping already live. `handleCreateCheckpoint` converts a domain error
+  into a `CallToolResult` (via `domainError`) and returns a **nil Go error**, so
+  `errors.Is`/`errors.As` do **NOT** resolve "through the handler". The mapper MUST therefore
+  detect the wrapped sentinel with `errors.Is` **before** serialization and choose the MCP error
+  code from it. Map `ErrCheckpointSchemaRejected` → a bounded validation-class MCP error whose
+  remediation appends `allow_legacy_import` (NOT the CLI flag spelling); map
+  `ErrCheckpointSchemaUnsupported` → a bounded validation-class MCP error with **no** opt-in
+  remediation. The two sentinels MUST be **programmatically distinguishable at the structured
+  level** (distinct MCP error codes, or a structured machine-detectable remediation/retryable
+  field — not merely differing free-text), so an agent can branch "retry with opt-in" vs "give
+  up" the same way the CLI branches the two typed sentinels; a test asserts that structured
+  distinction. Producer-level `errors.Is`/`errors.As` chain assertions stay in U2 (core), the only
+  layer where the Go error chain is intact.
+* **Files** (≤ 2 production): `internal/mcp/errors.go`, `internal/mcp/error_mapping_test.go`.
+* **Tests / verify**: given a wrapped `ErrCheckpointSchemaRejected` / `ErrCheckpointSchemaUnsupported`
+  produced by the core, the mapper yields the expected bounded MCP error **code/body** and the
+  correct (or absent) remediation token; assert on the serialized `CallToolResult` error class, not
+  on a Go error return (which is nil). `go test ./internal/mcp/...` green for the mapping.
+* **Milestone**: both sentinels map to bounded, correctly-remediated MCP errors, detected before
+  serialization.
+* **Depends on**: U2.
+
+### U6 — MCP tool opt-in parameter, schema/description, registry & parity fixtures (execution posture: test-first)
+
+* **What**: Expose the opt-in on the MCP surface consistently. Add an optional `allow_legacy_import`
+  boolean parameter to the `backlogit_create_checkpoint` tool schema; parse it in
+  `handleCreateCheckpoint` (`internal/mcp/tools.go`) and pass `WithAllowLegacyImport()` into the
+  core. Update the tool description to (a) state the changed default ("default changed: non-V1 dumps
+  now rejected"), (b) convey the opt-in scope compactly (accepts only legacy shapes in the Upgrade
+  window — absent or integer-literal `0` `schema_version` that is otherwise V1-valid;
+  future/unsupported/wrong-typed/malformed and records needing remap/identity remain rejected;
+  import upgrades to valid V1, never verbatim), and (c) drop the "written verbatim with no schema
+  validation" text. Advertise the new parameter in the governed operation registry
+  (`.autoharness/backlog-registry.yaml`, whose `create_checkpoint` entry currently lists only
+  `state_dump` + a CLI command without the opt-in), recording the opt-in with **both surface
+  spellings** (`--allow-legacy-import` for the CLI command, `allow_legacy_import` for the MCP
+  param) as a single governed parameter, and update the existing governed **parity fixtures /
+  tool-metadata** so generated metadata and registry-driven parity tests dispatch the opt-in on
+  **each** surface and expose the new parameter on both.
+* **Files** (≤ 2 production + config): `internal/mcp/tools.go`, `.autoharness/backlog-registry.yaml`;
+  governed parity fixtures / tool-metadata test surface (`tests/contract/checkpoint_tools_test.go` or
+  `internal/mcp/checkpoint_create_strict_test.go`) plus the existing governed-parity fixture.
+* **Tests / verify**: MCP create without the param rejects a schema-less dump and writes no file,
+  surfacing the bounded U4-mapped error code (parity assertion on error **class**, not just
+  accept/reject); with `allow_legacy_import: true` an Upgrade-window dump is imported and readable;
+  an out-of-window legacy dump still fails as `ErrCheckpointSchemaUnsupported`; default false.
+  Registry-driven parity fixtures dispatch the **registered** handler (via `callToolForTest`), not
+  the core directly, with a separate `t.TempDir()` per surface. Generated tool metadata includes
+  `allow_legacy_import`. `go test ./internal/mcp/... ./tests/contract/...` green.
+* **Milestone**: MCP parity with core + CLI (accept/reject AND error class); registry + generated
+  metadata + parity fixtures all expose the opt-in consistently.
+* **Depends on**: U4.
 
 ### U5 — Documentation & compatibility (execution posture: docs)
 
@@ -188,53 +312,85 @@ legacy-import path, which runs the same V1 validation).
 * **Tests / verify**: `go run ./cmd/backlogit docs lint` reports 0 violations; docs
   describe flag, default behavior, and matrix.
 * **Milestone**: docs and compatibility guidance consistent with shipped behavior.
-* **Depends on**: U3 and U4.
+* **Depends on**: U3, U4, and U6.
 
 ## Dependency Graph
 
 ```
-U1 ─▶ U2 ─▶ U3 ─▶ U5
-             └▶ U4 ─▶ U5
-      (U3 and U4 both depend on U2 and may run in parallel; U5 depends on U3 and U4)
+U1 ─▶ U2 ─┬▶ U3 ───────────────▶ U5
+          └▶ U4 ─▶ U6 ──────────▶ U5
+   (U3 and U4 both depend on U2 and may run in parallel; U6 depends on U4;
+    U5 depends on U3, U4, and U6)
 ```
 
 No cycles.
 
 ## Decisions and Rationale
 
+* **Mandatory harness ordering: source-shape AST harness → declaration → behavior harness →
+  implementation** — per `workflow-policies.md:123-143` and `harness-architect/SKILL.md:221-234`,
+  a declaration-bearing seam whose body will absorb real behavior MUST be split. U1 is a
+  **declaration** task: its **source-shape (`go/ast`) harness lands first** and gates the
+  declaration (options type, `WithAllowLegacyImport`, the variadic signature, both sentinels);
+  **no production stub** is written ahead of that harness. The **behavior** harness (the semantics
+  matrix, reading/mutating/writing) is owned by U2 in a strictly later wave, landing red against
+  the landed declaration and turned green by U2's implementation. Combining the declaration with
+  the behavior harness in one task (the earlier draft) is the plan defect this split removes.
+  (Raised at PR review — mandatory red-before-production ordering.)
 * **Variadic functional options, not a mandatory struct parameter** — `CreateCheckpoint(ctx,
   dir, dump, opts ...CreateCheckpointOption)`. A mandatory 4th parameter would break
   repo-wide compilation (`go build ./...` / `go test ./...`) at the U2 milestone because
   every existing 3-arg caller (CLI, MCP, resumption call sites) would fail to compile until
-  U3/U4. Variadic options keep the repo green at each unit boundary while giving the same
+  U3/U4/U6. Variadic options keep the repo green at each unit boundary while giving the same
   extensibility and a strict-by-default zero-option call. (Raised by Go Reviewer and
   Architecture Strategist at plan review.)
-* **Opt-in scoped to legacy shapes only, defined by raw JSON token** — a legacy shape is an
-  **absent** `schema_version` member or **exactly one** member whose token is the integer
-  literal `0`. Classify from the raw token (`json.RawMessage`/`json.Number`), never an `int`
-  zero-value probe, so a present-but-wrong-typed (`"0"`, `null`, `1.5`, overflow) or
-  **duplicated** member is rejected rather than silently collapsing to `0`. A
-  future/unsupported version is "unknown", not "legacy". Malformed JSON is never importable.
-  (Raised by Go Reviewer and Security Lens Reviewer.)
-* **Legacy import upgrades to valid V1 — never verbatim** — the opt-in coerces a legacy
-  shape to `schema_version:1` and runs the SAME V1 validation path, writing only a record
-  that reads back without quarantine. Writing legacy JSON verbatim behind a flag would
-  reintroduce the exact quarantine-poisoning the fix removes. Enforcing the invariant in the
-  core write seam *before* schema resolution (not at the surfaces) follows the
-  enforce-before-schema precedent (compound 2026-07-30
-  `task-only-typed-metadata-seam-enforce-before-schema`). (Raised by Security Lens Reviewer.)
-* **Dedicated create-time sentinel in `internal/errors`, surface-neutral message** —
-  `internal/errors` is the only cycle-free leaf (CLI→MCP import direction), so a shared error
-  there keeps both surfaces aligned (compound 2026-09-04 neutral-leaf ownership). The message
-  is surface-neutral; each surface appends its own `--allow-legacy-import` /
-  `allow_legacy_import` remediation token in its error-mapping layer, avoiding CLI/MCP message
-  drift. When a cause is preserved, wrap with the two-`%w` discriminator
-  (`%w: %w`, sentinel, cause) so the sentinel stays `errors.Is`-detectable and the cause
-  stays traversable (compound 2026-09-04 `two-percent-w-discriminator`). (Raised by Go
-  Reviewer, Agent-Native Parity Reviewer, Learnings Researcher.)
-* **Mandatory bounded MCP error mapping** — the sentinel maps to a bounded validation-class
-  MCP error (not "if needed"), with a parity assertion on error *class*, so the agent path is
-  as legible and governed as the CLI path. (Raised by Agent-Native Parity Reviewer.)
+* **Opt-in scoped to a deterministic Upgrade window; fail-closed; no identity synthesis** — a
+  legacy **shape** is an **absent** `schema_version` member or **exactly one** member whose token
+  is the integer literal `0`. Classification uses a **`json.Decoder.Token()` stream scan** (reuse
+  the `objectMemberKeys` pattern in `internal/events/checkpoint_schema.go`) capturing the raw token
+  via `json.RawMessage` — never `json.Number`, an `int` zero-value probe, or a struct/`map` decode
+  (those collapse duplicate keys last-wins) — so `"0"`/`null`/`1.5`/overflow AND a **duplicated**
+  top-level member are rejected, not silently accepted. Passing the shape gate is necessary but not
+  sufficient, and the **same window predicate is evaluated on both paths** so the default-path
+  sentinel is actionable. The record is upgradable only if it already carries `agent ∈ {ship,stage}`,
+  non-empty `session_id`, non-empty `phase`, and no foreign top-level members (`created_at`/
+  `updated_at`/`status` are defaultable-when-absent, validated only if present). `agent`/`session_id`
+  anchor the fail-closed crash-resumption trust boundary and are **never synthesized**, so a record
+  needing field remapping (`consumer→agent`), identity synthesis, or top-level relocation is
+  fail-closed rejected as `ErrCheckpointSchemaUnsupported`. This narrows the migration claim to what
+  the fix can honestly deliver (grounded in the actual `internal/events/testdata/legacy-corpus`
+  fixtures and this PR's archived checkpoint, all of which are correctly rejected). A broad
+  corpus-remapping migration is out of scope and deferred (see Risks). (Raised by Go + Security Lens
+  Reviewer; narrowed per PR-review corpus evidence.)
+* **Legacy import upgrades to valid V1 — never verbatim** — the opt-in coerces an in-window legacy
+  shape to `schema_version:1` and runs the SAME V1 validation path, writing only a record that
+  reads back without quarantine. Writing legacy JSON verbatim behind a flag would reintroduce the
+  exact quarantine-poisoning the fix removes. Enforcing the invariant in the core write seam
+  *before* schema resolution (not at the surfaces) follows the enforce-before-schema precedent
+  (compound 2026-07-30 `task-only-typed-metadata-seam-enforce-before-schema`). (Raised by Security
+  Lens Reviewer.)
+* **Two create-time sentinels in `internal/errors`, surface-neutral, actionable remediation** —
+  `internal/errors` is the only cycle-free leaf (CLI→MCP import direction), so shared errors there
+  keep both surfaces aligned (compound 2026-09-04 neutral-leaf ownership). The taxonomy is split so
+  remediation is **actionable**: `ErrCheckpointSchemaRejected` (a legacy-eligible dump rejected with
+  the opt-in off) carries the `--allow-legacy-import` / `allow_legacy_import` remediation, while
+  `ErrCheckpointSchemaUnsupported` (unsupported/future/wrong-typed/ambiguous/non-upgradable, rejected
+  on BOTH paths) carries **no** opt-in remediation — appending "enable the opt-in" to a case the
+  opt-in cannot rescue is non-actionable advice. Both messages are surface-neutral; each surface
+  appends the correct remediation only for the eligible sentinel, avoiding CLI/MCP drift. When a
+  cause is preserved, wrap with the two-`%w` discriminator (`%w: %w`, sentinel, cause) so the
+  sentinel stays `errors.Is`-detectable and the cause stays traversable (compound 2026-09-04
+  `two-percent-w-discriminator`). (Raised by Go Reviewer, Agent-Native Parity Reviewer, Learnings
+  Researcher; taxonomy split per PR-review actionability.)
+* **Mandatory bounded MCP error mapping, detected before serialization** — each sentinel maps to a
+  bounded validation-class MCP error (not "if needed"), with a parity assertion on error *class*.
+  Because `handleCreateCheckpoint` returns a `CallToolResult` with a **nil Go error**,
+  `errors.Is`/`errors.As` cannot resolve "through the handler"; the mapper in
+  `internal/mcp/errors.go` (U4) MUST detect the wrapped sentinel with `errors.Is` **before**
+  serialization, and the test asserts the returned MCP error code/body after registered-handler
+  dispatch. Producer-level `errors.Is`/`errors.As` chain assertions stay in the core (U2), the only
+  layer where the Go error chain is intact. (Raised by Agent-Native Parity Reviewer; refined per
+  PR-review.)
 * **Classification stays before the atomic write site** — structurally guarantees the
   no-file-on-reject property; reuse `assertNoCheckpointWritten` (confirmed to use `t.Helper()`
   and assert an empty dir) and the `checkpoint_writesite_test.go` static guard; keep the
@@ -262,6 +418,17 @@ No cycles.
   green.
 * **No on-disk migration in scope**: existing invalid files remain a quarantine concern
   (already handled by 136-F); this fix only stops manufacturing new ones.
+* **Narrow opt-in coverage / deferred broad migration**: the opt-in's Upgrade window is
+  deliberately narrow (records already V1-valid except a missing/`0` `schema_version`), so it
+  does **not** rescue the representative legacy corpus (`consumer`/no-`session_id`/top-level
+  extras) or this PR's archived checkpoint — those are fail-closed rejected, by design, because
+  `agent`/`session_id` cannot be safely synthesized at the crash-resumption trust boundary. A
+  full corpus-remapping migration (alias `consumer→agent`, relocate top-level members into the
+  open `context` namespace, deterministically derive `session_id`, tested against the
+  `legacy-corpus` fixtures) is a **separate, deferred migration feature** — captured as a
+  `DEFERRED SCOPE EXPANSION` stash entry (`5EF84EC4`, `requires deliberation`; P-021 C1/C2:
+  different contract surface — a design decision, not a mechanical part of the reject-by-default
+  fix). This caveat keeps the migration claim honest and the fix bounded.
 
 ## Constitution Check
 
@@ -478,3 +645,60 @@ TOOL_OK: reviewer-subagent-dispatch
 **Plan hardening**: required and satisfied. Constitution Check: pass. Runtime verification and operational closure specified for the changed CLI and MCP surfaces.
 
 **Rationale**: The plan is architecturally sound (single authoritative core behavior; neutral-leaf error ownership), scope-bounded to the checkpoint-create path, security-hardened (no quarantine-poisoning; secret/size guards preserved; no-file-on-reject structurally guaranteed), and Go-idiomatic (variadic options keep the repo green at every unit boundary). Cleared for harvest.
+
+<!-- plan-review-attempt: 3 -->
+## Plan Review
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+TOOL_OK: reviewer-subagent-dispatch
+
+**Attempt**: 3 of max 3. **Gate**: PASS (no P0/P1/P2 remaining; only folded P3 advisories). This
+re-review supersedes the attempt-2 PASS because the plan was materially revised to address the
+Copilot review on PR #428 (harness-ordering split, MCP task split, narrowed migration claim,
+two-sentinel taxonomy, corpus-grounded upgrade window).
+
+**Personas dispatched (5) + self-verified (3)**: Correctness Reviewer, Security Reviewer, Go
+Reviewer, Agent-Native Parity Reviewer, Scope Boundary Auditor were dispatched as independent
+sub-agents against the revised plan; Constitution (unchanged 11-principle mapping still holds),
+Architecture Strategist (single authoritative core; neutral-leaf error ownership; U1/U2 and
+U4/U6 seams clean), and Learnings Researcher (enforce-before-schema, two-%w, no-parallel-seam,
+Windows pre-Remove guard — all retained) were carried forward/self-verified.
+
+### Findings raised and resolution (all cleared before this PASS)
+- **Go P1 x2 (signature location)** — the variadic `CreateCheckpoint` signature necessarily lives
+  in `internal/events/memory.go` (Go has no overloading) and must be gated by U1's source-shape
+  harness. RESOLVED: U1 now owns the signature-only widening of `memory.go` (body/behavior deferred
+  to U2) and its `go/ast` harness parses `memory.go`, `checkpoint_create_options.go`, and
+  `checkpoint_errors.go`. No production surface lands ahead of the harness that gates it.
+- **Go P2 (duplicate-member detection)** — `json.RawMessage`/struct decode collapse duplicate keys
+  (last-wins). RESOLVED: classification now uses a `json.Decoder.Token()` stream scan (reuse
+  `objectMemberKeys`) so a duplicated top-level `schema_version` is rejected as
+  `ErrCheckpointSchemaUnsupported`.
+- **Go P3 (json.Number imprecise)** — RESOLVED: dropped; `json.RawMessage` via the token scan is the
+  single capture mechanism.
+- **Correctness P2 (non-actionable default sentinel)** — RESOLVED: the Upgrade-window predicate is
+  now evaluated on BOTH paths; an in-window legacy shape yields `ErrCheckpointSchemaRejected`
+  (opt-in advice is actionable), an out-of-window shape yields `ErrCheckpointSchemaUnsupported`.
+- **Correctness P3 (status determinism)** — RESOLVED: `status`/timestamps are defaultable-when-absent
+  and validated-only-if-present; the required-present window set is `agent`/`session_id`/`phase`
+  plus a closed top-level namespace.
+- **Security Reviewer** — no findings; upgrade-or-reject + never-synthesize-identity + no-file-on-reject
+  close quarantine-poisoning and identity-fabrication at the crash-resumption trust boundary.
+- **Scope Boundary Auditor** — no findings; U4->U4+U6 and U1/U2 splits are policy-required (not
+  fragmentation); the broad corpus migration is correctly OUT of scope and captured as
+  `DEFERRED SCOPE EXPANSION` stash `5EF84EC4`.
+- **Agent-Native Parity — 3 P3 advisories, folded**: CLI long-help now conveys the same compact
+  opt-in scope as the MCP tool description; U4 requires the two sentinels to be programmatically
+  distinguishable at the structured MCP level (distinct code / structured field), with a test; U6
+  records the opt-in in the registry with BOTH surface spellings so registry-driven parity fixtures
+  dispatch each surface.
+
+**Plan hardening**: required (`Requires plan hardening: yes`) and satisfied. Constitution Check: pass.
+Runtime verification and operational closure specified for the changed CLI and MCP surfaces.
+
+**Rationale**: The revised plan is architecturally sound, scope-bounded (narrowed, honest migration
+claim; deferred broad migration captured), security-hardened, and Go-idiomatic with mandatory
+harness ordering now correctly specified (source-shape AST harness -> declaration -> behavior
+harness -> implementation). No P0/P1/P2 remain. Cleared for harvest.
