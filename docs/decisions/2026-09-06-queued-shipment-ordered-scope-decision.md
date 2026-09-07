@@ -151,7 +151,8 @@ numeric-predecessor logic lives inside the external `autoharness` binary
 **Decision G — requirement #7 path.** Because the gate itself prevents the correct
 order and changing it would require production-code work on `autoharness`, Stage
 **does not work around it** (no `--force`, no ID renumbering, no edge fudging).
-Stage records a narrowly-scoped follow-up (§7) and prepares only the
+Stage **specifies** a narrowly-scoped follow-up (§7, not yet filed) and prepares
+only the
 planning/backlog changes valid under the current gate.
 
 ---
@@ -275,7 +276,11 @@ mutate the stash. On operator approval, apply:
 > in optimal order without operator `--force`. **kind:** bug · **priority:** high
 
 This is an `autoharness` production-code change → outside this repo and outside
-Stage's role boundary. Captured as a follow-up, not actioned.
+Stage's role boundary. **Specified** as a follow-up (§7a) but **not filed** — the
+stash capture is deferred to the operator to preserve the flagged
+`.backlogit/stash.jsonl` line-ending state. Requirement #7's durable-tracking
+deliverable is therefore **drafted here but incomplete**: filing the stash entry
+(and recording its generated ID) remains an explicit operator action.
 
 ---
 
@@ -315,10 +320,14 @@ advance past 139-S until that wall clears.
 
 ## 9. Changes made vs. proposed
 
-**Made this session (additive, docs-only):**
+**Made this session (additive, docs-only — this PR contains exactly these two
+Markdown files):**
 * This decision artifact.
 * Session memory (`docs/memory/2026-09-06-stage-queued-shipment-ordered-scope.md`).
-* Structured checkpoint via `backlogit checkpoint create`.
+
+A structured checkpoint was written via `backlogit checkpoint create` as local
+session state; that checkpoint JSON is **not** part of this docs-only PR and is
+not in the checkout.
 
 **Explicitly NOT made (by design):**
 * No dependency-edge changes — the DAG is already correct (D-1).

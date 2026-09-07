@@ -39,9 +39,11 @@ Requires fresh operator approval to route to Ship. Real critical-path work =
 re-plan S6/S8/S9/S10/S12 + resolve S13.
 
 ## Changes
-- Added: docs/decisions/2026-09-06-queued-shipment-ordered-scope-decision.md
-  (authoritative artifact), this memory, backlogit checkpoint
-  checkpoint-20260906-231751.json.
+- Added (this PR — docs-only, exactly two Markdown files):
+  docs/decisions/2026-09-06-queued-shipment-ordered-scope-decision.md
+  (authoritative artifact) and this memory file. A session `backlogit checkpoint
+  create` ran locally, but its checkpoint JSON is NOT part of this PR and is not
+  in the checkout.
 - Branch: stage/queued-shipment-ordered-scope → PR (docs-only, additive).
 - NOT changed: dependency edges (already correct), queue_position/priority
   (can't affect numeric gate), stash.jsonl (preservation-flagged line-ending
