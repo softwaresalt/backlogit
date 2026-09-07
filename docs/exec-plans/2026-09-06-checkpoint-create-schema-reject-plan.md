@@ -32,7 +32,7 @@ an explicit migration-only opt-in, consistently across the shared core function,
 |---|---|---|
 | Reject schema-less/non-V1 by default | Invert classification in `CreateCheckpoint`; typed pre-write rejection | U2 |
 | Legacy import behind explicit opt-in | Add `allowLegacyImport` to core signature (variadic option) | U1, U2 |
-| Actionable rejection taxonomy | Two sentinels — `ErrCheckpointSchemaRejected` (legacy-eligible → opt-in remediation) vs `ErrCheckpointSchemaUnsupported` (unsupported/malformed/non-upgradable → NO opt-in remediation) | U1, U2, U3, U4 |
+| Actionable rejection taxonomy | Two sentinels — `ErrCheckpointSchemaRejected` (legacy-eligible → opt-in remediation) vs `ErrCheckpointSchemaUnsupported` (unsupported/non-upgradable → NO opt-in remediation); malformed JSON uses the existing malformed-input error on all paths | U1, U2, U3, U4 |
 | Cover shared core function | `internal/events/memory.go` | U2 |
 | Cover CLI `checkpoint create` | `--allow-legacy-import` flag, wired to core | U3 |
 | Cover MCP `backlogit_create_checkpoint` | bounded sentinel→MCP error mapping in `internal/mcp/errors.go` (U4); optional `allow_legacy_import` param + tool schema/description + registry entry + parity fixtures (U6) | U4, U6 |
@@ -176,7 +176,7 @@ legacy-import path, which runs the same V1 validation).
   production-file budget). The `memory.go` touch is a trivial declaration edit, so the unit stays
   within the 2-hour envelope; its behavior change is isolated to U2.
 * **Tests / verify**: source-shape harness is red before the declaration and green after; `go
-  build ./...` and `go vet ./internal/events/...` pass. **No behavior test in this task.**
+  build ./...`, `go vet ./internal/events/...`, and `go test ./internal/events/...` pass. **No behavior test in this task.**
 * **Milestone**: declaration (options type, `WithAllowLegacyImport`, widened signature, two
   sentinels) + source-shape harness landed; no production stub ahead of the harness that gates it;
   no behavior admitted.
@@ -265,7 +265,7 @@ legacy-import path, which runs the same V1 validation).
   `errors.Is(err, ErrCheckpointSchemaRejected)` and
   `errors.Is(err, ErrCheckpointSchemaUnsupported)` (and `errors.As` where a cause is preserved) are
   asserted here, on the CORE return value — this is the only layer where the Go error chain is
-  intact (see U4 for why the MCP layer asserts the mapped error instead). `go test ./internal/events/...`
+  intact (see U4 for why the MCP layer asserts the mapped error instead). `go test ./...`
   green.
 * **Milestone**: core behavior correct; no-file on every rejection path; every successful legacy
   import is a valid, readable V1 record; the three legacy-success tests now encode the strict contract.
