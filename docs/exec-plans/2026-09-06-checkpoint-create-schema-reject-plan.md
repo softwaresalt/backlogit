@@ -213,8 +213,11 @@ legacy-import path, which runs the same V1 validation).
   nested `progress`, duplicate `context` members, or canonical growth past 64 KiB. When `WithAllowLegacyImport()` is set AND the dry-run
   succeeds, **upgrade**: write the canonical V1 the dry-run validated. A legacy shape whose
   dry-run fails (needing field remapping such as `consumer→agent`, identity synthesis, top-level
-  relocation, carrying bad context/progress, or canonical growth past 64 KiB) is **fail-closed rejected** with `ErrCheckpointSchemaUnsupported` and **no
-  file** — identity (`agent`/`session_id`) is **never** synthesized. Never write a legacy dump
+  relocation, or carrying bad context/progress) is **fail-closed rejected** with
+  `ErrCheckpointSchemaUnsupported` and **no file**; a legacy shape whose dry-run fails
+  specifically at the post-marshal size guard returns the native `checkStateDumpSize` error
+  (preserved so callers know to reduce the payload, not to enable the opt-in) — in both cases
+  **no file** — identity (`agent`/`session_id`) is **never** synthesized. Never write a legacy dump
   verbatim. Preserve the pre-branch size + secret guards and
   the V1-branch duplicate-key/closed-namespace checks unchanged, and keep
   `TestSyncWriteFileAtomic_NoPreRemoveInAST` green (no Windows pre-Remove near the write site).
