@@ -69,21 +69,30 @@ members are rejected as duplicate/ambiguous. Anything else (string `"0"`, `null`
 overflow, or duplicate members) is NOT a legacy shape and is rejected on both paths before the
 write site as `ErrCheckpointSchemaUnsupported`.
 
-**Upgrade window (deterministic, fail-closed) — evaluated on BOTH paths.** Passing the shape
-gate is necessary but not sufficient; the same window predicate is evaluated whether or not the
-opt-in is set, so the **default-path sentinel is actionable**: an in-window legacy shape yields
-`ErrCheckpointSchemaRejected` (enabling the opt-in *will* succeed), and an out-of-window legacy
-shape yields `ErrCheckpointSchemaUnsupported` (enabling the opt-in cannot help). The upgrade
-coerces `schema_version → 1`, then runs the **same** V1 path (create-time defaults +
-closed-namespace + duplicate-key + `ValidateCheckpoint` + canonical marshal), writing only if
-the result is a valid CheckpointV1. Window membership (deterministic):
+**Upgrade window (deterministic, fail-closed) — decided by a full V1 dry-run on BOTH paths.**
+Passing the shape gate is necessary but not sufficient, and a field-level predicate (identity +
+closed top-level namespace) is ALSO insufficient — a schema-less object can carry a wrong-typed
+`context` (e.g. `"context":"bad"`), unknown nested `progress` fields, or duplicate `context`
+members that satisfy those fields yet still fail the shared V1 pipeline. Eligibility is therefore
+defined operationally: run the **complete upgraded-V1 pre-write pipeline as a dry-run** — coerce
+`schema_version → 1`, apply create-time defaults (`created_at`/`updated_at`, `status`), then the
+closed top-level + nested-`progress` namespace checks, duplicate-key checks, and full
+`ValidateCheckpoint` — and treat the record as in-window **iff that dry-run would produce a valid
+CheckpointV1**. The SAME dry-run decides both paths, so the default path emits
+`ErrCheckpointSchemaRejected` (actionable — enabling the opt-in *will* succeed) ONLY when the
+dry-run succeeds, and `ErrCheckpointSchemaUnsupported` when it would not (enabling the opt-in
+cannot help). Necessary preconditions for the dry-run to have any chance of passing (helpful for
+readers, but not a substitute for the dry-run):
 
 * **required present**: `agent ∈ {ship,stage}`, non-empty `session_id`, non-empty `phase`, and
   a **closed** top-level namespace (no foreign top-level members)
   (`internal/events/checkpoint_schema.go:21-57`);
 * **defaultable-when-absent (validated only if present)**: `created_at`/`updated_at` (default
   to now) and `status` (default to `active`; if present it must be an allowed non-`abandoned`
-  value).
+  value);
+* but a record satisfying those can still be out-of-window if the full pipeline rejects it
+  (wrong-typed `context`, invalid nested `progress`, duplicate `context` members). `agent`/
+  `session_id`/`phase` are never synthesized.
 
 Records requiring field remapping or identity synthesis are **fail-closed rejected**
 (`ErrCheckpointSchemaUnsupported`). Grounded in the actual corpus:
@@ -174,11 +183,12 @@ legacy-import path, which runs the same V1 validation).
   U2 changes only the body/behavior). Behavior turned green by this task and retained as a
   green-step regression guard. Require `schema_version == 1` by default; when the dump is
   missing/`0`/unsupported/wrong-typed/malformed, reject **before** `syncWriteFileAtomicHook` with
-  the appropriate typed sentinel, choosing it from the **same Upgrade-window predicate on both
-  paths**: `ErrCheckpointSchemaRejected` for a legacy shape that IS in the Upgrade window (so the
-  default-path remediation "enable the opt-in" is actionable), `ErrCheckpointSchemaUnsupported`
-  for an out-of-window legacy shape and for unsupported/future/wrong-typed/ambiguous, and the
-  existing malformed-input error for malformed JSON. Classify `schema_version` with a
+  the appropriate typed sentinel, choosing it from a **full upgraded-V1 pre-write dry-run,
+  evaluated the same way on both paths**: `ErrCheckpointSchemaRejected` for a legacy shape whose
+  dry-run WOULD succeed (so the default-path remediation "enable the opt-in" is actionable),
+  `ErrCheckpointSchemaUnsupported` for a legacy shape whose dry-run would NOT succeed and for
+  unsupported/future/wrong-typed/ambiguous, and the existing malformed-input error for malformed
+  JSON. Classify `schema_version` with a
   **`json.Decoder.Token()` stream scan** (reuse the `objectMemberKeys` pattern in
   `internal/events/checkpoint_schema.go`) capturing the raw token via `json.RawMessage` — **not**
   `json.Number`, and **not** an `int` zero-value probe or a struct/`map` decode (those collapse
@@ -187,26 +197,33 @@ legacy-import path, which runs the same V1 validation).
   **case-fold-aware** (`strings.EqualFold`, matching `encoding/json` and
   `checkClosedSchemaNamespace` at `internal/events/checkpoint_strict.go:166-170`), so a valid
   `SCHEMA_VERSION: 1` is recognized as V1 (not misclassified as schema-less) and fold-equivalent
-  duplicates are rejected as ambiguous; U2 covers this case. When `WithAllowLegacyImport()`
-  is set AND the dump is in the **Upgrade window** (legacy shape AND `agent ∈ {ship,stage}`,
-  non-empty `session_id`, non-empty `phase` all present AND **no** foreign top-level members;
-  `created_at`/`updated_at`/`status` are defaultable-when-absent and validated only if present),
-  **upgrade**: coerce `schema_version → 1`, default timestamps + `status`, run the SAME V1 path
-  (closed-namespace, duplicate-key, `ValidateCheckpoint`, canonical marshal), and write only if it
-  validates. A legacy shape **outside** the Upgrade window (needing field remapping such as
-  `consumer→agent`, identity synthesis, or top-level relocation) is **fail-closed rejected** with
-  `ErrCheckpointSchemaUnsupported` and **no file** — identity (`agent`/`session_id`) is **never**
-  synthesized. Never write a legacy dump verbatim. Preserve the pre-branch size + secret guards and
+  duplicates are rejected as ambiguous; U2 covers this case. In-window / out-of-window is decided
+  by the **complete upgraded-V1 pre-write dry-run** (coerce `schema_version → 1`; default
+  `created_at`/`updated_at`/`status`; closed top-level + nested-`progress` namespace checks;
+  duplicate-key checks; full `ValidateCheckpoint`) — NOT by a field-level identity+namespace
+  predicate alone, because a schema-less object with valid `agent`/`session_id`/`phase` can still
+  fail the pipeline via a wrong-typed `context`, invalid nested `progress`, or duplicate `context`
+  members. When `WithAllowLegacyImport()` is set AND the dry-run succeeds, **upgrade**: write the
+  canonical V1 the dry-run validated. A legacy shape whose dry-run fails (needing field remapping
+  such as `consumer→agent`, identity synthesis, top-level relocation, or carrying bad
+  context/progress) is **fail-closed rejected** with `ErrCheckpointSchemaUnsupported` and **no
+  file** — identity (`agent`/`session_id`) is **never** synthesized. Never write a legacy dump
+  verbatim. Preserve the pre-branch size + secret guards and
   the V1-branch duplicate-key/closed-namespace checks unchanged, and keep
   `TestSyncWriteFileAtomic_NoPreRemoveInAST` green (no Windows pre-Remove near the write site).
   * **Update existing tests that assumed schema-less / verbatim success** (they encode the OLD
-    contract and MUST be revised to reject-by-default): `internal/events/memory_test.go`
-    (`TestCreateCheckpoint_WritesFile`, which writes `{"state":"test"}`),
+    contract and MUST be revised to reject-by-default so `go test ./...` stays green):
+    `internal/events/memory_test.go` (`TestCreateCheckpoint_WritesFile`, writes `{"state":"test"}`),
     `internal/events/checkpoint_readpath_test.go` (`TestCreateCheckpoint_LegacyDumpWrittenVerbatim`),
-    and `internal/events/checkpoint_u1_harness_test.go`
-    (`TestCreateCheckpoint_U1_ValidLegacyJSON_PassesThrough`); and any legacy-corpus fixture relied
-    on for verbatim success. Each becomes a reject-with-no-file assertion (or an opt-in
-    Upgrade-window success assertion where the fixture qualifies).
+    `internal/events/checkpoint_u1_harness_test.go`
+    (`TestCreateCheckpoint_U1_ValidLegacyJSON_PassesThrough`),
+    `internal/cli/checkpoint_create_shape_test.go:12-82` (which must also pin arrays/scalars/`null`
+    as unsupported **non-object** inputs that reject with no file), and
+    `tests/contract/checkpoint_tools_test.go:219-237`; plus any legacy-corpus fixture relied on for
+    verbatim success. Each becomes a reject-with-no-file assertion (or an opt-in dry-run success
+    assertion where the fixture qualifies). Add cases for a schema-less object with valid identity
+    but wrong-typed `context` / invalid nested `progress` / duplicate `context` members → default
+    `ErrCheckpointSchemaUnsupported`, and opt-in fail-closed reject.
 * **Files**: `internal/events/memory.go` (production) plus the U2 behavior test file
   (`internal/events/checkpoint_create_schema_test.go`, reusing the existing
   `assertNoCheckpointWritten` helper — first confirm it uses `t.Helper()` and asserts the
@@ -289,11 +306,16 @@ legacy-import path, which runs the same V1 validation).
   import upgrades to valid V1, never verbatim), and (c) drop the "written verbatim with no schema
   validation" text. Advertise the new parameter in the governed operation registry
   (`.autoharness/backlog-registry.yaml`, whose `create_checkpoint` entry currently lists only
-  `state_dump` + a CLI command without the opt-in), recording the opt-in with **both surface
-  spellings** (`--allow-legacy-import` for the CLI command, `allow_legacy_import` for the MCP
-  param) as a single governed parameter, and update the existing governed **parity fixtures /
-  tool-metadata** so generated metadata and registry-driven parity tests dispatch the opt-in on
-  **each** surface and expose the new parameter on both.
+  `state_dump` + a CLI command without the opt-in): **keep the base `cli_command` strict-by-default
+  — do NOT add `--allow-legacy-import` as an unconditional literal in `cli_command`**, or every
+  registry-derived CLI fallback would silently enable migration mode and violate the
+  strict-by-default contract. Instead list `allow_legacy_import` in the entry's `params` while
+  omitting the flag from the base `cli_command` — the established optional-flag convention
+  (`internal/cli/registry_parity_test.go:321-329`, as used by `archive_item.commit_sha`) — and have
+  the opt-in parity fixture append `--allow-legacy-import` only in the explicit `true` scenario.
+  Update the existing governed **parity fixtures / tool-metadata** so generated metadata and
+  registry-driven parity tests expose the parameter on both surfaces and dispatch the flag only for
+  the explicit opt-in case.
 * **Files** (≤ 2 production + config): `internal/mcp/tools.go`, `.autoharness/backlog-registry.yaml`;
   governed parity fixtures / tool-metadata test surface (`tests/contract/checkpoint_tools_test.go` or
   `internal/mcp/checkpoint_create_strict_test.go`) plus the existing governed-parity fixture.
@@ -363,17 +385,22 @@ No cycles.
   via `json.RawMessage` — never `json.Number`, an `int` zero-value probe, or a struct/`map` decode
   (those collapse duplicate keys last-wins) — so `"0"`/`null`/`1.5`/overflow AND a **duplicated**
   top-level member are rejected, not silently accepted. Passing the shape gate is necessary but not
-  sufficient, and the **same window predicate is evaluated on both paths** so the default-path
-  sentinel is actionable. The record is upgradable only if it already carries `agent ∈ {ship,stage}`,
-  non-empty `session_id`, non-empty `phase`, and no foreign top-level members (`created_at`/
-  `updated_at`/`status` are defaultable-when-absent, validated only if present). `agent`/`session_id`
-  anchor the fail-closed crash-resumption trust boundary and are **never synthesized**, so a record
-  needing field remapping (`consumer→agent`), identity synthesis, or top-level relocation is
-  fail-closed rejected as `ErrCheckpointSchemaUnsupported`. This narrows the migration claim to what
-  the fix can honestly deliver (grounded in the actual `internal/events/testdata/legacy-corpus`
-  fixtures and this PR's archived checkpoint, all of which are correctly rejected). A broad
-  corpus-remapping migration is out of scope and deferred (see Risks). (Raised by Go + Security Lens
-  Reviewer; narrowed per PR-review corpus evidence.)
+  sufficient, and a field-level identity+namespace predicate is ALSO insufficient; instead the
+  **complete upgraded-V1 pre-write pipeline is dry-run on both paths** (coerce → defaults → closed
+  top-level + nested-`progress` namespace → dup-key → full `ValidateCheckpoint`), and the record is
+  in-window **iff that dry-run would produce a valid CheckpointV1** — so the default-path
+  `ErrCheckpointSchemaRejected` (enable-opt-in advice) is emitted only when the opt-in would
+  actually succeed. Necessary-but-insufficient preconditions are `agent ∈ {ship,stage}`, non-empty
+  `session_id`/`phase`, and no foreign top-level members (`created_at`/`updated_at`/`status` are
+  defaultable-when-absent); a record meeting those can still be out-of-window if the pipeline
+  rejects a wrong-typed `context`, invalid nested `progress`, or duplicate `context` members.
+  `agent`/`session_id` anchor the fail-closed crash-resumption trust boundary and are **never
+  synthesized**, so a record needing field remapping (`consumer→agent`), identity synthesis, or
+  top-level relocation is fail-closed rejected as `ErrCheckpointSchemaUnsupported`. This narrows the
+  migration claim to what the fix can honestly deliver (grounded in the actual
+  `internal/events/testdata/legacy-corpus` fixtures and this PR's archived checkpoint, all of which
+  are correctly rejected). A broad corpus-remapping migration is out of scope and deferred (see
+  Risks). (Raised by Go + Security Lens Reviewer; narrowed and made dry-run-based per PR review.)
 * **Legacy import upgrades to valid V1 — never verbatim** — the opt-in coerces an in-window legacy
   shape to `schema_version:1` and runs the SAME V1 validation path, writing only a record that
   reads back without quarantine. Writing legacy JSON verbatim behind a flag would reintroduce the
@@ -720,3 +747,5 @@ harness ordering now correctly specified (source-shape AST harness -> declaratio
 harness -> implementation). No P0/P1/P2 remain. Cleared for harvest.
 
 **Post-PASS PR-review refinements folded (gate NOT reset — same-surface consistency, not design change).** After this attempt-3 PASS, Copilot PR review raised same-contract-surface consistency items, all folded without altering the design or decision: (1) case-fold-aware `schema_version` classification (a fold-valid `SCHEMA_VERSION: 1` must not be misclassified as schema-less; `strings.EqualFold` per `checkpoint_strict.go:166-170`); (2) `U6 ← U3` dependency added (U6's registry-driven parity fixture dispatches the CLI flag from U3); (3) deliberation decomposition and semantics matrix aligned to six tasks and the narrowed Upgrade window; (4) task bodies (171.002/003/004-T) propagated the plan's structured-MCP-distinguishability, CLI in-surface-scope, and fold-aware requirements; (5) `171-F` carries `source_stash_id: 6FDC4A49` for durable stash→artifact linkage. These strengthen the reviewed plan; the attempt-3 PASS stands.
+
+**Further PR-review refinements (cycle 5), folded — same-surface, gate not reset.** (6) The default-path `ErrCheckpointSchemaRejected` actionability is now decided by a **full upgraded-V1 pre-write dry-run** (not a field-level identity+namespace predicate), so a schema-less object with valid identity but wrong-typed `context` / invalid nested `progress` / duplicate `context` members is correctly `ErrCheckpointSchemaUnsupported`; (7) the governed registry keeps its base `cli_command` **strict-by-default** — `allow_legacy_import` lives in `params`, the flag is appended only in the explicit opt-in parity scenario (`archive_item.commit_sha` convention, `registry_parity_test.go:321-329`) — so registry-derived CLI fallback cannot silently enable migration mode; (8) U2 test-update scope extended to `internal/cli/checkpoint_create_shape_test.go:12-82` (pinning arrays/scalars/null as unsupported non-object inputs) and `tests/contract/checkpoint_tools_test.go:219-237`.
