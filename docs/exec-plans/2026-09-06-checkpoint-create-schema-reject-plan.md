@@ -507,7 +507,10 @@ Requires plan hardening: yes
 * **Runtime verification before absorbed**:
   * Default CLI create of a schema-less dump exits non-zero with the typed error and leaves
     **no** file in the checkpoint dir.
-  * `--allow-legacy-import` create of a legacy dump succeeds and returns the path.
+  * `--allow-legacy-import` create of an **in-Upgrade-window** legacy dump (already V1-valid
+    except a missing/`0` `schema_version` — NOT a `legacy-corpus` fixture or this PR's archived
+    checkpoint, which are intentionally out-of-window and MUST fail) succeeds and returns the
+    path; an **out-of-window** legacy dump still fails with no file even under the flag.
   * MCP create mirrors both outcomes via registered-tool dispatch.
   * A valid V1 create still succeeds unchanged (regression).
 * **Operational closure**: monitoring signal = zero new quarantine-candidate files produced
@@ -567,7 +570,7 @@ legacy-import opt-in.
     (integrity). Approval: covered by this plan + plan-review gate; no separate operator
     approval needed (non-destructive, reversible by merge revert).
   * `ActionResult` (expected): valid V1 unchanged; missing/`0`/unsupported/malformed
-    rejected with no file; opt-in accepts legacy shapes only.
+    rejected with no file; opt-in accepts only **in-window** legacy shapes (upgrade-or-reject).
 * `ProposedAction`: change the MCP tool schema (add optional `allow_legacy_import`) and the
   CLI flag surface (add `--allow-legacy-import`).
   * `ActionRisk`: **low-medium** — additive optional parameter/flag; default false preserves
@@ -579,8 +582,9 @@ legacy-import opt-in.
 
 * Environment precheck: run against a fresh `t.TempDir()` checkpoint dir per surface.
 * Target scenarios (per surface): schema-less reject + no file; `schema_version:0` reject +
-  no file; unsupported/future reject + no file; malformed reject + no file; opt-in accepts
-  missing and `0`; opt-in still rejects future + malformed; valid V1 accepted; size/secret/
+  no file; unsupported/future reject + no file; malformed reject + no file; opt-in accepts an
+  **in-window** missing/`0` dump (out-of-window legacy dumps still reject + no file); opt-in
+  still rejects future + malformed; valid V1 accepted; size/secret/
   dup-key/closed-namespace regressions still fire.
 * Blocked-path handling: if `--allow-legacy-import` is set but the dump is malformed or a
   future version, the create must still reject with a no-file guarantee.
