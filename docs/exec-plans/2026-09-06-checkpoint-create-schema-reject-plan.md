@@ -76,9 +76,11 @@ closed top-level namespace) is ALSO insufficient — a schema-less object can ca
 members that satisfy those fields yet still fail the shared V1 pipeline. Eligibility is therefore
 defined operationally: run the **complete upgraded-V1 pre-write pipeline as a dry-run** — coerce
 `schema_version → 1`, apply create-time defaults (`created_at`/`updated_at`, `status`), then the
-closed top-level + nested-`progress` namespace checks, duplicate-key checks, and full
-`ValidateCheckpoint` — and treat the record as in-window **iff that dry-run would produce a valid
-CheckpointV1**. The SAME dry-run decides both paths, so the default path emits
+closed top-level + nested-`progress` namespace checks, duplicate-key checks, full
+`ValidateCheckpoint`, `Context.Keys()`, canonical marshal (`jsonutil.MarshalReadable`),
+post-marshal size check (`checkStateDumpSize`), and second secret scan on the canonical bytes
+(`checkStateDumpSecrets`) — and treat the record as in-window **iff that dry-run would produce a
+valid CheckpointV1**. The SAME dry-run decides both paths, so the default path emits
 `ErrCheckpointSchemaRejected` (actionable — enabling the opt-in *will* succeed) ONLY when the
 dry-run succeeds, and `ErrCheckpointSchemaUnsupported` when it would not (enabling the opt-in
 cannot help). Necessary preconditions for the dry-run to have any chance of passing (helpful for
@@ -91,7 +93,8 @@ readers, but not a substitute for the dry-run):
   to now) and `status` (default to `active`; if present it must be an allowed non-`abandoned`
   value);
 * but a record satisfying those can still be out-of-window if the full pipeline rejects it
-  (wrong-typed `context`, invalid nested `progress`, duplicate `context` members). `agent`/
+  (wrong-typed `context`, invalid nested `progress`, duplicate `context` members, canonical
+  growth past 64 KiB, or a secret revealed after canonicalization). `agent`/
   `session_id`/`phase` are never synthesized.
 
 Records requiring field remapping or identity synthesis are **fail-closed rejected**
@@ -200,13 +203,16 @@ legacy-import path, which runs the same V1 validation).
   duplicates are rejected as ambiguous; U2 covers this case. In-window / out-of-window is decided
   by the **complete upgraded-V1 pre-write dry-run** (coerce `schema_version → 1`; default
   `created_at`/`updated_at`/`status`; closed top-level + nested-`progress` namespace checks;
-  duplicate-key checks; full `ValidateCheckpoint`) — NOT by a field-level identity+namespace
-  predicate alone, because a schema-less object with valid `agent`/`session_id`/`phase` can still
-  fail the pipeline via a wrong-typed `context`, invalid nested `progress`, or duplicate `context`
-  members. When `WithAllowLegacyImport()` is set AND the dry-run succeeds, **upgrade**: write the
-  canonical V1 the dry-run validated. A legacy shape whose dry-run fails (needing field remapping
-  such as `consumer→agent`, identity synthesis, top-level relocation, or carrying bad
-  context/progress) is **fail-closed rejected** with `ErrCheckpointSchemaUnsupported` and **no
+  duplicate-key checks; full `ValidateCheckpoint`; `Context.Keys()`; canonical marshal;
+  post-marshal size check; second secret scan on canonical bytes) — NOT by a field-level
+  identity+namespace predicate alone, because a schema-less object with valid
+  `agent`/`session_id`/`phase` can still fail the pipeline via a wrong-typed `context`, invalid
+  nested `progress`, duplicate `context` members, canonical growth past 64 KiB, or a secret
+  revealed after canonicalization. When `WithAllowLegacyImport()` is set AND the dry-run
+  succeeds, **upgrade**: write the canonical V1 the dry-run validated. A legacy shape whose
+  dry-run fails (needing field remapping such as `consumer→agent`, identity synthesis, top-level
+  relocation, carrying bad context/progress, canonical growth past 64 KiB, or a secret revealed
+  after canonicalization) is **fail-closed rejected** with `ErrCheckpointSchemaUnsupported` and **no
   file** — identity (`agent`/`session_id`) is **never** synthesized. Never write a legacy dump
   verbatim. Preserve the pre-branch size + secret guards and
   the V1-branch duplicate-key/closed-namespace checks unchanged, and keep
@@ -223,7 +229,12 @@ legacy-import path, which runs the same V1 validation).
     verbatim success. Each becomes a reject-with-no-file assertion (or an opt-in dry-run success
     assertion where the fixture qualifies). Add cases for a schema-less object with valid identity
     but wrong-typed `context` / invalid nested `progress` / duplicate `context` members → default
-    `ErrCheckpointSchemaUnsupported`, and opt-in fail-closed reject.
+    `ErrCheckpointSchemaUnsupported`, and opt-in fail-closed reject. Add explicit cases for
+    **default-to-canonical growth past 64 KiB** (passes first size check; canonical form exceeds
+    the limit) and **secret revealed after canonicalization** (Unicode-escaped secret in raw
+    input; caught by `checkStateDumpSecrets` on canonical bytes) — each must reject with the
+    native size or secret error type (no file on either path; preserve the native error type, not
+    `ErrCheckpointSchemaUnsupported`, so remediation is actionable).
 * **Files**: `internal/events/memory.go` (production) plus the U2 behavior test file
   (`internal/events/checkpoint_create_schema_test.go`, reusing the existing
   `assertNoCheckpointWritten` helper — first confirm it uses `t.Helper()` and asserts the
@@ -237,7 +248,13 @@ legacy-import path, which runs the same V1 validation).
   `GetCheckpoint`/`ListCheckpoints` without quarantine**; opt-in still fail-closed rejects an
   out-of-window legacy shape (e.g. a corpus fixture with `consumer`/no-`session_id`) as
   `ErrCheckpointSchemaUnsupported`; valid V1 unchanged; size/secret/dup-key/closed-namespace
-  regressions still fire. **Producer-level** `errors.Is(err, ErrCheckpointSchemaRejected)` and
+  regressions still fire; **default-to-canonical growth past 64 KiB** (in-window input passing
+  the first size check whose canonical form exceeds the limit) → native size-limit error, no
+  file on both paths; **secret revealed after canonicalization** (Unicode-escaped secret in raw
+  input that passes the first scan but is caught by `checkStateDumpSecrets` on canonical bytes)
+  → native secret-found error, no file on both paths (preserve native error types, not
+  `ErrCheckpointSchemaUnsupported`, so remediation remains actionable). **Producer-level**
+  `errors.Is(err, ErrCheckpointSchemaRejected)` and
   `errors.Is(err, ErrCheckpointSchemaUnsupported)` (and `errors.As` where a cause is preserved) are
   asserted here, on the CORE return value — this is the only layer where the Go error chain is
   intact (see U4 for why the MCP layer asserts the mapped error instead). `go test ./internal/events/...`
@@ -387,13 +404,16 @@ No cycles.
   top-level member are rejected, not silently accepted. Passing the shape gate is necessary but not
   sufficient, and a field-level identity+namespace predicate is ALSO insufficient; instead the
   **complete upgraded-V1 pre-write pipeline is dry-run on both paths** (coerce → defaults → closed
-  top-level + nested-`progress` namespace → dup-key → full `ValidateCheckpoint`), and the record is
+  top-level + nested-`progress` namespace → dup-key → full `ValidateCheckpoint` →
+  `Context.Keys()` → canonical marshal → post-marshal size check → second secret scan on
+  canonical bytes), and the record is
   in-window **iff that dry-run would produce a valid CheckpointV1** — so the default-path
   `ErrCheckpointSchemaRejected` (enable-opt-in advice) is emitted only when the opt-in would
   actually succeed. Necessary-but-insufficient preconditions are `agent ∈ {ship,stage}`, non-empty
   `session_id`/`phase`, and no foreign top-level members (`created_at`/`updated_at`/`status` are
   defaultable-when-absent); a record meeting those can still be out-of-window if the pipeline
-  rejects a wrong-typed `context`, invalid nested `progress`, or duplicate `context` members.
+  rejects a wrong-typed `context`, invalid nested `progress`, duplicate `context` members,
+  canonical growth past 64 KiB, or a secret revealed after canonicalization.
   `agent`/`session_id` anchor the fail-closed crash-resumption trust boundary and are **never
   synthesized**, so a record needing field remapping (`consumer→agent`), identity synthesis, or
   top-level relocation is fail-closed rejected as `ErrCheckpointSchemaUnsupported`. This narrows the
@@ -576,8 +596,11 @@ legacy-import opt-in.
    `assertNoCheckpointWritten` asserts an empty checkpoint dir; the
    `checkpoint_writesite_test.go` static write-site guard remains intact.
 2. **Preserved guards** — input size limit and secret scanning fire on both default and
-   opt-in paths; duplicate-key and closed-namespace checks fire exactly as today on the V1
-   path.
+   opt-in paths; the post-marshal size check (`checkStateDumpSize` on canonical bytes) and
+   second secret scan (`checkStateDumpSecrets` on canonical bytes) run within the V1 pre-write
+   path and within the legacy upgrade dry-run on both default and opt-in paths, preserving the
+   native error types so size and secret rejections remain actionable; duplicate-key and
+   closed-namespace checks fire exactly as today on the V1 path.
 3. **Governed CLI/MCP parity** — identical observable acceptance/rejection and identical
    opt-in semantics across both surfaces; both route through the shared core option.
 4. **Valid-V1 creates unaffected** — the existing happy path is a regression guard.
