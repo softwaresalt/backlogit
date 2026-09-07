@@ -82,8 +82,11 @@ post-marshal size check (`checkStateDumpSize`), and second secret scan on the ca
 (`checkStateDumpSecrets`) — and treat the record as in-window **iff that dry-run would produce a
 valid CheckpointV1**. The SAME dry-run decides both paths, so the default path emits
 `ErrCheckpointSchemaRejected` (actionable — enabling the opt-in *will* succeed) ONLY when the
-dry-run succeeds, and `ErrCheckpointSchemaUnsupported` when it would not (enabling the opt-in
-cannot help). Necessary preconditions for the dry-run to have any chance of passing (helpful for
+dry-run succeeds; `ErrCheckpointSchemaUnsupported` when a structural or validation failure
+causes the dry-run to fail (identity, namespace, dup-key, ValidateCheckpoint, or Context.Keys()
+failure — enabling the opt-in cannot help); or the native size error from `checkStateDumpSize`
+when the dry-run fails at the post-marshal size guard (the native error is preserved so the
+caller knows to reduce the payload, not to enable the opt-in). Necessary preconditions for the dry-run to have any chance of passing (helpful for
 readers, but not a substitute for the dry-run):
 
 * **required present**: `agent ∈ {ship,stage}`, non-empty `session_id`, non-empty `phase`, and
