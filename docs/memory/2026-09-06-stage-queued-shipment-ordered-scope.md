@@ -18,7 +18,8 @@ NOT Ship execution. No production code, no shipment claim, no PR merge.
 - **Topology gate contradiction (core).** `pipeline-topology --phase pre_claim`
   uses numeric ID-1 predecessor: blocks 148-S on "147-S", 149-S on "148-S" —
   neither is a real `blocks` edge. Contradicts `dag-readiness`. Not fixable via
-  backlog ops (shipments have no queue_position; predecessor is ID-derived).
+  backlog ops (shipments *do* carry `custom_fields.queue_position`, but it only
+  sorts queue output and cannot change the gate's ID-derived predecessor).
   Gate logic is in external `autoharness.exe` = production code out of scope →
   requirement #7 path (capture follow-up, don't work around).
 - **Plan readiness:** PASS → 138,139,141,145,148,149,150,151. FAIL → 140/S6,

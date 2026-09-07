@@ -35,7 +35,8 @@ shipment to Ship requires fresh explicit operator approval.
   `autoharness gate pipeline-topology --shipment <id> --phase pre_claim --json`.
 * Final `## Plan Review` verdict read from each covering plan
   (`docs/exec-plans/2026-09-03-s*-plan.md`, plus the 148-S and 866FDC8C plans).
-* Prior Stage memory: `docs/memory/2026-09-06-stage-866fdc8c-148s-restage-reassess.md`.
+* Prior 148-S reassessment decision (committed):
+  `docs/decisions/2026-09-06-148s-reassessment-decomposition-readiness.md`.
 * Stash `FF6D467A` (re-plan driver) read via `backlogit stash get`.
 
 ---
@@ -134,13 +135,18 @@ shipment-ID adjacency**, not from the dependency graph. It therefore imposes an
 effective total order `138 → 139 → … → 151` that contradicts the true DAG and
 contradicts `dag-readiness`.
 
-**Finding G-2 — not fixable via backlog operations.** Shipments carry no
-`queue_position` field, and the predecessor is computed from the shipment ID
-itself. No dependency edge, priority change, or reorder that Stage can perform
-will change which shipment the gate treats as the numeric predecessor. The only
-backlog-level lever would be renumbering shipment IDs — destructive, unsupported,
-and out of scope. The numeric-predecessor logic lives inside the external
-`autoharness` binary (`autoharness.exe`), i.e. production code outside this repo.
+**Finding G-2 — not fixable via backlog operations.** Queue ordering *does* store
+`custom_fields.queue_position` on any artifact, including shipments —
+`MoveInQueue` writes it without restricting artifact type
+(`internal/core/queue.go:243-307`), and the sequencing guidance explicitly applies
+it to shipments (`.github/instructions/backlogit.instructions.md:56-92`). But
+`queue_position` only sorts *queue output*; it cannot alter this gate's predecessor,
+which is derived from the shipment **ID** itself. No dependency edge, priority
+change, or `queue_position` reorder that Stage can perform will change which
+shipment the gate treats as the numeric predecessor. The only backlog-level lever
+would be renumbering shipment IDs — destructive, unsupported, and out of scope. The
+numeric-predecessor logic lives inside the external `autoharness` binary
+(`autoharness.exe`), i.e. production code outside this repo.
 
 **Decision G — requirement #7 path.** Because the gate itself prevents the correct
 order and changing it would require production-code work on `autoharness`, Stage
@@ -168,10 +174,12 @@ criticality, risk reduction, unblocking, and minimal rework:
 | 6 | 151-S | READY plan; deps 148-S+149-S now satisfied |
 | 7+ | 140→147 | after S6/S8/S9/S10/S12 re-plan to PASS and S13 authorized; then 141,145 unblock |
 
-Rationale for the key promotions: 148-S is the only **critical**-priority queued
-shipment, is fully sized and plan-PASS, has **no** architectural dependency on the
-fault-line program, and is a hard predecessor of the entire trust-boundary
-security program (150-S/151-S). Holding it — and 149-S — behind a fault-line chain
+Rationale for the key promotions: 148-S is a **critical**-priority queued shipment
+(138-S and 139-S are also `priority: critical` — see `.backlogit/queue/138-S.md`
+and `.backlogit/queue/139-S.md`), is fully sized and plan-PASS, has **no**
+architectural dependency on the fault-line program, and — unlike the Track A head
+138-S/139-S — is a hard predecessor of the entire trust-boundary security program
+(150-S/151-S). Holding it — and 149-S — behind a fault-line chain
 that is itself stalled at a FAIL wall maximizes both delay and rework risk.
 
 ### 5b. Gate-constrained achievable order (what CAN happen under the installed gate today)
@@ -264,7 +272,7 @@ mutate the stash. On operator approval, apply:
 > derive predecessors from the shipment `blocks` DAG (as `dag-readiness` does),
 > not numeric ID adjacency. Scope: `autoharness` gate core only; no backlogit
 > change. Until fixed, DAG-independent shipments (148-S/149-S) cannot be claimed
-> in optimal order without operator `--force`.` **kind:** bug · **priority:** high
+> in optimal order without operator `--force`. **kind:** bug · **priority:** high
 
 This is an `autoharness` production-code change → outside this repo and outside
 Stage's role boundary. Captured as a follow-up, not actioned.
@@ -281,7 +289,11 @@ unreachable and leaves **critical 148-S + the trust-boundary security program
   138-S then 139-S to Ship; concurrently run the Stage re-plan pipeline for
   S6/S8/S9/S12 and operator-intervene on S10, and authorize/​re-plan S13. Only
   then does the numeric path reach 148-S. Highest latency to the critical item;
-  zero gate risk. *(Stage-executable once approved.)*
+  zero gate risk. *(Scope split: only the S6/S8/S9/S12 re-plan pipeline — plus
+  S10 operator-intervention and S13 authorize/re-plan — is Stage's own work.
+  Routing 138-S/139-S to Ship is the Orchestrator's role and claiming/execution
+  is Ship's; this decision does not authorize Stage to route, claim, or execute
+  any shipment.)*
 * **Option B — Operator `--force` claim of 148-S ahead of the fault-line.**
   Operator-only, audited `pre_claim --force` to ship critical 148-S (then 149-S)
   before the fault-line completes. Delivers the critical item and unblocks the
@@ -291,7 +303,8 @@ unreachable and leaves **critical 148-S + the trust-boundary security program
   optimal order (§5a) becomes gate-compliant. Correct long-term fix; requires
   `autoharness` production-code work outside this repo. **Out of Stage scope.**
 
-**Stage recommendation:** pursue **C** as the durable fix (follow-up filed) and,
+**Stage recommendation:** pursue **C** as the durable fix (follow-up **specified in
+§7a but not yet filed** — the stash mutation is deferred to the operator, §7) and,
 in the interim, **A** for gate-compliant forward progress — with **B** available
 to the operator if 148-S criticality must be honored before the fault-line
 re-plan completes. Re-planning S6/S8/S9/S10/S12 + resolving S13 is the real
