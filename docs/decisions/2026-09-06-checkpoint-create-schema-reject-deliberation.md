@@ -175,16 +175,20 @@ namespace guards.
 This is task-shaped (a single bug) but spans five surfaces and exceeds one 2-hour task, so
 it is harvested under a synthesized covering **feature**: *"Checkpoint create rejects
 schema-less dumps by default; legacy import requires explicit opt-in."* Work is decomposed
-into five width-isolated, dependent tasks: (1) declarations/harness, (2) core reject-by-
-default behavior, (3) CLI flag, (4) MCP parameter/schema, (5) documentation/compatibility.
+into **six** width-isolated, dependent tasks: (1) source-shape AST harness + declarations
+(171.001-T), (2) behavior harness + core reject-by-default / bounded upgrade (171.002-T),
+(3) CLI flag (171.003-T), (4) MCP sentinel→error mapping (171.004-T), (5) MCP tool
+parameter/schema/registry/parity (171.006-T), and (6) documentation/compatibility
+(171.005-T). The MCP surface is two tasks — error mapping vs. tool-parameter/registry/parity —
+because together they exceed the per-task file budget.
 
 ### Explicit semantics matrix
 
 | `schema_version` state | Default (no opt-in) | With `allow_legacy_import` (migration only) |
 |---|---|---|
 | `1` (valid V1) | Accept via existing V1 path (parse → closed-namespace → dup-key → defaults → validate → canonical write) | Same (opt-in has no effect on valid V1) |
-| Missing (absent) | **REJECT** — typed schema-rejection error, **no file written** | **Upgrade → validate → write**: coerce to `schema_version:1`, populate defaults, run full V1 validation; write canonical V1 only if it validates, else **REJECT, no file** |
-| `0` (zero) | **REJECT** — no file | **Upgrade → validate → write** (same as missing); else **REJECT, no file** |
+| Missing (absent) | **REJECT**, **no file** — `ErrCheckpointSchemaRejected` if the record is in the Upgrade window (remediation: enable opt-in), else `ErrCheckpointSchemaUnsupported` | **Deterministic upgrade → validate → write** only if in the Upgrade window (already carries `agent∈{ship,stage}`, non-empty `session_id`/`phase`, no foreign top-level members; timestamps/`status` defaultable): coerce to `schema_version:1`, default timestamps/status, run full V1 validation, write canonical V1 only if it validates. A legacy shape outside the window (needing `consumer→agent` remap, identity synthesis, or top-level relocation) is **fail-closed rejected** (`ErrCheckpointSchemaUnsupported`, **no file**); identity is never synthesized |
+| `0` (single integer-literal) | same as missing (window-conditioned sentinel) | **Upgrade → validate → write** if in the Upgrade window; else **REJECT, no file** (same as missing) |
 | Unsupported/future (e.g. `2`, negative) | **REJECT** — no file | **REJECT** — no file (opt-in is scoped to legacy shapes, not future/unknown versions) |
 | Wrong-typed / ambiguous `schema_version` (string `"0"`, `null`, non-integral, out-of-range, or **duplicate** `schema_version` members) | **REJECT** — no file | **REJECT** — no file (only an absent member or exactly one integer-literal `0` counts as a legacy shape) |
 | Malformed JSON | **REJECT** — malformed-input error, no file | **REJECT** — no file (malformed is never importable) |

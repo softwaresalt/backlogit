@@ -59,9 +59,15 @@ literal `0`**. Because `encoding/json` collapses duplicate object keys (last-win
 "exactly one member" test and the top-level `schema_version` probe are done with a
 **`json.Decoder.Token()` stream scan** (reuse the existing `objectMemberKeys` pattern in
 `internal/events/checkpoint_schema.go`), NOT a `json.RawMessage`/struct decode — a
-`json.RawMessage` capture cannot see a duplicated member. Anything else (string `"0"`, `null`,
-`1.5`, overflow, or duplicate members) is NOT a legacy shape and is rejected on both paths
-before the write site as `ErrCheckpointSchemaUnsupported`.
+`json.RawMessage` capture cannot see a duplicated member. The scan MUST be **case-fold-aware**:
+`encoding/json` and `checkClosedSchemaNamespace` match keys case-insensitively
+(`strings.EqualFold`, `internal/events/checkpoint_strict.go:166-170`), so the probe matches
+`schema_version` by fold-equality (recognizing `SCHEMA_VERSION`, `Schema_Version`, …) and
+counts **fold-equivalent** occurrences — a fold-valid `SCHEMA_VERSION: 1` is correctly
+classified as valid V1 (not misclassified as schema-less), and two or more fold-equivalent
+members are rejected as duplicate/ambiguous. Anything else (string `"0"`, `null`, `1.5`,
+overflow, or duplicate members) is NOT a legacy shape and is rejected on both paths before the
+write site as `ErrCheckpointSchemaUnsupported`.
 
 **Upgrade window (deterministic, fail-closed) — evaluated on BOTH paths.** Passing the shape
 gate is necessary but not sufficient; the same window predicate is evaluated whether or not the
@@ -177,7 +183,11 @@ legacy-import path, which runs the same V1 validation).
   `internal/events/checkpoint_schema.go`) capturing the raw token via `json.RawMessage` — **not**
   `json.Number`, and **not** an `int` zero-value probe or a struct/`map` decode (those collapse
   duplicate keys last-wins) — so a present-but-wrong-typed value OR a **duplicated** top-level
-  `schema_version` member is rejected rather than collapsing to `0`. When `WithAllowLegacyImport()`
+  `schema_version` member is rejected rather than collapsing to `0`. The scan is
+  **case-fold-aware** (`strings.EqualFold`, matching `encoding/json` and
+  `checkClosedSchemaNamespace` at `internal/events/checkpoint_strict.go:166-170`), so a valid
+  `SCHEMA_VERSION: 1` is recognized as V1 (not misclassified as schema-less) and fold-equivalent
+  duplicates are rejected as ambiguous; U2 covers this case. When `WithAllowLegacyImport()`
   is set AND the dump is in the **Upgrade window** (legacy shape AND `agent ∈ {ship,stage}`,
   non-empty `session_id`, non-empty `phase` all present AND **no** foreign top-level members;
   `created_at`/`updated_at`/`status` are defaultable-when-absent and validated only if present),
@@ -296,7 +306,8 @@ legacy-import path, which runs the same V1 validation).
   `allow_legacy_import`. `go test ./internal/mcp/... ./tests/contract/...` green.
 * **Milestone**: MCP parity with core + CLI (accept/reject AND error class); registry + generated
   metadata + parity fixtures all expose the opt-in consistently.
-* **Depends on**: U4.
+* **Depends on**: U4 **and U3** (U6's registry-driven parity fixture dispatches the CLI
+  `--allow-legacy-import` flag introduced by U3, so U3 must land first).
 
 ### U5 — Documentation & compatibility (execution posture: docs)
 
@@ -317,9 +328,10 @@ legacy-import path, which runs the same V1 validation).
 ## Dependency Graph
 
 ```
-U1 ─▶ U2 ─┬▶ U3 ───────────────▶ U5
-          └▶ U4 ─▶ U6 ──────────▶ U5
-   (U3 and U4 both depend on U2 and may run in parallel; U6 depends on U4;
+U1 ─▶ U2 ─┬▶ U3 ─┬──────────────▶ U5
+          │      └──────┐
+          └▶ U4 ─▶ U6 ──┴────────▶ U5
+   (U3 and U4 both depend on U2 and may run in parallel; U6 depends on U4 **and U3**;
     U5 depends on U3, U4, and U6)
 ```
 
@@ -702,3 +714,5 @@ Runtime verification and operational closure specified for the changed CLI and M
 claim; deferred broad migration captured), security-hardened, and Go-idiomatic with mandatory
 harness ordering now correctly specified (source-shape AST harness -> declaration -> behavior
 harness -> implementation). No P0/P1/P2 remain. Cleared for harvest.
+
+**Post-PASS PR-review refinements folded (gate NOT reset — same-surface consistency, not design change).** After this attempt-3 PASS, Copilot PR review raised same-contract-surface consistency items, all folded without altering the design or decision: (1) case-fold-aware `schema_version` classification (a fold-valid `SCHEMA_VERSION: 1` must not be misclassified as schema-less; `strings.EqualFold` per `checkpoint_strict.go:166-170`); (2) `U6 ← U3` dependency added (U6's registry-driven parity fixture dispatches the CLI flag from U3); (3) deliberation decomposition and semantics matrix aligned to six tasks and the narrowed Upgrade window; (4) task bodies (171.002/003/004-T) propagated the plan's structured-MCP-distinguishability, CLI in-surface-scope, and fold-aware requirements; (5) `171-F` carries `source_stash_id: 6FDC4A49` for durable stash→artifact linkage. These strengthen the reviewed plan; the attempt-3 PASS stands.
