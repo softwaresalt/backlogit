@@ -1,0 +1,7 @@
+{
+  "filename": "checkpoint-20260906-231751.json",
+  "disposition": "quarantined",
+  "reason": "Malformed schema-less checkpoint blocks pipeline recovery; operator explicitly approved quarantine on 2026-09-06",
+  "operator": "softwaresalt",
+  "disposition_at": "2026-09-06T23:47:54.7954854Z"
+}
