@@ -1172,11 +1172,56 @@ compound refresh, compact-context). These commits MUST NOT land directly on `mai
 1. **Confirm the feature branch merge is complete**: The Merge Confirmation Gate (NON-NEGOTIABLE)
    above Step 6.0 has already verified `MERGE_CONFIRMED` using `merge-base --is-ancestor`.
    Step 6.0 proceeds only after that gate passes — no additional merge verification needed here.
-2. **Create a post-merge closure branch** from `main` (run as separate sequential steps):
-   `git checkout main`
-   `git pull`
-   `git checkout -b post-merge/{feature_slug}`
-   where `{feature_slug}` is derived from the feature ID and title (e.g., `post-merge/022-stash-filter`).
+2. **Return the existing worktree to synchronized `main` (NON-NEGOTIABLE, runs only
+   after `MERGE_SUCCEEDED`)**. This runs automatically immediately after the merge is
+   confirmed, before any post-merge closure work — the operator must never have to ask
+   for it. The Merge Confirmation Gate's `MERGE_CONFIRMED` (verified above with
+   `git merge-base --is-ancestor`) is the local confirmation that the merge landed and
+   is treated as `MERGE_SUCCEEDED` for this trigger — including in a resumed session or
+   when the PR was merged outside this invocation. Invariant:
+   `MERGE_SUCCEEDED -> safe switch main -> ff-only sync -> SHA equality verification -> optional post-merge branch`.
+   Run each command as a separate sequential step; never chain, never stash, never reset,
+   never rebase, never discard:
+   a. Inspect the working tree and record the unrelated tracked/untracked state that must
+      be preserved:
+      `git status --porcelain`
+   b. Fetch the default branch into its tracking ref (explicit destination
+      refspec so `refs/remotes/origin/main` — the equality target in step f — is
+      updated, not only `FETCH_HEAD`):
+      `git fetch origin main:refs/remotes/origin/main`
+   c. Verify switching to `main` will not overwrite local modifications. If `git checkout main`
+      would report that local changes would be overwritten, halt with
+      `POST_MERGE_SYNC_BLOCKED: switching to main is unsafe — unrelated local changes present. Do not stash, reset, or discard.`
+   d. Switch the existing worktree to local `main`:
+      `git checkout main`
+   e. Fast-forward local `main` to the merged remote tip (fast-forward only — never a merge
+      or rebase):
+      `git pull --ff-only origin main`
+      If the fast-forward is refused, halt with
+      `POST_MERGE_SYNC_BLOCKED: git pull --ff-only failed — local main diverged. Do not force, reset, or rebase.`
+   f. Verify local `main` equals `origin/main` and record the synchronized SHA. `git rev-parse HEAD`
+      and `git rev-parse origin/main` MUST be identical, i.e. `HEAD == origin/main`. Log
+      `POST_MERGE_SYNC_OK: main == origin/main @ {sync_sha}`. If they differ, halt with
+      `POST_MERGE_SYNC_BLOCKED: HEAD != origin/main after ff-only pull.`
+   g. Re-inspect the working tree with `git status --porcelain` and confirm the unrelated
+      tracked/untracked state recorded in step 2a is still present and unchanged — the
+      same tracked, untracked, and index (staged) status as step 2a; the sync must not have
+      staged, modified, or dropped it. If it changed,
+      halt with `POST_MERGE_SYNC_BLOCKED: unrelated local state changed during sync.`
+   h. **Only after `POST_MERGE_SYNC_OK`**, create the post-merge closure branch from
+      synchronized `main`:
+      `git checkout -b post-merge/{feature_slug}`
+      where `{feature_slug}` is derived from the feature ID and title (e.g., `post-merge/022-stash-filter`).
+      If no closure branch is required, Ship still ends on synchronized local `main`.
+
+   This safe main-sync sequence applies to every successfully merged PR Ship handles —
+   feature, chore, staging/planning, corrective, and closure PRs alike. If the safe switch
+   or ff-only update cannot complete, post-merge cleanup is BLOCKED and MUST be surfaced;
+   never report the merge workflow as fully complete in that state. This step
+   operationalizes the authoritative cross-workflow rule in
+   `.github/instructions/git-merge.instructions.md` (Post-Merge Local Main
+   Synchronization), which governs every merge to `main` regardless of role or PR class;
+   Ship must not contradict or narrow it.
 3. **All subsequent Step 6 work happens on this branch.** Every commit in steps 6.1–6.10
    targets `post-merge/{feature_slug}`, not `main`.
 4. **After all closure work is committed**, push the branch and create a PR:
