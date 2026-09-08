@@ -1,7 +1,7 @@
 ---
 schema_version: "1.0"
 chunk_strategy: h1-h2-h3
-source: docs/closure/2026-09-08-ship-138s-closure.md
+source: docs/closure/138-S-156-F-post-merge-closure.md
 doc_type: closure
 title: "138-S Post-merge Closure — S4 Cross-surface golden parity harness"
 shipment_id: "138-S"
@@ -12,6 +12,7 @@ merge_date: "2026-09-08T22:25:10Z"
 closure_date: "2026-09-08"
 releasability: "READY"
 compaction_status: "done"
+closure_status: READY
 ---
 
 # 138-S Post-merge Closure — S4 Cross-surface golden parity harness
@@ -65,3 +66,4 @@ Not applicable — harness-only changes, no production runtime surfaces.
 ## Compaction Status
 
 pending → to be updated by compact-context invocation
+
