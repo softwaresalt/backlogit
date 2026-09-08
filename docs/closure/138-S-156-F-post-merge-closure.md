@@ -65,5 +65,5 @@ Not applicable — harness-only changes, no production runtime surfaces.
 
 ## Compaction Status
 
-pending → to be updated by compact-context invocation
+**done** — P-020 compact-context invoked at post-merge closure. Below threshold (18 files, 39.4 KB); no forced consolidation required. Compact-context report: `docs/memory/2026-09-08-ship-138s-compact-context.md`.
 
