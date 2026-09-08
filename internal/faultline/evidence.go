@@ -201,4 +201,6 @@ type registry struct {
 // globalRegistry is the package-level family registry.
 //
 //nolint:unused // Consumed by RegisterFamily/freeze/knownFamilies in 156.006-T (red-deliverable scaffold).
-var globalRegistry = &registry{}
+var globalRegistry = &registry{
+	factories: make(map[int]map[string]func() FamilyPayload),
+}

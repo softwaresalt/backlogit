@@ -102,12 +102,18 @@ func (d *Driver) RunScenario(ctx context.Context, t testing.TB, sc ScenarioTable
 	var results [3]SurfaceResult
 	var wg sync.WaitGroup
 
+	// Pre-allocate and clone all surface roots BEFORE launching any goroutine so
+	// that a t.Fatalf mid-loop (e.g. on a copyTree failure for surface N) cannot
+	// orphan already-running goroutines for surfaces 0..N-1.
+	var surfaceRoots [3]string
 	for i := range runners {
-		surfaceRoot := t.TempDir()
-		if err := copyTree(seedRoot, surfaceRoot); err != nil {
+		surfaceRoots[i] = t.TempDir()
+		if err := copyTree(seedRoot, surfaceRoots[i]); err != nil {
 			t.Fatalf("parity: clone seed for surface %d: %v", i, err)
 		}
+	}
 
+	for i := range runners {
 		wg.Add(1)
 		// Each goroutine writes only results[idx] (a distinct array element) and
 		// never touches shared mutable state, so the fan-out is data-race clean.
@@ -121,7 +127,7 @@ func (d *Driver) RunScenario(ctx context.Context, t testing.TB, sc ScenarioTable
 				res.PostStatePath = root
 			}
 			results[idx] = res
-		}(i, runners[i], surfaceRoot)
+		}(i, runners[i], surfaceRoots[i])
 	}
 
 	wg.Wait()
