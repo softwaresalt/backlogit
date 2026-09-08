@@ -16,6 +16,7 @@ package parity_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -268,12 +269,13 @@ func TestU2ComparatorEvidenceValidates(t *testing.T) {
 	require.True(t, ok, "evidence payload must be *ParityEvidence")
 }
 
-// TestU2ComparatorGetIntPresentNonFloat64TreatedAsAbsent guards against the
-// F-C2 bug where getIntPresent returned (0, true) for any non-float64 value,
-// masking the actual value. A string "5000" for retry_after_ms must be treated
-// as absent (not (0, present)), so no spurious divergence is reported when the
-// CLI side also has no retry_after_ms.
-func TestU2ComparatorGetIntPresentNonFloat64TreatedAsAbsent(t *testing.T) {
+// TestU2ComparatorGetIntPresentNonFloat64TypeMismatch guards the numeric type
+// -mismatch policy (supersedes the earlier F-C2 "treat as absent" behavior). A
+// string "5000" for retry_after_ms is present-but-wrong-type, so getIntPresent
+// reports it as a type mismatch and the retryability dimension fails CLOSED via
+// the distinct "retry_after_ms:type_mismatch" marker rather than silently
+// masking the malformed value as absent or as a zero value.
+func TestU2ComparatorGetIntPresentNonFloat64TypeMismatch(t *testing.T) {
 	response := surfaceBody{"id": "T-9", "status": "blocked"}
 	post := identicalPostState()
 
@@ -286,8 +288,6 @@ func TestU2ComparatorGetIntPresentNonFloat64TreatedAsAbsent(t *testing.T) {
 		"post_state": post,
 	})
 	// MCP: retry_after_ms as a string "5000" (type mismatch — not a JSON number).
-	// With the fix, getIntPresent returns (0, false) so hasRetryAfter=false, matching CLI.
-	// Before the fix, getIntPresent returned (0, true), causing a spurious divergence.
 	mcp := body(t, surfaceBody{
 		"error":          "blocked",
 		"message":        "task is blocked by an open dependency",
@@ -312,12 +312,100 @@ func TestU2ComparatorGetIntPresentNonFloat64TreatedAsAbsent(t *testing.T) {
 	report, err := parity.CompareResults(context.Background(), "string-retry-after-ms", results)
 	require.NoError(t, err)
 
-	// retry_after_ms with a non-float64 value must be treated as absent, so
-	// the retryability dimension must NOT list retry_after_ms as a divergent field.
+	// The malformed numeric value must fail closed as a distinct type-mismatch
+	// marker, and must NOT be folded into the tracked-drift "retry_after_ms"
+	// field (which would masquerade as an expected divergence).
 	d := findDimension(t, report, "retryability")
-	for _, f := range d.DivergentFields {
-		if f == "retry_after_ms" {
-			t.Errorf("retry_after_ms: string value was treated as present (getIntPresent bug not fixed), want treated as absent")
-		}
+	require.Equal(t, parity.StatusFail, d.Status)
+	require.Contains(t, d.DivergentFields, "retry_after_ms:type_mismatch")
+	require.NotContains(t, d.DivergentFields, "retry_after_ms")
+}
+
+// arrayBody marshals a top-level JSON array surface body (e.g. the `list`
+// command shape).
+func arrayBody(t *testing.T, items []any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(items)
+	require.NoError(t, err)
+	return raw
+}
+
+// TestU2ComparatorArrayBodyIdenticalPass verifies that surfaces whose body is a
+// top-level JSON array are treated as PRESENT and compared, so three identical
+// array bodies produce a parity pass rather than being treated as absent (which
+// previously yielded "no applicable surfaces to attest").
+func TestU2ComparatorArrayBodyIdenticalPass(t *testing.T) {
+	items := []any{
+		map[string]any{"id": "F-1", "title": "Alpha", "status": "active"},
+		map[string]any{"id": "F-2", "title": "Beta", "status": "queued"},
 	}
+	b := arrayBody(t, items)
+	results := [3]parity.SurfaceResult{
+		{ExitCode: 0, Body: b, PostStatePath: "/cli"},
+		{ExitCode: 0, Body: b, PostStatePath: "/mcp"},
+		{ExitCode: 0, Body: b, PostStatePath: "/internal"},
+	}
+
+	report, err := parity.CompareResults(context.Background(), "list-array", results)
+	require.NoError(t, err)
+	require.NotNil(t, report.Evidence)
+
+	for _, d := range report.Dimensions {
+		require.Containsf(t, []string{parity.StatusPass, parity.StatusNotApplicable}, d.Status,
+			"dimension %q must be pass/not_applicable for identical array bodies, got %q (%v)",
+			d.Dimension, d.Status, d.DivergentFields)
+	}
+	require.Equal(t, faultline.StatusPass, report.Evidence.Status)
+}
+
+// TestU2ComparatorArrayBodyDivergesFailsClosed verifies that DIFFERING array
+// bodies fail the response-shape dimension closed.
+func TestU2ComparatorArrayBodyDivergesFailsClosed(t *testing.T) {
+	base := arrayBody(t, []any{map[string]any{"id": "F-1", "status": "active"}})
+	other := arrayBody(t, []any{map[string]any{"id": "F-1", "status": "DIVERGENT"}})
+	results := [3]parity.SurfaceResult{
+		{ExitCode: 0, Body: base, PostStatePath: "/cli"},
+		{ExitCode: 0, Body: other, PostStatePath: "/mcp"},
+		{ExitCode: 0, Body: base, PostStatePath: "/internal"},
+	}
+
+	report, err := parity.CompareResults(context.Background(), "list-array-diverge", results)
+	require.NoError(t, err)
+	require.Equal(t, parity.StatusFail, findDimension(t, report, "response_shape").Status)
+	require.Equal(t, faultline.StatusFail, report.Evidence.Status)
+}
+
+// TestU2ComparatorErroredSurfaceFailsClosed verifies that a surface whose runner
+// failed (SurfaceResult.Err != nil) is treated as "present but failed" and fails
+// its applicable dimensions closed rather than being silently omitted (which
+// would let a runner failure masquerade as a parity pass).
+func TestU2ComparatorErroredSurfaceFailsClosed(t *testing.T) {
+	results := identicalResults(t)
+	// MCP would otherwise agree, but its runner failed.
+	results[1].Err = errors.New("mcp runner failed to execute scenario")
+
+	report, err := parity.CompareResults(context.Background(), "errored-surface", results)
+	require.NoError(t, err)
+	require.NotNil(t, report.Evidence)
+	require.Equal(t, faultline.StatusFail, report.Evidence.Status,
+		"an errored surface must fail closed, not pass")
+}
+
+// TestU2ComparatorBoolTypeMismatchFailsClosed verifies that a present-but-wrong
+// -type boolean (e.g. retryable: "false") is a type mismatch that fails closed
+// rather than being normalized to false and indistinguishable from absent.
+func TestU2ComparatorBoolTypeMismatchFailsClosed(t *testing.T) {
+	results := identicalResults(t)
+	results[1].Body = body(t, surfaceBody{
+		"response":   surfaceBody{"id": "F-1", "title": "Seed feature", "status": "active"},
+		"retryable":  "false", // string, not bool: type mismatch
+		"force":      false,
+		"post_state": identicalPostState(),
+	})
+
+	report, err := parity.CompareResults(context.Background(), "bool-type-mismatch", results)
+	require.NoError(t, err)
+	d := findDimension(t, report, "retryability")
+	require.Equal(t, parity.StatusFail, d.Status)
+	require.Contains(t, d.DivergentFields, "retryable:type_mismatch")
 }

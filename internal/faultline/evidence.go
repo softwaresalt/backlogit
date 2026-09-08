@@ -754,6 +754,11 @@ func scanObject(dec *json.Decoder, depth int) ([]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("%w: non-string object key", ErrMalformed)
 		}
+		// Object keys must be subject to the same byte budget as string values;
+		// otherwise an adversarial key could bypass MaxStringBytes entirely.
+		if len(key) > MaxStringBytes {
+			return nil, fmt.Errorf("%w: object key exceeds %d bytes (resource-limit)", ErrMalformed, MaxStringBytes)
+		}
 		members++
 		if members > MaxObjectMembers {
 			return nil, fmt.Errorf("%w: object exceeds %d members (resource-limit)", ErrMalformed, MaxObjectMembers)

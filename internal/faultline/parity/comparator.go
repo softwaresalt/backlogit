@@ -48,7 +48,15 @@ const TrackedDefectGatePayload = "166-F"
 
 // producingCommit identifies the commit that produced comparator evidence. It
 // only needs to be non-empty for the U4a envelope invariants.
-const producingCommit = "c5ba5260"
+// commit that implemented 156.002-T comparator behavior.
+const producingCommit = "19c924bb"
+
+// MaxDivergentFields caps the number of divergent field paths reported for a
+// single dimension (or the aggregate evidence payload) so an adversarial or
+// runaway surface cannot emit an unbounded divergent-field list (SEC-04). When
+// the cap is exceeded the extra entries are dropped and a single
+// "...[N more]" marker is appended.
+const MaxDivergentFields = 32
 
 // Dimension identifiers.
 const (
@@ -134,16 +142,34 @@ var exitCodeClasses = map[int]map[string]struct{}{
 // body. Presence flags let the comparator apply absent==false / omitempty
 // normalization without conflating "absent" with a zero value.
 type surfaceProjection struct {
-	present        bool
+	present bool
+	// errored marks a surface whose runner failed (SurfaceResult.Err != nil).
+	// Such a surface is treated as "present but failed" so its applicable
+	// dimensions fail closed rather than silently omitting the surface (which
+	// would let a runner failure masquerade as a parity pass).
+	errored bool
+	// isArray marks a surface whose top-level body is a JSON array (e.g. the
+	// `list` command). topArray holds that array for response-shape comparison.
+	isArray        bool
+	topArray       []any
 	exitCode       int
 	category       string // machine category (CLI: derived from exit bucket, MCP: error field)
 	humanMessage   string // human message (CLI: error field, MCP: message field)
 	remediation    string
 	hasRemediation bool
 	retryable      bool
-	retryAfterMs   int
-	hasRetryAfter  bool
-	force          bool
+	// retryableTypeValid is false when a `retryable` value is present but not a
+	// JSON bool (e.g. the string "false"); a type mismatch fails closed.
+	retryableTypeValid bool
+	retryAfterMs       int
+	hasRetryAfter      bool
+	// retryAfterTypeValid is false when a `retry_after_ms` value is present but
+	// not a JSON number; a type mismatch fails closed.
+	retryAfterTypeValid bool
+	force               bool
+	// forceTypeValid is false when a `force` value is present but not a JSON
+	// bool; a type mismatch fails closed.
+	forceTypeValid bool
 	response       map[string]any
 	responseKeys   []string
 	post           *postProjection
@@ -214,7 +240,7 @@ func classifyDimension(dim string, divergent, applicable []string, detail string
 	}
 	if d, ok := knownDrifts[dim]; ok && sameStringSet(divergent, d.fields) {
 		r.Status = StatusReportOnly
-		r.DivergentFields = divergent
+		r.DivergentFields = capAndSanitizeFields(divergent)
 		r.ExpectedDivergence = true
 		r.TrackedDefect = d.tracked
 		if detail == "" {
@@ -223,7 +249,7 @@ func classifyDimension(dim string, divergent, applicable []string, detail string
 		return r
 	}
 	r.Status = StatusFail
-	r.DivergentFields = divergent
+	r.DivergentFields = capAndSanitizeFields(divergent)
 	return r
 }
 
@@ -237,6 +263,7 @@ func compareExitCode(proj [3]surfaceProjection) DimensionResult {
 	}
 	applicable := []string{surfaceNames[surfaceCLI], surfaceNames[surfaceMCP]}
 	var divergent []string
+	divergent = append(divergent, erroredSurfaceFields(proj, surfaceCLI, surfaceMCP)...)
 	if !inExitClass(cli.exitCode, mcp.category) {
 		divergent = append(divergent, "exit_code_class")
 	}
@@ -254,6 +281,7 @@ func compareStructuredError(proj [3]surfaceProjection) DimensionResult {
 	}
 	applicable := []string{surfaceNames[surfaceCLI], surfaceNames[surfaceMCP]}
 	var divergent []string
+	divergent = append(divergent, erroredSurfaceFields(proj, surfaceCLI, surfaceMCP)...)
 	if cli.humanMessage != mcp.humanMessage {
 		divergent = append(divergent, "message")
 	}
@@ -273,6 +301,12 @@ func compareDurablePostState(proj [3]surfaceProjection) DimensionResult {
 	anyPostState := false
 	for i := range proj {
 		p := proj[i]
+		if p.present && p.errored {
+			anyPostState = true
+			applicable = append(applicable, surfaceNames[i])
+			divergent = append(divergent, surfaceNames[i]+":surface_error")
+			continue
+		}
 		if !p.present || p.post == nil {
 			continue
 		}
@@ -320,14 +354,38 @@ func validatePostState(p *postProjection) []string {
 func compareResponseShape(proj [3]surfaceProjection) DimensionResult {
 	var applicable []string
 	var present []surfaceProjection
+	var divergent []string
 	for i := range proj {
 		if proj[i].present {
 			applicable = append(applicable, surfaceNames[i])
 			present = append(present, proj[i])
+			if proj[i].errored {
+				divergent = append(divergent, surfaceNames[i]+":surface_error")
+			}
 		}
 	}
 	if len(present) < 2 {
-		return classifyDimension(dimResponseShape, nil, applicable, "")
+		return classifyDimension(dimResponseShape, divergent, applicable, "")
+	}
+	// When any present surface is a top-level JSON array body (e.g. the `list`
+	// command), compare the surfaces as whole values after stripping volatile
+	// timestamps rather than by object-key mapping.
+	anyArray := false
+	for _, p := range present {
+		if p.isArray {
+			anyArray = true
+			break
+		}
+	}
+	if anyArray {
+		base := responseComparable(present[0])
+		for _, p := range present[1:] {
+			if !reflect.DeepEqual(base, responseComparable(p)) {
+				divergent = append(divergent, "body")
+				break
+			}
+		}
+		return classifyDimension(dimResponseShape, divergent, applicable, "")
 	}
 	base := normalizeResponse(present[0].response)
 	divergentSet := map[string]struct{}{}
@@ -339,7 +397,8 @@ func compareResponseShape(proj [3]surfaceProjection) DimensionResult {
 			}
 		}
 	}
-	return classifyDimension(dimResponseShape, keys(divergentSet), applicable, "")
+	divergent = append(divergent, keys(divergentSet)...)
+	return classifyDimension(dimResponseShape, divergent, applicable, "")
 }
 
 // compareRetryability compares retryability across all three surfaces with
@@ -348,16 +407,29 @@ func compareResponseShape(proj [3]surfaceProjection) DimensionResult {
 func compareRetryability(proj [3]surfaceProjection) DimensionResult {
 	var applicable []string
 	var present []surfaceProjection
+	var presentIdx []int
 	for i := range proj {
 		if proj[i].present {
 			applicable = append(applicable, surfaceNames[i])
 			present = append(present, proj[i])
+			presentIdx = append(presentIdx, i)
 		}
 	}
 	if len(present) == 0 {
 		return classifyDimension(dimRetryability, nil, nil, "")
 	}
 	var divergent []string
+	for _, i := range presentIdx {
+		if proj[i].errored {
+			divergent = append(divergent, surfaceNames[i]+":surface_error")
+		}
+		// A present-but-wrong-type `retryable` value is a type mismatch that
+		// must fail closed rather than be normalized to false. Use a distinct
+		// field marker so it never folds into a tracked drift set.
+		if !proj[i].errored && !proj[i].retryableTypeValid {
+			divergent = append(divergent, "retryable:type_mismatch")
+		}
+	}
 	// retryable: normalized absent==false across all present surfaces.
 	base := present[0].retryable
 	for _, p := range present[1:] {
@@ -369,7 +441,15 @@ func compareRetryability(proj [3]surfaceProjection) DimensionResult {
 	// retry_after_ms compared between CLI and MCP only.
 	cli, mcp := proj[surfaceCLI], proj[surfaceMCP]
 	if cli.present && mcp.present {
-		if cli.hasRetryAfter != mcp.hasRetryAfter || cli.retryAfterMs != mcp.retryAfterMs {
+		cliValid := cli.errored || cli.retryAfterTypeValid
+		mcpValid := mcp.errored || mcp.retryAfterTypeValid
+		switch {
+		case !cliValid || !mcpValid:
+			// A present-but-wrong-type numeric retry_after_ms is a type mismatch
+			// that fails closed via a distinct marker; skip the value/presence
+			// comparison so it never folds into the tracked-drift field set.
+			divergent = append(divergent, "retry_after_ms:type_mismatch")
+		case cli.hasRetryAfter != mcp.hasRetryAfter || cli.retryAfterMs != mcp.retryAfterMs:
 			divergent = append(divergent, "retry_after_ms")
 		}
 	}
@@ -386,6 +466,7 @@ func compareRemediation(proj [3]surfaceProjection) DimensionResult {
 	}
 	applicable := []string{surfaceNames[surfaceCLI], surfaceNames[surfaceMCP]}
 	var divergent []string
+	divergent = append(divergent, erroredSurfaceFields(proj, surfaceCLI, surfaceMCP)...)
 	if cli.hasRemediation != mcp.hasRemediation || cli.remediation != mcp.remediation {
 		divergent = append(divergent, "remediation")
 	}
@@ -398,14 +479,18 @@ func compareRemediation(proj [3]surfaceProjection) DimensionResult {
 func compareSerialization(proj [3]surfaceProjection) DimensionResult {
 	var applicable []string
 	var present []surfaceProjection
+	var divergent []string
 	for i := range proj {
 		if proj[i].present {
 			applicable = append(applicable, surfaceNames[i])
 			present = append(present, proj[i])
+			if proj[i].errored {
+				divergent = append(divergent, surfaceNames[i]+":surface_error")
+			}
 		}
 	}
 	if len(present) < 2 {
-		return classifyDimension(dimSerialization, nil, applicable, "")
+		return classifyDimension(dimSerialization, divergent, applicable, "")
 	}
 	base := stringSet(present[0].responseKeys)
 	divergentSet := map[string]struct{}{}
@@ -419,7 +504,8 @@ func compareSerialization(proj [3]surfaceProjection) DimensionResult {
 			}
 		}
 	}
-	return classifyDimension(dimSerialization, keys(divergentSet), applicable, "")
+	divergent = append(divergent, keys(divergentSet)...)
+	return classifyDimension(dimSerialization, divergent, applicable, "")
 }
 
 // compareForceLever compares the force lever symmetrically (present/absent
@@ -427,16 +513,26 @@ func compareSerialization(proj [3]surfaceProjection) DimensionResult {
 func compareForceLever(proj [3]surfaceProjection) DimensionResult {
 	var applicable []string
 	var present []surfaceProjection
+	var presentIdx []int
 	for i := range proj {
 		if proj[i].present {
 			applicable = append(applicable, surfaceNames[i])
 			present = append(present, proj[i])
+			presentIdx = append(presentIdx, i)
 		}
 	}
 	if len(present) == 0 {
 		return classifyDimension(dimForceLever, nil, nil, "")
 	}
 	var divergent []string
+	for _, i := range presentIdx {
+		if proj[i].errored {
+			divergent = append(divergent, surfaceNames[i]+":surface_error")
+		}
+		if !proj[i].errored && !proj[i].forceTypeValid {
+			divergent = append(divergent, "force:type_mismatch")
+		}
+	}
 	base := present[0].force
 	for _, p := range present[1:] {
 		if p.force != base {
@@ -488,12 +584,12 @@ func buildEvidence(scenarioID string, dims []DimensionResult) (*faultline.Eviden
 	switch {
 	case anyFail:
 		status = faultline.StatusFail
-		divergent = dedupeSort(keys(failFields))
+		divergent = capFields(dedupeSort(keys(failFields)))
 		detail = "unexpected cross-surface divergence"
 		tracked = ""
 	case anyReport:
 		status = faultline.StatusReportOnly
-		divergent = dedupeSort(keys(reportFields))
+		divergent = capFields(dedupeSort(keys(reportFields)))
 		expected = true
 		detail = "known tracked cross-surface drift (report only)"
 	default:
@@ -541,17 +637,30 @@ func buildEvidence(scenarioID string, dims []DimensionResult) (*faultline.Eviden
 // the human message lives in the `error` field, and the machine category is
 // DERIVED from the exit-code bucket (the CLI payload carries no category).
 func projectCLI(res SurfaceResult) surfaceProjection {
-	m, ok := parseBody(res.Body)
-	p := surfaceProjection{present: ok, exitCode: res.ExitCode}
+	m, arr, ok := parseBody(res.Body)
+	errored := res.Err != nil
+	p := surfaceProjection{
+		present:             ok || errored,
+		errored:             errored,
+		exitCode:            res.ExitCode,
+		retryableTypeValid:  true,
+		retryAfterTypeValid: true,
+		forceTypeValid:      true,
+	}
 	if !ok {
+		return p
+	}
+	if arr != nil {
+		p.isArray = true
+		p.topArray = arr
 		return p
 	}
 	p.humanMessage = getString(m, "error")
 	p.category = deriveCLICategory(res.ExitCode)
 	p.remediation, p.hasRemediation = getStringPresent(m, "remediation")
-	p.retryable = getBool(m, "retryable")
-	p.retryAfterMs, p.hasRetryAfter = getIntPresent(m, "retry_after_ms")
-	p.force = getBool(m, "force")
+	p.retryable, _, p.retryableTypeValid = getBoolPresent(m, "retryable")
+	p.retryAfterMs, p.hasRetryAfter, p.retryAfterTypeValid = getIntPresent(m, "retry_after_ms")
+	p.force, _, p.forceTypeValid = getBoolPresent(m, "force")
 	fillResponse(&p, m)
 	return p
 }
@@ -559,17 +668,30 @@ func projectCLI(res SurfaceResult) surfaceProjection {
 // projectMCP extracts the normalized projection from the MCP surface result:
 // the machine category lives in `error` and the human text in `message`.
 func projectMCP(res SurfaceResult) surfaceProjection {
-	m, ok := parseBody(res.Body)
-	p := surfaceProjection{present: ok, exitCode: res.ExitCode}
+	m, arr, ok := parseBody(res.Body)
+	errored := res.Err != nil
+	p := surfaceProjection{
+		present:             ok || errored,
+		errored:             errored,
+		exitCode:            res.ExitCode,
+		retryableTypeValid:  true,
+		retryAfterTypeValid: true,
+		forceTypeValid:      true,
+	}
 	if !ok {
+		return p
+	}
+	if arr != nil {
+		p.isArray = true
+		p.topArray = arr
 		return p
 	}
 	p.category = getString(m, "error")
 	p.humanMessage = getString(m, "message")
 	p.remediation, p.hasRemediation = getStringPresent(m, "remediation")
-	p.retryable = getBool(m, "retryable")
-	p.retryAfterMs, p.hasRetryAfter = getIntPresent(m, "retry_after_ms")
-	p.force = getBool(m, "force")
+	p.retryable, _, p.retryableTypeValid = getBoolPresent(m, "retryable")
+	p.retryAfterMs, p.hasRetryAfter, p.retryAfterTypeValid = getIntPresent(m, "retry_after_ms")
+	p.force, _, p.forceTypeValid = getBoolPresent(m, "force")
 	fillResponse(&p, m)
 	return p
 }
@@ -577,13 +699,26 @@ func projectMCP(res SurfaceResult) surfaceProjection {
 // projectInternal extracts the normalized projection from the internal surface
 // result: it has no structured error, category, or remediation.
 func projectInternal(res SurfaceResult) surfaceProjection {
-	m, ok := parseBody(res.Body)
-	p := surfaceProjection{present: ok, exitCode: res.ExitCode}
+	m, arr, ok := parseBody(res.Body)
+	errored := res.Err != nil
+	p := surfaceProjection{
+		present:             ok || errored,
+		errored:             errored,
+		exitCode:            res.ExitCode,
+		retryableTypeValid:  true,
+		retryAfterTypeValid: true,
+		forceTypeValid:      true,
+	}
 	if !ok {
 		return p
 	}
-	p.retryable = getBool(m, "retryable")
-	p.force = getBool(m, "force")
+	if arr != nil {
+		p.isArray = true
+		p.topArray = arr
+		return p
+	}
+	p.retryable, _, p.retryableTypeValid = getBoolPresent(m, "retryable")
+	p.force, _, p.forceTypeValid = getBoolPresent(m, "force")
 	fillResponse(&p, m)
 	return p
 }
@@ -633,17 +768,24 @@ func inExitClass(exit int, category string) bool {
 
 // --- small helpers --------------------------------------------------------
 
-// parseBody unmarshals a JSON object body, returning ok=false for empty or
-// non-object bodies.
-func parseBody(b []byte) (map[string]any, bool) {
-	if len(b) == 0 {
-		return nil, false
+// parseBody unmarshals a JSON body, returning the decoded object (for a
+// top-level JSON object) or the decoded array (for a top-level JSON array), and
+// ok=false for empty or otherwise non-JSON-container bodies. The `list` command
+// emits a top-level array, so both shapes MUST be accepted or every successful
+// array-shaped surface result would be treated as absent.
+func parseBody(raw []byte) (map[string]any, []any, bool) {
+	if len(raw) == 0 {
+		return nil, nil, false
 	}
 	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, false
+	if err := json.Unmarshal(raw, &m); err == nil && m != nil {
+		return m, nil, true
 	}
-	return m, true
+	var a []any
+	if err := json.Unmarshal(raw, &a); err == nil {
+		return nil, a, true
+	}
+	return nil, nil, false
 }
 
 // normalizeResponse returns a copy of resp with volatile timestamp fields
@@ -658,6 +800,83 @@ func normalizeResponse(resp map[string]any) map[string]any {
 			out[k] = v
 		}
 	}
+	return out
+}
+
+// normalizeAny recursively strips volatile timestamp keys from any JSON value
+// (objects, arrays, and their nested contents) so array-shaped bodies (e.g. the
+// `list` command) are compared on business content rather than raw equality.
+func normalizeAny(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			switch k {
+			case "created_at", "updated_at", "seed_updated_at":
+				continue
+			default:
+				out[k] = normalizeAny(val)
+			}
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = normalizeAny(e)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// responseComparable returns the timestamp-normalized comparable projection of
+// a surface's business body: the top-level array for array-shaped bodies, or
+// the response object otherwise.
+func responseComparable(p surfaceProjection) any {
+	if p.isArray {
+		return normalizeAny(p.topArray)
+	}
+	return normalizeResponse(p.response)
+}
+
+// erroredSurfaceFields returns "<surface>:surface_error" markers for any of the
+// given surfaces whose runner failed (errored). A failed surface is treated as
+// "present but failed" so the dimension fails closed rather than silently
+// omitting the surface, which would let a runner failure masquerade as a pass.
+func erroredSurfaceFields(proj [3]surfaceProjection, indices ...int) []string {
+	var fields []string
+	for _, i := range indices {
+		if proj[i].present && proj[i].errored {
+			fields = append(fields, surfaceNames[i]+":surface_error")
+		}
+	}
+	return fields
+}
+
+// capAndSanitizeFields sanitizes every field path (SEC-04 control-char escape)
+// and then caps the reported count via capFields.
+func capAndSanitizeFields(fields []string) []string {
+	if len(fields) == 0 {
+		return nil
+	}
+	sanitized := make([]string, 0, len(fields))
+	for _, f := range fields {
+		sanitized = append(sanitized, faultline.SanitizeDiagnostic(f))
+	}
+	return capFields(sanitized)
+}
+
+// capFields bounds the number of divergent field paths to MaxDivergentFields,
+// appending a single "...[N more]" marker when the cap is exceeded so an
+// unbounded field list can never be emitted.
+func capFields(fields []string) []string {
+	if len(fields) <= MaxDivergentFields {
+		return fields
+	}
+	out := make([]string, 0, MaxDivergentFields+1)
+	out = append(out, fields[:MaxDivergentFields]...)
+	out = append(out, fmt.Sprintf("...[%d more]", len(fields)-MaxDivergentFields))
 	return out
 }
 
@@ -691,28 +910,38 @@ func getStringPresent(m map[string]any, key string) (string, bool) {
 	return s, true
 }
 
-// getBool returns the bool value at key, defaulting to false (absent==false).
-func getBool(m map[string]any, key string) bool {
-	if v, ok := m[key].(bool); ok {
-		return v
-	}
-	return false
-}
-
-// getIntPresent returns the int value at key and whether the key exists as a
-// valid numeric (float64) JSON number. A value that exists but is not float64
-// (e.g. a string "5000") is treated as absent so that a type mismatch never
-// masks the actual value with a false (0, present) result.
-func getIntPresent(m map[string]any, key string) (int, bool) {
+// getBoolPresent returns the bool value at key, whether the key is present, and
+// whether the present value is a valid JSON bool. A value that exists but is
+// not a bool (e.g. the string "false") is reported as (false, true, false) so a
+// malformed type mismatch is never indistinguishable from a genuine absent or
+// false value; callers fail such a type mismatch closed.
+func getBoolPresent(m map[string]any, key string) (value bool, present bool, typeValid bool) {
 	v, ok := m[key]
 	if !ok || v == nil {
-		return 0, false
+		return false, false, true
+	}
+	b, isBool := v.(bool)
+	if !isBool {
+		return false, true, false
+	}
+	return b, true, true
+}
+
+// getIntPresent returns the int value at key, whether the key is present, and
+// whether the present value is a valid JSON number (float64). A value that
+// exists but is not a number (e.g. the string "5000") is reported as
+// (0, true, false) so a type mismatch fails closed rather than masquerading as
+// absent or as a zero value.
+func getIntPresent(m map[string]any, key string) (value int, present bool, typeValid bool) {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return 0, false, true
 	}
 	f, isFloat := v.(float64)
 	if !isFloat {
-		return 0, false // type mismatch treated as absent
+		return 0, true, false
 	}
-	return int(f), true
+	return int(f), true, true
 }
 
 // dedupeSort returns a sorted, duplicate-free copy of xs.

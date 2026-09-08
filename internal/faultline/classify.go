@@ -128,35 +128,37 @@ func safeWrap(sentinel error, category string, err error) error {
 // unbounded. It carries no secrets or PII of its own; callers must not pass
 // sensitive material.
 func SanitizeDiagnostic(s string) string {
-	runes := []rune(s)
-	truncated := false
-	if len(runes) > MaxDiagnosticRunes {
-		runes = runes[:MaxDiagnosticRunes]
-		truncated = true
-	}
-
 	var b strings.Builder
-	b.Grow(len(runes) + len(truncationMarker))
-	for _, r := range runes {
+	b.Grow(MaxDiagnosticRunes + len(truncationMarker))
+	// Enforce the budget on the ENCODED (escaped) output, not the raw input, so
+	// a run of control characters (each escaped to a multi-rune sequence like
+	// `\x00`) cannot blow past MaxDiagnosticRunes in the emitted string.
+	outputRunes := 0
+	for _, r := range s {
+		var escaped string
 		switch {
 		case r == utf8.RuneError:
-			b.WriteString(`\ufffd`)
+			escaped = `\ufffd`
 		case r == '\\':
-			b.WriteString(`\\`)
+			escaped = `\\`
 		case r == '\n':
-			b.WriteString(`\n`)
+			escaped = `\n`
 		case r == '\r':
-			b.WriteString(`\r`)
+			escaped = `\r`
 		case r == '\t':
-			b.WriteString(`\t`)
+			escaped = `\t`
 		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, r)
+			escaped = fmt.Sprintf(`\x%02x`, r)
 		default:
-			b.WriteRune(r)
+			escaped = string(r)
 		}
-	}
-	if truncated {
-		b.WriteString(truncationMarker)
+		escLen := len([]rune(escaped))
+		if outputRunes+escLen > MaxDiagnosticRunes {
+			b.WriteString(truncationMarker)
+			return b.String()
+		}
+		b.WriteString(escaped)
+		outputRunes += escLen
 	}
 	return b.String()
 }
