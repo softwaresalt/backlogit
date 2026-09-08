@@ -122,12 +122,21 @@ For each task in the shipment/feature:
 
 ### Step 5: Post-Merge Closure
 
-After user-approved merge:
+After a user-approved merge that reached `MERGE_SUCCEEDED`:
 
-1. Close the shipment via `backlogit_ship_shipment` if applicable.
-2. Write compound learnings for hard-won solutions.
-3. Update documentation if templates changed significantly.
-4. Write session memory to `docs/memory/`.
+1. **Return the existing worktree to synchronized `main` first (NON-NEGOTIABLE).**
+   Invariant: `MERGE_SUCCEEDED -> safe switch main -> ff-only sync -> SHA equality verification -> optional post-merge branch`.
+   Inspect and preserve unrelated tracked/untracked local state, `git fetch origin main`,
+   verify the switch is safe, `git checkout main`, `git pull --ff-only origin main`, then
+   verify `HEAD == origin/main` and record the synchronized SHA before creating any
+   `post-merge/{feature_slug}` closure branch. Never stash, reset, rebase, or discard to
+   force the switch; if the safe switch or ff-only sync cannot complete, treat post-merge
+   cleanup as BLOCKED and surface it — do not report the merge workflow as fully complete.
+   If no closure branch is needed, still end on synchronized local `main`.
+2. Close the shipment via `backlogit_ship_shipment` if applicable.
+3. Write compound learnings for hard-won solutions.
+4. Update documentation if templates changed significantly.
+5. Write session memory to `docs/memory/`.
 
 ## Stop Conditions
 

@@ -76,17 +76,37 @@ review, CI follow-up, and merge approval as one bounded workflow.
    while the merge gate is open. The branch is the active working context for
    any follow-up CI or review fixes.
 
-### Step 6: Post-merge cleanup
+### Step 6: Post-merge synchronization and cleanup
 
-After a user-approved merge:
+After a user-approved merge that reached `MERGE_SUCCEEDED`:
 
 1. Report the merge result and resulting default-branch state.
-2. If the caller requires post-merge closure work, recommend creating a
-   `post-merge/{feature_slug}` branch from updated `main` rather than pushing
-   closure commits directly to the default branch.
-3. Delete the feature branch only when that cleanup is explicitly requested or
+2. **Return the existing worktree to synchronized `main` (NON-NEGOTIABLE).**
+   This runs immediately after `MERGE_SUCCEEDED`, before any post-merge closure
+   branch or session completion, so the operator never has to ask for it. The
+   invariant is
+   `MERGE_SUCCEEDED -> safe switch main -> ff-only sync -> SHA equality verification -> optional post-merge branch`.
+   Run each step sequentially; never stash, reset, rebase, or discard to force
+   it:
+   a. Inspect the working tree (`git status --porcelain`) and preserve any
+      unrelated tracked or untracked local state.
+   b. Fetch the default branch (`git fetch origin main`).
+   c. Verify switching branches will not overwrite local modifications. If it
+      would, fail closed with a BLOCKED result — never auto-stash or discard.
+   d. Switch the existing worktree to local `main` (`git checkout main`).
+   e. Fast-forward only (`git pull --ff-only origin main`).
+   f. Verify `HEAD == origin/main` and record the synchronized SHA.
+   g. Confirm the unrelated local state from step 2a is still present and
+      unstaged.
+   h. Only after this may a `post-merge/{feature_slug}` closure branch be
+      created from synchronized `main`. If no closure branch is needed, end on
+      synchronized local `main`.
+3. If the safe switch or fast-forward-only update cannot complete, treat
+   post-merge cleanup as BLOCKED and surface it. Do not report the merge
+   workflow as fully complete.
+4. Delete the feature branch only when that cleanup is explicitly requested or
    already part of the chosen PR flow. Do NOT delete automatically.
-4. Summarize any follow-up items, release notes, or residual risks that remain
+5. Summarize any follow-up items, release notes, or residual risks that remain
    after merge.
 
 ## Completion Criteria
