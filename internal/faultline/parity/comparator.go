@@ -41,7 +41,10 @@ const (
 
 // TrackedDefectGatePayload is the canonical tracked-defect ID owning the known
 // CLI --json gate-payload omission drift (remediation + retry_after_ms).
-const TrackedDefectGatePayload = "156.007-T"
+// This is 166-F: a standalone queued feature OUTSIDE the shipment hierarchy
+// that serves as the report-only durable owner (156.007-T was the original
+// planned owner but is now archived; 166-F is the current non-terminal owner).
+const TrackedDefectGatePayload = "166-F"
 
 // producingCommit identifies the commit that produced comparator evidence. It
 // only needs to be non-empty for the U4a envelope invariants.

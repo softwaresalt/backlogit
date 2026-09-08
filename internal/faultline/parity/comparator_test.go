@@ -9,7 +9,7 @@ package parity_test
 //   2. detects and FAILS an injected divergence in each applicable dimension;
 //   3. classifies the KNOWN gate-payload drift (CLI --json omits remediation +
 //      retry_after_ms that MCP emits) as report_only with the exact field-path
-//      set {remediation, retry_after_ms} pinned to TrackedDefect 156.007-T;
+//      set {remediation, retry_after_ms} pinned to TrackedDefect 166-F;
 //   4. FAILS CLOSED on a new/unrelated divergence layered on the known drift;
 //   5. emits an EvidenceArtifact that validates against the U4a contract.
 
@@ -24,7 +24,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/faultline/parity"
 )
 
-const trackedGatePayload = "156.007-T"
+const trackedGatePayload = "166-F"
 
 // surfaceBody is a convenience builder for a JSON surface body.
 type surfaceBody map[string]any
