@@ -119,6 +119,23 @@ func TestShipAgentEncodesPostMergeMainSync(t *testing.T) {
 	}
 }
 
+// TestPluginShipAgentCreatesClosureBranchBeforeShipMutation guards the plugin
+// Ship agent's safety guarantee that the `post-merge/` closure branch is created
+// before any state-mutating closure step (notably `backlogit_ship_shipment`), so
+// plugin users never mutate the protected default branch. A regression that moves
+// the shipment mutation ahead of branch creation must fail this test.
+func TestPluginShipAgentCreatesClosureBranchBeforeShipMutation(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+	content := readGovernedSurface(t, repoRoot, "plugin/agents/ship.agent.md")
+
+	branchIdx := strings.Index(content, "post-merge/{feature_slug}")
+	shipIdx := strings.Index(content, "backlogit_ship_shipment")
+	require.NotEqual(t, -1, branchIdx, "plugin Ship agent must create a post-merge closure branch")
+	require.NotEqual(t, -1, shipIdx, "plugin Ship agent must call backlogit_ship_shipment")
+	assert.Less(t, branchIdx, shipIdx,
+		"plugin Ship agent must create the post-merge closure branch before the backlogit_ship_shipment mutation")
+}
+
 // TestGitMergeInstructionEncodesGlobalPostMergeMainSync guards the authoritative
 // cross-workflow merge instruction. The base synchronization invariant must live
 // here — not solely in Ship/pr-lifecycle — so it governs every merge-capable
