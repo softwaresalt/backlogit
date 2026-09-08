@@ -1,10 +1,19 @@
 ---
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 title: "Cross-surface parity harness design patterns (138-S / 156-F)"
-date: "2026-09-08"
-source_shipment: "138-S"
-source_feature: "156-F"
-category: "go-patterns"
-tags: ["parity", "evidence-contract", "json-parsing", "testing", "wave-scheduler"]
+description: "Compound learnings from implementing the fault-line evidence contract and three-surface parity harness"
+doc_type: learning
+source: docs/compound/2026-09-08-parity-harness-design-patterns.md
+docline:
+    date: 2026-09-08T00:00:00Z
+    severity: high
+    tags:
+        - parity
+        - evidence-contract
+        - json-parsing
+        - testing
+        - wave-scheduler
 ---
 
 # Cross-surface parity harness design patterns (138-S / 156-F)
