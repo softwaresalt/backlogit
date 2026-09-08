@@ -92,7 +92,10 @@ both residuals in a single follow-up stash pending Stage triage.
 - **Feature C — Authenticated per-invocation operator approval.** Closes
   residual (2) on shipment and — when shipped — upgrades confirmation-only v1 to
   machine-authenticated authorization; `167.015-T` remains the BLOCKING acceptance
-  gate on `148-S` closure until Feature C ships (see D3 below). Replaces
+  gate on `148-S` closure and has two independent criteria (authorization narrowing AND
+  no-descoping narrowing, per 167.015-T) — Feature C closes only the authorization
+  half and cannot by itself unblock `148-S` until BOTH criteria are satisfied (see D3
+  below). Replaces
   self-suppliable `--confirm`/TTY with verification of an operator-issued,
   per-invocation credential the agent cannot mint (e.g. a short-lived signed
   authorization token bound to the specific shipment-id + request-identity

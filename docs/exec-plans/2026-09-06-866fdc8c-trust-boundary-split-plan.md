@@ -54,7 +54,10 @@ edges to create: `A blocks B`, `A blocks C`, `167-F blocks B`, `167-F blocks C`.
 > Harvest ordering per feature follows the workspace TDD/harness policy
 > (`.github/policies/workflow-policies.md`): a go/ast source-shape harness lands
 > before each behavior-bearing declaration; behavior harness (RED) precedes each
-> implementation. Every task below is single-domain and ≤2h.
+> implementation. Every task below is intended to be single-domain and ≤2h; NOTE: 4
+> tasks (168.001-T, 168.005-T, 169.001-T, 170.001-T) are flagged for declaration/behavior
+> or domain splits and carry DEFERRED SCOPE EXPANSION stash entries AC5346BC / 71F5C21F /
+> 01D8515F / B9BA8751.
 
 > **Root-of-trust anchoring constraint (review remediation P1, Security Lens).**
 > Because the deliberation's own adversary is a workspace writer who can hand-edit
@@ -269,7 +272,10 @@ Remediation applied this cycle (verdict upgraded ADVISORY → PASS):
   CLI surface (C5) — closes Arch P1 single-domain violation.
 * B1/C1 re-pointed to depend only on their own declarations (parallel with A2/A3) — closes Arch/Scope P3.
 * C3 carries an explicit justify-or-fold gate + ledger-integrity (external-pin-rooted)
-  + pruning-past-not_after note — closes Scope P1 / Security P2.
+  + pruning-past-not_after note — closes Scope P1; Security P2 (ledger deletion/
+  truncation replay risk) is an UNRESOLVED RESIDUAL: the external-pin root cannot
+  prevent workspace-writer ledger mutation, per this plan's corrected C3 section;
+  carried forward to Feature-C implementation.
 * B6 enforce-mode marked NOT-YET-AVAILABLE; docs tasks (A6/B6/C7) given checkable
   acceptance lines — closes Scope P2/P3.
 * Shared-surface serialization note added for B⊥C (additive non-overlapping fields;
@@ -286,7 +292,10 @@ capability for residual (1) — full closure requires enforcement mode, which is
 explicitly deferred in B6 (enforce-mode marked NOT-YET-AVAILABLE).
 
 Readiness: HARVEST-CONDITIONAL — three coherent release units (Feature A = 6 tasks,
-Feature B = 6 tasks, Feature C = 7 tasks = 19 single-domain ≤2h tasks total),
+Feature B = 6 tasks, Feature C = 7 tasks = 19 tasks total; NOTE: single-domain and
+≤2h claims are PENDING for 4 tasks flagged for declaration/behavior or domain splits:
+168.001-T / 168.005-T / 169.001-T / 170.001-T per stash entries AC5346BC / 71F5C21F /
+01D8515F / B9BA8751),
 feature-level dependency edges A→B, A→C, 167-F→B, 167-F→C, B⊥C. Pending: explicit
 checkable acceptance criteria must be added to all 19 task artifacts before declaring
 unconditional HARVEST-READY (per late Copilot review, several tasks currently carry
