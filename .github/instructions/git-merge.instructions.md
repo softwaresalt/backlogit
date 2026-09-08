@@ -47,11 +47,22 @@ applyTo: '**'
 ### 7. Summarize Results
 
 * Provide a summary of the operation, conflicts, and resolutions
-* Remind the user no pushes were performed
+* Remind the user that this local merge/rebase conflict-resolution operation
+  performed no pushes
 
 ## Guardrails
 
-* Never push, force-push, or rewrite remote history
+These guardrails govern the **local merge/rebase conflict-resolution operation**
+described in Steps 1–7. They do not forbid the normal, non-force pushes that
+downstream merge-capable workflows legitimately perform (for example, Ship
+pushing a `post-merge/` closure branch, or any workflow pushing a feature branch
+before opening its PR). Force-pushing and history rewrites remain forbidden
+everywhere.
+
+* Never push, force-push, or rewrite remote history **as part of this local
+  merge/rebase conflict-resolution operation**. (Force-push and history rewrite
+  stay forbidden in all workflows; a normal push by a downstream workflow that
+  owns that step is allowed.)
 * Do not proceed with unrelated staged changes
 * Document every conflict fix with justification
 * When unsure, consult official Git documentation
