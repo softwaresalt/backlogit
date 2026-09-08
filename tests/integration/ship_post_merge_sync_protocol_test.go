@@ -129,6 +129,12 @@ func TestGitMergeInstructionEncodesGlobalPostMergeMainSync(t *testing.T) {
 
 	content := readGovernedSurface(t, repoRoot, gitMergeAuthoritySurface)
 
+	// The authority only governs "every merge-capable workflow" if it is actually
+	// loaded repository-wide. Without applyTo: '**' the section would only reach the
+	// explicitly-edited Ship/pr-lifecycle surfaces, defeating the global claim.
+	assert.Contains(t, content, "applyTo: '**'",
+		"git-merge instruction must be loaded repository-wide via applyTo: '**'")
+
 	// (a) Global applicability to every successful merge to main.
 	assert.Contains(t, content, globalPostMergeSyncInvariant,
 		"git-merge instruction must embed the generalized global sync invariant")
