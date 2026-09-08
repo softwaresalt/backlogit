@@ -48,7 +48,7 @@ both residuals in a single follow-up stash pending Stage triage.
 
 | Fact | Location |
 |---|---|
-| v1 trust model = explicit-confirmation + audited approval; NO signing/attestation or operator trust anchor exists | `docs/exec-plans/2026-09-05-423-...-plan.md` U2 "Trust model"; Plan Hardening "Evidence binding" |
+| v1 trust model = explicit-confirmation + audited approval; NO signing/attestation or operator trust anchor exists | `docs/exec-plans/2026-09-05-423-archived-shipment-reconciliation-to-shipped-plan.md` U2 "Trust model"; Plan Hardening "Evidence binding" |
 | Residual (1) crypto authenticity = non-gating, documented, accepted follow-up | #423 Plan Review "Scope disposition (P-021)" item (1) |
 | Residual (2) authenticated authorization = CONSCIOUS SCOPE NARROWING, a BLOCKING acceptance gate recorded as `167.015-T` | #423 Plan Review "Scope disposition (P-021)" item (2); D1 |
 | Evidence today binds via `evidence_digest` = hash(shipment-id + merge-sha + manifest-digest + closure content-hash + evidence_refs) — integrity, not authenticity | #423 plan U2 (6) |
@@ -90,7 +90,12 @@ both residuals in a single follow-up stash pending Stage triage.
   signed repair from a forged one. Extends `reconcile-shipped` with an
   `--attestation <path>` verification path (opt-in v1, enforced-by-policy later).
 - **Feature C — Authenticated per-invocation operator approval.** Closes
-  residual (2) and satisfies the `167.015-T` authorization narrowing. Replaces
+  residual (2) on shipment and — when shipped — upgrades confirmation-only v1 to
+  machine-authenticated authorization; `167.015-T` remains the BLOCKING acceptance
+  gate on `148-S` closure and has two independent criteria (authorization narrowing AND
+  no-descoping narrowing, per 167.015-T) — Feature C closes only the authorization
+  half and cannot by itself unblock `148-S` until BOTH criteria are satisfied (see D3
+  below). Replaces
   self-suppliable `--confirm`/TTY with verification of an operator-issued,
   per-invocation credential the agent cannot mint (e.g. a short-lived signed
   authorization token bound to the specific shipment-id + request-identity
