@@ -37,6 +37,11 @@ internal/mdfront/        ← Body-preserving frontmatter codec (stdlib-only leaf
 internal/atomicfile/     ← Hardened atomic file write: WriteFileAtomic, temp+rename (stdlib-only leaf)
 internal/models/         ← Shared domain models (work item types, statuses)
 internal/telemetry/      ← Telemetry harvesting: JSONL fact tables, schema reference
+internal/faultline/      ← Versioned fault-line evidence contract: EvidenceArtifact envelope, FamilyPayload
+                            interface, version-aware frozen registry, bounded decode (SEC-01/SEC-02/SEC-04);
+                            leaf (only imports: internal/canonical, optionally internal/errors)
+internal/faultline/parity/ ← Cross-surface golden parity harness: parallel-safe three-surface scenario driver
+                            (CLI/MCP/internal), dimension-aware comparator, recurring-failure corpus (test infra)
   ↓
 .backlogit/              ← Workspace: Markdown source-of-truth, SQLite cache
 ```
@@ -60,6 +65,9 @@ cmd → cli → core, db, mcp, models, telemetry
              release    → (stdlib only) — leaf, no internal imports
              version    → (stdlib only) — leaf, no internal imports
              errors    → (stdlib only)
+             faultline  → canonical, (optionally) errors — standalone leaf; producers S5-S9 and
+                          consumers S10-S11 import it; never imported by core/cli/mcp/events/db
+             faultline/parity → faultline, cli, mcp, core, db (test-only; not imported by production packages)
 ```
 
 Cross-cutting rules:
