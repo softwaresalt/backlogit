@@ -67,8 +67,9 @@ edges to create: `A blocks B`, `A blocks C`, `167-F blocks B`, `167-F blocks C`.
 > external pin at load time (a config entry whose fingerprint is not in the external
 > pin set is rejected fail-closed). Mutation of anchors (add/rotate/revoke) is a
 > distinct, audited, out-of-workspace-pin-gated operation. When no external pin is
-> configured, the feature is DISABLED (fail-closed, not fail-open) and `reconcile-shipped`
-> retains #423 v1 behavior.
+> configured, the feature is DISABLED (the trust-anchor and verification features
+> are inactive; the residuals remain open while no external pin is configured) and
+> `reconcile-shipped` retains #423 v1 behavior.
 
 * **A1 — `trust_anchors` config schema + loader + validation + external-pin gate.**
   Add `WorkspaceConfig.trust_anchors []TrustAnchor{ id, role, algo, public_key_ref,
@@ -166,9 +167,14 @@ edges to create: `A blocks B`, `A blocks C`, `167-F blocks B`, `167-F blocks C`.
   so replay of the identical request is already neutralized; C3 defends the residual
   window where a token is captured before its first legitimate use. **Ledger
   integrity + growth (review remediation P2, Security Lens):** the ledger's root of
-  trust is the SAME external pin as A (a ledger reset without the pinned key cannot
-  forge un-consumption of a validly-signed nonce because verification still requires
-  C2); consumed nonces are pruned past their token `not_after` to bound growth.
+  trust is the SAME external pin as A, BUT this does not prevent ledger deletion or
+  truncation by a workspace writer: deleting/truncating the ledger makes a consumed
+  nonce appear unused and allows a captured token to be replayed. The ledger
+  therefore provides anti-replay guarantees ONLY under a trust model where the
+  workspace writer cannot modify ledger state out-of-band; Feature-C planning MUST
+  document this residual window or adopt externally protected/rollback-resistant
+  consumption state. Consumed nonces are pruned past their token `not_after` to
+  bound growth.
   If planning finds the binding sufficient, C3 folds into C2 and this task is dropped.
 * **C4 — core authenticated-approval gate integration.** Inside the `167.008-T`
   locked critical section, require a C2/C3-verified token in place of the
@@ -275,8 +281,13 @@ pre-commits) is a Feature-C planning decision (D5 open question 3), not a plan-g
 
 Scope disposition (P-021): this plan decomposes `866FDC8C` only; it neither closes
 nor removes the #423 `167.015-T` authorization ratification gate (D3). Feature C is
-the mechanism that later closes residual (2); Feature B closes residual (1).
+the mechanism that later closes residual (2); Feature B adds opt-in verification
+capability for residual (1) — full closure requires enforcement mode, which is
+explicitly deferred in B6 (enforce-mode marked NOT-YET-AVAILABLE).
 
-Readiness: HARVEST-READY — three coherent release units (Feature A = 6 tasks,
+Readiness: HARVEST-CONDITIONAL — three coherent release units (Feature A = 6 tasks,
 Feature B = 6 tasks, Feature C = 7 tasks = 19 single-domain ≤2h tasks total),
-feature-level dependency edges A→B, A→C, 167-F→B, 167-F→C, B⊥C. Cleared for harvest.
+feature-level dependency edges A→B, A→C, 167-F→B, 167-F→C, B⊥C. Pending: explicit
+checkable acceptance criteria must be added to all 19 task artifacts before declaring
+unconditional HARVEST-READY (per late Copilot review, several tasks currently carry
+only implementation intent without a pass/fail acceptance outcome).
