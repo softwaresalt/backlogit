@@ -1175,7 +1175,10 @@ compound refresh, compact-context). These commits MUST NOT land directly on `mai
 2. **Return the existing worktree to synchronized `main` (NON-NEGOTIABLE, runs only
    after `MERGE_SUCCEEDED`)**. This runs automatically immediately after the merge is
    confirmed, before any post-merge closure work — the operator must never have to ask
-   for it. Invariant:
+   for it. The Merge Confirmation Gate's `MERGE_CONFIRMED` (verified above with
+   `git merge-base --is-ancestor`) is the local confirmation that the merge landed and
+   is treated as `MERGE_SUCCEEDED` for this trigger — including in a resumed session or
+   when the PR was merged outside this invocation. Invariant:
    `MERGE_SUCCEEDED -> safe switch main -> ff-only sync -> SHA equality verification -> optional post-merge branch`.
    Run each command as a separate sequential step; never chain, never stash, never reset,
    never rebase, never discard:
@@ -1199,7 +1202,9 @@ compound refresh, compact-context). These commits MUST NOT land directly on `mai
       `POST_MERGE_SYNC_OK: main == origin/main @ {sync_sha}`. If they differ, halt with
       `POST_MERGE_SYNC_BLOCKED: HEAD != origin/main after ff-only pull.`
    g. Re-inspect the working tree with `git status --porcelain` and confirm the unrelated
-      tracked/untracked state recorded in step 2a is still present and unstaged. If it changed,
+      tracked/untracked state recorded in step 2a is still present and unchanged — the
+      same tracked, untracked, and index (staged) status as step 2a; the sync must not have
+      staged, modified, or dropped it. If it changed,
       halt with `POST_MERGE_SYNC_BLOCKED: unrelated local state changed during sync.`
    h. **Only after `POST_MERGE_SYNC_OK`**, create the post-merge closure branch from
       synchronized `main`:

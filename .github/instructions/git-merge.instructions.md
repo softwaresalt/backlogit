@@ -9,7 +9,10 @@ description: "Required protocol for Git merge, rebase, and rebase --onto workflo
 ### 1. Prepare the Workspace
 
 * Confirm the working tree is clean with `git status --short`
-* Stash local changes before proceeding
+* Stash local changes before proceeding **only when preparing a new merge/rebase
+  operation**. This preparation step does NOT apply after a merge — post-merge
+  synchronization is governed by the Post-Merge Local Main Synchronization rule
+  below and never stashes, resets, or discards.
 * Fetch latest remote refs
 
 ### 2. Select the Operation Path
@@ -113,7 +116,9 @@ workflow — run these steps in order. Never stash, reset, rebase, discard,
 6. Verify local `main` equals the remote tip — `HEAD == origin/main` — and record
    the synchronized SHA.
 7. Verify the unrelated local state recorded in step 1 is still present and
-   unstaged.
+   unchanged — the same tracked, untracked, and index (staged) status captured in
+   step 1. The sync MUST NOT have staged, modified, or dropped it; a pre-existing
+   staged entry must remain staged, an unstaged one must remain unstaged.
 8. Only then proceed to any next step.
 
 ### Fail-closed blocked state
@@ -125,6 +130,10 @@ not stash, reset, rebase, discard, or force-push to clear the block automaticall
 
 ### Preserved rules
 
+* Precedence over pre-merge prep: the general "Stash local changes before
+  proceeding" step (Required Protocol §1) applies only to preparing a new
+  merge/rebase operation. It never overrides this section — post-merge
+  synchronization never stashes, resets, or discards.
 * No automatic source-branch deletion — branch deletion stays explicit (see
   Guardrails and the merge-commit-only policy below).
 * P-009 (merge-commit-only) and P-016 (single-worktree) are preserved: the ff-only

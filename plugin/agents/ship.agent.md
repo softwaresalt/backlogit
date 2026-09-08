@@ -128,18 +128,25 @@ After a user-approved merge that reached `MERGE_SUCCEEDED`:
    Invariant: `MERGE_SUCCEEDED -> safe switch main -> ff-only sync -> SHA equality verification -> optional post-merge branch`.
    Inspect and preserve unrelated tracked/untracked local state, `git fetch origin main`,
    verify the switch is safe, `git checkout main`, `git pull --ff-only origin main`, then
-   verify `HEAD == origin/main` and record the synchronized SHA before creating any
-   `post-merge/{feature_slug}` closure branch. Never stash, reset, rebase, or discard to
-   force the switch; if the safe switch or ff-only sync cannot complete, treat post-merge
-   cleanup as BLOCKED and surface it — do not report the merge workflow as fully complete.
-   If no closure branch is needed, still end on synchronized local `main`. This
-   operationalizes the authoritative cross-workflow rule in `git-merge.instructions.md`
-   (Post-Merge Local Main Synchronization), which governs every merge to `main` regardless
-   of role or PR class.
-2. Close the shipment via `backlogit_ship_shipment` if applicable.
-3. Write compound learnings for hard-won solutions.
-4. Update documentation if templates changed significantly.
-5. Write session memory to `docs/memory/`.
+   verify `HEAD == origin/main` and record the synchronized SHA. Re-inspect the working
+   tree (`git status --porcelain`) and confirm the unrelated state is unchanged — the same
+   tracked, untracked, and index (staged) status as before the sync. Never stash, reset,
+   rebase, or discard to force the switch; if the safe switch or ff-only sync cannot
+   complete, treat post-merge cleanup as BLOCKED and surface it — do not report the merge
+   workflow as fully complete. This operationalizes the authoritative cross-workflow rule
+   in `git-merge.instructions.md` (Post-Merge Local Main Synchronization), which governs
+   every merge to `main` regardless of role or PR class.
+2. **Before any state-mutating closure step below, create and switch to the
+   `post-merge/{feature_slug}` closure branch from synchronized `main`** (derive
+   `{feature_slug}` from the feature ID and title, e.g. `post-merge/022-stash-filter`).
+   Every closure mutation in the following steps — including `backlogit_ship_shipment`,
+   which archives and rewrites workspace artifacts — MUST land on that branch, never
+   directly on the protected default branch. If no closure changes are produced, end on
+   synchronized local `main`.
+3. Close the shipment via `backlogit_ship_shipment` if applicable.
+4. Write compound learnings for hard-won solutions.
+5. Update documentation if templates changed significantly.
+6. Write session memory to `docs/memory/`.
 
 ## Stop Conditions
 

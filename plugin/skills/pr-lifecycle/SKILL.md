@@ -97,7 +97,8 @@ After a user-approved merge that reached `MERGE_SUCCEEDED`:
    e. Fast-forward only (`git pull --ff-only origin main`).
    f. Verify `HEAD == origin/main` and record the synchronized SHA.
    g. Confirm the unrelated local state from step 2a is still present and
-      unstaged.
+      unchanged — the same tracked, untracked, and index (staged) status as
+      step 2a; the sync must not have staged, modified, or dropped it.
    h. Only after this may a `post-merge/{feature_slug}` closure branch be
       created from synchronized `main`. If no closure branch is needed, end on
       synchronized local `main`.
@@ -119,4 +120,8 @@ The skill is complete only when one of these outcomes is explicit:
 
 * the PR is open and ready, waiting on user merge approval
 * the PR feedback and CI loop is blocked with a clear reason
-* the PR was merged after explicit user approval
+* the PR was merged after explicit user approval AND local `main` was
+  synchronized to the merged tip (`HEAD == origin/main`)
+* the PR merged but post-merge synchronization is blocked
+  (`POST_MERGE_SYNC_BLOCKED`) — surfaced with its reason, NOT reported as a
+  fully complete merge workflow

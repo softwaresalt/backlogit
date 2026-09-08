@@ -154,4 +154,28 @@ func TestGitMergeInstructionEncodesGlobalPostMergeMainSync(t *testing.T) {
 		"git-merge instruction must run only after a confirmed MERGE_SUCCEEDED")
 	assert.Contains(t, content, "MERGE_SUCCEEDED",
 		"git-merge instruction must key the trigger on MERGE_SUCCEEDED")
+
+	// (f) The ordered sequence must actually be ordered: fetch -> checkout ->
+	// ff-only pull -> SHA equality, and the working tree must be recorded first.
+	orderedTokens := []string{
+		"git status --porcelain",
+		"git fetch origin main",
+		"git checkout main",
+		"git pull --ff-only origin main",
+		"HEAD == origin/main",
+	}
+	prev := -1
+	for _, tok := range orderedTokens {
+		idx := strings.Index(content, tok)
+		require.NotEqual(t, -1, idx, "git-merge instruction must contain ordered step token: %s", tok)
+		assert.Greater(t, idx, prev, "git-merge step %q must appear after the previous step", tok)
+		prev = idx
+	}
+
+	// (g) Destructive shortcuts must be explicitly forbidden so a surface cannot
+	// regress to stash/reset/discard/clean/force-push.
+	for _, forbidden := range []string{"stash", "reset", "rebase", "discard", "git clean", "force-push"} {
+		assert.Contains(t, content, forbidden,
+			"git-merge instruction must explicitly forbid the destructive shortcut: %s", forbidden)
+	}
 }
