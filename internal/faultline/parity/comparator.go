@@ -102,8 +102,9 @@ type driftDecl struct {
 
 // knownDrifts is the registry of tracked, expected divergences. The CLI --json
 // gate payload omits remediation (owned by the remediation dimension) and
-// retry_after_ms (owned by the retryability dimension); both are pinned to the
-// single tracked defect 156.007-T.
+// retry_after_ms (owned by the retryability dimension); both are pinned to
+// 166-F (TrackedDefectGatePayload); 156.007-T was the original planned owner
+// but is now archived.
 var knownDrifts = map[string]driftDecl{
 	dimRemediation: {
 		fields:  []string{"remediation"},
@@ -698,17 +699,20 @@ func getBool(m map[string]any, key string) bool {
 	return false
 }
 
-// getIntPresent returns the int value at key and whether the key exists. JSON
-// numbers decode as float64.
+// getIntPresent returns the int value at key and whether the key exists as a
+// valid numeric (float64) JSON number. A value that exists but is not float64
+// (e.g. a string "5000") is treated as absent so that a type mismatch never
+// masks the actual value with a false (0, present) result.
 func getIntPresent(m map[string]any, key string) (int, bool) {
 	v, ok := m[key]
-	if !ok {
+	if !ok || v == nil {
 		return 0, false
 	}
-	if f, isFloat := v.(float64); isFloat {
-		return int(f), true
+	f, isFloat := v.(float64)
+	if !isFloat {
+		return 0, false // type mismatch treated as absent
 	}
-	return 0, true
+	return int(f), true
 }
 
 // dedupeSort returns a sorted, duplicate-free copy of xs.

@@ -1,18 +1,10 @@
 package faultline
 
-// 156.004-T (U4a-decl): RED AST source-shape harness.
-//
-// This harness is a RED DELIVERABLE. It parses the SOURCE TEXT of evidence.go
-// with go/parser and go/ast and asserts that the fault-line evidence contract
-// WILL declare the functions/methods Canonical, DecodeAndValidate, Validate,
-// RegisterFamily, knownFamilies, and freeze.
-//
-// It deliberately does NOT reference any symbol from this package: the 156.004-T
-// declarations task lands only body-free-compilable declarations, so those six
-// functions do not exist yet. Parsing the source (instead of importing/using the
-// symbols) lets the harness compile RIGHT NOW while staying RED until the
-// behavior task (156.006-T) adds the function bodies, at which point it turns
-// GREEN. This preserves the harness-architect declaration gate without stubs.
+// TestU4aDeclSignatureShape is the permanent regression guard for the
+// internal/faultline contract function signatures (156.004-T + 156.006-T).
+// Originally a red-deliverable harness, it is now GREEN: all six required
+// contract functions (Canonical, DecodeAndValidate, Validate, RegisterFamily,
+// knownFamilies, freeze) exist in evidence.go with full implementations.
 
 import (
 	"go/ast"
@@ -25,8 +17,8 @@ import (
 )
 
 // TestU4aDeclSignatureShape parses evidence.go and asserts the presence of the
-// six contract functions/methods by name. It is expected to FAIL (RED) until
-// 156.006-T implements the function bodies.
+// six contract functions/methods by name. It is GREEN: all six functions exist
+// with full implementations as delivered by 156.006-T.
 func TestU4aDeclSignatureShape(t *testing.T) {
 	src := evidenceSourcePath(t)
 

@@ -280,7 +280,7 @@ func DecodeAndValidate(data []byte) (EvidenceArtifact, FamilyPayload, error) {
 	}
 
 	// (4) Family lookup by (SchemaVersion, NodeFamily) from the frozen registry.
-	factory, ok := lookupFactory(a.SchemaVersion, a.NodeFamily)
+	factory, ok := rawLookup(a.SchemaVersion, a.NodeFamily)
 	if !ok {
 		return a, nil, fmt.Errorf("%w: %q at v%d", ErrUnknownFamily, a.NodeFamily, a.SchemaVersion)
 	}
@@ -385,8 +385,9 @@ func freeze() {
 	}
 }
 
-// lookupFactory returns the frozen factory for (version, name).
-func lookupFactory(version int, name string) (func() FamilyPayload, bool) {
+// rawLookup returns the registered factory function for (version, name) under
+// the registry lock, or (nil, false) when absent.
+func rawLookup(version int, name string) (func() FamilyPayload, bool) {
 	globalRegistry.mu.Lock()
 	defer globalRegistry.mu.Unlock()
 	regv := globalRegistry.factories[version]
@@ -397,21 +398,56 @@ func lookupFactory(version int, name string) (func() FamilyPayload, bool) {
 	return f, ok
 }
 
-// decodePayload derives the concrete family payload from a.VerifiedEvidence via
-// the frozen registry. It returns ErrUnknownFamily for an unregistered family
-// and ErrMalformed for undecodable payload bytes.
-func decodePayload(a EvidenceArtifact) (FamilyPayload, error) {
+// lookupFactory resolves (version, name) from the frozen registry and returns a
+// fresh FamilyPayload instance. It returns ErrUnknownVersion when the schema
+// version is absent from knownVersions and ErrUnknownFamily when the family is
+// absent from the frozen registry for that version.
+func lookupFactory(version int, name string) (FamilyPayload, error) {
 	freeze()
-	factory, ok := lookupFactory(a.SchemaVersion, a.NodeFamily)
-	if !ok {
-		return nil, fmt.Errorf("%w: %q at v%d", ErrUnknownFamily, a.NodeFamily, a.SchemaVersion)
+	if _, ok := knownVersions[version]; !ok {
+		return nil, fmt.Errorf("%w: schema_version %d", ErrUnknownVersion, version)
 	}
-	fp := factory()
+	factory, ok := rawLookup(version, name)
+	if !ok {
+		return nil, fmt.Errorf("%w: %q at v%d", ErrUnknownFamily, name, version)
+	}
+	return factory(), nil
+}
+
+// decodePayload derives the concrete family payload from a.VerifiedEvidence via
+// the frozen registry, enforcing SEC-01 bounds and exact-casing on the family
+// field set (mirrors the verification path in DecodeAndValidate so that
+// Validate and Canonical apply identical structural controls).
+func decodePayload(a EvidenceArtifact) (FamilyPayload, error) {
+	if len(a.VerifiedEvidence) > MaxArtifactBytes {
+		return nil, fmt.Errorf("faultline: %w: verified_evidence exceeds MaxArtifactBytes", ErrMalformed)
+	}
+	fp, err := lookupFactory(a.SchemaVersion, a.NodeFamily)
+	if err != nil {
+		return nil, err
+	}
 	if len(a.VerifiedEvidence) == 0 {
 		return nil, fmt.Errorf("%w: verified_evidence missing", ErrMalformed)
 	}
-	if err := json.Unmarshal(a.VerifiedEvidence, fp); err != nil {
-		return nil, fmt.Errorf("%w: verified_evidence: %v", ErrMalformed, err)
+	// Exact-casing enforcement: scan the family payload keys and reject any that
+	// are absent from the family's declared JSON tag set. This catches miscased
+	// keys (e.g. "Scenario_ID" instead of "scenario_id") that encoding/json
+	// would otherwise accept via its case-insensitive fallback matching, closing
+	// the SEC-01 gap between decodePayload and DecodeAndValidate.
+	veKeys, scanErr := preScan(a.VerifiedEvidence)
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	famTags := structJSONTags(fp)
+	for _, k := range veKeys {
+		if _, ok := famTags[k]; !ok {
+			return nil, fmt.Errorf("%w: unknown or miscased verified_evidence field %q", ErrMalformed, k)
+		}
+	}
+	dec := json.NewDecoder(bytes.NewReader(a.VerifiedEvidence))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(fp); err != nil {
+		return nil, fmt.Errorf("faultline: %w: %s", ErrMalformed, err)
 	}
 	return fp, nil
 }

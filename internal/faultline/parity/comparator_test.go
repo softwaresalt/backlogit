@@ -267,3 +267,57 @@ func TestU2ComparatorEvidenceValidates(t *testing.T) {
 	_, ok := fp.(*faultline.ParityEvidence)
 	require.True(t, ok, "evidence payload must be *ParityEvidence")
 }
+
+// TestU2ComparatorGetIntPresentNonFloat64TreatedAsAbsent guards against the
+// F-C2 bug where getIntPresent returned (0, true) for any non-float64 value,
+// masking the actual value. A string "5000" for retry_after_ms must be treated
+// as absent (not (0, present)), so no spurious divergence is reported when the
+// CLI side also has no retry_after_ms.
+func TestU2ComparatorGetIntPresentNonFloat64TreatedAsAbsent(t *testing.T) {
+	response := surfaceBody{"id": "T-9", "status": "blocked"}
+	post := identicalPostState()
+
+	// CLI: no retry_after_ms field.
+	cli := body(t, surfaceBody{
+		"error":      "task is blocked by an open dependency",
+		"retryable":  true,
+		"force":      false,
+		"response":   response,
+		"post_state": post,
+	})
+	// MCP: retry_after_ms as a string "5000" (type mismatch — not a JSON number).
+	// With the fix, getIntPresent returns (0, false) so hasRetryAfter=false, matching CLI.
+	// Before the fix, getIntPresent returned (0, true), causing a spurious divergence.
+	mcp := body(t, surfaceBody{
+		"error":          "blocked",
+		"message":        "task is blocked by an open dependency",
+		"retry_after_ms": "5000",
+		"retryable":      true,
+		"force":          false,
+		"response":       response,
+		"post_state":     post,
+	})
+	internal := body(t, surfaceBody{
+		"retryable":  true,
+		"force":      false,
+		"response":   response,
+		"post_state": post,
+	})
+	results := [3]parity.SurfaceResult{
+		{ExitCode: 6, Body: cli, PostStatePath: "/cli"},
+		{ExitCode: 6, Body: mcp, PostStatePath: "/mcp"},
+		{ExitCode: 0, Body: internal, PostStatePath: "/internal"},
+	}
+
+	report, err := parity.CompareResults(context.Background(), "string-retry-after-ms", results)
+	require.NoError(t, err)
+
+	// retry_after_ms with a non-float64 value must be treated as absent, so
+	// the retryability dimension must NOT list retry_after_ms as a divergent field.
+	d := findDimension(t, report, "retryability")
+	for _, f := range d.DivergentFields {
+		if f == "retry_after_ms" {
+			t.Errorf("retry_after_ms: string value was treated as present (getIntPresent bug not fixed), want treated as absent")
+		}
+	}
+}

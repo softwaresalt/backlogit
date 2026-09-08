@@ -131,7 +131,7 @@ func lookupStatus(backlogitDir, id string) (string, bool, error) {
 		}
 		raw, readErr := os.ReadFile(path) //nolint:gosec // path is a workspace-owned artifact under backlogitDir.
 		if readErr != nil {
-			return readErr
+			return nil // skip unreadable files, continue walking
 		}
 		fm, _, parseErr := models.ParseFrontmatter(string(raw))
 		if parseErr != nil || fm == nil {

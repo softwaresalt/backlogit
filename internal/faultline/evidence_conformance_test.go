@@ -453,3 +453,34 @@ func TestU4aBehaviorDuplicateKeys(t *testing.T) {
 		}
 	})
 }
+
+// TestU4aBehaviorValidateMiscasedPayloadKey is the SEC-01 conformance test for
+// F-C1: Validate() called with a VerifiedEvidence payload that contains a
+// miscased field key (e.g. "Scenario_ID" instead of "scenario_id") must return
+// ErrMalformed. This proves that decodePayload applies the same exact-casing
+// enforcement as DecodeAndValidate (via preScan + structJSONTags), closing the
+// gap where plain json.Unmarshal would silently accept case-variant keys via
+// encoding/json's case-insensitive fallback matching.
+func TestU4aBehaviorValidateMiscasedPayloadKey(t *testing.T) {
+	// Hand-craft a VerifiedEvidence object with "Scenario_ID" (capital S + ID)
+	// instead of the correct "scenario_id" tag.
+	miscasedPayload := json.RawMessage(
+		`{"Scenario_ID":"list-default","dimension":"list-output",` +
+			`"surfaces":["cli","mcp","internal"],"divergent_fields":[],` +
+			`"expected_divergence":false,"tracked_defect":"","detail":"all surfaces agree"}`,
+	)
+	a := EvidenceArtifact{
+		SchemaVersion:     EvidenceSchemaVersion,
+		ProducingTask:     "156.006-T",
+		ProducingCommit:   "e97e0263",
+		NodeFamily:        NodeFamilyParity,
+		Applicability:     []string{"cli", "mcp", "internal"},
+		ValidatorIdentity: "faultline-conformance",
+		VerifiedEvidence:  miscasedPayload,
+		Status:            StatusPass,
+	}
+	err := Validate(a)
+	if !errors.Is(err, ErrMalformed) {
+		t.Errorf("miscased payload key: err = %v, want ErrMalformed (SEC-01 exact-casing must reject Scenario_ID)", err)
+	}
+}
