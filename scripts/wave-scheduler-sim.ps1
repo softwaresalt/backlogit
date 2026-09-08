@@ -778,7 +778,15 @@ function Compare-LiveShipmentProjection {
             Add-Drift $drift 'CONTRACT_PARSE' "$($fixtureMember.id): $contractError"
         }
         if ($liveMember.status -cne $fixtureMember.status) {
-            Add-Drift $drift 'MEMBER_STATUS' "$($fixtureMember.id): $($liveMember.status) != $($fixtureMember.status)"
+            # Skip MEMBER_STATUS drift when the live member has reached terminal_success
+            # (done/archived). A shipped shipment's tasks will always appear archived in
+            # the real queue; the fixture retains artificial simulated states for wave
+            # scheduling tests and must not be updated to archived (that would collapse
+            # the wave schedule to 0). Post-shipment archival is expected, not a defect.
+            $terminalSuccessTokens = @((ConvertTo-List $Fx.status_model.terminal_success))
+            if ($liveMember.status -cnotin $terminalSuccessTokens) {
+                Add-Drift $drift 'MEMBER_STATUS' "$($fixtureMember.id): $($liveMember.status) != $($fixtureMember.status)"
+            }
         }
         $expectedDeps = @((ConvertTo-List $fixtureMember.deps) | Sort-Object)
         $actualDeps = @((ConvertTo-List $liveMember.deps) | Sort-Object)

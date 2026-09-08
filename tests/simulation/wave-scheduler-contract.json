@@ -20,7 +20,7 @@
     "release_unit": "147-F",
     "shipment": "130-S",
     "queue_dir": ".backlogit/queue",
-    "mirrored_head": "47925de28b61a39ff3dd3860f8d90a12886a298a",
+    "mirrored_head": "a064f4438a05acaed28d94e386346d4b3450932b",
     "note": "Run scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue to parse the real shipment item list, live status catalog, and registry status mapping/features; resolve artifact types; compare filtered task IDs exactly with M and the explicit non-shipment fallback set; report excluded non-task IDs; verify task projections and every red-deliverable key; and run in-memory mutation checks."
   },
   "status_model": {
