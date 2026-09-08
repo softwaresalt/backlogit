@@ -118,7 +118,10 @@ workflow — run these steps in order. Never stash, reset, rebase, discard,
 
 1. Record and preserve unrelated local tracked and untracked state
    (`git status --porcelain`).
-2. Fetch the merged remote tip (`git fetch origin main`).
+2. Fetch the merged remote tip into the `origin/main` tracking ref that step 6
+   compares against — use an explicit destination refspec so
+   `refs/remotes/origin/main` is updated, not only `FETCH_HEAD`
+   (`git fetch origin main:refs/remotes/origin/main`).
 3. Prove the switch will not overwrite local modifications. If it would, fail
    closed — never auto-stash, reset, or discard.
 4. Switch the existing worktree to local `main` (`git checkout main`). Advance the

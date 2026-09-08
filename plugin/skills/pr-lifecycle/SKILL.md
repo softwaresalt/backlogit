@@ -90,7 +90,9 @@ After a user-approved merge that reached `MERGE_SUCCEEDED`:
    it:
    a. Inspect the working tree (`git status --porcelain`) and preserve any
       unrelated tracked or untracked local state.
-   b. Fetch the default branch (`git fetch origin main`).
+   b. Fetch the default branch into its tracking ref (explicit destination
+      refspec so `refs/remotes/origin/main` is updated, not only `FETCH_HEAD`):
+      `git fetch origin main:refs/remotes/origin/main`.
    c. Verify switching branches will not overwrite local modifications. If it
       would, fail closed with a BLOCKED result — never auto-stash or discard.
    d. Switch the existing worktree to local `main` (`git checkout main`).

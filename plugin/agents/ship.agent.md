@@ -126,7 +126,10 @@ After a user-approved merge that reached `MERGE_SUCCEEDED`:
 
 1. **Return the existing worktree to synchronized `main` first (NON-NEGOTIABLE).**
    Invariant: `MERGE_SUCCEEDED -> safe switch main -> ff-only sync -> SHA equality verification -> optional post-merge branch`.
-   Inspect and preserve unrelated tracked/untracked local state, `git fetch origin main`,
+   Inspect and preserve unrelated tracked/untracked local state,
+   `git fetch origin main:refs/remotes/origin/main` (explicit destination refspec
+   so the `origin/main` tracking ref the equality check reads is updated, not only
+   `FETCH_HEAD`),
    verify the switch is safe, `git checkout main`, `git pull --ff-only origin main`, then
    verify `HEAD == origin/main` and record the synchronized SHA. Re-inspect the working
    tree (`git status --porcelain`) and confirm the unrelated state is unchanged — the same

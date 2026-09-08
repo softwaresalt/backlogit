@@ -182,7 +182,7 @@ func TestGitMergeInstructionEncodesGlobalPostMergeMainSync(t *testing.T) {
 	// ff-only pull -> SHA equality, and the working tree must be recorded first.
 	orderedTokens := []string{
 		"git status --porcelain",
-		"git fetch origin main",
+		"git fetch origin main:refs/remotes/origin/main",
 		"git checkout main",
 		"git pull --ff-only origin main",
 		"HEAD == origin/main",

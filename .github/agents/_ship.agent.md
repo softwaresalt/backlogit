@@ -1185,8 +1185,10 @@ compound refresh, compact-context). These commits MUST NOT land directly on `mai
    a. Inspect the working tree and record the unrelated tracked/untracked state that must
       be preserved:
       `git status --porcelain`
-   b. Fetch the default branch:
-      `git fetch origin main`
+   b. Fetch the default branch into its tracking ref (explicit destination
+      refspec so `refs/remotes/origin/main` — the equality target in step f — is
+      updated, not only `FETCH_HEAD`):
+      `git fetch origin main:refs/remotes/origin/main`
    c. Verify switching to `main` will not overwrite local modifications. If `git checkout main`
       would report that local changes would be overwritten, halt with
       `POST_MERGE_SYNC_BLOCKED: switching to main is unsafe — unrelated local changes present. Do not stash, reset, or discard.`
