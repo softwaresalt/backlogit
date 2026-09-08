@@ -1210,7 +1210,11 @@ compound refresh, compact-context). These commits MUST NOT land directly on `mai
    This safe main-sync sequence applies to every successfully merged PR Ship handles —
    feature, chore, staging/planning, corrective, and closure PRs alike. If the safe switch
    or ff-only update cannot complete, post-merge cleanup is BLOCKED and MUST be surfaced;
-   never report the merge workflow as fully complete in that state.
+   never report the merge workflow as fully complete in that state. This step
+   operationalizes the authoritative cross-workflow rule in
+   `.github/instructions/git-merge.instructions.md` (Post-Merge Local Main
+   Synchronization), which governs every merge to `main` regardless of role or PR class;
+   Ship must not contradict or narrow it.
 3. **All subsequent Step 6 work happens on this branch.** Every commit in steps 6.1–6.10
    targets `post-merge/{feature_slug}`, not `main`.
 4. **After all closure work is committed**, push the branch and create a PR:

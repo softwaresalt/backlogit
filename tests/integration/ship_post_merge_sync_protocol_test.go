@@ -33,6 +33,17 @@ import (
 // single, greppable contract.
 const postMergeSyncInvariant = "MERGE_SUCCEEDED -> safe switch main -> ff-only sync -> SHA equality verification -> optional post-merge branch"
 
+// globalPostMergeSyncInvariant is the generalized, cross-workflow contract that
+// MUST live in the authoritative Git-merge instruction (not solely in
+// Ship/pr-lifecycle). It applies to ANY successful merge into `main`, regardless
+// of role or PR class.
+const globalPostMergeSyncInvariant = "ANY MERGE_SUCCEEDED to main -> safe local main switch -> ff-only origin/main sync -> SHA equality -> next steps"
+
+// gitMergeAuthoritySurface is the authoritative cross-workflow merge instruction
+// that owns the base synchronization invariant. Ship/pr-lifecycle surfaces
+// operationalize it and MUST reference it by name.
+const gitMergeAuthoritySurface = ".github/instructions/git-merge.instructions.md"
+
 // readGovernedSurface reads a repo-root-relative markdown surface and returns
 // its content with CRLF normalised to LF so assertions are line-ending
 // agnostic across Windows and POSIX checkouts.
@@ -71,6 +82,12 @@ func TestPRLifecycleSkillEncodesPostMergeMainSync(t *testing.T) {
 				"pr-lifecycle must require a fast-forward-only pull of main")
 			assert.Contains(t, content, "HEAD == origin/main",
 				"pr-lifecycle must require verifying HEAD equals origin/main")
+
+			// Ship/pr-lifecycle must stay coupled to the global authority: they
+			// operationalize the base invariant and reference it by name so the
+			// two surfaces cannot drift into a contradictory rule.
+			assert.Contains(t, content, "git-merge.instructions.md",
+				"pr-lifecycle must reference the authoritative cross-workflow git-merge instruction")
 		})
 	}
 }
@@ -95,6 +112,46 @@ func TestShipAgentEncodesPostMergeMainSync(t *testing.T) {
 				"Ship agent must require a fast-forward-only pull of main after merge")
 			assert.Contains(t, content, "HEAD == origin/main",
 				"Ship agent must verify HEAD equals origin/main and record the synchronized SHA")
+
+			assert.Contains(t, content, "git-merge.instructions.md",
+				"Ship agent must reference the authoritative cross-workflow git-merge instruction")
 		})
 	}
+}
+
+// TestGitMergeInstructionEncodesGlobalPostMergeMainSync guards the authoritative
+// cross-workflow merge instruction. The base synchronization invariant must live
+// here — not solely in Ship/pr-lifecycle — so it governs every merge-capable
+// workflow (Ship, PR lifecycle, staging/planning, corrective, closure, elective,
+// or any future merge-capable workflow) regardless of role or PR class.
+func TestGitMergeInstructionEncodesGlobalPostMergeMainSync(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+
+	content := readGovernedSurface(t, repoRoot, gitMergeAuthoritySurface)
+
+	// (a) Global applicability to every successful merge to main.
+	assert.Contains(t, content, globalPostMergeSyncInvariant,
+		"git-merge instruction must embed the generalized global sync invariant")
+	assert.Contains(t, content, "regardless of role or PR class",
+		"git-merge instruction must state the rule applies regardless of role or PR class")
+
+	// (b) Exact ordered ff-only sync and SHA equality.
+	assert.Contains(t, content, "git pull --ff-only origin main",
+		"git-merge instruction must require a fast-forward-only pull of main")
+	assert.Contains(t, content, "HEAD == origin/main",
+		"git-merge instruction must require verifying HEAD equals origin/main")
+
+	// (c) Fail-closed blocked state.
+	assert.Contains(t, content, "POST_MERGE_SYNC_BLOCKED",
+		"git-merge instruction must define the fail-closed blocked state")
+
+	// (d) Next-step prohibition before sync completes.
+	assert.Contains(t, content, "before any next step",
+		"git-merge instruction must prohibit next steps before the sync completes")
+
+	// (e) Trigger is MERGE_SUCCEEDED only — failures/approved-unmerged do not fire.
+	assert.Contains(t, content, "only after a confirmed",
+		"git-merge instruction must run only after a confirmed MERGE_SUCCEEDED")
+	assert.Contains(t, content, "MERGE_SUCCEEDED",
+		"git-merge instruction must key the trigger on MERGE_SUCCEEDED")
 }

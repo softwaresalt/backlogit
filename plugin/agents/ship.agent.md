@@ -132,7 +132,10 @@ After a user-approved merge that reached `MERGE_SUCCEEDED`:
    `post-merge/{feature_slug}` closure branch. Never stash, reset, rebase, or discard to
    force the switch; if the safe switch or ff-only sync cannot complete, treat post-merge
    cleanup as BLOCKED and surface it — do not report the merge workflow as fully complete.
-   If no closure branch is needed, still end on synchronized local `main`.
+   If no closure branch is needed, still end on synchronized local `main`. This
+   operationalizes the authoritative cross-workflow rule in `git-merge.instructions.md`
+   (Post-Merge Local Main Synchronization), which governs every merge to `main` regardless
+   of role or PR class.
 2. Close the shipment via `backlogit_ship_shipment` if applicable.
 3. Write compound learnings for hard-won solutions.
 4. Update documentation if templates changed significantly.

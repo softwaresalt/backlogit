@@ -104,6 +104,10 @@ After a user-approved merge that reached `MERGE_SUCCEEDED`:
 3. If the safe switch or fast-forward-only update cannot complete, treat
    post-merge cleanup as BLOCKED and surface it. Do not report the merge
    workflow as fully complete.
+   This sequence operationalizes the authoritative cross-workflow rule in
+   `git-merge.instructions.md` (Post-Merge Local Main Synchronization), which
+   governs every merge to `main` regardless of role or PR class; this skill
+   must not contradict or narrow it.
 4. Delete the feature branch only when that cleanup is explicitly requested or
    already part of the chosen PR flow. Do NOT delete automatically.
 5. Summarize any follow-up items, release notes, or residual risks that remain
