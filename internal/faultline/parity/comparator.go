@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"runtime/debug"
 	"sort"
 	"time"
 
@@ -47,9 +48,35 @@ const (
 const TrackedDefectGatePayload = "166-F"
 
 // producingCommit identifies the commit that produced comparator evidence. It
-// only needs to be non-empty for the U4a envelope invariants.
-// commit that implemented 156.002-T comparator behavior.
-const producingCommit = "19c924bb"
+// only needs to be non-empty for the U4a envelope invariants. It defaults to
+// the VCS revision embedded in the binary by the Go toolchain (or "dev" when
+// unavailable, e.g. a `go test` run in a non-VCS environment) so evidence
+// artifacts carry the actual build identity instead of a stale historical
+// constant. Tests may override it via SetProducingCommitForTest.
+var producingCommit = resolveProducingCommit()
+
+// resolveProducingCommit returns the VCS revision embedded in the current
+// binary, or "dev" when the toolchain did not stamp one. The result is always
+// non-empty to satisfy the U4a ProducingCommit invariant.
+func resolveProducingCommit() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && s.Value != "" {
+				return s.Value
+			}
+		}
+	}
+	return "dev"
+}
+
+// SetProducingCommitForTest overrides the producing-commit identity for the
+// duration of a test and returns a restore function. It exists so tests can
+// pin a deterministic value without depending on the ambient build stamp.
+func SetProducingCommitForTest(commit string) (restore func()) {
+	prev := producingCommit
+	producingCommit = commit
+	return func() { producingCommit = prev }
+}
 
 // MaxDivergentFields caps the number of divergent field paths reported for a
 // single dimension (or the aggregate evidence payload) so an adversarial or
@@ -341,9 +368,16 @@ func validatePostState(p *postProjection) []string {
 		bad = append(bad, "updated_at")
 	}
 	// updated_at MUST be bumped vs the seed baseline: a surface that fails to
-	// bump it (under-persist) is caught rather than normalized away.
-	if p.seedUpdatedAt != "" && p.updatedAt == p.seedUpdatedAt {
-		bad = append(bad, "updated_at")
+	// bump it (under-persist) is caught rather than normalized away. The
+	// comparison is done on parsed time.Time instants — NOT on lexical RFC3339
+	// strings — so two encodings of the same instant (e.g. a `Z` vs `+00:00`
+	// zone offset) are not mistaken for a bump, and an unparseable seed
+	// baseline fails closed instead of passing silently.
+	if p.seedUpdatedAt != "" {
+		seed, seedOK := parseTime(p.seedUpdatedAt)
+		if !seedOK || !updated.After(seed) {
+			bad = append(bad, "updated_at")
+		}
 	}
 	return bad
 }
@@ -917,8 +951,11 @@ func getStringPresent(m map[string]any, key string) (string, bool) {
 // false value; callers fail such a type mismatch closed.
 func getBoolPresent(m map[string]any, key string) (value bool, present bool, typeValid bool) {
 	v, ok := m[key]
-	if !ok || v == nil {
-		return false, false, true
+	if !ok {
+		return false, false, true // key absent — not present, no type violation
+	}
+	if v == nil {
+		return false, true, false // key present with JSON null — type mismatch
 	}
 	b, isBool := v.(bool)
 	if !isBool {
@@ -934,8 +971,11 @@ func getBoolPresent(m map[string]any, key string) (value bool, present bool, typ
 // absent or as a zero value.
 func getIntPresent(m map[string]any, key string) (value int, present bool, typeValid bool) {
 	v, ok := m[key]
-	if !ok || v == nil {
-		return 0, false, true
+	if !ok {
+		return 0, false, true // key absent — not present, no type violation
+	}
+	if v == nil {
+		return 0, true, false // key present with JSON null — type mismatch
 	}
 	f, isFloat := v.(float64)
 	if !isFloat {

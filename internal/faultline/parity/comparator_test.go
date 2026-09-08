@@ -409,3 +409,24 @@ func TestU2ComparatorBoolTypeMismatchFailsClosed(t *testing.T) {
 	require.Equal(t, parity.StatusFail, d.Status)
 	require.Contains(t, d.DivergentFields, "retryable:type_mismatch")
 }
+
+// TestU2ComparatorNullBoolIsTypeMismatch verifies that an explicit JSON null
+// value for `retryable` is treated as present-with-a-type-mismatch (fail
+// closed), NOT as an absent key that normalizes to false. A missing key and a
+// null value are semantically distinct: null IS present, just with the wrong
+// type.
+func TestU2ComparatorNullBoolIsTypeMismatch(t *testing.T) {
+	results := identicalResults(t)
+	results[1].Body = body(t, surfaceBody{
+		"response":   surfaceBody{"id": "F-1", "title": "Seed feature", "status": "active"},
+		"retryable":  nil, // JSON null: present-but-wrong-type, not absent
+		"force":      false,
+		"post_state": identicalPostState(),
+	})
+
+	report, err := parity.CompareResults(context.Background(), "null-bool-type-mismatch", results)
+	require.NoError(t, err)
+	d := findDimension(t, report, "retryability")
+	require.Equal(t, parity.StatusFail, d.Status)
+	require.Contains(t, d.DivergentFields, "retryable:type_mismatch")
+}
