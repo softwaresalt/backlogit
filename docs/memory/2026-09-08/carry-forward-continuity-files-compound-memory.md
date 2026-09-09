@@ -17,7 +17,9 @@ preserved and included in the next Stage-owned staging round.
 ## Decisions
 
 * Known continuity-file changes are not disposable dirty-worktree noise
-* Stage owns carrying these changes through a staging branch and pull request
+* Stage validates and commits only the backlog, planning, learning, and memory
+  artifacts within its role boundary; Orchestrator Step 1.5 owns the staging
+  branch and pull request
 * Ship retains its clean-default-branch gate
 * Unknown or secret-bearing changes remain fail-closed and are not implicitly
   included by this rule

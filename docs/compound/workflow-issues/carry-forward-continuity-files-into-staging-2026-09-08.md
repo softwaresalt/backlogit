@@ -94,6 +94,9 @@ and must fail closed when their ownership is unclear.
 * The Orchestrator's staging-artifact merge gate should include legitimate
   pending changes to `.backlogit/stash.jsonl`, `docs/memory/`, `start.ps1`, and
   `.gitignore` without assigning out-of-bound mutations to Stage
+* Until Orchestrator Step 1.5 formally checks every carry-forward path, treat
+  this learning as the explicit path allowlist and record that continuity
+  staging is required in the dark-mode activation before claiming a shipment
 * Ship should continue enforcing a clean-default-branch gate; Stage owns making
   the expected continuity state durable before the Ship handoff
 * Never use reset, checkout, clean, or automatic stash operations to hide these
