@@ -1,0 +1,7 @@
+{
+  "filename": "checkpoint-20260909-025605.json",
+  "disposition": "quarantined",
+  "reason": "malformed schema_version=0 checkpoint created by ship agent (state_dump had wrong format)",
+  "operator": "ship-agent",
+  "disposition_at": "2026-09-09T03:44:10.9190488Z"
+}
