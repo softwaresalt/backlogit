@@ -10,6 +10,7 @@ logs/
 .env
 .env.*
 !.env.example
+.openai-token
 
 # Project files
 *.prj
@@ -37,6 +38,7 @@ backlogit.db
 .backlogit/runtime/
 .autoharness/staging/
 .autoharness/backups/
+.autoharness/gates/pre-review/
 *.exe~
 prompt.md
 
