@@ -309,7 +309,9 @@ After Stage completes and before routing to Ship, verify that all staging artifa
    - If any other path is dirty, halt with
      `STAGING_GATE_FAIL: unclassified dirty path {path}`.
    - If an allowlisted path is dirty, validate that its content is legitimate
-     continuity, launcher, or repository-hygiene state before proceeding.
+     continuity, launcher, or repository-hygiene state, then proceed directly
+     to step 3.
+   - If no allowlisted path is dirty, proceed to step 2.
 2. Check for unpushed local commits:
    `git fetch origin main`
    `git log origin/main..main --oneline`
