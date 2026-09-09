@@ -1,4 +1,5 @@
 ---
+chunk_strategy: h1-h2-h3
 closure_status: READY
 compaction_status: done
 doc_type: closure
