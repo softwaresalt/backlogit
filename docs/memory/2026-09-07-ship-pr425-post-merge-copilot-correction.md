@@ -1,8 +1,8 @@
 # Ship: Post-Merge Copilot Correction for PR #425
 
-**Date:** 2026-09-07 / 2026-09-08  
-**Session type:** Post-merge corrective (not a shipment)  
-**Branch:** `fix/pr-425-post-merge-review`  
+**Date:** 2026-09-07 / 2026-09-08
+**Session type:** Post-merge corrective (not a shipment)
+**Branch:** `fix/pr-425-post-merge-review`
 **Corrective PR:** #429 https://github.com/softwaresalt/backlogit/pull/429
 
 ## Context
