@@ -42,6 +42,9 @@ internal/faultline/      ← Versioned fault-line evidence contract: EvidenceArt
                             leaf (only imports: internal/canonical, optionally internal/errors)
 internal/faultline/parity/ ← Cross-surface golden parity harness: parallel-safe three-surface scenario driver
                             (CLI/MCP/internal), dimension-aware comparator, recurring-failure corpus (test infra)
+internal/faultline/mutation/ ← Declarative representation-set model and postcondition verifier for mutation ops
+                            (S5 fault-line seq 2/7): RepresentationKind, RepresentationSet, thread-safe registry,
+                            VerifySuccess/VerifyFailure with IncompleteSnapshot guard; stdlib-only leaf (no core import)
   ↓
 .backlogit/              ← Workspace: Markdown source-of-truth, SQLite cache
 ```
@@ -68,6 +71,7 @@ cmd → cli → core, db, mcp, models, telemetry
              faultline  → canonical, (optionally) errors — standalone leaf; producers S5-S9 and
                           consumers S10-S11 import it; never imported by core/cli/mcp/events/db
              faultline/parity → faultline, cli, mcp, core, db (test-only; not imported by production packages)
+             faultline/mutation → (stdlib-only) — postcondition verifier leaf; never imported by core/cli/mcp/db
 ```
 
 Cross-cutting rules:
