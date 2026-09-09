@@ -15,6 +15,7 @@ docline:
     message: "Ship branch creation blocked because local main contains recurring continuity-file changes"
     file_path: .backlogit/stash.jsonl
     citations:
+        - .github/agents/_stage.agent.md
         - .github/agents/_ship.agent.md
         - docs/compound/workflow-issues/ship-agent-incomplete-git-staging-pr-bypass-2026-04-14.md
         - .backlogit/queue/139-S.md
@@ -65,17 +66,20 @@ encounters the same dirty-worktree gate.
 
 ## Resolution
 
-Always carry these known continuity-file changes into the next Stage-owned
-staging round:
+Always carry these known continuity-file changes into the next staging round:
 
 1. Inspect the existing changes and confirm they are legitimate workflow,
    continuity, launcher, or repository-hygiene updates.
 2. Preserve the files exactly as found. Do not reset, discard, or automatically
    stash them to make Ship's branch gate pass.
-3. Include them in the next staging branch and staging pull request alongside
-   the next Stage-produced backlog or shipment artifacts.
-4. Merge the staging pull request to `main` before invoking Ship.
-5. Confirm local `main` is synchronized and clean, then hand the queued shipment
+3. Have Stage validate and commit the backlog, planning, learning, and memory
+   artifacts that fall within its role boundary.
+4. Have the Orchestrator's staging-artifact merge gate carry any validated
+   launcher or repository-hygiene changes through the staging branch and pull
+   request. Stage must not create the pull request or commit files outside its
+   role boundary.
+5. Merge the staging pull request to `main` before invoking Ship.
+6. Confirm local `main` is synchronized and clean, then hand the queued shipment
    to Ship.
 
 This rule carries forward the listed file classes. It does not convert every
@@ -85,10 +89,11 @@ and must fail closed when their ownership is unclear.
 
 ## Prevention
 
-* Stage session intake should check the known carry-forward paths before
-  declaring staging complete
-* A staging pull request should include legitimate pending changes to
-  `.backlogit/stash.jsonl`, `docs/memory/`, `start.ps1`, and `.gitignore`
+* Stage session intake should validate known carry-forward paths and commit only
+  the backlog, planning, learning, and memory artifacts its role permits
+* The Orchestrator's staging-artifact merge gate should include legitimate
+  pending changes to `.backlogit/stash.jsonl`, `docs/memory/`, `start.ps1`, and
+  `.gitignore` without assigning out-of-bound mutations to Stage
 * Ship should continue enforcing a clean-default-branch gate; Stage owns making
   the expected continuity state durable before the Ship handoff
 * Never use reset, checkout, clean, or automatic stash operations to hide these

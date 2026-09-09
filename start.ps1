@@ -1,4 +1,4 @@
-# Agent CLI Startup Script — graphtor-docs
+# Agent CLI Startup Script — backlogit
 #
 # This script is self-contained: it loads .env.local, resolves workspace-local
 # AI-tool state directories, runs the sidecar syncs enabled for this workspace
@@ -25,7 +25,7 @@
 Set-Location -LiteralPath $PSScriptRoot
 
 # Load .env.local (gitignored per-developer overrides) if present. Each
-# KEY=VALUE line overrides the inherited process value for this launch. A
+# KEY=VALUE line is applied only when the process variable is not already set. A
 # single pair of matching surrounding quotes is stripped from the value.
 $envLocalPath = Join-Path $PSScriptRoot ".env.local"
 if (Test-Path -LiteralPath $envLocalPath -PathType Leaf) {
@@ -40,7 +40,9 @@ if (Test-Path -LiteralPath $envLocalPath -PathType Leaf) {
                     $value = $value.Substring(1, $value.Length - 2)
                 }
             }
-            [Environment]::SetEnvironmentVariable($name, $value, "Process")
+            if ($null -eq [Environment]::GetEnvironmentVariable($name, "Process")) {
+                [Environment]::SetEnvironmentVariable($name, $value, "Process")
+            }
         }
     }
 }
@@ -142,7 +144,7 @@ if ($enabledSidecars -contains "engram") {
 
 # ai_tools.copilot_cli.args from .autoharness/config.yaml -- extra arguments
 # always passed before the operator's own argv (e.g. ["--remote"]).
-$copilotArguments = @("--yolo")
+$copilotArguments = @()
 $copilotArguments += $args
 
 & $copilotExe @copilotArguments
