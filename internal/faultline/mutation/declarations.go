@@ -1,5 +1,7 @@
 package mutation
 
+import "fmt"
+
 // init registers the representation sets for existing mutating operations in
 // internal/core. These declarations describe the existing behavior of each
 // operation and are the primary verification surface for S5 postcondition
@@ -20,6 +22,6 @@ func init() {
 // silently at runtime.
 func mustRegister(set RepresentationSet) {
 	if err := Register(set); err != nil {
-		panic("mutation.declarations: " + err.Error())
+		panic(fmt.Errorf("mutation.declarations: %w", err))
 	}
 }

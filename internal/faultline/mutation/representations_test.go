@@ -2,6 +2,8 @@ package mutation_test
 
 import (
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +11,15 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/faultline/mutation"
 )
+
+// testOpSeq provides unique op names across -count=N re-runs in the same
+// binary. The package-level registry never resets, so test op names must be
+// globally unique within the process.
+var testOpSeq atomic.Int64
+
+func uniqueOp(prefix string) string {
+	return fmt.Sprintf("%s_%d", prefix, testOpSeq.Add(1))
+}
 
 // TestU1_RepresentationKindConstants verifies that all six expected
 // RepresentationKind constants are exported with their correct string values.
@@ -112,15 +123,18 @@ func TestU1_RepresentationSetValidateErrors(t *testing.T) {
 // TestU1_RegistryRegisterAndLookup verifies that Register stores a valid set
 // and Lookup retrieves it by op name.
 func TestU1_RegistryRegisterAndLookup(t *testing.T) {
+	// uniqueOp ensures a fresh name on each -count=N run since the package
+	// registry is never reset between runs in the same binary.
+	opName := uniqueOp("LookupTestOp")
 	set := mutation.RepresentationSet{
-		Op:              "LookupTestOp",
+		Op:              opName,
 		Representations: []mutation.RepresentationKind{mutation.Frontmatter, mutation.SQLite},
 	}
 
 	err := mutation.Register(set)
 	require.NoError(t, err)
 
-	got, ok := mutation.Lookup("LookupTestOp")
+	got, ok := mutation.Lookup(opName)
 	require.True(t, ok, "Lookup should find registered op")
 	assert.Equal(t, set.Op, got.Op)
 	assert.Equal(t, set.Representations, got.Representations)
@@ -129,8 +143,11 @@ func TestU1_RegistryRegisterAndLookup(t *testing.T) {
 // TestU1_RegistryDuplicateReturnsError verifies that Register returns an error
 // when the same op name is registered twice.
 func TestU1_RegistryDuplicateReturnsError(t *testing.T) {
+	// uniqueOp ensures a fresh name on each -count=N run since the package
+	// registry is never reset between runs in the same binary.
+	opName := uniqueOp("DuplicateTestOp")
 	set := mutation.RepresentationSet{
-		Op:              "DuplicateTestOp",
+		Op:              opName,
 		Representations: []mutation.RepresentationKind{mutation.EventsJSONL},
 	}
 

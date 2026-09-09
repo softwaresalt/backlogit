@@ -33,13 +33,21 @@ func Register(set RepresentationSet) error {
 }
 
 // Lookup returns the RepresentationSet for the given op name. The second
-// return value is false when the op has not been registered. Lookup is safe
-// for concurrent use.
+// return value is false when the op has not been registered. The returned
+// RepresentationSet's Representations slice is a defensive copy; callers must
+// not mutate it. Lookup is safe for concurrent use.
 func Lookup(opName string) (RepresentationSet, bool) {
 	mu.RLock()
 	defer mu.RUnlock()
 	set, ok := reg[opName]
-	return set, ok
+	if !ok {
+		return RepresentationSet{}, false
+	}
+	// Defensive copy: prevent a caller mutation from corrupting the stored entry.
+	cp := make([]RepresentationKind, len(set.Representations))
+	copy(cp, set.Representations)
+	set.Representations = cp
+	return set, true
 }
 
 // Registered returns the names of all registered ops in sorted order.
