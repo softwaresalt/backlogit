@@ -2,7 +2,7 @@
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"
 title: "Carry forward continuity files into the next staging round"
-description: "Preserve recurring backlog, memory, launcher, and ignore-file changes on local main and include them in the next Stage-owned staging change."
+description: "Preserve recurring backlog, memory, launcher, and ignore-file changes on local main and include them in the next staging change without crossing role boundaries."
 doc_type: learning
 source: docs/compound/workflow-issues/carry-forward-continuity-files-into-staging-2026-09-08.md
 docline:
@@ -98,8 +98,9 @@ and must fail closed when their ownership is unclear.
 * Until Orchestrator Step 1.5 formally checks every carry-forward path, treat
   this learning as the explicit path allowlist and record that continuity
   staging is required in the dark-mode activation before claiming a shipment
-* Ship should continue enforcing a clean-default-branch gate; Stage owns making
-  the expected continuity state durable before the Ship handoff
+* Ship should continue enforcing a clean-default-branch gate; Stage makes only
+  its permitted artifacts durable, while launcher and repository-hygiene
+  changes follow the operator-owned staging path before the Ship handoff
 * Never use reset, checkout, clean, or automatic stash operations to hide these
   changes
 * Review unknown dirty paths separately instead of broadening this allowlist
