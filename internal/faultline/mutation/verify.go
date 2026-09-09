@@ -50,7 +50,7 @@ func VerifySuccess(snap MutationSnapshot) (VerificationResult, error) {
 		return VerificationResult{}, fmt.Errorf("mutation.VerifySuccess: op %q: %w", snap.Op, ErrOpNotRegistered)
 	}
 
-	var missing []RepresentationKind
+	missing := make([]RepresentationKind, 0, len(set.Representations))
 	for _, k := range set.Representations {
 		if bytes.Equal(snap.Before[k], snap.After[k]) {
 			missing = append(missing, k)
@@ -83,7 +83,7 @@ func VerifyFailure(snap MutationSnapshot) (VerificationResult, error) {
 		return VerificationResult{}, fmt.Errorf("mutation.VerifyFailure: op %q: %w", snap.Op, ErrOpNotRegistered)
 	}
 
-	var drifted []RepresentationKind
+	drifted := make([]RepresentationKind, 0, len(set.Representations))
 	for _, k := range set.Representations {
 		if !bytes.Equal(snap.Before[k], snap.After[k]) {
 			drifted = append(drifted, k)

@@ -65,6 +65,7 @@ func TestU2_VerifySuccess_OneMissing(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, result.Passed, "one rep unchanged: Passed must be false")
 	assert.Equal(t, []mutation.RepresentationKind{mutation.SQLite}, result.MissingReps)
+	assert.Nil(t, result.DriftedReps, "DriftedReps must be nil on success path")
 }
 
 // TestU2_VerifySuccess_AllMissing verifies that when no declared
@@ -97,6 +98,7 @@ func TestU2_VerifySuccess_AllMissing(t *testing.T) {
 	// Sorted alphabetically: "events_jsonl" < "frontmatter" < "sqlite"
 	want := []mutation.RepresentationKind{mutation.EventsJSONL, mutation.Frontmatter, mutation.SQLite}
 	assert.Equal(t, want, result.MissingReps)
+	assert.Nil(t, result.DriftedReps, "DriftedReps must be nil on success path")
 }
 
 // TestU2_VerifyFailure_AllUnchanged verifies the happy path: when no declared
@@ -155,6 +157,7 @@ func TestU2_VerifyFailure_OneDrifted(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, result.Passed, "one rep drifted: Passed must be false")
 	assert.Equal(t, []mutation.RepresentationKind{mutation.SQLite}, result.DriftedReps)
+	assert.Nil(t, result.MissingReps, "MissingReps must be nil on failure path")
 }
 
 // TestU2_VerifyFailure_AllDrifted verifies that when all declared
@@ -187,6 +190,7 @@ func TestU2_VerifyFailure_AllDrifted(t *testing.T) {
 	// Sorted alphabetically: "events_jsonl" < "frontmatter" < "sqlite"
 	want := []mutation.RepresentationKind{mutation.EventsJSONL, mutation.Frontmatter, mutation.SQLite}
 	assert.Equal(t, want, result.DriftedReps)
+	assert.Nil(t, result.MissingReps, "MissingReps must be nil on failure path")
 }
 
 // TestU2_UnregisteredOp verifies that both VerifySuccess and VerifyFailure

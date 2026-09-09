@@ -50,20 +50,25 @@ var ErrEmptyRepresentations = errors.New("mutation: representations must not be 
 // not in the defined set.
 var ErrUnknownKind = errors.New("mutation: unknown representation kind")
 
+// ErrDuplicateKind is returned by Validate when the same RepresentationKind
+// appears more than once in the Representations list.
+var ErrDuplicateKind = errors.New("mutation: duplicate representation kind")
+
 // RepresentationSet declares the representations that a single mutating
 // operation is responsible for updating.
 type RepresentationSet struct {
 	// Op is the stable human-readable name of the mutating operation.
 	Op string
 	// Representations is the non-empty ordered list of representation layers
-	// the operation must update.
+	// the operation must update. Each kind must appear at most once.
 	Representations []RepresentationKind
 }
 
 // Validate checks that the RepresentationSet satisfies the schema invariants:
-// Op must be non-empty, Representations must be non-nil and non-empty, and
-// every kind must be from the defined set. Returns one of ErrEmptyOp,
-// ErrEmptyRepresentations, or a wrapped ErrUnknownKind on validation failure.
+// Op must be non-empty, Representations must be non-nil and non-empty, every
+// kind must be from the defined set, and no kind may appear more than once.
+// Returns one of ErrEmptyOp, ErrEmptyRepresentations, a wrapped ErrUnknownKind,
+// or a wrapped ErrDuplicateKind on validation failure.
 func (r RepresentationSet) Validate() error {
 	if r.Op == "" {
 		return ErrEmptyOp
@@ -71,10 +76,15 @@ func (r RepresentationSet) Validate() error {
 	if len(r.Representations) == 0 {
 		return ErrEmptyRepresentations
 	}
+	seen := make(map[RepresentationKind]struct{}, len(r.Representations))
 	for _, k := range r.Representations {
 		if _, ok := validKinds[k]; !ok {
 			return fmt.Errorf("%w: %q", ErrUnknownKind, k)
 		}
+		if _, dup := seen[k]; dup {
+			return fmt.Errorf("%w: %q", ErrDuplicateKind, k)
+		}
+		seen[k] = struct{}{}
 	}
 	return nil
 }

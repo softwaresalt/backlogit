@@ -110,6 +110,14 @@ func TestU1_RepresentationSetValidateErrors(t *testing.T) {
 			},
 			wantErr: mutation.ErrUnknownKind,
 		},
+		{
+			name: "duplicate_kind",
+			set: mutation.RepresentationSet{
+				Op:              "Op1",
+				Representations: []mutation.RepresentationKind{mutation.Frontmatter, mutation.SQLite, mutation.Frontmatter},
+			},
+			wantErr: mutation.ErrDuplicateKind,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -138,6 +146,13 @@ func TestU1_RegistryRegisterAndLookup(t *testing.T) {
 	require.True(t, ok, "Lookup should find registered op")
 	assert.Equal(t, set.Op, got.Op)
 	assert.Equal(t, set.Representations, got.Representations)
+}
+
+// TestU1_RegistryLookupMiss verifies that Lookup returns (RepresentationSet{}, false)
+// for an op name that has never been registered.
+func TestU1_RegistryLookupMiss(t *testing.T) {
+	_, ok := mutation.Lookup("definitely-not-registered-u1-miss-xyz")
+	assert.False(t, ok, "Lookup must return false for an unregistered op")
 }
 
 // TestU1_RegistryDuplicateReturnsError verifies that Register returns an error
@@ -193,7 +208,7 @@ func TestU1_DeclarationsSchemaValidates(t *testing.T) {
 
 	// Explicitly check the two required ops are present with the expected kinds.
 	t.Run("CreateItem_present", func(t *testing.T) {
-		set, ok := mutation.Lookup("CreateItem")
+		set, ok := mutation.Lookup(mutation.OpCreateItem)
 		require.True(t, ok)
 		assert.Contains(t, set.Representations, mutation.Frontmatter)
 		assert.Contains(t, set.Representations, mutation.SQLite)
@@ -201,7 +216,7 @@ func TestU1_DeclarationsSchemaValidates(t *testing.T) {
 	})
 
 	t.Run("ArchiveItem_present", func(t *testing.T) {
-		set, ok := mutation.Lookup("ArchiveItem")
+		set, ok := mutation.Lookup(mutation.OpArchiveItem)
 		require.True(t, ok)
 		assert.Contains(t, set.Representations, mutation.Frontmatter)
 		assert.Contains(t, set.Representations, mutation.SQLite)

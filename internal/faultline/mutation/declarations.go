@@ -2,17 +2,27 @@ package mutation
 
 import "fmt"
 
+// Op name constants for the mutating operations declared in this package.
+// Callers should use these constants when invoking Lookup, VerifySuccess,
+// or VerifyFailure to avoid typos and to maintain a stable API reference.
+const (
+	// OpCreateItem is the op name for the CreateItem mutation.
+	OpCreateItem = "CreateItem"
+	// OpArchiveItem is the op name for the ArchiveItem mutation.
+	OpArchiveItem = "ArchiveItem"
+)
+
 // init registers the representation sets for existing mutating operations in
 // internal/core. These declarations describe the existing behavior of each
 // operation and are the primary verification surface for S5 postcondition
 // checks. No production behavior is changed.
 func init() {
 	mustRegister(RepresentationSet{
-		Op:              "CreateItem",
+		Op:              OpCreateItem,
 		Representations: []RepresentationKind{Frontmatter, SQLite, EventsJSONL},
 	})
 	mustRegister(RepresentationSet{
-		Op:              "ArchiveItem",
+		Op:              OpArchiveItem,
 		Representations: []RepresentationKind{Frontmatter, SQLite, EventsJSONL, ArchiveFile},
 	})
 }
