@@ -47,7 +47,7 @@ type VerificationResult struct {
 func VerifySuccess(snap MutationSnapshot) (VerificationResult, error) {
 	set, ok := Lookup(snap.Op)
 	if !ok {
-		return VerificationResult{}, fmt.Errorf("mutation: op %q not registered", snap.Op)
+		return VerificationResult{}, fmt.Errorf("mutation.VerifySuccess: op %q: %w", snap.Op, ErrOpNotRegistered)
 	}
 
 	var missing []RepresentationKind
@@ -57,7 +57,7 @@ func VerifySuccess(snap MutationSnapshot) (VerificationResult, error) {
 		}
 	}
 
-	sort.Slice(missing, func(i, j int) bool {
+	sort.SliceStable(missing, func(i, j int) bool {
 		return string(missing[i]) < string(missing[j])
 	})
 
@@ -80,7 +80,7 @@ func VerifySuccess(snap MutationSnapshot) (VerificationResult, error) {
 func VerifyFailure(snap MutationSnapshot) (VerificationResult, error) {
 	set, ok := Lookup(snap.Op)
 	if !ok {
-		return VerificationResult{}, fmt.Errorf("mutation: op %q not registered", snap.Op)
+		return VerificationResult{}, fmt.Errorf("mutation.VerifyFailure: op %q: %w", snap.Op, ErrOpNotRegistered)
 	}
 
 	var drifted []RepresentationKind
@@ -90,7 +90,7 @@ func VerifyFailure(snap MutationSnapshot) (VerificationResult, error) {
 		}
 	}
 
-	sort.Slice(drifted, func(i, j int) bool {
+	sort.SliceStable(drifted, func(i, j int) bool {
 		return string(drifted[i]) < string(drifted[j])
 	})
 

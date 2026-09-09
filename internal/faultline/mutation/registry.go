@@ -11,6 +11,10 @@ import (
 // registered.
 var ErrDuplicateOp = errors.New("mutation: op already registered")
 
+// ErrOpNotRegistered is returned by Lookup-dependent functions when the
+// requested op name has not been registered.
+var ErrOpNotRegistered = errors.New("mutation: op not registered")
+
 var (
 	mu  sync.RWMutex
 	reg = map[string]RepresentationSet{}

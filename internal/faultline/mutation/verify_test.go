@@ -36,6 +36,7 @@ func TestU2_VerifySuccess_AllChanged(t *testing.T) {
 	assert.Equal(t, op, result.Op)
 	assert.True(t, result.Passed, "all reps changed: Passed must be true")
 	assert.Empty(t, result.MissingReps, "no missing reps expected")
+	assert.Nil(t, result.DriftedReps, "DriftedReps must be nil on success path")
 }
 
 // TestU2_VerifySuccess_OneMissing verifies that when one declared
@@ -125,6 +126,7 @@ func TestU2_VerifyFailure_AllUnchanged(t *testing.T) {
 	assert.Equal(t, op, result.Op)
 	assert.True(t, result.Passed, "no reps changed: Passed must be true")
 	assert.Empty(t, result.DriftedReps, "no drifted reps expected")
+	assert.Nil(t, result.MissingReps, "MissingReps must be nil on failure path")
 }
 
 // TestU2_VerifyFailure_OneDrifted verifies that when one declared
@@ -199,11 +201,13 @@ func TestU2_UnregisteredOp(t *testing.T) {
 	t.Run("VerifySuccess", func(t *testing.T) {
 		_, err := mutation.VerifySuccess(snap)
 		require.Error(t, err, "VerifySuccess with unregistered op must return error")
+		assert.ErrorIs(t, err, mutation.ErrOpNotRegistered)
 	})
 
 	t.Run("VerifyFailure", func(t *testing.T) {
 		_, err := mutation.VerifyFailure(snap)
 		require.Error(t, err, "VerifyFailure with unregistered op must return error")
+		assert.ErrorIs(t, err, mutation.ErrOpNotRegistered)
 	})
 }
 
