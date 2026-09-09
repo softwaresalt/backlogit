@@ -56,16 +56,14 @@ $env:COPILOT_HOME = if ($env:COPILOT_HOME) { $env:COPILOT_HOME } else { Join-Pat
 $env:ENGRAM_DATA_DIR = if ($env:ENGRAM_DATA_DIR) { $env:ENGRAM_DATA_DIR } else { Join-Path $PSScriptRoot ".engram" }
 
 # GitHub token resolution via `gh`. Non-fatal when `gh` is absent or failing --
-# the affected variable is simply left unset. Both GitHub token variables use
-# no-clobber semantics so explicitly inherited credentials keep precedence.
+# the affected variable is simply left unset. GITHUB_PERSONAL_ACCESS_TOKEN is
+# refreshed from the active `gh` login; GITHUB_TOKEN uses no-clobber semantics.
 $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
 if ($ghCmd) {
-    if (-not $env:GITHUB_PERSONAL_ACCESS_TOKEN) {
-        try {
-            $env:GITHUB_PERSONAL_ACCESS_TOKEN = (& $ghCmd.Source auth token 2>$null).Trim()
-        } catch {
-            Write-Warning "gh auth token failed (non-fatal): $_"
-        }
+    try {
+        $env:GITHUB_PERSONAL_ACCESS_TOKEN = (& $ghCmd.Source auth token 2>$null).Trim()
+    } catch {
+        Write-Warning "gh auth token failed (non-fatal): $_"
     }
     if (-not $env:GITHUB_TOKEN) {
         try {
