@@ -32,6 +32,11 @@ func Register(set RepresentationSet) error {
 	if _, exists := reg[set.Op]; exists {
 		return fmt.Errorf("mutation.Register %q: %w", set.Op, ErrDuplicateOp)
 	}
+	// Defensive copy on ingress: prevent the caller from corrupting the stored
+	// entry by mutating the original Representations slice after registration.
+	cp := make([]RepresentationKind, len(set.Representations))
+	copy(cp, set.Representations)
+	set.Representations = cp
 	reg[set.Op] = set
 	return nil
 }
