@@ -1,7 +1,7 @@
 ---
 closure_status: READY
 compaction_status: done
-doc_type: post-merge-closure
+doc_type: closure
 shipment_id: 139-S
 feature_id: 157-F
 merge_sha: 78279fbbb2106c242224a5bbbbab7b7552c24964
