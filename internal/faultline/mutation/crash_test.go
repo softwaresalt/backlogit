@@ -26,6 +26,7 @@ func TestU3_PartialWrite_VerifySuccessFails(t *testing.T) {
 
 	result, err := mutation.VerifySuccess(snap)
 	require.NoError(t, err)
+	assert.Equal(t, op, result.Op)
 	assert.False(t, result.Passed, "partial write: VerifySuccess must return Passed=false")
 	// Sorted alphabetically: "events_jsonl" < "sqlite"
 	want := []mutation.RepresentationKind{mutation.EventsJSONL, mutation.SQLite}
@@ -48,6 +49,7 @@ func TestU3_PartialWrite_VerifyFailureFails(t *testing.T) {
 
 	result, err := mutation.VerifyFailure(snap)
 	require.NoError(t, err)
+	assert.Equal(t, op, result.Op)
 	assert.False(t, result.Passed, "partial write: VerifyFailure must return Passed=false (Frontmatter drifted)")
 	want := []mutation.RepresentationKind{mutation.Frontmatter}
 	assert.Equal(t, want, result.DriftedReps, "written rep must appear in DriftedReps")
@@ -67,10 +69,24 @@ func TestU3_StaleIndex_VerifySucceeds(t *testing.T) {
 	kinds := []mutation.RepresentationKind{mutation.Frontmatter, mutation.SQLite}
 	snap := staleIndexSnap(op, kinds)
 
-	result, err := mutation.VerifySuccess(snap)
-	require.NoError(t, err)
-	assert.True(t, result.Passed, "stale-index: VerifySuccess must pass (all reps differ)")
-	assert.Empty(t, result.MissingReps, "no missing reps expected with stale Before")
+	t.Run("VerifySuccess", func(t *testing.T) {
+		result, err := mutation.VerifySuccess(snap)
+		require.NoError(t, err)
+		assert.Equal(t, op, result.Op)
+		assert.True(t, result.Passed, "stale-index: VerifySuccess must pass (all reps differ)")
+		assert.Empty(t, result.MissingReps, "no missing reps expected with stale Before")
+	})
+
+	t.Run("VerifyFailure", func(t *testing.T) {
+		// Before≠After for every kind, so all reps appear as unexpected drift.
+		result, err := mutation.VerifyFailure(snap)
+		require.NoError(t, err)
+		assert.Equal(t, op, result.Op)
+		assert.False(t, result.Passed, "stale-index: VerifyFailure must fail (all reps drifted)")
+		// Sorted alphabetically: "frontmatter" < "sqlite"
+		wantDrifted := []mutation.RepresentationKind{mutation.Frontmatter, mutation.SQLite}
+		assert.Equal(t, wantDrifted, result.DriftedReps)
+	})
 }
 
 // TestU3_OldIndex_VerifySucceeds verifies that an old-index scenario —
@@ -86,10 +102,23 @@ func TestU3_OldIndex_VerifySucceeds(t *testing.T) {
 	kinds := []mutation.RepresentationKind{mutation.Frontmatter, mutation.SQLite}
 	snap := oldIndexSnap(op, kinds)
 
-	result, err := mutation.VerifySuccess(snap)
-	require.NoError(t, err)
-	assert.True(t, result.Passed, "old-index: VerifySuccess must pass (all reps differ)")
-	assert.Empty(t, result.MissingReps, "no missing reps expected with ancient Before")
+	t.Run("VerifySuccess", func(t *testing.T) {
+		result, err := mutation.VerifySuccess(snap)
+		require.NoError(t, err)
+		assert.Equal(t, op, result.Op)
+		assert.True(t, result.Passed, "old-index: VerifySuccess must pass (all reps differ)")
+		assert.Empty(t, result.MissingReps, "no missing reps expected with ancient Before")
+	})
+
+	t.Run("VerifyFailure", func(t *testing.T) {
+		// Before≠After for every kind, so all reps appear as unexpected drift.
+		result, err := mutation.VerifyFailure(snap)
+		require.NoError(t, err)
+		assert.Equal(t, op, result.Op)
+		assert.False(t, result.Passed, "old-index: VerifyFailure must fail (all reps drifted)")
+		wantDrifted := []mutation.RepresentationKind{mutation.Frontmatter, mutation.SQLite}
+		assert.Equal(t, wantDrifted, result.DriftedReps)
+	})
 }
 
 // TestU3_IndeterminateAtomic_CommittedPasses verifies the "all reps committed"
@@ -107,8 +136,10 @@ func TestU3_IndeterminateAtomic_CommittedPasses(t *testing.T) {
 
 	result, err := mutation.VerifySuccess(committed)
 	require.NoError(t, err)
+	assert.Equal(t, op, result.Op)
 	assert.True(t, result.Passed, "indeterminate-committed: VerifySuccess must pass")
 	assert.Empty(t, result.MissingReps, "no missing reps: all reps were committed")
+	assert.Nil(t, result.DriftedReps, "DriftedReps must be nil on success path")
 }
 
 // TestU3_IndeterminateAtomic_RolledBackPasses verifies the "all reps rolled
@@ -126,6 +157,8 @@ func TestU3_IndeterminateAtomic_RolledBackPasses(t *testing.T) {
 
 	result, err := mutation.VerifyFailure(rolledBack)
 	require.NoError(t, err)
+	assert.Equal(t, op, result.Op)
 	assert.True(t, result.Passed, "indeterminate-rolled-back: VerifyFailure must pass")
 	assert.Empty(t, result.DriftedReps, "no drifted reps: all reps were rolled back")
+	assert.Nil(t, result.MissingReps, "MissingReps must be nil on failure path")
 }

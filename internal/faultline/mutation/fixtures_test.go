@@ -29,7 +29,12 @@ func partialWriteSnap(op string, allKinds []mutation.RepresentationKind, updated
 			after[k] = []byte(fmt.Sprintf("after-%s", k))
 		} else {
 			// Not written: After retains the Before bytes (partial write).
-			after[k] = before[k]
+			// Defensive copy: Before and After must have independent backing
+			// arrays so future in-place transforms on either side cannot
+			// corrupt the other.
+			cp := make([]byte, len(before[k]))
+			copy(cp, before[k])
+			after[k] = cp
 		}
 	}
 
