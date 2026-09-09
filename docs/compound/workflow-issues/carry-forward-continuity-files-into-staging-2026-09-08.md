@@ -74,11 +74,11 @@ Always carry these known continuity-file changes into the next staging round:
    stash them to make Ship's branch gate pass.
 3. Have Stage validate and commit the backlog, planning, learning, and memory
    artifacts that fall within its role boundary.
-4. Have the Orchestrator's staging-artifact merge gate identify validated
-   launcher or repository-hygiene changes and hand them to the operator for the
-   staging branch and pull request. Stage must not create the pull request or
-   commit files outside its role boundary. Automated ownership remains deferred
-   until the Orchestrator role boundary and Step 1.5 are aligned.
+4. Use the Orchestrator's narrow Step 1.5 carve-out to commit validated
+   continuity changes at `.backlogit/stash.jsonl`, `docs/memory/**`,
+   `start.ps1`, and `.gitignore`, then carry them through a staging branch and
+   pull request. Stage must not create that pull request or commit files outside
+   its role boundary.
 5. Merge the staging pull request to `main` before invoking Ship.
 6. Confirm local `main` is synchronized and clean, then hand the queued shipment
    to Ship.
@@ -95,12 +95,11 @@ and must fail closed when their ownership is unclear.
 * The Orchestrator's staging-artifact merge gate should include legitimate
   pending changes to `.backlogit/stash.jsonl`, `docs/memory/`, `start.ps1`, and
   `.gitignore` without assigning out-of-bound mutations to Stage
-* Until Orchestrator Step 1.5 formally checks every carry-forward path, treat
-  this learning as the explicit path allowlist and record that continuity
-  staging is required in the dark-mode activation before claiming a shipment
+* Orchestrator Step 1.5 explicitly checks the four carry-forward paths and
+  rejects every unclassified dirty path before creating a staging branch
 * Ship should continue enforcing a clean-default-branch gate; Stage makes only
-  its permitted artifacts durable, while launcher and repository-hygiene
-  changes follow the operator-owned staging path before the Ship handoff
+  its permitted artifacts durable, while the Orchestrator's narrow carve-out
+  makes the allowlisted continuity state durable before the Ship handoff
 * Never use reset, checkout, clean, or automatic stash operations to hide these
   changes
 * Review unknown dirty paths separately instead of broadening this allowlist

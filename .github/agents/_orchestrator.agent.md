@@ -54,7 +54,32 @@ Present the proposed grouping to the operator before invoking Stage, unless the 
 * Enforce role isolation: Stage never gets build/PR scope; Ship never gets stash/planning scope
 * Support pipelined execution: Stage may work on the next stash batch while Ship executes the current shipment, provided P-001 and P-011 constraints are satisfied
 
-You do NOT triage stash entries yourself. You do NOT write code or create PRs yourself. Those are Stage's and Ship's responsibilities respectively.
+You do NOT triage stash entries yourself. You do NOT write application code or
+create pull requests except for the narrow continuity carry-forward operation
+defined below. Those are otherwise Stage's and Ship's responsibilities
+respectively.
+
+### Continuity Carry-Forward Carve-Out (NON-NEGOTIABLE)
+
+During Step 1.5 only, the Orchestrator may validate, commit, push, open, update,
+and merge a staging pull request for these exact continuity paths:
+
+* `.backlogit/stash.jsonl`
+* `docs/memory/**`
+* `start.ps1`
+* `.gitignore`
+
+The staging branch may also contain backlog or planning commits already authored
+by Stage. The Orchestrator MUST NOT author changes to any other backlog path,
+application source, test, template, schema, workflow, or configuration file
+under this carve-out.
+
+Before using the carve-out, inspect every changed file and fail closed if any
+path is outside the allowlist or any change is unknown, unrelated, binary, or
+secret-bearing. The staging pull request remains subject to current-HEAD local
+review readiness, required CI, review-thread resolution, merge authorization,
+and merge-commit-only policy. This carve-out grants no general source-code or
+pull-request authority outside Step 1.5.
 
 ## Elective Agents
 
@@ -275,20 +300,33 @@ When the `agent-intercom` capability pack is installed, broadcast `[ORCHESTRATOR
 
 After Stage completes and before routing to Ship, verify that all staging artifacts (backlog items, shipment manifests) are committed to the default branch **and present on the remote**. Ship's Branch Creation Gate (P-011) requires a clean `main`, but it does not verify that the shipment manifest being claimed actually exists on `main`.
 
-1. Check `git status --short -- .backlogit/` for uncommitted files in the backlog directory:
-   - If dirty: staging artifacts need to be committed first (proceed to step 3).
-   - If clean: proceed to step 2.
+1. Inspect the full working tree and classify every changed path:
+   `git status --short`
+   - Stage-owned backlog or planning artifacts must already be committed by
+     Stage.
+   - Uncommitted continuity changes are permitted only at
+     `.backlogit/stash.jsonl`, `docs/memory/**`, `start.ps1`, and `.gitignore`.
+   - If any other path is dirty, halt with
+     `STAGING_GATE_FAIL: unclassified dirty path {path}`.
+   - If an allowlisted path is dirty, validate that its content is legitimate
+     continuity, launcher, or repository-hygiene state before proceeding.
 2. Check for unpushed local commits:
    `git fetch origin main`
    `git log origin/main..main --oneline`
    - If output is empty: local and remote are in sync. Proceed to step 4.
    - If output is non-empty: local commits exist that are not on the remote. Proceed to step 3.
-3. When staging artifacts are uncommitted or unpushed:
-   a. Commit any uncommitted backlog files to a staging branch: `chore/stage-{shipment_id}`
+3. When allowlisted continuity changes are uncommitted or staging commits are
+   unpushed, apply the Continuity Carry-Forward Carve-Out:
+   a. Create or reuse `chore/stage-{shipment_id}` and commit only the validated
+      allowlisted continuity paths; preserve Stage-authored commits unchanged
    b. Push the staging branch and create a PR to `main`
-   c. Wait for the staging PR to merge (operator approval required)
-   d. After merge, pull `main` and proceed to step 4
-   e. **Branch protection handling**: Attempt a direct push to `main` first. If the push is rejected (exit code non-zero, typically due to branch protection rules), fall back to creating a staging PR:
+   c. Run the current-HEAD local review readiness gate, required CI, and review
+      thread resolution for the staging PR
+   d. Merge only with operator approval or a valid dark-mode merge
+      preauthorization, using merge-commit strategy
+   e. After merge, complete the mandatory post-merge local-main
+      synchronization and proceed to step 4
+   f. **Branch protection handling**: Attempt a direct push to `main` first. If the push is rejected (exit code non-zero, typically due to branch protection rules), fall back to creating a staging PR:
       - Create branch `chore/stage-{shipment_id}` from the current commit
       - Push the branch and create a PR to `main`
       - Wait for the staging PR to merge (operator approval required)

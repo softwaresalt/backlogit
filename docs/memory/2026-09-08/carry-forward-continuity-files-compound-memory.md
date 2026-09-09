@@ -18,10 +18,9 @@ preserved and included in the next Stage-owned staging round.
 
 * Known continuity-file changes are not disposable dirty-worktree noise
 * Stage validates and commits only the backlog, planning, learning, and memory
-  artifacts within its role boundary; Orchestrator Step 1.5 identifies
-  launcher and repository-hygiene changes for an operator-owned staging branch
-  and pull request until the deferred policy work defines an authorized
-  automated owner
+  artifacts within its role boundary; Orchestrator Step 1.5 has a narrow
+  carve-out to commit and carry the four allowlisted continuity paths through a
+  staging branch and pull request
 * Ship retains its clean-default-branch gate
 * Unknown or secret-bearing changes remain fail-closed and are not implicitly
   included by this rule
