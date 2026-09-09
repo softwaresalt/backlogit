@@ -1,3 +1,16 @@
+---
+closure_status: READY
+compaction_status: done
+doc_type: post-merge-closure
+shipment_id: 139-S
+feature_id: 157-F
+merge_sha: 78279fbbb2106c242224a5bbbbab7b7552c24964
+closed_at: 2026-09-09T05:44:20Z
+schema_version: "1.0"
+source: docs/closure/139-S-157-F-post-merge-closure.md
+title: "Post-Merge Closure: 139-S — S5 Mutation Postcondition and Consistency Framework"
+---
+
 # Operational Closure: 139-S — S5 Mutation Postcondition and Consistency Framework
 
 **Shipment**: 139-S  
