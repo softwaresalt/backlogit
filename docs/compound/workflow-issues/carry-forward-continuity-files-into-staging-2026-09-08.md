@@ -74,10 +74,11 @@ Always carry these known continuity-file changes into the next staging round:
    stash them to make Ship's branch gate pass.
 3. Have Stage validate and commit the backlog, planning, learning, and memory
    artifacts that fall within its role boundary.
-4. Have the Orchestrator's staging-artifact merge gate carry any validated
-   launcher or repository-hygiene changes through the staging branch and pull
-   request. Stage must not create the pull request or commit files outside its
-   role boundary.
+4. Have the Orchestrator's staging-artifact merge gate identify validated
+   launcher or repository-hygiene changes and hand them to the operator for the
+   staging branch and pull request. Stage must not create the pull request or
+   commit files outside its role boundary. Automated ownership remains deferred
+   until the Orchestrator role boundary and Step 1.5 are aligned.
 5. Merge the staging pull request to `main` before invoking Ship.
 6. Confirm local `main` is synchronized and clean, then hand the queued shipment
    to Ship.
