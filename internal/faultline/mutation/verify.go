@@ -13,10 +13,14 @@ type MutationSnapshot struct {
 	// Op is the name of the mutating operation being verified.
 	Op string
 	// Before holds the serialised state of each representation prior to the
-	// mutation. A missing key is treated as nil (no content).
+	// mutation. A missing key is treated as nil (no content) when the
+	// corresponding key is present in After; if both Before and After lack the
+	// key, the result carries IncompleteSnapshot=true.
 	Before map[RepresentationKind][]byte
 	// After holds the serialised state of each representation following the
-	// mutation. A missing key is treated as nil (no content).
+	// mutation. A missing key is treated as nil (no content) when the
+	// corresponding key is present in Before; if both Before and After lack the
+	// key, the result carries IncompleteSnapshot=true.
 	After map[RepresentationKind][]byte
 }
 
@@ -48,6 +52,10 @@ type VerificationResult struct {
 // its Before and After bytes are equal. The result's Passed field is true only
 // when every declared kind was changed. MissingReps contains the kinds that
 // were not updated, sorted by kind string value.
+//
+// If any declared representation is absent from both Before and After, the
+// result carries IncompleteSnapshot=true and Passed=false; MissingReps is not
+// populated.
 //
 // Returns a non-nil error when snap.Op is not registered.
 func VerifySuccess(snap MutationSnapshot) (VerificationResult, error) {
@@ -93,6 +101,10 @@ func VerifySuccess(snap MutationSnapshot) (VerificationResult, error) {
 // differ. The result's Passed field is true only when every declared kind is
 // unchanged. DriftedReps contains the kinds that changed, sorted by kind
 // string value.
+//
+// If any declared representation is absent from both Before and After, the
+// result carries IncompleteSnapshot=true and Passed=false; DriftedReps is not
+// populated.
 //
 // Returns a non-nil error when snap.Op is not registered.
 func VerifyFailure(snap MutationSnapshot) (VerificationResult, error) {
