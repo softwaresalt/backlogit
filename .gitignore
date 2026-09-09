@@ -37,6 +37,7 @@ backlogit.db
 .backlogit/runtime/
 .autoharness/staging/
 .autoharness/backups/
+.autoharness/gates/pre-review/
 *.exe~
 prompt.md
 
