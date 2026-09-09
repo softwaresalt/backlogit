@@ -64,10 +64,13 @@ func VerifySuccess(snap MutationSnapshot) (VerificationResult, error) {
 		return VerificationResult{}, fmt.Errorf("mutation.VerifySuccess: op %q: %w", snap.Op, ErrOpNotRegistered)
 	}
 
-	// Completeness guard: bytes.Equal(nil, nil) == true, so a snapshot whose
-	// Before and After both lack a declared key would incorrectly report that
-	// representation as changed (Passed: true with no real observation). Require
-	// each declared representation to be present in at least one direction.
+	// Completeness guard: when both Before and After lack a declared key,
+	// bytes.Equal(nil, nil) == true causes that kind to be appended to missing
+	// (treated as "unchanged"), which cannot distinguish an op that genuinely
+	// did not update a representation from a snapshot that was never populated.
+	// Require each declared representation to be present in at least one
+	// direction so that IncompleteSnapshot is set rather than silently returning
+	// a misleading MissingReps list with no real observation behind it.
 	for _, k := range set.Representations {
 		_, hasB := snap.Before[k]
 		_, hasA := snap.After[k]
