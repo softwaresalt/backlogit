@@ -26,6 +26,12 @@ type VerificationResult struct {
 	Op string
 	// Passed is true when the verification constraint was fully satisfied.
 	Passed bool
+	// IncompleteSnapshot is true when the snapshot did not contain an entry
+	// (even a nil one) for one or more declared representation kinds in both
+	// Before and After. When true, Passed is always false and neither
+	// MissingReps nor DriftedReps is populated — the snapshot does not carry
+	// enough information to make a meaningful assertion.
+	IncompleteSnapshot bool
 	// DriftedReps lists declared representation kinds that changed
 	// unexpectedly on a failure path (populated by VerifyFailure).
 	// Entries are sorted by kind string value for stable output.
@@ -48,6 +54,18 @@ func VerifySuccess(snap MutationSnapshot) (VerificationResult, error) {
 	set, ok := Lookup(snap.Op)
 	if !ok {
 		return VerificationResult{}, fmt.Errorf("mutation.VerifySuccess: op %q: %w", snap.Op, ErrOpNotRegistered)
+	}
+
+	// Completeness guard: bytes.Equal(nil, nil) == true, so a snapshot whose
+	// Before and After both lack a declared key would incorrectly report that
+	// representation as changed (Passed: true with no real observation). Require
+	// each declared representation to be present in at least one direction.
+	for _, k := range set.Representations {
+		_, hasB := snap.Before[k]
+		_, hasA := snap.After[k]
+		if !hasB && !hasA {
+			return VerificationResult{Op: snap.Op, IncompleteSnapshot: true}, nil
+		}
 	}
 
 	missing := make([]RepresentationKind, 0, len(set.Representations))
@@ -81,6 +99,18 @@ func VerifyFailure(snap MutationSnapshot) (VerificationResult, error) {
 	set, ok := Lookup(snap.Op)
 	if !ok {
 		return VerificationResult{}, fmt.Errorf("mutation.VerifyFailure: op %q: %w", snap.Op, ErrOpNotRegistered)
+	}
+
+	// Completeness guard: bytes.Equal(nil, nil) == true, so a snapshot whose
+	// Before and After both lack a declared key would incorrectly claim rollback
+	// was verified (Passed: true) when no state was actually observed. Require
+	// each declared representation to be present in at least one direction.
+	for _, k := range set.Representations {
+		_, hasB := snap.Before[k]
+		_, hasA := snap.After[k]
+		if !hasB && !hasA {
+			return VerificationResult{Op: snap.Op, IncompleteSnapshot: true}, nil
+		}
 	}
 
 	drifted := make([]RepresentationKind, 0, len(set.Representations))

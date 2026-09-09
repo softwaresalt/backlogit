@@ -215,18 +215,21 @@ func TestU2_UnregisteredOp(t *testing.T) {
 	})
 }
 
-// TestU2_NilSliceEquality verifies that nil Before/After map entries are
-// treated as empty bytes: nil==nil counts as no change (VerifyFailure passes),
-// while nil!=non-nil counts as a change (VerifySuccess passes).
+// TestU2_NilSliceEquality verifies nil Before/After snapshot semantics. A
+// snapshot whose Before and After both lack a declared key (nil maps or absent
+// entries) is unobservable and returns IncompleteSnapshot=true. A snapshot
+// where one side carries a non-nil value for a key is observable and proceeds
+// to the normal byte comparison.
 func TestU2_NilSliceEquality(t *testing.T) {
-	t.Run("nil_nil_passes_failure", func(t *testing.T) {
-		op := uniqueOp("U2NilNil")
+	t.Run("nil_nil_incomplete_failure", func(t *testing.T) {
+		op := uniqueOp("U2NilNilF")
 		require.NoError(t, mutation.Register(mutation.RepresentationSet{
 			Op:              op,
 			Representations: []mutation.RepresentationKind{mutation.Frontmatter},
 		}))
 
-		// Both Before and After are nil maps: all lookups return nil bytes.
+		// Both Before and After are nil maps: all lookups return nil bytes and
+		// key-presence checks return false. The completeness guard fires.
 		snap := mutation.MutationSnapshot{
 			Op:     op,
 			Before: nil,
@@ -235,8 +238,31 @@ func TestU2_NilSliceEquality(t *testing.T) {
 
 		result, err := mutation.VerifyFailure(snap)
 		require.NoError(t, err)
-		assert.True(t, result.Passed, "nil==nil: no drift, VerifyFailure must pass")
+		assert.False(t, result.Passed, "nil/nil snapshot is unobservable: Passed must be false")
+		assert.True(t, result.IncompleteSnapshot, "nil/nil snapshot must set IncompleteSnapshot")
 		assert.Empty(t, result.DriftedReps)
+		assert.Nil(t, result.MissingReps)
+	})
+
+	t.Run("nil_nil_incomplete_success", func(t *testing.T) {
+		op := uniqueOp("U2NilNilS")
+		require.NoError(t, mutation.Register(mutation.RepresentationSet{
+			Op:              op,
+			Representations: []mutation.RepresentationKind{mutation.Frontmatter},
+		}))
+
+		snap := mutation.MutationSnapshot{
+			Op:     op,
+			Before: nil,
+			After:  nil,
+		}
+
+		result, err := mutation.VerifySuccess(snap)
+		require.NoError(t, err)
+		assert.False(t, result.Passed, "nil/nil snapshot is unobservable: Passed must be false")
+		assert.True(t, result.IncompleteSnapshot, "nil/nil snapshot must set IncompleteSnapshot")
+		assert.Empty(t, result.MissingReps)
+		assert.Nil(t, result.DriftedReps)
 	})
 
 	t.Run("nil_vs_nonnil_passes_success", func(t *testing.T) {
@@ -246,7 +272,9 @@ func TestU2_NilSliceEquality(t *testing.T) {
 			Representations: []mutation.RepresentationKind{mutation.Frontmatter},
 		}))
 
-		// Before has no entry (nil lookup), After has content: counts as changed.
+		// Before has no entry (nil lookup), After has content: After key IS
+		// present (hasA=true) so the completeness guard passes; nil!=non-nil
+		// counts as a change.
 		snap := mutation.MutationSnapshot{
 			Op:     op,
 			Before: nil,
@@ -257,6 +285,7 @@ func TestU2_NilSliceEquality(t *testing.T) {
 
 		result, err := mutation.VerifySuccess(snap)
 		require.NoError(t, err)
+		assert.False(t, result.IncompleteSnapshot, "one side present: not incomplete")
 		assert.True(t, result.Passed, "nil!=non-nil: changed, VerifySuccess must pass")
 		assert.Empty(t, result.MissingReps)
 	})
