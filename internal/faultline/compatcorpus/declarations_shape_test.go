@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"strings"
 	"testing"
 )
@@ -120,7 +121,9 @@ func parseCompatcorpusPackage(t *testing.T) []*ast.File {
 	packages, err := parser.ParseDir(
 		token.NewFileSet(),
 		".",
-		nil,
+		func(info fs.FileInfo) bool {
+			return !strings.HasSuffix(info.Name(), "_test.go")
+		},
 		parser.SkipObjectResolution,
 	)
 	if err != nil {
@@ -145,6 +148,9 @@ func assertNamedStringType(t *testing.T, files []*ast.File, name string) {
 	if spec == nil {
 		t.Errorf("%s type is not declared in internal/faultline/compatcorpus", name)
 		return
+	}
+	if spec.Assign.IsValid() {
+		t.Errorf("%s must be a defined type, not an alias", name)
 	}
 	if got := declShapeExpr(spec.Type); got != "string" {
 		t.Errorf("%s underlying type = %s, want string", name, got)
@@ -384,7 +390,7 @@ func functionReceiver(fn *ast.FuncDecl) string {
 	if len(types) != 1 {
 		return ""
 	}
-	return strings.TrimPrefix(types[0], "*")
+	return types[0]
 }
 
 func flattenNamedFields(fields *ast.FieldList) []declShapeField {

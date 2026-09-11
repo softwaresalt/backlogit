@@ -65,8 +65,6 @@ var (
 	ErrInvalidPath = errors.New("compatcorpus: invalid/reserved path")
 	// ErrUnclosedFront identifies an unclosed frontmatter fence.
 	ErrUnclosedFront = errors.New("compatcorpus: unclosed frontmatter fence")
-
-	errNotImplemented = errors.New("compatcorpus: not implemented")
 )
 
 // Entry describes one compatibility-corpus input and its expected outcome.
@@ -110,27 +108,27 @@ type Report struct {
 	Results       []Result
 }
 
-// Run returns an unimplemented compatibility-corpus report.
+// Run declares the compatibility-corpus runner.
 func Run(context.Context, []Entry, map[string]ParserAdapter) Report {
-	return Report{}
+	panic("not implemented")
 }
 
-// DefaultCorpus returns the default compatibility corpus.
+// DefaultCorpus declares access to the default compatibility corpus.
 func DefaultCorpus() ([]Entry, error) {
-	return nil, errNotImplemented
+	panic("not implemented")
 }
 
-// DefaultAdapters returns the default parser adapters.
+// DefaultAdapters declares access to the default parser adapters.
 func DefaultAdapters() map[string]ParserAdapter {
-	return nil
+	panic("not implemented")
 }
 
-// LoadCorpus loads compatibility-corpus entries from a file system.
+// LoadCorpus declares compatibility-corpus loading from a file system.
 func LoadCorpus(fs.FS) ([]Entry, error) {
-	return nil, errNotImplemented
+	panic("not implemented")
 }
 
-// JSON returns a stable machine-readable representation of the report.
+// JSON declares stable machine-readable report serialization.
 func (Report) JSON() ([]byte, error) {
-	return nil, errNotImplemented
+	panic("not implemented")
 }
