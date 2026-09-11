@@ -86,6 +86,34 @@ var corpusContractExpectations = map[string]corpusContractExpectation{
 // TestCorpusRunner verifies the deterministic runner, strict adapters, corpus
 // fixtures, panic containment, and versioned report contract owned by 158.009-T.
 func TestCorpusRunner(t *testing.T) {
+	t.Run("YAML trailing documents preserve classification sentinels", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			input   []byte
+			wantErr error
+		}{
+			{
+				name:    "multiple documents are malformed",
+				input:   []byte("id: first\n---\nid: second\n"),
+				wantErr: ErrMalformed,
+			},
+			{
+				name:    "truncated trailing document is truncated",
+				input:   []byte("id: first\n---\nname: \"unfinished"),
+				wantErr: ErrTruncated,
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				_, err := decodeYAMLNode(test.input)
+				if !errors.Is(err, test.wantErr) {
+					t.Fatalf("decodeYAMLNode() error = %v, want errors.Is(_, %v)", err, test.wantErr)
+				}
+			})
+		}
+	})
+
 	t.Run("default corpus declares every representative case", func(t *testing.T) {
 		entries := mustDefaultCorpus(t)
 		byID := make(map[string]Entry, len(entries))

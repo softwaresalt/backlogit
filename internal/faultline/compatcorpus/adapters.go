@@ -167,7 +167,7 @@ func decodeYAMLNode(input []byte) (*yaml.Node, error) {
 		if err == nil {
 			err = fmt.Errorf("multiple YAML documents")
 		}
-		return nil, fmt.Errorf("decode frontmatter trailing content: %w", err)
+		return nil, fmt.Errorf("decode frontmatter trailing content: %w", classifyYAMLError(err))
 	}
 	return &root, nil
 }
