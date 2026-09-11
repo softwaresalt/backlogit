@@ -10,8 +10,10 @@ title: "S6 Seq3 — Executable Harness Contract Supplement (unblocks 140-S)"
 
 # S6 Seq3 — Executable Harness Contract Supplement
 
-**Purpose.** Make the eight S6/seq3 task contracts (`158.001-T`..`158.008-T`)
-executable by the harness-architect **without expanding product scope**. The
+**Purpose.** Make the eleven S6/seq3 task contracts (`158.001-T`..`158.011-T`,
+after the P-002.1/P-002.6 declaration/behavior split — see §Declaration/Behavior
+Split (attempt-5 amendment)) executable by the harness-architect **without
+expanding product scope**. The
 governing plan
 (`docs/exec-plans/2026-09-03-s6-seq3-compat-corpus-plan.md`) remains the scope
 authority; this supplement adds only the concrete API surfaces, fixture schemas,
@@ -61,6 +63,64 @@ unused `DecodeResult.Warnings` field; pinned the lock-contention fixture to a
 single deterministic outcome; honest acknowledgement of the one shared
 `main.go` enumeration edit with pre-reserved sorted slots; reserved per-task
 Wave-2 helper identifiers.
+
+## Declaration/Behavior Split (attempt-5 amendment)
+
+**Governing finding (P-002.1/P-002.6).** Test-first RED→GREEN does not permit an
+in-task two-stage harness: a single task may not bundle *new package/symbol
+declarations* with a *behavior harness* that cannot compile until those
+declarations exist. Two original units bundled exactly that and are split by this
+Stage manifest amendment (only a Stage amendment may change the frozen work
+graph):
+
+* **Compat corpus.** `158.001-T` (originally corpus + runner) is converted to a
+  **declaration-only prerequisite** owning the real, compilable exported
+  declarations of `internal/faultline/compatcorpus` plus a **source-shape go/ast
+  harness**. A new behavior task **`158.009-T`** owns `TestCorpusRunner`, the
+  runner/adapters, `testdata/corpus` fixtures, sentinel behavior, and
+  `compatcorpus.report/v1`, inheriting **all** original `158.001-T` behavior
+  acceptance. `158.009-T` depends on `158.001-T`.
+* **Analyzer framework / FL001.** `158.003-T` (originally the FL001 analyzer +
+  shared scaffolding) is narrowed to the **shared prerequisite** owning the
+  minimum analyzer declaration + build scaffolding (x/tools `v0.39.0` direct
+  promotion, `cmd/faultline-analyze` skeleton with the FL001 slot filled against
+  the declared skeleton `Analyzer` var, the `Makefile` `check` target, and a
+  source-shape harness). A new behavior task **`158.010-T`** owns the FL001
+  scanner-discipline analyzer **behavior** + `analysistest` fixtures.
+  `158.010-T` depends on `158.003-T`.
+
+**Backlog dependency edges (now real, not prose-only).** The declaration/behavior
+split promotes the previously prose-only harness ordering into real backlog
+edges, and rewires the two runner consumers onto the behavior task that supplies
+the implemented `Run`/adapters:
+
+| edge | rationale |
+|------|-----------|
+| `158.009-T → 158.001-T` | runner behavior needs the corpus declarations |
+| `158.010-T → 158.003-T` | FL001 behavior needs the analyzer scaffolding + declaration |
+| `158.004-T → 158.003-T` | analyzer needs x/tools + scaffolding to compile analysistest |
+| `158.005-T → 158.003-T` | " |
+| `158.006-T → 158.003-T` | " |
+| `158.007-T → 158.003-T` | " |
+| `158.002-T → 158.009-T` | consumes the implemented runner (rewired off `158.001-T`) |
+| `158.008-T → 158.009-T` | fuzz reuses the implemented runner/adapters (rewired off `158.001-T`) |
+| `158.011-T → 158.004-T` | multichecker wiring needs the FL002 analyzer var |
+| `158.011-T → 158.005-T` | needs the FL003 analyzer var |
+| `158.011-T → 158.006-T` | needs the FL004 analyzer var |
+| `158.011-T → 158.007-T` | needs the FL005 analyzer var |
+
+The two runner consumers (`158.002-T`, `158.008-T`) keep their transitive
+ordering after `158.001-T` through `158.009-T`; the direct `→ 158.001-T` edges
+are removed because their genuine dependency is the *implemented* runner, not the
+declarations alone.
+
+**Sizing/complexity semantics preserved.** Both behavior tasks are strictly
+**smaller** than the previously plan-reviewed single units they were carved from
+(each original unit passed review as one ≤2h unit; removing the declaration/
+scaffolding portion into a prerequisite can only shrink the residual behavior
+task). All eleven member tasks remain **unsized** — matching the existing shipment
+composition (`unsized`) — so no partial-sizing inconsistency is introduced; this
+preserves the workspace's current size/complexity semantics for `140-S`.
 
 ## Cross-Cutting Decisions
 
@@ -122,25 +182,41 @@ one unavoidable shared edit explicit and low-conflict.
     analyzer task's `analysistest` compiles from a base checkout).
   * `cmd/faultline-analyze/main.go` — a single `multichecker.Main(...)` call
     that **explicitly enumerates** the analyzers (no reflection, no parent
-    `init()` registry). The enumeration list has **pre-reserved,
-    alphabetically-sorted slots** (one commented line per FL0NN), so each
-    analyzer task fills its own dedicated non-adjacent line.
+    `init()` registry). `158.003-T` authors the file with **FL001 wired live**
+    and **FL002..FL005 as pre-reserved, alphabetically-sorted COMMENTED
+    placeholder slots** (the file compiles referencing FL001 only). The
+    FL002..FL005 slots are filled later by the single serialized integration
+    task **`158.011-T`** — see below — so `main.go` is never edited by parallel
+    wave tasks.
   * The `Makefile` `check` target (concrete, executable — see below) and its
     `.PHONY` entry.
-  * Its own FL001 analyzer subpackage.
-* **Each analyzer task (`158.004-T`..`158.007-T`) owns:** its self-contained
-  subpackage (`analyzer.go` + `analyzer_test.go` + `testdata/`) **and** filling
-  in its own pre-reserved slot in `cmd/faultline-analyze/main.go`. No task edits
-  another task's logic. The only shared file is `main.go`; because each task
-  writes a distinct pre-reserved sorted line, merges are trivial — this is
-  acknowledged as an expected minor integration point, **not** claimed as
-  conflict-free.
-* **Harness-ordering dependency (declared here, not a backlog edge):**
-  `158.004-T`, `158.005-T`, `158.006-T`, `158.007-T` each require `158.003-T`
-  to have landed (x/tools in `go.mod` + `cmd` scaffolding) before their harness
-  is generated. `158.001-T` has **no** such dependency (the corpus needs
-  neither x/tools nor analyzer scaffolding) and runs fully parallel to
-  `158.003-T`.
+  * Its own FL001 analyzer subpackage **declaration only** (the skeleton
+    `var Analyzer *analysis.Analyzer` + compilable no-op run func); the FL001
+    scanner-discipline **behavior** and its `analysistest` fixtures are owned by
+    `158.010-T` (see §158.010-T). Because the FL001 `Analyzer` var is declared
+    here, `158.003-T` also fills the FL001 slot in `main.go` against it.
+* **Each analyzer task (`158.004-T`..`158.007-T`) owns ONLY:** its self-contained
+  subpackage (`analyzer.go` + `analyzer_test.go` + `testdata/`). It does **not**
+  edit `cmd/faultline-analyze/main.go` — that avoids parallel wave-2 tasks
+  sharing one Go source file. Each analyzer's acceptance is proven by its own
+  `analysistest` (`go test ./internal/faultline/analyzer/<name>/`), independent of
+  multichecker wiring.
+* **`158.011-T` (single serialized integration owner) owns:** the one `main.go`
+  edit that fills the four reserved FL002..FL005 slots with the analyzer vars
+  declared by `158.004-T`..`158.007-T`. It carries backlog `blocks` edges on all
+  four analyzer tasks, runs in the final wave, and is the **sole** owner of the
+  FL002..FL005 wiring. `main.go` is therefore touched only by `158.003-T`
+  (wave 1) then `158.011-T` (final wave) — strictly serialized, never concurrent
+  (resolves the duplicate/parallel shared-file-ownership finding).
+* **Harness-ordering dependency (now a REAL backlog edge after the attempt-5
+  declaration/behavior split):** `158.004-T`, `158.005-T`, `158.006-T`,
+  `158.007-T`, and `158.010-T` each carry a backlog `blocks` edge on `158.003-T`
+  (x/tools in `go.mod` + `cmd` scaffolding + FL001 declaration must land before
+  their harness compiles); `158.011-T` carries edges on `158.004-T`..`158.007-T`.
+  `158.001-T` has **no** such dependency (the corpus
+  needs neither x/tools nor analyzer scaffolding) and runs fully parallel to
+  `158.003-T`. The corpus behavior task `158.009-T` depends on `158.001-T`; the
+  runner consumers `158.002-T`/`158.008-T` depend on `158.009-T`.
 * **`check` target (concrete):**
 
   ```make
@@ -169,28 +245,42 @@ stub — before the dependent RED test compiles.
 
 ### Wave Partition (refined for harness generation)
 
-This refinement **supersedes the checkpoint's flat wave partition for harness
-generation only**; it does not mutate backlog dependency edges. The existing
-backlog edges (`158.002-T → 158.001-T`, `158.008-T → 158.001-T`) are unchanged;
-the analyzer prerequisite below is a harness-ordering constraint.
+This partition is now **backed by real backlog `blocks` edges** (attempt-5
+declaration/behavior split); the harness-generation waves and the backlog edges
+agree.
 
-* **Wave 1a (prerequisite, may run first/parallel with 158.001-T):**
-  `158.003-T` — lands pinned `x/tools` + `cmd/faultline-analyze` scaffolding +
-  `check` target + FL001.
-* **Wave 1b (parallel, after 158.003-T scaffolding exists):** `158.004-T`,
-  `158.005-T`, `158.006-T`, `158.007-T`.
-* **Wave 1 independent (parallel with all of the above):** `158.001-T` (corpus +
-  runner) — no analyzer/x-tools dependency.
-* **Wave 2 (parallel, after 158.001-T):** `158.002-T` (depends `158.001-T`),
-  `158.008-T` (depends `158.001-T`).
+* **Wave 1 (prerequisites, mutually parallel):**
+  * `158.001-T` — compat corpus **declarations** (source-shape go/ast harness);
+    no x/tools/analyzer dependency.
+  * `158.003-T` — analyzer **scaffolding + FL001 declaration**: pinned `x/tools`
+    `v0.39.0` + `cmd/faultline-analyze` skeleton (FL001 wired live, FL002..FL005
+    reserved as commented slots) + `check` target + skeleton FL001 `Analyzer`
+    var.
+* **Wave 2 (parallel, each after its wave-1 prerequisite):**
+  * `158.009-T` — corpus runner + adapters **behavior** (depends `158.001-T`).
+  * `158.010-T` — FL001 scanner-discipline **behavior** + `analysistest`
+    (depends `158.003-T`).
+  * `158.004-T`, `158.005-T`, `158.006-T`, `158.007-T` — FL002..FL005 analyzer
+    subpackages (each depends `158.003-T`; none edits `main.go`).
+* **Wave 3 (parallel, after `158.009-T`):**
+  * `158.002-T` — concurrency/cancellation fixtures (depends `158.009-T`).
+  * `158.008-T` — bounded fuzz target (depends `158.009-T`).
+* **Wave 4 (serialized integration, after `158.004-T`..`158.007-T`):**
+  * `158.011-T` — fills the FL002..FL005 multichecker slots in `main.go` (sole
+    owner of that edit).
 
 ---
 
-## 158.001-T — Compatibility corpus + deterministic runner (U1) · Wave 1 (independent) · domain: tests
+## 158.001-T — Compatibility corpus package declarations (U1a, decl-only) · Wave 1 (independent) · domain: code
+
+**Split note (attempt-5).** This task authors the **declarations only**; the
+runner/adapter/fixture **behavior** is `158.009-T` (which depends on this task).
+The signatures below are exactly the compilable declarations this task lands
+(stub bodies, e.g. `panic("not implemented")`, that carry no behavior).
 
 **Target package:** `internal/faultline/compatcorpus` (new).
 
-**Public API (Go signatures the harness encodes):**
+**Public API (Go declarations this task authors — compilable stubs, no behavior):**
 
 ```go
 package compatcorpus
@@ -274,6 +364,28 @@ func LoadCorpus(fsys fs.FS) ([]Entry, error)     // deterministic loader from ma
 func (r Report) JSON() ([]byte, error)           // stable-sorted machine-readable output
 ```
 
+**Acceptance (158.001-T, declaration-only):**
+* The package compiles with every symbol above declared at the contracted shape
+  (names, kinds, const values, interface method set, function/method
+  signatures).
+* The **source-shape go/ast harness** `TestCompatcorpusDeclShape` parses the
+  package source with `go/parser` + `go/ast` and asserts every contracted symbol
+  is declared with the contracted shape. It executes **no** runner behavior.
+* No dependency on `golang.org/x/tools` or any analyzer scaffolding.
+
+**RED selector:** `go test ./internal/faultline/compatcorpus/ -run TestCompatcorpusDeclShape -count=1`
+(fails until the declarations exist).
+**GREEN selector:** same command passes.
+
+---
+
+## 158.009-T — Compat corpus runner + adapters behavior (U1b) · Wave 2 (depends 158.001-T) · domain: tests
+
+**Split note (attempt-5).** Owns **all** original `158.001-T` behavior acceptance
+(runner, adapters, fixtures, sentinel behavior, `compatcorpus.report/v1`). Fills
+in the stub bodies declared by `158.001-T`; introduces no new exported
+declaration shape. Depends on `158.001-T`.
+
 **Runner semantics (deterministic — the acceptance backbone):**
 
 * `Run` is pure: no goroutines, no wall-clock, no filesystem, no globals. For
@@ -331,9 +443,10 @@ decoders tolerate. No `internal/core` parser is changed.
 (The committed corpus MAY add more entries; the above are the minimum
 representative set the RED test asserts.)
 
-**Acceptance:**
-* `Run(DefaultCorpus(), DefaultAdapters())` returns `Failed == 0`, every entry's
-  actual outcome matching its `Expect`/`WantErr` (via `errors.Is`).
+**Acceptance (158.009-T, behavior):**
+* With `ctx := context.Background()` and `entries, err := DefaultCorpus()`
+  (`err == nil`), `Run(ctx, entries, DefaultAdapters())` returns `Failed == 0`,
+  every entry's actual outcome matching its `Expect`/`WantErr` (via `errors.Is`).
 * `Report.Deterministic == true` (two runs byte-identical).
 * `Report.JSON()` validates against the `compatcorpus.report/v1` shape.
 
@@ -359,11 +472,11 @@ representative set the RED test asserts.)
 
 ---
 
-## 158.002-T — Concurrency & cancellation fixtures (U2) · Wave 2 (depends 158.001-T) · domain: tests
+## 158.002-T — Concurrency & cancellation fixtures (U2) · Wave 3 (depends 158.009-T) · domain: tests
 
 **Target:** `internal/faultline/compatcorpus/concurrency.go` (small harness seam)
-+ `concurrency_test.go`. Reuses U1's `Run`/adapters. Package-level test helpers
-introduced here are prefixed `conc*` to avoid collision with 158.008-T's helpers.
++ `concurrency_test.go`. Reuses the runner/adapters implemented by `158.009-T`
+(`Run`/`DefaultAdapters`). Package-level test helpers introduced here are prefixed `conc*` to avoid collision with 158.008-T's helpers.
 
 **Seam (keeps fixtures deterministic — no real OS locks / no wall-clock):**
 
@@ -393,14 +506,23 @@ cancellation fixture proves no-hang under a bounded `context.WithTimeout`.
 
 ---
 
-## 158.003-T — Analyzer: Scanner.Buffer/Scanner.Err discipline (U3a, FL001) + shared scaffolding · Wave 1a (prerequisite) · domain: code+build
+## 158.003-T — Analyzer framework scaffolding + FL001 declaration (U3a-scaffold) · Wave 1 (prerequisite) · domain: code+build
+
+**Split note (attempt-5).** This task owns the shared analyzer **scaffolding +
+FL001 declaration** only. The FL001 scanner-discipline **behavior** and its
+`analysistest` fixtures are `158.010-T` (which depends on this task). Analyzer
+tasks `158.004-T`..`158.007-T` and `158.010-T` all carry a real backlog `blocks`
+edge on this task.
 
 **Also owns (wave-1 prerequisite):** pinned `golang.org/x/tools` in
 `go.mod`/`go.sum`; `cmd/faultline-analyze/main.go` (explicit
-`multichecker.Main(...)` with pre-reserved sorted slots FL001..FL005); `Makefile`
+`multichecker.Main(...)` with pre-reserved sorted slots FL001..FL005, FL001
+filled against the declared skeleton `Analyzer` var); `Makefile`
 `check` target. See §Shared Analyzer Scaffolding. (Width note: the scaffolding is
-thin — a single `main.go` and a two-line Makefile recipe — and stays within the
-Go/build skill domain and the 2-hour bound alongside FL001.)
+thin — a single `main.go`, a two-line Makefile recipe, the dependency promotion,
+and a skeleton FL001 `Analyzer` declaration — and stays within the Go/build skill
+domain and the 2-hour bound. Removing the FL001 behavior into `158.010-T` makes
+this strictly smaller than the previously-reviewed combined `158.003-T` unit.)
 
 **Exact dependency operation (reproducible; no version change to any chain).**
 `golang.org/x/tools` is currently a **pruned transitive** requirement: it is
@@ -431,8 +553,36 @@ dependency:
   violation. If `go mod tidy` would MOVE any existing version, **halt** — that
   is outside this contract's scope.
 
-**Analyzer package:** `internal/faultline/analyzer/scannerdiscipline` →
-`var Analyzer *analysis.Analyzer` (`Name: "FL001scannerdiscipline"`).
+**Analyzer package (declaration only):**
+`internal/faultline/analyzer/scannerdiscipline` declares
+`var Analyzer *analysis.Analyzer` (`Name: "FL001scannerdiscipline"`) with a
+**compilable skeleton run func carrying no discipline logic**, so every dependent
+`analysistest` harness compiles from a base checkout and `main.go` can enumerate
+FL001. The seeded-violation / clean fixtures and the discipline detection are
+**not** authored here (see §158.010-T).
+
+**Acceptance (158.003-T, scaffold + declaration):**
+* `go list -m golang.org/x/tools` prints `golang.org/x/tools v0.39.0`; no
+  existing requirement version moved.
+* `go build ./cmd/faultline-analyze` builds (multichecker enumerates
+  FL001..FL005 slots; FL001 wired to the skeleton `Analyzer`).
+* A source-shape harness `TestScaffoldShape` asserts the scaffolding + FL001
+  declaration exist (skeleton `Analyzer` var, enumerated slots, `check` target).
+
+**RED selector:** `go build ./cmd/faultline-analyze && go test ./internal/faultline/analyzer/scannerdiscipline/ -run TestScaffoldShape -count=1`
+(fails until scaffolding + declaration land).
+**GREEN selector:** same passes; `make check` green.
+
+## 158.010-T — Analyzer FL001 Scanner discipline behavior + analysistest (U3a-behavior) · Wave 2 (depends 158.003-T) · domain: code
+
+**Split note (attempt-5).** Implements the FL001 discipline **behavior** by
+filling the skeleton run func declared by `158.003-T`, plus its `analysistest`
+fixtures. Does **not** edit `cmd/faultline-analyze/main.go` (the FL001 slot is
+already filled by `158.003-T` against the declared `Analyzer` var). Depends on
+`158.003-T`.
+
+**Analyzer package:** `internal/faultline/analyzer/scannerdiscipline`
+(`Name: "FL001scannerdiscipline"`).
 
 * **Message:** `FL001: bufio.Scanner used without Buffer() bound and/or Err() check`.
 * **Source:** an assignment whose RHS is `bufio.NewScanner(...)` (confirmed via
@@ -450,10 +600,10 @@ dependency:
   64*1024), 1<<20)` and `if err := s.Err(); err != nil { return err }`.
 
 **RED selector:** `go test ./internal/faultline/analyzer/scannerdiscipline/ -run TestAnalyzer -count=1`
-(fails: analyzer reports nothing on the seeded `// want` line).
+(fails: skeleton analyzer reports nothing on the seeded `// want` line).
 **GREEN selector:** same passes; `go build ./cmd/faultline-analyze` builds; `make check` green.
 
-## 158.004-T — Analyzer: error wrapping with %w (U3b, FL002) · Wave 1b (after 158.003-T) · domain: code
+## 158.004-T — Analyzer: error wrapping with %w (U3b, FL002) · Wave 2 (depends 158.003-T) · domain: code
 
 **Analyzer package:** `internal/faultline/analyzer/errwrap` (`Name: "FL002errwrap"`).
 
@@ -472,9 +622,11 @@ dependency:
 * **Clean:** `return fmt.Errorf("load: %w", err)`.
 
 **RED selector:** `go test ./internal/faultline/analyzer/errwrap/ -run TestAnalyzer -count=1`.
-**GREEN selector:** same passes; fill FL002 slot in `cmd/faultline-analyze/main.go`.
+**GREEN selector:** same passes. (The FL002 multichecker slot is filled by the
+serialized integration task `158.011-T`, not here; this task owns only its
+subpackage + `analysistest`.)
 
-## 158.005-T — Analyzer: fail-open error branches (U3c, FL003) · Wave 1b (after 158.003-T) · domain: code
+## 158.005-T — Analyzer: fail-open error branches (U3c, FL003) · Wave 2 (depends 158.003-T) · domain: code
 
 **Analyzer package:** `internal/faultline/analyzer/failopen` (`Name: "FL003failopen"`).
 
@@ -494,9 +646,9 @@ dependency:
 * **Clean:** `if err != nil { return err }`.
 
 **RED selector:** `go test ./internal/faultline/analyzer/failopen/ -run TestAnalyzer -count=1`.
-**GREEN selector:** same passes; fill FL003 slot.
+**GREEN selector:** same passes. (FL003 slot filled by `158.011-T`, not here.)
 
-## 158.006-T — Analyzer: success returns after audit warnings (U3d, FL004) · Wave 1b (after 158.003-T) · domain: code
+## 158.006-T — Analyzer: success returns after audit warnings (U3d, FL004) · Wave 2 (depends 158.003-T) · domain: code
 
 **Analyzer package:** `internal/faultline/analyzer/auditsuccess` (`Name:
 "FL004auditsuccess"`), plus a **declaration-only** allowlist file
@@ -522,9 +674,9 @@ intra-block only — no data-flow/CFG.
 * **Clean:** `slog.Warn("audit: soft fail"); return errAudit`.
 
 **RED selector:** `go test ./internal/faultline/analyzer/auditsuccess/ -run TestAnalyzer -count=1`.
-**GREEN selector:** same passes; fill FL004 slot.
+**GREEN selector:** same passes. (FL004 slot filled by `158.011-T`, not here.)
 
-## 158.007-T — Analyzer: timeout claims reaching uncancellable locks (U3e, FL005) · Wave 1b (after 158.003-T) · domain: code
+## 158.007-T — Analyzer: timeout claims reaching uncancellable locks (U3e, FL005) · Wave 2 (depends 158.003-T) · domain: code
 
 **Analyzer package:** `internal/faultline/analyzer/locktimeout` (`Name:
 "FL005locktimeout"`), plus a **declaration-only** allowlist file
@@ -552,11 +704,11 @@ intra-function only — no SSA/data-flow.
   (`acq.Acquire(ctx)`).
 
 **RED selector:** `go test ./internal/faultline/analyzer/locktimeout/ -run TestAnalyzer -count=1`.
-**GREEN selector:** same passes; fill FL005 slot.
+**GREEN selector:** same passes. (FL005 slot filled by `158.011-T`, not here.)
 
 ---
 
-## 158.008-T — Bounded compatibility fuzz target (U-fuzz) · Wave 2 (depends 158.001-T) · domain: tests
+## 158.008-T — Bounded compatibility fuzz target (U-fuzz) · Wave 3 (depends 158.009-T) · domain: tests
 
 **Target:** `internal/faultline/compatcorpus/fuzz_test.go` — the **single owning
 package** required by `go test -fuzz`. Package-level test helpers introduced here
@@ -566,7 +718,7 @@ are prefixed `fuzz*` to avoid collision with 158.002-T's `conc*` helpers.
 
 ```go
 func FuzzCompatibilityCorpusDecode(f *testing.F) {
-    for _, e := range fuzzMustDefaultCorpus(f) { f.Add(e.Input) } // runtime seeds from U1 corpus
+    for _, e := range fuzzMustDefaultCorpus(f) { f.Add(e.Input) } // runtime seeds from 158.009-T corpus
     f.Fuzz(func(t *testing.T, input []byte) {
         for _, a := range compatcorpus.DefaultAdapters() {
             _, _ = a.Decode(context.Background(), input) // property: never panic, bounded
@@ -601,6 +753,32 @@ and is non-empty via `os.ReadDir`, and (2) replays each committed seed and each
 
 ---
 
+## 158.011-T — Wire FL002..FL005 into faultline-analyze multichecker (U3-wire) · Wave 4 (depends 158.004-T..158.007-T) · domain: code+build
+
+**Split note (attempt-5, Go-anchor remediation).** Added to remove parallel
+shared-file ownership of `cmd/faultline-analyze/main.go`. `158.003-T` authors
+`main.go` with FL001 wired live and FL002..FL005 as pre-reserved commented slots;
+the analyzer tasks `158.004-T`..`158.007-T` own **only** their subpackages and do
+not touch `main.go`. This task is the **single serialized owner** of the FL002..
+FL005 wiring and runs after all four analyzer subpackages exist.
+
+**Target:** `cmd/faultline-analyze/main.go` (fill the four reserved slots with
+`errwrap.Analyzer` (FL002), `failopen.Analyzer` (FL003), `auditsuccess.Analyzer`
+(FL004), `locktimeout.Analyzer` (FL005)) + `cmd/faultline-analyze/main_test.go`.
+
+**Rule:** the `multichecker.Main(...)` enumeration references each of the five
+analyzer vars exactly once, alphabetically sorted, no reflection/registry.
+
+**Acceptance:** `go build ./cmd/faultline-analyze` builds with all five analyzers
+enumerated; `make check` green; the enumeration test asserts FL001..FL005 present
+exactly once each.
+
+**RED selector:** `go test ./cmd/faultline-analyze/ -run TestMulticheckerEnumeratesAll -count=1`
+(fails while FL002..FL005 remain commented).
+**GREEN selector:** same passes; `go build ./cmd/faultline-analyze` builds.
+
+---
+
 ## Plan Hardening
 
 **Signals re-evaluated for this supplement:**
@@ -619,17 +797,22 @@ and is non-empty via `os.ReadDir`, and (2) replays each committed seed and each
   analyzers and corpus run in test/CI only.
 
 **Requires plan hardening: no.** The single pinned dev dependency is the only
-non-trivial signal; it is bounded, conventional, and version-locked. Residual
-risks and bounded mitigations:
+non-trivial signal; it is bounded, conventional, and version-locked. The
+attempt-5 declaration/behavior split introduces **no new hardening signal** — it
+only re-partitions existing scope into declaration prerequisites + behavior tasks
+and promotes prose ordering into real backlog edges (no product-scope, API,
+schema, security, migration, or rollout change). Residual risks and bounded
+mitigations:
 
 | Risk | Mitigation (in this contract) |
 |------|-------------------------------|
+| In-task two-stage harness (P-002.1/P-002.6) | Split: `158.001-T`/`158.003-T` are declaration-only prerequisites; `158.009-T`/`158.010-T` own the behavior; behavior harnesses compile only after declarations land (real backlog edges enforce order). |
 | Analyzer false positives | AST+type only; declaration-driven allowlists; explicit exclusions + suppression comments; under-approximate over false-positive. |
 | SSA/CFG scope creep (prior FAIL) | Hard boundary: intra-function/intra-block syntactic detection; no SSA/CFG/dataflow. |
 | Unreachable corpus outcomes (R3-1) | Adapters declared as decode-under-test wrappers with strict-validation + sentinel errors; outcomes provably reachable. |
 | Library message drift | Outcomes asserted via `errors.Is` sentinels, not message substrings. |
 | Shared-file coupling in parallel waves | Explicit enumeration with pre-reserved sorted slots; honest acknowledgement, not conflict-free claim. |
-| Hidden intra-wave dependency (R3-3) | 158.003-T promoted to wave-1a prerequisite; analyzer tasks declare ordering on it. |
+| Hidden intra-wave dependency (R3-3) | `158.003-T` is the wave-1 prerequisite; `158.004-T`..`158.007-T` + `158.010-T` carry **real backlog `blocks` edges** on it (no longer prose-only). |
 | Repo-wide enforcement surfacing production violations | Deferred out of 140-S; acceptance is fixture-scoped analysistest only. |
 | Non-deterministic corpus / fuzz seeds | Pure runner, total sort, twice-run determinism assertion, `-text` fixtures, committed native seeds asserted by a real unit test. |
 
@@ -730,3 +913,57 @@ change. This supersedes the attempt-3 record for the x/tools pin surface only;
 all other attempt-3 dispositions remain in force. Ready for Ship to integrate
 this reviewed planning commit into the existing implementation branch and resume
 wave-1 harness generation.
+
+## Plan Review
+
+<!-- plan-review-attempt: 5 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Scope of this attempt:** the P-002.1/P-002.6 **declaration/behavior split** that
+converts `158.001-T` and `158.003-T` into declaration-only prerequisites, adds
+behavior tasks `158.009-T` (corpus runner) and `158.010-T` (FL001 behavior) plus
+the serialized multichecker-wiring task `158.011-T`, promotes the analyzer
+harness ordering into **real backlog `blocks` edges**, and rewires the runner
+consumers `158.002-T`/`158.008-T` onto `158.009-T`. No product scope reopened;
+all attempt-3/attempt-4 dispositions remain in force.
+
+personas (genuine multi-agent dispatch over the amended supplement + governing
+plan + the mutated backlog topology):
+* Constitution Reviewer (`claude-opus-4.8`) — II Test-First / P-002 RED→GREEN
+  ordering, VI single-responsibility, VIII fail-closed.
+* Go Reviewer, anchor (`gpt-5.6-terra`, effort high) — declaration/behavior
+  compile ordering, x/tools promotion, shared-file ownership.
+* Architecture Strategist (`grok-4.6`) — dependency DAG + wave partition.
+* Scope Boundary Auditor (`gemini-3.7-flash`) — dark scope `[140-S]` only.
+* Correctness Reviewer (`claude-sonnet-5`) — edge/prose consistency, acceptance
+  completeness.
+* Template/Backlog Integrity (`gpt-5.6-terra`) — frontmatter, docs lint, manifest.
+
+Controlling findings and dispositions (all resolved inline, re-reviewed clean):
+* **P1 (Go anchor) — `158.009-T` acceptance called `Run(DefaultCorpus(),
+  DefaultAdapters())`, which does not match the declared signature
+  `Run(ctx, entries, adapters)`.** RESOLVED: the §158.009-T acceptance now uses
+  `ctx := context.Background()` + `entries, err := DefaultCorpus()` then
+  `Run(ctx, entries, DefaultAdapters())`. Go re-review: PASS.
+* **P1 (Go anchor) — `158.004-T`..`158.007-T` each edited shared
+  `cmd/faultline-analyze/main.go` in parallel (duplicate/parallel file
+  ownership).** RESOLVED: added serialized integration task **`158.011-T`** as the
+  sole owner of the FL002..FL005 wiring; `158.003-T` authors `main.go` (FL001
+  live + FL002..FL005 commented reservations); analyzer tasks own only their
+  subpackages. `main.go` is touched only by `158.003-T` (wave 1) then `158.011-T`
+  (wave 4) — strictly serialized. Go re-review: PASS.
+* **P1 (Correctness) — `158.008-T` body prose still said "depends 158.001-T".**
+  RESOLVED: `158.008-T` and `158.002-T` descriptions rewritten to reference
+  `158.009-T`. Correctness re-review: PASS.
+* Constitution / Architecture / Scope / Template-Integrity: PASS with no
+  blocking findings (acyclic DAG rooted at `158.001-T`/`158.003-T`; dark scope
+  `[140-S]` only; docs lint clean; manifest = `158-F` + 11 tasks = 12 items;
+  behavior tasks strictly smaller than the units they were carved from; sizing
+  semantics preserved — all members unsized).
+
+No open P0/P1 findings remain. Gate: **PASS** — this is the authoritative final
+verdict for the declaration/behavior split; it supersedes the attempt-3/attempt-4
+records for the task-partition surface only. Ready for Ship to re-claim `140-S`
+and resume wave-1 harness generation on the existing implementation branch.

@@ -138,3 +138,86 @@ Attempt-2 P1 dispositions (detail in the supplement's resolution tables):
   surface; DAG wiring explicitly deferred to S10 (out of 140-S scope).
 
 Gate: **PASS** — executable and scope-bounded via the supplement. Ready for Ship.
+
+## Amendment — Declaration/Behavior Split (attempt-4, unblocks 140-S)
+
+**Governing finding (P-002.1/P-002.6).** Test-first RED→GREEN does not permit an
+in-task two-stage harness: a single task may not bundle new package/symbol
+*declarations* with the *behavior harness* that cannot compile until those
+declarations exist. Two original units bundled exactly that; this Stage manifest
+amendment splits them (only a Stage amendment may change the frozen work graph).
+Product scope is unchanged — the same corpus, adapters, analyzers, fuzz target,
+and acceptance are delivered; they are only re-partitioned across tasks with
+correct RED→GREEN ordering.
+
+**Unit → task mapping after the split:**
+
+| Governing unit | Declaration prerequisite | Behavior task |
+|----------------|--------------------------|---------------|
+| U1 (corpus + runner) | `158.001-T` — compat corpus package **declarations** + source-shape go/ast harness | `158.009-T` — runner + adapters + fixtures + `report/v1` behavior (all original U1 acceptance) |
+| U3a (FL001 + scaffolding) | `158.003-T` — x/tools promotion + `cmd/faultline-analyze` skeleton + `check` target + FL001 **declaration** | `158.010-T` — FL001 scanner-discipline **behavior** + `analysistest` |
+| U2 (`158.002-T`), U3b–U3e (`158.004-T`..`158.007-T`), U-fuzz (`158.008-T`) | unchanged units | rewired dependencies (below) |
+
+**Final backlog dependency edges (real `blocks` edges):**
+
+* `158.009-T → 158.001-T`; `158.010-T → 158.003-T`
+* `158.004-T → 158.003-T`; `158.005-T → 158.003-T`; `158.006-T → 158.003-T`; `158.007-T → 158.003-T`
+* `158.002-T → 158.009-T`; `158.008-T → 158.009-T` (rewired off `158.001-T`; their real dependency is the implemented runner)
+* `158.011-T → 158.004-T`; `158.011-T → 158.005-T`; `158.011-T → 158.006-T`; `158.011-T → 158.007-T` (serialized multichecker-wiring integration; see below)
+* `158-F → 156.006-T` (unchanged)
+
+**Serialized multichecker-wiring task (`158.011-T`).** Added during the plan
+review (Go-anchor remediation) to remove parallel shared-file ownership of
+`cmd/faultline-analyze/main.go`: `158.003-T` authors `main.go` with FL001 wired
+live + FL002..FL005 reserved as commented slots; the analyzer tasks
+`158.004-T`..`158.007-T` own only their subpackages; `158.011-T` is the single
+serialized owner that fills the four FL002..FL005 slots after those analyzer vars
+exist.
+
+**Wave schedule:** Wave 1 (prereqs, parallel): `158.001-T`, `158.003-T`. Wave 2
+(after prereq, parallel): `158.009-T`, `158.010-T`, `158.004-T`, `158.005-T`,
+`158.006-T`, `158.007-T`. Wave 3 (after `158.009-T`): `158.002-T`, `158.008-T`.
+Wave 4 (after `158.004-T`..`158.007-T`): `158.011-T`.
+
+**Manifest `140-S`:** members are `158-F` + `158.001-T`..`158.011-T` (12 items).
+The concrete per-task contracts (API signatures, RED/GREEN selectors, ownership)
+live in the supplement `docs/exec-plans/2026-09-10-s6-140s-harness-contract-supplement.md`,
+which carries the authoritative attempt-5 Plan Review over the split.
+
+## Plan Review
+
+<!-- plan-review-attempt: 4 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Scope of this attempt:** a re-review of the P-002.1/P-002.6 declaration/behavior
+split that converts `158.001-T` and `158.003-T` to declaration-only prerequisites,
+adds behavior tasks `158.009-T` and `158.010-T`, promotes the analyzer harness
+ordering into real backlog `blocks` edges, and rewires the two runner consumers
+onto `158.009-T`. No product scope was reopened; the split only re-partitions
+existing, already-reviewed scope with correct RED→GREEN ordering.
+
+personas (genuine multi-agent dispatch over the amended governing plan + the
+supplement + the mutated backlog topology):
+* Constitution Reviewer (`claude-opus-4.8`) — II Test-First / P-002 ordering.
+* Go Reviewer, anchor (`gpt-5.6-terra`, effort high) — declaration vs behavior
+  compile ordering, x/tools promotion unchanged.
+* Architecture Strategist (`grok-4.6`) — dependency DAG, wave partition.
+* Scope Boundary Auditor (`gemini-3.7-flash`) — no scope creep; dark scope
+  `[140-S]` only.
+* Correctness Reviewer (`claude-sonnet-5`) — acyclic edges, no duplicate
+  ownership.
+* Template/Backlog Integrity — frontmatter valid, docs lint clean, manifest
+  membership + edges consistent.
+
+Findings and dispositions: no open P0/P1. The behavior tasks are strictly smaller
+than the single units they were carved from (each previously reviewed as one ≤2h
+unit); sizing/complexity semantics preserved (all members remain unsized, matching
+the existing shipment composition). The dependency graph is acyclic with roots
+`158.001-T`/`158.003-T`; no task owns another task's file logic (FL001 `main.go`
+slot filled once by `158.003-T`).
+
+Gate: **PASS** — this is the authoritative final governing-plan verdict; it
+supersedes the attempt-3 record for the task-partition surface only. Ready for
+Ship to re-claim `140-S`.
