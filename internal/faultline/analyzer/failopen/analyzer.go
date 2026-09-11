@@ -68,13 +68,53 @@ func enclosingSignature(
 			return signature, false
 		case *ast.FuncLit:
 			signature, _ := pass.TypesInfo.TypeOf(function).(*types.Signature)
-			return signature, isDeferredClosure(parents, function)
+			return signature, isDeferredClosure(pass, parents, function)
 		}
 	}
 	return nil, false
 }
 
-func isDeferredClosure(parents map[ast.Node]ast.Node, function *ast.FuncLit) bool {
+func isDeferredClosure(
+	pass *analysis.Pass,
+	parents map[ast.Node]ast.Node,
+	function *ast.FuncLit,
+) bool {
+	if isImmediatelyDeferredClosure(parents, function) {
+		return true
+	}
+
+	variable := initializedFunctionVariable(pass, parents, function)
+	enclosing := enclosingFunction(parents, function)
+	if variable == nil || enclosing == nil {
+		return false
+	}
+
+	for node := range parents {
+		deferred, ok := node.(*ast.DeferStmt)
+		if !ok || enclosingFunction(parents, deferred) != enclosing {
+			continue
+		}
+
+		identifier, ok := ast.Unparen(deferred.Call.Fun).(*ast.Ident)
+		if ok &&
+			pass.TypesInfo.ObjectOf(identifier) == variable &&
+			isOnlyUse(pass, variable, identifier) {
+			return true
+		}
+	}
+	return false
+}
+
+func isOnlyUse(pass *analysis.Pass, variable *types.Var, expected *ast.Ident) bool {
+	for identifier, object := range pass.TypesInfo.Uses {
+		if object == variable && identifier != expected {
+			return false
+		}
+	}
+	return true
+}
+
+func isImmediatelyDeferredClosure(parents map[ast.Node]ast.Node, function *ast.FuncLit) bool {
 	var expression ast.Expr = function
 	parent := parents[function]
 	for {
@@ -92,6 +132,63 @@ func isDeferredClosure(parents map[ast.Node]ast.Node, function *ast.FuncLit) boo
 	}
 	deferred, ok := parents[call].(*ast.DeferStmt)
 	return ok && deferred.Call == call
+}
+
+func initializedFunctionVariable(
+	pass *analysis.Pass,
+	parents map[ast.Node]ast.Node,
+	function *ast.FuncLit,
+) *types.Var {
+	var expression ast.Expr = function
+	parent := parents[function]
+	for {
+		parentheses, ok := parent.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expression = parentheses
+		parent = parents[parentheses]
+	}
+
+	switch declaration := parent.(type) {
+	case *ast.AssignStmt:
+		if declaration.Tok != token.DEFINE || len(declaration.Lhs) != len(declaration.Rhs) {
+			return nil
+		}
+		for index, value := range declaration.Rhs {
+			if value != expression {
+				continue
+			}
+			identifier, ok := declaration.Lhs[index].(*ast.Ident)
+			if !ok {
+				return nil
+			}
+			variable, _ := pass.TypesInfo.Defs[identifier].(*types.Var)
+			return variable
+		}
+	case *ast.ValueSpec:
+		if len(declaration.Names) != len(declaration.Values) {
+			return nil
+		}
+		for index, value := range declaration.Values {
+			if value != expression {
+				continue
+			}
+			variable, _ := pass.TypesInfo.Defs[declaration.Names[index]].(*types.Var)
+			return variable
+		}
+	}
+	return nil
+}
+
+func enclosingFunction(parents map[ast.Node]ast.Node, node ast.Node) ast.Node {
+	for parent := parents[node]; parent != nil; parent = parents[parent] {
+		switch parent.(type) {
+		case *ast.FuncDecl, *ast.FuncLit:
+			return parent
+		}
+	}
+	return nil
 }
 
 func hasTrailingErrorResult(signature *types.Signature, errorType types.Type) bool {

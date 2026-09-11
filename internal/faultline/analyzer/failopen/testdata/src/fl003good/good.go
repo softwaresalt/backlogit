@@ -125,6 +125,16 @@ func deferredCleanup() {
 	}()
 }
 
+func deferredAssignedCleanup() {
+	cleanup := func() error {
+		if err := work(); err != nil {
+			return nil
+		}
+		return nil
+	}
+	defer cleanup()
+}
+
 func work() error {
 	return nil
 }
