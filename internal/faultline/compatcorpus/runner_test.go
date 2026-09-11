@@ -260,27 +260,76 @@ func TestCorpusRunner(t *testing.T) {
 	})
 
 	t.Run("runner converts adapter panic to a failed result", func(t *testing.T) {
-		entry := Entry{
-			ID:      "panic-01",
-			Adapter: "panic",
-			Input:   []byte("boom"),
-			Expect:  ExpectAccepted,
+		tests := []struct {
+			name       string
+			adapter    ParserAdapter
+			wantGotErr string
+		}{
+			{
+				name:       "string",
+				adapter:    panicAdapter{},
+				wantGotErr: `adapter panic: string("adapter panic")`,
+			},
+			{
+				name:       "error",
+				adapter:    errorPanicAdapter{},
+				wantGotErr: `adapter panic: *errors.errorString("decode exploded")`,
+			},
+			{
+				name:       "scalar",
+				adapter:    scalarPanicAdapter{},
+				wantGotErr: "adapter panic: int16(-23)",
+			},
+			{
+				name:       "nondeterministic pointer",
+				adapter:    pointerPanicAdapter{payload: &panicPayload{value: 42}},
+				wantGotErr: "adapter panic: *compatcorpus.panicPayload",
+			},
 		}
-		report := runWithoutPanic(
-			t,
-			[]Entry{entry},
-			map[string]ParserAdapter{"panic": panicAdapter{}},
-		)
-		if report.Total != 1 || report.Passed != 0 || report.Failed != 1 {
-			t.Fatalf(
-				"panic report counts = total:%d passed:%d failed:%d, want 1/0/1",
-				report.Total,
-				report.Passed,
-				report.Failed,
-			)
-		}
-		if len(report.Results) != 1 || report.Results[0].Passed || report.Results[0].Reason == "" {
-			t.Fatalf("panic result = %+v, want one failed result with a reason", report.Results)
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				entry := Entry{
+					ID:      "panic-01",
+					Adapter: test.adapter.Name(),
+					Input:   []byte("boom"),
+					Expect:  ExpectAccepted,
+				}
+				adapters := map[string]ParserAdapter{test.adapter.Name(): test.adapter}
+				first := runWithoutPanic(t, []Entry{entry}, adapters)
+				second := runWithoutPanic(t, []Entry{entry}, adapters)
+
+				if first.Total != 1 || first.Passed != 0 || first.Failed != 1 {
+					t.Fatalf(
+						"panic report counts = total:%d passed:%d failed:%d, want 1/0/1",
+						first.Total,
+						first.Passed,
+						first.Failed,
+					)
+				}
+				if len(first.Results) != 1 ||
+					first.Results[0].Passed ||
+					first.Results[0].Reason == "" {
+					t.Fatalf("panic result = %+v, want one failed result with a reason", first.Results)
+				}
+				if first.Results[0].GotErr != test.wantGotErr {
+					t.Errorf("panic GotErr = %q, want %q", first.Results[0].GotErr, test.wantGotErr)
+				}
+
+				firstJSON := reportJSONWithoutPanic(t, first)
+				secondJSON := reportJSONWithoutPanic(t, second)
+				if !bytes.Equal(firstJSON, secondJSON) {
+					t.Errorf(
+						"identical panic runs emitted different JSON:\nfirst: %s\nsecond: %s",
+						firstJSON,
+						secondJSON,
+					)
+				}
+				if bytes.Contains(firstJSON, []byte("goroutine ")) ||
+					bytes.Contains(firstJSON, []byte("0x")) {
+					t.Errorf("panic report JSON contains nondeterministic runtime context: %s", firstJSON)
+				}
+			})
 		}
 	})
 }
@@ -293,6 +342,42 @@ func (panicAdapter) Name() string {
 
 func (panicAdapter) Decode(context.Context, []byte) (DecodeResult, error) {
 	panic("adapter panic")
+}
+
+type errorPanicAdapter struct{}
+
+func (errorPanicAdapter) Name() string {
+	return "error_panic"
+}
+
+func (errorPanicAdapter) Decode(context.Context, []byte) (DecodeResult, error) {
+	panic(errors.New("decode exploded"))
+}
+
+type scalarPanicAdapter struct{}
+
+func (scalarPanicAdapter) Name() string {
+	return "scalar_panic"
+}
+
+func (scalarPanicAdapter) Decode(context.Context, []byte) (DecodeResult, error) {
+	panic(int16(-23))
+}
+
+type panicPayload struct {
+	value int
+}
+
+type pointerPanicAdapter struct {
+	payload *panicPayload
+}
+
+func (pointerPanicAdapter) Name() string {
+	return "pointer_panic"
+}
+
+func (a pointerPanicAdapter) Decode(context.Context, []byte) (DecodeResult, error) {
+	panic(a.payload)
 }
 
 func mustDefaultCorpus(t *testing.T) (entries []Entry) {

@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"reflect"
 	"sort"
+	"strconv"
 )
 
 // Category identifies a compatibility-corpus fault category.
@@ -224,9 +226,9 @@ func runEntry(ctx context.Context, entry Entry, adapter ParserAdapter) Result {
 		return result
 	}
 
-	decoded, err, panicked := decodeSafely(ctx, adapter, bytes.Clone(entry.Input))
+	decoded, panicContext, panicked, err := decodeSafely(ctx, adapter, bytes.Clone(entry.Input))
 	if panicked {
-		result.GotErr = "adapter panic"
+		result.GotErr = "adapter panic: " + panicContext
 		result.Reason = "adapter panicked while decoding"
 		return result
 	}
@@ -269,14 +271,56 @@ func decodeSafely(
 	ctx context.Context,
 	adapter ParserAdapter,
 	input []byte,
-) (decoded DecodeResult, err error, panicked bool) {
+) (decoded DecodeResult, panicContext string, panicked bool, err error) {
 	defer func() {
-		if recover() != nil {
+		if recovered := recover(); recovered != nil {
 			decoded = DecodeResult{}
 			err = nil
+			panicContext = describePanic(recovered)
 			panicked = true
 		}
 	}()
 	decoded, err = adapter.Decode(ctx, input)
-	return decoded, err, false
+	return decoded, "", false, err
+}
+
+func describePanic(recovered any) string {
+	recoveredType := reflect.TypeOf(recovered)
+	if recoveredType == nil {
+		return "<nil>"
+	}
+
+	if recoveredErr, ok := recovered.(error); ok {
+		return recoveredType.String() + "(" + strconv.Quote(recoveredErr.Error()) + ")"
+	}
+
+	recoveredValue := reflect.ValueOf(recovered)
+	var value string
+	switch recoveredValue.Kind() {
+	case reflect.String:
+		value = strconv.Quote(recoveredValue.String())
+	case reflect.Bool:
+		value = strconv.FormatBool(recoveredValue.Bool())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		value = strconv.FormatInt(recoveredValue.Int(), 10)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		value = strconv.FormatUint(recoveredValue.Uint(), 10)
+	case reflect.Float32, reflect.Float64:
+		value = strconv.FormatFloat(
+			recoveredValue.Float(),
+			'g',
+			-1,
+			recoveredType.Bits(),
+		)
+	case reflect.Complex64, reflect.Complex128:
+		value = strconv.FormatComplex(
+			recoveredValue.Complex(),
+			'g',
+			-1,
+			recoveredType.Bits(),
+		)
+	default:
+		return recoveredType.String()
+	}
+	return recoveredType.String() + "(" + value + ")"
 }
