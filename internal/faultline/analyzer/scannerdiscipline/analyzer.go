@@ -62,7 +62,14 @@ func analyzeFunction(pass *analysis.Pass, file *ast.File, functionType *ast.Func
 		}
 
 		if hasSuppression(pass, file, creation.assignment) ||
-			scannerEscapes(pass, body, creation.object, creation.assignment.End(), upperBound) {
+			scannerEscapes(
+				pass,
+				functionType,
+				body,
+				creation.object,
+				creation.assignment.End(),
+				upperBound,
+			) {
 			continue
 		}
 
@@ -79,7 +86,7 @@ func analyzeFunction(pass *analysis.Pass, file *ast.File, functionType *ast.Func
 			creation.assignment.End(),
 			firstLoop,
 		)
-		hasErr := hasMethodCall(pass, body, creation.object, "Err", lastLoopEnd, upperBound)
+		hasErr := hasMeaningfulErrUse(pass, body, creation.object, lastLoopEnd, upperBound)
 		if !hasBuffer || !hasErr {
 			pass.Reportf(creation.call.Pos(), diagnostic)
 		}
@@ -161,7 +168,7 @@ func hasSuppression(pass *analysis.Pass, file *ast.File, assignment *ast.AssignS
 	for _, group := range file.Comments {
 		for _, comment := range group.List {
 			line := pass.Fset.Position(comment.Pos()).Line
-			if line >= startLine && line <= endLine &&
+			if (line == startLine-1 || line >= startLine && line <= endLine) &&
 				strings.TrimSpace(comment.Text) == "// faultline:scanner-ok" {
 				return true
 			}
@@ -221,6 +228,133 @@ func hasMethodCall(
 	return found
 }
 
+func hasMeaningfulErrUse(
+	pass *analysis.Pass,
+	body *ast.BlockStmt,
+	object *types.Var,
+	lowerBound,
+	upperBound token.Pos,
+) bool {
+	parents := parentNodes(body)
+	found := false
+	inspectFunctionBody(body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if ok &&
+			call.Pos() > lowerBound &&
+			call.End() < upperBound &&
+			isMethodCallOn(pass, call, object, "Err") &&
+			meaningfullyConsumesErr(call, parents) {
+			found = true
+			return false
+		}
+		return !found
+	})
+	return found
+}
+
+func meaningfullyConsumesErr(call *ast.CallExpr, parents map[ast.Node]ast.Node) bool {
+	for node := parents[call]; node != nil; node = parents[node] {
+		switch parent := node.(type) {
+		case *ast.ExprStmt:
+			return false
+		case *ast.AssignStmt:
+			return assignmentTargetIsNonBlank(parent, call)
+		case *ast.ValueSpec:
+			return valueSpecTargetIsNonBlank(parent, call)
+		case *ast.ReturnStmt:
+			return true
+		case *ast.IfStmt:
+			return containsPosition(parent.Cond, call)
+		case *ast.ForStmt:
+			return containsPosition(parent.Cond, call)
+		case *ast.SwitchStmt:
+			if parent.Tag != nil && containsPosition(parent.Tag, call) {
+				return true
+			}
+		case *ast.CaseClause:
+			for _, expression := range parent.List {
+				if containsPosition(expression, call) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func assignmentTargetIsNonBlank(assignment *ast.AssignStmt, call *ast.CallExpr) bool {
+	index := containingExpressionIndex(assignment.Rhs, call)
+	if index < 0 {
+		return false
+	}
+	if len(assignment.Lhs) == len(assignment.Rhs) {
+		return !isBlankIdentifier(assignment.Lhs[index])
+	}
+	for _, target := range assignment.Lhs {
+		if !isBlankIdentifier(target) {
+			return true
+		}
+	}
+	return false
+}
+
+func valueSpecTargetIsNonBlank(spec *ast.ValueSpec, call *ast.CallExpr) bool {
+	index := containingExpressionIndex(spec.Values, call)
+	if index < 0 {
+		return false
+	}
+	if len(spec.Names) == len(spec.Values) {
+		return spec.Names[index].Name != "_"
+	}
+	for _, name := range spec.Names {
+		if name.Name != "_" {
+			return true
+		}
+	}
+	return false
+}
+
+func containingExpressionIndex(expressions []ast.Expr, target ast.Node) int {
+	for index, expression := range expressions {
+		if containsPosition(expression, target) {
+			return index
+		}
+	}
+	return -1
+}
+
+func containsPosition(container, target ast.Node) bool {
+	return container != nil &&
+		target != nil &&
+		target.Pos() >= container.Pos() &&
+		target.End() <= container.End()
+}
+
+func isBlankIdentifier(expression ast.Expr) bool {
+	identifier, ok := ast.Unparen(expression).(*ast.Ident)
+	return ok && identifier.Name == "_"
+}
+
+func parentNodes(root ast.Node) map[ast.Node]ast.Node {
+	parents := make(map[ast.Node]ast.Node)
+	var stack []ast.Node
+	ast.Inspect(root, func(node ast.Node) bool {
+		if node == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		if len(stack) > 0 {
+			parents[node] = stack[len(stack)-1]
+		}
+		if _, nested := node.(*ast.FuncLit); nested {
+			return false
+		}
+		stack = append(stack, node)
+		return true
+	})
+	return parents
+}
+
 func containsMethodCall(pass *analysis.Pass, root ast.Node, object *types.Var, name string) bool {
 	found := false
 	ast.Inspect(root, func(node ast.Node) bool {
@@ -263,11 +397,18 @@ func isSelectorCallOn(pass *analysis.Pass, selector *ast.SelectorExpr, object *t
 
 func scannerEscapes(
 	pass *analysis.Pass,
+	functionType *ast.FuncType,
 	body *ast.BlockStmt,
 	object *types.Var,
 	lowerBound,
 	upperBound token.Pos,
 ) bool {
+	namedResults := namedResultVariables(pass, functionType)
+	if _, namedResult := namedResults[object]; namedResult &&
+		hasBareReturn(body, lowerBound, upperBound) {
+		return true
+	}
+
 	escaped := false
 	inspectFunctionBody(body, func(node ast.Node) bool {
 		if escaped || node.Pos() <= lowerBound || node.Pos() >= upperBound {
@@ -295,15 +436,24 @@ func scannerEscapes(
 				}
 			}
 		case *ast.AssignStmt:
-			for _, right := range value.Rhs {
-				if isObjectValue(pass, right, object) {
+			for index, right := range value.Rhs {
+				if storedObjectValue(pass, right, object) ||
+					(isDirectObjectValue(pass, right, object) &&
+						assignmentEscapes(
+							pass,
+							value,
+							index,
+							namedResults,
+							body,
+							upperBound,
+						)) {
 					escaped = true
 					break
 				}
 			}
 		case *ast.ValueSpec:
 			for _, initializer := range value.Values {
-				if isObjectValue(pass, initializer, object) {
+				if storedObjectValue(pass, initializer, object) {
 					escaped = true
 					break
 				}
@@ -317,6 +467,81 @@ func scannerEscapes(
 		return !escaped
 	})
 	return escaped
+}
+
+func namedResultVariables(pass *analysis.Pass, functionType *ast.FuncType) map[*types.Var]struct{} {
+	results := make(map[*types.Var]struct{})
+	if functionType.Results == nil {
+		return results
+	}
+	for _, field := range functionType.Results.List {
+		for _, name := range field.Names {
+			if object, ok := pass.TypesInfo.ObjectOf(name).(*types.Var); ok {
+				results[object] = struct{}{}
+			}
+		}
+	}
+	return results
+}
+
+func assignmentEscapes(
+	pass *analysis.Pass,
+	assignment *ast.AssignStmt,
+	rightIndex int,
+	namedResults map[*types.Var]struct{},
+	body *ast.BlockStmt,
+	upperBound token.Pos,
+) bool {
+	if rightIndex >= len(assignment.Lhs) {
+		return false
+	}
+
+	target := ast.Unparen(assignment.Lhs[rightIndex])
+	switch value := target.(type) {
+	case *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.StarExpr:
+		return true
+	case *ast.Ident:
+		if value.Name == "_" {
+			return false
+		}
+		targetObject, _ := pass.TypesInfo.ObjectOf(value).(*types.Var)
+		if targetObject == nil {
+			return false
+		}
+		if targetObject.Parent() == pass.Pkg.Scope() {
+			return true
+		}
+		if _, namedResult := namedResults[targetObject]; namedResult {
+			return hasBareReturn(body, assignment.End(), upperBound)
+		}
+	}
+	return false
+}
+
+func hasBareReturn(body *ast.BlockStmt, lowerBound, upperBound token.Pos) bool {
+	found := false
+	inspectFunctionBody(body, func(node ast.Node) bool {
+		result, ok := node.(*ast.ReturnStmt)
+		if ok &&
+			result.Pos() > lowerBound &&
+			result.End() < upperBound &&
+			len(result.Results) == 0 {
+			found = true
+			return false
+		}
+		return !found
+	})
+	return found
+}
+
+func storedObjectValue(pass *analysis.Pass, expression ast.Expr, object *types.Var) bool {
+	return isObjectValue(pass, expression, object) &&
+		!isDirectObjectValue(pass, expression, object)
+}
+
+func isDirectObjectValue(pass *analysis.Pass, expression ast.Expr, object *types.Var) bool {
+	identifier, ok := ast.Unparen(expression).(*ast.Ident)
+	return ok && pass.TypesInfo.ObjectOf(identifier) == object
 }
 
 func isObjectValue(pass *analysis.Pass, expression ast.Expr, object *types.Var) bool {
@@ -334,7 +559,8 @@ func isObjectValue(pass *analysis.Pass, expression ast.Expr, object *types.Var) 
 			}
 		}
 	case *ast.KeyValueExpr:
-		return isObjectValue(pass, value.Value, object)
+		return isObjectValue(pass, value.Key, object) ||
+			isObjectValue(pass, value.Value, object)
 	}
 	return false
 }
