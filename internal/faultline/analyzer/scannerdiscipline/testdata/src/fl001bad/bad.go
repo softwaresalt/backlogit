@@ -140,6 +140,16 @@ func inLoopReplacementDoesNotEndLifetime(r io.Reader, replacement *bufio.Scanner
 	}
 }
 
+func errOnInLoopReplacementDoesNotCheckOriginal(r io.Reader, replacement *bufio.Scanner) error {
+	s := bufio.NewScanner(r) // want "FL001"
+	s.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for s.Scan() {
+		_ = s.Text()
+		s = replacement
+	}
+	return s.Err()
+}
+
 func selfReplacementDoesNotEndLifetime(r io.Reader) {
 	s := bufio.NewScanner(r) // want "FL001"
 	s = s

@@ -72,7 +72,13 @@ func analyzeFunction(pass *analysis.Pass, file *ast.File, functionType *ast.Func
 			continue
 		}
 
-		firstLoop, lastLoopEnd := scanLoopBounds(pass, body, creation.object, creation.assignment.End(), upperBound)
+		firstLoop, lastLoopEnd, errReceiverEnd := scanLoopBounds(
+			pass,
+			body,
+			creation.object,
+			creation.assignment.End(),
+			upperBound,
+		)
 		if firstLoop == 0 {
 			continue
 		}
@@ -85,7 +91,7 @@ func analyzeFunction(pass *analysis.Pass, file *ast.File, functionType *ast.Func
 			creation.assignment.End(),
 			firstLoop,
 		)
-		hasErr := hasMeaningfulErrUse(pass, body, creation.object, lastLoopEnd, upperBound)
+		hasErr := hasMeaningfulErrUse(pass, body, creation.object, lastLoopEnd, errReceiverEnd)
 		if !hasBuffer || !hasErr {
 			pass.Reportf(creation.call.Pos(), diagnostic)
 		}
@@ -332,9 +338,13 @@ func scanLoopBounds(
 	object *types.Var,
 	lowerBound,
 	upperBound token.Pos,
-) (token.Pos, token.Pos) {
+) (token.Pos, token.Pos, token.Pos) {
 	var firstLoop token.Pos
 	var lastLoopEnd token.Pos
+	errReceiverEnd := upperBound
+	aliases := map[*types.Var]struct{}{object: {}}
+	addPossibleAliases(pass, body, aliases)
+
 	inspectFunctionBody(body, func(node ast.Node) bool {
 		loop, ok := node.(*ast.ForStmt)
 		if !ok || loop.Pos() <= lowerBound || loop.End() >= upperBound {
@@ -349,9 +359,36 @@ func scanLoopBounds(
 		if loop.End() > lastLoopEnd {
 			lastLoopEnd = loop.End()
 		}
+		if replacement := firstScannerReplacement(pass, loop.Body, object, aliases); replacement != 0 &&
+			replacement < errReceiverEnd {
+			errReceiverEnd = replacement
+		}
 		return true
 	})
-	return firstLoop, lastLoopEnd
+	return firstLoop, lastLoopEnd, errReceiverEnd
+}
+
+func firstScannerReplacement(
+	pass *analysis.Pass,
+	body *ast.BlockStmt,
+	object *types.Var,
+	aliases map[*types.Var]struct{},
+) token.Pos {
+	var first token.Pos
+	inspectFunctionBody(body, func(node ast.Node) bool {
+		assignment, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		right, replaces := assignedObjectValue(pass, assignment, object)
+		if replaces &&
+			!expressionReferencesAliases(pass, right, aliases) &&
+			(first == 0 || assignment.Pos() < first) {
+			first = assignment.Pos()
+		}
+		return true
+	})
+	return first
 }
 
 func hasMethodCall(
