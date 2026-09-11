@@ -1,4 +1,4 @@
-.PHONY: all build test lint vet fmt cover clean install docs docs-lint md-lint verify-plugin
+.PHONY: all build check test lint vet fmt cover clean install docs docs-lint md-lint verify-plugin
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -8,6 +8,10 @@ LDFLAGS := -X github.com/softwaresalt/backlogit/internal/version.Version=$(VERSI
            -X github.com/softwaresalt/backlogit/internal/version.BuildDate=$(DATE)
 
 all: fmt vet lint test build
+
+check:
+	go build ./cmd/faultline-analyze
+	go test ./internal/faultline/analyzer/...
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/backlogit ./cmd/backlogit
