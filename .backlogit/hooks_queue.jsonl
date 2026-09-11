@@ -2760,3 +2760,4 @@
 {"seq":2762,"timestamp":"2026-09-11T02:17:00.4850287Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["harness_status","labels"],"item_id":"158.001-T","schema_version":1}}
 {"seq":2763,"timestamp":"2026-09-11T02:17:25.4381409Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["harness_status","labels"],"item_id":"158.003-T","schema_version":1}}
 {"seq":2764,"timestamp":"2026-09-11T02:20:43.9113983Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"158.001-T","schema_version":1,"status_delta":{"from":"queued","to":"active"}}}
+{"seq":2765,"timestamp":"2026-09-11T02:33:35.8280531Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"158.001-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
