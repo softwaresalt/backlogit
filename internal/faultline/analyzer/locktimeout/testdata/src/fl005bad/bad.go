@@ -10,6 +10,10 @@ type acquirer struct{}
 
 func (acquirer) Acquire() {}
 
+type customLock struct{}
+
+func (customLock) Lock() {}
+
 func mutex(parent context.Context, mu *sync.Mutex) {
 	ctx, cancel := context.WithTimeout(parent, time.Second)
 	defer cancel()
@@ -36,6 +40,13 @@ func namedAcquire(parent context.Context, lock acquirer) {
 	defer cancel()
 	_ = ctx
 	lock.Acquire() // want "FL005"
+}
+
+func namedLock(parent context.Context, lock customLock) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	_ = ctx
+	lock.Lock() // want "FL005"
 }
 
 func nestedDescendant(parent context.Context, mu *sync.Mutex) {

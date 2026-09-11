@@ -27,14 +27,8 @@ type lockSink struct {
 // uncancellableLockSinks is the declaration-driven allowlist for FL005 lock acquisitions.
 var uncancellableLockSinks = [...]lockSink{
 	{
-		selector:        "Lock",
-		receiverPackage: "sync",
-		receiverName:    "Mutex",
-	},
-	{
-		selector:        "Lock",
-		receiverPackage: "sync",
-		receiverName:    "RWMutex",
+		selector:    "Lock",
+		anyReceiver: true,
 	},
 	{
 		selector:        "RLock",

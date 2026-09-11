@@ -242,12 +242,20 @@ func isUncancellableLock(
 	contextType types.Type,
 ) bool {
 	selector, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-	if !ok || pass.TypesInfo.Selections[selector] == nil {
+	if !ok {
 		return false
 	}
 
-	signature, ok := pass.TypesInfo.TypeOf(call.Fun).Underlying().(*types.Signature)
-	if !ok || signatureTakesContext(signature, contextType) {
+	selection := pass.TypesInfo.Selections[selector]
+	if selection == nil {
+		return false
+	}
+	method, ok := selection.Obj().(*types.Func)
+	if !ok {
+		return false
+	}
+	signature, ok := method.Type().(*types.Signature)
+	if !ok || signature.Recv() == nil || signatureTakesContext(signature, contextType) {
 		return false
 	}
 
