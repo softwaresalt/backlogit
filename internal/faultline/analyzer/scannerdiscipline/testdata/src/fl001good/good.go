@@ -145,6 +145,28 @@ func replacedByUnrelatedScanner(r io.Reader, replacement *bufio.Scanner) {
 	}
 }
 
+func escapesInSimultaneousReplacement(r io.Reader, replacement *bufio.Scanner) {
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		_ = s.Text()
+	}
+	externalScanner, s = s, replacement
+}
+
+func capturedErrCheckedAfterReplacement(r io.Reader, replacement *bufio.Scanner) error {
+	s := bufio.NewScanner(r)
+	s.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for s.Scan() {
+		_ = s.Text()
+	}
+	err := s.Err()
+	s = replacement
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // methodExpressionScanIsExcluded records FL001's deliberate v.Scan() boundary.
 func methodExpressionScanIsExcluded(r io.Reader) {
 	s := bufio.NewScanner(r)

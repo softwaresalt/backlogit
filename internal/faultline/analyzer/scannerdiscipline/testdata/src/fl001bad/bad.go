@@ -121,3 +121,38 @@ func assignmentAfterLoopDoesNotHideMissingErr(r io.Reader, replacement *bufio.Sc
 	}
 	s = replacement
 }
+
+func conditionalReplacementDoesNotEndLifetime(r io.Reader, replacement *bufio.Scanner, replace bool) {
+	s := bufio.NewScanner(r) // want "FL001"
+	if replace {
+		s = replacement
+	}
+	for s.Scan() {
+		_ = s.Text()
+	}
+}
+
+func inLoopReplacementDoesNotEndLifetime(r io.Reader, replacement *bufio.Scanner) {
+	s := bufio.NewScanner(r) // want "FL001"
+	for s.Scan() {
+		_ = s.Text()
+		s = replacement
+	}
+}
+
+func selfReplacementDoesNotEndLifetime(r io.Reader) {
+	s := bufio.NewScanner(r) // want "FL001"
+	s = s
+	for s.Scan() {
+		_ = s.Text()
+	}
+}
+
+func aliasReplacementDoesNotEndLifetime(r io.Reader) {
+	s := bufio.NewScanner(r) // want "FL001"
+	alias := s
+	s = alias
+	for s.Scan() {
+		_ = s.Text()
+	}
+}

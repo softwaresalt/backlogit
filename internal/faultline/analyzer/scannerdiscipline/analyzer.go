@@ -53,11 +53,11 @@ func analyzeFunction(pass *analysis.Pass, file *ast.File, functionType *ast.Func
 
 	creations := scannerCreations(pass, functionType, body)
 	for _, creation := range creations {
-		upperBound := nextDirectAssignment(
+		upperBound := nextDefiniteReplacement(
 			pass,
 			body,
 			creation.object,
-			creation.assignment.End(),
+			creation.assignment,
 		)
 
 		if hasSuppression(pass, file, creation.assignment) ||
@@ -92,28 +92,154 @@ func analyzeFunction(pass *analysis.Pass, file *ast.File, functionType *ast.Func
 	}
 }
 
-func nextDirectAssignment(
+func nextDefiniteReplacement(
 	pass *analysis.Pass,
 	body *ast.BlockStmt,
 	object *types.Var,
-	lowerBound token.Pos,
+	creation *ast.AssignStmt,
 ) token.Pos {
-	upperBound := body.End()
-	inspectFunctionBody(body, func(node ast.Node) bool {
-		assignment, ok := node.(*ast.AssignStmt)
-		if !ok || assignment.Pos() <= lowerBound || assignment.Pos() >= upperBound {
-			return true
+	statements := directStatementList(parentNodes(body)[creation])
+	if len(statements) == 0 {
+		return body.End()
+	}
+
+	aliases := map[*types.Var]struct{}{object: {}}
+	afterCreation := false
+	for _, statement := range statements {
+		if statement == creation {
+			afterCreation = true
+			continue
 		}
-		for _, left := range assignment.Lhs {
-			identifier, ok := ast.Unparen(left).(*ast.Ident)
-			if ok && pass.TypesInfo.ObjectOf(identifier) == object {
-				upperBound = assignment.Pos()
-				return false
+		if !afterCreation {
+			continue
+		}
+
+		assignment, ok := statement.(*ast.AssignStmt)
+		if ok {
+			right, replaces := assignedObjectValue(pass, assignment, object)
+			if replaces && !expressionReferencesAliases(pass, right, aliases) {
+				return assignment.Pos()
 			}
 		}
-		return true
+		addPossibleAliases(pass, statement, aliases)
+	}
+	return body.End()
+}
+
+func directStatementList(parent ast.Node) []ast.Stmt {
+	switch node := parent.(type) {
+	case *ast.BlockStmt:
+		return node.List
+	case *ast.CaseClause:
+		return node.Body
+	case *ast.CommClause:
+		return node.Body
+	default:
+		return nil
+	}
+}
+
+func assignedObjectValue(
+	pass *analysis.Pass,
+	assignment *ast.AssignStmt,
+	object *types.Var,
+) (ast.Expr, bool) {
+	if len(assignment.Lhs) != len(assignment.Rhs) {
+		return nil, false
+	}
+	for index, left := range assignment.Lhs {
+		identifier, ok := ast.Unparen(left).(*ast.Ident)
+		if ok && pass.TypesInfo.ObjectOf(identifier) == object {
+			return assignment.Rhs[index], true
+		}
+	}
+	return nil, false
+}
+
+func addPossibleAliases(
+	pass *analysis.Pass,
+	root ast.Node,
+	aliases map[*types.Var]struct{},
+) {
+	for {
+		changed := false
+		ast.Inspect(root, func(node ast.Node) bool {
+			if _, nested := node.(*ast.FuncLit); nested {
+				return false
+			}
+
+			switch value := node.(type) {
+			case *ast.AssignStmt:
+				if addAssignedAliases(pass, value.Lhs, value.Rhs, aliases) {
+					changed = true
+				}
+			case *ast.ValueSpec:
+				targets := make([]ast.Expr, 0, len(value.Names))
+				for _, name := range value.Names {
+					targets = append(targets, name)
+				}
+				if addAssignedAliases(pass, targets, value.Values, aliases) {
+					changed = true
+				}
+			}
+			return true
+		})
+		if !changed {
+			return
+		}
+	}
+}
+
+func addAssignedAliases(
+	pass *analysis.Pass,
+	targets []ast.Expr,
+	values []ast.Expr,
+	aliases map[*types.Var]struct{},
+) bool {
+	if len(targets) != len(values) {
+		return false
+	}
+
+	changed := false
+	for index, target := range targets {
+		if !expressionReferencesAliases(pass, values[index], aliases) {
+			continue
+		}
+		identifier, ok := ast.Unparen(target).(*ast.Ident)
+		if !ok || identifier.Name == "_" {
+			continue
+		}
+		object, _ := pass.TypesInfo.ObjectOf(identifier).(*types.Var)
+		if object == nil {
+			continue
+		}
+		if _, exists := aliases[object]; !exists {
+			aliases[object] = struct{}{}
+			changed = true
+		}
+	}
+	return changed
+}
+
+func expressionReferencesAliases(
+	pass *analysis.Pass,
+	expression ast.Expr,
+	aliases map[*types.Var]struct{},
+) bool {
+	found := false
+	ast.Inspect(expression, func(node ast.Node) bool {
+		if found {
+			return false
+		}
+		identifier, ok := node.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		object, _ := pass.TypesInfo.ObjectOf(identifier).(*types.Var)
+		_, found = aliases[object]
+		return !found
 	})
-	return upperBound
+	return found
 }
 
 func scannerCreations(
@@ -288,14 +414,28 @@ func meaningfullyConsumesErr(
 			return false
 		case *ast.AssignStmt:
 			object := assignedCallObject(pass, parent.Lhs, parent.Rhs, call)
-			return errorObjectIsChecked(pass, body, parents, object, call.End(), upperBound)
+			return errorObjectIsChecked(
+				pass,
+				body,
+				parents,
+				object,
+				call.End(),
+				objectLexicalLifetimeEnd(body, object, upperBound),
+			)
 		case *ast.ValueSpec:
 			names := make([]ast.Expr, 0, len(parent.Names))
 			for _, name := range parent.Names {
 				names = append(names, name)
 			}
 			object := assignedCallObject(pass, names, parent.Values, call)
-			return errorObjectIsChecked(pass, body, parents, object, call.End(), upperBound)
+			return errorObjectIsChecked(
+				pass,
+				body,
+				parents,
+				object,
+				call.End(),
+				objectLexicalLifetimeEnd(body, object, upperBound),
+			)
 		case *ast.ReturnStmt:
 			return true
 		case *ast.IfStmt:
@@ -315,6 +455,21 @@ func meaningfullyConsumesErr(
 		}
 	}
 	return false
+}
+
+func objectLexicalLifetimeEnd(
+	body *ast.BlockStmt,
+	object *types.Var,
+	fallback token.Pos,
+) token.Pos {
+	if object == nil || object.Parent() == nil {
+		return fallback
+	}
+	end := object.Parent().End()
+	if end <= object.Pos() || end > body.End() {
+		return body.End()
+	}
+	return end
 }
 
 func assignedCallObject(
@@ -487,7 +642,7 @@ func scannerEscapes(
 
 	escaped := false
 	inspectFunctionBody(body, func(node ast.Node) bool {
-		if escaped || node.Pos() <= lowerBound || node.Pos() >= upperBound {
+		if escaped || node.Pos() <= lowerBound || node.Pos() > upperBound {
 			return !escaped
 		}
 
@@ -521,7 +676,6 @@ func scannerEscapes(
 							index,
 							namedResults,
 							body,
-							upperBound,
 						)) {
 					escaped = true
 					break
@@ -566,7 +720,6 @@ func assignmentEscapes(
 	rightIndex int,
 	namedResults map[*types.Var]struct{},
 	body *ast.BlockStmt,
-	upperBound token.Pos,
 ) bool {
 	if rightIndex >= len(assignment.Lhs) {
 		return false
@@ -588,7 +741,7 @@ func assignmentEscapes(
 			return true
 		}
 		if _, namedResult := namedResults[targetObject]; namedResult {
-			return hasBareReturn(body, assignment.End(), upperBound)
+			return hasBareReturn(body, assignment.End(), body.End())
 		}
 	}
 	return false
