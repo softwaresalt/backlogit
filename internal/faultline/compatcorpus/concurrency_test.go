@@ -12,6 +12,8 @@ import (
 
 var errConcLockBusy = errors.New("concurrency fixture: lock busy")
 
+const concFixtureTimeout = 2 * time.Second
+
 type concLockMode string
 
 const (
@@ -42,6 +44,8 @@ type concFixtureLocker struct {
 	maximumHolders int
 }
 
+var _ Locker = (*concFixtureLocker)(nil)
+
 func concNewFixtureLocker(mode concLockMode) *concFixtureLocker {
 	locker := &concFixtureLocker{
 		mode:      mode,
@@ -56,7 +60,13 @@ func (l *concFixtureLocker) Acquire(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	l.attempted <- struct{}{}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("acquire fixture lock: %w", err)
+	}
+	select {
+	case l.attempted <- struct{}{}:
+	default:
+	}
 
 	switch l.mode {
 	case concLockBlocking:
@@ -86,7 +96,10 @@ func (l *concFixtureLocker) Release() {
 	l.mu.Lock()
 	l.holders--
 	l.mu.Unlock()
-	l.token <- struct{}{}
+	select {
+	case l.token <- struct{}{}:
+	default:
+	}
 }
 
 func (l *concFixtureLocker) recordAcquire() {
@@ -110,7 +123,10 @@ func (l *concFixtureLocker) maxHolders() int {
 func TestConcurrencyFixtures(t *testing.T) {
 	t.Run("lock contention", func(t *testing.T) {
 		t.Run("blocking waits for release", func(t *testing.T) {
-			outcome, err := concExerciseLockContention(context.Background(), concLockBlocking)
+			fixtureCtx, cancel := context.WithTimeout(context.Background(), concFixtureTimeout)
+			defer cancel()
+
+			outcome, err := concExerciseLockContention(fixtureCtx, concLockBlocking)
 			if err != nil {
 				t.Fatalf("blocking lock-contention fixture: %v", err)
 			}
@@ -130,7 +146,10 @@ func TestConcurrencyFixtures(t *testing.T) {
 		})
 
 		t.Run("busy fails with the pinned sentinel", func(t *testing.T) {
-			outcome, err := concExerciseLockContention(context.Background(), concLockBusy)
+			fixtureCtx, cancel := context.WithTimeout(context.Background(), concFixtureTimeout)
+			defer cancel()
+
+			outcome, err := concExerciseLockContention(fixtureCtx, concLockBusy)
 			if err != nil {
 				t.Fatalf("busy lock-contention fixture: %v", err)
 			}
@@ -151,7 +170,7 @@ func TestConcurrencyFixtures(t *testing.T) {
 	})
 
 	t.Run("context cancellation returns without hanging", func(t *testing.T) {
-		boundedCtx, stopBound := context.WithTimeout(context.Background(), time.Second)
+		boundedCtx, stopBound := context.WithTimeout(context.Background(), concFixtureTimeout)
 		defer stopBound()
 
 		cancelledCtx, cancel := context.WithCancel(boundedCtx)
@@ -162,55 +181,71 @@ func TestConcurrencyFixtures(t *testing.T) {
 			err     error
 		}
 		resultCh := make(chan result, 1)
+		workerDone := make(chan struct{})
 		go func() {
+			defer close(workerDone)
 			outcome, err := concExerciseCancellation(cancelledCtx)
-			resultCh <- result{outcome: outcome, err: err}
+			select {
+			case resultCh <- result{outcome: outcome, err: err}:
+			case <-boundedCtx.Done():
+			}
 		}()
 
-		select {
-		case got := <-resultCh:
-			if got.err != nil {
-				t.Fatalf("context-cancellation fixture: %v", got.err)
-			}
-			if !errors.Is(got.outcome.lockerError, context.Canceled) {
+		got, err := concReceive(boundedCtx, resultCh, "wait for cancellation fixture")
+		if err != nil {
+			cleanupCtx, stopCleanup := context.WithTimeout(context.Background(), concFixtureTimeout)
+			defer stopCleanup()
+			if joinErr := concWaitDone(cleanupCtx, workerDone, "join cancellation fixture worker"); joinErr != nil {
 				t.Errorf(
-					"blocking Locker.Acquire() error = %v, want errors.Is(_, context.Canceled)",
-					got.outcome.lockerError,
+					"context-cancellation fixture timed out and its worker did not join: %v",
+					joinErr,
 				)
 			}
-			for _, adapterName := range []string{"events_jsonl", "frontmatter", "scanner"} {
-				if !errors.Is(got.outcome.adapterErrors[adapterName], context.Canceled) {
-					t.Errorf(
-						"adapter %q error = %v, want errors.Is(_, context.Canceled)",
-						adapterName,
-						got.outcome.adapterErrors[adapterName],
-					)
-				}
-			}
-			if got.outcome.report.Total != 3 ||
-				got.outcome.report.Passed != 0 ||
-				got.outcome.report.Failed != 3 {
+			t.Fatalf("context-cancellation fixture hung past its hard deadline: %v", err)
+		}
+		if err := concWaitDone(boundedCtx, workerDone, "join cancellation fixture worker"); err != nil {
+			t.Fatalf("context-cancellation fixture cleanup: %v", err)
+		}
+
+		if got.err != nil {
+			t.Fatalf("context-cancellation fixture: %v", got.err)
+		}
+		if !errors.Is(got.outcome.lockerError, context.Canceled) {
+			t.Errorf(
+				"blocking Locker.Acquire() error = %v, want errors.Is(_, context.Canceled)",
+				got.outcome.lockerError,
+			)
+		}
+		for _, adapterName := range []string{"events_jsonl", "frontmatter", "scanner"} {
+			if !errors.Is(got.outcome.adapterErrors[adapterName], context.Canceled) {
 				t.Errorf(
-					"cancelled report counts = total:%d passed:%d failed:%d, want 3/0/3",
-					got.outcome.report.Total,
-					got.outcome.report.Passed,
-					got.outcome.report.Failed,
+					"adapter %q error = %v, want errors.Is(_, context.Canceled)",
+					adapterName,
+					got.outcome.adapterErrors[adapterName],
 				)
 			}
-			for _, entryResult := range got.outcome.report.Results {
-				if entryResult.Passed {
-					t.Errorf("cancelled entry %q unexpectedly passed", entryResult.EntryID)
-				}
-				if !strings.Contains(entryResult.GotErr, context.Canceled.Error()) {
-					t.Errorf(
-						"cancelled entry %q GotErr = %q, want context cancellation",
-						entryResult.EntryID,
-						entryResult.GotErr,
-					)
-				}
+		}
+		if got.outcome.report.Total != 3 ||
+			got.outcome.report.Passed != 0 ||
+			got.outcome.report.Failed != 3 {
+			t.Errorf(
+				"cancelled report counts = total:%d passed:%d failed:%d, want 3/0/3",
+				got.outcome.report.Total,
+				got.outcome.report.Passed,
+				got.outcome.report.Failed,
+			)
+		}
+		for _, entryResult := range got.outcome.report.Results {
+			if entryResult.Passed {
+				t.Errorf("cancelled entry %q unexpectedly passed", entryResult.EntryID)
 			}
-		case <-boundedCtx.Done():
-			t.Fatal("context-cancellation fixture hung past its bounded context")
+			if !strings.Contains(entryResult.GotErr, context.Canceled.Error()) {
+				t.Errorf(
+					"cancelled entry %q GotErr = %q, want context cancellation",
+					entryResult.EntryID,
+					entryResult.GotErr,
+				)
+			}
 		}
 	})
 
@@ -239,44 +274,101 @@ func TestConcurrencyFixtures(t *testing.T) {
 	})
 }
 
-func concExerciseLockContention(ctx context.Context, mode concLockMode) (concLockOutcome, error) {
+func concExerciseLockContention(
+	ctx context.Context,
+	mode concLockMode,
+) (outcome concLockOutcome, retErr error) {
 	if mode != concLockBlocking && mode != concLockBusy {
 		return concLockOutcome{}, fmt.Errorf("exercise lock contention: unsupported mode %q", mode)
 	}
 
-	locker := concNewFixtureLocker(mode)
+	runCtx, cancel := context.WithCancel(ctx)
+	fixtureLocker := concNewFixtureLocker(mode)
+	var locker Locker = fixtureLocker
 	releaseHolder := make(chan struct{})
+	var releaseHolderOnce sync.Once
+	releaseHolderNow := func() {
+		releaseHolderOnce.Do(func() {
+			close(releaseHolder)
+		})
+	}
 	holderReady := make(chan error, 1)
 	holderDone := make(chan struct{})
+	secondDone := make(chan struct{})
+	secondStarted := false
+	defer func() {
+		releaseHolderNow()
+		cancel()
+
+		cleanupCtx, stopCleanup := context.WithTimeout(context.Background(), concFixtureTimeout)
+		defer stopCleanup()
+		joinErr := concWaitDone(cleanupCtx, holderDone, "join first lock holder")
+		if secondStarted {
+			joinErr = errors.Join(
+				joinErr,
+				concWaitDone(cleanupCtx, secondDone, "join second lock acquirer"),
+			)
+		}
+		outcome.allGoroutinesJoined = joinErr == nil
+		outcome.maximumHolders = fixtureLocker.maxHolders()
+		if joinErr != nil {
+			retErr = errors.Join(
+				retErr,
+				fmt.Errorf("exercise lock contention cleanup: %w", joinErr),
+			)
+		}
+	}()
+
 	go func() {
 		defer close(holderDone)
-		if err := locker.Acquire(ctx); err != nil {
-			holderReady <- err
+		if err := locker.Acquire(runCtx); err != nil {
+			select {
+			case holderReady <- err:
+			case <-runCtx.Done():
+			}
 			return
 		}
-		holderReady <- nil
-		<-releaseHolder
+		select {
+		case holderReady <- nil:
+		case <-runCtx.Done():
+			locker.Release()
+			return
+		}
+		select {
+		case <-releaseHolder:
+		case <-runCtx.Done():
+		}
 		locker.Release()
 	}()
 
-	if err := <-holderReady; err != nil {
-		return concLockOutcome{}, fmt.Errorf("first fixture lock acquire: %w", err)
+	firstAcquireErr, err := concReceive(runCtx, holderReady, "wait for first lock holder")
+	if err != nil {
+		return concLockOutcome{}, err
 	}
-	<-locker.attempted
+	if firstAcquireErr != nil {
+		return concLockOutcome{}, fmt.Errorf("first fixture lock acquire: %w", firstAcquireErr)
+	}
+	if _, err := concReceive(runCtx, fixtureLocker.attempted, "wait for first lock attempt"); err != nil {
+		return concLockOutcome{}, err
+	}
 
 	secondResult := make(chan error, 1)
-	secondDone := make(chan struct{})
+	secondStarted = true
 	go func() {
 		defer close(secondDone)
-		err := locker.Acquire(ctx)
+		err := locker.Acquire(runCtx)
 		if err == nil {
 			locker.Release()
 		}
-		secondResult <- err
+		select {
+		case secondResult <- err:
+		case <-runCtx.Done():
+		}
 	}()
-	<-locker.attempted
+	if _, err := concReceive(runCtx, fixtureLocker.attempted, "wait for second lock attempt"); err != nil {
+		return concLockOutcome{}, err
+	}
 
-	outcome := concLockOutcome{}
 	if mode == concLockBlocking {
 		select {
 		case outcome.secondAcquireErr = <-secondResult:
@@ -284,19 +376,25 @@ func concExerciseLockContention(ctx context.Context, mode concLockMode) (concLoc
 		default:
 			outcome.waitedForRelease = true
 		}
-		close(releaseHolder)
+		releaseHolderNow()
 		if outcome.waitedForRelease {
-			outcome.secondAcquireErr = <-secondResult
+			outcome.secondAcquireErr, err = concReceive(
+				runCtx,
+				secondResult,
+				"wait for second blocking lock result",
+			)
+			if err != nil {
+				return concLockOutcome{}, err
+			}
 		}
 	} else {
-		outcome.secondAcquireErr = <-secondResult
-		close(releaseHolder)
+		outcome.secondAcquireErr, err = concReceive(runCtx, secondResult, "wait for busy lock result")
+		if err != nil {
+			return concLockOutcome{}, err
+		}
+		releaseHolderNow()
 	}
 
-	<-secondDone
-	<-holderDone
-	outcome.maximumHolders = locker.maxHolders()
-	outcome.allGoroutinesJoined = true
 	return outcome, nil
 }
 
@@ -331,15 +429,22 @@ func concExerciseCancellation(ctx context.Context) (concCancellationOutcome, err
 		})
 	}
 
-	locker := concNewFixtureLocker(concLockBlocking)
-	if err := locker.Acquire(context.Background()); err != nil {
-		return concCancellationOutcome{}, fmt.Errorf(
-			"hold cancellation fixture lock: %w",
-			err,
-		)
-	}
+	fixtureLocker := concNewFixtureLocker(concLockBlocking)
+	var locker Locker = fixtureLocker
 	outcome.lockerError = locker.Acquire(ctx)
-	locker.Release()
+	if outcome.lockerError == nil {
+		locker.Release()
+	} else {
+		verifyCtx, stopVerify := context.WithTimeout(context.Background(), concFixtureTimeout)
+		defer stopVerify()
+		if err := locker.Acquire(verifyCtx); err != nil {
+			return concCancellationOutcome{}, fmt.Errorf(
+				"verify cancelled acquire preserved free fixture lock: %w",
+				err,
+			)
+		}
+		locker.Release()
+	}
 
 	outcome.report = Run(ctx, entries, adapters)
 	return outcome, nil
@@ -354,4 +459,23 @@ func concAmbiguousGateEntry() (Entry, error) {
 		Expect:   ExpectRejected,
 		WantErr:  ErrDuplicateKey,
 	}, nil
+}
+
+func concReceive[T any](ctx context.Context, ch <-chan T, operation string) (T, error) {
+	select {
+	case value := <-ch:
+		return value, nil
+	case <-ctx.Done():
+		var zero T
+		return zero, fmt.Errorf("%s: %w", operation, ctx.Err())
+	}
+}
+
+func concWaitDone(ctx context.Context, done <-chan struct{}, operation string) error {
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("%s: %w", operation, ctx.Err())
+	}
 }
