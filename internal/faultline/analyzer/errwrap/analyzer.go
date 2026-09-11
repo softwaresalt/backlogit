@@ -10,11 +10,13 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/ast/astutil"
 )
 
 const (
 	diagnostic           = "FL002: error argument to fmt.Errorf should use %w, not %v/%s"
 	suppressionDirective = "// faultline:errwrap-ok"
+	maxFormatNumber      = 1_000_000
 )
 
 // Analyzer declares the FL002 error-wrapping analyzer.
@@ -27,6 +29,13 @@ var Analyzer = &analysis.Analyzer{
 type formatUse struct {
 	argument int
 	verb     rune
+}
+
+type formatParser struct {
+	format       string
+	numArguments int
+	offset       int
+	nextArgument int
 }
 
 func run(pass *analysis.Pass) (any, error) {
@@ -48,6 +57,14 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 func isErrorfCall(pass *analysis.Pass, call *ast.CallExpr) bool {
+	function := calledFunction(pass, call)
+	return function != nil &&
+		function.Pkg() != nil &&
+		function.Pkg().Path() == "fmt" &&
+		function.Name() == "Errorf"
+}
+
+func calledFunction(pass *analysis.Pass, call *ast.CallExpr) *types.Func {
 	var object types.Object
 	switch function := ast.Unparen(call.Fun).(type) {
 	case *ast.Ident:
@@ -56,11 +73,8 @@ func isErrorfCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 		object = pass.TypesInfo.ObjectOf(function.Sel)
 	}
 
-	errorf, ok := object.(*types.Func)
-	return ok &&
-		errorf.Pkg() != nil &&
-		errorf.Pkg().Path() == "fmt" &&
-		errorf.Name() == "Errorf"
+	function, _ := object.(*types.Func)
+	return function
 }
 
 func reportBadErrorFormats(pass *analysis.Pass, call *ast.CallExpr, errorInterface *types.Interface) {
@@ -78,15 +92,15 @@ func reportBadErrorFormats(pass *analysis.Pass, call *ast.CallExpr, errorInterfa
 	}
 
 	reported := make(map[int]struct{})
-	for _, use := range parseFormat(format) {
-		if use.argument < 0 || use.argument >= len(call.Args)-1 {
-			continue
-		}
+	for _, use := range parseFormat(format, len(call.Args)-1) {
 		if use.verb != 'v' && use.verb != 's' {
 			continue
 		}
 
 		argument := call.Args[use.argument+1]
+		if isErrorsNewCall(pass, argument) {
+			continue
+		}
 		switch ast.Unparen(argument).(type) {
 		case *ast.Ident, *ast.CallExpr:
 		default:
@@ -108,14 +122,53 @@ func reportBadErrorFormats(pass *analysis.Pass, call *ast.CallExpr, errorInterfa
 	}
 }
 
+func isErrorsNewCall(pass *analysis.Pass, expression ast.Expr) bool {
+	call, ok := ast.Unparen(expression).(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+
+	function := calledFunction(pass, call)
+	return function != nil &&
+		function.Pkg() != nil &&
+		function.Pkg().Path() == "errors" &&
+		function.Name() == "New"
+}
+
 func isSuppressed(pass *analysis.Pass, file *ast.File, call *ast.CallExpr) bool {
-	startLine := pass.Fset.Position(call.Pos()).Line
-	endLine := pass.Fset.Position(call.End()).Line
+	statement, direct := enclosingCallStatement(file, call)
+	if statement == nil {
+		return false
+	}
+
+	start := statement.Pos()
+	end := statement.End()
+	if !direct {
+		start = call.Pos()
+		end = call.End()
+	}
+	startLine := pass.Fset.Position(start).Line
+	endLine := pass.Fset.Position(end).Line
+	statementStartLine := pass.Fset.Position(statement.Pos()).Line
 	for _, group := range file.Comments {
 		for _, comment := range group.List {
+			if strings.TrimSpace(comment.Text) != suppressionDirective {
+				continue
+			}
+
 			line := pass.Fset.Position(comment.Pos()).Line
-			if (line == startLine-1 || line >= startLine && line <= endLine) &&
-				strings.TrimSpace(comment.Text) == suppressionDirective {
+			sameLine := line == endLine && comment.Pos() >= end
+			if !direct {
+				sameLine = sameLine && comment.Pos() < statement.End()
+			}
+			if sameLine {
+				return true
+			}
+			precedingLine := line == startLine-1
+			if !direct {
+				precedingLine = precedingLine && startLine > statementStartLine
+			}
+			if precedingLine && isDedicatedComment(pass, file, comment) {
 				return true
 			}
 		}
@@ -123,127 +176,215 @@ func isSuppressed(pass *analysis.Pass, file *ast.File, call *ast.CallExpr) bool 
 	return false
 }
 
-func parseFormat(format string) []formatUse {
-	uses := make([]formatUse, 0, strings.Count(format, "%"))
-	nextArgument := 0
+func enclosingCallStatement(file *ast.File, call *ast.CallExpr) (ast.Stmt, bool) {
+	path, _ := astutil.PathEnclosingInterval(file, call.Pos(), call.End())
+	for _, node := range path {
+		statement, ok := node.(ast.Stmt)
+		if !ok {
+			continue
+		}
+		return statement, statementDirectlyUsesCall(statement, call)
+	}
+	return nil, false
+}
 
-	for offset := 0; offset < len(format); {
-		percent := strings.IndexByte(format[offset:], '%')
+func statementDirectlyUsesCall(statement ast.Stmt, call *ast.CallExpr) bool {
+	isCall := func(expression ast.Expr) bool {
+		return ast.Unparen(expression) == call
+	}
+	containsCall := func(expressions []ast.Expr) bool {
+		for _, expression := range expressions {
+			if isCall(expression) {
+				return true
+			}
+		}
+		return false
+	}
+
+	switch statement := statement.(type) {
+	case *ast.AssignStmt:
+		return containsCall(statement.Rhs)
+	case *ast.DeclStmt:
+		declaration, ok := statement.Decl.(*ast.GenDecl)
+		if !ok {
+			return false
+		}
+		for _, spec := range declaration.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if ok && containsCall(value.Values) {
+				return true
+			}
+		}
+	case *ast.DeferStmt:
+		return statement.Call == call
+	case *ast.ExprStmt:
+		return isCall(statement.X)
+	case *ast.GoStmt:
+		return statement.Call == call
+	case *ast.ReturnStmt:
+		return containsCall(statement.Results)
+	case *ast.SendStmt:
+		return isCall(statement.Value)
+	}
+	return false
+}
+
+func isDedicatedComment(pass *analysis.Pass, file *ast.File, comment *ast.Comment) bool {
+	line := pass.Fset.Position(comment.Pos()).Line
+	dedicated := true
+	ast.Inspect(file, func(node ast.Node) bool {
+		if node == nil || !dedicated {
+			return dedicated
+		}
+		switch node.(type) {
+		case *ast.Comment, *ast.CommentGroup:
+			return false
+		}
+		if node.Pos() >= comment.Pos() || node.End() > comment.Pos() {
+			return true
+		}
+		if pass.Fset.Position(node.End()).Line == line {
+			dedicated = false
+			return false
+		}
+		return true
+	})
+	return dedicated
+}
+
+func parseFormat(format string, numArguments int) []formatUse {
+	uses := make([]formatUse, 0, strings.Count(format, "%"))
+	parser := formatParser{
+		format:       format,
+		numArguments: numArguments,
+	}
+
+	for parser.offset < len(format) {
+		percent := strings.IndexByte(format[parser.offset:], '%')
 		if percent < 0 {
 			break
 		}
-		offset += percent + 1
-		if offset >= len(format) {
-			break
-		}
-		if format[offset] == '%' {
-			offset++
-			continue
-		}
-
-		explicitArgument := -1
-		if index, next, ok := parseIndex(format, offset); ok {
-			explicitArgument = index
-			offset = next
-		}
-
-		offset = skipFlags(format, offset)
-		if explicitArgument < 0 {
-			if index, next, ok := parseIndex(format, offset); ok {
-				explicitArgument = index
-				offset = next
-			}
-		}
-
-		if offset < len(format) && format[offset] == '*' {
-			consumeArgument(explicitArgument, &nextArgument)
-			explicitArgument = -1
-			offset++
-		} else {
-			offset = skipDigits(format, offset)
-		}
-
-		if offset < len(format) && format[offset] == '.' {
-			offset++
-			precisionArgument := -1
-			if index, next, ok := parseIndex(format, offset); ok {
-				precisionArgument = index
-				offset = next
-			}
-			if offset < len(format) && format[offset] == '*' {
-				consumeArgument(precisionArgument, &nextArgument)
-				offset++
-			} else {
-				offset = skipDigits(format, offset)
-				if precisionArgument >= 0 {
-					explicitArgument = precisionArgument
-				}
-			}
-		}
-
-		if index, next, ok := parseIndex(format, offset); ok {
-			explicitArgument = index
-			offset = next
-		}
-		if offset >= len(format) {
+		parser.offset += percent + 1
+		if parser.offset >= len(format) {
 			break
 		}
 
-		verb, size := utf8.DecodeRuneInString(format[offset:])
-		offset += size
-		if verb == '%' {
-			continue
+		if use, ok := parser.parseDirective(); ok {
+			uses = append(uses, use)
 		}
-
-		argument := explicitArgument
-		if argument < 0 {
-			argument = nextArgument
-		}
-		nextArgument = argument + 1
-		uses = append(uses, formatUse{argument: argument, verb: verb})
 	}
 
 	return uses
 }
 
-func parseIndex(format string, offset int) (int, int, bool) {
-	if offset >= len(format) || format[offset] != '[' {
-		return 0, offset, false
+func (parser *formatParser) parseDirective() (formatUse, bool) {
+	parser.offset = skipFlags(parser.format, parser.offset)
+
+	argument, afterIndex, valid := parser.parseArgumentNumber(parser.nextArgument)
+
+	if parser.offset < len(parser.format) && parser.format[parser.offset] == '*' {
+		parser.offset++
+		argument = parser.consumeArgument(argument)
+		afterIndex = false
+	} else {
+		var widthPresent bool
+		_, widthPresent, parser.offset = parseNumber(parser.format, parser.offset, len(parser.format))
+		if afterIndex && widthPresent {
+			valid = false
+		}
 	}
 
-	end := offset + 1
-	for end < len(format) && format[end] >= '0' && format[end] <= '9' {
-		end++
-	}
-	if end == offset+1 || end >= len(format) || format[end] != ']' {
-		return 0, offset, false
+	if parser.offset+1 < len(parser.format) && parser.format[parser.offset] == '.' {
+		parser.offset++
+		if afterIndex {
+			valid = false
+		}
+
+		var indexValid bool
+		argument, afterIndex, indexValid = parser.parseArgumentNumber(argument)
+		valid = valid && indexValid
+		if parser.offset < len(parser.format) && parser.format[parser.offset] == '*' {
+			parser.offset++
+			argument = parser.consumeArgument(argument)
+			afterIndex = false
+		} else {
+			_, _, parser.offset = parseNumber(parser.format, parser.offset, len(parser.format))
+		}
 	}
 
-	index, err := strconv.Atoi(format[offset+1 : end])
-	if err != nil || index < 1 {
-		return 0, offset, false
+	if !afterIndex {
+		var indexValid bool
+		argument, _, indexValid = parser.parseArgumentNumber(argument)
+		valid = valid && indexValid
 	}
-	return index - 1, end + 1, true
+
+	parser.nextArgument = argument
+	if parser.offset >= len(parser.format) {
+		return formatUse{}, false
+	}
+
+	verb, size := utf8.DecodeRuneInString(parser.format[parser.offset:])
+	parser.offset += size
+	if verb == '%' || !valid || argument >= parser.numArguments {
+		return formatUse{}, false
+	}
+
+	parser.nextArgument++
+	return formatUse{argument: argument, verb: verb}, true
+}
+
+func (parser *formatParser) parseArgumentNumber(argument int) (int, bool, bool) {
+	if parser.offset >= len(parser.format) || parser.format[parser.offset] != '[' {
+		return argument, false, true
+	}
+
+	closeOffset := strings.IndexByte(parser.format[parser.offset+1:], ']')
+	if closeOffset < 0 {
+		parser.offset++
+		return argument, false, false
+	}
+	closeOffset += parser.offset + 1
+
+	index, ok, end := parseNumber(parser.format, parser.offset+1, closeOffset)
+	parser.offset = closeOffset + 1
+	if !ok || end != closeOffset {
+		return argument, false, false
+	}
+
+	index--
+	if index < 0 || index >= parser.numArguments {
+		return argument, true, false
+	}
+	return index, true, true
+}
+
+func (parser *formatParser) consumeArgument(argument int) int {
+	if argument < parser.numArguments {
+		return argument + 1
+	}
+	return argument
+}
+
+func parseNumber(format string, start, end int) (number int, present bool, next int) {
+	if start >= end {
+		return 0, false, end
+	}
+
+	next = start
+	for next < end && format[next] >= '0' && format[next] <= '9' {
+		if number > maxFormatNumber {
+			return 0, false, end
+		}
+		number = number*10 + int(format[next]-'0')
+		present = true
+		next++
+	}
+	return number, present, next
 }
 
 func skipFlags(format string, offset int) int {
-	for offset < len(format) && strings.ContainsRune("#0+- '", rune(format[offset])) {
+	for offset < len(format) && strings.ContainsRune("#0+- ", rune(format[offset])) {
 		offset++
 	}
 	return offset
-}
-
-func skipDigits(format string, offset int) int {
-	for offset < len(format) && format[offset] >= '0' && format[offset] <= '9' {
-		offset++
-	}
-	return offset
-}
-
-func consumeArgument(explicit int, next *int) {
-	if explicit >= 0 {
-		*next = explicit + 1
-		return
-	}
-	*next++
 }
