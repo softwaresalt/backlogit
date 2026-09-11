@@ -67,11 +67,31 @@ Wave-2 helper identifiers.
 ### Analyzer Framework (applies to 158.003-T..158.007-T)
 
 * **Framework:** `golang.org/x/tools` (`go/analysis` + `analysistest` +
-  `multichecker`), added as a new **direct** dependency **pinned** to a
-  reviewed release (`golang.org/x/tools v0.28.0`, Go 1.24-compatible; the exact
-  patch is locked in `go.mod`/`go.sum` — not `@latest`). This is the
-  conventional, minimal way to build and test Go analyzers; reimplementing the
-  analysis driver/loader would be strictly larger scope.
+  `multichecker`), promoted to a **direct** dependency and **pinned** to the
+  version **already selected by the current module graph**
+  (`golang.org/x/tools v0.39.0`, Go 1.24-compatible — its `go.mod` declares
+  `go 1.24.0`, matching this module; already present in `go.sum` as a pruned
+  transitive requirement; the exact version is locked in `go.mod`/`go.sum` —
+  not `@latest`). Reusing the already-selected `v0.39.0` adds the direct pin
+  **without upgrading or downgrading any existing dependency chain**, and it
+  provides the identical stable `go/analysis` + `analysistest` + `multichecker`
+  API surface these analyzers use. This is the conventional, minimal way to
+  build and test Go analyzers; reimplementing the analysis driver/loader would
+  be strictly larger scope.
+
+  > **Dependency-pin correction (supersedes the original `v0.28.0` mandate).**
+  > The original contract mandated an exact direct pin `golang.org/x/tools
+  > v0.28.0`. The repository's module graph already MVS-selects
+  > `golang.org/x/tools v0.39.0` (verified: `go list -m golang.org/x/tools` →
+  > `v0.39.0`; the module is already recorded in `go.sum`). Forcing `v0.28.0`
+  > would require an **unreviewed downgrade** of an already-selected chain;
+  > retaining `v0.39.0` while the contract said `v0.28.0` would violate the
+  > exact pin — this is the `HARNESS_CONTRACT_UNDERSPECIFIED` halt Ship
+  > correctly raised. This correction reuses the already-selected `v0.39.0`
+  > and authorizes **no** other dependency upgrade or downgrade. `v0.39.0`
+  > exposes the same `analysis.Analyzer`, `analysistest.Run`, and
+  > `multichecker.Main` API this contract depends on. See §158.003-T for the
+  > exact, reproducible dependency operation and verification command.
 * **Analysis depth:** AST (`go/ast`) plus type information (`pass.TypesInfo`,
   `pass.Pkg`) **only**. **No SSA, no CFG, no cross-function data-flow.** Where a
   property is not decidable syntactically within a single function/block, the
@@ -382,6 +402,35 @@ cancellation fixture proves no-hang under a bounded `context.WithTimeout`.
 thin — a single `main.go` and a two-line Makefile recipe — and stays within the
 Go/build skill domain and the 2-hour bound alongside FL001.)
 
+**Exact dependency operation (reproducible; no version change to any chain).**
+`golang.org/x/tools` is currently a **pruned transitive** requirement: it is
+recorded in `go.sum` at `v0.39.0` but is **not** listed in `go.mod`, and the
+main module does not yet import it (`go mod why golang.org/x/tools` → "main
+module does not need package golang.org/x/tools"). Adding the `go/analysis`
+import in this task promotes it to a **direct** requirement. The harness MUST
+pin it to the **already-selected** version and MUST NOT change any other
+dependency:
+
+* **Command:** `go get golang.org/x/tools@v0.39.0` (records the explicit direct
+  require at the version the graph already selects — a promotion, not an
+  upgrade/downgrade), then `go mod tidy` to normalize `go.mod`/`go.sum`.
+* **Expected `go.mod` delta:** one added **direct** `require` line,
+  `golang.org/x/tools v0.39.0` (no `// indirect` marker). `go mod tidy` may
+  ALSO add new `// indirect` entries for modules that `go/analysis` transitively
+  imports (e.g. `golang.org/x/mod`, `golang.org/x/sync`), each recorded at the
+  version the graph **already selects** (present in `go.sum` today) — these are
+  additions at already-selected versions, **not** version moves. **No** existing
+  requirement's version changes (notably `golang.org/x/text v0.32.0` stays put).
+* **Verification:** `go list -m golang.org/x/tools` prints
+  `golang.org/x/tools v0.39.0`; `go build ./cmd/faultline-analyze` builds;
+  `make check` is green.
+* **Prohibited / halt condition:** any `x/tools` version other than `v0.39.0`,
+  or any **version move** of an existing requirement (an upgrade/downgrade of
+  `x/text` or any other already-selected module). Newly recorded `// indirect`
+  entries at their already-selected versions are expected and are NOT a
+  violation. If `go mod tidy` would MOVE any existing version, **halt** — that
+  is outside this contract's scope.
+
 **Analyzer package:** `internal/faultline/analyzer/scannerdiscipline` →
 `var Analyzer *analysis.Analyzer` (`Name: "FL001scannerdiscipline"`).
 
@@ -562,8 +611,10 @@ and is non-empty via `os.ReadDir`, and (2) replays each committed seed and each
 * security/auth/permission/compliance-sensitive: **absent**.
 * migration/backfill/destructive/irreversible: **absent**.
 * external integration/operator checkpoint/external dependency: **one new dev
-  dependency** (`golang.org/x/tools`, pinned) — build/test-time only, no runtime
-  or distribution impact.
+  dependency** (`golang.org/x/tools`, pinned to the **already-selected**
+  `v0.39.0` — a promotion of an existing pruned transitive requirement to a
+  direct one, with **no** version change to any chain) — build/test-time only,
+  no runtime or distribution impact.
 * high runtime/rollout/rollback risk: **absent** — no production behavior change;
   analyzers and corpus run in test/CI only.
 
@@ -623,3 +674,59 @@ Attempt-3 controlling findings and dispositions (all resolved inline, see
 No open P0/P1 findings remain. Gate: **PASS** — executable, harness-first,
 scope-bounded. Ready for Ship to integrate this reviewed planning commit into the
 existing implementation branch and resume harness generation.
+
+## Plan Review
+
+<!-- plan-review-attempt: 4 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Scope of this attempt:** a NARROWLY SCOPED re-review of the single
+dependency-pin correction that unblocks shipment `140-S` — changing the mandated
+`golang.org/x/tools` pin from an exact `v0.28.0` (which would force an unreviewed
+downgrade of the already-MVS-selected `v0.39.0`) to reuse the repository's
+already-selected `v0.39.0`, promoting it from a pruned transitive requirement to
+a direct one. No unrelated plan scope was reopened. This attempt was explicitly
+authorized by the operator as one additional narrowly scoped review correction to
+resolve Ship's `HARNESS_CONTRACT_UNDERSPECIFIED` halt.
+
+personas (genuine multi-agent dispatch over the amended contract surface):
+* Go Reviewer, anchor (`gpt-5.6-terra`, effort high) — dependency/version
+  semantics + analyzer API compatibility.
+* Scope Boundary Auditor (`gemini-3.7-flash`) — scope-creep / collateral
+  dependency / backlog-mutation guard.
+* Security Reviewer — evaluated for risk-trigger; NOT triggered (build/test-only
+  dev dependency; no runtime, auth, secret, or permission surface).
+
+Verified facts (read-only):
+* `golang.org/x/tools v0.39.0` is already MVS-selected — recorded in `go.sum`,
+  absent from `go.mod`, `go mod why` → "main module does not need package".
+  `go list -m golang.org/x/tools` → `v0.39.0`.
+* `v0.39.0`'s `go.mod` declares `go 1.24.0`, matching this module — Go
+  1.24-compatible, no `go` directive bump forced.
+* `analysis.Analyzer`, `analysistest.Run`, and `multichecker.Main` exist at
+  `v0.39.0` with the exact signatures the contract depends on; the API surface is
+  stable across `v0.28.0`..`v0.39.0` (no incompatibility risk).
+
+Findings and dispositions:
+* Go Reviewer P2 — the original "exactly one added require line / no other
+  requirement changes" understated the real `go mod tidy` result (new
+  `// indirect` entries for `x/mod`/`x/sync` at their already-selected versions).
+  RESOLVED inline: §158.003-T now expects those `// indirect` additions at
+  already-selected versions and redefines the halt condition as any **version
+  move** of an existing requirement, not any added line.
+* Go Reviewer verdict: PASS (operation is a promotion, not an upgrade/downgrade;
+  verification command sound).
+* Scope Boundary Auditor: NO findings — doc-only, confined to the x/tools pin
+  surface, authorizes no collateral dependency change, mutates no backlog /
+  shipment `140-S` membership-status / task status / Ship checkpoint. Verdict:
+  PASS.
+
+No open P0/P1 findings remain. Gate: **PASS** — the contract now reuses the
+already-selected `golang.org/x/tools v0.39.0`, is reproducible (exact command +
+verification + bounded halt condition), and authorizes no unrelated dependency
+change. This supersedes the attempt-3 record for the x/tools pin surface only;
+all other attempt-3 dispositions remain in force. Ready for Ship to integrate
+this reviewed planning commit into the existing implementation branch and resume
+wave-1 harness generation.
