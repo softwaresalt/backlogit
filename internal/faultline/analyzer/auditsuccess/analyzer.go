@@ -68,7 +68,7 @@ func analyzeBlock(
 		call := directCall(statement)
 		if call == nil ||
 			!isAuditWarning(pass, call) ||
-			isSuppressed(pass, file, statement) {
+			isSuppressed(pass, file, block, statement) {
 			continue
 		}
 		warnings = append(warnings, call)
@@ -129,12 +129,20 @@ func matchesReceiver(
 		return false
 	}
 
-	receiver := types.Unalias(selection.Recv())
-	pointer, ok := receiver.(*types.Pointer)
+	method, ok := selection.Obj().(*types.Func)
 	if !ok {
 		return false
 	}
-	named, ok := types.Unalias(pointer.Elem()).(*types.Named)
+	signature, ok := method.Type().(*types.Signature)
+	if !ok || signature.Recv() == nil {
+		return false
+	}
+
+	receiver := types.Unalias(signature.Recv().Type())
+	if pointer, pointerReceiver := receiver.(*types.Pointer); pointerReceiver {
+		receiver = types.Unalias(pointer.Elem())
+	}
+	named, ok := receiver.(*types.Named)
 	return ok &&
 		named.Obj().Pkg() != nil &&
 		named.Obj().Pkg().Path() == packagePath &&
@@ -223,6 +231,9 @@ func isZeroValue(pass *analysis.Pass, expression ast.Expr, resultType types.Type
 	expression = ast.Unparen(expression)
 	if isNilZero(pass, expression, resultType) {
 		return true
+	}
+	if isInterface(resultType) {
+		return false
 	}
 
 	if value := pass.TypesInfo.Types[expression].Value; value != nil {
@@ -317,6 +328,7 @@ func isInterface(valueType types.Type) bool {
 func isSuppressed(
 	pass *analysis.Pass,
 	file *ast.File,
+	block *ast.BlockStmt,
 	statement ast.Stmt,
 ) bool {
 	startLine := pass.Fset.Position(statement.Pos()).Line
@@ -328,15 +340,57 @@ func isSuppressed(
 			}
 
 			line := pass.Fset.Position(comment.Pos()).Line
-			if line == endLine && comment.Pos() >= statement.End() {
+			if line == endLine &&
+				comment.Pos() >= statement.End() &&
+				trailingStatement(pass, block, comment) == statement {
 				return true
 			}
-			if line == startLine-1 && isDedicatedComment(pass, file, comment) {
+			if line == startLine-1 &&
+				isDedicatedComment(pass, file, comment) &&
+				followingStatement(pass, block, comment) == statement {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func trailingStatement(
+	pass *analysis.Pass,
+	block *ast.BlockStmt,
+	comment *ast.Comment,
+) ast.Stmt {
+	commentLine := pass.Fset.Position(comment.Pos()).Line
+	var owner ast.Stmt
+	for _, candidate := range block.List {
+		if candidate.End() > comment.Pos() ||
+			pass.Fset.Position(candidate.End()).Line != commentLine {
+			continue
+		}
+		if owner == nil || candidate.End() > owner.End() {
+			owner = candidate
+		}
+	}
+	return owner
+}
+
+func followingStatement(
+	pass *analysis.Pass,
+	block *ast.BlockStmt,
+	comment *ast.Comment,
+) ast.Stmt {
+	followingLine := pass.Fset.Position(comment.Pos()).Line + 1
+	var owner ast.Stmt
+	for _, candidate := range block.List {
+		if candidate.Pos() < comment.End() ||
+			pass.Fset.Position(candidate.Pos()).Line != followingLine {
+			continue
+		}
+		if owner == nil || candidate.Pos() < owner.Pos() {
+			owner = candidate
+		}
+	}
+	return owner
 }
 
 func isDedicatedComment(pass *analysis.Pass, file *ast.File, comment *ast.Comment) bool {
