@@ -243,7 +243,7 @@ func hasMeaningfulErrUse(
 			call.Pos() > lowerBound &&
 			call.End() < upperBound &&
 			isMethodCallOn(pass, call, object, "Err") &&
-			meaningfullyConsumesErr(call, parents) {
+			meaningfullyConsumesErr(pass, body, call, parents, upperBound) {
 			found = true
 			return false
 		}
@@ -252,15 +252,27 @@ func hasMeaningfulErrUse(
 	return found
 }
 
-func meaningfullyConsumesErr(call *ast.CallExpr, parents map[ast.Node]ast.Node) bool {
+func meaningfullyConsumesErr(
+	pass *analysis.Pass,
+	body *ast.BlockStmt,
+	call *ast.CallExpr,
+	parents map[ast.Node]ast.Node,
+	upperBound token.Pos,
+) bool {
 	for node := parents[call]; node != nil; node = parents[node] {
 		switch parent := node.(type) {
 		case *ast.ExprStmt:
 			return false
 		case *ast.AssignStmt:
-			return assignmentTargetIsNonBlank(parent, call)
+			object := assignedCallObject(pass, parent.Lhs, parent.Rhs, call)
+			return errorObjectIsChecked(pass, body, parents, object, call.End(), upperBound)
 		case *ast.ValueSpec:
-			return valueSpecTargetIsNonBlank(parent, call)
+			names := make([]ast.Expr, 0, len(parent.Names))
+			for _, name := range parent.Names {
+				names = append(names, name)
+			}
+			object := assignedCallObject(pass, names, parent.Values, call)
+			return errorObjectIsChecked(pass, body, parents, object, call.End(), upperBound)
 		case *ast.ReturnStmt:
 			return true
 		case *ast.IfStmt:
@@ -282,33 +294,79 @@ func meaningfullyConsumesErr(call *ast.CallExpr, parents map[ast.Node]ast.Node) 
 	return false
 }
 
-func assignmentTargetIsNonBlank(assignment *ast.AssignStmt, call *ast.CallExpr) bool {
-	index := containingExpressionIndex(assignment.Rhs, call)
+func assignedCallObject(
+	pass *analysis.Pass,
+	targets []ast.Expr,
+	values []ast.Expr,
+	call *ast.CallExpr,
+) *types.Var {
+	index := containingExpressionIndex(values, call)
 	if index < 0 {
-		return false
+		return nil
 	}
-	if len(assignment.Lhs) == len(assignment.Rhs) {
-		return !isBlankIdentifier(assignment.Lhs[index])
+	if len(targets) != len(values) {
+		return nil
 	}
-	for _, target := range assignment.Lhs {
-		if !isBlankIdentifier(target) {
-			return true
-		}
+	identifier, ok := ast.Unparen(targets[index]).(*ast.Ident)
+	if !ok || identifier.Name == "_" {
+		return nil
 	}
-	return false
+	object, _ := pass.TypesInfo.ObjectOf(identifier).(*types.Var)
+	return object
 }
 
-func valueSpecTargetIsNonBlank(spec *ast.ValueSpec, call *ast.CallExpr) bool {
-	index := containingExpressionIndex(spec.Values, call)
-	if index < 0 {
+func errorObjectIsChecked(
+	pass *analysis.Pass,
+	body *ast.BlockStmt,
+	parents map[ast.Node]ast.Node,
+	object *types.Var,
+	lowerBound,
+	upperBound token.Pos,
+) bool {
+	if object == nil {
 		return false
 	}
-	if len(spec.Names) == len(spec.Values) {
-		return spec.Names[index].Name != "_"
-	}
-	for _, name := range spec.Names {
-		if name.Name != "_" {
+
+	checked := false
+	inspectFunctionBody(body, func(node ast.Node) bool {
+		identifier, ok := node.(*ast.Ident)
+		if !ok ||
+			identifier.Pos() <= lowerBound ||
+			identifier.End() >= upperBound ||
+			pass.TypesInfo.ObjectOf(identifier) != object {
 			return true
+		}
+		if identifierMeaningfullyChecksError(identifier, parents) {
+			checked = true
+			return false
+		}
+		return true
+	})
+	return checked
+}
+
+func identifierMeaningfullyChecksError(
+	identifier *ast.Ident,
+	parents map[ast.Node]ast.Node,
+) bool {
+	for node := parents[identifier]; node != nil; node = parents[node] {
+		switch parent := node.(type) {
+		case *ast.ReturnStmt:
+			return true
+		case *ast.IfStmt:
+			return containsPosition(parent.Cond, identifier)
+		case *ast.ForStmt:
+			return containsPosition(parent.Cond, identifier)
+		case *ast.SwitchStmt:
+			return parent.Tag != nil && containsPosition(parent.Tag, identifier)
+		case *ast.CaseClause:
+			for _, expression := range parent.List {
+				if containsPosition(expression, identifier) {
+					return true
+				}
+			}
+		case ast.Stmt:
+			return false
 		}
 	}
 	return false
@@ -328,11 +386,6 @@ func containsPosition(container, target ast.Node) bool {
 		target != nil &&
 		target.Pos() >= container.Pos() &&
 		target.End() <= container.End()
-}
-
-func isBlankIdentifier(expression ast.Expr) bool {
-	identifier, ok := ast.Unparen(expression).(*ast.Ident)
-	return ok && identifier.Name == "_"
 }
 
 func parentNodes(root ast.Node) map[ast.Node]ast.Node {

@@ -241,6 +241,8 @@ func runEntry(ctx context.Context, entry Entry, adapter ParserAdapter) Result {
 		switch {
 		case err == nil:
 			result.Reason = "input was accepted; rejection required"
+		case isDecodeAbort(err) && entry.WantErr == nil:
+			result.Reason = "decode was canceled; explicit matching rejection error required"
 		case entry.WantErr != nil && !errors.Is(err, entry.WantErr):
 			result.Reason = "decoder returned a different error"
 		default:
@@ -267,6 +269,10 @@ func runEntry(ctx context.Context, entry Entry, adapter ParserAdapter) Result {
 	return result
 }
 
+func isDecodeAbort(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
 func decodeSafely(
 	ctx context.Context,
 	adapter ParserAdapter,
@@ -291,7 +297,11 @@ func describePanic(recovered any) string {
 	}
 
 	if recoveredErr, ok := recovered.(error); ok {
-		return recoveredType.String() + "(" + strconv.Quote(recoveredErr.Error()) + ")"
+		message, formatted := panicSafeErrorString(recoveredErr)
+		if !formatted {
+			return recoveredType.String() + "(<Error() panicked>)"
+		}
+		return recoveredType.String() + "(" + strconv.Quote(message) + ")"
 	}
 
 	recoveredValue := reflect.ValueOf(recovered)
@@ -323,4 +333,14 @@ func describePanic(recovered any) string {
 		return recoveredType.String()
 	}
 	return recoveredType.String() + "(" + value + ")"
+}
+
+func panicSafeErrorString(err error) (message string, formatted bool) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			message = ""
+			formatted = false
+		}
+	}()
+	return err.Error(), true
 }

@@ -176,9 +176,15 @@ func classifyYAMLError(err error) error {
 	message := strings.ToLower(err.Error())
 	if strings.Contains(message, "unexpected end of stream") ||
 		strings.Contains(message, "unexpected eof") {
-		return fmt.Errorf("decode truncated frontmatter: %w: %v", ErrTruncated, err)
+		return fmt.Errorf(
+			"decode truncated frontmatter: %w",
+			errors.Join(ErrTruncated, err),
+		)
 	}
-	return fmt.Errorf("decode malformed frontmatter: %w: %v", ErrMalformed, err)
+	return fmt.Errorf(
+		"decode malformed frontmatter: %w",
+		errors.Join(ErrMalformed, err),
+	)
 }
 
 func validateYAMLNode(node *yaml.Node) error {
@@ -334,7 +340,13 @@ func classifyJSONError(err error) error {
 	}
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
 		strings.Contains(strings.ToLower(err.Error()), "unexpected end") {
-		return fmt.Errorf("decode truncated event JSON: %w: %v", ErrTruncated, err)
+		return fmt.Errorf(
+			"decode truncated event JSON: %w",
+			errors.Join(ErrTruncated, err),
+		)
 	}
-	return fmt.Errorf("decode malformed event JSON: %w: %v", ErrMalformed, err)
+	return fmt.Errorf(
+		"decode malformed event JSON: %w",
+		errors.Join(ErrMalformed, err),
+	)
 }

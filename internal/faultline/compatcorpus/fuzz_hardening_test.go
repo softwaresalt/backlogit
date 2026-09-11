@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -76,6 +78,20 @@ func TestFuzzDecodeNativeSeedRequiresExactlyOneArgument(t *testing.T) {
 			require.Equal(t, test.want, got)
 		})
 	}
+}
+
+func TestFuzzReadNativeSeedsRejectsOversizedFileFromMetadata(t *testing.T) {
+	root := t.TempDir()
+	seedDir := filepath.Join(root, fuzzCanonicalSeedDir)
+	require.NoError(t, os.MkdirAll(seedDir, 0o700))
+	seedPath := filepath.Join(seedDir, "oversized")
+	seed := bytes.Repeat([]byte("x"), fuzzMaximumSeedFileBytes+1)
+	require.NoError(t, os.WriteFile(seedPath, seed, 0o600))
+	t.Chdir(root)
+
+	_, err := fuzzReadNativeSeeds()
+	require.ErrorContains(t, err, "metadata")
+	require.ErrorContains(t, err, "maximum")
 }
 
 func TestFuzzDecodeAllAdaptersRejectsInputsOutsideResourceBounds(t *testing.T) {

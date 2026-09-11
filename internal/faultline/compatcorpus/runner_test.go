@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -114,6 +116,52 @@ func TestCorpusRunner(t *testing.T) {
 		}
 	})
 
+	t.Run("classifier errors preserve sentinel and underlying chains", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			classify   func(error) error
+			underlying error
+			sentinel   error
+		}{
+			{
+				name:       "truncated JSON",
+				classify:   classifyJSONError,
+				underlying: io.ErrUnexpectedEOF,
+				sentinel:   ErrTruncated,
+			},
+			{
+				name:       "malformed JSON",
+				classify:   classifyJSONError,
+				underlying: errClassifierMalformed,
+				sentinel:   ErrMalformed,
+			},
+			{
+				name:       "truncated YAML",
+				classify:   classifyYAMLError,
+				underlying: errClassifierUnexpectedEOF,
+				sentinel:   ErrTruncated,
+			},
+			{
+				name:       "malformed YAML",
+				classify:   classifyYAMLError,
+				underlying: errClassifierMalformed,
+				sentinel:   ErrMalformed,
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				err := test.classify(test.underlying)
+				if !errors.Is(err, test.sentinel) {
+					t.Errorf("classified error = %v, want sentinel %v", err, test.sentinel)
+				}
+				if !errors.Is(err, test.underlying) {
+					t.Errorf("classified error = %v, want underlying error %v", err, test.underlying)
+				}
+			})
+		}
+	})
+
 	t.Run("default corpus declares every representative case", func(t *testing.T) {
 		entries := mustDefaultCorpus(t)
 		byID := make(map[string]Entry, len(entries))
@@ -200,6 +248,9 @@ func TestCorpusRunner(t *testing.T) {
 
 	t.Run("runner emits stable sorted successful report", func(t *testing.T) {
 		entries := mustDefaultCorpus(t)
+		for left, right := 0, len(entries)-1; left < right; left, right = left+1, right-1 {
+			entries[left], entries[right] = entries[right], entries[left]
+		}
 		adapters := mustDefaultAdapters(t)
 		first := runWithoutPanic(t, entries, adapters)
 		second := runWithoutPanic(t, entries, adapters)
@@ -259,6 +310,89 @@ func TestCorpusRunner(t *testing.T) {
 		}
 	})
 
+	t.Run("runner totally sorts deliberately unsorted entries and adapters", func(t *testing.T) {
+		entries := []Entry{
+			{ID: "z-last", Adapter: "scanner", Expect: ExpectAccepted},
+			{ID: "same", Adapter: "scanner", Expect: ExpectAccepted},
+			{ID: "a-first", Adapter: "frontmatter", Expect: ExpectAccepted},
+			{ID: "same", Adapter: "events_jsonl", Expect: ExpectAccepted},
+		}
+		adapters := map[string]ParserAdapter{
+			"scanner":      successfulAdapter{name: "scanner"},
+			"events_jsonl": successfulAdapter{name: "events_jsonl"},
+			"frontmatter":  successfulAdapter{name: "frontmatter"},
+		}
+
+		report := runWithoutPanic(t, entries, adapters)
+		got := make([]string, 0, len(report.Results))
+		for _, result := range report.Results {
+			got = append(got, result.EntryID+"/"+result.Adapter)
+		}
+		want := []string{
+			"a-first/frontmatter",
+			"same/events_jsonl",
+			"same/scanner",
+			"z-last/scanner",
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("sorted results = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("cancellation only satisfies an explicit matching rejection contract", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			decodeErr  error
+			wantErr    error
+			wantPassed bool
+		}{
+			{
+				name:      "canceled without expected sentinel fails",
+				decodeErr: context.Canceled,
+			},
+			{
+				name:       "canceled with expected sentinel passes",
+				decodeErr:  context.Canceled,
+				wantErr:    context.Canceled,
+				wantPassed: true,
+			},
+			{
+				name:      "deadline without expected sentinel fails",
+				decodeErr: context.DeadlineExceeded,
+			},
+			{
+				name:       "deadline with expected sentinel passes",
+				decodeErr:  context.DeadlineExceeded,
+				wantErr:    context.DeadlineExceeded,
+				wantPassed: true,
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				adapter := rejectingAdapter{name: "cancel", err: test.decodeErr}
+				report := runWithoutPanic(t, []Entry{{
+					ID:      "cancel-01",
+					Adapter: adapter.Name(),
+					Expect:  ExpectRejected,
+					WantErr: test.wantErr,
+				}}, map[string]ParserAdapter{adapter.Name(): adapter})
+
+				if len(report.Results) != 1 {
+					t.Fatalf("result count = %d, want 1", len(report.Results))
+				}
+				if report.Results[0].Passed != test.wantPassed {
+					t.Errorf(
+						"cancel result Passed = %t, want %t; result = %+v",
+						report.Results[0].Passed,
+						test.wantPassed,
+						report.Results[0],
+					)
+				}
+			})
+		}
+	})
+
 	t.Run("runner converts adapter panic to a failed result", func(t *testing.T) {
 		tests := []struct {
 			name       string
@@ -284,6 +418,11 @@ func TestCorpusRunner(t *testing.T) {
 				name:       "nondeterministic pointer",
 				adapter:    pointerPanicAdapter{payload: &panicPayload{value: 42}},
 				wantGotErr: "adapter panic: *compatcorpus.panicPayload",
+			},
+			{
+				name:       "error method also panics",
+				adapter:    panickingErrorPanicAdapter{},
+				wantGotErr: "adapter panic: compatcorpus.panickingError(<Error() panicked>)",
 			},
 		}
 
@@ -336,6 +475,11 @@ func TestCorpusRunner(t *testing.T) {
 
 type panicAdapter struct{}
 
+var (
+	errClassifierMalformed     = errors.New("classifier malformed")
+	errClassifierUnexpectedEOF = errors.New("unexpected EOF")
+)
+
 func (panicAdapter) Name() string {
 	return "panic"
 }
@@ -378,6 +522,47 @@ func (pointerPanicAdapter) Name() string {
 
 func (a pointerPanicAdapter) Decode(context.Context, []byte) (DecodeResult, error) {
 	panic(a.payload)
+}
+
+type successfulAdapter struct {
+	name string
+}
+
+func (a successfulAdapter) Name() string {
+	return a.name
+}
+
+func (successfulAdapter) Decode(context.Context, []byte) (DecodeResult, error) {
+	return DecodeResult{}, nil
+}
+
+type rejectingAdapter struct {
+	name string
+	err  error
+}
+
+func (a rejectingAdapter) Name() string {
+	return a.name
+}
+
+func (a rejectingAdapter) Decode(context.Context, []byte) (DecodeResult, error) {
+	return DecodeResult{}, a.err
+}
+
+type panickingError struct{}
+
+func (panickingError) Error() string {
+	panic("error method panic")
+}
+
+type panickingErrorPanicAdapter struct{}
+
+func (panickingErrorPanicAdapter) Name() string {
+	return "panicking_error_panic"
+}
+
+func (panickingErrorPanicAdapter) Decode(context.Context, []byte) (DecodeResult, error) {
+	panic(panickingError{})
 }
 
 func mustDefaultCorpus(t *testing.T) (entries []Entry) {

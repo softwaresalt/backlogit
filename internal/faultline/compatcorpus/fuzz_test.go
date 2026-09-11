@@ -396,9 +396,44 @@ func fuzzReadNativeSeeds() ([]fuzzSeed, error) {
 		if entry.IsDir() {
 			return nil, fmt.Errorf("seed entry %q is a directory", entry.Name())
 		}
-		data, err := os.ReadFile(filepath.Join(fuzzCanonicalSeedDir, entry.Name()))
+		info, err := entry.Info()
+		if err != nil {
+			return nil, fmt.Errorf("inspect seed %q metadata: %w", entry.Name(), err)
+		}
+		if info.Size() > int64(fuzzMaximumSeedFileBytes) {
+			return nil, fmt.Errorf(
+				"inspect seed %q metadata: native seed file has %d bytes, maximum is %d",
+				entry.Name(),
+				info.Size(),
+				fuzzMaximumSeedFileBytes,
+			)
+		}
+
+		seedPath := filepath.Join(fuzzCanonicalSeedDir, entry.Name())
+		data, err := os.ReadFile(seedPath)
 		if err != nil {
 			return nil, fmt.Errorf("read seed %q: %w", entry.Name(), err)
+		}
+		if len(data) > fuzzMaximumSeedFileBytes {
+			return nil, fmt.Errorf(
+				"read seed %q: native seed file has %d bytes, maximum is %d",
+				entry.Name(),
+				len(data),
+				fuzzMaximumSeedFileBytes,
+			)
+		}
+		afterRead, err := os.Stat(seedPath)
+		if err != nil {
+			return nil, fmt.Errorf("reinspect seed %q metadata: %w", entry.Name(), err)
+		}
+		if afterRead.Size() != info.Size() || afterRead.Size() != int64(len(data)) {
+			return nil, fmt.Errorf(
+				"read seed %q: file size changed from %d to %d bytes while reading %d bytes",
+				entry.Name(),
+				info.Size(),
+				afterRead.Size(),
+				len(data),
+			)
 		}
 		input, err := fuzzDecodeNativeSeed(data)
 		if err != nil {

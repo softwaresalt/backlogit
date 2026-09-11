@@ -10,6 +10,10 @@ type contextAcquirer interface {
 	Acquire(context.Context) error
 }
 
+type variadicContextAcquirer interface {
+	Acquire(...context.Context) error
+}
+
 type contextLocker interface {
 	Lock(context.Context) error
 }
@@ -28,6 +32,12 @@ func noTimeout(mu *sync.Mutex) {
 }
 
 func contextAware(parent context.Context, lock contextAcquirer) error {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	return lock.Acquire(ctx)
+}
+
+func variadicContextAware(parent context.Context, lock variadicContextAcquirer) error {
 	ctx, cancel := context.WithTimeout(parent, time.Second)
 	defer cancel()
 	return lock.Acquire(ctx)

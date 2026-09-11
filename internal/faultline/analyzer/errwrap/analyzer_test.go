@@ -1,33 +1,24 @@
 package errwrap_test
 
 import (
-	"errors"
-	"io/fs"
-	"os"
-	"os/exec"
 	"testing"
+
+	"github.com/softwaresalt/backlogit/internal/faultline/analyzer/errwrap"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/tools/go/analysis/analysistest"
 )
 
-// TestAnalyzer invokes the test-local analysistest contract for FL002. Keeping
-// the production import below testdata lets this package compile before the
-// brand-new analyzer declaration lands.
+// TestAnalyzer invokes the analysistest contract for FL002 directly.
 func TestAnalyzer(t *testing.T) {
-	if _, err := os.Stat("analyzer.go"); errors.Is(err, fs.ErrNotExist) {
-		t.Fatal("FL002 analyzer is not implemented: analyzer.go is absent")
-	} else if err != nil {
-		t.Fatalf("inspect FL002 analyzer.go: %v", err)
-	}
+	require.NotNil(t, errwrap.Analyzer)
+	require.Equal(t, "FL002errwrap", errwrap.Analyzer.Name)
+	require.NotNil(t, errwrap.Analyzer.Run)
 
-	command := exec.Command(
-		"go",
-		"test",
-		"-count=1",
-		"-run",
-		"^TestContractAnalyzer$",
-		"./testdata/harness",
+	analysistest.Run(
+		t,
+		analysistest.TestData(),
+		errwrap.Analyzer,
+		"fl002bad",
+		"fl002good",
 	)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("FL002 analyzer contract failed: %v\n%s", err, output)
-	}
 }

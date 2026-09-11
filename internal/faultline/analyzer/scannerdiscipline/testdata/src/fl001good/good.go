@@ -111,7 +111,9 @@ func assignedErrResult(r io.Reader) {
 		_ = s.Text()
 	}
 	err := s.Err()
-	_ = err
+	if err != nil {
+		return
+	}
 }
 
 func returnedErrResult(r io.Reader) error {

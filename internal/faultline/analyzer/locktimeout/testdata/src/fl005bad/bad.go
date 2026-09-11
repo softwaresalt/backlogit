@@ -10,6 +10,10 @@ type acquirer struct{}
 
 func (acquirer) Acquire() {}
 
+type variadicAcquirer struct{}
+
+func (variadicAcquirer) Acquire(...context.Context) {}
+
 type customLock struct{}
 
 func (customLock) Lock() {}
@@ -36,6 +40,13 @@ func rwRead(parent context.Context, mu *sync.RWMutex) {
 }
 
 func namedAcquire(parent context.Context, lock acquirer) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	_ = ctx
+	lock.Acquire() // want "FL005"
+}
+
+func zeroArgumentVariadicAcquire(parent context.Context, lock variadicAcquirer) {
 	ctx, cancel := context.WithTimeout(parent, time.Second)
 	defer cancel()
 	_ = ctx

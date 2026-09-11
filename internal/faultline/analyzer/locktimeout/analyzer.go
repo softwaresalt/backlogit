@@ -255,7 +255,9 @@ func isUncancellableLock(
 		return false
 	}
 	signature, ok := method.Type().(*types.Signature)
-	if !ok || signature.Recv() == nil || signatureTakesContext(signature, contextType) {
+	if !ok ||
+		signature.Recv() == nil ||
+		callSuppliesContext(call, signature, contextType) {
 		return false
 	}
 
@@ -270,7 +272,11 @@ func isUncancellableLock(
 	return false
 }
 
-func signatureTakesContext(signature *types.Signature, contextType types.Type) bool {
+func callSuppliesContext(
+	call *ast.CallExpr,
+	signature *types.Signature,
+	contextType types.Type,
+) bool {
 	parameters := signature.Params()
 	for index := range parameters.Len() {
 		parameterType := parameters.At(index).Type()
@@ -279,7 +285,7 @@ func signatureTakesContext(signature *types.Signature, contextType types.Type) b
 				parameterType = slice.Elem()
 			}
 		}
-		if types.AssignableTo(parameterType, contextType) {
+		if types.AssignableTo(parameterType, contextType) && index < len(call.Args) {
 			return true
 		}
 	}

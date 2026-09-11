@@ -76,6 +76,27 @@ func blankErrResult(r io.Reader) {
 	_ = s.Err()
 }
 
+func storedThenDiscardedErrResult(r io.Reader) {
+	s := bufio.NewScanner(r) // want "FL001"
+	s.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for s.Scan() {
+		_ = s.Text()
+	}
+	err := s.Err()
+	_ = err
+}
+
+func deadAssignedErrResult(r io.Reader) {
+	var err error
+	s := bufio.NewScanner(r) // want "FL001"
+	s.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for s.Scan() {
+		_ = s.Text()
+	}
+	err = s.Err()
+	_ = err
+}
+
 func inexactSuppression(r io.Reader) {
 	// faultline:scanner-ok because the caller checks the error
 	s := bufio.NewScanner(r) // want "FL001"
