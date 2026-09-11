@@ -3,15 +3,14 @@ package compatcorpus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
-var (
-	errConcFixturesNotImplemented = errors.New("TODO: implement concurrency fixtures")
-	errConcLockBusy               = errors.New("concurrency fixture: lock busy")
-)
+var errConcLockBusy = errors.New("concurrency fixture: lock busy")
 
 type concLockMode string
 
@@ -29,7 +28,81 @@ type concLockOutcome struct {
 
 type concCancellationOutcome struct {
 	adapterErrors map[string]error
+	lockerError   error
 	report        Report
+}
+
+type concFixtureLocker struct {
+	mode      concLockMode
+	token     chan struct{}
+	attempted chan struct{}
+
+	mu             sync.Mutex
+	holders        int
+	maximumHolders int
+}
+
+func concNewFixtureLocker(mode concLockMode) *concFixtureLocker {
+	locker := &concFixtureLocker{
+		mode:      mode,
+		token:     make(chan struct{}, 1),
+		attempted: make(chan struct{}, 2),
+	}
+	locker.token <- struct{}{}
+	return locker
+}
+
+func (l *concFixtureLocker) Acquire(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	l.attempted <- struct{}{}
+
+	switch l.mode {
+	case concLockBlocking:
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("acquire fixture lock: %w", ctx.Err())
+		case <-l.token:
+			l.recordAcquire()
+			return nil
+		}
+	case concLockBusy:
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("acquire fixture lock: %w", ctx.Err())
+		case <-l.token:
+			l.recordAcquire()
+			return nil
+		default:
+			return errConcLockBusy
+		}
+	default:
+		return fmt.Errorf("acquire fixture lock: unsupported mode %q", l.mode)
+	}
+}
+
+func (l *concFixtureLocker) Release() {
+	l.mu.Lock()
+	l.holders--
+	l.mu.Unlock()
+	l.token <- struct{}{}
+}
+
+func (l *concFixtureLocker) recordAcquire() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.holders++
+	if l.holders > l.maximumHolders {
+		l.maximumHolders = l.holders
+	}
+}
+
+func (l *concFixtureLocker) maxHolders() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.maximumHolders
 }
 
 // TestConcurrencyFixtures verifies the deterministic concurrency, cancellation,
@@ -38,7 +111,9 @@ func TestConcurrencyFixtures(t *testing.T) {
 	t.Run("lock contention", func(t *testing.T) {
 		t.Run("blocking waits for release", func(t *testing.T) {
 			outcome, err := concExerciseLockContention(context.Background(), concLockBlocking)
-			concReportUnimplemented(t, err, "blocking lock-contention fixture")
+			if err != nil {
+				t.Fatalf("blocking lock-contention fixture: %v", err)
+			}
 
 			if outcome.secondAcquireErr != nil {
 				t.Errorf("second blocking Acquire() error = %v, want nil after Release", outcome.secondAcquireErr)
@@ -56,7 +131,9 @@ func TestConcurrencyFixtures(t *testing.T) {
 
 		t.Run("busy fails with the pinned sentinel", func(t *testing.T) {
 			outcome, err := concExerciseLockContention(context.Background(), concLockBusy)
-			concReportUnimplemented(t, err, "busy lock-contention fixture")
+			if err != nil {
+				t.Fatalf("busy lock-contention fixture: %v", err)
+			}
 
 			if !errors.Is(outcome.secondAcquireErr, errConcLockBusy) {
 				t.Errorf(
@@ -92,7 +169,15 @@ func TestConcurrencyFixtures(t *testing.T) {
 
 		select {
 		case got := <-resultCh:
-			concReportUnimplemented(t, got.err, "context-cancellation fixture")
+			if got.err != nil {
+				t.Fatalf("context-cancellation fixture: %v", got.err)
+			}
+			if !errors.Is(got.outcome.lockerError, context.Canceled) {
+				t.Errorf(
+					"blocking Locker.Acquire() error = %v, want errors.Is(_, context.Canceled)",
+					got.outcome.lockerError,
+				)
+			}
 			for _, adapterName := range []string{"events_jsonl", "frontmatter", "scanner"} {
 				if !errors.Is(got.outcome.adapterErrors[adapterName], context.Canceled) {
 					t.Errorf(
@@ -131,7 +216,9 @@ func TestConcurrencyFixtures(t *testing.T) {
 
 	t.Run("ambiguous gate input fails closed", func(t *testing.T) {
 		entry, err := concAmbiguousGateEntry()
-		concReportUnimplemented(t, err, "ambiguous-gate-input fixture")
+		if err != nil {
+			t.Fatalf("ambiguous-gate-input fixture: %v", err)
+		}
 
 		if entry.Expect != ExpectRejected {
 			t.Errorf("ambiguous entry Expect = %q, want %q", entry.Expect, ExpectRejected)
@@ -152,24 +239,119 @@ func TestConcurrencyFixtures(t *testing.T) {
 	})
 }
 
-func concExerciseLockContention(context.Context, concLockMode) (concLockOutcome, error) {
-	return concLockOutcome{}, errConcFixturesNotImplemented
+func concExerciseLockContention(ctx context.Context, mode concLockMode) (concLockOutcome, error) {
+	if mode != concLockBlocking && mode != concLockBusy {
+		return concLockOutcome{}, fmt.Errorf("exercise lock contention: unsupported mode %q", mode)
+	}
+
+	locker := concNewFixtureLocker(mode)
+	releaseHolder := make(chan struct{})
+	holderReady := make(chan error, 1)
+	holderDone := make(chan struct{})
+	go func() {
+		defer close(holderDone)
+		if err := locker.Acquire(ctx); err != nil {
+			holderReady <- err
+			return
+		}
+		holderReady <- nil
+		<-releaseHolder
+		locker.Release()
+	}()
+
+	if err := <-holderReady; err != nil {
+		return concLockOutcome{}, fmt.Errorf("first fixture lock acquire: %w", err)
+	}
+	<-locker.attempted
+
+	secondResult := make(chan error, 1)
+	secondDone := make(chan struct{})
+	go func() {
+		defer close(secondDone)
+		err := locker.Acquire(ctx)
+		if err == nil {
+			locker.Release()
+		}
+		secondResult <- err
+	}()
+	<-locker.attempted
+
+	outcome := concLockOutcome{}
+	if mode == concLockBlocking {
+		select {
+		case outcome.secondAcquireErr = <-secondResult:
+			outcome.waitedForRelease = false
+		default:
+			outcome.waitedForRelease = true
+		}
+		close(releaseHolder)
+		if outcome.waitedForRelease {
+			outcome.secondAcquireErr = <-secondResult
+		}
+	} else {
+		outcome.secondAcquireErr = <-secondResult
+		close(releaseHolder)
+	}
+
+	<-secondDone
+	<-holderDone
+	outcome.maximumHolders = locker.maxHolders()
+	outcome.allGoroutinesJoined = true
+	return outcome, nil
 }
 
-func concExerciseCancellation(context.Context) (concCancellationOutcome, error) {
-	return concCancellationOutcome{}, errConcFixturesNotImplemented
+func concExerciseCancellation(ctx context.Context) (concCancellationOutcome, error) {
+	adapters := DefaultAdapters()
+	adapterInputs := map[string][]byte{
+		"events_jsonl": []byte(`{"schema_version":1,"gate":"allow"}`),
+		"frontmatter":  []byte("---\nid: cancellation\n---\n"),
+		"scanner":      []byte("bounded token\n"),
+	}
+	adapterOrder := []string{"events_jsonl", "frontmatter", "scanner"}
+
+	outcome := concCancellationOutcome{
+		adapterErrors: make(map[string]error, len(adapterOrder)),
+	}
+	entries := make([]Entry, 0, len(adapterOrder))
+	for _, adapterName := range adapterOrder {
+		adapter := adapters[adapterName]
+		if adapter == nil {
+			return concCancellationOutcome{}, fmt.Errorf(
+				"exercise cancellation: adapter %q is not registered",
+				adapterName,
+			)
+		}
+		input := adapterInputs[adapterName]
+		_, outcome.adapterErrors[adapterName] = adapter.Decode(ctx, input)
+		entries = append(entries, Entry{
+			ID:      "cancelled-" + adapterName,
+			Adapter: adapterName,
+			Input:   input,
+			Expect:  ExpectAccepted,
+		})
+	}
+
+	locker := concNewFixtureLocker(concLockBlocking)
+	if err := locker.Acquire(context.Background()); err != nil {
+		return concCancellationOutcome{}, fmt.Errorf(
+			"hold cancellation fixture lock: %w",
+			err,
+		)
+	}
+	outcome.lockerError = locker.Acquire(ctx)
+	locker.Release()
+
+	outcome.report = Run(ctx, entries, adapters)
+	return outcome, nil
 }
 
 func concAmbiguousGateEntry() (Entry, error) {
-	return Entry{}, errConcFixturesNotImplemented
-}
-
-func concReportUnimplemented(t *testing.T, err error, fixture string) {
-	t.Helper()
-	switch {
-	case errors.Is(err, errConcFixturesNotImplemented):
-		t.Errorf("%s: %v", fixture, err)
-	case err != nil:
-		t.Fatalf("%s setup failed: %v", fixture, err)
-	}
+	return Entry{
+		ID:       "ambiguous-gate-duplicate-key",
+		Category: CatDuplicateKey,
+		Adapter:  "events_jsonl",
+		Input:    []byte(`{"gate":"allow","gate":"deny"}`),
+		Expect:   ExpectRejected,
+		WantErr:  ErrDuplicateKey,
+	}, nil
 }
