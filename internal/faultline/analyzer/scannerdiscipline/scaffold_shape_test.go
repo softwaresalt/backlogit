@@ -94,9 +94,6 @@ func assertAnalyzerDeclarationShape(t *testing.T) {
 	if got := flattenScaffoldTypes(run.Type.Results); !equalScaffoldStrings(got, []string{"any", "error"}) {
 		t.Errorf("scannerdiscipline run results = %v, want [any error]", got)
 	}
-	if !isNoopRunBody(run.Body) {
-		t.Error("scannerdiscipline run must remain a declaration-only skeleton returning nil, nil")
-	}
 }
 
 func assertMulticheckerShape(t *testing.T, path string) {
@@ -107,8 +104,9 @@ func assertMulticheckerShape(t *testing.T, path string) {
 		t.Errorf("cmd/faultline-analyze/main.go is not declared: %v", err)
 		return
 	}
+	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(
-		token.NewFileSet(),
+		fileSet,
 		path,
 		source,
 		parser.SkipObjectResolution|parser.ParseComments,
@@ -131,20 +129,22 @@ func assertMulticheckerShape(t *testing.T, path string) {
 		t.Errorf("multichecker.Main call count = %d, want 1", len(calls))
 		return
 	}
-	if len(calls[0].Args) != 1 || scaffoldExpr(calls[0].Args[0]) != "scannerdiscipline.Analyzer" {
-		t.Errorf(
-			"live multichecker arguments = %v, want [scannerdiscipline.Analyzer]",
-			callArgumentShapes(calls[0]),
-		)
+	call := directTopLevelCall(mainFn, "multichecker.Main")
+	if call == nil || call != calls[0] {
+		t.Error("multichecker.Main must be a direct top-level statement in main")
+		return
 	}
 
-	text := string(source)
-	liveOffset := strings.Index(text, "scannerdiscipline.Analyzer")
-	if liveOffset < 0 {
-		t.Error("FL001 scannerdiscipline.Analyzer slot is not present")
+	scaffoldArguments := []string{"scannerdiscipline.Analyzer"}
+	finalArguments := []string{
+		"scannerdiscipline.Analyzer",
+		"errwrap.Analyzer",
+		"failopen.Analyzer",
+		"auditsuccess.Analyzer",
+		"locktimeout.Analyzer",
 	}
-	previous := liveOffset
-	for _, slot := range []struct {
+	arguments := callArgumentShapes(call)
+	placeholders := []struct {
 		id  string
 		ref string
 	}{
@@ -152,16 +152,30 @@ func assertMulticheckerShape(t *testing.T, path string) {
 		{id: "FL003", ref: "failopen.Analyzer"},
 		{id: "FL004", ref: "auditsuccess.Analyzer"},
 		{id: "FL005", ref: "locktimeout.Analyzer"},
-	} {
-		offset := commentedSlotOffset(text, slot.id, slot.ref)
-		if offset < 0 {
-			t.Errorf("%s reserved commented slot for %s is not present", slot.id, slot.ref)
-			continue
+	}
+	comments := callArgumentComments(file, call)
+
+	switch {
+	case equalScaffoldStrings(arguments, scaffoldArguments):
+		got := reservedPlaceholderComments(comments, placeholders)
+		want := make([]string, 0, len(placeholders))
+		for _, slot := range placeholders {
+			want = append(want, "// "+slot.id+": "+slot.ref)
 		}
-		if offset <= previous {
-			t.Errorf("%s reserved slot is not ordered after the preceding analyzer slot", slot.id)
+		if !equalScaffoldStrings(got, want) {
+			t.Errorf("reserved multichecker placeholders = %v, want %v", got, want)
 		}
-		previous = offset
+	case equalScaffoldStrings(arguments, finalArguments):
+		if got := reservedPlaceholderComments(comments, placeholders); len(got) != 0 {
+			t.Errorf("final multichecker wiring retains reserved placeholders: %v", got)
+		}
+	default:
+		t.Errorf(
+			"live multichecker arguments = %v, want scaffold %v or final integration %v",
+			arguments,
+			scaffoldArguments,
+			finalArguments,
+		)
 	}
 }
 
@@ -193,6 +207,11 @@ func assertModuleShape(t *testing.T, path string) {
 		t.Errorf("direct golang.org/x/tools v0.39.0 requirement count = %d, want 1", toolsMatches)
 	}
 
+	// No-version-move is a historical-diff property, so task verification compares
+	// the module requirements with implementation base
+	// 87a9f23fa0e073a445f23aeefa6a236edbb1e961. The permanent shape contract pins
+	// only the two versions material to this task rather than freezing unrelated
+	// repository dependencies.
 	if !moduleLineHasVersion(lines, "golang.org/x/text", "v0.32.0") {
 		t.Error("golang.org/x/text must remain at the pre-scaffold version v0.32.0")
 	}
@@ -295,17 +314,6 @@ func keyedCompositeFields(literal *ast.CompositeLit) map[string]ast.Expr {
 	return result
 }
 
-func isNoopRunBody(body *ast.BlockStmt) bool {
-	if body == nil || len(body.List) != 1 {
-		return false
-	}
-	ret, ok := body.List[0].(*ast.ReturnStmt)
-	if !ok || len(ret.Results) != 2 {
-		return false
-	}
-	return scaffoldExpr(ret.Results[0]) == "nil" && scaffoldExpr(ret.Results[1]) == "nil"
-}
-
 func findCalls(fn *ast.FuncDecl, target string) []*ast.CallExpr {
 	var result []*ast.CallExpr
 	ast.Inspect(fn.Body, func(node ast.Node) bool {
@@ -318,6 +326,23 @@ func findCalls(fn *ast.FuncDecl, target string) []*ast.CallExpr {
 	return result
 }
 
+func directTopLevelCall(fn *ast.FuncDecl, target string) *ast.CallExpr {
+	if fn.Body == nil {
+		return nil
+	}
+	for _, statement := range fn.Body.List {
+		expression, ok := statement.(*ast.ExprStmt)
+		if !ok {
+			continue
+		}
+		call, ok := expression.X.(*ast.CallExpr)
+		if ok && scaffoldExpr(call.Fun) == target {
+			return call
+		}
+	}
+	return nil
+}
+
 func callArgumentShapes(call *ast.CallExpr) []string {
 	result := make([]string, 0, len(call.Args))
 	for _, arg := range call.Args {
@@ -326,18 +351,36 @@ func callArgumentShapes(call *ast.CallExpr) []string {
 	return result
 }
 
-func commentedSlotOffset(source, id, ref string) int {
-	offset := 0
-	for _, line := range strings.Split(source, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "//") &&
-			strings.Contains(trimmed, id) &&
-			strings.Contains(trimmed, ref) {
-			return offset
+func callArgumentComments(file *ast.File, call *ast.CallExpr) []string {
+	var result []string
+	for _, group := range file.Comments {
+		for _, comment := range group.List {
+			if comment.Pos() > call.Lparen && comment.End() < call.Rparen {
+				result = append(result, strings.TrimSpace(comment.Text))
+			}
 		}
-		offset += len(line) + 1
 	}
-	return -1
+	return result
+}
+
+func reservedPlaceholderComments(
+	comments []string,
+	slots []struct {
+		id  string
+		ref string
+	},
+) []string {
+	result := make([]string, 0, len(slots))
+	for _, comment := range comments {
+		for _, slot := range slots {
+			if strings.HasPrefix(comment, "// "+slot.id+":") ||
+				strings.Contains(comment, slot.ref) {
+				result = append(result, comment)
+				break
+			}
+		}
+	}
+	return result
 }
 
 func moduleLineHasVersion(lines []string, module, version string) bool {
