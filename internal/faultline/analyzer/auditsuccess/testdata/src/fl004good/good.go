@@ -87,3 +87,38 @@ func warningAfterSuccess() error {
 	slog.Warn("audit: unreachable soft fail")
 	return errAudit
 }
+
+func switchCaseInterveningError(value int, failClosed bool) error {
+	switch value {
+	case 1:
+		slog.Warn("audit: switch case hard fail")
+		if failClosed {
+			return errAudit
+		}
+		return nil
+	default:
+		return errAudit
+	}
+}
+
+func typeSwitchCaseSuppressed(value any) error {
+	switch value.(type) {
+	case string:
+		slog.Warn("audit: accepted type switch warning") // faultline:warn-nonfatal
+		return nil
+	default:
+		return errAudit
+	}
+}
+
+func selectClauseClosureExcluded(ch <-chan int) error {
+	select {
+	case <-ch:
+		func() {
+			slog.Warn("audit: warning belongs to closure")
+		}()
+		return nil
+	default:
+		return errAudit
+	}
+}

@@ -393,6 +393,65 @@ func TestCorpusRunner(t *testing.T) {
 		}
 	})
 
+	t.Run("mid-flight cancellation overrides decode outcomes unless explicitly expected", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			expect     Expectation
+			decodeErr  error
+			wantErr    error
+			wantPassed bool
+		}{
+			{
+				name:      "successful decode fails",
+				expect:    ExpectAccepted,
+				decodeErr: nil,
+			},
+			{
+				name:      "matching ordinary rejection fails",
+				expect:    ExpectRejected,
+				decodeErr: ErrMalformed,
+				wantErr:   ErrMalformed,
+			},
+			{
+				name:       "explicit cancellation rejection passes",
+				expect:     ExpectRejected,
+				wantErr:    context.Canceled,
+				wantPassed: true,
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+
+				adapter := cancelingAdapter{
+					name:      "midflight_cancel",
+					cancel:    cancel,
+					decodeErr: test.decodeErr,
+				}
+				report := Run(ctx, []Entry{{
+					ID:      "midflight-cancel-01",
+					Adapter: adapter.Name(),
+					Expect:  test.expect,
+					WantErr: test.wantErr,
+				}}, map[string]ParserAdapter{adapter.Name(): adapter})
+
+				if len(report.Results) != 1 {
+					t.Fatalf("result count = %d, want 1", len(report.Results))
+				}
+				if report.Results[0].Passed != test.wantPassed {
+					t.Errorf(
+						"mid-flight cancel result Passed = %t, want %t; result = %+v",
+						report.Results[0].Passed,
+						test.wantPassed,
+						report.Results[0],
+					)
+				}
+			})
+		}
+	})
+
 	t.Run("runner converts adapter panic to a failed result", func(t *testing.T) {
 		tests := []struct {
 			name       string
@@ -547,6 +606,21 @@ func (a rejectingAdapter) Name() string {
 
 func (a rejectingAdapter) Decode(context.Context, []byte) (DecodeResult, error) {
 	return DecodeResult{}, a.err
+}
+
+type cancelingAdapter struct {
+	name      string
+	cancel    context.CancelFunc
+	decodeErr error
+}
+
+func (a cancelingAdapter) Name() string {
+	return a.name
+}
+
+func (a cancelingAdapter) Decode(context.Context, []byte) (DecodeResult, error) {
+	a.cancel()
+	return DecodeResult{}, a.decodeErr
 }
 
 type panickingError struct{}

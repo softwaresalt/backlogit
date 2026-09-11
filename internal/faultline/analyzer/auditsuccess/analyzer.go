@@ -28,16 +28,16 @@ func run(pass *analysis.Pass) (any, error) {
 	for _, file := range pass.Files {
 		parents := parentNodes(file)
 		ast.Inspect(file, func(node ast.Node) bool {
-			block, ok := node.(*ast.BlockStmt)
+			statements, ok := statementList(node)
 			if !ok {
 				return true
 			}
 
-			signature := enclosingSignature(pass, parents, block)
+			signature := enclosingSignature(pass, parents, node)
 			if signature == nil || !hasTrailingErrorResult(signature, errorType) {
 				return true
 			}
-			analyzeBlock(pass, file, block, signature)
+			analyzeStatementList(pass, file, statements, signature)
 			return true
 		})
 	}
@@ -45,14 +45,27 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-func analyzeBlock(
+func statementList(node ast.Node) ([]ast.Stmt, bool) {
+	switch container := node.(type) {
+	case *ast.BlockStmt:
+		return container.List, true
+	case *ast.CaseClause:
+		return container.Body, true
+	case *ast.CommClause:
+		return container.Body, true
+	default:
+		return nil, false
+	}
+}
+
+func analyzeStatementList(
 	pass *analysis.Pass,
 	file *ast.File,
-	block *ast.BlockStmt,
+	statements []ast.Stmt,
 	signature *types.Signature,
 ) {
 	warnings := make([]*ast.CallExpr, 0, 1)
-	for _, statement := range block.List {
+	for _, statement := range statements {
 		if result, ok := statement.(*ast.ReturnStmt); ok && isSuccessReturn(pass, result, signature) {
 			for _, warning := range warnings {
 				pass.Reportf(warning.Pos(), diagnostic)
@@ -68,7 +81,7 @@ func analyzeBlock(
 		call := directCall(statement)
 		if call == nil ||
 			!isAuditWarning(pass, call) ||
-			isSuppressed(pass, file, block, statement) {
+			isSuppressed(pass, file, statements, statement) {
 			continue
 		}
 		warnings = append(warnings, call)
@@ -342,7 +355,7 @@ func isInterface(valueType types.Type) bool {
 func isSuppressed(
 	pass *analysis.Pass,
 	file *ast.File,
-	block *ast.BlockStmt,
+	statements []ast.Stmt,
 	statement ast.Stmt,
 ) bool {
 	startLine := pass.Fset.Position(statement.Pos()).Line
@@ -356,12 +369,12 @@ func isSuppressed(
 			line := pass.Fset.Position(comment.Pos()).Line
 			if line == endLine &&
 				comment.Pos() >= statement.End() &&
-				trailingStatement(pass, block, comment) == statement {
+				trailingStatement(pass, statements, comment) == statement {
 				return true
 			}
 			if line == startLine-1 &&
 				isDedicatedComment(pass, file, comment) &&
-				followingStatement(pass, block, comment) == statement {
+				followingStatement(pass, statements, comment) == statement {
 				return true
 			}
 		}
@@ -371,12 +384,12 @@ func isSuppressed(
 
 func trailingStatement(
 	pass *analysis.Pass,
-	block *ast.BlockStmt,
+	statements []ast.Stmt,
 	comment *ast.Comment,
 ) ast.Stmt {
 	commentLine := pass.Fset.Position(comment.Pos()).Line
 	var owner ast.Stmt
-	for _, candidate := range block.List {
+	for _, candidate := range statements {
 		if candidate.End() > comment.Pos() ||
 			pass.Fset.Position(candidate.End()).Line != commentLine {
 			continue
@@ -390,12 +403,12 @@ func trailingStatement(
 
 func followingStatement(
 	pass *analysis.Pass,
-	block *ast.BlockStmt,
+	statements []ast.Stmt,
 	comment *ast.Comment,
 ) ast.Stmt {
 	followingLine := pass.Fset.Position(comment.Pos()).Line + 1
 	var owner ast.Stmt
-	for _, candidate := range block.List {
+	for _, candidate := range statements {
 		if candidate.Pos() < comment.End() ||
 			pass.Fset.Position(candidate.Pos()).Line != followingLine {
 			continue

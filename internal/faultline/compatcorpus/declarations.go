@@ -232,6 +232,9 @@ func runEntry(ctx context.Context, entry Entry, adapter ParserAdapter) Result {
 		result.Reason = "adapter panicked while decoding"
 		return result
 	}
+	if abort := ctx.Err(); abort != nil {
+		err = abort
+	}
 	if err != nil {
 		result.GotErr = err.Error()
 	}

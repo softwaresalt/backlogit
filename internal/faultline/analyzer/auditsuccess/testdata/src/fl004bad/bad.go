@@ -133,3 +133,33 @@ func nonAdjacentPrecedingSuppression() error {
 	slog.Warn("audit: soft fail") // want "FL004"
 	return nil
 }
+
+func switchCase(value int) error {
+	switch value {
+	case 1:
+		slog.Warn("audit: switch case soft fail") // want "FL004"
+		return nil
+	default:
+		return errAudit
+	}
+}
+
+func typeSwitchCase(value any) error {
+	switch value.(type) {
+	case string:
+		slog.Warn("audit: type switch case soft fail") // want "FL004"
+		return nil
+	default:
+		return errAudit
+	}
+}
+
+func selectClause(ch <-chan int) error {
+	select {
+	case <-ch:
+		slog.Warn("audit: select clause soft fail") // want "FL004"
+		return nil
+	default:
+		return errAudit
+	}
+}
