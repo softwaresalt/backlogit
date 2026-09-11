@@ -108,9 +108,9 @@ func isErrorNonNilCondition(pass *analysis.Pass, expression ast.Expr, errorType 
 
 	var candidate ast.Expr
 	switch {
-	case isNil(comparison.X):
+	case isNil(pass, comparison.X):
 		candidate = comparison.Y
-	case isNil(comparison.Y):
+	case isNil(pass, comparison.Y):
 		candidate = comparison.X
 	default:
 		return false
@@ -133,7 +133,11 @@ func returnsSuccess(pass *analysis.Pass, block *ast.BlockStmt, signature *types.
 	if !ok || len(result.Results) != signature.Results().Len() {
 		return false
 	}
-	if !isNil(result.Results[len(result.Results)-1]) {
+	if !isNilZero(
+		pass,
+		result.Results[len(result.Results)-1],
+		signature.Results().At(signature.Results().Len()-1).Type(),
+	) {
 		return false
 	}
 
@@ -147,8 +151,8 @@ func returnsSuccess(pass *analysis.Pass, block *ast.BlockStmt, signature *types.
 
 func isZeroValue(pass *analysis.Pass, expression ast.Expr, resultType types.Type) bool {
 	expression = ast.Unparen(expression)
-	if isNil(expression) {
-		return isNilable(resultType)
+	if isNilZero(pass, expression, resultType) {
+		return true
 	}
 
 	if value := pass.TypesInfo.Types[expression].Value; value != nil {
@@ -181,23 +185,72 @@ func isZeroValue(pass *analysis.Pass, expression ast.Expr, resultType types.Type
 	}
 }
 
-func isNil(expression ast.Expr) bool {
-	identifier, ok := ast.Unparen(expression).(*ast.Ident)
-	return ok && identifier.Name == "nil"
+func isNil(pass *analysis.Pass, expression ast.Expr) bool {
+	typeAndValue, ok := pass.TypesInfo.Types[ast.Unparen(expression)]
+	return ok && typeAndValue.IsNil()
+}
+
+func isNilZero(pass *analysis.Pass, expression ast.Expr, resultType types.Type) bool {
+	expression = ast.Unparen(expression)
+	if isNil(pass, expression) {
+		return isNilable(resultType)
+	}
+
+	expressionType, typedNil := typedNilType(pass, expression)
+	if !typedNil ||
+		!types.AssignableTo(expressionType, resultType) ||
+		(isInterface(resultType) && !isInterface(expressionType)) {
+		return false
+	}
+	return true
+}
+
+func typedNilType(pass *analysis.Pass, expression ast.Expr) (types.Type, bool) {
+	call, ok := ast.Unparen(expression).(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return nil, false
+	}
+
+	conversion, ok := pass.TypesInfo.Types[ast.Unparen(call.Fun)]
+	if !ok || !conversion.IsType() {
+		return nil, false
+	}
+
+	convertedType := pass.TypesInfo.TypeOf(call)
+	if convertedType == nil || !isNilable(convertedType) {
+		return nil, false
+	}
+
+	argument := ast.Unparen(call.Args[0])
+	if isNil(pass, argument) {
+		return convertedType, true
+	}
+
+	argumentType, typedNil := typedNilType(pass, argument)
+	if !typedNil || (isInterface(convertedType) && !isInterface(argumentType)) {
+		return nil, false
+	}
+	return convertedType, true
 }
 
 func isNilable(valueType types.Type) bool {
-	switch valueType.Underlying().(type) {
+	switch underlying := valueType.Underlying().(type) {
 	case *types.Chan, *types.Interface, *types.Map, *types.Pointer, *types.Signature, *types.Slice:
 		return true
+	case *types.Basic:
+		return underlying.Kind() == types.UnsafePointer
 	default:
 		return false
 	}
 }
 
+func isInterface(valueType types.Type) bool {
+	_, ok := valueType.Underlying().(*types.Interface)
+	return ok
+}
+
 func isSuppressed(pass *analysis.Pass, file *ast.File, branch *ast.IfStmt) bool {
 	startLine := pass.Fset.Position(branch.Pos()).Line
-	headerEndLine := pass.Fset.Position(branch.Body.Lbrace).Line
 	for _, group := range file.Comments {
 		for _, comment := range group.List {
 			if strings.TrimSpace(comment.Text) != suppressionDirective {
@@ -205,7 +258,7 @@ func isSuppressed(pass *analysis.Pass, file *ast.File, branch *ast.IfStmt) bool 
 			}
 
 			line := pass.Fset.Position(comment.Pos()).Line
-			if line >= startLine && line <= headerEndLine {
+			if isInlineDirective(pass, branch, comment) {
 				return true
 			}
 			if line == startLine-1 && isDedicatedComment(pass, file, comment) {
@@ -214,6 +267,14 @@ func isSuppressed(pass *analysis.Pass, file *ast.File, branch *ast.IfStmt) bool 
 		}
 	}
 	return false
+}
+
+func isInlineDirective(pass *analysis.Pass, branch *ast.IfStmt, comment *ast.Comment) bool {
+	if comment.Pos() <= branch.Body.Lbrace ||
+		pass.Fset.Position(comment.Pos()).Line != pass.Fset.Position(branch.Body.Lbrace).Line {
+		return false
+	}
+	return len(branch.Body.List) == 0 || comment.Pos() < branch.Body.List[0].Pos()
 }
 
 func isDedicatedComment(pass *analysis.Pass, file *ast.File, comment *ast.Comment) bool {
