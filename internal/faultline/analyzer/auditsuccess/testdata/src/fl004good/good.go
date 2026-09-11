@@ -12,6 +12,13 @@ type unrelatedLogger struct{}
 
 func (unrelatedLogger) Warn(string) {}
 
+type auditResult struct{}
+
+func nonErrorFinalResult() *auditResult {
+	slog.Warn("audit: informational warning")
+	return nil
+}
+
 func failClosed() error {
 	slog.Warn("audit: hard fail")
 	return errAudit
