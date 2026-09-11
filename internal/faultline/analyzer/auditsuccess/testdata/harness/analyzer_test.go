@@ -14,9 +14,12 @@ func TestContractAnalyzer(t *testing.T) {
 	require.Equal(t, "FL004auditsuccess", auditsuccess.Analyzer.Name)
 	require.NotNil(t, auditsuccess.Analyzer.Run)
 
+	testdata, err := filepath.Abs("..")
+	require.NoError(t, err)
+
 	analysistest.Run(
 		t,
-		filepath.Join(".."),
+		testdata,
 		auditsuccess.Analyzer,
 		"fl004bad",
 		"fl004good",

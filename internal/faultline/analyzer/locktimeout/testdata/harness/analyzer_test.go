@@ -14,9 +14,12 @@ func TestContractAnalyzer(t *testing.T) {
 	require.Equal(t, "FL005locktimeout", locktimeout.Analyzer.Name)
 	require.NotNil(t, locktimeout.Analyzer.Run)
 
+	testdata, err := filepath.Abs("..")
+	require.NoError(t, err)
+
 	analysistest.Run(
 		t,
-		filepath.Join(".."),
+		testdata,
 		locktimeout.Analyzer,
 		"fl005bad",
 		"fl005good",

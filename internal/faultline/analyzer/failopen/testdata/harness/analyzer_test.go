@@ -14,9 +14,12 @@ func TestContractAnalyzer(t *testing.T) {
 	require.Equal(t, "FL003failopen", failopen.Analyzer.Name)
 	require.NotNil(t, failopen.Analyzer.Run)
 
+	testdata, err := filepath.Abs("..")
+	require.NoError(t, err)
+
 	analysistest.Run(
 		t,
-		filepath.Join(".."),
+		testdata,
 		failopen.Analyzer,
 		"fl003bad",
 		"fl003good",
