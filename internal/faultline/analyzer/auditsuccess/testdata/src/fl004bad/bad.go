@@ -85,6 +85,14 @@ func warningOrder(flag bool) error {
 	return nil
 }
 
+func nonZeroPayloadDoesNotClear(flag bool) (int, error) {
+	slog.Warn("audit: soft fail") // want "FL004"
+	if flag {
+		return 1, nil
+	}
+	return 0, nil
+}
+
 func trailingSuppressionOwnsImmediateStatement() error {
 //line bad.go:200
 	// want +1 "FL004"

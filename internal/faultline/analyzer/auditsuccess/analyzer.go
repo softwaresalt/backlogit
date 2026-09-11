@@ -194,12 +194,26 @@ func containsErrorReturn(
 		if !ok {
 			return true
 		}
-		if !isSuccessReturn(pass, result, signature) {
+		if hasNonNilTrailingError(pass, result, signature) {
 			found = true
 		}
 		return false
 	})
 	return found
+}
+
+func hasNonNilTrailingError(
+	pass *analysis.Pass,
+	result *ast.ReturnStmt,
+	signature *types.Signature,
+) bool {
+	results := signature.Results()
+	if len(result.Results) != results.Len() {
+		return false
+	}
+
+	last := results.Len() - 1
+	return !isNilZero(pass, result.Results[last], results.At(last).Type())
 }
 
 func isSuccessReturn(
