@@ -2770,3 +2770,4 @@
 {"seq":2772,"timestamp":"2026-09-11T04:09:30.7849978Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["harness_status","labels"],"item_id":"158.009-T","schema_version":1}}
 {"seq":2773,"timestamp":"2026-09-11T04:10:43.5058161Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["harness_status","labels"],"item_id":"158.010-T","schema_version":1}}
 {"seq":2774,"timestamp":"2026-09-11T04:16:09.8221188Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"158.009-T","schema_version":1,"status_delta":{"from":"queued","to":"active"}}}
+{"seq":2775,"timestamp":"2026-09-11T04:50:52.3683683Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"158.009-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
