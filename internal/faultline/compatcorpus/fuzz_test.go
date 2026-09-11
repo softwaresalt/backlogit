@@ -1,6 +1,7 @@
 package compatcorpus
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,10 +16,7 @@ import (
 
 const fuzzCanonicalSeedDir = "testdata/fuzz/FuzzCompatibilityCorpusDecode"
 
-var (
-	errFuzzTargetNotImplemented = errors.New("TODO: implement bounded compatibility corpus decode fuzz target")
-	fuzzAdapterOrder            = []string{"events_jsonl", "frontmatter", "scanner"}
-)
+var fuzzAdapterOrder = []string{"events_jsonl", "frontmatter", "scanner"}
 
 type fuzzSeed struct {
 	name  string
@@ -70,9 +68,6 @@ func FuzzCompatibilityCorpusDecode(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		adapterNames, err := fuzzDecodeAllAdapters(context.Background(), input)
-		if errors.Is(err, errFuzzTargetNotImplemented) {
-			t.Fatalf("%v", err)
-		}
 		if err != nil {
 			t.Fatalf("decode fuzz input: %v", err)
 		}
@@ -88,11 +83,6 @@ func fuzzReplaySeeds(t *testing.T, seeds []fuzzSeed) []string {
 	trace := make([]string, 0, len(seeds))
 	for _, seed := range seeds {
 		adapterNames, err := fuzzDecodeAllAdapters(context.Background(), seed.input)
-		if errors.Is(err, errFuzzTargetNotImplemented) {
-			t.Errorf("%s: %v", seed.name, err)
-			trace = append(trace, seed.name+":TODO")
-			break
-		}
 		if err != nil {
 			t.Errorf("%s adapter replay failed: %v", seed.name, err)
 		}
@@ -104,8 +94,32 @@ func fuzzReplaySeeds(t *testing.T, seeds []fuzzSeed) []string {
 	return trace
 }
 
-func fuzzDecodeAllAdapters(context.Context, []byte) ([]string, error) {
-	return nil, errFuzzTargetNotImplemented
+func fuzzDecodeAllAdapters(ctx context.Context, input []byte) ([]string, error) {
+	adapters := DefaultAdapters()
+	adapterNames := make([]string, 0, len(adapters))
+	for name := range adapters {
+		adapterNames = append(adapterNames, name)
+	}
+	sort.Strings(adapterNames)
+
+	var replayErrors []error
+	for _, name := range adapterNames {
+		adapter := adapters[name]
+		if adapter == nil {
+			replayErrors = append(replayErrors, fmt.Errorf("adapter %q is nil", name))
+			continue
+		}
+
+		_, panicContext, panicked, decodeErr := decodeSafely(ctx, adapter, bytes.Clone(input))
+		_ = decodeErr // Decode errors are valid fuzz outcomes; only panics violate the property.
+		if panicked {
+			replayErrors = append(
+				replayErrors,
+				fmt.Errorf("adapter %q panicked: %s", name, panicContext),
+			)
+		}
+	}
+	return adapterNames, errors.Join(replayErrors...)
 }
 
 func fuzzReadNativeSeeds() ([]fuzzSeed, error) {

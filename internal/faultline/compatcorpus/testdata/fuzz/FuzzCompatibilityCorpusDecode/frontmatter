@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("---\nid: seed\npath: notes/item.md\n---\nbody\n")
