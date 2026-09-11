@@ -108,3 +108,33 @@ Controlling P1 findings:
 * The `success-after-audit-warning` and `uncancellable-lock timeout` analyzers are underspecified as bounded AST checks and likely require CFG, data-flow, or SSA scope.
 * Analyzer source/sink and wrap-boundary definitions are needed to avoid noisy or unsafe fail-open checks.
 * The runner output path into the S4 U4 evidence contract and S10 DAG remains unstated.
+
+## Plan Review
+
+<!-- plan-review-attempt: 3 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+The attempt-2 FAIL is superseded. The executable harness contract that resolves
+every attempt-2 P1 finding is authored in the supplement
+`docs/exec-plans/2026-09-10-s6-140s-harness-contract-supplement.md`, which carries
+its own genuine attempt-3 multi-agent Plan Review (decision PASS) over the
+concrete task-by-task contracts for `158.001-T`..`158.008-T`. This governing plan
+remains the scope authority; the supplement supplies the executable detail (API
+signatures, sentinel-error corpus outcomes, analyzer source/sink boundaries with
+declaration-driven allowlists, fuzz target + canonical seeds + budget, wave
+ordering, and check-target ownership) without changing intended product scope.
+
+Attempt-2 P1 dispositions (detail in the supplement's resolution tables):
+* Fuzzing — RESOLVED: `U-fuzz` / `158.008-T` with exact API, canonical seed dir,
+  30s single-package budget, and a valid seed-regression RED.
+* success-after-audit-warning / uncancellable-lock analyzers — RESOLVED: both
+  re-scoped to AST + type-info, intra-block/function, declaration-driven
+  allowlists; NO CFG/SSA/data-flow.
+* analyzer source/sink & wrap boundaries — RESOLVED: declared per analyzer with
+  explicit false-positive exclusions.
+* runner output into S4-U4 / S10 DAG — RESOLVED: stable `compatcorpus.report/v1`
+  surface; DAG wiring explicitly deferred to S10 (out of 140-S scope).
+
+Gate: **PASS** — executable and scope-bounded via the supplement. Ready for Ship.
