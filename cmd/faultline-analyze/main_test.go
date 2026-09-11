@@ -16,6 +16,7 @@ const multicheckerPackagePath = "golang.org/x/tools/go/analysis/multichecker"
 var (
 	errMulticheckerCallCount = errors.New("unexpected multichecker.Main call count")
 	errMulticheckerPlacement = errors.New("multichecker.Main is not a direct top-level statement in main")
+	errImportShadowing       = errors.New("multichecker wiring import identifier is shadowed")
 	errAnalyzerEnumeration   = errors.New("multichecker.Main does not directly enumerate five analyzers")
 	errAnalyzerOrder         = errors.New("multichecker.Main analyzer order differs from the frozen order")
 )
@@ -98,6 +99,46 @@ func TestValidateMulticheckerWiringRejectsInvalidShapes(t *testing.T) {
 			wantErr: errMulticheckerPlacement,
 		},
 		{
+			name: "return before call",
+			source: validTestProgram(`return
+		multichecker.Main(
+			scannerdiscipline.Analyzer,
+			errwrap.Analyzer,
+			failopen.Analyzer,
+			auditsuccess.Analyzer,
+			locktimeout.Analyzer,
+		)`),
+			wantErr: errMulticheckerPlacement,
+		},
+		{
+			name: "local multichecker import shadowing",
+			source: validTestProgram(`multichecker := struct {
+			Main func(...any)
+		}{}
+		multichecker.Main(
+			scannerdiscipline.Analyzer,
+			errwrap.Analyzer,
+			failopen.Analyzer,
+			auditsuccess.Analyzer,
+			locktimeout.Analyzer,
+		)`),
+			wantErr: errImportShadowing,
+		},
+		{
+			name: "local analyzer import shadowing",
+			source: validTestProgram(`scannerdiscipline := struct {
+			Analyzer any
+		}{}
+		multichecker.Main(
+			scannerdiscipline.Analyzer,
+			errwrap.Analyzer,
+			failopen.Analyzer,
+			auditsuccess.Analyzer,
+			locktimeout.Analyzer,
+		)`),
+			wantErr: errImportShadowing,
+		},
+		{
 			name: "textual aliases bound to wrong imports",
 			source: `package main
 
@@ -150,6 +191,9 @@ func validateMulticheckerWiring(file *ast.File) error {
 	if err != nil {
 		return fmt.Errorf("resolve imports: %w", err)
 	}
+	if shadowedName, ok := findShadowedWiringImport(file, bindings); ok {
+		return fmt.Errorf("%w: %q", errImportShadowing, shadowedName)
+	}
 
 	calls := findMulticheckerMainCalls(file, bindings)
 	if len(calls) != 1 {
@@ -158,7 +202,7 @@ func validateMulticheckerWiring(file *ast.File) error {
 	call := calls[0]
 
 	mainFunction := findMainFunction(file)
-	if mainFunction == nil || !isDirectTopLevelCall(mainFunction, call) {
+	if mainFunction == nil || !isOnlyDirectExpressionCall(mainFunction, call) {
 		return errMulticheckerPlacement
 	}
 	if call.Ellipsis.IsValid() {
@@ -218,6 +262,123 @@ func importBindings(file *ast.File) (map[string]string, error) {
 	return bindings, nil
 }
 
+func findShadowedWiringImport(file *ast.File, bindings map[string]string) (string, bool) {
+	protectedNames := make(map[string]struct{}, len(expectedAnalyzers())+1)
+	for localName, packagePath := range bindings {
+		if packagePath == multicheckerPackagePath || isExpectedAnalyzerPackage(packagePath) {
+			protectedNames[localName] = struct{}{}
+		}
+	}
+
+	var shadowedName string
+	ast.Inspect(file, func(node ast.Node) bool {
+		if shadowedName != "" {
+			return false
+		}
+
+		switch declaration := node.(type) {
+		case *ast.FuncDecl:
+			shadowedName = findFieldImportShadow(
+				protectedNames,
+				declaration.Recv,
+				declaration.Type.TypeParams,
+				declaration.Type.Params,
+				declaration.Type.Results,
+			)
+		case *ast.FuncLit:
+			shadowedName = findFieldImportShadow(
+				protectedNames,
+				declaration.Type.TypeParams,
+				declaration.Type.Params,
+				declaration.Type.Results,
+			)
+		case *ast.DeclStmt:
+			shadowedName = findGeneralDeclarationImportShadow(declaration.Decl, protectedNames)
+		case *ast.AssignStmt:
+			if declaration.Tok == token.DEFINE {
+				shadowedName = findExpressionImportShadow(declaration.Lhs, protectedNames)
+			}
+		case *ast.RangeStmt:
+			if declaration.Tok == token.DEFINE {
+				shadowedName = findExpressionImportShadow(
+					[]ast.Expr{declaration.Key, declaration.Value},
+					protectedNames,
+				)
+			}
+		}
+		return shadowedName == ""
+	})
+	return shadowedName, shadowedName != ""
+}
+
+func isExpectedAnalyzerPackage(packagePath string) bool {
+	for _, analyzer := range expectedAnalyzers() {
+		if packagePath == analyzer.packagePath {
+			return true
+		}
+	}
+	return false
+}
+
+func findFieldImportShadow(
+	protectedNames map[string]struct{},
+	fieldLists ...*ast.FieldList,
+) string {
+	for _, fields := range fieldLists {
+		if fields == nil {
+			continue
+		}
+		for _, field := range fields.List {
+			for _, name := range field.Names {
+				if isProtectedDeclarationName(name, protectedNames) {
+					return name.Name
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func findGeneralDeclarationImportShadow(declaration ast.Decl, protectedNames map[string]struct{}) string {
+	general, ok := declaration.(*ast.GenDecl)
+	if !ok {
+		return ""
+	}
+	for _, spec := range general.Specs {
+		switch declaration := spec.(type) {
+		case *ast.ValueSpec:
+			for _, name := range declaration.Names {
+				if isProtectedDeclarationName(name, protectedNames) {
+					return name.Name
+				}
+			}
+		case *ast.TypeSpec:
+			if isProtectedDeclarationName(declaration.Name, protectedNames) {
+				return declaration.Name.Name
+			}
+		}
+	}
+	return ""
+}
+
+func findExpressionImportShadow(expressions []ast.Expr, protectedNames map[string]struct{}) string {
+	for _, expression := range expressions {
+		identifier, ok := expression.(*ast.Ident)
+		if ok && isProtectedDeclarationName(identifier, protectedNames) {
+			return identifier.Name
+		}
+	}
+	return ""
+}
+
+func isProtectedDeclarationName(identifier *ast.Ident, protectedNames map[string]struct{}) bool {
+	if identifier == nil || identifier.Name == "_" {
+		return false
+	}
+	_, protected := protectedNames[identifier.Name]
+	return protected
+}
+
 func findMulticheckerMainCalls(file *ast.File, bindings map[string]string) []*ast.CallExpr {
 	var calls []*ast.CallExpr
 	ast.Inspect(file, func(node ast.Node) bool {
@@ -249,17 +410,16 @@ func findMainFunction(file *ast.File) *ast.FuncDecl {
 	return mainFunction
 }
 
-func isDirectTopLevelCall(function *ast.FuncDecl, call *ast.CallExpr) bool {
-	for _, statement := range function.Body.List {
-		expression, ok := statement.(*ast.ExprStmt)
-		if !ok {
-			continue
-		}
-		if directCall, ok := expression.X.(*ast.CallExpr); ok && directCall == call {
-			return true
-		}
+func isOnlyDirectExpressionCall(function *ast.FuncDecl, call *ast.CallExpr) bool {
+	if function.Body == nil || len(function.Body.List) != 1 {
+		return false
 	}
-	return false
+	expression, ok := function.Body.List[0].(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	directCall, ok := expression.X.(*ast.CallExpr)
+	return ok && directCall == call
 }
 
 func resolveSelector(bindings map[string]string, expression ast.Expr) (selectorReference, bool) {
