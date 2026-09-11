@@ -137,6 +137,14 @@ func switchedErrResult(r io.Reader) {
 	}
 }
 
+func replacedByUnrelatedScanner(r io.Reader, replacement *bufio.Scanner) {
+	s := bufio.NewScanner(r)
+	s = replacement
+	for s.Scan() {
+		_ = s.Text()
+	}
+}
+
 // methodExpressionScanIsExcluded records FL001's deliberate v.Scan() boundary.
 func methodExpressionScanIsExcluded(r io.Reader) {
 	s := bufio.NewScanner(r)

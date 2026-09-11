@@ -104,3 +104,20 @@ func inexactSuppression(r io.Reader) {
 		_ = s.Text()
 	}
 }
+
+func replacementNewScannerHasOwnLifetime(first, second io.Reader) {
+	s := bufio.NewScanner(first)
+	s = bufio.NewScanner(second) // want "FL001"
+	for s.Scan() {
+		_ = s.Text()
+	}
+}
+
+func assignmentAfterLoopDoesNotHideMissingErr(r io.Reader, replacement *bufio.Scanner) {
+	s := bufio.NewScanner(r) // want "FL001"
+	s.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for s.Scan() {
+		_ = s.Text()
+	}
+	s = replacement
+}

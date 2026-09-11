@@ -52,14 +52,13 @@ func analyzeFunction(pass *analysis.Pass, file *ast.File, functionType *ast.Func
 	}
 
 	creations := scannerCreations(pass, functionType, body)
-	for index, creation := range creations {
-		upperBound := body.End()
-		for _, later := range creations[index+1:] {
-			if later.object == creation.object {
-				upperBound = later.assignment.Pos()
-				break
-			}
-		}
+	for _, creation := range creations {
+		upperBound := nextDirectAssignment(
+			pass,
+			body,
+			creation.object,
+			creation.assignment.End(),
+		)
 
 		if hasSuppression(pass, file, creation.assignment) ||
 			scannerEscapes(
@@ -91,6 +90,30 @@ func analyzeFunction(pass *analysis.Pass, file *ast.File, functionType *ast.Func
 			pass.Reportf(creation.call.Pos(), diagnostic)
 		}
 	}
+}
+
+func nextDirectAssignment(
+	pass *analysis.Pass,
+	body *ast.BlockStmt,
+	object *types.Var,
+	lowerBound token.Pos,
+) token.Pos {
+	upperBound := body.End()
+	inspectFunctionBody(body, func(node ast.Node) bool {
+		assignment, ok := node.(*ast.AssignStmt)
+		if !ok || assignment.Pos() <= lowerBound || assignment.Pos() >= upperBound {
+			return true
+		}
+		for _, left := range assignment.Lhs {
+			identifier, ok := ast.Unparen(left).(*ast.Ident)
+			if ok && pass.TypesInfo.ObjectOf(identifier) == object {
+				upperBound = assignment.Pos()
+				return false
+			}
+		}
+		return true
+	})
+	return upperBound
 }
 
 func scannerCreations(
