@@ -66,8 +66,9 @@ reclaiming `140-S`.
 
 ## Checkpoint disposition
 
-The active Ship checkpoint
-`checkpoint-20260910-235156.json` remains active until this hand-back record and
-the queued lifecycle state are committed. It may then be resolved because the
-Ship execution cursor has been deliberately returned to Stage rather than
-resumed.
+The queued lifecycle state and this hand-back record were committed first at
+`c9f3a92c`. Only after that durable record existed, Ship resolved
+`checkpoint-20260910-235156.json` through
+`backlogit checkpoint resolve`. The checkpoint is now `resolved`; no
+replacement Ship checkpoint was created because execution ownership has been
+deliberately returned to Stage.
