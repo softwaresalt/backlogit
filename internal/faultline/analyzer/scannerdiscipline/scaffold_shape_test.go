@@ -207,14 +207,10 @@ func assertModuleShape(t *testing.T, path string) {
 		t.Errorf("direct golang.org/x/tools v0.39.0 requirement count = %d, want 1", toolsMatches)
 	}
 
-	// No-version-move is a historical-diff property, so task verification compares
-	// the module requirements with implementation base
-	// 87a9f23fa0e073a445f23aeefa6a236edbb1e961. The permanent shape contract pins
-	// only the two versions material to this task rather than freezing unrelated
-	// repository dependencies.
-	if !moduleLineHasVersion(lines, "golang.org/x/text", "v0.32.0") {
-		t.Error("golang.org/x/text must remain at the pre-scaffold version v0.32.0")
-	}
+	// No-version-move is a historical-diff property verified against implementation
+	// base 87a9f23fa0e073a445f23aeefa6a236edbb1e961. Keep the permanent shape
+	// contract limited to the direct x/tools requirement above rather than pinning
+	// unrelated transitive dependencies.
 }
 
 func assertCheckTargetShape(t *testing.T, path string) {
@@ -381,16 +377,6 @@ func reservedPlaceholderComments(
 		}
 	}
 	return result
-}
-
-func moduleLineHasVersion(lines []string, module, version string) bool {
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[0] == module && fields[1] == version {
-			return true
-		}
-	}
-	return false
 }
 
 func flattenScaffoldTypes(fields *ast.FieldList) []string {
