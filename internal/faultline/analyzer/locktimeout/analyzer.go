@@ -3,6 +3,7 @@ package locktimeout
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 	"strings"
 
@@ -31,6 +32,12 @@ type timeoutClaim struct {
 type lockAcquisition struct {
 	block *ast.BlockStmt
 	call  *ast.CallExpr
+}
+
+type directAssignment struct {
+	block     *ast.BlockStmt
+	statement *ast.AssignStmt
+	variable  *types.Var
 }
 
 func run(pass *analysis.Pass) (any, error) {
@@ -67,8 +74,13 @@ func analyzeFunction(
 	parents := functionParents(body)
 	claims := make([]timeoutClaim, 0, 1)
 	acquisitions := make([]lockAcquisition, 0, 1)
+	assignments := make([]directAssignment, 0, 1)
 
 	inspectFunctionBody(body, func(node ast.Node) bool {
+		if assignment, ok := node.(*ast.AssignStmt); ok {
+			assignments = append(assignments, directAssignments(pass, parents, assignment)...)
+		}
+
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
@@ -99,12 +111,36 @@ func analyzeFunction(
 			continue
 		}
 		for _, claim := range claims {
-			if claimReachesAcquisition(claim, acquisition) {
+			if claimReachesAcquisition(pass, parents, claim, acquisition, assignments) {
 				pass.Reportf(acquisition.call.Pos(), diagnostic)
 				break
 			}
 		}
 	}
+}
+
+func directAssignments(
+	pass *analysis.Pass,
+	parents map[ast.Node]ast.Node,
+	statement *ast.AssignStmt,
+) []directAssignment {
+	assignments := make([]directAssignment, 0, len(statement.Lhs))
+	for _, expression := range statement.Lhs {
+		identifier, ok := ast.Unparen(expression).(*ast.Ident)
+		if !ok || identifier.Name == "_" {
+			continue
+		}
+		variable, ok := pass.TypesInfo.ObjectOf(identifier).(*types.Var)
+		if !ok {
+			continue
+		}
+		assignments = append(assignments, directAssignment{
+			block:     containingBlock(parents, statement),
+			statement: statement,
+			variable:  variable,
+		})
+	}
+	return assignments
 }
 
 func importedContextType(pass *analysis.Pass) types.Type {
@@ -268,15 +304,84 @@ func matchesReceiver(pass *analysis.Pass, selector *ast.SelectorExpr, sink lockS
 		named.Obj().Name() == sink.receiverName
 }
 
-func claimReachesAcquisition(claim timeoutClaim, acquisition lockAcquisition) bool {
+func claimReachesAcquisition(
+	pass *analysis.Pass,
+	parents map[ast.Node]ast.Node,
+	claim timeoutClaim,
+	acquisition lockAcquisition,
+	assignments []directAssignment,
+) bool {
 	if claim.block == nil ||
-		claim.block != acquisition.block ||
+		!sameOrDescendantBlock(parents, claim.block, acquisition.block) ||
 		claim.call.End() >= acquisition.call.Pos() ||
-		claim.contextVar.Parent() == nil ||
-		!claim.contextVar.Parent().Contains(acquisition.call.Pos()) {
+		!variableVisibleAt(pass, claim.contextVar, acquisition.call.Pos()) ||
+		claimEndedBeforeAcquisition(parents, claim, acquisition, assignments) {
 		return false
 	}
 	return types.AssignableTo(claim.contextVar.Type(), claim.contextType)
+}
+
+func sameOrDescendantBlock(
+	parents map[ast.Node]ast.Node,
+	ancestor *ast.BlockStmt,
+	descendant *ast.BlockStmt,
+) bool {
+	for block := descendant; block != nil; block = containingBlock(parents, block) {
+		if block == ancestor {
+			return true
+		}
+	}
+	return false
+}
+
+func variableVisibleAt(pass *analysis.Pass, variable *types.Var, position token.Pos) bool {
+	scope := innermostScopeAt(pass, position)
+	if scope == nil {
+		return variable.Parent() != nil && variable.Parent().Contains(position)
+	}
+	_, object := scope.LookupParent(variable.Name(), position)
+	return object == variable
+}
+
+func innermostScopeAt(pass *analysis.Pass, position token.Pos) *types.Scope {
+	var innermost *types.Scope
+	for _, scope := range pass.TypesInfo.Scopes {
+		if !scope.Contains(position) {
+			continue
+		}
+		if innermost == nil || scopeDescendsFrom(scope, innermost) {
+			innermost = scope
+		}
+	}
+	return innermost
+}
+
+func scopeDescendsFrom(scope *types.Scope, ancestor *types.Scope) bool {
+	for current := scope.Parent(); current != nil; current = current.Parent() {
+		if current == ancestor {
+			return true
+		}
+	}
+	return false
+}
+
+func claimEndedBeforeAcquisition(
+	parents map[ast.Node]ast.Node,
+	claim timeoutClaim,
+	acquisition lockAcquisition,
+	assignments []directAssignment,
+) bool {
+	for _, assignment := range assignments {
+		if assignment.variable != claim.contextVar ||
+			assignment.statement.Pos() <= claim.call.End() ||
+			assignment.statement.End() >= acquisition.call.Pos() ||
+			!sameOrDescendantBlock(parents, claim.block, assignment.block) ||
+			!sameOrDescendantBlock(parents, assignment.block, acquisition.block) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func isSuppressed(
@@ -285,24 +390,32 @@ func isSuppressed(
 	parents map[ast.Node]ast.Node,
 	call *ast.CallExpr,
 ) bool {
-	statement := containingStatement(parents, call)
+	statement := containingBlockStatement(parents, call)
 	if statement == nil {
+		return false
+	}
+	block := containingBlock(parents, statement)
+	if block == nil {
 		return false
 	}
 
 	startLine := pass.Fset.Position(statement.Pos()).Line
-	endLine := pass.Fset.Position(statement.End()).Line
 	for _, group := range file.Comments {
 		for _, comment := range group.List {
 			if strings.TrimSpace(comment.Text) != suppressionDirective {
 				continue
 			}
-
 			line := pass.Fset.Position(comment.Pos()).Line
-			if line == endLine && comment.Pos() >= statement.End() {
+			if line == pass.Fset.Position(call.End()).Line &&
+				trailingStatement(pass, block, comment) == statement &&
+				nearestCallBefore(statement, comment) == call {
 				return true
 			}
-			if line == startLine-1 && isDedicatedComment(pass, file, comment) {
+			if line == pass.Fset.Position(call.Pos()).Line-1 &&
+				line == startLine-1 &&
+				isDedicatedComment(pass, file, comment) &&
+				followingStatement(pass, block, comment) == statement &&
+				nearestCallAfter(statement, comment) == call {
 				return true
 			}
 		}
@@ -310,10 +423,83 @@ func isSuppressed(
 	return false
 }
 
-func containingStatement(parents map[ast.Node]ast.Node, node ast.Node) ast.Stmt {
+func trailingStatement(
+	pass *analysis.Pass,
+	block *ast.BlockStmt,
+	comment *ast.Comment,
+) ast.Stmt {
+	commentLine := pass.Fset.Position(comment.Pos()).Line
+	var owner ast.Stmt
+	for _, candidate := range block.List {
+		if candidate.Pos() > comment.Pos() ||
+			(candidate.End() < comment.Pos() &&
+				pass.Fset.Position(candidate.End()).Line != commentLine) {
+			continue
+		}
+		if owner == nil || candidate.Pos() > owner.Pos() {
+			owner = candidate
+		}
+	}
+	return owner
+}
+
+func followingStatement(
+	pass *analysis.Pass,
+	block *ast.BlockStmt,
+	comment *ast.Comment,
+) ast.Stmt {
+	followingLine := pass.Fset.Position(comment.Pos()).Line + 1
+	var owner ast.Stmt
+	for _, candidate := range block.List {
+		if candidate.Pos() < comment.End() ||
+			pass.Fset.Position(candidate.Pos()).Line != followingLine {
+			continue
+		}
+		if owner == nil || candidate.Pos() < owner.Pos() {
+			owner = candidate
+		}
+	}
+	return owner
+}
+
+func nearestCallBefore(statement ast.Stmt, comment *ast.Comment) *ast.CallExpr {
+	var nearest *ast.CallExpr
+	ast.Inspect(statement, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || call.End() > comment.Pos() {
+			return true
+		}
+		if nearest == nil || call.End() > nearest.End() {
+			nearest = call
+		}
+		return true
+	})
+	return nearest
+}
+
+func nearestCallAfter(statement ast.Stmt, comment *ast.Comment) *ast.CallExpr {
+	var nearest *ast.CallExpr
+	ast.Inspect(statement, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || call.Pos() < comment.End() {
+			return true
+		}
+		if nearest == nil || call.Pos() < nearest.Pos() {
+			nearest = call
+		}
+		return true
+	})
+	return nearest
+}
+
+func containingBlockStatement(parents map[ast.Node]ast.Node, node ast.Node) ast.Stmt {
+	var owner ast.Stmt
 	for parent := parents[node]; parent != nil; parent = parents[parent] {
+		if _, ok := parent.(*ast.BlockStmt); ok {
+			return owner
+		}
 		if statement, ok := parent.(ast.Stmt); ok {
-			return statement
+			owner = statement
 		}
 	}
 	return nil

@@ -42,10 +42,6 @@ var uncancellableLockSinks = [...]lockSink{
 		receiverName:    "RWMutex",
 	},
 	{
-		selector:    "Lock",
-		anyReceiver: true,
-	},
-	{
 		selector:    "Acquire",
 		anyReceiver: true,
 	},
