@@ -3,6 +3,8 @@ package fl001good
 import (
 	"bufio"
 	"io"
+
+	"notbufio"
 )
 
 var externalScanner *bufio.Scanner
@@ -138,6 +140,13 @@ func methodExpressionScanIsExcluded(r io.Reader) {
 	s := bufio.NewScanner(r)
 	scan := (*bufio.Scanner).Scan
 	for scan(s) {
+		_ = s.Text()
+	}
+}
+
+func nameCompatibleNonBufioConstructorIsExcluded(r io.Reader) {
+	s := notbufio.NewScanner(r)
+	for s.Scan() {
 		_ = s.Text()
 	}
 }

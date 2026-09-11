@@ -28,6 +28,27 @@ func missingBuffer(r io.Reader) error {
 	return s.Err()
 }
 
+func bufferAfterScanLoop(r io.Reader) error {
+	s := bufio.NewScanner(r) // want "FL001"
+	for s.Scan() {
+		_ = s.Text()
+	}
+	s.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	return s.Err()
+}
+
+func errBeforeScanLoop(r io.Reader) error {
+	s := bufio.NewScanner(r) // want "FL001"
+	s.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	if err := s.Err(); err != nil {
+		return err
+	}
+	for s.Scan() {
+		_ = s.Text()
+	}
+	return nil
+}
+
 func localAliasIsNotEscape(r io.Reader) {
 	s := bufio.NewScanner(r) // want "FL001"
 	alias := s
