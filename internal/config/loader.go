@@ -41,6 +41,19 @@ func Load(_ context.Context, workspacePath string) (*WorkspaceConfig, error) {
 	applyEnvOverrides(&cfg)
 	applyBugLevelConfig(&cfg)
 
+	// reconcile.trusted_refs (#423, 167.012-T) is deliberately NOT eagerly
+	// defaulted here: resolving the repository default branch shells out to
+	// git, and Load is called on every workspace open across thousands of
+	// ephemeral test/CLI workspaces. Eager resolution here was measured to
+	// cause severe cumulative slowdowns/hangs across the wider test suite.
+	// An absent or empty cfg.Reconcile is a valid, fully-loaded config;
+	// ReconcileConfig.Normalize is called lazily by the actual consumer (U2
+	// evidence, 167.001-T) only when trusted-ref resolution is genuinely
+	// needed, never as part of ordinary config loading.
+	if cfg.Reconcile == nil {
+		cfg.Reconcile = &ReconcileConfig{}
+	}
+
 	if err := cfg.Validate(); err != nil {
 		var validationErrs validator.ValidationErrors
 		if errors.As(err, &validationErrs) {

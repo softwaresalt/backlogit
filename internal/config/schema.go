@@ -41,6 +41,49 @@ type WorkspaceConfig struct {
 	// enforcement may still be anchored outside the workspace — see
 	// FormalGateEnforced.
 	FormalGate *FormalGateConfig `yaml:"formal_gate,omitempty"`
+	// Reconcile configures governed shipment-reconciliation behavior (#423).
+	// Nil is equivalent to the zero value; Normalize fills in the resolved
+	// repository default branch when TrustedRefs is unset.
+	Reconcile *ReconcileConfig `yaml:"reconcile,omitempty"`
+}
+
+// ReconcileConfig configures governed shipment-reconciliation evidence trust
+// boundaries (#423, 167-F). It is deliberately distinct from
+// PreTaskCompletionGateConfig.BaseRef: that field configures an unrelated
+// pre-task-completion gate, and reconcile.trusted_refs MUST NOT repurpose it.
+type ReconcileConfig struct {
+	// TrustedRefs lists the git refs a reconcile delivery-evidence merge SHA
+	// must be reachable from (see internal/core shipment reconcile evidence,
+	// U2). When empty/unset, Normalize resolves it to the repository's
+	// default branch. Each entry must be non-empty after trimming
+	// whitespace.
+	TrustedRefs []string `yaml:"trusted_refs,omitempty" validate:"omitempty,dive,required"`
+}
+
+// Normalize fills TrustedRefs with the resolved repository default branch
+// when it is unset. It is idempotent: a non-empty TrustedRefs is left
+// untouched. resolve is injectable for tests; a nil resolve falls back to
+// ResolveDefaultBranch.
+func (r *ReconcileConfig) Normalize(workspacePath string, resolve DefaultBranchResolver) error {
+	if r == nil {
+		return nil
+	}
+	if len(r.TrustedRefs) > 0 {
+		return nil
+	}
+	if resolve == nil {
+		resolve = ResolveDefaultBranch
+	}
+	branch, err := resolve(workspacePath)
+	if err != nil {
+		return fmt.Errorf("resolve repository default branch for reconcile.trusted_refs: %w", err)
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return fmt.Errorf("resolved repository default branch for reconcile.trusted_refs is empty")
+	}
+	r.TrustedRefs = []string{branch}
+	return nil
 }
 
 // FormalGateConfig configures optional HMAC-authenticated formal gate evidence
