@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: "autoharness cross-gate contract inconsistency: dag-readiness reports 148-S/149-S ready while pipeline-topology pre_claim blocks them via the intentional implicit numeric-adjacency predecessor fallback; the two gates give contradictory readiness answers with no reconciled source of truth"
+description: "autoharness advisory-semantics mismatch: dag-readiness is advisory-only visibility/reporting whose ready_set/cursor does NOT authorize a claim, while pipeline-topology --phase pre_claim is the sole claim authority and intentionally blocks 148-S/149-S via the implicit numeric-adjacency predecessor. Differing results are NOT competing claim authorities; the gap is that advisory readiness output can mislead operators when it does not prominently label its non-authorizing model and the implicit predecessors pre_claim may add"
 doc_type: guide
 docline:
   author: Stage
@@ -9,10 +9,10 @@ docline:
 ingested_at: "2026-09-11T00:00:00Z"
 schema_version: "1.0"
 source: docs/scratch/2026-09-11-autoharness-pipeline-topology-numeric-predecessor-bug.md
-title: "autoharness cross-gate inconsistency — dag-readiness and pipeline-topology pre_claim disagree on implicit vs. explicit predecessor sequencing"
+title: "autoharness advisory-semantics mismatch — dag-readiness advisory output can mislead because pipeline-topology pre_claim is the sole claim authority"
 ---
 
-# autoharness cross-gate inconsistency — `dag-readiness` and `pipeline-topology pre_claim` disagree on implicit vs. explicit predecessor sequencing
+# autoharness advisory-semantics mismatch — `dag-readiness` advisory output can mislead operators because `pipeline-topology pre_claim` is the sole claim authority
 
 > **Transfer note & lifecycle.** This document was authored in the `backlogit`
 > workspace but describes a defect that belongs to the **separate `autoharness`
@@ -32,44 +32,62 @@ title: "autoharness cross-gate inconsistency — dag-readiness and pipeline-topo
 >
 > - **PR #438** in `softwaresalt/backlogit` carries this document and the stash
 >   entry in version history (recoverable even after scratch compaction).
-> - The authoritative **source-workspace** analysis lives at
+> - A prior **source-workspace** analysis lives at
 >   `docs/decisions/2026-09-06-queued-shipment-ordered-scope-decision.md`
->   (section 4, "Topology gate: numeric-predecessor behavior", and follow-up 7a),
->   which remains the durable `backlogit`-side record.
+>   (section 4, "Topology gate: numeric-predecessor behavior", and follow-up 7a).
+>   That document is **historical source-workspace analysis, superseded by this
+>   report's verified upstream semantics** (see §1 and §9): it predates the
+>   verification that `dag-readiness` is advisory-only and that
+>   `pipeline-topology --phase pre_claim` is the sole claim authority. It is
+>   **not authoritative** for claim decisions and is cited for provenance and
+>   history only.
 >
 > If you are reading this after transfer, copy it into a durable `autoharness`
 > location; do not link back to this `docs/scratch/` path as a stable reference.
 
 ## 1. Summary
 
-Two sibling gates in the `autoharness` binary return **contradictory
-claim-readiness answers** for the same shipment, with **no exposed or reconciled
-source of truth** for which sequencing model governs:
+Two sibling gates in the `autoharness` binary answer different questions for the
+same shipment, and the **advisory** gate's output can mislead operators into
+believing a shipment is claimable when the **authoritative** claim gate blocks it:
 
 - `dag-readiness` reads the explicit shipment **`blocks` DAG** and reports
-  `148-S` (and `149-S`) in its `ready_set`.
-- `pipeline-topology --phase pre_claim` reports the *same* shipments as
-  **`blocked` with `PREDECESSOR_NOT_SHIPPED`**, because it applies an **implicit
-  numeric-adjacency predecessor fallback** (nearest lower-numbered shipment) when
-  no explicit `blocks` predecessor is declared.
+  `148-S` (and `149-S`) in its `ready_set`. **`dag-readiness` is advisory
+  visibility/reporting only.** Its `ready_set`/cursor/`next_eligible` output is an
+  explicit-DAG analysis; it does **NOT** authorize a shipment claim.
+- `pipeline-topology --phase pre_claim` is the **sole BLOCK/claim authority**. It
+  reports the *same* shipments as **`blocked` with `PREDECESSOR_NOT_SHIPPED`**,
+  because it applies an **implicit numeric-adjacency predecessor** (nearest
+  lower-numbered shipment) when no explicit `blocks` predecessor is declared.
 
-**The implicit numeric-adjacency fallback is an intentional current `autoharness`
-safety contract, not an accidental bug.** It is preserved on purpose — see
-upstream commit `14c32ef879fd7d67a8ac6b0dfd55dad056ba34d2`, which *retains* the
-numeric-adjacency implicit-predecessor fallback (while fixing a separate
-fail-open suppression bug), and `tests/test_gates_topology.py::ImplicitNumericPredecessorTests`,
-which documents the heuristic as intentional: it catches an
-**unstated-but-intended sequential predecessor** when no shipment declares
-dependencies. This report therefore does **not** assert that numeric-predecessor
-logic is itself a defect, and does **not** mandate DAG-only resolution as settled
-contract.
+**The implicit numeric-adjacency predecessor is an intentional current
+`autoharness` safety behavior, not an accidental bug.** It is preserved on
+purpose — see upstream commit `14c32ef879fd7d67a8ac6b0dfd55dad056ba34d2`, which
+*retains* the numeric-adjacency implicit-predecessor behavior (while fixing a
+separate fail-open suppression bug), and
+`tests/test_gates_topology.py::ImplicitNumericPredecessorTests`, which documents
+the heuristic as intentional: it catches an **unstated-but-intended sequential
+predecessor** when no shipment declares dependencies. This report therefore does
+**not** assert that numeric-predecessor logic is itself a defect.
 
-**The actionable defect is the cross-gate contract inconsistency / ambiguous
-source of truth.** For a shipment that is a DAG root but has a lower-numbered
-neighbor, `dag-readiness` (explicit-DAG model) and `pre_claim` (implicit-fallback
-model) disagree, and neither gate exposes *which* model is authoritative or
-reconciles the two. Operators and agents cannot get one coherent claim-readiness
-answer from the gate suite.
+**These differing results do NOT create competing claim authorities.** There is
+exactly one claim authority — `pipeline-topology --phase pre_claim` — and it is
+authoritative. `dag-readiness` and `pre_claim` answer *different questions*
+(explicit-DAG readiness analysis vs. claim gating), so their differing answers are
+expected and not a contract conflict. Concretely: **`148-S` is NOT claimable**
+under the gate-compliant path unless **either** its implicit predecessor (`147-S`)
+reaches the shipped terminal state, **or** an explicit, operator-authorized,
+audited `pre_claim --force` override is issued for that specific shipment. A
+`dag-readiness` `ready_set` entry never changes that.
+
+**The actionable follow-up is an advisory-semantics / presentation-model gap.**
+Because `dag-readiness` presents a shipment as "ready" without prominently
+explaining that it is advisory-only and that `pre_claim` may add an implicit
+numeric predecessor, an operator (or agent) can misread advisory readiness as
+claim authorization. The remedy belongs in `autoharness` and is about making the
+advisory output honest about its model and non-authorizing status, and surfacing
+the authoritative `pre_claim` outcome — **not** about forcing both gates to return
+identical claim answers (see §7).
 
 ## 2. Environment
 
@@ -144,7 +162,7 @@ autoharness gate dag-readiness --workspace <WORKSPACE> --json
 Observed: `ready_set` includes `148-S` (e.g. `[141-S, 148-S, 149-S, 152-S]`);
 `148-S` is reported ready under the explicit-DAG model.
 
-### 3.3 Run the contradicting gate (autoharness pipeline-topology pre_claim)
+### 3.3 Run the authoritative claim gate (autoharness pipeline-topology pre_claim)
 
 ```sh
 cd <WORKSPACE>
@@ -157,169 +175,190 @@ autoharness gate pipeline-topology --mode agent --shipment 148-S --phase pre_cla
 ### Observed
 
 - `pre_claim 148-S` → `blocked: true` with `PREDECESSOR_NOT_SHIPPED`, selecting
-  predecessor **`147-S`** via the implicit numeric-adjacency fallback. `147-S` is
-  *not* an explicit `blocks` predecessor of `148-S` (which has zero explicit
+  predecessor **`147-S`** via the implicit numeric-adjacency predecessor. `147-S`
+  is *not* an explicit `blocks` predecessor of `148-S` (which has zero explicit
   predecessors); it is the numerically-adjacent ID that the intentional heuristic
-  substitutes when no dependency is declared.
+  substitutes when no dependency is declared. **This is the authoritative claim
+  answer: `148-S` is not claimable while `147-S` is unshipped.**
 - `pre_claim 149-S` → `blocked: true`, selecting predecessor **`148-S`** — again
-  the numeric-adjacency fallback, not an explicit edge.
+  the implicit numeric-adjacency predecessor, not an explicit edge.
 - `pre_claim 138-S` → `blocked: false`, because its numeric neighbor `137-S`
-  happens to be shipped (the implicit fallback coincidentally matches reality).
-- `dag-readiness` reports `148-S`/`149-S` **ready** at the same time.
+  happens to be shipped (the implicit predecessor coincidentally matches reality).
+- `dag-readiness` reports `148-S`/`149-S` in its advisory `ready_set` at the same
+  time — advisory-only, and **not** a claim authorization.
 
 The observed *behavior of each gate individually* is consistent with its own
-model. The problem is that the **two gates model sequencing differently and
-disagree**, and nothing reconciles them.
+question. `pre_claim` is the authoritative claim gate; `dag-readiness` is an
+advisory explicit-DAG analysis. They answer different questions, so they are
+**not** in contract conflict. The presentation problem is that advisory readiness
+does not label itself as non-authorizing, so it can be misread as claim
+authorization.
 
-### Expected (one coherent contract — direction is an upstream decision, see §7)
+### Expected (honest advisory presentation — the remedy is an upstream decision, see §7)
 
-- The gate suite must return **one coherent claim-readiness answer** per shipment.
-  A shipment reported `ready` by `dag-readiness` must not simultaneously be
-  `pre_claim`-blocked with no exposed rationale linking the two models.
-- Whichever sequencing model is authoritative (explicit-DAG-only, or
-  explicit-DAG-plus-intentional-implicit-fallback) must be **applied consistently
-  by both gates** and **surfaced in the gate output**, so an operator can tell
-  *why* a root with a lower-numbered neighbor is or is not claimable.
+- The gate suite already has one claim authority (`pre_claim`); that is correct
+  and must not change. The fix is **presentation-model honesty**, not making the
+  two gates return identical claim answers.
+- `dag-readiness` advisory output must **prominently label its model and
+  non-authorizing status** and make clear that `pre_claim` may add an implicit
+  numeric predecessor, so an operator can tell *why* a root with a lower-numbered
+  neighbor that appears "ready" is nonetheless not claimable. The authoritative
+  `pre_claim` outcome should be **surfaced alongside/within** the advisory report.
 
 This report deliberately does **not** assert the "expected" result is
-`blocked: false`. If the implicit fallback is retained as the authoritative
-contract (§7 Option A), then `148-S` being held behind `147-S` is *intended*, and
-`dag-readiness` is the gate that must be reconciled to report the same implicit
-predecessor. Which gate changes is the upstream decision in §7.
+`blocked: false`. The `pre_claim` block on `148-S` behind `147-S` is the
+**intended, authoritative** behavior. The advisory `dag-readiness` `ready_set`
+entry is not wrong either — it is simply an explicit-DAG analysis that does not
+speak to claim authority. The remedy is to make the advisory output say so
+prominently (see §7); it is **not** to force the two gates to return identical
+claim answers.
 
 ## 5. Impact
 
-- **Ambiguous source of truth for claim decisions.** `dag-readiness` says ready;
-  `pre_claim` says blocked. Neither gate declares which sequencing model wins, so
-  operators and agents cannot derive a single trustworthy claim-readiness answer
-  and are pushed toward manual overrides or guesswork.
-- **Sequencing intent is invisible.** If the implicit numeric fallback is the
-  intended safety contract (catching an unstated-but-intended predecessor), that
-  intent is not exposed by `dag-readiness`, so a DAG-independent root looks freely
-  claimable in one gate and serialized in the other with no explanation.
-- **Delivery latency risk from an unreconciled contract.** Whichever direction is
-  correct, today a critical, plan-ready, DAG-independent root such as `148-S` can
-  be held behind a numerically-lower track while a *different* gate simultaneously
-  reports it ready — and downstream convergent work (`150-S`/`151-S`) inherits the
-  ambiguity. This is a program-latency and trust risk, not evidence that either
-  gate's internal logic is broken.
+- **Advisory readiness can be misread as claim authorization.** `dag-readiness`
+  presents `148-S`/`149-S` as "ready" without prominently stating that it is
+  advisory-only and that `pre_claim` may add an implicit numeric predecessor. An
+  operator or agent can mistake the advisory `ready_set`/`next_eligible` for a
+  green light to claim, then hit the authoritative `pre_claim` block — or worse,
+  reach for an override they did not need.
+- **Sequencing intent is invisible in the advisory view.** The intentional
+  implicit numeric predecessor (catching an unstated-but-intended predecessor) is
+  applied by `pre_claim` but not surfaced by `dag-readiness`, so a DAG-independent
+  root looks freely claimable in the advisory view and serialized by the
+  authoritative gate with no explanation linking the two.
+- **Operator-trust and latency risk from a presentation gap.** Because the
+  advisory and authoritative views are not shown together, operators can lose
+  trust in the gate suite or make mis-sequenced decisions. This is a
+  presentation/model-honesty risk, not evidence that either gate's internal logic
+  is broken — and specifically not a competing-claim-authority problem.
 
-## 6. Likely contract boundary (where the reconciliation belongs)
+## 6. Likely contract boundary (where the remedy belongs)
 
-- The inconsistency is between two gates in the **`autoharness` gate core**: the
-  `pre_claim` predecessor-derivation step (explicit `blocks` edges **plus** the
-  intentional implicit numeric-adjacency fallback) and the `dag-readiness`
-  ready-set computation (explicit `blocks` edges **only**).
-- The reconciliation therefore belongs in `autoharness`: define a **single
-  predecessor/sequencing model** and have **both** gates consume it (ideally a
-  shared code path), plus expose in the gate output which model produced the
-  answer. The specific direction is the §7 decision.
+- The gap is in how the **`autoharness` gate core** *presents* two correctly
+  differing answers: the authoritative `pre_claim` predecessor-derivation step
+  (explicit `blocks` edges **plus** the intentional implicit numeric-adjacency
+  predecessor) and the advisory `dag-readiness` ready-set computation (explicit
+  `blocks` edges **only**).
+- The remedy therefore belongs in `autoharness`: keep `pre_claim` as the sole
+  claim authority and make the advisory `dag-readiness` output **honest about its
+  model and non-authorizing status**, surface the authoritative `pre_claim`
+  outcome alongside/within the report, and (optionally) model/report implicit
+  predecessors as a separate field/view. The specific remedy is the §7 decision.
+  This does **not** require both gates to return the same claim answer.
 - **No `backlogit` change is required or appropriate.** The dependency data is
   already correct and consistent in `backlogit` (`dep list` and the explicit-DAG
   `dag-readiness` agree). No `backlogit`-side lever (dependency edges, priority,
   or `queue_position`) can change a predecessor that the intentional heuristic
-  derives from the shipment ID itself — this must be reconciled inside
+  derives from the shipment ID itself — the presentation remedy is inside
   `autoharness`.
 
-## 7. Required upstream decision & acceptance criteria
+## 7. Requested upstream remedy & acceptance criteria
 
-**This is a follow-up requiring an upstream decision, not a settled bug fix.**
-Upstream must choose **one** authoritative sequencing model and make both gates
-agree. The intentional numeric fallback (commit `14c32ef` +
+**This is a follow-up requiring an upstream product/contract decision, not a
+settled bug fix.** `pipeline-topology --phase pre_claim` remains the sole claim
+authority and the intentional numeric predecessor (commit `14c32ef` +
 `ImplicitNumericPredecessorTests`) must **not** be deleted as though it were a
-proven accidental bug.
+proven accidental bug. The requested remedy is to make the **advisory output
+honest and the authoritative outcome visible** — the gates are **not** required
+to return identical claim answers.
 
-### Decision required (choose exactly one)
+### Requested remedy (one or more of the following)
 
-- **Option A — Retain implicit sequencing; reconcile `dag-readiness` to it.**
-  Keep the intentional numeric-adjacency implicit predecessor in `pre_claim` and
-  make `dag-readiness` **model and report the same implicit predecessors**, so a
-  root with an unshipped lower-numbered neighbor is reported *not* ready by both
-  gates (with the implicit predecessor named). Preserves the existing safety
-  guarantee; changes `dag-readiness`.
-- **Option B — Adopt explicit-DAG-only readiness; deliberately migrate off the
-  fallback.** Make `pre_claim` derive predecessors **exclusively** from the
-  explicit `blocks` DAG (matching `dag-readiness`), and **deliberately remove or
-  migrate** the numeric-adjacency fallback. This is a **contract change**: it must
-  update `ImplicitNumericPredecessorTests` (and any peer fixtures) to reflect the
-  new contract, document the removed safety behavior, and provide a migration path
-  for backlogs that relied on implicit sequencing (e.g. require explicit `blocks`
-  edges where implicit adjacency previously served).
+- **Label the advisory model and non-authorizing status.** `dag-readiness` output
+  must clearly state that it is advisory explicit-DAG analysis and that its
+  `ready_set`/cursor/`next_eligible` does **NOT** authorize a claim.
+- **Surface the authoritative outcome.** Show the `pipeline-topology --phase
+  pre_claim` result (block state + selected predecessor) alongside or within the
+  advisory report, so the authoritative answer travels with the advisory one.
+- **Model implicit predecessors explicitly (optional).** Represent/report the
+  implicit numeric-adjacency predecessor as a separate field or view in the
+  advisory output, so an operator can see *why* an apparently-ready root is held.
+- **Disambiguate `next_eligible`.** Ensure `next_eligible` (and any cursor
+  affordance) cannot be mistaken for claim authorization — e.g. rename, annotate,
+  or gate it behind the authoritative `pre_claim` result.
 
-### Acceptance criteria (apply to whichever option is chosen)
+### Numeric-fallback removal is an explicit *future* option, not the presumed fix
 
-1. **One sequencing model, both gates.** `pipeline-topology --phase pre_claim` and
-   `dag-readiness` resolve predecessors from the **same** model (ideally a shared,
-   provably-equivalent code path) so they cannot diverge again.
-2. **Agreement invariant.** For every shipment, `pre_claim` blocked-state and
-   `dag-readiness` ready-set membership are **mutually consistent**: a shipment in
-   the `ready_set` is not `pre_claim`-blocked, and vice-versa, under the chosen
-   model.
-3. **Model is exposed.** Gate output states which predecessor(s) drove the
-   decision and whether each is an **explicit `blocks` edge** or an **implicit
-   numeric-adjacency** predecessor, so the answer is auditable.
-4. **Regression coverage for the reconciled contract.** Cover the independent
+Removing or migrating the numeric-adjacency implicit predecessor from `pre_claim`
+(so predecessors derive **exclusively** from the explicit `blocks` DAG) remains a
+**possible future contract change** — but it is **not** the presumed or requested
+fix here. If upstream ever chooses it, it is a deliberate contract change that
+must update `ImplicitNumericPredecessorTests` (and any peer fixtures) to the new
+contract, document the removed safety behavior, and provide a migration path for
+backlogs that relied on implicit sequencing (e.g. require explicit `blocks` edges
+where implicit adjacency previously served). Until then, the numeric predecessor
+stays and the requested remedy is presentation honesty (above).
+
+### Acceptance criteria
+
+1. **`pre_claim` stays the sole claim authority.** No change makes `dag-readiness`
+   (or its `ready_set`/cursor/`next_eligible`) authorize a claim. The two gates
+   are **not** required to return identical claim answers.
+2. **Advisory output is honest about its model.** `dag-readiness` output labels
+   itself advisory explicit-DAG analysis and states it does not authorize claims.
+3. **Authoritative outcome is visible.** The `pre_claim` block state and selected
+   predecessor (explicit `blocks` edge vs. implicit numeric-adjacency) are
+   surfaced alongside/within the advisory report and are auditable.
+4. **`next_eligible` cannot be mistaken for authorization.** The cursor/eligibility
+   affordance is renamed, annotated, or gated so it reads as advisory only.
+5. **Regression coverage for the presentation contract.** Cover the independent
    numeric-adjacent roots fixture (`148-S`/`149-S`: numerically adjacent, both DAG
    roots, neither an explicit predecessor of the other), a convergence case
    (`150-S`/`151-S` depending on both roots), and a linear-track case, asserting
-   **both gates return the same claim-readiness** for each.
-5. **If Option B: contract-change hygiene.** `ImplicitNumericPredecessorTests` and
-   any dependent fixtures/docs are updated to the new explicit-DAG-only contract,
-   the removed safety behavior is documented, and backward-compatibility/migration
-   implications for implicit-sequencing backlogs are stated.
-6. **If Option A: reconciliation hygiene.** `dag-readiness` regression tests are
-   added asserting it reports the same implicit predecessors as `pre_claim`, and
-   its output documents the implicit-predecessor semantics.
+   the advisory output carries the non-authorizing label and the authoritative
+   `pre_claim` outcome for each.
+6. **If numeric-fallback removal is later chosen:** apply the contract-change
+   hygiene above (`ImplicitNumericPredecessorTests` + dependent fixtures/docs
+   updated, removed safety behavior documented, migration/back-compat stated).
 
-### Preferred recommendation (proposal only — not existing contract)
+## 8. Safe interim & gate-compliant paths (until the advisory presentation is fixed)
 
-**Proposed (not authoritative):** prefer **Option A** *unless* the program has
-already committed to explicit `blocks` edges everywhere. Rationale: the numeric
-fallback is a deliberately-retained safety net for backlogs that omit explicit
-edges (per `14c32ef` and `ImplicitNumericPredecessorTests`), and reconciling
-`dag-readiness` to it is lower-blast-radius than removing a guarantee other
-consumers may depend on. If upstream instead standardizes on explicit `blocks`
-edges as the sole sequencing source, Option B is preferable — but only as a
-deliberate, tested, documented contract change. **This preference is a proposal
-for the upstream owner to decide; it is not the current `autoharness` contract.**
-
-## 8. Safe interim workaround (until the contract is reconciled)
-
-- The only interim path to claim a DAG-root that the implicit fallback holds
-  behind a numeric neighbor is an **operator-authorized, audited** `pre_claim`
-  override (e.g. `--force`).
+- **Ordinary gate-compliant path (preferred).** Ship the numeric predecessor
+  chain first: claim/ship `147-S` (and the linear track ahead of it) so that
+  `pre_claim` on `148-S` clears normally. This requires **no override** and is the
+  intended sequencing — the implicit predecessor is satisfied by shipping it.
+- **`--force` override (only to claim before the predecessor is shipped).** The
+  **only** way to claim `148-S` **before** `147-S` reaches the shipped terminal
+  state is an **operator-authorized, audited** `pre_claim --force` override.
 - **This override must be explicitly authorized by a human operator for a
   specific, named shipment, and recorded in the audit trail. It must NEVER be
   applied automatically, blanket-enabled, or issued by an agent on its own
   authority.**
 - The override is a stopgap for a single known-good claim, not a substitute for
-  reconciling the gates. Each use should reference this inconsistency and the
+  fixing the advisory presentation. Each use should reference this report and the
   `dag-readiness` evidence showing the shipment is ready under the explicit-DAG
-  model.
+  model (advisory-only).
 
 ## 9. Supporting evidence
 
-- **Upstream (autoharness), verified — fallback is intentional:**
+- **Upstream (autoharness), verified — implicit predecessor is intentional; `dag-readiness` is advisory-only:**
   - Commit `14c32ef879fd7d67a8ac6b0dfd55dad056ba34d2` preserves the
-    numeric-adjacency implicit-predecessor fallback (and fixes a separate
+    numeric-adjacency implicit-predecessor behavior (and fixes a separate
     fail-open suppression bug).
   - `tests/test_gates_topology.py::ImplicitNumericPredecessorTests` documents the
     heuristic as intentional (catches an unstated-but-intended sequential
     predecessor when no shipment declares dependencies).
+  - Verified upstream semantics: `dag-readiness` is **advisory** visibility/
+    reporting only — its `ready_set`/cursor does **not** authorize a claim — and
+    `pipeline-topology --phase pre_claim` is the **sole** BLOCK/claim authority.
 - **Backlogit-side, read-only:**
   - `backlogit dep list 148-S` (forward): no incoming dependencies;
     `backlogit dep list 148-S --reverse`: only `150-S` and `151-S` depend on
     `148-S`.
   - `autoharness gate dag-readiness --workspace <WORKSPACE> --json`: `ready_set`
-    contains `148-S` (ready under explicit-DAG model).
+    contains `148-S` (advisory-only; ready under explicit-DAG model, not a claim
+    authorization).
   - `autoharness gate pipeline-topology --mode agent --shipment 148-S --phase pre_claim --json`:
-    `blocked: true`, `predecessor_id: 147-S` (implicit numeric-adjacency fallback,
-    not an explicit `blocks` edge).
-- **Non-portable source-workspace reference (does not resolve after transfer).**
+    `blocked: true`, `predecessor_id: 147-S` (implicit numeric-adjacency
+    predecessor, not an explicit `blocks` edge) — the authoritative claim answer.
+- **Historical source-workspace analysis, superseded (does not resolve after transfer).**
   A prior analysis exists in the *source* `backlogit` workspace at
   `docs/decisions/2026-09-06-queued-shipment-ordered-scope-decision.md`
-  (section 4 "Topology gate: numeric-predecessor behavior" and follow-up 7a).
-  This path is internal to the `backlogit` workspace and will **not** resolve in
-  the `autoharness` workspace; it is cited for provenance only. This report is
-  self-contained — all evidence needed to understand and reconcile the
-  inconsistency is in sections 1–8 above and does not depend on that document.
+  (section 4 "Topology gate: numeric-predecessor behavior" and follow-up 7a). It
+  is **historical source-workspace analysis, superseded by this report's verified
+  upstream semantics** (advisory `dag-readiness` vs. authoritative `pre_claim`),
+  and is **not authoritative** for claim decisions. This path is internal to the
+  `backlogit` workspace and will **not** resolve in the `autoharness` workspace;
+  it is cited for provenance/history only. This report is self-contained — all
+  evidence needed to understand and remedy the advisory-semantics mismatch is in
+  sections 1–8 above and does not depend on that document.
