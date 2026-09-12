@@ -262,20 +262,27 @@ proven accidental bug. The requested remedy is to make the **advisory output
 honest and the authoritative outcome visible** — the gates are **not** required
 to return identical claim answers.
 
-### Requested remedy (one or more of the following)
+### Requested remedy (three required changes, one optional)
 
-- **Label the advisory model and non-authorizing status.** `dag-readiness` output
-  must clearly state that it is advisory explicit-DAG analysis and that its
-  `ready_set`/cursor/`next_eligible` does **NOT** authorize a claim.
-- **Surface the authoritative outcome.** Show the `pipeline-topology --phase
-  pre_claim` result (block state + selected predecessor) alongside or within the
-  advisory report, so the authoritative answer travels with the advisory one.
-- **Model implicit predecessors explicitly (optional).** Represent/report the
+Three of the changes below are **required** — they are the substance of
+acceptance criteria 2, 3, and 4 and must all land, not a choose-any menu. The
+fourth is **optional**. The gates are still **not** required to return identical
+claim answers.
+
+- **(a) Label the advisory model and non-authorizing status (required).**
+  `dag-readiness` output must clearly state that it is advisory explicit-DAG
+  analysis and that its `ready_set`/cursor/`next_eligible` does **NOT** authorize
+  a claim.
+- **(b) Surface the authoritative outcome (required).** Show the
+  `pipeline-topology --phase pre_claim` result (block state + selected
+  predecessor) alongside or within the advisory report, so the authoritative
+  answer travels with the advisory one.
+- **(c) Model implicit predecessors explicitly (optional).** Represent/report the
   implicit numeric-adjacency predecessor as a separate field or view in the
   advisory output, so an operator can see *why* an apparently-ready root is held.
-- **Disambiguate `next_eligible`.** Ensure `next_eligible` (and any cursor
-  affordance) cannot be mistaken for claim authorization — e.g. rename, annotate,
-  or gate it behind the authoritative `pre_claim` result.
+- **(d) Disambiguate `next_eligible` (required).** Ensure `next_eligible` (and any
+  cursor affordance) cannot be mistaken for claim authorization — e.g. rename,
+  annotate, or gate it behind the authoritative `pre_claim` result.
 
 ### Numeric-fallback removal is an explicit *future* option, not the presumed fix
 
