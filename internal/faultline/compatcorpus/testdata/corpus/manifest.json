@@ -1,0 +1,91 @@
+[
+  {
+    "id": "crlf-01",
+    "category": "crlf",
+    "adapter": "frontmatter",
+    "expect": "normalized",
+    "want_normalized_file": "crlf/crlf-01.normalized"
+  },
+  {
+    "id": "json-dupkey-01",
+    "category": "duplicate_key",
+    "adapter": "events_jsonl",
+    "expect": "rejected",
+    "want_err": "ErrDuplicateKey"
+  },
+  {
+    "id": "json-malformed-01",
+    "category": "malformed_json",
+    "adapter": "events_jsonl",
+    "expect": "rejected",
+    "want_err": "ErrMalformed"
+  },
+  {
+    "id": "json-oldver-01",
+    "category": "old_index_version",
+    "adapter": "events_jsonl",
+    "expect": "rejected",
+    "want_err": "ErrOldVersion"
+  },
+  {
+    "id": "json-truncated-01",
+    "category": "truncated_json",
+    "adapter": "events_jsonl",
+    "expect": "rejected",
+    "want_err": "ErrTruncated"
+  },
+  {
+    "id": "lf-01",
+    "category": "lf",
+    "adapter": "frontmatter",
+    "expect": "accepted"
+  },
+  {
+    "id": "token-ok-01",
+    "category": "oversized_token",
+    "adapter": "scanner",
+    "expect": "accepted"
+  },
+  {
+    "id": "token-oversized-01",
+    "category": "oversized_token",
+    "adapter": "scanner",
+    "expect": "rejected",
+    "want_err": "ErrTokenTooLong"
+  },
+  {
+    "id": "windows-semantics-01",
+    "category": "windows_semantics",
+    "adapter": "frontmatter",
+    "expect": "rejected",
+    "want_err": "ErrInvalidPath"
+  },
+  {
+    "id": "yaml-casefold-01",
+    "category": "case_folded_key",
+    "adapter": "frontmatter",
+    "expect": "rejected",
+    "want_err": "ErrCaseFoldCollision"
+  },
+  {
+    "id": "yaml-dupkey-01",
+    "category": "duplicate_key",
+    "adapter": "frontmatter",
+    "expect": "rejected",
+    "want_err": "ErrDuplicateKey"
+  },
+  {
+    "id": "yaml-malformed-01",
+    "category": "malformed_yaml",
+    "adapter": "frontmatter",
+    "expect": "rejected",
+    "want_err": "ErrMalformed"
+  },
+  {
+    "id": "yaml-truncated-01",
+    "category": "truncated_yaml",
+    "adapter": "frontmatter",
+    "expect": "rejected",
+    "want_err": "ErrUnclosedFront"
+  }
+]

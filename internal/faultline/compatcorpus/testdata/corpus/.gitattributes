@@ -1,0 +1,2 @@
+**/*.input -text -diff
+**/*.normalized -text -diff

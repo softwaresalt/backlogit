@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"schema_version\":1}\n")
