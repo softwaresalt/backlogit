@@ -142,3 +142,11 @@ parameter types, or return types change, failing to guard the public contract.
 Use a simple AST type-renderer (not a full type-checker) to extract basic type names.
 This is still a source-shape check (go/ast only, no symbol imports) so it compiles before
 the implementation exists.
+
+Shipment 140-S refined the lifecycle boundary for this pattern. Signature,
+receiver, and direct-wiring checks can be permanent, but temporary no-op
+bodies and reserved placeholder comments cannot be frozen as permanent
+invariants. Remove transition-only assertions when the lifecycle advances, or
+enumerate the complete authorized state set when scaffold and final states must
+both remain valid. See
+[Source-shape harnesses must allow authorized lifecycle successors](best-practices/source-shape-harnesses-must-allow-lifecycle-successors-2026-09-11.md).
