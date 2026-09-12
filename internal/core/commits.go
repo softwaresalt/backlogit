@@ -61,6 +61,11 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	if err != nil {
 		return fmt.Errorf("associate commit: load artifact %s: %w", itemID, err)
 	}
+	// Captured BEFORE any lock is acquired (findArtifact takes none). Used by
+	// the guard below to detect a concurrent writer (e.g. a governed shipment
+	// reconciliation) that commits a different archived_status under lock B
+	// between this read and this function's own persist step (167.019-T).
+	preLockArchivedStatus := artifact.ArchivedStatus
 	// Snapshot the full pre-mutation artifact so the compensating write uses
 	// persistArtifact (no hooks) rather than UpdateArtifact (fires hooks).
 	// Using UpdateArtifact inside the envelope would leave spurious hook-queue
@@ -127,7 +132,7 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 				// entries. The SQLite fast-path (items.commit column) is
 				// intentionally not updated here; commit_links is the
 				// authoritative per-SHA representation.
-				if err := persistArtifact(ctx, ws, artifact, false); err != nil {
+				if err := persistArtifactWithGuard(ctx, ws, artifact, false, guardArchivedStatusUnchangedSince(ws, itemID, preLockArchivedStatus)); err != nil {
 					return fmt.Errorf("associate commit step 1 (frontmatter scalar): %w", err)
 				}
 				return nil

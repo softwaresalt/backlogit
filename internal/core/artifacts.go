@@ -930,6 +930,9 @@ func AddArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, lin
 	if err != nil {
 		return fmt.Errorf("find source artifact %s: %w", sourceID, err)
 	}
+	// Captured BEFORE any lock is acquired, for the stale-snapshot guard
+	// below (167.019-T).
+	preLockArchivedStatus := source.ArchivedStatus
 	if _, err := loadArtifact(ctx, ws, targetID); err != nil {
 		return fmt.Errorf("load target artifact %s: %w", targetID, err)
 	}
@@ -944,7 +947,7 @@ func AddArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, lin
 		LinkType: linkType,
 	})
 	source.UpdatedAt = models.NowUTC()
-	if err := persistArtifact(ctx, ws, source, false); err != nil {
+	if err := persistArtifactWithGuard(ctx, ws, source, false, guardArchivedStatusUnchangedSince(ws, sourceID, preLockArchivedStatus)); err != nil {
 		return fmt.Errorf("persist source artifact %s: %w", sourceID, err)
 	}
 	// SQLite cache update is best-effort: the Markdown write above is authoritative.

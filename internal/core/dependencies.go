@@ -97,7 +97,7 @@ func addDependencyWithEnvelope(
 		{
 			Name: "frontmatter-update",
 			Apply: func(ctx context.Context) error {
-				if err := persistArtifact(ctx, ws, artifact, false); err != nil {
+				if err := persistArtifactWithGuard(ctx, ws, artifact, false, guardArchivedStatusUnchangedSince(ws, itemID, originalArtifact.ArchivedStatus)); err != nil {
 					if blerrors.IsWriteIndeterminate(err) {
 						if upsertErr := db.UpsertItem(ctx, ws.DB, artifact); upsertErr != nil {
 							err = fmt.Errorf("%w; also items row upsert failed: %w", err, upsertErr)
@@ -136,6 +136,9 @@ func RemoveDependency(ctx context.Context, ws *Workspace, itemID, dependsOn stri
 	if err != nil {
 		return fmt.Errorf("load source artifact %s: %w", itemID, err)
 	}
+	// Captured BEFORE any lock is acquired, for the stale-snapshot guard
+	// below (167.019-T).
+	preLockArchivedStatus := artifact.ArchivedStatus
 
 	// Locate the edge in frontmatter to capture its type for rollback.
 	frontmatterType := "blocks"
@@ -185,7 +188,7 @@ func RemoveDependency(ctx context.Context, ws *Workspace, itemID, dependsOn stri
 	}
 
 	artifact.Dependencies = filtered
-	if err := persistArtifact(ctx, ws, artifact, false); err != nil {
+	if err := persistArtifactWithGuard(ctx, ws, artifact, false, guardArchivedStatusUnchangedSince(ws, itemID, preLockArchivedStatus)); err != nil {
 		// ErrWriteIndeterminate: the MD write committed but fsync failed — the
 		// removal is likely persisted. Do NOT restore the cache edge; restoring it
 		// would diverge the index from the (likely-updated) MD.
