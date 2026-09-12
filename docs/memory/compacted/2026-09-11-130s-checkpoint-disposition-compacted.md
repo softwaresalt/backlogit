@@ -2,13 +2,13 @@
 chunk_strategy: h1-h2-h3
 compacted_at: 2026-09-12T02:40:00Z
 compacted_from:
-  - docs/memory/2026-08-24/circuit-break-pr377-copilot-review-request.md
-  - docs/memory/2026-08-24/pr377-review-cycle-limit-memory.md
-  - docs/memory/2026-08-24/stage-d3ce9e81-checkpoint-toplevel-keys-memory.md
-  - docs/memory/2026-08-24/stage-pr377-plan-review-cycle-16-gate-memory.md
-  - docs/memory/2026-08-24/stage-pr377-remediation-cycle-15-memory.md
-  - docs/memory/2026-08-24/stage-pr377-remediation-cycle-16-memory.md
-  - docs/memory/2026-08-28/130-s-closure-session-scope.md
+  - docs/archive/memory/2026-08-24/circuit-break-pr377-copilot-review-request.md
+  - docs/archive/memory/2026-08-24/pr377-review-cycle-limit-memory.md
+  - docs/archive/memory/2026-08-24/stage-d3ce9e81-checkpoint-toplevel-keys-memory.md
+  - docs/archive/memory/2026-08-24/stage-pr377-plan-review-cycle-16-gate-memory.md
+  - docs/archive/memory/2026-08-24/stage-pr377-remediation-cycle-15-memory.md
+  - docs/archive/memory/2026-08-24/stage-pr377-remediation-cycle-16-memory.md
+  - docs/archive/memory/2026-08-28/130-s-closure-session-scope.md
 doc_type: learning
 schema_version: "1.0"
 source: docs/memory/compacted/2026-09-11-130s-checkpoint-disposition-compacted.md

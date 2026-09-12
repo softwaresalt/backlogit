@@ -2,10 +2,10 @@
 chunk_strategy: h1-h2-h3
 compacted_at: 2026-09-12T02:40:00Z
 compacted_from:
-  - docs/memory/2026-08-21/ship-129-s-pa8-pa3-approval-gate-memory.md
-  - docs/memory/2026-08-21/success-shaped-evidence-loss-stage-memory.md
-  - docs/memory/2026-08-22/circuit-break-pr373-copilot-review-cycles.md
-  - docs/memory/2026-08-22/ship-129-s-post-merge-closure-memory.md
+  - docs/archive/memory/2026-08-21/ship-129-s-pa8-pa3-approval-gate-memory.md
+  - docs/archive/memory/2026-08-21/success-shaped-evidence-loss-stage-memory.md
+  - docs/archive/memory/2026-08-22/circuit-break-pr373-copilot-review-cycles.md
+  - docs/archive/memory/2026-08-22/ship-129-s-post-merge-closure-memory.md
 doc_type: learning
 schema_version: "1.0"
 source: docs/memory/compacted/2026-09-11-129s-success-shaped-evidence-loss-compacted.md

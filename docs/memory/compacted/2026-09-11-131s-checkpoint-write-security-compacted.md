@@ -2,8 +2,8 @@
 chunk_strategy: h1-h2-h3
 compacted_at: 2026-09-12T02:40:00Z
 compacted_from:
-  - docs/memory/2026-08-28/131s-148f-ship-session.md
-  - docs/memory/2026-08-28/p002-incident-131s-148f-u3-red-phase-gap.md
+  - docs/archive/memory/2026-08-28/131s-148f-ship-session.md
+  - docs/archive/memory/2026-08-28/p002-incident-131s-148f-u3-red-phase-gap.md
 doc_type: learning
 schema_version: "1.0"
 source: docs/memory/compacted/2026-09-11-131s-checkpoint-write-security-compacted.md

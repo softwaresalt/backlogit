@@ -2,8 +2,8 @@
 chunk_strategy: h1-h2-h3
 decided_at: 2026-09-12T02:40:00Z
 decided_from:
-  - docs/exec-plans/2026-09-03-s6-seq3-compat-corpus-plan.md
-  - docs/exec-plans/2026-09-10-s6-140s-harness-contract-supplement.md
+  - docs/archive/plans/2026-09-03-s6-seq3-compat-corpus-plan.md
+  - docs/archive/plans/2026-09-10-s6-140s-harness-contract-supplement.md
 doc_type: learning
 schema_version: "1.0"
 source: docs/exec-plans/2026-09-11-s6-compatibility-corpus-decided-plan.md

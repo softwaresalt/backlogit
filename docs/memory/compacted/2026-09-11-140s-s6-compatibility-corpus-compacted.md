@@ -2,13 +2,13 @@
 chunk_strategy: h1-h2-h3
 compacted_at: 2026-09-12T02:40:00Z
 compacted_from:
-  - docs/memory/2026-09-10-140s-declaration-behavior-split.md
-  - docs/memory/2026-09-10-ship-140-s-declaration-behavior-split-blocked.md
-  - docs/memory/2026-09-10-ship-140-s-dependency-pin-blocked.md
-  - docs/memory/2026-09-10-ship-140-s-harness-blocked.md
-  - docs/memory/2026-09-10-ship-140-s-stage-manifest-handback.md
-  - docs/memory/2026-09-10-ship-140-s-wave-admission-halt.md
-  - docs/memory/2026-09-10-stage-140s-harness-contract-hardening.md
+  - docs/archive/memory/2026-09-10-140s-declaration-behavior-split.md
+  - docs/archive/memory/2026-09-10-ship-140-s-declaration-behavior-split-blocked.md
+  - docs/archive/memory/2026-09-10-ship-140-s-dependency-pin-blocked.md
+  - docs/archive/memory/2026-09-10-ship-140-s-harness-blocked.md
+  - docs/archive/memory/2026-09-10-ship-140-s-stage-manifest-handback.md
+  - docs/archive/memory/2026-09-10-ship-140-s-wave-admission-halt.md
+  - docs/archive/memory/2026-09-10-stage-140s-harness-contract-hardening.md
 doc_type: learning
 schema_version: "1.0"
 source: docs/memory/compacted/2026-09-11-140s-s6-compatibility-corpus-compacted.md
