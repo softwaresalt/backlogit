@@ -38,6 +38,7 @@ type directAssignment struct {
 	block     *ast.BlockStmt
 	statement *ast.AssignStmt
 	variable  *types.Var
+	value     ast.Expr
 }
 
 func run(pass *analysis.Pass) (any, error) {
@@ -124,8 +125,12 @@ func directAssignments(
 	parents map[ast.Node]ast.Node,
 	statement *ast.AssignStmt,
 ) []directAssignment {
+	if len(statement.Lhs) != len(statement.Rhs) {
+		return nil
+	}
+
 	assignments := make([]directAssignment, 0, len(statement.Lhs))
-	for _, expression := range statement.Lhs {
+	for index, expression := range statement.Lhs {
 		identifier, ok := ast.Unparen(expression).(*ast.Ident)
 		if !ok || identifier.Name == "_" {
 			continue
@@ -138,6 +143,7 @@ func directAssignments(
 			block:     containingBlock(parents, statement),
 			statement: statement,
 			variable:  variable,
+			value:     statement.Rhs[index],
 		})
 	}
 	return assignments
@@ -329,7 +335,7 @@ func claimReachesAcquisition(
 		!sameOrDescendantBlock(parents, claim.block, acquisition.block) ||
 		claim.call.End() >= acquisition.call.Pos() ||
 		!variableVisibleAt(pass, claim.contextVar, acquisition.call.Pos()) ||
-		claimEndedBeforeAcquisition(parents, claim, acquisition, assignments) {
+		claimEndedBeforeAcquisition(pass, parents, claim, acquisition, assignments) {
 		return false
 	}
 	return types.AssignableTo(claim.contextVar.Type(), claim.contextType)
@@ -380,22 +386,46 @@ func scopeDescendsFrom(scope *types.Scope, ancestor *types.Scope) bool {
 }
 
 func claimEndedBeforeAcquisition(
+	pass *analysis.Pass,
 	parents map[ast.Node]ast.Node,
 	claim timeoutClaim,
 	acquisition lockAcquisition,
 	assignments []directAssignment,
 ) bool {
+	sourceStatement := containingBlockStatement(parents, claim.call)
+	if sourceStatement == nil || parents[sourceStatement] != claim.block {
+		return false
+	}
+
 	for _, assignment := range assignments {
 		if assignment.variable != claim.contextVar ||
+			assignment.block != claim.block ||
+			parents[assignment.statement] != claim.block ||
 			assignment.statement.Pos() <= claim.call.End() ||
 			assignment.statement.End() >= acquisition.call.Pos() ||
-			!sameOrDescendantBlock(parents, claim.block, assignment.block) ||
-			!sameOrDescendantBlock(parents, assignment.block, acquisition.block) {
+			expressionReferencesVariable(pass, assignment.value, claim.contextVar) {
 			continue
 		}
 		return true
 	}
 	return false
+}
+
+func expressionReferencesVariable(
+	pass *analysis.Pass,
+	expression ast.Expr,
+	variable *types.Var,
+) bool {
+	references := false
+	ast.Inspect(expression, func(node ast.Node) bool {
+		identifier, ok := node.(*ast.Ident)
+		if !ok || pass.TypesInfo.ObjectOf(identifier) != variable {
+			return true
+		}
+		references = true
+		return false
+	})
+	return references
 }
 
 func isSuppressed(

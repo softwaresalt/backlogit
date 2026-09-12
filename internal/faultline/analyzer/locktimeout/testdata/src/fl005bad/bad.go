@@ -94,3 +94,32 @@ func nearMissPrecedingDirective(parent context.Context, mu *sync.Mutex) {
 
 	mu.Lock() // want "FL005"
 }
+
+func conditionalReset(parent context.Context, mu *sync.Mutex, reset bool) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	if reset {
+		ctx = context.Background()
+	}
+	_ = ctx
+	mu.Lock() // want "FL005"
+}
+
+func selfAssignment(parent context.Context, mu *sync.Mutex) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	ctx = ctx
+	_ = ctx
+	mu.Lock() // want "FL005"
+}
+
+func optionalLoopReset(parent context.Context, mu *sync.Mutex, reset bool) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	for reset {
+		ctx = context.Background()
+		break
+	}
+	_ = ctx
+	mu.Lock() // want "FL005"
+}
