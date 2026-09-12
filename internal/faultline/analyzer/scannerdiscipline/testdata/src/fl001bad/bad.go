@@ -177,3 +177,14 @@ func reboundAliasDoesNotPreserveOriginal(r io.Reader, replacement *bufio.Scanner
 	}
 	return s.Err()
 }
+
+func conditionalAliasRebindingPreservesPossibleAlias(r io.Reader, replacement *bufio.Scanner, cond bool) {
+	s := bufio.NewScanner(r) // want "FL001"
+	alias := s
+	if cond {
+		alias = replacement
+	}
+	s = alias
+	for s.Scan() {
+	}
+}

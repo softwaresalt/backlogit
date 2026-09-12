@@ -76,7 +76,7 @@ func analyzeFunction(pass *analysis.Pass, file *ast.File, functionType *ast.Func
 			pass,
 			body,
 			creation.object,
-			creation.assignment.End(),
+			creation.assignment,
 			upperBound,
 		)
 		if firstLoop == 0 {
@@ -167,7 +167,54 @@ func updateAliasesAfterStatement(
 	statement ast.Stmt,
 	aliases map[*types.Var]struct{},
 ) {
-	forwardAliasState(pass, statement, aliases, 0, statement.End(), nil)
+	switch value := statement.(type) {
+	case *ast.AssignStmt:
+		updateAssignedAliases(pass, value.Lhs, value.Rhs, aliases, true)
+	case *ast.DeclStmt:
+		declaration, ok := value.Decl.(*ast.GenDecl)
+		if !ok {
+			return
+		}
+		for _, specification := range declaration.Specs {
+			valueSpec, ok := specification.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			targets := make([]ast.Expr, 0, len(valueSpec.Names))
+			for _, name := range valueSpec.Names {
+				targets = append(targets, name)
+			}
+			updateAssignedAliases(pass, targets, valueSpec.Values, aliases, true)
+		}
+	default:
+		addPossibleAliases(pass, statement, aliases)
+	}
+}
+
+func addPossibleAliases(
+	pass *analysis.Pass,
+	root ast.Node,
+	aliases map[*types.Var]struct{},
+) {
+	for {
+		aliasCount := len(aliases)
+		inspectFunctionBodyNode(root, func(node ast.Node) bool {
+			switch value := node.(type) {
+			case *ast.AssignStmt:
+				updateAssignedAliases(pass, value.Lhs, value.Rhs, aliases, false)
+			case *ast.ValueSpec:
+				targets := make([]ast.Expr, 0, len(value.Names))
+				for _, name := range value.Names {
+					targets = append(targets, name)
+				}
+				updateAssignedAliases(pass, targets, value.Values, aliases, false)
+			}
+			return true
+		})
+		if len(aliases) == aliasCount {
+			return
+		}
+	}
 }
 
 type aliasAssignmentObserver func(*ast.AssignStmt, map[*types.Var]struct{})
@@ -178,8 +225,10 @@ func forwardAliasState(
 	aliases map[*types.Var]struct{},
 	lowerBound,
 	upperBound token.Pos,
+	definiteStatementList ast.Node,
 	observe aliasAssignmentObserver,
 ) {
+	parents := parentNodes(root)
 	inspectFunctionBodyNode(root, func(node ast.Node) bool {
 		if node.Pos() <= lowerBound || node.Pos() >= upperBound {
 			return true
@@ -190,16 +239,55 @@ func forwardAliasState(
 			if observe != nil {
 				observe(value, aliases)
 			}
-			updateAssignedAliases(pass, value.Lhs, value.Rhs, aliases)
+			statementList, direct := directStatementListParent(value, parents)
+			updateAssignedAliases(
+				pass,
+				value.Lhs,
+				value.Rhs,
+				aliases,
+				direct && statementList == definiteStatementList,
+			)
 		case *ast.ValueSpec:
 			targets := make([]ast.Expr, 0, len(value.Names))
 			for _, name := range value.Names {
 				targets = append(targets, name)
 			}
-			updateAssignedAliases(pass, targets, value.Values, aliases)
+			statementList, direct := directStatementListParent(value, parents)
+			updateAssignedAliases(
+				pass,
+				targets,
+				value.Values,
+				aliases,
+				direct && statementList == definiteStatementList,
+			)
 		}
 		return true
 	})
+}
+
+func directStatementListParent(
+	node ast.Node,
+	parents map[ast.Node]ast.Node,
+) (ast.Node, bool) {
+	parent := parents[node]
+	if _, ok := node.(*ast.ValueSpec); ok {
+		declaration, ok := parent.(*ast.GenDecl)
+		if !ok {
+			return nil, false
+		}
+		statement, ok := parents[declaration].(*ast.DeclStmt)
+		if !ok {
+			return nil, false
+		}
+		parent = parents[statement]
+	}
+
+	switch parent.(type) {
+	case *ast.BlockStmt, *ast.CaseClause, *ast.CommClause:
+		return parent, true
+	default:
+		return nil, false
+	}
 }
 
 func updateAssignedAliases(
@@ -207,6 +295,7 @@ func updateAssignedAliases(
 	targets []ast.Expr,
 	values []ast.Expr,
 	aliases map[*types.Var]struct{},
+	removeNonAliases bool,
 ) {
 	if len(targets) != len(values) {
 		return
@@ -237,7 +326,9 @@ func updateAssignedAliases(
 			aliases[update.object] = struct{}{}
 			continue
 		}
-		delete(aliases, update.object)
+		if removeNonAliases {
+			delete(aliases, update.object)
+		}
 	}
 }
 
@@ -350,9 +441,10 @@ func scanLoopBounds(
 	pass *analysis.Pass,
 	body *ast.BlockStmt,
 	object *types.Var,
-	lowerBound,
+	creation *ast.AssignStmt,
 	upperBound token.Pos,
 ) (token.Pos, token.Pos, token.Pos) {
+	lowerBound := creation.End()
 	var firstLoop token.Pos
 	var lastLoopEnd token.Pos
 	errReceiverEnd := upperBound
@@ -371,7 +463,7 @@ func scanLoopBounds(
 		if loop.End() > lastLoopEnd {
 			lastLoopEnd = loop.End()
 		}
-		aliases := possibleAliasesBefore(pass, body, object, lowerBound, loop.Pos())
+		aliases := possibleAliasesBefore(pass, body, object, creation, loop.Pos())
 		if replacement := firstScannerReplacement(pass, loop.Body, object, aliases); replacement != 0 &&
 			replacement < errReceiverEnd {
 			errReceiverEnd = replacement
@@ -385,11 +477,21 @@ func possibleAliasesBefore(
 	pass *analysis.Pass,
 	body *ast.BlockStmt,
 	object *types.Var,
-	lowerBound,
+	creation *ast.AssignStmt,
 	upperBound token.Pos,
 ) map[*types.Var]struct{} {
 	aliases := map[*types.Var]struct{}{object: {}}
-	forwardAliasState(pass, body, aliases, lowerBound, upperBound, nil)
+	parents := parentNodes(body)
+	statementList, _ := directStatementListParent(creation, parents)
+	forwardAliasState(
+		pass,
+		body,
+		aliases,
+		creation.End(),
+		upperBound,
+		statementList,
+		nil,
+	)
 	return aliases
 }
 
@@ -401,7 +503,7 @@ func firstScannerReplacement(
 ) token.Pos {
 	aliases = cloneAliases(aliases)
 	var first token.Pos
-	forwardAliasState(pass, body, aliases, body.Pos(), body.End(), func(
+	forwardAliasState(pass, body, aliases, body.Pos(), body.End(), body, func(
 		assignment *ast.AssignStmt,
 		currentAliases map[*types.Var]struct{},
 	) {
