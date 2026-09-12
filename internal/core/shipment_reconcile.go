@@ -109,8 +109,6 @@ func appendShipmentReconcileEvent(ctx context.Context, ws *Workspace, itemID str
 // shipmentReconcileSnapshot captures the pre-mutation archive file bytes and
 // full SQLite index row consumed by the transactional snapshot/rollback
 // primitive (#423, U1).
-//
-//nolint:unused // gated declaration; owner task 167.016-T lands the real call site
 type shipmentReconcileSnapshot struct {
 	ShipmentID string
 	FileBytes  []byte
@@ -122,18 +120,14 @@ type shipmentReconcileSnapshot struct {
 // U1, "snapshot(shipment)"). DECLARATION ONLY — panic body gated by the
 // source-shape harness; the behavior harness (RED) and implementation
 // (GREEN) land in 167.016-T.
-//
-//nolint:unused // gated declaration; owner task 167.016-T lands the real call site
 func snapshotShipmentReconcile(ctx context.Context, ws *Workspace, shipmentID string) (shipmentReconcileSnapshot, error) {
-	panic("not implemented: snapshotShipmentReconcile (167.016-T)")
+	return snapshotShipmentReconcileImpl(ctx, ws, shipmentID)
 }
 
 // restoreShipmentReconcile restores a previously captured snapshot (#423,
 // U1, "restore(snapshot)"). DECLARATION ONLY — panic body gated by the
 // source-shape harness; the behavior harness (RED) and implementation
 // (GREEN) land in 167.016-T.
-//
-//nolint:unused // gated declaration; owner task 167.016-T lands the real call site
 func restoreShipmentReconcile(ctx context.Context, ws *Workspace, snapshot shipmentReconcileSnapshot) error {
-	panic("not implemented: restoreShipmentReconcile (167.016-T)")
+	return restoreShipmentReconcileImpl(ctx, ws, snapshot)
 }
