@@ -1,9 +1,9 @@
 ---
 chunk_strategy: h1-h2-h3
-description: "Manual compiled-CLI runtime verification for shipment 140-S and PR #436 at HEAD 5a337b9f."
+description: "Runtime verification and completed post-merge observation for shipment 140-S and PR #436."
 doc_type: closure
 docline:
-    date: 2026-09-12T01:00:11Z
+    date: 2026-09-12T02:44:05Z
     status: accepted
     tags:
         - runtime-verification
@@ -18,7 +18,7 @@ title: "Shipment 140-S / PR #436 Runtime Verification"
 
 ## Verdict
 
-**PASS WITH FOLLOW-UP**
+**PASS**
 
 The compiled CLI artifacts built successfully from exact PR HEAD
 `5a337b9f8e8f2a80a9c80f27f8e08443d60e73e4`. Both the `go run` target and
@@ -27,9 +27,18 @@ shipment-owned analyzer and compatibility-corpus packages with exit code 0 and
 no diagnostics. Representative compatibility-corpus tests passed under the Go
 race detector. All six hosted CI checks reported success for the same HEAD.
 
-The only follow-up is the release-observability post-merge observation window.
-There is no deployment, browser, API, background-job, migration, or production
-runtime surface to validate for this shipment.
+The post-merge release-observability follow-up is complete. Final PR HEAD
+`6b7029eadf6418c70045aae552335670be89c7c6` passed six hosted checks, and
+merge commit `c5978bc26343a1ca6e3894bcab7a0fd74f7b8215` has that commit as
+its second parent with the same Git tree
+`4cf3c79d19af2f679774bc1eff9e37c25e61bf5a`. Local `main` and
+`origin/main` were synchronized at the merge SHA before the closure branch was
+created. More than 30 minutes elapsed after merge with no failure signal.
+
+No merge-commit CI run is claimed. The CI workflow triggers only on pull
+requests to `main`, while the release workflow triggers only on version tags.
+The terminal verdict uses final PR-head CI, merge-content identity, synchronized
+`main`, the compiled smoke evidence below, and the healthy observation window.
 
 ## Inputs and Verification Depth
 
@@ -229,17 +238,22 @@ releasability evidence.
 
 ### Observation window
 
-Operational closure should observe the first hosted CI run on the merge commit
-through completion, with a minimum 30-minute window after merge. Do not close
-the window early on success. Halt early only when a failure or rollback signal
-requires intervention. This future merge-commit observation is the reason for
-the `PASS WITH FOLLOW-UP` verdict.
+The merge reached `main` at `2026-09-12T02:12:48Z`. The required minimum
+30-minute window elapsed at `2026-09-12T02:42:48Z`, and the
+operator-provided threshold of `2026-09-12T02:43:19Z` also elapsed. The
+terminal observation at `2026-09-12T02:44:05Z` found no failure or rollback
+signal.
+
+Repository CI is intentionally PR-only. The six successful checks on final PR
+HEAD `6b7029ea` are retained as hosted evidence, and merge parent/tree identity
+confirms that the checked content reached `main`.
 
 ### Rollback trigger and procedure
 
-Rollback trigger: the first merge-commit CI run fails because of shipment
-140-S, or a reproducible rerun of either command below produces a non-zero exit,
-unexpected analyzer diagnostic, race, panic, or hang:
+Rollback trigger: a reproducible post-merge rerun of either command below
+produces a non-zero exit, unexpected analyzer diagnostic, race, panic, or hang,
+or retained evidence shows that the merged tree differs from the successfully
+checked final PR tree:
 
 ```text
 go run ./cmd/faultline-analyze ./internal/faultline/analyzer/scannerdiscipline ./internal/faultline/analyzer/errwrap ./internal/faultline/analyzer/failopen ./internal/faultline/analyzer/auditsuccess ./internal/faultline/analyzer/locktimeout ./internal/faultline/compatcorpus
@@ -261,19 +275,47 @@ No destructive or high-risk action was performed during verification. All
 commands were local builds, read-only metadata checks, analyzer executions
 without `-fix`, and tests.
 
+## Post-Merge Local Smoke
+
+The closure branch contains no source-code change after merge. Current compiled
+smoke was repeated from the closure branch after the observation window:
+
+```text
+go build -o .copilot\session-state\3c64d86d-f670-44b2-be32-15c6bdd2d747\files\post-merge-backlogit.exe ./cmd/backlogit
+go build -o .copilot\session-state\3c64d86d-f670-44b2-be32-15c6bdd2d747\files\post-merge-faultline-analyze.exe ./cmd/faultline-analyze
+.\.copilot\session-state\3c64d86d-f670-44b2-be32-15c6bdd2d747\files\post-merge-backlogit.exe version --format json
+.\.copilot\session-state\3c64d86d-f670-44b2-be32-15c6bdd2d747\files\post-merge-faultline-analyze.exe .\internal\faultline\analyzer\scannerdiscipline .\internal\faultline\analyzer\errwrap .\internal\faultline\analyzer\failopen .\internal\faultline\analyzer\auditsuccess .\internal\faultline\analyzer\locktimeout .\internal\faultline\compatcorpus
+```
+
+Both builds and both executions exited 0. The analyzer emitted no diagnostics.
+
+## Post-Merge Follow-Up Disposition
+
+| Evidence | Outcome |
+|---|---|
+| PR merge | `c5978bc2` merged at `2026-09-12T02:12:48Z` |
+| Final PR-head checks | Six successful checks for `6b7029ea` |
+| Merge content | Final PR HEAD is second parent; merge and PR HEAD trees match |
+| Main synchronization | Local `main` and `origin/main` matched `c5978bc2` |
+| Merge-commit CI | Not applicable; no push-to-main workflow trigger exists |
+| Observation window | Healthy after more than 30 minutes |
+| Failure signals | None observed |
+
+The original follow-up is closed with outcome **healthy**. Releasability is
+**READY**.
+
 ## Operational Closure Handoff
 
-* Verification verdict: **PASS WITH FOLLOW-UP**
+* Verification verdict: **PASS**
 * Runtime surfaces verified: compiled CLI help and execution, analyzer
   registration, shipment-owned package analysis, compatibility-corpus tests,
   and hosted current-HEAD CI
 * Evidence: exact commands, hashes, outputs, and CI check table in this report
 * Blocked prerequisites: none
-* Follow-up: observe the first hosted CI run on the merge commit for a minimum
-  of 30 minutes; halt early only on a failure or rollback signal, then record a
-  healthy, degraded, or rolled-back outcome
+* Follow-up disposition: completed healthy; no closure condition remains
 * Monitoring baseline: analyzer exit 0 with zero diagnostics; focused race
-  tests pass; expected hosted checks succeed
+  tests pass; final PR-head hosted checks succeed; merge tree matches final PR
+  tree
 * Rollback readiness: corrective revert PR; no deploy or data rollback needed
-* Recommended next action: feed this report into operational closure and retain
-  the merge-commit observation as a closure condition
+* Recommended next action: retain the residual P-021 IDs for future Stage
+  triage
