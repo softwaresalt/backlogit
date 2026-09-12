@@ -103,13 +103,10 @@ func lockShipmentReconcileItemLog(ctx context.Context, ws *Workspace, itemID str
 
 // appendShipmentReconcileEvent is the always-fsync durable event append
 // primitive that runs UNDER the caller's already-held item-log lock (#423,
-// U1); it MUST NOT re-acquire that lock. DECLARATION ONLY — panic body
-// gated by the source-shape harness; the behavior harness (RED) and
-// implementation (GREEN) land in 167.007-T.
-//
-//nolint:unused // gated declaration; owner task 167.007-T lands the real call site
+// U1); it MUST NOT re-acquire that lock. See shipment_reconcile_append.go
+// for the implementation (167.007-T).
 func appendShipmentReconcileEvent(ctx context.Context, ws *Workspace, itemID string, eventBytes []byte) error {
-	panic("not implemented: appendShipmentReconcileEvent (167.007-T)")
+	return appendShipmentReconcileEventImpl(ctx, ws, itemID, eventBytes)
 }
 
 // shipmentReconcileSnapshot captures the pre-mutation archive file bytes and
