@@ -61,7 +61,11 @@ the same bounded shipment back to Ship. No halt was bypassed.
 * Representative compatibility-corpus tests passed with the race detector
 * FL001-FL005 were registered exactly once and produced no diagnostics on
   shipment-owned clean packages
-* Hosted checks passed on the implementation head and on the merge commit
+* Six PR checks passed on head `6b7029ea`; no merge-commit CI run exists
+  because CI is `pull_request`-only
+* The post-merge condition was satisfied through merge parent and content
+  confirmation, synced `main`, local smoke testing, and a healthy 30-minute
+  observation
 * No production service, public API, schema, migration, or deployment surface
   changed
 

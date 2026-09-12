@@ -10,7 +10,7 @@ docline:
     - ".backlogit/archive/158.009-T.md"
     - ".backlogit/archive/158.010-T.md"
     - ".backlogit/archive/158.011-T.md"
-    - "docs/memory/2026-09-10-140s-declaration-behavior-split.md"
+    - "docs/archive/memory/2026-09-10-140s-declaration-behavior-split.md"
     - "docs/compound/2026-09-08-parity-harness-design-patterns.md"
     - "docs/closure/2026-09-11-140-s-158-f-pr-436-closure.md"
     - "https://github.com/softwaresalt/backlogit/pull/436"
