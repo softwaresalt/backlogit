@@ -134,9 +134,12 @@ The following residual IDs remain explicit:
 * Baselines and pre-existing scope: `92F79833`, `4DB1DFF1`, `CC0EBB59`
 * P-021 follow-ups: `6EB55AE6`, `E6EE8944`, `E2136C59`, `E08F7890`,
   `3F7782B4`, `0197BDA3`, `5944CE03`, `B58C24FA`, `2947C941`,
-  `EB427E20`, `31E484D5`
+  `EB427E20`, `31E484D5`, `5C426A01`
 
 No residual item was closed, reprioritized, or absorbed into shipment `140-S`.
+`5C426A01` preserves the Stage-owned archived `158-F` reference repair as
+traceability debt. It does not reopen closure, change releasability from
+**READY**, or invalidate completed P-020 compaction.
 
 ## Validation
 

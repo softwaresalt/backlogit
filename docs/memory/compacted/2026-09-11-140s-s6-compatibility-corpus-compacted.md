@@ -90,8 +90,12 @@ P-021 deferred-scope captures:
 * `2947C941`
 * `EB427E20`
 * `31E484D5`
+* `5C426A01`
 
 These IDs remain future Stage triage scope and are not absorbed into `140-S`.
+`5C426A01` covers Stage-owned repair of the archived `158-F` plan references.
+That mismatch is traceability debt, not a runtime or release blocker; closure
+remains **READY** and compaction remains complete.
 
 ## Archived Originals
 
