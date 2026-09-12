@@ -93,13 +93,14 @@ func writeShipmentReconcileArchiveFile(ctx context.Context, ws *Workspace, shipm
 }
 
 // lockShipmentReconcileItemLog is the handle-relative, stable-identity
-// item-log (C) lock primitive (#423, U1). DECLARATION ONLY — panic body
-// gated by the source-shape harness; the behavior harness (RED) and
-// implementation (GREEN) land in 167.011-T.
-//
-//nolint:unused // gated declaration; owner task 167.011-T lands the real call site
+// item-log (C) lock primitive (#423, U1). It targets the IDENTICAL canonical
+// sidecar resource events.LockItemLogCrossProcess uses (events.ItemLogLockPath,
+// 167.017-T) so it mutually excludes existing writers (AssociateCommit,
+// ArchiveItem, LinkCommit), while opening that sidecar directory-handle-relative
+// with no-follow/reparse-safe semantics rather than by a freshly recomputed
+// pathname. See shipment_reconcile_lock.go for the implementation (167.011-T).
 func lockShipmentReconcileItemLog(ctx context.Context, ws *Workspace, itemID string) (context.Context, func() error, error) {
-	panic("not implemented: lockShipmentReconcileItemLog (167.011-T)")
+	return lockShipmentReconcileItemLogImpl(ctx, ws, itemID)
 }
 
 // appendShipmentReconcileEvent is the always-fsync durable event append
