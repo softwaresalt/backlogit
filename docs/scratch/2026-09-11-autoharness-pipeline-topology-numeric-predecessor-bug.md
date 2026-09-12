@@ -12,8 +12,6 @@ source: docs/scratch/2026-09-11-autoharness-pipeline-topology-numeric-predecesso
 title: "autoharness advisory-semantics mismatch — dag-readiness advisory output can mislead because pipeline-topology pre_claim is the sole claim authority"
 ---
 
-# autoharness advisory-semantics mismatch — `dag-readiness` advisory output can mislead operators because `pipeline-topology pre_claim` is the sole claim authority
-
 > **Transfer note & lifecycle.** This document was authored in the `backlogit`
 > workspace but describes a defect that belongs to the **separate `autoharness`
 > workspace** (the `autoharness` gate binary). It is written to be self-contained
@@ -182,8 +180,12 @@ autoharness gate pipeline-topology --mode agent --shipment 148-S --phase pre_cla
   answer: `148-S` is not claimable while `147-S` is unshipped.**
 - `pre_claim 149-S` → `blocked: true`, selecting predecessor **`148-S`** — again
   the implicit numeric-adjacency predecessor, not an explicit edge.
-- `pre_claim 138-S` → `blocked: false`, because its numeric neighbor `137-S`
-  happens to be shipped (the implicit predecessor coincidentally matches reality).
+- `pre_claim 138-S` → `blocked: false`, because its **explicit** predecessor
+  `137-S` (declared via `dependencies: [137-S]`) is shipped. This is a control
+  case: with an explicit predecessor already in the shipped terminal state, the
+  authoritative gate clears without engaging the implicit numeric-adjacency
+  heuristic at all, so `138-S` demonstrates normal agreement between the explicit
+  DAG and `pre_claim` and is **not** evidence of the implicit numeric fallback.
 - `dag-readiness` reports `148-S`/`149-S` in its advisory `ready_set` at the same
   time — advisory-only, and **not** a claim authorization.
 
