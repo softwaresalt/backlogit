@@ -14,9 +14,23 @@ type variadicAcquirer struct{}
 
 func (variadicAcquirer) Acquire(...context.Context) {}
 
+type methodExpressionLocker struct{}
+
+func (*methodExpressionLocker) Acquire(...context.Context) {}
+
 type customLock struct{}
 
 func (customLock) Lock() {}
+
+type contextHelpers struct{}
+
+func (contextHelpers) WithoutCancel(ctx context.Context) context.Context {
+	return ctx
+}
+
+func derivedContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, struct{}{}, "value")
+}
 
 func mutex(parent context.Context, mu *sync.Mutex) {
 	ctx, cancel := context.WithTimeout(parent, time.Second)
@@ -51,6 +65,16 @@ func zeroArgumentVariadicAcquire(parent context.Context, lock variadicAcquirer) 
 	defer cancel()
 	_ = ctx
 	lock.Acquire() // want "FL005"
+}
+
+func zeroContextMethodExpressionAcquire(
+	parent context.Context,
+	lock *methodExpressionLocker,
+) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	_ = ctx
+	(*methodExpressionLocker).Acquire(lock) // want "FL005"
 }
 
 func namedLock(parent context.Context, lock customLock) {
@@ -111,6 +135,41 @@ func selfAssignment(parent context.Context, mu *sync.Mutex) {
 	ctx = ctx
 	_ = ctx
 	mu.Lock() // want "FL005"
+}
+
+func unknownDerivedContextReplacement(parent context.Context, mu *sync.Mutex) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	ctx = derivedContext(ctx)
+	_ = ctx
+	mu.Lock() // want "FL005"
+}
+
+func unrelatedWithoutCancelReplacement(parent context.Context, mu *sync.Mutex) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	ctx = (contextHelpers{}).WithoutCancel(ctx)
+	_ = ctx
+	mu.Lock() // want "FL005"
+}
+
+func unknownDerivedContextReplacementInIfInit(parent context.Context, mu *sync.Mutex) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	if ctx = derivedContext(ctx); true {
+		_ = ctx
+		mu.Lock() // want "FL005"
+	}
+}
+
+func contextReplacementInForPost(parent context.Context, mu *sync.Mutex) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	for first := true; first; ctx = context.Background() {
+		_ = ctx
+		mu.Lock() // want "FL005"
+		first = false
+	}
 }
 
 func optionalLoopReset(parent context.Context, mu *sync.Mutex, reset bool) {

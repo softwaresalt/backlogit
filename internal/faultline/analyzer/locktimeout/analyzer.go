@@ -140,7 +140,7 @@ func directAssignments(
 			continue
 		}
 		assignments = append(assignments, directAssignment{
-			container: statementListContainer(parents, statement),
+			container: directAssignmentContainer(parents, statement),
 			statement: statement,
 			variable:  variable,
 			value:     statement.Rhs[index],
@@ -263,7 +263,7 @@ func isUncancellableLock(
 	signature, ok := method.Type().(*types.Signature)
 	if !ok ||
 		signature.Recv() == nil ||
-		callSuppliesContext(call, signature, contextType) {
+		callSuppliesContext(call, selection, signature, contextType) {
 		return false
 	}
 
@@ -280,9 +280,15 @@ func isUncancellableLock(
 
 func callSuppliesContext(
 	call *ast.CallExpr,
+	selection *types.Selection,
 	signature *types.Signature,
 	contextType types.Type,
 ) bool {
+	argumentOffset := 0
+	if selection.Kind() == types.MethodExpr {
+		argumentOffset = 1
+	}
+
 	parameters := signature.Params()
 	for index := range parameters.Len() {
 		parameterType := parameters.At(index).Type()
@@ -291,7 +297,8 @@ func callSuppliesContext(
 				parameterType = slice.Elem()
 			}
 		}
-		if types.AssignableTo(parameterType, contextType) && index < len(call.Args) {
+		if types.AssignableTo(parameterType, contextType) &&
+			index+argumentOffset < len(call.Args) {
 			return true
 		}
 	}
@@ -397,12 +404,41 @@ func claimEndedBeforeAcquisition(
 			!hasAncestor(acquisition.call, assignment.container, parents) ||
 			assignment.statement.Pos() <= claim.call.End() ||
 			assignment.statement.End() >= acquisition.call.Pos() ||
-			expressionReferencesVariable(pass, assignment.value, claim.contextVar) {
+			!isDefiniteContextReplacement(pass, assignment.value, claim.contextVar) {
 			continue
 		}
 		return true
 	}
 	return false
+}
+
+func directAssignmentContainer(
+	parents map[ast.Node]ast.Node,
+	statement *ast.AssignStmt,
+) ast.Node {
+	if container := statementListContainer(parents, statement); container != nil {
+		return container
+	}
+
+	switch parent := parents[statement].(type) {
+	case *ast.IfStmt:
+		if parent.Init == statement {
+			return parent
+		}
+	case *ast.SwitchStmt:
+		if parent.Init == statement {
+			return parent
+		}
+	case *ast.TypeSwitchStmt:
+		if parent.Init == statement {
+			return parent
+		}
+	case *ast.ForStmt:
+		if parent.Init == statement {
+			return parent
+		}
+	}
+	return nil
 }
 
 func statementListContainer(
@@ -473,6 +509,26 @@ func expressionReferencesVariable(
 		return false
 	})
 	return references
+}
+
+func isDefiniteContextReplacement(
+	pass *analysis.Pass,
+	expression ast.Expr,
+	variable *types.Var,
+) bool {
+	if !expressionReferencesVariable(pass, expression, variable) {
+		return true
+	}
+
+	call, ok := ast.Unparen(expression).(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	function := calledFunction(pass, call)
+	return function != nil &&
+		function.Pkg() != nil &&
+		function.Pkg().Path() == "context" &&
+		function.Name() == "WithoutCancel"
 }
 
 func isSuppressed(

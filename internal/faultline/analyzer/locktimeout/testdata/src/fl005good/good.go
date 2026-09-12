@@ -14,6 +14,10 @@ type variadicContextAcquirer interface {
 	Acquire(...context.Context) error
 }
 
+type methodExpressionLocker struct{}
+
+func (*methodExpressionLocker) Acquire(...context.Context) {}
+
 type contextLocker interface {
 	Lock(context.Context) error
 }
@@ -41,6 +45,12 @@ func variadicContextAware(parent context.Context, lock variadicContextAcquirer) 
 	ctx, cancel := context.WithTimeout(parent, time.Second)
 	defer cancel()
 	return lock.Acquire(ctx)
+}
+
+func methodExpressionContextAware(parent context.Context, lock *methodExpressionLocker) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	(*methodExpressionLocker).Acquire(lock, ctx)
 }
 
 func contextAwareLock(parent context.Context, lock contextLocker) error {
@@ -97,6 +107,14 @@ func reassigned(parent context.Context, mu *sync.Mutex) {
 	ctx, cancel := context.WithTimeout(parent, time.Second)
 	defer cancel()
 	ctx = context.Background()
+	_ = ctx
+	mu.Lock()
+}
+
+func reassignedWithWithoutCancel(parent context.Context, mu *sync.Mutex) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	ctx = context.WithoutCancel(ctx)
 	_ = ctx
 	mu.Lock()
 }
@@ -160,6 +178,55 @@ func reassignedInsideUnconditionalNestedBlock(parent context.Context, mu *sync.M
 		mu.Lock()
 	}
 	_ = ctx
+}
+
+func reassignedInsideIfInit(parent context.Context, mu *sync.Mutex) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	if ctx = context.Background(); true {
+		_ = ctx
+		mu.Lock()
+	}
+}
+
+func reassignedInsideIfInitElse(parent context.Context, mu *sync.Mutex) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	if ctx = context.Background(); false {
+		_ = ctx
+	} else {
+		mu.Lock()
+	}
+}
+
+func reassignedInsideSwitchInit(parent context.Context, mu *sync.Mutex, value int) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	switch ctx = context.Background(); value {
+	case 1:
+		_ = ctx
+		mu.Lock()
+	}
+}
+
+func reassignedInsideTypeSwitchInit(parent context.Context, mu *sync.Mutex, value interface{}) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	switch ctx = context.Background(); value.(type) {
+	case string:
+		_ = ctx
+		mu.Lock()
+	}
+}
+
+func reassignedInsideForInit(parent context.Context, mu *sync.Mutex) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	for ctx = context.Background(); ; {
+		_ = ctx
+		mu.Lock()
+		break
+	}
 }
 
 func reassignedInsideSwitchCase(parent context.Context, mu *sync.Mutex, value int) {
