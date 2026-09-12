@@ -86,10 +86,8 @@ func ReconcileShipmentToShipped(ctx context.Context, ws *Workspace, req Shipment
 // archive-file writer primitive (#423, U1). DECLARATION ONLY — panic body
 // gated by the source-shape harness; the behavior harness (RED) and
 // implementation (GREEN) land in 167.006-T.
-//
-//nolint:unused // gated declaration; owner task 167.006-T lands the real call site
 func writeShipmentReconcileArchiveFile(ctx context.Context, ws *Workspace, shipmentID string, content []byte) error {
-	panic("not implemented: writeShipmentReconcileArchiveFile (167.006-T)")
+	return writeShipmentReconcileArchiveFileWithSeams(ctx, ws, shipmentID, content, defaultShipmentReconcileFSSeams())
 }
 
 // lockShipmentReconcileItemLog is the handle-relative, stable-identity
