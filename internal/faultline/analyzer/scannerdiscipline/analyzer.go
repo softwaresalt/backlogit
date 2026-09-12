@@ -127,7 +127,7 @@ func nextDefiniteReplacement(
 				return assignment.Pos()
 			}
 		}
-		addPossibleAliases(pass, statement, aliases)
+		updateAliasesAfterStatement(pass, statement, aliases)
 	}
 	return body.End()
 }
@@ -162,55 +162,62 @@ func assignedObjectValue(
 	return nil, false
 }
 
-func addPossibleAliases(
+func updateAliasesAfterStatement(
+	pass *analysis.Pass,
+	statement ast.Stmt,
+	aliases map[*types.Var]struct{},
+) {
+	forwardAliasState(pass, statement, aliases, 0, statement.End(), nil)
+}
+
+type aliasAssignmentObserver func(*ast.AssignStmt, map[*types.Var]struct{})
+
+func forwardAliasState(
 	pass *analysis.Pass,
 	root ast.Node,
 	aliases map[*types.Var]struct{},
+	lowerBound,
+	upperBound token.Pos,
+	observe aliasAssignmentObserver,
 ) {
-	for {
-		changed := false
-		ast.Inspect(root, func(node ast.Node) bool {
-			if _, nested := node.(*ast.FuncLit); nested {
-				return false
-			}
-
-			switch value := node.(type) {
-			case *ast.AssignStmt:
-				if addAssignedAliases(pass, value.Lhs, value.Rhs, aliases) {
-					changed = true
-				}
-			case *ast.ValueSpec:
-				targets := make([]ast.Expr, 0, len(value.Names))
-				for _, name := range value.Names {
-					targets = append(targets, name)
-				}
-				if addAssignedAliases(pass, targets, value.Values, aliases) {
-					changed = true
-				}
-			}
+	inspectFunctionBodyNode(root, func(node ast.Node) bool {
+		if node.Pos() <= lowerBound || node.Pos() >= upperBound {
 			return true
-		})
-		if !changed {
-			return
 		}
-	}
+
+		switch value := node.(type) {
+		case *ast.AssignStmt:
+			if observe != nil {
+				observe(value, aliases)
+			}
+			updateAssignedAliases(pass, value.Lhs, value.Rhs, aliases)
+		case *ast.ValueSpec:
+			targets := make([]ast.Expr, 0, len(value.Names))
+			for _, name := range value.Names {
+				targets = append(targets, name)
+			}
+			updateAssignedAliases(pass, targets, value.Values, aliases)
+		}
+		return true
+	})
 }
 
-func addAssignedAliases(
+func updateAssignedAliases(
 	pass *analysis.Pass,
 	targets []ast.Expr,
 	values []ast.Expr,
 	aliases map[*types.Var]struct{},
-) bool {
+) {
 	if len(targets) != len(values) {
-		return false
+		return
 	}
 
-	changed := false
+	type aliasUpdate struct {
+		object  *types.Var
+		isAlias bool
+	}
+	updates := make([]aliasUpdate, 0, len(targets))
 	for index, target := range targets {
-		if !expressionReferencesAliases(pass, values[index], aliases) {
-			continue
-		}
 		identifier, ok := ast.Unparen(target).(*ast.Ident)
 		if !ok || identifier.Name == "_" {
 			continue
@@ -219,12 +226,19 @@ func addAssignedAliases(
 		if object == nil {
 			continue
 		}
-		if _, exists := aliases[object]; !exists {
-			aliases[object] = struct{}{}
-			changed = true
-		}
+		updates = append(updates, aliasUpdate{
+			object:  object,
+			isAlias: expressionReferencesAliases(pass, values[index], aliases),
+		})
 	}
-	return changed
+
+	for _, update := range updates {
+		if update.isAlias {
+			aliases[update.object] = struct{}{}
+			continue
+		}
+		delete(aliases, update.object)
+	}
 }
 
 func expressionReferencesAliases(
@@ -342,8 +356,6 @@ func scanLoopBounds(
 	var firstLoop token.Pos
 	var lastLoopEnd token.Pos
 	errReceiverEnd := upperBound
-	aliases := map[*types.Var]struct{}{object: {}}
-	addPossibleAliases(pass, body, aliases)
 
 	inspectFunctionBody(body, func(node ast.Node) bool {
 		loop, ok := node.(*ast.ForStmt)
@@ -359,6 +371,7 @@ func scanLoopBounds(
 		if loop.End() > lastLoopEnd {
 			lastLoopEnd = loop.End()
 		}
+		aliases := possibleAliasesBefore(pass, body, object, lowerBound, loop.Pos())
 		if replacement := firstScannerReplacement(pass, loop.Body, object, aliases); replacement != 0 &&
 			replacement < errReceiverEnd {
 			errReceiverEnd = replacement
@@ -368,27 +381,46 @@ func scanLoopBounds(
 	return firstLoop, lastLoopEnd, errReceiverEnd
 }
 
+func possibleAliasesBefore(
+	pass *analysis.Pass,
+	body *ast.BlockStmt,
+	object *types.Var,
+	lowerBound,
+	upperBound token.Pos,
+) map[*types.Var]struct{} {
+	aliases := map[*types.Var]struct{}{object: {}}
+	forwardAliasState(pass, body, aliases, lowerBound, upperBound, nil)
+	return aliases
+}
+
 func firstScannerReplacement(
 	pass *analysis.Pass,
 	body *ast.BlockStmt,
 	object *types.Var,
 	aliases map[*types.Var]struct{},
 ) token.Pos {
+	aliases = cloneAliases(aliases)
 	var first token.Pos
-	inspectFunctionBody(body, func(node ast.Node) bool {
-		assignment, ok := node.(*ast.AssignStmt)
-		if !ok {
-			return true
-		}
+	forwardAliasState(pass, body, aliases, body.Pos(), body.End(), func(
+		assignment *ast.AssignStmt,
+		currentAliases map[*types.Var]struct{},
+	) {
 		right, replaces := assignedObjectValue(pass, assignment, object)
 		if replaces &&
-			!expressionReferencesAliases(pass, right, aliases) &&
+			!expressionReferencesAliases(pass, right, currentAliases) &&
 			(first == 0 || assignment.Pos() < first) {
 			first = assignment.Pos()
 		}
-		return true
 	})
 	return first
+}
+
+func cloneAliases(aliases map[*types.Var]struct{}) map[*types.Var]struct{} {
+	cloned := make(map[*types.Var]struct{}, len(aliases))
+	for object := range aliases {
+		cloned[object] = struct{}{}
+	}
+	return cloned
 }
 
 func hasMethodCall(
@@ -845,7 +877,11 @@ func referencesObject(pass *analysis.Pass, root ast.Node, object *types.Var) boo
 }
 
 func inspectFunctionBody(body *ast.BlockStmt, visit func(ast.Node) bool) {
-	ast.Inspect(body, func(node ast.Node) bool {
+	inspectFunctionBodyNode(body, visit)
+}
+
+func inspectFunctionBodyNode(root ast.Node, visit func(ast.Node) bool) {
+	ast.Inspect(root, func(node ast.Node) bool {
 		if node == nil {
 			return true
 		}

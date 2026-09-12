@@ -166,3 +166,14 @@ func aliasReplacementDoesNotEndLifetime(r io.Reader) {
 		_ = s.Text()
 	}
 }
+
+func reboundAliasDoesNotPreserveOriginal(r io.Reader, replacement *bufio.Scanner) error {
+	s := bufio.NewScanner(r) // want "FL001"
+	candidate := s
+	candidate = replacement
+	s.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for s.Scan() {
+		s = candidate
+	}
+	return s.Err()
+}
