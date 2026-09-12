@@ -10,7 +10,11 @@ import "github.com/softwaresalt/backlogit/internal/events"
 // construction site. It is nil-safe: a nil workspace or a nil config yields a
 // durable-off writer (byte-for-byte the prior default construction).
 func NewWorkspaceEventWriter(ws *Workspace, logsDir string) *events.EventWriter {
-	return events.NewEventWriter(logsDir, events.WithDurableWrites(WorkspaceDurableWrites(ws)))
+	locksRoot := ""
+	if ws != nil {
+		locksRoot = WorkspaceLocksRoot(ws.RootPath)
+	}
+	return events.NewEventWriter(logsDir, events.WithDurableWrites(WorkspaceDurableWrites(ws)), events.WithLocksRoot(locksRoot))
 }
 
 // WorkspaceDurableWrites reports whether the workspace opts into the

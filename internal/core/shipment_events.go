@@ -102,7 +102,7 @@ func appendShipmentEventErr(ctx context.Context, ws *Workspace, itemID, eventTyp
 		return fmt.Errorf("shipment event log for %s resolves outside the workspace logs directory: %w: %w",
 			itemID, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
 	}
-	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
 	if lockErr != nil {
 		return fmt.Errorf("lock shipment event log %s: %w: %w", itemID, blerrors.ErrWriteNotApplied, lockErr)
 	}

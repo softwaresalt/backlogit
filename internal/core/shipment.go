@@ -750,7 +750,7 @@ func appendItemEventWithCommit(ctx context.Context, ws *Workspace, itemID, event
 		CommitSHA: commitSHA,
 	}
 
-	lockedCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	lockedCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
 	if lockErr != nil {
 		slog.WarnContext(ctx, "lock shipment event log", "item_id", itemID, "event_type", eventType, "error", lockErr)
 		return

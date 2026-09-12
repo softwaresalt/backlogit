@@ -9,16 +9,17 @@ import (
 )
 
 func TestAcquireItemLogFileLockUsesStableAdvisorySidecar(t *testing.T) {
-	logsDir := t.TempDir()
-	firstUnlock, err := acquireItemLogFileLock(context.Background(), logsDir, "T001")
+	locksRoot := t.TempDir()
+	firstUnlock, err := acquireItemLogFileLock(context.Background(), locksRoot, "T001")
 	require.NoError(t, err)
-	lockPath := itemLogLockSidecarPath(logsDir, "T001")
+	lockPath, pathErr := ItemLogLockPath(locksRoot, "T001")
+	require.NoError(t, pathErr)
 
-	_, err = acquireItemLogFileLock(context.Background(), logsDir, "T001")
+	_, err = acquireItemLogFileLock(context.Background(), locksRoot, "T001")
 	require.Error(t, err, "a held advisory lock must remain busy without stale reclamation")
 	firstUnlock()
 
-	secondUnlock, err := acquireItemLogFileLock(context.Background(), logsDir, "T001")
+	secondUnlock, err := acquireItemLogFileLock(context.Background(), locksRoot, "T001")
 	require.NoError(t, err)
 	secondUnlock()
 	_, statErr := os.Stat(lockPath)

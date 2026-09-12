@@ -43,7 +43,14 @@ const (
 // EventWriter provides goroutine-safe append-only writes to per-item JSONL log files.
 type EventWriter struct {
 	logsDir string
-	mu      sync.Mutex
+	// locksRoot is the stable root the cross-process item-log lock (C)
+	// sidecar is keyed under (see ItemLogLockPath, 167.017-T). It is set at
+	// construction via WithLocksRoot and never mutated afterward. When unset,
+	// it defaults to logsDir at construction time, preserving the
+	// byte-for-byte prior (pre-167.017-T) behavior for any caller that has
+	// not yet migrated to a workspace-stable locks root.
+	locksRoot string
+	mu        sync.Mutex
 	// durable enables the durable_writes fsync protocol (123-F). It is set at
 	// construction via WithDurableWrites and never mutated afterward, so the
 	// writer is immutable with respect to its durability mode.
@@ -73,9 +80,21 @@ func WithDurableWrites(durable bool) Option {
 	return func(w *EventWriter) { w.durable = durable }
 }
 
+// WithLocksRoot sets the stable root the writer's cross-process item-log lock
+// (C) sidecar is keyed under (see ItemLogLockPath, 167.017-T). Pass the same
+// stable root used for the workspace's other advisory locks (membership lock
+// A, artifact-mutation lock B) so this writer's locking survives a
+// logs-directory reconfiguration/replacement. When never set, the writer
+// falls back to its own logsDir, preserving prior (pre-167.017-T) behavior.
+func WithLocksRoot(locksRoot string) Option {
+	return func(w *EventWriter) { w.locksRoot = locksRoot }
+}
+
 // NewEventWriter creates an event writer for the given logs directory. With no
 // options it is durable-off and byte-for-byte behavior-compatible with prior
-// releases; pass WithDurableWrites(true) to opt into the fsync protocol.
+// releases; pass WithDurableWrites(true) to opt into the fsync protocol and
+// WithLocksRoot to key the cross-process item-log lock under a stable root
+// independent of logsDir.
 func NewEventWriter(logsDir string, opts ...Option) *EventWriter {
 	w := &EventWriter{
 		logsDir:        logsDir,
@@ -83,6 +102,9 @@ func NewEventWriter(logsDir string, opts ...Option) *EventWriter {
 	}
 	for _, opt := range opts {
 		opt(w)
+	}
+	if w.locksRoot == "" {
+		w.locksRoot = logsDir
 	}
 	return w
 }
@@ -164,16 +186,16 @@ func withItemLogFileLock(ctx context.Context, key string) context.Context {
 	return context.WithValue(ctx, itemLogFileLockContextKey{}, set)
 }
 
-func itemLogLockSidecarPath(logsDir, itemID string) string {
-	path := LogPathForItem(logsDir, itemID)
-	return filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")
-}
-
-func acquireItemLogFileLock(ctx context.Context, logsDir, itemID string) (func(), error) {
-	if err := os.MkdirAll(logsDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create item logs directory: %w", err)
+// acquireItemLogFileLock acquires the cross-process item-log lock (C) sidecar
+// handle. locksRoot is the STABLE root (independent of any logs directory,
+// see ItemLogLockPath) that the sidecar is rooted under; it must remain
+// identical across a logs-directory reconfiguration/replacement for the
+// mutual-exclusion guarantee to survive one (167.017-T).
+func acquireItemLogFileLock(ctx context.Context, locksRoot, itemID string) (func(), error) {
+	lockPath, err := ItemLogLockPath(locksRoot, itemID)
+	if err != nil {
+		return nil, err
 	}
-	lockPath := itemLogLockSidecarPath(logsDir, itemID)
 	deadline := time.Now().Add(itemLogLockWait)
 	backoff := 20 * time.Millisecond
 	for {
@@ -207,20 +229,28 @@ func acquireItemLogFileLock(ctx context.Context, logsDir, itemID string) (func()
 
 // LockItemLogCrossProcess serializes a read/restore/reindex sequence with all
 // event appends for one item log, including writers in other processes.
-func LockItemLogCrossProcess(ctx context.Context, logsDir, itemID string) (context.Context, func(), error) {
+//
+// locksRoot is the STABLE lock root — independent of logsDir — that the
+// underlying cross-process sidecar (component C) is rooted under (see
+// ItemLogLockPath, 167.017-T). Callers own resolving it consistently
+// (typically a workspace's fixed ".locks" directory, the same root that the
+// shipment-membership lock A and artifact-mutation lock B use). logsDir is
+// still used for the in-process lock key/mutex (LockItemLog) and is
+// unaffected by this change: only the cross-process sidecar identity moved.
+func LockItemLogCrossProcess(ctx context.Context, locksRoot, logsDir, itemID string) (context.Context, func(), error) {
 	key := itemLogLockKey(logsDir, itemID)
 	if itemLogLockHeld(ctx, key) {
 		if itemLogFileLockHeld(ctx, key) {
 			return ctx, func() {}, nil
 		}
-		fileUnlock, err := acquireItemLogFileLock(ctx, logsDir, itemID)
+		fileUnlock, err := acquireItemLogFileLock(ctx, locksRoot, itemID)
 		if err != nil {
 			return ctx, nil, err
 		}
 		return withItemLogFileLock(ctx, key), fileUnlock, nil
 	}
 	lockedCtx, processUnlock := LockItemLog(ctx, logsDir, itemID)
-	fileUnlock, err := acquireItemLogFileLock(lockedCtx, logsDir, itemID)
+	fileUnlock, err := acquireItemLogFileLock(lockedCtx, locksRoot, itemID)
 	if err != nil {
 		processUnlock()
 		return ctx, nil, err
@@ -254,14 +284,14 @@ func (w *EventWriter) AppendEvent(ctx context.Context, event Event) error {
 	key := itemLogLockKey(w.logsDir, event.ItemID)
 	if itemLogLockHeld(ctx, key) {
 		if !itemLogFileLockHeld(ctx, key) {
-			fileUnlock, lockErr := acquireItemLogFileLock(ctx, w.logsDir, event.ItemID)
+			fileUnlock, lockErr := acquireItemLogFileLock(ctx, w.locksRoot, event.ItemID)
 			if lockErr != nil {
 				return lockErr
 			}
 			defer fileUnlock()
 		}
 	} else {
-		_, unlock, lockErr := LockItemLogCrossProcess(ctx, w.logsDir, event.ItemID)
+		_, unlock, lockErr := LockItemLogCrossProcess(ctx, w.locksRoot, w.logsDir, event.ItemID)
 		if lockErr != nil {
 			return lockErr
 		}

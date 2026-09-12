@@ -154,7 +154,7 @@ func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (ma
 		if err != nil {
 			return nil, fmt.Errorf("snapshot artifact %s file: %w", id, err)
 		}
-		_, unlockItemLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLogsRoot(ws.RootPath), id)
+		_, unlockItemLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), WorkspaceLogsRoot(ws.RootPath), id)
 		if lockErr != nil {
 			return nil, fmt.Errorf("lock artifact %s event log: %w", id, lockErr)
 		}
@@ -209,6 +209,7 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 func restoreShipArtifactsDetailed(ctx context.Context, ws *Workspace, snapshots map[string]shipArtifactSnapshot) ([]string, error) {
 	ctx = context.WithoutCancel(ctx)
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	locksRoot := WorkspaceLocksRoot(ws.RootPath)
 	operationID := shipmentOperationID(ctx)
 	ids := make([]string, 0, len(snapshots))
 	for id := range snapshots {
@@ -219,7 +220,7 @@ func restoreShipArtifactsDetailed(ctx context.Context, ws *Workspace, snapshots 
 	budget := &shipRestoreBudget{deadline: time.Now().Add(shipRestoreRetryWindow), attempts: shipRestoreRetryAttempts}
 	for _, id := range depthSortedIDs(ids) {
 		func() {
-			itemCtx, unlockItemLog, lockErr := acquireItemLogWithBudget(ctx, logsDir, id, budget)
+			itemCtx, unlockItemLog, lockErr := acquireItemLogWithBudget(ctx, locksRoot, logsDir, id, budget)
 			if lockErr != nil {
 				errs = append(errs, fmt.Errorf("lock artifact %s event log: %w", id, lockErr))
 				unrestored[id] = struct{}{}
@@ -271,7 +272,7 @@ func restoreShipArtifactsDetailed(ctx context.Context, ws *Workspace, snapshots 
 							fail(fmt.Errorf("restore artifact %s concurrent event: %w", id, err))
 						}
 					}
-					if err := bldb.ReindexItemLog(itemCtx, ws.DB, logsDir, id); err != nil {
+					if err := bldb.ReindexItemLog(itemCtx, ws.DB, locksRoot, logsDir, id); err != nil {
 						fail(fmt.Errorf("restore artifact %s event index: %w", id, err))
 					}
 				}
@@ -299,12 +300,12 @@ type shipRestoreBudget struct {
 // acquireItemLogWithBudget re-acquires an item-log lock, spending the shared
 // per-call retry budget when the first attempt fails. It never blocks beyond the
 // budget's wall-clock deadline for the retry loop itself.
-func acquireItemLogWithBudget(ctx context.Context, logsDir, id string, budget *shipRestoreBudget) (context.Context, func(), error) {
-	itemCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, id)
+func acquireItemLogWithBudget(ctx context.Context, locksRoot, logsDir, id string, budget *shipRestoreBudget) (context.Context, func(), error) {
+	itemCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, locksRoot, logsDir, id)
 	for lockErr != nil && budget.attempts > 0 && time.Now().Before(budget.deadline) {
 		budget.attempts--
 		time.Sleep(50 * time.Millisecond)
-		itemCtx, unlock, lockErr = events.LockItemLogCrossProcess(ctx, logsDir, id)
+		itemCtx, unlock, lockErr = events.LockItemLogCrossProcess(ctx, locksRoot, logsDir, id)
 	}
 	return itemCtx, unlock, lockErr
 }
@@ -1336,7 +1337,7 @@ func lockAdoptionEventLogs(ctx context.Context, ws *Workspace, oldID, newID stri
 	for _, id := range ids {
 		var unlock func()
 		var err error
-		lockedCtx, unlock, err = events.LockItemLogCrossProcess(lockedCtx, WorkspaceLogsRoot(ws.RootPath), id)
+		lockedCtx, unlock, err = events.LockItemLogCrossProcess(lockedCtx, WorkspaceLocksRoot(ws.RootPath), WorkspaceLogsRoot(ws.RootPath), id)
 		if err != nil {
 			for i := len(unlocks) - 1; i >= 0; i-- {
 				unlocks[i]()

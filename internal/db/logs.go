@@ -141,11 +141,15 @@ func DeleteAllItemLogs(ctx context.Context, database *sql.DB) error {
 }
 
 // ReindexItemLog rebuilds one item's indexed event projection from its JSONL log.
-func ReindexItemLog(ctx context.Context, database *sql.DB, logsDir, itemID string) error {
+// locksRoot is the stable root (independent of logsDir) the item-log
+// cross-process lock (C) is keyed under (see events.ItemLogLockPath,
+// 167.017-T); pass the workspace's advisory-lock root
+// (core.WorkspaceLocksRoot).
+func ReindexItemLog(ctx context.Context, database *sql.DB, locksRoot, logsDir, itemID string) error {
 	if itemID == "" {
 		return fmt.Errorf("reindex item log: item_id is required")
 	}
-	lockedCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	lockedCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, locksRoot, logsDir, itemID)
 	if lockErr != nil {
 		return fmt.Errorf("lock item log %s: %w", itemID, lockErr)
 	}
