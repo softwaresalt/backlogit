@@ -182,10 +182,13 @@ autoharness gate pipeline-topology --mode agent --shipment 148-S --phase pre_cla
   the implicit numeric-adjacency predecessor, not an explicit edge.
 - `pre_claim 138-S` → `blocked: false`, because its **explicit** predecessor
   `137-S` (declared via `dependencies: [137-S]`) is shipped. This is a control
-  case: with an explicit predecessor already in the shipped terminal state, the
-  authoritative gate clears without engaging the implicit numeric-adjacency
-  heuristic at all, so `138-S` demonstrates normal agreement between the explicit
-  DAG and `pre_claim` and is **not** evidence of the implicit numeric fallback.
+  case: `_prior_shipment_id(138-S)` is still evaluated and its numeric fallback
+  resolves to `137-S` — the very same ID already present as the explicit
+  predecessor — so deduplication prevents a second or distinct predecessor from
+  being added. Because the explicit predecessor is already in the shipped
+  terminal state, the authoritative gate clears, and `138-S` demonstrates normal
+  agreement between the explicit DAG and `pre_claim`. It is **not** evidence of
+  an independently added implicit predecessor.
 - `dag-readiness` reports `148-S`/`149-S` in its advisory `ready_set` at the same
   time — advisory-only, and **not** a claim authorization.
 
