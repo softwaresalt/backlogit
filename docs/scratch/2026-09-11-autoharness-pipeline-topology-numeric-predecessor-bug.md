@@ -2,12 +2,14 @@
 chunk_strategy: h1-h2-h3
 description: "autoharness pipeline-topology pre_claim gate derives predecessors from numeric shipment-ID adjacency instead of the blocks DAG, contradicting dag-readiness and blocking DAG-independent roots such as 148-S/149-S"
 doc_type: guide
+docline:
+  author: Stage
+  date: 2026-09-11
+  status: draft-for-transfer
+ingested_at: "2026-09-11T00:00:00Z"
 schema_version: "1.0"
 source: docs/scratch/2026-09-11-autoharness-pipeline-topology-numeric-predecessor-bug.md
 title: "autoharness bug — pipeline-topology pre_claim uses numeric shipment-ID predecessor instead of the blocks DAG"
-date: 2026-09-11
-author: Stage
-status: draft-for-transfer
 ---
 
 # autoharness bug — `pipeline-topology pre_claim` uses numeric shipment-ID predecessor instead of the blocks DAG
@@ -58,12 +60,25 @@ track ending at `147-S`:
 ### 3.1 Confirm the true dependency edges (backlogit)
 
 ```sh
-# 148-S has no incoming blocks edges; only 150-S and 151-S depend on it.
+# Forward edges — what 148-S depends on. Expect NONE (148-S is a DAG root).
 backlogit dep list 148-S
+
+# Reverse edges — what depends on 148-S. Expect only 150-S and 151-S.
+backlogit dep list 148-S --reverse
 ```
 
-Observed: no incoming dependencies for `148-S`; reverse edges show only `150-S`
-and `151-S` depend on `148-S`.
+Observed:
+
+- `backlogit dep list 148-S` (forward) → **no incoming/forward dependencies**
+  for `148-S` (empty result): it has zero `blocks` predecessors.
+- `backlogit dep list 148-S --reverse` →
+
+  ```text
+  150-S → 148-S (blocks)
+  151-S → 148-S (blocks)
+  ```
+
+  only `150-S` and `151-S` depend on `148-S`.
 
 ### 3.2 Confirm the true ready-set (autoharness dag-readiness)
 
@@ -172,11 +187,17 @@ be `pre_claim`-blocked on a fabricated numeric predecessor.
 
 ## 9. Supporting evidence (backlogit-side, read-only)
 
-- `backlogit dep list 148-S`: no incoming dependencies; reverse edges show only
-  `150-S` and `151-S` depend on `148-S`.
+- `backlogit dep list 148-S` (forward): no incoming dependencies;
+  `backlogit dep list 148-S --reverse`: only `150-S` and `151-S` depend on
+  `148-S`.
 - `autoharness gate dag-readiness --json`: `ready_set` contains `148-S` (ready).
-- `autoharness gate pipeline-topology --phase pre_claim --shipment 148-S --json`:
+- `autoharness gate pipeline-topology --mode agent --shipment 148-S --phase pre_claim --json`:
   `blocked: true`, `predecessor_id: 147-S` (not a real `blocks` edge).
-- Authoritative prior analysis in the `backlogit` workspace:
+- **Non-portable source-workspace reference (does not resolve after transfer).**
+  A prior analysis exists in the *source* `backlogit` workspace at
   `docs/decisions/2026-09-06-queued-shipment-ordered-scope-decision.md`
-  (see section 4 "Topology gate: numeric-predecessor behavior" and follow-up 7a).
+  (section 4 "Topology gate: numeric-predecessor behavior" and follow-up 7a).
+  This path is internal to the `backlogit` workspace and will **not** resolve in
+  the `autoharness` workspace; it is cited for provenance only. This report is
+  self-contained — all evidence needed to understand and fix the defect is in
+  sections 1–8 above and does not depend on that document.
