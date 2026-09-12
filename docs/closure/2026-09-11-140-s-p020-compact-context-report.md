@@ -34,11 +34,11 @@ is traceable from a compacted summary or decided plan.
 | Target | Before | After | Result |
 |---|---:|---:|---|
 | `docs/memory/` files | 56 | 40 | File-count threshold restored |
-| `docs/memory/` size | 247,683 bytes | 120,568 bytes | Below size threshold |
+| `docs/memory/` size | 247,683 bytes | 120,560 bytes | Below size threshold |
 | `docs/exec-plans/` files | 119 | 118 | Two 140-S plans consolidated into one decided plan |
-| `docs/exec-plans/` size | 3,928,834 bytes | 3,860,702 bytes | Historical corpus remains above threshold |
+| `docs/exec-plans/` size | 3,928,834 bytes | 3,860,700 bytes | Historical corpus remains above threshold |
 | `docs/closure/` files | 151 | 152 | Current report added; no closure original was eligible |
-| `docs/closure/` size | 1,118,264 bytes | 1,123,801 bytes | Historical corpus remains above threshold |
+| `docs/closure/` size | 1,118,264 bytes | More than 1.12 MB | Historical corpus remains above threshold |
 
 The plans and closure directories contain legacy artifacts whose terminal
 ownership cannot be proven safely from the live backlog index because many
@@ -113,7 +113,7 @@ them.
 | Original files compacted | 22 |
 | New compacted summaries | 4 |
 | New decided plans | 1 |
-| Active-directory space recovered | 195,247 bytes |
+| Active-directory space recovered | 195,257 bytes |
 | Approximate space recovered | 190.7 KiB |
 | Files deleted | 0 |
 
