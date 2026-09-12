@@ -1,3 +1,14 @@
+---
+chunk_strategy: h1-h2-h3
+description: "Migration runbook for the item-log cross-process lock's stable, handle-validated sidecar identity (167.017-T, #423): the full-fleet quiescence precondition for legacy binaries that cannot honor the new runtime lease."
+doc_type: design
+status: draft
+created: 2026-09-12
+schema_version: "1.0"
+source: docs/design-docs/2026-09-12-item-log-lock-identity-migration-runbook.md
+title: "Item-Log Lock Identity Migration Runbook (167.017-T)"
+---
+
 # Item-Log Lock Identity Migration Runbook (167.017-T)
 
 ## Summary
