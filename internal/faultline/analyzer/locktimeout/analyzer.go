@@ -23,15 +23,15 @@ var Analyzer = &analysis.Analyzer{
 }
 
 type timeoutClaim struct {
-	block       *ast.BlockStmt
+	container   ast.Node
 	call        *ast.CallExpr
 	contextVar  *types.Var
 	contextType types.Type
 }
 
 type lockAcquisition struct {
-	block *ast.BlockStmt
-	call  *ast.CallExpr
+	container ast.Node
+	call      *ast.CallExpr
 }
 
 type directAssignment struct {
@@ -90,7 +90,7 @@ func analyzeFunction(
 		if isTimeoutSource(pass, call) {
 			if variable := timeoutResultVariable(pass, parents, call, contextType); variable != nil {
 				claims = append(claims, timeoutClaim{
-					block:       containingBlock(parents, call),
+					container:   containingStatementListContainer(parents, call),
 					call:        call,
 					contextVar:  variable,
 					contextType: contextType,
@@ -100,8 +100,8 @@ func analyzeFunction(
 
 		if isUncancellableLock(pass, call, contextType) {
 			acquisitions = append(acquisitions, lockAcquisition{
-				block: containingBlock(parents, call),
-				call:  call,
+				container: containingStatementListContainer(parents, call),
+				call:      call,
 			})
 		}
 		return true
@@ -331,8 +331,9 @@ func claimReachesAcquisition(
 	acquisition lockAcquisition,
 	assignments []directAssignment,
 ) bool {
-	if claim.block == nil ||
-		!sameOrDescendantBlock(parents, claim.block, acquisition.block) ||
+	if claim.container == nil ||
+		acquisition.container == nil ||
+		!sameOrDescendantContainer(parents, claim.container, acquisition.container) ||
 		claim.call.End() >= acquisition.call.Pos() ||
 		!variableVisibleAt(pass, claim.contextVar, acquisition.call.Pos()) ||
 		claimEndedBeforeAcquisition(pass, parents, claim, acquisition, assignments) {
@@ -341,17 +342,15 @@ func claimReachesAcquisition(
 	return types.AssignableTo(claim.contextVar.Type(), claim.contextType)
 }
 
-func sameOrDescendantBlock(
+func sameOrDescendantContainer(
 	parents map[ast.Node]ast.Node,
-	ancestor *ast.BlockStmt,
-	descendant *ast.BlockStmt,
+	ancestor ast.Node,
+	descendant ast.Node,
 ) bool {
-	for block := descendant; block != nil; block = containingBlock(parents, block) {
-		if block == ancestor {
-			return true
-		}
+	if descendant == ancestor {
+		return true
 	}
-	return false
+	return hasAncestor(descendant, ancestor, parents)
 }
 
 func variableVisibleAt(pass *analysis.Pass, variable *types.Var, position token.Pos) bool {
@@ -392,11 +391,6 @@ func claimEndedBeforeAcquisition(
 	acquisition lockAcquisition,
 	assignments []directAssignment,
 ) bool {
-	sourceStatement := containingBlockStatement(parents, claim.call)
-	if sourceStatement == nil || parents[sourceStatement] != claim.block {
-		return false
-	}
-
 	for _, assignment := range assignments {
 		if assignment.variable != claim.contextVar ||
 			assignment.container == nil ||
@@ -425,6 +419,22 @@ func statementListContainer(
 	default:
 		return nil
 	}
+}
+
+func containingStatementListContainer(
+	parents map[ast.Node]ast.Node,
+	node ast.Node,
+) ast.Node {
+	for current := node; current != nil; current = parents[current] {
+		statement, ok := current.(ast.Stmt)
+		if !ok {
+			continue
+		}
+		if container := statementListContainer(parents, statement); container != nil {
+			return container
+		}
+	}
+	return nil
 }
 
 func hasAncestor(

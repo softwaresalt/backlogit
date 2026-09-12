@@ -194,3 +194,38 @@ func reassignedInsideSelectClause(parent context.Context, mu *sync.Mutex, ready 
 	}
 	_ = ctx
 }
+
+func sourceInsideSwitchCase(parent context.Context, mu *sync.Mutex, value int) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+	switch value {
+	case 1:
+		ctx, cancel = context.WithTimeout(parent, time.Second)
+		defer cancel()
+		ctx = context.Background()
+		_ = ctx
+		mu.Lock()
+	case 2:
+		mu.Lock()
+	}
+}
+
+func sourceInsideSelectClause(
+	parent context.Context,
+	mu *sync.Mutex,
+	ready <-chan struct{},
+	other <-chan struct{},
+) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+	select {
+	case <-ready:
+		ctx, cancel = context.WithTimeout(parent, time.Second)
+		defer cancel()
+		ctx = context.Background()
+		_ = ctx
+		mu.Lock()
+	case <-other:
+		mu.Lock()
+	}
+}

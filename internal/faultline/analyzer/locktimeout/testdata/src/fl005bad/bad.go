@@ -137,3 +137,31 @@ func valuePreservingAssignmentInsideConditionalPath(
 	}
 	_ = ctx
 }
+
+func sourceInsideSwitchCaseWithoutReset(
+	parent context.Context,
+	mu *sync.Mutex,
+	value int,
+) {
+	switch value {
+	case 1:
+		ctx, cancel := context.WithTimeout(parent, time.Second)
+		defer cancel()
+		_ = ctx
+		mu.Lock() // want "FL005"
+	}
+}
+
+func sourceInsideSelectClauseWithoutReset(
+	parent context.Context,
+	mu *sync.Mutex,
+	ready <-chan struct{},
+) {
+	select {
+	case <-ready:
+		ctx, cancel := context.WithTimeout(parent, time.Second)
+		defer cancel()
+		_ = ctx
+		mu.Lock() // want "FL005"
+	}
+}
