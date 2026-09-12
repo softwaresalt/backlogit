@@ -16,8 +16,6 @@ source: docs/closure/2026-09-11-140-s-pr-436-runtime-verification.md
 title: "Shipment 140-S / PR #436 Runtime Verification"
 ---
 
-# Runtime Verification: Shipment 140-S / PR #436
-
 ## Verdict
 
 **PASS WITH FOLLOW-UP**
@@ -234,10 +232,10 @@ releasability evidence.
 ### Observation window
 
 Operational closure should observe the first hosted CI run on the merge commit
-through completion, with a minimum 30-minute window after merge. The window may
-close early only after all expected checks complete successfully and the
-analyzer/test signals remain at their baselines. This future merge-commit
-observation is the reason for the `PASS WITH FOLLOW-UP` verdict.
+through completion, with a minimum 30-minute window after merge. Do not close
+the window early on success. Halt early only when a failure or rollback signal
+requires intervention. This future merge-commit observation is the reason for
+the `PASS WITH FOLLOW-UP` verdict.
 
 ### Rollback trigger and procedure
 
@@ -273,8 +271,9 @@ without `-fix`, and tests.
   and hosted current-HEAD CI
 * Evidence: exact commands, hashes, outputs, and CI check table in this report
 * Blocked prerequisites: none
-* Follow-up: observe the first hosted CI run on the merge commit for at least
-  the defined window and record healthy, degraded, or rolled-back outcome
+* Follow-up: observe the first hosted CI run on the merge commit for a minimum
+  of 30 minutes; halt early only on a failure or rollback signal, then record a
+  healthy, degraded, or rolled-back outcome
 * Monitoring baseline: analyzer exit 0 with zero diagnostics; focused race
   tests pass; expected hosted checks succeed
 * Rollback readiness: corrective revert PR; no deploy or data rollback needed
