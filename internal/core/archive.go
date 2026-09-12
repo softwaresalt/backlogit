@@ -227,7 +227,22 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		fm["archived_from"] = workspaceRelativePath(ws.RootPath, currentPath)
 	}
 	// 060.003-T: Preserve the pre-archive status so UnarchiveItem can restore it.
-	fm["archived_status"] = oldStatus
+	// 167.021-T guard: for an ALREADY-archived item (re-archive / pre-archived
+	// branch, currentPath==archivePath), oldStatus is itself "archived" --
+	// stamping archived_status = oldStatus here would overwrite a genuine
+	// terminal archived_status (e.g. a governed reconciliation's
+	// archived_status:shipped) with the malformed self-provenance "archived",
+	// serially destroying the reconciled state after reconcile has released
+	// its locks. Only the genuine queued->archive transition (oldStatus !=
+	// archived) stamps archived_status; a re-archive with an existing
+	// non-empty archived_status preserves it untouched. A legacy record with
+	// no existing archived_status (empty) still falls back to stamping
+	// oldStatus so it is not left permanently unset.
+	if existingArchivedStatus, _ := fm["archived_status"].(string); oldStatus == string(models.StatusArchived) && existingArchivedStatus != "" {
+		// Preserve fm["archived_status"] as already set.
+	} else {
+		fm["archived_status"] = oldStatus
+	}
 	fm["status"] = string(models.StatusArchived)
 	newContent := models.SerializeFrontmatter(fm, body)
 
