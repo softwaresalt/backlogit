@@ -207,14 +207,12 @@ Hosted workflow run: [CI run 34662505116](https://github.com/softwaresalt/backlo
 
 ### Monitoring plan
 
-The plan and harness supplement classify this shipment as internal analyzer and
-test/CI tooling with no production behavior, deployment, migration, or
+The decided plan classifies this shipment as internal analyzer and test/CI
+tooling with no production behavior, deployment, migration, or
 high-rollout-risk change:
 
-* `docs/exec-plans/2026-09-03-s6-seq3-compat-corpus-plan.md` -
-  `Runtime Verification and Closure`
-* `docs/exec-plans/2026-09-10-s6-140s-harness-contract-supplement.md` -
-  `Plan Hardening`
+* `docs/exec-plans/2026-09-11-s6-compatibility-corpus-decided-plan.md`
+  consolidates the governing plan and harness supplement
 
 | Signal | Baseline | Investigation threshold | Observation source | Owner |
 |---|---|---|---|---|
