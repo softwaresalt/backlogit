@@ -229,3 +229,36 @@ func sourceInsideSelectClause(
 		mu.Lock()
 	}
 }
+
+func suppressedInsideSwitchClause(parent context.Context, mu *sync.Mutex, value int) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	_ = ctx
+	switch value {
+	case 1:
+		// faultline:lock-nonctx-ok
+		mu.Lock()
+	}
+}
+
+func suppressedInsideTypeSwitchClause(parent context.Context, mu *sync.Mutex, value interface{}) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	_ = ctx
+	switch value.(type) {
+	case string:
+		// faultline:lock-nonctx-ok
+		mu.Lock()
+	}
+}
+
+func suppressedInsideSelectClause(parent context.Context, mu *sync.Mutex, ready <-chan struct{}) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	_ = ctx
+	select {
+	case <-ready:
+		// faultline:lock-nonctx-ok
+		mu.Lock()
+	}
+}

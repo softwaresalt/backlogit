@@ -165,3 +165,23 @@ func sourceInsideSelectClauseWithoutReset(
 		mu.Lock() // want "FL005"
 	}
 }
+
+func clauseLocalSuppressionNearMisses(parent context.Context, mu *sync.Mutex, value int) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	_ = ctx
+	switch value {
+	case 1:
+		// faultline:lock-nonctx-ok
+		mu.Lock()
+		mu.Lock() // want "FL005"
+	case 2:
+		// faultline:lock-nonctx-ok
+		_ = value
+		mu.Lock() // want "FL005"
+	case 3:
+		// faultline:lock-nonctx-ok
+	case 4:
+		mu.Lock() // want "FL005"
+	}
+}

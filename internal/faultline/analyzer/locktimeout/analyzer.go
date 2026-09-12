@@ -425,16 +425,24 @@ func containingStatementListContainer(
 	parents map[ast.Node]ast.Node,
 	node ast.Node,
 ) ast.Node {
+	_, container := containingStatementListOwner(parents, node)
+	return container
+}
+
+func containingStatementListOwner(
+	parents map[ast.Node]ast.Node,
+	node ast.Node,
+) (ast.Stmt, ast.Node) {
 	for current := node; current != nil; current = parents[current] {
 		statement, ok := current.(ast.Stmt)
 		if !ok {
 			continue
 		}
 		if container := statementListContainer(parents, statement); container != nil {
-			return container
+			return statement, container
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func hasAncestor(
@@ -473,12 +481,8 @@ func isSuppressed(
 	parents map[ast.Node]ast.Node,
 	call *ast.CallExpr,
 ) bool {
-	statement := containingBlockStatement(parents, call)
-	if statement == nil {
-		return false
-	}
-	block := containingBlock(parents, statement)
-	if block == nil {
+	statement, container := containingStatementListOwner(parents, call)
+	if statement == nil || container == nil {
 		return false
 	}
 
@@ -490,14 +494,14 @@ func isSuppressed(
 			}
 			line := pass.Fset.Position(comment.Pos()).Line
 			if line == pass.Fset.Position(call.End()).Line &&
-				trailingStatement(pass, block, comment) == statement &&
+				trailingStatement(pass, container, comment) == statement &&
 				nearestCallBefore(statement, comment) == call {
 				return true
 			}
 			if line == pass.Fset.Position(call.Pos()).Line-1 &&
 				line == startLine-1 &&
 				isDedicatedComment(pass, file, comment) &&
-				followingStatement(pass, block, comment) == statement &&
+				followingStatement(pass, container, comment) == statement &&
 				nearestCallAfter(statement, comment) == call {
 				return true
 			}
@@ -508,12 +512,12 @@ func isSuppressed(
 
 func trailingStatement(
 	pass *analysis.Pass,
-	block *ast.BlockStmt,
+	container ast.Node,
 	comment *ast.Comment,
 ) ast.Stmt {
 	commentLine := pass.Fset.Position(comment.Pos()).Line
 	var owner ast.Stmt
-	for _, candidate := range block.List {
+	for _, candidate := range statementList(container) {
 		if candidate.Pos() > comment.Pos() ||
 			(candidate.End() < comment.Pos() &&
 				pass.Fset.Position(candidate.End()).Line != commentLine) {
@@ -528,12 +532,12 @@ func trailingStatement(
 
 func followingStatement(
 	pass *analysis.Pass,
-	block *ast.BlockStmt,
+	container ast.Node,
 	comment *ast.Comment,
 ) ast.Stmt {
 	followingLine := pass.Fset.Position(comment.Pos()).Line + 1
 	var owner ast.Stmt
-	for _, candidate := range block.List {
+	for _, candidate := range statementList(container) {
 		if candidate.Pos() < comment.End() ||
 			pass.Fset.Position(candidate.Pos()).Line != followingLine {
 			continue
@@ -575,26 +579,17 @@ func nearestCallAfter(statement ast.Stmt, comment *ast.Comment) *ast.CallExpr {
 	return nearest
 }
 
-func containingBlockStatement(parents map[ast.Node]ast.Node, node ast.Node) ast.Stmt {
-	var owner ast.Stmt
-	for parent := parents[node]; parent != nil; parent = parents[parent] {
-		if _, ok := parent.(*ast.BlockStmt); ok {
-			return owner
-		}
-		if statement, ok := parent.(ast.Stmt); ok {
-			owner = statement
-		}
+func statementList(container ast.Node) []ast.Stmt {
+	switch container := container.(type) {
+	case *ast.BlockStmt:
+		return container.List
+	case *ast.CaseClause:
+		return container.Body
+	case *ast.CommClause:
+		return container.Body
+	default:
+		return nil
 	}
-	return nil
-}
-
-func containingBlock(parents map[ast.Node]ast.Node, node ast.Node) *ast.BlockStmt {
-	for parent := parents[node]; parent != nil; parent = parents[parent] {
-		if block, ok := parent.(*ast.BlockStmt); ok {
-			return block
-		}
-	}
-	return nil
 }
 
 func isDedicatedComment(pass *analysis.Pass, file *ast.File, comment *ast.Comment) bool {
