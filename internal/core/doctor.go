@@ -6,6 +6,7 @@ package core
 // and nil-layout guard failures.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -609,6 +610,62 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	return report, nil
 }
 
+// reconciledShippedEventPresence reports whether id's item JSONL carries at
+// least one FULLY-VALID EventShipmentReconciledShipped event (167.002-T,
+// U3's doctor-local recognition branch). It reads the raw log bytes
+// directly and validates each line via ValidateShipmentReconciledShippedEvent
+// with no prepared-event/digest comparison (the doctor scan has no access
+// to any persisted prepared-event artifact — that lands with the
+// transaction in 167.008-T) — so this only confirms shape and required-field
+// completeness, never full replay authenticity; a fully-consistent forgery
+// is an accepted residual (see the task's trust-model note).
+//
+// This does NOT broaden shippedEventPresence (144-F guard 2): it is
+// consulted ONLY as an alternative "present" signal by
+// detectMissingShippedEvents, never a replacement, and any
+// bare/malformed/stale/duplicate/key-mismatched event line leaves this
+// false, retaining the missing-shipped-event finding exactly as before this
+// task existed.
+func reconciledShippedEventPresence(logsDir, id string) (present bool, readable bool) {
+	logPath := events.LogPathForItem(logsDir, id)
+	realLogsDir, rootErr := filepath.EvalSymlinks(logsDir)
+	if rootErr != nil {
+		realLogsDir = filepath.Clean(logsDir)
+	}
+	realLogPath, evalErr := filepath.EvalSymlinks(logPath)
+	if evalErr != nil {
+		if realParent, perr := filepath.EvalSymlinks(filepath.Dir(logPath)); perr == nil {
+			realLogPath = filepath.Join(realParent, filepath.Base(logPath))
+		} else {
+			realLogPath = logPath
+		}
+	}
+	if !pathContained(realLogsDir, realLogPath) {
+		return false, false
+	}
+	data, err := os.ReadFile(realLogPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Absent log: nothing to read, but reading it is not a failure
+			// in itself. shippedEventPresence's own !present/!readable
+			// combination already reports "missing" for this case; this
+			// function simply has no reconciled event to contribute.
+			return false, true
+		}
+		return false, false
+	}
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		lineWithNewline := append(append([]byte{}, line...), '\n')
+		if ValidateShipmentReconciledShippedEvent(lineWithNewline, nil, "") == nil {
+			return true, true
+		}
+	}
+	return false, true
+}
+
 // shippedEventPresence reports whether the item JSONL for id carries a
 // shipment_status_changed event with status == "shipped", and whether the log
 // could be read at all.
@@ -681,6 +738,22 @@ func detectMissingShippedEvents(ctx context.Context, logsDir string, refs map[st
 			continue
 		}
 		present, readable := shippedEventPresence(ctx, logsDir, id)
+		if !present {
+			// 167.002-T: a governed reconciliation writes a DISTINCT event
+			// type (EventShipmentReconciledShipped), never the plain
+			// shipment_status_changed event shippedEventPresence looks for.
+			// This is consulted ONLY as an alternative "present" signal —
+			// never a replacement for shippedEventPresence's own logic
+			// (144-F guard 2 stays exactly as strict as before) — and only
+			// when the plain check already found nothing.
+			reconciledPresent, reconciledReadable := reconciledShippedEventPresence(logsDir, id)
+			if reconciledPresent {
+				present = true
+			}
+			if !readable && reconciledReadable {
+				readable = true
+			}
+		}
 		switch {
 		case !readable:
 			findings = append(findings, DoctorFinding{
