@@ -13,10 +13,11 @@ var (
 	ErrNotFound    = errors.New("backlogit: not found")
 
 	// Shipment sentinel errors (F015 / T002 / ST011).
-	ErrShipmentNotFound    = errors.New("backlogit: shipment not found")
-	ErrItemAlreadyAssigned = errors.New("backlogit: item already assigned to a shipment")
-	ErrShipmentConflict    = errors.New("backlogit: shipment status conflict")
-	ErrCannotReturnItem    = errors.New("backlogit: cannot return item from shipment")
+	ErrShipmentNotFound          = errors.New("backlogit: shipment not found")
+	ErrItemAlreadyAssigned       = errors.New("backlogit: item already assigned to a shipment")
+	ErrShipmentConflict          = errors.New("backlogit: shipment status conflict")
+	ErrShipmentReconcileEvidence = errors.New("backlogit: shipment reconcile evidence invalid or unverifiable")
+	ErrCannotReturnItem          = errors.New("backlogit: cannot return item from shipment")
 
 	// Cascade sentinel errors (F018 / T004).
 	ErrChildrenNotTerminal = errors.New("backlogit: parent cannot transition while non-terminal children exist")

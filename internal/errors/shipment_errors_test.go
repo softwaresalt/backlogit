@@ -19,6 +19,7 @@ func TestShipmentSentinelErrors_ErrorsIs(t *testing.T) {
 		{"ErrShipmentNotFound", ErrShipmentNotFound, "backlogit: shipment not found"},
 		{"ErrItemAlreadyAssigned", ErrItemAlreadyAssigned, "backlogit: item already assigned to a shipment"},
 		{"ErrShipmentConflict", ErrShipmentConflict, "backlogit: shipment status conflict"},
+		{"ErrShipmentReconcileEvidence", ErrShipmentReconcileEvidence, "backlogit: shipment reconcile evidence invalid or unverifiable"},
 		{"ErrCannotReturnItem", ErrCannotReturnItem, "backlogit: cannot return item from shipment"},
 	}
 
@@ -41,6 +42,7 @@ func TestShipmentSentinelErrors_AreDistinct(t *testing.T) {
 		ErrShipmentNotFound,
 		ErrItemAlreadyAssigned,
 		ErrShipmentConflict,
+		ErrShipmentReconcileEvidence,
 		ErrCannotReturnItem,
 	}
 
