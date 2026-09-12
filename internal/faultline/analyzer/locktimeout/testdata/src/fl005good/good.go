@@ -141,3 +141,56 @@ func functionLiteralSourceIsolation(parent context.Context, mu *sync.Mutex) {
 	}()
 	mu.Lock()
 }
+
+func reassignedInsideConditionalPath(parent context.Context, mu *sync.Mutex, reset bool) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	if reset {
+		ctx = context.Background()
+		mu.Lock()
+	}
+	_ = ctx
+}
+
+func reassignedInsideUnconditionalNestedBlock(parent context.Context, mu *sync.Mutex) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	{
+		ctx = context.Background()
+		mu.Lock()
+	}
+	_ = ctx
+}
+
+func reassignedInsideSwitchCase(parent context.Context, mu *sync.Mutex, value int) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	switch value {
+	case 1:
+		ctx = context.Background()
+		mu.Lock()
+	}
+	_ = ctx
+}
+
+func reassignedInsideTypeSwitchCase(parent context.Context, mu *sync.Mutex, value interface{}) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	switch value.(type) {
+	case string:
+		ctx = context.Background()
+		mu.Lock()
+	}
+	_ = ctx
+}
+
+func reassignedInsideSelectClause(parent context.Context, mu *sync.Mutex, ready <-chan struct{}) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	select {
+	case <-ready:
+		ctx = context.Background()
+		mu.Lock()
+	}
+	_ = ctx
+}

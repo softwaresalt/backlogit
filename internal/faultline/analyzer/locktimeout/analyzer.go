@@ -35,7 +35,7 @@ type lockAcquisition struct {
 }
 
 type directAssignment struct {
-	block     *ast.BlockStmt
+	container ast.Node
 	statement *ast.AssignStmt
 	variable  *types.Var
 	value     ast.Expr
@@ -140,7 +140,7 @@ func directAssignments(
 			continue
 		}
 		assignments = append(assignments, directAssignment{
-			block:     containingBlock(parents, statement),
+			container: statementListContainer(parents, statement),
 			statement: statement,
 			variable:  variable,
 			value:     statement.Rhs[index],
@@ -399,14 +399,43 @@ func claimEndedBeforeAcquisition(
 
 	for _, assignment := range assignments {
 		if assignment.variable != claim.contextVar ||
-			assignment.block != claim.block ||
-			parents[assignment.statement] != claim.block ||
+			assignment.container == nil ||
+			!hasAncestor(acquisition.call, assignment.container, parents) ||
 			assignment.statement.Pos() <= claim.call.End() ||
 			assignment.statement.End() >= acquisition.call.Pos() ||
 			expressionReferencesVariable(pass, assignment.value, claim.contextVar) {
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+func statementListContainer(
+	parents map[ast.Node]ast.Node,
+	statement ast.Stmt,
+) ast.Node {
+	switch parent := parents[statement].(type) {
+	case *ast.BlockStmt:
+		return parent
+	case *ast.CaseClause:
+		return parent
+	case *ast.CommClause:
+		return parent
+	default:
+		return nil
+	}
+}
+
+func hasAncestor(
+	node ast.Node,
+	ancestor ast.Node,
+	parents map[ast.Node]ast.Node,
+) bool {
+	for current := parents[node]; current != nil; current = parents[current] {
+		if current == ancestor {
+			return true
+		}
 	}
 	return false
 }

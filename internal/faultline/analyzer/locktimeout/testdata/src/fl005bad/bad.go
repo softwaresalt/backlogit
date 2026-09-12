@@ -123,3 +123,17 @@ func optionalLoopReset(parent context.Context, mu *sync.Mutex, reset bool) {
 	_ = ctx
 	mu.Lock() // want "FL005"
 }
+
+func valuePreservingAssignmentInsideConditionalPath(
+	parent context.Context,
+	mu *sync.Mutex,
+	reset bool,
+) {
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	if reset {
+		ctx = context.WithValue(ctx, struct{}{}, "value")
+		mu.Lock() // want "FL005"
+	}
+	_ = ctx
+}
