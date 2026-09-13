@@ -14,12 +14,34 @@ import (
 )
 
 // shipmentReconcileAppendResult carries the byte-range the platform-specific
-// append primitive actually wrote, so the portable orchestration can re-read
-// EXACTLY that slice for the post-write durability validation, never the
-// whole file (which could include unrelated prior/subsequent lines).
+// append primitive actually wrote, plus the durable re-read of exactly that
+// range performed from the SAME still-open file handle used for the append
+// itself (readBack). The portable orchestration validates readBack directly
+// rather than re-opening logPath BY PATHNAME a second time: a fresh pathname
+// open is a TOCTOU window in which the path could be swapped between the
+// handle-relative append and that re-open, letting validation read a
+// different (possibly outside-workspace) file while reporting the append as
+// durably verified (167.007-T hardening).
 type shipmentReconcileAppendResult struct {
 	preAppendSize int64
 	bytesWritten  int
+	readBack      []byte
+}
+
+// shipmentReconcileAppendSeams carries the injectable handle-relative append
+// primitive so tests can prove the portable orchestration below validates
+// the SAME re-read the primitive itself performed (result.readBack) rather
+// than re-deriving bytes via a fresh pathname open of logPath — the exact
+// TOCTOU distinction shipmentReconcileAppendResult documents. Production
+// always wires the real platform-specific
+// appendShipmentReconcileEventHandleRelative implementation.
+type shipmentReconcileAppendSeams struct {
+	appendHandleRelative func(logsDir, fileName string, eventBytes []byte) (shipmentReconcileAppendResult, error)
+}
+
+// defaultShipmentReconcileAppendSeams returns the production seam wiring.
+func defaultShipmentReconcileAppendSeams() shipmentReconcileAppendSeams {
+	return shipmentReconcileAppendSeams{appendHandleRelative: appendShipmentReconcileEventHandleRelative}
 }
 
 // appendShipmentReconcileEventImpl is the real implementation behind the
@@ -38,15 +60,24 @@ type shipmentReconcileAppendResult struct {
 // refused as indeterminate instead; (3) append eventBytes via a
 // handle-relative, ALWAYS-fsync write (decoupled from the workspace's
 // durable_writes config: this append represents the governed transaction's
-// own audit record and cannot be optional); (4) re-read EXACTLY the bytes
-// just written and re-validate them via the SAME shared validator — proving
-// the durable, on-disk bytes are what they should be, not merely what was
-// requested; (5) ONLY THEN index the event (bldb.IndexEvent). An index
-// failure at step 5 does NOT un-reconcile: the JSONL is already durably
-// valid and remains the source of truth; the index is repaired by the next
-// sync/reindex. No second append is ever attempted after a failure at any
-// step — the caller (167.008-T) owns retry/resume semantics.
+// own audit record and cannot be optional); (4) re-validate EXACTLY the
+// bytes the platform-specific primitive itself durably re-read from the SAME
+// handle it wrote through (never a fresh pathname re-open, which would be a
+// TOCTOU window) via the SAME shared validator — proving the durable,
+// on-disk bytes are what they should be, not merely what was requested; (5)
+// ONLY THEN index the event (bldb.IndexEvent). An index failure at step 5
+// does NOT un-reconcile: the JSONL is already durably valid and remains the
+// source of truth; the index is repaired by the next sync/reindex. No second
+// append is ever attempted after a failure at any step — the caller
+// (167.008-T) owns retry/resume semantics.
 func appendShipmentReconcileEventImpl(ctx context.Context, ws *Workspace, itemID string, eventBytes []byte) error {
+	return appendShipmentReconcileEventImplWithSeams(ctx, ws, itemID, eventBytes, defaultShipmentReconcileAppendSeams())
+}
+
+// appendShipmentReconcileEventImplWithSeams is the seam-injectable
+// implementation shared by appendShipmentReconcileEventImpl and the
+// portable-orchestration tests (shipment_reconcile_append_test.go).
+func appendShipmentReconcileEventImplWithSeams(ctx context.Context, ws *Workspace, itemID string, eventBytes []byte, seams shipmentReconcileAppendSeams) error {
 	if ws == nil {
 		return fmt.Errorf("append shipment reconcile event: workspace is required: %w", blerrors.ErrValidation)
 	}
@@ -56,7 +87,7 @@ func appendShipmentReconcileEventImpl(ctx context.Context, ws *Workspace, itemID
 	if len(eventBytes) == 0 {
 		return fmt.Errorf("append shipment reconcile event: event bytes are required: %w", blerrors.ErrValidation)
 	}
-	if err := ValidateShipmentReconciledShippedEvent(eventBytes, nil, ""); err != nil {
+	if err := ValidateShipmentReconciledShippedEvent(eventBytes, nil, "", itemID); err != nil {
 		return fmt.Errorf("append shipment reconcile event: refusing malformed event, no write attempted: %w", err)
 	}
 
@@ -66,24 +97,22 @@ func appendShipmentReconcileEventImpl(ctx context.Context, ws *Workspace, itemID
 	}
 	logPath := events.LogPathForItem(logsDir, itemID)
 
-	result, err := appendShipmentReconcileEventHandleRelative(logsDir, itemID+".jsonl", eventBytes)
+	result, err := seams.appendHandleRelative(logsDir, itemID+".jsonl", eventBytes)
 	if err != nil {
 		return err
 	}
 
-	f, err := os.Open(logPath)
-	if err != nil {
-		return fmt.Errorf("%w: re-open durably appended log for validation: %w", blerrors.ErrWriteIndeterminate, err)
-	}
-	defer f.Close()
-	reReadBuf := make([]byte, result.bytesWritten)
-	if _, readErr := f.ReadAt(reReadBuf, result.preAppendSize); readErr != nil {
-		return fmt.Errorf("%w: re-read durably appended event: %w", blerrors.ErrWriteIndeterminate, readErr)
+	// Validate the re-read the platform-specific append primitive already
+	// performed from the SAME handle it wrote through — never a fresh
+	// pathname open of logPath (see shipmentReconcileAppendResult).
+	reReadBuf := result.readBack
+	if len(reReadBuf) != result.bytesWritten {
+		return fmt.Errorf("%w: durably appended re-read length mismatch for %s: got %d want %d bytes", blerrors.ErrWriteIndeterminate, logPath, len(reReadBuf), result.bytesWritten)
 	}
 	if !bytes.Equal(reReadBuf, eventBytes) {
 		return fmt.Errorf("%w: durably appended bytes do not match the requested event", blerrors.ErrWriteIndeterminate)
 	}
-	if err := ValidateShipmentReconciledShippedEvent(reReadBuf, nil, ""); err != nil {
+	if err := ValidateShipmentReconciledShippedEvent(reReadBuf, nil, "", itemID); err != nil {
 		return fmt.Errorf("%w: re-read validation of durably appended event failed: %w", blerrors.ErrWriteIndeterminate, err)
 	}
 

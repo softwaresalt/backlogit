@@ -75,5 +75,15 @@ func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventB
 		}
 	}
 
-	return shipmentReconcileAppendResult{preAppendSize: preAppendSize, bytesWritten: n}, nil
+	// Re-read EXACTLY the bytes just written from the SAME still-open file
+	// descriptor used for the append itself — never a fresh pathname open,
+	// which would be a TOCTOU window in which fileName could be swapped for
+	// a different (possibly outside-workspace) file between this append and
+	// a later re-open (167.007-T hardening).
+	readBack := make([]byte, n)
+	if _, err := file.ReadAt(readBack, preAppendSize); err != nil {
+		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: re-read durably appended bytes from same handle for item log %s: %w", blerrors.ErrWriteIndeterminate, fileName, err)
+	}
+
+	return shipmentReconcileAppendResult{preAppendSize: preAppendSize, bytesWritten: n, readBack: readBack}, nil
 }
