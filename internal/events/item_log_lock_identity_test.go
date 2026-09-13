@@ -143,3 +143,50 @@ func TestItemLogLockPath_WritesVersionMarker(t *testing.T) {
 	require.NoError(t, readErr, "the identity version marker must be written on lock-path resolution")
 	assert.Equal(t, ItemLogLockIdentityVersion+"\n", string(data))
 }
+
+// TestWriteItemLogLockVersionMarker_RefusesExistingSymlink (Copilot PR #440
+// review, finding 3) proves writeItemLogLockVersionMarker no longer blindly
+// follows a symlink planted at the marker's own path: os.WriteFile follows
+// symlinks transparently, so a ".identity-version" leaf swapped for a
+// symlink pointing outside the workspace before this call would otherwise
+// redirect the write. The fix rejects (skips, best-effort) an existing
+// symlink rather than writing through it.
+func TestWriteItemLogLockVersionMarker_RefusesExistingSymlink(t *testing.T) {
+	namespaceDir := t.TempDir()
+	outsideDir := t.TempDir()
+	outsideTarget := filepath.Join(outsideDir, "planted-target.txt")
+	require.NoError(t, os.WriteFile(outsideTarget, []byte("pre-existing outside content"), 0o644))
+
+	markerPath := filepath.Join(namespaceDir, itemLogLockVersionMarkerName)
+	if err := os.Symlink(outsideTarget, markerPath); err != nil {
+		t.Skipf("symlink creation skipped: %v", err)
+	}
+
+	writeItemLogLockVersionMarker(namespaceDir)
+
+	// The symlink itself must be left exactly as it was (never removed or
+	// replaced), and its target must remain untouched — proving the write
+	// was refused rather than following the symlink.
+	link, lstatErr := os.Lstat(markerPath)
+	require.NoError(t, lstatErr)
+	assert.True(t, link.Mode()&os.ModeSymlink != 0, "the marker path must still be the planted symlink")
+
+	got, readErr := os.ReadFile(outsideTarget)
+	require.NoError(t, readErr)
+	assert.Equal(t, "pre-existing outside content", string(got),
+		"the symlink target outside the namespace directory must never be overwritten")
+}
+
+// TestWriteItemLogLockVersionMarker_SucceedsWithoutSymlink is the control
+// case: a normal (non-symlink) namespace directory must continue to have
+// the marker written exactly as before.
+func TestWriteItemLogLockVersionMarker_SucceedsWithoutSymlink(t *testing.T) {
+	namespaceDir := t.TempDir()
+
+	writeItemLogLockVersionMarker(namespaceDir)
+
+	markerPath := filepath.Join(namespaceDir, itemLogLockVersionMarkerName)
+	data, readErr := os.ReadFile(markerPath)
+	require.NoError(t, readErr)
+	assert.Equal(t, ItemLogLockIdentityVersion+"\n", string(data))
+}

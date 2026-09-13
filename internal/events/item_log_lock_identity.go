@@ -129,7 +129,27 @@ func ItemLogLockPath(locksRoot, itemID string) (string, error) {
 // Best-effort: a write failure here must never block lock acquisition — the
 // marker is informational/forward-compatibility metadata, not part of the
 // mutual-exclusion mechanism itself.
+//
+// Copilot PR #440 review, finding 3: markerPath lives inside namespaceDir,
+// which — despite namespaceDir itself already having been validated a few
+// lines above in ItemLogLockPath — could in principle have had its
+// ".identity-version" leaf independently swapped for a symlink pointing
+// outside the workspace before this write runs (a distinct planted-file
+// TOCTOU from the namespace-directory swap ItemLogLockPath already
+// defends against). Since this marker is durability/migration metadata,
+// not itself security-critical data, a full handle-relative rewrite is
+// disproportionate; instead this applies the same lightweight
+// Lstat-and-reject-ModeSymlink pattern this codebase already uses for
+// other lower-criticality writes (e.g. checkpoint_readnofollow_windows.go's
+// readFileNoFollow), refusing to blindly follow a symlink the way a bare
+// os.WriteFile would.
 func writeItemLogLockVersionMarker(namespaceDir string) {
 	markerPath := filepath.Join(namespaceDir, itemLogLockVersionMarkerName)
+	if info, err := os.Lstat(markerPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		// A symlink already sits at the marker path: refuse to follow it.
+		// Best-effort semantics mean this is silently skipped, exactly like
+		// any other write failure here.
+		return
+	}
 	_ = os.WriteFile(markerPath, []byte(ItemLogLockIdentityVersion+"\n"), 0o644)
 }
