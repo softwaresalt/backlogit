@@ -493,18 +493,22 @@ func TestShipmentReconcileShipped_Reject_Conflict(t *testing.T) {
 
 	// Same idempotency key, but a different actor changes the request
 	// identity digest (167.001-T's scalar-field digest is sensitive to
-	// actor) — this must be REJECTED, not silently accepted or treated as a
-	// no-op.
+	// actor). With Phase B's identity/legacy-value gate ordering fixed
+	// (167.008-T), this now reaches classifyShipmentReconcileState against
+	// the already-shipped shipment and is correctly classified as
+	// ShipmentReconcileOutcomeConflict (classifyShipmentReconcileEventPresent:
+	// the single logged event's IdempotencyKey matches the request's, but
+	// its RequestIdentityDigest does not) — a same-key, different-identity
+	// replay, not a pre-state rejection.
 	secondArgs := append(fx.args(fx.deliverySHA, fx.closureRel, "idem-167-005-conflict", "someone-else", "governed repair"), fx.confirmArg()...)
 	_, _, err = runReconcileShippedCLI(t, fx.root, secondArgs...)
-	require.Error(t, err)
-	assert.True(t,
-		errors.Is(err, blerrors.ErrShipmentReconcileConflict) || errors.Is(err, blerrors.ErrUnsupportedLegacyPreState),
-		"a conflicting-identity replay must be rejected as either the classifier conflict sentinel or the pre-state gate sentinel, got: %v", err)
+	require.Error(t, err, "a same-key, different-identity replay must still be rejected, now via the conflict outcome rather than a pre-state gate")
 
 	var ee *cli.ExitError
-	require.True(t, errors.As(err, &ee))
+	require.True(t, errors.As(err, &ee), "a conflict outcome must carry the typed reconcile-conflict exit code")
 	assert.Equal(t, cli.ExitReconcileConflict, ee.Code)
+	assert.Contains(t, ee.Msg, "conflicts with a different already-recorded reconciliation",
+		"the rejection must originate from classifyShipmentReconcileState's conflict outcome, not the legacy pre-state gate")
 
 	archiveAfterSecond, _ := snapshotFileOrAbsent(t, fx.archivedPath(t))
 	logAfterSecond, _ := snapshotFileOrAbsent(t, fx.itemLogPath())
@@ -561,21 +565,17 @@ func TestShipmentReconcileShipped_Reject_ReachableNonMergeCommit(t *testing.T) {
 
 // --- Scenario 9: idempotent replay (same key, same identity) -> no_op --------
 //
-// DISCOVERED PRODUCTION BEHAVIOR (see the 167.005-T completion report): the
-// SAME gate-ordering issue documented above
-// (TestShipmentReconcileShipped_Reject_Conflict) means an EXACT, same-key,
-// same-identity replay is ALSO currently rejected with
-// ErrUnsupportedLegacyPreState by reconcileShipmentPhaseB's unconditional
-// validateShipmentReconcileShipmentPreState call, before
-// classifyShipmentReconcileState's designed 1b ("already durably recorded")
-// no_op branch ever runs. classifyShipmentReconcileEventPresent
-// (internal/core/shipment_reconcile_classifier.go, 167.010-T) DOES implement
-// exactly the no_op contract this scenario describes — this test's
-// intended, spec'd outcome ("no_op", exit 0) is therefore not reachable
-// through the public ReconcileShipmentToShipped/CLI entry point today. This
-// test instead characterizes the CURRENT behavior and pins its most
-// important safety property: a replay is REJECTED rather than silently
-// treated as a fresh reconciliation, and it never produces a second write.
+// With Phase B's gate ordering fixed (167.008-T: the identity check runs
+// unconditionally, but the legacy archived_status-value check is deferred
+// until AFTER classification, and only re-applied on the fresh-repair
+// ("reconciled") branch), a second call with the SAME idempotency key and the
+// SAME request-identity-affecting fields now reaches
+// classifyShipmentReconcileState against the already-shipped shipment and is
+// classified via classifyShipmentReconcileEventPresent: exactly one logged
+// event whose IdempotencyKey/RequestIdentityDigest match both the request and
+// the persisted frontmatter markers, yielding ShipmentReconcileOutcomeNoOp.
+// reconcileShipmentPhaseBNoOp then finds the durable event already present
+// (branch 1b) and takes no further action — no second write, exit 0.
 func TestShipmentReconcileShipped_IdempotentReplay_NoOp(t *testing.T) {
 	reconcileShippedRequireGit(t)
 	fx := newReconcileShippedFixture(t, string(models.StatusDone))
@@ -590,32 +590,31 @@ func TestShipmentReconcileShipped_IdempotentReplay_NoOp(t *testing.T) {
 	logBefore, _ := snapshotFileOrAbsent(t, fx.itemLogPath())
 
 	// Identical request (same idempotency key, same identity-affecting
-	// fields). As shipped today this is rejected (see doc comment above)
-	// rather than resolving to no_op; either way it must never be an
-	// unguarded second write.
-	_, _, err = runReconcileShippedCLI(t, fx.root, args...)
-	require.Error(t, err, "a replay must never silently re-run the reconciliation as if it were fresh")
-	assert.True(t, errors.Is(err, blerrors.ErrUnsupportedLegacyPreState), "got: %v", err)
+	// fields): must resolve to no_op, with no second write.
+	secondStdout, secondStderr, err := runReconcileShippedCLI(t, fx.root, args...)
+	require.NoError(t, err, "an idempotent replay must succeed as a no-op, not error: stderr: %s", secondStderr)
+	second := decodeReconcileShippedResult(t, secondStdout)
+	assert.Equal(t, "no_op", second["outcome"], "a same-key, same-identity replay must resolve to no_op")
 
 	archiveAfter, _ := snapshotFileOrAbsent(t, fx.archivedPath(t))
 	logAfter, _ := snapshotFileOrAbsent(t, fx.itemLogPath())
-	assert.Equal(t, archiveBefore, archiveAfter, "a replay must not rewrite the archive file")
-	assert.Equal(t, logBefore, logAfter, "a replay must not append a second event")
+	assert.Equal(t, archiveBefore, archiveAfter, "a no_op replay must not rewrite the archive file")
+	assert.Equal(t, logBefore, logAfter, "a no_op replay must not append a second event")
 }
 
 // --- Scenario 10: idempotent replay after the closure file is deleted -------
 //
-// DISCOVERED PRODUCTION BEHAVIOR: the request's scalar identity digest
-// (shipmentReconcileRequestIdentityDigest, 167.001-T) is indeed computed
-// WITHOUT reading the closure path — that half of the design is verifiably
-// correct and this test still exercises it directly (the replay call below
-// succeeds in computing its identity digest even though the closure file no
-// longer exists on disk). What it cannot currently demonstrate is the
-// classifier reaching its designed no_op outcome afterward, for the exact
-// same reason documented on TestShipmentReconcileShipped_IdempotentReplay_NoOp
-// above: reconcileShipmentPhaseB's unconditional pre-state gate rejects the
-// replay before the classifier runs, regardless of whether the closure file
-// is present or deleted.
+// Same as TestShipmentReconcileShipped_IdempotentReplay_NoOp above, but the
+// closure-evidence file is deleted between the two calls. The replay must
+// still resolve to no_op: classifyShipmentReconcileState's
+// classifyShipmentReconcileEventPresent decision is made purely from the
+// already-read item log and frontmatter (both re-read fresh under Phase B's
+// held locks) plus the cheap, closure-path-free request identity digest
+// (shipmentReconcileRequestIdentityDigest, 167.001-T) — it never re-reads the
+// closure file. Phase C (the slow evidence gathering that DOES read the
+// closure file) only ever runs on the fresh-repair ("reconciled") branch,
+// which a no_op outcome never reaches, so the deleted closure file is simply
+// never consulted for this decision.
 func TestShipmentReconcileShipped_IdempotentReplay_AfterClosureFileDeleted(t *testing.T) {
 	reconcileShippedRequireGit(t)
 	fx := newReconcileShippedFixture(t, string(models.StatusDone))
@@ -627,7 +626,7 @@ func TestShipmentReconcileShipped_IdempotentReplay_AfterClosureFileDeleted(t *te
 	require.Equal(t, "reconciled", first["outcome"])
 
 	// Delete the closure file: a replay decision must be reachable from the
-	// request's scalar identity digest alone
+	// item log + frontmatter + the request's scalar identity digest alone
 	// (shipmentReconcileRequestIdentityDigest never reads the closure path),
 	// with no dependency on the closure file still existing.
 	closureAbs := filepath.Join(fx.root, filepath.FromSlash(fx.closureRel))
@@ -638,15 +637,15 @@ func TestShipmentReconcileShipped_IdempotentReplay_AfterClosureFileDeleted(t *te
 	archiveBefore, _ := snapshotFileOrAbsent(t, fx.archivedPath(t))
 	logBefore, _ := snapshotFileOrAbsent(t, fx.itemLogPath())
 
-	_, _, err = runReconcileShippedCLI(t, fx.root, args...)
-	require.Error(t, err, "a replay must never silently re-run the reconciliation as if it were fresh, closure file present or not")
-	assert.True(t, errors.Is(err, blerrors.ErrUnsupportedLegacyPreState), "got: %v", err)
-	assert.NotContains(t, err.Error(), "closure evidence", "the rejection must originate from the pre-state gate, not from a (now-impossible) closure re-read")
+	secondStdout, secondStderr, err := runReconcileShippedCLI(t, fx.root, args...)
+	require.NoError(t, err, "an idempotent replay must succeed as a no-op even with the closure file deleted: stderr: %s", secondStderr)
+	second := decodeReconcileShippedResult(t, secondStdout)
+	assert.Equal(t, "no_op", second["outcome"], "a same-key, same-identity replay must resolve to no_op regardless of closure file presence")
 
 	archiveAfter, _ := snapshotFileOrAbsent(t, fx.archivedPath(t))
 	logAfter, _ := snapshotFileOrAbsent(t, fx.itemLogPath())
-	assert.Equal(t, archiveBefore, archiveAfter, "a replay must not rewrite the archive file")
-	assert.Equal(t, logBefore, logAfter, "a replay must not append a second event")
+	assert.Equal(t, archiveBefore, archiveAfter, "a no_op replay must not rewrite the archive file")
+	assert.Equal(t, logBefore, logAfter, "a no_op replay must not append a second event")
 }
 
 // --- Scenario 11: dry run makes zero reconciliation writes -------------------
