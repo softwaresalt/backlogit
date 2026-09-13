@@ -36,7 +36,9 @@ const (
 	ExitReconcileIndeterminate = 11
 	// ExitConfirmationRequired is the distinct non-zero exit code for a
 	// shipment reconcile-shipped live mutation denied by the explicit-
-	// confirmation guard (corerrors.ErrConfirmationRequired): no matching
+	// confirmation guard (internal/errors.ErrConfirmationRequired, imported
+	// in this file — and consistently throughout internal/cli — under the
+	// local alias corerrors; see the import block above): no matching
 	// --confirm phrase and no interactive-TTY confirmation.
 	ExitConfirmationRequired = 12
 )
