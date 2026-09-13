@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -456,9 +457,42 @@ func lockShipmentReconcileCThenB(ctx context.Context, ws *Workspace, itemLogID s
 // a not-yet-created log as an empty (nil) slice — the same convention
 // classifyShipmentReconcileState's caller contract already assumes (a nil
 // log is "readable, event-absent", never "unreadable").
+//
+// This read is AUTHORITATIVE input to the reconciliation classifier during
+// Phase D's final commit (PR #440 review finding 7): a symlinked item-log
+// path must be rejected rather than silently followed, or a forged replay
+// event planted outside the workspace could be read as if it were this
+// shipment's own durable log. It mirrors doctor.go's
+// reconciledShippedEventPresence containment pattern: resolve both the
+// logs root and the candidate log path through symlinks, then require the
+// resolved log path to still be contained within the resolved logs root
+// before ever calling os.ReadFile on it.
 func shipmentReconcileReadItemLog(ws *Workspace, itemID string) ([]byte, error) {
-	logPath := events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), itemID)
-	logBytes, err := os.ReadFile(logPath)
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	logPath := events.LogPathForItem(logsDir, itemID)
+
+	realLogsDir, rootErr := filepath.EvalSymlinks(logsDir)
+	if rootErr != nil {
+		realLogsDir = filepath.Clean(logsDir)
+	}
+	realLogPath, evalErr := filepath.EvalSymlinks(logPath)
+	if evalErr != nil {
+		if os.IsNotExist(evalErr) {
+			// Not-yet-created log: nothing to reject, matches the
+			// established nil/nil convention below.
+			return nil, nil
+		}
+		if realParent, perr := filepath.EvalSymlinks(filepath.Dir(logPath)); perr == nil {
+			realLogPath = filepath.Join(realParent, filepath.Base(logPath))
+		} else {
+			realLogPath = logPath
+		}
+	}
+	if !pathContained(realLogsDir, realLogPath) {
+		return nil, fmt.Errorf("item log path %s resolves outside logs root %s, refusing to follow: %w", logPath, logsDir, blerrors.ErrValidation)
+	}
+
+	logBytes, err := os.ReadFile(realLogPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
