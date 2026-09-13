@@ -8,6 +8,17 @@ chunk_strategy: h1-h2-h3
 # check for whichever shipment follows 148-S.
 closure_status: READY
 compaction_status: done
+# operator_ratification_status is NOT read by the topology gate today (which only
+# consumes closure_status/compaction_status), but is recorded here, at the top
+# level, alongside them so any future gate revision — or a human reader of the
+# raw frontmatter — can see this distinction without depending on prose below.
+# closure_status: READY reflects that every SHIPMENT-level technical closure
+# criterion (build/test/review/archive-integrity/compaction) is met and it is
+# therefore safe for a LATER shipment to proceed past 148-S in the topology
+# gate's predecessor check. It intentionally does NOT assert that 167.015-T's
+# governance ratification has been received — see "Pending Operator Action"
+# below for why this is not conflated with closure_status.
+operator_ratification_status: pending_167.015-T
 description: "Topology gate registration for 148-S/167-F post-merge closure — machine-readable predecessor-closure record. Authoritative narrative evidence is in docs/closure/2026-09-13-148-s-operational-closure.md."
 doc_type: closure
 docline:
@@ -54,7 +65,7 @@ weaken that evidence.
 | Closure PR | #441 |
 | Task archives | `167.001-T` through `167.021-T` (20 tasks; `167.018-T` was never issued) — all `archived`/`done` ✅ |
 | Implementation PR #440 | All CI checks green (test, Windows handle/lock tests, Docline frontmatter gate, CLI Reference Drift, Markdown lint); `pipeline-topology (ambient)` failed on a documented, pre-existing, non-required predecessor-gate condition (147-S not yet shipped) — see the narrative closure record for full analysis; all Copilot review threads resolved across 7 remediation rounds ✅ |
-| P-007 archive integrity | No archive deletions — verified ✅ |
+| P-007 archive integrity | Verified via `git status -- ".backlogit/archive/"` (no unexpected working-tree deletions) plus a manual per-item `done`/`archived` status check for all 20 manifest tasks before shipping and after — **not** via the formal `shipment-reconcile` skill's generated `.backlogit/reconcile/148-S-{pre,post}-*.md` reports (that skill was not invoked for this closure; the `backlogit shipment ship` cascade path used instead is the permitted P-015 fully-covered-root case, since `167-F` is an explicit manifest member — but its own machine-generated GI/GR evidence artifacts were not produced). Captured as a documented gap, not silently overclaimed. ⚠️ |
 | P-020 compaction | Commit `3fdddf83` — `chore(148-S): P-020 compact-context — consolidate memory and closure artifacts for shipment 148-S` ✅ |
 | Compact summary | `docs/memory/compacted/2026-09-13-148s-167f-compacted.md` ✅ |
 | Backlog index resync | `backlogit sync` run post-archival ✅ |
@@ -64,6 +75,7 @@ weaken that evidence.
 | Stash ID | Description |
 |---|---|
 | `FE440C62` | `ArchiveItem` lock order (B-then-C) vs. `AssociateCommit`/reconcile (C-then-B) — bounded contention, not deadlock |
+| `732FA61E` | `shipment-reconcile` skill's `mode:pre`/`mode:post` GI/GR reports were not generated for this closure (bare CLI cascade path used instead — permitted P-015 case) |
 | `1E0C2251` | CAS guard not applied to `RemoveArtifactLink`/`BulkUpdateStatus` |
 | `A0C733C6` | `findArtifact` TOCTOU in manifest-member reload — shared infrastructure, out of scope |
 | `E45E6D65` | Windows archive-write TOCTOU can leak real payload bytes (supersedes `37699341`) |
