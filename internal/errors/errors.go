@@ -17,6 +17,9 @@ var (
 	ErrItemAlreadyAssigned       = errors.New("backlogit: item already assigned to a shipment")
 	ErrShipmentConflict          = errors.New("backlogit: shipment status conflict")
 	ErrShipmentReconcileEvidence = errors.New("backlogit: shipment reconcile evidence invalid or unverifiable")
+	ErrShipmentReconcileConflict = errors.New("backlogit: shipment reconcile state conflict")
+	ErrUnsupportedLegacyPreState = errors.New("backlogit: unsupported legacy shipment reconcile pre-state")
+	ErrUnsupportedLegacyDescope  = errors.New("backlogit: unsupported legacy shipment reconcile descope")
 	ErrCannotReturnItem          = errors.New("backlogit: cannot return item from shipment")
 
 	// Cascade sentinel errors (F018 / T004).
