@@ -1,45 +1,35 @@
-//go:build !(linux || darwin || freebsd || netbsd || openbsd || dragonfly)
+//go:build !windows && !(linux || darwin || freebsd || netbsd || openbsd || dragonfly)
 
 package core
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
-// readShipmentReconcileArchiveSnapshotFile is the portable (Windows and any
-// other non-Unix-tagged platform) fallback for reading the pre-mutation
-// archive file bytes. It preserves the pre-167.016-T-hardening behavior
-// (os.Lstat symlink/type check, then os.ReadFile) byte-for-byte: a true
-// handle-relative, single-open read for this path is tracked as a follow-up
-// for the platform-specific (Windows) hardening pass, mirroring the same
-// documented Windows/Unix asymmetry already established elsewhere in this
-// package (e.g. shipment_reconcile_lock_windows.go,
-// shipment_reconcile_evidence_windows.go).
-func readShipmentReconcileArchiveSnapshotFile(archiveDir, fileName string) ([]byte, error) {
-	archivePath := filepath.Join(archiveDir, fileName)
-
-	info, err := os.Lstat(archivePath)
-	if err != nil {
-		return nil, err
-	}
-	if info.IsDir() {
-		return nil, fmt.Errorf("archive file %s is a directory", archivePath)
-	}
-	symlink, err := IsSymlinkOrReparsePoint(info, archivePath)
-	if err != nil {
-		return nil, err
-	}
-	if symlink {
-		return nil, fmt.Errorf("archive file %s: %w", archivePath, blerrors.ErrValidation)
-	}
-
-	content, err := os.ReadFile(archivePath)
-	if err != nil {
-		return nil, err
-	}
-	return content, nil
+// readShipmentReconcileArchiveSnapshotFile is the fallback for a truly
+// generic non-Unix, non-Windows platform (e.g. js/wasm, plan9, solaris):
+// this codebase has no reparse-point/no-follow primitive available on such
+// platforms, and every sibling platform-split file in this family
+// (shipment_reconcile_fs_other.go, shipment_reconcile_append_other.go,
+// shipment_reconcile_evidence_other.go, shipment_reconcile_lock_other.go)
+// already treats this same tier as genuinely unsupported rather than
+// attempting a best-effort mitigation. Windows previously shared this
+// fallback too (the pre-167.016-T-windows-hardening state: os.Lstat
+// symlink/type check, then a separate os.ReadFile — two pathname
+// operations, hence a check/use TOCTOU race), which is why Windows now has
+// its own dedicated, handle-verified implementation in
+// shipment_reconcile_snapshot_windows.go, matching every sibling file's own
+// windows/other split (Copilot PR #440 review, finding 1).
+//
+// Residual risk, documented explicitly per this codebase's established
+// convention: this fallback is reached ONLY on a platform this codebase
+// does not otherwise support for the reconcile write path either (the
+// sibling writer/lock/evidence primitives above already refuse to run at
+// all there), so refusing outright here is consistent rather than
+// introducing a weaker, unexercised mitigation for a tier nothing else in
+// this family actually operates on.
+func readShipmentReconcileArchiveSnapshotFile(string, string) ([]byte, error) {
+	return nil, fmt.Errorf("shipment reconcile archive snapshot read unsupported on this platform: %w", blerrors.ErrValidation)
 }
