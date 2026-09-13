@@ -374,7 +374,7 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 		return result, fmt.Errorf("reconcile shipment to shipped: snapshot shipment %s: %w", shipmentID, err)
 	}
 
-	newArchiveContent, err := shipmentReconcileBuildArchiveContent(ctxCB, ws, shipmentID, req.IdempotencyKey, requestIdentityDigest, evidence)
+	newArchiveContent, err := shipmentReconcileBuildArchiveContent(shipmentID, snapshot.FileBytes, req.IdempotencyKey, requestIdentityDigest, evidence)
 	if err != nil {
 		return result, fmt.Errorf("reconcile shipment to shipped: build shipment %s archive content: %w", shipmentID, err)
 	}
@@ -427,16 +427,32 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 // the following durable append can resume via the 2b path instead of
 // re-running Phase C. It preserves every other existing frontmatter field
 // and the body verbatim.
-func shipmentReconcileBuildArchiveContent(ctx context.Context, ws *Workspace, shipmentID, idempotencyKey, requestIdentityDigest string, evidence shipmentReconcileEvidenceResult) ([]byte, error) {
-	archivePath, err := FindArtifactPath(ctx, ws, shipmentID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve shipment %s path: %w", shipmentID, err)
+// shipmentReconcileBuildArchiveContent parses the shipment's CURRENT raw
+// Markdown bytes (frontmatter + body) — passed in by the caller from the
+// same securely-snapshotted read (snapshotShipmentReconcile's
+// snapshot.FileBytes), never re-read here by a fresh pathname operation —
+// and returns the full replacement content with the reconciliation
+// frontmatter fields applied: archived_status is set to shipped,
+// custom_fields carries the idempotency key, and the top-level resume
+// markers (request-identity digest, canonical prepared event bytes, event
+// digest) are stamped so a crash between this write and the following
+// durable append can resume via the 2b path instead of re-running Phase C.
+// It preserves every other existing frontmatter field and the body
+// verbatim.
+//
+// rawContent MUST come from the same no-follow, handle-relative snapshot
+// read already taken under the held Phase D locks (snapshot.FileBytes) —
+// re-deriving and re-reading the archive path here via FindArtifactPath/
+// os.ReadFile would reintroduce exactly the pathname TOCTOU window the
+// snapshot primitive was hardened to close: an attacker or concurrent
+// filesystem actor could replace the archive entry between the snapshot
+// read and this second read, and the new content would be built from
+// bytes that were never actually verified.
+func shipmentReconcileBuildArchiveContent(shipmentID string, rawContent []byte, idempotencyKey, requestIdentityDigest string, evidence shipmentReconcileEvidenceResult) ([]byte, error) {
+	if len(rawContent) == 0 {
+		return nil, fmt.Errorf("build shipment %s archive content: snapshot bytes are empty; the archive file must exist for a reconcile-to-shipped repair", shipmentID)
 	}
-	raw, err := os.ReadFile(archivePath)
-	if err != nil {
-		return nil, fmt.Errorf("read shipment %s archive content: %w", shipmentID, err)
-	}
-	frontmatter, body, err := models.ParseFrontmatter(string(raw))
+	frontmatter, body, err := models.ParseFrontmatter(string(rawContent))
 	if err != nil {
 		return nil, fmt.Errorf("parse shipment %s archive frontmatter: %w", shipmentID, err)
 	}
