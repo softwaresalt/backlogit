@@ -22,8 +22,8 @@ This is a governed two-phase transaction (core.ReconcileShipmentToShipped): it
 validates the shipment is archived with archived_status=active and every
 manifest member reached a supported terminal status (done/accepted), verifies
 the supplied merge commit and closure evidence against the configured trusted
-refs, and durably appends a reconciliation event before flipping
-archived_status to "shipped". Requests are idempotent: replaying the same
+refs, and writes the archive frontmatter to archived_status="shipped" before
+durably appending the reconciliation event. Requests are idempotent: replaying the same
 --idempotency-key is a no-op; a different request under the same key is
 refused as a conflict.
 
