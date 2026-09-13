@@ -50,6 +50,61 @@ func TestWriteShipmentReconcileArchiveFileHandleRelative_RejectsIntermediateJunc
 	assert.True(t, hookCalled, "the TOCTOU simulation hook must have run")
 }
 
+// TestWriteShipmentReconcileArchiveFileHandleRelative_TOCTOUSwapLeaksRealPayload
+// (Copilot PR #440 review residual-risk investigation) proves the SHARPER
+// version of the finding above: the post-rename containment check detects
+// the race only AFTER os.CreateTemp, Write, and Rename have already
+// followed the swapped junction, so the file left behind in the swapped-in
+// (outside-workspace) target carries the REAL requested payload bytes, not
+// merely an empty placeholder. This is a materially worse residual than
+// "an empty file may leak": actual archive content can reach a location
+// outside the workspace before the call reports failure. There is no
+// call-order fix available with only the stdlib primitives this codebase
+// otherwise depends on here — os.CreateTemp(realArchiveDir, ...) is itself
+// a plain pathname operation that re-walks (and, if an intermediate segment
+// was swapped, transparently follows) realArchiveDir a first time before
+// any content is ever written, so by the time Write runs the temp file may
+// already exist at the wrong location; only a true handle-relative
+// directory create (requiring NT-native APIs this codebase does not use
+// elsewhere) would close this fully. The call must still fail closed
+// (ErrWriteIndeterminate) and never report success, which this test also
+// verifies.
+func TestWriteShipmentReconcileArchiveFileHandleRelative_TOCTOUSwapLeaksRealPayload(t *testing.T) {
+	base := t.TempDir()
+	archiveDir := filepath.Join(base, "archive")
+	require.NoError(t, os.MkdirAll(archiveDir, 0o755))
+
+	outside := t.TempDir()
+	const payload = "this is the real archive payload content, not a placeholder"
+
+	t.Cleanup(func() { shipmentReconcileFSWindowsTOCTOUHook = nil })
+	shipmentReconcileFSWindowsTOCTOUHook = func() {
+		require.NoError(t, os.Remove(archiveDir), "the original real archive directory must be removable (empty) to simulate the swap")
+		if err := createReconcileTestJunction(t, archiveDir, outside); err != nil {
+			t.Skipf("junction creation skipped: %v", err)
+		}
+	}
+
+	seams := defaultShipmentReconcileFSSeams()
+	err := writeShipmentReconcileArchiveFileHandleRelative(archiveDir, "leak-shipment.md", []byte(payload), seams)
+	require.Error(t, err, "the swapped-directory race must still be reported as a failure")
+
+	entries, readErr := os.ReadDir(outside)
+	require.NoError(t, readErr)
+	foundPayload := false
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		data, readFileErr := os.ReadFile(filepath.Join(outside, entry.Name()))
+		require.NoError(t, readFileErr)
+		if string(data) == payload {
+			foundPayload = true
+		}
+	}
+	assert.True(t, foundPayload, "the real archive payload bytes were expected to have leaked into the swapped-in outside location before the post-rename containment check could catch the race -- confirming the sharper residual-risk finding")
+}
+
 // TestWriteShipmentReconcileArchiveFileHandleRelative_SucceedsWithoutSwap is
 // the control case: with the TOCTOU hook left nil (production behavior), a
 // normal write against a stable archiveDir must still succeed, proving the

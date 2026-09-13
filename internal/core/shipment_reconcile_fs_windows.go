@@ -54,6 +54,29 @@ var shipmentReconcileFSWindowsTOCTOUHook func()
 // applies) — failing the call (as indeterminate, since the write already
 // committed and cannot be un-applied) unless that final path still lands
 // directly inside the snapshot.
+//
+// Residual risk, precisely characterized (Copilot PR #440 review
+// follow-up investigation; see
+// TestWriteShipmentReconcileArchiveFileHandleRelative_TOCTOUSwapLeaksRealPayload
+// for the adversarial proof): the post-rename containment check above
+// detects this race only AFTER os.CreateTemp, Write, and os.Rename have
+// already followed the swapped directory, so the file left behind at the
+// swapped-in (outside-workspace) location carries the REAL requested
+// content bytes — not merely an empty placeholder file. This is a more
+// serious residual than "an empty file might remain": actual archive
+// payload data can reach a location outside the workspace before the call
+// ever reports failure. No call-order fix closes this with only the
+// primitives this codebase otherwise depends on here: os.CreateTemp(
+// realArchiveDir, ...) is itself a plain pathname operation that re-walks
+// (and, if an intermediate segment was swapped, transparently follows)
+// realArchiveDir BEFORE any content is written, so the temp file may
+// already be created at the wrong location before Write is ever called.
+// Only a true handle-relative directory create (binding every subsequent
+// operation to a single, pre-validated directory handle) would close this
+// fully, and Windows exposes no such primitive without NT-native APIs this
+// codebase does not otherwise depend on. The call still always fails
+// closed (ErrWriteIndeterminate, never a false success) once the
+// containment check runs.
 func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string, content []byte, seams shipmentReconcileFSSeams) error {
 	if reparse, err := isReparsePointPath(archiveDir); err != nil {
 		return fmt.Errorf("%w: stat archive directory %s: %w", blerrors.ErrWriteNotApplied, archiveDir, err)
