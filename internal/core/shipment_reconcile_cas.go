@@ -39,15 +39,22 @@ import (
 //
 // A nil-returning findArtifact error other than "not found" is surfaced
 // as-is (the guard cannot prove absence of a conflict when the current state
-// cannot be read at all); "not found" is NOT a conflict — there is nothing on
-// disk to clobber (e.g. a rare concurrent delete), so the guard passes and
-// lets the persist's own downstream logic handle a missing target.
+// cannot be read at all). A "not found" result IS treated as a conflict: the
+// artifact disappeared between the caller's pre-lock read and this re-read
+// under the held lock, and letting the guard pass in that case would let
+// persistArtifactWithGuard continue with its stale in-memory artifact object
+// and write/upsert it back to disk — silently resurrecting an artifact that
+// was legitimately deleted in the interim. A disappearance is itself an
+// unobserved change to the item's state and must fail closed exactly like a
+// changed archived_status.
 func guardArchivedStatusUnchangedSince(ws *Workspace, itemID string, preLockArchivedStatus string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		current, err := findArtifact(ctx, ws, itemID)
 		if err != nil {
 			if errors.Is(err, blerrors.ErrNotFound) {
-				return nil
+				return fmt.Errorf(
+					"%s: artifact no longer exists (was %q) since the pre-lock snapshot: %w",
+					itemID, preLockArchivedStatus, blerrors.ErrShipmentConflict)
 			}
 			return fmt.Errorf("guard %s: re-read artifact under lock: %w", itemID, err)
 		}

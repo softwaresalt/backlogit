@@ -81,6 +81,26 @@ func TestGuardArchivedStatusUnchangedSince_UnitBehavior(t *testing.T) {
 		guard := guardArchivedStatusUnchangedSince(ws, feature.ID, current.ArchivedStatus)
 		require.NoError(t, guard(ctx))
 	})
+
+	t.Run("rejects_when_deleted", func(t *testing.T) {
+		// A snapshot-before-lock writer's pre-lock read observed the
+		// artifact present with some archived_status; if it disappears
+		// entirely before the guard's re-read under the held lock, that is
+		// itself an unobserved change and must be treated as a CAS
+		// conflict — never silently passed through, which would let the
+		// caller's stale in-memory artifact be written back to disk and
+		// resurrect a legitimately deleted item.
+		toDelete, createErr := CreateArtifact(ctx, ws, "167.019-T guard delete-target", "feature")
+		require.NoError(t, createErr)
+		preLock, findErr := findArtifact(ctx, ws, toDelete.ID)
+		require.NoError(t, findErr)
+		require.NoError(t, DeleteArtifact(ctx, ws, toDelete.ID))
+
+		guard := guardArchivedStatusUnchangedSince(ws, toDelete.ID, preLock.ArchivedStatus)
+		guardErr := guard(ctx)
+		require.Error(t, guardErr, "a disappeared artifact must fail the guard, not pass silently")
+		assert.True(t, errors.Is(guardErr, blerrors.ErrShipmentConflict))
+	})
 }
 
 func TestAssociateCommit_DoesNotClobberConcurrentArchivedStatusChange(t *testing.T) {

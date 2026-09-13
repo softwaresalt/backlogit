@@ -51,6 +51,20 @@ const shipmentReconcileManifestDigestDomain = "backlogit/shipment-reconcile/mani
 //     untouched (no restore, no append) on ErrWriteIndeterminate.
 func reconcileShipmentToShippedImpl(ctx context.Context, ws *Workspace, req ShipmentShippedReconcileRequest) (ShipmentShippedReconcileResult, error) {
 	shipmentID := strings.TrimSpace(req.ShipmentID)
+	// Normalize the idempotency key once, up front, before it is used for
+	// classification, log messages, or frontmatter persistence anywhere
+	// downstream. shipmentReconcileRequestIdentityDigest independently
+	// trims this same field when computing the digest (via
+	// normalizeShipmentReconcileRequest), so a whitespace-padded key and its
+	// unpadded twin already produce an IDENTICAL digest; without this
+	// normalization here too, the classifier's separate raw string-equality
+	// check on the idempotency key itself could still see them as
+	// DIFFERENT keys and misclassify a legitimate same-key replay as a
+	// conflict, and the persisted frontmatter value would be
+	// non-canonical. Every downstream use of req.IdempotencyKey in this
+	// file (classifier calls, log messages, frontmatter persistence) must
+	// see this same trimmed value.
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
 	result := ShipmentShippedReconcileResult{ShipmentID: shipmentID, DryRun: req.DryRun}
 
 	if ws == nil {

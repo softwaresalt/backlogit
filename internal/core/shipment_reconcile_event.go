@@ -136,9 +136,22 @@ func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventB
 		return fmt.Errorf("%w: item_id is %q, want %q", blerrors.ErrValidation, wrapper.ItemID, expectedShipmentID)
 	}
 
+	if wrapper.Actor == "" {
+		return fmt.Errorf("%w: actor is required", blerrors.ErrValidation)
+	}
+	if wrapper.Timestamp.IsZero() {
+		return fmt.Errorf("%w: timestamp is required", blerrors.ErrValidation)
+	}
+
 	delta, err := decodeShipmentReconciledShippedDelta(wrapper.Delta)
 	if err != nil {
 		return err
+	}
+	if delta.Before.Status == "" {
+		return fmt.Errorf("%w: delta.before.status is required", blerrors.ErrValidation)
+	}
+	if delta.Before.ArchivedStatus == "" {
+		return fmt.Errorf("%w: delta.before.archived_status is required", blerrors.ErrValidation)
 	}
 	if delta.After.ArchivedStatus != string(ShipmentShipped) {
 		return fmt.Errorf("%w: delta.after.archived_status is %q, want %q", blerrors.ErrValidation, delta.After.ArchivedStatus, string(ShipmentShipped))
@@ -154,6 +167,30 @@ func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventB
 	}
 	if delta.RequestIdentityDigest == "" {
 		return fmt.Errorf("%w: delta.request_identity_digest is required", blerrors.ErrValidation)
+	}
+	if delta.TrustedRefName == "" {
+		return fmt.Errorf("%w: delta.trusted_ref_name is required", blerrors.ErrValidation)
+	}
+	if delta.TrustedRefTip == "" {
+		return fmt.Errorf("%w: delta.trusted_ref_tip is required", blerrors.ErrValidation)
+	}
+	if delta.Evidence.MergeSHA == "" {
+		return fmt.Errorf("%w: delta.evidence.merge_sha is required", blerrors.ErrValidation)
+	}
+	if delta.Evidence.ClosureEvidence == "" {
+		return fmt.Errorf("%w: delta.evidence.closure_evidence is required", blerrors.ErrValidation)
+	}
+	if delta.Evidence.ManifestDigest == "" {
+		return fmt.Errorf("%w: delta.evidence.manifest_digest is required", blerrors.ErrValidation)
+	}
+	if len(delta.Evidence.MemberTerminalIDs) == 0 {
+		return fmt.Errorf("%w: delta.evidence.member_terminal_ids must be non-empty", blerrors.ErrValidation)
+	}
+	if delta.Evidence.ClosureContentHash == "" {
+		return fmt.Errorf("%w: delta.evidence.closure_content_hash is required", blerrors.ErrValidation)
+	}
+	if delta.Evidence.EvidenceRefs == nil {
+		return fmt.Errorf("%w: delta.evidence.evidence_refs must be present (an array, possibly empty, never omitted)", blerrors.ErrValidation)
 	}
 	if delta.Evidence.EvidenceDigest == "" {
 		return fmt.Errorf("%w: delta.evidence.evidence_digest is required", blerrors.ErrValidation)
