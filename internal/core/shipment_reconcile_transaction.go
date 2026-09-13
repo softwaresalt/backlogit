@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
-	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -542,50 +540,31 @@ func lockShipmentReconcileCThenB(ctx context.Context, ws *Workspace, itemLogID s
 }
 
 // shipmentReconcileReadItemLog reads itemID's raw item-log bytes, tolerating
-// a not-yet-created log as an empty (nil) slice — the same convention
-// classifyShipmentReconcileState's caller contract already assumes (a nil
-// log is "readable, event-absent", never "unreadable").
-//
 // This read is AUTHORITATIVE input to the reconciliation classifier during
-// Phase D's final commit (PR #440 review finding 7): a symlinked item-log
-// path must be rejected rather than silently followed, or a forged replay
-// event planted outside the workspace could be read as if it were this
-// shipment's own durable log. It mirrors doctor.go's
-// reconciledShippedEventPresence containment pattern: resolve both the
-// logs root and the candidate log path through symlinks, then require the
-// resolved log path to still be contained within the resolved logs root
-// before ever calling os.ReadFile on it.
+// Phase D's final commit (PR #440 review finding 7, hardened further in
+// review round 6): a symlinked item-log path must be rejected rather than
+// silently followed, or a forged replay event planted outside the
+// workspace could be read as if it were this shipment's own durable log.
+// It reuses the SAME no-follow, directory-handle-relative single-read
+// primitive already hardened for the archive file
+// (readShipmentReconcileArchiveSnapshotFile, shipment_reconcile_snapshot.go
+// / _unix.go / _windows.go / _other.go) rather than a separate
+// EvalSymlinks-then-os.ReadFile pathname pair, which — despite validating
+// containment first — still reopens the path a second time and so remains
+// vulnerable to the log being replaced by a symlink between the check and
+// the read.
 func shipmentReconcileReadItemLog(ws *Workspace, itemID string) ([]byte, error) {
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	logPath := events.LogPathForItem(logsDir, itemID)
+	fileName := itemID + ".jsonl"
 
-	realLogsDir, rootErr := filepath.EvalSymlinks(logsDir)
-	if rootErr != nil {
-		realLogsDir = filepath.Clean(logsDir)
-	}
-	realLogPath, evalErr := filepath.EvalSymlinks(logPath)
-	if evalErr != nil {
-		if os.IsNotExist(evalErr) {
-			// Not-yet-created log: nothing to reject, matches the
-			// established nil/nil convention below.
-			return nil, nil
-		}
-		if realParent, perr := filepath.EvalSymlinks(filepath.Dir(logPath)); perr == nil {
-			realLogPath = filepath.Join(realParent, filepath.Base(logPath))
-		} else {
-			realLogPath = logPath
-		}
-	}
-	if !pathContained(realLogsDir, realLogPath) {
-		return nil, fmt.Errorf("item log path %s resolves outside logs root %s, refusing to follow: %w", logPath, logsDir, blerrors.ErrValidation)
-	}
-
-	logBytes, err := os.ReadFile(realLogPath)
+	logBytes, err := readShipmentReconcileArchiveSnapshotFile(logsDir, fileName)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
+			// Not-yet-created log: nothing to reject, matches the
+			// established nil/nil convention.
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("read item log %s: %w", fileName, err)
 	}
 	return logBytes, nil
 }
