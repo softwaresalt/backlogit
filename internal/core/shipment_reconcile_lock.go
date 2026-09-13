@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -20,8 +21,11 @@ const shipmentReconcileLockWait = 3 * time.Second
 // ErrShipmentReconcileLockBusy signals that the item-log lock (C) sidecar is
 // already held — either by events.LockItemLogCrossProcess (an existing
 // writer: AssociateCommit, ArchiveItem, LinkCommit) or by another reconcile
-// acquirer — after the bounded retry window elapsed.
-var ErrShipmentReconcileLockBusy = fmt.Errorf("shipment reconcile item log lock is busy")
+// acquirer — after the bounded retry window elapsed. A static sentinel, so
+// errors.New is used rather than fmt.Errorf (no formatting verbs are ever
+// supplied here), matching internal/errors/errors.go's own convention for
+// every other static sentinel in this codebase.
+var ErrShipmentReconcileLockBusy = errors.New("shipment reconcile item log lock is busy")
 
 // lockShipmentReconcileItemLogImpl is the real implementation behind the
 // gated lockShipmentReconcileItemLog declaration (167.003-T panic body,
