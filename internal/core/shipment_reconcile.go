@@ -72,11 +72,10 @@ func classifyShipmentReconcileState(log []byte, frontmatter map[string]any, reqI
 }
 
 // ReconcileShipmentToShipped is the governed two-phase reconciliation
-// transaction entry point (#423, U1). DECLARATION ONLY — panic body gated
-// by the source-shape harness; the behavior harness (RED) and
-// implementation (GREEN) land in 167.008-T.
+// transaction entry point (#423, U1). See shipment_reconcile_transaction.go
+// for the implementation (167.008-T).
 func ReconcileShipmentToShipped(ctx context.Context, ws *Workspace, req ShipmentShippedReconcileRequest) (ShipmentShippedReconcileResult, error) {
-	panic("not implemented: ReconcileShipmentToShipped (167.008-T)")
+	return reconcileShipmentToShippedImpl(ctx, ws, req)
 }
 
 // writeShipmentReconcileArchiveFile is the handle-relative atomic
