@@ -2,11 +2,10 @@ package core
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
+	"github.com/softwaresalt/backlogit/internal/canonical"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 )
@@ -56,7 +55,7 @@ type ShipmentReconciledShippedEvidence struct {
 // frontmatter-only edit of either cannot be made to agree with the durable
 // event undetected (PR #424 review, binding).
 type ShipmentReconciledShippedDelta struct {
-	Before                ShipmentReconciledShippedBefore  `json:"before"`
+	Before                ShipmentReconciledShippedBefore   `json:"before"`
 	After                 ShipmentReconciledShippedAfter    `json:"after"`
 	Reason                string                            `json:"reason"`
 	Actor                 string                            `json:"actor"`
@@ -75,8 +74,7 @@ type ShipmentReconciledShippedDelta struct {
 // — so the digest covers the replay identity (request_identity_digest) as
 // well as the audit content (PR #424 review, binding).
 func ShipmentReconciledShippedEventDigest(eventBytes []byte) string {
-	sum := sha256.Sum256(eventBytes)
-	return hex.EncodeToString(sum[:])
+	return canonical.HashBytes(eventBytes)
 }
 
 // ValidateShipmentReconciledShippedEvent validates that rawEventBytes — a

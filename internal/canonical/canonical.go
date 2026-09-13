@@ -73,6 +73,19 @@ func Hash(v any) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// HashBytes returns the lowercase-hex SHA-256 of b directly, with no
+// canonicalization step. It is the raw-byte counterpart to Hash, for governed
+// callers that must hash an already-serialized/fixed byte payload verbatim
+// (e.g. a durable event's exact logged bytes, or file content whose digest
+// must detect ANY byte-level change) rather than a structured value that
+// benefits from Canonicalize's semantic normalization. Routing these sites
+// through this single seam keeps crypto/sha256 imports out of governed
+// gate-evidence call sites (see internal/canonical/guard_test.go).
+func HashBytes(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
 // encode writes the canonical encoding of v into sb. It supports the narrow
 // value set only; every other dynamic type fails closed with ErrUnsupportedType.
 func encode(v any, sb *strings.Builder) error {

@@ -3,9 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
@@ -16,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/canonical"
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core/gate"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -106,8 +105,8 @@ func shipmentReconcileDigestHex(domain string, fields ...shipmentReconcileDigest
 			shipmentReconcileWriteDigestString(&payload, value)
 		}
 	}
-	sum := sha256.Sum256(payload.Bytes())
-	return hex.EncodeToString(sum[:])
+	sum := canonical.HashBytes(payload.Bytes())
+	return sum
 }
 
 func shipmentReconcileWriteDigestString(buf *bytes.Buffer, value string) {
@@ -396,8 +395,7 @@ func shipmentReconcileEvidenceWrap(err error, format string, args ...any) error 
 }
 
 func shipmentReconcileSHA256Hex(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+	return canonical.HashBytes(data)
 }
 
 func marshalShipmentReconciledShippedDelta(delta ShipmentReconciledShippedDelta) (map[string]any, error) {
