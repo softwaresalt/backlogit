@@ -22,6 +22,14 @@ var (
 	ErrUnsupportedLegacyDescope  = errors.New("backlogit: unsupported legacy shipment reconcile descope")
 	ErrCannotReturnItem          = errors.New("backlogit: cannot return item from shipment")
 
+	// ErrConfirmationRequired is returned when a CLI-level explicit-confirmation
+	// guard denies a live (non-dry-run) mutating operation because neither a
+	// matching --confirm phrase nor an interactive-TTY confirmation was
+	// supplied (167.004-T, `backlogit shipment reconcile-shipped`). This is a
+	// confirmation-only guard against silent/accidental invocation, NOT
+	// machine-authenticated operator authorization.
+	ErrConfirmationRequired = errors.New("backlogit: explicit confirmation required for this operation")
+
 	// Cascade sentinel errors (F018 / T004).
 	ErrChildrenNotTerminal = errors.New("backlogit: parent cannot transition while non-terminal children exist")
 
