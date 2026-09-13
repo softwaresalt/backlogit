@@ -136,7 +136,7 @@ func reconcileShipmentPhaseB(ctx context.Context, ws *Workspace, req ShipmentShi
 		return result, fmt.Errorf("reconcile shipment to shipped: read shipment %s item log: %w", shipmentID, err)
 	}
 
-	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest)
+	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipmentID)
 	if classifyErr != nil {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
 		result.Message = fmt.Sprintf("shipment %s reconciliation state could not be determined", shipmentID)
@@ -193,7 +193,14 @@ func reconcileShipmentPhaseB(ctx context.Context, ws *Workspace, req ShipmentShi
 func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req ShipmentShippedReconcileRequest, shipmentID string, frontmatter map[string]any, logBytes []byte, result ShipmentShippedReconcileResult) (ShipmentShippedReconcileResult, error) {
 	result.Outcome = ShipmentReconcileOutcomeNoOp
 
-	loggedEvents, err := scanShipmentReconcileLog(logBytes)
+	persisted, err := parseShipmentReconcilePersistedState(frontmatter)
+	if err != nil {
+		result.Outcome = ShipmentReconcileOutcomeIndeterminate
+		return result, fmt.Errorf("reconcile shipment to shipped: re-parse shipment %s persisted resume state: %w", shipmentID, err)
+	}
+	preparedEventBytes, eventDigest := persisted.preparedEventBytesAndDigestIfPresent()
+
+	loggedEvents, err := scanShipmentReconcileLog(logBytes, shipmentID, preparedEventBytes, eventDigest)
 	if err != nil {
 		// The classifier already parsed this exact log successfully; an
 		// error here would mean the log changed shape between reads while
@@ -214,11 +221,6 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 		return result, nil
 	}
 
-	persisted, err := parseShipmentReconcilePersistedState(frontmatter)
-	if err != nil {
-		result.Outcome = ShipmentReconcileOutcomeIndeterminate
-		return result, fmt.Errorf("reconcile shipment to shipped: re-parse shipment %s persisted resume state: %w", shipmentID, err)
-	}
 	preparedEventText, err := readRequiredRawStringField(persisted.preparedEvent, shipmentReconcilePreparedEventField)
 	if err != nil {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
@@ -297,7 +299,7 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 	if err != nil {
 		return result, fmt.Errorf("reconcile shipment to shipped: re-read shipment %s item log: %w", shipmentID, err)
 	}
-	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest)
+	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipmentID)
 	if classifyErr != nil {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
 		result.Message = fmt.Sprintf("shipment %s reconciliation state could not be determined", shipmentID)
