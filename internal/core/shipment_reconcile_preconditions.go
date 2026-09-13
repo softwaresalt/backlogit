@@ -80,7 +80,7 @@ func loadShipmentReconcileArchivedShipment(ctx context.Context, ws *Workspace, s
 	if err != nil {
 		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: resolve shipment %s path: %w", shipmentID, err)
 	}
-	archiveDir := filepath.Join(workspaceStorageRoot(ws), "archive")
+	archiveDir := filepath.Join(workspaceStorageRoot(ws), shipmentReconcileArchiveDirName)
 	if !pathWithinDir(shipmentPath, archiveDir) {
 		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: shipment %s must resolve under %s: %w", shipmentID, archiveDir, blerrors.ErrValidation)
 	}
@@ -88,7 +88,20 @@ func loadShipmentReconcileArchivedShipment(ctx context.Context, ws *Workspace, s
 		return nil, nil, err
 	}
 
-	raw, err := os.ReadFile(shipmentPath)
+	// Read the archive frontmatter through the same no-follow,
+	// containment-verified handle-relative primitive used by the U2
+	// snapshot/restore path (readShipmentReconcileArchiveSnapshotFile,
+	// shipment_reconcile_snapshot.go / _unix.go / _windows.go / _other.go),
+	// rather than a second, independent os.ReadFile pathname-based read of
+	// shipmentPath (PR #440 review round 2, finding 3). FindArtifactPath's
+	// earlier containment validation is a pathname-only check; a second
+	// pathname-based read here would reopen exactly the TOCTOU window (leaf
+	// file replaced by a symlink between validation and this read) that the
+	// snapshot hardening was added to close elsewhere. Archive files are
+	// flat under archiveDir, named "<shipmentID>.md" (see
+	// snapshotShipmentReconcileArchiveFile), matching shipmentPath's base
+	// name confirmed by pathWithinDir above.
+	raw, err := readShipmentReconcileArchiveSnapshotFile(archiveDir, shipmentID+".md")
 	if err != nil {
 		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: read shipment %s frontmatter: %w", shipmentID, err)
 	}

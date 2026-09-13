@@ -345,6 +345,37 @@ func TestValidateShipmentReconcilePreconditions_SecondApproverMustDifferFromActo
 	assert.ErrorIs(t, err, blerrors.ErrValidation)
 }
 
+// TestValidateShipmentReconcilePreconditions_RejectsSymlinkArchiveLeaf covers
+// PR #440 review round 2, finding 3: the archive frontmatter must now be read
+// through the same no-follow, containment-verified handle-relative primitive
+// used by the U2 snapshot/restore path
+// (readShipmentReconcileArchiveSnapshotFile), consolidated onto a single
+// hardened read rather than a second, independent os.ReadFile pathname-based
+// read of the already-resolved shipment path. Swapping the archive leaf for
+// a symlink pointing outside the workspace must be rejected, never
+// transparently followed and parsed as reconciliation state.
+func TestValidateShipmentReconcilePreconditions_RejectsSymlinkArchiveLeaf(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	memberID := createShipmentReconcileMemberWithStatus(t, ws, models.StatusDone)
+	shipment := createArchivedShipmentReconcileFixture(t, ws, []string{memberID})
+	req := validShipmentReconcilePreconditionRequest(shipment.ID)
+	digest := mustShipmentReconcileRequestIdentityDigest(t, req)
+
+	archivePath, err := FindArtifactPath(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	outside := filepath.Join(t.TempDir(), "outside-shipment.md")
+	require.NoError(t, os.WriteFile(outside, []byte("status: archived\narchived_status: active\n---\nmalicious outside content\n"), 0o644))
+	require.NoError(t, os.Remove(archivePath))
+	if symErr := os.Symlink(outside, archivePath); symErr != nil {
+		t.Skipf("symlink creation unsupported on this host, skipping: %v", symErr)
+	}
+
+	_, err = validateShipmentReconcilePreconditions(ctx, ws, req, digest)
+	require.Error(t, err, "a symlinked archive leaf must be rejected, not followed and parsed as reconciliation state")
+}
+
 // TestValidateShipmentReconcilePreconditions_RejectsDuplicateLiveQueueRecord
 // covers PR #440 review round 2, finding 5: FindArtifactPath returns only
 // the FIRST match across the registry's search roots (archive before
