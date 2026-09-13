@@ -21,6 +21,15 @@ func classifierEvent(t *testing.T, itemID, idempotencyKey, requestIdentityDigest
 	return marshalReconciledShippedEvent(t, delta, itemID)
 }
 
+// shipmentStatusChangedEventLine builds a plain, non-governed
+// "shipment_status_changed" JSONL log line for itemID with the given
+// status delta, matching the shape ArchiveItem/ShipShipment already write
+// (archive_test.go's baseline fixture) and doctor.go's shippedEventPresence
+// recognition.
+func shipmentStatusChangedEventLine(itemID, status string) []byte {
+	return []byte(`{"timestamp":"2026-09-13T00:00:00Z","item_id":"` + itemID + `","event_type":"shipment_status_changed","delta":{"status":"` + status + `"},"actor":"backlogit"}` + "\n")
+}
+
 func classifierFrontmatter(archivedStatus, idempotencyKey, requestIdentityDigest string, preparedEvent []byte, eventDigest string) map[string]any {
 	fm := map[string]any{}
 	if archivedStatus != "" {
@@ -196,6 +205,56 @@ func TestClassifyShipmentReconcileState_Totality(t *testing.T) {
 		{
 			name:        "branch_2d_empty_readable_log_without_resume_markers_is_reconciled_not_branch_0",
 			log:         nil,
+			frontmatter: classifierFrontmatter("active", "", "", nil, ""),
+			reqKey:      reqKey,
+			reqDigest:   reqDigest,
+			wantOutcome: ShipmentReconcileOutcomeReconciled,
+		},
+		{
+			// Copilot PR #440 review, finding 4: a plain
+			// shipment_status_changed:shipped event (the ordinary,
+			// non-governed shipping path ArchiveItem/ShipShipment already
+			// use) present in this shipment's own item log is a real
+			// conflicting state-integrity discrepancy — it must never be
+			// silently ignored and allow the classifier to reach
+			// ShipmentReconcileOutcomeReconciled for what is, in fact, a
+			// shipment that already has a normal shipping history.
+			name:        "branch_conflicting_plain_shipped_event_without_reconcile_event_is_conflict",
+			log:         shipmentStatusChangedEventLine(itemID, "shipped"),
+			frontmatter: classifierFrontmatter("active", "", "", nil, ""),
+			reqKey:      reqKey,
+			reqDigest:   reqDigest,
+			wantOutcome: ShipmentReconcileOutcomeConflict,
+		},
+		{
+			// Same signal, but archived_status is already "shipped" and no
+			// resume markers are present: without the finding-4 fix this
+			// would fall into the absent-branch's non-shipped-with-markers
+			// check and still (incorrectly) reach conflict via a DIFFERENT
+			// path (no resume markers -> conflict per branch 2c logic) —
+			// this case instead exercises archived_status == "active" AND
+			// a fully-formed, otherwise-innocuous resume-marker-free state
+			// to isolate the plain-event signal specifically.
+			name:        "branch_conflicting_plain_shipped_event_ignores_non_matching_item_id",
+			log:         shipmentStatusChangedEventLine("some-other-shipment", "shipped"),
+			frontmatter: classifierFrontmatter("active", "", "", nil, ""),
+			reqKey:      reqKey,
+			reqDigest:   reqDigest,
+			wantOutcome: ShipmentReconcileOutcomeReconciled,
+		},
+		{
+			name:        "branch_conflicting_plain_shipped_event_alongside_valid_reconcile_event_is_conflict",
+			log:         append(append([]byte{}, validEvent...), shipmentStatusChangedEventLine(itemID, "shipped")...),
+			frontmatter: classifierFrontmatter(string(ShipmentShipped), reqKey, reqDigest, nil, ""),
+			reqKey:      reqKey,
+			reqDigest:   reqDigest,
+			wantOutcome: ShipmentReconcileOutcomeConflict,
+		},
+		{
+			// A plain status_changed event with a non-"shipped" status must
+			// not be mistaken for the conflicting signal.
+			name:        "branch_plain_status_changed_event_non_shipped_status_is_reconciled",
+			log:         shipmentStatusChangedEventLine(itemID, "active"),
 			frontmatter: classifierFrontmatter("active", "", "", nil, ""),
 			reqKey:      reqKey,
 			reqDigest:   reqDigest,

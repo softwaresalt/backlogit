@@ -63,9 +63,24 @@ func classifyShipmentReconcileStateImpl(log []byte, frontmatter map[string]any, 
 	// because it happens to be shape-valid.
 	preparedEventBytes, eventDigest := persisted.preparedEventBytesAndDigestIfPresent()
 
-	loggedEvents, err := scanShipmentReconcileLog(log, shipmentID, preparedEventBytes, eventDigest)
+	loggedEvents, conflictingPlainShippedEvent, err := scanShipmentReconcileLog(log, shipmentID, preparedEventBytes, eventDigest)
 	if err != nil {
 		return ShipmentReconcileOutcomeIndeterminate, err
+	}
+	// A plain shipment_status_changed:shipped event in this shipment's own
+	// item log is a real state-integrity discrepancy this governed
+	// transaction must never silently paper over (Copilot PR #440 review,
+	// finding 4): EventShipmentReconciledShipped exists specifically so a
+	// GOVERNED reconciliation can be told apart from a routine transition
+	// (167.002-T design intent), which only matters if this classifier
+	// actually treats a routine transition's presence as evidence the
+	// shipment already has a normal, non-governed shipping history that
+	// conflicts with running (or having run) a fresh legacy repair here.
+	// This check runs BEFORE the reconcile-event-present/absent branching
+	// below so it can never be silently bypassed on the path that would
+	// otherwise reach ShipmentReconcileOutcomeReconciled.
+	if conflictingPlainShippedEvent {
+		return ShipmentReconcileOutcomeConflict, nil
 	}
 	if len(loggedEvents) > 0 {
 		return classifyShipmentReconcileEventPresent(loggedEvents, persisted, reqIdempotencyKey, reqRequestIdentityDigest)
@@ -155,43 +170,82 @@ func parseShipmentReconcilePersistedState(frontmatter map[string]any) (shipmentR
 	return state, nil
 }
 
-func scanShipmentReconcileLog(log []byte, expectedShipmentID string, preparedEventBytes []byte, expectedDigest string) ([]shipmentReconcileLoggedEvent, error) {
+// scanShipmentReconcileLog scans log's JSONL lines for two DISTINCT
+// signals: (1) EventShipmentReconciledShipped events for expectedShipmentID
+// (validated and decoded into loggedEvents, as before), and (2) a plain
+// "shipment_status_changed" event whose delta shows the shipment was
+// already shipped through the ORDINARY, non-governed path (Copilot PR #440
+// review, finding 4). The two event types are mutually exclusive evidence:
+// EventShipmentReconciledShipped exists specifically so a GOVERNED
+// reconciliation can be told apart from a routine transition (167.002-T
+// design intent), and this classifier must actually use that distinction
+// defensively rather than silently ignoring every other event type in the
+// log. A conflicting plain shipped event is reported via the returned bool
+// so the caller can route it to ShipmentReconcileOutcomeConflict — a real
+// state-integrity discrepancy this governed transaction must never
+// silently paper over by reaching ShipmentReconcileOutcomeReconciled for a
+// shipment that was, in fact, already shipped normally.
+func scanShipmentReconcileLog(log []byte, expectedShipmentID string, preparedEventBytes []byte, expectedDigest string) ([]shipmentReconcileLoggedEvent, bool, error) {
 	trimmed := bytes.TrimSpace(log)
 	if len(trimmed) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 	if !bytes.HasSuffix(log, []byte("\n")) {
-		return nil, fmt.Errorf("classify shipment reconcile state: log ends with a partial JSONL line: %w", blerrors.ErrValidation)
+		return nil, false, fmt.Errorf("classify shipment reconcile state: log ends with a partial JSONL line: %w", blerrors.ErrValidation)
 	}
 
 	loggedEvents := make([]shipmentReconcileLoggedEvent, 0, 1)
+	conflictingPlainShippedEvent := false
 	for i, line := range bytes.Split(log, []byte("\n")) {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
 			continue
 		}
 		if err := detectDuplicateJSONMembers(line); err != nil {
-			return nil, fmt.Errorf("classify shipment reconcile state: log line %d has duplicate JSON object members: %w", i+1, err)
+			return nil, false, fmt.Errorf("classify shipment reconcile state: log line %d has duplicate JSON object members: %w", i+1, err)
 		}
 		event, ok, err := events.ParseEventLine(string(line), "")
 		if err != nil {
-			return nil, fmt.Errorf("classify shipment reconcile state: parse log line %d: %w", i+1, fmt.Errorf("%w: %v", blerrors.ErrValidation, err))
+			return nil, false, fmt.Errorf("classify shipment reconcile state: parse log line %d: %w", i+1, fmt.Errorf("%w: %v", blerrors.ErrValidation, err))
 		}
-		if !ok || event.EventType != EventShipmentReconciledShipped {
+		if !ok {
+			continue
+		}
+		if event.EventType == shipmentStatusChangedEventType {
+			if (expectedShipmentID == "" || event.ItemID == expectedShipmentID) && shipmentStatusChangedDeltaIsShipped(event.Delta) {
+				conflictingPlainShippedEvent = true
+			}
+			continue
+		}
+		if event.EventType != EventShipmentReconciledShipped {
 			continue
 		}
 
 		rawLine := append(append([]byte{}, line...), '\n')
 		if err := ValidateShipmentReconciledShippedEvent(rawLine, preparedEventBytes, expectedDigest, expectedShipmentID); err != nil {
-			return nil, fmt.Errorf("classify shipment reconcile state: validate log line %d: %w", i+1, err)
+			return nil, false, fmt.Errorf("classify shipment reconcile state: validate log line %d: %w", i+1, err)
 		}
 		delta, err := decodeShipmentReconciledShippedDelta(event.Delta)
 		if err != nil {
-			return nil, fmt.Errorf("classify shipment reconcile state: decode log line %d reconcile delta: %w", i+1, err)
+			return nil, false, fmt.Errorf("classify shipment reconcile state: decode log line %d reconcile delta: %w", i+1, err)
 		}
 		loggedEvents = append(loggedEvents, shipmentReconcileLoggedEvent{delta: delta})
 	}
-	return loggedEvents, nil
+	return loggedEvents, conflictingPlainShippedEvent, nil
+}
+
+// shipmentStatusChangedEventType is the plain, non-governed event type
+// ArchiveItem/ShipShipment already use (shipment.go, archive.go) — distinct
+// from EventShipmentReconciledShipped by design (167.002-T).
+const shipmentStatusChangedEventType = "shipment_status_changed"
+
+// shipmentStatusChangedDeltaIsShipped reports whether a
+// "shipment_status_changed" event's delta records the shipment as having
+// been shipped, mirroring doctor.go's shippedEventPresence recognition
+// (delta.status == string(ShipmentShipped)).
+func shipmentStatusChangedDeltaIsShipped(delta map[string]any) bool {
+	status, ok := delta["status"].(string)
+	return ok && status == string(ShipmentShipped)
 }
 
 func (state shipmentReconcilePersistedState) hasAnyResumeMarkers() bool {
@@ -243,7 +297,7 @@ func (state shipmentReconcilePersistedState) validatePreparedEvent(shipmentID st
 	if err := ValidateShipmentReconciledShippedEvent(preparedBytes, preparedBytes, eventDigest, shipmentID); err != nil {
 		return zero, fmt.Errorf("classify shipment reconcile state: validate persisted prepared event: %w", err)
 	}
-	loggedEvents, err := scanShipmentReconcileLog(preparedBytes, shipmentID, preparedBytes, eventDigest)
+	loggedEvents, _, err := scanShipmentReconcileLog(preparedBytes, shipmentID, preparedBytes, eventDigest)
 	if err != nil {
 		return zero, fmt.Errorf("classify shipment reconcile state: parse persisted prepared event: %w", err)
 	}
