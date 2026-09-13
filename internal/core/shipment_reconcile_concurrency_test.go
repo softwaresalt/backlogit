@@ -132,17 +132,32 @@ func u20ReconcileFixture(t *testing.T) (ws *Workspace, shipmentID, memberID stri
 }
 
 // u20AssertReconcilePanicked requires that the reconcile result recorded a
-// recovered panic and reports it as a (currently expected) test failure.
-// This is the load-bearing RED assertion: it is what makes this harness fail
-// for the documented reason (ReconcileShipmentToShipped is still a gated
-// panic declaration owned by 167.008-T) rather than hang or fail to build.
+// recovered panic and reports it as a test failure. It remains reachable
+// only from testU20ReconcileReplayDifferentIdentitySameKey's fallback
+// branch, where an actual recovered panic is (post-167.008-T) always an
+// unexpected, real defect.
 func u20AssertReconcilePanicked(t *testing.T, res u20GuardedResult) {
 	t.Helper()
 	if !res.panicked {
-		t.Errorf("%s: expected a recovered panic (ReconcileShipmentToShipped is still a 167.008-T gated declaration), got err=%v", res.name, res.err)
+		t.Errorf("%s: expected a recovered panic, got err=%v", res.name, res.err)
 		return
 	}
-	t.Errorf("%s: recovered panic (expected today, pending 167.008-T): %v", res.name, res.panicVal)
+	t.Errorf("%s: unexpected recovered panic: %v", res.name, res.panicVal)
+}
+
+// u20AssertReconcileNoPanic asserts the real post-167.008-T expected
+// behavior for ReconcileShipmentToShipped under concurrency: it must never
+// panic. A non-nil returned error is tolerated and NOT asserted against
+// here, since legitimate business-logic errors (e.g. Phase C evidence
+// verification failing against this test fixture's synthetic, non-existent
+// merge SHA/closure path) are expected outcomes, not defects. An actual
+// recovered panic, however, is a real implementation defect now that
+// 167.008-T has landed, so it is still reported as a test failure.
+func u20AssertReconcileNoPanic(t *testing.T, res u20GuardedResult) {
+	t.Helper()
+	if res.panicked {
+		t.Errorf("%s: unexpected recovered panic: %v", res.name, res.panicVal)
+	}
 }
 
 // u20AssertArtifactCoherent re-reads the artifact from disk and requires it
@@ -179,7 +194,7 @@ func testU20ReconcileVsAssociateCommit(t *testing.T) {
 
 	for _, res := range results {
 		if res.name == "reconcile" {
-			u20AssertReconcilePanicked(t, res)
+			u20AssertReconcileNoPanic(t, res)
 			continue
 		}
 		if res.panicked {
@@ -211,7 +226,7 @@ func testU20ReconcileVsArchiveItem(t *testing.T) {
 
 	for _, res := range results {
 		if res.name == "reconcile" {
-			u20AssertReconcilePanicked(t, res)
+			u20AssertReconcileNoPanic(t, res)
 			continue
 		}
 		if res.panicked {
@@ -307,7 +322,7 @@ func testU20ReconcileTOCTOUMemberSetReroute(t *testing.T) {
 
 	for _, res := range results {
 		if res.name == "reconcile" {
-			u20AssertReconcilePanicked(t, res)
+			u20AssertReconcileNoPanic(t, res)
 			continue
 		}
 		if res.panicked {
