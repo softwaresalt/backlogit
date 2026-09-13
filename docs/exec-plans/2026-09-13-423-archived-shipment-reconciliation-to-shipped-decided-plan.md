@@ -1,4 +1,5 @@
 ---
+chunk_strategy: h1-h2-h3
 decided_from: docs/archive/plans/2026-09-05/2026-09-05-423-archived-shipment-reconciliation-to-shipped-plan.md
 decided_at: 2026-09-13T20:55:00Z
 doc_type: learning
