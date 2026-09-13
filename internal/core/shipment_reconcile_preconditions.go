@@ -72,14 +72,6 @@ func validateShipmentReconcileApproverSeparation(req ShipmentShippedReconcileReq
 }
 
 func loadShipmentReconcileArchivedShipment(ctx context.Context, ws *Workspace, shipmentID string) (*models.Artifact, map[string]any, error) {
-	shipment, err := findArtifact(ctx, ws, shipmentID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: load shipment %s from markdown: %w", shipmentID, err)
-	}
-	if shipment.ArtifactType != "shipment" {
-		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: artifact %s is not a shipment: %w", shipmentID, blerrors.ErrValidation)
-	}
-
 	shipmentPath, err := FindArtifactPath(ctx, ws, shipmentID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: resolve shipment %s path: %w", shipmentID, err)
@@ -109,12 +101,30 @@ func loadShipmentReconcileArchivedShipment(ctx context.Context, ws *Workspace, s
 	if err != nil {
 		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: read shipment %s frontmatter: %w", shipmentID, err)
 	}
-	frontmatter, _, err := models.ParseFrontmatter(string(raw))
+	frontmatter, body, err := models.ParseFrontmatter(string(raw))
 	if err != nil {
 		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: parse shipment %s frontmatter: %w", shipmentID, err)
 	}
 	if frontmatter == nil {
 		frontmatter = map[string]any{}
+	}
+
+	// Build the returned Artifact from these SAME raw bytes (rather than a
+	// separately-loaded findArtifact call earlier in this function's prior
+	// form) so member/type validation, classification, snapshot, and the
+	// final write all observe an identical, single read of the shipment's
+	// content (PR #440 review round 5): a replacement of the archive file
+	// between two independent reads could otherwise let one validation
+	// pass against a different version of the content than another uses.
+	shipment, err := models.ArtifactFromFrontmatter(frontmatter, body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: build shipment %s artifact from frontmatter: %w", shipmentID, err)
+	}
+	if shipment.ID != shipmentID {
+		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: shipment %s frontmatter id %q does not match requested id: %w", shipmentID, shipment.ID, blerrors.ErrValidation)
+	}
+	if shipment.ArtifactType != "shipment" {
+		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: artifact %s is not a shipment: %w", shipmentID, blerrors.ErrValidation)
 	}
 	return shipment, frontmatter, nil
 }
