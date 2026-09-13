@@ -502,9 +502,18 @@ func shipmentReconcileFeatureMergeFromClosure(closureBytes []byte, shipmentID st
 	if !shipmentReconcileMentionsShipment(content, shipmentID) {
 		return "", fmt.Errorf("closure does not reference shipment %s", shipmentID)
 	}
-	scope := content
-	if section, ok := shipmentReconcileShipmentSection(content, shipmentID); ok {
-		scope = section
+	// Require an EXACT shipment-scoped section (matching the section-heading
+	// detection above); a whole-document fallback scan is deliberately NOT
+	// permitted (PR #440 review finding 4): a closure document naming
+	// multiple shipments (e.g. this shipment's ID in frontmatter, but a
+	// (feature)-role merge line belonging to a DIFFERENT shipment) could
+	// otherwise have that unrelated merge accepted as this shipment's own
+	// delivery evidence, since it would be the sole feature-role token found
+	// in an unscoped whole-document scan. Fail closed instead of adding more
+	// fallback-scoping heuristics.
+	scope, ok := shipmentReconcileShipmentSection(content, shipmentID)
+	if !ok {
+		return "", fmt.Errorf("closure lacks an exact shipment-scoped section for %s (a heading exactly matching %q is required, no whole-document fallback)", shipmentID, shipmentID)
 	}
 	matches := shipmentReconcilePRCommitRe.FindAllStringSubmatch(scope, -1)
 	featureSHAs := make([]string, 0, 1)
