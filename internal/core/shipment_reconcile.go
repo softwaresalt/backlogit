@@ -66,9 +66,10 @@ type ShipmentShippedReconcileResult struct {
 // classifyShipmentReconcileState is the shared, pure, read-only total state
 // classifier consumed by both the U2 precondition gate (167.014-T) and the
 // U1 transaction (167.008-T). See shipment_reconcile_classifier.go for the
-// implementation landed by 167.010-T.
-func classifyShipmentReconcileState(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string) (ShipmentReconcileOutcome, error) {
-	return classifyShipmentReconcileStateImpl(log, frontmatter, reqIdempotencyKey, reqRequestIdentityDigest)
+// implementation landed by 167.010-T. shipmentID binds every event this
+// classifier accepts to the shipment actually being classified.
+func classifyShipmentReconcileState(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string) (ShipmentReconcileOutcome, error) {
+	return classifyShipmentReconcileStateImpl(log, frontmatter, reqIdempotencyKey, reqRequestIdentityDigest, shipmentID)
 }
 
 // ReconcileShipmentToShipped is the governed two-phase reconciliation

@@ -211,7 +211,7 @@ func TestClassifyShipmentReconcileState_Totality(t *testing.T) {
 			)
 
 			assert.NotPanics(t, func() {
-				gotOutcome, gotErr = classifyShipmentReconcileState(tc.log, tc.frontmatter, tc.reqKey, tc.reqDigest)
+				gotOutcome, gotErr = classifyShipmentReconcileState(tc.log, tc.frontmatter, tc.reqKey, tc.reqDigest, itemID)
 			})
 			assert.Equal(t, tc.wantOutcome, gotOutcome)
 			if tc.wantErrIs == nil {

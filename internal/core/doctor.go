@@ -611,21 +611,25 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 }
 
 // reconciledShippedEventPresence reports whether id's item JSONL carries at
-// least one FULLY-VALID EventShipmentReconciledShipped event (167.002-T,
-// U3's doctor-local recognition branch). It reads the raw log bytes
-// directly and validates each line via ValidateShipmentReconciledShippedEvent
-// with no prepared-event/digest comparison (the doctor scan has no access
-// to any persisted prepared-event artifact — that lands with the
-// transaction in 167.008-T) — so this only confirms shape and required-field
-// completeness, never full replay authenticity; a fully-consistent forgery
-// is an accepted residual (see the task's trust-model note).
+// least one FULLY-VALID EventShipmentReconciledShipped event NAMING id ITSELF
+// (167.002-T, U3's doctor-local recognition branch; item_id binding per
+// PR #440 review finding 3b). It reads the raw log bytes directly and
+// validates each line via ValidateShipmentReconciledShippedEvent with no
+// prepared-event/digest comparison (the doctor scan has no access to any
+// persisted prepared-event artifact — that lands with the transaction in
+// 167.008-T) — so this only confirms shape, required-field completeness, and
+// shipment-identity binding, never full replay authenticity; a
+// fully-consistent forgery that also correctly names id is an accepted
+// residual (see the task's trust-model note). Requiring item_id == id
+// prevents a misplaced/forged event for a DIFFERENT shipment from
+// suppressing the missing-shipped-event finding for THIS shipment.
 //
 // This does NOT broaden shippedEventPresence (144-F guard 2): it is
 // consulted ONLY as an alternative "present" signal by
 // detectMissingShippedEvents, never a replacement, and any
-// bare/malformed/stale/duplicate/key-mismatched event line leaves this
-// false, retaining the missing-shipped-event finding exactly as before this
-// task existed.
+// bare/malformed/stale/duplicate/key-mismatched/wrong-shipment event line
+// leaves this false, retaining the missing-shipped-event finding exactly as
+// before this task existed.
 func reconciledShippedEventPresence(logsDir, id string) (present bool, readable bool) {
 	logPath := events.LogPathForItem(logsDir, id)
 	realLogsDir, rootErr := filepath.EvalSymlinks(logsDir)
@@ -659,7 +663,7 @@ func reconciledShippedEventPresence(logsDir, id string) (present bool, readable 
 			continue
 		}
 		lineWithNewline := append(append([]byte{}, line...), '\n')
-		if ValidateShipmentReconciledShippedEvent(lineWithNewline, nil, "") == nil {
+		if ValidateShipmentReconciledShippedEvent(lineWithNewline, nil, "", id) == nil {
 			return true, true
 		}
 	}

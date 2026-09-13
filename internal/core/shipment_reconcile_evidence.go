@@ -264,7 +264,7 @@ func prepareShipmentReconcileEvidence(ctx context.Context, ws *Workspace, req Sh
 		return zero, shipmentReconcileEvidenceWrap(err, "prepare shipment reconcile evidence: marshal prepared event")
 	}
 	eventDigest := ShipmentReconciledShippedEventDigest(eventBytes)
-	if err := ValidateShipmentReconciledShippedEvent(eventBytes, eventBytes, eventDigest); err != nil {
+	if err := ValidateShipmentReconciledShippedEvent(eventBytes, eventBytes, eventDigest, normalizedReq.ShipmentID); err != nil {
 		return zero, shipmentReconcileEvidenceWrap(err, "prepare shipment reconcile evidence: validate prepared event")
 	}
 

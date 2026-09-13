@@ -69,8 +69,23 @@ func TestEventShipmentReconciledShipped_Constant(t *testing.T) {
 
 func TestValidateShipmentReconciledShippedEvent_AcceptsWellFormedEvent(t *testing.T) {
 	raw := marshalReconciledShippedEvent(t, validReconciledShippedDelta(), "001-S")
-	err := ValidateShipmentReconciledShippedEvent(raw, nil, "")
+	err := ValidateShipmentReconciledShippedEvent(raw, nil, "", "")
 	require.NoError(t, err)
+}
+
+// TestValidateShipmentReconciledShippedEvent_ShipmentIDBinding covers
+// PR #440 review finding 3/6: an otherwise well-formed event naming a
+// DIFFERENT shipment than expectedShipmentID must be rejected, while a
+// blank expectedShipmentID (no specific identity to bind against) and a
+// matching expectedShipmentID both pass.
+func TestValidateShipmentReconciledShippedEvent_ShipmentIDBinding(t *testing.T) {
+	raw := marshalReconciledShippedEvent(t, validReconciledShippedDelta(), "001-S")
+
+	require.NoError(t, ValidateShipmentReconciledShippedEvent(raw, nil, "", "001-S"), "matching expected shipment id must pass")
+	require.NoError(t, ValidateShipmentReconciledShippedEvent(raw, nil, "", ""), "blank expected shipment id must skip the identity check")
+
+	err := ValidateShipmentReconciledShippedEvent(raw, nil, "", "047-S")
+	require.Error(t, err, "an event naming a different shipment than expected must be rejected")
 }
 
 func TestValidateShipmentReconciledShippedEvent_RejectsMissingRequiredFields(t *testing.T) {
@@ -90,7 +105,7 @@ func TestValidateShipmentReconciledShippedEvent_RejectsMissingRequiredFields(t *
 			delta := validReconciledShippedDelta()
 			tc.mutate(&delta)
 			raw := marshalReconciledShippedEvent(t, delta, "001-S")
-			err := ValidateShipmentReconciledShippedEvent(raw, nil, "")
+			err := ValidateShipmentReconciledShippedEvent(raw, nil, "", "")
 			assert.Error(t, err, "case %s must be rejected", tc.name)
 		})
 	}
@@ -107,13 +122,13 @@ func TestValidateShipmentReconciledShippedEvent_RejectsWrongEventType(t *testing
 	raw, err := json.Marshal(event)
 	require.NoError(t, err)
 	raw = append(raw, '\n')
-	assert.Error(t, ValidateShipmentReconciledShippedEvent(raw, nil, ""))
+	assert.Error(t, ValidateShipmentReconciledShippedEvent(raw, nil, "", ""))
 }
 
 func TestValidateShipmentReconciledShippedEvent_RejectsNonNewlineTerminated(t *testing.T) {
 	raw := marshalReconciledShippedEvent(t, validReconciledShippedDelta(), "001-S")
 	raw = bytes.TrimSuffix(raw, []byte("\n"))
-	assert.Error(t, ValidateShipmentReconciledShippedEvent(raw, nil, ""))
+	assert.Error(t, ValidateShipmentReconciledShippedEvent(raw, nil, "", ""))
 }
 
 func TestValidateShipmentReconciledShippedEvent_RejectsDuplicateTopLevelMember(t *testing.T) {
@@ -123,7 +138,7 @@ func TestValidateShipmentReconciledShippedEvent_RejectsDuplicateTopLevelMember(t
 	// caught by the raw token-level scan BEFORE any canonicalization.
 	tampered := bytes.Replace(raw, []byte(`"actor":"backlogit"`), []byte(`"actor":"backlogit","actor":"forged"`), 1)
 	require.NotEqual(t, string(raw), string(tampered), "the fixture must actually contain the literal being replaced")
-	err := ValidateShipmentReconciledShippedEvent(tampered, nil, "")
+	err := ValidateShipmentReconciledShippedEvent(tampered, nil, "", "")
 	require.Error(t, err)
 }
 
@@ -131,7 +146,7 @@ func TestValidateShipmentReconciledShippedEvent_RejectsDuplicateNestedDeltaMembe
 	raw := marshalReconciledShippedEvent(t, validReconciledShippedDelta(), "001-S")
 	tampered := bytes.Replace(raw, []byte(`"reason":"governed repair"`), []byte(`"reason":"governed repair","reason":"forged"`), 1)
 	require.NotEqual(t, string(raw), string(tampered))
-	err := ValidateShipmentReconciledShippedEvent(tampered, nil, "")
+	err := ValidateShipmentReconciledShippedEvent(tampered, nil, "", "")
 	require.Error(t, err)
 }
 
@@ -139,13 +154,13 @@ func TestValidateShipmentReconciledShippedEvent_ComparesAgainstPreparedEventAndD
 	raw := marshalReconciledShippedEvent(t, validReconciledShippedDelta(), "001-S")
 	digest := ShipmentReconciledShippedEventDigest(raw)
 
-	require.NoError(t, ValidateShipmentReconciledShippedEvent(raw, raw, digest))
+	require.NoError(t, ValidateShipmentReconciledShippedEvent(raw, raw, digest, ""))
 
 	t.Run("mutated_trusted_ref_tip_fails_digest", func(t *testing.T) {
 		mutatedDelta := validReconciledShippedDelta()
 		mutatedDelta.TrustedRefTip = "mutated"
 		mutated := marshalReconciledShippedEvent(t, mutatedDelta, "001-S")
-		err := ValidateShipmentReconciledShippedEvent(mutated, raw, digest)
+		err := ValidateShipmentReconciledShippedEvent(mutated, raw, digest, "")
 		assert.Error(t, err, "a mutated trusted_ref_tip must fail the prepared-event/digest comparison")
 	})
 
@@ -157,7 +172,7 @@ func TestValidateShipmentReconciledShippedEvent_ComparesAgainstPreparedEventAndD
 		mutatedDelta := validReconciledShippedDelta()
 		mutatedDelta.RequestIdentityDigest = "attacker-supplied"
 		mutated := marshalReconciledShippedEvent(t, mutatedDelta, "001-S")
-		err := ValidateShipmentReconciledShippedEvent(mutated, raw, digest)
+		err := ValidateShipmentReconciledShippedEvent(mutated, raw, digest, "")
 		assert.Error(t, err, "a frontmatter-only request_identity_digest edit must be caught by the event-digest comparison")
 	})
 }

@@ -162,7 +162,7 @@ func TestPrepareShipmentReconcileEvidence_HappyPathUsesDefaultTrustedRefAndBuild
 	assert.Equal(t, "main", result.TrustedRefName)
 	assert.Equal(t, fixture.nonMergeHead, result.TrustedRefTip)
 
-	require.NoError(t, ValidateShipmentReconciledShippedEvent(result.EventBytes, result.EventBytes, result.EventDigest))
+	require.NoError(t, ValidateShipmentReconciledShippedEvent(result.EventBytes, result.EventBytes, result.EventDigest, ""))
 	assert.Equal(t, result.EventDigest, ShipmentReconciledShippedEventDigest(result.EventBytes))
 
 	var wrapper events.Event

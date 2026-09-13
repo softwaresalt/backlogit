@@ -44,20 +44,33 @@ type shipmentReconcileLoggedEvent struct {
 // (unreadable/path-unsafe log) by returning indeterminate before calling this
 // function when those bytes cannot be obtained safely. A nil/blank log here is
 // therefore treated as a readable event-absent log, not an unreadable one.
-func classifyShipmentReconcileStateImpl(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string) (ShipmentReconcileOutcome, error) {
+//
+// shipmentID binds every event this classifier accepts (logged or persisted
+// prepared-event) to the shipment actually being classified (PR #440 review,
+// 167.010-T): without it, a misplaced/forged event naming a DIFFERENT
+// shipment could otherwise be classified as evidence for this one.
+func classifyShipmentReconcileStateImpl(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string) (ShipmentReconcileOutcome, error) {
 	persisted, err := parseShipmentReconcilePersistedState(frontmatter)
 	if err != nil {
 		return ShipmentReconcileOutcomeIndeterminate, err
 	}
 
-	loggedEvents, err := scanShipmentReconcileLog(log)
+	// Whenever the persisted prepared-event bytes/digest ARE already
+	// available in frontmatter, thread them through so every logged event is
+	// held to the STRICT byte+digest comparison instead of shape-only
+	// validation (167.002-T/167.010-T, PR #440 review finding 3a/6): a
+	// tampered or mismatched-digest logged event must never be accepted just
+	// because it happens to be shape-valid.
+	preparedEventBytes, eventDigest := persisted.preparedEventBytesAndDigestIfPresent()
+
+	loggedEvents, err := scanShipmentReconcileLog(log, shipmentID, preparedEventBytes, eventDigest)
 	if err != nil {
 		return ShipmentReconcileOutcomeIndeterminate, err
 	}
 	if len(loggedEvents) > 0 {
 		return classifyShipmentReconcileEventPresent(loggedEvents, persisted, reqIdempotencyKey, reqRequestIdentityDigest)
 	}
-	return classifyShipmentReconcileEventAbsent(persisted, reqIdempotencyKey, reqRequestIdentityDigest)
+	return classifyShipmentReconcileEventAbsent(persisted, reqIdempotencyKey, reqRequestIdentityDigest, shipmentID)
 }
 
 func classifyShipmentReconcileEventPresent(loggedEvents []shipmentReconcileLoggedEvent, persisted shipmentReconcilePersistedState, reqIdempotencyKey string, reqRequestIdentityDigest string) (ShipmentReconcileOutcome, error) {
@@ -84,7 +97,7 @@ func classifyShipmentReconcileEventPresent(loggedEvents []shipmentReconcileLogge
 	return ShipmentReconcileOutcomeNoOp, nil
 }
 
-func classifyShipmentReconcileEventAbsent(persisted shipmentReconcilePersistedState, reqIdempotencyKey string, reqRequestIdentityDigest string) (ShipmentReconcileOutcome, error) {
+func classifyShipmentReconcileEventAbsent(persisted shipmentReconcilePersistedState, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string) (ShipmentReconcileOutcome, error) {
 	if persisted.archivedStatus != string(ShipmentShipped) {
 		if persisted.hasAnyResumeMarkers() {
 			return ShipmentReconcileOutcomeIndeterminate, fmt.Errorf("classify shipment reconcile state: resume markers present while archived_status=%q: %w", persisted.archivedStatus, blerrors.ErrValidation)
@@ -99,7 +112,7 @@ func classifyShipmentReconcileEventAbsent(persisted shipmentReconcilePersistedSt
 		return ShipmentReconcileOutcomeIndeterminate, fmt.Errorf("classify shipment reconcile state: torn resume state: %w", blerrors.ErrValidation)
 	}
 
-	preparedDelta, err := persisted.validatePreparedEvent()
+	preparedDelta, err := persisted.validatePreparedEvent(shipmentID)
 	if err != nil {
 		return ShipmentReconcileOutcomeIndeterminate, err
 	}
@@ -142,7 +155,7 @@ func parseShipmentReconcilePersistedState(frontmatter map[string]any) (shipmentR
 	return state, nil
 }
 
-func scanShipmentReconcileLog(log []byte) ([]shipmentReconcileLoggedEvent, error) {
+func scanShipmentReconcileLog(log []byte, expectedShipmentID string, preparedEventBytes []byte, expectedDigest string) ([]shipmentReconcileLoggedEvent, error) {
 	trimmed := bytes.TrimSpace(log)
 	if len(trimmed) == 0 {
 		return nil, nil
@@ -169,7 +182,7 @@ func scanShipmentReconcileLog(log []byte) ([]shipmentReconcileLoggedEvent, error
 		}
 
 		rawLine := append(append([]byte{}, line...), '\n')
-		if err := ValidateShipmentReconciledShippedEvent(rawLine, nil, ""); err != nil {
+		if err := ValidateShipmentReconciledShippedEvent(rawLine, preparedEventBytes, expectedDigest, expectedShipmentID); err != nil {
 			return nil, fmt.Errorf("classify shipment reconcile state: validate log line %d: %w", i+1, err)
 		}
 		delta, err := decodeShipmentReconciledShippedDelta(event.Delta)
@@ -189,7 +202,32 @@ func (state shipmentReconcilePersistedState) resumeMarkersComplete() bool {
 	return state.idempotencyKey.present && state.requestIdentityDigest.present && state.preparedEvent.present && state.eventDigest.present
 }
 
-func (state shipmentReconcilePersistedState) validatePreparedEvent() (ShipmentReconciledShippedDelta, error) {
+// preparedEventBytesAndDigestIfPresent returns the persisted prepared-event
+// raw bytes and digest when BOTH frontmatter fields are present and
+// string-typed, or (nil, "") otherwise. It never itself validates JSON shape
+// — callers pass the result straight through to
+// ValidateShipmentReconciledShippedEvent, which performs that validation. A
+// partial/malformed pair degrades to shape-only comparison here rather than
+// erroring, matching this being a best-effort strengthening of an existing
+// shape-only call site, not a new hard precondition: any resume-marker
+// completeness/torn-state problem is already caught separately by
+// hasAnyResumeMarkers/resumeMarkersComplete before this matters.
+func (state shipmentReconcilePersistedState) preparedEventBytesAndDigestIfPresent() ([]byte, string) {
+	if !state.preparedEvent.present || !state.eventDigest.present {
+		return nil, ""
+	}
+	preparedText, ok := state.preparedEvent.value.(string)
+	if !ok {
+		return nil, ""
+	}
+	digest, ok := state.eventDigest.value.(string)
+	if !ok {
+		return nil, ""
+	}
+	return []byte(preparedText), digest
+}
+
+func (state shipmentReconcilePersistedState) validatePreparedEvent(shipmentID string) (ShipmentReconciledShippedDelta, error) {
 	var zero ShipmentReconciledShippedDelta
 
 	preparedEvent, err := readRequiredRawStringField(state.preparedEvent, shipmentReconcilePreparedEventField)
@@ -202,10 +240,10 @@ func (state shipmentReconcilePersistedState) validatePreparedEvent() (ShipmentRe
 	}
 
 	preparedBytes := []byte(preparedEvent)
-	if err := ValidateShipmentReconciledShippedEvent(preparedBytes, preparedBytes, eventDigest); err != nil {
+	if err := ValidateShipmentReconciledShippedEvent(preparedBytes, preparedBytes, eventDigest, shipmentID); err != nil {
 		return zero, fmt.Errorf("classify shipment reconcile state: validate persisted prepared event: %w", err)
 	}
-	loggedEvents, err := scanShipmentReconcileLog(preparedBytes)
+	loggedEvents, err := scanShipmentReconcileLog(preparedBytes, shipmentID, preparedBytes, eventDigest)
 	if err != nil {
 		return zero, fmt.Errorf("classify shipment reconcile state: parse persisted prepared event: %w", err)
 	}

@@ -101,7 +101,15 @@ func ShipmentReconciledShippedEventDigest(eventBytes []byte) string {
 // pair validates rawEventBytes' own shape and required-field contract only
 // (the doctor-local recognition path, which has no persisted prepared-event
 // artifact to compare against — that persistence lands in 167.008-T).
-func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventBytes []byte, expectedDigest string) error {
+//
+// When expectedShipmentID is non-blank, the event's item_id MUST equal it
+// exactly, or the event is rejected as invalid — regardless of whether it is
+// otherwise well-formed (PR #440 review, 167.002-T/167.010-T): a
+// shape-valid, even digest-matching, event that names a DIFFERENT shipment
+// must never be accepted as evidence for THIS shipment. A blank
+// expectedShipmentID skips this check (used only where the caller genuinely
+// has no specific shipment identity to bind against).
+func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventBytes []byte, expectedDigest string, expectedShipmentID string) error {
 	if len(rawEventBytes) == 0 || len(bytes.TrimSpace(rawEventBytes)) == 0 {
 		return fmt.Errorf("%w: event bytes are empty", blerrors.ErrValidation)
 	}
@@ -123,6 +131,9 @@ func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventB
 	}
 	if wrapper.ItemID == "" {
 		return fmt.Errorf("%w: item_id is required", blerrors.ErrValidation)
+	}
+	if expectedShipmentID != "" && wrapper.ItemID != expectedShipmentID {
+		return fmt.Errorf("%w: item_id is %q, want %q", blerrors.ErrValidation, wrapper.ItemID, expectedShipmentID)
 	}
 
 	delta, err := decodeShipmentReconciledShippedDelta(wrapper.Delta)
