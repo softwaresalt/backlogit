@@ -26,10 +26,10 @@ import (
 // MUST NOT call t.Parallel(): ShipShipment reads package globals that sibling
 // tests in this package override.
 
-func plantLockSidecarDirectory(t *testing.T, logsDir, itemID string) string {
+func plantLockSidecarDirectory(t *testing.T, ws *Workspace, itemID string) string {
 	t.Helper()
-	require.NoError(t, os.MkdirAll(logsDir, 0o755))
-	sidecar := filepath.Join(logsDir, "."+itemID+".jsonl.lock")
+	sidecar, pathErr := events.ItemLogLockPath(WorkspaceLocksRoot(ws.RootPath), itemID)
+	require.NoError(t, pathErr)
 	require.NoError(t, os.RemoveAll(sidecar))
 	require.NoError(t, os.MkdirAll(sidecar, 0o755))
 	t.Cleanup(func() { _ = os.RemoveAll(sidecar) })
@@ -43,8 +43,17 @@ func TestAppendShipmentEventErr_LockFailureIsNotApplied(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
 
-	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	plantLockSidecarDirectory(t, logsDir, "001-S")
+	// Ensure the logs directory itself resolves to a real (existing) path
+	// BEFORE the appender's symlink-containment pre-check runs: that check
+	// falls back to resolving the log file's parent directory when the log
+	// file itself does not yet exist, and an absent parent leaves the
+	// fallback path unresolved (potentially short-name-form on Windows),
+	// which can spuriously mismatch the fully-resolved storage root and trip
+	// the "resolves outside" branch — unrelated to the lock failure this
+	// test actually exercises.
+	require.NoError(t, os.MkdirAll(WorkspaceLogsRoot(ws.RootPath), 0o755))
+
+	plantLockSidecarDirectory(t, ws, "001-S")
 
 	err := appendShipmentEventErr(ctx, ws, "001-S", "shipment_status_changed", map[string]any{
 		"status": string(ShipmentShipped),

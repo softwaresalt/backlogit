@@ -33,6 +33,7 @@ shipments in the workspace, claim queued shipments, and return blocked items.`,
 	cmd.AddCommand(newShipmentShipCmd())
 	cmd.AddCommand(newShipmentReturnBlockedCmd())
 	cmd.AddCommand(newShipmentRepairEvidenceCmd())
+	cmd.AddCommand(newShipmentReconcileShippedCmd())
 	return cmd
 }
 

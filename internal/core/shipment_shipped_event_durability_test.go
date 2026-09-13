@@ -17,6 +17,7 @@ import (
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -257,9 +258,9 @@ func TestShipShipment_IndeterminateShippedEventNeverRollsBack(t *testing.T) {
 func TestShipShipment_UnrestorableItemReportsPartialCompensation(t *testing.T) {
 	fixture := newShipDurabilityFixture(t, false)
 
-	logsDir := WorkspaceLogsRoot(fixture.ws.RootPath)
 	blockedID := fixture.taskOneID
-	sidecar := filepath.Join(logsDir, "."+blockedID+".jsonl.lock")
+	sidecar, sidecarErr := events.ItemLogLockPath(WorkspaceLocksRoot(fixture.ws.RootPath), blockedID)
+	require.NoError(t, sidecarErr)
 
 	injected := fmt.Errorf("open item log: %w: %w", blerrors.ErrWriteNotApplied, errors.New("injected pre-write failure"))
 	fixture.injectShippedAppend(t, func(context.Context) error {

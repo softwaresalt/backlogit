@@ -750,7 +750,7 @@ func appendItemEventWithCommit(ctx context.Context, ws *Workspace, itemID, event
 		CommitSHA: commitSHA,
 	}
 
-	lockedCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	lockedCtx, unlock, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
 	if lockErr != nil {
 		slog.WarnContext(ctx, "lock shipment event log", "item_id", itemID, "event_type", eventType, "error", lockErr)
 		return
@@ -824,6 +824,21 @@ func normalizeShipmentArtifact(artifact *models.Artifact) {
 // write path.
 var persistArtifactWriteFn = WriteArtifactFileWithOptions
 
+// persistArtifactPreLockHook, when non-nil, is invoked by
+// persistArtifactWithLinkPolicyAndGuard immediately BEFORE it attempts to
+// acquire the artifact-mutation lock (B), with the artifact ID being
+// persisted. It exists solely so tests can deterministically synchronize a
+// "concurrent writer already committed a different archived_status" scenario
+// (167.019-T) without a timing-based sleep race: the hook runs synchronously,
+// in the SAME goroutine, so a test can perform its own concurrent mutation
+// (even via a recursive persistArtifact call, which is safe here because lock
+// B is not yet held at this point) and have it land on disk before this call
+// proceeds to acquire lock B and run its guard. Nil in production (no-op).
+//
+// Must not run with t.Parallel: tests that set this read/write a shared
+// package var.
+var persistArtifactPreLockHook func(artifactID string)
+
 func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) error {
 	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, true, nil)
 }
@@ -837,6 +852,9 @@ func persistArtifactWithGuard(ctx context.Context, ws *Workspace, artifact *mode
 }
 
 func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool, guard func(context.Context) error) error {
+	if persistArtifactPreLockHook != nil {
+		persistArtifactPreLockHook(artifact.ID)
+	}
 	unlock, err := lockArtifactMutation(ctx, ws, artifact.ID)
 	if err != nil {
 		return fmt.Errorf("lock artifact %s: %w", artifact.ID, err)

@@ -61,6 +61,11 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	if err != nil {
 		return fmt.Errorf("associate commit: load artifact %s: %w", itemID, err)
 	}
+	// Captured BEFORE any lock is acquired (findArtifact takes none). Used by
+	// the guard below to detect a concurrent writer (e.g. a governed shipment
+	// reconciliation) that commits a different archived_status under lock B
+	// between this read and this function's own persist step (167.019-T).
+	preLockArchivedStatus := artifact.ArchivedStatus
 	// Snapshot the full pre-mutation artifact so the compensating write uses
 	// persistArtifact (no hooks) rather than UpdateArtifact (fires hooks).
 	// Using UpdateArtifact inside the envelope would leave spurious hook-queue
@@ -99,7 +104,7 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	}
 
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
 	if lockErr != nil {
 		return fmt.Errorf("associate commit: lock item log: %w", lockErr)
 	}
@@ -127,7 +132,7 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 				// entries. The SQLite fast-path (items.commit column) is
 				// intentionally not updated here; commit_links is the
 				// authoritative per-SHA representation.
-				if err := persistArtifact(ctx, ws, artifact, false); err != nil {
+				if err := persistArtifactWithGuard(ctx, ws, artifact, false, guardArchivedStatusUnchangedSince(ws, itemID, preLockArchivedStatus)); err != nil {
 					return fmt.Errorf("associate commit step 1 (frontmatter scalar): %w", err)
 				}
 				return nil
@@ -224,7 +229,7 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 
 	// Append to the item's JSONL log so rehydration and search can rebuild state from log files.
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
 	if lockErr != nil {
 		return fmt.Errorf("link commit: lock item log: %w", lockErr)
 	}
@@ -273,7 +278,7 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 // behavior. Errors are wrapped with %w so callers can use errors.Is/As.
 func AppendComment(ctx context.Context, ws *Workspace, ew *events.EventWriter, itemID, actor, comment, commitSHA string) error {
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
 	if lockErr != nil {
 		return fmt.Errorf("append comment: lock item log: %w", lockErr)
 	}

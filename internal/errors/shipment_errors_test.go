@@ -19,6 +19,10 @@ func TestShipmentSentinelErrors_ErrorsIs(t *testing.T) {
 		{"ErrShipmentNotFound", ErrShipmentNotFound, "backlogit: shipment not found"},
 		{"ErrItemAlreadyAssigned", ErrItemAlreadyAssigned, "backlogit: item already assigned to a shipment"},
 		{"ErrShipmentConflict", ErrShipmentConflict, "backlogit: shipment status conflict"},
+		{"ErrShipmentReconcileEvidence", ErrShipmentReconcileEvidence, "backlogit: shipment reconcile evidence invalid or unverifiable"},
+		{"ErrShipmentReconcileConflict", ErrShipmentReconcileConflict, "backlogit: shipment reconcile state conflict"},
+		{"ErrUnsupportedLegacyPreState", ErrUnsupportedLegacyPreState, "backlogit: unsupported legacy shipment reconcile pre-state"},
+		{"ErrUnsupportedLegacyDescope", ErrUnsupportedLegacyDescope, "backlogit: unsupported legacy shipment reconcile descope"},
 		{"ErrCannotReturnItem", ErrCannotReturnItem, "backlogit: cannot return item from shipment"},
 	}
 
@@ -41,6 +45,10 @@ func TestShipmentSentinelErrors_AreDistinct(t *testing.T) {
 		ErrShipmentNotFound,
 		ErrItemAlreadyAssigned,
 		ErrShipmentConflict,
+		ErrShipmentReconcileEvidence,
+		ErrShipmentReconcileConflict,
+		ErrUnsupportedLegacyPreState,
+		ErrUnsupportedLegacyDescope,
 		ErrCannotReturnItem,
 	}
 

@@ -101,6 +101,19 @@ func WorkspaceLogsRoot(rootPath string) string {
 	return filepath.Join(WorkspaceStorageRoot(rootPath), "logs")
 }
 
+// WorkspaceLocksRoot returns the stable advisory-lock root for a workspace
+// root — the SAME root that shipment-membership lock A
+// (lockShipmentMembership) and artifact-mutation lock B
+// (artifactMutationLockPath) are already keyed under
+// (shipmentMembershipLocksDirName, ".locks"). Any lock rooted here —
+// including the item-log cross-process lock C
+// (events.LockItemLogCrossProcess, 167.017-T) — survives a logs-directory
+// reconfiguration/replacement, because it never derives from
+// WorkspaceLogsRoot.
+func WorkspaceLocksRoot(rootPath string) string {
+	return filepath.Join(WorkspaceStorageRoot(rootPath), shipmentMembershipLocksDirName)
+}
+
 func workspaceStorageRoot(ws *Workspace) string {
 	if ws != nil && ws.StorageRoot != "" {
 		return ws.StorageRoot

@@ -50,7 +50,7 @@ func appendItemEventWithActorErr(ctx context.Context, ws *Workspace, itemID, act
 		actor = "backlogit"
 	}
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, itemID)
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
 	if lockErr != nil {
 		return fmt.Errorf("lock gate evidence log %s: %w", itemID, lockErr)
 	}

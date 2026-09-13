@@ -676,7 +676,7 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 			CommitSHA: commitSHA,
 		}
 		logsDir := core.WorkspaceLogsRoot(s.Workspace.RootPath)
-		lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, logsDir, id)
+		lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, core.WorkspaceLocksRoot(s.Workspace.RootPath), logsDir, id)
 		if lockErr != nil {
 			logger.Warn("move item: failed to lock commit-traced event log", "item_id", id, "commit_sha", commitSHA, "error", lockErr)
 		} else {

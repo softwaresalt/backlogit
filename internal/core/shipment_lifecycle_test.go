@@ -117,7 +117,7 @@ func TestRestoreShipArtifactsDetailed_PromotesEveryPerItemFailure(t *testing.T) 
 		{
 			name: "lock_acquisition_failure",
 			arm: func(t *testing.T, ws *Workspace, logsDir, id string) {
-				plantLockSidecarDirectory(t, logsDir, id)
+				plantLockSidecarDirectory(t, ws, id)
 			},
 		},
 		{
@@ -162,7 +162,7 @@ func TestRestoreShipArtifactsDetailed_PromotesEveryPerItemFailure(t *testing.T) 
 
 			// No lock leak: a subsequent acquisition of the healthy item's log
 			// lock must still succeed immediately.
-			featureCtx, unlock, lockErr := acquireItemLogWithBudget(ctx, logsDir, feature.ID,
+			featureCtx, unlock, lockErr := acquireItemLogWithBudget(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, feature.ID,
 				&shipRestoreBudget{deadline: alreadyElapsedDeadline(), attempts: 0})
 			require.NoError(t, lockErr, "the compensation loop must not leak the item-log mutex")
 			require.NotNil(t, unlock)
@@ -191,7 +191,7 @@ func TestClassifyShippedEventAppendFailure_PromotesPartialCompensation(t *testin
 	require.NoError(t, err)
 
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	plantLockSidecarDirectory(t, logsDir, task.ID)
+	plantLockSidecarDirectory(t, ws, task.ID)
 
 	appendErr := &shipmentEventAppendError{
 		shipmentID: "001-S",

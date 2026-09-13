@@ -22,6 +22,25 @@ const (
 	ExitGateConfig         = 7
 	ExitGateRetryable      = 8
 	ExitShipmentGovernance = 9
+	// ExitReconcileConflict is `shipment reconcile-shipped`'s versioned exit
+	// code (167.004-T) for a typed reject: a conflict outcome (same
+	// idempotency key, different request identity), or a precondition/
+	// evidence validation failure (unsupported legacy pre-state/descope,
+	// unverifiable merge/closure evidence, generic request validation).
+	ExitReconcileConflict = 10
+	// ExitReconcileIndeterminate is the distinct non-zero exit code for a
+	// shipment reconcile-shipped outcome whose durable write outcome could
+	// not be determined (ErrWriteIndeterminate class, or a classifier/
+	// manifest read that came back indeterminate) — manual review required,
+	// deliberately distinguished from ExitReconcileConflict.
+	ExitReconcileIndeterminate = 11
+	// ExitConfirmationRequired is the distinct non-zero exit code for a
+	// shipment reconcile-shipped live mutation denied by the explicit-
+	// confirmation guard (internal/errors.ErrConfirmationRequired, imported
+	// in this file — and consistently throughout internal/cli — under the
+	// local alias corerrors; see the import block above): no matching
+	// --confirm phrase and no interactive-TTY confirmation.
+	ExitConfirmationRequired = 12
 )
 
 // gateExitError maps a gate typed error to an *ExitError carrying the versioned
