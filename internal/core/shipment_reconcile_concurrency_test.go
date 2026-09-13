@@ -205,11 +205,38 @@ func testU20ReconcileVsAssociateCommit(t *testing.T) {
 	u20AssertArtifactCoherent(t, ws, shipmentID)
 }
 
-// testU20ReconcileVsArchiveItem races ReconcileShipmentToShipped (on the
-// shipment) against ArchiveItem (on a related member item still under the
-// shipment's manifest), per the task spec's required race #2.
+// testU20ReconcileVsArchiveItem races ReconcileShipmentToShipped against
+// ArchiveItem on the SAME shipment item, per the task spec's required race
+// #2 ("concurrent AssociateCommit and ArchiveItem ... racing reconcile
+// A->C->B acquisition" only exercises the intended same-item lock
+// contention when both operations target the same item ID).
+//
+// u20ReconcileFixture's shipment is already archived (archived_status:
+// active) before this test runs (createArchivedShipmentReconcileFixture
+// calls ArchiveItem once during setup). A second ArchiveItem call on that
+// same, already-archived shipment ID is a real, supported re-archive path
+// (archive.go's currentPath==archivePath branch, guarded and documented at
+// 167.021-T): it still acquires the full lock B (lockArtifactMutations,
+// held for ArchiveItem's whole body) then lock C (events.
+// LockItemLogCrossProcess, near the end) and performs a real frontmatter
+// read/rewrite + DB status update, preserving the existing archived_status
+// rather than a no-op short-circuit. That is a genuine concurrent-mutation
+// window on the shipment ID, not a fabricated scenario.
+//
+// This deliberately creates an ABBA lock-order shape against reconcile's own
+// C-then-B acquisition (shipment_reconcile_transaction.go): ArchiveItem
+// acquires B then C while reconcile acquires C then B. Every lock in that
+// cycle is bounded-wait (lockArtifactMutations/lockTaskFileWithHeartbeat:
+// ~3s, defaultGateLockBoundedWait; reconcile's own C-lock,
+// lockShipmentReconcileItemLogImpl: ~3s, file-lock only, does NOT touch the
+// in-process events.LockItemLog mutex; ArchiveItem's C-lock file layer,
+// events.acquireItemLogFileLock: ~3s, itemLogLockWait) so the worst case is
+// a bounded lock-busy error on one side, never an unbounded wait. See
+// TestU20_ReconcileShipmentToShippedConcurrency's package-level doc comment
+// and the 167.020-T follow-up concurrency-review report for the empirical
+// -race -count=10 verification this claim rests on.
 func testU20ReconcileVsArchiveItem(t *testing.T) {
-	ws, shipmentID, memberID := u20ReconcileFixture(t)
+	ws, shipmentID, _ := u20ReconcileFixture(t)
 	ctx := context.Background()
 	req := validShipmentReconcilePreconditionRequest(shipmentID)
 
@@ -219,7 +246,7 @@ func testU20ReconcileVsArchiveItem(t *testing.T) {
 			return err
 		},
 		"archive_item": func() error {
-			_, err := ArchiveItem(ctx, ws.DB, ws, memberID)
+			_, err := ArchiveItem(ctx, ws.DB, ws, shipmentID)
 			return err
 		},
 	})
@@ -235,7 +262,6 @@ func testU20ReconcileVsArchiveItem(t *testing.T) {
 	}
 
 	u20AssertArtifactCoherent(t, ws, shipmentID)
-	u20AssertArtifactCoherent(t, ws, memberID)
 }
 
 // testU20ReconcileReplayDifferentIdentitySameKey issues two concurrent
