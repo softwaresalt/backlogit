@@ -150,7 +150,7 @@ func TestValidateShipmentReconcilePreconditions_ShipmentMustResolveUnderArchive(
 	_, err = validateShipmentReconcilePreconditions(ctx, ws, req, digest)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, blerrors.ErrValidation)
-	assert.Contains(t, err.Error(), ".backlogit\\archive")
+	assert.Contains(t, err.Error(), filepath.Join(".backlogit", "archive"))
 }
 
 func TestValidateShipmentReconcilePreconditions_ShipmentStatusMustBeArchived(t *testing.T) {

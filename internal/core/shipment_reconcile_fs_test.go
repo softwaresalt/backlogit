@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -99,7 +100,16 @@ func TestWriteShipmentReconcileArchiveFile_PostRenameDirFsyncFailureIndeterminat
 func TestWriteShipmentReconcileArchiveFile_RejectsUnsafeShipmentID(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 
-	for _, id := range []string{"../escape", "a/b", `a\b`, ".."} {
+	ids := []string{"../escape", "a/b", ".."}
+	if runtime.GOOS == "windows" {
+		// Backslash is only a path separator (and therefore only rejected
+		// as an unsafe multi-component filename) on Windows; on Unix-like
+		// platforms filepath.Base treats a literal backslash as an ordinary
+		// filename byte, so "a\b" is itself a safe single path component
+		// there and must not be asserted as unsafe cross-platform.
+		ids = append(ids, `a\b`)
+	}
+	for _, id := range ids {
 		err := writeShipmentReconcileArchiveFile(context.Background(), ws, id, []byte("x"))
 		assert.Error(t, err, "shipment id %q must be refused as an unsafe filename component", id)
 	}
