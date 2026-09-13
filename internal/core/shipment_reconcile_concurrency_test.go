@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -160,6 +162,37 @@ func u20AssertReconcileNoPanic(t *testing.T, res u20GuardedResult) {
 	}
 }
 
+// assertMeaningfulReconcileOutcome requires that a non-panicked reconcile
+// result reflect a RECOGNIZED reconcile-domain signal rather than an
+// arbitrary/unexpected error: either a nil error paired with a defined
+// ShipmentReconcileOutcome (in particular, Conflict is the specific,
+// meaningful signal a same-key/different-identity replay is expected to
+// eventually produce for the losing side), or an error wrapping one of the
+// two reconcile-domain sentinels a legitimate divergent outcome can surface
+// under this harness: ErrShipmentReconcileConflict (classifier-detected
+// identity conflict) or ErrShipmentReconcileEvidence (Phase C evidence
+// verification failure — the only failure mode this test's synthetic,
+// unverifiable MergeSHA fixture can currently reach, empirically confirmed
+// across repeated -race runs). Any other error class would indicate a real
+// defect, not a legitimate divergent-outcome signal, and fails the test.
+func assertMeaningfulReconcileOutcome(t *testing.T, name string, err error, outcome ShipmentReconcileOutcome) {
+	t.Helper()
+	if err == nil {
+		switch outcome {
+		case ShipmentReconcileOutcomeReconciled, ShipmentReconcileOutcomeNoOp,
+			ShipmentReconcileOutcomeConflict, ShipmentReconcileOutcomeIndeterminate:
+			return
+		default:
+			t.Errorf("%s: nil error but unrecognized outcome %q", name, outcome)
+			return
+		}
+	}
+	if errors.Is(err, blerrors.ErrShipmentReconcileConflict) || errors.Is(err, blerrors.ErrShipmentReconcileEvidence) {
+		return
+	}
+	t.Errorf("%s: error is neither ErrShipmentReconcileConflict nor ErrShipmentReconcileEvidence: %v", name, err)
+}
+
 // u20AssertArtifactCoherent re-reads the artifact from disk and requires it
 // still parses as a single, well-formed record — the "no clobber" proof.
 // A torn/corrupted frontmatter write under concurrent access would surface
@@ -285,13 +318,16 @@ func testU20ReconcileReplayDifferentIdentitySameKey(t *testing.T) {
 	reqB.IdempotencyKey = "idem-167-020-replay" // same key
 	reqB.MergeSHA = strings.Repeat("c", 40)     // different request identity
 
+	var outA, outB ShipmentShippedReconcileResult
 	results := u20AwaitWithDeadline(t, 10*time.Second, map[string]func() error{
 		"reconcile_a": func() error {
-			_, err := ReconcileShipmentToShipped(ctx, ws, reqA)
+			res, err := ReconcileShipmentToShipped(ctx, ws, reqA)
+			outA = res
 			return err
 		},
 		"reconcile_b": func() error {
-			_, err := ReconcileShipmentToShipped(ctx, ws, reqB)
+			res, err := ReconcileShipmentToShipped(ctx, ws, reqB)
+			outB = res
 			return err
 		},
 	})
@@ -308,6 +344,26 @@ func testU20ReconcileReplayDifferentIdentitySameKey(t *testing.T) {
 		// surfaces a conflict), never silently identical successes.
 		assert.False(t, resA.err == nil && resB.err == nil,
 			"same idempotency key with a different request-identity digest must not silently succeed on both calls")
+
+		// "not both nil" alone is satisfied by ANY divergent failure,
+		// including a call that merely failed to acquire a bounded lock in
+		// time -- that proves nothing about the classifier's same-key/
+		// different-identity CONFLICT branch. This fixture's synthetic,
+		// unverifiable MergeSHAs mean neither call can ever durably commit
+		// a "reconciled" event (both fail Phase C evidence verification
+		// deterministically, empirically confirmed across repeated -race
+		// runs), so ShipmentReconcileOutcomeConflict can never actually be
+		// observed here without a real git merge-commit + closure-evidence
+		// fixture (out of scope for this pass; see 167.020-T concurrency
+		// review follow-up). Assert the next-strongest available signal
+		// instead: each result must be either a recognized reconcile-domain
+		// outcome (Outcome == Conflict once evidence ever succeeds) or a
+		// recognized reconcile-domain error sentinel
+		// (ErrShipmentReconcileConflict or ErrShipmentReconcileEvidence) --
+		// never a bare/unexpected error class that would indicate a defect
+		// unrelated to identity-conflict classification.
+		assertMeaningfulReconcileOutcome(t, "reconcile_a", resA.err, outA.Outcome)
+		assertMeaningfulReconcileOutcome(t, "reconcile_b", resB.err, outB.Outcome)
 		return
 	}
 
