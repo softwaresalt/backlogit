@@ -277,6 +277,24 @@ func TestShipmentReconcileShipped_ConfirmTokenMatches_PermitsCoreCall(t *testing
 
 // --- 6. --dry-run needs no confirmation and performs zero writes -----------
 
+// TestShipmentReconcileShipped_DryRun_NoConfirmationNoWrites proves the
+// --dry-run contract's two INVARIANT properties that hold regardless of the
+// fixture's evidence validity: (1) no confirmation phrase is required, and
+// (2) zero reconciliation writes ever occur. It does NOT prove a dry run
+// against this fixture reports "reconciled": 167.008-T's own documented
+// contract (PR #440 review finding 5) is that --dry-run evaluates EVERY
+// precondition, including Phase C evidence verification (merge-commit
+// reachability, closure-evidence read/hash) and Phase D's manifest
+// re-validation — it only skips the final writes. This CLI-layer fixture has
+// no real git repository/trusted refs available (see
+// TestShipmentReconcileShipped_SuccessPath_BestEffort's identical
+// constraint), so evidence verification legitimately rejects the dry run
+// exactly as it would reject the equivalent live call — proving dry-run no
+// longer reports a false "would be reconciled" for a request that would
+// actually fail. The archive file byte-equality assertion below still holds:
+// the corrected, stricter dry-run makes zero writes, whether it fails at
+// evidence verification or (given a valid fixture) succeeds up to the write
+// boundary.
 func TestShipmentReconcileShipped_DryRun_NoConfirmationNoWrites(t *testing.T) {
 	reconcileShippedForceNonInteractiveStdin(t)
 	root := reconcileShippedSetupWorkspace(t)
@@ -287,14 +305,16 @@ func TestShipmentReconcileShipped_DryRun_NoConfirmationNoWrites(t *testing.T) {
 	require.NoError(t, err)
 
 	args := append(reconcileShippedValidArgs(shipmentID), "--dry-run")
-	stdout, _, err := reconcileShippedRunCmd(t, root, args...)
-	require.NoError(t, err, "a dry run against a valid fixture must succeed (exit 0)")
-	assert.Contains(t, stdout, `"dry_run": true`)
-	assert.Contains(t, stdout, shipmentID)
+	_, _, err = reconcileShippedRunCmd(t, root, args...)
+	require.Error(t, err, "no real git repository/trusted refs are available in this fixture, so Phase C evidence verification is expected to reject even a dry run")
+	assert.False(t, errors.Is(err, corerrors.ErrConfirmationRequired),
+		"--dry-run must never require the confirmation phrase, got: %v", err)
+	assert.True(t, errors.Is(err, corerrors.ErrShipmentReconcileEvidence),
+		"expected the same legitimate evidence-verification rejection a live call would hit, got: %v", err)
 
 	after, err := os.ReadFile(archivePath)
 	require.NoError(t, err)
-	assert.Equal(t, before, after, "dry-run must make zero reconciliation writes to the archive file")
+	assert.Equal(t, before, after, "dry-run must make zero reconciliation writes to the archive file, even when Phase C evidence verification rejects the request")
 }
 
 // --- 7. Success path (best-effort) ------------------------------------------

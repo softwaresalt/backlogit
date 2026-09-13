@@ -168,16 +168,16 @@ func reconcileShipmentPhaseB(ctx context.Context, ws *Workspace, req ShipmentShi
 		if err := validateShipmentReconcileShipmentLegacyPreState(shipment); err != nil {
 			return result, err
 		}
-		if req.DryRun {
-			result.Outcome = outcome
-			result.Message = fmt.Sprintf("dry run: shipment %s would be reconciled from archived_status=%q to archived_status=%q", shipmentID, shipment.ArchivedStatus, string(ShipmentShipped))
-			return result, nil
-		}
 		beforeArchivedStatus := shipment.ArchivedStatus
-		// 2d normal-repair: release B and C now (keep A held) before Phase
-		// C's slow, un-lockable evidence I/O.
+		// 2d normal-repair (live or dry-run alike): release B and C now (keep
+		// A held) before Phase C's slow, un-lockable evidence I/O. A dry run
+		// still runs Phase C's evidence verification and Phase D's
+		// manifest/classification re-validation in full (167.008-T, PR #440
+		// review finding 5): --dry-run evaluates EVERY precondition and only
+		// skips the final writes, so it must not short-circuit here before
+		// those preconditions ever run.
 		release()
-		return reconcileShipmentPhaseCAndD(ctx, ws, req, shipmentID, phaseAMemberIDs, requestIdentityDigest, beforeArchivedStatus, result)
+		return reconcileShipmentPhaseCAndD(ctx, ws, req, shipmentID, phaseAMemberIDs, requestIdentityDigest, beforeArchivedStatus, req.DryRun, result)
 	default:
 		return result, fmt.Errorf("reconcile shipment to shipped: shipment %s classifier returned unrecognized outcome %q", shipmentID, outcome)
 	}
@@ -243,7 +243,20 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 // and durably commit). It is only ever reached from the 2d normal-repair
 // branch, with B and C already released and only A still held by the
 // caller's own deferred unlock.
-func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req ShipmentShippedReconcileRequest, shipmentID string, phaseAMemberIDs []string, requestIdentityDigest string, beforeArchivedStatus string, result ShipmentShippedReconcileResult) (ShipmentShippedReconcileResult, error) {
+//
+// dryRun routes the SAME Phase C evidence-verification and Phase D
+// manifest/terminality/classification re-validation a live call performs
+// (167.008-T, PR #440 review finding 5): the command's own documented
+// contract is that --dry-run evaluates every precondition and only skips
+// WRITES, so a dry run must not short-circuit before Phase C/D preconditions
+// ever run (an invalid merge SHA, unresolvable closure evidence, or a
+// non-terminal member must still fail a dry run exactly as it would fail a
+// live call). When dryRun is true, this function releases the Phase D locks
+// and returns the dry-run result IMMEDIATELY BEFORE the first write
+// (snapshotShipmentReconcile / writeShipmentReconcileArchiveFile /
+// appendShipmentReconcileEvent) — it never snapshots, writes the archive
+// frontmatter, or appends the event.
+func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req ShipmentShippedReconcileRequest, shipmentID string, phaseAMemberIDs []string, requestIdentityDigest string, beforeArchivedStatus string, dryRun bool, result ShipmentShippedReconcileResult) (ShipmentShippedReconcileResult, error) {
 	manifestDigest := shipmentReconcileManifestDigest(phaseAMemberIDs)
 
 	evidence, err := prepareShipmentReconcileEvidence(ctx, ws, req, shipmentReconcileEvidenceInput{
@@ -255,7 +268,8 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 		return result, fmt.Errorf("reconcile shipment to shipped: prepare shipment %s evidence: %w", shipmentID, err)
 	}
 
-	// PHASE D: re-acquire C then B, held together for the entire commit.
+	// PHASE D: re-acquire C then B, held together for the entire commit (or,
+	// for a dry run, for the full read-only re-validation).
 	lockIDs := append([]string{shipmentID}, phaseAMemberIDs...)
 	ctxCB, releaseCB, err := lockShipmentReconcileCThenB(ctx, ws, shipmentID, lockIDs)
 	if err != nil {
@@ -318,6 +332,17 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 			result.Message = fmt.Sprintf("shipment %s reconciliation state could not be determined", shipmentID)
 			return result, fmt.Errorf("reconcile shipment to shipped: shipment %s re-classified as indeterminate under commit lock: %w", shipmentID, blerrors.ErrValidation)
 		}
+	}
+
+	if dryRun {
+		// Every Phase C/D precondition above has now been fully evaluated
+		// (evidence verification, membership/terminality re-validation, and
+		// re-classification all agree "reconciled"); release the locks and
+		// report the planned outcome without ever reaching a write.
+		release()
+		result.Outcome = outcome
+		result.Message = fmt.Sprintf("dry run: shipment %s would be reconciled from archived_status=%q to archived_status=%q", shipmentID, beforeArchivedStatus, string(ShipmentShipped))
+		return result, nil
 	}
 
 	snapshot, err := snapshotShipmentReconcile(ctxCB, ws, shipmentID)
