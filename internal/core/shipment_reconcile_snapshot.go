@@ -123,27 +123,19 @@ func snapshotShipmentReconcileArchiveFile(ws *Workspace, shipmentID string) ([]b
 		return nil, fmt.Errorf("snapshot shipment reconcile %s archive directory: %w", shipmentID, err)
 	}
 
-	archivePath := filepath.Join(archiveDir, shipmentID+".md")
-	info, err := os.Lstat(archivePath)
+	// readShipmentReconcileArchiveSnapshotFile (platform-specific) opens the
+	// archive file exactly once and reads from that single handle, rather
+	// than the prior Lstat-then-ReadFile pair: two separate pathname
+	// operations left a check/use race window in which the file could be
+	// replaced by a symlink between the symlink check and the read, and this
+	// snapshot is later WRITTEN BACK verbatim by restoreShipmentReconcile, so
+	// a race-won read here would persist outside-workspace bytes as the
+	// source of truth for rollback (167.016-T hardening).
+	content, err := readShipmentReconcileArchiveSnapshotFile(archiveDir, shipmentID+".md")
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("snapshot shipment reconcile %s archive file: %w", shipmentID, err)
-	}
-	if info.IsDir() {
-		return nil, fmt.Errorf("snapshot shipment reconcile %s archive file %s is a directory", shipmentID, archivePath)
-	}
-	symlink, err := IsSymlinkOrReparsePoint(info, archivePath)
-	if err != nil {
-		return nil, fmt.Errorf("snapshot shipment reconcile %s archive file: %w", shipmentID, err)
-	}
-	if symlink {
-		return nil, fmt.Errorf("snapshot shipment reconcile %s archive file: %w", shipmentID, blerrors.ErrValidation)
-	}
-
-	content, err := os.ReadFile(archivePath)
-	if err != nil {
 		return nil, fmt.Errorf("snapshot shipment reconcile %s archive file: %w", shipmentID, err)
 	}
 	if content == nil {
