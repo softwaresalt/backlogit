@@ -17,12 +17,26 @@ const (
 	itemLogLockViolation        = syscall.Errno(33)
 )
 
-// itemLogLockNamespaceIsReparsePoint reports whether the item-log lock (C)
-// namespace directory is (or resolves through) a reparse point at its own
-// final path component, mirroring internal/core/shipment_reconcile_lock_windows.go's
-// isReparsePointPath check byte-for-byte (Lstat's ModeSymlink first, then a
-// FILE_ATTRIBUTE_REPARSE_POINT fallback via the existing isReparsePoint
-// helper already established in checkpoint_readnofollow_windows.go). A
+// itemLogLockNamespaceIsReparsePoint reports whether path — the item-log
+// lock (C) namespace directory — is ITSELF a reparse point (Lstat's
+// ModeSymlink first, then a FILE_ATTRIBUTE_REPARSE_POINT fallback via the
+// existing isReparsePoint helper already established in
+// checkpoint_readnofollow_windows.go), mirroring
+// internal/core/shipment_reconcile_lock_windows.go's isReparsePointPath
+// check byte-for-byte.
+//
+// Scope correction (Copilot PR #440 review, finding 2): this checks ONLY
+// path's own final path component — it does NOT walk up path's ancestors,
+// despite the prior wording here suggesting a fuller "resolves through"
+// check. An ancestor directory of the namespace directory (e.g. the
+// caller-supplied locks root itself, or any intermediate segment) that is
+// swapped for a reparse point is NOT detected by this function; a
+// symlink/junction planted at one of those ancestors could still silently
+// redirect the open. This mirrors the same documented, accepted scope
+// bound events.ItemLogLockPath's own doc comment already calls out for the
+// caller-supplied locksRoot (it does not defend against an adversarial
+// rename/symlink-swap of locksRoot itself either) — a repository-wide
+// threat-model boundary, not a gap specific to this one check. A
 // non-existent path is not a reparse point.
 func itemLogLockNamespaceIsReparsePoint(path string) (bool, error) {
 	info, err := os.Lstat(path)
