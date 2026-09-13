@@ -37,9 +37,20 @@ const resolveDefaultBranchTimeout = 5 * time.Second
 // accepted as if it were reachable from the intended default. The literal
 // "main" fallback below is a SEPARATE, intentional, deterministic default
 // (not an active-checkout trust widening) and is preserved as-is.
+//
+// When origin/HEAD resolves, the returned value is the remote-tracking ref
+// itself (e.g. "origin/main"), NOT the bare local branch name with the
+// "origin/" prefix stripped (167.012-T, PR #440 review round 2). Downstream
+// reachability checks (internal/core shipment reconcile evidence) resolve
+// this value with `git rev-parse`, and the LOCAL branch of the same name can
+// be stale or locally ahead of the remote: a stale local "main" could reject
+// a valid remote merge, and a locally-ahead "main" could authorize a merge
+// that never reached the real repository default. Resolving against the
+// remote-tracking ref ties trust to what the remote actually reports as its
+// default, independent of the local branch's state.
 func ResolveDefaultBranch(workspacePath string) (string, error) {
 	if branch, ok := gitSymbolicRefShort(workspacePath, "refs/remotes/origin/HEAD"); ok {
-		return strings.TrimPrefix(branch, "origin/"), nil
+		return branch, nil
 	}
 	return "main", nil
 }

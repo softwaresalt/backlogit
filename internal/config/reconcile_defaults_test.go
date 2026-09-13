@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"os"
+	"os/exec"
 	"testing"
 )
 
@@ -112,5 +114,43 @@ func TestResolveDefaultBranch_NeverErrors(t *testing.T) {
 	}
 	if branch == "" {
 		t.Fatal("expected a non-empty fallback branch name")
+	}
+}
+
+// TestResolveDefaultBranch_ReturnsRemoteTrackingRef covers 167.012-T (PR #440
+// review round 2): when origin/HEAD resolves, ResolveDefaultBranch must
+// return the remote-tracking ref itself (e.g. "origin/main"), NOT the bare
+// local branch name with the "origin/" prefix stripped. Downstream
+// reachability checks resolve this value against the remote-tracking state;
+// returning the bare local name would let a stale or locally-ahead local
+// branch of the same name be trusted instead of what the remote actually
+// reports as its default.
+func TestResolveDefaultBranch_ReturnsRemoteTrackingRef(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available on PATH")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = os.Environ()
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %s: %v", args, out, err)
+		}
+	}
+	run("init", "-q")
+	// Simulate a cloned repo's remote-tracking default-branch symref without
+	// requiring an actual network remote: refs/remotes/origin/HEAD points at
+	// refs/remotes/origin/main.
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+	branch, err := ResolveDefaultBranch(dir)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if branch != "origin/main" {
+		t.Fatalf("expected the remote-tracking ref %q, got %q", "origin/main", branch)
 	}
 }
