@@ -102,8 +102,13 @@ func reconcileShipmentToShippedImpl(ctx context.Context, ws *Workspace, req Ship
 	// The frozen "Phase-A set": every later phase re-validates membership
 	// against exactly this snapshot, never a later re-read, so a concurrent
 	// membership rewrite is detected as a mismatch (indeterminate) rather
-	// than silently adopted mid-transaction.
-	phaseAMemberIDs := uniqueNonEmptyStrings(NormalizeShipmentItems(initialShipment))
+	// than silently adopted mid-transaction. The RAW manifest is validated
+	// (not silently normalized/repaired) before this set is frozen — see
+	// shipmentReconcileValidateRawManifestItems.
+	phaseAMemberIDs, err := shipmentReconcileValidateRawManifestItems(initialShipment)
+	if err != nil {
+		return result, err
+	}
 
 	return reconcileShipmentPhaseB(ctx, ws, req, shipmentID, phaseAMemberIDs, requestIdentityDigest, result)
 }
@@ -315,7 +320,10 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 		return result, err
 	}
 
-	currentMemberIDs := uniqueNonEmptyStrings(NormalizeShipmentItems(shipment))
+	currentMemberIDs, err := shipmentReconcileValidateRawManifestItems(shipment)
+	if err != nil {
+		return result, err
+	}
 	if !shipmentReconcileMemberSetsEqual(phaseAMemberIDs, currentMemberIDs) {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
 		result.Message = fmt.Sprintf("shipment %s manifest member set changed since it was locked; refusing to commit", shipmentID)
@@ -578,6 +586,69 @@ func shipmentReconcileManifestDigest(memberIDs []string) string {
 		shipmentReconcileManifestDigestDomain,
 		shipmentReconcileListField("member_ids", memberIDs),
 	)
+}
+
+// shipmentReconcileValidateRawManifestItems validates the shipment's RAW
+// `items` frontmatter value (shipment.CustomFields["items"], the value
+// NormalizeShipmentItems itself reads) is a well-formed array of unique,
+// non-blank strings, returning the validated member IDs in their original
+// order (167.008-T, PR #440 review round 2, finding 4).
+//
+// NormalizeShipmentItems (shipment.go) followed by uniqueNonEmptyStrings
+// silently DROPS any non-string element, any blank/whitespace-only string,
+// and any duplicate entry from the raw manifest before this reconcile
+// transaction ever validates member terminal state. A malformed/corrupt
+// legacy manifest — e.g. ["done-member", 42, "", "done-member"] — would
+// otherwise be silently reduced to ["done-member"] and reconciled after
+// checking only that single surviving valid string, even though the RAW
+// manifest was ambiguous/partially corrupt. The reconcile evidence contract
+// requires such evidence to fail closed rather than be silently repaired,
+// so this validates the raw value BEFORE any normalization/dropping runs.
+// It is used everywhere this transaction computes or re-computes the
+// governed member-ID set: Phase A's frozen set (reconcileShipmentToShippedImpl),
+// Phase D's re-read (reconcileShipmentPhaseCAndD), and the standalone
+// precondition gate (validateShipmentReconcilePreconditions) — not just the
+// initial Phase A read — so a malformed raw manifest cannot slip through any
+// one of those re-validation points either.
+func shipmentReconcileValidateRawManifestItems(shipment *models.Artifact) ([]string, error) {
+	if shipment == nil || shipment.CustomFields == nil {
+		return []string{}, nil
+	}
+	raw, ok := shipment.CustomFields["items"]
+	if !ok || raw == nil {
+		return []string{}, nil
+	}
+
+	var elements []any
+	switch items := raw.(type) {
+	case []string:
+		elements = make([]any, len(items))
+		for i, v := range items {
+			elements[i] = v
+		}
+	case []any:
+		elements = items
+	default:
+		return nil, fmt.Errorf("reconcile shipment to shipped: shipment %s manifest items must be an array, got %T: %w", shipment.ID, raw, blerrors.ErrValidation)
+	}
+
+	seen := make(map[string]struct{}, len(elements))
+	result := make([]string, 0, len(elements))
+	for i, element := range elements {
+		value, isString := element.(string)
+		if !isString {
+			return nil, fmt.Errorf("reconcile shipment to shipped: shipment %s manifest items[%d] is not a string (got %T): raw manifest evidence must fail closed rather than be silently repaired: %w", shipment.ID, i, element, blerrors.ErrValidation)
+		}
+		if strings.TrimSpace(value) == "" {
+			return nil, fmt.Errorf("reconcile shipment to shipped: shipment %s manifest items[%d] is blank/whitespace-only: raw manifest evidence must fail closed rather than be silently repaired: %w", shipment.ID, i, blerrors.ErrValidation)
+		}
+		if _, dup := seen[value]; dup {
+			return nil, fmt.Errorf("reconcile shipment to shipped: shipment %s manifest contains duplicate item %q: raw manifest evidence must fail closed rather than be silently repaired: %w", shipment.ID, value, blerrors.ErrValidation)
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result, nil
 }
 
 // shipmentReconcileMemberSetsEqual reports whether a and b contain the same

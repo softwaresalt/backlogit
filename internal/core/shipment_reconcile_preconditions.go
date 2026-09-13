@@ -49,7 +49,11 @@ func validateShipmentReconcilePreconditions(ctx context.Context, ws *Workspace, 
 	if err := validateShipmentReconcileClassifierState(ws, shipment, shipmentFrontmatter, req, requestIdentityDigest); err != nil {
 		return nil, err
 	}
-	if err := validateShipmentReconcileManifestMembers(ctx, ws, NormalizeShipmentItems(shipment)); err != nil {
+	memberIDs, err := shipmentReconcileValidateRawManifestItems(shipment)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateShipmentReconcileManifestMembers(ctx, ws, memberIDs); err != nil {
 		return nil, err
 	}
 	return shipment, nil
