@@ -46,8 +46,11 @@ reconciliation flow now recorded in the final closure artifact.
 * Later passes hardened the idempotency ordering, member-set validation,
   digesting, and rollback semantics until the classifier became total and the
   remaining residuals were explicitly scoped out.
-* The only remaining follow-up was the cryptographic authenticity residual,
-  captured separately rather than inflating #423.
+* Two remaining follow-ups were explicitly scoped out rather than silently
+  absorbed: the cryptographic/authenticated-authorization residual
+  (`866FDC8C`, tracked as stash `B633E9B9`) and the verifiable legacy
+  descope-provenance residual (tracked as stash `2B4E5AC3`) — both recorded
+  on `167.015-T`'s ratification gate.
 
 ### Final Decisions
 

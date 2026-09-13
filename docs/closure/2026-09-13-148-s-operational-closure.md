@@ -36,7 +36,7 @@ already produced during Ship execution, not live-service health/monitoring.
 |---|---|---|
 | Build | `go build ./...`, `go build ./cmd/backlogit`, `GOOS=linux go build ./...` | PASS |
 | Static analysis | `go vet ./...`, `golangci-lint run ./...` | PASS |
-| Unit/integration | `go test -count=1 -timeout 25m ./...` | PASS (one pre-existing, unrelated, Windows-checkout-only CRLF flake in `internal/faultline`, tracked under stash `92F79833`) |
+| Unit/integration | `go test -count=1 -timeout 25m ./...` | PASS WITH ONE KNOWN EXCEPTION (`TestU4aBehaviorCanonicalByteStable`, pre-existing, unrelated, Windows-checkout-only CRLF flake in `internal/faultline`, tracked under stash `92F79833`; does not reproduce on Linux CI) |
 | Concurrency | `go test -race -count=1 -run '^TestU20_ReconcileShipmentToShippedConcurrency$' ./internal/core` | PASS, repeated 30+ times across remediation cycles, no deadlock/data race |
 | CI (Linux) | GitHub Actions `test` job | PASS |
 | CI (Windows) | GitHub Actions `Windows handle/lock tests (167.013-T)` job | PASS |

@@ -18,8 +18,12 @@ closure record covers PR #440.
 
 ## Verification Summary
 
-* Build, vet, lint, targeted tests, full tests, CI, and local review/security
-  evidence all passed for the release unit.
+* Build, vet, lint, targeted tests, CI, and local review/security evidence all
+  passed for the release unit. The full `go test ./...` suite passed WITH ONE
+  KNOWN EXCEPTION: `TestU4aBehaviorCanonicalByteStable`, a pre-existing,
+  unrelated, Windows-checkout-only CRLF flake in `internal/faultline` (tracked
+  under stash `92F79833`; does not reproduce on Linux CI; zero diff in that
+  package versus the merge-base).
 * The release is CLI-only and operator-invoked, so there is no long-running
   production monitor to stand up for runtime health.
 * Rollback remains bounded to the governed transaction semantics already
@@ -28,8 +32,8 @@ closure record covers PR #440.
 ## Residual Follow-ups
 
 The closure record keeps the non-blocking follow-up stash items visible:
-`FE440C62`, `1E0C2251`, `A0C733C6`, `E45E6D65`, `B633E9B9`, `2B4E5AC3`, and
-`6EFD39C0`.
+`FE440C62`, `1E0C2251`, `A0C733C6`, `E45E6D65`, `B633E9B9`, `2B4E5AC3`,
+`6EFD39C0`, and `732FA61E` (captured during this closure PR's own remediation).
 
 ## Traceability
 
