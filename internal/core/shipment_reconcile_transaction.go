@@ -120,7 +120,14 @@ func reconcileShipmentPhaseB(ctx context.Context, ws *Workspace, req ShipmentShi
 	if err != nil {
 		return result, err
 	}
-	if err := validateShipmentReconcileShipmentPreState(shipment); err != nil {
+	// Identity/location gate only, unconditionally: safe to run before
+	// classification because reconcile never mutates the top-level `status`
+	// field. The legacy archived_status-value check is deferred past
+	// classification (see the ShipmentReconcileOutcomeReconciled case below)
+	// so that no_op/conflict replay outcomes against an already-shipped
+	// shipment are recognized by the classifier instead of being rejected
+	// here first.
+	if err := validateShipmentReconcileShipmentIdentity(shipment); err != nil {
 		return result, err
 	}
 
@@ -151,6 +158,16 @@ func reconcileShipmentPhaseB(ctx context.Context, ws *Workspace, req ShipmentShi
 	case ShipmentReconcileOutcomeNoOp:
 		return reconcileShipmentPhaseBNoOp(ctxCB, ws, req, shipmentID, frontmatter, logBytes, result)
 	case ShipmentReconcileOutcomeReconciled:
+		// Fresh-repair path only: the legacy archived_status-value check
+		// guards against an unsupported/unexpected starting archived_status
+		// (neither "active" nor "shipped") that classifyShipmentReconcileState's
+		// EventAbsent branch would otherwise silently treat as "reconciled".
+		// Deferred to here (past classification) rather than run
+		// unconditionally in Phase B, so it never re-fires against an
+		// already-shipped shipment on a no_op/conflict replay.
+		if err := validateShipmentReconcileShipmentLegacyPreState(shipment); err != nil {
+			return result, err
+		}
 		if req.DryRun {
 			result.Outcome = outcome
 			result.Message = fmt.Sprintf("dry run: shipment %s would be reconciled from archived_status=%q to archived_status=%q", shipmentID, shipment.ArchivedStatus, string(ShipmentShipped))
@@ -258,6 +275,10 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 	if err != nil {
 		return result, err
 	}
+	// Phase D is only ever reached via Phase B's Reconciled branch (both
+	// checks already passed there), so re-running the combined identity +
+	// legacy-value check here unconditionally is correctly scoped and kept
+	// as-is for clarity/symmetry with the pre-fix code.
 	if err := validateShipmentReconcileShipmentPreState(shipment); err != nil {
 		return result, err
 	}

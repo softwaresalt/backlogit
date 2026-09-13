@@ -113,10 +113,41 @@ func pathWithinDir(path, dir string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
 
+// validateShipmentReconcileShipmentPreState runs both the identity and
+// legacy-value pre-state checks in sequence (identity first). It is used by
+// validateShipmentReconcilePreconditions (167.014-T's standalone precondition
+// gate), where both checks must always run unconditionally regardless of the
+// classifier's outcome.
 func validateShipmentReconcileShipmentPreState(shipment *models.Artifact) error {
+	if err := validateShipmentReconcileShipmentIdentity(shipment); err != nil {
+		return err
+	}
+	return validateShipmentReconcileShipmentLegacyPreState(shipment)
+}
+
+// validateShipmentReconcileShipmentIdentity confirms the shipment is
+// currently located under the governed archived namespace (the top-level
+// `status` field). This is the identity/location gate: it is always safe to
+// run unconditionally, even for replay/no_op/conflict continuations, because
+// reconcile only ever mutates the `archived_status` sub-field — never this
+// top-level `status` — so it is invariant across the whole reconcile
+// lifecycle for a legacy-repair target.
+func validateShipmentReconcileShipmentIdentity(shipment *models.Artifact) error {
 	if shipment.Status != models.StatusArchived {
 		return fmt.Errorf("validate shipment reconcile preconditions: shipment %s status=%q must be archived for governed reconciliation: %w", shipment.ID, shipment.Status, blerrors.ErrUnsupportedLegacyPreState)
 	}
+	return nil
+}
+
+// validateShipmentReconcileShipmentLegacyPreState confirms the shipment's
+// `archived_status` sub-field is one of the supported pre-repair legacy
+// values. Unlike the identity check, this is NOT invariant across the
+// reconcile lifecycle: a successful reconcile rewrites `archived_status` to
+// "shipped", so this check must only be run in the fresh-repair
+// (ShipmentReconcileOutcomeReconciled) path — never unconditionally ahead of
+// classification — or every legitimate no_op/conflict replay against an
+// already-shipped shipment would be rejected before the classifier ever runs.
+func validateShipmentReconcileShipmentLegacyPreState(shipment *models.Artifact) error {
 	if _, ok := supportedLegacyShippedPreStates[shipment.ArchivedStatus]; !ok {
 		return fmt.Errorf("validate shipment reconcile preconditions: shipment %s archived_status=%q is not in supportedLegacyShippedPreStates={%s}: %w", shipment.ID, shipment.ArchivedStatus, string(ShipmentActive), blerrors.ErrUnsupportedLegacyPreState)
 	}
