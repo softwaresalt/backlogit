@@ -309,6 +309,38 @@ func TestPrepareShipmentReconcileEvidence_RejectsInvalidEvidenceRefs(t *testing.
 	}
 }
 
+// TestPrepareShipmentReconcileEvidence_RejectsAmbiguousDuplicateShipmentSections
+// covers PR #440 review round 2, finding 2: a closure document with TWO
+// sections whose headings both exactly match the same shipment ID (one with
+// a legitimate merge reference, one with a different/conflicting one) must
+// fail closed rather than silently accept whichever section is found first.
+func TestPrepareShipmentReconcileEvidence_RejectsAmbiguousDuplicateShipmentSections(t *testing.T) {
+	fixture := setupShipmentReconcileEvidenceFixture(t)
+	fixture.ws.Config.Reconcile = &config.ReconcileConfig{}
+
+	duplicateContent := strings.TrimSpace(`---
+shipments:
+  - 048-S
+---
+
+# Combined closure summary
+
+### 048-S
+Merged as PR #101 (feature), commit `+shortSHA(fixture.merge048)+`, and PR #102 (post-merge closure), commit `+shortSHA(fixture.closure048)+`.
+
+### 048-S
+Merged as PR #201 (feature), commit `+shortSHA(fixture.hiddenMerge)+`, and PR #202 (post-merge closure), commit `+shortSHA(fixture.closure048)+`.
+`) + "\n"
+	closureRel := fixture.writeClosureFile(t, "docs/closure/duplicate-048.md", duplicateContent)
+	req := fixture.request("048-S", fixture.merge048)
+	req.ClosureEvidence = closureRel
+
+	_, err := prepareShipmentReconcileEvidence(context.Background(), fixture.ws, req, fixedShipmentReconcileEvidenceInput())
+	require.Error(t, err, "a closure document with two conflicting exact-match sections for the same shipment must fail closed")
+	assert.ErrorIs(t, err, blerrors.ErrShipmentReconcileEvidence)
+	assert.Contains(t, err.Error(), "ambiguous", "the error must identify the ambiguous-section cause, not a generic parse failure")
+}
+
 func setupShipmentReconcileEvidenceFixture(t *testing.T) shipmentReconcileEvidenceFixture {
 	t.Helper()
 

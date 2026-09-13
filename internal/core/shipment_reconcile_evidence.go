@@ -511,9 +511,18 @@ func shipmentReconcileFeatureMergeFromClosure(closureBytes []byte, shipmentID st
 	// delivery evidence, since it would be the sole feature-role token found
 	// in an unscoped whole-document scan. Fail closed instead of adding more
 	// fallback-scoping heuristics.
-	scope, ok := shipmentReconcileShipmentSection(content, shipmentID)
-	if !ok {
-		return "", fmt.Errorf("closure lacks an exact shipment-scoped section for %s (a heading exactly matching %q is required, no whole-document fallback)", shipmentID, shipmentID)
+	//
+	// It is also NOT enough to match the FIRST exact-matching heading (PR
+	// #440 review round 2, finding 2): a closure document with a duplicated
+	// or conflicting heading for the same shipment ID (one legitimate
+	// section and one with a different, conflicting merge reference) must
+	// not have its ambiguity silently resolved by "pick the first one" — an
+	// attacker or a corrupt document could plant a second, conflicting
+	// section after the real one and have it silently ignored. Any number of
+	// matching sections other than exactly one is a fail-closed error.
+	scope, err := shipmentReconcileShipmentSection(content, shipmentID)
+	if err != nil {
+		return "", err
 	}
 	matches := shipmentReconcilePRCommitRe.FindAllStringSubmatch(scope, -1)
 	featureSHAs := make([]string, 0, 1)
@@ -539,37 +548,49 @@ func shipmentReconcileMentionsShipment(content, shipmentID string) bool {
 	return re.FindStringIndex(content) != nil
 }
 
-func shipmentReconcileShipmentSection(content, shipmentID string) (string, bool) {
+// shipmentReconcileShipmentSection returns the body of the section whose
+// heading exactly matches shipmentID. It scans the ENTIRE document (not just
+// the first match) and fails closed if zero or more than one section
+// exactly matches: an ambiguous closure document (e.g. a duplicated or
+// conflicting heading for the same shipment ID) must never be silently
+// resolved by trusting whichever section happens to appear first (PR #440
+// review round 2, finding 2).
+func shipmentReconcileShipmentSection(content, shipmentID string) (string, error) {
 	lines := strings.Split(content, "\n")
-	start := -1
-	level := 0
-	for i, line := range lines {
-		match := shipmentReconcileMarkdownHeadingRe.FindStringSubmatch(line)
-		if len(match) == 0 {
-			continue
-		}
-		title := strings.TrimSpace(match[2])
-		if title == shipmentID {
-			start = i + 1
-			level = len(match[1])
-			break
-		}
-	}
-	if start < 0 {
-		return "", false
-	}
-	end := len(lines)
-	for i := start; i < len(lines); i++ {
+	var sections []string
+	for i := 0; i < len(lines); i++ {
 		match := shipmentReconcileMarkdownHeadingRe.FindStringSubmatch(lines[i])
 		if len(match) == 0 {
 			continue
 		}
-		if len(match[1]) <= level {
-			end = i
-			break
+		title := strings.TrimSpace(match[2])
+		if title != shipmentID {
+			continue
 		}
+		level := len(match[1])
+		start := i + 1
+		end := len(lines)
+		for j := start; j < len(lines); j++ {
+			m2 := shipmentReconcileMarkdownHeadingRe.FindStringSubmatch(lines[j])
+			if len(m2) == 0 {
+				continue
+			}
+			if len(m2[1]) <= level {
+				end = j
+				break
+			}
+		}
+		sections = append(sections, strings.Join(lines[start:end], "\n"))
+		i = end - 1
 	}
-	return strings.Join(lines[start:end], "\n"), true
+	switch len(sections) {
+	case 0:
+		return "", fmt.Errorf("closure lacks an exact shipment-scoped section for %s (a heading exactly matching %q is required, no whole-document fallback)", shipmentID, shipmentID)
+	case 1:
+		return sections[0], nil
+	default:
+		return "", fmt.Errorf("closure has %d ambiguous sections exactly matching shipment %s (duplicate/conflicting headings are rejected, not resolved by picking the first match)", len(sections), shipmentID)
+	}
 }
 
 func shipmentReconcileNarrativeSHAMatches(narrativeSHA, mergeSHA string) bool {
