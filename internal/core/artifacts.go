@@ -724,35 +724,51 @@ func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, erro
 	}
 
 	for _, dirPath := range searchDirs {
-		if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
-			continue
-		}
-		var found string
-		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
-				return err
-			}
-			if guardErr := ensureArtifactLookupContained(ws, path); guardErr != nil {
-				return guardErr
-			}
-			a, _, parseErr := parseFile(path)
-			if parseErr != nil {
-				return nil
-			}
-			if a.ID == id {
-				found = path
-				return filepath.SkipAll
-			}
-			return nil
-		})
-		if walkErr != nil {
-			return "", fmt.Errorf("walk %s: %w", dirPath, walkErr)
+		found, findErr := findArtifactInSearchDir(ws, dirPath, id)
+		if findErr != nil {
+			return "", findErr
 		}
 		if found != "" {
 			return found, nil
 		}
 	}
 	return "", fmt.Errorf("artifact not found: %s: %w", id, blerrors.ErrNotFound)
+}
+
+// findArtifactInSearchDir searches a single registry-derived search directory
+// (recursively) for an artifact with the given id, returning its resolved
+// path, or "" if not found in dirPath (a missing dirPath is not an error). It
+// is the extracted, reusable single-directory search body of FindArtifactPath
+// so a caller that already knows which directory it wants to probe (e.g. to
+// check whether an id resolves anywhere OTHER than an already-found path,
+// without re-running the full multi-directory search) does not need a second,
+// weaker parse/walk implementation.
+func findArtifactInSearchDir(ws *Workspace, dirPath, id string) (string, error) {
+	if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
+		return "", nil
+	}
+	var found string
+	walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+			return err
+		}
+		if guardErr := ensureArtifactLookupContained(ws, path); guardErr != nil {
+			return guardErr
+		}
+		a, _, parseErr := parseFile(path)
+		if parseErr != nil {
+			return nil
+		}
+		if a.ID == id {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return "", fmt.Errorf("walk %s: %w", dirPath, walkErr)
+	}
+	return found, nil
 }
 
 func ensureArtifactLookupContained(ws *Workspace, path string) error {

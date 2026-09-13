@@ -344,3 +344,34 @@ func TestValidateShipmentReconcilePreconditions_SecondApproverMustDifferFromActo
 	require.Error(t, err)
 	assert.ErrorIs(t, err, blerrors.ErrValidation)
 }
+
+// TestValidateShipmentReconcilePreconditions_RejectsDuplicateLiveQueueRecord
+// covers PR #440 review round 2, finding 5: FindArtifactPath returns only
+// the FIRST match across the registry's search roots (archive before
+// queue/live per the default registry config), which on its own does not
+// prove the shipment id exists ONLY in the archive. A duplicate record for
+// the same id also present under queue (a data-integrity anomaly that
+// should never legitimately occur) must fail closed as ambiguous rather than
+// silently proceed to reconcile the archived copy.
+func TestValidateShipmentReconcilePreconditions_RejectsDuplicateLiveQueueRecord(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	memberID := createShipmentReconcileMemberWithStatus(t, ws, models.StatusDone)
+	shipment := createArchivedShipmentReconcileFixture(t, ws, []string{memberID})
+	req := validShipmentReconcilePreconditionRequest(shipment.ID)
+	digest := mustShipmentReconcileRequestIdentityDigest(t, req)
+
+	archivePath, err := FindArtifactPath(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	raw, err := os.ReadFile(archivePath)
+	require.NoError(t, err)
+
+	queueDir := filepath.Join(workspaceStorageRoot(ws), "queue")
+	require.NoError(t, os.MkdirAll(queueDir, 0o755))
+	duplicatePath := filepath.Join(queueDir, filepath.Base(archivePath))
+	require.NoError(t, os.WriteFile(duplicatePath, raw, 0o644))
+
+	_, err = validateShipmentReconcilePreconditions(ctx, ws, req, digest)
+	require.Error(t, err, "a duplicate live/queue record for the same shipment id must fail closed as ambiguous")
+	assert.ErrorIs(t, err, blerrors.ErrShipmentReconcileConflict)
+}

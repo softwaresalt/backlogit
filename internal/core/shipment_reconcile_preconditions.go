@@ -84,6 +84,9 @@ func loadShipmentReconcileArchivedShipment(ctx context.Context, ws *Workspace, s
 	if !pathWithinDir(shipmentPath, archiveDir) {
 		return nil, nil, fmt.Errorf("validate shipment reconcile preconditions: shipment %s must resolve under %s: %w", shipmentID, archiveDir, blerrors.ErrValidation)
 	}
+	if err := ensureShipmentReconcileArchiveOnlyLocation(ws, shipmentID, archiveDir); err != nil {
+		return nil, nil, err
+	}
 
 	raw, err := os.ReadFile(shipmentPath)
 	if err != nil {
@@ -111,6 +114,47 @@ func pathWithinDir(path, dir string) bool {
 		return false
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+// ensureShipmentReconcileArchiveOnlyLocation fails closed if shipmentID
+// resolves to any location OTHER than archiveDir (167.014-T, PR #440 review
+// round 2, finding 5). FindArtifactPath returns only the FIRST match across
+// the registry's search roots (archive is searched before queue/live
+// locations per the default registry config, see config.DefaultRegistry);
+// on its own that does NOT prove the id exists ONLY in the archive. A
+// duplicate record for the same id in a live/queue location should never
+// legitimately occur, but must not be silently trusted: proceeding to
+// reconcile the archived copy while a live record for the same id still
+// exists elsewhere is precisely the ambiguous state the "requires no live
+// queue record" precondition exists to prevent. This performs a targeted
+// check against the registry's OTHER known search roots (not a full
+// re-scan duplicating FindArtifactPath's own multi-directory search).
+func ensureShipmentReconcileArchiveOnlyLocation(ws *Workspace, shipmentID, archiveDir string) error {
+	searchDirs, err := artifactSearchDirs(ws)
+	if err != nil {
+		return fmt.Errorf("validate shipment reconcile preconditions: enumerate registry search directories for %s: %w", shipmentID, err)
+	}
+	archiveDirAbs, err := filepath.Abs(archiveDir)
+	if err != nil {
+		return fmt.Errorf("validate shipment reconcile preconditions: resolve archive directory for %s: %w", shipmentID, err)
+	}
+	for _, dirPath := range searchDirs {
+		dirAbs, absErr := filepath.Abs(dirPath)
+		if absErr != nil {
+			return fmt.Errorf("validate shipment reconcile preconditions: resolve search directory %s for %s: %w", dirPath, shipmentID, absErr)
+		}
+		if dirAbs == archiveDirAbs {
+			continue
+		}
+		found, findErr := findArtifactInSearchDir(ws, dirPath, shipmentID)
+		if findErr != nil {
+			return fmt.Errorf("validate shipment reconcile preconditions: search %s for a duplicate record of %s: %w", dirPath, shipmentID, findErr)
+		}
+		if found != "" {
+			return fmt.Errorf("validate shipment reconcile preconditions: shipment %s resolves to more than one location (archive and %s); ambiguous/indeterminate reconciliation target: %w", shipmentID, found, blerrors.ErrShipmentReconcileConflict)
+		}
+	}
+	return nil
 }
 
 // validateShipmentReconcileShipmentPreState runs both the identity and
