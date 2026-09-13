@@ -49,7 +49,13 @@ operator-facing behavior is documented in
 
 ## Releasability
 
-**READY.**
+**READY (technical criteria).** Operator ratification of the `167.015-T` scope
+narrowings (see below) is a separate, explicitly PENDING, non-technical follow-up —
+it is not folded into this READY determination and must not be read as already
+satisfied. See `docs/closure/148-S-167-F-post-merge-closure.md` for the
+machine-readable gate registration, which records this distinction explicitly so a
+future predecessor-closure gate reader cannot mistake `closure_status: READY` for
+ratification having already happened.
 
 - **Monitoring**: N/A (CLI-only, invoked on demand by an operator; no long-running process to
   monitor). Doctor's existing `missing_shipped_event` check now also recognizes
