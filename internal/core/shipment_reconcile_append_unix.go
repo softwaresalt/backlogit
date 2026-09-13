@@ -26,7 +26,13 @@ func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventB
 	dirFile := os.NewFile(uintptr(dirFD), logsDir)
 	defer dirFile.Close()
 
-	fd, err := unix.Openat(int(dirFile.Fd()), fileName, unix.O_CREAT|unix.O_WRONLY|unix.O_APPEND|unix.O_NOFOLLOW, 0o644)
+	// O_RDWR (not O_WRONLY): the trailing-byte partial-line check below
+	// reads from this same file descriptor via ReadAt before writing.
+	// O_WRONLY made that read fail with EBADF on Linux (bad file
+	// descriptor) — caught by CI, since the Windows sibling implementation
+	// already opens with GENERIC_READ|GENERIC_WRITE and never exhibited
+	// this platform-specific bug locally.
+	fd, err := unix.Openat(int(dirFile.Fd()), fileName, unix.O_CREAT|unix.O_RDWR|unix.O_APPEND|unix.O_NOFOLLOW, 0o644)
 	if err != nil {
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: open item log %s relative to %s: %w", blerrors.ErrWriteNotApplied, fileName, logsDir, err)
 	}
