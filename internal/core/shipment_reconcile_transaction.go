@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -215,7 +216,7 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 	}
 	preparedEventBytes, eventDigest := persisted.preparedEventBytesAndDigestIfPresent()
 
-	loggedEvents, err := scanShipmentReconcileLog(logBytes, shipmentID, preparedEventBytes, eventDigest)
+	loggedEvents, _, err := scanShipmentReconcileLog(logBytes, shipmentID, preparedEventBytes, eventDigest)
 	if err != nil {
 		// The classifier already parsed this exact log successfully; an
 		// error here would mean the log changed shape between reads while
@@ -382,6 +383,16 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 		return result, fmt.Errorf("reconcile shipment to shipped: write shipment %s archive file not applied, rolled back: %w", shipmentID, writeErr)
 	}
 
+	// The Markdown archive frontmatter is now durably the source of truth
+	// for archived_status=shipped; keep the SQLite items row in sync
+	// opportunistically (Copilot PR #440 review, finding 5), mirroring
+	// appendShipmentReconcileEventImpl's own "index failure does not
+	// un-reconcile" precedent: a sync failure here is logged as a warning
+	// and never rolls back the already-durable Markdown write. Markdown
+	// remains authoritative (doctor reads it directly); the index is
+	// repaired by the next sync/reindex.
+	syncShipmentReconcileItemIndex(ctxCB, ws, shipmentID, newArchiveContent)
+
 	if appendErr := appendShipmentReconcileEvent(ctxCB, ws, shipmentID, evidence.EventBytes); appendErr != nil {
 		if blerrors.IsWriteIndeterminate(appendErr) {
 			result.Outcome = ShipmentReconcileOutcomeIndeterminate
@@ -438,6 +449,45 @@ func shipmentReconcileBuildArchiveContent(ctx context.Context, ws *Workspace, sh
 	frontmatter[shipmentReconcileEventDigestField] = evidence.EventDigest
 
 	return []byte(models.SerializeFrontmatter(frontmatter, body)), nil
+}
+
+// syncShipmentReconcileItemIndex keeps the SQLite items row for shipmentID
+// in sync with the just-written archiveContent (Copilot PR #440 review,
+// finding 5): without this, the SQLite index/cache is left stale relative
+// to the Markdown source of truth (archived_status: shipped, plus the
+// resume-marker custom_fields) immediately after a successful
+// reconciliation, until the next sync/reindex — a real
+// index-vs-source-of-truth drift window this governed transaction should
+// close opportunistically, the same way ArchiveItem
+// (internal/core/archive.go) re-syncs the items row right after its own
+// frontmatter write.
+//
+// Best-effort, matching appendShipmentReconcileEventImpl's own documented
+// "index failure does not un-reconcile" precedent: the Markdown archive
+// file (already durably written by the time this is called) remains the
+// authoritative source of truth regardless of whether this sync succeeds;
+// a failure is logged as a warning and never rolls back or fails the
+// caller's transaction. The next sync/reindex repairs any drift.
+func syncShipmentReconcileItemIndex(ctx context.Context, ws *Workspace, shipmentID string, archiveContent []byte) {
+	frontmatter, body, err := models.ParseFrontmatter(string(archiveContent))
+	if err != nil {
+		slog.WarnContext(ctx, "reconcile shipment to shipped: parse archive content for index sync failed; index left stale, repaired by next sync/reindex", "shipment_id", shipmentID, "error", err)
+		return
+	}
+	artifact, err := models.ArtifactFromFrontmatter(frontmatter, body)
+	if err != nil {
+		slog.WarnContext(ctx, "reconcile shipment to shipped: build artifact for index sync failed; index left stale, repaired by next sync/reindex", "shipment_id", shipmentID, "error", err)
+		return
+	}
+	if artifact.ID == "" {
+		artifact.ID = shipmentID
+	}
+	if ws == nil || ws.DB == nil {
+		return
+	}
+	if err := bldb.UpsertItem(ctx, ws.DB, artifact); err != nil {
+		slog.WarnContext(ctx, "reconcile shipment to shipped: sync items row failed; JSONL/Markdown remains source of truth, index repaired by next sync/reindex", "shipment_id", shipmentID, "error", err)
+	}
 }
 
 // lockShipmentReconcileCThenB acquires the item-log lock (C) for itemLogID,
