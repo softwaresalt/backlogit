@@ -227,6 +227,19 @@ func TestValidateShipmentReconcilePreconditions_DirectRejectedMemberFailsClosed(
 	assert.ErrorIs(t, err, blerrors.ErrUnsupportedLegacyDescope)
 }
 
+func TestValidateShipmentReconcilePreconditions_DirectAbandonedMemberFailsClosed(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	abandoned := createShipmentReconcileMemberWithStatus(t, ws, models.StatusAbandoned)
+	shipment := createArchivedShipmentReconcileFixture(t, ws, []string{abandoned})
+	req := validShipmentReconcilePreconditionRequest(shipment.ID)
+	digest := mustShipmentReconcileRequestIdentityDigest(t, req)
+
+	_, err := validateShipmentReconcilePreconditions(ctx, ws, req, digest)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrUnsupportedLegacyDescope)
+}
+
 func TestValidateShipmentReconcilePreconditions_ArchivedRejectedMemberFailsClosed(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()

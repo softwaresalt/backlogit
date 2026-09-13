@@ -198,6 +198,9 @@ func validateShipmentReconcileManifestMember(member *models.Artifact) error {
 	if member.Status == models.StatusRejected {
 		return fmt.Errorf("validate shipment reconcile preconditions: shipment member %s is rejected and v1 cannot prove legacy descopes: %w", member.ID, blerrors.ErrUnsupportedLegacyDescope)
 	}
+	if member.Status == models.StatusAbandoned {
+		return fmt.Errorf("validate shipment reconcile preconditions: shipment member %s is abandoned and v1 cannot prove legacy descopes: %w", member.ID, blerrors.ErrUnsupportedLegacyDescope)
+	}
 	if member.Status == models.StatusArchived {
 		archivedStatus := models.ArtifactStatus(member.ArchivedStatus)
 		if _, ok := supportedLegacyReconcileMemberTerminalStatuses[archivedStatus]; ok {
