@@ -2870,3 +2870,4 @@
 {"seq":2872,"timestamp":"2026-09-14T06:04:09.4114849Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"173.007-T","schema_version":1,"status_delta":{"from":"active","to":"queued"}}}
 {"seq":2873,"timestamp":"2026-09-14T06:47:45.7424316Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"173.006-T","schema_version":1}}
 {"seq":2874,"timestamp":"2026-09-14T06:48:46.0053649Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"173.007-T","schema_version":1}}
+{"seq":2875,"timestamp":"2026-09-14T07:02:40.161667Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"173.006-T","schema_version":1,"status_delta":{"from":"queued","to":"active"}}}
