@@ -92,3 +92,25 @@
 ### Shipment membership (cycle 1 additions)
 - 149-S: +168.009-T, +168.010-T. 150-S: +169.009-T. 151-S: +170.009-T, +170.010-T.
 - 153-S: +172.008-T, +172.009-T, +172.010-T. 154-S: +173.006-T, +173.007-T.
+
+---
+
+## Review-fix cycle 2 (2026-09-13, staging PR #442, DARK_MODE)
+
+Commit: `1d1eab39dc3652223cf8744c9ae6145befddeb32` on `chore/stage-154-s-reliability` (not pushed).
+Applied 10 Copilot review-comment fixes (planning/backlog/doc only; no production Go).
+
+1. queue_position (custom_fields, spaced by 100): 154-S=100, 153-S=200, 141-S=300, 152-S=400, 142-S=500, 143-S=600, 144-S=700, 145-S=800, 149-S=900, 150-S=1000, 151-S=1100, 146-S=1200, 147-S=1300. No dependency edges changed.
+2. 169.008-T -> pre-169.007 unsigned-metadata RED only (<=2 scenarios); tamper/swap moved to 169.009-T GREEN/integration. Plan U169.008/U169.009 reconciled.
+3. 172.006-T preserves BulkUpdateResult.Failed []string + additive typed FailedDetails; NEW predecessors 172.011-T (decl, no deps) + 172.012-T (caller adaptation, deps 172.011-T); 172.006-T deps={172.009,172.011,172.012}; 172.010-T additive GREEN. Added to 153-S.
+4. 172.008-T predecessor 172.013-T (seam decl, deps 172.001-T); 172.008-T deps={172.001,172.013}. Added to 153-S.
+5. 173.006-T: RED = activation + rollback; seam byte-identical = passing characterization.
+6. 173.007-T: RED = marker projection (1)(2); absence/ignore (3)(4) = passing characterization.
+7. source_stash_id provenance: 173-F=CC0EBB59, 172.002-T=FE440C62, 172.005-T=1E0C2251, 168.007-T=3B661FCE, 169.007-T=BFF76433, 169.009-T=BF18DA1D, 170.008-T=4E210DB4. Merged pairs split across distinct tasks (scalar model). 6D53A33F intentionally no artifact.
+8. 168.008-T retitled (removed "bounded tracked residual"); requires authoritative external/fail-closed enforcement.
+9. 172-F: Unit1 (lock-order) and Unit2 (archived_status CAS) independent; de-sequenced.
+10. 173-F: uses existing generic CLI/MCP custom_fields projection; no bespoke read accessor.
+
+Verification: plan review multi-agent-dispatch PASS x3 (attempt-4 records appended); DAG acyclic (500 edges/436 nodes); docs lint 0 violations; sync 1470 artifacts / 0 parse failures; schema-validate touched files exit 0; queue positions + provenance + rehydrated stash_links verified; clean tree post-commit. No P0/P1 remaining. One P2 advisory (immutable historical attempt-2 review text still contains "bounded tracked residual" in pr425 plan) — left intact as audit record.
+
+NEW files: 172.011-T.md, 172.012-T.md, 172.013-T.md (parent 172-F).
