@@ -121,3 +121,45 @@ Immediate operational recommendation for 154-S (once capability ships OR via tem
 bootstrap seam frees backlogit's active slot for 155-S but leaves audit debt; 154-S MUST NOT be
 unblocked until U18 normalizes the metadata; autoharness topology-gate treatment of `blocked` is an
 UNCONFIRMED external assumption — verify before relying on bootstrap to admit 155-S.
+
+---
+
+## Remediation cycle — 9-P1 BLOCKED review of fee43b0a (branch chore/stage-155)
+
+Local review of `fee43b0a` returned **BLOCKED (0 P0, 9 P1)**. Bounded Stage remediation over
+Stage-owned docs/backlog/stash only (no source/tests, no 154-S edit, no PR). All 9 P1s + safe
+corrections resolved:
+
+- **P1-1**: restored independent stash `7AA35A39` (exact Ship-captured line from the intact Ship
+  branch) to `.backlogit/stash.jsonl`; NOT absorbed into 174-F; `808E4323` correctly absent.
+- **P1-2**: `164.001-T`→blocked (cannot exec from 146-S; history preserved via supersedes link);
+  `164.002-T` re-pointed parked→blocked + dep→174.001-T + related_to 174-F.
+- **P1-3**: choke-point/consumer inventory now includes `MoveShipmentStatus` + create/add/
+  create_item (U2b2=174.024-T, U2d, spec SBLK-R3).
+- **P1-4**: partial-failure durability — new U19=174.027-T + spec SBLK-R27 (ordered event→
+  frontmatter→index + failure-injection tests).
+- **P1-5**: active-slot source of truth = authoritative Markdown scan / real CAS, fail-closed on
+  stale/missing index + malformed/duplicate (U5b, SBLK-R4/R6).
+- **P1-6**: member disposition on block (U6, SBLK-R9/R10) — snapshot + active members→queued (frees
+  slot), restore on unblock. Generic-move bootstrap therefore CANNOT admit 155-S.
+- **P1-7**: removed invalid `move 154-S --status active` rollback; bootstrap PROHIBITED until seam
+  (U2c)+normalizer (U18a/U18b); rollback = governed `unblock --to active`.
+- **P1-8**: `174.021-T` harness-exempt label + machine-readable exemption block; AC covers R22–R26.
+- **P1-9**: 155-S reordered so 174.022/174.023 precede 174.021; dep graph + topo regenerated.
+
+Safe corrections: R13 --confirm on both unblock targets; feature range R1–R27; R19/R24–R26
+reclassified; "park" wording removed; U17 scoped to blocked edges + provisional-pending-ratification;
+fixture (not corpus) for active-count test; one workspace-global lock clarified; splits U2b→U2b2,
+U13→U13a/U13b, U18→U18a/U18b; doctor severity/exit/MCP (U13b); MCP parity for normalize (U18b);
+U7b narrowed; impossible blocked+terminal check removed (U13a).
+
+New tasks: **174.024-T** (U2b2), **174.025-T** (U13b), **174.026-T** (U18b), **174.027-T** (U19) →
+155-S now **28 items** (queued). New dep edges: 024→003, 004→024, 025→018, 026→{018,023,017,025},
+027→{004,006}, 021→026. Fourth plan-review amendment appended (`2-amendment-3`): ADVISORY +
+operator_authorization: approved; no P1 residual.
+
+Immediate 154-S recommendation (UPDATED): generic-move bootstrap is PROHIBITED (no member
+disposition → 173.006-T stays active → P-001 contended; no valid rollback once U2b guards land).
+Once 155-S ships, admit via GOVERNED block (member snapshot + active members→queued frees the slot),
+then normalize (U18a/U18b) before any unblock; autoharness topology-gate treatment of `blocked`
+remains an UNCONFIRMED external assumption to verify separately.

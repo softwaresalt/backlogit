@@ -15,7 +15,7 @@ docline:
 # Execution Plan — Resumable shipment `blocked` lifecycle status
 
 **Covering feature:** Resumable shipment `blocked` lifecycle status.
-**Source spec:** `docs/product-specs/2026-09-14-resumable-shipment-blocked-lifecycle-status.md` (SBLK-R1…R26).
+**Source spec:** `docs/product-specs/2026-09-14-resumable-shipment-blocked-lifecycle-status.md` (SBLK-R1…R27).
 **Source deliberation:** `docs/decisions/2026-09-14-resumable-shipment-blocked-lifecycle-status-deliberation.md` (Option A, decided).
 **Intake:** stash `808E4323`. **Informing defect (out of scope):** stash `7AA35A39`.
 **Supersedes:** S12 parked-state unit `164.001-T` (see deliberation §4/§6).
@@ -87,25 +87,33 @@ docs-only`); the **closed exempt set enumerated by this plan is exactly `{U16}`*
   `active → blocked`, `blocked → queued`, `blocked → active`; refuse every other edge into or
   out of `blocked` fail-closed. Acceptance: the three allowed edges pass and `queued→blocked`,
   `blocked→shipped`, `blocked→abandoned`, `blocked→archived` are refused. Depends on U1.
-* **U2b (SBLK-R3) — Close ALL ungoverned status-write choke points.** Make EVERY status-write
-  path that bypasses `isValidShipmentTransition` refuse a shipment transition whose
+* **U2b (SBLK-R3) — Close generic status-write choke points.** Make the generic
+  `move_item`/`update_item` path, **`setArtifactStatus`** refuse a shipment transition whose
   `newStatus=="blocked"` (block direction) OR `oldStatus=="blocked"` (unblock direction),
-  gated on `ArtifactType=="shipment"`, with NO forgeable exemption flag: the generic
-  `move_item`/`update_item` path, **`BulkUpdateStatus`** (today only special-cases
-  archived/shipped), **`setArtifactStatus`**, and **`cascadePersistedParentStatuses`**. Also
-  gate the parent cascade so it can never move a shipment out of `blocked`. The governed
+  gated on `ArtifactType=="shipment"`, with NO forgeable exemption flag. The governed
   `BlockShipment`/`UnblockShipment` functions (U2c) are exempt BY CONSTRUCTION (separate
-  functions), never via a flag. Acceptance: each named choke point refuses both directions
-  regardless of any flag and with the formal gate OFF; member `blocked` items are unaffected.
-  Depends on U2a.
+  functions), never via a flag. (Bulk/cascade/exported-core/create entry points are split into
+  U2b2 to keep each unit within the 2-hour envelope.) Acceptance: each named generic choke
+  point refuses both directions regardless of any flag and with the formal gate OFF; member
+  `blocked` items are unaffected. Depends on U2a.
+* **U2b2 (SBLK-R3) — Close bulk/cascade + exported-core + create choke points.** Make
+  **`BulkUpdateStatus`** (today only special-cases archived/shipped), **`cascadePersistedParentStatuses`**,
+  the exported core **`MoveShipmentStatus`** entry point, and the shipment **`create`/`add`/`create_item`**
+  entry points refuse a shipment `active↔blocked` transition (same gate/no-flag rule as U2b);
+  the parent cascade is additionally gated so it can never move a shipment out of `blocked`, and
+  `create`/`create_item` cannot originate a shipment directly in `blocked`. Acceptance: each of
+  `BulkUpdateStatus`/cascade/`MoveShipmentStatus`/`create`/`add`/`create_item` refuses both
+  directions with the gate OFF and any flag; a create cannot set `blocked`; member `blocked`
+  items unaffected. Depends on U2b.
 * **U2d (SBLK-R3) — Consumer-inventory proof-of-completeness.** Enumerate every
   `ShipmentStatus` consumer (guards, queue/ready-work, index projection, dependency
-  eligibility, ship/abandon/reconcile, archive, reporting, event consumers) and assert each
-  routes through the central non-terminal/terminal classifier or fails closed on the
-  unrecognized value — "no consumer default-allows blocked" is a testable acceptance. This is
-  the S12 taxonomy-integration P1 closure, split from U2b to keep each unit within the 2-hour
-  envelope. Acceptance: consumer-inventory test enumerates the full consumer set and every
-  entry classifies-or-fails-closed. Depends on U2b.
+  eligibility, ship/abandon/reconcile, archive, reporting, event consumers, **the exported
+  core `MoveShipmentStatus`, and the shipment `create`/`add`/`create_item` entry points**) and
+  assert each routes through the central non-terminal/terminal classifier or fails closed on
+  the unrecognized value — "no consumer default-allows blocked" is a testable acceptance. This
+  is the S12 taxonomy-integration P1 closure. Acceptance: consumer-inventory test enumerates
+  the full consumer set (including `MoveShipmentStatus` + create/add/create_item) and every
+  entry classifies-or-fails-closed. Depends on U2b2.
 * **U2c (SBLK-R3) — Governed block/unblock seam + shared metadata helper.** Add
   `BlockShipment` / `UnblockShipment` core functions that perform the governed transition and
   are the ONLY legitimate write path for `active↔blocked` (all generic paths refuse per U2b).
@@ -119,7 +127,7 @@ docs-only`); the **closed exempt set enumerated by this plan is exactly `{U16}`*
   unblock BEFORE frontmatter is cleared, via the shared EventWriter. Acceptance: governed
   functions succeed; the seam's write does NOT traverse a refusing choke point (tested); both
   edges emit a durable event before clearing; generic paths cannot reach this write.
-  Source-shape harness for the new signatures. Depends on U2b.
+  Source-shape harness for the new signatures. Depends on U2b2.
 * **U3 (SBLK-R7) — Blocked audit metadata write.** On `active → blocked`, persist
   `blocked_reason` (required non-empty), `blocked_at`, `blocked_by`, and `resume_checkpoint_ref`
   to frontmatter/`custom_fields`. `blocked_by` is ADVISORY best-effort actor attribution (NOT
@@ -137,22 +145,35 @@ docs-only`); the **closed exempt set enumerated by this plan is exactly `{U16}`*
   generic choke point can perform the unblock write (they refuse per U2b), so the seam is the
   sole path. Acceptance: both edges leave no residual `blocked_*` and emit the unblock event;
   the hook-bypassing `blocked → queued` path is covered. Depends on U2c, U3.
-* **U6 (SBLK-R9, R10) — Evidence & member preservation on block.** `active → blocked` preserves
-  member task statuses verbatim (no cascade to member `blocked`, no `return-blocked`
-  invocation) and leaves branch association and `resume_checkpoint_ref` intact. All `blocked_*`
-  predicates gate on `ArtifactType=="shipment"`. Acceptance: members unchanged after block;
-  checkpoint ref preserved; a member `blocked` (return-blocked) satisfies NO shipment-blocked
-  predicate and vice versa. Depends on U2c.
+* **U6 (SBLK-R9, R10) — Member disposition & evidence preservation on block.** `active → blocked`
+  captures a **governed member-status snapshot** (SBLK-R10) and then returns any **`active`/in-flight
+  member to `queued`** so the blocked shipment holds **no active release-unit execution** (this is
+  what actually frees the single active slot — a still-`active` member would keep P-001 contended).
+  Non-active member statuses are left unchanged. Branch association and `resume_checkpoint_ref` are
+  preserved intact. `blocked → active` (governed unblock/resume) **restores** members from the
+  snapshot. The requeue is performed by the U2c seam through its seam-private primitive, is recorded
+  in the audit event, and is reversible via the snapshot (a governed disposition, NOT an ungoverned
+  member mutation, and NOT a member `blocked` cascade / `return-blocked`). All `blocked_*` predicates
+  gate on `ArtifactType=="shipment"`. Acceptance: after block, no member remains `active` and the
+  snapshot records every pre-block status; branch + checkpoint preserved; unblock restores members
+  exactly; a member `blocked` (return-blocked) satisfies NO shipment-blocked predicate and vice
+  versa. Depends on U2c.
 
 ### SE-B — Active-slot & concurrency
 
-* **U5b (SBLK-R4, R6) — Workspace-global active-slot serialization.** Provide a single
-  workspace-scoped serialization (a global claim lock keyed on the workspace root under
-  `.locks/`, or an atomic active-slot compare-and-swap) that guards the active-slot
-  check-then-set. This is NOT the per-artifact mutation lock: two concurrent claims of
-  DIFFERENT shipments must contend on the same key so both cannot read "no active" and both
-  activate. Acceptance: two concurrent `ClaimShipment` calls on different shipments serialize;
-  at most one activates. Depends on U1.
+* **U5b (SBLK-R4, R6) — Workspace-global active-slot serialization + source of truth.** Provide a
+  single **workspace-scoped** serialization — ONE global claim lock keyed on the workspace root
+  under `.locks/` (NOT a per-artifact mutation lock; two concurrent claims of DIFFERENT shipments
+  must contend on the SAME key), or an atomic active-slot compare-and-swap — that guards the
+  active-slot check-then-set. **Active-slot source of truth:** the authoritative active count is
+  computed from an **authoritative scan of the contained shipment Markdown records** (canonical
+  state) or an equivalent real CAS on that state — NEVER from the SQLite index (a rebuildable,
+  non-authoritative projection). The check **fails closed** when the index is stale/missing (scan
+  is authoritative) and when the scanned state is malformed or shows a duplicate/ambiguous active
+  condition (refuse, do not guess). Acceptance: two concurrent `ClaimShipment` calls on different
+  shipments serialize on the one global key; at most one activates; a stale/missing index does not
+  admit a second active (scan wins); a malformed/duplicate-active scan refuses fail-closed. Depends
+  on U1.
 * **U5 (SBLK-R4) — Single-active-slot enforcement in claim.** `ClaimShipment`
   (`queued → active`) refuses fail-closed when another shipment is already `active` (blocked
   shipments excluded from the count), under the U5b serialization, atomic-by-construction with
@@ -174,10 +195,13 @@ docs-only`); the **closed exempt set enumerated by this plan is exactly `{U16}`*
 * **U7a (SBLK-R11) — Queue / ready-work exclusion.** Exclude `blocked` shipments from
   ready-work selection while keeping them in the queue directory (not archived). Acceptance:
   blocked excluded from ready-work; not archived. Depends on U1.
-* **U7b (SBLK-R11) — Index projection + status filter.** The SQLite index carries the
-  `blocked` value transactionally (rebuildable), `shipment list --status blocked` returns
-  them, and an index rebuild after `sync` retains the value. Acceptance: status filter returns
-  blocked; row count stable across a mid-walk-cancel rehydration test. Depends on U1.
+* **U7b (SBLK-R11) — Status-filter + rebuild stability (narrowed).** `blocked` is already a
+  valid `ArtifactStatus` the generic index projects, so this unit does NOT re-implement a
+  bespoke projection. It NARROWLY asserts that `shipment list --status blocked` returns blocked
+  shipments and that the `blocked` value survives an index rebuild after `sync` (row count stable
+  across a mid-walk-cancel rehydration test). The index remains a non-authoritative projection
+  (SBLK-R4/R27 — the active-slot source of truth is the Markdown scan, not this index).
+  Acceptance: status filter returns blocked; value stable across rebuild. Depends on U1.
 * **U10 (SBLK-R12) — Dependency eligibility.** A `blocked` shipment as a dependency remains
   execution-blocking (NOT added to the `IsNoLongerBlockingStatus` set). Acceptance: a dependent
   stays gated while its dependency shipment is `blocked`; unblock+terminal releases it. Depends on U1.
@@ -186,9 +210,11 @@ docs-only`); the **closed exempt set enumerated by this plan is exactly `{U16}`*
 
 * **U9 (SBLK-R13) — CLI block/unblock.** `backlogit shipment block <id> --reason <text>
   [--resume-checkpoint <ref>]` and `backlogit shipment unblock <id> --to queued|active
-  [--confirm]`, routing through the governed seam; naming distinct from `return-blocked`.
-  Acceptance: both verbs route the governed path; `--reason` required for block; unblock-to-active
-  honors the readiness gate (U12); help/usage updated. Depends on U2c, U3, U4, U5, U12.
+  --confirm`, routing through the governed seam; naming distinct from `return-blocked`.
+  `--confirm` is REQUIRED on BOTH unblock targets (non-authoritative blocker-resolution
+  confirmation). Acceptance: both verbs route the governed path; `--reason` required for block;
+  `--confirm` required for both unblock targets; unblock-to-active honors the readiness gate
+  (U12); help/usage updated. Depends on U2c, U3, U4, U5, U12.
 * **U11 (SBLK-R14) — MCP block/unblock + filter parity.** MCP tools for block/unblock at parity
   with the CLI and `blocked` in shipment status filters, consistent JSON-RPC error mapping. On
   MCP there is no interactive operator: the `--confirm`/blocker-resolution input is treated as a
@@ -214,17 +240,26 @@ docs-only`); the **closed exempt set enumerated by this plan is exactly `{U16}`*
   claim + unblock-to-active cannot both reach `active` (check-and-set under one held lock);
   `blocked→queued` refused when `--confirm` absent; **unblock (either target) refused when the
   shipment's governed `blocked_*` metadata is absent** (outstanding bootstrap-migration debt,
-  SBLK-R25) with a remediation message pointing at the U18 normalizer. Depends on U2c, U5, U5b.
-* **U13 (SBLK-R15, R16) — Doctor integrity checks.** `backlogit doctor`, over
-  `ArtifactType=="shipment"` only, verifies: (a) ≤1 active shipment; (b) every blocked shipment
-  has non-empty `blocked_reason` + valid `blocked_at`; (c) no shipment is blocked AND terminal
-  — justified as EXTERNAL-CORRUPTION detection (the governed matrix makes it unreachable in-band,
-  but doctor's role is to catch out-of-band edits); (d) unrecognized shipment status fails closed.
-  Reads `blocked_*` from the Markdown source (the index does not project them). Gating on
-  `ArtifactType=="shipment"` prevents false positives on member `return-blocked` items (which
-  correctly have no `blocked_reason`). Acceptance (≤4 scenarios): flags a malformed blocked
-  shipment; flags a two-active condition; ignores a member `blocked` item; fails closed on an
-  unknown status. Depends on U1, U5.
+  SBLK-R25) with a remediation message pointing at the U18a normalizer. Depends on U2c, U5, U5b.
+* **U13a (SBLK-R15, R16) — Doctor: active-count + malformed-blocked checks.** `backlogit doctor`,
+  over `ArtifactType=="shipment"` only, verifies: (a) ≤1 active shipment (`error` severity); (b)
+  every blocked shipment has non-empty `blocked_reason` + valid `blocked_at` (`error` severity; a
+  record lacking `blocked_reason` is a hard finding naming the U18a normalizer). The former
+  "blocked AND terminal" scalar check is **removed** — `status` is a single scalar, so a record
+  cannot simultaneously be `blocked` and terminal; the check was unsatisfiable and is not a
+  meaningful corruption detector. Reads `blocked_*` from the Markdown source (the index does not
+  project them). Acceptance (≤4 scenarios): flags a malformed blocked shipment; flags a two-active
+  condition; the removed check is not present. Depends on U1, U5.
+* **U13b (SBLK-R16) — Doctor: member-ignore, fail-closed, severity/exit/MCP contract.** Over
+  `ArtifactType=="shipment"` only, ignores member `return-blocked` items (no false positive on a
+  member `blocked` with no `blocked_reason`); fails closed on an unrecognized shipment status
+  (`error` severity). Defines the **finding contract**: each check declares a `severity`
+  (`error` for one-active, malformed-blocked, unknown-status); a deterministic process **exit
+  code** (non-zero when any `error` finding is present); and an **MCP result contract** at parity
+  with the CLI (structured findings with `severity`, `code`, `artifact_id`, `message`).
+  Acceptance (≤4 scenarios): ignores a member `blocked` item; fails closed on an unknown status;
+  exit code non-zero on an `error` finding; MCP result contract asserted at CLI parity. Depends on
+  U13a.
 * **U14 (SBLK-R17) — Ship/abandon guard integration.** `shipment ship` refuses a `blocked`
   shipment; the guard prevents `blocked → shipped/archived/abandoned`; `reconcile-shipped`
   (archived-only) is unaffected; terminal abandonment path is `blocked → active → abandoned`.
@@ -234,11 +269,13 @@ docs-only`); the **closed exempt set enumerated by this plan is exactly `{U16}`*
 
 * **U15 (SBLK-R18) — Back-compat (no fail-open marker).** The additive enum requires no data
   migration. A pre-existing multi-active condition is reported by doctor (U13a) as a HARD finding
-  with explicit remediation (unblock/park one shipment) — NOT a resettable "first-run" warning
-  and never a fail-open flag; claim enforcement (U5) is forward-only, so it refuses creating a new
-  second active without retroactively mutating existing state. Acceptance: `sync` + `doctor` are
-  clean over the existing corpus (exactly one active, `154-S`); an injected second active is a hard
-  doctor finding with remediation text. Depends on U13.
+  with explicit remediation (unblock one shipment to `queued`) — NOT a resettable "first-run"
+  warning and never a fail-open flag; claim enforcement (U5) is forward-only, so it refuses
+  creating a new second active without retroactively mutating existing state. Acceptance: over a
+  **dedicated fixture workspace** seeded with exactly one active shipment, `sync` + `doctor` are
+  clean; an injected second active in the fixture is a hard doctor finding with remediation text.
+  (The test asserts against the fixture, NOT the live repository corpus, so it stays deterministic
+  as the real backlog evolves.) Depends on U13a, U13b.
 * **U16 (docs; harness-exempt, `docs-only`, closed exempt set `{U16}`) — Operator docs & runbook.**
   CLI reference for block/unblock, a shipment lifecycle doc update, the `164-F` parked supersession
   note (including that S12 forward-repair `164.002-T` must re-point its dependency/acceptance from
@@ -252,66 +289,100 @@ docs-only`); the **closed exempt set enumerated by this plan is exactly `{U16}`*
   identifiable locally). Domain: docs. Acceptance: docs pass markdown lint; runbook + supersession
   note + migration/compat note present. Depends on U9, U14, U17.
 
-  Also documents the **one-time `154-S` bootstrap-migration runbook** (SBLK-R24/R25/R26): the
-  temporary generic-move compatibility seam, pre/post verification, status-only rollback, the
-  U18 debt-normalization step required before any unblock, and the autoharness topology-gate
-  caveat (bootstrap frees only backlogit's active-slot scan; the external gate must be verified
-  separately). Additional acceptance: bootstrap runbook + autoharness-gate caveat present.
-  (Also depends on U18.)
+  Also documents the **one-time `154-S` bootstrap-migration runbook** (SBLK-R24/R25/R26).
+  Per the amended finding-6/7 resolution the runbook states that the generic-move bootstrap is
+  **PROHIBITED** until the governed seam (U2c) and normalizer (U18a/U18b) land: a generic
+  `move 154-S --status blocked` performs NO member disposition (member `173.006-T` would stay
+  `active`, keeping the active slot contended and P-001 unsatisfied) and has NO valid governed
+  rollback once the U2b guards refuse `move 154-S --status active`. The runbook therefore
+  documents the GOVERNED admission path once the capability ships (governed block → member
+  snapshot + active members returned to `queued` → active slot freed → `155-S` claimable), the
+  pre/post verification, the governed bounded rollback (governed unblock, never a raw generic
+  move), and the autoharness topology-gate caveat (blocking `154-S` frees only backlogit's
+  active-slot scan; the external autoharness gate must be verified separately). Additional
+  acceptance: bootstrap-prohibition note, governed admission path, and autoharness-gate caveat
+  present. (Also depends on U18a, U18b.)
 * **U17 (SBLK-R20, R21 — [shared] contract conformance) — Portable-contract conformance test.**
-  A test that PINS the shared cross-repo contract so backlogit-local work cannot silently diverge:
-  asserts the status token is exactly the string `blocked`; the shipment transition set is exactly
-  the three shared edges; the audit field names are exactly
+  A test that PINS the shared cross-repo contract so backlogit-local work cannot silently diverge,
+  scoped to the **blocked-related edges only** (it does NOT re-pin unrelated shipment transitions):
+  asserts the status token is exactly the string `blocked`; the blocked-related shipment transition
+  set is exactly the three shared edges (`active→blocked`, `blocked→queued`, `blocked→active`); the
+  audit field names are exactly
   `blocked_reason`/`blocked_at`/`blocked_by`/`resume_checkpoint_ref`; the event name is
   `shipment_status_changed`; and that NO conflicting synonym token (`parked`, `paused`, `on-hold`)
-  is introduced for the same concept. Domain: tests. Acceptance: the conformance test enumerates
-  the shared tokens/edges/field-names and fails if any is renamed, removed, or a synonym is added.
+  is introduced for the same concept. The pinned values are documented as a **backlogit-proposed /
+  provisional contract pending upstream autoharness ratification** — the test guards backlogit-side
+  stability, and if upstream ratifies different names the update is a deliberate, reviewed contract
+  change, not silent drift. Domain: tests. Acceptance: the conformance test enumerates the shared
+  tokens/blocked-edges/field-names and fails if any is renamed, removed, or a synonym is added.
   Depends on U1, U2a, U3.
-* **U18 (SBLK-R24, R25 — bootstrap-migration debt discharge) — Normalize bootstrap-migrated
-  blocked shipments.** Provide a governed normalizer (`backlogit shipment normalize-blocked <id>
-  --reason <text> [--resume-checkpoint <ref>]`, routed through the U2c seam) that backfills the
-  governed `blocked_reason`/`blocked_at`/`blocked_by`/`resume_checkpoint_ref` and emits the
-  governed `shipment_status_changed` event for a shipment whose status token was set to `blocked`
-  by the temporary generic-move bootstrap seam (SBLK-R24) and therefore lacks governed metadata.
-  Idempotent: a no-op on an already-governed blocked shipment. Also: `doctor` (U13) flags a
-  status=`blocked` shipment with no `blocked_reason` as a **hard finding** naming this normalizer;
-  and the unblock readiness gate (U12) refuses unblock until normalization completes. Domain: code.
-  Acceptance: normalizer backfills all four fields + emits the event; is idempotent; a
-  bootstrap-migrated shipment cannot be unblocked until normalized; doctor flags the un-normalized
-  case. Depends on U2c, U3, U12, U13.
+* **U18a (SBLK-R24, R25 — bootstrap-migration debt discharge) — Blocked-shipment normalizer core.**
+  Provide a governed normalizer (`backlogit shipment normalize-blocked <id> --reason <text>
+  [--resume-checkpoint <ref>]`, routed through the U2c seam) that backfills the governed
+  `blocked_reason`/`blocked_at`/`blocked_by`/`resume_checkpoint_ref` and emits the governed
+  `shipment_status_changed` event for a shipment whose status token was set to `blocked` out-of-band
+  (e.g. a degraded or test-seeded record) and therefore lacks governed metadata. Idempotent: a
+  no-op on an already-governed blocked shipment. This unit normalizes **degraded/test-seeded**
+  records; it does NOT re-enable the prohibited `154-S` generic-move bootstrap (SBLK-R24 — bootstrap
+  stays prohibited; there is no "bootstrap frees the slot for 155-S" path). Domain: code.
+  Acceptance: normalizer backfills all four fields + emits the event; is idempotent on an
+  already-governed record. Depends on U2c, U3.
+* **U18b (SBLK-R25) — Normalizer integration + MCP parity decision.** Wire the normalizer into the
+  integrity/gate surfaces: `doctor` (U13a) flags a status=`blocked` shipment with no
+  `blocked_reason` as a **hard finding naming this normalizer**; the unblock readiness gate (U12)
+  **refuses** unblock until normalization completes; and resolve the **MCP parity decision** —
+  `normalize-blocked` is exposed at MCP at parity with the CLI (or explicitly recorded as
+  CLI-only with rationale). Domain: code. Acceptance: a bootstrap/degraded blocked shipment cannot
+  be unblocked until normalized; doctor flags the un-normalized case naming the normalizer; the MCP
+  parity decision is asserted (parity test OR recorded CLI-only rationale). Depends on U18a, U12,
+  U13a.
+* **U19 (SBLK-R27 — partial-failure durability) — Block/unblock/normalize partial-failure semantics.**
+  Define and test authoritative durability semantics for the multi-write block/unblock/normalize
+  operations (event append + frontmatter mutation + index projection): declare the canonical
+  ordering (durable append-only `shipment_status_changed` event FIRST, then frontmatter, then the
+  rebuildable index) and the classified handling of each partial-failure point — an event written
+  but frontmatter not yet applied is recoverable by replay/`sync`; a frontmatter write that fails
+  after the event leaves a detectable inconsistency doctor (U13a) reports; the index is always
+  rebuildable from Markdown and never authoritative. **Failure-injection tests** exercise each
+  crash point (fail-after-event, fail-after-frontmatter, fail-during-index) and assert the state is
+  either fully applied or safely recoverable — never a silent lost transition. Domain: tests.
+  Acceptance: each injected partial failure leaves a recoverable/detectable state (no silent loss);
+  `sync`/`doctor` recover or flag; ordering is asserted. Depends on U2c, U3, U6.
 
 ## Dependency graph
 
 ```
-U1 ──┬─► U2a ─► U2b ─┬─► U2c ─► U3 ─► U4
-     │              │         └─► U6
-     │              └─► U2d
-     │                 (governed seam U2c consumed by U9, U11)
+U1 ──┬─► U2a ─► U2b ─► U2b2 ─┬─► U2c ─┬─► U3 ─► U4
+     │                       │        └─► U6
+     │                       └─► U2d
+     │                          (governed seam U2c consumed by U9, U11, U12, U18a, U19)
      ├─► U5b ─► U5 ─► U8
      ├─► U7a
      ├─► U7b
      ├─► U10
      └─► U2a ─► U14
-U5b ─► U12 ; U5 ─► U12
-U2c ─► U12
+U5b ─► U12 ; U5 ─► U12 ; U2c ─► U12
 {U2c,U3,U4,U5,U12} ─► U9 ; {U2c,U3,U4,U5,U12} ─► U11
 {U1,U2a,U3} ─► U17
-{U2c,U3,U12,U13} ─► U18
-{U1,U5} ─► U13 ─► U15
-{U9,U14,U15,U17,U18} ─► U16
+{U2c,U3} ─► U18a ─► U18b ; {U12,U13a} ─► U18b
+{U2c,U3,U6} ─► U19
+{U1,U5} ─► U13a ─► U13b ; {U13a,U13b} ─► U15
+{U9,U14,U17,U18a,U18b} ─► U16
 ```
 
 Execution order (topological): U1 → {U2a, U5b, U7a, U7b, U10} → {U2b, U5, U14} →
-{U2c, U2d, U8, U13} → {U3, U12, U15} → {U4, U6, U18} → {U9, U11, U17} → U16.
+{U2b2, U8, U13a} → {U2c, U2d, U13b} → {U3, U6, U12, U15} → {U4, U17, U18a, U19} →
+{U9, U11, U18b} → U16.
 
 ## Runtime verification & closure
 
 Runtime surfaces: shipment lifecycle core, claim path, queue/ready-work selection, CLI,
 MCP, doctor. Verification: the transition guard matrix, single-active claim refusal,
 metadata set/clear at every choke point, queue/index exclusion, dependency gating, doctor
-checks, and CLI/MCP parity are each covered by unit tests; a `backlogit sync` + `doctor`
-pass over the existing corpus proves back-compat. Closure: operator docs + rollback runbook
-(U16); blocked-status audit metadata schema documented.
+checks, and CLI/MCP parity are each covered by unit tests; **partial-failure durability is
+covered by failure-injection tests (U19)**; a `backlogit sync` + `doctor` pass over a
+**dedicated fixture workspace** (not the live corpus) proves back-compat. Closure: operator
+docs + rollback runbook (U16); blocked-status audit metadata schema documented.
 
 ## Rollback / verification (feature-level)
 
@@ -324,16 +395,18 @@ prior binary cannot recognize.
 
 | ProposedAction | ActionRisk | Mitigation |
 |---|---|---|
-| New shipment lifecycle status + transition edges | Medium — taxonomy/gate integration (the exact S12 parked P1) | Single canonical `blocked` (Option A); closed guard matrix; **consumer-inventory proof** that no `ShipmentStatus` consumer default-allows blocked (U2b); fail-closed on unrecognized; doctor asserts well-formedness (U13) |
+| New shipment lifecycle status + transition edges | Medium — taxonomy/gate integration (the exact S12 parked P1) | Single canonical `blocked` (Option A); closed guard matrix; **consumer-inventory proof** that no `ShipmentStatus` consumer default-allows blocked (U2b/U2b2/U2d); fail-closed on unrecognized; doctor asserts well-formedness (U13a) |
 | Governed block/unblock transitions | Medium — ungoverned bypass via generic move/update, **BulkUpdateStatus, setArtifactStatus, cascade** | Unconditional refusal at EVERY status-write choke point keyed on old/new status=='blocked' AND ArtifactType=='shipment' (U2b); parent cascade gated so it cannot move a shipment out of blocked; governed `BlockShipment`/`UnblockShipment` exempt by construction; no forgeable flag (U2c) |
 | Single-active enforcement (operator-requested; P-001 was convention-only) | Medium — race could double-activate; could surface pre-existing multi-active | Workspace-GLOBAL active-slot serialization / CAS, not the per-artifact lock (U5b); atomic claim with member-set rollback (U5); pre-existing multi-active is a HARD doctor finding with remediation, not a fail-open marker (U15) |
 | Blocked audit metadata lifecycle & non-repudiation | Medium — stale `blocked_*` after hook-bypassing `blocked→queued`; audit erased on clear | Single seam-owned clear helper (U4); durable `shipment_status_changed` event with actor+reason+resume_ref emitted on BOTH block and unblock BEFORE clearing (U2c/U3); `blocked_by` documented as advisory, events authoritative |
-| Member vs shipment `blocked` conflation | Medium — shared "blocked" string on shared status field | Distinct `ShipmentStatus` Go type (U1); every blocked_* predicate/doctor/guard gates on ArtifactType=='shipment' (U6/U13); cross-axis negative test |
+| Member vs shipment `blocked` conflation | Medium — shared "blocked" string on shared status field | Distinct `ShipmentStatus` Go type (U1); every blocked_* predicate/doctor/guard gates on ArtifactType=='shipment' (U6/U13a); cross-axis negative test |
 | Atomic writes across MD + SQLite + JSONL | Medium — torn state / stale index on the new value | Transactional index rebuild with mid-walk-cancel test (U7b); commit-then-surface durability; shared EventWriter for event append (U2c) |
 | Unblock readiness is not an authorization boundary | Medium — self-asserted `--confirm`/TTY is spoofable (S12 precedent) | `--confirm` documented as NON-authoritative; the authoritative gate is the backlogit-side free-slot check under U5b (U12); MCP rejects a bare client boolean as sufficient and records actor trust level (U11) |
 | Downgrade with blocked shipments present | Low — unknown status to old binary | Additive enum; documented pre-rollback unblock runbook (U16) |
 | Cross-repo contract divergence (backlogit-local drift from the shared autoharness contract) | Medium — a local synonym token, extra edge, or renamed field would break the eventual autoharness supersession | Explicit shared-vs-local boundary (spec §2.5); portable-contract conformance test pins token/edges/field-names and forbids synonyms (U17); non-destructive additive-only migration with a documented 1:1 mapping note (U16, SBLK-R22); external informing reference recorded without inventing an ID (SBLK-R23) |
-| One-time `154-S` bootstrap via generic `move --status blocked` before the governed seam exists | Medium — degraded `blocked` shipment lacks governed audit metadata/event; could be mistaken for the final contract; external gate may not honor `blocked` | Bootstrap is a **temporary compatibility seam only**, status-only + reversible, never presented as the contract (SBLK-R24); missing metadata is tracked **debt** that U18 must normalize and U12 refuses unblock until discharged (SBLK-R25); doctor flags the un-normalized case (U13); pre/post verification + rollback documented (deliberation §6); autoharness topology-gate treatment of `blocked` flagged as an unconfirmed external assumption requiring separate verification (SBLK-R26) |
+| One-time `154-S` bootstrap via generic `move --status blocked` before the governed seam exists | High — generic move does NO member disposition (member `173.006-T` stays `active` → P-001 still contended, slot NOT freed) and has NO valid governed rollback once U2b guards refuse `move 154-S --status active`; degraded record lacks governed metadata/event | Bootstrap is **PROHIBITED** until the governed seam (U2c) + normalizer (U18a/U18b) land (SBLK-R24); admission of a corrective shipment requires the GOVERNED block path (U6 member disposition: snapshot + return active members to `queued` → slot freed) and governed bounded rollback (governed unblock, never a raw generic move); missing metadata is tracked **debt** the normalizer discharges and U12 refuses unblock until discharged (SBLK-R25); doctor flags the un-normalized case (U13a); autoharness topology-gate treatment of `blocked` flagged as an unconfirmed external assumption requiring separate verification (SBLK-R26) |
+| Member disposition on block (freeing the single active slot) | Medium — leaving members `active` keeps P-001 contended; ungoverned member mutation loses resumption evidence | Governed member-status snapshot captured on block; active members returned to `queued`; branch + `resume_checkpoint_ref` preserved; unblock restores members from the snapshot; requeue recorded in the audit event and reversible (U6) |
+| Partial failure across event append + frontmatter + index on block/unblock/normalize | Medium — a crash mid-operation could silently lose a transition or leave a torn state | Canonical ordering (durable append-only event FIRST, then frontmatter, then rebuildable index); classified handling per crash point; failure-injection tests assert fully-applied-or-recoverable, never silent loss; doctor detects residual inconsistency (U19, U13a) |
 
 Rollback trigger: any correctness failure in the guard matrix or claim exclusion; bounded
 to shipment lifecycle code, reversible by code revert. Ownership: Ship at execution time.
@@ -507,3 +580,82 @@ personas (focused re-dispatch over the delta):
 Gate outcome: **ADVISORY** — no P1 findings; the single actionable P2 (pre-verification ordering)
 was applied inline. Base plan approval (attempt 2) and the prior amendment stand; this amendment is
 additive and reopens no prior finding. Harvest adds one task (U18) to the existing feature/shipment.
+
+<!-- plan-review-attempt: 2-amendment-3 -->
+
+## Plan Review — Amendment (9-P1 BLOCKED remediation of fee43b0a)
+
+dispatch_mode: multi-agent-dispatch
+decision: ADVISORY
+operator_authorization: approved
+
+Trigger: local review of commit `fee43b0a` returned **BLOCKED (0 P0, 9 P1)**. This amendment
+records the bounded Stage remediation over Stage-owned docs/backlog/stash artifacts only (no
+application source/tests, no `154-S` edit, no PR). The nine P1 findings and their resolutions:
+
+* **P1-1 (restore independent stash `7AA35A39`):** RESOLVED — the exact Ship-captured provenance
+  line was recovered from the intact Ship branch and restored to `.backlogit/stash.jsonl`
+  (`808E4323` correctly absent; `7AA35A39` NOT absorbed into `174-F`, kept as an independent
+  informing-defect entry).
+* **P1-2 (reconcile parked queued work):** RESOLVED — `164.001-T` moved to `blocked` so it cannot
+  execute from `146-S` (history preserved via the existing supersedes link, not deleted);
+  `164.002-T` re-pointed from `parked` to canonical `blocked` semantics with a new dependency on
+  `174.001-T` and a `related_to 174-F` link. Backlog-native mutations, traceability preserved.
+* **P1-3 (governed-refusal inventory completeness):** RESOLVED — plan U2b/U2b2/U2d and spec SBLK-R3
+  now enumerate the exported core `MoveShipmentStatus` and the shipment `create`/`add`/`create_item`
+  entry points in the choke-point/consumer inventory; U2b2 (task `174.024-T`) is the dedicated
+  bulk/cascade/exported-core/create choke-point unit.
+* **P1-4 (partial-failure semantics):** RESOLVED — new plan unit **U19** (task `174.027-T`) and spec
+  **SBLK-R27** define authoritative event/frontmatter/index partial-failure durability (canonical
+  ordering: durable append-only event → frontmatter → rebuildable index) with classified handling
+  and failure-injection tests (fail-after-event / fail-after-frontmatter / fail-during-index).
+* **P1-5 (active-slot source of truth):** RESOLVED — U5b (SBLK-R4/R6) now defines the active count
+  as an authoritative scan of the contained shipment Markdown (or real CAS), NEVER the rebuildable
+  index; fails closed on stale/missing index and on malformed/duplicate-active state.
+* **P1-6 (bootstrap member disposition):** RESOLVED — U6 (SBLK-R9/R10) rewritten: `active→blocked`
+  captures a governed member snapshot and returns active members (incl. `173.006-T`) to `queued`,
+  genuinely freeing the active slot while preserving branch/checkpoint; unblock restores from the
+  snapshot. Consequently the generic-move bootstrap **cannot** admit `155-S` (member stays active →
+  P-001 contended). No policy override used.
+* **P1-7 (invalid generic rollback):** RESOLVED — the invalid `move 154-S --status active` rollback
+  is removed from deliberation §6 and spec SBLK-R24; the generic-move bootstrap is **PROHIBITED**
+  until the governed seam (U2c) + normalizer (U18a/U18b) land; rollback is the governed bounded
+  `unblock --to active`.
+* **P1-8 (harness-exempt labeling):** RESOLVED — `174.021-T` carries the canonical `harness-exempt`
+  label + a machine-readable `custom_fields.harness_exemption` block (class docs-only, exempt set
+  `{U16}`, rationale, validation evidence); its AC expanded to cover R22–R26 docs.
+* **P1-9 (topological reorder):** RESOLVED — `155-S` manifest reordered so `174.022-T` and
+  `174.023-T` precede dependent `174.021-T`; dependency graph + topological execution order
+  regenerated for the full unit set (U2b2/U13a/U13b/U18a/U18b/U19).
+
+Safe corrections applied: R13 `--confirm` required on both unblock targets (U9); feature requirement
+range widened to R1–R27; R19/R24–R26 reclassified in the layer table; actionable "park" wording
+removed (remediation now "unblock one shipment to queued"); U17 scoped to blocked-related edges +
+provisional-pending-upstream-ratification; fixture workspace (not live corpus) for the active-count
+back-compat test (U15); one workspace-global active-slot lock clarified vs per-artifact locks (U5b);
+oversized units split (U2b→U2b2, U13→U13a/U13b, U18→U18a/U18b); doctor severity/exit/MCP contract
+defined (U13b); MCP parity decision for normalize resolved (U18b); U7b narrowed to status-filter +
+rebuild-stability (redundant projection claim removed); impossible simultaneous blocked+terminal
+scalar check removed (U13a). All new/split units are single-domain ≤2h with explicit acceptance.
+
+personas (focused re-dispatch over the remediation delta):
+* Correctness Reviewer (`claude-opus-4.8`) — VOTE: ADVISORY — member disposition (U6) correctly
+  makes slot-freeing depend on requeueing active members, which is what invalidates the generic-move
+  bootstrap; U19 closes the partial-failure durability gap with ordered writes + injection tests;
+  U5b's Markdown-authoritative fail-closed source of truth removes the stale-index double-active
+  hazard. No P1 residual.
+* Architecture Strategist (`grok-4.6`) — VOTE: ADVISORY — the U2b2/U2d split keeps every governed
+  choke point within one unit and the consumer-inventory proof now covers the exported-core and
+  create/add entry points; U18a/U18b cleanly separate normalizer core from integration + MCP parity.
+* Scope Boundary Auditor (`gemini-3.7-flash`) — VOTE: PASS — all edits stay within Stage-owned
+  docs/backlog/stash; the reconciliation of `164.001-T`/`164.002-T` preserves history; each split
+  task is ≤2h single-domain; no scope creep into `154-S`/source/tests.
+* Security Reviewer (`gpt-5.6-terra`) — VOTE: ADVISORY — `--confirm` and `blocked_by` remain
+  documented as non-authoritative; the authoritative gate stays the backlogit-side free-slot check
+  under the workspace-global lock; governed-refusal inventory now closes the `MoveShipmentStatus` /
+  create-path bypass. No auth-boundary regression.
+
+Gate outcome: **ADVISORY** — no P1 findings remain after remediation; all nine controlling P1s and
+the safe corrections are resolved within the Stage boundary. Prior approvals (attempt 2, amendment,
+amendment-2) stand; this amendment is additive. Harvest adds four tasks (`174.024-T`/`174.025-T`/
+`174.026-T`/`174.027-T`) to feature `174-F` / shipment `155-S`.
