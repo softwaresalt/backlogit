@@ -33,7 +33,7 @@ implementation**. Two layers are kept explicit throughout this plan:
   `shipment_status_changed` event. **U17** pins these with a conformance test; **U16** documents
   the migration/compatibility mapping to autoharness.
 * **[local] replaceable implementation:** choke-point seams (U2b/U2c), `.locks/` workspace-global
-  lock (U5b), SQLite projection (U7b), doctor checks (U13), CLI/MCP surface shapes (U9/U11). These
+  lock (U5b), SQLite projection (U7b), doctor checks (U13a/U13b), CLI/MCP surface shapes (U9/U11). These
   may be re-implemented upstream and MUST NOT leak backlogit-specific semantics into the shared
   contract, and MUST NOT introduce a conflicting synonym token (SBLK-R21).
 
@@ -414,7 +414,7 @@ Runtime surfaces: shipment lifecycle core, claim path, queue/ready-work selectio
 MCP, doctor. Verification: the transition guard matrix, single-active claim refusal,
 metadata set/clear at every choke point, queue/index exclusion, dependency gating, doctor
 checks, and CLI/MCP parity are each covered by unit tests; **partial-failure durability is
-covered by failure-injection tests (U19)**; a `backlogit sync` + `doctor` pass over a
+covered by failure-injection tests (U19b) over the intent/commit durability contract (U19a)**; a `backlogit sync` + `doctor` pass over a
 **dedicated fixture workspace** (not the live corpus) proves back-compat. Closure: operator
 docs + rollback runbook (U16); blocked-status audit metadata schema documented.
 
@@ -429,7 +429,7 @@ prior binary cannot recognize.
 
 | ProposedAction | ActionRisk | Mitigation |
 |---|---|---|
-| New shipment lifecycle status + transition edges | Medium — taxonomy/gate integration (the exact S12 parked P1) | Single canonical `blocked` (Option A); closed guard matrix; **consumer-inventory proof** that no `ShipmentStatus` consumer default-allows blocked (U2b/U2b2/U2d); fail-closed on unrecognized; doctor asserts well-formedness (U13a) |
+| New shipment lifecycle status + transition edges | Medium — taxonomy/gate integration (the exact S12 parked P1) | Single canonical `blocked` (Option A); closed guard matrix; **consumer-inventory proof** that no `ShipmentStatus` consumer default-allows blocked (U2b/U2b2a/U2b2b/U2d); fail-closed on unrecognized; doctor asserts well-formedness (U13a) |
 | Governed block/unblock transitions | Medium — ungoverned bypass via generic move/update, **BulkUpdateStatus, setArtifactStatus, cascade** | Unconditional refusal at EVERY status-write choke point keyed on old/new status=='blocked' AND ArtifactType=='shipment' (U2b); parent cascade gated so it cannot move a shipment out of blocked; governed `BlockShipment`/`UnblockShipment` exempt by construction; no forgeable flag (U2c) |
 | Single-active enforcement (operator-requested; P-001 was convention-only) | Medium — race could double-activate; could surface pre-existing multi-active | Workspace-GLOBAL active-slot serialization / CAS, not the per-artifact lock (U5b); atomic claim with member-set rollback (U5); pre-existing multi-active is a HARD doctor finding with remediation, not a fail-open marker (U15) |
 | Blocked audit metadata lifecycle & non-repudiation | Medium — stale `blocked_*` after hook-bypassing `blocked→queued`; audit erased on clear | Single seam-owned clear helper (U4); durable `shipment_status_changed` event with actor+reason+resume_ref emitted on BOTH block and unblock BEFORE clearing (U2c/U3); `blocked_by` documented as advisory, events authoritative |
@@ -440,7 +440,7 @@ prior binary cannot recognize.
 | Cross-repo contract divergence (backlogit-local drift from the shared autoharness contract) | Medium — a local synonym token, extra edge, or renamed field would break the eventual autoharness supersession | Explicit shared-vs-local boundary (spec §2.5); portable-contract conformance test pins token/edges/field-names and forbids synonyms (U17); non-destructive additive-only migration with a documented 1:1 mapping note (U16, SBLK-R22); external informing reference recorded without inventing an ID (SBLK-R23) |
 | One-time, operator-approved, pre-governance `154-S` bootstrap (resolving the rollout circularity) | Medium — a naive generic `move --status blocked` would do NO member disposition (member `173.006-T` stays `active` → P-001 contended) and has no bounded rollback | The bootstrap is **exceptional, one-time, operator-approved, removed after migration** (SBLK-R24), NOT the steady-state API; it manually reproduces the governed guarantees — snapshot members, **manually disposition the active member to `queued` FIRST**, then generic `move 154-S --status blocked`, durable debt audit, autoharness topology pre-claim check; **bounded rollback valid ONLY before any other claim** (verify no other active, move 154 active, restore exact member snapshot; else fail closed); governed U18a/U18b normalizer backfills canonical metadata/event and U12 refuses unblock until discharged (SBLK-R25); doctor flags the un-normalized case (U13a); autoharness topology-gate treatment of `blocked` flagged as an unconfirmed external assumption requiring separate verification (SBLK-R26). Stage does NOT execute it. |
 | Member disposition on block (freeing the single active slot) | Medium — leaving members `active` keeps P-001 contended; ungoverned member mutation loses resumption evidence | Governed member-status snapshot captured on block; active members returned to `queued`; branch + `resume_checkpoint_ref` preserved; unblock restores members from the snapshot; requeue recorded in the audit event and reversible (U6) |
-| Partial failure across event append + frontmatter + index on block/unblock/normalize | Medium — a crash mid-operation could silently lose a transition or leave a torn state | Canonical ordering (durable append-only event FIRST, then frontmatter, then rebuildable index); classified handling per crash point; failure-injection tests assert fully-applied-or-recoverable, never silent loss; doctor detects residual inconsistency (U19, U13a) |
+| Partial failure across event append + frontmatter + index on block/unblock/normalize | Medium — a crash mid-operation could silently lose a transition or leave a torn state | Intent/commit protocol (persist INTENT + correlation id → frontmatter+member writes → COMMITTED event) so an append-first event alone never asserts completion; classified handling per crash point; failure-injection tests assert fully-applied-or-recoverable, never silent loss; doctor/recovery reconcile INTENT-without-COMMITTED (U19a, U19b, U13a) |
 
 Rollback trigger: any correctness failure in the guard matrix or claim exclusion; bounded
 to shipment lifecycle code, reversible by code revert. Ownership: Ship at execution time.
