@@ -98,15 +98,28 @@ high-risk (deadlock / stale-write / availability). See `## Plan Hardening`.
   AB-BA ordering against C-then-B writers, so the reentrancy invariant alone is
   insufficient justification to skip the restructure. Domain: code. Depends on
   U1.2.
-* **U1.seam (source-shape declaration — predecessor)** Declare the deterministic
-  B/C lock-barrier instrumentation seam BEFORE the RED harness: specify the
-  injectable, controllable barrier hook at the B (`lockArtifactMutations`) and C
-  (item-log append) acquisition points (per U1.1) that lets a test force the AB-BA
-  interleaving deterministically; pin where the barrier injects, that it is
-  enabled ONLY under test (off/no-op on production paths), and how it preserves
-  the causal item-log event-ordering invariant. The RED harness (U1.0) depends on
-  this declaration and the implementation (U1.2/U1.3) follows the observed-RED
-  evidence. Domain: docs/analysis. Depends on U1.1. (task 172.013-T)
+* **U1.seam-red (source-shape AST RED harness — predecessor)** Write a failing
+  source-shape assertion (AST / type-level harness) that asserts the
+  artifact-mutation writers expose controllable barrier hook points at **both**
+  the B (`lockArtifactMutations`) **and** the C (item-log append) acquisition
+  points (per U1.1). Observe it RED: only a pre-B hook
+  (`persistArtifactPreLockHook`) exists today and **no C-acquisition seam exists**,
+  so the "both B and C hook present" assertion fails before the production seam
+  lands. Domain: tests. Depends on U1.1. ≤2 scenarios. (task 172.015-T)
+* **U1.seam (no-op production seam declaration — makes the AST harness GREEN)**
+  Add the deterministic B/C lock-barrier instrumentation seam to **production**:
+  expose injectable, controllable barrier hook points at the B
+  (`lockArtifactMutations`) and C (item-log append) acquisition points (per U1.1)
+  that let a test force the AB-BA interleaving deterministically. The existing
+  pre-B `persistArtifactPreLockHook` is insufficient because **no C seam exists**;
+  add the missing controllable C hook (and the paired B hook). Pin where each hook
+  injects, that it is enabled ONLY under test (off/no-op on production paths so no
+  production behavior changes), and how it preserves the causal item-log
+  event-ordering invariant. The hooks are **no-op** by default; this task adds the
+  seam ONLY (no lock-order change). It turns U1.seam-red GREEN. The barrier-driven
+  RED harness (U1.0) depends on this seam and the implementation (U1.2/U1.3)
+  follows the observed-RED evidence. Domain: code. Depends on U1.1, U1.seam-red.
+  (task 172.013-T)
 * **U1.0 (RED harness — predecessor)** Write the failing lock-order regression
   BEFORE U1.2/U1.3 and observe it RED using a **deterministic lock-barrier /
   instrumentation harness** (inject a controllable barrier at the B/C acquisition
@@ -130,16 +143,24 @@ Unit 2 shares the code surface with Unit 1 (one PR) but carries **no correctness
 dependency** on the lock-order canonicalization. The tasks below do NOT depend on
 U1.2/U1.3.
 
-* **U2.decl (source-shape declaration — predecessor)** Declare the CURRENT
-  `BulkUpdateResult` source shape (the existing `Failed []string` field and how
-  `BulkUpdateStatus` populates it) and specify the ADDITIVE typed conflict-detail
-  surface to be added ALONGSIDE it (e.g. `FailedDetails []BulkUpdateConflict{ID,
-  Err, FromStatus, ToStatus}`): `Failed []string` is PRESERVED unchanged (no
-  signature change / removal / retype) for backward compatibility; the typed
-  detail is a NEW additive field, never a replacement; pin the field/struct names
-  and the stale-write→typed-conflict mapping. This is the source-of-truth contract
-  for U2.caller, U2.2, and U2.3b. Domain: docs/analysis. No deps (predecessor).
-  (task 172.011-T)
+* **U2.decl-red (source-shape AST RED harness — predecessor)** Write a failing
+  source-shape assertion (AST / type-level harness) that asserts `BulkUpdateResult`
+  exposes the ADDITIVE typed conflict-detail surface ALONGSIDE the preserved
+  `Failed []string`: a NEW `FailedDetails []BulkUpdateConflict` field whose element
+  type exposes `{ID, Err, FromStatus, ToStatus}`, AND that `Failed []string` is
+  unchanged. Observe it RED: the field/type do not yet exist, so the harness fails
+  before the production field declaration lands. Domain: tests. No deps
+  (predecessor). ≤2 scenarios. (task 172.014-T)
+* **U2.decl (production field declaration — makes the AST harness GREEN)** Add the
+  ADDITIVE typed conflict-detail surface to `BulkUpdateResult` in **production**: a
+  NEW `FailedDetails []BulkUpdateConflict{ID, Err, FromStatus, ToStatus}` field and
+  type, ADDED ALONGSIDE the existing `Failed []string`, which is PRESERVED
+  unchanged (no signature change / removal / retype) for backward compatibility.
+  This task declares the field/type ONLY — it does NOT populate `FailedDetails` and
+  does NOT change `BulkUpdateStatus` behavior (that is U2.2). It turns U2.decl-red
+  GREEN. Pin the field/struct names and the stale-write→typed-conflict mapping as
+  the source-of-truth contract for U2.caller, U2.2, and U2.3b. Domain: code.
+  Depends on U2.decl-red. (task 172.011-T)
 * **U2.caller (caller compatibility/adaptation — predecessor)** Enumerate every
   `BulkUpdateStatus` caller / `BulkUpdateResult` consumer; confirm each stays
   source- and behavior-compatible with the PRESERVED `Failed []string`, and adapt
@@ -212,12 +233,15 @@ U1.2/U1.3.
 
 ## Constitution Check
 
-* **Test-first ordering (NON-NEGOTIABLE)**: RED harnesses precede the impl they
-  cover — U1.0 (deterministic lock-barrier) before U1.2/U1.3; U2.0 before
-  U2.1/U2.2 — enforced by dependency edges. Source-shape declarations (U1.seam for
-  the barrier seam, U2.decl for the `BulkUpdateResult` additive typed surface) and
-  the U2.caller adaptation land before their dependent RED/impl units. U1.4 and
-  U2.3a/U2.3b are the GREEN regressions. Pass.
+* **Test-first ordering (NON-NEGOTIABLE)**: RED harnesses precede the code they
+  cover, enforced by dependency edges. **Source-shape AST RED harnesses precede
+  the production seam/field declarations they cover** — U1.seam-red (172.015-T)
+  before the no-op production seam U1.seam (172.013-T); U2.decl-red (172.014-T)
+  before the production field declaration U2.decl (172.011-T). **Behavior RED
+  harnesses precede the behavior impl** — U1.0 (deterministic lock-barrier) before
+  U1.2/U1.3; U2.0 before U2.1/U2.2. The production seam/field declarations and the
+  U2.caller adaptation land before their dependent behavior-RED/impl units. U1.4
+  and U2.3a/U2.3b are the GREEN regressions. Pass.
 * **True dependency only**: Unit 2 (archived_status CAS) carries NO correctness
   dependency on Unit 1 (lock order); the artificial Unit 2 → Unit 1 edge is
   removed. They share a code surface (one PR) only. Pass.
@@ -394,3 +418,58 @@ plan shows U1.seam before U1.0. Item 9: Unit 1 (lock-order) and Unit 2
 nodes). No P0/P1 findings.
 
 <!-- plan-review-attempt: 4 -->
+
+## Plan Review
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Review-fix cycle 3 (staging PR #442, hard cap). Personas dispatched (2, coverage
+complete): Correctness Reviewer, Scope Boundary Auditor. Re-reviewed after
+decomposing the two mislabeled "declaration" tasks into strict test-first
+source-shape-AST-RED-harness → production-declaration pairs.
+
+**Threads remediated:**
+* **Thread 1 (Unit 2, `BulkUpdateResult` typed detail, 1E0C2251)** — 172.011-T was
+  a docs/analysis note that established neither an AST harness nor a production
+  `FailedDetails` field/type. Decomposed: **172.014-T** (tests, source-shape AST
+  RED harness asserting the additive `FailedDetails []BulkUpdateConflict{ID,Err,
+  FromStatus,ToStatus}` alongside preserved `Failed []string`; no deps) →
+  **172.011-T** (retyped docs/analysis→**code**, production field/type declaration,
+  deps 172.014-T) → 172.012-T (caller adaptation) → 172.006-T (behavior, deps
+  172.009-T RED + 172.011-T + 172.012-T) → 172.010-T (GREEN). `Failed []string`
+  backward compatibility preserved end to end.
+* **Thread 2 (Unit 1, B/C barrier seam, FE440C62)** — 172.013-T was a docs/analysis
+  note; a docs declaration is insufficient. Decomposed: **172.015-T** (tests,
+  source-shape AST RED harness asserting BOTH B and C barrier hook points; RED
+  because the pre-B `persistArtifactPreLockHook` fires before acquisition and no C
+  seam exists; deps 172.001-T) → **172.013-T** (retyped docs/analysis→**code**,
+  no-op production seam adding controllable B and C acquisition hooks, deps
+  172.001-T + 172.015-T) → 172.008-T (barrier-driven behavior RED harness) →
+  172.002-T/172.003-T (impl). Test-only enablement, causal item-log ordering
+  preserved, no production behavior change in the seam.
+
+Dependency DAG re-verified acyclic (15 nodes / 21 edges over the 172 subgraph;
+automated DFS cycle check = ACYCLIC). Shipment 153-S manifest updated to 16 items
+(parent-first, dependency-ordered) including 172.014-T and 172.015-T. Docs
+authoring lint: valid, 0 violations. Index sync: OK.
+
+**Gate rationale**: no P0/P1 findings after remediation. Both threads' ID-reuse is
+accurate (docs/analysis→code retype with no history loss; both tasks were never
+executed). Residual findings are non-blocking advisories.
+
+Findings (residual, non-blocking):
+* P2 (Correctness) — the `ReconcileArchivedLifecycle` batch-path residual
+  (172.003-T) is verified deterministically only through 172.004-T's `-race`
+  regression; the deterministic-barrier harness (172.008-T) scopes the same-item
+  B→C vs C→B case and does not explicitly exercise the batch path. This is a
+  **different contract surface** than the two remediated threads (source-shape
+  declaration decomposition) and pre-existing (172.003-T/172.008-T passed prior
+  cycles); recorded as an implementer advisory, not expanded into this cycle.
+* P3 (Scope) — clarified in 172.013-T that the B/C hooks are centralized at the
+  shared `lockArtifactMutations` entry and item-log append helper (≤3 files) and
+  why the pre-B hook is insufficient; clarified in 172.011-T that the
+  ErrShipmentConflict→typed-entry mapping is documented contract, populated by
+  172.006-T (not behavior in the declaration task).
+
+<!-- plan-review-attempt: 5 -->
