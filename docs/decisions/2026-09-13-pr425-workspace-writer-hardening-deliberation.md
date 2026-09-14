@@ -124,26 +124,40 @@ authorization tokens under the workspace-writer threat model.
   documentation alone does not resolve the vector before Ship.
 * (C) Do nothing. Rejected.
 
-**Decision**: Option A (externally protected atomic compare-and-consume state) is
-**REQUIRED before Ship claims 151-S**. If Option A is genuinely infeasible within
-the bounded shipment, the ONLY alternatives are (i) **block Ship for 151-S** and
-re-plan, or (ii) a hard-reviewed **non-exploitability proof that itself rests on
+**Decision**: Option A (externally protected atomic compare-and-consume state).
+`151-S` **MAY be claimed** so its members implement this external
+compare-and-consume control — claiming a shipment to build its own hardening
+tasks is the normal, acyclic path. The hard gate is **PRE-COMPLETION /
+PRE-SHIPPING / merge-readiness, NOT claim-time**: `151-S` MUST NOT be marked
+complete, shipped, archived, or presented as merge-ready unless `170.008-T` has
+landed Option A (externally protected atomic compare-and-consume) **or** the
+independently-protected non-exploitability proof below is approved. If Option A is
+genuinely infeasible within the bounded shipment, the ONLY alternatives are
+(i) **block `151-S` from completion/shipping/merge-readiness** and re-plan, or
+(ii) a hard-reviewed **non-exploitability proof that itself rests on
 independently protected state** (the replay-to-no-op/conflict reduction must be
 guaranteed by an externally/independently protected idempotency or
 request-identity record, not by workspace-resident state alone), reviewed and
 approved as genuinely non-exploitable. A document-only replay-risk fold is NOT an
-acceptable outcome. New hardening task `170.008-T` depends on `170.003-T`; a new
+acceptable outcome. New hardening task `170.008-T` depends on `170.003-T` (and its RED predecessor
+`170.010-T`); a new
 `170.009-T` makes required-auth enablement externally authoritative / fail-closed
 so removing the workspace auth policy cannot downgrade 170-F enforcement.
 
 ---
 
-### Cross-cutting Decision: resolve before Ship
+### Cross-cutting Decision: resolve before completion/shipping (claim is permitted)
 
-All three shipments (149-S/150-S/151-S) are still **queued** (not claimed), so
-the hardening tasks are added to the existing features and their shipments now,
-and the amended plans are re-hardened and re-reviewed **before** Ship claims
-them. This satisfies "genuinely resolved before Ship." Existing security-relevant
+All three shipments (149-S/150-S/151-S) are still **queued** (not claimed). The
+hardening tasks are added to the existing features and their shipments now, and
+the amended plans are re-hardened and re-reviewed **before Ship claims** them —
+that is a *planning-gate* precondition on claim (the plan must be review-PASS
+before the shipment is claimed) and is fully acyclic. The **security controls
+themselves** (170.008-T Option A, 168/169 hardening) are implemented *after*
+claim and gate **completion/shipping/merge-readiness**, NOT claim: a shipment is
+claimed precisely so its members can be built. This satisfies "genuinely resolved
+before the shipment ships" without requiring any member task to be complete
+before its own containing shipment is claimed. Existing security-relevant
 dependency edges (149-S root; 150-S/151-S depend on 148-S + 149-S) are preserved
 unchanged.
 

@@ -54,7 +54,7 @@
 
 ## Blockers / caveats for the dark run
 - 152-S claimability: autoharness pre_claim implicit numeric predecessor still active (6D53A33F remedy is out-of-workspace; `--force` NOT authorized). Ship-time claim caveat, not a Stage blocker.
-- 170.008-T: Option A required before Ship claims 151-S, else block 151-S (no document-only closure).
+- 170.008-T: Option A (or approved independently-protected non-exploitability proof) required before 151-S is completed/shipped/archived/merge-ready — 151-S MAY be claimed to build it; the gate is pre-completion/pre-shipping, NOT claim-time (no document-only closure).
 
 ## Next steps (Ship, not Stage)
 - Claim shipments in reliability-weighted order; confirm hardening-task sequencing before claiming 149/150/151-S.
@@ -65,7 +65,7 @@
 
 ### P1 resolutions (final reviewed contracts)
 1. **Claim-scheduler (173-F)**: universal claim-activation marker is the final contract; record-only claim mode DROPPED everywhere (plan U1–U5, deliberation, tasks 173.001/002). Rollback (U3/173.003) clears the marker key and restores an emptied `custom_fields` map to nil.
-2. **PR#425 replay (170.008-T)**: documentation-only closure FORBIDDEN. Requires externally-protected ATOMIC compare-and-consume nonce state; any fold proof must rest ENTIRELY on independently-protected state. Otherwise 151-S blocked.
+2. **PR#425 replay (170.008-T)**: documentation-only closure FORBIDDEN. Requires externally-protected ATOMIC compare-and-consume nonce state; any fold proof must rest ENTIRELY on independently-protected state. Otherwise 151-S blocked. *(SUPERSEDED by cycle 4 FINAL below: the gate is PRE-COMPLETION / PRE-SHIPPING / merge-readiness, NOT claim-time — 151-S may be claimed to build the control; this cycle-1 line predates that correction.)*
 3. **168 trust anchors**: 168.009-T (new) makes revoke authoritatively externally revoke/tombstone — advisory-only status flip returns non-success/fails closed. 168.008-T no longer permits a documentation-only role/validity residual (fail-closed enforcement required). 170.009-T (new) makes required-auth enablement externally authoritative so removing/malforming workspace auth policy cannot downgrade 170-F enforcement.
 4. **169 attestation**: 169.007-T persists durable independently-verifiable signed material (envelope or digest-pinned protected reference), SUPERSEDING the presence-based forgeable 169.003-T branch; 169-F NOTE + 169.003-T updated to remove the stale metadata-presence-only acceptance model.
 5. **172 concurrency**: reviewer disagreement resolved as INDEPENDENT — Unit 2 (archived_status CAS) no longer depends on Unit 1 (lock order); artificial 172.005←172.002 / 172.006←172.002 edges REMOVED, rewired to the Unit-2 RED harness. Stale-write scope explicitly narrowed to `archived_status` everywhere (general whole-artifact CAS/reload-merge is out of scope, stated in-task).
@@ -114,3 +114,35 @@ Applied 10 Copilot review-comment fixes (planning/backlog/doc only; no productio
 Verification: plan review multi-agent-dispatch PASS x3 (attempt-4 records appended); DAG acyclic (500 edges/436 nodes); docs lint 0 violations; sync 1470 artifacts / 0 parse failures; schema-validate touched files exit 0; queue positions + provenance + rehydrated stash_links verified; clean tree post-commit. No P0/P1 remaining. One P2 advisory (immutable historical attempt-2 review text still contains "bounded tracked residual" in pr425 plan) — left intact as audit record.
 
 NEW files: 172.011-T.md, 172.012-T.md, 172.013-T.md (parent 172-F).
+
+---
+
+## Review-fix cycle 4 — FINAL (2026-09-13, staging PR #442, DARK_MODE_ACTIVE)
+
+**Operator authorization**: explicit ONE-TIME review-fix cycle extension to cycle 4 (final). Prior cap was 2 re-entry cycles; this extension is operator-authorized and non-recurring. STOP-and-report if any P0/P1 remains after this cycle (no cycle 5 authorized). No push / no PR create-merge / no GitHub thread reply-resolve / no production build / no production-source edit (planning artifacts only).
+
+**Between cycle 2 and cycle 4**: commit `9c06c159` ("remediate 172 declaration tasks into test-first AST-RED chains") introduced the AST-RED predecessor tasks 172.014-T and 172.015-T and rewired the declaration chains. Cycle 2's memory DAG predates that commit and is superseded by the FINAL graph below.
+
+### Five PR #442 findings remediated (all planning/backlog/doc only)
+1. **170.008-T circular pre-claim** — removed "REQUIRED before Ship claims 151-S". New contract: 151-S MAY be CLAIMED so its members implement the external atomic compare-and-consume control; the hard gate is PRE-COMPLETION / PRE-SHIPPING / merge-readiness (151-S must not be marked complete, shipped, archived, or merge-ready unless 170.008-T landed Option A OR the approved independently-protected non-exploitability proof). Document-only closure still forbidden.
+2. **172.014-T compile-failure RED** — rewritten as a source-only `go/parser`+`go/ast` harness that reads production source text as data, compiles/builds cleanly WITHOUT referencing the not-yet-declared `FailedDetails`/`BulkUpdateConflict` symbols; RED is an AST-assertion failure ONLY (never a compile/missing-symbol failure), turning GREEN when 172.011-T lands.
+3. **pr425 deliberation** — Decision 3 + cross-cutting section rewritten to the same pre-completion/merge-readiness gate; claim is explicitly permitted and acyclic (plan re-review before claim is a planning-gate precondition, not member-completion).
+4. **pr425 plan** — description, Objective, U170.008 body, AC, Plan Hardening mitigation, and Constitution P-003 note all aligned to the pre-completion gate; immutable historical Plan Review attempt records (which use the non-circular "before Ship" = before shipping) left intact as audit records.
+5. **memory** — this record: line-57 gate corrected; FINAL DAG below; new files listed; one-cycle extension + final reviewed HEAD semantics recorded.
+
+**Proactive variant elimination (same-surface)**: 172.015-T AST harness audited and PINNED to the identical source-only go/parser/go/ast discipline (compiles without referencing missing B/C hook symbols; RED = AST shape assertion only). Concurrency plan U1.seam-red and U2.decl-red sections aligned to the same wording. "AST / type-level harness" phrasing (which could imply symbol/reflect references to missing symbols) removed everywhere in the 172 surface.
+
+### FINAL 172 test-first AST-RED chains (verified acyclic)
+- **U2 (archived_status typed conflict)**: `172.014-T` (source-only AST RED, no deps) → `172.011-T` (production field decl, dep 172.014) → `172.012-T` (caller adaptation, dep 172.011) → `172.006-T` (CAS on BulkUpdateStatus, deps 172.009+172.011+172.012). Chain: **172.014 → 172.011 → 172.012 → 172.006**.
+- **U1 (B/C barrier seam)**: `172.015-T` (source-only AST RED, dep 172.001) → `172.013-T` (no-op production seam decl, deps 172.001+172.015) → `172.008-T` (deterministic lock-barrier RED, deps 172.001+172.013). Chain: **172.015 → 172.013 → 172.008**.
+- 153-S membership confirmed to include 172.014-T and 172.015-T (parent-first; feature 172-F first).
+
+### 151-S lifecycle contract (FINAL)
+`151-S` MAY be **claimed** (its members build the control). It MUST NOT be marked **complete / shipped / archived / merge-ready** unless `170.008-T` has landed Option A (externally-protected atomic compare-and-consume) OR the already-approved independently-protected non-exploitability proof (resting solely on externally-protected state; `archived_status` and any workspace-resident idempotency record explicitly excluded). Otherwise block 151-S from completion/shipping (never at claim). Document-only closure forbidden. Unrelated global `pre_claim` numeric-predecessor topology rules (autoharness) untouched.
+
+### NEW files (this cycle): none created; edits only.
+Touched: `.backlogit/queue/170.008-T.md`, `.backlogit/queue/172.014-T.md`, `.backlogit/queue/172.015-T.md`, `docs/decisions/2026-09-13-pr425-workspace-writer-hardening-deliberation.md`, `docs/exec-plans/2026-09-13-pr425-workspace-writer-hardening-plan.md`, `docs/exec-plans/2026-09-13-concurrency-writer-hardening-plan.md`, `docs/memory/2026-09-13-stage-reliability-security-hardening.md`.
+
+### Final reviewed HEAD semantics
+The review gate re-runs against the working-tree state that becomes the **review-fix-cycle-4 commit HEAD** on `chore/stage-154-s-reliability`; that commit is the authoritative reviewed HEAD handed to Ship, superseding prior cycle-2 HEAD `1d1eab39` (and cycle-3 remediation `9c06c159`) for review purposes.
+

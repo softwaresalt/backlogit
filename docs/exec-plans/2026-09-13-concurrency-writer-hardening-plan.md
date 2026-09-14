@@ -99,10 +99,16 @@ high-risk (deadlock / stale-write / availability). See `## Plan Hardening`.
   insufficient justification to skip the restructure. Domain: code. Depends on
   U1.2.
 * **U1.seam-red (source-shape AST RED harness — predecessor)** Write a failing
-  source-shape assertion (AST / type-level harness) that asserts the
+  source-shape assertion using a **source-only `go/parser`+`go/ast` harness that
+  reads the production source text as data** (parses the writer `.go` files into
+  an AST) that asserts the
   artifact-mutation writers expose controllable barrier hook points at **both**
   the B (`lockArtifactMutations`) **and** the C (item-log append) acquisition
-  points (per U1.1). Observe it RED: only a pre-B hook
+  points (per U1.1). The harness MUST compile/run WITHOUT referencing the
+  not-yet-declared B/C hook symbols (it inspects the AST, not type/reflect
+  references), so it builds cleanly before the seam lands. Observe it RED as an
+  **AST-shape-assertion failure ONLY** (never a compile/missing-symbol failure):
+  only a pre-B hook
   (`persistArtifactPreLockHook`) exists today and **no C-acquisition seam exists**,
   so the "both B and C hook present" assertion fails before the production seam
   lands. Domain: tests. Depends on U1.1. ≤2 scenarios. (task 172.015-T)
@@ -144,11 +150,18 @@ dependency** on the lock-order canonicalization. The tasks below do NOT depend o
 U1.2/U1.3.
 
 * **U2.decl-red (source-shape AST RED harness — predecessor)** Write a failing
-  source-shape assertion (AST / type-level harness) that asserts `BulkUpdateResult`
+  source-shape assertion using a **source-only `go/parser`+`go/ast` harness that
+  reads the production source text as data** (parses the relevant `.go` files into
+  an AST) that asserts `BulkUpdateResult`
   exposes the ADDITIVE typed conflict-detail surface ALONGSIDE the preserved
   `Failed []string`: a NEW `FailedDetails []BulkUpdateConflict` field whose element
   type exposes `{ID, Err, FromStatus, ToStatus}`, AND that `Failed []string` is
-  unchanged. Observe it RED: the field/type do not yet exist, so the harness fails
+  unchanged. The harness MUST compile/run WITHOUT importing or referencing the
+  not-yet-declared `FailedDetails`/`BulkUpdateConflict` symbols (it inspects the
+  AST, not type/reflect references), so it builds cleanly before 172.011-T lands.
+  Observe it RED as an **AST-assertion failure ONLY** (never a compile/missing-symbol
+  failure): the parsed declarations do not yet contain the additive field/type, so
+  the assertion fails
   before the production field declaration lands. Domain: tests. No deps
   (predecessor). ≤2 scenarios. (task 172.014-T)
 * **U2.decl (production field declaration — makes the AST harness GREEN)** Add the

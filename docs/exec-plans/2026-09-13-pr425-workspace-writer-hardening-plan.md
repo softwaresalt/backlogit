@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: "Hardening-addendum implementation plan amending 168-F/169-F/170-F so the PR #425 workspace-writer threat-model findings (3B661FCE, BFF76433, BF18DA1D, 4E210DB4) are genuinely resolved before Ship claims 149-S/150-S/151-S"
+description: "Hardening-addendum implementation plan amending 168-F/169-F/170-F so the PR #425 workspace-writer threat-model findings (3B661FCE, BFF76433, BF18DA1D, 4E210DB4) are genuinely resolved before 149-S/150-S/151-S are completed/shipped (the shipments are claimed first so their hardening members can be built; claim-time is not the gate)"
 doc_type: plan
 schema_version: "1.0"
 source: docs/exec-plans/2026-09-13-pr425-workspace-writer-hardening-plan.md
@@ -16,7 +16,11 @@ docline:
 Amend the already-PASSED 866FDC8C trust-boundary split (`168-F`/`169-F`/`170-F`)
 with hardening tasks that close four PR #425 review threads under the workspace-
 writer threat model, and add those tasks to the existing queued shipments
-`149-S`/`150-S`/`151-S` so they are resolved **before** Ship.
+`149-S`/`150-S`/`151-S` so they are resolved **before those shipments are
+completed/shipped**. The shipments are **claimed first** so their hardening
+members can be implemented; the security controls gate **completion/shipping/
+merge-readiness**, never claim-time (a member task is never required to be
+complete before its own containing shipment is claimed).
 
 Source: `docs/decisions/2026-09-13-pr425-workspace-writer-hardening-deliberation.md`.
 Origin plan: `docs/exec-plans/2026-09-13-866fdc8c-trust-boundary-split-decided-plan.md`.
@@ -136,12 +140,15 @@ persistence, and anti-replay state. See `## Plan Hardening`.
   the external pin root of trust — a single atomic check-then-mark on an
   independently protected store — so ledger deletion/truncation cannot re-enable
   replay; fail closed if the external consumption state is unavailable.
-  **Option A is REQUIRED before Ship claims 151-S.** Document-only closure —
+  **Option A is REQUIRED before 151-S is completed/shipped/archived or presented
+  as merge-ready.** 151-S MAY be CLAIMED so its members implement this control —
+  claim-time is NOT the gate; the hard gate is PRE-COMPLETION / PRE-SHIPPING /
+  merge-readiness. Document-only closure —
   binding nonce lifetime and merely documenting the residual replay window — is
   **NOT an acceptable Ship outcome** for this authorization-replay /
   privilege-escalation vector (consistent with Decision 1). If externally-protected
   atomic compare-and-consume state is genuinely infeasible within 151-S, the only
-  choices are: (i) **block Ship for 151-S** and re-plan, or (ii) retain a fold
+  choices are: (i) **block 151-S from completion/shipping/merge-readiness** and re-plan, or (ii) retain a fold
   ONLY behind a hard-reviewed **non-exploitability proof that itself rests on
   independently protected state** — e.g. the replay reduction to a
   no-op/conflict must be guaranteed by an *externally/independently protected*
@@ -158,7 +165,8 @@ persistence, and anti-replay state. See `## Plan Hardening`.
     still-valid token (atomic external compare-and-consume, Option A); OR (only if
     A infeasible) a hard-reviewed non-exploitability proof grounded in
     independently protected state is recorded and approved, otherwise 151-S is
-    blocked. Document-only closure is rejected.
+    blocked from completion/shipping/merge-readiness (never at claim time).
+    Document-only closure is rejected.
 * **170.009-T** Make **required-auth enablement externally authoritative /
   fail-closed**: a workspace writer who removes or malforms the in-workspace auth
   policy config MUST NOT downgrade 170-F enforcement back to the self-suppliable
@@ -198,7 +206,11 @@ persistence, and anti-replay state. See `## Plan Hardening`.
   170-F precede their children. The new hardening tasks are inserted into
   149-S/150-S/151-S at shipment assembly (Stage Step 5.5); Ship MUST confirm each
   hardening task is present in its shipment AND sequenced after its base
-  dependency before claiming 149-S/150-S/151-S. Pass (membership added at
+  dependency before claiming 149-S/150-S/151-S — this is a **membership +
+  ordering** confirmation only (the tasks must be IN the shipment and correctly
+  ordered in the DAG), NOT a requirement that any member be completed before its
+  own containing shipment is claimed; the security controls gate
+  completion/shipping, not claim. Pass (membership added at
   assembly; Ship-gate confirmation required).
 
 Constitution Check: pass
@@ -220,8 +232,9 @@ Constitution Check: pass
   forgeable unsigned-metadata path rather than adding a desyncable sidecar.
 * **ProposedAction**: externally-protected atomic compare-and-consume nonce state;
   externally authoritative required-auth enablement. **ActionRisk**: high
-  (anti-replay / authz bypass). Mitigation: Option A required before Ship or block
-  151-S; any fold requires a non-exploitability proof grounded in independently
+  (anti-replay / authz bypass). Mitigation: Option A required before 151-S is
+  completed/shipped/merge-ready (151-S may be claimed to build it) or block its
+  completion/shipping; any fold requires a non-exploitability proof grounded in independently
   protected state (no document-only closure); auth enablement fails closed on
   policy removal/malformation.
 * **Trust-boundary invariant** (from origin plan): never treat the workspace as
