@@ -89,12 +89,17 @@ persistence, and anti-replay state. See `## Plan Hardening`.
 ### 169-F (shipment 150-S) — durable signed material [BFF76433 + BF18DA1D]
 
 * **169.008-T (RED harness — predecessor)** Write the failing negative tests
-  BEFORE `169.007-T` and observe them RED: (1) a forged unsigned-metadata-only
+  BEFORE `169.007-T` and observe them RED, covering ONLY genuine pre-169.007
+  unsigned-metadata acceptance behavior: (1) a forged unsigned-metadata-only
   event is **rejected**; (2) the removed presence-based metadata-presence doctor
   branch **no longer accepts** (asserts the forgeable accept path is gone).
-  Domain: tests. Depends on `169.003-T` (base event surface). ≤2 scenarios.
+  Protected-reference tamper/swap detection is explicitly OUT of this RED harness
+  (no protected reference exists pre-169.007, so it cannot be a genuine pre-impl
+  RED) — it is owned by the GREEN integration task `169.009-T`. Domain: tests.
+  Depends on `169.003-T` (base event surface). ≤2 scenarios.
   * AC: both tests exist and fail against the pre-hardening code (which still
-    accepts unsigned metadata), demonstrating a genuine RED baseline.
+    accepts unsigned metadata), demonstrating a genuine RED baseline; no
+    tamper/swap scenario is asserted here.
 * **169.007-T** Persist a durable **signed envelope** in the `169.003-T` event
   binding, replacing unsigned-metadata+digest, enabling independent
   `doctor`/auditor re-verification against the external root; fail closed when
@@ -112,7 +117,9 @@ persistence, and anti-replay state. See `## Plan Hardening`.
     text is removed.
 * **169.009-T (GREEN integration)** After impl: persisted signed envelope
   re-verifies against the external root; tampered envelope / swapped reference
-  fails closed. Domain: tests. Depends on `169.007-T`. ≤2 scenarios.
+  fails closed. This GREEN task OWNS protected-reference tamper/swap detection
+  (moved from the 169.008-T RED harness, since no protected reference exists
+  pre-169.007). Domain: tests. Depends on `169.007-T`. ≤2 scenarios.
 
 ### 170-F (shipment 151-S) — rollback-resistant nonce ledger [4E210DB4]
 
@@ -359,3 +366,21 @@ genuinely resolved before Ship (hardening tasks in 149-S/150-S/151-S; Ship-gate
 confirms sequencing).
 
 <!-- plan-review-attempt: 3 -->
+
+## Plan Review
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Review-fix cycle 2 (staging PR #442). Re-reviewed after reconciling Copilot
+comments 2 and 8. Item 2: 169.008-T retains only genuine pre-169.007
+unsigned-metadata RED acceptance/negative checks (<=2 scenarios); protected-
+reference tamper/swap behavior moved to 169.009-T GREEN/integration scope, which
+now explicitly owns it; plan sections U169.008 and U169.009 match the split.
+Item 8: 168.008-T retitled to remove "bounded tracked residual"; title and body
+now require authoritative external role/validity-window binding or concrete
+fail-closed enforcement. Advisory (P2, non-blocking): the phrase "bounded
+tracked residual" still appears in the immutable historical attempt-2 review
+record below; left intact as an audit record. No P0/P1 findings.
+
+<!-- plan-review-attempt: 4 -->

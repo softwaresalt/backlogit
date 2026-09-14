@@ -100,26 +100,36 @@ scheduler across a trust/workspace boundary. See `## Plan Hardening`.
   * AC: after a claim that fails partway and rolls back, no reverted item retains
     the baseline marker key and no empty-map artifact remains (no torn state),
     even if rollback itself fails midway.
-* **U0a (RED harness — lifecycle)** Write the failing lifecycle unit tests BEFORE
-  U1/U3 implementation and observe them RED: (1) claim activation sets the marker
-  key on each activated item; (2) non-claim `setArtifactStatus` callers produce
-  byte-identical frontmatter (seam isolation); (3) `rollbackShipmentClaim` clears
-  the marker key on every reverted id and restores an emptied map to nil. Domain:
-  tests. No deps (predecessor). ≤3 scenarios.
-  * AC: all three tests exist and fail against the pre-implementation code
-    (marker/seam/rollback absent), demonstrating a genuine RED baseline.
-* **U0b (RED harness — read surface)** Write the failing read-surface tests BEFORE
-  U2 and observe them RED, asserting the pinned `scheduler_baseline_claim` key on
-  BOTH read transports independently (they use different code paths with different
-  freshness guarantees): (1) the persisted marker appears in the frontmatter-backed
+* **U0a (RED harness + characterization — lifecycle)** Write the lifecycle unit
+  tests BEFORE U1/U3 implementation. TWO are genuine RED (fail against the
+  pre-implementation code because the behavior does not exist yet): (1) claim
+  activation sets the marker key on each activated item; (3) `rollbackShipmentClaim`
+  clears the marker key on every reverted id and restores an emptied map to nil.
+  ONE is a PASSING characterization/regression baseline, NOT a required RED: (2)
+  non-claim `setArtifactStatus` callers produce byte-identical frontmatter (seam
+  isolation) — non-claim callers already emit their current frontmatter, so this
+  test passes before AND after and only locks in that the gated off-by-default
+  seam leaves them unaffected. Domain: tests. No deps (predecessor). ≤3 scenarios.
+  * AC: scenarios (1) and (3) exist and fail against the pre-implementation code
+    (marker/rollback absent), demonstrating a genuine RED baseline; scenario (2)
+    passes as a characterization/regression baseline both before and after and is
+    NOT treated as a required RED.
+* **U0b (RED harness + characterization — read surface)** Write the read-surface
+  tests BEFORE U2, asserting the pinned `scheduler_baseline_claim` key on BOTH
+  read transports independently (they use different code paths with different
+  freshness guarantees). TWO are genuine RED (fail pre-impl because the marker is
+  not yet produced): (1) the persisted marker appears in the frontmatter-backed
   CLI `get --format json` projection for a claim-activated item; (2) the persisted
   marker appears identically in the DB-backed MCP `get_item` projection for the
-  same item; (3) it is absent for an
-  organic-active item; (4) a consumer ignoring the marker (absent-marker consume
+  same item. TWO are PASSING characterization/regression baselines, NOT required
+  RED: (3) it is absent for an organic-active item (organic items carry no marker
+  before AND after); (4) a consumer ignoring the marker (absent-marker consume
   path) is unchanged. Domain: tests. No deps (predecessor). ≤4 scenarios.
-  * AC: all four tests exist and fail against the pre-implementation read path, and
-    scenarios (1)/(2) prove the marker materializes on both the CLI (frontmatter)
-    and MCP (DB) surfaces so the two paths cannot silently drift.
+  * AC: the marker-projection scenarios (1)/(2) fail against the pre-implementation
+    read path (genuine RED) and prove the marker materializes on both the CLI
+    (frontmatter) and MCP (DB) surfaces so the two paths cannot silently drift; the
+    absence/ignore scenarios (3)/(4) pass as characterization/regression baselines
+    both before and after and are NOT treated as required RED.
 * **U1** (impl) — see above. Depends on **U0a**.
 * **U2** (impl) — see above. Depends on **U1**, **U0b**.
 * **U3** (impl) — see above. Depends on **U1**, **U0a**.
@@ -286,3 +296,20 @@ yes; present and adequate. Honestly scoped as an enabling precondition (full def
 resolution needs the autoharness follow-up).
 
 <!-- plan-review-attempt: 3 -->
+
+## Plan Review
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Review-fix cycle 2 (staging PR #442). Re-reviewed after reconciling Copilot
+comments 5, 6, and 10. Item 5 (U0a / 173.006-T): marker activation and rollback
+are genuine RED; the seam byte-identical / non-claim-caller case is explicitly
+passing characterization/regression, not required RED. Item 6 (U0b /
+173.007-T): CLI/MCP marker projection cases are genuine RED; absence/ignore
+cases are explicitly passing characterization. Item 10 (173-F): summary uses the
+existing generic CLI/MCP `custom_fields` projection with no bespoke read
+accessor. RED-vs-characterization labeling internally consistent. No P0/P1
+findings.
+
+<!-- plan-review-attempt: 4 -->

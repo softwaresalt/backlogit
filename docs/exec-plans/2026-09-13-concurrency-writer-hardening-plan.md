@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: "Implementation plan for concurrency-safety hardening of backlogit artifact-mutation writers: canonical lock order (FE440C62) then shared stale-write CAS guard generalization (1E0C2251)"
+description: "Implementation plan for concurrency-safety hardening of backlogit artifact-mutation writers: canonical lock order (FE440C62) and shared stale-write CAS guard generalization (1E0C2251) as two independent same-surface units (no ordering between them)"
 doc_type: plan
 schema_version: "1.0"
 source: docs/exec-plans/2026-09-13-concurrency-writer-hardening-plan.md
@@ -98,13 +98,22 @@ high-risk (deadlock / stale-write / availability). See `## Plan Hardening`.
   AB-BA ordering against C-then-B writers, so the reentrancy invariant alone is
   insufficient justification to skip the restructure. Domain: code. Depends on
   U1.2.
+* **U1.seam (source-shape declaration — predecessor)** Declare the deterministic
+  B/C lock-barrier instrumentation seam BEFORE the RED harness: specify the
+  injectable, controllable barrier hook at the B (`lockArtifactMutations`) and C
+  (item-log append) acquisition points (per U1.1) that lets a test force the AB-BA
+  interleaving deterministically; pin where the barrier injects, that it is
+  enabled ONLY under test (off/no-op on production paths), and how it preserves
+  the causal item-log event-ordering invariant. The RED harness (U1.0) depends on
+  this declaration and the implementation (U1.2/U1.3) follows the observed-RED
+  evidence. Domain: docs/analysis. Depends on U1.1. (task 172.013-T)
 * **U1.0 (RED harness — predecessor)** Write the failing lock-order regression
   BEFORE U1.2/U1.3 and observe it RED using a **deterministic lock-barrier /
   instrumentation harness** (inject a controllable barrier at the B/C acquisition
   points so the AB-BA interleaving is forced deterministically), NOT a
   probabilistic `go test -race` repeat. The harness reproduces the same-item B→C
   vs C→B inversion (bounded contention) deterministically and asserts the causal
-  item-log event ordering. Domain: tests. Depends on U1.1. ≤3 scenarios.
+  item-log event ordering. Domain: tests. Depends on U1.1, U1.seam. ≤3 scenarios.
   * AC: the barrier-driven test deterministically exhibits the pre-fix inversion
     (RED) and the asserted causal-ordering violation, without relying on `-race`
     timing luck.
@@ -121,6 +130,23 @@ Unit 2 shares the code surface with Unit 1 (one PR) but carries **no correctness
 dependency** on the lock-order canonicalization. The tasks below do NOT depend on
 U1.2/U1.3.
 
+* **U2.decl (source-shape declaration — predecessor)** Declare the CURRENT
+  `BulkUpdateResult` source shape (the existing `Failed []string` field and how
+  `BulkUpdateStatus` populates it) and specify the ADDITIVE typed conflict-detail
+  surface to be added ALONGSIDE it (e.g. `FailedDetails []BulkUpdateConflict{ID,
+  Err, FromStatus, ToStatus}`): `Failed []string` is PRESERVED unchanged (no
+  signature change / removal / retype) for backward compatibility; the typed
+  detail is a NEW additive field, never a replacement; pin the field/struct names
+  and the stale-write→typed-conflict mapping. This is the source-of-truth contract
+  for U2.caller, U2.2, and U2.3b. Domain: docs/analysis. No deps (predecessor).
+  (task 172.011-T)
+* **U2.caller (caller compatibility/adaptation — predecessor)** Enumerate every
+  `BulkUpdateStatus` caller / `BulkUpdateResult` consumer; confirm each stays
+  source- and behavior-compatible with the PRESERVED `Failed []string`, and adapt
+  the callers that should consume the new additive typed detail to read it WITHOUT
+  changing the `Failed []string` contract. Lands BEFORE the behavior impl (U2.2)
+  and its GREEN test (U2.3b) so the additive surface has adapted consumers, not an
+  orphaned field. Domain: code. Depends on U2.decl. (task 172.012-T)
 * **U2.0 (RED harness — predecessor)** Write the failing `archived_status`
   stale-write tests BEFORE U2.1/U2.2 and observe them RED, using a deterministic
   barrier that forces the snapshot-then-stale-overwrite interleaving: (1) a
@@ -157,13 +183,19 @@ U1.2/U1.3.
 * **U2.2** Apply the guard to `BulkUpdateStatus` (`internal/core/queue.go:404`)
   via `persistArtifactWithGuard` with a per-item pre-lock `preLockArchivedStatus`
   snapshot **read from the Markdown source of truth (`findArtifact`), not the DB
-  fast-path projection** (same source-of-truth requirement as U2.1). Observable behavior change to assert: a per-item stale-write
-  (`ErrShipmentConflict`) now surfaces as a **typed per-item conflict entry**
-  carrying the item id and the conflicting status transition (a structured
-  `BulkUpdateResult` failure entry, e.g. `{ID, Err, FromStatus, ToStatus}`),
-  **not a bare `[]string`** — so callers can distinguish a stale-write conflict
-  from other per-item failures — rather than aborting or silently clobbering the
-  batch. Domain: code. Depends on U2.0 (RED).
+  fast-path projection** (same source-of-truth requirement as U2.1). Observable
+  behavior change to assert (**BACKWARD-COMPATIBLE + ADDITIVE**): the existing
+  `BulkUpdateResult.Failed []string` field is **PRESERVED** and continues to be
+  populated for every failed item (no signature change / removal / retype) so
+  existing callers keep compiling and behaving unchanged; a per-item stale-write
+  (`ErrShipmentConflict`) is **ADDITIONALLY** recorded in a NEW additive typed
+  detail surface (e.g. `FailedDetails []BulkUpdateConflict{ID, Err, FromStatus,
+  ToStatus}`) carrying the item id and the conflicting status transition — added
+  **alongside** `Failed []string`, NOT as a replacement — so new callers can
+  distinguish a stale-write conflict from other per-item failures, rather than
+  aborting or silently clobbering the batch. Depends on U2.decl (source-shape
+  declaration) and U2.caller (caller adaptation), both landing first. Domain:
+  code. Depends on U2.0 (RED), U2.decl, U2.caller.
 * **U2.3a (GREEN — RemoveArtifactLink)** Stale-write GREEN regression for
   `RemoveArtifactLink`: concurrent `RemoveArtifactLink` vs reconcile-to-shipped
   cannot clobber `archived_status: shipped`; `ErrNotFound` is not treated as
@@ -171,17 +203,21 @@ U1.2/U1.3.
   Domain: tests. Depends on U2.1, U2.0. ≤3 scenarios.
 * **U2.3b (GREEN — BulkUpdateStatus)** Stale-write GREEN regression for
   `BulkUpdateStatus`: concurrent `BulkUpdateStatus` vs reconcile-to-shipped cannot
-  clobber `archived_status: shipped`; a per-item stale-write surfaces as a **typed
-  per-item conflict entry** (id + status transition), not a bare `[]string`; other
-  per-item results are unaffected. Domain: tests. Depends on U2.2, U2.0.
-  ≤3 scenarios.
+  clobber `archived_status: shipped`; the backward-compatible
+  `BulkUpdateResult.Failed []string` remains populated for the clobbered item AND
+  a per-item stale-write is ADDITIONALLY recorded in the new additive typed detail
+  surface (id + status transition) — additive, NOT a replacement for
+  `Failed []string`; other per-item results are unaffected. Domain: tests. Depends
+  on U2.2, U2.0. ≤3 scenarios.
 
 ## Constitution Check
 
 * **Test-first ordering (NON-NEGOTIABLE)**: RED harnesses precede the impl they
   cover — U1.0 (deterministic lock-barrier) before U1.2/U1.3; U2.0 before
-  U2.1/U2.2 — enforced by dependency edges. U1.4 and U2.3a/U2.3b are the GREEN
-  regressions. Pass.
+  U2.1/U2.2 — enforced by dependency edges. Source-shape declarations (U1.seam for
+  the barrier seam, U2.decl for the `BulkUpdateResult` additive typed surface) and
+  the U2.caller adaptation land before their dependent RED/impl units. U1.4 and
+  U2.3a/U2.3b are the GREEN regressions. Pass.
 * **True dependency only**: Unit 2 (archived_status CAS) carries NO correctness
   dependency on Unit 1 (lock order); the artificial Unit 2 → Unit 1 edge is
   removed. They share a code surface (one PR) only. Pass.
@@ -216,9 +252,11 @@ Constitution Check: pass
   revertible; reverting one does not require reverting the other (no cross-unit
   dependency). Reverting either restores the pre-change (reviewed-PASS) behavior
   of that unit only; no governed reconcile-to-shipped contract change is involved.
-* **Blast-radius bound**: no change to public API signatures except the additive
-  typed `BulkUpdateResult` per-item conflict field; no new lock primitives
-  introduced.
+* **Blast-radius bound**: no change to public API signatures —
+  `BulkUpdateResult.Failed []string` is **preserved unchanged** (backward-
+  compatible); the only surface addition is a NEW **additive** typed
+  `BulkUpdateResult` per-item conflict-detail field **alongside** `Failed []string`
+  (not a replacement); no new lock primitives introduced.
 * **Residual risk**: (1) the fully-automatic shared-persist-path enforcement
   (deliberation Option C) is intentionally deferred (see Follow-ups); any *future*
   new snapshot-before-lock writer must opt in — U1.1's note documents this. (2)
@@ -336,3 +374,23 @@ classification) recorded for the implementer. Plan hardening required: yes;
 present and adequate.
 
 <!-- plan-review-attempt: 3 -->
+
+## Plan Review
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Review-fix cycle 2 (staging PR #442). Re-reviewed after reconciling Copilot
+comments 3, 4, and 9. Item 3: `BulkUpdateResult.Failed []string` preserved for
+backward compatibility with an additive typed `FailedDetails` conflict surface;
+predecessor source-shape declaration task 172.011-T (no deps) and caller
+compatibility/adaptation task 172.012-T (deps 172.011-T) precede behavior work;
+172.006-T deps expanded to {172.009-T, 172.011-T, 172.012-T}; GREEN task
+172.010-T assertions are additive. Item 4: seam declaration task 172.013-T (deps
+172.001-T) precedes the RED barrier harness; 172.008-T deps include 172.013-T;
+plan shows U1.seam before U1.0. Item 9: Unit 1 (lock-order) and Unit 2
+(archived_status CAS) documented as independent shared-surface work with no
+"first, then" sequencing. Dependency DAG re-verified acyclic (500 edges / 436
+nodes). No P0/P1 findings.
+
+<!-- plan-review-attempt: 4 -->
