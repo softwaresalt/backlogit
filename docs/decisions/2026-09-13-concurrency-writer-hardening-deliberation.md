@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 description: "Deliberation for the concurrency-safety hardening group (FE440C62 lock-order inversion + 1E0C2251 non-universal CAS guard) across backlogit artifact-mutation writers"
-doc_type: learning
+doc_type: decision
 schema_version: "1.0"
 source: docs/decisions/2026-09-13-concurrency-writer-hardening-deliberation.md
 title: "Deliberation: Concurrency-safety hardening for artifact-mutation writers"
@@ -52,25 +52,48 @@ Verified in-repo: the guard is present at `artifacts.go:966` (a *different*
 function above `RemoveArtifactLink` at 981) and in `commits.go`/`dependencies.go`,
 but NOT in `RemoveArtifactLink`/`BulkUpdateStatus`. Contracts are real.
 
-### Real-Contract Dependency (NOT numeric adjacency)
+### Dependency Analysis (resolved: INDEPENDENT — reviewer disagreement settled)
 
-The stale-write CAS generalization (1E0C2251) should land on a **canonical,
-consistent lock-acquisition order** (FE440C62). A shared persist-path guard that
-assumes an ordering is only sound once the ordering is uniform. Therefore
-**FE440C62 → 1E0C2251** is a genuine contract edge: canonicalize lock order
-first, then generalize the CAS guard across the same writers. This is derived
-from the shared persist path, not from ID numbering.
+An earlier framing argued the `archived_status` stale-write CAS generalization
+(1E0C2251) "should land on a canonical, consistent lock-acquisition order"
+(FE440C62), treating **FE440C62 → 1E0C2251** as a genuine contract edge. On
+re-examination that is **rejected as artificial**: the `archived_status` CAS
+guard's soundness rests on snapshot-then-compare of the `archived_status` field
+across the persist window, which is orthogonal to the item-log (lock C)
+acquisition **order** (a deadlock/availability concern). Canonicalizing the lock
+order is neither a precondition nor a correctness input for the guard;
+`RemoveArtifactLink`/`BulkUpdateStatus` guarding works identically whether
+`ArchiveItem` acquires B→C or C→B. The two defects touch the **same
+files/functions**, so they are grouped into one covering feature / one PR to
+avoid conflicting edits — a **same-surface sequencing preference, expressed at PR
+level, NOT a DAG dependency edge**. The artificial Unit 2 → Unit 1 dependency is
+therefore **removed**; the two units are independent and independently revertible.
+
+### CAS-guard scope (narrowed explicitly)
+
+The generalized guard protects exactly the `archived_status` field against a
+stale overwrite of a freshly-reconciled `archived_status: shipped`. It is **not**
+a general content-staleness / lost-update guard: it does not use a revision
+counter or canonical-content digest and does not reload-and-merge other fields
+under lock. The authorized 1E0C2251 defect is the `archived_status:shipped`
+clobber specifically, so the claim is narrowed to `archived_status` everywhere.
+General content-staleness protection (revision / canonical-content CAS or
+reload-and-merge-under-lock) is a separate, larger change recorded as a follow-up
+(alongside Option C).
 
 ### Options
 
-**Option A — One covering feature, canonical-order-first, then generalize CAS
-(CHOSEN).** Sub-work 1: characterize + document the canonical lock order, then
-reorder `ArchiveItem` to C→B with a race regression test. Sub-work 2 (depends on
-Sub-work 1): apply the shared CAS guard to `RemoveArtifactLink` and
-`BulkUpdateStatus`, with stale-write regression tests. One shipment / one PR.
+**Option A — One covering feature over the shared surface; two INDEPENDENT
+sub-works (CHOSEN).** Sub-work 1 (FE440C62): characterize + document the
+canonical lock order, then reorder `ArchiveItem` to C→B, gated by a deterministic
+lock-barrier RED harness. Sub-work 2 (1E0C2251, **independent**): apply the
+`archived_status` CAS guard to `RemoveArtifactLink` and `BulkUpdateStatus`, gated
+by its own stale-write RED harness. One shipment / one PR because they edit the
+same files, but with **no correctness dependency between the two sub-works**.
 
-* Pros: single PR over one code surface; no conflicting edits; the dependency
-  edge encodes the real ordering; each task stays single-domain and 2-hour-sized.
+* Pros: single PR over one code surface; no conflicting edits; each task stays
+  single-domain, test-first, and 2-hour-sized; the DAG reflects the true
+  (absent) dependency rather than an artificial ordering edge.
 * Cons: slightly larger shipment.
 
 **Option B — Two separate features / two shipments with a shipment-level edge.**
@@ -90,11 +113,15 @@ this shipment's scope.
 ### Decision
 
 Adopt **Option A**. Covering feature: *Concurrency-safety hardening for
-artifact-mutation writers*. Internal dependency FE440C62-work → 1E0C2251-work.
-Independent root shipment (no real edge into the 141-S fault-line chain; the
-operator's reliability-first ordering is a scheduling preference, expressed in
-the session summary, not a DAG edge). Option C (automatic shared enforcement)
-recorded as a future follow-up in the plan's Follow-ups section.
+artifact-mutation writers*. The two sub-works (FE440C62 lock-order, 1E0C2251
+`archived_status` CAS) are **independent** — no internal DAG dependency between
+them; they ship in one PR only because they edit the same files. Each sub-work is
+gated by its own deterministic RED harness (test-first). Independent root
+shipment (no real edge into the 141-S fault-line chain; the operator's
+reliability-first ordering is a scheduling preference, expressed in the session
+summary, not a DAG edge). Option C (automatic shared enforcement) and general
+content-staleness CAS are recorded as future follow-ups in the plan's Follow-ups
+section.
 
 ### Scope Boundary
 

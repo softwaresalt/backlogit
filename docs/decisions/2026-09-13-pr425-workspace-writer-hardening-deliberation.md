@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 description: "Deliberation for the PR #425 workspace-writer threat-model hardening group: 3B661FCE (168-F trust-anchor external binding), BFF76433+BF18DA1D (169-F durable signed material), 4E210DB4 (170-F rollback-resistant nonce ledger)"
-doc_type: learning
+doc_type: decision
 schema_version: "1.0"
 source: docs/decisions/2026-09-13-pr425-workspace-writer-hardening-deliberation.md
 title: "Deliberation: PR #425 workspace-writer threat-model hardening (168-F/169-F/170-F)"
@@ -57,10 +57,18 @@ external trust root.
   **genuinely resolved before Ship**, and status-reactivation is a privilege
   escalation, not an acceptable documented residual.
 
-**Decision**: Option A. New hardening task `168.007-T` binds
-role/status/validity to the external root and makes revocation non-reversible by
-a workspace-local edit; depends on `168.001-T` (pin gate) and `168.003-T`
-(resolver).
+**Decision**: Option A. New hardening task `168.007-T` binds the trust-anchor
+**status** to the external root and makes revocation non-reversible by a
+workspace-local edit (depends on `168.001-T` pin gate and `168.003-T` resolver).
+Because `168.001-T`'s external pin is fingerprint-membership only, `168.008-T`
+extends the external representation to carry **role + validity** OR fails closed
+(denies) any in-workspace-asserted role/validity not confirmed by the external
+root — a documentation-only residual is **not** accepted. `168.009-T` makes
+`trust-anchor revoke` (168.005-T) **authoritatively revoke**: since in-workspace
+status is now advisory, a revoke that could only flip advisory status MUST NOT
+report success — it performs an external revocation/tombstone (or surfaces the
+explicit external operation) and fails closed otherwise. All three are gated
+behind the `168.010-T` RED harness (written and observed failing first).
 
 ---
 
@@ -83,11 +91,17 @@ level views — deduplicated into one decision.
 * (C) Verify only at write time, don't persist signed material. Rejected: defeats
   independent re-verification, which is the whole point.
 
-**Decision**: Option A. New hardening tasks `169.007-T` (persist signed envelope
-/ protected reference; fail closed when absent) and `169.008-T` (negative tests:
-forged unsigned metadata rejected; envelope re-verifies against external root).
-`169.007-T` depends on `169.002-T` (verification primitive) and `169.003-T`
-(event binding); `169.008-T` depends on `169.007-T`.
+**Decision**: Option A. New hardening task `169.007-T` persists the signed
+envelope / digest-pinned protected reference (fail closed when absent) and
+**supersedes** the forgeable presence-based metadata-presence doctor branch —
+removing the stale "doctor distinguishes by presence of attested metadata fields"
+acceptance from the `169-F` / `169.003-T` contract text rather than adding a
+parallel accept path. It is preceded by the `169.008-T` **RED harness** (forged
+unsigned metadata rejected; removed presence branch no longer accepts — written
+and observed failing first), and followed by `169.009-T` GREEN integration
+(persisted envelope re-verifies; tampered/swapped reference fails closed).
+`169.007-T` depends on `169.002-T` (verification primitive), `169.003-T` (event
+binding), and `169.008-T` (RED); `169.009-T` depends on `169.007-T`.
 
 ---
 
@@ -99,21 +113,28 @@ authorization tokens under the workspace-writer threat model.
 
 **Options**:
 * (A, CHOSEN) Move nonce-consumption state to an **externally protected,
-  rollback-resistant** store (monotonic external counter / protected reference),
-  so ledger deletion cannot re-enable replay; fail closed if the external
-  consumption state is unavailable.
-* (B) Bind nonce lifetime tightly + document the residual replay window.
-  Acceptable ONLY as a fallback if externally-protected state is infeasible in
-  this shipment; recorded as the explicit documented-risk alternative the stash
-  itself names ("or explicitly document the replay risk").
+  rollback-resistant, atomic compare-and-consume (test-and-set)** store bound to
+  the external pin root of trust, so ledger deletion cannot re-enable replay; fail
+  closed if the external consumption state is unavailable.
+* (B) Bind nonce lifetime tightly + **document** the residual replay window.
+  **REJECTED** as a document-only closure of an authorization-replay /
+  privilege-escalation vector (consistent with Decision 1's rejection of
+  document-only closure for the analogous 168 reactivation vector). The stash's
+  "or explicitly document the replay risk" phrasing is explicitly overridden here:
+  documentation alone does not resolve the vector before Ship.
 * (C) Do nothing. Rejected.
 
-**Decision**: Option A as the target; the task is written **justify-or-fold**
-(matching the existing `170.003-T` marker) — if externally-protected state
-cannot be delivered within the bounded shipment, fold to Option B (documented
-replay risk under the stated threat model) with an explicit operator-visible
-residual-risk record, NOT a silent gap. New hardening task `170.008-T` depends on
-`170.003-T`.
+**Decision**: Option A (externally protected atomic compare-and-consume state) is
+**REQUIRED before Ship claims 151-S**. If Option A is genuinely infeasible within
+the bounded shipment, the ONLY alternatives are (i) **block Ship for 151-S** and
+re-plan, or (ii) a hard-reviewed **non-exploitability proof that itself rests on
+independently protected state** (the replay-to-no-op/conflict reduction must be
+guaranteed by an externally/independently protected idempotency or
+request-identity record, not by workspace-resident state alone), reviewed and
+approved as genuinely non-exploitable. A document-only replay-risk fold is NOT an
+acceptable outcome. New hardening task `170.008-T` depends on `170.003-T`; a new
+`170.009-T` makes required-auth enablement externally authoritative / fail-closed
+so removing the workspace auth policy cannot downgrade 170-F enforcement.
 
 ---
 

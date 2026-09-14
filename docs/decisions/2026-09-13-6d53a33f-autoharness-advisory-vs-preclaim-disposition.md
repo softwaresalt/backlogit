@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 description: "Stage disposition for stash 6D53A33F — autoharness advisory DAG-readiness vs authoritative pre_claim semantics; cross-workspace boundary and non-blocking determination for the backlogit dark run"
-doc_type: learning
+doc_type: decision
 schema_version: "1.0"
 source: docs/decisions/2026-09-13-6d53a33f-autoharness-advisory-vs-preclaim-disposition.md
 title: "Disposition: 6D53A33F autoharness advisory-vs-pre_claim semantics (cross-workspace)"

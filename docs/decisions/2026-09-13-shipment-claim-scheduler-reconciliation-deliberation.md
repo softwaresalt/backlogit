@@ -1,10 +1,10 @@
 ---
 chunk_strategy: h1-h2-h3
-description: "Deliberation for CC0EBB59 — reconcile backlogit shipment-claim activation semantics with the P-002.6 wave scheduler via a record-only claim mode / explicit scheduler baseline (in-repo portion)"
-doc_type: learning
+description: "Deliberation for CC0EBB59 — reconcile backlogit shipment-claim activation semantics with the P-002.6 wave scheduler via a universal persisted scheduler-baseline marker (in-repo portion); record-only claim mode considered and dropped"
+doc_type: decision
 schema_version: "1.0"
 source: docs/decisions/2026-09-13-shipment-claim-scheduler-reconciliation-deliberation.md
-title: "Deliberation: Shipment-claim activation reconciliation (record-only claim mode)"
+title: "Deliberation: Shipment-claim activation reconciliation (universal scheduler-baseline marker)"
 docline:
     stash_id: CC0EBB59
     status: decided
@@ -34,13 +34,15 @@ workflow infrastructure**.
 
 ### Scope Split (workspace containment, P-017)
 
-* **In-repo (backlogit) — harvestable now**: give the shipment lifecycle an
-  explicit **record-only claim mode** and/or a persisted **scheduler baseline
-  marker** so that claim-activated manifest tasks are distinguishable from
-  organic active residuals. This is the backlogit half of the contract and the
+* **In-repo (backlogit) — harvestable now**: give the shipment lifecycle a
+  persisted **universal scheduler-baseline marker** written on every
+  claim-activated manifest task so claim-activated tasks are distinguishable from
+  organic active residuals. (A separate **record-only claim mode** was considered
+  and **dropped** — see Decision — because the universal marker removes the need
+  for a divergent claim path.) This is the backlogit half of the contract and the
   authorized in-repo reliability defect.
 * **Out-of-repo (autoharness) — NOT edited here**: the wave scheduler's
-  consumption of that marker (treating record-only / baseline-marked tasks as
+  consumption of that marker (treating baseline-marked tasks as
   non-residual). Recorded as a cross-workspace follow-up; Stage does not modify
   autoharness.
 
@@ -75,15 +77,22 @@ distinction.
 
 ### Decision
 
-Adopt **Option A** (persisted baseline marker) as the primary in-repo mechanism,
-and expose a minimal **record-only claim** entry that sets the marker without
-altering default claim behavior (a thin, backward-compatible slice of Option B
-layered on Option A's marker). Default path unchanged; marker is additive.
-Autoharness scheduler consumption is a recorded cross-workspace follow-up and a
-Ship-time / out-of-workspace concern — **not** a Stage blocker.
+Adopt **Option A** (persisted universal baseline marker) as the sole in-repo
+mechanism. The marker is written on **every** claim activation via a gated,
+off-by-default `setArtifactStatus` seam, and the claim-activated-vs-organic
+distinction is surfaced through a supported CLI/MCP/data read surface the
+out-of-workspace scheduler can consume. The **record-only claim mode** (Option B,
+and the thin record-only entry originally floated as a layered slice) is
+**dropped**: because the universal marker already distinguishes claim-activated
+tasks, a second claim path would add divergent lifecycle semantics for no
+additional benefit and is rejected. Default claim behavior is unchanged; the
+marker is additive and advisory. Autoharness scheduler consumption is a recorded
+cross-workspace follow-up and a Ship-time / out-of-workspace concern — **not** a
+Stage blocker.
 
 ### Scope Boundary
 
 In-repo `internal/core/shipment_lifecycle.go` + tests + operator docs. No
-autoharness edit. No change to default claim behavior when the new marker/mode is
-not requested.
+autoharness edit. No change to default claim behavior; the universal marker is
+additive and advisory, and unmarked items are byte-identical to pre-change
+behavior.
