@@ -163,3 +163,26 @@ disposition → 173.006-T stays active → P-001 contended; no valid rollback on
 Once 155-S ships, admit via GOVERNED block (member snapshot + active members→queued frees the slot),
 then normalize (U18a/U18b) before any unblock; autoharness topology-gate treatment of `blocked`
 remains an UNCONFIRMED external assumption to verify separately.
+
+## Remediation cycle 3 (final task-propagation & rollout-circularity)
+
+Branch `chore/stage-155`. Fixed residual/new P1s A–E in Stage-owned docs/backlog/stash only.
+
+New tasks: `174.028-T` (U2b2b exported-core + create/add/create_item choke points; dep 174.003),
+`174.029-T` (U19b block/unblock/normalize failure-injection tests; deps 174.027, 174.008).
+Shipment `155-S` now 30 members, re-topologized. `146-S`: `164.001-T` removed from membership;
+dep `164.002→164.001` removed (retained `164.002→174.001`).
+
+Key resolutions:
+- A: 174.003 generic-only; 174.024 bulk/cascade-only; 174.005 full inventory+deps; 174.008 member
+  snapshot/requeue/restore; 174.009 Markdown-scan/CAS fail-closed; 174.015 --confirm both targets;
+  174.018 narrowed to 2 checks; 174.020 fixture+deps; 174.022 blocked-edges+provisional; 174.023
+  normalizer-core+reconstruction; 174.027 durability-contract; 174.029 failure-injection tests.
+- B: Goals members-dispositioned; SBLK-R6 workspace-global vs per-artifact lock + acquisition order;
+  ranges R1–R27; SBLK-R27 intent/commit event protocol.
+- C: 146-S reconciled via backlog-native mutations + manifest edit.
+- D: one-time operator-approved PRE-GOVERNANCE bootstrap runbook (manual member disposition FIRST,
+  then generic move, bounded pre-claim rollback, else fail closed; normalizer backfills after 155
+  ships). Replaces prior blanket PROHIBITION. Not executed by Stage.
+- E: 174.021 docs AC; dep graph + topo order regenerated; index synced; plan-review amendment-4
+  appended (ADVISORY, operator_authorization: approved).

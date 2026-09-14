@@ -21,7 +21,7 @@ docline:
 individual tasks and NOT the informing workflow defect.
 
 Companion product spec: `docs/product-specs/2026-09-14-resumable-shipment-blocked-lifecycle-status.md`
-(requirement IDs SBLK-R1…R19).
+(requirement IDs SBLK-R1…R27).
 
 ---
 
@@ -107,7 +107,7 @@ S12 to add reason/audit/single-active semantics onto `parked`.
 ## 4. Decision
 
 Adopt **Option A**. Introduce a single canonical non-terminal shipment lifecycle status
-`blocked` per the product spec (SBLK-R1…R18), with the governed transition set
+`blocked` per the product spec (SBLK-R1…R27), with the governed transition set
 `active → blocked`, `blocked → queued`, `blocked → active` (SBLK-R2), enforced
 unconditionally at the core seam (SBLK-R3), excluded from the single active slot
 (SBLK-R4), preserving all resumption evidence (SBLK-R10), and carrying
@@ -199,53 +199,64 @@ this deliberation as the concrete evidence the `blocked` status must preserve (S
    once the RED-baseline/claim-bookkeeping contract is reconciled. Until the capability
    ships, `154-S` remains `active` and parked only in intent.
 
-3. **One-time bootstrap for `154-S` — PROHIBITED until the governed seam + normalizer land
-   (amended per findings 6/7; SBLK-R24/R25/R26).** An earlier draft proposed bootstrapping
-   `154-S` into `blocked` via the already-supported generic `move 154-S --status blocked`
-   (verified 2026-09-14: `models.StatusBlocked` at `internal/models/artifact.go:17`; generic
-   `move` → `core.UpdateArtifactWithGate` at `internal/cli/move.go:62`;
-   `list --type shipment --status blocked` works). **This generic-move bootstrap is now
-   PROHIBITED** because it CANNOT correctly admit `155-S` and has NO valid rollback:
+3. **One-time, operator-approved, PRE-GOVERNANCE bootstrap for `154-S` (resolves the rollout
+   circularity; SBLK-R24/R25/R26).** There is a genuine **circularity**: the governed
+   `BlockShipment` seam (U2c) with member disposition (U6) is the correct way to block `154-S`,
+   but it does not exist until `155-S` ships — and `155-S` cannot run until the single active
+   slot is free, which requires `154-S` to be blocked first. Without a controlled exception,
+   rollout is impossible. The earlier blanket prohibition on the generic-move bootstrap was
+   correct about its two defects but left the circularity unresolved. This deliberation resolves
+   it with an **explicitly exceptional, one-time, operator-approved pre-governance bootstrap
+   runbook** — NOT the final API, and NOT the naive single generic move. It manually reproduces
+   the two things the governed seam would guarantee (member disposition + a bounded rollback),
+   and is **removed after migration**. Stage does NOT execute it (operator-owned; `154-S` must
+   not be edited by Stage).
 
-   * **It does not free the active slot.** The generic status move performs NO member
-     disposition, so covering-feature member `173.006-T` remains `active`. Under the new
-     single-active enforcement (U5/U5b) an active member keeps P-001 contended — the active
-     slot is NOT freed, so `155-S` still cannot claim. The bootstrap's core premise (free the
-     slot for `155-S`) is false.
-   * **It has no valid governed rollback.** Once the U2b choke-point guards land, generic
-     `move 154-S --status active` is unconditionally refused (old status == `blocked` AND
-     ArtifactType == shipment), so the previously-proposed status-only rollback becomes
-     inexecutable. A bootstrap with no rollback is not admissible.
-   * **It produces a degraded record.** No `blocked_reason`/`blocked_at`/`blocked_by`/
-     `resume_checkpoint_ref` and no governed `shipment_status_changed` event — pure migration
-     debt masquerading as a blocked shipment.
+   Local code already supports the primitive (verified 2026-09-14: `models.StatusBlocked` at
+   `internal/models/artifact.go:17`; generic `move` → `core.UpdateArtifactWithGate` at
+   `internal/cli/move.go:62`; `list --type shipment --status blocked` works). The runbook the
+   operator may run, in order:
 
-   **Resolution: admission requires the GOVERNED path once the capability ships.** `154-S` may
-   only be blocked through the governed `BlockShipment` seam (U2c) with member disposition
-   (U6): capture a governed member-status snapshot, return active members (incl. `173.006-T`)
-   to `queued` — THIS is what actually frees the active slot — while preserving branch
-   `feat/shipment-claim-scheduler-baseline-marker-enabling-precondition` and checkpoint
-   `checkpoint-20260914-070735.json`. Governed block writes `blocked_reason`
-   (= `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE` / informing defect `7AA35A39`), `blocked_at`,
-   `blocked_by`, `resume_checkpoint_ref` and emits the governed event. Rollback is the
-   **governed** `unblock --to active` (bounded, restores members from the snapshot), never a
-   raw generic move. Stage does NOT execute any of this (operator/Ship-owned; `154-S` must not
-   be edited by Stage).
+   **Pre-verification / snapshot (capture baseline):**
+   * `backlogit shipment get 154-S` → confirm `status: active`; record covering feature `173-F`,
+     the **exact status of every member** (esp. active `173.006-T`), branch
+     `feat/shipment-claim-scheduler-baseline-marker-enabling-precondition`, and checkpoint
+     `checkpoint-20260914-070735.json`. Persist this **member snapshot** durably (memory/audit).
+   * `backlogit list --type shipment --status active` → confirm `154-S` is the sole active.
 
-   **Pre/post verification the operator/Ship may run once the capability ships:**
-   * Pre: `backlogit shipment get 154-S` → confirm `status: active`, record covering feature
-     `173-F`, member statuses (esp. active `173.006-T`), branch, checkpoint; `backlogit list
-     --type shipment --status active` → `154-S` sole active.
-   * Post (after governed block): `154-S` `status: blocked` with all four `blocked_*` fields
-     populated + governed event emitted; active members returned to `queued` and captured in
-     the snapshot; branch + checkpoint UNCHANGED; `list --status active` → `154-S` ABSENT and
-     the slot genuinely free (no active member remains) so `155-S` can claim.
-   * Rollback: governed `unblock --to active` restores members from the snapshot; no generic
-     status move.
+   **Bootstrap (manual member disposition FIRST, then status move):**
+   * Move the active member to `queued`: `backlogit move 173.006-T --status queued` (removes the
+     in-flight release-unit execution so P-001 is no longer contended — this is the manual
+     equivalent of the governed member disposition).
+   * Move the shipment token to blocked: `backlogit move 154-S --status blocked` (existing
+     generic move; members already dispositioned, branch/checkpoint untouched).
+   * Append a **durable comment/memory audit** naming the **migration debt**: the record now
+     lacks governed `blocked_reason`/`blocked_at`/`blocked_by`/`resume_checkpoint_ref` and the
+     governed `shipment_status_changed` event, to be backfilled by the U18a/U18b normalizer.
 
-   The degraded generic-move path is retained ONLY as the U18a/U18b normalizer's remediation
-   target for records that reach `blocked` out-of-band (degraded/test-seeded) — not as a
-   sanctioned bootstrap for `154-S`.
+   **Post-verification:**
+   * No member of `154-S` remains `active` (esp. `173.006-T` now `queued`); `154-S` `status:
+     blocked`; branch + checkpoint intact vs. the snapshot; `list --status active` → `154-S`
+     ABSENT and the slot genuinely free.
+   * Run the **autoharness topology pre-claim check for `155-S`** (item 4 / SBLK-R26) before
+     relying on the freed slot.
+
+   **Bounded rollback (permitted ONLY before any other claim):**
+   * Rollback is valid **only if no other shipment has become active in the interim**. First
+     verify `list --type shipment --status active` is empty; then `backlogit move 154-S --status
+     active` and **restore every member to its exact snapshot status** (e.g. `173.006-T` back to
+     its recorded pre-block status). If any other shipment is already active, rollback would
+     create a second active and MUST **fail closed** (rollback refused; forward-fix only).
+
+   **Debt discharge:** after `155-S` ships U2c/U3 and the U18a/U18b normalizer, run the governed
+   normalizer to backfill the canonical metadata and emit the governed event; the unblock
+   readiness gate (U12) refuses any unblock until this is done (SBLK-R25).
+
+   This bootstrap is **exceptional, operator-approved, one-time, and removed after migration**;
+   it is never presented as the shared contract or the steady-state API. The governed
+   `BlockShipment`/`UnblockShipment` seam remains the only sanctioned path once the capability
+   ships; the generic-move primitive survives only as the normalizer's internal remediation
+   target for out-of-band `blocked` records.
 
 4. **Autoharness topology-gate assessment (SBLK-R26).** The governed block frees *backlogit's
    own* status-keyed active-slot scan (via member disposition, item 3), but the **external
@@ -269,9 +280,11 @@ this deliberation as the concrete evidence the `blocked` status must preserve (S
 ## 7. Scope boundary
 
 In-repo backlogit shipment lifecycle + CLI/MCP/doctor/queue/index + tests + operator
-docs. No autoharness edit. No modification of `154-S` by Stage (the governed block in §6 is an
-operator-owned recommendation for once the capability ships, not executed here; the
-generic-move bootstrap is PROHIBITED). No shipment claim, no Ship
+docs. No autoharness edit. No modification of `154-S` by Stage (both the §6 governed block and
+the one-time operator-approved pre-governance bootstrap runbook are operator-owned, not executed
+by Stage). No shipment claim, no Ship
 invocation, no application source/test writes by Stage. The change is additive and
-backward-compatible (SBLK-R18); the generic-move bootstrap seam is **prohibited** and the
-only sanctioned path to `blocked` for `154-S` is the governed seam (SBLK-R24).
+backward-compatible (SBLK-R18). The steady-state sanctioned path to `blocked` for a shipment is
+the governed `BlockShipment` seam (SBLK-R24); the generic-move bootstrap is permitted ONLY as an
+exceptional, one-time, operator-approved pre-governance migration (manual member disposition +
+bounded pre-claim rollback), removed after migration.
