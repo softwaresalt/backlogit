@@ -43,8 +43,8 @@ Replacement:
 
 | Task | Req | Title | Domain | Depends on |
 |---|---|---|---|---|
-| `174.039-T` | R1s | Core-lifecycle SOURCE-SHAPE RED harness (go/ast: `ShipmentBlocked` + EXACT `BlockShipment`/`UnblockShipment` signatures + `BlockOptions`/`UnblockOptions` + `blerrors.ErrNotImplemented` sentinel; no transition-table) | tests | — |
-| `174.052-T` | Rd | Core-lifecycle declaration-only stubs (compile-green): `ShipmentBlocked` const + `BlockOptions`/`UnblockOptions` + block/unblock stub signatures returning `blerrors.ErrNotImplemented` only (no transition-table) | code | R1s |
+| `174.039-T` | R1s | Core-lifecycle SOURCE-SHAPE RED harness (go/ast: `ShipmentBlocked` + EXACT `BlockShipment`/`UnblockShipment` signatures + `BlockOptions`/`UnblockOptions` + `blerrors.ErrNotImplemented` + `blerrors.ErrShipmentBlockedRequiresEnvelope` sentinels; no transition-table) | tests | — |
+| `174.052-T` | Rd | Core-lifecycle declaration-only stubs (compile-green): `ShipmentBlocked` const + `BlockOptions`/`UnblockOptions` + block/unblock stub signatures returning `blerrors.ErrNotImplemented`; declares BOTH the `blerrors.ErrNotImplemented` and `blerrors.ErrShipmentBlockedRequiresEnvelope` sentinels (no transition-table) | code | R1s |
 | `174.053-T` | R1b | Core-lifecycle BEHAVIOR RED harness (transitions/metadata/intent+preimage/disposition/target-aware unblock) | tests | Rd |
 | `174.040-T` | R2 | Writer/bypass BEHAVIOR RED harness (writer boundary, generic move/update, MoveShipmentStatus, bulk/cascade, create-as-active) | tests | Rd |
 | `174.041-T` | R3 | Crash/reopen BEHAVIOR RED harness (durable intent/preimage recovery; subprocess kill+reopen) | tests | Rd |
@@ -251,7 +251,9 @@ docs-only`); the **closed exempt set enumerated by this plan is exactly `{U16}`*
   `blocked_reason` (required non-empty), `blocked_at`, `blocked_by`, and `resume_checkpoint_ref`
   to frontmatter/`custom_fields`. `blocked_by` is ADVISORY best-effort actor attribution (NOT
   an authorization credential; its trust level is documented); the append-only
-  `shipment_status_changed` event is the authoritative non-repudiation record. `blocked_reason`
+  `shipment_status_changed` event is the authoritative durable correlated audit record (durable
+  audit evidence — NOT a non-repudiation/tamper-evident record: the JSONL is a mutable fsynced
+  append with no signing, and `blocked_by` is advisory). `blocked_reason`
   is written to frontmatter via **structured YAML marshaling (opaque scalar), never string
   interpolation**, and is treated as data (not a format string) on every CLI/doctor render.
   Acceptance: metadata persisted; empty reason rejected; event carries actor+reason+resume_ref;
@@ -544,7 +546,7 @@ prior binary cannot recognize.
 | New shipment lifecycle status + transition edges | Medium — taxonomy/gate integration (the exact S12 parked P1) | Single canonical `blocked` (Option A); closed guard matrix; **consumer-inventory proof** that no `ShipmentStatus` consumer default-allows blocked (U2b/U2b2a/U2b2b/U2d); fail-closed on unrecognized; doctor asserts well-formedness (U13a) |
 | Governed block/unblock transitions | Medium — ungoverned bypass via generic move/update, **BulkUpdateStatus, setArtifactStatus, cascade** | Unconditional refusal at EVERY status-write choke point keyed on old/new status=='blocked' AND ArtifactType=='shipment' (U2b); parent cascade gated so it cannot move a shipment out of blocked; governed `BlockShipment`/`UnblockShipment` exempt by construction; no forgeable flag (U2c) |
 | Single-active enforcement (operator-requested; P-001 was convention-only) | Medium — race could double-activate; could surface pre-existing multi-active | Workspace-GLOBAL active-slot serialization / CAS, not the per-artifact lock (U5b); atomic claim with member-set rollback (U5); pre-existing multi-active is a HARD doctor finding with remediation, not a fail-open marker (U15) |
-| Blocked audit metadata lifecycle & non-repudiation | Medium — stale `blocked_*` after hook-bypassing `blocked→queued`; audit erased on clear | Single seam-owned clear helper (U4); durable `shipment_status_changed` event with actor+reason+resume_ref emitted on BOTH block and unblock BEFORE clearing (U2c/U3); `blocked_by` documented as advisory, events authoritative |
+| Blocked audit metadata lifecycle & durable audit evidence | Medium — stale `blocked_*` after hook-bypassing `blocked→queued`; audit erased on clear | Single seam-owned clear helper (U4); durable `shipment_status_changed` event with actor+reason+resume_ref emitted on BOTH block and unblock BEFORE clearing (U2c/U3); `blocked_by` documented as advisory, events authoritative (durable correlated audit record, not a non-repudiation/tamper-evident guarantee) |
 | Member vs shipment `blocked` conflation | Medium — shared "blocked" string on shared status field | Distinct `ShipmentStatus` Go type (U1); every blocked_* predicate/doctor/guard gates on ArtifactType=='shipment' (U6/U13a); cross-axis negative test |
 | Atomic writes across MD + SQLite + JSONL | Medium — torn state / stale index on the new value | Transactional index rebuild with mid-walk-cancel test (U7b); commit-then-surface durability; shared EventWriter for event append (U2c) |
 | Unblock readiness is not an authorization boundary | Medium — self-asserted `--confirm`/TTY is spoofable (S12 precedent) | `--confirm` documented as NON-authoritative; the authoritative gate is the backlogit-side free-slot check under U5b (U12); MCP rejects a bare client boolean as sufficient and records actor trust level (U11) |
@@ -1167,9 +1169,13 @@ retained).
   `BlockShipment(ctx, ws, shipmentID string, opts BlockOptions) (*models.Artifact, error)` and
   `UnblockShipment(ctx, ws, shipmentID string, opts UnblockOptions) (*models.Artifact, error)`, with
   `BlockOptions{Reason (required), BlockedBy, ResumeCheckpointRef}` and
-  `UnblockOptions{Target (ShipmentQueued|ShipmentActive), Confirm, UnblockedBy}`. The exact
-  declaration-only sentinel is `blerrors.ErrNotImplemented = errors.New("backlogit: not implemented")`
-  in `internal/errors` (follows the package `backlogit:` convention). Updated: `174.039-T` (R1s
+  `UnblockOptions{Target (ShipmentQueued|ShipmentActive), Confirm, UnblockedBy}`. The
+  declaration-only sentinels are `blerrors.ErrNotImplemented = errors.New("backlogit: not implemented")`
+  and `blerrors.ErrShipmentBlockedRequiresEnvelope` in `internal/errors` (both follow the package
+  `backlogit:` convention). BOTH sentinels are declared declaration-only by Rd (`174.052-T`);
+  `ErrShipmentBlockedRequiresEnvelope` is WIRED (not introduced) by the R4g guard (`174.054-T`),
+  so the R2 behavior harness (`174.040-T`) compiles against an already-declared symbol and there is
+  no declare-after-use cycle (see P1-C). Updated: `174.039-T` (R1s
   asserts exact signatures + option struct names + sentinel via `go/ast`), `174.052-T` (Rd lands
   exactly those declarations returning the sentinel), `174.053-T` (R1b behavior RED exercises the
   exact option-carrying calls), `174.043-T`/`174.044-T` (implementations read the exact opts),
@@ -1186,7 +1192,9 @@ retained).
   block at W5 and ungoverned unblock at W6. Remediation moves the specific `MoveShipmentStatus`
   block/unblock refusal into a new smallest task **R4g `174.054-T`**@**W4** — a top-level fail-closed
   guard placed ABOVE the transition-table check (unlike the existing `shipped` guard which sits
-  after it), returning a new `blerrors.ErrShipmentBlockedRequiresEnvelope` sentinel (mirrors
+  after it), returning the `blerrors.ErrShipmentBlockedRequiresEnvelope` sentinel (declared
+  declaration-only by Rd `174.052-T` alongside `ErrNotImplemented`; R4g WIRES it, does not
+  introduce it — mirrors
   `ErrShipmentShippedRequiresEnvelope`). Because it sits above the table it refuses identically
   before AND after the edges land, so the guard is active from W4, strictly before R5/R6.
   R5 and R6 now carry a hard dependency on `174.054-T`; the governed `BlockShipment`/`UnblockShipment`
@@ -1218,3 +1226,43 @@ owns the MoveShipmentStatus block/unblock refusal. `backlogit doctor` — pre-ex
 none on any 174.\* artifact.
 
 **Verdict: PASS** — residual P0 = 0, residual P1 = 0. `155-S` ready for Ship to claim.
+
+### Copilot PR #444 remediation cycle 5 (2026-09-15, HEAD `8fb4e8b5`)
+
+Bounded remediation of two OPEN Copilot review threads; Stage-owned backlog/docs only — no
+source/tests, no `154-S`, no shipment claim; caller replies/resolves the threads. Prior records
+above are preserved verbatim as append-only audit history.
+
+* **P1-C — declare-after-use compile cycle on the refusal sentinel (thread
+  `PRRT_kwDORzozKM6ivJeO`, `174.040-T`/`174.054-T`).** The R2 behavior harness `174.040-T`
+  references `blerrors.ErrShipmentBlockedRequiresEnvelope` (asserting the generic
+  `MoveShipmentStatus` refusal for BOTH directions) and depends only on Rd `174.052-T`, but the
+  sentinel was previously INTRODUCED by R4g `174.054-T`, which in turn depends on `174.040-T` —
+  a declare-after-use cycle that left `174.040-T` unable to compile and coupled the two tasks in
+  a logical cycle. Remediation makes the refusal sentinel a **declaration-only symbol landed by
+  Rd `174.052-T`** alongside `blerrors.ErrNotImplemented` (a bare `errors.New(...)` var — no
+  behavior, so Rd stays declaration-only), and **source-shape-gates its exact name in R1s
+  `174.039-T`** (go/ast asserts `internal/errors` declares it). `174.040-T` now compiles against
+  the already-declared sentinel and fails on BEHAVIOR only. R4g `174.054-T` now **WIRES/uses** the
+  already-declared sentinel in the top-level guard rather than introducing it (its function budget
+  drops the sentinel decl). No dependency-graph edge changed; the graph stays acyclic (9 waves)
+  and the compile-green wave semantics hold — R1s@W1 red until Rd@W2 lands both sentinels + stubs,
+  then green; R2 behavior-red compiling against Rd; R4g@W4 turns the refusal portion green.
+* **P1-D — `non-repudiation` overclaim on the mutable JSONL event (thread
+  `PRRT_kwDORzozKM6ivJej`).** The plan (U3 SBLK-R7 narrative + risk table) and spec (SBLK-R7)
+  called the fsynced-but-mutable, unsigned `shipment_status_changed` JSONL record the
+  "non-repudiation record" even though `blocked_by` is advisory and no signing/tamper-evidence
+  exists. Replaced with accurate wording — **"authoritative durable correlated audit record" /
+  "durable audit evidence"** — in all authoritative current docs, with an explicit note that it is
+  NOT a non-repudiation/tamper-evident guarantee. No auth/signing scope added; no active acceptance
+  criterion claims non-repudiation. Superseded audit history retained verbatim.
+
+Validation evidence (HEAD after commit): `backlogit sync` parse_failures=0; `backlogit docs lint`
+spec/plan/decision `valid: true`; `wave-scheduler-sim -VerifyAgainstQueue` WAVE_SIM_OK; actual
+RED-contract parser clean (`174.054-T` carries no red block); dependency graph acyclic, 9 waves,
+`174.054-T`@W4 strictly before `174.043-T`@W5 / `174.044-T`@W6; manifest/release-scope `155-S` 17
+members (16 live == live `174-F` descendant set); targeted contract check — both sentinels declared
+by Rd `174.052-T`, asserted by R1s `174.039-T`, referenced (not introduced) by R2 `174.040-T` and
+R4g `174.054-T`; no `non-repudiation` claim remains in any authoritative current doc/live task.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. `155-S` remains ready for Ship to claim.

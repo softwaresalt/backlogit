@@ -73,10 +73,12 @@ harness no longer jumps from a source-shape RED directly into declaring/implemen
 `174.039-T` (R1s) is a source-shape harness pinning the `ShipmentBlocked` enum + the EXACT
 `BlockShipment(ctx, ws, shipmentID string, opts BlockOptions) (*models.Artifact, error)` /
 `UnblockShipment(ctx, ws, shipmentID string, opts UnblockOptions) (*models.Artifact, error)`
-signatures, the `BlockOptions`/`UnblockOptions` structs, and the `blerrors.ErrNotImplemented`
-sentinel (declaration shape only; NOT the `isValidShipmentTransition` blocked-transition table,
+signatures, the `BlockOptions`/`UnblockOptions` structs, and BOTH the `blerrors.ErrNotImplemented`
+and `blerrors.ErrShipmentBlockedRequiresEnvelope` sentinels (declaration shape only; NOT the
+`isValidShipmentTransition` blocked-transition table,
 which is functional transition-enablement deferred to R5/R6); `174.052-T` (Rd) lands ONLY those
-declarations (stubs returning the sentinel), turning R1s green; `174.053-T` (R1b) is the behavior
+declarations (stubs return `ErrNotImplemented`; BOTH sentinels declared declaration-only —
+`ErrShipmentBlockedRequiresEnvelope` is WIRED, not introduced, by R4g `174.054-T`), turning R1s green; `174.053-T` (R1b) is the behavior
 RED harness that compiles against the stubs and stays red until R5/R6 implement. The writer/crash
 harnesses R2 (`174.040-T`) and R3 (`174.041-T`) depend on Rd (`174.052-T`) so they compile-green
 before asserting behavior. These exact Go signatures/structs/sentinel are the **[local] backlogit
@@ -87,14 +89,14 @@ asserted separately (U17) and does not overlap the R1s go/ast shape assertions.
 block/unblock refusal is landed by `174.054-T` (R4g) at **wave 4**, STRICTLY BEFORE R5 (`174.043-T`)
 enables the `active→blocked` edge and R6 (`174.044-T`) enables `blocked→{queued,active}` in
 `isValidShipmentTransition`. R4g is a top-level fail-closed guard placed ABOVE the transition-table
-check (returning `blerrors.ErrShipmentBlockedRequiresEnvelope`), so no intermediate wave exposes an
+check (returning the Rd-declared `blerrors.ErrShipmentBlockedRequiresEnvelope`), so no intermediate wave exposes an
 ungoverned generic block/unblock; the governed seam is exempt by construction (it writes beneath the
 choke point). R5/R6 therefore depend on R4g. R7a (`174.045-T`) retains the remaining bypass routing.
 
 | Task | Req | Scope | Domain |
 |---|---|---|---|
-| `174.039-T` | R1s | Core-lifecycle SOURCE-SHAPE RED harness (go/ast: `ShipmentBlocked` enum + EXACT `BlockShipment`/`UnblockShipment` signatures + `BlockOptions`/`UnblockOptions` + `blerrors.ErrNotImplemented` sentinel; no transition-table) | tests |
-| `174.052-T` | Rd | Core-lifecycle declaration-only stubs (compile-green): `ShipmentBlocked` const + `BlockOptions`/`UnblockOptions` + block/unblock stub signatures returning `blerrors.ErrNotImplemented` only (no `isValidShipmentTransition` blocked entries) | code |
+| `174.039-T` | R1s | Core-lifecycle SOURCE-SHAPE RED harness (go/ast: `ShipmentBlocked` enum + EXACT `BlockShipment`/`UnblockShipment` signatures + `BlockOptions`/`UnblockOptions` + `blerrors.ErrNotImplemented` + `blerrors.ErrShipmentBlockedRequiresEnvelope` sentinels; no transition-table) | tests |
+| `174.052-T` | Rd | Core-lifecycle declaration-only stubs (compile-green): `ShipmentBlocked` const + `BlockOptions`/`UnblockOptions` + block/unblock stub signatures returning `blerrors.ErrNotImplemented`; declares BOTH the `ErrNotImplemented` and `ErrShipmentBlockedRequiresEnvelope` sentinels (no `isValidShipmentTransition` blocked entries) | code |
 | `174.053-T` | R1b | Core-lifecycle BEHAVIOR RED harness (transitions, metadata, intent+preimage, disposition, target-aware unblock) | tests |
 | `174.040-T` | R2 | Writer/bypass BEHAVIOR RED harness (writer boundary, generic move/update, MoveShipmentStatus, bulk/cascade, create-as-active) | tests |
 | `174.041-T` | R3 | Crash/reopen BEHAVIOR RED harness (durable intent/preimage recovery; subprocess kill+reopen) | tests |
@@ -364,8 +366,9 @@ R21 and R23 are cross-cutting contract-governance requirements (see *Portability
   documented), and `resume_checkpoint_ref` (optional pointer to the Ship-owned resume
   checkpoint, e.g. `154-S`'s `checkpoint-20260914-070735.json`). Metadata is persisted in
   shipment frontmatter/`custom_fields`. The append-only `shipment_status_changed` event is
-  the **authoritative** non-repudiation record and carries actor + reason +
-  `resume_checkpoint_ref`.
+  the **authoritative durable correlated audit record** (durable audit evidence) and carries
+  actor + reason + `resume_checkpoint_ref`. It is NOT a non-repudiation/tamper-evident record:
+  the JSONL is a mutable fsynced append with no signing, and `blocked_by` is advisory.
 * **SBLK-R8 (M)** — `blocked_*` audit metadata is cleared on `blocked → queued` AND
   `blocked → active` through a **single governed-seam-owned helper** (not independent
   blocked-aware branches embedded in generic mutation code). Because generic status-write

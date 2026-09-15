@@ -443,3 +443,39 @@ Validation (current HEAD): `backlogit sync` parse_failures=0; `docs lint` all th
 red block); dependency graph acyclic (9 waves) with 174.054@W4 strictly before 043@W5/044@W6; manifest
 17 members == 174-F + 16 live queued descendants; doctor pre-existing findings only, none on 174.*.
 No source/tests, no `154-S`, no claim.
+
+## §6g — Copilot PR #444 remediation cycle 5 (2026-09-15, branch `chore/stage-155`, HEAD `8fb4e8b5`)
+
+Bounded remediation of two OPEN Copilot review threads on PR #444, Stage-owned backlog/docs only;
+caller replies/resolves the threads. Append-only — §6a…§6f above are retained verbatim as audit
+context (their now-superseded ownership wording for the refusal sentinel is preserved intentionally).
+
+1. **Refusal-sentinel declare-after-use cycle (thread `PRRT_kwDORzozKM6ivJeO`, `174.040-T`/`174.054-T`).**
+   The R2 behavior harness `174.040-T` (depends only on Rd `174.052-T`) references
+   `blerrors.ErrShipmentBlockedRequiresEnvelope`, but that sentinel was INTRODUCED by R4g `174.054-T`,
+   which depends on `174.040-T` — a declare-after-use cycle causing a compile failure. Fix: the
+   refusal sentinel is now a **declaration-only symbol landed by Rd `174.052-T`** alongside
+   `blerrors.ErrNotImplemented` (a bare `errors.New(...)` var, NO behavior — Rd stays
+   declaration-only), and its EXACT name is **source-shape-gated by R1s `174.039-T`** (go/ast asserts
+   `internal/errors` declares it). `174.040-T` now compiles against the already-declared sentinel and
+   fails behaviorally only; R4g `174.054-T` now WIRES/uses the sentinel in the top-level guard rather
+   than introducing it. No dependency-graph edge changed; graph stays acyclic (9 waves); compile-green
+   wave semantics hold (R1s@W1 red → Rd@W2 lands both sentinels + stubs → green; R2 behavior-red
+   compiling against Rd; R4g@W4 turns the refusal portion green). Updated 174.039/052/054/040 + spec
+   §0/§2.5 tables + plan task tables/P1-A/P1-B narrative + new plan P1-C.
+2. **`non-repudiation` overclaim on the mutable JSONL event (thread `PRRT_kwDORzozKM6ivJej`).** The
+   plan (U3 SBLK-R7 + risk table) and spec (SBLK-R7) called the fsynced-but-mutable, unsigned
+   `shipment_status_changed` JSONL record the "non-repudiation record" while `blocked_by` is advisory
+   and no signing/tamper-evidence exists. Replaced with accurate wording — **"authoritative durable
+   correlated audit record" / "durable audit evidence"** — in all authoritative current docs, with an
+   explicit note that it is NOT a non-repudiation/tamper-evident guarantee. No auth/signing scope
+   added; no active acceptance criterion claims non-repudiation. Superseded audit history retained.
+
+Validation (HEAD after commit): `backlogit sync` parse_failures=0; `docs lint` all three
+`valid: true`; `wave-scheduler-sim -VerifyAgainstQueue` WAVE_SIM_OK; RED-contract parser clean
+(`174.054-T` carries no red block); dependency graph acyclic (9 waves) with `174.054-T`@W4 strictly
+before 043@W5/044@W6; manifest 17 members == 174-F + 16 live queued descendants; targeted contract
+check — both sentinels declared by Rd `174.052-T`, asserted by R1s `174.039-T`, referenced (not
+introduced) by R2 `174.040-T` and R4g `174.054-T`; no `non-repudiation` claim remains in any
+authoritative current doc/live task; doctor pre-existing findings only, none on 174.*. No
+source/tests, no `154-S`, no claim.
