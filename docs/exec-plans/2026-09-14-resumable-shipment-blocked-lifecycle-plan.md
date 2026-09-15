@@ -25,11 +25,12 @@ docline:
 > §0 is the **authoritative current plan** and supersedes rev1/rev2 §0. All sections below (unit
 > bodies U1…U19b, hardening table, and **every `## Plan Review` record**) are **retained as
 > historical/audit context**. The prior 29-unit decomposition and the rev2 9-task set are
-> superseded; the shipped scope is the concise **12-task RED-before-GREEN set** below. Where §0 and
+> superseded; the shipped scope is the concise **13-task RED-before-GREEN set** (`174.039-T…174.050-T`
+> plus the R7b split task `174.051-T`; 14 `155-S` members incl. `174-F`) below. Where §0 and
 > a later section conflict, §0 governs. **rev3 removes the rollout circularity, the generic-move
 > bootstrap, and the `155-S` topology `--force`.**
 
-### 0.1 Concise task set (feature `174-F` / shipment `155-S`) — 12 tasks, RED-before-GREEN, ≤2h
+### 0.1 Concise task set (feature `174-F` / shipment `155-S`) — 13 tasks (14 `155-S` members incl. `174-F`), RED-before-GREEN, ≤2h
 
 The rev2 tasks `174.030-T…174.038-T` are **superseded** (parked `blocked`, preserved). Replacement:
 
@@ -977,3 +978,44 @@ Validation evidence: `backlogit sync` parse_failures=0 (1525 artifacts); `backlo
 `wave-scheduler-sim.ps1 -VerifyAgainstQueue` WAVE_SIM_OK 186/186; RED contract parser 3/3 clean.
 
 **Verdict: PASS** — residual P0 = 0, residual P1 = 0. Ready for Ship to claim `155-S`.
+
+## Plan Review — current-HEAD remediation cycle 2 (2026-09-15, branch `chore/stage-155`)
+
+dispatch_mode: single-agent-declared-degradation
+decision: PASS
+
+Bounded current-HEAD remediation of two remaining P1 findings. The prior cycle removed the
+obsolete `164.002-T → 174.050-T` dependency and updated the retirement narrative, but two gaps
+remained: (a) the retired task `164.002-T` was still a **member of the live queued `146-S`
+manifest** (WAVE_MEMBER_BLOCKED), with `147-S` depending on `146-S` (permanent downstream block);
+and (b) the authoritative Rev3 §0 headings/summaries still declared **12 tasks** while the actual
+post-R7b-split topology is **13 live tasks / 14 `155-S` members**. Stage-owned artifacts only — no
+source/tests, no `154-S`, no shipment claim, no PR; `146-S`/`147-S`/`155-S` remained `queued`.
+
+* **P1-1 — Parked-era release unit reconciled (smallest valid manifest mutation).** Governed
+  `backlogit shipment return-blocked --shipment 146-S --item 164.002-T` removed the retired member
+  from the executable `146-S` manifest while keeping it `blocked` (history preserved via the
+  return-blocked journal + `shipment_item_returned_blocked`/`item_blocked` events; `related_to
+  174-F` link retained). `146-S` manifest is now `[164-F]` — a covering feature with only
+  `blocked` children (`164.001-T`, `164.002-T`), i.e. **no executable task work** (features are
+  excluded from the wave member set `M`). Because `146-S` has no executable work, the downstream
+  `147-S → 146-S` `blocks` dependency was **removed** (`backlogit dep remove 147-S 146-S`) so no
+  live queued shipment is permanently blocked by the retired empty release unit. No unsupported
+  shipment status invented; `146-S`/`147-S` stay `queued`.
+* **P1-2 — Rev3 §0 topology corrected to actual post-split state.** Spec §0.2 heading + topological
+  note, decision §0 decomposition bullet, and plan §0 header + §0.1 heading now state **13 live
+  tasks (`174.039-T…174.050-T` plus `174.051-T`)** and **14 `155-S` members including `174-F`**, and
+  explicitly state `164.002-T` is **retired with no dependency on `174.050-T`**. The stale decision
+  §0 "`164.002-T` re-pointed … to the final live task `174.050-T`" line was corrected. Old
+  `12-task`/re-point wording survives only inside the superseded `## Plan Review — Revision 3`
+  audit record.
+
+Validation evidence (current HEAD): `backlogit sync` 1525 artifacts, parse_failures=0;
+`backlogit docs lint` on all three docs — `valid: true`, 0 violations each; `backlogit doctor` — 23
+pre-existing findings (unchanged), **none on touched artifacts** (`146-S`/`147-S`/`164-F`/
+`164.001-T`/`164.002-T`/`155-S`/`165-F`); scheduler verification — `164.002-T` is a member of **no**
+shipment manifest and **no** shipment depends on `146-S`; `147-S` sits in the `queued` frontier
+(not `blocked`); `wave-scheduler-sim.ps1 -VerifyAgainstQueue` WAVE_SIM_OK 186/186 (scheduler
+contract incl. WAVE_MEMBER_BLOCKED detection intact).
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0.

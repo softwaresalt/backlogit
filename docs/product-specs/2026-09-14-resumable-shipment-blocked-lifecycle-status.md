@@ -54,10 +54,12 @@ governed public `WriteArtifactFile` boundary + private lower writer, `.locks/` w
 lock, SQLite projection, doctor checks, and CLI/MCP surface shapes are local and may be
 re-implemented upstream; they MUST NOT leak backlogit-specific semantics into (a).
 
-### 0.2 Concise decomposition (feature 174-F / shipment 155-S) — 12 tasks, RED-before-GREEN
+### 0.2 Concise decomposition (feature 174-F / shipment 155-S) — 13 tasks (14 shipment members incl. 174-F), RED-before-GREEN
 
 The rev2 9-task set (`174.030-T…174.038-T`) is **superseded** and parked at `blocked` (preserved,
-not deleted). Replacement, all ≤2h, RED harnesses precede their implementations:
+not deleted). Replacement is **13 live tasks** — `174.039-T…174.050-T` (12) plus the R7b split task
+`174.051-T` — all ≤2h, RED harnesses precede their implementations. Shipment `155-S` therefore
+carries **14 members** (the 13 tasks plus covering feature `174-F`):
 
 | Task | Req | Scope | Domain |
 |---|---|---|---|
@@ -76,11 +78,12 @@ not deleted). Replacement, all ≤2h, RED harnesses precede their implementation
 | `174.050-T` | R12 | Operator docs + branch-scoped bootstrap runbook + topology note | docs |
 
 Topological order (parent-first): `174-F → 174.039 → 174.040 → 174.041 → 174.042 → 174.043 →
-174.044 → 174.045 → 174.051 → 174.046 → 174.047 → 174.048 → 174.049 → 174.050`. `164.002-T`
-(S12 forward-repair) is **retired/superseded by rev3** — set `blocked` (history preserved) and its
-obsolete `174.050-T` dependency removed, because its shipment-record-only `queued → active`
-contract is incompatible with rev3 exclusive activation and its reconciliation role is subsumed by
-R9 (`174.047-T`) / R11 (`174.049-T`); `146-S` therefore no longer couples to `155-S`.
+174.044 → 174.045 → 174.051 → 174.046 → 174.047 → 174.048 → 174.049 → 174.050` (13 tasks + `174-F`
+= 14 `155-S` members). `164.002-T` (S12 forward-repair) is **retired/superseded by rev3** — set
+`blocked` (history preserved) with **no dependency on `174.050-T`** (the obsolete cross-shipment
+edge is removed), because its shipment-record-only `queued → active` contract is incompatible with
+rev3 exclusive activation and its reconciliation role is subsumed by R9 (`174.047-T`) / R11
+(`174.049-T`); `146-S` therefore no longer couples to `155-S`.
 
 ### 0.3 Authoritative rollout sequence (removes circularity — NO pre-block, NO 155 topology force)
 

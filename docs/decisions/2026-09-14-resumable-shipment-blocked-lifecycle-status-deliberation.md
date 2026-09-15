@@ -40,8 +40,11 @@ Companion product spec: `docs/product-specs/2026-09-14-resumable-shipment-blocke
   (to-queued preserves snapshot; to-active exact restore); only Claim/unblock-to-active create an
   active shipment; never active members under a queued shipment.
 * **Decomposition (rev3):** rev2 `174.030-T…174.038-T` superseded (parked `blocked`, preserved);
-  replaced by **12 RED-before-GREEN ≤2h tasks** `174.039-T…174.050-T` (spec §0.2). `164.002-T`
-  re-pointed from superseded `174.001-T` to the final live task `174.050-T`.
+  replaced by **13 RED-before-GREEN ≤2h tasks** — `174.039-T…174.050-T` (12) plus the R7b split
+  task `174.051-T` (spec §0.2) — so `155-S` now carries **14 members including `174-F`**.
+  `164.002-T` (S12 forward-repair) is **retired** — set `blocked` (history preserved) with **no
+  dependency on `174.050-T`** (the obsolete cross-shipment edge is removed); `146-S` no longer
+  couples to `155-S`.
 * **Authoritative rollout (no circularity; §6):** (1) after staging merges, `155-S` ships
   **normally on `main`** — no pre-block, no `155` topology force, no `blocked` token during its
   execution; (2) then a **backlog-only `chore/block-154`** branch off synchronized `main` imports
@@ -346,3 +349,33 @@ editing only Stage-owned planning/backlog artifacts:
 Validation: `backlogit sync` (parse_failures=0), `doctor --check-orphans --check-duplicates` (no
 new findings on touched artifacts), `wave-scheduler-sim -VerifyAgainstQueue` (186/186 PASS), RED
 contract parser (3/3 clean). No source/tests edited, no `154-S` edit, no shipment claim, no PR.
+
+---
+
+## 6d. Current-HEAD remediation cycle 2 (2026-09-15, branch `chore/stage-155`; Stage-owned)
+
+Completes the two P1 gaps left open after §6c. §6c removed the obsolete `164.002-T → 174.050-T`
+dependency but left the retired task **inside the live queued `146-S` manifest**, and the Rev3 §0
+headings still declared 12 tasks.
+
+1. **Manifest reconciliation (smallest valid mutation).** Governed
+   `backlogit shipment return-blocked --shipment 146-S --item 164.002-T` removed the retired member
+   from the `146-S` executable manifest while keeping it `blocked` (return-blocked journal +
+   `shipment_item_returned_blocked`/`item_blocked` events; `related_to 174-F` retained). `146-S`
+   manifest is now `[164-F]` — a covering feature whose only children (`164.001-T`, `164.002-T`)
+   are `blocked`, i.e. no executable task work (features are excluded from the wave member set).
+   No live queued shipment now contains a blocked/superseded member.
+2. **Downstream decouple.** Because `146-S` has no executable work, `backlogit dep remove 147-S
+   146-S` removed the `147-S → 146-S` `blocks` edge so no downstream shipment is permanently
+   blocked by the retired empty release unit. `147-S` now sits in the `queued` frontier. No
+   unsupported shipment status invented; `146-S`/`147-S`/`155-S` stay `queued`.
+3. **Rev3 §0 topology corrected.** Spec §0.2, decision §0, and plan §0/§0.1 now state 13 live tasks
+   (`174.039-T…174.050-T` plus `174.051-T`) / 14 `155-S` members incl. `174-F`, and that
+   `164.002-T` is retired with no dependency on `174.050-T`. Old topology remains only in the
+   superseded `## Plan Review — Revision 3` audit record.
+
+Validation (current HEAD): `backlogit sync` (1525 artifacts, parse_failures=0); `docs lint` on all
+three docs (`valid: true`, 0 violations each); `doctor` — 23 pre-existing findings unchanged, none
+on touched artifacts; scheduler verification — `164.002-T` is a member of no shipment manifest, no
+shipment depends on `146-S`, `147-S` unblocked; `wave-scheduler-sim -VerifyAgainstQueue`
+WAVE_SIM_OK 186/186. No source/tests edited, no `154-S` edit, no shipment claim, no PR.
