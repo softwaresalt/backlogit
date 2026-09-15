@@ -54,50 +54,67 @@ governed public `WriteArtifactFile` boundary + private lower writer, `.locks/` w
 lock, SQLite projection, doctor checks, and CLI/MCP surface shapes are local and may be
 re-implemented upstream; they MUST NOT leak backlogit-specific semantics into (a).
 
-### 0.2 Concise decomposition (feature 174-F / shipment 155-S) — 15 tasks (16 shipment members incl. 174-F), RED-before-GREEN
+### 0.2 Concise decomposition (feature 174-F / shipment 155-S) — 16 tasks (17 shipment members incl. 174-F), RED-before-GREEN
 
 The rev2 9-task set (`174.030-T…174.038-T`) is **superseded**; together with the rev1 remnants
 `174.001-T…174.029-T` the full `174.001-T…174.038-T` band is now **archived** (terminal,
 `archived_status: blocked`, history/events preserved) so those superseded descendants sit OUTSIDE
-the live 174-F release scope. Replacement is **15 live tasks** — `174.039-T…174.051-T` (13) plus the
+the live 174-F release scope. Replacement is **16 live tasks** — `174.039-T…174.051-T` (13) plus the
 core stateful-seam split tasks `174.052-T` (declaration-only compile-green) and `174.053-T`
-(core-lifecycle behavior RED) — all ≤2h, RED harnesses precede their implementations. Shipment
-`155-S` therefore carries **16 members** (the 15 tasks plus covering feature `174-F`).
+(core-lifecycle behavior RED) and the R4g pre-edge guard `174.054-T` (generic `MoveShipmentStatus`
+block/unblock refusal, landed before the R5/R6 transition-table edges) — all ≤2h, RED harnesses
+precede their implementations. Shipment `155-S` therefore carries **17 members** (the 16 tasks plus
+covering feature `174-F`).
 
 **Stateful-seam RED discipline (rev3 remediation).** The core `BlockShipment`/`UnblockShipment`
 seam follows the mandated chain **source-shape RED → declaration-only compile-green → behavior RED →
 implementation** (P-002.1 source-shape harness; no declaration-only *exemption*). R1 is split so the
 harness no longer jumps from a source-shape RED directly into declaring/implementing the seam:
-`174.039-T` (R1s) is a source-shape harness pinning the `ShipmentBlocked` enum + block/unblock
-signatures (declaration shape only; NOT the `isValidShipmentTransition` blocked-transition table,
-which is functional transition-enablement deferred to R5/R6); `174.052-T` (Rd) lands ONLY those declarations (stubs), turning R1s
-green; `174.053-T` (R1b) is the behavior RED harness that compiles against the stubs and stays red
-until R5/R6 implement. The writer/crash harnesses R2 (`174.040-T`) and R3 (`174.041-T`) depend on Rd
-(`174.052-T`) so they compile-green before asserting behavior.
+`174.039-T` (R1s) is a source-shape harness pinning the `ShipmentBlocked` enum + the EXACT
+`BlockShipment(ctx, ws, shipmentID string, opts BlockOptions) (*models.Artifact, error)` /
+`UnblockShipment(ctx, ws, shipmentID string, opts UnblockOptions) (*models.Artifact, error)`
+signatures, the `BlockOptions`/`UnblockOptions` structs, and the `blerrors.ErrNotImplemented`
+sentinel (declaration shape only; NOT the `isValidShipmentTransition` blocked-transition table,
+which is functional transition-enablement deferred to R5/R6); `174.052-T` (Rd) lands ONLY those
+declarations (stubs returning the sentinel), turning R1s green; `174.053-T` (R1b) is the behavior
+RED harness that compiles against the stubs and stays red until R5/R6 implement. The writer/crash
+harnesses R2 (`174.040-T`) and R3 (`174.041-T`) depend on Rd (`174.052-T`) so they compile-green
+before asserting behavior. These exact Go signatures/structs/sentinel are the **[local] backlogit
+API shape** (§2.5); the **[shared] portable contract** (token/edge-set/field-names/event) is
+asserted separately (U17) and does not overlap the R1s go/ast shape assertions.
+
+**Guard-before-edge ordering (PR #444 remediation).** The generic exported `MoveShipmentStatus`
+block/unblock refusal is landed by `174.054-T` (R4g) at **wave 4**, STRICTLY BEFORE R5 (`174.043-T`)
+enables the `active→blocked` edge and R6 (`174.044-T`) enables `blocked→{queued,active}` in
+`isValidShipmentTransition`. R4g is a top-level fail-closed guard placed ABOVE the transition-table
+check (returning `blerrors.ErrShipmentBlockedRequiresEnvelope`), so no intermediate wave exposes an
+ungoverned generic block/unblock; the governed seam is exempt by construction (it writes beneath the
+choke point). R5/R6 therefore depend on R4g. R7a (`174.045-T`) retains the remaining bypass routing.
 
 | Task | Req | Scope | Domain |
 |---|---|---|---|
-| `174.039-T` | R1s | Core-lifecycle SOURCE-SHAPE RED harness (go/ast: `ShipmentBlocked` enum + `BlockShipment`/`UnblockShipment` signatures; no transition-table) | tests |
-| `174.052-T` | Rd | Core-lifecycle declaration-only stubs (compile-green): `ShipmentBlocked` const + block/unblock stub signatures only (no `isValidShipmentTransition` blocked entries) | code |
+| `174.039-T` | R1s | Core-lifecycle SOURCE-SHAPE RED harness (go/ast: `ShipmentBlocked` enum + EXACT `BlockShipment`/`UnblockShipment` signatures + `BlockOptions`/`UnblockOptions` + `blerrors.ErrNotImplemented` sentinel; no transition-table) | tests |
+| `174.052-T` | Rd | Core-lifecycle declaration-only stubs (compile-green): `ShipmentBlocked` const + `BlockOptions`/`UnblockOptions` + block/unblock stub signatures returning `blerrors.ErrNotImplemented` only (no `isValidShipmentTransition` blocked entries) | code |
 | `174.053-T` | R1b | Core-lifecycle BEHAVIOR RED harness (transitions, metadata, intent+preimage, disposition, target-aware unblock) | tests |
 | `174.040-T` | R2 | Writer/bypass BEHAVIOR RED harness (writer boundary, generic move/update, MoveShipmentStatus, bulk/cascade, create-as-active) | tests |
 | `174.041-T` | R3 | Crash/reopen BEHAVIOR RED harness (durable intent/preimage recovery; subprocess kill+reopen) | tests |
 | `174.042-T` | R4 | Governed writer core + envelope + public `WriteArtifactFile` boundary | code |
-| `174.043-T` | R5 | Core `BlockShipment` (global lock held across intent→preimage→disposition→persist→commit/compensation; member-mutation guard while blocked; enable governed `active→blocked` transition, generic move still refused) | code |
-| `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction; enable governed `blocked→{queued,active}` transitions, generic move still refused) | code |
-| `174.045-T` | R7a | Route bypass WRITE call-sites (generic move/update, MoveShipmentStatus, bulk/cascade) through the governed writer | code |
+| `174.054-T` | R4g | Pre-edge generic `MoveShipmentStatus` block/unblock top-level refusal (`blerrors.ErrShipmentBlockedRequiresEnvelope`, above the transition-table check; lands @W4 before any R5/R6 edge) | code |
+| `174.043-T` | R5 | Core `BlockShipment` (global lock held across intent→preimage→disposition→persist→commit/compensation; member-mutation guard while blocked; enable governed `active→blocked` transition, generic move still refused via R4g) | code |
+| `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction; enable governed `blocked→{queued,active}` transitions, generic move still refused via R4g) | code |
+| `174.045-T` | R7a | Route REMAINING bypass WRITE call-sites (generic move/update, bulk/cascade; MoveShipmentStatus writer delegation) through the governed writer — MoveShipmentStatus block/unblock refusal now owned by R4g | code |
 | `174.051-T` | R7b | Guard create-as-active + all generic activation paths (refuse activation outside claim/unblock) | code |
-| `174.046-T` | R8 | CLI + MCP parity for block/unblock + read/list status | code |
+| `174.046-T` | R8 | CLI + MCP parity for block/unblock + read/list status (surface inputs map 1:1 to `BlockOptions`/`UnblockOptions` over the same core) | code |
 | `174.047-T` | R9 | Recovery + normalizer (durable-intent recovery under locks; machine-readable snapshot schema as input; MCP normalizer parity) | code |
 | `174.048-T` | R10 | Subprocess crash/reopen GREEN tests | tests |
 | `174.049-T` | R11 | Doctor production checks (active-count, malformed-blocked, torn-intent; severity/exit; MCP; isolated fixture) | code |
 | `174.050-T` | R12 | Operator docs + branch-scoped bootstrap runbook + topology note | docs |
 
 Topological order (parent-first): `174-F → 174.039 → 174.052 → 174.053 → 174.040 → 174.041 →
-174.042 → 174.043 → 174.044 → 174.045 → 174.051 → 174.046 → 174.047 → 174.048 → 174.049 → 174.050`
-(15 tasks + `174-F` = 16 `155-S` members). Waves (dependency layers): W1 `039`; W2 `052`; W3 `053`,
-`040`, `041`; W4 `042`; W5 `043`; W6 `044`; W7 `045`, `051`, `046`, `047`; W8 `048`, `049`; W9 `050`
-(9 waves). RED-deliverable closing waves: R1s@2, R1b@6, R2@7, R3@8. `164.002-T` (S12 forward-repair) is **retired/superseded by rev3** — set
+174.042 → 174.054 → 174.043 → 174.044 → 174.045 → 174.051 → 174.046 → 174.047 → 174.048 → 174.049 →
+174.050` (16 tasks + `174-F` = 17 `155-S` members). Waves (dependency layers): W1 `039`; W2 `052`;
+W3 `053`, `040`, `041`; W4 `042`, `054`; W5 `043`; W6 `044`; W7 `045`, `051`, `046`, `047`; W8
+`048`, `049`; W9 `050` (9 waves). RED-deliverable closing waves: R1s@2, R1b@6, R2@7, R3@8. `164.002-T` (S12 forward-repair) is **retired/superseded by rev3** — set
 `blocked` (history preserved) with **no dependency on `174.050-T`** (the obsolete cross-shipment
 edge is removed), because its shipment-record-only `queued → active` contract is incompatible with
 rev3 exclusive activation and its reconciliation role is subsumed by R9 (`174.047-T`) / R11
@@ -262,7 +279,7 @@ Layer classification of the requirements below:
 | Layer | Requirements |
 |---|---|
 | **[shared]** — portable contract, must stay stable | SBLK-R1 (token value), R2 (transition set), R4 (single-active exclusion invariant), R5 (unblock-readiness *semantics*: blocker-resolution assertion + free slot), R6 (non-claimable/non-executable while blocked), R7 (audit **field names** + authoritative event), R9 (member-disposition semantics: no active release-unit execution while blocked), R10 (evidence/branch/checkpoint/member-snapshot preserved), R11 (ready-work exclusion + kept-in-queue *behavior*), R12 (dependency stays execution-blocking), R17 (no direct `blocked→terminal`), R20, R22, R27 (partial-failure durability semantics) |
-| **[local]** — backlogit implementation detail, replaceable | SBLK-R3 (choke-point seams/wiring), R5 (`--confirm` flag + `.locks/` free-slot *mechanism*), R8 (clear-helper mechanism), R13 (CLI verb shape), R14 (MCP tool shape), R15 (SQLite projection), R16 (`doctor` checks), R18 (backlogit enum/index additive handling), R24/R25 (bootstrap seam + normalization *mechanism*) |
+| **[local]** — backlogit implementation detail, replaceable | SBLK-R3 (choke-point seams/wiring; the exact Go API shape `BlockShipment(ctx, ws, shipmentID string, opts BlockOptions) (*models.Artifact, error)` / `UnblockShipment(ctx, ws, shipmentID string, opts UnblockOptions) (*models.Artifact, error)`, the `BlockOptions`/`UnblockOptions` structs, and the `blerrors.ErrNotImplemented` + `blerrors.ErrShipmentBlockedRequiresEnvelope` sentinels), R5 (`--confirm` flag + `.locks/` free-slot *mechanism*), R8 (clear-helper mechanism), R13 (CLI verb shape), R14 (MCP tool shape), R15 (SQLite projection), R16 (`doctor` checks), R18 (backlogit enum/index additive handling), R24/R25 (bootstrap seam + normalization *mechanism*) |
 | **informing / assessment (non-contract)** | SBLK-R19 (RED-baseline defect provenance), R21 (no-conflicting-local-semantics governance), R23 (upstream informing item), R26 (external autoharness topology-gate assessment) |
 
 R21 and R23 are cross-cutting contract-governance requirements (see *Portability & migration*).

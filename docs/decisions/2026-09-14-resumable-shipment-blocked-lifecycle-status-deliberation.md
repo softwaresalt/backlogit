@@ -41,11 +41,15 @@ Companion product spec: `docs/product-specs/2026-09-14-resumable-shipment-blocke
   active shipment; never active members under a queued shipment.
 * **Decomposition (rev3):** rev1/rev2 `174.001-T…174.038-T` superseded and **archived** (terminal,
   `archived_status: blocked`, history/events preserved) so they sit OUTSIDE the live 174-F release
-  scope; replaced by **15 RED-before-GREEN ≤2h tasks** — `174.039-T…174.051-T` (13) plus the core
+  scope; replaced by **16 RED-before-GREEN ≤2h tasks** — `174.039-T…174.051-T` (13) plus the core
   stateful-seam split tasks `174.052-T` (declaration-only compile-green) and `174.053-T`
-  (core-lifecycle behavior RED) (spec §0.2) — so `155-S` now carries **16 members including
-  `174-F`**. The core `BlockShipment`/`UnblockShipment` seam follows **source-shape RED →
-  declaration-only compile-green → behavior RED → implementation** (R1 split into R1s/Rd/R1b).
+  (core-lifecycle behavior RED) and the R4g pre-edge guard `174.054-T` (generic `MoveShipmentStatus`
+  block/unblock refusal landed before the R5/R6 transition-table edges) (spec §0.2) — so `155-S`
+  now carries **17 members including `174-F`**. The core `BlockShipment`/`UnblockShipment` seam
+  follows **source-shape RED → declaration-only compile-green → behavior RED → implementation** (R1
+  split into R1s/Rd/R1b), and its EXACT [local] Go API shape (`BlockShipment(ctx, ws, id, BlockOptions)`
+  / `UnblockShipment(ctx, ws, id, UnblockOptions) (*models.Artifact, error)` + `blerrors.ErrNotImplemented`
+  sentinel) is pinned by the R1s source-shape harness, kept separate from the [shared] contract.
   `164.002-T` (S12 forward-repair) is **retired** — set `blocked` (history preserved) with **no
   dependency on `174.050-T`** (the obsolete cross-shipment edge is removed); `146-S` no longer
   couples to `155-S`.
@@ -410,3 +414,32 @@ parser 4/4 clean with Rd carrying no red block; dependency graph acyclic (9 wave
 transition enablement strictly after 053 behavior RED; manifest 16 members == 174-F + 15 live queued
 descendants; doctor 23 pre-existing findings, none on 174.*. No source/tests, no `154-S`, no claim,
 no PR.
+
+## §6f — Copilot PR #444 remediation cycle 4 (2026-09-15, branch `chore/stage-155`)
+
+Bounded remediation of the two OPEN Copilot review threads on PR #444 (HEAD `409f3c54`),
+Stage-owned backlog/docs only; caller replies/resolves the threads. Append-only — prior counts in
+earlier records are retained as audit context.
+
+1. **Exact API shape (thread `PRRT_kwDORzozKM6iuWEe`, `174.039-T`).** `BlockShipment`/`UnblockShipment`
+   were spelled only as `(...)`. Now pinned to exact [local] signatures grounded in core conventions:
+   `BlockShipment(ctx, ws, shipmentID string, opts BlockOptions) (*models.Artifact, error)` and
+   `UnblockShipment(ctx, ws, shipmentID string, opts UnblockOptions) (*models.Artifact, error)` with
+   `BlockOptions{Reason(required), BlockedBy, ResumeCheckpointRef}` / `UnblockOptions{Target, Confirm, UnblockedBy}`;
+   declaration-only sentinel `blerrors.ErrNotImplemented`. Updated 174.039/052/053/043/044/046 + spec
+   §0.2/§2.5 + plan Portability boundary. The [local] Go shape (R1s go/ast) stays SEPARATE from the
+   [shared] token/edge/field-name/event conformance (U17).
+
+2. **Guard-before-edge (thread `PRRT_kwDORzozKM6iunWq`, `174.045-T`).** R5/R6 enabled the
+   `isValidShipmentTransition` edges before R7a's generic `MoveShipmentStatus` refusal (wave 7),
+   exposing ungoverned generic block/unblock at waves 5–6. New smallest task **R4g `174.054-T`**@**W4**
+   lands a top-level fail-closed `MoveShipmentStatus` block/unblock refusal (sentinel
+   `blerrors.ErrShipmentBlockedRequiresEnvelope`, placed ABOVE the transition-table check) strictly
+   before any edge; R5/R6 now depend on it; R7a keeps the remaining bypass routing. Governed seam
+   exempt by construction (writes beneath the choke point). Scope: **16 tasks / 17 members incl. 174-F**.
+
+Validation (current HEAD): `backlogit sync` parse_failures=0; `docs lint` all three `valid: true`;
+`wave-scheduler-sim -VerifyAgainstQueue` WAVE_SIM_OK; RED-contract parser clean (174.054 carries no
+red block); dependency graph acyclic (9 waves) with 174.054@W4 strictly before 043@W5/044@W6; manifest
+17 members == 174-F + 16 live queued descendants; doctor pre-existing findings only, none on 174.*.
+No source/tests, no `154-S`, no claim.
