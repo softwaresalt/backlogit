@@ -20,63 +20,80 @@ docline:
 **Intake:** stash `808E4323`. **Informing defect (out of scope):** stash `7AA35A39`.
 **Supersedes:** S12 parked-state unit `164.001-T` (see deliberation §4/§6).
 
-## 0. CURRENT AUTHORITATIVE REVISION — rev2 (2026-09-15)
+## 0. CURRENT AUTHORITATIVE REVISION — rev3 (2026-09-15)
 
-> §0 is the **authoritative current plan**. All sections below (unit bodies U1…U19b,
-> hardening table, and **every `## Plan Review` record**) are **retained as historical
-> context/audit trail**. The prior 29-unit decomposition is superseded; the shipped scope is
-> the concise 9-task set below. Where §0 and a later section conflict, §0 governs.
+> §0 is the **authoritative current plan** and supersedes rev1/rev2 §0. All sections below (unit
+> bodies U1…U19b, hardening table, and **every `## Plan Review` record**) are **retained as
+> historical/audit context**. The prior 29-unit decomposition and the rev2 9-task set are
+> superseded; the shipped scope is the concise **12-task RED-before-GREEN set** below. Where §0 and
+> a later section conflict, §0 governs. **rev3 removes the rollout circularity, the generic-move
+> bootstrap, and the `155-S` topology `--force`.**
 
-### 0.1 Concise task set (feature `174-F` / shipment `155-S`) — all test-first, ≤2h
+### 0.1 Concise task set (feature `174-F` / shipment `155-S`) — 12 tasks, RED-before-GREEN, ≤2h
+
+The rev2 tasks `174.030-T…174.038-T` are **superseded** (parked `blocked`, preserved). Replacement:
 
 | Task | Req | Title | Domain | Depends on |
 |---|---|---|---|---|
-| `174.030-T` | R1 | RED harness for blocked shipment contract | tests | — |
-| `174.031-T` | R2 | Core governed `BlockShipment` | code | R1 |
-| `174.032-T` | R3 | Core governed `UnblockShipment` | code | R1, R2 |
-| `174.033-T` | R4a | Central governed writer core + envelope | code | R1, R2 |
-| `174.034-T` | R4b | Route bypass call-sites through governed writer | code | R4a, R2 |
-| `174.035-T` | R5 | CLI+MCP parity for block/unblock/status | code | R2, R3 |
-| `174.036-T` | R6 | 154-S bootstrap + normalizer + crash recovery | code | R2, R3, R4b |
-| `174.037-T` | R7 | Crash/reopen subprocess integration tests | tests | R2, R3, R6 |
-| `174.038-T` | R8 | Docs + doctor verification | docs | R5, R6 |
+| `174.039-T` | R1 | Core-lifecycle RED harness (transitions/metadata/intent+preimage/disposition/target-aware unblock) | tests | — |
+| `174.040-T` | R2 | Writer/bypass RED harness (writer boundary, generic move/update, MoveShipmentStatus, bulk/cascade, create-as-active) | tests | — |
+| `174.041-T` | R3 | Crash/reopen RED harness (durable intent/preimage recovery; subprocess kill+reopen) | tests | — |
+| `174.042-T` | R4 | Governed writer core + envelope + public `WriteArtifactFile` boundary | code | R1, R2 |
+| `174.043-T` | R5 | Core `BlockShipment` (global lock across intent→preimage→disposition→persist→commit/compensation; member guard) | code | R1, R4 |
+| `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction) | code | R1, R5 |
+| `174.045-T` | R7 | Route bypass call-sites through governed writer (split if >4 functions) | code | R2, R4, R6 |
+| `174.046-T` | R8 | CLI + MCP parity for block/unblock + read/list status | code | R5, R6 |
+| `174.047-T` | R9 | Recovery + normalizer + machine-readable snapshot schema (durable-intent recovery under locks; MCP parity) | code | R3, R5, R6 |
+| `174.048-T` | R10 | Subprocess crash/reopen GREEN tests | tests | R3, R9 |
+| `174.049-T` | R11 | Doctor production checks (active-count, malformed-blocked, torn-intent; severity/exit/MCP; isolated fixture) | code | R5, R6, R9 |
+| `174.050-T` | R12 | Operator docs + branch-scoped bootstrap runbook + topology note | docs | R8, R9, R11 |
 
 ```
-R1 ─► R2 ─┬─► R3 ─┬─► R5 ─┐
-          ├─► R4a ─► R4b ─┤        ├─► R8
-          │                └─► R6 ─┤
-          └────────(R6 needs R2,R3,R4b)   └─► R7
+R1(039) ─┬─────────────────► R4(042) ─┬─► R5(043) ─┬─► R6(044) ─┬─► R8(046) ─┐
+R2(040) ─┘                            │            │            ├─► R9(047) ─┼─► R11(049) ─► R12(050)
+R3(041) ──────────────────────────────┘ (R9 needs R3,R5,R6)    │            │            ▲
+                                       R7(045) needs R2,R4,R6 ──┘            └─► R10(048)─┘
 ```
 
-Topological execution order (parent-first):
-`174-F → 174.030 → 174.031 → 174.032 → 174.033 → 174.034 → 174.035 → 174.036 → 174.037 → 174.038`.
+Topological order (parent-first):
+`174-F → 174.039 → 174.040 → 174.041 → 174.042 → 174.043 → 174.044 → 174.045 → 174.046 →
+174.047 → 174.048 → 174.049 → 174.050`.
 
-Each task's private acceptance criteria (RED-first, lock/intent-commit invariants,
-snapshot/restore, governed-refusal, CLI/MCP parity, normalizer-or-refuse, crash recovery,
-doctor severity/exit) live in the task artifacts themselves. Every code task is gated by a
-failing R1 test it must turn green; no production code lands before R1 is RED.
+Each task's private acceptance criteria (RED-first, workspace-global-lock + durable
+intent/preimage-before-mutation invariants, snapshot/restore, member CAS/drift refusal,
+governed-refusal of bypass paths, create-active restriction, CLI/MCP parity, normalizer-or-refuse
+with machine-readable snapshot input, startup/governed crash recovery under locks, doctor
+severity/exit/MCP) live in the task artifacts. Every code task is gated by a failing RED test
+(R1/R2/R3) it must turn green; no production code lands before the corresponding RED is failing.
+`164.002-T` is re-pointed from superseded `174.001-T` to the final live task `174.050-T`.
 
-### 0.2 U-BOOT — one-time bootstrap handoff (documented; NOT a shipped code unit; NOT executed by Stage)
+### 0.2 Branch-scoped bootstrap for `154-S` (documented; NOT a shipped code unit; NOT executed by Stage)
 
-Authoritative runbook in deliberation §6 items 3 & 5. Summary: after `155-S` ships and
-`chore/stage-155` merges to `main`, capture the machine-readable `154-S` snapshot from the
-**intact Ship branch `…precondition` @ `dd9f01a1`** (authoritative active provenance — the
-staging projection shows `queued` and must NOT be used), via a single-worktree `git switch`
-(non-destructive; Ship commits untouched); create `chore/bootstrap-154` off post-merge `main`;
-disposition `173.006-T → queued` FIRST, set `154-S → blocked`, backfill metadata via the shipped
-normalizer (R6), and commit only `154-S`/snapshot state there. No parallel worktrees; no Ship
-commit loss. Bounded rollback valid only before any other claim, else fail closed.
+Authoritative runbook in deliberation §6.2. **No generic move, no pre-governance rollback, no
+migration debt.** Sequence: (1) after staging merges, **`155-S` ships normally on `main`** (154-S
+& 173.006-T are `queued` there — slot free; no `blocked` token during execution; no `--force`).
+(2) Create a **backlog-only `chore/block-154`** branch off synchronized `main`; import ONLY
+authoritative `154-S`/`173-F` provenance from the intact Ship branch `…precondition @ dd9f01a1`
+with **content hashes + explicit allowlist (no Go/source/harness code)** to reconstruct the
+active state; Ship commits untouched, no parallel worktrees. (3) Invoke the **shipped governed
+`BlockShipment`** there (legal `active → blocked`): global lock, durable intent + preimage,
+machine-readable snapshot (`.backlogit/bootstrap/154-S.snapshot.json`, consumed by R9/`174.047-T`),
+member disposition `173.006-T → queued`, governed metadata/event; commit only the `154-S`/snapshot
+backlog state and PR-merge to `main`. (4) Run the corrective `7AA35A39` shipment on `main` while
+`154` is `blocked`; later merge `main` into the `154` feature branch, governed **unblock-to-active**
+after the fix, resume checkpoint `checkpoint-20260914-070735.json`.
 
-### 0.3 External topology compatibility (VERIFIED — see spec §0.3, deliberation §6.4)
+### 0.3 External topology compatibility (VERIFIED — see spec §0.4, deliberation §6 item 3)
 
 `autoharness gate pipeline-topology` currently **rejects** `blocked` (`topology.py:553`,
 `_VALID_LIVE_SHIPMENT_STATUSES` excludes it) though its active-slot/consistency logic already
-treats `blocked` as non-active. Smallest fix = one-line upstream allowlist add (external Python,
-not backlogit Go) → external ratification item. Interim: audited operator-only
-`--force` override for the `155-S` bootstrap window at `pre_claim`/`post_claim`/`lifecycle`.
+treats `blocked` as non-active. **`155-S` never exercises this** (no `blocked` token during its
+execution). For the **later corrective shipment**: smallest fix = one-line upstream allowlist add
+(`"blocked"` → `_VALID_LIVE_SHIPMENT_STATUSES`, external Python, not backlogit Go) as an external
+ratification item; interim, an **audited per-phase `--force` scoped to that shipment ONLY after the
+normal gate proves the sole failure is the unsupported `blocked` status** (no standing override).
 
 ---
-
 ## Portability boundary (shared vs. backlogit-local — spec §2.5, SBLK-R20…R23)
 
 This capability is already stashed upstream in the **`autoharness` backlog**; this backlogit
@@ -859,3 +876,54 @@ Persona votes:
   `blocked`; authoritative gate remains the workspace-global-locked free-slot scan.
 
 Gate outcome: **PASS** (Security advisory noted and operator-authorized). Residual P1 findings: 0.
+
+<!-- plan-review-attempt: rev3 -->
+
+## Plan Review — Revision 3 (branch-scoped source-of-truth; rollout-circularity removed)
+
+* **dispatch_mode:** multi-agent-dispatch
+* **decision:** PASS
+* **operator_authorization:** approved
+* **plan-review-attempt:** rev3 (prior records — attempt 1, 2, amendments 1–4, rev2 — retained above as audit)
+* **scope:** feature `174-F` / shipment `155-S`; 12 replacement tasks `174.039-T…174.050-T`
+  (rev2 `174.030-T…174.038-T` superseded → `blocked`, preserved).
+
+### P1 resolutions verified
+
+1. **10–12 tasks, explicit RED-before-GREEN.** 12 tasks; three RED harnesses (`174.039/040/041`)
+   have no prerequisites and every implementation task depends on its RED harness — verified in the
+   dependency graph (`174.042→039,040`; `174.043→039,042`; `174.047→041,…`; `174.048→041,047`).
+2. **Durable INTENT + complete preimage persist before any mutation; global lock held through
+   intent→disposition→persist→commit/compensation.** Encoded in R5 (`174.043-T`) AC; claim and
+   unblock-to-active share the same workspace-global lock (R6 `174.044-T`).
+3. **Target-aware unblock.** to-queued preserves snapshot/leaves members queued; to-active exact
+   restore under lock; never active members under a queued shipment (R6 `174.044-T`).
+4. **Govern public `WriteArtifactFile` boundary + private lower writer; create-active restricted.**
+   Only `ClaimShipment`/unblock-to-active create an active shipment under the global lock (R4
+   `174.042-T` + R6 `174.044-T`); all generic activation/bypass paths rewired via R7 `174.045-T`.
+5. **Member CAS/drift refusal.** Member mutations guarded while parent blocked; restore refuses on
+   drift (R5/R6).
+6. **Machine-readable snapshot schema is normalizer input (no free-form memory).** R9 `174.047-T`.
+7. **Startup/governed recovery under the same locks from durable intent/preimage; subprocess
+   kill+reopen tests.** R9 `174.047-T` (recovery) + R10 `174.048-T` (GREEN subprocess tests),
+   RED-gated by R3 `174.041-T`.
+8. **MCP normalizer parity + CLI/MCP block/unblock/status parity.** R8 `174.046-T`, R9 `174.047-T`.
+9. **Doctor split from docs.** R11 `174.049-T` (doctor production) vs. R12 `174.050-T` (docs).
+10. **`164.002-T` re-pointed** from superseded `174.001-T` to final live task `174.050-T` (applied
+    via backlog-native `dep` mutations; traceability preserved).
+11. **Rollout circularity removed; generic-move bootstrap and `155` topology `--force` deleted from
+    authoritative sections** (§0.2/§0.3, deliberation §6); stale live-corpus/pre-block/pre-governance
+    text removed from §0; historical sections retained below as superseded audit.
+
+### Persona votes
+
+* **Correctness:** PASS — RED-before-GREEN topology sound; intent+preimage-before-mutation and
+  global-lock invariants explicit; target-aware unblock well-defined.
+* **Architecture:** PASS — shared portable contract cleanly separated from backlogit-local writer
+  implementation; branch-scoped source-of-truth eliminates the circular dependency at the root.
+* **Scope/Maintainability:** PASS — 12 tasks each ≤2h, single-domain, RED-gated; no
+  one-task-per-callsite sprawl (R7 split-if->4-functions guard).
+* **Constitution/Safety:** PASS — no source/tests/154-S mutated by Stage; `155-S` ships without any
+  topology override; corrective-shipment override is audited, per-phase, and conditional.
+
+**Verdict: PASS** — cleared for harvest/manifest; residual P1 = 0.

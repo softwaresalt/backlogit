@@ -222,3 +222,28 @@ executed by Stage.
 
 Docs: added authoritative §0 to spec/decision/plan (historical sections retained); plan-review
 record rev2 appended (PASS, operator_authorization: approved, residual P1 = 0).
+
+---
+
+## Rev3 rearchitecture (2026-09-15) — branch-scoped source-of-truth
+
+* **Superseded** rev2 tasks `174.030-T…174.038-T` → status `blocked` (preserved, not deleted).
+* **Created** 12 RED-before-GREEN ≤2h tasks `174.039-T…174.050-T` under `174-F`; 22 dependency
+  edges (three RED harnesses 039/040/041 have no prereqs; all impl tasks depend on their RED).
+* **Re-pointed** `164.002-T`: removed dep on superseded `174.001-T`; added dep on final live task
+  `174.050-T`.
+* **Remanifested** `155-S` → 13 items (`174-F` + `174.039`–`174.050-T`).
+* **Docs §0 rewritten to rev3** (spec/decision/plan): removed generic-move bootstrap,
+  pre-block-of-154, `155-S` topology `--force`, pre-governance rollback runbook, live-corpus checks.
+  Historical sections + all prior plan-review records retained as superseded audit.
+* **Authoritative rollout (no circularity):** `155-S` ships normally on `main` (154-S/173.006
+  queued there → slot free, no `blocked` token, no force) → backlog-only `chore/block-154` off
+  synchronized `main` hydrated from Ship branch `…precondition@dd9f01a1` (content hashes +
+  allowlist, no code) → shipped governed `BlockShipment` (legal active→blocked, machine-readable
+  snapshot `.backlogit/bootstrap/154-S.snapshot.json`) → PR blocked state to `main` → corrective
+  `7AA35A39` shipment while 154 blocked → merge main into 154 feature branch → governed
+  unblock-to-active → resume checkpoint.
+* **Topology:** current external gate rejects `blocked` (`topology.py:553`), non-active logic
+  already correct. `155-S` unaffected. Corrective shipment: one-line upstream allowlist add, else
+  audited per-phase `--force` only after normal gate proves sole failure is unsupported-`blocked`.
+* Plan-review rev3 record: PASS, residual P1 = 0.

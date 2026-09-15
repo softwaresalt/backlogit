@@ -26,91 +26,90 @@ whose plan is currently `FAIL` at plan-review attempt 2 and pending re-plan.
 
 ---
 
-## 0. CURRENT AUTHORITATIVE REVISION — rev2 (2026-09-15)
+## 0. CURRENT AUTHORITATIVE REVISION — rev3 (2026-09-15)
 
-> This §0 is the **authoritative current revision** and supersedes the detailed
-> requirement/decomposition text in the sections below, which are **retained as
-> historical context and audit trail** (including all prior `## Plan Review`
-> records in the companion plan). Requirement IDs `SBLK-R1…R27` remain valid as
-> the shared contract vocabulary; §0 re-states the delivery shape concisely.
+> §0 is the **authoritative current revision** and supersedes rev1/rev2 §0 and the detailed
+> sections below, which are **retained as superseded audit trail** (including all prior
+> `## Plan Review` records in the companion plan). `SBLK-R1…R27` remain the shared contract
+> vocabulary. **rev3 removes the rollout circularity, the generic-move bootstrap, and the
+> topology `--force` for `155-S` entirely** by using a branch-scoped source-of-truth.
 
 ### 0.1 Scope split — shared contract vs. backlogit-local implementation
 
-**(a) Shared, portable contract (STABLE — must not diverge from autoharness).**
-The cross-repository contract is shipment lifecycle status **`blocked`**: non-terminal;
-preserves shipment/member/reconciliation/resumption evidence; **excluded from the single
-*active* execution slot** so exactly one corrective shipment may run; cannot be
+**(a) Shared, portable contract (STABLE — must not diverge from autoharness).** Shipment
+lifecycle status **`blocked`**: non-terminal; preserves shipment/member/reconciliation/
+resumption evidence; **excluded from the single *active* execution slot**; cannot be
 claimed/executed while blocked; governed transitions `active → blocked` and
-`blocked → {queued, active}` only after blockers clear and topology/readiness gates pass.
-Multiple `blocked` shipments may coexist; at most one `active`. Governed audit metadata:
-`blocked_reason`, `blocked_at`, `blocked_by`, `resume_checkpoint_ref`. On block, active/
-in-flight member tasks are captured in a **machine-readable snapshot** and returned to
-`queued`; on governed unblock they are **exactly restored** (CAS/drift refusal). Every
-transition uses a **correlated intent→commit** record so an append-only event alone can
-never assert a completed transition. This contract is the autoharness-stashed capability;
-the local implementation is expected to be superseded by the upstream one and MUST remain
-compatible (no backlogit-specific semantics that conflict with autoharness).
+`blocked → {queued, active}`. At most one `active` shipment; multiple `blocked` may coexist.
+Governed metadata `blocked_reason`, `blocked_at`, `blocked_by`, `resume_checkpoint_ref`. A
+**durable INTENT + complete PREIMAGE snapshot persist before any member/shipment mutation**; on
+block, active/in-flight members are captured to a **machine-readable snapshot** and returned to
+`queued`; **never leave active members under a queued shipment**. Target-aware unblock: to-queued
+leaves members queued and preserves the snapshot; to-active restores the exact snapshot under the
+workspace-global lock. **Only ClaimShipment and unblock-to-active may create an active shipment**,
+both under that global lock. Every transition uses a **correlated intent→commit** record.
 
-**(b) backlogit-local implementation (REPLACEABLE).** The central governed writer/envelope,
-`.locks/` workspace-global active-slot lock, SQLite projection, doctor checks, and CLI/MCP
-surface shapes are local and may be re-implemented upstream; they MUST NOT leak
-backlogit-specific semantics into (a) nor introduce a conflicting synonym token.
+**(b) backlogit-local implementation (REPLACEABLE).** The central governed writer/envelope, the
+governed public `WriteArtifactFile` boundary + private lower writer, `.locks/` workspace-global
+lock, SQLite projection, doctor checks, and CLI/MCP surface shapes are local and may be
+re-implemented upstream; they MUST NOT leak backlogit-specific semantics into (a).
 
-### 0.2 Concise replacement decomposition (feature 174-F / shipment 155-S, 9 tasks)
+### 0.2 Concise decomposition (feature 174-F / shipment 155-S) — 12 tasks, RED-before-GREEN
 
-The prior 29-task decomposition (`174.001-T…174.029-T`) is **superseded** and parked at
-status `blocked` (preserved, not deleted). Replacement, all test-first and ≤2h:
+The rev2 9-task set (`174.030-T…174.038-T`) is **superseded** and parked at `blocked` (preserved,
+not deleted). Replacement, all ≤2h, RED harnesses precede their implementations:
 
 | Task | Req | Scope | Domain |
 |---|---|---|---|
-| `174.030-T` | R1 | RED harness: transitions, metadata, intent/commit, member snapshot/disposition | tests |
-| `174.031-T` | R2 | Core governed `BlockShipment` (lock-held snapshot → member→queued → persist → intent/commit → rollback) | code |
-| `174.032-T` | R3 | Core governed `UnblockShipment` (`--confirm`, free-slot check, snapshot CAS/drift refusal, exact restore, metadata clear/event) | code |
-| `174.033-T` | R4a | Central private governed writer + envelope (correlation/intent-commit) | code |
-| `174.034-T` | R4b | Route all bypasses through the writer (generic move/update, `MoveShipmentStatus`, bulk/cascade, create-as-blocked/active, public `WriteArtifactFile`) | code |
-| `174.035-T` | R5 | CLI+MCP parity for block/unblock + read/list status | code |
-| `174.036-T` | R6 | 154-S bootstrap + normalizer (machine-readable snapshot, no free-form memory) + startup/governed crash recovery from durable intent | code |
-| `174.037-T` | R7 | Crash/reopen subprocess integration tests (block/unblock/bootstrap) | tests |
-| `174.038-T` | R8 | Minimal docs + doctor verification (active-count, malformed-blocked, torn-intent) | docs |
+| `174.039-T` | R1 | Core-lifecycle RED harness (transitions, metadata, intent+preimage, disposition, target-aware unblock) | tests |
+| `174.040-T` | R2 | Writer/bypass RED harness (writer boundary, generic move/update, MoveShipmentStatus, bulk/cascade, create-as-active) | tests |
+| `174.041-T` | R3 | Crash/reopen RED harness (durable intent/preimage recovery; subprocess kill+reopen) | tests |
+| `174.042-T` | R4 | Governed writer core + envelope + public `WriteArtifactFile` boundary | code |
+| `174.043-T` | R5 | Core `BlockShipment` (global lock held across intent→preimage→disposition→persist→commit/compensation; member-mutation guard while blocked) | code |
+| `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction) | code |
+| `174.045-T` | R7 | Route bypass call-sites through the governed writer (split if >4 functions) | code |
+| `174.046-T` | R8 | CLI + MCP parity for block/unblock + read/list status | code |
+| `174.047-T` | R9 | Recovery + normalizer (durable-intent recovery under locks; machine-readable snapshot schema as input; MCP normalizer parity) | code |
+| `174.048-T` | R10 | Subprocess crash/reopen GREEN tests | tests |
+| `174.049-T` | R11 | Doctor production checks (active-count, malformed-blocked, torn-intent; severity/exit; MCP; isolated fixture) | code |
+| `174.050-T` | R12 | Operator docs + branch-scoped bootstrap runbook + topology note | docs |
 
-Dependency order (parent-first): `174-F → 174.030 → 174.031 → 174.032 → 174.033 →
-174.034 → 174.035 → 174.036 → 174.037 → 174.038`.
+Topological order (parent-first): `174-F → 174.039 → 174.040 → 174.041 → 174.042 → 174.043 →
+174.044 → 174.045 → 174.046 → 174.047 → 174.048 → 174.049 → 174.050`. `164.002-T`'s dependency is
+re-pointed from superseded `174.001-T` to the final live task `174.050-T`.
 
-### 0.3 External autoharness topology compatibility (VERIFIED 2026-09-15)
+### 0.3 Authoritative rollout sequence (removes circularity — NO pre-block, NO 155 topology force)
 
-Direct inspection of the installed external gate
-`autoharness gate pipeline-topology` (`autoharness/gates/topology.py`) establishes:
+1. `main`/staging currently hold `154-S` and `173.006-T` as `queued`; therefore after the staging
+   PR merges, **`155-S` is claimed and shipped normally on `main`** — no pre-block of `154`, no
+   topology `--force` for `155`. **During `155-S` execution no `blocked` token exists**, so the
+   external topology gate is never exercised on `blocked`.
+2. After `155-S` ships and the governed `BlockShipment` exists on `main`, create a dedicated
+   **backlog-only `chore/block-154` branch** from synchronized `main`. Import ONLY authoritative
+   backlog/checkpoint provenance for `154-S`/`173-F` members from the preserved Ship branch
+   `feat/shipment-claim-scheduler-baseline-marker-enabling-precondition@dd9f01a1` **with content
+   hashes and an explicit allowlist (no Go/source/harness code)**. This hydration reconstructs the
+   shipment-active + member-active state on the bootstrap branch.
+3. Invoke the newly shipped **governed `BlockShipment`** there (a legal `active → blocked`), which
+   writes the machine-readable snapshot, queues active members, and records metadata/events; then
+   commit and PR-merge the backlog-only blocked state to `main`. **No generic move, no
+   pre-governance rollback.**
+4. Run the corrective `7AA35A39` shipment on `main` while `154` is `blocked`. Later merge current
+   `main` into the preserved `154` feature branch, resolve backlog state to the blocked provenance,
+   invoke governed **unblock-to-active** after the fix, and resume from checkpoint.
 
-* **The current gate REJECTS a `blocked` shipment token.** Queue-folder shipment parsing
-  (`topology.py:553`) raises `BacklogUnavailableError("missing or unsupported status")`
-  for any status not in `_VALID_LIVE_SHIPMENT_STATUSES = {queued, active, shipped,
-  abandoned}` — `blocked` is absent, so a `blocked` shipment fails the gate closed.
-* **Downstream logic already treats `blocked` correctly once admitted:** `_active_shipments`
-  counts only `live_status == "active"` (so `blocked` is non-active — matches contract (a)),
-  and `_detect_before_consistency` (`_NOT_YET_CLAIMED_STATUSES = {queued, blocked}`) flags
-  `SHIPMENT_STATE_INCONSISTENT` if a `blocked` shipment still has an `active`/`done` member —
-  **external corroboration** of the member-disposition-to-`queued` requirement.
-* **Smallest compatibility change** = add `"blocked"` to `_VALID_LIVE_SHIPMENT_STATUSES`
-  (one line) in **external autoharness** `topology.py`. This lives upstream (Python,
-  external dependency), NOT in backlogit Go source, so it is recorded here as an
-  **external informing/ratification item** (see `informing_defect` + §0.4), not implemented
-  by this release unit.
-* **Until upstream ratifies:** the bootstrap uses an **operator-only, audited temporary
-  gate override** (`autoharness gate pipeline-topology --force`) scoped to phases
-  `pre_claim`/`post_claim`/`lifecycle` for `155-S`'s bootstrap window only, recorded in the
-  bootstrap runbook (companion decision §6). No standing override; removed after migration.
+### 0.4 External topology compatibility (VERIFIED 2026-09-15)
 
-### 0.4 Bootstrap source-of-truth handoff (154-S) — authoritative
-
-The staging HEAD (`chore/stage-155`, based on `origin/main`) carries `154-S` and its member
-`173.006-T` as `queued`, but the **intact Ship branch `feat/shipment-claim-scheduler-baseline-marker-enabling-precondition`
-@ `dd9f01a1`** carries the *active* provenance/checkpoint. The bootstrap's machine-readable
-snapshot MUST be captured from the **Ship-branch truth**, not the staging projection.
-Full one-time, operator-approved, single-worktree handoff runbook (no parallel worktrees,
-no loss of Ship commits) is authoritative in companion decision §6 and plan U-BOOT.
-
----
-
+Direct inspection of `autoharness/gates/topology.py`: the current gate would reject a `blocked`
+token because `_VALID_LIVE_SHIPMENT_STATUSES = {queued, active, shipped, abandoned}` excludes it
+(`topology.py:553`), while `_active_shipments` and `_detect_before_consistency` already treat
+`blocked` as non-active (external corroboration of member-disposition-to-`queued`). **This never
+affects `155-S`** (no `blocked` token exists during its execution, §0.3 step 1). For the **later
+corrective shipment** (run while `154` is `blocked`), require the **smallest upstream change** —
+add `"blocked"` to `_VALID_LIVE_SHIPMENT_STATUSES` (one line, external autoharness Python, NOT
+backlogit Go) — recorded as an external ratification item. If upstream is unavailable, use an
+**audited per-phase `--force` ONLY after the normal gate proves the sole failure is the
+unsupported `blocked` status** (no blanket/standing override), removed once upstream ratifies.
 ## 1. Problem statement
 
 A shipment can reach a state where it cannot make forward progress but MUST NOT be
