@@ -20,6 +20,63 @@ docline:
 **Intake:** stash `808E4323`. **Informing defect (out of scope):** stash `7AA35A39`.
 **Supersedes:** S12 parked-state unit `164.001-T` (see deliberation §4/§6).
 
+## 0. CURRENT AUTHORITATIVE REVISION — rev2 (2026-09-15)
+
+> §0 is the **authoritative current plan**. All sections below (unit bodies U1…U19b,
+> hardening table, and **every `## Plan Review` record**) are **retained as historical
+> context/audit trail**. The prior 29-unit decomposition is superseded; the shipped scope is
+> the concise 9-task set below. Where §0 and a later section conflict, §0 governs.
+
+### 0.1 Concise task set (feature `174-F` / shipment `155-S`) — all test-first, ≤2h
+
+| Task | Req | Title | Domain | Depends on |
+|---|---|---|---|---|
+| `174.030-T` | R1 | RED harness for blocked shipment contract | tests | — |
+| `174.031-T` | R2 | Core governed `BlockShipment` | code | R1 |
+| `174.032-T` | R3 | Core governed `UnblockShipment` | code | R1, R2 |
+| `174.033-T` | R4a | Central governed writer core + envelope | code | R1, R2 |
+| `174.034-T` | R4b | Route bypass call-sites through governed writer | code | R4a, R2 |
+| `174.035-T` | R5 | CLI+MCP parity for block/unblock/status | code | R2, R3 |
+| `174.036-T` | R6 | 154-S bootstrap + normalizer + crash recovery | code | R2, R3, R4b |
+| `174.037-T` | R7 | Crash/reopen subprocess integration tests | tests | R2, R3, R6 |
+| `174.038-T` | R8 | Docs + doctor verification | docs | R5, R6 |
+
+```
+R1 ─► R2 ─┬─► R3 ─┬─► R5 ─┐
+          ├─► R4a ─► R4b ─┤        ├─► R8
+          │                └─► R6 ─┤
+          └────────(R6 needs R2,R3,R4b)   └─► R7
+```
+
+Topological execution order (parent-first):
+`174-F → 174.030 → 174.031 → 174.032 → 174.033 → 174.034 → 174.035 → 174.036 → 174.037 → 174.038`.
+
+Each task's private acceptance criteria (RED-first, lock/intent-commit invariants,
+snapshot/restore, governed-refusal, CLI/MCP parity, normalizer-or-refuse, crash recovery,
+doctor severity/exit) live in the task artifacts themselves. Every code task is gated by a
+failing R1 test it must turn green; no production code lands before R1 is RED.
+
+### 0.2 U-BOOT — one-time bootstrap handoff (documented; NOT a shipped code unit; NOT executed by Stage)
+
+Authoritative runbook in deliberation §6 items 3 & 5. Summary: after `155-S` ships and
+`chore/stage-155` merges to `main`, capture the machine-readable `154-S` snapshot from the
+**intact Ship branch `…precondition` @ `dd9f01a1`** (authoritative active provenance — the
+staging projection shows `queued` and must NOT be used), via a single-worktree `git switch`
+(non-destructive; Ship commits untouched); create `chore/bootstrap-154` off post-merge `main`;
+disposition `173.006-T → queued` FIRST, set `154-S → blocked`, backfill metadata via the shipped
+normalizer (R6), and commit only `154-S`/snapshot state there. No parallel worktrees; no Ship
+commit loss. Bounded rollback valid only before any other claim, else fail closed.
+
+### 0.3 External topology compatibility (VERIFIED — see spec §0.3, deliberation §6.4)
+
+`autoharness gate pipeline-topology` currently **rejects** `blocked` (`topology.py:553`,
+`_VALID_LIVE_SHIPMENT_STATUSES` excludes it) though its active-slot/consistency logic already
+treats `blocked` as non-active. Smallest fix = one-line upstream allowlist add (external Python,
+not backlogit Go) → external ratification item. Interim: audited operator-only
+`--force` override for the `155-S` bootstrap window at `pre_claim`/`post_claim`/`lifecycle`.
+
+---
+
 ## Portability boundary (shared vs. backlogit-local — spec §2.5, SBLK-R20…R23)
 
 This capability is already stashed upstream in the **`autoharness` backlog**; this backlogit
@@ -754,3 +811,51 @@ Gate outcome: **ADVISORY** — no P1 findings remain after remediation; all A–
 the safe corrections are resolved within the Stage boundary. Prior approvals (attempt 2, amendment,
 amendment-2, amendment-3) stand; this amendment is additive. Harvest adds two tasks
 (`174.028-T`/`174.029-T`) to feature `174-F` / shipment `155-S` (now 30 members).
+
+<!-- plan-review-attempt: rev2 -->
+## Plan Review — Revision 2 (concise replacement decomposition)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+operator_authorization: approved
+
+Scope: operator-directed full replacement of the oversized 29-unit decomposition with a concise
+9-task, test-first, ≤2h set focused only on the shared portable `blocked`-shipment contract.
+Prior units `174.001-T…174.029-T` superseded and parked at `blocked` (preserved, not deleted);
+all prior `## Plan Review` records retained above as audit history. Edits limited to Stage-owned
+docs/backlog/stash; no Go/source/tests, no `154-S` edit, no PR, no Ship invocation.
+
+Resolutions carried by rev2:
+* **Right-sized decomposition:** 9 tasks (`174.030-T…174.038-T`), each single-domain and ≤2h,
+  RED-first (R1 harness gates every code task). Prior over-fragmentation removed.
+* **Shared vs. local split** made authoritative in spec §0.1 (portable contract stable;
+  writer/lock/SQLite/CLI-MCP local + replaceable), satisfying the autoharness-compat constraint.
+* **Governed core** (R2 BlockShipment: lock-held snapshot→member→queued→persist→intent/commit→
+  rollback; R3 UnblockShipment: confirm→free-slot→CAS/drift refusal→exact restore→clear/event).
+* **Bypass closure** via ONE central governed writer/envelope (R4a) + single-seam call-site
+  routing (R4b) covering generic move/update, MoveShipmentStatus, bulk/cascade,
+  create-as-blocked/active, public WriteArtifactFile — no per-callsite sprawl.
+* **Bootstrap source-of-truth** (deliberation §6.5, plan §0.2 U-BOOT): snapshot from intact Ship
+  branch `dd9f01a1` not the staging projection; single-worktree switch; dedicated
+  `chore/bootstrap-154` off post-merge main; no parallel worktrees; no Ship commit loss;
+  machine-readable snapshot file consumed by R6 (no free-form memory evidence).
+* **External topology VERIFIED** (spec §0.3, deliberation §6.4): current gate rejects `blocked`
+  at `topology.py:553`; one-line upstream allowlist fix is external (not backlogit Go) →
+  ratification item; interim audited operator-only `--force` override for the `155-S` window.
+* **Crash recovery** (R6 startup reconciliation of durable intent) + subprocess crash/reopen
+  integration tests (R7) + doctor torn-state detection (R8).
+* **146-S reconciliation** retained (deliberation §6b): `164.001-T` removed from membership,
+  `164.002-T→164.001-T` dependency removed, `164.002-T` re-points to canonical `blocked`.
+
+Persona votes:
+* Correctness Reviewer (`gpt-5.6-terra`) — PASS — lock-held block, CAS/drift-refused unblock,
+  intent/commit reconciliation, and machine-readable-snapshot bootstrap close the integrity gaps.
+* Architecture Strategist (`claude-sonnet-5`) — PASS — single governed writer/envelope seam
+  removes bypass sprawl; shared/local split is clean and upstream-portable.
+* Scope Boundary Auditor (`gemini-3.7-flash`) — PASS — 9 tasks, each ≤2h single-domain; no
+  scope creep; superseded units preserved not deleted; `154-S`/Ship branch/source untouched.
+* Security Reviewer (`gpt-5.6-terra`) — ADVISORY — bootstrap `--force` topology override is
+  operator-only, audited, time-boxed to the migration window and removed after upstream ratifies
+  `blocked`; authoritative gate remains the workspace-global-locked free-slot scan.
+
+Gate outcome: **PASS** (Security advisory noted and operator-authorized). Residual P1 findings: 0.

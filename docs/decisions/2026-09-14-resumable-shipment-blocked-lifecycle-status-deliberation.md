@@ -25,6 +25,34 @@ Companion product spec: `docs/product-specs/2026-09-14-resumable-shipment-blocke
 
 ---
 
+## 0. CURRENT AUTHORITATIVE REVISION — rev2 (2026-09-15)
+
+> §0 is the **authoritative current decision**; the detailed sections below are **retained as
+> historical deliberation and audit trail**. The core decision is unchanged (introduce a
+> canonical, non-terminal, resumable shipment `blocked` status; it supersedes S12 `parked`);
+> rev2 records the concise delivery shape, the **verified** external-topology result, and the
+> **bootstrap source-of-truth handoff**.
+
+* **Decision (unchanged):** Option A — a single canonical shipment lifecycle status `blocked`,
+  non-terminal, excluded from the single *active* slot, governed transitions
+  `active → blocked` and `blocked → {queued, active}`, correlated intent→commit events, member
+  snapshot/disposition on block and exact restore on unblock. Shared portable contract vs.
+  backlogit-local implementation are separated in spec §0.1.
+* **Decomposition (revised):** the prior 29-task set (`174.001-T…174.029-T`) is **superseded**
+  and parked at `blocked` (preserved, not deleted); replaced by **9 test-first ≤2h tasks**
+  `174.030-T…174.038-T` (spec §0.2) under feature `174-F` / shipment `155-S`.
+* **External topology (VERIFIED, §6 item 4):** the current `autoharness gate
+  pipeline-topology` **rejects** a `blocked` token (`_VALID_LIVE_SHIPMENT_STATUSES` excludes
+  `blocked`, `topology.py:553`), while its active-slot and consistency logic already treat
+  `blocked` as non-active. Smallest fix is a one-line upstream allowlist change (external, not
+  backlogit Go); interim admission via an audited operator-only `--force` override for `155-S`.
+* **Bootstrap source-of-truth (§6 item 5):** snapshot `154-S` from the **intact Ship branch
+  `…precondition` @ `dd9f01a1`** (authoritative active provenance), not the staging projection;
+  single-worktree branch-switch handoff, dedicated `chore/bootstrap-154` branch off post-merge
+  main, no parallel worktrees, no loss of Ship commits. Operator-owned; not executed by Stage.
+
+---
+
 ## 1. Problem frame
 
 Shipment `154-S` (covering feature `173-F`, the scheduler-baseline marker) is `active`
@@ -258,22 +286,87 @@ this deliberation as the concrete evidence the `blocked` status must preserve (S
    ships; the generic-move primitive survives only as the normalizer's internal remediation
    target for out-of-band `blocked` records.
 
-4. **Autoharness topology-gate assessment (SBLK-R26).** The governed block frees *backlogit's
-   own* status-keyed active-slot scan (via member disposition, item 3), but the **external
-   autoharness pipeline-topology gate** (out-of-repo, numeric-predecessor ordering) is a
-   separate authority. It is **not established** that it interprets the new `blocked` token as
-   non-active:
-   * **If** the external gate keys off backlogit `status == active`, a `blocked` `154-S` is
-     excluded and `155-S` can proceed.
-   * **If** it keys off queue position / predecessor completion, a `blocked` `154-S` may still
-     occupy a predecessor slot and continue to gate `155-S`, or may not recognize `blocked` at
-     all and fail closed.
-   * **Recommendation:** before relying on the governed block to admit `155-S`, independently
-     verify the autoharness gate's treatment of `blocked`. If it does not recognize `blocked`
-     as non-active, a **separate external compatibility gate / configuration** is required.
-     Until verified, treat admission as an **unconfirmed assumption** and fail closed. This is
-     an external, out-of-repo dependency and is explicitly NOT implemented in backlogit
-     (consistent with the §2.5 non-goal on the autoharness gate).
+4. **Autoharness topology-gate assessment (SBLK-R26) — VERIFIED 2026-09-15.** Direct
+   inspection of the installed external gate (`autoharness/gates/topology.py`) now RESOLVES
+   the previously-open question:
+   * **The current external gate REJECTS a `blocked` shipment token.** Queue-folder shipment
+     parsing at `topology.py:553` raises `BacklogUnavailableError("missing or unsupported
+     status")` for any status outside `_VALID_LIVE_SHIPMENT_STATUSES = {queued, active,
+     shipped, abandoned}`; `blocked` is absent, so a `blocked` `154-S` fails the gate closed
+     **before** any active-slot classification runs.
+   * **Design intent already agrees `blocked` is non-active** once admitted: `_active_shipments`
+     counts only `live_status == "active"`, and `_detect_before_consistency`
+     (`_NOT_YET_CLAIMED_STATUSES = {queued, blocked}`, `topology.py:33/1643`) raises
+     `SHIPMENT_STATE_INCONSISTENT` when a `blocked` shipment still has an `active`/`done` member.
+     The latter is **external corroboration** that the bootstrap MUST disposition `173.006-T`
+     to `queued` before/with blocking `154-S`.
+   * **Smallest compatibility change:** add `"blocked"` to `_VALID_LIVE_SHIPMENT_STATUSES`
+     (one line) **upstream in external autoharness** `topology.py`. This is out-of-repo Python,
+     NOT backlogit Go source, so backlogit does not implement it; it is recorded as an
+     **external informing/ratification item** for the autoharness maintainers.
+   * **Until upstream ratifies:** admit `155-S` using an **operator-only, audited temporary
+     override** — `autoharness gate pipeline-topology --force` scoped to phases
+     `pre_claim`/`post_claim`/`lifecycle` for the `155-S` bootstrap window only, recorded in the
+     bootstrap audit. No standing override; removed after upstream adds `blocked` to the
+     allowlist. This preserves the fail-closed default for every other shipment.
+
+5. **Bootstrap source-of-truth & single-worktree handoff (154-S) — authoritative,
+   operator-owned, NOT executed by Stage.** The staging branch `chore/stage-155` (based on
+   `origin/main`) projects `154-S` and member `173.006-T` as `queued`, but the **intact Ship
+   branch `feat/shipment-claim-scheduler-baseline-marker-enabling-precondition` @ `dd9f01a1`**
+   carries the authoritative *active* provenance and checkpoint
+   (`checkpoint-20260914-070735.json`, `blocker_token: RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`).
+   The bootstrap snapshot MUST be taken from the **Ship-branch truth**, not the staging
+   projection. The handoff uses ONE worktree, creates NO parallel worktrees, and loses NO Ship
+   commits:
+
+   1. **Land staging first.** Merge `chore/stage-155` → `main` via the normal PR (Orchestrator
+      owns Step 1.5). Do not proceed until merged.
+   2. **Capture the machine-readable snapshot from Ship-branch truth.** In the single worktree,
+      `git switch feat/shipment-claim-scheduler-baseline-marker-enabling-precondition` (a plain
+      branch switch — non-destructive, no rebase/reset, Ship commits untouched). Read the
+      authoritative state and write a **machine-readable snapshot file** (e.g.
+      `.backlogit/bootstrap/154-S.snapshot.json`) recording: `154-S` status/manifest, every
+      member ID and its exact status (esp. `173.006-T = active`), the Ship branch name + tip SHA
+      `dd9f01a1`, and the checkpoint ref. No free-form memory evidence — the snapshot file is the
+      sole source of truth consumed by `174.036-T` (R6).
+   3. **Return to a dedicated bootstrap branch based on post-merge main.**
+      `git switch main && git pull` then `git switch -c chore/bootstrap-154` (based on the merged
+      main that now contains the shipped `blocked` capability). The Ship branch is left exactly
+      as-is at `dd9f01a1`.
+   4. **Commit the blocked state on the bootstrap branch.** Using the SHIPPED governed
+      `BlockShipment` (post-`155-S`), or — during the pre-governance window only — the audited
+      one-time runbook in item 3, apply member disposition (`173.006-T → queued`) FIRST, set
+      `154-S → blocked`, backfill governed metadata/event (or record migration debt), and commit
+      **only** the `154-S`/snapshot state onto `chore/bootstrap-154`. Never commit onto or
+      rewrite the Ship branch.
+   5. **Verify + bounded rollback.** As in item 3: confirm no member remains `active`, `154-S`
+      is `blocked`, the Ship branch + checkpoint are intact vs. the snapshot file, and the active
+      slot is free; run the topology pre-claim check (with the audited `--force` override until
+      upstream ratifies). Bounded rollback is valid ONLY before any other claim; else fail closed.
+
+   Stage authors this procedure but does **not** execute it, does not switch branches for the
+   bootstrap, and does not edit `154-S` or the Ship branch.
+
+---
+
+## 6a. External informing item (no invented ID)
+
+The **autoharness stash** already tracks the shared `blocked`-shipment capability (the
+upstream owner of contract §0.1(a)); its exact stash ID is **not identifiable from local
+evidence** and is therefore recorded as an *external informing backlog item* without inventing
+an ID. The **smallest upstream compatibility change** (add `"blocked"` to
+`_VALID_LIVE_SHIPMENT_STATUSES` in `autoharness/gates/topology.py`) is likewise an external
+ratification item, not a backlogit deliverable.
+
+---
+
+## 6b. Precedent reconciliation applied (146-S / 164-F)
+
+Executed via backlog-native operations in the current staging session: `164.001-T` removed from
+`146-S` membership and the obsolete `164.002-T → 164.001-T` dependency removed, retaining
+`164.002-T → 174.001-T` and traceability. `164.002-T` re-points to the canonical `blocked`
+semantics (not the superseded `parked`). History preserved (no deletion).
 
 ---
 

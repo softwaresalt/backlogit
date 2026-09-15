@@ -186,3 +186,39 @@ Key resolutions:
   ships). Replaces prior blanket PROHIBITION. Not executed by Stage.
 - E: 174.021 docs AC; dep graph + topo order regenerated; index synced; plan-review amendment-4
   appended (ADVISORY, operator_authorization: approved).
+
+## Revision 2 (2026-09-15) — concise replacement decomposition
+
+Operator-directed full plan replacement. Branch `chore/stage-155`.
+
+Superseded prior 29-task set 174.001-T..174.029-T -> moved to status=blocked (preserved as
+history, not deleted); recorded supersession comment on 174-F.
+
+New 9 test-first <=2h tasks under 174-F (155-S remanifested to these + feature):
+- 174.030-T R1 RED harness
+- 174.031-T R2 core BlockShipment
+- 174.032-T R3 core UnblockShipment
+- 174.033-T R4a governed writer+envelope
+- 174.034-T R4b route bypass call-sites
+- 174.035-T R5 CLI+MCP parity
+- 174.036-T R6 154-S bootstrap+normalizer+crash recovery
+- 174.037-T R7 crash/reopen subprocess tests
+- 174.038-T R8 docs+doctor
+Deps chain: 030<-031<-{032,033}; 034<-{033,031}; 035<-{031,032}; 036<-{031,032,034};
+037<-{031,032,036}; 038<-{035,036}.
+
+External topology VERIFIED (autoharness/gates/topology.py): current gate REJECTS blocked at
+line 553 (_VALID_LIVE_SHIPMENT_STATUSES = {queued,active,shipped,abandoned}); active-slot logic
+(_active_shipments) + _detect_before_consistency already treat blocked as non-active and require
+member disposition. Smallest fix = add "blocked" to that allowlist upstream (external Python, not
+backlogit Go) -> external ratification item; interim audited operator-only --force override for
+155-S bootstrap window.
+
+Bootstrap source-of-truth: snapshot 154-S from intact Ship branch dd9f01a1 (authoritative active
+provenance), NOT staging projection (shows queued). Single-worktree git switch; dedicated
+chore/bootstrap-154 off post-merge main; no parallel worktrees; no Ship commit loss; machine-
+readable snapshot file consumed by R6. Documented in deliberation §6.5 / plan §0.2 U-BOOT; NOT
+executed by Stage.
+
+Docs: added authoritative §0 to spec/decision/plan (historical sections retained); plan-review
+record rev2 appended (PASS, operator_authorization: approved, residual P1 = 0).

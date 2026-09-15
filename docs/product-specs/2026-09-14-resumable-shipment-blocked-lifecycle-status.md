@@ -26,6 +26,91 @@ whose plan is currently `FAIL` at plan-review attempt 2 and pending re-plan.
 
 ---
 
+## 0. CURRENT AUTHORITATIVE REVISION — rev2 (2026-09-15)
+
+> This §0 is the **authoritative current revision** and supersedes the detailed
+> requirement/decomposition text in the sections below, which are **retained as
+> historical context and audit trail** (including all prior `## Plan Review`
+> records in the companion plan). Requirement IDs `SBLK-R1…R27` remain valid as
+> the shared contract vocabulary; §0 re-states the delivery shape concisely.
+
+### 0.1 Scope split — shared contract vs. backlogit-local implementation
+
+**(a) Shared, portable contract (STABLE — must not diverge from autoharness).**
+The cross-repository contract is shipment lifecycle status **`blocked`**: non-terminal;
+preserves shipment/member/reconciliation/resumption evidence; **excluded from the single
+*active* execution slot** so exactly one corrective shipment may run; cannot be
+claimed/executed while blocked; governed transitions `active → blocked` and
+`blocked → {queued, active}` only after blockers clear and topology/readiness gates pass.
+Multiple `blocked` shipments may coexist; at most one `active`. Governed audit metadata:
+`blocked_reason`, `blocked_at`, `blocked_by`, `resume_checkpoint_ref`. On block, active/
+in-flight member tasks are captured in a **machine-readable snapshot** and returned to
+`queued`; on governed unblock they are **exactly restored** (CAS/drift refusal). Every
+transition uses a **correlated intent→commit** record so an append-only event alone can
+never assert a completed transition. This contract is the autoharness-stashed capability;
+the local implementation is expected to be superseded by the upstream one and MUST remain
+compatible (no backlogit-specific semantics that conflict with autoharness).
+
+**(b) backlogit-local implementation (REPLACEABLE).** The central governed writer/envelope,
+`.locks/` workspace-global active-slot lock, SQLite projection, doctor checks, and CLI/MCP
+surface shapes are local and may be re-implemented upstream; they MUST NOT leak
+backlogit-specific semantics into (a) nor introduce a conflicting synonym token.
+
+### 0.2 Concise replacement decomposition (feature 174-F / shipment 155-S, 9 tasks)
+
+The prior 29-task decomposition (`174.001-T…174.029-T`) is **superseded** and parked at
+status `blocked` (preserved, not deleted). Replacement, all test-first and ≤2h:
+
+| Task | Req | Scope | Domain |
+|---|---|---|---|
+| `174.030-T` | R1 | RED harness: transitions, metadata, intent/commit, member snapshot/disposition | tests |
+| `174.031-T` | R2 | Core governed `BlockShipment` (lock-held snapshot → member→queued → persist → intent/commit → rollback) | code |
+| `174.032-T` | R3 | Core governed `UnblockShipment` (`--confirm`, free-slot check, snapshot CAS/drift refusal, exact restore, metadata clear/event) | code |
+| `174.033-T` | R4a | Central private governed writer + envelope (correlation/intent-commit) | code |
+| `174.034-T` | R4b | Route all bypasses through the writer (generic move/update, `MoveShipmentStatus`, bulk/cascade, create-as-blocked/active, public `WriteArtifactFile`) | code |
+| `174.035-T` | R5 | CLI+MCP parity for block/unblock + read/list status | code |
+| `174.036-T` | R6 | 154-S bootstrap + normalizer (machine-readable snapshot, no free-form memory) + startup/governed crash recovery from durable intent | code |
+| `174.037-T` | R7 | Crash/reopen subprocess integration tests (block/unblock/bootstrap) | tests |
+| `174.038-T` | R8 | Minimal docs + doctor verification (active-count, malformed-blocked, torn-intent) | docs |
+
+Dependency order (parent-first): `174-F → 174.030 → 174.031 → 174.032 → 174.033 →
+174.034 → 174.035 → 174.036 → 174.037 → 174.038`.
+
+### 0.3 External autoharness topology compatibility (VERIFIED 2026-09-15)
+
+Direct inspection of the installed external gate
+`autoharness gate pipeline-topology` (`autoharness/gates/topology.py`) establishes:
+
+* **The current gate REJECTS a `blocked` shipment token.** Queue-folder shipment parsing
+  (`topology.py:553`) raises `BacklogUnavailableError("missing or unsupported status")`
+  for any status not in `_VALID_LIVE_SHIPMENT_STATUSES = {queued, active, shipped,
+  abandoned}` — `blocked` is absent, so a `blocked` shipment fails the gate closed.
+* **Downstream logic already treats `blocked` correctly once admitted:** `_active_shipments`
+  counts only `live_status == "active"` (so `blocked` is non-active — matches contract (a)),
+  and `_detect_before_consistency` (`_NOT_YET_CLAIMED_STATUSES = {queued, blocked}`) flags
+  `SHIPMENT_STATE_INCONSISTENT` if a `blocked` shipment still has an `active`/`done` member —
+  **external corroboration** of the member-disposition-to-`queued` requirement.
+* **Smallest compatibility change** = add `"blocked"` to `_VALID_LIVE_SHIPMENT_STATUSES`
+  (one line) in **external autoharness** `topology.py`. This lives upstream (Python,
+  external dependency), NOT in backlogit Go source, so it is recorded here as an
+  **external informing/ratification item** (see `informing_defect` + §0.4), not implemented
+  by this release unit.
+* **Until upstream ratifies:** the bootstrap uses an **operator-only, audited temporary
+  gate override** (`autoharness gate pipeline-topology --force`) scoped to phases
+  `pre_claim`/`post_claim`/`lifecycle` for `155-S`'s bootstrap window only, recorded in the
+  bootstrap runbook (companion decision §6). No standing override; removed after migration.
+
+### 0.4 Bootstrap source-of-truth handoff (154-S) — authoritative
+
+The staging HEAD (`chore/stage-155`, based on `origin/main`) carries `154-S` and its member
+`173.006-T` as `queued`, but the **intact Ship branch `feat/shipment-claim-scheduler-baseline-marker-enabling-precondition`
+@ `dd9f01a1`** carries the *active* provenance/checkpoint. The bootstrap's machine-readable
+snapshot MUST be captured from the **Ship-branch truth**, not the staging projection.
+Full one-time, operator-approved, single-worktree handoff runbook (no parallel worktrees,
+no loss of Ship commits) is authoritative in companion decision §6 and plan U-BOOT.
+
+---
+
 ## 1. Problem statement
 
 A shipment can reach a state where it cannot make forward progress but MUST NOT be
