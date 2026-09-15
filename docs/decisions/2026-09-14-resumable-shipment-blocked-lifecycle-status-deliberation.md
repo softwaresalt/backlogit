@@ -245,8 +245,13 @@ this deliberation as the concrete evidence the `blocked` status must preserve (S
       (`.backlogit/bootstrap/154-S.snapshot.json` — sole source of truth, consumed by `174.047-T`),
       dispositions active members (`173.006-T → queued`) and records governed
       `blocked_reason`/`blocked_at`/`blocked_by`/`resume_checkpoint_ref` + the
-      `shipment_status_changed` event. Then commit **only** the `154-S`/snapshot backlog state onto
-      `chore/block-154` and PR-merge it to `main`. **No generic move, no pre-governance rollback,
+      `shipment_status_changed` event. Then commit the COMPLETE governed output as one atomic backlog
+      change onto `chore/block-154` — the `154-S` shipment record, every changed member artifact
+      (`173.006-T` requeued), the durable intent + preimage + machine-readable snapshot/recovery state,
+      and the authoritative per-item event logs for the shipment and each dispositioned member — and
+      PR-merge it to `main`. **Committing only `154-S` + snapshot is insufficient** (it would drop the
+      changed-member, intent/recovery, and per-item event provenance R9/`174.047-T` and the doctor
+      checks consume). **No generic move, no pre-governance rollback,
       no migration debt** (metadata is governed from the first write because `BlockShipment` already
       exists on `main`).
    4. **Corrective `7AA35A39` shipment on `main` while `154` is blocked.** `154` being `blocked` is
@@ -287,6 +292,14 @@ Executed via backlog-native operations in the current staging session: `164.001-
 `164.002-T → 174.001-T` and traceability. `164.002-T` re-points to the canonical `blocked`
 semantics (not the superseded `parked`). History preserved (no deletion).
 
+> **SUPERSEDED 2026-09-15 (current-HEAD remediation §6c).** `164.002-T` is now **retired**, not
+> merely re-pointed. Under rev3's exclusive-activation invariant a shipment-record-only
+> `queued → active` forward-repair is illegal (only `Claim`/unblock-to-active create an active
+> shipment, both disposing members), and the R9 recovery+normalizer (`174.047-T`) plus R11 doctor
+> (`174.049-T`) subsume its reconciliation role. `164.002-T` is set `blocked` (history preserved)
+> and its obsolete cross-shipment dependency (`174.050-T`) is removed, so `146-S` no longer retains
+> a live member depending on `155-S` and needs no shipment-level `blocks` edge. See §6c.
+
 ---
 
 ## 7. Scope boundary
@@ -300,3 +313,36 @@ backward-compatible (SBLK-R18). The steady-state sanctioned path to `blocked` fo
 the governed `BlockShipment` seam (SBLK-R24); the generic-move bootstrap is permitted ONLY as an
 exceptional, one-time, operator-approved pre-governance migration (manual member disposition +
 bounded pre-claim rollback), removed after migration.
+
+---
+
+## 6c. Current-HEAD remediation cycle (2026-09-15, Stage-owned; no source/Ship work)
+
+Applied five P1 remediations to `155-S`/`174-F` (and `146-S`/`164-F`) while `155-S` is `queued`,
+editing only Stage-owned planning/backlog artifacts:
+
+1. **RED deliverable contracts (F1).** Added canonical `red-deliverable-contract` blocks to the
+   three harness-only RED tasks. Validated with the ACTUAL scheduler parser
+   (`scripts/wave-scheduler-sim.ps1` `Read-RedDeliverableContract` + `Test-TaskScopedCommandShape`):
+   `174.039-T`/R1 → selector `go test -count=1 -run '^TestUR1_' ./internal/core`, green-makers
+   `174.043-T,174.044-T`, closes wave 4; `174.040-T`/R2 → `^TestUR2_`, green-makers
+   `174.042-T,174.045-T,174.051-T`, closes wave 5; `174.041-T`/R3 → `^TestUR3_`, green-makers
+   `174.047-T,174.048-T`, closes wave 6. All parse clean (0 errors).
+2. **Governed BlockShipment commit contents (F2).** §6.2 step 3 (and plan §0.2, spec §0.3) now
+   require the governed block commit to carry the COMPLETE governed output — `154-S` record, every
+   changed member artifact, durable intent/preimage/snapshot recovery state, AND authoritative
+   per-item event logs — not `154-S` + snapshot alone.
+3. **164.002-T retired (F3).** Parked-era shipment-record-only `queued → active` forward-repair is
+   incompatible with rev3 exclusive activation and subsumed by R9/`174.047-T` + R11/`174.049-T`;
+   set `blocked` (history preserved), obsolete `174.050-T` dependency removed.
+4. **Release-unit ordering (F4).** Because `164.002-T`'s cross-shipment dependency was removed,
+   `146-S` no longer retains a live member depending on `155-S`; no shipment-level `blocks` edge is
+   required (consistent with the F3 retire choice).
+5. **174.045-T split (F5).** R7 split into `174.045-T`/R7a (route bypass WRITE paths through the
+   governed writer) and new `174.051-T`/R7b (guard create-as-active + generic activation refusal);
+   both ≤5 functions, both R2 green-makers, both wave 5, RED-before-GREEN preserved. `174.051-T`
+   added to the `155-S` manifest after `174.045-T`; dependencies `[174.040-T,174.042-T,174.044-T]`.
+
+Validation: `backlogit sync` (parse_failures=0), `doctor --check-orphans --check-duplicates` (no
+new findings on touched artifacts), `wave-scheduler-sim -VerifyAgainstQueue` (186/186 PASS), RED
+contract parser (3/3 clean). No source/tests edited, no `154-S` edit, no shipment claim, no PR.

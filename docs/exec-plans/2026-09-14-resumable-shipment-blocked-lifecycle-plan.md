@@ -41,7 +41,8 @@ The rev2 tasks `174.030-T…174.038-T` are **superseded** (parked `blocked`, pre
 | `174.042-T` | R4 | Governed writer core + envelope + public `WriteArtifactFile` boundary | code | R1, R2 |
 | `174.043-T` | R5 | Core `BlockShipment` (global lock across intent→preimage→disposition→persist→commit/compensation; member guard) | code | R1, R4 |
 | `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction) | code | R1, R5 |
-| `174.045-T` | R7 | Route bypass call-sites through governed writer (split if >4 functions) | code | R2, R4, R6 |
+| `174.045-T` | R7a | Route bypass WRITE call-sites (generic move/update, MoveShipmentStatus, bulk/cascade) through governed writer | code | R2, R4, R6 |
+| `174.051-T` | R7b | Guard create-as-active + all generic activation paths (refuse activation outside claim/unblock) | code | R2, R4, R6 |
 | `174.046-T` | R8 | CLI + MCP parity for block/unblock + read/list status | code | R5, R6 |
 | `174.047-T` | R9 | Recovery + normalizer + machine-readable snapshot schema (durable-intent recovery under locks; MCP parity) | code | R3, R5, R6 |
 | `174.048-T` | R10 | Subprocess crash/reopen GREEN tests | tests | R3, R9 |
@@ -52,11 +53,11 @@ The rev2 tasks `174.030-T…174.038-T` are **superseded** (parked `blocked`, pre
 R1(039) ─┬─────────────────► R4(042) ─┬─► R5(043) ─┬─► R6(044) ─┬─► R8(046) ─┐
 R2(040) ─┘                            │            │            ├─► R9(047) ─┼─► R11(049) ─► R12(050)
 R3(041) ──────────────────────────────┘ (R9 needs R3,R5,R6)    │            │            ▲
-                                       R7(045) needs R2,R4,R6 ──┘            └─► R10(048)─┘
+                                       R7a(045)+R7b(051) need R2,R4,R6 ─┘        └─► R10(048)─┘
 ```
 
 Topological order (parent-first):
-`174-F → 174.039 → 174.040 → 174.041 → 174.042 → 174.043 → 174.044 → 174.045 → 174.046 →
+`174-F → 174.039 → 174.040 → 174.041 → 174.042 → 174.043 → 174.044 → 174.045 → 174.051 → 174.046 →
 174.047 → 174.048 → 174.049 → 174.050`.
 
 Each task's private acceptance criteria (RED-first, workspace-global-lock + durable
@@ -65,7 +66,13 @@ governed-refusal of bypass paths, create-active restriction, CLI/MCP parity, nor
 with machine-readable snapshot input, startup/governed crash recovery under locks, doctor
 severity/exit/MCP) live in the task artifacts. Every code task is gated by a failing RED test
 (R1/R2/R3) it must turn green; no production code lands before the corresponding RED is failing.
-`164.002-T` is re-pointed from superseded `174.001-T` to the final live task `174.050-T`.
+`164.002-T` (S12 forward-repair) is **RETIRED/SUPERSEDED by rev3** (was previously re-pointed to
+`174.050-T`): its shipment-record-only `queued → active` contract is incompatible with the rev3
+exclusive-activation invariant (only `Claim`/unblock-to-active may create an active shipment, and
+both dispose members), and rev3's R9 recovery+normalizer (`174.047-T`) and R11 doctor
+(`174.049-T`) subsume its reconciliation role. It is set `blocked` (history preserved, not deleted)
+and its obsolete `164.002-T → 174.050-T` dependency is removed, so `146-S` no longer retains a live
+member depending on `155-S` (no shipment-level `blocks` edge is required).
 
 ### 0.2 Branch-scoped bootstrap for `154-S` (documented; NOT a shipped code unit; NOT executed by Stage)
 
@@ -78,8 +85,13 @@ with **content hashes + explicit allowlist (no Go/source/harness code)** to reco
 active state; Ship commits untouched, no parallel worktrees. (3) Invoke the **shipped governed
 `BlockShipment`** there (legal `active → blocked`): global lock, durable intent + preimage,
 machine-readable snapshot (`.backlogit/bootstrap/154-S.snapshot.json`, consumed by R9/`174.047-T`),
-member disposition `173.006-T → queued`, governed metadata/event; commit only the `154-S`/snapshot
-backlog state and PR-merge to `main`. (4) Run the corrective `7AA35A39` shipment on `main` while
+member disposition `173.006-T → queued`, governed metadata/event; commit the COMPLETE governed
+output as one atomic backlog change — the `154-S` shipment record, EVERY changed member artifact
+(`173.006-T` requeued), the durable intent + preimage + machine-readable snapshot/recovery state
+(`.backlogit/bootstrap/154-S.snapshot.json`), AND the authoritative per-item event logs for the
+shipment and each dispositioned member — then PR-merge to `main`. **Committing only `154-S` +
+snapshot is INSUFFICIENT**: it would drop the changed-member, intent/recovery, and per-item event
+provenance that R9/`174.047-T` recovery and the R11/`174.049-T` doctor checks consume. (4) Run the corrective `7AA35A39` shipment on `main` while
 `154` is `blocked`; later merge `main` into the `154` feature branch, governed **unblock-to-active**
 after the fix, resume checkpoint `checkpoint-20260914-070735.json`.
 
@@ -927,3 +939,41 @@ Gate outcome: **PASS** (Security advisory noted and operator-authorized). Residu
   topology override; corrective-shipment override is audited, per-phase, and conditional.
 
 **Verdict: PASS** — cleared for harvest/manifest; residual P1 = 0.
+
+## Plan Review — current-HEAD remediation cycle (2026-09-15)
+
+dispatch_mode: single-agent-declared-degradation
+decision: PASS
+
+Bounded current-HEAD remediation of five P1 findings from final code review, applied to Stage-owned
+planning/backlog artifacts only (no source/tests, no `154-S`, no shipment claim, no PR). `155-S`
+remained `queued` throughout; append-only review history and blocked/superseded tasks preserved.
+
+* **F1 — RED deliverable contracts.** Added canonical machine-readable `red-deliverable-contract`
+  blocks to `174.039-T` (R1), `174.040-T` (R2), `174.041-T` (R3). Keys/order exactly
+  `red_deliverable, red_deliverable_reason, red_selector_command, green_maker_tasks,
+  green_maker_closes_wave`; executable selectors anchored to `^TestUR<n>_ ./internal/core`
+  (`WriteArtifactFile`/`MoveShipmentStatus`/`isValidShipmentTransition` package). Green-maker lists
+  and closing waves derived from the post-split dependency graph: R1→{043,044}@4, R2→{042,045,051}@5,
+  R3→{047,048}@6. Validated with the actual `scripts/wave-scheduler-sim.ps1` parser functions
+  (`Read-RedDeliverableContract`, `Test-TaskScopedCommandShape`) — 3/3 parse clean, selector shape OK.
+* **F2 — Governed block commit completeness.** plan §0.2 / decision §6.2 / spec §0.3 now enumerate
+  the full governed output (`154-S` record + changed member artifacts + intent/preimage/snapshot
+  recovery state + per-item event logs); the "`154-S` + snapshot only" wording is removed.
+* **F3 — 164.002-T retired.** Obsolete parked-era forward-repair set `blocked`; obsolete
+  `164.002-T → 174.050-T` dependency removed; superseded rationale recorded in the task body and
+  plan §0.1 / spec §0.2 / decision §6b–§6c.
+* **F4 — Release-unit ordering.** F3's dependency removal decouples `146-S` from `155-S`; no live
+  member of `146-S` depends on `155-S`, so no shipment-level `blocks` edge is added (consistent with
+  the retire choice).
+* **F5 — 174.045-T split.** R7 → R7a (`174.045-T`, bypass WRITE paths) + R7b (`174.051-T`,
+  create-as-active/activation refusal); each ≤5 functions, ~2h, RED-before-GREEN preserved.
+  `174.051-T` created under `174-F` with deps `[174.040-T,174.042-T,174.044-T]` and added to the
+  `155-S` manifest (now 14 members) after `174.045-T`; §0.1 table, dependency graph, and topological
+  order updated in plan and spec.
+
+Validation evidence: `backlogit sync` parse_failures=0 (1525 artifacts); `backlogit doctor
+--check-orphans --check-duplicates` — 23 pre-existing findings, none on touched artifacts;
+`wave-scheduler-sim.ps1 -VerifyAgainstQueue` WAVE_SIM_OK 186/186; RED contract parser 3/3 clean.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. Ready for Ship to claim `155-S`.

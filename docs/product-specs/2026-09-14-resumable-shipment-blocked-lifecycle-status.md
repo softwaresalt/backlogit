@@ -67,7 +67,8 @@ not deleted). Replacement, all ≤2h, RED harnesses precede their implementation
 | `174.042-T` | R4 | Governed writer core + envelope + public `WriteArtifactFile` boundary | code |
 | `174.043-T` | R5 | Core `BlockShipment` (global lock held across intent→preimage→disposition→persist→commit/compensation; member-mutation guard while blocked) | code |
 | `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction) | code |
-| `174.045-T` | R7 | Route bypass call-sites through the governed writer (split if >4 functions) | code |
+| `174.045-T` | R7a | Route bypass WRITE call-sites (generic move/update, MoveShipmentStatus, bulk/cascade) through the governed writer | code |
+| `174.051-T` | R7b | Guard create-as-active + all generic activation paths (refuse activation outside claim/unblock) | code |
 | `174.046-T` | R8 | CLI + MCP parity for block/unblock + read/list status | code |
 | `174.047-T` | R9 | Recovery + normalizer (durable-intent recovery under locks; machine-readable snapshot schema as input; MCP normalizer parity) | code |
 | `174.048-T` | R10 | Subprocess crash/reopen GREEN tests | tests |
@@ -75,8 +76,11 @@ not deleted). Replacement, all ≤2h, RED harnesses precede their implementation
 | `174.050-T` | R12 | Operator docs + branch-scoped bootstrap runbook + topology note | docs |
 
 Topological order (parent-first): `174-F → 174.039 → 174.040 → 174.041 → 174.042 → 174.043 →
-174.044 → 174.045 → 174.046 → 174.047 → 174.048 → 174.049 → 174.050`. `164.002-T`'s dependency is
-re-pointed from superseded `174.001-T` to the final live task `174.050-T`.
+174.044 → 174.045 → 174.051 → 174.046 → 174.047 → 174.048 → 174.049 → 174.050`. `164.002-T`
+(S12 forward-repair) is **retired/superseded by rev3** — set `blocked` (history preserved) and its
+obsolete `174.050-T` dependency removed, because its shipment-record-only `queued → active`
+contract is incompatible with rev3 exclusive activation and its reconciliation role is subsumed by
+R9 (`174.047-T`) / R11 (`174.049-T`); `146-S` therefore no longer couples to `155-S`.
 
 ### 0.3 Authoritative rollout sequence (removes circularity — NO pre-block, NO 155 topology force)
 
@@ -92,7 +96,11 @@ re-pointed from superseded `174.001-T` to the final live task `174.050-T`.
    shipment-active + member-active state on the bootstrap branch.
 3. Invoke the newly shipped **governed `BlockShipment`** there (a legal `active → blocked`), which
    writes the machine-readable snapshot, queues active members, and records metadata/events; then
-   commit and PR-merge the backlog-only blocked state to `main`. **No generic move, no
+   commit the complete governed output as one atomic backlog change — the `154-S` shipment record,
+   every changed member artifact (`173.006-T` requeued), the durable intent + preimage +
+   snapshot/recovery state, and the authoritative per-item event logs for the shipment and each
+   dispositioned member — and PR-merge it to `main` (committing only `154-S` + snapshot is
+   insufficient). **No generic move, no
    pre-governance rollback.**
 4. Run the corrective `7AA35A39` shipment on `main` while `154` is `blocked`. Later merge current
    `main` into the preserved `154` feature branch, resolve backlog state to the blocked provenance,
