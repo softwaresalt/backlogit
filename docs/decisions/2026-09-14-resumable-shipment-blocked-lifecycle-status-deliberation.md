@@ -383,3 +383,30 @@ three docs (`valid: true`, 0 violations each); `doctor` — 23 pre-existing find
 on touched artifacts; scheduler verification — `164.002-T` is a member of no shipment manifest, no
 shipment depends on `146-S`, `147-S` unblocked; `wave-scheduler-sim -VerifyAgainstQueue`
 WAVE_SIM_OK 186/186. No source/tests edited, no `154-S` edit, no shipment claim, no PR.
+
+## 6e. Current-HEAD remediation cycle 3 (2026-09-15, branch `chore/stage-155`; Stage-owned)
+
+Two same-contract P1 findings on PR #444 (HEAD `380fa1e9`), backlog/docs only — no source/tests, no
+`154-S`, no shipment claim, no PR.
+
+1. **Rd declaration-only purity.** `174.052-T` (Rd) no longer populates the
+   `isValidShipmentTransition` blocked-transition table — adding those entries is functional
+   transition-enablement that would let generic `MoveShipmentStatus` persist a governed blocked
+   transition in the declaration wave. Rd now lands ONLY the `ShipmentBlocked` enum + not-implemented
+   `BlockShipment`/`UnblockShipment` stub signatures; `isValidShipmentTransition` stays fail-closed
+   after Rd. The R1s source-shape harness (`174.039-T`) drops the transition-table assertion. The
+   `active->blocked` / `blocked->{queued,active}` transition enablement moves to the governed
+   implementation tasks `174.043-T` (R5) / `174.044-T` (R6), AFTER behavior RED (`174.053-T`), gated
+   so generic `MoveShipmentStatus` remains unable to persist a blocked transition. No dependency,
+   wave, or manifest change.
+2. **Authoritative §0 count.** The plan §0 intro paragraph is corrected from a stale 13-task/14-member
+   statement to **15 live tasks / 16 `155-S` members**, explicitly naming `174.052-T` and `174.053-T`.
+   Remaining 13/14 references survive only inside clearly-labeled superseded audit records (§6c/§6d,
+   `## Plan Review` history).
+
+Validation (current HEAD): `backlogit sync` (1527 artifacts, parse_failures=0); `docs lint` all
+three `valid: true`; `wave-scheduler-sim -VerifyAgainstQueue` WAVE_SIM_OK 186/186; RED-contract
+parser 4/4 clean with Rd carrying no red block; dependency graph acyclic (9 waves) with 043/044
+transition enablement strictly after 053 behavior RED; manifest 16 members == 174-F + 15 live queued
+descendants; doctor 23 pre-existing findings, none on 174.*. No source/tests, no `154-S`, no claim,
+no PR.

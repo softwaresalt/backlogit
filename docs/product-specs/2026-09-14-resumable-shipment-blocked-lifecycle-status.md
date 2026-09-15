@@ -69,21 +69,22 @@ seam follows the mandated chain **source-shape RED → declaration-only compile-
 implementation** (P-002.1 source-shape harness; no declaration-only *exemption*). R1 is split so the
 harness no longer jumps from a source-shape RED directly into declaring/implementing the seam:
 `174.039-T` (R1s) is a source-shape harness pinning the `ShipmentBlocked` enum + block/unblock
-signatures + transition shape; `174.052-T` (Rd) lands ONLY those declarations (stubs), turning R1s
+signatures (declaration shape only; NOT the `isValidShipmentTransition` blocked-transition table,
+which is functional transition-enablement deferred to R5/R6); `174.052-T` (Rd) lands ONLY those declarations (stubs), turning R1s
 green; `174.053-T` (R1b) is the behavior RED harness that compiles against the stubs and stays red
 until R5/R6 implement. The writer/crash harnesses R2 (`174.040-T`) and R3 (`174.041-T`) depend on Rd
 (`174.052-T`) so they compile-green before asserting behavior.
 
 | Task | Req | Scope | Domain |
 |---|---|---|---|
-| `174.039-T` | R1s | Core-lifecycle SOURCE-SHAPE RED harness (go/ast: `ShipmentBlocked` enum + `BlockShipment`/`UnblockShipment` signatures + transition shape) | tests |
-| `174.052-T` | Rd | Core-lifecycle declaration-only stubs (compile-green): `ShipmentBlocked` const + block/unblock stub signatures + `isValidShipmentTransition` blocked shape | code |
+| `174.039-T` | R1s | Core-lifecycle SOURCE-SHAPE RED harness (go/ast: `ShipmentBlocked` enum + `BlockShipment`/`UnblockShipment` signatures; no transition-table) | tests |
+| `174.052-T` | Rd | Core-lifecycle declaration-only stubs (compile-green): `ShipmentBlocked` const + block/unblock stub signatures only (no `isValidShipmentTransition` blocked entries) | code |
 | `174.053-T` | R1b | Core-lifecycle BEHAVIOR RED harness (transitions, metadata, intent+preimage, disposition, target-aware unblock) | tests |
 | `174.040-T` | R2 | Writer/bypass BEHAVIOR RED harness (writer boundary, generic move/update, MoveShipmentStatus, bulk/cascade, create-as-active) | tests |
 | `174.041-T` | R3 | Crash/reopen BEHAVIOR RED harness (durable intent/preimage recovery; subprocess kill+reopen) | tests |
 | `174.042-T` | R4 | Governed writer core + envelope + public `WriteArtifactFile` boundary | code |
-| `174.043-T` | R5 | Core `BlockShipment` (global lock held across intent→preimage→disposition→persist→commit/compensation; member-mutation guard while blocked) | code |
-| `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction) | code |
+| `174.043-T` | R5 | Core `BlockShipment` (global lock held across intent→preimage→disposition→persist→commit/compensation; member-mutation guard while blocked; enable governed `active→blocked` transition, generic move still refused) | code |
+| `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction; enable governed `blocked→{queued,active}` transitions, generic move still refused) | code |
 | `174.045-T` | R7a | Route bypass WRITE call-sites (generic move/update, MoveShipmentStatus, bulk/cascade) through the governed writer | code |
 | `174.051-T` | R7b | Guard create-as-active + all generic activation paths (refuse activation outside claim/unblock) | code |
 | `174.046-T` | R8 | CLI + MCP parity for block/unblock + read/list status | code |
