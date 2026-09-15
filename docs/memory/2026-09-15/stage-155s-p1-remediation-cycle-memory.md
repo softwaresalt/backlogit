@@ -49,3 +49,63 @@ history and blocked/superseded tasks preserved.
 ## Files changed
 .backlogit/queue/{155-S,164.002-T,174.039-T,174.040-T,174.041-T,174.045-T,174.051-T}.md;
 docs/{exec-plans,product-specs,decisions}/2026-09-14-resumable-shipment-blocked-lifecycle-*.md
+
+---
+
+## Follow-up cycle — PR #444 contract-alignment P1 (2026-09-15, HEAD `5e3e1001`)
+
+Bounded single in-scope P1 remediation on `chore/stage-155`. Stage-owned docs/backlog ONLY —
+no source/tests, no `154-S` edit, no shipment claim, no PR; caller owns GitHub thread replies.
+
+### Finding resolved
+**P1 — unblock-confirmation + resume-flag divergence between the authoritative product contract
+and the live [local] API tasks.** The authoritative contract (spec SBLK-R5/R13, plan L335/L827,
+decision) requires (a) explicit `--confirm` for BOTH `blocked→queued` AND `blocked→active`, and
+(b) CLI flag `--resume-checkpoint`. The exact-shape task surfaces still carried the pre-contract
+"active-only confirmation" wording, and R8 mapped the stale flag `--resume-ref`. Aligned all live
+task surfaces to the contract; plan/spec/decision already agreed and were left unchanged.
+
+### Surfaces aligned (task bodies + comments; no struct-field additions)
+- `174.039-T` (R1s) — `UnblockOptions.Confirm` comment: REQUIRED for BOTH targets (active also
+  needs the free-active-slot check). Struct/type names unchanged, so the go/ast source-shape
+  harness stays intact.
+- `174.052-T` (Rd) — `Confirm` stub comment: REQUIRED for BOTH targets.
+- `174.053-T` (R1b behavior RED) — target-aware unblock assertion: BOTH targets require
+  `Confirm==true`; active additionally requires free-active-slot.
+- `174.044-T` (R6) — governed UnblockShipment: both targets require `opts.Confirm==true` (refuse
+  when absent); active additionally requires free-active-slot.
+- `174.046-T` (R8 CLI/MCP parity) — block mapping `--resume-checkpoint`/`resume_checkpoint_ref`
+  → `BlockOptions.ResumeCheckpointRef`; unblock `--confirm`/`confirm` → `Confirm` (required for
+  BOTH targets). MCP param `resume_checkpoint_ref` already matched the spec field name.
+
+### Resume-flag semantics
+`ResumeCheckpointRef` belongs to `BlockOptions` metadata only (block path). Unblock has no resume
+flag — no field invented; `--resume-checkpoint` maps to `BlockOptions.ResumeCheckpointRef` on the
+block command. Consistent with spec SBLK-R13 and audit field `resume_checkpoint_ref`.
+
+### Final exact API shape (unchanged struct fields; semantics clarified)
+- `BlockOptions{ Reason (required non-empty→blocked_reason), BlockedBy (→blocked_by),
+  ResumeCheckpointRef (optional→resume_checkpoint_ref) }`
+- `UnblockOptions{ Target (ShipmentQueued|ShipmentActive), Confirm (REQUIRED true for BOTH
+  targets), UnblockedBy }`
+- `BlockShipment(ctx, ws, shipmentID string, opts BlockOptions) (*models.Artifact, error)`
+- `UnblockShipment(ctx, ws, shipmentID string, opts UnblockOptions) (*models.Artifact, error)`
+- CLI: block `--reason`/`--by`/`--resume-checkpoint`; unblock `--to queued|active` `--confirm`
+  (both targets) `--by`. MCP: `reason`/`by`/`resume_checkpoint_ref`; `target`/`confirm`/`by`.
+
+### Validation
+- `backlogit docs lint` → valid, 0 findings.
+- `backlogit sync` → parse_failures=0, 1528 artifacts indexed.
+- `scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue` (actual parser + wave sim) → WAVE_SIM_OK
+  186/186 across 21 scenarios.
+- `backlogit doctor` (dependency/manifest structural) → 23 pre-existing orphans (016.x/106.x),
+  NONE on touched artifacts; target-mode schema validation of all 5 edited files → exit 0.
+- `shipment get 155-S` → manifest membership intact (174-F first; all 5 edited tasks present).
+- Targeted text/contract assertions → ALL_ASSERTIONS_PASS (no residual `--resume-ref` /
+  active-only wording; confirm-for-both + `--resume-checkpoint` present on all current surfaces).
+
+### Residual
+- P0 = 0, P1 = 0 (in-scope).
+
+### Files changed (this cycle)
+.backlogit/queue/{174.039-T,174.044-T,174.046-T,174.052-T,174.053-T}.md; this memory file.
