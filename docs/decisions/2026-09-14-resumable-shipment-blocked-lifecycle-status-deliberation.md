@@ -39,9 +39,13 @@ Companion product spec: `docs/product-specs/2026-09-14-resumable-shipment-blocke
   before any mutation; workspace-global lock held across block/unblock/claim; target-aware unblock
   (to-queued preserves snapshot; to-active exact restore); only Claim/unblock-to-active create an
   active shipment; never active members under a queued shipment.
-* **Decomposition (rev3):** rev2 `174.030-T…174.038-T` superseded (parked `blocked`, preserved);
-  replaced by **13 RED-before-GREEN ≤2h tasks** — `174.039-T…174.050-T` (12) plus the R7b split
-  task `174.051-T` (spec §0.2) — so `155-S` now carries **14 members including `174-F`**.
+* **Decomposition (rev3):** rev1/rev2 `174.001-T…174.038-T` superseded and **archived** (terminal,
+  `archived_status: blocked`, history/events preserved) so they sit OUTSIDE the live 174-F release
+  scope; replaced by **15 RED-before-GREEN ≤2h tasks** — `174.039-T…174.051-T` (13) plus the core
+  stateful-seam split tasks `174.052-T` (declaration-only compile-green) and `174.053-T`
+  (core-lifecycle behavior RED) (spec §0.2) — so `155-S` now carries **16 members including
+  `174-F`**. The core `BlockShipment`/`UnblockShipment` seam follows **source-shape RED →
+  declaration-only compile-green → behavior RED → implementation** (R1 split into R1s/Rd/R1b).
   `164.002-T` (S12 forward-repair) is **retired** — set `blocked` (history preserved) with **no
   dependency on `174.050-T`** (the obsolete cross-shipment edge is removed); `146-S` no longer
   couples to `155-S`.

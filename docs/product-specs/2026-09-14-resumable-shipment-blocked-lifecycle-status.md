@@ -54,18 +54,33 @@ governed public `WriteArtifactFile` boundary + private lower writer, `.locks/` w
 lock, SQLite projection, doctor checks, and CLI/MCP surface shapes are local and may be
 re-implemented upstream; they MUST NOT leak backlogit-specific semantics into (a).
 
-### 0.2 Concise decomposition (feature 174-F / shipment 155-S) — 13 tasks (14 shipment members incl. 174-F), RED-before-GREEN
+### 0.2 Concise decomposition (feature 174-F / shipment 155-S) — 15 tasks (16 shipment members incl. 174-F), RED-before-GREEN
 
-The rev2 9-task set (`174.030-T…174.038-T`) is **superseded** and parked at `blocked` (preserved,
-not deleted). Replacement is **13 live tasks** — `174.039-T…174.050-T` (12) plus the R7b split task
-`174.051-T` — all ≤2h, RED harnesses precede their implementations. Shipment `155-S` therefore
-carries **14 members** (the 13 tasks plus covering feature `174-F`):
+The rev2 9-task set (`174.030-T…174.038-T`) is **superseded**; together with the rev1 remnants
+`174.001-T…174.029-T` the full `174.001-T…174.038-T` band is now **archived** (terminal,
+`archived_status: blocked`, history/events preserved) so those superseded descendants sit OUTSIDE
+the live 174-F release scope. Replacement is **15 live tasks** — `174.039-T…174.051-T` (13) plus the
+core stateful-seam split tasks `174.052-T` (declaration-only compile-green) and `174.053-T`
+(core-lifecycle behavior RED) — all ≤2h, RED harnesses precede their implementations. Shipment
+`155-S` therefore carries **16 members** (the 15 tasks plus covering feature `174-F`).
+
+**Stateful-seam RED discipline (rev3 remediation).** The core `BlockShipment`/`UnblockShipment`
+seam follows the mandated chain **source-shape RED → declaration-only compile-green → behavior RED →
+implementation** (P-002.1 source-shape harness; no declaration-only *exemption*). R1 is split so the
+harness no longer jumps from a source-shape RED directly into declaring/implementing the seam:
+`174.039-T` (R1s) is a source-shape harness pinning the `ShipmentBlocked` enum + block/unblock
+signatures + transition shape; `174.052-T` (Rd) lands ONLY those declarations (stubs), turning R1s
+green; `174.053-T` (R1b) is the behavior RED harness that compiles against the stubs and stays red
+until R5/R6 implement. The writer/crash harnesses R2 (`174.040-T`) and R3 (`174.041-T`) depend on Rd
+(`174.052-T`) so they compile-green before asserting behavior.
 
 | Task | Req | Scope | Domain |
 |---|---|---|---|
-| `174.039-T` | R1 | Core-lifecycle RED harness (transitions, metadata, intent+preimage, disposition, target-aware unblock) | tests |
-| `174.040-T` | R2 | Writer/bypass RED harness (writer boundary, generic move/update, MoveShipmentStatus, bulk/cascade, create-as-active) | tests |
-| `174.041-T` | R3 | Crash/reopen RED harness (durable intent/preimage recovery; subprocess kill+reopen) | tests |
+| `174.039-T` | R1s | Core-lifecycle SOURCE-SHAPE RED harness (go/ast: `ShipmentBlocked` enum + `BlockShipment`/`UnblockShipment` signatures + transition shape) | tests |
+| `174.052-T` | Rd | Core-lifecycle declaration-only stubs (compile-green): `ShipmentBlocked` const + block/unblock stub signatures + `isValidShipmentTransition` blocked shape | code |
+| `174.053-T` | R1b | Core-lifecycle BEHAVIOR RED harness (transitions, metadata, intent+preimage, disposition, target-aware unblock) | tests |
+| `174.040-T` | R2 | Writer/bypass BEHAVIOR RED harness (writer boundary, generic move/update, MoveShipmentStatus, bulk/cascade, create-as-active) | tests |
+| `174.041-T` | R3 | Crash/reopen BEHAVIOR RED harness (durable intent/preimage recovery; subprocess kill+reopen) | tests |
 | `174.042-T` | R4 | Governed writer core + envelope + public `WriteArtifactFile` boundary | code |
 | `174.043-T` | R5 | Core `BlockShipment` (global lock held across intent→preimage→disposition→persist→commit/compensation; member-mutation guard while blocked) | code |
 | `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction) | code |
@@ -77,9 +92,11 @@ carries **14 members** (the 13 tasks plus covering feature `174-F`):
 | `174.049-T` | R11 | Doctor production checks (active-count, malformed-blocked, torn-intent; severity/exit; MCP; isolated fixture) | code |
 | `174.050-T` | R12 | Operator docs + branch-scoped bootstrap runbook + topology note | docs |
 
-Topological order (parent-first): `174-F → 174.039 → 174.040 → 174.041 → 174.042 → 174.043 →
-174.044 → 174.045 → 174.051 → 174.046 → 174.047 → 174.048 → 174.049 → 174.050` (13 tasks + `174-F`
-= 14 `155-S` members). `164.002-T` (S12 forward-repair) is **retired/superseded by rev3** — set
+Topological order (parent-first): `174-F → 174.039 → 174.052 → 174.053 → 174.040 → 174.041 →
+174.042 → 174.043 → 174.044 → 174.045 → 174.051 → 174.046 → 174.047 → 174.048 → 174.049 → 174.050`
+(15 tasks + `174-F` = 16 `155-S` members). Waves (dependency layers): W1 `039`; W2 `052`; W3 `053`,
+`040`, `041`; W4 `042`; W5 `043`; W6 `044`; W7 `045`, `051`, `046`, `047`; W8 `048`, `049`; W9 `050`
+(9 waves). RED-deliverable closing waves: R1s@2, R1b@6, R2@7, R3@8. `164.002-T` (S12 forward-repair) is **retired/superseded by rev3** — set
 `blocked` (history preserved) with **no dependency on `174.050-T`** (the obsolete cross-shipment
 edge is removed), because its shipment-record-only `queued → active` contract is incompatible with
 rev3 exclusive activation and its reconciliation role is subsumed by R9 (`174.047-T`) / R11

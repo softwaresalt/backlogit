@@ -30,18 +30,24 @@ docline:
 > a later section conflict, §0 governs. **rev3 removes the rollout circularity, the generic-move
 > bootstrap, and the `155-S` topology `--force`.**
 
-### 0.1 Concise task set (feature `174-F` / shipment `155-S`) — 13 tasks (14 `155-S` members incl. `174-F`), RED-before-GREEN, ≤2h
+### 0.1 Concise task set (feature `174-F` / shipment `155-S`) — 15 tasks (16 `155-S` members incl. `174-F`), RED-before-GREEN, ≤2h
 
-The rev2 tasks `174.030-T…174.038-T` are **superseded** (parked `blocked`, preserved). Replacement:
+The rev1/rev2 tasks `174.001-T…174.038-T` are **superseded and archived** (terminal,
+`archived_status: blocked`, history/events preserved), so they sit OUTSIDE the live 174-F release
+scope. The core `BlockShipment`/`UnblockShipment` stateful seam follows **source-shape RED →
+declaration-only compile-green → behavior RED → implementation** (R1 split into R1s/Rd/R1b).
+Replacement:
 
 | Task | Req | Title | Domain | Depends on |
 |---|---|---|---|---|
-| `174.039-T` | R1 | Core-lifecycle RED harness (transitions/metadata/intent+preimage/disposition/target-aware unblock) | tests | — |
-| `174.040-T` | R2 | Writer/bypass RED harness (writer boundary, generic move/update, MoveShipmentStatus, bulk/cascade, create-as-active) | tests | — |
-| `174.041-T` | R3 | Crash/reopen RED harness (durable intent/preimage recovery; subprocess kill+reopen) | tests | — |
-| `174.042-T` | R4 | Governed writer core + envelope + public `WriteArtifactFile` boundary | code | R1, R2 |
-| `174.043-T` | R5 | Core `BlockShipment` (global lock across intent→preimage→disposition→persist→commit/compensation; member guard) | code | R1, R4 |
-| `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction) | code | R1, R5 |
+| `174.039-T` | R1s | Core-lifecycle SOURCE-SHAPE RED harness (go/ast: `ShipmentBlocked` + block/unblock signatures + transition shape) | tests | — |
+| `174.052-T` | Rd | Core-lifecycle declaration-only stubs (compile-green): `ShipmentBlocked` const + block/unblock stubs + transition shape | code | R1s |
+| `174.053-T` | R1b | Core-lifecycle BEHAVIOR RED harness (transitions/metadata/intent+preimage/disposition/target-aware unblock) | tests | Rd |
+| `174.040-T` | R2 | Writer/bypass BEHAVIOR RED harness (writer boundary, generic move/update, MoveShipmentStatus, bulk/cascade, create-as-active) | tests | Rd |
+| `174.041-T` | R3 | Crash/reopen BEHAVIOR RED harness (durable intent/preimage recovery; subprocess kill+reopen) | tests | Rd |
+| `174.042-T` | R4 | Governed writer core + envelope + public `WriteArtifactFile` boundary | code | R2, Rd |
+| `174.043-T` | R5 | Core `BlockShipment` (global lock across intent→preimage→disposition→persist→commit/compensation; member guard) | code | R1b, Rd, R4 |
+| `174.044-T` | R6 | `UnblockShipment` + `Claim` under shared global lock (target-aware restore, CAS/drift refusal, create-active restriction) | code | R1b, Rd, R5 |
 | `174.045-T` | R7a | Route bypass WRITE call-sites (generic move/update, MoveShipmentStatus, bulk/cascade) through governed writer | code | R2, R4, R6 |
 | `174.051-T` | R7b | Guard create-as-active + all generic activation paths (refuse activation outside claim/unblock) | code | R2, R4, R6 |
 | `174.046-T` | R8 | CLI + MCP parity for block/unblock + read/list status | code | R5, R6 |
@@ -51,15 +57,21 @@ The rev2 tasks `174.030-T…174.038-T` are **superseded** (parked `blocked`, pre
 | `174.050-T` | R12 | Operator docs + branch-scoped bootstrap runbook + topology note | docs | R8, R9, R11 |
 
 ```
-R1(039) ─┬─────────────────► R4(042) ─┬─► R5(043) ─┬─► R6(044) ─┬─► R8(046) ─┐
-R2(040) ─┘                            │            │            ├─► R9(047) ─┼─► R11(049) ─► R12(050)
-R3(041) ──────────────────────────────┘ (R9 needs R3,R5,R6)    │            │            ▲
-                                       R7a(045)+R7b(051) need R2,R4,R6 ─┘        └─► R10(048)─┘
+R1s(039) ─► Rd(052) ─┬─► R1b(053) ─────────────┐
+                     ├─► R2(040) ─► R4(042) ─┐  │
+                     └─► R3(041)             ├─►R5(043) ─► R6(044) ─┬─► R8(046) ─┐
+                                             │  (R5/R6 need R1b,Rd) ├─► R9(047) ─┼─► R11(049) ─► R12(050)
+                                             │                      │            │            ▲
+                                       R7a(045)+R7b(051) need R2,R4,R6            └─► R10(048)─┘
 ```
 
+Waves (dependency layers): W1 `039`; W2 `052`; W3 `053`,`040`,`041`; W4 `042`; W5 `043`; W6 `044`;
+W7 `045`,`051`,`046`,`047`; W8 `048`,`049`; W9 `050` — 9 waves. RED-deliverable closing waves:
+R1s (`174.039-T`)@2, R1b (`174.053-T`)@6, R2 (`174.040-T`)@7, R3 (`174.041-T`)@8.
+
 Topological order (parent-first):
-`174-F → 174.039 → 174.040 → 174.041 → 174.042 → 174.043 → 174.044 → 174.045 → 174.051 → 174.046 →
-174.047 → 174.048 → 174.049 → 174.050`.
+`174-F → 174.039 → 174.052 → 174.053 → 174.040 → 174.041 → 174.042 → 174.043 → 174.044 → 174.045 →
+174.051 → 174.046 → 174.047 → 174.048 → 174.049 → 174.050`.
 
 Each task's private acceptance criteria (RED-first, workspace-global-lock + durable
 intent/preimage-before-mutation invariants, snapshot/restore, member CAS/drift refusal,
@@ -1019,3 +1031,53 @@ shipment manifest and **no** shipment depends on `146-S`; `147-S` sits in the `q
 contract incl. WAVE_MEMBER_BLOCKED detection intact).
 
 **Verdict: PASS** — residual P0 = 0, residual P1 = 0.
+
+## Plan Review — Copilot PR #444 remediation (2026-09-15, branch `chore/stage-155`)
+
+dispatch_mode: single-agent-declared-degradation
+decision: PASS
+
+Bounded remediation of two valid, in-scope Copilot review findings on PR #444 (HEAD `35912a0b`),
+Stage-owned backlog/docs only — no source/tests, no `154-S`, no shipment claim, no PR/thread reply.
+`155-S` remained `queued`; append-only history and all superseded artifacts preserved.
+
+* **Finding 1 (thread `PRRT_kwDORzozKM6itxgT`) — superseded descendants inside live release scope.**
+  `releaseScopeItemIDs` expands the covering feature `174-F` to ALL descendants (`IncludeArchived:
+  true`), so the 38 superseded, `blocked`, non-terminal tasks `174.001-T…174.038-T` sat in `155-S`
+  release scope and would fail `validateMemberGateEvidence` (`is blocked (not completed through the
+  gate)`). Remediation: archived all 38 via the supported non-destructive `backlogit archive`
+  lifecycle op (queue → archive; `status: archived`, `archived_status: blocked` preserved; parent
+  `174-F` and per-item event logs intact). Archiving from a descope-eligible in-flight status
+  (`blocked`) makes each a GENUINELY DESCOPED member that `validateMemberGateEvidence` skips, so they
+  no longer block the ship while remaining fully auditable. Result: `174-F` descendants = 38 archived
+  (descope-eligible) + 15 live queued; **0 blocked non-terminal descendants** remain in release scope.
+
+* **Finding 2 (thread `PRRT_kwDORzozKM6itxgz`) — source-shape RED jumped straight to declare+implement.**
+  The stateful core seam (`ShipmentBlocked` enum + `BlockShipment`/`UnblockShipment`, absent from
+  `internal/core`) violated the harness chain **source-shape RED → declaration-only compile-green →
+  behavior RED → implementation**. Remediation: R1 (`174.039-T`) split into
+  (a) **R1s** `174.039-T` source-shape RED (go/ast pins `ShipmentBlocked` + block/unblock signatures
+  + `isValidShipmentTransition` blocked shape; `^TestUR1S_`; green-maker `174.052-T`; closes wave 2),
+  (b) **Rd** `174.052-T` NEW declaration-only compile-green task (lands the `ShipmentBlocked` const +
+  block/unblock stub signatures + transition shape; ≤5 functions; gated by R1s — NOT a declaration-
+  only exemption per P-002.1), and (c) **R1b** `174.053-T` NEW behavior RED harness (`^TestUR1B_`;
+  green-makers `174.043-T,174.044-T`; closes wave 6). R2 (`174.040-T`) and R3 (`174.041-T`) now
+  depend on Rd (`174.052-T`) so they compile-green before asserting behavior (closing waves 7 and 8).
+  Implementation deps rewired: R4 `[R2,Rd]`, R5 `[R1b,Rd,R4]`, R6 `[R1b,Rd,R5]`. Manifest updated to
+  **16 members** (`174-F` + 15 tasks) in parent-first dependency order; §0 topology in spec/plan/
+  decision updated to 15 tasks / 9 waves. Every task ≤2h / ≤5 functions; RED-before-GREEN preserved.
+
+Validation evidence (current HEAD, branch `chore/stage-155`):
+`backlogit sync` — 1527 artifacts, parse_failures=0.
+`wave-scheduler-sim.ps1 -VerifyAgainstQueue` — **WAVE_SIM_OK 186/186** (scheduler contract intact).
+Actual RED-contract parser (`Read-RedDeliverableContract`) over the 4 live 174 RED harnesses —
+**4/4 parse clean (0 errors)**; selectors `^TestUR1S_/^TestUR1B_/^TestUR2_/^TestUR3_`; closing waves
+R1s@2, R1b@6, R2@7, R3@8 (match the recomputed 9-wave dependency layering); Rd `174.052-T` carries no
+red-deliverable block (correct).
+`backlogit docs lint` — spec/plan/decision `valid: true`, 0 violations each.
+`backlogit doctor` target-mode — 9/9 touched live files exit 0; global doctor 23 pre-existing
+findings (unchanged), **none on any 174.\* artifact** (archived or live).
+Release-scope check — manifest task set (15) == live queued `174-F` descendant set (15); all 38
+archived carry `archived_status: blocked` (descope-eligible); 0 blocked non-terminal descendants.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. `155-S` ready for Ship to claim.
