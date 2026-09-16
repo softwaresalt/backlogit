@@ -110,3 +110,38 @@ Controlling P1 findings:
 * CLI-only does not enforce operator-only; the shared `queued -> active` transition choke point must reject bypass paths.
 * The new `parked` state is not integrated into the closed shipment status taxonomy consumed by already-planned gates.
 * No named atomic repair seam exists across Markdown, SQLite cache, and JSONL audit evidence.
+
+## Current Remediation Note — S12 release unit retirement (2026-09-15, branch `chore/stage-155`)
+
+**Status: RETIRED.** This plan's approach (a `parked` shipment state plus a queued-record
+forward-repair break-glass) failed Plan Review and was fully superseded by feature `174-F`
+(governed non-terminal `blocked` shipment lifecycle, plus the R9/R11 recovery+normalizer and
+doctor production checks). No S12 code ships.
+
+**P1 corrected.** Queued shipment `146-S` had been reduced to a single executable manifest item —
+its covering feature `164-F` — after both member tasks were removed from the manifest and set to
+`blocked`. Left in the queue, once blocker `145-S` shipped, `146-S` would have become claimable;
+`ClaimShipment` would activate `164-F` with zero executable tasks, Ship would find no work and
+halt, stranding the single-active shipment slot.
+
+**Remediation applied (supported lifecycle archival, non-destructive, non-cascading).** Retired the
+legacy release unit so it is non-selectable while preserving history:
+
+* `backlogit archive 146-S` → shipment archived (`.backlogit/archive/146-S.md`); removed from the
+  queued/active shipment set so `ClaimShipment` can never select it. Nothing depended on `146-S`
+  (reverse dependency scan empty); its historical `146-S → 145-S (blocks)` edge is retained as
+  archived history.
+* `backlogit archive 164-F` → covering feature archived (`.backlogit/archive/164-F.md`). The CLI
+  archive path does not cascade, so child tasks were left untouched.
+
+**History preserved (not archived, not deleted).** Blocked historical tasks remain in the queue
+with their full event/link evidence:
+
+* `164.001-T` — status `blocked` (parked-state task, superseded by `174-F`).
+* `164.002-T` — status `blocked`, `related_to 174-F` link retained for traceability; its
+  supersession history and `return-blocked` journal/event evidence are intact.
+
+**Verification.** After `backlogit sync`: `146-S` = archived, `164-F` = archived, `164.001-T` =
+blocked, `164.002-T` = blocked. No queued/active shipment references `146-S` and no live executable
+manifest contains `164-F` or any `164.*` member. Retirement was performed with the repository's
+supported archival operation only — no direct status forging and no deletion.
