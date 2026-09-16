@@ -479,3 +479,198 @@ check — both sentinels declared by Rd `174.052-T`, asserted by R1s `174.039-T`
 introduced) by R2 `174.040-T` and R4g `174.054-T`; no `non-repudiation` claim remains in any
 authoritative current doc/live task; doctor pre-existing findings only, none on 174.*. No
 source/tests, no `154-S`, no claim.
+
+## §6h — Flat-manifest shipment scope determination (rev4, 2026-09-15, branch `chore/stage-155-flat-shipment-scope`; Stage-owned)
+
+Operator clarified the authoritative product rule: **a shipment is a FLAT manifest of explicitly
+listed deliverables (`custom_fields.items`); it is not expanded or encumbered by feature hierarchy.
+Including a feature does not implicitly include its descendants. Dependencies govern execution
+ordering; feature hierarchy does not govern shipment membership.** Backlog/docs + planning artifacts
+only — no source/tests written by Stage, no `154-S`, no shipment claim, no PR.
+
+**Problem frame.** Direct code inspection (engram daemon unavailable → ENGRAM_DEGRADED, bounded local
+read-only inspection) confirmed the live defect: the shipment lifecycle derives release scope by
+expanding a listed feature into all descendants — `releaseScopeItemIDs`
+(`internal/core/shipment_lifecycle.go:1142`) → `descendantItems` (`:1219`, BFS on `ParentID`,
+`IncludeArchived:true`) — and the member/size projection `compositionMemberIDs`
+(`internal/core/size_composition.go:291`) expands feature→children. `155-S`'s 17-entry explicit
+manifest projected to **54** `size_composition.members`, pulling in the archived `174.001-T…174.038-T`
+band that was never an explicit member. Expanded `releaseScope` is consumed by member-evidence
+validation (`validateMemberGateEvidence`), `completeReleaseScope` (closure), `collectArchiveCandidateIDs`
+(archival cascade), rollback locking, and `returnUnreleasedFeatureItems`. No exported API expands;
+`NormalizeShipmentItems` (exported accessor) only parses the flat manifest.
+
+**Options considered.**
+* **Option A — Descope by archival only (status quo mental model).** Keep hierarchy expansion; rely on
+  archiving superseded descendants so they fall out of the expanded set. *Rejected:* archival becomes a
+  load-bearing descoping mechanism; a non-archived-but-unlisted descendant is still silently pulled in;
+  the projection still misrepresents membership (54 vs 17); it contradicts the operator's flat rule and
+  couples membership to lifecycle status.
+* **Option B — Flat explicit membership (CHOSEN).** Make release scope equal the flat explicit
+  `custom_fields.items` manifest across lifecycle, gate, projection, and archival; descendants are members
+  only when explicitly listed; parent-first is ordering only; feature-only manifests are valid and must
+  free the active slot. Delivered test-first as +4 tasks on `174-F` layered on the finalized
+  `blocked`-lifecycle seam. *Chosen:* matches the operator's authoritative rule, is the smallest correct
+  internal change (no public API), and makes the projection truthful.
+* **Option C — New explicit `release_scope` field separate from `items`.** *Rejected:* redundant with the
+  existing flat manifest, adds a public schema seam and migration for no behavioral gain (YAGNI); the
+  operator's rule is precisely that `items` IS the scope.
+
+**Decision (Option B) — SBLK-R28 [shared].** A shipment's release scope is its flat explicit
+`custom_fields.items` manifest. No lifecycle/gate/completion/archival/projection surface expands a listed
+parent into unexpressed descendants; descendants are in scope only when explicitly listed; parent-first
+is manifest ordering only; feature-only/zero-executable-task manifests are valid and their ship/closure
+frees the single active slot (never strands it). Recorded authoritatively in spec §0.5/§0.6 + plan §0.4.
+
+**Rev3 reconciliation.** Spec §0.2 and plan §0.1 previously said the archived `174.001-T…174.038-T` band
+"sit[s] OUTSIDE the live 174-F release scope" — phrasing that assumed feature-root expansion. Reconciled:
+those IDs are outside `155-S` scope **because they were never explicit members of the `155-S` manifest**,
+not because they were archived; archival preserved history but is **not required** to descope them, and
+**no archived/superseded task is restored merely for shipment scope**.
+
+**Task delta (+4, all ≤2h, ≤5 functions, <4 scenarios), RED-before-GREEN:** `174.055-T` (SCOPE-RED-A,
+tests) + `174.056-T` (SCOPE-RED-B regression, tests) precede `174.057-T` (SCOPE-IMPL-1, code, flatten
+the `releaseScopeItemIDs` derivation; evidence/completion flatten transitively — **rollback is an
+INDEPENDENT expansion, re-scoped in §6i (rev5)**) + `174.058-T`
+(SCOPE-IMPL-2, code, flatten the `compositionMemberIDs` projection AND the independent ship/closure
+descendant re-expansions in `collectArchiveCandidateIDs`/`returnUnreleasedFeatureItems`, plus
+feature-only active-slot safety and coupled-test updates). The two ship/closure functions re-expand
+descendants directly (not via the `releaseScope` parameter), so they are flattened by `174.058-T`, not
+`174.057-T` — a distinction confirmed by the cycle's plan review. Deps (blocks): `055→044`, `056→044`,
+`057→{055,045,051}`, `058→{056,057}`. Integrated waves stay **9** (`055`,`056`@W7; `057`@W8; `058`@W9).
+`155-S` → **20 tasks / 21 members incl. `174-F`** (flat `size_composition.members` = 20 listed tasks,
+feature excluded as non-sizable; currently 58 under expansion), appended in dependency order. Existing
+`blocked`-lifecycle tasks and their RED contracts are unchanged.
+
+**Topology / force posture.** The external numeric-predecessor wave/topology gate
+(`autoharness/gates/topology.py`) reads neither `releaseScopeItemIDs` nor the member projection, so it is
+**independent** of this correction (verified by inspection; the P-002.6 wave-scheduler simulation is
+bound to the 130-S/147-F fixture, not 155-S). **No `--force` override is authorized or applied.**
+
+Validation evidence and the review verdict for this cycle are recorded in the companion plan's
+**"Plan Review — Revision 4 (flat-manifest shipment scope)"** section.
+
+## §6i — Flat-manifest scope hardening (rev5, 2026-09-16, branch `chore/stage-155-flat-shipment-scope`; Stage-owned)
+
+Bounded remediation of **four P1 findings** raised against the rev4 flat-manifest addendum. All fixes
+are Stage-owned backlog/docs only — no source/tests written by Stage, `155-S` stays `queued`, no PR.
+The findings and their dispositions:
+
+* **P1-1 — rollback/snapshot path independently expands (mis-scoped as "flatten transitively").**
+  `rollbackIDs`/`snapshotShipArtifacts` are built independently at `shipment_lifecycle.go:603-612`,
+  appending covering-feature ancestors (`featureIDs`) **and every** `descendantItems` on top of
+  `{shipmentID} ∪ releaseScope` — so flattening the derivation alone does NOT flatten the artifact
+  lock/snapshot/restore set. **Disposition:** this expansion is re-scoped to `174.057-T` (neutralize
+  `:603-612`), with new RED harness `174.059-T` (SCOPE-RED-C, `^TestURollbackScopeFlat_`) proving the
+  lock/snapshot/restore set set-equals `{shipmentID} ∪ flat manifest` and that unlisted ancestors and
+  descendants are absent and non-restorable. The covering-feature **status-rollup** revert via
+  `nonMemberFeatureSnapshots`/`restoreRolledUpNonMemberFeatures` is a SEPARATE mechanism and is
+  preserved unchanged.
+* **P1-2 — RED/GREEN contract inconsistent for `releaseScopeItemIDs`.** RED (`174.055-T`) pins the
+  `releaseScopeItemIDs` seam, but the rev4 `174.057-T` instruction bypassed it with a direct
+  `explicitScope` assignment. **Disposition:** `174.057-T` now flattens `releaseScopeItemIDs`
+  **in place** (`return uniqueNonEmptyStrings(itemIDs)`, seam + signature retained; line 549 still
+  calls it), removing the bypass instruction, so RED and GREEN target the same function and all callers
+  consume its flat result. Pins to 174.055/spec §0.5/plan §0.4 as already written.
+* **P1-3 — `collectArchiveCandidateIDs` also appends unlisted linked deliberations.** The covering-feature
+  loop appends `linkedDeliberationIDs(feature)` with no membership guard. **Disposition:** included in
+  `174.058-T` ownership; new RED harness `174.060-T` (SCOPE-RED-D, `^TestUArchiveCandidateFlat_`)
+  asserts an unlisted linked deliberation is absent from `ArchivedIDs` and untouched.
+* **P1-4 — archive RED used already-archived descendants (a no-op the collector skips).** The collector
+  skips `archived` descendants, so that assertion never exercised the expansion. **Disposition:**
+  `174.060-T` uses an unlisted **terminal-but-not-archived** descendant (status `done`/`accepted`),
+  which the collector DOES append today, asserting it stays untouched and absent from `ArchivedIDs`;
+  archived-descendant projection coverage is retained separately (in `174.056-T` and as a
+  `174.060-T` negative-control that no archived artifact is restored for scope).
+
+**Task delta (rev5): +2 (total scope-correction delta now +6).** New RED tasks `174.059-T`
+(SCOPE-RED-C → green-maker `174.057-T`@close-wave 8) and `174.060-T` (SCOPE-RED-D → green-maker
+`174.058-T`@close-wave 9), each `dep 174.044-T`, each ≤2h / <4 scenarios. Impl edges added:
+`057→059`, `058→060`. Waves stay **9** (`055`,`059`,`056`,`060`@W7; `057`@W8; `058`@W9). `155-S`
+manifest → **22 tasks / 23 members incl. `174-F`** (flat `size_composition.members` target updated
+`20 → 22`), appended in dependency order `… 174.055 → 174.059 → 174.056 → 174.060 → 174.057 →
+174.058`. **No public/exported API introduced**; no archived/superseded task restored; **no `--force`
+override authorized or applied.** The external topology/wave gate is still independent (it reads
+neither `releaseScopeItemIDs`, the projection, nor the rollback set). Validation evidence and verdict
+recorded in the companion plan's **"Plan Review — Revision 5 (flat-manifest scope hardening)"**
+section.
+
+## §6j — Non-member ancestor rollup elimination (rev6, 2026-09-16, branch `chore/stage-155-flat-shipment-scope`; Stage-owned)
+
+Bounded remediation of **one P1 concurrency defect** in the rev5 flat-scope plan. Stage-owned
+backlog/docs only — no source/tests written by Stage, `155-S` stays `queued`, no PR/Ship work.
+**Concurrency fix-cycle-3 (2026-09-16)** resolved two further same-contract P1 findings against this
+addendum without a redesign: (1) the member-completion cascade boundary must be carried on a separate
+in-closure context and must not leak onto the ship's escaping outer `ctx` reaching the post-ship
+`FirePost` hook (else an unrelated post-ship-hook update loses its global cascade) — pinned by the new
+RED harness `174.063-T`; and (2) authoritative terminology now distinguishes the RELEASE/MEMBER scope
+(flat `custom_fields.items`) from the transactional lock/snapshot/rollback set
+(`{shipment control record ID} ∪ explicit manifest IDs`, the shipment record being the sole exemption),
+removing "manifest only" wording. Both remain Stage-owned docs/backlog only.
+
+**Problem frame.** rev5 (§6i P1-1) explicitly PRESERVED the non-member covering-feature status-rollup
+revert (`nonMemberFeatureSnapshots` snapshot at `shipment_lifecycle.go:598` +
+`restoreRolledUpNonMemberFeatures` at the in-line `:684`, the deferred fallback at `:496`, and the
+`classifyShippedEventAppendFailure` indeterminate branch at `:927`), treating it as a mechanism
+separate from the artifact lock/snapshot set that `174.057-T` flattens. But `174.057-T` **removes
+unlisted ancestors from the outer artifact lock** (`:603-612` → `lockArtifactMutations`). With the
+ancestor no longer locked, the preserved path snapshots its status, the `completeReleaseScope` cascade
+(`cascadePersistedParentStatuses`) rolls it to `done`/`archived`, and the restore later writes the
+snapshot back — so any mutation to the ancestor **between snapshot and restore** is silently
+overwritten. This is a **lost-update (TOCTOU) P1**: the compensation designed to protect a non-member
+ancestor now itself corrupts a concurrent write to it.
+
+**Options considered.**
+* **Option A — Add a separate protected lock/CAS around the non-member snapshot/restore.** Re-lock (or
+  compare-and-swap) each non-member ancestor across the snapshot→restore window so a concurrent write
+  is serialized or detected. *Rejected:* it re-introduces exactly the hierarchy-derived ancestor
+  locking that `174.057-T` removed to satisfy SBLK-R28 ("shipment processing must not lock artifacts
+  absent from its manifest"), and adds a second lock lifecycle and drift-detection path — extra
+  complexity for a side effect the flat-manifest rule says should not exist at all.
+* **Option B (CHOSEN) — Eliminate the non-member ancestor rollup side effects entirely.** Bound the
+  member-completion cascade to explicit members so a non-member ancestor is never rolled up, and delete
+  the now-dead snapshot/restore compensation. Nothing is snapshotted, restored, mutated, or locked
+  outside the manifest, so there is no window to race. Explicitly-listed **feature members** keep their
+  own governed status handling (the `:648` member-guarded `setArtifactStatus(done)`), satisfying
+  "explicitly listed feature artifacts may still receive governed shipment status handling, but
+  hierarchy-derived ancestors cannot."
+
+**Decision (Option B) — SBLK-R28 §0.5 point 8 [shared].** Shipment ship/rollback/closure MUST NOT
+mutate, snapshot, restore, or lock any non-member artifact absent from `custom_fields.items`; a
+hierarchy-derived non-member ancestor receives no status-rollup handling. The shipment control record
+is the **sole** exemption — it is not a `custom_fields.items` member but must be locked, snapshotted,
+and transitioned because ship/rollback changes its own status; the transactional lock/snapshot/rollback
+set is therefore `{shipment control record ID} ∪ explicit manifest IDs`, never "manifest only". The
+membership boundary that bounds the completion cascade MUST be carried on a **separate in-closure
+context** confined to the governed member mutations, and MUST NOT be set on the ship's escaping outer
+`ctx` (which flows into `collectArchiveCandidateIDs`/`VerifyPostShipConsistency` and the post-ship
+`FirePost` hook at `:704`) — otherwise an unrelated post-ship-hook artifact update would inherit the
+boundary and have its legitimate global parent-status cascade suppressed. Delivered as **+2 `155-S`
+tasks (concurrency fix-cycle-3 adds a third, `174.063-T`)**, RED-first:
+`174.061-T` (SCOPE-RED-E, `^TestUNonMemberRollupSafe_`, dep `174.044-T`) pins the contract using the
+existing production seams `persistArtifactPreLockHook`/`persistArtifactWriteFn` (so it compiles and is
+RED against current code) across three scenarios — no ship-originated write to an unlisted ancestor
+on success (with a listed-member-feature governed-`done` control), concurrent-mutation survives ship
+success, concurrent-mutation survives forced rollback; `174.063-T` (SCOPE-RED-F,
+`^TestUPostShipHookCascadeGlobal_`, dep `174.044-T`) pins that a post-ship `FirePost` hook's unrelated
+artifact update still triggers the normal GLOBAL parent-status cascade (the boundary does not leak onto
+the escaping outer `ctx`). `174.062-T` (SCOPE-IMPL-3, dep
+`174.061-T,174.063-T,174.057-T,174.058-T`) bounds `cascadePersistedParentStatuses` to the
+explicit-membership set via a separate in-closure boundary context (never the escaping outer `ctx`) and
+deletes `snapshotNonMemberFeatureStatuses` /
+`restoreRolledUpNonMemberFeatures` and their `ShipShipment`/`classifyShippedEventAppendFailure`
+call-sites, updating the coupled tests. `174.057-T`/`174.059-T` were amended to stop describing the
+status-rollup revert as "preserved" — they leave it in place pending `174.062-T`, and their
+transactional-set terminology now reads `{shipment control record ID} ∪ explicit manifest IDs`.
+
+**Task delta (rev6): +2 (total scope-correction delta now +8); concurrency fix-cycle-3 adds
+`174.063-T` → delta now +9.** Impl edge `062 → {061,063,057,058}`,
+RED edges `061 → 044`, `063 → 044`. **Waves 9 → 10** (`174.061`@W7, `174.063`@W7; `174.062`@W10;
+SCOPE-RED-E `174.061-T` and SCOPE-RED-F `174.063-T` closed by
+`174.062-T`@close-wave 10). `155-S` manifest → **25 tasks / 26 members incl. `174-F`**, appended
+`… 174.058 → 174.061 → 174.063 → 174.062`. **No public/exported API introduced** (unexported context boundary
+key only); no archived/superseded task restored; **no re-lock/CAS added**; **no `--force` authorized
+or applied**; the external topology/wave gate remains independent (it reads neither the cascade, the
+projection, nor the rollback set). Validation evidence and verdict recorded in the companion plan's
+**"Plan Review — Revision 6 (non-member ancestor rollup elimination; concurrency)"** and
+**"Plan Review — Revision 7 (post-ship-hook cascade isolation; terminology)"** sections.
