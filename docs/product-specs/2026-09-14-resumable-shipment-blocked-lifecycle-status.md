@@ -190,9 +190,17 @@ unsupported `blocked` status** (no blanket/standing override), removed once upst
 2. **Descendants are members only when explicitly listed.** A descendant of a listed feature is in
    scope **iff that descendant's own ID is itself in the manifest**. Feature hierarchy does **not**
    govern shipment membership.
-3. **Release scope == explicit manifest.** The set that evidence validation, ship/closure gating,
-   member completion, archival cascade, rollback locking, and **any machine-readable release-scope
-   or member projection** operate on **equals the explicit manifest** — no hierarchy expansion.
+3. **Release scope == explicit manifest; the transactional set adds only the shipment control
+   record.** The RELEASE/MEMBER set that evidence validation, ship/closure gating, member completion,
+   archival cascade, and **any machine-readable release-scope or member projection** operate on
+   **equals the explicit manifest** — no hierarchy expansion. The **transactional
+   lock/snapshot/rollback set** is a DISTINCT set and is NOT the release set: it equals
+   **`{shipment control record ID} ∪ explicit manifest IDs`**. The shipment control record is the
+   **sole** control-record exemption — it is never a `custom_fields.items` member yet must be locked,
+   snapshotted, and transitioned because ship/rollback mutates its own status. No OTHER artifact
+   absent from the manifest may be mutated, snapshotted, restored, or locked on account of hierarchy.
+   Stating that rollback locking "equals the explicit manifest" (manifest-only) is **incorrect** — it
+   omits the mandatory shipment control record.
 4. **Dependencies govern ordering, not membership.** Dependency edges (`blocks`) determine execution
    ORDER and wave layering among manifest members. They never add or remove members.
 5. **Parent-first is ordering only.** A covering feature is listed before its listed children as a
@@ -220,15 +228,28 @@ unsupported `blocked` status** (no blanket/standing override), removed once upst
    overwritten.) Explicitly-listed **feature members** still receive their own governed shipment status
    handling (marked `done` on release); only hierarchy-derived non-members are excluded. Re-locking a
    non-member ancestor to make the snapshot/restore safe is **rejected** — it would re-introduce the
-   hierarchy expansion this rule forbids; the compensation is **eliminated**, not protected.
+   hierarchy expansion this rule forbids; the compensation is **eliminated**, not protected. The
+   membership boundary that bounds this cascade MUST be scoped to the governed in-closure member
+   mutations only (carried on a **separate in-closure context**), and MUST NOT be carried on the
+   ship's escaping outer context into post-closure work or **post-ship hooks**: an unrelated artifact
+   update performed inside a post-ship hook callback must retain the normal **GLOBAL** parent-status
+   cascade (leaking the boundary there would suppress a legitimate unrelated cascade — a distinct
+   concurrency defect). The shipment control record remains the sole non-member artifact the ship may
+   lock/snapshot/transition (it must change status); every other non-member is untouched.
 
 **SBLK-R28 (M) [shared] — Flat explicit shipment membership.** A shipment's release scope is its
 flat explicit `custom_fields.items` manifest. No lifecycle, gate, completion, archival, or projection
 surface may expand a listed parent into unexpressed descendants; descendants are in scope only when
 their IDs are explicitly listed. No ship/rollback/closure surface may mutate, snapshot, restore, or
 lock a **non-member** artifact (including a hierarchy-derived ancestor): non-member ancestors receive
-**no** status-rollup handling, while explicitly-listed feature members do. Parent-first order is
-manifest ordering only. Feature-only manifests are valid and their ship/closure must free the active
+**no** status-rollup handling, while explicitly-listed feature members do. The transactional
+lock/snapshot/rollback set is `{shipment control record ID} ∪ explicit manifest IDs` — the shipment
+control record is the **sole** exemption (never a `custom_fields.items` member, but locked/snapshotted/
+transitioned because ship/rollback changes its own status); "manifest-only" wording for that set is
+incorrect. The member-completion cascade boundary MUST be confined to the governed in-closure member
+mutations (a separate in-closure context) and MUST NOT leak onto the ship's escaping outer context or
+into **post-ship hooks**, so an unrelated post-ship-hook artifact update keeps its normal global
+cascade. Parent-first order is manifest ordering only. Feature-only manifests are valid and their ship/closure must free the active
 slot. This is a portable contract requirement (§2.5 [shared] layer); the specific backlogit code-path
 corrections are [local] (§0.6).
 
@@ -280,17 +301,28 @@ is **independent** of this correction; **no `--force` override is authorized or 
 > `174.057-T` drops unlisted ancestors from the outer artifact lock, that preserved path snapshots and
 > restores an **unlocked** ancestor — a **P1 lost-update** when the ancestor is mutated between
 > snapshot and restore. Per §0.5 point 8 the fix **eliminates** the non-member rollup (no re-lock, no
-> CAS). **+2 tasks (delta now +8):**
+> CAS). **+2 tasks (delta now +8); a concurrency fix-cycle-3 adds `174.063-T` (delta now +9)** to
+> isolate the member boundary from post-ship hooks (see the trailing note below):
 >
 > | Task | Role | Scope | Domain | Depends on |
 > |---|---|---|---|---|
 > | `174.061-T` | SCOPE-RED-E | Behavior RED harness: a hierarchy-derived non-member covering-feature ancestor receives no ship-originated status write (no rollup, no restore) and a concurrent mutation to it is never overwritten on ship success **or** forced rollback; an explicitly-listed member feature still gets governed `done` (control). Uses the existing `persistArtifactPreLockHook`/`persistArtifactWriteFn` seams. `^TestUNonMemberRollupSafe_`. <4 scenarios | tests | `174.044-T` |
-> | `174.062-T` | SCOPE-IMPL-3 | Bound `completeReleaseScope`→`cascadePersistedParentStatuses` rollup to explicit members (ctx boundary) and delete `snapshotNonMemberFeatureStatuses`/`restoreRolledUpNonMemberFeatures` + their `ShipShipment`/`classifyShippedEventAppendFailure` call-sites; explicitly-listed feature members keep governed `done` handling; update coupled tests. Makes `174.061-T` green | code | `174.061-T`, `174.057-T`, `174.058-T` |
+> | `174.063-T` | SCOPE-RED-F | Behavior RED harness: a post-ship `FirePost` hook's UNRELATED artifact update still triggers the normal GLOBAL parent-status cascade — the shipment member boundary is confined to the governed in-closure context and does NOT leak onto the ship's escaping outer `ctx` reaching `collectArchiveCandidateIDs`/`VerifyPostShipConsistency`/`FirePost`. `^TestUPostShipHookCascadeGlobal_`. <4 scenarios | tests | `174.044-T` |
+> | `174.062-T` | SCOPE-IMPL-3 | Bound `completeReleaseScope`→`cascadePersistedParentStatuses` rollup to explicit members via a **separate in-closure boundary context** (never the escaping outer `ctx` that reaches `FirePost`) and delete `snapshotNonMemberFeatureStatuses`/`restoreRolledUpNonMemberFeatures` + their `ShipShipment`/`classifyShippedEventAppendFailure` call-sites; explicitly-listed feature members keep governed `done` handling; update coupled tests. Makes `174.061-T` + `174.063-T` green | code | `174.061-T`, `174.063-T`, `174.057-T`, `174.058-T` |
 >
-> **Waves 9 → 10:** `174.061`@**W7**; `174.062`@**W10**. RED-deliverable closing wave adds SCOPE-RED-E
-> (`174.061-T`) closed by `174.062-T`@**W10**. **Updated `155-S` manifest — 24 tasks (25 members incl.
-> `174-F`)**, appended `… → 174.058 → 174.061 → 174.062`. No public/exported API introduced (unexported
-> context boundary key only); topology/wave gate still independent; no `--force`.
+> **Waves 9 → 10:** `174.061`@**W7**, `174.063`@**W7**; `174.062`@**W10**. RED-deliverable closing wave
+> adds SCOPE-RED-E (`174.061-T`) and SCOPE-RED-F (`174.063-T`) closed by `174.062-T`@**W10**. **Updated
+> `155-S` manifest — 25 tasks (26 members incl. `174-F`)**, appended
+> `… → 174.058 → 174.061 → 174.063 → 174.062`. No public/exported API introduced (unexported context
+> boundary key only); topology/wave gate still independent; no `--force`.
+>
+> **rev6 concurrency fix-cycle-3 note (2026-09-16).** Two P1 findings were resolved without a redesign:
+> (1) the member boundary MUST be carried on a **separate in-closure context**, not the ship's outer
+> `ctx` (which escapes the governed closure and reaches the post-ship `FirePost` hook at
+> `shipment_lifecycle.go:704`) — otherwise an unrelated post-ship-hook artifact update would inherit the
+> boundary and have its legitimate global cascade suppressed; `174.063-T` pins this. (2) Terminology
+> aligned: the transactional lock/snapshot/rollback set is `{shipment control record ID} ∪ explicit
+> manifest IDs` (the shipment record is the sole non-member exemption), never "manifest only".
 
 A shipment can reach a state where it cannot make forward progress but MUST NOT be
 abandoned or archived because its branch, wave harnesses, commits, checkpoints, and

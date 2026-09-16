@@ -186,23 +186,30 @@ by `174.058-T`@W9. Sub-graph acyclic; no existing wave changes.
 > ship/rollback must not mutate/snapshot/restore/lock any artifact absent from the explicit manifest;
 > the fix **eliminates** the non-member ancestor rollup entirely rather than re-locking it (re-locking
 > would re-introduce the hierarchy expansion `174.057-T` removed). **+2 tasks (scope-correction delta
-> now +8):** `174.061-T` (SCOPE-RED-E, `^TestUNonMemberRollupSafe_`, dep `174.044-T`) precedes
-> `174.062-T` (SCOPE-IMPL-3, dep `174.061-T,174.057-T,174.058-T`) which bounds the
-> `completeReleaseScope`→`cascadePersistedParentStatuses` rollup to explicit members and deletes
-> `snapshotNonMemberFeatureStatuses`/`restoreRolledUpNonMemberFeatures` (+ their `ShipShipment` and
-> `classifyShippedEventAppendFailure` call-sites). Explicitly-listed feature members keep governed
-> `done` handling (the `:648` member-guarded path). `174.057-T`/`174.059-T` updated: they no longer
-> claim the status-rollup revert is "preserved" — they leave it in place pending `174.062-T`.
+> now +8); concurrency fix-cycle-3 adds `174.063-T` (delta now +9):** `174.061-T` (SCOPE-RED-E,
+> `^TestUNonMemberRollupSafe_`, dep `174.044-T`) and `174.063-T` (SCOPE-RED-F,
+> `^TestUPostShipHookCascadeGlobal_`, dep `174.044-T`) precede
+> `174.062-T` (SCOPE-IMPL-3, dep `174.061-T,174.063-T,174.057-T,174.058-T`) which bounds the
+> `completeReleaseScope`→`cascadePersistedParentStatuses` rollup to explicit members **via a separate
+> in-closure boundary context** (never the escaping outer `ctx` that reaches the post-ship `FirePost`
+> hook at `:704`) and deletes `snapshotNonMemberFeatureStatuses`/`restoreRolledUpNonMemberFeatures`
+> (+ their `ShipShipment` and `classifyShippedEventAppendFailure` call-sites). Explicitly-listed
+> feature members keep governed `done` handling (the `:648` member-guarded path). `174.057-T`/`174.059-T`
+> updated: they no longer claim the status-rollup revert is "preserved" — they leave it in place pending
+> `174.062-T`, and their transactional-set terminology now reads `{shipment control record ID} ∪ explicit
+> manifest IDs` (shipment record = sole non-member exemption), never "manifest only".
 >
 > ```
-> 174.044(R6) ─► 174.061(SCOPE-RED-E) ─┐
-> 174.057(IMPL-1),174.058(IMPL-2) ─────┴─► 174.062(SCOPE-IMPL-3)
+> 174.044(R6) ─┬─► 174.061(SCOPE-RED-E) ─┐
+>              └─► 174.063(SCOPE-RED-F) ─┤
+> 174.057(IMPL-1),174.058(IMPL-2) ───────┴─► 174.062(SCOPE-IMPL-3)
 > ```
 >
-> **Waves 9 → 10:** `174.061`@**W7** (dep `174.044`@W6); `174.062`@**W10** (deps `174.061`@W7,
-> `174.057`@W8, `174.058`@W9). RED-deliverable closing wave adds: SCOPE-RED-E (`174.061-T`) closed by
-> `174.062-T`@**W10**. **`155-S` manifest → 24 tasks (25 members incl. `174-F`)**; appended
-> `… 174.058 → 174.061 → 174.062`. No public/exported API introduced (unexported context boundary key
+> **Waves 9 → 10:** `174.061`@**W7** (dep `174.044`@W6), `174.063`@**W7** (dep `174.044`@W6);
+> `174.062`@**W10** (deps `174.061`@W7, `174.063`@W7, `174.057`@W8, `174.058`@W9). RED-deliverable
+> closing wave adds: SCOPE-RED-E (`174.061-T`) and SCOPE-RED-F (`174.063-T`) closed by
+> `174.062-T`@**W10**. **`155-S` manifest → 25 tasks (26 members incl. `174-F`)**; appended
+> `… 174.058 → 174.061 → 174.063 → 174.062`. No public/exported API introduced (unexported context boundary key
 > only). Topology/wave gate still independent; no `--force`.
 
 ---
@@ -1492,12 +1499,12 @@ decision: PASS
 
 ### Reviewer conclusions
 * **Race fully closed at root.** Removing the unbounded upward cascade for non-members means the ancestor is never written by the ship, so there is nothing to snapshot or restore — the snapshot↔restore window that hosted the lost update ceases to exist. Enumerated status-rollup sites (`:598`,`:684`,`:496`,`:927`,`:1267`,`:648`) confirmed COMPLETE against source; `collectArchiveCandidateIDs` already membership-guards non-members (`:790`), not a missed site.
-* **Boundary-key cascade correct/safe.** Stopping the up-walk at a non-member parent cannot strand a member descendant (cascade propagates upward only); "absent key ⇒ global behavior" holds (only `ShipShipment` sets the key; context values immutable; concurrent writer uses its own ctx — no cross-goroutine leak).
+* **Boundary-key cascade correct/safe.** Stopping the up-walk at a non-member parent cannot strand a member descendant (cascade propagates upward only); "absent key ⇒ global behavior" holds (only `ShipShipment` sets the key; context values immutable; concurrent writer uses its own ctx — no cross-goroutine leak). **[SUPERSEDED by rev7]** — this conclusion missed a SAME-goroutine leak: the boundary-bearing outer `ctx` also flows into the post-ship `FirePost` hook (`:704`), so the boundary must be carried on a separate in-closure context (see rev7).
 * **Seams verified present** and fire at the claimed boundaries (`shipment.go:~840`); tests are RED today and GREEN only after `174.062-T`.
 * **No residual P0/P1.** Listed member features remain locked (per `174.057-T`) and get governed `done` directly via `:648`; deferred-fallback removal leaves no uncompensated failure path. Atomicity (both moves in one task) confirmed necessary — move-2-before-move-1 would leave non-members rolled-up-but-unreverted.
 
 ### Advisory findings folded into the task contracts before this PASS
-* **F1 (was P2) → `174.062-T`:** the context boundary key MUST be injected on the exact `ctx` threaded into every in-closure `setArtifactStatus` caller (`completeReleaseScope`, the `:648` member loop, and `returnUnreleasedFeatureItems` `:735`), AFTER the `lockArtifactMutations` ctx reassignment (`:610`) and BEFORE `completeReleaseScope`. Contract now states this injection point explicitly.
+* **F1 (was P2) → `174.062-T`:** the context boundary key MUST be injected on the exact `ctx` threaded into every in-closure `setArtifactStatus` caller (`completeReleaseScope`, the `:648` member loop, and `returnUnreleasedFeatureItems` `:735`), AFTER the `lockArtifactMutations` ctx reassignment (`:610`) and BEFORE `completeReleaseScope`. Contract now states this injection point explicitly. **[SUPERSEDED by rev7]** — injecting on the function-scope `ctx` leaks the boundary into the escaping post-closure/post-ship-hook path (`FirePost` `:704`); rev7 replaces this with a SEPARATE in-closure `scopedCtx` threaded only to the three governed callers, leaving the outer `ctx` boundary-free.
 * **F3 (was P2) → `174.061-T`:** scenarios 2 & 3 now anchor the concurrent-writer injection to a LISTED MEMBER's persist boundary (fires on both current and fixed code) rather than to `F` (which never persists post-fix), keeping the assertions RED-now / GREEN-after instead of vacuously green.
 * **F2 (P3) → `174.062-T` AC(2):** the `returnUnreleasedFeatureItems` (`:735`) return-to-backlog cascade is now named explicitly as a second non-member path covered by the bounded-cascade fix.
 * **F4 (P3) → `174.062-T`:** the member-above-non-member invariant (`T`→`F`(non-member)→`E`(member): `E` gets `done` via the DIRECT `:648` write, not via cascade) is pinned so a future change cannot silently reintroduce a stale-member-ancestor bug.
@@ -1506,3 +1513,25 @@ decision: PASS
 **Validation evidence (branch `chore/stage-155-flat-shipment-scope`):** `backlogit sync` OK (1536 artifacts, 0 parse failures); `backlogit docs lint` on plan/spec/decision all `valid: true` (0 violations); `doctor --target` on `174.057-T`,`174.058-T`,`174.059-T`,`174.061-T`,`174.062-T`,`155-S` all exit 0 (`ok: true`, `kind: pass`); RED-contract block well-formed (`174.061-T` green_maker `174.062-T`@close-wave 10); `wave-scheduler-sim` fixture **WAVE_SIM_OK 164/164** and `-VerifyAgainstQueue` **WAVE_SIM_OK 186/186**; dependency-graph check over the `155-S` manifest: **acyclic**, manifest a valid **parent-first topological order**, **25 items (`174-F` + 24 tasks)**; dep edges verified `061→044`, `062→{061,057,058}`; **waves 9 → 10** (`061`@W7; `062`@W10) with the RED strictly before its green-maker. Topology/wave gate independent of this correction; **no `--force` override authorized or applied.**
 
 **Verdict: PASS** — residual P0 = 0, residual P1 = 0. `155-S` remains `queued` and ready for Ship to implement SBLK-R28 test-first (RED `174.061-T` → GREEN `174.062-T`). Unrelated residual: pre-existing `doctor` orphan findings in the `016.xxx`/`106.xxx-T` bands (present on baseline, outside this amendment's scope).
+
+## Plan Review — Revision 7 (post-ship-hook cascade isolation; terminology) (2026-09-16, branch `chore/stage-155-flat-shipment-scope`)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Reviewer:** independent read-only Concurrency/code-review pass over `internal/core/shipment_lifecycle.go`, `internal/core/shipment_verify.go`, `internal/core/archive.go`, and task contracts `174.057-T`/`174.059-T`/`174.061-T`/`174.062-T`/`174.063-T`. **Confidence: High.** This is **concurrency fix-cycle-3** — the third and final bounded review-fix cycle — resolving exactly **two same-contract P1 findings** against the rev6 non-member-rollup-elimination addendum. Stage-owned backlog/docs only; `155-S` stays `queued`; no source/tests/PR by Stage.
+
+**Finding 1 (P1) — member boundary leaks into post-ship hooks.** rev6 F1 instructed injecting the membership boundary key on the function-scope `ctx` that `lockArtifactMutations` reassigns. Verified against source: `shipment_lifecycle.go:615` is an `=` assignment (not `:=`) to the function-scope `ctx` (declared with `releaseArtifactLocks` at `:470`), so it ESCAPES the `ShipShipment` governed closure and is the same `ctx` handed to `collectArchiveCandidateIDs` (`:664`), `VerifyPostShipConsistency` (`:689`), and the top-level post-ship `FirePost` hook (`:704`). Setting the boundary there would SUPPRESS the legitimate GLOBAL parent-status cascade that an UNRELATED artifact update inside a post-ship hook callback must still trigger. **Resolution:** `174.062-T` now requires deriving a SEPARATE in-closure `scopedCtx := context.WithValue(ctx, <unexportedBoundaryKey>, explicitScopeSet)` AFTER the `:615` lock reassignment and BEFORE `completeReleaseScope`, threaded ONLY into the three governed callers (`completeReleaseScope` `:630`, the `:648` member loop, `returnUnreleasedFeatureItems` call `:637`/def `:735`); the function-scope `ctx` stays boundary-free for all post-closure work. A new RED harness `174.063-T` (SCOPE-RED-F, `^TestUPostShipHookCascadeGlobal_`, dep `174.044-T`, green-maker `174.062-T`) pins the contract.
+
+**Finding 2 (P1) — impossible "manifest-only" transactional-set wording.** Corrected authoritative terminology across spec §0.5 point 3 / point 8 / SBLK-R28 / §0.6 rev6 addendum, plan rev6 update block, decision §6j, and tasks `174.057-T`/`174.059-T`/`174.061-T`/`174.062-T`/`174.063-T`: shipment RELEASE/MEMBER scope == exactly flat `custom_fields.items`; the transactional lock/snapshot/rollback set == `{shipment control record ID} ∪ explicit manifest IDs`; the shipment control record is the SOLE control-record exemption (never a `custom_fields.items` member, but locked/snapshotted/transitioned because ship/rollback mutates its own status); no other absent artifact may be mutated/snapshotted/restored/locked due to hierarchy. Verified against source: `rollbackIDs := append([]string{shipmentID}, releaseScope...)` (`:603`), so `{shipmentID} ∪ manifest` is the correct set and "manifest only" is retracted (`174.059-T` scenario 3, `174.061-T`).
+
+### Reviewer conclusions
+* **Finding 1 escape claim confirmed TRUE** against source — the `:615` `=` assignment mutates the function-scope `ctx`; no `ctx :=` shadow exists in the closure; `FirePost` (`:704`) receives it.
+* **Separate-`scopedCtx` fix sound AND complete.** The only trigger of the bounded rollup is `setArtifactStatus → cascadePersistedParentStatuses` (`:1261`). All three governed callers get `scopedCtx`. Every post-closure call was verified boundary-safe: `collectArchiveCandidateIDs` is read-only; `attachCommitToItems` persists commit only; `archiveItems`→`ArchiveItem` cascades DOWNWARD only (no upward rollup in `archive.go`); `VerifyPostShipConsistency` takes `_ context.Context` (ignores ctx, structurally cannot cascade); `moveShipmentStatusWithHeadGuard` uses `persistArtifactWithGuard` with no cascade (shipment control record is the exempt transition). No other cascade-bearing post-closure path exists.
+* **`174.063-T` is genuinely RED-now and a valid discriminator.** Its RED-now anchor pins the EVENT history (no `"child status rollup"`, no revert event on the non-member ancestor `F`) — correct, because the current snapshot/restore reverts `F`'s status to pre-ship so a status-only assertion would be vacuously green. Truth table: current code → RED (anchor); correct separate-`scopedCtx` fix → GREEN; naive boundary-on-escaping-`ctx` fix → RED (the hook's `C→P` up-walk stops at non-member `P`).
+* **Finding 2 terminology internally consistent** and matches source; no contradictory statement about the shipment control record remains.
+* **No residual P0/P1.** Atomicity, dependency order (`062 → {061,063,057,058}`; RED harnesses `061`/`063`@W7 strictly before green-maker `062`@W10), and RED-before-GREEN discipline all hold.
+
+**Validation evidence (branch `chore/stage-155-flat-shipment-scope`):** `backlogit sync` OK (**1537 artifacts, 0 parse failures**); `backlogit docs lint` on plan/spec/decision all `valid: true` (0 violations); `doctor --target` on `174.057-T`,`174.058-T`,`174.059-T`,`174.061-T`,`174.063-T`,`174.062-T`,`155-S` all exit 0 (`ok: true`, `kind: pass`); RED-contract blocks well-formed (`174.061-T` and `174.063-T` both green_maker `174.062-T`@close-wave 10); `wave-scheduler-sim` fixture **WAVE_SIM_OK 164/164** and `-VerifyAgainstQueue` **WAVE_SIM_OK 186/186** across 21 scenarios; dependency-graph check over the `155-S` manifest: **acyclic (0 cycles)**, **parent-first (0 violations)**, in-manifest **topological order valid (0 violations)**, **26 members (`174-F` + 25 tasks)**, manifest order `… 174.061-T[23] → 174.063-T[24] → 174.062-T[25]` (RED strictly before green-maker); dep edges verified `061→044`, `063→044`, `062→{061,063,057,058}`. Topology/wave gate independent of this correction; **no `--force` override authorized or applied.**
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. This was **fix cycle 3 (final)**; both in-scope P1 findings are resolved and no in-scope P0/P1 remains. `155-S` remains `queued` and ready for Ship to implement SBLK-R28 test-first (RED `174.061-T` + `174.063-T` → GREEN `174.062-T`). Unrelated residual: pre-existing `doctor` orphan findings in the `016.xxx`/`106.xxx-T` bands (present on baseline, outside this amendment's scope).
