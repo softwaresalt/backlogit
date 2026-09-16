@@ -479,3 +479,72 @@ check — both sentinels declared by Rd `174.052-T`, asserted by R1s `174.039-T`
 introduced) by R2 `174.040-T` and R4g `174.054-T`; no `non-repudiation` claim remains in any
 authoritative current doc/live task; doctor pre-existing findings only, none on 174.*. No
 source/tests, no `154-S`, no claim.
+
+## §6h — Flat-manifest shipment scope determination (rev4, 2026-09-15, branch `chore/stage-155-flat-shipment-scope`; Stage-owned)
+
+Operator clarified the authoritative product rule: **a shipment is a FLAT manifest of explicitly
+listed deliverables (`custom_fields.items`); it is not expanded or encumbered by feature hierarchy.
+Including a feature does not implicitly include its descendants. Dependencies govern execution
+ordering; feature hierarchy does not govern shipment membership.** Backlog/docs + planning artifacts
+only — no source/tests written by Stage, no `154-S`, no shipment claim, no PR.
+
+**Problem frame.** Direct code inspection (engram daemon unavailable → ENGRAM_DEGRADED, bounded local
+read-only inspection) confirmed the live defect: the shipment lifecycle derives release scope by
+expanding a listed feature into all descendants — `releaseScopeItemIDs`
+(`internal/core/shipment_lifecycle.go:1142`) → `descendantItems` (`:1219`, BFS on `ParentID`,
+`IncludeArchived:true`) — and the member/size projection `compositionMemberIDs`
+(`internal/core/size_composition.go:291`) expands feature→children. `155-S`'s 17-entry explicit
+manifest projected to **54** `size_composition.members`, pulling in the archived `174.001-T…174.038-T`
+band that was never an explicit member. Expanded `releaseScope` is consumed by member-evidence
+validation (`validateMemberGateEvidence`), `completeReleaseScope` (closure), `collectArchiveCandidateIDs`
+(archival cascade), rollback locking, and `returnUnreleasedFeatureItems`. No exported API expands;
+`NormalizeShipmentItems` (exported accessor) only parses the flat manifest.
+
+**Options considered.**
+* **Option A — Descope by archival only (status quo mental model).** Keep hierarchy expansion; rely on
+  archiving superseded descendants so they fall out of the expanded set. *Rejected:* archival becomes a
+  load-bearing descoping mechanism; a non-archived-but-unlisted descendant is still silently pulled in;
+  the projection still misrepresents membership (54 vs 17); it contradicts the operator's flat rule and
+  couples membership to lifecycle status.
+* **Option B — Flat explicit membership (CHOSEN).** Make release scope equal the flat explicit
+  `custom_fields.items` manifest across lifecycle, gate, projection, and archival; descendants are members
+  only when explicitly listed; parent-first is ordering only; feature-only manifests are valid and must
+  free the active slot. Delivered test-first as +4 tasks on `174-F` layered on the finalized
+  `blocked`-lifecycle seam. *Chosen:* matches the operator's authoritative rule, is the smallest correct
+  internal change (no public API), and makes the projection truthful.
+* **Option C — New explicit `release_scope` field separate from `items`.** *Rejected:* redundant with the
+  existing flat manifest, adds a public schema seam and migration for no behavioral gain (YAGNI); the
+  operator's rule is precisely that `items` IS the scope.
+
+**Decision (Option B) — SBLK-R28 [shared].** A shipment's release scope is its flat explicit
+`custom_fields.items` manifest. No lifecycle/gate/completion/archival/projection surface expands a listed
+parent into unexpressed descendants; descendants are in scope only when explicitly listed; parent-first
+is manifest ordering only; feature-only/zero-executable-task manifests are valid and their ship/closure
+frees the single active slot (never strands it). Recorded authoritatively in spec §0.5/§0.6 + plan §0.4.
+
+**Rev3 reconciliation.** Spec §0.2 and plan §0.1 previously said the archived `174.001-T…174.038-T` band
+"sit[s] OUTSIDE the live 174-F release scope" — phrasing that assumed feature-root expansion. Reconciled:
+those IDs are outside `155-S` scope **because they were never explicit members of the `155-S` manifest**,
+not because they were archived; archival preserved history but is **not required** to descope them, and
+**no archived/superseded task is restored merely for shipment scope**.
+
+**Task delta (+4, all ≤2h, ≤5 functions, <4 scenarios), RED-before-GREEN:** `174.055-T` (SCOPE-RED-A,
+tests) + `174.056-T` (SCOPE-RED-B regression, tests) precede `174.057-T` (SCOPE-IMPL-1, code, flatten
+the `releaseScopeItemIDs` derivation; evidence/completion/rollback flatten transitively) + `174.058-T`
+(SCOPE-IMPL-2, code, flatten the `compositionMemberIDs` projection AND the independent ship/closure
+descendant re-expansions in `collectArchiveCandidateIDs`/`returnUnreleasedFeatureItems`, plus
+feature-only active-slot safety and coupled-test updates). The two ship/closure functions re-expand
+descendants directly (not via the `releaseScope` parameter), so they are flattened by `174.058-T`, not
+`174.057-T` — a distinction confirmed by the cycle's plan review. Deps (blocks): `055→044`, `056→044`,
+`057→{055,045,051}`, `058→{056,057}`. Integrated waves stay **9** (`055`,`056`@W7; `057`@W8; `058`@W9).
+`155-S` → **20 tasks / 21 members incl. `174-F`** (flat `size_composition.members` = 20 listed tasks,
+feature excluded as non-sizable; currently 58 under expansion), appended in dependency order. Existing
+`blocked`-lifecycle tasks and their RED contracts are unchanged.
+
+**Topology / force posture.** The external numeric-predecessor wave/topology gate
+(`autoharness/gates/topology.py`) reads neither `releaseScopeItemIDs` nor the member projection, so it is
+**independent** of this correction (verified by inspection; the P-002.6 wave-scheduler simulation is
+bound to the 130-S/147-F fixture, not 155-S). **No `--force` override is authorized or applied.**
+
+Validation evidence and the review verdict for this cycle are recorded in the companion plan's
+**"Plan Review — Revision 4 (flat-manifest shipment scope)"** section.

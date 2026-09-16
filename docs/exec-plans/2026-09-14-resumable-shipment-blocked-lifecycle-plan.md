@@ -36,8 +36,10 @@ docline:
 ### 0.1 Concise task set (feature `174-F` / shipment `155-S`) — 16 tasks (17 `155-S` members incl. `174-F`), RED-before-GREEN, ≤2h
 
 The rev1/rev2 tasks `174.001-T…174.038-T` are **superseded and archived** (terminal,
-`archived_status: blocked`, history/events preserved), so they sit OUTSIDE the live 174-F release
-scope. The core `BlockShipment`/`UnblockShipment` stateful seam follows **source-shape RED →
+`archived_status: blocked`, history/events preserved). Under the flat-manifest rule (§0.4, spec
+§0.5 / SBLK-R28) they are OUTSIDE `155-S` scope **because their IDs were never explicit members of
+the `155-S` manifest**, not because they were archived — archival is not required to descope them.
+The core `BlockShipment`/`UnblockShipment` stateful seam follows **source-shape RED →
 declaration-only compile-green → behavior RED → implementation** (R1 split into R1s/Rd/R1b).
 Replacement:
 
@@ -125,6 +127,45 @@ execution). For the **later corrective shipment**: smallest fix = one-line upstr
 (`"blocked"` → `_VALID_LIVE_SHIPMENT_STATUSES`, external Python, not backlogit Go) as an external
 ratification item; interim, an **audited per-phase `--force` scoped to that shipment ONLY after the
 normal gate proves the sole failure is the unsupported `blocked` status** (no standing override).
+
+---
+
+### 0.4 Scope-correction task addendum (flat-manifest shipment scope — rev4, 2026-09-15)
+
+Delivers spec §0.5 / **SBLK-R28** (flat explicit shipment membership) as part of `155-S`, RED-first,
+layered on the finalized `blocked`-lifecycle seam. Root cause (direct code inspection): the shipment
+lifecycle derives release scope by expanding a listed feature into all descendants —
+`releaseScopeItemIDs` (`internal/core/shipment_lifecycle.go:1142`) → `descendantItems`
+(`:1219`, BFS on `ParentID`, `IncludeArchived:true`) — and `compositionMemberIDs`
+(`internal/core/size_composition.go:291`) expands feature→children for the member projection, so
+`155-S`'s 17-entry explicit manifest projects to 54 members (pulling in archived `174.001-T…038-T`).
+A second, independent expansion survives even a flat `releaseScope`: the ship/closure cleanup
+re-expands a member feature's descendants directly via `descendantItems` in `collectArchiveCandidateIDs`
+(`:800`, archives unlisted terminal descendants) and `returnUnreleasedFeatureItems` (`:735`,
+returns-to-backlog and `clearParentID`-orphans unlisted non-terminal descendants) — both flattened by
+`174.058-T`. The flat rule makes release scope equal the explicit `custom_fields.items` manifest.
+
+| Task | Role | Title | Domain | Depends on |
+|---|---|---|---|---|
+| `174.055-T` | SCOPE-RED-A | Behavior RED harness: release scope == flat explicit manifest (task-only manifest scopes to its items; listed feature does NOT expand to unlisted descendants; explicitly-listed descendant IS in scope) — <4 scenarios | tests | `174.044-T` |
+| `174.056-T` | SCOPE-RED-B | Behavior RED harness (regression): unlisted **blocked** descendant excluded; **archived** descendants excluded; **feature-only** manifest scopes to `{feature}` and its ship/closure frees the active slot — <4 scenarios | tests | `174.044-T` |
+| `174.057-T` | SCOPE-IMPL-1 | Flatten release-scope **derivation**: `releaseScopeItemIDs` (`:550`) returns the flat manifest; parameter-consuming consumers (evidence set/`validateMemberGateEvidence`, `completeReleaseScope`, snapshot/rollback lock set) flatten transitively; parent-first preserved as ordering, not expansion — makes `174.055-T` green | code | `174.055-T`, `174.045-T`, `174.051-T` |
+| `174.058-T` | SCOPE-IMPL-2 | Flatten **projection** + **ship/closure feature cleanup**: `compositionMemberIDs` (listed task members, feature excluded → `155-S` 20 not 58) + the independent descendant re-expansions in `collectArchiveCandidateIDs` (`:800`) and `returnUnreleasedFeatureItems` (`:735`, no archival/orphan of unlisted descendants); feature-only ship/closure frees the active slot; update coupled legacy tests — makes `174.056-T` green | code | `174.056-T`, `174.057-T` |
+
+```
+174.044(R6) ─┬─► 174.055(RED-A) ─► 174.057(IMPL-1) ─► 174.058(IMPL-2)
+             └─► 174.056(RED-B) ───────────────────────► 174.058
+174.045(R7a)+174.051(R7b) ─► 174.057
+```
+
+**Integrated waves (still 9):** `174.055`,`174.056`@**W7**; `174.057`@**W8**; `174.058`@**W9**.
+RED-deliverable closing waves add: SCOPE-RED-A (`174.055-T`) closed by `174.057-T`@W8; SCOPE-RED-B
+(`174.056-T`) closed by `174.058-T`@W9. Sub-graph acyclic; no existing wave changes.
+
+**`155-S` manifest → 20 tasks (21 members incl. `174-F`)**; appended in dependency order
+`… 174.050 → 174.055 → 174.056 → 174.057 → 174.058`. **No public API introduced** (internal behavior
+change only; `NormalizeShipmentItems` unchanged). External topology/wave gate is independent
+(reads neither seam); **no `--force` authorized or applied**.
 
 ---
 ## Portability boundary (shared vs. backlogit-local — spec §2.5, SBLK-R20…R23)
@@ -1266,3 +1307,74 @@ by Rd `174.052-T`, asserted by R1s `174.039-T`, referenced (not introduced) by R
 R4g `174.054-T`; no `non-repudiation` claim remains in any authoritative current doc/live task.
 
 **Verdict: PASS** — residual P0 = 0, residual P1 = 0. `155-S` remains ready for Ship to claim.
+
+## Plan Review — Revision 4 (flat-manifest shipment scope; SBLK-R28) (2026-09-16, branch `chore/stage-155-flat-shipment-scope`)
+
+dispatch_mode: single-agent-declared-degradation
+decision: PASS
+
+Bounded Stage amendment implementing the operator's clarified authoritative product rule: a
+shipment is a **FLAT manifest of explicitly-listed deliverables** (`custom_fields.items`) — including
+a feature does not implicitly include its descendants; dependencies govern execution ordering, not
+membership. Stage-owned backlog/docs/planning artifacts only — NO source or test code written by
+Stage; the rule is delivered as RED-first tasks so Ship implements it test-first inside `155-S`.
+`155-S` remained `queued` throughout; append-only history and all superseded records above are
+preserved verbatim as audit context. **ENGRAM_DEGRADED**: the agent-engram daemon was unavailable
+after the required retry, so discovery used bounded local read-only code inspection — this justifies
+`single-agent-declared-degradation` for this cycle, consistent with the prior cycles above.
+
+**Scope correction added (spec §0.5/§0.6 + SBLK-R28; plan §0.4; decision §6h):** the shipment
+lifecycle derived release scope by expanding a listed feature into all descendants
+(`releaseScopeItemIDs` → `descendantItems`, `shipment_lifecycle.go:1142/1219`, BFS on `ParentID`,
+`IncludeArchived:true`) and the member projection did the same (`compositionMemberIDs`,
+`size_composition.go:291`). Direct inspection of live `155-S` confirmed the defect: a 17-entry
+explicit manifest (`174-F` + 16 tasks) projected to 54 `size_composition.members` (58 after adding
+the four scope tasks), pulling in the archived `174.001-T…174.038-T` band that was never an explicit
+member. The flat rule makes release scope equal the explicit `custom_fields.items` manifest.
+
+**Review findings — dispatched code-review, both RESOLVED before this verdict:**
+
+* **P0 — the two independent-expansion consumers were unassigned.** A flat `releaseScope`
+  (line 550) is consumed transitively by the evidence set/`validateMemberGateEvidence`,
+  `completeReleaseScope`, and the snapshot/rollback lock set — those need no logic change. But
+  `returnUnreleasedFeatureItems` (`:735`, which returns-to-backlog and `clearParentID`-**orphans**
+  unlisted non-terminal descendants) and the covering-feature descendant loop in
+  `collectArchiveCandidateIDs` (`:800`, which **archives** unlisted terminal descendants) call
+  `descendantItems(featureID)` **directly** and are NOT flattened by changing line 550. Both are
+  member-feature-guarded (133.004-T) and `174-F` IS a member, so they fire. Resolution: `174.058-T`
+  now explicitly owns neutralizing both; `174.057-T` explicitly scopes them OUT and documents the
+  transitive-vs-independent distinction. Spec §0.5/§0.6, plan §0.4, and decision §6h were reconciled
+  to name both functions.
+* **P1 — member-count overclaim.** `compositionMemberIDs` excludes the covering feature
+  (non-sizable) and counts tasks only, so the flat `size_composition.members` for `155-S` is **20
+  task members** (manifest `items` stays 21 incl. `174-F`), not 21 and not the expanded 58. All four
+  docs and the `174.058-T` AC now state 20.
+
+**Task delta (+4, RED-before-GREEN, each ≤2h / ≤5 functions / <4 scenarios):** `174.055-T`
+(SCOPE-RED-A, derivation harness, `^TestUReleaseScopeFlat_`) and `174.056-T` (SCOPE-RED-B,
+projection+ship-flow regression harness, `^TestUReleaseScopeRegression_`) precede `174.057-T`
+(SCOPE-IMPL-1, flatten the `releaseScopeItemIDs` derivation) and `174.058-T` (SCOPE-IMPL-2, flatten
+the `compositionMemberIDs` projection + the independent `collectArchiveCandidateIDs` /
+`returnUnreleasedFeatureItems` re-expansions, plus feature-only/zero-executable-task active-slot
+safety and coupled legacy-test updates). The four operator-required regression cases are allocated
+so each harness stays <4 scenarios: explicitly-listed child + unlisted `blocked` descendant →
+`174.055-T`; archived descendants + feature-only manifest → `174.056-T`. No new exported/public API
+(internal behavior change only; source-shape ordering not triggered). Archived `174.001-T…174.038-T`
+are NOT restored and were NOT required to descope `155-S` — they were never explicit members;
+archival preserved history but non-membership, not archival, is the descoping mechanism.
+
+Validation evidence (branch `chore/stage-155-flat-shipment-scope`): `backlogit docs lint`
+spec/plan/decision all `valid: true` (0 violations); `doctor --target` on `174.055-T…174.058-T` all
+exit 0; RED-contract blocks well-formed (green_maker `174.057-T`@close-wave 8 / `174.058-T`@close-wave
+9); `wave-scheduler-sim` fixture WAVE_SIM_OK 164/164 and `-VerifyAgainstQueue` WAVE_SIM_OK 186/186
+(both decoupled — bound to `130-S`/`147-F`, unperturbed by `155-S`); dependency graph acyclic, **9
+waves unchanged** (`055`,`056`@W7; `057`@W8; `058`@W9) with RED strictly before its green-maker;
+dep edges verified `055→044`, `056→044`, `057→{055,045,051}`, `058→{056,057}`; `155-S` manifest = 21
+items (`174-F` + 20 tasks incl. `055–058`); live `size_composition.members` currently 58 (the
+pre-fix expansion defect the tasks correct to 20). Topology/wave gate is independent of this
+hierarchy correction (the scheduler does not call `releaseScopeItemIDs`); **no `--force` override
+authorized or applied.**
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. `155-S` ready for Ship to implement SBLK-R28
+test-first. Unrelated residual: pre-existing `doctor` orphan findings in the `106.xxx-T` band
+(present on baseline main, outside this amendment's scope).
