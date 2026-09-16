@@ -208,13 +208,29 @@ unsupported `blocked` status** (no blanket/standing override), removed once upst
    because they were archived. Archiving them preserved history but was **not required** to descope
    them from `155-S`, and superseded archived tasks are **never** restored merely to satisfy shipment
    scope.
+8. **Shipment processing must not touch non-member artifacts — including hierarchy-derived
+   ancestors (rev6, 2026-09-16, authoritative).** Ship, rollback, and closure MUST NOT mutate,
+   snapshot, restore, or lock any artifact whose ID is absent from `custom_fields.items`. In
+   particular, a **hierarchy-derived covering-feature ancestor** that is not itself a manifest member
+   receives **no** status-rollup handling: the member-completion cascade must **stop at the manifest
+   boundary** and must not roll a non-member ancestor to `done`/`archived`, and no non-member
+   snapshot/restore compensation may run. (Retaining such compensation after the ancestor is dropped
+   from the ship's artifact lock is a lost-update concurrency defect: the ancestor is snapshotted then
+   restored **without a lock**, so a concurrent mutation to it between snapshot and restore is silently
+   overwritten.) Explicitly-listed **feature members** still receive their own governed shipment status
+   handling (marked `done` on release); only hierarchy-derived non-members are excluded. Re-locking a
+   non-member ancestor to make the snapshot/restore safe is **rejected** — it would re-introduce the
+   hierarchy expansion this rule forbids; the compensation is **eliminated**, not protected.
 
 **SBLK-R28 (M) [shared] — Flat explicit shipment membership.** A shipment's release scope is its
 flat explicit `custom_fields.items` manifest. No lifecycle, gate, completion, archival, or projection
 surface may expand a listed parent into unexpressed descendants; descendants are in scope only when
-their IDs are explicitly listed. Parent-first order is manifest ordering only. Feature-only manifests
-are valid and their ship/closure must free the active slot. This is a portable contract requirement
-(§2.5 [shared] layer); the specific backlogit code-path corrections are [local] (§0.6).
+their IDs are explicitly listed. No ship/rollback/closure surface may mutate, snapshot, restore, or
+lock a **non-member** artifact (including a hierarchy-derived ancestor): non-member ancestors receive
+**no** status-rollup handling, while explicitly-listed feature members do. Parent-first order is
+manifest ordering only. Feature-only manifests are valid and their ship/closure must free the active
+slot. This is a portable contract requirement (§2.5 [shared] layer); the specific backlogit code-path
+corrections are [local] (§0.6).
 
 ### 0.6 Scope-correction task addendum (feature `174-F` / shipment `155-S`) — +4 tasks, RED-before-GREEN, ≤2h
 
@@ -258,7 +274,23 @@ order).
 gate (`autoharness/gates/topology.py`) reads neither `releaseScopeItemIDs` nor this projection, so it
 is **independent** of this correction; **no `--force` override is authorized or applied.**
 
-## 1. Problem statement
+> **rev6 addendum (2026-09-16, branch `chore/stage-155-flat-shipment-scope`) — non-member ancestor
+> rollup elimination (§0.5 point 8).** The rev4/rev5 tasks preserved the non-member covering-feature
+> status-rollup revert (`nonMemberFeatureSnapshots`/`restoreRolledUpNonMemberFeatures`). Once
+> `174.057-T` drops unlisted ancestors from the outer artifact lock, that preserved path snapshots and
+> restores an **unlocked** ancestor — a **P1 lost-update** when the ancestor is mutated between
+> snapshot and restore. Per §0.5 point 8 the fix **eliminates** the non-member rollup (no re-lock, no
+> CAS). **+2 tasks (delta now +8):**
+>
+> | Task | Role | Scope | Domain | Depends on |
+> |---|---|---|---|---|
+> | `174.061-T` | SCOPE-RED-E | Behavior RED harness: a hierarchy-derived non-member covering-feature ancestor receives no ship-originated status write (no rollup, no restore) and a concurrent mutation to it is never overwritten on ship success **or** forced rollback; an explicitly-listed member feature still gets governed `done` (control). Uses the existing `persistArtifactPreLockHook`/`persistArtifactWriteFn` seams. `^TestUNonMemberRollupSafe_`. <4 scenarios | tests | `174.044-T` |
+> | `174.062-T` | SCOPE-IMPL-3 | Bound `completeReleaseScope`→`cascadePersistedParentStatuses` rollup to explicit members (ctx boundary) and delete `snapshotNonMemberFeatureStatuses`/`restoreRolledUpNonMemberFeatures` + their `ShipShipment`/`classifyShippedEventAppendFailure` call-sites; explicitly-listed feature members keep governed `done` handling; update coupled tests. Makes `174.061-T` green | code | `174.061-T`, `174.057-T`, `174.058-T` |
+>
+> **Waves 9 → 10:** `174.061`@**W7**; `174.062`@**W10**. RED-deliverable closing wave adds SCOPE-RED-E
+> (`174.061-T`) closed by `174.062-T`@**W10**. **Updated `155-S` manifest — 24 tasks (25 members incl.
+> `174-F`)**, appended `… → 174.058 → 174.061 → 174.062`. No public/exported API introduced (unexported
+> context boundary key only); topology/wave gate still independent; no `--force`.
 
 A shipment can reach a state where it cannot make forward progress but MUST NOT be
 abandoned or archived because its branch, wave harnesses, commits, checkpoints, and

@@ -594,3 +594,58 @@ override authorized or applied.** The external topology/wave gate is still indep
 neither `releaseScopeItemIDs`, the projection, nor the rollback set). Validation evidence and verdict
 recorded in the companion plan's **"Plan Review — Revision 5 (flat-manifest scope hardening)"**
 section.
+
+## §6j — Non-member ancestor rollup elimination (rev6, 2026-09-16, branch `chore/stage-155-flat-shipment-scope`; Stage-owned)
+
+Bounded remediation of **one P1 concurrency defect** in the rev5 flat-scope plan. Stage-owned
+backlog/docs only — no source/tests written by Stage, `155-S` stays `queued`, no PR/Ship work.
+
+**Problem frame.** rev5 (§6i P1-1) explicitly PRESERVED the non-member covering-feature status-rollup
+revert (`nonMemberFeatureSnapshots` snapshot at `shipment_lifecycle.go:598` +
+`restoreRolledUpNonMemberFeatures` at the in-line `:684`, the deferred fallback at `:496`, and the
+`classifyShippedEventAppendFailure` indeterminate branch at `:927`), treating it as a mechanism
+separate from the artifact lock/snapshot set that `174.057-T` flattens. But `174.057-T` **removes
+unlisted ancestors from the outer artifact lock** (`:603-612` → `lockArtifactMutations`). With the
+ancestor no longer locked, the preserved path snapshots its status, the `completeReleaseScope` cascade
+(`cascadePersistedParentStatuses`) rolls it to `done`/`archived`, and the restore later writes the
+snapshot back — so any mutation to the ancestor **between snapshot and restore** is silently
+overwritten. This is a **lost-update (TOCTOU) P1**: the compensation designed to protect a non-member
+ancestor now itself corrupts a concurrent write to it.
+
+**Options considered.**
+* **Option A — Add a separate protected lock/CAS around the non-member snapshot/restore.** Re-lock (or
+  compare-and-swap) each non-member ancestor across the snapshot→restore window so a concurrent write
+  is serialized or detected. *Rejected:* it re-introduces exactly the hierarchy-derived ancestor
+  locking that `174.057-T` removed to satisfy SBLK-R28 ("shipment processing must not lock artifacts
+  absent from its manifest"), and adds a second lock lifecycle and drift-detection path — extra
+  complexity for a side effect the flat-manifest rule says should not exist at all.
+* **Option B (CHOSEN) — Eliminate the non-member ancestor rollup side effects entirely.** Bound the
+  member-completion cascade to explicit members so a non-member ancestor is never rolled up, and delete
+  the now-dead snapshot/restore compensation. Nothing is snapshotted, restored, mutated, or locked
+  outside the manifest, so there is no window to race. Explicitly-listed **feature members** keep their
+  own governed status handling (the `:648` member-guarded `setArtifactStatus(done)`), satisfying
+  "explicitly listed feature artifacts may still receive governed shipment status handling, but
+  hierarchy-derived ancestors cannot."
+
+**Decision (Option B) — SBLK-R28 §0.5 point 8 [shared].** Shipment ship/rollback/closure MUST NOT
+mutate, snapshot, restore, or lock any artifact absent from `custom_fields.items`; a hierarchy-derived
+non-member ancestor receives no status-rollup handling. Delivered as **+2 `155-S` tasks**, RED-first:
+`174.061-T` (SCOPE-RED-E, `^TestUNonMemberRollupSafe_`, dep `174.044-T`) pins the contract using the
+existing production seams `persistArtifactPreLockHook`/`persistArtifactWriteFn` (so it compiles and is
+RED against current code) across three scenarios — no ship-originated write to an unlisted ancestor
+on success (with a listed-member-feature governed-`done` control), concurrent-mutation survives ship
+success, concurrent-mutation survives forced rollback. `174.062-T` (SCOPE-IMPL-3, dep
+`174.061-T,174.057-T,174.058-T`) bounds `cascadePersistedParentStatuses` to the explicit-membership
+set (unexported ctx boundary key) and deletes `snapshotNonMemberFeatureStatuses` /
+`restoreRolledUpNonMemberFeatures` and their `ShipShipment`/`classifyShippedEventAppendFailure`
+call-sites, updating the coupled tests. `174.057-T`/`174.059-T` were amended to stop describing the
+status-rollup revert as "preserved" — they leave it in place pending `174.062-T`.
+
+**Task delta (rev6): +2 (total scope-correction delta now +8).** Impl edge `062 → {061,057,058}`,
+RED edge `061 → 044`. **Waves 9 → 10** (`174.061`@W7; `174.062`@W10; SCOPE-RED-E closed by
+`174.062-T`@close-wave 10). `155-S` manifest → **24 tasks / 25 members incl. `174-F`**, appended
+`… 174.058 → 174.061 → 174.062`. **No public/exported API introduced** (unexported context boundary
+key only); no archived/superseded task restored; **no re-lock/CAS added**; **no `--force` authorized
+or applied**; the external topology/wave gate remains independent (it reads neither the cascade, the
+projection, nor the rollback set). Validation evidence and verdict recorded in the companion plan's
+**"Plan Review — Revision 6 (non-member ancestor rollup elimination; concurrency)"** section.

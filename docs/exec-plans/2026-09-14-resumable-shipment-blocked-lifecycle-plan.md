@@ -177,6 +177,34 @@ by `174.058-T`@W9. Sub-graph acyclic; no existing wave changes.
 (internal behavior change only; `NormalizeShipmentItems` unchanged). External topology/wave gate is independent
 (reads neither seam); **no `--force` authorized or applied**.
 
+> **rev6 update (2026-09-16, branch `chore/stage-155-flat-shipment-scope`) — SUPERSEDES the two lines
+> above for counts/waves.** The rev4/rev5 addendum PRESERVED the non-member covering-feature
+> status-rollup revert (`nonMemberFeatureSnapshots`/`restoreRolledUpNonMemberFeatures`). That preserved
+> path is a **P1 concurrency defect** once `174.057-T` drops unlisted ancestors from the outer artifact
+> lock (`:603-612`): the ancestor is snapshotted and later restored **without a lock**, so a mutation
+> to it between snapshot and restore is overwritten (lost update). Per SBLK-R28 (§0.5 point 8) shipment
+> ship/rollback must not mutate/snapshot/restore/lock any artifact absent from the explicit manifest;
+> the fix **eliminates** the non-member ancestor rollup entirely rather than re-locking it (re-locking
+> would re-introduce the hierarchy expansion `174.057-T` removed). **+2 tasks (scope-correction delta
+> now +8):** `174.061-T` (SCOPE-RED-E, `^TestUNonMemberRollupSafe_`, dep `174.044-T`) precedes
+> `174.062-T` (SCOPE-IMPL-3, dep `174.061-T,174.057-T,174.058-T`) which bounds the
+> `completeReleaseScope`→`cascadePersistedParentStatuses` rollup to explicit members and deletes
+> `snapshotNonMemberFeatureStatuses`/`restoreRolledUpNonMemberFeatures` (+ their `ShipShipment` and
+> `classifyShippedEventAppendFailure` call-sites). Explicitly-listed feature members keep governed
+> `done` handling (the `:648` member-guarded path). `174.057-T`/`174.059-T` updated: they no longer
+> claim the status-rollup revert is "preserved" — they leave it in place pending `174.062-T`.
+>
+> ```
+> 174.044(R6) ─► 174.061(SCOPE-RED-E) ─┐
+> 174.057(IMPL-1),174.058(IMPL-2) ─────┴─► 174.062(SCOPE-IMPL-3)
+> ```
+>
+> **Waves 9 → 10:** `174.061`@**W7** (dep `174.044`@W6); `174.062`@**W10** (deps `174.061`@W7,
+> `174.057`@W8, `174.058`@W9). RED-deliverable closing wave adds: SCOPE-RED-E (`174.061-T`) closed by
+> `174.062-T`@**W10**. **`155-S` manifest → 24 tasks (25 members incl. `174-F`)**; appended
+> `… 174.058 → 174.061 → 174.062`. No public/exported API introduced (unexported context boundary key
+> only). Topology/wave gate still independent; no `--force`.
+
 ---
 ## Portability boundary (shared vs. backlogit-local — spec §2.5, SBLK-R20…R23)
 
@@ -1450,3 +1478,31 @@ the member projection, nor the rollback set); **no `--force` override authorized
 **Verdict: PASS** — residual P0 = 0, residual P1 = 0. `155-S` remains `queued` and ready for Ship to
 implement SBLK-R28 test-first. Unrelated residual: pre-existing `doctor` orphan findings in the
 `016.xxx`/`106.xxx-T` bands (present on baseline, outside this amendment's scope).
+
+## Plan Review — Revision 6 (non-member ancestor rollup elimination; concurrency) (2026-09-16, branch `chore/stage-155-flat-shipment-scope`)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Reviewer:** Concurrency Reviewer subagent (independent), read-only over `internal/core/shipment_lifecycle.go`, `internal/core/shipment.go`, and task contracts `174.057-T`/`174.058-T`/`174.059-T`/`174.061-T`/`174.062-T`. **Confidence: High.**
+
+**Scope of this revision.** Resolves the residual P1 lost-update race that survived rev5: `174.057-T` removes unlisted covering-feature ancestors from the outer artifact-mutation lock set (`:603-612`), but the rev5 tasks explicitly PRESERVED the separate non-member covering-feature status-rollup path (`snapshotNonMemberFeatureStatuses` @`:598`; `restoreRolledUpNonMemberFeatures` in-line @`:684`, deferred fallback @`:496`, and inside `classifyShippedEventAppendFailure` @`:927`). Because the unlisted ancestor is no longer locked, a concurrent mutation to it between snapshot and restore is silently overwritten (P1 lost update). Root cause: `completeReleaseScope` → `setArtifactStatus` → `cascadePersistedParentStatuses` (`:1267`) walks UP the parent chain marking any ancestor `done` with no shipment-membership awareness.
+
+**Resolution reviewed (authoritative flat-manifest rule / SBLK-R28):** eliminate the non-member ancestor rollup side effect entirely rather than re-lock/CAS-protect it. Two coordinated moves in ONE impl task (`174.062-T`): (1) bound `cascadePersistedParentStatuses` to explicit members via an unexported context boundary key sourced from `explicitScopeSet` (stop the up-walk at a non-member parent; absent key ⇒ unchanged global cascade for all non-ship callers); (2) delete `snapshotNonMemberFeatureStatuses` + `restoreRolledUpNonMemberFeatures` + `featureStatusSnapshot`/`nonMemberFeatureSnapshots` and drop them from `ShipShipment` and `classifyShippedEventAppendFailure`. RED harness `174.061-T` (`^TestUNonMemberRollupSafe_`, 3 scenarios) pins the contract using existing production seams (`persistArtifactPreLockHook`, `persistArtifactWriteFn`).
+
+### Reviewer conclusions
+* **Race fully closed at root.** Removing the unbounded upward cascade for non-members means the ancestor is never written by the ship, so there is nothing to snapshot or restore — the snapshot↔restore window that hosted the lost update ceases to exist. Enumerated status-rollup sites (`:598`,`:684`,`:496`,`:927`,`:1267`,`:648`) confirmed COMPLETE against source; `collectArchiveCandidateIDs` already membership-guards non-members (`:790`), not a missed site.
+* **Boundary-key cascade correct/safe.** Stopping the up-walk at a non-member parent cannot strand a member descendant (cascade propagates upward only); "absent key ⇒ global behavior" holds (only `ShipShipment` sets the key; context values immutable; concurrent writer uses its own ctx — no cross-goroutine leak).
+* **Seams verified present** and fire at the claimed boundaries (`shipment.go:~840`); tests are RED today and GREEN only after `174.062-T`.
+* **No residual P0/P1.** Listed member features remain locked (per `174.057-T`) and get governed `done` directly via `:648`; deferred-fallback removal leaves no uncompensated failure path. Atomicity (both moves in one task) confirmed necessary — move-2-before-move-1 would leave non-members rolled-up-but-unreverted.
+
+### Advisory findings folded into the task contracts before this PASS
+* **F1 (was P2) → `174.062-T`:** the context boundary key MUST be injected on the exact `ctx` threaded into every in-closure `setArtifactStatus` caller (`completeReleaseScope`, the `:648` member loop, and `returnUnreleasedFeatureItems` `:735`), AFTER the `lockArtifactMutations` ctx reassignment (`:610`) and BEFORE `completeReleaseScope`. Contract now states this injection point explicitly.
+* **F3 (was P2) → `174.061-T`:** scenarios 2 & 3 now anchor the concurrent-writer injection to a LISTED MEMBER's persist boundary (fires on both current and fixed code) rather than to `F` (which never persists post-fix), keeping the assertions RED-now / GREEN-after instead of vacuously green.
+* **F2 (P3) → `174.062-T` AC(2):** the `returnUnreleasedFeatureItems` (`:735`) return-to-backlog cascade is now named explicitly as a second non-member path covered by the bounded-cascade fix.
+* **F4 (P3) → `174.062-T`:** the member-above-non-member invariant (`T`→`F`(non-member)→`E`(member): `E` gets `done` via the DIRECT `:648` write, not via cascade) is pinned so a future change cannot silently reintroduce a stale-member-ancestor bug.
+* **F5 (P3):** atomicity + dependency order confirmed correct (`174.062-T` deps `{174.061-T, 174.057-T, 174.058-T}`; the exploitable window opens at `174.057-T`@W8 and the fix lands @W10, never released to Ship independently).
+
+**Validation evidence (branch `chore/stage-155-flat-shipment-scope`):** `backlogit sync` OK (1536 artifacts, 0 parse failures); `backlogit docs lint` on plan/spec/decision all `valid: true` (0 violations); `doctor --target` on `174.057-T`,`174.058-T`,`174.059-T`,`174.061-T`,`174.062-T`,`155-S` all exit 0 (`ok: true`, `kind: pass`); RED-contract block well-formed (`174.061-T` green_maker `174.062-T`@close-wave 10); `wave-scheduler-sim` fixture **WAVE_SIM_OK 164/164** and `-VerifyAgainstQueue` **WAVE_SIM_OK 186/186**; dependency-graph check over the `155-S` manifest: **acyclic**, manifest a valid **parent-first topological order**, **25 items (`174-F` + 24 tasks)**; dep edges verified `061→044`, `062→{061,057,058}`; **waves 9 → 10** (`061`@W7; `062`@W10) with the RED strictly before its green-maker. Topology/wave gate independent of this correction; **no `--force` override authorized or applied.**
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. `155-S` remains `queued` and ready for Ship to implement SBLK-R28 test-first (RED `174.061-T` → GREEN `174.062-T`). Unrelated residual: pre-existing `doctor` orphan findings in the `016.xxx`/`106.xxx-T` bands (present on baseline, outside this amendment's scope).
