@@ -170,11 +170,17 @@ unsupported `blocked` status** (no blanket/standing override), removed once upst
 > `internal/core/shipment_lifecycle.go:1142/1219`) and the size/member projection doing the same
 > (`compositionMemberIDs`, `internal/core/size_composition.go:291`): `155-S`'s **17-entry** explicit
 > manifest (`custom_fields.items` = `174-F` + 16 tasks) projected to **54** `size_composition.members`,
-> pulling in the archived `174.001-T…174.038-T` band that is **not** in the manifest. A second,
-> independent expansion survives even a flat `releaseScope`: the ship/closure cleanup re-expands a
+> pulling in the archived `174.001-T…174.038-T` band that is **not** in the manifest. Further
+> independent expansions survive even a flat `releaseScope`: (a) the ship/closure cleanup re-expands a
 > member feature's descendants directly via `descendantItems` in `collectArchiveCandidateIDs`
-> (`shipment_lifecycle.go:800`) and `returnUnreleasedFeatureItems` (`:735`, which returns-to-backlog
-> and `clearParentID`-orphans unlisted non-terminal descendants) — both must also be flattened.
+> (`shipment_lifecycle.go:800`, which **also** appends the feature's **linked deliberations** via
+> `linkedDeliberationIDs` with no membership guard) and `returnUnreleasedFeatureItems` (`:735`, which
+> returns-to-backlog and `clearParentID`-orphans unlisted non-terminal descendants); and (b) the
+> rollback/snapshot path (`:603-612`) **independently** re-expands the artifact lock/snapshot/restore
+> set (`rollbackIDs`/`snapshotShipArtifacts`) with covering-feature ancestors (`featureIDs`) **and
+> every** `descendantItems` of each. None of these are neutralized by the derivation change, so all
+> must be flattened explicitly (the covering-feature status-rollup revert via
+> `nonMemberFeatureSnapshots` is a separate mechanism and is preserved).
 
 **A shipment's scope is EXACTLY its explicit, flat `custom_fields.items` manifest.** The rule:
 
@@ -214,31 +220,37 @@ are valid and their ship/closure must free the active slot. This is a portable c
 
 The flat-manifest rule (§0.5) is delivered as part of `155-S` (Ship implements it **test-first**),
 layered on top of the finalized `blocked`-lifecycle seam so it lands on the stabilized shipment
-lifecycle/gate code. Four ≤2h tasks are appended to `174-F`; each RED harness precedes its GREEN
+lifecycle/gate code. Six ≤2h tasks are appended to `174-F`; each RED harness precedes its GREEN
 maker. The pre-existing 16-task `blocked`-lifecycle set (§0.2) and its RED contracts are **unchanged**.
 
 | Task | Role | Scope | Domain | Depends on |
 |---|---|---|---|---|
-| `174.055-T` | SCOPE-RED-A | Behavior RED harness: shipment release scope == explicit flat manifest — a task-only manifest scopes to exactly its items; a listed feature does **not** expand to unlisted descendants; an explicitly listed descendant **is** in scope (asserts over the `releaseScopeItemIDs`/evidence-set derivation). <4 scenarios | tests | `174.044-T` |
-| `174.056-T` | SCOPE-RED-B | Behavior RED harness (regression): an unlisted **blocked** descendant is excluded; **archived** descendants are excluded; a **feature-only** manifest scopes to `{feature}` and its ship/closure frees the active slot (zero-executable-task lifecycle). <4 scenarios | tests | `174.044-T` |
-| `174.057-T` | SCOPE-IMPL-1 | Flatten release-scope **derivation**: `releaseScopeItemIDs` (`shipment_lifecycle.go:550`) returns the flat explicit manifest; its **parameter-consuming** consumers (member-evidence set/`validateMemberGateEvidence`, `completeReleaseScope`, snapshot/rollback lock set) flatten transitively; preserve parent-first as manifest ordering, not expansion. Makes `174.055-T` green | code | `174.055-T`, `174.045-T`, `174.051-T` |
-| `174.058-T` | SCOPE-IMPL-2 | Flatten the machine-readable **projection** + **ship/closure feature-hierarchy cleanup**: `compositionMemberIDs` (member projection → listed task members, feature excluded) and the independent descendant re-expansions in `collectArchiveCandidateIDs` (`:800`) + `returnUnreleasedFeatureItems` (`:735`, no archival/`clearParentID`-orphan of unlisted descendants); feature-only/zero-executable-task ship/closure completes listed members only and frees the active slot; update coupled legacy tests. Makes `174.056-T` green | code | `174.056-T`, `174.057-T` |
+| `174.055-T` | SCOPE-RED-A | Behavior RED harness: shipment release scope == explicit flat manifest — a task-only manifest scopes to exactly its items; a listed feature does **not** expand to unlisted descendants; an explicitly listed descendant **is** in scope (asserts over the retained `releaseScopeItemIDs`/evidence-set derivation seam). <4 scenarios | tests | `174.044-T` |
+| `174.059-T` | SCOPE-RED-C | Behavior RED harness: the ship/closure **rollback lock/snapshot/restore** set == `{shipment} ∪ flat manifest` — an unlisted ancestor feature + unlisted descendant are absent from the snapshot/lock set and non-restorable (pins the independent `:603-612` expansion). <4 scenarios | tests | `174.044-T` |
+| `174.056-T` | SCOPE-RED-B | Behavior RED harness (regression): an unlisted **blocked** descendant is excluded from the projection; unlisted (incl. **archived**) descendants are excluded; a **feature-only** manifest scopes to `{feature}` and its ship/closure frees the active slot (zero-executable-task lifecycle). <4 scenarios | tests | `174.044-T` |
+| `174.060-T` | SCOPE-RED-D | Behavior RED harness: `collectArchiveCandidateIDs` excludes an unlisted **terminal-but-not-archived** (`done`/`accepted`) descendant **and** an unlisted **linked deliberation** of a member feature from `ArchivedIDs`; no archived artifact restored to satisfy scope. <4 scenarios | tests | `174.044-T` |
+| `174.057-T` | SCOPE-IMPL-1 | Flatten release-scope **derivation**: `releaseScopeItemIDs` (`shipment_lifecycle.go:1142`) flattened **in place** (seam retained, not bypassed) to return the flat explicit manifest; evidence set/`validateMemberGateEvidence` + `completeReleaseScope` flatten transitively; **AND** neutralize the independent rollback/snapshot expansion at `:603-612` so the lock/snapshot/restore set == `{shipment} ∪ flat manifest` (separate non-member feature status-rollup revert preserved). Preserve parent-first as ordering. Makes `174.055-T` + `174.059-T` green | code | `174.055-T`, `174.059-T`, `174.045-T`, `174.051-T` |
+| `174.058-T` | SCOPE-IMPL-2 | Flatten the machine-readable **projection** + **ship/closure feature-hierarchy cleanup**: `compositionMemberIDs` (listed task members, feature excluded → `155-S` **22**) and the independent re-expansions in `collectArchiveCandidateIDs` (`:800`, unlisted **terminal-but-not-archived** descendants **and linked deliberations** left untouched) + `returnUnreleasedFeatureItems` (`:735`, no archival/`clearParentID`-orphan of unlisted descendants); feature-only/zero-executable-task ship/closure completes listed members only and frees the active slot; update coupled legacy tests. Makes `174.056-T` + `174.060-T` green | code | `174.056-T`, `174.060-T`, `174.057-T` |
 
 **Dependency sub-graph (appended; existing W1–W9 unchanged):**
 
 ```
-174.044(R6) ─┬─► 174.055(SCOPE-RED-A) ─► 174.057(SCOPE-IMPL-1) ─► 174.058(SCOPE-IMPL-2)
-             └─► 174.056(SCOPE-RED-B) ──────────────────────────────► 174.058
+174.044(R6) ─┬─► 174.055(SCOPE-RED-A) ─┬─► 174.057(SCOPE-IMPL-1) ─► 174.058(SCOPE-IMPL-2)
+             ├─► 174.059(SCOPE-RED-C) ─┘
+             ├─► 174.056(SCOPE-RED-B) ─┬─────────────────────────────► 174.058
+             └─► 174.060(SCOPE-RED-D) ─┘
 174.045(R7a)+174.051(R7b) ─► 174.057
 ```
 
-**Integrated waves (still 9):** `174.055`,`174.056` join **W7** (deps ≤ W6); `174.057` joins **W8**
-(deps in W7); `174.058` joins **W9** (deps in W7/W8). RED-deliverable closing waves add: SCOPE-RED-A
-(`174.055-T`) closed by `174.057-T`@**W8**; SCOPE-RED-B (`174.056-T`) closed by `174.058-T`@**W9**.
+**Integrated waves (still 9):** `174.055`,`174.059`,`174.056`,`174.060` join **W7** (deps ≤ W6);
+`174.057` joins **W8** (deps in W7); `174.058` joins **W9** (deps in W7/W8). RED-deliverable closing
+waves add: SCOPE-RED-A (`174.055-T`) and SCOPE-RED-C (`174.059-T`) closed by `174.057-T`@**W8**;
+SCOPE-RED-B (`174.056-T`) and SCOPE-RED-D (`174.060-T`) closed by `174.058-T`@**W9**.
 
-**Updated `155-S` manifest — 20 tasks (21 members incl. `174-F`).** Appended in dependency order:
-`… → 174.050 → 174.055 → 174.056 → 174.057 → 174.058` (each appended ID's predecessors already
-precede it, so the flat manifest order remains a valid parent-first topological order).
+**Updated `155-S` manifest — 22 tasks (23 members incl. `174-F`).** Appended in dependency order:
+`… → 174.050 → 174.055 → 174.059 → 174.056 → 174.060 → 174.057 → 174.058` (each appended ID's
+predecessors already precede it, so the flat manifest order remains a valid parent-first topological
+order).
 
 **No public API seam is introduced** — the correction changes existing internal behavior
 (`releaseScopeItemIDs`, `compositionMemberIDs`, `validateMemberGateEvidence`) only; `NormalizeShipmentItems`

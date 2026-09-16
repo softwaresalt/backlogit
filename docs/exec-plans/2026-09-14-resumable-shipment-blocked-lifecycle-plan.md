@@ -139,32 +139,42 @@ lifecycle derives release scope by expanding a listed feature into all descendan
 (`:1219`, BFS on `ParentID`, `IncludeArchived:true`) — and `compositionMemberIDs`
 (`internal/core/size_composition.go:291`) expands feature→children for the member projection, so
 `155-S`'s 17-entry explicit manifest projects to 54 members (pulling in archived `174.001-T…038-T`).
-A second, independent expansion survives even a flat `releaseScope`: the ship/closure cleanup
+A second and third independent expansion survive even a flat `releaseScope`: (a) the ship/closure cleanup
 re-expands a member feature's descendants directly via `descendantItems` in `collectArchiveCandidateIDs`
-(`:800`, archives unlisted terminal descendants) and `returnUnreleasedFeatureItems` (`:735`,
-returns-to-backlog and `clearParentID`-orphans unlisted non-terminal descendants) — both flattened by
-`174.058-T`. The flat rule makes release scope equal the explicit `custom_fields.items` manifest.
+(`:800`, archives unlisted terminal descendants **and appends the feature's linked deliberations** via
+`linkedDeliberationIDs`) and `returnUnreleasedFeatureItems` (`:735`, returns-to-backlog and
+`clearParentID`-orphans unlisted non-terminal descendants) — flattened by `174.058-T`; and (b) the
+rollback/snapshot path (`:603-612`) independently re-expands the artifact lock/snapshot/restore set
+(`rollbackIDs`/`snapshotShipArtifacts`) with covering-feature ancestors and every `descendantItems` —
+flattened by `174.057-T` (the covering-feature status-rollup revert via `nonMemberFeatureSnapshots` is a
+separate mechanism and is preserved). The flat rule makes release scope equal the explicit
+`custom_fields.items` manifest.
 
 | Task | Role | Title | Domain | Depends on |
 |---|---|---|---|---|
-| `174.055-T` | SCOPE-RED-A | Behavior RED harness: release scope == flat explicit manifest (task-only manifest scopes to its items; listed feature does NOT expand to unlisted descendants; explicitly-listed descendant IS in scope) — <4 scenarios | tests | `174.044-T` |
-| `174.056-T` | SCOPE-RED-B | Behavior RED harness (regression): unlisted **blocked** descendant excluded; **archived** descendants excluded; **feature-only** manifest scopes to `{feature}` and its ship/closure frees the active slot — <4 scenarios | tests | `174.044-T` |
-| `174.057-T` | SCOPE-IMPL-1 | Flatten release-scope **derivation**: `releaseScopeItemIDs` (`:550`) returns the flat manifest; parameter-consuming consumers (evidence set/`validateMemberGateEvidence`, `completeReleaseScope`, snapshot/rollback lock set) flatten transitively; parent-first preserved as ordering, not expansion — makes `174.055-T` green | code | `174.055-T`, `174.045-T`, `174.051-T` |
-| `174.058-T` | SCOPE-IMPL-2 | Flatten **projection** + **ship/closure feature cleanup**: `compositionMemberIDs` (listed task members, feature excluded → `155-S` 20 not 58) + the independent descendant re-expansions in `collectArchiveCandidateIDs` (`:800`) and `returnUnreleasedFeatureItems` (`:735`, no archival/orphan of unlisted descendants); feature-only ship/closure frees the active slot; update coupled legacy tests — makes `174.056-T` green | code | `174.056-T`, `174.057-T` |
+| `174.055-T` | SCOPE-RED-A | Behavior RED harness: release scope == flat explicit manifest (task-only manifest scopes to its items; listed feature does NOT expand to unlisted descendants; explicitly-listed descendant IS in scope; asserts over the retained `releaseScopeItemIDs` seam) — <4 scenarios | tests | `174.044-T` |
+| `174.059-T` | SCOPE-RED-C | Behavior RED harness: rollback lock/snapshot/restore set == `{shipment} ∪ flat manifest` (unlisted ancestor feature + unlisted descendant absent and non-restorable; pins the independent `:603-612` expansion) — <4 scenarios | tests | `174.044-T` |
+| `174.056-T` | SCOPE-RED-B | Behavior RED harness (regression): unlisted **blocked** descendant excluded from projection; unlisted (incl. **archived**) descendants excluded; **feature-only** manifest scopes to `{feature}` and its ship/closure frees the active slot — <4 scenarios | tests | `174.044-T` |
+| `174.060-T` | SCOPE-RED-D | Behavior RED harness: `collectArchiveCandidateIDs` excludes an unlisted **terminal-but-not-archived** (`done`/`accepted`) descendant **and** an unlisted **linked deliberation** from `ArchivedIDs`; no archived artifact restored for scope — <4 scenarios | tests | `174.044-T` |
+| `174.057-T` | SCOPE-IMPL-1 | Flatten release-scope **derivation**: `releaseScopeItemIDs` (`:1142`) flattened **in place** (seam retained, not bypassed); evidence set/`validateMemberGateEvidence` + `completeReleaseScope` flatten transitively; **AND** neutralize the independent rollback/snapshot expansion at `:603-612` (lock/snapshot/restore set == `{shipment} ∪ flat manifest`; non-member feature rollup revert preserved); parent-first preserved as ordering — makes `174.055-T` + `174.059-T` green | code | `174.055-T`, `174.059-T`, `174.045-T`, `174.051-T` |
+| `174.058-T` | SCOPE-IMPL-2 | Flatten **projection** + **ship/closure feature cleanup**: `compositionMemberIDs` (listed task members, feature excluded → `155-S` **22**) + the independent re-expansions in `collectArchiveCandidateIDs` (`:800`, unlisted **terminal-but-not-archived** descendants **and linked deliberations** left untouched) and `returnUnreleasedFeatureItems` (`:735`, no archival/orphan of unlisted descendants); feature-only ship/closure frees the active slot; update coupled legacy tests — makes `174.056-T` + `174.060-T` green | code | `174.056-T`, `174.060-T`, `174.057-T` |
 
 ```
-174.044(R6) ─┬─► 174.055(RED-A) ─► 174.057(IMPL-1) ─► 174.058(IMPL-2)
-             └─► 174.056(RED-B) ───────────────────────► 174.058
+174.044(R6) ─┬─► 174.055(RED-A) ─┬─► 174.057(IMPL-1) ─► 174.058(IMPL-2)
+             ├─► 174.059(RED-C) ─┘
+             ├─► 174.056(RED-B) ─┬─────────────────────► 174.058
+             └─► 174.060(RED-D) ─┘
 174.045(R7a)+174.051(R7b) ─► 174.057
 ```
 
-**Integrated waves (still 9):** `174.055`,`174.056`@**W7**; `174.057`@**W8**; `174.058`@**W9**.
-RED-deliverable closing waves add: SCOPE-RED-A (`174.055-T`) closed by `174.057-T`@W8; SCOPE-RED-B
-(`174.056-T`) closed by `174.058-T`@W9. Sub-graph acyclic; no existing wave changes.
+**Integrated waves (still 9):** `174.055`,`174.059`,`174.056`,`174.060`@**W7**; `174.057`@**W8**;
+`174.058`@**W9**. RED-deliverable closing waves add: SCOPE-RED-A (`174.055-T`) + SCOPE-RED-C
+(`174.059-T`) closed by `174.057-T`@W8; SCOPE-RED-B (`174.056-T`) + SCOPE-RED-D (`174.060-T`) closed
+by `174.058-T`@W9. Sub-graph acyclic; no existing wave changes.
 
-**`155-S` manifest → 20 tasks (21 members incl. `174-F`)**; appended in dependency order
-`… 174.050 → 174.055 → 174.056 → 174.057 → 174.058`. **No public API introduced** (internal behavior
-change only; `NormalizeShipmentItems` unchanged). External topology/wave gate is independent
+**`155-S` manifest → 22 tasks (23 members incl. `174-F`)**; appended in dependency order
+`… 174.050 → 174.055 → 174.059 → 174.056 → 174.060 → 174.057 → 174.058`. **No public API introduced**
+(internal behavior change only; `NormalizeShipmentItems` unchanged). External topology/wave gate is independent
 (reads neither seam); **no `--force` authorized or applied**.
 
 ---
@@ -1378,3 +1388,65 @@ authorized or applied.**
 **Verdict: PASS** — residual P0 = 0, residual P1 = 0. `155-S` ready for Ship to implement SBLK-R28
 test-first. Unrelated residual: pre-existing `doctor` orphan findings in the `106.xxx-T` band
 (present on baseline main, outside this amendment's scope).
+
+## Plan Review — Revision 5 (flat-manifest scope hardening) (2026-09-16, branch `chore/stage-155-flat-shipment-scope`)
+
+dispatch_mode: single-agent-declared-degradation
+decision: PASS
+
+Bounded Stage remediation of **four P1 findings** against the rev4 flat-manifest addendum. Stage-owned
+backlog/docs only — NO source or test code written by Stage; `155-S` stays `queued`; no shipment claim,
+no PR. **ENGRAM_DEGRADED**: the agent-engram daemon was not consulted for this cycle (bounded local
+read-only code inspection of `internal/core/shipment_lifecycle.go` and `size_composition.go` was
+sufficient to confirm each finding at exact line references), which justifies
+`single-agent-declared-degradation`, consistent with the prior cycles above.
+
+**Findings remediated (all four were real):**
+
+* **P1-1 — rollback/snapshot path is an INDEPENDENT expansion, mis-scoped as "flatten transitively."**
+  `rollbackIDs`/`snapshotShipArtifacts` are built at `shipment_lifecycle.go:603-612` by appending
+  covering-feature ancestors (`featureIDs`) **and every** `descendantItems` on top of
+  `{shipmentID} ∪ releaseScope`; flattening the derivation alone does not flatten the artifact
+  lock/snapshot/restore set. **Fix:** re-scoped to `174.057-T` (neutralize `:603-612`) with a new RED
+  harness `174.059-T` (SCOPE-RED-C, `^TestURollbackScopeFlat_`) asserting set-equality with
+  `{shipmentID} ∪ flat manifest` and that unlisted ancestors/descendants are absent and non-restorable.
+  The separate `nonMemberFeatureSnapshots`/`restoreRolledUpNonMemberFeatures` status-rollup revert is
+  preserved (explicitly kept in `174.057-T` AC).
+* **P1-2 — RED/GREEN contract inconsistent for `releaseScopeItemIDs`.** RED (`174.055-T`) pins the
+  `releaseScopeItemIDs` seam; the rev4 `174.057-T` told the implementer to bypass it with direct
+  `explicitScope` assignment. **Fix:** `174.057-T` now flattens `releaseScopeItemIDs` **in place**
+  (`return uniqueNonEmptyStrings(itemIDs)`; seam + signature retained; line 549 still calls it) and all
+  callers consume its flat result. The bypass instruction is removed. `174.055-T` clarified to state the
+  seam is retained, so RED and GREEN target the same function.
+* **P1-3 — `collectArchiveCandidateIDs` also appends unlisted linked deliberations.** Its covering-feature
+  loop appends `linkedDeliberationIDs(feature)` unguarded. **Fix:** folded into `174.058-T` ownership;
+  `174.060-T` (SCOPE-RED-D) asserts an unlisted linked deliberation is absent from `ArchivedIDs` and
+  untouched.
+* **P1-4 — archive RED used already-archived descendants the collector skips (a no-op).** **Fix:**
+  `174.060-T` uses an unlisted **terminal-but-not-archived** descendant (`done`/`accepted`) — which the
+  collector DOES append today — asserting it stays untouched and absent from `ArchivedIDs`;
+  archived-descendant projection coverage retained separately (`174.056-T` scenario 2 as projection-only;
+  `174.060-T` negative-control that no archived artifact is restored for scope).
+
+**Task delta (rev5): +2 (scope-correction delta now +6).** New `174.059-T` (SCOPE-RED-C →
+`174.057-T`@close-wave 8) and `174.060-T` (SCOPE-RED-D → `174.058-T`@close-wave 9), each `dep 174.044-T`,
+≤2h / <4 scenarios / tests. Impl edges added `057→059`, `058→060`. Flat `size_composition.members`
+target updated `20 → 22`; spec §0.5/§0.6, plan §0.4, and decision §6i reconciled. No new exported/public
+API; no archived/superseded task restored.
+
+**Validation evidence (branch `chore/stage-155-flat-shipment-scope`):** `backlogit sync` OK (1534
+artifacts, 0 parse failures); `backlogit docs lint` spec/plan/decision all `valid: true` (0 violations);
+`doctor --target` on `174.055-T`,`174.056-T`,`174.057-T`,`174.058-T`,`174.059-T`,`174.060-T`,`155-S` all
+exit 0; RED-contract blocks well-formed (green_maker `174.057-T`@close-wave 8 for `055`/`059`;
+`174.058-T`@close-wave 9 for `056`/`060`); `wave-scheduler-sim` fixture **WAVE_SIM_OK 164/164** and
+`-VerifyAgainstQueue` **WAVE_SIM_OK 186/186** (both decoupled — bound to `130-S`/`147-F`, unperturbed by
+`155-S`); markdownlint **0 issues**; dependency-graph check over the `155-S` manifest: **acyclic**,
+manifest a valid **parent-first topological order**, **23 items (`174-F` + 22 tasks)**; dep edges
+verified `059→044`, `060→044`, `057→{055,059,045,051}`, `058→{056,060,057}`; **9 waves unchanged**
+(`055`,`059`,`056`,`060`@W7; `057`@W8; `058`@W9) with each RED strictly before its green-maker.
+Topology/wave gate independent of this correction (the scheduler reads neither `releaseScopeItemIDs`,
+the member projection, nor the rollback set); **no `--force` override authorized or applied.**
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. `155-S` remains `queued` and ready for Ship to
+implement SBLK-R28 test-first. Unrelated residual: pre-existing `doctor` orphan findings in the
+`016.xxx`/`106.xxx-T` bands (present on baseline, outside this amendment's scope).

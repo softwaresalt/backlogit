@@ -530,7 +530,8 @@ not because they were archived; archival preserved history but is **not required
 
 **Task delta (+4, all ≤2h, ≤5 functions, <4 scenarios), RED-before-GREEN:** `174.055-T` (SCOPE-RED-A,
 tests) + `174.056-T` (SCOPE-RED-B regression, tests) precede `174.057-T` (SCOPE-IMPL-1, code, flatten
-the `releaseScopeItemIDs` derivation; evidence/completion/rollback flatten transitively) + `174.058-T`
+the `releaseScopeItemIDs` derivation; evidence/completion flatten transitively — **rollback is an
+INDEPENDENT expansion, re-scoped in §6i (rev5)**) + `174.058-T`
 (SCOPE-IMPL-2, code, flatten the `compositionMemberIDs` projection AND the independent ship/closure
 descendant re-expansions in `collectArchiveCandidateIDs`/`returnUnreleasedFeatureItems`, plus
 feature-only active-slot safety and coupled-test updates). The two ship/closure functions re-expand
@@ -548,3 +549,48 @@ bound to the 130-S/147-F fixture, not 155-S). **No `--force` override is authori
 
 Validation evidence and the review verdict for this cycle are recorded in the companion plan's
 **"Plan Review — Revision 4 (flat-manifest shipment scope)"** section.
+
+## §6i — Flat-manifest scope hardening (rev5, 2026-09-16, branch `chore/stage-155-flat-shipment-scope`; Stage-owned)
+
+Bounded remediation of **four P1 findings** raised against the rev4 flat-manifest addendum. All fixes
+are Stage-owned backlog/docs only — no source/tests written by Stage, `155-S` stays `queued`, no PR.
+The findings and their dispositions:
+
+* **P1-1 — rollback/snapshot path independently expands (mis-scoped as "flatten transitively").**
+  `rollbackIDs`/`snapshotShipArtifacts` are built independently at `shipment_lifecycle.go:603-612`,
+  appending covering-feature ancestors (`featureIDs`) **and every** `descendantItems` on top of
+  `{shipmentID} ∪ releaseScope` — so flattening the derivation alone does NOT flatten the artifact
+  lock/snapshot/restore set. **Disposition:** this expansion is re-scoped to `174.057-T` (neutralize
+  `:603-612`), with new RED harness `174.059-T` (SCOPE-RED-C, `^TestURollbackScopeFlat_`) proving the
+  lock/snapshot/restore set set-equals `{shipmentID} ∪ flat manifest` and that unlisted ancestors and
+  descendants are absent and non-restorable. The covering-feature **status-rollup** revert via
+  `nonMemberFeatureSnapshots`/`restoreRolledUpNonMemberFeatures` is a SEPARATE mechanism and is
+  preserved unchanged.
+* **P1-2 — RED/GREEN contract inconsistent for `releaseScopeItemIDs`.** RED (`174.055-T`) pins the
+  `releaseScopeItemIDs` seam, but the rev4 `174.057-T` instruction bypassed it with a direct
+  `explicitScope` assignment. **Disposition:** `174.057-T` now flattens `releaseScopeItemIDs`
+  **in place** (`return uniqueNonEmptyStrings(itemIDs)`, seam + signature retained; line 549 still
+  calls it), removing the bypass instruction, so RED and GREEN target the same function and all callers
+  consume its flat result. Pins to 174.055/spec §0.5/plan §0.4 as already written.
+* **P1-3 — `collectArchiveCandidateIDs` also appends unlisted linked deliberations.** The covering-feature
+  loop appends `linkedDeliberationIDs(feature)` with no membership guard. **Disposition:** included in
+  `174.058-T` ownership; new RED harness `174.060-T` (SCOPE-RED-D, `^TestUArchiveCandidateFlat_`)
+  asserts an unlisted linked deliberation is absent from `ArchivedIDs` and untouched.
+* **P1-4 — archive RED used already-archived descendants (a no-op the collector skips).** The collector
+  skips `archived` descendants, so that assertion never exercised the expansion. **Disposition:**
+  `174.060-T` uses an unlisted **terminal-but-not-archived** descendant (status `done`/`accepted`),
+  which the collector DOES append today, asserting it stays untouched and absent from `ArchivedIDs`;
+  archived-descendant projection coverage is retained separately (in `174.056-T` and as a
+  `174.060-T` negative-control that no archived artifact is restored for scope).
+
+**Task delta (rev5): +2 (total scope-correction delta now +6).** New RED tasks `174.059-T`
+(SCOPE-RED-C → green-maker `174.057-T`@close-wave 8) and `174.060-T` (SCOPE-RED-D → green-maker
+`174.058-T`@close-wave 9), each `dep 174.044-T`, each ≤2h / <4 scenarios. Impl edges added:
+`057→059`, `058→060`. Waves stay **9** (`055`,`059`,`056`,`060`@W7; `057`@W8; `058`@W9). `155-S`
+manifest → **22 tasks / 23 members incl. `174-F`** (flat `size_composition.members` target updated
+`20 → 22`), appended in dependency order `… 174.055 → 174.059 → 174.056 → 174.060 → 174.057 →
+174.058`. **No public/exported API introduced**; no archived/superseded task restored; **no `--force`
+override authorized or applied.** The external topology/wave gate is still independent (it reads
+neither `releaseScopeItemIDs`, the projection, nor the rollback set). Validation evidence and verdict
+recorded in the companion plan's **"Plan Review — Revision 5 (flat-manifest scope hardening)"**
+section.
