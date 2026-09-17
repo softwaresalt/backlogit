@@ -6,7 +6,9 @@ source: docs/exec-plans/2026-09-16-866fdc8c-decomposition-correction-plan.md
 title: "Correction Plan: 866FDC8C trust-chain decomposition (149-S/150-S/151-S)"
 ---
 
-## Correction Plan: 866FDC8C trust-chain decomposition
+# Correction Plan: 866FDC8C trust-chain decomposition
+
+## Overview
 
 **Source deliberation:** `066-DL` (linked stash `AC5346BC`; covers all six
 deferred-scope-expansion entries).
@@ -48,15 +50,19 @@ against `.github/instructions/constitution.instructions.md`:
 | I. Safety-First Go | No source written by Stage; typed-error/fail-closed AC preserved on every behavior task | PASS |
 | II. Test-First (NON-NEGOTIABLE) | Every behavior-bearing split declares a RED harness observed failing before impl; declaration tasks carry a source-shape (go/ast) harness | PASS |
 | III. Workspace Isolation / Security Boundaries | `trust_anchors` parsing/schema validation placed in `internal/config`; policy/resolution/mutation in `internal/core` (item 10); external-pin gate fail-closed | PASS |
-| IV. CLI Workspace Containment (NON-NEGOTIABLE) | CLI split into thin wiring tasks (168.013-T/168.016-T) delegating to core; no security-state logic in CLI layer | PASS |
-| V. Structured Observability | Durable audit event required on every trust-anchor mutation (168.005-T); write-outcome taxonomy + recovery marker (168.017-T) | PASS |
+| IV. CLI Workspace Containment (NON-NEGOTIABLE) | CLI split into thin wiring tasks (168.013-T) delegating to core; no security-state logic in CLI layer. REASSESSED for external protected state: the external-pin ROOT OF TRUST is a read-only trust reference, not a filesystem write target; every filesystem WRITE (config, status, durable audit, nonce ledger, recovery marker) stays within the workspace `.backlogit` tree; the `public_key_ref` structural contract (168.018-T) rejects absolute paths, `..`, and URL schemes so no ref escapes containment | PASS |
+| V. Structured Observability | Durable audit event required on every trust-anchor mutation (168.005-T); write-outcome taxonomy + recovery marker (168.017-T); denied-mutation audit (168.019-T) | PASS |
 | VI. Single Responsibility | Declaration split from behavior; parser split from verification; every task single-domain (config OR core OR cli OR docs) | PASS |
-| VII. Destructive Command Approval (NON-NEGOTIABLE) | No destructive commands; governed backlogit mutations only; archive append-only history untouched | PASS |
-| VIII. Explicit Safety Modes | No elevated-risk mode introduced; no relaxation of existing fail-closed controls | PASS |
+| VII. Destructive Command Approval (NON-NEGOTIABLE) | REASSESSED: trust-anchor REVOKE / ROTATE / tombstone ARE destructive security-state mutations, not benign edits. They are classified destructive and MUST require explicit operator approval / safety-mode gating, recorded as a binding AC on the mutation surface (168.013-T CLI + 168.005-T core). Stage itself runs no destructive commands; governed backlogit mutations only; append-only archive untouched | PASS (classification recorded) |
+| VIII. Explicit Safety Modes | No elevated-risk mode introduced; destructive security-state mutations gated by the VII approval classification; no relaxation of existing fail-closed controls | PASS |
+| IX. Git-Friendly Persistence | All backlog artifacts, plan, and memory are line-oriented Markdown/JSONL written by governed writers with deterministic ordering; append-only archive history is never rewritten | PASS |
+| X. Agent Context Efficiency | Every task bounded to <=3 executable scenarios and a single domain; the scenario matrix (item 9) keeps leaves small; plan/memory kept concise | PASS |
 | Task Granularity (NON-NEGOTIABLE) | Every task re-scoped to <3 files / <5 funcs / <4 test scenarios; tasks confirmed at 4+ scenarios split (item 9 matrix) | PASS |
-| XI. Merge Commit History Preservation | N/A (no merges performed by Stage) | N/A |
+| XI. Merge Commit History Preservation (NON-NEGOTIABLE) | NOT N/A: 149-S -> 150-S -> 151-S ship serially over shared reconcile/event surfaces. Downstream Ship PRs for these shipments MUST merge via MERGE COMMITS; squash and rebase merges are PROHIBITED so per-shipment history is preserved | PASS (constraint recorded) |
 
-No principle fails. Proceed to plan review.
+No principle fails; the IV / VII / XI reassessments are recorded constraints, not deviations.
+
+Constitution Check: pass
 
 ### Six deferred-scope-expansion entries addressed
 
@@ -118,15 +124,13 @@ closed; (4) negatives cover each rejection.
 
 ### 168.003-T (AC backfill)
 
-Trusted-key resolver primitive (rotation + revocation), pure.
+Trusted-key resolver primitive (rotation), pure.
 **AC:** (1) returns the active key inside not_before/not_after with status=active;
-(2) expired/not-yet-valid, revoked, and ambiguous inputs each return a typed error;
-(3) pure (no I/O), proven by table-driven tests; (4) **resolution is role-scoped
-(Security-F1 remediation): a caller requests a key for a specific purpose
-(attestation-signer vs token-issuer) and the resolver rejects an anchor whose
-`role` does not match, preventing cross-protocol key reuse;** (5) **the resolved
-key carries the anchor's pinned algo so callers verify with the pinned algorithm,
-never a caller/payload-declared one (Security-F4 remediation).**
+(2) expired and not-yet-valid inputs each return a typed error; (3) pure (no I/O),
+proven by table-driven tests; (4) revoked and ambiguous (multiple-active) resolver
+paths are delegated to **168.015-T**; (5) role-scoped resolution (Security-F1) and
+pinned-algo binding (Security-F4) are delegated to **168.020-T** (cycle-2 width
+split) — this origin task no longer enumerates that behavior.
 
 ### 168.004-T (AC backfill)
 
@@ -142,34 +146,41 @@ first. Depends on 168.003-T (preserved from the pre-correction DAG), 168.012-T
 (added). **2-hour / audit-seam rationale (review P3 remediation):** add/rotate/revoke
 share ONE parametrized mutation path (table-driven test, single core function), and
 the durable audit event is kept INSIDE this core task — not split out — because audit
-persistence must be transactionally atomic with the state change it records. This
-faithfully follows stash 71F5C21F, which groups "config mutation, external-pin policy
-enforcement, audit-event creation/persistence" as one core task and separates only
-the CLI wiring. The task stays within the 2-hour envelope via the shared parametrized
-path.
+persistence is the final step of the same sequenced commit that records the state
+change. This faithfully follows stash 71F5C21F, which groups "config mutation,
+external-pin policy enforcement, audit-event creation/persistence" as one core task
+and separates only the CLI wiring. The task stays within the 2-hour envelope via the
+shared parametrized path.
 
-**Deterministic ordering (item-3 remediation).** The core mutation path executes a
-fixed sequence: (a) validate args -> (b) external-pin policy gate (fail-closed) ->
-(c) apply config mutation -> (d) apply status mutation -> (e) persist durable audit
-event, where (c)+(d)+(e) form ONE atomic in-core commit. The durable
-**write-outcome taxonomy** — `ErrWriteNotApplied` (no state changed; retry-safe) vs
-`ErrWriteIndeterminate` (state may be partially applied; retry unsafe) — plus
-retry/compensation boundaries, the recovery-visibility marker, and injected-failure
-tests are split into **168.017-T** to preserve the 2-hour/single-domain limit.
-168.005-T owns the deterministic ordering, atomic in-core commit, and it
-**DECLARES the base `WriteOutcome` result type** (so its own return signature and
-tests compile without depending on its downstream leaf); **168.017-T** adds only the
-variant *semantics* (`ErrWriteNotApplied` retry-safe vs `ErrWriteIndeterminate`
-retry-unsafe), retry/compensation boundaries, the recovery-visibility marker, and
-injected-failure tests (Architecture-P2 / Correctness-P3 ownership-inversion
-remediation). This split preserves the 2-hour/single-domain limit.
+**Deterministic ordering (item-3 cycle-1 + item-4 cycle-2 correction).** The core
+mutation path executes a fixed sequence: (a) validate args -> (b) external-pin policy
+gate (fail-closed) -> (c) apply config mutation -> (d) apply status mutation -> (e)
+persist durable audit event. **Cycle-2 atomicity correction (Architecture-P2):** this
+sequence is NOT a true cross-file atomic commit — a config file + status + separate
+audit log cannot be atomically committed on a filesystem. 168.005-T owns the
+deterministic ORDERING and returns the base `WriteOutcome` type; the marker-protected
+sequenced-commit protocol, the durable **write-outcome taxonomy**
+(`ErrWriteNotApplied` no state changed / retry-safe vs `ErrWriteIndeterminate` state
+may be partially applied / retry-unsafe), retry/compensation boundaries, and the
+recovery-visibility marker are OWNED by **168.017-T**; denied-mutation
+audit-write-failure + recovery reconciliation is owned by **168.019-T**. This keeps
+each task within the 2-hour/single-domain limit and removes the atomic-vs-indeterminate
+contradiction (guarantee language lives with the mechanism in 168.017-T).
+
+**Constitution VII (cycle-2) — destructive-op authorization.** rotate and revoke are
+destructive security-state mutations. The core mutation refuses to apply a
+rotate/revoke unless it receives an explicit approved-authorization argument (set only
+after the 168.013-T CLI operator-approval / safety-mode gate passes), so even a
+programmatic core caller cannot bypass the gate.
 **AC:** (1) RED test first; (2) add/rotate/revoke mutate config+status in fixed
 order (a)->(e); (3) an unpinned-fingerprint mutation is rejected (fail-closed) at
 step (b) before any state change **AND the denied mutation persists a durable audit
 event (Security-F2 remediation: denials are audited, not only successes)**; (4) each
-successful mutation persists a durable audit event atomically with the state change;
-(5) the core declares and returns the base `WriteOutcome` type consumed by
-168.017-T; (6) tests GREEN.
+successful mutation persists a durable audit event as the final ordered step (NOT
+claimed cross-file atomic; recoverability owned by 168.017-T); (5) a rotate/revoke
+without the explicit approved-authorization argument is refused with a typed error and
+no state change (Constitution VII); (6) the core declares and returns the base
+`WriteOutcome` type consumed by 168.017-T; (7) tests GREEN.
 
 ### 168.013-T (new, thin CLI wiring)
 
@@ -177,9 +188,13 @@ successful mutation persists a durable audit event atomically with the state cha
 the 168.005-T core. No security-state logic in the CLI layer. Domain: cli.
 Depends on 168.005-T.
 **AC:** (1) **RED test first (Correctness-P3 remediation)**; (2) each subcommand
-invokes the core mutation and surfaces its typed
-result/exit code; (3) the CLI layer contains no pin-gate/audit logic; (4) a
-rejected core mutation yields a non-zero exit with no partial write.
+invokes the core mutation and surfaces its typed result/exit code; (3) **rotate and
+revoke are destructive security-state operations and require an explicit operator
+approval / safety-mode gate BEFORE the core mutation is invoked — without approval the
+CLI refuses with a non-zero exit and invokes no core mutation (Constitution VII,
+cycle-2), proven by a RED-first negative test;** (4) the CLI layer contains no
+pin-gate/audit logic (delegates to core); (5) a rejected core mutation yields a
+non-zero exit with no partial write.
 
 ### 168.006-T (AC backfill; dep retargeted 168.005 -> 168.013)
 
@@ -205,26 +220,26 @@ diff (parser is 169.010-T).
 
 ### 169.010-T (new, parser behavior)
 
-Attestation envelope parser rejecting malformed/duplicate-member JSON via
-raw-token scan (mirroring the #423 validator). Domain: core. TDD: RED harness
-first. Depends on 169.001-T.
+Attestation envelope parser rejecting malformed JSON and EXACT-BYTE duplicate
+members via raw-token scan (mirroring the #423 validator). Domain: core. TDD: RED
+harness first. Depends on 169.001-T.
 **AC:** (1) RED test first; (2) a well-formed envelope parses; (3) malformed JSON is
-rejected AND duplicate JSON members — both exact-byte duplicates and
-decoder-equivalent case-fold duplicates — are rejected with a typed error at EVERY
-object depth (top-level statement, nested predicate, subject, and evidence objects),
-proven by negative tests per depth; (4) tests GREEN.
+rejected AND EXACT-BYTE duplicate JSON members are rejected with a typed error at
+EVERY concrete object depth (envelope root, statement, subject, predicate/evidence),
+proven by negative tests per depth; (4) decoder-equivalent (case-fold / Unicode-escape)
+duplicate collisions at every depth are delegated to **169.015-T** (cycle-2 split);
+(5) tests GREEN.
 
 ### 169.002-T (AC backfill; dep retargeted 169.001 -> 169.010)
 
 Attestation verification primitive (fail-closed).
 **AC:** (1) a valid signature over the canonical statement using a 168.003-resolved
 key verifies; (2) statement evidence fields must equal the reconcile-computed
-evidence or fail; (3) any signature/binding/expiry mismatch returns a typed
-fail-closed error; (4) **the resolver is asked for an attestation-signer-role key
-and verification uses the anchor's pinned algo, rejecting a role mismatch and any
-envelope-declared algo (incl. `none`) (Security-F1/F4 remediation);** (5) **every
-fail-closed verification rejection persists a durable audit event, not only
-successes (Security-F2 remediation).**
+evidence or fail; (3) any signature/evidence mismatch returns a typed fail-closed
+error; (4) role-scoped resolution + pinned-algo enforcement (Security-F1/F4) and the
+fail-closed rejection audit (Security-F2) are delegated to **169.013-T** (cycle-2
+width split) — this origin task no longer enumerates that behavior; (5) binding/expiry
+mismatch delegated to **169.011-T**.
 
 ### 169.003-T (AC backfill)
 
@@ -269,16 +284,22 @@ before Feature C implementation. Domain: docs (design-doc). Blocks 170.001-T and
 forward-reference deliverable produced by Ship during 170.011-T execution (Stage
 does NOT create it now); referenced by 170.001-T and 170.002-T.
 
-**Digest/lock sequencing (item-6 remediation).** The contract MUST specify this
-ordering to match the existing producer:
+**Digest/lock sequencing (item-6 cycle-1 + item-3 cycle-2 correction).** Grounded in
+authoritative code, the contract MUST specify this TARGET ordering:
 `shipmentReconcileRequestIdentityDigestForNormalized` is computed as PRE-LOCK,
 pure/deterministic work over the normalized delta BEFORE any membership or
-persistence lock is taken. Then Phase-A membership locking is acquired; then
-per-artifact persistence locks are taken inside the critical section. The
-pre-computed digest is threaded THROUGH the critical section but is NEVER
-recomputed or re-canonicalized under lock (recomputation under lock is a defect the
-contract must forbid), guaranteeing the digest is a stable function of the request
-inputs independent of lock-ordering or concurrent membership changes.
+persistence lock is taken (`internal/core/shipment_reconcile_transaction.go` ~line
+76). Then Phase-A membership locking is acquired; then per-artifact persistence locks
+are taken inside the critical section; the pre-computed digest is threaded THROUGH
+the critical section. **Cycle-2 code-grounding correction:** the current code does
+NOT yet match this target — `prepareShipmentReconcileEvidence` REDUNDANTLY recomputes
+the digest under the Phase-A membership lock at
+`internal/core/shipment_reconcile_evidence.go:186`. The earlier plan claim that the
+digest is "never recomputed under lock" was FALSE. This docs task specifies the
+drift-free target; the redundant under-lock recomputation is removed by behavior task
+**170.015-T** (which threads the single pre-lock digest and deletes the second
+computation site). A docs-only task does not claim behavior no task owns; 170.015-T
+owns it.
 
 **Producer linkage (Architecture-review P1 remediation).** `request_identity_digest`
 is *produced* by the existing reconcile/event path inside the locked 167.008-T
@@ -302,7 +323,8 @@ intentional, not an unstated gap.
 and their order, byte-for-byte aligned with the 167.008-T reconcile-path producer;
 (2) specifies a canonical, deterministic byte encoding and asserts it matches the
 producer's encoding (no independent re-canonicalization); (3) specifies the operator
-pre-commit issuance flow (who mints, what is signed, TTL and nonce handling); (4) is
+pre-commit issuance flow (who mints, what is signed incl. not_before/issued-at, TTL
+and nonce handling); (4) is
 referenced by 170.001-T and 170.002-T and references the 167.008-T producer; (5)
 markdownlint passes.
 
@@ -322,35 +344,34 @@ behavior in the diff (parser is 170.012-T).
 Authorization-token parser over the 170.001-T declared shape. Domain: core. TDD:
 RED harness first. Depends on 170.001-T.
 **AC:** (1) RED test first; (2) a well-formed token parses into the declared
-struct; (3) malformed token input is rejected AND duplicate JSON members — both
-exact-byte duplicates and decoder-equivalent case-fold duplicates — are rejected
-with a typed error at EVERY object depth, proven by negative tests per depth;
-(4) tests GREEN.
+struct; (3) malformed token input is rejected AND EXACT-BYTE duplicate JSON members
+are rejected with a typed error at EVERY concrete object depth (token root, header,
+claims/payload, binding/evidence), proven by negative tests per depth; (4)
+decoder-equivalent (case-fold / Unicode-escape) duplicate collisions at every depth
+are delegated to **170.018-T** (cycle-2 split); (5) tests GREEN.
 
 ### 170.002-T (AC backfill; dep retargeted 170.001 -> 170.012; +170.011)
 
 Token verification primitive (fail-closed).
-**AC:** (1) the token signature verifies via a 168.003-resolved token-issuer-role
-key using the anchor's pinned algo (rejects role mismatch and any token-declared
-algo incl. `none`; Security-F1/F4); (2) binding to
-the target shipment-id AND the reconcile request-identity digest (per the 170.011-T
-contract) is enforced, verified by a **golden cross-check test against actual
-167.008-T producer output so producer-encoding drift breaks a test rather than
-fail-closing production (Architecture-P2 remediation);** (3) both not_after AND
-not_before/issued-at are enforced (Security-F5 remediation); (4) any mismatch
-returns a typed fail-closed error; (5) every fail-closed rejection persists a
-durable audit event (Security-F2 remediation).
+**AC:** (1) the token signature verifies via a 168.003-resolved key; (2) binding to
+the target shipment-id is enforced (wrong shipment fails closed with a typed error);
+(3) not_after is enforced (expired fails closed); (4) role-scoped resolution +
+pinned-algo enforcement (Security-F1/F4), not_before/issued-at enforcement
+(Security-F5), and the fail-closed rejection audit (Security-F2) are delegated to
+**170.016-T** (cycle-2 width split); (5) the request-identity-digest binding AND the
+producer GOLDEN cross-check against actual 167.008-T output are delegated to
+**170.013-T** (cycle-2 item 5) — this origin task no longer enumerates that behavior.
 
 ### 170.003-T (AC backfill)
 
 Nonce single-use ledger (anti-replay) — **MANDATORY (Security-F3 remediation;
-no longer fold-eligible: request-identity + not_after binding does not prevent
-replay within the TTL window).**
-**AC:** (1) durable, handle-safe append-then-fsync record of consumed nonces with
-an **atomic check-then-consume inside the 167.008-T locked section (no TOCTOU
-double-spend window under concurrency);** (2) a
-replayed token is rejected fail-closed; (3) consumed nonces are pruned past token
-not_after; (4) a replayed/double-spend attempt persists a durable audit event.
+request-identity + not_after binding does not prevent replay within the TTL
+window).** TDD: RED harness first.
+**AC:** (1) RED test first; (2) durable, handle-safe append-then-fsync record of
+consumed nonces; (3) a replayed token whose nonce is already recorded is rejected
+fail-closed with a typed replay error; (4) consumed nonces are pruned past token
+not_after; (5) the ATOMIC check-then-consume seam and the consume-audit event are
+delegated to **170.017-T** (cycle-2 split).
 
 ### 170.004-T (AC backfill)
 
@@ -369,9 +390,14 @@ behavior.
 
 ### 170.006-T (AC backfill)
 
-Integration + negative tests (authenticated approval).
-**AC:** (1) a valid token authorizes; (2) self-minted (no trusted key), expired,
-wrong-shipment, wrong-request-identity, and replayed tokens are each rejected.
+Integration + POSITIVE/issuer/expiry partition (paired with 170.014-T). TDD: RED
+harness first.
+**AC:** (1) RED test first; (2) a VALID token from a trusted issuer bound to the
+target shipment authorizes; (3) a SELF-MINTED token (untrusted/unpinned issuer) is
+rejected fail-closed with a typed untrusted-issuer error; (4) an EXPIRED token is
+rejected fail-closed with a typed expired-token error; (5) the {wrong-shipment,
+wrong-request-identity, replay} negatives are owned by **170.014-T** under the exact
+partition — no case overlap.
 
 ### 170.007-T (AC backfill)
 
@@ -443,8 +469,61 @@ which every row satisfies; the pre/post columns are not a conservation identity.
 | 168.018-T | RED test first; a well-formed `public_key_ref` (inline PEM or contained real-path) validates; empty/malformed/scheme-violating refs are each rejected with a typed error (internal/config) |
 | 169.011-T | RED test first; an attestation bound to the target shipment within validity verifies; a wrong-shipment binding and an expired attestation each fail closed with a typed error |
 | 169.012-T | RED test first; expired-key, revoked-key, and wrong-shipment attestations are each rejected fail-closed; each rejection is negative-tested |
-| 170.013-T | RED test first; a token whose request-identity-digest matches the reconcile-computed digest binds; a mismatched digest fails closed with a typed error |
+| 170.013-T | RED test first; a token whose request-identity-digest matches the reconcile-computed digest binds; a mismatched digest fails closed with a typed error; a GOLDEN cross-check asserts the enforced digest equals actual 167.008-T producer output so encoding drift breaks THIS test not production |
 | 170.014-T | RED test first; self-minted (untrusted-key), expired, wrong-shipment, and replayed tokens are each rejected fail-closed with distinct typed errors |
+
+### Scenario matrix — cycle 2 recount (honest width, item 6)
+
+Cycle-2 re-review recounted the security-expanded and newly surfaced tasks. Every
+task confirmed at 4+ executable scenarios or carrying multiple distinct
+implementation seams is split; the carved task is a pure leaf depending only on its
+origin, so DAG acyclicity is structurally preserved and only shipment membership
+grows.
+
+| Task | Cycle-2 pre-count | Verdict | Carved task | Post (origin / carved) |
+|---|---|---|---|---|
+| 168.003-T | 5 (base 3 + F1 role-scope + F4 algo-pin) | SPLIT | 168.020-T (role-scoped + pinned-algo) | 3 / 3 |
+| 168.017-T | 4 (pre-mut NotApplied, post-mut Indeterminate, recovery, denied-audit) | SPLIT | 168.019-T (denied-mutation audit-fail + recovery) | 3 / 3 |
+| 169.002-T | 5 (base 3 + role/algo + fail-closed audit) | SPLIT | 169.013-T (role/algo + audit) | 3 / 3 |
+| 169.007-T | 4 (persist-envelope, offline re-verify, tamper/swap, stale-branch removal) | SPLIT | 169.014-T (tamper/swap fail-closed + stale-branch absence) | 2 / 3 |
+| 169.010-T | 4 (well-formed, malformed, exact-byte dup all depths, decoder-equiv dup all depths) | SPLIT | 169.015-T (case-fold/escape dup all depths) | 3 / 3 |
+| 170.002-T | 5 (base 3 + role/algo + not_before + audit; golden moved out) | SPLIT | 170.016-T (role/algo/not_before/audit); golden -> 170.013-T | 3 / 3 |
+| 170.003-T | 4 (durable record, replay-reject, prune, atomic-consume+audit) | SPLIT | 170.017-T (atomic check-then-consume + audit) | 3 / 3 |
+| 170.006-T / 170.014-T | 6 across the pair | RE-PARTITIONED (no new leaf) | exact partition {valid, self-minted, expired} / {wrong-shipment, wrong-request-identity, replay} | 3 / 3 |
+| 170.012-T | 4 (well-formed, malformed, exact-byte dup all depths, decoder-equiv dup all depths) | SPLIT | 170.018-T (case-fold/escape dup all depths) | 3 / 3 |
+
+**170.015-T (new behavior, item 3).** Not a scenario split: created because the
+docs design task 170.011-T described drift-free behavior that no task owned. Grounded
+in authoritative code, `prepareShipmentReconcileEvidence` redundantly recomputes
+`shipmentReconcileRequestIdentityDigestForNormalized` under the Phase-A membership
+lock (`internal/core/shipment_reconcile_evidence.go:186`). 170.015-T removes that
+recomputation and threads the single pre-lock digest (3 scenarios, RED-first,
+depends on 170.011-T, member of 151-S).
+
+**Hardening recount.** The ten hardening tasks (168.007-010, 169.007-009,
+170.008-010) were recounted; 169.007-T exceeded four scenarios and was split
+(169.014-T). 168.008-T and 170.008-T remain single-seam at <=3 scenarios (no
+split). All ten now carry `size: S` / `size_source: agent` /
+`size_ruleset_version: stage-2h-rule-v1`.
+
+### New cycle-2 tasks (each a pure leaf/behavior; origin-only dependency)
+
+| Task | Depends-on | Domain | Scope | Shipment |
+|---|---|---|---|---|
+| 168.019-T | 168.017-T | core | Denied-mutation audit-write-failure + recovery reconciliation | 149-S |
+| 168.020-T | 168.003-T | core | Resolver role-scoped (F1) + pinned-algo (F4) binding | 149-S |
+| 169.013-T | 169.002-T | core | Attestation role-scoped + pinned-algo + fail-closed audit (F1/F4/F2) | 150-S |
+| 169.014-T | 169.007-T, 169.008-T | core | Doctor attestation tamper/swap fail-closed + stale-branch absence | 150-S |
+| 169.015-T | 169.010-T | core | Attestation JSON case-fold/escape duplicate rejection at every depth | 150-S |
+| 170.015-T | 170.011-T | core | Thread precomputed reconcile digest; remove under-lock recompute (behavior owner) | 151-S |
+| 170.016-T | 170.002-T | core | Token role-scoped + pinned-algo + not_before + fail-closed audit | 151-S |
+| 170.017-T | 170.003-T | core | Token nonce atomic check-then-consume + consume audit | 151-S |
+| 170.018-T | 170.012-T | core | Token JSON case-fold/escape duplicate rejection at every depth | 151-S |
+
+Each cycle-2 task carries `size: S`, `size_source: agent`,
+`size_ruleset_version: stage-2h-rule-v1`, at least one checkable AC, and RED-first
+ordering (a compiling failing harness observed before implementation) for the
+behavior-bearing tasks. None is a docs-only exemption.
 
 ## Domain placement (item 10)
 
@@ -474,6 +553,12 @@ test, or config change. **No behavior- or test-bearing task is exempt** — ever
 outside this closed set retains its RED/source-shape harness requirement. 170.011-T
 qualifies solely because its deliverable is a specification document; the behavior it
 specifies is implemented and harnessed by 170.001-T/170.012-T/170.002-T.
+
+**Cycle-2 exemption note (item 7/8).** None of the nine cycle-2 tasks (168.019-T,
+168.020-T, 169.013-T, 169.014-T, 169.015-T, 170.015-T, 170.016-T, 170.017-T,
+170.018-T) is docs-only; every one is behavior-bearing and carries a RED-first
+compiling-harness requirement observed before implementation. The closed docs-only
+set above is unchanged at exactly four tasks.
 
 
 
@@ -533,6 +618,24 @@ Reference-only linkage (not a blocking edge; 167-F is shipped via 148-S):
 
 Release-unit edges preserved: 150-S depends-on 149-S; 151-S depends-on 149-S;
 150-S/151-S depends-on 148-S.
+
+**Cycle-2 serial-execution edge (item 2).** Added 151-S depends-on 150-S. Although
+150-S (169-F attestation) and 151-S (170-F authorization) are dependency-independent
+in feature logic, they touch shared reconcile/event surfaces
+(`shipment_reconcile_evidence.go` / `shipment_reconcile_event.go` — e.g. the
+request-identity digest threaded by 170.015-T and the event binding upgraded by
+169.007-T), so overlapping Ship work would race those surfaces. The chain is now
+strictly serial 149-S -> 150-S -> 151-S through merge and closure under P-001.
+Verified in-backlog: `151-S depends-on {149-S, 148-S, 150-S}`.
+
+## Cycle-2 shipment membership deltas (item 6)
+
+* 149-S: add 168.019-T, 168.020-T -> **21 items**
+* 150-S: add 169.013-T, 169.014-T, 169.015-T -> **16 items**
+* 151-S: add 170.015-T, 170.016-T, 170.017-T, 170.018-T -> **19 items**
+
+Final verified membership after cycle 2: **149-S = 21, 150-S = 16, 151-S = 19**
+(feature + all children, confirmed via `backlogit shipment get`).
 
 ## Shipment membership deltas
 
@@ -629,3 +732,62 @@ advisories or operator-mandated by design. Gate decision: **PASS**.
   with explicit direction to resolve all high/medium P0/P1 and tightly-coupled P2/P3
   integrity findings and rerun the gate; no blocking/FAIL findings remained after
   remediation).
+
+### Plan Review — cycle 2
+
+<!-- plan-review-attempt: 2 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+* **reviewers:** Scope Boundary Auditor, Correctness Reviewer, Architecture
+  Strategist, **Security Reviewer** (four independent agents dispatched in parallel on
+  this plan document; the Security Reviewer is the mandatory security-sensitive persona
+  for this trust-chain plan). A focused Security RE-REVIEW was dispatched after
+  remediation to confirm the single FAIL-class finding was closed.
+* **cycle:** review-fix cycle 2 (this is the authoritative final record; supersedes the
+  cycle-1 record above).
+
+#### Raw reviewer verdicts (cycle-2)
+
+| Reviewer | Verdict | Headline findings |
+|---|---|---|
+| Scope Boundary Auditor | ADVISORY | No new release units; all 9 cycle-2 tasks land only in 149-S/150-S/151-S (deltas +2/+3/+4 -> 21/16/19); every task traces to a remediation item; only new edge is the declared serial 151-S->150-S. Advisories: 170.016-T/169.013-T scenario-count near ceiling (P2/P3); 170.015-T is a code de-dup behavior (P3); VII gate AC (P3, since resolved). |
+| Correctness Reviewer | ADVISORY | DAG CONFIRMED ACYCLIC (all 9 cycle-2 tasks are pure sinks; shipment edges 149<-150<-151 serial). Item-3 code-grounding CONFIRMED ACCURATE: prepareShipmentReconcileEvidence recomputes the digest under the Phase-A lock at shipment_reconcile_evidence.go:186; 170.015-T removal is behavior-preserving and correctly owned. Membership arithmetic reconciles. P3: stale-body double-ownership risk (resolved by de-listing carved ACs). |
+| Architecture Strategist | ADVISORY | No config->core or docs->behavior inversion; 170.011-T docs forward-ref vs 170.015-T behavior owner clean. Two P2 ownership ambiguities (golden cross-check placement; 168.005-T atomicity terminology) — both RESOLVED in remediation. |
+| Security Reviewer | FAIL -> PASS (after remediation) | Initial: one P1 FAIL-class — Constitution VII rotate/revoke approval gate classified but unowned by a checkable AC. All other controls (F1-F6, JSON duplicate-member exact + decoder-equivalent) verified owned by behavior tasks with RED-first typed fail-closed ACs. Focused re-review after remediation: **PASS — P1 CLOSED**, no remaining FAIL-class finding. |
+
+#### Remediations applied before gate close (cycle-2)
+
+1. **Security P1 (Constitution VII) — RESOLVED.** The destructive rotate/revoke approval
+   gate is now owned by checkable RED-first ACs on 168.013-T (CLI: operator approval /
+   safety-mode gate before core invocation, else non-zero exit with no core mutation) and
+   168.005-T (core: refuses rotate/revoke without an explicit approved-authorization
+   argument, bypass-resistant). Confirmed CLOSED by focused Security re-review.
+2. **Architecture P2 (atomicity terminology) — RESOLVED.** 168.005-T reworded from "one
+   atomic in-core commit" to a deterministic sequenced commit returning the base
+   WriteOutcome type; the marker-protected recoverability semantics
+   (ErrWriteNotApplied/ErrWriteIndeterminate) live with the mechanism in 168.017-T, and
+   denied-path audit-failure recovery in 168.019-T. The atomic-vs-indeterminate
+   contradiction is removed.
+3. **Architecture P2 / Correctness P3 (golden cross-check ownership) — RESOLVED.** The
+   producer golden cross-check moved from 170.002-T to the digest-binding owner 170.013-T
+   (plan section, leaf-AC row, and task body); 170.002-T no longer enumerates it.
+4. **Correctness P3 (stale-body double-ownership) — RESOLVED.** The origin plan sections
+   168.003-T, 169.002-T, 170.002-T, 169.010-T, 170.012-T now DELEGATE their carved
+   behavior (role/algo/audit/not_before/decoder-equivalent duplicates) to the cycle-2
+   split tasks instead of re-listing it, so a Ship executor cannot implement it twice.
+5. **Scope P2 (scenario count) — NON-BLOCKING.** 170.016-T and 169.013-T combine
+   role+algo into one parametrized scenario, leaving each task at exactly three executable
+   scenarios (role/algo, not_before or audit, fail-closed audit). Within the ceiling;
+   retained by design.
+
+No reviewer returned FAIL after remediation. Zero open P0/P1 findings remain (the single
+P1 is closed and confirmed by re-review); residual items are non-blocking P2/P3 advisories
+or operator-mandated by design. Remediation context is recorded above, separate from the
+literal `decision:` line.
+
+operator_authorization: approved (operator delegated this cycle-2 Stage review-fix session
+on branch chore/stage-149-s-trust-chain-corrections with explicit direction to resolve the
+consolidated residuals and rerun the full plan-review gate; no blocking/FAIL findings
+remain after remediation).
