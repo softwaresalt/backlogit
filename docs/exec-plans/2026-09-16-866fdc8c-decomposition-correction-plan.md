@@ -936,3 +936,81 @@ session on branch chore/stage-149-s-trust-chain-corrections with explicit direct
 resolve the consolidated in-scope blockers, run plan-harden, and rerun the full plan-review
 gate with architecture, scope, correctness, constitution/standards, and security coverage;
 zero open in-scope P0/P1 remain after remediation).
+
+### Plan Review — cycle 4 (operator-authorized extra bounded cycle)
+
+<!-- plan-review-attempt: 4 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+* **reviewers dispatched this cycle:** Scope Boundary Auditor, Correctness Reviewer, and
+  **Security Reviewer** (three independent persona agents dispatched in parallel over the
+  cycle-4 change surface). The Security Reviewer is the mandatory security-sensitive persona
+  for this trust-chain work.
+* **personas carried forward (cycle-3 PASS inherited):** Constitution Reviewer and
+  Architecture Strategist. Cycle-4 edits are confined to P-002.3 `exempt_verification_command`
+  text, additive P-002.6 `red-deliverable-contract` metadata blocks, dependency-prose
+  alignment, and one task-title rename. These touch neither the plan's `## Constitution Check`
+  / principle coverage nor any task-ownership or dependency-DIRECTION surface (the prose fixes
+  bring prose INTO alignment with pre-existing frontmatter; the red blocks are additive
+  scheduling metadata). The cycle-3 Constitution `pass` and Architecture PASS therefore carry
+  forward unchanged and unweakened.
+* **cycle:** operator-authorized extra bounded review-fix cycle 4 (beyond the normal 3-cycle
+  limit; narrowly scoped to the P1-1 / P1-2 / P2 residual list). This record supersedes the
+  cycle-3 FINAL record for the affected contract surfaces only; all cycle-3 verdicts otherwise stand.
+
+#### Scope of cycle-4 change surface
+
+* **P1-1 (P-002.3 harness-exempt commands):** 168.006-T, 169.006-T, 169.009-T, 170.007-T,
+  170.011-T. Docs-only commands now probe required document CONTENT and run the doc lint gate,
+  emitting `EXEMPT_VERIFY_OK:<task-id>` only after all guards; content probes extended to the
+  AC-required security terms (`rotation` on 168.006-T, `not_after` on 170.007-T).
+  Verification-only 169.009-T runs verbose `go test`, rejects `no tests to run`, and asserts
+  both named `--- PASS: TestAttestationReVerifyGuard_OfflineReverify` and
+  `TestAttestationReVerifyGuard_TamperSwapFailClosed` guards by name and by count (>=2).
+* **P1-2 (P-002.6 red-deliverable contracts):** 168.010-T (closes wave 8; green-makers
+  168.007/168.008/168.009), 169.008-T (closes wave 6; green-maker 169.007), 170.010-T (closes
+  wave 7; green-makers 170.008/170.009). Each block carries the five canonical keys in order
+  with a persistent named `red_selector_command`; closing waves independently recomputed against
+  the M-restricted per-shipment DAG.
+* **P2 (consistency):** dependency prose aligned to frontmatter in 169.012-T
+  (`169.005-T, 169.011-T, 168.015-T`), 170.013-T (`170.002-T`, with 170.011-T labelled a
+  forward reference), 170.014-T (adds `170.008-T`); 170.016-T title renamed to
+  `Token verify role-scoped + pinned-algo + rejection audit` (drops `not_before` ownership,
+  which the body already delegates to 170.002-T).
+
+#### Raw reviewer verdicts (cycle-4)
+
+| Reviewer | Verdict | Open P0/P1 | Headline |
+|---|---|---|---|
+| Scope Boundary Auditor | PASS | none | No scope creep: no new tasks, no behavior beyond the authorized P1-1/P1-2/P2 contract text; changed-file set confined to the 12 authorized tasks. One P3 low-confidence (git-diff not runnable in agent session — closed by Stage: `git diff --stat` shows only the 12 authorized task files + the governed `hooks_queue.jsonl` side-effect of the 170.016 title update). |
+| Correctness Reviewer | PASS | none | All eight P-002.3/P-002.6 contracts EXACTLY match authoritative policy; `EXEMPT_VERIFY_OK` marker last-before-exit on all five; red-block key order, selectors, green-maker closed-set membership, and closing waves (8/6/7) self-consistent and matching independently verified waves. Zero findings, high confidence. |
+| Security Reviewer | PASS | none | Fail-closed contracts PRESERVED: docs-only commands emit the marker only after existence + security-content probe + doc lint gate (no short-circuit, no swallowed exit); red harnesses still assert fail-closed rejection of revoked/role-widened, unsigned-metadata, and replayed/downgraded inputs. Three P3 advisories (probe-coverage `rotation`/`not_after`, named-guard assertion) — two applied this cycle (168.006-T `rotation`, 170.007-T `not_after`), the 169.009-T named-guard assertion applied this cycle. |
+
+#### Remediations applied before gate close (cycle-4)
+
+1. **Security P3 (168.006-T probe coverage) — RESOLVED.** Added `rotation` to the content
+   probe set so the exempt command validates the AC-required key-rotation custody content.
+2. **Security P3 (170.007-T probe coverage) — RESOLVED.** Added `not_after` to the content
+   probe set so the command validates the AC-required token-expiry (validity-window) content.
+3. **Security P3 (169.009-T named-guard assertion) — RESOLVED.** The verification-only command
+   now asserts both specific guard names (`OfflineReverify`, `TamperSwapFailClosed`) in
+   addition to the `>=2` count and the `no tests to run` rejection, closing the "two arbitrary
+   prefix PASS lines" gap.
+4. **Scope P3 (git-diff coverage gap) — CLOSED by Stage.** `git --no-pager diff --stat`
+   confirms exactly the 12 authorized task files changed plus one appended line in the
+   governed `.backlogit/hooks_queue.jsonl` (automatic index/hook side-effect of the governed
+   `backlogit update --title` on 170.016-T); no source, config, or out-of-scope task files touched.
+
+**Zero open P0/P1 findings** across all dispatched personas; the two carried-forward personas
+(Constitution, Architecture) remain PASS from cycle 3 with no cycle-4 surface impact. No
+reviewer returned FAIL. Remediation context above is recorded separately from the literal
+`decision:` line.
+
+operator_authorization: approved (operator explicitly authorized ONE narrowly bounded extra
+Stage review-fix cycle beyond the normal limit on branch
+chore/stage-149-s-trust-chain-corrections to apply exactly the P1-1 P-002.3 harness-exempt
+contract fixes, P1-2 P-002.6 red-deliverable contract blocks, and P2 consistency fixes, then
+run focused policy validation and a final plan review; zero open in-scope P0/P1 remain after
+remediation, so Step 1.5 may proceed).

@@ -156,3 +156,50 @@ merge+closure, THEN 151-S; never overlapping. Downstream PRs MUST land as merge 
 Stage did NOT claim any shipment. Deferred: B633E9B9 (authorization-boundary feature);
 6749D311 (broad trust-anchor crash-recovery/doctor auto-reconciliation subsystem,
 P-021 cycle-3).
+
+## Cycle 4 (operator-authorized extra bounded cycle)
+
+Operator authorized ONE extra bounded review-fix cycle beyond the normal 3-cycle limit,
+scoped to a fixed residual contract list. One new commit on
+`chore/stage-149-s-trust-chain-corrections` (parent = checkpoint b01b1e46; main NOT
+advanced, remains 40a596eb; no amend/push/PR). Changes are contract-text-only — no Go
+implemented, no new tasks, no membership change.
+
+**P1-1 — P-002.3 harness-exempt commands (5 tasks):** 168.006-T, 169.006-T, 169.009-T,
+170.007-T, 170.011-T `exempt_verification_command` rewritten. Docs-only commands now probe
+required document CONTENT and run the doc lint gate, emitting `EXEMPT_VERIFY_OK:<task-id>`
+only after all guards; probe sets extended to AC-required security terms (`rotation` on
+168.006-T, `not_after` on 170.007-T). Verification-only 169.009-T uses verbose `go test`,
+rejects `no tests to run`, and asserts both named guards `TestAttestationReVerifyGuard_OfflineReverify`
+and `TestAttestationReVerifyGuard_TamperSwapFailClosed` by name and count (>=2).
+
+**P1-2 — P-002.6 red-deliverable contracts (3 tasks):** 168.010-T (closes wave 8;
+green-makers 168.007/168.008/168.009), 169.008-T (closes wave 6; green-maker 169.007),
+170.010-T (closes wave 7; green-makers 170.008/170.009). Five canonical keys in order,
+persistent named `red_selector_command` prefixes referenced in each body; closing waves
+recomputed against the M-restricted per-shipment DAG.
+
+**P2 — consistency (4 tasks):** dependency prose aligned to frontmatter in 169.012-T
+(`169.005-T, 169.011-T, 168.015-T`), 170.013-T (`170.002-T`; 170.011-T = forward reference),
+170.014-T (adds `170.008-T`); 170.016-T title renamed to
+`Token verify role-scoped + pinned-algo + rejection audit` (not_before ownership dropped;
+body already delegates not_before to 170.002-T).
+
+**Validation (cycle-4):** DAG ACYCLIC (50 168/169/170 task nodes Kahn topo-sorted; full
+53 task+feature nodes unchanged); memberships 149-S=20 / 150-S=16 / 151-S=17 unchanged;
+red-deliverable closing waves 8/6/7 independently verified with every green-maker strictly
+later in wave order than its red task; `backlogit doctor` reports only pre-existing
+016/106-series orphans (no 168/169/170 issue); sync clean (0 parse_failures, 1555 artifacts).
+
+**Plan review cycle-4: decision PASS, zero open P0/P1.** Dispatched Scope Boundary Auditor,
+Correctness Reviewer, Security Reviewer (Correctness 0 findings high-confidence; Security 0
+P0/P1 with 3 P3 advisories all applied this cycle; Scope 0 creep). Constitution and
+Architecture PASS carried forward from cycle 3 — cycle-4 surface touches neither the
+`## Constitution Check` / principle coverage nor task-ownership / dependency-direction.
+
+**Serial execution reaffirmed:** 149-S -> 150-S -> 151-S; 150-S and 151-S ship serially
+through merge+closure under P-001 and shared reconcile/event surfaces. Downstream PRs land
+as merge commits (Constitution XI).
+
+Step 1.5 may proceed: the trust-chain staging artifacts pass the final gate with zero open
+in-scope P0/P1.
