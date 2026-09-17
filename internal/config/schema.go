@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -29,6 +30,7 @@ type WorkspaceConfig struct {
 	QueueLayout         *QueueLayoutConfig             `yaml:"queue_layout"`
 	CheckpointRetention CheckpointRetention            `yaml:"checkpoint_retention,omitempty"`
 	Telemetry           *TelemetryConfig               `yaml:"telemetry,omitempty"`
+	TrustAnchors        []TrustAnchor                  `yaml:"trust_anchors"`
 	// DurableWrites opts the workspace into the durable_writes fsync protocol
 	// (123-F): when true, the shared write primitives fsync file content and
 	// (on POSIX) the parent directory so a crash/power-loss cannot lose a
@@ -45,6 +47,18 @@ type WorkspaceConfig struct {
 	// Nil is equivalent to the zero value; Normalize fills in the resolved
 	// repository default branch when TrustedRefs is unset.
 	Reconcile *ReconcileConfig `yaml:"reconcile,omitempty"`
+}
+
+// TrustAnchor declares a verification trust anchor.
+type TrustAnchor struct {
+	ID           string    `yaml:"id"`
+	Role         string    `yaml:"role"`
+	Algo         string    `yaml:"algo"`
+	PublicKeyRef string    `yaml:"public_key_ref"`
+	Fingerprint  string    `yaml:"fingerprint"`
+	Status       string    `yaml:"status"`
+	NotBefore    time.Time `yaml:"not_before"`
+	NotAfter     time.Time `yaml:"not_after"`
 }
 
 // ReconcileConfig configures governed shipment-reconciliation evidence trust
