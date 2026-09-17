@@ -83,3 +83,11 @@ Ownership is deliberately paused. Do not resume or reclaim `149-S` until the
 repository-wide test, lint, and format baseline is green through a separately
 authorized release unit. When resumed, re-run Step 4.6 wave convergence before
 admitting the next dependency-correct frontier, `168.011-T`.
+
+## Checkpoint disposition
+
+After the queued state, exact task census, pushed handback commit, and unforced
+topology result were verified, Ship resolved
+`checkpoint-20260917-215709.json` at
+`2026-09-17T23:10:58.5719794Z`. No replacement Ship checkpoint was created
+because shipment ownership is deliberately paused for baseline remediation.
