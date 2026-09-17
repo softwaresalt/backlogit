@@ -42,7 +42,9 @@ consequence of the declaration/behavior split, and 168.010-T's RED-ordering pros
 was synchronized with its frontmatter (see item-5 remediation). All other
 hardening tasks are unchanged.
 
-**Constitution Check (mandatory, NON-NEGOTIABLE).** This correction is validated
+## Constitution Check
+
+This correction is validated (mandatory, NON-NEGOTIABLE)
 against `.github/instructions/constitution.instructions.md`:
 
 | Principle | Check | Result |
@@ -50,10 +52,10 @@ against `.github/instructions/constitution.instructions.md`:
 | I. Safety-First Go | No source written by Stage; typed-error/fail-closed AC preserved on every behavior task | PASS |
 | II. Test-First (NON-NEGOTIABLE) | Every behavior-bearing split declares a RED harness observed failing before impl; declaration tasks carry a source-shape (go/ast) harness | PASS |
 | III. Workspace Isolation / Security Boundaries | `trust_anchors` parsing/schema validation placed in `internal/config`; policy/resolution/mutation in `internal/core` (item 10); external-pin gate fail-closed | PASS |
-| IV. CLI Workspace Containment (NON-NEGOTIABLE) | CLI split into thin wiring tasks (168.013-T) delegating to core; no security-state logic in CLI layer. REASSESSED for external protected state: the external-pin ROOT OF TRUST is a read-only trust reference, not a filesystem write target; every filesystem WRITE (config, status, durable audit, nonce ledger, recovery marker) stays within the workspace `.backlogit` tree; the `public_key_ref` structural contract (168.018-T) rejects absolute paths, `..`, and URL schemes so no ref escapes containment | PASS |
-| V. Structured Observability | Durable audit event required on every trust-anchor mutation (168.005-T); write-outcome taxonomy + recovery marker (168.017-T); denied-mutation audit (168.019-T) | PASS |
+| IV. CLI Workspace Containment (NON-NEGOTIABLE) | CLI split into thin wiring tasks (168.013-T) delegating to core; no security-state logic in CLI layer. REASSESSED (cycle-3 item 4) for external protected state: the external-pin ROOT OF TRUST is a read-only trust reference, not a filesystem write target; every mutable filesystem WRITE (config, status, durable audit, nonce ledger projection, indeterminate marker) stays within the workspace `.backlogit` tree; external revocation/tombstone (168.009-T) and rollback-resistant nonce compare-and-consume (170.008-T) authority is modeled through an INJECTED NON-FILESYSTEM provider (or a signed/read-only authority) — NO mutable filesystem write outside the workspace is authorized; the workspace holds only a contained projection. The `public_key_ref` structural contract (168.018-T) rejects absolute paths, `..`, and URL schemes so no ref escapes containment | PASS |
+| V. Structured Observability | Durable audit event required on every trust-anchor mutation (168.005-T); write-outcome taxonomy + fail-closed audit + operator-visible indeterminate marker, incl. denied-path `ErrAuditNotPersisted` (168.017-T; 168.019-T withdrawn and folded, cycle-3 item 13) | PASS |
 | VI. Single Responsibility | Declaration split from behavior; parser split from verification; every task single-domain (config OR core OR cli OR docs) | PASS |
-| VII. Destructive Command Approval (NON-NEGOTIABLE) | REASSESSED: trust-anchor REVOKE / ROTATE / tombstone ARE destructive security-state mutations, not benign edits. They are classified destructive and MUST require explicit operator approval / safety-mode gating, recorded as a binding AC on the mutation surface (168.013-T CLI + 168.005-T core). Stage itself runs no destructive commands; governed backlogit mutations only; append-only archive untouched | PASS (classification recorded) |
+| VII. Destructive Command Approval (NON-NEGOTIABLE) | REASSESSED (cycle-3 item 3): trust-anchor REVOKE / ROTATE / tombstone ARE destructive security-state mutations. Explicit operator approval is ALWAYS required; any safety-mode gate is ADDITIONAL, never an alternative to approval. The core refuses the mutation unless presented with VERIFIABLE authorization EVIDENCE (a signed/verifiable operator-approval token or capability the core validates) — an unproven caller boolean is NOT authorization evidence — recorded as a binding AC on the mutation surface (168.013-T CLI produces the evidence + 168.005-T core validates it). Stage itself runs no destructive commands; governed backlogit mutations only; append-only archive untouched | PASS (classification recorded) |
 | VIII. Explicit Safety Modes | No elevated-risk mode introduced; destructive security-state mutations gated by the VII approval classification; no relaxation of existing fail-closed controls | PASS |
 | IX. Git-Friendly Persistence | All backlog artifacts, plan, and memory are line-oriented Markdown/JSONL written by governed writers with deterministic ordering; append-only archive history is never rewritten | PASS |
 | X. Agent Context Efficiency | Every task bounded to <=3 executable scenarios and a single domain; the scenario matrix (item 9) keeps leaves small; plan/memory kept concise | PASS |
@@ -162,25 +164,31 @@ deterministic ORDERING and returns the base `WriteOutcome` type; the marker-prot
 sequenced-commit protocol, the durable **write-outcome taxonomy**
 (`ErrWriteNotApplied` no state changed / retry-safe vs `ErrWriteIndeterminate` state
 may be partially applied / retry-unsafe), retry/compensation boundaries, and the
-recovery-visibility marker are OWNED by **168.017-T**; denied-mutation
-audit-write-failure + recovery reconciliation is owned by **168.019-T**. This keeps
+recovery-visibility marker are OWNED by **168.017-T**; denied-path
+audit-write-failure handling is folded into **168.017-T** (cycle-3 item 13: the cycle-2
+168.019-T is withdrawn; its minimal denied-path `ErrAuditNotPersisted` fail-closed
+outcome moves into 168.017-T, and the broad crash-recovery / doctor auto-reconciliation
+subsystem is deferred to P-021 as out of scope, not implemented in 149-S/150-S/151-S).
+This keeps
 each task within the 2-hour/single-domain limit and removes the atomic-vs-indeterminate
 contradiction (guarantee language lives with the mechanism in 168.017-T).
 
-**Constitution VII (cycle-2) — destructive-op authorization.** rotate and revoke are
-destructive security-state mutations. The core mutation refuses to apply a
-rotate/revoke unless it receives an explicit approved-authorization argument (set only
-after the 168.013-T CLI operator-approval / safety-mode gate passes), so even a
-programmatic core caller cannot bypass the gate.
+**Constitution VII (cycle-3 item 3) — destructive-op authorization.** rotate and revoke
+are destructive security-state mutations. Explicit operator approval is ALWAYS required,
+and any safety-mode gate is ADDITIONAL, never an alternative. The core refuses to apply a
+rotate/revoke unless it is presented with VERIFIABLE authorization EVIDENCE — a
+signed/verifiable operator-approval token or capability the core itself validates — NOT a
+bare caller-supplied boolean the core would have to trust; an unproven caller boolean is
+not authorization evidence, so even a programmatic core caller cannot forge approval.
 **AC:** (1) RED test first; (2) add/rotate/revoke mutate config+status in fixed
 order (a)->(e); (3) an unpinned-fingerprint mutation is rejected (fail-closed) at
 step (b) before any state change **AND the denied mutation persists a durable audit
 event (Security-F2 remediation: denials are audited, not only successes)**; (4) each
 successful mutation persists a durable audit event as the final ordered step (NOT
 claimed cross-file atomic; recoverability owned by 168.017-T); (5) a rotate/revoke
-without the explicit approved-authorization argument is refused with a typed error and
-no state change (Constitution VII); (6) the core declares and returns the base
-`WriteOutcome` type consumed by 168.017-T; (7) tests GREEN.
+without VERIFIABLE operator-approval evidence (bare boolean, absent, invalid, or forged)
+is refused with a typed error and no state change (Constitution VII); (6) the core
+declares and returns the base `WriteOutcome` type consumed by 168.017-T; (7) tests GREEN.
 
 ### 168.013-T (new, thin CLI wiring)
 
@@ -296,10 +304,13 @@ NOT yet match this target — `prepareShipmentReconcileEvidence` REDUNDANTLY rec
 the digest under the Phase-A membership lock at
 `internal/core/shipment_reconcile_evidence.go:186`. The earlier plan claim that the
 digest is "never recomputed under lock" was FALSE. This docs task specifies the
-drift-free target; the redundant under-lock recomputation is removed by behavior task
-**170.015-T** (which threads the single pre-lock digest and deletes the second
-computation site). A docs-only task does not claim behavior no task owns; 170.015-T
-owns it.
+drift-free target; per cycle-3 item 12 the redundant under-lock recomputation is left in
+place and documented as drift-free (see the WITHDRAWN note below).
+**170.015-T is WITHDRAWN**: because the under-lock recomputation is
+DETERMINISTIC over the same normalized delta it yields a byte-identical digest and
+introduces NO drift, so the design DOCUMENTS the current authoritative
+producer/recompute behavior accurately rather than mandating a code change. A docs-only
+task does not claim behavior no task owns; it describes existing behavior only.
 
 **Producer linkage (Architecture-review P1 remediation).** `request_identity_digest`
 is *produced* by the existing reconcile/event path inside the locked 167.008-T
@@ -355,10 +366,12 @@ are delegated to **170.018-T** (cycle-2 split); (5) tests GREEN.
 Token verification primitive (fail-closed).
 **AC:** (1) the token signature verifies via a 168.003-resolved key; (2) binding to
 the target shipment-id is enforced (wrong shipment fails closed with a typed error);
-(3) not_after is enforced (expired fails closed); (4) role-scoped resolution +
-pinned-algo enforcement (Security-F1/F4), not_before/issued-at enforcement
-(Security-F5), and the fail-closed rejection audit (Security-F2) are delegated to
-**170.016-T** (cycle-2 width split); (5) the request-identity-digest binding AND the
+(3) the token VALIDITY WINDOW is enforced — both not_before/issued-at (not-yet-valid)
+and not_after (expired) fail closed with typed errors (cycle-3 item 14: not_before
+folded here into the validity-window seam); (4) role-scoped resolution +
+pinned-algo enforcement (Security-F1/F4) and the fail-closed rejection audit
+(Security-F2) are delegated to
+**170.016-T** (cycle-2 width split; not_before no longer delegated there); (5) the request-identity-digest binding AND the
 producer GOLDEN cross-check against actual 167.008-T output are delegated to
 **170.013-T** (cycle-2 item 5) — this origin task no longer enumerates that behavior.
 
@@ -371,7 +384,8 @@ window).** TDD: RED harness first.
 consumed nonces; (3) a replayed token whose nonce is already recorded is rejected
 fail-closed with a typed replay error; (4) consumed nonces are pruned past token
 not_after; (5) the ATOMIC check-then-consume seam and the consume-audit event are
-delegated to **170.017-T** (cycle-2 split).
+delegated to the single nonce-consume owner **170.008-T** (cycle-3 item 11; the cycle-2
+carve 170.017-T is WITHDRAWN and folded into 170.008-T).
 
 ### 170.004-T (AC backfill)
 
@@ -483,22 +497,22 @@ grows.
 | Task | Cycle-2 pre-count | Verdict | Carved task | Post (origin / carved) |
 |---|---|---|---|---|
 | 168.003-T | 5 (base 3 + F1 role-scope + F4 algo-pin) | SPLIT | 168.020-T (role-scoped + pinned-algo) | 3 / 3 |
-| 168.017-T | 4 (pre-mut NotApplied, post-mut Indeterminate, recovery, denied-audit) | SPLIT | 168.019-T (denied-mutation audit-fail + recovery) | 3 / 3 |
+| 168.017-T | 3 (pre-mut NotApplied, post-mut Indeterminate, denied-path audit-fail) | REDUCED (cycle-3 item 13) | 168.019-T WITHDRAWN/folded; broad auto-reconciliation deferred to P-021 | 3 / — |
 | 169.002-T | 5 (base 3 + role/algo + fail-closed audit) | SPLIT | 169.013-T (role/algo + audit) | 3 / 3 |
 | 169.007-T | 4 (persist-envelope, offline re-verify, tamper/swap, stale-branch removal) | SPLIT | 169.014-T (tamper/swap fail-closed + stale-branch absence) | 2 / 3 |
 | 169.010-T | 4 (well-formed, malformed, exact-byte dup all depths, decoder-equiv dup all depths) | SPLIT | 169.015-T (case-fold/escape dup all depths) | 3 / 3 |
-| 170.002-T | 5 (base 3 + role/algo + not_before + audit; golden moved out) | SPLIT | 170.016-T (role/algo/not_before/audit); golden -> 170.013-T | 3 / 3 |
-| 170.003-T | 4 (durable record, replay-reject, prune, atomic-consume+audit) | SPLIT | 170.017-T (atomic check-then-consume + audit) | 3 / 3 |
+| 170.002-T | 5 (base 3 + role/algo + not_before + audit; golden moved out) | SPLIT | 170.016-T (role/algo + audit); not_before FOLDED into 170.002 validity window (cycle-3 item 14); golden -> 170.013-T | 3 / 3 |
+| 170.003-T | 4 (durable record, replay-reject, prune, atomic-consume+audit) | FOLDED (cycle-3 item 11) | 170.017-T WITHDRAWN; atomic-consume+audit seam folded into nonce owner 170.008-T | 3 / — |
 | 170.006-T / 170.014-T | 6 across the pair | RE-PARTITIONED (no new leaf) | exact partition {valid, self-minted, expired} / {wrong-shipment, wrong-request-identity, replay} | 3 / 3 |
 | 170.012-T | 4 (well-formed, malformed, exact-byte dup all depths, decoder-equiv dup all depths) | SPLIT | 170.018-T (case-fold/escape dup all depths) | 3 / 3 |
 
-**170.015-T (new behavior, item 3).** Not a scenario split: created because the
-docs design task 170.011-T described drift-free behavior that no task owned. Grounded
-in authoritative code, `prepareShipmentReconcileEvidence` redundantly recomputes
-`shipmentReconcileRequestIdentityDigestForNormalized` under the Phase-A membership
-lock (`internal/core/shipment_reconcile_evidence.go:186`). 170.015-T removes that
-recomputation and threads the single pre-lock digest (3 scenarios, RED-first,
-depends on 170.011-T, member of 151-S).
+**170.015-T WITHDRAWN (cycle-3 item 12).** The cycle-2 de-dup behavior task is REMOVED
+as outside the authorized digest-design scope: `prepareShipmentReconcileEvidence`
+recomputes `shipmentReconcileRequestIdentityDigestForNormalized` under the Phase-A
+membership lock (`internal/core/shipment_reconcile_evidence.go:186`), but that recompute
+is DETERMINISTIC over the same normalized delta and therefore byte-identical/drift-free,
+so 170.011-T now DOCUMENTS the current authoritative behavior accurately rather than
+mandating its removal. No behavior task is needed; the removal reduces scope.
 
 **Hardening recount.** The ten hardening tasks (168.007-010, 169.007-009,
 170.008-010) were recounted; 169.007-T exceeded four scenarios and was split
@@ -510,15 +524,18 @@ split). All ten now carry `size: S` / `size_source: agent` /
 
 | Task | Depends-on | Domain | Scope | Shipment |
 |---|---|---|---|---|
-| 168.019-T | 168.017-T | core | Denied-mutation audit-write-failure + recovery reconciliation | 149-S |
 | 168.020-T | 168.003-T | core | Resolver role-scoped (F1) + pinned-algo (F4) binding | 149-S |
 | 169.013-T | 169.002-T | core | Attestation role-scoped + pinned-algo + fail-closed audit (F1/F4/F2) | 150-S |
-| 169.014-T | 169.007-T, 169.008-T | core | Doctor attestation tamper/swap fail-closed + stale-branch absence | 150-S |
+| 169.014-T | 169.007-T, 169.008-T | core | Doctor attestation tamper/swap fail-closed + legacy-branch removal (single owner, core-only, cycle-3 item 10) | 150-S |
 | 169.015-T | 169.010-T | core | Attestation JSON case-fold/escape duplicate rejection at every depth | 150-S |
-| 170.015-T | 170.011-T | core | Thread precomputed reconcile digest; remove under-lock recompute (behavior owner) | 151-S |
-| 170.016-T | 170.002-T | core | Token role-scoped + pinned-algo + not_before + fail-closed audit | 151-S |
-| 170.017-T | 170.003-T | core | Token nonce atomic check-then-consume + consume audit | 151-S |
+| 170.016-T | 170.002-T | core | Token role-scoped + pinned-algo + fail-closed rejection audit + audit-write-failure contract (not_before folded to 170.002, cycle-3 item 14) | 151-S |
 | 170.018-T | 170.012-T | core | Token JSON case-fold/escape duplicate rejection at every depth | 151-S |
+
+Three cycle-2 tasks were WITHDRAWN in cycle 3 to remove over-expansion: **168.019-T**
+(denied-path audit-fail folded into 168.017-T; broad recovery deferred to P-021, item 13),
+**170.015-T** (digest de-dup out of scope; 170.011-T now documents the drift-free
+behavior, item 12), and **170.017-T** (nonce atomic-consume+audit folded into the single
+owner 170.008-T, item 11).
 
 Each cycle-2 task carries `size: S`, `size_source: agent`,
 `size_ruleset_version: stage-2h-rule-v1`, at least one checkable AC, and RED-first
@@ -546,19 +563,33 @@ The **closed set** of confirmed docs-only, P-002.1-harness-exempt tasks is exact
 | 170.007-T | Operator docs + 167.015-T linkage note | Prose only; markdownlint gate |
 | 170.011-T | Design doc: request-identity-digest contract | Design/spec artifact under `docs/design-docs/`; markdownlint gate; no executable behavior |
 
-These four carry the canonical labels `docs-only,p002.1-harness-exempt`. **Contract:**
-a P-002.1-harness-exempt task MUST (1) produce only markdown/design artifacts, (2)
-declare markdownlint (or design-review) as its gate, and (3) contain NO Go source,
+These four carry the canonical label `harness-exempt` (plus the descriptive `docs-only`
+label) and each embeds the exact P-002.1 harness-exemption-contract block
+(delimited by `<!-- BEGIN:harness-exemption-contract -->` / `<!-- END:... -->`) with the
+five canonical keys `harness_exemption_class: docs-only`, `harness_exemption_reason`,
+`harness_owner: none`, `exempt_verification_command` (an exact runnable command), and
+`exempt_precondition: must-fail-before-deliverable`. **Contract:**
+a docs-only harness-exempt task MUST (1) produce only markdown/design artifacts, (2)
+carry a runnable `exempt_verification_command` that fails before the deliverable exists
+and passes after, and (3) contain NO Go source,
 test, or config change. **No behavior- or test-bearing task is exempt** — every task
 outside this closed set retains its RED/source-shape harness requirement. 170.011-T
 qualifies solely because its deliverable is a specification document; the behavior it
 specifies is implemented and harnessed by 170.001-T/170.012-T/170.002-T.
 
-**Cycle-2 exemption note (item 7/8).** None of the nine cycle-2 tasks (168.019-T,
-168.020-T, 169.013-T, 169.014-T, 169.015-T, 170.015-T, 170.016-T, 170.017-T,
-170.018-T) is docs-only; every one is behavior-bearing and carries a RED-first
-compiling-harness requirement observed before implementation. The closed docs-only
-set above is unchanged at exactly four tasks.
+**Verification-only exempt task (P-002.1, separate from the docs-only set).** 169.009-T
+is a `verification-only` harness-exempt task (cycle-3 item 10): it records green
+re-verify/fail-closed evidence for behavior delivered by 169.007-T (persist) and
+169.014-T (tamper/swap owner) and commits NO new red assertion. It carries the
+`harness-exempt` label and the exact exemption-contract block with
+`harness_exemption_class: verification-only` and `harness_owner: none`. Its previous
+claim of OWNING tamper/swap detection is removed; the single owner is 169.014-T.
+
+**Cycle-2 exemption note (item 7/8).** None of the six surviving cycle-2 tasks (168.020-T,
+169.013-T, 169.014-T, 169.015-T, 170.016-T, 170.018-T) is docs-only; every one is
+behavior-bearing and carries a RED-first compiling-harness requirement observed before
+implementation. (The withdrawn 168.019-T, 170.015-T, and 170.017-T are removed in cycle
+3.) The closed docs-only set above is unchanged at exactly four tasks.
 
 
 
@@ -623,19 +654,41 @@ Release-unit edges preserved: 150-S depends-on 149-S; 151-S depends-on 149-S;
 150-S (169-F attestation) and 151-S (170-F authorization) are dependency-independent
 in feature logic, they touch shared reconcile/event surfaces
 (`shipment_reconcile_evidence.go` / `shipment_reconcile_event.go` — e.g. the
-request-identity digest threaded by 170.015-T and the event binding upgraded by
+request-identity digest recomputed deterministically in the reconcile evidence path and
+the event binding upgraded by
 169.007-T), so overlapping Ship work would race those surfaces. The chain is now
 strictly serial 149-S -> 150-S -> 151-S through merge and closure under P-001.
 Verified in-backlog: `151-S depends-on {149-S, 148-S, 150-S}`.
 
-## Cycle-2 shipment membership deltas (item 6)
+### Cycle-3 dependency corrections (item 9 — frontmatter/body/plan synchronized)
 
-* 149-S: add 168.019-T, 168.020-T -> **21 items**
-* 150-S: add 169.013-T, 169.014-T, 169.015-T -> **16 items**
-* 151-S: add 170.015-T, 170.016-T, 170.017-T, 170.018-T -> **19 items**
+The cycle-2 leaf-split edges above are superseded for four tasks; the following are the
+authoritative final task edges, matching each task's frontmatter and body prose:
 
-Final verified membership after cycle 2: **149-S = 21, 150-S = 16, 151-S = 19**
-(feature + all children, confirmed via `backlogit shipment get`).
+* 169.012-T depends-on {169.005-T, 169.011-T, 168.015-T} (its expired/revoked/wrong-shipment
+  cases require the attestation-verify behavior owner 169.011-T and the resolver-negative
+  owner 168.015-T, added to the retained carve-origin edge 169.005-T).
+* 170.006-T depends-on {170.002-T, 170.003-T, 170.013-T} (matches its required
+  validity/nonce/digest-binding prerequisites; the edge to 170.005-T is removed).
+* 170.014-T depends-on {170.002-T, 170.003-T, 170.013-T, 170.008-T} (depends on the
+  digest-binding owner 170.013-T and the final nonce owner 170.008-T, not only 170.006-T).
+* 170.004-T depends-on 170.008-T (wired to the single nonce compare-and-consume owner).
+* 169.009-T depends-on 169.014-T (verification-only guard depends on the tamper/swap owner).
+
+All other cycle-1/cycle-2 edges are unchanged. A full Kahn topological sort over the 53
+in-scope nodes with these final edges yields a complete ordering (sorted = 53) => ACYCLIC.
+
+## Cycle-2 shipment membership deltas (item 6) — revised by cycle 3
+
+* 149-S: cycle-2 added 168.019-T, 168.020-T; cycle-3 WITHDREW 168.019-T -> net +1 (168.020-T)
+* 150-S: add 169.013-T, 169.014-T, 169.015-T -> **16 items** (unchanged in cycle 3)
+* 151-S: cycle-2 added 170.015-T, 170.016-T, 170.017-T, 170.018-T; cycle-3 WITHDREW
+  170.015-T and 170.017-T -> net +2 (170.016-T, 170.018-T)
+
+**Final verified membership after cycle 3: `149-S = 20, 150-S = 16, 151-S = 17`**
+(feature + all children, confirmed via `backlogit` membership read and a Kahn DAG check
+of 53 in-scope nodes = ACYCLIC). The stale cycle-1/cycle-2 final counts (149-S = 21 /
+151-S = 19) are superseded by these cycle-3 figures.
 
 ## Shipment membership deltas
 
@@ -647,18 +700,54 @@ Final verified membership after cycle 2: **149-S = 21, 150-S = 16, 151-S = 19**
   170-F already present) -> 15 items
 
 Final verified membership: **149-S = 19, 150-S = 13, 151-S = 15** (feature + all
-children, confirmed via `backlogit shipment get`).
+children, confirmed via `backlogit shipment get`). **[SUPERSEDED — cycle-1 snapshot;
+the authoritative final counts are 149-S = 20, 150-S = 16, 151-S = 17 in the cycle-3
+revised section above.]**
 
 ## Plan Hardening Assessment
 
-**Requires plan hardening: no.** This is a decomposition-and-acceptance-criteria
-correction of an already-hardened, already-reviewed plan (the base plan passed
-review PASS-after-remediation; the security vectors 3B661FCE / BFF76433 / 4E210DB4
-are already encoded in the untouched hardening tasks 168.007-010, 169.007-009,
-170.008-010 with fail-closed AC). The corrections split declaration from behavior,
-add checkable AC, and add a design predecessor; none introduce new security surface
-or relax an existing fail-closed control. RED-first ordering is preserved for every
-behavior-bearing split. No hardening signals are introduced; proceed to plan review.
+**Requires plan hardening: yes.** Although this is a decomposition-and-acceptance-criteria
+correction of an already-reviewed base plan, the corrected work directly governs
+**authentication/authorization** (trust-anchor key resolution, attestation and token
+verification), **destructive security-state mutation** (anchor rotate/revoke/tombstone),
+**external integration** (non-filesystem revocation and nonce authorities), and
+**rollback-resistant state** (single-consume nonce ledger). Under the plan-harden skill
+these signals REQUIRE explicit hardening. The `## Plan Hardening` section below records the
+ProposedAction / ActionRisk / approval / rollback / verification contracts for every
+destructive or security-sensitive seam; only after it is complete does the plan proceed to
+the plan-review gate.
+
+## Plan Hardening
+
+Every high-risk seam is modeled as a governed action with an explicit approval and
+rollback/compensation contract. Destructive security-state operations (rotate, revoke,
+tombstone) ALWAYS require explicit operator approval; a safety-mode classification is an
+ADDITIONAL guard, never an alternative to approval. The core MUST treat authorization as
+verifiable evidence threaded from the CLI boundary — never a bare caller-supplied boolean.
+
+| ProposedAction | ActionRisk | Approval / classification | Rollback / compensation | Verification | Owner task |
+|---|---|---|---|---|---|
+| Rotate trust anchor (replace active key material) | HIGH — a wrong rotation can lock out valid signers or admit a rogue key | Explicit operator approval REQUIRED + destructive-safety classification (additional) | Prior anchor retained as revoked-not-erased; rotation is append-only so the previous active anchor is recoverable | Durable audit event on approve AND deny; RED test asserts unapproved rotate fails closed | 168.005-T (mutation), 168.013-T (CLI evidence) |
+| Revoke trust anchor | HIGH — removes a trusted signer; irreversible trust withdrawal | Explicit operator approval REQUIRED + safety classification (additional) | Tombstone marker (revoked, not physically deleted) preserves audit lineage; no external-path erasure | Fail-closed resolver negative (168.015-T); audit event on deny and success | 168.005-T, 168.009-T |
+| Tombstone / external revocation authority read | MEDIUM — external authority unavailability must fail closed, not open | No mutation of external protected state; authority modeled as a **non-filesystem, signed/read-only provider** injected into core; workspace holds only a contained projection | Workspace-contained projection is regenerable; no mutable write outside the workspace (Principle IV) | Injected-provider tests prove unreachable authority => fail closed | 168.009-T, 170.008-T |
+| Atomic nonce compare-and-consume | HIGH — replay/double-spend if consume is non-atomic; rollback-resistant once consumed | No operator approval (automated verification path) but consume is single-writer atomic via injected provider | Consumed-but-audit-missing is an explicit INDETERMINATE outcome (no rollback that could re-enable replay); recovery marker emitted, replay stays blocked | RED tests: valid consume, replay reject, consumed-but-audit-missing indeterminate | 170.008-T (single owner) |
+| Config/status mutation + durable audit commit | HIGH — a mutation whose audit is lost is unauditable security state | Ordered: mutate-then-audit; `ErrWriteNotApplied` (nothing changed, retry-safe) vs `ErrWriteIndeterminate` (partial, retry-unsafe) | On indeterminate, emit recovery-visibility marker; denied-path audit failure surfaces `ErrAuditNotPersisted`; broad auto-reconciliation deferred to P-021 (stash 6749D311) | Injected write-failure tests prove each branch (168.017-T) | 168.005-T, 168.017-T |
+
+**Containment (Principle IV).** No planned operation writes mutable filesystem state outside
+the workspace. External trust/revocation/nonce authority is modeled through an injected
+non-filesystem provider or a signed read-only authority plus a workspace-contained projection;
+168.009-T and 170.008-T are explicitly constrained to reject external-path writes.
+
+**Approval evidence (Principle VII).** rotate/revoke/tombstone are destructive
+security-state operations. The CLI (168.013-T) captures explicit operator approval and threads
+it to core as verifiable evidence; core (168.005-T) MUST NOT trust an unproven caller boolean
+as authorization. Safety-mode classification is additional and never substitutes for approval.
+
+**Merge-history (Principle XI).** Downstream Ship PRs for 149-S/150-S/151-S MUST land as merge
+commits; squash and rebase-merge are prohibited so the serial 149->150->151 history is preserved.
+
+After hardening, RED-first ordering is preserved for every behavior-bearing split and no
+existing fail-closed control is relaxed; the plan proceeds to the plan-review gate below.
 
 ## Plan Review
 
@@ -768,7 +857,9 @@ decision: PASS
    atomic in-core commit" to a deterministic sequenced commit returning the base
    WriteOutcome type; the marker-protected recoverability semantics
    (ErrWriteNotApplied/ErrWriteIndeterminate) live with the mechanism in 168.017-T, and
-   denied-path audit-failure recovery in 168.019-T. The atomic-vs-indeterminate
+   denied-path audit-failure recovery in 168.019-T (**withdrawn cycle-3 item 13; folded
+   into 168.017-T as the minimal `ErrAuditNotPersisted` denied-path contract, broad
+   recovery deferred to P-021 stash 6749D311**). The atomic-vs-indeterminate
    contradiction is removed.
 3. **Architecture P2 / Correctness P3 (golden cross-check ownership) — RESOLVED.** The
    producer golden cross-check moved from 170.002-T to the digest-binding owner 170.013-T
@@ -791,3 +882,57 @@ operator_authorization: approved (operator delegated this cycle-2 Stage review-f
 on branch chore/stage-149-s-trust-chain-corrections with explicit direction to resolve the
 consolidated residuals and rerun the full plan-review gate; no blocking/FAIL findings
 remain after remediation).
+
+### Plan Review — cycle 3 (FINAL)
+
+<!-- plan-review-attempt: 3 -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+* **reviewers:** Scope Boundary Auditor, Correctness Reviewer, Architecture
+  Strategist, Constitution Reviewer, and **Security Reviewer** (five independent
+  persona agents dispatched in parallel on this plan document after plan-harden; the
+  Security Reviewer and Constitution Reviewer are the mandatory security-sensitive and
+  standards personas for this destructive-mutation trust-chain plan — items A2, 16).
+* **cycle:** review-fix cycle 3 (FINAL permitted cycle; this is the authoritative final
+  record and supersedes the cycle-1 and cycle-2 records above).
+
+#### Raw reviewer verdicts (cycle-3)
+
+| Reviewer | Verdict | Open P0/P1 | Headline |
+|---|---|---|---|
+| Scope Boundary Auditor | PASS | none | Scope REDUCED as directed: 168.019-T/170.015-T/170.017-T withdrawn and consistently reflected; P-021 stash 6749D311 captures deferred recovery subsystem; no new release units; membership confined to 149-S/150-S/151-S; all tasks single-domain <=3 scenarios. Three P3 doc-staleness nits. |
+| Correctness Reviewer | ADVISORY | none | Removed-task refs CLEAN; membership 20/16/17 MATCH; serial chain confirmed; DAG ACYCLIC; 170.011-T correctly documents drift-free under-lock recompute (code-verified at shipment_reconcile_evidence.go:186). One P2 plan-vs-artifact edge-text inconsistency on 169.012-T. |
+| Architecture Strategist | PASS | none | No config->core or docs->behavior inversion; single-owner integrity for nonce (170.008-T) and tamper/swap (169.014-T); WriteOutcome base/variant layering correct. Three P3 (one medium: 168.017-T body/frontmatter edge mismatch). |
+| Constitution Reviewer | PASS | none | `## Constitution Check` H2 + `Constitution Check: pass` present; I-XI incl. IX/X explicit; XI not N/A (merge-commit constraint); IV containment and VII destructive-approval owned by checkable ACs; `## Plan Hardening` present with ProposedAction/ActionRisk/approval/rollback; `Requires plan hardening: yes`. Two low P3. |
+| Security Reviewer | ADVISORY | none | Fail-closed spine fully owned: role-scoped resolution (F1/F4), denial+rejection audit (F2), single atomic nonce consume with no-rollback indeterminate (F3), workspace containment, exact + decoder-equivalent JSON duplicate rejection at every depth. Cycle-2 P1 (VII approval gate) CLOSED and confirmed. One P3 (approval-evidence trust-root provenance). |
+
+#### Remediations applied before gate close (cycle-3)
+
+1. **Correctness P2 (169.012-T edge text) — RESOLVED.** The dependency-correction section
+   now states the final set `{169.005-T, 169.011-T, 168.015-T}` (169.005-T retained as the
+   carve origin), matching the task frontmatter and body; the incorrect "169.005-T replaced"
+   wording is removed.
+2. **Architecture P3 (medium) (168.017-T body/frontmatter mismatch) — RESOLVED.** The
+   explicit edge `168.017-T -> 168.012-T` (external-pin gate, used by the denied-path audit
+   contract) was added to the frontmatter to match the body; re-verified ACYCLIC.
+3. **Scope/Security P3 (stale references) — RESOLVED.** The superseded cycle-1 "Final
+   verified membership" block is annotated as a cycle-1 snapshot pointing to the
+   authoritative cycle-3 counts; the cycle-2 remediation record's 168.019-T ownership
+   mention is annotated `withdrawn cycle-3 item 13`.
+
+The residual advisories (Security P3 approval-evidence trust root, Constitution low P3
+tombstone/nonce wording legibility, Scope P3 documentation-staleness) are non-blocking
+defense-completeness / legibility items with no reachable exploit or scope impact; they are
+recorded for Ship execution consideration, not gate blockers.
+
+**Zero open P0/P1 findings** across all five personas (the cycle-2 P1 is closed and
+re-confirmed). No reviewer returned FAIL. Remediation context is recorded above, separate
+from the literal `decision:` line.
+
+operator_authorization: approved (operator delegated this cycle-3 FINAL Stage review-fix
+session on branch chore/stage-149-s-trust-chain-corrections with explicit direction to
+resolve the consolidated in-scope blockers, run plan-harden, and rerun the full plan-review
+gate with architecture, scope, correctness, constitution/standards, and security coverage;
+zero open in-scope P0/P1 remain after remediation).

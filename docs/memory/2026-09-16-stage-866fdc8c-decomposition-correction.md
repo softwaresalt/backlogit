@@ -77,49 +77,82 @@ confirmed accurate (digest recompute under Phase-A lock at
 after remediation; zero open P0/P1. Gate decision: **PASS**,
 operator_authorization: approved. `<!-- plan-review-attempt: 2 -->`
 
-Cycle-2 new tasks (9): 168.019-T (denied-mutation audit-fail + recovery), 168.020-T
+Cycle-2 new tasks (9, later reduced to 6 in cycle 3): 168.019-T (denied-mutation
+audit-fail + recovery — **WITHDRAWN cycle-3**), 168.020-T
 (resolver role/algo), 169.013-T (attestation role/algo/audit), 169.014-T (doctor
-tamper/swap + stale-branch absence), 169.015-T (attestation case-fold/escape dup all
-depths), 170.015-T (thread pre-lock digest; remove under-lock recompute — behavior
-owner), 170.016-T (token role/algo/not_before/audit), 170.017-T (nonce atomic
-check-then-consume + audit), 170.018-T (token case-fold/escape dup all depths). Each
-carries size S / agent / stage-2h-rule-v1, RED-first, behavior-bearing (none
-docs-only). Size metadata also backfilled on the 10 hardening tasks
-(168.007-010, 169.007-009, 170.008-010).
+tamper/swap + legacy-branch absence — single owner), 169.015-T (attestation
+case-fold/escape dup all depths), 170.015-T (thread pre-lock digest — **WITHDRAWN
+cycle-3**), 170.016-T (token role/algo + audit; not_before folded to 170.002-T),
+170.017-T (nonce atomic check-then-consume — **WITHDRAWN cycle-3**), 170.018-T (token
+case-fold/escape dup all depths). Each surviving task carries size S / agent /
+stage-2h-rule-v1, RED-first, behavior-bearing (none docs-only). Size metadata also
+backfilled on the 10 hardening tasks (168.007-010, 169.007-009, 170.008-010).
 
-## Shipment manifests (post-correction, cycle-2)
+## Plan review — cycle 3 (FINAL, authoritative)
 
-- 149-S: **21 items** (168-F + 168.001..020-T). Root of trust-chain
-  (queue_position 900).
+Review-fix cycle 3 on branch `chore/stage-149-s-trust-chain-corrections`. Applied
+**plan-harden** (added `## Plan Hardening` with ProposedAction/ActionRisk/approval/
+rollback contracts for rotate/revoke/tombstone, nonce consume, and config+audit
+commit; `Requires plan hardening: yes`), then dispatched the FULL five-persona
+plan-review gate: Scope Boundary Auditor, Correctness Reviewer, Architecture
+Strategist, **Constitution Reviewer**, and **Security Reviewer**.
+
+Verdicts: Scope=PASS, Correctness=ADVISORY, Architecture=PASS, Constitution=PASS,
+Security=ADVISORY. **Zero open high/medium-confidence P0/P1** across all five personas
+(cycle-2 Security P1 confirmed closed). No FAIL. Tightly-coupled integrity findings
+resolved before gate close: Correctness P2 (169.012-T edge text reconciled to
+`{169.005-T,169.011-T,168.015-T}`), Architecture medium P3 (168.017-T→168.012-T edge
+added to frontmatter), Scope/Security P3 stale-reference annotations. Residual P3
+advisories are non-blocking defense-completeness/legibility items recorded for Ship.
+Gate decision: **PASS**, operator_authorization: approved.
+`<!-- plan-review-attempt: 3 -->`
+
+**Cycle-3 scope reduction (over-expansion removed).** Three cycle-2 tasks WITHDRAWN
+via governed `backlogit delete --force` + queue-manifest edit: 168.019-T (denied-path
+minimal contract folded into 168.017-T; broad crash-recovery/doctor auto-reconciliation
+deferred to **P-021 stash 6749D311**), 170.015-T (digest de-dup out of scope —
+170.011-T now DOCUMENTS the deterministic drift-free under-lock recompute), 170.017-T
+(nonce atomic consume folded into single owner 170.008-T). Final in-scope graph = 50
+tasks + 3 features = **53 nodes, Kahn topo-sort complete = ACYCLIC**.
+
+## Shipment manifests (post-correction, FINAL cycle-3)
+
+- 149-S: **20 items** (168-F + 168.001..018,020-T; 168.019-T withdrawn). Root of
+  trust-chain (queue_position 900).
 - 150-S: **16 items** (169-F + 169.001..015-T). depends_on 149-S, 148-S.
-- 151-S: **19 items** (170-F + 170.001..018-T). depends_on 149-S, 148-S, **150-S**
-  (cycle-2 serial edge added — see Handoff).
+- 151-S: **17 items** (170-F + 170.001..014,016,018-T; 170.015-T/170.017-T withdrawn).
+  depends_on 149-S, 148-S, **150-S** (serial edge — see Handoff).
+
+(Stale cycle-2 counts were 149-S=21 / 151-S=19; superseded by the cycle-3 withdrawals.)
 
 Cycle-1 leaf-split tasks (item 9): 168.014-018, 169.011-012, 170.013-014.
-Cycle-2 tasks: 168.019-020, 169.013-015, 170.015-018 — each a pure sink depending
-only on its origin task (DAG acyclicity structurally preserved).
+Surviving cycle-2 tasks (6): 168.020, 169.013-015, 170.016, 170.018 — each a pure sink
+depending only on its origin/behavior owners (DAG acyclicity structurally preserved).
 
-Corrected DAG verified ACYCLIC (44 nodes Kahn topo-sorted; roots 168.001-T /
-169.001-T / 170.011-T). doctor: no new integrity issues in 168/169/170 scope
-(23 pre-existing unrelated orphans — 016.001-R, 106.012-033-T — left untouched).
+Final corrected DAG verified ACYCLIC (**53 task+feature nodes** Kahn topo-sorted;
+roots 168.001-T / 169.001-T / 170.011-T). Memberships confirmed 20/16/17 with no
+withdrawn ID present in any manifest.
 
 ## Handoff
 
-Trust-chain queued and reviewed (plan-review cycle-2: 4 reviewers incl. mandatory
-Security persona; decision PASS after remediation, zero open P0/P1), ready for the
-Orchestrator staging-artifact merge gate.
+Trust-chain queued and reviewed (plan-review cycle-3 FINAL: five personas incl.
+mandatory Security and Constitution personas; decision PASS after remediation, zero
+open P0/P1), ready for the Orchestrator staging-artifact merge gate.
 
-**Execution order for Ship (item-7 CORRECTION, hardened in cycle-2).** 149-S ships
-first (root). 150-S and 151-S are **dependency-independent in feature logic**
+**Execution order for Ship (item-7 CORRECTION, hardened cycle-2, reaffirmed cycle-3).**
+149-S ships first (root). 150-S and 151-S are **dependency-independent in feature logic**
 (neither feature requires the other), BUT they MUST ship **SERIALLY through merge and
 closure** — NOT in parallel — under P-001 single-active and because they touch
 **shared reconcile/event surfaces** (`internal/core` shipment-reconcile
 classifier/event path, the 167.008-T locked critical section, the
 `shipment_reconciled_shipped` delta, and specifically the request-identity digest
-threaded by 170.015-T and the event binding upgraded by 169.007-T). Concurrent merge
-of 150-S and 151-S would race those shared surfaces. **Cycle-2 enforcement:** the
-serial order is no longer prose-only — a hard shipment dependency edge
-**151-S depends_on 150-S** was added, so the chain is 149-S -> 150-S -> 151-S. Ship
-150-S fully through merge+closure, THEN 151-S; never overlapping.
+recomputed deterministically in the reconcile evidence path and the event binding
+upgraded by 169.007-T). Concurrent merge of 150-S and 151-S would race those shared
+surfaces. **Enforcement:** a hard shipment dependency edge **151-S depends_on 150-S**
+is present, so the chain is 149-S -> 150-S -> 151-S. Ship 150-S fully through
+merge+closure, THEN 151-S; never overlapping. Downstream PRs MUST land as merge commits
+(Constitution XI; squash/rebase prohibited).
 
-Stage did NOT claim any shipment. Deferred: B633E9B9 (authorization-boundary feature).
+Stage did NOT claim any shipment. Deferred: B633E9B9 (authorization-boundary feature);
+6749D311 (broad trust-anchor crash-recovery/doctor auto-reconciliation subsystem,
+P-021 cycle-3).
