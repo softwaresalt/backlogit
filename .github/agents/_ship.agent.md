@@ -451,7 +451,22 @@ frozen **here** and nowhere else.
    every green-maker to land in a strictly later wave and `green_maker_closes_wave` to equal the
    actual latest green-maker wave. Any failure halts with `WAVE_RED_MAPPING_UNRESOLVED` (P-002.2).
    Never infer the mapping from prose, labels, or dependency direction.
-4. **Freeze green-regression arrays.** For every member of `M`, parse the optional canonical
+4. **Freeze task-scoped gate contracts.**
+   * For every member of `M`, parse the required canonical
+     `<!-- BEGIN:task-lint-contract -->` JSON block. Task artifacts may call this file-scoped lint
+     verification (FSLV). The block carries `task_lint_cmd`, a closed `lint_scope`, and
+     `non_vacuity_evidence`. Freeze all three values per task. The command must be executable as
+     written, read-only, bounded to the task-owned lint surface, preserve the native
+     linter/configuration/process exit, and fail closed when its claimed target or evidence is
+     absent, empty, malformed, or otherwise non-vacuous proof is missing. A
+     `harness-exempt` or `red_deliverable` task is not exempt from this contract: when its closed
+     delta has no lintable Go surface, its command must positively prove that no-Go surface in
+     both the pre-commit and post-commit sequencing positions. An absent command, bare
+     repository-wide `golangci-lint run`, success-shaped native failure, `|| true`, suppression,
+     or unbounded operator waiver halts with `WAVE_TASK_LINT_CONTRACT_INVALID`. The same frozen
+     command is screened before claim, passed verbatim to build-feature, run before any task commit,
+     and rerun by Ship after build-feature returns.
+   * For every member of `M`, parse the optional canonical
    `<!-- BEGIN:green-regression-contract -->` JSON block defined by P-002.6. An absent block means
    exactly `green_regression_cmds(t) = []`; it does not mean "choose packages later". Validate a
    present block and its commands exactly as P-002.6 requires and halt with
@@ -552,7 +567,7 @@ Run this step at the head of every wave, before anything in that wave is scaffol
     of `ready_k` is harness-satisfied and every non-exempt member is **simultaneously red**; that is
     the expected state. If any member is not harness-satisfied, halt and report rather than building
     a partial wave.
-11. **Execute the wave, task-scoped.** Run Steps 4.1a → 4.5 for each member of `ready_k`. Only
+11. **Execute the wave, task-scoped.** Run Steps 4.1 → 4.5 for each member of `ready_k`. Only
     members of the current wave may be claimed. Each task is driven green against **its own scoped
     verification command** — a sibling's still-red harness, and any selector in
     `open_red_deliverables_k`, are expected red and MUST NOT fail the task under build (see Step 4.2
@@ -594,6 +609,27 @@ session-stall counters keep counting across waves. A new wave never resets, re-a
 of them.
 
 For each task in the current wave:
+
+#### Step 4.1: Wave-Scoped Task-Lint Claim-Time Gate
+
+Run this gate for every task before claim, including `harness-ready`, `harness-exempt`, and
+`red_deliverable` tasks.
+
+1. Re-read the task's canonical `task-lint-contract` and exact-compare its `task_lint_cmd`,
+   `lint_scope`, and `non_vacuity_evidence` with the values frozen at Step 3 item 4. Missing or
+   drifted content halts with `WAVE_TASK_LINT_CONTRACT_INVALID`.
+2. Apply the P-002.5 read-only screen before the command can reach build-feature. Reject
+   destructive operations, native-exit masking, a bare repository-wide `golangci-lint run`, an
+   empty or open-ended scope, and non-vacuity evidence that does not fail closed. A task with no
+   lintable Go delta must declare and positively verify that closed surface; an exemption label is
+   not a lint waiver.
+3. Do not execute the completion command before the deliverable. This is the pre-task contract
+   gate, not the post-task lint result. After it passes, continue to Step 4.1a for a
+   `harness-exempt` task or directly to Step 4.1b for every other task.
+
+A halt occurs before claim and before any mutation. Record
+`WAVE_TASK_LINT_CONTRACT_INVALID` through P-005 telemetry and return the task for a contract
+amendment; never infer or widen a replacement command.
 
 #### Step 4.1a: Harness-Exempt Claim-Time Gate (P-002.1 / P-002.3, fail-closed)
 
@@ -644,8 +680,8 @@ P-002.2 code and return the task to the operator or to Stage for a contract amen
 
 #### Step 4.1b: Claim Task
 
-Reached only after Step 4.1a has passed, or immediately for a `harness-ready` task, for which Step
-4.1a does not apply. Update task status to `active` using the backlog tool's move operation.
+Reached only after Step 4.1 has passed and, for a `harness-exempt` task, Step 4.1a has also passed.
+Update task status to `active` using the backlog tool's move operation.
 
 When the `agent-intercom` capability pack is installed, broadcast the task claim and current task ID.
 
@@ -672,6 +708,10 @@ Invoke the **build-feature** skill with:
 * `wave_scoped`: `true` whenever this dispatch comes from a wave (Step 4.0 item 11) — which is
   always, under P-002.6. It tells the skill to run its post-loop suite **task-scoped** and to leave
   the full-repository suite to Step 4.6.
+* `task_lint_cmd`: the exact command frozen from this task's canonical `task-lint-contract` at
+  Step 3 item 4 and screened at Step 4.1. Pass it verbatim for every task, including
+  `harness-exempt` and `red_deliverable` tasks. Build-feature validates it before mutation and
+  runs it before commit; Ship reruns the same command at Step 4.3 after commit.
 * `green_regression_cmds`: the exact array frozen for this task at Step 3 item 4 from the canonical
   optional `green-regression-contract`; when the block is absent, pass exactly `[]`. The loop runs
   exactly this array and never commands inferred from prose or packages chosen by the implementer.
@@ -740,7 +780,14 @@ without one.
 
 After the build-feature skill reports success:
 
-1. **Lint**: `golangci-lint run`
+1. **Task-scoped lint**: run the frozen `task_lint_cmd` exactly once against the post-build-feature
+   tree. It must exit 0 and satisfy the canonical `non_vacuity_evidence` for the frozen
+   `lint_scope`, providing non-vacuity proof for the claimed target. Preserve and propagate any
+   native linter/configuration/process failure; reject empty or malformed evidence, target absence,
+   and success-shaped wrappers. This post-build run must use the same command build-feature ran
+   before any task commit, including for `harness-exempt` and `red_deliverable` tasks. Do not infer
+   a replacement or run repository-wide lint here.
+   `golangci-lint run` remains mandatory at Step 4.6.
 2. **Format**: `gofmt -l .`
 3. **Task-scoped test suite**: run the task's own scoped `harness_cmd` plus exactly the frozen
    `green_regression_cmds` array from Step 3 item 4, whose absent-block default is `[]`, and nothing
@@ -896,9 +943,9 @@ task comment summarizing the outcome.
 #### Step 4.6: Wave Convergence Gate (P-002.6)
 
 Run this step **once per wave**, after every member of `ready_k` has been individually completed by
-Steps 4.1a–4.5 (or carries an appropriate terminal-success status), and **before** the wave index
-advances. This is where the suite Steps 4.2/4.3 deliberately scoped away is executed — always in
-part, and unfiltered whenever it can be.
+Steps 4.1–4.5 (or carries an appropriate terminal-success status), and **before** the wave index
+advances. This is where the repository-wide test and lint gates Steps 4.2/4.3 deliberately scoped away are
+executed. Repository-wide lint always runs; the unfiltered test suite runs whenever it can.
 
 1. **Confirm the wave is individually converged.** Every member of `ready_k` is `done` (or
    `archived`), and no member is `active`, `blocked`, or in an unsupported status. A member still

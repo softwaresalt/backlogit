@@ -15,6 +15,15 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
 * `task_id`: (Required) The backlog task ID to implement.
 * `harness_cmd`: (Required) The **task-scoped** test command to run. Under P-002.6 it MUST be executable as written, name an explicit package path (never a bare `./...`), carry `-count=1`, be anchored to the task's own `^TestU<unit>_` selector, fail closed on a vacuous pass, and carry no `-short`, added build tag, `t.Skip`, or `|| true`. For a `harness-exempt` task there is no scaffolded red harness; the caller passes the command the loop must drive from failing to passing — the task's `exempt_verification_command` for `docs-only` and `verification-only`, or the predecessor owner's `harness_owner_command` for `covered-by`. The loop below runs against that command unchanged.
 * `wave_scoped`: (Optional, default `false`) `true` when Ship dispatches this task from inside a P-002.6 wave. When `true`, the post-loop suite is **task-scoped** and the full-repository suite is Ship's Step 4.6 wave convergence gate, not this skill's. When `false` or absent, the post-loop suite is the full repository suite as before — this input relocates a gate inside a wave, it never removes one.
+* `task_lint_cmd`: (Required when `wave_scoped` is `true`) The exact command Ship parsed and froze
+  from the task's canonical `<!-- BEGIN:task-lint-contract -->` block. Task artifacts may describe
+  this as file-scoped lint verification (FSLV). Every wave member declares one, including
+  `harness-exempt` and `red_deliverable` tasks. It must be executable as written, read-only,
+  bounded to the task-owned lint surface, preserve the native linter/configuration/process exit,
+  and fail closed when its claimed lint target or evidence is absent, empty, malformed, or
+  otherwise non-vacuous proof is missing. A task with no lintable Go delta must positively prove
+  that closed no-Go surface; absence of a command is not an exemption. When `wave_scoped` is
+  `false` or absent, omit this input and retain the repository-wide lint gate.
 * `green_regression_cmds`: (Optional; meaningful only when `wave_scoped` is `true`; default `[]`)
   The exact array Ship parsed and froze from the task's canonical optional
   `green-regression-contract` at Step 3. The contract format is defined by P-002.6; an absent block
@@ -50,6 +59,22 @@ When the `agent-engram` capability pack is installed, follow
 `.github/instructions/agent-engram.instructions.md` throughout the loop: prefer indexed symbol and
 impact lookup while diagnosing failures, verify the workspace is bound before trusting engram
 results, and refresh stale indexes before concluding the code graph is wrong.
+
+### Wave-Scoped Lint Contract Precondition
+
+When `wave_scoped` is `true`, validate `task_lint_cmd` before any mutation and before selecting the
+generic, `harness-exempt`, or `red_deliverable` branch. It must be present verbatim in the task's
+canonical `task-lint-contract`, clear the P-002.5 read-only screen, and satisfy the task-scoping,
+native-failure propagation, and non-vacuity requirements in **Inputs**. This precondition applies to
+every task, including `harness-exempt` tasks; neither an exemption class nor a no-Go deliverable
+permits an absent or success-shaped lint command. A missing, drifted, destructive, global-only,
+native-failure-masking, or vacuous command halts with `WAVE_TASK_LINT_CONTRACT_INVALID` before work
+begins. Do not execute the completion command here: build-feature runs it after the task deliverable
+passes, and Ship runs the same frozen command again after build-feature returns (after its commit
+when the task produces one).
+
+When `wave_scoped` is `false` or absent, reject a caller attempt to replace the repository-wide
+lint gate with `task_lint_cmd`. The non-wave path remains unchanged.
 
 ### Step 0: Harness-exempt pre-work precondition (P-002.3 / P-002.5)
 
@@ -189,7 +214,9 @@ report all four items or halt with `RED_DELIVERABLE_EVIDENCE_INCOMPLETE`.
 
 Run the Post-Loop Quality Gates below with these substitutions, and do not iterate on a failure:
 
-1. **Lint**: `golangci-lint run` — unchanged.
+1. **Lint**: run the frozen `task_lint_cmd` exactly as the wave-scoped lint contract requires.
+   Preserve any native process failure and reject vacuous success. The repository-wide
+   `golangci-lint run` is deferred to Ship Step 4.6, not skipped.
 2. **Format**: `gofmt -l .` — unchanged.
 3. **Test suite**: item 3 **inverts**. `harness_cmd` must still be observed **RED**, and a green
    result fails the gate with `WAVE_RED_DELIVERABLE_EARLY_GREEN`. The supplied
@@ -346,7 +373,16 @@ builds — and must never be narrowed to the task's own package to dodge a real 
 
 After the harness passes:
 
-1. **Lint**: `golangci-lint run`
+1. **Lint** — scope depends on `wave_scoped`:
+   * **`wave_scoped: true`**: run the frozen `task_lint_cmd` exactly once. It must exit 0 and
+     produce the command's declared non-vacuity evidence for the task-owned lint surface. Preserve
+     and propagate a native linter/configuration/process failure; an issues-exit override may
+     classify owned findings only when the wrapper captures the native exit first and never turns
+     infrastructure failure into success. Do not infer a replacement command, accept empty or
+     malformed evidence, or run `golangci-lint run` here. Ship reruns this same command after the
+     task commit, and the repository-wide command runs at Step 4.6.
+   * **`wave_scoped: false` or absent**: `golangci-lint run`, unchanged. A task-scoped command
+     cannot replace or weaken this gate outside a wave.
 2. **Format**: `gofmt -l .`
    * If violations found: `gofmt -w .` and re-check
 3. **Test suite** — scope depends on `wave_scoped`:
@@ -439,6 +475,11 @@ without leaving a non-compliant commit behind.
 * Never re-derive `red_baseline_sha` from `HEAD` or diff against `..HEAD` on this branch. Ship captures the baseline after the wave's scaffolding commit precisely so a sibling's harness cannot appear in this task's delta
 * Never complete a `red_deliverable` task without returning the Step 0.5c red-evidence report; Ship builds the `open_red_deliverables` entry from it, and an unaccounted entry cannot be re-confirmed at Step 4.6
 * Never accept a `harness_cmd` that fails the P-002.6 task-scoped requirements — a bare `./...`, a missing `-count=1`, an unanchored or sibling-matching selector, a `-short`/build-tag/`t.Skip`/`|| true` weakening, or a command that passes vacuously. Halt and report the contract defect rather than substituting a weaker command
+* Never enter a wave-scoped task without the exact canonical `task_lint_cmd`, including
+  `harness-exempt` and `red_deliverable` tasks. Never widen it to repository-wide lint, infer it
+  from prose, mask its native process failure, or accept vacuous evidence. The command is the
+  per-task completion gate; repository-wide lint remains Ship Step 4.6
+* Never use `task_lint_cmd` to replace `golangci-lint run` when `wave_scoped` is false or absent
 * Never narrow the Step 6 compilation check (`go test -run=^$ -count=1 ./...`) to the task's own package. It runs no test, so a sibling's red harness cannot affect it
 * Maximum 5 attempts before circuit breaker trips (skill-managed exception; see `circuit-breaker.instructions.md`)
 * Same-error recurrence at attempt 3+ triggers the universal circuit breaker
@@ -449,10 +490,11 @@ without leaving a non-compliant commit behind.
 ## Quality Criteria
 
 * All harness tests pass
-* No lint violations
+* The task-scoped lint completion command passes non-vacuously for wave-scoped work; non-wave work
+  passes repository-wide lint
 * No format violations
 * The task-scoped suite passes; under `wave_scoped: true` the full repository suite is Ship's Step
-  4.6 wave convergence gate, which runs unfiltered whenever the open-red set is empty and must pass
+  4.6 wave convergence gate, and repository-wide lint runs there on every wave; both must pass
   before the next wave is admitted
 * Changes are scoped to the task requirements
 * For a `harness-exempt` task: the pre-work probe was observed failing (marker absent), the

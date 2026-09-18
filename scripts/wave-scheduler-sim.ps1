@@ -15,7 +15,7 @@
     and touches no repository state. It is therefore safe to run at any gate
     point, including under the P-002.5 read-only command screen.
 
-    Assertion coverage (cycle-34):
+    Assertion coverage (cycle-39):
       * real shipment-manifest parsing, task-type filtering, and excluded-ID report
       * live workspace status catalog plus registry status-mapping/feature parsing
       * exact manifest-M versus explicit non-shipment fallback-set comparison
@@ -34,6 +34,8 @@
       * active residual at wave admission
       * dependency-cycle injection
       * sibling-red wave: withdrawn repo-wide gate vs task-scoped gate
+      * installed Ship/build-feature task-lint contract symmetry
+      * repository-wide lint retained at wave convergence and outside waves
       * non-frozen-M negative control
       * red-to-green-maker mapping fail-closed cases
 
@@ -116,6 +118,85 @@ function Test-Equal {
     $e = Format-Value $Expected
     $a = Format-Value $Actual
     Add-Assertion -Scenario $Scenario -Name $Name -Ok ($e -ceq $a) -Expected $e -Actual $a
+}
+
+function Get-MarkdownSection {
+    param([string]$Text, [string]$Heading)
+
+    if ($Heading -notmatch '^(#+)\s') { return '' }
+    $level = $Matches[1].Length
+    $headingPattern = [regex]::Escape($Heading)
+    $match = [regex]::Match(
+        $Text,
+        "(?ms)^$headingPattern\r?\n(?<body>.*?)(?=^#{1,$level}\s|\z)"
+    )
+    if (-not $match.Success) { return '' }
+    return $match.Value
+}
+
+function Test-SectionTerms {
+    param(
+        [string]$Scenario,
+        [string]$Artifact,
+        [string]$Section,
+        [string[]]$Required,
+        [string[]]$Forbidden = @()
+    )
+
+    $path = Join-Path $repoRoot $Artifact
+    $text = if (Test-Path $path) { Get-Content $path -Raw } else { '' }
+    $sectionText = Get-MarkdownSection -Text $text -Heading $Section
+    Test-Equal -Scenario $Scenario -Name "$Artifact section $Section exists" `
+        -Expected $true -Actual (-not [string]::IsNullOrWhiteSpace($sectionText))
+    foreach ($term in $Required) {
+        Test-Equal -Scenario $Scenario -Name "$Artifact $Section contains $term" `
+            -Expected $true -Actual ($sectionText.IndexOf($term, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+    }
+    foreach ($term in $Forbidden) {
+        Test-Equal -Scenario $Scenario -Name "$Artifact $Section excludes $term" `
+            -Expected $false -Actual ($sectionText.IndexOf($term, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+    }
+}
+
+function Invoke-LintGateContractChecks {
+    $contract = $fx.lint_gate_contract
+    $sc = 'lint_gate_contract'
+    $taskCommand = "$($contract.task_command_input)"
+    $canonicalBlock = "$($contract.canonical_block)"
+    $taskContractName = "$($contract.task_contract_name)"
+    $globalCommand = "$($contract.global_command)"
+
+    Test-SectionTerms -Scenario $sc -Artifact "$($contract.build_feature_artifact)" `
+        -Section '## Inputs' `
+        -Required @($taskCommand, $canonicalBlock, $taskContractName, 'wave_scoped', 'harness-exempt')
+    Test-SectionTerms -Scenario $sc -Artifact "$($contract.build_feature_artifact)" `
+        -Section '### Wave-Scoped Lint Contract Precondition' `
+        -Required @($taskCommand, 'native', 'non-vacu', 'before any mutation', 'harness-exempt')
+    Test-SectionTerms -Scenario $sc -Artifact "$($contract.build_feature_artifact)" `
+        -Section '### Post-Loop Quality Gates' `
+        -Required @($taskCommand, 'wave_scoped: true', 'wave_scoped: false', $globalCommand, 'native', 'non-vacu') `
+        -Forbidden @("1. **Lint**: ``$globalCommand``")
+    Test-SectionTerms -Scenario $sc -Artifact "$($contract.build_feature_artifact)" `
+        -Section '#### Step 0.5d: Inverted quality gates, no fix iteration' `
+        -Required @($taskCommand, $globalCommand, 'deferred', 'native', 'vacuous') `
+        -Forbidden @("1. **Lint**: ``$globalCommand`` — unchanged.")
+
+    Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
+        -Section '### Step 3: Build Wave Schedule (P-002.6)' `
+        -Required @($taskCommand, $canonicalBlock, $taskContractName, 'freeze', 'harness-exempt', 'native', 'non-vacu')
+    Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
+        -Section '#### Step 4.1: Wave-Scoped Task-Lint Claim-Time Gate' `
+        -Required @($taskCommand, 'read-only screen', 'before', 'claim')
+    Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
+        -Section '#### Step 4.2: Delegate to Build Feature' `
+        -Required @($taskCommand, $canonicalBlock, 'verbatim')
+    Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
+        -Section '#### Step 4.3: Quality Gates' `
+        -Required @($taskCommand, 'native', 'non-vacu') `
+        -Forbidden @("1. **Lint**: ``$globalCommand``")
+    Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
+        -Section '#### Step 4.6: Wave Convergence Gate (P-002.6)' `
+        -Required @($globalCommand, 'repo-wide static gates')
 }
 
 # --- fixture load --------------------------------------------------------------
@@ -1575,6 +1656,7 @@ if (-not $Quiet) {
 
 Invoke-GreenRegressionParserControls
 Invoke-RedDeliverableBranchControls
+Invoke-LintGateContractChecks
 if ($VerifyAgainstQueue) { Invoke-QueueDriftCheck }
 
 foreach ($sc in $fx.scenarios) {

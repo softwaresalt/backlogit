@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "artifact": "wave-scheduler-contract-simulation",
-  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S itself, filters its task-type IDs into M, parses the live status catalog and registry mapping/features, exact-compares M with the explicit non-shipment fallback task-ID set, reports excluded non-task IDs, and projects task contracts from the live backlog; scenarios and expectations encode the cycle-34 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
+  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S itself, filters its task-type IDs into M, parses the live status catalog and registry mapping/features, exact-compares M with the explicit non-shipment fallback task-ID set, reports excluded non-task IDs, projects task contracts from the live backlog, and verifies the installed Ship/build-feature lint-gate contract; scenarios and expectations encode the cycle-39 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
   "contract": {
     "policy": ".github/policies/workflow-policies.md",
     "policy_version": "1.24.0",
@@ -10,7 +10,7 @@
       "P-002.6"
     ],
     "consumers": [
-      ".github/agents/.ship.agent.md",
+      ".github/agents/_ship.agent.md",
       ".github/skills/build-feature/SKILL.md",
       ".github/skills/harness-architect/SKILL.md"
     ]
@@ -22,6 +22,15 @@
     "queue_dir": ".backlogit/queue",
     "mirrored_head": "a064f4438a05acaed28d94e386346d4b3450932b",
     "note": "Run scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue to parse the real shipment item list, live status catalog, and registry status mapping/features; resolve artifact types; compare filtered task IDs exactly with M and the explicit non-shipment fallback set; report excluded non-task IDs; verify task projections and every red-deliverable key; and run in-memory mutation checks."
+  },
+  "lint_gate_contract": {
+    "ship_artifact": ".github/agents/_ship.agent.md",
+    "build_feature_artifact": ".github/skills/build-feature/SKILL.md",
+    "canonical_block": "task-lint-contract",
+    "task_command_input": "task_lint_cmd",
+    "task_contract_name": "FSLV",
+    "global_command": "golangci-lint run",
+    "note": "Every wave-scoped task, including harness-exempt and red-deliverable tasks, declares one canonical task-scoped lint completion command. Ship freezes and screens it before claim; build-feature validates it before mutation; build-feature executes it before any task commit and Ship executes it again after build-feature returns. The repository-wide lint command is relocated to wave convergence and remains unchanged for non-wave-scoped work."
   },
   "status_model": {
     "catalog_source": ".backlogit/config.yaml -> fields.status.values",

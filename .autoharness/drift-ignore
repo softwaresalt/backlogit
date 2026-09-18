@@ -542,6 +542,22 @@
 #       removed it fails on both assertions. An adopting template MUST carry an
 #       equivalent control suite, not just the branch prose.
 #       Version header and Amendment Log are 1.24.0.
+#
+# NOTE (2026-09-18, cycle 39): wave-scoped lint now follows the same governed
+# relocation as the task-scoped test suite. A template adoption MUST preserve:
+#   .github/agents/_ship.agent.md and .github/skills/build-feature/SKILL.md —
+#       every wave member, including harness-exempt and red-deliverable tasks,
+#       declares a canonical task-lint-contract. Ship freezes and screens its
+#       task_lint_cmd before claim; build-feature validates it before mutation
+#       and runs it before any task commit; Ship reruns it after build-feature
+#       returns. Native process failures and non-vacuity remain fail-closed.
+#       Repository-wide `golangci-lint run` is relocated, not waived: it runs at
+#       every Step 4.6 wave convergence and remains unchanged outside waves.
+#   scripts/wave-scheduler-sim.ps1 and
+#       tests/simulation/wave-scheduler-contract.json — installed-artifact
+#       assertions pin the pre-task, post-task, exemption, red-deliverable,
+#       convergence, and non-wave lint semantics. Repo-authored; no path entry
+#       is needed below.
 
 # --- Registry / backlog configuration ---
 .autoharness/backlog-registry.yaml
@@ -584,6 +600,7 @@
 
 # --- Agents carrying the 143-F shipped-event indeterminate third branch ---
 .github/agents/.ship.agent.md
+.github/agents/_ship.agent.md
 
 # --- Skills ---
 .github/skills/build-feature/SKILL.md
