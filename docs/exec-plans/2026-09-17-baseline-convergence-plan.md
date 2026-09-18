@@ -91,13 +91,20 @@ make U1's content-identical gate impossible to satisfy.
   `git add --renormalize .` to update the INDEX (index-only, non-destructive,
   reversible via `git reset`). Because `git add --renormalize .` rewrites only
   the index and does NOT refresh already-checked-out working-tree files,
-  explicitly REFRESH ONLY the affected renormalized paths afterward — enumerate
-  the paths the renormalize actually staged (`git diff --cached --name-only`) and
-  re-checkout exactly those (`git checkout -- <affected paths>`) so their on-disk
-  `.go`/`.json` bytes become LF BEFORE any `w/lf` assertion is made. Do NOT use a
+  explicitly REFRESH the affected paths afterward so their on-disk `.go`/`.json`
+  bytes become LF BEFORE any `w/lf` assertion is made. Derive the affected-path
+  set as the UNION of (a) the paths the renormalize actually staged
+  (`git diff --cached --name-only`) AND (b) every tracked path governed by a new
+  `eol=lf` attribute whose working-tree EOL is still `w/crlf`/`w/mixed`
+  (enumerated via `git ls-files --eol` restricted to the `eol=lf`-governed set).
+  The staged-diff names ALONE are insufficient: if the index is already LF (e.g.
+  a prior renormalize) while the working tree is CRLF, `git add --renormalize`
+  stages nothing and the staged-diff list is empty even though CRLF working-tree
+  files still need refresh. Re-checkout exactly that union set
+  (`git checkout -- <affected paths>`). Do NOT use a
   forced whole-tree refresh (`git checkout-index -f -a`) or whole-tree
-  removal/re-checkout — the refresh is scoped strictly to the renormalized path
-  set. Keep the concrete implementation deferred to Ship.
+  removal/re-checkout — the refresh is scoped strictly to the enumerated
+  `eol=lf`-governed affected-path set. Keep the concrete implementation deferred to Ship.
 * **Files:** `.gitattributes` (+ mechanical renormalization of many tracked
   files — DECLARED file-count exception; content-identical).
 * **Verify:** `git ls-files --eol` shows `w/lf` for tracked `.go`/`.json`
@@ -134,16 +141,20 @@ make U1's content-identical gate impossible to satisfy.
   workflow edit.
 * **Posture:** migration-first.
 
-### U2 — Residual `gofmt` remediation (code-format)
+### U2 — Residual `gofmt` remediation (code-format) — runs LAST before U12
 
-* **Changes:** After U1 renormalization, run `gofmt -w` on any files still
-  reported by `gofmt -l .` for genuine formatting (not line endings).
-* **Files:** only the residual files `gofmt -l .` reports (expected small).
+* **Changes:** After U1 renormalization AND after every code-owning unit
+  (U3, U4–U11, U13) has completed, run `gofmt -w` on any residual files still
+  reported by `gofmt -l .` for genuine formatting (not line endings) that are
+  owned by NO other unit.
+* **Files:** only the residual files `gofmt -l .` reports that no other unit
+  owns (expected small).
 * **Verify:** `gofmt -l <U2-owned files>` returns empty for the files this unit
-  touched. U2 owns ONLY residual files not owned by any errcheck/staticcheck
-  unit, and it runs before U3–U13 while other owned files may still be
-  legitimately dirty, so U2 does NOT assert repository-wide `gofmt -l .` — that
-  repository-wide assertion belongs to U12.
+  touched. Under the exactly-one-owner redesign U2 runs LAST among the fix units
+  (after U3, U4–U11, U13; before only U12) and owns ONLY residual files not owned
+  by any errcheck/staticcheck/test-fixture unit — per-unit gofmt for owned files
+  folds into each owning unit — so U2 does NOT assert repository-wide `gofmt -l .`;
+  that repository-wide assertion belongs to U12.
 * **Posture:** characterization-first (`gofmt -l .` is the characterization).
 
 ### U3 — Golden-fixture LF normalization + U4a green (test) — fixes 92F79833
@@ -160,7 +171,10 @@ make U1's content-identical gate impossible to satisfy.
   (same package `internal/faultline`, shipment 140-S) which makes non-vacuity
   mandatory, not optional.
 * **Files:** `internal/faultline/testdata/parity_v1.golden.json` +
-  `evidence_conformance_test.go` (non-vacuity assertion).
+  `evidence_conformance_test.go` (non-vacuity assertion). These two files are
+  pre-assigned to U3 and excluded from U11's overlap inventory; U3 owns EVERY
+  finding in them (test correctness, gofmt, any errcheck/staticcheck) so exactly
+  one unit owns each and no finding is orphaned.
 * **Verify:** `go test -run '^TestU4aBehaviorCanonicalByteStable$' ./internal/faultline`
   passes on a Windows checkout.
 * **Posture:** test-first (the failing test already exists; make it green).
@@ -172,6 +186,17 @@ committing the U4–U10 boundaries, enumerate per-package errcheck counts
 (`golangci-lint run <pkg>`). If a package exceeds the 2-hour file bound
 (≥ 3 files / ≥ 5 functions), pre-declare a split into bounded sub-units
 (U4a/U4b…) rather than discovering the overflow mid-execution.
+
+**Exactly-one-owner ordering (resolves Copilot cycle-2 exactly-one-owner
+finding):** U4–U10 and U13 each depend on U11 (`175.011-T`), which runs
+IMMEDIATELY AFTER U1 as the staticcheck/errcheck overlap-inventory owner. U11
+records the COMPLETE set of staticcheck-flagged files (minus the two U3-owned
+files) and owns EVERY finding in them — staticcheck AND errcheck. Each errcheck
+unit reads U11's recorded owned-file set and EXCLUDES it from its own scope, so
+no file is ever owned by two units. Ownership is fixed by U11's up-front
+inventory before any code edit; serialization order never confers ownership. This
+REPLACES the earlier scheme where U11 depended on the errcheck units (which could
+serialize two owners onto one file).
 
 Per-category remediation strategy (resolves plan-review P2 — blanket `%w` is not
 idiomatic for the dominant errcheck categories):
@@ -242,21 +267,28 @@ idiomatic for the dominant errcheck categories):
   Principle II deviation in the closure artifact.
 * **Posture:** characterization-first (the linter is the characterization).
 
-### U11 — staticcheck remediation (code)
+### U11 — staticcheck remediation + overlap-inventory owner (code) — runs after U1
 
-* **Changes:** FIRST enumerate the specific staticcheck check IDs
-  (`golangci-lint run`), then choose fix-vs-nolint per category — SA1019
-  (deprecated API) and SA4006 (unused write) are behavior-relevant and must not
-  be uniformly suppressed. `//nolint:staticcheck` only with a justified inline
-  reason.
-* **Files:** bounded to the files staticcheck flags (expected ≤ 3).
-* **Dependencies (resolves Copilot cycle-1 finding — conservative pre-partition):**
-  Stage cannot pre-partition staticcheck ownership without running the linter, so
-  U11 depends on ALL potentially file-overlapping errcheck units — U4–U10 and
-  U13. Any staticcheck-flagged file that is also owned by an errcheck package unit
-  is therefore edited only AFTER that unit completes, so a staticcheck/errcheck
-  file overlap can never be discovered too late (preserves the file-partition
-  invariant at file granularity). U12 remains the terminal sink.
+* **Changes:** FIRST run `golangci-lint run` and enumerate (a) the specific
+  staticcheck check IDs and (b) the COMPLETE set of files staticcheck flags. U11
+  EXCLUSIVELY OWNS every staticcheck-flagged file for ALL its findings —
+  staticcheck AND any errcheck in the same file — EXCEPT the two U3-owned files
+  (`parity_v1.golden.json`, `evidence_conformance_test.go`), which are
+  pre-assigned to U3 and excluded from the inventory. Choose fix-vs-nolint per
+  category — SA1019 (deprecated API) and SA4006 (unused write) are
+  behavior-relevant and must not be uniformly suppressed; `//nolint:staticcheck`
+  only with a justified inline reason. Errcheck findings inside a U11-owned file
+  use the same per-category errcheck strategy as U4–U10.
+* **Files:** the staticcheck-flagged files (expected ≤ 3), minus the two U3-owned
+  files. U11 records this owned-file set as DETERMINISTIC HANDOFF EVIDENCE in its
+  closure artifact so U4–U10/U13 can exclude it.
+* **Dependencies (exactly-one-owner redesign — resolves Copilot cycle-2
+  finding):** U11 depends on U1 (`175.001-T`) ONLY and runs IMMEDIATELY AFTER U1,
+  BEFORE every errcheck unit. U4–U10 and U13 depend on U11 (the edge direction is
+  REVERSED from the cycle-1 conservative scheme) and exclude U11's recorded
+  owned-file set. Because overlap ownership is decided by U11's up-front inventory
+  before any errcheck edit, no file is ever owned by two units and serialization
+  never confers ownership. U12 remains the terminal sink.
 * **Verify:** `golangci-lint run` reports 0 staticcheck; `gofmt -l` on touched
   files empty.
 * **Posture:** characterization-first.
@@ -272,11 +304,19 @@ idiomatic for the dominant errcheck categories):
 * **Changes:** add a persistent CI step that inspects WORKING-TREE end-of-line
   state via `git ls-files --eol` and FAILS the job on any `w/crlf` or `w/mixed`
   for tracked `eol=lf` text paths (`.go`/`.json`; the golden and declared
-  binaries are excluded per their attribute rules). The index-diff /
+  binaries are excluded per their attribute rules). This working-tree guard MUST
+  run on a `windows-latest` runner AFTER `actions/checkout` — CRLF re-drift only
+  manifests on a Windows checkout, so a Linux checkout would false-green — and
+  MUST run on EVERY PR/push to protected branches: it is NOT gated behind a
+  `paths:`/`paths-ignore:`/changed-files filter, so a docs-only or backlog-only
+  change still exercises the checkout + guard and cannot silently re-drift line
+  endings (if path-based job skipping exists elsewhere in the workflow, this
+  guard is explicitly exempt / always-run). The index-diff /
   renormalize-exit-code check (`git add --renormalize . && git diff --cached
   --exit-code`) is retained as SEPARATE, complementary content-identity evidence
-  — NOT a substitute for the working-tree `w/*` inspection, since an index-only
-  check can pass while the checkout carries CRLF.
+  that MAY run on a distinct `ubuntu-latest` job — NOT a substitute for the
+  Windows working-tree `w/*` inspection, since an index-only check can pass while
+  the checkout carries CRLF.
 * **Files:** `.github/workflows/ci.yml` only. Stage does NOT edit the workflow;
   this unit authorizes Ship to add the guard at execution time.
 * **Depends on:** U1 (`175.001-T`) — authored after renormalization lands.
@@ -299,39 +339,49 @@ idiomatic for the dominant errcheck categories):
 
 ```
 U1 (.gitattributes + renormalize)  [STRICT PREDECESSOR of all code units]
- ├─> U2  (residual gofmt)
- ├─> U3  (golden fixture / U4a)
- ├─> U4  (errcheck internal/cli)      ─┐
- ├─> U5  (errcheck internal/db)        │
- ├─> U6  (errcheck internal/telemetry) │ U4–U10 + U13 mutually
- ├─> U7  (errcheck internal/stash)     │ independent once U1 landed
- ├─> U8  (errcheck internal/events)    │
- ├─> U9  (errcheck tests/integration)  │
- ├─> U10 (errcheck internal/core)      │
- ├─> U13 (errcheck residual closed set)┘
+ ├─> U3  (golden fixture / U4a — owns 2 named files; excluded from U11 inventory)
+ ├─> U11 (staticcheck + overlap-inventory owner — runs IMMEDIATELY after U1)
  └─> U14 (persistent CI line-ending guard, .github/workflows/ci.yml)
-U4..U10, U13 ──> U11 (staticcheck)   [U11 depends on every errcheck unit so a
-                                      staticcheck/errcheck file overlap can never
-                                      be discovered too late]
-U2, U3, U4..U11, U13, U14 ──> U12 (convergence verify)  [terminal gate]
+
+U1, U11 ──> U4  (errcheck internal/cli)      ─┐ each errcheck unit depends on
+U1, U11 ──> U5  (errcheck internal/db)        │ U1 (predecessor) AND U11, and
+U1, U11 ──> U6  (errcheck internal/telemetry) │ EXCLUDES U11's recorded
+U1, U11 ──> U7  (errcheck internal/stash)     │ staticcheck-owned file set, so
+U1, U11 ──> U8  (errcheck internal/events)    │ exactly ONE unit owns each file
+U1, U11 ──> U9  (errcheck tests/integration)  │ (ownership fixed by U11's
+U1, U11 ──> U10 (errcheck internal/core)      │ up-front inventory, never by
+U1, U11 ──> U13 (errcheck residual closed set)┘ serialization order)
+
+U3, U4..U11, U13 ──> U2 (residual gofmt — runs LAST before U12; residual UNOWNED paths only)
+U2, U3, U4..U11, U13, U14 ──> U12 (convergence verify)  [terminal sink]
 ```
 
-No cycles. U1 is a strict predecessor barrier for every code-touching unit so the
-renormalization diff stays content-identical. U2, U3, U4–U10, U13, and U14 are
-mutually independent AFTER U1 lands; U11 (staticcheck) additionally depends on
-every errcheck unit (U4–U10, U13) so a staticcheck/errcheck file overlap cannot be
-discovered too late. U12 is the terminal sink node whose incoming edges are every
+No cycles (41 task-dependency edges total). U1 is a strict predecessor barrier for
+every code-touching unit so the renormalization diff stays content-identical. U11
+(staticcheck + overlap inventory) runs IMMEDIATELY after U1 and is a predecessor of
+every errcheck unit (U4–U10, U13), which each also depend on U1; U11 owns every
+staticcheck-flagged file (minus the two U3-owned files) for ALL findings and
+records that owned-file set, so each errcheck unit excludes it and exactly one unit
+owns each file. U3 and U14 depend on U1 only. U2 (residual gofmt) runs LAST among
+the fix units — it depends on U3, U4–U11, and U13 and formats only residual paths
+owned by no other unit. U12 is the terminal sink node whose incoming edges are every
 fix unit (U2, U3, U4–U11, U13, and U14).
 
-**File-partition invariant (resolves plan-review cycle-2 P2):** every touched
-file has exactly ONE owning unit — the package/lint-category axes must not both
-edit the same file concurrently. Enforce: (a) U2 residual `gofmt` is scoped
-strictly to files NOT owned by any errcheck/staticcheck unit (per-file gofmt for
-owned packages folds into U4–U11, U13); (b) if U11 staticcheck flags a file inside a
-package already owned by an errcheck unit (U4–U10, U13), merge that staticcheck fix
-into the owning package unit OR add an explicit intra-package ordering edge so
-the two units never edit the same file concurrently. This preserves the
-"mutually independent" claim at file granularity, not just package granularity.
+**File-partition invariant (resolves plan-review cycle-2 P2 + Copilot cycle-2
+exactly-one-owner finding):** every touched file has exactly ONE owning unit —
+the package/lint-category axes must not both edit the same file. Enforce via an
+UP-FRONT ownership inventory, not serialization: (a) U11 runs immediately after
+U1 and, as the overlap-inventory owner, records the COMPLETE set of
+staticcheck-flagged files (minus the two U3-owned files) and owns EVERY finding in
+them (staticcheck AND errcheck); (b) each errcheck unit (U4–U10, U13) depends on
+U11 and EXCLUDES U11's recorded owned-file set from its own scope, so a
+staticcheck-flagged file is owned by U11 alone and is never edited by an errcheck
+unit; (c) U2 residual `gofmt` runs LAST (after U3, U4–U11, U13) and is scoped
+strictly to files owned by NO other unit (per-file gofmt for owned packages folds
+into their owning units). Ownership is fixed BEFORE any code edit; serialization
+order NEVER confers ownership (the earlier "merge OR add an ordering edge" escape
+is removed). This preserves exactly-one-owner at file granularity, not just
+package granularity.
 
 ## Decisions and Rationale
 
@@ -623,3 +673,39 @@ intent and do not change the PASS verdict. Deltas:
 Backlog effect: 13 → 14 tasks (U1–U14); dependency edges 22 → 32; shipment
 `156-S` manifest 14 → 15 items (`175-F` + 14 tasks). All mutations via governed
 backlogit operations.
+
+### Copilot PR #448 review cycle 2 — Stage-owned corrections (post-harvest, P-021 C1)
+
+Same-contract-surface planning/handoff corrections; no new scope, PASS verdict
+unchanged. Deltas:
+
+* **Exactly-one-owner DAG redesign (findings 4 + 7)** — U11 no longer depends on
+  the errcheck units. Instead U11 runs IMMEDIATELY after U1 as the
+  staticcheck/errcheck overlap-inventory owner: it owns every staticcheck-flagged
+  file (minus the two U3-owned files) for ALL findings (staticcheck + errcheck) and
+  records that owned-file set. U4–U10 and U13 now depend on U11 and EXCLUDE its
+  recorded files, and U2 (residual gofmt) now runs LAST (after U3, U4–U11, U13). The
+  prior "merge into owning unit OR rely on serialization" wording — which permitted
+  two owners on one file — is removed; ownership is fixed by the up-front inventory,
+  never by serialization order. Dependency edges 32 → 41 (U11→U4–U10/U13 reversed to
+  U4–U10/U13→U11: −8/+8; U2→U1 replaced by U2→{U3,U4–U11,U13}: −1/+10). DAG remains
+  acyclic; U12 terminal; U14 terminal-fed.
+* **U1 refresh-set derivation (finding 2)** — the working-tree refresh path set is
+  now derived from the UNION of staged renormalized paths AND every
+  `eol=lf`-governed tracked path whose working-tree EOL is `w/crlf`/`w/mixed`
+  (`git ls-files --eol`), not the staged-diff names alone — because the index may
+  already be LF while the working tree is CRLF (renormalize would stage nothing).
+  Clean-tree precondition, operator-only pre-approval, scoped refresh, and no forced
+  whole-tree checkout are retained.
+* **U14 Windows guard (finding 3)** — the persistent `git ls-files --eol`
+  working-tree guard MUST run on `windows-latest` AFTER checkout, and MUST run on
+  every PR/push (no `paths:`/changed-files skip) so docs/backlog-only changes still
+  exercise the checkout + guard. The index-identity/renormalize-exit-code check
+  stays SEPARATE (may run on `ubuntu-latest`). The workflow file itself is NOT
+  edited during staging.
+* **Deliberation source-kind (finding 6)** — `4DB1DFF1` machine kind corrected from
+  `tech-debt` to the actual `task` in the deliberation grouped-entries table.
+
+Backlog effect: 14 tasks (U1–U14) unchanged; dependency edges 32 → 41; shipment
+`156-S` manifest unchanged at 15 items (`175-F` + 14 tasks). All mutations via
+governed backlogit operations.

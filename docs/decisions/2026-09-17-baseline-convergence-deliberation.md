@@ -46,7 +46,7 @@ throughout) and thereby unblocks `149-S`.
 | Stash ID | Kind | Summary | requires-deliberation |
 |---|---|---|---|
 | `92F79833` | bug | `TestU4aBehaviorCanonicalByteStable` CRLF/LF golden-byte mismatch in `internal/faultline` | true |
-| `4DB1DFF1` | tech-debt | 50 errcheck + 6 staticcheck + gofmt drift in non-faultline repository files | false (marker forces deliberation) |
+| `4DB1DFF1` | task | 50 errcheck + 6 staticcheck + gofmt drift in non-faultline repository files | false (marker forces deliberation) |
 
 Per the Step 1 precedence rule, the `DEFERRED SCOPE EXPANSION` marker forces the
 `deliberate` route for BOTH entries regardless of shape/size/priority. `4DB1DFF1`
@@ -239,3 +239,33 @@ These corrections complete the already-authorized staging contracts for shipment
   `175.010.a-T` → `175.010.001-ST`.
 * **Backlog effect** — 13 → 14 tasks (U1–U14); dependency edges 22 → 32; shipment
   `156-S` manifest 14 → 15 items. All mutations via governed backlogit operations.
+
+## Copilot PR #448 review cycle 2 — corrections (Stage-owned, P-021 C1)
+
+Same-contract-surface planning/handoff corrections; no new scope. Deltas:
+
+* **Exactly-one-owner DAG redesign (findings 4 + 7)** — U11 is repositioned to run
+  IMMEDIATELY after U1 as the staticcheck/errcheck overlap-inventory owner: it owns
+  every staticcheck-flagged file (minus the two U3-owned files) for ALL findings
+  (staticcheck + errcheck) and records that owned-file set as deterministic handoff
+  evidence. U4–U10 and U13 now depend on U11 and exclude its recorded files; U2
+  (residual gofmt) runs LAST (after U3, U4–U11, U13) over residual unowned paths
+  only. Overlap ownership is thus determined BEFORE any code edit so exactly one task
+  owns each file; the prior wording permitting a serialized second owner is removed.
+  Dependency edges 32 → 41; DAG remains acyclic; U12 terminal.
+* **U14 CI guard on windows-latest (finding 3)** — the persistent `git ls-files
+  --eol` working-tree guard must run on a `windows-latest` runner AFTER checkout
+  (CRLF re-drift only manifests on a Windows checkout) and must run on every PR/push
+  with explicit conditions so docs-only/backlog-only changes do NOT skip the
+  checkout + guard; any Ubuntu/index-identity guard stays separate. The workflow is
+  not edited during staging.
+* **U1 refresh-set (finding 2)** — refresh path set derived from every
+  `eol=lf`-governed tracked path whose working-tree EOL is `w/crlf`/`w/mixed` (union
+  with staged renormalized names), not the staged names alone, because the index may
+  already be LF while the working tree is CRLF.
+* **Source-kind (finding 6)** — `4DB1DFF1` kind corrected to the actual machine kind
+  `task` in the grouped-entries table above (was `tech-debt`).
+
+Backlog effect: 14 tasks (U1–U14) unchanged; dependency edges 32 → 41; shipment
+`156-S` manifest unchanged at 15 items. All mutations via governed backlogit
+operations.

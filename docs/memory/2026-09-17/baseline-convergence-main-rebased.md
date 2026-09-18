@@ -34,18 +34,23 @@ checkpoint provenance are internally consistent with main.
   `operator_authorization: approved` (Cycle 1 FAIL 2×P1 remediated, Cycle 2
   PASS). Review-record contract re-validated on this branch; docline lint = 0
   violations on both docs.
-- **Regenerated natively on main:** feature, 13 tasks, 22 task-dependency edges,
+- **Regenerated natively on main:** feature, 13 tasks, 22 task-dependency edges
+  (as first regenerated; now **14 tasks (U1–U14) / 41 edges** after cycle-1 +
+  cycle-2 corrections — see the current-state blocks below),
   shipment, cross-shipment dependency, stash archival, and the session
   checkpoint — all via backlogit operations so sequence/provenance is native to
   main. No `.backlogit/` file copies, no cherry-pick.
 
-> **Corrected current state (2026-09-17):** the regenerated release unit now
-> carries **13 tasks (U1–U13)**, not the 12 (U1–U12) first recorded below. U13
+> **Corrected current state (2026-09-17) — HISTORICAL, SUPERSEDED:** the
+> regenerated release unit then
+> carried **13 tasks (U1–U13)**, not the 12 (U1–U12) first recorded below. U13
 > (`175.013-T` — errcheck remediation of the residual closed package set) was
 > added, raising the dependency-edge count to **22** and the shipment `156-S`
-> manifest to **14 items**. The corrected figures are authoritative; the
-> historical wording beneath is preserved for provenance and superseded where it
-> conflicts.
+> manifest to **14 items**. These figures were authoritative at the U13
+> correction but are now SUPERSEDED by the cycle-1 (U14 → 14 tasks / 32 edges /
+> 15 items) and cycle-2 (exactly-one-owner redesign → **41 edges**) blocks below;
+> the historical wording beneath is preserved for provenance and superseded where
+> it conflicts.
 
 > **Corrected current state (Copilot PR #448 review cycle 1):** the release unit
 > now carries **14 tasks (U1–U14)**. U14 (`175.014-T` — persistent CI
@@ -57,20 +62,36 @@ checkpoint provenance are internally consistent with main.
 > are the authoritative figures; earlier 13-task / 22-edge / 14-item wording is
 > superseded. All mutations via governed backlogit operations.
 
-## Native backlog artifacts (IDs assigned by current main)
+> **Corrected current state (Copilot PR #448 review cycle 2):** the
+> exactly-one-owner DAG redesign REVERSED the staticcheck/errcheck edges — U11
+> (`175.011-T`) now runs IMMEDIATELY after U1 as the overlap-inventory owner, and
+> `175.004-T`–`175.010-T`, `175.013-T` depend on U11 (NOT the reverse); U2
+> (`175.002-T`, residual gofmt) now runs LAST, depending on
+> `175.003-T`,`175.004-T`–`175.011-T`,`175.013-T`. The dependency-edge count is now
+> **41** (queried via `backlogit dep list`), superseding the cycle-1 **32** figure
+> and its "U11→errcheck units / U2→U1-only" wording. Task count (**14**, U1–U14)
+> and shipment `156-S` manifest (**15 items**, `175-F` + `175.001-T`…`175.014-T`)
+> are UNCHANGED. All mutations via governed backlogit operations.
+
+## Native backlog artifacts (IDs assigned by current main) — current (cycle 2)
 
 - Covering **feature `175-F`** (feature required by `isRootCoveringFeature()` +
   manifest-binding digest).
-- Tasks **`175.001-T` … `175.013-T`** (plan units U1–U13), each with acceptance
-  criteria + plan reference. *(Corrected: U1–U13 / 13 tasks; originally recorded
-  as U1–U12 / 12 tasks.)*
-- Dependency edges (22, corrected from 20): `175.002-T`–`175.011-T` **and
-  `175.013-T`** each depends-on `175.001-T`
-  (U1 renormalize strict predecessor, 11 edges); `175.012-T` (terminal
-  verification sink) depends-on `175.002-T`–`175.011-T` **plus `175.013-T`**
-  (11 edges).
+- Tasks **`175.001-T` … `175.014-T`** (plan units U1–U14 / **14 tasks**), each
+  with acceptance criteria + plan reference. *(Historical, superseded: originally
+  U1–U12 / 12 tasks, then U1–U13 / 13 tasks; current is U1–U14 / 14 tasks.)*
+- Dependency edges: **41** (queried via `backlogit dep list`), under the cycle-2
+  exactly-one-owner DAG: `175.003-T`, `175.004-T`–`175.011-T`, `175.013-T`,
+  `175.014-T` each depend-on `175.001-T` (U1 strict predecessor);
+  `175.004-T`–`175.010-T` and `175.013-T` additionally depend-on `175.011-T`
+  (U11 overlap-inventory owner); `175.002-T` (residual gofmt, runs last)
+  depends-on `175.003-T`, `175.004-T`–`175.011-T`, `175.013-T` (10 edges);
+  `175.012-T` (terminal verification sink) depends-on all fix units
+  `175.002-T`–`175.011-T`, `175.013-T`, `175.014-T` (12 edges). *(Historical,
+  superseded: 20 → 22 → 32 → 41 edges across corrections.)*
 - **Shipment `156-S`** "Repository baseline convergence" (queued, high). Manifest
-  = **14 items (corrected from 13)**: `175-F` (parent-first) + `175.001-T`…`175.013-T`.
+  = **15 items**: `175-F` (parent-first) + `175.001-T`…`175.014-T`. *(Historical,
+  superseded: 13 → 14 → 15 items.)*
 - Cross-shipment dependency **`149-S → 156-S (blocks)`**. `149-S` members/manifest
   NOT mutated (only `dependencies: [156-S]` added).
 
