@@ -22,15 +22,16 @@ shipment ships.
 
 The completed redesign replaces the earlier package or aggregate plan with an
 immutable file-owned lint DAG. The executable scope is locked before handoff:
-exactly 39 tasks, no aggregate lint task, no separate format task, and no
+exactly 40 tasks, no aggregate lint task, no separate format task, and no
 backlog creation during execution.
 
 Baseline evidence at HEAD `c80d7c6ba968604913614e90522e1380ba84ad99`:
 
 * `go test ./...` exposed the Windows checkout LF/CRLF golden-byte failure in
   `internal/faultline.TestU4aBehaviorCanonicalByteStable`
-* `gofmt -l .` listed 518 Go files, exactly matching the 518 tracked CRLF
-  Go/JSON files handled by the line-ending migration
+* `gofmt -l .` listed 518 Go files, exactly matching the 518 tracked CRLF Go
+  files; U1's wider renormalization scope is 548 tracked CRLF paths
+  (518 `*.go` + 30 `*.json`, confirmed by live read-only `git ls-files --eol`)
 * `golangci-lint` v2.13.2 reported 56 findings across 36 flagged files:
   50 `errcheck` findings across 31 files and 9 packages, plus 6 `staticcheck`
   findings across 5 files and 4 packages
@@ -42,21 +43,23 @@ Baseline evidence at HEAD `c80d7c6ba968604913614e90522e1380ba84ad99`:
 | Requirement | Implementation unit(s) |
 | --- | --- |
 | Normalize tracked Go/JSON line endings durably | U1 (`175.001-T`) |
-| Preserve `ci.yml` byte-for-byte | U1 and U14 |
+| Preserve `ci.yml` byte-for-byte | U1, U40, and U14 |
 | Resolve every linter-flagged file with one file owner | 36 lint tasks (`175.002-T`..`175.011-T`, `175.013-T`, `175.015-T`..`175.039-T`) |
-| Add a non-vacuous persistent line-ending guard | U14 (`175.014-T`) |
+| Provide a reusable fixed-set line-ending guard script | U40 (`175.040-T`) |
+| Add a non-vacuous persistent line-ending guard workflow | U14 (`175.014-T`) |
 | Prove repository convergence and evidence integrity | U12 (`175.012-T`) |
 
 ## Authoritative Decomposition
 
-Feature `175-F` contains exactly 39 executable tasks:
+Feature `175-F` contains exactly 40 executable tasks:
 
 | Unit set | Task IDs | Ownership |
 | --- | --- | --- |
 | U1 | `175.001-T` | Homogeneous mechanical line-ending migration |
 | Lint tasks | `175.002-T`..`175.011-T`, `175.013-T`, `175.015-T`..`175.039-T` | One flagged source or test file per task |
-| U12 | `175.012-T` | Terminal verification-only sink |
+| U40 | `175.040-T` | Line-ending guard script (`scripts/check-line-endings.ps1`) |
 | U14 | `175.014-T` | Dedicated line-ending guard workflow |
+| U12 | `175.012-T` | Terminal verification-only sink |
 
 The full 36-file-to-task mapping is not duplicated here. It lives in
 `docs/decisions/2026-09-17-baseline-lint-inventory.md`, including each task's
@@ -77,14 +80,18 @@ most two files: its flagged file and its deterministic harness file.
 
 U1 (`175.001-T`) is the only homogeneous mechanical migration:
 
-* `.gitattributes` hardening for tracked Go/JSON LF normalization
-* path-scoped `git add --renormalize` of exactly 518 tracked `*.go`/`*.json`
-  files
-* no semantic content change in those 518 files
+* `.gitattributes` hardening for tracked Go/JSON LF normalization (the byte-exact
+  golden JSON stays governed by `eol=lf`; no `-text` branch)
+* NUL-safe pathspec-file `git add --renormalize --pathspec-from-file=<temp>
+  --pathspec-file-nul` over exactly 548 tracked CRLF paths (518 `*.go` +
+  30 `*.json`), with `.gitattributes` staged separately
+* pathspec-scoped worktree refresh (`git restore --worktree --source=:
+  --pathspec-from-file=... --pathspec-file-nul`), not a whole-tree checkout
+* no semantic content change in those 548 files
 * no workflow content change; `.github/workflows/ci.yml` stays byte-identical
 
 U1 deliberately exceeds the `<3 files` heuristic because the migration is a
-single 518-file byte-only operation. This is a documented heuristic exceedance,
+single 548-file byte-only operation. This is a documented heuristic exceedance,
 not an exemption from the 2-hour human-effort bound. The bound holds because the
 change is homogeneous, mechanically verified, and has zero semantic delta.
 
@@ -93,10 +100,15 @@ Required gates retained for U1:
 * operator-only approval before staging or refreshing any renormalized path
 * clean-tree fail-closed gate before the migration begins
 * path-scoped refresh only; no whole-tree forced refresh
-* semantic-diff prohibition for the 518 migrated files
-* exact evidence that all 518 tracked Go/JSON files were included
-* exclusive harness `tests/lineending_baseline_175_test.go` with a genuine
-  red-before-green LF-assertion selector
+* semantic-diff prohibition for the 548 migrated files
+* exact evidence that the staged EOL set equals the frozen 548 tracked Go/JSON
+  paths plus `.gitattributes`, with no unrelated text paths
+* `Freeze-scope` plus `Careful mode` safety posture
+  (ProposedAction/ActionRisk/approval/rollback/ActionResult)
+* exclusive harness `tests/lineending_baseline_175_test.go` with task-owned
+  function `TestU175_001_...` verified via `go test <pkg> -run '^TestU175_001_'
+  -v -count=1` (fail-closed on zero matching `--- PASS: TestU175_001_` lines);
+  red before `.gitattributes` + refresh, green after
 
 ## File-Owned Lint Tasks
 
@@ -104,7 +116,11 @@ The 36 lint tasks are normal harness-required implementation tasks. Each task:
 
 * owns exactly one flagged source or test file from the v2.13.2 lint baseline
 * owns exactly one deterministic harness file named
-  `<pkg>/<linter>_<basename>_175_test.go`
+  `<pkg>/<linter>_<basename>_175_test.go` whose function starts
+  `TestU175_<NNN>_` (e.g. `TestU175_002_` for `175.002-T`)
+* verifies via the scoped command `go test ./<pkg> -run '^TestU175_<NNN>_'
+  -v -count=1`, preserving native exit and failing fail-closed when zero
+  matching `--- PASS: TestU175_<NNN>_` lines appear
 * lists exact linter, file, finding lines, package, affected functions, and
   fewer than 4 scenarios in the lint inventory
 * affects fewer than 5 functions
@@ -124,12 +140,14 @@ separate cross-linter ownership artifact exists.
 
 ### Lint remediation strategy
 
-Errcheck fixes follow the existing Go error-handling policy:
+Errcheck fixes follow the existing Go error-handling policy, which requires every
+returned error to be handled — no ignored `_ =` return is accepted:
 
 * deferred writable `Close` operations use named returns and `errors.Join`
 * write and short-write paths use checked helper patterns already documented in
   compound learnings
-* genuinely discardable return values use explicit `_ =` with an inline reason
+* returned errors are checked and propagated/wrapped, asserted in a test, or
+  handled through an existing safe helper — never discarded via `_ =`
 * tests prefer `require.NoError` or `t.Setenv` where applicable
 * propagated errors use `fmt.Errorf("context: %w", err)` while preserving
   sentinel classification where required
@@ -138,10 +156,31 @@ Staticcheck fixes prefer behavior-preserving code changes. A `//nolint` is
 allowed only when the evidence artifact records a current, non-empty
 justification and the suppression still matches a live finding.
 
+## U40 - Line-Ending Guard Script
+
+U40 (`175.040-T`) owns exactly `scripts/check-line-endings.ps1` plus
+`tests/lineendings_data_guard_175_test.go`. It depends on U1. The script is
+fail-closed over a FIXED tracked `*.go`/`*.json` set and asserts three
+independent properties so narrowing or deleting `.gitattributes` cannot make the
+check vacuous:
+
+1. the required `.gitattributes` contract is present
+2. the checked-out working tree has LF for the fixed tracked set
+3. the stored/index blobs are LF-normalized
+
+U40's harness function `TestU175_040_...` (verified via `go test <pkg> -run
+'^TestU175_040_' -v -count=1`, fail-closed non-vacuity) uses a `t.TempDir`
+disposable Git repository, does not mutate the caller index, and covers three
+scenarios: CRLF/mixed worktree red, CRLF committed blob red, and fully LF green
+(attribute-contract validation is part of each data-state precondition, not a
+fourth scenario).
+
 ## U14 - Dedicated Line-Ending Guard Workflow
 
-U14 (`175.014-T`) owns only a new workflow file:
-`.github/workflows/line-endings.yml`. It does not modify
+U14 (`175.014-T`) owns only a new workflow file
+`.github/workflows/line-endings.yml` plus its harness
+`tests/lineendings_workflow_175_test.go`. It depends on U40, and the workflow
+invokes `scripts/check-line-endings.ps1`. It does not modify
 `.github/workflows/ci.yml`; that workflow remains byte-identical.
 
 The new workflow contract:
@@ -155,18 +194,13 @@ The new workflow contract:
 * uses `concurrency` keyed on `github.ref` with `cancel-in-progress: true`
 * has no changed-file skip path and no dependency on the existing CI workflow
 
-The guard is fail-closed over a fixed tracked `*.go`/`*.json` set. It asserts
-three independent properties so narrowing or deleting `.gitattributes` cannot
-make the check vacuous:
-
-1. the required `.gitattributes` contract is present
-2. the checked-out working tree has LF for the fixed tracked set
-3. the stored/index blobs are LF-normalized
-
-U14 owns harness `tests/lineendings_guard_175_test.go`. The harness creates a
-disposable `t.TempDir` repository, extracts and executes the committed guard
-script, and covers red scenarios for missing workflow, removed attributes, CRLF
-working tree, CRLF committed blob, plus a green LF scenario.
+U14 owns harness `tests/lineendings_workflow_175_test.go` with function
+`TestU175_014_...` (verified via `go test <pkg> -run '^TestU175_014_' -v
+-count=1`, fail-closed non-vacuity). The harness extracts and executes the
+committed workflow run script and covers three scenarios: missing/malformed
+workflow invocation red, insecure/skippable workflow contract red
+(attributes/trigger/pinning/permissions/filters as one contract-validation
+outcome), and valid secure always-run workflow green.
 
 ## U12 - Terminal Verification Sink
 
@@ -190,24 +224,27 @@ artifact and the machine-readable `//nolint` inventory. The inventory check
 rejects missing, extra, duplicate, empty-justification, and stale rows.
 
 U12 has no green guard harness and no source/config deliverable. Its dependency
-on U1 is transitive through the tasks it depends on.
+on U1 and U40 is transitive through the tasks it depends on.
 
 ## Frozen DAG
 
-The DAG is acyclic and contains 74 edges total:
+The DAG is acyclic and contains 75 edges total:
 
-* 36 lint tasks depend on U1
-* U14 depends on U1
-* U12 depends on every other executable task except U1 directly: all 36 lint
-  tasks plus U14
+* each of the 36 lint tasks depends on U1 (36 edges)
+* U40 depends on U1 (1 edge)
+* U14 depends on U40 (1 edge)
+* U12 depends on exactly 37 immediate predecessors: all 36 lint tasks plus U14
 
-This yields 37 edges into U1 under backlogit's `depends_on` orientation and 37
-edges from U12 to its immediate prerequisites. U12 is the sole terminal sink; no
-lint task or U14 depends on another lint task.
+U12's dependency on U1 and U40 is transitive only (no direct edge to either).
+36 + 1 + 1 + 37 = 75. U12 is the sole terminal sink; no lint task, U40, or U14
+depends on another lint task.
 
 ```text
 U1 line-ending migration
   <- 36 file-owned lint tasks
+  <- U40 line-ending guard script
+
+U40 guard script
   <- U14 dedicated workflow guard
 
 U12 terminal verification
@@ -224,8 +261,8 @@ file-owned lint task.
 | --- | --- | --- | --- |
 | `175.012-T` | `verification-only` | `none` | `docs/closure/175-baseline-convergence-convergence-evidence.md` |
 
-Every other task is normal harness-required. U1, U14, and all 36 lint tasks own
-real red-before-green harnesses.
+Every other task is normal harness-required. U1, U40, U14, and all 36 lint tasks
+own real red-before-green harnesses.
 
 ## Stash Classification
 
@@ -258,7 +295,7 @@ half of that separate concern.
 * **Renormalization blast radius:** U1 requires operator approval, clean-tree
   gating, exact path evidence, scoped refresh, and semantic-diff prohibition
 * **Binary or fixture corruption:** U1 limits the migration to the tracked
-  Go/JSON set and proves the 518-file set exactly
+  Go/JSON set and proves the 548-file set exactly
 * **Lint ownership drift:** the lint inventory is the source of truth for every
   flagged file and reserved harness path
 * **Guard vacuity:** U14 validates attributes, working-tree EOL, and stored blob
@@ -269,7 +306,7 @@ half of that separate concern.
 
 * **Safety-First Go:** pass. Error handling changes are file-local and follow
   existing wrapping and sentinel policies.
-* **Test-First Development:** pass. U1, U14, and every lint task are normal
+* **Test-First Development:** pass. U1, U40, U14, and every lint task are normal
   harness-required tasks with red-before-green harnesses. U12 is the sole
   verification-only harness-exempt task.
 * **Workspace Isolation:** pass. All planned edits are within the repository.
@@ -288,16 +325,17 @@ Constitution Check: documented-deviations
 
 ## Plan Review Status
 
-The earlier per-package and aggregate design was superseded by the cycle-5
-file-owned lint DAG redesign. The PASS conclusion is retained only for the
-current contract described in this document:
+The earlier per-package and aggregate design was superseded by the file-owned
+lint DAG redesign. The PASS conclusion is retained only for the current contract
+described in this document:
 
-* exactly 39 executable tasks
+* exactly 40 executable tasks
 * 36 file-owned lint tasks
-* U1 as the only line-ending migration
-* U14 as a new dedicated workflow with no `ci.yml` edit
+* U1 as the only line-ending migration (548 tracked CRLF paths)
+* U40 as the line-ending guard script
+* U14 as a new dedicated workflow with no `ci.yml` edit (depends on U40)
 * U12 as the only harness-exempt verification sink
-* 74 DAG edges
+* 75 DAG edges
 * no aggregate lint unit and no execution-time backlog creation
 
 ## Runtime Verification and Closure

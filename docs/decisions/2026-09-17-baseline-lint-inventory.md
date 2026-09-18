@@ -24,7 +24,7 @@ This inventory is generated directly from the read-only golangci-lint evidence c
 - Total findings: 56 (errcheck 50 + staticcheck 6)
 - Flagged files: 36 (one file-owned lint task each)
 
-gofmt/CRLF companion proof (`baseline-gofmt-files.txt` vs `baseline-crlf-go-json.txt`): the 518 gofmt-listed Go files are exactly the 518 tracked CRLF Go files (`gofmtNotCRLF=0`, `crlfGoNotGofmt=0`), so U1's line-ending migration resolves gofmt wholesale and no separate gofmt task is required.
+gofmt/CRLF companion proof (`baseline-gofmt-files.txt` vs `baseline-crlf-go-json.txt`): the 518 gofmt-listed Go files are exactly the 518 tracked CRLF Go files (`gofmtNotCRLF=0`, `crlfGoNotGofmt=0`), so U1's line-ending migration resolves gofmt wholesale and no separate gofmt task is required. U1's wider renormalization scope is 548 tracked CRLF paths (518 `*.go` + 30 `*.json`, from live read-only `git ls-files --eol`); the 30 JSON paths are byte-only and outside gofmt's Go-only scope.
 
 ## Linter set disjointness (no-overlap proof)
 
@@ -81,3 +81,4 @@ Because the errcheck and staticcheck file sets are disjoint, NO overlap-inventor
 - Maximum affected functions in any single file: 3 (< 5).
 - No file carries >= 4 distinct affected functions, so no file requires a further same-file split.
 - Every reserved harness path is unique (exactly-one-owner, collision-proof naming `<pkg>/<linter>_<basename>_175_test.go`).
+- Each harness file's test function follows the P-002.6 selector convention `TestU175_<NNN>_...` (deterministic sanitized unit token, e.g. `TestU175_002_` for `175.002-T`); the scoped verification command is `go test ./<pkg> -run '^TestU175_<NNN>_' -v -count=1`, preserving native exit and failing fail-closed when zero matching `--- PASS: TestU175_<NNN>_` lines appear. Errcheck findings are resolved by checked propagation/wrapping, named-return `errors.Join`, test assertion, or an existing safe helper — never by an ignored `_ =` return.

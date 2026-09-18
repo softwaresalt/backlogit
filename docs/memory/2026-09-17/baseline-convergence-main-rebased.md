@@ -22,16 +22,17 @@ consistent with main.
 
 ## Current redesign summary
 
-The completed cycle-5 redesign supersedes the earlier package and aggregate
+The completed cycle-6 redesign supersedes the earlier package and aggregate
 planning shape. The current authoritative design is an immutable file-owned lint
 DAG for feature `175-F`:
 
-* exactly 39 executable tasks
-* U1 (`175.001-T`) as the sole line-ending migration
+* exactly 40 executable tasks
+* U1 (`175.001-T`) as the sole line-ending migration (548 tracked CRLF paths)
 * 36 file-owned lint tasks covering every flagged file in the v2.13.2 baseline
+* U40 (`175.040-T`) as the line-ending guard script
+* U14 (`175.014-T`) as the dedicated line-ending guard workflow (depends on U40)
 * U12 (`175.012-T`) as the only harness-exempt verification sink
-* U14 (`175.014-T`) as the dedicated line-ending guard workflow
-* exactly 74 dependency edges
+* exactly 75 dependency edges
 * no aggregate lint unit and no backlog creation during execution
 
 The complete lint file-to-task mapping is recorded in
@@ -42,32 +43,34 @@ The complete lint file-to-task mapping is recorded in
 The current main-native release unit consists of:
 
 * covering feature `175-F`
-* tasks `175.001-T` through `175.039-T`
+* tasks `175.001-T` through `175.040-T`
 * shipment `156-S` for repository baseline convergence
 * cross-shipment dependency `149-S -> 156-S (blocks)`
 
-The 39 tasks are assigned as follows:
+The 40 tasks are assigned as follows:
 
 | Unit | Task ID(s) | Role |
 | --- | --- | --- |
-| U1 | `175.001-T` | line-ending migration for 518 tracked Go/JSON files |
+| U1 | `175.001-T` | line-ending migration for 548 tracked CRLF Go/JSON paths (518 Go + 30 JSON) |
 | lint tasks | `175.002-T`..`175.011-T`, `175.013-T`, `175.015-T`..`175.039-T` | one flagged file each |
+| U40 | `175.040-T` | line-ending guard script (`scripts/check-line-endings.ps1`) |
+| U14 | `175.014-T` | new dedicated line-ending workflow (depends on U40) |
 | U12 | `175.012-T` | terminal verification-only evidence |
-| U14 | `175.014-T` | new dedicated line-ending workflow |
 
 U1 and U14 both leave `.github/workflows/ci.yml` byte-identical. U14 owns only
-`.github/workflows/line-endings.yml`.
+`.github/workflows/line-endings.yml` plus its workflow harness.
 
 ## Dependency graph
 
-The DAG is locked before Ship handoff and has 74 edges:
+The DAG is locked before Ship handoff and has 75 edges:
 
-* each of the 36 lint tasks depends on U1
-* U14 depends on U1
-* U12 depends on all 36 lint tasks and U14
+* each of the 36 lint tasks depends on U1 (36 edges)
+* U40 depends on U1 (1 edge)
+* U14 depends on U40 (1 edge)
+* U12 depends on all 36 lint tasks and U14 (37 immediate edges)
 
-U12's dependency on U1 is transitive. U12 is the sole terminal sink. U11 is now a
-normal file-owned lint task, not a special coordination owner.
+U12's dependency on U1 and U40 is transitive only. U12 is the sole terminal sink.
+U11 is now a normal file-owned lint task, not a special coordination owner.
 
 ## Lint and format evidence
 
@@ -78,10 +81,11 @@ Baseline evidence at HEAD `c80d7c6ba968604913614e90522e1380ba84ad99`:
 * total flagged files: 36
 * errcheck/staticcheck file intersection: empty
 * gofmt-listed Go files: 518
-* tracked CRLF Go/JSON files: 518
+* tracked CRLF Go files: 518
+* tracked CRLF Go + JSON paths (U1 renormalization scope): 548 (518 Go + 30 JSON)
 
-The gofmt and CRLF sets match exactly, so U1 resolves the format drift. No
-separate gofmt task exists.
+The gofmt-listed Go files exactly match the 518 tracked CRLF Go files, so U1
+resolves the format drift. No separate gofmt task exists.
 
 ## Stash disposition and classification
 
