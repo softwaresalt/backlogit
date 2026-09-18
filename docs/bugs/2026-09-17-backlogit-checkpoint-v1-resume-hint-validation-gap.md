@@ -1,16 +1,25 @@
 ---
-type: bug-report
-kind: bug-report
-date: 2026-09-17
-agent: Stage
-subject: "backlogit bug report — CheckpointV1 accepts payloads with no top-level resume_hint"
-status: OPEN
-component: "backlogit checkpoint schema validator (CheckpointV1) + `checkpoint create` CLI help/example"
-target_workspace: backlogit
-severity: medium
-source_workspace: autoharness
-related_stash: ["71200CBB"]
-portable: true
+chunk_strategy: h1-h2-h3
+description: 'Defect report: backlogit CheckpointV1 validation accepts schema_version 1 checkpoints that omit the top-level resume_hint recovery-intent field, and checkpoint get reports such records valid.'
+doc_type: guide
+docline:
+    agent: Stage
+    component: backlogit checkpoint schema validator (CheckpointV1) + `checkpoint create` CLI help/example
+    date: 2026-09-17T00:00:00Z
+    kind: bug-report
+    portable: true
+    related_stash:
+        - 71200CBB
+    severity: medium
+    source_workspace: autoharness
+    status: OPEN
+    subject: backlogit bug report — CheckpointV1 accepts payloads with no top-level resume_hint
+    target_workspace: backlogit
+    type: bug-report
+ingested_at: "2026-09-18T04:35:33Z"
+schema_version: "1.0"
+source: docs/bugs/2026-09-17-backlogit-checkpoint-v1-resume-hint-validation-gap.md
+title: Backlogit CheckpointV1 Accepts a Checkpoint With No Top-Level resume_hint
 ---
 
 # backlogit bug — `CheckpointV1` accepts a checkpoint with no top-level `resume_hint`
