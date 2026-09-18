@@ -4,7 +4,7 @@
   "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S for the scheduler regression corpus and dynamically projects baseline-convergence membership, roles, task-lint contracts, and dependency topology from shipment 156-S's canonical feature block and live queue. Generic controls validate arbitrary correctly declared convergence DAGs, strict and baseline-convergence lint modes, exact governed claim deltas, and installed Ship/build-feature/policy parity. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
   "contract": {
     "policy": ".github/policies/workflow-policies.md",
-    "policy_version": "1.30.0",
+    "policy_version": "1.31.0",
     "policies": [
       "P-002.2",
       "P-002.6"
@@ -186,7 +186,8 @@
         {"task_id": "900.002-T", "role": "finding-remediation", "task_artifact_sha256": "2222222222222222222222222222222222222222222222222222222222222222"},
         {"task_id": "900.003-T", "role": "finding-remediation", "task_artifact_sha256": "3333333333333333333333333333333333333333333333333333333333333333"},
         {"task_id": "900.004-T", "role": "finding-remediation", "task_artifact_sha256": "4444444444444444444444444444444444444444444444444444444444444444"},
-        {"task_id": "900.005-T", "role": "terminal-convergence", "task_artifact_sha256": "5555555555555555555555555555555555555555555555555555555555555555"}
+        {"task_id": "900.005-T", "role": "terminal-convergence", "task_artifact_sha256": "5555555555555555555555555555555555555555555555555555555555555555"},
+        {"task_id": "900.006-T", "role": "support", "task_artifact_sha256": "6666666666666666666666666666666666666666666666666666666666666666"}
       ],
       "baseline_inventory": {
         "path": "tests/simulation/fixtures/generic-lint-baseline.json",
@@ -209,7 +210,8 @@
       "900.002-T": ["900.001-T"],
       "900.003-T": ["900.001-T"],
       "900.004-T": ["900.002-T"],
-      "900.005-T": ["900.003-T", "900.004-T"]
+      "900.005-T": ["900.003-T", "900.004-T", "900.006-T"],
+      "900.006-T": ["900.002-T"]
     },
     "inventory_observation": {
       "digest_matches": true,
@@ -237,8 +239,17 @@
       {"task_id": "900.002-T", "status": "queued"},
       {"task_id": "900.003-T", "status": "queued"},
       {"task_id": "900.004-T", "status": "queued"},
-      {"task_id": "900.005-T", "status": "queued"}
+      {"task_id": "900.005-T", "status": "queued"},
+      {"task_id": "900.006-T", "status": "queued"}
     ],
+    "task_lint_contract_observation": {
+      "900.001-T": true,
+      "900.002-T": true,
+      "900.003-T": true,
+      "900.004-T": true,
+      "900.005-T": true,
+      "900.006-T": true
+    },
     "initial_attestation_observation": {
       "executed_before_claim": true,
       "exact_inventory": true,
@@ -246,10 +257,18 @@
     },
     "expected_shipment_id": "900-S",
     "expected_release_unit_id": "900-F",
-    "members": ["900.001-T", "900.002-T", "900.003-T", "900.004-T", "900.005-T"],
+    "members": ["900.001-T", "900.002-T", "900.003-T", "900.004-T", "900.005-T", "900.006-T"],
     "controls": [
       {"id": "missing-entire-baseline-contract", "remove_contract": true, "baseline_requested": true, "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
       {"id": "intermediate-exact-residual", "completed": ["900.001-T"], "observed": ["internal/a.go|10|2|errcheck|unchecked return|900.002-T", "internal/b.go|20|3|staticcheck|deprecated call|900.003-T", "internal/c.go|30|4|errcheck|unchecked close|900.004-T"], "terminal": false, "global_lint_ok": false, "expect": "CONVERGING"},
+      {"id": "connected-support-chain", "completed": ["900.001-T"], "observed": ["internal/a.go|10|2|errcheck|unchecked return|900.002-T", "internal/b.go|20|3|staticcheck|deprecated call|900.003-T", "internal/c.go|30|4|errcheck|unchecked close|900.004-T"], "terminal": false, "global_lint_ok": false, "expect": "CONVERGING"},
+      {"id": "support-owning-finding", "set_finding_owner": {"finding_key": "internal/c.go|30|4|errcheck|unchecked close", "owner_task_id": "900.006-T"}, "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "disconnected-support", "set_dependencies": {"task_id": "900.006-T", "dependencies": []}, "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "support-not-reaching-terminal", "set_dependencies": {"task_id": "900.005-T", "dependencies": ["900.003-T", "900.004-T"]}, "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "support-missing-task-lint", "remove_task_lint_task": "900.006-T", "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "hidden-support", "remove_member_scope_task": "900.006-T", "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "off-catalog-support", "append_member_scope": {"task_id": "900.999-T", "role": "support", "task_artifact_sha256": "9999999999999999999999999999999999999999999999999999999999999999"}, "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "support-status-does-not-reduce-residual", "completed": ["900.001-T", "900.002-T", "900.006-T"], "observed": ["internal/b.go|20|3|staticcheck|deprecated call|900.003-T"], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_RESIDUAL_MISMATCH"},
       {"id": "control-only-first-wave-unconditional-global-lint", "remove_contract": true, "baseline_requested": false, "completed": ["900.001-T"], "observed": ["internal/a.go|10|2|errcheck|unchecked return|900.002-T", "internal/b.go|20|3|staticcheck|deprecated call|900.003-T", "internal/c.go|30|4|errcheck|unchecked close|900.004-T"], "terminal": false, "global_lint_ok": false, "expect": "STRICT_GLOBAL_LINT_FAILED"},
       {"id": "missing-member", "remove_member_scope_task": "900.004-T", "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
       {"id": "duplicate-control-role", "set_member_role": {"task_id": "900.002-T", "role": "baseline-control"}, "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
@@ -279,9 +298,9 @@
       {"id": "moved-or-changed-linter", "completed": ["900.001-T"], "observed": ["internal/a.go|11|2|staticcheck|unchecked return|900.002-T", "internal/b.go|20|3|staticcheck|deprecated call|900.003-T", "internal/c.go|30|4|errcheck|unchecked close|900.004-T"], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_RESIDUAL_MISMATCH"},
       {"id": "native-or-parser-failure", "completed": ["900.001-T"], "observed": [], "native_exec_ok": false, "structured_output_valid": false, "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_EXEC_FAILED"},
       {"id": "intermediate-empty-residual-is-not-pass", "completed": ["900.001-T", "900.002-T", "900.003-T", "900.004-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "CONVERGING"},
-      {"id": "terminal-without-zero-warning-global", "completed": ["900.001-T", "900.002-T", "900.003-T", "900.004-T", "900.005-T"], "observed": [], "terminal": true, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_UNCLOSED"},
-      {"id": "terminal-derived-despite-false-flag", "completed": ["900.001-T", "900.002-T", "900.003-T", "900.004-T", "900.005-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_UNCLOSED"},
-      {"id": "terminal-zero-warning-global", "completed": ["900.001-T", "900.002-T", "900.003-T", "900.004-T", "900.005-T"], "observed": [], "terminal": true, "global_lint_ok": true, "expect": "PASS"}
+      {"id": "terminal-without-zero-warning-global", "completed": ["900.001-T", "900.002-T", "900.003-T", "900.004-T", "900.005-T", "900.006-T"], "observed": [], "terminal": true, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_UNCLOSED"},
+      {"id": "terminal-derived-despite-false-flag", "completed": ["900.001-T", "900.002-T", "900.003-T", "900.004-T", "900.005-T", "900.006-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_UNCLOSED"},
+      {"id": "terminal-zero-warning-global", "completed": ["900.001-T", "900.002-T", "900.003-T", "900.004-T", "900.005-T", "900.006-T"], "observed": [], "terminal": true, "global_lint_ok": true, "expect": "PASS"}
     ]
   },
   "governed_claim_delta_controls": [

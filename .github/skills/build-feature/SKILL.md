@@ -25,7 +25,9 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
 * `task_lint_cmd`: (Required when `wave_scoped` is `true`) The exact command Ship parsed and froze
   from the task's canonical `<!-- BEGIN:task-lint-contract -->` block. Task artifacts may describe
   this as file-scoped lint verification (FSLV). Every wave member declares one, including
-  `harness-exempt` and `red_deliverable` tasks. It must be executable as written, read-only,
+  `support`, `harness-exempt`, and `red_deliverable` tasks. A `support` role is not a lint waiver:
+  its contract must be canonical, native-failure-preserving, non-vacuous, and appropriate to its
+  exact changed artifacts, just like every other task. It must be executable as written, read-only,
   bounded to one exact owned file or a small explicitly enumerated set of owned files/findings,
   preserve the native linter/configuration/process exit, and fail closed when any claimed lint
   target or exact ordinal finding identity is absent, empty, malformed, omitted from the native
@@ -88,8 +90,9 @@ generic, `harness-exempt`, or `red_deliverable` branch. It must be present verba
 canonical `task-lint-contract`, clear the P-002.5 read-only screen, and satisfy the task-scoping,
 native-failure propagation, exact-target participation, ordinal-identity, and non-vacuity
 requirements in **Inputs**. This precondition applies to
-every task, including `harness-exempt` tasks; neither an exemption class nor a no-Go deliverable
-permits an absent or success-shaped lint command. A missing, drifted, destructive, global-only,
+every task, including `support` and `harness-exempt` tasks; neither a neutral support role, an
+exemption class, nor a no-Go deliverable permits an absent or success-shaped lint command. A
+missing, drifted, destructive, global-only,
 native-failure-masking, or vacuous command halts with `WAVE_TASK_LINT_CONTRACT_INVALID` before work
 begins. Do not execute the completion command here: build-feature runs it after the task deliverable
 passes, and Ship runs the same frozen command again after build-feature returns (after its commit
@@ -105,8 +108,9 @@ When `wave_scoped` is `false` or absent, reject a caller attempt to replace the 
 lint gate with `task_lint_cmd`. The non-wave path remains unchanged.
 
 Build-feature owns only the per-task lint result. It never parses, changes, or waives a
-release-unit `baseline-lint-convergence-contract`. Ship executes repository-wide lint analysis at
-every Step 4.6 gate and applies the frozen `strict` or `baseline-convergence` result contract;
+release-unit `baseline-lint-convergence-contract`, and it never treats a `support` task's status as
+baseline-finding ownership or residual authorization. Ship executes repository-wide lint analysis
+at every Step 4.6 gate and applies the frozen `strict` or `baseline-convergence` result contract;
 build-feature cannot remove that gate.
 
 ### Governed Claim Delta Precondition

@@ -867,6 +867,7 @@ function Test-BaselineTopologyShape {
     $bindingList = @($Bindings)
     $control = @($bindingList | Where-Object { "$($_.role)" -ceq 'baseline-control' })
     $remediation = @($bindingList | Where-Object { "$($_.role)" -ceq 'finding-remediation' })
+    $support = @($bindingList | Where-Object { "$($_.role)" -ceq 'support' })
     $terminal = @($bindingList | Where-Object { "$($_.role)" -ceq 'terminal-convergence' })
     if ($control.Count -ne 1) { $errors += 'baseline-control role is not unique' }
     if ($remediation.Count -lt 1) { $errors += 'no finding-remediation member is declared' }
@@ -972,7 +973,7 @@ function Test-BaselineTopologyShape {
             }
         }
         if ($ancestors.Count -ne $Members.Count) {
-            $errors += 'terminal task does not cover every remediation/control path'
+            $errors += 'terminal task does not cover every member path'
         }
     }
     return $errors
@@ -989,6 +990,7 @@ function Test-BaselineLintContractShape {
         $AuthorizationObservation,
         $MemberScopeObservation,
         $MemberStatusObservation,
+        $TaskLintContractObservation,
         [string]$UnstartedStatus
     )
     $errors = @()
@@ -1012,7 +1014,7 @@ function Test-BaselineLintContractShape {
         $role = "$($binding.role)"
         if (((Get-PropertyNames $binding) -join ',') -cne ($bindingKeys -join ',') -or
             $taskID -cnotmatch '^\d+\.\d{3}-T$' -or
-            $role -cnotmatch '^(baseline-control|finding-remediation|terminal-convergence)$' -or
+            $role -cnotmatch '^(baseline-control|finding-remediation|support|terminal-convergence)$' -or
             "$($binding.task_artifact_sha256)" -cnotmatch '^[0-9a-f]{64}$') {
             $errors += "member scope binding is malformed: $taskID"
         }
@@ -1044,6 +1046,19 @@ function Test-BaselineLintContractShape {
         foreach ($row in $statusRows) {
             if ("$($row.status)" -cne $UnstartedStatus) {
                 $errors += "member is not unstarted: $($row.task_id)=$($row.status)"
+            }
+        }
+    }
+    $taskLintIDs = if ($null -ne $TaskLintContractObservation) {
+        @(Get-PropertyNames $TaskLintContractObservation)
+    } else { @() }
+    if (-not (Test-ExactOrdinalSet -Expected $Members -Actual $taskLintIDs)) {
+        $errors += 'task-lint contract observation does not bind exact M'
+    }
+    else {
+        foreach ($member in $Members) {
+            if (-not [bool]$TaskLintContractObservation.$member) {
+                $errors += "member task-lint contract is missing or invalid: $member"
             }
         }
     }
@@ -1184,6 +1199,7 @@ function Read-BaselineLintContract {
         $AuthorizationObservation,
         $MemberScopeObservation,
         $MemberStatusObservation,
+        $TaskLintContractObservation,
         [string]$UnstartedStatus
     )
     $block = Get-DelimitedContractBlock -Raw $Raw -Name 'baseline-lint-convergence-contract' -Fence 'json'
@@ -1215,6 +1231,7 @@ function Read-BaselineLintContract {
             -AuthorizationObservation $AuthorizationObservation `
             -MemberScopeObservation $MemberScopeObservation `
             -MemberStatusObservation $MemberStatusObservation `
+            -TaskLintContractObservation $TaskLintContractObservation `
             -UnstartedStatus $UnstartedStatus
     }
     return [pscustomobject]@{ Contract = $contract; Errors = @($errors) }
@@ -1290,6 +1307,7 @@ function Get-BaselineLintGateOutcome {
     $authorizationObservation = Copy-JsonObject $Root.authorization_observation
     $memberScopeObservation = Copy-JsonObject $Root.member_scope_observation
     $memberStatusObservation = Copy-JsonObject $Root.member_status_observation
+    $taskLintContractObservation = Copy-JsonObject $Root.task_lint_contract_observation
     $initialAttestation = Copy-JsonObject $Root.initial_attestation_observation
     $dependenciesByTask = Copy-JsonObject $Root.dependencies_by_task
     if (Test-HasProperty $Control 'mode_override') { $contract.mode = "$($Control.mode_override)" }
@@ -1309,6 +1327,27 @@ function Get-BaselineLintGateOutcome {
         )
         if ($binding.Count -eq 1) {
             $binding[0].role = "$($Control.set_member_role.role)"
+        }
+    }
+    if (Test-HasProperty $Control 'append_member_scope') {
+        $contract.member_scope = @(
+            @($contract.member_scope) +
+            [pscustomobject][ordered]@{
+                task_id = "$($Control.append_member_scope.task_id)"
+                role = "$($Control.append_member_scope.role)"
+                task_artifact_sha256 = "$($Control.append_member_scope.task_artifact_sha256)"
+            }
+        )
+    }
+    if (Test-HasProperty $Control 'set_finding_owner') {
+        $finding = @(
+            $inventoryObservation.findings |
+                Where-Object {
+                    (Get-LintFindingKey -Finding $_) -ceq "$($Control.set_finding_owner.finding_key)"
+                }
+        )
+        if ($finding.Count -eq 1) {
+            $finding[0].owner_task_id = "$($Control.set_finding_owner.owner_task_id)"
         }
     }
     if (Test-HasProperty $Control 'set_dependencies') {
@@ -1353,6 +1392,11 @@ function Get-BaselineLintGateOutcome {
             $statusRow[0].status = "$($Control.set_member_status.status)"
         }
     }
+    if (Test-HasProperty $Control 'remove_task_lint_task') {
+        [void]$taskLintContractObservation.PSObject.Properties.Remove(
+            "$($Control.remove_task_lint_task)"
+        )
+    }
     if (Test-HasProperty $Control 'set_initial_attestation_exact') {
         $initialAttestation.exact_inventory = [bool]$Control.set_initial_attestation_exact
     }
@@ -1374,6 +1418,7 @@ function Get-BaselineLintGateOutcome {
         -AuthorizationObservation $authorizationObservation `
         -MemberScopeObservation $memberScopeObservation `
         -MemberStatusObservation $memberStatusObservation `
+        -TaskLintContractObservation $taskLintContractObservation `
         -UnstartedStatus "$($Root.unstarted_status)"
     if ($parsed.Errors.Count -gt 0) { return 'WAVE_BASELINE_LINT_CONTRACT_INVALID' }
     if (-not [bool]$initialAttestation.executed_before_claim -or
@@ -1389,9 +1434,17 @@ function Get-BaselineLintGateOutcome {
         return 'WAVE_BASELINE_LINT_EXEC_FAILED'
     }
     $completed = @($Control.completed)
+    $remediationOwners = @(
+        $contract.member_scope |
+            Where-Object { "$($_.role)" -ceq 'finding-remediation' } |
+            ForEach-Object { "$($_.task_id)" }
+    )
     $expected = @(
         @($inventoryObservation.findings) |
-            Where-Object { $completed -notcontains "$($_.owner_task_id)" } |
+            Where-Object {
+                $owner = "$($_.owner_task_id)"
+                $remediationOwners -ccontains $owner -and $completed -notcontains $owner
+            } |
             ForEach-Object { Get-LintIdentity -Finding $_ } |
             Sort-Object
     )
@@ -2191,9 +2244,12 @@ function Invoke-BaselineConvergenceQueueProjection {
             Where-Object { $taskIDs -notcontains "$_" }
     )
     $liveDependencies = [pscustomobject][ordered]@{}
+    $liveTaskLintContracts = [pscustomobject][ordered]@{}
     foreach ($member in ($members | Sort-Object id)) {
         $liveDependencies | Add-Member -NotePropertyName "$($member.id)" `
             -NotePropertyValue @($member.deps)
+        $liveTaskLintContracts | Add-Member -NotePropertyName "$($member.id)" `
+            -NotePropertyValue ([bool](@($member.task_lint_errors).Count -eq 0))
     }
     $firstWave = @($members | Where-Object { @($_.deps).Count -eq 0 } | ForEach-Object { $_.id } | Sort-Object)
     $releaseCandidates = @($excluded | Where-Object { $_.artifact_type -ceq 'feature' })
@@ -2226,7 +2282,7 @@ function Invoke-BaselineConvergenceQueueProjection {
                 $scope = @($rawContract.member_scope)
                 $scopeCount = $scope.Count
                 $roleCounts = @(
-                    'baseline-control', 'finding-remediation', 'terminal-convergence' |
+                    'baseline-control', 'finding-remediation', 'support', 'terminal-convergence' |
                         ForEach-Object {
                             $role = $_
                             "$role=$(@($scope | Where-Object { "$($_.role)" -ceq $role }).Count)"
@@ -2247,6 +2303,7 @@ function Invoke-BaselineConvergenceQueueProjection {
                 -DependenciesByTask $liveDependencies `
                 -AuthorizationObservation $authorizationObservation `
                 -MemberStatusObservation $memberStatusObservation `
+                -TaskLintContractObservation $liveTaskLintContracts `
                 -UnstartedStatus $unstartedStatus
             $baselineValidWhenPresent = [bool]($parsedBaseline.Errors.Count -eq 0)
         }

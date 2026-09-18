@@ -498,12 +498,13 @@ frozen **here** and nowhere else.
      "purpose": "known-global-lint-baseline-removal",
      "shipment_id": "900-S",
      "release_unit_id": "900-F",
-     "terminal_task_id": "900.004-T",
+     "terminal_task_id": "900.005-T",
      "member_scope": [
        {"task_id": "900.001-T", "role": "baseline-control", "task_artifact_sha256": "<lowercase-64-hex>"},
        {"task_id": "900.002-T", "role": "finding-remediation", "task_artifact_sha256": "<lowercase-64-hex>"},
        {"task_id": "900.003-T", "role": "finding-remediation", "task_artifact_sha256": "<lowercase-64-hex>"},
-       {"task_id": "900.004-T", "role": "terminal-convergence", "task_artifact_sha256": "<lowercase-64-hex>"}
+       {"task_id": "900.004-T", "role": "support", "task_artifact_sha256": "<lowercase-64-hex>"},
+       {"task_id": "900.005-T", "role": "terminal-convergence", "task_artifact_sha256": "<lowercase-64-hex>"}
      ],
      "baseline_inventory": {
        "path": "path/to/committed-machine-inventory.json",
@@ -511,7 +512,7 @@ frozen **here** and nowhere else.
        "finding_count": 1,
        "identity_fields": ["path", "line", "column", "linter", "message", "owner_task_id"]
      },
-     "intermediate_wave_lint_cmd": "pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory path/to/committed-machine-inventory.json -InventorySha256 <lowercase-64-hex> -Shipment 900-S -TerminalTask 900.004-T",
+     "intermediate_wave_lint_cmd": "pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory path/to/committed-machine-inventory.json -InventorySha256 <lowercase-64-hex> -Shipment 900-S -TerminalTask 900.005-T",
      "terminal_global_lint_cmd": "golangci-lint run",
      "operator_authorization": {
        "record": "<durable authorization identity>",
@@ -526,24 +527,31 @@ frozen **here** and nowhere else.
    Require `member_scope` to contain every executable task member of the release unit/shipment
    (`M`) exactly once and no other task, without assuming a fixed member or edge count. Recompute
    each committed task artifact's SHA-256 and exact-match it before claim. The only roles are
-   `baseline-control`, `finding-remediation`, and `terminal-convergence`. There must be exactly one
-   control role, one or more remediation roles, and exactly one terminal role matching
-   `terminal_task_id`; every inventory owner has the remediation role, every remediation role owns
-   at least one exact inventory identity, and control/terminal roles own none. These
-   digest-bound declarations are the mechanical proof that the authorized release unit contains
-   only baseline control, removal, and terminal convergence work; labels or purpose prose alone
-   are insufficient.
+   `baseline-control`, `finding-remediation`, `support`, and `terminal-convergence`. There must be
+   exactly one control role, one or more remediation roles, exactly one terminal role matching
+   `terminal_task_id`, and zero or more support roles. Every inventory owner has the remediation
+   role, every remediation role owns at least one exact inventory identity, and control, support,
+   and terminal roles own none. A support member is neutral connected release-unit work, not a
+   finding owner: it remains in exact membership, digest, status, task-lint, dependency, and
+   ordinary task-gate validation, but its completion status never removes or retains a baseline
+   finding. These digest-bound declarations are the mechanical proof that the authorized release
+   unit contains only baseline control, removal, connected support, and terminal convergence work;
+   labels or purpose prose alone are insufficient.
    Recompute the inventory SHA-256; require a committed, machine-readable, non-empty inventory;
    validate exact ordinal identities and exactly one `owner_task_id ∈ M` per row; require the
    positive count to match. Validate the live dependency map over exactly `M`: every dependency
    endpoint must be in `M`; the graph must be acyclic; the control task must be the unique source
    and have no prerequisites; the terminal task must be the unique sink; and every member must be
-   reachable from control and able to reach terminal. Thus no disconnected or hidden extra task
-   is admitted, and terminal convergence covers every remediation/control path directly or
-   transitively. Screen the intermediate command under P-002.5 and require it to preserve native
+   reachable from control and able to reach terminal. Support members may have dependencies and
+   may gate terminal convergence, but may not be disconnected or bypass the sink. Thus no
+   disconnected or hidden extra task is admitted, and terminal convergence covers every member
+   path directly or transitively. Screen the intermediate command under P-002.5 and require it to
+   preserve native
    launch/configuration/process/parser failures while exact-comparing the observed repository-wide
-   finding set with only the baseline findings owned by tasks not yet `done`. New, missing, moved,
-   message-changed, changed-linter, duplicate, malformed, or unowned findings must fail. The
+   finding set with only the baseline findings owned by `finding-remediation` tasks not yet
+   `done`. Control, support, and terminal status never authorizes retaining a finding. New,
+   missing, moved, message-changed, changed-linter, duplicate, malformed, or unowned findings must
+   fail. The
    authorization must be an explicit operator record for the exact enclosing shipment and exact
    temporary scope. Ship must also receive that record identity directly from the operator at
    invocation and ordinal-exact-compare it with the block; repository prose cannot authenticate

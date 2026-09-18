@@ -65,15 +65,21 @@ machine inventory is committed and digest-bound.
 The simulator accepts `baseline-convergence` only through the canonical release-unit JSON block.
 Its `member_scope` must exactly equal every executable shipment task. Exactly one
 `baseline-control` task is the unique source, one or more `finding-remediation` tasks each own at
-least one exact inventory finding, and exactly one `terminal-convergence` task is the unique sink.
-The graph must be acyclic, every edge must stay inside the member set, and every member must be
-reachable from control and able to reach terminal. Generic negative controls cover missing
-members, duplicate roles, disconnected nodes, cycles, multiple sinks, and incomplete terminal
+least one exact inventory finding, zero or more `support` tasks own no inventory findings, and
+exactly one `terminal-convergence` task is the unique sink. Control and terminal tasks also own no
+findings. Support tasks remain exact digest/status/task-lint members of the release unit, may have
+dependencies, and may gate terminal convergence. The graph must be acyclic, every edge must stay
+inside the member set, and every member—including support—must be reachable from control and able
+to reach terminal. Generic controls cover a valid connected support chain plus support ownership,
+missing support task lint, hidden/off-catalog support, disconnected support, support without a path
+to terminal, missing members, duplicate roles, cycles, multiple sinks, and incomplete terminal
 coverage.
 At intermediate waves the observed normalized repository-wide finding set must equal exactly the
-committed baseline rows owned by unfinished tasks. New, missing, moved, changed-linter, malformed,
-or unowned findings fail. At the declared terminal task, the residual must be empty and the
-ordinary zero-warning global command must pass.
+committed baseline rows owned by unfinished `finding-remediation` tasks. Support status cannot
+remove or retain a finding; an explicit negative control rejects residual allowance derived from
+support completion. New, missing, moved, changed-linter, malformed, or unowned findings fail. At
+the declared terminal task, the residual must be empty and the ordinary zero-warning global
+command must pass.
 
 The block's intermediate command is a byte-exact invocation of
 `scripts/verify-baseline-lint.ps1`, binding the inventory path and SHA-256 plus shipment and

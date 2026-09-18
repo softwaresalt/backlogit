@@ -125,13 +125,13 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "c86bf576a863deaae95d7bf2fc12a090b3ef97bbbf1b426bd4506294b1d64552"
+    checksum: "d7670fc0e4bbaba09812062cbd64412433ddeebfa3aff3e08613eea48c8b94f6"
     drift_allowed: true
     drift_reason: "Locally hardened P-002.6 dynamic baseline-convergence DAG/member validation, strict lint, and governed-claim policy contract; preserve until the upstream template provides equivalent fail-closed behavior."
   - path: ".github/skills/build-feature/SKILL.md"
     primitive: 1
     template: "templates/skills/build-feature/SKILL.md.tmpl"
-    checksum: "2237774cf81be52a9557a395dd11d3ff3754b1806c8f51d89e2944b1efefd336"
+    checksum: "4b3cc00c8859c4eb7052ea089eed1130147ec905120b1984f10e9f149f04a3a1"
     drift_allowed: true
     drift_reason: "Locally hardened P-002.6 baseline-convergence, bounded task-lint, and governed-claim execution contract; preserve until the upstream template provides equivalent fail-closed behavior."
   - path: ".github/skills/spike/SKILL.md"
@@ -381,7 +381,7 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "86f775613e532933fa8176e1e9a66432715e8a563939baa53d71ef0a9d21e4e7"
+    checksum: "a9643a80e1d3ef61b34feed9a8de124e97c72a201667a0c8f1120232f847a450"
     drift_allowed: true
     drift_reason: "Workspace-hardened Ship contract: preserves the PR #400 read-only graphtor tool grant and adds P-002.6 dynamic baseline-convergence DAG/member validation plus bounded task-lint authoring. Preserve until the upstream template provides equivalent fail-closed behavior."
   - path: ".github/skills/harness-architect/SKILL.md"
