@@ -194,29 +194,48 @@ justification and the suppression still matches a live finding.
 
 Package-wide `golangci-lint run ./<pkg>` exits nonzero for ANY sibling finding,
 so a task cannot verify its own owned file while same-wave siblings remain red.
-Each lint task therefore carries an executable file-scoped lint verification
-command with this canonical shape (per-file parameters: package `./<pkg>`, owned
-`<linter>`, and the normalized owned `<file>` path):
+Each wave member therefore carries a canonical `<!-- BEGIN:task-lint-contract -->`
+block (`task_lint_cmd`, closed `lint_scope`, `non_vacuity_evidence`) per the
+installed harness (`_ship.agent.md` Step 3 item 4 / Step 4.1 screen). Each of the
+36 file-owned lint tasks carries an executable in-memory file-scoped lint
+verification (FSLV) `task_lint_cmd` with this canonical shape (per-file
+parameters: package `./<pkg>`, owned `<linter>`, and the normalized owned
+`<file>` path):
 
-* run `golangci-lint run --output.json.path <tempfile> --issues-exit-code 0
-  ./<pkg>` so lint FINDINGS do not set the exit code — structured JSON is written
-  to a file (never stdout, to avoid stderr-summary contamination);
-* `--issues-exit-code 0` suppresses only the issues-exit; a genuine native
-  configuration/execution failure (for example a bogus package) still yields a
-  nonzero exit that is PRESERVED and re-emitted as `LINT-NATIVE-FAIL:<code>`
-  (fail-closed);
-* parse the JSON and count only issues whose `.FromLinter` equals the task's
-  owned linter AND whose `.Pos.Filename` (backslashes normalized to `/`) equals
-  the task's owned file, by ordinal equality;
-* exit 1 when one or more owned findings remain, exit 0 when none remain, and
-  propagate any other nonzero as a preserved native failure.
+* launch `golangci-lint` (v2.13.2) as a CHILD PROCESS via
+  `System.Diagnostics.ProcessStartInfo` with `RedirectStandardOutput`/
+  `RedirectStandardError`, capturing both streams IN MEMORY — NO machine temp
+  files and NO `Remove-Item` cleanup;
+* pass `run --output.json.path stdout --show-stats=false --issues-exit-code 0
+  ./<pkg>` so lint FINDINGS do not set the exit code and the structured JSON is
+  emitted to stdout; `--show-stats=false` is ESSENTIAL (a stats summary would
+  otherwise corrupt the JSON payload);
+* PRESERVE a genuine native launch/exit failure DISTINCTLY — a process-launch
+  error emits `LINT-NATIVE-LAUNCH-FAIL` (exit 97) and any nonzero child exit is
+  re-emitted as `LINT-NATIVE-FAIL:<code>` and passed through (fail-closed);
+* VALIDATE the schema BEFORE filtering and reject every vacuous success shape:
+  empty stdout (91), malformed JSON (92), JSON `null` (93), a non-object root
+  (94), a missing `Issues` key (95), or a non-collection `Issues` value (96) are
+  distinct HARD failures;
+* count only issues whose `.FromLinter` equals the task's owned linter AND whose
+  `.Pos.Filename` (backslashes normalized to `/`) equals the task's owned file,
+  by ORDINAL equality;
+* exit 1 when one or more owned findings remain, exit 0 (`FSLV-OK:...`) when none
+  remain, and propagate any other nonzero as a preserved native failure.
 
 This makes each lint task independently completable while same-wave siblings are
 still red, without lint findings masking infrastructure failures. Windows-owned
-tasks (U19–U22) prefix the command with a Windows-native fail-closed guard
-(`if(-not $IsWindows){exit 19}`) so their windows-build-tagged files are actually
-linted. The terminal U12 full `golangci-lint run` gate is unchanged and is NOT
-weakened by this per-file pattern.
+tasks (U19–U22) own build-tagged `*_windows.go` files that a non-Windows lint
+host silently excludes, so each prefixes its FSLV with a Windows-native
+fail-closed guard (`if(-not $IsWindows){...; exit 19}`); this prevents a
+false-green on a non-Windows host and forces the windows-tagged owned file to be
+actually linted. U1, U40, and U14 own no single flagged Go file and carry a
+harness-path FSLV variant (same in-memory shape, any-linter over `./tests`,
+filtered to the task's owned `*_175_test.go` harness path). U12 owns no lintable
+Go surface and carries a dual-mode `positive-no-go-surface-proof` `task_lint_cmd`
+(see the U12 section). Every `task_lint_cmd` is task-scoped ONLY; the full
+repository `golangci-lint run` is DEFERRED to mandatory wave convergence at the
+terminal U12 gate and is never used as a per-task proxy.
 
 ## U40 - Line-Ending Guard Script
 
@@ -293,15 +312,35 @@ artifact and the machine-readable `//nolint` inventory. The inventory check
 rejects missing, extra, duplicate, empty-justification, and stale rows.
 
 The evidence artifact is bound to the exact verified content without impossible
-self-reference. U12's final task commit contains ONLY the evidence artifact, so
-its parent SHA is exactly the implementation-content HEAD the four gates verify.
-The command therefore additionally requires: valid Docline closure frontmatter
-(`title`, `source`, `doc_type: closure`, `chunk_strategy`, `schema_version`)
-verified by the repository docs lint (`backlogit docs lint --path <artifact>
---format json`; `exit 20` on any violation or nonzero/unparseable lint); a single
-`VERIFIED-PARENT: <40-hex>` body line equal to `git rev-parse HEAD^` (`exit 21`);
-and a changed-path set equal to exactly the evidence artifact via `git diff
---name-only HEAD^ HEAD` (`exit 22`). All use fail-closed native-command handling.
+self-reference, using a DUAL-MODE binding that passes both build-feature's
+pre-commit exemption-completion gate and Ship's post-commit Step 4.3 rerun. The
+command reads `git status --porcelain=v1 -z --untracked-files=all` as a
+continuous NUL-delimited byte stream (strict throw-on-invalid UTF-8 decode per
+record) and applies a closed governed-claim allowlist of exactly
+`.backlogit/queue/175.012-T.md` and `.backlogit/hooks_queue.jsonl` (the paths a
+governed claim/refresh may legitimately touch). It selects mode from the
+working-tree state:
+
+* PRE-COMMIT mode — the evidence artifact is the sole non-allowlisted dirty path:
+  `VERIFIED-PARENT` must equal `git rev-parse HEAD` (the current implementation
+  HEAD the gates just verified), `exit 21` on mismatch;
+* POST-COMMIT mode — no non-allowlisted dirty path remains: `VERIFIED-PARENT`
+  must equal `git rev-parse HEAD^` (`exit 21`) AND `git diff --name-only HEAD^
+  HEAD` must equal exactly the evidence artifact (`exit 22`);
+* any ambiguous mode, an extra dirty/committed source/config/test/script/workflow
+  path, a malformed record, or a nonzero native git invocation FAILS CLOSED
+  (`exit 23` / `exit 21`).
+
+The command additionally requires valid Docline closure frontmatter (`title`,
+`source`, `doc_type: closure`, `chunk_strategy`, `schema_version`) verified by
+the repository docs lint (`backlogit docs lint --path <artifact> --format json`;
+`exit 20` on any violation or nonzero/unparseable lint). All native-command
+handling is fail-closed. Because U12 owns no lintable Go surface, its
+`task-lint-contract` `task_lint_cmd` is a dual-mode `positive-no-go-surface-proof`
+that asserts the owned delta is exactly the single non-Go evidence artifact in
+both the pre-commit and post-commit sequencing positions (`exit 34` owned `.go`
+surface, `exit 33` wrong owned delta, `exit 32` ambiguous mode, `exit 31`
+malformed/native-git), never at claim-time.
 
 The `//nolint` inventory is a RAW marker-delimited block (NOT a Markdown code
 fence) delimited by the literal plain-text lines `# BEGIN NOLINT-INVENTORY` and
