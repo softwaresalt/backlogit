@@ -94,11 +94,21 @@ make U1's content-identical gate impossible to satisfy.
   (asserted ONLY after the working-tree refresh above) and `-text` (or `w/lf`
   under the `eol=lf` variant) for the golden fixture, and `-text` for declared
   binaries. `git diff --cached --stat` shows the staged line-ending churn. To
-  prove the churn is content-identical, run the content-identity comparison
-  EXCLUDING the intentional config change (`.gitattributes`), e.g.
-  `git diff --cached -w --stat -- . ':(exclude).gitattributes'` — `.gitattributes`
-  genuinely changes content and would otherwise make a global `-w` comparison
-  non-empty by design. For tracked binaries, do NOT treat `-`/`-` in
+  prove the churn is EOL-only (CRLF->LF) and content-identical in every non-EOL
+  byte, do NOT rely on `git diff -w` (which ignores ALL intra-line whitespace,
+  not just line-ending bytes, and would mask a genuine non-EOL whitespace edit).
+  Instead, for each staged text path — EXCLUDING the intentional `.gitattributes`
+  change and all declared binaries — compare the base and index blob content
+  after canonicalizing ONLY CRLF->LF:
+  - base bytes `B = git cat-file blob HEAD:<path>`; index bytes
+    `I = git cat-file blob :<path>`;
+  - canonicalize each by replacing every CRLF (`\r\n`) with LF (`\n`) and leaving
+    every other byte (including any bare CR) untouched;
+  - require `SHA-256(canon(B)) == SHA-256(canon(I))` for every such path.
+  Equal hashes prove that ONLY line-ending bytes changed; any non-EOL byte
+  difference (added/removed/edited content, or a bare-CR change) makes the hashes
+  differ and fails the check. `.gitattributes` is excluded because it genuinely
+  changes content by design. For tracked binaries, do NOT treat `-`/`-` in
   `git diff --cached --numstat` as proof of byte-identity (`-`/`-` only signals
   binary CLASSIFICATION, not unchanged bytes): instead require each declared
   binary to be ABSENT from the staged diff entirely (renormalization must not
@@ -321,7 +331,9 @@ Mapped against `.github/instructions/constitution.instructions.md`:
 * **Task Granularity (2-Hour Rule)** — documented deviation for U1 only: the
   renormalization mechanically touches many files, exceeding the < 3-files
   heuristic. Sanctioned because the churn is mechanical and content-identical
-  (verified via `git diff --cached -w --stat` empty). Rejected simpler
+  (verified via the EOL-only normalized-blob SHA-256 comparison in U1's Verify
+  section — CRLF->LF canonicalization with all non-EOL bytes preserved,
+  `.gitattributes` and declared binaries excluded). Rejected simpler
   alternative: splitting the renormalization into many per-directory sub-units —
   rejected because `git add --renormalize .` is an atomic whole-tree operation
   and slicing it would fragment one mechanical commit without reducing risk. All
@@ -366,10 +378,14 @@ changed" with `git diff --exit-code` on generated/golden output),
   `*.golden` that are intentionally binary, and any image must carry an explicit
   `-text` rule and remain byte-identical after renormalization.
 * `git diff` after U1 shows ONLY line-ending churn for `.go`/`.json`
-  (content-identical); the content-identity check EXCLUDES the intentional
-  `.gitattributes` change (e.g.
-  `git diff -w --stat -- . ':(exclude).gitattributes'` is empty), since
-  `.gitattributes` genuinely changes content by design.
+  (content-identical); the content-identity check is the EOL-only normalized-blob
+  SHA-256 comparison from U1's Verify section (per staged text path: canonicalize
+  ONLY CRLF->LF in the base blob `HEAD:<path>` and the index blob `:<path>`, then
+  require `SHA-256(canon(base)) == SHA-256(canon(index))`), EXCLUDING the
+  intentional `.gitattributes` change and all declared binaries. It does NOT rely
+  on `git diff -w`, which would ignore all intra-line whitespace and mask a
+  genuine non-EOL edit; `.gitattributes` is excluded because it genuinely changes
+  content by design.
 * errcheck fixes preserve behavior on success paths and only add
   capture/propagation on failure paths — no package test regresses.
 * The golden fixture is asserted against exact LF bytes, never a same-marshaler

@@ -34,22 +34,33 @@ checkpoint provenance are internally consistent with main.
   `operator_authorization: approved` (Cycle 1 FAIL 2×P1 remediated, Cycle 2
   PASS). Review-record contract re-validated on this branch; docline lint = 0
   violations on both docs.
-- **Regenerated natively on main:** feature, 12 tasks, 20 task-dependency edges,
+- **Regenerated natively on main:** feature, 13 tasks, 22 task-dependency edges,
   shipment, cross-shipment dependency, stash archival, and the session
   checkpoint — all via backlogit operations so sequence/provenance is native to
   main. No `.backlogit/` file copies, no cherry-pick.
+
+> **Corrected current state (2026-09-17):** the regenerated release unit now
+> carries **13 tasks (U1–U13)**, not the 12 (U1–U12) first recorded below. U13
+> (`175.013-T` — errcheck remediation of the residual closed package set) was
+> added, raising the dependency-edge count to **22** and the shipment `156-S`
+> manifest to **14 items**. The corrected figures are authoritative; the
+> historical wording beneath is preserved for provenance and superseded where it
+> conflicts.
 
 ## Native backlog artifacts (IDs assigned by current main)
 
 - Covering **feature `175-F`** (feature required by `isRootCoveringFeature()` +
   manifest-binding digest).
-- Tasks **`175.001-T` … `175.012-T`** (plan units U1–U12), each with acceptance
-  criteria + plan reference.
-- Dependency edges (20): `175.002-T`–`175.011-T` each depends-on `175.001-T`
-  (U1 renormalize strict predecessor); `175.012-T` depends-on
-  `175.002-T`–`175.011-T` (terminal verification sink).
+- Tasks **`175.001-T` … `175.013-T`** (plan units U1–U13), each with acceptance
+  criteria + plan reference. *(Corrected: U1–U13 / 13 tasks; originally recorded
+  as U1–U12 / 12 tasks.)*
+- Dependency edges (22, corrected from 20): `175.002-T`–`175.011-T` **and
+  `175.013-T`** each depends-on `175.001-T`
+  (U1 renormalize strict predecessor, 11 edges); `175.012-T` (terminal
+  verification sink) depends-on `175.002-T`–`175.011-T` **plus `175.013-T`**
+  (11 edges).
 - **Shipment `156-S`** "Repository baseline convergence" (queued, high). Manifest
-  = 13 items: `175-F` (parent-first) + `175.001-T`…`175.012-T`.
+  = **14 items (corrected from 13)**: `175-F` (parent-first) + `175.001-T`…`175.013-T`.
 - Cross-shipment dependency **`149-S → 156-S (blocks)`**. `149-S` members/manifest
   NOT mutated (only `dependencies: [156-S]` added).
 
@@ -59,6 +70,19 @@ checkpoint provenance are internally consistent with main.
 - Deferred-expansion obligations (P-021 C5/C6): duplicate detection CLEAN ×2;
   late-identifier reconciliation no-op ×2 (N/A stands, non-blocking). Recorded in
   the deliberation artifact under Stage authority; no stash edits, no Ship writes.
+
+### Residual-risk follow-up (provenance gap)
+
+- `92F79833` and `4DB1DFF1` were archived through the **plain (non-harvest)**
+  archive path, so they carry no canonical `harvested_artifact_id` linkage to
+  feature `175-F` / shipment `156-S` / the deliberation + plan. Canonical
+  harvest provenance CANNOT be claimed retroactively with current tooling, and
+  manual JSONL/SQLite/frontmatter edits are prohibited. This acknowledged gap is
+  captured as a governed, audited, idempotent provenance-backfill follow-up:
+  **stash `5A016581`** (`DEFERRED SCOPE EXPANSION`, kind chore, priority high,
+  `requires deliberation`). It requests supplementary audited linkage — NOT a
+  canonical-provenance rewrite — and is an explicit residual risk for a future
+  Stage deliberation, not a blocker on this release unit.
 
 ## Branch / remote
 
