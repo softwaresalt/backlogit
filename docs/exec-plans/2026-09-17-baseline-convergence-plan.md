@@ -110,12 +110,14 @@ Required gates retained for U1:
 * operator-only approval before staging or refreshing any renormalized path
 * claim-aware clean-tree fail-closed gate before the migration begins: because
   Ship claims U1 (mutating its task status) AFTER the wave harness commit, the
-  entry tree is not bit-clean. A bounded governed allow-set — at minimum U1's own
-  task status artifact `.backlogit/queue/175.001-T.md` and the append-only
-  `.backlogit/hooks_queue.jsonl` claim/event byproduct actually produced by
-  backlogit in this workspace — is snapshotted and verified; any change outside
-  that allow-set (including broader `.backlogit/**` dirt) fails closed, and the
-  allow-set paths are preserved through the line-ending operations
+  entry tree is not bit-clean. A CLOSED governed allow-set of EXACTLY two paths —
+  U1's own task status artifact `.backlogit/queue/175.001-T.md` and the
+  append-only `.backlogit/hooks_queue.jsonl` claim/event byproduct produced by
+  backlogit in this workspace — is snapshotted and verified; this exact set is
+  the COMPLETE governed set (no open-ended or "minimum" allow-set applies),
+  and any change outside those two paths (including broader `.backlogit/**` dirt)
+  fails closed, while the two allow-set paths are preserved through the
+  line-ending operations
 * path-scoped refresh only; no whole-tree forced refresh
 * semantic-diff prohibition for the 548 migrated files
 * the staged set contains no path outside the frozen 548 + `.gitattributes` (fail
