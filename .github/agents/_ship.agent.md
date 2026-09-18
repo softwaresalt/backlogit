@@ -456,9 +456,11 @@ frozen **here** and nowhere else.
      `<!-- BEGIN:task-lint-contract -->` JSON block. Task artifacts may call this file-scoped lint
      verification (FSLV). The block carries `task_lint_cmd`, a closed `lint_scope`, and
      `non_vacuity_evidence`. Freeze all three values per task. The command must be executable as
-     written, read-only, bounded to the task-owned lint surface, preserve the native
+     written, read-only, bounded to one exact owned file or a small explicitly enumerated set of
+     owned files/findings, preserve the native
      linter/configuration/process exit, and fail closed when its claimed target or evidence is
-     absent, empty, malformed, or otherwise non-vacuous proof is missing. A
+     absent, empty, malformed, not ordinal-identical, does not participate in the native lint
+     invocation/result comparison, or otherwise lacks non-vacuous proof. A
      `harness-exempt` or `red_deliverable` task is not exempt from this contract: when its closed
      delta has no lintable Go surface, its command must positively prove that no-Go surface in
      both the pre-commit and post-commit sequencing positions. An absent command, bare
@@ -466,6 +468,19 @@ frozen **here** and nowhere else.
      or unbounded operator waiver halts with `WAVE_TASK_LINT_CONTRACT_INVALID`. The same frozen
      command is screened before claim, passed verbatim to build-feature, run before any task commit,
      and rerun by Ship after build-feature returns.
+     A remediation task spanning a small bounded set uses
+     `lint_scope.kind: "bounded-finding-set-go-lint"` with the exact keys `kind`, `packages`,
+     `owned_files`, and `owned_findings`. `packages` and `owned_files` are non-empty,
+     duplicate-free explicit arrays of at most two entries, and no package selector may contain
+     recursive `...`; `owned_findings` contains between one and sixteen entries whose exact key
+     order is `path`, `line`, `column`, `linter`, `message`, with every path present in
+     `owned_files`. The package count cannot exceed the owned-file count.
+     `task_lint_cmd` must invoke every declared package, bind every owned file, construct every
+     ordinal identity as `path|line|column|linter|message`, parse native structured lint output,
+     and compare those identities without case folding before emitting its exact success marker.
+     This permits safe grouping of a few related files/findings; it does not authorize broad
+     package ownership, inferred targets, or work wider than the repository's task-duration and
+     granularity limits.
    * For every member of `M`, parse the optional canonical
    `<!-- BEGIN:green-regression-contract -->` JSON block defined by P-002.6. An absent block means
    exactly `green_regression_cmds(t) = []`; it does not mean "choose packages later". Validate a
@@ -481,44 +496,51 @@ frozen **here** and nowhere else.
    {
      "mode": "baseline-convergence",
      "purpose": "known-global-lint-baseline-removal",
-     "shipment_id": "156-S",
-     "release_unit_id": "175-F",
-     "terminal_task_id": "175.012-T",
+     "shipment_id": "900-S",
+     "release_unit_id": "900-F",
+     "terminal_task_id": "900.004-T",
      "member_scope": [
-       {"task_id": "175.001-T", "role": "baseline-control", "task_artifact_sha256": "<lowercase-64-hex>"},
-       {"task_id": "175.002-T", "role": "finding-remediation", "task_artifact_sha256": "<lowercase-64-hex>"},
-       {"task_id": "175.012-T", "role": "terminal-convergence", "task_artifact_sha256": "<lowercase-64-hex>"}
+       {"task_id": "900.001-T", "role": "baseline-control", "task_artifact_sha256": "<lowercase-64-hex>"},
+       {"task_id": "900.002-T", "role": "finding-remediation", "task_artifact_sha256": "<lowercase-64-hex>"},
+       {"task_id": "900.003-T", "role": "finding-remediation", "task_artifact_sha256": "<lowercase-64-hex>"},
+       {"task_id": "900.004-T", "role": "terminal-convergence", "task_artifact_sha256": "<lowercase-64-hex>"}
      ],
      "baseline_inventory": {
        "path": "path/to/committed-machine-inventory.json",
        "sha256": "<lowercase-64-hex>",
-       "finding_count": 56,
+       "finding_count": 1,
        "identity_fields": ["path", "line", "column", "linter", "message", "owner_task_id"]
      },
-     "intermediate_wave_lint_cmd": "pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory path/to/committed-machine-inventory.json -InventorySha256 <lowercase-64-hex> -Shipment 156-S -TerminalTask 175.012-T",
+     "intermediate_wave_lint_cmd": "pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory path/to/committed-machine-inventory.json -InventorySha256 <lowercase-64-hex> -Shipment 900-S -TerminalTask 900.004-T",
      "terminal_global_lint_cmd": "golangci-lint run",
      "operator_authorization": {
        "record": "<durable authorization identity>",
        "authorized_at": "<RFC3339 timestamp>",
        "authorized_by": "<operator identity>",
-       "shipment_id": "156-S",
+       "shipment_id": "900-S",
        "scope": "retain-only-unfinished-owned-baseline-findings-until-terminal"
      }
    }
    ```
 
-   Require `member_scope` to contain every member of `M` exactly once and no other task. Recompute
+   Require `member_scope` to contain every executable task member of the release unit/shipment
+   (`M`) exactly once and no other task, without assuming a fixed member or edge count. Recompute
    each committed task artifact's SHA-256 and exact-match it before claim. The only roles are
-   `baseline-control`, `finding-remediation`, and `terminal-convergence`; the exact terminal task
-   is the sole terminal role, every inventory owner has the remediation role, every remediation
-   role owns at least one inventory identity, and control/terminal roles own none. These
+   `baseline-control`, `finding-remediation`, and `terminal-convergence`. There must be exactly one
+   control role, one or more remediation roles, and exactly one terminal role matching
+   `terminal_task_id`; every inventory owner has the remediation role, every remediation role owns
+   at least one exact inventory identity, and control/terminal roles own none. These
    digest-bound declarations are the mechanical proof that the authorized release unit contains
    only baseline control, removal, and terminal convergence work; labels or purpose prose alone
    are insufficient.
    Recompute the inventory SHA-256; require a committed, machine-readable, non-empty inventory;
    validate exact ordinal identities and exactly one `owner_task_id ∈ M` per row; require the
-   positive count to match; require `terminal_task_id ∈ M` and later confirm it is the unique
-   terminal sink. Screen the intermediate command under P-002.5 and require it to preserve native
+   positive count to match. Validate the live dependency map over exactly `M`: every dependency
+   endpoint must be in `M`; the graph must be acyclic; the control task must be the unique source
+   and have no prerequisites; the terminal task must be the unique sink; and every member must be
+   reachable from control and able to reach terminal. Thus no disconnected or hidden extra task
+   is admitted, and terminal convergence covers every remediation/control path directly or
+   transitively. Screen the intermediate command under P-002.5 and require it to preserve native
    launch/configuration/process/parser failures while exact-comparing the observed repository-wide
    finding set with only the baseline findings owned by tasks not yet `done`. New, missing, moved,
    message-changed, changed-linter, duplicate, malformed, or unowned findings must fail. The
@@ -545,7 +567,8 @@ frozen **here** and nowhere else.
 8. Compute the wave partition: wave 1 is every member with no unfinished dependencies; wave *k+1*
    is every remaining member whose dependencies are all in waves 1..*k*. Record the partition as
    the expected schedule so a deviation at Step 4.0 is visible rather than silent. For
-   `baseline-convergence`, require the declared terminal task to be the unique terminal sink.
+   `baseline-convergence`, require the declared control task alone in wave 1 and the declared
+   terminal task as the unique terminal sink, with every member on a control-to-terminal path.
 9. If `M` is empty, halt and report — there is nothing to build.
 10. **Replay the scheduler before relying on it.** Run the tracked, read-only contract simulation
    and require `WAVE_SIM_OK`: use
@@ -558,7 +581,8 @@ frozen **here** and nowhere else.
    non-shipment fallback set; reports excluded non-task IDs; verifies every red-deliverable key;
    and runs status-source and archived-sibling mutation controls. It also enforces the
    green-regression, task-lint, baseline-convergence, and governed-claim-delta contracts and checks
-   the queue-backed 156-S 40-task/75-edge projection. A drifted fixture or regressed halt path is
+   a queue-backed live projection whose member, role, and edge counts come from the canonical
+   block and current queue. A drifted fixture or regressed halt path is
    therefore caught here rather than mid-release. A failing or drifted simulation blocks the
    schedule from being used (P-002.6).
 

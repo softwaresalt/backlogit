@@ -40,7 +40,7 @@
       * strict-by-default and explicit baseline-convergence repository lint modes
       * exact intermediate residual identities and terminal zero-warning global lint
       * exact, transition- and digest-validated harness-exempt governed claim delta
-      * queue-backed shipment 156-S projection (40 tasks, 75 edges, U1-only first wave)
+      * queue-backed baseline-convergence projection derived from its canonical block and live queue
       * non-frozen-M negative control
       * red-to-green-maker mapping fail-closed cases
 
@@ -224,7 +224,7 @@ function Invoke-LintGateContractChecks {
     }
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.build_feature_artifact)" `
         -Section '## Inputs' `
-        -Required @($taskCommand, $canonicalBlock, $taskContractName, 'wave_scoped', 'harness-exempt', $claimInput, $lintModeInput)
+        -Required @($taskCommand, $canonicalBlock, $taskContractName, 'wave_scoped', 'harness-exempt', 'bounded-finding-set-go-lint', $claimInput, $lintModeInput)
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.build_feature_artifact)" `
         -Section '### Wave-Scoped Lint Contract Precondition' `
         -Required @($taskCommand, 'native', 'non-vacu', 'before any mutation', 'harness-exempt')
@@ -242,7 +242,7 @@ function Invoke-LintGateContractChecks {
 
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
         -Section '### Step 3: Build Wave Schedule (P-002.6)' `
-        -Required @($taskCommand, $canonicalBlock, $taskContractName, 'freeze', 'harness-exempt', 'native', 'non-vacu', $baselineBlock, $baselineMode, $strictMode, 'terminal_task_id', 'operator_authorization', 'member_scope', 'task_artifact_sha256', 'BASELINE-LINT-RESIDUAL-OK')
+        -Required @($taskCommand, $canonicalBlock, $taskContractName, 'freeze', 'harness-exempt', 'native', 'non-vacu', 'bounded-finding-set-go-lint', $baselineBlock, $baselineMode, $strictMode, 'terminal_task_id', 'operator_authorization', 'member_scope', 'task_artifact_sha256', 'acyclic', 'unique source', 'reachable from control', 'unique sink', 'BASELINE-LINT-RESIDUAL-OK')
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
         -Section '#### Step 4.1: Wave-Scoped Task-Lint Claim-Time Gate' `
         -Required @($taskCommand, 'read-only screen', 'before', 'claim')
@@ -262,6 +262,7 @@ function Invoke-LintGateContractChecks {
             $baselineBlock, $baselineMode, $strictMode, 'baseline_inventory',
             'scripts/verify-baseline-lint.ps1', 'operator-supplied record',
             'member_scope', 'task_artifact_sha256', 'BASELINE-LINT-RESIDUAL-OK',
+            'acyclic', 'unique source', 'reachable from control', 'unique sink',
             'WAVE_BASELINE_LINT_CONTRACT_INVALID', 'WAVE_BASELINE_LINT_EXEC_FAILED',
             'WAVE_BASELINE_LINT_RESIDUAL_MISMATCH', 'WAVE_BASELINE_LINT_UNCLOSED',
             'golangci-lint run', 'terminal boundary'
@@ -531,6 +532,104 @@ function Read-TaskLintContract {
     return [pscustomobject]@{ Contract = $contract; Errors = @($errors) }
 }
 
+function Test-BoundedTaskLintCommandFlow {
+    param(
+        [string]$Command,
+        [string[]]$Packages,
+        [string[]]$Identities
+    )
+    $errors = @()
+    $wrapper = [regex]::Match(
+        $Command,
+        "(?s)^\s*pwsh(?:\.exe)?\s+-Command\s+'(?<body>.*)'\s*$"
+    )
+    if (-not $wrapper.Success) {
+        return , @('bounded task lint command is not the canonical pwsh -Command form')
+    }
+    $body = $wrapper.Groups['body'].Value
+    $tokens = $null
+    $parseErrors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput(
+        $body, [ref]$tokens, [ref]$parseErrors
+    )
+    if ($parseErrors.Count -ne 0) {
+        return , @('bounded task lint command body does not parse')
+    }
+    $assignments = @($ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.AssignmentStatementAst]
+            }, $true))
+    $nativeArgs = @(
+        $assignments | Where-Object {
+            $_.Left.Extent.Text -ceq '$psi.Arguments'
+        }
+    )
+    if ($nativeArgs.Count -ne 1) {
+        $errors += 'bounded task lint must assign native arguments exactly once'
+    }
+    else {
+        try {
+            $argumentValue = "$($nativeArgs[0].Right.Expression.SafeGetValue())"
+            $argumentTokens = @($argumentValue -split '\s+' | Where-Object { $_ })
+            foreach ($package in $Packages) {
+                if ($argumentTokens -cnotcontains $package) {
+                    $errors += "declared package is not an exact native lint argument: $package"
+                }
+            }
+        }
+        catch { $errors += 'native lint arguments are not a canonical constant string' }
+    }
+    $ownedAssignments = @(
+        $assignments | Where-Object { $_.Left.Extent.Text -ceq '$owned' }
+    )
+    if ($ownedAssignments.Count -ne 1) {
+        $errors += 'bounded task lint must assign the owned identity set exactly once'
+    }
+    else {
+        try {
+            $ownedValues = @(
+                $ownedAssignments[0].Right.Expression.SafeGetValue() |
+                    ForEach-Object { "$_" }
+            )
+            if (-not (Test-ExactOrdinalSet -Expected $Identities -Actual $ownedValues)) {
+                $errors += 'owned comparison set does not exactly equal declared ordinal identities'
+            }
+        }
+        catch { $errors += 'owned comparison set is not a canonical constant array' }
+    }
+    $observedAssignments = @(
+        $assignments | Where-Object { $_.Left.Extent.Text -ceq '$observed' }
+    )
+    if ($observedAssignments.Count -ne 1) {
+        $errors += 'bounded task lint must assign the observed identity set exactly once'
+    }
+    else {
+        $observedText = $observedAssignments[0].Right.Extent.Text
+        $identityFields = @(
+            '.Pos.Filename', '.Pos.Line', '.Pos.Column', '.FromLinter', '.Text'
+        )
+        $cursor = -1
+        foreach ($field in $identityFields) {
+            $next = $observedText.IndexOf(
+                $field, $cursor + 1, [System.StringComparison]::Ordinal
+            )
+            if ($next -lt 0) {
+                $errors += "observed identity projection omits or reorders $field"
+                break
+            }
+            $cursor = $next
+        }
+        if ($observedText.IndexOf('.Issues', [System.StringComparison]::Ordinal) -lt 0) {
+            $errors += 'observed identity projection is not derived from lint Issues'
+        }
+    }
+    if ($body -cnotmatch '\$observed\s*\|\s*Where-Object\s*\{\s*\$owned\s+-ccontains\s+\$_\s*\}' -or
+        $body -cnotmatch '(?s)if\s*\(\s*@\(\s*\$observed\s*\|.*?\)\.Count\s*\)\s*\{\s*exit\s+1\s*\}') {
+        $errors += 'bounded task lint does not fail on the owned/observed identity intersection'
+    }
+    return $errors
+}
+
 function Test-TaskLintContractShape {
     param($Contract)
     $errors = @()
@@ -544,14 +643,30 @@ function Test-TaskLintContractShape {
         $errors += 'task_lint_cmd does not preserve native failure'
     }
     $scope = if (Test-HasProperty $Contract 'lint_scope') { $Contract.lint_scope } else { $null }
-    $target = ''
+    $targets = @()
     if ($null -ne $scope) {
-        if (Test-HasProperty $scope 'owned_file') { $target = "$($scope.owned_file)" }
-        elseif (Test-HasProperty $scope 'owned_delta_path') { $target = "$($scope.owned_delta_path)" }
+        if (Test-HasProperty $scope 'owned_file') { $targets = @("$($scope.owned_file)") }
+        elseif (Test-HasProperty $scope 'owned_files') {
+            $targets = @($scope.owned_files | ForEach-Object { "$_" })
+        }
+        elseif (Test-HasProperty $scope 'owned_delta_path') {
+            $targets = @("$($scope.owned_delta_path)")
+        }
     }
-    if ([string]::IsNullOrWhiteSpace($target)) { $errors += 'lint_scope has no exact owned target' }
-    elseif ($cmd.IndexOf($target, [System.StringComparison]::Ordinal) -lt 0) {
-        $errors += 'task_lint_cmd does not bind the exact owned target'
+    if ($targets.Count -eq 0 -or @($targets | Where-Object {
+                [string]::IsNullOrWhiteSpace($_)
+            }).Count -gt 0) {
+        $errors += 'lint_scope has no exact owned target'
+    }
+    elseif (@($targets | Sort-Object -Unique).Count -ne $targets.Count) {
+        $errors += 'lint_scope repeats an owned target'
+    }
+    else {
+        foreach ($target in $targets) {
+            if ($cmd.IndexOf($target, [System.StringComparison]::Ordinal) -lt 0) {
+                $errors += "task_lint_cmd does not bind the exact owned target: $target"
+            }
+        }
     }
     $evidence = if (Test-HasProperty $Contract 'non_vacuity_evidence') {
         $Contract.non_vacuity_evidence
@@ -604,6 +719,60 @@ function Test-TaskLintContractShape {
             $errors += 'task lint command does not execute and parse structured native lint'
         }
     }
+    elseif ($kind -ceq 'bounded-finding-set-go-lint') {
+        $expectedScopeKeys = @('kind', 'packages', 'owned_files', 'owned_findings')
+        $expectedEvidenceKeys = @('mode', 'success_marker', 'asserts')
+        $packages = @($scope.packages | ForEach-Object { "$_" })
+        $ownedFiles = @($scope.owned_files | ForEach-Object { "$_" })
+        $ownedFindings = @($scope.owned_findings)
+        if (((Get-PropertyNames $scope) -join ',') -cne ($expectedScopeKeys -join ',') -or
+            $packages.Count -eq 0 -or $packages.Count -gt 2 -or
+            $ownedFiles.Count -eq 0 -or $ownedFiles.Count -gt 2 -or
+            $ownedFindings.Count -eq 0 -or $ownedFindings.Count -gt 16 -or
+            @($packages | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0 -or
+            @($packages | Sort-Object -Unique).Count -ne $packages.Count -or
+            @($packages | Where-Object { $_ -match '(^|/)\.\.\.($|/)' }).Count -gt 0 -or
+            $packages.Count -gt $ownedFiles.Count -or
+            "$($evidence.mode)" -cne 'structured-json-schema-validated' -or
+            ((Get-PropertyNames $evidence) -join ',') -cne ($expectedEvidenceKeys -join ',') -or
+            @($evidence.asserts).Count -eq 0) {
+            $errors += 'bounded finding-set task lint inner schema is not canonical'
+        }
+        foreach ($package in $packages) {
+            if ($cmd.IndexOf($package, [System.StringComparison]::Ordinal) -lt 0) {
+                $errors += "task_lint_cmd does not execute the exact owned package: $package"
+            }
+        }
+        $identities = @()
+        foreach ($finding in $ownedFindings) {
+            $findingKeys = @('path', 'line', 'column', 'linter', 'message')
+            $identity = Get-LintFindingKey -Finding $finding
+            $identities += $identity
+            if (((Get-PropertyNames $finding) -join ',') -cne ($findingKeys -join ',') -or
+                [string]::IsNullOrWhiteSpace("$($finding.path)") -or
+                ([int]$finding.line) -lt 1 -or ([int]$finding.column) -lt 1 -or
+                [string]::IsNullOrWhiteSpace("$($finding.linter)") -or
+                [string]::IsNullOrWhiteSpace("$($finding.message)") -or
+                $ownedFiles -cnotcontains "$($finding.path)") {
+                $errors += "bounded task lint finding is malformed or outside owned_files: $identity"
+            }
+            if ($cmd.IndexOf($identity, [System.StringComparison]::Ordinal) -lt 0) {
+                $errors += "task_lint_cmd does not bind exact ordinal finding identity: $identity"
+            }
+        }
+        if (@($identities | Sort-Object -Unique).Count -ne $identities.Count) {
+            $errors += 'bounded task lint repeats an exact finding identity'
+        }
+        $errors += Test-BoundedTaskLintCommandFlow -Command $cmd -Packages $packages `
+            -Identities $identities
+        if ($cmd -notmatch '(?i)\bgolangci-lint\b' -or
+            $cmd -notmatch 'ProcessStartInfo' -or $cmd -notmatch 'ConvertFrom-Json' -or
+            $cmd -notmatch '\bIssues\b' -or $cmd -notmatch 'RedirectStandardOutput' -or
+            $cmd -notmatch 'RedirectStandardError' -or $cmd -notmatch 'ReadToEndAsync' -or
+            $cmd -notmatch 'WaitForExit') {
+            $errors += 'bounded task lint command does not execute and parse structured native lint'
+        }
+    }
     else { $errors += "unknown task lint scope kind: $kind" }
     return $errors
 }
@@ -636,6 +805,7 @@ function Get-BaselineMemberScopeObservation {
     }
     $allCommitted = $true
     $allMatch = $true
+    $rootFull = [System.IO.Path]::GetFullPath($repoRoot).TrimEnd('\', '/')
     foreach ($binding in @($Contract.member_scope)) {
         $taskID = "$($binding.task_id)"
         if ($taskID -cnotmatch '^\d+\.\d{3}-T$') {
@@ -643,15 +813,31 @@ function Get-BaselineMemberScopeObservation {
             $allMatch = $false
             continue
         }
-        $relative = ".backlogit/queue/$taskID.md"
-        $full = Join-Path $repoRoot $relative
-        if (-not (Test-Path $full -PathType Leaf)) {
+        $relative = ".backlogit/queue/$taskID.md" -replace '\\', '/'
+        $full = [System.IO.Path]::GetFullPath((Join-Path $rootFull $relative))
+        if (-not $full.StartsWith(
+                "$rootFull$([System.IO.Path]::DirectorySeparatorChar)",
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) {
             $allCommitted = $false
             $allMatch = $false
             continue
         }
-        $item = Get-Item $full -Force
-        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        $cursor = $rootFull
+        $pathSafe = $true
+        foreach ($segment in ($relative -split '/')) {
+            $cursor = Join-Path $cursor $segment
+            if (-not (Test-Path $cursor)) {
+                $pathSafe = $false
+                break
+            }
+            $item = Get-Item $cursor -Force
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                $pathSafe = $false
+                break
+            }
+        }
+        if (-not $pathSafe -or -not (Test-Path $full -PathType Leaf)) {
             $allCommitted = $false
             $allMatch = $false
             continue
@@ -670,6 +856,128 @@ function Get-BaselineMemberScopeObservation {
     return [pscustomobject]@{ committed = $allCommitted; digests_match = $allMatch }
 }
 
+function Test-BaselineTopologyShape {
+    param(
+        [string[]]$Members,
+        $Bindings,
+        $DependenciesByTask,
+        [string]$TerminalTaskID
+    )
+    $errors = @()
+    $bindingList = @($Bindings)
+    $control = @($bindingList | Where-Object { "$($_.role)" -ceq 'baseline-control' })
+    $remediation = @($bindingList | Where-Object { "$($_.role)" -ceq 'finding-remediation' })
+    $terminal = @($bindingList | Where-Object { "$($_.role)" -ceq 'terminal-convergence' })
+    if ($control.Count -ne 1) { $errors += 'baseline-control role is not unique' }
+    if ($remediation.Count -lt 1) { $errors += 'no finding-remediation member is declared' }
+    if ($terminal.Count -ne 1 -or
+        ($terminal.Count -eq 1 -and "$($terminal[0].task_id)" -cne $TerminalTaskID)) {
+        $errors += 'terminal-convergence role is not unique and exact'
+    }
+    if ($null -eq $DependenciesByTask) {
+        return @($errors + 'dependency map is missing')
+    }
+
+    $dependencyKeys = @(Get-PropertyNames $DependenciesByTask)
+    if (-not (Test-ExactOrdinalSet -Expected $Members -Actual $dependencyKeys)) {
+        $errors += 'dependency map does not describe exact M'
+    }
+    $deps = @{}
+    foreach ($member in $Members) {
+        $memberDeps = @()
+        if (Test-HasProperty $DependenciesByTask $member) {
+            $memberDeps = @($DependenciesByTask.$member | ForEach-Object { "$_" })
+        }
+        $deps[$member] = $memberDeps
+        $uniqueDependencies = @($memberDeps | Sort-Object -Unique)
+        if (@($uniqueDependencies).Count -ne @($memberDeps).Count) {
+            $errors += "dependency list repeats an edge for $member"
+        }
+        foreach ($dependency in $memberDeps) {
+            if ($Members -cnotcontains $dependency) {
+                $errors += "dependency edge leaves M: $member->$dependency"
+            }
+        }
+    }
+
+    $sources = @($Members | Where-Object { @($deps[$_]).Count -eq 0 })
+    $dependedOn = @($Members | ForEach-Object { $deps[$_] } | Sort-Object -Unique)
+    $sinks = @($Members | Where-Object { $dependedOn -cnotcontains $_ })
+    if ($control.Count -eq 1) {
+        $controlID = "$($control[0].task_id)"
+        if ($sources.Count -ne 1 -or $sources[0] -cne $controlID) {
+            $errors += 'baseline-control task is not the unique initial source'
+        }
+    }
+    if ($sinks.Count -ne 1 -or $sinks[0] -cne $TerminalTaskID) {
+        $errors += 'terminal task is not the unique DAG sink'
+    }
+
+    $indegree = @{}
+    $dependents = @{}
+    foreach ($member in $Members) {
+        $indegree[$member] = 0
+        $dependents[$member] = @()
+    }
+    foreach ($member in $Members) {
+        foreach ($dependency in $deps[$member]) {
+            if ($Members -ccontains $dependency) {
+                $indegree[$member] = $indegree[$member] + 1
+                $dependents[$dependency] = @($dependents[$dependency] + $member)
+            }
+        }
+    }
+    $queue = [System.Collections.Generic.Queue[string]]::new()
+    foreach ($member in (Sort-Ordinal $Members)) {
+        if ($indegree[$member] -eq 0) { $queue.Enqueue($member) }
+    }
+    $visitedCount = 0
+    while ($queue.Count -gt 0) {
+        $current = $queue.Dequeue()
+        $visitedCount++
+        foreach ($dependent in (Sort-Ordinal $dependents[$current])) {
+            $indegree[$dependent] = $indegree[$dependent] - 1
+            if ($indegree[$dependent] -eq 0) { $queue.Enqueue($dependent) }
+        }
+    }
+    if ($visitedCount -ne $Members.Count) { $errors += 'baseline topology contains a cycle' }
+
+    if ($control.Count -eq 1) {
+        $reachable = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::Ordinal
+        )
+        $frontier = [System.Collections.Generic.Queue[string]]::new()
+        $frontier.Enqueue("$($control[0].task_id)")
+        while ($frontier.Count -gt 0) {
+            $current = $frontier.Dequeue()
+            if (-not $reachable.Add($current)) { continue }
+            foreach ($dependent in $dependents[$current]) { $frontier.Enqueue($dependent) }
+        }
+        if ($reachable.Count -ne $Members.Count) {
+            $errors += 'not every member is reachable from baseline-control'
+        }
+    }
+
+    if ($Members -ccontains $TerminalTaskID) {
+        $ancestors = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::Ordinal
+        )
+        $frontier = [System.Collections.Generic.Queue[string]]::new()
+        $frontier.Enqueue($TerminalTaskID)
+        while ($frontier.Count -gt 0) {
+            $current = $frontier.Dequeue()
+            if (-not $ancestors.Add($current)) { continue }
+            foreach ($dependency in $deps[$current]) {
+                if ($Members -ccontains $dependency) { $frontier.Enqueue($dependency) }
+            }
+        }
+        if ($ancestors.Count -ne $Members.Count) {
+            $errors += 'terminal task does not cover every remediation/control path'
+        }
+    }
+    return $errors
+}
+
 function Test-BaselineLintContractShape {
     param(
         $Contract,
@@ -677,9 +985,11 @@ function Test-BaselineLintContractShape {
         $InventoryObservation,
         [string]$ExpectedShipmentID,
         [string]$ExpectedReleaseUnitID,
-        [string]$UniqueTerminalSink,
+        $DependenciesByTask,
         $AuthorizationObservation,
-        $MemberScopeObservation
+        $MemberScopeObservation,
+        $MemberStatusObservation,
+        [string]$UnstartedStatus
     )
     $errors = @()
     $expectedIdentityFields = @('path', 'line', 'column', 'linter', 'message', 'owner_task_id')
@@ -690,9 +1000,8 @@ function Test-BaselineLintContractShape {
         "$($Contract.release_unit_id)" -cne $ExpectedReleaseUnitID) {
         $errors += 'release identity does not match its enclosing artifacts'
     }
-    if ($Members -notcontains "$($Contract.terminal_task_id)" -or
-        "$($Contract.terminal_task_id)" -cne $UniqueTerminalSink) {
-        $errors += 'terminal task is outside M or is not the unique terminal sink'
+    if ($Members -cnotcontains "$($Contract.terminal_task_id)") {
+        $errors += 'terminal task is outside M'
     }
     $bindings = if (Test-HasProperty $Contract 'member_scope') { @($Contract.member_scope) } else { @() }
     $bindingIDs = @()
@@ -719,9 +1028,24 @@ function Test-BaselineLintContractShape {
         "$($terminalRoles[0].task_id)" -cne "$($Contract.terminal_task_id)") {
         $errors += 'member scope terminal role is not exact'
     }
+    $errors += Test-BaselineTopologyShape -Members $Members -Bindings $bindings `
+        -DependenciesByTask $DependenciesByTask -TerminalTaskID "$($Contract.terminal_task_id)"
     if ($null -eq $MemberScopeObservation -or -not [bool]$MemberScopeObservation.committed -or
         -not [bool]$MemberScopeObservation.digests_match) {
         $errors += 'member task artifact digest is stale or uncommitted'
+    }
+    $statusRows = @($MemberStatusObservation)
+    $statusIDs = @($statusRows | ForEach-Object { "$($_.task_id)" })
+    if ([string]::IsNullOrWhiteSpace($UnstartedStatus) -or
+        -not (Test-ExactOrdinalSet -Expected $Members -Actual $statusIDs)) {
+        $errors += 'member status observation does not bind exact M'
+    }
+    else {
+        foreach ($row in $statusRows) {
+            if ("$($row.status)" -cne $UnstartedStatus) {
+                $errors += "member is not unstarted: $($row.task_id)=$($row.status)"
+            }
+        }
     }
     $inventory = if (Test-HasProperty $Contract 'baseline_inventory') { $Contract.baseline_inventory } else { $null }
     if ($null -eq $inventory) { $errors += 'baseline inventory is missing' }
@@ -817,7 +1141,10 @@ function Test-BaselineLintContractShape {
         $verifierText -notmatch 'BASELINE-LINT-RESIDUAL-OK') {
         $errors += 'intermediate wave command is missing, vacuous, or failure-masking'
     }
-    if ("$($Contract.terminal_global_lint_cmd)" -cne 'golangci-lint run') {
+    $terminalGlobalLint = if (Test-HasProperty $Contract 'terminal_global_lint_cmd') {
+        "$($Contract.terminal_global_lint_cmd)"
+    } else { '' }
+    if ($terminalGlobalLint -cne 'golangci-lint run') {
         $errors += 'terminal global lint command is not exact'
     }
     $auth = if (Test-HasProperty $Contract 'operator_authorization') {
@@ -853,9 +1180,11 @@ function Read-BaselineLintContract {
         $InventoryObservation,
         [string]$ExpectedShipmentID,
         [string]$ExpectedReleaseUnitID,
-        [string]$UniqueTerminalSink,
+        $DependenciesByTask,
         $AuthorizationObservation,
-        $MemberScopeObservation
+        $MemberScopeObservation,
+        $MemberStatusObservation,
+        [string]$UnstartedStatus
     )
     $block = Get-DelimitedContractBlock -Raw $Raw -Name 'baseline-lint-convergence-contract' -Fence 'json'
     if (-not $block.Present) {
@@ -882,9 +1211,11 @@ function Read-BaselineLintContract {
         }
         $errors += Test-BaselineLintContractShape -Contract $contract -Members $Members `
             -InventoryObservation $InventoryObservation -ExpectedShipmentID $ExpectedShipmentID `
-            -ExpectedReleaseUnitID $ExpectedReleaseUnitID -UniqueTerminalSink $UniqueTerminalSink `
+            -ExpectedReleaseUnitID $ExpectedReleaseUnitID -DependenciesByTask $DependenciesByTask `
             -AuthorizationObservation $AuthorizationObservation `
-            -MemberScopeObservation $MemberScopeObservation
+            -MemberScopeObservation $MemberScopeObservation `
+            -MemberStatusObservation $MemberStatusObservation `
+            -UnstartedStatus $UnstartedStatus
     }
     return [pscustomobject]@{ Contract = $contract; Errors = @($errors) }
 }
@@ -958,10 +1289,33 @@ function Get-BaselineLintGateOutcome {
     $inventoryObservation = Copy-JsonObject $Root.inventory_observation
     $authorizationObservation = Copy-JsonObject $Root.authorization_observation
     $memberScopeObservation = Copy-JsonObject $Root.member_scope_observation
+    $memberStatusObservation = Copy-JsonObject $Root.member_status_observation
     $initialAttestation = Copy-JsonObject $Root.initial_attestation_observation
+    $dependenciesByTask = Copy-JsonObject $Root.dependencies_by_task
     if (Test-HasProperty $Control 'mode_override') { $contract.mode = "$($Control.mode_override)" }
     if (Test-HasProperty $Control 'remove') {
         [void]$contract.PSObject.Properties.Remove("$($Control.remove)")
+    }
+    if (Test-HasProperty $Control 'remove_member_scope_task') {
+        $contract.member_scope = @(
+            $contract.member_scope |
+                Where-Object { "$($_.task_id)" -cne "$($Control.remove_member_scope_task)" }
+        )
+    }
+    if (Test-HasProperty $Control 'set_member_role') {
+        $binding = @(
+            $contract.member_scope |
+                Where-Object { "$($_.task_id)" -ceq "$($Control.set_member_role.task_id)" }
+        )
+        if ($binding.Count -eq 1) {
+            $binding[0].role = "$($Control.set_member_role.role)"
+        }
+    }
+    if (Test-HasProperty $Control 'set_dependencies') {
+        $taskID = "$($Control.set_dependencies.task_id)"
+        if (Test-HasProperty $dependenciesByTask $taskID) {
+            $dependenciesByTask.$taskID = @($Control.set_dependencies.dependencies)
+        }
     }
     if (Test-HasProperty $Control 'set_terminal_task_id') {
         $contract.terminal_task_id = "$($Control.set_terminal_task_id)"
@@ -984,8 +1338,20 @@ function Get-BaselineLintGateOutcome {
     if (Test-HasProperty $Control 'set_digest_matches') {
         $inventoryObservation.digest_matches = [bool]$Control.set_digest_matches
     }
+    if (Test-HasProperty $Control 'set_inventory_machine_readable') {
+        $inventoryObservation.machine_readable = [bool]$Control.set_inventory_machine_readable
+    }
     if (Test-HasProperty $Control 'set_member_scope_digests_match') {
         $memberScopeObservation.digests_match = [bool]$Control.set_member_scope_digests_match
+    }
+    if (Test-HasProperty $Control 'set_member_status') {
+        $statusRow = @(
+            $memberStatusObservation |
+                Where-Object { "$($_.task_id)" -ceq "$($Control.set_member_status.task_id)" }
+        )
+        if ($statusRow.Count -eq 1) {
+            $statusRow[0].status = "$($Control.set_member_status.status)"
+        }
     }
     if (Test-HasProperty $Control 'set_initial_attestation_exact') {
         $initialAttestation.exact_inventory = [bool]$Control.set_initial_attestation_exact
@@ -1004,9 +1370,11 @@ function Get-BaselineLintGateOutcome {
     $parsed = Read-BaselineLintContract -Raw $raw -Members @($Root.members) `
         -InventoryObservation $inventoryObservation -ExpectedShipmentID "$($Root.expected_shipment_id)" `
         -ExpectedReleaseUnitID "$($Root.expected_release_unit_id)" `
-        -UniqueTerminalSink "$($Root.unique_terminal_sink)" `
+        -DependenciesByTask $dependenciesByTask `
         -AuthorizationObservation $authorizationObservation `
-        -MemberScopeObservation $memberScopeObservation
+        -MemberScopeObservation $memberScopeObservation `
+        -MemberStatusObservation $memberStatusObservation `
+        -UnstartedStatus "$($Root.unstarted_status)"
     if ($parsed.Errors.Count -gt 0) { return 'WAVE_BASELINE_LINT_CONTRACT_INVALID' }
     if (-not [bool]$initialAttestation.executed_before_claim -or
         -not [bool]$initialAttestation.exact_inventory -or
@@ -1393,6 +1761,7 @@ function Get-ArtifactProjection {
 
     $red = Read-RedDeliverableContract -Raw $raw
     $green = Read-GreenRegressionContract -Raw $raw
+    $lint = Read-TaskLintContract -Raw $raw
     $exemptClass = $null
     if ($raw -match '(?m)^harness_exemption_class:\s*(\S+)\s*$') { $exemptClass = $Matches[1] }
     return [pscustomobject]@{
@@ -1405,6 +1774,8 @@ function Get-ArtifactProjection {
         red_deliverable            = [bool]($null -ne $red.Contract -and $red.Contract.red_deliverable)
         red_contract               = $red.Contract
         green_regression_cmds      = @($green.Commands)
+        task_lint_contract         = $lint.Contract
+        task_lint_errors           = @($lint.Errors)
         contract_errors            = @($red.Errors + $green.Errors)
     }
 }
@@ -1793,7 +2164,7 @@ function Invoke-QueueDriftCheck {
 
 function Invoke-BaselineConvergenceQueueProjection {
     $projection = $fx.baseline_convergence_projection
-    $sc = 'queue_projection/156-S'
+    $sc = "queue_projection/$($projection.shipment_id)"
     $shipmentPath = Find-ArtifactPath -Dir $QueueDir -Id "$($projection.shipment_id)"
     if ($null -eq $shipmentPath) {
         Test-Equal -Scenario $sc -Name 'shipment present' -Expected $true -Actual $false
@@ -1812,48 +2183,37 @@ function Invoke-BaselineConvergenceQueueProjection {
         else { $excluded += [pscustomobject]@{ id = "$id"; artifact_type = "$($artifact.artifact_type)" } }
     }
     $taskIDs = @($members | ForEach-Object { $_.id } | Sort-Object)
-    $expectedTaskIDs = @($projection.task_ids | ForEach-Object { "$_" } | Sort-Object)
-    $actualExcluded = @($excluded | ForEach-Object { "$($_.id)=$($_.artifact_type)" } | Sort-Object)
-    $expectedExcluded = @(
-        $projection.excluded_members |
-            ForEach-Object { "$($_.id)=$($_.artifact_type)" } |
-            Sort-Object
-    )
-    $lintValid = 0
-    foreach ($artifact in $members) {
-        $path = Find-ArtifactPath -Dir $QueueDir -Id "$($artifact.id)"
-        $lint = Read-TaskLintContract -Raw (Get-Content $path -Raw)
-        if ($lint.Errors.Count -eq 0) { $lintValid++ }
-    }
+    $lintValid = @($members | Where-Object { @($_.task_lint_errors).Count -eq 0 }).Count
     $edgeCount = @($members | ForEach-Object { @($_.deps).Count } | Measure-Object -Sum).Sum
     $externalEdges = @(
         $members |
             ForEach-Object { $_.deps } |
             Where-Object { $taskIDs -notcontains "$_" }
     )
-    $actualDependencyProjection = @(
-        $members |
-            Sort-Object id |
-            ForEach-Object { "$($_.id)=>$(@($_.deps | Sort-Object) -join ',')" }
-    )
-    $expectedDependencyProjection = @(
-        (Get-PropertyNames $projection.dependencies_by_task) |
-            Sort-Object |
-            ForEach-Object {
-                "$_=>$(@($projection.dependencies_by_task.$_ | Sort-Object) -join ',')"
-            }
-    )
+    $liveDependencies = [pscustomobject][ordered]@{}
+    foreach ($member in ($members | Sort-Object id)) {
+        $liveDependencies | Add-Member -NotePropertyName "$($member.id)" `
+            -NotePropertyValue @($member.deps)
+    }
     $firstWave = @($members | Where-Object { @($_.deps).Count -eq 0 } | ForEach-Object { $_.id } | Sort-Object)
-    $u1Dependents = @(
-        $members | Where-Object { @($_.deps) -contains '175.001-T' }
-    ).Count
-    $terminal = @($members | Where-Object { $_.id -ceq "$($projection.terminal_task_id)" })
-    $terminalDeps = if ($terminal.Count -eq 1) { @($terminal[0].deps).Count } else { -1 }
-    $dependedOn = @($members | ForEach-Object { $_.deps } | Sort-Object -Unique)
-    $sinks = @($taskIDs | Where-Object { $dependedOn -notcontains $_ } | Sort-Object)
-    $releasePath = Find-ArtifactPath -Dir $QueueDir -Id "$($projection.release_unit_id)"
+    $releaseCandidates = @($excluded | Where-Object { $_.artifact_type -ceq 'feature' })
+    $releaseUnitID = if ($releaseCandidates.Count -eq 1) { "$($releaseCandidates[0].id)" } else { '' }
+    $statusSources = Get-LiveStatusSourceProjection -Dir $QueueDir
+    $unstartedStatus = if (Test-HasProperty $statusSources.registry_status_mapping 'queued') {
+        "$($statusSources.registry_status_mapping.queued)"
+    } else { '' }
+    $memberStatusObservation = @(
+        $members | ForEach-Object {
+            [pscustomobject]@{ task_id = "$($_.id)"; status = "$($_.status)" }
+        }
+    )
+    $releasePath = if ($releaseUnitID) {
+        Find-ArtifactPath -Dir $QueueDir -Id $releaseUnitID
+    } else { $null }
     $baselinePresent = $false
     $baselineValidWhenPresent = $true
+    $scopeCount = 0
+    $roleCounts = ''
     if ($null -ne $releasePath) {
         $baselineBlock = Get-DelimitedContractBlock -Raw (Get-Content $releasePath -Raw) `
             -Name 'baseline-lint-convergence-contract' -Fence 'json'
@@ -1862,6 +2222,17 @@ function Invoke-BaselineConvergenceQueueProjection {
             $rawContract = $null
             try { $rawContract = $baselineBlock.Content | ConvertFrom-Json -DateKind String -ErrorAction Stop }
             catch { $rawContract = $null }
+            if ($null -ne $rawContract) {
+                $scope = @($rawContract.member_scope)
+                $scopeCount = $scope.Count
+                $roleCounts = @(
+                    'baseline-control', 'finding-remediation', 'terminal-convergence' |
+                        ForEach-Object {
+                            $role = $_
+                            "$role=$(@($scope | Where-Object { "$($_.role)" -ceq $role }).Count)"
+                        }
+                ) -join ','
+            }
             $inventoryObservation = Get-BaselineInventoryObservation -Contract $rawContract
             $authorizationObservation = [pscustomobject]@{
                 operator_supplied = -not [string]::IsNullOrWhiteSpace($OperatorAuthorizationRecord)
@@ -1872,43 +2243,37 @@ function Invoke-BaselineConvergenceQueueProjection {
             $parsedBaseline = Read-BaselineLintContract -Raw (Get-Content $releasePath -Raw) `
                 -Members $taskIDs -InventoryObservation $inventoryObservation `
                 -ExpectedShipmentID "$($projection.shipment_id)" `
-                -ExpectedReleaseUnitID "$($projection.release_unit_id)" `
-                -UniqueTerminalSink "$($projection.terminal_task_id)" `
-                -AuthorizationObservation $authorizationObservation
+                -ExpectedReleaseUnitID $releaseUnitID `
+                -DependenciesByTask $liveDependencies `
+                -AuthorizationObservation $authorizationObservation `
+                -MemberStatusObservation $memberStatusObservation `
+                -UnstartedStatus $unstartedStatus
             $baselineValidWhenPresent = [bool]($parsedBaseline.Errors.Count -eq 0)
         }
     }
 
-    Test-Equal -Scenario $sc -Name 'shipment member count' `
-        -Expected $projection.shipment_member_count -Actual $itemIDs.Count
     Test-Equal -Scenario $sc -Name 'all member IDs/types resolve' -Expected @() -Actual $resolutionErrors
-    Test-Equal -Scenario $sc -Name 'task count' -Expected $projection.task_count -Actual $taskIDs.Count
-    Test-Equal -Scenario $sc -Name 'exact frozen task IDs' -Expected $expectedTaskIDs -Actual $taskIDs
-    Test-Equal -Scenario $sc -Name 'excluded non-task members' `
-        -Expected $expectedExcluded -Actual $actualExcluded
-    Test-Equal -Scenario $sc -Name 'edge count' -Expected $projection.edge_count -Actual $edgeCount
+    Test-Equal -Scenario $sc -Name 'exactly one release-unit feature member' `
+        -Expected 1 -Actual $releaseCandidates.Count
+    Test-Equal -Scenario $sc -Name 'one or more executable task members' `
+        -Expected $true -Actual ([bool]($taskIDs.Count -gt 0))
     Test-Equal -Scenario $sc -Name 'all dependency edges stay inside M' -Expected @() -Actual $externalEdges
-    Test-Equal -Scenario $sc -Name 'exact dependency edge identities' `
-        -Expected $expectedDependencyProjection -Actual $actualDependencyProjection
-    Test-Equal -Scenario $sc -Name 'U1-only first wave' `
-        -Expected (ConvertTo-List $projection.first_wave) -Actual $firstWave
-    Test-Equal -Scenario $sc -Name 'U1 direct dependents' `
-        -Expected $projection.u1_direct_dependents -Actual $u1Dependents
-    Test-Equal -Scenario $sc -Name 'terminal dependency count' `
-        -Expected $projection.terminal_dependency_count -Actual $terminalDeps
-    Test-Equal -Scenario $sc -Name 'unique terminal sink' `
-        -Expected @("$($projection.terminal_task_id)") -Actual $sinks
     Test-Equal -Scenario $sc -Name 'valid task-lint contract count' `
-        -Expected $projection.task_lint_contract_count -Actual $lintValid
+        -Expected $taskIDs.Count -Actual $lintValid
     Test-Equal -Scenario $sc -Name 'Stage baseline contract presence' `
-        -Expected ([bool]$projection.stage_contract_present) -Actual $baselinePresent
+        -Expected ([bool]$projection.require_current_contract) -Actual $baselinePresent
     Test-Equal -Scenario $sc -Name 'Stage baseline contract valid when present' `
         -Expected $true -Actual $baselineValidWhenPresent
+    if ($baselinePresent) {
+        Test-Equal -Scenario $sc -Name 'canonical member count equals live task count' `
+            -Expected $taskIDs.Count -Actual $scopeCount
+    }
 
     if (-not $Quiet) {
-        Write-Host "156-S    : $($taskIDs.Count) tasks, $edgeCount edges, first wave [$($firstWave -join ', ')]"
+        Write-Host "$($projection.shipment_id) : $($itemIDs.Count) shipment members; $($taskIDs.Count) tasks; $edgeCount live edges"
+        Write-Host "topology  : first wave [$($firstWave -join ', ')]; canonical roles [$roleCounts]"
         Write-Host "lint      : $lintValid/$($taskIDs.Count) task-lint contracts structurally valid"
-        Write-Host "Stage mode: baseline-lint contract present=$baselinePresent (expected $($projection.stage_contract_present))"
+        Write-Host "Stage mode: baseline-lint contract present=$baselinePresent (required $($projection.require_current_contract))"
         Write-Host ""
     }
 }

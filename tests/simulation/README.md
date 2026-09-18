@@ -3,9 +3,9 @@
 `wave-scheduler-contract.json` is a tracked, read-only fixture that pins the behaviour of the
 **P-002.6 dependency-aware wave scheduler** (`.github/policies/workflow-policies.md`). The primary
 scheduler corpus is shipment `130-S`: **44** explicit members and exactly **43 task-type IDs** in
-`M`. Queue-backed verification also projects baseline-convergence shipment `156-S`: **41**
-members, **40** tasks, **75** edges, an exact U1-only first wave, and U12 as its unique terminal
-sink.
+`M`. Queue-backed verification also projects baseline-convergence shipment `156-S` dynamically:
+the release-unit feature, executable task set, role counts, dependency edges, first wave, and sink
+come from the canonical feature block and live queue, never from fixture-owned counts or IDs.
 
 It exists because the scheduler is a *contract executed by agents*, not compiled code: nothing in
 the Go test suite can fail when the contract regresses. The fixture plus its runner make the
@@ -29,9 +29,10 @@ pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue
 
 When a live `baseline-lint-convergence-contract` exists, also pass its operator-supplied opaque
 record identity as `-OperatorAuthorizationRecord <record>`. The repository block cannot
-authenticate itself. Until Stage adds the required block and machine inventory to 175-F,
-`-VerifyAgainstQueue` intentionally fails its Stage-contract-presence assertion; that failure is
-the executable readiness blocker, not fixture drift to waive.
+authenticate itself. Until Stage authors the current block and machine inventory on the shipment's
+release-unit feature, `-VerifyAgainstQueue` intentionally fails its Stage-contract-presence or
+contract-validity assertion; that preclaim failure is the executable readiness blocker, not a
+harness simulation failure to waive.
 
 Verification compares the exact filtered and fallback task-ID sets, configured status sources,
 statuses, dependencies, exemption metadata, the optional green-regression projection, and **all
@@ -44,15 +45,17 @@ Three parser controls also require a green-regression payload to be a JSON objec
 `green_regression_cmds` value is an array, and 18 red-deliverable branch controls pin
 `build-feature` Step 0.5 routing and result classification (see *Red-deliverable branch controls*
 below). Additional controls parse task-lint contracts, reject missing/vacuous/native-failure-masked
-commands, exercise strict and explicit baseline-convergence lint modes, exact-compare intermediate
-residual finding identities, require zero-warning global lint at the terminal boundary, and
-validate the exact governed claim-path union before and after a verification-only commit.
+commands, accept one exact owned file or a small explicitly enumerated set of owned files and
+ordinal finding identities, exercise strict and explicit baseline-convergence lint modes,
+exact-compare intermediate residual finding identities, require zero-warning global lint at the
+terminal boundary, and validate the exact governed claim-path union before and after a
+verification-only commit.
 
 The runner prints one line per scenario and a final `WAVE_SIM_OK: {pass}/{total} assertions PASS`
-line, exiting non-zero on any failed assertion. The current totals are **358 assertions** with
-`-VerifyAgainstQueue` and **321** without, across 22 scheduler scenarios plus the parser and
-execution controls. It is **read-only**: it reads the fixture and backlog Markdown, computes and
-mutates copies in memory, and writes nothing. It runs no `go` command; when a live
+line, exiting non-zero on any failed assertion. Assertion totals are derived from the fixture and
+optional live projection rather than pinned here. It is **read-only**: it reads the fixture and
+backlog Markdown, computes and mutates copies in memory, and writes nothing. It runs no `go`
+command; when a live
 baseline-convergence block exists, it uses only read-only Git/file hashing to verify that the
 machine inventory is committed and digest-bound.
 
@@ -60,6 +63,13 @@ machine inventory is committed and digest-bound.
 
 `lint_mode` defaults to `strict`, where unmodified `golangci-lint run` must be green at each wave.
 The simulator accepts `baseline-convergence` only through the canonical release-unit JSON block.
+Its `member_scope` must exactly equal every executable shipment task. Exactly one
+`baseline-control` task is the unique source, one or more `finding-remediation` tasks each own at
+least one exact inventory finding, and exactly one `terminal-convergence` task is the unique sink.
+The graph must be acyclic, every edge must stay inside the member set, and every member must be
+reachable from control and able to reach terminal. Generic negative controls cover missing
+members, duplicate roles, disconnected nodes, cycles, multiple sinks, and incomplete terminal
+coverage.
 At intermediate waves the observed normalized repository-wide finding set must equal exactly the
 committed baseline rows owned by unfinished tasks. New, missing, moved, changed-linter, malformed,
 or unowned findings fail. At the declared terminal task, the residual must be empty and the
@@ -141,10 +151,12 @@ newly created file would otherwise satisfy an empty-delta claim.
 
 ## Keeping it honest
 
-* The fixture mirrors the real shipment projection. `-VerifyAgainstQueue` is the drift gate: run
-  it whenever shipment/fallback membership, a status source, a member type, a dependency edge, an
-  exemption label, a `red-deliverable-contract`, a `green-regression-contract`, a
-  `task-lint-contract`, or a release-unit `baseline-lint-convergence-contract` changes.
+* The fixture mirrors the primary scheduler shipment. For baseline convergence,
+  `-VerifyAgainstQueue` derives authority from the canonical feature block and live shipment
+  instead of mirroring its topology. Run it whenever shipment/fallback membership, a status source,
+  a member type, a dependency edge, an exemption label, a `red-deliverable-contract`, a
+  `green-regression-contract`, a `task-lint-contract`, or a release-unit
+  `baseline-lint-convergence-contract` changes.
 * Every expectation lives in the fixture, not in the runner. A contract change is a fixture change,
   and it shows up as a diff.
 * The runner implements the contract; it does not implement the repository. It proves the wave

@@ -125,15 +125,15 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "5f3b64023938b3fff6be94303677861396ad9c6e3fee45d247662419803a51ea"
+    checksum: "c86bf576a863deaae95d7bf2fc12a090b3ef97bbbf1b426bd4506294b1d64552"
     drift_allowed: true
-    drift_reason: "Locally hardened P-002.6 baseline-convergence, strict lint, and governed-claim policy contract; preserve until the upstream template provides equivalent fail-closed behavior."
+    drift_reason: "Locally hardened P-002.6 dynamic baseline-convergence DAG/member validation, strict lint, and governed-claim policy contract; preserve until the upstream template provides equivalent fail-closed behavior."
   - path: ".github/skills/build-feature/SKILL.md"
     primitive: 1
     template: "templates/skills/build-feature/SKILL.md.tmpl"
-    checksum: "567b6b48d0df1884a9901415fc047e57a07cfe0f5ea0423424d5e85c752a8696"
+    checksum: "2237774cf81be52a9557a395dd11d3ff3754b1806c8f51d89e2944b1efefd336"
     drift_allowed: true
-    drift_reason: "Locally hardened P-002.6 baseline-convergence and governed-claim execution contract; preserve until the upstream template provides equivalent fail-closed behavior."
+    drift_reason: "Locally hardened P-002.6 baseline-convergence, bounded task-lint, and governed-claim execution contract; preserve until the upstream template provides equivalent fail-closed behavior."
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
@@ -381,9 +381,9 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "06294ba193d57582da0284b57cbd79932bcadacf86ecf7f5c3da1330c9d5607b"
+    checksum: "86f775613e532933fa8176e1e9a66432715e8a563939baa53d71ef0a9d21e4e7"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert."
+    drift_reason: "Workspace-hardened Ship contract: preserves the PR #400 read-only graphtor tool grant and adds P-002.6 dynamic baseline-convergence DAG/member validation plus bounded task-lint authoring. Preserve until the upstream template provides equivalent fail-closed behavior."
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"

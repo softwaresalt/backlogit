@@ -26,11 +26,17 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
   from the task's canonical `<!-- BEGIN:task-lint-contract -->` block. Task artifacts may describe
   this as file-scoped lint verification (FSLV). Every wave member declares one, including
   `harness-exempt` and `red_deliverable` tasks. It must be executable as written, read-only,
-  bounded to the task-owned lint surface, preserve the native linter/configuration/process exit,
-  and fail closed when its claimed lint target or evidence is absent, empty, malformed, or
-  otherwise non-vacuous proof is missing. A task with no lintable Go delta must positively prove
-  that closed no-Go surface; absence of a command is not an exemption. When `wave_scoped` is
-  `false` or absent, omit this input and retain the repository-wide lint gate.
+  bounded to one exact owned file or a small explicitly enumerated set of owned files/findings,
+  preserve the native linter/configuration/process exit, and fail closed when any claimed lint
+  target or exact ordinal finding identity is absent, empty, malformed, omitted from the native
+  invocation/result comparison, or otherwise lacks non-vacuous proof. A task may therefore own a
+  narrow cross-file finding set without claiming a broad package; the command may name only the
+  explicit packages needed to analyze those files. That form uses the canonical
+  `bounded-finding-set-go-lint` scope frozen by Ship; this skill does not widen or reinterpret its
+  declared `packages`, `owned_files`, or ordinal `owned_findings`. A task with no lintable Go
+  delta must positively prove that closed no-Go surface; absence of a command is not an exemption.
+  When `wave_scoped` is `false` or absent, omit this input and retain the repository-wide lint
+  gate.
 * `green_regression_cmds`: (Optional; meaningful only when `wave_scoped` is `true`; default `[]`)
   The exact array Ship parsed and froze from the task's canonical optional
   `green-regression-contract` at Step 3. The contract format is defined by P-002.6; an absent block
@@ -80,7 +86,8 @@ results, and refresh stale indexes before concluding the code graph is wrong.
 When `wave_scoped` is `true`, validate `task_lint_cmd` before any mutation and before selecting the
 generic, `harness-exempt`, or `red_deliverable` branch. It must be present verbatim in the task's
 canonical `task-lint-contract`, clear the P-002.5 read-only screen, and satisfy the task-scoping,
-native-failure propagation, and non-vacuity requirements in **Inputs**. This precondition applies to
+native-failure propagation, exact-target participation, ordinal-identity, and non-vacuity
+requirements in **Inputs**. This precondition applies to
 every task, including `harness-exempt` tasks; neither an exemption class nor a no-Go deliverable
 permits an absent or success-shaped lint command. A missing, drifted, destructive, global-only,
 native-failure-masking, or vacuous command halts with `WAVE_TASK_LINT_CONTRACT_INVALID` before work
