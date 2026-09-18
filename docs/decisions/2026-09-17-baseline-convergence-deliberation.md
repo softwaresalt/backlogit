@@ -213,3 +213,29 @@ technical-surface-isolated ~2h tasks:
   refactors; `//nolint` only with a justified inline reason.
 * **Unblocking coupling** — a `blocks` dependency makes `149-S` depend on the
   new baseline shipment so `149-S` is ineligible until baseline ships.
+
+## Copilot PR #448 review cycle 1 — corrections (Stage-owned, P-021 C1)
+
+These corrections complete the already-authorized staging contracts for shipment
+`156-S` (no new scope beyond honoring the existing CI-guard / line-ending intent):
+
+* **U14 added** — the persistent CI line-ending guard is split into its own unit
+  (`175.014-T`, owning `.github/workflows/ci.yml`) so U1 stays content-identical
+  (EOL-only). U14 depends on U1 and feeds the U12 terminal sink; the guard inspects
+  working-tree EOL via `git ls-files --eol` (fail on `w/crlf`/`w/mixed`), with the
+  index-diff check kept as separate content-identity evidence.
+* **U1 approval hardened** — operator-only approval recorded BEFORE any renormalize
+  staging or working-tree refresh (not merely before the commit); clean-tree
+  precondition (fail on unrelated index/worktree changes); working-tree refresh
+  scoped to affected paths only (no forced whole-tree checkout/removal).
+* **U11 staticcheck** — conservative pre-partition: U11 now depends on ALL errcheck
+  units (U4–U10, U13) so a file overlap cannot be discovered too late; U12 remains
+  terminal.
+* **U13 residual scope** — `internal/config` and `internal/faultline` top-level are
+  now INCLUDED with file-level exclusions for the two U3-owned files, replacing the
+  prior package-level "evidenced clean" exclusion Stage cannot substantiate without
+  running linters.
+* **Subtask ID examples corrected** — `175.013.a-T` → `175.013.001-ST`,
+  `175.010.a-T` → `175.010.001-ST`.
+* **Backlog effect** — 13 → 14 tasks (U1–U14); dependency edges 22 → 32; shipment
+  `156-S` manifest 14 → 15 items. All mutations via governed backlogit operations.

@@ -47,6 +47,16 @@ checkpoint provenance are internally consistent with main.
 > historical wording beneath is preserved for provenance and superseded where it
 > conflicts.
 
+> **Corrected current state (Copilot PR #448 review cycle 1):** the release unit
+> now carries **14 tasks (U1–U14)**. U14 (`175.014-T` — persistent CI
+> line-ending guard owning `.github/workflows/ci.yml`) was split out of U1 so U1
+> stays content-identical (EOL-only). New dependency edges: U14→U1 and U12→U14
+> (+2), and U11→each errcheck unit U4–U10,U13 (+8, conservative staticcheck
+> pre-partition), raising the dependency-edge count from 22 to **32**. Shipment
+> `156-S` manifest is now **15 items** (`175-F` + `175.001-T`…`175.014-T`). These
+> are the authoritative figures; earlier 13-task / 22-edge / 14-item wording is
+> superseded. All mutations via governed backlogit operations.
+
 ## Native backlog artifacts (IDs assigned by current main)
 
 - Covering **feature `175-F`** (feature required by `isRootCoveringFeature()` +

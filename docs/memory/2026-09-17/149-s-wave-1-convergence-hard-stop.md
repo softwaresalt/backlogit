@@ -70,7 +70,11 @@ Hard-stop failures:
 
 ## Continuity
 
-The shipment remains active. Task `168.001-T` is terminal-success with commit
+At the time of this hard stop the shipment was active. **Current-state
+correction (post-handback):** `149-S` was subsequently governed-handback to
+`queued` with task `168.001-T` done; it is now blocked on baseline shipment
+`156-S` (cross-shipment `149-S → 156-S (blocks)`) and resumes only after `156-S`
+ships. Task `168.001-T` is terminal-success with commit
 association `c976315fa6d97e5b9db60f936fa9f5cbc7d12b74`. All other frozen members
 remain queued. Resume only after the repository-wide lint and format baseline is
 made green through a separately authorized release unit or the installed
