@@ -20,8 +20,7 @@ its authorized change surface. Feature `175-F` is the covering release unit that
 restores the repository baseline and lets `149-S` resume after the baseline
 shipment ships.
 
-The completed redesign replaces the earlier package or aggregate plan with an
-immutable file-owned lint DAG. The executable scope is locked before handoff:
+The executable scope is an immutable file-owned lint DAG, locked before handoff:
 exactly 40 tasks, no aggregate lint task, no separate format task, and no
 backlog creation during execution.
 
@@ -455,15 +454,13 @@ Constitution Check: documented-deviations
 
 ## Plan Review Status
 
-The earlier per-package and aggregate design was superseded by the file-owned
-lint DAG redesign. The PASS conclusion is retained only for the current contract
-described in this document:
+Review conclusion: PASS for the contract specified in this document:
 
 * exactly 40 executable tasks
 * 36 file-owned lint tasks
 * U1 as the only line-ending migration (548 tracked CRLF paths)
 * U40 as the line-ending guard script
-* U14 as a new dedicated workflow with no `ci.yml` edit (depends on U40)
+* U14 as a dedicated workflow with no `ci.yml` edit (depends on U40)
 * U12 as the only harness-exempt verification sink
 * 75 DAG edges
 * no aggregate lint unit and no execution-time backlog creation

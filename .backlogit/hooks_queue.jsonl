@@ -3326,3 +3326,6 @@
 {"seq":3328,"timestamp":"2026-09-18T19:37:18.3874185Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.038-T","schema_version":1}}
 {"seq":3329,"timestamp":"2026-09-18T19:37:34.5766394Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.039-T","schema_version":1}}
 {"seq":3330,"timestamp":"2026-09-18T19:37:54.7100815Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.040-T","schema_version":1}}
+{"seq":3331,"timestamp":"2026-09-18T20:38:47.840563Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"feature","changed_fields":["priority"],"item_id":"175-F","schema_version":1}}
+{"seq":3332,"timestamp":"2026-09-18T20:39:08.69854Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.001-T","schema_version":1}}
+{"seq":3333,"timestamp":"2026-09-18T20:39:35.158965Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.012-T","schema_version":1}}
