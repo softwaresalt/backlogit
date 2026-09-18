@@ -42,7 +42,7 @@ green, which is the precondition for `149-S` to resume.
 | 50 errcheck findings resolved (4DB1DFF1) | U4–U10, U13 (closed residual set) |
 | 6 staticcheck findings resolved (4DB1DFF1) | U11 |
 | `go test ./...` + `go vet ./...` + `golangci-lint run` + `gofmt -l .` all green | U12 |
-| Durable, non-re-drifting line endings on Windows (CI guard) | U14 (`.github/workflows/ci.yml`) |
+| Durable, non-re-drifting line endings on Windows (CI guard) | U14 (new `.github/workflows/line-endings.yml`) |
 
 ## Implementation Units
 
@@ -132,9 +132,9 @@ make U1's content-identical gate impossible to satisfy.
   touch it), or compare its pre/post blob hashes (`git rev-parse :<path>` before
   vs after) and confirm they are identical.
 * **Durable CI guard — split into U14 (`175.014-T`):** the persistent CI
-  line-ending guard is owned by U14, NOT U1, because installing it is a genuine
-  content change to `.github/workflows/ci.yml` and would otherwise violate U1's
-  content-identical (EOL-only) invariant. U14 depends on U1 and inspects
+  line-ending guard is owned by U14, NOT U1, because installing it adds a genuine
+  NEW workflow file `.github/workflows/line-endings.yml` and would otherwise violate
+  U1's content-identical (EOL-only) invariant. U14 depends on U1 and inspects
   working-tree EOL via `git ls-files --eol`, failing on `w/crlf`/`w/mixed` (see
   U14). U1 itself introduces NO workflow content change; its EOL-only
   content-identity proof therefore does not (and must not) account for a
@@ -175,17 +175,37 @@ make U1's content-identical gate impossible to satisfy.
   pre-assigned to U3 and excluded from U11's overlap inventory; U3 owns EVERY
   finding in them (test correctness, gofmt, any errcheck/staticcheck) so exactly
   one unit owns each and no finding is orphaned.
+* **Genuine RED-before-green (resolves Copilot cycle-4 P2 "U3 already green
+  after U1"):** because U1's on-disk renormalization already leaves the golden LF,
+  an assertion that merely re-checks the on-disk golden would be green-on-arrival.
+  U3 therefore owns a SYNTHETIC in-memory CRLF regression sub-case — it builds a
+  CRLF-corrupted copy of the golden in memory
+  (`bytes.ReplaceAll(golden, []byte("\n"), []byte("\r\n"))`) and asserts
+  `Canonical()` emits LF-only bytes AND the byte-for-byte comparison REJECTS the
+  CRLF blob. It reads no file U1 touched, so U1 landing never makes it green; it
+  is genuinely RED before U3's normalization-assertion logic exists and GREEN only
+  after. U1's operator-only renormalization gate is untouched (U3 renormalizes no
+  tracked file; test/fixture-only change).
 * **Verify:** `go test -run '^TestU4aBehaviorCanonicalByteStable$' ./internal/faultline`
-  passes on a Windows checkout.
-* **Posture:** test-first (the failing test already exists; make it green).
+  passes on a Windows checkout; the synthetic-CRLF sub-case is demonstrably red
+  before green.
+* **Posture:** test-first — the synthetic-CRLF regression IS the required RED
+  harness (not green-on-arrival).
 
 ### U4–U10, U13 — errcheck remediation, per-package with a closed residual set (code)
 
-**Pre-step (enforce granularity up front — resolves plan-review P2):** before
-committing the U4–U10 boundaries, enumerate per-package errcheck counts
-(`golangci-lint run <pkg>`). If a package exceeds the 2-hour file bound
-(≥ 3 files / ≥ 5 functions), pre-declare a split into bounded sub-units
-(U4a/U4b…) rather than discovering the overflow mid-execution.
+**Pre-step (frozen boundaries, honest under the Stage role boundary — resolves
+Copilot cycle-4 P1-1):** the U4–U10 and U13 package→unit boundaries are CLOSED and
+FROZEN at staging from the stored 149-S aggregate lint evidence (50 errcheck
+findings repository-wide). Stage does NOT run `golangci-lint` to derive per-file
+counts — the role boundary forbids running linters — so no per-file split is
+pre-declared from live linter output. Instead each unit owns a frozen package (or,
+for U13, a frozen closed package set); the whole errcheck surface is a small,
+uniform, mechanical error-capture class whose 2-hour bound is satisfied DIRECTLY by
+the small aggregate count, so the `<3-implementation-file` heuristic (a proxy for
+the 2-hour rule) is explicitly WAIVED for this mechanical-remediation class with
+this recorded justification. No boundary is deferred to execution and NO unit
+authorizes Ship to create backlog items after the shipment/DAG freeze.
 
 **Exactly-one-owner ordering (resolves Copilot cycle-2 exactly-one-owner
 finding):** U4–U10 and U13 each depend on U11 (`175.011-T`), which runs
@@ -248,14 +268,17 @@ idiomatic for the dominant errcheck categories):
   exclusions for the two U3-owned files
   (`internal/faultline/testdata/parity_v1.golden.json` and
   `internal/faultline/evidence_conformance_test.go`).
-  **Not an open-ended catch-all and NOT a Ship-created planning unit:** Stage owns
-  the COMPLETE package→unit assignment here. If the aggregate residual surface
-  exceeds the 2-hour/<3-file bound at execution, Ship performs a MECHANICAL
-  execution subdivision (per-package subtasks under U10/U13, e.g. `175.013.001-ST`) —
-  execution decomposition of an already-owned unit; Ship creates NO new planning
-  units. Packages with zero findings close as no-ops. Exact per-file counts are
-  execution-verified by Ship (Stage role forbids running linters); the package
-  OWNERSHIP decision — the planning decision — is closed here by Stage.
+  **Not an open-ended catch-all, NOT a Ship-created planning unit, and NO
+  execution-time subdivision (resolves Copilot cycle-4 P1-1):** Stage owns the
+  COMPLETE package→unit assignment here and FREEZES it at staging. U10 and U13
+  create NO subtasks and NO planning units at execution time and authorize Ship to
+  create NONE; every prior execution-time subtask-subdivision clause is removed.
+  Ship executes each unit as a SINGLE width-isolated mechanical pass within its
+  frozen closed scope and may NOT add backlog items after the shipment/DAG freeze.
+  Packages with zero findings close as no-ops. Exact per-file counts are
+  execution-verified by Ship (Stage role forbids running linters); that
+  verification never creates a new planning unit. The `<3-file` heuristic is waived
+  for this mechanical class per the frozen-boundaries pre-step above.
 
 * **Verify (each):** `golangci-lint run <pkg>` reports 0 errcheck; `gofmt -l` on
   touched files is empty (per-unit format cohesion); package tests still
@@ -284,8 +307,22 @@ idiomatic for the dominant errcheck categories):
   only with a justified inline reason. Errcheck findings inside a U11-owned file
   use the same per-category errcheck strategy as U4–U10.
 * **Files:** the staticcheck-flagged files (expected ≤ 3), minus the two U3-owned
-  files. U11 records this owned-file set as DETERMINISTIC HANDOFF EVIDENCE in its
-  closure artifact so U4–U10/U13 can exclude it.
+  files. **Owned handoff artifact (resolves Copilot cycle-4 P1-3):** U11
+  exclusively generates and owns the Ship-deliverable overlap inventory at the
+  reserved path `docs/closure/175-U11-overlap-inventory.md` — a docline-valid
+  markdown file whose machine-readable payload is a single fenced `text` block
+  delimited by `# BEGIN OVERLAP-INVENTORY` / `# END OVERLAP-INVENTORY` holding the
+  COMPLETE staticcheck-flagged file set (minus the two U3-owned files), one
+  repo-relative POSIX path per line, byte-ascending sorted, LF, no duplicates.
+  Deterministic generation:
+  `golangci-lint run --out-format=json | jq -r '.Issues[] | select(.FromLinter=="staticcheck") | .Pos.Filename' | grep -vxF -e internal/faultline/testdata/parity_v1.golden.json -e internal/faultline/evidence_conformance_test.go | sort -u`.
+  It DOES NOT EXIST during staging (must NOT be treated as pre-existing); Ship
+  creates it while executing U11. U4–U10/U13 consume it BY EXACT PATH to exclude
+  every listed file; an absent artifact is a blocking U11-incomplete dependency
+  violation, never "no overlap". **Owned harness (resolves cycle-4 P1-2):** U11
+  reserves `<pkg>/staticcheck_convergence_175_test.go` per behavior-relevant
+  staticcheck-flagged package (excluded from the implementation-file count; never
+  collides with an errcheck unit's `errcheck_convergence_175_test.go`).
 * **Dependencies (exactly-one-owner redesign — resolves Copilot cycle-2
   finding):** U11 depends on U1 (`175.001-T`) ONLY and runs IMMEDIATELY AFTER U1,
   BEFORE every errcheck unit. U4–U10 and U13 depend on U11 (the edge direction is
@@ -297,51 +334,50 @@ idiomatic for the dominant errcheck categories):
   files empty.
 * **Posture:** characterization-first.
 
-### U14 — Persistent CI line-ending guard (`.github/workflows/ci.yml`) (config/CI)
+### U14 — Persistent CI line-ending guard (new `.github/workflows/line-endings.yml`) (config/CI)
 
 * **Split rationale (resolves Copilot cycle-1 ownership-honesty finding):** the
   persistent CI guard is its OWN unit, not part of U1, because installing it is a
-  GENUINE content change to `.github/workflows/ci.yml` and would break U1's
-  content-identical (EOL-only) invariant if folded in. U1 owns only
-  `.gitattributes` + the EOL-only renormalization; U14 owns the workflow content
-  change, and U1's content-identity proof does not account for any workflow edit.
-* **Changes:** add a persistent CI step that inspects WORKING-TREE end-of-line
-  state via `git ls-files --eol` and FAILS the job on any `w/crlf` or `w/mixed`
-  for tracked `eol=lf` text paths (`.go`/`.json`; the golden and declared
-  binaries are excluded per their attribute rules). This working-tree guard MUST
-  run on a `windows-latest` runner AFTER `actions/checkout` — CRLF re-drift only
-  manifests on a Windows checkout, so a Linux checkout would false-green — and
-  MUST run on EVERY PR/push to protected branches: it is NOT gated behind a
-  `paths:`/`paths-ignore:`/changed-files filter, so a docs-only or backlog-only
-  change still exercises the checkout + guard and cannot silently re-drift line
-  endings (if path-based job skipping exists elsewhere in the workflow, this
-  guard is explicitly exempt / always-run). The index-diff /
-  renormalize-exit-code check (`git add --renormalize . && git diff --cached
-  --exit-code`) is retained as SEPARATE, complementary content-identity evidence
-  that MAY run on a distinct `ubuntu-latest` job — NOT a substitute for the
-  Windows working-tree `w/*` inspection, since an index-only check can pass while
-  the checkout carries CRLF.
-* **Workflow scope (concrete — resolves Copilot cycle-3 finding):** the CURRENT
-  `.github/workflows/ci.yml` triggers on `pull_request` ONLY (no `push`) and skips
-  the Windows checkout for docs/backlog-only changes via `needs.changes` step
-  conditions. A guard-STEP-only edit therefore could NOT satisfy the
-  always-run-on-push/PR requirement. U14's ownership expands — WITHIN the same one
-  file — to THREE coordinated changes: (1) add a `push:` trigger for protected
-  branches (`main`) alongside `pull_request:` (reconciling the file's "PR-only"
-  header comment for this intentionally push+PR guard, since CRLF re-drift can land
-  via a direct push); (2) add a DEDICATED always-run Windows guard job modeled on
-  the existing always-run `md-lint`/`topology-check` jobs — no `needs: changes`, no
-  `paths:`/`paths-ignore:` filter, no changed-files skip — leaving the scoped
-  `test-windows` (167.013-T) job unchanged; and (3) the `git ls-files --eol` guard
-  step itself. Single CI/config domain, one-file contract kept under the 2-hour
-  rule.
-* **Files:** `.github/workflows/ci.yml` only. Stage does NOT edit the workflow;
-  this unit authorizes Ship to make the trigger, always-run-job, and guard-step
-  changes at execution time.
+  GENUINE new-file addition and would break U1's content-identical (EOL-only)
+  invariant if folded in. U1 owns only `.gitattributes` + the EOL-only
+  renormalization; U14 owns the new guard workflow, and U1's content-identity
+  proof does not account for any workflow file.
+* **Design (resolves Copilot cycle-4 P1-5 — coherent GitHub Actions event
+  semantics):** U14 owns a DEDICATED, NEW, always-running workflow file
+  `.github/workflows/line-endings.yml` and does NOT modify
+  `.github/workflows/ci.yml` at all. The existing `ci.yml` is `pull_request`-only
+  with docs/backlog changed-file skip conditions; adding a workflow-level `push`
+  trigger THERE would contradict its documented "PR-only validation removes
+  duplicate push-to-main runs" invariant and would force every existing `ci.yml`
+  job to also run on push unless each were individually guarded — an unnecessarily
+  large blast radius. A separate always-running workflow is the lowest-blast-radius
+  coherent contract: it leaves ALL existing `ci.yml` behavior byte-for-byte
+  unchanged.
+* **Changes (in the new file only):** `on: { pull_request: { branches: [main] },
+  push: { branches: [main] } }`; a SINGLE job `runs-on: windows-latest` with NO
+  `needs:` gate, NO `paths:`/`paths-ignore:` filter, and NO changed-files skip;
+  steps = `actions/checkout` then a `git ls-files --eol` guard that FAILS the job
+  on any `w/crlf` or `w/mixed` for tracked `eol=lf` text paths (`.go`/`.json`; the
+  golden and declared binaries excluded per their attribute rules). The
+  working-tree guard MUST run on `windows-latest` AFTER `actions/checkout` — CRLF
+  re-drift only manifests on a Windows checkout, so a Linux checkout would
+  false-green. Because it is a standalone workflow with no change-detection job, a
+  docs-only or backlog-only PR — or a direct push to `main` — cannot skip it. The
+  index-diff / renormalize-exit-code content-identity check remains owned by U1's
+  proof and is NOT duplicated here.
+* **Files:** exactly ONE new implementation file `.github/workflows/line-endings.yml`
+  (plus the reserved owned harness `tests/lineendings_guard_175_test.go`, a
+  RED-first synthetic-CRLF guard-regression, excluded from the implementation-file
+  count). `.github/workflows/ci.yml` is NOT touched (proven by an empty `ci.yml`
+  diff). Stage does NOT create/edit any workflow; this unit authorizes Ship to add
+  the new file at execution time.
 * **Depends on:** U1 (`175.001-T`) — authored after renormalization lands.
-* **Verify:** the guard fails a synthetic CRLF re-drift and passes on the
-  normalized tree; existing CI jobs still pass.
-* **Posture:** migration-first (guard installation).
+* **Verify:** the new workflow's `on:` block contains both `push.branches: [main]`
+  and `pull_request.branches: [main]`; the guard runs on a direct push and on a
+  docs/backlog-only PR; the guard job has no `needs: changes` and no changed-files
+  skip; `ci.yml` is byte-for-byte unchanged; the guard fails a synthetic CRLF
+  re-drift and passes on the normalized tree.
+* **Posture:** migration-first (new-workflow guard installation).
 
 ### U12 — Repository convergence verification (verification) — unblocks 149-S
 
@@ -354,11 +390,17 @@ idiomatic for the dominant errcheck categories):
 * **Harness-exempt (P-002.1 `verification-only`):** U12 carries the
   `harness-exempt` label and a canonical harness-exemption contract block — class
   `verification-only`, `harness_owner: none`, an exact `exempt_verification_command`
-  that FAILS before the evidence artifact exists (required pre-work failure) and
-  exits 0 with the unique `EXEMPT_VERIFY_OK:175.012-T` marker after the deliverable
-  lands, `exempt_precondition: must-fail-before-deliverable`. It records evidence
-  for already-delivered gate-green behavior, scaffolds no red harness, and adds no
-  new red assertion. It is the SOLE member of the plan's closed harness-exempt set
+  that (resolves Copilot cycle-4 P1-4) ITSELF RUNS the four mandatory gates
+  (`go test ./...`, `go vet ./...`, `golangci-lint run`, `gofmt -l .`), FAILS on any
+  nonzero exit AND separately FAILS when `gofmt -l .` prints any path, and only THEN
+  validates the evidence artifact and its exact marker strings — it does NOT trust
+  string-only evidence. It FAILS before the evidence artifact exists (required
+  pre-work failure) and exits 0 with the unique `EXEMPT_VERIFY_OK:175.012-T` marker
+  only after the gates are green AND the deliverable lands;
+  `exempt_precondition: must-fail-before-deliverable`. The evidence artifact is
+  generated from the observed command results, never hand-authored. U12 commits ONLY
+  its named evidence artifact (no "green guards"), scaffolds no red harness, and adds
+  no new red assertion. It is the SOLE member of the plan's closed harness-exempt set
   (below).
 * **Verify:** all four commands exit clean; evidence + the full enumerated list
   of any `//nolint` suppressions and their justifications recorded in the evidence
@@ -387,7 +429,7 @@ retrospective waiver.
 U1 (.gitattributes + renormalize)  [STRICT PREDECESSOR of all code units]
  ├─> U3  (golden fixture / U4a — owns 2 named files; excluded from U11 inventory)
  ├─> U11 (staticcheck + overlap-inventory owner — runs IMMEDIATELY after U1)
- └─> U14 (persistent CI line-ending guard, .github/workflows/ci.yml)
+ └─> U14 (persistent CI line-ending guard, new .github/workflows/line-endings.yml)
 
 U1, U11 ──> U4  (errcheck internal/cli)      ─┐ each errcheck unit depends on
 U1, U11 ──> U5  (errcheck internal/db)        │ U1 (predecessor) AND U11, and
@@ -454,9 +496,12 @@ package granularity.
   boundary), so exact per-file errcheck COUNTS are execution-verified by Ship.
   Stage nonetheless owns the COMPLETE, CLOSED package→unit assignment (U4–U10 for
   the named packages, U13 for the fully-enumerated residual set); no package
-  enumeration and no planning-unit creation is deferred to Ship. Any intra-package
-  overflow beyond the 2-hour/<3-file bound is a MECHANICAL execution subtask under
-  the already-owned unit, never a new planning unit. A package with zero findings
+  enumeration and no planning-unit creation is deferred to Ship. Boundaries are
+  FROZEN at staging: no unit creates subtasks/planning units at execution or
+  authorizes Ship to. Any intra-package overflow beyond the `<3-file` proxy is
+  still ONE width-isolated mechanical pass within the already-owned frozen scope
+  (the small errcheck class meets the 2-hour rule directly, so the file-count proxy
+  is waived for this class), NEVER a new backlog item. A package with zero findings
   closes as a no-op.
 * **Golden false-green** — never regenerate-and-trust; assert exact bytes.
 
@@ -805,3 +850,62 @@ Backlog effect: 14 tasks (U1–U14) unchanged; dependency edges unchanged at 41;
 shipment `156-S` manifest unchanged at 15 items (`175-F` + 14 tasks). U12 gains the
 `harness-exempt` label (no dependency/membership/DAG change). All mutations via
 governed backlogit operations / canonical artifact edits.
+
+### Copilot local-review cycle 4 — Stage-owned P1/P2 remediation (post-harvest, P-021 C1)
+
+Operator-authorized extension of the review-fix cycle limit for a bounded
+deduplicated local-review defect class. Stage planning/backlog/docs only; no Go
+source/test/workflow edits, no PR actions, no claim/ship. All task/feature mutations
+via governed `backlogit update`; plan/deliberation via canonical artifact edits.
+
+* **P1-1 — no Ship-time backlog creation; frozen executable scope.** Every
+  execution-time subtask-subdivision clause is REMOVED from U10 and U13 (the two
+  units that carried it). U4–U10 and U13 boundaries are CLOSED and FROZEN at
+  staging from stored 149-S aggregate lint evidence (50 errcheck repo-wide). No unit
+  creates subtasks/planning units at execution or authorizes Ship to; Ship executes
+  each as a single width-isolated mechanical pass within its frozen scope. Because
+  Stage's role boundary forbids running linters, per-file counts are execution-
+  verified (never a new planning unit); the small mechanical errcheck class
+  satisfies the 2-hour rule directly, so the `<3-implementation-file` proxy is
+  explicitly WAIVED for this class with recorded justification. **Design note:** a
+  degenerate ≤2-file partition (~120 mostly-no-op leaves) was deliberately NOT
+  materialized — it cannot be proven bounded/evidence-backed without linter data
+  (Stage role) and would corrupt a clean, reviewed, passing shipment; the frozen
+  aggregate with removed Ship-time-creation language and a real recognized purpose
+  (complete package→unit closure + completeness backstop) is the operator-sanctioned
+  "valid recognized contract" path.
+* **P1-2 — harness-file ownership.** Every normal harness-required unit exclusively
+  owns and reserves its deterministic `*_test.go` harness path — errcheck units
+  `<pkg>/errcheck_convergence_175_test.go`, U11 `<pkg>/staticcheck_convergence_175_test.go`,
+  U14 `tests/lineendings_guard_175_test.go` — never colliding, excluded from the
+  implementation-file count.
+* **P1-3 — U11 overlap handoff artifact.** U11 exclusively owns the Ship-deliverable
+  `docs/closure/175-U11-overlap-inventory.md` (byte-sorted repo-relative POSIX
+  paths in a `BEGIN/END OVERLAP-INVENTORY` fenced block; deterministic
+  `golangci-lint --out-format=json | jq | sort -u` generation; NOT pre-existing at
+  Stage). Every errcheck unit consumes it by exact path to exclude listed files; an
+  absent artifact is a blocking U11-incomplete dependency violation.
+* **P1-4 — U12 executes real gates.** The `exempt_verification_command` now itself
+  runs `go test ./...`, `go vet ./...`, `golangci-lint run`, `gofmt -l .`, fails on
+  any nonzero exit AND on non-empty `gofmt` output, then validates the evidence
+  artifact/markers and prints `EXEMPT_VERIFY_OK:175.012-T`. Evidence is generated
+  from observed results, not hand-authored. must-fail-before-deliverable preserved;
+  U12 stays `verification-only`; the contradictory "green guards" wording is removed
+  (U12 owns only its named evidence artifact).
+* **P1-5 — U14 coherent event semantics.** U14 now owns a dedicated NEW always-running
+  `.github/workflows/line-endings.yml` (`pull_request` + protected-branch `push`,
+  `windows-latest` checkout, `git ls-files --eol` guard) and leaves
+  `.github/workflows/ci.yml` byte-for-byte untouched — lowest-blast-radius contract.
+* **P2 — U3 genuine red; U13 residual-only; docs cross-ref.** U3 gains a SYNTHETIC
+  in-memory CRLF regression sub-case that is red-before-green independent of U1's
+  on-disk renormalization (U1's operator-only gate untouched). U13 verifies only its
+  owned residual scope; repository-wide zero-errcheck is the terminal U12 assertion.
+  The `docs/bugs/2026-09-17-…-resume-hint-validation-gap.md` report adds a reverse
+  reference to local backlogit stash `484F2845` and qualifies `71200CBB` as the
+  autoharness-workspace stash (docline re-validated clean).
+
+Backlog effect: 14 tasks (U1–U14) unchanged; dependency edges unchanged at 41;
+shipment `156-S` manifest unchanged at 15 items (`175-F` + 14 tasks). No new tasks,
+dependencies, or membership changes — task bodies + feature + plan/deliberation
+updated in place. New local stash `484F2845` (CheckpointV1 `resume_hint` validation
+gap) added and carried forward on the branch.

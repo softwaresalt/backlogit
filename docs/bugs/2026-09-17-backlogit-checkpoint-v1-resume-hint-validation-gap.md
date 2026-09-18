@@ -10,6 +10,7 @@ docline:
     portable: true
     related_stash:
         - 71200CBB
+        - 484F2845
     severity: medium
     source_workspace: autoharness
     status: OPEN
@@ -185,7 +186,13 @@ downstream consumer must resolve independently.
 
 ## Related tracking
 
-- autoharness stash `71200CBB` — the autoharness-owned half: harness checkpoint
+- local backlogit stash `484F2845` (this workspace) — the backlogit-owned half and
+  the reverse reference for this report: the CheckpointV1 validator change described
+  here (require/validate the top-level `resume_hint` recovery-intent field under
+  `schema_version: 1`, and stop reporting `"valid": true` for records that omit it) is
+  tracked in the local backlogit workspace stash `484F2845`. This report is the source
+  document for that stash entry and that entry points back at this file.
+- autoharness-workspace stash `71200CBB` — the autoharness-owned half: harness checkpoint
   producers must always emit a specific `resume_hint`, deterministic harness-side
   validation/tests, and a safe policy/migration for historical resolved records so
   fail-closed startup is not permanently deadlocked. That entry explicitly excludes the

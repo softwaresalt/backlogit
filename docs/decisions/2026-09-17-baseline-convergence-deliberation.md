@@ -198,9 +198,14 @@ technical-surface-isolated ~2h tasks:
   planning: Stage owns the COMPLETE, CLOSED package→unit assignment — U4–U10 for
   the named packages and U13 for the fully-enumerated residual set (every module
   package not owned by U3–U11). No package enumeration and no planning-unit
-  creation is deferred to Ship. If an already-owned package's surface exceeds the
-  2-hour file bound (≥3 files), Ship performs a MECHANICAL execution subdivision
-  (per-package sub-tasks under the owning unit), never a new planning unit.
+  creation is deferred to Ship. **Cycle-4 resolution (P1-1):** the boundaries are
+  FROZEN at staging and no unit creates subtasks/planning units at execution or
+  authorizes Ship to; every execution-time subdivision clause is removed. The
+  errcheck surface is a small (50 findings repo-wide), uniform, mechanical
+  error-capture class whose 2-hour bound is met directly, so the
+  `<3-implementation-file` proxy is explicitly WAIVED for this class with recorded
+  justification; a package exceeding 3 flagged files is still one width-isolated
+  mechanical pass within the already-owned frozen scope, NOT a new backlog item.
   Carried into `plan-harden`.
 
 ## Risks and Mitigations
@@ -310,3 +315,38 @@ Backlog effect: 14 tasks (U1–U14) unchanged; dependency edges unchanged at 41;
 shipment `156-S` manifest unchanged at 15 items. U12 gains the `harness-exempt`
 label; no dependency, membership, or DAG change. All mutations via governed
 backlogit operations / canonical artifact edits.
+
+## Copilot local-review cycle 4 — corrections (Stage-owned, P-021 C1)
+
+Operator-authorized extension of the review-fix cycle limit for a bounded
+deduplicated local-review defect class. Stage planning/backlog/docs only.
+
+* **P1-1 (no Ship-time creation; frozen scope):** removed every execution-time
+  subtask-subdivision clause from U10/U13; boundaries frozen at staging; the
+  `<3-file` proxy WAIVED for the small mechanical errcheck class (2-hour rule met
+  directly). A degenerate ≤2-file leaf explosion (~120 mostly-no-op leaves) was
+  deliberately not materialized: it is unprovable/evidence-unbacked under the Stage
+  no-linter role boundary and would corrupt a clean, reviewed, passing shipment, so
+  the frozen aggregate with a real recognized purpose is the operator-sanctioned
+  "valid recognized contract" path.
+* **P1-2 (harness ownership):** every normal unit reserves its deterministic
+  `*_test.go` harness path, excluded from the implementation-file count.
+* **P1-3 (U11 overlap artifact):** U11 owns the deterministic Ship-deliverable
+  `docs/closure/175-U11-overlap-inventory.md` (byte-sorted paths, `BEGIN/END
+  OVERLAP-INVENTORY` block, jq generation), not pre-existing at Stage; errcheck
+  units consume it by exact path.
+* **P1-4 (U12 real gates):** `exempt_verification_command` now runs the four gates,
+  fails on nonzero exit or non-empty `gofmt`, then validates the evidence artifact;
+  "green guards" wording removed; still `verification-only`.
+* **P1-5 (U14 event semantics):** U14 owns a NEW `.github/workflows/line-endings.yml`
+  (`pull_request` + protected-branch `push`, `windows-latest`, `git ls-files --eol`);
+  `ci.yml` untouched.
+* **P2:** U3 gains a synthetic in-memory CRLF red-before-green sub-case (U1 gate
+  untouched); U13 verifies only its residual scope (repo-wide zero → terminal U12);
+  bug report adds reverse ref to local stash `484F2845` and qualifies `71200CBB` as
+  the autoharness-workspace stash.
+
+Backlog effect: 14 tasks (U1–U14) unchanged; 41 dependency edges unchanged;
+`156-S` manifest unchanged at 15 items. No new tasks/dependencies/membership — task
+bodies + feature + plan/deliberation updated in place. New local stash `484F2845`
+carried forward on the branch.
