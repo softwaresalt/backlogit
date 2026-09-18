@@ -269,3 +269,44 @@ Same-contract-surface planning/handoff corrections; no new scope. Deltas:
 Backlog effect: 14 tasks (U1–U14) unchanged; dependency edges 32 → 41; shipment
 `156-S` manifest unchanged at 15 items. All mutations via governed backlogit
 operations.
+
+## Copilot PR #448 review cycle 3 — corrections (Stage-owned, P-021 C1)
+
+Same-contract-surface planning/handoff corrections; no new scope; PASS verdict
+unchanged. All three findings are on the harness-contract / CI-contract surface:
+
+* **Invalid generic harness exemptions removed (finding 1)** — U4–U10, U11, and
+  U13 previously carried a "PRE-DECLARED mechanical harness-exemption contract …
+  recorded in the closure artifact at execution" note. That is NOT a valid P-002.1
+  contract: `mechanical`/generic/closure-time is not a recognized exemption class
+  (the closed vocabulary is `docs-only` / `verification-only` / `covered-by`) and
+  it carries none of the required canonical metadata (label, contract block, closed
+  exempt-set membership). All such language is removed; U4–U10, U11, and U13 are now
+  NORMAL harness-required units gated by a real red harness authored by the
+  harness-architect (P-002/P-004). No `covered-by` was fabricated — no existing
+  predecessor harness supports one, and normal harness-required is preferred to
+  speculative coverage. No retrospective waiver added.
+* **U12 canonical verification-only exemption declared (finding 2)** — U12
+  (`175.012-T`) is verification-only with no implementation deliverable, so it is
+  declared with the exact canonical P-002.1 contract: the `harness-exempt` label, a
+  `<!-- BEGIN/END:harness-exemption-contract -->` block with the five canonical keys
+  (`harness_exemption_class: verification-only`, reason, `harness_owner: none`, an
+  exact must-fail-before-deliverable `exempt_verification_command` that asserts the
+  evidence artifact `docs/closure/175-baseline-convergence-convergence-evidence.md`
+  records all four gates green and prints `EXEMPT_VERIFY_OK:175.012-T`, and
+  `exempt_precondition: must-fail-before-deliverable`), and membership in the plan's
+  new closed harness-exempt set (U12 sole member). Ship can now statically classify
+  U12 without scaffolding an impossible implementation harness.
+* **U14 workflow scope expanded (finding 3)** — the current `.github/workflows/ci.yml`
+  triggers on `pull_request` only and skips the Windows checkout for docs/backlog-only
+  changes, so a guard-step-only edit cannot make the guard always-run on push and PR.
+  U14's ownership expands — within the SAME one file — to three coordinated changes:
+  add a `push:` trigger for protected branches (reconciling the file's "PR-only"
+  header comment), add a dedicated always-run Windows guard job (no `needs: changes`,
+  no changed-files skip; the scoped `test-windows` job is left unchanged), and the
+  `git ls-files --eol` guard step. Kept as one CI/config task under the 2-hour rule.
+
+Backlog effect: 14 tasks (U1–U14) unchanged; dependency edges unchanged at 41;
+shipment `156-S` manifest unchanged at 15 items. U12 gains the `harness-exempt`
+label; no dependency, membership, or DAG change. All mutations via governed
+backlogit operations / canonical artifact edits.

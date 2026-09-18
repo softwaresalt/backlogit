@@ -260,11 +260,15 @@ idiomatic for the dominant errcheck categories):
 * **Verify (each):** `golangci-lint run <pkg>` reports 0 errcheck; `gofmt -l` on
   touched files is empty (per-unit format cohesion); package tests still
   build/pass.
-* **Test-first note (Principle II — resolves plan-review P2):** where an errcheck
-  fix introduces genuinely NEW reachable failure-path behavior, add/confirm a
-  failing test exercising the propagated error first; where the change is purely
-  mechanical capture with no reachable behavior change, record a justified
-  Principle II deviation in the closure artifact.
+* **Test-first note (Principle II):** U4–U10, U11, and U13 are NORMAL
+  harness-required units — **none** claims a harness exemption. The
+  harness-architect authors a failing (RED) harness/test that compiles before the
+  fix and fails on an assertion (P-002/P-004), and implementation drives it green.
+  Where an errcheck fix introduces genuinely NEW reachable failure-path behavior,
+  the RED test exercises the propagated error first. NO mechanical/generic/
+  closure-time harness exemption, exempt contract, waiver, or Principle II
+  deviation is declared for any errcheck unit; the sole harness-exempt unit in
+  this plan is U12 (verification-only — see the Harness-Exempt Set section).
 * **Posture:** characterization-first (the linter is the characterization).
 
 ### U11 — staticcheck remediation + overlap-inventory owner (code) — runs after U1
@@ -317,8 +321,23 @@ idiomatic for the dominant errcheck categories):
   that MAY run on a distinct `ubuntu-latest` job — NOT a substitute for the
   Windows working-tree `w/*` inspection, since an index-only check can pass while
   the checkout carries CRLF.
+* **Workflow scope (concrete — resolves Copilot cycle-3 finding):** the CURRENT
+  `.github/workflows/ci.yml` triggers on `pull_request` ONLY (no `push`) and skips
+  the Windows checkout for docs/backlog-only changes via `needs.changes` step
+  conditions. A guard-STEP-only edit therefore could NOT satisfy the
+  always-run-on-push/PR requirement. U14's ownership expands — WITHIN the same one
+  file — to THREE coordinated changes: (1) add a `push:` trigger for protected
+  branches (`main`) alongside `pull_request:` (reconciling the file's "PR-only"
+  header comment for this intentionally push+PR guard, since CRLF re-drift can land
+  via a direct push); (2) add a DEDICATED always-run Windows guard job modeled on
+  the existing always-run `md-lint`/`topology-check` jobs — no `needs: changes`, no
+  `paths:`/`paths-ignore:` filter, no changed-files skip — leaving the scoped
+  `test-windows` (167.013-T) job unchanged; and (3) the `git ls-files --eol` guard
+  step itself. Single CI/config domain, one-file contract kept under the 2-hour
+  rule.
 * **Files:** `.github/workflows/ci.yml` only. Stage does NOT edit the workflow;
-  this unit authorizes Ship to add the guard at execution time.
+  this unit authorizes Ship to make the trigger, always-run-job, and guard-step
+  changes at execution time.
 * **Depends on:** U1 (`175.001-T`) — authored after renormalization lands.
 * **Verify:** the guard fails a synthetic CRLF re-drift and passes on the
   normalized tree; existing CI jobs still pass.
@@ -326,14 +345,41 @@ idiomatic for the dominant errcheck categories):
 
 ### U12 — Repository convergence verification (verification) — unblocks 149-S
 
-* **Changes:** none (verification only). Confirm and capture evidence that
-  `go test ./...`, **`go vet ./...`**, `golangci-lint run`, and `gofmt -l .` are
-  ALL green (all four mandatory quality gates — resolves plan-review P2 /
-  Principle I).
+* **Changes:** none to production/config; commits ONLY the evidence artifact
+  `docs/closure/175-baseline-convergence-convergence-evidence.md` (the
+  verification-only class delta surface under `docs/closure/`). Confirm and capture
+  evidence that `go test ./...`, **`go vet ./...`**, `golangci-lint run`, and
+  `gofmt -l .` are ALL green (all four mandatory quality gates — resolves
+  plan-review P2 / Principle I).
+* **Harness-exempt (P-002.1 `verification-only`):** U12 carries the
+  `harness-exempt` label and a canonical harness-exemption contract block — class
+  `verification-only`, `harness_owner: none`, an exact `exempt_verification_command`
+  that FAILS before the evidence artifact exists (required pre-work failure) and
+  exits 0 with the unique `EXEMPT_VERIFY_OK:175.012-T` marker after the deliverable
+  lands, `exempt_precondition: must-fail-before-deliverable`. It records evidence
+  for already-delivered gate-green behavior, scaffolds no red harness, and adds no
+  new red assertion. It is the SOLE member of the plan's closed harness-exempt set
+  (below).
 * **Verify:** all four commands exit clean; evidence + the full enumerated list
-  of any `//nolint` suppressions and their justifications recorded in the closure
-  artifact.
+  of any `//nolint` suppressions and their justifications recorded in the evidence
+  artifact with the exact gate-green marker strings the exempt command asserts.
 * **Posture:** runtime-verification.
+
+## Harness-Exempt Set (closed)
+
+This release unit declares a CLOSED harness-exempt set with exactly ONE member
+(satisfies P-002.1 required-metadata condition 3 — closed-exempt-set membership):
+
+| Task | Class | `harness_owner` | Deliverable |
+|---|---|---|---|
+| `175.012-T` (U12) | `verification-only` | `none` | evidence artifact `docs/closure/175-baseline-convergence-convergence-evidence.md` |
+
+No other unit in this plan is harness-exempt. U1–U11, U13, and U14 are all NORMAL
+harness-required units gated by a real red harness authored by the
+harness-architect (P-002/P-004). Any `harness-exempt` label on a unit outside this
+set, or any member of this set failing its P-002.1 static-intake contract, is a
+fail-closed halt under the P-002.2 taxonomy — never a generic, mechanical, or
+retrospective waiver.
 
 ## Dependency Graph
 
@@ -422,12 +468,16 @@ Mapped against `.github/instructions/constitution.instructions.md`:
   (named-return + `errors.Join` for deferred writable-close, checked helper for
   short-writes, `fmt.Errorf("…: %w", err)` for propagation, justified `_ =` for
   genuinely discardable returns); no `unsafe` introduced; production code stays Go.
-* **Test-First Development** — pass with a documented mechanical-capture note.
-  U3 makes an existing failing test green and adds a required non-vacuity
-  assertion. For errcheck fixes that introduce genuinely new reachable
-  failure-path behavior, a failing test is added first (U4–U10 test-first note);
-  purely mechanical captures with no reachable behavior change record a justified
-  Principle II deviation in the closure artifact.
+* **Test-First Development** — pass. U3 makes an existing failing test green and
+  adds a required non-vacuity assertion. U4–U10, U11, and U13 are NORMAL
+  harness-required units — none claims a harness exemption; the harness-architect
+  authors a failing (RED) harness/test that compiles before the fix and fails on
+  an assertion (P-002/P-004), and implementation drives it green. For errcheck
+  fixes that introduce genuinely new reachable failure-path behavior the RED test
+  exercises the propagated error. U12 is the SOLE harness-exempt unit
+  (verification-only, canonical P-002.1 contract with the required label, contract
+  block, and closed-exempt-set membership). No mechanical/generic/closure-time
+  harness exemption or Principle II deviation is declared for any errcheck unit.
 * **Workspace Isolation and Security Boundaries** — pass. All changes are within
   the workspace; no secrets committed; `.gitattributes` scoped to this repo.
 * **CLI Workspace Containment** — pass. Nothing created/modified outside the
@@ -709,3 +759,49 @@ unchanged. Deltas:
 Backlog effect: 14 tasks (U1–U14) unchanged; dependency edges 32 → 41; shipment
 `156-S` manifest unchanged at 15 items (`175-F` + 14 tasks). All mutations via
 governed backlogit operations.
+
+### Copilot PR #448 review cycle 3 — Stage-owned corrections (post-harvest, P-021 C1)
+
+Same-contract-surface planning/handoff corrections; no new scope, PASS verdict
+unchanged. All three findings are on the harness-contract / CI-contract surface:
+
+* **Invalid generic harness exemptions removed (finding 1)** — U4–U10, U11, and
+  U13 previously declared a "PRE-DECLARED mechanical harness-exemption contract …
+  recorded in the closure artifact at execution." That is NOT a valid P-002.1
+  contract: `mechanical`/generic/closure-time is not a recognized exemption class
+  (closed vocabulary: `docs-only` / `verification-only` / `covered-by`) and it
+  carries none of the required canonical metadata (label, contract block, closed
+  exempt-set membership). All such language is removed from the tasks and from the
+  plan's Test-first note and Constitution Test-First entry; U4–U10, U11, and U13
+  are now NORMAL harness-required units gated by a real red harness authored by the
+  harness-architect (P-002/P-004). No `covered-by` was fabricated — no existing
+  predecessor harness supports one, and normal harness-required is preferred over
+  speculative coverage. No retrospective waiver added.
+* **U12 canonical verification-only exemption (finding 2)** — U12 (`175.012-T`) is
+  verification-only with no implementation deliverable. It now carries the exact
+  canonical P-002.1 contract: the `harness-exempt` label, a
+  `<!-- BEGIN/END:harness-exemption-contract -->` block with the five canonical keys
+  (class `verification-only`, reason, `harness_owner: none`, an exact
+  must-fail-before-deliverable `exempt_verification_command` asserting the evidence
+  artifact `docs/closure/175-baseline-convergence-convergence-evidence.md` records
+  all four gates green and printing `EXEMPT_VERIFY_OK:175.012-T`, and
+  `exempt_precondition: must-fail-before-deliverable`), plus membership in the new
+  closed harness-exempt set (U12 sole member; see the "Harness-Exempt Set (closed)"
+  section). Ship can statically classify U12 without scaffolding an impossible
+  implementation harness.
+* **U14 workflow scope expanded (finding 3)** — the current
+  `.github/workflows/ci.yml` triggers on `pull_request` only and skips the Windows
+  checkout for docs/backlog-only changes, so a guard-step-only edit cannot make the
+  guard always-run on the relevant push and PR events. U14's ownership expands —
+  within the SAME one file — to three coordinated changes: add a `push:` trigger for
+  protected branches (reconciling the file's "PR-only" header comment), add a
+  dedicated always-run Windows guard job (no `needs: changes`, no changed-files skip;
+  the scoped `test-windows` (167.013-T) job is left unchanged), and the
+  `git ls-files --eol` guard step. Kept as one CI/config task under the 2-hour rule;
+  task acceptance updated so the Windows guard runs on the relevant push AND PR
+  events and cannot be skipped by changed-file conditions.
+
+Backlog effect: 14 tasks (U1–U14) unchanged; dependency edges unchanged at 41;
+shipment `156-S` manifest unchanged at 15 items (`175-F` + 14 tasks). U12 gains the
+`harness-exempt` label (no dependency/membership/DAG change). All mutations via
+governed backlogit operations / canonical artifact edits.
