@@ -142,23 +142,33 @@ the 36 flagged-file coverage. U12 and U14 retain their specialized meanings.
 ### U1 - Line-ending migration
 
 U1 owns `.gitattributes` hardening plus path-scoped renormalization of exactly
-548 tracked CRLF paths (518 `*.go` + 30 `*.json`). The migration uses a NUL-safe
-pathspec-file sequence (`git add --renormalize --pathspec-from-file=<temp>
---pathspec-file-nul`) with `.gitattributes` staged separately, and a pathspec-scoped
-worktree refresh (`git restore --worktree --source=: --pathspec-from-file=...
---pathspec-file-nul`) rather than a whole-tree checkout. It retains these gates:
+548 tracked CRLF *working-tree* paths (518 `*.go` + 30 `*.json`). Baseline
+evidence records `indexCRLF=0` (all 548 target paths are already `i/lf`), so the
+frozen 548 set is the WORKTREE REFRESH/VERIFICATION set: a pathspec-scoped
+worktree refresh from the index (`git restore --worktree
+--pathspec-from-file=<temp> --pathspec-file-nul`, default index source, no
+`--source`; `--source=:` is invalid and does not appear) rather than a whole-tree
+checkout. The NUL-safe pathspec file is built from `git ls-files -z --eol` by
+extracting only the path field after the metadata TAB (never full `i/... w/...
+attr/...` records). `git add --renormalize --pathspec-from-file=<temp>
+--pathspec-file-nul` runs over the frozen set for index hygiene with
+`.gitattributes` staged separately; because `indexCRLF=0` it stages no source
+content. It retains these gates:
 
 * operator-only pre-execution approval
 * clean-tree fail-closed precondition
 * path-scoped refresh after renormalization
 * semantic-diff prohibition for the 548 migrated files
-* exact 548-file evidence (staged EOL set must equal the frozen 548 paths plus
-  `.gitattributes`; no unrelated text paths)
+* staged set contains no path outside the frozen 548 + `.gitattributes` (fail on
+  any staged extra; may be empty or a subset since the index is already LF); the
+  committed implementation diff is `.gitattributes` only
 * `Freeze-scope` plus `Careful mode` safety posture
   (ProposedAction/ActionRisk/approval/rollback/ActionResult)
 * exclusive harness `tests/lineending_baseline_175_test.go` with task-owned
-  function `TestU175_001_...` verified via `go test <pkg> -run '^TestU175_001_'
-  -v -count=1` (fail-closed on zero matching `--- PASS: TestU175_001_` lines)
+  function `TestU175_001_...`, verified via the executable non-vacuity PowerShell
+  wrapper around `go test ./tests -run '^TestU175_001_' -v -count=1` (re-emits
+  output, propagates native nonzero exit, exits nonzero on zero matching
+  `--- PASS: TestU175_001_` lines)
 
 The byte-exact golden JSON remains governed by `eol=lf` (no `-text` branch), and
 U1 changes no workflow content. `.github/workflows/ci.yml` remains
@@ -187,8 +197,9 @@ U40 (`175.040-T`) owns exactly `scripts/check-line-endings.ps1` plus
 `tests/lineendings_data_guard_175_test.go`. It depends on U1. The script performs
 a fixed-set `.gitattributes` contract check plus worktree EOL and stored/index
 blob LF normalization checks so deleting or narrowing attributes cannot make the
-guard vacuous. Its harness function `TestU175_040_...` (verified via
-`go test <pkg> -run '^TestU175_040_' -v -count=1`, fail-closed non-vacuity) uses a
+guard vacuous. Its harness function `TestU175_040_...` (verified via the
+executable non-vacuity PowerShell wrapper around `go test ./tests -run
+'^TestU175_040_' -v -count=1`) uses a
 `t.TempDir` disposable Git repository and covers three scenarios: CRLF/mixed
 worktree red, CRLF committed blob red, and fully LF green (attribute-contract
 validation is part of each data-state precondition, not a fourth scenario).
@@ -206,9 +217,10 @@ uses `windows-latest`, and checks out with
 `persist-credentials: false`, and `permissions: contents: read`. Its concurrency
 group is keyed on `github.ref` with `cancel-in-progress: true`.
 
-U14's harness function `TestU175_014_...` (verified via
-`go test <pkg> -run '^TestU175_014_' -v -count=1`, fail-closed non-vacuity)
-extracts and executes the committed workflow run script and covers three
+U14's harness function `TestU175_014_...` (verified via the executable
+non-vacuity PowerShell wrapper around `go test ./tests -run '^TestU175_014_' -v
+-count=1`) extracts and executes the committed workflow run script and covers
+three
 scenarios: missing/malformed workflow invocation red, insecure/skippable workflow
 contract red (attributes/trigger/pinning/permissions/filters as one
 contract-validation outcome), and valid secure always-run workflow green.

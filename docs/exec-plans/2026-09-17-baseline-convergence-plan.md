@@ -82,11 +82,21 @@ U1 (`175.001-T`) is the only homogeneous mechanical migration:
 
 * `.gitattributes` hardening for tracked Go/JSON LF normalization (the byte-exact
   golden JSON stays governed by `eol=lf`; no `-text` branch)
-* NUL-safe pathspec-file `git add --renormalize --pathspec-from-file=<temp>
-  --pathspec-file-nul` over exactly 548 tracked CRLF paths (518 `*.go` +
-  30 `*.json`), with `.gitattributes` staged separately
-* pathspec-scoped worktree refresh (`git restore --worktree --source=:
-  --pathspec-from-file=... --pathspec-file-nul`), not a whole-tree checkout
+* baseline evidence: `indexCRLF=0` (all 548 target paths are already `i/lf`) and
+  `worktreeCRLF=548` (518 `*.go` + 30 `*.json`) — the problem is 548 CRLF
+  *working-tree* paths, not CRLF index blobs
+* the frozen 548 set is the WORKTREE REFRESH/VERIFICATION set: a pathspec-scoped
+  worktree refresh from the index (`git restore --worktree
+  --pathspec-from-file=<temp> --pathspec-file-nul`, default index source, no
+  `--source`; `--source=:` is invalid and does not appear), not a whole-tree
+  checkout
+* the NUL-safe pathspec file is built from `git ls-files -z --eol` by extracting
+  ONLY the path field after the metadata TAB (never full `i/... w/... attr/...`
+  records)
+* `git add --renormalize --pathspec-from-file=<temp> --pathspec-file-nul` over the
+  frozen set for index hygiene, `.gitattributes` staged separately; because
+  `indexCRLF=0` this stages no source content — the staged source subset may be
+  empty or a subset of the frozen 548 and must contain no path outside it
 * no semantic content change in those 548 files
 * no workflow content change; `.github/workflows/ci.yml` stays byte-identical
 
@@ -101,14 +111,18 @@ Required gates retained for U1:
 * clean-tree fail-closed gate before the migration begins
 * path-scoped refresh only; no whole-tree forced refresh
 * semantic-diff prohibition for the 548 migrated files
-* exact evidence that the staged EOL set equals the frozen 548 tracked Go/JSON
-  paths plus `.gitattributes`, with no unrelated text paths
+* the staged set contains no path outside the frozen 548 + `.gitattributes` (fail
+  on any staged extra; it may be empty or a subset because the index is already
+  LF); the committed implementation diff is `.gitattributes` only, and any staged
+  EOL subset is EOL-only verified by normalized-blob SHA-256
 * `Freeze-scope` plus `Careful mode` safety posture
   (ProposedAction/ActionRisk/approval/rollback/ActionResult)
 * exclusive harness `tests/lineending_baseline_175_test.go` with task-owned
-  function `TestU175_001_...` verified via `go test <pkg> -run '^TestU175_001_'
-  -v -count=1` (fail-closed on zero matching `--- PASS: TestU175_001_` lines);
-  red before `.gitattributes` + refresh, green after
+  function `TestU175_001_...`, verified via the executable non-vacuity PowerShell
+  wrapper around `go test ./tests -run '^TestU175_001_' -v -count=1` (re-emits
+  combined output, propagates the native nonzero `go test` exit, and exits
+  nonzero when zero `--- PASS: TestU175_001_` lines are observed); red before
+  `.gitattributes` + refresh, green after
 
 ## File-Owned Lint Tasks
 
@@ -118,9 +132,11 @@ The 36 lint tasks are normal harness-required implementation tasks. Each task:
 * owns exactly one deterministic harness file named
   `<pkg>/<linter>_<basename>_175_test.go` whose function starts
   `TestU175_<NNN>_` (e.g. `TestU175_002_` for `175.002-T`)
-* verifies via the scoped command `go test ./<pkg> -run '^TestU175_<NNN>_'
-  -v -count=1`, preserving native exit and failing fail-closed when zero
-  matching `--- PASS: TestU175_<NNN>_` lines appear
+* verifies via an executable non-vacuity PowerShell wrapper around the scoped
+  command `go test ./<pkg> -run '^TestU175_<NNN>_' -v -count=1` — the wrapper
+  re-emits combined output, propagates the native nonzero exit, and fails
+  fail-closed (exit nonzero) when zero matching `--- PASS: TestU175_<NNN>_` lines
+  appear, so an absent/zero-match selector cannot pass vacuously
 * lists exact linter, file, finding lines, package, affected functions, and
   fewer than 4 scenarios in the lint inventory
 * affects fewer than 5 functions
@@ -168,8 +184,9 @@ check vacuous:
 2. the checked-out working tree has LF for the fixed tracked set
 3. the stored/index blobs are LF-normalized
 
-U40's harness function `TestU175_040_...` (verified via `go test <pkg> -run
-'^TestU175_040_' -v -count=1`, fail-closed non-vacuity) uses a `t.TempDir`
+U40's harness function `TestU175_040_...` (verified via the executable
+non-vacuity PowerShell wrapper around `go test ./tests -run '^TestU175_040_' -v
+-count=1`) uses a `t.TempDir`
 disposable Git repository, does not mutate the caller index, and covers three
 scenarios: CRLF/mixed worktree red, CRLF committed blob red, and fully LF green
 (attribute-contract validation is part of each data-state precondition, not a
@@ -195,8 +212,9 @@ The new workflow contract:
 * has no changed-file skip path and no dependency on the existing CI workflow
 
 U14 owns harness `tests/lineendings_workflow_175_test.go` with function
-`TestU175_014_...` (verified via `go test <pkg> -run '^TestU175_014_' -v
--count=1`, fail-closed non-vacuity). The harness extracts and executes the
+`TestU175_014_...` (verified via the executable non-vacuity PowerShell wrapper
+around `go test ./tests -run '^TestU175_014_' -v -count=1`). The harness extracts
+and executes the
 committed workflow run script and covers three scenarios: missing/malformed
 workflow invocation red, insecure/skippable workflow contract red
 (attributes/trigger/pinning/permissions/filters as one contract-validation

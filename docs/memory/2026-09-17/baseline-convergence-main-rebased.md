@@ -27,12 +27,19 @@ planning shape. The current authoritative design is an immutable file-owned lint
 DAG for feature `175-F`:
 
 * exactly 40 executable tasks
-* U1 (`175.001-T`) as the sole line-ending migration (548 tracked CRLF paths)
+* U1 (`175.001-T`) as the sole line-ending migration (548 tracked CRLF
+  *working-tree* paths; baseline `indexCRLF=0`, so the frozen 548 is the worktree
+  refresh/verification set)
 * 36 file-owned lint tasks covering every flagged file in the v2.13.2 baseline
 * U40 (`175.040-T`) as the line-ending guard script
 * U14 (`175.014-T`) as the dedicated line-ending guard workflow (depends on U40)
 * U12 (`175.012-T`) as the only harness-exempt verification sink
 * exactly 75 dependency edges
+* every normal task (U1 + 36 lint + U14 + U40 = 39) declares an executable
+  non-vacuity PowerShell wrapper as its P-002.6 verification: the wrapper runs the
+  anchored `^TestU175_NNN_` selector with `-v -count=1`, re-emits combined output,
+  propagates the native nonzero exit, and fails when zero `--- PASS: TestU175_NNN_`
+  lines are observed
 * no aggregate lint unit and no backlog creation during execution
 
 The complete lint file-to-task mapping is recorded in
@@ -51,7 +58,7 @@ The 40 tasks are assigned as follows:
 
 | Unit | Task ID(s) | Role |
 | --- | --- | --- |
-| U1 | `175.001-T` | line-ending migration for 548 tracked CRLF Go/JSON paths (518 Go + 30 JSON) |
+| U1 | `175.001-T` | line-ending migration for 548 tracked CRLF *working-tree* Go/JSON paths (518 Go + 30 JSON; `indexCRLF=0`) |
 | lint tasks | `175.002-T`..`175.011-T`, `175.013-T`, `175.015-T`..`175.039-T` | one flagged file each |
 | U40 | `175.040-T` | line-ending guard script (`scripts/check-line-endings.ps1`) |
 | U14 | `175.014-T` | new dedicated line-ending workflow (depends on U40) |
@@ -82,7 +89,7 @@ Baseline evidence at HEAD `c80d7c6ba968604913614e90522e1380ba84ad99`:
 * errcheck/staticcheck file intersection: empty
 * gofmt-listed Go files: 518
 * tracked CRLF Go files: 518
-* tracked CRLF Go + JSON paths (U1 renormalization scope): 548 (518 Go + 30 JSON)
+* tracked CRLF Go + JSON worktree paths (U1 refresh/verification scope): 548 (518 Go + 30 JSON); index already LF (`indexCRLF=0`)
 
 The gofmt-listed Go files exactly match the 518 tracked CRLF Go files, so U1
 resolves the format drift. No separate gofmt task exists.

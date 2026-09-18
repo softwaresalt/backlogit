@@ -24,7 +24,7 @@ This inventory is generated directly from the read-only golangci-lint evidence c
 - Total findings: 56 (errcheck 50 + staticcheck 6)
 - Flagged files: 36 (one file-owned lint task each)
 
-gofmt/CRLF companion proof (`baseline-gofmt-files.txt` vs `baseline-crlf-go-json.txt`): the 518 gofmt-listed Go files are exactly the 518 tracked CRLF Go files (`gofmtNotCRLF=0`, `crlfGoNotGofmt=0`), so U1's line-ending migration resolves gofmt wholesale and no separate gofmt task is required. U1's wider renormalization scope is 548 tracked CRLF paths (518 `*.go` + 30 `*.json`, from live read-only `git ls-files --eol`); the 30 JSON paths are byte-only and outside gofmt's Go-only scope.
+gofmt/CRLF companion proof (`baseline-gofmt-files.txt` vs `baseline-crlf-go-json.txt`): the 518 gofmt-listed Go files are exactly the 518 tracked CRLF Go files (`gofmtNotCRLF=0`, `crlfGoNotGofmt=0`), so U1's line-ending migration resolves gofmt wholesale and no separate gofmt task is required. U1's wider worktree refresh/verification scope is 548 tracked CRLF *working-tree* paths (518 `*.go` + 30 `*.json`, from live read-only `git ls-files --eol`; baseline `indexCRLF=0` so the index is already LF and the frozen 548 is the worktree refresh/verification set); the 30 JSON paths are byte-only and outside gofmt's Go-only scope.
 
 ## Linter set disjointness (no-overlap proof)
 
