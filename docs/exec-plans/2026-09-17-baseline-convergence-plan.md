@@ -108,7 +108,14 @@ change is homogeneous, mechanically verified, and has zero semantic delta.
 Required gates retained for U1:
 
 * operator-only approval before staging or refreshing any renormalized path
-* clean-tree fail-closed gate before the migration begins
+* claim-aware clean-tree fail-closed gate before the migration begins: because
+  Ship claims U1 (mutating its task status) AFTER the wave harness commit, the
+  entry tree is not bit-clean. A bounded governed allow-set — at minimum U1's own
+  task status artifact `.backlogit/queue/175.001-T.md` and the append-only
+  `.backlogit/hooks_queue.jsonl` claim/event byproduct actually produced by
+  backlogit in this workspace — is snapshotted and verified; any change outside
+  that allow-set (including broader `.backlogit/**` dirt) fails closed, and the
+  allow-set paths are preserved through the line-ending operations
 * path-scoped refresh only; no whole-tree forced refresh
 * semantic-diff prohibition for the 548 migrated files
 * the staged set contains no path outside the frozen 548 + `.gitattributes` (fail
@@ -154,6 +161,17 @@ The linter evidence is fixed:
 The file sets are disjoint. Each flagged file has exactly one task owner, so no
 separate cross-linter ownership artifact exists.
 
+Harness scaffolding follows Ship's wave semantics. Ship scaffolds every
+non-exempt member of the admitted ready wave together (per `_ship.agent.md`
+Step 2 and the harness-architect skill), not one harness immediately before one
+file task. Sibling task-scoped red within the same wave is EXPECTED and
+TOLERATED until wave convergence; each task's own `^TestU175_<NNN>_` selector
+must turn green when that task completes, and full-suite green is required only
+at wave convergence. No later-wave harness is scaffolded early, and harnesses
+are not pre-committed at Stage. This wave contract applies to all 39 normal
+tasks (U1 + 36 lint tasks + U14 + U40); it does not serialize tasks and does not
+change the frozen 40-task / 41-member / 75-edge DAG.
+
 ### Lint remediation strategy
 
 Errcheck fixes follow the existing Go error-handling policy, which requires every
@@ -171,6 +189,34 @@ returned error to be handled — no ignored `_ =` return is accepted:
 Staticcheck fixes prefer behavior-preserving code changes. A `//nolint` is
 allowed only when the evidence artifact records a current, non-empty
 justification and the suppression still matches a live finding.
+
+### File-scoped lint verification (FSLV)
+
+Package-wide `golangci-lint run ./<pkg>` exits nonzero for ANY sibling finding,
+so a task cannot verify its own owned file while same-wave siblings remain red.
+Each lint task therefore carries an executable file-scoped lint verification
+command with this canonical shape (per-file parameters: package `./<pkg>`, owned
+`<linter>`, and the normalized owned `<file>` path):
+
+* run `golangci-lint run --output.json.path <tempfile> --issues-exit-code 0
+  ./<pkg>` so lint FINDINGS do not set the exit code — structured JSON is written
+  to a file (never stdout, to avoid stderr-summary contamination);
+* `--issues-exit-code 0` suppresses only the issues-exit; a genuine native
+  configuration/execution failure (for example a bogus package) still yields a
+  nonzero exit that is PRESERVED and re-emitted as `LINT-NATIVE-FAIL:<code>`
+  (fail-closed);
+* parse the JSON and count only issues whose `.FromLinter` equals the task's
+  owned linter AND whose `.Pos.Filename` (backslashes normalized to `/`) equals
+  the task's owned file, by ordinal equality;
+* exit 1 when one or more owned findings remain, exit 0 when none remain, and
+  propagate any other nonzero as a preserved native failure.
+
+This makes each lint task independently completable while same-wave siblings are
+still red, without lint findings masking infrastructure failures. Windows-owned
+tasks (U19–U22) prefix the command with a Windows-native fail-closed guard
+(`if(-not $IsWindows){exit 19}`) so their windows-build-tagged files are actually
+linted. The terminal U12 full `golangci-lint run` gate is unchanged and is NOT
+weakened by this per-file pattern.
 
 ## U40 - Line-Ending Guard Script
 
@@ -226,8 +272,13 @@ U12 (`175.012-T`) is the only member of the closed P-002.1 harness-exempt set.
 It is verification-only and owns only
 `docs/closure/175-baseline-convergence-convergence-evidence.md`.
 
-The runnable single-quoted `exempt_verification_command` must execute the real
-repository gates:
+The runnable single-quoted `exempt_verification_command` first fails closed when
+not run Windows-native (`if(-not $IsWindows){exit 19}`) BEFORE any gate, so the
+four windows-build-tagged files owned by U19–U22 are included by
+`golangci-lint run` / `go vet` / `go test` — the Ubuntu lint CI would silently
+exclude them. U14's dedicated Windows workflow semantics are preserved unchanged
+and no implementation scope is broadened. It then executes the real repository
+gates:
 
 ```text
 go test ./...
@@ -240,6 +291,26 @@ It fails on any nonzero exit and separately fails if `gofmt -l .` prints any
 path. Only after the gates pass does it validate the convergence evidence
 artifact and the machine-readable `//nolint` inventory. The inventory check
 rejects missing, extra, duplicate, empty-justification, and stale rows.
+
+The evidence artifact is bound to the exact verified content without impossible
+self-reference. U12's final task commit contains ONLY the evidence artifact, so
+its parent SHA is exactly the implementation-content HEAD the four gates verify.
+The command therefore additionally requires: valid Docline closure frontmatter
+(`title`, `source`, `doc_type: closure`, `chunk_strategy`, `schema_version`)
+verified by the repository docs lint (`backlogit docs lint --path <artifact>
+--format json`; `exit 20` on any violation or nonzero/unparseable lint); a single
+`VERIFIED-PARENT: <40-hex>` body line equal to `git rev-parse HEAD^` (`exit 21`);
+and a changed-path set equal to exactly the evidence artifact via `git diff
+--name-only HEAD^ HEAD` (`exit 22`). All use fail-closed native-command handling.
+
+The `//nolint` inventory is a RAW marker-delimited block (NOT a Markdown code
+fence) delimited by the literal plain-text lines `# BEGIN NOLINT-INVENTORY` and
+`# END NOLINT-INVENTORY`: every nonempty trimmed line strictly between them is a
+row `path:line | linter-set | justification`. No Markdown code-fence line may
+appear inside the interval (a fence line there is a malformed one-column row that
+fails); if a fence is used for rendering, the `# BEGIN` / `# END` delimiters sit
+inside the fence and the fence lines sit outside the parsed row interval, so the
+command and the deliverable wording cannot conflict.
 
 U12 has no green guard harness and no source/config deliverable. Its dependency
 on U1 and U40 is transitive through the tasks it depends on.
