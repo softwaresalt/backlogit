@@ -38,8 +38,8 @@ green, which is the precondition for `149-S` to resume.
 | Requirement (source) | Implementation unit(s) |
 |---|---|
 | `TestU4aBehaviorCanonicalByteStable` passes (92F79833) | U1 (`.gitattributes`), U3 (golden fixture) |
-| `gofmt -l .` clean (4DB1DFF1) | U1 (renormalize), U2 (residual gofmt), U4–U11 (per-unit gofmt) |
-| 50 errcheck findings resolved (4DB1DFF1) | U4–U10 |
+| `gofmt -l .` clean (4DB1DFF1) | U1 (renormalize), U2 (residual gofmt), U4–U11, U13 (per-unit gofmt) |
+| 50 errcheck findings resolved (4DB1DFF1) | U4–U10, U13 (closed residual set) |
 | 6 staticcheck findings resolved (4DB1DFF1) | U11 |
 | `go test ./...` + `go vet ./...` + `golangci-lint run` + `gofmt -l .` all green | U12 |
 | Durable, non-re-drifting line endings on Windows (CI guard) | U1 |
@@ -60,25 +60,50 @@ make U1's content-identical gate impossible to satisfy.
 
 ### U1 — `.gitattributes` line-ending hardening + renormalize (config) — STRICT PREDECESSOR
 
-* **Operating mode:** careful / freeze-scope (high blast radius). **Mandatory
-  operator/Ship approval of the renormalization diff before the commit lands**
+* **Operating mode:** careful / freeze-scope (high blast radius). **Mandatory,
+  explicitly-recorded operator-only approval of the renormalization diff,
+  captured immediately before the whole-tree renormalization commit lands**
   (resolves plan-review P2 / Principle VII) — this is a required gate, not a
-  recommendation.
+  recommendation. Ship (or any agent) may PREPARE and PRESENT the
+  renormalization diff and its verification evidence, but Ship CANNOT authorize
+  the renormalization; only the operator can approve it, and that approval must
+  be recorded before the commit lands.
 * **Changes:** First enumerate tracked binaries (`git ls-files` filtered for
   `*.exe`, `*.db`, images, and any intentionally-CRLF fixture) — add `-text`
   rules ONLY for classes actually present (no speculative image rules). Keep
   `* text=auto` for auto-classified files; add explicit `*.go text eol=lf` and
-  `*.json text eol=lf`; pin the byte-exact golden with `-text` (binary — no
-  checkout filter can ever touch it), placed AFTER the `*.json` rule so the
-  most-specific/last match wins (`internal/faultline/testdata/parity_v1.golden.json -text`).
-  Do NOT use the redundant/contradictory `text=auto eol=lf` combined form.
-  Then run `git add --renormalize .`.
+  `*.json text eol=lf`. For the golden fixture, PREFER the LF-preserving
+  attribute `internal/faultline/testdata/parity_v1.golden.json text eol=lf`
+  (which pins LF on every checkout) rather than `-text`. If `-text` is chosen
+  instead to make the golden checkout-filter-immune, the fixture MUST FIRST be
+  normalized to LF in the working tree and index (rewrite CRLF→LF, then
+  `git add`) BEFORE the `-text` rule is applied — otherwise `-text` would freeze
+  whatever (possibly CRLF) bytes are currently on disk. Place the golden rule
+  AFTER the `*.json` rule so the most-specific/last match wins. Do NOT use the
+  redundant/contradictory `text=auto eol=lf` combined form. Then run
+  `git add --renormalize .` to update the INDEX. Because
+  `git add --renormalize .` rewrites only the index and does NOT refresh
+  already-checked-out working-tree files, explicitly REFRESH the working tree
+  afterward (e.g., `git checkout-index -f -a`, or remove and re-checkout the
+  affected paths) so the on-disk `.go`/`.json` bytes actually become LF BEFORE
+  any `w/lf` assertion is made. Keep the concrete implementation deferred to
+  Ship.
 * **Files:** `.gitattributes` (+ mechanical renormalization of many tracked
   files — DECLARED file-count exception; content-identical).
-* **Verify:** `git ls-files --eol` shows `w/lf` for tracked `.go`/`.json` and
-  `-text` for declared binaries; `git diff --cached --stat` shows the staged
-  churn and `git diff --cached -w --stat` is empty for content; each tracked
-  binary shows `-`/`-` in `git diff --cached --numstat` (byte-identical).
+* **Verify:** `git ls-files --eol` shows `w/lf` for tracked `.go`/`.json`
+  (asserted ONLY after the working-tree refresh above) and `-text` (or `w/lf`
+  under the `eol=lf` variant) for the golden fixture, and `-text` for declared
+  binaries. `git diff --cached --stat` shows the staged line-ending churn. To
+  prove the churn is content-identical, run the content-identity comparison
+  EXCLUDING the intentional config change (`.gitattributes`), e.g.
+  `git diff --cached -w --stat -- . ':(exclude).gitattributes'` — `.gitattributes`
+  genuinely changes content and would otherwise make a global `-w` comparison
+  non-empty by design. For tracked binaries, do NOT treat `-`/`-` in
+  `git diff --cached --numstat` as proof of byte-identity (`-`/`-` only signals
+  binary CLASSIFICATION, not unchanged bytes): instead require each declared
+  binary to be ABSENT from the staged diff entirely (renormalization must not
+  touch it), or compare its pre/post blob hashes (`git rev-parse :<path>` before
+  vs after) and confirm they are identical.
 * **Durable CI guard (resolves plan-review P2):** add a persistent CI step
   (`git add --renormalize . && git diff --cached --exit-code`, or a
   `git ls-files --eol` assertion) so line endings cannot silently re-drift after
@@ -112,7 +137,7 @@ make U1's content-identical gate impossible to satisfy.
   passes on a Windows checkout.
 * **Posture:** test-first (the failing test already exists; make it green).
 
-### U4–U10 — errcheck remediation, one task per package surface (code)
+### U4–U10, U13 — errcheck remediation, per-package with a closed residual set (code)
 
 **Pre-step (enforce granularity up front — resolves plan-review P2):** before
 committing the U4–U10 boundaries, enumerate per-package errcheck counts
@@ -149,9 +174,28 @@ idiomatic for the dominant errcheck categories):
 * **U9** `tests/integration` — **test-layer policy (resolves plan-review P3):**
   prefer `require.NoError`/explicit assertions over `%w` propagation; justified
   `//nolint:errcheck` allowed for genuinely non-load-bearing test cleanup.
-* **U10** residual-package errcheck sweep — **enumerate-then-split**: first list
-  remaining errcheck-flagged packages; each additional package becomes its own
-  bounded single-domain sub-unit (U10a, U10b…). Not an open-ended catch-all.
+* **U10** `internal/core` — the largest residual error-returning surface outside
+  U4–U9, assigned its OWN bounded unit (NOT its sub-packages `internal/core/gate`
+  / `internal/core/templates`, which belong to U13).
+* **U13** residual CLOSED package set — every module package not owned by U3–U11
+  is explicitly enumerated and owned by U13 (full list in the `175.013-T` task
+  body): `internal/canonical`, `internal/mcp`, `internal/hooks`, `internal/parser`,
+  `internal/mdfront`, `internal/docline`, `internal/errors`, `internal/models`,
+  `internal/jsonutil`, `internal/fsutil`, `internal/atomicfile`, `internal/release`,
+  `internal/version`, `internal/gateevidence`, `internal/gateproof`,
+  `internal/cli/format`, `internal/core/gate`, `internal/core/templates`,
+  `internal/faultline/{mutation,parity,compatcorpus,analyzer/*}`, `cmd/backlogit`,
+  `cmd/faultline-analyze`, `cmd/gen-docs`, `scripts`, `tests`, `tests/contract`.
+  Explicitly EXCLUDED: the U4–U10 packages, `internal/faultline` top-level (U3),
+  and `internal/config` (evidenced clean in the 149-S wave-1 hard-stop memory).
+  **Not an open-ended catch-all and NOT a Ship-created planning unit:** Stage owns
+  the COMPLETE package→unit assignment here. If the aggregate residual surface
+  exceeds the 2-hour/<3-file bound at execution, Ship performs a MECHANICAL
+  execution subdivision (per-package subtasks under U10/U13, e.g. `175.013.a-T`) —
+  execution decomposition of an already-owned unit; Ship creates NO new planning
+  units. Packages with zero findings close as no-ops. Exact per-file counts are
+  execution-verified by Ship (Stage role forbids running linters); the package
+  OWNERSHIP decision — the planning decision — is closed here by Stage.
 
 * **Verify (each):** `golangci-lint run <pkg>` reports 0 errcheck; `gofmt -l` on
   touched files is empty (per-unit format cohesion); package tests still
@@ -198,22 +242,23 @@ U1 (.gitattributes + renormalize)  [STRICT PREDECESSOR of all code units]
  ├─> U7  (errcheck internal/stash)     │ once U1 has landed
  ├─> U8  (errcheck internal/events)    │
  ├─> U9  (errcheck tests/integration)  │
- ├─> U10 (errcheck residual sweep)     │
- └─> U11 (staticcheck)                ─┘
-U2, U3, U4..U11 ──> U12 (convergence verify)  [terminal gate]
+ ├─> U10 (errcheck internal/core)      │
+ ├─> U11 (staticcheck)                 │
+ └─> U13 (errcheck residual closed set)─┘
+U2, U3, U4..U11, U13 ──> U12 (convergence verify)  [terminal gate]
 ```
 
 No cycles. U1 is a strict predecessor barrier for every code-touching unit so the
-renormalization diff stays content-identical. U2, U3, U4–U11 are mutually
+renormalization diff stays content-identical. U2, U3, U4–U11, U13 are mutually
 independent AFTER U1 lands. U12 is the terminal sink node whose incoming edges
-are every fix unit.
+are every fix unit (U2, U3, U4–U11, and U13).
 
 **File-partition invariant (resolves plan-review cycle-2 P2):** every touched
 file has exactly ONE owning unit — the package/lint-category axes must not both
 edit the same file concurrently. Enforce: (a) U2 residual `gofmt` is scoped
 strictly to files NOT owned by any errcheck/staticcheck unit (per-file gofmt for
-owned packages folds into U4–U11); (b) if U11 staticcheck flags a file inside a
-package already owned by an errcheck unit (U4–U10), merge that staticcheck fix
+owned packages folds into U4–U11, U13); (b) if U11 staticcheck flags a file inside a
+package already owned by an errcheck unit (U4–U10, U13), merge that staticcheck fix
 into the owning package unit OR add an explicit intra-package ordering edge so
 the two units never edit the same file concurrently. This preserves the
 "mutually independent" claim at file granularity, not just package granularity.
@@ -240,8 +285,13 @@ the two units never edit the same file concurrently. This preserves the
   `git diff --stat` (line-ending-only churn) and a binary spot-check before
   commit. (Hardened in the Plan Hardening section.)
 * **errcheck count unknown at plan time** — Stage cannot run linters (role
-  boundary); per-package counts are enumerated as the first step of each errcheck
-  task. If a package exceeds the file bound, split at execution.
+  boundary), so exact per-file errcheck COUNTS are execution-verified by Ship.
+  Stage nonetheless owns the COMPLETE, CLOSED package→unit assignment (U4–U10 for
+  the named packages, U13 for the fully-enumerated residual set); no package
+  enumeration and no planning-unit creation is deferred to Ship. Any intra-package
+  overflow beyond the 2-hour/<3-file bound is a MECHANICAL execution subtask under
+  the already-owned unit, never a new planning unit. A package with zero findings
+  closes as a no-op.
 * **Golden false-green** — never regenerate-and-trust; assert exact bytes.
 
 ## Constitution Check
@@ -264,8 +314,10 @@ Mapped against `.github/instructions/constitution.instructions.md`:
   working tree.
 * **Destructive Command Approval** — pass with mandatory gate. `git add
   --renormalize .` is git-tracked and revertible; U1 declares careful/freeze-scope
-  mode and requires MANDATORY operator/Ship approval of the renormalization diff
-  before the commit lands.
+  mode and requires MANDATORY, explicitly-recorded operator-only approval of the
+  renormalization diff immediately before the commit lands. Ship may prepare and
+  present the diff and its verification evidence but CANNOT authorize the
+  renormalization; authorization is the operator's alone.
 * **Task Granularity (2-Hour Rule)** — documented deviation for U1 only: the
   renormalization mechanically touches many files, exceeding the < 3-files
   heuristic. Sanctioned because the churn is mechanical and content-identical
@@ -313,8 +365,11 @@ changed" with `git diff --exit-code` on generated/golden output),
 * No true binary is reclassified as text. `*.exe`, `*.db`, `backlogit.exe`,
   `*.golden` that are intentionally binary, and any image must carry an explicit
   `-text` rule and remain byte-identical after renormalization.
-* `git diff` after U1 shows ONLY line-ending churn (content-identical);
-  `git diff -w --stat` is empty for content.
+* `git diff` after U1 shows ONLY line-ending churn for `.go`/`.json`
+  (content-identical); the content-identity check EXCLUDES the intentional
+  `.gitattributes` change (e.g.
+  `git diff -w --stat -- . ':(exclude).gitattributes'` is empty), since
+  `.gitattributes` genuinely changes content by design.
 * errcheck fixes preserve behavior on success paths and only add
   capture/propagation on failure paths — no package test regresses.
 * The golden fixture is asserted against exact LF bytes, never a same-marshaler
@@ -326,22 +381,27 @@ changed" with `git diff --exit-code` on generated/golden output),
   across the whole tree (U1). `ActionRisk:` HIGH blast radius (touches many
   tracked files), reversible via single-commit revert. `ActionResult` (expected):
   line-ending-only churn, all four baseline gates progress toward green, no
-  binary corruption. **MANDATORY operator/Ship approval of the renormalization
-  diff before the commit lands** (settled, blocking — see U1 operating mode and
-  the Constitution Check Destructive Command Approval entry). Not advisory.
+  binary corruption. **MANDATORY, explicitly-recorded operator-only approval of
+  the renormalization diff immediately before the commit lands** (settled,
+  blocking — see U1 operating mode and the Constitution Check Destructive Command
+  Approval entry). Ship may prepare and present the diff and evidence but CANNOT
+  authorize it. Not advisory.
 * `ProposedAction:` bulk `gofmt -w` on residual files (U2). `ActionRisk:` LOW,
   mechanical, reversible.
 
 **Added verification / rollback / monitoring:**
 
-* U1 pre-commit gate: run `git ls-files --eol`, confirm `w/lf` for `.go`/`.json`
-  and `-text` for declared binaries; spot-check a known binary (`backlogit.exe`
-  is gitignored, but any tracked binary/fixture) is byte-identical
-  (`git diff --numstat` shows `-`/`-` for binaries, no change).
+* U1 pre-commit gate: after the working-tree refresh, run `git ls-files --eol`,
+  confirm `w/lf` for `.go`/`.json` and `-text` for declared binaries; verify each
+  tracked binary is byte-identical by confirming it is ABSENT from the staged diff
+  or by comparing its pre/post blob hash (`git rev-parse :<path>`). Do NOT rely on
+  `git diff --numstat` `-`/`-` as an identity signal — it only marks binary
+  CLASSIFICATION, not unchanged bytes.
 * Rollback: each unit is a discrete commit; U1 renormalization reverts as a
   single commit without touching later fix commits.
-* U12 is the monitoring/closure gate: all three commands green on a clean
-  checkout, evidence captured in the closure artifact.
+* U12 is the monitoring/closure gate: all four mandatory gates (`go test ./...`,
+  `go vet ./...`, `golangci-lint run`, `gofmt -l .`) green on a clean checkout,
+  evidence captured in the closure artifact.
 
 **Review-gate capability risk carried forward:** plan-review MUST emit literal
 `dispatch_mode:` and `decision:` markers. No P-012 degraded-tool condition is
@@ -349,10 +409,11 @@ expected for this plan (no backlog-registry tool dependency inside review); if
 sub-agent dispatch is unavailable, plan-review must declare
 `single-agent-declared-degradation` rather than silently skip.
 
-**Settled operator decision (not open):** MANDATORY operator/Ship approval of the
-U1 renormalization diff is a required, blocking gate before the renormalization
-commit lands (reconciled with U1 and the Constitution Check — no longer an
-optional/unresolved checkpoint).
+**Settled operator decision (not open):** MANDATORY, explicitly-recorded
+operator-only approval of the U1 renormalization diff is a required, blocking gate
+before the renormalization commit lands (reconciled with U1 and the Constitution
+Check — no longer an optional/unresolved checkpoint). Ship may prepare and present
+the diff and evidence; only the operator can authorize.
 
 Requires plan hardening: yes
 
@@ -361,10 +422,11 @@ Requires plan hardening: yes
 * **Changed runtime surfaces:** none directly (repo hygiene + error handling).
   errcheck fixes change error-propagation behavior on failure paths — U4–U10 must
   keep package tests green so no behavior regresses.
-* **Runtime verification to prove absorption:** U12 confirms `go test ./...`,
-  `golangci-lint run`, and `gofmt -l .` are all green on a clean checkout.
+* **Runtime verification to prove absorption:** U12 confirms all FOUR mandatory
+  quality gates — `go test ./...`, `go vet ./...`, `golangci-lint run`, and
+  `gofmt -l .` — are all green on a clean checkout.
 * **Operational closure artifact:** a convergence closure note recording the
-  three green gates and the `git ls-files --eol` proof, plus confirmation that
+  four green gates and the `git ls-files --eol` proof, plus confirmation that
   `149-S` is now eligible once the baseline shipment ships. Rollback trigger: if
   renormalization corrupts any file, revert the U1 commit (single-commit
   rollback). Owner: Ship (execution); validation window: the next `149-S`

@@ -36,9 +36,10 @@ change surface (`docs/memory/2026-09-17/149-s-wave-1-convergence-hard-stop.md`):
   line-ending baseline.
 
 This deliberation groups the two active stash entries that own this debt into a
-single **baseline-convergence covering feature** whose completion restores
-`go test ./...`, `golangci-lint run`, and `gofmt -l .` to green and thereby
-unblocks `149-S`.
+single **baseline-convergence covering feature** whose completion restores all
+four mandatory quality gates — `go test ./...`, `go vet ./...`,
+`golangci-lint run`, and `gofmt -l .` — to green (with `go vet` kept green
+throughout) and thereby unblocks `149-S`.
 
 ### Grouped stash entries (both carry the `DEFERRED SCOPE EXPANSION` marker)
 
@@ -171,12 +172,17 @@ technical-surface-isolated ~2h tasks:
 2. Residual genuine `gofmt -l .` remediation after renormalization (code-format).
 3. Golden-fixture LF normalization + `TestU4aBehaviorCanonicalByteStable` green
    (test) — the concrete fix for `92F79833`.
-4–10. errcheck remediation, one task per package surface
+4–10. errcheck remediation, one task per named package surface
    (`internal/cli`, `internal/db`, `internal/telemetry`, `internal/stash`,
-   `internal/events`, `tests/integration`, + residual sweep).
+   `internal/events`, `tests/integration`, `internal/core`).
+   Plus **U13** — errcheck remediation for the CLOSED residual package set: every
+   module package not owned by U3–U11 is enumerated and owned by U13 (full list in
+   the `175.013-T` task body). No open-ended sweep and no Ship-created planning
+   unit; the complete package→unit assignment is closed here by Stage.
 11. staticcheck remediation (6 findings).
-12. Repository convergence verification (`go test ./...`,
-   `golangci-lint run`, `gofmt -l .` all green) — unblocks `149-S`.
+12. Repository convergence verification — all four mandatory gates
+   (`go test ./...`, `go vet ./...`, `golangci-lint run`, `gofmt -l .`) green
+   — unblocks `149-S`.
 
 ## Rejected Alternatives
 
@@ -187,11 +193,15 @@ technical-surface-isolated ~2h tasks:
 
 ## Unresolved Questions
 
-* Exact per-package errcheck distribution is unknown because Stage may not run
-  linters (role boundary). Each errcheck task's first step is to enumerate its
-  package's findings (baseline discipline). If a package's errcheck surface
-  exceeds the 2-hour file bound (≥3 files), Ship splits it into a follow-up
-  sub-task. Carried into `plan-harden`.
+* Exact per-file errcheck COUNTS are unknown because Stage may not run linters
+  (role boundary) and are execution-verified by Ship. This does NOT defer any
+  planning: Stage owns the COMPLETE, CLOSED package→unit assignment — U4–U10 for
+  the named packages and U13 for the fully-enumerated residual set (every module
+  package not owned by U3–U11). No package enumeration and no planning-unit
+  creation is deferred to Ship. If an already-owned package's surface exceeds the
+  2-hour file bound (≥3 files), Ship performs a MECHANICAL execution subdivision
+  (per-package sub-tasks under the owning unit), never a new planning unit.
+  Carried into `plan-harden`.
 
 ## Risks and Mitigations
 
