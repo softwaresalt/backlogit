@@ -125,7 +125,15 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "319dc97ccc8605ede2814326f0f16abe8752ed792b38ad29d892d135607d34d5"
+    checksum: "5f3b64023938b3fff6be94303677861396ad9c6e3fee45d247662419803a51ea"
+    drift_allowed: true
+    drift_reason: "Locally hardened P-002.6 baseline-convergence, strict lint, and governed-claim policy contract; preserve until the upstream template provides equivalent fail-closed behavior."
+  - path: ".github/skills/build-feature/SKILL.md"
+    primitive: 1
+    template: "templates/skills/build-feature/SKILL.md.tmpl"
+    checksum: "567b6b48d0df1884a9901415fc047e57a07cfe0f5ea0423424d5e85c752a8696"
+    drift_allowed: true
+    drift_reason: "Locally hardened P-002.6 baseline-convergence and governed-claim execution contract; preserve until the upstream template provides equivalent fail-closed behavior."
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
@@ -203,7 +211,9 @@ artifacts:
   - path: ".github/instructions/constitution.instructions.md"
     primitive: 1
     template: "templates/foundation/constitution.instructions.md.tmpl"
-    checksum: "90924a2a3facdea5d094e0c2d1df6a9e6d474fa0905faba34e11b1454d818cf4"
+    checksum: "ac2c6fcc526e9fe0b8d3f0c51ecec52ca6e688c4e501a3a770457f5fbbc3bba4"
+    drift_allowed: true
+    drift_reason: "Constitution 1.1.0 adds only the P-002.6 baseline-convergence timing exception synchronized with the installed Ship, policy, build-feature, and simulation contracts."
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"

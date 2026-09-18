@@ -15,6 +15,13 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
 * `task_id`: (Required) The backlog task ID to implement.
 * `harness_cmd`: (Required) The **task-scoped** test command to run. Under P-002.6 it MUST be executable as written, name an explicit package path (never a bare `./...`), carry `-count=1`, be anchored to the task's own `^TestU<unit>_` selector, fail closed on a vacuous pass, and carry no `-short`, added build tag, `t.Skip`, or `|| true`. For a `harness-exempt` task there is no scaffolded red harness; the caller passes the command the loop must drive from failing to passing — the task's `exempt_verification_command` for `docs-only` and `verification-only`, or the predecessor owner's `harness_owner_command` for `covered-by`. The loop below runs against that command unchanged.
 * `wave_scoped`: (Optional, default `false`) `true` when Ship dispatches this task from inside a P-002.6 wave. When `true`, the post-loop suite is **task-scoped** and the full-repository suite is Ship's Step 4.6 wave convergence gate, not this skill's. When `false` or absent, the post-loop suite is the full repository suite as before — this input relocates a gate inside a wave, it never removes one.
+* `release_lint_mode`: (Required when `wave_scoped` is `true`) Ship's exact frozen value:
+  `strict` or `baseline-convergence`. `strict` requires both `task_lint_cmd` and the unmodified
+  repository-wide `golangci-lint run` before this task may commit.
+  `baseline-convergence` permits only the global-lint timing exception authorized and validated by
+  Ship's canonical release-unit contract; it never relaxes `task_lint_cmd`. Missing, unknown, or
+  caller-inferred values halt with `WAVE_BASELINE_LINT_CONTRACT_INVALID`. Omit this input for
+  non-wave work.
 * `task_lint_cmd`: (Required when `wave_scoped` is `true`) The exact command Ship parsed and froze
   from the task's canonical `<!-- BEGIN:task-lint-contract -->` block. Task artifacts may describe
   this as file-scoped lint verification (FSLV). Every wave member declares one, including
@@ -35,7 +42,15 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
 * `red_baseline_sha`: (Required for `red_deliverable` tasks) The commit SHA Ship captured at its Step 4.1a item 5, **after** the wave's harness scaffolding commit and before this task was claimed. Use this exact value as the left side of the Step 0.5b zero-delta check. Do not re-derive it from `HEAD`: a self-derived range would either measure nothing or sweep in the wave's sibling harnesses and reject valid work. An absent baseline halts with `WAVE_RED_MAPPING_UNRESOLVED`.
 * `exempt_gate_cmd`: (Required for `harness-exempt` tasks) The task's `exempt_verification_command`. This is the completion gate that must pass and match declared evidence after the deliverable lands. For every class except `covered-by` it is the same command as `harness_cmd`.
 * `exempt_class`: (Required for `harness-exempt` tasks) The task's `harness_exemption_class` — `docs-only`, `verification-only`, or `covered-by`. Determines the allowed changed-file surface (P-002.4). `declaration-only` is **not** a valid value; the class was withdrawn in cycle 29 and a declaration task arrives here as a normal `harness-ready` task with a source-shape harness.
-* `exempt_baseline_sha`: (Required for `harness-exempt` tasks) The commit SHA Ship captured at its Step 4.1a, immediately before claiming the task and before any mutation. Use this exact value as the left side of every P-002.4 diff. Do not re-derive it from `HEAD`, and do not proceed without it — an absent or re-derived baseline is `EXEMPT_DELTA_EXCEEDS_CLASS`, because the gate would then measure a different range than Ship's. This skill's completion gate runs **before** its own commit, so it pairs this SHA with the working-tree diff form, never with `..HEAD`.
+* `exempt_baseline_sha`: (Required for `harness-exempt` tasks) The clean commit SHA Ship captured
+  immediately before claim. Use it as the left side of every P-002.4 diff; never re-derive it.
+* `governed_claim_delta`: (Required for `harness-exempt` tasks) Ship's frozen Step 4.1c record:
+  `task_id`, `exempt_baseline_sha`, the closed registry-derived `paths`, per-path before/after
+  SHA-256 digests, and validated task-status/event transitions. In this workspace the only
+  eligible paths are the exact `.backlogit/queue/{task_id}.md` task artifact and, when the claim
+  actually appended it, `.backlogit/hooks_queue.jsonl`. Reject a caller-authored allowlist,
+  arbitrary dirty path, extra/missing path, digest mismatch, non-append event mutation, or
+  transition for another task/status as `EXEMPT_CLAIM_DELTA_INVALID`.
 
 ## Output
 
@@ -73,8 +88,37 @@ begins. Do not execute the completion command here: build-feature runs it after 
 passes, and Ship runs the same frozen command again after build-feature returns (after its commit
 when the task produces one).
 
+Also require `release_lint_mode` to be exactly `strict` or `baseline-convergence`. This skill does
+not infer it from task prose or independently authorize the latter. In `strict` mode the global
+zero-warning command remains a pre-commit gate in addition to task lint; only Ship's already
+validated `baseline-convergence` dispatch defers that command to the terminal release-unit
+boundary.
+
 When `wave_scoped` is `false` or absent, reject a caller attempt to replace the repository-wide
 lint gate with `task_lint_cmd`. The non-wave path remains unchanged.
+
+Build-feature owns only the per-task lint result. It never parses, changes, or waives a
+release-unit `baseline-lint-convergence-contract`. Ship executes repository-wide lint analysis at
+every Step 4.6 gate and applies the frozen `strict` or `baseline-convergence` result contract;
+build-feature cannot remove that gate.
+
+### Governed Claim Delta Precondition
+
+For every `harness-exempt` dispatch, validate `governed_claim_delta` before any mutation:
+
+1. `task_id` and `exempt_baseline_sha` must equal the other frozen inputs.
+2. Derive the task artifact path from the task ID and registry and exact-compare it with the
+   recorded task-state path. Accept the configured hook-event path only when its validated
+   transition says the claim appended exactly one matching event. No supplied path list is
+   authoritative by itself.
+3. Diff from the baseline across staged, unstaged, and untracked state. Before task work starts,
+   the complete changed set must equal the frozen governed path set.
+4. Recompute each after-digest and revalidate the exact status-to-`active` and optional event-append
+   transitions. Any mismatch, additional field/path, truncation, rewrite, malformed record, or
+   unreadable state halts with `EXEMPT_CLAIM_DELTA_INVALID`.
+
+Repeat the digest/content validation before the completion gate and before staging. Only this exact
+validated lifecycle delta may be subtracted from the exempt class surface.
 
 ### Step 0: Harness-exempt pre-work precondition (P-002.3 / P-002.5)
 
@@ -215,8 +259,12 @@ report all four items or halt with `RED_DELIVERABLE_EVIDENCE_INCOMPLETE`.
 Run the Post-Loop Quality Gates below with these substitutions, and do not iterate on a failure:
 
 1. **Lint**: run the frozen `task_lint_cmd` exactly as the wave-scoped lint contract requires.
-   Preserve any native process failure and reject vacuous success. The repository-wide
-   `golangci-lint run` is deferred to Ship Step 4.6, not skipped.
+   Preserve any native process failure and reject vacuous success. When `release_lint_mode` is
+   `strict`, also run the
+   unmodified repository-wide `golangci-lint run` and require zero warnings before returning. Only
+   an exact `baseline-convergence` input defers that analysis to Ship Step 4.6, where Ship applies
+   the authorized residual contract and always requires unmodified global lint at the terminal
+   boundary.
 2. **Format**: `gofmt -l .` — unchanged.
 3. **Test suite**: item 3 **inverts**. `harness_cmd` must still be observed **RED**, and a green
    result fails the gate with `WAVE_RED_DELIVERABLE_EARLY_GREEN`. The supplied
@@ -379,8 +427,13 @@ After the harness passes:
      and propagate a native linter/configuration/process failure; an issues-exit override may
      classify owned findings only when the wrapper captures the native exit first and never turns
      infrastructure failure into success. Do not infer a replacement command, accept empty or
-     malformed evidence, or run `golangci-lint run` here. Ship reruns this same command after the
-     task commit, and the repository-wide command runs at Step 4.6.
+     malformed evidence. When `release_lint_mode` is `strict`, then run the exact unmodified
+     `golangci-lint run` and require exit 0 with zero warnings before committing. When it is
+     `baseline-convergence`, do not run the global command here: Ship reruns task lint after the
+     task commit and applies the exact residual gate after the wave. At Step 4.6 Ship runs
+     repository-wide lint under the frozen strict or baseline-convergence contract; the latter
+     changes only intermediate timing and result classification, never the terminal zero-warning
+     command.
    * **`wave_scoped: false` or absent**: `golangci-lint run`, unchanged. A task-scoped command
      cannot replace or weaken this gate outside a wave.
 2. **Format**: `gofmt -l .`
@@ -408,46 +461,48 @@ After the harness passes:
      declared evidence — the named `--- PASS:` guard count, the declared content assertions, or the
      declared evidence-manifest rows and scalars. A vacuous pass is `EXEMPT_EVIDENCE_MISMATCH`; an
      exit-0 run without the marker is `EXEMPT_MARKER_MISSING`. Report either and stop.
-   * **Diff against the working tree, not against `HEAD`.** This gate runs **before** the `###
-     Commit` step below, so the task's work is staged and/or unstaged in the working tree and is
-     **not yet in `HEAD`**. `git diff {exempt_baseline_sha}..HEAD` at this moment compares the
-     baseline commit against itself, yields an empty delta, and passes every check trivially — a
-     gate that reads as fail-closed while enforcing nothing. Use the two-dot form with **no
-     right-hand side**, which diffs the commit against the working tree, and add the `--cached`
-     pass so staged changes are included:
-     * path pass — `git diff --name-only {exempt_baseline_sha}` **and**
-       `git diff --cached --name-only {exempt_baseline_sha}`; the union of the two is the task's
-       changed-file set.
-     * content pass — `git diff {exempt_baseline_sha} -- <each allowed file>` **and**
-       `git diff --cached {exempt_baseline_sha} -- <each allowed file>`.
-   * **An empty changed-file set is a halt, never a pass.** If the union above is empty, report
-     `EXEMPT_DELTA_EXCEEDS_CLASS` with detail `empty delta — gate measured a range that does not
-     contain the task's work` and stop. An exempt task that changed nothing has no deliverable and
-     cannot have legitimately passed `exempt_gate_cmd`.
-   * Confirm the changed-file set is a subset of the P-002.4 delta surface for `exempt_class`,
-     diffing from `exempt_baseline_sha` rather than from a self-derived range. Anything outside the
-     surface is `EXEMPT_DELTA_EXCEEDS_CLASS`; report it and stop. Do not "fix" a class violation by
-     editing the contract.
-   * Run the P-002.4 **content pass** as well. The class surfaces are content restrictions, so a
-     path-only check passes changes it should reject. Under `verification-only`, a hunk that
+   * **Diff against the working tree, not against `HEAD`.** Build the full changed set as the union
+     of `git diff --name-only {exempt_baseline_sha}`,
+     `git diff --cached --name-only {exempt_baseline_sha}`, and untracked paths. A pre-commit
+     `{exempt_baseline_sha}..HEAD` diff is vacuous and forbidden.
+   * Revalidate every `governed_claim_delta` path's registry identity, exact transition, and
+     after-digest. Define `task_owned_delta = full_changed_set - governed_claim_delta.paths`.
+     Subtract no name that failed validation and no caller-proposed path. An omitted/extra governed
+     path or altered content is `EXEMPT_CLAIM_DELTA_INVALID`.
+   * **An empty task-owned delta is a halt, never a pass.** Report
+     `EXEMPT_DELTA_EXCEEDS_CLASS` with detail `empty task-owned delta`. Claim metadata alone is not
+     the exempt deliverable.
+   * Confirm `task_owned_delta` is a subset of the P-002.4 surface for `exempt_class`. Anything
+     outside the surface is `EXEMPT_DELTA_EXCEEDS_CLASS`; do not edit the class contract to fit.
+   * Run the P-002.4 **content pass** over every task-owned file using both unstaged and cached
+     baseline-to-working-tree forms, and independently revalidate the governed claim content. A
+     path-only check is insufficient. Under `verification-only`, a hunk that
      weakens, deletes, renames, or narrows the selector of a pre-existing assertion is
      `EXEMPT_DELTA_EXCEEDS_CLASS`, and so is any hunk in `.gitignore` or another
      repository-configuration file — `verification-only` is not a repository-hygiene class. Under
      `docs-only`, any `*.go` hunk is `EXEMPT_BEHAVIOR_NO_OWNER`. Under `covered-by`, any
      `*_test.go` hunk is `EXEMPT_DELTA_EXCEEDS_CLASS`.
-   * Ship re-runs both passes at its own Step 4.3 against the same baseline — but **after** this
-     skill's commit, so Ship correctly uses the `{exempt_baseline_sha}..HEAD` form there. The two
-     forms are intentionally different because the two gates sit on opposite sides of the commit.
-     Do not copy Ship's form into this step or this step's form into Ship's.
+   * Return the exact sorted `task_owned_delta` and governed path set to Ship. Ship re-runs both
+     passes after commit using `{exempt_baseline_sha}..HEAD`, requires that range to equal exactly
+     their union, revalidates governed content, and applies the class checks to the same task-owned
+     set.
 
 ### Commit
 
 If all quality gates pass — including the harness-exempt completion gate above, which ran against
 the working tree precisely because this commit had not happened yet:
 
-1. Stage all changes
-2. Create a conventional commit message referencing the task ID
-3. Report success to the caller
+1. For a normal task, retain the ordinary staging behavior. For a `harness-exempt` task, stage by
+   exact pathspec only: the validated `task_owned_delta ∪ governed_claim_delta.paths`. Never use
+   `git add -A`, `git add .`, or another stage-all form on this branch.
+2. For a `harness-exempt` task, exact-compare staged paths with that union, require no remaining
+   unstaged or untracked path, and revalidate every governed after-digest and transition. Extra,
+   omitted, or altered state halts with `EXEMPT_CLAIM_DELTA_INVALID`.
+3. Create a conventional commit message referencing the task ID.
+4. Recheck the committed range `{exempt_baseline_sha}..HEAD`: its path set must equal exactly the
+   same union; governed content must still match the frozen record; task-owned paths/content must
+   still satisfy P-002.4. Any mismatch is a halt, not a selective-stage retry.
+5. Report the exact committed task-owned and governed path sets to the caller.
 
 Do **not** reorder this step ahead of the completion gate to make an `..HEAD` diff work. The gate
 must observe the delta before it is committed so that a failing class check can stop the task
@@ -480,6 +535,13 @@ without leaving a non-compliant commit behind.
   from prose, mask its native process failure, or accept vacuous evidence. The command is the
   per-task completion gate; repository-wide lint remains Ship Step 4.6
 * Never use `task_lint_cmd` to replace `golangci-lint run` when `wave_scoped` is false or absent
+* Never interpret `wave_scoped` as permission to skip repository-wide lint. Ship applies strict
+  zero-warning lint at every wave unless a valid release-unit `baseline-convergence` contract
+  selects exact residual-set verification; even then unmodified zero-warning
+  `golangci-lint run` is mandatory at the exact terminal boundary and final gate
+* Never accept arbitrary claim-path exclusions. A harness-exempt dispatch requires the exact
+  registry-derived, transition- and digest-validated `governed_claim_delta`; stage and commit only
+  its union with the class-valid task-owned delta, and reject every other path
 * Never narrow the Step 6 compilation check (`go test -run=^$ -count=1 ./...`) to the task's own package. It runs no test, so a sibling's red harness cannot affect it
 * Maximum 5 attempts before circuit breaker trips (skill-managed exception; see `circuit-breaker.instructions.md`)
 * Same-error recurrence at attempt 3+ triggers the universal circuit breaker
@@ -494,8 +556,10 @@ without leaving a non-compliant commit behind.
   passes repository-wide lint
 * No format violations
 * The task-scoped suite passes; under `wave_scoped: true` the full repository suite is Ship's Step
-  4.6 wave convergence gate, and repository-wide lint runs there on every wave; both must pass
-  before the next wave is admitted
+  4.6 wave convergence gate. Repository-wide lint analysis runs there on every wave: strict mode
+  requires zero-warning `PASS`; an authorized intermediate baseline-convergence wave requires an
+  exact residual `CONVERGING` result; its terminal boundary and the final gate still require
+  zero-warning `PASS`
 * Changes are scoped to the task requirements
 * For a `harness-exempt` task: the pre-work probe was observed failing (marker absent), the
   completion gate passes non-vacuously with the exact marker present, both commands cleared the

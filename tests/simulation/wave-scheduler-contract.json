@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "artifact": "wave-scheduler-contract-simulation",
-  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S itself, filters its task-type IDs into M, parses the live status catalog and registry mapping/features, exact-compares M with the explicit non-shipment fallback task-ID set, reports excluded non-task IDs, projects task contracts from the live backlog, and verifies the installed Ship/build-feature lint-gate contract; scenarios and expectations encode the cycle-39 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
+  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S for the scheduler regression corpus and shipment 156-S for its 40-task/75-edge baseline-convergence projection, projects canonical task-lint contracts from the live queue, validates strict and baseline-convergence lint modes plus exact governed claim deltas, and verifies installed Ship/build-feature/policy parity. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
   "contract": {
     "policy": ".github/policies/workflow-policies.md",
-    "policy_version": "1.24.0",
+    "policy_version": "1.29.0",
     "policies": [
       "P-002.2",
       "P-002.6"
@@ -25,13 +25,281 @@
   },
   "lint_gate_contract": {
     "ship_artifact": ".github/agents/_ship.agent.md",
+    "constitution_artifacts": [
+      "AGENTS.md",
+      ".github/instructions/constitution.instructions.md"
+    ],
+    "constitution_version": "1.1.0",
     "build_feature_artifact": ".github/skills/build-feature/SKILL.md",
+    "policy_artifact": ".github/policies/workflow-policies.md",
     "canonical_block": "task-lint-contract",
     "task_command_input": "task_lint_cmd",
     "task_contract_name": "FSLV",
     "global_command": "golangci-lint run",
-    "note": "Every wave-scoped task, including harness-exempt and red-deliverable tasks, declares one canonical task-scoped lint completion command. Ship freezes and screens it before claim; build-feature validates it before mutation; build-feature executes it before any task commit and Ship executes it again after build-feature returns. The repository-wide lint command is relocated to wave convergence and remains unchanged for non-wave-scoped work."
+    "baseline_block": "baseline-lint-convergence-contract",
+    "baseline_mode": "baseline-convergence",
+    "strict_mode": "strict",
+    "claim_input": "governed_claim_delta",
+    "lint_mode_input": "release_lint_mode",
+    "note": "Every wave-scoped task declares one canonical task-scoped lint completion command. Ship owns and explicitly passes the release-unit lint mode. Strict is the default and runs zero-warning repository-wide lint before and after each task commit and at every convergence gate. Baseline-convergence requires an explicit fail-closed release-unit contract, exact residual-set verification at intermediate waves, and unmodified zero-warning golangci-lint at the exact terminal boundary. Harness-exempt claim paths are admitted only through an exact transition- and digest-validated governed_claim_delta."
   },
+  "baseline_convergence_projection": {
+    "shipment_id": "156-S",
+    "release_unit_id": "175-F",
+    "task_ids": [
+      "175.001-T", "175.002-T", "175.003-T", "175.004-T", "175.005-T",
+      "175.006-T", "175.007-T", "175.008-T", "175.009-T", "175.010-T",
+      "175.011-T", "175.012-T", "175.013-T", "175.014-T", "175.015-T",
+      "175.016-T", "175.017-T", "175.018-T", "175.019-T", "175.020-T",
+      "175.021-T", "175.022-T", "175.023-T", "175.024-T", "175.025-T",
+      "175.026-T", "175.027-T", "175.028-T", "175.029-T", "175.030-T",
+      "175.031-T", "175.032-T", "175.033-T", "175.034-T", "175.035-T",
+      "175.036-T", "175.037-T", "175.038-T", "175.039-T", "175.040-T"
+    ],
+    "dependencies_by_task": {
+      "175.001-T": [],
+      "175.002-T": ["175.001-T"],
+      "175.003-T": ["175.001-T"],
+      "175.004-T": ["175.001-T"],
+      "175.005-T": ["175.001-T"],
+      "175.006-T": ["175.001-T"],
+      "175.007-T": ["175.001-T"],
+      "175.008-T": ["175.001-T"],
+      "175.009-T": ["175.001-T"],
+      "175.010-T": ["175.001-T"],
+      "175.011-T": ["175.001-T"],
+      "175.012-T": [
+        "175.002-T", "175.003-T", "175.004-T", "175.005-T", "175.006-T",
+        "175.007-T", "175.008-T", "175.009-T", "175.010-T", "175.011-T",
+        "175.013-T", "175.014-T", "175.015-T", "175.016-T", "175.017-T",
+        "175.018-T", "175.019-T", "175.020-T", "175.021-T", "175.022-T",
+        "175.023-T", "175.024-T", "175.025-T", "175.026-T", "175.027-T",
+        "175.028-T", "175.029-T", "175.030-T", "175.031-T", "175.032-T",
+        "175.033-T", "175.034-T", "175.035-T", "175.036-T", "175.037-T",
+        "175.038-T", "175.039-T"
+      ],
+      "175.013-T": ["175.001-T"],
+      "175.014-T": ["175.040-T"],
+      "175.015-T": ["175.001-T"],
+      "175.016-T": ["175.001-T"],
+      "175.017-T": ["175.001-T"],
+      "175.018-T": ["175.001-T"],
+      "175.019-T": ["175.001-T"],
+      "175.020-T": ["175.001-T"],
+      "175.021-T": ["175.001-T"],
+      "175.022-T": ["175.001-T"],
+      "175.023-T": ["175.001-T"],
+      "175.024-T": ["175.001-T"],
+      "175.025-T": ["175.001-T"],
+      "175.026-T": ["175.001-T"],
+      "175.027-T": ["175.001-T"],
+      "175.028-T": ["175.001-T"],
+      "175.029-T": ["175.001-T"],
+      "175.030-T": ["175.001-T"],
+      "175.031-T": ["175.001-T"],
+      "175.032-T": ["175.001-T"],
+      "175.033-T": ["175.001-T"],
+      "175.034-T": ["175.001-T"],
+      "175.035-T": ["175.001-T"],
+      "175.036-T": ["175.001-T"],
+      "175.037-T": ["175.001-T"],
+      "175.038-T": ["175.001-T"],
+      "175.039-T": ["175.001-T"],
+      "175.040-T": ["175.001-T"]
+    },
+    "excluded_members": [{"id": "175-F", "artifact_type": "feature"}],
+    "shipment_member_count": 41,
+    "task_count": 40,
+    "edge_count": 75,
+    "first_wave": ["175.001-T"],
+    "u1_direct_dependents": 37,
+    "terminal_task_id": "175.012-T",
+    "terminal_dependency_count": 37,
+    "task_lint_contract_count": 40,
+    "stage_contract_present": true,
+    "note": "Queue-backed projection of shipment 156-S. The real release-unit artifact must carry a valid baseline-lint-convergence-contract before this verification can pass; until Stage authors it, the queue-backed run fails closed while the focused negative controls remain green."
+  },
+  "task_lint_contract_controls": [
+    {
+      "id": "valid-owned-target",
+      "contract": {
+        "task_lint_cmd": "pwsh -Command '$psi=[System.Diagnostics.ProcessStartInfo]::new(); $psi.FileName=\"golangci-lint\"; $psi.Arguments=\"run --output.json.path stdout --show-stats=false --issues-exit-code 0 ./internal\"; $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true; $psi.UseShellExecute=$false; $p=[System.Diagnostics.Process]::Start($psi); $so=$p.StandardOutput.ReadToEndAsync(); $se=$p.StandardError.ReadToEndAsync(); $p.WaitForExit(); $out=$so.GetAwaiter().GetResult(); $err=$se.GetAwaiter().GetResult(); if($p.ExitCode -ne 0){exit $p.ExitCode}; $j=$out|ConvertFrom-Json; if(-not ($j.Issues -is [System.Array])){exit 96}; $hits=@($j.Issues|Where-Object{$_.Pos.Filename -eq \"internal/x.go\" -and $_.FromLinter -eq \"errcheck\"}); if($hits.Count){exit 1}; Write-Output \"FSLV-OK:internal/x.go:errcheck:0-owned-findings\"'",
+        "lint_scope": {"kind": "file-scoped-go-lint", "package": "./internal", "linter": "errcheck", "owned_file": "internal/x.go"},
+        "non_vacuity_evidence": {"mode": "structured-json-schema-validated", "success_marker": "FSLV-OK:internal/x.go:errcheck:0-owned-findings", "asserts": ["native exit preserved", "schema and exact target validated"]}
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "missing-command",
+      "contract": {
+        "task_lint_cmd": "",
+        "lint_scope": {"kind": "file-scoped-go-lint", "package": "./internal", "linter": "errcheck", "owned_file": "internal/x.go"},
+        "non_vacuity_evidence": {"mode": "structured-json-schema-validated", "success_marker": "FSLV-OK:internal/x.go:errcheck:0-owned-findings", "asserts": ["invalid empty command"]}
+      },
+      "expect_valid": false
+    },
+    {
+      "id": "target-vacuous",
+      "contract": {
+        "task_lint_cmd": "pwsh -Command '$nativeExit=0; if($nativeExit -ne 0){exit $nativeExit}; Write-Output \"FSLV-OK\"'",
+        "lint_scope": {"kind": "file-scoped-go-lint", "package": "./internal", "linter": "errcheck", "owned_file": "internal/x.go"},
+        "non_vacuity_evidence": {"mode": "structured-json-schema-validated", "success_marker": "FSLV-OK:internal/x.go:errcheck:0-owned-findings", "asserts": ["target must be bound"]}
+      },
+      "expect_valid": false
+    },
+    {
+      "id": "native-failure-masked",
+      "contract": {
+        "task_lint_cmd": "pwsh -Command 'golangci-lint run internal/x.go || true; Write-Output \"FSLV-OK:internal/x.go:errcheck:0-owned-findings\"'",
+        "lint_scope": {"kind": "file-scoped-go-lint", "package": "./internal", "linter": "errcheck", "owned_file": "internal/x.go"},
+        "non_vacuity_evidence": {"mode": "structured-json-schema-validated", "success_marker": "FSLV-OK:internal/x.go:errcheck:0-owned-findings", "asserts": ["native masking rejected"]}
+      },
+      "expect_valid": false
+    }
+  ],
+  "baseline_lint_contract_control": {
+    "valid_contract": {
+      "mode": "baseline-convergence",
+      "purpose": "known-global-lint-baseline-removal",
+      "shipment_id": "156-S",
+      "release_unit_id": "175-F",
+      "terminal_task_id": "175.012-T",
+      "member_scope": [
+        {"task_id": "175.001-T", "role": "baseline-control", "task_artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111"},
+        {"task_id": "175.002-T", "role": "finding-remediation", "task_artifact_sha256": "2222222222222222222222222222222222222222222222222222222222222222"},
+        {"task_id": "175.003-T", "role": "finding-remediation", "task_artifact_sha256": "3333333333333333333333333333333333333333333333333333333333333333"},
+        {"task_id": "175.012-T", "role": "terminal-convergence", "task_artifact_sha256": "4444444444444444444444444444444444444444444444444444444444444444"}
+      ],
+      "baseline_inventory": {
+        "path": "tests/simulation/fixtures/156-S-lint-baseline.json",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "finding_count": 2,
+        "identity_fields": ["path", "line", "column", "linter", "message", "owner_task_id"]
+      },
+      "intermediate_wave_lint_cmd": "pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory tests/simulation/fixtures/156-S-lint-baseline.json -InventorySha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -Shipment 156-S -TerminalTask 175.012-T",
+      "terminal_global_lint_cmd": "golangci-lint run",
+      "operator_authorization": {
+        "record": "operator-authorization:156-S:2026-09-18",
+        "authorized_at": "2026-09-18T13:57:01-07:00",
+        "authorized_by": "workspace-operator",
+        "shipment_id": "156-S",
+        "scope": "retain-only-unfinished-owned-baseline-findings-until-terminal"
+      }
+    },
+    "inventory_observation": {
+      "digest_matches": true,
+      "committed": true,
+      "machine_readable": true,
+      "findings": [
+        {"path": "internal/a.go", "line": 10, "column": 2, "linter": "errcheck", "message": "unchecked return", "owner_task_id": "175.002-T"},
+        {"path": "internal/b.go", "line": 20, "column": 3, "linter": "staticcheck", "message": "deprecated call", "owner_task_id": "175.003-T"}
+      ]
+    },
+    "authorization_observation": {
+      "operator_supplied": true,
+      "record": "operator-authorization:156-S:2026-09-18",
+      "shipment_id": "156-S",
+      "scope": "retain-only-unfinished-owned-baseline-findings-until-terminal"
+    },
+    "member_scope_observation": {
+      "committed": true,
+      "digests_match": true
+    },
+    "initial_attestation_observation": {
+      "executed_before_claim": true,
+      "exact_inventory": true,
+      "residual_count": 2
+    },
+    "expected_shipment_id": "156-S",
+    "expected_release_unit_id": "175-F",
+    "unique_terminal_sink": "175.012-T",
+    "members": ["175.001-T", "175.002-T", "175.003-T", "175.012-T"],
+    "controls": [
+      {"id": "missing-entire-baseline-contract", "remove_contract": true, "baseline_requested": true, "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "intermediate-exact-residual", "completed": ["175.001-T"], "observed": ["internal/a.go|10|2|errcheck|unchecked return|175.002-T", "internal/b.go|20|3|staticcheck|deprecated call|175.003-T"], "terminal": false, "global_lint_ok": false, "expect": "CONVERGING"},
+      {"id": "u1-unconditional-global-lint", "remove_contract": true, "baseline_requested": false, "completed": ["175.001-T"], "observed": ["internal/a.go|10|2|errcheck|unchecked return|175.002-T", "internal/b.go|20|3|staticcheck|deprecated call|175.003-T"], "terminal": false, "global_lint_ok": false, "expect": "STRICT_GLOBAL_LINT_FAILED"},
+      {"id": "missing-baseline-inventory", "remove": "baseline_inventory", "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "malformed-terminal-task", "set_terminal_task_id": "175.999-T", "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "in-m-non-sink-terminal", "set_terminal_task_id": "175.003-T", "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "wrong-enclosing-shipment", "set_shipment_id": "999-S", "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "wrong-enclosing-release-unit", "set_release_unit_id": "999-F", "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "missing-operator-scope", "remove_operator_scope": true, "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "malformed-operator-time", "set_authorized_at": "yesterday", "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "operator-record-not-supplied", "operator_supplied": false, "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "stale-inventory-digest", "set_digest_matches": false, "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "stale-member-task-digest", "set_member_scope_digests_match": false, "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "initial-baseline-not-exact", "set_initial_attestation_exact": false, "completed": ["175.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "new-unowned-finding", "completed": ["175.001-T"], "observed": ["internal/a.go|10|2|errcheck|unchecked return|175.002-T", "internal/b.go|20|3|staticcheck|deprecated call|175.003-T", "internal/new.go|1|1|errcheck|new debt|UNOWNED"], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_RESIDUAL_MISMATCH"},
+      {"id": "moved-or-changed-linter", "completed": ["175.001-T"], "observed": ["internal/a.go|11|2|staticcheck|unchecked return|175.002-T", "internal/b.go|20|3|staticcheck|deprecated call|175.003-T"], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_RESIDUAL_MISMATCH"},
+      {"id": "native-or-parser-failure", "completed": ["175.001-T"], "observed": [], "native_exec_ok": false, "structured_output_valid": false, "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_EXEC_FAILED"},
+      {"id": "intermediate-empty-residual-is-not-pass", "completed": ["175.001-T", "175.002-T", "175.003-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "CONVERGING"},
+      {"id": "terminal-without-zero-warning-global", "completed": ["175.001-T", "175.002-T", "175.003-T", "175.012-T"], "observed": [], "terminal": true, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_UNCLOSED"},
+      {"id": "terminal-derived-despite-false-flag", "completed": ["175.001-T", "175.002-T", "175.003-T", "175.012-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_UNCLOSED"},
+      {"id": "terminal-zero-warning-global", "completed": ["175.001-T", "175.002-T", "175.003-T", "175.012-T"], "observed": [], "terminal": true, "global_lint_ok": true, "expect": "PASS"}
+    ]
+  },
+  "governed_claim_delta_controls": [
+    {
+      "id": "verification-only-exact-union",
+      "task_id": "175.012-T",
+      "exempt_class": "verification-only",
+      "exempt_baseline_sha": "1111111111111111111111111111111111111111",
+      "paths": [".backlogit/queue/175.012-T.md", ".backlogit/hooks_queue.jsonl"],
+      "derived_paths": [".backlogit/queue/175.012-T.md", ".backlogit/hooks_queue.jsonl"],
+      "before_sha256_by_path": {".backlogit/queue/175.012-T.md": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ".backlogit/hooks_queue.jsonl": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+      "after_sha256_by_path": {".backlogit/queue/175.012-T.md": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", ".backlogit/hooks_queue.jsonl": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+      "digests_match": true,
+      "transitions_valid": true,
+      "validated_transitions": {"task_status": "queued->active", "event_append_count": 1, "event_task_id": "175.012-T", "event_status": "active"},
+      "task_owned_delta": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "observed_or_committed_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "pre_dispatch_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md"],
+      "pre_completion_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "staged_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "post_commit_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "expect": "PASS"
+    },
+    {
+      "id": "verification-only-claim-delta-omitted",
+      "task_id": "175.012-T",
+      "exempt_class": "verification-only",
+      "exempt_baseline_sha": "1111111111111111111111111111111111111111",
+      "paths": [],
+      "derived_paths": [".backlogit/queue/175.012-T.md", ".backlogit/hooks_queue.jsonl"],
+      "before_sha256_by_path": {},
+      "after_sha256_by_path": {},
+      "digests_match": true,
+      "transitions_valid": true,
+      "validated_transitions": {"task_status": "queued->active", "event_append_count": 1, "event_task_id": "175.012-T", "event_status": "active"},
+      "task_owned_delta": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "observed_or_committed_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "pre_dispatch_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md"],
+      "pre_completion_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "staged_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "post_commit_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "expect": "EXEMPT_CLAIM_DELTA_INVALID"
+    },
+    {
+      "id": "verification-only-extra-path-admitted",
+      "task_id": "175.012-T",
+      "exempt_class": "verification-only",
+      "exempt_baseline_sha": "1111111111111111111111111111111111111111",
+      "paths": [".backlogit/queue/175.012-T.md", ".backlogit/hooks_queue.jsonl", ".gitignore"],
+      "derived_paths": [".backlogit/queue/175.012-T.md", ".backlogit/hooks_queue.jsonl"],
+      "before_sha256_by_path": {".backlogit/queue/175.012-T.md": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ".backlogit/hooks_queue.jsonl": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", ".gitignore": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"},
+      "after_sha256_by_path": {".backlogit/queue/175.012-T.md": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", ".backlogit/hooks_queue.jsonl": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", ".gitignore": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "digests_match": true,
+      "transitions_valid": true,
+      "validated_transitions": {"task_status": "queued->active", "event_append_count": 1, "event_task_id": "175.012-T", "event_status": "active"},
+      "task_owned_delta": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "observed_or_committed_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "pre_dispatch_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore"],
+      "pre_completion_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "staged_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "post_commit_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "expect": "EXEMPT_CLAIM_DELTA_INVALID"
+    }
+  ],
   "status_model": {
     "catalog_source": ".backlogit/config.yaml -> fields.status.values",
     "catalog": [
@@ -1373,6 +1641,23 @@
         "halt_wave": 1,
         "unsupported": [
           "147.020-T=frobnicated"
+        ],
+        "completion_claimed": false
+      }
+    },
+    {
+      "id": "unsupported_status_off_case",
+      "description": "Status tokens are ordinal and exact; an off-case terminal token cannot satisfy completion.",
+      "mutations": {
+        "set_status": {
+          "147.020-T": "DONE"
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_STATUS_UNSUPPORTED",
+        "halt_wave": 1,
+        "unsupported": [
+          "147.020-T=DONE"
         ],
         "completion_claimed": false
       }
