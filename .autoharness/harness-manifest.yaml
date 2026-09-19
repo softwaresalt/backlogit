@@ -1,6 +1,6 @@
 schema_version: "1.0.0"
 installed_at: "2026-05-17T23:40:00Z"
-tuned_at: "2026-08-31T00:00:00-07:00"
+tuned_at: "2026-09-18T22:09:32-07:00"
 autoharness_version: "1.5.0"
 autoharness_home: "C:\\Python\\Python314\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
@@ -125,7 +125,15 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "319dc97ccc8605ede2814326f0f16abe8752ed792b38ad29d892d135607d34d5"
+    checksum: "3d60b71307e90dac5f5d99c037a09b1a92c09c80de43804d5a57dcd40eb3e430"
+    drift_allowed: true
+    drift_reason: "Locally hardened P-002.6 dynamic baseline-convergence DAG/member validation, strict lint, and governed-claim policy contract; preserve until the upstream template provides equivalent fail-closed behavior."
+  - path: ".github/skills/build-feature/SKILL.md"
+    primitive: 1
+    template: "templates/skills/build-feature/SKILL.md.tmpl"
+    checksum: "fa09f9dab1d76eb256354e6a1c84afac5b9596a40d798f3f97d1e16a074c3c2e"
+    drift_allowed: true
+    drift_reason: "Locally hardened P-002.6 baseline-convergence, bounded task-lint, and governed-claim execution contract; preserve until the upstream template provides equivalent fail-closed behavior."
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
@@ -157,7 +165,7 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "52a10cc0f1e5fab6a843acb23425cacb4a783a6620ef79cc5d783ae452637b0f"
+    checksum: "3ce5180ee98ed316187dd63b176dcb8a275771de3808fd157c1ccd60fad378e8"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). The upstream continuous-learning overlay hardcodes docs/learnings/, conflicting with the configured continuous_learning.directory (.autoharness/continuous-learning) that the pack's own instruction file uses, which would let agents write observations to two different stores. Aligned to the configured directory. Do not auto-revert."
   - path: ".github/copilot-instructions.md"
@@ -203,7 +211,9 @@ artifacts:
   - path: ".github/instructions/constitution.instructions.md"
     primitive: 1
     template: "templates/foundation/constitution.instructions.md.tmpl"
-    checksum: "90924a2a3facdea5d094e0c2d1df6a9e6d474fa0905faba34e11b1454d818cf4"
+    checksum: "ae514ac3d71af0bfe40c1689c42f0a2a552dc07646b6fa90e1d5b97c3f7c91a7"
+    drift_allowed: true
+    drift_reason: "Constitution 1.1.0 adds only the P-002.6 baseline-convergence timing exception synchronized with the installed Ship, policy, build-feature, and simulation contracts."
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
@@ -371,9 +381,9 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "06294ba193d57582da0284b57cbd79932bcadacf86ecf7f5c3da1330c9d5607b"
+    checksum: "3c6a9b8076eda91e7ce28f797823fdd862510acd98f59070e61960abfb3b8cd7"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert."
+    drift_reason: "Workspace-hardened Ship contract: preserves the PR #400 read-only graphtor tool grant and adds P-002.6 dynamic baseline-convergence DAG/member validation plus bounded task-lint authoring. Preserve until the upstream template provides equivalent fail-closed behavior."
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"
@@ -483,6 +493,54 @@ artifacts:
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Bootstrap reused a pre-existing autoharness_home with no version check and installed unpinned, so a clean or default deployment could silently hand off to an installer older than the 1.5.0 gates and schema these artifacts require. Added AUTOHARNESS_MIN_VERSION, version_lt / resolved_version (via `autoharness version`), and a verify_home_version gate applied to both the reuse path and the post-install path; pip bootstrap now installs autoharness>=<min>. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Passes bash -n."
+  - path: "scripts/lint-runtime.ps1"
+    primitive: 8
+    template: "workspace-local/baseline-convergence-runtime"
+    checksum: "7a20f93cc6aa1df42f874444fe8f5b48382f2843a066a5fd2277ebf954a62f49"
+    drift_allowed: true
+    drift_reason: "Workspace runtime for lifecycle-aware artifact resolution, immutable task-contract digests, pinned golangci-lint execution, structured-output isolation, and supported-GOOS selection."
+  - path: "scripts/verify-baseline-lint.ps1"
+    primitive: 8
+    template: "workspace-local/baseline-convergence-runtime"
+    checksum: "c586ccb0b9b99b2d3101233d782f20f6b3e4c42134e1cf86b7c7d00910778ca8"
+    drift_allowed: true
+    drift_reason: "Workspace baseline-convergence residual verifier; not supplied by the upstream template set."
+  - path: "scripts/verify-task-lint.ps1"
+    primitive: 8
+    template: "workspace-local/baseline-convergence-runtime"
+    checksum: "c956ba10fa984939024611de31a42ffa8febae5ef0e9d9f9483f6d911c2e1c92"
+    drift_allowed: true
+    drift_reason: "Canonical short task-lint entrypoint replacing duplicated inline task programs."
+  - path: "scripts/verify-terminal-lint.ps1"
+    primitive: 8
+    template: "workspace-local/baseline-convergence-runtime"
+    checksum: "cec1a030446852a6a21c53ed0cc088f48ad9e3f3e4111d7bba33f2fb0eb65849"
+    drift_allowed: true
+    drift_reason: "Pinned zero-warning terminal gate for every declared supported GOOS."
+  - path: "scripts/wave-scheduler-sim.ps1"
+    primitive: 8
+    template: "workspace-local/baseline-convergence-runtime"
+    checksum: "e78607b4dd84fd5b9af250b711cd35efb6e64307b258df7d56c6917584206a01"
+    drift_allowed: true
+    drift_reason: "Workspace simulation for scheduler, baseline-convergence, canonical task-lint, topology, and claim-union contracts."
+  - path: "tests/simulation/README.md"
+    primitive: 8
+    template: "workspace-local/baseline-convergence-runtime"
+    checksum: "bfdf5732ae71c749f5fc31c46425c02a06dc3d09d0f41eb95ccf1716767f07bb"
+    drift_allowed: true
+    drift_reason: "Operator-facing specification for the workspace contract simulation."
+  - path: "tests/simulation/lint-runtime-tests.ps1"
+    primitive: 8
+    template: "workspace-local/baseline-convergence-runtime"
+    checksum: "a1fc19a10621c9ad5210829f3ae1ba553c0f05135efe730f1effaf7323803c67"
+    drift_allowed: true
+    drift_reason: "Focused runtime fixtures for lifecycle, digest, process isolation, version pin, GOOS, and claim-union behavior."
+  - path: "tests/simulation/wave-scheduler-contract.json"
+    primitive: 8
+    template: "workspace-local/baseline-convergence-runtime"
+    checksum: "fceaaea6bdc366c38921bfd16108e2d4f4cdca4e5296b57779c2761db2814133"
+    drift_allowed: true
+    drift_reason: "Canonical simulation fixture for scheduler and baseline-convergence runtime contracts."
   - path: "start.sh"
     primitive: 6
     template: "templates/scripts/start.sh.tmpl"
@@ -674,6 +732,24 @@ variables_used:
       `**/middleware*.go`.
     - Keywords: `login`, `token`, `password`, `permission`, `role`, `secret`, `key`, `credential`.
 tuning_history:
+  - at: "2026-09-18T22:09:32-07:00"
+    summary: "PR #448 exact-HEAD runtime hardening: replaced copied inline task-lint programs with a canonical executable; added lifecycle-aware queue/archive resolution and immutable task-contract digests; pinned golangci-lint 2.13.2 locally and in GitHub CI; made Windows/Linux lint surfaces explicit; exact-compared canonical live topology; and unified verification-only pre/post claim-union evidence. The current Stage contract intentionally remains blocked until its task commands, digests, topology, platform inventory, and four Linux-only remediation units are adopted."
+    artifacts:
+      - "scripts/lint-runtime.ps1"
+      - "scripts/verify-baseline-lint.ps1"
+      - "scripts/verify-task-lint.ps1"
+      - "scripts/verify-terminal-lint.ps1"
+      - "scripts/wave-scheduler-sim.ps1"
+      - "tests/simulation/lint-runtime-tests.ps1"
+      - "tests/simulation/wave-scheduler-contract.json"
+      - "tests/simulation/README.md"
+      - ".github/agents/_ship.agent.md"
+      - ".github/skills/build-feature/SKILL.md"
+      - ".github/policies/workflow-policies.md"
+      - ".github/instructions/constitution.instructions.md"
+      - "AGENTS.md"
+      - ".github/workflows/ci.yml"
+      - ".autoharness/harness-manifest.yaml"
   - at: "2026-04-05T18:53:02.3114814Z"
     summary: "Adopted remaining worthwhile foundation drift by merging root guidance docs and generic backlog abstraction instructions into backlogit."
     artifacts:

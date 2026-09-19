@@ -1,0 +1,4016 @@
+{
+  "schema": "baseline-lint-platform-inventory/v2",
+  "generator": "golangci-lint",
+  "generator_version": "v2.13.2",
+  "invocation": "golangci-lint run --output.json.path stdout --show-stats=false --max-issues-per-linter 0 --max-same-issues 0 --uniq-by-line=false --issues-exit-code 0 ./...",
+  "identity_fields": [
+    "path",
+    "line",
+    "column",
+    "linter",
+    "message"
+  ],
+  "primary_goos": "windows",
+  "supported_goos": [
+    "windows",
+    "linux"
+  ],
+  "finding_count": 497,
+  "findings": [
+    {
+      "path": "internal/atomicfile/atomicfile_bench_test.go",
+      "line": 48,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.002-T"
+    },
+    {
+      "path": "internal/canonical/canonical.go",
+      "line": 228,
+      "column": 5,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.003-T"
+    },
+    {
+      "path": "internal/cli/add.go",
+      "line": 68,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/add.go",
+      "line": 120,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/add_test.go",
+      "line": 207,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.055-T"
+    },
+    {
+      "path": "internal/cli/adopt.go",
+      "line": 31,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.005-T"
+    },
+    {
+      "path": "internal/cli/archive.go",
+      "line": 30,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/archive.go",
+      "line": 41,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/archive.go",
+      "line": 53,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/archive.go",
+      "line": 58,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 344,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 345,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 346,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 347,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 348,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 349,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 353,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 357,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 358,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 516,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint.go",
+      "line": 585,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/checkpoint_remediation_test.go",
+      "line": 168,
+      "column": 65,
+      "linter": "staticcheck",
+      "message": "ST1008: error should be returned as the last argument",
+      "owner_task_id": "175.008-T"
+    },
+    {
+      "path": "internal/cli/comment.go",
+      "line": 50,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.055-T"
+    },
+    {
+      "path": "internal/cli/commit_association_parity_test.go",
+      "line": 77,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `freshWS.Close` is not checked",
+      "owner_task_id": "175.056-T"
+    },
+    {
+      "path": "internal/cli/delete.go",
+      "line": 31,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.048-T"
+    },
+    {
+      "path": "internal/cli/delete.go",
+      "line": 34,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.048-T"
+    },
+    {
+      "path": "internal/cli/delete.go",
+      "line": 42,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.048-T"
+    },
+    {
+      "path": "internal/cli/delete_search_test.go",
+      "line": 33,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.048-T"
+    },
+    {
+      "path": "internal/cli/delete_search_test.go",
+      "line": 77,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.048-T"
+    },
+    {
+      "path": "internal/cli/delete_search_test.go",
+      "line": 125,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.048-T"
+    },
+    {
+      "path": "internal/cli/deliberate.go",
+      "line": 39,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.056-T"
+    },
+    {
+      "path": "internal/cli/dep.go",
+      "line": 50,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.016-T"
+    },
+    {
+      "path": "internal/cli/dep.go",
+      "line": 75,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.016-T"
+    },
+    {
+      "path": "internal/cli/dep.go",
+      "line": 83,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.016-T"
+    },
+    {
+      "path": "internal/cli/dep.go",
+      "line": 107,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.016-T"
+    },
+    {
+      "path": "internal/cli/dep.go",
+      "line": 112,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.016-T"
+    },
+    {
+      "path": "internal/cli/dep.go",
+      "line": 136,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.016-T"
+    },
+    {
+      "path": "internal/cli/dep.go",
+      "line": 148,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.016-T"
+    },
+    {
+      "path": "internal/cli/dep_test.go",
+      "line": 78,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.052-T"
+    },
+    {
+      "path": "internal/cli/dep_test.go",
+      "line": 114,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.052-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 190,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 191,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 192,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 193,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 194,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 195,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 196,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 248,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 250,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 253,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 256,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 258,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 262,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 271,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 274,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/docs.go",
+      "line": 276,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.046-T"
+    },
+    {
+      "path": "internal/cli/doctor.go",
+      "line": 107,
+      "column": 19,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/doctor.go",
+      "line": 124,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/doctor.go",
+      "line": 152,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/doctor.go",
+      "line": 156,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/doctor.go",
+      "line": 159,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/doctor.go",
+      "line": 161,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/doctor.go",
+      "line": 315,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/doctor.go",
+      "line": 318,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/doctor.go",
+      "line": 320,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.006-T"
+    },
+    {
+      "path": "internal/cli/get.go",
+      "line": 44,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/get.go",
+      "line": 70,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/get.go",
+      "line": 142,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/get.go",
+      "line": 153,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/get.go",
+      "line": 162,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/get.go",
+      "line": 168,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/get.go",
+      "line": 170,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/get.go",
+      "line": 177,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/get.go",
+      "line": 179,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/get_test.go",
+      "line": 33,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.049-T"
+    },
+    {
+      "path": "internal/cli/get_test.go",
+      "line": 62,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.049-T"
+    },
+    {
+      "path": "internal/cli/get_test.go",
+      "line": 94,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.049-T"
+    },
+    {
+      "path": "internal/cli/hooks.go",
+      "line": 48,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.053-T"
+    },
+    {
+      "path": "internal/cli/hooks.go",
+      "line": 100,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.053-T"
+    },
+    {
+      "path": "internal/cli/jsonrpc_test.go",
+      "line": 126,
+      "column": 9,
+      "linter": "staticcheck",
+      "message": "QF1011: could omit type func() error from declaration; it will be inferred from the right-hand side",
+      "owner_task_id": "175.009-T"
+    },
+    {
+      "path": "internal/cli/link.go",
+      "line": 45,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.049-T"
+    },
+    {
+      "path": "internal/cli/link.go",
+      "line": 74,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.049-T"
+    },
+    {
+      "path": "internal/cli/link.go",
+      "line": 106,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.049-T"
+    },
+    {
+      "path": "internal/cli/list.go",
+      "line": 206,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/list.go",
+      "line": 261,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/list_test.go",
+      "line": 26,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.050-T"
+    },
+    {
+      "path": "internal/cli/list_test.go",
+      "line": 57,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.050-T"
+    },
+    {
+      "path": "internal/cli/list_test.go",
+      "line": 86,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.050-T"
+    },
+    {
+      "path": "internal/cli/memory.go",
+      "line": 48,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.057-T"
+    },
+    {
+      "path": "internal/cli/metadata.go",
+      "line": 49,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/metadata.go",
+      "line": 85,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/metadata.go",
+      "line": 115,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/metadata.go",
+      "line": 209,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/metadata.go",
+      "line": 222,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.007-T"
+    },
+    {
+      "path": "internal/cli/metadata_parity_test.go",
+      "line": 40,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.057-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 54,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.041-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 56,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.041-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 58,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.041-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 60,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.041-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 77,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.041-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 83,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.041-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 93,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.041-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 96,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.041-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 103,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.041-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 105,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.011-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 110,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.011-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 138,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.011-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 146,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.011-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 171,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.011-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 185,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.011-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 194,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.011-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 197,
+      "column": 12,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.011-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 198,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.011-T"
+    },
+    {
+      "path": "internal/cli/migrate.go",
+      "line": 200,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.011-T"
+    },
+    {
+      "path": "internal/cli/move.go",
+      "line": 60,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.015-T"
+    },
+    {
+      "path": "internal/cli/move.go",
+      "line": 87,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.015-T"
+    },
+    {
+      "path": "internal/cli/move.go",
+      "line": 90,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.015-T"
+    },
+    {
+      "path": "internal/cli/move.go",
+      "line": 111,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.015-T"
+    },
+    {
+      "path": "internal/cli/move.go",
+      "line": 125,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.015-T"
+    },
+    {
+      "path": "internal/cli/move.go",
+      "line": 129,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.015-T"
+    },
+    {
+      "path": "internal/cli/move.go",
+      "line": 135,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.015-T"
+    },
+    {
+      "path": "internal/cli/move.go",
+      "line": 137,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.015-T"
+    },
+    {
+      "path": "internal/cli/move_relocate_test.go",
+      "line": 29,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.058-T"
+    },
+    {
+      "path": "internal/cli/move_test.go",
+      "line": 34,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.050-T"
+    },
+    {
+      "path": "internal/cli/move_test.go",
+      "line": 60,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.050-T"
+    },
+    {
+      "path": "internal/cli/move_test.go",
+      "line": 105,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.050-T"
+    },
+    {
+      "path": "internal/cli/query.go",
+      "line": 33,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.058-T"
+    },
+    {
+      "path": "internal/cli/query_status_test.go",
+      "line": 32,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.053-T"
+    },
+    {
+      "path": "internal/cli/query_status_test.go",
+      "line": 81,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.053-T"
+    },
+    {
+      "path": "internal/cli/queue_cmd.go",
+      "line": 65,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.005-T"
+    },
+    {
+      "path": "internal/cli/queue_cmd.go",
+      "line": 139,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.005-T"
+    },
+    {
+      "path": "internal/cli/queue_cmd.go",
+      "line": 148,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.005-T"
+    },
+    {
+      "path": "internal/cli/queue_cmd.go",
+      "line": 181,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.005-T"
+    },
+    {
+      "path": "internal/cli/queue_cmd.go",
+      "line": 189,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.005-T"
+    },
+    {
+      "path": "internal/cli/queue_cmd.go",
+      "line": 194,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.005-T"
+    },
+    {
+      "path": "internal/cli/queue_cmd.go",
+      "line": 196,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.005-T"
+    },
+    {
+      "path": "internal/cli/reconcile.go",
+      "line": 43,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.059-T"
+    },
+    {
+      "path": "internal/cli/registry_parity_test.go",
+      "line": 489,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `freshWS.Close` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/registry_parity_test.go",
+      "line": 538,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `freshWS.Close` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/registry_parity_test.go",
+      "line": 579,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `freshWS.Close` is not checked",
+      "owner_task_id": "175.013-T"
+    },
+    {
+      "path": "internal/cli/root.go",
+      "line": 343,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.051-T"
+    },
+    {
+      "path": "internal/cli/root.go",
+      "line": 366,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.051-T"
+    },
+    {
+      "path": "internal/cli/root.go",
+      "line": 381,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.051-T"
+    },
+    {
+      "path": "internal/cli/search.go",
+      "line": 34,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.054-T"
+    },
+    {
+      "path": "internal/cli/search.go",
+      "line": 43,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.054-T"
+    },
+    {
+      "path": "internal/cli/shipment.go",
+      "line": 73,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/shipment.go",
+      "line": 108,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/shipment.go",
+      "line": 156,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/shipment.go",
+      "line": 194,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/shipment.go",
+      "line": 275,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/shipment.go",
+      "line": 309,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/shipment.go",
+      "line": 349,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/shipment.go",
+      "line": 376,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/shipment.go",
+      "line": 442,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.004-T"
+    },
+    {
+      "path": "internal/cli/shipment_covering_test.go",
+      "line": 60,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.059-T"
+    },
+    {
+      "path": "internal/cli/shipment_list_items_test.go",
+      "line": 128,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.060-T"
+    },
+    {
+      "path": "internal/cli/shipment_reconcile_shipped.go",
+      "line": 87,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.047-T"
+    },
+    {
+      "path": "internal/cli/shipment_reconcile_shipped.go",
+      "line": 104,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.047-T"
+    },
+    {
+      "path": "internal/cli/shipment_reconcile_shipped.go",
+      "line": 121,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.047-T"
+    },
+    {
+      "path": "internal/cli/shipment_reconcile_shipped.go",
+      "line": 218,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.047-T"
+    },
+    {
+      "path": "internal/cli/shipment_reconcile_shipped_test.go",
+      "line": 51,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.051-T"
+    },
+    {
+      "path": "internal/cli/shipment_reconcile_shipped_test.go",
+      "line": 80,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.051-T"
+    },
+    {
+      "path": "internal/cli/shipment_reconcile_shipped_test.go",
+      "line": 106,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.051-T"
+    },
+    {
+      "path": "internal/cli/size_composition_columns_test.go",
+      "line": 110,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.060-T"
+    },
+    {
+      "path": "internal/cli/size_composition_parity_test.go",
+      "line": 23,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.047-T"
+    },
+    {
+      "path": "internal/cli/size_composition_parity_test.go",
+      "line": 78,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.047-T"
+    },
+    {
+      "path": "internal/cli/size_composition_parity_test.go",
+      "line": 106,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.047-T"
+    },
+    {
+      "path": "internal/cli/size_composition_parity_test.go",
+      "line": 157,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.047-T"
+    },
+    {
+      "path": "internal/cli/stash.go",
+      "line": 48,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.008-T"
+    },
+    {
+      "path": "internal/cli/stash.go",
+      "line": 79,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.008-T"
+    },
+    {
+      "path": "internal/cli/stash.go",
+      "line": 144,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.008-T"
+    },
+    {
+      "path": "internal/cli/stash.go",
+      "line": 174,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.008-T"
+    },
+    {
+      "path": "internal/cli/stash.go",
+      "line": 208,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.008-T"
+    },
+    {
+      "path": "internal/cli/stash.go",
+      "line": 238,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.008-T"
+    },
+    {
+      "path": "internal/cli/stash_correct.go",
+      "line": 37,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.061-T"
+    },
+    {
+      "path": "internal/cli/stash_correct_test.go",
+      "line": 45,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.061-T"
+    },
+    {
+      "path": "internal/cli/status_cmd.go",
+      "line": 30,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.009-T"
+    },
+    {
+      "path": "internal/cli/status_cmd.go",
+      "line": 38,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.009-T"
+    },
+    {
+      "path": "internal/cli/status_cmd.go",
+      "line": 40,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.009-T"
+    },
+    {
+      "path": "internal/cli/status_cmd.go",
+      "line": 45,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.009-T"
+    },
+    {
+      "path": "internal/cli/status_cmd.go",
+      "line": 47,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.009-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 93,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 111,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 132,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 152,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 179,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 219,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 261,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 306,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 308,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 329,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 343,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 344,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.044-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 345,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 346,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 361,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 419,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 420,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 422,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 423,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 429,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 432,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 433,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 435,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 436,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.043-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 438,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 459,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 461,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 462,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 463,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 464,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 470,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 473,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 475,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 476,
+      "column": 14,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 477,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 478,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/telemetry.go",
+      "line": 480,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.042-T"
+    },
+    {
+      "path": "internal/cli/tty_test.go",
+      "line": 19,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `r.Close` is not checked",
+      "owner_task_id": "175.015-T"
+    },
+    {
+      "path": "internal/cli/tty_test.go",
+      "line": 20,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `w.Close` is not checked",
+      "owner_task_id": "175.015-T"
+    },
+    {
+      "path": "internal/cli/update.go",
+      "line": 97,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.052-T"
+    },
+    {
+      "path": "internal/cli/update.go",
+      "line": 334,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintln` is not checked",
+      "owner_task_id": "175.052-T"
+    },
+    {
+      "path": "internal/cli/update.go",
+      "line": 338,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprintf` is not checked",
+      "owner_task_id": "175.052-T"
+    },
+    {
+      "path": "internal/cli/update_sync_test.go",
+      "line": 30,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.016-T"
+    },
+    {
+      "path": "internal/cli/update_sync_test.go",
+      "line": 65,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `ws2.Close` is not checked",
+      "owner_task_id": "175.016-T"
+    },
+    {
+      "path": "internal/cli/update_test.go",
+      "line": 32,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/update_test.go",
+      "line": 60,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/update_test.go",
+      "line": 88,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/update_test.go",
+      "line": 130,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/update_test.go",
+      "line": 153,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/update_test.go",
+      "line": 176,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/update_test.go",
+      "line": 203,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/update_test.go",
+      "line": 229,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/update_test.go",
+      "line": 262,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.010-T"
+    },
+    {
+      "path": "internal/cli/update_utc_test.go",
+      "line": 83,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.054-T"
+    },
+    {
+      "path": "internal/cli/update_utc_test.go",
+      "line": 96,
+      "column": 11,
+      "linter": "errcheck",
+      "message": "Error return value of `ws2.Close` is not checked",
+      "owner_task_id": "175.054-T"
+    },
+    {
+      "path": "internal/core/060_archive_rollback_integrity_harness_test.go",
+      "line": 55,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.021-T"
+    },
+    {
+      "path": "internal/core/060_archive_rollback_integrity_harness_test.go",
+      "line": 161,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.021-T"
+    },
+    {
+      "path": "internal/core/060_stash_harvest_rollback_harness_test.go",
+      "line": 41,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.064-T"
+    },
+    {
+      "path": "internal/core/archive_consistency_harness_042_test.go",
+      "line": 42,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.023-T"
+    },
+    {
+      "path": "internal/core/archive_consistency_harness_042_test.go",
+      "line": 86,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.DB.Close` is not checked",
+      "owner_task_id": "175.023-T"
+    },
+    {
+      "path": "internal/core/archive_consistency_harness_042_test.go",
+      "line": 134,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.023-T"
+    },
+    {
+      "path": "internal/core/archive_consistency_harness_042_test.go",
+      "line": 142,
+      "column": 23,
+      "linter": "errcheck",
+      "message": "Error return value of `database2.Close` is not checked",
+      "owner_task_id": "175.023-T"
+    },
+    {
+      "path": "internal/core/archive_durable_write_test.go",
+      "line": 77,
+      "column": 36,
+      "linter": "errcheck",
+      "message": "Error return value of `workspace.Close` is not checked",
+      "owner_task_id": "175.017-T"
+    },
+    {
+      "path": "internal/core/archive_reconcile_test.go",
+      "line": 32,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.064-T"
+    },
+    {
+      "path": "internal/core/archive_test.go",
+      "line": 36,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.018-T"
+    },
+    {
+      "path": "internal/core/archive_test.go",
+      "line": 383,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.018-T"
+    },
+    {
+      "path": "internal/core/archive_test.go",
+      "line": 593,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.DB.Close` is not checked",
+      "owner_task_id": "175.018-T"
+    },
+    {
+      "path": "internal/core/archive_test.go",
+      "line": 597,
+      "column": 32,
+      "linter": "errcheck",
+      "message": "Error return value of `newDB.Close` is not checked",
+      "owner_task_id": "175.018-T"
+    },
+    {
+      "path": "internal/core/artifacts_expansion_test.go",
+      "line": 34,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.022-T"
+    },
+    {
+      "path": "internal/core/artifacts_expansion_test.go",
+      "line": 55,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.022-T"
+    },
+    {
+      "path": "internal/core/blocking_cascade.go",
+      "line": 69,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.065-T"
+    },
+    {
+      "path": "internal/core/blocking_cascade_test.go",
+      "line": 37,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.065-T"
+    },
+    {
+      "path": "internal/core/canonical_cache_test.go",
+      "line": 34,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.062-T"
+    },
+    {
+      "path": "internal/core/canonical_cache_test.go",
+      "line": 70,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.062-T"
+    },
+    {
+      "path": "internal/core/commits.go",
+      "line": 315,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.066-T"
+    },
+    {
+      "path": "internal/core/commits_test.go",
+      "line": 31,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.066-T"
+    },
+    {
+      "path": "internal/core/delete_crashsafe_harness_042_test.go",
+      "line": 39,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.062-T"
+    },
+    {
+      "path": "internal/core/delete_crashsafe_harness_042_test.go",
+      "line": 75,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.DB.Close` is not checked",
+      "owner_task_id": "175.062-T"
+    },
+    {
+      "path": "internal/core/doctor.go",
+      "line": 908,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.019-T"
+    },
+    {
+      "path": "internal/core/doctor.go",
+      "line": 1464,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.019-T"
+    },
+    {
+      "path": "internal/core/doctor.go",
+      "line": 1537,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.019-T"
+    },
+    {
+      "path": "internal/core/doctor_test.go",
+      "line": 189,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.018-T"
+    },
+    {
+      "path": "internal/core/doctor_test.go",
+      "line": 244,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.018-T"
+    },
+    {
+      "path": "internal/core/gate/runner_test.go",
+      "line": 143,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.073-T"
+    },
+    {
+      "path": "internal/core/gate/runner_test.go",
+      "line": 146,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `fmt.Fprint` is not checked",
+      "owner_task_id": "175.073-T"
+    },
+    {
+      "path": "internal/core/gate_transition_test.go",
+      "line": 55,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.067-T"
+    },
+    {
+      "path": "internal/core/harness_status.go",
+      "line": 54,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.067-T"
+    },
+    {
+      "path": "internal/core/harness_status_test.go",
+      "line": 70,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.068-T"
+    },
+    {
+      "path": "internal/core/hierarchy.go",
+      "line": 46,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.063-T"
+    },
+    {
+      "path": "internal/core/hierarchy.go",
+      "line": 129,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.063-T"
+    },
+    {
+      "path": "internal/core/migrate_links.go",
+      "line": 229,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.068-T"
+    },
+    {
+      "path": "internal/core/migrate_links_canonical_test.go",
+      "line": 28,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/migrate_links_canonical_test.go",
+      "line": 58,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/migrate_links_canonical_test.go",
+      "line": 88,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/migrate_links_canonical_test.go",
+      "line": 118,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/migrate_links_canonical_test.go",
+      "line": 157,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/migrate_links_canonical_test.go",
+      "line": 213,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/migrate_links_canonical_test.go",
+      "line": 237,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/migrate_links_canonical_test.go",
+      "line": 269,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/migrate_links_canonical_test.go",
+      "line": 295,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/migrate_links_test.go",
+      "line": 37,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.069-T"
+    },
+    {
+      "path": "internal/core/migrate_queue_test.go",
+      "line": 50,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.069-T"
+    },
+    {
+      "path": "internal/core/naming.go",
+      "line": 60,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.070-T"
+    },
+    {
+      "path": "internal/core/queue.go",
+      "line": 106,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.070-T"
+    },
+    {
+      "path": "internal/core/queue_test.go",
+      "line": 28,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.071-T"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_append_windows.go",
+      "line": 90,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `file.Close` is not checked",
+      "owner_task_id": "175.019-T"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_evidence_windows.go",
+      "line": 56,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `file.Close` is not checked",
+      "owner_task_id": "175.020-T"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_fs_windows.go",
+      "line": 154,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `dirFile.Close` is not checked",
+      "owner_task_id": "175.021-T"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_snapshot.go",
+      "line": 152,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.071-T"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_snapshot_windows.go",
+      "line": 66,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `file.Close` is not checked",
+      "owner_task_id": "175.022-T"
+    },
+    {
+      "path": "internal/core/shipment_test.go",
+      "line": 36,
+      "column": 36,
+      "linter": "errcheck",
+      "message": "Error return value of `workspace.Close` is not checked",
+      "owner_task_id": "175.023-T"
+    },
+    {
+      "path": "internal/core/shipment_test.go",
+      "line": 1454,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `reopened.Close` is not checked",
+      "owner_task_id": "175.023-T"
+    },
+    {
+      "path": "internal/core/shipment_test.go",
+      "line": 1480,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.023-T"
+    },
+    {
+      "path": "internal/core/shipment_test.go",
+      "line": 1483,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `ws2.Close` is not checked",
+      "owner_task_id": "175.023-T"
+    },
+    {
+      "path": "internal/core/size_composition.go",
+      "line": 341,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.072-T"
+    },
+    {
+      "path": "internal/core/size_compositions_batch_test.go",
+      "line": 37,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.017-T"
+    },
+    {
+      "path": "internal/core/size_compositions_batch_test.go",
+      "line": 86,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.017-T"
+    },
+    {
+      "path": "internal/core/size_compositions_batch_test.go",
+      "line": 109,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.017-T"
+    },
+    {
+      "path": "internal/core/size_compositions_batch_test.go",
+      "line": 131,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.017-T"
+    },
+    {
+      "path": "internal/core/stash.go",
+      "line": 64,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.063-T"
+    },
+    {
+      "path": "internal/core/stash.go",
+      "line": 624,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `file.Close` is not checked",
+      "owner_task_id": "175.063-T"
+    },
+    {
+      "path": "internal/core/stash_harvest_atomicity_harness_042_test.go",
+      "line": 44,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.020-T"
+    },
+    {
+      "path": "internal/core/stash_harvest_atomicity_harness_042_test.go",
+      "line": 87,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.DB.Close` is not checked",
+      "owner_task_id": "175.020-T"
+    },
+    {
+      "path": "internal/core/stash_harvest_atomicity_harness_042_test.go",
+      "line": 99,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `ws2.Close` is not checked",
+      "owner_task_id": "175.020-T"
+    },
+    {
+      "path": "internal/core/stash_provenance_test.go",
+      "line": 35,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.072-T"
+    },
+    {
+      "path": "internal/core/templates/service_sync_test.go",
+      "line": 31,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.074-T"
+    },
+    {
+      "path": "internal/core/templates/service_test.go",
+      "line": 30,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.074-T"
+    },
+    {
+      "path": "internal/core/workspace.go",
+      "line": 151,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/workspace.go",
+      "line": 160,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/workspace.go",
+      "line": 167,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/workspace.go",
+      "line": 226,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/workspace.go",
+      "line": 231,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/core/workspace.go",
+      "line": 272,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.024-T"
+    },
+    {
+      "path": "internal/db/cascade_delete_test.go",
+      "line": 32,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.079-T"
+    },
+    {
+      "path": "internal/db/connection.go",
+      "line": 88,
+      "column": 11,
+      "linter": "errcheck",
+      "message": "Error return value of `db.Close` is not checked",
+      "owner_task_id": "175.025-T"
+    },
+    {
+      "path": "internal/db/connection_spike_test.go",
+      "line": 86,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `db.Close` is not checked",
+      "owner_task_id": "175.025-T"
+    },
+    {
+      "path": "internal/db/connection_spike_test.go",
+      "line": 112,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `db.Close` is not checked",
+      "owner_task_id": "175.025-T"
+    },
+    {
+      "path": "internal/db/connection_spike_test.go",
+      "line": 143,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `db.Close` is not checked",
+      "owner_task_id": "175.025-T"
+    },
+    {
+      "path": "internal/db/connection_spike_test.go",
+      "line": 168,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `db.Close` is not checked",
+      "owner_task_id": "175.025-T"
+    },
+    {
+      "path": "internal/db/connection_spike_test.go",
+      "line": 184,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `db.Close` is not checked",
+      "owner_task_id": "175.025-T"
+    },
+    {
+      "path": "internal/db/connection_test.go",
+      "line": 39,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/connection_test.go",
+      "line": 47,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/connection_test.go",
+      "line": 67,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/connection_test.go",
+      "line": 77,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/connection_test.go",
+      "line": 93,
+      "column": 32,
+      "linter": "errcheck",
+      "message": "Error return value of `first.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/connection_test.go",
+      "line": 97,
+      "column": 33,
+      "linter": "errcheck",
+      "message": "Error return value of `second.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/connection_test.go",
+      "line": 112,
+      "column": 32,
+      "linter": "errcheck",
+      "message": "Error return value of `first.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/connection_test.go",
+      "line": 116,
+      "column": 33,
+      "linter": "errcheck",
+      "message": "Error return value of `second.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/connection_test.go",
+      "line": 150,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/dependencies.go",
+      "line": 58,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/dependencies.go",
+      "line": 69,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/dependencies.go",
+      "line": 196,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/dependencies.go",
+      "line": 201,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.026-T"
+    },
+    {
+      "path": "internal/db/dependencies_test.go",
+      "line": 22,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.079-T"
+    },
+    {
+      "path": "internal/db/duplicates.go",
+      "line": 34,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.080-T"
+    },
+    {
+      "path": "internal/db/gate.go",
+      "line": 125,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.080-T"
+    },
+    {
+      "path": "internal/db/gate_evidence.go",
+      "line": 34,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.081-T"
+    },
+    {
+      "path": "internal/db/gate_evidence_rehydrate_test.go",
+      "line": 56,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.081-T"
+    },
+    {
+      "path": "internal/db/gate_evidence_schema_test.go",
+      "line": 38,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.077-T"
+    },
+    {
+      "path": "internal/db/gate_evidence_schema_test.go",
+      "line": 63,
+      "column": 12,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.077-T"
+    },
+    {
+      "path": "internal/db/links.go",
+      "line": 78,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.077-T"
+    },
+    {
+      "path": "internal/db/links.go",
+      "line": 91,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.077-T"
+    },
+    {
+      "path": "internal/db/links_test.go",
+      "line": 27,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.082-T"
+    },
+    {
+      "path": "internal/db/logs.go",
+      "line": 215,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.078-T"
+    },
+    {
+      "path": "internal/db/logs.go",
+      "line": 235,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.078-T"
+    },
+    {
+      "path": "internal/db/queries.go",
+      "line": 310,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.027-T"
+    },
+    {
+      "path": "internal/db/queries.go",
+      "line": 332,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.027-T"
+    },
+    {
+      "path": "internal/db/queries.go",
+      "line": 474,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.027-T"
+    },
+    {
+      "path": "internal/db/queries.go",
+      "line": 495,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.027-T"
+    },
+    {
+      "path": "internal/db/queries_expansion_test.go",
+      "line": 26,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.082-T"
+    },
+    {
+      "path": "internal/db/rehydration_link_validation_harness_042_test.go",
+      "line": 61,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.075-T"
+    },
+    {
+      "path": "internal/db/rehydration_link_validation_harness_042_test.go",
+      "line": 90,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.075-T"
+    },
+    {
+      "path": "internal/db/rehydration_link_validation_harness_042_test.go",
+      "line": 127,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.075-T"
+    },
+    {
+      "path": "internal/db/rehydration_link_validation_harness_042_test.go",
+      "line": 159,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.075-T"
+    },
+    {
+      "path": "internal/db/schema.go",
+      "line": 89,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.075-T"
+    },
+    {
+      "path": "internal/db/schema.go",
+      "line": 166,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.075-T"
+    },
+    {
+      "path": "internal/db/schema.go",
+      "line": 194,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.075-T"
+    },
+    {
+      "path": "internal/db/schema.go",
+      "line": 238,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.075-T"
+    },
+    {
+      "path": "internal/db/schema_gen.go",
+      "line": 102,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.083-T"
+    },
+    {
+      "path": "internal/db/schema_gen_test.go",
+      "line": 151,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.076-T"
+    },
+    {
+      "path": "internal/db/schema_gen_test.go",
+      "line": 191,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.076-T"
+    },
+    {
+      "path": "internal/db/schema_gen_test.go",
+      "line": 208,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.076-T"
+    },
+    {
+      "path": "internal/db/stash.go",
+      "line": 98,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.078-T"
+    },
+    {
+      "path": "internal/db/stash.go",
+      "line": 223,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.078-T"
+    },
+    {
+      "path": "internal/db/task_children_index_test.go",
+      "line": 23,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.083-T"
+    },
+    {
+      "path": "internal/db/telemetry_schema.go",
+      "line": 129,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.027-T"
+    },
+    {
+      "path": "internal/db/telemetry_schema_test.go",
+      "line": 23,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.076-T"
+    },
+    {
+      "path": "internal/db/telemetry_schema_test.go",
+      "line": 39,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `rows1.Close` is not checked",
+      "owner_task_id": "175.076-T"
+    },
+    {
+      "path": "internal/db/telemetry_schema_test.go",
+      "line": 43,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `rows2.Close` is not checked",
+      "owner_task_id": "175.076-T"
+    },
+    {
+      "path": "internal/db/telemetry_schema_test.go",
+      "line": 95,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.076-T"
+    },
+    {
+      "path": "internal/db/upsert_custom_fields_test.go",
+      "line": 122,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `database.Close` is not checked",
+      "owner_task_id": "175.084-T"
+    },
+    {
+      "path": "internal/db/upsert_projection.go",
+      "line": 153,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.084-T"
+    },
+    {
+      "path": "internal/events/hook_events.go",
+      "line": 126,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `qf.Close` is not checked",
+      "owner_task_id": "175.028-T"
+    },
+    {
+      "path": "internal/events/reader.go",
+      "line": 35,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.028-T"
+    },
+    {
+      "path": "internal/events/stream.go",
+      "line": 319,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.085-T"
+    },
+    {
+      "path": "internal/events/telemetry.go",
+      "line": 45,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.085-T"
+    },
+    {
+      "path": "internal/gateevidence/formal.go",
+      "line": 223,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1003: could use tagged switch on schema",
+      "owner_task_id": "175.029-T"
+    },
+    {
+      "path": "internal/hooks/webhook.go",
+      "line": 172,
+      "column": 24,
+      "linter": "errcheck",
+      "message": "Error return value of `resp.Body.Close` is not checked",
+      "owner_task_id": "175.030-T"
+    },
+    {
+      "path": "internal/mcp/contract_consistency_test.go",
+      "line": 196,
+      "column": 38,
+      "linter": "errcheck",
+      "message": "Error return value of `(*github.com/softwaresalt/backlogit/internal/core.Workspace).Close` is not checked",
+      "owner_task_id": "175.031-T"
+    },
+    {
+      "path": "internal/mcp/dynamic_test.go",
+      "line": 31,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.033-T"
+    },
+    {
+      "path": "internal/mcp/dynamic_test.go",
+      "line": 85,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.033-T"
+    },
+    {
+      "path": "internal/mcp/export_command_map_test.go",
+      "line": 38,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.031-T"
+    },
+    {
+      "path": "internal/mcp/merge_sync_harness_test.go",
+      "line": 98,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.032-T"
+    },
+    {
+      "path": "internal/mcp/metadata_parity_test.go",
+      "line": 36,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.086-T"
+    },
+    {
+      "path": "internal/mcp/reliability_test.go",
+      "line": 42,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `s.Workspace.Close` is not checked",
+      "owner_task_id": "175.032-T"
+    },
+    {
+      "path": "internal/mcp/section_bugs_test.go",
+      "line": 37,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.086-T"
+    },
+    {
+      "path": "internal/mcp/server_init_test.go",
+      "line": 49,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.033-T"
+    },
+    {
+      "path": "internal/mcp/server_init_test.go",
+      "line": 67,
+      "column": 30,
+      "linter": "errcheck",
+      "message": "Error return value of `ws1.Close` is not checked",
+      "owner_task_id": "175.033-T"
+    },
+    {
+      "path": "internal/mcp/server_init_test.go",
+      "line": 106,
+      "column": 38,
+      "linter": "errcheck",
+      "message": "Error return value of `(*github.com/softwaresalt/backlogit/internal/core.Workspace).Close` is not checked",
+      "owner_task_id": "175.033-T"
+    },
+    {
+      "path": "internal/stash/jsonl.go",
+      "line": 100,
+      "column": 12,
+      "linter": "errcheck",
+      "message": "Error return value of `tmp.Close` is not checked",
+      "owner_task_id": "175.034-T"
+    },
+    {
+      "path": "internal/stash/jsonl.go",
+      "line": 101,
+      "column": 12,
+      "linter": "errcheck",
+      "message": "Error return value of `os.Remove` is not checked",
+      "owner_task_id": "175.034-T"
+    },
+    {
+      "path": "internal/stash/jsonl.go",
+      "line": 105,
+      "column": 12,
+      "linter": "errcheck",
+      "message": "Error return value of `os.Remove` is not checked",
+      "owner_task_id": "175.034-T"
+    },
+    {
+      "path": "internal/stash/jsonl.go",
+      "line": 109,
+      "column": 12,
+      "linter": "errcheck",
+      "message": "Error return value of `os.Remove` is not checked",
+      "owner_task_id": "175.034-T"
+    },
+    {
+      "path": "internal/stash/jsonl_test.go",
+      "line": 124,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.035-T"
+    },
+    {
+      "path": "internal/telemetry/checkpoint_test.go",
+      "line": 112,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.036-T"
+    },
+    {
+      "path": "internal/telemetry/checkpoint_test.go",
+      "line": 141,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.036-T"
+    },
+    {
+      "path": "internal/telemetry/checkpoint_test.go",
+      "line": 172,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.036-T"
+    },
+    {
+      "path": "internal/telemetry/context_window_test.go",
+      "line": 139,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/correlator.go",
+      "line": 212,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.088-T"
+    },
+    {
+      "path": "internal/telemetry/events_harvest.go",
+      "line": 304,
+      "column": 20,
+      "linter": "errcheck",
+      "message": "Error return value of `tcFile.Close` is not checked",
+      "owner_task_id": "175.037-T"
+    },
+    {
+      "path": "internal/telemetry/events_harvest.go",
+      "line": 310,
+      "column": 20,
+      "linter": "errcheck",
+      "message": "Error return value of `sfFile.Close` is not checked",
+      "owner_task_id": "175.037-T"
+    },
+    {
+      "path": "internal/telemetry/events_harvest.go",
+      "line": 339,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.037-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 244,
+      "column": 12,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 263,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 289,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 401,
+      "column": 11,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 402,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `os.Remove` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 440,
+      "column": 11,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 441,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `os.Remove` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 449,
+      "column": 11,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 450,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `os.Remove` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 467,
+      "column": 11,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 468,
+      "column": 13,
+      "linter": "errcheck",
+      "message": "Error return value of `os.Remove` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 474,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 475,
+      "column": 12,
+      "linter": "errcheck",
+      "message": "Error return value of `os.Remove` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 479,
+      "column": 12,
+      "linter": "errcheck",
+      "message": "Error return value of `os.Remove` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest.go",
+      "line": 489,
+      "column": 12,
+      "linter": "errcheck",
+      "message": "Error return value of `os.Remove` is not checked",
+      "owner_task_id": "175.087-T"
+    },
+    {
+      "path": "internal/telemetry/harvest_since_test.go",
+      "line": 80,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.037-T"
+    },
+    {
+      "path": "internal/telemetry/harvest_since_test.go",
+      "line": 98,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.037-T"
+    },
+    {
+      "path": "internal/telemetry/harvest_since_test.go",
+      "line": 116,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.037-T"
+    },
+    {
+      "path": "internal/telemetry/harvest_since_test.go",
+      "line": 141,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.037-T"
+    },
+    {
+      "path": "internal/telemetry/harvest_test.go",
+      "line": 46,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.036-T"
+    },
+    {
+      "path": "internal/telemetry/harvest_test.go",
+      "line": 64,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.036-T"
+    },
+    {
+      "path": "internal/telemetry/harvest_test.go",
+      "line": 82,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.036-T"
+    },
+    {
+      "path": "internal/telemetry/harvest_test.go",
+      "line": 121,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.036-T"
+    },
+    {
+      "path": "internal/telemetry/harvest_test.go",
+      "line": 136,
+      "column": 22,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.036-T"
+    },
+    {
+      "path": "internal/telemetry/helpers_test.go",
+      "line": 17,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `db.Close` is not checked",
+      "owner_task_id": "175.088-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 196,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 198,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 214,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 274,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 275,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 277,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 318,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 357,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 555,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 557,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 570,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 591,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 657,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 658,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.045-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 666,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 679,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 680,
+      "column": 2,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 683,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 739,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 764,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 882,
+      "column": 4,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 896,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 899,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 925,
+      "column": 4,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 1001,
+      "column": 4,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 1014,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 1017,
+      "column": 3,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/reporter.go",
+      "line": 1033,
+      "column": 4,
+      "linter": "staticcheck",
+      "message": "QF1012: Use fmt.Fprintf(...) instead of WriteString(fmt.Sprintf(...))",
+      "owner_task_id": "175.038-T"
+    },
+    {
+      "path": "internal/telemetry/session_events.go",
+      "line": 95,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.089-T"
+    },
+    {
+      "path": "internal/telemetry/session_store.go",
+      "line": 28,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `db.Close` is not checked",
+      "owner_task_id": "175.039-T"
+    },
+    {
+      "path": "internal/telemetry/session_store.go",
+      "line": 34,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `rows.Close` is not checked",
+      "owner_task_id": "175.039-T"
+    },
+    {
+      "path": "internal/telemetry/session_store_test.go",
+      "line": 42,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `db.Close` is not checked",
+      "owner_task_id": "175.089-T"
+    },
+    {
+      "path": "internal/telemetry/shipment_040_report_harness_test.go",
+      "line": 62,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.039-T"
+    },
+    {
+      "path": "internal/telemetry/shipment_040_report_harness_test.go",
+      "line": 73,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `storeDB.Close` is not checked",
+      "owner_task_id": "175.039-T"
+    },
+    {
+      "path": "internal/telemetry/shipment_040_report_harness_test.go",
+      "line": 126,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.039-T"
+    },
+    {
+      "path": "internal/telemetry/shipment_040_report_harness_test.go",
+      "line": 159,
+      "column": 35,
+      "linter": "errcheck",
+      "message": "Error return value of `sqliteDB.Close` is not checked",
+      "owner_task_id": "175.039-T"
+    },
+    {
+      "path": "tests/contract/dep_type_parity_test.go",
+      "line": 45,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.090-T"
+    },
+    {
+      "path": "tests/contract/hook_events_test.go",
+      "line": 33,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.091-T"
+    },
+    {
+      "path": "tests/contract/merge_sync_contract_test.go",
+      "line": 129,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.091-T"
+    },
+    {
+      "path": "tests/contract/telemetry_tool_test.go",
+      "line": 44,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.090-T"
+    },
+    {
+      "path": "tests/contract/telemetry_tool_test.go",
+      "line": 119,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.090-T"
+    },
+    {
+      "path": "tests/contract/tools_expansion_test.go",
+      "line": 32,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.092-T"
+    },
+    {
+      "path": "tests/contract/tools_real_test.go",
+      "line": 36,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.092-T"
+    },
+    {
+      "path": "tests/integration/merge_sync_integration_test.go",
+      "line": 62,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.094-T"
+    },
+    {
+      "path": "tests/integration/shipment_workflow_test.go",
+      "line": 34,
+      "column": 29,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.094-T"
+    },
+    {
+      "path": "tests/integration/shipment_workflow_test.go",
+      "line": 57,
+      "column": 16,
+      "linter": "errcheck",
+      "message": "Error return value of `f2.Close` is not checked",
+      "owner_task_id": "175.094-T"
+    },
+    {
+      "path": "tests/integration/shipment_workflow_test.go",
+      "line": 128,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.094-T"
+    },
+    {
+      "path": "tests/integration/shipment_workflow_test.go",
+      "line": 134,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `ws2.Close` is not checked",
+      "owner_task_id": "175.094-T"
+    },
+    {
+      "path": "tests/integration/shipment_workflow_test.go",
+      "line": 244,
+      "column": 15,
+      "linter": "errcheck",
+      "message": "Error return value of `f.Close` is not checked",
+      "owner_task_id": "175.094-T"
+    },
+    {
+      "path": "tests/integration/shipment_workflow_test.go",
+      "line": 266,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.094-T"
+    },
+    {
+      "path": "tests/integration/shipment_workflow_test.go",
+      "line": 272,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `ws2.Close` is not checked",
+      "owner_task_id": "175.094-T"
+    },
+    {
+      "path": "tests/integration/workflow_test.go",
+      "line": 90,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.093-T"
+    },
+    {
+      "path": "tests/integration/workflow_test.go",
+      "line": 111,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.093-T"
+    },
+    {
+      "path": "tests/integration/workflow_test.go",
+      "line": 134,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.093-T"
+    },
+    {
+      "path": "tests/integration/workflow_test.go",
+      "line": 154,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.093-T"
+    },
+    {
+      "path": "tests/integration/workflow_test.go",
+      "line": 175,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.093-T"
+    },
+    {
+      "path": "tests/integration/workflow_test.go",
+      "line": 186,
+      "column": 17,
+      "linter": "errcheck",
+      "message": "Error return value of `ws2.Close` is not checked",
+      "owner_task_id": "175.093-T"
+    },
+    {
+      "path": "tests/integration/workflow_test.go",
+      "line": 202,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.093-T"
+    },
+    {
+      "path": "tests/integration/workflow_test.go",
+      "line": 227,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.093-T"
+    },
+    {
+      "path": "tests/integration/workflow_test.go",
+      "line": 276,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.093-T"
+    },
+    {
+      "path": "tests/integration/workflow_test.go",
+      "line": 303,
+      "column": 10,
+      "linter": "errcheck",
+      "message": "Error return value of `ws.Close` is not checked",
+      "owner_task_id": "175.093-T"
+    }
+  ],
+  "surface_exclusions": {
+    "windows": [],
+    "linux": [
+      "internal/core/shipment_reconcile_append_windows.go|90|18|errcheck|Error return value of `file.Close` is not checked",
+      "internal/core/shipment_reconcile_evidence_windows.go|56|18|errcheck|Error return value of `file.Close` is not checked",
+      "internal/core/shipment_reconcile_fs_windows.go|154|21|errcheck|Error return value of `dirFile.Close` is not checked",
+      "internal/core/shipment_reconcile_snapshot_windows.go|66|18|errcheck|Error return value of `file.Close` is not checked"
+    ]
+  },
+  "additional_findings": [
+    {
+      "path": "internal/core/shipment_reconcile_append_unix.go",
+      "line": 27,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `dirFile.Close` is not checked",
+      "owner_task_id": "175.095-T",
+      "goos": "linux"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_append_unix.go",
+      "line": 40,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `file.Close` is not checked",
+      "owner_task_id": "175.095-T",
+      "goos": "linux"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_evidence_unix.go",
+      "line": 99,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `file.Close` is not checked",
+      "owner_task_id": "175.095-T",
+      "goos": "linux"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_fs_unix.go",
+      "line": 30,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `dirFile.Close` is not checked",
+      "owner_task_id": "175.096-T",
+      "goos": "linux"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_lock_unix.go",
+      "line": 30,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `dirFile.Close` is not checked",
+      "owner_task_id": "175.096-T",
+      "goos": "linux"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_snapshot_unix.go",
+      "line": 32,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `dirFile.Close` is not checked",
+      "owner_task_id": "175.097-T",
+      "goos": "linux"
+    },
+    {
+      "path": "internal/core/shipment_reconcile_snapshot_unix.go",
+      "line": 39,
+      "column": 18,
+      "linter": "errcheck",
+      "message": "Error return value of `file.Close` is not checked",
+      "owner_task_id": "175.097-T",
+      "goos": "linux"
+    },
+    {
+      "path": "internal/events/item_log_lock_unix.go",
+      "line": 39,
+      "column": 21,
+      "linter": "errcheck",
+      "message": "Error return value of `dirFile.Close` is not checked",
+      "owner_task_id": "175.098-T",
+      "goos": "linux"
+    }
+  ]
+}

@@ -1,11 +1,13 @@
 # Wave scheduler contract simulation
 
 `wave-scheduler-contract.json` is a tracked, read-only fixture that pins the behaviour of the
-**P-002.6 dependency-aware wave scheduler** (`.github/policies/workflow-policies.md`) against
-shipment `130-S` and its live backlog artifacts. The shipment contains **44** explicit members;
-the scheduler's `M` is exactly its **43 task-type IDs**. The excluded non-task report is
-`147-F=feature`. The explicit non-shipment fallback is the same closed 43-ID task set; retired
-archived sibling `147.010-T` is in neither source and can never enter a snapshot.
+**P-002.6 dependency-aware wave scheduler** (`.github/policies/workflow-policies.md`). The primary
+scheduler corpus is shipment `130-S`: **44** explicit members and exactly **43 task-type IDs** in
+`M`. Queue-backed verification also projects baseline-convergence shipment `156-S` dynamically:
+the release-unit feature and executable task set come from the live shipment. The simulator
+derives the exact role partition, dependency edge set/count, unique source/sink, reachability,
+acyclic Kahn wave decomposition, and terminal coverage, then exact-compares every value with the
+canonical feature contract.
 
 It exists because the scheduler is a *contract executed by agents*, not compiled code: nothing in
 the Go test suite can fail when the contract regresses. The fixture plus its runner make the
@@ -15,9 +17,11 @@ contract reproducibly checkable by a human, by CI, or by an agent at a gate poin
 
 ```pwsh
 pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1
+pwsh -NoProfile -File tests/simulation/lint-runtime-tests.ps1
 ```
 
-Add `-VerifyAgainstQueue` to parse `.backlogit/queue/130-S.md`,
+Add `-VerifyAgainstQueue` to parse `.backlogit/queue/130-S.md` and
+`.backlogit/queue/156-S.md`,
 `.backlogit/config.yaml` status values, and `.autoharness/backlog-registry.yaml` status
 mapping/features; resolve every listed artifact's type; filter task IDs into `M`; exact-compare
 manifest `M` with the explicit fallback set; report excluded non-task IDs; and fail on drift:
@@ -25,6 +29,13 @@ manifest `M` with the explicit fallback set; report excluded non-task IDs; and f
 ```pwsh
 pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue
 ```
+
+When a live `baseline-lint-convergence-contract` exists, also pass its operator-supplied opaque
+record identity as `-OperatorAuthorizationRecord <record>`. The repository block cannot
+authenticate itself. Until Stage authors the current block and machine inventory on the shipment's
+release-unit feature, `-VerifyAgainstQueue` intentionally fails its Stage-contract-presence or
+contract-validity assertion; that preclaim failure is the executable readiness blocker, not a
+harness simulation failure to waive.
 
 Verification compares the exact filtered and fallback task-ID sets, configured status sources,
 statuses, dependencies, exemption metadata, the optional green-regression projection, and **all
@@ -36,15 +47,134 @@ inclusion, every red-contract-key mutation, and a non-empty green-regression mut
 Three parser controls also require a green-regression payload to be a JSON object whose
 `green_regression_cmds` value is an array, and 18 red-deliverable branch controls pin
 `build-feature` Step 0.5 routing and result classification (see *Red-deliverable branch controls*
-below). Both control suites run unconditionally, with or without `-VerifyAgainstQueue`.
+below). Additional controls parse task-lint contracts, reject missing/vacuous/native-failure-masked
+commands, accept one exact owned file or a small explicitly enumerated set of owned files and
+ordinal finding identities, exercise strict and explicit baseline-convergence lint modes,
+exact-compare intermediate residual finding identities, require zero-warning global lint at the
+terminal boundary, and validate the exact governed claim-path union before and after a
+verification-only commit.
 
 The runner prints one line per scenario and a final `WAVE_SIM_OK: {pass}/{total} assertions PASS`
-line, exiting non-zero on any failed assertion. The current totals are **186 assertions** with
-`-VerifyAgainstQueue` and **164** without, across 21 scheduler scenarios plus 21 controls. It is
-**pure**: it reads the fixture and backlog
-Markdown, computes and mutates copies in memory, and writes nothing. It starts no process, runs no
-`go` command, and mutates no repository state, so it clears the P-002.5 read-only command screen
-and is safe to run at any gate point.
+line, exiting non-zero on any failed assertion. Assertion totals are derived from the fixture and
+optional live projection rather than pinned here. It is **read-only**: it reads the fixture and
+backlog Markdown, computes and mutates copies in memory, and writes nothing. It runs no `go`
+command; when a live
+baseline-convergence block exists, it uses only read-only Git/file hashing to verify that the
+machine inventory is committed and digest-bound.
+
+## Baseline lint and claim controls
+
+`lint_mode` defaults to `strict`, where unmodified `golangci-lint run` must be green at each wave.
+The simulator accepts `baseline-convergence` only through the canonical release-unit JSON block.
+Its `member_scope` must exactly equal every executable shipment task. Exactly one
+`baseline-control` task is the unique source, one or more `finding-remediation` tasks each own at
+least one exact inventory finding, zero or more `support` tasks own no inventory findings, and
+exactly one `terminal-convergence` task is the unique sink. Control and terminal tasks also own no
+findings. Support tasks remain exact digest/status/task-lint members of the release unit, may have
+dependencies, and may gate terminal convergence. The graph must be acyclic, every edge must stay
+inside the member set, and every member—including support—must be reachable from control and able
+to reach terminal. Generic controls cover a valid connected support chain plus support ownership,
+missing support task lint, hidden/off-catalog support, disconnected support, support without a path
+to terminal, missing members, duplicate roles, cycles, multiple sinks, and incomplete terminal
+coverage.
+At intermediate waves the observed normalized repository-wide finding set must equal exactly the
+committed baseline rows owned by unfinished `finding-remediation` tasks. Support status cannot
+remove or retain a finding; an explicit negative control rejects residual allowance derived from
+support completion. New, missing, moved, changed-linter, malformed, or unowned findings fail. At
+the declared terminal task, the residual must be empty and the frozen supported-platform terminal
+command must pass.
+
+The block's intermediate command is a byte-exact invocation of
+`scripts/verify-baseline-lint.ps1`, binding the inventory path and SHA-256 plus shipment, feature,
+and terminal task. The verifier resolves tasks across queue/archive by lifecycle, rejects
+duplicates and status/location mismatches, binds immutable canonical task-lint JSON digests,
+requires golangci-lint v2.13.2, validates the machine-readable finding schema, preserves native and
+parser failures, and emits a success marker only after exact Windows and Linux residual equality.
+The primary inventory is Windows-scoped; Linux exclusions and Linux-only rows are explicit, so a
+Windows host is never described as covering Unix-tagged files. Terminal convergence uses
+`scripts/verify-terminal-lint.ps1` and requires zero findings for both GOOS values; GitHub CI runs
+the pinned Linux surface natively.
+
+Every `task_lint_cmd` is the short canonical
+`pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId <task> -FeatureId <feature>` form;
+inline PowerShell programs are rejected. A no-Go task requires explicit `-Phase Schema`,
+`-Phase PreCommit`, or `-Phase PostCommit` at the corresponding workflow gate; the unsuffixed
+stored command cannot pass its completion gate. The package set must equal the owned-file directory
+package set, and native `go list` under each supported GOOS determines file participation. Across
+those packages, the task runner permits only exact inventory identities owned by unfinished other
+tasks to remain, preserving later slices without admitting new, moved, linter-changed, message-changed,
+or terminal-owner findings. For a harness-exempt task, `governed_claim_delta` is not an allowlist. Its task/event paths must be
+registry-derived, its before/after digests and status/event transitions must validate, and the
+pre-commit working set must equal the task-owned deliverable union with that governed claim delta.
+Build-feature invokes the runner with `-Phase PreCommit`. Ship invokes it with
+`-Phase PostCommit`; the commit must equal the task-owned set, the working set must equal the
+governed claim set, and their combined union must remain exact. The unsuffixed command performs
+schema screening only. Omitted claim paths, uncommitted deliverables, and extra admitted paths are
+negative controls.
+Queue-backed topology controls mutate a member count, role partition, edge, edge count, source,
+sink, wave, and terminal coverage; each mutation must be rejected.
+
+## Canonical Stage adoption schema
+
+Each member keeps its existing structured `lint_scope` for
+`bounded-finding-set-go-lint` or `harness-file-scoped-go-lint`, but replaces copied program text
+with:
+
+```json
+{
+  "task_lint_cmd": "pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId 900.001-T -FeatureId 900-F",
+  "lint_scope": {},
+  "non_vacuity_evidence": {
+    "success_marker": "TASK-LINT-OK:900.001-T:finding-remediation"
+  }
+}
+```
+
+The shown empty `lint_scope` is a placeholder for the task's real closed structured scope, not a
+valid value. A terminal verification-only member uses exactly:
+
+```json
+{
+  "kind": "no-go-lint-surface",
+  "owned_paths": ["docs/closure/example.md"],
+  "governed_claim_paths": [
+    ".backlogit/queue/900.005-T.md",
+    ".backlogit/hooks_queue.jsonl"
+  ]
+}
+```
+
+Each `member_scope` row binds `task_contract_sha256`, computed over the compact canonical JSON of
+that task's complete `task-lint-contract`. The baseline inventory has this exact top-level shape:
+
+```json
+{
+  "primary_goos": "windows",
+  "supported_goos": ["windows", "linux"],
+  "findings": [],
+  "surface_exclusions": {
+    "windows": [],
+    "linux": ["path|line|column|linter|message"]
+  },
+  "additional_findings": [
+    {
+      "goos": "linux",
+      "path": "path",
+      "line": 1,
+      "column": 1,
+      "linter": "errcheck",
+      "message": "message",
+      "owner_task_id": "900.002-T"
+    }
+  ]
+}
+```
+
+`findings` is the primary Windows set. `surface_exclusions.linux` lists only primary identities
+absent on Linux; `additional_findings` lists only identities absent from the primary set. The
+feature's `baseline_inventory.finding_count` is the union count. The feature also declares
+`supported_goos`, exact `topology`, the canonical intermediate command including `-FeatureId`, and
+the canonical terminal command described above.
 
 ## What it checks
 
@@ -111,9 +241,12 @@ newly created file would otherwise satisfy an empty-delta claim.
 
 ## Keeping it honest
 
-* The fixture mirrors the real shipment projection. `-VerifyAgainstQueue` is the drift gate: run
-  it whenever shipment/fallback membership, a status source, a member type, a dependency edge, an
-  exemption label, a `red-deliverable-contract`, or a `green-regression-contract` changes.
+* The fixture mirrors the primary scheduler shipment. For baseline convergence,
+  `-VerifyAgainstQueue` derives authority from the canonical feature block and live shipment
+  instead of mirroring its topology. Run it whenever shipment/fallback membership, a status source,
+  a member type, a dependency edge, an exemption label, a `red-deliverable-contract`, a
+  `green-regression-contract`, a `task-lint-contract`, or a release-unit
+  `baseline-lint-convergence-contract` changes.
 * Every expectation lives in the fixture, not in the runner. A contract change is a fixture change,
   and it shows up as a diff.
 * The runner implements the contract; it does not implement the repository. It proves the wave
