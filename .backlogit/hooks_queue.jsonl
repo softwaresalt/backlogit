@@ -3682,3 +3682,4 @@
 {"seq":3684,"timestamp":"2026-09-19T07:39:20.9262004Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.096-T","schema_version":1}}
 {"seq":3685,"timestamp":"2026-09-19T07:39:35.2295088Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.097-T","schema_version":1}}
 {"seq":3686,"timestamp":"2026-09-19T07:39:49.6799842Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.098-T","schema_version":1}}
+{"seq":3687,"timestamp":"2026-09-19T07:47:52.3283003Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"feature","changed_fields":["priority"],"item_id":"175-F","schema_version":1}}
