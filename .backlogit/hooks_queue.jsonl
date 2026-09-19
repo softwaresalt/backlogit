@@ -3478,3 +3478,4 @@
 {"seq":3480,"timestamp":"2026-09-19T01:47:43.2258559Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.092-T","schema_version":1}}
 {"seq":3481,"timestamp":"2026-09-19T01:48:07.1447755Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.093-T","schema_version":1}}
 {"seq":3482,"timestamp":"2026-09-19T01:48:30.0870147Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.094-T","schema_version":1}}
+{"seq":3483,"timestamp":"2026-09-19T01:51:55.6697703Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"feature","changed_fields":["priority"],"item_id":"175-F","schema_version":1}}
