@@ -66,20 +66,20 @@ try {
     if ($digest -cne $InventorySha256) { throw 'inventory-digest' }
 
     try {
-        $inventory = Get-Content -LiteralPath $inventoryPath -Raw |
+        $inventoryData = Get-Content -LiteralPath $inventoryPath -Raw |
             ConvertFrom-Json -NoEnumerate -DateKind String -ErrorAction Stop
     }
     catch { throw 'inventory-json' }
     foreach ($name in @(
             'primary_goos', 'supported_goos', 'findings',
             'surface_exclusions', 'additional_findings')) {
-        if ($inventory.PSObject.Properties.Name -cnotcontains $name) {
+        if ($inventoryData.PSObject.Properties.Name -cnotcontains $name) {
             throw "inventory-schema:$name"
         }
     }
-    Assert-PlatformInventoryShape -Inventory $inventory
-    $primaryRows = @($inventory.findings)
-    $additionalRows = @($inventory.additional_findings)
+    Assert-PlatformInventoryShape -Inventory $inventoryData
+    $primaryRows = @($inventoryData.findings)
+    $additionalRows = @($inventoryData.additional_findings)
     if ($primaryRows.Count -lt 1) { throw 'empty-inventory' }
 
     $shipmentArtifact = Resolve-CanonicalArtifact -Root $root -Id $Shipment
@@ -177,8 +177,8 @@ try {
     [void](Assert-GolangCILintVersion -Root $root)
     $residualUnion = [System.Collections.Generic.HashSet[string]]::new(
         [System.StringComparer]::Ordinal)
-    foreach ($goos in @($inventory.supported_goos)) {
-        $exclusions = @($inventory.surface_exclusions.$goos)
+    foreach ($goos in @($inventoryData.supported_goos)) {
+        $exclusions = @($inventoryData.surface_exclusions.$goos)
         foreach ($key in $exclusions) {
             if (-not $rowByKey.ContainsKey("$key") -or
                 @($primaryRows | Where-Object {

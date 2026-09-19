@@ -107,22 +107,26 @@ jobs:
       - name: Install dependencies
         if: needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false'
         run: go mod download
+      - name: Install pinned golangci-lint
+        if: needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false'
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.2
+          install-only: true
       - name: Verify lint runtime contracts
         if: needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false'
         shell: pwsh
         run: |
           pwsh -NoProfile -File tests/simulation/lint-runtime-tests.ps1
+          pwsh -NoProfile -File tests/simulation/ci-lint-gate-tests.ps1
           pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -Quiet
       - name: Lint
         if: needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false'
-        # Native Linux is the mandatory CI lint surface. The terminal release
-        # gate separately runs the same pinned binary for both linux and
-        # windows GOOS; neither host is claimed to cover the other's tagged
-        # source by itself.
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          version: v2.13.2
-          args: --timeout=5m --max-issues-per-linter=0 --max-same-issues=0 --uniq-by-line=false
+        # Unfinished baseline-convergence units use their exact authorized
+        # residual contract. All other states retain the pinned zero-warning
+        # global gate, including terminal convergence.
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/verify-ci-lint-gate.ps1
       - name: Vet
         if: needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false'
         run: go vet ./...
