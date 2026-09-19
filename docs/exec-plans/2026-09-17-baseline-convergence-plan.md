@@ -100,7 +100,8 @@ terminal-convergence members own zero findings.
 Every remediation task carries a canonical
 `<!-- BEGIN:task-lint-contract -->` block with a frozen `task_lint_cmd`, a closed
 `lint_scope`, and `non_vacuity_evidence`, per the installed harness contract. The
-`task_lint_cmd` is a bounded file-scoped lint verifier (FSLV) that:
+`task_lint_cmd` is a bounded finding-set lint verifier
+(`lint_scope.kind: bounded-finding-set-go-lint`) that:
 
 1. **Proves target participation before filtering (target-vacuity guard).** For
    each owned Go file it fails closed unless the file exists, is tracked
@@ -117,12 +118,12 @@ Every remediation task carries a canonical
 3. **Validates schema before filtering:** empty stdout, malformed JSON, JSON
    `null`, a non-object root, missing `Issues`, or a non-collection `Issues` are
    hard failures; unknown/vacuous success shapes are rejected.
-4. **Matches owned identities by ordinal exact identity.** Non-slice tasks match
-   the owned path(s) with any-linter ordinal path identity; slice tasks match the
-   exact `path|line|column|linter` identity set. The verifier fails if any owned
-   finding remains, and emits its success marker only when zero owned findings are
-   observed. `Issues: []` counts as success only after target participation is
-   proven.
+4. **Matches owned identities by ordinal exact identity.** Each remediation task
+   matches its exact owned `path|line|column|linter|message` finding identity set
+   (1-16 identities over 1-2 owned files/packages) by ordinal set equality. The
+   verifier fails if any owned finding remains, and emits its success marker only
+   when zero owned findings are observed. `Issues: []` counts as success only
+   after target participation is proven.
 
 The `task_lint_cmd` is **task-scoped only**. The full repository
 `golangci-lint run` is deferred to mandatory terminal convergence and is never
@@ -135,8 +136,9 @@ U40 (`175.040-T`) owns exactly `scripts/check-line-endings.ps1` plus its harness
 `tests/lineendings_data_guard_175_test.go` (`TestU175_040_...`). It depends on U1.
 The script performs fixed-set `.gitattributes` contract, worktree EOL, and
 index/blob normalization checks. U40 owns zero lint findings and uses a
-harness-path FSLV (any-linter over its owned `*_175_test.go` harness path with the
-target-vacuity guard).
+harness-file-scoped lint verifier (`lint_scope.kind: harness-file-scoped-go-lint`,
+any-linter over its owned `*_175_test.go` harness path with the target-vacuity
+guard).
 
 ## U14 - Dedicated Line-Ending Guard Workflow (support)
 
@@ -146,7 +148,8 @@ U14 (`175.014-T`) owns only the new always-running
 the workflow invokes `scripts/check-line-endings.ps1`. Security criteria:
 `permissions: contents: read`, full-SHA checkout pin, `persist-credentials: false`,
 and a safe concurrency group/cancel. `.github/workflows/ci.yml` remains
-byte-identical. U14 owns zero lint findings and uses a harness-path FSLV.
+byte-identical. U14 owns zero lint findings and uses a harness-file-scoped lint
+verifier (`lint_scope.kind: harness-file-scoped-go-lint`).
 
 ## U12 - Terminal Verification Sink (terminal-convergence)
 
@@ -189,7 +192,7 @@ owned delta carries no lintable Go surface (`no-go-lint-surface` prover, exits
 ## Dynamic DAG
 
 The DAG is acyclic with **94 members and 177 edges** across
-**10 bounded waves** (~9-9
+**10 bounded remediation waves** (~9
 remediation tasks per wave):
 
 - **U1 (`175.001-T`) is the unique source** (in-degree 0). Its direct dependents
@@ -259,14 +262,14 @@ into this single baseline-convergence covering feature.
   one enormous wave.
 - Line-ending remediation is centralized in U1 (root cause) and guarded by U40 +
   U14 so drift cannot silently return.
-- Task-scoped lint per member with a proven-non-vacuous FSLV avoids false green,
-  while the mandatory terminal `golangci-lint run` guarantees repository-wide
-  zero-warning convergence.
+- Task-scoped lint per member with a proven-non-vacuous task-lint verifier avoids
+  false green, while the mandatory terminal `golangci-lint run` guarantees
+  repository-wide zero-warning convergence.
 
 ## Risks and Mitigations
 
-- **FSLV false green** (default caps suppress same-message findings): mitigated by
-  uncapped flags and schema-before-filter validation.
+- **Task-lint false green** (default caps suppress same-message findings):
+  mitigated by uncapped flags and schema-before-filter validation.
 - **Target vacuity** (linting a file that does not participate in analysis):
   mitigated by the go-list/package-membership target-vacuity guard, with a Windows
   host guard for Windows-only files.
@@ -298,7 +301,7 @@ adversarial review and post-remediation re-review. Residual P0=0, P1=0.
 ## Runtime Verification and Closure
 
 Ship executes the DAG wave by wave: each member turns its own
-`^TestU175_<NNN>_` selector green and satisfies its task-scoped FSLV; the
+`^TestU175_<NNN>_` selector green and satisfies its task-scoped lint verifier; the
 intermediate-wave verifier enforces exact remaining-baseline monotonicity against
 the governed inventory; terminal convergence at U12 requires all four mandatory
 gates green including a zero-warning `golangci-lint run`, the `//nolint` inventory

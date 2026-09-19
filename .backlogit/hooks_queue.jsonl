@@ -3571,3 +3571,4 @@
 {"seq":3573,"timestamp":"2026-09-19T03:10:05.6988926Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.092-T","schema_version":1}}
 {"seq":3574,"timestamp":"2026-09-19T03:10:28.3842257Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.093-T","schema_version":1}}
 {"seq":3575,"timestamp":"2026-09-19T03:10:51.4881624Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"175.094-T","schema_version":1}}
+{"seq":3576,"timestamp":"2026-09-19T03:17:34.8797178Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"feature","changed_fields":["priority"],"item_id":"175-F","schema_version":1}}
