@@ -14,6 +14,19 @@ docline:
 
 # Baseline-Convergence Verifier Invocation Mismatch (Fail-Closed STOP)
 
+## Resolution
+
+**Resolved and superseded.** The operator subsequently authorized the full-baseline
+rescope that this STOP record required. The verifier's unbounded invocation is the
+authoritative truth: shipment 156-S / feature 175-F binds the complete 489-finding
+golangci-lint v2.13.2 baseline across 160 files (459 errcheck + 30 staticcheck). The
+former 56-finding figure was golangci-lint display-cap truncation and is no longer
+authoritative. The current binding and its session-scoped authorization live in
+`docs/decisions/baseline-lint-inventory-489.json`, the `175-F` canonical
+baseline-convergence contract, and
+`docs/decisions/2026-09-17-baseline-convergence-authorization.md`. The fail-closed STOP
+below is retained as historical decision evidence.
+
 ## Decision
 
 Stage **stops and reports** rather than binding the `baseline-lint-convergence-contract`

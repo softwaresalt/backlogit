@@ -8,7 +8,7 @@ description: "Deliberation grouping two deferred-scope-expansion stash entries i
 docline:
   topic: "Baseline convergence: CRLF golden-fixture failure + repository-wide lint/gofmt drift"
   depth: "standard"
-  decision_status: "decided"
+  decision_status: "superseded"
   promoted_to: "plan"
   linked_artifacts:
     - "docs/exec-plans/2026-09-17-baseline-convergence-plan.md"
@@ -22,6 +22,19 @@ docline:
 ---
 
 # Repository Baseline Convergence Release Unit
+
+## Status
+
+**Superseded.** This deliberation establishes the grouping decision that combines the
+two deferred-scope-expansion stash entries (`92F79833`, `4DB1DFF1`) into one
+baseline-convergence covering feature (`175-F`), and that grouping stands. Its original
+task decomposition is superseded: the release unit is rescoped to the complete unbounded
+golangci-lint v2.13.2 baseline of 489 findings across 160 files. The current authoritative
+decomposition — 94 members, 177 edges, 10 remediation waves — lives in
+`docs/exec-plans/2026-09-17-baseline-convergence-plan.md`, the committed inventory
+`docs/decisions/baseline-lint-inventory-489.json`, and the `175-F` canonical
+baseline-convergence contract. The option analysis below is retained as historical
+decision evidence at its original abstraction.
 
 ## Problem Frame
 
@@ -133,9 +146,10 @@ The complete file-to-task mapping lives in
 truth for linter, flagged file, finding lines, package, affected functions,
 scenario bounds, and reserved harness paths.
 
-Repurposed IDs are intentional. `175.002-T` through `175.011-T` and `175.013-T`
-are now file-owned lint tasks. New IDs `175.015-T` through `175.039-T` complete
-the 36 flagged-file coverage. U12 and U14 retain their specialized meanings.
+ID assignments in this original decomposition were intentional: `175.002-T` through
+`175.011-T` and `175.013-T` were file-owned lint tasks. New IDs `175.015-T` through
+`175.039-T` completed the 36 flagged-file coverage. U12 and U14 retained their
+specialized meanings.
 
 ## Unit Contracts
 
