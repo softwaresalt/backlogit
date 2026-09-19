@@ -118,15 +118,36 @@ jobs:
         shell: pwsh
         run: |
           pwsh -NoProfile -File tests/simulation/lint-runtime-tests.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pwsh -NoProfile -File tests/simulation/ci-lint-gate-tests.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -Quiet
-      - name: Lint
-        if: needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Lint (authorized baseline convergence)
+        if: >-
+          (needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false') &&
+          vars.BASELINE_CONVERGENCE_AUTHORIZATION_RECORD == 'docs/decisions/2026-09-17-baseline-convergence-authorization.md' &&
+          (
+            github.head_ref == 'stage/baseline-convergence-main' ||
+            contains(github.event.pull_request.labels.*.name, 'baseline-convergence:156-S')
+          )
         # Unfinished baseline-convergence units use their exact authorized
-        # residual contract. All other states retain the pinned zero-warning
-        # global gate, including terminal convergence.
+        # residual contract only when repository metadata supplies the exact
+        # authorization identity and the PR opts into shipment 156-S. The
+        # staging branch is the one-time bootstrap path for PR #448.
         shell: pwsh
         run: pwsh -NoProfile -File scripts/verify-ci-lint-gate.ps1
+      - name: Lint (strict zero-warning)
+        if: >-
+          (needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false') &&
+          !(
+            vars.BASELINE_CONVERGENCE_AUTHORIZATION_RECORD == 'docs/decisions/2026-09-17-baseline-convergence-authorization.md' &&
+            (
+              github.head_ref == 'stage/baseline-convergence-main' ||
+              contains(github.event.pull_request.labels.*.name, 'baseline-convergence:156-S')
+            )
+          )
+        run: golangci-lint run --timeout=5m --max-issues-per-linter=0 --max-same-issues=0 --uniq-by-line=false
       - name: Vet
         if: needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false'
         run: go vet ./...
