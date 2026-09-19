@@ -4,8 +4,10 @@
 **P-002.6 dependency-aware wave scheduler** (`.github/policies/workflow-policies.md`). The primary
 scheduler corpus is shipment `130-S`: **44** explicit members and exactly **43 task-type IDs** in
 `M`. Queue-backed verification also projects baseline-convergence shipment `156-S` dynamically:
-the release-unit feature, executable task set, role counts, dependency edges, first wave, and sink
-come from the canonical feature block and live queue, never from fixture-owned counts or IDs.
+the release-unit feature and executable task set come from the live shipment. The simulator
+derives the exact role partition, dependency edge set/count, unique source/sink, reachability,
+acyclic Kahn wave decomposition, and terminal coverage, then exact-compares every value with the
+canonical feature contract.
 
 It exists because the scheduler is a *contract executed by agents*, not compiled code: nothing in
 the Go test suite can fail when the contract regresses. The fixture plus its runner make the
@@ -15,6 +17,7 @@ contract reproducibly checkable by a human, by CI, or by an agent at a gate poin
 
 ```pwsh
 pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1
+pwsh -NoProfile -File tests/simulation/lint-runtime-tests.ps1
 ```
 
 Add `-VerifyAgainstQueue` to parse `.backlogit/queue/130-S.md` and
@@ -78,19 +81,100 @@ At intermediate waves the observed normalized repository-wide finding set must e
 committed baseline rows owned by unfinished `finding-remediation` tasks. Support status cannot
 remove or retain a finding; an explicit negative control rejects residual allowance derived from
 support completion. New, missing, moved, changed-linter, malformed, or unowned findings fail. At
-the declared terminal task, the residual must be empty and the ordinary zero-warning global
+the declared terminal task, the residual must be empty and the frozen supported-platform terminal
 command must pass.
 
 The block's intermediate command is a byte-exact invocation of
-`scripts/verify-baseline-lint.ps1`, binding the inventory path and SHA-256 plus shipment and
-terminal task. The verifier rejects uncommitted/reparse-point inventory paths, validates the
-machine-readable finding schema, preserves native `golangci-lint` and parser failures, and emits a
-success marker only after exact residual equality.
+`scripts/verify-baseline-lint.ps1`, binding the inventory path and SHA-256 plus shipment, feature,
+and terminal task. The verifier resolves tasks across queue/archive by lifecycle, rejects
+duplicates and status/location mismatches, binds immutable canonical task-lint JSON digests,
+requires golangci-lint v2.13.2, validates the machine-readable finding schema, preserves native and
+parser failures, and emits a success marker only after exact Windows and Linux residual equality.
+The primary inventory is Windows-scoped; Linux exclusions and Linux-only rows are explicit, so a
+Windows host is never described as covering Unix-tagged files. Terminal convergence uses
+`scripts/verify-terminal-lint.ps1` and requires zero findings for both GOOS values; GitHub CI runs
+the pinned Linux surface natively.
 
-For a harness-exempt task, `governed_claim_delta` is not an allowlist. Its task/event paths must be
+Every `task_lint_cmd` is the short canonical
+`pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId <task> -FeatureId <feature>` form;
+inline PowerShell programs are rejected. A no-Go task requires explicit `-Phase Schema`,
+`-Phase PreCommit`, or `-Phase PostCommit` at the corresponding workflow gate; the unsuffixed
+stored command cannot pass its completion gate. The package set must equal the owned-file directory
+package set, and native `go list` under each supported GOOS determines file participation. Across
+those packages, the task runner permits only exact inventory identities owned by unfinished other
+tasks to remain, preserving later slices without admitting new, moved, linter-changed, message-changed,
+or terminal-owner findings. For a harness-exempt task, `governed_claim_delta` is not an allowlist. Its task/event paths must be
 registry-derived, its before/after digests and status/event transitions must validate, and the
-pre-commit and post-commit path sets must equal exactly the task-owned deliverable union that
-governed claim delta. Omitted claim paths and extra admitted paths are negative controls.
+pre-commit working set must equal the task-owned deliverable union with that governed claim delta.
+Build-feature invokes the runner with `-Phase PreCommit`. Ship invokes it with
+`-Phase PostCommit`; the commit must equal the task-owned set, the working set must equal the
+governed claim set, and their combined union must remain exact. The unsuffixed command performs
+schema screening only. Omitted claim paths, uncommitted deliverables, and extra admitted paths are
+negative controls.
+Queue-backed topology controls mutate a member count, role partition, edge, edge count, source,
+sink, wave, and terminal coverage; each mutation must be rejected.
+
+## Canonical Stage adoption schema
+
+Each member keeps its existing structured `lint_scope` for
+`bounded-finding-set-go-lint` or `harness-file-scoped-go-lint`, but replaces copied program text
+with:
+
+```json
+{
+  "task_lint_cmd": "pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId 900.001-T -FeatureId 900-F",
+  "lint_scope": {},
+  "non_vacuity_evidence": {
+    "success_marker": "TASK-LINT-OK:900.001-T:finding-remediation"
+  }
+}
+```
+
+The shown empty `lint_scope` is a placeholder for the task's real closed structured scope, not a
+valid value. A terminal verification-only member uses exactly:
+
+```json
+{
+  "kind": "no-go-lint-surface",
+  "owned_paths": ["docs/closure/example.md"],
+  "governed_claim_paths": [
+    ".backlogit/queue/900.005-T.md",
+    ".backlogit/hooks_queue.jsonl"
+  ]
+}
+```
+
+Each `member_scope` row binds `task_contract_sha256`, computed over the compact canonical JSON of
+that task's complete `task-lint-contract`. The baseline inventory has this exact top-level shape:
+
+```json
+{
+  "primary_goos": "windows",
+  "supported_goos": ["windows", "linux"],
+  "findings": [],
+  "surface_exclusions": {
+    "windows": [],
+    "linux": ["path|line|column|linter|message"]
+  },
+  "additional_findings": [
+    {
+      "goos": "linux",
+      "path": "path",
+      "line": 1,
+      "column": 1,
+      "linter": "errcheck",
+      "message": "message",
+      "owner_task_id": "900.002-T"
+    }
+  ]
+}
+```
+
+`findings` is the primary Windows set. `surface_exclusions.linux` lists only primary identities
+absent on Linux; `additional_findings` lists only identities absent from the primary set. The
+feature's `baseline_inventory.finding_count` is the union count. The feature also declares
+`supported_goos`, exact `topology`, the canonical intermediate command including `-FeatureId`, and
+the canonical terminal command described above.
 
 ## What it checks
 

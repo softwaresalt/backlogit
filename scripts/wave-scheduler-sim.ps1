@@ -91,6 +91,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$runtimePath = Join-Path $PSScriptRoot 'lint-runtime.ps1'
+if (-not (Test-Path -LiteralPath $runtimePath -PathType Leaf)) {
+    throw 'lint runtime is missing'
+}
+. $runtimePath
 
 # --- repository root resolution (script lives in scripts/) ---------------------
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -230,7 +235,7 @@ function Invoke-LintGateContractChecks {
         -Required @($taskCommand, 'native', 'non-vacu', 'before any mutation', 'harness-exempt')
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.build_feature_artifact)" `
         -Section '### Post-Loop Quality Gates' `
-        -Required @($taskCommand, 'wave_scoped: true', 'wave_scoped: false', $globalCommand, 'native', 'non-vacu', $claimInput, 'task_owned_delta', $lintModeInput, $strictMode, $baselineMode) `
+        -Required @($taskCommand, '-Phase PreCommit', 'wave_scoped: true', 'wave_scoped: false', $globalCommand, 'native', 'non-vacu', $claimInput, 'task_owned_delta', $lintModeInput, $strictMode, $baselineMode) `
         -Forbidden @("1. **Lint**: ``$globalCommand``")
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.build_feature_artifact)" `
         -Section '### Governed Claim Delta Precondition' `
@@ -242,30 +247,33 @@ function Invoke-LintGateContractChecks {
 
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
         -Section '### Step 3: Build Wave Schedule (P-002.6)' `
-        -Required @($taskCommand, $canonicalBlock, $taskContractName, 'freeze', 'harness-exempt', 'native', 'non-vacu', 'bounded-finding-set-go-lint', $baselineBlock, $baselineMode, $strictMode, 'terminal_task_id', 'operator_authorization', 'member_scope', 'task_artifact_sha256', 'acyclic', 'unique source', 'reachable from control', 'unique sink', 'BASELINE-LINT-RESIDUAL-OK')
+        -Required @($taskCommand, $canonicalBlock, $taskContractName, 'freeze', 'harness-exempt', 'native', 'non-vacu', 'bounded-finding-set-go-lint', $baselineBlock, $baselineMode, $strictMode, 'terminal_task_id', 'operator_authorization', 'member_scope', 'task_contract_sha256', 'acyclic', 'unique source', 'reachable from control', 'unique sink', 'BASELINE-LINT-RESIDUAL-OK')
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
         -Section '#### Step 4.1: Wave-Scoped Task-Lint Claim-Time Gate' `
-        -Required @($taskCommand, 'read-only screen', 'before', 'claim')
+        -Required @($taskCommand, '-Phase Schema', 'read-only screen', 'before', 'claim')
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
         -Section '#### Step 4.2: Delegate to Build Feature' `
         -Required @($taskCommand, $canonicalBlock, 'verbatim', $claimInput, $lintModeInput)
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
         -Section '#### Step 4.3: Quality Gates' `
-        -Required @($taskCommand, 'native', 'non-vacu', $claimInput, 'task_owned_delta', $lintModeInput, $strictMode, $baselineMode, $globalCommand) `
+        -Required @($taskCommand, '-Phase PostCommit', 'native', 'non-vacu', $claimInput, 'task_owned_delta', $lintModeInput, $strictMode, $baselineMode, $globalCommand) `
         -Forbidden @("1. **Lint**: ``$globalCommand``")
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.ship_artifact)" `
         -Section '#### Step 4.6: Wave Convergence Gate (P-002.6)' `
-        -Required @($globalCommand, $baselineMode, $strictMode, 'intermediate_wave_lint_cmd', 'WAVE_BASELINE_LINT_UNCLOSED', 'zero findings')
+        -Required @($baselineMode, $strictMode, 'intermediate_wave_lint_cmd',
+            'terminal_global_lint_cmd', 'scripts/verify-terminal-lint.ps1',
+            'Windows', 'Linux', 'WAVE_BASELINE_LINT_UNCLOSED', 'zero findings')
     Test-SectionTerms -Scenario $sc -Artifact "$($contract.policy_artifact)" `
         -Section '### P-002.6 — Dependency-Aware Harness Waves (Scheduling Contract)' `
         -Required @(
             $baselineBlock, $baselineMode, $strictMode, 'baseline_inventory',
             'scripts/verify-baseline-lint.ps1', 'operator-supplied record',
-            'member_scope', 'task_artifact_sha256', 'BASELINE-LINT-RESIDUAL-OK',
+            'member_scope', 'task_contract_sha256', 'BASELINE-LINT-RESIDUAL-OK',
             'acyclic', 'unique source', 'reachable from control', 'unique sink',
             'WAVE_BASELINE_LINT_CONTRACT_INVALID', 'WAVE_BASELINE_LINT_EXEC_FAILED',
             'WAVE_BASELINE_LINT_RESIDUAL_MISMATCH', 'WAVE_BASELINE_LINT_UNCLOSED',
-            'golangci-lint run', 'terminal boundary'
+            'terminal_global_lint_cmd', 'scripts/verify-terminal-lint.ps1',
+            'Windows', 'Linux', 'terminal boundary'
         )
 }
 
@@ -513,7 +521,7 @@ function Get-DelimitedContractBlock {
 }
 
 function Read-TaskLintContract {
-    param([string]$Raw)
+    param([string]$Raw, [string]$TaskID, [string]$FeatureID)
     $block = Get-DelimitedContractBlock -Raw $Raw -Name 'task-lint-contract' -Fence 'json'
     if (-not $block.Present) {
         return [pscustomobject]@{ Contract = $null; Errors = @('task-lint-contract is missing') }
@@ -527,7 +535,8 @@ function Read-TaskLintContract {
         if (((Get-PropertyNames $contract) -join ',') -cne ($expected -join ',')) {
             $errors += 'task-lint keys/order must be task_lint_cmd,lint_scope,non_vacuity_evidence'
         }
-        $errors += Test-TaskLintContractShape -Contract $contract
+        $errors += Test-TaskLintContractShape -Contract $contract -TaskID $TaskID `
+            -FeatureID $FeatureID
     }
     return [pscustomobject]@{ Contract = $contract; Errors = @($errors) }
 }
@@ -631,7 +640,7 @@ function Test-BoundedTaskLintCommandFlow {
 }
 
 function Test-TaskLintContractShape {
-    param($Contract)
+    param($Contract, [string]$TaskID = '', [string]$FeatureID = '')
     $errors = @()
     if ($null -eq $Contract) { return 'contract is null' }
     $cmd = if (Test-HasProperty $Contract 'task_lint_cmd') { "$($Contract.task_lint_cmd)" } else { '' }
@@ -639,6 +648,58 @@ function Test-TaskLintContractShape {
     if ($cmd.Trim() -ceq 'golangci-lint run') { $errors += 'task_lint_cmd is bare global lint' }
     if ($cmd -match '\|\|\s*true') { $errors += 'task_lint_cmd masks native failure' }
     if ($cmd -match '(?i)\$nativeExit\s*=\s*0') { $errors += 'task_lint_cmd hard-codes native success' }
+    if (-not [string]::IsNullOrWhiteSpace($TaskID)) {
+        $expectedCommand = "pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId $TaskID -FeatureId $FeatureID"
+        if ($cmd -cne $expectedCommand) {
+            $errors += 'task_lint_cmd is not the canonical executable runner form'
+        }
+        if ($cmd -match '(?i)\s-(?:Command|EncodedCommand)\b') {
+            $errors += 'task_lint_cmd embeds an inline PowerShell program'
+        }
+        $scope = if (Test-HasProperty $Contract 'lint_scope') { $Contract.lint_scope } else { $null }
+        $evidence = if (Test-HasProperty $Contract 'non_vacuity_evidence') {
+            $Contract.non_vacuity_evidence
+        } else { $null }
+        $successMarker = if ($null -ne $evidence -and
+            (Test-HasProperty $evidence 'success_marker')) {
+            "$($evidence.success_marker)"
+        } else { '' }
+        if ($null -eq $scope -or $null -eq $evidence -or
+            $successMarker -cnotmatch "^TASK-LINT-OK:$([regex]::Escape($TaskID)):" ) {
+            $errors += 'canonical runner success marker is missing or not task-bound'
+        }
+        $kind = if ($null -ne $scope) { "$($scope.kind)" } else { '' }
+        if ($kind -ceq 'bounded-finding-set-go-lint') {
+            $packages = @($scope.packages)
+            $files = @($scope.owned_files)
+            $findings = @($scope.owned_findings)
+            if ($packages.Count -lt 1 -or $packages.Count -gt 2 -or
+                $files.Count -lt 1 -or $files.Count -gt 2 -or
+                $findings.Count -lt 1 -or $findings.Count -gt 16 -or
+                @($packages | Sort-Object -Unique).Count -ne $packages.Count -or
+                @($files | Sort-Object -Unique).Count -ne $files.Count) {
+                $errors += 'canonical bounded scope exceeds limits or repeats targets'
+            }
+        }
+        elseif ($kind -ceq 'harness-file-scoped-go-lint') {
+            if ([string]::IsNullOrWhiteSpace("$($scope.package)") -or
+                [string]::IsNullOrWhiteSpace("$($scope.owned_file)")) {
+                $errors += 'canonical harness-file scope is incomplete'
+            }
+        }
+        elseif ($kind -ceq 'no-go-lint-surface') {
+            if (((Get-PropertyNames $scope) -join ',') -cne
+                'kind,owned_paths,governed_claim_paths' -or
+                @($scope.owned_paths).Count -lt 1 -or
+                @($scope.governed_claim_paths).Count -lt 1) {
+                $errors += 'canonical no-Go claim-union scope is incomplete'
+            }
+        }
+        else {
+            $errors += "unknown task lint scope kind: $kind"
+        }
+        return $errors
+    }
     if ($cmd -notmatch '(?i)(ExitCode|LASTEXITCODE|nativeExit)' -or $cmd -notmatch '(?i)\bexit\b') {
         $errors += 'task_lint_cmd does not preserve native failure'
     }
@@ -813,12 +874,16 @@ function Get-BaselineMemberScopeObservation {
             $allMatch = $false
             continue
         }
-        $relative = ".backlogit/queue/$taskID.md" -replace '\\', '/'
-        $full = [System.IO.Path]::GetFullPath((Join-Path $rootFull $relative))
-        if (-not $full.StartsWith(
-                "$rootFull$([System.IO.Path]::DirectorySeparatorChar)",
-                [System.StringComparison]::OrdinalIgnoreCase
-            )) {
+        if (-not (Test-HasProperty $binding 'task_contract_sha256')) {
+            $allMatch = $false
+            continue
+        }
+        try {
+            $artifact = Resolve-CanonicalArtifact -Root $rootFull -Id $taskID
+            $relative = $artifact.RelativePath
+            $full = $artifact.Path
+        }
+        catch {
             $allCommitted = $false
             $allMatch = $false
             continue
@@ -849,9 +914,14 @@ function Get-BaselineMemberScopeObservation {
         & git -C $repoRoot diff --cached --quiet HEAD -- $relative
         $indexClean = [bool]($LASTEXITCODE -eq 0)
         $allCommitted = [bool]($allCommitted -and $tracked -and $workingClean -and $indexClean)
-        $actual = (Get-FileHash $full -Algorithm SHA256).Hash.ToLowerInvariant()
+        try { $actual = Get-TaskContractDigest -TaskPath $full }
+        catch {
+            $allCommitted = $false
+            $allMatch = $false
+            continue
+        }
         $allMatch = [bool]($allMatch -and
-            $actual -ceq "$($binding.task_artifact_sha256)")
+            $actual -ceq "$($binding.task_contract_sha256)")
     }
     return [pscustomobject]@{ committed = $allCommitted; digests_match = $allMatch }
 }
@@ -979,6 +1049,114 @@ function Test-BaselineTopologyShape {
     return $errors
 }
 
+function Get-SchedulerTopologyProjection {
+    param(
+        [string[]]$Members,
+        $Bindings,
+        $DependenciesByTask,
+        [string]$TerminalTaskID
+    )
+
+    $rolePartition = [pscustomobject][ordered]@{}
+    foreach ($role in @(
+            'baseline-control', 'finding-remediation', 'support', 'terminal-convergence')) {
+        $ids = @($Bindings | Where-Object { "$($_.role)" -ceq $role } |
+                ForEach-Object { "$($_.task_id)" } | Sort-Object)
+        $rolePartition | Add-Member -NotePropertyName $role -NotePropertyValue $ids
+    }
+    $edges = @(
+        foreach ($member in $Members) {
+            foreach ($dependency in @($DependenciesByTask.$member)) {
+                "$dependency->$member"
+            }
+        }
+    ) | Sort-Object
+    $remaining = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal)
+    foreach ($member in $Members) { [void]$remaining.Add($member) }
+    $waves = @()
+    while ($remaining.Count -gt 0) {
+        $ready = @(
+            $remaining | Where-Object {
+                $candidate = "$_"
+                @($DependenciesByTask.$candidate | Where-Object {
+                        $remaining.Contains("$_")
+                    }).Count -eq 0
+            } | Sort-Object
+        )
+        if ($ready.Count -eq 0) { break }
+        $waves += , @($ready)
+        foreach ($id in $ready) { [void]$remaining.Remove($id) }
+    }
+    $sources = @($Members | Where-Object { @($DependenciesByTask.$_).Count -eq 0 })
+    $dependedOn = @($Members | ForEach-Object { @($DependenciesByTask.$_) } |
+            Sort-Object -Unique)
+    $sinks = @($Members | Where-Object { $dependedOn -cnotcontains $_ })
+    $coverage = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal)
+    $frontier = [System.Collections.Generic.Queue[string]]::new()
+    if ($Members -ccontains $TerminalTaskID) { $frontier.Enqueue($TerminalTaskID) }
+    while ($frontier.Count -gt 0) {
+        $current = $frontier.Dequeue()
+        if (-not $coverage.Add($current)) { continue }
+        foreach ($dependency in @($DependenciesByTask.$current)) {
+            if ($Members -ccontains "$dependency") { $frontier.Enqueue("$dependency") }
+        }
+    }
+    return [pscustomobject][ordered]@{
+        member_count = $Members.Count
+        role_partition = $rolePartition
+        edge_count = $edges.Count
+        edges = $edges
+        source_task_id = if ($sources.Count -eq 1) { "$($sources[0])" } else { '' }
+        sink_task_id = if ($sinks.Count -eq 1) { "$($sinks[0])" } else { '' }
+        waves = $waves
+        terminal_coverage = @($coverage | Sort-Object)
+    }
+}
+
+function Test-CanonicalTopologyContract {
+    param($Declared, $Actual)
+    $errors = @()
+    $keys = @(
+        'member_count', 'role_partition', 'edge_count', 'edges',
+        'source_task_id', 'sink_task_id', 'waves', 'terminal_coverage')
+    if ($null -eq $Declared -or
+        ((Get-PropertyNames $Declared) -join ',') -cne ($keys -join ',')) {
+        return , @('canonical topology keys/order are not exact')
+    }
+    if ([int]$Declared.member_count -ne [int]$Actual.member_count) {
+        $errors += 'canonical topology member count drift'
+    }
+    foreach ($role in @(
+            'baseline-control', 'finding-remediation', 'support', 'terminal-convergence')) {
+        if (-not (Test-ExactOrdinalSet -Expected @($Actual.role_partition.$role) `
+                -Actual @($Declared.role_partition.$role))) {
+            $errors += "canonical topology role partition drift: $role"
+        }
+    }
+    if ([int]$Declared.edge_count -ne [int]$Actual.edge_count -or
+        -not (Test-ExactOrdinalSet -Expected @($Actual.edges) -Actual @($Declared.edges))) {
+        $errors += 'canonical topology edge set/count drift'
+    }
+    if ("$($Declared.source_task_id)" -cne "$($Actual.source_task_id)") {
+        $errors += 'canonical topology source drift'
+    }
+    if ("$($Declared.sink_task_id)" -cne "$($Actual.sink_task_id)") {
+        $errors += 'canonical topology sink drift'
+    }
+    $declaredWaves = @($Declared.waves | ForEach-Object { (@($_) -join ',') })
+    $actualWaves = @($Actual.waves | ForEach-Object { (@($_) -join ',') })
+    if (($declaredWaves -join "`n") -cne ($actualWaves -join "`n")) {
+        $errors += 'canonical topology scheduler wave drift'
+    }
+    if (-not (Test-ExactOrdinalSet -Expected @($Actual.terminal_coverage) `
+            -Actual @($Declared.terminal_coverage))) {
+        $errors += 'canonical topology terminal coverage drift'
+    }
+    return $errors
+}
+
 function Test-BaselineLintContractShape {
     param(
         $Contract,
@@ -995,6 +1173,7 @@ function Test-BaselineLintContractShape {
     )
     $errors = @()
     $expectedIdentityFields = @('path', 'line', 'column', 'linter', 'message', 'owner_task_id')
+    $modernRuntime = Test-HasProperty $Contract 'supported_goos'
     if ($null -eq $Contract) { return 'contract is null' }
     if ("$($Contract.mode)" -cne 'baseline-convergence') { $errors += 'mode is invalid' }
     if ("$($Contract.purpose)" -cne 'known-global-lint-baseline-removal') { $errors += 'purpose is invalid' }
@@ -1009,13 +1188,16 @@ function Test-BaselineLintContractShape {
     $bindingIDs = @()
     $roleByTask = @{}
     foreach ($binding in $bindings) {
-        $bindingKeys = @('task_id', 'role', 'task_artifact_sha256')
+        $bindingKeys = @('task_id', 'role', 'task_contract_sha256')
         $taskID = "$($binding.task_id)"
         $role = "$($binding.role)"
+        $contractDigest = if (Test-HasProperty $binding 'task_contract_sha256') {
+            "$($binding.task_contract_sha256)"
+        } else { '' }
         if (((Get-PropertyNames $binding) -join ',') -cne ($bindingKeys -join ',') -or
             $taskID -cnotmatch '^\d+\.\d{3}-T$' -or
             $role -cnotmatch '^(baseline-control|finding-remediation|support|terminal-convergence)$' -or
-            "$($binding.task_artifact_sha256)" -cnotmatch '^[0-9a-f]{64}$') {
+            $contractDigest -cnotmatch '^[0-9a-f]{64}$') {
             $errors += "member scope binding is malformed: $taskID"
         }
         $bindingIDs += $taskID
@@ -1032,9 +1214,20 @@ function Test-BaselineLintContractShape {
     }
     $errors += Test-BaselineTopologyShape -Members $Members -Bindings $bindings `
         -DependenciesByTask $DependenciesByTask -TerminalTaskID "$($Contract.terminal_task_id)"
+    if (-not $modernRuntime -or
+        -not (Test-ExactOrdinalSet -Expected @('windows', 'linux') `
+            -Actual @($Contract.supported_goos))) {
+        $errors += 'supported GOOS set is not exact'
+    }
+    $actualTopology = Get-SchedulerTopologyProjection -Members $Members -Bindings $bindings `
+        -DependenciesByTask $DependenciesByTask -TerminalTaskID "$($Contract.terminal_task_id)"
+    $declaredTopology = if (Test-HasProperty $Contract 'topology') {
+        $Contract.topology
+    } else { $null }
+    $errors += Test-CanonicalTopologyContract -Declared $declaredTopology -Actual $actualTopology
     if ($null -eq $MemberScopeObservation -or -not [bool]$MemberScopeObservation.committed -or
         -not [bool]$MemberScopeObservation.digests_match) {
-        $errors += 'member task artifact digest is stale or uncommitted'
+        $errors += 'member task contract digest is stale or uncommitted'
     }
     $statusRows = @($MemberStatusObservation)
     $statusIDs = @($statusRows | ForEach-Object { "$($_.task_id)" })
@@ -1079,7 +1272,10 @@ function Test-BaselineLintContractShape {
             $errors += 'inventory is not committed and machine-readable'
         }
         elseif (-not [bool]$InventoryObservation.digest_matches) { $errors += 'inventory digest is stale' }
-        $findings = if ($null -ne $InventoryObservation) { @($InventoryObservation.findings) } else { @() }
+        [object[]]$findings = if ($null -ne $InventoryObservation) {
+            @($InventoryObservation.findings)
+        } else { @() }
+        $findings = @($findings | Where-Object { $null -ne $_ })
         if ($findings.Count -eq 0 -or ([int]$inventory.finding_count) -ne $findings.Count) {
             $errors += 'inventory finding count is empty or mismatched'
         }
@@ -1116,12 +1312,18 @@ function Test-BaselineLintContractShape {
     }
     $intermediate = "$($Contract.intermediate_wave_lint_cmd)"
     $expectedIntermediate = if ($null -ne $inventory) {
-        'pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 ' +
+        $prefix = 'pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 ' +
             "-Inventory $($inventory.path) -InventorySha256 $($inventory.sha256) " +
-            "-Shipment $($Contract.shipment_id) -TerminalTask $($Contract.terminal_task_id)"
+            "-Shipment $($Contract.shipment_id) "
+        $prefix + "-FeatureId $($Contract.release_unit_id) " +
+            "-TerminalTask $($Contract.terminal_task_id)"
     } else { '' }
     $verifierPath = Join-Path $repoRoot 'scripts/verify-baseline-lint.ps1'
     $verifierText = if (Test-Path $verifierPath) { Get-Content $verifierPath -Raw } else { '' }
+    $runtimeVerifierPath = Join-Path $repoRoot 'scripts/lint-runtime.ps1'
+    if (Test-Path $runtimeVerifierPath -PathType Leaf) {
+        $verifierText += "`n" + (Get-Content $runtimeVerifierPath -Raw)
+    }
     $verifierReady = $false
     if (Test-Path $verifierPath -PathType Leaf) {
         $item = Get-Item $verifierPath -Force
@@ -1150,16 +1352,18 @@ function Test-BaselineLintContractShape {
         $verifierText -notmatch '--max-issues-per-linter' -or
         $verifierText -notmatch '--max-same-issues' -or
         $verifierText -notmatch '--uniq-by-line=false' -or
-        $verifierText -notmatch 'unsupported-member-status' -or
-        $verifierText -notmatch '\^\(queued\|active\|blocked\|done\)\$' -or
-        $verifierText -notmatch 'BASELINE-RESIDUAL-MISMATCH' -or
+        $verifierText -notmatch 'Resolve-CanonicalArtifact' -or
+        $verifierText -notmatch 'supported_goos' -or
+        $verifierText -notmatch 'Assert-GolangCILintVersion' -or
         $verifierText -notmatch 'BASELINE-LINT-RESIDUAL-OK') {
         $errors += 'intermediate wave command is missing, vacuous, or failure-masking'
     }
     $terminalGlobalLint = if (Test-HasProperty $Contract 'terminal_global_lint_cmd') {
         "$($Contract.terminal_global_lint_cmd)"
     } else { '' }
-    if ($terminalGlobalLint -cne 'golangci-lint run') {
+    $expectedTerminal =
+        "pwsh -NoProfile -File scripts/verify-terminal-lint.ps1 -FeatureId $ExpectedReleaseUnitID"
+    if ($terminalGlobalLint -cne $expectedTerminal) {
         $errors += 'terminal global lint command is not exact'
     }
     $auth = if (Test-HasProperty $Contract 'operator_authorization') {
@@ -1216,7 +1420,8 @@ function Read-BaselineLintContract {
     if ($null -ne $contract) {
         $expectedKeys = @(
             'mode', 'purpose', 'shipment_id', 'release_unit_id', 'terminal_task_id',
-            'member_scope', 'baseline_inventory', 'intermediate_wave_lint_cmd', 'terminal_global_lint_cmd',
+            'supported_goos', 'member_scope', 'topology', 'baseline_inventory',
+            'intermediate_wave_lint_cmd', 'terminal_global_lint_cmd',
             'operator_authorization'
         )
         if (((Get-PropertyNames $contract) -join ',') -cne ($expectedKeys -join ',')) {
@@ -1282,13 +1487,22 @@ function Get-BaselineInventoryObservation {
             machine_readable = $false
             findings = @()
         } }
-    $findings = if ($parsed -is [System.Array]) { @($parsed) }
-    elseif (Test-HasProperty $parsed 'findings') { @($parsed.findings) }
-    else { @() }
+    $modernSchema = [bool](
+        $null -ne $parsed -and
+        (Test-HasProperty $parsed 'primary_goos') -and
+        (Test-HasProperty $parsed 'supported_goos') -and
+        (Test-HasProperty $parsed 'findings') -and
+        (Test-HasProperty $parsed 'surface_exclusions') -and
+        (Test-HasProperty $parsed 'additional_findings') -and
+        "$($parsed.primary_goos)" -ceq 'windows' -and
+        (Test-ExactOrdinalSet -Expected @('windows', 'linux') -Actual @($parsed.supported_goos)))
+    $findings = if ($modernSchema) {
+        @($parsed.findings) + @($parsed.additional_findings)
+    } else { @() }
     return [pscustomobject]@{
         digest_matches = [bool]($digest -ceq "$($Contract.baseline_inventory.sha256)")
         committed = $committed
-        machine_readable = [bool]($findings.Count -gt 0)
+        machine_readable = [bool]($modernSchema -and $findings.Count -gt 0)
         findings = $findings
     }
 }
@@ -1335,7 +1549,7 @@ function Get-BaselineLintGateOutcome {
             [pscustomobject][ordered]@{
                 task_id = "$($Control.append_member_scope.task_id)"
                 role = "$($Control.append_member_scope.role)"
-                task_artifact_sha256 = "$($Control.append_member_scope.task_artifact_sha256)"
+                task_contract_sha256 = "$($Control.append_member_scope.task_contract_sha256)"
             }
         )
     }
@@ -1534,11 +1748,15 @@ function Get-GovernedClaimDeltaOutcome {
     if (-not (Test-ExactOrdinalSet -Expected $paths -Actual @($Control.pre_dispatch_paths))) {
         return 'EXEMPT_CLAIM_DELTA_INVALID'
     }
-    foreach ($phaseName in @('pre_completion_paths', 'staged_paths', 'post_commit_paths')) {
-        if (-not (Test-HasProperty $Control $phaseName)) { return 'EXEMPT_CLAIM_DELTA_INVALID' }
-        if (-not (Test-ExactOrdinalSet -Expected $expectedUnion -Actual @($Control.$phaseName))) {
-            return 'EXEMPT_CLAIM_DELTA_INVALID'
-        }
+    if (-not (Test-ExactOrdinalSet -Expected $expectedUnion `
+            -Actual @($Control.pre_completion_paths)) -or
+        -not (Test-ExactOrdinalSet -Expected $owned -Actual @($Control.staged_paths)) -or
+        -not (Test-ExactOrdinalSet -Expected $owned -Actual @($Control.post_commit_paths)) -or
+        -not (Test-ExactOrdinalSet -Expected $paths `
+            -Actual @($Control.post_commit_working_paths)) -or
+        -not (Test-ExactOrdinalSet -Expected $expectedUnion `
+            -Actual @($Control.post_commit_paths + $Control.post_commit_working_paths))) {
+        return 'EXEMPT_CLAIM_DELTA_INVALID'
     }
     return 'PASS'
 }
@@ -1553,7 +1771,8 @@ function Invoke-GovernedClaimDeltaControls {
 
 function Invoke-TaskLintContractControls {
     foreach ($control in @($fx.task_lint_contract_controls)) {
-        $errors = @(Test-TaskLintContractShape -Contract $control.contract)
+        $errors = @(Test-TaskLintContractShape -Contract $control.contract `
+                -TaskID '900.002-T' -FeatureID '900-F')
         Test-Equal -Scenario "task_lint/$($control.id)" -Name 'shape enforcement' `
             -Expected ([bool]$control.expect_valid) -Actual ([bool]($errors.Count -eq 0))
     }
@@ -1794,6 +2013,7 @@ function Get-ArtifactProjection {
     $id = $null
     $artifactType = $null
     $status = $null
+    $parentID = $null
     $deps = @()
     $labels = @()
     foreach ($line in $lines) {
@@ -1809,12 +2029,13 @@ function Get-ArtifactProjection {
         if ($inLabels -and $line -match '^\s+-\s+(\S+)') { $labels += $Matches[1]; continue }
         if ($line -match '^artifact_type:\s*(\S+)') { $artifactType = $Matches[1] }
         if ($line -match '^id:\s*(\S+)') { $id = $Matches[1] }
+        if ($line -match '^parent_id:\s*(\S+)') { $parentID = $Matches[1] }
         if ($line -match '^status:\s*(\S+)') { $status = $Matches[1] }
     }
 
     $red = Read-RedDeliverableContract -Raw $raw
     $green = Read-GreenRegressionContract -Raw $raw
-    $lint = Read-TaskLintContract -Raw $raw
+    $lint = Read-TaskLintContract -Raw $raw -TaskID $id -FeatureID $parentID
     $exemptClass = $null
     if ($raw -match '(?m)^harness_exemption_class:\s*(\S+)\s*$') { $exemptClass = $Matches[1] }
     return [pscustomobject]@{
@@ -2270,6 +2491,7 @@ function Invoke-BaselineConvergenceQueueProjection {
     $baselineValidWhenPresent = $true
     $scopeCount = 0
     $roleCounts = ''
+    $topologyErrors = @()
     if ($null -ne $releasePath) {
         $baselineBlock = Get-DelimitedContractBlock -Raw (Get-Content $releasePath -Raw) `
             -Name 'baseline-lint-convergence-contract' -Fence 'json'
@@ -2288,6 +2510,51 @@ function Invoke-BaselineConvergenceQueueProjection {
                             "$role=$(@($scope | Where-Object { "$($_.role)" -ceq $role }).Count)"
                         }
                 ) -join ','
+                $actualTopology = Get-SchedulerTopologyProjection -Members $taskIDs `
+                    -Bindings $scope -DependenciesByTask $liveDependencies `
+                    -TerminalTaskID "$($rawContract.terminal_task_id)"
+                $declaredTopology = if (Test-HasProperty $rawContract 'topology') {
+                    $rawContract.topology
+                } else { $null }
+                $topologyErrors = @(Test-CanonicalTopologyContract `
+                        -Declared $declaredTopology -Actual $actualTopology)
+
+                if ($null -ne $actualTopology) {
+                    $negativeBaseline = Copy-JsonObject $actualTopology
+                    $mutations = @(
+                        @{ name = 'altered member count'; property = 'member_count'; value = -1 },
+                        @{ name = 'altered edge count'; property = 'edge_count'; value = -1 },
+                        @{ name = 'altered source'; property = 'source_task_id'; value = 'wrong-source' },
+                        @{ name = 'altered sink'; property = 'sink_task_id'; value = 'wrong-sink' }
+                    )
+                    foreach ($mutation in $mutations) {
+                        $copy = Copy-JsonObject $negativeBaseline
+                        $copy.($mutation.property) = $mutation.value
+                        $detected = @(Test-CanonicalTopologyContract -Declared $copy `
+                                -Actual $actualTopology).Count -gt 0
+                        Test-Equal -Scenario "$sc/topology-negative" `
+                            -Name "$($mutation.name) is rejected" -Expected $true -Actual $detected
+                    }
+                    foreach ($mutationName in @(
+                            'altered role partition', 'altered edge member',
+                            'altered wave partition', 'altered terminal coverage')) {
+                        $copy = Copy-JsonObject $negativeBaseline
+                        switch ($mutationName) {
+                            'altered role partition' {
+                                $copy.role_partition.support = @($copy.role_partition.support) + 'wrong-task'
+                            }
+                            'altered edge member' { $copy.edges = @($copy.edges) + 'wrong->edge' }
+                            'altered wave partition' { $copy.waves[0] = @($copy.waves[0]) + 'wrong-task' }
+                            'altered terminal coverage' {
+                                $copy.terminal_coverage = @($copy.terminal_coverage) + 'wrong-task'
+                            }
+                        }
+                        $detected = @(Test-CanonicalTopologyContract -Declared $copy `
+                                -Actual $actualTopology).Count -gt 0
+                        Test-Equal -Scenario "$sc/topology-negative" `
+                            -Name "$mutationName is rejected" -Expected $true -Actual $detected
+                    }
+                }
             }
             $inventoryObservation = Get-BaselineInventoryObservation -Contract $rawContract
             $authorizationObservation = [pscustomobject]@{
@@ -2305,7 +2572,8 @@ function Invoke-BaselineConvergenceQueueProjection {
                 -MemberStatusObservation $memberStatusObservation `
                 -TaskLintContractObservation $liveTaskLintContracts `
                 -UnstartedStatus $unstartedStatus
-            $baselineValidWhenPresent = [bool]($parsedBaseline.Errors.Count -eq 0)
+            $baselineValidWhenPresent = [bool](
+                $parsedBaseline.Errors.Count -eq 0 -and $topologyErrors.Count -eq 0)
         }
     }
 
@@ -2324,6 +2592,8 @@ function Invoke-BaselineConvergenceQueueProjection {
     if ($baselinePresent) {
         Test-Equal -Scenario $sc -Name 'canonical member count equals live task count' `
             -Expected $taskIDs.Count -Actual $scopeCount
+        Test-Equal -Scenario $sc -Name 'canonical topology exactly equals live graph' `
+            -Expected @() -Actual $topologyErrors
     }
 
     if (-not $Quiet) {

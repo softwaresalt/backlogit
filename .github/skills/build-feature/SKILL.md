@@ -27,11 +27,17 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
   this as file-scoped lint verification (FSLV). Every wave member declares one, including
   `support`, `harness-exempt`, and `red_deliverable` tasks. A `support` role is not a lint waiver:
   its contract must be canonical, native-failure-preserving, non-vacuous, and appropriate to its
-  exact changed artifacts, just like every other task. It must be executable as written, read-only,
+  exact changed artifacts, just like every other task. The command is always the short executable
+  form `pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId {task_id} -FeatureId
+  {feature_id}`; copied `-Command`/`-EncodedCommand` programs are invalid. The runner reads the
+  structured scope, validates its immutable contract digest, resolves queue/archive lifecycle
+  location, checks golangci-lint v2.13.2, and isolates JSON stdout from diagnostics. It is read-only,
   bounded to one exact owned file or a small explicitly enumerated set of owned files/findings,
   preserve the native linter/configuration/process exit, and fail closed when any claimed lint
   target or exact ordinal finding identity is absent, empty, malformed, omitted from the native
   invocation/result comparison, or otherwise lacks non-vacuous proof. A task may therefore own a
+  `no-go-lint-surface` scope only when workflow invocations append an explicit phase:
+  `-Phase Schema` before claim, `-Phase PreCommit` here, and `-Phase PostCommit` in Ship.
   narrow cross-file finding set without claiming a broad package; the command may name only the
   explicit packages needed to analyze those files. That form uses the canonical
   `bounded-finding-set-go-lint` scope frozen by Ship; this skill does not widen or reinterpret its
@@ -433,7 +439,8 @@ builds — and must never be narrowed to the task's own package to dodge a real 
 After the harness passes:
 
 1. **Lint** — scope depends on `wave_scoped`:
-   * **`wave_scoped: true`**: run the frozen `task_lint_cmd` exactly once. It must exit 0 and
+   * **`wave_scoped: true`**: run the frozen canonical `task_lint_cmd` exactly once; for
+     `no-go-lint-surface`, append mandatory `-Phase PreCommit`. It must exit 0 and
      produce the command's declared non-vacuity evidence for the task-owned lint surface. Preserve
      and propagate a native linter/configuration/process failure; an issues-exit override may
      classify owned findings only when the wrapper captures the native exit first and never turns
@@ -441,7 +448,10 @@ After the harness passes:
      malformed evidence. When `release_lint_mode` is `strict`, then run the exact unmodified
      `golangci-lint run` and require exit 0 with zero warnings before committing. When it is
      `baseline-convergence`, do not run the global command here: Ship reruns task lint after the
-     task commit and applies the exact residual gate after the wave. At Step 4.6 Ship runs
+     task commit and applies the exact residual gate after the wave. For a `no-go-lint-surface`
+     verification-only task, invoke the same runner with `-Phase PreCommit`; it must accept
+     exactly `owned_paths ∪ governed_claim_paths` as the complete working delta.
+     At Step 4.6 Ship runs
      repository-wide lint under the frozen strict or baseline-convergence contract; the latter
      changes only intermediate timing and result classification, never the terminal zero-warning
      command.
@@ -493,10 +503,12 @@ After the harness passes:
      repository-configuration file — `verification-only` is not a repository-hygiene class. Under
      `docs-only`, any `*.go` hunk is `EXEMPT_BEHAVIOR_NO_OWNER`. Under `covered-by`, any
      `*_test.go` hunk is `EXEMPT_DELTA_EXCEEDS_CLASS`.
-   * Return the exact sorted `task_owned_delta` and governed path set to Ship. Ship re-runs both
-     passes after commit using `{exempt_baseline_sha}..HEAD`, requires that range to equal exactly
-     their union, revalidates governed content, and applies the class checks to the same task-owned
-     set.
+   * Return the exact sorted `task_owned_delta` and governed path set to Ship. Commit exactly
+     `task_owned_delta`; governed lifecycle paths remain separately validated working state. Ship
+     reruns the same canonical task runner with `-Phase PostCommit`; that phase requires the
+     commit delta to equal `task_owned_delta`, the working delta to equal the governed paths, and
+     their combined union to contain no extra or missing path. It rejects phase ambiguity before
+     the remaining content/class checks.
 
 ### Commit
 
@@ -504,16 +516,20 @@ If all quality gates pass — including the harness-exempt completion gate above
 the working tree precisely because this commit had not happened yet:
 
 1. For a normal task, retain the ordinary staging behavior. For a `harness-exempt` task, stage by
-   exact pathspec only: the validated `task_owned_delta ∪ governed_claim_delta.paths`. Never use
+   exact pathspec only: the validated `task_owned_delta`. Keep
+   `governed_claim_delta.paths` unstaged as the separately validated working delta. Never use
    `git add -A`, `git add .`, or another stage-all form on this branch.
-2. For a `harness-exempt` task, exact-compare staged paths with that union, require no remaining
-   unstaged or untracked path, and revalidate every governed after-digest and transition. Extra,
-   omitted, or altered state halts with `EXEMPT_CLAIM_DELTA_INVALID`.
+2. For a `harness-exempt` task, exact-compare staged paths with `task_owned_delta`, exact-compare
+   unstaged/untracked paths with `governed_claim_delta.paths`, and revalidate every governed
+   after-digest and transition. Extra, omitted, or altered state halts with
+   `EXEMPT_CLAIM_DELTA_INVALID`.
 3. Create a conventional commit message referencing the task ID.
-4. Recheck the committed range `{exempt_baseline_sha}..HEAD`: its path set must equal exactly the
-   same union; governed content must still match the frozen record; task-owned paths/content must
-   still satisfy P-002.4. Any mismatch is a halt, not a selective-stage retry.
-5. Report the exact committed task-owned and governed path sets to the caller.
+4. Recheck the committed range `{exempt_baseline_sha}..HEAD`: its path set must equal exactly
+   `task_owned_delta`; the working delta must equal exactly `governed_claim_delta.paths`; governed
+   content must still match the frozen record; and their combined union must remain exact.
+   Task-owned paths/content must still satisfy P-002.4. Any mismatch is a halt, not a
+   selective-stage retry.
+5. Report the exact committed task-owned set and governed working set to the caller.
 
 Do **not** reorder this step ahead of the completion gate to make an `..HEAD` diff work. The gate
 must observe the delta before it is committed so that a failing class check can stop the task
@@ -552,7 +568,8 @@ without leaving a non-compliant commit behind.
   `golangci-lint run` is mandatory at the exact terminal boundary and final gate
 * Never accept arbitrary claim-path exclusions. A harness-exempt dispatch requires the exact
   registry-derived, transition- and digest-validated `governed_claim_delta`; stage and commit only
-  its union with the class-valid task-owned delta, and reject every other path
+  the class-valid task-owned delta, retain exactly the governed paths as validated working state,
+  exact-check their combined union, and reject every other path
 * Never narrow the Step 6 compilation check (`go test -run=^$ -count=1 ./...`) to the task's own package. It runs no test, so a sibling's red harness cannot affect it
 * Maximum 5 attempts before circuit breaker trips (skill-managed exception; see `circuit-breaker.instructions.md`)
 * Same-error recurrence at attempt 3+ triggers the universal circuit breaker

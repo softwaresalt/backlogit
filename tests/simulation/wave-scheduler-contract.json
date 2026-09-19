@@ -34,7 +34,7 @@
     "policy_artifact": ".github/policies/workflow-policies.md",
     "canonical_block": "task-lint-contract",
     "task_command_input": "task_lint_cmd",
-    "task_contract_name": "FSLV",
+    "task_contract_name": "verify-task-lint.ps1",
     "global_command": "golangci-lint run",
     "baseline_block": "baseline-lint-convergence-contract",
     "baseline_mode": "baseline-convergence",
@@ -52,16 +52,16 @@
     {
       "id": "valid-owned-target",
       "contract": {
-        "task_lint_cmd": "pwsh -Command '$psi=[System.Diagnostics.ProcessStartInfo]::new(); $psi.FileName=\"golangci-lint\"; $psi.Arguments=\"run --output.json.path stdout --show-stats=false --issues-exit-code 0 ./internal\"; $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true; $psi.UseShellExecute=$false; $p=[System.Diagnostics.Process]::Start($psi); $so=$p.StandardOutput.ReadToEndAsync(); $se=$p.StandardError.ReadToEndAsync(); $p.WaitForExit(); $out=$so.GetAwaiter().GetResult(); $err=$se.GetAwaiter().GetResult(); if($p.ExitCode -ne 0){exit $p.ExitCode}; $j=$out|ConvertFrom-Json; if(-not ($j.Issues -is [System.Array])){exit 96}; $hits=@($j.Issues|Where-Object{$_.Pos.Filename -eq \"internal/x.go\" -and $_.FromLinter -eq \"errcheck\"}); if($hits.Count){exit 1}; Write-Output \"FSLV-OK:internal/x.go:errcheck:0-owned-findings\"'",
-        "lint_scope": {"kind": "file-scoped-go-lint", "package": "./internal", "linter": "errcheck", "owned_file": "internal/x.go"},
-        "non_vacuity_evidence": {"mode": "structured-json-schema-validated", "success_marker": "FSLV-OK:internal/x.go:errcheck:0-owned-findings", "asserts": ["native exit preserved", "schema and exact target validated"]}
+        "task_lint_cmd": "pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId 900.002-T -FeatureId 900-F",
+        "lint_scope": {"kind": "harness-file-scoped-go-lint", "package": "./internal", "linter": null, "owned_file": "internal/x.go"},
+        "non_vacuity_evidence": {"mode": "structured-json-schema-validated", "success_marker": "TASK-LINT-OK:900.002-T:support", "asserts": ["canonical runner validates native exit, schema, and exact target"]}
       },
       "expect_valid": true
     },
     {
       "id": "valid-bounded-finding-set",
       "contract": {
-        "task_lint_cmd": "pwsh -Command '$owned=@(\"internal/a.go|10|2|errcheck|unchecked return\",\"internal/b.go|20|3|staticcheck|deprecated call\"); $psi=[System.Diagnostics.ProcessStartInfo]::new(); $psi.FileName=\"golangci-lint\"; $psi.Arguments=\"run --output.json.path stdout --show-stats=false --issues-exit-code 0 ./internal/a ./internal/b\"; $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true; $psi.UseShellExecute=$false; $p=[System.Diagnostics.Process]::Start($psi); $so=$p.StandardOutput.ReadToEndAsync(); $se=$p.StandardError.ReadToEndAsync(); $p.WaitForExit(); $out=$so.GetAwaiter().GetResult(); $err=$se.GetAwaiter().GetResult(); if($p.ExitCode -ne 0){exit $p.ExitCode}; $j=$out|ConvertFrom-Json; if(-not ($j.Issues -is [System.Array])){exit 96}; $observed=@($j.Issues|ForEach-Object{\"$($_.Pos.Filename)|$($_.Pos.Line)|$($_.Pos.Column)|$($_.FromLinter)|$($_.Text)\"}); if(@($observed|Where-Object{$owned -ccontains $_}).Count){exit 1}; Write-Output \"FSLV-OK:bounded:2-files:2-findings\"'",
+        "task_lint_cmd": "pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId 900.002-T -FeatureId 900-F",
         "lint_scope": {
           "kind": "bounded-finding-set-go-lint",
           "packages": ["./internal/a", "./internal/b"],
@@ -73,7 +73,7 @@
         },
         "non_vacuity_evidence": {
           "mode": "structured-json-schema-validated",
-          "success_marker": "FSLV-OK:bounded:2-files:2-findings",
+          "success_marker": "TASK-LINT-OK:900.002-T:finding-remediation",
           "asserts": ["native exit preserved", "all exact files and ordinal finding identities participate"]
         }
       },
@@ -181,22 +181,38 @@
       "shipment_id": "900-S",
       "release_unit_id": "900-F",
       "terminal_task_id": "900.005-T",
+      "supported_goos": ["windows", "linux"],
       "member_scope": [
-        {"task_id": "900.001-T", "role": "baseline-control", "task_artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111"},
-        {"task_id": "900.002-T", "role": "finding-remediation", "task_artifact_sha256": "2222222222222222222222222222222222222222222222222222222222222222"},
-        {"task_id": "900.003-T", "role": "finding-remediation", "task_artifact_sha256": "3333333333333333333333333333333333333333333333333333333333333333"},
-        {"task_id": "900.004-T", "role": "finding-remediation", "task_artifact_sha256": "4444444444444444444444444444444444444444444444444444444444444444"},
-        {"task_id": "900.005-T", "role": "terminal-convergence", "task_artifact_sha256": "5555555555555555555555555555555555555555555555555555555555555555"},
-        {"task_id": "900.006-T", "role": "support", "task_artifact_sha256": "6666666666666666666666666666666666666666666666666666666666666666"}
+        {"task_id": "900.001-T", "role": "baseline-control", "task_contract_sha256": "1111111111111111111111111111111111111111111111111111111111111111"},
+        {"task_id": "900.002-T", "role": "finding-remediation", "task_contract_sha256": "2222222222222222222222222222222222222222222222222222222222222222"},
+        {"task_id": "900.003-T", "role": "finding-remediation", "task_contract_sha256": "3333333333333333333333333333333333333333333333333333333333333333"},
+        {"task_id": "900.004-T", "role": "finding-remediation", "task_contract_sha256": "4444444444444444444444444444444444444444444444444444444444444444"},
+        {"task_id": "900.005-T", "role": "terminal-convergence", "task_contract_sha256": "5555555555555555555555555555555555555555555555555555555555555555"},
+        {"task_id": "900.006-T", "role": "support", "task_contract_sha256": "6666666666666666666666666666666666666666666666666666666666666666"}
       ],
+      "topology": {
+        "member_count": 6,
+        "role_partition": {
+          "baseline-control": ["900.001-T"],
+          "finding-remediation": ["900.002-T", "900.003-T", "900.004-T"],
+          "support": ["900.006-T"],
+          "terminal-convergence": ["900.005-T"]
+        },
+        "edge_count": 7,
+        "edges": ["900.001-T->900.002-T", "900.001-T->900.003-T", "900.002-T->900.004-T", "900.002-T->900.006-T", "900.003-T->900.005-T", "900.004-T->900.005-T", "900.006-T->900.005-T"],
+        "source_task_id": "900.001-T",
+        "sink_task_id": "900.005-T",
+        "waves": [["900.001-T"], ["900.002-T", "900.003-T"], ["900.004-T", "900.006-T"], ["900.005-T"]],
+        "terminal_coverage": ["900.001-T", "900.002-T", "900.003-T", "900.004-T", "900.005-T", "900.006-T"]
+      },
       "baseline_inventory": {
         "path": "tests/simulation/fixtures/generic-lint-baseline.json",
         "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "finding_count": 3,
         "identity_fields": ["path", "line", "column", "linter", "message", "owner_task_id"]
       },
-      "intermediate_wave_lint_cmd": "pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory tests/simulation/fixtures/generic-lint-baseline.json -InventorySha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -Shipment 900-S -TerminalTask 900.005-T",
-      "terminal_global_lint_cmd": "golangci-lint run",
+      "intermediate_wave_lint_cmd": "pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory tests/simulation/fixtures/generic-lint-baseline.json -InventorySha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -Shipment 900-S -FeatureId 900-F -TerminalTask 900.005-T",
+      "terminal_global_lint_cmd": "pwsh -NoProfile -File scripts/verify-terminal-lint.ps1 -FeatureId 900-F",
       "operator_authorization": {
         "record": "operator-authorization:generic-baseline",
         "authorized_at": "2026-09-18T13:57:01-07:00",
@@ -267,7 +283,7 @@
       {"id": "support-not-reaching-terminal", "set_dependencies": {"task_id": "900.005-T", "dependencies": ["900.003-T", "900.004-T"]}, "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
       {"id": "support-missing-task-lint", "remove_task_lint_task": "900.006-T", "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
       {"id": "hidden-support", "remove_member_scope_task": "900.006-T", "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
-      {"id": "off-catalog-support", "append_member_scope": {"task_id": "900.999-T", "role": "support", "task_artifact_sha256": "9999999999999999999999999999999999999999999999999999999999999999"}, "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
+      {"id": "off-catalog-support", "append_member_scope": {"task_id": "900.999-T", "role": "support", "task_contract_sha256": "9999999999999999999999999999999999999999999999999999999999999999"}, "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
       {"id": "support-status-does-not-reduce-residual", "completed": ["900.001-T", "900.002-T", "900.006-T"], "observed": ["internal/b.go|20|3|staticcheck|deprecated call|900.003-T"], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_RESIDUAL_MISMATCH"},
       {"id": "control-only-first-wave-unconditional-global-lint", "remove_contract": true, "baseline_requested": false, "completed": ["900.001-T"], "observed": ["internal/a.go|10|2|errcheck|unchecked return|900.002-T", "internal/b.go|20|3|staticcheck|deprecated call|900.003-T", "internal/c.go|30|4|errcheck|unchecked close|900.004-T"], "terminal": false, "global_lint_ok": false, "expect": "STRICT_GLOBAL_LINT_FAILED"},
       {"id": "missing-member", "remove_member_scope_task": "900.004-T", "completed": ["900.001-T"], "observed": [], "terminal": false, "global_lint_ok": false, "expect": "WAVE_BASELINE_LINT_CONTRACT_INVALID"},
@@ -320,9 +336,31 @@
       "observed_or_committed_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
       "pre_dispatch_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md"],
       "pre_completion_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
-      "staged_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
-      "post_commit_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "staged_paths": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "post_commit_paths": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "post_commit_working_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md"],
       "expect": "PASS"
+    },
+    {
+      "id": "verification-only-uncommitted-deliverable",
+      "task_id": "175.012-T",
+      "exempt_class": "verification-only",
+      "exempt_baseline_sha": "1111111111111111111111111111111111111111",
+      "paths": [".backlogit/queue/175.012-T.md", ".backlogit/hooks_queue.jsonl"],
+      "derived_paths": [".backlogit/queue/175.012-T.md", ".backlogit/hooks_queue.jsonl"],
+      "before_sha256_by_path": {".backlogit/queue/175.012-T.md": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ".backlogit/hooks_queue.jsonl": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+      "after_sha256_by_path": {".backlogit/queue/175.012-T.md": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", ".backlogit/hooks_queue.jsonl": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+      "digests_match": true,
+      "transitions_valid": true,
+      "validated_transitions": {"task_status": "queued->active", "event_append_count": 1, "event_task_id": "175.012-T", "event_status": "active"},
+      "task_owned_delta": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "observed_or_committed_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "pre_dispatch_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md"],
+      "pre_completion_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "staged_paths": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "post_commit_paths": [],
+      "post_commit_working_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "expect": "EXEMPT_CLAIM_DELTA_INVALID"
     },
     {
       "id": "verification-only-claim-delta-omitted",
@@ -340,8 +378,9 @@
       "observed_or_committed_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
       "pre_dispatch_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md"],
       "pre_completion_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
-      "staged_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
-      "post_commit_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "staged_paths": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "post_commit_paths": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "post_commit_working_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md"],
       "expect": "EXEMPT_CLAIM_DELTA_INVALID"
     },
     {
@@ -360,8 +399,9 @@
       "observed_or_committed_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
       "pre_dispatch_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore"],
       "pre_completion_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
-      "staged_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
-      "post_commit_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore", "docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "staged_paths": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "post_commit_paths": ["docs/closure/175-baseline-convergence-convergence-evidence.md"],
+      "post_commit_working_paths": [".backlogit/hooks_queue.jsonl", ".backlogit/queue/175.012-T.md", ".gitignore"],
       "expect": "EXEMPT_CLAIM_DELTA_INVALID"
     }
   ],

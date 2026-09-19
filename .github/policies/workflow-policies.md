@@ -467,11 +467,11 @@ halts with `EXEMPT_CLAIM_DELTA_INVALID`. A caller-supplied path allowlist is nev
 Ship passes the frozen record unchanged to `build-feature`. At every pre-commit check, each
 governed path must still equal its recorded after-digest and transition. The P-002.4 class
 `task_owned_delta` is the full baseline-to-working-tree delta minus **only** that exact, revalidated
-governed claim delta. At commit, `build-feature` stages exactly
-`task_owned_delta ∪ governed_claim_delta.paths`; it rejects every other staged, unstaged, or
-untracked path. After commit, Ship validates that `git diff --name-only
-{exempt_baseline_sha}..HEAD` is exactly the same union, revalidates the governed path contents,
-and applies the class path/content passes to `task_owned_delta` only. This subtraction is not a
+governed claim delta. At commit, `build-feature` stages exactly `task_owned_delta` and retains exactly
+`governed_claim_delta.paths` as the separately validated working delta; it rejects every other
+staged, unstaged, or untracked path. After commit, Ship validates the task-owned commit delta and
+governed working delta separately, exact-compares their combined union, revalidates the governed
+path contents, and applies the class path/content passes to `task_owned_delta` only. This subtraction is not a
 general dirty-tree allowance: a missing, changed, or unvalidated claim record is a halt.
 
 **Diff form depends on whether the task's commit exists yet (mandatory).** The two consumers of
@@ -482,7 +482,7 @@ possible failure mode for a fail-closed check:
 | Consumer | Runs | Correct diff form | Why |
 |---|---|---|---|
 | `build-feature` post-loop completion gate | **before** the skill's own `### Commit` step | Union of `git diff --name-only {exempt_baseline_sha}`, `git diff --cached --name-only {exempt_baseline_sha}`, and untracked paths; then exact-validate and subtract `governed_claim_delta.paths` | The task's work and governed claim mutation are in the working tree. The class gate evaluates only the non-empty `task_owned_delta`; the exact claim delta remains independently content-validated. |
-| Ship Step 4.3 quality gates | **after** `build-feature` reports success and after its commit | `git diff --name-only {exempt_baseline_sha}..HEAD`, exact-compared with `task_owned_delta ∪ governed_claim_delta.paths`; per-file content diff over the same range | The commit exists, so `HEAD` is stable. Ship revalidates the governed content and evaluates the class against the same task-owned set as `build-feature`. |
+| Ship Step 4.3 quality gates | **after** `build-feature` reports success and after its commit | Commit delta exact-compared with `task_owned_delta`; working delta exact-compared with `governed_claim_delta.paths`; their combined path union exact-compared with the frozen union | The commit exists, so `HEAD` is stable. Ship revalidates governed working content separately and evaluates the class against the same task-owned set as `build-feature`. |
 
 **A `{exempt_baseline_sha}..HEAD` diff evaluated before the task's commit exists is still
 forbidden.** It compares the baseline against itself. Likewise, subtracting claim paths by name
@@ -831,10 +831,34 @@ unit's declared purpose is removal of a known repository-wide lint baseline and 
 exactly one canonical `baseline-lint-convergence-contract` JSON block. Never infer this mode from a
 label, prose, shipment title, a failing lint run, or operator presence. The block must freeze:
 
+Every member's `task_lint_cmd` is exactly
+`pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId {task_id} -FeatureId
+{release_unit_id}`. Inline `-Command` and `-EncodedCommand` runners are invalid. The canonical
+runner resolves lifecycle location, verifies the stable task-contract digest, validates the
+role/scope schema and exact ownership, requires the package set to equal the owned-file directory
+package set, and derives each file's supported-platform participation from native `go list`.
+It proves tracked/nonignored participation, checks golangci-lint v2.13.2, captures JSON stdout
+separately from diagnostics, and compares paths and finding identities ordinally. Across the exact
+selected packages, only inventory findings owned by unfinished other tasks may remain; current-task, new, moved,
+linter-changed, message-changed, and terminal-owner findings fail. A remediation scope has 1–2 owned files, 1–2 explicit nonrecursive
+packages, and 1–16 findings. Harness/control/support scopes prove their exact owned harness target.
+A terminal `no-go-lint-surface` scope declares `owned_paths` and `governed_claim_paths`; the same
+runner uses explicit `-Phase PreCommit` to require exactly their working union. Ship uses explicit
+`-Phase PostCommit` to require the exact owned-path commit delta plus the exact governed-claim
+working delta and exact-compares their combined union. The unsuffixed command is schema-only, so
+phase confusion fails closed. For `no-go-lint-surface`, the unsuffixed stored command is not an
+executable completion check: Ship appends `-Phase Schema` before claim, build-feature appends
+`-Phase PreCommit`, and Ship appends `-Phase PostCommit` after the task-owned commit. Missing and
+case-varied phase values fail closed.
+Missing, duplicate, misplaced, out-of-role, vacuous, or extra data fails.
+
 * `mode: "baseline-convergence"`, `purpose: "known-global-lint-baseline-removal"`, the exact
   `shipment_id` and `release_unit_id`, and the exact `terminal_task_id`;
-* `member_scope`, containing every executable task in frozen `M` exactly once and no other task,
-  with exact `task_id`, `role`, and committed `task_artifact_sha256`. Allowed roles are
+* `supported_goos: ["windows","linux"]` and `member_scope`, containing every executable task in
+  frozen `M` exactly once and no other task, with exact `task_id`, `role`, and
+  `task_contract_sha256`. The digest is SHA-256 over the compact canonical JSON value of the
+  task's `task-lint-contract`, not over mutable frontmatter or the whole artifact; status changes
+  and queue-to-archive relocation therefore do not invalidate the release contract. Allowed roles are
   `baseline-control`, `finding-remediation`, `support`, and `terminal-convergence`. There is
   exactly one control member, one or more remediation members, exactly one terminal member
   matching `terminal_task_id`, and zero or more support members. Every inventory owner is a
@@ -842,15 +866,21 @@ label, prose, shipment title, a failing lint run, or operator presence. The bloc
   control, support, and terminal members own none. Support is neutral connected release-unit work,
   not finding ownership: support members remain subject to exact membership, digest, status,
   canonical non-vacuous native-failure-preserving task-lint, dependency-DAG, and normal task-gate
-  validation. Ship recomputes every digest before claim, so purpose prose or an unbound role label
+  validation. Ship resolves each task in exactly one lifecycle-valid queue/archive location and
+  recomputes every contract digest before claim, so purpose prose or an unbound role label
   cannot admit unrelated work;
+* `topology`, containing the exact dynamic `member_count`, role-partition arrays, `edge_count`,
+  ordinal edge set (`dependency->member`), unique `source_task_id`, unique `sink_task_id`, Kahn
+  `waves`, and full `terminal_coverage`. Every value is derived from the same frozen live
+  membership/dependency graph and exact-compared; it is not a copied prose count;
 * `baseline_inventory.path`, a repository-relative path to a committed machine-readable inventory,
   its lowercase 64-hex `sha256`, its positive `finding_count`, and
   `identity_fields: ["path","line","column","linter","message","owner_task_id"]`. Every row must
   have one normalized exact identity and exactly one owner in `M`; duplicate, malformed, unowned,
   multiply owned, or out-of-`M` rows are invalid;
 * the exact read-only invocation `pwsh -NoProfile -File scripts/verify-baseline-lint.ps1
-  -Inventory {path} -InventorySha256 {sha256} -Shipment {shipment_id} -TerminalTask
+  -Inventory {path} -InventorySha256 {sha256} -Shipment {shipment_id} -FeatureId
+  {release_unit_id} -TerminalTask
   {terminal_task_id}` with placeholders replaced by the other frozen values and no extra argument.
   The tracked verifier preserves native launch, configuration, process, and parser failure, runs
   repository-wide lint in structured-output mode, normalizes all identity fields ordinally,
@@ -859,8 +889,13 @@ label, prose, shipment title, a failing lint run, or operator presence. The bloc
   Control, support, and terminal status never authorizes retaining a finding. New, missing, moved,
   message-changed, changed-linter, duplicate, malformed, or unowned findings all fail.
   `--issues-exit-code 0` is valid only inside this verifier after native execution and schema
-  success are independently proved;
-* `terminal_global_lint_cmd: "golangci-lint run"` exactly; and
+  success are independently proved. The inventory declares Windows as the primary captured
+  surface, Linux primary-row exclusions, and the exact Linux-only additional rows. The verifier
+  evaluates both GOOS values and deduplicates common identities by construction; one host is never
+  represented as covering both build-tag surfaces;
+* `terminal_global_lint_cmd: "pwsh -NoProfile -File scripts/verify-terminal-lint.ps1 -FeatureId
+  {release_unit_id}"` exactly. It requires golangci-lint v2.13.2 and zero findings for Windows and
+  Linux. GitHub CI independently runs pinned v2.13.2 on native Ubuntu; and
 * `operator_authorization.record`, `authorized_at`, `authorized_by`, `shipment_id`, and
   `scope: "retain-only-unfinished-owned-baseline-findings-until-terminal"`. The authorization
   shipment must equal the enclosing shipment and expires at the terminal boundary. Ship must
@@ -869,13 +904,14 @@ label, prose, shipment title, a failing lint run, or operator presence. The bloc
   runtime-unconfirmed, or self-authored waiver is invalid.
 
 At Step 3, Ship recomputes the inventory digest, validates every identity/owner against frozen `M`,
-and recomputes every `member_scope` task-artifact digest. It then validates the live dependency map
+and recomputes every `member_scope` task-contract digest. It then validates the live dependency map
 over exactly `M`, with no fixed member or edge count: every dependency endpoint is in `M`; the
 graph is acyclic; the sole `baseline-control` member is the unique source and has no prerequisite;
 the declared `terminal_task_id` is the sole `terminal-convergence` member and unique sink; and
 every member is both reachable from control and able to reach terminal. Support members may have
 dependencies and may gate terminal convergence, but may not be disconnected or bypass the sink.
-These checks reject a
+The canonical `topology` exact comparison and its member/role/edge/wave/terminal mutation controls
+make those properties executable. These checks reject a
 missing, hidden extra, disconnected, cyclic, multiple-source, or multiple-sink member and prove
 that terminal convergence covers every member path directly or transitively. Ship
 then screens the
@@ -883,7 +919,8 @@ intermediate command, and freezes the whole block. Any missing, duplicate, ambig
 inconsistent field halts before claim with `WAVE_BASELINE_LINT_CONTRACT_INVALID`.
 Activation also requires every member to be unstarted. Before the first claim or mutation, Ship
 runs the exact intermediate command and requires
-`BASELINE-LINT-RESIDUAL-OK:{shipment_id}:{finding_count}`. A different count or any native,
+`BASELINE-LINT-RESIDUAL-OK:{shipment_id}:surfaces=2:residual={unique_unfinished_identity_count}`.
+A different count or any native,
 configuration, parser, or residual mismatch halts, proving the inventory equals the live global
 baseline before completed-member filtering can remove an expected finding.
 
@@ -896,11 +933,13 @@ introduced/unowned finding halts with
 not required to exit zero at these intermediate convergence points only.
 
 At the wave containing the exact `terminal_task_id`, after the terminal task and all of `M` are
-`done`, the residual must be empty and Ship must execute the exact unmodified
-`golangci-lint run`. Exit zero with zero findings is mandatory before the release unit may be
-presented for PR or merge; otherwise halt with `WAVE_BASELINE_LINT_UNCLOSED`. Ship runs the same
-unmodified command again in the final branch-wide gate. `archived` never discharges a baseline
-finding owner or satisfies this terminal boundary. Non-declared and malformed contracts remain in
+`done`, the residual must be empty and Ship must execute the exact frozen
+`terminal_global_lint_cmd`, exactly
+`pwsh -NoProfile -File scripts/verify-terminal-lint.ps1 -FeatureId <feature-id>`. Exit zero with
+zero findings on Windows and Linux is mandatory before the release unit may be presented for PR or merge; otherwise halt with
+`WAVE_BASELINE_LINT_UNCLOSED`. Ship runs the same frozen command again in the final branch-wide
+gate. Like `done`, `archived` removes a task from residual finding ownership, but unlike `done` it
+does not satisfy this terminal boundary: every member of `M` must be `done`. Non-declared and malformed contracts remain in
 `strict` mode only in the sense that no relaxation exists: if a release unit requests or labels
 baseline convergence but lacks a valid block, halt rather than silently choosing either mode.
 
@@ -982,10 +1021,10 @@ would fail on the deliverables the plan asked for, and the loop could never adva
   1. the repo-wide compile check `go test -run=^$ -count=1 ./...` — it executes no test, so no red
      harness can affect it, and it is exactly the check that catches a broken build hiding behind a
      narrowed suite;
-  2. `go vet ./...` and `gofmt -l .`, plus the frozen lint-mode gate: unmodified
-     `golangci-lint run` under `strict`; the exact residual-set command at an intermediate
-     `baseline-convergence` wave; and both empty residual-set proof and unmodified
-     `golangci-lint run` at its terminal boundary;
+  2. `go vet ./...` and `gofmt -l .`, plus the frozen lint-mode gate: pinned v2.13.2 global lint
+     under `strict`; the exact two-surface residual-set command at an intermediate
+     `baseline-convergence` wave; and both empty residual-set proof and the canonical Windows/Linux
+     terminal runner at its terminal boundary;
   3. the wave's **closed list of declared scoped commands** — every member's `harness_cmd` and
      declared `green_regression_cmds`, each of which must pass, **except** a red-deliverable
      member, whose `red_selector_command` must still be observed **RED**. A red deliverable that

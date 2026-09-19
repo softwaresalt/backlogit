@@ -453,10 +453,11 @@ frozen **here** and nowhere else.
    Never infer the mapping from prose, labels, or dependency direction.
 4. **Freeze task-scoped gate contracts.**
    * For every member of `M`, parse the required canonical
-     `<!-- BEGIN:task-lint-contract -->` JSON block. Task artifacts may call this file-scoped lint
-     verification (FSLV). The block carries `task_lint_cmd`, a closed `lint_scope`, and
-     `non_vacuity_evidence`. Freeze all three values per task. The command must be executable as
-     written, read-only, bounded to one exact owned file or a small explicitly enumerated set of
+     `<!-- BEGIN:task-lint-contract -->` JSON block. The block carries `task_lint_cmd`, a closed
+     `lint_scope`, and `non_vacuity_evidence`. Freeze all three values per task. The command must be
+     exactly `pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId {task_id} -FeatureId
+     {feature_id}`. Inline `-Command`/`-EncodedCommand` implementations are invalid. The tracked
+     runner is read-only, bounded to one exact owned file or a small explicitly enumerated set of
      owned files/findings, preserve the native
      linter/configuration/process exit, and fail closed when its claimed target or evidence is
      absent, empty, malformed, not ordinal-identical, does not participate in the native lint
@@ -467,7 +468,10 @@ frozen **here** and nowhere else.
      repository-wide `golangci-lint run`, success-shaped native failure, `|| true`, suppression,
      or unbounded operator waiver halts with `WAVE_TASK_LINT_CONTRACT_INVALID`. The same frozen
      command is screened before claim, passed verbatim to build-feature, run before any task commit,
-     and rerun by Ship after build-feature returns.
+     and rerun by Ship after build-feature returns. For `no-go-lint-surface` only, append the
+     mandatory phase selected by the workflow position: `-Phase Schema` at the read-only
+     pre-claim screen, `-Phase PreCommit` in build-feature, and `-Phase PostCommit` in Ship after
+     the task-owned commit. An omitted or unrecognized phase fails closed.
      A remediation task spanning a small bounded set uses
      `lint_scope.kind: "bounded-finding-set-go-lint"` with the exact keys `kind`, `packages`,
      `owned_files`, and `owned_findings`. `packages` and `owned_files` are non-empty,
@@ -475,9 +479,13 @@ frozen **here** and nowhere else.
      recursive `...`; `owned_findings` contains between one and sixteen entries whose exact key
      order is `path`, `line`, `column`, `linter`, `message`, with every path present in
      `owned_files`. The package count cannot exceed the owned-file count.
-     `task_lint_cmd` must invoke every declared package, bind every owned file, construct every
-     ordinal identity as `path|line|column|linter|message`, parse native structured lint output,
-     and compare those identities without case folding before emitting its exact success marker.
+     `task_lint_cmd` must invoke every declared package, require the package set to equal the
+     owned-file directory package set, derive platform participation from native `go list`,
+     construct every ordinal identity as
+     `path|line|column|linter|message`, parse native structured lint output, and compare those
+     identities without case folding. Across the selected packages, only exact inventory
+     identities owned by unfinished other tasks may remain; current-task, new, moved, linter-changed, message-changed,
+     and terminal-owner findings fail before the exact success marker.
      This permits safe grouping of a few related files/findings; it does not authorize broad
      package ownership, inferred targets, or work wider than the repository's task-duration and
      granularity limits.
@@ -499,21 +507,32 @@ frozen **here** and nowhere else.
      "shipment_id": "900-S",
      "release_unit_id": "900-F",
      "terminal_task_id": "900.005-T",
+     "supported_goos": ["windows", "linux"],
      "member_scope": [
-       {"task_id": "900.001-T", "role": "baseline-control", "task_artifact_sha256": "<lowercase-64-hex>"},
-       {"task_id": "900.002-T", "role": "finding-remediation", "task_artifact_sha256": "<lowercase-64-hex>"},
-       {"task_id": "900.003-T", "role": "finding-remediation", "task_artifact_sha256": "<lowercase-64-hex>"},
-       {"task_id": "900.004-T", "role": "support", "task_artifact_sha256": "<lowercase-64-hex>"},
-       {"task_id": "900.005-T", "role": "terminal-convergence", "task_artifact_sha256": "<lowercase-64-hex>"}
+      {"task_id": "900.001-T", "role": "baseline-control", "task_contract_sha256": "<sha256-of-canonical-task-lint-json>"},
+      {"task_id": "900.002-T", "role": "finding-remediation", "task_contract_sha256": "<sha256-of-canonical-task-lint-json>"},
+      {"task_id": "900.003-T", "role": "finding-remediation", "task_contract_sha256": "<sha256-of-canonical-task-lint-json>"},
+      {"task_id": "900.004-T", "role": "support", "task_contract_sha256": "<sha256-of-canonical-task-lint-json>"},
+      {"task_id": "900.005-T", "role": "terminal-convergence", "task_contract_sha256": "<sha256-of-canonical-task-lint-json>"}
      ],
+     "topology": {
+       "member_count": 5,
+       "role_partition": {"baseline-control": ["900.001-T"], "finding-remediation": ["900.002-T", "900.003-T"], "support": ["900.004-T"], "terminal-convergence": ["900.005-T"]},
+       "edge_count": 5,
+       "edges": ["900.001-T->900.002-T", "900.001-T->900.003-T", "900.002-T->900.004-T", "900.003-T->900.005-T", "900.004-T->900.005-T"],
+       "source_task_id": "900.001-T",
+       "sink_task_id": "900.005-T",
+       "waves": [["900.001-T"], ["900.002-T", "900.003-T"], ["900.004-T"], ["900.005-T"]],
+       "terminal_coverage": ["900.001-T", "900.002-T", "900.003-T", "900.004-T", "900.005-T"]
+     },
      "baseline_inventory": {
        "path": "path/to/committed-machine-inventory.json",
        "sha256": "<lowercase-64-hex>",
        "finding_count": 1,
        "identity_fields": ["path", "line", "column", "linter", "message", "owner_task_id"]
      },
-     "intermediate_wave_lint_cmd": "pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory path/to/committed-machine-inventory.json -InventorySha256 <lowercase-64-hex> -Shipment 900-S -TerminalTask 900.005-T",
-     "terminal_global_lint_cmd": "golangci-lint run",
+     "intermediate_wave_lint_cmd": "pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory path/to/committed-machine-inventory.json -InventorySha256 <lowercase-64-hex> -Shipment 900-S -FeatureId 900-F -TerminalTask 900.005-T",
+     "terminal_global_lint_cmd": "pwsh -NoProfile -File scripts/verify-terminal-lint.ps1 -FeatureId 900-F",
      "operator_authorization": {
        "record": "<durable authorization identity>",
        "authorized_at": "<RFC3339 timestamp>",
@@ -526,7 +545,9 @@ frozen **here** and nowhere else.
 
    Require `member_scope` to contain every executable task member of the release unit/shipment
    (`M`) exactly once and no other task, without assuming a fixed member or edge count. Recompute
-   each committed task artifact's SHA-256 and exact-match it before claim. The only roles are
+   each task's canonicalized `task-lint-contract` SHA-256 and exact-match it before claim. This
+   digest remains stable when lifecycle frontmatter changes or the artifact moves to archive.
+   The only roles are
    `baseline-control`, `finding-remediation`, `support`, and `terminal-convergence`. There must be
    exactly one control role, one or more remediation roles, exactly one terminal role matching
    `terminal_task_id`, and zero or more support roles. Every inventory owner has the remediation
@@ -536,7 +557,9 @@ frozen **here** and nowhere else.
    ordinary task-gate validation, but its completion status never removes or retains a baseline
    finding. These digest-bound declarations are the mechanical proof that the authorized release
    unit contains only baseline control, removal, connected support, and terminal convergence work;
-   labels or purpose prose alone are insufficient.
+   labels or purpose prose alone are insufficient. Exact-compare the declared `topology` with the
+   live member count, role partition, edge set/count, unique source/sink, Kahn wave decomposition,
+   and terminal ancestor coverage.
    Recompute the inventory SHA-256; require a committed, machine-readable, non-empty inventory;
    validate exact ordinal identities and exactly one `owner_task_id ∈ M` per row; require the
    positive count to match. Validate the live dependency map over exactly `M`: every dependency
@@ -555,13 +578,16 @@ frozen **here** and nowhere else.
    authorization must be an explicit operator record for the exact enclosing shipment and exact
    temporary scope. Ship must also receive that record identity directly from the operator at
    invocation and ordinal-exact-compare it with the block; repository prose cannot authenticate
-   itself. The terminal command must equal `golangci-lint run` byte-for-byte. The intermediate
+   itself. Both commands fail closed unless golangci-lint reports exactly v2.13.2. The terminal
+   command must equal the canonical terminal runner and must produce zero findings for Windows and
+   Linux. The intermediate
    command must be exactly `pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory
-   {path} -InventorySha256 {sha256} -Shipment {shipment_id} -TerminalTask {terminal_task_id}` using
+   {path} -InventorySha256 {sha256} -Shipment {shipment_id} -FeatureId {release_unit_id}
+   -TerminalTask {terminal_task_id}` using
    the other frozen fields; no alternate wrapper or extra argument is admitted.
    Before any member is claimed or mutated, require every member status to be unstarted, execute
    that exact intermediate command once, and require
-   `BASELINE-LINT-RESIDUAL-OK:{shipment_id}:{finding_count}`. This initial attestation proves the
+   `BASELINE-LINT-RESIDUAL-OK:{shipment_id}:surfaces=2:residual={count}`. This initial attestation proves the
    committed inventory equals the live repository-wide baseline before completed-member filtering
    can remove any expected row.
    Missing/duplicate fields, a stale digest, ambiguous ownership, a generic waiver, or a
@@ -727,8 +753,9 @@ Run this gate for every task before claim, including `harness-ready`, `harness-e
    empty or open-ended scope, and non-vacuity evidence that does not fail closed. A task with no
    lintable Go delta must declare and positively verify that closed surface; an exemption label is
    not a lint waiver.
-3. Do not execute the completion command before the deliverable. This is the pre-task contract
-   gate, not the post-task lint result. After it passes, continue to Step 4.1a for a
+3. Do not execute a completion phase before the deliverable. For `no-go-lint-surface`, execute only
+   the read-only schema screen by appending `-Phase Schema`; never substitute it for the later
+   `PreCommit` or `PostCommit` checks. After the contract gate passes, continue to Step 4.1a for a
    `harness-exempt` task or directly to Step 4.1b for every other task.
 
 A halt occurs before claim and before any mutation. Record
@@ -917,13 +944,14 @@ without one.
 
 After the build-feature skill reports success:
 
-1. **Task-scoped lint**: run the frozen `task_lint_cmd` exactly once against the post-build-feature
+1. **Task-scoped lint**: run the frozen canonical `task_lint_cmd` exactly once against the post-build-feature
    tree. It must exit 0 and satisfy the canonical `non_vacuity_evidence` for the frozen
    `lint_scope`, providing non-vacuity proof for the claimed target. Preserve and propagate any
    native linter/configuration/process failure; reject empty or malformed evidence, target absence,
    and success-shaped wrappers. This post-build run must use the same command build-feature ran
-   before any task commit, including for `harness-exempt` and `red_deliverable` tasks. Do not infer
-   a replacement. If the frozen `release_lint_mode` is `strict`, also run the exact unmodified
+   before any task commit, including for `harness-exempt` and `red_deliverable` tasks. For
+   `no-go-lint-surface`, append the mandatory `-Phase PostCommit`. Do not infer a replacement. If
+   the frozen `release_lint_mode` is `strict`, also run the exact unmodified
    `golangci-lint run` now and require exit 0 with zero warnings; this is the post-commit
    defense-in-depth counterpart to build-feature's strict pre-commit gate. Only a validated
    `baseline-convergence` mode defers this global command here.
@@ -947,14 +975,20 @@ After the build-feature skill reports success:
      assertions, or the declared evidence-manifest rows and scalars. A vacuous pass (absent tests,
      empty selector, skipped package, no-op probe) → halt with `EXEMPT_EVIDENCE_MISMATCH`. Exit 0
      without the marker → halt with `EXEMPT_MARKER_MISSING`.
+   * For a `no-go-lint-surface` verification task, the same canonical runner must accept
+     exactly `task_owned_delta ∪ governed_claim_delta.paths` in both sequencing positions:
+     build-feature invokes `-Phase PreCommit` for the complete working delta; Ship invokes
+     `-Phase PostCommit` for the union of the exact task-owned commit delta and exact
+     governed-claim working delta. The unsuffixed canonical command performs schema screening
+     only, so the post-build gate cannot be mistaken for a pre-commit pass. No second allowlist
+     or handwritten verifier is permitted.
    * Revalidate `governed_claim_delta` against `task_id`, `exempt_baseline_sha`, its exact
      registry-derived path set, each validated transition, and each after-digest. Then obtain
-     `committed_delta = git diff --name-only {exempt_baseline_sha}..HEAD`. It must equal exactly
-     `task_owned_delta ∪ governed_claim_delta.paths`, where `task_owned_delta` is the same
-     non-empty set build-feature reported before commit. An omitted governed path, an added path,
-     or changed governed content halts with `EXEMPT_CLAIM_DELTA_INVALID`. The `..HEAD` form is
-     correct here because build-feature's commit exists; build-feature uses baseline-to-working-tree
-     forms before commit.
+     `committed_delta = git diff --name-only {exempt_baseline_sha}..HEAD` and the complete current
+     working delta. The commit must equal `task_owned_delta`, the working delta must equal
+     `governed_claim_delta.paths`, and their combined union must equal the frozen union. An omitted
+     governed path, an added path, or changed governed content halts with
+     `EXEMPT_CLAIM_DELTA_INVALID`. Build-feature uses baseline-to-working-tree forms before commit.
    * Apply the P-002.4 **path pass** to `task_owned_delta` only. An empty task-owned set halts with
      `EXEMPT_DELTA_EXCEEDS_CLASS` (detail: `empty task-owned delta`). Governed lifecycle metadata
      alone is not a deliverable.
@@ -1116,9 +1150,11 @@ Step 3 item 5; the unfiltered test suite runs whenever it can.
        halts with `WAVE_BASELINE_LINT_EXEC_FAILED`.
      * `baseline-convergence`, at the wave containing the exact `terminal_task_id`: require the
        terminal task and every member of `M` to be `done` (not `archived`), require the structured
-       residual to be empty, and then run the exact unmodified `golangci-lint run`. Any failure or
-       non-empty output halts with `WAVE_BASELINE_LINT_UNCLOSED`. Do not present the release unit
-       for PR or merge until this boundary passes.
+       residual to be empty, and then run the frozen `terminal_global_lint_cmd`, whose exact form
+       is `pwsh -NoProfile -File scripts/verify-terminal-lint.ps1 -FeatureId <feature-id>` and
+       which executes the pinned lint gate for both Windows and Linux. Any failure or non-empty
+       output halts with `WAVE_BASELINE_LINT_UNCLOSED`. Do not present the release unit for PR or
+       merge until this boundary passes.
    * The wave's **closed list of declared scoped commands**: every member's `harness_cmd` and its
      declared `green_regression_cmds`, each of which must pass — **except** a red-deliverable
      member, whose declared `red_selector_command` must still be observed **RED**. A red deliverable
@@ -1187,8 +1223,9 @@ After all tasks in the queue are complete:
    empty at final closure, and every deferred full suite is discharged here. If any entry is still
    open — including because a declared green-maker reached `archived` (a descope) rather than
    `done` — halt with `WAVE_OPEN_RED_UNCLOSED` and return the release unit to Stage. A release unit
-   never merges with an undischarged deferral. Also run the exact unmodified
-   `golangci-lint run` and require zero findings regardless of lint mode. A
+   never merges with an undischarged deferral. In `strict` mode run the exact unmodified
+   `golangci-lint run`; in `baseline-convergence` mode rerun the frozen
+   `terminal_global_lint_cmd`. Require zero findings on every declared surface. A
    baseline-convergence release unit that did not pass its exact terminal boundary halts with
    `WAVE_BASELINE_LINT_UNCLOSED`; no authorization record survives into PR/merge readiness.
 2. Write a session memory summary to `docs/memory/` capturing: items completed, items blocked, branch state, decisions with rationale, and next steps

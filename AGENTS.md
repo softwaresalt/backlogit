@@ -37,12 +37,16 @@ No ``unsafe`` package usage without explicit justification in a code comment and
 The sole exception to the pre-commit global-lint timing is the fail-closed
 P-002.6 `baseline-convergence` mode for a release unit whose exclusive purpose
 is removal of a committed, exact known-global-lint inventory. That mode requires
-an exact shipment-scoped operator authorization, native-failure-preserving
-task lint before every member commit, and exact residual-set verification after
+an exact shipment-scoped operator authorization, the native-failure-preserving canonical
+`scripts/verify-task-lint.ps1` command before and after every member commit, and exact residual-set verification after
 every intermediate wave; it may retain only unchanged inventory findings owned
 by unfinished member tasks. An intermediate result is `CONVERGING`, never
-`PASS`. The exception expires at the declared unique terminal boundary, where
-the unmodified ``golangci-lint run`` command must pass with zero warnings before
+`PASS`. All canonical baseline, task, and terminal lint entrypoints fail closed unless golangci-lint is exactly
+v2.13.2. The inventory is explicitly platform-scoped; Windows and Linux
+build-tag surfaces are verified separately and never inferred from one host.
+The exception expires at the declared unique terminal boundary, where
+`scripts/verify-terminal-lint.ps1` must report zero warnings for both supported
+GOOS surfaces before
 the release unit may be presented for pull request or merge. It does not apply
 to any other release unit, task, lint command, or quality gate.
 All errors must be wrapped with context using ``fmt.Errorf("context: %w", err)``. Sentinel errors for known failures. Never ignore returned errors..
