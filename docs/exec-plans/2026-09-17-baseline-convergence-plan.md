@@ -97,10 +97,10 @@ terminal-convergence members own zero findings.
   are: [`175.011-T`, `175.041-T`]; [`175.042-T`, `175.043-T`, `175.044-T`]; [`175.038-T`, `175.045-T`].
 - Cohesive same-package pairs are used only when total findings <= 16 and the work
   stays within the 2-hour bound; otherwise one file per task or sliced file tasks.
-- Windows-owned files (4) retain a host guard so their lint verification runs only
-  on Windows: `internal/core/shipment_reconcile_append_windows.go`, `internal/core/shipment_reconcile_evidence_windows.go`, `internal/core/shipment_reconcile_fs_windows.go`, `internal/core/shipment_reconcile_snapshot_windows.go`.
-- Linux-owned files (6) carry `supported_goos: [linux]` and are proven and linted
-  only on the Linux host: `internal/core/shipment_reconcile_append_unix.go`, `internal/core/shipment_reconcile_evidence_unix.go`, `internal/core/shipment_reconcile_fs_unix.go`, `internal/core/shipment_reconcile_lock_unix.go`, `internal/core/shipment_reconcile_snapshot_unix.go`, `internal/events/item_log_lock_unix.go`.
+- Windows-owned files (4) own only `windows`-surface findings and are linted under
+  the `windows` build surface: `internal/core/shipment_reconcile_append_windows.go`, `internal/core/shipment_reconcile_evidence_windows.go`, `internal/core/shipment_reconcile_fs_windows.go`, `internal/core/shipment_reconcile_snapshot_windows.go`.
+- Linux-owned files (6) own only `linux`-surface findings and are linted under the
+  `linux` build surface (cross-compiled via `GOOS=linux` on the same host): `internal/core/shipment_reconcile_append_unix.go`, `internal/core/shipment_reconcile_evidence_unix.go`, `internal/core/shipment_reconcile_fs_unix.go`, `internal/core/shipment_reconcile_lock_unix.go`, `internal/core/shipment_reconcile_snapshot_unix.go`, `internal/events/item_log_lock_unix.go`.
 
 ### Task lint contract (bounded, task-scoped)
 
@@ -116,9 +116,11 @@ duplicated PowerShell runner. The canonical runner:
    each owned Go file it fails closed unless the file exists, is tracked
    (`git ls-files --error-unmatch`), is not ignored (`git check-ignore`), and
    participates in its analyzed package (`go list` `GoFiles`/`TestGoFiles`/
-   `XTestGoFiles`). Windows-owned files are proven only on the Windows host and
-   Linux-owned files only on the Linux host per `supported_goos`; off-host they
-   short-circuit as a satisfied host guard rather than a false green.
+   `XTestGoFiles`). The runner cross-compiles `go list` and golangci-lint under
+   both the `windows` and `linux` surfaces in-process (a `GOOS` override on a
+   single host) and derives each owned file's required surface(s) from the
+   inventory, so `_windows.go` files are proven under `windows` and `_unix.go`
+   files under `linux` without depending on the analyzing host's own platform.
 2. **Runs golangci-lint v2.13.2 in-memory** as a child process with in-memory
    stdout/stderr capture (no machine temp files, no `Remove-Item` cleanup),
    uncapped (`--max-issues-per-linter 0 --max-same-issues 0 --uniq-by-line=false`),
@@ -201,7 +203,8 @@ fail-closed on any owned `.go` path.
 ## Dynamic DAG
 
 The DAG is acyclic with **98 members and 184 edges** across **13 bounded waves**
-(11 remediation waves plus the source, support, and terminal boundary waves):
+(11 remediation waves plus the source and terminal boundary waves; the U40 and
+U14 support members fold into remediation waves):
 
 - **U1 (`175.001-T`) is the unique source** (in-degree 0). Its direct dependents
   are `175.002-T`, `175.003-T`, `175.004-T`, `175.005-T`, `175.006-T`, `175.007-T`, `175.008-T`, `175.009-T`, `175.010-T`, `175.040-T`.
@@ -209,7 +212,8 @@ The DAG is acyclic with **98 members and 184 edges** across **13 bounded waves**
 - The first remediation batch depends on U1. Each later remediation batch is
   gated by an explicit anchor dependency from the prior batch; per-file slices
   additionally depend on the preceding slice for that file. Per-wave remediation
-  anchors: `175.002-T`, `175.011-T`, `175.022-T`, `175.031-T`, `175.041-T`, `175.043-T`, `175.044-T`, `175.068-T`, `175.077-T`, `175.086-T`, `175.095-T`.
+  anchors (illustrative wave entry points; the authoritative execution ordering is
+  encoded in the backlogit dependency edges, not this list): `175.002-T`, `175.011-T`, `175.022-T`, `175.031-T`, `175.041-T`, `175.043-T`, `175.044-T`, `175.068-T`, `175.077-T`, `175.086-T`, `175.095-T`.
 - **U12 (`175.012-T`) is the unique terminal sink** and depends on exactly
   85 immediate predecessors — the final remediation frontier (84 tasks) plus U14
   (`175.014-T`) — with U1 and U40 transitive only (no direct edge).
