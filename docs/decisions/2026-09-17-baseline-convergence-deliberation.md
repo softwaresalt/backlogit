@@ -29,10 +29,11 @@ docline:
 two deferred-scope-expansion stash entries (`92F79833`, `4DB1DFF1`) into one
 baseline-convergence covering feature (`175-F`), and that grouping stands. Its original
 task decomposition is superseded: the release unit is rescoped to the complete unbounded
-golangci-lint v2.13.2 baseline of 489 findings across 160 files. The current authoritative
-decomposition — 94 members, 177 edges, 10 remediation waves — lives in
-`docs/exec-plans/2026-09-17-baseline-convergence-plan.md`, the committed inventory
-`docs/decisions/baseline-lint-inventory-489.json`, and the `175-F` canonical
+golangci-lint v2.13.2 supported-platform baseline (497 unique findings across the `windows`
+and `linux` surfaces; 489 on the Windows-primary surface alone). The current authoritative
+decomposition — 98 executable members, 184 edges, 13 waves — lives in
+`docs/exec-plans/2026-09-17-baseline-convergence-plan.md`, the committed supported-platform
+union inventory `docs/decisions/baseline-lint-inventory.json`, and the `175-F` canonical
 baseline-convergence contract. The option analysis below is retained as historical
 decision evidence at its original abstraction.
 

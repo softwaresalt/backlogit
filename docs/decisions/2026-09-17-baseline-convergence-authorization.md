@@ -22,8 +22,12 @@ baseline-convergence release unit (feature `175-F`, shipment `156-S`):
   that are owned by not-yet-completed finding-remediation tasks, until terminal
   convergence at U12 (`175.012-T`).
 - No new or unowned findings may be introduced. The set of tolerated findings is
-  exactly the 489-identity governed inventory at `docs/decisions/baseline-lint-inventory-489.json`
-  (SHA-256 `7330d6baecc93e9cac4f4f96438a21565994106984f50c239cd1e6d8f86d2b66`); each identity is owned by exactly one remediation task.
+  exactly the 497-identity supported-platform union governed inventory at
+  `docs/decisions/baseline-lint-inventory.json`
+  (SHA-256 `6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a`);
+  the union covers the Windows-primary 489 findings and the 8 Linux-only findings,
+  with the 4 Windows-only findings encoded as Linux surface exclusions. Each
+  identity is owned by exactly one finding-remediation task.
 - Terminal global lint is mandatory and MUST be zero-warning: the terminal task
   U12 runs `golangci-lint run` across the whole repository and the release unit
   is not converged until that run is clean.
@@ -44,16 +48,19 @@ baseline-convergence release unit (feature `175-F`, shipment `156-S`):
 The intermediate-wave verifier enforces exact remaining-baseline monotonicity
 against the governed inventory:
 
-```
-pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory-489.json -InventorySha256 7330d6baecc93e9cac4f4f96438a21565994106984f50c239cd1e6d8f86d2b66 -Shipment 156-S -TerminalTask 175.012-T
+```text
+pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a -Shipment 156-S -FeatureId 175-F -TerminalTask 175.012-T
 ```
 
-The terminal command is exactly `golangci-lint run` (zero-warning required).
+The terminal command is exactly `pwsh -NoProfile -File scripts/verify-terminal-lint.ps1 -FeatureId 175-F`,
+which runs `golangci-lint run` across the whole repository (zero-warning
+required) and covers both declared supported surfaces (`windows`, `linux`).
 
 ## Authority
 
 - Authorized by: `Derek Williams <42183845+softwaresalt@users.noreply.github.com>` (configured git user identity).
 - Authorization time: `2026-09-19T01:01:22Z`.
 - Basis: explicit operator instruction across the baseline-convergence rescope
-  session directing full-baseline (489-finding) convergence with task-scoped lint
-  per member and mandatory zero-warning global lint only at terminal convergence.
+  session directing full-baseline supported-platform union convergence (497
+  findings: 489 Windows-primary plus 8 Linux-only) with task-scoped lint per
+  member and mandatory zero-warning global lint only at terminal convergence.
