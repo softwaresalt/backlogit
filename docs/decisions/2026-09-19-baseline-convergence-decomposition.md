@@ -165,19 +165,25 @@ runner-bootstrap prerequisite task and shipment are added under feature `175-F`:
   runner bootstrap.
 
 **Non-vacuous bootstrap contract (honest resolution).** Because `175.099-T`
-CREATES the shared runners, its own verification MUST NOT invoke them (a vacuous
-self-dependency on the artifact it produces). It therefore carries a
-self-contained task-lint contract of a new `lint_scope` kind
+CREATES the shared runners, its task-lint GATE MUST NOT be a direct invocation of
+`scripts/verify-task-lint.ps1` (using the created runner as its own gate would be a
+circular self-dependency) and MUST be buildable before any runner exists. It
+therefore carries a self-contained task-lint contract of a new `lint_scope` kind
 `runner-bootstrap-self-contained`: an owned Go harness
 `tests/runner_bootstrap_175_099_test.go` (`TestU175_099_RunnerBootstrap`) that
-proves the three runner scripts exist, are tracked, are non-empty, parse cleanly
-under the built-in PowerShell AST parser, and declare their required `param(...)`
-surface — RED before the runners exist, GREEN after — using ONLY existing
-main-branch tooling (`go test` + `pwsh`) and executing NO runner lint body and
-NEVER invoking `scripts/verify-task-lint.ps1`. The prerequisite is therefore
-independently buildable under existing tooling before any runner exists. No Go
-source, workflow, or script is implemented in this planning PR; `175.099-T`
-declares the ownership that Ship executes later. Full contract:
+(static layer) proves the three runner scripts exist, are tracked, are non-empty,
+parse cleanly under the built-in PowerShell AST parser, and declare their required
+`param(...)` surface, and (behavioral layer, non-vacuous) — after the runners exist
+— EXERCISES each runner against harness-authored deterministic fixture
+workspaces/inputs to assert its success, native/nonzero failure-propagation, and
+malformed/missing-input fail-closed contracts with divergent exit codes, so a no-op
+runner that merely parses is rejected — RED before the runners exist, GREEN after —
+using ONLY existing main-branch tooling (`go test` + `pwsh`), constructing all
+fixtures itself and invoking runners via fixed argument vectors (no untrusted shell
+input). The GATE never makes the created runner its own lint gate, so the
+prerequisite is independently buildable under existing tooling before any runner
+exists. No Go source, workflow, or script is implemented in this planning PR;
+`175.099-T` declares the ownership that Ship executes later. Full contract:
 `.backlogit/queue/175.099-T.md`; feature contract: the "## Runner-bootstrap
 prerequisite" section and `packaging.prerequisite_*` fields in
 `.backlogit/queue/175-F.md`.
@@ -377,9 +383,11 @@ defects, both corrected in this update:
    runner-bootstrap prerequisite task `175.099-T` and prerequisite shipment
    `176-S` (RS-W(-1)), gating the replacement sequence via
    `157-S depends_on 176-S` and `175.001-T depends_on 175.099-T`. `175.099-T`
-   carries a non-vacuous, self-contained bootstrap harness (Go test + PowerShell
-   AST parse over the three created scripts) that never invokes the runner it
-   creates and is independently buildable under existing tooling. Full detail:
+   carries a non-vacuous, self-contained bootstrap harness (a Go test that
+   statically AST-parses the three created scripts and — per PR #449 cycle 3 —
+   behaviorally exercises each runner against controlled fixtures) whose GATE is
+   never a direct invocation of the runner it creates and is independently
+   buildable under existing tooling. Full detail:
    "## Runner-bootstrap prerequisite (PR #449 review cycle 2)" above. No source or
    scripts are implemented in this planning PR.
 
@@ -396,3 +404,45 @@ governance-only, and the readiness-metadata observation is PR-body-only (updated
 by Ship after this commit). Feature executable-task total is now 99 (98
 remediation + 1 prerequisite); the 98-task exactly-once coverage across
 `157-S`..`169-S` is unchanged.
+
+## Correction (PR #449 review cycle 3, 2026-09-19)
+
+Cycle-3 Copilot review of PR #449 raised two Stage-owned defects, both corrected in
+this update:
+
+1. **Vacuous bootstrap harness (thread `PRRT_kwDORzozKM6kHLk_`,
+   `.backlogit/queue/175.099-T.md`).** The `175.099-T` bootstrap harness previously
+   proved only file existence, clean AST parse, and `param(...)` surface while
+   explicitly never executing any runner body, so a no-op implementation of the
+   three runners could satisfy the task and let prerequisite shipment `176-S` ship
+   even though the other 98 tasks depend on the runners' fail-closed lint, baseline,
+   and terminal behavior. Corrected by strengthening the owned Go harness
+   (`tests/runner_bootstrap_175_099_test.go`, `TestU175_099_RunnerBootstrap`) to a
+   behavioral, fixture-driven contract: after the runners exist it exercises each of
+   the three runners against harness-authored deterministic fixture
+   workspaces/inputs, asserting per runner an expected-success GREEN scenario, an
+   expected native/nonzero failure-propagation scenario, a malformed/missing-input
+   fail-closed scenario, and non-vacuity evidence (success vs failure fixtures yield
+   different exit codes) sufficient to reject no-op runners. The bootstrap invariant
+   is preserved: the task-lint GATE is the Go harness (`go test ./tests -run
+   ^TestU175_099_`), never a direct invocation of the runner this task creates, it
+   requires no runner to pre-exist to be buildable (RED before, GREEN after), it uses
+   only existing main-branch tooling (`go test` + `pwsh`), and it constructs all
+   fixtures itself and invokes runners via fixed argument vectors (no untrusted shell
+   input). Coupled feature/decomposition wording in `.backlogit/queue/175-F.md`,
+   `.backlogit/queue/176-S.md`, and the cycle-2 record above was reworded from
+   "never invokes the runner" to the precise gate invariant. No source, scripts, or
+   tests are implemented in this planning PR.
+
+2. **Stale durable session handoff (thread `PRRT_kwDORzozKM6kHLlD`,
+   `docs/memory/2026-09-19-baseline-convergence-decomposition-session.md`).** The
+   durable handoff still recorded 98 tasks and only shipments `157-S`..`169-S`,
+   omitting task `175.099-T`, shipment `176-S`, and the `176→157` prerequisite edge.
+   Updated its counts, wave→shipment map, dependency edges, invariants, commit/review
+   state, and handoff text to the current 99-task / 14-shipment graph.
+
+No structural change to the 98-member remediation sub-DAG (184 edges, U1 source, U12
+sink, 13 waves) or to shipment membership; both mechanical validators re-run PASS at
+98 tasks / 184 edges / 13 replacement shipments. Feature executable-task total
+remains 99 (98 remediation + 1 prerequisite); shipment total 14 (13 replacement + 1
+prerequisite `176-S`).
