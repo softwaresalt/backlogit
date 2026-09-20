@@ -86,7 +86,13 @@ subtlety exists.
 | RS-W11 | Remediation 11 (Linux surfaces) | 175.095-T, 175.096-T, 175.097-T, 175.098-T | 4 |
 | RS-W12 | Terminal boundary (U12; unblocks 149-S) | 175.012-T | 1 |
 
-**Total: 98 tasks, each in exactly one replacement shipment.**
+**Total: 98 remediation tasks, each in exactly one replacement shipment
+(`157-S`..`169-S`).** PR #449 review cycle 2 adds ONE runner-bootstrap
+prerequisite task `175.099-T` in a new prerequisite shipment `176-S` (RS-W(-1)),
+bringing the feature's executable-task total to **99**. The 98 remediation-task
+coverage across `157-S`..`169-S` is unchanged; `175.099-T` is the only member of
+`176-S` and appears in no other shipment. See "## Runner-bootstrap prerequisite
+(PR #449 review cycle 2)" below.
 
 Actual assigned shipment IDs (shipment ID counter is per-type, continued from 156-S):
 
@@ -108,6 +114,13 @@ Actual assigned shipment IDs (shipment ID counter is per-type, continued from 15
 
 ## Dependency / Ordering Map
 
+- **Runner-bootstrap prerequisite gate (PR #449 cycle 2):** the entire
+  replacement baseline sequence is gated behind the prerequisite shipment `176-S`
+  (RS-W(-1), carrying `175.099-T`) via `157-S depends_on 176-S`, with a
+  reinforcing task-level edge `175.001-T depends_on 175.099-T`. `RS-W00` (`157-S`)
+  therefore cannot begin until `176-S` has shipped. `175.099-T` is the
+  in-degree-zero source of the full-feature graph; U1 remains the source of the
+  98-member remediation sub-DAG.
 - **Chain (deterministic sequence):** `RS-W(k+1)` `blocks`-depends on `RS-Wk` for
   k = 0..11. This yields the strict order RS-W00 → RS-W01 → ... → RS-W12.
 - **149-S rewire:** the existing edge `149-S depends_on 156-S` is removed and
@@ -125,6 +138,54 @@ Actual assigned shipment IDs (shipment ID counter is per-type, continued from 15
   transitively gated behind the full replacement sequence.
 - **168.001-T:** remains archived / `done`; it is not re-listed in any replacement
   shipment and is not re-executed.
+
+## Runner-bootstrap prerequisite (PR #449 review cycle 2)
+
+Copilot review of PR #449 (thread `PRRT_kwDORzozKM6kHF00`) identified that all 98
+task contracts invoke `scripts/verify-task-lint.ps1`, and the feature also
+requires `scripts/verify-baseline-lint.ps1` and `scripts/verify-terminal-lint.ps1`,
+but none of those three runner scripts exists on this branch and no `175.*`
+remediation task owned creating them. The first replacement shipment `157-S`
+therefore had no executable task-lint command, and folding the runners into
+`157-S` would exceed its single-task ownership.
+
+**Resolution (in scope under P-021 same-contract completion).** A single
+runner-bootstrap prerequisite task and shipment are added under feature `175-F`:
+
+| Item | ID | Role | Contents / ownership |
+|---|---|---|---|
+| Prerequisite task | `175.099-T` | `runner-bootstrap` | OWNS creation of `scripts/verify-task-lint.ps1`, `scripts/verify-baseline-lint.ps1`, `scripts/verify-terminal-lint.ps1` |
+| Prerequisite shipment | `176-S` (RS-W(-1)) | prerequisite | task-only manifest `[175.099-T]`; gates `157-S` |
+
+**Explicit dependency edges added:**
+
+- `157-S depends_on 176-S` — the replacement baseline sequence cannot begin until
+  the prerequisite shipment ships.
+- `175.001-T depends_on 175.099-T` — task-level reinforcement; U1 waits for the
+  runner bootstrap.
+
+**Non-vacuous bootstrap contract (honest resolution).** Because `175.099-T`
+CREATES the shared runners, its own verification MUST NOT invoke them (a vacuous
+self-dependency on the artifact it produces). It therefore carries a
+self-contained task-lint contract of a new `lint_scope` kind
+`runner-bootstrap-self-contained`: an owned Go harness
+`tests/runner_bootstrap_175_099_test.go` (`TestU175_099_RunnerBootstrap`) that
+proves the three runner scripts exist, are tracked, are non-empty, parse cleanly
+under the built-in PowerShell AST parser, and declare their required `param(...)`
+surface — RED before the runners exist, GREEN after — using ONLY existing
+main-branch tooling (`go test` + `pwsh`) and executing NO runner lint body and
+NEVER invoking `scripts/verify-task-lint.ps1`. The prerequisite is therefore
+independently buildable under existing tooling before any runner exists. No Go
+source, workflow, or script is implemented in this planning PR; `175.099-T`
+declares the ownership that Ship executes later. Full contract:
+`.backlogit/queue/175.099-T.md`; feature contract: the "## Runner-bootstrap
+prerequisite" section and `packaging.prerequisite_*` fields in
+`.backlogit/queue/175-F.md`.
+
+The 98-member remediation sub-DAG (184 edges, U1 source, U12 sink, 13 waves
+RS-W00..RS-W12) is UNCHANGED internally; `175.099-T` sits outside it as a
+pre-DAG bootstrap. Feature executable-member total: **99** (98 remediation + 1
+prerequisite).
 
 ## Supersession of 156-S (non-destructive)
 
@@ -149,8 +210,11 @@ never deleted:
 3. This decision record documents the supersession for the Orchestrator's claim
    routing.
 
-`156-S` retains its historical 98-task membership as provenance; the exclusive
-execution ownership of those tasks moves to the replacement shipments.
+`156-S`'s committed manifest is now empty (`items: []`); its historical membership
+(feature `175-F` plus the 98 remediation tasks) is preserved ONLY in Git history
+and on branch `stage/baseline-convergence-main`, not in the current manifest. The
+exclusive execution ownership of those tasks now lives in the replacement
+shipments.
 
 ## What Is NOT Carried Forward
 
@@ -169,11 +233,18 @@ retained as **design specification**, not as committed tooling.
 
 ## Invariants Preserved
 
-- 98 unique executable tasks, covered exactly once across the 13 replacement
-  shipments (no omission, no duplicate).
-- No replacement shipment lists `175-F`.
-- Every replacement shipment is `queued`.
-- Dependency graph is acyclic and yields the declared ordered wave sequence.
+- 98 unique remediation tasks, covered exactly once across the 13 replacement
+  shipments `157-S`..`169-S` (no omission, no duplicate).
+- 1 runner-bootstrap prerequisite task `175.099-T`, owned exactly once by the
+  prerequisite shipment `176-S` and present in no other shipment. Feature
+  executable-task total: 99.
+- No replacement shipment (nor `176-S`) lists `175-F`.
+- The replacement baseline sequence is gated behind `176-S` via
+  `157-S depends_on 176-S`; the runner-bootstrap prerequisite is buildable under
+  existing tooling without invoking the runner it creates.
+- Every replacement shipment and the prerequisite shipment `176-S` are `queued`.
+- Dependency graph (including the two prerequisite edges) is acyclic and yields
+  the declared ordered wave sequence RS-W(-1) → RS-W00 → … → RS-W12.
 - 149-S is ordered behind the terminal replacement shipment (RS-W12 / `169-S`) by
   an advisory `blocks` edge; shipped-only readiness is governed by claim-routing
   policy until tool-level enforcement lands (stash `6434A4D7`). See the Accuracy
@@ -293,3 +364,35 @@ operator authorization was correspondingly extended from `156-S` to the
 replacement sequence `157-S`..`169-S` — a derived application of existing
 authority over an operator-directed repackaging, recorded in
 `docs/decisions/2026-09-17-baseline-convergence-authorization.md`.
+
+## Correction (PR #449 review cycle 2, 2026-09-19)
+
+Cycle-2 Copilot review of PR #449 raised two Stage-owned repository-contract
+defects, both corrected in this update:
+
+1. **Missing shared-runner owner (thread `PRRT_kwDORzozKM6kHF00`).** All 98 task
+   contracts invoke `scripts/verify-task-lint.ps1`, and the feature also requires
+   `scripts/verify-baseline-lint.ps1` and `scripts/verify-terminal-lint.ps1`, but
+   none existed and no task owned creating them. Resolved by adding the
+   runner-bootstrap prerequisite task `175.099-T` and prerequisite shipment
+   `176-S` (RS-W(-1)), gating the replacement sequence via
+   `157-S depends_on 176-S` and `175.001-T depends_on 175.099-T`. `175.099-T`
+   carries a non-vacuous, self-contained bootstrap harness (Go test + PowerShell
+   AST parse over the three created scripts) that never invokes the runner it
+   creates and is independently buildable under existing tooling. Full detail:
+   "## Runner-bootstrap prerequisite (PR #449 review cycle 2)" above. No source or
+   scripts are implemented in this planning PR.
+
+2. **Stale 156-S membership wording (thread `PRRT_kwDORzozKM6kHF1C`).** The
+   Supersession section previously said `156-S` "retains its historical 98-task
+   membership", contradicting its committed empty manifest (`items: []`). Reworded
+   to state the manifest is empty and the historical membership survives only in
+   Git history and on branch `stage/baseline-convergence-main`.
+
+Advisory-dependency threads `PRRT_kwDORzozKM6kHF08` (149-S) and
+`PRRT_kwDORzozKM6kHF0_` (stale readiness metadata) require no repository change:
+the committed `149-S` contract already describes the dependency as advisory /
+governance-only, and the readiness-metadata observation is PR-body-only (updated
+by Ship after this commit). Feature executable-task total is now 99 (98
+remediation + 1 prerequisite); the 98-task exactly-once coverage across
+`157-S`..`169-S` is unchanged.
