@@ -1,5 +1,7 @@
 ---
 title: "Deliberation: Shipment-claim / wave-scheduler convergence (claim semantic model)"
+doc_type: "decision"
+source: "docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-deliberation.md"
 description: "Authoritative decision on the shipment-claim semantic model that reconciles core.ClaimShipment activation with the P-002.6 wave scheduler; deliberation over deferred stash 6434A4D7"
 topic: "Shipment-claim / wave-scheduler convergence — claim semantic model for backlogit core"
 depth: "deep"
