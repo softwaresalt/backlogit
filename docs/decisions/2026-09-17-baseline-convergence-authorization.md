@@ -30,7 +30,7 @@ grant.** Its basis is the conjunction of:
    *packaging* (shipment membership and shipment-level sequencing) and leaves the
    98 executable tasks, the 184-edge DAG, the terminal task `175.012-T`, and the
    governed 497-identity inventory (`docs/decisions/baseline-lint-inventory.json`,
-   SHA-256 `6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a`)
+   SHA-256 `6758f96b03170d242bb0a9407effa2ed66c0a68d0951ff81d29f385bc1d91b60`)
    **unchanged**; and
 3. the operator's explicit directive for this correction cycle to restage /
    decompose and resolve the PR #449 review findings, which includes the request
@@ -63,7 +63,7 @@ baseline-convergence release unit (feature `175-F`, shipment `156-S`):
 - No new or unowned findings may be introduced. The set of tolerated findings is
   exactly the 497-identity supported-platform union governed inventory at
   `docs/decisions/baseline-lint-inventory.json`
-  (SHA-256 `6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a`);
+  (SHA-256 `6758f96b03170d242bb0a9407effa2ed66c0a68d0951ff81d29f385bc1d91b60`);
   the union covers the Windows-primary 489 findings and the 8 Linux-only findings,
   with the 4 Windows-only findings encoded as Linux surface exclusions. Each
   identity is owned by exactly one finding-remediation task.
@@ -94,7 +94,7 @@ substituting `-Shipment` with that wave's replacement shipment id; the supersede
 `156-S` is never used as the `-Shipment` argument:
 
 ```text
-pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
+pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 6758f96b03170d242bb0a9407effa2ed66c0a68d0951ff81d29f385bc1d91b60 -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
 ```
 
 The terminal command is exactly `pwsh -NoProfile -File scripts/verify-terminal-lint.ps1 -FeatureId 175-F`,

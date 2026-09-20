@@ -300,14 +300,14 @@ remediation sub-DAG members with their live role and the lowercase 64-hex
 (the runner-bootstrap prerequisite `175.099-T` is recorded separately in the
 `packaging.prerequisite_*` fields, outside this remediation `member_scope`); the
 committed machine inventory (`docs/decisions/baseline-lint-inventory.json`, SHA-256
-`6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a`, 497 identities);
+`6758f96b03170d242bb0a9407effa2ed66c0a68d0951ff81d29f385bc1d91b60`, 497 identities);
 the exact intermediate-wave verifier command; the canonical terminal command; and
 the shipment-scoped operator authorization reference.
 
 Intermediate-wave verifier (exact remaining-baseline monotonicity):
 
 ```
-pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
+pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 6758f96b03170d242bb0a9407effa2ed66c0a68d0951ff81d29f385bc1d91b60 -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
 ```
 
 > Packaging note (2026-09-19): under the accepted decomposition, the

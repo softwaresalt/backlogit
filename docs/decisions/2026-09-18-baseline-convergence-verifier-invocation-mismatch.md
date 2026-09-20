@@ -27,7 +27,7 @@ union**: the Windows-primary surface carries 489 findings across 160 files (459 
 and is no longer authoritative; the 489 figure is the Windows-primary surface alone, not
 the supported-platform total. The current binding lives in the committed machine-readable
 inventory `docs/decisions/baseline-lint-inventory.json` (497 identities, SHA-256
-`6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a`), the `175-F`
+`6758f96b03170d242bb0a9407effa2ed66c0a68d0951ff81d29f385bc1d91b60`), the `175-F`
 canonical `baseline-lint-convergence-contract`, and the shipment-scoped operator
 authorization at `docs/decisions/2026-09-17-baseline-convergence-authorization.md`.
 Execution is owned by the wave-aligned replacement shipments `157-S`..`169-S` (the
