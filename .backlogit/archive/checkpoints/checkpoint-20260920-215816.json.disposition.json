@@ -1,0 +1,7 @@
+{
+  "filename": "checkpoint-20260920-215816.json",
+  "disposition": "quarantined",
+  "reason": "Malformed Stage checkpoint: schema_version 0 and missing created_at; operator approved quarantine on 2026-09-20",
+  "operator": "softwaresalt",
+  "disposition_at": "2026-09-20T23:16:27.6330719Z"
+}
