@@ -50,9 +50,11 @@ unblocks shipment `149-S`.
 
 ## Requirements Trace
 
-- Complete baseline convergence: every one of the 497 governed lint identities in
-  the supported-platform union is owned by exactly one finding-remediation task
-  and resolved before terminal convergence.
+- Complete baseline convergence: every one of the 497 governed lint occurrences in
+  the supported-platform union (237 stable groups under the
+  `line-stable-group-multiset/v1` identity model) is owned by exactly one
+  finding-remediation task as an exact disjoint occurrence-count partition of its
+  stable group, and resolved before terminal convergence.
 - Line-ending root cause fixed once (U1) and guarded persistently (U40 script +
   U14 always-running workflow).
 - Task-scoped lint per member during intermediate waves; mandatory zero-warning
@@ -180,12 +182,31 @@ duplicated PowerShell runner. The canonical runner:
 3. **Validates schema before filtering:** empty stdout, malformed JSON, JSON
    `null`, a non-object root, missing `Issues`, or a non-collection `Issues` are
    hard failures; unknown/vacuous success shapes are rejected.
-4. **Matches owned identities by ordinal exact identity.** Each remediation task
-   matches its exact owned `path|line|column|linter|message` finding identity set
-   (1-16 identities over 1-2 owned files/packages) by ordinal set equality. The
-   verifier fails if any owned finding remains, and emits its success marker only
-   when zero owned findings are observed. `Issues: []` counts as success only
-   after target participation is proven.
+4. **Matches owned identities by line-stable stable-group multiplicity.** Ownership
+   identity is the line-stable group-multiset model (`line-stable-group-multiset/v1`),
+   NOT exact `path|line|column|linter|message`. Line and column are retained only as
+   diagnostic baseline coordinates and are never part of durable ownership identity.
+   Each owned finding belongs to a **stable group** keyed by the line-independent tuple
+   `(path, linter, normalized_message)` and fingerprinted as
+   `sha256(json([path,linter,normalized_message]))`; `normalized_message` is the linter
+   message under Unicode NFC + trim + internal-whitespace collapse. Each remediation
+   task owns, per governed stable group, an exact `owned_count` (occurrence multiplicity)
+   drawn from a contiguous baseline-ordinal range, and declares its
+   `expected_group_residual_after_task` (the count still owned by strictly-later sibling
+   slices; `0` when the task is the sole or final owner of the group). The verifier
+   re-derives each owned group's fingerprint from live golangci-lint output (path,
+   `FromLinter`, normalized `Text` — all line-shift-invariant), counts the group's
+   residual occurrences, and requires observed residual to **equal**
+   `expected_group_residual_after_task` for every owned group. Observed **greater than**
+   expected (an owned occurrence — including one shifted by a multiline edit — still
+   present) fails; observed **less than** expected (the task resolved an occurrence a
+   later slice owns) also fails, preserving task isolation even for interchangeable
+   duplicates. Occurrences within one stable group are truly indistinguishable and
+   semantically interchangeable, so the contract is enforced by required multiplicity
+   decrease, not by matching a specific occurrence to a specific line. A group that
+   appears in output with no baseline fingerprint (new finding) or a baseline group
+   whose message/path/linter changed (reorder across distinguishable findings) fails.
+   `Issues: []` counts as success only after target participation is proven.
 
 Each member binds a stable `task_contract_sha256` computed over its canonical
 task-lint-contract JSON, surviving the queue-to-archive lifecycle. The
@@ -193,6 +214,101 @@ task-lint-contract JSON, surviving the queue-to-archive lifecycle. The
 is deferred to mandatory terminal convergence and is never used as a per-task
 proxy. Same-wave sibling harnesses may remain red until wave convergence; no
 later-wave harness or lint scaffolding is created early.
+
+## Line-Stable Ownership Identity
+
+The durable ownership identity is the **line-stable group-multiset model**
+(`line-stable-group-multiset/v1`), recorded canonically in
+`docs/decisions/baseline-lint-inventory.json` (`identity_model`,
+`group_index`, and per-row `group_fingerprint`/`group_ordinal`/`group_multiplicity`).
+Line and column survive only as diagnostic baseline coordinates (requirement:
+they are never part of ownership identity).
+
+- **Stable group key.** `(path, linter, normalized_message)` — every field is
+  line-independent and reproducible at both baseline capture and verification.
+  golangci-lint re-emits path, `FromLinter`, and message `Text` for each issue
+  regardless of any line shift, so the fingerprint is stable across multiline edits.
+  `normalized_message` = Unicode NFC + trim + collapse internal whitespace.
+  `group_fingerprint = sha256(json([path, linter, normalized_message]))`.
+- **Multiplicity and order.** `group_multiplicity` is the baseline occurrence count
+  of the group; `group_ordinal` is a 1-based rank by ascending `(line, column)`, used
+  only for the deterministic contiguous ownership partition and as a diagnostic — never
+  as identity.
+- **Ownership.** Every governed occurrence is owned by exactly one remediation task as
+  an exact disjoint occurrence-count partition of its stable group. A group whose
+  occupancy fits one task is owned wholly by that task; a group larger than a single
+  slice is owned by an **ordered slice chain** (`slice k/n`, each depending on the
+  prior slice) over contiguous ordinal ranges.
+- **Interchangeability (explicit).** Occurrences within one stable group are truly
+  indistinguishable and semantically interchangeable — identical path, linter, and
+  normalized message; the identical mechanical fix at each call site. The ownership
+  contract is therefore enforced by required **multiplicity decrease**, not by binding
+  a specific occurrence to a specific line. This is the sound treatment of the
+  same-file split groups (the only 6 split groups are
+  `internal/cli/migrate.go` errcheck, `internal/cli/telemetry.go` errcheck, and
+  `internal/telemetry/reporter.go` staticcheck QF1012).
+- **Expected residual.** For a task `T` owning group `G`,
+  `expected_group_residual_after_task = group_multiplicity(G) − Σ owned_count(s)` over
+  `T` and every slice ordered at-or-before `T` — equivalently the summed `owned_count`
+  of strictly-later slices. The intermediate-wave verifier's expected residual for `G`
+  after a set of completed tasks equals the baseline multiplicity minus the summed
+  `owned_count` of the completed owners of `G`. A task-scoped or wave verifier fails
+  when observed residual is greater (a still-present owned occurrence, including a
+  shifted one) OR less (an occurrence a later slice owns was resolved) than expected,
+  and fails on any new-fingerprint or reordered-across-distinguishable-groups finding.
+
+Simplest-correct-form rationale (requirement: "choose and document the simplest
+correct form"): the model uses only attributes already present in the governed
+inventory (`path`, `linter`, `message`) plus deterministically derived
+multiplicity/ordinal data. It deliberately does **not** introduce enclosing-symbol or
+normalized-AST/call fingerprints: those are absent from the inventory and deriving them
+would require re-inspecting source at baseline coordinates (speculative mapping, which
+is prohibited), and — because every actual split group's occurrences are already
+genuinely interchangeable under `(path, linter, normalized_message)` — the extra
+attributes are unnecessary for correctness. No symbol or fingerprint value is invented.
+
+### Non-vacuity red scenarios (must fail)
+
+These scenarios are the correctness contract the canonical runners
+(`scripts/verify-task-lint.ps1`, `scripts/verify-baseline-lint.ps1`) implement, and
+are mirrored by the `175.099-T` runner-bootstrap behavioral fixtures.
+
+1. **Multiline edit before a remaining finding (shift must not hide it).** A completed
+   task edits above a still-owned occurrence of group `G`, shifting it from L100 to
+   L112. Because `G` is matched by fingerprint and counted by multiplicity, the shifted
+   occurrence is still counted; observed residual for `G` stays above
+   `expected_group_residual_after_task` → **FAIL**. (Under the retired exact-line model
+   the shifted occurrence no longer matched L100 and silently vanished.)
+2. **Repeated identical messages preserve multiplicity.** `internal/cli/telemetry.go`
+   carries 16 interchangeable `errcheck` `fmt.Fprintf` occurrences. Slice `175.042-T`
+   owns 7 with `expected_group_residual_after_task = 9`; resolving only 6 leaves observed
+   10 > 9 → **FAIL**; resolving 7 leaves 9 → PASS; the group is only fully cleared after
+   `175.044-T` (residual 0). Multiplicity, not line position, is enforced.
+3. **Wrong sibling occurrence cannot satisfy a distinguishable owned fingerprint.** A
+   task owning group `G1` (e.g. `ws.Close`) that instead resolves an occurrence of the
+   distinguishable group `G2` (e.g. `fmt.Fprintln`) leaves `G1` residual above expected
+   → **FAIL**; distinguishable findings are separate fingerprints with independent
+   multiplicity accounting.
+4. **New or reordered unmatched findings fail.** A golangci-lint output group whose
+   fingerprint is absent from the baseline (new finding), or a baseline occurrence whose
+   path/linter/message changed (reorder across distinguishable groups → new + missing),
+   fails the wave verifier.
+5. **Zero current findings only succeeds after target participation.** `Issues: []` is
+   accepted only after the target-vacuity guard proves each owned file exists, is
+   tracked, is not ignored, and participates in its analyzed package on its required
+   surface; an empty result from a non-participating target fails closed.
+
+### 175.042-T worked example
+
+Under the split group `internal/cli/telemetry.go | errcheck | fmt.Fprintf`
+(`group_multiplicity = 16`), the ordered chain is `175.042-T (slice 1/3)` →
+`175.043-T (slice 2/3)` → `175.044-T (slice 3/3)`, owning 7, 6, 3 occurrences with
+`expected_group_residual_after_task` 9, 3, 0 respectively; the parallel `fmt.Fprintln`
+group (`group_multiplicity = 14`) owns 6, 6, 2 with residual 8, 2, 0. `175.042-T`
+passes iff each of its owned groups drops to exactly its recorded residual — it cannot
+pass by clearing a `175.043-T`/`175.044-T`-owned occurrence (residual would fall below
+expected) and cannot pass while leaving one of its own (residual would stay above
+expected), regardless of any line shifts introduced by its own multiline edits.
 
 ## U40 - Line-Ending Guard Script (support)
 
@@ -299,17 +415,21 @@ remediation sub-DAG members with their live role and the lowercase 64-hex
 `task_contract_sha256` of each final committed canonical task-lint-contract JSON
 (the runner-bootstrap prerequisite `175.099-T` is recorded separately in the
 `packaging.prerequisite_*` fields, outside this remediation `member_scope`); the
-committed machine inventory (`docs/decisions/baseline-lint-inventory.json`, SHA-256
+committed machine inventory (`docs/decisions/baseline-lint-inventory.json`, schema
+`baseline-lint-platform-inventory/v3` carrying the `line-stable-group-multiset/v1`
+`identity_model`, the `group_index`, and per-row
+`group_fingerprint`/`group_ordinal`/`group_multiplicity`; SHA-256
 of the canonical checked-in LF inventory bytes — equivalently the post-U1 LF
 working-tree bytes, not the host CRLF checkout —
-`f20b3c9c116f1ba6a2a25b33fc51f6b7772fc56581a0f7793b387bf9c837c1d1`, 497 identities);
+`bbb20803209fcf26af03e8dd13af1ad6236629fb2c7432caf14be5badddc5f4c`, 497 occurrences
+across 237 stable groups);
 the exact intermediate-wave verifier command; the canonical terminal command; and
 the shipment-scoped operator authorization reference.
 
 Intermediate-wave verifier (exact remaining-baseline monotonicity):
 
 ```
-pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 f20b3c9c116f1ba6a2a25b33fc51f6b7772fc56581a0f7793b387bf9c837c1d1 -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
+pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 bbb20803209fcf26af03e8dd13af1ad6236629fb2c7432caf14be5badddc5f4c -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
 ```
 
 > Packaging note (2026-09-19): under the accepted decomposition, the
@@ -380,13 +500,23 @@ into this single baseline-convergence covering feature.
 
 ## Risks and Mitigations
 
-- **Task-lint false green** (default caps suppress same-message findings):
-  mitigated by uncapped flags and schema-before-filter validation.
+- **Task-lint false green** (default caps suppress same-message findings, or a
+  multiline edit shifts a still-unresolved owned occurrence off its baseline line):
+  mitigated by uncapped flags, schema-before-filter validation, and the line-stable
+  group-multiset identity model — matching by stable `(path, linter, normalized_message)`
+  fingerprint and enforcing per-group multiplicity decrease, so a shifted occurrence is
+  still counted and cannot silently satisfy the gate.
 - **Target vacuity** (linting a file that does not participate in analysis):
   mitigated by the go-list/package-membership target-vacuity guard, with a host
   guard for Windows-only and Linux-only files.
-- **Same-file concurrent mutation**: mitigated by slice ordering and the
-  never-co-wave constraint.
+- **Same-file concurrent mutation / shifted descendants**: mitigated by the ordered
+  slice chain, the never-co-wave constraint, and line-independent multiplicity matching
+  with a recorded `expected_group_residual_after_task` per split slice, so ownership and
+  isolation hold regardless of line shifts.
+- **Interchangeable-duplicate mis-attribution** (a slice passing by fixing a
+  sibling-owned occurrence of the same stable group): mitigated by the cumulative
+  ordinal partition plus the sequential slice dependency — a slice's expected residual
+  fails both when it leaves an owned occurrence and when it resolves a later slice's.
 - **Digest instability**: mitigated by the non-circular content/digest ceremony
   (finalize task bytes and timestamps, commit, digest, then author the feature
   member_scope and inventory bindings last).

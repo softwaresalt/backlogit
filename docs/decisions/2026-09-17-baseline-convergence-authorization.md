@@ -32,7 +32,7 @@ grant.** Its basis is the conjunction of:
    governed 497-identity inventory (`docs/decisions/baseline-lint-inventory.json`,
    SHA-256 of the canonical checked-in LF inventory bytes — equivalently the
    post-U1 LF working-tree bytes, not the host CRLF checkout —
-   `f20b3c9c116f1ba6a2a25b33fc51f6b7772fc56581a0f7793b387bf9c837c1d1`)
+   `bbb20803209fcf26af03e8dd13af1ad6236629fb2c7432caf14be5badddc5f4c`)
    **unchanged**; and
 3. the operator's explicit directive for this correction cycle to restage /
    decompose and resolve the PR #449 review findings, which includes the request
@@ -63,14 +63,20 @@ baseline-convergence release unit (feature `175-F`, shipment `156-S`):
   that are owned by not-yet-completed finding-remediation tasks, until terminal
   convergence at U12 (`175.012-T`).
 - No new or unowned findings may be introduced. The set of tolerated findings is
-  exactly the 497-identity supported-platform union governed inventory at
+  exactly the 497-occurrence supported-platform union governed inventory at
   `docs/decisions/baseline-lint-inventory.json`
   (SHA-256 of the canonical checked-in LF inventory bytes — equivalently the
   post-U1 LF working-tree bytes, not the host CRLF checkout —
-  `f20b3c9c116f1ba6a2a25b33fc51f6b7772fc56581a0f7793b387bf9c837c1d1`);
+  `bbb20803209fcf26af03e8dd13af1ad6236629fb2c7432caf14be5badddc5f4c`);
   the union covers the Windows-primary 489 findings and the 8 Linux-only findings,
-  with the 4 Windows-only findings encoded as Linux surface exclusions. Each
-  identity is owned by exactly one finding-remediation task.
+  with the 4 Windows-only findings encoded as Linux surface exclusions. Ownership
+  identity is the line-stable group-multiset model (`line-stable-group-multiset/v1`):
+  each governed occurrence is owned by exactly one finding-remediation task as an
+  exact disjoint occurrence-count partition of its stable group
+  `(path, linter, normalized_message)`; `line`/`column` are diagnostic baseline
+  coordinates only, never durable ownership identity, and tolerance is enforced by
+  per-group multiplicity, so a retained owned occurrence shifted by a multiline edit
+  remains counted and still owned rather than silently disappearing.
 - Terminal global lint is mandatory and MUST be zero-warning: the terminal task
   U12 runs `golangci-lint run` across the whole repository and the release unit
   is not converged until that run is clean.
@@ -98,7 +104,7 @@ substituting `-Shipment` with that wave's replacement shipment id; the supersede
 `156-S` is never used as the `-Shipment` argument:
 
 ```text
-pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 f20b3c9c116f1ba6a2a25b33fc51f6b7772fc56581a0f7793b387bf9c837c1d1 -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
+pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 bbb20803209fcf26af03e8dd13af1ad6236629fb2c7432caf14be5badddc5f4c -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
 ```
 
 The `-InventorySha256` value is the SHA-256 of the canonical checked-in LF
