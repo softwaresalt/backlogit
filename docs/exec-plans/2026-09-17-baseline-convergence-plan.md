@@ -300,14 +300,16 @@ remediation sub-DAG members with their live role and the lowercase 64-hex
 (the runner-bootstrap prerequisite `175.099-T` is recorded separately in the
 `packaging.prerequisite_*` fields, outside this remediation `member_scope`); the
 committed machine inventory (`docs/decisions/baseline-lint-inventory.json`, SHA-256
-`6758f96b03170d242bb0a9407effa2ed66c0a68d0951ff81d29f385bc1d91b60`, 497 identities);
+of the canonical checked-in LF inventory bytes — equivalently the post-U1 LF
+working-tree bytes, not the host CRLF checkout —
+`f20b3c9c116f1ba6a2a25b33fc51f6b7772fc56581a0f7793b387bf9c837c1d1`, 497 identities);
 the exact intermediate-wave verifier command; the canonical terminal command; and
 the shipment-scoped operator authorization reference.
 
 Intermediate-wave verifier (exact remaining-baseline monotonicity):
 
 ```
-pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 6758f96b03170d242bb0a9407effa2ed66c0a68d0951ff81d29f385bc1d91b60 -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
+pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 f20b3c9c116f1ba6a2a25b33fc51f6b7772fc56581a0f7793b387bf9c837c1d1 -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
 ```
 
 > Packaging note (2026-09-19): under the accepted decomposition, the
@@ -315,6 +317,12 @@ pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions
 > RS-W00..RS-W12 order (`157-S`..`169-S`), substituting `-Shipment` with that
 > wave's replacement shipment id; the superseded `156-S` is never used as the
 > `-Shipment` argument.
+>
+> The `-InventorySha256` value is the SHA-256 of the canonical checked-in LF
+> inventory bytes (equivalently the post-U1 LF working-tree bytes, not the
+> host CRLF checkout); U1 (`175.001-T`) normalizes the tracked working tree
+> to LF before any intermediate-wave run, so the on-disk inventory hashes to
+> this canonical digest.
 
 Terminal command (zero-warning, mandatory at U12, both supported surfaces):
 
