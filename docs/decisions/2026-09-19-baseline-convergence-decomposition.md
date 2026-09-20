@@ -143,6 +143,56 @@ Actual assigned shipment IDs (shipment ID counter is per-type, continued from 15
 - **168.001-T:** remains archived / `done`; it is not re-listed in any replacement
   shipment and is not re-executed.
 
+## Claim/Scheduler Execution Readiness (BLOCKED)
+
+**This topology is structurally complete but not yet executable.** The
+`runner-bootstrap` prerequisite gate above resolves the *lint-runner* bootstrap;
+it does **not** resolve a second, independent blocker: the shipment-claim /
+wave-scheduler contract mismatch. `core.ClaimShipment`
+(`internal/core/shipment_lifecycle.go:46-98`) transitions **every** queued
+manifest member to `active` on claim, while Ship wave admission
+(`.github/agents/_ship.agent.md:526-535`) halts on **any** active member and
+computes `ready_k` only from `queued` tasks. Claiming `176-S` makes all three
+bootstrap tasks `active` and immediately yields `WAVE_NO_PROGRESS`; the same
+applies to `157-S`..`169-S`. (Identical to the mismatch that blocked `140-S`.)
+
+Execution readiness of the entire replacement sequence (`176-S` and
+`157-S`..`169-S`) is therefore **BLOCKED** until the shipment-claim /
+wave-scheduler convergence prerequisite lands. The authoritative claim model and
+its rationale are recorded in
+`docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-deliberation.md`
+(deliberation over stash `6434A4D7`): `core.ClaimShipment` keeps its
+all-members-active semantics; dependency-gated wave admission is realized
+additively via the scheduler-baseline marker plus its scheduler consumption.
+
+**Exact readiness dependencies:**
+
+1. **`154-S` / `173-F`** — the in-repo scheduler-baseline **marker** enabling
+   precondition (reviewed PASS). Encoded as the advisory edge `154-S blocks 176-S`
+   (the front of the replacement chain waits for the marker). Advisory, not a hard
+   shipped-only guard, until `6434A4D7` lands.
+2. **External autoharness P-002.6 scheduler marker-consumption** (out-of-workspace,
+   P-017) — must treat marked-active members as the wave-0 admissible baseline and
+   reserve the active-residual halt for unmarked residuals. Cross-workspace
+   follow-up; cannot be a backlog edge.
+3. **`6434A4D7`** dependency-axis hardening (deferred Go-core release unit) —
+   claim-time dependency guard + shipped-only readiness gate + governed
+   non-claimable disposition. Governs, but does not gate, the baseline sequence.
+
+**Bootstrap of the marker prerequisite itself.** `154-S`/`173-F` cannot be
+executed through the marked-aware scheduler (the marker its own tasks produce
+does not exist at its own claim time; `173-F` is internally multi-wave). It is
+executed via an **operator-authorized single-shipment bootstrap**: Ship claims
+`154-S`, then drives the claim-activated members green in their declared
+dependency order **without** the strict active-residual halt, because the
+just-claimed members are the intended working set. The exception is scoped to
+`154-S` only; all later shipments use the normal marked-aware scheduler.
+
+**Consequence for `#449`:** this PR is a planning-only decomposition; it makes no
+shipment executable on its own. Until readiness dependencies (1) and (2) land, no
+member shipment may be claimed for wave execution. The Orchestrator claim-routing
+policy holds the sequence non-claimable in the interim.
+
 ## Runner-bootstrap prerequisite
 
 All 98 baseline-remediation task contracts invoke `scripts/verify-task-lint.ps1`,
@@ -166,6 +216,11 @@ at-most-three-scenario behavioral matrix):
 
 **Explicit dependency edges added:**
 
+- `154-S blocks 176-S` — the replacement chain's front (`176-S`) waits for the
+  in-repo scheduler-baseline marker enabling precondition (`154-S`/`173-F`) so the
+  wave scheduler can execute claim-activated members without `WAVE_NO_PROGRESS`.
+  Advisory (not a hard shipped-only guard) until `6434A4D7` lands; see
+  "## Claim/Scheduler Execution Readiness (BLOCKED)".
 - `157-S depends_on 176-S` — the replacement baseline sequence cannot begin until
   the prerequisite shipment ships.
 - `175.100-T depends_on 175.099-T` and `175.101-T depends_on 175.100-T` — the
@@ -273,9 +328,17 @@ retained as **design specification**, not as committed tooling.
 - The replacement baseline sequence is gated behind `176-S` via
   `157-S depends_on 176-S`; the runner-bootstrap prerequisite is buildable under
   existing tooling without invoking the runner it creates.
+- **Execution readiness of the replacement sequence (`176-S` and
+  `157-S`..`169-S`) is BLOCKED** until the shipment-claim / wave-scheduler
+  convergence prerequisite lands: the in-repo scheduler-baseline marker
+  (`154-S`/`173-F`, edge `154-S blocks 176-S`) plus its external autoharness
+  scheduler consumption (P-017). See "## Claim/Scheduler Execution Readiness
+  (BLOCKED)" and
+  `docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-deliberation.md`.
 - Every replacement shipment and the prerequisite shipment `176-S` are `queued`.
-- Dependency graph (including the two prerequisite edges) is acyclic and yields
-  the declared ordered wave sequence RS-W(-1) → RS-W00 → … → RS-W12.
+- Dependency graph (including the prerequisite edges `154-S blocks 176-S`,
+  `157-S depends_on 176-S`, and `175.001-T depends_on 175.101-T`) is acyclic and
+  yields the declared ordered wave sequence RS-W(-1) → RS-W00 → … → RS-W12.
 - 149-S is ordered behind the terminal replacement shipment (RS-W12 / `169-S`) by
   an advisory `blocks` edge; shipped-only readiness is governed by claim-routing
   policy until tool-level enforcement lands (stash `6434A4D7`). The advisory edge

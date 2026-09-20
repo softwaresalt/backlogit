@@ -563,19 +563,179 @@ Maintainability personas, with the policy-sensitive harness/planning coupling
 additionally escalated to the installed adversarial review and post-remediation
 re-review. Residual P0=0, P1=0.
 
-## Runtime Verification and Closure
+## Execution Readiness (BLOCKED) and Runtime Verification
 
-Ship executes the DAG wave by wave: the prerequisite shipment `176-S`
-(`175.099-T` -> `175.100-T` -> `175.101-T`) ships first — creating the three shared
-runners — then the
-replacement sequence `157-S`..`169-S` converges wave by wave. Each member turns
-its own `^TestU175_<NNN>_` selector green and satisfies its task-scoped lint
-verifier; the intermediate-wave verifier enforces exact remaining-baseline
-monotonicity against the governed inventory; terminal convergence at U12 (in
-`169-S`, RS-W12) requires all mandatory gates green including the canonical terminal
-runner's zero-warning `golangci-lint` proof on both supported surfaces
-(`scripts/verify-terminal-lint.ps1 -FeatureId 175-F`, emitting `TERMINAL-LINT-OK:175-F`),
-the `//nolint` inventory
-validated, and the Docline closure evidence artifact committed. The replacement
-sequence converges and unblocks `149-S` by an advisory ordering edge (shipped-only
-readiness governed by claim-routing policy, per the decomposition decision).
+**Execution readiness: BLOCKED.** This topology is structurally well-formed but
+is **not executable** under the current shipment-claim and wave-scheduler
+contracts. `core.ClaimShipment` (`internal/core/shipment_lifecycle.go:46-98`)
+transitions **every** queued manifest member to `active` on claim, while Ship
+wave admission (`.github/agents/_ship.agent.md:526-535`) halts on **any** active
+member and computes `ready_k` only from `queued` tasks. Claiming `176-S`
+therefore makes all three bootstrap tasks `active` and immediately yields
+`WAVE_NO_PROGRESS`; the same applies to every replacement shipment
+`157-S`..`169-S`. No shipment in this feature may be treated as executable until
+the shipment-claim / wave-scheduler convergence prerequisite lands.
+
+**Convergence prerequisite (exact dependency).** Per
+`docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-deliberation.md`
+(deliberation over stash `6434A4D7`), the chosen model preserves
+`core.ClaimShipment` all-members-active semantics and realizes dependency-gated
+wave admission additively. Baseline execution readiness depends on:
+
+1. **`154-S` / `173-F`** — the in-repo scheduler-baseline **marker** enabling
+   precondition (reviewed PASS). Encoded here as the advisory edge
+   `154-S blocks 176-S` (the front of the replacement chain waits for the
+   marker). This edge is advisory, not a hard shipped-only guard, until the
+   `6434A4D7` claim-time guard lands.
+2. **External autoharness P-002.6 scheduler marker-consumption** (out-of-workspace,
+   P-017) — the scheduler must treat marked-active members as the wave-0
+   admissible baseline and reserve the active-residual halt for unmarked
+   residuals. Tracked as a cross-workspace follow-up; cannot be a backlog edge.
+3. **`6434A4D7`** dependency-axis hardening (deferred Go-core release unit) —
+   converts the advisory `156-S`/`149-S` edges into hard shipped-only guards and
+   adds the governed non-claimable disposition. Governs, but does not gate, the
+   baseline execution sequence.
+
+**Bootstrap of the marker prerequisite itself.** `154-S`/`173-F` cannot be
+executed through the marked-aware scheduler because the marker its own tasks
+produce does not exist at its own claim time (`173-F` is internally multi-wave).
+It is executed via an **operator-authorized single-shipment bootstrap**: Ship
+claims `154-S`, then drives the claim-activated members green in their declared
+dependency order **without** the strict active-residual halt — the just-claimed
+members ARE the intended working set. This exception is scoped to `154-S` only;
+every subsequent shipment uses the normal marked-aware scheduler. See the
+convergence deliberation's "Bootstrap Resolution".
+
+**Ready-state execution (once the prerequisite lands).** Ship executes the DAG
+wave by wave: `176-S` (`175.099-T` -> `175.100-T` -> `175.101-T`) ships first —
+creating the three shared runners — then `157-S`..`169-S` converges wave by wave.
+Each member turns its own `^TestU175_<NNN>_` selector green and satisfies its
+task-scoped lint verifier; the intermediate-wave verifier enforces exact
+remaining-baseline monotonicity against the governed inventory; terminal
+convergence at U12 (in `169-S`, RS-W12) requires all mandatory gates green
+including the canonical terminal runner's zero-warning `golangci-lint` proof on
+both supported surfaces (`scripts/verify-terminal-lint.ps1 -FeatureId 175-F`,
+emitting `TERMINAL-LINT-OK:175-F`), the `//nolint` inventory validated, and the
+Docline closure evidence artifact committed. The replacement sequence converges
+and unblocks `149-S` by an advisory ordering edge (shipped-only readiness
+governed by claim-routing policy, per the decomposition decision).
+
+## Plan Hardening
+
+Requires plan hardening: yes
+
+**Hardening trigger (2026-09-20 convergence rewrite).** This amendment changes
+the plan's execution-readiness contract (BLOCKED) and documents a
+shipment-lifecycle claim-semantics dependency and an operator-authorized
+bootstrap execution exception. These are contract / high-blast-radius signals on
+a shared core surface (`core.ClaimShipment`, the P-002.6 wave scheduler), so
+hardening is required before the review re-gate.
+
+**Protected invariants.**
+
+- `core.ClaimShipment` all-members-active semantics are UNCHANGED (backward
+  compatibility; ~60 test call sites and two production callers depend on it).
+  This plan proposes no in-place change to that verb.
+- No Go source, script, workflow, or config file is modified by this planning
+  cycle. The plan remains a design/decomposition contract only.
+- The claim-time dependency guard, shipped-only readiness gate, and governed
+  non-claimable disposition are DEFERRED core work (stash `6434A4D7`), not
+  executed here.
+
+**Risky actions (ProposedAction / ActionRisk).**
+
+- **ProposedAction:** execute `154-S`/`173-F` via an operator-authorized
+  single-shipment bootstrap that drives claim-activated members green without the
+  strict P-002.6 active-residual halt.
+  **ActionRisk:** high (bypasses a safety halt). **Approval:** operator-only,
+  per-shipment; NOT pre-authorized by this plan. **Mitigation:** scoped to
+  `154-S` alone; the halt being waived is a check against *orphaned prior-wave*
+  claims, and the just-claimed members are the intended working set; every later
+  shipment uses the normal marked-aware scheduler with no exception.
+- **ProposedAction:** encode the advisory edge `154-S blocks 176-S`.
+  **ActionRisk:** low (advisory backlog edge; queue filtering + direct claim
+  bypass mean it is documentation of intent, not a hard runtime gate until
+  `6434A4D7` lands). **ActionResult:** edge added and verified
+  (`176-S → 154-S (blocks)`).
+
+**Review-gate capability.** Sub-agent dispatch is available in this environment;
+the re-gate MUST emit literal `dispatch_mode: multi-agent-dispatch` and a literal
+`decision:` marker. If dispatch degrades mid-gate, fall back to a complete
+single-agent rubric pass and emit `single-agent-declared-degradation` — never a
+partial-coverage PASS.
+
+**Learnings / context consulted.** Prior 2026-09-13 marker deliberation
+(`docs/decisions/2026-09-13-shipment-claim-scheduler-reconciliation-deliberation.md`);
+checkpoint `ship-140-s-2026-09-10` (same active-residual mismatch); the
+convergence deliberation
+`docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-deliberation.md`.
+
+**Unresolved operator decisions still blocking safe execution.** (1) external
+autoharness P-002.6 scheduler marker-consumption (P-017); (2) whether to formalize
+the bootstrap exception as a Ship-contract clause (Ship-owned).
+
+## Plan Review
+
+dispatch_mode: multi-agent-dispatch
+decision: ADVISORY
+operator_authorization: approved
+
+<!-- plan-review-attempt: 2 -->
+
+Re-gate of the 2026-09-20 shipment-claim / wave-scheduler convergence rewrite
+(supersedes the earlier `## Plan Review Status` PASS record, which predates this
+readiness rewrite). Dispatched six personas as independent sub-agents —
+Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher
+(always-on), Architecture Strategist and Agent-Native Parity Reviewer
+(cross-model; parity triggered because the plan governs agent-facing claim /
+wave-scheduler contracts). All six returned. Security Lens Reviewer not triggered
+(no auth/authz/secrets/external-trust-boundary surface). Plan hardening was
+required (`Requires plan hardening: yes`) and is present (`## Plan Hardening`).
+
+**Attempt 1 → FAIL** (P0=0, P1=2). Both P1s (Agent-Native Parity) — the BLOCKED
+readiness and the 154-S bootstrap exception existed only as human-facing prose,
+giving no machine-consumable signal, so an autonomous Orchestrator/Ship could
+claim `176-S`/`157-S` prematurely or claim `154-S` and deadlock `WAVE_NO_PROGRESS`.
+
+**Remediation applied → re-gate ADVISORY** (P0=0, P1=0):
+
+* P1-a (no machine non-claimable signal on the baseline front): added labels
+  `readiness-blocked` + `do-not-claim-until-convergence` to `176-S` and `157-S`,
+  plus a BLOCKED-readiness comment on `176-S`.
+* P1-b (154-S bootstrap exception invisible at tool boundary): added labels
+  `bootstrap-exception` + `convergence-prerequisite` and a bootstrap-exception
+  comment (scope=154-S only; "do NOT run standard P-002.6 admission") to `154-S`.
+* Go P2 (shipped-only gate must not mutate shared status taxonomy): decision
+  item 3 now requires a NEW release-gating predicate that MUST NOT unify
+  `IsNoLongerBlockingStatus`/`IsCascadeTerminalStatus` (deliberately divergent).
+* Architecture/Scope P2 (over-prescribing out-of-workspace + Ship-owned detail):
+  M2(ii) external admission algorithm reframed as a recommendation to the owning
+  workspace with a single-sourced marker-consumption contract; 6434A4D7 flagged
+  for module-boundary decomposition; bootstrap procedure kept as operator-authorized
+  (operator required this per the "state how the prerequisite executes" objective).
+
+**Residual findings — accepted follow-ups (do not block this planning-only
+deliverable):**
+
+* [P2] External autoharness P-002.6 marker-consumption is a load-bearing readiness
+  node that cannot be an in-repo edge (P-017); represented via labels + comment +
+  docs + Orchestrator claim-routing governance rather than tool enforcement.
+* [P2] Marker could become a first-class lifecycle sub-status instead of an
+  out-of-band side channel — deferred design guidance for the `6434A4D7` core cycle.
+* [P2] Ship-agent wave-admission contract (`.github/agents/_ship.agent.md:526-536`)
+  lacks a forward-reference to the pending marked-aware convergence — Ship-owned
+  agent-contract change, out of this freeze-scope cycle; current halt-on-any-active
+  behavior is conservatively safe.
+* [P2] `176-S` body prose still documents only the runner-bootstrap gate — mirrored
+  via the readiness comment + labels; a full description rewrite is deferred to
+  avoid clobbering the large governed manifest description.
+* [P3] Advisory: line-reference precision; permanent-fixture documentation of the
+  marker; durable per-shipment bootstrap approval artifact at Ship execution.
+
+**Gate rationale.** No P0/P1 remain after remediation. Remaining P2s are inherent
+P-017 constraints, deferred core-cycle guidance, or Ship-owned agent-contract work
+— none is a defect in the delivered planning/decision/backlog artifacts. Per the
+operator's explicit standing approval of the shipment-claim / wave-scheduler
+convergence and instruction to proceed through the gates, ADVISORY is authorized
+(`operator_authorization: approved`). Learnings Researcher returned PASS
+(consistent with and building on the 2026-09-13 marker decision; no contradiction).
