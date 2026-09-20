@@ -31,11 +31,17 @@ baseline-convergence covering feature (`175-F`), and that grouping stands. Its o
 task decomposition is superseded: the release unit is rescoped to the complete unbounded
 golangci-lint v2.13.2 supported-platform baseline (497 unique findings across the `windows`
 and `linux` surfaces; 489 on the Windows-primary surface alone). The current authoritative
-decomposition — 98 executable members, 184 edges, 13 waves — lives in
+decomposition is **99 executable feature tasks total** — the mandatory runner-bootstrap
+prerequisite `175.099-T` plus the unchanged 98-member remediation sub-DAG (184 edges, 13
+bounded waves). `175.099-T` sits outside the 98-member sub-DAG topology as its in-degree-zero
+pre-DAG source; the 98-member remediation sub-DAG is the remediation scope only, never the
+release-unit total. This release unit packages into **14 shipments**: the runner-bootstrap
+prerequisite shipment `176-S` (RS-W(-1)) gating the 13 wave-aligned replacement shipments
+`157-S`..`169-S`, in strict order `176→157→…→169`. The authoritative decomposition lives in
 `docs/exec-plans/2026-09-17-baseline-convergence-plan.md`, the committed supported-platform
 union inventory `docs/decisions/baseline-lint-inventory.json`, and the `175-F` canonical
 baseline-convergence contract. The option analysis below is retained as historical
-decision evidence at its original abstraction.
+decision evidence at its original abstraction and does not describe the current scope.
 
 ## Problem Frame
 
