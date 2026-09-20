@@ -18,8 +18,9 @@ title: 'Repository Baseline Convergence Release Unit'
 > preceded by the runner-bootstrap prerequisite shipment `176-S` (RS-W(-1)) that
 > gates the sequence — strict order `176→157→…→169`, **14 shipments** total. The
 > 98-member DAG below is the remediation sub-DAG; the feature additionally carries
-> the prerequisite task `175.099-T` (see "## Runner-Bootstrap Prerequisite"),
-> giving a feature executable-task total of **99**.
+> the three dependency-ordered prerequisite tasks `175.099-T`, `175.100-T`,
+> `175.101-T` (see "## Runner-Bootstrap Prerequisite"),
+> giving a feature executable-task total of **101**.
 > The sole current execution recommendation is
 > `docs/decisions/2026-09-19-baseline-convergence-decomposition.md`.
 > References to `156-S` and to Ship-authored verifier scripts / `ci.yml` in this plan
@@ -84,12 +85,14 @@ Roles map to the live baseline-convergence contract: exactly one
 `baseline-control`, 94 `finding-remediation`, two `support` (U40, U14), and
 exactly one `terminal-convergence`.
 
-Beyond this 98-member remediation sub-DAG, the feature carries **one
-runner-bootstrap prerequisite member**, `175.099-T`, that owns creation of the
-three shared lint runners and gates the sub-DAG. Counting it, the feature's
-executable-task total is **99** (98 remediation sub-DAG + 1 prerequisite).
-`175.099-T` is deliberately outside the 98-member sub-DAG topology and is
-described in "## Runner-Bootstrap Prerequisite" below.
+Beyond this 98-member remediation sub-DAG, the feature carries **three
+dependency-ordered runner-bootstrap prerequisite members** — `175.099-T`
+(task-lint runner), `175.100-T` (baseline-lint runner), and `175.101-T`
+(terminal-lint runner) — that between them own creation of the three shared lint
+runners and gate the sub-DAG. Counting them, the feature's executable-task total is
+**101** (98 remediation sub-DAG + 3 prerequisite). The three are deliberately
+outside the 98-member sub-DAG topology and are described in
+"## Runner-Bootstrap Prerequisite" below.
 
 ## Runner-Bootstrap Prerequisite (RS-W(-1))
 
@@ -97,27 +100,38 @@ Every baseline-remediation member's task-lint contract invokes the canonical sho
 runner `scripts/verify-task-lint.ps1`, and the feature additionally requires the
 intermediate-wave runner `scripts/verify-baseline-lint.ps1` and the terminal
 runner `scripts/verify-terminal-lint.ps1`. None of those three runner scripts
-exists on this branch, and no `175.*` remediation member owns creating them.
-`175.099-T` (`runner-bootstrap`) closes that gap: it OWNS creation of the three
-`scripts/verify-*.ps1` runners and ships alone in the prerequisite shipment
-`176-S` (RS-W(-1)). The prerequisite gates the replacement sequence via
-`157-S depends_on 176-S` (shipment edge) and `175.001-T depends_on 175.099-T`
-(task edge), making `175.099-T` the in-degree-zero source of the FULL feature
-graph while U1 remains the source of the 98-member remediation sub-DAG. `176-S`
-owns zero baseline findings and is not an intermediate-wave verifier target.
+exists on this branch, and no `175.*` remediation member owns creating them. Three
+`runner-bootstrap` prerequisite tasks close that gap, one runner each (split from a
+prior oversized single bootstrap task per PR #449 cycle 9 so each owns at most two
+files and a bounded at-most-three-scenario matrix): `175.099-T` OWNS
+`scripts/verify-task-lint.ps1`, `175.100-T` OWNS `scripts/verify-baseline-lint.ps1`,
+and `175.101-T` OWNS `scripts/verify-terminal-lint.ps1`. All three ship together in
+the prerequisite shipment `176-S` (RS-W(-1)). The prerequisite gates the replacement
+sequence via `157-S depends_on 176-S` (shipment edge); the tasks are dependency
+ordered `175.099-T -> 175.100-T -> 175.101-T` (baseline runner after task runner,
+terminal runner after baseline runner), and U1 depends on the terminal sink
+(`175.001-T depends_on 175.101-T`, task edge), making `175.099-T` the in-degree-zero
+source of the FULL feature graph and `175.101-T` its bootstrap sink, while U1 remains
+the source of the 98-member remediation sub-DAG. `176-S` owns zero baseline findings
+and is not an intermediate-wave verifier target.
 
-Because `175.099-T` CREATES the shared runners, its task-lint GATE MUST NOT be a
-direct invocation of `scripts/verify-task-lint.ps1` (a circular self-dependency);
-it is the owned Go harness `tests/runner_bootstrap_175_099_test.go`
-(`TestU175_099_RunnerBootstrap`), which COMPILES and whose targeted test EXECUTES
-under existing main-branch tooling before any runner exists — RED (nonzero exit)
-before the runners exist, GREEN after — statically proving each runner exists, is
+Because each of `175.099-T`, `175.100-T`, `175.101-T` CREATES the runner it verifies,
+its task-lint GATE MUST NOT be a direct invocation of the runner it creates (a
+circular self-dependency); it is that task's own owned Go harness
+(`tests/runner_bootstrap_task_lint_175_099_test.go` /
+`tests/runner_bootstrap_baseline_lint_175_100_test.go` /
+`tests/runner_bootstrap_terminal_lint_175_101_test.go`, functions
+`TestU175_099_TaskLintRunnerBootstrap` / `TestU175_100_BaselineLintRunnerBootstrap` /
+`TestU175_101_TerminalLintRunnerBootstrap`), which COMPILES and whose targeted test
+EXECUTES under existing main-branch tooling before its runner exists — RED (nonzero
+exit) before that runner exists, GREEN after — statically proving the runner exists, is
 tracked, is non-empty, parses cleanly under the built-in PowerShell AST parser,
-and declares its required `param(...)` surface, and — after the runners exist —
-behaviorally exercising each runner against harness-authored deterministic fixtures
+and declares its required `param(...)` surface, and — after the runner exists —
+behaviorally exercising the runner against harness-authored deterministic fixtures
 for its success and failure/fail-closed contracts (non-vacuous). No source,
-scripts, or tests are implemented in this planning PR; `175.099-T` declares the
-ownership Ship executes later. Full contract: `.backlogit/queue/175.099-T.md`.
+scripts, or tests are implemented in this planning PR; the three tasks declare the
+ownership Ship executes later. Full contracts: `.backlogit/queue/175.099-T.md`,
+`.backlogit/queue/175.100-T.md`, `.backlogit/queue/175.101-T.md`.
 
 ## U1 - Line-Ending Migration (baseline-control)
 
@@ -271,7 +285,8 @@ attributes are unnecessary for correctness. No symbol or fingerprint value is in
 
 These scenarios are the correctness contract the canonical runners
 (`scripts/verify-task-lint.ps1`, `scripts/verify-baseline-lint.ps1`) implement, and
-are mirrored by the `175.099-T` runner-bootstrap behavioral fixtures.
+are mirrored by the runner-bootstrap tasks' behavioral fixtures (`175.099-T`,
+`175.100-T`, `175.101-T`).
 
 1. **Multiline edit before a remaining finding (shift must not hide it).** A completed
    task edits above a still-owned occurrence of group `G`, shifting it from L100 to
@@ -386,10 +401,11 @@ the U40 and U14 support members fold into remediation waves):
   (in-degree 0 within the sub-DAG). Its direct dependents
   are `175.002-T`, `175.003-T`, `175.004-T`, `175.005-T`, `175.006-T`, `175.007-T`, `175.008-T`, `175.009-T`, `175.010-T`, `175.040-T`.
 - **Full-feature source (outside the sub-DAG):** the runner-bootstrap prerequisite
-  `175.099-T` (shipment `176-S`, RS-W(-1)) is the in-degree-zero source of the
-  full feature graph via `175.001-T depends_on 175.099-T` (task edge) and
-  `157-S depends_on 176-S` (shipment edge). The 98-member sub-DAG's internal
-  source remains U1; `175.099-T` sits ahead of it as a pre-DAG bootstrap.
+  chain `175.099-T -> 175.100-T -> 175.101-T` (shipment `176-S`, RS-W(-1)) sits ahead
+  of the sub-DAG. `175.099-T` is the in-degree-zero source of the full feature graph;
+  its sink `175.101-T` gates the sub-DAG via `175.001-T depends_on 175.101-T` (task
+  edge) and `157-S depends_on 176-S` (shipment edge). The 98-member sub-DAG's internal
+  source remains U1; the bootstrap chain sits ahead of it as a pre-DAG bootstrap.
 - **U40 depends on U1; U14 depends on U40** (support chain).
 - The first remediation batch depends on U1. Each later remediation batch is
   gated by an explicit anchor dependency from the prior batch; per-file slices
@@ -408,12 +424,14 @@ the U40 and U14 support members fold into remediation waves):
 Feature `175-F` carries the canonical `baseline-lint-convergence-contract` block
 authored after task content is final. It records: the mode/purpose; the
 release-unit (`175-F`) and terminal task (`175.012-T`); the current packaging (the
-prerequisite shipment `176-S` carrying `175.099-T`, gating the replacement
+prerequisite shipment `176-S` carrying the three bootstrap tasks `175.099-T`,
+`175.100-T`, `175.101-T`, gating the replacement
 sequence `157-S`..`169-S`, superseding the abandoned single shipment `156-S`); the
 declared `supported_goos` (`windows`, `linux`); the `member_scope` of all 98
 remediation sub-DAG members with their live role and the lowercase 64-hex
 `task_contract_sha256` of each final committed canonical task-lint-contract JSON
-(the runner-bootstrap prerequisite `175.099-T` is recorded separately in the
+(the runner-bootstrap prerequisites `175.099-T`, `175.100-T`, `175.101-T` are recorded
+separately in the
 `packaging.prerequisite_*` fields, outside this remediation `member_scope`); the
 committed machine inventory (`docs/decisions/baseline-lint-inventory.json`, schema
 `baseline-lint-platform-inventory/v3` carrying the `line-stable-group-multiset/v1`
@@ -453,13 +471,17 @@ pwsh -NoProfile -File scripts/verify-terminal-lint.ps1 -FeatureId 175-F
 ## Harness-Exempt Set
 
 Closed, single member: U12 (`175.012-T`). Every other member (U1 + 94
-remediation + U40 + U14 + the runner-bootstrap prerequisite `175.099-T`) is a
+remediation + U40 + U14 + the three runner-bootstrap prerequisites `175.099-T`,
+`175.100-T`, `175.101-T`) is a
 normal harness-required task that exclusively owns exactly one deterministic
 `*_test.go` harness path with a genuine targeted red-before-green
-`TestU175_<NNN>_` selector. The prerequisite `175.099-T` is harness-required with
-a self-contained bootstrap harness (`tests/runner_bootstrap_175_099_test.go`,
-`TestU175_099_RunnerBootstrap`) whose gate is the Go harness itself — never the
-runner it creates — RED before the three runners exist and GREEN after. Ship's
+`TestU175_<NNN>_` selector. Each prerequisite is harness-required with
+its own self-contained bootstrap harness
+(`tests/runner_bootstrap_task_lint_175_099_test.go`,
+`tests/runner_bootstrap_baseline_lint_175_100_test.go`,
+`tests/runner_bootstrap_terminal_lint_175_101_test.go`) whose gate is that Go harness
+itself — never the runner it creates — RED before that task's runner exists and GREEN
+after. Ship's
 harness phase scaffolds every non-exempt member of the admitted ready wave
 together; same-wave sibling task-scoped red is expected and tolerated until wave
 convergence. No later-wave harness is scaffolded early; harnesses are not
@@ -544,7 +566,8 @@ re-review. Residual P0=0, P1=0.
 ## Runtime Verification and Closure
 
 Ship executes the DAG wave by wave: the prerequisite shipment `176-S`
-(`175.099-T`) ships first — creating the three shared runners — then the
+(`175.099-T` -> `175.100-T` -> `175.101-T`) ships first — creating the three shared
+runners — then the
 replacement sequence `157-S`..`169-S` converges wave by wave. Each member turns
 its own `^TestU175_<NNN>_` selector green and satisfies its task-scoped lint
 verifier; the intermediate-wave verifier enforces exact remaining-baseline

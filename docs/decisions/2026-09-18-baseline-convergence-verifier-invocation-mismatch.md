@@ -34,7 +34,8 @@ canonical `baseline-lint-convergence-contract`, and the shipment-scoped operator
 authorization at `docs/decisions/2026-09-17-baseline-convergence-authorization.md`.
 Execution is owned by the wave-aligned replacement shipments `157-S`..`169-S` (the
 superseded single shipment `156-S` carries an empty manifest and is never claimed),
-gated by the runner-bootstrap prerequisite shipment `176-S` (task `175.099-T`). The
+gated by the runner-bootstrap prerequisite shipment `176-S` (tasks `175.099-T`,
+`175.100-T`, `175.101-T`). The
 fail-closed STOP below is retained as historical decision evidence.
 
 ## Decision

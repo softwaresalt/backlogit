@@ -28,12 +28,16 @@ status: complete
 - `168.001-T` remains archived/`done` (not repeated).
 - **Runner-bootstrap prerequisite.** The three shared lint runners
   (`scripts/verify-task-lint.ps1`, `scripts/verify-baseline-lint.ps1`,
-  `scripts/verify-terminal-lint.ps1`) had no owning task. Added one runner-bootstrap
-  prerequisite task `175.099-T` (99th executable member) in a new prerequisite shipment
+  `scripts/verify-terminal-lint.ps1`) had no owning task. Added three dependency-ordered
+  runner-bootstrap prerequisite tasks `175.099-T` (task-lint), `175.100-T` (baseline-lint),
+  `175.101-T` (terminal-lint) — the 99th/100th/101st executable members, one runner each
+  (split from a prior oversized single bootstrap task per PR #449 cycle 9) — in a new
+  prerequisite shipment
   `176-S` (RS-W(-1)), gating the replacement sequence via `157-S depends_on 176-S` and
-  reinforced by `175.001-T depends_on 175.099-T`. Feature is **99 tasks / 14 shipments**.
-- **Behavioral bootstrap harness.** The `175.099-T` bootstrap harness is a behavioral,
-  fixture-driven contract that exercises each runner's success and failure/fail-closed
+  reinforced by `175.001-T depends_on 175.101-T` (the bootstrap sink). Feature is
+  **101 tasks / 14 shipments**.
+- **Behavioral bootstrap harness.** Each bootstrap harness is a behavioral,
+  fixture-driven contract that exercises its runner's success and failure/fail-closed
   scenarios with divergent exit codes (existence/AST/param-only checks alone would be
   vacuous), while preserving the gate invariant (the owned Go harness — never the created
   runner — is the gate). The terminal runner's coverage independently proves both
@@ -47,28 +51,29 @@ status: complete
   run`.
 
 ## Wave → shipment map (task numbers of 175.NNN-T)
-RS-W(-1)(176)=[99] runner-bootstrap prerequisite (`175.099-T`); gates the sequence via `157 depends_on 176`.
+RS-W(-1)(176)=[99,100,101] runner-bootstrap prerequisites (`175.099-T` -> `175.100-T` -> `175.101-T`); gates the sequence via `157 depends_on 176`.
 W0(157)=[1]; W1(158)=[2-10,40]; W2(159)=[11,13-21]; W3(160)=[22-30];
 W4(161)=[31-39]; W5(162)=[41,42,45-51]; W6(163)=[43,52-59]; W7(164)=[44,60-67];
 W8(165)=[68-76]; W9(166)=[77-85]; W10(167)=[86-94]; W11(168)=[95-98]; W12(169)=[12].
 Remediation counts: 1,10,10,9,9,9,9,9,9,9,9,4,1 = 98 across 13 shipments (157-S..169-S).
-Total: 98 remediation + 1 bootstrap (175.099-T) = **99 tasks**; 13 replacement + 1 prerequisite
+Total: 98 remediation + 3 bootstrap (175.099-T, 175.100-T, 175.101-T) = **101 tasks**; 13 replacement + 1 prerequisite
 (176-S) = **14 shipments**.
 
 ## Dependency edges
-Prerequisite gate: `157-S depends_on 176-S`; `175.001-T depends_on 175.099-T` (task-level
-reinforcement — U1 waits for the runner bootstrap). `176-S`/`175.099-T` is the in-degree-zero
-source of the full feature graph.
+Prerequisite gate: `157-S depends_on 176-S`; bootstrap chain `175.099-T -> 175.100-T -> 175.101-T`;
+`175.001-T depends_on 175.101-T` (task-level
+reinforcement — U1 waits for the bootstrap sink / terminal-lint runner). `176-S`/`175.099-T` is the in-degree-zero
+source of the full feature graph; `175.101-T` is its sink.
 Chain: 158→157, 159→158, ..., 169→168. 149-S→169-S (advisory). 156-S→169-S (advisory guard).
 150-S/151-S→149-S preserved.
 
 ## Invariants (all PASS)
-INV1 99 unique executable tasks once (98 remediation + `175.099-T` bootstrap); INV2 no 175-F in
+INV1 101 unique executable tasks once (98 remediation + `175.099-T`/`175.100-T`/`175.101-T` bootstrap); INV2 no 175-F in
 any shipment; INV3 all queued (157-S..169-S + 176-S); INV4 acyclic ordered chain incl. the
-`176→157` / `175.099→175.001` prerequisite gate; INV5 149-S ordered behind 169-S (advisory);
+`176→157` / `175.099→175.100→175.101→175.001` prerequisite gate; INV5 149-S ordered behind 169-S (advisory);
 INV6 168.001-T done; INV7 only `.backlogit/` + `docs/` changed; INV8 176-S is the single
-prerequisite shipment, sole owner of `175.099-T`, present in no other shipment; INV9 the
-`175.099-T` bootstrap gate is buildable before its runners exist (RED before / GREEN after).
+prerequisite shipment, sole owner of the three bootstrap tasks, each present in no other shipment; INV9 each
+bootstrap gate is buildable before its runner exists (RED before / GREEN after).
 
 ## Provenance preserved
 Old branch `stage/baseline-convergence-main` @ d4d394e1 untouched (read-only evidence).
@@ -77,7 +82,7 @@ PR #448 closed unmerged. `156-S` retained as historical packaging.
 ## Handoff
 PR #449 tracks this staging work on branch `stage/baseline-convergence-decomposed`.
 Volatile review chronology, current-head evidence, and CI/readiness state are owned by
-the PR and Git history, not this durable handoff. Current graph: **99 tasks / 14
+the PR and Git history, not this durable handoff. Current graph: **101 tasks / 14
 shipments**. No active shipment; the Orchestrator owns the staging merge gate, and the
 work is not for Ship until merged. No BDD retrofit (deferred spec preserved). Governance
 follow-ups remain in stash: `6434A4D7` (tool-level prerequisite/claim enforcement) and
