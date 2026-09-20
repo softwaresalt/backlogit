@@ -248,8 +248,14 @@ the shipment-scoped operator authorization reference.
 Intermediate-wave verifier (exact remaining-baseline monotonicity):
 
 ```
-pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a -Shipment 156-S -FeatureId 175-F -TerminalTask 175.012-T
+pwsh -NoProfile -File scripts/verify-baseline-lint.ps1 -Inventory docs/decisions/baseline-lint-inventory.json -InventorySha256 6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a -Shipment <replacement-shipment-id> -FeatureId 175-F -TerminalTask 175.012-T
 ```
+
+> Packaging note (2026-09-19): under the accepted decomposition, the
+> intermediate-wave verifier is invoked once per active replacement shipment in
+> RS-W00..RS-W12 order (`157-S`..`169-S`), substituting `-Shipment` with that
+> wave's replacement shipment id; the superseded `156-S` is never used as the
+> `-Shipment` argument.
 
 Terminal command (zero-warning, mandatory at U12, both supported surfaces):
 
@@ -269,12 +275,16 @@ harness is scaffolded early; harnesses are not pre-committed at Stage.
 
 ## Operator Authorization
 
-The narrow shipment-scoped operator authorization is recorded durably at
-`docs/decisions/2026-09-17-baseline-convergence-authorization.md`: shipment
-`156-S` may retain the exact governed findings owned by unfinished remediation
-tasks until terminal convergence; no new/unowned findings; mandatory zero-warning
-global lint at U12; expiring when `156-S` closes or the authorization is revoked.
-It does not approve U1's destructive worktree refresh.
+The operator authorization is recorded durably at
+`docs/decisions/2026-09-17-baseline-convergence-authorization.md`: the exact
+governed findings owned by unfinished remediation tasks may be retained until
+terminal convergence; no new/unowned findings; mandatory zero-warning global lint
+at U12; expiring at terminal convergence (U12 `175.012-T`) or on operator
+revocation. It does not approve U1's destructive worktree refresh. Originally
+scoped to shipment `156-S`, the authorization was extended — as a derived
+application of existing authority over the operator-accepted decomposition — to
+the wave-aligned replacement sequence `157-S`..`169-S` (see the authorization
+record's scope-extension section).
 
 ## Stash Classification
 

@@ -2,6 +2,10 @@
 title: Baseline-Convergence Decomposition into Wave-Aligned Replacement Shipments
 date: 2026-09-19
 status: accepted
+doc_type: decision
+source: docs/decisions/2026-09-19-baseline-convergence-decomposition.md
+schema_version: "1.0"
+chunk_strategy: h1-h2-h3
 supersedes: Single-shipment packaging (156-S) of feature 175-F
 provenance:
     - PR #448 (CLOSED WITHOUT MERGE) — historical
@@ -108,9 +112,15 @@ Actual assigned shipment IDs (shipment ID counter is per-type, continued from 15
   k = 0..11. This yields the strict order RS-W00 → RS-W01 → ... → RS-W12.
 - **149-S rewire:** the existing edge `149-S depends_on 156-S` is removed and
   replaced with `149-S depends_on RS-W12` (the terminal shipment carrying U12).
-  U12 (`175.012-T`) is titled "terminal sink; unblocks 149-S", so gating 149-S on
-  the terminal replacement shipment preserves the original semantics exactly:
-  149-S cannot become eligible until the entire replacement sequence closes.
+  U12 (`175.012-T`) is titled "terminal sink; unblocks 149-S", so ordering 149-S
+  behind the terminal replacement shipment preserves the intended sequence.
+  **Accuracy note (PR #449 review):** this edge is an ADVISORY ordering signal,
+  not a hard shipped-only guarantee — backlogit queue filtering treats any
+  no-longer-blocking terminal status of `169-S` (the 6-status cascade
+  done/accepted/archived/shipped/abandoned/rejected) as satisfying it, and a
+  direct claim bypasses dependencies entirely. Shipped-only readiness is governed
+  by the Orchestrator claim-routing policy until tool-level enforcement lands
+  (captured in stash `6434A4D7`); see `.backlogit/queue/149-S.md`.
 - **150-S / 151-S:** already `blocks`-depend on `149-S`; unchanged and therefore
   transitively gated behind the full replacement sequence.
 - **168.001-T:** remains archived / `done`; it is not re-listed in any replacement
@@ -119,15 +129,23 @@ Actual assigned shipment IDs (shipment ID counter is per-type, continued from 15
 ## Supersession of 156-S (non-destructive)
 
 The backlogit shipment lifecycle exposes no `abandon`/supersede verb in Stage
-scope, and `move` does not route a shipment `abandoned` status safely. Per the
-operator directive, `156-S` is therefore **left queued with an explicit
-supersession record plus a hard dependency guard**, never deleted:
+scope (valid shipment transitions are `queued -> active` and
+`active -> shipped|abandoned`; there is no governed `queued -> abandoned/archived`
+path without activation). Per the operator directive, `156-S` is therefore **left
+queued with an explicit supersession record plus a best-effort ordering edge**,
+never deleted:
 
 1. A supersession comment is appended to `156-S` naming the 13 replacement
    shipment IDs and marking it DO-NOT-CLAIM.
-2. A hard guard edge `156-S depends_on RS-W12` is added so `156-S` can never
-   become claim-eligible ahead of the replacement sequence; by the time RS-W12
-   ships, all 98 member tasks are already `done` via the replacement shipments.
+2. A best-effort ordering edge `156-S depends_on RS-W12` is retained. **Accuracy
+   note (PR #449 review):** this edge is NOT a hard claim guard — direct
+   `core.ClaimShipment` bypasses dependency checks and queue filtering clears the
+   edge on any no-longer-blocking terminal status of `169-S`. `156-S` is held
+   non-claimable by GOVERNANCE (this DO-NOT-CLAIM record + Orchestrator claim
+   routing) and by its empty manifest (a claim would activate no work). Tool-level
+   non-claimable enforcement is captured as prerequisite work in stash `6434A4D7`.
+   By the time RS-W12 ships, all 98 member tasks are already `done` via the
+   replacement shipments.
 3. This decision record documents the supersession for the Orchestrator's claim
    routing.
 
@@ -156,7 +174,10 @@ retained as **design specification**, not as committed tooling.
 - No replacement shipment lists `175-F`.
 - Every replacement shipment is `queued`.
 - Dependency graph is acyclic and yields the declared ordered wave sequence.
-- 149-S remains gated until the terminal replacement shipment (RS-W12) ships.
+- 149-S is ordered behind the terminal replacement shipment (RS-W12 / `169-S`) by
+  an advisory `blocks` edge; shipped-only readiness is governed by claim-routing
+  policy until tool-level enforcement lands (stash `6434A4D7`). See the Accuracy
+  notes in the Dependency / Ordering Map.
 - 168.001-T remains archived / `done`.
 - No source or workflow implementation files are modified on this branch.
 
@@ -167,8 +188,8 @@ retained as **design specification**, not as committed tooling.
 | H1 | Task dropped or duplicated across shipments | High | Mechanical validator (`logs/validate_decomp.py`) asserts exactly-once coverage of all 98 tasks; re-run post-assembly against live shipment manifests. |
 | H2 | A dependency points backward/within a wave, breaking the shipment chain guarantee | High | Validator asserts all 184 edges are strictly forward-across-waves; confirmed PASS (0 intra-wave, 0 backward). |
 | H3 | Backlog tool enforces single-shipment membership, blocking creation while 156-S holds the tasks | Medium | Contingency: if creation/add is rejected due to 156-S membership, clear 156-S membership via Stage file-authority edit + `sync` (non-destructive; 156-S retained), then retry. Empirically probed at assembly. |
-| H4 | 149-S becomes eligible early | High | Rewire removes 149-S→156-S and adds 149-S→RS-W12; verify 149-S has no path to readiness until RS-W12 ships. |
-| H5 | 156-S accidentally claimed after supersession | Medium | Supersession comment (DO-NOT-CLAIM) + guard edge 156-S→RS-W12 + this decision record. |
+| H4 | 149-S becomes eligible early | High | Rewire removes 149-S→156-S and adds advisory 149-S→RS-W12. **PR #449 review correction:** this edge is advisory, not a hard shipped-only guarantee (queue filtering clears on any terminal cascade status; direct claim bypasses deps). Shipped-only readiness is governed by Orchestrator claim-routing policy; tool-level enforcement tracked in stash `6434A4D7`. |
+| H5 | 156-S accidentally claimed after supersession | Medium | DO-NOT-CLAIM supersession record + empty manifest + advisory 156-S→RS-W12 edge + Orchestrator claim-routing. **PR #449 review correction:** the edge is not a hard claim guard (direct claim bypasses deps); non-claimability is governed, with tool-level enforcement tracked in stash `6434A4D7`. |
 | H6 | Accidental inclusion of 175-F in a subset shipment (descendant expansion) | High | Manifests use task IDs only; validator/readback asserts no shipment lists 175-F. |
 | H7 | Cycle introduced by chain + guard + rewire edges | High | Post-assembly acyclicity check over shipment-level edges. |
 | H8 | Ship implementation leaks onto staging branch | Medium | `git diff origin/main` restricted to `.backlogit/` + `docs/`; assert zero source/workflow/test changes before commit. |
@@ -228,11 +249,47 @@ Shipment-level (`validate_shipments.py`), invariants 1–6:
 - **INV4** — shipment DAG acyclic (28/28 nodes toposorted), all 12 chain edges
   present, RS-W00..RS-W12 order honored.
 - **INV5** — `149-S depends_on 169-S` = true; `149-S depends_on 156-S` = false;
-  `169-S` transitively behind all 12 predecessors (149-S cannot be eligible until
-  the whole sequence closes).
+  `169-S` transitively behind all 12 predecessors in the shipment DAG. (**PR #449
+  review correction:** DAG placement orders 149-S last, but the edge is advisory —
+  it does not by itself guarantee 149-S waits for a *successful ship* of 169-S;
+  see the Correction section and Accuracy notes. Shipped-only readiness is
+  governed by claim-routing policy; enforcement tracked in stash `6434A4D7`.)
 - **INV6** — `168.001-T` status = `done`.
 
 Invariant 7 (no source/workflow implementation changed) verified via
 `git diff origin/main`: staged changes are confined to `.backlogit/` and `docs/`;
 zero changes under `internal/`, `cmd/`, `scripts/`, `tests/`, `.github/`,
 `AGENTS.md`, `.autoharness/`, `Makefile`, `go.mod`, `go.sum`.
+
+## Correction (PR #449 review, 2026-09-19)
+
+Copilot review of PR #449 identified that this document (and the earlier
+`156-S`/`149-S` bindings) overstated backlog dependencies as hard claim guards.
+This correction is authoritative and **supersedes any "cannot become eligible",
+"never become claim-eligible", "no early-eligibility path", "gated until … ships",
+or "hard guard" phrasing** in the Plan Review and Validation Evidence records
+above; those records are retained as historical attestation only.
+
+Corrected semantics (backlog data alone cannot enforce a hard guard):
+
+- Dependencies are applied only while filtering queue results
+  (`internal/core/queue.go` `filterByResolvedDependencies`); a dependency is
+  cleared by ANY no-longer-blocking terminal status (the 6-status cascade
+  done/accepted/archived/shipped/abandoned/rejected), not by `shipped` alone.
+- Direct `core.ClaimShipment` (`internal/core/shipment_lifecycle.go`) transitions
+  `queued -> active` with no dependency check, so a direct claim bypasses
+  dependencies entirely.
+
+Therefore: the `156-S -> RS-W12` and `149-S -> RS-W12` edges are **advisory
+ordering signals**, not hard guards. `156-S` non-claimability and `149-S`
+shipped-only readiness are held by GOVERNANCE — the DO-NOT-CLAIM record, the empty
+`156-S` manifest, and the Orchestrator's claim-routing policy (never claim
+`156-S`; do not claim `149-S` until `169-S` is `shipped`). Tool-level enforcement
+(claim-time dependency validation, shipped-only readiness at claim/queue
+boundaries, and a governed non-claimable/superseded disposition reachable from
+`queued` without activation) is out of scope for this planning-only cycle and is
+captured as explicit prerequisite work in stash `6434A4D7` (P-021 C1). The
+operator authorization was correspondingly extended from `156-S` to the
+replacement sequence `157-S`..`169-S` — a derived application of existing
+authority over an operator-directed repackaging, recorded in
+`docs/decisions/2026-09-17-baseline-convergence-authorization.md`.
