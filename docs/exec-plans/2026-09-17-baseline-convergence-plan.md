@@ -14,7 +14,12 @@ title: 'Repository Baseline Convergence Release Unit'
 > 13 bounded waves) remains authoritative and unchanged. Its original single-shipment
 > packaging in `156-S` was abandoned with PR #448 (closed without merge) and is
 > **superseded** by 13 wave-aligned replacement shipments `157-S`..`169-S`
-> (one bounded wave each, task-IDs-only, chained by `blocks` dependencies).
+> (one bounded wave each, task-IDs-only, chained by `blocks` dependencies),
+> preceded by the runner-bootstrap prerequisite shipment `176-S` (RS-W(-1)) that
+> gates the sequence — strict order `176→157→…→169`, **14 shipments** total. The
+> 98-member DAG below is the remediation sub-DAG; the feature additionally carries
+> the prerequisite task `175.099-T` (see "## Runner-Bootstrap Prerequisite"),
+> giving a feature executable-task total of **99**.
 > The sole current execution recommendation is
 > `docs/decisions/2026-09-19-baseline-convergence-decomposition.md`.
 > References to `156-S` and to Ship-authored verifier scripts / `ci.yml` in this plan
@@ -36,12 +41,12 @@ It is captured with the same uncapped invocation semantics as
 `scripts/verify-baseline-lint.ps1`. This complete union is authoritative and is
 the exact set the release unit converges. `go vet ./...` is kept green throughout.
 
-This is the covering release unit (feature `175-F`, shipment `156-S`) that makes
-all four mandatory quality gates — `go test ./...`, `go vet ./...`,
-`golangci-lint run`, and `gofmt -l .` — green, fixes the shared line-ending root
-cause, converges the complete lint baseline through bounded finding-remediation,
-and installs a persistent CI line-ending guard so line endings cannot silently
-re-drift. It unblocks shipment `149-S`.
+This is the covering release unit (feature `175-F`) that makes all four mandatory
+quality gates — `go test ./...`, `go vet ./...`, `golangci-lint run`, and
+`gofmt -l .` — green, fixes the shared line-ending root cause, converges the
+complete lint baseline through bounded finding-remediation, and installs a
+persistent CI line-ending guard so line endings cannot silently re-drift. It
+unblocks shipment `149-S`.
 
 ## Requirements Trace
 
@@ -60,7 +65,8 @@ re-drift. It unblocks shipment `149-S`.
 
 ## Authoritative Decomposition
 
-The release unit decomposes into **98 executable members**:
+The release unit's **remediation sub-DAG** comprises **98 executable members**
+(topology unchanged):
 
 - **U1 (`175.001-T`) — baseline-control.** The sole homogeneous mechanical
   line-ending migration and the unique DAG source.
@@ -75,6 +81,41 @@ The release unit decomposes into **98 executable members**:
 Roles map to the live baseline-convergence contract: exactly one
 `baseline-control`, 94 `finding-remediation`, two `support` (U40, U14), and
 exactly one `terminal-convergence`.
+
+Beyond this 98-member remediation sub-DAG, the feature carries **one
+runner-bootstrap prerequisite member**, `175.099-T`, that owns creation of the
+three shared lint runners and gates the sub-DAG. Counting it, the feature's
+executable-task total is **99** (98 remediation sub-DAG + 1 prerequisite).
+`175.099-T` is deliberately outside the 98-member sub-DAG topology and is
+described in "## Runner-Bootstrap Prerequisite" below.
+
+## Runner-Bootstrap Prerequisite (RS-W(-1))
+
+Every baseline-remediation member's task-lint contract invokes the canonical short
+runner `scripts/verify-task-lint.ps1`, and the feature additionally requires the
+intermediate-wave runner `scripts/verify-baseline-lint.ps1` and the terminal
+runner `scripts/verify-terminal-lint.ps1`. None of those three runner scripts
+exists on this branch, and no `175.*` remediation member owns creating them.
+`175.099-T` (`runner-bootstrap`) closes that gap: it OWNS creation of the three
+`scripts/verify-*.ps1` runners and ships alone in the prerequisite shipment
+`176-S` (RS-W(-1)). The prerequisite gates the replacement sequence via
+`157-S depends_on 176-S` (shipment edge) and `175.001-T depends_on 175.099-T`
+(task edge), making `175.099-T` the in-degree-zero source of the FULL feature
+graph while U1 remains the source of the 98-member remediation sub-DAG. `176-S`
+owns zero baseline findings and is not an intermediate-wave verifier target.
+
+Because `175.099-T` CREATES the shared runners, its task-lint GATE MUST NOT be a
+direct invocation of `scripts/verify-task-lint.ps1` (a circular self-dependency);
+it is the owned Go harness `tests/runner_bootstrap_175_099_test.go`
+(`TestU175_099_RunnerBootstrap`), which COMPILES and whose targeted test EXECUTES
+under existing main-branch tooling before any runner exists — RED (nonzero exit)
+before the runners exist, GREEN after — statically proving each runner exists, is
+tracked, is non-empty, parses cleanly under the built-in PowerShell AST parser,
+and declares its required `param(...)` surface, and — after the runners exist —
+behaviorally exercising each runner against harness-authored deterministic fixtures
+for its success and failure/fail-closed contracts (non-vacuous). No source,
+scripts, or tests are implemented in this planning PR; `175.099-T` declares the
+ownership Ship executes later. Full contract: `.backlogit/queue/175.099-T.md`.
 
 ## U1 - Line-Ending Migration (baseline-control)
 
@@ -213,12 +254,18 @@ fail-closed on any owned `.go` path.
 
 ## Dynamic DAG
 
-The DAG is acyclic with **98 members and 184 edges** across **13 bounded waves**
-(11 remediation waves plus the source and terminal boundary waves; the U40 and
-U14 support members fold into remediation waves):
+The remediation sub-DAG is acyclic with **98 members and 184 edges** across **13
+bounded waves** (11 remediation waves plus the source and terminal boundary waves;
+the U40 and U14 support members fold into remediation waves):
 
-- **U1 (`175.001-T`) is the unique source** (in-degree 0). Its direct dependents
+- **U1 (`175.001-T`) is the unique source of the remediation sub-DAG**
+  (in-degree 0 within the sub-DAG). Its direct dependents
   are `175.002-T`, `175.003-T`, `175.004-T`, `175.005-T`, `175.006-T`, `175.007-T`, `175.008-T`, `175.009-T`, `175.010-T`, `175.040-T`.
+- **Full-feature source (outside the sub-DAG):** the runner-bootstrap prerequisite
+  `175.099-T` (shipment `176-S`, RS-W(-1)) is the in-degree-zero source of the
+  full feature graph via `175.001-T depends_on 175.099-T` (task edge) and
+  `157-S depends_on 176-S` (shipment edge). The 98-member sub-DAG's internal
+  source remains U1; `175.099-T` sits ahead of it as a pre-DAG bootstrap.
 - **U40 depends on U1; U14 depends on U40** (support chain).
 - The first remediation batch depends on U1. Each later remediation batch is
   gated by an explicit anchor dependency from the prior batch; per-file slices
@@ -235,12 +282,16 @@ U14 support members fold into remediation waves):
 ## Baseline-Convergence Contract
 
 Feature `175-F` carries the canonical `baseline-lint-convergence-contract` block
-authored after task content is final. It records: the mode/purpose, the shipment
-(`156-S`), release-unit (`175-F`), and terminal task (`175.012-T`); the declared
-`supported_goos` (`windows`, `linux`); the `member_scope` of all 98 executable
-members with their live role and the lowercase 64-hex `task_contract_sha256` of
-each final committed canonical task-lint-contract JSON; the committed machine
-inventory (`docs/decisions/baseline-lint-inventory.json`, SHA-256
+authored after task content is final. It records: the mode/purpose; the
+release-unit (`175-F`) and terminal task (`175.012-T`); the current packaging (the
+prerequisite shipment `176-S` carrying `175.099-T`, gating the replacement
+sequence `157-S`..`169-S`, superseding the abandoned single shipment `156-S`); the
+declared `supported_goos` (`windows`, `linux`); the `member_scope` of all 98
+remediation sub-DAG members with their live role and the lowercase 64-hex
+`task_contract_sha256` of each final committed canonical task-lint-contract JSON
+(the runner-bootstrap prerequisite `175.099-T` is recorded separately in the
+`packaging.prerequisite_*` fields, outside this remediation `member_scope`); the
+committed machine inventory (`docs/decisions/baseline-lint-inventory.json`, SHA-256
 `6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a`, 497 identities);
 the exact intermediate-wave verifier command; the canonical terminal command; and
 the shipment-scoped operator authorization reference.
@@ -266,12 +317,17 @@ pwsh -NoProfile -File scripts/verify-terminal-lint.ps1 -FeatureId 175-F
 ## Harness-Exempt Set
 
 Closed, single member: U12 (`175.012-T`). Every other member (U1 + 94
-remediation + U40 + U14) is a normal harness-required task that exclusively owns
-exactly one deterministic `*_test.go` harness path with a genuine targeted
-red-before-green `TestU175_<NNN>_` selector. Ship's harness phase scaffolds every
-non-exempt member of the admitted ready wave together; same-wave sibling
-task-scoped red is expected and tolerated until wave convergence. No later-wave
-harness is scaffolded early; harnesses are not pre-committed at Stage.
+remediation + U40 + U14 + the runner-bootstrap prerequisite `175.099-T`) is a
+normal harness-required task that exclusively owns exactly one deterministic
+`*_test.go` harness path with a genuine targeted red-before-green
+`TestU175_<NNN>_` selector. The prerequisite `175.099-T` is harness-required with
+a self-contained bootstrap harness (`tests/runner_bootstrap_175_099_test.go`,
+`TestU175_099_RunnerBootstrap`) whose gate is the Go harness itself — never the
+runner it creates — RED before the three runners exist and GREEN after. Ship's
+harness phase scaffolds every non-exempt member of the admitted ready wave
+together; same-wave sibling task-scoped red is expected and tolerated until wave
+convergence. No later-wave harness is scaffolded early; harnesses are not
+pre-committed at Stage.
 
 ## Operator Authorization
 
@@ -333,7 +389,7 @@ into this single baseline-convergence covering feature.
 dispatch_mode: multi-agent-dispatch
 decision: PASS
 
-Reviewed at the exact current HEAD across Constitution, Correctness, Template
+Reviewed across Constitution, Correctness, Template
 Integrity, Scope Boundary, Schema/CLI/Docs coupling, CI coupling, and
 Maintainability personas, with the policy-sensitive harness/planning coupling
 additionally escalated to the installed adversarial review and post-remediation
@@ -341,10 +397,14 @@ re-review. Residual P0=0, P1=0.
 
 ## Runtime Verification and Closure
 
-Ship executes the DAG wave by wave: each member turns its own
-`^TestU175_<NNN>_` selector green and satisfies its task-scoped lint verifier; the
-intermediate-wave verifier enforces exact remaining-baseline monotonicity against
-the governed inventory; terminal convergence at U12 requires all four mandatory
-gates green including a zero-warning `golangci-lint run` on both supported
-surfaces, the `//nolint` inventory validated, and the Docline closure evidence
-artifact committed. Shipment `156-S` converges and unblocks `149-S`.
+Ship executes the DAG wave by wave: the prerequisite shipment `176-S`
+(`175.099-T`) ships first — creating the three shared runners — then the
+replacement sequence `157-S`..`169-S` converges wave by wave. Each member turns
+its own `^TestU175_<NNN>_` selector green and satisfies its task-scoped lint
+verifier; the intermediate-wave verifier enforces exact remaining-baseline
+monotonicity against the governed inventory; terminal convergence at U12 (in
+`169-S`, RS-W12) requires all four mandatory gates green including a zero-warning
+`golangci-lint run` on both supported surfaces, the `//nolint` inventory
+validated, and the Docline closure evidence artifact committed. The replacement
+sequence converges and unblocks `149-S` by an advisory ordering edge (shipped-only
+readiness governed by claim-routing policy, per the decomposition decision).
