@@ -291,10 +291,16 @@ and it does **not** extend to `176-S`..`169-S`, which run under the (by then
 consumed) marked-aware scheduler with **no** exception. This is a **two-shipment**
 bootstrap set, not an unbounded chain of manual exceptions.
 
-The "does not extend past {`155-S`, `154-S`}" result is **DAG-enforced for marker
-production** (`176-S depends_on 154-S` guarantees the marker-writing
-`ClaimShipment` code has shipped before `176-S` is claimable, so `176-S` members
-are claimed *marked*). It additionally rests on two non-DAG conditions that the
+The "does not extend past {`155-S`, `154-S`}" result is **governance-enforced,
+not DAG-enforced**, until the `6434A4D7` dependency-axis hardening lands. The
+advisory `176-S depends_on 154-S` edge does **not** by itself guarantee the
+marker-writing `ClaimShipment` code has shipped before `176-S` is claimable:
+ordinary queue filtering admits six terminal statuses and direct `ClaimShipment`
+performs no claim-time dependency check, so nothing in current code prevents a
+premature `176-S` claim. The boundary therefore holds only under an **explicit
+pre-claim governance check** — `154-S` MUST be verified `shipped` and the marker
+available/consumed before `176-S` may be claimed — after which `176-S` members
+are claimed *marked*. It additionally rests on two non-DAG conditions that the
 BLOCKED readiness already governs: (a) the external autoharness scheduler must be
 **consuming** the marker before `176-S` is claimed (readiness dep #2, P-017); and
 (b) pre-marker scheduling discipline — no unrelated multi-member shipment (e.g.
