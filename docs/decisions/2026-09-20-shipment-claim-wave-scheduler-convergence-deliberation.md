@@ -254,37 +254,82 @@ pending") is **rejected** — no evidence proves it safe, per the operator guard
 
 ### Bootstrap Resolution (Objective 3)
 
-**The bootstrap problem:** the enabling-precondition shipment `154-S`/`173-F`
-cannot itself be executed through the marked-aware wave scheduler, because the
-marker its own tasks produce does not exist at its own claim time. `173-F` is
-multi-wave internally (`173.001-T`..`173.007-T` form a dependency chain, e.g.
-`173.002-T depends_on 173.001-T, 173.007-T`). Claiming `154-S` therefore
-activates all seven members **unmarked** at once → strict wave admission halts
-`WAVE_NO_PROGRESS`. So the fix cannot be shipped by the very contract it repairs.
+**The bootstrap problem — complete predecessor chain.** The marker is produced by
+the enabling-precondition shipment `154-S`/`173-F` and becomes usable only after
+the external autoharness P-002.6 scheduler consumes it. No shipment that must run
+*before* the marker is consumable can be admitted through the marked-aware
+scheduler, because the marker does not yet exist at its claim time. The governed
+shipment-level dependency DAG makes the full predecessor chain explicit:
 
-**Resolution — operator-authorized single-shipment bootstrap execution, without
-relying on the broken contract:** `154-S`/`173-F` is executed as a direct,
-operator-supervised bootstrap in which Ship claims the shipment and then drives
-the claim-activated members green **in their declared dependency order**
-(`173.006-T`/`173.007-T` → `173.001-T` → `173.002-T`/`173.003-T` → `173.004-T` →
-…), **without** running the strict active-residual admission halt — because for
-the just-claimed prerequisite the active members ARE the intended wave-0 working
-set, not orphaned residuals. This bootstrap exception is:
+```text
+155-S (in-degree 0, DAG root) → 154-S → 176-S → 157-S → … → 169-S
+```
 
-* **Scoped to exactly one shipment** (`154-S`); every subsequent shipment uses
-  the normal marked-aware scheduler with no exception.
-* **Independent of the not-yet-built marker** — it needs no scheduler
-  marker-consumption to complete.
-* **Operator-authorized** — the strict P-002.6 active-residual halt is a safety
-  check against *orphaned prior-wave* claims; waiving it for a single supervised
-  prerequisite whose members are all backlogit-core marker work is bounded and
-  auditable.
+`154-S depends_on 155-S` is a **governed edge**, added deliberately as a DAG-root
+correction (commit `69e900be`: "155-S is the corrective prerequisite for
+unfinished 154-S"), so `155-S` — **not** `154-S` — is the earliest prerequisite.
+`155-S` (S14 — Resumable shipment blocked lifecycle status) carries **26 members**
+(`174-F` + `174.039-T`..`174.063-T`) and is exposed to the **same**
+`ClaimShipment` all-members-active versus strict wave-admission mismatch: claiming
+it activates all 26 members **unmarked** at once → `WAVE_NO_PROGRESS`.
+`154-S`/`173-F` is likewise internally multi-wave (`173.001-T`..`173.007-T`) and
+hits the same halt. So the fix cannot be shipped by the very contract it repairs,
+and the earliest executable prerequisite is `155-S`, not `154-S`. The prior
+convergence record started the bootstrap at `154-S` and **omitted** its blocking
+predecessor `155-S`; that omission is corrected here.
 
-Sequencing that unblocks #449:
-`154-S`/`173-F` (bootstrap execution) → external autoharness scheduler consumes
-the marker → `176-S` (runner bootstrap) → `157-S`..`169-S` (baseline waves) via
-the normal marked-aware scheduler → `6434A4D7` dependency-axis hardening lands
-separately to convert the advisory `156-S`/`149-S` edges into hard guards.
+**Bounded, non-circular bootstrap set = {`155-S`, `154-S`}.** Under Model M2 the
+bootstrap set is exactly the marker's predecessor closure that must execute
+*before* the marker is consumable: the DAG-root prerequisite `155-S` and the
+marker producer `154-S`. The set is **bounded** — it terminates at the
+in-degree-0 root `155-S`; it is **non-circular** — `155-S` has no dependencies;
+and it does **not** extend to `176-S`..`169-S`, which run under the (by then
+consumed) marked-aware scheduler with **no** exception. This is a **two-shipment**
+bootstrap set, not an unbounded chain of manual exceptions.
+
+The "does not extend past {`155-S`, `154-S`}" result is **DAG-enforced for marker
+production** (`176-S depends_on 154-S` guarantees the marker-writing
+`ClaimShipment` code has shipped before `176-S` is claimable, so `176-S` members
+are claimed *marked*). It additionally rests on two non-DAG conditions that the
+BLOCKED readiness already governs: (a) the external autoharness scheduler must be
+**consuming** the marker before `176-S` is claimed (readiness dep #2, P-017); and
+(b) pre-marker scheduling discipline — no unrelated multi-member shipment (e.g.
+`153-S`) is claimed in the pre-marker window, since any unmarked active member
+would also halt `WAVE_NO_PROGRESS`. Both hold under the recorded BLOCKED sequence
+and Orchestrator claim-routing; the two-shipment bound is exact under them.
+
+**Executability under Model M2.** Each earliest prerequisite is executable via a
+direct, operator-supervised bootstrap in which Ship claims the shipment and drives
+the claim-activated members green **in their declared dependency order** (`155-S`:
+the `174-F` members; then `154-S`: the `173-F` members) **without** running the
+strict active-residual admission halt — because for a just-claimed prerequisite
+the active members ARE the intended wave-0 working set, not orphaned residuals.
+The technique needs no marker-consumption and is identical for both shipments.
+
+**AUTHORIZATION STATE — the halt bypass is UNAPPROVED / BLOCKED.** Waiving the
+P-002.6 active-residual safety halt is a **high-risk** execution-time action. The
+operator approved *pursuing this convergence recommendation*; the operator has
+**NOT** authorized bypassing the P-002.6 active-residual halt for `155-S` or
+`154-S`. The durable authorization record
+(`docs/decisions/2026-09-17-baseline-convergence-authorization.md`) grants only
+governed lint-finding retention for `156-S`/`157-S`..`169-S` and confers **no**
+scheduler-halt waiver. The bootstrap therefore remains **BLOCKED**: it may not be
+executed until the operator **explicitly approves that exact action** — the
+per-shipment active-residual halt waiver for `155-S` and `154-S`. Supervision is
+not authorization.
+
+**Smallest next decision to unblock.** A single explicit operator approval of the
+exact P-002.6 active-residual halt waiver for the two-shipment bootstrap set
+{`155-S`, `154-S`} (or an alternative operator directive). Absent that approval
+the entire baseline sequence stays BLOCKED.
+
+Sequencing that unblocks #449 (contingent on the operator approval above):
+`155-S` (bootstrap; halt-bypass UNAPPROVED) → `154-S`/`173-F` (bootstrap;
+halt-bypass UNAPPROVED; produces the marker) → external autoharness scheduler
+consumes the marker → `176-S` (runner bootstrap) → `157-S`..`169-S` (baseline
+waves) via the normal marked-aware scheduler → `6434A4D7` dependency-axis
+hardening lands separately to convert the advisory `156-S`/`149-S` edges into
+hard guards.
 
 ### Rejected Alternatives
 
@@ -302,16 +347,21 @@ separately to convert the advisory `156-S`/`149-S` edges into hard guards.
 * `6434A4D7` Go-core dependency-axis hardening — deferred core release unit;
   governs converting the `156-S`/`149-S` advisory edges into hard shipped-only
   guards and adding the governed non-claimable disposition.
-* Whether the single-shipment bootstrap exception should be formalized as an
-  explicit Ship-contract clause (vs remaining an operator-authorized manual
-  bootstrap) — Ship-owned; out of Stage scope.
+* **Explicit operator approval of the P-002.6 active-residual halt waiver for the
+  bootstrap set {`155-S`, `154-S`}** — the smallest next decision blocking #449
+  execution. UNAPPROVED as of this record; the bootstrap stays BLOCKED until the
+  operator approves that exact action (or issues an alternative directive).
+* Whether the two-shipment bootstrap exception should be formalized as an explicit
+  Ship-contract clause (vs remaining an operator-supervised manual bootstrap) —
+  Ship-owned; out of Stage scope.
 
 ### Risks and Mitigations
 
 | Risk | Sev | Mitigation |
 |---|---|---|
 | Baseline sequence treated as executable while claim/scheduler unresolved | High | #449 decomposition + plan rewritten to readiness `BLOCKED`; advisory edge `154-S blocks 176-S` recorded. |
-| Bootstrap exception over-generalized into a standing scheduler bypass | Med | Exception scoped to `154-S` only, operator-authorized, single-shipment; all later shipments use the marked-aware scheduler. |
+| Bootstrap exception over-generalized into a standing scheduler bypass | Med | Exception bounded to the two-shipment set {`155-S`, `154-S`} (marker predecessor closure; terminates at DAG-root `155-S`), non-circular; every later shipment uses the marked-aware scheduler with no exception. |
+| Halt bypass executed without explicit operator approval | High | Bypass recorded **UNAPPROVED / BLOCKED**; requires explicit per-shipment operator approval of the exact P-002.6 active-residual halt waiver for `155-S` and `154-S`; the lint-retention authorization confers no such waiver. |
 | Eventual `6434A4D7` implementer changes `ClaimShipment` in place | Med | This decision fixes Model M2 (additive guard only) as the authoritative model. |
 | Marker never consumed (external work stalls) | Med | Readiness stays `BLOCKED`; no baseline wave is claimed until consumption lands (Orchestrator claim routing). |
 

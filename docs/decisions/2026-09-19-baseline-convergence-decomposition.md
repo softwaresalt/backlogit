@@ -179,14 +179,24 @@ additively via the scheduler-baseline marker plus its scheduler consumption.
    claim-time dependency guard + shipped-only readiness gate + governed
    non-claimable disposition. Governs, but does not gate, the baseline sequence.
 
-**Bootstrap of the marker prerequisite itself.** `154-S`/`173-F` cannot be
-executed through the marked-aware scheduler (the marker its own tasks produce
-does not exist at its own claim time; `173-F` is internally multi-wave). It is
-executed via an **operator-authorized single-shipment bootstrap**: Ship claims
-`154-S`, then drives the claim-activated members green in their declared
-dependency order **without** the strict active-residual halt, because the
-just-claimed members are the intended working set. The exception is scoped to
-`154-S` only; all later shipments use the normal marked-aware scheduler.
+**Bootstrap of the marker prerequisite itself.** The marker becomes usable only
+after `154-S`/`173-F` ships and the external autoharness scheduler consumes it, so
+the shipments on the marker's predecessor closure must run before the marked-aware
+scheduler exists. The governed DAG makes the complete predecessor chain explicit:
+`155-S (in-degree 0 root) → 154-S → 176-S → 157-S..169-S`. Because
+`154-S depends_on 155-S` is a governed edge (DAG-root correction, commit
+`69e900be`), the earliest prerequisite is **`155-S`, not `154-S`**; `155-S`
+(26 members: `174-F` + `174.039-T`..`174.063-T`) is exposed to the same
+all-members-active vs. strict wave-admission mismatch. The bootstrap set is the
+**bounded, non-circular two-shipment set {`155-S`, `154-S`}** (terminating at the
+in-degree-0 root `155-S`); it does not extend to `176-S`..`169-S`. Each is
+executed via an **operator-supervised bootstrap**: Ship claims the shipment and
+drives the claim-activated members green in their declared dependency order
+**without** the strict active-residual halt, because the just-claimed members are
+the intended working set. **The active-residual halt bypass is UNAPPROVED /
+BLOCKED**: the operator approved pursuing the convergence recommendation but has
+not authorized the halt waiver, which requires explicit per-shipment operator
+approval for `155-S` and `154-S`.
 
 **Consequence for `#449`:** this PR is a planning-only decomposition; it makes no
 shipment executable on its own. Until readiness dependencies (1) and (2) land, no

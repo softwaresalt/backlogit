@@ -52,9 +52,15 @@ Artifact: `docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-d
 
 * `154-S`/`173-F` **REUSED** as the in-repo marker prerequisite — no duplicate created.
 * `6434A4D7` core hardening deferred (P-021 C1), not harvested.
-* Bootstrap: `154-S` executed via operator-authorized single-shipment bootstrap
-  (drive claim-activated members green in dependency order without the strict
-  active-residual halt; scope=154-S only).
+* Bootstrap (CORRECTED 2026-09-20): complete predecessor chain
+  `155-S (DAG root) → 154-S → 176-S → 157-S..169-S`. Bounded, non-circular
+  bootstrap set = {`155-S`, `154-S`} (marker predecessor closure; terminates at
+  in-degree-0 root `155-S`; earlier record wrongly started at `154-S` and omitted
+  `155-S`). Each runs as an operator-supervised bootstrap (drive members green in
+  dependency order without the strict active-residual halt). **The P-002.6
+  active-residual halt bypass is UNAPPROVED / BLOCKED** — operator approved
+  pursuing the convergence recommendation, NOT the halt waiver; requires explicit
+  per-shipment operator approval for `155-S` and `154-S`.
 
 ## Artifacts changed
 
@@ -73,11 +79,16 @@ Artifact: `docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-d
 
 ## Gates
 
-* plan-harden: appended `## Plan Hardening` (`Requires plan hardening: yes`).
-* plan-review: 6 personas, multi-agent-dispatch. Attempt 1 FAIL (2 P1); remediated
-  via machine-consumable signals; re-gate **ADVISORY** (P0=0/P1=0), operator
-  authorized. Residual P2 accepted as follow-ups (external consumption, marker-as-
-  state, Ship-contract forward-ref, 176-S body mirror).
+* plan-harden: appended `## Plan Hardening` (`Requires plan hardening: yes`);
+  corrective re-hardening 2026-09-20 (predecessor chain + authorization state).
+* plan-review: multi-agent-dispatch. Attempt 1 FAIL (2 P1); remediated via
+  machine-consumable signals; ADVISORY (P0=0/P1=0). Corrective re-gate 2026-09-20
+  (attempt 3) over the corrected contract — decision ADVISORY; operator
+  authorization scoped to acceptance of the ADVISORY planning verdict and pursuit
+  of the convergence recommendation ONLY. **The P-002.6 halt bypass is explicitly
+  EXCLUDED from that authorization and remains UNAPPROVED / BLOCKED.** Residual P2
+  accepted as follow-ups (external consumption, marker-as-state, Ship-contract
+  forward-ref, 176-S body mirror).
 
 ## Thread dispositions (Stage does NOT reply/resolve)
 
@@ -91,7 +102,10 @@ Artifact: `docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-d
 
 ## Blocker preventing #449 review-ready
 
-`#449` cannot reach executable/review-ready until (out-of-Stage-scope): external
-autoharness P-002.6 scheduler marker-consumption lands, and the marker
-prerequisite (`154-S`/`173-F`) ships via bootstrap. Both are downstream of this
-planning cycle.
+`#449` cannot reach executable/review-ready until: (1) the operator **explicitly
+approves the P-002.6 active-residual halt waiver** for the bootstrap set
+{`155-S`, `154-S`} (the smallest next decision; currently UNAPPROVED → BLOCKED);
+(2) the two-shipment bootstrap executes `155-S` then `154-S`/`173-F`, producing
+the marker; and (3) the external autoharness P-002.6 scheduler consumes the marker
+(out-of-workspace, P-017). All three are downstream of this planning cycle. Stage
+does not claim, bootstrap, or bypass any halt.
