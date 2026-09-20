@@ -218,19 +218,27 @@ byte-identical. U14 owns zero lint findings and uses a canonical
 
 U12 (`175.012-T`) is the unique terminal sink and the sole harness-exempt unit
 (P-002.1 `verification-only`, `harness-exempt` label, `harness_owner: none`,
-`must-fail-before-deliverable` precondition). It runs the four mandatory gates —
-`go test ./...`, `go vet ./...`, `golangci-lint run`, and `gofmt -l .` — fails on
-any nonzero exit or non-empty gofmt output, then validates its evidence artifact
-and a machine-readable full-identity `//nolint` suppression inventory.
+`must-fail-before-deliverable` precondition). It runs the mandatory build/vet/format
+gates — `go test ./...`, `go vet ./...`, and `gofmt -l .` — and delegates the mandatory
+zero-warning terminal LINT gate to the canonical terminal runner
+`scripts/verify-terminal-lint.ps1 -FeatureId 175-F`; it fails on any nonzero exit, a
+missing `TERMINAL-LINT-OK:175-F` marker, or non-empty gofmt output, then validates its
+evidence artifact and a machine-readable full-identity `//nolint` suppression inventory.
 
-The terminal `golangci-lint run` is the mandatory **zero-warning** full-repository
-gate on both declared supported surfaces (`windows`, `linux`): the release unit is
-not converged until it is clean.
+The canonical terminal runner `scripts/verify-terminal-lint.ps1 -FeatureId 175-F` is the
+mandatory **zero-warning** full-repository gate: it screens both declared supported
+surfaces (`windows`, `linux`) via an in-process `GOOS` override on a single host, fails
+closed if either surface carries a residual warning or execution fails, and emits
+`TERMINAL-LINT-OK:175-F` only after both surfaces are clean. The release unit is not
+converged until both surfaces are clean; U12 is the task that invokes this runner.
 
 U12's hardened verification protections are preserved exactly:
 
-- **Windows-native host gate first** (before any repository gate or evidence
-  work), then repository gates and evidence work.
+- **Cross-surface terminal lint gate** through the canonical terminal runner, proving
+  zero residual warnings independently on the `windows` and `linux` surfaces (in-process
+  `GOOS` override on a single host) before evidence work — covering both the
+  windows-build-tagged U19-U22 files and the Linux-only `_unix.go` files without
+  depending on the analyzing host's own platform.
 - Docline closure frontmatter + docs-lint on the evidence artifact.
 - Lexical-state-aware `//nolint` scanner, continuous NUL-delimited byte-stream
   tracked-file enumeration, strict throw-on-invalid UTF-8 path decoding,
@@ -403,8 +411,10 @@ replacement sequence `157-S`..`169-S` converges wave by wave. Each member turns
 its own `^TestU175_<NNN>_` selector green and satisfies its task-scoped lint
 verifier; the intermediate-wave verifier enforces exact remaining-baseline
 monotonicity against the governed inventory; terminal convergence at U12 (in
-`169-S`, RS-W12) requires all four mandatory gates green including a zero-warning
-`golangci-lint run` on both supported surfaces, the `//nolint` inventory
+`169-S`, RS-W12) requires all mandatory gates green including the canonical terminal
+runner's zero-warning `golangci-lint` proof on both supported surfaces
+(`scripts/verify-terminal-lint.ps1 -FeatureId 175-F`, emitting `TERMINAL-LINT-OK:175-F`),
+the `//nolint` inventory
 validated, and the Docline closure evidence artifact committed. The replacement
 sequence converges and unblocks `149-S` by an advisory ordering edge (shipped-only
 readiness governed by claim-routing policy, per the decomposition decision).

@@ -7,12 +7,9 @@ status: complete
 
 # Stage Session: Baseline-Convergence Restage & Decomposition
 
-**Date:** 2026-09-19 (updated PR #449 review cycle 3)
+**Date:** 2026-09-19
 **Branch:** `stage/baseline-convergence-decomposed` (from `origin/main` @ 37a5cba)
-**Reviewed head:** `e0f77878f1bdec473bfbf6623f77036f0bb90a49` (PR #449 cycle-3 review census head;
-the cycle-3 review-fix commit succeeds it)
-**Trigger:** Operator direct directive — abandon PR #448, restage, decompose 156-S. Subsequently
-hardened under PR #449 review (cycles 1–3).
+**Trigger:** Operator direct directive — abandon PR #448, restage, decompose 156-S.
 
 ## What was done
 
@@ -29,22 +26,25 @@ hardened under PR #449 review (cycles 1–3).
 - Rewired `149-S`: removed `→156-S`, added `→169-S` (advisory ordering; governed by
   claim-routing policy, see stash `6434A4D7`).
 - `168.001-T` remains archived/`done` (not repeated).
-- **PR #449 review cycle 2 — runner-bootstrap prerequisite added.** The three shared
-  lint runners (`scripts/verify-task-lint.ps1`, `scripts/verify-baseline-lint.ps1`,
+- **Runner-bootstrap prerequisite.** The three shared lint runners
+  (`scripts/verify-task-lint.ps1`, `scripts/verify-baseline-lint.ps1`,
   `scripts/verify-terminal-lint.ps1`) had no owning task. Added one runner-bootstrap
   prerequisite task `175.099-T` (99th executable member) in a new prerequisite shipment
   `176-S` (RS-W(-1)), gating the replacement sequence via `157-S depends_on 176-S` and
-  reinforced by `175.001-T depends_on 175.099-T`. Feature now **99 tasks / 14 shipments**.
-- **PR #449 review cycle 3 — bootstrap harness made behavioral.** The `175.099-T`
-  bootstrap harness was strengthened from existence/AST/param-only (vacuous, so a no-op
-  script could pass) to a behavioral, fixture-driven contract that exercises each runner's
-  success and failure/fail-closed scenarios with divergent exit codes, while preserving
-  the gate invariant (the owned Go harness — never the created runner — is the gate).
-  This durable session handoff was updated to the 99-task/14-shipment graph.
-- Review cycles: Correctness Reviewer PASS (initial, 3 P3 advisories dispositioned) plus
-  Copilot PR #449 cycles 1–3 (dependency-guard honesty, runner-bootstrap prerequisite,
-  behavioral bootstrap harness).
-- Both mechanical validators PASS; live-DB + file re-checks PASS.
+  reinforced by `175.001-T depends_on 175.099-T`. Feature is **99 tasks / 14 shipments**.
+- **Behavioral bootstrap harness.** The `175.099-T` bootstrap harness is a behavioral,
+  fixture-driven contract that exercises each runner's success and failure/fail-closed
+  scenarios with divergent exit codes (existence/AST/param-only checks alone would be
+  vacuous), while preserving the gate invariant (the owned Go harness — never the created
+  runner — is the gate). The terminal runner's coverage independently proves both
+  supported GOOS surfaces (`windows`, `linux`), fails closed on a residual warning in
+  either surface, and asserts its `TERMINAL-LINT-OK:175-F` success marker.
+- **Terminal gate through the canonical runner.** U12 (`175.012-T`) delegates its
+  mandatory zero-warning terminal lint gate to `scripts/verify-terminal-lint.ps1
+  -FeatureId 175-F`, which screens both supported GOOS surfaces (`windows`, `linux`) via
+  an in-process `GOOS` override on a single host and emits `TERMINAL-LINT-OK:175-F` only
+  after both surfaces are clean — replacing a Windows-native-only direct `golangci-lint
+  run`.
 
 ## Wave → shipment map (task numbers of 175.NNN-T)
 RS-W(-1)(176)=[99] runner-bootstrap prerequisite (`175.099-T`); gates the sequence via `157 depends_on 176`.
@@ -75,14 +75,13 @@ Old branch `stage/baseline-convergence-main` @ d4d394e1 untouched (read-only evi
 PR #448 closed unmerged. `156-S` retained as historical packaging.
 
 ## Handoff
-PR #449 open on branch `stage/baseline-convergence-decomposed`; hardened through review cycle 3
-(cycle-3 census head `e0f77878f1bdec473bfbf6623f77036f0bb90a49`, two unresolved Copilot threads
-addressed by the succeeding cycle-3 review-fix commit: behavioral bootstrap harness for
-`175.099-T` and this durable-handoff update). Current graph: **99 tasks / 14 shipments**. CI
-green; no active shipment. Orchestrator owns the staging merge gate. Not for Ship until merged.
-No BDD retrofit (deferred spec preserved). Governance follow-ups remain in stash: `6434A4D7`
-(tool-level prerequisite/claim enforcement) and `B633E9B9` (machine-authenticated
-reauthorization).
+PR #449 tracks this staging work on branch `stage/baseline-convergence-decomposed`.
+Volatile review chronology, current-head evidence, and CI/readiness state are owned by
+the PR and Git history, not this durable handoff. Current graph: **99 tasks / 14
+shipments**. No active shipment; the Orchestrator owns the staging merge gate, and the
+work is not for Ship until merged. No BDD retrofit (deferred spec preserved). Governance
+follow-ups remain in stash: `6434A4D7` (tool-level prerequisite/claim enforcement) and
+`B633E9B9` (machine-authenticated reauthorization).
 
 ## Out of scope (left active)
 4 unrelated deferred-scope-expansion stash entries: 3F06493B, 7B71AD77,

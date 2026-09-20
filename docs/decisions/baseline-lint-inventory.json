@@ -8,7 +8,8 @@
     "line",
     "column",
     "linter",
-    "message"
+    "message",
+    "owner_task_id"
   ],
   "primary_goos": "windows",
   "supported_goos": [

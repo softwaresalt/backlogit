@@ -17,15 +17,23 @@ docline:
 ## Resolution
 
 **Resolved and superseded.** The operator subsequently authorized the full-baseline
-rescope that this STOP record required. The verifier's unbounded invocation is the
-authoritative truth: shipment 156-S / feature 175-F binds the complete 489-finding
-golangci-lint v2.13.2 baseline across 160 files (459 errcheck + 30 staticcheck). The
-former 56-finding figure was golangci-lint display-cap truncation and is no longer
-authoritative. The current binding and its session-scoped authorization live in
-`docs/decisions/baseline-lint-inventory-489.json`, the `175-F` canonical
-baseline-convergence contract, and
-`docs/decisions/2026-09-17-baseline-convergence-authorization.md`. The fail-closed STOP
-below is retained as historical decision evidence.
+rescope that this STOP record required. The unbounded golangci-lint v2.13.2 baseline —
+taken across the declared supported-platform surfaces — is the authoritative truth.
+Feature `175-F` now binds the complete **497-identity Windows+Linux supported-platform
+union**: the Windows-primary surface carries 489 findings across 160 files (459 errcheck
++ 30 staticcheck), and the Linux surface adds 8 Linux-only errcheck findings on
+`_unix.go` sources while excluding 4 Windows-only `_windows.go` findings (intersection
+485, union 497). The former 56-finding figure was golangci-lint display-cap truncation
+and is no longer authoritative; the 489 figure is the Windows-primary surface alone, not
+the supported-platform total. The current binding lives in the committed machine-readable
+inventory `docs/decisions/baseline-lint-inventory.json` (497 identities, SHA-256
+`6cd1d3468d6fe334b165763b33dc03aacdcfad04d369dda3c88057459b998f3a`), the `175-F`
+canonical `baseline-lint-convergence-contract`, and the shipment-scoped operator
+authorization at `docs/decisions/2026-09-17-baseline-convergence-authorization.md`.
+Execution is owned by the wave-aligned replacement shipments `157-S`..`169-S` (the
+superseded single shipment `156-S` carries an empty manifest and is never claimed),
+gated by the runner-bootstrap prerequisite shipment `176-S` (task `175.099-T`). The
+fail-closed STOP below is retained as historical decision evidence.
 
 ## Decision
 
