@@ -10,6 +10,18 @@ import (
 
 func TestUR1S_ShipmentBlockedStatusShape(t *testing.T) {
 	file := parseUR1SFile(t, "shipment.go")
+	statusSpec := findUR1STypeSpec(file, "ShipmentStatus")
+	if statusSpec == nil {
+		t.Fatal("ShipmentStatus is not declared in shipment.go")
+	}
+	if statusSpec.Assign.IsValid() {
+		t.Error("ShipmentStatus must be a defined type, not a type alias")
+	}
+	underlyingType, ok := statusSpec.Type.(*ast.Ident)
+	if !ok || underlyingType.Name != "string" {
+		t.Errorf("ShipmentStatus underlying type = %q, want string", ur1sExprName(statusSpec.Type))
+	}
+
 	spec := findUR1SValueSpec(file, "ShipmentBlocked")
 	if spec == nil {
 		t.Fatal("ShipmentBlocked is not declared in shipment.go")
@@ -93,10 +105,7 @@ func findUR1SValueSpec(file *ast.File, name string) *ast.ValueSpec {
 	return nil
 }
 
-func assertUR1SStructFields(t *testing.T, file *ast.File, typeName string, want []string) {
-	t.Helper()
-
-	var structType *ast.StructType
+func findUR1STypeSpec(file *ast.File, name string) *ast.TypeSpec {
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
 		if !ok || genDecl.Tok != token.TYPE {
@@ -104,19 +113,37 @@ func assertUR1SStructFields(t *testing.T, file *ast.File, typeName string, want 
 		}
 		for _, spec := range genDecl.Specs {
 			typeSpec, ok := spec.(*ast.TypeSpec)
-			if !ok || typeSpec.Name.Name != typeName {
-				continue
+			if ok && typeSpec.Name.Name == name {
+				return typeSpec
 			}
-			structType, _ = typeSpec.Type.(*ast.StructType)
 		}
 	}
-	if structType == nil {
+	return nil
+}
+
+func assertUR1SStructFields(t *testing.T, file *ast.File, typeName string, want []string) {
+	t.Helper()
+
+	typeSpec := findUR1STypeSpec(file, typeName)
+	if typeSpec == nil {
 		t.Errorf("%s struct is not declared in shipment.go", typeName)
+		return
+	}
+	if typeSpec.Assign.IsValid() {
+		t.Errorf("%s must be a defined struct type, not a type alias", typeName)
+	}
+	structType, ok := typeSpec.Type.(*ast.StructType)
+	if !ok {
+		t.Errorf("%s must be declared with an underlying struct type", typeName)
 		return
 	}
 
 	got := make([]string, 0, len(structType.Fields.List))
 	for _, field := range structType.Fields.List {
+		if len(field.Names) == 0 {
+			t.Errorf("%s must not contain anonymous or embedded fields", typeName)
+			continue
+		}
 		for _, name := range field.Names {
 			got = append(got, name.Name+" "+ur1sExprName(field.Type))
 		}
@@ -136,6 +163,9 @@ func assertUR1SFunctionShape(t *testing.T, file *ast.File, functionName, options
 	}
 	if decl.Recv != nil {
 		t.Errorf("%s must be receiver-less", functionName)
+	}
+	if decl.Type.TypeParams != nil {
+		t.Errorf("%s must not declare type parameters", functionName)
 	}
 
 	wantParams := []string{
