@@ -4,83 +4,96 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUR1S_ShipmentBlockedStatusShape(t *testing.T) {
 	file := parseUR1SFile(t, "shipment.go")
 	statusSpec := findUR1STypeSpec(file, "ShipmentStatus")
-	if statusSpec == nil {
-		t.Fatal("ShipmentStatus is not declared in shipment.go")
-	}
-	if statusSpec.Assign.IsValid() {
-		t.Error("ShipmentStatus must be a defined type, not a type alias")
-	}
+	require.NotNil(t, statusSpec, "ShipmentStatus is not declared in shipment.go")
+	assert.False(t, statusSpec.Assign.IsValid(), "ShipmentStatus must be a defined type, not a type alias")
+
 	underlyingType, ok := statusSpec.Type.(*ast.Ident)
-	if !ok || underlyingType.Name != "string" {
-		t.Errorf("ShipmentStatus underlying type = %q, want string", ur1sExprName(statusSpec.Type))
-	}
+	require.True(t, ok, "ShipmentStatus must have an identifier underlying type")
+	assert.Equal(t, "string", underlyingType.Name, "ShipmentStatus underlying type")
 
 	spec := findUR1SValueSpec(file, "ShipmentBlocked")
-	if spec == nil {
-		t.Fatal("ShipmentBlocked is not declared in shipment.go")
-	}
-	if got := ur1sExprName(spec.Type); got != "ShipmentStatus" {
-		t.Errorf("ShipmentBlocked type = %q, want ShipmentStatus", got)
-	}
-	if len(spec.Values) != 1 {
-		t.Fatalf("ShipmentBlocked value count = %d, want 1", len(spec.Values))
-	}
+	require.NotNil(t, spec, "ShipmentBlocked is not declared in shipment.go")
+	assert.Equal(t, "ShipmentStatus", ur1sExprName(spec.Type), "ShipmentBlocked type")
+	require.Len(t, spec.Values, 1, "ShipmentBlocked value count")
+
 	value, ok := spec.Values[0].(*ast.BasicLit)
-	if !ok || value.Kind != token.STRING || value.Value != `"blocked"` {
-		t.Errorf("ShipmentBlocked value must be the string literal \"blocked\", got %T", spec.Values[0])
-	}
+	require.True(t, ok, "ShipmentBlocked value must be a basic literal, got %T", spec.Values[0])
+	assert.Equal(t, token.STRING, value.Kind, "ShipmentBlocked literal kind")
+	assert.Equal(t, `"blocked"`, value.Value, "ShipmentBlocked value")
 }
 
 func TestUR1S_BlockAndUnblockAPIDeclarationShape(t *testing.T) {
 	file := parseUR1SFile(t, "shipment.go")
 
-	assertUR1SStructFields(t, file, "BlockOptions", []string{
-		"Reason string",
-		"BlockedBy string",
-		"ResumeCheckpointRef string",
-	})
-	assertUR1SStructFields(t, file, "UnblockOptions", []string{
-		"Target ShipmentStatus",
-		"Confirm bool",
-		"UnblockedBy string",
-	})
+	tests := []struct {
+		name         string
+		optionsType  string
+		fields       []string
+		functionName string
+	}{
+		{
+			name:        "block",
+			optionsType: "BlockOptions",
+			fields: []string{
+				"Reason string",
+				"BlockedBy string",
+				"ResumeCheckpointRef string",
+			},
+			functionName: "BlockShipment",
+		},
+		{
+			name:        "unblock",
+			optionsType: "UnblockOptions",
+			fields: []string{
+				"Target ShipmentStatus",
+				"Confirm bool",
+				"UnblockedBy string",
+			},
+			functionName: "UnblockShipment",
+		},
+	}
 
-	assertUR1SFunctionShape(t, file, "BlockShipment", "BlockOptions")
-	assertUR1SFunctionShape(t, file, "UnblockShipment", "UnblockOptions")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assertUR1SStructFields(t, file, test.optionsType, test.fields)
+			assertUR1SFunctionShape(t, file, test.functionName, test.optionsType)
+		})
+	}
 }
 
 func TestUR1S_BlockAndUnblockSentinelShape(t *testing.T) {
-	shipmentFile := parseUR1SFile(t, "shipment.go")
-	for _, functionName := range []string{"BlockShipment", "UnblockShipment"} {
-		decl := findUR1SFunction(shipmentFile, functionName)
-		if decl == nil {
-			t.Errorf("%s is not declared in shipment.go", functionName)
-			continue
-		}
-		if !ur1sContainsSelector(decl.Body, "blerrors", "ErrNotImplemented") {
-			t.Errorf("%s must reference blerrors.ErrNotImplemented", functionName)
-		}
+	// Transient stub-body verification belongs to the 174.052-T task-time
+	// gate/review, not this permanent declaration-shape harness.
+	file := parseUR1SFile(t, "../errors/errors.go")
+	tests := []struct {
+		name        string
+		wantMessage string
+	}{
+		{name: "ErrNotImplemented", wantMessage: `"backlogit: not implemented"`},
+		{name: "ErrShipmentBlockedRequiresEnvelope"},
 	}
 
-	errorsFile := parseUR1SFile(t, "../errors/errors.go")
-	assertUR1SErrorSentinel(t, errorsFile, "ErrNotImplemented", `"backlogit: not implemented"`)
-	assertUR1SErrorSentinel(t, errorsFile, "ErrShipmentBlockedRequiresEnvelope", "")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assertUR1SErrorSentinel(t, file, test.name, test.wantMessage)
+		})
+	}
 }
 
 func parseUR1SFile(t *testing.T, path string) *ast.File {
 	t.Helper()
 
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.AllErrors)
-	if err != nil {
-		t.Fatalf("parse %s: %v", path, err)
-	}
+	require.NoError(t, err, "parse %s", path)
 	return file
 }
 
@@ -125,48 +138,31 @@ func assertUR1SStructFields(t *testing.T, file *ast.File, typeName string, want 
 	t.Helper()
 
 	typeSpec := findUR1STypeSpec(file, typeName)
-	if typeSpec == nil {
-		t.Errorf("%s struct is not declared in shipment.go", typeName)
-		return
-	}
-	if typeSpec.Assign.IsValid() {
-		t.Errorf("%s must be a defined struct type, not a type alias", typeName)
-	}
+	require.NotNil(t, typeSpec, "%s struct is not declared in shipment.go", typeName)
+	assert.False(t, typeSpec.Assign.IsValid(), "%s must be a defined struct type, not a type alias", typeName)
+
 	structType, ok := typeSpec.Type.(*ast.StructType)
-	if !ok {
-		t.Errorf("%s must be declared with an underlying struct type", typeName)
-		return
-	}
+	require.True(t, ok, "%s must be declared with an underlying struct type", typeName)
 
 	got := make([]string, 0, len(structType.Fields.List))
 	for _, field := range structType.Fields.List {
-		if len(field.Names) == 0 {
-			t.Errorf("%s must not contain anonymous or embedded fields", typeName)
+		if !assert.NotEmpty(t, field.Names, "%s must not contain anonymous or embedded fields", typeName) {
 			continue
 		}
 		for _, name := range field.Names {
 			got = append(got, name.Name+" "+ur1sExprName(field.Type))
 		}
 	}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("%s fields = %v, want %v", typeName, got, want)
-	}
+	assert.Equal(t, want, got, "%s fields", typeName)
 }
 
 func assertUR1SFunctionShape(t *testing.T, file *ast.File, functionName, optionsType string) {
 	t.Helper()
 
 	decl := findUR1SFunction(file, functionName)
-	if decl == nil {
-		t.Errorf("%s is not declared in shipment.go", functionName)
-		return
-	}
-	if decl.Recv != nil {
-		t.Errorf("%s must be receiver-less", functionName)
-	}
-	if decl.Type.TypeParams != nil {
-		t.Errorf("%s must not declare type parameters", functionName)
-	}
+	require.NotNil(t, decl, "%s is not declared in shipment.go", functionName)
+	assert.Nil(t, decl.Recv, "%s must be receiver-less", functionName)
+	assert.Nil(t, decl.Type.TypeParams, "%s must not declare type parameters", functionName)
 
 	wantParams := []string{
 		"ctx context.Context",
@@ -175,15 +171,11 @@ func assertUR1SFunctionShape(t *testing.T, file *ast.File, functionName, options
 		"opts " + optionsType,
 	}
 	gotParams := ur1sFieldList(decl.Type.Params)
-	if strings.Join(gotParams, ",") != strings.Join(wantParams, ",") {
-		t.Errorf("%s parameters = %v, want %v", functionName, gotParams, wantParams)
-	}
+	assert.Equal(t, wantParams, gotParams, "%s parameters", functionName)
 
 	wantResults := []string{"*models.Artifact", "error"}
 	gotResults := ur1sFieldList(decl.Type.Results)
-	if strings.Join(gotResults, ",") != strings.Join(wantResults, ",") {
-		t.Errorf("%s results = %v, want %v", functionName, gotResults, wantResults)
-	}
+	assert.Equal(t, wantResults, gotResults, "%s results", functionName)
 }
 
 func findUR1SFunction(file *ast.File, name string) *ast.FuncDecl {
@@ -228,23 +220,6 @@ func ur1sExprName(expr ast.Expr) string {
 	}
 }
 
-func ur1sContainsSelector(node ast.Node, packageName, selectorName string) bool {
-	found := false
-	ast.Inspect(node, func(candidate ast.Node) bool {
-		selector, ok := candidate.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		ident, ok := selector.X.(*ast.Ident)
-		if ok && ident.Name == packageName && selector.Sel.Name == selectorName {
-			found = true
-			return false
-		}
-		return true
-	})
-	return found
-}
-
 func assertUR1SErrorSentinel(t *testing.T, file *ast.File, name, wantMessage string) {
 	t.Helper()
 
@@ -262,24 +237,22 @@ func assertUR1SErrorSentinel(t *testing.T, file *ast.File, name, wantMessage str
 				if ident.Name != name {
 					continue
 				}
-				if index >= len(valueSpec.Values) {
-					t.Errorf("%s must be initialized with errors.New", name)
-					return
-				}
+				require.Less(t, index, len(valueSpec.Values), "%s must be initialized with errors.New", name)
+
 				call, ok := valueSpec.Values[index].(*ast.CallExpr)
-				if !ok || ur1sExprName(call.Fun) != "errors.New" || len(call.Args) != 1 {
-					t.Errorf("%s must be initialized with errors.New", name)
-					return
-				}
+				require.True(t, ok, "%s must be initialized with errors.New", name)
+				assert.Equal(t, "errors.New", ur1sExprName(call.Fun), "%s initializer", name)
+				require.Len(t, call.Args, 1, "%s errors.New argument count", name)
+
 				if wantMessage != "" {
 					message, ok := call.Args[0].(*ast.BasicLit)
-					if !ok || message.Kind != token.STRING || message.Value != wantMessage {
-						t.Errorf("%s message must be %s", name, wantMessage)
-					}
+					require.True(t, ok, "%s message must be a basic literal", name)
+					assert.Equal(t, token.STRING, message.Kind, "%s message literal kind", name)
+					assert.Equal(t, wantMessage, message.Value, "%s message", name)
 				}
 				return
 			}
 		}
 	}
-	t.Errorf("%s is not declared in internal/errors/errors.go", name)
+	assert.Fail(t, name+" is not declared in internal/errors/errors.go")
 }
