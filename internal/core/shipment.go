@@ -191,6 +191,16 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 	}
 	oldShipmentStatus := shipment.Status
 
+	if topLevel &&
+		shipment.ArtifactType == "shipment" &&
+		(newStatus == ShipmentBlocked || oldShipmentStatus == models.StatusBlocked) {
+		return fmt.Errorf(
+			"move shipment %s between blocked status via ungoverned path: %w",
+			shipmentID,
+			blerrors.ErrShipmentBlockedRequiresEnvelope,
+		)
+	}
+
 	if !isValidShipmentTransition(shipment.Status, newStatus) {
 		return fmt.Errorf(
 			"move shipment %s from %s to %s: %w",
