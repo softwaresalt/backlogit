@@ -1535,3 +1535,92 @@ decision: PASS
 **Validation evidence (branch `chore/stage-155-flat-shipment-scope`):** `backlogit sync` OK (**1537 artifacts, 0 parse failures**); `backlogit docs lint` on plan/spec/decision all `valid: true` (0 violations); `doctor --target` on `174.057-T`,`174.058-T`,`174.059-T`,`174.061-T`,`174.063-T`,`174.062-T`,`155-S` all exit 0 (`ok: true`, `kind: pass`); RED-contract blocks well-formed (`174.061-T` and `174.063-T` both green_maker `174.062-T`@close-wave 10); `wave-scheduler-sim` fixture **WAVE_SIM_OK 164/164** and `-VerifyAgainstQueue` **WAVE_SIM_OK 186/186** across 21 scenarios; dependency-graph check over the `155-S` manifest: **acyclic (0 cycles)**, **parent-first (0 violations)**, in-manifest **topological order valid (0 violations)**, **26 members (`174-F` + 25 tasks)**, manifest order `… 174.061-T[23] → 174.063-T[24] → 174.062-T[25]` (RED strictly before green-maker); dep edges verified `061→044`, `063→044`, `062→{061,063,057,058}`. Topology/wave gate independent of this correction; **no `--force` override authorized or applied.**
 
 **Verdict: PASS** — residual P0 = 0, residual P1 = 0. This was **fix cycle 3 (final)**; both in-scope P1 findings are resolved and no in-scope P0/P1 remains. `155-S` remains `queued` and ready for Ship to implement SBLK-R28 test-first (RED `174.061-T` + `174.063-T` → GREEN `174.062-T`). Unrelated residual: pre-existing `doctor` orphan findings in the `016.xxx`/`106.xxx-T` bands (present on baseline, outside this amendment's scope).
+
+<!-- plan-review-attempt: rev8-wave3-verification-ownership -->
+
+## Plan Review — Amendment (Wave 3 RED-harness verification-ownership correction) (2026-09-21, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Trigger.** `155-S` is an ACTIVE shipment mid-Wave-3. The single authorized cycle-4
+harness review (see `docs/memory/2026-09-21/155-s-wave-3-cycle-4-review-blocker.md`) passed
+formatting, compile, vet, CI-pinned lint, and the expected assertion-RED selectors
+(`^TestUR1B_`, `^TestUR2_`, `^TestUR3_`) but RETAINED three P1 findings because the plan/task
+contracts assigned **verification ownership** incorrectly. This amendment corrects the
+verification-ownership contracts on the EXISTING Wave-3 tasks. It is a Stage-owned
+plan/backlog-contract change only: NO production or test code, NO status/dependency/manifest/
+priority mutation, NO new task, and the four uncommitted Wave-3 harness files
+(checkpoint `checkpoint-20260921-194021.json`, Ship-owned) are untouched. `155-S` stays
+`active`; `154-S` and PR #449 untouched.
+
+**Root-cause corrections encoded (cycle-4 P1 findings 1–3 + writer-control gap):**
+
+1. **Deterministic workspace-global-lock contention proof relocated RED → GREEN.** A
+   deterministic proof that recovery contends on the workspace-GLOBAL lock CANNOT be authored
+   reliably in the PRE-implementation RED harness **R3 `174.041-T`**: the only observable hook
+   available pre-implementation is immediately before the artifact lock, so a global-lock-less
+   implementation passes whenever the competing goroutine is scheduled late (exactly cycle-4 P1
+   finding 1). `174.041-T` now carries an explicit EXCLUSION disclaiming that proof; the
+   deterministic, scheduler-independent contention proof is now OWNED by the POST-implementation
+   GREEN task **R10 `174.048-T`**, which asserts it against the real recovery + lock mechanism
+   defined by **R9 `174.047-T`**. `174.048-T` already depends on `[174.041-T, 174.047-T]`, so
+   **no dependency edge is added or changed**.
+2. **RED recovery responsibilities retained on `174.041-T`.** The RED harness keeps
+   responsibility for: startup/governed recovery INVOCATION; **policy-aware terminal state**
+   (compensated ⇒ exact preimage restored; committed ⇒ target fully applied); recovered
+   CANONICAL authority (Markdown source + append-only `shipment_status_changed` event, never the
+   index, as state of record); and correlated TERMINAL audit evidence (correlation id ties intent
+   → committed/compensated outcome). The GREEN subprocess task `174.048-T` proves the same
+   canonical-authority and terminal-audit outcomes end-to-end post-implementation (cycle-4 P1
+   finding 3).
+3. **SQLite index = sync/rebuild convergence, NOT immediate equality.** The SQLite index is a
+   rebuildable, non-authoritative projection. Both `174.041-T` (RED) and `174.048-T` (GREEN) now
+   express any index check as SYNC/REBUILD CONVERGENCE — equality asserted only AFTER `sync` —
+   and explicitly state that immediate-projection equality during recovery is NOT a RED-harness
+   requirement (cycle-4 P1 finding 3).
+4. **`174.040-T` positive non-shipment controls expanded to every guarded surface.** The R2
+   writer/bypass RED harness now requires POSITIVE non-shipment controls for EVERY named guarded
+   surface — public `WriteArtifactFile` boundary, private lower writer, generic move/update,
+   `MoveShipmentStatus`, bulk/cascade status updates, and create-as-active/generic activation —
+   proving each guard scopes strictly on `ArtifactType=="shipment"` and preserving ordinary
+   task/member transitions on the SAME surface, not only `UpdateArtifact` (cycle-4 P1 finding 2).
+
+**RED-before-GREEN discipline preserved.** The relocation moves a GREEN, post-implementation
+assertion INTO a GREEN task (`174.048-T`) and OUT of a RED harness (`174.041-T`) — never the
+reverse. Both `174.040-T` and `174.041-T` remain BEHAVIOR-RED-by-design (they still fail on
+behavior until their unchanged green-makers land). The red-deliverable-contract blocks
+(`174.040-T`: green_maker `174.054-T/174.042-T/174.045-T/174.051-T`, close-wave 7;
+`174.041-T`: green_maker `174.047-T/174.048-T`, close-wave 8) are UNCHANGED. Scenario budgets
+respected: `174.040-T`/`174.041-T` `<4 scenario groups`; `174.048-T` stays at 3 scenarios
+(contention/convergence/audit folded in as assertions/post-conditions, no new scenario).
+
+**Review dispatch (multi-agent).**
+* Correctness Reviewer (`claude-opus-4.8`) — VOTE: PASS — all four findings encoded YES/YES/YES/YES;
+  RED harnesses remain behavior-red-by-design; relocation direction correct; no new dependency edge.
+* Scope Boundary Auditor (`gemini-3.8-flash`) — VOTE: ADVISORY — no P0/P1/P2 scope creep; two
+  non-blocking P3 advisories: (a) the terminal-audit post-condition on `174.048-T` is a GREEN
+  mirror of the relocated proof AND is directly mandated by cycle-4 P1 finding 3 (in-scope,
+  dispositioned); (b) the six-surface control matrix on `174.040-T` sits at the upper edge of the
+  2-hour rule (assertions folded into existing scenario groups; effort-edge advisory only, no
+  structural change). Both advisories dispositioned; neither blocks.
+
+**Aggregate: zero P1/P2 findings across both personas.** Both reviewers operated read-only and
+could not run `git diff`; Stage independently verified the diff touches ONLY AC/description prose
+plus the `updated_at` header on the three files, with no dependency/status/priority/id/parent/
+membership/contract-block mutation.
+
+**Validation evidence (branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`):**
+`backlogit sync` OK (**1555 artifacts, 0 parse failures**); `doctor --target` on
+`174.040-T`, `174.041-T`, `174.048-T` all `ok: true` / `kind: pass` (exit 0); shipment `155-S`
+manifest unchanged (**26 members**, `174-F` + 25 tasks); dependencies unchanged
+(`174.040-T→[174.052-T]`, `174.041-T→[174.052-T]`, `174.048-T→[174.041-T,174.047-T]`);
+red-deliverable-contract blocks unchanged. The four Ship-owned uncommitted harness files were not
+read for content, not edited, and are excluded from the amendment commit.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. Verification ownership now assigns the
+deterministic global-lock contention proof to GREEN `174.048-T`, defines SQLite verification as
+sync/rebuild convergence, preserves the RED recovery/terminal-state/canonical-authority/
+correlated-audit assertions on `174.041-T`, and expands `174.040-T` non-shipment controls to
+every guarded surface. No new tasks, dependencies, members, or status changes. Ready for Ship to
+resume Wave-3 implementation against the corrected contracts.
