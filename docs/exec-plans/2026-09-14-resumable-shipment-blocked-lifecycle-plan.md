@@ -1586,6 +1586,16 @@ priority mutation, NO new task, and the four uncommitted Wave-3 harness files
    proving each guard scopes strictly on `ArtifactType=="shipment"` and preserving ordinary
    task/member transitions on the SAME surface, not only `UpdateArtifact` (cycle-4 P1 finding 2).
 
+> **CORRECTION (rev9, 2026-09-21):** item #4 is SUPERSEDED IN PART. `MoveShipmentStatus` is
+> REMOVED from the positive-non-shipment-control matrix — it is a shipment-only entry point through
+> which no non-shipment artifact can legitimately flow, so a literal non-shipment success path there
+> is impossible and permitting `queued→active` via `MoveShipmentStatus` to construct one would
+> conflict with activation being restricted to claim/confirmed unblock. The matrix now applies ONLY
+> to the polymorphic/generic surfaces (`WriteArtifactFile`, private lower writer, generic
+> move/update, bulk/cascade, create-as-active/generic activation). `MoveShipmentStatus` instead
+> carries shipment-specific same-surface controls. rev8 items #1–#3 are unchanged. See the rev9
+> amendment section below.
+
 **RED-before-GREEN discipline preserved.** The relocation moves a GREEN, post-implementation
 assertion INTO a GREEN task (`174.048-T`) and OUT of a RED harness (`174.041-T`) — never the
 reverse. Both `174.040-T` and `174.041-T` remain BEHAVIOR-RED-by-design (they still fail on
@@ -1624,3 +1634,78 @@ sync/rebuild convergence, preserves the RED recovery/terminal-state/canonical-au
 correlated-audit assertions on `174.041-T`, and expands `174.040-T` non-shipment controls to
 every guarded surface. No new tasks, dependencies, members, or status changes. Ready for Ship to
 resume Wave-3 implementation against the corrected contracts.
+
+<!-- plan-review-attempt: rev9-wave3-moveshipmentstatus-control-correction -->
+
+## Plan Review — Amendment (Wave 3 `MoveShipmentStatus` non-shipment-control correction) (2026-09-21, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`)
+
+dispatch_mode: single-agent-declared-degradation
+decision: PASS
+
+**Trigger.** A fresh Ship harness review of the rev8-amended Wave-3 contracts returned two P1
+observations. This bounded Stage-owned amendment resolves the first (a genuine contract defect) and
+records the disposition of the second (NOT a contract defect). It is a plan/backlog-contract change
+only: NO production or test code, NO status/dependency/manifest/priority mutation, NO new task.
+`155-S` stays `active`; `154-S` and PR #449 untouched; the four uncommitted Ship-owned Wave-3
+harness files are excluded from this commit.
+
+**P1-1 (contract defect — CORRECTED): rev8 item #4 required an impossible non-shipment success path
+through the shipment-only `MoveShipmentStatus`.** rev8 amendment item #4 (and `174.040-T` AC (4))
+required POSITIVE non-shipment controls for EVERY named guarded surface, INCLUDING
+`MoveShipmentStatus`. Fresh review correctly found this literally impossible/incorrect:
+`MoveShipmentStatus` is inherently shipment-specific and cannot legitimately receive a non-shipment
+artifact, so an ordinary non-shipment (task/member) status transition cannot succeed through it;
+substituting `UpdateArtifact` does not satisfy the literal contract, and allowing `queued→active`
+via `MoveShipmentStatus` to manufacture such a path would conflict with activation being restricted
+to `ClaimShipment`/confirmed unblock-to-active. Correction:
+* The positive-non-shipment-control matrix (rev8 #4 / `174.040-T` AC (4)) now applies ONLY to the
+  POLYMORPHIC/GENERIC surfaces that can legitimately receive a non-shipment artifact: public
+  `WriteArtifactFile`, the private lower writer, generic move/update, bulk/cascade status updates,
+  and create-as-active/generic activation as applicable. `MoveShipmentStatus` is REMOVED from that
+  matrix.
+* `MoveShipmentStatus` instead carries the CORRECT shipment-specific SAME-SURFACE controls
+  (`174.040-T` new AC (5)): shipment-only type enforcement / rejection of a non-shipment ID where
+  the surface is callable with one; refusal of governed `blocked`/unblock bypasses (top-level
+  `blerrors.ErrShipmentBlockedRequiresEnvelope` for BOTH directions via the R4g guard `174.054-T`);
+  and preservation of every otherwise-allowed shipment transition EXCEPT that activation remains
+  restricted to claim/confirmed unblock per this plan. NO non-shipment success path is asserted or
+  required through the shipment-only API.
+
+**P1-2 (NOT a contract defect — obligation PRESERVED explicitly): `174.041-T` correlated
+`shipment_status_changed` terminal evidence for the compensated restored-preimage status.** The
+fresh review's second P1 asks that `174.041-T` require correlated `shipment_status_changed` terminal
+evidence for the compensated restored-preimage status. That obligation is ALREADY required by
+`174.041-T` AC (2) (canonical authority = Markdown source + append-only `shipment_status_changed`
+event) and AC (3) (correlated TERMINAL audit event for the committed/compensated outcome). This
+amendment makes it EXPLICIT in AC (3) — the compensated restore's correlated terminal evidence is
+specifically a `shipment_status_changed` event recording the restored preimage status — and records
+that the obligation is RETAINED and NOT weakened. No RED→GREEN relocation; `174.041-T` remains
+BEHAVIOR-RED-by-design.
+
+**All other rev8 corrections unchanged.** rev8 items #1 (global-lock contention proof relocated
+RED→GREEN to `174.048-T`), #2 (RED recovery responsibilities retained on `174.041-T`), and #3
+(SQLite = sync/rebuild convergence) stand exactly as recorded. rev8 item #4 is superseded IN PART
+only as to the `MoveShipmentStatus` surface (see the inline correction marker on rev8 item #4
+above); its generic-surface positive controls are retained.
+
+**Review dispatch.** dispatch_mode `single-agent-declared-degradation`: this bounded prose-only
+contract correction was reviewed directly by Stage against the fresh-review findings and the plan's
+activation/refusal invariants; no multi-agent dispatch was run for this narrow follow-up. Focused
+correctness check: (a) corrected AC (4) no longer asserts an impossible non-shipment success path;
+(b) AC (5) restates only same-surface shipment controls already consistent with the base-plan
+governed-refusal inventory and the claim/unblock-restricted activation rule; (c) `174.041-T`
+obligation strengthened-not-weakened; (d) no id/parent/status/priority/dependency/membership/
+red-deliverable-contract mutation on any task.
+
+**Validation evidence (branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`):**
+`backlogit sync` OK (**1555 artifacts, 0 parse failures**); `doctor --target` on `174.040-T` and
+`174.041-T` both `ok: true` / `kind: pass` (exit 0); shipment `155-S` manifest unchanged (**26
+members**, `174-F` + 25 tasks); dependencies unchanged (`174.040-T→[174.052-T]`,
+`174.041-T→[174.052-T]`); red-deliverable-contract blocks unchanged. The four Ship-owned uncommitted
+harness files were not read for content, not edited, and are excluded from this commit.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. `MoveShipmentStatus` non-shipment control
+requirement corrected to shipment-specific same-surface controls; generic-surface positive controls
+retained; `174.041-T` correlated `shipment_status_changed` terminal-evidence obligation preserved
+explicitly and not weakened. No new tasks, dependencies, members, or status changes. Ready for Ship
+to resume Wave-3 implementation against the corrected contracts.
