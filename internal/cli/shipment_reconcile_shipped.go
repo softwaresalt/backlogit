@@ -155,7 +155,7 @@ left unchanged).`,
 
 // requireShipmentReconcileTrimmedFields validates that every named flag value
 // is non-empty AFTER trimming whitespace. Cobra's required-flag check only
-// verifies a flag was SUPPLIED, so `--reason ''` or `--reason '   '` passes
+// verifies a flag was SUPPLIED, so `--reason ”` or `--reason '   '` passes
 // that check while remaining semantically empty (PR #424 review finding).
 // This is a fast-fail CLI-boundary UX layer: the equivalent trimmed-non-empty
 // validation already exists at the core layer (167.001-T/167.014-T
