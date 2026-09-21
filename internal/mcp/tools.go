@@ -462,6 +462,15 @@ func (s *Server) RegisterTools() {
 		s.handleUnblockShipment,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_normalize_blocked_shipment",
+			mcplib.WithDescription("Normalize an out-of-band blocked shipment from a machine-readable snapshot"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("snapshot_ref", mcplib.Required(), mcplib.Description("Workspace-relative shipment-bootstrap-snapshot/v1 reference")),
+			mcplib.WithString("by", mcplib.Description("Actor normalizing the shipment")),
+		),
+		s.handleNormalizeBlockedShipment,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_ship_shipment",
 			mcplib.WithDescription("Close a released shipment, archive the released scope, and record merge commit traceability"),
 			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
@@ -2040,6 +2049,30 @@ func (s *Server) handleUnblockShipment(ctx context.Context, request mcplib.CallT
 	})
 	if err != nil {
 		return domainError("unblock shipment", err), nil
+	}
+	return toolResultJSON(shipment)
+}
+
+func (s *Server) handleNormalizeBlockedShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	snapshotRef, _ := request.Params.Arguments["snapshot_ref"].(string)
+	if snapshotRef == "" {
+		return ValidationFailed("snapshot_ref is required"), nil
+	}
+	actor, _ := request.Params.Arguments["by"].(string)
+
+	logger.Info("shipment tool invoked", "tool", "backlogit_normalize_blocked_shipment", "shipment_id", id)
+
+	shipment, err := core.NormalizeBlockedShipment(ctx, s.Workspace, id, snapshotRef, actor)
+	if err != nil {
+		return domainError("normalize blocked shipment", err), nil
 	}
 	return toolResultJSON(shipment)
 }

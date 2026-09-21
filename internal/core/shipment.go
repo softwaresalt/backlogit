@@ -78,6 +78,8 @@ const shipmentLifecycleGlobalLockID = "shipment-lifecycle-global"
 
 type governedShipmentActivationContextKey struct{}
 
+type shipmentLifecycleGlobalLockContextKey struct{}
+
 // BlockShipment performs the governed active-to-blocked shipment transition.
 func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts BlockOptions) (*models.Artifact, error) {
 	if strings.TrimSpace(opts.Reason) == "" {
@@ -93,6 +95,10 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 			slog.WarnContext(ctx, "release shipment lifecycle lock", "shipment_id", shipmentID, "error", unlockErr)
 		}
 	}()
+	ctx = context.WithValue(ctx, shipmentLifecycleGlobalLockContextKey{}, struct{}{})
+	if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
+		return nil, fmt.Errorf("recover pending shipment operations before block: %w", err)
+	}
 
 	membershipUnlock, err := lockShipmentMembership(ctx, ws, shipmentID)
 	if err != nil {
@@ -333,6 +339,10 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 			slog.WarnContext(ctx, "release shipment lifecycle lock", "shipment_id", shipmentID, "error", unlockErr)
 		}
 	}()
+	ctx = context.WithValue(ctx, shipmentLifecycleGlobalLockContextKey{}, struct{}{})
+	if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
+		return nil, fmt.Errorf("recover pending shipment operations before unblock: %w", err)
+	}
 
 	membershipUnlock, err := lockShipmentMembership(ctx, ws, shipmentID)
 	if err != nil {
@@ -1885,6 +1895,9 @@ func guardBlockedShipmentMemberStatusMutation(ctx context.Context, ws *Workspace
 	if artifact == nil || artifact.ArtifactType == "shipment" {
 		return nil
 	}
+	if shipmentOperationID(ctx) != "" {
+		return nil
+	}
 	current, err := findArtifact(ctx, ws, artifact.ID)
 	if err != nil {
 		return fmt.Errorf("load current artifact %s for blocked shipment guard: %w", artifact.ID, err)
@@ -1956,6 +1969,19 @@ func removeReturnBlockedJournal(ctx context.Context, rootPath, shipmentID, itemI
 }
 
 func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error {
+	if _, held := ctx.Value(shipmentLifecycleGlobalLockContextKey{}).(struct{}); !held {
+		globalUnlock, err := lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)
+		if err != nil {
+			return fmt.Errorf("lock shipment lifecycle recovery: %w", err)
+		}
+		defer func() {
+			if unlockErr := globalUnlock(); unlockErr != nil {
+				slog.WarnContext(ctx, "release shipment lifecycle recovery lock", "error", unlockErr)
+			}
+		}()
+		ctx = context.WithValue(ctx, shipmentLifecycleGlobalLockContextKey{}, struct{}{})
+	}
+
 	entries, err := os.ReadDir(shipmentOpsRoot(ws.RootPath))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -1969,6 +1995,48 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 			continue
 		}
 		if strings.HasPrefix(entry.Name(), "shipment-operation-") {
+			journalPath := filepath.Join(shipmentOpsRoot(ws.RootPath), entry.Name())
+			data, readErr := os.ReadFile(journalPath)
+			if readErr != nil {
+				recoveryErrs = append(recoveryErrs,
+					fmt.Errorf("read shipment lifecycle journal %s: %w", journalPath, readErr))
+				continue
+			}
+			var journal shipmentLifecycleJournal
+			if unmarshalErr := json.Unmarshal(data, &journal); unmarshalErr != nil {
+				recoveryErrs = append(recoveryErrs,
+					fmt.Errorf("parse shipment lifecycle journal %s: %w", journalPath, unmarshalErr))
+				continue
+			}
+			if journal.Phase != "intent" {
+				continue
+			}
+			if journal.Preimage.Shipment == nil || journal.ShipmentID == "" {
+				recoveryErrs = append(recoveryErrs,
+					fmt.Errorf("shipment lifecycle journal %s is incomplete: %w",
+						journalPath, blerrors.ErrValidation))
+				continue
+			}
+			membershipUnlock, lockErr := lockShipmentMembership(ctx, ws, journal.ShipmentID)
+			if lockErr != nil {
+				recoveryErrs = append(recoveryErrs,
+					fmt.Errorf("lock shipment %s recovery membership: %w", journal.ShipmentID, lockErr))
+				continue
+			}
+			lockIDs := append([]string{journal.ShipmentID}, NormalizeShipmentItems(journal.Preimage.Shipment)...)
+			lockedCtx, artifactUnlock, lockErr := lockArtifactMutations(ctx, ws, lockIDs)
+			if lockErr == nil {
+				_, lockErr = reconcileShipmentLifecycleIntent(lockedCtx, ws, journalPath, journal)
+			}
+			unlockErr := artifactUnlock
+			if unlockErr != nil {
+				lockErr = errors.Join(lockErr, unlockErr())
+			}
+			lockErr = errors.Join(lockErr, membershipUnlock())
+			if lockErr != nil {
+				recoveryErrs = append(recoveryErrs,
+					fmt.Errorf("recover shipment %s lifecycle journal: %w", journal.ShipmentID, lockErr))
+			}
 			continue
 		}
 		journalPath := filepath.Join(shipmentOpsRoot(ws.RootPath), entry.Name())

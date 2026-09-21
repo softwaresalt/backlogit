@@ -53,6 +53,10 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 			slog.WarnContext(ctx, "release shipment lifecycle lock", "shipment_id", shipmentID, "error", unlockErr)
 		}
 	}()
+	ctx = context.WithValue(ctx, shipmentLifecycleGlobalLockContextKey{}, struct{}{})
+	if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
+		return nil, fmt.Errorf("recover pending shipment operations before claim: %w", err)
+	}
 
 	// Snapshot the pre-claim shipment before any mutation so a mid-flight
 	// failure can be rolled back to a fully queued state.
