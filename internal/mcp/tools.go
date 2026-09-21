@@ -442,6 +442,26 @@ func (s *Server) RegisterTools() {
 		s.handleClaimShipment,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_block_shipment",
+			mcplib.WithDescription("Block an active shipment"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason the shipment is blocked")),
+			mcplib.WithString("by", mcplib.Description("Actor blocking the shipment")),
+			mcplib.WithString("resume_checkpoint_ref", mcplib.Description("Checkpoint reference for resuming the shipment")),
+		),
+		s.handleBlockShipment,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_unblock_shipment",
+			mcplib.WithDescription("Unblock a shipment to queued or active"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("target", mcplib.Required(), mcplib.Description("Target shipment status (queued or active)")),
+			mcplib.WithBoolean("confirm", mcplib.Required(), mcplib.Description("Confirm the unblock transition")),
+			mcplib.WithString("by", mcplib.Description("Actor unblocking the shipment")),
+		),
+		s.handleUnblockShipment,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_ship_shipment",
 			mcplib.WithDescription("Close a released shipment, archive the released scope, and record merge commit traceability"),
 			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
@@ -1968,6 +1988,58 @@ func (s *Server) handleClaimShipment(ctx context.Context, request mcplib.CallToo
 	shipment, err := core.ClaimShipment(ctx, s.Workspace, id)
 	if err != nil {
 		return domainError("claim shipment", err), nil
+	}
+	return toolResultJSON(shipment)
+}
+
+func (s *Server) handleBlockShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	reason, _ := request.Params.Arguments["reason"].(string)
+	blockedBy, _ := request.Params.Arguments["by"].(string)
+	resumeCheckpointRef, _ := request.Params.Arguments["resume_checkpoint_ref"].(string)
+
+	logger.Info("shipment tool invoked", "tool", "backlogit_block_shipment", "shipment_id", id)
+
+	shipment, err := core.BlockShipment(ctx, s.Workspace, id, core.BlockOptions{
+		Reason:              reason,
+		BlockedBy:           blockedBy,
+		ResumeCheckpointRef: resumeCheckpointRef,
+	})
+	if err != nil {
+		return domainError("block shipment", err), nil
+	}
+	return toolResultJSON(shipment)
+}
+
+func (s *Server) handleUnblockShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	target, _ := request.Params.Arguments["target"].(string)
+	confirm, _ := request.Params.Arguments["confirm"].(bool)
+	unblockedBy, _ := request.Params.Arguments["by"].(string)
+
+	logger.Info("shipment tool invoked", "tool", "backlogit_unblock_shipment", "shipment_id", id)
+
+	shipment, err := core.UnblockShipment(ctx, s.Workspace, id, core.UnblockOptions{
+		Target:      core.ShipmentStatus(target),
+		Confirm:     confirm,
+		UnblockedBy: unblockedBy,
+	})
+	if err != nil {
+		return domainError("unblock shipment", err), nil
 	}
 	return toolResultJSON(shipment)
 }

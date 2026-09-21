@@ -296,6 +296,24 @@ operations:
     params:
       shipment_id: "id"
 
+  block_shipment:
+    mcp_tool: "backlogit_block_shipment"
+    cli_command: "backlogit shipment block {{id}} --reason {{reason}} --by {{by}} --resume-checkpoint {{resume_checkpoint_ref}}"
+    params:
+      shipment_id: "id"
+      reason: "reason"
+      by: "by"
+      resume_checkpoint_ref: "resume_checkpoint_ref"
+
+  unblock_shipment:
+    mcp_tool: "backlogit_unblock_shipment"
+    cli_command: "backlogit shipment unblock {{id}} --to {{target}} --confirm --by {{by}}"
+    params:
+      shipment_id: "id"
+      target: "target"
+      confirm: "confirm"
+      by: "by"
+
   ship_shipment:
     mcp_tool: "backlogit_ship_shipment"
     cli_command: "backlogit shipment ship {{id}}"

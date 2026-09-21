@@ -30,6 +30,8 @@ shipments in the workspace, claim queued shipments, and return blocked items.`,
 	cmd.AddCommand(newShipmentListCmd())
 	cmd.AddCommand(newShipmentAddCmd())
 	cmd.AddCommand(newShipmentClaimCmd())
+	cmd.AddCommand(newShipmentBlockCmd())
+	cmd.AddCommand(newShipmentUnblockCmd())
 	cmd.AddCommand(newShipmentShipCmd())
 	cmd.AddCommand(newShipmentReturnBlockedCmd())
 	cmd.AddCommand(newShipmentRepairEvidenceCmd())
@@ -284,6 +286,88 @@ func newShipmentClaimCmd() *cobra.Command {
 			return enc.Encode(shipment)
 		},
 	}
+}
+
+func newShipmentBlockCmd() *cobra.Command {
+	var reason string
+	var blockedBy string
+	var resumeCheckpointRef string
+
+	cmd := &cobra.Command{
+		Use:     "block <id>",
+		Short:   "Block an active shipment",
+		Example: `  backlogit shipment block 001-S --reason "waiting for prerequisite" --by agent --resume-checkpoint checkpoint.json`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			shipmentID := args[0]
+			slog.Info("shipment command invoked", "operation", "shipment-block", "shipment_id", shipmentID)
+
+			ws, err := core.NewWorkspace(ctx, shipmentCWD(cmd))
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			shipment, err := core.BlockShipment(ctx, ws, shipmentID, core.BlockOptions{
+				Reason:              reason,
+				BlockedBy:           blockedBy,
+				ResumeCheckpointRef: resumeCheckpointRef,
+			})
+			if err != nil {
+				return fmt.Errorf("block shipment: %w", err)
+			}
+
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(shipment)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "reason the shipment is blocked (required)")
+	cmd.Flags().StringVar(&blockedBy, "by", "", "actor blocking the shipment")
+	cmd.Flags().StringVar(&resumeCheckpointRef, "resume-checkpoint", "", "checkpoint reference for resuming the shipment")
+	return cmd
+}
+
+func newShipmentUnblockCmd() *cobra.Command {
+	var target string
+	var confirm bool
+	var unblockedBy string
+
+	cmd := &cobra.Command{
+		Use:     "unblock <id>",
+		Short:   "Unblock a shipment",
+		Example: `  backlogit shipment unblock 001-S --to active --confirm --by agent`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			shipmentID := args[0]
+			slog.Info("shipment command invoked", "operation", "shipment-unblock", "shipment_id", shipmentID)
+
+			ws, err := core.NewWorkspace(ctx, shipmentCWD(cmd))
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer ws.Close()
+
+			shipment, err := core.UnblockShipment(ctx, ws, shipmentID, core.UnblockOptions{
+				Target:      core.ShipmentStatus(target),
+				Confirm:     confirm,
+				UnblockedBy: unblockedBy,
+			})
+			if err != nil {
+				return fmt.Errorf("unblock shipment: %w", err)
+			}
+
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(shipment)
+		},
+	}
+	cmd.Flags().StringVar(&target, "to", "", "target shipment status (queued or active)")
+	cmd.Flags().BoolVar(&confirm, "confirm", false, "confirm the unblock transition")
+	cmd.Flags().StringVar(&unblockedBy, "by", "", "actor unblocking the shipment")
+	return cmd
 }
 
 // newShipmentShipCmd returns the `backlogit shipment ship <id>` subcommand.
