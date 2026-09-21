@@ -29,11 +29,37 @@ const (
 	ShipmentQueued ShipmentStatus = "queued"
 	// ShipmentActive indicates the shipment is in progress.
 	ShipmentActive ShipmentStatus = "active"
+	// ShipmentBlocked indicates the shipment is paused.
+	ShipmentBlocked ShipmentStatus = "blocked"
 	// ShipmentShipped indicates the shipment has been delivered.
 	ShipmentShipped ShipmentStatus = "shipped"
 	// ShipmentAbandoned indicates the shipment was cancelled.
 	ShipmentAbandoned ShipmentStatus = "abandoned"
 )
+
+// BlockOptions contains the declaration-only inputs for blocking a shipment.
+type BlockOptions struct {
+	Reason              string // REQUIRED non-empty -> blocked_reason (opaque YAML scalar)
+	BlockedBy           string // advisory actor -> blocked_by (NOT an auth credential)
+	ResumeCheckpointRef string // optional -> resume_checkpoint_ref
+}
+
+// UnblockOptions contains the declaration-only inputs for unblocking a shipment.
+type UnblockOptions struct {
+	Target      ShipmentStatus // REQUIRED; ShipmentQueued or ShipmentActive
+	Confirm     bool           // REQUIRED true for BOTH targets (ShipmentQueued and ShipmentActive)
+	UnblockedBy string         // advisory actor
+}
+
+// BlockShipment is a declaration-only stub for the governed shipment-blocking seam.
+func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts BlockOptions) (*models.Artifact, error) {
+	return nil, fmt.Errorf("BlockShipment: %w", blerrors.ErrNotImplemented)
+}
+
+// UnblockShipment is a declaration-only stub for the governed shipment-unblocking seam.
+func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts UnblockOptions) (*models.Artifact, error) {
+	return nil, fmt.Errorf("UnblockShipment: %w", blerrors.ErrNotImplemented)
+}
 
 type fileSnapshot struct {
 	Path    string

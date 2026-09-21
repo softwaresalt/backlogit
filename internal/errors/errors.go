@@ -4,13 +4,14 @@ import "errors"
 
 // Sentinel errors for the backlogit error hierarchy.
 var (
-	ErrConfig      = errors.New("backlogit: configuration error")
-	ErrValidation  = errors.New("backlogit: validation error")
-	ErrQuery       = errors.New("backlogit: query error")
-	ErrRehydration = errors.New("backlogit: rehydration error")
-	ErrMigration   = errors.New("backlogit: migration error")
-	ErrMCP         = errors.New("backlogit: mcp error")
-	ErrNotFound    = errors.New("backlogit: not found")
+	ErrConfig         = errors.New("backlogit: configuration error")
+	ErrValidation     = errors.New("backlogit: validation error")
+	ErrQuery          = errors.New("backlogit: query error")
+	ErrRehydration    = errors.New("backlogit: rehydration error")
+	ErrMigration      = errors.New("backlogit: migration error")
+	ErrMCP            = errors.New("backlogit: mcp error")
+	ErrNotFound       = errors.New("backlogit: not found")
+	ErrNotImplemented = errors.New("backlogit: not implemented")
 
 	// Shipment sentinel errors (F015 / T002 / ST011).
 	ErrShipmentNotFound          = errors.New("backlogit: shipment not found")
@@ -60,6 +61,10 @@ var (
 	// updateArtifactUngated, or ungoverned MoveShipmentStatus) instead of the
 	// governed ShipShipment envelope.
 	ErrShipmentShippedRequiresEnvelope = errors.New("backlogit: shipment must be shipped via ShipShipment, not a direct status update")
+
+	// ErrShipmentBlockedRequiresEnvelope is declared for the governed
+	// BlockShipment and UnblockShipment seam. Guard behavior is wired separately.
+	ErrShipmentBlockedRequiresEnvelope = errors.New("backlogit: shipment must be blocked/unblocked via the governed BlockShipment/UnblockShipment seam, not a direct status update")
 
 	// ErrArchiveShippedRequiresEvent is returned when ArchiveItem is about to stamp
 	// archived_status: shipped on a shipment but no durable shipment_status_changed
