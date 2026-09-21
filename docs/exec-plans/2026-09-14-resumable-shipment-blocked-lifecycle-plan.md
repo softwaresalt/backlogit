@@ -1709,3 +1709,85 @@ requirement corrected to shipment-specific same-surface controls; generic-surfac
 retained; `174.041-T` correlated `shipment_status_changed` terminal-evidence obligation preserved
 explicitly and not weakened. No new tasks, dependencies, members, or status changes. Ready for Ship
 to resume Wave-3 implementation against the corrected contracts.
+
+<!-- plan-review-attempt: rev10-wave3-adversarial-consensus-ownership -->
+
+## Plan Review — Amendment (Wave 3 adversarial-consensus verification-ownership resolution) (2026-09-21, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Trigger.** An adversarial four-reviewer consensus over the rev8/rev9-amended Wave-3 contracts
+completed and returned a bounded set of verification-ownership decisions. This rev10 amendment
+encodes those decisions EXACTLY onto the existing tasks and plan. It is a Stage-owned
+plan/backlog-contract change only: NO production or test code, NO status/dependency/manifest/
+priority mutation, NO new task, NO new scenario group. `155-S` stays `active`; `154-S` and PR #449
+untouched; the four uncommitted Ship-owned Wave-3 harness files are excluded from this commit.
+
+**Consensus decisions encoded:**
+
+1. **`174.040-T` RED retains two HIGH/P1 obligations (added as AC (6)/(7), assertions folded into
+   existing bypass-path scenario groups — no new group).** (a) Representative invalid blocked
+   INGRESS/EGRESS coverage across EVERY polymorphic lower-writer surface enumerated in AC (4) —
+   both directions refused on every such surface, not just one. (b) The BulkUpdateStatus /
+   bulk-cascade harness MUST inspect item-level `BulkUpdateResult.Failed` entries (not only the
+   top-level error) AND prove AGGREGATE IMMUTABILITY (all-or-nothing; no batch member left
+   mutated on a refused blocked transition).
+
+2. **Blocked-member mutation and drift/CAS proofs are GREEN-owned by existing `174.043-T` /
+   `174.044-T`, NOT Wave-3 RED P1s.** Ownership clarified in place: the blocked-member-mutation
+   guard is GREEN-owned by R5 `174.043-T`; the drift/CAS exact-snapshot-restore proof is
+   GREEN-owned by R6 `174.044-T`. R1b `174.053-T` (RED) carries neither. No dependency-graph
+   change.
+
+3. **Deterministic Claim/unblock CONTENTION proof is GREEN-owned by `174.044-T`, paralleling the
+   rev8 recovery-contention relocation to GREEN R10 `174.048-T`.** R1b `174.053-T` (RED) MAY assert
+   the externally visible single-active-shipment invariant (blocked excluded) but MUST NOT require
+   an operation-owned deterministic contention barrier before implementation — adversarial
+   consensus found NO authentic pre-implementation RED-observable contention seam for Claim/unblock.
+   No dependency-graph change.
+
+4. **rev9 correlated compensated-status evidence REMAINS required (no `174.041-T` change).** The
+   rev9 obligation on `174.041-T` AC (3) — a correlated `shipment_status_changed` event recording
+   the restored preimage status for a COMPENSATED restore — stands unchanged. A blanket
+   post-reopen SUFFIX requirement is NOT required and MUST NOT be imposed: `174.041-T` AC (2)/(3)
+   already handle the committed roll-forward case ("committed ⇒ target fully applied") via the same
+   canonical authority, and legitimate PRE-CRASH roll-forward evidence must NOT be rejected. No
+   contract change to `174.041-T`; this disposition is recorded here so no reviewer or implementer
+   reads a suffix-ordering requirement into AC (3). `174.041-T` therefore needs NO edit under rev10.
+
+**Authorized Ship follow-up (bounded).** This amendment authorizes Ship's final bounded patch
+ONLY in `internal/core/shipment_blocked_writer_harness_test.go` for exactly the two consensus
+HIGH/P1 fixes in decision 1 (invalid blocked ingress/egress coverage across polymorphic
+lower-writer surfaces; BulkUpdateStatus item-level `Failed` inspection + aggregate immutability).
+It MUST NOT reopen decisions 2, 3, or 4 as RED blockers, and MUST NOT touch the other three
+uncommitted harness files.
+
+**Review dispatch (multi-agent — adversarial four-reviewer consensus).** The four-reviewer
+adversarial consensus is the authoritative review of record for this amendment; Stage encoded its
+decisions verbatim and independently verified the encoding: (a) AC (6)/(7) fold into existing
+scenario groups with no new group and no scenario-count-limit breach; (b) decisions 2/3 are
+ownership clarifications only, with every green-maker edge and red-deliverable-contract block left
+byte-for-byte intact; (c) decision 4 imposes no `174.041-T` contract change and preserves the rev9
+obligation while barring a suffix requirement; (d) no id/parent/status/priority/dependency/
+membership mutation on any task.
+
+**Validation evidence (branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`):**
+`backlogit sync` OK (**1555 artifacts, 0 parse failures**); `doctor --target` on `174.040-T`,
+`174.043-T`, `174.044-T`, and `174.053-T` all `ok: true` / `kind: pass` (exit 0); `docs lint` on
+this plan valid (0 violations); shipment `155-S` manifest unchanged (**26 members**, `174-F` + 25
+tasks); dependencies unchanged (`174.040-T→[174.052-T]`, `174.053-T→[174.052-T]`,
+`174.043-T→[174.052-T,174.053-T,174.042-T,174.054-T]`,
+`174.044-T→[174.052-T,174.053-T,174.043-T,174.054-T]`); all red-deliverable-contract blocks
+unchanged; only `updated_at` and description/AC prose changed on the four edited task files. The
+four Ship-owned uncommitted harness files were not read for content, not edited, and are excluded
+from this commit.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. Verification ownership is now unambiguous:
+`174.040-T` RED retains the two consensus HIGH/P1 writer obligations; blocked-member mutation,
+drift/CAS, and Claim/unblock contention proofs are GREEN-owned by `174.043-T`/`174.044-T`; R1b
+`174.053-T` asserts only the externally visible single-active invariant with no pre-implementation
+contention barrier; and the rev9 compensated-status evidence obligation on `174.041-T` stands
+without a post-reopen suffix requirement. No new tasks, dependencies, members, scenario groups, or
+status changes. Ship's final bounded patch is authorized solely in the writer harness for the two
+decision-1 fixes.
