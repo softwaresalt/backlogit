@@ -61,3 +61,19 @@ The six flat-manifest RED selectors remain RED as declared:
 
 Route the inconsistent `^TestUR3_` red-deliverable closing contract to Stage for amendment. Resume
 Ship only after the authoritative mapping/schedule makes Wave 7 convergence satisfiable.
+
+## Report-only review
+
+Reviewed HEAD `edfc04948104130b24cda18c9f84ae7c264df259` is **NOT READY**:
+
+- P1: `ClaimShipment` does not serialize with the existing per-shipment membership writers.
+- P1: startup rollback recovery restores preimages without a CAS/drift check and may overwrite
+  post-crash edits.
+- P1: `backlogit_normalize_blocked_shipment` has no backlog-registry operation mapping; registry
+  parity fails.
+- P2: generic creation can create a shipment directly in `blocked`.
+- P2: generic updates may return failure after the artifact mutation is already committed when the
+  final audit append fails.
+
+These findings require P-021 scope classification before remediation. No review fix was attempted
+after the convergence halt.
