@@ -639,6 +639,12 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		return nil, fmt.Errorf("validate artifact: %w", err)
 	}
 
+	ctx = context.WithValue(ctx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
+		operation:                     "update",
+		changes:                       updates,
+		allowGovernedShipmentMutation: true,
+		audit:                         true,
+	})
 	if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previousStatus, artifact.Status)); err != nil {
 		return nil, fmt.Errorf("persist artifact %s: %w", id, err)
 	}
@@ -844,15 +850,48 @@ func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
 	return WriteArtifactFileWithOptions(artifact, filePath, false)
 }
 
+type artifactWriteEnvelopeContextKey struct{}
+
+type artifactWriteEnvelope struct {
+	correlationID                 string
+	operation                     string
+	changes                       map[string]any
+	allowGovernedShipmentMutation bool
+	audit                         bool
+}
+
 // WriteArtifactFileWithOptions atomically writes an artifact to filePath through
-// the shared atomicfile primitive, applying the durable_writes fsync protocol
-// when durable is true. It is the single production choke point for artifact
-// rewrites: it enforces the archive-provenance invariant (shared with the
-// back-compat WriteArtifactFile wrapper) and delegates the write to
-// atomicfile.WriteFileAtomicWithOptions, so the U2 durability error classes
-// (ErrWriteNotApplied before commit, ErrWriteIndeterminate after) propagate to
-// callers unchanged.
+// the private governed writer, applying the durable_writes fsync protocol when
+// durable is true. With no operation envelope, the public boundary is
+// deliberately unable to persist shipment transitions reserved for governed
+// lifecycle operations.
 func WriteArtifactFileWithOptions(artifact *models.Artifact, filePath string, durable bool) error {
+	return writeArtifactFileGoverned(
+		artifact,
+		filePath,
+		filePath,
+		durable,
+		artifactWriteEnvelope{},
+		nil,
+	)
+}
+
+// writeArtifactFileGoverned is the sole lower artifact rewrite boundary. It
+// validates the existing canonical preimage before permitting protected
+// shipment transitions and then delegates to either the injected persistence
+// seam or the shared atomic writer.
+func writeArtifactFileGoverned(
+	artifact *models.Artifact,
+	filePath string,
+	currentPath string,
+	durable bool,
+	envelope artifactWriteEnvelope,
+	writeFn func(*models.Artifact, string, bool) error,
+) error {
+	if artifact == nil {
+		return fmt.Errorf("refusing to write a nil artifact: %w", blerrors.ErrValidation)
+	}
+
 	// Enforce the archive-provenance invariant at the write boundary itself.
 	// This choke point funnels every production rewrite, so it is the single
 	// place where "status archived <=> provenance present" can be guaranteed
@@ -864,8 +903,37 @@ func WriteArtifactFileWithOptions(artifact *models.Artifact, filePath string, du
 		return fmt.Errorf("refusing to write archived artifact %s without provenance (archived_from/archived_status); archive via the archive operation: %w", artifact.ID, blerrors.ErrValidation)
 	}
 
-	fm := artifact.ToFrontmatterMap()
+	if currentPath != "" {
+		previous, _, err := parseFile(currentPath)
+		switch {
+		case err == nil:
+			protectedTransition := previous.ArtifactType == "shipment" &&
+				previous.Status != artifact.Status &&
+				(artifact.Status == models.StatusBlocked ||
+					previous.Status == models.StatusBlocked ||
+					(previous.Status == models.StatusQueued && artifact.Status == models.StatusActive))
+			if protectedTransition && !envelope.allowGovernedShipmentMutation {
+				return fmt.Errorf(
+					"refusing ungoverned shipment transition %s from %s to %s: %w",
+					artifact.ID,
+					previous.Status,
+					artifact.Status,
+					blerrors.ErrShipmentBlockedRequiresEnvelope,
+				)
+			}
+		case !errors.Is(err, os.ErrNotExist):
+			return fmt.Errorf("read current artifact %s before governed write: %w", artifact.ID, err)
+		}
+	}
 
+	if writeFn != nil {
+		if err := writeFn(artifact, filePath, durable); err != nil {
+			return fmt.Errorf("write artifact file: %w", err)
+		}
+		return nil
+	}
+
+	fm := artifact.ToFrontmatterMap()
 	content := models.SerializeFrontmatter(fm, artifact.Description)
 	if err := atomicfile.WriteFileAtomicWithOptions(filePath, []byte(content), atomicfile.Options{DurableWrites: durable}); err != nil {
 		return fmt.Errorf("write artifact file: %w", err)

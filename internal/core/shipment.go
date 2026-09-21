@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/config"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -226,6 +228,14 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 
 	shipment.Status = models.ArtifactStatus(newStatus)
 	shipment.UpdatedAt = models.NowUTC()
+	ctx = context.WithValue(ctx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
+		operation: "move_shipment_status",
+		changes: map[string]any{
+			"status": string(newStatus),
+		},
+		allowGovernedShipmentMutation: oldShipmentStatus != models.StatusBlocked &&
+			models.ArtifactStatus(newStatus) != models.StatusBlocked,
+	})
 	var guard func(context.Context) error
 	if expectedHeadSHA != "" {
 		guard = func(guardCtx context.Context) error {
@@ -841,14 +851,21 @@ func normalizeShipmentArtifact(artifact *models.Artifact) {
 	artifact.CustomFields["items"] = NormalizeShipmentItems(artifact)
 }
 
-// persistArtifactWriteFn is the artifact-write seam used by persistArtifact for
-// the WriteArtifactFileWithOptions call. Tests that exercise the relocate=false
-// path (AddDependency/RemoveDependency) override this seam to inject durable-write
+// persistArtifactWriteFn is the raw artifact-write seam used only beneath the
+// governed writer. Tests that exercise the relocate=false path
+// (AddDependency/RemoveDependency) override this seam to inject durable-write
 // failures, because neither mkdirDirSyncFn nor mkdirAllDurable fires on that path.
 //
 // Must not run with t.Parallel: tests that swap this seam read on the production
 // write path.
-var persistArtifactWriteFn = WriteArtifactFileWithOptions
+var persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
+	fm := artifact.ToFrontmatterMap()
+	content := models.SerializeFrontmatter(fm, artifact.Description)
+	if err := atomicfile.WriteFileAtomicWithOptions(filePath, []byte(content), atomicfile.Options{DurableWrites: durable}); err != nil {
+		return fmt.Errorf("write artifact file: %w", err)
+	}
+	return nil
+}
 
 // persistArtifactPreLockHook, when non-nil, is invoked by
 // persistArtifactWithLinkPolicyAndGuard immediately BEFORE it attempts to
@@ -914,6 +931,30 @@ func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, a
 			return err
 		}
 	}
+
+	envelope, hasEnvelope := ctx.Value(artifactWriteEnvelopeContextKey{}).(artifactWriteEnvelope)
+	if envelope.audit {
+		if envelope.operation == "" {
+			return fmt.Errorf("governed artifact write %s has no operation: %w", artifact.ID, blerrors.ErrValidation)
+		}
+		if envelope.correlationID == "" {
+			var correlationBytes [16]byte
+			if _, err := rand.Read(correlationBytes[:]); err != nil {
+				return fmt.Errorf("generate artifact write correlation id: %w", err)
+			}
+			envelope.correlationID = hex.EncodeToString(correlationBytes[:])
+		}
+		delta := map[string]any{
+			"correlation_id": envelope.correlationID,
+			"operation":      envelope.operation,
+			"phase":          "intent",
+			"changes":        envelope.changes,
+		}
+		if err := appendItemEventErr(ctx, ws, artifact.ID, "artifact_mutation", delta); err != nil {
+			return fmt.Errorf("append artifact write intent %s: %w", artifact.ID, err)
+		}
+	}
+
 	if currentPath != targetPath {
 		if err := mkdirAllDurable(filepath.Dir(targetPath), WorkspaceDurableWrites(ws)); err != nil {
 			return fmt.Errorf("create directory %s: %w", filepath.Dir(targetPath), err)
@@ -922,7 +963,17 @@ func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, a
 			return fmt.Errorf("clear target artifact path: %w", err)
 		}
 	}
-	if err := persistArtifactWriteFn(artifact, targetPath, WorkspaceDurableWrites(ws)); err != nil {
+	if !hasEnvelope {
+		envelope = artifactWriteEnvelope{}
+	}
+	if err := writeArtifactFileGoverned(
+		artifact,
+		targetPath,
+		currentPath,
+		WorkspaceDurableWrites(ws),
+		envelope,
+		persistArtifactWriteFn,
+	); err != nil {
 		return fmt.Errorf("write artifact file: %w", err)
 	}
 	if currentPath != targetPath {
@@ -953,6 +1004,17 @@ func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, a
 			return fmt.Errorf("upsert item: %w; restore files: %v", err, restoreErr)
 		}
 		return fmt.Errorf("upsert item: %w", err)
+	}
+	if envelope.audit {
+		delta := map[string]any{
+			"correlation_id": envelope.correlationID,
+			"operation":      envelope.operation,
+			"phase":          "committed",
+			"changes":        envelope.changes,
+		}
+		if err := appendItemEventErr(ctx, ws, artifact.ID, "artifact_mutation", delta); err != nil {
+			return fmt.Errorf("append artifact write commit %s: %w", artifact.ID, err)
+		}
 	}
 	return nil
 }
