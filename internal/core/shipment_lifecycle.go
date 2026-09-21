@@ -44,15 +44,32 @@ type ShipShipmentResult struct {
 // cascade-activated parent) are restored to their pre-claim state so no
 // partial/torn activation is left behind.
 func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*models.Artifact, error) {
+	globalUnlock, err := lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)
+	if err != nil {
+		return nil, fmt.Errorf("lock shipment lifecycle: %w", err)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock", "shipment_id", shipmentID, "error", unlockErr)
+		}
+	}()
+
 	// Snapshot the pre-claim shipment before any mutation so a mid-flight
 	// failure can be rolled back to a fully queued state.
 	current, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return nil, err
 	}
+	if current.Status != models.StatusQueued {
+		return nil, fmt.Errorf("claim shipment %s from %s: %w", shipmentID, current.Status, blerrors.ErrShipmentConflict)
+	}
+	if err := ensureShipmentActiveSlotAvailable(ws, shipmentID); err != nil {
+		return nil, fmt.Errorf("claim shipment %s: %w", shipmentID, err)
+	}
 	preClaimShipment := cloneArtifact(current)
 
-	if err := MoveShipmentStatus(ctx, ws, shipmentID, ShipmentActive); err != nil {
+	activationCtx := context.WithValue(ctx, governedShipmentActivationContextKey{}, struct{}{})
+	if err := MoveShipmentStatus(activationCtx, ws, shipmentID, ShipmentActive); err != nil {
 		return nil, err
 	}
 

@@ -248,6 +248,10 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		return nil, fmt.Errorf("create artifact %q: initial status %q is not permitted for shipments (ship via ShipShipment): %w",
 			artifactID, status, blerrors.ErrShipmentShippedRequiresEnvelope)
 	}
+	if artifactType == "shipment" && models.ArtifactStatus(status) == models.StatusActive {
+		return nil, fmt.Errorf("create artifact %q: initial status %q is not permitted for shipments (activate via ClaimShipment or UnblockShipment): %w",
+			artifactID, status, blerrors.ErrShipmentConflict)
+	}
 
 	now := models.NowUTC()
 	artifact := &models.Artifact{
