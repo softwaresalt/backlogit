@@ -11,7 +11,9 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
@@ -53,9 +55,261 @@ type UnblockOptions struct {
 	UnblockedBy string         // advisory actor
 }
 
-// BlockShipment is a declaration-only stub for the governed shipment-blocking seam.
+type shipmentLifecyclePreimage struct {
+	Shipment *models.Artifact   `json:"shipment"`
+	Members  []*models.Artifact `json:"members"`
+}
+
+type shipmentLifecycleJournal struct {
+	SchemaVersion  string                    `json:"schema_version"`
+	CorrelationID  string                    `json:"correlation_id"`
+	Phase          string                    `json:"phase"`
+	Operation      string                    `json:"operation"`
+	RecoveryPolicy string                    `json:"recovery_policy"`
+	ShipmentID     string                    `json:"shipment_id"`
+	Target         string                    `json:"target"`
+	Reason         string                    `json:"reason,omitempty"`
+	BlockedBy      string                    `json:"blocked_by,omitempty"`
+	SnapshotRef    string                    `json:"snapshot_ref,omitempty"`
+	Preimage       shipmentLifecyclePreimage `json:"preimage"`
+}
+
+const shipmentLifecycleGlobalLockID = "shipment-lifecycle-global"
+
+// BlockShipment performs the governed active-to-blocked shipment transition.
 func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts BlockOptions) (*models.Artifact, error) {
-	return nil, fmt.Errorf("BlockShipment: %w", blerrors.ErrNotImplemented)
+	if strings.TrimSpace(opts.Reason) == "" {
+		return nil, fmt.Errorf("block shipment %s requires a non-empty reason: %w", shipmentID, blerrors.ErrValidation)
+	}
+
+	globalUnlock, err := lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)
+	if err != nil {
+		return nil, fmt.Errorf("lock shipment lifecycle: %w", err)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock", "shipment_id", shipmentID, "error", unlockErr)
+		}
+	}()
+
+	membershipUnlock, err := lockShipmentMembership(ctx, ws, shipmentID)
+	if err != nil {
+		return nil, fmt.Errorf("lock shipment %s membership: %w", shipmentID, err)
+	}
+	defer func() {
+		if unlockErr := membershipUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment membership lock", "shipment_id", shipmentID, "error", unlockErr)
+		}
+	}()
+
+	shipment, err := findArtifact(ctx, ws, shipmentID)
+	if err != nil {
+		return nil, fmt.Errorf("load shipment %s: %w", shipmentID, err)
+	}
+	if shipment.ArtifactType != "shipment" {
+		return nil, fmt.Errorf("block shipment %s: %w", shipmentID, blerrors.ErrShipmentNotFound)
+	}
+	if !isValidShipmentTransition(shipment.Status, ShipmentBlocked) {
+		return nil, fmt.Errorf(
+			"block shipment %s from %s: %w",
+			shipmentID,
+			shipment.Status,
+			blerrors.ErrShipmentConflict,
+		)
+	}
+
+	memberIDs := NormalizeShipmentItems(shipment)
+	lockIDs := append([]string{shipmentID}, memberIDs...)
+	lockedCtx, artifactUnlock, err := lockArtifactMutations(ctx, ws, lockIDs)
+	if err != nil {
+		return nil, fmt.Errorf("lock shipment %s aggregate: %w", shipmentID, err)
+	}
+	defer func() {
+		if unlockErr := artifactUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment aggregate locks", "shipment_id", shipmentID, "error", unlockErr)
+		}
+	}()
+
+	shipment, err = findArtifact(lockedCtx, ws, shipmentID)
+	if err != nil {
+		return nil, fmt.Errorf("reload shipment %s under lock: %w", shipmentID, err)
+	}
+	if shipment.Status != models.StatusActive {
+		return nil, fmt.Errorf(
+			"block shipment %s from %s: %w",
+			shipmentID,
+			shipment.Status,
+			blerrors.ErrShipmentConflict,
+		)
+	}
+	if got := NormalizeShipmentItems(shipment); !slices.Equal(got, memberIDs) {
+		return nil, fmt.Errorf("shipment %s membership changed while acquiring locks: %w", shipmentID, blerrors.ErrShipmentConflict)
+	}
+
+	preimage := shipmentLifecyclePreimage{
+		Shipment: cloneArtifact(shipment),
+		Members:  make([]*models.Artifact, 0, len(memberIDs)),
+	}
+	memberStatuses := make(map[string]string, len(memberIDs))
+	for _, memberID := range memberIDs {
+		member, loadErr := findArtifact(lockedCtx, ws, memberID)
+		if loadErr != nil {
+			return nil, fmt.Errorf("load shipment %s member %s: %w", shipmentID, memberID, loadErr)
+		}
+		preimage.Members = append(preimage.Members, cloneArtifact(member))
+		memberStatuses[memberID] = string(member.Status)
+	}
+
+	var correlationBytes [16]byte
+	if _, err := rand.Read(correlationBytes[:]); err != nil {
+		return nil, fmt.Errorf("generate block shipment correlation id: %w", err)
+	}
+	correlationID := hex.EncodeToString(correlationBytes[:])
+	journal := shipmentLifecycleJournal{
+		SchemaVersion:  "shipment-operation/v1",
+		CorrelationID:  correlationID,
+		Phase:          "intent",
+		Operation:      "block",
+		RecoveryPolicy: "rollback",
+		ShipmentID:     shipmentID,
+		Target:         string(ShipmentBlocked),
+		Reason:         opts.Reason,
+		BlockedBy:      opts.BlockedBy,
+		SnapshotRef:    opts.ResumeCheckpointRef,
+		Preimage:       preimage,
+	}
+	journalPath := filepath.Join(shipmentOpsRoot(ws.RootPath), "shipment-operation-"+correlationID+".json")
+	if err := writeShipmentLifecycleJournal(journalPath, journal); err != nil {
+		return nil, fmt.Errorf("persist block shipment %s intent: %w", shipmentID, err)
+	}
+
+	operationCtx := withShipmentOperation(lockedCtx, correlationID)
+	eventDelta := map[string]any{
+		"correlation_id":         correlationID,
+		"operation":              "block",
+		"target":                 string(ShipmentBlocked),
+		"reason":                 opts.Reason,
+		"blocked_by":             opts.BlockedBy,
+		"resume_checkpoint_ref":  opts.ResumeCheckpointRef,
+		"member_status_snapshot": memberStatuses,
+	}
+	mutationApplied := false
+	compensate := func(cause error) error {
+		if blerrors.IsWriteIndeterminate(cause) {
+			return fmt.Errorf("block shipment %s requires recovery after an indeterminate write: %w", shipmentID, cause)
+		}
+		compensateCtx := context.WithoutCancel(operationCtx)
+		compensateCtx = context.WithValue(compensateCtx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
+			correlationID:                 correlationID,
+			operation:                     "block_compensation",
+			allowGovernedShipmentMutation: true,
+		})
+		var compensationErr error
+		if mutationApplied {
+			if restoreErr := persistArtifact(compensateCtx, ws, cloneArtifact(preimage.Shipment), true); restoreErr != nil {
+				compensationErr = errors.Join(compensationErr, fmt.Errorf("restore shipment %s: %w", shipmentID, restoreErr))
+			}
+			for _, member := range preimage.Members {
+				if restoreErr := persistArtifact(compensateCtx, ws, cloneArtifact(member), true); restoreErr != nil {
+					compensationErr = errors.Join(compensationErr, fmt.Errorf("restore member %s: %w", member.ID, restoreErr))
+				}
+			}
+		}
+		if compensationErr == nil {
+			journal.Phase = "compensated"
+			if journalErr := writeShipmentLifecycleJournal(journalPath, journal); journalErr != nil {
+				compensationErr = errors.Join(compensationErr, fmt.Errorf("persist compensation journal: %w", journalErr))
+			}
+			compensatedDelta := maps.Clone(eventDelta)
+			compensatedDelta["phase"] = "compensated"
+			compensatedDelta["target"] = string(preimage.Shipment.Status)
+			if eventErr := appendItemEventWithActorErr(
+				compensateCtx,
+				ws,
+				shipmentID,
+				opts.BlockedBy,
+				"shipment_lifecycle",
+				compensatedDelta,
+			); eventErr != nil {
+				compensationErr = errors.Join(compensationErr, fmt.Errorf("append compensation event: %w", eventErr))
+			}
+		}
+		if compensationErr != nil {
+			return fmt.Errorf("block shipment %s: %w; compensation failed: %w", shipmentID, cause, compensationErr)
+		}
+		return fmt.Errorf("block shipment %s: %w", shipmentID, cause)
+	}
+
+	intentDelta := maps.Clone(eventDelta)
+	intentDelta["phase"] = "intent"
+	if err := appendItemEventWithActorErr(operationCtx, ws, shipmentID, opts.BlockedBy, "shipment_lifecycle", intentDelta); err != nil {
+		return nil, compensate(fmt.Errorf("append lifecycle intent: %w", err))
+	}
+
+	for _, member := range preimage.Members {
+		if member.Status != models.StatusActive && member.Status != models.StatusReview {
+			continue
+		}
+		updated := cloneArtifact(member)
+		updated.Status = models.StatusQueued
+		updated.UpdatedAt = models.NowUTC()
+		if err := persistArtifact(operationCtx, ws, updated, true); err != nil {
+			return nil, compensate(fmt.Errorf("queue shipment member %s: %w", member.ID, err))
+		}
+		mutationApplied = true
+	}
+
+	blocked := cloneArtifact(shipment)
+	blocked.Status = models.StatusBlocked
+	blocked.UpdatedAt = models.NowUTC()
+	if blocked.CustomFields == nil {
+		blocked.CustomFields = map[string]any{}
+	}
+	blocked.CustomFields["blocked_reason"] = opts.Reason
+	blocked.CustomFields["blocked_at"] = time.Now().UTC().Format(time.RFC3339)
+	blocked.CustomFields["blocked_by"] = opts.BlockedBy
+	blocked.CustomFields["member_status_snapshot"] = memberStatuses
+	if opts.ResumeCheckpointRef == "" {
+		delete(blocked.CustomFields, "resume_checkpoint_ref")
+	} else {
+		blocked.CustomFields["resume_checkpoint_ref"] = opts.ResumeCheckpointRef
+	}
+	governedCtx := context.WithValue(operationCtx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
+		correlationID:                 correlationID,
+		operation:                     "block_shipment",
+		changes:                       eventDelta,
+		allowGovernedShipmentMutation: true,
+	})
+	if err := persistArtifact(governedCtx, ws, blocked, true); err != nil {
+		return nil, compensate(fmt.Errorf("persist blocked shipment: %w", err))
+	}
+	mutationApplied = true
+
+	statusDelta := maps.Clone(eventDelta)
+	statusDelta["phase"] = "applied"
+	statusDelta["status"] = string(ShipmentBlocked)
+	if err := appendItemEventWithActorErr(
+		operationCtx,
+		ws,
+		shipmentID,
+		opts.BlockedBy,
+		"shipment_status_changed",
+		statusDelta,
+	); err != nil {
+		return nil, compensate(fmt.Errorf("append blocked status event: %w", err))
+	}
+
+	commitDelta := maps.Clone(eventDelta)
+	commitDelta["phase"] = "committed"
+	if err := appendItemEventWithActorErr(operationCtx, ws, shipmentID, opts.BlockedBy, "shipment_lifecycle", commitDelta); err != nil {
+		return nil, compensate(fmt.Errorf("append lifecycle commit: %w", err))
+	}
+	journal.Phase = "committed"
+	if err := writeShipmentLifecycleJournal(journalPath, journal); err != nil {
+		return nil, compensate(fmt.Errorf("persist block shipment commit: %w", err))
+	}
+
+	return blocked, nil
 }
 
 // UnblockShipment is a declaration-only stub for the governed shipment-unblocking seam.
@@ -826,7 +1080,7 @@ func isValidShipmentTransition(current models.ArtifactStatus, next ShipmentStatu
 	case models.StatusQueued:
 		return next == ShipmentActive
 	case models.StatusActive:
-		return next == ShipmentShipped || next == ShipmentAbandoned
+		return next == ShipmentBlocked || next == ShipmentShipped || next == ShipmentAbandoned
 	default:
 		return false
 	}
@@ -914,6 +1168,9 @@ func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, a
 	}
 	defer func() { _ = unlock() }()
 
+	if err := guardBlockedShipmentMemberStatusMutation(ctx, ws, artifact); err != nil {
+		return err
+	}
 	if err := artifact.Validate(); err != nil {
 		return fmt.Errorf("validate artifact: %w", err)
 	}
@@ -1286,6 +1543,60 @@ func restoreSnapshot(snapshot fileSnapshot) error {
 
 func shipmentOpsRoot(rootPath string) string {
 	return filepath.Join(WorkspaceStorageRoot(rootPath), "ops")
+}
+
+func writeShipmentLifecycleJournal(path string, journal shipmentLifecycleJournal) error {
+	if err := mkdirAllDurable(filepath.Dir(path), true); err != nil {
+		return fmt.Errorf("create shipment operation directory: %w", err)
+	}
+	payload, err := json.MarshalIndent(journal, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal shipment lifecycle journal: %w", err)
+	}
+	if err := atomicfile.WriteFileAtomicWithOptions(path, payload, atomicfile.Options{DurableWrites: true}); err != nil {
+		return fmt.Errorf("write shipment lifecycle journal: %w", err)
+	}
+	return nil
+}
+
+func guardBlockedShipmentMemberStatusMutation(ctx context.Context, ws *Workspace, artifact *models.Artifact) error {
+	if artifact == nil || artifact.ArtifactType == "shipment" {
+		return nil
+	}
+	current, err := findArtifact(ctx, ws, artifact.ID)
+	if err != nil {
+		return fmt.Errorf("load current artifact %s for blocked shipment guard: %w", artifact.ID, err)
+	}
+	if current.Status == artifact.Status {
+		return nil
+	}
+
+	refs, err := scanCanonicalArtifacts(ws)
+	if err != nil {
+		return fmt.Errorf("scan shipments guarding member %s: %w", artifact.ID, err)
+	}
+	for _, candidates := range refs {
+		for _, candidate := range candidates {
+			if candidate.artifactType != "shipment" || candidate.status != string(ShipmentBlocked) {
+				continue
+			}
+			shipment, _, parseErr := parseFile(candidate.path)
+			if parseErr != nil {
+				return fmt.Errorf("parse blocked shipment %s guarding member %s: %w", candidate.id, artifact.ID, parseErr)
+			}
+			if containsString(NormalizeShipmentItems(shipment), artifact.ID) {
+				return fmt.Errorf(
+					"change status of member %s from %s to %s while shipment %s is blocked: %w",
+					artifact.ID,
+					current.Status,
+					artifact.Status,
+					shipment.ID,
+					blerrors.ErrShipmentConflict,
+				)
+			}
+		}
+	}
+	return nil
 }
 
 func returnBlockedJournalPath(rootPath, shipmentID, itemID string) string {
