@@ -537,9 +537,21 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 	// flag is required here. Non-status updates to an already-shipped shipment
 	// are unaffected: they carry no "status" key in updates.
 	if artifact.ArtifactType == "shipment" {
-		if newStatus, _ := updates["status"].(string); newStatus == string(ShipmentShipped) {
-			return nil, fmt.Errorf("update artifact %s: locked write path refused shipment shipped transition: %w",
-				id, blerrors.ErrShipmentShippedRequiresEnvelope)
+		if newStatus, ok := updates["status"].(string); ok {
+			targetStatus := models.ArtifactStatus(newStatus)
+			if targetStatus == models.ArtifactStatus(ShipmentShipped) {
+				return nil, fmt.Errorf("update artifact %s: locked write path refused shipment shipped transition: %w",
+					id, blerrors.ErrShipmentShippedRequiresEnvelope)
+			}
+			if isProtectedShipmentStatusTransition(artifact.Status, targetStatus) {
+				return nil, fmt.Errorf(
+					"update artifact %s: refusing ungoverned shipment transition from %s to %s: %w",
+					id,
+					artifact.Status,
+					targetStatus,
+					blerrors.ErrShipmentBlockedRequiresEnvelope,
+				)
+			}
 		}
 	}
 
@@ -644,10 +656,9 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 	}
 
 	ctx = context.WithValue(ctx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
-		operation:                     "update",
-		changes:                       updates,
-		allowGovernedShipmentMutation: true,
-		audit:                         true,
+		operation: "update",
+		changes:   updates,
+		audit:     true,
 	})
 	if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previousStatus, artifact.Status)); err != nil {
 		return nil, fmt.Errorf("persist artifact %s: %w", id, err)
@@ -912,10 +923,7 @@ func writeArtifactFileGoverned(
 		switch {
 		case err == nil:
 			protectedTransition := previous.ArtifactType == "shipment" &&
-				previous.Status != artifact.Status &&
-				(artifact.Status == models.StatusBlocked ||
-					previous.Status == models.StatusBlocked ||
-					(previous.Status == models.StatusQueued && artifact.Status == models.StatusActive))
+				isProtectedShipmentStatusTransition(previous.Status, artifact.Status)
 			if protectedTransition && !envelope.allowGovernedShipmentMutation {
 				return fmt.Errorf(
 					"refusing ungoverned shipment transition %s from %s to %s: %w",
@@ -943,6 +951,13 @@ func writeArtifactFileGoverned(
 		return fmt.Errorf("write artifact file: %w", err)
 	}
 	return nil
+}
+
+func isProtectedShipmentStatusTransition(previous, next models.ArtifactStatus) bool {
+	return previous != next &&
+		(next == models.StatusBlocked ||
+			previous == models.StatusBlocked ||
+			(previous == models.StatusQueued && next == models.StatusActive))
 }
 
 func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact, error) {
