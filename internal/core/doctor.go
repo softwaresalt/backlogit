@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/mdfront"
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -146,6 +148,10 @@ const (
 	// shipment-operation journal set cannot be safely enumerated, read, or
 	// decoded. Doctor reports the poison without running recovery.
 	FindingInvalidShipmentLifecycleJournal DoctorFindingType = "invalid_shipment_lifecycle_journal"
+
+	// FindingConflictingShipmentLifecycleEvidence indicates correlated lifecycle
+	// or status evidence cannot prove one consistent terminal outcome.
+	FindingConflictingShipmentLifecycleEvidence DoctorFindingType = "conflicting_shipment_lifecycle_evidence"
 )
 
 // DoctorFindingSeverity classifies whether a doctor finding affects process
@@ -289,12 +295,33 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		Findings:  []DoctorFinding{},
 		CheckedAt: time.Now().UTC(),
 	}
-	if _, err := loadShipmentOperationJournals(ws); err != nil {
+	journals, err := loadShipmentOperationJournals(ws)
+	if err != nil {
 		report.Findings = append(report.Findings, newDoctorErrorFinding(
 			FindingInvalidShipmentLifecycleJournal,
 			"ops",
 			fmt.Sprintf("shipment lifecycle journal inspection failed: %v", err),
 		))
+	} else {
+		for _, record := range journals {
+			if record.kind != shipmentLifecycleJournalKind || record.lifecycle.Phase != "intent" {
+				continue
+			}
+			if _, evidenceErr := inspectShipmentLifecycleRecoveryEvidence(ctx, ws, record.lifecycle); evidenceErr != nil {
+				findingType := FindingInvalidShipmentLifecycleJournal
+				artifactID := "ops"
+				if errors.Is(evidenceErr, blerrors.ErrShipmentConflict) {
+					findingType = FindingConflictingShipmentLifecycleEvidence
+					artifactID = record.lifecycle.ShipmentID
+				}
+				report.Findings = append(report.Findings, newDoctorErrorFinding(
+					findingType,
+					artifactID,
+					fmt.Sprintf("shipment lifecycle journal %s evidence inspection failed: %v",
+						record.name, evidenceErr),
+				))
+			}
+		}
 	}
 
 	if opts.CheckWorkspaceRootConflict {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -855,27 +858,17 @@ func TestUR3_BranchBootstrapReopenRollsForwardUsingMachineReadableSnapshot(t *te
 			Members:  memberPreimages,
 		},
 	}
-	tornShipment := cloneArtifact(shipmentPreimage)
-	tornShipment.Status = models.StatusBlocked
-	delete(tornShipment.CustomFields, "branch")
-	tornShipment.CustomFields["blocked_reason"] = "inconsistent partial bootstrap"
-	tornShipment.CustomFields["blocked_by"] = "torn-writer"
-	tornShipment.CustomFields["resume_checkpoint_ref"] = "wrong-checkpoint.json"
-	tornShipment.CustomFields["member_status_snapshot"] = map[string]string{
-		memberPreimages[0].ID: string(models.StatusActive),
-	}
-	tornShipment.UpdatedAt = models.NowUTC()
 	tornMember := cloneArtifact(memberPreimages[0])
 	tornMember.Status = models.StatusQueued
 	tornMember.UpdatedAt = models.NowUTC()
-	tornArtifacts := []*models.Artifact{tornShipment, tornMember}
+	tornArtifacts := []*models.Artifact{tornMember}
 	crash := runUR3CrashSubprocess(t, root, ws, intent, tornArtifacts...)
 
 	reopened, err := NewWorkspace(context.Background(), root)
 	require.NoError(t, err, "workspace startup must roll forward bootstrap state left by killed process")
 	defer func() { require.NoError(t, reopened.Close()) }()
 	recoveredShipment := loadURCanonicalArtifact(t, reopened, shipmentPreimage.ID)
-	require.NotEqual(t, artifactCodecViewUR(t, tornShipment), artifactCodecViewUR(t, recoveredShipment),
+	require.NotEqual(t, artifactCodecViewUR(t, shipmentPreimage), artifactCodecViewUR(t, recoveredShipment),
 		"roll-forward must reconstruct the incomplete torn shipment rather than accept it")
 	require.Equal(t, models.StatusBlocked, recoveredShipment.Status)
 	require.Equal(t, "feat/preserved-ship-branch", recoveredShipment.CustomFields["branch"])
@@ -916,6 +909,210 @@ func TestUR3_BranchBootstrapReopenRollsForwardUsingMachineReadableSnapshot(t *te
 	for _, member := range memberPreimages {
 		assertURArtifactEqual(t, recoveredMembers[member.ID], loadURCanonicalArtifact(t, reopenedAgain, member.ID))
 	}
+}
+
+func TestUR3_ReopenConvergesCorrelatedRecoveryEvidenceWithoutReplay(t *testing.T) {
+	tests := []struct {
+		name             string
+		withTerminal     bool
+		wantAddedEvents  int
+		wantTerminalSeen int
+	}{
+		{
+			name:             "status_evidence_survives_before_terminal_append",
+			wantAddedEvents:  1,
+			wantTerminalSeen: 1,
+		},
+		{
+			name:             "terminal_evidence_survives_before_journal_finalize",
+			withTerminal:     true,
+			wantAddedEvents:  0,
+			wantTerminalSeen: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, ws := setupUR3Workspace(t)
+			fixture := newURBlockedActiveFixture(t, ws)
+			journal := p021LifecycleJournal(t, ws, "block", "rollback", fixture.shipment.ID, "")
+			journalPath := p021WriteLifecycleJournal(t, ws, journal)
+			journal = p021ReadLifecycleJournal(t, journalPath)
+			appendUR3RecoveryBoundaryEvidence(t, ws, journal, tt.withTerminal)
+			beforeEvents := readUREvents(t, ws, journal.ShipmentID)
+			require.NoError(t, ws.Close())
+
+			reopened, err := NewWorkspace(context.Background(), root)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, reopened.Close()) }()
+
+			terminal := p021ReadLifecycleJournal(t, journalPath)
+			require.Equal(t, "compensated", terminal.Phase)
+			afterEvents := readUREvents(t, reopened, journal.ShipmentID)
+			require.Len(t, afterEvents, len(beforeEvents)+tt.wantAddedEvents)
+			require.Equal(t, 1, countUR3RecoveryEvidence(afterEvents, journal, "shipment_status_changed", "applied"))
+			require.Equal(t, tt.wantTerminalSeen,
+				countUR3RecoveryEvidence(afterEvents, journal, "shipment_lifecycle", "compensated"))
+			assertURArtifactEqual(t, journal.Preimage.Shipment,
+				loadURCanonicalArtifact(t, reopened, journal.ShipmentID))
+			for _, member := range journal.Preimage.Members {
+				assertURArtifactEqual(t, member, loadURCanonicalArtifact(t, reopened, member.ID))
+			}
+		})
+	}
+
+	t.Run("committed_terminal_evidence_survives_before_journal_finalize", func(t *testing.T) {
+		root, ws := setupUR3Workspace(t)
+		fixture := newURBlockedActiveFixture(t, ws)
+		_, err := BlockShipment(context.Background(), ws, fixture.shipment.ID, BlockOptions{
+			Reason:    "terminal journal crash",
+			BlockedBy: "UR3",
+		})
+		require.NoError(t, err)
+
+		records, err := loadShipmentOperationJournals(ws)
+		require.NoError(t, err)
+		var journalPath string
+		var journal shipmentLifecycleJournal
+		for _, record := range records {
+			if record.kind == shipmentLifecycleJournalKind &&
+				record.lifecycle.ShipmentID == fixture.shipment.ID &&
+				record.lifecycle.Operation == "block" {
+				journalPath = record.path
+				journal = record.lifecycle
+				break
+			}
+		}
+		require.NotEmpty(t, journalPath)
+		require.Equal(t, "committed", journal.Phase)
+		journal.Phase = "intent"
+		_, err = writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal)
+		require.NoError(t, err)
+		beforeShipment := cloneArtifact(loadURCanonicalArtifact(t, ws, journal.ShipmentID))
+		beforeMembers := make(map[string]*models.Artifact, len(journal.Preimage.Members))
+		for _, member := range journal.Preimage.Members {
+			beforeMembers[member.ID] = cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID))
+		}
+		beforeEvents := readUREvents(t, ws, journal.ShipmentID)
+		require.NoError(t, ws.Close())
+
+		reopened, err := NewWorkspace(context.Background(), root)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reopened.Close()) }()
+
+		require.Equal(t, "committed", p021ReadLifecycleJournal(t, journalPath).Phase)
+		require.Equal(t, beforeEvents, readUREvents(t, reopened, journal.ShipmentID))
+		assertURArtifactEqual(t, beforeShipment, loadURCanonicalArtifact(t, reopened, journal.ShipmentID))
+		for memberID, beforeMember := range beforeMembers {
+			assertURArtifactEqual(t, beforeMember, loadURCanonicalArtifact(t, reopened, memberID))
+		}
+	})
+}
+
+func TestUR3_ConflictingRecoveryTerminalEvidenceFailsClosedAndIsDoctorVisible(t *testing.T) {
+	root, ws := setupUR3Workspace(t)
+	fixture := newURBlockedActiveFixture(t, ws)
+	journal := p021LifecycleJournal(t, ws, "block", "rollback", fixture.shipment.ID, "")
+	journalPath := p021WriteLifecycleJournal(t, ws, journal)
+	journal = p021ReadLifecycleJournal(t, journalPath)
+	appendUR3RecoveryBoundaryEvidence(t, ws, journal, true)
+
+	operationCtx := withShipmentOperation(context.Background(), journal.CorrelationID)
+	require.NoError(t, appendItemEventWithActorErr(
+		operationCtx,
+		ws,
+		journal.ShipmentID,
+		journal.BlockedBy,
+		"shipment_lifecycle",
+		map[string]any{
+			"correlation_id": journal.CorrelationID,
+			"operation":      journal.Operation,
+			"phase":          "committed",
+			"target":         journal.Target,
+		},
+	))
+	before := snapshotURAggregate(t, ws, journal.ShipmentID)
+
+	report, err := Doctor(context.Background(), ws, &DoctorOptions{
+		CheckOrphans:    false,
+		CheckDuplicates: false,
+	})
+	require.NoError(t, err)
+	require.True(t, hasUR3DoctorFinding(report, journal.ShipmentID,
+		DoctorFindingType("conflicting_shipment_lifecycle_evidence")))
+
+	err = recoverPendingShipmentOperations(context.Background(), ws)
+	require.ErrorIs(t, err, blerrors.ErrShipmentConflict)
+	requireURAggregateUnchanged(t, ws, before)
+	require.Equal(t, "intent", p021ReadLifecycleJournal(t, journalPath).Phase)
+
+	require.NoError(t, ws.Close())
+	reopened, reopenErr := NewWorkspace(context.Background(), root)
+	require.ErrorIs(t, reopenErr, blerrors.ErrShipmentConflict)
+	require.Nil(t, reopened)
+}
+
+func appendUR3RecoveryBoundaryEvidence(
+	t *testing.T,
+	ws *Workspace,
+	journal shipmentLifecycleJournal,
+	withTerminal bool,
+) {
+	t.Helper()
+
+	operationCtx := withShipmentOperation(context.Background(), journal.CorrelationID)
+	common := map[string]any{
+		"correlation_id": journal.CorrelationID,
+		"operation":      journal.Operation,
+		"target":         string(journal.Preimage.Shipment.Status),
+	}
+	intent := maps.Clone(common)
+	intent["phase"] = "intent"
+	intent["target"] = journal.Target
+	require.NoError(t, appendItemEventWithActorErr(
+		operationCtx, ws, journal.ShipmentID, journal.BlockedBy, "shipment_lifecycle", intent,
+	))
+	status := maps.Clone(common)
+	status["phase"] = "applied"
+	status["status"] = string(journal.Preimage.Shipment.Status)
+	require.NoError(t, appendItemEventWithActorErr(
+		operationCtx, ws, journal.ShipmentID, journal.BlockedBy, "shipment_status_changed", status,
+	))
+	if !withTerminal {
+		return
+	}
+	terminal := maps.Clone(common)
+	terminal["phase"] = "compensated"
+	require.NoError(t, appendItemEventWithActorErr(
+		operationCtx, ws, journal.ShipmentID, journal.BlockedBy, "shipment_lifecycle", terminal,
+	))
+}
+
+func countUR3RecoveryEvidence(
+	itemEvents []events.Event,
+	journal shipmentLifecycleJournal,
+	eventType string,
+	phase string,
+) int {
+	count := 0
+	for _, event := range itemEvents {
+		if event.EventType == eventType &&
+			exactEventCorrelationUR(event) == journal.CorrelationID &&
+			eventLifecycleOperationUR(event) == journal.Operation &&
+			eventPhaseUR(event) == phase {
+			count++
+		}
+	}
+	return count
+}
+
+func hasUR3DoctorFinding(report *DoctorReport, artifactID string, findingType DoctorFindingType) bool {
+	for _, finding := range report.Findings {
+		if finding.ArtifactID == artifactID && finding.Type == findingType {
+			return true
+		}
+	}
+	return false
 }
 
 func TestUR10_SubprocessCrashReopenRecovery(t *testing.T) {
@@ -1112,20 +1309,10 @@ func TestUR10_SubprocessCrashReopenRecovery(t *testing.T) {
 				Members:  memberPreimages,
 			},
 		}
-		tornShipment := cloneArtifact(shipmentPreimage)
-		tornShipment.Status = models.StatusBlocked
-		delete(tornShipment.CustomFields, "branch")
-		tornShipment.CustomFields["blocked_reason"] = "R10 torn bootstrap"
-		tornShipment.CustomFields["blocked_by"] = "r10-torn-writer"
-		tornShipment.CustomFields["resume_checkpoint_ref"] = "wrong-r10-checkpoint.json"
-		tornShipment.CustomFields["member_status_snapshot"] = map[string]string{
-			memberPreimages[0].ID: string(models.StatusActive),
-		}
-		tornShipment.UpdatedAt = models.NowUTC()
 		tornMember := cloneArtifact(memberPreimages[0])
 		tornMember.Status = models.StatusQueued
 		tornMember.UpdatedAt = models.NowUTC()
-		crash := runUR3CrashSubprocess(t, root, ws, intent, tornShipment, tornMember)
+		crash := runUR3CrashSubprocess(t, root, ws, intent, tornMember)
 
 		runUR10RecoverySubprocess(t, root)
 

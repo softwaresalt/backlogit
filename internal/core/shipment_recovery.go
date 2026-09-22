@@ -17,6 +17,7 @@ import (
 	"time"
 
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -160,6 +161,10 @@ func reconcileShipmentLifecycleIntent(
 		}
 		snapshot = &loadedSnapshot
 	}
+	recoveryEvidence, err := inspectShipmentLifecycleRecoveryEvidence(ctx, ws, journal)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateShipmentLifecycleRecoveryCAS(
 		ctx,
 		ws,
@@ -170,6 +175,28 @@ func reconcileShipmentLifecycleIntent(
 	); err != nil {
 		return nil, err
 	}
+	if recoveryEvidence.terminalPhase != "" {
+		if err := validateShipmentLifecycleRecoveryOutcome(
+			ctx,
+			ws,
+			journal,
+			memberIDs,
+			preimageMembers,
+			snapshot,
+			recoveryEvidence.terminalPhase,
+		); err != nil {
+			return nil, err
+		}
+		journal.Phase = recoveryEvidence.terminalPhase
+		if _, err := writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal); err != nil {
+			return nil, fmt.Errorf("persist shipment %s recovered terminal journal: %w", journal.ShipmentID, err)
+		}
+		current, err := findArtifact(ctx, ws, journal.ShipmentID)
+		if err != nil {
+			return nil, fmt.Errorf("load shipment %s recovered terminal state: %w", journal.ShipmentID, err)
+		}
+		return current, nil
+	}
 
 	operationCtx := withShipmentOperation(ctx, journal.CorrelationID)
 	governedCtx := context.WithValue(operationCtx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
@@ -178,70 +205,87 @@ func reconcileShipmentLifecycleIntent(
 		allowGovernedShipmentMutation: true,
 	})
 	var result *models.Artifact
-	switch journal.RecoveryPolicy {
-	case "rollback":
-		if journal.Operation == "unblock" {
+	journal.Phase = recoveryTerminalPhase(journal)
+	if recoveryEvidence.appliedPhase == journal.Phase {
+		if err := validateShipmentLifecycleRecoveryOutcome(
+			ctx,
+			ws,
+			journal,
+			memberIDs,
+			preimageMembers,
+			snapshot,
+			journal.Phase,
+		); err != nil {
+			return nil, err
+		}
+		result, err = findArtifact(ctx, ws, journal.ShipmentID)
+		if err != nil {
+			return nil, fmt.Errorf("load shipment %s recovery outcome: %w", journal.ShipmentID, err)
+		}
+	} else {
+		switch journal.RecoveryPolicy {
+		case "rollback":
+			if journal.Operation == "unblock" {
+				for _, memberID := range memberIDs {
+					if err := persistArtifact(operationCtx, ws, cloneArtifact(preimageMembers[memberID]), true); err != nil {
+						return nil, fmt.Errorf("restore shipment %s member %s preimage: %w",
+							journal.ShipmentID, memberID, err)
+					}
+				}
+				if err := persistArtifact(governedCtx, ws, cloneArtifact(journal.Preimage.Shipment), true); err != nil {
+					return nil, fmt.Errorf("restore shipment %s preimage: %w", journal.ShipmentID, err)
+				}
+			} else {
+				if err := persistArtifact(governedCtx, ws, cloneArtifact(journal.Preimage.Shipment), true); err != nil {
+					return nil, fmt.Errorf("restore shipment %s preimage: %w", journal.ShipmentID, err)
+				}
+				for _, memberID := range memberIDs {
+					if err := persistArtifact(operationCtx, ws, cloneArtifact(preimageMembers[memberID]), true); err != nil {
+						return nil, fmt.Errorf("restore shipment %s member %s preimage: %w",
+							journal.ShipmentID, memberID, err)
+					}
+				}
+			}
+			result = cloneArtifact(journal.Preimage.Shipment)
+		case "roll_forward":
 			for _, memberID := range memberIDs {
-				if err := persistArtifact(operationCtx, ws, cloneArtifact(preimageMembers[memberID]), true); err != nil {
-					return nil, fmt.Errorf("restore shipment %s member %s preimage: %w",
+				member := cloneArtifact(preimageMembers[memberID])
+				member.Status = models.ArtifactStatus(snapshot.Members[memberID])
+				if member.Status == models.StatusActive || member.Status == models.StatusReview {
+					member.Status = models.StatusQueued
+				}
+				member.UpdatedAt = models.NowUTC()
+				if err := persistArtifact(operationCtx, ws, member, true); err != nil {
+					return nil, fmt.Errorf("roll forward shipment %s member %s: %w",
 						journal.ShipmentID, memberID, err)
 				}
 			}
-			if err := persistArtifact(governedCtx, ws, cloneArtifact(journal.Preimage.Shipment), true); err != nil {
-				return nil, fmt.Errorf("restore shipment %s preimage: %w", journal.ShipmentID, err)
+			blocked := cloneArtifact(journal.Preimage.Shipment)
+			blocked.Status = models.StatusBlocked
+			blocked.UpdatedAt = models.NowUTC()
+			if blocked.CustomFields == nil {
+				blocked.CustomFields = map[string]any{}
 			}
-		} else {
-			if err := persistArtifact(governedCtx, ws, cloneArtifact(journal.Preimage.Shipment), true); err != nil {
-				return nil, fmt.Errorf("restore shipment %s preimage: %w", journal.ShipmentID, err)
+			if snapshot.Branch != "" {
+				blocked.CustomFields["branch"] = snapshot.Branch
 			}
-			for _, memberID := range memberIDs {
-				if err := persistArtifact(operationCtx, ws, cloneArtifact(preimageMembers[memberID]), true); err != nil {
-					return nil, fmt.Errorf("restore shipment %s member %s preimage: %w",
-						journal.ShipmentID, memberID, err)
-				}
+			blocked.CustomFields["blocked_reason"] = snapshot.BlockedReason
+			blocked.CustomFields["blocked_at"] = snapshot.BlockedAt
+			blocked.CustomFields["blocked_by"] = snapshot.BlockedBy
+			blocked.CustomFields["member_status_snapshot"] = maps.Clone(snapshot.Members)
+			if snapshot.ResumeCheckpointRef == "" {
+				delete(blocked.CustomFields, "resume_checkpoint_ref")
+			} else {
+				blocked.CustomFields["resume_checkpoint_ref"] = snapshot.ResumeCheckpointRef
 			}
-		}
-		result = cloneArtifact(journal.Preimage.Shipment)
-		journal.Phase = "compensated"
-	case "roll_forward":
-		for _, memberID := range memberIDs {
-			member := cloneArtifact(preimageMembers[memberID])
-			member.Status = models.ArtifactStatus(snapshot.Members[memberID])
-			if member.Status == models.StatusActive || member.Status == models.StatusReview {
-				member.Status = models.StatusQueued
+			if err := persistArtifact(governedCtx, ws, blocked, true); err != nil {
+				return nil, fmt.Errorf("roll forward shipment %s: %w", journal.ShipmentID, err)
 			}
-			member.UpdatedAt = models.NowUTC()
-			if err := persistArtifact(operationCtx, ws, member, true); err != nil {
-				return nil, fmt.Errorf("roll forward shipment %s member %s: %w",
-					journal.ShipmentID, memberID, err)
-			}
+			result = blocked
+		default:
+			return nil, fmt.Errorf("shipment lifecycle journal %s has unsupported recovery policy %q: %w",
+				journalPath, journal.RecoveryPolicy, blerrors.ErrValidation)
 		}
-		blocked := cloneArtifact(journal.Preimage.Shipment)
-		blocked.Status = models.StatusBlocked
-		blocked.UpdatedAt = models.NowUTC()
-		if blocked.CustomFields == nil {
-			blocked.CustomFields = map[string]any{}
-		}
-		if snapshot.Branch != "" {
-			blocked.CustomFields["branch"] = snapshot.Branch
-		}
-		blocked.CustomFields["blocked_reason"] = snapshot.BlockedReason
-		blocked.CustomFields["blocked_at"] = snapshot.BlockedAt
-		blocked.CustomFields["blocked_by"] = snapshot.BlockedBy
-		blocked.CustomFields["member_status_snapshot"] = maps.Clone(snapshot.Members)
-		if snapshot.ResumeCheckpointRef == "" {
-			delete(blocked.CustomFields, "resume_checkpoint_ref")
-		} else {
-			blocked.CustomFields["resume_checkpoint_ref"] = snapshot.ResumeCheckpointRef
-		}
-		if err := persistArtifact(governedCtx, ws, blocked, true); err != nil {
-			return nil, fmt.Errorf("roll forward shipment %s: %w", journal.ShipmentID, err)
-		}
-		result = blocked
-		journal.Phase = "committed"
-	default:
-		return nil, fmt.Errorf("shipment lifecycle journal %s has unsupported recovery policy %q: %w",
-			journalPath, journal.RecoveryPolicy, blerrors.ErrValidation)
 	}
 
 	target := journal.Target
@@ -256,18 +300,32 @@ func reconcileShipmentLifecycleIntent(
 		"target":         target,
 		"snapshot_ref":   journal.SnapshotRef,
 	}
-	if err := appendItemEventWithActorErr(
-		operationCtx,
-		ws,
-		journal.ShipmentID,
-		journal.BlockedBy,
-		"shipment_status_changed",
-		eventDelta,
-	); err != nil {
-		return nil, fmt.Errorf("append shipment %s recovery status evidence: %w", journal.ShipmentID, err)
+	if recoveryEvidence.appliedPhase != journal.Phase {
+		eventDelta["evidence_id"] = shipmentLifecycleRecoveryEvidenceID(
+			journal.CorrelationID,
+			"status",
+			"applied",
+			target,
+		)
+		if err := appendItemEventWithActorErr(
+			operationCtx,
+			ws,
+			journal.ShipmentID,
+			journal.BlockedBy,
+			"shipment_status_changed",
+			eventDelta,
+		); err != nil {
+			return nil, fmt.Errorf("append shipment %s recovery status evidence: %w", journal.ShipmentID, err)
+		}
 	}
 	terminalDelta := maps.Clone(eventDelta)
 	terminalDelta["phase"] = journal.Phase
+	terminalDelta["evidence_id"] = shipmentLifecycleRecoveryEvidenceID(
+		journal.CorrelationID,
+		"terminal",
+		journal.Phase,
+		target,
+	)
 	if err := appendItemEventWithActorErr(
 		operationCtx,
 		ws,
@@ -284,6 +342,176 @@ func reconcileShipmentLifecycleIntent(
 	return result, nil
 }
 
+type shipmentLifecycleRecoveryEvidence struct {
+	appliedPhase  string
+	terminalPhase string
+}
+
+func inspectShipmentLifecycleRecoveryEvidence(
+	ctx context.Context,
+	ws *Workspace,
+	journal shipmentLifecycleJournal,
+) (shipmentLifecycleRecoveryEvidence, error) {
+	var evidence shipmentLifecycleRecoveryEvidence
+	itemEvents, err := events.ReadAllEvents(ctx, WorkspaceLogsRoot(ws.RootPath), journal.ShipmentID)
+	if err != nil {
+		return evidence, fmt.Errorf("read shipment %s recovery evidence: %w", journal.ShipmentID, err)
+	}
+
+	for _, event := range itemEvents {
+		correlationID, _ := event.Delta["correlation_id"].(string)
+		if correlationID != journal.CorrelationID {
+			continue
+		}
+		if event.EventType != "shipment_status_changed" && event.EventType != "shipment_lifecycle" {
+			continue
+		}
+		operation, _ := event.Delta["operation"].(string)
+		if operation != journal.Operation {
+			return evidence, shipmentLifecycleEvidenceConflict(
+				journal,
+				"correlated %s evidence has operation %q",
+				event.EventType,
+				operation,
+			)
+		}
+
+		phase, _ := event.Delta["phase"].(string)
+		target, targetErr := shipmentLifecycleEvidenceTarget(event.Delta)
+		if targetErr != nil {
+			return evidence, shipmentLifecycleEvidenceConflict(journal, "%v", targetErr)
+		}
+		switch event.EventType {
+		case "shipment_status_changed":
+			if phase != "applied" {
+				return evidence, shipmentLifecycleEvidenceConflict(
+					journal,
+					"correlated status evidence has phase %q",
+					phase,
+				)
+			}
+			appliedPhase, phaseErr := shipmentLifecycleEvidencePhaseForTarget(journal, target)
+			if phaseErr != nil {
+				return evidence, phaseErr
+			}
+			evidence.appliedPhase = appliedPhase
+		case "shipment_lifecycle":
+			switch phase {
+			case "intent":
+				if target != journal.Target {
+					return evidence, shipmentLifecycleEvidenceConflict(
+						journal,
+						"correlated intent target %q does not match journal target %q",
+						target,
+						journal.Target,
+					)
+				}
+			case "committed", "compensated":
+				wantTarget := shipmentLifecycleTerminalTarget(journal, phase)
+				if target != wantTarget {
+					return evidence, shipmentLifecycleEvidenceConflict(
+						journal,
+						"correlated %s terminal target %q does not match %q",
+						phase,
+						target,
+						wantTarget,
+					)
+				}
+				if evidence.terminalPhase != "" && evidence.terminalPhase != phase {
+					return evidence, shipmentLifecycleEvidenceConflict(
+						journal,
+						"correlated terminal evidence conflicts between %s and %s",
+						evidence.terminalPhase,
+						phase,
+					)
+				}
+				evidence.terminalPhase = phase
+			}
+		}
+	}
+
+	if evidence.terminalPhase != "" && evidence.appliedPhase != evidence.terminalPhase {
+		return evidence, shipmentLifecycleEvidenceConflict(
+			journal,
+			"correlated %s terminal evidence lacks matching final status evidence",
+			evidence.terminalPhase,
+		)
+	}
+	return evidence, nil
+}
+
+func shipmentLifecycleEvidenceTarget(delta map[string]any) (string, error) {
+	target, _ := delta["target"].(string)
+	status, _ := delta["status"].(string)
+	if target == "" {
+		target = status
+	}
+	if target == "" {
+		return "", fmt.Errorf("correlated lifecycle evidence has no target")
+	}
+	if status != "" && status != target {
+		return "", fmt.Errorf("correlated lifecycle evidence status %q conflicts with target %q", status, target)
+	}
+	return target, nil
+}
+
+func shipmentLifecycleEvidencePhaseForTarget(
+	journal shipmentLifecycleJournal,
+	target string,
+) (string, error) {
+	if target == journal.Target {
+		return "committed", nil
+	}
+	preimageTarget := string(journal.Preimage.Shipment.Status)
+	if target == preimageTarget {
+		return "compensated", nil
+	}
+	return "", shipmentLifecycleEvidenceConflict(
+		journal,
+		"correlated status target %q matches neither committed target %q nor compensated target %q",
+		target,
+		journal.Target,
+		preimageTarget,
+	)
+}
+
+func shipmentLifecycleTerminalTarget(journal shipmentLifecycleJournal, phase string) string {
+	if phase == "compensated" {
+		return string(journal.Preimage.Shipment.Status)
+	}
+	return journal.Target
+}
+
+func recoveryTerminalPhase(journal shipmentLifecycleJournal) string {
+	if journal.RecoveryPolicy == "rollback" {
+		return "compensated"
+	}
+	return "committed"
+}
+
+func shipmentLifecycleEvidenceConflict(
+	journal shipmentLifecycleJournal,
+	format string,
+	args ...any,
+) error {
+	return fmt.Errorf(
+		"shipment %s lifecycle evidence conflict: %s: %w",
+		journal.ShipmentID,
+		fmt.Sprintf(format, args...),
+		blerrors.ErrShipmentConflict,
+	)
+}
+
+func shipmentLifecycleRecoveryEvidenceID(correlationID, kind, phase, target string) string {
+	return strings.Join([]string{
+		"shipment-lifecycle",
+		correlationID,
+		kind,
+		phase,
+		target,
+	}, ":")
+}
+
 func validateShipmentLifecycleRecoveryCAS(
 	ctx context.Context,
 	ws *Workspace,
@@ -292,15 +520,6 @@ func validateShipmentLifecycleRecoveryCAS(
 	preimageMembers map[string]*models.Artifact,
 	snapshot *ShipmentBlockedSnapshot,
 ) error {
-	// Legacy branch-bootstrap journals use operation=block with an explicitly
-	// authoritative roll-forward snapshot. Their contract permits replacement
-	// of an otherwise unprovable partial bootstrap image; normalize journals,
-	// by contrast, originate from an observed live aggregate and require the
-	// preimage/target CAS enforced below.
-	if journal.RecoveryPolicy == "roll_forward" && journal.Operation == "block" {
-		return nil
-	}
-
 	currentShipment, err := findArtifact(ctx, ws, journal.ShipmentID)
 	if err != nil {
 		return fmt.Errorf("load shipment %s recovery CAS state: %w", journal.ShipmentID, err)
@@ -346,6 +565,77 @@ func validateShipmentLifecycleRecoveryCAS(
 				journal.ShipmentID,
 				memberID,
 				blerrors.ErrShipmentConflict,
+			)
+		}
+	}
+	return nil
+}
+
+func validateShipmentLifecycleRecoveryOutcome(
+	ctx context.Context,
+	ws *Workspace,
+	journal shipmentLifecycleJournal,
+	memberIDs []string,
+	preimageMembers map[string]*models.Artifact,
+	snapshot *ShipmentBlockedSnapshot,
+	phase string,
+) error {
+	currentShipment, err := findArtifact(ctx, ws, journal.ShipmentID)
+	if err != nil {
+		return fmt.Errorf("load shipment %s recovery outcome: %w", journal.ShipmentID, err)
+	}
+	shipmentCandidates, err := shipmentRecoveryCandidates(journal, currentShipment, snapshot)
+	if err != nil {
+		return err
+	}
+	shipmentCandidate := shipmentCandidates[len(shipmentCandidates)-1]
+	if phase == "compensated" {
+		shipmentCandidate = shipmentCandidates[0]
+	}
+	matches, err := recoveryArtifactMatchesAny(currentShipment, []recoveryArtifactCandidate{shipmentCandidate})
+	if err != nil {
+		return fmt.Errorf("compare shipment %s recovery outcome: %w", journal.ShipmentID, err)
+	}
+	if !matches {
+		return shipmentLifecycleEvidenceConflict(
+			journal,
+			"%s terminal evidence does not match the current shipment state",
+			phase,
+		)
+	}
+
+	for _, memberID := range memberIDs {
+		currentMember, loadErr := findArtifact(ctx, ws, memberID)
+		if loadErr != nil {
+			return fmt.Errorf("load shipment %s member %s recovery outcome: %w",
+				journal.ShipmentID, memberID, loadErr)
+		}
+		memberCandidates, candidateErr := memberRecoveryCandidates(
+			journal,
+			preimageMembers[memberID],
+			snapshot,
+		)
+		if candidateErr != nil {
+			return candidateErr
+		}
+		memberCandidate := memberCandidates[len(memberCandidates)-1]
+		if phase == "compensated" {
+			memberCandidate = memberCandidates[0]
+		}
+		matches, compareErr := recoveryArtifactMatchesAny(
+			currentMember,
+			[]recoveryArtifactCandidate{memberCandidate},
+		)
+		if compareErr != nil {
+			return fmt.Errorf("compare shipment %s member %s recovery outcome: %w",
+				journal.ShipmentID, memberID, compareErr)
+		}
+		if !matches {
+			return shipmentLifecycleEvidenceConflict(
+				journal,
+				"%s terminal evidence does not match member %s state",
+				phase,
+				memberID,
 			)
 		}
 	}
@@ -425,7 +715,8 @@ func shipmentRecoveryCandidates(
 		delete(target.CustomFields, "blocked_reason")
 		delete(target.CustomFields, "blocked_at")
 		delete(target.CustomFields, "blocked_by")
-	case journal.RecoveryPolicy == "roll_forward" && journal.Operation == "normalize":
+	case journal.RecoveryPolicy == "roll_forward" &&
+		(journal.Operation == "block" || journal.Operation == "normalize"):
 		if snapshot == nil {
 			return nil, fmt.Errorf("normalize shipment %s recovery has no snapshot: %w",
 				journal.ShipmentID, blerrors.ErrShipmentConflict)
@@ -485,7 +776,8 @@ func memberRecoveryCandidates(
 			}
 			target.Status = models.ArtifactStatus(status)
 		}
-	case journal.RecoveryPolicy == "roll_forward" && journal.Operation == "normalize":
+	case journal.RecoveryPolicy == "roll_forward" &&
+		(journal.Operation == "block" || journal.Operation == "normalize"):
 		if snapshot == nil {
 			return nil, fmt.Errorf("normalize shipment %s recovery has no snapshot: %w",
 				journal.ShipmentID, blerrors.ErrShipmentConflict)

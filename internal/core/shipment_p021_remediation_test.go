@@ -260,6 +260,25 @@ func TestP021RecoveryCAS_RefusesDriftAndRestoresExactPreimage(t *testing.T) {
 		require.Equal(t, "intent", p021ReadLifecycleJournal(t, journalPath).Phase)
 	})
 
+	t.Run("bootstrap_roll_forward_refuses_shipment_drift_without_mutation", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		fixture := newURBlockedActiveFixture(t, ws)
+		snapshotRef := p021WriteBootstrapSnapshot(t, ws, fixture.shipment.ID)
+		journal := p021LifecycleJournal(t, ws, "block", "roll_forward", fixture.shipment.ID, snapshotRef)
+		journalPath := p021WriteLifecycleJournal(t, ws, journal)
+
+		drifted := cloneArtifact(journal.Preimage.Shipment)
+		drifted.Title = "post-intent bootstrap edit"
+		drifted.UpdatedAt = models.NowUTC()
+		forceURArtifactFixture(t, ws, drifted)
+		before := snapshotURAggregate(t, ws, fixture.shipment.ID)
+
+		err := recoverPendingShipmentOperations(context.Background(), ws)
+		require.ErrorIs(t, err, blerrors.ErrShipmentConflict)
+		requireURAggregateUnchanged(t, ws, before)
+		require.Equal(t, "intent", p021ReadLifecycleJournal(t, journalPath).Phase)
+	})
+
 	t.Run("rollback_restores_exact_preimage_when_cas_holds", func(t *testing.T) {
 		ws := setupShipmentWorkspace(t)
 		fixture := newURBlockedActiveFixture(t, ws)
@@ -348,6 +367,32 @@ func p021ReadLifecycleJournal(t *testing.T, path string) shipmentLifecycleJourna
 	var journal shipmentLifecycleJournal
 	require.NoError(t, json.Unmarshal(data, &journal))
 	return journal
+}
+
+func p021WriteBootstrapSnapshot(t *testing.T, ws *Workspace, shipmentID string) string {
+	t.Helper()
+
+	shipment := loadURCanonicalArtifact(t, ws, shipmentID)
+	memberStatuses := make(map[string]string)
+	for _, memberID := range NormalizeShipmentItems(shipment) {
+		memberStatuses[memberID] = string(loadURCanonicalArtifact(t, ws, memberID).Status)
+	}
+	snapshot := ShipmentBlockedSnapshot{
+		SchemaVersion: ShipmentBlockedSnapshotSchemaVersion,
+		ShipmentID:    shipmentID,
+		Target:        ShipmentBlocked,
+		BlockedReason: "P021 bootstrap recovery",
+		BlockedAt:     time.Now().UTC().Format(time.RFC3339),
+		BlockedBy:     "P021",
+		Members:       memberStatuses,
+	}
+	data, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	relativePath := filepath.Join("bootstrap", "p021-"+shipmentID+".json")
+	absolutePath := filepath.Join(WorkspaceStorageRoot(ws.RootPath), relativePath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(absolutePath), 0o755))
+	require.NoError(t, os.WriteFile(absolutePath, data, 0o644))
+	return relativePath
 }
 
 func p021WriteBlockedSnapshot(t *testing.T, ws *Workspace, shipmentID string) string {
