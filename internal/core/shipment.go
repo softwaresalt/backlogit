@@ -2058,7 +2058,7 @@ func removeReturnBlockedJournal(ctx context.Context, rootPath, shipmentID, itemI
 
 func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error {
 	if _, held := ctx.Value(shipmentLifecycleGlobalLockContextKey{}).(struct{}); !held {
-		globalUnlock, err := lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)
+		lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
 		if err != nil {
 			return fmt.Errorf("lock shipment lifecycle recovery: %w", err)
 		}
@@ -2067,7 +2067,7 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 				slog.WarnContext(ctx, "release shipment lifecycle recovery lock", "error", unlockErr)
 			}
 		}()
-		ctx = context.WithValue(ctx, shipmentLifecycleGlobalLockContextKey{}, struct{}{})
+		ctx = lockedCtx
 	}
 
 	entries, err := os.ReadDir(shipmentOpsRoot(ws.RootPath))

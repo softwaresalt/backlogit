@@ -20,6 +20,7 @@ import (
 )
 
 const ur3CrashInstructionEnv = "BACKLOGIT_UR3_CRASH_INSTRUCTION"
+const ur10SubprocessInstructionEnv = "BACKLOGIT_UR10_SUBPROCESS_INSTRUCTION"
 
 type ur3OperationIntent struct {
 	SchemaVersion  string              `json:"schema_version"`
@@ -50,6 +51,20 @@ type ur3CrashPoint struct {
 	PersistedArtifactPath string             `json:"persisted_artifact_path"`
 	PersistedArtifact     *models.Artifact   `json:"persisted_artifact"`
 	RealOperationWrite    bool               `json:"real_operation_write"`
+}
+
+type ur10SubprocessInstruction struct {
+	Mode          string `json:"mode"`
+	Root          string `json:"root"`
+	ShipmentID    string `json:"shipment_id,omitempty"`
+	ItemID        string `json:"item_id,omitempty"`
+	ReadyPath     string `json:"ready_path,omitempty"`
+	StartPath     string `json:"start_path,omitempty"`
+	AttemptedPath string `json:"attempted_path,omitempty"`
+	ContendedPath string `json:"contended_path,omitempty"`
+	AcquiredPath  string `json:"acquired_path,omitempty"`
+	ContinuePath  string `json:"continue_path,omitempty"`
+	DonePath      string `json:"done_path"`
 }
 
 func setupUR3Workspace(t *testing.T) (string, *Workspace) {
@@ -901,4 +916,401 @@ func TestUR3_BranchBootstrapReopenRollsForwardUsingMachineReadableSnapshot(t *te
 	for _, member := range memberPreimages {
 		assertURArtifactEqual(t, recoveredMembers[member.ID], loadURCanonicalArtifact(t, reopenedAgain, member.ID))
 	}
+}
+
+func TestUR10_SubprocessCrashReopenRecovery(t *testing.T) {
+	t.Run("crash_during_block_recovers_under_contended_workspace_global_lock", func(t *testing.T) {
+		root, ws := setupUR3Workspace(t)
+		fixture := newURBlockedActiveFixture(t, ws)
+		shipmentPreimage := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+		shipmentPreimage.CustomFields["codec_integer"] = 17
+		forceURArtifactFixture(t, ws, shipmentPreimage)
+		shipmentPreimage = cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+
+		memberPreimages := make([]*models.Artifact, 0, len(fixture.members))
+		for index, member := range fixture.members {
+			current := cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID))
+			if current.CustomFields == nil {
+				current.CustomFields = map[string]any{}
+			}
+			current.CustomFields["r10_member"] = index
+			forceURArtifactFixture(t, ws, current)
+			memberPreimages = append(memberPreimages, cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID)))
+		}
+
+		candidate, err := CreateShipment(context.Background(), ws, "R10 competing shipment", nil)
+		require.NoError(t, err)
+		competingFeature, err := CreateArtifact(context.Background(), ws, "R10 competing feature", "feature")
+		require.NoError(t, err)
+		competingItem, err := CreateArtifact(
+			context.Background(),
+			ws,
+			"R10 competing member",
+			"task",
+			WithParent(competingFeature.ID),
+		)
+		require.NoError(t, err)
+
+		competitorInstruction := newUR10Instruction(root, "competitor")
+		competitorInstruction.ShipmentID = candidate.ID
+		competitorInstruction.ItemID = competingItem.ID
+		competitor := startUR10Subprocess(t, competitorInstruction)
+		waitUR10Marker(t, competitorInstruction.ReadyPath, "competitor workspace ready")
+
+		intent := ur3OperationIntent{
+			SchemaVersion:  "shipment-operation/v1",
+			CorrelationID:  "ur10-block-recovery",
+			Phase:          "intent",
+			Operation:      "block",
+			RecoveryPolicy: "rollback",
+			ShipmentID:     shipmentPreimage.ID,
+			Target:         string(ShipmentBlocked),
+			Reason:         "R10 crash during block",
+			BlockedBy:      "r10-harness",
+			Preimage: urLifecyclePreimage{
+				Shipment: shipmentPreimage,
+				Members:  memberPreimages,
+			},
+		}
+		crash := runUR3CrashSubprocess(t, root, ws, intent)
+
+		recoveryInstruction := newUR10Instruction(root, "recovery")
+		recovery := startUR10Subprocess(t, recoveryInstruction)
+		waitUR10Marker(t, recoveryInstruction.AcquiredPath, "recovery global lock acquired")
+
+		writeUR10Marker(t, competitorInstruction.StartPath)
+		waitUR10Marker(t, competitorInstruction.AttemptedPath, "competing governed operation attempted global lock")
+		waitUR10Marker(t, competitorInstruction.ContendedPath, "competing governed operation observed lock contention")
+		requireUR10MarkerAbsent(t, competitorInstruction.AcquiredPath,
+			"competing governed operation acquired the workspace-global lock before recovery released it")
+
+		writeUR10Marker(t, recoveryInstruction.ContinuePath)
+		waitUR10Marker(t, recoveryInstruction.DonePath, "recovery subprocess completed")
+		require.NoError(t, recovery.wait(), recovery.outputString())
+		waitUR10Marker(t, competitorInstruction.AcquiredPath,
+			"competing governed operation acquired the released global lock")
+		waitUR10Marker(t, competitorInstruction.DonePath, "competing governed operation completed")
+		require.NoError(t, competitor.wait(), competitor.outputString())
+
+		reopened, err := NewWorkspace(context.Background(), root)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reopened.Close()) }()
+		requireUR3ActualOperationOutcome(t, reopened, crash)
+
+		candidateCanonical := loadURCanonicalArtifact(t, reopened, candidate.ID)
+		require.Equal(t, []string{competingItem.ID}, NormalizeShipmentItems(candidateCanonical))
+		requireUR3PostSyncConvergence(
+			t,
+			reopened,
+			candidateCanonical,
+			loadURCanonicalArtifact(t, reopened, competingItem.ID),
+		)
+	})
+
+	t.Run("crash_during_unblock_restores_exact_blocked_preimage", func(t *testing.T) {
+		root, ws := setupUR3Workspace(t)
+		fixture := newURBlockedActiveFixture(t, ws)
+
+		shipmentPreimage := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+		shipmentPreimage.Status = models.StatusBlocked
+		shipmentPreimage.CustomFields["blocked_reason"] = "R10 external dependency"
+		shipmentPreimage.CustomFields["blocked_at"] = "2026-09-22T00:00:00Z"
+		shipmentPreimage.CustomFields["blocked_by"] = "r10-harness"
+		shipmentPreimage.CustomFields["resume_checkpoint_ref"] = "r10-before-unblock.json"
+		memberSnapshot := make(map[string]string, len(fixture.members))
+		memberPreimages := make([]*models.Artifact, 0, len(fixture.members))
+		for _, member := range fixture.members {
+			current := cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID))
+			memberSnapshot[current.ID] = string(current.Status)
+			current.Status = models.StatusQueued
+			forceURArtifactFixture(t, ws, current)
+			memberPreimages = append(memberPreimages, cloneArtifact(loadURCanonicalArtifact(t, ws, current.ID)))
+		}
+		shipmentPreimage.CustomFields["member_status_snapshot"] = memberSnapshot
+		shipmentPreimage.CustomFields["codec_integer"] = 19
+		forceURArtifactFixture(t, ws, shipmentPreimage)
+		shipmentPreimage = cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+
+		intent := ur3OperationIntent{
+			SchemaVersion:  "shipment-operation/v1",
+			CorrelationID:  "ur10-unblock-recovery",
+			Phase:          "intent",
+			Operation:      "unblock",
+			RecoveryPolicy: "rollback",
+			ShipmentID:     shipmentPreimage.ID,
+			Target:         string(ShipmentActive),
+			BlockedBy:      "r10-harness",
+			Preimage: urLifecyclePreimage{
+				Shipment: shipmentPreimage,
+				Members:  memberPreimages,
+			},
+		}
+		crash := runUR3CrashSubprocess(t, root, ws, intent)
+		require.Equal(t, "rollback", crash.Journal.RecoveryPolicy)
+
+		runUR10RecoverySubprocess(t, root)
+
+		reopened, err := NewWorkspace(context.Background(), root)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reopened.Close()) }()
+		recoveredShipment, recoveredMembers := requireUR3ActualOperationOutcome(t, reopened, crash)
+		require.Equal(t, "compensated", requireUR3IntentResolved(t, crash).Phase)
+		assertURArtifactEqual(t, shipmentPreimage, recoveredShipment)
+		for _, member := range memberPreimages {
+			assertURArtifactEqual(t, member, recoveredMembers[member.ID])
+		}
+	})
+
+	t.Run("crash_during_branch_bootstrap_recovers_from_intent_and_snapshot", func(t *testing.T) {
+		root, ws := setupUR3Workspace(t)
+		fixture := newURBlockedActiveFixture(t, ws)
+		shipmentPreimage := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+		shipmentPreimage.CustomFields["branch"] = "feat/r10-bootstrap"
+		shipmentPreimage.CustomFields["codec_integer"] = 23
+		forceURArtifactFixture(t, ws, shipmentPreimage)
+		shipmentPreimage = cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+
+		memberPreimages := make([]*models.Artifact, 0, len(fixture.members))
+		memberStatuses := make(map[string]string, len(fixture.members))
+		for _, member := range fixture.members {
+			current := cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID))
+			memberPreimages = append(memberPreimages, current)
+			memberStatuses[current.ID] = string(current.Status)
+		}
+
+		snapshotRel := filepath.Join("bootstrap", fixture.shipment.ID+".r10.snapshot.json")
+		snapshotPath := filepath.Join(workspaceStorageRoot(ws), snapshotRel)
+		require.NoError(t, os.MkdirAll(filepath.Dir(snapshotPath), 0o755))
+		snapshot := map[string]any{
+			"schema_version":        ShipmentBlockedSnapshotSchemaVersion,
+			"shipment_id":           fixture.shipment.ID,
+			"branch":                "feat/r10-bootstrap",
+			"target":                string(ShipmentBlocked),
+			"blocked_reason":        "R10 snapshot-authoritative bootstrap",
+			"blocked_at":            "2026-09-22T00:00:00Z",
+			"blocked_by":            "r10-bootstrap-operator",
+			"resume_checkpoint_ref": "r10-bootstrap-checkpoint.json",
+			"members":               memberStatuses,
+		}
+		snapshotData, err := json.MarshalIndent(snapshot, "", "  ")
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(snapshotPath, snapshotData, 0o644))
+
+		intent := ur3OperationIntent{
+			SchemaVersion:  "shipment-operation/v1",
+			CorrelationID:  "ur10-bootstrap-recovery",
+			Phase:          "intent",
+			Operation:      "block",
+			RecoveryPolicy: "roll_forward",
+			ShipmentID:     shipmentPreimage.ID,
+			Target:         string(ShipmentBlocked),
+			Reason:         "journal value must not override snapshot",
+			BlockedBy:      "stale-r10-operator",
+			SnapshotRef:    snapshotRel,
+			Preimage: urLifecyclePreimage{
+				Shipment: shipmentPreimage,
+				Members:  memberPreimages,
+			},
+		}
+		tornShipment := cloneArtifact(shipmentPreimage)
+		tornShipment.Status = models.StatusBlocked
+		delete(tornShipment.CustomFields, "branch")
+		tornShipment.CustomFields["blocked_reason"] = "R10 torn bootstrap"
+		tornShipment.CustomFields["blocked_by"] = "r10-torn-writer"
+		tornShipment.CustomFields["resume_checkpoint_ref"] = "wrong-r10-checkpoint.json"
+		tornShipment.CustomFields["member_status_snapshot"] = map[string]string{
+			memberPreimages[0].ID: string(models.StatusActive),
+		}
+		tornShipment.UpdatedAt = models.NowUTC()
+		tornMember := cloneArtifact(memberPreimages[0])
+		tornMember.Status = models.StatusQueued
+		tornMember.UpdatedAt = models.NowUTC()
+		crash := runUR3CrashSubprocess(t, root, ws, intent, tornShipment, tornMember)
+
+		runUR10RecoverySubprocess(t, root)
+
+		reopened, err := NewWorkspace(context.Background(), root)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reopened.Close()) }()
+		recoveredShipment := loadURCanonicalArtifact(t, reopened, shipmentPreimage.ID)
+		require.Equal(t, models.StatusBlocked, recoveredShipment.Status)
+		require.Equal(t, "feat/r10-bootstrap", recoveredShipment.CustomFields["branch"])
+		require.Equal(t, "R10 snapshot-authoritative bootstrap", recoveredShipment.CustomFields["blocked_reason"])
+		require.Equal(t, "2026-09-22T00:00:00Z", recoveredShipment.CustomFields["blocked_at"])
+		require.Equal(t, "r10-bootstrap-operator", recoveredShipment.CustomFields["blocked_by"])
+		require.Equal(t, "r10-bootstrap-checkpoint.json", recoveredShipment.CustomFields["resume_checkpoint_ref"])
+		require.Equal(t, memberStatuses, statusSnapshotUR(recoveredShipment.CustomFields))
+		require.EqualValues(t, 23, recoveredShipment.CustomFields["codec_integer"])
+
+		recoveredMembers := make(map[string]*models.Artifact, len(memberPreimages))
+		for _, member := range memberPreimages {
+			recovered := loadURCanonicalArtifact(t, reopened, member.ID)
+			require.Equal(t, models.StatusQueued, recovered.Status)
+			recoveredMembers[member.ID] = cloneArtifact(recovered)
+		}
+		gotSnapshot, err := os.ReadFile(snapshotPath)
+		require.NoError(t, err)
+		require.JSONEq(t, string(snapshotData), string(gotSnapshot),
+			"bootstrap recovery must preserve its exact machine-readable snapshot")
+		terminal := requireUR3IntentResolved(t, crash)
+		require.Equal(t, "committed", terminal.Phase)
+		requireUR3CorrelatedTerminalEvidence(t, reopened, crash.Journal, terminal)
+		canonical := make([]*models.Artifact, 0, len(recoveredMembers)+1)
+		canonical = append(canonical, recoveredShipment)
+		for _, member := range memberPreimages {
+			canonical = append(canonical, recoveredMembers[member.ID])
+		}
+		requireUR3PostSyncConvergence(t, reopened, canonical...)
+	})
+}
+
+type ur10Subprocess struct {
+	cmd    *exec.Cmd
+	output *bytes.Buffer
+}
+
+func (child ur10Subprocess) wait() error {
+	return child.cmd.Wait()
+}
+
+func (child ur10Subprocess) outputString() string {
+	return child.output.String()
+}
+
+func newUR10Instruction(root, mode string) ur10SubprocessInstruction {
+	prefix := filepath.Join(root, "r10-"+mode)
+	return ur10SubprocessInstruction{
+		Mode:          mode,
+		Root:          root,
+		ReadyPath:     prefix + "-ready",
+		StartPath:     prefix + "-start",
+		AttemptedPath: prefix + "-attempted",
+		ContendedPath: prefix + "-contended",
+		AcquiredPath:  prefix + "-acquired",
+		ContinuePath:  prefix + "-continue",
+		DonePath:      prefix + "-done",
+	}
+}
+
+func startUR10Subprocess(t *testing.T, instruction ur10SubprocessInstruction) ur10Subprocess {
+	t.Helper()
+
+	instructionPath := filepath.Join(instruction.Root, "r10-"+instruction.Mode+"-instruction.json")
+	data, err := json.Marshal(instruction)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(instructionPath, data, 0o644))
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestShipmentBlockedRecoveryR10SubprocessHelper$", "-test.count=1")
+	cmd.Env = append(os.Environ(), ur10SubprocessInstructionEnv+"="+instructionPath)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	})
+	return ur10Subprocess{cmd: cmd, output: &output}
+}
+
+func runUR10RecoverySubprocess(t *testing.T, root string) {
+	t.Helper()
+
+	instruction := newUR10Instruction(root, "recovery")
+	child := startUR10Subprocess(t, instruction)
+	waitUR10Marker(t, instruction.AcquiredPath, "recovery global lock acquired")
+	writeUR10Marker(t, instruction.ContinuePath)
+	waitUR10Marker(t, instruction.DonePath, "recovery subprocess completed")
+	require.NoError(t, child.wait(), child.outputString())
+}
+
+func waitUR10Marker(t *testing.T, path, description string) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		} else if !os.IsNotExist(err) {
+			require.NoError(t, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	require.FailNow(t, "subprocess synchronization marker not observed", "%s: %s", description, path)
+}
+
+func writeUR10Marker(t *testing.T, path string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(path, []byte("ready"), 0o644))
+}
+
+func requireUR10MarkerAbsent(t *testing.T, path, message string) {
+	t.Helper()
+	_, err := os.Stat(path)
+	require.True(t, os.IsNotExist(err), message)
+}
+
+func TestShipmentBlockedRecoveryR10SubprocessHelper(t *testing.T) {
+	instructionPath := os.Getenv(ur10SubprocessInstructionEnv)
+	if instructionPath == "" {
+		t.Skip("subprocess-only R10 helper")
+	}
+
+	data, err := os.ReadFile(instructionPath)
+	require.NoError(t, err)
+	var instruction ur10SubprocessInstruction
+	require.NoError(t, json.Unmarshal(data, &instruction))
+
+	switch instruction.Mode {
+	case "recovery":
+		var acquiredOnce sync.Once
+		hook := func(phase string) {
+			if phase != "acquired" {
+				return
+			}
+			acquiredOnce.Do(func() {
+				writeUR10Marker(t, instruction.AcquiredPath)
+				waitUR10Marker(t, instruction.ContinuePath, "parent released recovery barrier")
+			})
+		}
+		ctx := context.WithValue(
+			context.Background(),
+			shipmentLifecycleGlobalLockHookContextKey{},
+			hook,
+		)
+		ws, openErr := NewWorkspace(ctx, instruction.Root)
+		require.NoError(t, openErr)
+		require.NoError(t, ws.Close())
+	case "competitor":
+		ws, openErr := NewWorkspace(context.Background(), instruction.Root)
+		require.NoError(t, openErr)
+		defer func() { require.NoError(t, ws.Close()) }()
+		writeUR10Marker(t, instruction.ReadyPath)
+		waitUR10Marker(t, instruction.StartPath, "parent started competing governed operation")
+
+		var attemptedOnce sync.Once
+		var contendedOnce sync.Once
+		var acquiredOnce sync.Once
+		hook := func(phase string) {
+			switch phase {
+			case "attempt":
+				attemptedOnce.Do(func() { writeUR10Marker(t, instruction.AttemptedPath) })
+			case "contended":
+				contendedOnce.Do(func() { writeUR10Marker(t, instruction.ContendedPath) })
+			case "acquired":
+				acquiredOnce.Do(func() { writeUR10Marker(t, instruction.AcquiredPath) })
+			}
+		}
+		ctx := context.WithValue(
+			context.Background(),
+			shipmentLifecycleGlobalLockHookContextKey{},
+			hook,
+		)
+		require.NoError(t, AddItemToShipment(ctx, ws, instruction.ShipmentID, instruction.ItemID))
+	default:
+		require.FailNow(t, "unsupported R10 subprocess mode", "%q", instruction.Mode)
+	}
+	writeUR10Marker(t, instruction.DonePath)
 }
