@@ -441,21 +441,13 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	// resolution, the non-member-feature snapshot, release-scope
 	// completion, and the shipment's own status write) now runs inside this
 	// SAME locked closure so no such window remains.
-	var explicitScope, releaseScope, featureIDs, returnedIDs []string
+	var explicitScope, releaseScope, featureIDs []string
 	var explicitScopeSet map[string]struct{}
 	var nonMemberFeatureSnapshots map[string]featureStatusSnapshot
 	var shipSnapshots map[string]shipArtifactSnapshot
 	// archivedIDs and restored are declared here (rather than at their first
 	// assignment) so both the locked closure below and the deferred fallback
 	// registered immediately after it observe/mutate the same variables.
-	// featureScopeRoots only discovers a non-member feature by walking UP
-	// from an explicitly listed descendant, so a feature nested UNDER an
-	// explicit-member root (reachable via AdoptItem re-parenting, e.g. a
-	// dotted "002.001-F") is captured as "non-member" even though
-	// collectArchiveCandidateIDs later sweeps it into archivedIDs anyway, as
-	// a genuine descendant of that explicit-member root. Restoring such a
-	// feature would revert an archival this same call just legitimately
-	// performed (review-fix, 133.004-T).
 	var archivedIDs []string
 	// restoreAttempted and restoreSucceeded are tracked separately (143.012-T)
 	// so the deferred fallback can distinguish "already restored successfully"
@@ -647,14 +639,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 			return fmt.Errorf("complete release scope: %w", err)
 		}
 
-		returnedIDs = make([]string, 0)
-		releaseScopeSet := toIDSet(releaseScope)
 		for _, featureID := range featureIDs {
-			returned, returnErr := returnUnreleasedFeatureItems(ctx, ws, featureID, releaseScopeSet)
-			if returnErr != nil {
-				return fmt.Errorf("return unreleased feature items for %s: %w", featureID, returnErr)
-			}
-			returnedIDs = append(returnedIDs, returned...)
 			// 133.004-T: only a covering feature that is itself an explicit
 			// shipment member is marked done here. A feature that is merely
 			// an ancestor of some shipped item, but was never itself a
@@ -675,7 +660,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		return nil, fmt.Errorf("ship shipment %s: %w", shipmentID, lockErr)
 	}
 
-	archiveIDs, err := collectArchiveCandidateIDs(ctx, ws, shipmentID, releaseScope, featureIDs, returnedIDs, explicitScopeSet)
+	archiveIDs, err := collectArchiveCandidateIDs(ctx, ws, shipmentID, releaseScope, featureIDs, explicitScopeSet)
 	if err != nil {
 		return nil, fmt.Errorf("ship shipment %s: collect archive scope: %w", shipmentID, err)
 	}
@@ -724,7 +709,6 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		ShipmentID:     shipmentID,
 		ShipmentStatus: string(ShipmentShipped),
 		ArchivedIDs:    archivedIDs,
-		ReturnedIDs:    uniqueNonEmptyStrings(returnedIDs),
 		CommitSHA:      commitSHA(commit),
 	}, nil
 }
@@ -748,48 +732,15 @@ func completeReleaseScope(ctx context.Context, ws *Workspace, releaseScope []str
 	return nil
 }
 
-func returnUnreleasedFeatureItems(ctx context.Context, ws *Workspace, featureID string, releaseScope map[string]struct{}) ([]string, error) {
-	descendants, err := descendantItems(ctx, ws, featureID)
-	if err != nil {
-		return nil, err
-	}
-
-	var returned []string
-	for _, item := range descendants {
-		if _, ok := releaseScope[item.ID]; ok {
-			continue
-		}
-		if isTerminalReleaseStatus(item.Status) {
-			continue
-		}
-		if item.Status != models.StatusQueued {
-			if _, err := setArtifactStatus(ctx, ws, item.ID, models.StatusQueued, "returned to backlog after release"); err != nil {
-				return nil, err
-			}
-		}
-		// Clear parent_id so the orphaned item is visible as unparented backlog.
-		// The hierarchical ID prefix preserves provenance without implying ownership.
-		if err := clearParentID(ctx, ws, item.ID); err != nil {
-			return nil, err
-		}
-		appendItemEvent(ctx, ws, item.ID, "returned_to_backlog", map[string]any{
-			"feature_id": featureID,
-		})
-		returned = append(returned, item.ID)
-	}
-	return uniqueNonEmptyStrings(returned), nil
-}
-
-func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, featureIDs, returnedIDs []string, explicitScope map[string]struct{}) ([]string, error) {
+func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, featureIDs []string, explicitScope map[string]struct{}) ([]string, error) {
 	candidates := []string{shipmentID}
-	returnedSet := toIDSet(returnedIDs)
 
 	for _, itemID := range releaseScope {
 		item, err := loadArtifact(ctx, ws, itemID)
 		if err != nil {
 			return nil, err
 		}
-		if _, returned := returnedSet[itemID]; returned || item.Status == models.StatusArchived {
+		if item.Status == models.StatusArchived {
 			continue
 		}
 		if isTerminalReleaseStatus(item.Status) {
@@ -798,13 +749,9 @@ func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID s
 	}
 
 	for _, featureID := range featureIDs {
-		// 133.004-T: a covering feature (and its descendants/linked
-		// deliberations) is only archived here when the feature is itself an
-		// explicit shipment member. An ancestor feature that is merely
-		// upstream of some shipped item, but was never listed in the
-		// manifest, must be left out of the archive scope entirely -- its
-		// own lifecycle and any of its other descendants are independent of
-		// this partial release (133-F).
+		// A covering feature is archived only when it is itself an explicit
+		// shipment member. Its descendants and linked deliberations remain
+		// independent unless their own IDs are explicit members.
 		if _, isMember := explicitScope[featureID]; !isMember {
 			continue
 		}
@@ -816,25 +763,6 @@ func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID s
 		if feature.Status != models.StatusArchived {
 			candidates = append(candidates, feature.ID)
 		}
-
-		descendants, err := descendantItems(ctx, ws, featureID)
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range descendants {
-			if _, returned := returnedSet[item.ID]; returned || item.Status == models.StatusArchived {
-				continue
-			}
-			if isTerminalReleaseStatus(item.Status) {
-				candidates = append(candidates, item.ID)
-			}
-		}
-
-		deliberations, err := linkedDeliberationIDs(ctx, ws, feature)
-		if err != nil {
-			return nil, err
-		}
-		candidates = append(candidates, deliberations...)
 	}
 
 	return uniqueNonEmptyStrings(candidates), nil
@@ -1178,59 +1106,6 @@ func featureScopeRoots(ctx context.Context, ws *Workspace, itemIDs []string) ([]
 		}
 	}
 	return featureIDs, nil
-}
-
-func linkedDeliberationIDs(ctx context.Context, ws *Workspace, feature *models.Artifact) ([]string, error) {
-	if feature == nil {
-		return nil, nil
-	}
-	var ids []string
-	if feature.CustomFields != nil {
-		if value, ok := feature.CustomFields["source_deliberation_id"].(string); ok && value != "" {
-			ids = append(ids, value)
-		}
-	}
-	ids = append(ids, deliberationIDPattern.FindAllString(feature.Description, -1)...)
-	for _, ref := range feature.References {
-		ids = append(ids, deliberationIDPattern.FindAllString(ref, -1)...)
-	}
-
-	unique := uniqueNonEmptyStrings(ids)
-	valid := make([]string, 0, len(unique))
-	for _, id := range unique {
-		item, err := loadArtifact(ctx, ws, id)
-		if err != nil {
-			if errors.Is(err, blerrors.ErrNotFound) {
-				continue
-			}
-			return nil, err
-		}
-		if item.ArtifactType == "deliberation" {
-			valid = append(valid, id)
-		}
-	}
-	return valid, nil
-}
-
-func descendantItems(ctx context.Context, ws *Workspace, parentID string) ([]*models.Artifact, error) {
-	queue := []string{parentID}
-	var descendants []*models.Artifact
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		children, err := bldb.QueryItems(ctx, ws.DB, bldb.QueryFilters{
-			ParentID:        current,
-			IncludeArchived: true,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("query children for %s: %w", current, err)
-		}
-		for _, child := range children {
-			descendants = append(descendants, child)
-			queue = append(queue, child.ID)
-		}
-	}
-	return descendants, nil
 }
 
 func setArtifactStatus(ctx context.Context, ws *Workspace, itemID string, newStatus models.ArtifactStatus, reason string) (*models.Artifact, error) {

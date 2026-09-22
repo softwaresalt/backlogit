@@ -37,10 +37,10 @@ func TestSizeCompositionResolvesFeatureMembersFromIndex(t *testing.T) {
 	assert.Empty(t, result.Skipped, "no member should be skipped when present in the index")
 }
 
-// TestSizeCompositionResolvesShipmentManifestFromIndex proves the shipment
-// manifest member-type resolution (task vs feature expansion) is also
-// index-backed, not a per-member filesystem WalkDir.
-func TestSizeCompositionResolvesShipmentManifestFromIndex(t *testing.T) {
+// TestSizeCompositionExcludesShipmentFeatureMembersFromIndex proves shipment
+// manifest member-type resolution excludes a listed feature without expanding
+// its indexed descendants.
+func TestSizeCompositionExcludesShipmentFeatureMembersFromIndex(t *testing.T) {
 	ws, _ := newSizeEstimationHarnessWorkspace(t)
 	ctx := context.Background()
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
@@ -59,8 +59,8 @@ func TestSizeCompositionResolvesShipmentManifestFromIndex(t *testing.T) {
 	result, err := SizeComposition(ctx, ws, shipment)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, 1, result.Histogram["L"], "expanded child task counted from index")
-	assert.Len(t, result.Members, 1)
+	assert.Zero(t, result.Histogram["L"], "unlisted child task must not be counted")
+	assert.Empty(t, result.Members)
 	assert.Empty(t, result.Skipped)
 }
 

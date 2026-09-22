@@ -303,7 +303,7 @@ func TestSE4SizeCompositionHarness(t *testing.T) {
 		assert.NotContains(t, string(rawAfter), "size_composition", "composition must never be persisted")
 	})
 
-	t.Run("shipment expands feature-only manifest and dedups explicit child tasks", func(t *testing.T) {
+	t.Run("shipment counts explicit tasks without expanding feature members", func(t *testing.T) {
 		ws, backlogitDir := newSizeEstimationHarnessWorkspace(t)
 		seedSizingHarnessArtifact(t, ws, backlogitDir, &models.Artifact{
 			ID:           "941-F",
@@ -331,8 +331,8 @@ func TestSE4SizeCompositionHarness(t *testing.T) {
 			Title:        "Composition shipment",
 			Status:       models.StatusActive,
 			ArtifactType: "shipment",
-			// Manifest lists the feature, one of its children explicitly (to prove
-			// de-duplication), and a dangling id (to prove warn-skip).
+			// Manifest lists the feature, one child explicitly, and a dangling
+			// ID. Only the explicit task is sizable.
 			CustomFields: map[string]any{"items": []any{"941-F", "941.001-T", "999.404-T"}},
 		}
 		seedSizingHarnessArtifact(t, ws, backlogitDir, shipment)
@@ -341,13 +341,9 @@ func TestSE4SizeCompositionHarness(t *testing.T) {
 		requireNoSizeEstimationTODO(t, err)
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		// 941-F expands to 941.001-T + 941.002-T; the explicitly-listed 941.001-T
-		// is de-duplicated so the sized child is counted exactly once.
-		assert.Equal(t, 1, result.Histogram["L"], "sized child counted once despite explicit + expanded membership")
-		// Task-only sizing: the feature is a rollup parent (expanded, not counted);
-		// only the two child tasks are members, one of them unsized.
-		assert.Equal(t, 1, result.Unsized, "only the unsized child task is unsized")
-		assert.Len(t, result.Members, 2, "the two child tasks, each counted once (feature excluded)")
+		assert.Equal(t, 1, result.Histogram["L"], "explicitly listed task is counted")
+		assert.Zero(t, result.Unsized, "unlisted child task must not contribute to sizing")
+		assert.Len(t, result.Members, 1, "only the explicitly listed task is a member")
 		assert.Contains(t, result.Skipped, "999.404-T", "the dangling manifest id is warn-skipped")
 		assert.Nil(t, result.RulesetVersion)
 

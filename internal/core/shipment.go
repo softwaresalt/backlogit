@@ -907,9 +907,8 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 // shipmentEventAppendError is the private boundary value carrying a governed
 // shipped-event append failure out of moveShipmentStatusWithHeadGuard so
 // ShipShipment's rollback defer classifies ONLY that error. Every other closure
-// error -- including untagged pre-append failures from completeReleaseScope,
-// returnUnreleasedFeatureItems, and the status cascades -- keeps the existing
-// unconditional rollback.
+// error -- including untagged pre-append failures from completeReleaseScope and
+// the status cascades -- keeps the existing unconditional rollback.
 //
 // It is declared here, in the unit that constructs it, rather than a unit
 // earlier: an unexported type with no constructor is reported by staticcheck's
