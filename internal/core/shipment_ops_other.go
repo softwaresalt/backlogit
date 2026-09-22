@@ -23,3 +23,8 @@ func writeShipmentOperationJournalFile(*os.File, string, string, []byte) error {
 	return fmt.Errorf("shipment operation journal writes are unsupported on this platform: %w",
 		blerrors.ErrValidation)
 }
+
+func removeShipmentOperationJournalTempFile(*os.File, string, string) error {
+	return fmt.Errorf("shipment operation journal temp cleanup is unsupported on this platform: %w",
+		blerrors.ErrValidation)
+}

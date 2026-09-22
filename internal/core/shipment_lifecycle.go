@@ -173,7 +173,7 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); err != nil {
 		return nil, rollback(fmt.Errorf("persist claim shipment %s commit: %w", shipmentID, err))
 	}
-	removeShipmentOperationJournal(operationCtx, journalPath)
+	removeShipmentOperationJournal(operationCtx, ws, journalPath)
 	return shipment, nil
 }
 
@@ -204,7 +204,7 @@ func rollbackShipmentClaim(
 		); err != nil {
 			rollbackErr = fmt.Errorf("persist claim compensation journal: %w", err)
 		} else {
-			removeShipmentOperationJournal(ctx, journalPath)
+			removeShipmentOperationJournal(ctx, ws, journalPath)
 		}
 	}
 	if rollbackErr != nil {

@@ -340,7 +340,7 @@ func reconcileShipmentLifecycleIntent(
 		if _, err := writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal); err != nil {
 			return nil, fmt.Errorf("persist shipment %s claim recovery journal: %w", journal.ShipmentID, err)
 		}
-		removeShipmentOperationJournal(ctx, journalPath)
+		removeShipmentOperationJournal(ctx, ws, journalPath)
 		return result, nil
 	}
 
@@ -1076,6 +1076,8 @@ func normalizeBlockedShipment(
 		if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
 			return nil, fmt.Errorf("recover pending shipment operations before normalize: %w", err)
 		}
+	} else if err := refusePendingShipmentLifecycleIntent(ws, shipmentID); err != nil {
+		return nil, err
 	}
 
 	membershipUnlock, err := lockShipmentMembership(ctx, ws, shipmentID)
@@ -1168,4 +1170,26 @@ func normalizeBlockedShipment(
 		return nil, fmt.Errorf("persist normalize shipment %s intent: %w", shipmentID, err)
 	}
 	return reconcileShipmentLifecycleIntent(lockedCtx, ws, journalPath, journal)
+}
+
+func refusePendingShipmentLifecycleIntent(ws *Workspace, shipmentID string) error {
+	records, _, err := inspectShipmentOperationJournals(ws)
+	if err != nil {
+		return fmt.Errorf("inspect shipment lifecycle ownership for %s: %w", shipmentID, err)
+	}
+	for _, record := range records {
+		if record.kind != shipmentLifecycleJournalKind ||
+			record.lifecycle.Phase != "intent" ||
+			record.lifecycle.ShipmentID != shipmentID {
+			continue
+		}
+		return fmt.Errorf(
+			"shipment %s already has nonterminal lifecycle intent %s (%s): %w",
+			shipmentID,
+			record.lifecycle.CorrelationID,
+			record.lifecycle.Operation,
+			blerrors.ErrShipmentConflict,
+		)
+	}
+	return nil
 }

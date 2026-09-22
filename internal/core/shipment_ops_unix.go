@@ -54,7 +54,10 @@ func writeShipmentOperationJournalFile(dir *os.File, _ string, name string, data
 		return fmt.Errorf("inspect shipment operation journal %s: %w", name, err)
 	}
 
-	tempName := ".shipment-operation-" + name + ".tmp"
+	tempName, err := shipmentOperationJournalTempName(name)
+	if err != nil {
+		return fmt.Errorf("derive shipment operation temp file: %w", err)
+	}
 	fd, err := unix.Openat(
 		int(dir.Fd()),
 		tempName,
@@ -98,6 +101,28 @@ func writeShipmentOperationJournalFile(dir *os.File, _ string, name string, data
 	cleanup = false
 	if err := dir.Sync(); err != nil {
 		return fmt.Errorf("sync shipment operations directory: %w", err)
+	}
+	return nil
+}
+
+func removeShipmentOperationJournalTempFile(dir *os.File, _ string, name string) error {
+	if _, ok := shipmentOperationJournalTempTarget(name); !ok {
+		return fmt.Errorf("shipment operation temp file %q is not writer-owned: %w",
+			name, blerrors.ErrValidation)
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstatat(int(dir.Fd()), name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return fmt.Errorf("inspect shipment operation temp file %s: %w", name, err)
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG {
+		return fmt.Errorf("shipment operation temp file %s is not regular: %w",
+			name, blerrors.ErrValidation)
+	}
+	if err := unix.Unlinkat(int(dir.Fd()), name, 0); err != nil {
+		return fmt.Errorf("remove shipment operation temp file %s: %w", name, err)
+	}
+	if err := dir.Sync(); err != nil {
+		return fmt.Errorf("sync shipment operations directory after temp cleanup: %w", err)
 	}
 	return nil
 }

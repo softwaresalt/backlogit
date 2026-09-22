@@ -620,10 +620,19 @@ type fileSnapshot struct {
 }
 
 type returnBlockedJournal struct {
-	Shipment *models.Artifact `json:"shipment"`
-	Item     *models.Artifact `json:"item"`
-	Reason   string           `json:"reason,omitempty"`
+	SchemaVersion  string           `json:"schema_version,omitempty"`
+	CorrelationID  string           `json:"correlation_id,omitempty"`
+	Phase          string           `json:"phase,omitempty"`
+	ShipmentID     string           `json:"shipment_id,omitempty"`
+	ItemID         string           `json:"item_id,omitempty"`
+	Shipment       *models.Artifact `json:"shipment"`
+	Item           *models.Artifact `json:"item"`
+	TargetShipment *models.Artifact `json:"target_shipment,omitempty"`
+	TargetItem     *models.Artifact `json:"target_item,omitempty"`
+	Reason         string           `json:"reason,omitempty"`
 }
+
+const returnBlockedJournalSchemaVersion = "return-blocked/v2"
 
 // CreateShipment creates a new shipment artifact in the workspace with the given
 // title and associates the specified item IDs with it. The shipment owns the items
@@ -1307,9 +1316,6 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 	}
 	originalShipment := cloneArtifact(shipment)
 	originalItem := cloneArtifact(item)
-	if err := writeReturnBlockedJournal(ws, originalShipment, originalItem, reason); err != nil {
-		return fmt.Errorf("journal return of item %s from shipment %s: %w", itemID, shipmentID, err)
-	}
 
 	if shipment.CustomFields == nil {
 		shipment.CustomFields = map[string]any{}
@@ -1324,24 +1330,50 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 	item.CustomFields["blocked_reason"] = reason
 	item.UpdatedAt = models.NowUTC()
 
+	journal, err := newReturnBlockedJournal(originalShipment, originalItem, shipment, item, reason)
+	if err != nil {
+		return fmt.Errorf("prepare return of item %s from shipment %s: %w", itemID, shipmentID, err)
+	}
+	if err := writeReturnBlockedJournalRecord(ws, journal); err != nil {
+		return fmt.Errorf("journal return of item %s from shipment %s: %w", itemID, shipmentID, err)
+	}
+
 	rolledBack, err := persistReturnedBlockedArtifacts(ctx, ws, originalShipment, shipment, originalItem, item)
 	if err != nil {
 		if rolledBack {
-			removeReturnBlockedJournal(ctx, ws.RootPath, originalShipment.ID, originalItem.ID)
+			removeReturnBlockedJournal(ctx, ws, originalShipment.ID, originalItem.ID)
 		}
 		return err
 	}
-	removeReturnBlockedJournal(ctx, ws.RootPath, originalShipment.ID, originalItem.ID)
+	if err := appendReturnBlockedEvidence(ctx, ws, journal); err != nil {
+		rollbackErr := rollbackReturnedBlockedArtifacts(ctx, ws, originalShipment, originalItem)
+		eventCleanupErr := removeShipmentOperationEvents(
+			context.WithoutCancel(ctx),
+			ws,
+			[]string{shipmentID, itemID},
+			journal.CorrelationID,
+		)
+		if rollbackErr != nil || eventCleanupErr != nil {
+			return &blerrors.MutationPartialError{
+				Completed:         []string{"shipment-membership", "blocked-item"},
+				FailedStep:        "return-blocked-evidence",
+				CompensationState: "partially-compensated",
+				Class:             "double-fault",
+				Cause:             errors.Join(err, rollbackErr, eventCleanupErr),
+			}
+		}
+		removeReturnBlockedJournal(ctx, ws, originalShipment.ID, originalItem.ID)
+		return fmt.Errorf("append return-blocked evidence for item %s from shipment %s: %w",
+			itemID, shipmentID, err)
+	}
+	journal.Phase = "committed"
+	if err := writeReturnBlockedJournalRecord(ws, journal); err != nil {
+		return fmt.Errorf("persist committed return of item %s from shipment %s: %w",
+			itemID, shipmentID, err)
+	}
+	removeReturnBlockedJournal(ctx, ws, originalShipment.ID, originalItem.ID)
 
 	slog.InfoContext(ctx, "shipment item returned blocked", "shipment_id", shipmentID, "item_id", itemID)
-	appendItemEvent(ctx, ws, shipmentID, "shipment_item_returned_blocked", map[string]any{
-		"item_id": itemID,
-		"reason":  reason,
-	})
-	appendItemEvent(ctx, ws, itemID, "item_blocked", map[string]any{
-		"shipment_id":    shipmentID,
-		"blocked_reason": reason,
-	})
 
 	return nil
 }
@@ -2032,20 +2064,95 @@ func returnBlockedJournalPath(rootPath, shipmentID, itemID string) string {
 	return filepath.Join(shipmentOpsRoot(rootPath), fmt.Sprintf("return-blocked-%s-%s.json", shipmentID, itemID))
 }
 
+func newReturnBlockedJournal(
+	shipment *models.Artifact,
+	item *models.Artifact,
+	targetShipment *models.Artifact,
+	targetItem *models.Artifact,
+	reason string,
+) (returnBlockedJournal, error) {
+	var correlationBytes [16]byte
+	if _, err := rand.Read(correlationBytes[:]); err != nil {
+		return returnBlockedJournal{}, fmt.Errorf("generate return-blocked correlation id: %w", err)
+	}
+	return returnBlockedJournal{
+		SchemaVersion:  returnBlockedJournalSchemaVersion,
+		CorrelationID:  hex.EncodeToString(correlationBytes[:]),
+		Phase:          "intent",
+		ShipmentID:     shipment.ID,
+		ItemID:         item.ID,
+		Shipment:       cloneArtifact(shipment),
+		Item:           cloneArtifact(item),
+		TargetShipment: cloneArtifact(targetShipment),
+		TargetItem:     cloneArtifact(targetItem),
+		Reason:         reason,
+	}, nil
+}
+
+func validateReturnBlockedJournalTargets(journal returnBlockedJournal) error {
+	if !containsString(NormalizeShipmentItems(journal.Shipment), journal.Item.ID) {
+		return fmt.Errorf("return-blocked preimage does not contain item %s: %w",
+			journal.Item.ID, blerrors.ErrValidation)
+	}
+	expectedShipment := cloneArtifact(journal.Shipment)
+	if expectedShipment.CustomFields == nil {
+		expectedShipment.CustomFields = map[string]any{}
+	}
+	expectedShipment.CustomFields["items"] = removeString(
+		NormalizeShipmentItems(expectedShipment),
+		journal.Item.ID,
+	)
+	expectedShipment.UpdatedAt = journal.TargetShipment.UpdatedAt
+	shipmentMatches, err := recoveryArtifactMatchesAny(
+		journal.TargetShipment,
+		[]recoveryArtifactCandidate{{artifact: expectedShipment}},
+	)
+	if err != nil {
+		return fmt.Errorf("compare return-blocked shipment target: %w", err)
+	}
+
+	expectedItem := cloneArtifact(journal.Item)
+	if expectedItem.CustomFields == nil {
+		expectedItem.CustomFields = map[string]any{}
+	}
+	expectedItem.Status = models.StatusBlocked
+	expectedItem.CustomFields["blocked_reason"] = journal.Reason
+	expectedItem.UpdatedAt = journal.TargetItem.UpdatedAt
+	itemMatches, err := recoveryArtifactMatchesAny(
+		journal.TargetItem,
+		[]recoveryArtifactCandidate{{artifact: expectedItem}},
+	)
+	if err != nil {
+		return fmt.Errorf("compare return-blocked item target: %w", err)
+	}
+	if !shipmentMatches || !itemMatches {
+		return fmt.Errorf("return-blocked target is not derived from its durable preimage: %w",
+			blerrors.ErrValidation)
+	}
+	return nil
+}
+
 func writeReturnBlockedJournal(ws *Workspace, shipment, item *models.Artifact, reasons ...string) error {
 	reason := ""
 	if len(reasons) > 0 {
 		reason = reasons[0]
 	}
-	payload, err := json.MarshalIndent(returnBlockedJournal{
+	return writeReturnBlockedJournalRecord(ws, returnBlockedJournal{
 		Shipment: cloneArtifact(shipment),
 		Item:     cloneArtifact(item),
 		Reason:   reason,
-	}, "", "  ")
+	})
+}
+
+func writeReturnBlockedJournalRecord(ws *Workspace, journal returnBlockedJournal) error {
+	payload, err := json.MarshalIndent(journal, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal journal: %w", err)
 	}
-	name := filepath.Base(returnBlockedJournalPath(ws.RootPath, shipment.ID, item.ID))
+	if journal.Shipment == nil || journal.Item == nil {
+		return fmt.Errorf("return-blocked journal preimage is incomplete: %w", blerrors.ErrValidation)
+	}
+	name := filepath.Base(returnBlockedJournalPath(ws.RootPath, journal.Shipment.ID, journal.Item.ID))
 	if _, _, err := validateShipmentOperationJournalName(name); err != nil {
 		return err
 	}
@@ -2060,12 +2167,129 @@ func writeReturnBlockedJournal(ws *Workspace, shipment, item *models.Artifact, r
 	return nil
 }
 
-func removeReturnBlockedJournal(ctx context.Context, rootPath, shipmentID, itemID string) {
-	removeShipmentOperationJournal(ctx, returnBlockedJournalPath(rootPath, shipmentID, itemID))
+func appendReturnBlockedEvidence(ctx context.Context, ws *Workspace, journal returnBlockedJournal) error {
+	operationCtx := withShipmentOperation(ctx, journal.CorrelationID)
+	for _, expected := range returnBlockedEvidenceSpecs(journal) {
+		present, err := returnBlockedEvidencePresent(operationCtx, ws, journal, expected.itemID, expected.eventType,
+			expected.delta)
+		if err != nil {
+			return err
+		}
+		if present {
+			continue
+		}
+		if err := appendItemEventErr(operationCtx, ws, expected.itemID, expected.eventType, expected.delta); err != nil {
+			return fmt.Errorf("append %s return-blocked evidence: %w", expected.itemID, err)
+		}
+	}
+	return nil
 }
 
-func removeShipmentOperationJournal(ctx context.Context, journalPath string) {
-	if err := os.Remove(journalPath); err != nil && !os.IsNotExist(err) {
+type returnBlockedEvidenceSpec struct {
+	itemID    string
+	eventType string
+	delta     map[string]any
+}
+
+func returnBlockedEvidenceSpecs(journal returnBlockedJournal) []returnBlockedEvidenceSpec {
+	return []returnBlockedEvidenceSpec{
+		{
+			itemID:    journal.Shipment.ID,
+			eventType: "shipment_item_returned_blocked",
+			delta: map[string]any{
+				"correlation_id": journal.CorrelationID,
+				"evidence_id":    journal.CorrelationID + ":shipment",
+				"item_id":        journal.Item.ID,
+				"operation":      "return_blocked",
+				"phase":          "applied",
+				"reason":         journal.Reason,
+			},
+		},
+		{
+			itemID:    journal.Item.ID,
+			eventType: "item_blocked",
+			delta: map[string]any{
+				"blocked_reason": journal.Reason,
+				"correlation_id": journal.CorrelationID,
+				"evidence_id":    journal.CorrelationID + ":item",
+				"operation":      "return_blocked",
+				"phase":          "applied",
+				"shipment_id":    journal.Shipment.ID,
+			},
+		},
+	}
+}
+
+func validateReturnBlockedEvidence(ctx context.Context, ws *Workspace, journal returnBlockedJournal) error {
+	operationCtx := withShipmentOperation(ctx, journal.CorrelationID)
+	for _, expected := range returnBlockedEvidenceSpecs(journal) {
+		present, err := returnBlockedEvidencePresent(
+			operationCtx,
+			ws,
+			journal,
+			expected.itemID,
+			expected.eventType,
+			expected.delta,
+		)
+		if err != nil {
+			return err
+		}
+		if !present {
+			return fmt.Errorf(
+				"committed return-blocked correlation %s lacks %s evidence on %s: %w",
+				journal.CorrelationID,
+				expected.eventType,
+				expected.itemID,
+				blerrors.ErrShipmentConflict,
+			)
+		}
+	}
+	return nil
+}
+
+func returnBlockedEvidencePresent(
+	ctx context.Context,
+	ws *Workspace,
+	journal returnBlockedJournal,
+	itemID string,
+	eventType string,
+	expected map[string]any,
+) (bool, error) {
+	itemEvents, err := events.ReadAllEvents(ctx, WorkspaceLogsRoot(ws.RootPath), itemID)
+	if err != nil {
+		return false, fmt.Errorf("read return-blocked evidence for %s: %w", itemID, err)
+	}
+	for _, event := range itemEvents {
+		if !isShipmentOperationEvent(event, journal.CorrelationID) {
+			continue
+		}
+		if event.EventType != eventType {
+			return false, fmt.Errorf("return-blocked correlation %s has unexpected event type %s on %s: %w",
+				journal.CorrelationID, event.EventType, itemID, blerrors.ErrShipmentConflict)
+		}
+		for key, value := range expected {
+			if event.Delta[key] != value {
+				return false, fmt.Errorf(
+					"return-blocked correlation %s has conflicting %s evidence on %s: %w",
+					journal.CorrelationID, key, itemID, blerrors.ErrShipmentConflict,
+				)
+			}
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func removeReturnBlockedJournal(ctx context.Context, ws *Workspace, shipmentID, itemID string) {
+	removeShipmentOperationJournal(ctx, ws, returnBlockedJournalPath(ws.RootPath, shipmentID, itemID))
+}
+
+func removeShipmentOperationJournal(ctx context.Context, ws *Workspace, journalPath string) {
+	remove := os.Remove
+	if ws != nil && ws.removeShipmentOperationJournal != nil {
+		remove = ws.removeShipmentOperationJournal
+	}
+	if err := remove(journalPath); err != nil && !os.IsNotExist(err) {
 		slog.WarnContext(ctx, "remove shipment operation journal", "path", journalPath, "error", err)
 	}
 }
@@ -2140,6 +2364,9 @@ func recoverReturnBlockedJournal(ctx context.Context, ws *Workspace, record ship
 	if journal.Shipment == nil || journal.Item == nil {
 		return fmt.Errorf("shipment journal %s is incomplete", record.path)
 	}
+	if journal.SchemaVersion == "" {
+		return recoverLegacyReturnBlockedJournal(ctx, ws, record)
+	}
 	currentShipment, err := findArtifact(ctx, ws, journal.Shipment.ID)
 	if err != nil {
 		return fmt.Errorf("load shipment %s return recovery state: %w", journal.Shipment.ID, err)
@@ -2147,6 +2374,103 @@ func recoverReturnBlockedJournal(ctx context.Context, ws *Workspace, record ship
 	currentItem, err := findArtifact(ctx, ws, journal.Item.ID)
 	if err != nil {
 		return fmt.Errorf("load item %s return recovery state: %w", journal.Item.ID, err)
+	}
+	shipmentPreimage, err := recoveryArtifactMatchesAny(
+		currentShipment,
+		[]recoveryArtifactCandidate{{artifact: journal.Shipment}},
+	)
+	if err != nil {
+		return fmt.Errorf("compare shipment %s return recovery state: %w", journal.Shipment.ID, err)
+	}
+	shipmentTarget, err := recoveryArtifactMatchesAny(
+		currentShipment,
+		[]recoveryArtifactCandidate{{artifact: journal.TargetShipment}},
+	)
+	if err != nil {
+		return fmt.Errorf("compare shipment %s return recovery target: %w", journal.Shipment.ID, err)
+	}
+	itemPreimage, err := recoveryArtifactMatchesAny(
+		currentItem,
+		[]recoveryArtifactCandidate{{artifact: journal.Item}},
+	)
+	if err != nil {
+		return fmt.Errorf("compare item %s return recovery state: %w", journal.Item.ID, err)
+	}
+	itemTarget, err := recoveryArtifactMatchesAny(
+		currentItem,
+		[]recoveryArtifactCandidate{{artifact: journal.TargetItem}},
+	)
+	if err != nil {
+		return fmt.Errorf("compare item %s return recovery target: %w", journal.Item.ID, err)
+	}
+	if (!shipmentPreimage && !shipmentTarget) || (!itemPreimage && !itemTarget) {
+		return fmt.Errorf(
+			"return-blocked journal %s diverged from its durable intent: %w",
+			record.path,
+			blerrors.ErrShipmentConflict,
+		)
+	}
+
+	if journal.Phase == "committed" {
+		if !shipmentTarget || !itemTarget {
+			return fmt.Errorf(
+				"committed return-blocked journal %s does not match its target state: %w",
+				record.path,
+				blerrors.ErrShipmentConflict,
+			)
+		}
+		if err := validateReturnBlockedEvidence(ctx, ws, journal); err != nil {
+			return err
+		}
+		removeReturnBlockedJournal(ctx, ws, journal.Shipment.ID, journal.Item.ID)
+		return nil
+	}
+
+	if shipmentTarget && itemTarget {
+		if err := appendReturnBlockedEvidence(ctx, ws, journal); err != nil {
+			return fmt.Errorf("complete return-blocked evidence for journal %s: %w", record.path, err)
+		}
+		journal.Phase = "committed"
+		if err := writeReturnBlockedJournalRecord(ws, journal); err != nil {
+			return fmt.Errorf("persist recovered return-blocked commit %s: %w", record.path, err)
+		}
+		removeReturnBlockedJournal(ctx, ws, journal.Shipment.ID, journal.Item.ID)
+		return nil
+	}
+
+	recoveryCtx, cancel := boundedShipmentRecoveryContext(ctx)
+	defer cancel()
+	if err := persistArtifact(recoveryCtx, ws, journal.Item, true); err != nil {
+		return fmt.Errorf("restore item %s from journal: %w", journal.Item.ID, err)
+	}
+	if err := persistArtifact(recoveryCtx, ws, journal.Shipment, false); err != nil {
+		return fmt.Errorf("restore shipment %s from journal: %w", journal.Shipment.ID, err)
+	}
+	if err := removeShipmentOperationEvents(
+		recoveryCtx,
+		ws,
+		[]string{journal.Shipment.ID, journal.Item.ID},
+		journal.CorrelationID,
+	); err != nil {
+		return fmt.Errorf("remove rolled-back return-blocked evidence: %w", err)
+	}
+	removeReturnBlockedJournal(recoveryCtx, ws, journal.Shipment.ID, journal.Item.ID)
+	return nil
+}
+
+func recoverLegacyReturnBlockedJournal(
+	ctx context.Context,
+	ws *Workspace,
+	record shipmentOperationJournalRecord,
+) error {
+	journal := record.returnBlocked
+	currentShipment, err := findArtifact(ctx, ws, journal.Shipment.ID)
+	if err != nil {
+		return fmt.Errorf("load shipment %s legacy return recovery state: %w", journal.Shipment.ID, err)
+	}
+	currentItem, err := findArtifact(ctx, ws, journal.Item.ID)
+	if err != nil {
+		return fmt.Errorf("load item %s legacy return recovery state: %w", journal.Item.ID, err)
 	}
 	shipmentTarget := cloneArtifact(journal.Shipment)
 	shipmentTarget.CustomFields["items"] = removeString(NormalizeShipmentItems(shipmentTarget), journal.Item.ID)
@@ -2165,11 +2489,11 @@ func recoverReturnBlockedJournal(ctx context.Context, ws *Workspace, record ship
 		{artifact: shipmentTarget, ignoreUpdatedAt: true},
 	})
 	if err != nil {
-		return fmt.Errorf("compare shipment %s return recovery state: %w", journal.Shipment.ID, err)
+		return fmt.Errorf("compare shipment %s legacy return recovery state: %w", journal.Shipment.ID, err)
 	}
 	itemMatches, err := recoveryArtifactMatchesAny(currentItem, itemTargets)
 	if err != nil {
-		return fmt.Errorf("compare item %s return recovery state: %w", journal.Item.ID, err)
+		return fmt.Errorf("compare item %s legacy return recovery state: %w", journal.Item.ID, err)
 	}
 	if !shipmentMatches || !itemMatches {
 		return fmt.Errorf(
@@ -2182,11 +2506,11 @@ func recoverReturnBlockedJournal(ctx context.Context, ws *Workspace, record ship
 	recoveryCtx, cancel := boundedShipmentRecoveryContext(ctx)
 	defer cancel()
 	if err := persistArtifact(recoveryCtx, ws, journal.Shipment, false); err != nil {
-		return fmt.Errorf("restore shipment %s from journal: %w", journal.Shipment.ID, err)
+		return fmt.Errorf("restore shipment %s from legacy journal: %w", journal.Shipment.ID, err)
 	}
 	if err := persistArtifact(recoveryCtx, ws, journal.Item, true); err != nil {
-		return fmt.Errorf("restore item %s from journal: %w", journal.Item.ID, err)
+		return fmt.Errorf("restore item %s from legacy journal: %w", journal.Item.ID, err)
 	}
-	removeReturnBlockedJournal(recoveryCtx, ws.RootPath, journal.Shipment.ID, journal.Item.ID)
+	removeReturnBlockedJournal(recoveryCtx, ws, journal.Shipment.ID, journal.Item.ID)
 	return nil
 }

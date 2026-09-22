@@ -97,11 +97,22 @@ func writeShipmentOperationJournalFile(_ *os.File, opsRoot, name string, data []
 		return fmt.Errorf("inspect existing shipment operation journal: %w", err)
 	}
 
-	temp, err := os.CreateTemp(opsRoot, ".shipment-operation-*.tmp")
+	tempName, err := shipmentOperationJournalTempName(name)
+	if err != nil {
+		return fmt.Errorf("derive shipment operation journal temp file: %w", err)
+	}
+	tempPath := filepath.Join(opsRoot, tempName)
+	if _, statErr := os.Lstat(tempPath); statErr == nil {
+		if removeErr := removeShipmentOperationJournalTempFile(nil, opsRoot, tempName); removeErr != nil {
+			return fmt.Errorf("remove stale shipment operation journal temp file: %w", removeErr)
+		}
+	} else if !os.IsNotExist(statErr) {
+		return fmt.Errorf("inspect shipment operation journal temp file: %w", statErr)
+	}
+	temp, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("create shipment operation journal temp file: %w", err)
 	}
-	tempPath := temp.Name()
 	defer func() { _ = os.Remove(tempPath) }()
 	if err := validateShipmentOpsWindowsFileHandle(windows.Handle(temp.Fd()), opsRoot, tempPath); err != nil {
 		_ = temp.Close()
@@ -129,6 +140,34 @@ func writeShipmentOperationJournalFile(_ *os.File, opsRoot, name string, data []
 	}
 	if err := windows.MoveFileEx(from, to, windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH); err != nil {
 		return fmt.Errorf("replace shipment operation journal: %w", err)
+	}
+	return nil
+}
+
+func removeShipmentOperationJournalTempFile(_ *os.File, opsRoot, name string) error {
+	if _, ok := shipmentOperationJournalTempTarget(name); !ok {
+		return fmt.Errorf("shipment operation temp file %q is not writer-owned: %w",
+			name, blerrors.ErrValidation)
+	}
+	path := filepath.Join(opsRoot, name)
+	handle, err := openShipmentOpsWindowsHandle(
+		path,
+		windows.GENERIC_READ,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_OPEN_REPARSE_POINT,
+	)
+	if err != nil {
+		return fmt.Errorf("open shipment operation temp file: %w", err)
+	}
+	if err := validateShipmentOpsWindowsFileHandle(handle, opsRoot, path); err != nil {
+		_ = windows.CloseHandle(handle)
+		return err
+	}
+	if err := windows.CloseHandle(handle); err != nil {
+		return fmt.Errorf("close shipment operation temp file: %w", err)
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("remove shipment operation temp file: %w", err)
 	}
 	return nil
 }

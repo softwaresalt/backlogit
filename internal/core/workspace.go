@@ -66,6 +66,9 @@ type Workspace struct {
 	// directory aborts the ship earlier and leaves the rollback map empty.
 	// Nil means use the real appendShipmentEventErr.
 	shipmentEventAppend func(ctx context.Context, ws *Workspace, itemID, eventType string, delta map[string]any) error
+	// removeShipmentOperationJournal allows tests to inject a cleanup failure
+	// after a shipment operation has durably committed. Nil uses os.Remove.
+	removeShipmentOperationJournal func(path string) error
 	// webhookNotifier is stored for shutdown draining. Unexported.
 	webhookNotifier interface{ Shutdown(context.Context) error }
 }

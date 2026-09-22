@@ -29,6 +29,12 @@ var (
 	returnBlockedJournalNamePattern = regexp.MustCompile(
 		`^return-blocked-([0-9]+(?:\.[0-9]+)*-[A-Za-z]+)-([0-9]+(?:\.[0-9]+)*-[A-Za-z]+)\.json$`,
 	)
+	returnBlockedCorrelationIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
+)
+
+const (
+	shipmentOperationJournalTempPrefix = ".shipment-operation-"
+	shipmentOperationJournalTempSuffix = ".tmp"
 )
 
 type shipmentOperationJournalRecord struct {
@@ -106,19 +112,47 @@ func validateShipmentOperationJournalName(name string) (shipmentOperationJournal
 		name, blerrors.ErrValidation)
 }
 
-func loadShipmentOperationJournals(ws *Workspace) ([]shipmentOperationJournalRecord, error) {
+func shipmentOperationJournalTempName(journalName string) (string, error) {
+	if _, _, err := validateShipmentOperationJournalName(journalName); err != nil {
+		return "", err
+	}
+	return shipmentOperationJournalTempPrefix + journalName + shipmentOperationJournalTempSuffix, nil
+}
+
+func shipmentOperationJournalTempTarget(name string) (string, bool) {
+	if !strings.HasPrefix(name, shipmentOperationJournalTempPrefix) ||
+		!strings.HasSuffix(name, shipmentOperationJournalTempSuffix) {
+		return "", false
+	}
+	target := strings.TrimSuffix(
+		strings.TrimPrefix(name, shipmentOperationJournalTempPrefix),
+		shipmentOperationJournalTempSuffix,
+	)
+	if target == "" {
+		return "", false
+	}
+	if _, _, err := validateShipmentOperationJournalName(target); err != nil {
+		return "", false
+	}
+	expected, err := shipmentOperationJournalTempName(target)
+	return target, err == nil && expected == name
+}
+
+func inspectShipmentOperationJournals(
+	ws *Workspace,
+) ([]shipmentOperationJournalRecord, []error, error) {
 	opsRoot, dir, err := shipmentOpsRootForWorkspace(ws, false)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer dir.Close()
 
 	entries, err := dir.ReadDir(-1)
 	if err != nil {
-		return nil, fmt.Errorf("enumerate shipment operations directory: %w", err)
+		return nil, nil, fmt.Errorf("enumerate shipment operations directory: %w", err)
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() < entries[j].Name()
@@ -128,6 +162,31 @@ func loadShipmentOperationJournals(ws *Workspace) ([]shipmentOperationJournalRec
 	var validationErrs []error
 	for _, entry := range entries {
 		name := entry.Name()
+		if _, temp := shipmentOperationJournalTempTarget(name); temp {
+			info, infoErr := entry.Info()
+			if infoErr != nil {
+				validationErrs = append(validationErrs,
+					fmt.Errorf("inspect shipment operation temp file %s: %w", name, infoErr))
+				continue
+			}
+			redirected, redirectErr := IsSymlinkOrReparsePoint(info, filepath.Join(opsRoot, name))
+			if redirectErr != nil {
+				validationErrs = append(validationErrs,
+					fmt.Errorf("inspect shipment operation temp file %s redirect: %w", name, redirectErr))
+				continue
+			}
+			if redirected || !info.Mode().IsRegular() {
+				validationErrs = append(validationErrs,
+					fmt.Errorf("shipment operation temp file %s is not a regular unredirected file: %w",
+						name, blerrors.ErrValidation))
+				continue
+			}
+			if removeErr := removeShipmentOperationJournalTempFile(dir, opsRoot, name); removeErr != nil {
+				validationErrs = append(validationErrs,
+					fmt.Errorf("remove shipment operation temp residue %s: %w", name, removeErr))
+			}
+			continue
+		}
 		kind, captures, nameErr := validateShipmentOperationJournalName(name)
 		if nameErr != nil {
 			validationErrs = append(validationErrs, nameErr)
@@ -182,16 +241,48 @@ func loadShipmentOperationJournals(ws *Workspace) ([]shipmentOperationJournalRec
 					fmt.Errorf("parse return-blocked journal %s: %w", name, decodeErr))
 				continue
 			}
-			if record.returnBlocked.Shipment == nil || record.returnBlocked.Item == nil ||
-				record.returnBlocked.Shipment.ID != captures[0] ||
-				record.returnBlocked.Item.ID != captures[1] {
+			if validationErr := validateReturnBlockedJournal(record.returnBlocked, captures); validationErr != nil {
 				validationErrs = append(validationErrs,
-					fmt.Errorf("return-blocked journal %s does not match its filename: %w",
-						name, blerrors.ErrValidation))
+					fmt.Errorf("validate return-blocked journal %s: %w", name, validationErr))
 				continue
 			}
 		}
 		records = append(records, record)
+	}
+	return records, validationErrs, nil
+}
+
+func validateReturnBlockedJournal(journal returnBlockedJournal, captures []string) error {
+	if journal.Shipment == nil || journal.Item == nil ||
+		len(captures) != 2 ||
+		journal.Shipment.ID != captures[0] ||
+		journal.Item.ID != captures[1] {
+		return fmt.Errorf("journal does not match its filename: %w", blerrors.ErrValidation)
+	}
+	if journal.SchemaVersion == "" {
+		return nil
+	}
+	if journal.SchemaVersion != returnBlockedJournalSchemaVersion ||
+		!returnBlockedCorrelationIDPattern.MatchString(journal.CorrelationID) ||
+		(journal.Phase != "intent" && journal.Phase != "committed") ||
+		journal.ShipmentID != journal.Shipment.ID ||
+		journal.ItemID != journal.Item.ID ||
+		journal.TargetShipment == nil ||
+		journal.TargetItem == nil ||
+		journal.TargetShipment.ID != journal.Shipment.ID ||
+		journal.TargetItem.ID != journal.Item.ID {
+		return fmt.Errorf("journal durable intent is incomplete: %w", blerrors.ErrValidation)
+	}
+	if err := validateReturnBlockedJournalTargets(journal); err != nil {
+		return err
+	}
+	return nil
+}
+
+func loadShipmentOperationJournals(ws *Workspace) ([]shipmentOperationJournalRecord, error) {
+	records, validationErrs, err := inspectShipmentOperationJournals(ws)
+	if err != nil {
+		return nil, err
 	}
 	if err := errors.Join(validationErrs...); err != nil {
 		return nil, err
