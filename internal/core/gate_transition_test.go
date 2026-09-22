@@ -281,7 +281,8 @@ func TestUpdateArtifactWithGate_ShipmentToShipped_Refused_GateOff(t *testing.T) 
 
 	shipment, err := CreateShipment(ctx, ws, "Guard-test shipment", nil)
 	require.NoError(t, err)
-	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentActive))
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
 
 	_, _, err = UpdateArtifactWithGate(ctx, ws, shipment.ID,
 		map[string]any{"status": string(ShipmentShipped)},
@@ -291,7 +292,7 @@ func TestUpdateArtifactWithGate_ShipmentToShipped_Refused_GateOff(t *testing.T) 
 		"want ErrShipmentShippedRequiresEnvelope; got %v", err)
 }
 
-func TestUpdateArtifactWithGate_ShipmentToNonShipped_Unaffected(t *testing.T) {
+func TestUpdateArtifactWithGate_ShipmentToActive_RefusedUngoverned(t *testing.T) {
 	ws := newGateTestWorkspace(t)
 	ws.Config.FormalGate = nil
 	ctx := context.Background()
@@ -299,9 +300,10 @@ func TestUpdateArtifactWithGate_ShipmentToNonShipped_Unaffected(t *testing.T) {
 	shipment, err := CreateShipment(ctx, ws, "Transition-guard non-shipped shipment", nil)
 	require.NoError(t, err)
 
-	// queued→active must not be refused by guard 1.
 	_, _, err = UpdateArtifactWithGate(ctx, ws, shipment.ID,
 		map[string]any{"status": string(ShipmentActive)},
 		TransitionOptions{})
-	require.NoError(t, err, "non-shipped transition must not be refused by guard 1")
+	require.Error(t, err, "ungoverned queued-to-active shipment transition must be refused")
+	assert.ErrorIs(t, err, bkerrors.ErrShipmentBlockedRequiresEnvelope)
+	assert.Equal(t, string(ShipmentQueued), statusOf(t, ws, shipment.ID))
 }

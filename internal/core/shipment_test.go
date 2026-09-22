@@ -114,8 +114,8 @@ func TestCreateShipment_RejectsAlreadyAssignedItem(t *testing.T) {
 	assert.ErrorIs(t, err, blerrors.ErrItemAlreadyAssigned)
 }
 
-// T002 / ST012: Move shipment from queued to active.
-func TestMoveShipmentStatus_QueuedToActive(t *testing.T) {
+// T002 / ST012: Claim shipment from queued to active.
+func TestClaimShipment_QueuedToActive(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
@@ -123,10 +123,11 @@ func TestMoveShipmentStatus_QueuedToActive(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	err = MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentActive)
+	claimed, err := ClaimShipment(ctx, ws, shipment.ID)
 
 	// Assert
 	require.NoError(t, err)
+	assert.Equal(t, "active", string(claimed.Status))
 	updated, err := GetShipment(ctx, ws, shipment.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "active", string(updated.Status))
@@ -171,7 +172,8 @@ func TestMoveShipmentStatus_ActiveToShipped(t *testing.T) {
 	ctx := context.Background()
 	shipment, err := CreateShipment(ctx, ws, "Deliver shipment", nil)
 	require.NoError(t, err)
-	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentActive))
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
 
 	// After 144-F guard 1, the exported MoveShipmentStatus (topLevel=true)
 	// must refuse ShipmentShipped unconditionally.
@@ -1012,7 +1014,8 @@ func TestAddItemToShipment_AllowsItemAfterShippedShipment(t *testing.T) {
 	secondShipment, err := CreateShipment(ctx, ws, "Shipment 2", nil)
 	require.NoError(t, err)
 	require.NoError(t, AddItemToShipment(ctx, ws, firstShipment.ID, task.ID))
-	require.NoError(t, MoveShipmentStatus(ctx, ws, firstShipment.ID, ShipmentActive))
+	_, err = ClaimShipment(ctx, ws, firstShipment.ID)
+	require.NoError(t, err)
 	// Use the internal ungoverned path (topLevel=false) as a test fixture to
 	// reach "shipped" without the governed ShipShipment envelope.
 	require.NoError(t, moveShipmentStatusWithHeadGuard(ctx, ws, firstShipment.ID, ShipmentShipped, false, ""))
@@ -1038,7 +1041,8 @@ func TestAddItemToShipment_RejectsTerminalShipment(t *testing.T) {
 	require.NoError(t, err)
 	shipment, err := CreateShipment(ctx, ws, "Terminal shipment", nil)
 	require.NoError(t, err)
-	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentActive))
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
 	// Use the internal ungoverned path (topLevel=false) as a test fixture.
 	require.NoError(t, moveShipmentStatusWithHeadGuard(ctx, ws, shipment.ID, ShipmentShipped, false, ""))
 
@@ -1588,8 +1592,8 @@ func TestMoveShipmentStatus_ToShipped_Refused_Ungoverned(t *testing.T) {
 	shipment, err := CreateShipment(ctx, ws, "Guard-test shipment ungoverned", nil)
 	require.NoError(t, err)
 
-	// Move to active first (this is fine — active is not "shipped").
-	require.NoError(t, MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentActive))
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
 
 	// Ungoverned shipped via the exported MoveShipmentStatus (topLevel=true).
 	err = MoveShipmentStatus(ctx, ws, shipment.ID, ShipmentShipped)
