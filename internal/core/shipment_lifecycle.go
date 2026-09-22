@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -60,8 +63,16 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 		return nil, fmt.Errorf("recover pending shipment operations before claim: %w", err)
 	}
 
-	// Snapshot the pre-claim shipment before any mutation so a mid-flight
-	// failure can be rolled back to a fully queued state.
+	membershipUnlock, err := lockShipmentMembership(ctx, ws, shipmentID)
+	if err != nil {
+		return nil, fmt.Errorf("lock shipment %s membership: %w", shipmentID, err)
+	}
+	defer func() {
+		if unlockErr := membershipUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment membership lock", "shipment_id", shipmentID, "error", unlockErr)
+		}
+	}()
+
 	current, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return nil, err
@@ -72,92 +83,167 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 	if err := ensureShipmentActiveSlotAvailable(ws, shipmentID); err != nil {
 		return nil, fmt.Errorf("claim shipment %s: %w", shipmentID, err)
 	}
-	preClaimShipment := cloneArtifact(current)
 
-	activationCtx := context.WithValue(ctx, governedShipmentActivationContextKey{}, struct{}{})
-	if err := MoveShipmentStatus(activationCtx, ws, shipmentID, ShipmentActive); err != nil {
-		return nil, err
-	}
-
-	shipment, err := GetShipment(ctx, ws, shipmentID)
+	memberIDs := NormalizeShipmentItems(current)
+	relatedIDs, err := shipmentClaimAncestorIDs(ctx, ws, memberIDs)
 	if err != nil {
-		// The shipment is active but no items have been activated yet; restore
-		// it to queued so a failed read-back does not leave a torn state.
-		return nil, rollbackShipmentClaim(ctx, ws, shipmentID, preClaimShipment, nil,
-			fmt.Errorf("reload shipment after activation: %w", err))
+		return nil, fmt.Errorf("collect shipment %s claim ancestors: %w", shipmentID, err)
+	}
+	memberSet := make(map[string]struct{}, len(memberIDs)+1)
+	memberSet[shipmentID] = struct{}{}
+	for _, memberID := range memberIDs {
+		memberSet[memberID] = struct{}{}
+	}
+	filteredRelatedIDs := make([]string, 0, len(relatedIDs))
+	for _, relatedID := range relatedIDs {
+		if _, exists := memberSet[relatedID]; !exists {
+			filteredRelatedIDs = append(filteredRelatedIDs, relatedID)
+		}
+	}
+	lockIDs := uniqueNonEmptyStrings(append(append([]string{shipmentID}, memberIDs...), filteredRelatedIDs...))
+	lockedCtx, artifactUnlock, err := lockArtifactMutations(ctx, ws, lockIDs)
+	if err != nil {
+		return nil, fmt.Errorf("lock shipment %s claim aggregate: %w", shipmentID, err)
+	}
+	defer func() {
+		if unlockErr := artifactUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment claim aggregate locks", "shipment_id", shipmentID, "error", unlockErr)
+		}
+	}()
+
+	current, err = findArtifact(lockedCtx, ws, shipmentID)
+	if err != nil {
+		return nil, fmt.Errorf("reload shipment %s under claim locks: %w", shipmentID, err)
+	}
+	normalizeShipmentArtifact(current)
+	if current.Status != models.StatusQueued || !slices.Equal(NormalizeShipmentItems(current), memberIDs) {
+		return nil, fmt.Errorf("shipment %s changed while acquiring claim locks: %w", shipmentID, blerrors.ErrShipmentConflict)
 	}
 
-	// activatedIDs records every item this claim transitioned to active, in
-	// application order, so rollback can revert them (newest first) on failure.
-	var activatedIDs []string
-	for _, itemID := range NormalizeShipmentItems(shipment) {
-		item, loadErr := loadArtifact(ctx, ws, itemID)
+	preimage := shipmentLifecyclePreimage{
+		Shipment: cloneArtifact(current),
+		Members:  make([]*models.Artifact, 0, len(memberIDs)),
+		Related:  make([]*models.Artifact, 0, len(filteredRelatedIDs)),
+	}
+	for _, memberID := range memberIDs {
+		member, loadErr := findArtifact(lockedCtx, ws, memberID)
 		if loadErr != nil {
-			return nil, rollbackShipmentClaim(ctx, ws, shipmentID, preClaimShipment, activatedIDs,
-				fmt.Errorf("load item %s: %w", itemID, loadErr))
+			return nil, fmt.Errorf("load shipment %s claim member %s: %w", shipmentID, memberID, loadErr)
 		}
-		if item.Status == models.StatusQueued {
-			// Record the item as activation-attempted *before* mutating it:
-			// setArtifactStatus persists the item active before cascading parent
-			// statuses, so a failure mid-call can leave the item active on disk.
-			// Tracking it up front guarantees rollback reverts it; a queued->queued
-			// revert is a safe no-op when activation never landed.
-			activatedIDs = append(activatedIDs, itemID)
-			if _, setErr := setArtifactStatus(ctx, ws, itemID, models.StatusActive, "shipment claimed"); setErr != nil {
-				return nil, rollbackShipmentClaim(ctx, ws, shipmentID, preClaimShipment, activatedIDs,
-					fmt.Errorf("activate item %s: %w", itemID, setErr))
-			}
+		preimage.Members = append(preimage.Members, cloneArtifact(member))
+	}
+	for _, relatedID := range filteredRelatedIDs {
+		related, loadErr := findArtifact(lockedCtx, ws, relatedID)
+		if loadErr != nil {
+			return nil, fmt.Errorf("load shipment %s claim related artifact %s: %w", shipmentID, relatedID, loadErr)
+		}
+		preimage.Related = append(preimage.Related, cloneArtifact(related))
+	}
+
+	snapshots, err := snapshotShipArtifacts(lockedCtx, ws, lockIDs)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot shipment %s claim aggregate: %w", shipmentID, err)
+	}
+	var correlationBytes [16]byte
+	if _, err := rand.Read(correlationBytes[:]); err != nil {
+		return nil, fmt.Errorf("generate claim shipment correlation id: %w", err)
+	}
+	correlationID := hex.EncodeToString(correlationBytes[:])
+	journal := shipmentLifecycleJournal{
+		SchemaVersion:  "shipment-operation/v1",
+		CorrelationID:  correlationID,
+		Phase:          "intent",
+		Operation:      "claim",
+		RecoveryPolicy: "rollback",
+		ShipmentID:     shipmentID,
+		Target:         string(ShipmentActive),
+		Preimage:       preimage,
+	}
+	journalName := shipmentLifecycleJournalName(correlationID)
+	journalPath, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal)
+	if err != nil {
+		return nil, fmt.Errorf("persist claim shipment %s intent: %w", shipmentID, err)
+	}
+
+	operationCtx := withShipmentOperation(lockedCtx, correlationID)
+	rollback := func(cause error) error {
+		return rollbackShipmentClaim(operationCtx, ws, journalPath, journal, snapshots, cause)
+	}
+	activationCtx := context.WithValue(operationCtx, governedShipmentActivationContextKey{}, struct{}{})
+	if err := MoveShipmentStatus(activationCtx, ws, shipmentID, ShipmentActive); err != nil {
+		return nil, rollback(err)
+	}
+
+	shipment, err := GetShipment(operationCtx, ws, shipmentID)
+	if err != nil {
+		return nil, rollback(fmt.Errorf("reload shipment after activation: %w", err))
+	}
+	for _, member := range preimage.Members {
+		if member.Status != models.StatusQueued {
+			continue
+		}
+		if _, setErr := setArtifactStatus(operationCtx, ws, member.ID, models.StatusActive, "shipment claimed"); setErr != nil {
+			return nil, rollback(fmt.Errorf("activate item %s: %w", member.ID, setErr))
 		}
 	}
 
-	// The shipment artifact itself is not mutated by item activation (its
-	// manifest items are children of the feature, not of the shipment), so the
-	// snapshot loaded above already reflects the post-activation truth. Return
-	// it directly rather than performing another read-back: a read-back here
-	// could fail after every item is active, leaving a torn state with no
-	// remaining operation to roll back. Eliminating it keeps the claim
-	// all-or-nothing by construction.
+	journal.Phase = "committed"
+	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); err != nil {
+		return nil, rollback(fmt.Errorf("persist claim shipment %s commit: %w", shipmentID, err))
+	}
+	removeShipmentOperationJournal(operationCtx, journalPath)
 	return shipment, nil
 }
 
-// rollbackShipmentClaim reverts a partially applied shipment claim. Each item
-// the claim activated is returned to queued in reverse order so child statuses
-// settle before their parents are recomputed by the cascade, and the shipment
-// is restored to its pre-claim snapshot. The original claim error is wrapped
-// together with any rollback error so the caller sees the full failure context.
-func rollbackShipmentClaim(ctx context.Context, ws *Workspace, shipmentID string, preClaimShipment *models.Artifact, activatedIDs []string, claimErr error) error {
-	// Guard against a nil triggering error: rollback must never collapse to a
-	// nil return that silently drops the failure (a future caller that passes
-	// nil would otherwise hide a torn-state rollback behind a success).
+// rollbackShipmentClaim restores the exact pre-claim artifact and event
+// snapshots. The durable intent remains recoverable until compensation reaches
+// a terminal phase.
+func rollbackShipmentClaim(
+	ctx context.Context,
+	ws *Workspace,
+	journalPath string,
+	journal shipmentLifecycleJournal,
+	snapshots map[string]shipArtifactSnapshot,
+	claimErr error,
+) error {
 	if claimErr == nil {
 		claimErr = fmt.Errorf("claim rollback invoked without a triggering error")
 	}
-	var rollbackErrs []error
-	for i := len(activatedIDs) - 1; i >= 0; i-- {
-		if _, err := setArtifactStatus(ctx, ws, activatedIDs[i], models.StatusQueued, "shipment claim rolled back"); err != nil {
-			rollbackErrs = append(rollbackErrs, fmt.Errorf("revert item %s: %w", activatedIDs[i], err))
+	unrestored, rollbackErr := restoreShipArtifactsDetailed(ctx, ws, snapshots)
+	compensationState := "compensated"
+	if rollbackErr != nil {
+		compensationState = "partially-compensated"
+	} else {
+		journal.Phase = "compensated"
+		if _, err := writeShipmentLifecycleJournalForWorkspace(
+			ws,
+			filepath.Base(journalPath),
+			journal,
+		); err != nil {
+			rollbackErr = fmt.Errorf("persist claim compensation journal: %w", err)
+		} else {
+			removeShipmentOperationJournal(ctx, journalPath)
 		}
 	}
-	if preClaimShipment != nil {
-		if err := persistArtifact(ctx, ws, preClaimShipment, true); err != nil {
-			rollbackErrs = append(rollbackErrs, fmt.Errorf("restore shipment %s: %w", shipmentID, err))
+	if rollbackErr != nil {
+		cause := errors.Join(claimErr, rollbackErr)
+		if len(unrestored) > 0 {
+			cause = errors.Join(cause, fmt.Errorf("claim compensation could not restore: %s", strings.Join(unrestored, ", ")))
+		}
+		return &blerrors.MutationPartialError{
+			Completed:         []string{"claim-activation"},
+			FailedStep:        "claim-compensation",
+			CompensationState: compensationState,
+			Class:             "double-fault",
+			Cause:             cause,
 		}
 	}
-
-	slog.WarnContext(ctx, "shipment claim rolled back",
-		"shipment_id", shipmentID, "reverted_items", len(activatedIDs), "error", claimErr)
-	appendItemEvent(ctx, ws, shipmentID, "shipment_claim_rolled_back", map[string]any{
-		"reverted_items": len(activatedIDs),
-	})
-
-	if len(rollbackErrs) > 0 {
-		return fmt.Errorf("claim shipment %s: %w; rollback failed: %w", shipmentID, claimErr, errors.Join(rollbackErrs...))
-	}
-	return fmt.Errorf("claim shipment %s: %w", shipmentID, claimErr)
+	return fmt.Errorf("claim shipment %s: %w", journal.ShipmentID, claimErr)
 }
 
 type shipArtifactSnapshot struct {
 	artifact *models.Artifact
+	dbItem   *models.Artifact
 	file     fileSnapshot
 	eventLog fileSnapshot
 }
@@ -168,6 +254,10 @@ func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (ma
 		artifact, err := findArtifact(ctx, ws, id)
 		if err != nil {
 			return nil, fmt.Errorf("snapshot artifact %s: %w", id, err)
+		}
+		dbItem, err := bldb.GetItem(ctx, ws.DB, id)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot artifact %s index: %w", id, err)
 		}
 		path, err := FindArtifactPath(ctx, ws, id)
 		if err != nil {
@@ -188,6 +278,7 @@ func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (ma
 		}
 		snapshots[id] = shipArtifactSnapshot{
 			artifact: cloneArtifact(artifact),
+			dbItem:   cloneArtifact(dbItem),
 			file:     file,
 			eventLog: eventLog,
 		}
@@ -206,9 +297,17 @@ func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (ma
 // (3 seconds each) is the ceiling.
 const shipRestoreRetryWindow = 6 * time.Second
 
+const shipmentRecoveryTimeout = shipRestoreRetryWindow
+
 // shipRestoreRetryAttempts is the number of EXTRA lock acquisitions the whole
 // call may spend, shared across all items.
 const shipRestoreRetryAttempts = 2
+
+var restoreShipmentSnapshotFn = restoreSnapshot
+
+func boundedShipmentRecoveryContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), shipmentRecoveryTimeout)
+}
 
 // restoreShipArtifacts compensates a failed ship by restoring every snapshot.
 // It returns only the joined error; callers that must report which items could
@@ -230,7 +329,8 @@ func restoreShipArtifacts(ctx context.Context, ws *Workspace, snapshots map[stri
 // `defer unlockItemLog()` is equally unsafe because
 // events.LockItemLogCrossProcess returns a NIL unlock on error.
 func restoreShipArtifactsDetailed(ctx context.Context, ws *Workspace, snapshots map[string]shipArtifactSnapshot) ([]string, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx, cancel := boundedShipmentRecoveryContext(ctx)
+	defer cancel()
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	locksRoot := WorkspaceLocksRoot(ws.RootPath)
 	operationID := shipmentOperationID(ctx)
@@ -282,11 +382,11 @@ func restoreShipArtifactsDetailed(ctx context.Context, ws *Workspace, snapshots 
 			} else if err != nil && !errors.Is(err, blerrors.ErrNotFound) {
 				fail(fmt.Errorf("locate mutated artifact %s: %w", id, err))
 			}
-			if err := restoreSnapshot(snapshot.file); err != nil {
+			if err := restoreShipmentSnapshotFn(snapshot.file); err != nil {
 				fail(fmt.Errorf("restore artifact %s file: %w", id, err))
 			}
 			if eventLogRestorable {
-				if err := restoreSnapshot(snapshot.eventLog); err != nil {
+				if err := restoreShipmentSnapshotFn(snapshot.eventLog); err != nil {
 					fail(fmt.Errorf("restore artifact %s event log: %w", id, err))
 				} else {
 					writer := NewWorkspaceEventWriter(ws, logsDir)
@@ -300,7 +400,13 @@ func restoreShipArtifactsDetailed(ctx context.Context, ws *Workspace, snapshots 
 					}
 				}
 			}
-			if err := bldb.UpsertItem(itemCtx, ws.DB, snapshot.artifact); err != nil {
+			dbItem := snapshot.dbItem
+			if dbItem == nil {
+				dbItem = snapshot.artifact
+			}
+			if dbItem == nil {
+				fail(fmt.Errorf("restore artifact %s index: snapshot is incomplete: %w", id, blerrors.ErrValidation))
+			} else if err := bldb.UpsertItem(itemCtx, ws.DB, dbItem); err != nil {
 				fail(fmt.Errorf("restore artifact %s index: %w", id, err))
 			}
 		}()
@@ -853,6 +959,41 @@ func featureScopeRoots(ctx context.Context, ws *Workspace, itemIDs []string) ([]
 		}
 	}
 	return featureIDs, nil
+}
+
+func shipmentClaimAncestorIDs(ctx context.Context, ws *Workspace, memberIDs []string) ([]string, error) {
+	memberSet := make(map[string]struct{}, len(memberIDs))
+	for _, memberID := range memberIDs {
+		memberSet[memberID] = struct{}{}
+	}
+	seen := make(map[string]struct{})
+	ancestors := make([]string, 0)
+	for _, memberID := range uniqueNonEmptyStrings(memberIDs) {
+		member, err := loadArtifact(ctx, ws, memberID)
+		if err != nil {
+			return nil, fmt.Errorf("load claim member %s hierarchy: %w", memberID, err)
+		}
+		chain := make(map[string]struct{})
+		for ancestorID := member.ParentID; ancestorID != ""; {
+			if _, cycle := chain[ancestorID]; cycle {
+				return nil, fmt.Errorf("claim member %s hierarchy contains a cycle at %s: %w",
+					memberID, ancestorID, blerrors.ErrValidation)
+			}
+			chain[ancestorID] = struct{}{}
+			ancestor, loadErr := loadArtifact(ctx, ws, ancestorID)
+			if loadErr != nil {
+				return nil, fmt.Errorf("load claim member %s ancestor %s: %w", memberID, ancestorID, loadErr)
+			}
+			if _, isMember := memberSet[ancestorID]; !isMember {
+				if _, exists := seen[ancestorID]; !exists {
+					seen[ancestorID] = struct{}{}
+					ancestors = append(ancestors, ancestorID)
+				}
+			}
+			ancestorID = ancestor.ParentID
+		}
+	}
+	return ancestors, nil
 }
 
 func setArtifactStatus(ctx context.Context, ws *Workspace, itemID string, newStatus models.ArtifactStatus, reason string) (*models.Artifact, error) {

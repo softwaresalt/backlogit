@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -941,6 +942,9 @@ func writeArtifactFileGoverned(
 		previous, _, err := parseFile(currentPath)
 		switch {
 		case err == nil:
+			if err := guardBlockedShipmentMembershipMutation(previous, artifact); err != nil {
+				return err
+			}
 			protectedTransition := previous.ArtifactType == "shipment" &&
 				isProtectedShipmentStatusTransition(previous.Status, artifact.Status)
 			if protectedTransition && !envelope.allowGovernedShipmentMutation {
@@ -970,6 +974,20 @@ func writeArtifactFileGoverned(
 		return fmt.Errorf("write artifact file: %w", err)
 	}
 	return nil
+}
+
+func guardBlockedShipmentMembershipMutation(previous, next *models.Artifact) error {
+	if previous == nil || next == nil ||
+		previous.ArtifactType != "shipment" ||
+		previous.Status != models.StatusBlocked ||
+		slices.Equal(NormalizeShipmentItems(previous), NormalizeShipmentItems(next)) {
+		return nil
+	}
+	return fmt.Errorf(
+		"shipment %s membership is sealed while blocked: %w",
+		previous.ID,
+		blerrors.ErrShipmentConflict,
+	)
 }
 
 func isProtectedShipmentStatusTransition(previous, next models.ArtifactStatus) bool {

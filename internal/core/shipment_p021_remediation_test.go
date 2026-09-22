@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -172,6 +173,253 @@ func TestP021ClaimSerialization_MembershipAndGenericWritersUseGlobalLock(t *test
 			require.NoError(t, actionErr)
 		})
 	}
+}
+
+func TestP1C4_BlockedShipmentMembershipIsImmutable(t *testing.T) {
+	tests := []struct {
+		name string
+		act  func(context.Context, *Workspace, urBlockedFixture, *models.Artifact) error
+	}{
+		{
+			name: "AddItemToShipment",
+			act: func(ctx context.Context, ws *Workspace, fixture urBlockedFixture, candidate *models.Artifact) error {
+				return AddItemToShipment(ctx, ws, fixture.shipment.ID, candidate.ID)
+			},
+		},
+		{
+			name: "ReturnBlockedItem",
+			act: func(ctx context.Context, ws *Workspace, fixture urBlockedFixture, _ *models.Artifact) error {
+				return ReturnBlockedItem(ctx, ws, fixture.shipment.ID, fixture.members[0].ID, "must remain sealed")
+			},
+		},
+		{
+			name: "UpdateArtifact_custom_fields",
+			act: func(ctx context.Context, ws *Workspace, fixture urBlockedFixture, _ *models.Artifact) error {
+				_, err := UpdateArtifact(ctx, ws, fixture.shipment.ID, map[string]any{
+					"custom_fields": map[string]any{
+						"items": []string{fixture.members[0].ID},
+					},
+				})
+				return err
+			},
+		},
+		{
+			name: "private_generic_persist",
+			act: func(ctx context.Context, ws *Workspace, fixture urBlockedFixture, _ *models.Artifact) error {
+				blocked := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+				blocked.CustomFields["items"] = []string{fixture.members[0].ID}
+				blocked.UpdatedAt = models.NowUTC()
+				return persistArtifact(ctx, ws, blocked, false)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ws := setupShipmentWorkspace(t)
+			ctx := context.Background()
+			fixture := newURBlockedActiveFixture(t, ws)
+			feature, err := CreateArtifact(ctx, ws, "C4 candidate feature", "feature")
+			require.NoError(t, err)
+			candidate, err := CreateArtifact(ctx, ws, "C4 candidate member", "task", WithParent(feature.ID))
+			require.NoError(t, err)
+			_, err = BlockShipment(ctx, ws, fixture.shipment.ID, BlockOptions{
+				Reason:    "C4 sealed aggregate",
+				BlockedBy: "C4 test",
+			})
+			require.NoError(t, err)
+			before := snapshotURAggregate(t, ws, fixture.shipment.ID)
+
+			err = test.act(ctx, ws, fixture, candidate)
+
+			require.ErrorIs(t, err, blerrors.ErrShipmentConflict)
+			requireURAggregateUnchanged(t, ws, before)
+		})
+	}
+}
+
+func TestP1C6_ClaimCompensationDetachesCancellationAndRestoresExactly(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	feature, err := CreateArtifact(ctx, ws, "C6 claim feature", "feature")
+	require.NoError(t, err)
+	parent, err := CreateArtifact(ctx, ws, "C6 claim parent", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	member, err := CreateArtifact(ctx, ws, "C6 claim member", "subtask", WithParent(parent.ID))
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "C6 claim shipment", []string{member.ID})
+	require.NoError(t, err)
+	before := snapshotURGovernedState(t, ws, []string{shipment.ID, feature.ID, parent.ID, member.ID})
+
+	originalWriter := persistArtifactWriteFn
+	persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
+		if artifact.ID == feature.ID && artifact.Status == models.StatusActive {
+			cancel()
+			return context.Canceled
+		}
+		return originalWriter(artifact, filePath, durable)
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = originalWriter })
+
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+
+	require.ErrorIs(t, err, context.Canceled)
+	requireP1C6DurableStateRestored(t, ws, before)
+}
+
+func TestP1C6_ReturnBlockedCompensationDetachesCancellationAndRestoresExactly(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	feature, err := CreateArtifact(ctx, ws, "C6 return feature", "feature")
+	require.NoError(t, err)
+	member, err := CreateArtifact(ctx, ws, "C6 return member", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "C6 return shipment", []string{member.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	before := snapshotURAggregate(t, ws, shipment.ID)
+
+	originalWriter := persistArtifactWriteFn
+	persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
+		if artifact.ID == member.ID && artifact.Status == models.StatusBlocked {
+			cancel()
+			return context.Canceled
+		}
+		return originalWriter(artifact, filePath, durable)
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = originalWriter })
+
+	err = ReturnBlockedItem(ctx, ws, shipment.ID, member.ID, "C6 injected cancellation")
+
+	require.ErrorIs(t, err, context.Canceled)
+	requireP1C6DurableStateRestored(t, ws, before)
+}
+
+func TestP1C6_ClaimCompensationFailureIsClassifiedAndRecoverable(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	feature, err := CreateArtifact(ctx, ws, "C6 claim recovery feature", "feature")
+	require.NoError(t, err)
+	parent, err := CreateArtifact(ctx, ws, "C6 claim recovery parent", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	member, err := CreateArtifact(ctx, ws, "C6 claim recovery member", "subtask", WithParent(parent.ID))
+	require.NoError(t, err)
+	appendItemEvent(ctx, ws, parent.ID, "c6_baseline", map[string]any{"preserve": true})
+	shipment, err := CreateShipment(ctx, ws, "C6 claim recovery shipment", []string{member.ID})
+	require.NoError(t, err)
+	parentEventLogPath := events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), parent.ID)
+	before := snapshotURGovernedState(t, ws, []string{shipment.ID, feature.ID, parent.ID, member.ID})
+
+	originalWriter := persistArtifactWriteFn
+	persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
+		if artifact.ID == feature.ID && artifact.Status == models.StatusActive {
+			cancel()
+			return context.Canceled
+		}
+		return originalWriter(artifact, filePath, durable)
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = originalWriter })
+
+	injectedRecoveryErr := errors.New("injected claim compensation failure")
+	originalRestore := restoreShipmentSnapshotFn
+	failedRestore := false
+	restoreShipmentSnapshotFn = func(snapshot fileSnapshot) error {
+		if !failedRestore && filepath.Clean(snapshot.Path) == filepath.Clean(parentEventLogPath) {
+			failedRestore = true
+			return injectedRecoveryErr
+		}
+		return originalRestore(snapshot)
+	}
+	t.Cleanup(func() { restoreShipmentSnapshotFn = originalRestore })
+
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+
+	var partial *blerrors.MutationPartialError
+	require.ErrorAs(t, err, &partial)
+	require.Equal(t, "double-fault", partial.Class)
+	require.Equal(t, "partially-compensated", partial.CompensationState)
+	require.ErrorIs(t, err, injectedRecoveryErr)
+	requireClaimRecoveryIntent(t, ws, shipment.ID)
+
+	persistArtifactWriteFn = originalWriter
+	restoreShipmentSnapshotFn = originalRestore
+	require.NoError(t, recoverPendingShipmentOperations(context.Background(), ws))
+	requireP1C6DurableStateRestored(t, ws, before)
+}
+
+func TestP1C6_ReturnBlockedCompensationFailureIsClassifiedAndRecoverable(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	feature, err := CreateArtifact(ctx, ws, "C6 return recovery feature", "feature")
+	require.NoError(t, err)
+	member, err := CreateArtifact(ctx, ws, "C6 return recovery member", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "C6 return recovery shipment", []string{member.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	before := snapshotURAggregate(t, ws, shipment.ID)
+
+	injectedRecoveryErr := errors.New("injected return compensation failure")
+	originalWriter := persistArtifactWriteFn
+	forwardFailed := false
+	persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
+		switch {
+		case artifact.ID == member.ID && artifact.Status == models.StatusBlocked:
+			forwardFailed = true
+			cancel()
+			return context.Canceled
+		case forwardFailed && artifact.ID == shipment.ID:
+			return injectedRecoveryErr
+		default:
+			return originalWriter(artifact, filePath, durable)
+		}
+	}
+	t.Cleanup(func() { persistArtifactWriteFn = originalWriter })
+
+	err = ReturnBlockedItem(ctx, ws, shipment.ID, member.ID, "C6 durable recovery")
+
+	var partial *blerrors.MutationPartialError
+	require.ErrorAs(t, err, &partial)
+	require.Equal(t, "double-fault", partial.Class)
+	require.Equal(t, "partially-compensated", partial.CompensationState)
+	require.ErrorIs(t, err, injectedRecoveryErr)
+	_, statErr := os.Stat(returnBlockedJournalPath(ws.RootPath, shipment.ID, member.ID))
+	require.NoError(t, statErr, "failed compensation must retain its durable recovery journal")
+
+	persistArtifactWriteFn = originalWriter
+	require.NoError(t, recoverPendingShipmentOperations(context.Background(), ws))
+	requireP1C6DurableStateRestored(t, ws, before)
+}
+
+func requireClaimRecoveryIntent(t *testing.T, ws *Workspace, shipmentID string) {
+	t.Helper()
+
+	records, err := loadShipmentOperationJournals(ws)
+	require.NoError(t, err)
+	for _, record := range records {
+		if record.kind == shipmentLifecycleJournalKind &&
+			record.lifecycle.Operation == "claim" &&
+			record.lifecycle.ShipmentID == shipmentID &&
+			record.lifecycle.Phase == "intent" {
+			return
+		}
+	}
+	require.FailNow(t, "claim recovery intent missing", "shipment %s has no durable claim intent", shipmentID)
+}
+
+func requireP1C6DurableStateRestored(t *testing.T, ws *Workspace, before urAggregateSnapshot) {
+	t.Helper()
+
+	after := snapshotURGovernedState(t, ws, before.ArtifactIDs)
+	for id, want := range before.Artifacts {
+		assertURArtifactEqual(t, want, after.Artifacts[id])
+	}
+	require.Equal(t, before.CanonicalFiles, after.CanonicalFiles)
+	require.Equal(t, before.ArtifactLocations, after.ArtifactLocations)
+	require.Equal(t, before.EventLogs, after.EventLogs)
+	require.Equal(t, before.OperationJournals, after.OperationJournals)
 }
 
 func p021ObserveGlobalLock(ctx context.Context) (context.Context, <-chan struct{}, <-chan struct{}) {

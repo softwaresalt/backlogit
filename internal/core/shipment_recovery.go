@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -124,7 +125,10 @@ func reconcileShipmentLifecycleIntent(
 		return nil, fmt.Errorf("shipment lifecycle journal %s is incomplete: %w",
 			journalPath, blerrors.ErrValidation)
 	}
-	if journal.Operation != "block" && journal.Operation != "unblock" && journal.Operation != "normalize" {
+	if journal.Operation != "block" &&
+		journal.Operation != "unblock" &&
+		journal.Operation != "normalize" &&
+		journal.Operation != "claim" {
 		return nil, fmt.Errorf("shipment lifecycle journal %s has unsupported operation %q: %w",
 			journalPath, journal.Operation, blerrors.ErrValidation)
 	}
@@ -152,6 +156,22 @@ func reconcileShipmentLifecycleIntent(
 				journalPath, memberID, blerrors.ErrShipmentConflict)
 		}
 	}
+	relatedPreimages := make(map[string]*models.Artifact, len(journal.Preimage.Related))
+	for _, related := range journal.Preimage.Related {
+		if related == nil || related.ID == "" {
+			return nil, fmt.Errorf("shipment lifecycle journal %s has an incomplete related preimage: %w",
+				journalPath, blerrors.ErrValidation)
+		}
+		if related.ID == journal.ShipmentID || preimageMembers[related.ID] != nil {
+			return nil, fmt.Errorf("shipment lifecycle journal %s repeats related artifact %s in its aggregate: %w",
+				journalPath, related.ID, blerrors.ErrValidation)
+		}
+		if _, duplicate := relatedPreimages[related.ID]; duplicate {
+			return nil, fmt.Errorf("shipment lifecycle journal %s repeats related artifact %s: %w",
+				journalPath, related.ID, blerrors.ErrValidation)
+		}
+		relatedPreimages[related.ID] = related
+	}
 
 	var snapshot *ShipmentBlockedSnapshot
 	if journal.RecoveryPolicy == "roll_forward" {
@@ -171,6 +191,7 @@ func reconcileShipmentLifecycleIntent(
 		journal,
 		memberIDs,
 		preimageMembers,
+		relatedPreimages,
 		snapshot,
 	); err != nil {
 		return nil, err
@@ -230,7 +251,23 @@ func reconcileShipmentLifecycleIntent(
 	} else {
 		switch journal.RecoveryPolicy {
 		case "rollback":
-			if journal.Operation == "unblock" {
+			if journal.Operation == "claim" {
+				for _, related := range journal.Preimage.Related {
+					if err := persistArtifact(operationCtx, ws, cloneArtifact(related), true); err != nil {
+						return nil, fmt.Errorf("restore shipment %s related artifact %s preimage: %w",
+							journal.ShipmentID, related.ID, err)
+					}
+				}
+				for _, memberID := range memberIDs {
+					if err := persistArtifact(operationCtx, ws, cloneArtifact(preimageMembers[memberID]), true); err != nil {
+						return nil, fmt.Errorf("restore shipment %s member %s preimage: %w",
+							journal.ShipmentID, memberID, err)
+					}
+				}
+				if err := persistArtifact(governedCtx, ws, cloneArtifact(journal.Preimage.Shipment), true); err != nil {
+					return nil, fmt.Errorf("restore shipment %s preimage: %w", journal.ShipmentID, err)
+				}
+			} else if journal.Operation == "unblock" {
 				for _, memberID := range memberIDs {
 					if err := persistArtifact(operationCtx, ws, cloneArtifact(preimageMembers[memberID]), true); err != nil {
 						return nil, fmt.Errorf("restore shipment %s member %s preimage: %w",
@@ -291,6 +328,20 @@ func reconcileShipmentLifecycleIntent(
 			return nil, fmt.Errorf("shipment lifecycle journal %s has unsupported recovery policy %q: %w",
 				journalPath, journal.RecoveryPolicy, blerrors.ErrValidation)
 		}
+	}
+	if journal.Operation == "claim" {
+		claimArtifactIDs := append([]string{journal.ShipmentID}, memberIDs...)
+		for _, related := range journal.Preimage.Related {
+			claimArtifactIDs = append(claimArtifactIDs, related.ID)
+		}
+		if err := removeShipmentOperationEvents(operationCtx, ws, claimArtifactIDs, journal.CorrelationID); err != nil {
+			return nil, fmt.Errorf("restore shipment %s claim event logs: %w", journal.ShipmentID, err)
+		}
+		if _, err := writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal); err != nil {
+			return nil, fmt.Errorf("persist shipment %s claim recovery journal: %w", journal.ShipmentID, err)
+		}
+		removeShipmentOperationJournal(ctx, journalPath)
+		return result, nil
 	}
 
 	target := journal.Target
@@ -543,6 +594,7 @@ func validateShipmentLifecycleRecoveryCAS(
 	journal shipmentLifecycleJournal,
 	memberIDs []string,
 	preimageMembers map[string]*models.Artifact,
+	relatedPreimages map[string]*models.Artifact,
 	snapshot *ShipmentBlockedSnapshot,
 ) error {
 	currentShipment, err := findArtifact(ctx, ws, journal.ShipmentID)
@@ -589,6 +641,34 @@ func validateShipmentLifecycleRecoveryCAS(
 				"shipment %s member %s diverged from its durable lifecycle preimage: %w",
 				journal.ShipmentID,
 				memberID,
+				blerrors.ErrShipmentConflict,
+			)
+		}
+	}
+	for _, related := range journal.Preimage.Related {
+		currentRelated, loadErr := findArtifact(ctx, ws, related.ID)
+		if loadErr != nil {
+			return fmt.Errorf("load shipment %s related artifact %s recovery CAS state: %w",
+				journal.ShipmentID, related.ID, loadErr)
+		}
+		candidates := []recoveryArtifactCandidate{{artifact: relatedPreimages[related.ID]}}
+		if journal.Operation == "claim" && journal.RecoveryPolicy == "rollback" {
+			target := cloneArtifact(related)
+			if target.Status == models.StatusQueued {
+				target.Status = models.StatusActive
+			}
+			candidates = append(candidates, recoveryArtifactCandidate{artifact: target, ignoreUpdatedAt: true})
+		}
+		matches, compareErr := recoveryArtifactMatchesAny(currentRelated, candidates)
+		if compareErr != nil {
+			return fmt.Errorf("compare shipment %s related artifact %s recovery CAS state: %w",
+				journal.ShipmentID, related.ID, compareErr)
+		}
+		if !matches {
+			return fmt.Errorf(
+				"shipment %s related artifact %s diverged from its durable lifecycle preimage: %w",
+				journal.ShipmentID,
+				related.ID,
 				blerrors.ErrShipmentConflict,
 			)
 		}
@@ -682,6 +762,10 @@ func recoveryArtifactMatchesAny(
 		if left == nil || right == nil {
 			continue
 		}
+		left.Level = 0
+		left.HierarchyPath = ""
+		right.Level = 0
+		right.HierarchyPath = ""
 		if candidate.ignoreUpdatedAt {
 			left.UpdatedAt = time.Time{}
 			right.UpdatedAt = time.Time{}
@@ -701,6 +785,75 @@ func recoveryArtifactMatchesAny(
 	return false, nil
 }
 
+func removeShipmentOperationEvents(
+	ctx context.Context,
+	ws *Workspace,
+	artifactIDs []string,
+	operationID string,
+) error {
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	locksRoot := WorkspaceLocksRoot(ws.RootPath)
+	for _, artifactID := range depthSortedIDs(uniqueNonEmptyStrings(artifactIDs)) {
+		itemCtx, unlock, err := events.LockItemLogCrossProcess(ctx, locksRoot, logsDir, artifactID)
+		if err != nil {
+			return fmt.Errorf("lock artifact %s event log: %w", artifactID, err)
+		}
+		err = func() error {
+			defer unlock()
+			logPath := events.LogPathForItem(logsDir, artifactID)
+			content, readErr := os.ReadFile(logPath)
+			if os.IsNotExist(readErr) {
+				return nil
+			}
+			if readErr != nil {
+				return fmt.Errorf("read artifact %s event log: %w", artifactID, readErr)
+			}
+			filtered, changed, filterErr := filterShipmentOperationEventBytes(content, artifactID, operationID)
+			if filterErr != nil {
+				return filterErr
+			}
+			if !changed {
+				return nil
+			}
+			snapshot := fileSnapshot{Path: logPath, Exists: len(filtered) > 0, Content: filtered}
+			if restoreErr := restoreSnapshot(snapshot); restoreErr != nil {
+				return fmt.Errorf("rewrite artifact %s event log: %w", artifactID, restoreErr)
+			}
+			if reindexErr := bldb.ReindexItemLog(itemCtx, ws.DB, locksRoot, logsDir, artifactID); reindexErr != nil {
+				return fmt.Errorf("reindex artifact %s event log: %w", artifactID, reindexErr)
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func filterShipmentOperationEventBytes(content []byte, itemID, operationID string) ([]byte, bool, error) {
+	var filtered bytes.Buffer
+	changed := false
+	for _, rawLine := range bytes.SplitAfter(content, []byte{'\n'}) {
+		if len(rawLine) == 0 {
+			continue
+		}
+		line := strings.TrimSuffix(strings.TrimSuffix(string(rawLine), "\n"), "\r")
+		event, ok, err := events.ParseEventLine(line, itemID)
+		if err != nil {
+			return nil, false, fmt.Errorf("parse artifact %s event log: %w", itemID, err)
+		}
+		if ok && isShipmentOperationEvent(event, operationID) {
+			changed = true
+			continue
+		}
+		if _, err := filtered.Write(rawLine); err != nil {
+			return nil, false, fmt.Errorf("buffer artifact %s event log: %w", itemID, err)
+		}
+	}
+	return filtered.Bytes(), changed, nil
+}
+
 func shipmentRecoveryCandidates(
 	journal shipmentLifecycleJournal,
 	current *models.Artifact,
@@ -709,6 +862,8 @@ func shipmentRecoveryCandidates(
 	candidates := []recoveryArtifactCandidate{{artifact: journal.Preimage.Shipment}}
 	target := cloneArtifact(journal.Preimage.Shipment)
 	switch {
+	case journal.RecoveryPolicy == "rollback" && journal.Operation == "claim":
+		target.Status = models.StatusActive
 	case journal.RecoveryPolicy == "rollback" && journal.Operation == "block":
 		if current.Status != models.StatusBlocked {
 			return candidates, nil
@@ -782,6 +937,11 @@ func memberRecoveryCandidates(
 	candidates := []recoveryArtifactCandidate{{artifact: preimage}}
 	target := cloneArtifact(preimage)
 	switch {
+	case journal.RecoveryPolicy == "rollback" && journal.Operation == "claim":
+		if preimage.Status != models.StatusQueued {
+			return candidates, nil
+		}
+		target.Status = models.StatusActive
 	case journal.RecoveryPolicy == "rollback" && journal.Operation == "block":
 		if preimage.Status != models.StatusActive && preimage.Status != models.StatusReview {
 			return candidates, nil
