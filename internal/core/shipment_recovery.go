@@ -195,6 +195,11 @@ func reconcileShipmentLifecycleIntent(
 		if err != nil {
 			return nil, fmt.Errorf("load shipment %s recovered terminal state: %w", journal.ShipmentID, err)
 		}
+		if current.Status == models.StatusBlocked && journal.Phase == "committed" {
+			if _, err := validatePersistedBlockedShipmentEnvelope(ctx, ws, current); err != nil {
+				return nil, fmt.Errorf("validate shipment %s recovered blocked envelope: %w", journal.ShipmentID, err)
+			}
+		}
 		return current, nil
 	}
 
@@ -300,6 +305,21 @@ func reconcileShipmentLifecycleIntent(
 		"target":         target,
 		"snapshot_ref":   journal.SnapshotRef,
 	}
+	if result != nil && result.Status == models.StatusBlocked && snapshot != nil {
+		eventDelta["reason"] = result.CustomFields["blocked_reason"]
+		eventDelta["blocked_at"] = result.CustomFields["blocked_at"]
+		eventDelta["blocked_by"] = result.CustomFields["blocked_by"]
+		eventDelta["member_status_snapshot"] = result.CustomFields["member_status_snapshot"]
+		if branch, found := result.CustomFields["branch"]; found {
+			eventDelta["branch"] = branch
+		}
+		if resumeCheckpointRef, found := result.CustomFields["resume_checkpoint_ref"]; found {
+			eventDelta["resume_checkpoint_ref"] = resumeCheckpointRef
+		}
+		if journal.BlockedBy != "" {
+			eventDelta["normalized_by"] = journal.BlockedBy
+		}
+	}
 	if recoveryEvidence.appliedPhase != journal.Phase {
 		eventDelta["evidence_id"] = shipmentLifecycleRecoveryEvidenceID(
 			journal.CorrelationID,
@@ -338,6 +358,11 @@ func reconcileShipmentLifecycleIntent(
 	}
 	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal); err != nil {
 		return nil, fmt.Errorf("persist shipment %s recovery terminal journal: %w", journal.ShipmentID, err)
+	}
+	if result != nil && result.Status == models.StatusBlocked && journal.Phase == "committed" {
+		if _, err := validatePersistedBlockedShipmentEnvelope(ctx, ws, result); err != nil {
+			return nil, fmt.Errorf("validate shipment %s recovered blocked envelope: %w", journal.ShipmentID, err)
+		}
 	}
 	return result, nil
 }

@@ -711,23 +711,22 @@ func detectShipmentLifecycleFindings(
 		if ref.status == string(ShipmentActive) {
 			activeIDs = append(activeIDs, id)
 		}
+		itemEvents, err := events.ReadAllEvents(ctx, logsDir, id)
+		if err != nil {
+			return nil, fmt.Errorf("read shipment %s lifecycle events: %w", id, err)
+		}
 		if ref.status == string(ShipmentBlocked) {
 			artifact, _, err := parseFile(ref.path)
 			if err != nil {
 				return nil, fmt.Errorf("parse blocked shipment %s: %w", id, err)
 			}
-			reason, reasonOK := artifact.CustomFields["blocked_reason"].(string)
-			blockedAtValid := false
-			switch blockedAt := artifact.CustomFields["blocked_at"].(type) {
-			case string:
-				_, err = time.Parse(time.RFC3339, blockedAt)
-				blockedAtValid = err == nil
-			case time.Time:
-				blockedAtValid = !blockedAt.IsZero()
-			}
-			if strings.TrimSpace(reason) == "" || !reasonOK || !blockedAtValid {
+			if _, envelopeErr := validateBlockedShipmentEnvelope(
+				artifact,
+				NormalizeShipmentItems(artifact),
+				itemEvents,
+			); envelopeErr != nil {
 				message := fmt.Sprintf(
-					"blocked shipment %q must have a non-empty blocked_reason and valid RFC3339 blocked_at; run the blocked-shipment normalizer",
+					"blocked shipment %q lacks a canonical governed block/normalize envelope; run the blocked-shipment normalizer",
 					id,
 				)
 				findings = append(findings, newDoctorErrorFinding(
@@ -738,10 +737,6 @@ func detectShipmentLifecycleFindings(
 			}
 		}
 
-		itemEvents, err := events.ReadAllEvents(ctx, logsDir, id)
-		if err != nil {
-			return nil, fmt.Errorf("read shipment %s lifecycle events: %w", id, err)
-		}
 		intents := make(map[string]string)
 		terminal := make(map[string]struct{})
 		for _, event := range itemEvents {

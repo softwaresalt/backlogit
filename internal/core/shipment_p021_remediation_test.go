@@ -188,6 +188,229 @@ func p021ObserveGlobalLock(ctx context.Context) (context.Context, <-chan struct{
 	return context.WithValue(ctx, shipmentLifecycleGlobalLockHookContextKey{}, hook), attempted, acquired
 }
 
+func TestP1C7_BlockedEnvelopeRequiresGovernedProvenance(t *testing.T) {
+	t.Run("unblock_refuses_plausible_out_of_band_record", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		fixture := newURBlockedActiveFixture(t, ws)
+		p021ForceOutOfBandBlockedShipment(t, ws, fixture)
+		before := snapshotURAggregate(t, ws, fixture.shipment.ID)
+
+		_, err := UnblockShipment(context.Background(), ws, fixture.shipment.ID, UnblockOptions{
+			Target:      ShipmentActive,
+			Confirm:     true,
+			UnblockedBy: "C7 test",
+		})
+		require.ErrorIs(t, err, blerrors.ErrShipmentBlockedRequiresEnvelope)
+		requireURAggregateUnchanged(t, ws, before)
+	})
+
+	t.Run("normalizer_establishes_provenance_before_unblock", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		fixture := newURBlockedActiveFixture(t, ws)
+		p021ForceOutOfBandBlockedShipment(t, ws, fixture)
+		snapshotRef := p021WriteBlockedSnapshot(t, ws, fixture.shipment.ID)
+
+		normalized, err := NormalizeBlockedShipment(
+			context.Background(),
+			ws,
+			fixture.shipment.ID,
+			snapshotRef,
+			"C7 normalizer",
+		)
+		require.NoError(t, err)
+		require.Equal(t, models.StatusBlocked, normalized.Status)
+
+		unblocked, err := UnblockShipment(context.Background(), ws, fixture.shipment.ID, UnblockOptions{
+			Target:      ShipmentActive,
+			Confirm:     true,
+			UnblockedBy: "C7 test",
+		})
+		require.NoError(t, err)
+		require.Equal(t, models.StatusActive, unblocked.Status)
+	})
+
+	t.Run("doctor_reports_plausible_out_of_band_record", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		fixture := newURBlockedActiveFixture(t, ws)
+		p021ForceOutOfBandBlockedShipment(t, ws, fixture)
+
+		report, err := Doctor(context.Background(), ws, &DoctorOptions{})
+		require.NoError(t, err)
+		require.Contains(t, report.Findings, DoctorFinding{
+			Type:        FindingMalformedBlockedShipment,
+			Severity:    DoctorSeverityError,
+			Code:        FindingMalformedBlockedShipment,
+			ArtifactID:  fixture.shipment.ID,
+			Description: "blocked shipment \"" + fixture.shipment.ID + "\" lacks a canonical governed block/normalize envelope; run the blocked-shipment normalizer",
+			Message:     "blocked shipment \"" + fixture.shipment.ID + "\" lacks a canonical governed block/normalize envelope; run the blocked-shipment normalizer",
+		})
+	})
+}
+
+func TestP1C7_BlockedEnvelopeRequiresCanonicalMetadata(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*models.Artifact)
+	}{
+		{
+			name: "reason_must_match_evidence",
+			mutate: func(shipment *models.Artifact) {
+				shipment.CustomFields["blocked_reason"] = "tampered reason"
+			},
+		},
+		{
+			name: "blocked_at_must_be_rfc3339",
+			mutate: func(shipment *models.Artifact) {
+				shipment.CustomFields["blocked_at"] = "not-a-timestamp"
+			},
+		},
+		{
+			name: "blocked_by_must_be_present",
+			mutate: func(shipment *models.Artifact) {
+				delete(shipment.CustomFields, "blocked_by")
+			},
+		},
+		{
+			name: "branch_must_be_a_non_empty_string_when_present",
+			mutate: func(shipment *models.Artifact) {
+				shipment.CustomFields["branch"] = 7
+			},
+		},
+		{
+			name: "resume_reference_must_be_non_empty_when_present",
+			mutate: func(shipment *models.Artifact) {
+				shipment.CustomFields["resume_checkpoint_ref"] = ""
+			},
+		},
+		{
+			name: "snapshot_must_exactly_cover_manifest",
+			mutate: func(shipment *models.Artifact) {
+				snapshot := statusSnapshotUR(shipment.CustomFields["member_status_snapshot"])
+				snapshot["999.999-T"] = string(models.StatusQueued)
+				shipment.CustomFields["member_status_snapshot"] = snapshot
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ws := setupShipmentWorkspace(t)
+			fixture := newURBlockedActiveFixture(t, ws)
+			shipment := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+			shipment.CustomFields["branch"] = "feat/c7-envelope"
+			forceURArtifactFixture(t, ws, shipment)
+			_, err := BlockShipment(context.Background(), ws, fixture.shipment.ID, BlockOptions{
+				Reason:              "canonical C7 blocker",
+				BlockedBy:           "C7 actor",
+				ResumeCheckpointRef: "c7-resume.json",
+			})
+			require.NoError(t, err)
+
+			tampered := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+			test.mutate(tampered)
+			tampered.UpdatedAt = models.NowUTC()
+			forceURArtifactFixture(t, ws, tampered)
+			before := snapshotURAggregate(t, ws, fixture.shipment.ID)
+
+			_, err = UnblockShipment(context.Background(), ws, fixture.shipment.ID, UnblockOptions{
+				Target:      ShipmentActive,
+				Confirm:     true,
+				UnblockedBy: "C7 test",
+			})
+			require.ErrorIs(t, err, blerrors.ErrShipmentBlockedRequiresEnvelope)
+			requireURAggregateUnchanged(t, ws, before)
+		})
+	}
+}
+
+func TestP1C8_GenericShipmentCreateRejectsBlockedStatus(t *testing.T) {
+	tests := []struct {
+		name   string
+		create func(context.Context, *Workspace) (*models.Artifact, error)
+	}{
+		{
+			name: "generic_artifact_create",
+			create: func(ctx context.Context, ws *Workspace) (*models.Artifact, error) {
+				return CreateArtifact(ctx, ws, "C8 generic blocked", "shipment", WithStatus("blocked"))
+			},
+		},
+		{
+			name: "shipment_create",
+			create: func(ctx context.Context, ws *Workspace) (*models.Artifact, error) {
+				return CreateShipment(ctx, ws, "C8 blocked shipment", nil, WithStatus("blocked"))
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ws := setupShipmentWorkspace(t)
+
+			_, err := test.create(context.Background(), ws)
+			require.ErrorIs(t, err, blerrors.ErrShipmentBlockedRequiresEnvelope)
+		})
+	}
+}
+
+func TestP1C8_GenericShipmentCreatePreservesOrdinaryAllowedStatuses(t *testing.T) {
+	tests := []struct {
+		name   string
+		status models.ArtifactStatus
+	}{
+		{name: "default_queued", status: models.StatusQueued},
+		{name: "explicit_abandoned", status: models.StatusAbandoned},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ws := setupShipmentWorkspace(t)
+			opts := []Option{}
+			if test.status != models.StatusQueued {
+				opts = append(opts, WithStatus(string(test.status)))
+			}
+
+			created, err := CreateArtifact(
+				context.Background(),
+				ws,
+				"C8 allowed "+test.name,
+				"shipment",
+				opts...,
+			)
+			require.NoError(t, err)
+			require.Equal(t, test.status, created.Status)
+		})
+	}
+}
+
+func p021ForceOutOfBandBlockedShipment(t *testing.T, ws *Workspace, fixture urBlockedFixture) {
+	t.Helper()
+
+	shipment := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+	memberStatuses := make(map[string]string, len(fixture.members))
+	for _, memberID := range NormalizeShipmentItems(shipment) {
+		member := cloneArtifact(loadURCanonicalArtifact(t, ws, memberID))
+		memberStatuses[memberID] = string(member.Status)
+		if member.Status == models.StatusActive || member.Status == models.StatusReview {
+			member.Status = models.StatusQueued
+			member.UpdatedAt = models.NowUTC()
+			forceURArtifactFixture(t, ws, member)
+		}
+	}
+
+	shipment.Status = models.StatusBlocked
+	shipment.UpdatedAt = models.NowUTC()
+	if shipment.CustomFields == nil {
+		shipment.CustomFields = map[string]any{}
+	}
+	shipment.CustomFields["blocked_reason"] = "plausible imported blocker"
+	shipment.CustomFields["blocked_at"] = time.Now().UTC().Format(time.RFC3339)
+	shipment.CustomFields["blocked_by"] = "out-of-band importer"
+	shipment.CustomFields["branch"] = "feat/imported-blocked-record"
+	shipment.CustomFields["resume_checkpoint_ref"] = "imported-resume.json"
+	shipment.CustomFields["member_status_snapshot"] = memberStatuses
+	forceURArtifactFixture(t, ws, shipment)
+}
+
 func TestP021RecoveryCAS_RefusesDriftAndRestoresExactPreimage(t *testing.T) {
 	t.Run("rollback_refuses_member_drift_without_mutation", func(t *testing.T) {
 		ws := setupShipmentWorkspace(t)

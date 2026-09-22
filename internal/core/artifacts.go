@@ -241,6 +241,14 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		return nil, fmt.Errorf("create artifact %q: initial status %q is not permitted (create then archive): %w",
 			artifactID, status, blerrors.ErrValidation)
 	}
+	if artifactType == "shipment" && models.ArtifactStatus(status) == models.StatusBlocked {
+		return nil, fmt.Errorf(
+			"create artifact %q: initial status %q is not permitted for shipments (normalize imported records or block via BlockShipment): %w",
+			artifactID,
+			status,
+			blerrors.ErrShipmentBlockedRequiresEnvelope,
+		)
+	}
 	// 144-F guard 1 (create seam): reject "shipped" as an initial status for
 	// shipments. Shipments are created at "queued" and reach "shipped" only via
 	// the ShipShipment governed envelope.

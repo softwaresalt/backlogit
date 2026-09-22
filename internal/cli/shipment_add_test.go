@@ -106,3 +106,18 @@ func TestShipmentAdd_RegisteredInShipmentGroup(t *testing.T) {
 	}
 	assert.Contains(t, names, "add", "shipment group must register the add subcommand")
 }
+
+func TestAddShipment_BlockedStatusRequiresGovernedEnvelope(t *testing.T) {
+	root := setupCLIWorkspace(t)
+
+	err := runCLIErr(
+		t,
+		root,
+		"add",
+		"--type", "shipment",
+		"--title", "Born blocked shipment",
+		"--status", "blocked",
+	)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrShipmentBlockedRequiresEnvelope)
+}

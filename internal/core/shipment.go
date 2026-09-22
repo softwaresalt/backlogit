@@ -225,6 +225,11 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 		"resume_checkpoint_ref":  opts.ResumeCheckpointRef,
 		"member_status_snapshot": memberStatuses,
 	}
+	blockedAt := time.Now().UTC().Format(time.RFC3339)
+	eventDelta["blocked_at"] = blockedAt
+	if branch, ok := shipment.CustomFields["branch"].(string); ok && branch != "" {
+		eventDelta["branch"] = branch
+	}
 	mutationApplied := false
 	compensate := func(cause error) error {
 		if blerrors.IsWriteIndeterminate(cause) {
@@ -298,7 +303,7 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 		blocked.CustomFields = map[string]any{}
 	}
 	blocked.CustomFields["blocked_reason"] = opts.Reason
-	blocked.CustomFields["blocked_at"] = time.Now().UTC().Format(time.RFC3339)
+	blocked.CustomFields["blocked_at"] = blockedAt
 	blocked.CustomFields["blocked_by"] = opts.BlockedBy
 	blocked.CustomFields["member_status_snapshot"] = memberStatuses
 	if opts.ResumeCheckpointRef == "" {
@@ -417,28 +422,11 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 		return nil, fmt.Errorf("shipment %s membership changed while acquiring locks: %w", shipmentID, blerrors.ErrShipmentConflict)
 	}
 
-	rawSnapshot, ok := shipment.CustomFields["member_status_snapshot"]
-	if !ok {
-		return nil, fmt.Errorf("unblock shipment %s without member status snapshot: %w", shipmentID, blerrors.ErrShipmentConflict)
+	envelope, err := validatePersistedBlockedShipmentEnvelope(lockedCtx, ws, shipment)
+	if err != nil {
+		return nil, fmt.Errorf("unblock shipment %s: %w", shipmentID, err)
 	}
-	memberStatuses := make(map[string]string, len(memberIDs))
-	switch snapshot := rawSnapshot.(type) {
-	case map[string]string:
-		maps.Copy(memberStatuses, snapshot)
-	case map[string]any:
-		for memberID, value := range snapshot {
-			status, statusOK := value.(string)
-			if !statusOK {
-				return nil, fmt.Errorf("unblock shipment %s snapshot status for %s is not a string: %w", shipmentID, memberID, blerrors.ErrShipmentConflict)
-			}
-			memberStatuses[memberID] = status
-		}
-	default:
-		return nil, fmt.Errorf("unblock shipment %s has invalid member status snapshot: %w", shipmentID, blerrors.ErrShipmentConflict)
-	}
-	if len(memberStatuses) != len(memberIDs) {
-		return nil, fmt.Errorf("unblock shipment %s snapshot does not exactly cover its members: %w", shipmentID, blerrors.ErrShipmentConflict)
-	}
+	memberStatuses := envelope.memberStatuses
 
 	preimage := shipmentLifecyclePreimage{
 		Shipment: cloneArtifact(shipment),

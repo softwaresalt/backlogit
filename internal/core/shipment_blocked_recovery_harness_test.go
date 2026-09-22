@@ -758,25 +758,21 @@ func TestUR3_ReopenRollsBackInterruptedUnblockAndRestoresExactBlockedPreimage(t 
 	root, ws := setupUR3Workspace(t)
 	fixture := newURBlockedActiveFixture(t, ws)
 
+	shipment := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+	shipment.CustomFields["codec_integer"] = 9
+	forceURArtifactFixture(t, ws, shipment)
+	_, err := BlockShipment(context.Background(), ws, fixture.shipment.ID, BlockOptions{
+		Reason:              "external dependency",
+		BlockedBy:           "ur3-harness",
+		ResumeCheckpointRef: "checkpoint-before-unblock.json",
+	})
+	require.NoError(t, err)
+
 	shipmentPreimage := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
-	shipmentPreimage.Status = models.StatusBlocked
-	shipmentPreimage.CustomFields["blocked_reason"] = "external dependency"
-	shipmentPreimage.CustomFields["blocked_at"] = "2026-09-21T00:00:00Z"
-	shipmentPreimage.CustomFields["blocked_by"] = "ur3-harness"
-	shipmentPreimage.CustomFields["resume_checkpoint_ref"] = "checkpoint-before-unblock.json"
-	memberSnapshot := make(map[string]string, len(fixture.members))
 	memberPreimages := make([]*models.Artifact, 0, len(fixture.members))
 	for _, member := range fixture.members {
-		current := cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID))
-		memberSnapshot[current.ID] = string(current.Status)
-		current.Status = models.StatusQueued
-		forceURArtifactFixture(t, ws, current)
-		memberPreimages = append(memberPreimages, cloneArtifact(loadURCanonicalArtifact(t, ws, current.ID)))
+		memberPreimages = append(memberPreimages, cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID)))
 	}
-	shipmentPreimage.CustomFields["member_status_snapshot"] = memberSnapshot
-	shipmentPreimage.CustomFields["codec_integer"] = 9
-	forceURArtifactFixture(t, ws, shipmentPreimage)
-	shipmentPreimage = cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
 
 	intent := ur3OperationIntent{
 		SchemaVersion:  "shipment-operation/v1",
@@ -1208,25 +1204,21 @@ func TestUR10_SubprocessCrashReopenRecovery(t *testing.T) {
 		root, ws := setupUR3Workspace(t)
 		fixture := newURBlockedActiveFixture(t, ws)
 
+		shipment := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+		shipment.CustomFields["codec_integer"] = 19
+		forceURArtifactFixture(t, ws, shipment)
+		_, err := BlockShipment(context.Background(), ws, fixture.shipment.ID, BlockOptions{
+			Reason:              "R10 external dependency",
+			BlockedBy:           "r10-harness",
+			ResumeCheckpointRef: "r10-before-unblock.json",
+		})
+		require.NoError(t, err)
+
 		shipmentPreimage := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
-		shipmentPreimage.Status = models.StatusBlocked
-		shipmentPreimage.CustomFields["blocked_reason"] = "R10 external dependency"
-		shipmentPreimage.CustomFields["blocked_at"] = "2026-09-22T00:00:00Z"
-		shipmentPreimage.CustomFields["blocked_by"] = "r10-harness"
-		shipmentPreimage.CustomFields["resume_checkpoint_ref"] = "r10-before-unblock.json"
-		memberSnapshot := make(map[string]string, len(fixture.members))
 		memberPreimages := make([]*models.Artifact, 0, len(fixture.members))
 		for _, member := range fixture.members {
-			current := cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID))
-			memberSnapshot[current.ID] = string(current.Status)
-			current.Status = models.StatusQueued
-			forceURArtifactFixture(t, ws, current)
-			memberPreimages = append(memberPreimages, cloneArtifact(loadURCanonicalArtifact(t, ws, current.ID)))
+			memberPreimages = append(memberPreimages, cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID)))
 		}
-		shipmentPreimage.CustomFields["member_status_snapshot"] = memberSnapshot
-		shipmentPreimage.CustomFields["codec_integer"] = 19
-		forceURArtifactFixture(t, ws, shipmentPreimage)
-		shipmentPreimage = cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
 
 		intent := ur3OperationIntent{
 			SchemaVersion:  "shipment-operation/v1",
