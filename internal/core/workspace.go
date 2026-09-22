@@ -126,6 +126,17 @@ func workspaceStorageRoot(ws *Workspace) string {
 
 // NewWorkspace creates a workspace, loads config, opens DB, and ensures schema.
 func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
+	return newWorkspace(ctx, rootPath, true)
+}
+
+// NewDiagnosticWorkspace creates a workspace without running mutating shipment
+// recovery. It is reserved for doctor and recovery-remediation surfaces that
+// must remain available when a pending journal prevents ordinary initialization.
+func NewDiagnosticWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
+	return newWorkspace(ctx, rootPath, false)
+}
+
+func newWorkspace(ctx context.Context, rootPath string, autoRecover bool) (*Workspace, error) {
 	started := time.Now()
 	backlogitDir, err := ResolveStorageRoot(rootPath)
 	if err != nil {
@@ -268,12 +279,16 @@ func NewWorkspace(ctx context.Context, rootPath string) (*Workspace, error) {
 	// DB-only link migration is intentionally not part of workspace construction.
 	// Rehydrate callers invoke MigrateDBOnlyLinks immediately before clearing the
 	// item_links cache, keeping the MCP handshake free of filesystem-wide scans.
-	if err := recoverPendingShipmentOperations(ctx, workspace); err != nil {
-		database.Close()
-		return nil, fmt.Errorf("recover shipment operations: %w", err)
+	if autoRecover {
+		if err := recoverPendingShipmentOperations(ctx, workspace); err != nil {
+			database.Close()
+			return nil, fmt.Errorf("recover shipment operations: %w", err)
+		}
 	}
 	slog.InfoContext(ctx, "workspace initialized",
-		"storage_root", backlogitDir, "duration_ms", time.Since(started).Milliseconds())
+		"storage_root", backlogitDir,
+		"auto_recover", autoRecover,
+		"duration_ms", time.Since(started).Milliseconds())
 	return workspace, nil
 }
 

@@ -97,6 +97,36 @@ func TestUR11_DoctorBlockedShipmentIntegrityContract(t *testing.T) {
 	}
 }
 
+func TestUR11_DoctorInspectsPoisonedLifecycleJournalWithoutAutoRecovery(t *testing.T) {
+	root, ws := newUR11DoctorFixture(t)
+	require.NoError(t, ws.Close())
+
+	opsRoot := filepath.Join(root, ".backlogit", "ops")
+	require.NoError(t, os.MkdirAll(opsRoot, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(opsRoot, "shipment-operation-0123456789abcdef0123456789abcdef.json"),
+		[]byte(`{"schema_version":`),
+		0o644,
+	))
+
+	ordinary, ordinaryErr := core.NewWorkspace(context.Background(), root)
+	require.Error(t, ordinaryErr, "ordinary workspace construction must remain fail-closed")
+	require.Nil(t, ordinary)
+
+	server, serverErr := openMCPServer(context.Background(), root)
+	require.NoError(t, serverErr, "MCP startup must retain diagnostic surfaces")
+	require.NotNil(t, server)
+
+	payload, doctorErr := runUR11DoctorCLI(t, root)
+	var exitErr *ExitError
+	require.True(t, errors.As(doctorErr, &exitErr), "poisoned journals must be reported as doctor findings")
+	require.Equal(t, 1, exitErr.ExitCode())
+	report := decodeUR11DoctorReport(t, payload)
+	require.Len(t, report.Findings, 1)
+	assert.Equal(t, "invalid_shipment_lifecycle_journal", report.Findings[0].Code)
+	assert.Contains(t, report.Findings[0].Message, "shipment-operation-")
+}
+
 func newUR11DoctorFixture(t *testing.T) (string, *core.Workspace) {
 	t.Helper()
 

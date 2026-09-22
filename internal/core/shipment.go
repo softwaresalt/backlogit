@@ -209,8 +209,9 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 		SnapshotRef:    opts.ResumeCheckpointRef,
 		Preimage:       preimage,
 	}
-	journalPath := filepath.Join(shipmentOpsRoot(ws.RootPath), "shipment-operation-"+correlationID+".json")
-	if err := writeShipmentLifecycleJournal(journalPath, journal); err != nil {
+	journalName := shipmentLifecycleJournalName(correlationID)
+	_, err = writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal)
+	if err != nil {
 		return nil, fmt.Errorf("persist block shipment %s intent: %w", shipmentID, err)
 	}
 
@@ -248,7 +249,7 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 		}
 		if compensationErr == nil {
 			journal.Phase = "compensated"
-			if journalErr := writeShipmentLifecycleJournal(journalPath, journal); journalErr != nil {
+			if _, journalErr := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); journalErr != nil {
 				compensationErr = errors.Join(compensationErr, fmt.Errorf("persist compensation journal: %w", journalErr))
 			}
 			compensatedDelta := maps.Clone(eventDelta)
@@ -336,7 +337,7 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 		return nil, compensate(fmt.Errorf("append lifecycle commit: %w", err))
 	}
 	journal.Phase = "committed"
-	if err := writeShipmentLifecycleJournal(journalPath, journal); err != nil {
+	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); err != nil {
 		return nil, compensate(fmt.Errorf("persist block shipment commit: %w", err))
 	}
 
@@ -498,8 +499,9 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 		SnapshotRef:    resumeCheckpointRef,
 		Preimage:       preimage,
 	}
-	journalPath := filepath.Join(shipmentOpsRoot(ws.RootPath), "shipment-operation-"+correlationID+".json")
-	if err := writeShipmentLifecycleJournal(journalPath, journal); err != nil {
+	journalName := shipmentLifecycleJournalName(correlationID)
+	_, err = writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal)
+	if err != nil {
 		return nil, fmt.Errorf("persist unblock shipment %s intent: %w", shipmentID, err)
 	}
 
@@ -536,7 +538,7 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 		}
 		if compensationErr == nil {
 			journal.Phase = "compensated"
-			if journalErr := writeShipmentLifecycleJournal(journalPath, journal); journalErr != nil {
+			if _, journalErr := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); journalErr != nil {
 				compensationErr = errors.Join(compensationErr, fmt.Errorf("persist compensation journal: %w", journalErr))
 			}
 			compensatedDelta := maps.Clone(eventDelta)
@@ -615,7 +617,7 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 		return nil, compensate(fmt.Errorf("append lifecycle commit: %w", err))
 	}
 	journal.Phase = "committed"
-	if err := writeShipmentLifecycleJournal(journalPath, journal); err != nil {
+	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); err != nil {
 		return nil, compensate(fmt.Errorf("persist unblock shipment commit: %w", err))
 	}
 
@@ -1307,7 +1309,7 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 	}
 	originalShipment := cloneArtifact(shipment)
 	originalItem := cloneArtifact(item)
-	if err := writeReturnBlockedJournal(ws.RootPath, originalShipment, originalItem); err != nil {
+	if err := writeReturnBlockedJournal(ws, originalShipment, originalItem); err != nil {
 		return fmt.Errorf("journal return of item %s from shipment %s: %w", itemID, shipmentID, err)
 	}
 
@@ -1964,20 +1966,6 @@ func shipmentOpsRoot(rootPath string) string {
 	return filepath.Join(WorkspaceStorageRoot(rootPath), "ops")
 }
 
-func writeShipmentLifecycleJournal(path string, journal shipmentLifecycleJournal) error {
-	if err := mkdirAllDurable(filepath.Dir(path), true); err != nil {
-		return fmt.Errorf("create shipment operation directory: %w", err)
-	}
-	payload, err := json.MarshalIndent(journal, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal shipment lifecycle journal: %w", err)
-	}
-	if err := atomicfile.WriteFileAtomicWithOptions(path, payload, atomicfile.Options{DurableWrites: true}); err != nil {
-		return fmt.Errorf("write shipment lifecycle journal: %w", err)
-	}
-	return nil
-}
-
 func guardBlockedShipmentMemberStatusMutation(ctx context.Context, ws *Workspace, artifact *models.Artifact) error {
 	if artifact == nil || artifact.ArtifactType == "shipment" {
 		return nil
@@ -2025,11 +2013,7 @@ func returnBlockedJournalPath(rootPath, shipmentID, itemID string) string {
 	return filepath.Join(shipmentOpsRoot(rootPath), fmt.Sprintf("return-blocked-%s-%s.json", shipmentID, itemID))
 }
 
-func writeReturnBlockedJournal(rootPath string, shipment, item *models.Artifact) error {
-	journalPath := returnBlockedJournalPath(rootPath, shipment.ID, item.ID)
-	if err := os.MkdirAll(filepath.Dir(journalPath), 0o755); err != nil {
-		return fmt.Errorf("create journal directory: %w", err)
-	}
+func writeReturnBlockedJournal(ws *Workspace, shipment, item *models.Artifact) error {
 	payload, err := json.MarshalIndent(returnBlockedJournal{
 		Shipment: cloneArtifact(shipment),
 		Item:     cloneArtifact(item),
@@ -2037,13 +2021,17 @@ func writeReturnBlockedJournal(rootPath string, shipment, item *models.Artifact)
 	if err != nil {
 		return fmt.Errorf("marshal journal: %w", err)
 	}
-	tmpPath := journalPath + ".tmp"
-	if err := os.WriteFile(tmpPath, payload, 0o644); err != nil {
-		return fmt.Errorf("write journal temp file: %w", err)
+	name := filepath.Base(returnBlockedJournalPath(ws.RootPath, shipment.ID, item.ID))
+	if _, _, err := validateShipmentOperationJournalName(name); err != nil {
+		return err
 	}
-	if err := os.Rename(tmpPath, journalPath); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("commit journal: %w", err)
+	opsRoot, dir, err := shipmentOpsRootForWorkspace(ws, true)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	if err := writeShipmentOperationJournalFile(dir, opsRoot, name, payload); err != nil {
+		return fmt.Errorf("write return-blocked journal: %w", err)
 	}
 	return nil
 }
@@ -2069,39 +2057,21 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 		ctx = lockedCtx
 	}
 
-	entries, err := os.ReadDir(shipmentOpsRoot(ws.RootPath))
+	records, err := loadShipmentOperationJournals(ws)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("read shipment ops directory: %w", err)
+		return fmt.Errorf("validate shipment operation journals: %w", err)
 	}
 	var recoveryErrs []error
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		if strings.HasPrefix(entry.Name(), "shipment-operation-") {
-			journalPath := filepath.Join(shipmentOpsRoot(ws.RootPath), entry.Name())
-			data, readErr := os.ReadFile(journalPath)
-			if readErr != nil {
-				recoveryErrs = append(recoveryErrs,
-					fmt.Errorf("read shipment lifecycle journal %s: %w", journalPath, readErr))
-				continue
-			}
-			var journal shipmentLifecycleJournal
-			if unmarshalErr := json.Unmarshal(data, &journal); unmarshalErr != nil {
-				recoveryErrs = append(recoveryErrs,
-					fmt.Errorf("parse shipment lifecycle journal %s: %w", journalPath, unmarshalErr))
-				continue
-			}
+	for _, record := range records {
+		if record.kind == shipmentLifecycleJournalKind {
+			journal := record.lifecycle
 			if journal.Phase != "intent" {
 				continue
 			}
 			if journal.Preimage.Shipment == nil || journal.ShipmentID == "" {
 				recoveryErrs = append(recoveryErrs,
 					fmt.Errorf("shipment lifecycle journal %s is incomplete: %w",
-						journalPath, blerrors.ErrValidation))
+						record.path, blerrors.ErrValidation))
 				continue
 			}
 			membershipUnlock, lockErr := lockShipmentMembership(ctx, ws, journal.ShipmentID)
@@ -2113,7 +2083,7 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 			lockIDs := append([]string{journal.ShipmentID}, NormalizeShipmentItems(journal.Preimage.Shipment)...)
 			lockedCtx, artifactUnlock, lockErr := lockArtifactMutations(ctx, ws, lockIDs)
 			if lockErr == nil {
-				_, lockErr = reconcileShipmentLifecycleIntent(lockedCtx, ws, journalPath, journal)
+				_, lockErr = reconcileShipmentLifecycleIntent(lockedCtx, ws, record.path, journal)
 			}
 			unlockErr := artifactUnlock
 			if unlockErr != nil {
@@ -2126,25 +2096,17 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 			}
 			continue
 		}
-		journalPath := filepath.Join(shipmentOpsRoot(ws.RootPath), entry.Name())
-		if err := recoverReturnBlockedJournal(ctx, ws, journalPath); err != nil {
+		if err := recoverReturnBlockedJournal(ctx, ws, record); err != nil {
 			recoveryErrs = append(recoveryErrs, err)
 		}
 	}
 	return errors.Join(recoveryErrs...)
 }
 
-func recoverReturnBlockedJournal(ctx context.Context, ws *Workspace, journalPath string) error {
-	data, err := os.ReadFile(journalPath)
-	if err != nil {
-		return fmt.Errorf("read shipment journal %s: %w", journalPath, err)
-	}
-	var journal returnBlockedJournal
-	if err := json.Unmarshal(data, &journal); err != nil {
-		return fmt.Errorf("parse shipment journal %s: %w", journalPath, err)
-	}
+func recoverReturnBlockedJournal(ctx context.Context, ws *Workspace, record shipmentOperationJournalRecord) error {
+	journal := record.returnBlocked
 	if journal.Shipment == nil || journal.Item == nil {
-		return fmt.Errorf("shipment journal %s is incomplete", journalPath)
+		return fmt.Errorf("shipment journal %s is incomplete", record.path)
 	}
 	if err := persistArtifact(ctx, ws, journal.Shipment, false); err != nil {
 		return fmt.Errorf("restore shipment %s from journal: %w", journal.Shipment.ID, err)

@@ -100,7 +100,7 @@ resume) — no new command; retry policy is owned by the caller.`,
 				// results, not usage errors; silence Cobra's stderr error print
 				// and carry the code via ExitError so main can os.Exit(code).
 				cmd.SilenceErrors = true
-				ws, err := core.NewWorkspace(ctx, *cwd)
+				ws, err := core.NewDiagnosticWorkspace(ctx, *cwd)
 				if err != nil {
 					return &ExitError{Code: 3, Msg: fmt.Sprintf("open workspace: %v", err)}
 				}
@@ -114,7 +114,7 @@ resume) — no new command; retry policy is owned by the caller.`,
 				return &ExitError{Code: code, Msg: fmt.Sprintf("doctor target: %s (%s)", res.Kind, res.Message)}
 			}
 
-			ws, err := core.NewWorkspace(ctx, *cwd)
+			ws, err := core.NewDiagnosticWorkspace(ctx, *cwd)
 			if err != nil {
 				if len(preflightFindings) > 0 {
 					return writeDoctorPreflightReport(cmd.OutOrStdout(), outputFormatFlag, preflightFindings)

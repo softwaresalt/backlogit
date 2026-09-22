@@ -1251,7 +1251,7 @@ func TestNewWorkspace_RecoversPendingReturnBlockedJournal(t *testing.T) {
 	updatedShipment := cloneArtifact(originalShipment)
 	updatedShipment.CustomFields["items"] = removeString(NormalizeShipmentItems(updatedShipment), task.ID)
 	updatedShipment.UpdatedAt = time.Now()
-	require.NoError(t, writeReturnBlockedJournal(ws.RootPath, originalShipment, originalItem))
+	require.NoError(t, writeReturnBlockedJournal(ws, originalShipment, originalItem))
 	require.NoError(t, persistArtifact(ctx, ws, updatedShipment, false))
 	rootPath := ws.RootPath
 	require.NoError(t, ws.Close())

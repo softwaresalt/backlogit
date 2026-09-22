@@ -278,7 +278,7 @@ func reconcileShipmentLifecycleIntent(
 	); err != nil {
 		return nil, fmt.Errorf("append shipment %s recovery terminal evidence: %w", journal.ShipmentID, err)
 	}
-	if err := writeShipmentLifecycleJournal(journalPath, journal); err != nil {
+	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal); err != nil {
 		return nil, fmt.Errorf("persist shipment %s recovery terminal journal: %w", journal.ShipmentID, err)
 	}
 	return result, nil
@@ -560,6 +560,31 @@ func NormalizeBlockedShipment(
 	snapshotRef string,
 	actor string,
 ) (*models.Artifact, error) {
+	return normalizeBlockedShipment(ctx, ws, shipmentID, snapshotRef, actor, true)
+}
+
+// NormalizeBlockedShipmentForRecovery normalizes a blocked shipment without
+// first auto-recovering unrelated journals. It is reserved for diagnostic
+// remediation when ordinary workspace initialization is blocked by a poison
+// journal; the target aggregate still undergoes the normal snapshot CAS.
+func NormalizeBlockedShipmentForRecovery(
+	ctx context.Context,
+	ws *Workspace,
+	shipmentID string,
+	snapshotRef string,
+	actor string,
+) (*models.Artifact, error) {
+	return normalizeBlockedShipment(ctx, ws, shipmentID, snapshotRef, actor, false)
+}
+
+func normalizeBlockedShipment(
+	ctx context.Context,
+	ws *Workspace,
+	shipmentID string,
+	snapshotRef string,
+	actor string,
+	recoverPending bool,
+) (*models.Artifact, error) {
 	globalUnlock, err := lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)
 	if err != nil {
 		return nil, fmt.Errorf("lock shipment lifecycle: %w", err)
@@ -570,8 +595,10 @@ func NormalizeBlockedShipment(
 		}
 	}()
 	ctx = context.WithValue(ctx, shipmentLifecycleGlobalLockContextKey{}, struct{}{})
-	if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
-		return nil, fmt.Errorf("recover pending shipment operations before normalize: %w", err)
+	if recoverPending {
+		if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
+			return nil, fmt.Errorf("recover pending shipment operations before normalize: %w", err)
+		}
 	}
 
 	membershipUnlock, err := lockShipmentMembership(ctx, ws, shipmentID)
@@ -658,8 +685,9 @@ func NormalizeBlockedShipment(
 		SnapshotRef:    snapshotRef,
 		Preimage:       preimage,
 	}
-	journalPath := filepath.Join(shipmentOpsRoot(ws.RootPath), "shipment-operation-"+correlationID+".json")
-	if err := writeShipmentLifecycleJournal(journalPath, journal); err != nil {
+	journalName := shipmentLifecycleJournalName(correlationID)
+	journalPath, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal)
+	if err != nil {
 		return nil, fmt.Errorf("persist normalize shipment %s intent: %w", shipmentID, err)
 	}
 	return reconcileShipmentLifecycleIntent(lockedCtx, ws, journalPath, journal)

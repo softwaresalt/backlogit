@@ -317,9 +317,27 @@ func p021LifecycleJournal(
 func p021WriteLifecycleJournal(t *testing.T, ws *Workspace, journal shipmentLifecycleJournal) string {
 	t.Helper()
 
-	path := filepath.Join(shipmentOpsRoot(ws.RootPath), "shipment-operation-"+journal.CorrelationID+".json")
-	require.NoError(t, writeShipmentLifecycleJournal(path, journal))
+	journal.CorrelationID = p021CorrelationID(journal.Operation)
+	path, err := writeShipmentLifecycleJournalForWorkspace(
+		ws,
+		shipmentLifecycleJournalName(journal.CorrelationID),
+		journal,
+	)
+	require.NoError(t, err)
 	return path
+}
+
+func p021CorrelationID(operation string) string {
+	switch operation {
+	case "block":
+		return "11111111111111111111111111111111"
+	case "unblock":
+		return "22222222222222222222222222222222"
+	case "normalize":
+		return "33333333333333333333333333333333"
+	default:
+		return "ffffffffffffffffffffffffffffffff"
+	}
 }
 
 func p021ReadLifecycleJournal(t *testing.T, path string) shipmentLifecycleJournal {

@@ -421,6 +421,15 @@ func openMCPServer(ctx context.Context, rootPath string) (*mcpinternal.Server, e
 		wireMCPMetadataProvider(s, rootPath)
 		return s, nil
 	}
+	diagnostic, diagnosticErr := core.NewDiagnosticWorkspace(ctx, rootPath)
+	if diagnosticErr == nil {
+		if closeErr := diagnostic.Close(); closeErr != nil {
+			return nil, fmt.Errorf("close diagnostic workspace: %w", closeErr)
+		}
+		s := mcpinternal.NewServerForRoot(rootPath)
+		wireMCPMetadataProvider(s, rootPath)
+		return s, nil
+	}
 	return nil, fmt.Errorf("open workspace: %w", err)
 }
 

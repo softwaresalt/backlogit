@@ -141,6 +141,11 @@ const (
 	// FindingTornShipmentLifecycleIntent indicates a shipment_lifecycle intent
 	// event has no correlated committed or compensated terminal event.
 	FindingTornShipmentLifecycleIntent DoctorFindingType = "torn_shipment_lifecycle_intent"
+
+	// FindingInvalidShipmentLifecycleJournal indicates that the durable
+	// shipment-operation journal set cannot be safely enumerated, read, or
+	// decoded. Doctor reports the poison without running recovery.
+	FindingInvalidShipmentLifecycleJournal DoctorFindingType = "invalid_shipment_lifecycle_journal"
 )
 
 // DoctorFindingSeverity classifies whether a doctor finding affects process
@@ -283,6 +288,13 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	report := &DoctorReport{
 		Findings:  []DoctorFinding{},
 		CheckedAt: time.Now().UTC(),
+	}
+	if _, err := loadShipmentOperationJournals(ws); err != nil {
+		report.Findings = append(report.Findings, newDoctorErrorFinding(
+			FindingInvalidShipmentLifecycleJournal,
+			"ops",
+			fmt.Sprintf("shipment lifecycle journal inspection failed: %v", err),
+		))
 	}
 
 	if opts.CheckWorkspaceRootConflict {

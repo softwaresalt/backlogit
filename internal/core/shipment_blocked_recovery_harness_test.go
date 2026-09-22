@@ -86,9 +86,9 @@ func writeUR3Intent(t *testing.T, ws *Workspace, intent ur3OperationIntent) stri
 	require.NoError(t, os.MkdirAll(opsRoot, 0o755))
 	data, err := json.MarshalIndent(intent, "", "  ")
 	require.NoError(t, err)
-	file, err := os.CreateTemp(opsRoot, "shipment-operation-*.json")
+	path := filepath.Join(opsRoot, shipmentLifecycleJournalName(intent.CorrelationID))
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	require.NoError(t, err)
-	path := file.Name()
 	require.NoError(t, file.Chmod(0o644))
 	_, writeErr := file.Write(data)
 	syncErr := file.Sync()
@@ -661,7 +661,7 @@ func TestUR3_ReopenRollsBackInterruptedBlockFromCompletePreimage(t *testing.T) {
 
 	intent := ur3OperationIntent{
 		SchemaVersion:  "shipment-operation/v1",
-		CorrelationID:  "ur3-block-rollback",
+		CorrelationID:  "11111111111111111111111111111111",
 		Phase:          "intent",
 		Operation:      "block",
 		RecoveryPolicy: "rollback",
@@ -701,7 +701,7 @@ func TestUR3_ReopenRollsBackInterruptedBlockFromCompletePreimage(t *testing.T) {
 		}
 		pending := ur3OperationIntent{
 			SchemaVersion:  "shipment-operation/v1",
-			CorrelationID:  "ur3-open-workspace-recovery",
+			CorrelationID:  "22222222222222222222222222222222",
 			Phase:          "intent",
 			Operation:      "block",
 			RecoveryPolicy: "rollback",
@@ -777,7 +777,7 @@ func TestUR3_ReopenRollsBackInterruptedUnblockAndRestoresExactBlockedPreimage(t 
 
 	intent := ur3OperationIntent{
 		SchemaVersion:  "shipment-operation/v1",
-		CorrelationID:  "ur3-unblock-rollback",
+		CorrelationID:  "33333333333333333333333333333333",
 		Phase:          "intent",
 		Operation:      "unblock",
 		RecoveryPolicy: "rollback",
@@ -841,7 +841,7 @@ func TestUR3_BranchBootstrapReopenRollsForwardUsingMachineReadableSnapshot(t *te
 
 	intent := ur3OperationIntent{
 		SchemaVersion:  "shipment-operation/v1",
-		CorrelationID:  "ur3-bootstrap-roll-forward",
+		CorrelationID:  "44444444444444444444444444444444",
 		Phase:          "intent",
 		Operation:      "block",
 		RecoveryPolicy: "roll_forward",
@@ -959,7 +959,7 @@ func TestUR10_SubprocessCrashReopenRecovery(t *testing.T) {
 
 		intent := ur3OperationIntent{
 			SchemaVersion:  "shipment-operation/v1",
-			CorrelationID:  "ur10-block-recovery",
+			CorrelationID:  "55555555555555555555555555555555",
 			Phase:          "intent",
 			Operation:      "block",
 			RecoveryPolicy: "rollback",
@@ -1033,7 +1033,7 @@ func TestUR10_SubprocessCrashReopenRecovery(t *testing.T) {
 
 		intent := ur3OperationIntent{
 			SchemaVersion:  "shipment-operation/v1",
-			CorrelationID:  "ur10-unblock-recovery",
+			CorrelationID:  "66666666666666666666666666666666",
 			Phase:          "intent",
 			Operation:      "unblock",
 			RecoveryPolicy: "rollback",
@@ -1098,7 +1098,7 @@ func TestUR10_SubprocessCrashReopenRecovery(t *testing.T) {
 
 		intent := ur3OperationIntent{
 			SchemaVersion:  "shipment-operation/v1",
-			CorrelationID:  "ur10-bootstrap-recovery",
+			CorrelationID:  "77777777777777777777777777777777",
 			Phase:          "intent",
 			Operation:      "block",
 			RecoveryPolicy: "roll_forward",

@@ -2054,8 +2054,16 @@ func (s *Server) handleUnblockShipment(ctx context.Context, request mcplib.CallT
 }
 
 func (s *Server) handleNormalizeBlockedShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	if _, result := s.requireWorkspace(ctx); result != nil {
-		return result, nil
+	ws, result := s.requireWorkspace(ctx)
+	recoveryRemediation := false
+	if result != nil {
+		diagnostic, err := core.NewDiagnosticWorkspace(ctx, s.RootPath)
+		if err != nil {
+			return result, nil
+		}
+		defer diagnostic.Close()
+		ws = diagnostic
+		recoveryRemediation = true
 	}
 
 	id, _ := request.Params.Arguments["id"].(string)
@@ -2070,7 +2078,13 @@ func (s *Server) handleNormalizeBlockedShipment(ctx context.Context, request mcp
 
 	logger.Info("shipment tool invoked", "tool", "backlogit_normalize_blocked_shipment", "shipment_id", id)
 
-	shipment, err := core.NormalizeBlockedShipment(ctx, s.Workspace, id, snapshotRef, actor)
+	var shipment *models.Artifact
+	var err error
+	if recoveryRemediation {
+		shipment, err = core.NormalizeBlockedShipmentForRecovery(ctx, ws, id, snapshotRef, actor)
+	} else {
+		shipment, err = core.NormalizeBlockedShipment(ctx, ws, id, snapshotRef, actor)
+	}
 	if err != nil {
 		return domainError("normalize blocked shipment", err), nil
 	}
@@ -2301,15 +2315,27 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 		preflightFindings = findings
 	}
 
-	ws, result := s.requireWorkspace(ctx)
-	if result != nil {
-		if len(preflightFindings) > 0 {
-			return toolResultJSON(&core.DoctorReport{
-				Findings:  preflightFindings,
-				CheckedAt: time.Now().UTC(),
-			})
+	ws := s.Workspace
+	diagnosticOwned := false
+	if ws == nil {
+		diagnostic, err := core.NewDiagnosticWorkspace(ctx, s.RootPath)
+		if err != nil {
+			if len(preflightFindings) > 0 {
+				return toolResultJSON(&core.DoctorReport{
+					Findings:  preflightFindings,
+					CheckedAt: time.Now().UTC(),
+				})
+			}
+			if errors.Is(err, os.ErrNotExist) {
+				return WorkspaceNotInitialized(), nil
+			}
+			return InternalError(fmt.Sprintf("open diagnostic workspace: %v", err)), nil
 		}
-		return result, nil
+		ws = diagnostic
+		diagnosticOwned = true
+	}
+	if diagnosticOwned {
+		defer ws.Close()
 	}
 
 	// target mode: validate a single artifact file and return a structured,
