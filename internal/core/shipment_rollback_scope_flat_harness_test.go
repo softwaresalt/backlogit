@@ -89,7 +89,7 @@ func TestURollbackScopeFlat_RestoreCannotOverwriteUnlistedDescendant(t *testing.
 
 	mutated := false
 	persistArtifactPreLockHook = func(id string) {
-		if id != listed.ID || mutated {
+		if id != shipment.ID || mutated {
 			return
 		}
 		mutated = true

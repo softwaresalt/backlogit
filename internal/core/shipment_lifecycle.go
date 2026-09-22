@@ -445,7 +445,6 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	var explicitScopeSet map[string]struct{}
 	var nonMemberFeatureSnapshots map[string]featureStatusSnapshot
 	var shipSnapshots map[string]shipArtifactSnapshot
-	shipRollbackAttempted := false
 	// archivedIDs and restored are declared here (rather than at their first
 	// assignment) so both the locked closure below and the deferred fallback
 	// registered immediately after it observe/mutate the same variables.
@@ -464,15 +463,15 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	// single `restored` flag conflated the two and let a transient busy-lock
 	// permanently abandon the covering-feature compensation.
 	//
-	// Truth table for the interaction with shipRollbackAttempted:
+	// Truth table for the non-member fallback:
 	//
-	//	outcome                | in-lock restore | attempted | succeeded | rollbackAttempted | fallback
-	//	-----------------------|-----------------|-----------|-----------|-------------------|---------
-	//	success                | explicit call   | true      | true      | false             | skip
-	//	success, restore fails | explicit call   | true      | false     | false             | retry once
-	//	not-applied            | none            | false     | false     | true              | skip
-	//	partially-compensated  | none            | false     | false     | true              | skip
-	//	indeterminate          | in classify     | true      | true/false| false             | retry once
+	//	outcome                | in-lock restore | attempted | succeeded | fallback
+	//	-----------------------|-----------------|-----------|-----------|-----------
+	//	success                | explicit call   | true      | true      | skip
+	//	success, restore fails | explicit call   | true      | false     | retry once
+	//	not-applied            | none            | false     | false     | restore
+	//	partially-compensated  | none            | false     | false     | restore
+	//	indeterminate          | in classify     | true      | true/false| retry once
 	restoreAttempted := false
 	restoreSucceeded := false
 	// 133.004-T: always attempt the revert, even if a later step in this
@@ -519,9 +518,6 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	// only during return unwinding -- strictly after those in-line
 	// statements already ran to completion.
 	defer func() {
-		if shipRollbackAttempted {
-			return
-		}
 		if restoreAttempted && restoreSucceeded {
 			return
 		}
@@ -559,7 +555,6 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 			var appendErr *shipmentEventAppendError
 			if errors.As(closureErr, &appendErr) {
 				outcome := classifyShippedEventAppendFailure(ctx, ws, shipmentID, appendErr, shipSnapshots, nonMemberFeatureSnapshots)
-				shipRollbackAttempted = outcome.rollbackAttempted
 				if outcome.nonMemberRestored {
 					restoreAttempted = true
 					restoreSucceeded = outcome.nonMemberRestoreSucceeded
@@ -570,7 +565,6 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 			if closureErr == nil || len(shipSnapshots) == 0 {
 				return
 			}
-			shipRollbackAttempted = true
 			if rollbackErr := restoreShipArtifacts(ctx, ws, shipSnapshots); rollbackErr != nil {
 				closureErr = fmt.Errorf("%w; rollback failed: %w", closureErr, rollbackErr)
 			}
@@ -633,16 +627,6 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 
 		rollbackIDs := append([]string{shipmentID}, releaseScope...)
-		rollbackIDs = append(rollbackIDs, featureIDs...)
-		for _, featureID := range featureIDs {
-			descendants, descendantsErr := descendantItems(ctx, ws, featureID)
-			if descendantsErr != nil {
-				return fmt.Errorf("snapshot feature descendants for %s: %w", featureID, descendantsErr)
-			}
-			for _, descendant := range descendants {
-				rollbackIDs = append(rollbackIDs, descendant.ID)
-			}
-		}
 		var artifactLockErr error
 		ctx, releaseArtifactLocks, artifactLockErr = lockArtifactMutations(ctx, ws, rollbackIDs)
 		if artifactLockErr != nil {
@@ -894,8 +878,7 @@ func snapshotNonMemberFeatureStatuses(ctx context.Context, ws *Workspace, featur
 type shippedEventFailureOutcome struct {
 	// err is the *blerrors.MutationPartialError the closure returns.
 	err error
-	// rollbackAttempted reports whether restoreShipArtifacts ran, so the outer
-	// non-member fallback keeps its existing semantics.
+	// rollbackAttempted reports whether restoreShipArtifacts ran.
 	rollbackAttempted bool
 	// nonMemberRestored reports whether restoreRolledUpNonMemberFeatures was
 	// already run synchronously, so the outer deferred fallback does not repeat it.
@@ -1172,26 +1155,7 @@ func archiveItems(ctx context.Context, ws *Workspace, itemIDs []string) ([]strin
 }
 
 func releaseScopeItemIDs(ctx context.Context, ws *Workspace, itemIDs []string) ([]string, error) {
-	ids := make([]string, 0, len(itemIDs))
-	seen := make(map[string]struct{}, len(itemIDs))
-	for _, itemID := range uniqueNonEmptyStrings(itemIDs) {
-		if _, ok := seen[itemID]; !ok {
-			seen[itemID] = struct{}{}
-			ids = append(ids, itemID)
-		}
-		descendants, err := descendantItems(ctx, ws, itemID)
-		if err != nil {
-			return nil, err
-		}
-		for _, child := range descendants {
-			if _, ok := seen[child.ID]; ok {
-				continue
-			}
-			seen[child.ID] = struct{}{}
-			ids = append(ids, child.ID)
-		}
-	}
-	return ids, nil
+	return uniqueNonEmptyStrings(itemIDs), nil
 }
 
 func featureScopeRoots(ctx context.Context, ws *Workspace, itemIDs []string) ([]string, error) {

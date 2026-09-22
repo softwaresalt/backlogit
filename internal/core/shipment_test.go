@@ -400,8 +400,6 @@ func TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails(t *testing.T
 	require.NoError(t, err)
 	task, err := CreateArtifact(ctx, ws, "Rollback release task", "task", WithParent(feature.ID))
 	require.NoError(t, err)
-	unreleasedTask, err := CreateArtifact(ctx, ws, "Rollback unreleased task", "task", WithParent(feature.ID))
-	require.NoError(t, err)
 	shipment, err := CreateShipment(ctx, ws, "Rollback shipment", []string{task.ID})
 	require.NoError(t, err)
 	_, err = ClaimShipment(ctx, ws, shipment.ID)
@@ -425,20 +423,6 @@ func TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails(t *testing.T
 	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, shipment.ID))
 	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, task.ID))
 	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, feature.ID))
-	assert.Equal(t, string(models.StatusQueued), statusOf(t, ws, unreleasedTask.ID))
-	restoredUnreleasedTask, loadErr := loadArtifact(ctx, ws, unreleasedTask.ID)
-	require.NoError(t, loadErr)
-	assert.Equal(t, feature.ID, restoredUnreleasedTask.ParentID)
-	restoredEvents, readErr := events.ReadAllEvents(ctx, WorkspaceLogsRoot(ws.RootPath), unreleasedTask.ID)
-	require.NoError(t, readErr)
-	for _, event := range restoredEvents {
-		assert.NotEqual(t, "returned_to_backlog", event.EventType)
-	}
-	indexedEvents, indexErr := bldb.ListItemLogEntries(ctx, ws.DB, unreleasedTask.ID, 0)
-	require.NoError(t, indexErr)
-	for _, event := range indexedEvents {
-		assert.NotEqual(t, "returned_to_backlog", event.EventType)
-	}
 }
 
 func TestGuardEventsSinceSnapshotPreservesOnlyNewEvidence(t *testing.T) {

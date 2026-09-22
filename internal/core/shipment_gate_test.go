@@ -328,14 +328,13 @@ func TestValidateMemberGateEvidence_EmptyMemberHeadNoRepoSkipped(t *testing.T) {
 
 // TestValidateMemberGateEvidence_DescopedArchivedMemberExempt pins the
 // descoped-member exemption: a feature descendant that was scaffolded then
-// removed from the release (archived directly from a descope-eligible status, so it
-// never went through the completion gate and carries NO gate evidence) MUST NOT
-// block the shipment. releaseScopeItemIDs expands a feature to ALL descendants
-// (IncludeArchived: true), so such a descoped task lands in the release scope even
-// when the shipment manifest excludes it; demanding per-member gate evidence for
-// it would permanently block the parent feature's ship with no operator recourse
-// (archived is a terminal sink with no allowed transitions, so it cannot be
-// force-gated). The exemption is narrow and safe: archived-WITH-evidence members
+// removed from active completion (archived directly from a descope-eligible status,
+// so it never went through the completion gate and carries NO gate evidence) MUST
+// NOT block the shipment when it remains explicitly listed in the flat manifest.
+// Demanding per-member gate evidence for it would permanently block the shipment
+// with no operator recourse (archived is a terminal sink with no allowed status
+// transitions, so it cannot be force-gated). The exemption is narrow and safe:
+// archived-WITH-evidence members
 // still get full lineage validation, non-archived members are unchanged, and the
 // shipment-level aggregate diff gate still covers the full shipment diff.
 func TestValidateMemberGateEvidence_DescopedArchivedMemberExempt(t *testing.T) {
