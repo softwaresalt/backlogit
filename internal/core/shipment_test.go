@@ -133,7 +133,7 @@ func TestClaimShipment_QueuedToActive(t *testing.T) {
 	assert.Equal(t, "active", string(updated.Status))
 }
 
-// T002 / ST012: Claiming a shipment activates included work and rolls feature status up.
+// T002 / ST012: Claiming a shipment activates only its explicitly included work.
 func TestClaimShipment_ActivatesIncludedScope(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
@@ -161,7 +161,8 @@ func TestClaimShipment_ActivatesIncludedScope(t *testing.T) {
 
 	updatedFeature, err := loadArtifact(ctx, ws, feature.ID)
 	require.NoError(t, err)
-	assert.Equal(t, models.StatusActive, updatedFeature.Status)
+	assert.Equal(t, models.StatusQueued, updatedFeature.Status,
+		"unlisted parent feature must remain outside the flat shipment scope")
 }
 
 // T002 / ST012: MoveShipmentStatus no longer allows active→shipped after 144-F
@@ -426,7 +427,7 @@ func TestShipShipment_RollsBackReleaseScopeWhenShipmentPersistFails(t *testing.T
 	assert.Nil(t, result)
 	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, shipment.ID))
 	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, task.ID))
-	assert.Equal(t, string(models.StatusActive), statusOf(t, ws, feature.ID))
+	assert.Equal(t, string(models.StatusQueued), statusOf(t, ws, feature.ID))
 }
 
 func TestGuardEventsSinceSnapshotPreservesOnlyNewEvidence(t *testing.T) {

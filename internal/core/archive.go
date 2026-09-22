@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,6 +57,10 @@ type archiveConfig struct {
 	cascade   bool  // when true, archive children recursively before the parent
 }
 
+type archiveShipmentMembershipLocksContextKey struct{}
+
+type archiveShipmentMembershipLockSet map[string]struct{}
+
 type artifactMoveKind int
 
 const (
@@ -96,17 +101,21 @@ func WithCascade(cascade bool) ArchiveOpt {
 // updating the SQLite index and storing the original path in frontmatter for restoration.
 // When WithCascade(true) is set, child items are archived bottom-up before the parent.
 func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string, opts ...ArchiveOpt) (*ArchiveRecord, error) {
-	lockedCtx, releaseArtifactLock, lockErr := lockArtifactMutations(ctx, ws, []string{itemID})
-	if lockErr != nil {
-		return nil, fmt.Errorf("archive item %s: acquire mutation lock: %w", itemID, lockErr)
-	}
-	defer func() { _ = releaseArtifactLock() }()
-	ctx = lockedCtx
-
 	var cfg archiveConfig
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+
+	lockedCtx, releaseLocks, lockErr := lockArchiveGovernance(ctx, database, ws, itemID, cfg.cascade)
+	if lockErr != nil {
+		return nil, fmt.Errorf("archive item %s: acquire governed locks: %w", itemID, lockErr)
+	}
+	defer func() {
+		if unlockErr := releaseLocks(); unlockErr != nil {
+			slog.WarnContext(ctx, "release archive governance locks", "item_id", itemID, "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
 
 	// 144-F guard 2 preflight: run BEFORE any cascade so a refusal leaves
 	// descendants untouched. Read the parent frontmatter early (using the
@@ -359,6 +368,173 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		CascadedItems: cascadedItems,
 		FailedItems:   failedItems,
 	}, nil
+}
+
+func lockArchiveGovernance(
+	ctx context.Context,
+	database *sql.DB,
+	ws *Workspace,
+	itemID string,
+	cascade bool,
+) (context.Context, func() error, error) {
+	lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+	if err != nil {
+		return ctx, nil, fmt.Errorf("lock shipment lifecycle: %w", err)
+	}
+	releaseGlobal := true
+	defer func() {
+		if releaseGlobal {
+			_ = globalUnlock()
+		}
+	}()
+
+	scopeIDs := []string{itemID}
+	if cascade {
+		scopeIDs = append(scopeIDs,
+			collectDescendants(lockedCtx, database, itemID, make(map[string]bool), 0, maxCascadeDepth(ws))...)
+	}
+	scopeIDs = uniqueNonEmptyStrings(scopeIDs)
+	shipmentIDs, err := archiveRelatedShipmentIDs(ws, scopeIDs)
+	if err != nil {
+		return ctx, nil, err
+	}
+
+	lockedCtx, membershipUnlock, err := lockArchiveShipmentMemberships(lockedCtx, ws, shipmentIDs)
+	if err != nil {
+		return ctx, nil, err
+	}
+	releaseMembership := true
+	defer func() {
+		if releaseMembership {
+			_ = membershipUnlock()
+		}
+	}()
+
+	artifactIDs := uniqueNonEmptyStrings(append(append([]string(nil), scopeIDs...), shipmentIDs...))
+	lockedCtx, artifactUnlock, err := lockArtifactMutations(lockedCtx, ws, artifactIDs)
+	if err != nil {
+		return ctx, nil, err
+	}
+	if err := guardArchiveShipmentGovernance(lockedCtx, ws, scopeIDs, shipmentIDs); err != nil {
+		_ = artifactUnlock()
+		return ctx, nil, err
+	}
+
+	releaseGlobal = false
+	releaseMembership = false
+	return lockedCtx, func() error {
+		return errors.Join(artifactUnlock(), membershipUnlock(), globalUnlock())
+	}, nil
+}
+
+func archiveRelatedShipmentIDs(ws *Workspace, scopeIDs []string) ([]string, error) {
+	scope := make(map[string]struct{}, len(scopeIDs))
+	for _, id := range scopeIDs {
+		scope[id] = struct{}{}
+	}
+	refs, err := scanCanonicalArtifacts(ws)
+	if err != nil {
+		return nil, fmt.Errorf("scan shipment membership for archive: %w", err)
+	}
+	shipmentIDs := make([]string, 0)
+	for _, candidates := range refs {
+		for _, candidate := range candidates {
+			if candidate.artifactType != "shipment" {
+				continue
+			}
+			shipment, _, parseErr := parseFile(candidate.path)
+			if parseErr != nil {
+				return nil, fmt.Errorf("parse shipment %s for archive governance: %w", candidate.id, parseErr)
+			}
+			if _, targetIsShipment := scope[shipment.ID]; targetIsShipment ||
+				shipmentContainsAnyMember(shipment, scope) {
+				shipmentIDs = append(shipmentIDs, shipment.ID)
+			}
+		}
+	}
+	shipmentIDs = uniqueNonEmptyStrings(shipmentIDs)
+	sort.Strings(shipmentIDs)
+	return shipmentIDs, nil
+}
+
+func shipmentContainsAnyMember(shipment *models.Artifact, memberIDs map[string]struct{}) bool {
+	for _, memberID := range NormalizeShipmentItems(shipment) {
+		if _, exists := memberIDs[memberID]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func lockArchiveShipmentMemberships(
+	ctx context.Context,
+	ws *Workspace,
+	shipmentIDs []string,
+) (context.Context, func() error, error) {
+	held, _ := ctx.Value(archiveShipmentMembershipLocksContextKey{}).(archiveShipmentMembershipLockSet)
+	locked := make(archiveShipmentMembershipLockSet, len(held)+len(shipmentIDs))
+	for id := range held {
+		locked[id] = struct{}{}
+	}
+	ordered := uniqueNonEmptyStrings(shipmentIDs)
+	sort.Strings(ordered)
+	unlocks := make([]func() error, 0, len(ordered))
+	for _, shipmentID := range ordered {
+		if _, exists := locked[shipmentID]; exists {
+			continue
+		}
+		unlock, err := lockShipmentMembership(ctx, ws, shipmentID)
+		if err != nil {
+			for i := len(unlocks) - 1; i >= 0; i-- {
+				_ = unlocks[i]()
+			}
+			return ctx, nil, fmt.Errorf("lock shipment %s membership for archive: %w", shipmentID, err)
+		}
+		unlocks = append(unlocks, unlock)
+		locked[shipmentID] = struct{}{}
+	}
+	lockedCtx := context.WithValue(ctx, archiveShipmentMembershipLocksContextKey{}, locked)
+	return lockedCtx, func() error {
+		var errs []error
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			if err := unlocks[i](); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		return errors.Join(errs...)
+	}, nil
+}
+
+func guardArchiveShipmentGovernance(
+	ctx context.Context,
+	ws *Workspace,
+	scopeIDs []string,
+	shipmentIDs []string,
+) error {
+	for _, itemID := range scopeIDs {
+		if _, err := findArtifact(ctx, ws, itemID); err != nil {
+			return fmt.Errorf("reload archive target %s under governed locks: %w", itemID, err)
+		}
+	}
+	scope := make(map[string]struct{}, len(scopeIDs))
+	for _, id := range scopeIDs {
+		scope[id] = struct{}{}
+	}
+	for _, shipmentID := range shipmentIDs {
+		shipment, err := findArtifact(ctx, ws, shipmentID)
+		if err != nil {
+			return fmt.Errorf("reload governing shipment %s under archive locks: %w", shipmentID, err)
+		}
+		normalizeShipmentArtifact(shipment)
+		if shipment.Status == models.StatusBlocked && shipmentContainsAnyMember(shipment, scope) {
+			return fmt.Errorf(
+				"archive explicit member of blocked shipment %s outside its lifecycle operation: %w",
+				shipmentID,
+				blerrors.ErrShipmentConflict,
+			)
+		}
+	}
+	return nil
 }
 
 // archiveDescendants collects all descendants of parentID bottom-up and archives

@@ -45,9 +45,9 @@ type ShipShipmentResult struct {
 
 // ClaimShipment moves a queued shipment to active and marks the included work
 // scope active. Activation is all-or-nothing: if any item fails to load or
-// activate mid-flight, the shipment and every already-activated item (plus any
-// cascade-activated parent) are restored to their pre-claim state so no
-// partial/torn activation is left behind.
+// activate mid-flight, the shipment and every already-activated explicit member
+// are restored to their pre-claim state so no partial/torn activation is left
+// behind. Hierarchy-derived non-members are outside the claim aggregate.
 func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*models.Artifact, error) {
 	globalUnlock, err := lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)
 	if err != nil {
@@ -85,22 +85,11 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 	}
 
 	memberIDs := NormalizeShipmentItems(current)
-	relatedIDs, err := shipmentClaimAncestorIDs(ctx, ws, memberIDs)
-	if err != nil {
-		return nil, fmt.Errorf("collect shipment %s claim ancestors: %w", shipmentID, err)
-	}
-	memberSet := make(map[string]struct{}, len(memberIDs)+1)
-	memberSet[shipmentID] = struct{}{}
+	memberSet := make(map[string]struct{}, len(memberIDs))
 	for _, memberID := range memberIDs {
 		memberSet[memberID] = struct{}{}
 	}
-	filteredRelatedIDs := make([]string, 0, len(relatedIDs))
-	for _, relatedID := range relatedIDs {
-		if _, exists := memberSet[relatedID]; !exists {
-			filteredRelatedIDs = append(filteredRelatedIDs, relatedID)
-		}
-	}
-	lockIDs := uniqueNonEmptyStrings(append(append([]string{shipmentID}, memberIDs...), filteredRelatedIDs...))
+	lockIDs := uniqueNonEmptyStrings(append([]string{shipmentID}, memberIDs...))
 	lockedCtx, artifactUnlock, err := lockArtifactMutations(ctx, ws, lockIDs)
 	if err != nil {
 		return nil, fmt.Errorf("lock shipment %s claim aggregate: %w", shipmentID, err)
@@ -123,7 +112,6 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 	preimage := shipmentLifecyclePreimage{
 		Shipment: cloneArtifact(current),
 		Members:  make([]*models.Artifact, 0, len(memberIDs)),
-		Related:  make([]*models.Artifact, 0, len(filteredRelatedIDs)),
 	}
 	for _, memberID := range memberIDs {
 		member, loadErr := findArtifact(lockedCtx, ws, memberID)
@@ -131,13 +119,6 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 			return nil, fmt.Errorf("load shipment %s claim member %s: %w", shipmentID, memberID, loadErr)
 		}
 		preimage.Members = append(preimage.Members, cloneArtifact(member))
-	}
-	for _, relatedID := range filteredRelatedIDs {
-		related, loadErr := findArtifact(lockedCtx, ws, relatedID)
-		if loadErr != nil {
-			return nil, fmt.Errorf("load shipment %s claim related artifact %s: %w", shipmentID, relatedID, loadErr)
-		}
-		preimage.Related = append(preimage.Related, cloneArtifact(related))
 	}
 
 	snapshots, err := snapshotShipArtifacts(lockedCtx, ws, lockIDs)
@@ -166,15 +147,16 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 	}
 
 	operationCtx := withShipmentOperation(lockedCtx, correlationID)
+	claimCtx := context.WithValue(operationCtx, shipmentMemberCascadeBoundaryContextKey{}, memberSet)
 	rollback := func(cause error) error {
 		return rollbackShipmentClaim(operationCtx, ws, journalPath, journal, snapshots, cause)
 	}
-	activationCtx := context.WithValue(operationCtx, governedShipmentActivationContextKey{}, struct{}{})
+	activationCtx := context.WithValue(claimCtx, governedShipmentActivationContextKey{}, struct{}{})
 	if err := MoveShipmentStatus(activationCtx, ws, shipmentID, ShipmentActive); err != nil {
 		return nil, rollback(err)
 	}
 
-	shipment, err := GetShipment(operationCtx, ws, shipmentID)
+	shipment, err := GetShipment(claimCtx, ws, shipmentID)
 	if err != nil {
 		return nil, rollback(fmt.Errorf("reload shipment after activation: %w", err))
 	}
@@ -182,7 +164,7 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 		if member.Status != models.StatusQueued {
 			continue
 		}
-		if _, setErr := setArtifactStatus(operationCtx, ws, member.ID, models.StatusActive, "shipment claimed"); setErr != nil {
+		if _, setErr := setArtifactStatus(claimCtx, ws, member.ID, models.StatusActive, "shipment claimed"); setErr != nil {
 			return nil, rollback(fmt.Errorf("activate item %s: %w", member.ID, setErr))
 		}
 	}
@@ -959,41 +941,6 @@ func featureScopeRoots(ctx context.Context, ws *Workspace, itemIDs []string) ([]
 		}
 	}
 	return featureIDs, nil
-}
-
-func shipmentClaimAncestorIDs(ctx context.Context, ws *Workspace, memberIDs []string) ([]string, error) {
-	memberSet := make(map[string]struct{}, len(memberIDs))
-	for _, memberID := range memberIDs {
-		memberSet[memberID] = struct{}{}
-	}
-	seen := make(map[string]struct{})
-	ancestors := make([]string, 0)
-	for _, memberID := range uniqueNonEmptyStrings(memberIDs) {
-		member, err := loadArtifact(ctx, ws, memberID)
-		if err != nil {
-			return nil, fmt.Errorf("load claim member %s hierarchy: %w", memberID, err)
-		}
-		chain := make(map[string]struct{})
-		for ancestorID := member.ParentID; ancestorID != ""; {
-			if _, cycle := chain[ancestorID]; cycle {
-				return nil, fmt.Errorf("claim member %s hierarchy contains a cycle at %s: %w",
-					memberID, ancestorID, blerrors.ErrValidation)
-			}
-			chain[ancestorID] = struct{}{}
-			ancestor, loadErr := loadArtifact(ctx, ws, ancestorID)
-			if loadErr != nil {
-				return nil, fmt.Errorf("load claim member %s ancestor %s: %w", memberID, ancestorID, loadErr)
-			}
-			if _, isMember := memberSet[ancestorID]; !isMember {
-				if _, exists := seen[ancestorID]; !exists {
-					seen[ancestorID] = struct{}{}
-					ancestors = append(ancestors, ancestorID)
-				}
-			}
-			ancestorID = ancestor.ParentID
-		}
-	}
-	return ancestors, nil
 }
 
 func setArtifactStatus(ctx context.Context, ws *Workspace, itemID string, newStatus models.ArtifactStatus, reason string) (*models.Artifact, error) {

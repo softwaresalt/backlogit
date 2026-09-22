@@ -253,7 +253,7 @@ func TestP1C6_ClaimCompensationDetachesCancellationAndRestoresExactly(t *testing
 
 	originalWriter := persistArtifactWriteFn
 	persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
-		if artifact.ID == feature.ID && artifact.Status == models.StatusActive {
+		if artifact.ID == member.ID && artifact.Status == models.StatusActive {
 			cancel()
 			return context.Canceled
 		}
@@ -308,12 +308,12 @@ func TestP1C6_ClaimCompensationFailureIsClassifiedAndRecoverable(t *testing.T) {
 	appendItemEvent(ctx, ws, parent.ID, "c6_baseline", map[string]any{"preserve": true})
 	shipment, err := CreateShipment(ctx, ws, "C6 claim recovery shipment", []string{member.ID})
 	require.NoError(t, err)
-	parentEventLogPath := events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), parent.ID)
+	memberEventLogPath := events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), member.ID)
 	before := snapshotURGovernedState(t, ws, []string{shipment.ID, feature.ID, parent.ID, member.ID})
 
 	originalWriter := persistArtifactWriteFn
 	persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
-		if artifact.ID == feature.ID && artifact.Status == models.StatusActive {
+		if artifact.ID == member.ID && artifact.Status == models.StatusActive {
 			cancel()
 			return context.Canceled
 		}
@@ -325,7 +325,7 @@ func TestP1C6_ClaimCompensationFailureIsClassifiedAndRecoverable(t *testing.T) {
 	originalRestore := restoreShipmentSnapshotFn
 	failedRestore := false
 	restoreShipmentSnapshotFn = func(snapshot fileSnapshot) error {
-		if !failedRestore && filepath.Clean(snapshot.Path) == filepath.Clean(parentEventLogPath) {
+		if !failedRestore && filepath.Clean(snapshot.Path) == filepath.Clean(memberEventLogPath) {
 			failedRestore = true
 			return injectedRecoveryErr
 		}
