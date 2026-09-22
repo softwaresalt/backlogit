@@ -549,7 +549,7 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_doctor",
-			mcplib.WithDescription("Scan the workspace for structural integrity issues such as orphaned artifacts and duplicate IDs. Use fix_orphans=true to archive orphaned artifacts automatically. Returns a DoctorReport with findings, fix_actions, and checked_at timestamp."),
+			mcplib.WithDescription("Scan the workspace for structural integrity issues such as orphaned artifacts, duplicate IDs, multiple active shipments, malformed blocked shipments, and torn shipment lifecycle intents. Error-severity findings remain a successful structured MCP result at parity with CLI JSON, whose process exits non-zero. Use fix_orphans=true to archive orphaned artifacts automatically. Returns a DoctorReport with findings, fix_actions, and checked_at timestamp."),
 			mcplib.WithBoolean("check_orphans", mcplib.Description("Enable orphaned-artifact check (default true)")),
 			mcplib.WithBoolean("check_duplicates", mcplib.Description("Enable duplicate-ID check (default true)")),
 			mcplib.WithBoolean("check_partial_mutations", mcplib.Description("Enable advisory detection of residual partial commit-association and dependency-linking state (default false)")),

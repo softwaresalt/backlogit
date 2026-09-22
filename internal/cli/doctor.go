@@ -144,7 +144,13 @@ resume) — no new command; retry policy is owned by the caller.`,
 			if outputFormatFlag == "json" {
 				enc := json.NewEncoder(w)
 				enc.SetIndent("", "  ")
-				return enc.Encode(report)
+				if err := enc.Encode(report); err != nil {
+					return fmt.Errorf("encode doctor report: %w", err)
+				}
+				if report.HasErrors() {
+					return &ExitError{Code: 1, Msg: "doctor found error-severity integrity issues"}
+				}
+				return nil
 			}
 
 			// Text output.
@@ -159,6 +165,9 @@ resume) — no new command; retry policy is owned by the caller.`,
 				fmt.Fprintf(w, "[fix:%s] %s: %s\n", a.Type, a.ArtifactID, a.Detail)
 			}
 			fmt.Fprintf(w, "\n%d issue(s) found, %d fix(es) applied.\n", len(report.Findings), len(report.FixActions))
+			if report.HasErrors() {
+				return &ExitError{Code: 1, Msg: "doctor found error-severity integrity issues"}
+			}
 			return nil
 		},
 	}

@@ -129,13 +129,38 @@ const (
 	// shipment, because the indeterminate branch returns before the archive
 	// collector runs. Advisory; report-only.
 	FindingShippedUnarchivedResidue DoctorFindingType = "shipped_unarchived_residue"
+
+	// FindingMultipleActiveShipments indicates the authoritative Markdown
+	// corpus contains more than one active shipment.
+	FindingMultipleActiveShipments DoctorFindingType = "multiple_active_shipments"
+
+	// FindingMalformedBlockedShipment indicates a blocked shipment is missing a
+	// non-empty blocked_reason or a valid blocked_at timestamp.
+	FindingMalformedBlockedShipment DoctorFindingType = "malformed_blocked_shipment"
+
+	// FindingTornShipmentLifecycleIntent indicates a shipment_lifecycle intent
+	// event has no correlated committed or compensated terminal event.
+	FindingTornShipmentLifecycleIntent DoctorFindingType = "torn_shipment_lifecycle_intent"
+)
+
+// DoctorFindingSeverity classifies whether a doctor finding affects process
+// success.
+type DoctorFindingSeverity string
+
+const (
+	// DoctorSeverityError marks an integrity finding that makes doctor exit
+	// non-zero.
+	DoctorSeverityError DoctorFindingSeverity = "error"
 )
 
 // DoctorFinding describes a single integrity issue detected by Doctor.
 type DoctorFinding struct {
-	Type        DoctorFindingType `json:"type"`
-	ArtifactID  string            `json:"artifact_id"`
-	Description string            `json:"description"`
+	Type        DoctorFindingType     `json:"type"`
+	Severity    DoctorFindingSeverity `json:"severity,omitempty"`
+	Code        DoctorFindingType     `json:"code,omitempty"`
+	ArtifactID  string                `json:"artifact_id"`
+	Description string                `json:"description"`
+	Message     string                `json:"message,omitempty"`
 }
 
 // FixActionType classifies a repair action taken by Doctor.
@@ -169,6 +194,20 @@ type DoctorReport struct {
 	Findings   []DoctorFinding `json:"findings"`
 	FixActions []FixAction     `json:"fix_actions,omitempty"`
 	CheckedAt  time.Time       `json:"checked_at"`
+}
+
+// HasErrors reports whether the doctor report contains an error-severity
+// finding.
+func (r *DoctorReport) HasErrors() bool {
+	if r == nil {
+		return false
+	}
+	for _, finding := range r.Findings {
+		if finding.Severity == DoctorSeverityError {
+			return true
+		}
+	}
+	return false
 }
 
 // DoctorOptions controls which checks Doctor performs.
@@ -300,6 +339,11 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	}
 
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	shipmentFindings, shipmentErr := detectShipmentLifecycleFindings(ctx, logsDir, refs, ids)
+	if shipmentErr != nil {
+		return nil, fmt.Errorf("doctor: detect shipment lifecycle integrity: %w", shipmentErr)
+	}
+	report.Findings = append(report.Findings, shipmentFindings...)
 
 	if opts.CheckOrphans && ws.Config != nil {
 		for _, info := range artifacts {
@@ -608,6 +652,133 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	}
 
 	return report, nil
+}
+
+func detectShipmentLifecycleFindings(
+	ctx context.Context,
+	logsDir string,
+	refs map[string][]artifactRef,
+	ids []string,
+) ([]DoctorFinding, error) {
+	activeIDs := make([]string, 0, 1)
+	findings := make([]DoctorFinding, 0)
+
+	for _, id := range ids {
+		group := refs[id]
+		if len(group) == 0 || group[0].artifactType != "shipment" {
+			continue
+		}
+		ref := group[0]
+		if ref.status == string(ShipmentActive) {
+			activeIDs = append(activeIDs, id)
+		}
+		if ref.status == string(ShipmentBlocked) {
+			artifact, _, err := parseFile(ref.path)
+			if err != nil {
+				return nil, fmt.Errorf("parse blocked shipment %s: %w", id, err)
+			}
+			reason, reasonOK := artifact.CustomFields["blocked_reason"].(string)
+			blockedAtValid := false
+			switch blockedAt := artifact.CustomFields["blocked_at"].(type) {
+			case string:
+				_, err = time.Parse(time.RFC3339, blockedAt)
+				blockedAtValid = err == nil
+			case time.Time:
+				blockedAtValid = !blockedAt.IsZero()
+			}
+			if strings.TrimSpace(reason) == "" || !reasonOK || !blockedAtValid {
+				message := fmt.Sprintf(
+					"blocked shipment %q must have a non-empty blocked_reason and valid RFC3339 blocked_at; run the blocked-shipment normalizer",
+					id,
+				)
+				findings = append(findings, newDoctorErrorFinding(
+					FindingMalformedBlockedShipment,
+					id,
+					message,
+				))
+			}
+		}
+
+		itemEvents, err := events.ReadAllEvents(ctx, logsDir, id)
+		if err != nil {
+			return nil, fmt.Errorf("read shipment %s lifecycle events: %w", id, err)
+		}
+		intents := make(map[string]string)
+		terminal := make(map[string]struct{})
+		for _, event := range itemEvents {
+			if event.EventType != "shipment_lifecycle" {
+				continue
+			}
+			correlationID, _ := event.Delta["correlation_id"].(string)
+			phase, _ := event.Delta["phase"].(string)
+			if correlationID == "" {
+				continue
+			}
+			switch phase {
+			case "intent":
+				operation, _ := event.Delta["operation"].(string)
+				intents[correlationID] = operation
+			case "committed", "compensated":
+				terminal[correlationID] = struct{}{}
+			}
+		}
+		correlationIDs := make([]string, 0, len(intents))
+		for correlationID := range intents {
+			correlationIDs = append(correlationIDs, correlationID)
+		}
+		sort.Strings(correlationIDs)
+		for _, correlationID := range correlationIDs {
+			if _, closed := terminal[correlationID]; closed {
+				continue
+			}
+			message := fmt.Sprintf(
+				"shipment %q has %s lifecycle intent %q without a correlated committed or compensated terminal event",
+				id,
+				intents[correlationID],
+				correlationID,
+			)
+			findings = append(findings, newDoctorErrorFinding(
+				FindingTornShipmentLifecycleIntent,
+				id,
+				message,
+			))
+		}
+	}
+
+	if len(activeIDs) > 1 {
+		for _, id := range activeIDs {
+			message := fmt.Sprintf(
+				"shipment %q is active while the workspace contains %d active shipments: %s",
+				id,
+				len(activeIDs),
+				strings.Join(activeIDs, ", "),
+			)
+			findings = append(findings, newDoctorErrorFinding(
+				FindingMultipleActiveShipments,
+				id,
+				message,
+			))
+		}
+	}
+
+	sort.SliceStable(findings, func(i, j int) bool {
+		if findings[i].Code == findings[j].Code {
+			return findings[i].ArtifactID < findings[j].ArtifactID
+		}
+		return findings[i].Code < findings[j].Code
+	})
+	return findings, nil
+}
+
+func newDoctorErrorFinding(findingType DoctorFindingType, artifactID, message string) DoctorFinding {
+	return DoctorFinding{
+		Type:        findingType,
+		Severity:    DoctorSeverityError,
+		Code:        findingType,
+		ArtifactID:  artifactID,
+		Description: message,
+		Message:     message,
+	}
 }
 
 // reconciledShippedEventPresence reports whether id's item JSONL carries at
