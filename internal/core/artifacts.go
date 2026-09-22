@@ -515,6 +515,17 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		return nil, fmt.Errorf("field %q is immutable and cannot be changed", "id")
 	}
 
+	lockedLifecycleCtx, globalUnlock, globalLockErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if globalLockErr != nil {
+		return nil, fmt.Errorf("lock shipment lifecycle for artifact update %s: %w", id, globalLockErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after artifact update", "artifact_id", id, "error", unlockErr)
+		}
+	}()
+	ctx = lockedLifecycleCtx
+
 	lockedCtx, unlock, lockErr := lockArtifactMutations(ctx, ws, []string{id})
 	if lockErr != nil {
 		return nil, fmt.Errorf("lock artifact %s: %w", id, lockErr)

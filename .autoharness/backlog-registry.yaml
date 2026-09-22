@@ -314,6 +314,13 @@ operations:
       confirm: "confirm"
       by: "by"
 
+  normalize_blocked_shipment:
+    mcp_tool: "backlogit_normalize_blocked_shipment"
+    params:
+      shipment_id: "id"
+      snapshot_ref: "snapshot_ref"
+      by: "by"
+
   ship_shipment:
     mcp_tool: "backlogit_ship_shipment"
     cli_command: "backlogit shipment ship {{id}}"

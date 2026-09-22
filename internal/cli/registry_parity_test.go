@@ -81,6 +81,14 @@ var cliOnlyIntentional = []string{
 	"backlogit telemetry trend",
 }
 
+// mcpWithoutCLIIntentional names narrowly approved MCP operations whose
+// registry mapping intentionally has neither a CLI fallback nor the broader
+// mcp_only classification. The normalizer is recovery-only MCP parity and its
+// authoritative registry shape is pinned separately, including all params.
+var mcpWithoutCLIIntentional = map[string]bool{
+	"backlogit_normalize_blocked_shipment": true,
+}
+
 // resolveCLIPath extracts the cobra command path from a registry cli_command
 // template by taking the leading tokens up to the first flag (--x) or templated
 // parameter ({{x}}). e.g. "backlogit shipment add {{shipment_id}} {{item_id}}"
@@ -176,7 +184,7 @@ func TestRegistryParity_EveryMCPToolMappedOrDeferred(t *testing.T) {
 
 		satisfied := false
 		for _, op := range matched {
-			if op.MCPOnly {
+			if op.MCPOnly || mcpWithoutCLIIntentional[tool] {
 				satisfied = true
 				break
 			}

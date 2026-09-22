@@ -385,6 +385,17 @@ func eventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []events.
 // ShipShipment closes a shipped scope, returns untouched descendants to backlog,
 // archives the released artifacts, and records the closing commit in item logs.
 func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit *CommitMetadata) (result *ShipShipmentResult, err error) {
+	lockedCtx, globalUnlock, globalLockErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if globalLockErr != nil {
+		return nil, fmt.Errorf("lock shipment lifecycle for ship %s: %w", shipmentID, globalLockErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after ship", "shipment_id", shipmentID, "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
+
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return nil, err
@@ -1259,6 +1270,17 @@ func descendantItems(ctx context.Context, ws *Workspace, parentID string) ([]*mo
 }
 
 func setArtifactStatus(ctx context.Context, ws *Workspace, itemID string, newStatus models.ArtifactStatus, reason string) (*models.Artifact, error) {
+	lockedCtx, globalUnlock, lockErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if lockErr != nil {
+		return nil, fmt.Errorf("lock shipment lifecycle for status update %s: %w", itemID, lockErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after status update", "artifact_id", itemID, "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
+
 	artifact, err := loadArtifact(ctx, ws, itemID)
 	if err != nil {
 		return nil, err
@@ -1286,6 +1308,17 @@ func setArtifactStatus(ctx context.Context, ws *Workspace, itemID string, newSta
 }
 
 func cascadePersistedParentStatuses(ctx context.Context, ws *Workspace, itemID string) error {
+	lockedCtx, globalUnlock, lockErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if lockErr != nil {
+		return fmt.Errorf("lock shipment lifecycle for status cascade %s: %w", itemID, lockErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after status cascade", "artifact_id", itemID, "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
+
 	item, err := loadArtifact(ctx, ws, itemID)
 	if err != nil {
 		return err

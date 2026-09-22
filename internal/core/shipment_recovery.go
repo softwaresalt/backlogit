@@ -152,6 +152,25 @@ func reconcileShipmentLifecycleIntent(
 		}
 	}
 
+	var snapshot *ShipmentBlockedSnapshot
+	if journal.RecoveryPolicy == "roll_forward" {
+		loadedSnapshot, err := readShipmentBlockedSnapshot(ws, journal.SnapshotRef, journal.ShipmentID, memberIDs)
+		if err != nil {
+			return nil, err
+		}
+		snapshot = &loadedSnapshot
+	}
+	if err := validateShipmentLifecycleRecoveryCAS(
+		ctx,
+		ws,
+		journal,
+		memberIDs,
+		preimageMembers,
+		snapshot,
+	); err != nil {
+		return nil, err
+	}
+
 	operationCtx := withShipmentOperation(ctx, journal.CorrelationID)
 	governedCtx := context.WithValue(operationCtx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
 		correlationID:                 journal.CorrelationID,
@@ -185,10 +204,6 @@ func reconcileShipmentLifecycleIntent(
 		result = cloneArtifact(journal.Preimage.Shipment)
 		journal.Phase = "compensated"
 	case "roll_forward":
-		snapshot, err := readShipmentBlockedSnapshot(ws, journal.SnapshotRef, journal.ShipmentID, memberIDs)
-		if err != nil {
-			return nil, err
-		}
 		for _, memberID := range memberIDs {
 			member := cloneArtifact(preimageMembers[memberID])
 			member.Status = models.ArtifactStatus(snapshot.Members[memberID])
@@ -267,6 +282,271 @@ func reconcileShipmentLifecycleIntent(
 		return nil, fmt.Errorf("persist shipment %s recovery terminal journal: %w", journal.ShipmentID, err)
 	}
 	return result, nil
+}
+
+func validateShipmentLifecycleRecoveryCAS(
+	ctx context.Context,
+	ws *Workspace,
+	journal shipmentLifecycleJournal,
+	memberIDs []string,
+	preimageMembers map[string]*models.Artifact,
+	snapshot *ShipmentBlockedSnapshot,
+) error {
+	// Legacy branch-bootstrap journals use operation=block with an explicitly
+	// authoritative roll-forward snapshot. Their contract permits replacement
+	// of an otherwise unprovable partial bootstrap image; normalize journals,
+	// by contrast, originate from an observed live aggregate and require the
+	// preimage/target CAS enforced below.
+	if journal.RecoveryPolicy == "roll_forward" && journal.Operation == "block" {
+		return nil
+	}
+
+	currentShipment, err := findArtifact(ctx, ws, journal.ShipmentID)
+	if err != nil {
+		return fmt.Errorf("load shipment %s recovery CAS state: %w", journal.ShipmentID, err)
+	}
+	shipmentCandidates, err := shipmentRecoveryCandidates(journal, currentShipment, snapshot)
+	if err != nil {
+		return err
+	}
+	matches, err := recoveryArtifactMatchesAny(currentShipment, shipmentCandidates)
+	if err != nil {
+		return fmt.Errorf("compare shipment %s recovery CAS state: %w", journal.ShipmentID, err)
+	}
+	if !matches {
+		return fmt.Errorf(
+			"shipment %s diverged from its durable lifecycle preimage: %w",
+			journal.ShipmentID,
+			blerrors.ErrShipmentConflict,
+		)
+	}
+
+	for _, memberID := range memberIDs {
+		currentMember, loadErr := findArtifact(ctx, ws, memberID)
+		if loadErr != nil {
+			return fmt.Errorf("load shipment %s member %s recovery CAS state: %w",
+				journal.ShipmentID, memberID, loadErr)
+		}
+		memberCandidates, candidateErr := memberRecoveryCandidates(
+			journal,
+			preimageMembers[memberID],
+			snapshot,
+		)
+		if candidateErr != nil {
+			return candidateErr
+		}
+		matches, compareErr := recoveryArtifactMatchesAny(currentMember, memberCandidates)
+		if compareErr != nil {
+			return fmt.Errorf("compare shipment %s member %s recovery CAS state: %w",
+				journal.ShipmentID, memberID, compareErr)
+		}
+		if !matches {
+			return fmt.Errorf(
+				"shipment %s member %s diverged from its durable lifecycle preimage: %w",
+				journal.ShipmentID,
+				memberID,
+				blerrors.ErrShipmentConflict,
+			)
+		}
+	}
+	return nil
+}
+
+type recoveryArtifactCandidate struct {
+	artifact        *models.Artifact
+	ignoreUpdatedAt bool
+}
+
+func recoveryArtifactMatchesAny(
+	current *models.Artifact,
+	candidates []recoveryArtifactCandidate,
+) (bool, error) {
+	for _, candidate := range candidates {
+		left := cloneArtifact(current)
+		right := cloneArtifact(candidate.artifact)
+		if left == nil || right == nil {
+			continue
+		}
+		if candidate.ignoreUpdatedAt {
+			left.UpdatedAt = time.Time{}
+			right.UpdatedAt = time.Time{}
+		}
+		leftJSON, err := json.Marshal(left)
+		if err != nil {
+			return false, fmt.Errorf("marshal current artifact: %w", err)
+		}
+		rightJSON, err := json.Marshal(right)
+		if err != nil {
+			return false, fmt.Errorf("marshal recovery candidate: %w", err)
+		}
+		if bytes.Equal(leftJSON, rightJSON) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func shipmentRecoveryCandidates(
+	journal shipmentLifecycleJournal,
+	current *models.Artifact,
+	snapshot *ShipmentBlockedSnapshot,
+) ([]recoveryArtifactCandidate, error) {
+	candidates := []recoveryArtifactCandidate{{artifact: journal.Preimage.Shipment}}
+	target := cloneArtifact(journal.Preimage.Shipment)
+	switch {
+	case journal.RecoveryPolicy == "rollback" && journal.Operation == "block":
+		if current.Status != models.StatusBlocked {
+			return candidates, nil
+		}
+		blockedAt, found := current.CustomFields["blocked_at"]
+		if !found || !validRecoveryBlockedAt(blockedAt) {
+			return candidates, nil
+		}
+		target.Status = models.StatusBlocked
+		target.UpdatedAt = current.UpdatedAt
+		if target.CustomFields == nil {
+			target.CustomFields = map[string]any{}
+		}
+		target.CustomFields["blocked_reason"] = journal.Reason
+		target.CustomFields["blocked_at"] = blockedAt
+		target.CustomFields["blocked_by"] = journal.BlockedBy
+		memberStatuses := make(map[string]string, len(journal.Preimage.Members))
+		for _, member := range journal.Preimage.Members {
+			memberStatuses[member.ID] = string(member.Status)
+		}
+		target.CustomFields["member_status_snapshot"] = memberStatuses
+		if journal.SnapshotRef == "" {
+			delete(target.CustomFields, "resume_checkpoint_ref")
+		} else {
+			target.CustomFields["resume_checkpoint_ref"] = journal.SnapshotRef
+		}
+	case journal.RecoveryPolicy == "rollback" && journal.Operation == "unblock":
+		target.Status = models.ArtifactStatus(journal.Target)
+		delete(target.CustomFields, "blocked_reason")
+		delete(target.CustomFields, "blocked_at")
+		delete(target.CustomFields, "blocked_by")
+	case journal.RecoveryPolicy == "roll_forward" && journal.Operation == "normalize":
+		if snapshot == nil {
+			return nil, fmt.Errorf("normalize shipment %s recovery has no snapshot: %w",
+				journal.ShipmentID, blerrors.ErrShipmentConflict)
+		}
+		target.Status = models.StatusBlocked
+		if target.CustomFields == nil {
+			target.CustomFields = map[string]any{}
+		}
+		if snapshot.Branch != "" {
+			target.CustomFields["branch"] = snapshot.Branch
+		}
+		target.CustomFields["blocked_reason"] = snapshot.BlockedReason
+		target.CustomFields["blocked_at"] = snapshot.BlockedAt
+		target.CustomFields["blocked_by"] = snapshot.BlockedBy
+		target.CustomFields["member_status_snapshot"] = maps.Clone(snapshot.Members)
+		if snapshot.ResumeCheckpointRef == "" {
+			delete(target.CustomFields, "resume_checkpoint_ref")
+		} else {
+			target.CustomFields["resume_checkpoint_ref"] = snapshot.ResumeCheckpointRef
+		}
+	default:
+		return nil, fmt.Errorf(
+			"shipment %s recovery cannot prove operation %s policy %s: %w",
+			journal.ShipmentID,
+			journal.Operation,
+			journal.RecoveryPolicy,
+			blerrors.ErrShipmentConflict,
+		)
+	}
+	return append(candidates, recoveryArtifactCandidate{artifact: target, ignoreUpdatedAt: true}), nil
+}
+
+func memberRecoveryCandidates(
+	journal shipmentLifecycleJournal,
+	preimage *models.Artifact,
+	snapshot *ShipmentBlockedSnapshot,
+) ([]recoveryArtifactCandidate, error) {
+	candidates := []recoveryArtifactCandidate{{artifact: preimage}}
+	target := cloneArtifact(preimage)
+	switch {
+	case journal.RecoveryPolicy == "rollback" && journal.Operation == "block":
+		if preimage.Status != models.StatusActive && preimage.Status != models.StatusReview {
+			return candidates, nil
+		}
+		target.Status = models.StatusQueued
+	case journal.RecoveryPolicy == "rollback" && journal.Operation == "unblock":
+		target.Status = models.StatusQueued
+		if journal.Target == string(ShipmentActive) {
+			statuses, err := recoveryMemberStatusSnapshot(journal.Preimage.Shipment)
+			if err != nil {
+				return nil, err
+			}
+			status, found := statuses[preimage.ID]
+			if !found {
+				return nil, fmt.Errorf("shipment %s recovery snapshot is missing member %s: %w",
+					journal.ShipmentID, preimage.ID, blerrors.ErrShipmentConflict)
+			}
+			target.Status = models.ArtifactStatus(status)
+		}
+	case journal.RecoveryPolicy == "roll_forward" && journal.Operation == "normalize":
+		if snapshot == nil {
+			return nil, fmt.Errorf("normalize shipment %s recovery has no snapshot: %w",
+				journal.ShipmentID, blerrors.ErrShipmentConflict)
+		}
+		target.Status = models.ArtifactStatus(snapshot.Members[preimage.ID])
+		if target.Status == models.StatusActive || target.Status == models.StatusReview {
+			target.Status = models.StatusQueued
+		}
+	default:
+		return nil, fmt.Errorf(
+			"shipment %s recovery cannot prove member %s operation %s policy %s: %w",
+			journal.ShipmentID,
+			preimage.ID,
+			journal.Operation,
+			journal.RecoveryPolicy,
+			blerrors.ErrShipmentConflict,
+		)
+	}
+	return append(candidates, recoveryArtifactCandidate{artifact: target, ignoreUpdatedAt: true}), nil
+}
+
+func recoveryMemberStatusSnapshot(shipment *models.Artifact) (map[string]string, error) {
+	if shipment == nil || shipment.CustomFields == nil {
+		return nil, fmt.Errorf("shipment recovery preimage has no member status snapshot: %w",
+			blerrors.ErrShipmentConflict)
+	}
+	rawSnapshot, found := shipment.CustomFields["member_status_snapshot"]
+	if !found {
+		return nil, fmt.Errorf("shipment recovery preimage has no member status snapshot: %w",
+			blerrors.ErrShipmentConflict)
+	}
+	statuses := make(map[string]string)
+	switch values := rawSnapshot.(type) {
+	case map[string]string:
+		maps.Copy(statuses, values)
+	case map[string]any:
+		for memberID, value := range values {
+			status, ok := value.(string)
+			if !ok {
+				return nil, fmt.Errorf("shipment recovery member %s status is not a string: %w",
+					memberID, blerrors.ErrShipmentConflict)
+			}
+			statuses[memberID] = status
+		}
+	default:
+		return nil, fmt.Errorf("shipment recovery preimage has an invalid member status snapshot: %w",
+			blerrors.ErrShipmentConflict)
+	}
+	return statuses, nil
+}
+
+func validRecoveryBlockedAt(value any) bool {
+	switch blockedAt := value.(type) {
+	case string:
+		_, err := time.Parse(time.RFC3339, blockedAt)
+		return err == nil
+	case time.Time:
+		return !blockedAt.IsZero()
+	default:
+		return false
+	}
 }
 
 // NormalizeBlockedShipment reconstructs a blocked shipment from an

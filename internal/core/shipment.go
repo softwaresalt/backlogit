@@ -80,6 +80,29 @@ type governedShipmentActivationContextKey struct{}
 
 type shipmentLifecycleGlobalLockContextKey struct{}
 
+type shipmentLifecycleGlobalLockHookContextKey struct{}
+
+func lockShipmentLifecycleGlobal(
+	ctx context.Context,
+	ws *Workspace,
+) (context.Context, func() error, error) {
+	if _, held := ctx.Value(shipmentLifecycleGlobalLockContextKey{}).(struct{}); held {
+		return ctx, func() error { return nil }, nil
+	}
+	hook, _ := ctx.Value(shipmentLifecycleGlobalLockHookContextKey{}).(func(string))
+	if hook != nil {
+		hook("attempt")
+	}
+	unlock, err := lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)
+	if err != nil {
+		return ctx, nil, err
+	}
+	if hook != nil {
+		hook("acquired")
+	}
+	return context.WithValue(ctx, shipmentLifecycleGlobalLockContextKey{}, struct{}{}), unlock, nil
+}
+
 // BlockShipment performs the governed active-to-blocked shipment transition.
 func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts BlockOptions) (*models.Artifact, error) {
 	if strings.TrimSpace(opts.Reason) == "" {
@@ -622,6 +645,17 @@ type returnBlockedJournal struct {
 // the items list, set status to queued, generate ID with S prefix, write to queue
 // directory, and upsert into the database index.
 func CreateShipment(ctx context.Context, ws *Workspace, title string, itemIDs []string, opts ...Option) (*models.Artifact, error) {
+	lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+	if err != nil {
+		return nil, fmt.Errorf("lock shipment lifecycle for create: %w", err)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after create", "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
+
 	items := uniqueNonEmptyStrings(itemIDs)
 	if err := validateShipmentItemIDs(ctx, ws, "", items); err != nil {
 		return nil, fmt.Errorf("create shipment %q: %w", title, err)
@@ -721,6 +755,17 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 // enforced, or genuine no-repo) leaves this guard inert, identical to
 // moveShipmentStatusWithTopLevel's prior behavior.
 func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmentID string, newStatus ShipmentStatus, topLevel bool, expectedHeadSHA string) error {
+	lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+	if err != nil {
+		return fmt.Errorf("lock shipment lifecycle for move %s: %w", shipmentID, err)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after move", "shipment_id", shipmentID, "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
+
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return err
@@ -1129,6 +1174,17 @@ const shipmentMembershipLocksDirName = ".locks"
 // in frontmatter, rewrite the file atomically, and upsert into the database.
 // Emit slog.Debug for item association and events.jsonl record.
 func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID string) error {
+	lockedCtx, globalUnlock, lockErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if lockErr != nil {
+		return fmt.Errorf("add item %s to shipment %s: lock shipment lifecycle: %w", itemID, shipmentID, lockErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after add", "shipment_id", shipmentID, "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
+
 	unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
 	if lockErr != nil {
 		return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, lockErr)
@@ -1216,6 +1272,17 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 // both files atomically, and emit slog.Info + events.jsonl for the return.
 // Return ErrCannotReturnItem if the item is not in this shipment.
 func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, reason string) error {
+	lockedCtx, globalUnlock, lockErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if lockErr != nil {
+		return fmt.Errorf("return item %s from shipment %s: lock shipment lifecycle: %w", itemID, shipmentID, lockErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after return", "shipment_id", shipmentID, "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
+
 	unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
 	if lockErr != nil {
 		return fmt.Errorf("return item %s from shipment %s: %w", itemID, shipmentID, lockErr)
@@ -1493,6 +1560,27 @@ func persistArtifactWithGuard(ctx context.Context, ws *Workspace, artifact *mode
 func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool, guard func(context.Context) error) error {
 	if persistArtifactPreLockHook != nil {
 		persistArtifactPreLockHook(artifact.ID)
+	}
+	if artifact != nil && artifact.ArtifactType == "shipment" {
+		if artifactMutationLockHeld(ctx, artifact.ID) {
+			if _, globalHeld := ctx.Value(shipmentLifecycleGlobalLockContextKey{}).(struct{}); !globalHeld {
+				return fmt.Errorf(
+					"shipment %s writer acquired its artifact lock before the lifecycle lock: %w",
+					artifact.ID,
+					blerrors.ErrShipmentConflict,
+				)
+			}
+		}
+		lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+		if err != nil {
+			return fmt.Errorf("lock shipment lifecycle for artifact %s: %w", artifact.ID, err)
+		}
+		defer func() {
+			if unlockErr := globalUnlock(); unlockErr != nil {
+				slog.WarnContext(ctx, "release shipment lifecycle lock after persist", "artifact_id", artifact.ID, "error", unlockErr)
+			}
+		}()
+		ctx = lockedCtx
 	}
 	unlock, err := lockArtifactMutation(ctx, ws, artifact.ID)
 	if err != nil {

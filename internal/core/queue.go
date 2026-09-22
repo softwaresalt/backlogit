@@ -416,6 +416,17 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 	if targetStatus == models.ArtifactStatus(ShipmentShipped) {
 		return nil, fmt.Errorf("bulk update to shipped is not supported for shipments; use the ShipShipment operation: %w", blerrors.ErrShipmentShippedRequiresEnvelope)
 	}
+	lockedCtx, globalUnlock, lockErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if lockErr != nil {
+		return nil, fmt.Errorf("lock shipment lifecycle for bulk update: %w", lockErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after bulk update", "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
+
 	result := &BulkUpdateResult{}
 	for _, id := range itemIDs {
 		artifact, err := findArtifact(ctx, ws, id)
