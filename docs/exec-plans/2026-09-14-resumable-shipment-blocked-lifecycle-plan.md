@@ -1791,3 +1791,126 @@ contention barrier; and the rev9 compensated-status evidence obligation on `174.
 without a post-reopen suffix requirement. No new tasks, dependencies, members, scenario groups, or
 status changes. Ship's final bounded patch is authorized solely in the writer harness for the two
 decision-1 fixes.
+
+<!-- plan-review-attempt: rev11-wave7-red-deliverable-early-green-correction -->
+
+## Plan Review — Amendment (Wave 7 `^TestUR3_` red-deliverable early-green mapping correction + 3-P1 P-021 classification) (2026-09-22, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`)
+
+dispatch_mode: single-agent-declared-degradation
+decision: PASS
+
+**Trigger.** Ship reported primary blocker `WAVE_RED_DELIVERABLE_EARLY_GREEN` (P-002.6): the
+`^TestUR3_` red-deliverable selector greened after completed GREEN task R9 `174.047-T` (wave 7),
+but the authoritative red-deliverable mapping on RED task `174.041-T` named BOTH `174.047-T` and
+Wave-8 `174.048-T` as green-makers with `green_maker_closes_wave: 8`. Because the selector greened
+at wave 7 — one wave before its declared closure — P-002.6 fails closed. This rev11 amendment is a
+Stage-owned plan/backlog-contract change ONLY: NO production/test code, NO status/dependency/
+manifest/priority/checkpoint mutation, NO new task, NO new scenario group. `155-S` stays `active`;
+`154-S` and PR #449 untouched; completed GREEN task `174.047-T` keeps `status: done`; the four
+Ship-owned harness files are excluded.
+
+**Mapping correction (authoritative live source: `174.041-T` red-deliverable-contract block).**
+`green_maker_tasks` corrected `174.047-T, 174.048-T` → `174.047-T`; `green_maker_closes_wave`
+corrected `8` → `7`. Rationale confirmed against the actual contracts:
+* `174.047-T` (R9) AC (1) EXPLICITLY "turns recovery tests of R3 GREEN (non-subprocess)" — it is the
+  green-maker that closes `^TestUR3_`, and it lands at wave 7.
+* The `^TestUR3_` functions (`TestUR3_ReopenRollsBackInterruptedBlockFromCompletePreimage`,
+  `..._ReopenRollsBackInterruptedUnblockAndRestoresExactBlockedPreimage`,
+  `..._BranchBootstrapReopenRollsForwardUsingMachineReadableSnapshot`) invoke recovery IN-PROCESS
+  via `NewWorkspace(...)` reopen; the subprocess mechanism only PRODUCES the crash state. All
+  behavior they assert is supplied by R9 `174.047-T` recovery + normalizer, so the selector is fully
+  green at wave 7.
+* `174.048-T` (R10) authors its OWN separate subprocess crash/reopen integration tests (a distinct
+  selector) and owns the rev8-relocated deterministic global-lock contention proof + SQLite
+  sync/rebuild convergence + terminal audit; it is a GREEN task with NO red-deliverable-contract
+  block of its own — already an explicit non-red-deliverable gate. It is therefore NOT a green-maker
+  of `^TestUR3_`; listing it was the mapping error that produced the early-green block.
+
+This SUPERSEDES the rev8 statement above ("`174.041-T`: green_maker `174.047-T/174.048-T`,
+close-wave 8 ... are UNCHANGED"), which is retained as audit history. The correction is
+wording/mapping ONLY: `174.041-T`'s `dependencies` (`174.052-T`), `status: done`, priority, parent,
+and shipment membership are UNCHANGED, and the dependency GRAPH is UNCHANGED (`174.048-T` still
+depends on `[174.041-T, 174.047-T]`). A wording/mapping correction alone fully expresses the true
+order, so — per the fail-closed dependency rule — NO dependency edge is changed. A green selector is
+NOT made artificially red.
+
+**`174.048-T` obligation status: RETAINED IN FULL, NOT weakened.** Removing `174.048-T` from
+`^TestUR3_`'s green-maker list drops no obligation. `174.048-T` continues to own, under its own
+non-red-deliverable GREEN gate (its own subprocess selector): (a) subprocess crash/reopen recovery
+for block/unblock/branch-bootstrap; (b) the deterministic shared workspace-global-lock CONTENTION
+proof relocated from RED `174.041-T` in rev8; (c) SQLite sync/rebuild projection convergence;
+(d) correlated TERMINAL audit evidence — all folded into its existing 3 scenarios (no new scenario).
+A rev11 confirmation note is recorded on `174.048-T`.
+
+**P-021 C1 classification of the three report-only P1s (all SAME-CONTRACT / in-scope for Ship; none
+out-of-scope; no deferred-capture; no AC amendment required — ownership already unambiguous).**
+
+1. **Claim / membership-writer serialization → SAME-CONTRACT.** Owner: R6 `174.044-T` (makes
+   `ClaimShipment` share the SAME workspace-global lock; rev10 assigned the deterministic
+   Claim/unblock contention proof GREEN-owned here) together with R7a `174.045-T` (routes the
+   REMAINING bypass write call-sites — generic move/update, bulk/cascade, membership writes —
+   through the governed writer, which acquires the same workspace-global lock). Serializing the
+   membership writer against Claim is completed ENTIRELY by finishing the already-authorized shared
+   workspace-global-lock routing on `174.044-T`/`174.045-T` — the exact same contract surface. No
+   new task, no AC amendment.
+
+2. **Recovery CAS/drift protection → SAME-CONTRACT.** Owner: R9 `174.047-T` (recovery reconciles
+   durable intent + preimage UNDER THE SAME LOCKS, rolling forward/back; normalizer REFUSES when
+   reconstruction cannot be proven) together with R6 `174.044-T` (exact-snapshot restore UNDER LOCK
+   with refusal on CAS/drift; rev10 assigned the drift/CAS proof GREEN-owned here). CAS/drift
+   protection during recovery is completion of the exact recovery-under-locks + CAS-refusal surface
+   already authorized. No new task, no AC amendment.
+
+3. **Missing normalizer MCP registry mapping → SAME-CONTRACT.** Owner: R9 `174.047-T` AC (3) "MCP
+   normalizer parity present" ("Provide MCP normalizer parity"). The MCP tool
+   `backlogit_normalize_blocked_shipment` IS implemented and registered in the Go MCP server
+   (`internal/mcp/tools.go`), but the abstract operation is absent from
+   `.autoharness/backlog-registry.yaml`, whose SIBLING lifecycle operations (`block_shipment`,
+   `unblock_shipment`, `claim_shipment`, `add_to_shipment`) ARE mapped. Adding the
+   `normalize_blocked_shipment` registry entry to match its siblings is completion of the exact "MCP
+   normalizer parity" already authorized on `174.047-T` AC (3) — same contract surface. No new task,
+   no AC amendment.
+
+Because all three P1s are SAME-CONTRACT completions of existing tasks, NONE is a deferred scope
+expansion and Stage captures NOTHING (per P-021: capture only when conclusively out-of-scope AND
+Stage owns the operation). All three remain in-scope for Ship remediation within the cited tasks'
+existing contracts.
+
+**Scope confirmation — machine-readable scheduler fixture untouched (out of scope).** The
+`tests/simulation/wave-scheduler-contract.json` fixture is a frozen scheduler-ALGORITHM self-test
+whose `source.shipment` is `130-S` and which references ZERO `174.` tasks; it does NOT encode the
+`155-S`/`174.041-T` mapping and is NOT the authoritative source for this correction. It was NOT
+touched. The authoritative `155-S` red-deliverable mapping is the live `174.041-T` task block, the
+only file corrected for the mapping.
+
+**Review dispatch.** dispatch_mode `single-agent-declared-degradation`: this bounded
+mapping-wording + classification amendment carries no production/test delta; a single reviewer
+(Stage) verified read-only that the diff touches ONLY the `174.041-T` red-deliverable-contract
+mapping fields + amendment prose + `updated_at`, a confirmation note + `updated_at` on `174.048-T`,
+and this plan section — with no id/parent/status/priority/dependency/membership/scenario-count
+change and no edit to any RED-deliverable block other than `174.041-T`'s two `green_maker_*` fields
+and reason.
+
+**Validation evidence (branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`):**
+`backlogit sync` OK (**1555 artifacts, 0 parse failures**); `doctor --target` on `174.041-T` and
+`174.048-T` both `ok: true` / `kind: pass` (exit 0); `docs lint` on this plan valid (0 violations);
+shipment `155-S` manifest unchanged (**26 members**, `174-F` + 25 tasks); dependency graph
+unchanged (`174.041-T→[174.052-T]`, `174.048-T→[174.041-T,174.047-T]`); `174.047-T` remains
+`status: done`. The four Ship-owned harness files were not read as harness code, not edited, and are
+excluded from this commit.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. The `^TestUR3_` red-deliverable now closes at
+wave 7 via `174.047-T`, clearing `WAVE_RED_DELIVERABLE_EARLY_GREEN`; `174.048-T`'s obligations are
+retained under its own non-red-deliverable GREEN gate; and all three report-only P1s are
+SAME-CONTRACT completions in-scope for Ship (Claim/membership serialization → `174.044-T`/
+`174.045-T`; recovery CAS/drift → `174.047-T`/`174.044-T`; normalizer registry mapping →
+`174.047-T`). No new tasks, dependencies, members, scenario groups, or status changes.
+
+**Ship-ready directive.** Advance `155-S` past the early-green gate: `^TestUR3_` is legitimately
+GREEN at wave 7 (closed by `174.047-T`) and the corrected mapping now agrees. Then complete the
+three SAME-CONTRACT P1s in place — (1) route the membership writer through the governed shared
+workspace-global lock in `174.044-T`/`174.045-T`; (2) enforce recovery CAS/drift refusal in
+`174.047-T`/`174.044-T`; (3) add the `normalize_blocked_shipment` mapping to
+`.autoharness/backlog-registry.yaml` to match its block/unblock/claim siblings under `174.047-T`
+AC (3) — and complete `174.048-T`'s retained post-implementation subprocess/contention/convergence/
+audit verification under its own selector. No new backlog items are required.
