@@ -484,15 +484,7 @@ func TestEventsSinceSnapshotPreservesConcurrentAuditEvents(t *testing.T) {
 	assert.Equal(t, EventGateBlocked, preserved[1].EventType)
 }
 
-// 133.004-T (Unit 2 failure-injection): the deferred restore in ShipShipment
-// must fire even when a later step fails and ShipShipment returns an error.
-// moveShipmentStatusWithTopLevel's persistArtifact call (marking the
-// shipment itself "shipped") runs strictly after completeReleaseScope's
-// rollup already relocated the non-member covering feature, but strictly
-// before collectArchiveCandidateIDs/archiveItems ever run. Failing exactly
-// that write exercises the defer's error-join path without ever reaching the
-// archival collector, proving the restore is not merely a side effect of the
-// happy path.
+// A failed ship leaves hierarchy-derived non-member features untouched.
 func TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
@@ -516,10 +508,11 @@ func TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup(t *te
 	require.NoError(t, err)
 	_, err = ClaimShipment(ctx, ws, shipment.ID)
 	require.NoError(t, err)
+	preShipFeature, err := loadArtifact(ctx, ws, feature.ID)
+	require.NoError(t, err)
+	baselineEvents := flatScopeEventCount(t, ws, feature.ID)
 
-	// Fail only the write that persists the shipment artifact itself; let
-	// every other artifact write (tasks, the covering feature, and its
-	// restore) proceed through the real implementation.
+	// Fail only the write that persists the shipment artifact itself.
 	injectedErr := errors.New("injected shipment write failure")
 	origFn := persistArtifactWriteFn
 	persistArtifactWriteFn = func(a *models.Artifact, filePath string, durable bool) error {
@@ -538,20 +531,17 @@ func TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup(t *te
 	assert.ErrorIs(t, err, injectedErr)
 	assert.Nil(t, result)
 
-	// Even though ShipShipment failed partway through -- after the rollup
-	// already marked the covering feature done and relocated it, but before
-	// the archival collector ever ran -- the deferred restore must still have
-	// fired and reverted the feature to its pre-ship status and location.
-	restoredFeature, findErr := findArtifact(ctx, ws, feature.ID)
+	finalFeature, findErr := findArtifact(ctx, ws, feature.ID)
 	require.NoError(t, findErr)
-	assert.NotEqual(t, models.StatusDone, restoredFeature.Status,
-		"non-member covering feature must be restored even when the ship fails after the rollup")
-	assert.NotEqual(t, models.StatusArchived, restoredFeature.Status,
-		"non-member covering feature must not be archived when the ship fails after the rollup")
+	assert.Equal(t, preShipFeature.Status, finalFeature.Status,
+		"failed ship must not change a hierarchy-derived non-member feature")
+	reasons := flatScopeStatusReasonsSince(t, ws, feature.ID, baselineEvents)
+	assert.NotContains(t, reasons, "child status rollup")
+	assert.NotContains(t, reasons, "reverted unintended rollup from partial-feature ship")
 	featureQueuePath, pathErr := FindArtifactPath(ctx, ws, feature.ID)
-	require.NoError(t, pathErr, "covering feature file must still be discoverable after restore")
+	require.NoError(t, pathErr, "covering feature file must remain discoverable")
 	assert.Equal(t, "queue", filepath.Base(filepath.Dir(featureQueuePath)),
-		"covering feature file must be restored under .backlogit/queue/, got %s", featureQueuePath)
+		"covering feature file must remain under .backlogit/queue/, got %s", featureQueuePath)
 }
 
 // A nested feature reached only through AdoptItem-based re-parenting remains
@@ -626,13 +616,8 @@ func TestShipShipment_LeavesUnlistedNestedFeatureDescendantUntouched(t *testing.
 // guard for a review-fix (PR #327 Copilot finding): archiveItems previously
 // returned (nil, err) whenever a LATER item in its depth-sorted loop failed,
 // discarding the IDs it had already archived earlier in the very same call.
-// ShipShipment assigns that return value directly to archivedIDs before the
-// error causes an early return, so its deferred restoreRolledUpNonMemberFeatures
-// would run with an empty exclusion set and could revert a nested feature this
-// exact call had just legitimately archived -- the precise corruption the
-// archivedIDs exclusion (133.004-T review-fix) exists to prevent, just reached
-// via a partial-failure path instead of the happy path. This test exercises
-// archiveItems directly (rather than through the full ShipShipment cascade,
+// This test exercises archiveItems directly (rather than through the full
+// ShipShipment cascade,
 // where every candidate is already relocated into .backlogit/archive/ by the
 // unguarded done-status persistArtifact relocate -- see
 // config.defaults.go's status->"archive" directory rule -- before archiveItems
@@ -697,167 +682,8 @@ func TestArchiveItems_PreservesPriorSuccessesWhenLaterItemFails(t *testing.T) {
 	assert.Contains(t, string(foreignContent), "Pre-existing DIFFERENT archived item")
 }
 
-// TestRestoreRolledUpNonMemberFeatures_SucceedsWithCanceledContext is a
-// regression guard for a review-fix (PR #327 Copilot finding): ShipShipment's
-// deferred cleanup is documented to "always attempt the revert, even if a
-// later step in this function fails and returns early" (see the ShipShipment
-// defer at the archivedIDs declaration), but restoreRolledUpNonMemberFeatures
-// previously reused the caller's context unchanged. When ShipShipment's own
-// context is canceled or its deadline expires -- exactly the condition under
-// which the forward operation is most likely to have failed and triggered
-// this cleanup -- the reused context makes the internal loadArtifact/
-// setArtifactStatus calls fail immediately with context.Canceled /
-// DeadlineExceeded, leaving the covering feature stranded at its unintended
-// rolled-up status and archive-directory location despite the "always
-// attempt" guarantee. This mirrors the established rollbackQueueMove
-// precedent (internal/core/queue.go:365-372), which detaches from the
-// caller's context via context.WithoutCancel for the exact same reason.
-// restoreRolledUpNonMemberFeatures must do the same.
-func TestRestoreRolledUpNonMemberFeatures_SucceedsWithCanceledContext(t *testing.T) {
-	// Arrange
-	ws := setupShipmentWorkspace(t)
-	bg := context.Background()
-
-	feature, err := CreateArtifact(bg, ws, "Rolled-up covering feature", "feature")
-	require.NoError(t, err)
-	require.NoError(t, bldb.UpsertItem(bg, ws.DB, feature))
-
-	// Simulate the unintended rollup completeReleaseScope's cascade performs:
-	// the feature's status moves to done, which (per the registry's
-	// status-based directory routing) also physically relocates its file
-	// into .backlogit/archive/.
-	_, err = setArtifactStatus(bg, ws, feature.ID, models.StatusDone, "simulated unintended rollup")
-	require.NoError(t, err)
-
-	snapshots := map[string]featureStatusSnapshot{
-		feature.ID: {status: models.StatusQueued},
-	}
-
-	canceledCtx, cancel := context.WithCancel(bg)
-	cancel()
-	require.Error(t, canceledCtx.Err(), "test precondition: context must already be canceled")
-
-	// Act: archivedIDs is nil, so the feature is not in the exclusion set --
-	// it must be restored, and it must be restored EVEN THOUGH canceledCtx is
-	// already done, exactly as ShipShipment's deferred cleanup requires.
-	restoreErr := restoreRolledUpNonMemberFeatures(canceledCtx, ws, snapshots, nil)
-
-	// Assert
-	require.NoError(t, restoreErr,
-		"restore must succeed even when the caller's context is already canceled")
-
-	restored, findErr := findArtifact(bg, ws, feature.ID)
-	require.NoError(t, findErr)
-	assert.Equal(t, models.StatusQueued, restored.Status,
-		"feature must be reverted to its pre-rollup status despite the canceled context")
-	restoredPath, pathErr := FindArtifactPath(bg, ws, feature.ID)
-	require.NoError(t, pathErr)
-	assert.Equal(t, "queue", filepath.Base(filepath.Dir(restoredPath)),
-		"feature file must be relocated back under .backlogit/queue/ despite the canceled context")
-}
-
-// TestRestoreRolledUpNonMemberFeatures_RestoresDeepestFirstRegardlessOfMapOrder
-// is a regression guard for a review-fix (PR #327 Copilot finding):
-// restoreRolledUpNonMemberFeatures iterated `snapshots` with a plain
-// `for featureID, snapshot := range snapshots` loop. Go map iteration order
-// is intentionally randomized, but setArtifactStatus unconditionally cascades
-// every status change UP to the parent via cascadePersistedParentStatuses. If
-// a parent feature's snapshot is restored before its child's, the child's
-// later restore re-triggers the parent cascade (via ComputeParentStatus,
-// which mirrors a single child's status onto its parent) and silently
-// recomputes -- overwriting -- the parent's just-restored value, corrupting
-// the parent's final status. Restoring children before their parents
-// (deepest-first, exactly what depthSortedIDs already provides for the
-// analogous ordering need in completeReleaseScope) avoids this because each
-// parent's own restore is always the LAST write to touch it.
-//
-// A single parent/child pair would only reproduce this on roughly half of
-// all runs -- Go's map iteration order for two keys is effectively a coin
-// flip that does not repeat reliably across process runs -- so this test
-// uses eight independent parent/child pairs in ONE combined snapshots map.
-// Fixing the bug is the only way every pair lands correctly on every run;
-// the unfixed code has only a ~1-in-256 chance of coincidentally iterating
-// all eight pairs in the safe child-before-parent order.
-func TestRestoreRolledUpNonMemberFeatures_RestoresDeepestFirstRegardlessOfMapOrder(t *testing.T) {
-	// Arrange
-	ws := setupShipmentWorkspace(t)
-	bg := context.Background()
-
-	const pairCount = 8
-	type pair struct {
-		parentID, childID string
-	}
-	pairs := make([]pair, 0, pairCount)
-	snapshots := make(map[string]featureStatusSnapshot, pairCount*2)
-
-	for i := 0; i < pairCount; i++ {
-		parent, err := CreateArtifact(bg, ws, fmt.Sprintf("Parent %d", i), "feature")
-		require.NoError(t, err)
-		require.NoError(t, bldb.UpsertItem(bg, ws.DB, parent))
-
-		childSeed, err := CreateArtifact(bg, ws, fmt.Sprintf("Child %d", i), "feature")
-		require.NoError(t, err)
-		require.NoError(t, bldb.UpsertItem(bg, ws.DB, childSeed))
-
-		// Nest the child under the parent the same way the codebase's other
-		// nested-feature tests do: create top-level, then re-parent via
-		// AdoptItem (CreateArtifact enforces AllowedChildren and would
-		// reject a feature-under-feature at creation time).
-		adoptResult, err := AdoptItem(bg, ws, childSeed.ID, parent.ID)
-		require.NoError(t, err)
-		childID := adoptResult.NewID
-		if childID == "" {
-			childID = childSeed.ID
-		}
-
-		// Simulate the unintended rollup completeReleaseScope's cascade
-		// performs: the child rolls up to done first, and because it is the
-		// parent's ONLY recorded child, setArtifactStatus's own cascade also
-		// forces the parent to done as a side effect.
-		_, err = setArtifactStatus(bg, ws, childID, models.StatusDone, "simulated unintended rollup")
-		require.NoError(t, err)
-
-		parentReloaded, err := loadArtifact(bg, ws, parent.ID)
-		require.NoError(t, err)
-		require.Equal(t, models.StatusDone, parentReloaded.Status,
-			"test precondition: pair %d parent must also roll up to done via the child's cascade", i)
-
-		snapshots[parent.ID] = featureStatusSnapshot{status: models.StatusQueued}
-		snapshots[childID] = featureStatusSnapshot{status: models.StatusActive}
-		pairs = append(pairs, pair{parentID: parent.ID, childID: childID})
-	}
-
-	// Act
-	restoreErr := restoreRolledUpNonMemberFeatures(bg, ws, snapshots, nil)
-
-	// Assert
-	require.NoError(t, restoreErr)
-	for i, p := range pairs {
-		restoredParent, err := loadArtifact(bg, ws, p.parentID)
-		require.NoError(t, err)
-		assert.Equal(t, models.StatusQueued, restoredParent.Status,
-			"pair %d: parent must end up at its own pre-ship snapshot, not silently overwritten by a later child-triggered cascade", i)
-
-		restoredChild, err := loadArtifact(bg, ws, p.childID)
-		require.NoError(t, err)
-		assert.Equal(t, models.StatusActive, restoredChild.Status,
-			"pair %d: child must be restored to its own pre-ship snapshot", i)
-	}
-}
-
-// 133.004-T (review-fix, PR #327 ordering finding): the non-member covering
-// feature restore must complete on the successful path BEFORE
-// VerifyPostShipConsistency and the post-ship hooks run, not merely by the
-// time the function returns. Before this fix, restoreRolledUpNonMemberFeatures
-// ran only inside ShipShipment's deferred cleanup, which -- like every Go
-// defer -- executes during return unwinding, i.e. strictly AFTER
-// VerifyPostShipConsistency and ws.HookRunner.FirePost have already run to
-// completion as ordinary in-line statements. A post-ship hook (an external
-// webhook or custom integration) could therefore observe -- and act on -- the
-// covering feature in its transient, incorrectly-rolled-up done/archived
-// state, even though the ship ultimately succeeds and the feature is
-// reverted moments later. This test registers a synchronous post-ship hook
-// probe and asserts it observes the ALREADY-RESTORED feature.
+// A successful ship never exposes a hierarchy-derived non-member feature as
+// changed to post-ship hooks.
 func TestShipShipment_RestoresNonMemberFeatureBeforePostShipHooksObserveIt(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
@@ -882,6 +708,9 @@ func TestShipShipment_RestoresNonMemberFeatureBeforePostShipHooksObserveIt(t *te
 	require.NoError(t, err)
 	_, err = ClaimShipment(ctx, ws, shipment.ID)
 	require.NoError(t, err)
+	preShipFeature, err := loadArtifact(ctx, ws, feature.ID)
+	require.NoError(t, err)
+	baselineEvents := flatScopeEventCount(t, ws, feature.ID)
 
 	var (
 		hookFired      bool
@@ -911,10 +740,14 @@ func TestShipShipment_RestoresNonMemberFeatureBeforePostShipHooksObserveIt(t *te
 	require.NotNil(t, result)
 	require.True(t, hookFired, "test precondition: the post-ship hook probe must have fired")
 	require.NoError(t, observeErr)
-	assert.NotEqual(t, models.StatusDone, observedStatus,
-		"post-ship hook must observe the covering feature already restored, not the transient rolled-up done status")
-	assert.NotEqual(t, models.StatusArchived, observedStatus,
-		"post-ship hook must observe the covering feature already restored, not archived")
+	assert.Equal(t, preShipFeature.Status, observedStatus,
+		"post-ship hook must observe the untouched non-member feature")
+	finalFeature, findErr := findArtifact(ctx, ws, feature.ID)
+	require.NoError(t, findErr)
+	assert.Equal(t, preShipFeature.Status, finalFeature.Status)
+	reasons := flatScopeStatusReasonsSince(t, ws, feature.ID, baselineEvents)
+	assert.NotContains(t, reasons, "child status rollup")
+	assert.NotContains(t, reasons, "reverted unintended rollup from partial-feature ship")
 }
 
 // T002 / ST012: Reject invalid status transition (queued -> shipped).

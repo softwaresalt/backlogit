@@ -52,6 +52,49 @@ func TestUNonMemberRollupSafe_ShipWritesOnlyMembersAndPreservesListedFeatureCont
 		"SCOPE-RED-E control: explicitly-listed feature must retain governed completion")
 }
 
+func TestUNonMemberRollupSafe_MemberAboveNonMemberUsesDirectCompletion(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+
+	memberAbove, err := CreateArtifact(ctx, ws, "Member above non-member", "feature")
+	require.NoError(t, err)
+	nonMemberSeed, err := CreateArtifact(ctx, ws, "Intervening non-member", "feature")
+	require.NoError(t, err)
+	adopted, err := AdoptItem(ctx, ws, nonMemberSeed.ID, memberAbove.ID)
+	require.NoError(t, err)
+	nonMemberID := adopted.NewID
+	if nonMemberID == "" {
+		nonMemberID = nonMemberSeed.ID
+	}
+	memberTask, err := CreateArtifact(ctx, ws, "Member below non-member", "task", WithParent(nonMemberID))
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "Member above non-member shipment", []string{memberAbove.ID, memberTask.ID})
+	require.NoError(t, err)
+	_, err = ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+
+	forceFlatScopeStatus(t, ws, memberAbove.ID, models.StatusAccepted)
+	forceFlatScopeStatus(t, ws, nonMemberID, models.StatusQueued)
+	memberBaseline := flatScopeEventCount(t, ws, memberAbove.ID)
+	nonMemberBaseline := flatScopeEventCount(t, ws, nonMemberID)
+
+	result, err := ShipShipment(ctx, ws, shipment.ID, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, result.ArchivedIDs, memberAbove.ID,
+		"listed feature above an intervening non-member must complete")
+	memberReasons := flatScopeStatusReasonsSince(t, ws, memberAbove.ID, memberBaseline)
+	assert.Contains(t, memberReasons, "feature released",
+		"listed feature must be completed by the direct governed member write")
+	assert.NotContains(t, memberReasons, "child status rollup",
+		"bounded cascade must not cross the intervening non-member")
+	assert.Equal(t, models.StatusQueued, flatScopeStatus(t, ws, nonMemberID),
+		"intervening non-member must remain untouched")
+	nonMemberReasons := flatScopeStatusReasonsSince(t, ws, nonMemberID, nonMemberBaseline)
+	assert.NotContains(t, nonMemberReasons, "child status rollup")
+	assert.NotContains(t, nonMemberReasons, "reverted unintended rollup from partial-feature ship")
+}
+
 func TestUNonMemberRollupSafe_ConcurrentAncestorMutationSurvivesSuccessfulShip(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
