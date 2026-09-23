@@ -125,7 +125,9 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "319dc97ccc8605ede2814326f0f16abe8752ed792b38ad29d892d135607d34d5"
+    checksum: "d941c1c78f33a46c0afd9e743ccd606d3da4316cada7260871708c4b91d9290b"
+    drift_allowed: true
+    drift_reason: "Shipment 155-S final-review remediation. P-015 now matches the implemented flat explicit shipment scope: listed features do not imply descendant or linked-deliberation membership, and only explicit members plus the shipment control record participate in closure. Do not auto-revert."
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
@@ -325,9 +327,9 @@ artifacts:
   - path: ".github/skills/shipment-reconcile/SKILL.md"
     primitive: 4
     template: "templates/skills/shipment-reconcile/SKILL.md.tmpl"
-    checksum: "1c21702178a2f31cec8a6656b1a0848d5079b57f52b760f6c70f1e050f90f0c3"
+    checksum: "8f15392dd8ba09de6a90bb2cca63c4565444f4e4a5341f47fe4cd70595c824e3"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). Safe-close step 8 instructed agents to run `backlogit move <shipment_id> --status shipped`, which this codebase refuses unconditionally with ErrShipmentShippedRequiresEnvelope (internal/core/shipment.go guard 1, gate_transition.go, artifacts.go create seam); ShipShipment is the only path to shipped and it cascades. Because that step ran after manifest items were archived, every safe-close attempt would have left a partially closed shipment before halting. Added a Step 0(d) close-capability pre-flight gate that halts with RECONCILE_BLOCKED_NO_NONCASCADING_CLOSE before any mutation, and rewrote step 8 to name the governed non-cascading operation rather than an operation that cannot succeed. Do not auto-revert."
+    drift_reason: "Shipment 155-S final-review remediation supersedes the earlier safe-close workaround. The implemented governed ShipShipment transaction now uses flat explicit membership, so reconciliation checks only manifest IDs plus the shipment control record, never inferred descendants or linked deliberations, while preserving the pre/post lock and P-007 integrity gates. Do not auto-revert."
   - path: ".github/prompts/stage-grouping-analysis.prompt.md"
     primitive: 4
     template: "templates/prompts/stage-grouping-analysis.prompt.md.tmpl"
@@ -359,9 +361,9 @@ artifacts:
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "6300556430d3f73326ec4f48d3cb72f90f8650d913862e7e3cc539267df9ed9b"
+    checksum: "6a1a082e554a3ae42bb5a0f08867cc0e2533b7232ac59080db93cf4b970bafb0"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). Granted the eight read-only graphtor verbs by name so the enabled graphtor-docs pack is actually callable, matching the stage and ship allowlists. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert."
+    drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert."
   - path: ".github/agents/_stage.agent.md"
     primitive: 1
     template: "templates/agents/_stage.agent.md.tmpl"
@@ -371,9 +373,9 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "06294ba193d57582da0284b57cbd79932bcadacf86ecf7f5c3da1330c9d5607b"
+    checksum: "99fa4692befa977a4606a27b650cc9b08da9463833190be447993e2160ebbb0b"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert."
+    drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also grants governed block/unblock/MCP-only normalization operations and aligns closure with flat explicit manifest membership, leaving unlisted source and hierarchy-related artifacts untouched. Do not auto-revert."
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"

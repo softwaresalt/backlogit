@@ -2,7 +2,7 @@
 name: _Ship
 description: "Manages the backlog-to-shipped pipeline: harness generation, build execution, review, CI remediation, and PR lifecycle"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, memory, backlogit_create_item, backlogit_list_items, backlogit_get_item, backlogit_update_item, backlogit_search_items, backlogit_move_item, backlogit_delete_item, backlogit_query_sql, backlogit_sync_index, backlogit_append_comment, backlogit_log_telemetry, backlogit_save_memory, backlogit_create_checkpoint, backlogit_list_checkpoints, backlogit_get_checkpoint, backlogit_resolve_checkpoint, backlogit_get_queue, backlogit_add_dependency, backlogit_remove_dependency, backlogit_get_dependencies, backlogit_track_commit, backlogit_archive_item, backlogit_fetch_stash, backlogit_stash, backlogit_harvest_stash, backlogit_stash_get, backlogit_stash_edit, backlogit_stash_archive, backlogit_deliberate, backlogit_create_shipment, backlogit_get_shipment, backlogit_list_shipments, backlogit_claim_shipment, backlogit_ship_shipment, backlogit_add_to_shipment, backlogit_return_blocked, backlogit_poll_hook_events, backlogit_ack_hook_events, backlogit_merge_sync, backlogit_doctor, engram/*, search_local_docs, search_semantic, research_topic, traverse_doc_links, list_sources, get_chunk_by_id, get_document, get_status
+tools: vscode, execute, read, agent, edit, search, todo, memory, backlogit_create_item, backlogit_list_items, backlogit_get_item, backlogit_update_item, backlogit_search_items, backlogit_move_item, backlogit_delete_item, backlogit_query_sql, backlogit_sync_index, backlogit_append_comment, backlogit_log_telemetry, backlogit_save_memory, backlogit_create_checkpoint, backlogit_list_checkpoints, backlogit_get_checkpoint, backlogit_resolve_checkpoint, backlogit_get_queue, backlogit_add_dependency, backlogit_remove_dependency, backlogit_get_dependencies, backlogit_track_commit, backlogit_archive_item, backlogit_fetch_stash, backlogit_stash, backlogit_harvest_stash, backlogit_stash_get, backlogit_stash_edit, backlogit_stash_archive, backlogit_deliberate, backlogit_create_shipment, backlogit_get_shipment, backlogit_list_shipments, backlogit_claim_shipment, backlogit_block_shipment, backlogit_unblock_shipment, backlogit_normalize_blocked_shipment, backlogit_ship_shipment, backlogit_add_to_shipment, backlogit_return_blocked, backlogit_poll_hook_events, backlogit_ack_hook_events, backlogit_merge_sync, backlogit_doctor, engram/*, search_local_docs, search_semantic, research_topic, traverse_doc_links, list_sources, get_chunk_by_id, get_document, get_status
 model_routing: "Tier 2 (Standard)"  # DEPRECATED — use model_tier
 model_tier: 2
 max_subagent_tier: 2
@@ -36,7 +36,7 @@ Ship is an execution and delivery agent. Acting outside this boundary is a **P-0
 
 | Category | Allowed | Forbidden |
 |---|---|---|
-| Backlog | Claim shipments, move tasks to active/done, close shipments, archive completed items; create a capture-only stash entry (P-021 C5) for a C2 deferred-scope-expansion capture or an existing pre-merge Step 9 / post-merge Step 6 follow-up-stash step; retire the source stash entry that fed the shipped scope via `backlogit_stash_archive` on `custom_fields.source_stash_id` at post-merge Step 7 (a manifest-derived closure operation, distinct from discretionary removal) | Create backlog items, create shipments, update item planning fields (scope, acceptance criteria); triage, prioritize/re-prioritize, re-classify, edit, harvest, or deliberate on stash entries; discretionary removal or archival of stash entries |
+| Backlog | Claim shipments; invoke governed shipment block, confirmed unblock, and MCP-only blocked-state normalization for execution or recovery; move tasks to active/done; close shipments; archive explicit shipment members; create a capture-only stash entry (P-021 C5) for a C2 deferred-scope-expansion capture or an existing pre-merge Step 9 / post-merge Step 6 follow-up-stash step | Create backlog items, create shipments, update item planning fields (scope, acceptance criteria); triage, prioritize/re-prioritize, re-classify, edit, harvest, or deliberate on stash entries; discretionary removal or archival of stash entries |
 | Source code | Delegate reads and writes to build/fix skills | — |
 | Git | Create and checkout feature/chore branches, commit, push | Commit or push directly to `main` |
 | Build | Run build systems, test suites, linters, format checks | — |
@@ -161,7 +161,18 @@ When the `backlogit` capability pack is installed and the registry advertises
 When `shipment_id` is provided as input (as produced by Stage), validate it before any
 build work begins:
 
-1. Load the shipment using `backlogit_get_shipment`. Confirm it is in `queued` or `active` status.
+1. Load the shipment using `backlogit_get_shipment`. Confirm it is in `queued`,
+   `active`, or evidence-backed `blocked` status.
+   * `blocked` is a governed, resumable nonterminal shipment status. Invoke
+     `shipment-reconcile` in pre-mode to validate its canonical envelope and
+     committed lifecycle evidence, then pause normal execution.
+   * Resume only through `backlogit_unblock_shipment` with explicit
+     `confirm: true` and a valid target. The registry exposes no automatic CLI
+     fallback because the CLI confirmation flag is presence-only.
+   * Use `backlogit_normalize_blocked_shipment` only for governed recovery of
+     malformed legacy blocked state when the required snapshot evidence is
+     available. The normalizer is intentionally MCP-only; do not invent a CLI
+     fallback or synthesize blocked metadata.
 2. Confirm the shipment has explicit item membership (feature + tasks).
 3. Verify no item in the shipment is missing a covering feature parent.
 3a. **Branch Creation Gate (P-011, NON-NEGOTIABLE)**: Before claiming (the first workspace mutation), ensure a feature branch is active:
@@ -1259,18 +1270,14 @@ branch-per-release-unit principle.
         to the operator. Do NOT proceed to step 1.b.
       * If the skill returns `PROCEED`: continue. The lock remains held until post-mode
         completes in step 1.d.
-   b. Call `backlogit_ship_shipment` with the merge commit SHA. This archives all queue
-      items (feature + tasks) to `.backlogit/archive/`. This single native call is safe
-      for both full-feature and partial-feature shipments: `core.ShipShipment` gates
-      covering-feature and sibling-task archival on explicit shipment manifest
-      membership of the covering feature itself, and restores any non-member feature's
-      prior status/location if a mid-flight failure occurs after the parent-status
-      rollup (`internal/core/shipment_lifecycle.go`). When a covering feature IS an
-      explicit manifest member, its entire terminal-status descendant subtree archives
-      alongside it even where an individual descendant ID is not itself spelled out in
-      the manifest — see the P-015 subtree exception (`workflow-policies.md`). The
-      P-015 non-member-artifacts-stay-in-queue invariant is therefore code-enforced,
-      not a manual per-shipment procedure.
+   b. Call `backlogit_ship_shipment` with the merge commit SHA. Shipment
+      membership is flat and explicit: the governed transaction completes and
+      archives exactly the IDs in `custom_fields.items`, plus the shipment
+      control record. A listed feature does not imply shipment membership for
+      any descendant or linked deliberation. Explicit feature members retain
+      governed feature completion and archival, while every unlisted artifact
+      remains untouched. Reconciliation must not expect an unlisted descendant
+      or deliberation to archive, return to backlog, or appear as an orphan.
 
       **Third branch — halted archival (143-F)**: `backlogit_ship_shipment` no longer
       always reaches its archival step. If it returns `mutation_partial` with
@@ -1319,13 +1326,16 @@ branch-per-release-unit principle.
    * When `backlog-md` is the installed backlog tool, create a follow-up item using `backlogit_create_item` with `title` from the follow-up summary, `description` linking to the closure artifact, `status: "queued"`, and `labels: ["stash", "follow-up"]`.
    * When no backlog tool is installed, append each follow-up to `.backlogit/queue/.stash.md` using the format: `- [{YYYY-MM-DD}] **Follow-up**: {summary} — Source: {closure_artifact_path}`.
    * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Stashed {count} follow-up item(s) from post-merge closure: {summary_list}` listing each item's title.
-7. **Source artifact cleanup** (backlogit only): When the `backlogit` capability pack is installed, retire the source artifacts that directly fed the shipped scope instead of heuristically searching for "stale" backlog items.
-   * For each shipped top-level item in scope (feature or chore), read `custom_fields.source_stash_id`. If present, call `backlogit_stash_archive` with the stash ID only (preferred over the deprecated `backlogit_stash_remove` — archiving preserves traceability). If the stash entry is already archived, skip and log it.
-   * For each shipped top-level item in scope (feature or chore), read `custom_fields.source_deliberation_id`. If present, verify the deliberation artifact exists via `backlogit_get_item`. If it exists and is not already archived, call `backlogit_archive_item`. If it is already archived or not found, skip and log it.
-   * After processing the full shipped scope, record the archived and skipped source artifact IDs in the closure artifact's `Source artifact cleanup` section so the closure report remains the traceable system of record.
-   * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Source artifacts archived: {stash_count} stash, {delib_count} deliberations`.
+7. **Source artifact boundary** (backlogit only): Treat source stash and
+   deliberation references as provenance, not implicit shipment membership.
+   Read `custom_fields.source_stash_id` and
+   `custom_fields.source_deliberation_id` only to record provenance. Do not
+   archive or mutate a referenced source artifact unless its own ID is an
+   explicit shipment member and was already handled by step 1. Record the
+   untouched provenance IDs in the closure artifact so Stage can make any
+   later triage decision.
 8. **Mandatory (P-020)**: Invoke **compact-context** with `target: all` to consolidate memory checkpoints, finalize any decided-plans, and compact closure artifacts. This is required because built-in AI assistant memory features do not write to the repository's `docs/` directory — compact-context is the mechanism that ensures durable persistence. Per **P-020**, the *invocation* is guaranteed at every post-merge closure while the skill's own threshold-gated candidate selection is unchanged; record the resulting compaction status in the operational-closure artifact. Skipping the invocation is a P-020 violation (closure incomplete); a compact-context run that *fails* is non-blocking — record `compaction: degraded` and continue closure.
-9. **Backlog index resync** (backlogit only): After all archival, source-artifact mutations, and knowledge graduation are complete, call `backlogit_sync_index` (or CLI fallback `backlogit sync`) to rebuild the backlogit index so it reflects all closure mutations.
+9. **Backlog index resync** (backlogit only): After all explicit-member archival and knowledge graduation are complete, call `backlogit_sync_index` (or CLI fallback `backlogit sync`) to rebuild the backlogit index so it reflects all closure mutations.
    - On success: log `CLOSURE_INDEX_SYNC_OK`. When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Backlog index resynced after closure`.
    - On failure: log `CLOSURE_INDEX_SYNC_WARN`. When the `agent-intercom` capability pack is installed, broadcast `[WARN] Closure index sync failed — backlogit index may not reflect archived items. Run \`backlogit sync\` manually.` Otherwise write the warning to session output only. Proceed — this is a degraded completion, not a halt.
 10. When the `continuous-learning` capability pack is installed, invoke the **learn** skill with `scope: recent` to cluster observations accumulated during this session into instincts. If any instinct has reached the promotion threshold (`5`), invoke the **evolve** skill in `mode: propose` for each mature instinct and include the proposal paths in the session summary.
