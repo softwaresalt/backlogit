@@ -486,6 +486,10 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	}()
 	ctx = lockedCtx
 
+	if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
+		return nil, fmt.Errorf("recover pending shipment operations before ship %s: %w", shipmentID, err)
+	}
+
 	shipment, err := GetShipment(ctx, ws, shipmentID)
 	if err != nil {
 		return nil, err

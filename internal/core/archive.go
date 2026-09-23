@@ -387,6 +387,9 @@ func lockArchiveGovernance(
 			_ = globalUnlock()
 		}
 	}()
+	if err := recoverPendingShipmentOperations(lockedCtx, ws); err != nil {
+		return ctx, nil, fmt.Errorf("recover pending shipment operations before archive %s: %w", itemID, err)
+	}
 
 	scopeIDs := []string{itemID}
 	if cascade {

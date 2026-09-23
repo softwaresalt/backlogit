@@ -880,19 +880,24 @@ func shipmentRecoveryCandidates(
 		if target.CustomFields == nil {
 			target.CustomFields = map[string]any{}
 		}
+		branch, err := blockedEnvelopeOptionalString(target.CustomFields, "branch")
+		if err != nil {
+			return nil, fmt.Errorf("shipment %s recovery branch: %w", journal.ShipmentID, err)
+		}
 		target.CustomFields["blocked_reason"] = journal.Reason
 		target.CustomFields["blocked_at"] = blockedAt
-		target.CustomFields["blocked_by"] = journal.BlockedBy
+		setBlockedEnvelopeOptionalString(target.CustomFields, "branch", branch)
+		setBlockedEnvelopeOptionalString(target.CustomFields, "blocked_by", journal.BlockedBy)
 		memberStatuses := make(map[string]string, len(journal.Preimage.Members))
 		for _, member := range journal.Preimage.Members {
 			memberStatuses[member.ID] = string(member.Status)
 		}
 		target.CustomFields["member_status_snapshot"] = memberStatuses
-		if journal.SnapshotRef == "" {
-			delete(target.CustomFields, "resume_checkpoint_ref")
-		} else {
-			target.CustomFields["resume_checkpoint_ref"] = journal.SnapshotRef
-		}
+		setBlockedEnvelopeOptionalString(
+			target.CustomFields,
+			"resume_checkpoint_ref",
+			journal.SnapshotRef,
+		)
 	case journal.RecoveryPolicy == "rollback" && journal.Operation == "unblock":
 		target.Status = models.ArtifactStatus(journal.Target)
 		delete(target.CustomFields, "blocked_reason")
@@ -1180,9 +1185,12 @@ func normalizeBlockedShipment(
 }
 
 func refusePendingShipmentLifecycleIntent(ws *Workspace, shipmentID string) error {
-	records, _, err := inspectShipmentOperationJournals(ws)
+	records, validationErrs, err := inspectShipmentOperationJournals(ws)
 	if err != nil {
 		return fmt.Errorf("inspect shipment lifecycle ownership for %s: %w", shipmentID, err)
+	}
+	if err := lifecycleJournalValidationErrors(validationErrs); err != nil {
+		return fmt.Errorf("validate shipment lifecycle ownership for %s: %w", shipmentID, err)
 	}
 	for _, record := range records {
 		if record.kind != shipmentLifecycleJournalKind ||

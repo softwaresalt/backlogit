@@ -101,7 +101,7 @@ func newPoisonedNormalizationWorkspace(t *testing.T) (string, string, string) {
 	require.NoError(t, os.WriteFile(snapshotPath, payload, 0o644))
 	require.NoError(t, ws.Close())
 
-	poisonPath := filepath.Join(storageRoot, "ops", "shipment-operation-fedcba9876543210fedcba9876543210.json")
+	poisonPath := filepath.Join(storageRoot, "ops", "unrelated-poison.json")
 	require.NoError(t, os.WriteFile(poisonPath, []byte(`{"schema_version":`), 0o644))
 	ordinary, ordinaryErr := core.NewWorkspace(ctx, root)
 	require.Error(t, ordinaryErr)

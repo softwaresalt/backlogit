@@ -1190,6 +1190,11 @@ func AddItemToShipment(ctx context.Context, ws *Workspace, shipmentID, itemID st
 	}()
 	ctx = lockedCtx
 
+	if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
+		return fmt.Errorf("recover pending shipment operations before adding item %s to shipment %s: %w",
+			itemID, shipmentID, err)
+	}
+
 	unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
 	if lockErr != nil {
 		return fmt.Errorf("add item %s to shipment %s: %w", itemID, shipmentID, lockErr)
@@ -1287,6 +1292,11 @@ func ReturnBlockedItem(ctx context.Context, ws *Workspace, shipmentID, itemID, r
 		}
 	}()
 	ctx = lockedCtx
+
+	if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
+		return fmt.Errorf("recover pending shipment operations before returning item %s from shipment %s: %w",
+			itemID, shipmentID, err)
+	}
 
 	unlock, lockErr := lockShipmentMembership(ctx, ws, shipmentID)
 	if lockErr != nil {

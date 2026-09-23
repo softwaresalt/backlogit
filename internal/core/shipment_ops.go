@@ -45,6 +45,32 @@ type shipmentOperationJournalRecord struct {
 	returnBlocked returnBlockedJournal
 }
 
+type shipmentOperationJournalValidationError struct {
+	path string
+	kind shipmentOperationJournalKind
+	err  error
+}
+
+func (e *shipmentOperationJournalValidationError) Error() string {
+	return fmt.Sprintf("shipment operation journal %s is invalid: %v", e.path, e.err)
+}
+
+func (e *shipmentOperationJournalValidationError) Unwrap() error {
+	return e.err
+}
+
+func newShipmentOperationJournalValidationError(
+	path string,
+	kind shipmentOperationJournalKind,
+	err error,
+) error {
+	return &shipmentOperationJournalValidationError{
+		path: path,
+		kind: kind,
+		err:  err,
+	}
+}
+
 func shipmentOpsRootForWorkspace(ws *Workspace, create bool) (string, *os.File, error) {
 	if ws == nil {
 		return "", nil, fmt.Errorf("shipment operations workspace is nil: %w", blerrors.ErrValidation)
@@ -192,64 +218,150 @@ func inspectShipmentOperationJournals(
 			validationErrs = append(validationErrs, nameErr)
 			continue
 		}
+		journalPath := filepath.Join(opsRoot, name)
 		info, infoErr := entry.Info()
 		if infoErr != nil {
 			validationErrs = append(validationErrs,
-				fmt.Errorf("inspect shipment operation journal %s: %w", name, infoErr))
+				newShipmentOperationJournalValidationError(
+					journalPath,
+					kind,
+					fmt.Errorf("inspect journal: %w", infoErr),
+				))
 			continue
 		}
-		redirected, redirectErr := IsSymlinkOrReparsePoint(info, filepath.Join(opsRoot, name))
+		redirected, redirectErr := IsSymlinkOrReparsePoint(info, journalPath)
 		if redirectErr != nil {
 			validationErrs = append(validationErrs,
-				fmt.Errorf("inspect shipment operation journal %s redirect: %w", name, redirectErr))
+				newShipmentOperationJournalValidationError(
+					journalPath,
+					kind,
+					fmt.Errorf("inspect journal redirect: %w", redirectErr),
+				))
 			continue
 		}
 		if redirected || !info.Mode().IsRegular() {
 			validationErrs = append(validationErrs,
-				fmt.Errorf("shipment operation journal %s is not a regular unredirected file: %w",
-					name, blerrors.ErrValidation))
+				newShipmentOperationJournalValidationError(
+					journalPath,
+					kind,
+					fmt.Errorf("journal is not a regular unredirected file: %w", blerrors.ErrValidation),
+				))
 			continue
 		}
 
 		data, readErr := readShipmentOperationJournalFile(dir, opsRoot, name)
 		if readErr != nil {
 			validationErrs = append(validationErrs,
-				fmt.Errorf("read shipment operation journal %s: %w", name, readErr))
+				newShipmentOperationJournalValidationError(
+					journalPath,
+					kind,
+					fmt.Errorf("read journal: %w", readErr),
+				))
 			continue
 		}
 		record := shipmentOperationJournalRecord{
 			name: name,
-			path: filepath.Join(opsRoot, name),
+			path: journalPath,
 			kind: kind,
 		}
 		switch kind {
 		case shipmentLifecycleJournalKind:
 			if decodeErr := decodeShipmentOperationJournal(data, &record.lifecycle); decodeErr != nil {
 				validationErrs = append(validationErrs,
-					fmt.Errorf("parse shipment lifecycle journal %s: %w", name, decodeErr))
+					newShipmentOperationJournalValidationError(
+						journalPath,
+						kind,
+						fmt.Errorf("parse lifecycle journal: %v: %w", decodeErr, blerrors.ErrValidation),
+					))
 				continue
 			}
-			if record.lifecycle.CorrelationID != captures[0] {
+			if validationErr := validateShipmentLifecycleJournalRecord(record.lifecycle, captures[0]); validationErr != nil {
 				validationErrs = append(validationErrs,
-					fmt.Errorf("shipment lifecycle journal %s correlation id does not match its filename: %w",
-						name, blerrors.ErrValidation))
+					newShipmentOperationJournalValidationError(journalPath, kind, validationErr))
 				continue
 			}
 		case returnBlockedJournalKind:
 			if decodeErr := decodeShipmentOperationJournal(data, &record.returnBlocked); decodeErr != nil {
 				validationErrs = append(validationErrs,
-					fmt.Errorf("parse return-blocked journal %s: %w", name, decodeErr))
+					newShipmentOperationJournalValidationError(
+						journalPath,
+						kind,
+						fmt.Errorf("parse return-blocked journal: %v: %w", decodeErr, blerrors.ErrValidation),
+					))
 				continue
 			}
 			if validationErr := validateReturnBlockedJournal(record.returnBlocked, captures); validationErr != nil {
 				validationErrs = append(validationErrs,
-					fmt.Errorf("validate return-blocked journal %s: %w", name, validationErr))
+					newShipmentOperationJournalValidationError(journalPath, kind, validationErr))
 				continue
 			}
 		}
 		records = append(records, record)
 	}
 	return records, validationErrs, nil
+}
+
+func validateShipmentLifecycleJournalRecord(
+	journal shipmentLifecycleJournal,
+	filenameCorrelationID string,
+) error {
+	if journal.SchemaVersion != "shipment-operation/v1" {
+		return fmt.Errorf("unsupported lifecycle journal schema %q: %w",
+			journal.SchemaVersion, blerrors.ErrValidation)
+	}
+	if journal.CorrelationID != filenameCorrelationID {
+		return fmt.Errorf("correlation id does not match filename: %w", blerrors.ErrValidation)
+	}
+	switch journal.Phase {
+	case "intent", "committed", "compensated":
+	default:
+		return fmt.Errorf("unsupported lifecycle phase %q: %w", journal.Phase, blerrors.ErrValidation)
+	}
+	switch journal.Operation {
+	case "block", "unblock", "normalize", "claim":
+	default:
+		return fmt.Errorf("unsupported lifecycle operation %q: %w", journal.Operation, blerrors.ErrValidation)
+	}
+	switch journal.RecoveryPolicy {
+	case "rollback", "roll_forward":
+	default:
+		return fmt.Errorf("unsupported lifecycle recovery policy %q: %w",
+			journal.RecoveryPolicy, blerrors.ErrValidation)
+	}
+	if journal.ShipmentID == "" ||
+		journal.Preimage.Shipment == nil ||
+		journal.Preimage.Shipment.ID != journal.ShipmentID ||
+		journal.Preimage.Shipment.ArtifactType != "shipment" {
+		return fmt.Errorf("lifecycle journal cannot prove shipment ownership: %w", blerrors.ErrValidation)
+	}
+	if journal.Target == "" {
+		return fmt.Errorf("lifecycle journal target is empty: %w", blerrors.ErrValidation)
+	}
+
+	memberIDs := NormalizeShipmentItems(journal.Preimage.Shipment)
+	members := make(map[string]struct{}, len(journal.Preimage.Members))
+	for _, member := range journal.Preimage.Members {
+		if member == nil || member.ID == "" {
+			return fmt.Errorf("lifecycle journal has an incomplete member preimage: %w",
+				blerrors.ErrValidation)
+		}
+		if _, duplicate := members[member.ID]; duplicate {
+			return fmt.Errorf("lifecycle journal repeats member %s: %w",
+				member.ID, blerrors.ErrValidation)
+		}
+		members[member.ID] = struct{}{}
+	}
+	if len(members) != len(memberIDs) {
+		return fmt.Errorf("lifecycle journal member preimage does not cover the manifest: %w",
+			blerrors.ErrValidation)
+	}
+	for _, memberID := range memberIDs {
+		if _, found := members[memberID]; !found {
+			return fmt.Errorf("lifecycle journal is missing member %s: %w",
+				memberID, blerrors.ErrValidation)
+		}
+	}
+	return nil
 }
 
 func validateReturnBlockedJournal(journal returnBlockedJournal, captures []string) error {
@@ -288,6 +400,17 @@ func loadShipmentOperationJournals(ws *Workspace) ([]shipmentOperationJournalRec
 		return nil, err
 	}
 	return records, nil
+}
+
+func lifecycleJournalValidationErrors(validationErrs []error) error {
+	var lifecycleErrs []error
+	for _, validationErr := range validationErrs {
+		var journalErr *shipmentOperationJournalValidationError
+		if errors.As(validationErr, &journalErr) && journalErr.kind == shipmentLifecycleJournalKind {
+			lifecycleErrs = append(lifecycleErrs, journalErr)
+		}
+	}
+	return errors.Join(lifecycleErrs...)
 }
 
 func decodeShipmentOperationJournal(data []byte, target any) error {

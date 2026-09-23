@@ -187,6 +187,65 @@ func TestNormalizeBlockedShipmentForRecovery_UnrelatedPoisonRemainsDiagnosable(t
 	require.Error(t, err, "the poison entry must remain diagnosable")
 }
 
+func TestNormalizeBlockedShipmentForRecovery_RejectsMalformedCanonicalOwnershipJournal(t *testing.T) {
+	tests := []struct {
+		name          string
+		correlationID string
+		payload       []byte
+	}{
+		{
+			name:          "semantic ownership is incomplete",
+			correlationID: "44444444444444444444444444444444",
+			payload: []byte(`{
+  "schema_version": "shipment-operation/v1",
+  "correlation_id": "44444444444444444444444444444444",
+  "phase": "intent",
+  "operation": "block",
+  "recovery_policy": "rollback",
+  "target": "blocked",
+  "preimage": {}
+}`),
+		},
+		{
+			name:          "journal cannot be decoded",
+			correlationID: "55555555555555555555555555555555",
+			payload:       []byte(`{"schema_version":`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := setupShipmentWorkspace(t)
+			fixture := newURBlockedActiveFixture(t, ws)
+			p021ForceOutOfBandBlockedShipment(t, ws, fixture)
+			snapshotRef := p021WriteBlockedSnapshot(t, ws, fixture.shipment.ID)
+			journalPath := writeP1MalformedCanonicalLifecycleJournal(
+				t,
+				ws,
+				tt.correlationID,
+				tt.payload,
+			)
+			before := snapshotURAggregate(t, ws, fixture.shipment.ID)
+
+			_, err := NormalizeBlockedShipmentForRecovery(
+				context.Background(),
+				ws,
+				fixture.shipment.ID,
+				snapshotRef,
+				"ownership validation",
+			)
+
+			require.ErrorIs(t, err, blerrors.ErrValidation)
+			require.ErrorContains(t, err, filepath.Base(journalPath))
+			requireURAggregateUnchanged(t, ws, before)
+
+			report, doctorErr := Doctor(context.Background(), ws, &DoctorOptions{})
+			require.NoError(t, doctorErr)
+			require.True(t, hasUR3DoctorFinding(report, "ops", FindingInvalidShipmentLifecycleJournal))
+		})
+	}
+}
+
 func TestNormalizeBlockedShipmentForRecovery_ChecksOwnershipAfterGlobalLock(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	fixture := newURBlockedActiveFixture(t, ws)
@@ -390,6 +449,209 @@ func TestNormalizeBlockedShipment_CanonicalizesOptionalEnvelopeValuesBeforeWrite
 	}
 }
 
+func TestBlockRecovery_CanonicalizesAppliedTargetForCAS(t *testing.T) {
+	tests := []struct {
+		name      string
+		branch    string
+		blockedBy string
+		resumeRef string
+	}{
+		{
+			name:      "trims_present_values",
+			branch:    "  feat/recovery-canonical  ",
+			blockedBy: "  recovery operator  ",
+			resumeRef: "  checkpoints/recovery.json  ",
+		},
+		{
+			name:      "omits_whitespace_only_values",
+			branch:    " \t ",
+			blockedBy: "\n ",
+			resumeRef: " \r\n ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := setupShipmentWorkspace(t)
+			fixture := newURBlockedActiveFixture(t, ws)
+			shipment := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+			shipment.CustomFields["branch"] = tt.branch
+			forceURArtifactFixture(t, ws, shipment)
+
+			blocked, err := BlockShipment(context.Background(), ws, fixture.shipment.ID, BlockOptions{
+				Reason:              "recover canonical applied target",
+				BlockedBy:           tt.blockedBy,
+				ResumeCheckpointRef: tt.resumeRef,
+			})
+			require.NoError(t, err)
+			_, err = validatePersistedBlockedShipmentEnvelope(context.Background(), ws, blocked)
+			require.NoError(t, err, "post-crash applied target must satisfy the shared envelope validator")
+
+			records, err := loadShipmentOperationJournals(ws)
+			require.NoError(t, err)
+			var journalPath string
+			var journal shipmentLifecycleJournal
+			for _, record := range records {
+				if record.kind == shipmentLifecycleJournalKind &&
+					record.lifecycle.Operation == "block" &&
+					record.lifecycle.ShipmentID == fixture.shipment.ID {
+					journalPath = record.path
+					journal = record.lifecycle
+					break
+				}
+			}
+			require.NotEmpty(t, journalPath)
+			journal.Phase = "intent"
+			_, err = writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal)
+			require.NoError(t, err)
+
+			require.NoError(t, recoverPendingShipmentOperations(context.Background(), ws),
+				"canonical post-crash applied target must satisfy recovery CAS")
+			require.Equal(t, "committed", p021ReadLifecycleJournal(t, journalPath).Phase)
+			assertURArtifactEqual(t, blocked, loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+		})
+	}
+}
+
+func TestLifecycleMutators_RunPendingRecoveryBarrierBeforeAggregateAccess(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*testing.T, *Workspace) func(context.Context) error
+	}{
+		{
+			name: "ship",
+			prepare: func(t *testing.T, ws *Workspace) func(context.Context) error {
+				t.Helper()
+				shipment, err := CreateShipment(context.Background(), ws, "barrier ship", nil)
+				require.NoError(t, err)
+				return func(ctx context.Context) error {
+					_, shipErr := ShipShipment(ctx, ws, shipment.ID, nil)
+					return shipErr
+				}
+			},
+		},
+		{
+			name: "add_item",
+			prepare: func(t *testing.T, ws *Workspace) func(context.Context) error {
+				t.Helper()
+				feature, err := CreateArtifact(context.Background(), ws, "barrier add feature", "feature")
+				require.NoError(t, err)
+				item, err := CreateArtifact(
+					context.Background(),
+					ws,
+					"barrier add item",
+					"task",
+					WithParent(feature.ID),
+				)
+				require.NoError(t, err)
+				shipment, err := CreateShipment(context.Background(), ws, "barrier add shipment", nil)
+				require.NoError(t, err)
+				return func(ctx context.Context) error {
+					return AddItemToShipment(ctx, ws, shipment.ID, item.ID)
+				}
+			},
+		},
+		{
+			name: "return_blocked",
+			prepare: func(t *testing.T, ws *Workspace) func(context.Context) error {
+				t.Helper()
+				feature, err := CreateArtifact(context.Background(), ws, "barrier return feature", "feature")
+				require.NoError(t, err)
+				item, err := CreateArtifact(
+					context.Background(),
+					ws,
+					"barrier return item",
+					"task",
+					WithParent(feature.ID),
+				)
+				require.NoError(t, err)
+				shipment, err := CreateShipment(
+					context.Background(),
+					ws,
+					"barrier return shipment",
+					[]string{item.ID},
+				)
+				require.NoError(t, err)
+				return func(ctx context.Context) error {
+					return ReturnBlockedItem(ctx, ws, shipment.ID, item.ID, "barrier refusal")
+				}
+			},
+		},
+		{
+			name: "archive",
+			prepare: func(t *testing.T, ws *Workspace) func(context.Context) error {
+				t.Helper()
+				artifact, err := CreateArtifact(context.Background(), ws, "barrier archive", "feature")
+				require.NoError(t, err)
+				return func(ctx context.Context) error {
+					_, archiveErr := ArchiveItem(ctx, ws.DB, ws, artifact.ID)
+					return archiveErr
+				}
+			},
+		},
+		{
+			name: "doctor_fix_orphans",
+			prepare: func(t *testing.T, ws *Workspace) func(context.Context) error {
+				t.Helper()
+				feature, err := CreateArtifact(context.Background(), ws, "barrier doctor feature", "feature")
+				require.NoError(t, err)
+				orphan, err := CreateArtifact(
+					context.Background(),
+					ws,
+					"barrier doctor orphan",
+					"task",
+					WithParent(feature.ID),
+				)
+				require.NoError(t, err)
+				orphan = cloneArtifact(loadURCanonicalArtifact(t, ws, orphan.ID))
+				orphan.ParentID = ""
+				forceURArtifactFixture(t, ws, orphan)
+				return func(ctx context.Context) error {
+					_, doctorErr := Doctor(ctx, ws, &DoctorOptions{
+						CheckOrphans: true,
+						FixOrphans:   true,
+					})
+					return doctorErr
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := setupShipmentWorkspace(t)
+			act := tt.prepare(t, ws)
+			journalPath := writeP1MalformedCanonicalLifecycleJournal(
+				t,
+				ws,
+				"44444444444444444444444444444444",
+				[]byte(`{
+  "schema_version": "shipment-operation/v1",
+  "correlation_id": "44444444444444444444444444444444",
+  "phase": "intent",
+  "operation": "block",
+  "recovery_policy": "rollback",
+  "target": "blocked",
+  "preimage": {}
+}`),
+			)
+			before := snapshotURWorkspace(t, ws)
+			ctx, _, acquired := p021ObserveGlobalLock(context.Background())
+
+			err := act(ctx)
+
+			require.ErrorIs(t, err, blerrors.ErrValidation)
+			require.ErrorContains(t, err, filepath.Base(journalPath))
+			select {
+			case <-acquired:
+			default:
+				t.Fatal("mutator did not acquire the workspace-global lifecycle lock before recovery")
+			}
+			requireURAggregateUnchanged(t, ws, before)
+		})
+	}
+}
+
 func TestNormalizeBlockedShipment_RejectsWhitespaceActorBeforeWrites(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	fixture := newURBlockedActiveFixture(t, ws)
@@ -533,6 +795,21 @@ func writeP1BlockedSnapshot(
 	require.NoError(t, os.MkdirAll(filepath.Dir(absolutePath), 0o755))
 	require.NoError(t, os.WriteFile(absolutePath, data, 0o644))
 	return filepath.ToSlash(relativePath)
+}
+
+func writeP1MalformedCanonicalLifecycleJournal(
+	t *testing.T,
+	ws *Workspace,
+	correlationID string,
+	payload []byte,
+) string {
+	t.Helper()
+
+	opsRoot := shipmentOpsRoot(ws.RootPath)
+	require.NoError(t, os.MkdirAll(opsRoot, 0o755))
+	path := filepath.Join(opsRoot, shipmentLifecycleJournalName(correlationID))
+	require.NoError(t, os.WriteFile(path, payload, 0o600))
+	return path
 }
 
 func TestReturnBlockedRecovery_TargetIntentConvergesWithoutUndo(t *testing.T) {

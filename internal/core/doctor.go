@@ -291,6 +291,23 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		return nil, fmt.Errorf("doctor: FixMalformed requires CheckArchivedFrom to be true")
 	}
 
+	if opts.FixOrphans {
+		lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+		if err != nil {
+			return nil, fmt.Errorf("doctor: lock shipment lifecycle before fixing orphans: %w", err)
+		}
+		defer func() {
+			if unlockErr := globalUnlock(); unlockErr != nil {
+				slog.WarnContext(ctx, "doctor: release shipment lifecycle lock after fixing orphans",
+					"error", unlockErr)
+			}
+		}()
+		ctx = lockedCtx
+		if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
+			return nil, fmt.Errorf("doctor: recover pending shipment operations before fixing orphans: %w", err)
+		}
+	}
+
 	report := &DoctorReport{
 		Findings:  []DoctorFinding{},
 		CheckedAt: time.Now().UTC(),
