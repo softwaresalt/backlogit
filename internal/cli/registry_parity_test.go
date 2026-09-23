@@ -47,12 +47,20 @@ import (
 // registryOperation is a single entry in the .autoharness operation map. Only the
 // fields relevant to drift detection are decoded.
 type registryOperation struct {
-	MCPTool      string            `yaml:"mcp_tool"`
-	CLICommand   string            `yaml:"cli_command"`
-	MCPOnly      bool              `yaml:"mcp_only"`
-	Governed     bool              `yaml:"governed"`
-	GovernedName string            `yaml:"governed_name"`
-	Params       map[string]string `yaml:"params"`
+	MCPTool      string               `yaml:"mcp_tool"`
+	CLICommand   string               `yaml:"cli_command"`
+	CLIFallback  *registryCLIFallback `yaml:"cli_fallback"`
+	MCPOnly      bool                 `yaml:"mcp_only"`
+	Governed     bool                 `yaml:"governed"`
+	GovernedName string               `yaml:"governed_name"`
+	Params       map[string]string    `yaml:"params"`
+}
+
+type registryCLIFallback struct {
+	Automatic        bool            `yaml:"automatic"`
+	ConfirmedCommand string          `yaml:"confirmed_command"`
+	Requires         map[string]bool `yaml:"requires"`
+	Rationale        string          `yaml:"rationale"`
 }
 
 // registryFile is the top-level shape of .autoharness/backlog-registry.yaml.
@@ -82,11 +90,12 @@ var cliOnlyIntentional = []string{
 }
 
 // mcpWithoutCLIIntentional names narrowly approved MCP operations whose
-// registry mapping intentionally has neither a CLI fallback nor the broader
-// mcp_only classification. The normalizer is recovery-only MCP parity and its
-// authoritative registry shape is pinned separately, including all params.
+// registry mapping intentionally has no automatic CLI fallback and does not
+// use the broader mcp_only classification. Each exception's authoritative
+// registry shape is pinned separately.
 var mcpWithoutCLIIntentional = map[string]bool{
 	"backlogit_normalize_blocked_shipment": true,
+	"backlogit_unblock_shipment":           true,
 }
 
 // resolveCLIPath extracts the cobra command path from a registry cli_command
@@ -215,6 +224,38 @@ func TestRegistryParity_EveryCLICommandResolves(t *testing.T) {
 			"operation %q cli_command %q resolves to non-existent command path %q (Class-C over-claim)",
 			name, op.CLICommand, path)
 	}
+}
+
+func TestRegistryParity_UnblockConfirmationFailClosed(t *testing.T) {
+	ops := loadRegistryOperations(t)
+	op, found := ops["unblock_shipment"]
+	require.True(t, found, "registry operation unblock_shipment must exist")
+
+	assert.Equal(t, "backlogit_unblock_shipment", op.MCPTool)
+	assert.Empty(t, op.CLICommand,
+		"unblock_shipment must not expose an automatic CLI fallback that can convert confirm:false into --confirm")
+	require.NotNil(t, op.CLIFallback,
+		"unblock_shipment must document its confirmed-only manual CLI fallback")
+	assert.False(t, op.CLIFallback.Automatic,
+		"unblock_shipment CLI fallback must remain non-automatic")
+	assert.Equal(t,
+		"backlogit shipment unblock {{id}} --to {{target}} --confirm --by {{by}}",
+		op.CLIFallback.ConfirmedCommand,
+		"the explicit confirmed CLI command must remain available")
+	assert.Equal(t, map[string]bool{"confirm": true}, op.CLIFallback.Requires,
+		"confirmed-only fallback must require confirm:true")
+	assert.NotEmpty(t, strings.TrimSpace(op.CLIFallback.Rationale),
+		"confirmed-only fallback requires an explicit fail-closed rationale")
+	assert.Equal(t, "confirm", op.Params["confirm"],
+		"registry must preserve the MCP confirmation parameter mapping")
+
+	root := NewRootCommand()
+	path := resolveCLIPath(op.CLIFallback.ConfirmedCommand)
+	cmd := findCommandByPath(root, path)
+	require.NotNil(t, cmd, "confirmed-only CLI command must resolve to a live command")
+	confirmFlag := lookupFlag(cmd, "confirm")
+	require.NotNil(t, confirmFlag, "confirmed-only CLI command must expose --confirm")
+	assert.Equal(t, "bool", confirmFlag.Value.Type())
 }
 
 // TestRegistryParity_NoOrphanMCPTool is assertion (iii): every registry mcp_tool

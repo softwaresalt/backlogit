@@ -63,6 +63,12 @@ precondition holds, delegates to the Cascade Close Sub-Procedure instead.
 | `expected_status` | pre-mode only | `queued` \| `active` \| `done` | `queued` for fresh intake; `active` when shipment already claimed in a prior session; `done` for pre-ship check |
 | `merge_commit_sha` | post-mode and safe-close | git SHA | The merge commit that closed the PR; recorded on archived items for traceability |
 
+The requested reconciliation phase is derived without adding a second status
+input: pre-mode with `expected_status: queued|active` is an intake/resume audit;
+pre-mode with `expected_status: done` is pre-close; safe-close is close; and
+post-mode is post-close. This phase determines whether a canonical blocked
+shipment is an expected resumable pause or an unexpected close-state conflict.
+
 ## Output
 
 A structured **reconciliation report** stored at
@@ -94,53 +100,45 @@ happens to be `active`/`done` outside the shipment's own
 scope can never be misread as a "conflicting task". This mirrors the task-artifact
 filter the Ship agent's intake early-warning already applies to
 `custom_fields.items` (`templates/agents/_ship.agent.md.tmpl`). **Scope**: the
-three named inconsistency cases below apply only when the
-record's own status is `queued` or `blocked` — the two
-statuses where a manifest task already being `active`/`done`
-is itself the drift signal (the queued/blocked record has not "caught up" to its
-tasks). **`blocked` itself is a non-standard/legacy value**: backlogit
-1.8.0's `ShipmentStatus` enum is only `queued|active|shipped|abandoned` (see
-`docs/compound/2026-05-07-backlogit-shipment-status-constraints.md`) — a
-persisted `blocked` record can still exist in real workspaces from a
-historical `backlogit move` CLI defect that silently accepted invalid status
-writes. Pre-mode's `record-blocked-with-active-work`/`record-blocked-with-done-work`
-cases below classify such a leftover record defensively (it is real data that may
-be present); `mode: detect-mixed-role`'s `malformed-legacy` classification
-(defined further below, in the mode's own classification section) reports the
-identical underlying fact — a non-standard/legacy status value, never a normal
-current-day state — for a different manifest scan. Both agree `blocked` is never fabricated or
-transitioned into/out of; only the case label differs by mode. When the record's
-own status is `active` or `done`
-(or archived), the record is **by definition** `record-consistent` for this
-check — an `active` record is the normal in-progress state while its
-tasks move `queued` → `active` → `done`, and an
-`done`/archived record reflects a shipment already closed. This is an
-explicit scope boundary, not a silent default: the four cases below are
-**mutually exclusive** because they are evaluated in this fixed order and every
-record status value maps to exactly one of them.
+queued inconsistency case below applies when a queued record has not caught up
+to manifest work. A `blocked` record follows a different contract: `blocked` is
+a canonical governed resumable nonterminal shipment status. Validate its
+canonical blocked envelope before classification: non-empty `blocked_reason`,
+RFC3339 `blocked_at`, exact-manifest `member_status_snapshot`, canonical optional
+`blocked_by`/`branch`/`resume_checkpoint_ref`, and correlated committed block or
+normalize lifecycle evidence. The snapshot, rather than the tasks' current
+mixed statuses alone, proves the resumable pause. A persisted `blocked` value
+without that envelope/evidence is malformed legacy data and must fail closed.
+When the record's own status is `active` or `done`/`shipped`/archived, the
+record is **by definition** `record-consistent` for this check. These cases are
+mutually exclusive because they are evaluated in the fixed order below.
 
 | Classification | Condition |
 |---|---|
-| `record-consistent` | Record status is `active` or `done`/archived (always consistent — the normal in-progress/closed lifecycle, out of scope for this check), OR record status is `queued`/`blocked` and none of the three inconsistency conditions below match (e.g. record `queued` with all task items `queued`) |
+| `record-consistent` | Record status is `active` or `done`/`shipped`/archived (the normal in-progress/closed lifecycle), OR record status is `queued` and no queued inconsistency below matches |
 | `record-queued-with-active-work` | Record status is `queued` AND at least one **task-artifact** manifest item is `active` or `done` — the classic "silently-dropped claim" inconsistency |
-| `record-blocked-with-active-work` | Record status is `blocked` AND at least one **task-artifact** manifest item is `active`. **Precedence**: when a `blocked` record has BOTH an `active` task and a `done` task, classify here — active work takes precedence over `record-blocked-with-done-work` below, because it is the more severe/earlier-stage drift signal |
-| `record-blocked-with-done-work` | Record status is `blocked` AND no **task-artifact** manifest item is `active` AND at least one **task-artifact** manifest item is `done` |
+| `record-blocked-resumable` | Record status is `blocked` AND the canonical blocked envelope and correlated committed lifecycle evidence validate. Manifest task statuses may be mixed when they match the governed snapshot; blocked remains nonterminal and is never treated as done/shipped |
+| `record-blocked-invalid` | Record status is `blocked` but the canonical blocked envelope, exact-manifest snapshot, or correlated committed lifecycle evidence is missing or invalid |
 
-These four cases are mutually exclusive: every possible record-status value
-(`queued`, `active`, `blocked`, `done`)
-is covered — `active`/`done` always resolve to
-`record-consistent`, and for `queued`/`blocked` the
-active-over-done precedence rule (applied only to task-artifact items) guarantees
-exactly one of the remaining three cases applies. This check is
-**detect-and-report only — NO auto-repair**: it
-never mutates the shipment record or any task; operators must manually
-reconcile.
+These four cases are mutually exclusive. This check is **detect-and-report only
+— NO auto-repair**: it never mutates the shipment record or any task. A valid
+blocked record is handled under the blocked lifecycle contract; an invalid one
+is reported as malformed rather than normalized by this skill.
 
 The report ends with a `recommendation`:
 
 * `PROCEED` — all items are `matched` or `pre-archived` AND the
   shipment-record-status classification is `record-consistent`; no action needed
-* `HALT — operator reconcile required` — one or more missing, status-mismatch, or orphan items, OR a non-`record-consistent` shipment-record-status classification (pre-mode)
+* `PAUSED — governed unblock required` — pre-mode intake/resume audit found
+  `record-blocked-resumable`; the blocked state is valid and resumable, but no
+  build, claim, safe-close, or post-close step may proceed until an explicit
+  governed unblock succeeds
+* `HALT — operator reconcile required` — one or more missing, status-mismatch,
+  or orphan items, a queued-record drift classification, or invalid blocked
+  lifecycle evidence (pre-mode)
+* `HALT — blocked shipment unexpected for requested reconciliation phase` —
+  pre-close, safe-close, or post-close encountered `record-blocked-resumable`;
+  blocked is valid but cannot be treated as done, shipped, archived, or closed
 * `HALT — restore archives` — missing archive files or unrestored deletions (post-mode)
 * `HALT — shipped-event reconciliation required` — post-mode only (143-F, workspace-specific):
   `backlogit_ship_shipment` returned `mutation_partial` with `classification: indeterminate`
@@ -195,18 +193,13 @@ manifest task satisfying none of these is role-clean):
 | `out-of-role` | Task status falls outside the allowed lifecycle set `queued` \| `active` \| `done`/`archived` (e.g. a non-lifecycle or otherwise malformed status value) |
 | `torn-partial` | Any other ambiguous, incomplete, or inconsistent signal for the task that cannot be cleanly assigned to a role (e.g. partially-written frontmatter) |
 
-**Malformed-legacy shipment record**: backlogit 1.8.0 has NO `blocked`
-shipment status (`ShipmentStatus` is only `queued|active|shipped|abandoned`).
-A shipment record whose persisted status is anything other than a valid 1.8.0
-lifecycle value (e.g. a legacy `blocked` value) is described in the report as
-`malformed-legacy` — REPORT it, HALT, and never fabricate a `blocked->queued`
-or any other transition. This is the same underlying fact the pre-mode
-Shipment-Record-Status Classification table above documents for its own
-scan (`record-blocked-with-active-work`/`record-blocked-with-done-work`
-defensively classify a leftover legacy `blocked` record because it
-may exist in real workspaces); the two modes describe the identical
-non-standard value under mode-appropriate labels — never treat a persisted
-`blocked` value as a normal current-day state in either mode.
+**Blocked and malformed shipment records**: a shipment record with
+`status: blocked` and a valid canonical blocked envelope plus correlated
+committed block/normalize evidence is classified `blocked-resumable`. It is a
+valid resumable nonterminal state, not the mixed-role signature and not
+completion. A `blocked` record without that evidence, or any other unrecognized
+status, is `malformed-legacy` — REPORT it, HALT the affected scan, and never
+fabricate a transition.
 
 **Mixed-role signature**: a shipment record `queued` whose
 task-artifact manifest items (filtered by `artifact_type` to exclude any
@@ -222,7 +215,7 @@ attempt to resolve or repair.
 **Detection outcomes** (structured audit entry + telemetry event on every
 run — see "Mixed-Role Detection Audit + Telemetry" below): exactly one of
 `DETECTED` (scan completed; no mixed-role signature or anomaly found —
-`record-consistent`, nothing to report), `REPORTED` (scan completed; the
+`record-consistent` or `blocked-resumable`), `REPORTED` (scan completed; the
 mixed-role signature and/or one or more per-item anomalies were found and
 described in the report), or `DEGRADED` (backlogit was unreachable; the
 degraded condition is reported and the scan halts). There is **NO**
@@ -231,10 +224,11 @@ mutated or repaired by this mode.
 
 ## Behavioral Constraints
 
-* **Report-and-halt only.** This skill NEVER modifies the shipment manifest or
-  queue/archive files **outside the safe-close mode's manifest-scoped archival**.
-  In pre- and post-mode it only reports; operators must manually reconcile via
-  existing backlog tools and re-invoke Ship Step 6.
+* **Report-only outside close.** This skill NEVER modifies the shipment manifest
+  or queue/archive files **outside the safe-close mode's manifest-scoped
+  archival**. Pre-mode returns `PROCEED`, a non-failure `PAUSED` result for an
+  expected resumable blocked state, or `HALT` for an unexpected/invalid state.
+  Post-mode reports and halts on any nonterminal or archive-integrity conflict.
 * **Manifest-scoped mutation only.** In `mode: safe-close`, the ONLY artifacts
   this skill may move or archive are the shipment manifest's explicit item IDs and
   the shipment record itself (`{shipment_id}`). It must NEVER archive the parent
@@ -300,20 +294,19 @@ mutated or repaired by this mode.
    — so a covering feature that is `active`/`done` outside the
    shipment's own manifest scope can never be misread as a "conflicting task" and
    falsely halt an otherwise-consistent shipment.
-   * Record `active` or `done`/archived →
-     `record-consistent` (always — this check is scoped to `queued`/
-     `blocked` records only; an active/done record is the normal
-     in-progress/closed lifecycle state, not evaluated further).
+   * Record `active` or `done`/`shipped`/archived →
+     `record-consistent` (the normal in-progress/closed lifecycle state).
    * Record `queued` AND any manifest **task** is `active` or
      `done` → `record-queued-with-active-work`.
-   * Record `blocked` AND any manifest **task** is `active` →
-     `record-blocked-with-active-work` (takes precedence over the case below when
-     both an active and a done task are present).
-   * Record `blocked` AND no task `active` AND any manifest
-     **task** is `done` → `record-blocked-with-done-work`.
-   * Record `queued` or `blocked` matching none of the above
-     → `record-consistent` (e.g. record `queued` with all tasks
-     `queued`).
+   * Record `blocked` with a valid canonical blocked envelope, exact-manifest
+     member snapshot, and correlated committed block/normalize evidence →
+     `record-blocked-resumable`. Compare observed manifest statuses to the
+     snapshot and report any mismatch; do not reinterpret mixed active/done
+     members as queued-record drift.
+   * Record `blocked` without that complete evidence →
+     `record-blocked-invalid`.
+   * Record `queued` matching none of the above → `record-consistent`
+     (e.g. record `queued` with all tasks `queued`).
    This step is **detect-and-report only — NO auto-repair**: it never mutates the
    shipment record or any task.
 
@@ -324,9 +317,19 @@ mutated or repaired by this mode.
    * If all items are `matched` or `pre-archived`, no orphans exist, AND the
      shipment-record-status classification is `record-consistent` →
      `recommendation: PROCEED`
+   * If the classification is `record-blocked-resumable` during a pre-mode
+     intake/resume audit (`expected_status: queued|active`) →
+     `recommendation: PAUSED — governed unblock required`. Release the lock if
+     held and return the report without `RECONCILE_FAIL`; this is a valid
+     resumable pause, not malformed data. Do not claim, close, or mutate the
+     shipment.
+   * If the classification is `record-blocked-resumable` during pre-close
+     (`expected_status: done`) →
+     `recommendation: HALT — blocked shipment unexpected for requested
+     reconciliation phase`; release the lock and halt with `RECONCILE_FAIL`.
    * If any `missing`, `status-mismatch`, or `orphan` items exist, OR the
-     shipment-record-status classification is `record-queued-with-active-work`,
-     `record-blocked-with-active-work`, or `record-blocked-with-done-work` →
+     shipment-record-status classification is `record-queued-with-active-work`
+     or `record-blocked-invalid` →
      `recommendation: HALT — operator reconcile required`, naming the shipment id,
      the record's own status, and the conflicting manifest task ids
    * On `HALT`: emit the report path, release the lock, and halt with
@@ -356,6 +359,17 @@ mutated or repaired by this mode.
      fully-covered-root exception). After a `mode: safe-close` run there is no cascade
      result to classify, so proceed directly to step 1.
 
+0a. **Reject nonterminal shipment state before archive success**: Re-read the
+   shipment record from queue/archive. If it is live `status: blocked`, validate
+   the canonical blocked envelope and correlated committed lifecycle evidence,
+   classify it `record-blocked-resumable` or `record-blocked-invalid`, and emit
+   `recommendation: HALT — blocked shipment unexpected for requested
+   reconciliation phase`. Post-mode requires verified shipped/archive
+   provenance; it must never accept blocked as done, shipped, or archived. Any
+   other live nonterminal status likewise halts. Preserve the P-007 halted-event
+   branch in step 0: that branch remains authoritative when its exact
+   `mutation_partial` envelope is present.
+
 1. **Verify archive presence**:
    List `.backlogit/archive/` and confirm a file exists for the shipment itself
    (`{shipment_id}.*`).
@@ -375,6 +389,9 @@ mutated or repaired by this mode.
 
 5. **Gate decision**:
    * If step 0 classified a halted archival → `recommendation: HALT — shipped-event reconciliation required`
+   * If step 0a found a live blocked or other nonterminal shipment record →
+     `recommendation: HALT — blocked shipment unexpected for requested
+     reconciliation phase`
    * If all archive files present and no deletions detected → `recommendation: PROCEED`
    * If missing archive files or unrestored deletions detected →
      `recommendation: HALT — restore archives`
@@ -405,7 +422,12 @@ completion.
       `items` list. This load happens here in Step 0 — not deferred to step 1
       below — because the classification in (c) and the cascade
       pre/post-comparison in the Cascade Close Sub-Procedure both require it,
-      and the cascade path skips steps 1–10 entirely.
+      and the cascade path skips steps 1–10 entirely. If the shipment is
+      `blocked`, validate and report its canonical blocked envelope, then halt
+      with `HALT — blocked shipment unexpected for requested reconciliation
+      phase` before any mutation. Safe-close never treats a valid resumable
+      blocked record as done or shipped, and an invalid blocked envelope fails
+      closed as `record-blocked-invalid`.
    b. **Snapshot pre-close `parent_id` and declared `status` for every task
       item** in the manifest by reading each task's current frontmatter from
       whichever of `.backlogit/queue/` or
@@ -955,15 +977,17 @@ template family: this SKILL's prose only).
    above). Note: `shipped`/`abandoned` are the shipment record's own terminal
    statuses (`ShipmentStatus` enum), distinct from `done` which is
    a **task**-artifact status — a live shipment record is never itself
-   `done`. If a candidate's persisted status is not a valid
-   backlogit 1.8.0 shipment lifecycle value (e.g. a legacy `blocked` value),
-   classify it `malformed-legacy`, add it to the report, and continue to the
-   next candidate — never fabricate a transition. Any other unrecognized
-   persisted value is likewise `malformed-legacy` rather than silently
-   skipped or silently matched to the queued branch below — every possible
-   persisted value maps to exactly one of: skip (`active`/
-   `shipped`/`abandoned`/archived), scan (`queued`, step 3), or
-   `malformed-legacy` (anything else).
+   `done`. For `status: blocked`, validate the canonical blocked envelope,
+   exact-manifest `member_status_snapshot`, and correlated committed
+   block/normalize lifecycle evidence. A valid record is
+   `blocked-resumable`: include an informational report entry, do not scan it
+   as the queued mixed-role signature, and do not treat it as completion. An
+   invalid blocked envelope is `malformed-legacy`. Any other unrecognized
+   persisted value is likewise `malformed-legacy` rather than silently skipped
+   or matched to the queued branch — every possible persisted value maps to
+   exactly one of: skip (`active`/`shipped`/`abandoned`/archived), report valid
+   pause (`blocked-resumable`), scan (`queued`, step 3), or
+   `malformed-legacy`.
 
 3. **Filter to task-artifact manifest items**: for each remaining
    `queued` candidate, read its manifest `items` list and each
@@ -982,6 +1006,10 @@ template family: this SKILL's prose only).
    representations from `malformed-provenance` / `any-other-archived-status`.
 
 5. **Determine the outcome for each candidate**:
+   * If the candidate is `blocked-resumable` → `DETECTED`, recording the
+     governed pause and resume metadata without a mixed-role anomaly.
+   * If the candidate is `malformed-legacy` → `REPORTED`, naming the missing or
+     invalid lifecycle evidence.
    * If any per-item anomaly was found → `REPORTED`, naming the shipment id,
      the anomalous task id(s), and the specific anomaly for each.
    * Else if the mixed-role signature is present (at least one `live-active`
@@ -1026,11 +1054,14 @@ report:
 > (`isValidShipmentTransition` in `internal/core/shipment.go` permits ONLY
 > `queued`→`active` and
 > `active`→`{shipped,abandoned}`; a re-claim on an already-`active`
-> shipment returns `ErrShipmentConflict`). There is **NO**
-> `active`→`queued` transition and **NO** `blocked`
-> shipment status in 1.8.0 — never expect or fabricate either. The SUPPORTED
-> manual remediation path is entirely through backlogit's own sanctioned
-> lifecycle transitions: the operator inspects the shipment and its manifest
+> shipment returns `ErrShipmentConflict`). There is no generic
+> `active`→`queued` transition. `blocked` is a separate canonical governed
+> resumable nonterminal lifecycle state: enter it only through the governed
+> block/normalize operations and leave it only through explicit confirmed
+> unblock. Never fabricate a blocked envelope or treat dependency satisfaction
+> as an unblock. The SUPPORTED manual remediation path is entirely through
+> backlogit's own sanctioned lifecycle transitions: the operator inspects the
+> shipment and its manifest
 > tasks directly (`backlogit get <id>` / `backlogit shipment get <id>`) and
 > decides, case by case, whether the tasks are legitimately progressing (in
 > which case the operator may let the shipment proceed to closure normally
@@ -1121,17 +1152,18 @@ If pre-mode cannot acquire the lock because another process holds it:
 * `mode: post` runs after the safe-close archive sequence in Ship Step 6
 * All five item classifications are represented in the schema
 * Pre-mode adds a shipment-record-status classification (`record-consistent` /
-  `record-queued-with-active-work` / `record-blocked-with-active-work` /
-  `record-blocked-with-done-work`) comparing the record's own status against its
-  manifest **task-artifact** items' statuses (filtered by `artifact_type` to
-  exclude any non-task manifest entry, e.g. a covering feature id, before
-  aggregating), with the blocked+active-over-blocked+done precedence
-  rule stated explicitly; the four cases are mutually exclusive, computed with
-  no new scan (reuses data already read in steps 2–3); any non-`record-consistent`
-  classification HALTs the pre-mode recommendation, naming the shipment id,
-  record status, and conflicting task ids — detect-and-report only, no auto-repair
-* Lock is acquired before pre-mode and released after post-mode (or on any halt)
-* Report-and-halt in pre/post mode; safe-close mutation is strictly manifest-scoped with no auto-prune
+  `record-queued-with-active-work` / `record-blocked-resumable` /
+  `record-blocked-invalid`). Canonical blocked validation requires the complete
+  envelope, exact-manifest member snapshot, and correlated committed
+  block/normalize evidence. Intake/resume audit reports a valid blocked record
+  as `PAUSED — governed unblock required` without `RECONCILE_FAIL`; pre-close,
+  safe-close, and post-close halt because blocked is unexpected for the
+  requested reconciliation phase. No phase treats blocked as done/shipped
+* Lock is acquired before Ship Step 6 pre-mode and released after post-mode, on
+  any halt, or when intake/resume reconciliation returns `PAUSED`
+* Pre/post modes remain report-only; pre-mode may return phase-aware
+  `PROCEED`/`PAUSED`/`HALT`, while safe-close mutation is strictly
+  manifest-scoped with no auto-prune
 * `mode: detect-mixed-role` is operator-invoked and strictly READ-ONLY: it
   requires NO `file-lock` acquisition, NEVER mutates any shipment record or
   task, and NEVER calls `backlogit_claim_shipment` or any other status-write
@@ -1146,6 +1178,10 @@ If pre-mode cannot acquire the lock because another process holds it:
   `out-of-role` / `torn-partial`); role classification is used ONLY to
   DESCRIBE the inconsistency in the report, NEVER to gate a mutation
   (013-DL Addendum G)
+* `mode: detect-mixed-role` recognizes evidence-backed `status: blocked` as
+  `blocked-resumable`, records the governed pause as informational, and does not
+  classify it as the queued mixed-role signature or completion. A blocked
+  record lacking the canonical envelope/evidence remains `malformed-legacy`
 * `mode: detect-mixed-role` produces exactly one outcome per candidate
   shipment — `DETECTED` / `REPORTED` / `DEGRADED` — with NO
   `succeeded`/`repaired`/`refused`/two-active outcome, and writes a
@@ -1157,8 +1193,8 @@ If pre-mode cannot acquire the lock because another process holds it:
   NO auto-repair and that a record-only forward re-claim is UNSUPPORTED by
   backlogit 1.8.0 (`ClaimShipment` is manifest-wide + all-or-nothing +
   STRICTLY SINGLE-SHOT; NO `active`→`queued` edge; NO
-  `blocked` shipment status), with the read-only source evidence, and never
-  fabricates a `blocked`→`queued` or
+  implicit unblock), with the read-only source evidence, and never fabricates a
+  `blocked`→`queued` or
   `active`→`queued` transition
 * `mode: detect-mixed-role` DEGRADED (backlogit unreachable) reports the
   degraded condition and HALTs — it never guesses or acts on partial data

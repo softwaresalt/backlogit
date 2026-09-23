@@ -307,7 +307,17 @@ operations:
 
   unblock_shipment:
     mcp_tool: "backlogit_unblock_shipment"
-    cli_command: "backlogit shipment unblock {{id}} --to {{target}} --confirm --by {{by}}"
+    # No automatic CLI fallback is exposed because the CLI uses a presence-only
+    # --confirm flag. Rendering that flag unconditionally would turn
+    # confirm:false or an ambiguous value into a confirmed unblock. Operators
+    # may use the explicit confirmed-only command below after independently
+    # establishing confirm:true.
+    cli_fallback:
+      automatic: false
+      confirmed_command: "backlogit shipment unblock {{id}} --to {{target}} --confirm --by {{by}}"
+      requires:
+        confirm: true
+      rationale: "fail closed unless confirmation is explicitly true; automatic fallback must never be more permissive than MCP"
     params:
       shipment_id: "id"
       target: "target"

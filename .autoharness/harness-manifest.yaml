@@ -109,11 +109,11 @@ artifacts:
   - path: ".autoharness/backlog-registry.yaml"
     primitive: 9
     template: "templates/backlog/registries/backlogit.registry.yaml"
-    checksum: "d0d9e5894eb055c597b820aebacd7b53d82527723dcbb42be83b9ad83ec8196f"
+    checksum: "78e81c59ba857c6c036917de4f4d95d484817ec63acc843eef69de32189d3f68"
   - path: ".github/instructions/backlogit.instructions.md"
     primitive: 6
     template: "templates/instructions/backlogit.instructions.md.tmpl"
-    checksum: "747c627993df6349a8438e385bdccd160979a9b62e468be161b0fde82f6dd2f3"
+    checksum: "818d73af15eb9c8d9f71a1f0a374424a711ab73d60e7afcb1fa0afb8947e8c92"
   - path: ".github/instructions/architecture-doc.instructions.md"
     primitive: 9
     template: "templates/instructions/architecture-doc.instructions.md.tmpl"
@@ -325,7 +325,7 @@ artifacts:
   - path: ".github/skills/shipment-reconcile/SKILL.md"
     primitive: 4
     template: "templates/skills/shipment-reconcile/SKILL.md.tmpl"
-    checksum: "7f52a30c8469a96af554965fbcf84c1216a7b2672bc9aac7243117fc10531eed"
+    checksum: "1c21702178a2f31cec8a6656b1a0848d5079b57f52b760f6c70f1e050f90f0c3"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Safe-close step 8 instructed agents to run `backlogit move <shipment_id> --status shipped`, which this codebase refuses unconditionally with ErrShipmentShippedRequiresEnvelope (internal/core/shipment.go guard 1, gate_transition.go, artifacts.go create seam); ShipShipment is the only path to shipped and it cascades. Because that step ran after manifest items were archived, every safe-close attempt would have left a partially closed shipment before halting. Added a Step 0(d) close-capability pre-flight gate that halts with RECONCILE_BLOCKED_NO_NONCASCADING_CLOSE before any mutation, and rewrote step 8 to name the governed non-cascading operation rather than an operation that cannot succeed. Do not auto-revert."
   - path: ".github/prompts/stage-grouping-analysis.prompt.md"
