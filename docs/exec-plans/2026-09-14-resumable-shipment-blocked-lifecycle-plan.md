@@ -2016,3 +2016,125 @@ decision: PASS
 dependency changes). Task doctor re-run PASS after each edit. Decision: **PASS**.
 
 <!-- plan-review-attempt: rev12-corrective-lock-order-inversion-closure (PASS after ADVISORY→hardened) -->
+
+<!-- plan-review-attempt: rev13-corrective-faultline-golden-lf-materialization -->
+
+## Corrective Wave — Wave 12 (Faultline parity golden LF materialization) (2026-09-23, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`)
+
+**Trigger.** The mandatory local full suite for `155-S` final readiness is blocked by an
+ENVIRONMENT-ONLY failure: pre-existing test
+`internal/faultline/evidence_conformance_test.go:TestU4aBehaviorCanonicalByteStable` byte-compares
+`a.Canonical()` LF output to `internal/faultline/testdata/parity_v1.golden.json`. The repo blobs are
+LF, but Windows `core.autocrlf=true` materializes the fixture as CRLF because `.gitattributes` carries
+only `* text=auto`. Test, fixture, and `.gitattributes` are unchanged by `155-S`; there is no Linux CI
+evidence and no waiver. The same-operation full-suite circuit is OPEN — no test re-run or fourth
+attempt was performed.
+
+**P-021 C1 classification — OUT OF SCOPE (deferred-scope-expansion captured).** Fixing the fixture
+byte-stability / line-ending materialization contract does NOT complete the exact change authorized
+for `155-S` (resumable shipment blocked-lifecycle status + the Wave 11 lock-order closure). It is a
+DIFFERENT contract surface owned by the archived Faultline golden-parity harness task `156.006-T`
+under archived feature `156-F`. same-file / same-PR / same-subsystem do not make it in-scope. The
+mandatory `DEFERRED SCOPE EXPANSION` capture was performed BEFORE any planning: stash `18E587A0`
+(kind bug, provisional priority high) → deliberation `067-DL`.
+
+**Ownership decision (fail-closed parent).** `156-F` and `156.006-T` are ARCHIVED (terminal). Hosting
+a live queued corrective under a terminal feature would soft-reopen closed scope and risks
+hierarchical-ID ambiguity against archived ordinals. The corrective is therefore parented to the
+ACTIVE covering feature `174-F` (the covering feature of `155-S`), with explicit C1 provenance to
+`156.006-T` recorded in the task body and here. This parallels the accepted sibling corrective
+`174.064-T`.
+
+**New task.** `174.065-T` — *"Pin LF materialization for Faultline parity golden fixture (155-S
+full-suite unblock)"* (status `queued`, priority `high`, parent `174-F`). Scope: add a path-specific
+`.gitattributes` entry `internal/faultline/testdata/parity_v1.golden.json text eol=lf` ONLY —
+NO global `* text eol=lf`, NO change to the existing `* text=auto`, NO test weakening, NO edit to the
+in-repo golden bytes. Acceptance criteria (AC0–AC8, hardened per rev13 review) require: a committed-blob
+LF precondition pre-check (AC0, guarding byte-identity); the path-specific `eol=lf` entry placed AFTER
+`* text=auto` (order-based precedence); a `git check-attr eol` proof resolving `lf`; a FORCED
+working-tree re-materialization (`git rm --cached`/delete + `git checkout`, not `git add --renormalize`
+alone — which updates only the index and no-ops when the blob is already LF) followed by a no-CRLF byte
+assertion; a narrow adjacent-golden audit (fix only proven-defective paths); the targeted
+`TestU4aBehaviorCanonicalByteStable` passing with the `156.006-T` byte-stability contract preserved; no
+comparison-path normalization; the circuit disposition below; and a rollback/diagnostic record. Scope ≈
+≤2h; config/attributes only — no decomposition needed.
+
+**Shipment membership.** `174.065-T` was added to ACTIVE shipment `155-S` through the GOVERNED
+`AddItemToShipment` path (`backlogit shipment add 155-S 174.065-T` → `{status: "added"}`). Active
+shipments are not membership-mutation-blocked (`shipmentMutationBlocked` excludes `active`);
+`validateShipmentItemIDs` imposes no covering-feature-descendant requirement, so an explicit
+single-task add of a `174-F`-parented task is governed-permitted. The covering feature `174-F` was
+already a member; no parent feature was newly added and `custom_fields` was NOT hand-edited.
+
+**Dependencies / order.** No dependency-graph change (fail-closed). Unlike the lock-order corrective
+`174.064-T` — which legitimately depends on foundational serialization tasks it must follow — the
+LF-materialization fix is a standalone config/attributes change with NO upstream implementation task;
+adding a `blocks` edge onto already-done tasks would encode a false ordering and satisfy immediately,
+providing no real gate. As an UNFINISHED member of active `155-S`, `174.065-T` already gates the
+shipment's final readiness / PR readiness via membership (the same membership-as-gate mechanism 155-S
+uses for all members). This is the minimal correct encoding and preserves the dependency graph
+unchanged.
+
+**Circuit disposition (KEY — do NOT run the full suite now).** The same-operation full-suite circuit
+is OPEN against the PRE-FIX repository state. This corrective task, when implemented and COMMITTED by
+Ship, CHANGES repository state (adds the `.gitattributes` entry + renormalizes the fixture in the
+working tree). After that correction commit, the local full-suite invocation is a NEW,
+SEPARATELY-AUTHORIZED final-gate operation at a NEW commit / NEW workflow phase — it is NOT a retry or
+probe of the open pre-fix failing state, and does not count against the pre-fix circuit. Explicit
+operator authorization is still required immediately before that post-fix full-suite run if policy
+demands it. Ship MUST NOT run the full suite as part of this task's RED/GREEN beyond the targeted
+`TestU4aBehaviorCanonicalByteStable`. No waiver is invented; if policy forbids ever running the full
+suite even after a state-changing correction, the compliant alternative is a targeted per-package
+verification of `./internal/faultline/` plus the affected packages at the new commit under explicit
+authorization — never a skipped mandatory gate.
+
+**Scope guard.** Faultline golden LF materialization only; no shipment-lifecycle, lock-order, or
+product-code change; no test/source/fixture/`.gitattributes` edit under THIS Stage amendment (Ship
+implements the `.gitattributes` change later under `174.065-T`). The active Ship checkpoint
+`checkpoint-20260923-191544.json`, `154-S`, and PR #449 are untouched; the uncommitted Ship
+implementation files are excluded from the Stage commit (explicit pathspec).
+
+<!-- plan-review-attempt: rev13-corrective-faultline-golden-lf-materialization -->
+
+## Plan Review — Amendment (Wave 12 Faultline golden LF materialization corrective task) (2026-09-23)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Reviewers dispatched (parallel, planning-artifact review of `174.065-T` ACs + the Wave 12 corrective-wave section):**
+
+- **Scope Boundary Auditor** — **PASS**, zero P0/P1/P2. Confirmed minimal scope (single path-specific
+  `.gitattributes` line; no global change; no test/golden weakening), verifiable ACs, and that the
+  "no dependency-graph change / membership-as-gate" decision is the anti-scope-creep choice (a `blocks`
+  edge onto already-done tasks would encode a false, immediately-satisfied ordering) rather than a
+  verification gap. One P3 advisory: keep AC4's adjacent-golden audit strictly limited to
+  proven-defective faultline paths (no preemptive `eol=lf` on non-defective goldens). Encoded into AC4.
+
+- **Correctness Reviewer** — **PASS**. Verified the failure diagnosis is technically correct
+  (`canonical.Canonicalize` emits a single trailing LF; the raw `bytes.Equal` compare in
+  `evidence_conformance_test.go` has no normalization; `.gitattributes` carries only `* text=auto`), and
+  that `text eol=lf` is the correct and sufficient forcing mechanism that overrides `* text=auto`. One
+  P2: `git add --renormalize` alone does NOT reliably rewrite the WORKING TREE (index-only; no-op when
+  the blob is already LF; a plain `git checkout` may skip re-smudging) — the AC must force
+  re-materialization. Two P3 advisories: place the path-specific entry AFTER `* text=auto`
+  (order-based precedence), and pre-check that the committed blob is LF before renormalize (guards
+  byte-identity). **All three resolved in-scope** by hardening `174.065-T`'s own ACs: new AC0
+  (blob-LF precondition pre-check), AC1 ordering requirement (after `* text=auto`), and AC3 rewritten to
+  force re-materialization (`git rm --cached`/delete + `git checkout`, not `--renormalize` alone) with
+  the no-CRLF byte assertion retained as a falsifiable backstop.
+
+**Residual P0/P1 after hardening: NONE** (P0=0, P1=0). The one P2 and both P3 findings were resolved
+in-scope by tightening `174.065-T`'s own acceptance criteria — same corrective contract; NO new task,
+scenario group, dependency edge, status, priority, or membership change. Task `doctor` re-run PASS after
+the AC edits (see validation evidence). Decision: **PASS**.
+
+**Ship-ready directive.** Implement `174.065-T` as the final corrective before `155-S` PR readiness:
+add the single path-specific `.gitattributes` `eol=lf` entry (after `* text=auto`), force-re-materialize
+and prove no-CRLF, run ONLY the targeted `./internal/faultline/ -run TestU4aBehaviorCanonicalByteStable`.
+Do NOT run the mandatory full suite as part of this task. The post-fix full-suite run is a NEW
+final-gate operation at the new (post-correction) commit — NOT a retry of the open pre-fix circuit — and
+requires explicit operator authorization immediately before it if policy demands. Preserve the
+uncommitted R1–R5/R8 Ship implementation and the `174.064-T` lock-order work; this corrective is
+orthogonal and touches only `.gitattributes` + working-tree materialization of the one golden.
+
+<!-- plan-review-attempt: rev13-corrective-faultline-golden-lf-materialization (PASS after ADVISORY→hardened) -->
