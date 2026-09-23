@@ -2138,3 +2138,102 @@ uncommitted R1–R5/R8 Ship implementation and the `174.064-T` lock-order work; 
 orthogonal and touches only `.gitattributes` + working-tree materialization of the one golden.
 
 <!-- plan-review-attempt: rev13-corrective-faultline-golden-lf-materialization (PASS after ADVISORY→hardened) -->
+
+---
+
+## Wave 13 — Corrective: isolate shipped-event durability tests from the real gate/version subprocess (2026-09-23)
+
+**Task:** `174.066-T` (queued, high) under active covering feature `174-F`; governed member of active
+shipment `155-S` (added after `174.064-T`, `174.065-T`). Origin: P-021 deferred-scope-expansion stash
+`FF1F3AC7` → deliberation `068-DL`.
+
+**Trigger.** The authorized full suite `go test ./...` fails and then times out in UNCHANGED
+`internal/core` durability tests. First failure:
+`TestShipShipment_FailClosedShippedAppendSuppressesMoveStatusPostHook`
+(`internal/core/shipment_shipped_event_durability_test.go:316`); the package then times out at 10m in
+`TestShipShipment_ShippedEventAppendFailureLogsFixedShape/not_applied`. Terminal stack:
+`gate.ExecVersionRunner.Version → gate.Probe → Broker.Evaluate → gateShipmentCompletion → ShipShipment`.
+
+**Root cause (test-infrastructure, not product).** `newShipDurabilityFixture` builds its workspace via
+`setupShipmentWorkspace → NewWorkspace`, which wires the REAL `buildGateBroker`
+(`gate.Broker{Version: gate.ExecVersionRunner{...}}`, workspace.go:278 / gate_transition.go:71-76) and
+never overrides it. `shipWithWatchdog` then runs `ShipShipment(context.Background(), …)` UNBOUNDED in a
+goroutine, so `gateShipmentCompletion` spawns a real `autoharness version` subprocess whose latency,
+under a loaded parallel full-suite run, exhausts the 10m package deadline. This is a gate/version
+subprocess-isolation defect in the test harness, NOT the item-log/artifact/global-lock ordering surface
+owned by `174.064-T`.
+
+**P-021 C1 classification.** OUT OF SCOPE for `174.064-T` (lock-order canonicalization) — a different
+contract surface (gate/version subprocess isolation vs. artifact/global lock ordering) — yet it BLOCKS
+`174.064-T` AC6 / the full-repository gate, so it is a governed prerequisite for `155-S` final readiness.
+Disposition: captured as `DEFERRED SCOPE EXPANSION` (`FF1F3AC7`), deliberated (`068-DL`), and planned as
+its own minimal corrective task rather than folded into any completed task.
+
+**Chosen correction (test-only; no production change).** Use the PRE-EXISTING injection seam — the public
+`ws.GateBroker` field, the `gate.VersionRunner` / `gate.GateRunner` interfaces, and the
+`injectBroker` / `fakeVersion` / `fakeGateRunner` helpers already in `gate_transition_test.go`:
+
+1. Override the durability fixture's `ws.GateBroker` with a PASSING fake broker (fake version + fake gate
+   runner) using the `gate.EnabledMode` that preserves the existing ship-completion path, so no
+   `gate.ExecVersionRunner` subprocess is ever spawned and every durability assertion still runs.
+2. Propagate a BOUNDED context (`context.WithTimeout`/`WithDeadline` + `defer cancel`) into `ShipShipment`
+   and the ship goroutine in `shipWithWatchdog`, instead of `context.Background()`, so cancellation
+   propagates into the ship path rather than relying solely on the package deadline.
+3. Deterministically PROVE no `gate.ExecVersionRunner` invocation (call-recording fake and/or type
+   assertion on `ws.GateBroker.Version`), preserve ALL append/compensation/post-hook-suppression/
+   fixed-shape assertions verbatim, and demonstrate RED-before / GREEN-after on the targeted durability
+   suite. No timeout inflation, no `t.Skip`, no weakened assertions, no production gate bypass.
+
+Scope is confined to `internal/core/shipment_shipped_event_durability_test.go` (and, only if strictly
+necessary, a sibling `_test.go` helper reusing the existing seam). No production (`non-_test.go`) change
+is required; if one is discovered to be required, Ship MUST HALT and classify/bound it explicitly rather
+than silently expand.
+
+**Dependencies / ordering.** No dependency-graph edge is added (fail-closed): the standalone
+test-harness corrective has no authentic upstream implementation task, and a `blocks` edge onto the
+already-done tasks would encode a false, immediately-satisfied ordering. Ordering is enforced by
+MEMBERSHIP — `174.066-T` is an unfinished member of active `155-S`, which gates PR readiness until it is
+done. No completed task status is reopened.
+
+**Circuit disposition (full-suite same-operation circuit is OPEN).** Do NOT run `go test ./...` now.
+After the correction COMMIT changes repository state, the local full-suite invocation is a NEW,
+SEPARATELY-AUTHORIZED final-gate operation at a NEW commit / NEW workflow phase — NOT a retry or probe of
+the open pre-fix failing state, and it does not count against the pre-fix circuit. Explicit operator
+authorization is still required immediately before that post-fix full-suite run if policy demands it.
+Within this task Ship runs ONLY the targeted durability verification (e.g.
+`go test -run TestShipShipment_ ./internal/core`). No waiver is invented; if policy forbids ever running
+the full suite even after a state-changing correction, the compliant alternative is a targeted
+per-package verification of `./internal/core/` plus the affected packages at the new commit under
+explicit authorization — never a skipped mandatory gate.
+
+**Scope guard.** Durability-test gate isolation only; no shipment-lifecycle, lock-order, product-code, or
+`.gitattributes` change; no touch of the current uncommitted Ship implementation, the active checkpoint
+`checkpoint-20260923-231731.json`, `154-S`, or PR #449. The uncommitted Ship implementation files are
+excluded from the Stage commit (explicit pathspec).
+
+<!-- plan-review-attempt: rev14-corrective-durability-gate-isolation -->
+
+## Plan Review — Amendment (Wave 13 durability-test gate-isolation corrective task) (2026-09-23)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Reviewers dispatched (parallel, planning-artifact review of `174.066-T` ACs + the Wave 13 corrective-wave section):** Concurrency Reviewer, Correctness Reviewer, Scope Boundary Auditor.
+
+- **Correctness Reviewer — initial FAIL (P1), re-review PASS after hardening.** Traced the real gate broker, `gateShipmentCompletion`, `validateMemberGateEvidence`, and the durability fixture and found the original AC premise INVERTED: it directed an ENFORCED+PASSING fake broker, but the fixture's release-scope members are active and carry NO per-member gate-pass evidence and `formalGateEnforced()` is false, so an enforced broker makes `gateShipmentCompletion` run `validateMemberGateEvidence` and REFUSE the ship BEFORE the `ws.shipmentEventAppend` seam — short-circuiting the ship and breaking every durability assertion. The behavior-preserving configuration is a NOT-enforced / fail-open broker (`gate.EnabledAuto` + version-probe error, or `gate.EnabledFalse`), matching the current default-config CI `!ev.Enforced` early-return. **Resolved in-scope** by rewriting AC1 (not-enforced/fail-open, explicitly forbidding enforced+passing), plus P2 fixes: AC2 (assert `formalGateEnforced()==false` precondition), AC5 (prove the post-hook-suppression scenario's error is the shipped-event-append `MutationPartialError` via `requireShippedAppendPartial`/`errors.As`, closing a wrong-path masking gap), AC6 (structural TYPE ASSERTION on `ws.GateBroker.Version`/`.Runner` rather than an invocation spy that would pass vacuously under `EnabledFalse`), and P3 reframes (AC3 "600s-bounded + leaks" precision; AC7 pre-fix RED is a bounded timeout, not a clean assertion failure). Re-review verdict: **PASS** — the not-enforced direction is behavior-preserving under both `EnabledAuto` and `EnabledFalse`, the masking gap is closed, the type-assertion proof is sound, and no new correctness defect was introduced. Two residual P3 advisories (AC8 fail-open/kill-switch wording; AC3 bound must exceed the pre-Evaluate `ws.headSHABounded` git probe) were also folded into the ACs.
+
+- **Concurrency Reviewer — ADVISORY, resolved in-scope.** Confirmed AC1 (fake broker) is the primary and sufficient fix and AC3 (bounded ctx) is correct defense-in-depth (`ExecVersionRunner.Version` honors `exec.CommandContext(ctx)`), with AC6's proof deterministic (per-`ws` broker, no `t.Parallel`). P2/P3 hardening folded in: AC3 bound strictly < watchdog and generous/unobservable on the happy path (prevents `DeadlineExceeded` from mutating `MutationPartialError.Class`/`CompensationState`); AC6 recorder concurrency-safe and read only after channel receive (avoids a `-race` hazard on a leaked goroutine), `-race` recommended for AC7; AC1 injection ordering pinned (after construction, before goroutine launch); AC9 explicitly acknowledges the residual leaked-goroutine/use-after-close on a GENUINE lock regression as a known OUT-OF-SCOPE limitation whose full fix (cooperative ctx cancellation inside `ShipShipment`) is a production change.
+
+- **Scope Boundary Auditor — ADVISORY, resolved in-scope.** Affirmed strong anti-creep scope (single `_test.go` file, pre-existing seam reuse, verbatim-assertion preservation, HALT-on-production-change) and that the no-dependency-edge / membership-as-gate decision is the correct anti-scope-creep choice (a `blocks` edge onto already-done tasks is a vacuous, immediately-satisfied ordering), not a verification gap. P2/P3 hardening folded in: AC6 broadened to both seam interfaces (VersionRunner AND GateRunner); AC9 makes introducing any NEW production injection API OUT OF SCOPE BY DEFINITION (HALT, not "bound"); AC3 framed as defense-in-depth; AC7 accepts a bounded RED reproduction; AC4 scoped "verbatim" to assertion SEMANTICS so it does not forbid AC3's context threading. Plan-level clarification (this record): the fail-closed membership-as-gate control is INDEPENDENTLY OBSERVABLE — `174.066-T` is an unfinished member of active `155-S`, and shipment membership is what actually blocks `174.064-T` AC6 / the full-repository gate for `155-S` final readiness — so the absent dependency edge is compensated by an asserted control, not by assumption.
+
+**Residual P0/P1 after hardening: NONE** (P0=0, P1=0). The single P1 (correctness AC1 inversion) and all P2/P3 findings were resolved in-scope by tightening `174.066-T`'s own acceptance criteria — same corrective contract; NO new task, scenario group, dependency edge, status, priority, or membership change. Decision: **PASS**.
+
+**Ship-ready directive.** Implement `174.066-T` as a governed prerequisite for `155-S` final readiness, confined to `internal/core/shipment_shipped_event_durability_test.go` (+ a sibling `_test.go` helper only if strictly needed) using the PRE-EXISTING seam — NO production change:
+
+1. Override the durability fixture `ws.GateBroker` with a NOT-enforced / fail-open fake broker (`gate.EnabledAuto` + a `fakeVersion` reporting the gate binary unavailable, or `gate.EnabledFalse`) via `injectBroker`, injected after `NewWorkspace` construction and before `shipWithWatchdog` launches the ship goroutine. Do NOT use an enforced+passing broker (it would trip `validateMemberGateEvidence` and refuse the ungated members). Assert `formalGateEnforced()==false`.
+2. Replace `context.Background()` in `shipWithWatchdog` with a bounded context (bound strictly < watchdog, generous vs. the append/compensation window AND the pre-Evaluate `ws.headSHABounded` git probe, unobservable on the happy path).
+3. Prove no real broker via a TYPE ASSERTION on `ws.GateBroker.Version` and `.Runner`; close the post-hook-suppression masking gap by asserting the error is the shipped-event-append `MutationPartialError`; keep any recorder concurrency-safe and read only after channel receive.
+4. Preserve every append/compensation/post-hook-suppression/fixed-shape assertion by semantics. RED-before (bounded timeout reproduction acceptable) / GREEN-after on `go test -run TestShipShipment_ ./internal/core` (recommended `-race`).
+5. Do NOT run `go test ./...` now — the full-suite same-operation circuit is OPEN. After the correction commit, the full suite is a NEW separately-authorized final-gate operation at a new commit/phase requiring explicit operator authorization; if policy forbids it even post-correction, use targeted per-package verification (`./internal/core` + affected packages) under explicit authorization. Preserve the uncommitted R1–R5/R8 Ship implementation, the `174.064-T` lock-order work, the active checkpoint `checkpoint-20260923-231731.json`, `154-S`, and PR #449; this corrective is orthogonal (test-harness gate isolation only). If any production (`non-_test.go`) change is found necessary, HALT and classify — introducing a new production injection API is out of scope by definition.
+
+<!-- plan-review-attempt: rev14-corrective-durability-gate-isolation (PASS after correctness FAIL->hardened) -->
