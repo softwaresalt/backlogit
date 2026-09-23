@@ -106,6 +106,9 @@ func readShipmentBlockedSnapshot(
 				shipmentID, memberID, status, blerrors.ErrValidation)
 		}
 	}
+	snapshot.Branch = normalizeBlockedEnvelopeOptionalString(snapshot.Branch)
+	snapshot.BlockedBy = normalizeBlockedEnvelopeOptionalString(snapshot.BlockedBy)
+	snapshot.ResumeCheckpointRef = normalizeBlockedEnvelopeOptionalString(snapshot.ResumeCheckpointRef)
 	return snapshot, nil
 }
 
@@ -308,18 +311,16 @@ func reconcileShipmentLifecycleIntent(
 			if blocked.CustomFields == nil {
 				blocked.CustomFields = map[string]any{}
 			}
-			if snapshot.Branch != "" {
-				blocked.CustomFields["branch"] = snapshot.Branch
-			}
+			setBlockedEnvelopeOptionalString(blocked.CustomFields, "branch", snapshot.Branch)
 			blocked.CustomFields["blocked_reason"] = snapshot.BlockedReason
 			blocked.CustomFields["blocked_at"] = snapshot.BlockedAt
-			blocked.CustomFields["blocked_by"] = snapshot.BlockedBy
+			setBlockedEnvelopeOptionalString(blocked.CustomFields, "blocked_by", snapshot.BlockedBy)
 			blocked.CustomFields["member_status_snapshot"] = maps.Clone(snapshot.Members)
-			if snapshot.ResumeCheckpointRef == "" {
-				delete(blocked.CustomFields, "resume_checkpoint_ref")
-			} else {
-				blocked.CustomFields["resume_checkpoint_ref"] = snapshot.ResumeCheckpointRef
-			}
+			setBlockedEnvelopeOptionalString(
+				blocked.CustomFields,
+				"resume_checkpoint_ref",
+				snapshot.ResumeCheckpointRef,
+			)
 			if err := persistArtifact(governedCtx, ws, blocked, true); err != nil {
 				return nil, fmt.Errorf("roll forward shipment %s: %w", journal.ShipmentID, err)
 			}
@@ -359,8 +360,10 @@ func reconcileShipmentLifecycleIntent(
 	if result != nil && result.Status == models.StatusBlocked && snapshot != nil {
 		eventDelta["reason"] = result.CustomFields["blocked_reason"]
 		eventDelta["blocked_at"] = result.CustomFields["blocked_at"]
-		eventDelta["blocked_by"] = result.CustomFields["blocked_by"]
 		eventDelta["member_status_snapshot"] = result.CustomFields["member_status_snapshot"]
+		if blockedBy, found := result.CustomFields["blocked_by"]; found {
+			eventDelta["blocked_by"] = blockedBy
+		}
 		if branch, found := result.CustomFields["branch"]; found {
 			eventDelta["branch"] = branch
 		}
@@ -905,18 +908,16 @@ func shipmentRecoveryCandidates(
 		if target.CustomFields == nil {
 			target.CustomFields = map[string]any{}
 		}
-		if snapshot.Branch != "" {
-			target.CustomFields["branch"] = snapshot.Branch
-		}
+		setBlockedEnvelopeOptionalString(target.CustomFields, "branch", snapshot.Branch)
 		target.CustomFields["blocked_reason"] = snapshot.BlockedReason
 		target.CustomFields["blocked_at"] = snapshot.BlockedAt
-		target.CustomFields["blocked_by"] = snapshot.BlockedBy
+		setBlockedEnvelopeOptionalString(target.CustomFields, "blocked_by", snapshot.BlockedBy)
 		target.CustomFields["member_status_snapshot"] = maps.Clone(snapshot.Members)
-		if snapshot.ResumeCheckpointRef == "" {
-			delete(target.CustomFields, "resume_checkpoint_ref")
-		} else {
-			target.CustomFields["resume_checkpoint_ref"] = snapshot.ResumeCheckpointRef
-		}
+		setBlockedEnvelopeOptionalString(
+			target.CustomFields,
+			"resume_checkpoint_ref",
+			snapshot.ResumeCheckpointRef,
+		)
 	default:
 		return nil, fmt.Errorf(
 			"shipment %s recovery cannot prove operation %s policy %s: %w",
@@ -1062,6 +1063,12 @@ func normalizeBlockedShipment(
 	actor string,
 	recoverPending bool,
 ) (*models.Artifact, error) {
+	actor = normalizeBlockedEnvelopeOptionalString(actor)
+	if actor == "" {
+		return nil, fmt.Errorf("normalize shipment %s requires a non-empty actor: %w",
+			shipmentID, blerrors.ErrValidation)
+	}
+
 	globalUnlock, err := lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)
 	if err != nil {
 		return nil, fmt.Errorf("lock shipment lifecycle: %w", err)

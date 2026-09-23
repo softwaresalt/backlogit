@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -226,6 +227,312 @@ func TestNormalizeBlockedShipmentForRecovery_ChecksOwnershipAfterGlobalLock(t *t
 		t.Fatal("normalizer did not finish after global lock release")
 	}
 	require.Equal(t, 1, countShipmentLifecycleJournalFiles(t, shipmentOpsRoot(ws.RootPath)))
+}
+
+func TestBlockShipment_CanonicalizesOptionalEnvelopeValuesBeforeWrites(t *testing.T) {
+	tests := []struct {
+		name           string
+		branch         string
+		blockedBy      string
+		resumeRef      string
+		wantBranch     string
+		wantBlockedBy  string
+		wantResumeRef  string
+		wantEventActor string
+	}{
+		{
+			name:           "trims_present_values",
+			branch:         "  feat/canonical-block  ",
+			blockedBy:      "  release operator  ",
+			resumeRef:      "  checkpoints/resume.json  ",
+			wantBranch:     "feat/canonical-block",
+			wantBlockedBy:  "release operator",
+			wantResumeRef:  "checkpoints/resume.json",
+			wantEventActor: "release operator",
+		},
+		{
+			name:           "omits_whitespace_only_values",
+			branch:         " \t ",
+			blockedBy:      "\n ",
+			resumeRef:      " \r\n ",
+			wantEventActor: "backlogit",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := setupShipmentWorkspace(t)
+			fixture := newURBlockedActiveFixture(t, ws)
+			shipment := cloneArtifact(loadURCanonicalArtifact(t, ws, fixture.shipment.ID))
+			shipment.CustomFields["branch"] = tt.branch
+			forceURArtifactFixture(t, ws, shipment)
+
+			blocked, err := BlockShipment(context.Background(), ws, fixture.shipment.ID, BlockOptions{
+				Reason:              "canonical block",
+				BlockedBy:           tt.blockedBy,
+				ResumeCheckpointRef: tt.resumeRef,
+			})
+			require.NoError(t, err)
+			requireP1OptionalEnvelopeValue(t, blocked.CustomFields, "branch", tt.wantBranch)
+			requireP1OptionalEnvelopeValue(t, blocked.CustomFields, "blocked_by", tt.wantBlockedBy)
+			requireP1OptionalEnvelopeValue(t, blocked.CustomFields, "resume_checkpoint_ref", tt.wantResumeRef)
+			requireP1BlockedEnvelopeConsumersAccept(t, ws, blocked)
+			requireP1LifecycleEvidenceCanonical(
+				t,
+				ws,
+				blocked.ID,
+				"block",
+				tt.wantEventActor,
+				tt.wantBranch,
+				tt.wantBlockedBy,
+				tt.wantResumeRef,
+			)
+			requireP1LifecycleJournalCanonical(
+				t,
+				ws,
+				blocked.ID,
+				"block",
+				tt.wantBlockedBy,
+				tt.wantResumeRef,
+			)
+
+			unblocked, err := UnblockShipment(context.Background(), ws, blocked.ID, UnblockOptions{
+				Target:      ShipmentActive,
+				Confirm:     true,
+				UnblockedBy: "canonicalization test",
+			})
+			require.NoError(t, err)
+			require.Equal(t, models.StatusActive, unblocked.Status)
+		})
+	}
+}
+
+func TestNormalizeBlockedShipment_CanonicalizesOptionalEnvelopeValuesBeforeWrites(t *testing.T) {
+	tests := []struct {
+		name          string
+		branch        string
+		blockedBy     string
+		resumeRef     string
+		wantBranch    string
+		wantBlockedBy string
+		wantResumeRef string
+	}{
+		{
+			name:          "trims_present_values",
+			branch:        "  feat/canonical-normalize  ",
+			blockedBy:     "  snapshot operator  ",
+			resumeRef:     "  checkpoints/normalize.json  ",
+			wantBranch:    "feat/canonical-normalize",
+			wantBlockedBy: "snapshot operator",
+			wantResumeRef: "checkpoints/normalize.json",
+		},
+		{
+			name:      "omits_whitespace_only_values",
+			branch:    " \t ",
+			blockedBy: "\n ",
+			resumeRef: " \r\n ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := setupShipmentWorkspace(t)
+			fixture := newURBlockedActiveFixture(t, ws)
+			p021ForceOutOfBandBlockedShipment(t, ws, fixture)
+			snapshotRef := writeP1BlockedSnapshot(
+				t,
+				ws,
+				fixture.shipment.ID,
+				tt.branch,
+				tt.blockedBy,
+				tt.resumeRef,
+			)
+
+			normalized, err := NormalizeBlockedShipment(
+				context.Background(),
+				ws,
+				fixture.shipment.ID,
+				snapshotRef,
+				"  recovery operator  ",
+			)
+			require.NoError(t, err)
+			requireP1OptionalEnvelopeValue(t, normalized.CustomFields, "branch", tt.wantBranch)
+			requireP1OptionalEnvelopeValue(t, normalized.CustomFields, "blocked_by", tt.wantBlockedBy)
+			requireP1OptionalEnvelopeValue(t, normalized.CustomFields, "resume_checkpoint_ref", tt.wantResumeRef)
+			requireP1BlockedEnvelopeConsumersAccept(t, ws, normalized)
+			requireP1LifecycleEvidenceCanonical(
+				t,
+				ws,
+				normalized.ID,
+				"normalize",
+				"recovery operator",
+				tt.wantBranch,
+				tt.wantBlockedBy,
+				tt.wantResumeRef,
+			)
+			requireP1LifecycleJournalCanonical(
+				t,
+				ws,
+				normalized.ID,
+				"normalize",
+				"recovery operator",
+				snapshotRef,
+			)
+
+			unblocked, err := UnblockShipment(context.Background(), ws, normalized.ID, UnblockOptions{
+				Target:      ShipmentActive,
+				Confirm:     true,
+				UnblockedBy: "canonicalization test",
+			})
+			require.NoError(t, err)
+			require.Equal(t, models.StatusActive, unblocked.Status)
+		})
+	}
+}
+
+func TestNormalizeBlockedShipment_RejectsWhitespaceActorBeforeWrites(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	fixture := newURBlockedActiveFixture(t, ws)
+	p021ForceOutOfBandBlockedShipment(t, ws, fixture)
+	snapshotRef := writeP1BlockedSnapshot(
+		t,
+		ws,
+		fixture.shipment.ID,
+		"feat/required-actor",
+		"snapshot operator",
+		"checkpoints/required-actor.json",
+	)
+	before := snapshotURAggregate(t, ws, fixture.shipment.ID)
+
+	_, err := NormalizeBlockedShipment(
+		context.Background(),
+		ws,
+		fixture.shipment.ID,
+		snapshotRef,
+		" \t ",
+	)
+
+	require.ErrorIs(t, err, blerrors.ErrValidation)
+	requireURAggregateUnchanged(t, ws, before)
+}
+
+func requireP1OptionalEnvelopeValue(t *testing.T, fields map[string]any, key, want string) {
+	t.Helper()
+
+	got, found := fields[key]
+	if want == "" {
+		require.False(t, found, "%s must be absent when its normalized value is empty", key)
+		return
+	}
+	require.True(t, found, "%s must be present", key)
+	require.Equal(t, want, got)
+}
+
+func requireP1BlockedEnvelopeConsumersAccept(
+	t *testing.T,
+	ws *Workspace,
+	shipment *models.Artifact,
+) {
+	t.Helper()
+
+	_, err := validatePersistedBlockedShipmentEnvelope(context.Background(), ws, shipment)
+	require.NoError(t, err, "shared blocked-envelope validator must accept successful output")
+	report, err := Doctor(context.Background(), ws, &DoctorOptions{})
+	require.NoError(t, err)
+	for _, finding := range report.Findings {
+		require.False(
+			t,
+			finding.Type == FindingMalformedBlockedShipment && finding.ArtifactID == shipment.ID,
+			"doctor must accept successful output: %+v",
+			finding,
+		)
+	}
+}
+
+func requireP1LifecycleEvidenceCanonical(
+	t *testing.T,
+	ws *Workspace,
+	shipmentID string,
+	operation string,
+	wantActor string,
+	wantBranch string,
+	wantBlockedBy string,
+	wantResumeRef string,
+) {
+	t.Helper()
+
+	found := 0
+	for _, event := range readUREvents(t, ws, shipmentID) {
+		if event.Delta["operation"] != operation {
+			continue
+		}
+		found++
+		require.Equal(t, wantActor, event.Actor)
+		requireP1OptionalEnvelopeValue(t, event.Delta, "branch", wantBranch)
+		requireP1OptionalEnvelopeValue(t, event.Delta, "blocked_by", wantBlockedBy)
+		requireP1OptionalEnvelopeValue(t, event.Delta, "resume_checkpoint_ref", wantResumeRef)
+		if operation == "normalize" {
+			require.Equal(t, wantActor, event.Delta["normalized_by"])
+		}
+	}
+	require.Positive(t, found, "expected lifecycle evidence for %s", operation)
+}
+
+func requireP1LifecycleJournalCanonical(
+	t *testing.T,
+	ws *Workspace,
+	shipmentID string,
+	operation string,
+	wantActor string,
+	wantSnapshotRef string,
+) {
+	t.Helper()
+
+	records, err := loadShipmentOperationJournals(ws)
+	require.NoError(t, err)
+	found := 0
+	for _, record := range records {
+		if record.kind != shipmentLifecycleJournalKind ||
+			record.lifecycle.ShipmentID != shipmentID ||
+			record.lifecycle.Operation != operation {
+			continue
+		}
+		found++
+		require.Equal(t, wantActor, record.lifecycle.BlockedBy)
+		require.Equal(t, wantSnapshotRef, record.lifecycle.SnapshotRef)
+	}
+	require.Equal(t, 1, found, "expected one lifecycle journal for %s", operation)
+}
+
+func writeP1BlockedSnapshot(
+	t *testing.T,
+	ws *Workspace,
+	shipmentID string,
+	branch string,
+	blockedBy string,
+	resumeRef string,
+) string {
+	t.Helper()
+
+	shipment := loadURCanonicalArtifact(t, ws, shipmentID)
+	snapshot := ShipmentBlockedSnapshot{
+		SchemaVersion:       ShipmentBlockedSnapshotSchemaVersion,
+		ShipmentID:          shipmentID,
+		Branch:              branch,
+		Target:              ShipmentBlocked,
+		BlockedReason:       "canonical normalization",
+		BlockedAt:           time.Now().UTC().Format(time.RFC3339),
+		BlockedBy:           blockedBy,
+		ResumeCheckpointRef: resumeRef,
+		Members:             statusSnapshotUR(shipment.CustomFields["member_status_snapshot"]),
+	}
+	data, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	relativePath := filepath.Join("snapshots", "p1-canonical-"+shipmentID+".json")
+	absolutePath := filepath.Join(WorkspaceStorageRoot(ws.RootPath), relativePath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(absolutePath), 0o755))
+	require.NoError(t, os.WriteFile(absolutePath, data, 0o644))
+	return filepath.ToSlash(relativePath)
 }
 
 func TestReturnBlockedRecovery_TargetIntentConvergesWithoutUndo(t *testing.T) {

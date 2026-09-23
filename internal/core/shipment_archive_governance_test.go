@@ -108,3 +108,20 @@ func TestArchiveItemGovernance_BlockedShipmentMemberRefusesWithoutMutation(t *te
 	require.ErrorIs(t, err, blerrors.ErrShipmentConflict)
 	requireURAggregateUnchanged(t, ws, before)
 }
+
+func TestArchiveItemGovernance_BlockedShipmentRootRefusesWithoutMutation(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	fixture := newURBlockedActiveFixture(t, ws)
+	_, err := BlockShipment(ctx, ws, fixture.shipment.ID, BlockOptions{
+		Reason:    "archive root must remain blocked",
+		BlockedBy: "archive governance test",
+	})
+	require.NoError(t, err)
+	before := snapshotURAggregate(t, ws, fixture.shipment.ID)
+
+	_, err = ArchiveItem(ctx, ws.DB, ws, fixture.shipment.ID)
+
+	require.ErrorIs(t, err, blerrors.ErrShipmentConflict)
+	requireURAggregateUnchanged(t, ws, before)
+}

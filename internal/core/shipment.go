@@ -109,6 +109,8 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 	if strings.TrimSpace(opts.Reason) == "" {
 		return nil, fmt.Errorf("block shipment %s requires a non-empty reason: %w", shipmentID, blerrors.ErrValidation)
 	}
+	opts.BlockedBy = normalizeBlockedEnvelopeOptionalString(opts.BlockedBy)
+	opts.ResumeCheckpointRef = normalizeBlockedEnvelopeOptionalString(opts.ResumeCheckpointRef)
 
 	globalUnlock, err := lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)
 	if err != nil {
@@ -177,6 +179,10 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 	if got := NormalizeShipmentItems(shipment); !slices.Equal(got, memberIDs) {
 		return nil, fmt.Errorf("shipment %s membership changed while acquiring locks: %w", shipmentID, blerrors.ErrShipmentConflict)
 	}
+	branch, err := blockedEnvelopeOptionalString(shipment.CustomFields, "branch")
+	if err != nil {
+		return nil, fmt.Errorf("block shipment %s: %w", shipmentID, err)
+	}
 
 	preimage := shipmentLifecyclePreimage{
 		Shipment: cloneArtifact(shipment),
@@ -222,15 +228,13 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 		"operation":              "block",
 		"target":                 string(ShipmentBlocked),
 		"reason":                 opts.Reason,
-		"blocked_by":             opts.BlockedBy,
-		"resume_checkpoint_ref":  opts.ResumeCheckpointRef,
 		"member_status_snapshot": memberStatuses,
 	}
+	setBlockedEnvelopeOptionalString(eventDelta, "blocked_by", opts.BlockedBy)
+	setBlockedEnvelopeOptionalString(eventDelta, "resume_checkpoint_ref", opts.ResumeCheckpointRef)
 	blockedAt := time.Now().UTC().Format(time.RFC3339)
 	eventDelta["blocked_at"] = blockedAt
-	if branch, ok := shipment.CustomFields["branch"].(string); ok && branch != "" {
-		eventDelta["branch"] = branch
-	}
+	setBlockedEnvelopeOptionalString(eventDelta, "branch", branch)
 	mutationApplied := false
 	compensate := func(cause error) error {
 		if blerrors.IsWriteIndeterminate(cause) {
@@ -305,13 +309,10 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 	}
 	blocked.CustomFields["blocked_reason"] = opts.Reason
 	blocked.CustomFields["blocked_at"] = blockedAt
-	blocked.CustomFields["blocked_by"] = opts.BlockedBy
 	blocked.CustomFields["member_status_snapshot"] = memberStatuses
-	if opts.ResumeCheckpointRef == "" {
-		delete(blocked.CustomFields, "resume_checkpoint_ref")
-	} else {
-		blocked.CustomFields["resume_checkpoint_ref"] = opts.ResumeCheckpointRef
-	}
+	setBlockedEnvelopeOptionalString(blocked.CustomFields, "branch", branch)
+	setBlockedEnvelopeOptionalString(blocked.CustomFields, "blocked_by", opts.BlockedBy)
+	setBlockedEnvelopeOptionalString(blocked.CustomFields, "resume_checkpoint_ref", opts.ResumeCheckpointRef)
 	governedCtx := context.WithValue(operationCtx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
 		correlationID:                 correlationID,
 		operation:                     "block_shipment",

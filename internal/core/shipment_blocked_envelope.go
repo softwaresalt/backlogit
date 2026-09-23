@@ -64,15 +64,15 @@ func validateBlockedShipmentEnvelope(
 	if !ok {
 		return envelope, blockedShipmentEnvelopeError(shipment.ID, "blocked_at must be an RFC3339 timestamp")
 	}
-	blockedBy, ok := shipment.CustomFields["blocked_by"].(string)
-	if !ok {
-		return envelope, blockedShipmentEnvelopeError(shipment.ID, "blocked_by must be present as a string")
-	}
-	branch, err := optionalBlockedEnvelopeString(shipment.CustomFields, "branch")
+	blockedBy, err := persistedBlockedEnvelopeOptionalString(shipment.CustomFields, "blocked_by")
 	if err != nil {
 		return envelope, blockedShipmentEnvelopeError(shipment.ID, err.Error())
 	}
-	resumeCheckpointRef, err := optionalBlockedEnvelopeString(
+	branch, err := persistedBlockedEnvelopeOptionalString(shipment.CustomFields, "branch")
+	if err != nil {
+		return envelope, blockedShipmentEnvelopeError(shipment.ID, err.Error())
+	}
+	resumeCheckpointRef, err := persistedBlockedEnvelopeOptionalString(
 		shipment.CustomFields,
 		"resume_checkpoint_ref",
 	)
@@ -104,16 +104,44 @@ func validateBlockedShipmentEnvelope(
 	return envelope, nil
 }
 
-func optionalBlockedEnvelopeString(fields map[string]any, key string) (string, error) {
+func normalizeBlockedEnvelopeOptionalString(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func blockedEnvelopeOptionalString(fields map[string]any, key string) (string, error) {
 	raw, found := fields[key]
 	if !found {
 		return "", nil
 	}
 	value, ok := raw.(string)
-	if !ok || strings.TrimSpace(value) == "" {
-		return "", fmt.Errorf("%s must be a non-empty string when present", key)
+	if !ok {
+		return "", fmt.Errorf("%s must be a string when present", key)
+	}
+	return normalizeBlockedEnvelopeOptionalString(value), nil
+}
+
+func persistedBlockedEnvelopeOptionalString(fields map[string]any, key string) (string, error) {
+	value, err := blockedEnvelopeOptionalString(fields, key)
+	if err != nil {
+		return "", err
+	}
+	raw, found := fields[key]
+	if !found {
+		return "", nil
+	}
+	if value == "" || raw.(string) != value {
+		return "", fmt.Errorf("%s must be a canonical non-empty string when present", key)
 	}
 	return value, nil
+}
+
+func setBlockedEnvelopeOptionalString(fields map[string]any, key, value string) {
+	value = normalizeBlockedEnvelopeOptionalString(value)
+	if value == "" {
+		delete(fields, key)
+		return
+	}
+	fields[key] = value
 }
 
 func decodeBlockedMemberStatusSnapshot(raw any, memberIDs []string) (map[string]string, error) {
@@ -213,7 +241,7 @@ func hasCorrelatedCommittedBlockedEvidence(
 
 func blockedEvidenceMatchesEnvelope(delta map[string]any, envelope blockedShipmentEnvelope) bool {
 	reason, _ := delta["reason"].(string)
-	blockedBy, blockedByOK := delta["blocked_by"].(string)
+	blockedBy, blockedByOK := optionalBlockedEvidenceString(delta, "blocked_by")
 	blockedAt, blockedAtOK := canonicalBlockedTimestamp(delta["blocked_at"])
 	branch, branchOK := optionalBlockedEvidenceString(delta, "branch")
 	resumeCheckpointRef, resumeOK := optionalBlockedEvidenceString(delta, "resume_checkpoint_ref")
@@ -238,7 +266,8 @@ func optionalBlockedEvidenceString(delta map[string]any, key string) (string, bo
 	if !ok {
 		return "", false
 	}
-	return value, true
+	canonical := normalizeBlockedEnvelopeOptionalString(value)
+	return canonical, canonical != "" && canonical == value
 }
 
 func sortedBlockedSnapshotMemberIDs(statuses map[string]string) []string {

@@ -410,7 +410,10 @@ func lockArchiveGovernance(
 		}
 	}()
 
-	artifactIDs := uniqueNonEmptyStrings(append(append([]string(nil), scopeIDs...), shipmentIDs...))
+	artifactIDs, err := archiveGovernedArtifactIDs(lockedCtx, ws, scopeIDs, shipmentIDs)
+	if err != nil {
+		return ctx, nil, err
+	}
 	lockedCtx, artifactUnlock, err := lockArtifactMutations(lockedCtx, ws, artifactIDs)
 	if err != nil {
 		return ctx, nil, err
@@ -425,6 +428,23 @@ func lockArchiveGovernance(
 	return lockedCtx, func() error {
 		return errors.Join(artifactUnlock(), membershipUnlock(), globalUnlock())
 	}, nil
+}
+
+func archiveGovernedArtifactIDs(
+	ctx context.Context,
+	ws *Workspace,
+	scopeIDs []string,
+	shipmentIDs []string,
+) ([]string, error) {
+	artifactIDs := append(append([]string(nil), scopeIDs...), shipmentIDs...)
+	for _, shipmentID := range shipmentIDs {
+		shipment, err := findArtifact(ctx, ws, shipmentID)
+		if err != nil {
+			return nil, fmt.Errorf("load shipment %s aggregate for archive locking: %w", shipmentID, err)
+		}
+		artifactIDs = append(artifactIDs, NormalizeShipmentItems(shipment)...)
+	}
+	return uniqueNonEmptyStrings(artifactIDs), nil
 }
 
 func archiveRelatedShipmentIDs(ws *Workspace, scopeIDs []string) ([]string, error) {
@@ -526,9 +546,11 @@ func guardArchiveShipmentGovernance(
 			return fmt.Errorf("reload governing shipment %s under archive locks: %w", shipmentID, err)
 		}
 		normalizeShipmentArtifact(shipment)
-		if shipment.Status == models.StatusBlocked && shipmentContainsAnyMember(shipment, scope) {
+		_, targetIsShipmentRoot := scope[shipmentID]
+		if shipment.Status == models.StatusBlocked &&
+			(targetIsShipmentRoot || shipmentContainsAnyMember(shipment, scope)) {
 			return fmt.Errorf(
-				"archive explicit member of blocked shipment %s outside its lifecycle operation: %w",
+				"archive blocked shipment aggregate %s outside its lifecycle operation: %w",
 				shipmentID,
 				blerrors.ErrShipmentConflict,
 			)
