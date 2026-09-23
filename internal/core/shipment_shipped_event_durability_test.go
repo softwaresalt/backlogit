@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/softwaresalt/backlogit/internal/core/gate"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
@@ -53,8 +54,13 @@ type shipDurabilityFixture struct {
 
 func newShipDurabilityFixture(t *testing.T, durableWrites bool) *shipDurabilityFixture {
 	t.Helper()
+	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "false")
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
+
+	versionProbeErr := fmt.Errorf("probe autoharness version: %w", blerrors.ErrGateBinaryNotFound)
+	injectBroker(ws, gate.EnabledAuto, &fakeGateRunner{}, fakeVersion{err: versionProbeErr})
+	requireShipDurabilityGateIsolation(t, ws)
 
 	// Pin durability explicitly so classification never depends silently on
 	// workspace configuration.
@@ -87,6 +93,30 @@ func newShipDurabilityFixture(t *testing.T, durableWrites bool) *shipDurabilityF
 	}
 }
 
+func requireShipDurabilityGateIsolation(t *testing.T, ws *Workspace) {
+	t.Helper()
+	require.NotNil(t, ws.GateBroker, "durability fixture must install an explicit fail-open gate broker")
+	assert.IsType(t, fakeVersion{}, ws.GateBroker.Version,
+		"durability fixture GateBroker.Version must be fakeVersion, not gate.ExecVersionRunner; got %T", ws.GateBroker.Version)
+	_, usesRealVersion := ws.GateBroker.Version.(gate.ExecVersionRunner)
+	assert.False(t, usesRealVersion, "durability fixture must never inherit the real gate.ExecVersionRunner")
+	assert.IsType(t, &fakeGateRunner{}, ws.GateBroker.Runner,
+		"durability fixture GateBroker.Runner must be *fakeGateRunner, not a real gate runner; got %T", ws.GateBroker.Runner)
+	_, usesRealRunner := ws.GateBroker.Runner.(gate.ExecRunner)
+	assert.False(t, usesRealRunner, "durability fixture must never inherit the real gate.ExecRunner")
+	require.False(t, ws.formalGateEnforced(),
+		"durability fixture must run with formal gate enforcement disabled")
+
+	evaluation, err := ws.GateBroker.Evaluate(context.Background(), gate.Request{})
+	require.NoError(t, err, "durability fixture gate probe must fail open under auto")
+	require.False(t, evaluation.Enforced, "durability fixture gate broker must not enforce the gate")
+	require.False(t, evaluation.Ran, "durability fixture gate runner must not execute after the fail-open probe")
+}
+
+func TestShipShipment_DurabilityFixtureUsesFailOpenFakeGate(t *testing.T) {
+	_ = newShipDurabilityFixture(t, false)
+}
+
 // injectShippedAppend arms the seam so only the shipment's own
 // shipment_status_changed:shipped append fails. Every other append flows
 // through the real error-returning path.
@@ -108,21 +138,33 @@ func shipWithWatchdog(t *testing.T, ws *Workspace, shipmentID string) (*ShipShip
 		result *ShipShipmentResult
 		err    error
 	}
-	done := make(chan shipOutcome, 1)
-	go func() {
-		result, err := ShipShipment(context.Background(), ws, shipmentID, nil)
-		done <- shipOutcome{result: result, err: err}
-	}()
 	watchdog := 90 * time.Second
 	if deadline, ok := t.Deadline(); ok {
 		if remaining := time.Until(deadline) - 5*time.Second; remaining > 0 && remaining < watchdog {
 			watchdog = remaining
 		}
 	}
+
+	const watchdogMargin = time.Second
+	require.Greater(t, watchdog, 5*time.Second+watchdogMargin,
+		"watchdog must leave enough time for the bounded HEAD probe and cancellation margin")
+	shipCtx, cancel := context.WithTimeout(context.Background(), watchdog-watchdogMargin)
+	defer cancel()
+
+	done := make(chan shipOutcome, 1)
+	go func() {
+		result, err := ShipShipment(shipCtx, ws, shipmentID, nil)
+		done <- shipOutcome{result: result, err: err}
+	}()
+
+	timer := time.NewTimer(watchdog)
+	defer timer.Stop()
 	select {
 	case outcome := <-done:
+		require.NotErrorIs(t, outcome.err, context.DeadlineExceeded,
+			"ShipShipment must complete before its bounded context expires")
 		return outcome.result, outcome.err
-	case <-time.After(watchdog):
+	case <-timer.C:
 		t.Fatalf("ShipShipment did not return within %s: the item-log lock was taken by the harness or the appender dropped its locked context", watchdog)
 		return nil, nil
 	}
@@ -314,7 +356,7 @@ func TestShipShipment_FailClosedShippedAppendSuppressesMoveStatusPostHook(t *tes
 	fixture.injectShippedAppend(t, func(context.Context) error { return injected })
 
 	_, err := shipWithWatchdog(t, fixture.ws, fixture.shipmentID)
-	require.Error(t, err)
+	requireShippedAppendPartial(t, err)
 	assert.False(t, movePostHookFired,
 		"the move-shipment-status post hook must not fire for a shipped transition whose audit append failed")
 }
