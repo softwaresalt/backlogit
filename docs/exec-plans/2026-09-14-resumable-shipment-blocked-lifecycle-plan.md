@@ -1914,3 +1914,105 @@ workspace-global lock in `174.044-T`/`174.045-T`; (2) enforce recovery CAS/drift
 `.autoharness/backlog-registry.yaml` to match its block/unblock/claim siblings under `174.047-T`
 AC (3) — and complete `174.048-T`'s retained post-implementation subprocess/contention/convergence/
 audit verification under its own selector. No new backlog items are required.
+
+<!-- plan-review-attempt: rev12-corrective-lock-order-inversion-closure -->
+
+## Corrective Wave — Wave 11 (Lock-order inversion closure) (2026-09-23, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`, HEAD `fcbed9fc`)
+
+**Trigger.** The final bounded R1–R5/R8 shared-serialization remediation (uncommitted at review time:
+10 files, 418 insertions / 20 deletions; focused regressions + mechanical gates green) introduced a
+canonical `shipment-lifecycle-global` lock (`lockShipmentLifecycleGlobal` →
+`lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)`). `updateArtifactUngated`
+(`internal/core/artifacts.go:523`) and the shipment-lifecycle / membership mutators acquire that
+global lock BEFORE `lockArtifactMutations` — **global → artifact**. Pre-existing persistence callers
+reach the lifecycle pending-recovery barrier while ALREADY holding artifact locks via
+`UpdateArtifact → updateArtifactUngated → persistArtifact → persistArtifactWithLinkPolicyAndGuard` —
+**artifact → global**. The two orders form an ABBA inversion that deadlocked the core suite at
+`TestCheckChildrenTerminal_NonTerminalChild_ReturnsBlockingError` (suite timeout). Naively releasing
+the global lock before the artifact locks breaks generic-writer serialization
+(`TestP021ClaimSerialization_MembershipAndGenericWritersUseGlobalLock/generic_update_waits`). Ship
+correctly halted with no scope expansion applied.
+
+**Decision.** This is a SAME-CONTRACT mechanical consequence of R1 / shared serialization, but a NEW
+separately-planned corrective work unit — the prior review-fix cycle is exhausted and all owning
+tasks (`174.044-T`, `174.045-T`, `174.047-T`) are already `done`. Completed task statuses are NOT
+reopened. Fresh WIT/metadata discovery confirmed `task` (level 2) sits directly under `174-F`
+(feature, level 1); no subtask is required, so the smallest unit is a single task.
+
+**New task.** `174.064-T` — *"Canonicalize shipment-lifecycle/artifact lock order; close
+inverse-caller paths"* (`artifact_type: task`, `parent_id: 174-F`, `status: queued`,
+`priority: high`; task priority enum max is `high`). Full AC (canonical hierarchy; inverse-path
+closure; serialization preserved; deterministic deadlock regression; lock-order audit; focused +
+full core + full-repo validation; rollback/diagnostics) and implementation-notes are carried in the
+task artifact. Scope ≈ ≤2h; internal/core lock-ordering only — no decomposition needed.
+
+**Shipment membership.** `174.064-T` was added to ACTIVE shipment `155-S` through the GOVERNED
+`AddItemToShipment` path (`backlogit shipment add 155-S 174.064-T` → `{status: "added"}`). This is
+permitted because `shipmentMutationBlocked` (shipment.go:1887) blocks membership mutation only for
+`blocked`/`shipped`/`abandoned`/`archived` — an `active` shipment accepts governed additions. No
+`custom_fields` were hand-edited; the shipment frontmatter `items` list and `updated_at` were
+mutated only by the governed operation.
+
+**Dependencies / order.** `174.064-T depends_on {174.044-T, 174.045-T, 174.047-T}` (typed `blocks`;
+all three `done` → the task is immediately eligible). The edges encode that the corrective runs AFTER
+the implementation that exposed the inversion — `174.044-T` (global-lock serialization owner),
+`174.045-T` (generic-writer routing through the governed writer), `174.047-T` (pending-recovery
+barrier under locks). As an unfinished member of `155-S`, `174.064-T` gates the shipment's
+PR/ship readiness until `done`, so the corrective necessarily precedes final review/PR readiness. NO
+existing dependency edge is changed and NO completed status is altered — the ordering is expressed by
+adding one new queued node with three satisfied predecessors, the minimal graph change.
+
+**Canonical hierarchy decision (for the implementer).** The single permitted order is
+**global (`shipment-lifecycle-global`) → artifact (`artifact-mutation`)**. Inverse-caller closure
+HOISTS the pending-recovery barrier / global acquisition ahead of the artifact locks on the
+persistence path (`persistArtifact` / `persistArtifactWithLinkPolicyAndGuard` /
+`recoverPendingShipmentOperations`); it does NOT release the global lock early, which would reopen
+the `generic_update_waits` serialization gap. The global lock is acquired first AND held
+continuously spanning artifact-lock acquisition as one nested critical section (no
+acquire/release/reacquire window). Because `updateArtifactUngated` already holds the global lock
+before `persistArtifact` re-enters the barrier's own `lockShipmentLifecycleGlobal`, the barrier's
+global acquisition must detect prior ownership via a ctx-carried held-lock token and become a
+verified no-op when already held (erroring rather than silently skipping if the token is absent
+while contended) — closing the single-goroutine re-entrant self-acquire mode as well as ABBA.
+Generic/membership/Claim writers continue to contend on the same global lock.
+
+**Scope guard.** internal/core lock-ordering only; no shipment-lifecycle semantic change beyond
+acquisition order. Ship's uncommitted R1–R5/R8 implementation files are PRESERVED and NOT reverted or
+staged by Stage; `154-S`, PR #449, and the active checkpoint
+`.backlogit/checkpoints/checkpoint-20260923-033438.json` (unresolved/active) are untouched.
+
+<!-- plan-review-attempt: rev12-corrective-lock-order-inversion-closure -->
+
+## Plan Review — Amendment (Wave 11 lock-order inversion corrective task) (2026-09-23)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Reviewers dispatched (parallel, planning-artifact review of `174.064-T` ACs + this corrective-wave section):**
+
+- **Concurrency Reviewer** — initial ADVISORY. Three P1 wording gaps: (a) re-entrancy seam unspecified
+  (`updateArtifactUngated` holds global before `persistArtifact` re-enters the barrier's own
+  `lockShipmentLifecycleGlobal` → single-goroutine self-reacquire risk); (b) "hoist the barrier"
+  ambiguous on lock HOLD span (acquire/release/reacquire window reopens the inversion); (c) caller
+  enumeration must be transitive (an inverse path is "reaches the barrier while holding an artifact
+  lock"), not only direct acquisition sites. **All three closed** in AC2/AC4/AC5 (rev12 hardening):
+  ctx-carried held-lock token + verified no-op + error-not-skip; global held continuously across
+  artifact-lock acquisition as one nested critical section; transitive persist→barrier + P-021
+  claim/generic-writer trace added to the audit.
+- **Correctness Reviewer** — initial ADVISORY. Four P1 gaps: AC4(a) a "returns blocking error"
+  functional test does not deterministically exercise ABBA (timeout ≠ deterministic failure); AC4(b)
+  "proves no ABBA" unfalsifiable / can pass vacuously; AC1-vs-AC5 scope inconsistency ("anywhere" vs
+  "7 files"); AC4↔AC7 detection mechanism not linked. **All four closed:** AC4 pass/fail signal is now
+  the AC7 out-of-order-acquisition assertion (not a hang), `-race` + repeated iterations + explicit
+  single-goroutine re-entrant case; AC5 now requires proving the enumerated set is EXHAUSTIVE for the
+  global-lock handle (repo-wide search) or widening repo-wide; AC3 keeps `generic_update_waits` a
+  positive wait assertion.
+- **Scope Boundary Auditor** — **PASS**, zero P0/P1. One task, no subtask, ACs map 1:1 to the required
+  elements, one new queued node with three satisfied `blocks` edges (no existing edge or completed
+  status changed), governed `155-S` membership, commit pathspec limited to the four Stage-owned files.
+
+**Residual P0/P1 after hardening: NONE.** All ADVISORY P1 findings were resolved in-scope by tightening
+`174.064-T`'s own acceptance criteria (same corrective contract — no new tasks, no scenario-group or
+dependency changes). Task doctor re-run PASS after each edit. Decision: **PASS**.
+
+<!-- plan-review-attempt: rev12-corrective-lock-order-inversion-closure (PASS after ADVISORY→hardened) -->
