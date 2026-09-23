@@ -61,3 +61,26 @@ Operator review is required before any further review-fix cycle. If continuation
 resume on the same branch/worktree, re-read the current HEAD and latest report, classify each
 finding under P-021, remediate only confirmed same-contract P1s, then rerun the current-HEAD
 standard review and adversarial gate. Do not create a PR or merge while P1 findings remain.
+
+## Operator-authorized final remediation continuation
+
+The operator explicitly authorized one final bounded remediation cycle from
+`fc659e3fef4100628b6217f5c1eabc241272b5d7`.
+
+### Deferred scope expansions captured under P-021 C2
+
+- R6: `52D18E44`
+- R7: `5247D4BC`
+- R9: `497D20E3`
+- R11: `75E02C17`
+
+Each entry was captured before closing the finding, re-read successfully, and is capture-only:
+Ship will not edit, reprioritize, triage, or backfill it. The PR and review-thread source fields
+were correctly recorded as `N/A` because no PR existed at capture time.
+
+### R10 rejection
+
+R10 was rejected and was not captured. The Orchestrator is routing-only; its Step 1.5 continuity
+carve-out permits only `.backlogit/stash.jsonl`, `docs/memory/**`, `start.ps1`, and `.gitignore`.
+P-010 role enforcement remains fail-closed, and tool availability is not authority. The review
+identified no concrete unauthorized mutation.
