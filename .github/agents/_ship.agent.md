@@ -6,9 +6,9 @@ tools: vscode, execute, read, agent, edit, search, todo, memory, backlogit_creat
 model_routing: "Tier 2 (Standard)"  # DEPRECATED — use model_tier
 model_tier: 2
 max_subagent_tier: 2
-reasoning_effort: "high"
-model_provider: "anthropic"
-model_family: "claude-sonnet-4.6"
+reasoning_effort: "xhigh"
+model_provider: "openai"
+model_family: "gpt-6-luna"
 subagent_depth: 2
 ---
 

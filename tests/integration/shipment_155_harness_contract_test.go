@@ -34,6 +34,7 @@ func TestShipment155HarnessContractsUseFlatMembershipAndGovernedRecovery(t *test
 		filepath.Join(repoRoot, ".github", "agents", "_ship.agent.md"))
 	shipTools, ok := shipFrontmatter["tools"].(string)
 	require.True(t, ok, "Ship tools frontmatter must be a string")
+	require.NotContains(t, shipTools, "backlogit/*")
 
 	for _, operation := range []string{
 		"backlogit_block_shipment",

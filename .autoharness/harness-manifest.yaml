@@ -373,9 +373,9 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "99fa4692befa977a4606a27b650cc9b08da9463833190be447993e2160ebbb0b"
+    checksum: "d6b046f8d2299e8b146df95994fa7d5d6472c28eec56335a8e8988fbf242a3d9"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also grants governed block/unblock/MCP-only normalization operations and aligns closure with flat explicit manifest membership, leaving unlisted source and hierarchy-related artifacts untouched. Do not auto-revert."
+    drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert."
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"
