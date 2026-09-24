@@ -2347,3 +2347,34 @@ Residual P0/P1: NONE. All findings were P3 advisories; the two clarifying ones a
 Ship-ready directive: implement 174.069-T as a test-only class-level fix in internal/core test files only (gate_transition_test.go shared helper/newGateTestWorkspace; shipment_test.go setupShipmentWorkspace; 025_archive_harness_test.go local wrapper; durability test only if consolidating). Do NOT run go test ./... during the task; use targeted per-package verification. After the commit lands, one post-fix full-suite run is a NEW separately-authorized final-gate operation requiring explicit operator authorization immediately before it.
 
 <!-- plan-review-attempt: rev17-classlevel-gate-fixture-isolation-PASS -->
+
+## Wave 16 — Pinned errcheck discard completion for durability helper (155-S lint unblock) (2026-09-23)
+
+<!-- plan-review-attempt: rev18-durability-errcheck-discard -->
+
+Corrective wave adding ONE one-line, test-only lint completion. errcheck pins internal/core/shipment_shipped_event_durability_test.go:359 because requireShippedAppendPartial returns *blerrors.MutationPartialError (satisfies error via Error() string) and its return is discarded at that single call site. Source: fresh pinned-lint finding that stopped the remaining 174.069-T gates after inventory/helper/race/compile/vet passed.
+
+- 174.070-T (queued/high, under 174-F, governed member of active 155-S) — replace the bare call at line 359 with the repository-standard explicit discard `_ = requireShippedAppendPartial(t, err)`.
+
+P-021 C1: SAME-CONTRACT completion of DONE 174.066-T (the helper + call site it authored). Created as a NEW task because 174.066-T is done and its review-fix authorization is exhausted; 174.066-T status is NOT reopened. The helper return is intentionally discardable at this one site: the helper's internal require.Error / ErrorAs / FailedStep assertions fully validate the structured partial, and TestShipShipment_FailClosedShippedAppendSuppressesMoveStatusPostHook needs only those plus the movePostHookFired==false assertion — no further Class/CompensationState assertion on the return.
+
+Objective closure conditions: exactly one changed line (line 359); helper signature/return type and the three capturing call sites (198/261/325) unchanged; MutationPartialError semantics preserved; targeted durability suite GREEN; pinned errcheck cleared with no new lint; gofmt/goimports clean. No production/config/API change. Scope: internal/core/shipment_shipped_event_durability_test.go only.
+
+Circuit disposition (shared): do NOT run go test ./... in this task. After the commit lands, Ship resumes the 174.069-T lint/build/format gates; the full suite runs later ONCE only as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before). Then the 155-S zero-P0/P1 stop-gate applies.
+
+Dependencies: none added (governed member of active 155-S; membership-as-gate). Provenance link to done 174.066-T is informational.
+
+## Plan Review — Amendment (Wave 16 durability errcheck discard) (2026-09-23)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Focused Correctness review over corrective task 174.070-T (one-line, test-only errcheck discard at internal/core/shipment_shipped_event_durability_test.go:359).
+
+- Correctness Reviewer: PASS (no findings). Verified against ground-truth code that requireShippedAppendPartial (helper line 173) performs all structured-error assertions internally (require.Error, ErrorAs into *MutationPartialError, FailedStep == shippedEventAppendStep), so discarding the return skips no validation. Line 359 sits in TestShipShipment_FailClosedShippedAppendSuppressesMoveStatusPostHook, whose only subsequent assertion is movePostHookFired==false — nothing consumes the returned partial, so the return is genuinely intentionally discardable there. The three capturing sites (198/261/325) make further Class/CompensationState assertions and are correctly left unchanged (AC2). `_ = f()` is the repo-standard explicit discard and preserves MutationPartialError semantics.
+
+Residual P0/P1: NONE.
+
+Ship-ready directive: apply the exact one-line change `_ = requireShippedAppendPartial(t, err)` at line 359 of internal/core/shipment_shipped_event_durability_test.go. Run the targeted durability suite GREEN, clear the pinned errcheck with no new lint, gofmt clean, confirm a one-line diff. Do NOT run go test ./... in the task; then resume the 174.069-T lint/build/format gates. The full suite runs later ONCE as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before it).
+
+<!-- plan-review-attempt: rev18-durability-errcheck-discard-PASS -->
