@@ -2294,3 +2294,24 @@ Ship-ready directive:
 5. No dependency edges added (both are governed members of active 155-S; membership-as-gate blocks final readiness). Provenance link to done 174.064-T is informational only.
 
 <!-- plan-review-attempt: rev15-corrective-final-review-blockers (PASS after 2 FAIL->hardened) -->
+
+## Plan Review — Amendment (Wave 14 rev16: Windows rename API-boundary correction) (2026-09-23)
+
+<!-- plan-review-attempt: rev16-windows-rename-api-boundary -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Scope: surgical API-boundary correction to 174.068-T AC2/AC7 only. No graph/status/dependency/membership/priority change; no source/test/checkpoint mutation; 154-S and PR #449 untouched. 174.068-T remains active/high, governed member of 155-S.
+
+Correction (read-only diagnosis by Ship): the Win32 `SetFileInformationByHandle(FileRenameInfo`, class 3`)` form rejects a non-null-RootDirectory relative rename with `ERROR_INVALID_PARAMETER` on this platform. Everything else in the handle-relative design is already correct (buffer/layout, source DELETE access, share flags, directory handle, UTF-16 byte length without terminator, no-follow source open). The information-class/API pairing is the only defect.
+
+Amendment: AC2 now mandates `golang.org/x/sys/windows.NtSetInformationFile` with the native `FileRenameInformation` class (value 10) over the EXISTING `FILE_RENAME_INFORMATION`-compatible buffer and the live validated RootDirectory handle, converting NTSTATUS through the existing Windows error path. AC7 swaps the authorized rename primitive accordingly. Both ACs EXPLICITLY FORBID: `FileRenameInfoEx`/`FileRenameInformationEx` (any *_EX class), POSIX-semantics rename flags / class 65, `MoveFileEx`, absolute-path re-resolution, and any new syscall declaration or third-party dependency (`NtSetInformationFile` already exists in `x/sys/windows`).
+
+Preserved unchanged: AC1, AC3–AC6, AC8; all security properties (object-binding, no verify-after substitute, fail-closed-or-genuine-object invariant), the adversarial TOCTOU tests (read/remove/rename-window object-identity swap), durability (temp `Sync()`-before-rename + atomic replace-if-exists), rollback/circuit disposition. Sibling `shipment_reconcile_fs_windows.go` divergence rationale preserved.
+
+Focused review: Security PASS (native NT rename over the RootDirectory-relative buffer closes the same-canonical-path window the Win32 form left ERROR_INVALID_PARAMETER-blocked; no *_EX/POSIX/MoveFileEx/absolute-path fallback reintroduced; no post-hoc verify-after substitute). Correctness PASS (AC2/AC7 now name an API/class pairing that accepts the non-null RootDirectory buffer, so the contract is satisfiable; buffer, share flags, DELETE access, and no-follow open preserved as-is; NTSTATUS routed through the existing error path — no new error surface). Residual P0/P1: NONE.
+
+Ship-ready directive: in `internal/core/shipment_ops_windows.go`, replace the `SetFileInformationByHandle(FileRenameInfo)` rename call with `NtSetInformationFile(FileRenameInformation, class 10)` using the same buffer + live RootDirectory handle; convert NTSTATUS via the existing Windows error path; keep the open primitives (`NtCreateFile`/`NtOpenFile`, no-follow) and every other invariant unchanged. Verification stays circuit-gated: no tests now; one post-change targeted Windows verification phase requires explicit operator authorization immediately before it, then the shared Wave 14 full-suite/stop-gate (AC8) applies.
+
+<!-- plan-review-attempt: rev16-windows-rename-api-boundary (PASS) -->
