@@ -29,7 +29,7 @@ func setupTestWorkspace(t *testing.T) *core.Workspace {
 	require.NoError(t, config.WriteDefaults(backlogitDir))
 
 	ctx := context.Background()
-	ws, err := core.NewWorkspace(ctx, root)
+	ws, err := core.NewWorkspaceWithoutRecoveryForTest(ctx, root)
 	require.NoError(t, err)
 	t.Cleanup(func() { ws.Close() })
 	return ws
@@ -50,7 +50,7 @@ func setupTestWorkspaceWithBugLevel(t *testing.T, level int) *core.Workspace {
 	require.NoError(t, os.WriteFile(configPath, []byte(updated), 0o644))
 
 	ctx := context.Background()
-	ws, err := core.NewWorkspace(ctx, root)
+	ws, err := core.NewWorkspaceWithoutRecoveryForTest(ctx, root)
 	require.NoError(t, err)
 	t.Cleanup(func() { ws.Close() })
 	return ws
