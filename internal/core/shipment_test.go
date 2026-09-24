@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -242,6 +243,11 @@ func TestShipShipment_CleansReleasedFeatureScope(t *testing.T) {
 		"linked deliberation of a non-member covering feature must not be archived")
 	assert.NotContains(t, result.ReturnedIDs, futureTask.ID,
 		"unlisted descendant must not be returned to backlog")
+	require.NotNil(t, result.ReturnedIDs)
+	require.Empty(t, result.ReturnedIDs)
+	resultJSON, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.Contains(t, string(resultJSON), `"returned_ids":[]`)
 
 	// The covering feature must remain open: not done, not archived, and its
 	// file must still physically reside under .backlogit/queue/ — this is the

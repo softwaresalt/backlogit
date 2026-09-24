@@ -58,3 +58,28 @@ func TestWriteShipmentLifecycleJournal_RejectsRedirectedOperationsDirectory(t *t
 	require.NoError(t, readErr)
 	require.Empty(t, entries, "no temp file or preimage may be created outside the workspace")
 }
+
+func TestShipmentOpsDirectoryHandle_PreventsReplacement(t *testing.T) {
+	root := newShipmentOpsSecurityWorkspace(t)
+	ws, err := NewWorkspace(context.Background(), root)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
+
+	opsRoot, dir, err := shipmentOpsRootForWorkspace(ws, true)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, dir.Close()) })
+
+	replacementTarget := opsRoot + "-displaced"
+	replaced := false
+	t.Cleanup(func() {
+		if replaced {
+			require.NoError(t, os.Rename(replacementTarget, opsRoot))
+		}
+	})
+
+	err = os.Rename(opsRoot, replacementTarget)
+	if err == nil {
+		replaced = true
+	}
+	require.Error(t, err, "a live validated operations-directory handle must deny directory replacement")
+}

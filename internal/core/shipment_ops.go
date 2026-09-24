@@ -167,6 +167,19 @@ func shipmentOperationJournalTempTarget(name string) (string, bool) {
 func inspectShipmentOperationJournals(
 	ws *Workspace,
 ) ([]shipmentOperationJournalRecord, []error, error) {
+	return inspectShipmentOperationJournalsWithTempCleanup(ws, true)
+}
+
+func inspectShipmentOperationJournalsReadOnly(
+	ws *Workspace,
+) ([]shipmentOperationJournalRecord, []error, error) {
+	return inspectShipmentOperationJournalsWithTempCleanup(ws, false)
+}
+
+func inspectShipmentOperationJournalsWithTempCleanup(
+	ws *Workspace,
+	cleanupTempResidue bool,
+) ([]shipmentOperationJournalRecord, []error, error) {
 	opsRoot, dir, err := shipmentOpsRootForWorkspace(ws, false)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil, nil
@@ -207,9 +220,11 @@ func inspectShipmentOperationJournals(
 						name, blerrors.ErrValidation))
 				continue
 			}
-			if removeErr := removeShipmentOperationJournalTempFile(dir, opsRoot, name); removeErr != nil {
-				validationErrs = append(validationErrs,
-					fmt.Errorf("remove shipment operation temp residue %s: %w", name, removeErr))
+			if cleanupTempResidue {
+				if removeErr := removeShipmentOperationJournalTempFile(dir, opsRoot, name); removeErr != nil {
+					validationErrs = append(validationErrs,
+						fmt.Errorf("remove shipment operation temp residue %s: %w", name, removeErr))
+				}
 			}
 			continue
 		}
@@ -336,6 +351,39 @@ func validateShipmentLifecycleJournalRecord(
 	}
 	if journal.Target == "" {
 		return fmt.Errorf("lifecycle journal target is empty: %w", blerrors.ErrValidation)
+	}
+	if journal.Operation == "claim" && journal.Phase == "intent" && len(journal.Preimage.Related) != 0 {
+		return fmt.Errorf("nonterminal claim lifecycle journal contains related preimages: %w",
+			blerrors.ErrValidation)
+	}
+	switch journal.Operation {
+	case "claim":
+		if journal.RecoveryPolicy != "rollback" || journal.Target != "active" {
+			return fmt.Errorf("claim lifecycle tuple must be rollback/active: %w", blerrors.ErrValidation)
+		}
+	case "block":
+		if journal.Target != "blocked" ||
+			(journal.RecoveryPolicy != "rollback" && journal.RecoveryPolicy != "roll_forward") {
+			return fmt.Errorf("block lifecycle tuple must target blocked with rollback or roll_forward: %w",
+				blerrors.ErrValidation)
+		}
+		if journal.RecoveryPolicy == "roll_forward" && strings.TrimSpace(journal.SnapshotRef) == "" {
+			return fmt.Errorf("block roll_forward lifecycle tuple requires a snapshot: %w",
+				blerrors.ErrValidation)
+		}
+	case "unblock":
+		if journal.RecoveryPolicy != "rollback" ||
+			(journal.Target != "queued" && journal.Target != "active") {
+			return fmt.Errorf("unblock lifecycle tuple must be rollback/queued or rollback/active: %w",
+				blerrors.ErrValidation)
+		}
+	case "normalize":
+		if journal.RecoveryPolicy != "roll_forward" ||
+			journal.Target != "blocked" ||
+			strings.TrimSpace(journal.SnapshotRef) == "" {
+			return fmt.Errorf("normalize lifecycle tuple must be roll_forward/blocked with snapshot: %w",
+				blerrors.ErrValidation)
+		}
 	}
 
 	memberIDs := NormalizeShipmentItems(journal.Preimage.Shipment)

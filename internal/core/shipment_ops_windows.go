@@ -180,7 +180,7 @@ func openShipmentOpsWindowsHandle(path string, access, disposition, flags uint32
 	handle, err := windows.CreateFile(
 		name,
 		access,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
 		nil,
 		disposition,
 		windows.FILE_ATTRIBUTE_NORMAL|flags,

@@ -689,6 +689,7 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		ShipmentID:     shipmentID,
 		ShipmentStatus: string(ShipmentShipped),
 		ArchivedIDs:    archivedIDs,
+		ReturnedIDs:    []string{},
 		CommitSHA:      commitSHA(commit),
 	}, nil
 }

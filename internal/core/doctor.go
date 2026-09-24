@@ -312,7 +312,8 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		Findings:  []DoctorFinding{},
 		CheckedAt: time.Now().UTC(),
 	}
-	journals, err := loadShipmentOperationJournals(ws)
+	journals, journalValidationErrs, err := inspectShipmentOperationJournalsReadOnly(ws)
+	err = errors.Join(err, errors.Join(journalValidationErrs...))
 	if err != nil {
 		report.Findings = append(report.Findings, newDoctorErrorFinding(
 			FindingInvalidShipmentLifecycleJournal,

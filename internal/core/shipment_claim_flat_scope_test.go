@@ -5,10 +5,12 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -94,6 +96,45 @@ func TestClaimShipmentFlatScope_ExplicitFeatureMemberActivatesDirectly(t *testin
 	require.NoError(t, err)
 	require.Equal(t, models.StatusActive, loadURCanonicalArtifact(t, ws, feature.ID).Status)
 	require.Equal(t, models.StatusActive, loadURCanonicalArtifact(t, ws, task.ID).Status)
+}
+
+func TestClaimShipmentFlatScope_RecoveryRejectsRelatedPreimage(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	ancestor, err := CreateArtifact(ctx, ws, "claim recovery unrelated ancestor", "feature")
+	require.NoError(t, err)
+	member, err := CreateArtifact(ctx, ws, "claim recovery member", "task", WithParent(ancestor.ID))
+	require.NoError(t, err)
+	shipment, err := CreateShipment(ctx, ws, "claim recovery shipment", []string{member.ID})
+	require.NoError(t, err)
+
+	journal := p021LifecycleJournal(t, ws, "claim", "rollback", shipment.ID, "")
+	journal.Target = string(ShipmentActive)
+	journal.Preimage.Related = []*models.Artifact{cloneArtifact(ancestor)}
+	journalPath := p021WriteLifecycleJournal(t, ws, journal)
+	before := snapshotURWorkspace(t, ws)
+
+	lockPath, err := artifactMutationLockPath(ws, ancestor.ID)
+	require.NoError(t, err)
+	unlock, err := lockTaskFileWithHeartbeat(ctx, lockPath, defaultGateLockBoundedWait, defaultGateLockHeartbeat)
+	require.NoError(t, err)
+	locked := true
+	t.Cleanup(func() {
+		if locked {
+			require.NoError(t, unlock())
+		}
+	})
+
+	recoveryCtx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+	defer cancel()
+	err = recoverPendingShipmentOperations(recoveryCtx, ws)
+
+	require.ErrorIs(t, err, blerrors.ErrValidation)
+	require.ErrorContains(t, err, journalPath)
+	require.NoError(t, unlock())
+	locked = false
+	requireURAggregateUnchanged(t, ws, before)
+	require.Equal(t, "intent", p021ReadLifecycleJournal(t, journalPath).Phase)
 }
 
 func snapshotClaimFlatArtifact(t *testing.T, ws *Workspace, artifactID string) claimFlatArtifactSnapshot {

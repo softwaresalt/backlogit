@@ -11,6 +11,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -83,11 +84,223 @@ type shipmentLifecycleGlobalLockContextKey struct{}
 
 type shipmentLifecycleGlobalLockHookContextKey struct{}
 
+type shipmentLifecycleHeldLocksContextKey struct{}
+
+type shipmentLifecycleHeldLocks struct {
+	workspaceRoot string
+	ordered       []string
+}
+
+// ShipmentLifecycleLockOrderError reports an attempted shipment-lifecycle lock
+// acquisition that contradicts the canonical global-before-artifact order.
+type ShipmentLifecycleLockOrderError struct {
+	RequestedLock string
+	CallerName    string
+	OrderedHeld   []string
+	Reason        string
+}
+
+// Error implements error.
+func (e *ShipmentLifecycleLockOrderError) Error() string {
+	return fmt.Sprintf(
+		"shipment lifecycle lock order violation: lock=%s caller=%s held=%v: %s",
+		e.RequestedLock,
+		e.CallerName,
+		e.OrderedHeld,
+		e.Reason,
+	)
+}
+
+// LockID returns the lock whose acquisition was rejected.
+func (e *ShipmentLifecycleLockOrderError) LockID() string {
+	return e.RequestedLock
+}
+
+// Caller returns the function that attempted the rejected acquisition.
+func (e *ShipmentLifecycleLockOrderError) Caller() string {
+	return e.CallerName
+}
+
+// HeldLocks returns the locks held by the caller in acquisition order.
+func (e *ShipmentLifecycleLockOrderError) HeldLocks() []string {
+	return append([]string(nil), e.OrderedHeld...)
+}
+
+func shipmentLifecycleLockCaller() string {
+	pc, _, _, ok := runtime.Caller(2)
+	if !ok {
+		return "unknown"
+	}
+	function := runtime.FuncForPC(pc)
+	if function == nil {
+		return "unknown"
+	}
+	return function.Name()
+}
+
+func artifactMutationLockID(artifactID string) string {
+	return "artifact-mutation:" + artifactID
+}
+
+func orderedArtifactMutationLockIDs(ctx context.Context) []string {
+	set, _ := ctx.Value(artifactMutationLockContextKey{}).(artifactMutationLockSet)
+	held := make([]string, 0, len(set))
+	for id := range set {
+		held = append(held, artifactMutationLockID(id))
+	}
+	sort.Strings(held)
+	return held
+}
+
+func shipmentLifecycleLockOrderError(
+	ctx context.Context,
+	caller string,
+	reason string,
+) error {
+	held := orderedArtifactMutationLockIDs(ctx)
+	if token, ok := ctx.Value(shipmentLifecycleHeldLocksContextKey{}).(*shipmentLifecycleHeldLocks); ok {
+		held = append([]string(nil), token.ordered...)
+	}
+	return &ShipmentLifecycleLockOrderError{
+		RequestedLock: shipmentLifecycleGlobalLockID,
+		CallerName:    caller,
+		OrderedHeld:   held,
+		Reason:        reason,
+	}
+}
+
+func validateShipmentLifecycleGlobalReentry(
+	ctx context.Context,
+	ws *Workspace,
+	caller string,
+) (bool, error) {
+	_, markedHeld := ctx.Value(shipmentLifecycleGlobalLockContextKey{}).(struct{})
+	token, hasToken := ctx.Value(shipmentLifecycleHeldLocksContextKey{}).(*shipmentLifecycleHeldLocks)
+	artifactLocks := orderedArtifactMutationLockIDs(ctx)
+
+	if !markedHeld {
+		if hasToken || len(artifactLocks) > 0 {
+			return false, shipmentLifecycleLockOrderError(
+				ctx,
+				caller,
+				"shipment lifecycle global lock is absent while artifact mutation locks are held",
+			)
+		}
+		return false, nil
+	}
+	if !hasToken {
+		if len(artifactLocks) > 0 {
+			return false, shipmentLifecycleLockOrderError(
+				ctx,
+				caller,
+				"global held-lock marker has no ordered token for the artifact locks",
+			)
+		}
+		// Legacy direct global acquisitions in the lifecycle producers set the
+		// marker before taking any artifact lock. The artifact-lock helper
+		// upgrades this state to an ordered token before returning its context.
+		return true, nil
+	}
+	if token.workspaceRoot != filepath.Clean(ws.RootPath) {
+		return false, shipmentLifecycleLockOrderError(
+			ctx,
+			caller,
+			"held-lock token belongs to a different workspace",
+		)
+	}
+	if len(token.ordered) == 0 || token.ordered[0] != shipmentLifecycleGlobalLockID {
+		return false, shipmentLifecycleLockOrderError(
+			ctx,
+			caller,
+			"held-lock token does not begin with shipment lifecycle global",
+		)
+	}
+	orderedSet := make(map[string]struct{}, len(token.ordered))
+	for _, lockID := range token.ordered {
+		orderedSet[lockID] = struct{}{}
+	}
+	for _, lockID := range artifactLocks {
+		if _, exists := orderedSet[lockID]; !exists {
+			return false, shipmentLifecycleLockOrderError(
+				ctx,
+				caller,
+				"held-lock token omits an acquired artifact mutation lock",
+			)
+		}
+	}
+	return true, nil
+}
+
+func withShipmentLifecycleHeldLocks(
+	ctx context.Context,
+	ws *Workspace,
+	lockIDs ...string,
+) context.Context {
+	existing, _ := ctx.Value(shipmentLifecycleHeldLocksContextKey{}).(*shipmentLifecycleHeldLocks)
+	ordered := make([]string, 0, len(lockIDs)+1)
+	if existing != nil {
+		ordered = append(ordered, existing.ordered...)
+	} else if _, globalHeld := ctx.Value(shipmentLifecycleGlobalLockContextKey{}).(struct{}); globalHeld {
+		ordered = append(ordered, shipmentLifecycleGlobalLockID)
+	}
+	seen := make(map[string]struct{}, len(ordered)+len(lockIDs))
+	for _, lockID := range ordered {
+		seen[lockID] = struct{}{}
+	}
+	for _, lockID := range lockIDs {
+		if lockID == "" {
+			continue
+		}
+		if _, exists := seen[lockID]; exists {
+			continue
+		}
+		ordered = append(ordered, lockID)
+		seen[lockID] = struct{}{}
+	}
+	return context.WithValue(ctx, shipmentLifecycleHeldLocksContextKey{}, &shipmentLifecycleHeldLocks{
+		workspaceRoot: filepath.Clean(ws.RootPath),
+		ordered:       ordered,
+	})
+}
+
 func lockShipmentLifecycleGlobal(
 	ctx context.Context,
 	ws *Workspace,
 ) (context.Context, func() error, error) {
-	if _, held := ctx.Value(shipmentLifecycleGlobalLockContextKey{}).(struct{}); held {
+	caller := shipmentLifecycleLockCaller()
+	alreadyHeld, err := validateShipmentLifecycleGlobalReentry(ctx, ws, caller)
+	if err != nil {
+		return ctx, nil, err
+	}
+	lockedCtx, unlock, err := lockShipmentLifecycleGlobalRaw(ctx, ws, caller)
+	if err != nil {
+		return ctx, nil, err
+	}
+	if alreadyHeld {
+		return lockedCtx, unlock, nil
+	}
+	if err := recoverPendingShipmentOperations(lockedCtx, ws); err != nil {
+		if unlockErr := unlock(); unlockErr != nil {
+			err = errors.Join(err, fmt.Errorf("release shipment lifecycle lock after recovery failure: %w", unlockErr))
+		}
+		return ctx, nil, fmt.Errorf("run pending shipment recovery barrier: %w", err)
+	}
+	return lockedCtx, unlock, nil
+}
+
+func lockShipmentLifecycleGlobalRaw(
+	ctx context.Context,
+	ws *Workspace,
+	caller string,
+) (context.Context, func() error, error) {
+	held, err := validateShipmentLifecycleGlobalReentry(ctx, ws, caller)
+	if err != nil {
+		return ctx, nil, err
+	}
+	if held {
+		if _, hasToken := ctx.Value(shipmentLifecycleHeldLocksContextKey{}).(*shipmentLifecycleHeldLocks); !hasToken {
+			ctx = withShipmentLifecycleHeldLocks(ctx, ws, shipmentLifecycleGlobalLockID)
+		}
 		return ctx, func() error { return nil }, nil
 	}
 	hook, _ := ctx.Value(shipmentLifecycleGlobalLockHookContextKey{}).(func(string))
@@ -101,7 +314,9 @@ func lockShipmentLifecycleGlobal(
 	if hook != nil {
 		hook("acquired")
 	}
-	return context.WithValue(ctx, shipmentLifecycleGlobalLockContextKey{}, struct{}{}), unlock, nil
+	lockedCtx := context.WithValue(ctx, shipmentLifecycleGlobalLockContextKey{}, struct{}{})
+	lockedCtx = withShipmentLifecycleHeldLocks(lockedCtx, ws, shipmentLifecycleGlobalLockID)
+	return lockedCtx, unlock, nil
 }
 
 // BlockShipment performs the governed active-to-blocked shipment transition.
@@ -1087,6 +1302,24 @@ func lockArtifactMutation(ctx context.Context, ws *Workspace, artifactID string)
 }
 
 func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (context.Context, func() error, error) {
+	// Aggregate mutation locks share the lifecycle-global domain. Acquiring the
+	// barrier here keeps less-obvious callers (archive reconciliation, adoption,
+	// and unarchive) on the same global -> artifact order as shipment writers.
+	lockedLifecycleCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+	if err != nil {
+		return ctx, nil, fmt.Errorf("lock shipment lifecycle before artifact mutations: %w", err)
+	}
+	ctx = lockedLifecycleCtx
+
+	releaseAfterFailure := func(lockErr error, unlocks []func() error) error {
+		errs := []error{lockErr}
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			errs = append(errs, unlocks[i]())
+		}
+		errs = append(errs, globalUnlock())
+		return errors.Join(errs...)
+	}
+
 	uniqueIDs := uniqueNonEmptyStrings(ids)
 	sort.Strings(uniqueIDs)
 	unlocks := make([]func() error, 0, len(uniqueIDs))
@@ -1096,21 +1329,20 @@ func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (co
 		}
 		stableKey, err := artifactMutationLockPath(ws, id)
 		if err != nil {
-			for i := len(unlocks) - 1; i >= 0; i-- {
-				_ = unlocks[i]()
-			}
-			return ctx, nil, err
+			return ctx, nil, releaseAfterFailure(err, unlocks)
 		}
 		unlock, err := lockTaskFileWithHeartbeat(ctx, stableKey, defaultGateLockBoundedWait, defaultGateLockHeartbeat)
 		if err != nil {
-			for i := len(unlocks) - 1; i >= 0; i-- {
-				_ = unlocks[i]()
-			}
-			return ctx, nil, fmt.Errorf("lock artifact %s: %w", id, err)
+			return ctx, nil, releaseAfterFailure(fmt.Errorf("lock artifact %s: %w", id, err), unlocks)
 		}
 		unlocks = append(unlocks, unlock)
 	}
 	lockedCtx := withArtifactMutationLocks(ctx, uniqueIDs)
+	orderedLockIDs := make([]string, 0, len(uniqueIDs))
+	for _, id := range uniqueIDs {
+		orderedLockIDs = append(orderedLockIDs, artifactMutationLockID(id))
+	}
+	lockedCtx = withShipmentLifecycleHeldLocks(lockedCtx, ws, orderedLockIDs...)
 	return lockedCtx, func() error {
 		var errs []error
 		for i := len(unlocks) - 1; i >= 0; i-- {
@@ -1118,6 +1350,7 @@ func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (co
 				errs = append(errs, err)
 			}
 		}
+		errs = append(errs, globalUnlock())
 		return errors.Join(errs...)
 	}, nil
 }
@@ -1604,16 +1837,11 @@ func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, a
 		persistArtifactPreLockHook(artifact.ID)
 	}
 	if artifact != nil && artifact.ArtifactType == "shipment" {
-		if artifactMutationLockHeld(ctx, artifact.ID) {
-			if _, globalHeld := ctx.Value(shipmentLifecycleGlobalLockContextKey{}).(struct{}); !globalHeld {
-				return fmt.Errorf(
-					"shipment %s writer acquired its artifact lock before the lifecycle lock: %w",
-					artifact.ID,
-					blerrors.ErrShipmentConflict,
-				)
-			}
-		}
-		lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+		lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobalRaw(
+			ctx,
+			ws,
+			"persistArtifactWithLinkPolicyAndGuard",
+		)
 		if err != nil {
 			return fmt.Errorf("lock shipment lifecycle for artifact %s: %w", artifact.ID, err)
 		}
@@ -2306,28 +2534,32 @@ func removeShipmentOperationJournal(ctx context.Context, ws *Workspace, journalP
 }
 
 func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error {
-	if _, held := ctx.Value(shipmentLifecycleGlobalLockContextKey{}).(struct{}); !held {
-		lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
-		if err != nil {
-			return fmt.Errorf("lock shipment lifecycle recovery: %w", err)
-		}
-		defer func() {
-			if unlockErr := globalUnlock(); unlockErr != nil {
-				slog.WarnContext(ctx, "release shipment lifecycle recovery lock", "error", unlockErr)
-			}
-		}()
-		ctx = lockedCtx
+	lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobalRaw(
+		ctx,
+		ws,
+		"recoverPendingShipmentOperations",
+	)
+	if err != nil {
+		return fmt.Errorf("lock shipment lifecycle recovery: %w", err)
 	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle recovery lock", "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
 
 	records, err := loadShipmentOperationJournals(ws)
 	if err != nil {
 		return fmt.Errorf("validate shipment operation journals: %w", err)
 	}
+	currentOperationID := shipmentOperationID(ctx)
 	var recoveryErrs []error
 	for _, record := range records {
 		if record.kind == shipmentLifecycleJournalKind {
 			journal := record.lifecycle
-			if journal.Phase != "intent" {
+			if journal.Phase != "intent" ||
+				(currentOperationID != "" && journal.CorrelationID == currentOperationID) {
 				continue
 			}
 			if journal.Preimage.Shipment == nil || journal.ShipmentID == "" {
@@ -2363,8 +2595,39 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 			}
 			continue
 		}
-		if err := recoverReturnBlockedJournal(ctx, ws, record); err != nil {
-			recoveryErrs = append(recoveryErrs, err)
+		journal := record.returnBlocked
+		if currentOperationID != "" && journal.CorrelationID == currentOperationID {
+			continue
+		}
+		if journal.Shipment == nil || journal.Item == nil {
+			recoveryErrs = append(recoveryErrs,
+				fmt.Errorf("shipment journal %s is incomplete: %w", record.path, blerrors.ErrValidation))
+			continue
+		}
+		membershipUnlock, lockErr := lockShipmentMembership(ctx, ws, journal.Shipment.ID)
+		if lockErr != nil {
+			recoveryErrs = append(recoveryErrs,
+				fmt.Errorf("lock shipment %s return-blocked recovery membership: %w",
+					journal.Shipment.ID, lockErr))
+			continue
+		}
+		lockedCtx, artifactUnlock, lockErr := lockArtifactMutations(
+			ctx,
+			ws,
+			[]string{journal.Shipment.ID, journal.Item.ID},
+		)
+		if lockErr == nil {
+			lockedCtx = withShipmentOperation(lockedCtx, journal.CorrelationID)
+			lockErr = recoverReturnBlockedJournal(lockedCtx, ws, record)
+		}
+		if artifactUnlock != nil {
+			lockErr = errors.Join(lockErr, artifactUnlock())
+		}
+		lockErr = errors.Join(lockErr, membershipUnlock())
+		if lockErr != nil {
+			recoveryErrs = append(recoveryErrs,
+				fmt.Errorf("recover shipment %s return-blocked journal: %w",
+					journal.Shipment.ID, lockErr))
 		}
 	}
 	return errors.Join(recoveryErrs...)

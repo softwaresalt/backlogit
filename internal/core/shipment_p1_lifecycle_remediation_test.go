@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -192,6 +193,7 @@ func TestNormalizeBlockedShipmentForRecovery_RejectsMalformedCanonicalOwnershipJ
 		name          string
 		correlationID string
 		payload       []byte
+		mutate        func(*shipmentLifecycleJournal)
 	}{
 		{
 			name:          "semantic ownership is incomplete",
@@ -211,6 +213,55 @@ func TestNormalizeBlockedShipmentForRecovery_RejectsMalformedCanonicalOwnershipJ
 			correlationID: "55555555555555555555555555555555",
 			payload:       []byte(`{"schema_version":`),
 		},
+		{
+			name:          "claim target contradicts producer tuple",
+			correlationID: "66666666666666666666666666666666",
+			mutate: func(journal *shipmentLifecycleJournal) {
+				journal.Operation = "claim"
+				journal.Target = string(ShipmentBlocked)
+			},
+		},
+		{
+			name:          "block rollback target contradicts producer tuple",
+			correlationID: "77777777777777777777777777777777",
+			mutate: func(journal *shipmentLifecycleJournal) {
+				journal.Target = string(ShipmentActive)
+			},
+		},
+		{
+			name:          "block roll forward omits required snapshot",
+			correlationID: "88888888888888888888888888888888",
+			mutate: func(journal *shipmentLifecycleJournal) {
+				journal.RecoveryPolicy = "roll_forward"
+				journal.SnapshotRef = ""
+			},
+		},
+		{
+			name:          "unblock target contradicts producer tuple",
+			correlationID: "99999999999999999999999999999999",
+			mutate: func(journal *shipmentLifecycleJournal) {
+				journal.Operation = "unblock"
+				journal.Target = string(ShipmentBlocked)
+			},
+		},
+		{
+			name:          "normalize policy contradicts producer tuple",
+			correlationID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			mutate: func(journal *shipmentLifecycleJournal) {
+				journal.Operation = "normalize"
+				journal.RecoveryPolicy = "rollback"
+				journal.SnapshotRef = "snapshots/semantic-tuple.json"
+			},
+		},
+		{
+			name:          "normalize roll forward omits required snapshot",
+			correlationID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			mutate: func(journal *shipmentLifecycleJournal) {
+				journal.Operation = "normalize"
+				journal.RecoveryPolicy = "roll_forward"
+				journal.SnapshotRef = ""
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -219,11 +270,20 @@ func TestNormalizeBlockedShipmentForRecovery_RejectsMalformedCanonicalOwnershipJ
 			fixture := newURBlockedActiveFixture(t, ws)
 			p021ForceOutOfBandBlockedShipment(t, ws, fixture)
 			snapshotRef := p021WriteBlockedSnapshot(t, ws, fixture.shipment.ID)
+			payload := tt.payload
+			if tt.mutate != nil {
+				journal := p021LifecycleJournal(t, ws, "block", "rollback", fixture.shipment.ID, "")
+				journal.CorrelationID = tt.correlationID
+				tt.mutate(&journal)
+				var marshalErr error
+				payload, marshalErr = json.Marshal(journal)
+				require.NoError(t, marshalErr)
+			}
 			journalPath := writeP1MalformedCanonicalLifecycleJournal(
 				t,
 				ws,
 				tt.correlationID,
-				tt.payload,
+				payload,
 			)
 			before := snapshotURAggregate(t, ws, fixture.shipment.ID)
 
@@ -590,6 +650,72 @@ func TestLifecycleMutators_RunPendingRecoveryBarrierBeforeAggregateAccess(t *tes
 			},
 		},
 		{
+			name: "generic_update",
+			prepare: func(t *testing.T, ws *Workspace) func(context.Context) error {
+				t.Helper()
+				artifact, err := CreateArtifact(context.Background(), ws, "barrier generic update", "feature")
+				require.NoError(t, err)
+				return func(ctx context.Context) error {
+					_, updateErr := UpdateArtifact(ctx, ws, artifact.ID, map[string]any{
+						"title": "barrier generic update attempted",
+					})
+					return updateErr
+				}
+			},
+		},
+		{
+			name: "bulk_update",
+			prepare: func(t *testing.T, ws *Workspace) func(context.Context) error {
+				t.Helper()
+				parent, err := CreateArtifact(context.Background(), ws, "barrier bulk parent", "feature")
+				require.NoError(t, err)
+				artifact, err := CreateArtifact(
+					context.Background(),
+					ws,
+					"barrier bulk update",
+					"task",
+					WithParent(parent.ID),
+				)
+				require.NoError(t, err)
+				return func(ctx context.Context) error {
+					result, bulkErr := BulkUpdateStatus(
+						ctx,
+						ws.DB,
+						ws,
+						[]string{artifact.ID},
+						string(models.StatusActive),
+					)
+					if bulkErr != nil {
+						return bulkErr
+					}
+					if result.Succeeded != 1 || len(result.Failed) != 0 {
+						return errors.New("bulk update did not complete exactly once")
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name: "cascade_update",
+			prepare: func(t *testing.T, ws *Workspace) func(context.Context) error {
+				t.Helper()
+				parent, err := CreateArtifact(context.Background(), ws, "barrier cascade parent", "feature")
+				require.NoError(t, err)
+				child, err := CreateArtifact(
+					context.Background(),
+					ws,
+					"barrier cascade child",
+					"task",
+					WithParent(parent.ID),
+					WithStatus(string(models.StatusActive)),
+				)
+				require.NoError(t, err)
+				return func(ctx context.Context) error {
+					return cascadePersistedParentStatuses(ctx, ws, child.ID)
+				}
+			},
+		},
+		{
 			name: "doctor_fix_orphans",
 			prepare: func(t *testing.T, ws *Workspace) func(context.Context) error {
 				t.Helper()
@@ -857,17 +983,115 @@ func TestReturnBlockedRecovery_TargetIntentConvergesWithoutUndo(t *testing.T) {
 }
 
 func TestReturnBlockedRecovery_IntentPartialRollsBackExactly(t *testing.T) {
-	ws := setupShipmentWorkspace(t)
-	journal := newReturnBlockedCrashJournal(t, ws, "partial rollback")
-	require.NoError(t, writeReturnBlockedJournalRecord(ws, journal))
-	require.NoError(t, persistArtifact(context.Background(), ws, journal.TargetShipment, false))
+	tests := []struct {
+		name string
+		lock func(context.Context, *Workspace, returnBlockedJournal) (func() error, error)
+	}{
+		{
+			name: "membership lock contention",
+			lock: func(ctx context.Context, ws *Workspace, journal returnBlockedJournal) (func() error, error) {
+				return lockShipmentMembership(ctx, ws, journal.Shipment.ID)
+			},
+		},
+		{
+			name: "artifact lock contention",
+			lock: func(ctx context.Context, ws *Workspace, journal returnBlockedJournal) (func() error, error) {
+				ids := []string{journal.Shipment.ID, journal.Item.ID}
+				sort.Strings(ids)
+				unlocks := make([]func() error, 0, len(ids))
+				release := func() error {
+					var errs []error
+					for i := len(unlocks) - 1; i >= 0; i-- {
+						errs = append(errs, unlocks[i]())
+					}
+					return errors.Join(errs...)
+				}
+				for _, id := range ids {
+					lockPath, err := artifactMutationLockPath(ws, id)
+					if err != nil {
+						return nil, errors.Join(err, release())
+					}
+					unlock, err := lockTaskFileWithHeartbeat(
+						ctx,
+						lockPath,
+						defaultGateLockBoundedWait,
+						defaultGateLockHeartbeat,
+					)
+					if err != nil {
+						return nil, errors.Join(err, release())
+					}
+					unlocks = append(unlocks, unlock)
+				}
+				return release, nil
+			},
+		},
+	}
 
-	require.NoError(t, recoverPendingShipmentOperations(context.Background(), ws))
-	assertURArtifactEqual(t, journal.Shipment, loadURCanonicalArtifact(t, ws, journal.Shipment.ID))
-	assertURArtifactEqual(t, journal.Item, loadURCanonicalArtifact(t, ws, journal.Item.ID))
-	require.Zero(t, countReturnBlockedEvidence(t, ws, journal))
-	_, err := os.Stat(returnBlockedJournalPath(ws.RootPath, journal.Shipment.ID, journal.Item.ID))
-	require.ErrorIs(t, err, os.ErrNotExist)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := setupShipmentWorkspace(t)
+			journal := newReturnBlockedCrashJournal(t, ws, "partial rollback "+tt.name)
+			require.NoError(t, writeReturnBlockedJournalRecord(ws, journal))
+			require.NoError(t, persistArtifact(context.Background(), ws, journal.TargetShipment, false))
+
+			unlock, err := tt.lock(context.Background(), ws, journal)
+			require.NoError(t, err)
+			locked := true
+			t.Cleanup(func() {
+				if locked {
+					require.NoError(t, unlock())
+				}
+			})
+
+			started := make(chan struct{})
+			recovered := make(chan error, 1)
+			go func() {
+				close(started)
+				recovered <- recoverPendingShipmentOperations(context.Background(), ws)
+			}()
+			<-started
+			select {
+			case earlyErr := <-recovered:
+				t.Fatalf("return-blocked recovery bypassed %s: %v", tt.name, earlyErr)
+			case <-time.After(150 * time.Millisecond):
+			}
+
+			require.NoError(t, unlock())
+			locked = false
+			select {
+			case recoveryErr := <-recovered:
+				require.NoError(t, recoveryErr)
+			case <-time.After(defaultGateLockBoundedWait + 2*time.Second):
+				t.Fatalf("return-blocked recovery did not finish after releasing %s", tt.name)
+			}
+
+			assertURArtifactEqual(t, journal.Shipment, loadURCanonicalArtifact(t, ws, journal.Shipment.ID))
+			assertURArtifactEqual(t, journal.Item, loadURCanonicalArtifact(t, ws, journal.Item.ID))
+			require.Zero(t, countReturnBlockedEvidence(t, ws, journal))
+			_, err = os.Stat(returnBlockedJournalPath(ws.RootPath, journal.Shipment.ID, journal.Item.ID))
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+func TestDoctor_DoesNotDeleteShipmentOperationTempEvidence(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	journalName := shipmentLifecycleJournalName("cccccccccccccccccccccccccccccccc")
+	tempName, err := shipmentOperationJournalTempName(journalName)
+	require.NoError(t, err)
+	tempPath := filepath.Join(shipmentOpsRoot(ws.RootPath), tempName)
+	require.NoError(t, os.MkdirAll(filepath.Dir(tempPath), 0o755))
+	const evidence = "incomplete-writer-evidence"
+	require.NoError(t, os.WriteFile(tempPath, []byte(evidence), 0o600))
+	require.Equal(t, evidence, string(requireReadFile(t, tempPath)))
+	_, _, err = inspectShipmentOperationJournalsReadOnly(ws)
+	require.NoError(t, err)
+	require.Equal(t, evidence, string(requireReadFile(t, tempPath)))
+
+	_, err = Doctor(context.Background(), ws, &DoctorOptions{})
+
+	require.NoError(t, err)
+	require.Equal(t, evidence, string(requireReadFile(t, tempPath)))
 }
 
 func TestReturnBlockedRecovery_RefusesDriftWithoutMutation(t *testing.T) {
