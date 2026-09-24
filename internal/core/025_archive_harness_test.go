@@ -67,7 +67,7 @@ func TestArchiveItem_NoDuplicateAcrossQueueArchive(t *testing.T) {
 // removes all released items from the queue directory.
 func TestShipShipment_QueuePathAbsentAfterShip(t *testing.T) {
 	// Arrange
-	ws := setupTestWorkspace(t)
+	ws := setupShipShipmentQueuePathWorkspace(t)
 	ctx := context.Background()
 
 	feature, err := core.CreateArtifact(ctx, ws, "Ship queue test feature", "feature")
@@ -110,6 +110,14 @@ func TestShipShipment_QueuePathAbsentAfterShip(t *testing.T) {
 	taskArchiveCount := countFilesWithPrefix(t, archiveDir, task.ID)
 	assert.Equal(t, 1, featureArchiveCount, "feature must have exactly one archive file after shipping")
 	assert.Equal(t, 1, taskArchiveCount, "task must have exactly one archive file after shipping")
+}
+
+func setupShipShipmentQueuePathWorkspace(t *testing.T) *core.Workspace {
+	t.Helper()
+	ws := setupTestWorkspace(t)
+	ws.GateBroker = nil
+	require.Nil(t, ws.GateBroker, "ShipShipment archive fixture must not retain the executable gate broker")
+	return ws
 }
 
 // countFilesWithPrefix returns how many files in dir have a base name starting with prefix.

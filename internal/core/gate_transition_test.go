@@ -53,11 +53,27 @@ func newGateTestWorkspace(t *testing.T) *Workspace {
 	ws, err := NewWorkspace(context.Background(), tmp)
 	require.NoError(t, err)
 	t.Cleanup(func() { ws.Close() })
+	disableExecGateForTest(t, ws)
 	return ws
+}
+
+func disableExecGateForTest(t *testing.T, ws *Workspace) {
+	t.Helper()
+	ws.GateBroker = nil
+	require.Nil(t, ws.GateBroker, "test workspace must not retain the executable gate broker")
 }
 
 // injectBroker wires a fake-seam broker and a normalized gate config onto ws.
 func injectBroker(ws *Workspace, enabled gate.EnabledMode, runner gate.GateRunner, version gate.VersionRunner) {
+	switch runner.(type) {
+	case gate.ExecRunner, *gate.ExecRunner:
+		panic("injectBroker requires a fake gate runner")
+	}
+	switch version.(type) {
+	case gate.ExecVersionRunner, *gate.ExecVersionRunner:
+		panic("injectBroker requires a fake version runner")
+	}
+
 	ws.GateBroker = &gate.Broker{
 		Runner:         runner,
 		Git:            fakeGitAllOK{},
@@ -68,6 +84,15 @@ func injectBroker(ws *Workspace, enabled gate.EnabledMode, runner gate.GateRunne
 	cfg := config.PreTaskCompletionGateConfig{Enabled: string(enabled)}
 	cfg.Normalize()
 	ws.gateConfig = cfg
+}
+
+func requireFakeGateBrokerForTest(t *testing.T, ws *Workspace) {
+	t.Helper()
+	require.NotNil(t, ws.GateBroker, "intentional gate test must explicitly inject its fake broker")
+	_, usesRealVersion := ws.GateBroker.Version.(gate.ExecVersionRunner)
+	assert.False(t, usesRealVersion, "intentional gate test must not expose gate.ExecVersionRunner")
+	_, usesRealRunner := ws.GateBroker.Runner.(gate.ExecRunner)
+	assert.False(t, usesRealRunner, "intentional gate test must not expose gate.ExecRunner")
 }
 
 // newActiveTask creates a feature+task and moves the task to active (ungated).
@@ -93,11 +118,51 @@ func statusOf(t *testing.T, ws *Workspace, id string) string {
 
 const okVersion = "1.4.7"
 
+func TestShipShipmentFixtureGateBrokerInventory(t *testing.T) {
+	fixtures := []struct {
+		name  string
+		build func(t *testing.T) *Workspace
+	}{
+		{
+			name:  "ordinary shipment fixture",
+			build: setupShipmentWorkspace,
+		},
+		{
+			name:  "gate fixture default",
+			build: newGateTestWorkspace,
+		},
+		{
+			name: "intentional gate fake",
+			build: func(t *testing.T) *Workspace {
+				ws := newGateTestWorkspace(t)
+				injectBroker(ws, gate.EnabledAuto, &fakeGateRunner{}, fakeVersion{v: okVersion})
+				return ws
+			},
+		},
+		{
+			name: "durability fail-open fake",
+			build: func(t *testing.T) *Workspace {
+				return newShipDurabilityFixture(t, false).ws
+			},
+		},
+	}
+
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			ws := fixture.build(t)
+			if ws.GateBroker == nil {
+				return
+			}
+
+			requireFakeGateBrokerForTest(t, ws)
+		})
+	}
+}
+
 func TestGate_NoBroker_AllowsWithoutRunning(t *testing.T) {
 	ws := newGateTestWorkspace(t)
 	id := newActiveTask(t, ws)
 	// Simulate a bare workspace (no broker wired): the gate is skipped entirely.
-	ws.GateBroker = nil
 	require.Nil(t, ws.GateBroker)
 	art, outcome, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
 	require.NoError(t, err)
@@ -110,6 +175,7 @@ func TestGate_Pass_CompletesToDone(t *testing.T) {
 	id := newActiveTask(t, ws)
 	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0, Stdout: []byte(`{}`)}}
 	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+	requireFakeGateBrokerForTest(t, ws)
 
 	art, outcome, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
 	require.NoError(t, err)
@@ -129,6 +195,7 @@ func TestGate_Block_RefusesAndRetainsStatus(t *testing.T) {
 	report := `{"repeated_failure":{"count":1,"threshold":3,"reached":false,"action":"block"}}`
 	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 1, Stdout: []byte(report)}}
 	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+	requireFakeGateBrokerForTest(t, ws)
 
 	art, outcome, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
 	require.Error(t, err)
@@ -152,6 +219,7 @@ func TestGate_RepeatedFailure_Block_RequeuesToQueued(t *testing.T) {
 	report := `{"repeated_failure":{"count":3,"threshold":3,"reached":true,"action":"block"}}`
 	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 1, Stdout: []byte(report)}}
 	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+	requireFakeGateBrokerForTest(t, ws)
 
 	art, outcome, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
 	require.Error(t, err)
@@ -174,6 +242,7 @@ func TestGate_RepeatedFailure_Escalate_MovesToBlocked(t *testing.T) {
 	report := `{"repeated_failure":{"count":5,"threshold":3,"reached":true,"action":"escalate"}}`
 	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 1, Stdout: []byte(report)}}
 	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+	requireFakeGateBrokerForTest(t, ws)
 
 	art, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
 	require.Error(t, err)
@@ -192,6 +261,7 @@ func TestGate_MissingBinary_StrictEnabled_ConfigError(t *testing.T) {
 	notFound := fmt.Errorf("resolve autoharness: %w", bkerrors.ErrGateBinaryNotFound)
 	// enabled:true + unresolvable binary -> setup-class refusal at probe.
 	injectBroker(ws, gate.EnabledTrue, &fakeGateRunner{}, fakeVersion{err: notFound})
+	requireFakeGateBrokerForTest(t, ws)
 
 	art, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
 	require.Error(t, err)
@@ -210,6 +280,7 @@ func TestGate_MissingBinary_Auto_FailsOpen(t *testing.T) {
 	notFound := fmt.Errorf("resolve autoharness: %w", bkerrors.ErrGateBinaryNotFound)
 	// enabled:auto + unresolvable binary -> proceed (fail open).
 	injectBroker(ws, gate.EnabledAuto, &fakeGateRunner{}, fakeVersion{err: notFound})
+	requireFakeGateBrokerForTest(t, ws)
 
 	art, outcome, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
 	require.NoError(t, err)
@@ -224,6 +295,7 @@ func TestGate_ExitTwo_ConfigError(t *testing.T) {
 	id := newActiveTask(t, ws)
 	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 2, Stderr: []byte("bad gate config")}}
 	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+	requireFakeGateBrokerForTest(t, ws)
 
 	art, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"}, TransitionOptions{})
 	require.Error(t, err)
@@ -239,6 +311,7 @@ func TestGate_ForceFromNonCLI_Rejected(t *testing.T) {
 	id := newActiveTask(t, ws)
 	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 0}}
 	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+	requireFakeGateBrokerForTest(t, ws)
 
 	_, _, err := UpdateArtifactWithGate(context.Background(), ws, id, map[string]any{"status": "done"},
 		TransitionOptions{Force: true, ForceReason: "x", ForceSource: ForceSourceNone})
@@ -260,6 +333,7 @@ func TestGate_NonTaskType_NotGated(t *testing.T) {
 	require.NoError(t, err)
 	runner := &fakeGateRunner{res: gate.GateResult{ExitCode: 1}}
 	injectBroker(ws, gate.EnabledAuto, runner, fakeVersion{v: okVersion})
+	requireFakeGateBrokerForTest(t, ws)
 
 	// A feature completion is not gated even with exit 1 configured.
 	_, outcome, err := UpdateArtifactWithGate(ctx, ws, feat.ID, map[string]any{"status": "done"}, TransitionOptions{})

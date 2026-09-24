@@ -35,6 +35,7 @@ func setupShipmentWorkspace(t *testing.T) *Workspace {
 	workspace, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
 	t.Cleanup(func() { workspace.Close() })
+	disableExecGateForTest(t, workspace)
 	return workspace
 }
 
