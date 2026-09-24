@@ -2315,3 +2315,35 @@ Focused review: Security PASS (native NT rename over the RootDirectory-relative 
 Ship-ready directive: in `internal/core/shipment_ops_windows.go`, replace the `SetFileInformationByHandle(FileRenameInfo)` rename call with `NtSetInformationFile(FileRenameInformation, class 10)` using the same buffer + live RootDirectory handle; convert NTSTATUS via the existing Windows error path; keep the open primitives (`NtCreateFile`/`NtOpenFile`, no-follow) and every other invariant unchanged. Verification stays circuit-gated: no tests now; one post-change targeted Windows verification phase requires explicit operator authorization immediately before it, then the shared Wave 14 full-suite/stop-gate (AC8) applies.
 
 <!-- plan-review-attempt: rev16-windows-rename-api-boundary (PASS) -->
+
+## Wave 15 — Class-level ShipShipment gate-fixture isolation (155-S full-suite unblock) (2026-09-23)
+
+<!-- plan-review-attempt: rev17-classlevel-gate-fixture-isolation -->
+
+Corrective wave adding ONE class-level, test-only task closing the full-suite timeout root cause. Source stash DB48A817; deliberation 069-DL. No graph/status/priority/membership change to existing tasks; no production/config/default/API change.
+
+- 174.069-T (queued/high, under 174-F, governed member of active 155-S) — default GateBroker=nil across shared ShipShipment fixture families so ordinary internal/core tests stop inheriting the real ExecVersionRunner/ExecRunner gate subprocess.
+
+Root cause: 11 of 34 internal/core ShipShipment tests inherit the real default GateBroker via setupShipmentWorkspace or external setupTestWorkspace; latest full-suite failure shipment_test.go:TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup times out on the real gate version subprocess.
+
+Objective closure conditions: shared test-only disableExecGateForTest(t,ws) sets/asserts GateBroker=nil, defaulted in setupShipmentWorkspace and newGateTestWorkspace; intentional gate tests explicitly inject fakes afterward and assert no Exec runners; durability fail-open fake fixture/assertions preserved (touched only if consolidating structural assertions); local external archive wrapper for 025_archive_harness_test.go nils/asserts the broker without modifying broad core_test.setupTestWorkspace; inventory regression proves no ordinary ShipShipment fixture retains exec types while intentional gate tests remain behaviorally covered; no skipped tests / timeout inflation / weakened assertions / production changes. Scope: internal/core test files only. P-021 C1 OUT OF SCOPE re done 174.066-T (shared cross-family infra, not durability-only completion).
+
+Circuit disposition (shared): do NOT run go test ./... within this task (same-operation full-suite circuit OPEN). After the corrective commit lands, run the full suite ONCE as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before it); compliant alternative is targeted per-package verification (ShipShipment/gate/durability/archive suites + race). Then 155-S final review/stop-gate (zero P0/P1) applies.
+
+Dependencies: none added (governed member of active 155-S; membership-as-gate blocks final readiness). Provenance link to done 174.066-T is informational.
+
+## Plan Review — Amendment (Wave 15 GateBroker-nil test isolation) (2026-09-23)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Focused two-reviewer dispatch over corrective task 174.069-T (class-level, test-only gate-fixture isolation) ACs and the Wave 15 plan section.
+
+- Correctness Reviewer: PASS. Verified against ground-truth code that gateShipmentCompletion nil-guards ws.GateBroker (skips the gate, returns nil — no nil-panic), NewWorkspace wires the real buildGateBroker only when the gate config is enabled, and intentional gate/durability fixtures re-inject fakes AFTER construction so nil defaulting is harmless. AC3 preserves behavioral gate coverage; AC4 leaves the durability fail-open fixture intact; AC6 inventory invariant is consistent with the gate-test exemption. Two P3 advisories applied (AC5 names the actual ShipShipment caller; AC6 asserts absence-of-real-Exec-types rather than strict nil so the durability fake re-injection is not false-flagged).
+- Scope Boundary Auditor: PASS. Correction stays within the four authorized internal/core test files; broad core_test.setupTestWorkspace and all production/config/default/API surfaces are explicitly excluded (AC5/AC7); correction is genuinely class-level (shared helper + two fixture defaults + one inventory regression), not per-test patches; verification is bounded (AC8 targeted + race; AC9 defers full suite to a separately-authorized op under the zero-P0/P1 stop gate); P-021 C1 OUT OF SCOPE re done 174.066-T is correctly justified. One P3 advisory applied (AC6 regression pinned to gate_transition_test.go).
+
+Residual P0/P1: NONE. All findings were P3 advisories; the two clarifying ones are applied to 174.069-T.
+
+Ship-ready directive: implement 174.069-T as a test-only class-level fix in internal/core test files only (gate_transition_test.go shared helper/newGateTestWorkspace; shipment_test.go setupShipmentWorkspace; 025_archive_harness_test.go local wrapper; durability test only if consolidating). Do NOT run go test ./... during the task; use targeted per-package verification. After the commit lands, one post-fix full-suite run is a NEW separately-authorized final-gate operation requiring explicit operator authorization immediately before it.
+
+<!-- plan-review-attempt: rev17-classlevel-gate-fixture-isolation-PASS -->
