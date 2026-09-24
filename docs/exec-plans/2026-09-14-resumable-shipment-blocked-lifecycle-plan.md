@@ -2378,3 +2378,40 @@ Residual P0/P1: NONE.
 Ship-ready directive: apply the exact one-line change `_ = requireShippedAppendPartial(t, err)` at line 359 of internal/core/shipment_shipped_event_durability_test.go. Run the targeted durability suite GREEN, clear the pinned errcheck with no new lint, gofmt clean, confirm a one-line diff. Do NOT run go test ./... in the task; then resume the 174.069-T lint/build/format gates. The full suite runs later ONCE as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before it).
 
 <!-- plan-review-attempt: rev18-durability-errcheck-discard-PASS -->
+
+## Wave 17 — Final two correctives: core_test recovery isolation + Ship allowlist restore (155-S) (2026-09-23)
+
+<!-- plan-review-attempt: rev19-final-two-correctives -->
+
+Two DISTINCT, domain-separated corrective tasks closing the last full-suite/contract blockers. Sources: stash 885263D2 (deliberation 070-DL) and 4A0B7BCF (deliberation 071-DL). No graph/status/priority change to existing tasks; both are governed members of active 155-S (membership-as-gate); no inter-task dependency (independent domains).
+
+- 174.071-T (queued/high, under 174-F, member of 155-S) — TEST-ONLY Go fixture seam. Add package-core _test.go helper NewWorkspaceWithoutRecoveryForTest(ctx,root) delegating to newWorkspace(ctx,root,false); external core_test setupTestWorkspace (artifacts_expansion_test.go:24, 100+ callers) uses it so the broad fixture stops running recovery-enabled construction that hangs a hierarchy test in Windows FindFirstFile/EvalSymlinks during synthetic global-lock root canonicalization. Recovery-specific tests keep explicit NewWorkspace. NO production default/lock/recovery change; do NOT repurpose NewDiagnosticWorkspace. P-021 C1 OUT OF SCOPE for all done 174-F tasks (distinct test-infra seam).
+
+- 174.072-T (queued/high, under 174-F, member of 155-S) — HARNESS/CONFIG restore. Restore the protected explicit Ship governed-lifecycle tool allowlist in .github/agents/_ship.agent.md that a generic renderer overwrote with backlogit/* (failing the integration contract requiring explicit block/unblock/normalize trio). Keep the explicit list incl. the trio + all intended tools, drop backlogit/*, preserve unrelated concurrent model-routing edits, and reconcile the .autoharness/harness-manifest.yaml _ship checksum + drift record. Do NOT change registry/plugin template here (registry trio already present via ac5ebd29); capture a separate upstream tune-preservation follow-up if the renderer will re-drift. P-021 C1 OUT OF SCOPE for all done 174-F tasks (harness/config surface, moderate mutation authority).
+
+Circuit disposition (shared): do NOT run go test ./... in either task; use targeted per-task verification (hierarchy/expansion + recovery selectors for A; integration contract + harness verify for B). After BOTH commits land, the full suite runs ONCE as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before it), followed by the final standard + adversarial review over the changed surfaces with a zero-P0/P1 stop-gate.
+
+Dependencies: none added; both governed members of active 155-S. Provenance links to done tasks are informational.
+
+## Plan Review — Amendment (Wave 17: final two correctives — core_test recovery isolation + Ship allowlist restore)
+
+<!-- plan-review-attempt: rev19-final-two-correctives -->
+
+- dispatch_mode: multi-agent-dispatch
+- decision: PASS
+- residual P0/P1: NONE
+- scope: 174.071-T (test-only Go fixture seam) + 174.072-T (Ship harness/config allowlist restore); both governed members of active 155-S; no inter-task dependency (independent domains); no existing task status/priority/graph change.
+
+Reviewer verdicts:
+- 174.071-T — Correctness Reviewer: PASS (seam technically sound; recovery coverage preserved). Scope Boundary Auditor: PASS (strictly test-only; no production/NewDiagnosticWorkspace repurposing; <=2h single-domain).
+- 174.072-T — Agent-Native Parity Reviewer: PASS. Template Integrity Reviewer: PASS. Security Reviewer (scope): PASS (dropping backlogit/* is a least-privilege improvement; no authority escalation; trio inside Ship role boundary).
+
+Consensus P2 findings folded into the ACs (no P0/P1):
+- 174.071-T: enumerate the exact recovery-agnostic fixtures to convert (setupTestWorkspace + setupTestWorkspaceWithBugLevel) and require confirmation that no recovery/journal test transitively uses a converted fixture (AC2/AC3); require a bounded-timeout RED reproduction + named targeted selectors (AC5); normalize the seam signature to (*Workspace, error) (AC1).
+- 174.072-T: keep tools as a scalar comma-separated string with in-place wildcard removal so the contract .(string) assertion holds (AC1); preserve exact HEAD memory token + unrelated model-routing edits (AC2); recompute the manifest checksum LF-normalized (AC3/AC6); make require.NotContains(shipTools, "backlogit/*") a MANDATORY contract assertion (AC4); make the separate upstream tune-preservation follow-up capture MANDATORY, not conditional (AC5).
+
+Circuit disposition: full-suite go test ./... circuit remains OPEN; neither task runs it. After BOTH commits land, one NEW separately-authorized full-suite run (explicit operator authorization immediately before), then the 155-S zero-P0/P1 stop-gate and final standard + adversarial review over the changed surfaces.
+
+Ship-ready sequential directive: (1) apply 174.071-T test-seam (add package-core _test.go seam; switch the two enumerated fixtures; keep recovery tests on explicit NewWorkspace) with its targeted hierarchy/expansion + recovery selectors; (2) apply 174.072-T allowlist restore (in-place scalar tools restore incl. trio, drop backlogit/*, add mandatory NotContains assertion, LF-normalized manifest checksum + drift record) with verify-workspace + integration contract; (3) capture the mandatory upstream tune-preservation follow-up stash; (4) then request explicit authorization for the single post-fix full-suite operation; (5) final standard + adversarial review over changed surfaces, zero-P0/P1 stop-gate. Preserve the currently-uncommitted Ship implementation and the dirty _ship.agent.md / config / checkpoints; Stage committed only its own backlog/plan files.
+
+<!-- plan-review-attempt: rev19-final-two-correctives-PASS -->
