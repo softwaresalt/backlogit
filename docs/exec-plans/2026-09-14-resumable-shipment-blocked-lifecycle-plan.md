@@ -2415,3 +2415,180 @@ Circuit disposition: full-suite go test ./... circuit remains OPEN; neither task
 Ship-ready sequential directive: (1) apply 174.071-T test-seam (add package-core _test.go seam; switch the two enumerated fixtures; keep recovery tests on explicit NewWorkspace) with its targeted hierarchy/expansion + recovery selectors; (2) apply 174.072-T allowlist restore (in-place scalar tools restore incl. trio, drop backlogit/*, add mandatory NotContains assertion, LF-normalized manifest checksum + drift record) with verify-workspace + integration contract; (3) capture the mandatory upstream tune-preservation follow-up stash; (4) then request explicit authorization for the single post-fix full-suite operation; (5) final standard + adversarial review over changed surfaces, zero-P0/P1 stop-gate. Preserve the currently-uncommitted Ship implementation and the dirty _ship.agent.md / config / checkpoints; Stage committed only its own backlog/plan files.
 
 <!-- plan-review-attempt: rev19-final-two-correctives-PASS -->
+
+## Wave 18 — Corrective: size/complexity core_test fixture recovery isolation (62C6A469) (2026-09-24)
+
+<!-- plan-review-attempt: rev20-size-complexity-fixture-recovery-isolation -->
+
+This corrective wave adds ONE test-only task. Source: DEFERRED SCOPE EXPANSION stash `62C6A469` (P-021 C6 forced deliberate route); deliberation `072-DL`. It makes no graph, status, priority, or membership change to existing tasks, and no production, config, default, API, CI, Makefile, or timeout change. The branch is `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`; evidence HEAD is `228a28fe89def0566fcb8b96ef077e1ab0d5eb03`, and the implementation state before evidence was `eedc48a16711fc5e3cd5b94b5619c61e2f006659`. Where this section and `072-DL` differ in wording (helper responsibilities), THIS SECTION IS AUTHORITATIVE.
+
+### Problem frame and root cause (evidence-bounded)
+
+Three consecutive separately-authorized `go test ./...` runs failed ONLY in `internal/core`, at the default 10m package deadline (602.093s / 600.818s / 602.192s). Every other package passed, including `tests/integration`. At each deadline the running test was 0-1s old and sat in a different, unrelated, normal I/O stack:
+
+| Capture | Blamed test (fixture) | Stack at deadline | Run-order position (current tree) |
+|---|---|---|---|
+| post-wave14 (`3588cad2`) | `TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup` | gate `ExecVersionRunner` process wait (since fixed by 174.069-T) | about 59% (522/881) |
+| post-174070 (`46145ed5`) | `TestCreateArtifact_RejectsLevel2WithoutParent` (`setupTestWorkspace`) | recovery `EvalSymlinks`/`FindFirstFile` (since fixed by 174.071-T) | about 69% (612/881) |
+| post-wave17 (`eedc48a1`) | `TestSetArtifactSize_BusyLockReturnsErrTaskBusy` (`setupSizeWorkspace`) | `config.LoadTemplates` -> `os.ReadFile` | about 79% (697/881) |
+
+No stack shows a lock waiter, holder cycle, or per-test hang. The in-capture test counts (879/880/881) are nearly constant, so the run-order positions are comparable. The root cause is the cumulative wall time of the single `internal/core` test binary (881 top-level tests: 590 `package core` + 291 `core_test`) on this Windows host. The blamed fixture is incidental to where the deadline fell. Logging stops at the same test (`TestGateBaseOverrideShadowed_WarnsAdvisory`) in two captures while the deadline moved, which confirms the 60-90s silence is a diagnostics artifact (the `slog.SetDefault` restore leaves `log` output redirected), not a hang; it is captured separately as `D8EF5443`. Paused `t.Parallel` tests (`workspace_dualroot_test.go`) run only after all sequential tests, so the about-760s linear estimate is a LOWER bound.
+
+### Honest sufficiency disclosure and 62C6A469 split disposition (NON-NEGOTIABLE carry-forward)
+
+This task removes the unrelated recovery cost from the fixture named by `62C6A469` (`setupSizeWorkspace`) plus its construction-identical sibling `setupComplexityWorkspace` (072-DL option A2). By itself it is NOT expected to bring `internal/core` under the 10m default: the savings are seconds, against an estimated shortfall of at least about 160s. `62C6A469` is therefore a SPLIT disposition. The fixture-family portion is resolved by `174.073-T`. The package runtime-budget residual (explicit test timeout vs partitioning vs broad fixture I/O reduction/consolidation into one canonical recovery-agnostic `core_test` constructor vs construction caching) is carried by DEFERRED SCOPE EXPANSION `11BE840F` (high, requires deliberation). `62C6A469` is archived as consumed, with forward refs to BOTH `174.073-T` and `11BE840F`; it is NOT recorded as fully resolved. Neither the task nor Ship may widen into `11BE840F` (P-021 C4). Because the 155-S final gate requires a passing full suite, 155-S cannot close until `11BE840F` is dispositioned and, if it yields work, harvested as a governed 155-S member.
+
+### Implementation unit
+
+- **U18 / 174.073-T** (queued/high, under `174-F`, governed member of active `155-S`). Domain: Go test infrastructure only. Safety modes: investigate-first plus freeze-scope (two files).
+  - Files (exactly two, both `package core_test`): `internal/core/artifact_size_test.go`, `internal/core/artifact_complexity_test.go`.
+  - Functions (four):
+    1. NEW helper `newRecoveryFreeFixtureWorkspace(ctx context.Context, root string) (*core.Workspace, error)` in `artifact_size_test.go`. Its ONLY responsibility is construction: it calls the EXISTING `core.NewWorkspaceWithoutRecoveryForTest(ctx, root)` (`internal/core/workspace_test_seam_test.go`, unchanged) and wraps any error as `fmt.Errorf("new recovery-free fixture workspace: %w", err)`. It does NOT call `config.WriteDefaults`.
+    2. `setupSizeWorkspace` rerouted to call the helper in place of `core.NewWorkspace`. Everything else stays exactly as before: `t.TempDir()`, queue `MkdirAll`, `config.WriteDefaults`, `require.NoError`, `t.Cleanup(ws.Close)`, golden file, and `db.UpsertItem` seed.
+    3. `setupComplexityWorkspace`, rerouted identically.
+    4. NEW harness `TestRecoveryFreeFixture_SkipsShipmentRecoveryButLoadsTemplates` in `artifact_size_test.go` (no `t.Parallel`; no `slog`/env mutation). Arrange: a `t.TempDir()` root with `.backlogit/queue` + `config.WriteDefaults`, then create `<root>/.backlogit/ops` as a REGULAR FILE. The implementer confirms the path against `shipmentOpsRootForWorkspace` (`internal/core/shipment_ops.go`, `filepath.Join(realStorageRoot, "ops")`; a non-directory is rejected with `blerrors.ErrValidation`). Before seeding, `require.NoFileExists`/`NoDirExists` on `ops` confirms `WriteDefaults` did not create it. Each constructor call uses its OWN distinctly named context, `recoveryCtx, cancelRecovery := context.WithTimeout(context.Background(), 2*time.Second)` / `isolatedCtx, cancelIsolated := ...`, each with `defer cancel...()`, following the naming precedent at `workspace_no_recovery_regression_test.go`. Result variables are also distinct (`recoveryWS, recoveryErr` / `isolatedWS, isolatedErr`), so there is no `:=` redeclaration. (i) Negative control: `recoveryWS, recoveryErr := core.NewWorkspace(recoveryCtx, root)`. If `recoveryWS != nil`, register a Close cleanup first (precedent `shipment_ops_security_test.go`). Then MUST give `require.Error`, `require.ErrorContains(recoveryErr, "recover shipment operations")`, `require.ErrorIs(recoveryErr, blerrors.ErrValidation)`, `require.Nil(t, recoveryWS)`. (ii) Positive: `isolatedWS, isolatedErr := newRecoveryFreeFixtureWorkspace(isolatedCtx, root)` MUST give `require.NoError`, register `t.Cleanup(func() { require.NoError(t, isolatedWS.Close()) })`, and `require.NotEmpty(t, isolatedWS.Templates)` (template loading retained).
+  - Phase ownership (P-002/P-004; scoped red selectors because the full-suite circuit is OPEN, per branch precedent Waves 13-17; the compile-check narrowing is new and declared in the Quality Gates deviation):
+    - RED phase (harness-architect): (a) characterization extract. Add the helper, TEMPORARILY calling `core.NewWorkspace` (TRANSITION-ONLY state; no permanent test pins it), and reroute both fixtures through it. The family selector (step 2) must be GREEN with 13 PASS, which proves the extract is behavior-preserving. (b) Add the harness. Compile check `go test -run '^$' -count=1 ./internal/core` exits 0. The harness selector (step 1) FAILS on assertion (ii) with the recovery error. Capture this under `logs/diagnostics/174073-red-harness.txt` (+ `.metadata.json`). Record `Compilation: PASS` / `Red Phase: CONFIRMED (scoped)` and apply `harness-ready`.
+    - GREEN phase (build-feature): change ONLY the helper body to call `core.NewWorkspaceWithoutRecoveryForTest`. Steps 1-6 then pass. Capture under `logs/diagnostics/174073-*`.
+
+### Verification contract (PowerShell-safe; single-quoted selectors; literal SHAs)
+
+Before the first edit, Ship records the literal task-start SHA with `git rev-parse HEAD` and substitutes that literal text wherever `START_SHA` appears below. Never paste angle-bracket placeholders. Non-vacuity counts ONLY unindented top-level `--- PASS: Test` lines, and any `--- SKIP` or `--- FAIL` counts as failure.
+
+1. RED/GREEN harness: `go test ./internal/core -run '^TestRecoveryFreeFixture_SkipsShipmentRecoveryButLoadsTemplates$' -count=1 -timeout=2m -v`. RED before the helper switch, GREEN after. Exactly 1 top-level PASS when green.
+2. Family (exact-name anchored; a prefix selector would also match `TestSetArtifactSize_PreservesTopLevelDocline` in `docline_codec_roundtrip_test.go`, which is out of scope and keeps `core.NewWorkspace`): `go test ./internal/core -run '^(TestSetArtifactSize_PersistsAndPreservesIndexColumns|TestSetArtifactSize_RejectsInvalidValueBeforeWrite|TestSetArtifactSize_GoldenBodyPreserved|TestSetArtifactSize_Idempotent|TestSetArtifactSize_BusyLockReturnsErrTaskBusy|TestSetArtifactComplexity_PersistsAndPreservesBody|TestSetArtifactComplexity_RejectsInvalidValueBeforeWrite|TestSetArtifactComplexity_EmptyClearsField|TestSetArtifactComplexity_EmptyRejectsNonTask|TestSetArtifactComplexity_RejectsNonTaskEvenWithCustomSchema|TestSetArtifactComplexity_EmptyRequiresComplexitySchema|TestSetArtifactComplexity_GenericUpdatePreservesComplexity|TestSetArtifactComplexity_GenericCreateRejectsComplexity)$' -count=1 -timeout=2m -v`. Exactly 13 top-level PASS: the 5 `TestSetArtifactSize_*` + 8 `TestSetArtifactComplexity_*` functions declared in the two target files. `TestSetArtifactSize_BusyLockReturnsErrTaskBusy` still asserts `core.ErrTaskBusy`.
+3. Recovery and seam negative controls: `go test ./internal/core -run '^(TestNewWorkspace_RecoversPendingReturnBlockedJournal|TestNewWorkspace_RemovesWriterTempResidueAndRecoversValidJournal|TestNewWorkspaceWithoutRecoveryForTest_IsolatesRecoveryState)$' -count=1 -timeout=2m -v`. Exactly 3 top-level PASS. If a named test does not resolve, STOP and report; do not substitute.
+4. Template sanity (optional, non-gating; `internal/config` is untouched): `go test ./internal/config -run '^(TestLoadTemplates_|TestWriteDefaults_)' -count=1 -v`.
+5. Pinned gates (Go 1.24.0): `go vet ./...`; `go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout=5m --new-from-rev=START_SHA ./internal/core/...` (or the installed `golangci-lint` v1.64.8 with the same arguments), 0 new findings; `go build ./cmd/backlogit`; scoped format `gofmt -l 'internal/core/artifact_size_test.go' 'internal/core/artifact_complexity_test.go'`, empty output; `git diff --check START_SHA HEAD -- 'internal/core/artifact_size_test.go' 'internal/core/artifact_complexity_test.go'`, clean (path-scoped committed delta, so unrelated dirty files cannot falsely fail it). The lint `--new-from-rev` result is judged ONLY for findings in the two target files; an unrelated-file finding from dirty-worktree state is recorded, not treated as a task failure.
+6. Scope and reroute inventory, against the task commit:
+   - `git diff --name-only START_SHA HEAD -- internal cmd` lists EXACTLY `internal/core/artifact_size_test.go` and `internal/core/artifact_complexity_test.go`. Allowed outside that filter: `.backlogit/**` lifecycle metadata for `174.073-T`, `logs/diagnostics/174073-*`, `docs/memory/**`. Pre-existing unrelated dirty files are neither staged nor committed.
+   - `Select-String -CaseSensitive -SimpleMatch -Pattern 'core.NewWorkspace(' -Path 'internal/core/artifact_size_test.go','internal/core/artifact_complexity_test.go'` gives EXACTLY 1 match (the harness negative control). Counts include comments, so do not write either literal pattern in a comment.
+   - `-Pattern 'newRecoveryFreeFixtureWorkspace('` gives EXACTLY 4 matches: 1 definition, plus calls in `setupSizeWorkspace`, `setupComplexityWorkspace`, and the harness.
+   - `internal/core/workspace_test_seam_test.go` and every non-`_test.go` file are unchanged.
+
+### Circuit disposition (NON-NEGOTIABLE)
+
+- Do NOT run `go test ./...` within this task. Do NOT run the whole `internal/core` package without a `-run` selector; both are full-suite-equivalent because `internal/core` is the failing unit. The package-scoped `-run '^$'` compile check in the RED phase (`./internal/core` only) is the only unselected form allowed, and it runs no tests. `go test -run '^$' ./...` is NOT used, because it is itself a `go test ./...` invocation under the operator's stop rule; see the Quality Gates deviation.
+- After the task commit lands, Ship STOPS. Before any next `go test ./...`, Ship MUST request a NEW, separate, explicit operator authorization immediately before the run. That request MUST cite either a recorded operator disposition of `11BE840F`, or an explicit operator waiver accepting a known-risk diagnostic run.
+- The run form SHOULD be `go test -json ./...`, captured to `logs/diagnostics/`, so per-test `Elapsed` is available.
+- The 155-S zero-P0/P1 stop-gate and the final standard + adversarial review then apply.
+
+### Dependencies
+
+None added. The task is a governed member of active `155-S` (membership-as-gate). Provenance links to done `174.071-T` (seam author) are informational. The 155-S final gate depends on the `11BE840F` disposition (operator decision; not yet harvestable).
+
+### Plan Hardening Signals (Wave 18)
+
+- Public API/schema/contract change: absent (test-only; the seam is reused unchanged).
+- Security/auth/permission: absent.
+- Migration/destructive/irreversible: absent (only `t.TempDir()` scratch writes).
+- External integration / operator checkpoint / external dependency: PRESENT. The next full suite needs separate operator authorization, and `11BE840F` is an operator decision.
+- High runtime/rollout/rollback risk: PRESENT (moderate). The Windows package deadline remains after this task, so a mis-sequenced full-suite run would waste another roughly 13-minute authorized operation.
+
+Requires plan hardening: yes
+
+### Constitution Check (Wave 18)
+
+- I. Safety-First Go: pass except the lint-scope element, which is a DEVIATION (see Quality Gates below: `golangci-lint` runs in `--new-from-rev` mode). Test-only Go; no `unsafe`; the helper wraps errors with `%w`.
+- II. Test-First Development (NON-NEGOTIABLE): pass. The characterization extract comes first, then a failing harness captured as RED before GREEN. "All tests pass via `go test ./...` before merge" is enforced at the 155-S merge gate under separate authorization, not waived. `11BE840F` must preserve this rule; no ad-hoc timeout workaround.
+- III. Workspace Isolation and Security Boundaries: pass. All test-authored writes stay under each test's `t.TempDir()` root; no traversal; no secrets.
+- IV. CLI Workspace Containment (NON-NEGOTIABLE): pass. The agent performs no file operation outside the working directory. Diagnostics go under `logs/diagnostics/`. The only out-of-cwd writes (`t.TempDir()`, GOCACHE) are made by the Go test/toolchain process itself, not by agent file operations, so they are not an exception to IV.
+- V. Structured Observability: pass. RED/GREEN evidence is captured under `logs/diagnostics/174073-*` with metadata. The log-capture leak that degraded observability is captured as `D8EF5443`.
+- VI. Single Responsibility: pass. The helper only constructs; fixtures keep seeding; the harness proves one contract.
+- VII. Destructive Command Approval (NON-NEGOTIABLE): pass. No destructive steps; the full-suite run is gated by operator authorization.
+- VIII. Explicit Safety Modes: pass. Investigate-first + freeze-scope, declared above.
+- IX. Git-Friendly Persistence: pass. Text-only test changes; backlog changes go through governed backlogit operations.
+- X. Agent Context Efficiency: pass. The task contract is self-contained, with exact selectors and paths.
+- XI. Merge Commit History Preservation (NON-NEGOTIABLE): pass. The work ships inside the 155-S merge-commit PR; no squash/rebase.
+- Quality Gates / Technical Constraints: DEVIATION (documented, not a NON-NEGOTIABLE principle). At task level, `go test ./...` is replaced by the scoped selectors above because the full-suite circuit is OPEN; it runs once at the 155-S final gate under separate authorization. `golangci-lint run` runs in `--new-from-rev` mode because the repo carries pre-existing lint debt (`4DB1DFF1`). `gofmt -l .` is scoped to the two touched files because the repo carries pre-existing format drift (`4DB1DFF1`). `go vet ./...` runs in full. P-004 red-phase mapping: P-004's precondition `go test -run=^$ -count=1 ./...` is NARROWED to `go test -run '^$' -count=1 ./internal/core`, because any `go test ./...` form is behind the operator's stop rule. Only `internal/core` changes, and `go vet ./...` + `go build ./cmd/backlogit` compile-check the other non-test packages. P-004's `go test ./...` exits non-zero clause is mapped to the scoped harness selector (P-002.6 per-member scoped commands). Branch precedent (Waves 13-17) supports scoped red selectors only; the compile-check narrowing is NEW and is declared here. Rejected simpler alternative: running the full gates per task, which would re-trip the known package deadline and pre-existing debt unrelated to this change.
+
+Constitution Check: documented-deviations
+
+## Plan Hardening — Wave 18 (size/complexity fixture recovery isolation)
+
+Hardening required: yes (operator checkpoint + residual runtime risk). Consulted: `.github/policies/workflow-policies.md` P-002/P-004/P-021 (C1/C2/C4/C6); `.github/instructions/constitution.instructions.md`; `docs/compound/test-failures/go-analysistest-absolute-path-and-non-vacuity-2026-09-11.md` (non-vacuity of scoped `-run` selectors); `docs/compound/2026-07-29-durable-writes-test-seam-patterns.md` (seams must not leak process-global state; no `t.Parallel` alongside global seams); `docs/compound/best-practices/source-shape-harnesses-must-allow-lifecycle-successors-2026-09-11.md` (the RED extract is a transition-only state); `docs/memory/2026-09-24/ship-155s-174070-format-command-blocked.md` (a PowerShell-unsafe format command previously blocked Ship).
+
+Protected invariants:
+1. Recovery coverage: every recovery/journal test keeps explicit `core.NewWorkspace`, and the harness negative control proves recovery still engages on the seeded root (`ErrorIs` `blerrors.ErrValidation`).
+2. Template coverage: the recovery-free fixture still loads templates (`require.NotEmpty(ws.Templates)`), and the complexity tests still create artifacts.
+3. Lock semantics: `TestSetArtifactSize_BusyLockReturnsErrTaskBusy` still returns `core.ErrTaskBusy`.
+4. Seam integrity: `NewWorkspaceWithoutRecoveryForTest` is unchanged and its regression test stays GREEN; `NewDiagnosticWorkspace` is not repurposed; no production file changes.
+5. No global-state leakage: no `slog.SetDefault`, env, or `t.Parallel` changes in the touched files.
+6. Reroute proof: static inventory (step 6) shows neither fixture calls `core.NewWorkspace`.
+
+ProposedAction / ActionRisk:
+- PA-1: edit two `_test.go` files (helper + two reroutes + harness). ActionRisk: low; reversible by `git revert`; no approval needed beyond task claim.
+- PA-2: run targeted selectors 1-4, pinned gates 5, and inventory 6. ActionRisk: low; bounded (`-timeout=2m`) and scoped.
+- PA-3: next `go test ./...` (OUTSIDE this task). ActionRisk: medium (a roughly 13-minute operation with a known residual deadline risk). REQUIRES a new explicit operator authorization immediately before it, citing the `11BE840F` disposition or an explicit known-risk waiver; the recommended form is `go test -json ./...`.
+
+Blocked-path handling:
+- If RED cannot be reproduced (`core.NewWorkspace` succeeds on the seeded root, or the harness passes before the switch), STOP. Do not substitute a weaker fingerprint. Record the observation and return to Stage, since that would falsify the recovery-cost premise.
+- If the extract turns the family selector non-GREEN, STOP. The extract was not behavior-preserving.
+- If any selector reports SKIP, fewer PASS than stated, or a named test does not resolve, treat it as FAIL.
+- If a pinned gate fails, stop without retrying under a different command form, and record the evidence under `logs/diagnostics/`.
+
+Rollback: `git revert` of the single task commit restores both fixtures; there is no data or config state to unwind. Owner: Ship (task execution); Stage (`11BE840F` and `D8EF5443` follow-ups). Validation window: the task closes on steps 1-6. The package-deadline outcome is measured only by the next separately-authorized full-suite run.
+
+Review-gate capability carry-forward: plan review MUST emit literal `dispatch_mode:` and `decision:` markers. If reviewer sub-agent dispatch is unavailable or partial, it must declare `single-agent-declared-degradation` and `TOOL_DEGRADED: reviewer-subagent-dispatch` rather than issue a partial gate.
+
+Unresolved operator decisions (non-blocking for this task; blocking for the 155-S final gate): the `11BE840F` package-budget disposition (or an explicit known-risk waiver), and authorization for the next full suite.
+
+## Plan Review — Wave 18 attempt 1 (rev20, superseded)
+
+- dispatch_mode: multi-agent-dispatch
+- decision: ADVISORY
+- operator_authorization: not requested (superseded by the in-cycle P2 revision below; not a gate-satisfying record)
+- personas: Go Reviewer (PASS, 3 P2 / 5 P3), Scope Boundary Auditor (PASS, 4 P2 / 3 P3), Constitution Reviewer (PASS, 4 P2 / 5 P3), Architecture Strategist (PASS, 4 P2 / 3 P3), Learnings Researcher (PASS, 0 P2 / 4 P3, confidence high). Agent-Native Parity and Security Lens were not triggered (no MCP/agent-facing surface; no auth/secrets/trust boundary).
+- residual P0/P1: NONE.
+- Plan hardening required: yes; satisfied by `## Plan Hardening — Wave 18`.
+
+Merged P2 findings (deduplicated), all C1-in-scope for this plan and resolved in place in the Wave 18 section above (rev20.1):
+1. The harness proved the helper but not the fixture reroute (Go/Scope/Arch/Constitution). Resolved: step 6 static inventory (exactly 1 `core.NewWorkspace(`, exactly 4 helper matches) + invariant 6.
+2. The scope-inventory command compared against the dirty worktree and used a PowerShell-unsafe `<placeholder>` (Go/Scope). Resolved: `git diff --name-only START_SHA HEAD -- internal cmd`, a literal SHA via `git rev-parse HEAD`, and an explicit allowed-metadata list.
+3. The harness lacked close/timeout discipline (Go). Resolved: `t.Cleanup(require.NoError(ws.Close()))`, 2s `context.WithTimeout` per constructor, `require.Nil(ws)` on the negative path, and `ErrorIs(blerrors.ErrValidation)`.
+4. `11BE840F` was only "advised" before the next full suite (Scope/Arch). Resolved: the authorization request MUST cite a recorded `11BE840F` disposition or an explicit known-risk waiver.
+5. The `62C6A469` disposition was unstated (Scope). Resolved: SPLIT disposition recorded (family portion to `174.073-T`; residual to `11BE840F`; archive with both forward refs).
+6. 155-S closure dependency on `11BE840F` was untracked (Arch). Resolved: recorded in Dependencies and the sufficiency section.
+7. The DL vs plan helper wording conflicted (Scope/Arch). Resolved: plan declared authoritative; the helper only constructs; the 072-DL body wording was corrected, and a 072-DL comment event records the supersession.
+8. The Constitution Check was incomplete, mislabeled III/IV, gave a wrong III/IV rationale, and left the scoped gates undeclared (Constitution). Resolved: all principles I-XI listed with correct NON-NEGOTIABLE labels, toolchain temp/cache exception stated, Quality Gates deviation documented; verdict now `documented-deviations`.
+9. RED ownership under P-002/P-004 was unassigned (Constitution). Resolved: extract + harness + scoped red + `harness-ready` go to harness-architect; the helper switch goes to build-feature.
+
+Stage static verification (post-revision): the `Templates` field (`workspace.go:36`), the `blerrors` alias precedent, the 5+8 family functions, all three negative-control names (`shipment_test.go:1244`, `shipment_p1_lifecycle_remediation_test.go:61`, `workspace_no_recovery_regression_test.go:17`), and the current 2 `core.NewWorkspace(` sites (`artifact_size_test.go:54`, `artifact_complexity_test.go:45`) were confirmed. A prefix collision (`TestSetArtifactSize_PreservesTopLevelDocline`) was found and removed by exact-name anchoring selector 2.
+
+P3 items adopted: helper renamed `newRecoveryFreeFixtureWorkspace`; error wrap with `%w`; seam regression test added to step 3; family selector run after the extract; RED evidence path named; top-level-only PASS counting; `-timeout=2m` on selectors 1-3; RED extract marked transition-only; safety modes named; "family" wording narrowed; selector 4 made non-gating; `go vet ./...` run in full; lower-bound note on the estimate. P3 items recorded for `11BE840F` deliberation: consolidate recovery-free fixtures into one canonical `core_test` constructor; the paused-parallel test cost.
+
+<!-- plan-review-attempt: rev20-attempt-1-ADVISORY-superseded -->
+
+## Plan Review — Wave 18 final (rev20.2, attempt 2)
+
+- dispatch_mode: multi-agent-dispatch
+- decision: PASS
+- personas (re-review of the revised section after the attempt-1 P2 resolutions): Go Reviewer PASS (0 P0/P1/P2; all 3 attempt-1 P2s RESOLVED); Scope Boundary Auditor PASS (0 P0/P1/P2; F1-F4 and the DL wording conflict RESOLVED); Constitution Reviewer PASS (0 P0/P1; all 5 attempt-1 P2s RESOLVED; 1 new P2). The Architecture Strategist's and Learnings Researcher's attempt-1 findings were covered by the same resolutions: the reroute proof, the `11BE840F` precondition, the 155-S closure dependency, and the DL wording. Neither re-review surfaced any finding in their areas.
+- Plan hardening required: yes; satisfied by `## Plan Hardening — Wave 18`.
+- Constitution Check: documented-deviations (Quality Gates / Principle I lint scope; P-004 compile-check narrowing). No NON-NEGOTIABLE principle is deviated.
+
+Attempt-2 findings and disposition (all resolved in place; none deferred):
+- P2 (Constitution): the P-004 compile check was narrowed to `./internal/core` without a declaration. RESOLVED: the narrowing and its rationale are now declared in the Quality Gates deviation. `go test -run '^$' ./...` is explicitly not used, because it is a `go test ./...` form under the operator's stop rule. `go vet ./...` and `go build ./cmd/backlogit` compile-check the rest.
+- P3 (Constitution): Principle I was marked pass despite the lint scoping. RESOLVED: now marked "pass except lint-scope DEVIATION".
+- P3 (Constitution): the IV "toolchain exception" wording. RESOLVED: reworded to "no agent file operation outside cwd; toolchain temp is process-managed".
+- P3 (Constitution): the precedent overstated. RESOLVED: the text now says precedent covers scoped red selectors only and the compile-check narrowing is new.
+- P3 (Go): `git diff --check` / lint compared against the dirty worktree. RESOLVED: `git diff --check START_SHA HEAD -- <two paths>`; lint judged only on the two target files.
+- P3 (Go): harness redeclaration and lost-cancel risk. RESOLVED: distinct `recoveryCtx`/`isolatedCtx` and `recoveryWS`/`isolatedWS` names, each with `defer cancel`.
+- P3 (Go): negative path could leak an open workspace. RESOLVED: Close cleanup registered if `recoveryWS != nil`.
+- P3 (Go): comments could break the static counts. RESOLVED: "counts include comments" stated.
+- P3 (Go): `WriteDefaults` might create `ops`. RESOLVED: `NoFileExists`/`NoDirExists` pre-seed check.
+- P3 (Scope): the 072-DL supersession comment was missing. RESOLVED: 072-DL body corrected and a comment event appended.
+- Stage static verification also found a prefix collision in selector 2 (`TestSetArtifactSize_PreservesTopLevelDocline`). RESOLVED before attempt 2 by exact-name anchoring.
+
+Out-of-scope residuals (P-021 C2 captured; NOT widened into this task): `11BE840F` (package runtime-budget disposition; high; deliberate route) and `D8EF5443` (slog/log capture restore leak; medium; deliberate route).
+
+Residual P0/P1/P2: NONE. Gate satisfied (`decision: PASS`). Harvest authorized for exactly one task (`174.073-T` or the CLI-assigned ID recorded below at harvest).
+
+<!-- plan-review-attempt: rev20-attempt-2-PASS -->
+
+### Wave 18 harvest record (2026-09-24)
+
+- Harvested: `174.073-T` "Route size/complexity core_test fixtures through recovery-free seam" (task, queued, high, parent `174-F`; CLI-assigned ID matches this plan).
+- Shipment: governed `backlogit shipment add 155-S 174.073-T` -> `added`. The 155-S manifest now has 36 items (`174-F` first, `174.073-T` last), status `active`. `154-S` is untouched.
+- Stash (Stage authority): `62C6A469` edited with the SPLIT disposition and archived via `backlogit stash archive` (non-destructive). `11BE840F` and `D8EF5443` were late-reconciled from `task N/A` to `task 174.073-T`; both remain ACTIVE for operator-decided deliberation.
+- Dependency edges: none added (membership-as-gate).
