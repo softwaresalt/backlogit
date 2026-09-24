@@ -1832,11 +1832,50 @@ func persistArtifactWithGuard(ctx context.Context, ws *Workspace, artifact *mode
 	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, true, guard)
 }
 
+func artifactIsShipmentLifecycleMember(ws *Workspace, artifactID string) (bool, error) {
+	refs, err := scanCanonicalArtifacts(ws)
+	if err != nil {
+		return false, fmt.Errorf("scan shipment lifecycle membership for artifact %s: %w", artifactID, err)
+	}
+	for _, candidates := range refs {
+		for _, candidate := range candidates {
+			if candidate.artifactType != "shipment" {
+				continue
+			}
+			shipment, _, parseErr := parseFile(candidate.path)
+			if parseErr != nil {
+				return false, fmt.Errorf(
+					"parse shipment %s while checking lifecycle membership for artifact %s: %w",
+					candidate.id,
+					artifactID,
+					parseErr,
+				)
+			}
+			if containsString(NormalizeShipmentItems(shipment), artifactID) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate, preserveDBOnlyLinks bool, guard func(context.Context) error) error {
 	if persistArtifactPreLockHook != nil {
 		persistArtifactPreLockHook(artifact.ID)
 	}
-	if artifact != nil && artifact.ArtifactType == "shipment" {
+	requiresLifecycleBarrier := artifact != nil && artifact.ArtifactType == "shipment"
+	if artifact != nil && !requiresLifecycleBarrier {
+		if _, globalHeld := ctx.Value(shipmentLifecycleGlobalLockContextKey{}).(struct{}); globalHeld {
+			requiresLifecycleBarrier = true
+		} else {
+			var err error
+			requiresLifecycleBarrier, err = artifactIsShipmentLifecycleMember(ws, artifact.ID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if requiresLifecycleBarrier {
 		lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobalRaw(
 			ctx,
 			ws,
