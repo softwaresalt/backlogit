@@ -2605,9 +2605,9 @@ recorded decision.
 **Authority.** This section is the authoritative Wave 19 contract. Where it differs from
 `073-DL`, this section wins. rev21 failed plan review in attempt 1, rev21.1 failed in
 attempt 2, and rev21.2 failed in attempt 3 (see the `## Plan Review — Wave 19` records). rev21.3
-applies every attempt-3 disposition but is **unreviewed**: the Stage cycle limit is exhausted, so
-harvest is blocked until the operator authorizes a further review cycle (see the attempt-3
-record). Task IDs in the attempt-1 record use rev21.1 numbering. Differences from 073-DL:
+applies every attempt-3 disposition. The operator authorized one additional review pass, and
+rev21.3 failed it in attempt 4 (one P0, B1). Harvest stays blocked pending a new operator
+decision (see the attempt-4 record). Task IDs in the attempt-1 record use rev21.1 numbering. Differences from 073-DL:
 
 * 18 tasks instead of 13. Every new Go surface is split into a declaration task and a behavior
   task (Principle II), and the wrapper is split into a run surface and a result-sink surface to
@@ -3853,4 +3853,138 @@ escalation_status: ESCALATION_DEGRADED (the Engram CLI exposes no escalation-han
   174.074-T … 174.091-T into 155-S.
 * **(b)** Accept rev21.3 as ADVISORY-equivalent without re-review. Stage appends
   `operator_authorization: approved` in a new final `## Plan Review` section and harvests.
+* **(c)** Reject Wave 19 and re-deliberate 073-DL.
+
+<!-- plan-review-attempt: rev21.3-attempt-4-FAIL (operator-authorized single additional pass) -->
+
+## Plan Review — Wave 19 attempt 4 (operator-authorized single additional pass, rev21.3) (2026-09-24)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Schema-CLI-Docs Coupling Reviewer, Correctness Reviewer
+decision: FAIL
+plan_hardening_required: yes
+plan_hardening_satisfied: yes (## Plan Hardening — Wave 19, H1-H12)
+constitution_check_verdict: documented-deviations (recognized)
+```
+
+**Authorization.** Operator 2026-09-24: "Authorize one additional Stage plan-review pass for
+Wave 19 rev21.3. If it passes, harvest the reviewed tasks into 155-S; do not implement them or
+run the full suite." This record is that single pass. It does **not** authorize any further
+remediation or re-review cycle. `TOOL_OK: reviewer-subagent-dispatch` (all 7 personas
+dispatched and returned). Security Lens Reviewer: not triggered (no auth/authz, secrets, or
+trust-boundary surface). Agent-Native Parity Reviewer: not triggered (no MCP tool or
+agent-action surface; the Ship/skill edits are command-text swaps pinned by 174.080-T).
+
+**Verdicts on rev21.3:**
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Constitution | ADVISORY | none (3 P2, 7 P3) |
+| Go | FAIL | 1 P1 (B1) |
+| Scope | ADVISORY | none (1 P2, 3 P3) |
+| Learnings Researcher | FAIL | 1 P0 (B1, contradicts `docs/compound/best-practices/source-shape-harnesses-must-allow-lifecycle-successors-2026-09-11.md`) |
+| Architecture | ADVISORY | none (2 P2, 4 P3) |
+| Schema-CLI-Docs Coupling | ADVISORY | none (2 P2, 7 P3) |
+| Correctness | ADVISORY | none (3 P2, 7 P3) |
+
+**Attempt-3 findings: all confirmed fixed** (Constitution P1 exit-mapping/unknown-subcommand
+rows present at 3082-3088, 3116-3118, 3180, 3199-3200; 174.079-T is 2 files; BEGIN/END
+markers; table-driven surfaces test; D1 scoping; verdict line; every Go P2/P3 and Scope P3
+item). Independently confirmed correct: `mapWaitResult` 5-row table against GOROOT `os/exec`
+(`ExitError` and `ErrWaitDelay` never co-occur), the single-writer claim, the counter rules
+against `cmd/go` `isTestFunc`, the growth-table arithmetic and the 1500 overflow guard, the
+bounded hang-test timing, the ceiling clamp/run/exit-3 precedence, release isolation of
+`cmd/test-budget`, the 19.2 line inventory, P-021 scope (`5F1A1873`, `5A1C4D3F`, `95DF7CE9`,
+`D8EF5443` stay separate), and the dependency order 074, 076, 077 → 075, 078 → 079 → 080 →
+081..091.
+
+**Blocking finding (merged; final severity P0, the more conservative of P0/P1):**
+
+* **B1 — 174.077-T/174.078-T lifecycle-frozen source-shape harness (Go P1 + Learnings P0).**
+  `TestResultSinkSourceShape` (174.077-T, 3051-3058) pins transition-only scaffold state as a
+  permanent test: `type resultSink struct{}` with no fields, plus the removable anchors
+  `var _ = (*resultSink).footer` and `var _ = mapWaitResult`. 174.078-T is required to add the
+  `resultSink` fields and delete those two anchors (3076-3078), may touch only `result.go` and
+  `result_test.go` (3074), and its AC2 (3122-3123) — and 174.079-T AC2 — require
+  `TestResultSinkSourceShape` to PASS. H11 repeats the conflict. As written, 174.078-T either
+  cannot go green or must edit `result_shape_test.go` as a third file (2-hour/2-file rule
+  breach). This contradicts the resolved compound lesson that permanent source-shape harnesses
+  assert only permanent shape. **Recommended remediation (NOT applied; no remediation cycle is
+  authorized):** the 174.077-T harness asserts only that `resultSink` is a struct type (fields
+  unchecked), the three signatures, and the permanent `var _ io.Writer = (*resultSink)(nil)`;
+  the two removable anchors remain required by 174.077-T AC4 (lint) but are not asserted by the
+  harness; H11 is reworded to match.
+
+**Non-blocking P2 findings (recorded for the remediation revision; not dispositioned here):**
+
+* **P2-1 (Constitution + Go + Correctness).** Exit-2 rows in `TestRun_DerivationAndPrint`
+  (four timeout spellings 3184, no `go.mod` 3185, zero tests 3186, unknown/empty 3180), the
+  real start-failure row (3199-3200), and the 174.075-T error rows pass against the stubs, so
+  those behaviors never fail first. Pin a per-path `TEST_BUDGET_ERROR: <class>` stderr marker,
+  a runner-not-called check, both `=` and separate-value timeout forms inside a valid fixture,
+  and `errors.Is(err, exec.ErrNotFound)` plus the `start go:` prefix.
+* **P2-2 (Constitution + Correctness).** `TestResultSink_Write` (3097) must observe parsing only
+  through `Write` + `footer(...)`; otherwise the RED run is a compile failure against the
+  field-less struct, contradicting 174.078-T AC1.
+* **P2-3 (Constitution).** Constitution Check Principle VIII row (3639) should declare
+  Freeze-scope for W5 and Careful mode for 081/082/083/085/087.
+* **P2-4 (Go; Correctness P3).** Hang probe: add `t.Setenv("GOENV","off")`; an empty `GOFLAGS`
+  does not neutralize a `go env -w GOFLAGS=...` setting.
+* **P2-5 (Scope).** `.github/copilot-instructions.md:86` (`go test ./internal/...`) is neither
+  migrated, exempted, nor matched by the 174.080-T full-suite rule.
+* **P2-6 (Coupling).** `.github/copilot-instructions.md:13` table row: the unquoted `go test`
+  Technology cell plus the `./...` Notes token is flagged bare by the detector even after the
+  planned 174.088-T edit, and `workspace-profile.yaml:26` `runner: "go test"` re-renders it.
+* **P2-7 (Coupling).** `.github/skills/build-feature/SKILL.md:266` 45m stall kill equals the
+  Ceiling, pre-empting the Go alarm/R5 evidence and the footer markers near the ceiling.
+* **P2-8 (Architecture).** R2 (1.25) and R3 (1200) thresholds live in `cmd/test-budget`, outside
+  the `internal/testbudget` single source of truth claimed by 19.4.1 and H5.
+* **P2-9 (Architecture; Scope P3).** The ship-time note (3498-3500) permits pushing into the
+  declared interim red, contradicting H8; after 174.082-T the pre-push Test gate and PR CI both
+  run the full suite, which conflicts with D1/D2 and the single authorized run in 19.10.
+* **P2-10 (Learnings).** Hand-edited autoharness-managed rendered surfaces
+  (constitution, go, github-pr-automation, copilot-code-review instructions, go-engineer) have
+  no stated checksum/drift disposition against `autoharness gate check` at task completion.
+* **P2-11 (Learnings).** The plugin-parity coverage boundary is unstated (no confirmation that
+  existing `.github`↔`plugin` parity tests exclude the edited files).
+
+**P3 (advisory):** `run` `(0, err)` should map to 1; `buildGoTestArgs` error condition unpinned;
+`print` exit-code wording (2819 vs 3144); `\r` stripping and 64 KiB prefix-parse wording; pin
+`run(context.Background(), os.Args[1:], ...)` in the 076 shape harness; stdlib `module`-directive
+parse (no `golang.org/x/mod` promotion); allow one unexported `run` helper; gofmt AC on
+075/078/079; merged-stream note; package doc in `budget.go`; testify import allowance or a D5
+deviation; soft edges 077←076 and 087←085; explicit AC per W5 surface task; mechanical check of
+the 174.087-T rationale/sync-impact headings; unused `bare-mention`/`drift_reason` allowlists;
+footer exact-line row; shape harness pins constant values; package-wide no-`t.Parallel`;
+rationale for rejecting smaller caller timeouts; `Largest` tie-break and base-name prefix rule;
+missing growth-table boundary pairs; TESTING_RULES consumer, fix-ci:72 canonicalCI, `-json` mixed
+output; constitution amendment-log heading anchor; surface units may fix red-capture-named lines;
+wrapper static existence check in the coupling test; release-build-target guard; 174.079-T and
+174.080-T are circuit-breaker-sensitive in size.
+
+**Gate outcome.** FAIL (one P0). Stage did **not** harvest, did **not** apply any remediation,
+and did **not** re-invoke plan-review. `11BE840F` stays ACTIVE. No task `174.074-T` …
+`174.091-T` exists; shipment `155-S` membership is unchanged.
+
+**Escalation (P-013.6).**
+
+```text
+threshold_kind: plan-review consecutive FAIL (operator-extended cycle)
+count: 4 (rev21 attempt 1, rev21.1 attempt 2, rev21.2 attempt 3, rev21.3 attempt 4)
+failure_summary: blocking count converged 5 -> 3 -> 1 -> 1; attempt-4 blocker B1 is a single-sentence harness-scope fix (lifecycle-frozen shape assertion), plus 11 non-blocking P2s
+last_actions: attempt-4 multi-agent dispatch (7 personas) on rev21.3; no remediation applied
+artifact_refs: docs/exec-plans/2026-09-14-resumable-shipment-blocked-lifecycle-plan.md (Wave 19 rev21.3), .backlogit/queue/073-DL.md, stash 11BE840F
+telemetry_evidence: logs/diagnostics/155-s-go-test-post-wave17-20260924.txt (+ metadata)
+resumption_checkpoint: docs/memory/2026-09-24/stage-11be840f-attempt4-review-fail.md
+resolved_escalation_route: gpt-6-sol / openai / xhigh (config.model_routing.escalation, freshly reloaded 2026-09-24; differs from the Stage route claude-opus-5.5 / anthropic / high)
+escalation_status: ESCALATION_DEGRADED (no Engram escalation-handoff operation is exposed) -> operator halt
+```
+
+**Operator decision required.** Choose one:
+
+* **(a)** Authorize a remediation revision (rev21.4) applying B1 (and optionally the P2s), plus
+  one further plan-review pass; on PASS, Stage harvests 174.074-T … 174.091-T into 155-S.
+* **(b)** Accept rev21.3 with B1 as explicitly accepted residual risk under
+  `operator_authorization: approved` (not recommended: 174.078-T is not satisfiable as written).
 * **(c)** Reject Wave 19 and re-deliberate 073-DL.
