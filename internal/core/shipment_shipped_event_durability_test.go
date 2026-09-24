@@ -356,7 +356,7 @@ func TestShipShipment_FailClosedShippedAppendSuppressesMoveStatusPostHook(t *tes
 	fixture.injectShippedAppend(t, func(context.Context) error { return injected })
 
 	_, err := shipWithWatchdog(t, fixture.ws, fixture.shipmentID)
-	requireShippedAppendPartial(t, err)
+	_ = requireShippedAppendPartial(t, err)
 	assert.False(t, movePostHookFired,
 		"the move-shipment-status post hook must not fire for a shipped transition whose audit append failed")
 }
