@@ -2237,3 +2237,60 @@ decision: PASS
 5. Do NOT run `go test ./...` now — the full-suite same-operation circuit is OPEN. After the correction commit, the full suite is a NEW separately-authorized final-gate operation at a new commit/phase requiring explicit operator authorization; if policy forbids it even post-correction, use targeted per-package verification (`./internal/core` + affected packages) under explicit authorization. Preserve the uncommitted R1–R5/R8 Ship implementation, the `174.064-T` lock-order work, the active checkpoint `checkpoint-20260923-231731.json`, `154-S`, and PR #449; this corrective is orthogonal (test-harness gate isolation only). If any production (`non-_test.go`) change is found necessary, HALT and classify — introducing a new production injection API is out of scope by definition.
 
 <!-- plan-review-attempt: rev14-corrective-durability-gate-isolation (PASS after correctness FAIL->hardened) -->
+
+<!-- plan-review-attempt: rev15-corrective-final-review-blockers -->
+
+## Wave 14 — Corrective: final-review consensus blockers (lock hierarchy + Windows directory TOCTOU) (2026-09-23)
+
+At HEAD 5e4a04ca (`go test ./...` passed once at the corrected state), standard + adversarial final review blocked on three consensus-backed same-contract completion defects. Wave 14 splits them by domain under the 2-hour rule into two atomic corrective tasks, both governed members of active 155-S. Implementation commit provenance: 4d8a08fd; task-completion HEAD 5e4a04ca; active checkpoint checkpoint-20260924-011723.json.
+
+### 174.067-T — Lock hierarchy: singular-writer barrier + Reconcile/Add inversion (concurrency domain)
+
+Closes:
+- R-A (HIGH/P1, 3/3): `internal/core/shipment.go:1293 lockArtifactMutation` lets singular typed writers mutate lifecycle members without the pending-intent recovery barrier that the plural `lockArtifactMutations` (:1304-1308) acquires.
+- R-B (MEDIUM/P1, 2/3): `internal/core/shipment.go:1303-1308 lockArtifactMutations` context; `ReconcileShipmentToShipped` may hold membership/item-log locks before global, opposing `AddItemToShipment`'s global->membership order.
+
+Objective closure conditions (consensus-hardened): R-A closed at the `persistArtifactWithLinkPolicyAndGuard` barrier-gate (broaden the `ArtifactType=="shipment"` gate to cover lifecycle members, preserving `ctx=lockedCtx` token propagation + reentrancy held-check) — NOT unconditionally in the generic `lockArtifactMutation` helper (would over-serialize all writes, run recovery on every write, and risk a `validateShipmentLifecycleGlobalReentry` fail-closed break); R-B closed by `reconcileShipmentToShippedImpl` Phase A / `lockShipmentReconcileCThenB` acquiring global before membership/item-log (extended global hold across reconcile Phase C is intentional); GLOBAL-FIRST invariant enforced on the implicated paths only (item-log↔artifact relative order is NOT constrained on the snapshot/ship path, dominated by the barrier); scoped lock-order audit; deterministic singular-member-wait test (targets a NON-shipment member to avoid a vacuous RED) and lock-layer Reconcile-vs-Add contention test (under -race); existing generic/membership-writer serialization (TestP021ClaimSerialization...) preserved; no NEW runtime lock-order detector. Scope (whitelisted): `internal/core/shipment.go` (persist barrier-gate) + `internal/core/shipment_reconcile_transaction.go` (Phase A) + `internal/core/shipment_reconcile_lock.go` (CThenB) + exact tests; no new production lock primitive (HALT+classify otherwise).
+
+### 174.068-T — Windows shipment-ops directory-replacement TOCTOU (Windows filesystem containment domain)
+
+Closes:
+- R-C (MEDIUM/P1, 2/3): `internal/core/shipment_ops_windows.go:54` (and the read/write/remove helpers at :56/:79/:147) validate a directory handle then DISCARD it (`_ *os.File`) and re-resolve absolute paths for read/write/remove, leaving a directory-replacement TOCTOU.
+
+Objective closure conditions (consensus-hardened): the validated directory handle is threaded through and USED via OBJECT-BOUND, RootDirectory-relative `NtCreateFile`/`NtOpenFile` (no-follow) for read/create-temp/remove AND a handle-relative `SetFileInformationByHandle` FILE_RENAME_INFO+RootDirectory atomic rename REPLACING the pathname `MoveFileEx` (the literal MoveFileEx leaves the rename target swappable — a fail-open payload leak — and is jointly unsatisfiable with the handle-relative requirement); no absolute-path re-resolution and no post-hoc re-open+identity-compare substitute; fail closed (ErrValidation) on directory-identity change; handle stays live across each dependent op incl. the rename commit; all other containment + durability invariants preserved (durability via temp fsync-before-rename + atomic replace-if-exists); Windows-guarded adversarial tests that swap the ops dir by OBJECT IDENTITY while preserving the canonical path (not a mere external reparse point, which existing checks already catch) for read, remove, AND the temp-create→rename window (asserting payload bytes never reach the swapped-in directory). Scope: `internal/core/shipment_ops_windows.go` + Windows-only tests; the minimal NT-native RootDirectory-relative primitives (`NtCreateFile`/`NtOpenFile`, `SetFileInformationByHandle` FILE_RENAME_INFO+RootDirectory) are EXPLICITLY AUTHORIZED as in-scope (parity with the Unix `Openat`/`Renameat` contract); any OTHER new production seam or cross-platform change is out of scope (HALT+classify).
+
+### Shared Wave 14 closure / circuit disposition (NON-NEGOTIABLE)
+
+- Dependencies: no `blocks` edge on either task; both are governed members of active 155-S and gate 155-S final readiness by membership-as-gate. Provenance link to 174.064-T (lock-order) is informational, not an ordering edge onto a done task.
+- No completed task statuses are reopened.
+- The same-operation full-suite circuit is OPEN. Neither task runs `go test ./...`. After BOTH corrective commits (174.067-T and 174.068-T) land, the full suite runs EXACTLY ONCE as a NEW separately-authorized final-gate operation at a new commit/phase (explicit operator authorization required immediately before it). Compliant alternative if a full-suite run is forbidden even post-correction: targeted per-package verification (./internal/core plus affected packages) under explicit authorization — never a skipped mandatory gate.
+- Review is NOT open-ended: after the shared post-both-commits verification, exactly ONE standard review + ONE adversarial review over ONLY the changed surfaces of the two tasks. Exact stop gate: zero P0/P1. No further review-fix cycles are authorized by this amendment beyond closing genuine P0/P1 within those changed surfaces.
+
+## Plan Review — Amendment (Wave 14 final-review-blockers corrective) (2026-09-23)
+
+<!-- plan-review-attempt: rev15-corrective-final-review-blockers -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Scope of amendment: two NEW atomic corrective tasks created under 174-F and governed-added to active shipment 155-S, closing the three consensus-backed final-review blockers at HEAD 5e4a04ca. No existing task status/dependency/priority/membership altered; no source/test/checkpoint mutation; 154-S and PR #449 untouched.
+
+- 174.067-T (Task A, concurrency/lock hierarchy) — closes R-A (HIGH/P1 3/3) + R-B (MEDIUM/P1 2/3).
+- 174.068-T (Task B, Windows filesystem containment) — closes R-C (MEDIUM/P1 2/3).
+
+Reviewer dispatch (4 personas, parallel; then targeted re-dispatch of the 2 FAILs over hardened ACs):
+- Concurrency Reviewer (Task A): ADVISORY -> hardened. R-A fix relocated from an unconditional `lockArtifactMutation` acquire to the `persistArtifactWithLinkPolicyAndGuard` barrier-gate (preserves ctx=lockedCtx reentrancy-token propagation; avoids over-serializing all writes and a `validateShipmentLifecycleGlobalReentry` fail-closed break). R-B fix whitelisted to `shipment_reconcile_transaction.go` Phase A + `shipment_reconcile_lock.go` (CThenB). Canonical invariant narrowed to GLOBAL-FIRST on implicated paths; no new runtime lock-order detector.
+- Scope Boundary Auditor (both): ADVISORY -> hardened. Non-vacuous RED (singular test targets a NON-shipment member); scope pathspecs pinned; NT-native primitive authorization made explicit rather than an unbounded "new API".
+- Correctness Reviewer (both): FAIL -> PASS. Prior FAIL: Task B AC1/AC2 (handle-relative) vs old AC3 (retain literal MoveFileEx) were jointly UNSATISFIABLE. Resolved: MoveFileEx replaced by handle-relative SetFileInformationByHandle FILE_RENAME_INFO+RootDirectory (Windows Renameat parity); durability via temp Sync()-before-rename; AC5 ErrValidation coupling relaxed to the object-binding security invariant (payload never reaches the swapped-in dir).
+- Security Reviewer (Task B): FAIL -> PASS. Prior FAIL: AC7 forbade the very NT-native RootDirectory-relative primitives required to close the same-canonical-path window; AC1 allowed a re-open-then-verify-identity (check-after-use) substitute; AC5 tested only a reparse-to-external swap already caught vacuously. Resolved: AC7 explicitly authorizes the minimal NtCreateFile/NtOpenFile(RootDirectory) + SetFileInformationByHandle(FILE_RENAME_INFO,RootDirectory) primitives and documents the deliberate divergence from shipment_reconcile_fs_windows.go; AC1 strikes the verify-after substitute; AC5 tests a canonical-path-preserving object-identity swap covering read, remove, AND the temp-create->rename window.
+
+Residual P0/P1: NONE. Remaining reviewer items (Correctness P2 AC5 error-coupling; Security P3 handle-relative stat) were encoded into 174.068-T AC1/AC4/AC5/AC6.
+
+Ship-ready directive:
+1. Implement 174.067-T (test+code): apply R-A at `persistArtifactWithLinkPolicyAndGuard` (broaden the `ArtifactType=="shipment"` barrier gate to lifecycle members, preserving reentrancy token + held-check); apply R-B by making `reconcileShipmentToShippedImpl` Phase A / `lockShipmentReconcileCThenB` acquire the global barrier before membership/item-log. Add the deterministic singular-member-wait test (target a non-shipment member) and the -race Reconcile-vs-Add contention test. Preserve TestP021ClaimSerialization... . No new lock primitive/detector. Files: shipment.go + shipment_reconcile_transaction.go + shipment_reconcile_lock.go + exact tests.
+2. Implement 174.068-T (test+code): thread the validated ops directory handle through read/stat/create-temp/write/rename/remove via RootDirectory-relative NtCreateFile/NtOpenFile (no-follow) and REPLACE MoveFileEx with a handle-relative SetFileInformationByHandle FILE_RENAME_INFO+RootDirectory rename; add the Windows-guarded object-identity-swap TOCTOU tests (read, remove, temp-create->rename window). File: shipment_ops_windows.go + Windows-only tests.
+3. Circuit disposition (shared): do NOT run `go test ./...` mid-task (same-operation circuit OPEN). After BOTH corrective commits land, run the full suite ONCE as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before it); compliant alternative is targeted per-package verification. `go test ./...` passed once at HEAD 5e4a04ca before final review blocked.
+4. Stop gate: after both commits + the single authorized full-suite pass, exactly ONE standard + ONE adversarial review over ONLY the changed surfaces of both tasks; ship-ready at zero P0/P1.
+5. No dependency edges added (both are governed members of active 155-S; membership-as-gate blocks final readiness). Provenance link to done 174.064-T is informational only.
+
+<!-- plan-review-attempt: rev15-corrective-final-review-blockers (PASS after 2 FAIL->hardened) -->
