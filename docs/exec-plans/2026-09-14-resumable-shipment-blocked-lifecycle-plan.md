@@ -2592,3 +2592,1265 @@ Residual P0/P1/P2: NONE. Gate satisfied (`decision: PASS`). Harvest authorized f
 - Shipment: governed `backlogit shipment add 155-S 174.073-T` -> `added`. The 155-S manifest now has 36 items (`174-F` first, `174.073-T` last), status `active`. `154-S` is untouched.
 - Stash (Stage authority): `62C6A469` edited with the SPLIT disposition and archived via `backlogit stash archive` (non-destructive). `11BE840F` and `D8EF5443` were late-reconciled from `task N/A` to `task 174.073-T`; both remain ACTIVE for operator-decided deliberation.
 - Dependency edges: none added (membership-as-gate).
+
+## Wave 19 — Governed adaptive go test runtime budget (11BE840F / 073-DL) — rev21.3
+
+**Source.** DEFERRED SCOPE EXPANSION stash `11BE840F` (P-021 C6 forced the deliberate route) →
+deliberation `073-DL` (`.backlogit/queue/073-DL.md`, option O11). Operator direction 2026-09-24:
+"Deal with 11BE840F first. I don't know where the 10-minute timeout came from; it seems arbitrary.
+The more tests we have, the longer they will take and we should adapt accordingly." The operator
+delegated the decision to Stage ("decide and produce executable reviewed work"), so O11 is the
+recorded decision.
+
+**Authority.** This section is the authoritative Wave 19 contract. Where it differs from
+`073-DL`, this section wins. rev21 failed plan review in attempt 1, rev21.1 failed in
+attempt 2, and rev21.2 failed in attempt 3 (see the `## Plan Review — Wave 19` records). rev21.3
+applies every attempt-3 disposition but is **unreviewed**: the Stage cycle limit is exhausted, so
+harvest is blocked until the operator authorizes a further review cycle (see the attempt-3
+record). Task IDs in the attempt-1 record use rev21.1 numbering. Differences from 073-DL:
+
+* 18 tasks instead of 13. Every new Go surface is split into a declaration task and a behavior
+  task (Principle II), and the wrapper is split into a run surface and a result-sink surface to
+  stay within the 2-hour rule.
+* The contract test lands before the surface migrations as a red deliverable, not last.
+* At the ceiling, the wrapper clamps and still runs, then exits non-zero. It does not refuse to
+  run.
+* The constitution bump is MINOR `1.1.0`, not PATCH.
+* The drift-ignore edits are dropped.
+* Targeted `-run` selectors keep Go's default timeout (or the smaller timeout their task
+  declares). They do not "keep explicit small timeouts".
+* The 073-DL note "capture the next run with `-json`" is superseded (see 19.4.6).
+
+### 19.1 Provenance finding (verified, no run)
+
+* **Origin.** The 10-minute limit is `cmd/go`'s built-in default for `go test`:
+  * `GOROOT/src/cmd/go/internal/test/testflag.go:69` has
+    `cf.DurationVar(&testTimeout, "timeout", 10*time.Minute, "")`.
+  * `testflag.go:385-389` injects `-test.timeout=10m0s` into every test binary when the caller
+    passes no `-timeout`.
+  * `cmd/go` adds a backup process kill at timeout + 1m (`test.go:841`).
+  * The in-binary alarm is `testing.(*M).startAlarm` (`testing.go:2802`), the panic frame in
+    every capture.
+  * Host toolchain `go1.26.5`; `go.mod` declares `go 1.24.0`.
+* **Scope.** The limit is **per package test binary** and **cumulative**. It is not per test and
+  not per command. `internal/core` is one binary with 885 top-level tests (886 after
+  `174.073-T`), so its whole runtime shares one 10-minute alarm.
+* **Ownership.** Nobody in this repository owns it:
+  * `GOFLAGS` is empty (env and `go env`) and there is no `go.work`.
+  * No governed invocation passes `-timeout` (19.2).
+  * The `.autoharness` `TEST_COMMAND` token is a bare `go test ./...`, so every rendered harness
+    surface inherits the default implicitly.
+* **Outer limits that are NOT the test timeout:**
+  * The `ci.yml` `test` job has no `timeout-minutes` (GitHub default 360m).
+  * The only 10-minute literal in CI is `timeout-minutes: 10` on the unrelated `topology-check`
+    job. It is a coincidence.
+  * `golangci-lint --timeout=5m` and `engram --timeout 300` are lint and index limits.
+  * The agent shell `initial_wait` is a poll interval, not a kill.
+  * The 803.433s overall wall time of the post-wave17 run comes from packages running in
+    parallel. Only `internal/core`'s own binary alarm fired.
+
+### 19.2 Governed invocation-surface inventory
+
+"Relies on default" means the line runs a full-suite form with no `-timeout`, so Go's 10m default
+applies per package.
+
+| Surface | Line(s) | Current form | Relies on default | Migrating unit |
+|---|---|---|---|---|
+| `.github/workflows/ci.yml` step `Test` | 121 | `go test -race -coverprofile=coverage.out ./...` | yes | U19h `174.081-T` |
+| `.github/workflows/release.yml` step `Test` | 40 | `go test ./...` | yes | U19h `174.081-T` |
+| `scripts/pre-push-quality-gates.ps1` Test gate | 140 | `Invoke-Gate "Test" "go" "go test ./..."` | yes | U19i `174.082-T` |
+| `scripts/pre-push-quality-gates.sh` Test gate | 129 | `run_gate "Test" "go" "go test ./..."` | yes | U19i `174.082-T` |
+| `Makefile` `test:` | 20 | `go test -race -coverprofile=coverage.out ./...` | yes | U19j `174.083-T` |
+| `make.ps1` `Step "test"` | 50, 65 | same as Makefile | yes | U19j `174.083-T` |
+| `.github/agents/_ship.agent.md` final gate | 950, 989 | unfiltered full repository suite `go test ./...` | yes | U19k `174.084-T` |
+| `.github/skills/build-feature/SKILL.md` | 355, 365 | full-suite gate | yes | U19k `174.084-T` |
+| `.github/policies/workflow-policies.md` | 916, 925, 1149 | full-suite rule text | yes | U19l `174.085-T` |
+| `.github/skills/fix-ci/SKILL.md` | 13, 72, 126, 189 | local reproduction | yes | U19m `174.086-T` |
+| `.github/instructions/github-pr-automation.instructions.md` | 126 | pre-PR gate | yes | U19m `174.086-T` |
+| `AGENTS.md` | 16 (version), 43, 239, 252 | build/test guidance | yes | U19n `174.087-T` |
+| `.github/instructions/constitution.instructions.md` | 22, 209, 221, 328 (version) | quality gate | yes | U19n `174.087-T` |
+| `.github/copilot-instructions.md` | 13, 47 | test guidance | yes | U19o `174.088-T` |
+| `.github/instructions/go.instructions.md` | 35, 36 | test guidance | yes | U19o `174.088-T` |
+| `.github/agents/subagents/go-engineer.agent.md` | 76 | validation loop (74 is compile-only and stays unchanged) | yes | U19p `174.089-T` |
+| `README.md` | 283 | contributor test command | yes | U19p `174.089-T` |
+| `.github/copilot-review-instructions.md` | 195 | reviewer guidance | yes | U19q `174.090-T` |
+| `.github/instructions/copilot-code-review.instructions.md` | 53 | reviewer guidance | yes | U19q `174.090-T` |
+| `.autoharness/harness-manifest.yaml` variables | 556 `TEST_COMMAND`, 596 `HARNESS_ENFORCED_SUMMARY`, 633 `TESTING_RULES` | render tokens | yes, for re-render | U19r `174.091-T` |
+| `.autoharness/workspace-profile.yaml` | 27, 47 | discovered test command | yes, for re-render | U19r `174.091-T` |
+
+**Left unchanged on purpose:**
+
+* **Descriptive or historical text:**
+  * `harness-manifest.yaml:461` (a `note:` recording what was installed 2026-08-31).
+  * `.github/skills/doc-review/SKILL.md:200` (a list of commands whose absence makes docs
+    stale; `go test` still exists).
+  * `tests/simulation/wave-scheduler-contract.json:968-969` (a simulation fixture, not an
+    invocation).
+  * Workflow-policies amendment-log rows.
+  * All prior plan and memory text.
+* **Out of scope:** `plugin/**`. It is the product bundle shipped to consumer workspaces that do
+  not have `cmd/test-budget`. Its parity is captured as a P-021 follow-up (19.12).
+* **Targeted selectors** (`go test ./pkg -run '^TestX$' ...`) are not full-suite forms. They keep
+  Go's default 10m, or the smaller `-timeout` their own task declares. This includes
+  `ci.yml:165` (the `test-windows` job, `-run "ItemLog|ShipmentReconcile"`).
+* **Compile-only gates** (`-run=^$`) stay unchanged: `scripts/pre-push-quality-gates.ps1:141` and
+  `.sh:130` (Build gate `go test -run=^$ -count=1 ./...`). No test body runs under them, so they
+  are not runtime-budget surfaces.
+* **Does CI differ from dev/Ship?** Yes, but in flags only:
+  * CI and make add `-race -coverprofile=coverage.out`.
+  * release, pre-push, and Ship use the plain form.
+  * All of them rely on the same unowned 10m default.
+
+### 19.3 Runtime evidence, safe baseline, and headroom (existing transcripts only)
+
+| Run (Windows, no `-race`) | `internal/core` elapsed | Result |
+|---|---|---|
+| final 2026-09-23 | 602.717s | TIMEOUT |
+| post-`174.066-T` | 578.449s | PASS (96.4% of 600s) |
+| post-wave14 `3588cad2` | 602.093s | TIMEOUT |
+| post-`174.070-T` `46145ed5` | 600.818s | TIMEOUT |
+| post-wave17 `eedc48a1` | 602.192s | TIMEOUT (overall wall 803.433s) |
+
+* **Where the deadline fell.** At about 59%, 69%, and 79% of the 881-test run order. Each time
+  the running test was 0-1s old and sat in ordinary I/O. That signature is cumulative growth,
+  not a hang.
+* **Measured per-test cost.** `600s / (0.79 × 881) = 0.862 s/test`. This is a lower bound,
+  because paused `t.Parallel` tests run last. The linear projection is about 760s.
+* **Linux CI with `-race`** (run 35462047185, 2026-09-19): `internal/core` took 239.878s, about
+  0.29 s/test.
+* **Growth.** Static top-level counts for `internal/core` were 800 at merge-base `37a5cba4` and
+  885 at HEAD `0ffbdd42`: +85 in one shipment. Next largest packages: `internal/cli` 385,
+  `internal/events` 253.
+* **Safe baseline.** PerTestReference = 900ms. This is the Windows dev/Ship host measurement
+  (the slowest governed platform), rounded up.
+* **Headroom.** 2× over that reference. The expected ~760-800s run therefore uses about 45% of
+  the 30m budget. That absorbs host noise and the unmeasured `t.Parallel` tail, and still leaves
+  WARN (R1) meaningful.
+
+### 19.4 Chosen policy — Governed Test Runtime Budget (O11)
+
+#### 19.4.1 Single source of truth
+
+The new package `internal/testbudget` is the single source of truth. Its package doc carries the
+provenance, the formula, and R1-R5. Constants:
+
+| Constant | Value | Why |
+|---|---|---|
+| `Floor` | `10 * time.Minute` | Never below Go's own default |
+| `Step` | `5 * time.Minute` | Rounding step; limits `go test` cache-key churn (`-timeout` is a cached flag) |
+| `PerTestReference` | `900 * time.Millisecond` | 19.3 measurement, rounded up |
+| `Headroom` | `2` (untyped const) | 2× safety over the reference |
+| `Ceiling` | `45 * time.Minute` | Upper bound that forces a Stage decision |
+| `PolicyID` | `"073-DL"` | Links every printed budget to the governing decision |
+
+**Formula:** `Compute(n) = max(Floor, ceil_to_Step(n × PerTestReference × Headroom))`
+
+* `n < 0` returns an error.
+* `n == 0` returns `Floor` from `Compute`. The caller fails closed on an empty repository count
+  (19.4.3).
+* **Overflow guard:** if `n > int(Ceiling / (PerTestReference * Headroom))` (that is, `n > 1500`),
+  return `(Ceiling, fmt.Errorf("%w: ...", ErrCeilingExceeded))` **before** multiplying.
+
+**Current value:** N_max = 885 (886 after `174.073-T`) → 1593s (1594.8s) → **`30m0s`**.
+
+#### 19.4.2 Growth table (pinned in `TestCompute_Table`)
+
+| N_max (largest package) | Budget |
+|---|---|
+| 0-333 | 10m (floor) |
+| 334-500 | 15m |
+| 501-666 | 20m |
+| 667-833 | 25m |
+| 834-1000 | 30m (today: 885/886) |
+| 1001-1166 | 35m |
+| 1167-1333 | 40m |
+| 1334-1500 | 45m (ceiling) |
+| > 1500 | `ErrCeilingExceeded` (clamped to 45m, run marked failed) |
+
+The table test pins these rows: 0→10m, 1→10m, 333→10m, 334→15m, 500→15m, 501→20m, 885→30m,
+886→30m, 1000→30m, 1001→35m, 1500→45m, 1501→(45m, `ErrCeilingExceeded`), -1→error.
+
+#### 19.4.3 Static counter (deterministic per commit, identical on every machine)
+
+**What `N_max` is.** The largest count, in any one package directory, of top-level test
+functions in `*_test.go` files. Internal and external `_test` packages in one directory share one
+binary, so they are counted together.
+
+**What counts as a test function:**
+
+* A `*ast.FuncDecl` with no receiver.
+* Named `Test…` or `Fuzz…`, where the suffix does not start with a lowercase letter.
+* Exactly one parameter, whose type is `*T`/`*testing.T` for `Test…` or `*F`/`*testing.F` for
+  `Fuzz…`. The parameter list must have one field naming at most one parameter, so
+  `func TestX(a, b *testing.T)` is rejected, as `cmd/go` rejects it. The type may be
+  `*ast.StarExpr` over an `*ast.Ident` or an `*ast.SelectorExpr` whose `Sel` is `T`/`F`.
+* No results.
+
+**Consequences:**
+
+* `TestMain(m *testing.M)` is excluded by the parameter rule.
+* Benchmarks and examples are not counted.
+* Build tags are ignored, so every file is counted. This is conservative: it overcounts across
+  GOOS-specific files.
+* Non-`_test.go` files are never read.
+
+**Directory walk.** `Largest(root)` walks `root`. The skip rules apply only to directories other
+than `root` itself (`path != root`), so `Largest(".")` is not skipped by the `.` prefix rule. It
+skips:
+
+* `testdata`, `vendor`, and `.`- or `_`-prefixed directories;
+* any nested directory containing its own `go.mod`.
+
+`Dir` is reported slash-separated relative to `root` (`.` for the root).
+
+**Repository-wide on purpose.** The budget is derived from the whole module, whatever package
+pattern the invocation selects. The printed value is therefore a function of the commit alone,
+identical on dev, Ship, and CI.
+
+**Fail closed.** `N_max == 0` on a real repository is an error, not the floor.
+
+#### 19.4.4 Governed entry point `cmd/test-budget`
+
+`cmd/test-budget` uses plain `os.Args`, not cobra, and is not part of the release artifact. It
+must be run from the module root; a missing `go.mod` in the working directory gives exit 2.
+
+**`go run ./cmd/test-budget print`** prints the header and exits 0. It never runs tests, so
+verification can check the derivation without any suite run.
+
+**`go run ./cmd/test-budget run <go test flags/packages>`:**
+
+1. Rejects a caller `-timeout`, `--timeout`, `-test.timeout`, or `--test.timeout` (in `=` or
+   separate-value form) with exit 2 and `TEST_BUDGET_ERROR: -timeout is governed by 073-DL`.
+   This keeps one source of truth.
+2. Prints the header (field order is pinned):
+   `TEST_BUDGET: timeout=30m0s largest_package=internal/core top_level_tests=886 policy=073-DL`.
+3. Emits these header warnings when they apply:
+   * `TEST_BUDGET_WARN: largest_package_tests=<n> revisit=R3` when N_max ≥ 1200.
+   * `TEST_BUDGET_WARN: race-on-windows uncalibrated revisit=R4` when `-race` is passed and
+     `hostGOOS == "windows"` (`hostGOOS` is a package variable initialized from `runtime.GOOS`).
+   * `TEST_BUDGET_CEILING_EXCEEDED: largest_package_tests=<n> ceiling=45m0s revisit=R3` when
+     `Compute` returns `ErrCeilingExceeded`. The run continues clamped to 45m so the evidence R3
+     needs is still produced. The final exit is non-zero even when every package passes.
+4. Execs `go test` with the argument vector built by `buildGoTestArgs(d, args)`, which is exactly
+   `["test", "-timeout=<d>", args...]`. `execGo` maps a `Start` failure to 2 inline and passes the
+   `Wait` outcome to the pure helper `mapWaitResult(code, err)` (declared in 174.077-T, tested in
+   174.078-T).
+   * The child's stdout and stderr stream live through **one** writer,
+     `w := io.MultiWriter(stdout, sink)`, passed as both `Stdout` and `Stderr`. `os/exec`
+     therefore uses a single pipe and a single copy goroutine (it compares the two writers
+     with `interfaceEqual`). `Write` is never called concurrently, and the wrapper starts no
+     goroutine of its own.
+   * `resultSink.Write` always returns `len(p), nil`. It buffers partial lines (capped at
+     64 KiB; the rest of an over-long line is discarded), strips `\r`, and parses each
+     completed line against `^(ok|FAIL)\s+(\S+)\s+([0-9]+(?:\.[0-9]+)?)s(?:\s|$)`. `(cached)`,
+     `[no test files]`, and `[build failed]` lines do not match.
+   * The terminal receives the child's raw bytes unchanged. Only the sink's private copy is
+     line-normalized.
+5. Prints the footer:
+   `TEST_BUDGET_SUMMARY: timeout=<d> slowest_package=<pkg> slowest_elapsed=<raw>s budget_use=<pct>% largest_package_tests=<n> largest_package_elapsed=<raw>s per_test_cost=<s> ratio_to_reference=<x.xx>`.
+   * The raw elapsed token is kept as printed by `go test`.
+   * `per_test_cost` and the ratio use `%.3f` and `%.2f`.
+   * The largest package's elapsed is found by an **exact** import-path match, where the path is
+     the `go.mod` `module` path, plus `"/" + Dir` when `Dir != "."`. If there is no match, those
+     fields print `n/a`.
+   * If nothing was parsed (for example, a fully cached run), the summary prints
+     `slowest_package=n/a` with no percentages and derives no WARN.
+   * Footer warnings:
+     * `TEST_BUDGET_WARN: package=<pkg> elapsed=<raw>s exceeds budget/Headroom revisit=R1` for
+       each package over `budget / Headroom`.
+     * `TEST_BUDGET_WARN: per_test_cost ratio=<x> revisit=R2` when `ratio_to_reference > 1.25`.
+   * With `-json` in the arguments, the footer prints `TEST_BUDGET_SUMMARY: mode=json-unparsed`
+     and no WARN is derived.
+
+**Exit codes, returned by `run()`:**
+
+| Code | Meaning |
+|---|---|
+| 0 | Child succeeded and the ceiling was not exceeded |
+| child's code | Child failed; a negative `ExitCode()` (signal) maps to 1 |
+| 1 | The child exited but a descendant held the output open past `WaitDelay` (`exec.ErrWaitDelay`), fail closed |
+| 2 | Usage, configuration, or counter error, or the `go` process failed to start |
+| 3 | Child succeeded but `ErrCeilingExceeded` |
+
+`go run` collapses any non-zero program status to 1. Gates therefore classify outcomes by the
+printed markers and zero/non-zero status, not by exact codes. Codes 2 and 3 matter only to the
+direct `run()` unit tests.
+
+**Signals.** The wrapper never kills or signals the child, and it starts no goroutine.
+
+* `execGo` registers `signal.Notify(ch, os.Interrupt)` on a buffered channel of size 1, with
+  `defer signal.Stop(ch)`. This only keeps the wrapper alive until the child exits and the
+  footer is printed.
+* The terminal or console delivers Ctrl+C to the child process directly (the process group on
+  Unix, the attached console on Windows).
+* `cmd/go`'s own budget + 1m kill stays the backstop, so the hang detector stays finite.
+
+#### 19.4.5 Governed commands
+
+**Canonical literals** (required exactly at the structural gate locations the coupling test
+checks):
+
+* **canonicalFull** (Ship final gate, release, pre-push, docs):
+  `go run ./cmd/test-budget run ./...`
+* **canonicalCI** (CI `Test` step, Makefile, make.ps1):
+  `go run ./cmd/test-budget run -race -coverprofile=coverage.out ./...`
+
+**Any other governed span** (`go run ./cmd/test-budget run <args>` with no timeout flag) is
+accepted in prose. For example, `go.instructions.md:36` becomes
+`go run ./cmd/test-budget run -coverprofile=coverage.out ./...`, which keeps that line's
+no-`-race` intent.
+
+#### 19.4.6 Hang detection and `-json` supersession
+
+* **The hang detector stays finite.** Every test binary still gets a Go alarm (30m today) with a
+  goroutine dump that names the stuck test. `cmd/go` kills the process at budget + 1m.
+* **Detection latency.** It grows from 10m to the computed budget. This is accepted, because R5
+  classifies a timeout whose running test is ≥ 60s old as a defect, never as a reason to raise
+  the budget.
+* **`-json`.** 073-DL/11BE840F's "capture the next run with `go test -json`" is superseded for
+  the gate. The gate form is canonicalFull, whose standard package lines feed the summary.
+  `-json` stays available as a pass-through for a separate diagnostic run
+  (`mode=json-unparsed`).
+
+### 19.5 Rejected alternatives
+
+| ID | Alternative | Why rejected |
+|---|---|---|
+| O1 | Status quo (Go default 10m) | Already exceeded (~760s needed) |
+| O2 | Scattered literal `-timeout=30m` | Unexplained constant drifting across ~20 surfaces; no growth adaptation |
+| O3 | `-timeout=0` | Removes the finite hang detector |
+| O4 | `GOFLAGS` / `go env -w` | Machine-local and unversioned; dev, Ship, and CI diverge |
+| O5 | `TestMain` override of `test.timeout` | `cmd/go` always injects `-test.timeout` and kills at timeout + 1m; hidden and fragile |
+| O6 | Partition `internal/core`, reduce fixture I/O, or cache templates | Performance refactor excluded by the operator's scope; does not adapt durably; captured as a trigger-gated follow-up |
+| O7 | Committed measured-baseline ratchet | Commits machine-specific numbers, needs large `-json` captures, churns |
+| O8 | Platform-specific budgets | A run could pass in CI and time out locally |
+| O9 | Fail-fast guard against bare runs at runtime | Breaks legitimate bare runs on fast hosts; the static coupling test covers governed surfaces instead |
+| O10 | `go test -json ./...` as the gate form | Capture size; the calibration uses standard package lines |
+
+### 19.6 Revisit criteria (constants change only via a Stage deliberation citing ≥ 2 governed-run summaries)
+
+* **R1** — `TEST_BUDGET_WARN ... revisit=R1` on any governed run. Stage re-measures
+  PerTestReference from the summaries.
+* **R2** — `ratio_to_reference > 1.25`. Investigate a per-test cost regression first; do not just
+  raise the budget.
+* **R3** — N_max ≥ 1200 (80% of the ceiling) or `TEST_BUDGET_CEILING_EXCEEDED`. Deliberate the
+  partition/performance follow-up, or a reviewed ceiling amendment.
+* **R4** — A new governed platform, or `-race` on Windows (make.ps1). Measure before treating the
+  budget as calibrated.
+* **R5** — A timeout whose running test is ≥ 60s old is a genuine hang or slow-test defect. Fix
+  the test; never raise the budget for it.
+
+### 19.7 Work units (18 tasks under `174-F`; each ≤ 2 files, < 5 functions, < 4 scenarios, single domain)
+
+**Function limit.** It counts production functions and methods created or given a body in the
+task. A table test is one scenario.
+
+**RED selectors are scoped.** Every compile check is `go vet` on the named package plus a scoped
+`-run '^$'`; see deviation D1.
+
+**U19a `174.074-T` — Declare internal/testbudget policy surface**
+
+* Tests domain first, then declaration. Non-exempt; source-shape harness per P-002.1. Wave 1.
+  No dependencies.
+* Files:
+  * `internal/testbudget/budget_shape_test.go` (new; imports only `go/ast`, `go/parser`,
+    `go/token`, `os`, `path/filepath`, `strings`, `testing`);
+  * `internal/testbudget/budget.go` (new).
+* Harness `TestBudgetSourceShape` asserts over `budget.go` source:
+  * the package doc mentions `073-DL`;
+  * the 6 constants exist with the 19.4.1 value expressions;
+  * `var ErrCeilingExceeded` exists;
+  * `type PackageCount struct { Dir string; Tests int }` exists;
+  * these signatures exist: `func Compute(n int) (time.Duration, error)`,
+    `func CountTopLevelTests(dir string) (int, error)`,
+    `func Largest(root string) (PackageCount, error)`.
+* RED: before `budget.go` exists, the harness compiles and fails on assertion ("budget.go not
+  found / Compute not declared").
+* Declaration bodies are non-behavioral: `return 0, errors.New("testbudget: not implemented")`,
+  or the zero struct plus that error.
+* AC:
+  1. `go vet ./internal/testbudget` exits 0.
+  2. `go test ./internal/testbudget -run '^TestBudgetSourceShape$' -count=1 -v` shows exactly 1
+     top-level PASS.
+  3. No behavior is implemented.
+  4. `gofmt -l internal/testbudget` is empty.
+
+**U19b `174.075-T` — Implement testbudget Compute, counter, and Largest**
+
+* Tests first. Non-exempt. Wave 2. Depends on `174.074-T`.
+* Files: `internal/testbudget/budget_test.go` (new), `internal/testbudget/budget.go`.
+* Functions: `Compute`, `CountTopLevelTests`, `Largest`, plus at most one unexported helper
+  (`isTestFunc`).
+* Harness (compiles against the declarations, fails on assertion). All fixtures are written into
+  `t.TempDir()`; no `testdata` files are committed.
+  * `TestCompute_Table`: the 19.4.2 rows.
+  * `TestCountTopLevelTests`: a fixture with
+    * a counted `TestA(t *testing.T)`, `TestB(t *T)` (declared with a local `type T = testing.T`; cmd/go matches `*T` by name), and
+      `FuzzC(f *testing.F)`;
+    * non-counted `TestMain(m *testing.M)`, `Testlower(t *testing.T)`, `TestD()`,
+      `TestE(t *testing.T) error`, `TestH(a, b *testing.T)`, and a method
+      `(s S) TestF(t *testing.T)`;
+    * a `helper.go` (non-test file) containing `func TestG(t *testing.T)`.
+    * The count is exactly 3.
+  * `TestLargest`, with subtests:
+    * `fixture`: two directories plus skipped `testdata`, `vendor`, `_x`, `.y`, and a nested
+      module. The largest is reported with a relative slash `Dir`.
+    * `empty`: returns an error.
+    * `dot-root`: under `t.Chdir(<fixture root with go.mod and one test file>)`, `Largest(".")`
+      returns `Dir == "."` with the root's count (the `.`-prefix skip rule does not apply to the
+      root).
+    * `repository`: `Largest(<module root>)` has `Dir == "internal/core"` and `Tests >= 500`.
+      This is a non-vacuity floor, not an exact count.
+* AC:
+  1. The RED evidence (assertion failures, compile PASS) is captured under
+     `logs/diagnostics/174075-*`.
+  2. GREEN: `go test ./internal/testbudget -count=1 -v` shows exactly 4 top-level PASS
+     (including the shape test).
+  3. `go vet ./internal/testbudget` exits 0.
+  4. The package doc carries provenance, the formula, and R1-R5.
+
+**Shape-harness imports (174.074-T, 174.076-T, 174.077-T).** Each harness imports exactly
+`go/ast`, `go/parser`, `go/token`, `os`, `path/filepath`, `strings`, and `testing`. That goes
+beyond the four packages P-002.1 lists as its example. `os` and `path/filepath` locate and read
+the source file; `strings` checks doc comments and literals. None of them names an identifier
+of the package under test, so the harness compiles before the declaration exists (a package
+made only of test files compiles under `go vet` and `go test`).
+
+**U19c `174.076-T` — Declare cmd/test-budget run surface**
+
+* Source-shape harness first. Non-exempt. Wave 1. No dependencies.
+* Files: `cmd/test-budget/main_shape_test.go` (new), `cmd/test-budget/main.go` (new).
+* Harness `TestWrapperRunSourceShape` asserts these declarations in `main.go`:
+  * `type goRunner func(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error)`;
+  * `var defaultRunner goRunner = execGo`;
+  * `var hostGOOS = runtime.GOOS`;
+  * `func main()`, whose body calls `os.Exit(run(...))` with `defaultRunner`;
+  * `func run(ctx context.Context, args []string, stdout, stderr io.Writer, runner goRunner) int`;
+  * `func buildGoTestArgs(d time.Duration, args []string) ([]string, error)`;
+  * `func execGo(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error)`.
+* Functions: 4 (`main`, `run`, `buildGoTestArgs`, `execGo`).
+* Stub bodies are non-behavioral:
+  * `buildGoTestArgs` returns `nil, errors.New("test-budget: not implemented")`;
+  * `execGo` returns `2, errors.New(...)`;
+  * `run` is exactly: `_ = hostGOOS`, then
+    `if _, err := buildGoTestArgs(0, args); err != nil { return 2 }`, then `return 2`. The
+    checked error keeps errcheck quiet.
+  * This keeps golangci-lint `unused` (default linter set; there is no `.golangci.yml`) quiet
+    without any directive.
+* AC:
+  1. `go vet ./cmd/test-budget` exits 0.
+  2. `go test ./cmd/test-budget -run '^TestWrapperRunSourceShape$' -count=1 -v` shows exactly 1
+     top-level PASS.
+  3. `gofmt -l cmd/test-budget` is empty.
+  4. `golangci-lint run ./cmd/test-budget/...` reports nothing.
+
+**U19d `174.077-T` — Declare cmd/test-budget result sink and exit-mapping surface**
+
+* Source-shape harness first. Non-exempt. Wave 1. No dependencies.
+* Files: `cmd/test-budget/result_shape_test.go` (new), `cmd/test-budget/result.go` (new).
+* Harness `TestResultSinkSourceShape` asserts these declarations in `result.go`:
+  * `type resultSink struct{}` (no fields; 174.078-T adds them);
+  * `func (s *resultSink) Write(p []byte) (int, error)`;
+  * `func (s *resultSink) footer(budget time.Duration, largestImportPath string, largestTests int, jsonMode bool) []string`;
+  * `func mapWaitResult(code int, err error) (int, error)`;
+  * the anchors `var _ io.Writer = (*resultSink)(nil)`, `var _ = (*resultSink).footer`, and
+    `var _ = mapWaitResult`. 174.078-T removes the last two once its tests call them
+    (golangci-lint runs with tests included by default, so a test call counts as a use).
+* Functions: 3 (`Write`, `footer`, `mapWaitResult`).
+* Stub bodies are non-behavioral:
+  * `Write` returns `len(p), nil` without parsing (the `io.Writer` contract only);
+  * `footer` returns `nil`;
+  * `mapWaitResult` returns `2, errors.New("test-budget: not implemented")`.
+* AC:
+  1. `go vet ./cmd/test-budget` exits 0.
+  2. `go test ./cmd/test-budget -run '^TestResultSinkSourceShape$' -count=1 -v` shows exactly 1
+     PASS.
+  3. `gofmt -l cmd/test-budget` is empty.
+  4. `golangci-lint run ./cmd/test-budget/...` reports nothing.
+
+**U19e `174.078-T` — Implement test-budget result sink, footer, and exit mapping**
+
+* Tests first. Non-exempt. Wave 2. Depends on `174.074-T` (constants) and `174.077-T`.
+* Files: `cmd/test-budget/result_test.go` (new), `cmd/test-budget/result.go`.
+* Functions given bodies: 3 (`Write`, `footer`, `mapWaitResult`). `footer` reads
+  `testbudget.Headroom` and `testbudget.PerTestReference`. It adds the `resultSink` fields and
+  deletes the `var _ = (*resultSink).footer` and `var _ = mapWaitResult` anchors; the
+  `io.Writer` assertion stays.
+* `mapWaitResult(code, err)` contract (pure; `code` is the caller's
+  `cmd.ProcessState.ExitCode()`, or -1 when there is no state):
+
+| Input | Returns |
+|---|---|
+| `(0, nil)` | `(0, nil)` |
+| `(c, *exec.ExitError)` with c ≥ 0 | `(c, nil)` |
+| `(c, *exec.ExitError)` with c < 0 (signal) | `(1, nil)` |
+| `errors.Is(err, exec.ErrWaitDelay)` (any code) | `(1, err)`, fail closed |
+| any other non-nil `err` | `(1, err)` |
+* `Write` contract:
+  * It **always returns `len(p), nil`**, even when it discards bytes. A short write or an error
+    would stop the `os/exec` copy goroutine and break the child's pipe.
+  * It buffers a partial line (capped at 64 KiB; the rest of an over-long line is discarded up
+    to the next newline), strips a trailing `\r`, and matches each completed line against
+    `^(ok|FAIL)\s+(\S+)\s+([0-9]+(?:\.[0-9]+)?)s(?:\s|$)`.
+  * It records the raw elapsed token for each package.
+* Harness:
+  * `TestResultSink_Write` (table) covers:
+    * a line split across two writes;
+    * CRLF input;
+    * `ok  pkg (cached)` ignored;
+    * `?   pkg [no test files]` ignored;
+    * `FAIL pkg 602.717s` parsed, with the raw token kept;
+    * `FAIL pkg [build failed]` ignored;
+    * `ok  pkg 0.123s  coverage: 50.0% of statements` parsed;
+    * a 70 KiB line: discarded, `Write` still returns `len(p), nil`, and the next line parses.
+  * `TestResultSink_Footer` (table) covers:
+    * the slowest package and its raw elapsed;
+    * `budget_use` percent;
+    * `revisit=R1` when a package elapsed exceeds `budget / Headroom`;
+    * `revisit=R2` when `ratio_to_reference > 1.25`;
+    * the largest package matched by **exact** import path (`module` alone, or
+      `module + "/" + Dir`), where `example.com/m/x/internal/core` does not match
+      `internal/core`, and an unmatched package prints `n/a`;
+    * nothing parsed (a fully cached run): `slowest_package=n/a`, no percentages, no WARN;
+    * `jsonMode`: exactly `TEST_BUDGET_SUMMARY: mode=json-unparsed`.
+  * `TestMapWaitResult` (table): `(0, nil)` → `(0, nil)`; `(3, &exec.ExitError{})` → `(3, nil)`;
+    `(-1, &exec.ExitError{})` → `(1, nil)`; `(0, fmt.Errorf("wait: %w", exec.ErrWaitDelay))` →
+    `(1, err)` with `errors.Is(err, exec.ErrWaitDelay)`; `(-1, errors.New("copy"))` → `(1, err)`.
+* AC:
+  1. RED evidence (compile PASS, assertion failures) is captured under
+     `logs/diagnostics/174078-*`.
+  2. GREEN: `go test ./cmd/test-budget -run '^(TestResultSink_Write|TestResultSink_Footer|TestMapWaitResult|TestResultSinkSourceShape)$' -count=1 -v`
+     shows exactly 4 top-level PASS.
+  3. `go vet ./cmd/test-budget` exits 0.
+  4. `golangci-lint run ./cmd/test-budget/...` reports nothing.
+
+**U19f `174.079-T` — Implement test-budget run, exec, and header**
+
+* Tests first. Non-exempt. Wave 3. Depends on `174.075-T`, `174.076-T`, `174.078-T`.
+* Files: `cmd/test-budget/main_test.go` (new), `cmd/test-budget/main.go`. `result.go` is not
+  touched (174.078-T already removed its anchors).
+* Functions given bodies: 3 (`run`, `buildGoTestArgs`, `execGo`). `main` is unchanged.
+* `run` contract:
+  * Subcommands are `print` and `run`; anything else (including no subcommand) returns 2 with
+    usage.
+  * It rejects `-timeout`, `--timeout`, `-test.timeout`, and `--test.timeout`, in `=` and
+    separate-value forms: exit 2 and `TEST_BUDGET_ERROR: -timeout is governed by 073-DL`.
+  * It requires `go.mod` in the working directory and reads its `module` path; otherwise exit 2.
+  * It calls `testbudget.Largest(".")`. An error or `Tests == 0` returns 2.
+  * It calls `testbudget.Compute`. `ErrCeilingExceeded` clamps the budget to 45m and marks the
+    run for exit 3.
+  * It prints the header plus the R3, R4 (`-race` && `hostGOOS == "windows"`), and CEILING
+    lines.
+  * `print` returns 0, or 3 at the ceiling.
+  * `run` builds `w := io.MultiWriter(stdout, sink)` and passes **the same `w` as both stdout
+    and stderr**. `os/exec` then uses one pipe and one copy goroutine, because it compares the
+    two writers with `interfaceEqual`. There is no concurrent `Write` and no race.
+  * The terminal receives the child's raw bytes; only the sink normalizes lines.
+  * After the child exits, `run` prints `footer(...)` lines to stdout.
+* Exit mapping (`run` return values):
+
+| Runner returns | `run` returns |
+|---|---|
+| `(0, nil)` | 0, or 3 at the ceiling |
+| `(c, nil)` with c ≠ 0 | c |
+| any `(c, err)` | c, and prints `TEST_BUDGET_ERROR: <err>` |
+
+* `execGo` contract:
+  * It uses `exec.CommandContext(ctx, "go", args...)` with `Stdout`/`Stderr` as given and
+    `cmd.WaitDelay = 10 * time.Second`.
+  * A `Start` failure returns `(2, fmt.Errorf("start go: %w", err))` inline. After `Wait`, it
+    returns `mapWaitResult(cmd.ProcessState.ExitCode(), err)` (or code -1 when
+    `ProcessState` is nil), so every row of the table below is unit-tested in 174.078-T.
+  * It registers `signal.Notify(ch, os.Interrupt)` on a buffered channel of size 1, with
+    `defer signal.Stop(ch)`, and starts no goroutine. This only stops the wrapper from dying
+    before the child. The terminal or console delivers the interrupt to the child itself, and
+    nothing is forwarded or killed.
+  * Returns:
+
+| Outcome | `execGo` returns |
+|---|---|
+| `Start` failure | `(2, err)` |
+| `*exec.ExitError` | `(ExitCode(), nil)`; a negative code (signal) becomes 1 |
+| `errors.Is(err, exec.ErrWaitDelay)` (a descendant kept the output open after the child exited) | `(1, err)`, fail closed |
+| success | `(0, nil)` |
+
+* Harness:
+  * `TestRun_DerivationAndPrint` (table; fixtures are generated in `t.TempDir()`; the working
+    directory is set with `t.Chdir`, available since Go 1.24; no `t.Parallel`), rows:
+    * an unknown subcommand (`frobnicate`) and an empty argument list each return 2 with usage;
+    * `print` on a module with 2 tests writes exactly
+      `TEST_BUDGET: timeout=10m0s largest_package=. top_level_tests=2 policy=073-DL` and
+      returns 0;
+    * the four timeout-flag spellings each return 2;
+    * no `go.mod` returns 2;
+    * a zero-test module returns 2;
+    * a generated 1200-test package prints `revisit=R3` and `timeout=40m0s`;
+    * a generated 1501-test package prints `TEST_BUDGET_CEILING_EXCEEDED` and
+      `timeout=45m0s`, and returns 3.
+  * `TestRun_ExecutionAndExitMapping`, with a fake `goRunner`:
+    * the recorded vector equals `["test", "-timeout=10m0s", "./..."]`;
+    * the stdout and stderr the fake receives are the same writer;
+    * header, then child output, then `TEST_BUDGET_SUMMARY`, in that order;
+    * the fake returning `(1, nil)` gives 1;
+    * `(2, errors.New("start"))` gives 2 and `TEST_BUDGET_ERROR`;
+    * the 1501-test fixture with a `(0, nil)` fake gives 3;
+    * `hostGOOS = "windows"` with `-race` prints `revisit=R4`; `hostGOOS` is restored with
+      `t.Cleanup`;
+    * the real `execGo` under `t.Setenv("PATH", t.TempDir())` (no `go` resolvable) returns code
+      2 and a non-nil error wrapping the start failure.
+  * `TestGoTestTimeout_BoundedHangIsDetected` (real toolchain, bounded):
+    * `t.Chdir` into a `t.TempDir()` module whose `go.mod` pins `go 1.24` and whose single test
+      blocks on `select {}`;
+    * `t.Setenv("GOWORK","off")`, `t.Setenv("GOFLAGS","")`, and
+      `t.Setenv("GOTOOLCHAIN","local")`, which the child inherits. Production `execGo` inherits
+      the caller environment unchanged;
+    * a 2-minute context;
+    * builds `args, err := buildGoTestArgs(3*time.Second, []string{"-count=1", "./..."})`,
+      fails the test on `err`, then runs `execGo(ctx, args, &buf, &buf)`;
+    * asserts a non-zero code, `panic: test timed out after 3s` in the output, and a return
+      before the context deadline;
+    * no `t.Parallel`.
+* AC:
+  1. RED evidence is captured under `logs/diagnostics/174079-*`.
+  2. GREEN: `go test ./cmd/test-budget -count=1 -timeout=5m -v` shows exactly 8 top-level PASS
+     (the 2 shape tests, the 3 result tests, and the 3 run tests).
+  3. `go run ./cmd/test-budget print` from the repo root prints
+     `TEST_BUDGET: timeout=30m0s largest_package=internal/core top_level_tests=<885|886> policy=073-DL`
+     and exits 0. It is captured as evidence; this is derivation only and no suite runs.
+  4. `go vet ./cmd/test-budget ./internal/testbudget` exits 0.
+  5. `golangci-lint run ./cmd/test-budget/... ./internal/testbudget/...` reports nothing.
+  6. `go build ./cmd/backlogit` is unaffected.
+
+**U19g `174.080-T` — RED contract test coupling governed test-budget surfaces**
+
+* Tests domain. Non-exempt **red deliverable**. Wave 4. Depends on `174.079-T`.
+* File: `tests/integration/test_budget_coupling_test.go` (new, package `integration_test`).
+  * It reuses the existing `findRepoRoot`, `readFileString`, `readCIWorkflow`, and `findStep`
+    helpers from `ci_compliance_test.go`.
+  * It adds 2 local helpers: `bareFullSuiteForms(text) []string` and
+    `governedSpans(text) []string`.
+  * `canonicalFull` and `canonicalCI` are interpreted-string constants.
+* **Bare-form detector** (tokenizing, not a single regex). All text is CRLF-normalized first.
+  * **Occurrence.** `go test` counts only at the start of a line or after a non-word character
+    (so `cargo test` is ignored).
+  * **Continuation.** A line whose trimmed text ends in ` \` is joined with the next line before
+    spans are cut.
+  * **Span.** For each occurrence of `go test`: if the character immediately before it is a
+    backtick, `"`, or `'`, the span ends at the next matching character. Otherwise the span
+    runs to the end of the (joined) line.
+  * **Tokens.** The span is split on whitespace. Surrounding quotes are stripped from each
+    token, and trailing `,;:)` is trimmed.
+  * **Selector.** The `-run` value is read from any of `-run=V`, `-run V`, `-test.run=V`, or
+    `-test.run V`, with quotes stripped from V.
+  * **Full-suite form.** A token starts with `./...`, or equals `./internal/core` or
+    `./internal/core/...`.
+  * **Exempt (compile-only).** The selector value is exactly `^$`.
+  * **Bare.** A full-suite form with no selector, or with selector `.`, `.*`, or empty.
+  * **Targeted and allowed.** Any other selector value.
+  * **Governed span.** `go run ./cmd/test-budget run` through the end of its span. It fails if
+    any token equals `-timeout`, `--timeout`, `-test.timeout`, or `--test.timeout`, or starts
+    with one of them followed by `=`.
+  * **Allowlisted lines:**
+    * lines carrying the literal marker `test-budget:bare-mention` (at most 1 per file; a second
+      marker fails);
+    * workflow-policies amendment-log table rows;
+    * `harness-manifest.yaml` lines whose trimmed text starts with `note:`, `drift_reason:`, or
+      `checksum:`.
+* **`TestGovernedTestBudgetSurfaces`** is table-driven (one scenario): each row carries the
+  subtest name, the files, and a predicate function, and `t.Run` executes one subtest per row:
+
+| Subtest | Unit | Requirements |
+|---|---|---|
+| `ci-workflows` | 174.081-T | ci `Test` step `run` == canonicalCI; release `Test` step `run` == canonicalFull |
+| `pre-push` | 174.082-T | the Test gate's third argument == canonicalFull in both scripts; the Build gate stays compile-only |
+| `make` | 174.083-T | the line after `test:` in `Makefile` == `"\t"+canonicalCI`; every `Step "test"` block in `make.ps1` wraps canonicalCI (≥ 1 found) |
+| `ship-gate` | 174.084-T | `_ship.agent.md` and build-feature each contain canonicalFull and no bare form |
+| `policy` | 174.085-T | workflow-policies contains canonicalFull, no bare form, and an amendment-log row containing `073-DL` |
+| `fix-ci` | 174.086-T | fix-ci SKILL contains a governed span; neither it nor github-pr-automation has a bare form |
+| `constitution` | 174.087-T | AGENTS.md `Constitution version: X` == constitution `**Version**: X`; the constitution has an amendment record containing `073-DL`; both files contain canonicalFull or canonicalCI and no bare form |
+| `instructions` | 174.088-T | copilot-instructions and go.instructions each contain a governed span and no bare form |
+| `engineer-readme` | 174.089-T | go-engineer and README each contain canonicalFull and no bare form |
+| `review-instructions` | 174.090-T | both review-instruction files contain a governed span and no bare form; `copilot-code-review.instructions.md` contains the literal `summaryLine` |
+| `harness-inputs` | 174.091-T | the `variables_used:` block of `harness-manifest.yaml` is found and non-empty; its `TEST_COMMAND` value == canonicalFull; the block has no bare form outside the allowlist; workspace-profile has no bare form and contains canonicalFull; the block contains the literal `summaryLine` (below) |
+
+* `summaryLine` is the interpreted-string constant
+  ``"Test-first red-green gate mechanics (P-002, P-004) and the `go run ./cmd/test-budget run ./...` suite run"``.
+  It is the text `HARNESS_ENFORCED_SUMMARY` (manifest line 596) renders into
+  `copilot-code-review.instructions.md` line 53, so 174.090-T and 174.091-T write identical text.
+* No subtest pins a budget value, a version number, or an exact occurrence count.
+* **`TestGovernedTestBudgetExecutableSweep`**:
+  * Subtest `detector`: a table of about 19 literal rows. It is GREEN from landing:
+
+| Row | Expected |
+|---|---|
+| `go test ./...` | bare |
+| a backticked `go test ./...` | bare |
+| `Invoke-Gate "Test" "go" "go test ./..."` | bare |
+| `go test -race -coverprofile=coverage.out ./...` | bare |
+| `go test -timeout=30m ./...` | bare |
+| `go test -run . ./...` | bare |
+| `go test -run=".*" ./...` | bare |
+| `go test ./internal/core` | bare |
+| `go test ./internal/core/...` | bare |
+| `go test -run=^$ -count=1 ./...` | exempt |
+| `go test -run '^$' ./...` | exempt |
+| `go test ./internal/core/... ./internal/events/... -run "ItemLog\|ShipmentReconcile" -count=1 -v` (the literal `ci.yml:165` line) | allowed |
+| `go test ./tests/integration -run '^TestX$'` | allowed |
+| canonicalFull | governed |
+| `go run ./cmd/test-budget run -timeout=1m ./...` | governed-with-timeout, fails |
+| `go vet ./...` | ignored |
+| `cargo test ./...` | ignored |
+| `go test -count=1 \` followed by a line `  ./...` | bare (continuation joined) |
+| `go run ./cmd/test-budget run --test.timeout=1m ./...` | governed-with-timeout, fails |
+
+  * Subtest `executables`: every file under `.github/workflows/`, every `*.ps1` and `*.sh`
+    under `scripts/`, `Makefile`, and `make.ps1` has zero bare forms. Each of the 6 known
+    executable files (`ci.yml`, `release.yml`, the 2 pre-push scripts, `Makefile`, `make.ps1`)
+    has ≥ 1 governed span.
+  * (Grep evidence at planning time: under `scripts/`, only the two pre-push Test lines are
+    full-suite forms. The two Build lines are compile-only.)
+* Red-deliverable contract:
+
+```text
+red_deliverable: true
+red_deliverable_reason: Deliverable IS the persistent RED coupling contract for the 073-DL governed test budget; it lands red by design (every surface still runs the bare default-timeout form) and is driven green only by the 11 Wave 19 surface migrations.
+red_selector_command: go test ./tests/integration -run '^(TestGovernedTestBudgetSurfaces|TestGovernedTestBudgetExecutableSweep)$' -count=1 -timeout=5m -v
+green_maker_tasks: 174.081-T, 174.082-T, 174.083-T, 174.084-T, 174.085-T, 174.086-T, 174.087-T, 174.088-T, 174.089-T, 174.090-T, 174.091-T
+green_maker_closes_wave: 5
+```
+
+* AC:
+  1. `go vet ./tests/integration` exits 0.
+  2. The red selector compiles and fails with exactly the 11 surface subtests plus
+     `executables` failing and `detector` passing. This is captured to
+     `logs/diagnostics/174080-red-harness.txt` plus `.metadata.json` with `Compilation: PASS`
+     and `Red Phase: CONFIRMED`.
+  3. `go test ./tests/integration -run '^TestGovernedTestBudgetExecutableSweep$/^detector$' -count=1 -v`
+     PASSes.
+  4. `golangci-lint run ./tests/integration/...` reports nothing new.
+  5. No surface file is edited.
+
+**Surface units.** All are Wave 5 and depend on `174.080-T`. Each edits only the listed files,
+only the lines named in 19.2, and the version and amendment lines named in its own row, replacing
+the bare form with a governed span. Prose around the command may be adjusted in the same
+sentence. Task bodies carry each contract block below verbatim, wrapped in
+`<!-- BEGIN:harness-exemption-contract -->` / `<!-- END:harness-exemption-contract -->` (and
+174.080-T in `<!-- BEGIN:red-deliverable-contract -->` / `<!-- END:red-deliverable-contract -->`).
+
+| Unit | ID | Title | Files | Class |
+|---|---|---|---|---|
+| U19h | 174.081-T | Route CI and release Test steps through test-budget | `ci.yml` (canonicalCI), `release.yml` (canonicalFull). The `Test` step `if:` stays unchanged (pinned by `TestHeavyStepsAreFailSafeGated`); `TestReleaseWorkflowDropsRaceMatrix` stays green | covered-by `174.080-T` |
+| U19i | 174.082-T | Route pre-push Test gates through test-budget | `scripts/pre-push-quality-gates.ps1`, `.sh`: the Test gate becomes canonicalFull; the probe argument stays `go`; the Build gate is unchanged | covered-by `174.080-T` |
+| U19j | 174.083-T | Route Makefile and make.ps1 test through test-budget | `Makefile`, `make.ps1` (canonicalCI; keep `-race`; the R4 WARN is expected on Windows `make.ps1 test`) | covered-by `174.080-T` |
+| U19k | 174.084-T | Govern Ship final-gate full-suite command | `.github/agents/_ship.agent.md` (950/989), `.github/skills/build-feature/SKILL.md` (355/365) | docs-only |
+| U19l | 174.085-T | Govern workflow-policies full-suite rule (1.30.0) | `.github/policies/workflow-policies.md` (916/925/1149; version 1.29.0 → 1.30.0; amendment row citing 073-DL and 11BE840F) | docs-only |
+| U19m | 174.086-T | Govern fix-ci and PR automation test commands | `.github/skills/fix-ci/SKILL.md` (13/72/126/189), `.github/instructions/github-pr-automation.instructions.md` (126) | docs-only |
+| U19n | 174.087-T | Govern constitution quality gate and AGENTS (1.1.0) | `.github/instructions/constitution.instructions.md` (22/209/221; version 1.0.0 → 1.1.0), `AGENTS.md` (16/43/239/252) | docs-only |
+| U19o | 174.088-T | Govern copilot and Go instruction test commands | `.github/copilot-instructions.md` (13/47), `.github/instructions/go.instructions.md` (35 becomes canonicalFull; 36 becomes `go run ./cmd/test-budget run -coverprofile=coverage.out ./...`) | docs-only |
+| U19p | 174.089-T | Govern go-engineer loop and README test command | `.github/agents/subagents/go-engineer.agent.md` (76 becomes canonicalFull, 1:1; 74 stays compile-only), `README.md` (283) | docs-only |
+| U19q | 174.090-T | Govern review-instruction test commands | `.github/copilot-review-instructions.md` (195 becomes canonicalFull), `.github/instructions/copilot-code-review.instructions.md` (53 becomes `* ` + `summaryLine`) | docs-only |
+| U19r | 174.091-T | Govern autoharness test-command render inputs | `.autoharness/harness-manifest.yaml` (556/596/633 only, 596 becoming `    * ` + `summaryLine`; 461 is historical), `.autoharness/workspace-profile.yaml` (27/47) | covered-by `174.080-T` |
+
+**174.087-T constitution amendment AC** (constitution Governance: version bump, rationale, and
+sync impact report):
+
+* The `**Version**` line reads `1.1.0`, with an amended date.
+* It adds an amendment record containing `073-DL`, with:
+  * **rationale:** provenance of the unowned 10m default, and the count-scaled governed
+    budget;
+  * **sync impact report:** AGENTS.md; workflow-policies 1.30.0; the Ship agent and
+    build-feature; fix-ci and PR automation; copilot, go, and review instructions; the
+    go-engineer agent and README; CI, release, pre-push, and make; the `.autoharness` render
+    inputs. Pending: the upstream template and plugin parity (P-021 (c)).
+* The Technical Constraints `Test` row and the Quality Gates block use canonicalFull.
+* Principle II line 22 reads "pass via `go run ./cmd/test-budget run ./...`".
+* AGENTS.md line 16 reads `Constitution version: 1.1.0`.
+
+**Closed exempt set (exactly these 11 IDs; rendered contract blocks).** Every block follows the
+P-002.1 grammar: the five canonical keys in order, plus `harness_owner_command` for
+`covered-by`.
+
+* docs-only tasks probe content (their own subtest `--- PASS:` line), then run the doc lint gate
+  on each edited Markdown file (P-002.3).
+* covered-by tasks probe the owner subtest `--- PASS:` line, then their own deliverable literal.
+* Every task is labelled `harness-exempt`.
+* The commands use a single-quoted outer `pwsh -NoProfile -Command '...'` with doubled inner
+  quotes. All 15 commands were syntax-checked with the PowerShell parser during planning, and
+  none was executed.
+* **must-fail-before-deliverable.** Before `174.080-T` lands, the subtest does not exist, so no
+  PASS line is printed and `no tests to run` appears. After it lands and before the migration,
+  the subtest fails.
+
+**174.081-T** (`ci-workflows`)
+
+```text
+harness_exemption_class: covered-by
+harness_exemption_reason: Edits only the CI and release Test-step run lines; the behavior is pinned by owner 174.080-T subtest ci-workflows, so a second harness would duplicate the owner contract.
+harness_owner: 174.080-T
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^ci-workflows$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/ci-workflows'')) { exit 1 }; if (-not (Get-Content -Raw ''.github/workflows/ci.yml'').Contains(''go run ./cmd/test-budget run -race -coverprofile=coverage.out ./...'')) { exit 1 }; if (-not (Get-Content -Raw ''.github/workflows/release.yml'').Contains(''go run ./cmd/test-budget run ./...'')) { exit 1 }; Write-Output ''EXEMPT_VERIFY_OK:174.081-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+harness_owner_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^ci-workflows$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0 -or $o.Contains(''no tests to run'') -or -not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/ci-workflows'')) { exit 1 }; exit 0'
+```
+
+**174.082-T** (`pre-push`)
+
+```text
+harness_exemption_class: covered-by
+harness_exemption_reason: Edits only the pre-push Test gate command strings; the behavior is pinned by owner 174.080-T subtest pre-push, so a second harness would duplicate the owner contract.
+harness_owner: 174.080-T
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^pre-push$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/pre-push'')) { exit 1 }; if (-not (Get-Content -Raw ''scripts/pre-push-quality-gates.ps1'').Contains(''go run ./cmd/test-budget run ./...'')) { exit 1 }; if (-not (Get-Content -Raw ''scripts/pre-push-quality-gates.sh'').Contains(''go run ./cmd/test-budget run ./...'')) { exit 1 }; Write-Output ''EXEMPT_VERIFY_OK:174.082-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+harness_owner_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^pre-push$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0 -or $o.Contains(''no tests to run'') -or -not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/pre-push'')) { exit 1 }; exit 0'
+```
+
+**174.083-T** (`make`)
+
+```text
+harness_exemption_class: covered-by
+harness_exemption_reason: Edits only the Makefile test recipe and make.ps1 test steps; the behavior is pinned by owner 174.080-T subtest make, so a second harness would duplicate the owner contract.
+harness_owner: 174.080-T
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^make$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/make'')) { exit 1 }; if (-not (Get-Content -Raw ''Makefile'').Contains(''go run ./cmd/test-budget run -race -coverprofile=coverage.out ./...'')) { exit 1 }; if (-not (Get-Content -Raw ''make.ps1'').Contains(''go run ./cmd/test-budget run -race -coverprofile=coverage.out ./...'')) { exit 1 }; Write-Output ''EXEMPT_VERIFY_OK:174.083-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+harness_owner_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^make$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0 -or $o.Contains(''no tests to run'') -or -not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/make'')) { exit 1 }; exit 0'
+```
+
+**174.084-T** (`ship-gate`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Replaces the bare full-suite command in Ship agent and build-feature instruction text only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^ship-gate$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/ship-gate'')) { exit 1 }; foreach ($f in @(''.github/agents/_ship.agent.md'',''.github/skills/build-feature/SKILL.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.084-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.085-T** (`policy`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Amends workflow-policies full-suite rule text, version, and amendment log only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^policy$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/policy'')) { exit 1 }; foreach ($f in @(''.github/policies/workflow-policies.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.085-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.086-T** (`fix-ci`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Replaces the bare full-suite command in fix-ci and PR automation instruction text only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^fix-ci$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/fix-ci'')) { exit 1 }; foreach ($f in @(''.github/skills/fix-ci/SKILL.md'',''.github/instructions/github-pr-automation.instructions.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.086-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.087-T** (`constitution`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Amends constitution quality-gate text and version with its sync impact report and the coupled AGENTS.md lines only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^constitution$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/constitution'')) { exit 1 }; foreach ($f in @(''.github/instructions/constitution.instructions.md'',''AGENTS.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.087-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.088-T** (`instructions`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Replaces the bare full-suite command in copilot and Go instruction text only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^instructions$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/instructions'')) { exit 1 }; foreach ($f in @(''.github/copilot-instructions.md'',''.github/instructions/go.instructions.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.088-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.089-T** (`engineer-readme`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Replaces the bare full-suite command in the go-engineer validation loop and README contributor text only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^engineer-readme$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/engineer-readme'')) { exit 1 }; foreach ($f in @(''.github/agents/subagents/go-engineer.agent.md'',''README.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.089-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.090-T** (`review-instructions`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Replaces the bare full-suite command in the two review-instruction files only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^review-instructions$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/review-instructions'')) { exit 1 }; foreach ($f in @(''.github/copilot-review-instructions.md'',''.github/instructions/copilot-code-review.instructions.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.090-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.091-T** (`harness-inputs`)
+
+```text
+harness_exemption_class: covered-by
+harness_exemption_reason: Edits only the autoharness render-input values for the test command; the behavior is pinned by owner 174.080-T subtest harness-inputs, so a second harness would duplicate the owner contract.
+harness_owner: 174.080-T
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^harness-inputs$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/harness-inputs'')) { exit 1 }; if (-not (Get-Content -Raw ''.autoharness/harness-manifest.yaml'').Contains(''go run ./cmd/test-budget run ./...'')) { exit 1 }; if (-not (Get-Content -Raw ''.autoharness/workspace-profile.yaml'').Contains(''go run ./cmd/test-budget run ./...'')) { exit 1 }; Write-Output ''EXEMPT_VERIFY_OK:174.091-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+harness_owner_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^harness-inputs$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0 -or $o.Contains(''no tests to run'') -or -not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/harness-inputs'')) { exit 1 }; exit 0'
+```
+
+**Ship-time coupling note.** Between the W4 red landing and the W5 close, CI on any interim push
+is red on `TestGovernedTestBudget*` by design. Ship closes W5 before pushing, or treats that
+interim red as the declared red deliverable.
+
+### 19.8 Closed exempt set, schedule, and 155-S membership snapshot
+
+**155-S membership snapshot** (2026-09-24, `backlogit shipment get 155-S`): 36 items, status
+`active`.
+
+* `174-F`: active.
+* 30 tasks `done`.
+* 4 archived: `174.069-T` through `174.072-T`.
+* The only non-terminal task is `174.073-T` (queued, no dependencies).
+
+The waves are therefore derived over {`174.073-T`, `174.074-T` … `174.091-T`}:
+
+| Wave | Tasks | Dependencies |
+|---|---|---|
+| W1 | `174.073-T`, `174.074-T`, `174.076-T`, `174.077-T` | none; recommended order is `174.073-T` first (already reviewed), then 074, 076, 077 |
+| W2 | `174.075-T`, `174.078-T` | 075 ← 074; 078 ← 074, 077 |
+| W3 | `174.079-T` | ← 075, 076, 078 |
+| W4 | `174.080-T` | ← 079 (red deliverable) |
+| W5 | `174.081-T` … `174.091-T` | each ← 080 (the closed exempt set; green makers; closes the red deliverable) |
+
+* **No edge from `174.074-T` to `174.073-T`.** They touch disjoint files and domains.
+  `174.073-T` only lowers `internal/core` cost and does not change the static count rule. Its
+  one new test takes N from 885 to 886, which is the same 30m budget.
+* **`174.073-T` is preserved unchanged.** Its AC7 rule governs the final gate below.
+* **Session limit.** The 19 open tasks stay under the 20-tasks-per-session breaker. Ship
+  checkpoints if a session ends before W5.
+* `155-S` stays a supervised bootstrap shipment. These members are added by governed
+  `backlogit shipment add` in dependency order.
+
+### 19.9 Named deviations (constitutional conflicts, each with justification and rejected alternative)
+
+* **D1 — Quality Gates "Do not skip any gate" (`go test ./...` first) and P-002.6 convergence
+  item 1 / build-feature Step 0.5 repo-wide compile check, during W1-W5.**
+  * Mapping: `go vet ./...`, which type-checks all test files without running them, plus the
+    scoped `go test <pkg>` selectors named in each task.
+  * Justification: the operator stop rule and `174.073-T` AC7 forbid any `go test ./...`
+    (including `-run '^$' ./...`) over the **repository module** until a separately authorized
+    run. `go vet ./...` is not a `go test` form. The hang probe's child `go test ./...` runs in a
+    hermetic `t.TempDir()` module containing one test, so it is outside the stop rule.
+  * Rejected alternative: an unfiltered compile or run, which is unauthorized.
+* **D2 — P-002.6 unfiltered-suite convergence for W1-W5, and Principle II "`go test ./...`
+  before merge".**
+  * Ship records `FULL_SUITE_OPERATOR_DEFERRED` (citing the stop rule and `174.073-T` AC7) in
+    place of each wave's unfiltered convergence run, **including W5**.
+  * W5, and therefore 155-S, stays **unconverged** until the one authorized governed run
+    (19.10) passes. The deviation defers the gate; it never waives it.
+  * Rejected alternative: running canonicalFull per wave, which is an unauthorized full-suite
+    execution.
+* **D3 — Quality Gates `golangci-lint run` and `gofmt -l .` (repo-wide).**
+  * Narrowed per task to `gofmt -l <package dirs>` and `golangci-lint run <package>/...`.
+  * Trust basis: the installed golangci-lint v1.64.8 is the version CI pins.
+  * Justification: repo-wide lint carries unrelated debt (`4DB1DFF1`).
+  * Rejected alternative: fixing repo-wide lint here, which is out of scope.
+* **D4 — P-004 non-zero red clause.**
+  * Satisfied by the scoped red selectors (assertion failures with a compile PASS), not by a
+    full-suite non-zero exit.
+  * Rejected alternative: a full-suite red, which is unauthorized and would conflate
+    unrelated failures.
+
+### 19.10 Application to the imminent 155-S final gate and future growth
+
+* **Readiness.** After W5 closes, all 155-S correctives are landed. Ship STOPS and requests a
+  new explicit operator authorization for exactly one full-suite execution:
+  `go run ./cmd/test-budget run ./...` from the repo root on the branch HEAD. The full output is
+  captured under `logs/diagnostics/155-s-go-test-governed-<date>.txt` plus metadata.
+* **The request cites the recorded operator disposition of 11BE840F:** `073-DL` O11, as
+  `174.073-T` AC7 requires. AC7's recommended form, `go test -json ./...`, is superseded by
+  canonicalFull (19.4.6). This plan records the supersession; `174.073-T` itself is not
+  edited.
+* **Expected result.** The header is `timeout=30m0s largest_package=internal/core
+  top_level_tests=886 policy=073-DL`. The expected `internal/core` time is about 760-800s, about
+  45% budget use.
+* **Pass criteria:**
+  * exit 0;
+  * no `panic: test timed out`;
+  * `TEST_BUDGET_SUMMARY` present;
+  * `TEST_BUDGET_CEILING_EXCEEDED` absent.
+  * Then the 155-S zero-P0/P1 stop-gate and the final standard + adversarial review apply.
+* **A `revisit=R1`/`R2` WARN** does not fail the gate. Ship captures it as a Stage input (P-021
+  capture-only) for re-calibration.
+* **If it times out anyway:**
+  * If the running test is ≥ 60s old: R5, a genuine hang or slow-test defect. Ship captures a
+    P-021 expansion and does not raise the budget.
+  * If it is < 60s old: the calibration is wrong. Stage re-deliberates the constants with the
+    captured summary. No ad hoc flag is ever added.
+* **Future growth.**
+  * Each new test in the largest package raises the budget automatically at the 5m steps in
+    19.4.2, reproducibly on every machine.
+  * N_max ≥ 1200 triggers R3 early, 300 tests before the ceiling.
+  * A ceiling breach turns the governed run red, which forces a Stage decision.
+  * Constants change only through a new deliberation citing ≥ 2 governed-run summaries (R1-R4).
+* **Authorization-request text** (for Ship's stop):
+  "155-S Wave 19 closed. Per 174.073-T AC7, 11BE840F is dispositioned by 073-DL (O11). Request
+  authorization for ONE governed full-suite run: `go run ./cmd/test-budget run ./...` (budget
+  printed by the wrapper). `-json` is not used for the gate; a per-test `-json` diagnostic
+  would be a separate request."
+
+### 19.11 Out of scope for Wave 19
+
+* Performance work on `internal/core`, partitioning, and fixture or template caching (O6).
+* `D8EF5443`, the slog capture leak. The policy does not mechanically require it, and it stays
+  active.
+* `plugin/**` parity.
+* Windows `-race` calibration.
+* Re-rendering the harness. The contract test is the tripwire: a re-render that reintroduces the
+  bare form turns `harness-inputs` and `executables` red.
+* No drift-ignore edits.
+
+### 19.12 P-021 follow-up captures (Stage-authored 2026-09-24: (a) `5F1A1873`, (b) `5A1C4D3F`, (c) `95DF7CE9`)
+
+* **(a) core runtime reduction** (medium; trigger R2/R3): partition `internal/core`, or reduce
+  fixture I/O and construction cost.
+* **(b) Windows `-race` calibration** for `make.ps1 test` (low; R4).
+* **(c) Upstream autoharness template and `plugin/**` parity** for the governed test command
+  (low). Consumer workspaces lack `cmd/test-budget`, so this needs a template-level
+  capability-conditional token.
+
+### Plan Hardening Signals — Wave 19
+
+* Cross-cutting change to governed CI, release, and pre-push entry points: **yes** (rollback is
+  the literal revert of one line per surface).
+* New executable in the repository: **yes** (`cmd/test-budget`; not in the release artifact).
+* Policy and constitution text amendments: **yes** (MINOR bumps with amendment records).
+* Irreversible data or schema changes: **no**.
+* **Requires plan hardening: yes.**
+
+### Constitution Check — Wave 19
+
+| Principle / section | Mapping |
+|---|---|
+| I. Safety-First Go | The new Go code wraps errors with `%w`, has no `panic`, and guards overflow before multiplying. `go vet` and scoped golangci-lint run per task. The new binary is not in the release artifact |
+| II. Test-First (NON-NEGOTIABLE) | Each Go surface has a declaration task with a source-shape harness (074/076/077), then a behavior task with an assertion-red harness (075/078/079). The surface migrations are gated by the red-deliverable contract test 080. The full-suite clause is deferred, not waived (D2) |
+| III. Workspace Isolation | Every path the wrapper and counter use is relative to the module root (cwd). The tests use `t.TempDir()` |
+| IV. CLI Containment (NON-NEGOTIABLE) | The wrapper requires `go.mod` in cwd and never walks above it |
+| V. Structured Observability | The header, summary, WARN, CEILING, and ERROR markers are stable machine-readable lines that name `073-DL` and the revisit criterion |
+| VI. Single Responsibility | `internal/testbudget` holds the policy and counter; `cmd/test-budget` holds the process wrapper. No new dependency |
+| VII. Destructive Approval (NON-NEGOTIABLE) | No destructive operation. The wrapper never kills a process |
+| VIII. Safety Modes | Not triggered (no elevated-risk operation) |
+| IX. Git-Friendly Persistence | Only Markdown/YAML and Go source text changes. Evidence goes under `logs/diagnostics/` |
+| X. Context Efficiency | One source of truth plus one contract test replaces about 20 scattered literals |
+| XI. Merge Commit History | Unaffected (Ship's merge discipline is unchanged) |
+| Quality Gates | Mapped by D1 (go test), D3 (lint, gofmt). `go vet` runs as specified. Conflicts are documented in 19.9 with justification and rejected alternative |
+| Task Granularity (NON-NEGOTIABLE) | 18 tasks. Each is ≤ 2 files, ≤ 4 functions, ≤ 3 test scenarios, and a single domain (Go code+tests, a single test file, docs, or config). 077/078 hold 3 functions each, 079 holds 3 |
+| Stop Conditions | The 19 open tasks are under the 20-task session breaker. Plan-review attempts follow the Stage cycle limit |
+| Versioning / Governance | workflow-policies 1.30.0 (MINOR: new governed rule). Constitution 1.1.0 (MINOR: a material quality-gate change) with rationale and sync impact report (174.087-T). AGENTS.md is coupled by the contract test |
+| P-010 | Stage authored no code |
+
+Constitution Check: documented-deviations
+
+## Plan Hardening — Wave 19
+
+| # | Risk | Mitigation (bound to a unit and a check) |
+|---|---|---|
+| H1 | The counter undercounts, the budget stays too small, and the timeout recurs | `TestLargest/repository` requires ≥ 500 for `internal/core` (174.075-T). The build-tag-agnostic count is conservative. `print` evidence shows 885/886 (174.079-T AC3) |
+| H2 | The wrapper hides the hang detector | The budget is always finite (≤ 45m). `TestGoTestTimeout_BoundedHangIsDetected` proves a real alarm fires through `execGo` (174.079-T). The wrapper never kills or signals the child, and `cmd/go`'s +1m backstop remains |
+| H3 | A caller supplies its own timeout and bypasses the policy | `run` rejects all four spellings (174.079-T table rows). The coupling test fails on a timeout flag in any governed span (174.080-T) |
+| H4 | Surfaces drift back to bare forms (manual edit or harness re-render) | The persistent coupling contract, including the `harness-inputs` subtest and the executable sweep (174.080-T) |
+| H5 | Unexplained constant creep | `PolicyID` is printed in every header. The constants live only in `internal/testbudget`. R1-R5 plus the ≥ 2-summary rule |
+| H6 | Output parsing breaks on Windows CRLF, partial writes, over-long lines, or concurrent writes | A single shared writer means a single copy goroutine. `Write` always returns `len(p), nil`. Covered by the `TestResultSink_Write` rows (174.078-T) and the same-writer assertion (174.079-T) |
+| H7 | `go run` exit-code collapse hides the class | Gates key on markers and zero/non-zero status only (19.4.4) |
+| H8 | Interim CI red between W4 and W5 | Declared red deliverable. Ship closes W5 before pushing (19.7 note) |
+| H9 | Machine-specific flakiness | The budget depends only on committed source. There is no platform branch in the formula. R4 WARN is informational |
+| H10 | Ceiling breach silently grows the budget | It clamps at 45m, prints `TEST_BUDGET_CEILING_EXCEEDED`, and returns non-zero (exit 3). Pinned by the 1501-test rows (174.079-T) |
+| H11 | Lint `unused` fails the declaration tasks | The 076/077 stubs and anchors reference every unexported declaration (076/077 AC4). 078 removes its anchors only when its own tests call the symbols. 074 declares only exported symbols |
+| H12 | A descendant holds the output open, and the wrapper hangs or passes | `WaitDelay` 10s, then `ErrWaitDelay` maps to exit 1, fail closed |
+
+<!-- plan-review-attempt: rev21-attempt-1-FAIL -->
+
+## Plan Review — Wave 19 attempt 1
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Go Reviewer, Scope Boundary Auditor, Constitution Reviewer, Architecture Strategist, Schema-CLI-Docs Coupling Reviewer
+decision: FAIL
+```
+
+**Verdicts on rev21:**
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Go | FAIL | 2 P1 |
+| Scope | FAIL | 2 P1 |
+| Constitution | FAIL | 2 P0, 1 P1 |
+| Architecture | ADVISORY | 1 P1 |
+| Coupling | ADVISORY | P2/P3 only |
+
+**Findings and their rev21.1 dispositions:**
+
+* **Constitution P0-1 (Principle II).** New Go packages were created without a declaration +
+  source-shape harness split. *Fixed:* 074/076 are declarations and 075/077 are behavior tasks.
+* **Constitution P0-2.** The contract test landed last, so the surface migrations had no red
+  gate. *Fixed:* 174.078-T is a W4 red deliverable, with the surfaces as green makers.
+* **Constitution P1.** The constitution bump was PATCH. *Fixed:* MINOR 1.1.0, with an AGENTS.md
+  coupling check.
+* **Go P1-1.** Scanner/pipe goroutine risks (deadlock, lost partial lines, CRLF). *Fixed:*
+  `io.MultiWriter` plus `resultSink` inline parsing.
+* **Go P1-2.** The hang probe inherited the host `GOFLAGS`/`GOWORK`/toolchain, and there was no
+  `WaitDelay`. *Fixed:* 19.7 U19d.
+* **Go P2s** (all fixed):
+  * counter rules for `helper.go`, TestMain, and param type;
+  * overflow guard;
+  * negative exit codes;
+  * signal forwarding;
+  * raw-elapsed precision.
+* **Scope P1-1.** Drift-ignore edits widened scope. *Fixed:* dropped; P-021 (c) captured.
+* **Scope P1-2.** Missing surfaces: the review instructions and 3 manifest variables. *Fixed:*
+  added 174.088-T and extended 174.089-T.
+* **Architecture P1.** Ceiling fail-closed before running destroyed the R3 evidence. *Fixed:*
+  clamp, run, non-zero exit.
+* **Coupling P2/P3** (all fixed):
+  * the growth-table row error (334-555 → corrected 334-500/501-666);
+  * the "targeted selectors keep explicit small timeouts" wording;
+  * the `-json` supersession note;
+  * header field order pinned.
+
+<!-- plan-review-attempt: rev21.1-attempt-2-FAIL -->
+
+## Plan Review — Wave 19 attempt 2
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor
+decision: FAIL
+```
+
+**Verdicts on rev21.1** (all attempt-1 findings confirmed fixed):
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Constitution | FAIL | 1 P1 |
+| Go | FAIL | 2 P1 |
+| Scope | ADVISORY | P2/P3 only |
+
+**Cycle accounting.** Per the Stage cycle limit (maximum 2 re-entry cycles) and plan precedent
+rev15 ("PASS after 2 FAIL"), attempt 3 is the last allowed re-entry. A FAIL in attempt 3 halts
+to the operator.
+
+**Findings and their rev21.2 dispositions:**
+
+* **Constitution P1.** The 174.077-T harness left the ceiling, R2/R3/R4, negative-exit, `n/a`,
+  and 64 KiB behaviors with no failing test first. *Fixed:* the wrapper is split into 076
+  (run declaration), 077 (sink declaration), 078 (sink behavior), and 079 (run behavior), and
+  every 19.4.4 behavior has a named table row.
+* **Constitution P2** (all fixed):
+  * the exemption contracts are now rendered in full (11 blocks; `covered-by`
+    `harness_owner_command` wrapped with the PASS and no-tests checks);
+  * D2 is extended through W5, which stays unconverged until the authorized run;
+  * 174.087-T AC now requires the rationale and sync impact report;
+  * the Constitution Check maps I-XI and documents each deviation as a constitutional conflict.
+* **Constitution P3.** The shape-harness imports are listed exactly, with a justification.
+  *Fixed.*
+* **Go P1-1.** Two `MultiWriter`s sharing one sink caused a concurrent-write race. *Fixed:* one
+  writer is passed as both `Stdout` and `Stderr`, so there is one copy goroutine, and `Write`
+  always returns `len(p), nil`.
+* **Go P1-2.** golangci-lint `unused` would fail on the declaration stubs. *Fixed:* the stubs
+  and anchors reference every unexported declaration; lint is part of the AC.
+* **Go P2/P3** (all fixed):
+  * the signal lifecycle (`Notify` + `defer Stop`, no goroutine, no forwarding);
+  * `ErrWaitDelay` maps to 1 and a start failure to 2;
+  * the largest package is matched by exact module path;
+  * the output wording (raw bytes to the terminal);
+  * `--timeout` and `--test.timeout` rejection;
+  * the two-names-per-field counter row;
+  * the fixture `go.mod` pins `go 1.24`;
+  * the cached-run `n/a` fallback.
+* **Scope P2** (all fixed):
+  * the detector parses `-run=V`, `-run V`, and `-test.run`;
+  * the span rule is quote-aware only when a quote opens the span;
+  * rows added for `ci.yml:165` and the `-run=^$` compile-only lines;
+  * the `variables_used:` block is named and asserted non-empty.
+* **Scope P3** (all fixed):
+  * `go.instructions.md:36` becomes a governed coverage span;
+  * signal forwarding is dropped (YAGNI);
+  * `-json` mode and exit code 3 are kept (the ceiling test and the diagnostic pass-through
+    need them).
+
+<!-- plan-review-attempt: rev21.2-attempt-3-FAIL -->
+
+## Plan Review — Wave 19 attempt 3
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor
+decision: FAIL
+```
+
+**Verdicts on rev21.2** (all attempt-2 findings confirmed fixed):
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Constitution | FAIL | 1 P1 |
+| Go | ADVISORY | P2/P3 only |
+| Scope | ADVISORY | P3 only |
+
+**Circuit breaker: OPEN.** This is the third consecutive FAIL. The attempt-2 record declared
+attempt 3 the last allowed re-entry, so Stage halts here. Stage did **not** re-invoke
+plan-review and did **not** harvest. rev21.3 carries every disposition below, but it is
+**unreviewed**. `decision: FAIL` stays the authoritative final record until an
+operator-authorized review appends a later `## Plan Review` section.
+
+**Findings and their rev21.3 dispositions (applied, not yet re-reviewed):**
+
+* **Constitution P1.** 174.079-T left the `execGo` exit mapping (negative code, `ErrWaitDelay`,
+  start failure) and the unknown-subcommand path with no failing test first. *Remediated:*
+  * the pure helper `mapWaitResult(code, err)` is declared in 174.077-T and gets a 5-row
+    `TestMapWaitResult` in 174.078-T;
+  * 174.079-T adds rows for an unknown subcommand, an empty argument list, and the real
+    `execGo` start failure (with `PATH` set to an empty temp dir).
+* **Constitution P2.** 174.079-T's anchor removal made it a 3-file task. *Remediated:* 174.078-T
+  removes the anchors, since its own tests use the symbols. 174.079-T touches only `main.go`
+  and `main_test.go`. The sink files are renamed `result.go`, `result_test.go`, and
+  `result_shape_test.go`.
+* **Constitution P3** (all remediated):
+  * contract blocks are wrapped in BEGIN/END markers in the task bodies;
+  * the surfaces test is table-driven;
+  * D1 scopes the stop rule to the repository module (the hang probe is hermetic);
+  * the `Constitution Check: documented-deviations` verdict line is added.
+* **Go P2** (all remediated):
+  * the errcheck-safe 076 `run` stub;
+  * `type resultSink struct{}` with no fields until 174.078-T;
+  * `Largest` skip rules apply only when `path != root`, with a `dot-root` row under `t.Chdir`.
+* **Go P3** (all remediated):
+  * the hang probe assigns `buildGoTestArgs`'s two results;
+  * the detector requires a line start or a non-word character before `go`, and joins ` \`
+    continuations;
+  * timeout flags match an exact token or a `flag=` prefix;
+  * the detector table gains 3 rows.
+* **Scope P3** (all remediated):
+  * go-engineer line 76 becomes canonicalFull 1:1;
+  * surface tasks may edit the version and amendment lines named in their row;
+  * 174.090-T and 174.091-T share the pinned `summaryLine` (manifest line 596 renders into
+    `copilot-code-review.instructions.md` line 53);
+  * the heading is retitled.
+
+**Escalation (P-013.6).**
+
+```text
+threshold_kind: plan-review consecutive FAIL
+count: 3 (rev21 attempt 1, rev21.1 attempt 2, rev21.2 attempt 3)
+failure_summary: each attempt converged (P0/P1 counts 5 -> 3 -> 1); the final blocker was a single missing-test P1 with a mechanical fix
+last_actions: attempt-1/2/3 records above; rev21.3 remediation applied
+artifact_refs: docs/exec-plans/2026-09-14-resumable-shipment-blocked-lifecycle-plan.md (Wave 19 rev21.3), .backlogit/queue/073-DL.md, stash 11BE840F
+telemetry_evidence: logs/diagnostics/155-s-go-test-post-wave17-20260924.txt (+ metadata)
+resumption_checkpoint: docs/memory/2026-09-24/stage-11be840f-governed-test-budget.md
+resolved_escalation_route: gpt-6-sol / openai / xhigh (config.model_routing.escalation, reloaded 2026-09-24; differs from the Stage route claude-opus-5.5 / anthropic / high)
+escalation_status: ESCALATION_DEGRADED (the Engram CLI exposes no escalation-handoff command; MCP is not used) -> operator halt
+```
+
+**Operator decision required.** Choose one:
+
+* **(a)** Authorize one further plan-review cycle on rev21.3. On PASS, Stage harvests
+  174.074-T … 174.091-T into 155-S.
+* **(b)** Accept rev21.3 as ADVISORY-equivalent without re-review. Stage appends
+  `operator_authorization: approved` in a new final `## Plan Review` section and harvests.
+* **(c)** Reject Wave 19 and re-deliberate 073-DL.
