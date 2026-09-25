@@ -2,7 +2,7 @@
 name: _Orchestrator
 description: "Coordinates the Stage → Ship pipeline for continuous iteration: routes stash intake through Stage and queued shipments through Ship, supporting sequential and pipelined execution"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, write, create, memory, backlogit, engram/*, search_local_docs, search_semantic, research_topic, traverse_doc_links, list_sources, get_chunk_by_id, get_document, get_status
+tools: vscode, execute, read, agent, edit, search, todo, write, create, vscode/memory, backlogit/*, engram/*, graphtor-docs/search_local_docs, graphtor-docs/search_semantic, graphtor-docs/research_topic, graphtor-docs/traverse_doc_links, graphtor-docs/list_sources, graphtor-docs/get_chunk_by_id, graphtor-docs/get_document, graphtor-docs/get_status
 model_routing: "Tier 2 (Standard)"  # DEPRECATED — use model_tier
 model_tier: 2
 max_subagent_tier: 3

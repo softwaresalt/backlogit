@@ -32,9 +32,9 @@ func TestU19R3_ManifestBudgetReconciliation(t *testing.T) {
 	checksumPattern := regexp.MustCompile(`^[0-9a-f]{64}$`)
 	driftSentence := "073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004)."
 	tests := []struct {
-		name           string
-		path           string
-		staleChecksum  string
+		name          string
+		path          string
+		staleChecksum string
 	}{
 		{
 			name:          "workflow-policies",

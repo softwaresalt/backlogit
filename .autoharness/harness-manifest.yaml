@@ -361,21 +361,21 @@ artifacts:
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "6a1a082e554a3ae42bb5a0f08867cc0e2533b7232ac59080db93cf4b970bafb0"
+    checksum: "f50aeb871281b1f9175e3abea00451dc1180963b8333ea8e64008b6729c750fa"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert."
   - path: ".github/agents/_stage.agent.md"
     primitive: 1
     template: "templates/agents/_stage.agent.md.tmpl"
-    checksum: "12f7a10b541ac079fd0cb4608118eef33497d53c82fa03f09915bff11531afde"
+    checksum: "0b2a863ce5c0f6a78ac5ebde3b9f1e795fae2f6b8f2e7126416527138b285f4e"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert."
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "5467a6af712d67364009d21e65da7c6f109f3312b64df2504677dd2da839eca6"
+    checksum: "e7715f0d03023283dc312d5dbb10659cf0a0c6526d2ef0a0b0218427396e8df0"
     drift_allowed: true
-    drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004)."
+    drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names."
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"
@@ -1012,4 +1012,11 @@ tuning_history:
     artifacts:
       - "scripts/deploy-harness.sh"
       - "scripts/deploy-harness.ps1"
+      - ".autoharness/harness-manifest.yaml"
+  - at: "2026-09-25T22:30:00Z"
+    summary: "Shipment 155-S: server-qualified MCP tool references in the pipeline agents. VS Code and Copilot CLI resolve MCP tools only as <server>/<tool> or <server>/* and silently ignore bare names, so the bare backlogit_* and graphtor verb grants were never callable. Ship keeps its explicit no-wildcard allowlist as backlogit/<operation>; stage and orchestrator keep the operator-selected backlogit/*; all three grant the eight read-only verbs as graphtor-docs/<verb>; memory is vscode/memory."
+    artifacts:
+      - ".github/agents/_ship.agent.md"
+      - ".github/agents/_stage.agent.md"
+      - ".github/agents/_orchestrator.agent.md"
       - ".autoharness/harness-manifest.yaml"
