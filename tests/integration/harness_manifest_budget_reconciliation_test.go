@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestHarnessManifestBudgetReconciliation(t *testing.T) {
+func TestU19R3_ManifestBudgetReconciliation(t *testing.T) {
 	type artifact struct {
 		Path         string `yaml:"path"`
 		Checksum     string `yaml:"checksum"`
