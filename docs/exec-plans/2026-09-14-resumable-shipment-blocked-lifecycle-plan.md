@@ -4937,3 +4937,42 @@ is available or needed.
   174.076-T, for example to a non-exempt task"). The final `## Plan Review` gate (Wave 19R
   attempt 3: `multi-agent-dispatch`, `ADVISORY`, `operator_authorization: approved`) is
   unchanged, and no new review attempt is recorded.
+
+## Amendment — Wave 19R rev22.5: P-002.6 unit-prefix selector for 174.076-T (2026-09-25)
+
+* **Trigger.** Ship halted before implementation on a rev22.4 contract defect. The AC3
+  selector `^TestHarnessManifestBudgetReconciliation$` is not anchored to a task unit prefix, so
+  it violates P-002.6 task-scoped command requirement 4 (`-run '^TestU<unit>_'`), which Ship's
+  Step 4.2 `harness_cmd` rule enforces. The harness itself was sound: harness commit `edb8d88b`
+  was assertion-RED on (c)/(d) in both subtests.
+* **D9 — unit token `U19R3`.** 174.076-T is Wave 19R work unit 3 of 3, so its unit prefix is
+  `TestU19R3_`.
+  * The harness function is renamed `TestU19R3_ManifestBudgetReconciliation`, with no assertion
+    change.
+  * No other function in the repository carries the `TestU19R` prefix.
+  * The task-scoped `harness_cmd` is
+    `go test -count=1 -timeout=5m -v -run '^TestU19R3_' ./tests/integration`.
+  * It passes only on exactly one top-level `--- PASS: TestU19R3_ManifestBudgetReconciliation`
+    line. Exit 0 with `[no tests to run]`, `no test files`, or zero PASS lines is a failure.
+* **Regression declared canonically.** The `npx ` regression selector is now declared in a
+  P-002.6 `green-regression-contract` block rather than in prose:
+  `go test -count=1 -timeout=5m -v -run '^TestActivePluginDocsDoNotReferenceRetiredNPMWrapper$' ./tests/integration`.
+* **Checksum probe.** It stays an acceptance-evidence probe. It is neither `harness_cmd` nor a
+  `green_regression_cmds` entry, because it is a read-only PowerShell content check and not a
+  scoped Go test command.
+* **Procedure** (full detail in 174.076-T):
+  1. 174.076-T returns to `queued`, keeping `harness-ready`.
+  2. harness-architect makes a test-only rename commit.
+  3. RED is re-verified against the HEAD manifest, with the deliverable set aside under the
+     approved hash-verified backup.
+  4. Ship re-claims the task, capturing a new claim baseline equal to the rename commit.
+  5. The backup is restored, and the green gates and manifest-only commit follow.
+* **Unchanged:**
+  * dependencies and 155-S membership;
+  * D8 (non-exempt classification);
+  * the push-after-W3 rule;
+  * the D1 deferral;
+  * the single 19R.8 authorization request.
+* **Review disposition.** This is a mechanical selector and naming correction inside the D7
+  stall-bound path. The final `## Plan Review` gate is unchanged, and no new review attempt is
+  recorded.
