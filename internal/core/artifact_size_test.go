@@ -3,9 +3,11 @@ package core_test
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,6 +15,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/mdfront"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -43,6 +46,14 @@ const goldenTaskFile = "---\n" +
 	"\n" +
 	"Final paragraph.\n"
 
+func newRecoveryFreeFixtureWorkspace(ctx context.Context, root string) (*core.Workspace, error) {
+	ws, err := core.NewWorkspace(ctx, root)
+	if err != nil {
+		return nil, fmt.Errorf("new recovery-free fixture workspace: %w", err)
+	}
+	return ws, nil
+}
+
 func setupSizeWorkspace(t *testing.T) (ws *core.Workspace, id, path string) {
 	t.Helper()
 	ctx := context.Background()
@@ -51,7 +62,7 @@ func setupSizeWorkspace(t *testing.T) (ws *core.Workspace, id, path string) {
 	require.NoError(t, os.MkdirAll(filepath.Join(backlogitDir, "queue"), 0o755))
 	require.NoError(t, config.WriteDefaults(backlogitDir))
 
-	ws, err := core.NewWorkspace(ctx, root)
+	ws, err := newRecoveryFreeFixtureWorkspace(ctx, root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ws.Close() })
 
@@ -69,6 +80,36 @@ func setupSizeWorkspace(t *testing.T) (ws *core.Workspace, id, path string) {
 	}
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, art))
 	return ws, "900.001-T", path
+}
+
+func TestRecoveryFreeFixture_SkipsShipmentRecoveryButLoadsTemplates(t *testing.T) {
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(filepath.Join(backlogitDir, "queue"), 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+
+	opsPath := filepath.Join(backlogitDir, "ops")
+	require.NoFileExists(t, opsPath)
+	require.NoDirExists(t, opsPath)
+	require.NoError(t, os.WriteFile(opsPath, []byte("not a directory"), 0o644))
+
+	recoveryCtx, cancelRecovery := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelRecovery()
+	recoveryWS, recoveryErr := core.NewWorkspace(recoveryCtx, root)
+	if recoveryWS != nil {
+		t.Cleanup(func() { require.NoError(t, recoveryWS.Close()) })
+	}
+	require.Error(t, recoveryErr)
+	require.ErrorContains(t, recoveryErr, "recover shipment operations")
+	require.ErrorIs(t, recoveryErr, blerrors.ErrValidation)
+	require.Nil(t, recoveryWS)
+
+	isolatedCtx, cancelIsolated := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelIsolated()
+	isolatedWS, isolatedErr := newRecoveryFreeFixtureWorkspace(isolatedCtx, root)
+	require.NoError(t, isolatedErr)
+	t.Cleanup(func() { require.NoError(t, isolatedWS.Close()) })
+	require.NotEmpty(t, isolatedWS.Templates)
 }
 
 func TestSetArtifactSize_PersistsAndPreservesIndexColumns(t *testing.T) {
