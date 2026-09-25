@@ -47,7 +47,7 @@ const goldenTaskFile = "---\n" +
 	"Final paragraph.\n"
 
 func newRecoveryFreeFixtureWorkspace(ctx context.Context, root string) (*core.Workspace, error) {
-	ws, err := core.NewWorkspace(ctx, root)
+	ws, err := core.NewWorkspaceWithoutRecoveryForTest(ctx, root)
 	if err != nil {
 		return nil, fmt.Errorf("new recovery-free fixture workspace: %w", err)
 	}
