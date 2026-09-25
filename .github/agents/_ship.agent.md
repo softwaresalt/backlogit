@@ -947,7 +947,7 @@ part, and unfiltered whenever it can be.
      partition the pre-recomputation open set exactly: still open → required RED, newly closed →
      required GREEN. No entry is skipped.
 3. **Decide the full suite from the open-red set** recomputed in item 2.
-   * **Empty** → run the **unfiltered full repository suite**: `go test ./...`. No selector, no
+   * **Empty** → run the **unfiltered full repository suite**: `go test -timeout=30m ./...`. No selector, no
      `-short`, no skip, no tolerated red. It must be fully green. This is mandatory, not optional:
      an empty open-red set is exactly when the full suite is meaningful, and skipping it there
      would turn the deferral into a permanent exemption.
@@ -986,7 +986,7 @@ When the `agent-intercom` capability pack is installed, broadcast
 After all tasks in the queue are complete:
 
 1. Run the full quality gate sequence one final time. Under P-002.6 this **must** include the
-   **unfiltered** `go test ./...` with no tolerated red of any kind: `open_red_deliverables` must be
+   **unfiltered** `go test -timeout=30m ./...` with no tolerated red of any kind: `open_red_deliverables` must be
    empty at final closure, and every deferred full suite is discharged here. If any entry is still
    open — including because a declared green-maker reached `archived` (a descope) rather than
    `done` — halt with `WAVE_OPEN_RED_UNCLOSED` and return the release unit to Stage. A release unit
