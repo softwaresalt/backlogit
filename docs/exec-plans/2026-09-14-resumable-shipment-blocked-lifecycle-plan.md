@@ -4880,3 +4880,60 @@ is available or needed.
     closure) and `7CE12EE6` (allocator ID reservation).
 * **E1–E5:** planned and reviewed (19R.10), but not created yet (19R.11). They wait until PR
   #449 merges or closes.
+
+## Amendment — Wave 19R rev22.4: 174.076-T reclassified after the D7 fail-closed return (2026-09-25)
+
+* **Trigger (H14 / D7 stall bound).**
+  * At W3, Ship's P-002.4 path pass rejected `.autoharness/harness-manifest.yaml` under
+    `docs-only` with `EXEMPT_DELTA_EXCEEDS_CLASS`
+    (`logs/diagnostics/174076-p0024-delta-report.json`).
+  * The exact pre-work probe had failed (exit 1), and the post-deliverable probe and the
+    regression selector had both passed. Only the class surface was wrong.
+  * Per 174.076-T AC6, Ship halted with W1/W2 local and unpushed, and returned the task to Stage.
+* **D8 — 174.076-T is a normal harness-required task (supersedes D7 for this task).**
+  * P-002.4 admits no YAML configuration file under any exempt class. It already names the
+    compliant route for one: a non-exempt task with its own red harness.
+  * The task therefore drops `harness-exempt`/`docs-only`, and its exemption contract block is
+    removed.
+  * In W3, harness-architect scaffolds one Go harness,
+    `TestHarnessManifestBudgetReconciliation`, in
+    `tests/integration/harness_manifest_budget_reconciliation_test.go`.
+  * The harness asserts that both manifest entries:
+    * parse without duplicate keys;
+    * keep `drift_allowed: true`;
+    * carry the `073-DL rev22` sentence exactly once;
+    * carry a 64-hex checksum rotated away from the pre-reconciliation value.
+  * It is assertion-red against the HEAD manifest and green on the deliverable. Stage verified
+    both states read-only.
+  * No policy text changes and no waiver is taken.
+* **D7's over-coupling objection is met rather than overridden.** The harness does not
+  recompute checksum currency from the target files. Future edits of `_ship.agent.md` or
+  `workflow-policies.md` therefore cannot fail CI through this test, and neither can the
+  operator-owned working-tree tools line. Exact currency remains a task-gate probe: the former
+  exempt command, with its marker renamed `CHECKSUM_PROBE_OK:174.076-T`.
+* **Closed exempt set (19R.6), amended:** {`174.075-T` docs-only}. `174.076-T` leaves the set.
+* **Sequencing.** The validated deliverable is uncommitted in the working tree. Ship must:
+  1. set it aside with a hash-verified backup under the ignored `logs/diagnostics/`;
+  2. restore the HEAD manifest, confirm red, commit the harness alone, and apply
+     `harness-ready`;
+  3. restore the backup byte-exactly, run the green gates, and commit the manifest alone.
+
+  The restore-over-uncommitted step is subject to P-002.5 / Principle VII screening. The full
+  contract is in 174.076-T AC1–AC9 and its implementation notes.
+* **Unchanged:**
+  * dependencies (`174.076-T` blocks on `174.075-T`);
+  * 155-S membership (39 items);
+  * W3 as the final wave and the push-after-W3 rule;
+  * the D1 full-suite deferral;
+  * the single 19R.8 governed-run authorization request after push.
+* **Rejected:**
+  * amending P-002.4 to admit harness-metadata YAML into `docs-only`: a contract change needing
+    operator authority and its own deliberated, harnessed work, and unnecessary given D8;
+  * `covered-by`: needs a new owner harness anyway, plus a contestable production-file
+    reading of YAML;
+  * dropping or deferring the task: contradicts finishing W1–W3;
+  * an operator P-002.4 waiver: operator-only, and not required.
+* **Review disposition.** This is the pre-authorized D7 stall-bound path ("Stage amends
+  174.076-T, for example to a non-exempt task"). The final `## Plan Review` gate (Wave 19R
+  attempt 3: `multi-agent-dispatch`, `ADVISORY`, `operator_authorization: approved`) is
+  unchanged, and no new review attempt is recorded.
