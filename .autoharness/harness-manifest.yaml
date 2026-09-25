@@ -125,9 +125,9 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "d941c1c78f33a46c0afd9e743ccd606d3da4316cada7260871708c4b91d9290b"
+    checksum: "d6e67d03bb872709a3edd5faf7daf7f44a62042b0019862cee83c709cf164778"
     drift_allowed: true
-    drift_reason: "Shipment 155-S final-review remediation. P-015 now matches the implemented flat explicit shipment scope: listed features do not imply descendant or linked-deliberation membership, and only explicit members plus the shipment control record participate in closure. Do not auto-revert."
+    drift_reason: "Shipment 155-S final-review remediation. P-015 now matches the implemented flat explicit shipment scope: listed features do not imply descendant or linked-deliberation membership, and only explicit members plus the shipment control record participate in closure. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004)."
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
@@ -373,9 +373,9 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "d6b046f8d2299e8b146df95994fa7d5d6472c28eec56335a8e8988fbf242a3d9"
+    checksum: "5467a6af712d67364009d21e65da7c6f109f3312b64df2504677dd2da839eca6"
     drift_allowed: true
-    drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert."
+    drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004)."
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"
