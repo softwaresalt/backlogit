@@ -611,7 +611,12 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 	}
 	journal.Phase = "committed"
 	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); err != nil {
-		return nil, compensate(fmt.Errorf("persist block shipment commit: %w", err))
+		return nil, fmt.Errorf(
+			"block shipment %s: persist block shipment commit: %v: %w",
+			shipmentID,
+			err,
+			blerrors.ErrWriteIndeterminate,
+		)
 	}
 
 	return blocked, nil
@@ -868,7 +873,12 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 	}
 	journal.Phase = "committed"
 	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); err != nil {
-		return nil, compensate(fmt.Errorf("persist unblock shipment commit: %w", err))
+		return nil, fmt.Errorf(
+			"unblock shipment %s: persist unblock shipment commit: %v: %w",
+			shipmentID,
+			err,
+			blerrors.ErrWriteIndeterminate,
+		)
 	}
 
 	return unblocked, nil
