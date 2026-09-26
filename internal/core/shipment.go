@@ -319,6 +319,65 @@ func lockShipmentLifecycleGlobalRaw(
 	return lockedCtx, unlock, nil
 }
 
+func finishShipmentLifecycleCompensation(
+	ctx context.Context,
+	ws *Workspace,
+	journalName string,
+	journal *shipmentLifecycleJournal,
+	actor string,
+	eventDelta map[string]any,
+	cause error,
+) error {
+	compensationStepError := func(step string, err error) error {
+		return fmt.Errorf(
+			"%s shipment %s compensation failed during %s (cause: %v; step error: %v): %w",
+			journal.Operation,
+			journal.ShipmentID,
+			step,
+			cause,
+			err,
+			blerrors.ErrWriteIndeterminate,
+		)
+	}
+
+	preimageStatus := string(journal.Preimage.Shipment.Status)
+	statusDelta := maps.Clone(eventDelta)
+	statusDelta["phase"] = "applied"
+	statusDelta["target"] = preimageStatus
+	statusDelta["status"] = preimageStatus
+	if err := appendItemEventWithActorErr(
+		ctx,
+		ws,
+		journal.ShipmentID,
+		actor,
+		"shipment_status_changed",
+		statusDelta,
+	); err != nil {
+		return compensationStepError("append compensation status evidence", err)
+	}
+
+	compensatedDelta := maps.Clone(eventDelta)
+	compensatedDelta["phase"] = "compensated"
+	compensatedDelta["target"] = preimageStatus
+	if err := appendItemEventWithActorErr(
+		ctx,
+		ws,
+		journal.ShipmentID,
+		actor,
+		"shipment_lifecycle",
+		compensatedDelta,
+	); err != nil {
+		return compensationStepError("append compensation event", err)
+	}
+
+	journal.Phase = "compensated"
+	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, *journal); err != nil {
+		journal.Phase = "intent"
+		return compensationStepError("persist compensation journal", err)
+	}
+	return nil
+}
+
 // BlockShipment performs the governed active-to-blocked shipment transition.
 func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts BlockOptions) (*models.Artifact, error) {
 	if strings.TrimSpace(opts.Reason) == "" {
@@ -472,27 +531,19 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 				}
 			}
 		}
-		if compensationErr == nil {
-			journal.Phase = "compensated"
-			if _, journalErr := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); journalErr != nil {
-				compensationErr = errors.Join(compensationErr, fmt.Errorf("persist compensation journal: %w", journalErr))
-			}
-			compensatedDelta := maps.Clone(eventDelta)
-			compensatedDelta["phase"] = "compensated"
-			compensatedDelta["target"] = string(preimage.Shipment.Status)
-			if eventErr := appendItemEventWithActorErr(
-				compensateCtx,
-				ws,
-				shipmentID,
-				opts.BlockedBy,
-				"shipment_lifecycle",
-				compensatedDelta,
-			); eventErr != nil {
-				compensationErr = errors.Join(compensationErr, fmt.Errorf("append compensation event: %w", eventErr))
-			}
-		}
 		if compensationErr != nil {
 			return fmt.Errorf("block shipment %s: %w; compensation failed: %w", shipmentID, cause, compensationErr)
+		}
+		if err := finishShipmentLifecycleCompensation(
+			compensateCtx,
+			ws,
+			journalName,
+			&journal,
+			opts.BlockedBy,
+			eventDelta,
+			cause,
+		); err != nil {
+			return err
 		}
 		return fmt.Errorf("block shipment %s: %w", shipmentID, cause)
 	}
@@ -534,10 +585,10 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 		changes:                       eventDelta,
 		allowGovernedShipmentMutation: true,
 	})
+	mutationApplied = true
 	if err := persistArtifact(governedCtx, ws, blocked, true); err != nil {
 		return nil, compensate(fmt.Errorf("persist blocked shipment: %w", err))
 	}
-	mutationApplied = true
 
 	statusDelta := maps.Clone(eventDelta)
 	statusDelta["phase"] = "applied"
@@ -741,27 +792,19 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 				compensationErr = errors.Join(compensationErr, fmt.Errorf("restore shipment %s: %w", shipmentID, restoreErr))
 			}
 		}
-		if compensationErr == nil {
-			journal.Phase = "compensated"
-			if _, journalErr := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); journalErr != nil {
-				compensationErr = errors.Join(compensationErr, fmt.Errorf("persist compensation journal: %w", journalErr))
-			}
-			compensatedDelta := maps.Clone(eventDelta)
-			compensatedDelta["phase"] = "compensated"
-			compensatedDelta["target"] = string(preimage.Shipment.Status)
-			if eventErr := appendItemEventWithActorErr(
-				compensateCtx,
-				ws,
-				shipmentID,
-				opts.UnblockedBy,
-				"shipment_lifecycle",
-				compensatedDelta,
-			); eventErr != nil {
-				compensationErr = errors.Join(compensationErr, fmt.Errorf("append compensation event: %w", eventErr))
-			}
-		}
 		if compensationErr != nil {
 			return fmt.Errorf("unblock shipment %s: %w; compensation failed: %w", shipmentID, cause, compensationErr)
+		}
+		if err := finishShipmentLifecycleCompensation(
+			compensateCtx,
+			ws,
+			journalName,
+			&journal,
+			opts.UnblockedBy,
+			eventDelta,
+			cause,
+		); err != nil {
+			return err
 		}
 		return fmt.Errorf("unblock shipment %s: %w", shipmentID, cause)
 	}
@@ -784,10 +827,10 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 		changes:                       eventDelta,
 		allowGovernedShipmentMutation: true,
 	})
+	mutationApplied = true
 	if err := persistArtifact(governedCtx, ws, unblocked, true); err != nil {
 		return nil, compensate(fmt.Errorf("persist unblocked shipment: %w", err))
 	}
-	mutationApplied = true
 
 	for _, member := range preimage.Members {
 		desiredStatus := desiredStatuses[member.ID]
