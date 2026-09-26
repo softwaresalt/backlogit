@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -638,6 +639,25 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		artifact.ParentID = v
 	}
 	if v, ok := updates["custom_fields"].(map[string]any); ok {
+		if artifact.ArtifactType == "shipment" && previousStatus == models.StatusBlocked {
+			cleanedUpdates := make(map[string]any, len(updates))
+			for key, value := range updates {
+				cleanedUpdates[key] = value
+			}
+			cleanedCustomFields := make(map[string]any, len(v))
+			for key, value := range v {
+				cleanedCustomFields[key] = value
+			}
+			for _, key := range blockedShipmentEnvelopeKeys() {
+				delete(cleanedCustomFields, key)
+				if priorValue, exists := artifact.CustomFields[key]; exists {
+					cleanedCustomFields[key] = priorValue
+				}
+			}
+			cleanedUpdates["custom_fields"] = cleanedCustomFields
+			updates = cleanedUpdates
+			v = cleanedCustomFields
+		}
 		artifact.CustomFields = mergePreserveReservedSizingKeys(artifact.CustomFields, v)
 	}
 	if v, ok := updates["harness_status"].(string); ok {
@@ -945,6 +965,23 @@ func writeArtifactFileGoverned(
 			if err := guardBlockedShipmentMembershipMutation(previous, artifact); err != nil {
 				return err
 			}
+			if previous.ArtifactType == "shipment" &&
+				previous.Status == models.StatusBlocked &&
+				artifact.Status == models.StatusBlocked &&
+				!envelope.allowGovernedShipmentMutation {
+				for _, key := range blockedShipmentEnvelopeKeys() {
+					previousValue, previousPresent := previous.CustomFields[key]
+					nextValue, nextPresent := artifact.CustomFields[key]
+					if previousPresent != nextPresent ||
+						(previousPresent && !blockedShipmentEnvelopeValuesEqual(key, previousValue, nextValue)) {
+						return fmt.Errorf(
+							"refusing ungoverned blocked shipment envelope mutation %s: %w",
+							artifact.ID,
+							blerrors.ErrShipmentBlockedRequiresEnvelope,
+						)
+					}
+				}
+			}
 			protectedTransition := previous.ArtifactType == "shipment" &&
 				isProtectedShipmentStatusTransition(previous.Status, artifact.Status)
 			if protectedTransition && !envelope.allowGovernedShipmentMutation {
@@ -974,6 +1011,39 @@ func writeArtifactFileGoverned(
 		return fmt.Errorf("write artifact file: %w", err)
 	}
 	return nil
+}
+
+// blockedShipmentEnvelopeKeys returns the canonical blocked-shipment envelope keys.
+// Additional blocked-envelope stash fields are deferred to stash 8AF55264.
+func blockedShipmentEnvelopeKeys() [6]string {
+	return [...]string{
+		"blocked_reason",
+		"blocked_at",
+		"member_status_snapshot",
+		"branch",
+		"blocked_by",
+		"resume_checkpoint_ref",
+	}
+}
+
+func blockedShipmentEnvelopeValuesEqual(key string, previous, next any) bool {
+	if key == "blocked_at" {
+		previousTimestamp, previousOK := canonicalBlockedTimestamp(previous)
+		nextTimestamp, nextOK := canonicalBlockedTimestamp(next)
+		if previousOK && nextOK {
+			return previousTimestamp == nextTimestamp
+		}
+	}
+
+	previousJSON, previousErr := json.Marshal(previous)
+	if previousErr != nil {
+		return false
+	}
+	nextJSON, nextErr := json.Marshal(next)
+	if nextErr != nil {
+		return false
+	}
+	return string(previousJSON) == string(nextJSON)
 }
 
 func guardBlockedShipmentMembershipMutation(previous, next *models.Artifact) error {
