@@ -159,10 +159,8 @@ func TestU20C3_CompensationEventFailureLeavesRecoverableIntent(t *testing.T) {
 
 			shipmentAfterFailure := cloneArtifact(loadURCanonicalArtifact(t, ws, preimageShipment.ID))
 			assertURArtifactEqual(t, preimageShipment, shipmentAfterFailure)
-			membersAfterFailure := make([]*models.Artifact, 0, len(preimageMembers))
 			for _, member := range preimageMembers {
 				current := cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID))
-				membersAfterFailure = append(membersAfterFailure, current)
 				assertURArtifactEqual(t, member, current)
 			}
 			if tt.operation == "unblock" {
