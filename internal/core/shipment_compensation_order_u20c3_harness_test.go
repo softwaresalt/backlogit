@@ -185,9 +185,9 @@ func TestU20C3_CompensationEventFailureLeavesRecoverableIntent(t *testing.T) {
 
 			itemEvents := readUREvents(t, ws, preimageShipment.ID)
 			terminalCount := 0
-			appliedCount := 0
+			compensatingStatusCount := 0
 			lastAppliedTarget := ""
-			appliedIndex := -1
+			compensatingStatusIndex := -1
 			terminalIndex := -1
 			for index, event := range itemEvents {
 				if exactEventCorrelationUR(event) != journal.CorrelationID ||
@@ -195,9 +195,15 @@ func TestU20C3_CompensationEventFailureLeavesRecoverableIntent(t *testing.T) {
 					continue
 				}
 				if event.EventType == "shipment_status_changed" && eventPhaseUR(event) == "applied" {
-					appliedCount++
 					lastAppliedTarget = eventTargetUR(event)
-					appliedIndex = index
+					target, targetOK := event.Delta["target"].(string)
+					status, statusOK := event.Delta["status"].(string)
+					if targetOK && statusOK &&
+						target == string(preimageShipment.Status) &&
+						status == string(preimageShipment.Status) {
+						compensatingStatusCount++
+						compensatingStatusIndex = index
+					}
 				}
 				if event.EventType == "shipment_lifecycle" && eventPhaseUR(event) == "compensated" {
 					terminalCount++
@@ -205,12 +211,14 @@ func TestU20C3_CompensationEventFailureLeavesRecoverableIntent(t *testing.T) {
 				}
 			}
 			assert.Equal(t, 1, terminalCount, "exactly one correlated terminal compensated event must exist")
-			assert.Equal(t, 1, appliedCount, "exactly one correlated compensated status event must exist")
+			assert.Equal(t, 1, compensatingStatusCount,
+				"exactly one correlated compensating status evidence event must exist")
 			assert.Equal(t, string(preimageShipment.Status), lastAppliedTarget,
 				"the last applied status target must be the shipment preimage")
-			assert.GreaterOrEqual(t, appliedIndex, 0)
+			assert.GreaterOrEqual(t, compensatingStatusIndex, 0)
 			assert.GreaterOrEqual(t, terminalIndex, 0)
-			assert.Less(t, appliedIndex, terminalIndex, "compensated status evidence must precede its terminal event")
+			assert.Less(t, compensatingStatusIndex, terminalIndex,
+				"compensated status evidence must precede its terminal event")
 
 			report, doctorErr := Doctor(ctx, ws, &DoctorOptions{
 				CheckOrphans:    false,
@@ -396,8 +404,8 @@ func TestU20C3_CompensationJournalFailureAfterTerminalEvidenceRecovers(t *testin
 			}
 
 			terminalCount := 0
-			appliedCount := 0
-			appliedIndex := -1
+			compensatingStatusCount := 0
+			compensatingStatusIndex := -1
 			terminalIndex := -1
 			lastAppliedTarget := ""
 			for index, event := range eventsBeforeRecovery {
@@ -406,21 +414,28 @@ func TestU20C3_CompensationJournalFailureAfterTerminalEvidenceRecovers(t *testin
 					continue
 				}
 				if event.EventType == "shipment_status_changed" && eventPhaseUR(event) == "applied" {
-					appliedCount++
-					appliedIndex = index
 					lastAppliedTarget = eventTargetUR(event)
+					target, targetOK := event.Delta["target"].(string)
+					status, statusOK := event.Delta["status"].(string)
+					if targetOK && statusOK &&
+						target == string(preimageShipment.Status) &&
+						status == string(preimageShipment.Status) {
+						compensatingStatusCount++
+						compensatingStatusIndex = index
+					}
 				}
 				if event.EventType == "shipment_lifecycle" && eventPhaseUR(event) == "compensated" {
 					terminalCount++
 					terminalIndex = index
 				}
 			}
-			assert.Equal(t, 1, appliedCount, "compensated applied status evidence must be present before recovery")
+			assert.Equal(t, 1, compensatingStatusCount,
+				"exactly one compensating applied status evidence event must be present before recovery")
 			assert.Equal(t, 1, terminalCount, "exactly one terminal compensated event must be present before recovery")
 			assert.Equal(t, string(preimageShipment.Status), lastAppliedTarget)
-			assert.GreaterOrEqual(t, appliedIndex, 0)
+			assert.GreaterOrEqual(t, compensatingStatusIndex, 0)
 			assert.GreaterOrEqual(t, terminalIndex, 0)
-			assert.Less(t, appliedIndex, terminalIndex,
+			assert.Less(t, compensatingStatusIndex, terminalIndex,
 				"compensated status evidence must precede the terminal compensated event")
 
 			recoveryErr := recoverPendingShipmentOperations(ctx, ws)
@@ -437,8 +452,8 @@ func TestU20C3_CompensationJournalFailureAfterTerminalEvidenceRecovers(t *testin
 
 			eventsAfterRecovery := readUREvents(t, ws, preimageShipment.ID)
 			terminalCount = 0
-			appliedCount = 0
-			appliedIndex = -1
+			compensatingStatusCount = 0
+			compensatingStatusIndex = -1
 			terminalIndex = -1
 			for index, event := range eventsAfterRecovery {
 				if exactEventCorrelationUR(event) != journal.CorrelationID ||
@@ -446,19 +461,26 @@ func TestU20C3_CompensationJournalFailureAfterTerminalEvidenceRecovers(t *testin
 					continue
 				}
 				if event.EventType == "shipment_status_changed" && eventPhaseUR(event) == "applied" {
-					appliedCount++
-					appliedIndex = index
+					target, targetOK := event.Delta["target"].(string)
+					status, statusOK := event.Delta["status"].(string)
+					if targetOK && statusOK &&
+						target == string(preimageShipment.Status) &&
+						status == string(preimageShipment.Status) {
+						compensatingStatusCount++
+						compensatingStatusIndex = index
+					}
 				}
 				if event.EventType == "shipment_lifecycle" && eventPhaseUR(event) == "compensated" {
 					terminalCount++
 					terminalIndex = index
 				}
 			}
-			assert.Equal(t, 1, appliedCount, "recovery must not duplicate compensated status evidence")
+			assert.Equal(t, 1, compensatingStatusCount,
+				"recovery must not duplicate compensating status evidence")
 			assert.Equal(t, 1, terminalCount, "recovery must not duplicate the terminal compensated event")
-			assert.GreaterOrEqual(t, appliedIndex, 0)
+			assert.GreaterOrEqual(t, compensatingStatusIndex, 0)
 			assert.GreaterOrEqual(t, terminalIndex, 0)
-			assert.Less(t, appliedIndex, terminalIndex)
+			assert.Less(t, compensatingStatusIndex, terminalIndex)
 
 			report, doctorErr := Doctor(ctx, ws, &DoctorOptions{
 				CheckOrphans:    false,
