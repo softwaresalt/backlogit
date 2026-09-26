@@ -1,8 +1,10 @@
 ---
-title: "155-S Final Review Record"
-description: "Final-gate Step 2 review, remediation, and post-remediation results for shipment 155-S; the governed suite remains withheld."
+chunk_strategy: h1-h2-h3
+description: "Final-gate review and verification record for shipment 155-S, including the single governed-suite docline failure."
 doc_type: closure
+schema_version: "1.0"
 source: docs/closure/2026-09-25-155-S-final-review.md
+title: "155-S Final Review Record"
 ---
 
 # 155-S Final Review Record
@@ -383,8 +385,8 @@ post-remediation commit:
 ### Final-gate disposition and process deviations
 
 Final-gate Step 2 is `READY`: zero P0/P1 findings and no unresolved in-scope
-P2 findings remain. Final-gate Step 1, the governed full suite, is still
-operator-withheld. Do not run it or create a PR until separately authorized.
+P2 findings remain. Final-gate Step 1 was subsequently run once with operator
+authorization; its result is documented below. No full-suite rerun is claimed.
 
 The following process deviations and harness corrections are recorded:
 
@@ -398,4 +400,40 @@ The following process deviations and harness corrections are recorded:
   dispatch.
 
 No PR, CI, P-018 Copilot-review, merge, shipment archival, or post-merge
-closure was started. The governed full suite remains withheld.
+closure was started. The governed full-suite outcome is recorded below; no
+full-suite rerun is claimed.
+
+## Final-gate Step 1 — governed full suite
+
+The operator authorized one governed full-suite run at HEAD `0b11459f` on
+2026-09-26T10:24. The Orchestrator ran
+`go test -timeout=30m ./...` once. It exited 1 after 2029 seconds. Every
+package passed except
+`tests/integration:TestDoclineSoftKeys_LiveTrackedCorpus/deterministic_path_report`,
+which found this document missing the soft keys `chunk_strategy: h1-h2-h3`
+and `schema_version: "1.0"`. This was a documentation-only failure; no code
+failure was reported. `internal/core` passed in 791.8 seconds, as did the
+other packages (`internal/mcp`, `internal/cli`, `tests`, and
+`tests/contract`). The suite was not rerun.
+
+The full-suite capture is
+`logs/diagnostics/155-s-go-test-governed-30m-20260926-1024.txt` with metadata
+in the adjacent `.meta.txt` file.
+
+**Fix commit SHA:** Pending; a follow-up documentation commit will record the
+SHA of the commit that adds these soft keys.
+
+**Targeted re-verification:**
+
+* `go test -count=1 -timeout=10m -run '^TestDoclineSoftKeys_' ./tests/integration`
+  — PASS, exit 0; package time 13.287 seconds.
+* `go test -count=1 -timeout=15m ./tests/integration` — PASS, exit 0; package
+  time 15.888 seconds.
+* `.\bin\backlogit.exe docs lint --path docs/closure/2026-09-25-155-S-final-review.md`
+  — PASS, `valid: true`, zero violations.
+
+The targeted outputs and command metadata are captured in
+`logs/diagnostics/155-s-docline-softkeys-targeted-20260926.txt`,
+`logs/diagnostics/155-s-integration-targeted-20260926.txt`, and
+`logs/diagnostics/155-s-closure-docs-lint-fix-20260926.txt` with corresponding
+`.meta.txt` files.
