@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/mdfront"
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -129,13 +131,47 @@ const (
 	// shipment, because the indeterminate branch returns before the archive
 	// collector runs. Advisory; report-only.
 	FindingShippedUnarchivedResidue DoctorFindingType = "shipped_unarchived_residue"
+
+	// FindingMultipleActiveShipments indicates the authoritative Markdown
+	// corpus contains more than one active shipment.
+	FindingMultipleActiveShipments DoctorFindingType = "multiple_active_shipments"
+
+	// FindingMalformedBlockedShipment indicates a blocked shipment is missing a
+	// non-empty blocked_reason or a valid blocked_at timestamp.
+	FindingMalformedBlockedShipment DoctorFindingType = "malformed_blocked_shipment"
+
+	// FindingTornShipmentLifecycleIntent indicates a shipment_lifecycle intent
+	// event has no correlated committed or compensated terminal event.
+	FindingTornShipmentLifecycleIntent DoctorFindingType = "torn_shipment_lifecycle_intent"
+
+	// FindingInvalidShipmentLifecycleJournal indicates that the durable
+	// shipment-operation journal set cannot be safely enumerated, read, or
+	// decoded. Doctor reports the poison without running recovery.
+	FindingInvalidShipmentLifecycleJournal DoctorFindingType = "invalid_shipment_lifecycle_journal"
+
+	// FindingConflictingShipmentLifecycleEvidence indicates correlated lifecycle
+	// or status evidence cannot prove one consistent terminal outcome.
+	FindingConflictingShipmentLifecycleEvidence DoctorFindingType = "conflicting_shipment_lifecycle_evidence"
+)
+
+// DoctorFindingSeverity classifies whether a doctor finding affects process
+// success.
+type DoctorFindingSeverity string
+
+const (
+	// DoctorSeverityError marks an integrity finding that makes doctor exit
+	// non-zero.
+	DoctorSeverityError DoctorFindingSeverity = "error"
 )
 
 // DoctorFinding describes a single integrity issue detected by Doctor.
 type DoctorFinding struct {
-	Type        DoctorFindingType `json:"type"`
-	ArtifactID  string            `json:"artifact_id"`
-	Description string            `json:"description"`
+	Type        DoctorFindingType     `json:"type"`
+	Severity    DoctorFindingSeverity `json:"severity,omitempty"`
+	Code        DoctorFindingType     `json:"code,omitempty"`
+	ArtifactID  string                `json:"artifact_id"`
+	Description string                `json:"description"`
+	Message     string                `json:"message,omitempty"`
 }
 
 // FixActionType classifies a repair action taken by Doctor.
@@ -169,6 +205,20 @@ type DoctorReport struct {
 	Findings   []DoctorFinding `json:"findings"`
 	FixActions []FixAction     `json:"fix_actions,omitempty"`
 	CheckedAt  time.Time       `json:"checked_at"`
+}
+
+// HasErrors reports whether the doctor report contains an error-severity
+// finding.
+func (r *DoctorReport) HasErrors() bool {
+	if r == nil {
+		return false
+	}
+	for _, finding := range r.Findings {
+		if finding.Severity == DoctorSeverityError {
+			return true
+		}
+	}
+	return false
 }
 
 // DoctorOptions controls which checks Doctor performs.
@@ -241,9 +291,55 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		return nil, fmt.Errorf("doctor: FixMalformed requires CheckArchivedFrom to be true")
 	}
 
+	if opts.FixOrphans {
+		lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+		if err != nil {
+			return nil, fmt.Errorf("doctor: lock shipment lifecycle before fixing orphans: %w", err)
+		}
+		defer func() {
+			if unlockErr := globalUnlock(); unlockErr != nil {
+				slog.WarnContext(ctx, "doctor: release shipment lifecycle lock after fixing orphans",
+					"error", unlockErr)
+			}
+		}()
+		ctx = lockedCtx
+		if err := recoverPendingShipmentOperations(ctx, ws); err != nil {
+			return nil, fmt.Errorf("doctor: recover pending shipment operations before fixing orphans: %w", err)
+		}
+	}
+
 	report := &DoctorReport{
 		Findings:  []DoctorFinding{},
 		CheckedAt: time.Now().UTC(),
+	}
+	journals, journalValidationErrs, err := inspectShipmentOperationJournalsReadOnly(ws)
+	err = errors.Join(err, errors.Join(journalValidationErrs...))
+	if err != nil {
+		report.Findings = append(report.Findings, newDoctorErrorFinding(
+			FindingInvalidShipmentLifecycleJournal,
+			"ops",
+			fmt.Sprintf("shipment lifecycle journal inspection failed: %v", err),
+		))
+	} else {
+		for _, record := range journals {
+			if record.kind != shipmentLifecycleJournalKind || record.lifecycle.Phase != "intent" {
+				continue
+			}
+			if _, evidenceErr := inspectShipmentLifecycleRecoveryEvidence(ctx, ws, record.lifecycle); evidenceErr != nil {
+				findingType := FindingInvalidShipmentLifecycleJournal
+				artifactID := "ops"
+				if errors.Is(evidenceErr, blerrors.ErrShipmentConflict) {
+					findingType = FindingConflictingShipmentLifecycleEvidence
+					artifactID = record.lifecycle.ShipmentID
+				}
+				report.Findings = append(report.Findings, newDoctorErrorFinding(
+					findingType,
+					artifactID,
+					fmt.Sprintf("shipment lifecycle journal %s evidence inspection failed: %v",
+						record.name, evidenceErr),
+				))
+			}
+		}
 	}
 
 	if opts.CheckWorkspaceRootConflict {
@@ -300,6 +396,11 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	}
 
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	shipmentFindings, shipmentErr := detectShipmentLifecycleFindings(ctx, logsDir, refs, ids)
+	if shipmentErr != nil {
+		return nil, fmt.Errorf("doctor: detect shipment lifecycle integrity: %w", shipmentErr)
+	}
+	report.Findings = append(report.Findings, shipmentFindings...)
 
 	if opts.CheckOrphans && ws.Config != nil {
 		for _, info := range artifacts {
@@ -608,6 +709,128 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	}
 
 	return report, nil
+}
+
+func detectShipmentLifecycleFindings(
+	ctx context.Context,
+	logsDir string,
+	refs map[string][]artifactRef,
+	ids []string,
+) ([]DoctorFinding, error) {
+	activeIDs := make([]string, 0, 1)
+	findings := make([]DoctorFinding, 0)
+
+	for _, id := range ids {
+		group := refs[id]
+		if len(group) == 0 || group[0].artifactType != "shipment" {
+			continue
+		}
+		ref := group[0]
+		if ref.status == string(ShipmentActive) {
+			activeIDs = append(activeIDs, id)
+		}
+		itemEvents, err := events.ReadAllEvents(ctx, logsDir, id)
+		if err != nil {
+			return nil, fmt.Errorf("read shipment %s lifecycle events: %w", id, err)
+		}
+		if ref.status == string(ShipmentBlocked) {
+			artifact, _, err := parseFile(ref.path)
+			if err != nil {
+				return nil, fmt.Errorf("parse blocked shipment %s: %w", id, err)
+			}
+			if _, envelopeErr := validateBlockedShipmentEnvelope(
+				artifact,
+				NormalizeShipmentItems(artifact),
+				itemEvents,
+			); envelopeErr != nil {
+				message := fmt.Sprintf(
+					"blocked shipment %q lacks a canonical governed block/normalize envelope; run the blocked-shipment normalizer",
+					id,
+				)
+				findings = append(findings, newDoctorErrorFinding(
+					FindingMalformedBlockedShipment,
+					id,
+					message,
+				))
+			}
+		}
+
+		intents := make(map[string]string)
+		terminal := make(map[string]struct{})
+		for _, event := range itemEvents {
+			if event.EventType != "shipment_lifecycle" {
+				continue
+			}
+			correlationID, _ := event.Delta["correlation_id"].(string)
+			phase, _ := event.Delta["phase"].(string)
+			if correlationID == "" {
+				continue
+			}
+			switch phase {
+			case "intent":
+				operation, _ := event.Delta["operation"].(string)
+				intents[correlationID] = operation
+			case "committed", "compensated":
+				terminal[correlationID] = struct{}{}
+			}
+		}
+		correlationIDs := make([]string, 0, len(intents))
+		for correlationID := range intents {
+			correlationIDs = append(correlationIDs, correlationID)
+		}
+		sort.Strings(correlationIDs)
+		for _, correlationID := range correlationIDs {
+			if _, closed := terminal[correlationID]; closed {
+				continue
+			}
+			message := fmt.Sprintf(
+				"shipment %q has %s lifecycle intent %q without a correlated committed or compensated terminal event",
+				id,
+				intents[correlationID],
+				correlationID,
+			)
+			findings = append(findings, newDoctorErrorFinding(
+				FindingTornShipmentLifecycleIntent,
+				id,
+				message,
+			))
+		}
+	}
+
+	if len(activeIDs) > 1 {
+		for _, id := range activeIDs {
+			message := fmt.Sprintf(
+				"shipment %q is active while the workspace contains %d active shipments: %s",
+				id,
+				len(activeIDs),
+				strings.Join(activeIDs, ", "),
+			)
+			findings = append(findings, newDoctorErrorFinding(
+				FindingMultipleActiveShipments,
+				id,
+				message,
+			))
+		}
+	}
+
+	sort.SliceStable(findings, func(i, j int) bool {
+		if findings[i].Code == findings[j].Code {
+			return findings[i].ArtifactID < findings[j].ArtifactID
+		}
+		return findings[i].Code < findings[j].Code
+	})
+	return findings, nil
+}
+
+func newDoctorErrorFinding(findingType DoctorFindingType, artifactID, message string) DoctorFinding {
+	return DoctorFinding{
+		Type:        findingType,
+		Severity:    DoctorSeverityError,
+		Code:        findingType,
+		ArtifactID:  artifactID,
+		Description: message,
+		Message:     message,
+	}
 }
 
 // reconciledShippedEventPresence reports whether id's item JSONL carries at

@@ -402,20 +402,44 @@ type BulkUpdateResult struct {
 // BulkUpdateResult.Failed rather than aborting the entire batch. The SQLite
 // index is updated only after the Markdown file has been successfully written.
 func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []string, newStatus string) (*BulkUpdateResult, error) {
+	targetStatus := models.ArtifactStatus(newStatus)
 	// Archiving must go through ArchiveItem so archive provenance
 	// (archived_from/archived_status) is stamped. BulkUpdateStatus stamps none
 	// and fires no transition hook, so an archived target would write
 	// non-invertible artifacts. Refuse the whole batch.
-	if models.ArtifactStatus(newStatus) == models.StatusArchived {
+	if targetStatus == models.StatusArchived {
 		return nil, fmt.Errorf("bulk update to archived is not supported; use the archive operation to preserve provenance: %w", blerrors.ErrValidation)
 	}
 	// 144-F guard 1: shipments must reach "shipped" only via ShipShipment.
 	// Abort the whole batch when newStatus is "shipped" so no item in the
 	// batch is written before the refusal fires.
-	if models.ArtifactStatus(newStatus) == models.ArtifactStatus(ShipmentShipped) {
+	if targetStatus == models.ArtifactStatus(ShipmentShipped) {
 		return nil, fmt.Errorf("bulk update to shipped is not supported for shipments; use the ShipShipment operation: %w", blerrors.ErrShipmentShippedRequiresEnvelope)
 	}
+	lockedCtx, globalUnlock, lockErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if lockErr != nil {
+		return nil, fmt.Errorf("lock shipment lifecycle for bulk update: %w", lockErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after bulk update", "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
+
 	result := &BulkUpdateResult{}
+	for _, id := range itemIDs {
+		artifact, err := findArtifact(ctx, ws, id)
+		if err != nil {
+			continue
+		}
+		if artifact.ArtifactType == "shipment" &&
+			isProtectedShipmentStatusTransition(artifact.Status, targetStatus) &&
+			(artifact.Status == models.StatusBlocked || targetStatus == models.StatusBlocked) {
+			result.Failed = append(result.Failed, itemIDs...)
+			return result, nil
+		}
+	}
 	for _, id := range itemIDs {
 		artifact, err := findArtifact(ctx, ws, id)
 		if err != nil {
@@ -425,7 +449,7 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 			continue
 		}
 		previousStatus := artifact.Status
-		artifact.Status = models.ArtifactStatus(newStatus)
+		artifact.Status = targetStatus
 		artifact.UpdatedAt = models.NowUTC()
 		if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previousStatus, artifact.Status)); err != nil {
 			slog.WarnContext(ctx, "bulk update status: persist failed, skipping",

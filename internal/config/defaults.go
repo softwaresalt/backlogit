@@ -134,7 +134,7 @@ func defaultHeaderDef() *HeaderDefConfig {
 				Fields: map[string]*FieldDef{
 					"status": {
 						Type:    "enum",
-						Values:  []string{"queued", "active", "shipped", "abandoned"},
+						Values:  []string{"queued", "active", "blocked", "shipped", "abandoned"},
 						Default: "queued",
 					},
 					"branch": {

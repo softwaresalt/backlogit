@@ -89,6 +89,21 @@ func TestDomainError_Conflict_MapsCorrectly(t *testing.T) {
 	}
 }
 
+func TestDomainError_BlockedShipmentEnvelope_MapsCorrectly(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "direct", err: corerrors.ErrShipmentBlockedRequiresEnvelope},
+		{name: "wrapped", err: fmt.Errorf("wrap: %w", corerrors.ErrShipmentBlockedRequiresEnvelope)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, "shipment_blocked_requires_envelope", domainErrorType(t, test.err))
+		})
+	}
+}
+
 // TestDomainError_WriteDurability_MapsCorrectly verifies that the generic
 // durable-write sentinels (surfaced by callers that do not wrap a durable
 // write in a MutationEnvelope, e.g. ResolveCheckpoint) map to their own

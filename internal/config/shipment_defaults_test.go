@@ -58,6 +58,22 @@ func TestDefaultHeaderDef_ContainsShipmentSchema(t *testing.T) {
 	require.Contains(t, shipmentDef.Fields, "branch")
 	require.Contains(t, shipmentDef.Fields, "items")
 	assert.Equal(t, "list", shipmentDef.Fields["items"].Type)
+	assert.Contains(t, shipmentDef.Fields["status"].Values, "blocked",
+		"canonical governed blocked shipments must satisfy the generated shipment schema")
+}
+
+func TestUpgradeLegacyGeneratedHeaderDef_AddsShipmentBlockedStatus(t *testing.T) {
+	legacy := defaultHeaderDef()
+	legacy.Types["shipment"].Fields["status"].Values = []string{
+		"queued",
+		"active",
+		"shipped",
+		"abandoned",
+	}
+
+	upgradeLegacyGeneratedHeaderDef(legacy)
+
+	assert.Contains(t, legacy.Types["shipment"].Fields["status"].Values, "blocked")
 }
 
 // T001 / ST003: Verify default template content for shipment is present.

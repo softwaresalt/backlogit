@@ -116,4 +116,3 @@ func MutationEnvelope(ctx context.Context, steps []MutationStep) error {
 
 	return nil
 }
-

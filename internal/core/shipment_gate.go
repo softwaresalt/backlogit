@@ -723,12 +723,11 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 			// DESCOPE-ELIGIBLE status — an in-flight status or a non-completion
 			// terminal) was taken out of the release rather than completed
 			// through the gate, so it carries no per-member evidence and MUST NOT block
-			// the shipment. releaseScopeItemIDs expands a feature to ALL descendants
-			// (IncludeArchived: true), so a task scaffolded-then-descoped lands in the
-			// release scope even when the shipment manifest excludes it; demanding
-			// evidence for it would permanently block the parent feature's ship with no
-			// operator recourse (archived is a terminal sink with no allowed status
-			// transitions, so it cannot be force-gated).
+			// the shipment. A task scaffolded-then-descoped may remain explicitly
+			// listed in the flat shipment manifest; demanding evidence for it would
+			// permanently block the shipment with no operator recourse (archived is a
+			// terminal sink with no allowed status transitions, so it cannot be
+			// force-gated).
 			//
 			// The exemption is deliberately narrow: it applies ONLY when the member was
 			// archived from a DESCOPE-ELIGIBLE status — an in-flight status (queued,

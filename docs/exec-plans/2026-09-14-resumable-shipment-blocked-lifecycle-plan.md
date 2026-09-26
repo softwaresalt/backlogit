@@ -1535,3 +1535,4635 @@ decision: PASS
 **Validation evidence (branch `chore/stage-155-flat-shipment-scope`):** `backlogit sync` OK (**1537 artifacts, 0 parse failures**); `backlogit docs lint` on plan/spec/decision all `valid: true` (0 violations); `doctor --target` on `174.057-T`,`174.058-T`,`174.059-T`,`174.061-T`,`174.063-T`,`174.062-T`,`155-S` all exit 0 (`ok: true`, `kind: pass`); RED-contract blocks well-formed (`174.061-T` and `174.063-T` both green_maker `174.062-T`@close-wave 10); `wave-scheduler-sim` fixture **WAVE_SIM_OK 164/164** and `-VerifyAgainstQueue` **WAVE_SIM_OK 186/186** across 21 scenarios; dependency-graph check over the `155-S` manifest: **acyclic (0 cycles)**, **parent-first (0 violations)**, in-manifest **topological order valid (0 violations)**, **26 members (`174-F` + 25 tasks)**, manifest order `… 174.061-T[23] → 174.063-T[24] → 174.062-T[25]` (RED strictly before green-maker); dep edges verified `061→044`, `063→044`, `062→{061,063,057,058}`. Topology/wave gate independent of this correction; **no `--force` override authorized or applied.**
 
 **Verdict: PASS** — residual P0 = 0, residual P1 = 0. This was **fix cycle 3 (final)**; both in-scope P1 findings are resolved and no in-scope P0/P1 remains. `155-S` remains `queued` and ready for Ship to implement SBLK-R28 test-first (RED `174.061-T` + `174.063-T` → GREEN `174.062-T`). Unrelated residual: pre-existing `doctor` orphan findings in the `016.xxx`/`106.xxx-T` bands (present on baseline, outside this amendment's scope).
+
+<!-- plan-review-attempt: rev8-wave3-verification-ownership -->
+
+## Plan Review — Amendment (Wave 3 RED-harness verification-ownership correction) (2026-09-21, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Trigger.** `155-S` is an ACTIVE shipment mid-Wave-3. The single authorized cycle-4
+harness review (see `docs/memory/2026-09-21/155-s-wave-3-cycle-4-review-blocker.md`) passed
+formatting, compile, vet, CI-pinned lint, and the expected assertion-RED selectors
+(`^TestUR1B_`, `^TestUR2_`, `^TestUR3_`) but RETAINED three P1 findings because the plan/task
+contracts assigned **verification ownership** incorrectly. This amendment corrects the
+verification-ownership contracts on the EXISTING Wave-3 tasks. It is a Stage-owned
+plan/backlog-contract change only: NO production or test code, NO status/dependency/manifest/
+priority mutation, NO new task, and the four uncommitted Wave-3 harness files
+(checkpoint `checkpoint-20260921-194021.json`, Ship-owned) are untouched. `155-S` stays
+`active`; `154-S` and PR #449 untouched.
+
+**Root-cause corrections encoded (cycle-4 P1 findings 1–3 + writer-control gap):**
+
+1. **Deterministic workspace-global-lock contention proof relocated RED → GREEN.** A
+   deterministic proof that recovery contends on the workspace-GLOBAL lock CANNOT be authored
+   reliably in the PRE-implementation RED harness **R3 `174.041-T`**: the only observable hook
+   available pre-implementation is immediately before the artifact lock, so a global-lock-less
+   implementation passes whenever the competing goroutine is scheduled late (exactly cycle-4 P1
+   finding 1). `174.041-T` now carries an explicit EXCLUSION disclaiming that proof; the
+   deterministic, scheduler-independent contention proof is now OWNED by the POST-implementation
+   GREEN task **R10 `174.048-T`**, which asserts it against the real recovery + lock mechanism
+   defined by **R9 `174.047-T`**. `174.048-T` already depends on `[174.041-T, 174.047-T]`, so
+   **no dependency edge is added or changed**.
+2. **RED recovery responsibilities retained on `174.041-T`.** The RED harness keeps
+   responsibility for: startup/governed recovery INVOCATION; **policy-aware terminal state**
+   (compensated ⇒ exact preimage restored; committed ⇒ target fully applied); recovered
+   CANONICAL authority (Markdown source + append-only `shipment_status_changed` event, never the
+   index, as state of record); and correlated TERMINAL audit evidence (correlation id ties intent
+   → committed/compensated outcome). The GREEN subprocess task `174.048-T` proves the same
+   canonical-authority and terminal-audit outcomes end-to-end post-implementation (cycle-4 P1
+   finding 3).
+3. **SQLite index = sync/rebuild convergence, NOT immediate equality.** The SQLite index is a
+   rebuildable, non-authoritative projection. Both `174.041-T` (RED) and `174.048-T` (GREEN) now
+   express any index check as SYNC/REBUILD CONVERGENCE — equality asserted only AFTER `sync` —
+   and explicitly state that immediate-projection equality during recovery is NOT a RED-harness
+   requirement (cycle-4 P1 finding 3).
+4. **`174.040-T` positive non-shipment controls expanded to every guarded surface.** The R2
+   writer/bypass RED harness now requires POSITIVE non-shipment controls for EVERY named guarded
+   surface — public `WriteArtifactFile` boundary, private lower writer, generic move/update,
+   `MoveShipmentStatus`, bulk/cascade status updates, and create-as-active/generic activation —
+   proving each guard scopes strictly on `ArtifactType=="shipment"` and preserving ordinary
+   task/member transitions on the SAME surface, not only `UpdateArtifact` (cycle-4 P1 finding 2).
+
+> **CORRECTION (rev9, 2026-09-21):** item #4 is SUPERSEDED IN PART. `MoveShipmentStatus` is
+> REMOVED from the positive-non-shipment-control matrix — it is a shipment-only entry point through
+> which no non-shipment artifact can legitimately flow, so a literal non-shipment success path there
+> is impossible and permitting `queued→active` via `MoveShipmentStatus` to construct one would
+> conflict with activation being restricted to claim/confirmed unblock. The matrix now applies ONLY
+> to the polymorphic/generic surfaces (`WriteArtifactFile`, private lower writer, generic
+> move/update, bulk/cascade, create-as-active/generic activation). `MoveShipmentStatus` instead
+> carries shipment-specific same-surface controls. rev8 items #1–#3 are unchanged. See the rev9
+> amendment section below.
+
+**RED-before-GREEN discipline preserved.** The relocation moves a GREEN, post-implementation
+assertion INTO a GREEN task (`174.048-T`) and OUT of a RED harness (`174.041-T`) — never the
+reverse. Both `174.040-T` and `174.041-T` remain BEHAVIOR-RED-by-design (they still fail on
+behavior until their unchanged green-makers land). The red-deliverable-contract blocks
+(`174.040-T`: green_maker `174.054-T/174.042-T/174.045-T/174.051-T`, close-wave 7;
+`174.041-T`: green_maker `174.047-T/174.048-T`, close-wave 8) are UNCHANGED. Scenario budgets
+respected: `174.040-T`/`174.041-T` `<4 scenario groups`; `174.048-T` stays at 3 scenarios
+(contention/convergence/audit folded in as assertions/post-conditions, no new scenario).
+
+**Review dispatch (multi-agent).**
+* Correctness Reviewer (`claude-opus-4.8`) — VOTE: PASS — all four findings encoded YES/YES/YES/YES;
+  RED harnesses remain behavior-red-by-design; relocation direction correct; no new dependency edge.
+* Scope Boundary Auditor (`gemini-3.8-flash`) — VOTE: ADVISORY — no P0/P1/P2 scope creep; two
+  non-blocking P3 advisories: (a) the terminal-audit post-condition on `174.048-T` is a GREEN
+  mirror of the relocated proof AND is directly mandated by cycle-4 P1 finding 3 (in-scope,
+  dispositioned); (b) the six-surface control matrix on `174.040-T` sits at the upper edge of the
+  2-hour rule (assertions folded into existing scenario groups; effort-edge advisory only, no
+  structural change). Both advisories dispositioned; neither blocks.
+
+**Aggregate: zero P1/P2 findings across both personas.** Both reviewers operated read-only and
+could not run `git diff`; Stage independently verified the diff touches ONLY AC/description prose
+plus the `updated_at` header on the three files, with no dependency/status/priority/id/parent/
+membership/contract-block mutation.
+
+**Validation evidence (branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`):**
+`backlogit sync` OK (**1555 artifacts, 0 parse failures**); `doctor --target` on
+`174.040-T`, `174.041-T`, `174.048-T` all `ok: true` / `kind: pass` (exit 0); shipment `155-S`
+manifest unchanged (**26 members**, `174-F` + 25 tasks); dependencies unchanged
+(`174.040-T→[174.052-T]`, `174.041-T→[174.052-T]`, `174.048-T→[174.041-T,174.047-T]`);
+red-deliverable-contract blocks unchanged. The four Ship-owned uncommitted harness files were not
+read for content, not edited, and are excluded from the amendment commit.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. Verification ownership now assigns the
+deterministic global-lock contention proof to GREEN `174.048-T`, defines SQLite verification as
+sync/rebuild convergence, preserves the RED recovery/terminal-state/canonical-authority/
+correlated-audit assertions on `174.041-T`, and expands `174.040-T` non-shipment controls to
+every guarded surface. No new tasks, dependencies, members, or status changes. Ready for Ship to
+resume Wave-3 implementation against the corrected contracts.
+
+<!-- plan-review-attempt: rev9-wave3-moveshipmentstatus-control-correction -->
+
+## Plan Review — Amendment (Wave 3 `MoveShipmentStatus` non-shipment-control correction) (2026-09-21, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`)
+
+dispatch_mode: single-agent-declared-degradation
+decision: PASS
+
+**Trigger.** A fresh Ship harness review of the rev8-amended Wave-3 contracts returned two P1
+observations. This bounded Stage-owned amendment resolves the first (a genuine contract defect) and
+records the disposition of the second (NOT a contract defect). It is a plan/backlog-contract change
+only: NO production or test code, NO status/dependency/manifest/priority mutation, NO new task.
+`155-S` stays `active`; `154-S` and PR #449 untouched; the four uncommitted Ship-owned Wave-3
+harness files are excluded from this commit.
+
+**P1-1 (contract defect — CORRECTED): rev8 item #4 required an impossible non-shipment success path
+through the shipment-only `MoveShipmentStatus`.** rev8 amendment item #4 (and `174.040-T` AC (4))
+required POSITIVE non-shipment controls for EVERY named guarded surface, INCLUDING
+`MoveShipmentStatus`. Fresh review correctly found this literally impossible/incorrect:
+`MoveShipmentStatus` is inherently shipment-specific and cannot legitimately receive a non-shipment
+artifact, so an ordinary non-shipment (task/member) status transition cannot succeed through it;
+substituting `UpdateArtifact` does not satisfy the literal contract, and allowing `queued→active`
+via `MoveShipmentStatus` to manufacture such a path would conflict with activation being restricted
+to `ClaimShipment`/confirmed unblock-to-active. Correction:
+* The positive-non-shipment-control matrix (rev8 #4 / `174.040-T` AC (4)) now applies ONLY to the
+  POLYMORPHIC/GENERIC surfaces that can legitimately receive a non-shipment artifact: public
+  `WriteArtifactFile`, the private lower writer, generic move/update, bulk/cascade status updates,
+  and create-as-active/generic activation as applicable. `MoveShipmentStatus` is REMOVED from that
+  matrix.
+* `MoveShipmentStatus` instead carries the CORRECT shipment-specific SAME-SURFACE controls
+  (`174.040-T` new AC (5)): shipment-only type enforcement / rejection of a non-shipment ID where
+  the surface is callable with one; refusal of governed `blocked`/unblock bypasses (top-level
+  `blerrors.ErrShipmentBlockedRequiresEnvelope` for BOTH directions via the R4g guard `174.054-T`);
+  and preservation of every otherwise-allowed shipment transition EXCEPT that activation remains
+  restricted to claim/confirmed unblock per this plan. NO non-shipment success path is asserted or
+  required through the shipment-only API.
+
+**P1-2 (NOT a contract defect — obligation PRESERVED explicitly): `174.041-T` correlated
+`shipment_status_changed` terminal evidence for the compensated restored-preimage status.** The
+fresh review's second P1 asks that `174.041-T` require correlated `shipment_status_changed` terminal
+evidence for the compensated restored-preimage status. That obligation is ALREADY required by
+`174.041-T` AC (2) (canonical authority = Markdown source + append-only `shipment_status_changed`
+event) and AC (3) (correlated TERMINAL audit event for the committed/compensated outcome). This
+amendment makes it EXPLICIT in AC (3) — the compensated restore's correlated terminal evidence is
+specifically a `shipment_status_changed` event recording the restored preimage status — and records
+that the obligation is RETAINED and NOT weakened. No RED→GREEN relocation; `174.041-T` remains
+BEHAVIOR-RED-by-design.
+
+**All other rev8 corrections unchanged.** rev8 items #1 (global-lock contention proof relocated
+RED→GREEN to `174.048-T`), #2 (RED recovery responsibilities retained on `174.041-T`), and #3
+(SQLite = sync/rebuild convergence) stand exactly as recorded. rev8 item #4 is superseded IN PART
+only as to the `MoveShipmentStatus` surface (see the inline correction marker on rev8 item #4
+above); its generic-surface positive controls are retained.
+
+**Review dispatch.** dispatch_mode `single-agent-declared-degradation`: this bounded prose-only
+contract correction was reviewed directly by Stage against the fresh-review findings and the plan's
+activation/refusal invariants; no multi-agent dispatch was run for this narrow follow-up. Focused
+correctness check: (a) corrected AC (4) no longer asserts an impossible non-shipment success path;
+(b) AC (5) restates only same-surface shipment controls already consistent with the base-plan
+governed-refusal inventory and the claim/unblock-restricted activation rule; (c) `174.041-T`
+obligation strengthened-not-weakened; (d) no id/parent/status/priority/dependency/membership/
+red-deliverable-contract mutation on any task.
+
+**Validation evidence (branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`):**
+`backlogit sync` OK (**1555 artifacts, 0 parse failures**); `doctor --target` on `174.040-T` and
+`174.041-T` both `ok: true` / `kind: pass` (exit 0); shipment `155-S` manifest unchanged (**26
+members**, `174-F` + 25 tasks); dependencies unchanged (`174.040-T→[174.052-T]`,
+`174.041-T→[174.052-T]`); red-deliverable-contract blocks unchanged. The four Ship-owned uncommitted
+harness files were not read for content, not edited, and are excluded from this commit.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. `MoveShipmentStatus` non-shipment control
+requirement corrected to shipment-specific same-surface controls; generic-surface positive controls
+retained; `174.041-T` correlated `shipment_status_changed` terminal-evidence obligation preserved
+explicitly and not weakened. No new tasks, dependencies, members, or status changes. Ready for Ship
+to resume Wave-3 implementation against the corrected contracts.
+
+<!-- plan-review-attempt: rev10-wave3-adversarial-consensus-ownership -->
+
+## Plan Review — Amendment (Wave 3 adversarial-consensus verification-ownership resolution) (2026-09-21, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Trigger.** An adversarial four-reviewer consensus over the rev8/rev9-amended Wave-3 contracts
+completed and returned a bounded set of verification-ownership decisions. This rev10 amendment
+encodes those decisions EXACTLY onto the existing tasks and plan. It is a Stage-owned
+plan/backlog-contract change only: NO production or test code, NO status/dependency/manifest/
+priority mutation, NO new task, NO new scenario group. `155-S` stays `active`; `154-S` and PR #449
+untouched; the four uncommitted Ship-owned Wave-3 harness files are excluded from this commit.
+
+**Consensus decisions encoded:**
+
+1. **`174.040-T` RED retains two HIGH/P1 obligations (added as AC (6)/(7), assertions folded into
+   existing bypass-path scenario groups — no new group).** (a) Representative invalid blocked
+   INGRESS/EGRESS coverage across EVERY polymorphic lower-writer surface enumerated in AC (4) —
+   both directions refused on every such surface, not just one. (b) The BulkUpdateStatus /
+   bulk-cascade harness MUST inspect item-level `BulkUpdateResult.Failed` entries (not only the
+   top-level error) AND prove AGGREGATE IMMUTABILITY (all-or-nothing; no batch member left
+   mutated on a refused blocked transition).
+
+2. **Blocked-member mutation and drift/CAS proofs are GREEN-owned by existing `174.043-T` /
+   `174.044-T`, NOT Wave-3 RED P1s.** Ownership clarified in place: the blocked-member-mutation
+   guard is GREEN-owned by R5 `174.043-T`; the drift/CAS exact-snapshot-restore proof is
+   GREEN-owned by R6 `174.044-T`. R1b `174.053-T` (RED) carries neither. No dependency-graph
+   change.
+
+3. **Deterministic Claim/unblock CONTENTION proof is GREEN-owned by `174.044-T`, paralleling the
+   rev8 recovery-contention relocation to GREEN R10 `174.048-T`.** R1b `174.053-T` (RED) MAY assert
+   the externally visible single-active-shipment invariant (blocked excluded) but MUST NOT require
+   an operation-owned deterministic contention barrier before implementation — adversarial
+   consensus found NO authentic pre-implementation RED-observable contention seam for Claim/unblock.
+   No dependency-graph change.
+
+4. **rev9 correlated compensated-status evidence REMAINS required (no `174.041-T` change).** The
+   rev9 obligation on `174.041-T` AC (3) — a correlated `shipment_status_changed` event recording
+   the restored preimage status for a COMPENSATED restore — stands unchanged. A blanket
+   post-reopen SUFFIX requirement is NOT required and MUST NOT be imposed: `174.041-T` AC (2)/(3)
+   already handle the committed roll-forward case ("committed ⇒ target fully applied") via the same
+   canonical authority, and legitimate PRE-CRASH roll-forward evidence must NOT be rejected. No
+   contract change to `174.041-T`; this disposition is recorded here so no reviewer or implementer
+   reads a suffix-ordering requirement into AC (3). `174.041-T` therefore needs NO edit under rev10.
+
+**Authorized Ship follow-up (bounded).** This amendment authorizes Ship's final bounded patch
+ONLY in `internal/core/shipment_blocked_writer_harness_test.go` for exactly the two consensus
+HIGH/P1 fixes in decision 1 (invalid blocked ingress/egress coverage across polymorphic
+lower-writer surfaces; BulkUpdateStatus item-level `Failed` inspection + aggregate immutability).
+It MUST NOT reopen decisions 2, 3, or 4 as RED blockers, and MUST NOT touch the other three
+uncommitted harness files.
+
+**Review dispatch (multi-agent — adversarial four-reviewer consensus).** The four-reviewer
+adversarial consensus is the authoritative review of record for this amendment; Stage encoded its
+decisions verbatim and independently verified the encoding: (a) AC (6)/(7) fold into existing
+scenario groups with no new group and no scenario-count-limit breach; (b) decisions 2/3 are
+ownership clarifications only, with every green-maker edge and red-deliverable-contract block left
+byte-for-byte intact; (c) decision 4 imposes no `174.041-T` contract change and preserves the rev9
+obligation while barring a suffix requirement; (d) no id/parent/status/priority/dependency/
+membership mutation on any task.
+
+**Validation evidence (branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`):**
+`backlogit sync` OK (**1555 artifacts, 0 parse failures**); `doctor --target` on `174.040-T`,
+`174.043-T`, `174.044-T`, and `174.053-T` all `ok: true` / `kind: pass` (exit 0); `docs lint` on
+this plan valid (0 violations); shipment `155-S` manifest unchanged (**26 members**, `174-F` + 25
+tasks); dependencies unchanged (`174.040-T→[174.052-T]`, `174.053-T→[174.052-T]`,
+`174.043-T→[174.052-T,174.053-T,174.042-T,174.054-T]`,
+`174.044-T→[174.052-T,174.053-T,174.043-T,174.054-T]`); all red-deliverable-contract blocks
+unchanged; only `updated_at` and description/AC prose changed on the four edited task files. The
+four Ship-owned uncommitted harness files were not read for content, not edited, and are excluded
+from this commit.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. Verification ownership is now unambiguous:
+`174.040-T` RED retains the two consensus HIGH/P1 writer obligations; blocked-member mutation,
+drift/CAS, and Claim/unblock contention proofs are GREEN-owned by `174.043-T`/`174.044-T`; R1b
+`174.053-T` asserts only the externally visible single-active invariant with no pre-implementation
+contention barrier; and the rev9 compensated-status evidence obligation on `174.041-T` stands
+without a post-reopen suffix requirement. No new tasks, dependencies, members, scenario groups, or
+status changes. Ship's final bounded patch is authorized solely in the writer harness for the two
+decision-1 fixes.
+
+<!-- plan-review-attempt: rev11-wave7-red-deliverable-early-green-correction -->
+
+## Plan Review — Amendment (Wave 7 `^TestUR3_` red-deliverable early-green mapping correction + 3-P1 P-021 classification) (2026-09-22, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`)
+
+dispatch_mode: single-agent-declared-degradation
+decision: PASS
+
+**Trigger.** Ship reported primary blocker `WAVE_RED_DELIVERABLE_EARLY_GREEN` (P-002.6): the
+`^TestUR3_` red-deliverable selector greened after completed GREEN task R9 `174.047-T` (wave 7),
+but the authoritative red-deliverable mapping on RED task `174.041-T` named BOTH `174.047-T` and
+Wave-8 `174.048-T` as green-makers with `green_maker_closes_wave: 8`. Because the selector greened
+at wave 7 — one wave before its declared closure — P-002.6 fails closed. This rev11 amendment is a
+Stage-owned plan/backlog-contract change ONLY: NO production/test code, NO status/dependency/
+manifest/priority/checkpoint mutation, NO new task, NO new scenario group. `155-S` stays `active`;
+`154-S` and PR #449 untouched; completed GREEN task `174.047-T` keeps `status: done`; the four
+Ship-owned harness files are excluded.
+
+**Mapping correction (authoritative live source: `174.041-T` red-deliverable-contract block).**
+`green_maker_tasks` corrected `174.047-T, 174.048-T` → `174.047-T`; `green_maker_closes_wave`
+corrected `8` → `7`. Rationale confirmed against the actual contracts:
+* `174.047-T` (R9) AC (1) EXPLICITLY "turns recovery tests of R3 GREEN (non-subprocess)" — it is the
+  green-maker that closes `^TestUR3_`, and it lands at wave 7.
+* The `^TestUR3_` functions (`TestUR3_ReopenRollsBackInterruptedBlockFromCompletePreimage`,
+  `..._ReopenRollsBackInterruptedUnblockAndRestoresExactBlockedPreimage`,
+  `..._BranchBootstrapReopenRollsForwardUsingMachineReadableSnapshot`) invoke recovery IN-PROCESS
+  via `NewWorkspace(...)` reopen; the subprocess mechanism only PRODUCES the crash state. All
+  behavior they assert is supplied by R9 `174.047-T` recovery + normalizer, so the selector is fully
+  green at wave 7.
+* `174.048-T` (R10) authors its OWN separate subprocess crash/reopen integration tests (a distinct
+  selector) and owns the rev8-relocated deterministic global-lock contention proof + SQLite
+  sync/rebuild convergence + terminal audit; it is a GREEN task with NO red-deliverable-contract
+  block of its own — already an explicit non-red-deliverable gate. It is therefore NOT a green-maker
+  of `^TestUR3_`; listing it was the mapping error that produced the early-green block.
+
+This SUPERSEDES the rev8 statement above ("`174.041-T`: green_maker `174.047-T/174.048-T`,
+close-wave 8 ... are UNCHANGED"), which is retained as audit history. The correction is
+wording/mapping ONLY: `174.041-T`'s `dependencies` (`174.052-T`), `status: done`, priority, parent,
+and shipment membership are UNCHANGED, and the dependency GRAPH is UNCHANGED (`174.048-T` still
+depends on `[174.041-T, 174.047-T]`). A wording/mapping correction alone fully expresses the true
+order, so — per the fail-closed dependency rule — NO dependency edge is changed. A green selector is
+NOT made artificially red.
+
+**`174.048-T` obligation status: RETAINED IN FULL, NOT weakened.** Removing `174.048-T` from
+`^TestUR3_`'s green-maker list drops no obligation. `174.048-T` continues to own, under its own
+non-red-deliverable GREEN gate (its own subprocess selector): (a) subprocess crash/reopen recovery
+for block/unblock/branch-bootstrap; (b) the deterministic shared workspace-global-lock CONTENTION
+proof relocated from RED `174.041-T` in rev8; (c) SQLite sync/rebuild projection convergence;
+(d) correlated TERMINAL audit evidence — all folded into its existing 3 scenarios (no new scenario).
+A rev11 confirmation note is recorded on `174.048-T`.
+
+**P-021 C1 classification of the three report-only P1s (all SAME-CONTRACT / in-scope for Ship; none
+out-of-scope; no deferred-capture; no AC amendment required — ownership already unambiguous).**
+
+1. **Claim / membership-writer serialization → SAME-CONTRACT.** Owner: R6 `174.044-T` (makes
+   `ClaimShipment` share the SAME workspace-global lock; rev10 assigned the deterministic
+   Claim/unblock contention proof GREEN-owned here) together with R7a `174.045-T` (routes the
+   REMAINING bypass write call-sites — generic move/update, bulk/cascade, membership writes —
+   through the governed writer, which acquires the same workspace-global lock). Serializing the
+   membership writer against Claim is completed ENTIRELY by finishing the already-authorized shared
+   workspace-global-lock routing on `174.044-T`/`174.045-T` — the exact same contract surface. No
+   new task, no AC amendment.
+
+2. **Recovery CAS/drift protection → SAME-CONTRACT.** Owner: R9 `174.047-T` (recovery reconciles
+   durable intent + preimage UNDER THE SAME LOCKS, rolling forward/back; normalizer REFUSES when
+   reconstruction cannot be proven) together with R6 `174.044-T` (exact-snapshot restore UNDER LOCK
+   with refusal on CAS/drift; rev10 assigned the drift/CAS proof GREEN-owned here). CAS/drift
+   protection during recovery is completion of the exact recovery-under-locks + CAS-refusal surface
+   already authorized. No new task, no AC amendment.
+
+3. **Missing normalizer MCP registry mapping → SAME-CONTRACT.** Owner: R9 `174.047-T` AC (3) "MCP
+   normalizer parity present" ("Provide MCP normalizer parity"). The MCP tool
+   `backlogit_normalize_blocked_shipment` IS implemented and registered in the Go MCP server
+   (`internal/mcp/tools.go`), but the abstract operation is absent from
+   `.autoharness/backlog-registry.yaml`, whose SIBLING lifecycle operations (`block_shipment`,
+   `unblock_shipment`, `claim_shipment`, `add_to_shipment`) ARE mapped. Adding the
+   `normalize_blocked_shipment` registry entry to match its siblings is completion of the exact "MCP
+   normalizer parity" already authorized on `174.047-T` AC (3) — same contract surface. No new task,
+   no AC amendment.
+
+Because all three P1s are SAME-CONTRACT completions of existing tasks, NONE is a deferred scope
+expansion and Stage captures NOTHING (per P-021: capture only when conclusively out-of-scope AND
+Stage owns the operation). All three remain in-scope for Ship remediation within the cited tasks'
+existing contracts.
+
+**Scope confirmation — machine-readable scheduler fixture untouched (out of scope).** The
+`tests/simulation/wave-scheduler-contract.json` fixture is a frozen scheduler-ALGORITHM self-test
+whose `source.shipment` is `130-S` and which references ZERO `174.` tasks; it does NOT encode the
+`155-S`/`174.041-T` mapping and is NOT the authoritative source for this correction. It was NOT
+touched. The authoritative `155-S` red-deliverable mapping is the live `174.041-T` task block, the
+only file corrected for the mapping.
+
+**Review dispatch.** dispatch_mode `single-agent-declared-degradation`: this bounded
+mapping-wording + classification amendment carries no production/test delta; a single reviewer
+(Stage) verified read-only that the diff touches ONLY the `174.041-T` red-deliverable-contract
+mapping fields + amendment prose + `updated_at`, a confirmation note + `updated_at` on `174.048-T`,
+and this plan section — with no id/parent/status/priority/dependency/membership/scenario-count
+change and no edit to any RED-deliverable block other than `174.041-T`'s two `green_maker_*` fields
+and reason.
+
+**Validation evidence (branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`):**
+`backlogit sync` OK (**1555 artifacts, 0 parse failures**); `doctor --target` on `174.041-T` and
+`174.048-T` both `ok: true` / `kind: pass` (exit 0); `docs lint` on this plan valid (0 violations);
+shipment `155-S` manifest unchanged (**26 members**, `174-F` + 25 tasks); dependency graph
+unchanged (`174.041-T→[174.052-T]`, `174.048-T→[174.041-T,174.047-T]`); `174.047-T` remains
+`status: done`. The four Ship-owned harness files were not read as harness code, not edited, and are
+excluded from this commit.
+
+**Verdict: PASS** — residual P0 = 0, residual P1 = 0. The `^TestUR3_` red-deliverable now closes at
+wave 7 via `174.047-T`, clearing `WAVE_RED_DELIVERABLE_EARLY_GREEN`; `174.048-T`'s obligations are
+retained under its own non-red-deliverable GREEN gate; and all three report-only P1s are
+SAME-CONTRACT completions in-scope for Ship (Claim/membership serialization → `174.044-T`/
+`174.045-T`; recovery CAS/drift → `174.047-T`/`174.044-T`; normalizer registry mapping →
+`174.047-T`). No new tasks, dependencies, members, scenario groups, or status changes.
+
+**Ship-ready directive.** Advance `155-S` past the early-green gate: `^TestUR3_` is legitimately
+GREEN at wave 7 (closed by `174.047-T`) and the corrected mapping now agrees. Then complete the
+three SAME-CONTRACT P1s in place — (1) route the membership writer through the governed shared
+workspace-global lock in `174.044-T`/`174.045-T`; (2) enforce recovery CAS/drift refusal in
+`174.047-T`/`174.044-T`; (3) add the `normalize_blocked_shipment` mapping to
+`.autoharness/backlog-registry.yaml` to match its block/unblock/claim siblings under `174.047-T`
+AC (3) — and complete `174.048-T`'s retained post-implementation subprocess/contention/convergence/
+audit verification under its own selector. No new backlog items are required.
+
+<!-- plan-review-attempt: rev12-corrective-lock-order-inversion-closure -->
+
+## Corrective Wave — Wave 11 (Lock-order inversion closure) (2026-09-23, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`, HEAD `fcbed9fc`)
+
+**Trigger.** The final bounded R1–R5/R8 shared-serialization remediation (uncommitted at review time:
+10 files, 418 insertions / 20 deletions; focused regressions + mechanical gates green) introduced a
+canonical `shipment-lifecycle-global` lock (`lockShipmentLifecycleGlobal` →
+`lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)`). `updateArtifactUngated`
+(`internal/core/artifacts.go:523`) and the shipment-lifecycle / membership mutators acquire that
+global lock BEFORE `lockArtifactMutations` — **global → artifact**. Pre-existing persistence callers
+reach the lifecycle pending-recovery barrier while ALREADY holding artifact locks via
+`UpdateArtifact → updateArtifactUngated → persistArtifact → persistArtifactWithLinkPolicyAndGuard` —
+**artifact → global**. The two orders form an ABBA inversion that deadlocked the core suite at
+`TestCheckChildrenTerminal_NonTerminalChild_ReturnsBlockingError` (suite timeout). Naively releasing
+the global lock before the artifact locks breaks generic-writer serialization
+(`TestP021ClaimSerialization_MembershipAndGenericWritersUseGlobalLock/generic_update_waits`). Ship
+correctly halted with no scope expansion applied.
+
+**Decision.** This is a SAME-CONTRACT mechanical consequence of R1 / shared serialization, but a NEW
+separately-planned corrective work unit — the prior review-fix cycle is exhausted and all owning
+tasks (`174.044-T`, `174.045-T`, `174.047-T`) are already `done`. Completed task statuses are NOT
+reopened. Fresh WIT/metadata discovery confirmed `task` (level 2) sits directly under `174-F`
+(feature, level 1); no subtask is required, so the smallest unit is a single task.
+
+**New task.** `174.064-T` — *"Canonicalize shipment-lifecycle/artifact lock order; close
+inverse-caller paths"* (`artifact_type: task`, `parent_id: 174-F`, `status: queued`,
+`priority: high`; task priority enum max is `high`). Full AC (canonical hierarchy; inverse-path
+closure; serialization preserved; deterministic deadlock regression; lock-order audit; focused +
+full core + full-repo validation; rollback/diagnostics) and implementation-notes are carried in the
+task artifact. Scope ≈ ≤2h; internal/core lock-ordering only — no decomposition needed.
+
+**Shipment membership.** `174.064-T` was added to ACTIVE shipment `155-S` through the GOVERNED
+`AddItemToShipment` path (`backlogit shipment add 155-S 174.064-T` → `{status: "added"}`). This is
+permitted because `shipmentMutationBlocked` (shipment.go:1887) blocks membership mutation only for
+`blocked`/`shipped`/`abandoned`/`archived` — an `active` shipment accepts governed additions. No
+`custom_fields` were hand-edited; the shipment frontmatter `items` list and `updated_at` were
+mutated only by the governed operation.
+
+**Dependencies / order.** `174.064-T depends_on {174.044-T, 174.045-T, 174.047-T}` (typed `blocks`;
+all three `done` → the task is immediately eligible). The edges encode that the corrective runs AFTER
+the implementation that exposed the inversion — `174.044-T` (global-lock serialization owner),
+`174.045-T` (generic-writer routing through the governed writer), `174.047-T` (pending-recovery
+barrier under locks). As an unfinished member of `155-S`, `174.064-T` gates the shipment's
+PR/ship readiness until `done`, so the corrective necessarily precedes final review/PR readiness. NO
+existing dependency edge is changed and NO completed status is altered — the ordering is expressed by
+adding one new queued node with three satisfied predecessors, the minimal graph change.
+
+**Canonical hierarchy decision (for the implementer).** The single permitted order is
+**global (`shipment-lifecycle-global`) → artifact (`artifact-mutation`)**. Inverse-caller closure
+HOISTS the pending-recovery barrier / global acquisition ahead of the artifact locks on the
+persistence path (`persistArtifact` / `persistArtifactWithLinkPolicyAndGuard` /
+`recoverPendingShipmentOperations`); it does NOT release the global lock early, which would reopen
+the `generic_update_waits` serialization gap. The global lock is acquired first AND held
+continuously spanning artifact-lock acquisition as one nested critical section (no
+acquire/release/reacquire window). Because `updateArtifactUngated` already holds the global lock
+before `persistArtifact` re-enters the barrier's own `lockShipmentLifecycleGlobal`, the barrier's
+global acquisition must detect prior ownership via a ctx-carried held-lock token and become a
+verified no-op when already held (erroring rather than silently skipping if the token is absent
+while contended) — closing the single-goroutine re-entrant self-acquire mode as well as ABBA.
+Generic/membership/Claim writers continue to contend on the same global lock.
+
+**Scope guard.** internal/core lock-ordering only; no shipment-lifecycle semantic change beyond
+acquisition order. Ship's uncommitted R1–R5/R8 implementation files are PRESERVED and NOT reverted or
+staged by Stage; `154-S`, PR #449, and the active checkpoint
+`.backlogit/checkpoints/checkpoint-20260923-033438.json` (unresolved/active) are untouched.
+
+<!-- plan-review-attempt: rev12-corrective-lock-order-inversion-closure -->
+
+## Plan Review — Amendment (Wave 11 lock-order inversion corrective task) (2026-09-23)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Reviewers dispatched (parallel, planning-artifact review of `174.064-T` ACs + this corrective-wave section):**
+
+- **Concurrency Reviewer** — initial ADVISORY. Three P1 wording gaps: (a) re-entrancy seam unspecified
+  (`updateArtifactUngated` holds global before `persistArtifact` re-enters the barrier's own
+  `lockShipmentLifecycleGlobal` → single-goroutine self-reacquire risk); (b) "hoist the barrier"
+  ambiguous on lock HOLD span (acquire/release/reacquire window reopens the inversion); (c) caller
+  enumeration must be transitive (an inverse path is "reaches the barrier while holding an artifact
+  lock"), not only direct acquisition sites. **All three closed** in AC2/AC4/AC5 (rev12 hardening):
+  ctx-carried held-lock token + verified no-op + error-not-skip; global held continuously across
+  artifact-lock acquisition as one nested critical section; transitive persist→barrier + P-021
+  claim/generic-writer trace added to the audit.
+- **Correctness Reviewer** — initial ADVISORY. Four P1 gaps: AC4(a) a "returns blocking error"
+  functional test does not deterministically exercise ABBA (timeout ≠ deterministic failure); AC4(b)
+  "proves no ABBA" unfalsifiable / can pass vacuously; AC1-vs-AC5 scope inconsistency ("anywhere" vs
+  "7 files"); AC4↔AC7 detection mechanism not linked. **All four closed:** AC4 pass/fail signal is now
+  the AC7 out-of-order-acquisition assertion (not a hang), `-race` + repeated iterations + explicit
+  single-goroutine re-entrant case; AC5 now requires proving the enumerated set is EXHAUSTIVE for the
+  global-lock handle (repo-wide search) or widening repo-wide; AC3 keeps `generic_update_waits` a
+  positive wait assertion.
+- **Scope Boundary Auditor** — **PASS**, zero P0/P1. One task, no subtask, ACs map 1:1 to the required
+  elements, one new queued node with three satisfied `blocks` edges (no existing edge or completed
+  status changed), governed `155-S` membership, commit pathspec limited to the four Stage-owned files.
+
+**Residual P0/P1 after hardening: NONE.** All ADVISORY P1 findings were resolved in-scope by tightening
+`174.064-T`'s own acceptance criteria (same corrective contract — no new tasks, no scenario-group or
+dependency changes). Task doctor re-run PASS after each edit. Decision: **PASS**.
+
+<!-- plan-review-attempt: rev12-corrective-lock-order-inversion-closure (PASS after ADVISORY→hardened) -->
+
+<!-- plan-review-attempt: rev13-corrective-faultline-golden-lf-materialization -->
+
+## Corrective Wave — Wave 12 (Faultline parity golden LF materialization) (2026-09-23, branch `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`)
+
+**Trigger.** The mandatory local full suite for `155-S` final readiness is blocked by an
+ENVIRONMENT-ONLY failure: pre-existing test
+`internal/faultline/evidence_conformance_test.go:TestU4aBehaviorCanonicalByteStable` byte-compares
+`a.Canonical()` LF output to `internal/faultline/testdata/parity_v1.golden.json`. The repo blobs are
+LF, but Windows `core.autocrlf=true` materializes the fixture as CRLF because `.gitattributes` carries
+only `* text=auto`. Test, fixture, and `.gitattributes` are unchanged by `155-S`; there is no Linux CI
+evidence and no waiver. The same-operation full-suite circuit is OPEN — no test re-run or fourth
+attempt was performed.
+
+**P-021 C1 classification — OUT OF SCOPE (deferred-scope-expansion captured).** Fixing the fixture
+byte-stability / line-ending materialization contract does NOT complete the exact change authorized
+for `155-S` (resumable shipment blocked-lifecycle status + the Wave 11 lock-order closure). It is a
+DIFFERENT contract surface owned by the archived Faultline golden-parity harness task `156.006-T`
+under archived feature `156-F`. same-file / same-PR / same-subsystem do not make it in-scope. The
+mandatory `DEFERRED SCOPE EXPANSION` capture was performed BEFORE any planning: stash `18E587A0`
+(kind bug, provisional priority high) → deliberation `067-DL`.
+
+**Ownership decision (fail-closed parent).** `156-F` and `156.006-T` are ARCHIVED (terminal). Hosting
+a live queued corrective under a terminal feature would soft-reopen closed scope and risks
+hierarchical-ID ambiguity against archived ordinals. The corrective is therefore parented to the
+ACTIVE covering feature `174-F` (the covering feature of `155-S`), with explicit C1 provenance to
+`156.006-T` recorded in the task body and here. This parallels the accepted sibling corrective
+`174.064-T`.
+
+**New task.** `174.065-T` — *"Pin LF materialization for Faultline parity golden fixture (155-S
+full-suite unblock)"* (status `queued`, priority `high`, parent `174-F`). Scope: add a path-specific
+`.gitattributes` entry `internal/faultline/testdata/parity_v1.golden.json text eol=lf` ONLY —
+NO global `* text eol=lf`, NO change to the existing `* text=auto`, NO test weakening, NO edit to the
+in-repo golden bytes. Acceptance criteria (AC0–AC8, hardened per rev13 review) require: a committed-blob
+LF precondition pre-check (AC0, guarding byte-identity); the path-specific `eol=lf` entry placed AFTER
+`* text=auto` (order-based precedence); a `git check-attr eol` proof resolving `lf`; a FORCED
+working-tree re-materialization (`git rm --cached`/delete + `git checkout`, not `git add --renormalize`
+alone — which updates only the index and no-ops when the blob is already LF) followed by a no-CRLF byte
+assertion; a narrow adjacent-golden audit (fix only proven-defective paths); the targeted
+`TestU4aBehaviorCanonicalByteStable` passing with the `156.006-T` byte-stability contract preserved; no
+comparison-path normalization; the circuit disposition below; and a rollback/diagnostic record. Scope ≈
+≤2h; config/attributes only — no decomposition needed.
+
+**Shipment membership.** `174.065-T` was added to ACTIVE shipment `155-S` through the GOVERNED
+`AddItemToShipment` path (`backlogit shipment add 155-S 174.065-T` → `{status: "added"}`). Active
+shipments are not membership-mutation-blocked (`shipmentMutationBlocked` excludes `active`);
+`validateShipmentItemIDs` imposes no covering-feature-descendant requirement, so an explicit
+single-task add of a `174-F`-parented task is governed-permitted. The covering feature `174-F` was
+already a member; no parent feature was newly added and `custom_fields` was NOT hand-edited.
+
+**Dependencies / order.** No dependency-graph change (fail-closed). Unlike the lock-order corrective
+`174.064-T` — which legitimately depends on foundational serialization tasks it must follow — the
+LF-materialization fix is a standalone config/attributes change with NO upstream implementation task;
+adding a `blocks` edge onto already-done tasks would encode a false ordering and satisfy immediately,
+providing no real gate. As an UNFINISHED member of active `155-S`, `174.065-T` already gates the
+shipment's final readiness / PR readiness via membership (the same membership-as-gate mechanism 155-S
+uses for all members). This is the minimal correct encoding and preserves the dependency graph
+unchanged.
+
+**Circuit disposition (KEY — do NOT run the full suite now).** The same-operation full-suite circuit
+is OPEN against the PRE-FIX repository state. This corrective task, when implemented and COMMITTED by
+Ship, CHANGES repository state (adds the `.gitattributes` entry + renormalizes the fixture in the
+working tree). After that correction commit, the local full-suite invocation is a NEW,
+SEPARATELY-AUTHORIZED final-gate operation at a NEW commit / NEW workflow phase — it is NOT a retry or
+probe of the open pre-fix failing state, and does not count against the pre-fix circuit. Explicit
+operator authorization is still required immediately before that post-fix full-suite run if policy
+demands it. Ship MUST NOT run the full suite as part of this task's RED/GREEN beyond the targeted
+`TestU4aBehaviorCanonicalByteStable`. No waiver is invented; if policy forbids ever running the full
+suite even after a state-changing correction, the compliant alternative is a targeted per-package
+verification of `./internal/faultline/` plus the affected packages at the new commit under explicit
+authorization — never a skipped mandatory gate.
+
+**Scope guard.** Faultline golden LF materialization only; no shipment-lifecycle, lock-order, or
+product-code change; no test/source/fixture/`.gitattributes` edit under THIS Stage amendment (Ship
+implements the `.gitattributes` change later under `174.065-T`). The active Ship checkpoint
+`checkpoint-20260923-191544.json`, `154-S`, and PR #449 are untouched; the uncommitted Ship
+implementation files are excluded from the Stage commit (explicit pathspec).
+
+<!-- plan-review-attempt: rev13-corrective-faultline-golden-lf-materialization -->
+
+## Plan Review — Amendment (Wave 12 Faultline golden LF materialization corrective task) (2026-09-23)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Reviewers dispatched (parallel, planning-artifact review of `174.065-T` ACs + the Wave 12 corrective-wave section):**
+
+- **Scope Boundary Auditor** — **PASS**, zero P0/P1/P2. Confirmed minimal scope (single path-specific
+  `.gitattributes` line; no global change; no test/golden weakening), verifiable ACs, and that the
+  "no dependency-graph change / membership-as-gate" decision is the anti-scope-creep choice (a `blocks`
+  edge onto already-done tasks would encode a false, immediately-satisfied ordering) rather than a
+  verification gap. One P3 advisory: keep AC4's adjacent-golden audit strictly limited to
+  proven-defective faultline paths (no preemptive `eol=lf` on non-defective goldens). Encoded into AC4.
+
+- **Correctness Reviewer** — **PASS**. Verified the failure diagnosis is technically correct
+  (`canonical.Canonicalize` emits a single trailing LF; the raw `bytes.Equal` compare in
+  `evidence_conformance_test.go` has no normalization; `.gitattributes` carries only `* text=auto`), and
+  that `text eol=lf` is the correct and sufficient forcing mechanism that overrides `* text=auto`. One
+  P2: `git add --renormalize` alone does NOT reliably rewrite the WORKING TREE (index-only; no-op when
+  the blob is already LF; a plain `git checkout` may skip re-smudging) — the AC must force
+  re-materialization. Two P3 advisories: place the path-specific entry AFTER `* text=auto`
+  (order-based precedence), and pre-check that the committed blob is LF before renormalize (guards
+  byte-identity). **All three resolved in-scope** by hardening `174.065-T`'s own ACs: new AC0
+  (blob-LF precondition pre-check), AC1 ordering requirement (after `* text=auto`), and AC3 rewritten to
+  force re-materialization (`git rm --cached`/delete + `git checkout`, not `--renormalize` alone) with
+  the no-CRLF byte assertion retained as a falsifiable backstop.
+
+**Residual P0/P1 after hardening: NONE** (P0=0, P1=0). The one P2 and both P3 findings were resolved
+in-scope by tightening `174.065-T`'s own acceptance criteria — same corrective contract; NO new task,
+scenario group, dependency edge, status, priority, or membership change. Task `doctor` re-run PASS after
+the AC edits (see validation evidence). Decision: **PASS**.
+
+**Ship-ready directive.** Implement `174.065-T` as the final corrective before `155-S` PR readiness:
+add the single path-specific `.gitattributes` `eol=lf` entry (after `* text=auto`), force-re-materialize
+and prove no-CRLF, run ONLY the targeted `./internal/faultline/ -run TestU4aBehaviorCanonicalByteStable`.
+Do NOT run the mandatory full suite as part of this task. The post-fix full-suite run is a NEW
+final-gate operation at the new (post-correction) commit — NOT a retry of the open pre-fix circuit — and
+requires explicit operator authorization immediately before it if policy demands. Preserve the
+uncommitted R1–R5/R8 Ship implementation and the `174.064-T` lock-order work; this corrective is
+orthogonal and touches only `.gitattributes` + working-tree materialization of the one golden.
+
+<!-- plan-review-attempt: rev13-corrective-faultline-golden-lf-materialization (PASS after ADVISORY→hardened) -->
+
+---
+
+## Wave 13 — Corrective: isolate shipped-event durability tests from the real gate/version subprocess (2026-09-23)
+
+**Task:** `174.066-T` (queued, high) under active covering feature `174-F`; governed member of active
+shipment `155-S` (added after `174.064-T`, `174.065-T`). Origin: P-021 deferred-scope-expansion stash
+`FF1F3AC7` → deliberation `068-DL`.
+
+**Trigger.** The authorized full suite `go test ./...` fails and then times out in UNCHANGED
+`internal/core` durability tests. First failure:
+`TestShipShipment_FailClosedShippedAppendSuppressesMoveStatusPostHook`
+(`internal/core/shipment_shipped_event_durability_test.go:316`); the package then times out at 10m in
+`TestShipShipment_ShippedEventAppendFailureLogsFixedShape/not_applied`. Terminal stack:
+`gate.ExecVersionRunner.Version → gate.Probe → Broker.Evaluate → gateShipmentCompletion → ShipShipment`.
+
+**Root cause (test-infrastructure, not product).** `newShipDurabilityFixture` builds its workspace via
+`setupShipmentWorkspace → NewWorkspace`, which wires the REAL `buildGateBroker`
+(`gate.Broker{Version: gate.ExecVersionRunner{...}}`, workspace.go:278 / gate_transition.go:71-76) and
+never overrides it. `shipWithWatchdog` then runs `ShipShipment(context.Background(), …)` UNBOUNDED in a
+goroutine, so `gateShipmentCompletion` spawns a real `autoharness version` subprocess whose latency,
+under a loaded parallel full-suite run, exhausts the 10m package deadline. This is a gate/version
+subprocess-isolation defect in the test harness, NOT the item-log/artifact/global-lock ordering surface
+owned by `174.064-T`.
+
+**P-021 C1 classification.** OUT OF SCOPE for `174.064-T` (lock-order canonicalization) — a different
+contract surface (gate/version subprocess isolation vs. artifact/global lock ordering) — yet it BLOCKS
+`174.064-T` AC6 / the full-repository gate, so it is a governed prerequisite for `155-S` final readiness.
+Disposition: captured as `DEFERRED SCOPE EXPANSION` (`FF1F3AC7`), deliberated (`068-DL`), and planned as
+its own minimal corrective task rather than folded into any completed task.
+
+**Chosen correction (test-only; no production change).** Use the PRE-EXISTING injection seam — the public
+`ws.GateBroker` field, the `gate.VersionRunner` / `gate.GateRunner` interfaces, and the
+`injectBroker` / `fakeVersion` / `fakeGateRunner` helpers already in `gate_transition_test.go`:
+
+1. Override the durability fixture's `ws.GateBroker` with a PASSING fake broker (fake version + fake gate
+   runner) using the `gate.EnabledMode` that preserves the existing ship-completion path, so no
+   `gate.ExecVersionRunner` subprocess is ever spawned and every durability assertion still runs.
+2. Propagate a BOUNDED context (`context.WithTimeout`/`WithDeadline` + `defer cancel`) into `ShipShipment`
+   and the ship goroutine in `shipWithWatchdog`, instead of `context.Background()`, so cancellation
+   propagates into the ship path rather than relying solely on the package deadline.
+3. Deterministically PROVE no `gate.ExecVersionRunner` invocation (call-recording fake and/or type
+   assertion on `ws.GateBroker.Version`), preserve ALL append/compensation/post-hook-suppression/
+   fixed-shape assertions verbatim, and demonstrate RED-before / GREEN-after on the targeted durability
+   suite. No timeout inflation, no `t.Skip`, no weakened assertions, no production gate bypass.
+
+Scope is confined to `internal/core/shipment_shipped_event_durability_test.go` (and, only if strictly
+necessary, a sibling `_test.go` helper reusing the existing seam). No production (`non-_test.go`) change
+is required; if one is discovered to be required, Ship MUST HALT and classify/bound it explicitly rather
+than silently expand.
+
+**Dependencies / ordering.** No dependency-graph edge is added (fail-closed): the standalone
+test-harness corrective has no authentic upstream implementation task, and a `blocks` edge onto the
+already-done tasks would encode a false, immediately-satisfied ordering. Ordering is enforced by
+MEMBERSHIP — `174.066-T` is an unfinished member of active `155-S`, which gates PR readiness until it is
+done. No completed task status is reopened.
+
+**Circuit disposition (full-suite same-operation circuit is OPEN).** Do NOT run `go test ./...` now.
+After the correction COMMIT changes repository state, the local full-suite invocation is a NEW,
+SEPARATELY-AUTHORIZED final-gate operation at a NEW commit / NEW workflow phase — NOT a retry or probe of
+the open pre-fix failing state, and it does not count against the pre-fix circuit. Explicit operator
+authorization is still required immediately before that post-fix full-suite run if policy demands it.
+Within this task Ship runs ONLY the targeted durability verification (e.g.
+`go test -run TestShipShipment_ ./internal/core`). No waiver is invented; if policy forbids ever running
+the full suite even after a state-changing correction, the compliant alternative is a targeted
+per-package verification of `./internal/core/` plus the affected packages at the new commit under
+explicit authorization — never a skipped mandatory gate.
+
+**Scope guard.** Durability-test gate isolation only; no shipment-lifecycle, lock-order, product-code, or
+`.gitattributes` change; no touch of the current uncommitted Ship implementation, the active checkpoint
+`checkpoint-20260923-231731.json`, `154-S`, or PR #449. The uncommitted Ship implementation files are
+excluded from the Stage commit (explicit pathspec).
+
+<!-- plan-review-attempt: rev14-corrective-durability-gate-isolation -->
+
+## Plan Review — Amendment (Wave 13 durability-test gate-isolation corrective task) (2026-09-23)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+**Reviewers dispatched (parallel, planning-artifact review of `174.066-T` ACs + the Wave 13 corrective-wave section):** Concurrency Reviewer, Correctness Reviewer, Scope Boundary Auditor.
+
+- **Correctness Reviewer — initial FAIL (P1), re-review PASS after hardening.** Traced the real gate broker, `gateShipmentCompletion`, `validateMemberGateEvidence`, and the durability fixture and found the original AC premise INVERTED: it directed an ENFORCED+PASSING fake broker, but the fixture's release-scope members are active and carry NO per-member gate-pass evidence and `formalGateEnforced()` is false, so an enforced broker makes `gateShipmentCompletion` run `validateMemberGateEvidence` and REFUSE the ship BEFORE the `ws.shipmentEventAppend` seam — short-circuiting the ship and breaking every durability assertion. The behavior-preserving configuration is a NOT-enforced / fail-open broker (`gate.EnabledAuto` + version-probe error, or `gate.EnabledFalse`), matching the current default-config CI `!ev.Enforced` early-return. **Resolved in-scope** by rewriting AC1 (not-enforced/fail-open, explicitly forbidding enforced+passing), plus P2 fixes: AC2 (assert `formalGateEnforced()==false` precondition), AC5 (prove the post-hook-suppression scenario's error is the shipped-event-append `MutationPartialError` via `requireShippedAppendPartial`/`errors.As`, closing a wrong-path masking gap), AC6 (structural TYPE ASSERTION on `ws.GateBroker.Version`/`.Runner` rather than an invocation spy that would pass vacuously under `EnabledFalse`), and P3 reframes (AC3 "600s-bounded + leaks" precision; AC7 pre-fix RED is a bounded timeout, not a clean assertion failure). Re-review verdict: **PASS** — the not-enforced direction is behavior-preserving under both `EnabledAuto` and `EnabledFalse`, the masking gap is closed, the type-assertion proof is sound, and no new correctness defect was introduced. Two residual P3 advisories (AC8 fail-open/kill-switch wording; AC3 bound must exceed the pre-Evaluate `ws.headSHABounded` git probe) were also folded into the ACs.
+
+- **Concurrency Reviewer — ADVISORY, resolved in-scope.** Confirmed AC1 (fake broker) is the primary and sufficient fix and AC3 (bounded ctx) is correct defense-in-depth (`ExecVersionRunner.Version` honors `exec.CommandContext(ctx)`), with AC6's proof deterministic (per-`ws` broker, no `t.Parallel`). P2/P3 hardening folded in: AC3 bound strictly < watchdog and generous/unobservable on the happy path (prevents `DeadlineExceeded` from mutating `MutationPartialError.Class`/`CompensationState`); AC6 recorder concurrency-safe and read only after channel receive (avoids a `-race` hazard on a leaked goroutine), `-race` recommended for AC7; AC1 injection ordering pinned (after construction, before goroutine launch); AC9 explicitly acknowledges the residual leaked-goroutine/use-after-close on a GENUINE lock regression as a known OUT-OF-SCOPE limitation whose full fix (cooperative ctx cancellation inside `ShipShipment`) is a production change.
+
+- **Scope Boundary Auditor — ADVISORY, resolved in-scope.** Affirmed strong anti-creep scope (single `_test.go` file, pre-existing seam reuse, verbatim-assertion preservation, HALT-on-production-change) and that the no-dependency-edge / membership-as-gate decision is the correct anti-scope-creep choice (a `blocks` edge onto already-done tasks is a vacuous, immediately-satisfied ordering), not a verification gap. P2/P3 hardening folded in: AC6 broadened to both seam interfaces (VersionRunner AND GateRunner); AC9 makes introducing any NEW production injection API OUT OF SCOPE BY DEFINITION (HALT, not "bound"); AC3 framed as defense-in-depth; AC7 accepts a bounded RED reproduction; AC4 scoped "verbatim" to assertion SEMANTICS so it does not forbid AC3's context threading. Plan-level clarification (this record): the fail-closed membership-as-gate control is INDEPENDENTLY OBSERVABLE — `174.066-T` is an unfinished member of active `155-S`, and shipment membership is what actually blocks `174.064-T` AC6 / the full-repository gate for `155-S` final readiness — so the absent dependency edge is compensated by an asserted control, not by assumption.
+
+**Residual P0/P1 after hardening: NONE** (P0=0, P1=0). The single P1 (correctness AC1 inversion) and all P2/P3 findings were resolved in-scope by tightening `174.066-T`'s own acceptance criteria — same corrective contract; NO new task, scenario group, dependency edge, status, priority, or membership change. Decision: **PASS**.
+
+**Ship-ready directive.** Implement `174.066-T` as a governed prerequisite for `155-S` final readiness, confined to `internal/core/shipment_shipped_event_durability_test.go` (+ a sibling `_test.go` helper only if strictly needed) using the PRE-EXISTING seam — NO production change:
+
+1. Override the durability fixture `ws.GateBroker` with a NOT-enforced / fail-open fake broker (`gate.EnabledAuto` + a `fakeVersion` reporting the gate binary unavailable, or `gate.EnabledFalse`) via `injectBroker`, injected after `NewWorkspace` construction and before `shipWithWatchdog` launches the ship goroutine. Do NOT use an enforced+passing broker (it would trip `validateMemberGateEvidence` and refuse the ungated members). Assert `formalGateEnforced()==false`.
+2. Replace `context.Background()` in `shipWithWatchdog` with a bounded context (bound strictly < watchdog, generous vs. the append/compensation window AND the pre-Evaluate `ws.headSHABounded` git probe, unobservable on the happy path).
+3. Prove no real broker via a TYPE ASSERTION on `ws.GateBroker.Version` and `.Runner`; close the post-hook-suppression masking gap by asserting the error is the shipped-event-append `MutationPartialError`; keep any recorder concurrency-safe and read only after channel receive.
+4. Preserve every append/compensation/post-hook-suppression/fixed-shape assertion by semantics. RED-before (bounded timeout reproduction acceptable) / GREEN-after on `go test -run TestShipShipment_ ./internal/core` (recommended `-race`).
+5. Do NOT run `go test ./...` now — the full-suite same-operation circuit is OPEN. After the correction commit, the full suite is a NEW separately-authorized final-gate operation at a new commit/phase requiring explicit operator authorization; if policy forbids it even post-correction, use targeted per-package verification (`./internal/core` + affected packages) under explicit authorization. Preserve the uncommitted R1–R5/R8 Ship implementation, the `174.064-T` lock-order work, the active checkpoint `checkpoint-20260923-231731.json`, `154-S`, and PR #449; this corrective is orthogonal (test-harness gate isolation only). If any production (`non-_test.go`) change is found necessary, HALT and classify — introducing a new production injection API is out of scope by definition.
+
+<!-- plan-review-attempt: rev14-corrective-durability-gate-isolation (PASS after correctness FAIL->hardened) -->
+
+<!-- plan-review-attempt: rev15-corrective-final-review-blockers -->
+
+## Wave 14 — Corrective: final-review consensus blockers (lock hierarchy + Windows directory TOCTOU) (2026-09-23)
+
+At HEAD 5e4a04ca (`go test ./...` passed once at the corrected state), standard + adversarial final review blocked on three consensus-backed same-contract completion defects. Wave 14 splits them by domain under the 2-hour rule into two atomic corrective tasks, both governed members of active 155-S. Implementation commit provenance: 4d8a08fd; task-completion HEAD 5e4a04ca; active checkpoint checkpoint-20260924-011723.json.
+
+### 174.067-T — Lock hierarchy: singular-writer barrier + Reconcile/Add inversion (concurrency domain)
+
+Closes:
+- R-A (HIGH/P1, 3/3): `internal/core/shipment.go:1293 lockArtifactMutation` lets singular typed writers mutate lifecycle members without the pending-intent recovery barrier that the plural `lockArtifactMutations` (:1304-1308) acquires.
+- R-B (MEDIUM/P1, 2/3): `internal/core/shipment.go:1303-1308 lockArtifactMutations` context; `ReconcileShipmentToShipped` may hold membership/item-log locks before global, opposing `AddItemToShipment`'s global->membership order.
+
+Objective closure conditions (consensus-hardened): R-A closed at the `persistArtifactWithLinkPolicyAndGuard` barrier-gate (broaden the `ArtifactType=="shipment"` gate to cover lifecycle members, preserving `ctx=lockedCtx` token propagation + reentrancy held-check) — NOT unconditionally in the generic `lockArtifactMutation` helper (would over-serialize all writes, run recovery on every write, and risk a `validateShipmentLifecycleGlobalReentry` fail-closed break); R-B closed by `reconcileShipmentToShippedImpl` Phase A / `lockShipmentReconcileCThenB` acquiring global before membership/item-log (extended global hold across reconcile Phase C is intentional); GLOBAL-FIRST invariant enforced on the implicated paths only (item-log↔artifact relative order is NOT constrained on the snapshot/ship path, dominated by the barrier); scoped lock-order audit; deterministic singular-member-wait test (targets a NON-shipment member to avoid a vacuous RED) and lock-layer Reconcile-vs-Add contention test (under -race); existing generic/membership-writer serialization (TestP021ClaimSerialization...) preserved; no NEW runtime lock-order detector. Scope (whitelisted): `internal/core/shipment.go` (persist barrier-gate) + `internal/core/shipment_reconcile_transaction.go` (Phase A) + `internal/core/shipment_reconcile_lock.go` (CThenB) + exact tests; no new production lock primitive (HALT+classify otherwise).
+
+### 174.068-T — Windows shipment-ops directory-replacement TOCTOU (Windows filesystem containment domain)
+
+Closes:
+- R-C (MEDIUM/P1, 2/3): `internal/core/shipment_ops_windows.go:54` (and the read/write/remove helpers at :56/:79/:147) validate a directory handle then DISCARD it (`_ *os.File`) and re-resolve absolute paths for read/write/remove, leaving a directory-replacement TOCTOU.
+
+Objective closure conditions (consensus-hardened): the validated directory handle is threaded through and USED via OBJECT-BOUND, RootDirectory-relative `NtCreateFile`/`NtOpenFile` (no-follow) for read/create-temp/remove AND a handle-relative `SetFileInformationByHandle` FILE_RENAME_INFO+RootDirectory atomic rename REPLACING the pathname `MoveFileEx` (the literal MoveFileEx leaves the rename target swappable — a fail-open payload leak — and is jointly unsatisfiable with the handle-relative requirement); no absolute-path re-resolution and no post-hoc re-open+identity-compare substitute; fail closed (ErrValidation) on directory-identity change; handle stays live across each dependent op incl. the rename commit; all other containment + durability invariants preserved (durability via temp fsync-before-rename + atomic replace-if-exists); Windows-guarded adversarial tests that swap the ops dir by OBJECT IDENTITY while preserving the canonical path (not a mere external reparse point, which existing checks already catch) for read, remove, AND the temp-create→rename window (asserting payload bytes never reach the swapped-in directory). Scope: `internal/core/shipment_ops_windows.go` + Windows-only tests; the minimal NT-native RootDirectory-relative primitives (`NtCreateFile`/`NtOpenFile`, `SetFileInformationByHandle` FILE_RENAME_INFO+RootDirectory) are EXPLICITLY AUTHORIZED as in-scope (parity with the Unix `Openat`/`Renameat` contract); any OTHER new production seam or cross-platform change is out of scope (HALT+classify).
+
+### Shared Wave 14 closure / circuit disposition (NON-NEGOTIABLE)
+
+- Dependencies: no `blocks` edge on either task; both are governed members of active 155-S and gate 155-S final readiness by membership-as-gate. Provenance link to 174.064-T (lock-order) is informational, not an ordering edge onto a done task.
+- No completed task statuses are reopened.
+- The same-operation full-suite circuit is OPEN. Neither task runs `go test ./...`. After BOTH corrective commits (174.067-T and 174.068-T) land, the full suite runs EXACTLY ONCE as a NEW separately-authorized final-gate operation at a new commit/phase (explicit operator authorization required immediately before it). Compliant alternative if a full-suite run is forbidden even post-correction: targeted per-package verification (./internal/core plus affected packages) under explicit authorization — never a skipped mandatory gate.
+- Review is NOT open-ended: after the shared post-both-commits verification, exactly ONE standard review + ONE adversarial review over ONLY the changed surfaces of the two tasks. Exact stop gate: zero P0/P1. No further review-fix cycles are authorized by this amendment beyond closing genuine P0/P1 within those changed surfaces.
+
+## Plan Review — Amendment (Wave 14 final-review-blockers corrective) (2026-09-23)
+
+<!-- plan-review-attempt: rev15-corrective-final-review-blockers -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Scope of amendment: two NEW atomic corrective tasks created under 174-F and governed-added to active shipment 155-S, closing the three consensus-backed final-review blockers at HEAD 5e4a04ca. No existing task status/dependency/priority/membership altered; no source/test/checkpoint mutation; 154-S and PR #449 untouched.
+
+- 174.067-T (Task A, concurrency/lock hierarchy) — closes R-A (HIGH/P1 3/3) + R-B (MEDIUM/P1 2/3).
+- 174.068-T (Task B, Windows filesystem containment) — closes R-C (MEDIUM/P1 2/3).
+
+Reviewer dispatch (4 personas, parallel; then targeted re-dispatch of the 2 FAILs over hardened ACs):
+- Concurrency Reviewer (Task A): ADVISORY -> hardened. R-A fix relocated from an unconditional `lockArtifactMutation` acquire to the `persistArtifactWithLinkPolicyAndGuard` barrier-gate (preserves ctx=lockedCtx reentrancy-token propagation; avoids over-serializing all writes and a `validateShipmentLifecycleGlobalReentry` fail-closed break). R-B fix whitelisted to `shipment_reconcile_transaction.go` Phase A + `shipment_reconcile_lock.go` (CThenB). Canonical invariant narrowed to GLOBAL-FIRST on implicated paths; no new runtime lock-order detector.
+- Scope Boundary Auditor (both): ADVISORY -> hardened. Non-vacuous RED (singular test targets a NON-shipment member); scope pathspecs pinned; NT-native primitive authorization made explicit rather than an unbounded "new API".
+- Correctness Reviewer (both): FAIL -> PASS. Prior FAIL: Task B AC1/AC2 (handle-relative) vs old AC3 (retain literal MoveFileEx) were jointly UNSATISFIABLE. Resolved: MoveFileEx replaced by handle-relative SetFileInformationByHandle FILE_RENAME_INFO+RootDirectory (Windows Renameat parity); durability via temp Sync()-before-rename; AC5 ErrValidation coupling relaxed to the object-binding security invariant (payload never reaches the swapped-in dir).
+- Security Reviewer (Task B): FAIL -> PASS. Prior FAIL: AC7 forbade the very NT-native RootDirectory-relative primitives required to close the same-canonical-path window; AC1 allowed a re-open-then-verify-identity (check-after-use) substitute; AC5 tested only a reparse-to-external swap already caught vacuously. Resolved: AC7 explicitly authorizes the minimal NtCreateFile/NtOpenFile(RootDirectory) + SetFileInformationByHandle(FILE_RENAME_INFO,RootDirectory) primitives and documents the deliberate divergence from shipment_reconcile_fs_windows.go; AC1 strikes the verify-after substitute; AC5 tests a canonical-path-preserving object-identity swap covering read, remove, AND the temp-create->rename window.
+
+Residual P0/P1: NONE. Remaining reviewer items (Correctness P2 AC5 error-coupling; Security P3 handle-relative stat) were encoded into 174.068-T AC1/AC4/AC5/AC6.
+
+Ship-ready directive:
+1. Implement 174.067-T (test+code): apply R-A at `persistArtifactWithLinkPolicyAndGuard` (broaden the `ArtifactType=="shipment"` barrier gate to lifecycle members, preserving reentrancy token + held-check); apply R-B by making `reconcileShipmentToShippedImpl` Phase A / `lockShipmentReconcileCThenB` acquire the global barrier before membership/item-log. Add the deterministic singular-member-wait test (target a non-shipment member) and the -race Reconcile-vs-Add contention test. Preserve TestP021ClaimSerialization... . No new lock primitive/detector. Files: shipment.go + shipment_reconcile_transaction.go + shipment_reconcile_lock.go + exact tests.
+2. Implement 174.068-T (test+code): thread the validated ops directory handle through read/stat/create-temp/write/rename/remove via RootDirectory-relative NtCreateFile/NtOpenFile (no-follow) and REPLACE MoveFileEx with a handle-relative SetFileInformationByHandle FILE_RENAME_INFO+RootDirectory rename; add the Windows-guarded object-identity-swap TOCTOU tests (read, remove, temp-create->rename window). File: shipment_ops_windows.go + Windows-only tests.
+3. Circuit disposition (shared): do NOT run `go test ./...` mid-task (same-operation circuit OPEN). After BOTH corrective commits land, run the full suite ONCE as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before it); compliant alternative is targeted per-package verification. `go test ./...` passed once at HEAD 5e4a04ca before final review blocked.
+4. Stop gate: after both commits + the single authorized full-suite pass, exactly ONE standard + ONE adversarial review over ONLY the changed surfaces of both tasks; ship-ready at zero P0/P1.
+5. No dependency edges added (both are governed members of active 155-S; membership-as-gate blocks final readiness). Provenance link to done 174.064-T is informational only.
+
+<!-- plan-review-attempt: rev15-corrective-final-review-blockers (PASS after 2 FAIL->hardened) -->
+
+## Plan Review — Amendment (Wave 14 rev16: Windows rename API-boundary correction) (2026-09-23)
+
+<!-- plan-review-attempt: rev16-windows-rename-api-boundary -->
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Scope: surgical API-boundary correction to 174.068-T AC2/AC7 only. No graph/status/dependency/membership/priority change; no source/test/checkpoint mutation; 154-S and PR #449 untouched. 174.068-T remains active/high, governed member of 155-S.
+
+Correction (read-only diagnosis by Ship): the Win32 `SetFileInformationByHandle(FileRenameInfo`, class 3`)` form rejects a non-null-RootDirectory relative rename with `ERROR_INVALID_PARAMETER` on this platform. Everything else in the handle-relative design is already correct (buffer/layout, source DELETE access, share flags, directory handle, UTF-16 byte length without terminator, no-follow source open). The information-class/API pairing is the only defect.
+
+Amendment: AC2 now mandates `golang.org/x/sys/windows.NtSetInformationFile` with the native `FileRenameInformation` class (value 10) over the EXISTING `FILE_RENAME_INFORMATION`-compatible buffer and the live validated RootDirectory handle, converting NTSTATUS through the existing Windows error path. AC7 swaps the authorized rename primitive accordingly. Both ACs EXPLICITLY FORBID: `FileRenameInfoEx`/`FileRenameInformationEx` (any *_EX class), POSIX-semantics rename flags / class 65, `MoveFileEx`, absolute-path re-resolution, and any new syscall declaration or third-party dependency (`NtSetInformationFile` already exists in `x/sys/windows`).
+
+Preserved unchanged: AC1, AC3–AC6, AC8; all security properties (object-binding, no verify-after substitute, fail-closed-or-genuine-object invariant), the adversarial TOCTOU tests (read/remove/rename-window object-identity swap), durability (temp `Sync()`-before-rename + atomic replace-if-exists), rollback/circuit disposition. Sibling `shipment_reconcile_fs_windows.go` divergence rationale preserved.
+
+Focused review: Security PASS (native NT rename over the RootDirectory-relative buffer closes the same-canonical-path window the Win32 form left ERROR_INVALID_PARAMETER-blocked; no *_EX/POSIX/MoveFileEx/absolute-path fallback reintroduced; no post-hoc verify-after substitute). Correctness PASS (AC2/AC7 now name an API/class pairing that accepts the non-null RootDirectory buffer, so the contract is satisfiable; buffer, share flags, DELETE access, and no-follow open preserved as-is; NTSTATUS routed through the existing error path — no new error surface). Residual P0/P1: NONE.
+
+Ship-ready directive: in `internal/core/shipment_ops_windows.go`, replace the `SetFileInformationByHandle(FileRenameInfo)` rename call with `NtSetInformationFile(FileRenameInformation, class 10)` using the same buffer + live RootDirectory handle; convert NTSTATUS via the existing Windows error path; keep the open primitives (`NtCreateFile`/`NtOpenFile`, no-follow) and every other invariant unchanged. Verification stays circuit-gated: no tests now; one post-change targeted Windows verification phase requires explicit operator authorization immediately before it, then the shared Wave 14 full-suite/stop-gate (AC8) applies.
+
+<!-- plan-review-attempt: rev16-windows-rename-api-boundary (PASS) -->
+
+## Wave 15 — Class-level ShipShipment gate-fixture isolation (155-S full-suite unblock) (2026-09-23)
+
+<!-- plan-review-attempt: rev17-classlevel-gate-fixture-isolation -->
+
+Corrective wave adding ONE class-level, test-only task closing the full-suite timeout root cause. Source stash DB48A817; deliberation 069-DL. No graph/status/priority/membership change to existing tasks; no production/config/default/API change.
+
+- 174.069-T (queued/high, under 174-F, governed member of active 155-S) — default GateBroker=nil across shared ShipShipment fixture families so ordinary internal/core tests stop inheriting the real ExecVersionRunner/ExecRunner gate subprocess.
+
+Root cause: 11 of 34 internal/core ShipShipment tests inherit the real default GateBroker via setupShipmentWorkspace or external setupTestWorkspace; latest full-suite failure shipment_test.go:TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup times out on the real gate version subprocess.
+
+Objective closure conditions: shared test-only disableExecGateForTest(t,ws) sets/asserts GateBroker=nil, defaulted in setupShipmentWorkspace and newGateTestWorkspace; intentional gate tests explicitly inject fakes afterward and assert no Exec runners; durability fail-open fake fixture/assertions preserved (touched only if consolidating structural assertions); local external archive wrapper for 025_archive_harness_test.go nils/asserts the broker without modifying broad core_test.setupTestWorkspace; inventory regression proves no ordinary ShipShipment fixture retains exec types while intentional gate tests remain behaviorally covered; no skipped tests / timeout inflation / weakened assertions / production changes. Scope: internal/core test files only. P-021 C1 OUT OF SCOPE re done 174.066-T (shared cross-family infra, not durability-only completion).
+
+Circuit disposition (shared): do NOT run go test ./... within this task (same-operation full-suite circuit OPEN). After the corrective commit lands, run the full suite ONCE as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before it); compliant alternative is targeted per-package verification (ShipShipment/gate/durability/archive suites + race). Then 155-S final review/stop-gate (zero P0/P1) applies.
+
+Dependencies: none added (governed member of active 155-S; membership-as-gate blocks final readiness). Provenance link to done 174.066-T is informational.
+
+## Plan Review — Amendment (Wave 15 GateBroker-nil test isolation) (2026-09-23)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Focused two-reviewer dispatch over corrective task 174.069-T (class-level, test-only gate-fixture isolation) ACs and the Wave 15 plan section.
+
+- Correctness Reviewer: PASS. Verified against ground-truth code that gateShipmentCompletion nil-guards ws.GateBroker (skips the gate, returns nil — no nil-panic), NewWorkspace wires the real buildGateBroker only when the gate config is enabled, and intentional gate/durability fixtures re-inject fakes AFTER construction so nil defaulting is harmless. AC3 preserves behavioral gate coverage; AC4 leaves the durability fail-open fixture intact; AC6 inventory invariant is consistent with the gate-test exemption. Two P3 advisories applied (AC5 names the actual ShipShipment caller; AC6 asserts absence-of-real-Exec-types rather than strict nil so the durability fake re-injection is not false-flagged).
+- Scope Boundary Auditor: PASS. Correction stays within the four authorized internal/core test files; broad core_test.setupTestWorkspace and all production/config/default/API surfaces are explicitly excluded (AC5/AC7); correction is genuinely class-level (shared helper + two fixture defaults + one inventory regression), not per-test patches; verification is bounded (AC8 targeted + race; AC9 defers full suite to a separately-authorized op under the zero-P0/P1 stop gate); P-021 C1 OUT OF SCOPE re done 174.066-T is correctly justified. One P3 advisory applied (AC6 regression pinned to gate_transition_test.go).
+
+Residual P0/P1: NONE. All findings were P3 advisories; the two clarifying ones are applied to 174.069-T.
+
+Ship-ready directive: implement 174.069-T as a test-only class-level fix in internal/core test files only (gate_transition_test.go shared helper/newGateTestWorkspace; shipment_test.go setupShipmentWorkspace; 025_archive_harness_test.go local wrapper; durability test only if consolidating). Do NOT run go test ./... during the task; use targeted per-package verification. After the commit lands, one post-fix full-suite run is a NEW separately-authorized final-gate operation requiring explicit operator authorization immediately before it.
+
+<!-- plan-review-attempt: rev17-classlevel-gate-fixture-isolation-PASS -->
+
+## Wave 16 — Pinned errcheck discard completion for durability helper (155-S lint unblock) (2026-09-23)
+
+<!-- plan-review-attempt: rev18-durability-errcheck-discard -->
+
+Corrective wave adding ONE one-line, test-only lint completion. errcheck pins internal/core/shipment_shipped_event_durability_test.go:359 because requireShippedAppendPartial returns *blerrors.MutationPartialError (satisfies error via Error() string) and its return is discarded at that single call site. Source: fresh pinned-lint finding that stopped the remaining 174.069-T gates after inventory/helper/race/compile/vet passed.
+
+- 174.070-T (queued/high, under 174-F, governed member of active 155-S) — replace the bare call at line 359 with the repository-standard explicit discard `_ = requireShippedAppendPartial(t, err)`.
+
+P-021 C1: SAME-CONTRACT completion of DONE 174.066-T (the helper + call site it authored). Created as a NEW task because 174.066-T is done and its review-fix authorization is exhausted; 174.066-T status is NOT reopened. The helper return is intentionally discardable at this one site: the helper's internal require.Error / ErrorAs / FailedStep assertions fully validate the structured partial, and TestShipShipment_FailClosedShippedAppendSuppressesMoveStatusPostHook needs only those plus the movePostHookFired==false assertion — no further Class/CompensationState assertion on the return.
+
+Objective closure conditions: exactly one changed line (line 359); helper signature/return type and the three capturing call sites (198/261/325) unchanged; MutationPartialError semantics preserved; targeted durability suite GREEN; pinned errcheck cleared with no new lint; gofmt/goimports clean. No production/config/API change. Scope: internal/core/shipment_shipped_event_durability_test.go only.
+
+Circuit disposition (shared): do NOT run go test ./... in this task. After the commit lands, Ship resumes the 174.069-T lint/build/format gates; the full suite runs later ONCE only as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before). Then the 155-S zero-P0/P1 stop-gate applies.
+
+Dependencies: none added (governed member of active 155-S; membership-as-gate). Provenance link to done 174.066-T is informational.
+
+## Plan Review — Amendment (Wave 16 durability errcheck discard) (2026-09-23)
+
+dispatch_mode: multi-agent-dispatch
+decision: PASS
+
+Focused Correctness review over corrective task 174.070-T (one-line, test-only errcheck discard at internal/core/shipment_shipped_event_durability_test.go:359).
+
+- Correctness Reviewer: PASS (no findings). Verified against ground-truth code that requireShippedAppendPartial (helper line 173) performs all structured-error assertions internally (require.Error, ErrorAs into *MutationPartialError, FailedStep == shippedEventAppendStep), so discarding the return skips no validation. Line 359 sits in TestShipShipment_FailClosedShippedAppendSuppressesMoveStatusPostHook, whose only subsequent assertion is movePostHookFired==false — nothing consumes the returned partial, so the return is genuinely intentionally discardable there. The three capturing sites (198/261/325) make further Class/CompensationState assertions and are correctly left unchanged (AC2). `_ = f()` is the repo-standard explicit discard and preserves MutationPartialError semantics.
+
+Residual P0/P1: NONE.
+
+Ship-ready directive: apply the exact one-line change `_ = requireShippedAppendPartial(t, err)` at line 359 of internal/core/shipment_shipped_event_durability_test.go. Run the targeted durability suite GREEN, clear the pinned errcheck with no new lint, gofmt clean, confirm a one-line diff. Do NOT run go test ./... in the task; then resume the 174.069-T lint/build/format gates. The full suite runs later ONCE as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before it).
+
+<!-- plan-review-attempt: rev18-durability-errcheck-discard-PASS -->
+
+## Wave 17 — Final two correctives: core_test recovery isolation + Ship allowlist restore (155-S) (2026-09-23)
+
+<!-- plan-review-attempt: rev19-final-two-correctives -->
+
+Two DISTINCT, domain-separated corrective tasks closing the last full-suite/contract blockers. Sources: stash 885263D2 (deliberation 070-DL) and 4A0B7BCF (deliberation 071-DL). No graph/status/priority change to existing tasks; both are governed members of active 155-S (membership-as-gate); no inter-task dependency (independent domains).
+
+- 174.071-T (queued/high, under 174-F, member of 155-S) — TEST-ONLY Go fixture seam. Add package-core _test.go helper NewWorkspaceWithoutRecoveryForTest(ctx,root) delegating to newWorkspace(ctx,root,false); external core_test setupTestWorkspace (artifacts_expansion_test.go:24, 100+ callers) uses it so the broad fixture stops running recovery-enabled construction that hangs a hierarchy test in Windows FindFirstFile/EvalSymlinks during synthetic global-lock root canonicalization. Recovery-specific tests keep explicit NewWorkspace. NO production default/lock/recovery change; do NOT repurpose NewDiagnosticWorkspace. P-021 C1 OUT OF SCOPE for all done 174-F tasks (distinct test-infra seam).
+
+- 174.072-T (queued/high, under 174-F, member of 155-S) — HARNESS/CONFIG restore. Restore the protected explicit Ship governed-lifecycle tool allowlist in .github/agents/_ship.agent.md that a generic renderer overwrote with backlogit/* (failing the integration contract requiring explicit block/unblock/normalize trio). Keep the explicit list incl. the trio + all intended tools, drop backlogit/*, preserve unrelated concurrent model-routing edits, and reconcile the .autoharness/harness-manifest.yaml _ship checksum + drift record. Do NOT change registry/plugin template here (registry trio already present via ac5ebd29); capture a separate upstream tune-preservation follow-up if the renderer will re-drift. P-021 C1 OUT OF SCOPE for all done 174-F tasks (harness/config surface, moderate mutation authority).
+
+Circuit disposition (shared): do NOT run go test ./... in either task; use targeted per-task verification (hierarchy/expansion + recovery selectors for A; integration contract + harness verify for B). After BOTH commits land, the full suite runs ONCE as a NEW separately-authorized final-gate operation (explicit operator authorization immediately before it), followed by the final standard + adversarial review over the changed surfaces with a zero-P0/P1 stop-gate.
+
+Dependencies: none added; both governed members of active 155-S. Provenance links to done tasks are informational.
+
+## Plan Review — Amendment (Wave 17: final two correctives — core_test recovery isolation + Ship allowlist restore)
+
+<!-- plan-review-attempt: rev19-final-two-correctives -->
+
+- dispatch_mode: multi-agent-dispatch
+- decision: PASS
+- residual P0/P1: NONE
+- scope: 174.071-T (test-only Go fixture seam) + 174.072-T (Ship harness/config allowlist restore); both governed members of active 155-S; no inter-task dependency (independent domains); no existing task status/priority/graph change.
+
+Reviewer verdicts:
+- 174.071-T — Correctness Reviewer: PASS (seam technically sound; recovery coverage preserved). Scope Boundary Auditor: PASS (strictly test-only; no production/NewDiagnosticWorkspace repurposing; <=2h single-domain).
+- 174.072-T — Agent-Native Parity Reviewer: PASS. Template Integrity Reviewer: PASS. Security Reviewer (scope): PASS (dropping backlogit/* is a least-privilege improvement; no authority escalation; trio inside Ship role boundary).
+
+Consensus P2 findings folded into the ACs (no P0/P1):
+- 174.071-T: enumerate the exact recovery-agnostic fixtures to convert (setupTestWorkspace + setupTestWorkspaceWithBugLevel) and require confirmation that no recovery/journal test transitively uses a converted fixture (AC2/AC3); require a bounded-timeout RED reproduction + named targeted selectors (AC5); normalize the seam signature to (*Workspace, error) (AC1).
+- 174.072-T: keep tools as a scalar comma-separated string with in-place wildcard removal so the contract .(string) assertion holds (AC1); preserve exact HEAD memory token + unrelated model-routing edits (AC2); recompute the manifest checksum LF-normalized (AC3/AC6); make require.NotContains(shipTools, "backlogit/*") a MANDATORY contract assertion (AC4); make the separate upstream tune-preservation follow-up capture MANDATORY, not conditional (AC5).
+
+Circuit disposition: full-suite go test ./... circuit remains OPEN; neither task runs it. After BOTH commits land, one NEW separately-authorized full-suite run (explicit operator authorization immediately before), then the 155-S zero-P0/P1 stop-gate and final standard + adversarial review over the changed surfaces.
+
+Ship-ready sequential directive: (1) apply 174.071-T test-seam (add package-core _test.go seam; switch the two enumerated fixtures; keep recovery tests on explicit NewWorkspace) with its targeted hierarchy/expansion + recovery selectors; (2) apply 174.072-T allowlist restore (in-place scalar tools restore incl. trio, drop backlogit/*, add mandatory NotContains assertion, LF-normalized manifest checksum + drift record) with verify-workspace + integration contract; (3) capture the mandatory upstream tune-preservation follow-up stash; (4) then request explicit authorization for the single post-fix full-suite operation; (5) final standard + adversarial review over changed surfaces, zero-P0/P1 stop-gate. Preserve the currently-uncommitted Ship implementation and the dirty _ship.agent.md / config / checkpoints; Stage committed only its own backlog/plan files.
+
+<!-- plan-review-attempt: rev19-final-two-correctives-PASS -->
+
+## Wave 18 — Corrective: size/complexity core_test fixture recovery isolation (62C6A469) (2026-09-24)
+
+<!-- plan-review-attempt: rev20-size-complexity-fixture-recovery-isolation -->
+
+This corrective wave adds ONE test-only task. Source: DEFERRED SCOPE EXPANSION stash `62C6A469` (P-021 C6 forced deliberate route); deliberation `072-DL`. It makes no graph, status, priority, or membership change to existing tasks, and no production, config, default, API, CI, Makefile, or timeout change. The branch is `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`; evidence HEAD is `228a28fe89def0566fcb8b96ef077e1ab0d5eb03`, and the implementation state before evidence was `eedc48a16711fc5e3cd5b94b5619c61e2f006659`. Where this section and `072-DL` differ in wording (helper responsibilities), THIS SECTION IS AUTHORITATIVE.
+
+### Problem frame and root cause (evidence-bounded)
+
+Three consecutive separately-authorized `go test ./...` runs failed ONLY in `internal/core`, at the default 10m package deadline (602.093s / 600.818s / 602.192s). Every other package passed, including `tests/integration`. At each deadline the running test was 0-1s old and sat in a different, unrelated, normal I/O stack:
+
+| Capture | Blamed test (fixture) | Stack at deadline | Run-order position (current tree) |
+|---|---|---|---|
+| post-wave14 (`3588cad2`) | `TestShipShipment_RestoresNonMemberFeatureEvenWhenShipFailsAfterRollup` | gate `ExecVersionRunner` process wait (since fixed by 174.069-T) | about 59% (522/881) |
+| post-174070 (`46145ed5`) | `TestCreateArtifact_RejectsLevel2WithoutParent` (`setupTestWorkspace`) | recovery `EvalSymlinks`/`FindFirstFile` (since fixed by 174.071-T) | about 69% (612/881) |
+| post-wave17 (`eedc48a1`) | `TestSetArtifactSize_BusyLockReturnsErrTaskBusy` (`setupSizeWorkspace`) | `config.LoadTemplates` -> `os.ReadFile` | about 79% (697/881) |
+
+No stack shows a lock waiter, holder cycle, or per-test hang. The in-capture test counts (879/880/881) are nearly constant, so the run-order positions are comparable. The root cause is the cumulative wall time of the single `internal/core` test binary (881 top-level tests: 590 `package core` + 291 `core_test`) on this Windows host. The blamed fixture is incidental to where the deadline fell. Logging stops at the same test (`TestGateBaseOverrideShadowed_WarnsAdvisory`) in two captures while the deadline moved, which confirms the 60-90s silence is a diagnostics artifact (the `slog.SetDefault` restore leaves `log` output redirected), not a hang; it is captured separately as `D8EF5443`. Paused `t.Parallel` tests (`workspace_dualroot_test.go`) run only after all sequential tests, so the about-760s linear estimate is a LOWER bound.
+
+### Honest sufficiency disclosure and 62C6A469 split disposition (NON-NEGOTIABLE carry-forward)
+
+This task removes the unrelated recovery cost from the fixture named by `62C6A469` (`setupSizeWorkspace`) plus its construction-identical sibling `setupComplexityWorkspace` (072-DL option A2). By itself it is NOT expected to bring `internal/core` under the 10m default: the savings are seconds, against an estimated shortfall of at least about 160s. `62C6A469` is therefore a SPLIT disposition. The fixture-family portion is resolved by `174.073-T`. The package runtime-budget residual (explicit test timeout vs partitioning vs broad fixture I/O reduction/consolidation into one canonical recovery-agnostic `core_test` constructor vs construction caching) is carried by DEFERRED SCOPE EXPANSION `11BE840F` (high, requires deliberation). `62C6A469` is archived as consumed, with forward refs to BOTH `174.073-T` and `11BE840F`; it is NOT recorded as fully resolved. Neither the task nor Ship may widen into `11BE840F` (P-021 C4). Because the 155-S final gate requires a passing full suite, 155-S cannot close until `11BE840F` is dispositioned and, if it yields work, harvested as a governed 155-S member.
+
+### Implementation unit
+
+- **U18 / 174.073-T** (queued/high, under `174-F`, governed member of active `155-S`). Domain: Go test infrastructure only. Safety modes: investigate-first plus freeze-scope (two files).
+  - Files (exactly two, both `package core_test`): `internal/core/artifact_size_test.go`, `internal/core/artifact_complexity_test.go`.
+  - Functions (four):
+    1. NEW helper `newRecoveryFreeFixtureWorkspace(ctx context.Context, root string) (*core.Workspace, error)` in `artifact_size_test.go`. Its ONLY responsibility is construction: it calls the EXISTING `core.NewWorkspaceWithoutRecoveryForTest(ctx, root)` (`internal/core/workspace_test_seam_test.go`, unchanged) and wraps any error as `fmt.Errorf("new recovery-free fixture workspace: %w", err)`. It does NOT call `config.WriteDefaults`.
+    2. `setupSizeWorkspace` rerouted to call the helper in place of `core.NewWorkspace`. Everything else stays exactly as before: `t.TempDir()`, queue `MkdirAll`, `config.WriteDefaults`, `require.NoError`, `t.Cleanup(ws.Close)`, golden file, and `db.UpsertItem` seed.
+    3. `setupComplexityWorkspace`, rerouted identically.
+    4. NEW harness `TestRecoveryFreeFixture_SkipsShipmentRecoveryButLoadsTemplates` in `artifact_size_test.go` (no `t.Parallel`; no `slog`/env mutation). Arrange: a `t.TempDir()` root with `.backlogit/queue` + `config.WriteDefaults`, then create `<root>/.backlogit/ops` as a REGULAR FILE. The implementer confirms the path against `shipmentOpsRootForWorkspace` (`internal/core/shipment_ops.go`, `filepath.Join(realStorageRoot, "ops")`; a non-directory is rejected with `blerrors.ErrValidation`). Before seeding, `require.NoFileExists`/`NoDirExists` on `ops` confirms `WriteDefaults` did not create it. Each constructor call uses its OWN distinctly named context, `recoveryCtx, cancelRecovery := context.WithTimeout(context.Background(), 2*time.Second)` / `isolatedCtx, cancelIsolated := ...`, each with `defer cancel...()`, following the naming precedent at `workspace_no_recovery_regression_test.go`. Result variables are also distinct (`recoveryWS, recoveryErr` / `isolatedWS, isolatedErr`), so there is no `:=` redeclaration. (i) Negative control: `recoveryWS, recoveryErr := core.NewWorkspace(recoveryCtx, root)`. If `recoveryWS != nil`, register a Close cleanup first (precedent `shipment_ops_security_test.go`). Then MUST give `require.Error`, `require.ErrorContains(recoveryErr, "recover shipment operations")`, `require.ErrorIs(recoveryErr, blerrors.ErrValidation)`, `require.Nil(t, recoveryWS)`. (ii) Positive: `isolatedWS, isolatedErr := newRecoveryFreeFixtureWorkspace(isolatedCtx, root)` MUST give `require.NoError`, register `t.Cleanup(func() { require.NoError(t, isolatedWS.Close()) })`, and `require.NotEmpty(t, isolatedWS.Templates)` (template loading retained).
+  - Phase ownership (P-002/P-004; scoped red selectors because the full-suite circuit is OPEN, per branch precedent Waves 13-17; the compile-check narrowing is new and declared in the Quality Gates deviation):
+    - RED phase (harness-architect): (a) characterization extract. Add the helper, TEMPORARILY calling `core.NewWorkspace` (TRANSITION-ONLY state; no permanent test pins it), and reroute both fixtures through it. The family selector (step 2) must be GREEN with 13 PASS, which proves the extract is behavior-preserving. (b) Add the harness. Compile check `go test -run '^$' -count=1 ./internal/core` exits 0. The harness selector (step 1) FAILS on assertion (ii) with the recovery error. Capture this under `logs/diagnostics/174073-red-harness.txt` (+ `.metadata.json`). Record `Compilation: PASS` / `Red Phase: CONFIRMED (scoped)` and apply `harness-ready`.
+    - GREEN phase (build-feature): change ONLY the helper body to call `core.NewWorkspaceWithoutRecoveryForTest`. Steps 1-6 then pass. Capture under `logs/diagnostics/174073-*`.
+
+### Verification contract (PowerShell-safe; single-quoted selectors; literal SHAs)
+
+Before the first edit, Ship records the literal task-start SHA with `git rev-parse HEAD` and substitutes that literal text wherever `START_SHA` appears below. Never paste angle-bracket placeholders. Non-vacuity counts ONLY unindented top-level `--- PASS: Test` lines, and any `--- SKIP` or `--- FAIL` counts as failure.
+
+1. RED/GREEN harness: `go test ./internal/core -run '^TestRecoveryFreeFixture_SkipsShipmentRecoveryButLoadsTemplates$' -count=1 -timeout=2m -v`. RED before the helper switch, GREEN after. Exactly 1 top-level PASS when green.
+2. Family (exact-name anchored; a prefix selector would also match `TestSetArtifactSize_PreservesTopLevelDocline` in `docline_codec_roundtrip_test.go`, which is out of scope and keeps `core.NewWorkspace`): `go test ./internal/core -run '^(TestSetArtifactSize_PersistsAndPreservesIndexColumns|TestSetArtifactSize_RejectsInvalidValueBeforeWrite|TestSetArtifactSize_GoldenBodyPreserved|TestSetArtifactSize_Idempotent|TestSetArtifactSize_BusyLockReturnsErrTaskBusy|TestSetArtifactComplexity_PersistsAndPreservesBody|TestSetArtifactComplexity_RejectsInvalidValueBeforeWrite|TestSetArtifactComplexity_EmptyClearsField|TestSetArtifactComplexity_EmptyRejectsNonTask|TestSetArtifactComplexity_RejectsNonTaskEvenWithCustomSchema|TestSetArtifactComplexity_EmptyRequiresComplexitySchema|TestSetArtifactComplexity_GenericUpdatePreservesComplexity|TestSetArtifactComplexity_GenericCreateRejectsComplexity)$' -count=1 -timeout=2m -v`. Exactly 13 top-level PASS: the 5 `TestSetArtifactSize_*` + 8 `TestSetArtifactComplexity_*` functions declared in the two target files. `TestSetArtifactSize_BusyLockReturnsErrTaskBusy` still asserts `core.ErrTaskBusy`.
+3. Recovery and seam negative controls: `go test ./internal/core -run '^(TestNewWorkspace_RecoversPendingReturnBlockedJournal|TestNewWorkspace_RemovesWriterTempResidueAndRecoversValidJournal|TestNewWorkspaceWithoutRecoveryForTest_IsolatesRecoveryState)$' -count=1 -timeout=2m -v`. Exactly 3 top-level PASS. If a named test does not resolve, STOP and report; do not substitute.
+4. Template sanity (optional, non-gating; `internal/config` is untouched): `go test ./internal/config -run '^(TestLoadTemplates_|TestWriteDefaults_)' -count=1 -v`.
+5. Pinned gates (Go 1.24.0): `go vet ./...`; `go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout=5m --new-from-rev=START_SHA ./internal/core/...` (or the installed `golangci-lint` v1.64.8 with the same arguments), 0 new findings; `go build ./cmd/backlogit`; scoped format `gofmt -l 'internal/core/artifact_size_test.go' 'internal/core/artifact_complexity_test.go'`, empty output; `git diff --check START_SHA HEAD -- 'internal/core/artifact_size_test.go' 'internal/core/artifact_complexity_test.go'`, clean (path-scoped committed delta, so unrelated dirty files cannot falsely fail it). The lint `--new-from-rev` result is judged ONLY for findings in the two target files; an unrelated-file finding from dirty-worktree state is recorded, not treated as a task failure.
+6. Scope and reroute inventory, against the task commit:
+   - `git diff --name-only START_SHA HEAD -- internal cmd` lists EXACTLY `internal/core/artifact_size_test.go` and `internal/core/artifact_complexity_test.go`. Allowed outside that filter: `.backlogit/**` lifecycle metadata for `174.073-T`, `logs/diagnostics/174073-*`, `docs/memory/**`. Pre-existing unrelated dirty files are neither staged nor committed.
+   - `Select-String -CaseSensitive -SimpleMatch -Pattern 'core.NewWorkspace(' -Path 'internal/core/artifact_size_test.go','internal/core/artifact_complexity_test.go'` gives EXACTLY 1 match (the harness negative control). Counts include comments, so do not write either literal pattern in a comment.
+   - `-Pattern 'newRecoveryFreeFixtureWorkspace('` gives EXACTLY 4 matches: 1 definition, plus calls in `setupSizeWorkspace`, `setupComplexityWorkspace`, and the harness.
+   - `internal/core/workspace_test_seam_test.go` and every non-`_test.go` file are unchanged.
+
+### Circuit disposition (NON-NEGOTIABLE)
+
+- Do NOT run `go test ./...` within this task. Do NOT run the whole `internal/core` package without a `-run` selector; both are full-suite-equivalent because `internal/core` is the failing unit. The package-scoped `-run '^$'` compile check in the RED phase (`./internal/core` only) is the only unselected form allowed, and it runs no tests. `go test -run '^$' ./...` is NOT used, because it is itself a `go test ./...` invocation under the operator's stop rule; see the Quality Gates deviation.
+- After the task commit lands, Ship STOPS. Before any next `go test ./...`, Ship MUST request a NEW, separate, explicit operator authorization immediately before the run. That request MUST cite either a recorded operator disposition of `11BE840F`, or an explicit operator waiver accepting a known-risk diagnostic run.
+- The run form SHOULD be `go test -json ./...`, captured to `logs/diagnostics/`, so per-test `Elapsed` is available.
+- The 155-S zero-P0/P1 stop-gate and the final standard + adversarial review then apply.
+
+### Dependencies
+
+None added. The task is a governed member of active `155-S` (membership-as-gate). Provenance links to done `174.071-T` (seam author) are informational. The 155-S final gate depends on the `11BE840F` disposition (operator decision; not yet harvestable).
+
+### Plan Hardening Signals (Wave 18)
+
+- Public API/schema/contract change: absent (test-only; the seam is reused unchanged).
+- Security/auth/permission: absent.
+- Migration/destructive/irreversible: absent (only `t.TempDir()` scratch writes).
+- External integration / operator checkpoint / external dependency: PRESENT. The next full suite needs separate operator authorization, and `11BE840F` is an operator decision.
+- High runtime/rollout/rollback risk: PRESENT (moderate). The Windows package deadline remains after this task, so a mis-sequenced full-suite run would waste another roughly 13-minute authorized operation.
+
+Requires plan hardening: yes
+
+### Constitution Check (Wave 18)
+
+- I. Safety-First Go: pass except the lint-scope element, which is a DEVIATION (see Quality Gates below: `golangci-lint` runs in `--new-from-rev` mode). Test-only Go; no `unsafe`; the helper wraps errors with `%w`.
+- II. Test-First Development (NON-NEGOTIABLE): pass. The characterization extract comes first, then a failing harness captured as RED before GREEN. "All tests pass via `go test ./...` before merge" is enforced at the 155-S merge gate under separate authorization, not waived. `11BE840F` must preserve this rule; no ad-hoc timeout workaround.
+- III. Workspace Isolation and Security Boundaries: pass. All test-authored writes stay under each test's `t.TempDir()` root; no traversal; no secrets.
+- IV. CLI Workspace Containment (NON-NEGOTIABLE): pass. The agent performs no file operation outside the working directory. Diagnostics go under `logs/diagnostics/`. The only out-of-cwd writes (`t.TempDir()`, GOCACHE) are made by the Go test/toolchain process itself, not by agent file operations, so they are not an exception to IV.
+- V. Structured Observability: pass. RED/GREEN evidence is captured under `logs/diagnostics/174073-*` with metadata. The log-capture leak that degraded observability is captured as `D8EF5443`.
+- VI. Single Responsibility: pass. The helper only constructs; fixtures keep seeding; the harness proves one contract.
+- VII. Destructive Command Approval (NON-NEGOTIABLE): pass. No destructive steps; the full-suite run is gated by operator authorization.
+- VIII. Explicit Safety Modes: pass. Investigate-first + freeze-scope, declared above.
+- IX. Git-Friendly Persistence: pass. Text-only test changes; backlog changes go through governed backlogit operations.
+- X. Agent Context Efficiency: pass. The task contract is self-contained, with exact selectors and paths.
+- XI. Merge Commit History Preservation (NON-NEGOTIABLE): pass. The work ships inside the 155-S merge-commit PR; no squash/rebase.
+- Quality Gates / Technical Constraints: DEVIATION (documented, not a NON-NEGOTIABLE principle). At task level, `go test ./...` is replaced by the scoped selectors above because the full-suite circuit is OPEN; it runs once at the 155-S final gate under separate authorization. `golangci-lint run` runs in `--new-from-rev` mode because the repo carries pre-existing lint debt (`4DB1DFF1`). `gofmt -l .` is scoped to the two touched files because the repo carries pre-existing format drift (`4DB1DFF1`). `go vet ./...` runs in full. P-004 red-phase mapping: P-004's precondition `go test -run=^$ -count=1 ./...` is NARROWED to `go test -run '^$' -count=1 ./internal/core`, because any `go test ./...` form is behind the operator's stop rule. Only `internal/core` changes, and `go vet ./...` + `go build ./cmd/backlogit` compile-check the other non-test packages. P-004's `go test ./...` exits non-zero clause is mapped to the scoped harness selector (P-002.6 per-member scoped commands). Branch precedent (Waves 13-17) supports scoped red selectors only; the compile-check narrowing is NEW and is declared here. Rejected simpler alternative: running the full gates per task, which would re-trip the known package deadline and pre-existing debt unrelated to this change.
+
+Constitution Check: documented-deviations
+
+## Plan Hardening — Wave 18 (size/complexity fixture recovery isolation)
+
+Hardening required: yes (operator checkpoint + residual runtime risk). Consulted: `.github/policies/workflow-policies.md` P-002/P-004/P-021 (C1/C2/C4/C6); `.github/instructions/constitution.instructions.md`; `docs/compound/test-failures/go-analysistest-absolute-path-and-non-vacuity-2026-09-11.md` (non-vacuity of scoped `-run` selectors); `docs/compound/2026-07-29-durable-writes-test-seam-patterns.md` (seams must not leak process-global state; no `t.Parallel` alongside global seams); `docs/compound/best-practices/source-shape-harnesses-must-allow-lifecycle-successors-2026-09-11.md` (the RED extract is a transition-only state); `docs/memory/2026-09-24/ship-155s-174070-format-command-blocked.md` (a PowerShell-unsafe format command previously blocked Ship).
+
+Protected invariants:
+1. Recovery coverage: every recovery/journal test keeps explicit `core.NewWorkspace`, and the harness negative control proves recovery still engages on the seeded root (`ErrorIs` `blerrors.ErrValidation`).
+2. Template coverage: the recovery-free fixture still loads templates (`require.NotEmpty(ws.Templates)`), and the complexity tests still create artifacts.
+3. Lock semantics: `TestSetArtifactSize_BusyLockReturnsErrTaskBusy` still returns `core.ErrTaskBusy`.
+4. Seam integrity: `NewWorkspaceWithoutRecoveryForTest` is unchanged and its regression test stays GREEN; `NewDiagnosticWorkspace` is not repurposed; no production file changes.
+5. No global-state leakage: no `slog.SetDefault`, env, or `t.Parallel` changes in the touched files.
+6. Reroute proof: static inventory (step 6) shows neither fixture calls `core.NewWorkspace`.
+
+ProposedAction / ActionRisk:
+- PA-1: edit two `_test.go` files (helper + two reroutes + harness). ActionRisk: low; reversible by `git revert`; no approval needed beyond task claim.
+- PA-2: run targeted selectors 1-4, pinned gates 5, and inventory 6. ActionRisk: low; bounded (`-timeout=2m`) and scoped.
+- PA-3: next `go test ./...` (OUTSIDE this task). ActionRisk: medium (a roughly 13-minute operation with a known residual deadline risk). REQUIRES a new explicit operator authorization immediately before it, citing the `11BE840F` disposition or an explicit known-risk waiver; the recommended form is `go test -json ./...`.
+
+Blocked-path handling:
+- If RED cannot be reproduced (`core.NewWorkspace` succeeds on the seeded root, or the harness passes before the switch), STOP. Do not substitute a weaker fingerprint. Record the observation and return to Stage, since that would falsify the recovery-cost premise.
+- If the extract turns the family selector non-GREEN, STOP. The extract was not behavior-preserving.
+- If any selector reports SKIP, fewer PASS than stated, or a named test does not resolve, treat it as FAIL.
+- If a pinned gate fails, stop without retrying under a different command form, and record the evidence under `logs/diagnostics/`.
+
+Rollback: `git revert` of the single task commit restores both fixtures; there is no data or config state to unwind. Owner: Ship (task execution); Stage (`11BE840F` and `D8EF5443` follow-ups). Validation window: the task closes on steps 1-6. The package-deadline outcome is measured only by the next separately-authorized full-suite run.
+
+Review-gate capability carry-forward: plan review MUST emit literal `dispatch_mode:` and `decision:` markers. If reviewer sub-agent dispatch is unavailable or partial, it must declare `single-agent-declared-degradation` and `TOOL_DEGRADED: reviewer-subagent-dispatch` rather than issue a partial gate.
+
+Unresolved operator decisions (non-blocking for this task; blocking for the 155-S final gate): the `11BE840F` package-budget disposition (or an explicit known-risk waiver), and authorization for the next full suite.
+
+## Plan Review — Wave 18 attempt 1 (rev20, superseded)
+
+- dispatch_mode: multi-agent-dispatch
+- decision: ADVISORY
+- operator_authorization: not requested (superseded by the in-cycle P2 revision below; not a gate-satisfying record)
+- personas: Go Reviewer (PASS, 3 P2 / 5 P3), Scope Boundary Auditor (PASS, 4 P2 / 3 P3), Constitution Reviewer (PASS, 4 P2 / 5 P3), Architecture Strategist (PASS, 4 P2 / 3 P3), Learnings Researcher (PASS, 0 P2 / 4 P3, confidence high). Agent-Native Parity and Security Lens were not triggered (no MCP/agent-facing surface; no auth/secrets/trust boundary).
+- residual P0/P1: NONE.
+- Plan hardening required: yes; satisfied by `## Plan Hardening — Wave 18`.
+
+Merged P2 findings (deduplicated), all C1-in-scope for this plan and resolved in place in the Wave 18 section above (rev20.1):
+1. The harness proved the helper but not the fixture reroute (Go/Scope/Arch/Constitution). Resolved: step 6 static inventory (exactly 1 `core.NewWorkspace(`, exactly 4 helper matches) + invariant 6.
+2. The scope-inventory command compared against the dirty worktree and used a PowerShell-unsafe `<placeholder>` (Go/Scope). Resolved: `git diff --name-only START_SHA HEAD -- internal cmd`, a literal SHA via `git rev-parse HEAD`, and an explicit allowed-metadata list.
+3. The harness lacked close/timeout discipline (Go). Resolved: `t.Cleanup(require.NoError(ws.Close()))`, 2s `context.WithTimeout` per constructor, `require.Nil(ws)` on the negative path, and `ErrorIs(blerrors.ErrValidation)`.
+4. `11BE840F` was only "advised" before the next full suite (Scope/Arch). Resolved: the authorization request MUST cite a recorded `11BE840F` disposition or an explicit known-risk waiver.
+5. The `62C6A469` disposition was unstated (Scope). Resolved: SPLIT disposition recorded (family portion to `174.073-T`; residual to `11BE840F`; archive with both forward refs).
+6. 155-S closure dependency on `11BE840F` was untracked (Arch). Resolved: recorded in Dependencies and the sufficiency section.
+7. The DL vs plan helper wording conflicted (Scope/Arch). Resolved: plan declared authoritative; the helper only constructs; the 072-DL body wording was corrected, and a 072-DL comment event records the supersession.
+8. The Constitution Check was incomplete, mislabeled III/IV, gave a wrong III/IV rationale, and left the scoped gates undeclared (Constitution). Resolved: all principles I-XI listed with correct NON-NEGOTIABLE labels, toolchain temp/cache exception stated, Quality Gates deviation documented; verdict now `documented-deviations`.
+9. RED ownership under P-002/P-004 was unassigned (Constitution). Resolved: extract + harness + scoped red + `harness-ready` go to harness-architect; the helper switch goes to build-feature.
+
+Stage static verification (post-revision): the `Templates` field (`workspace.go:36`), the `blerrors` alias precedent, the 5+8 family functions, all three negative-control names (`shipment_test.go:1244`, `shipment_p1_lifecycle_remediation_test.go:61`, `workspace_no_recovery_regression_test.go:17`), and the current 2 `core.NewWorkspace(` sites (`artifact_size_test.go:54`, `artifact_complexity_test.go:45`) were confirmed. A prefix collision (`TestSetArtifactSize_PreservesTopLevelDocline`) was found and removed by exact-name anchoring selector 2.
+
+P3 items adopted: helper renamed `newRecoveryFreeFixtureWorkspace`; error wrap with `%w`; seam regression test added to step 3; family selector run after the extract; RED evidence path named; top-level-only PASS counting; `-timeout=2m` on selectors 1-3; RED extract marked transition-only; safety modes named; "family" wording narrowed; selector 4 made non-gating; `go vet ./...` run in full; lower-bound note on the estimate. P3 items recorded for `11BE840F` deliberation: consolidate recovery-free fixtures into one canonical `core_test` constructor; the paused-parallel test cost.
+
+<!-- plan-review-attempt: rev20-attempt-1-ADVISORY-superseded -->
+
+## Plan Review — Wave 18 final (rev20.2, attempt 2)
+
+- dispatch_mode: multi-agent-dispatch
+- decision: PASS
+- personas (re-review of the revised section after the attempt-1 P2 resolutions): Go Reviewer PASS (0 P0/P1/P2; all 3 attempt-1 P2s RESOLVED); Scope Boundary Auditor PASS (0 P0/P1/P2; F1-F4 and the DL wording conflict RESOLVED); Constitution Reviewer PASS (0 P0/P1; all 5 attempt-1 P2s RESOLVED; 1 new P2). The Architecture Strategist's and Learnings Researcher's attempt-1 findings were covered by the same resolutions: the reroute proof, the `11BE840F` precondition, the 155-S closure dependency, and the DL wording. Neither re-review surfaced any finding in their areas.
+- Plan hardening required: yes; satisfied by `## Plan Hardening — Wave 18`.
+- Constitution Check: documented-deviations (Quality Gates / Principle I lint scope; P-004 compile-check narrowing). No NON-NEGOTIABLE principle is deviated.
+
+Attempt-2 findings and disposition (all resolved in place; none deferred):
+- P2 (Constitution): the P-004 compile check was narrowed to `./internal/core` without a declaration. RESOLVED: the narrowing and its rationale are now declared in the Quality Gates deviation. `go test -run '^$' ./...` is explicitly not used, because it is a `go test ./...` form under the operator's stop rule. `go vet ./...` and `go build ./cmd/backlogit` compile-check the rest.
+- P3 (Constitution): Principle I was marked pass despite the lint scoping. RESOLVED: now marked "pass except lint-scope DEVIATION".
+- P3 (Constitution): the IV "toolchain exception" wording. RESOLVED: reworded to "no agent file operation outside cwd; toolchain temp is process-managed".
+- P3 (Constitution): the precedent overstated. RESOLVED: the text now says precedent covers scoped red selectors only and the compile-check narrowing is new.
+- P3 (Go): `git diff --check` / lint compared against the dirty worktree. RESOLVED: `git diff --check START_SHA HEAD -- <two paths>`; lint judged only on the two target files.
+- P3 (Go): harness redeclaration and lost-cancel risk. RESOLVED: distinct `recoveryCtx`/`isolatedCtx` and `recoveryWS`/`isolatedWS` names, each with `defer cancel`.
+- P3 (Go): negative path could leak an open workspace. RESOLVED: Close cleanup registered if `recoveryWS != nil`.
+- P3 (Go): comments could break the static counts. RESOLVED: "counts include comments" stated.
+- P3 (Go): `WriteDefaults` might create `ops`. RESOLVED: `NoFileExists`/`NoDirExists` pre-seed check.
+- P3 (Scope): the 072-DL supersession comment was missing. RESOLVED: 072-DL body corrected and a comment event appended.
+- Stage static verification also found a prefix collision in selector 2 (`TestSetArtifactSize_PreservesTopLevelDocline`). RESOLVED before attempt 2 by exact-name anchoring.
+
+Out-of-scope residuals (P-021 C2 captured; NOT widened into this task): `11BE840F` (package runtime-budget disposition; high; deliberate route) and `D8EF5443` (slog/log capture restore leak; medium; deliberate route).
+
+Residual P0/P1/P2: NONE. Gate satisfied (`decision: PASS`). Harvest authorized for exactly one task (`174.073-T` or the CLI-assigned ID recorded below at harvest).
+
+<!-- plan-review-attempt: rev20-attempt-2-PASS -->
+
+### Wave 18 harvest record (2026-09-24)
+
+- Harvested: `174.073-T` "Route size/complexity core_test fixtures through recovery-free seam" (task, queued, high, parent `174-F`; CLI-assigned ID matches this plan).
+- Shipment: governed `backlogit shipment add 155-S 174.073-T` -> `added`. The 155-S manifest now has 36 items (`174-F` first, `174.073-T` last), status `active`. `154-S` is untouched.
+- Stash (Stage authority): `62C6A469` edited with the SPLIT disposition and archived via `backlogit stash archive` (non-destructive). `11BE840F` and `D8EF5443` were late-reconciled from `task N/A` to `task 174.073-T`; both remain ACTIVE for operator-decided deliberation.
+- Dependency edges: none added (membership-as-gate).
+
+## Wave 19 — Governed adaptive go test runtime budget (11BE840F / 073-DL) — rev21.3
+
+> **SUPERSEDED (2026-09-24, operator option (c)).** Wave 19 rev21.x (O11, 18 tasks
+> `174.074-T` … `174.091-T`, `cmd/test-budget`, `internal/testbudget`) is **rejected as
+> over-engineering** and is never harvested. It is replaced by **Wave 19R (rev22)** at the end of
+> this plan. The text below is retained unchanged as an audit record only. No task, AC, or
+> schedule in this section is authoritative. Where a Wave 19 task ID is reused by Wave 19R, the
+> Wave 19R contract is the only definition.
+
+**Source.** DEFERRED SCOPE EXPANSION stash `11BE840F` (P-021 C6 forced the deliberate route) →
+deliberation `073-DL` (`.backlogit/queue/073-DL.md`, option O11). Operator direction 2026-09-24:
+"Deal with 11BE840F first. I don't know where the 10-minute timeout came from; it seems arbitrary.
+The more tests we have, the longer they will take and we should adapt accordingly." The operator
+delegated the decision to Stage ("decide and produce executable reviewed work"), so O11 is the
+recorded decision.
+
+**Authority.** This section is the authoritative Wave 19 contract. Where it differs from
+`073-DL`, this section wins. rev21 failed plan review in attempt 1, rev21.1 failed in
+attempt 2, and rev21.2 failed in attempt 3 (see the `## Plan Review — Wave 19` records). rev21.3
+applies every attempt-3 disposition. The operator authorized one additional review pass, and
+rev21.3 failed it in attempt 4 (one P0, B1). Harvest stays blocked pending a new operator
+decision (see the attempt-4 record). Task IDs in the attempt-1 record use rev21.1 numbering. Differences from 073-DL:
+
+* 18 tasks instead of 13. Every new Go surface is split into a declaration task and a behavior
+  task (Principle II), and the wrapper is split into a run surface and a result-sink surface to
+  stay within the 2-hour rule.
+* The contract test lands before the surface migrations as a red deliverable, not last.
+* At the ceiling, the wrapper clamps and still runs, then exits non-zero. It does not refuse to
+  run.
+* The constitution bump is MINOR `1.1.0`, not PATCH.
+* The drift-ignore edits are dropped.
+* Targeted `-run` selectors keep Go's default timeout (or the smaller timeout their task
+  declares). They do not "keep explicit small timeouts".
+* The 073-DL note "capture the next run with `-json`" is superseded (see 19.4.6).
+
+### 19.1 Provenance finding (verified, no run)
+
+* **Origin.** The 10-minute limit is `cmd/go`'s built-in default for `go test`:
+  * `GOROOT/src/cmd/go/internal/test/testflag.go:69` has
+    `cf.DurationVar(&testTimeout, "timeout", 10*time.Minute, "")`.
+  * `testflag.go:385-389` injects `-test.timeout=10m0s` into every test binary when the caller
+    passes no `-timeout`.
+  * `cmd/go` adds a backup process kill at timeout + 1m (`test.go:841`).
+  * The in-binary alarm is `testing.(*M).startAlarm` (`testing.go:2802`), the panic frame in
+    every capture.
+  * Host toolchain `go1.26.5`; `go.mod` declares `go 1.24.0`.
+* **Scope.** The limit is **per package test binary** and **cumulative**. It is not per test and
+  not per command. `internal/core` is one binary with 885 top-level tests (886 after
+  `174.073-T`), so its whole runtime shares one 10-minute alarm.
+* **Ownership.** Nobody in this repository owns it:
+  * `GOFLAGS` is empty (env and `go env`) and there is no `go.work`.
+  * No governed invocation passes `-timeout` (19.2).
+  * The `.autoharness` `TEST_COMMAND` token is a bare `go test ./...`, so every rendered harness
+    surface inherits the default implicitly.
+* **Outer limits that are NOT the test timeout:**
+  * The `ci.yml` `test` job has no `timeout-minutes` (GitHub default 360m).
+  * The only 10-minute literal in CI is `timeout-minutes: 10` on the unrelated `topology-check`
+    job. It is a coincidence.
+  * `golangci-lint --timeout=5m` and `engram --timeout 300` are lint and index limits.
+  * The agent shell `initial_wait` is a poll interval, not a kill.
+  * The 803.433s overall wall time of the post-wave17 run comes from packages running in
+    parallel. Only `internal/core`'s own binary alarm fired.
+
+### 19.2 Governed invocation-surface inventory
+
+"Relies on default" means the line runs a full-suite form with no `-timeout`, so Go's 10m default
+applies per package.
+
+| Surface | Line(s) | Current form | Relies on default | Migrating unit |
+|---|---|---|---|---|
+| `.github/workflows/ci.yml` step `Test` | 121 | `go test -race -coverprofile=coverage.out ./...` | yes | U19h `174.081-T` |
+| `.github/workflows/release.yml` step `Test` | 40 | `go test ./...` | yes | U19h `174.081-T` |
+| `scripts/pre-push-quality-gates.ps1` Test gate | 140 | `Invoke-Gate "Test" "go" "go test ./..."` | yes | U19i `174.082-T` |
+| `scripts/pre-push-quality-gates.sh` Test gate | 129 | `run_gate "Test" "go" "go test ./..."` | yes | U19i `174.082-T` |
+| `Makefile` `test:` | 20 | `go test -race -coverprofile=coverage.out ./...` | yes | U19j `174.083-T` |
+| `make.ps1` `Step "test"` | 50, 65 | same as Makefile | yes | U19j `174.083-T` |
+| `.github/agents/_ship.agent.md` final gate | 950, 989 | unfiltered full repository suite `go test ./...` | yes | U19k `174.084-T` |
+| `.github/skills/build-feature/SKILL.md` | 355, 365 | full-suite gate | yes | U19k `174.084-T` |
+| `.github/policies/workflow-policies.md` | 916, 925, 1149 | full-suite rule text | yes | U19l `174.085-T` |
+| `.github/skills/fix-ci/SKILL.md` | 13, 72, 126, 189 | local reproduction | yes | U19m `174.086-T` |
+| `.github/instructions/github-pr-automation.instructions.md` | 126 | pre-PR gate | yes | U19m `174.086-T` |
+| `AGENTS.md` | 16 (version), 43, 239, 252 | build/test guidance | yes | U19n `174.087-T` |
+| `.github/instructions/constitution.instructions.md` | 22, 209, 221, 328 (version) | quality gate | yes | U19n `174.087-T` |
+| `.github/copilot-instructions.md` | 13, 47 | test guidance | yes | U19o `174.088-T` |
+| `.github/instructions/go.instructions.md` | 35, 36 | test guidance | yes | U19o `174.088-T` |
+| `.github/agents/subagents/go-engineer.agent.md` | 76 | validation loop (74 is compile-only and stays unchanged) | yes | U19p `174.089-T` |
+| `README.md` | 283 | contributor test command | yes | U19p `174.089-T` |
+| `.github/copilot-review-instructions.md` | 195 | reviewer guidance | yes | U19q `174.090-T` |
+| `.github/instructions/copilot-code-review.instructions.md` | 53 | reviewer guidance | yes | U19q `174.090-T` |
+| `.autoharness/harness-manifest.yaml` variables | 556 `TEST_COMMAND`, 596 `HARNESS_ENFORCED_SUMMARY`, 633 `TESTING_RULES` | render tokens | yes, for re-render | U19r `174.091-T` |
+| `.autoharness/workspace-profile.yaml` | 27, 47 | discovered test command | yes, for re-render | U19r `174.091-T` |
+
+**Left unchanged on purpose:**
+
+* **Descriptive or historical text:**
+  * `harness-manifest.yaml:461` (a `note:` recording what was installed 2026-08-31).
+  * `.github/skills/doc-review/SKILL.md:200` (a list of commands whose absence makes docs
+    stale; `go test` still exists).
+  * `tests/simulation/wave-scheduler-contract.json:968-969` (a simulation fixture, not an
+    invocation).
+  * Workflow-policies amendment-log rows.
+  * All prior plan and memory text.
+* **Out of scope:** `plugin/**`. It is the product bundle shipped to consumer workspaces that do
+  not have `cmd/test-budget`. Its parity is captured as a P-021 follow-up (19.12).
+* **Targeted selectors** (`go test ./pkg -run '^TestX$' ...`) are not full-suite forms. They keep
+  Go's default 10m, or the smaller `-timeout` their own task declares. This includes
+  `ci.yml:165` (the `test-windows` job, `-run "ItemLog|ShipmentReconcile"`).
+* **Compile-only gates** (`-run=^$`) stay unchanged: `scripts/pre-push-quality-gates.ps1:141` and
+  `.sh:130` (Build gate `go test -run=^$ -count=1 ./...`). No test body runs under them, so they
+  are not runtime-budget surfaces.
+* **Does CI differ from dev/Ship?** Yes, but in flags only:
+  * CI and make add `-race -coverprofile=coverage.out`.
+  * release, pre-push, and Ship use the plain form.
+  * All of them rely on the same unowned 10m default.
+
+### 19.3 Runtime evidence, safe baseline, and headroom (existing transcripts only)
+
+| Run (Windows, no `-race`) | `internal/core` elapsed | Result |
+|---|---|---|
+| final 2026-09-23 | 602.717s | TIMEOUT |
+| post-`174.066-T` | 578.449s | PASS (96.4% of 600s) |
+| post-wave14 `3588cad2` | 602.093s | TIMEOUT |
+| post-`174.070-T` `46145ed5` | 600.818s | TIMEOUT |
+| post-wave17 `eedc48a1` | 602.192s | TIMEOUT (overall wall 803.433s) |
+
+* **Where the deadline fell.** At about 59%, 69%, and 79% of the 881-test run order. Each time
+  the running test was 0-1s old and sat in ordinary I/O. That signature is cumulative growth,
+  not a hang.
+* **Measured per-test cost.** `600s / (0.79 × 881) = 0.862 s/test`. This is a lower bound,
+  because paused `t.Parallel` tests run last. The linear projection is about 760s.
+* **Linux CI with `-race`** (run 35462047185, 2026-09-19): `internal/core` took 239.878s, about
+  0.29 s/test.
+* **Growth.** Static top-level counts for `internal/core` were 800 at merge-base `37a5cba4` and
+  885 at HEAD `0ffbdd42`: +85 in one shipment. Next largest packages: `internal/cli` 385,
+  `internal/events` 253.
+* **Safe baseline.** PerTestReference = 900ms. This is the Windows dev/Ship host measurement
+  (the slowest governed platform), rounded up.
+* **Headroom.** 2× over that reference. The expected ~760-800s run therefore uses about 45% of
+  the 30m budget. That absorbs host noise and the unmeasured `t.Parallel` tail, and still leaves
+  WARN (R1) meaningful.
+
+### 19.4 Chosen policy — Governed Test Runtime Budget (O11)
+
+#### 19.4.1 Single source of truth
+
+The new package `internal/testbudget` is the single source of truth. Its package doc carries the
+provenance, the formula, and R1-R5. Constants:
+
+| Constant | Value | Why |
+|---|---|---|
+| `Floor` | `10 * time.Minute` | Never below Go's own default |
+| `Step` | `5 * time.Minute` | Rounding step; limits `go test` cache-key churn (`-timeout` is a cached flag) |
+| `PerTestReference` | `900 * time.Millisecond` | 19.3 measurement, rounded up |
+| `Headroom` | `2` (untyped const) | 2× safety over the reference |
+| `Ceiling` | `45 * time.Minute` | Upper bound that forces a Stage decision |
+| `PolicyID` | `"073-DL"` | Links every printed budget to the governing decision |
+
+**Formula:** `Compute(n) = max(Floor, ceil_to_Step(n × PerTestReference × Headroom))`
+
+* `n < 0` returns an error.
+* `n == 0` returns `Floor` from `Compute`. The caller fails closed on an empty repository count
+  (19.4.3).
+* **Overflow guard:** if `n > int(Ceiling / (PerTestReference * Headroom))` (that is, `n > 1500`),
+  return `(Ceiling, fmt.Errorf("%w: ...", ErrCeilingExceeded))` **before** multiplying.
+
+**Current value:** N_max = 885 (886 after `174.073-T`) → 1593s (1594.8s) → **`30m0s`**.
+
+#### 19.4.2 Growth table (pinned in `TestCompute_Table`)
+
+| N_max (largest package) | Budget |
+|---|---|
+| 0-333 | 10m (floor) |
+| 334-500 | 15m |
+| 501-666 | 20m |
+| 667-833 | 25m |
+| 834-1000 | 30m (today: 885/886) |
+| 1001-1166 | 35m |
+| 1167-1333 | 40m |
+| 1334-1500 | 45m (ceiling) |
+| > 1500 | `ErrCeilingExceeded` (clamped to 45m, run marked failed) |
+
+The table test pins these rows: 0→10m, 1→10m, 333→10m, 334→15m, 500→15m, 501→20m, 885→30m,
+886→30m, 1000→30m, 1001→35m, 1500→45m, 1501→(45m, `ErrCeilingExceeded`), -1→error.
+
+#### 19.4.3 Static counter (deterministic per commit, identical on every machine)
+
+**What `N_max` is.** The largest count, in any one package directory, of top-level test
+functions in `*_test.go` files. Internal and external `_test` packages in one directory share one
+binary, so they are counted together.
+
+**What counts as a test function:**
+
+* A `*ast.FuncDecl` with no receiver.
+* Named `Test…` or `Fuzz…`, where the suffix does not start with a lowercase letter.
+* Exactly one parameter, whose type is `*T`/`*testing.T` for `Test…` or `*F`/`*testing.F` for
+  `Fuzz…`. The parameter list must have one field naming at most one parameter, so
+  `func TestX(a, b *testing.T)` is rejected, as `cmd/go` rejects it. The type may be
+  `*ast.StarExpr` over an `*ast.Ident` or an `*ast.SelectorExpr` whose `Sel` is `T`/`F`.
+* No results.
+
+**Consequences:**
+
+* `TestMain(m *testing.M)` is excluded by the parameter rule.
+* Benchmarks and examples are not counted.
+* Build tags are ignored, so every file is counted. This is conservative: it overcounts across
+  GOOS-specific files.
+* Non-`_test.go` files are never read.
+
+**Directory walk.** `Largest(root)` walks `root`. The skip rules apply only to directories other
+than `root` itself (`path != root`), so `Largest(".")` is not skipped by the `.` prefix rule. It
+skips:
+
+* `testdata`, `vendor`, and `.`- or `_`-prefixed directories;
+* any nested directory containing its own `go.mod`.
+
+`Dir` is reported slash-separated relative to `root` (`.` for the root).
+
+**Repository-wide on purpose.** The budget is derived from the whole module, whatever package
+pattern the invocation selects. The printed value is therefore a function of the commit alone,
+identical on dev, Ship, and CI.
+
+**Fail closed.** `N_max == 0` on a real repository is an error, not the floor.
+
+#### 19.4.4 Governed entry point `cmd/test-budget`
+
+`cmd/test-budget` uses plain `os.Args`, not cobra, and is not part of the release artifact. It
+must be run from the module root; a missing `go.mod` in the working directory gives exit 2.
+
+**`go run ./cmd/test-budget print`** prints the header and exits 0. It never runs tests, so
+verification can check the derivation without any suite run.
+
+**`go run ./cmd/test-budget run <go test flags/packages>`:**
+
+1. Rejects a caller `-timeout`, `--timeout`, `-test.timeout`, or `--test.timeout` (in `=` or
+   separate-value form) with exit 2 and `TEST_BUDGET_ERROR: -timeout is governed by 073-DL`.
+   This keeps one source of truth.
+2. Prints the header (field order is pinned):
+   `TEST_BUDGET: timeout=30m0s largest_package=internal/core top_level_tests=886 policy=073-DL`.
+3. Emits these header warnings when they apply:
+   * `TEST_BUDGET_WARN: largest_package_tests=<n> revisit=R3` when N_max ≥ 1200.
+   * `TEST_BUDGET_WARN: race-on-windows uncalibrated revisit=R4` when `-race` is passed and
+     `hostGOOS == "windows"` (`hostGOOS` is a package variable initialized from `runtime.GOOS`).
+   * `TEST_BUDGET_CEILING_EXCEEDED: largest_package_tests=<n> ceiling=45m0s revisit=R3` when
+     `Compute` returns `ErrCeilingExceeded`. The run continues clamped to 45m so the evidence R3
+     needs is still produced. The final exit is non-zero even when every package passes.
+4. Execs `go test` with the argument vector built by `buildGoTestArgs(d, args)`, which is exactly
+   `["test", "-timeout=<d>", args...]`. `execGo` maps a `Start` failure to 2 inline and passes the
+   `Wait` outcome to the pure helper `mapWaitResult(code, err)` (declared in 174.077-T, tested in
+   174.078-T).
+   * The child's stdout and stderr stream live through **one** writer,
+     `w := io.MultiWriter(stdout, sink)`, passed as both `Stdout` and `Stderr`. `os/exec`
+     therefore uses a single pipe and a single copy goroutine (it compares the two writers
+     with `interfaceEqual`). `Write` is never called concurrently, and the wrapper starts no
+     goroutine of its own.
+   * `resultSink.Write` always returns `len(p), nil`. It buffers partial lines (capped at
+     64 KiB; the rest of an over-long line is discarded), strips `\r`, and parses each
+     completed line against `^(ok|FAIL)\s+(\S+)\s+([0-9]+(?:\.[0-9]+)?)s(?:\s|$)`. `(cached)`,
+     `[no test files]`, and `[build failed]` lines do not match.
+   * The terminal receives the child's raw bytes unchanged. Only the sink's private copy is
+     line-normalized.
+5. Prints the footer:
+   `TEST_BUDGET_SUMMARY: timeout=<d> slowest_package=<pkg> slowest_elapsed=<raw>s budget_use=<pct>% largest_package_tests=<n> largest_package_elapsed=<raw>s per_test_cost=<s> ratio_to_reference=<x.xx>`.
+   * The raw elapsed token is kept as printed by `go test`.
+   * `per_test_cost` and the ratio use `%.3f` and `%.2f`.
+   * The largest package's elapsed is found by an **exact** import-path match, where the path is
+     the `go.mod` `module` path, plus `"/" + Dir` when `Dir != "."`. If there is no match, those
+     fields print `n/a`.
+   * If nothing was parsed (for example, a fully cached run), the summary prints
+     `slowest_package=n/a` with no percentages and derives no WARN.
+   * Footer warnings:
+     * `TEST_BUDGET_WARN: package=<pkg> elapsed=<raw>s exceeds budget/Headroom revisit=R1` for
+       each package over `budget / Headroom`.
+     * `TEST_BUDGET_WARN: per_test_cost ratio=<x> revisit=R2` when `ratio_to_reference > 1.25`.
+   * With `-json` in the arguments, the footer prints `TEST_BUDGET_SUMMARY: mode=json-unparsed`
+     and no WARN is derived.
+
+**Exit codes, returned by `run()`:**
+
+| Code | Meaning |
+|---|---|
+| 0 | Child succeeded and the ceiling was not exceeded |
+| child's code | Child failed; a negative `ExitCode()` (signal) maps to 1 |
+| 1 | The child exited but a descendant held the output open past `WaitDelay` (`exec.ErrWaitDelay`), fail closed |
+| 2 | Usage, configuration, or counter error, or the `go` process failed to start |
+| 3 | Child succeeded but `ErrCeilingExceeded` |
+
+`go run` collapses any non-zero program status to 1. Gates therefore classify outcomes by the
+printed markers and zero/non-zero status, not by exact codes. Codes 2 and 3 matter only to the
+direct `run()` unit tests.
+
+**Signals.** The wrapper never kills or signals the child, and it starts no goroutine.
+
+* `execGo` registers `signal.Notify(ch, os.Interrupt)` on a buffered channel of size 1, with
+  `defer signal.Stop(ch)`. This only keeps the wrapper alive until the child exits and the
+  footer is printed.
+* The terminal or console delivers Ctrl+C to the child process directly (the process group on
+  Unix, the attached console on Windows).
+* `cmd/go`'s own budget + 1m kill stays the backstop, so the hang detector stays finite.
+
+#### 19.4.5 Governed commands
+
+**Canonical literals** (required exactly at the structural gate locations the coupling test
+checks):
+
+* **canonicalFull** (Ship final gate, release, pre-push, docs):
+  `go run ./cmd/test-budget run ./...`
+* **canonicalCI** (CI `Test` step, Makefile, make.ps1):
+  `go run ./cmd/test-budget run -race -coverprofile=coverage.out ./...`
+
+**Any other governed span** (`go run ./cmd/test-budget run <args>` with no timeout flag) is
+accepted in prose. For example, `go.instructions.md:36` becomes
+`go run ./cmd/test-budget run -coverprofile=coverage.out ./...`, which keeps that line's
+no-`-race` intent.
+
+#### 19.4.6 Hang detection and `-json` supersession
+
+* **The hang detector stays finite.** Every test binary still gets a Go alarm (30m today) with a
+  goroutine dump that names the stuck test. `cmd/go` kills the process at budget + 1m.
+* **Detection latency.** It grows from 10m to the computed budget. This is accepted, because R5
+  classifies a timeout whose running test is ≥ 60s old as a defect, never as a reason to raise
+  the budget.
+* **`-json`.** 073-DL/11BE840F's "capture the next run with `go test -json`" is superseded for
+  the gate. The gate form is canonicalFull, whose standard package lines feed the summary.
+  `-json` stays available as a pass-through for a separate diagnostic run
+  (`mode=json-unparsed`).
+
+### 19.5 Rejected alternatives
+
+| ID | Alternative | Why rejected |
+|---|---|---|
+| O1 | Status quo (Go default 10m) | Already exceeded (~760s needed) |
+| O2 | Scattered literal `-timeout=30m` | Unexplained constant drifting across ~20 surfaces; no growth adaptation |
+| O3 | `-timeout=0` | Removes the finite hang detector |
+| O4 | `GOFLAGS` / `go env -w` | Machine-local and unversioned; dev, Ship, and CI diverge |
+| O5 | `TestMain` override of `test.timeout` | `cmd/go` always injects `-test.timeout` and kills at timeout + 1m; hidden and fragile |
+| O6 | Partition `internal/core`, reduce fixture I/O, or cache templates | Performance refactor excluded by the operator's scope; does not adapt durably; captured as a trigger-gated follow-up |
+| O7 | Committed measured-baseline ratchet | Commits machine-specific numbers, needs large `-json` captures, churns |
+| O8 | Platform-specific budgets | A run could pass in CI and time out locally |
+| O9 | Fail-fast guard against bare runs at runtime | Breaks legitimate bare runs on fast hosts; the static coupling test covers governed surfaces instead |
+| O10 | `go test -json ./...` as the gate form | Capture size; the calibration uses standard package lines |
+
+### 19.6 Revisit criteria (constants change only via a Stage deliberation citing ≥ 2 governed-run summaries)
+
+* **R1** — `TEST_BUDGET_WARN ... revisit=R1` on any governed run. Stage re-measures
+  PerTestReference from the summaries.
+* **R2** — `ratio_to_reference > 1.25`. Investigate a per-test cost regression first; do not just
+  raise the budget.
+* **R3** — N_max ≥ 1200 (80% of the ceiling) or `TEST_BUDGET_CEILING_EXCEEDED`. Deliberate the
+  partition/performance follow-up, or a reviewed ceiling amendment.
+* **R4** — A new governed platform, or `-race` on Windows (make.ps1). Measure before treating the
+  budget as calibrated.
+* **R5** — A timeout whose running test is ≥ 60s old is a genuine hang or slow-test defect. Fix
+  the test; never raise the budget for it.
+
+### 19.7 Work units (18 tasks under `174-F`; each ≤ 2 files, < 5 functions, < 4 scenarios, single domain)
+
+**Function limit.** It counts production functions and methods created or given a body in the
+task. A table test is one scenario.
+
+**RED selectors are scoped.** Every compile check is `go vet` on the named package plus a scoped
+`-run '^$'`; see deviation D1.
+
+**U19a `174.074-T` — Declare internal/testbudget policy surface**
+
+* Tests domain first, then declaration. Non-exempt; source-shape harness per P-002.1. Wave 1.
+  No dependencies.
+* Files:
+  * `internal/testbudget/budget_shape_test.go` (new; imports only `go/ast`, `go/parser`,
+    `go/token`, `os`, `path/filepath`, `strings`, `testing`);
+  * `internal/testbudget/budget.go` (new).
+* Harness `TestBudgetSourceShape` asserts over `budget.go` source:
+  * the package doc mentions `073-DL`;
+  * the 6 constants exist with the 19.4.1 value expressions;
+  * `var ErrCeilingExceeded` exists;
+  * `type PackageCount struct { Dir string; Tests int }` exists;
+  * these signatures exist: `func Compute(n int) (time.Duration, error)`,
+    `func CountTopLevelTests(dir string) (int, error)`,
+    `func Largest(root string) (PackageCount, error)`.
+* RED: before `budget.go` exists, the harness compiles and fails on assertion ("budget.go not
+  found / Compute not declared").
+* Declaration bodies are non-behavioral: `return 0, errors.New("testbudget: not implemented")`,
+  or the zero struct plus that error.
+* AC:
+  1. `go vet ./internal/testbudget` exits 0.
+  2. `go test ./internal/testbudget -run '^TestBudgetSourceShape$' -count=1 -v` shows exactly 1
+     top-level PASS.
+  3. No behavior is implemented.
+  4. `gofmt -l internal/testbudget` is empty.
+
+**U19b `174.075-T` — Implement testbudget Compute, counter, and Largest**
+
+* Tests first. Non-exempt. Wave 2. Depends on `174.074-T`.
+* Files: `internal/testbudget/budget_test.go` (new), `internal/testbudget/budget.go`.
+* Functions: `Compute`, `CountTopLevelTests`, `Largest`, plus at most one unexported helper
+  (`isTestFunc`).
+* Harness (compiles against the declarations, fails on assertion). All fixtures are written into
+  `t.TempDir()`; no `testdata` files are committed.
+  * `TestCompute_Table`: the 19.4.2 rows.
+  * `TestCountTopLevelTests`: a fixture with
+    * a counted `TestA(t *testing.T)`, `TestB(t *T)` (declared with a local `type T = testing.T`; cmd/go matches `*T` by name), and
+      `FuzzC(f *testing.F)`;
+    * non-counted `TestMain(m *testing.M)`, `Testlower(t *testing.T)`, `TestD()`,
+      `TestE(t *testing.T) error`, `TestH(a, b *testing.T)`, and a method
+      `(s S) TestF(t *testing.T)`;
+    * a `helper.go` (non-test file) containing `func TestG(t *testing.T)`.
+    * The count is exactly 3.
+  * `TestLargest`, with subtests:
+    * `fixture`: two directories plus skipped `testdata`, `vendor`, `_x`, `.y`, and a nested
+      module. The largest is reported with a relative slash `Dir`.
+    * `empty`: returns an error.
+    * `dot-root`: under `t.Chdir(<fixture root with go.mod and one test file>)`, `Largest(".")`
+      returns `Dir == "."` with the root's count (the `.`-prefix skip rule does not apply to the
+      root).
+    * `repository`: `Largest(<module root>)` has `Dir == "internal/core"` and `Tests >= 500`.
+      This is a non-vacuity floor, not an exact count.
+* AC:
+  1. The RED evidence (assertion failures, compile PASS) is captured under
+     `logs/diagnostics/174075-*`.
+  2. GREEN: `go test ./internal/testbudget -count=1 -v` shows exactly 4 top-level PASS
+     (including the shape test).
+  3. `go vet ./internal/testbudget` exits 0.
+  4. The package doc carries provenance, the formula, and R1-R5.
+
+**Shape-harness imports (174.074-T, 174.076-T, 174.077-T).** Each harness imports exactly
+`go/ast`, `go/parser`, `go/token`, `os`, `path/filepath`, `strings`, and `testing`. That goes
+beyond the four packages P-002.1 lists as its example. `os` and `path/filepath` locate and read
+the source file; `strings` checks doc comments and literals. None of them names an identifier
+of the package under test, so the harness compiles before the declaration exists (a package
+made only of test files compiles under `go vet` and `go test`).
+
+**U19c `174.076-T` — Declare cmd/test-budget run surface**
+
+* Source-shape harness first. Non-exempt. Wave 1. No dependencies.
+* Files: `cmd/test-budget/main_shape_test.go` (new), `cmd/test-budget/main.go` (new).
+* Harness `TestWrapperRunSourceShape` asserts these declarations in `main.go`:
+  * `type goRunner func(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error)`;
+  * `var defaultRunner goRunner = execGo`;
+  * `var hostGOOS = runtime.GOOS`;
+  * `func main()`, whose body calls `os.Exit(run(...))` with `defaultRunner`;
+  * `func run(ctx context.Context, args []string, stdout, stderr io.Writer, runner goRunner) int`;
+  * `func buildGoTestArgs(d time.Duration, args []string) ([]string, error)`;
+  * `func execGo(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error)`.
+* Functions: 4 (`main`, `run`, `buildGoTestArgs`, `execGo`).
+* Stub bodies are non-behavioral:
+  * `buildGoTestArgs` returns `nil, errors.New("test-budget: not implemented")`;
+  * `execGo` returns `2, errors.New(...)`;
+  * `run` is exactly: `_ = hostGOOS`, then
+    `if _, err := buildGoTestArgs(0, args); err != nil { return 2 }`, then `return 2`. The
+    checked error keeps errcheck quiet.
+  * This keeps golangci-lint `unused` (default linter set; there is no `.golangci.yml`) quiet
+    without any directive.
+* AC:
+  1. `go vet ./cmd/test-budget` exits 0.
+  2. `go test ./cmd/test-budget -run '^TestWrapperRunSourceShape$' -count=1 -v` shows exactly 1
+     top-level PASS.
+  3. `gofmt -l cmd/test-budget` is empty.
+  4. `golangci-lint run ./cmd/test-budget/...` reports nothing.
+
+**U19d `174.077-T` — Declare cmd/test-budget result sink and exit-mapping surface**
+
+* Source-shape harness first. Non-exempt. Wave 1. No dependencies.
+* Files: `cmd/test-budget/result_shape_test.go` (new), `cmd/test-budget/result.go` (new).
+* Harness `TestResultSinkSourceShape` asserts these declarations in `result.go`:
+  * `type resultSink struct{}` (no fields; 174.078-T adds them);
+  * `func (s *resultSink) Write(p []byte) (int, error)`;
+  * `func (s *resultSink) footer(budget time.Duration, largestImportPath string, largestTests int, jsonMode bool) []string`;
+  * `func mapWaitResult(code int, err error) (int, error)`;
+  * the anchors `var _ io.Writer = (*resultSink)(nil)`, `var _ = (*resultSink).footer`, and
+    `var _ = mapWaitResult`. 174.078-T removes the last two once its tests call them
+    (golangci-lint runs with tests included by default, so a test call counts as a use).
+* Functions: 3 (`Write`, `footer`, `mapWaitResult`).
+* Stub bodies are non-behavioral:
+  * `Write` returns `len(p), nil` without parsing (the `io.Writer` contract only);
+  * `footer` returns `nil`;
+  * `mapWaitResult` returns `2, errors.New("test-budget: not implemented")`.
+* AC:
+  1. `go vet ./cmd/test-budget` exits 0.
+  2. `go test ./cmd/test-budget -run '^TestResultSinkSourceShape$' -count=1 -v` shows exactly 1
+     PASS.
+  3. `gofmt -l cmd/test-budget` is empty.
+  4. `golangci-lint run ./cmd/test-budget/...` reports nothing.
+
+**U19e `174.078-T` — Implement test-budget result sink, footer, and exit mapping**
+
+* Tests first. Non-exempt. Wave 2. Depends on `174.074-T` (constants) and `174.077-T`.
+* Files: `cmd/test-budget/result_test.go` (new), `cmd/test-budget/result.go`.
+* Functions given bodies: 3 (`Write`, `footer`, `mapWaitResult`). `footer` reads
+  `testbudget.Headroom` and `testbudget.PerTestReference`. It adds the `resultSink` fields and
+  deletes the `var _ = (*resultSink).footer` and `var _ = mapWaitResult` anchors; the
+  `io.Writer` assertion stays.
+* `mapWaitResult(code, err)` contract (pure; `code` is the caller's
+  `cmd.ProcessState.ExitCode()`, or -1 when there is no state):
+
+| Input | Returns |
+|---|---|
+| `(0, nil)` | `(0, nil)` |
+| `(c, *exec.ExitError)` with c ≥ 0 | `(c, nil)` |
+| `(c, *exec.ExitError)` with c < 0 (signal) | `(1, nil)` |
+| `errors.Is(err, exec.ErrWaitDelay)` (any code) | `(1, err)`, fail closed |
+| any other non-nil `err` | `(1, err)` |
+* `Write` contract:
+  * It **always returns `len(p), nil`**, even when it discards bytes. A short write or an error
+    would stop the `os/exec` copy goroutine and break the child's pipe.
+  * It buffers a partial line (capped at 64 KiB; the rest of an over-long line is discarded up
+    to the next newline), strips a trailing `\r`, and matches each completed line against
+    `^(ok|FAIL)\s+(\S+)\s+([0-9]+(?:\.[0-9]+)?)s(?:\s|$)`.
+  * It records the raw elapsed token for each package.
+* Harness:
+  * `TestResultSink_Write` (table) covers:
+    * a line split across two writes;
+    * CRLF input;
+    * `ok  pkg (cached)` ignored;
+    * `?   pkg [no test files]` ignored;
+    * `FAIL pkg 602.717s` parsed, with the raw token kept;
+    * `FAIL pkg [build failed]` ignored;
+    * `ok  pkg 0.123s  coverage: 50.0% of statements` parsed;
+    * a 70 KiB line: discarded, `Write` still returns `len(p), nil`, and the next line parses.
+  * `TestResultSink_Footer` (table) covers:
+    * the slowest package and its raw elapsed;
+    * `budget_use` percent;
+    * `revisit=R1` when a package elapsed exceeds `budget / Headroom`;
+    * `revisit=R2` when `ratio_to_reference > 1.25`;
+    * the largest package matched by **exact** import path (`module` alone, or
+      `module + "/" + Dir`), where `example.com/m/x/internal/core` does not match
+      `internal/core`, and an unmatched package prints `n/a`;
+    * nothing parsed (a fully cached run): `slowest_package=n/a`, no percentages, no WARN;
+    * `jsonMode`: exactly `TEST_BUDGET_SUMMARY: mode=json-unparsed`.
+  * `TestMapWaitResult` (table): `(0, nil)` → `(0, nil)`; `(3, &exec.ExitError{})` → `(3, nil)`;
+    `(-1, &exec.ExitError{})` → `(1, nil)`; `(0, fmt.Errorf("wait: %w", exec.ErrWaitDelay))` →
+    `(1, err)` with `errors.Is(err, exec.ErrWaitDelay)`; `(-1, errors.New("copy"))` → `(1, err)`.
+* AC:
+  1. RED evidence (compile PASS, assertion failures) is captured under
+     `logs/diagnostics/174078-*`.
+  2. GREEN: `go test ./cmd/test-budget -run '^(TestResultSink_Write|TestResultSink_Footer|TestMapWaitResult|TestResultSinkSourceShape)$' -count=1 -v`
+     shows exactly 4 top-level PASS.
+  3. `go vet ./cmd/test-budget` exits 0.
+  4. `golangci-lint run ./cmd/test-budget/...` reports nothing.
+
+**U19f `174.079-T` — Implement test-budget run, exec, and header**
+
+* Tests first. Non-exempt. Wave 3. Depends on `174.075-T`, `174.076-T`, `174.078-T`.
+* Files: `cmd/test-budget/main_test.go` (new), `cmd/test-budget/main.go`. `result.go` is not
+  touched (174.078-T already removed its anchors).
+* Functions given bodies: 3 (`run`, `buildGoTestArgs`, `execGo`). `main` is unchanged.
+* `run` contract:
+  * Subcommands are `print` and `run`; anything else (including no subcommand) returns 2 with
+    usage.
+  * It rejects `-timeout`, `--timeout`, `-test.timeout`, and `--test.timeout`, in `=` and
+    separate-value forms: exit 2 and `TEST_BUDGET_ERROR: -timeout is governed by 073-DL`.
+  * It requires `go.mod` in the working directory and reads its `module` path; otherwise exit 2.
+  * It calls `testbudget.Largest(".")`. An error or `Tests == 0` returns 2.
+  * It calls `testbudget.Compute`. `ErrCeilingExceeded` clamps the budget to 45m and marks the
+    run for exit 3.
+  * It prints the header plus the R3, R4 (`-race` && `hostGOOS == "windows"`), and CEILING
+    lines.
+  * `print` returns 0, or 3 at the ceiling.
+  * `run` builds `w := io.MultiWriter(stdout, sink)` and passes **the same `w` as both stdout
+    and stderr**. `os/exec` then uses one pipe and one copy goroutine, because it compares the
+    two writers with `interfaceEqual`. There is no concurrent `Write` and no race.
+  * The terminal receives the child's raw bytes; only the sink normalizes lines.
+  * After the child exits, `run` prints `footer(...)` lines to stdout.
+* Exit mapping (`run` return values):
+
+| Runner returns | `run` returns |
+|---|---|
+| `(0, nil)` | 0, or 3 at the ceiling |
+| `(c, nil)` with c ≠ 0 | c |
+| any `(c, err)` | c, and prints `TEST_BUDGET_ERROR: <err>` |
+
+* `execGo` contract:
+  * It uses `exec.CommandContext(ctx, "go", args...)` with `Stdout`/`Stderr` as given and
+    `cmd.WaitDelay = 10 * time.Second`.
+  * A `Start` failure returns `(2, fmt.Errorf("start go: %w", err))` inline. After `Wait`, it
+    returns `mapWaitResult(cmd.ProcessState.ExitCode(), err)` (or code -1 when
+    `ProcessState` is nil), so every row of the table below is unit-tested in 174.078-T.
+  * It registers `signal.Notify(ch, os.Interrupt)` on a buffered channel of size 1, with
+    `defer signal.Stop(ch)`, and starts no goroutine. This only stops the wrapper from dying
+    before the child. The terminal or console delivers the interrupt to the child itself, and
+    nothing is forwarded or killed.
+  * Returns:
+
+| Outcome | `execGo` returns |
+|---|---|
+| `Start` failure | `(2, err)` |
+| `*exec.ExitError` | `(ExitCode(), nil)`; a negative code (signal) becomes 1 |
+| `errors.Is(err, exec.ErrWaitDelay)` (a descendant kept the output open after the child exited) | `(1, err)`, fail closed |
+| success | `(0, nil)` |
+
+* Harness:
+  * `TestRun_DerivationAndPrint` (table; fixtures are generated in `t.TempDir()`; the working
+    directory is set with `t.Chdir`, available since Go 1.24; no `t.Parallel`), rows:
+    * an unknown subcommand (`frobnicate`) and an empty argument list each return 2 with usage;
+    * `print` on a module with 2 tests writes exactly
+      `TEST_BUDGET: timeout=10m0s largest_package=. top_level_tests=2 policy=073-DL` and
+      returns 0;
+    * the four timeout-flag spellings each return 2;
+    * no `go.mod` returns 2;
+    * a zero-test module returns 2;
+    * a generated 1200-test package prints `revisit=R3` and `timeout=40m0s`;
+    * a generated 1501-test package prints `TEST_BUDGET_CEILING_EXCEEDED` and
+      `timeout=45m0s`, and returns 3.
+  * `TestRun_ExecutionAndExitMapping`, with a fake `goRunner`:
+    * the recorded vector equals `["test", "-timeout=10m0s", "./..."]`;
+    * the stdout and stderr the fake receives are the same writer;
+    * header, then child output, then `TEST_BUDGET_SUMMARY`, in that order;
+    * the fake returning `(1, nil)` gives 1;
+    * `(2, errors.New("start"))` gives 2 and `TEST_BUDGET_ERROR`;
+    * the 1501-test fixture with a `(0, nil)` fake gives 3;
+    * `hostGOOS = "windows"` with `-race` prints `revisit=R4`; `hostGOOS` is restored with
+      `t.Cleanup`;
+    * the real `execGo` under `t.Setenv("PATH", t.TempDir())` (no `go` resolvable) returns code
+      2 and a non-nil error wrapping the start failure.
+  * `TestGoTestTimeout_BoundedHangIsDetected` (real toolchain, bounded):
+    * `t.Chdir` into a `t.TempDir()` module whose `go.mod` pins `go 1.24` and whose single test
+      blocks on `select {}`;
+    * `t.Setenv("GOWORK","off")`, `t.Setenv("GOFLAGS","")`, and
+      `t.Setenv("GOTOOLCHAIN","local")`, which the child inherits. Production `execGo` inherits
+      the caller environment unchanged;
+    * a 2-minute context;
+    * builds `args, err := buildGoTestArgs(3*time.Second, []string{"-count=1", "./..."})`,
+      fails the test on `err`, then runs `execGo(ctx, args, &buf, &buf)`;
+    * asserts a non-zero code, `panic: test timed out after 3s` in the output, and a return
+      before the context deadline;
+    * no `t.Parallel`.
+* AC:
+  1. RED evidence is captured under `logs/diagnostics/174079-*`.
+  2. GREEN: `go test ./cmd/test-budget -count=1 -timeout=5m -v` shows exactly 8 top-level PASS
+     (the 2 shape tests, the 3 result tests, and the 3 run tests).
+  3. `go run ./cmd/test-budget print` from the repo root prints
+     `TEST_BUDGET: timeout=30m0s largest_package=internal/core top_level_tests=<885|886> policy=073-DL`
+     and exits 0. It is captured as evidence; this is derivation only and no suite runs.
+  4. `go vet ./cmd/test-budget ./internal/testbudget` exits 0.
+  5. `golangci-lint run ./cmd/test-budget/... ./internal/testbudget/...` reports nothing.
+  6. `go build ./cmd/backlogit` is unaffected.
+
+**U19g `174.080-T` — RED contract test coupling governed test-budget surfaces**
+
+* Tests domain. Non-exempt **red deliverable**. Wave 4. Depends on `174.079-T`.
+* File: `tests/integration/test_budget_coupling_test.go` (new, package `integration_test`).
+  * It reuses the existing `findRepoRoot`, `readFileString`, `readCIWorkflow`, and `findStep`
+    helpers from `ci_compliance_test.go`.
+  * It adds 2 local helpers: `bareFullSuiteForms(text) []string` and
+    `governedSpans(text) []string`.
+  * `canonicalFull` and `canonicalCI` are interpreted-string constants.
+* **Bare-form detector** (tokenizing, not a single regex). All text is CRLF-normalized first.
+  * **Occurrence.** `go test` counts only at the start of a line or after a non-word character
+    (so `cargo test` is ignored).
+  * **Continuation.** A line whose trimmed text ends in ` \` is joined with the next line before
+    spans are cut.
+  * **Span.** For each occurrence of `go test`: if the character immediately before it is a
+    backtick, `"`, or `'`, the span ends at the next matching character. Otherwise the span
+    runs to the end of the (joined) line.
+  * **Tokens.** The span is split on whitespace. Surrounding quotes are stripped from each
+    token, and trailing `,;:)` is trimmed.
+  * **Selector.** The `-run` value is read from any of `-run=V`, `-run V`, `-test.run=V`, or
+    `-test.run V`, with quotes stripped from V.
+  * **Full-suite form.** A token starts with `./...`, or equals `./internal/core` or
+    `./internal/core/...`.
+  * **Exempt (compile-only).** The selector value is exactly `^$`.
+  * **Bare.** A full-suite form with no selector, or with selector `.`, `.*`, or empty.
+  * **Targeted and allowed.** Any other selector value.
+  * **Governed span.** `go run ./cmd/test-budget run` through the end of its span. It fails if
+    any token equals `-timeout`, `--timeout`, `-test.timeout`, or `--test.timeout`, or starts
+    with one of them followed by `=`.
+  * **Allowlisted lines:**
+    * lines carrying the literal marker `test-budget:bare-mention` (at most 1 per file; a second
+      marker fails);
+    * workflow-policies amendment-log table rows;
+    * `harness-manifest.yaml` lines whose trimmed text starts with `note:`, `drift_reason:`, or
+      `checksum:`.
+* **`TestGovernedTestBudgetSurfaces`** is table-driven (one scenario): each row carries the
+  subtest name, the files, and a predicate function, and `t.Run` executes one subtest per row:
+
+| Subtest | Unit | Requirements |
+|---|---|---|
+| `ci-workflows` | 174.081-T | ci `Test` step `run` == canonicalCI; release `Test` step `run` == canonicalFull |
+| `pre-push` | 174.082-T | the Test gate's third argument == canonicalFull in both scripts; the Build gate stays compile-only |
+| `make` | 174.083-T | the line after `test:` in `Makefile` == `"\t"+canonicalCI`; every `Step "test"` block in `make.ps1` wraps canonicalCI (≥ 1 found) |
+| `ship-gate` | 174.084-T | `_ship.agent.md` and build-feature each contain canonicalFull and no bare form |
+| `policy` | 174.085-T | workflow-policies contains canonicalFull, no bare form, and an amendment-log row containing `073-DL` |
+| `fix-ci` | 174.086-T | fix-ci SKILL contains a governed span; neither it nor github-pr-automation has a bare form |
+| `constitution` | 174.087-T | AGENTS.md `Constitution version: X` == constitution `**Version**: X`; the constitution has an amendment record containing `073-DL`; both files contain canonicalFull or canonicalCI and no bare form |
+| `instructions` | 174.088-T | copilot-instructions and go.instructions each contain a governed span and no bare form |
+| `engineer-readme` | 174.089-T | go-engineer and README each contain canonicalFull and no bare form |
+| `review-instructions` | 174.090-T | both review-instruction files contain a governed span and no bare form; `copilot-code-review.instructions.md` contains the literal `summaryLine` |
+| `harness-inputs` | 174.091-T | the `variables_used:` block of `harness-manifest.yaml` is found and non-empty; its `TEST_COMMAND` value == canonicalFull; the block has no bare form outside the allowlist; workspace-profile has no bare form and contains canonicalFull; the block contains the literal `summaryLine` (below) |
+
+* `summaryLine` is the interpreted-string constant
+  ``"Test-first red-green gate mechanics (P-002, P-004) and the `go run ./cmd/test-budget run ./...` suite run"``.
+  It is the text `HARNESS_ENFORCED_SUMMARY` (manifest line 596) renders into
+  `copilot-code-review.instructions.md` line 53, so 174.090-T and 174.091-T write identical text.
+* No subtest pins a budget value, a version number, or an exact occurrence count.
+* **`TestGovernedTestBudgetExecutableSweep`**:
+  * Subtest `detector`: a table of about 19 literal rows. It is GREEN from landing:
+
+| Row | Expected |
+|---|---|
+| `go test ./...` | bare |
+| a backticked `go test ./...` | bare |
+| `Invoke-Gate "Test" "go" "go test ./..."` | bare |
+| `go test -race -coverprofile=coverage.out ./...` | bare |
+| `go test -timeout=30m ./...` | bare |
+| `go test -run . ./...` | bare |
+| `go test -run=".*" ./...` | bare |
+| `go test ./internal/core` | bare |
+| `go test ./internal/core/...` | bare |
+| `go test -run=^$ -count=1 ./...` | exempt |
+| `go test -run '^$' ./...` | exempt |
+| `go test ./internal/core/... ./internal/events/... -run "ItemLog\|ShipmentReconcile" -count=1 -v` (the literal `ci.yml:165` line) | allowed |
+| `go test ./tests/integration -run '^TestX$'` | allowed |
+| canonicalFull | governed |
+| `go run ./cmd/test-budget run -timeout=1m ./...` | governed-with-timeout, fails |
+| `go vet ./...` | ignored |
+| `cargo test ./...` | ignored |
+| `go test -count=1 \` followed by a line `  ./...` | bare (continuation joined) |
+| `go run ./cmd/test-budget run --test.timeout=1m ./...` | governed-with-timeout, fails |
+
+  * Subtest `executables`: every file under `.github/workflows/`, every `*.ps1` and `*.sh`
+    under `scripts/`, `Makefile`, and `make.ps1` has zero bare forms. Each of the 6 known
+    executable files (`ci.yml`, `release.yml`, the 2 pre-push scripts, `Makefile`, `make.ps1`)
+    has ≥ 1 governed span.
+  * (Grep evidence at planning time: under `scripts/`, only the two pre-push Test lines are
+    full-suite forms. The two Build lines are compile-only.)
+* Red-deliverable contract:
+
+```text
+red_deliverable: true
+red_deliverable_reason: Deliverable IS the persistent RED coupling contract for the 073-DL governed test budget; it lands red by design (every surface still runs the bare default-timeout form) and is driven green only by the 11 Wave 19 surface migrations.
+red_selector_command: go test ./tests/integration -run '^(TestGovernedTestBudgetSurfaces|TestGovernedTestBudgetExecutableSweep)$' -count=1 -timeout=5m -v
+green_maker_tasks: 174.081-T, 174.082-T, 174.083-T, 174.084-T, 174.085-T, 174.086-T, 174.087-T, 174.088-T, 174.089-T, 174.090-T, 174.091-T
+green_maker_closes_wave: 5
+```
+
+* AC:
+  1. `go vet ./tests/integration` exits 0.
+  2. The red selector compiles and fails with exactly the 11 surface subtests plus
+     `executables` failing and `detector` passing. This is captured to
+     `logs/diagnostics/174080-red-harness.txt` plus `.metadata.json` with `Compilation: PASS`
+     and `Red Phase: CONFIRMED`.
+  3. `go test ./tests/integration -run '^TestGovernedTestBudgetExecutableSweep$/^detector$' -count=1 -v`
+     PASSes.
+  4. `golangci-lint run ./tests/integration/...` reports nothing new.
+  5. No surface file is edited.
+
+**Surface units.** All are Wave 5 and depend on `174.080-T`. Each edits only the listed files,
+only the lines named in 19.2, and the version and amendment lines named in its own row, replacing
+the bare form with a governed span. Prose around the command may be adjusted in the same
+sentence. Task bodies carry each contract block below verbatim, wrapped in
+`<!-- BEGIN:harness-exemption-contract -->` / `<!-- END:harness-exemption-contract -->` (and
+174.080-T in `<!-- BEGIN:red-deliverable-contract -->` / `<!-- END:red-deliverable-contract -->`).
+
+| Unit | ID | Title | Files | Class |
+|---|---|---|---|---|
+| U19h | 174.081-T | Route CI and release Test steps through test-budget | `ci.yml` (canonicalCI), `release.yml` (canonicalFull). The `Test` step `if:` stays unchanged (pinned by `TestHeavyStepsAreFailSafeGated`); `TestReleaseWorkflowDropsRaceMatrix` stays green | covered-by `174.080-T` |
+| U19i | 174.082-T | Route pre-push Test gates through test-budget | `scripts/pre-push-quality-gates.ps1`, `.sh`: the Test gate becomes canonicalFull; the probe argument stays `go`; the Build gate is unchanged | covered-by `174.080-T` |
+| U19j | 174.083-T | Route Makefile and make.ps1 test through test-budget | `Makefile`, `make.ps1` (canonicalCI; keep `-race`; the R4 WARN is expected on Windows `make.ps1 test`) | covered-by `174.080-T` |
+| U19k | 174.084-T | Govern Ship final-gate full-suite command | `.github/agents/_ship.agent.md` (950/989), `.github/skills/build-feature/SKILL.md` (355/365) | docs-only |
+| U19l | 174.085-T | Govern workflow-policies full-suite rule (1.30.0) | `.github/policies/workflow-policies.md` (916/925/1149; version 1.29.0 → 1.30.0; amendment row citing 073-DL and 11BE840F) | docs-only |
+| U19m | 174.086-T | Govern fix-ci and PR automation test commands | `.github/skills/fix-ci/SKILL.md` (13/72/126/189), `.github/instructions/github-pr-automation.instructions.md` (126) | docs-only |
+| U19n | 174.087-T | Govern constitution quality gate and AGENTS (1.1.0) | `.github/instructions/constitution.instructions.md` (22/209/221; version 1.0.0 → 1.1.0), `AGENTS.md` (16/43/239/252) | docs-only |
+| U19o | 174.088-T | Govern copilot and Go instruction test commands | `.github/copilot-instructions.md` (13/47), `.github/instructions/go.instructions.md` (35 becomes canonicalFull; 36 becomes `go run ./cmd/test-budget run -coverprofile=coverage.out ./...`) | docs-only |
+| U19p | 174.089-T | Govern go-engineer loop and README test command | `.github/agents/subagents/go-engineer.agent.md` (76 becomes canonicalFull, 1:1; 74 stays compile-only), `README.md` (283) | docs-only |
+| U19q | 174.090-T | Govern review-instruction test commands | `.github/copilot-review-instructions.md` (195 becomes canonicalFull), `.github/instructions/copilot-code-review.instructions.md` (53 becomes `* ` + `summaryLine`) | docs-only |
+| U19r | 174.091-T | Govern autoharness test-command render inputs | `.autoharness/harness-manifest.yaml` (556/596/633 only, 596 becoming `    * ` + `summaryLine`; 461 is historical), `.autoharness/workspace-profile.yaml` (27/47) | covered-by `174.080-T` |
+
+**174.087-T constitution amendment AC** (constitution Governance: version bump, rationale, and
+sync impact report):
+
+* The `**Version**` line reads `1.1.0`, with an amended date.
+* It adds an amendment record containing `073-DL`, with:
+  * **rationale:** provenance of the unowned 10m default, and the count-scaled governed
+    budget;
+  * **sync impact report:** AGENTS.md; workflow-policies 1.30.0; the Ship agent and
+    build-feature; fix-ci and PR automation; copilot, go, and review instructions; the
+    go-engineer agent and README; CI, release, pre-push, and make; the `.autoharness` render
+    inputs. Pending: the upstream template and plugin parity (P-021 (c)).
+* The Technical Constraints `Test` row and the Quality Gates block use canonicalFull.
+* Principle II line 22 reads "pass via `go run ./cmd/test-budget run ./...`".
+* AGENTS.md line 16 reads `Constitution version: 1.1.0`.
+
+**Closed exempt set (exactly these 11 IDs; rendered contract blocks).** Every block follows the
+P-002.1 grammar: the five canonical keys in order, plus `harness_owner_command` for
+`covered-by`.
+
+* docs-only tasks probe content (their own subtest `--- PASS:` line), then run the doc lint gate
+  on each edited Markdown file (P-002.3).
+* covered-by tasks probe the owner subtest `--- PASS:` line, then their own deliverable literal.
+* Every task is labelled `harness-exempt`.
+* The commands use a single-quoted outer `pwsh -NoProfile -Command '...'` with doubled inner
+  quotes. All 15 commands were syntax-checked with the PowerShell parser during planning, and
+  none was executed.
+* **must-fail-before-deliverable.** Before `174.080-T` lands, the subtest does not exist, so no
+  PASS line is printed and `no tests to run` appears. After it lands and before the migration,
+  the subtest fails.
+
+**174.081-T** (`ci-workflows`)
+
+```text
+harness_exemption_class: covered-by
+harness_exemption_reason: Edits only the CI and release Test-step run lines; the behavior is pinned by owner 174.080-T subtest ci-workflows, so a second harness would duplicate the owner contract.
+harness_owner: 174.080-T
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^ci-workflows$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/ci-workflows'')) { exit 1 }; if (-not (Get-Content -Raw ''.github/workflows/ci.yml'').Contains(''go run ./cmd/test-budget run -race -coverprofile=coverage.out ./...'')) { exit 1 }; if (-not (Get-Content -Raw ''.github/workflows/release.yml'').Contains(''go run ./cmd/test-budget run ./...'')) { exit 1 }; Write-Output ''EXEMPT_VERIFY_OK:174.081-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+harness_owner_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^ci-workflows$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0 -or $o.Contains(''no tests to run'') -or -not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/ci-workflows'')) { exit 1 }; exit 0'
+```
+
+**174.082-T** (`pre-push`)
+
+```text
+harness_exemption_class: covered-by
+harness_exemption_reason: Edits only the pre-push Test gate command strings; the behavior is pinned by owner 174.080-T subtest pre-push, so a second harness would duplicate the owner contract.
+harness_owner: 174.080-T
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^pre-push$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/pre-push'')) { exit 1 }; if (-not (Get-Content -Raw ''scripts/pre-push-quality-gates.ps1'').Contains(''go run ./cmd/test-budget run ./...'')) { exit 1 }; if (-not (Get-Content -Raw ''scripts/pre-push-quality-gates.sh'').Contains(''go run ./cmd/test-budget run ./...'')) { exit 1 }; Write-Output ''EXEMPT_VERIFY_OK:174.082-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+harness_owner_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^pre-push$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0 -or $o.Contains(''no tests to run'') -or -not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/pre-push'')) { exit 1 }; exit 0'
+```
+
+**174.083-T** (`make`)
+
+```text
+harness_exemption_class: covered-by
+harness_exemption_reason: Edits only the Makefile test recipe and make.ps1 test steps; the behavior is pinned by owner 174.080-T subtest make, so a second harness would duplicate the owner contract.
+harness_owner: 174.080-T
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^make$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/make'')) { exit 1 }; if (-not (Get-Content -Raw ''Makefile'').Contains(''go run ./cmd/test-budget run -race -coverprofile=coverage.out ./...'')) { exit 1 }; if (-not (Get-Content -Raw ''make.ps1'').Contains(''go run ./cmd/test-budget run -race -coverprofile=coverage.out ./...'')) { exit 1 }; Write-Output ''EXEMPT_VERIFY_OK:174.083-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+harness_owner_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^make$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0 -or $o.Contains(''no tests to run'') -or -not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/make'')) { exit 1 }; exit 0'
+```
+
+**174.084-T** (`ship-gate`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Replaces the bare full-suite command in Ship agent and build-feature instruction text only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^ship-gate$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/ship-gate'')) { exit 1 }; foreach ($f in @(''.github/agents/_ship.agent.md'',''.github/skills/build-feature/SKILL.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.084-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.085-T** (`policy`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Amends workflow-policies full-suite rule text, version, and amendment log only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^policy$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/policy'')) { exit 1 }; foreach ($f in @(''.github/policies/workflow-policies.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.085-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.086-T** (`fix-ci`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Replaces the bare full-suite command in fix-ci and PR automation instruction text only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^fix-ci$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/fix-ci'')) { exit 1 }; foreach ($f in @(''.github/skills/fix-ci/SKILL.md'',''.github/instructions/github-pr-automation.instructions.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.086-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.087-T** (`constitution`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Amends constitution quality-gate text and version with its sync impact report and the coupled AGENTS.md lines only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^constitution$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/constitution'')) { exit 1 }; foreach ($f in @(''.github/instructions/constitution.instructions.md'',''AGENTS.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.087-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.088-T** (`instructions`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Replaces the bare full-suite command in copilot and Go instruction text only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^instructions$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/instructions'')) { exit 1 }; foreach ($f in @(''.github/copilot-instructions.md'',''.github/instructions/go.instructions.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.088-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.089-T** (`engineer-readme`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Replaces the bare full-suite command in the go-engineer validation loop and README contributor text only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^engineer-readme$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/engineer-readme'')) { exit 1 }; foreach ($f in @(''.github/agents/subagents/go-engineer.agent.md'',''README.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.089-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.090-T** (`review-instructions`)
+
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Replaces the bare full-suite command in the two review-instruction files only; no production or test code changes.
+harness_owner: none
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^review-instructions$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/review-instructions'')) { exit 1 }; foreach ($f in @(''.github/copilot-review-instructions.md'',''.github/instructions/copilot-code-review.instructions.md'')) { go run ./cmd/backlogit docs lint --path $f --no-update-check; if ($LASTEXITCODE -ne 0) { exit 1 } }; Write-Output ''EXEMPT_VERIFY_OK:174.090-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+```
+
+**174.091-T** (`harness-inputs`)
+
+```text
+harness_exemption_class: covered-by
+harness_exemption_reason: Edits only the autoharness render-input values for the test command; the behavior is pinned by owner 174.080-T subtest harness-inputs, so a second harness would duplicate the owner contract.
+harness_owner: 174.080-T
+exempt_verification_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^harness-inputs$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0) { exit 1 }; if (-not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/harness-inputs'')) { exit 1 }; if (-not (Get-Content -Raw ''.autoharness/harness-manifest.yaml'').Contains(''go run ./cmd/test-budget run ./...'')) { exit 1 }; if (-not (Get-Content -Raw ''.autoharness/workspace-profile.yaml'').Contains(''go run ./cmd/test-budget run ./...'')) { exit 1 }; Write-Output ''EXEMPT_VERIFY_OK:174.091-T''; exit 0'
+exempt_precondition: must-fail-before-deliverable
+harness_owner_command: pwsh -NoProfile -Command '$o = go test ./tests/integration -run ''^TestGovernedTestBudgetSurfaces$/^harness-inputs$'' -count=1 -timeout=5m -v 2>&1 | Out-String; $rc = $LASTEXITCODE; Write-Output $o; if ($rc -ne 0 -or $o.Contains(''no tests to run'') -or -not $o.Contains(''--- PASS: TestGovernedTestBudgetSurfaces/harness-inputs'')) { exit 1 }; exit 0'
+```
+
+**Ship-time coupling note.** Between the W4 red landing and the W5 close, CI on any interim push
+is red on `TestGovernedTestBudget*` by design. Ship closes W5 before pushing, or treats that
+interim red as the declared red deliverable.
+
+### 19.8 Closed exempt set, schedule, and 155-S membership snapshot
+
+**155-S membership snapshot** (2026-09-24, `backlogit shipment get 155-S`): 36 items, status
+`active`.
+
+* `174-F`: active.
+* 30 tasks `done`.
+* 4 archived: `174.069-T` through `174.072-T`.
+* The only non-terminal task is `174.073-T` (queued, no dependencies).
+
+The waves are therefore derived over {`174.073-T`, `174.074-T` … `174.091-T`}:
+
+| Wave | Tasks | Dependencies |
+|---|---|---|
+| W1 | `174.073-T`, `174.074-T`, `174.076-T`, `174.077-T` | none; recommended order is `174.073-T` first (already reviewed), then 074, 076, 077 |
+| W2 | `174.075-T`, `174.078-T` | 075 ← 074; 078 ← 074, 077 |
+| W3 | `174.079-T` | ← 075, 076, 078 |
+| W4 | `174.080-T` | ← 079 (red deliverable) |
+| W5 | `174.081-T` … `174.091-T` | each ← 080 (the closed exempt set; green makers; closes the red deliverable) |
+
+* **No edge from `174.074-T` to `174.073-T`.** They touch disjoint files and domains.
+  `174.073-T` only lowers `internal/core` cost and does not change the static count rule. Its
+  one new test takes N from 885 to 886, which is the same 30m budget.
+* **`174.073-T` is preserved unchanged.** Its AC7 rule governs the final gate below.
+* **Session limit.** The 19 open tasks stay under the 20-tasks-per-session breaker. Ship
+  checkpoints if a session ends before W5.
+* `155-S` stays a supervised bootstrap shipment. These members are added by governed
+  `backlogit shipment add` in dependency order.
+
+### 19.9 Named deviations (constitutional conflicts, each with justification and rejected alternative)
+
+* **D1 — Quality Gates "Do not skip any gate" (`go test ./...` first) and P-002.6 convergence
+  item 1 / build-feature Step 0.5 repo-wide compile check, during W1-W5.**
+  * Mapping: `go vet ./...`, which type-checks all test files without running them, plus the
+    scoped `go test <pkg>` selectors named in each task.
+  * Justification: the operator stop rule and `174.073-T` AC7 forbid any `go test ./...`
+    (including `-run '^$' ./...`) over the **repository module** until a separately authorized
+    run. `go vet ./...` is not a `go test` form. The hang probe's child `go test ./...` runs in a
+    hermetic `t.TempDir()` module containing one test, so it is outside the stop rule.
+  * Rejected alternative: an unfiltered compile or run, which is unauthorized.
+* **D2 — P-002.6 unfiltered-suite convergence for W1-W5, and Principle II "`go test ./...`
+  before merge".**
+  * Ship records `FULL_SUITE_OPERATOR_DEFERRED` (citing the stop rule and `174.073-T` AC7) in
+    place of each wave's unfiltered convergence run, **including W5**.
+  * W5, and therefore 155-S, stays **unconverged** until the one authorized governed run
+    (19.10) passes. The deviation defers the gate; it never waives it.
+  * Rejected alternative: running canonicalFull per wave, which is an unauthorized full-suite
+    execution.
+* **D3 — Quality Gates `golangci-lint run` and `gofmt -l .` (repo-wide).**
+  * Narrowed per task to `gofmt -l <package dirs>` and `golangci-lint run <package>/...`.
+  * Trust basis: the installed golangci-lint v1.64.8 is the version CI pins.
+  * Justification: repo-wide lint carries unrelated debt (`4DB1DFF1`).
+  * Rejected alternative: fixing repo-wide lint here, which is out of scope.
+* **D4 — P-004 non-zero red clause.**
+  * Satisfied by the scoped red selectors (assertion failures with a compile PASS), not by a
+    full-suite non-zero exit.
+  * Rejected alternative: a full-suite red, which is unauthorized and would conflate
+    unrelated failures.
+
+### 19.10 Application to the imminent 155-S final gate and future growth
+
+* **Readiness.** After W5 closes, all 155-S correctives are landed. Ship STOPS and requests a
+  new explicit operator authorization for exactly one full-suite execution:
+  `go run ./cmd/test-budget run ./...` from the repo root on the branch HEAD. The full output is
+  captured under `logs/diagnostics/155-s-go-test-governed-<date>.txt` plus metadata.
+* **The request cites the recorded operator disposition of 11BE840F:** `073-DL` O11, as
+  `174.073-T` AC7 requires. AC7's recommended form, `go test -json ./...`, is superseded by
+  canonicalFull (19.4.6). This plan records the supersession; `174.073-T` itself is not
+  edited.
+* **Expected result.** The header is `timeout=30m0s largest_package=internal/core
+  top_level_tests=886 policy=073-DL`. The expected `internal/core` time is about 760-800s, about
+  45% budget use.
+* **Pass criteria:**
+  * exit 0;
+  * no `panic: test timed out`;
+  * `TEST_BUDGET_SUMMARY` present;
+  * `TEST_BUDGET_CEILING_EXCEEDED` absent.
+  * Then the 155-S zero-P0/P1 stop-gate and the final standard + adversarial review apply.
+* **A `revisit=R1`/`R2` WARN** does not fail the gate. Ship captures it as a Stage input (P-021
+  capture-only) for re-calibration.
+* **If it times out anyway:**
+  * If the running test is ≥ 60s old: R5, a genuine hang or slow-test defect. Ship captures a
+    P-021 expansion and does not raise the budget.
+  * If it is < 60s old: the calibration is wrong. Stage re-deliberates the constants with the
+    captured summary. No ad hoc flag is ever added.
+* **Future growth.**
+  * Each new test in the largest package raises the budget automatically at the 5m steps in
+    19.4.2, reproducibly on every machine.
+  * N_max ≥ 1200 triggers R3 early, 300 tests before the ceiling.
+  * A ceiling breach turns the governed run red, which forces a Stage decision.
+  * Constants change only through a new deliberation citing ≥ 2 governed-run summaries (R1-R4).
+* **Authorization-request text** (for Ship's stop):
+  "155-S Wave 19 closed. Per 174.073-T AC7, 11BE840F is dispositioned by 073-DL (O11). Request
+  authorization for ONE governed full-suite run: `go run ./cmd/test-budget run ./...` (budget
+  printed by the wrapper). `-json` is not used for the gate; a per-test `-json` diagnostic
+  would be a separate request."
+
+### 19.11 Out of scope for Wave 19
+
+* Performance work on `internal/core`, partitioning, and fixture or template caching (O6).
+* `D8EF5443`, the slog capture leak. The policy does not mechanically require it, and it stays
+  active.
+* `plugin/**` parity.
+* Windows `-race` calibration.
+* Re-rendering the harness. The contract test is the tripwire: a re-render that reintroduces the
+  bare form turns `harness-inputs` and `executables` red.
+* No drift-ignore edits.
+
+### 19.12 P-021 follow-up captures (Stage-authored 2026-09-24: (a) `5F1A1873`, (b) `5A1C4D3F`, (c) `95DF7CE9`)
+
+* **(a) core runtime reduction** (medium; trigger R2/R3): partition `internal/core`, or reduce
+  fixture I/O and construction cost.
+* **(b) Windows `-race` calibration** for `make.ps1 test` (low; R4).
+* **(c) Upstream autoharness template and `plugin/**` parity** for the governed test command
+  (low). Consumer workspaces lack `cmd/test-budget`, so this needs a template-level
+  capability-conditional token.
+
+### Plan Hardening Signals — Wave 19
+
+* Cross-cutting change to governed CI, release, and pre-push entry points: **yes** (rollback is
+  the literal revert of one line per surface).
+* New executable in the repository: **yes** (`cmd/test-budget`; not in the release artifact).
+* Policy and constitution text amendments: **yes** (MINOR bumps with amendment records).
+* Irreversible data or schema changes: **no**.
+* **Requires plan hardening: yes.**
+
+### Constitution Check — Wave 19
+
+| Principle / section | Mapping |
+|---|---|
+| I. Safety-First Go | The new Go code wraps errors with `%w`, has no `panic`, and guards overflow before multiplying. `go vet` and scoped golangci-lint run per task. The new binary is not in the release artifact |
+| II. Test-First (NON-NEGOTIABLE) | Each Go surface has a declaration task with a source-shape harness (074/076/077), then a behavior task with an assertion-red harness (075/078/079). The surface migrations are gated by the red-deliverable contract test 080. The full-suite clause is deferred, not waived (D2) |
+| III. Workspace Isolation | Every path the wrapper and counter use is relative to the module root (cwd). The tests use `t.TempDir()` |
+| IV. CLI Containment (NON-NEGOTIABLE) | The wrapper requires `go.mod` in cwd and never walks above it |
+| V. Structured Observability | The header, summary, WARN, CEILING, and ERROR markers are stable machine-readable lines that name `073-DL` and the revisit criterion |
+| VI. Single Responsibility | `internal/testbudget` holds the policy and counter; `cmd/test-budget` holds the process wrapper. No new dependency |
+| VII. Destructive Approval (NON-NEGOTIABLE) | No destructive operation. The wrapper never kills a process |
+| VIII. Safety Modes | Not triggered (no elevated-risk operation) |
+| IX. Git-Friendly Persistence | Only Markdown/YAML and Go source text changes. Evidence goes under `logs/diagnostics/` |
+| X. Context Efficiency | One source of truth plus one contract test replaces about 20 scattered literals |
+| XI. Merge Commit History | Unaffected (Ship's merge discipline is unchanged) |
+| Quality Gates | Mapped by D1 (go test), D3 (lint, gofmt). `go vet` runs as specified. Conflicts are documented in 19.9 with justification and rejected alternative |
+| Task Granularity (NON-NEGOTIABLE) | 18 tasks. Each is ≤ 2 files, ≤ 4 functions, ≤ 3 test scenarios, and a single domain (Go code+tests, a single test file, docs, or config). 077/078 hold 3 functions each, 079 holds 3 |
+| Stop Conditions | The 19 open tasks are under the 20-task session breaker. Plan-review attempts follow the Stage cycle limit |
+| Versioning / Governance | workflow-policies 1.30.0 (MINOR: new governed rule). Constitution 1.1.0 (MINOR: a material quality-gate change) with rationale and sync impact report (174.087-T). AGENTS.md is coupled by the contract test |
+| P-010 | Stage authored no code |
+
+Constitution Check: documented-deviations
+
+## Plan Hardening — Wave 19
+
+| # | Risk | Mitigation (bound to a unit and a check) |
+|---|---|---|
+| H1 | The counter undercounts, the budget stays too small, and the timeout recurs | `TestLargest/repository` requires ≥ 500 for `internal/core` (174.075-T). The build-tag-agnostic count is conservative. `print` evidence shows 885/886 (174.079-T AC3) |
+| H2 | The wrapper hides the hang detector | The budget is always finite (≤ 45m). `TestGoTestTimeout_BoundedHangIsDetected` proves a real alarm fires through `execGo` (174.079-T). The wrapper never kills or signals the child, and `cmd/go`'s +1m backstop remains |
+| H3 | A caller supplies its own timeout and bypasses the policy | `run` rejects all four spellings (174.079-T table rows). The coupling test fails on a timeout flag in any governed span (174.080-T) |
+| H4 | Surfaces drift back to bare forms (manual edit or harness re-render) | The persistent coupling contract, including the `harness-inputs` subtest and the executable sweep (174.080-T) |
+| H5 | Unexplained constant creep | `PolicyID` is printed in every header. The constants live only in `internal/testbudget`. R1-R5 plus the ≥ 2-summary rule |
+| H6 | Output parsing breaks on Windows CRLF, partial writes, over-long lines, or concurrent writes | A single shared writer means a single copy goroutine. `Write` always returns `len(p), nil`. Covered by the `TestResultSink_Write` rows (174.078-T) and the same-writer assertion (174.079-T) |
+| H7 | `go run` exit-code collapse hides the class | Gates key on markers and zero/non-zero status only (19.4.4) |
+| H8 | Interim CI red between W4 and W5 | Declared red deliverable. Ship closes W5 before pushing (19.7 note) |
+| H9 | Machine-specific flakiness | The budget depends only on committed source. There is no platform branch in the formula. R4 WARN is informational |
+| H10 | Ceiling breach silently grows the budget | It clamps at 45m, prints `TEST_BUDGET_CEILING_EXCEEDED`, and returns non-zero (exit 3). Pinned by the 1501-test rows (174.079-T) |
+| H11 | Lint `unused` fails the declaration tasks | The 076/077 stubs and anchors reference every unexported declaration (076/077 AC4). 078 removes its anchors only when its own tests call the symbols. 074 declares only exported symbols |
+| H12 | A descendant holds the output open, and the wrapper hangs or passes | `WaitDelay` 10s, then `ErrWaitDelay` maps to exit 1, fail closed |
+
+<!-- plan-review-attempt: rev21-attempt-1-FAIL -->
+
+## Plan Review — Wave 19 attempt 1
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Go Reviewer, Scope Boundary Auditor, Constitution Reviewer, Architecture Strategist, Schema-CLI-Docs Coupling Reviewer
+decision: FAIL
+```
+
+**Verdicts on rev21:**
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Go | FAIL | 2 P1 |
+| Scope | FAIL | 2 P1 |
+| Constitution | FAIL | 2 P0, 1 P1 |
+| Architecture | ADVISORY | 1 P1 |
+| Coupling | ADVISORY | P2/P3 only |
+
+**Findings and their rev21.1 dispositions:**
+
+* **Constitution P0-1 (Principle II).** New Go packages were created without a declaration +
+  source-shape harness split. *Fixed:* 074/076 are declarations and 075/077 are behavior tasks.
+* **Constitution P0-2.** The contract test landed last, so the surface migrations had no red
+  gate. *Fixed:* 174.078-T is a W4 red deliverable, with the surfaces as green makers.
+* **Constitution P1.** The constitution bump was PATCH. *Fixed:* MINOR 1.1.0, with an AGENTS.md
+  coupling check.
+* **Go P1-1.** Scanner/pipe goroutine risks (deadlock, lost partial lines, CRLF). *Fixed:*
+  `io.MultiWriter` plus `resultSink` inline parsing.
+* **Go P1-2.** The hang probe inherited the host `GOFLAGS`/`GOWORK`/toolchain, and there was no
+  `WaitDelay`. *Fixed:* 19.7 U19d.
+* **Go P2s** (all fixed):
+  * counter rules for `helper.go`, TestMain, and param type;
+  * overflow guard;
+  * negative exit codes;
+  * signal forwarding;
+  * raw-elapsed precision.
+* **Scope P1-1.** Drift-ignore edits widened scope. *Fixed:* dropped; P-021 (c) captured.
+* **Scope P1-2.** Missing surfaces: the review instructions and 3 manifest variables. *Fixed:*
+  added 174.088-T and extended 174.089-T.
+* **Architecture P1.** Ceiling fail-closed before running destroyed the R3 evidence. *Fixed:*
+  clamp, run, non-zero exit.
+* **Coupling P2/P3** (all fixed):
+  * the growth-table row error (334-555 → corrected 334-500/501-666);
+  * the "targeted selectors keep explicit small timeouts" wording;
+  * the `-json` supersession note;
+  * header field order pinned.
+
+<!-- plan-review-attempt: rev21.1-attempt-2-FAIL -->
+
+## Plan Review — Wave 19 attempt 2
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor
+decision: FAIL
+```
+
+**Verdicts on rev21.1** (all attempt-1 findings confirmed fixed):
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Constitution | FAIL | 1 P1 |
+| Go | FAIL | 2 P1 |
+| Scope | ADVISORY | P2/P3 only |
+
+**Cycle accounting.** Per the Stage cycle limit (maximum 2 re-entry cycles) and plan precedent
+rev15 ("PASS after 2 FAIL"), attempt 3 is the last allowed re-entry. A FAIL in attempt 3 halts
+to the operator.
+
+**Findings and their rev21.2 dispositions:**
+
+* **Constitution P1.** The 174.077-T harness left the ceiling, R2/R3/R4, negative-exit, `n/a`,
+  and 64 KiB behaviors with no failing test first. *Fixed:* the wrapper is split into 076
+  (run declaration), 077 (sink declaration), 078 (sink behavior), and 079 (run behavior), and
+  every 19.4.4 behavior has a named table row.
+* **Constitution P2** (all fixed):
+  * the exemption contracts are now rendered in full (11 blocks; `covered-by`
+    `harness_owner_command` wrapped with the PASS and no-tests checks);
+  * D2 is extended through W5, which stays unconverged until the authorized run;
+  * 174.087-T AC now requires the rationale and sync impact report;
+  * the Constitution Check maps I-XI and documents each deviation as a constitutional conflict.
+* **Constitution P3.** The shape-harness imports are listed exactly, with a justification.
+  *Fixed.*
+* **Go P1-1.** Two `MultiWriter`s sharing one sink caused a concurrent-write race. *Fixed:* one
+  writer is passed as both `Stdout` and `Stderr`, so there is one copy goroutine, and `Write`
+  always returns `len(p), nil`.
+* **Go P1-2.** golangci-lint `unused` would fail on the declaration stubs. *Fixed:* the stubs
+  and anchors reference every unexported declaration; lint is part of the AC.
+* **Go P2/P3** (all fixed):
+  * the signal lifecycle (`Notify` + `defer Stop`, no goroutine, no forwarding);
+  * `ErrWaitDelay` maps to 1 and a start failure to 2;
+  * the largest package is matched by exact module path;
+  * the output wording (raw bytes to the terminal);
+  * `--timeout` and `--test.timeout` rejection;
+  * the two-names-per-field counter row;
+  * the fixture `go.mod` pins `go 1.24`;
+  * the cached-run `n/a` fallback.
+* **Scope P2** (all fixed):
+  * the detector parses `-run=V`, `-run V`, and `-test.run`;
+  * the span rule is quote-aware only when a quote opens the span;
+  * rows added for `ci.yml:165` and the `-run=^$` compile-only lines;
+  * the `variables_used:` block is named and asserted non-empty.
+* **Scope P3** (all fixed):
+  * `go.instructions.md:36` becomes a governed coverage span;
+  * signal forwarding is dropped (YAGNI);
+  * `-json` mode and exit code 3 are kept (the ceiling test and the diagnostic pass-through
+    need them).
+
+<!-- plan-review-attempt: rev21.2-attempt-3-FAIL -->
+
+## Plan Review — Wave 19 attempt 3
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor
+decision: FAIL
+```
+
+**Verdicts on rev21.2** (all attempt-2 findings confirmed fixed):
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Constitution | FAIL | 1 P1 |
+| Go | ADVISORY | P2/P3 only |
+| Scope | ADVISORY | P3 only |
+
+**Circuit breaker: OPEN.** This is the third consecutive FAIL. The attempt-2 record declared
+attempt 3 the last allowed re-entry, so Stage halts here. Stage did **not** re-invoke
+plan-review and did **not** harvest. rev21.3 carries every disposition below, but it is
+**unreviewed**. `decision: FAIL` stays the authoritative final record until an
+operator-authorized review appends a later `## Plan Review` section.
+
+**Findings and their rev21.3 dispositions (applied, not yet re-reviewed):**
+
+* **Constitution P1.** 174.079-T left the `execGo` exit mapping (negative code, `ErrWaitDelay`,
+  start failure) and the unknown-subcommand path with no failing test first. *Remediated:*
+  * the pure helper `mapWaitResult(code, err)` is declared in 174.077-T and gets a 5-row
+    `TestMapWaitResult` in 174.078-T;
+  * 174.079-T adds rows for an unknown subcommand, an empty argument list, and the real
+    `execGo` start failure (with `PATH` set to an empty temp dir).
+* **Constitution P2.** 174.079-T's anchor removal made it a 3-file task. *Remediated:* 174.078-T
+  removes the anchors, since its own tests use the symbols. 174.079-T touches only `main.go`
+  and `main_test.go`. The sink files are renamed `result.go`, `result_test.go`, and
+  `result_shape_test.go`.
+* **Constitution P3** (all remediated):
+  * contract blocks are wrapped in BEGIN/END markers in the task bodies;
+  * the surfaces test is table-driven;
+  * D1 scopes the stop rule to the repository module (the hang probe is hermetic);
+  * the `Constitution Check: documented-deviations` verdict line is added.
+* **Go P2** (all remediated):
+  * the errcheck-safe 076 `run` stub;
+  * `type resultSink struct{}` with no fields until 174.078-T;
+  * `Largest` skip rules apply only when `path != root`, with a `dot-root` row under `t.Chdir`.
+* **Go P3** (all remediated):
+  * the hang probe assigns `buildGoTestArgs`'s two results;
+  * the detector requires a line start or a non-word character before `go`, and joins ` \`
+    continuations;
+  * timeout flags match an exact token or a `flag=` prefix;
+  * the detector table gains 3 rows.
+* **Scope P3** (all remediated):
+  * go-engineer line 76 becomes canonicalFull 1:1;
+  * surface tasks may edit the version and amendment lines named in their row;
+  * 174.090-T and 174.091-T share the pinned `summaryLine` (manifest line 596 renders into
+    `copilot-code-review.instructions.md` line 53);
+  * the heading is retitled.
+
+**Escalation (P-013.6).**
+
+```text
+threshold_kind: plan-review consecutive FAIL
+count: 3 (rev21 attempt 1, rev21.1 attempt 2, rev21.2 attempt 3)
+failure_summary: each attempt converged (P0/P1 counts 5 -> 3 -> 1); the final blocker was a single missing-test P1 with a mechanical fix
+last_actions: attempt-1/2/3 records above; rev21.3 remediation applied
+artifact_refs: docs/exec-plans/2026-09-14-resumable-shipment-blocked-lifecycle-plan.md (Wave 19 rev21.3), .backlogit/queue/073-DL.md, stash 11BE840F
+telemetry_evidence: logs/diagnostics/155-s-go-test-post-wave17-20260924.txt (+ metadata)
+resumption_checkpoint: docs/memory/2026-09-24/stage-11be840f-governed-test-budget.md
+resolved_escalation_route: gpt-6-sol / openai / xhigh (config.model_routing.escalation, reloaded 2026-09-24; differs from the Stage route claude-opus-5.5 / anthropic / high)
+escalation_status: ESCALATION_DEGRADED (the Engram CLI exposes no escalation-handoff command; MCP is not used) -> operator halt
+```
+
+**Operator decision required.** Choose one:
+
+* **(a)** Authorize one further plan-review cycle on rev21.3. On PASS, Stage harvests
+  174.074-T … 174.091-T into 155-S.
+* **(b)** Accept rev21.3 as ADVISORY-equivalent without re-review. Stage appends
+  `operator_authorization: approved` in a new final `## Plan Review` section and harvests.
+* **(c)** Reject Wave 19 and re-deliberate 073-DL.
+
+<!-- plan-review-attempt: rev21.3-attempt-4-FAIL (operator-authorized single additional pass) -->
+
+## Plan Review — Wave 19 attempt 4 (operator-authorized single additional pass, rev21.3) (2026-09-24)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Schema-CLI-Docs Coupling Reviewer, Correctness Reviewer
+decision: FAIL
+plan_hardening_required: yes
+plan_hardening_satisfied: yes (## Plan Hardening — Wave 19, H1-H12)
+constitution_check_verdict: documented-deviations (recognized)
+```
+
+**Authorization.** Operator 2026-09-24: "Authorize one additional Stage plan-review pass for
+Wave 19 rev21.3. If it passes, harvest the reviewed tasks into 155-S; do not implement them or
+run the full suite." This record is that single pass. It does **not** authorize any further
+remediation or re-review cycle. `TOOL_OK: reviewer-subagent-dispatch` (all 7 personas
+dispatched and returned). Security Lens Reviewer: not triggered (no auth/authz, secrets, or
+trust-boundary surface). Agent-Native Parity Reviewer: not triggered (no MCP tool or
+agent-action surface; the Ship/skill edits are command-text swaps pinned by 174.080-T).
+
+**Verdicts on rev21.3:**
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Constitution | ADVISORY | none (3 P2, 7 P3) |
+| Go | FAIL | 1 P1 (B1) |
+| Scope | ADVISORY | none (1 P2, 3 P3) |
+| Learnings Researcher | FAIL | 1 P0 (B1, contradicts `docs/compound/best-practices/source-shape-harnesses-must-allow-lifecycle-successors-2026-09-11.md`) |
+| Architecture | ADVISORY | none (2 P2, 4 P3) |
+| Schema-CLI-Docs Coupling | ADVISORY | none (2 P2, 7 P3) |
+| Correctness | ADVISORY | none (3 P2, 7 P3) |
+
+**Attempt-3 findings: all confirmed fixed** (Constitution P1 exit-mapping/unknown-subcommand
+rows present at 3082-3088, 3116-3118, 3180, 3199-3200; 174.079-T is 2 files; BEGIN/END
+markers; table-driven surfaces test; D1 scoping; verdict line; every Go P2/P3 and Scope P3
+item). Independently confirmed correct: `mapWaitResult` 5-row table against GOROOT `os/exec`
+(`ExitError` and `ErrWaitDelay` never co-occur), the single-writer claim, the counter rules
+against `cmd/go` `isTestFunc`, the growth-table arithmetic and the 1500 overflow guard, the
+bounded hang-test timing, the ceiling clamp/run/exit-3 precedence, release isolation of
+`cmd/test-budget`, the 19.2 line inventory, P-021 scope (`5F1A1873`, `5A1C4D3F`, `95DF7CE9`,
+`D8EF5443` stay separate), and the dependency order 074, 076, 077 → 075, 078 → 079 → 080 →
+081..091.
+
+**Blocking finding (merged; final severity P0, the more conservative of P0/P1):**
+
+* **B1 — 174.077-T/174.078-T lifecycle-frozen source-shape harness (Go P1 + Learnings P0).**
+  `TestResultSinkSourceShape` (174.077-T, 3051-3058) pins transition-only scaffold state as a
+  permanent test: `type resultSink struct{}` with no fields, plus the removable anchors
+  `var _ = (*resultSink).footer` and `var _ = mapWaitResult`. 174.078-T is required to add the
+  `resultSink` fields and delete those two anchors (3076-3078), may touch only `result.go` and
+  `result_test.go` (3074), and its AC2 (3122-3123) — and 174.079-T AC2 — require
+  `TestResultSinkSourceShape` to PASS. H11 repeats the conflict. As written, 174.078-T either
+  cannot go green or must edit `result_shape_test.go` as a third file (2-hour/2-file rule
+  breach). This contradicts the resolved compound lesson that permanent source-shape harnesses
+  assert only permanent shape. **Recommended remediation (NOT applied; no remediation cycle is
+  authorized):** the 174.077-T harness asserts only that `resultSink` is a struct type (fields
+  unchecked), the three signatures, and the permanent `var _ io.Writer = (*resultSink)(nil)`;
+  the two removable anchors remain required by 174.077-T AC4 (lint) but are not asserted by the
+  harness; H11 is reworded to match.
+
+**Non-blocking P2 findings (recorded for the remediation revision; not dispositioned here):**
+
+* **P2-1 (Constitution + Go + Correctness).** Exit-2 rows in `TestRun_DerivationAndPrint`
+  (four timeout spellings 3184, no `go.mod` 3185, zero tests 3186, unknown/empty 3180), the
+  real start-failure row (3199-3200), and the 174.075-T error rows pass against the stubs, so
+  those behaviors never fail first. Pin a per-path `TEST_BUDGET_ERROR: <class>` stderr marker,
+  a runner-not-called check, both `=` and separate-value timeout forms inside a valid fixture,
+  and `errors.Is(err, exec.ErrNotFound)` plus the `start go:` prefix.
+* **P2-2 (Constitution + Correctness).** `TestResultSink_Write` (3097) must observe parsing only
+  through `Write` + `footer(...)`; otherwise the RED run is a compile failure against the
+  field-less struct, contradicting 174.078-T AC1.
+* **P2-3 (Constitution).** Constitution Check Principle VIII row (3639) should declare
+  Freeze-scope for W5 and Careful mode for 081/082/083/085/087.
+* **P2-4 (Go; Correctness P3).** Hang probe: add `t.Setenv("GOENV","off")`; an empty `GOFLAGS`
+  does not neutralize a `go env -w GOFLAGS=...` setting.
+* **P2-5 (Scope).** `.github/copilot-instructions.md:86` (`go test ./internal/...`) is neither
+  migrated, exempted, nor matched by the 174.080-T full-suite rule.
+* **P2-6 (Coupling).** `.github/copilot-instructions.md:13` table row: the unquoted `go test`
+  Technology cell plus the `./...` Notes token is flagged bare by the detector even after the
+  planned 174.088-T edit, and `workspace-profile.yaml:26` `runner: "go test"` re-renders it.
+* **P2-7 (Coupling).** `.github/skills/build-feature/SKILL.md:266` 45m stall kill equals the
+  Ceiling, pre-empting the Go alarm/R5 evidence and the footer markers near the ceiling.
+* **P2-8 (Architecture).** R2 (1.25) and R3 (1200) thresholds live in `cmd/test-budget`, outside
+  the `internal/testbudget` single source of truth claimed by 19.4.1 and H5.
+* **P2-9 (Architecture; Scope P3).** The ship-time note (3498-3500) permits pushing into the
+  declared interim red, contradicting H8; after 174.082-T the pre-push Test gate and PR CI both
+  run the full suite, which conflicts with D1/D2 and the single authorized run in 19.10.
+* **P2-10 (Learnings).** Hand-edited autoharness-managed rendered surfaces
+  (constitution, go, github-pr-automation, copilot-code-review instructions, go-engineer) have
+  no stated checksum/drift disposition against `autoharness gate check` at task completion.
+* **P2-11 (Learnings).** The plugin-parity coverage boundary is unstated (no confirmation that
+  existing `.github`↔`plugin` parity tests exclude the edited files).
+
+**P3 (advisory):** `run` `(0, err)` should map to 1; `buildGoTestArgs` error condition unpinned;
+`print` exit-code wording (2819 vs 3144); `\r` stripping and 64 KiB prefix-parse wording; pin
+`run(context.Background(), os.Args[1:], ...)` in the 076 shape harness; stdlib `module`-directive
+parse (no `golang.org/x/mod` promotion); allow one unexported `run` helper; gofmt AC on
+075/078/079; merged-stream note; package doc in `budget.go`; testify import allowance or a D5
+deviation; soft edges 077←076 and 087←085; explicit AC per W5 surface task; mechanical check of
+the 174.087-T rationale/sync-impact headings; unused `bare-mention`/`drift_reason` allowlists;
+footer exact-line row; shape harness pins constant values; package-wide no-`t.Parallel`;
+rationale for rejecting smaller caller timeouts; `Largest` tie-break and base-name prefix rule;
+missing growth-table boundary pairs; TESTING_RULES consumer, fix-ci:72 canonicalCI, `-json` mixed
+output; constitution amendment-log heading anchor; surface units may fix red-capture-named lines;
+wrapper static existence check in the coupling test; release-build-target guard; 174.079-T and
+174.080-T are circuit-breaker-sensitive in size.
+
+**Gate outcome.** FAIL (one P0). Stage did **not** harvest, did **not** apply any remediation,
+and did **not** re-invoke plan-review. `11BE840F` stays ACTIVE. No task `174.074-T` …
+`174.091-T` exists; shipment `155-S` membership is unchanged.
+
+**Escalation (P-013.6).**
+
+```text
+threshold_kind: plan-review consecutive FAIL (operator-extended cycle)
+count: 4 (rev21 attempt 1, rev21.1 attempt 2, rev21.2 attempt 3, rev21.3 attempt 4)
+failure_summary: blocking count converged 5 -> 3 -> 1 -> 1; attempt-4 blocker B1 is a single-sentence harness-scope fix (lifecycle-frozen shape assertion), plus 11 non-blocking P2s
+last_actions: attempt-4 multi-agent dispatch (7 personas) on rev21.3; no remediation applied
+artifact_refs: docs/exec-plans/2026-09-14-resumable-shipment-blocked-lifecycle-plan.md (Wave 19 rev21.3), .backlogit/queue/073-DL.md, stash 11BE840F
+telemetry_evidence: logs/diagnostics/155-s-go-test-post-wave17-20260924.txt (+ metadata)
+resumption_checkpoint: docs/memory/2026-09-24/stage-11be840f-attempt4-review-fail.md
+resolved_escalation_route: gpt-6-sol / openai / xhigh (config.model_routing.escalation, freshly reloaded 2026-09-24; differs from the Stage route claude-opus-5.5 / anthropic / high)
+escalation_status: ESCALATION_DEGRADED (no Engram escalation-handoff operation is exposed) -> operator halt
+```
+
+**Operator decision required.** Choose one:
+
+* **(a)** Authorize a remediation revision (rev21.4) applying B1 (and optionally the P2s), plus
+  one further plan-review pass; on PASS, Stage harvests 174.074-T … 174.091-T into 155-S.
+* **(b)** Accept rev21.3 with B1 as explicitly accepted residual risk under
+  `operator_authorization: approved` (not recommended: 174.078-T is not satisfiable as written).
+* **(c)** Reject Wave 19 and re-deliberate 073-DL.
+
+## Wave 19R — Explicit 30-minute governed full-suite budget (11BE840F / 073-DL) — rev22.3
+
+**Source.** DEFERRED SCOPE EXPANSION stash `11BE840F` → deliberation `073-DL`, re-opened and
+re-deliberated as a **hard scope reset** (decision O12). This wave supersedes Wave 19 rev21.x
+in full. Operator authorization, 2026-09-24: "Resume Stage checkpoint
+`.backlogit/checkpoints/checkpoint-20260924-232153.json`; re-deliberate `073-DL` with the 3–4
+task scope cap, harvest only the minimal `155-S` unblock ensemble, and plan broader ensembles as
+separate DAG dependency-ordered shipments." Stage ran no `go test` command to produce this wave.
+
+### 19R.1 Decision (073-DL O12)
+
+* **Mechanism.** Every governed unfiltered full-suite run on the 155-S final-gate path is the
+  single literal **`go test -timeout=30m ./...`**, run from the repository root. It replaces
+  reliance on cmd/go's implicit 10-minute default. The flag is explicit on the command line, so
+  the budget is versioned in the repository and reproducible on every machine.
+* **Authority.** `.github/policies/workflow-policies.md` P-002.6 defines the literal as the
+  **governed full-suite budget (073-DL)**. `.github/agents/_ship.agent.md` Steps 4.6 and 5 name
+  the same literal. These are exactly the surfaces Ship reads at wave convergence and final
+  closure. The P-002.6 definition also covers the full-suite runs Ship **delegates** during
+  Step 5: the fix-ci skill (Steps 4/7) and the github-pr-automation fix loop (§1.4). Those two
+  procedure files keep their budget-less text until ensemble E3 lands; the policy sentence
+  governs them in the meantime (D6).
+* **Coupling contract.** A persistent contract test,
+  `tests/integration/governed_full_suite_budget_test.go`, pins the literal in the anchored
+  sections of those two surfaces. It fails if either surface reverts to the budget-less form or
+  adopts a zero timeout. It is a permanent CI coupling guard in its own right (H3), not a test
+  written only to give an exempt task a red.
+  * It runs in every CI run that executes the Go gates, and in every Ship full-suite gate of
+    every later shipment, so a reversion is caught before the next shipment can close.
+  * CI's `changes` filter skips the Go gates for Markdown-only pull requests
+    (`ci.yml` `code` filter `'!**/*.md'`). A Markdown-only reversion would therefore be caught
+    at the next code or Ship gate rather than on its own PR. Ensemble E1 closes that gap by
+    running the selector in the `docs-lint` job, whose steps run for `.github/**/*.md` changes
+    (gated on `docline_required`) and which already runs `TestDoclineSoftKeys_LiveTrackedCorpus`
+    the same way. Neither existing step of that job inspects `.github/` content today; only the
+    new E1 selector will.
+* **Semantics.** `-timeout` is a per-test-binary deadline. It applies to each package binary
+  separately; it is not a total wall-clock limit on `./...`.
+* **Hang detection is preserved.** The budget stays finite. At 30m the test binary's in-process
+  alarm panics with `panic: test timed out` and a full goroutine dump naming the stuck test, and
+  cmd/go's own backstop kills the binary at budget + 1m. A genuine hang is therefore still
+  detected and diagnosed. It is detected later (30m instead of 10m), which is accepted.
+* **Scope cap.** Three new atomic tasks plus the unchanged `174.073-T`. There is no new
+  executable, no new package, no wrapper, no result sink, no declaration choreography, no
+  formula, and no partitioning.
+
+### 19R.2 Why the 18-task rev21.x design (O11) was rejected
+
+* **Disproportion.** The goal is one number on two governed surfaces. O11 answered it with a
+  new executable (`cmd/test-budget`), a new package (`internal/testbudget`), a static test
+  counter, a growth formula with floor, step, ceiling, and headroom constants, a streaming result
+  sink, and a declaration → behavior-harness → implementation split for each seam. That is 18
+  tasks for a change whose observable effect is one flag.
+* **Review evidence.** O11 failed plan review four consecutive times (rev21 → rev21.3; blocking
+  counts 5 → 3 → 1 → 1). Each fix added contract surface that created a new finding. The
+  attempt-4 blocker B1 was a lifecycle-frozen shape harness, a defect that the machinery itself
+  created.
+* **Speculative generality.** The formula guarded against growth that has not happened. The
+  current need has 1.8–2.4× headroom under a fixed budget (19R.3). A fixed value with
+  evidence-based adjustment criteria (19R.9) covers the same risk with no code.
+* **Wrong ownership of complexity.** The wrapper moved a Go toolchain concern (a deadline flag)
+  into a repository-owned process supervisor. That supervisor then needed its own exit-code
+  mapping, `WaitDelay`, and output-parsing hardening (rev21 H6/H7/H12). Each of those is a new
+  failure mode that the plain flag does not have.
+* **Blocking the unblock.** 155-S was stalled behind a design that could not converge. Its
+  actual blocker needs a three-task fix.
+
+### 19R.3 Budget sufficiency (existing evidence only; no run)
+
+| Evidence (existing captures) | Value |
+|---|---|
+| `internal/core` Windows runs under the implicit 10m default | 602.717s TIMEOUT; 578.449s PASS (96.4% of 600s); 602.093s, 600.818s, 602.192s TIMEOUT |
+| Where the deadline fell | About 59% / 69% / 79% of run order, each time in a test 0–1s old with an unrelated I/O stack. This is cumulative growth, not a hang |
+| Projection (600s ÷ run-order fraction) | 600/0.79 ≈ **760s**; 600/0.69 ≈ 870s; 600/0.59 ≈ **1017s**. The range is **760–1017s**. The linear per-test estimate (881 × 0.862 s/test ≈ 760s) matches the optimistic end |
+| Linux CI (`-race`) `internal/core` | 239.878s |
+| Budget utilization at 30m (1800s) | 760–1017s ≈ **42–57%**. Headroom ≈ **1.8–2.4×** |
+| Provenance of 10m | cmd/go default `testTimeout = 10*time.Minute` (`cmd/go/internal/test/testflag.go`), applied per test binary. `GOFLAGS` is empty. Nothing in this repository sets it |
+
+* 30m is the smallest round budget that keeps at least 1.75× headroom over the most pessimistic
+  projection (1017s). 20m (1200s) would leave only 1.18× over it, and 25m only 1.47×.
+* 30m is also short enough that a genuine hang still fails a governed run well inside one Ship
+  session.
+
+### 19R.4 Surfaces: minimal scope versus deferred ensembles
+
+| Surface | Current literal | Disposition |
+|---|---|---|
+| `.github/agents/_ship.agent.md` Step 4.6 item 3 (line ~950), Step 5 item 1 (line ~989) | budget-less form | **Minimal (174.075-T)** |
+| `.github/policies/workflow-policies.md` P-002.6 (lines ~916, ~925), P-004 precondition (line ~1149) | budget-less form | **Minimal (174.075-T)**, plus a new P-002.6 budget bullet and version 1.30.0 |
+| `.autoharness/harness-manifest.yaml` checksums for the two files above | stale after 174.075-T | **Minimal (174.076-T)** |
+| `.github/workflows/ci.yml:121`, `.github/workflows/release.yml:40` | budget-less | Ensemble **E1** |
+| `scripts/pre-push-quality-gates.ps1:140`, `.sh:129` (Test gate), `Makefile:20` | budget-less | Ensemble **E2** |
+| `make.ps1:50,65` (Windows `-race`) | budget-less | **Measurement-gated** (`5A1C4D3F`). Not migrated until Windows `-race` is measured |
+| `.github/skills/build-feature/SKILL.md:365` (non-wave path), `.github/skills/fix-ci/SKILL.md:13,72,126,189`, `.github/instructions/github-pr-automation.instructions.md:126`, `.github/agents/subagents/go-engineer.agent.md:76` | budget-less | Ensemble **E3** |
+| `.github/instructions/constitution.instructions.md:22,209,221` (Quality Gates), `AGENTS.md`, `README.md`, `.github/copilot-instructions.md`, `.github/instructions/go.instructions.md` | budget-less | Ensemble **E4** |
+| Manifest render vars `TEST_COMMAND` / `HARNESS_ENFORCED_SUMMARY` / `TESTING_RULES`, `workspace-profile.yaml:27,47` | budget-less | Ensemble **E5** (render inputs first; E3 and E4 follow it; E2's scripts are `drift_allowed: true`, see 19R.10) |
+| Prohibitions `build-feature/SKILL.md:355`, `harness-architect/SKILL.md:265,332` ("Do not run …") | negative rule | Ensemble **E3** rewords each to forbid any repo-wide **test-running** `go test … ./...` form, so the prohibition keeps matching the governed command after P-004 migrates; the `-run=^$` compile-only check stays explicitly allowed (P-002.6). Not an allowlist of the budget-less literal |
+| `.github/instructions/copilot-code-review.instructions.md` | rendered consumer of `HARNESS_ENFORCED_SUMMARY` | Ensemble **E5** |
+| `.github/copilot-review-instructions.md` ("core validation bar is: …"; hand-authored, not a managed artifact) | reviewer-normative (it sets the bar reviewers apply) | Ensemble **E4**. Rule: text that tells a reviewer or agent which command is the validation bar is migrated; text that only mentions the command (for example `doc-review`) is unchanged |
+| `doc-review/SKILL.md:200` | descriptive | Unchanged. It describes; it does not govern a run |
+| `plugin/**`, upstream autoharness templates | budget-less | **Rejected here.** Consumer bundles must not carry a backlogit-calibrated budget. The upstream-template part stays in `95DF7CE9` |
+
+**Why this is sufficient to unblock 155-S.**
+
+* **Direct runs.** Ship executes 155-S's convergence gates (Step 4.6) and final closure (Step 5)
+  from `_ship.agent.md` and P-002.6.
+* **Delegated runs.** Step 5 delegates two procedures that restate the budget-less literal:
+  fix-ci (Steps 4/7) and the github-pr-automation fix loop (§1.4 step 3). The pinned P-002.6
+  sentence explicitly covers both, so Ship runs them with the explicit budget. Their own text is
+  migrated by E3 (D6).
+* **build-feature.** Its full-suite line at 365 applies only to the non-wave dispatch path.
+  155-S uses wave-scoped dispatch, so that path does not run for this shipment. Line 355 is a
+  prohibition.
+* **Pre-push scripts.** They are opt-in: no hook is installed (P-019) and Ship does not invoke
+  them.
+* **CI.** CI is not the 155-S gate that timed out. Linux CI completes `internal/core` in about
+  240s even with `-race`.
+
+**Complete occurrence inventory** (git grep -F on the budget-less literal, 2026-09-24):
+
+* `_ship.agent.md`: exactly 2 hits (≈950, ≈989), both migrated.
+* `workflow-policies.md`: exactly 5 hits. Three are non-amendment lines (≈916, ≈925, ≈1149),
+  all migrated. Two are amendment-log rows 1.19.0 and 1.20.0, which are skipped and stay
+  byte-identical.
+* A zero-timeout form appears in neither file.
+* Open PR #449 changes neither file; its non-`.backlogit` paths are all under `docs/`. There is
+  therefore no merge-order interaction.
+* **Claim-time precondition:** Ship re-runs this inventory at claim time. Any additional hit is a
+  plan defect that goes back to Stage, never an in-task scope widening.
+* **Resume-time inventory (E1–E5 only):** Stage's re-run at E-harvest also covers
+  `.claude-plugin/`, `.copilot/`, and `.github/plugin/plugin.json`, which this pass did not read.
+
+### 19R.5 Work units (3 new tasks under `174-F` plus unchanged `174.073-T`)
+
+#### 19R.5.1 `174.074-T` — Add governed full-suite budget contract test (RED deliverable)
+
+* **Domain:** tests. **Files:** 1 (new `tests/integration/governed_full_suite_budget_test.go`,
+  package `integration_test`). **Functions:** 4. **Test functions:** 1. **Posture:** test-first
+  (red deliverable). It is a **permanent coupling guard** (H3), not a throwaway red.
+* **Content.** harness-architect scaffolds this file in the W1 scaffolding commit. The task
+  itself writes nothing else (P-002.6 red-deliverable rule).
+  * Constants:
+    * `governedFullSuiteBudget = "30m"`;
+    * `governedFullSuiteCommand = "go test -timeout=" + governedFullSuiteBudget + " ./..."`.
+    * Every required phrase that contains the command is **built from**
+      `governedFullSuiteCommand` (for example ``"`" + governedFullSuiteCommand + "`"``), so the
+      constants are used (no `unused` finding) and the value lives in one place.
+    * Later ensemble tests reference these constants rather than restating the value. After
+      155-S ships, the constants and helpers in this file are **frozen**: later ensembles consume
+      them and never edit this file, except for a budget-value change made under 19R.9.
+  * `governedSection(content, heading string) string`:
+    * returns the text from the exact heading line to the next ATX heading of the same or higher
+      level;
+    * ignores lines inside fenced code blocks when looking for that next heading, and never
+      takes a heading inside a fence as the start anchor. A fence closes only on a line of the
+      opener's character (backtick or `~`) at least as long as the opener;
+    * returns an empty string when the heading is absent.
+  * `sectionHasPhrase(section, phrase string) bool`: compares both arguments after
+    whitespace normalization, reusing the package's existing `normalizeDocWhitespace`
+    (`plugin_manifest_test.go:429`) rather than a copy.
+  * `budgetlessFullSuiteLines(content string) []string`:
+    * normalizes CRLF to LF;
+    * skips amendment-log rows matching `^\|\s*\d+\.\d+\.\d+\s*\|`;
+    * returns `L<n>: <line>` for each remaining line that contains the substring
+      `go test ./...` or matches `-timeout[= ]0(?:[smh])?(?:[^0-9.]|$)`.
+  * `TestGovernedFullSuiteBudget_ShipFinalGate`:
+    1. **Detector self-check** (inline `require` before any surface is read; no separate test
+       function, so there is no passing test during red). `budgetlessFullSuiteLines` must:
+       * flag a budget-less line;
+       * flag `-timeout=0` and `-timeout 0` lines;
+       * not flag the canonical line;
+       * not flag an amendment-log row that contains the budget-less form;
+       * return the same result for CRLF and LF input.
+
+       `sectionHasPhrase` must reject a `` `go test -timeout=300m ./...` `` span against the
+       backtick-delimited canonical phrase (bounded matching). `governedSection` must stop at the
+       next same-or-higher heading, must not stop at a `#` line inside a fence, must not anchor on
+       a heading inside a fence, and must return `""` for an absent heading.
+    2. **Surface subtests** `t.Run("ship-agent")` and `t.Run("workflow-policies")`. Each reads
+       its surface via the existing `readGovernedSurface` and `testRepoRoot` helpers, then checks
+       with `assert` (not `require`), so one red run reports every missing phrase and every
+       budget-less line:
+       * **non-vacuity:** each anchor heading is present and its section is non-empty;
+       * **required phrase:** `sectionHasPhrase` holds for each required phrase;
+       * **no budget-less form:** `budgetlessFullSuiteLines(content)` is empty over the whole
+         file.
+* **Anchors and required phrases** (compared after whitespace normalization):
+
+| Surface | Anchor heading (exact line) | Required phrase |
+|---|---|---|
+| `_ship.agent.md` | `#### Step 4.6: Wave Convergence Gate (P-002.6)` | ``run the **unfiltered full repository suite**: `go test -timeout=30m ./...` `` |
+| `_ship.agent.md` | `### Step 5: PR Lifecycle` | ``**unfiltered** `go test -timeout=30m ./...` with no tolerated red of any kind`` |
+| `workflow-policies.md` | `### P-002.6 — Dependency-Aware Harness Waves (Scheduling Contract)` | ``(`go test -timeout=30m ./...`, no selector, no `-short`, no skip)`` |
+| `workflow-policies.md` | same | ``run `go test -timeout=30m ./...` and admit only failures`` |
+| `workflow-policies.md` | same | ``**Governed full-suite budget (073-DL).** Every governed unfiltered full-suite run in P-002.6, in P-004, and in Ship Steps 4.6 and 5, including the full-suite runs Ship delegates during Step 5 (fix-ci and the github-pr-automation fix loop), is `go test -timeout=30m ./...`, run from the repository root.`` |
+| `workflow-policies.md` | `## P-004: Red Phase Before Implementation` | ``AND `go test -timeout=30m ./...` exits non-zero with expected failure markers`` |
+
+* **Red-deliverable contract block** (copy verbatim into the task body, delimiters included):
+
+````markdown
+<!-- BEGIN:red-deliverable-contract -->
+```text
+red_deliverable: true
+red_deliverable_reason: Governed full-suite budget contract test (permanent coupling guard); its anchored-phrase and budget-less-form assertions over _ship.agent.md and workflow-policies.md turn green only after 174.075-T migrates both surfaces, so TestGovernedFullSuiteBudget_ShipFinalGate is assertion-red by design when this task completes.
+red_selector_command: go test ./tests/integration -run '^TestGovernedFullSuiteBudget_ShipFinalGate$' -count=1 -timeout=5m -v
+green_maker_tasks: 174.075-T
+green_maker_closes_wave: 2
+```
+<!-- END:red-deliverable-contract -->
+````
+
+* **Red evidence (P-004).**
+  * Compilation PASS.
+  * The single test function `TestGovernedFullSuiteBudget_ShipFinalGate` FAILs on named
+    assertions: missing required phrases, and budget-less lines reported for both surfaces.
+  * The inline detector self-check `require`s precede the surface subtests and succeed. They are
+    not a test function, so every test function in the harness is red, as P-004 requires.
+  * harness-architect confirms that both surface subtests ran and failed on surface assertions.
+    A self-check failure is red for the wrong reason and is not valid red evidence.
+* **Gates.**
+  * `go vet ./tests/integration` per task. The repository-wide `go vet ./...` compile check runs
+    at convergence (D2).
+  * `gofmt -l tests/integration/governed_full_suite_budget_test.go` → empty.
+  * Scoped golangci-lint v1.64.8 over `./tests/integration/...` with `--new-from-rev` set to the
+    pre-scaffold SHA → 0 new findings.
+  * **Scope:**
+    * (a) the W1 scaffolding commit's `git diff --name-only` set is exactly
+      `tests/integration/governed_full_suite_budget_test.go` (added) plus, if present,
+      174.073-T's AC2 harness files (which may be modifications).
+    * (b) this task's own delta against its red baseline is empty across tracked, staged, and
+      untracked files (the P-002.6 red-deliverable rule, build-feature Step 0.5b).
+* **Constraints.**
+  * No `t.Parallel`, no `t.Skip`, no build tag.
+  * No new dependency: `testify/require` and `testify/assert` are both already used in package
+    `integration_test`.
+  * No edit to any other test file. The existing helpers are reused, not copied.
+* **Accepted limits.**
+  * The detector targets the literal governed form and zero-timeout spellings only.
+  * Other budget-less shapes (for example `go test -race … ./...` in workflows) are owned by the
+    ensemble that migrates them, each with its own shape-specific detector (19R.10).
+  * The zero-timeout pattern also flags `-timeout=0h30m`. That false positive is harmless: the
+    governed form is `30m`, and no surface uses compound durations.
+* **Labels:** `wave-19r`, `155-S` at harvest. harness-architect applies `harness-ready` after RED is confirmed.
+
+#### 19R.5.2 `174.075-T` — Pin explicit 30m full-suite budget in Ship and P-002.6
+
+* **Domain:** docs/governance. **Files:** 2. **Exemption:** `docs-only` (closed exempt set,
+  19R.6). **Labels:** `harness-exempt`, `wave-19r`, `155-S`. **Green maker** for `174.074-T`.
+  **Depends on** `174.074-T`.
+* **Edits.**
+  * `.github/agents/_ship.agent.md`: replace the budget-less literal with
+    `` `go test -timeout=30m ./...` `` at Step 4.6 item 3 and Step 5 item 1. There are no other
+    edits.
+  * `.github/policies/workflow-policies.md`:
+    * Replace the literal at three places:
+      * P-002.6 "What the convergence gate runs conditionally";
+      * P-002.6 "Why deferral rather than a classified full run";
+      * the P-004 Precondition.
+    * Add one P-002.6 bullet immediately after "What the convergence gate runs conditionally".
+      It begins with the exact pinned sentence (19R.5.1 table). It continues:
+      * the explicit budget replaces cmd/go's implicit 10-minute per-test-binary default;
+      * it applies per package test binary;
+      * it stays finite so a genuine hang still panics with a goroutine dump;
+      * it is never zero, never unbounded, and never supplied through `GOFLAGS` or `go env -w`;
+      * procedure files that still restate the budget-less form are governed by this bullet
+        until they are migrated;
+      * the value changes only through a Stage deliberation that meets the 073-DL adjustment
+        criteria.
+    * Bump `**Version**: 1.29.0` → `1.30.0`.
+    * Append amendment row `1.30.0`: "Amended P-002.6 and P-004; `_ship.agent.md` Steps 4.6/5.
+      Governed full-suite budget (073-DL rev22)".
+    * Historical rows 1.19.0 and 1.20.0 stay byte-identical.
+* **Wording constraint.** The new text MUST NOT contain the substring `go test ./...` or any
+  zero-timeout spelling (`-timeout=0`, `-timeout 0`) outside an amendment-log row. It writes
+  "budget-less form" and "never zero" instead.
+* **Harness exemption contract block** (copy verbatim, delimiters included):
+
+````markdown
+<!-- BEGIN:harness-exemption-contract -->
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Governance-text migration of two agent/policy documents; no production or test code; its content probe is the 174.074-T contract test turning green, followed by the repository docline doc lint gate (the P-002.5-allowlisted go run ./cmd/backlogit docs lint).
+harness_owner: none
+exempt_verification_command: $o = (go test ./tests/integration -run '^TestGovernedFullSuiteBudget_ShipFinalGate$' -count=1 -timeout=5m -v 2>&1 | Out-String); if ($LASTEXITCODE -ne 0) { exit 1 }; if (([regex]::Matches($o, '(?m)^--- PASS: TestGovernedFullSuiteBudget_ShipFinalGate ')).Count -ne 1) { exit 1 }; if ($o -match '(?m)^\s*--- (FAIL|SKIP)') { exit 1 }; go run ./cmd/backlogit docs lint; if ($LASTEXITCODE -ne 0) { exit 1 }; Write-Output 'EXEMPT_VERIFY_OK:174.075-T'; exit 0
+exempt_precondition: must-fail-before-deliverable
+```
+<!-- END:harness-exemption-contract -->
+````
+
+* **Gates.**
+  * The pre-work probe fails, because 174.074-T is red.
+  * The post-deliverable run passes: content probe, then doc lint (P-002.3 `docs-only` rule),
+    then the marker.
+  * **Doc lint choice (P-002.5).** The gate is `go run ./cmd/backlogit docs lint`, byte-identical
+    to `make docs-lint` and the CI docline gate, which P-002.5 names as a read-only example.
+    `npx … markdownlint-cli2` is **not** used in the exempt command, because it downloads and
+    runs a remote package (`EXEMPT_COMMAND_DESTRUCTIVE`).
+  * **What the doc lint does and does not prove.** The docline linter excludes `.github/`
+    (`internal/docline/policy.go` `scopeExcludeDirs`), so it does not inspect either edited file.
+    It satisfies the P-002.3 "then run the doc lint gate" step and guards the in-scope `docs/`
+    corpus against regression; the **content probe is the real evidence** for this deliverable.
+    Markdownlint P-008 coverage of the two `.github/` files comes from the unconditional CI
+    `md-lint` job. Any doc-lint finding in a file other than the two edited files goes back to
+    Stage; it is never fixed inside this task.
+  * **Regression selector** (task gate, run after the exempt command): the existing tests that
+    read either edited surface must still pass:
+    `go test ./tests/integration -run '^(TestShipment155HarnessContractsUseFlatMembershipAndGovernedRecovery|TestShipAgentEncodesPostMergeMainSync)$' -count=1 -timeout=5m -v`
+    → exactly 2 top-level `--- PASS:` lines, no FAIL or SKIP. No test pins the `1.29.0` version
+    string or the budget-less literal (grep of `tests/integration`, 2026-09-24).
+  * `git diff --name-only START_SHA HEAD` → exactly the two files, plus `.backlogit/**` and
+    `docs/memory/**`. `logs/` is gitignored. `.backlogit/**` and `docs/memory/**` are Ship
+    lifecycle bookkeeping, not the deliverable; if Ship's P-002.4 path pass counts them, Ship
+    commits bookkeeping separately from the deliverable commit.
+* **Coupling note.** The harness manifest checksums for both files are stale after this task.
+  `174.076-T` reconciles them in the next wave. The no-push rule covers W1 through W3 (19R.6).
+
+#### 19R.5.3 `174.076-T` — Reconcile harness-manifest checksums for budget surfaces
+
+* **Domain:** harness metadata (`docs-only` class per D7). **Files:** 1
+  (`.autoharness/harness-manifest.yaml`). **Exemption:** `docs-only`, under the explicit
+  classification in D7. **Labels:** `harness-exempt`, `wave-19r`, `155-S`.
+  **Depends on** `174.075-T`. Checksum-method precedent: `174.072-T` AC3.
+* **Edits.**
+  * Set the `checksum:` of the `.github/agents/_ship.agent.md` entry (line ~373) and the
+    `.github/policies/workflow-policies.md` entry (line ~125). Each value is the lowercase
+    SHA-256 of the file's UTF-8 content with CRLF normalized to LF. This method was verified to
+    reproduce both current checksums exactly on 2026-09-24.
+  * Amend each entry's existing single `drift_reason` **in place** by appending one sentence:
+    "073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5,
+    P-002.6, P-004)."
+  * No key is duplicated and no other entry changes.
+* **Harness exemption contract block** (copy verbatim, delimiters included):
+
+````markdown
+<!-- BEGIN:harness-exemption-contract -->
+```text
+harness_exemption_class: docs-only
+harness_exemption_reason: Harness-manifest checksum and drift-reason reconciliation for the two agent/policy artifacts changed by 174.075-T; harness artifact metadata only, no production or test code (plan 19R.7 D7).
+harness_owner: none
+exempt_verification_command: $m = Get-Content '.autoharness/harness-manifest.yaml'; foreach ($f in @('.github/agents/_ship.agent.md', '.github/policies/workflow-policies.md')) { $t = [IO.File]::ReadAllText((Resolve-Path $f)).Replace([string][char]13 + [char]10, [string][char]10); $h = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($t))).Replace('-', '').ToLower(); $i = [Array]::IndexOf($m, '  - path: ' + [char]34 + $f + [char]34); if ($i -lt 0) { exit 1 }; $j = $i + 1; $ok = 0; $ck = 0; $dr = 0; $dok = 0; while ($j -lt $m.Count -and -not $m[$j].StartsWith('  - path:')) { $l = $m[$j].Trim(); if ($l.StartsWith('checksum:')) { $ck++ }; if ($l.StartsWith('drift_reason:')) { $dr++; if ($l.Contains('073-DL rev22')) { $dok++ } }; if ($l -eq ('checksum: ' + [char]34 + $h + [char]34)) { $ok++ }; $j++ }; if ($ok -ne 1 -or $ck -ne 1 -or $dr -ne 1 -or $dok -ne 1) { exit 1 } }; Write-Output 'EXEMPT_VERIFY_OK:174.076-T'; exit 0
+exempt_precondition: must-fail-before-deliverable
+```
+<!-- END:harness-exemption-contract -->
+````
+
+* **Gates.**
+  * The pre-work probe fails, because the checksums are stale after 174.075-T and no
+    `073-DL rev22` sentence exists yet.
+  * The post-deliverable run passes and emits the marker.
+  * The markdown doc lint gate does not apply, because the file is YAML (D7 names this). The
+    content probe is the whole exempt gate.
+  * **Regression selector** (task gate): `TestActivePluginDocsDoNotReferenceRetiredNPMWrapper`
+    reads the manifest and forbids `npx ` in it:
+    `go test ./tests/integration -run '^TestActivePluginDocsDoNotReferenceRetiredNPMWrapper$' -count=1 -timeout=5m -v`
+    → exactly 1 top-level `--- PASS:` line.
+  * `git diff --name-only START_SHA HEAD` → exactly the manifest, plus `.backlogit/**` and
+    `docs/memory/**` (Ship bookkeeping, handled as in 174.075-T).
+
+#### 19R.5.4 `174.073-T` — unchanged (already reviewed; Wave 18)
+
+* The contract, ACs, labels, and "no blocks edge (membership-as-gate)" note are unchanged. It
+  stays useful: it removes shipment recovery from 13 size/complexity fixtures, which reduces
+  `internal/core` runtime, and it closes the 072-DL corrective.
+* **AC7 interaction.**
+  * AC7 says STOP after its commit and requires a new, explicit operator authorization before
+    any full-suite run. Wave 19R satisfies AC7's precondition: the authorization request cites
+    the recorded disposition of `11BE840F` (`073-DL` O12, this wave).
+  * AC7 *recommends* `go test -json ./...`. That recommendation is superseded, in this plan
+    record only, by the governed literal `go test -timeout=30m ./...` (19R.8). `174.073-T` is
+    not edited.
+  * AC7's STOP forbids the full-suite **run**, not the other members of the shipment. Ship
+    finishes 174.074-T, 174.075-T, and 174.076-T before making the single authorization
+    request (19R.8).
+  * If Ship reads AC7 as a whole-shipment halt, the operator's continuation to the remaining
+    members is a continuation only. It is not a full-suite authorization.
+  * AC7 also governs any later full-suite run Ship delegates in Step 5 (fix-ci, §1.4). Each
+    such run uses the explicit budget and needs its own AC7 authorization.
+
+### 19R.6 Closed exempt set, schedule, edges, and 155-S membership
+
+* **Closed exempt set (P-002.1 item 3):** {`174.075-T` docs-only, `174.076-T` docs-only (D7)}.
+  No other Wave 19R member is exempt. `174.074-T` carries `harness-ready`; its harness is
+  scaffolded in W1.
+* **Dependency edges (`blocks`):** `174.075-T` depends on `174.074-T`; `174.076-T` depends on
+  `174.075-T`. There is no edge to or from `174.073-T`.
+* **Waves (derived by Ship Step 3 from the edges):**
+  * W1 = {`174.073-T`, `174.074-T`}, in task-ID order;
+  * W2 = {`174.075-T`}, which closes the 174.074-T red deliverable;
+  * W3 = {`174.076-T`}.
+* **Push rule.** Ship MUST NOT push from the start of W1 until W3 closes. The pushed tree would
+  carry a designed red (W1) or stale checksums (W2). Ship pushes only after W3.
+* **155-S manifest after harvest:** 39 items:
+  * `174-F` first;
+  * then the 35 existing task members, ending with `174.073-T`;
+  * then `174.074-T`, `174.075-T`, `174.076-T`, in that order.
+* The status stays `active`. `154-S` is untouched.
+
+### 19R.7 Named deviations
+
+* **D1 — P-002.6 convergence full-suite runs in W1–W3.**
+  * W1 defers by rule, because the open red set is non-empty. Ship records the standard
+    `FULL_SUITE_DEFERRED: wave 1`.
+  * W2 and W3 have an empty set and would otherwise require the unfiltered run. Ship records
+    the **plan-local** token `FULL_SUITE_OPERATOR_DEFERRED: wave {k} (19R.7 D1; 174.073-T AC7)`.
+    This follows the Wave 18 and rev21 precedent. It is not a P-002.6 vocabulary token, and it
+    is valid only because this deviation names it.
+  * The single authorized final run (19R.8) discharges every deferral. The deviation defers the
+    gate; it never waives it.
+  * Rejected alternative: per-wave full runs, which are unauthorized executions.
+* **D2 — Repo-wide compile check at convergence.**
+  * Mapped to `go vet ./...`, which type-checks every test file without running any, plus each
+    task's scoped selectors. Per task, 174.074-T runs `go vet ./tests/integration`.
+  * Rejected alternative: `go test -run '^$' ./...` over the module, which AC7 forbids.
+* **D3 — Repo-wide lint and format.**
+  * Narrowed per task to the touched package or file (debt `4DB1DFF1`).
+  * Rejected alternative: fixing repo-wide lint debt here, which is out of scope.
+* **D4 — Constitution wording (clarification, not a principle violation).**
+  * Principle II requires "All tests MUST pass via `go test` over `./...`". Quality Gates lists
+    the same command first. `go test -timeout=30m ./...` runs the same test set with a finite
+    runtime budget: nothing is filtered, skipped, or weakened. Principle II and the "do not skip
+    any gate" rule are therefore satisfied as written.
+  * The constitution supersedes other practices, so P-002.6 is not treated as overriding it;
+    the two agree.
+  * Only the literal wording lags. It is documented under the constitution's Conflict
+    resolution clause and closed by ensemble E4 (a constitution amendment with version bump and
+    sync impact report).
+  * Rejected alternative: amending the constitution inside 155-S, which widens the minimal
+    scope for a wording clarification.
+* **D5 — Docline lint via the installed binary.**
+  * Stage validated this plan with `backlogit docs lint --path` (installed v1.10.1-dev), not
+    `go run ./cmd/backlogit docs lint`, because Stage is prohibited from builds.
+* **D6 — Delegated procedure literals until E3.**
+  * `fix-ci/SKILL.md` and `github-pr-automation.instructions.md` §1.4 restate the budget-less
+    form. When Ship delegates to them in 155-S Step 5, the pinned P-002.6 sentence governs, and
+    the run is `go test -timeout=30m ./...`.
+  * Rejected alternative: migrating both files in 155-S. That adds a fourth new task (a
+    three-file limit and a separate docs domain) and two more manifest entries, which exceeds
+    the operator's 3–4-task cap for a path that runs only if CI or review feedback fails.
+* **D7 — The harness manifest is classified as a harness/agent artifact for `docs-only`.**
+  * P-002.4 limits `docs-only` to "Markdown, instruction, prompt, and agent artifacts".
+    `.autoharness/harness-manifest.yaml` is the autoharness registry that records the installed
+    agent, skill, instruction, and policy artifacts: their paths, templates, checksums, and drift
+    reasons. It contains no production or test code, and it is not CI config, build config, or
+    `.gitignore`/`.gitattributes`.
+  * This plan's closed exempt set declares that classification explicitly, so the P-002.4
+    path check has a written basis rather than executor judgement. If Ship's path check still
+    rejects it (`EXEMPT_DELTA_EXCEEDS_CLASS`), Ship halts fail-closed and returns 174.076-T to
+    Stage. No relaxation is made in-session.
+  * **P-002.3 doc-lint clause.** The `docs-only` rule "then run the doc lint gate" has no
+    YAML analogue in this repository. The must-fail-before-deliverable content probe is the whole
+    exempt gate, and it cannot produce a false green: it fails before the change and passes only
+    on exact checksums plus the `073-DL rev22` sentence. Rejected alternative: a YAML linter,
+    which would install or run an external tool (P-002.5).
+  * **Stall bound.** If Ship rejects the class at W3, the W1/W2 commits stay local and unpushed.
+    Stage amends 174.076-T (for example to a non-exempt task); no work is lost.
+  * Rejected alternatives:
+    * folding the manifest into 174.075-T, which gives three files across two domains;
+    * a non-exempt harness-ready task, which needs a permanent checksum-currency test and would
+      couple every future edit of both files to the manifest (over-coupling).
+
+### 19R.8 155-S final gate: exact mechanism and authorization request
+
+* **Readiness.** After W3 closes and before any push, Ship STOPS and requests one explicit
+  operator authorization for exactly one full-suite execution.
+* **Command.** From the repository root, on the branch HEAD:
+
+```powershell
+go test -timeout=30m ./... 2>&1 | Tee-Object -FilePath logs/diagnostics/155-s-go-test-governed-30m-<yyyymmdd-hhmm>.txt
+```
+
+* Ship reads `$LASTEXITCODE` from the `go` process. It records the start and end time, HEAD
+  SHA, and `go version` in its session memory.
+* **Pass criteria:**
+  * exit 0;
+  * no `panic: test timed out`;
+  * no `FAIL` package line.
+* Then the 155-S zero-P0/P1 stop gate and the final standard and adversarial review apply.
+* **Ledger (19R.9).** Ship records the non-cached `ok … internal/core <elapsed>s` line. A
+  `(cached)` line is recorded as cached and gives no ledger datum. There is no re-run for
+  evidence, because any further run would need its own authorization.
+* **If it times out anyway:**
+  * If the test running at the deadline is ≥ 60s old: a genuine hang or slow-test defect. Ship
+    captures a P-021 deferred expansion. The budget is **not** raised.
+  * If it is < 60s old: a budget miss. Ship captures the evidence for Stage; the budget changes
+    only by 19R.9.
+  * No ad hoc flag, re-run with a larger value, zero timeout, or `GOFLAGS` change is ever made
+    at the gate.
+* **Authorization-request text:** "155-S Wave 19R closed (174.073-T, 174.074-T, 174.075-T,
+  174.076-T done). Per 174.073-T AC7, 11BE840F is dispositioned by 073-DL O12 (explicit 30m
+  governed budget). Request authorization for ONE governed full-suite run:
+  `go test -timeout=30m ./...`, output captured to logs/diagnostics/."
+
+### 19R.9 Budget adjustment criteria (evidence-based; no formula, no automation)
+
+* **Review trigger.** Stage reviews the budget when any of these holds:
+  * a governed run records a non-cached largest-package elapsed time above **1200s**
+    (two-thirds of the budget, so headroom has fallen below 1.5×);
+  * a governed run times out with the test running at the deadline < 60s old;
+  * a new package, other than `internal/core`, becomes the largest.
+* The current pessimistic projection (1017s) is below the trigger. The first governed run is
+  expected not to fire it. If it does fire, that is the evidence the criterion exists to
+  surface.
+* **Hang rule.** A timeout where the test running at the deadline is ≥ 60s old is a defect to
+  fix. It is never grounds to raise the budget.
+* **New platform or mode.** Any new governed platform or mode (for example Windows `-race`)
+  needs measurement before it adopts the budget. See `5A1C4D3F`.
+* **Change procedure.** The value changes only through a new Stage deliberation that cites at
+  least **two** non-cached governed-run captures, each a standard `ok <pkg> <elapsed>s` line.
+* **Order of remedies.** Runtime reduction (`5F1A1873`) is evaluated before any raise beyond
+  45m.
+* **Bounds.** The value is never zero, never unbounded, never per-machine, and never set via
+  `GOFLAGS` or `go env -w`.
+
+### 19R.10 Broader ensembles as separate queued shipments (E1–E5) and DAG
+
+Each ensemble is independently valuable and releasable, and each becomes its own queued
+shipment with a bounded manifest: one covering feature plus the listed tasks. None joins 155-S.
+
+* **Separate test files.** Each ensemble adds its **own** contract test file, reusing the
+  174.074-T constants and helpers. A shared table would put every ensemble on the same file and
+  force an ordering between otherwise independent shipments.
+* **Detectors.** Each test owns a shape-specific detector for its surfaces (for example, any
+  `go test` invocation over `./...` lacking `-timeout=30m`, excluding `-run=^$` compile-only
+  gates). Each detector has its own non-vacuity rows.
+* **Scanning.** Each test scans by anchored section. Prohibition lines ("Do not run …") are
+  reworded by E3 to forbid any repo-wide test-running `go test … ./...` form (the `-run=^$`
+  compile-only check stays allowed), and each detector recognises that reworded prohibition
+  shape, so kept prohibitions never trip it.
+* **Naming.** Every ensemble test function is named `TestGovernedFullSuiteBudget_<Surface>`, so
+  E1's single prefix selector covers every later ensemble without another `ci.yml` edit.
+
+| Ensemble | Covering feature (planned title) | Tasks (domain) | Depends on |
+|---|---|---|---|
+| **E1** CI and release workflow budget | "Governed test budget: CI and release workflows" | (1) tests: RED contract test `governed_budget_workflows_test.go` pinning `ci.yml` `go test -race -timeout=30m -coverprofile=coverage.out ./...` and `release.yml` `go test -timeout=30m ./...`; (2) config: edit both workflow lines (green maker); (3) config: add one non-vacuous prefix selector `^TestGovernedFullSuiteBudget_` (requires ≥ 1 top-level `--- PASS:`) to the `docs-lint` job, closing the H3 Markdown-only CI gap (19R.1), and update any `ci_compliance_test.go` wiring assertion on that job's steps (for example `TestHeavyStepsAreFailSafeGated`). `ci.yml` is not a managed manifest artifact (manifest `ci-topology-check.sh` note), so there is no checksum task | **155-S** |
+| **E2** Local gate parity | "Governed test budget: pre-push and Makefile gates" | (1) tests: RED contract test `governed_budget_local_gates_test.go` covering the pre-push Test gate in both scripts and `Makefile:20`; the Build gate `-run=^$` stays unchanged; (2) scripts: the pre-push `.ps1` + `.sh` Test gate pair; (3) config: `Makefile:20` (a POSIX `make` path; Windows developers use `make.ps1`, which is excluded and measurement-gated under `5A1C4D3F`); (4) harness metadata: manifest checksums and `drift_reason` for both pre-push scripts | **155-S** |
+| **E5** Harness render-input parity | "Governed test budget: harness render inputs" | (1) tests: RED contract test `governed_budget_render_inputs_test.go`; (2) config: manifest vars `TEST_COMMAND`, `HARNESS_ENFORCED_SUMMARY`, `TESTING_RULES` + `workspace-profile.yaml:27,47`; (3) docs: `copilot-code-review.instructions.md`, the rendered consumer of `HARNESS_ENFORCED_SUMMARY`; (4) harness metadata: manifest checksum for (3) | **155-S** |
+| **E3** Agent and skill procedure parity | "Governed test budget: agent and skill procedures" | (1) tests: RED contract test `governed_budget_procedures_test.go`; (2) docs: `build-feature/SKILL.md:365` + `fix-ci/SKILL.md`; (3) docs: `github-pr-automation.instructions.md` + `subagents/go-engineer.agent.md` (closes D6); (4) docs: reword the prohibitions `build-feature/SKILL.md:355` + `harness-architect/SKILL.md:265,332` to forbid any repo-wide test-running `go test … ./...` form, keeping `-run=^$` allowed; (5) harness metadata: manifest checksums for the managed files | **E5** |
+| **E4** Constitution and top-level guidance | "Governed test budget: constitution and top-level guidance" | (1) tests: RED contract test `governed_budget_guidance_test.go`; (2) docs: `constitution.instructions.md` Principle II + Quality Gates (version bump, rationale, and sync impact report; closes D4); (3) docs: `AGENTS.md` + `README.md`; (4) docs: `copilot-instructions.md` + `go.instructions.md`; (5) docs: `copilot-review-instructions.md`; (6) harness metadata: manifest checksums for the managed files | **E5** |
+
+**DAG edges (shipment `blocks`; the dependent is listed first):**
+
+* `E1 → 155-S`
+* `E2 → 155-S`
+* `E5 → 155-S`
+* `E3 → E5`
+* `E4 → E5`
+
+**Why these edges and no others.**
+
+* **→ 155-S.** Every ensemble reuses the constants and helpers from `174.074-T` and cites the
+  P-002.6 definition from `174.075-T`. Both exist only once 155-S ships.
+* **E3/E4 → E5.** The manifest render variables (`TEST_COMMAND`, `TESTING_RULES`,
+  `HARNESS_ENFORCED_SUMMARY`) are the *source* the harness renders into managed consumers that
+  are **not** `drift_allowed`: `constitution.instructions.md`, `go.instructions.md` (E4) and
+  `github-pr-automation.instructions.md`, `subagents/go-engineer.agent.md` (E3). If such a file
+  were migrated before its inputs, a harness re-render would put the budget-less form back.
+  Inputs therefore come first. Stage re-verifies the consumer list and each file's
+  `drift_allowed` value against the manifest at resume; an E3/E4 edge is kept only while at
+  least one of its consumers is not drift-allowed.
+* **No E2 → E5 edge.** The pre-push scripts are rendered from `TEST_COMMAND`, but both carry
+  `drift_allowed: true` with "Do not auto-revert" (their PR #400 hand fixes). A re-render would
+  already undo those fixes, so it cannot silently revert E2. Ordering is therefore not required.
+  When E5 lands, it confirms that the scripts' drift reasons still hold.
+* **Accepted drift window.** Between E5 and each of E3/E4, a deterministic re-render of a
+  not-yet-migrated consumer differs from the installed file. This is accepted and non-blocking;
+  the reverse order would leave a worse window (reversion on re-render).
+* **Unordered pairs.** E1 shares no contract, file, or input with any other ensemble (`ci.yml`
+  and `release.yml` are hand-written and unmanaged). E2 has no required order against E5 (see
+  above). E2, E3, and E4 edit disjoint files. All of these pairs stay **unordered**.
+* **Shared manifest file.** E2, E3, E4, and E5 edit different entries of
+  `.autoharness/harness-manifest.yaml`. P-001 single-active execution serializes them, so this
+  does not need an ordering edge.
+* **Eligibility.**
+  * After 155-S ships, E1, E2, and E5 are eligible, in any order.
+  * After E5 ships, E3 and E4 become eligible, in any order.
+* **No new shipment is a predecessor of `154-S`.** No edge touches `154-S`. The existing edge,
+  in which `154-S` depends on `155-S` (`155-S` blocks `154-S`), is unchanged. No new shipment is
+  in `154-S`'s predecessor set, because every new shipment depends on `155-S` or on E5 and none
+  is depended on by `154-S`. The new shipments get no `queue_position`, so they sort
+  after every positioned shipment and never displace `154-S` (position 100).
+
+**Evaluated and not planned as shipments:**
+
+* **Adaptive/dynamic budget automation:** rejected (19R.2). No shipment.
+* **Package runtime reduction** (`5F1A1873`) and **Windows race calibration** (`5A1C4D3F`):
+  measurement-gated. They stay active stash entries and are promoted only when a 19R.9 trigger
+  fires. When `5A1C4D3F` is promoted, it will carry `make.ps1:50,65`.
+* **Diagnostic logging repair** (`D8EF5443`): an independent correctness defect with no
+  contract overlap. As a DEFERRED SCOPE EXPANSION it needs its own P-021 C6 deliberation before
+  planning. It stays active with no edges.
+* **Template/plugin parity:** rejected for `plugin/**` (19R.4). The upstream-template part
+  stays in `95DF7CE9`, narrowed.
+
+### 19R.11 Deferred-harvest precondition for E1–E5 (PR #449 ID reservation)
+
+* **Collision.** Open, protected PR #449 (branch `stage/baseline-convergence-decomposed`)
+  already introduces shipments `156-S` … `169-S` and `176-S`, feature `175-F`, and tasks
+  `175.001-T` … `175.101-T`. The backlogit allocator assigns max + 1 from the local index
+  (`NextTypedHierarchicalID`) and exposes no explicit-ID option. Any shipment or feature created
+  on this branch now would therefore receive `156-S` / `175-F`, which collide with PR #449.
+* **Disposition.** E1–E5 are fully planned and reviewed here. Their creation is **deferred**:
+  covering features, tasks, shipments, and edges are not created until PR #449 has merged or
+  closed, and the synced index on the harvesting branch shows the maximum shipment ID ≥ `176-S`
+  and the maximum feature ID ≥ `175-F` (or the PR is closed and its IDs are released).
+* **Durable tracking.** Stage records the deferral in three places:
+  * a new active **stash tracker entry** that cites 19R.10/19R.11 and carries D4/D6 closure;
+  * an owner-scoped Stage checkpoint with a resume hint;
+  * a separate stash capture for allocator ID reservation / explicit IDs, the root cause.
+* **Harvest manifest, executed at resume in this order:**
+  1. Create the covering features for E1, E2, E5, E3, and E4.
+  2. Create each ensemble's tasks under its feature, RED contract test first, with
+     intra-ensemble edges: the green maker depends on the RED test; manifest tasks depend on the
+     surface tasks.
+  3. Create one queued shipment per ensemble, with the covering feature as the first item,
+     then add the tasks in dependency order.
+  4. Add the shipment edges from 19R.10.
+  5. Verify each manifest and the edges.
+* **Re-validation at resume.** Stage re-runs the occurrence inventory. If PR #449 changes
+  shipment semantics (for example it adds labels or edges on `155-S`), Stage re-validates the
+  E-edges against the merged graph before creating them. The 19R.10 rule is unchanged: no edge
+  into `154-S`, and no duplicate of work that PR #449 already contains.
+
+### 19R.12 Stash dispositions
+
+* `11BE840F`: consumed by this wave. It is archived (non-destructive `stash archive`) only after
+  174.074-T, 174.075-T, and 174.076-T are harvested and 155-S membership is verified. Its
+  deferred-ensemble residue is carried by the new tracker entry (19R.11), so no plan obligation
+  depends on a checkpoint alone.
+* `95DF7CE9`: stays active, narrowed. The local render-input portion is re-homed to E5; the
+  upstream autoharness template portion remains.
+* `5F1A1873`, `5A1C4D3F`: stay active and are annotated with the 19R.9 triggers. `5A1C4D3F`
+  also owns `make.ps1`.
+* `D8EF5443`: stays active and independent. It needs its own C6 deliberation. It gets no edges.
+* All four are annotated in place under Stage authority. No identifier is removed or rewritten.
+
+### Plan Hardening Signals — Wave 19R
+
+* Governance-policy and Ship-agent text amendment: **yes** (a MINOR policy bump with an
+  amendment row; rollback is a literal revert of five lines plus one bullet).
+* New executable or package: **no**.
+* Cross-cutting CI/release change: **no**. That is deferred to E1.
+* Irreversible data or schema change: **no**.
+* A change to a gate that controls merge readiness (the final full-suite command): **yes**.
+* **Requires plan hardening: yes.**
+
+### Constitution Check — Wave 19R
+
+| Principle / section | Mapping |
+|---|---|
+| I. Safety-First Go | The only Go is test code. There is no `panic`; the self-check uses `require` and the surface checks use `assert` |
+| II. Test-First (NON-NEGOTIABLE) | The RED contract test (174.074-T) lands first, and its single test function is observed assertion-red. The docs green maker (174.075-T) and the manifest reconcile (174.076-T) carry must-fail-before-deliverable exempt commands. The full-suite clause is satisfied by `go test -timeout=30m ./...` over the same test set (D4) and is deferred to the single authorized run, not waived (D1) |
+| III. Workspace Isolation | The test reads repository files only, via `testRepoRoot`. It does not write |
+| IV. CLI Containment (NON-NEGOTIABLE) | Unaffected. No CLI change |
+| V. Structured Observability | The governed run is captured to `logs/diagnostics/`, with run metadata in Ship session memory. The standard non-cached `ok <pkg> <elapsed>s` lines feed the 19R.9 ledger. The plan-local deferral token is named in D1 |
+| VI. Single Responsibility | The policy defines the literal, Ship executes it, and the contract test couples the two. No new package or dependency |
+| VII. Destructive Approval (NON-NEGOTIABLE) | No destructive operation. Stash disposition is archival, not removal |
+| VIII. Safety Modes | Not triggered |
+| IX. Git-Friendly Persistence | Markdown, YAML, and one Go test file |
+| X. Context Efficiency | Three tasks replace an 18-task design. Deferred surfaces are enumerated per ensemble rather than swept |
+| XI. Merge Commit History | Unaffected |
+| Quality Gates | D1 (full suite deferred to the one authorized run), D2 (`go vet ./...`), D3 (scoped lint and format), D4 (constitution wording clarified by E4), D6 (delegated procedure wording migrated by E3) |
+| Task Granularity (NON-NEGOTIABLE) | 174.074-T: 1 file, 4 functions, 1 test function with 3 scenarios (detector self-check, ship-agent subtest, policy subtest). 174.075-T: 2 files, docs. 174.076-T: 1 file, harness metadata. Each is a single domain and well under 2 hours |
+| Stop Conditions | 4 open tasks in this wave. The plan-review budget is fresh for this materially new design, with a maximum of 2 re-entries |
+| Versioning / Governance | workflow-policies 1.30.0 (MINOR: new governed budget rule) with an amendment row. Constitution unchanged in 155-S; its wording is clarified by E4 with a version bump (D4) |
+| P-010 | Stage authored no code, test, workflow, or instruction change |
+
+Constitution Check: documented-deviations
+
+## Plan Hardening — Wave 19R
+
+| # | Risk | Mitigation (bound to a unit and a check) |
+|---|---|---|
+| H1 | 30m is still too small on the final run | 19R.3 evidence gives about 42–57% utilization, and 1.8× headroom even at the pessimistic 1017s. The ≥ 60s / < 60s classification (19R.8) separates a hang from a budget miss. A miss changes the budget only through 19R.9 and never ad hoc at the gate |
+| H2 | The explicit budget masks a real hang | The budget stays finite. The in-binary alarm dumps goroutines at 30m, and cmd/go kills at 31m. The hang rule forbids raising the budget for a ≥ 60s-old stuck test |
+| H3 | A governed surface silently reverts to the budget-less form | The 174.074-T anchored-phrase and whole-file assertions run in every CI run with Go gates and in every later Ship full-suite gate. The Markdown-only CI gap is stated in 19R.1 and closed by E1 task (3) with one non-vacuous prefix selector |
+| H4 | The contract test is vacuous (a missing heading, or a detector that flags nothing) | Non-vacuity checks on each anchor section, plus inline detector self-check `require`s that must flag the bad forms before any surface is scanned |
+| H5 | Bounded-match defect (`-timeout=300m` satisfies the check) | The shared `sectionHasPhrase` helper matches backtick-delimited exact spans, and the self-check asserts that the 300m span is rejected |
+| H6 | Amendment-log history trips the ban, or the ban is dodged | Only rows matching `^\|\s*\d+\.\d+\.\d+\s*\|` are skipped. The self-check proves that an amendment row is skipped and a non-amendment line is flagged. Zero-timeout detection covers both the `=` and space spellings |
+| H7 | Stale manifest checksums are pushed | The 174.076-T must-fail-before-deliverable command checks the LF-normalized checksum, exactly one `checksum` and one `drift_reason` key per entry, and the `073-DL rev22` sentence. The no-push rule covers W1 to W3 (19R.6) |
+| H8 | CRLF checkouts break assertions or checksums | `readGovernedSurface` normalizes CRLF, the self-check compares CRLF and LF results, and the checksum command normalizes CRLF to LF. That method was verified to reproduce both current manifest checksums |
+| H9 | The broader ensembles collide with PR #449 IDs | Creation is deferred behind an index precondition, with a durable stash tracker (19R.11) |
+| H10 | The new shipments disturb the protected `154-S` queue order | No edge into `154-S`, and no `queue_position` on the new shipments (19R.10) |
+| H11 | 174.073-T AC7 stalls the shipment mid-wave | The 19R.5.4 interpretation plus the handoff instruction. An operator continuation is explicitly not a full-suite authorization |
+| H12 | The P-002.6 bullet wording itself reintroduces a banned substring | The wording constraint in 174.075-T bans both the budget-less literal and zero-timeout spellings. The 174.074-T whole-file scan catches any violation |
+| H13 | A Step 5 delegated run (fix-ci, §1.4) falls back to the 10m default | The pinned P-002.6 sentence names both delegations explicitly (D6). E3 migrates their text |
+| H14 | Ship's P-002.4 path check rejects the manifest under `docs-only` | D7 gives the explicit classification in the plan's closed exempt set. If Ship still rejects it, Ship halts fail-closed and returns the task to Stage; there is no in-session relaxation |
+| H15 | Red-phase rule: a passing test function inside a red deliverable | The harness has exactly one test function; the self-check is inline `require`s, not a separate test. The red selector is anchored with `$` |
+| H16 | An exempt command executes remote code (P-002.5) | 174.075-T's doc lint is the allowlisted `go run ./cmd/backlogit docs lint` (identical to `make docs-lint`); no `npx`, install, or download appears in either exempt command. The docline linter excludes `.github/`, so the content probe is the deliverable evidence (19R.5.2) |
+| H17 | A docs edit breaks an existing test that reads the same surface | 174.075-T and 174.076-T each declare a regression selector over the existing readers of their files, checked by exact PASS count |
+
+<!-- plan-review-attempt: 19R-1 -->
+
+## Plan Review — Wave 19R attempt 1 (rev22) (2026-09-24)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Correctness Reviewer, Go Reviewer, Scope Boundary Auditor, Constitution Reviewer, Architecture Strategist, Schema-CLI-Docs Coupling Reviewer
+decision: FAIL
+```
+
+Wave 19R starts a **fresh** review budget, because it is a materially new design after
+operator option (c). Earlier Wave 19 attempts 1–4 reviewed the rejected O11 design and do not
+count here.
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Correctness | FAIL | C-P1a "mixed-red" detector test; C-P1b 174.074-T diff gate unsatisfiable for a red deliverable |
+| Go | FAIL | G-P1 "reversion cannot land silently" is false (CI skips Go gates for Markdown-only PRs) |
+| Scope Boundary | FAIL | S-P1 Step 5 delegated full-suite runs (fix-ci, github-pr-automation §1.4) not covered |
+| Constitution | FAIL | K-P1a docs-only command lacks the doc lint gate; K-P1b mixed-red violates P-004 (same as C-P1a) |
+| Architecture | ADVISORY | none (E5 ordering P2, detector shape P2) |
+| Schema-CLI-Docs Coupling | ADVISORY | none (CI Markdown gap P2, class P2, doc lint P2, E3 prohibition-line P2) |
+
+**Disposition (all resolved in rev22.1, in place above):**
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| C-P1a / K-P1b | P1 | The always-green detector test function sits inside the red selector, which P-004 forbids | The harness now has one test function. The self-check is inline `require`s. The selector is anchored `^TestGovernedFullSuiteBudget_ShipFinalGate$`, and the 174.075-T command counts exactly 1 PASS (19R.5.1, 19R.5.2, H15) |
+| C-P1b | P1 | 174.074-T diff gate is unsatisfiable | Replaced with (a) the scaffolding-commit file set and (b) an empty task delta per the red-deliverable rule (19R.5.1) |
+| G-P1 | P1 | False CI claim | 19R.1 and H3 reworded. E1 gains task (3), a docs-lint-job selector that closes the Markdown-only gap |
+| S-P1 | P1 | Delegated Step 5 runs | Pinned P-002.6 sentence widened to name fix-ci and the github-pr-automation fix loop; D6 added; 19R.4 sufficiency updated; E3 closes D6 |
+| K-P1a | P1 | Missing doc lint in the docs-only command | `markdownlint-cli2@0.23.1` on both files appended before the marker (19R.5.2) |
+| G-P2 | P2 | Optimistic headroom | 19R.3 now states 760–1017s (42–57%, 1.8–2.4×). The 19R.9 trigger was recalibrated to 1200s (headroom < 1.5×) |
+| G-P2 | P2 | Cached results | Ledger uses non-cached lines only, with no evidence re-run (19R.8/19R.9) |
+| K/C/X-P2 | P2 | 174.076-T `docs-only` class | D7 gives the explicit classification with rejected alternatives, and a fail-closed fallback (H14) |
+| S-P2-1 | P2 | 076 command does not check the drift sentence | Command now requires `073-DL rev22` in the single `drift_reason` |
+| S-P2-2 / X-P3 | P2/P3 | Occurrence inventory not proven | A complete git-grep inventory is recorded, with a claim-time re-run precondition (19R.4) |
+| K-P2 | P2 | Blocks lack delimiters | BEGIN/END delimiters included in all three blocks |
+| K-P2 | P2 | D4 precedence reversed | D4 reframed as a wording clarification that satisfies Principle II, citing the Conflict resolution clause, closed by E4 |
+| K-P2 | P2 | D4 closure tracked only by a checkpoint | A new stash tracker entry carries E1–E5 plus the D4/D6 closure (19R.11/19R.12) |
+| K-P2 | P2 | `FULL_SUITE_OPERATOR_DEFERRED` is not a policy token | D1 declares it plan-local, alongside the standard `FULL_SUITE_DEFERRED` for W1 |
+| K-P2 | P2 | D2 vs per-task vet mismatch | D2 now states both levels |
+| C-P2 | P2 | PR #449 overlap | Verified read-only: PR #449 touches neither target file (19R.4) |
+| A-F1 | P2 | E5 ordering backwards; copilot-code-review consumer | E5 → 155-S; E3/E4 → E5. E5 includes the `copilot-code-review.instructions.md` re-alignment and its checksum |
+| A-F2 / X-4 | P2 | E-test detector reuse | Per-ensemble shape-specific detectors, section-scoped scanning, and a prohibition allowlist (19R.10) |
+| C/K/G-P3 | P3 | Zero-timeout wording trap; `-timeout 0` spelling | Wording ban extended; detector matches `-timeout[= ]0` |
+| C-P3 | P3 | Member count 34 → 35 | Fixed (19R.6) |
+| C-P3 | P3 | Push rule stated two ways | Unified as W1–W3 |
+| G/C-P3 | P3 | 300m row tested stdlib only | Shared `sectionHasPhrase` helper, rejected by the self-check |
+| G-P3 | P3 | Fenced-code heading fragility | `governedSection` ignores fenced code |
+| A-F3 | P3 | Value restated everywhere | `governedFullSuiteBudget` constant; E-tests reference it |
+| A-F5 | P3 | Makefile `-race` on Windows | Stated as a POSIX `make` path; `make.ps1` stays measurement-gated |
+| A-F6 | P3 | Allocator root cause | A separate stash capture (19R.11) |
+| A-F7 | P3 | `ci.yml` manifest status | Resume-time confirmation step in E1 |
+| S-P3-3 | P3 | Sidecar is new process | Run metadata goes to Ship session memory |
+| K-P3 | P3 | Granularity count | 1 test function with 3 scenarios, stated honestly |
+| K-P3 | P3 | Test written for an exempt task | 174.074-T is declared a permanent coupling guard |
+| S-P3-1 | P3 | E5 edge rationale | Replaced by the render-input source rationale |
+| S-P3-2 | P3 | Separate E-test files | Rationale stated in 19R.10 |
+| A-F4 | P3 | 075/076 split creates a no-push state | Accepted (single-domain rule), with the W1–W3 no-push rule |
+
+<!-- plan-review-attempt: 19R-2 -->
+
+## Plan Review — Wave 19R attempt 2 (rev22.1) (2026-09-24)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Correctness Reviewer, Go Reviewer, Scope Boundary Auditor, Constitution Reviewer, Architecture Strategist, Schema-CLI-Docs Coupling Reviewer
+decision: FAIL
+```
+
+This is re-entry 1 of a maximum of 2. Every attempt-1 blocker was confirmed resolved by the
+reviewer that raised it.
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Correctness | FAIL | C2-P1: the 174.075-T exempt command ran `npx --yes markdownlint-cli2`, which downloads and runs a remote package. P-002.5 rejects that outright (`EXEMPT_COMMAND_DESTRUCTIVE`), which would halt the only green maker |
+| Go | ADVISORY | none |
+| Scope Boundary | ADVISORY | none |
+| Constitution | ADVISORY | none |
+| Architecture | ADVISORY | none |
+| Schema-CLI-Docs Coupling | ADVISORY | none |
+
+**Disposition (all resolved in rev22.2, in place above):**
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| C2-P1 | P1 | `npx` in the exempt command violates P-002.5 | Doc lint is now `go run ./cmd/backlogit docs lint --no-update-check`. P-002.5 names it as a read-only example, and it is the same command as `make docs-lint` and the CI docline gate. Markdownlint stays in the unconditional CI `md-lint` job. H16 added |
+| C2-P2a | P2 | `require` stops at the first missing phrase, so the stated red evidence cannot be observed | Surface checks use `assert`, which the package already uses |
+| C2-P2b | P2 | No regression coverage for existing tests that read the edited surfaces | 174.075-T regression selector (2 named tests) and 174.076-T regression selector (1 named test). No test pins `1.29.0` or the budget-less literal. H17 added |
+| C2-P2c / S2-P2-2 / A2-P2-4 | P2 | E1 "E-test selectors" were vacuous or forced later ensembles to edit `ci.yml` | One non-vacuous prefix selector, plus a naming rule `TestGovernedFullSuiteBudget_<Surface>`. E1 also updates any `ci_compliance_test.go` wiring |
+| C2-P2d / S2-P2-1 / A2-P2-3 | P2 | 19R.4 row contradicted E5 | The row is split: `copilot-code-review` goes to E5, and `doc-review` stays unchanged |
+| G2-P2 | P2 | `unused` risk on the constants | Required phrases are built from `governedFullSuiteCommand` |
+| K2-P2-1 | P2 | D7 domain label mismatch; stall risk | 19R.5.3 and E-table labels now read "harness metadata (`docs-only` per D7)". A D7 stall bound was added |
+| K2-P2-2 | P2 | Unnamed P-002.3 doc-lint gap for YAML | D7 names it, with a rejected alternative |
+| K2-P2-3 | P2 | `harness-exempt` label not stated | Labels are stated on all three tasks |
+| A2-P2-1 | P2 | Missing E2 → E5 edge (the pre-push scripts render from `TEST_COMMAND`) | Edge added, the consumer list is completed, and a `variables_used` re-check happens at resume |
+| A2-P2-2 | P2 | Drift window between E5 and its consumers | Recorded as accepted and non-blocking |
+| X2-P2-1 | P2 | The pinned sentence "in this registry" overclaimed P-019 | The sentence is now scoped to "in P-002.6, in P-004, and in Ship Steps 4.6 and 5" |
+| X2-P2-2 | P2 | `.github/copilot-review-instructions.md` was missing from the inventory | Added to E4. The resume-time inventory also covers `.claude-plugin/`, `.copilot/`, and `plugin.json` |
+| X2-P2-3 | P2 | The allowlist locked the budget-less literal into prohibitions | E3 task (4) rewords the prohibitions to forbid any repo-wide form |
+| G2/C2/X2-P3 | P3 | "always-on" docs-lint wording | Reworded to "steps run for `.github/**/*.md` changes (gated on `docline_required`)" |
+| G2-P3 | P3 | `governedSection` has no self-check; fence matching is loose; duplicate normalizer | Self-check rows added; fence-close rule stated; `normalizeDocWhitespace` is reused |
+| G2-P3 | P3 | Stale 2.3× figure; `0h30m` false positive | Figure is now 1.8–2.4×. The false positive is listed under accepted limits |
+| C2-P3 | P3 | Scope gate "adds" wording | Changed to the scaffolding commit's name-only set, noting that 174.073-T files may be modifications |
+| K2-P3 | P3 | Self-check failure is red for the wrong reason | harness-architect confirms that both surface subtests failed |
+| K2-P3 | P3 | Node prerequisite | Moot: `npx` was removed |
+| A2-P3-1 | P3 | F7 could be closed now | Closed: `ci.yml` is not a managed artifact |
+| A2-P3-2 | P3 | Shared constants file coupling | Constants and helpers are frozen after 155-S |
+| S2-P3 | P3 | Label E1 task (3) | It is labelled as closing the H3 gap. The allocator capture stays capture-only |
+
+## Plan Review — Wave 19R attempt 3 (rev22.2) (2026-09-24)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Correctness Reviewer, Go Reviewer, Scope Boundary Auditor, Constitution Reviewer, Architecture Strategist, Schema-CLI-Docs Coupling Reviewer
+decision: ADVISORY
+operator_authorization: approved
+```
+
+This is re-entry 2 of a maximum of 2. No P0 or P1 finding remains. The attempt-2 blocker C2-P1
+(P-002.5 remote code) was confirmed resolved by the reviewer that raised it.
+
+**Operator authorization basis.** The operator's standing instruction for this session reads:
+"Run plan hardening and plan review on the new design … Resolve in-scope findings. If a
+blocking finding remains, halt without harvest." The only halt condition the operator defined
+is a remaining blocking finding, and none remains. Every advisory finding below is in scope and
+resolved in place (rev22.3). Stage therefore records `operator_authorization: approved` under
+that instruction, and reports it explicitly in the session summary. No further review attempt
+is available or needed.
+
+| Reviewer | Verdict | Blocking findings |
+|---|---|---|
+| Correctness | ADVISORY | none |
+| Go | PASS | none |
+| Scope Boundary | ADVISORY | none |
+| Constitution | ADVISORY | none |
+| Architecture | ADVISORY | none |
+| Schema-CLI-Docs Coupling | ADVISORY | none |
+
+**Advisory disposition (resolved in rev22.3, in place above):**
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| C3-P2 / X3-P2-1 | P2 | The docline linter excludes `.github/`, so the doc lint does not inspect the edited files | 19R.5.2 now says so plainly. The content probe is the deliverable evidence. Markdownlint coverage comes from CI `md-lint`. A finding outside the edited files goes back to Stage. H16 updated |
+| S3-P2 | P2 | The E2 → E5 edge is not required (both pre-push scripts are `drift_allowed: true`, "Do not auto-revert") | Edge dropped, so E2 → 155-S. The E3/E4 → E5 edges are kept only for consumers that are not drift-allowed (verified in the manifest: constitution, go.instructions, github-pr-automation, go-engineer). This supersedes the attempt-2 A2-P2-1 resolution |
+| X3-P2-2 | P2 | E3's prohibition rewording could ban the `-run=^$` compile-only check | Rewording now forbids repo-wide **test-running** forms only; `-run=^$` stays allowed |
+| G3-P3 / X3-P3 / K3-P3 | P3 | `--no-update-check` is a no-op; "same command" was inaccurate | Flag dropped. The command is now byte-identical to `make docs-lint`. This supersedes the attempt-2 C2-P1 text |
+| G3-P3 / K3-P3 | P3 | Whole-tree lint can fail for unrelated files | Gate note routes such findings to Stage |
+| G3-P3 | P3 | Constitution Check row I still said `require` | Now reads `require` for the self-check and `assert` for the surface checks |
+| C3-P3 / S3-P3 / A3-P3-1 | P3 | 19R.4 E5 row omitted E2 | Row now explains E2's `drift_allowed` status |
+| C3-P3 | P3 | 19R.1: no existing docs-lint step inspects `.github/` | Noted |
+| S3-P3 | P3 | Rule for descriptive versus reviewer-normative files; E4 task at the three-file limit | Rule stated. E4 task (4) split, so `copilot-review-instructions.md` is its own task (5) |
+| A3-P3-2 | P3 | Freeze rule clashed with 19R.9 | Exception added for a 19R.9 value change |
+| A3-P3-3 | P3 | `154-S` edge direction was ambiguous | Now states that `154-S` depends on `155-S` and that no new shipment is in 154-S's predecessor set |
+| A3-P3-4 | P3 | Harvest step 2 did not require the RED test first | RED contract test first |
+| K3-P3 | P3 | Domain wording varied | Unified as "harness metadata (`docs-only` class per D7)" |
+| K3-P3 | P3 | `.backlogit/**` in the docs-only diff | Treated as Ship bookkeeping; committed separately if Ship's path pass counts it |
+| K3-P3 | P3 | Cold-cache module fetch | Advisory only. Modules are pinned in `go.sum` |
+
+**Gate evaluation (final section):** `dispatch_mode: multi-agent-dispatch`, `decision: ADVISORY`,
+`operator_authorization: approved`. The plan-review gate is satisfied, and harvest may proceed.
+
+## Harvest Record — Wave 19R (2026-09-24)
+
+* **Gate:** the final `## Plan Review` section is `Wave 19R attempt 3`. It records
+  `dispatch_mode: multi-agent-dispatch`, `decision: ADVISORY`, and
+  `operator_authorization: approved`, which satisfies the plan-review gate.
+* **P-003 chain:**
+  * source: deliberation `073-DL` (O12), which records the disposition of stash `11BE840F`;
+  * plan: this section;
+  * top-level unit: feature `174-F`;
+  * tasks: each task carries at least one acceptance criterion and a verbatim contract block.
+
+| Task | Title | Domain / class | Depends on | Wave |
+|---|---|---|---|---|
+| `174.074-T` | Add governed full-suite budget contract test (RED deliverable) | tests; red deliverable (`harness-ready` applied by harness-architect after RED is confirmed) | none | W1 |
+| `174.075-T` | Pin explicit 30m full-suite budget in Ship and P-002.6 | docs; `docs-only`, `harness-exempt`; green maker | `174.074-T` | W2 |
+| `174.076-T` | Reconcile harness-manifest checksums for budget surfaces | harness metadata; `docs-only` (D7), `harness-exempt` | `174.075-T` | W3 |
+| `174.073-T` | (unchanged, Wave 18) | tests | none | W1 |
+
+* **Shipment `155-S`:** 39 items, verified by read-back:
+  * `174-F`;
+  * then the 35 existing tasks, ending with `174.073-T`;
+  * then `174.074-T`, `174.075-T`, `174.076-T`.
+
+  Status: `active`. `154-S` is untouched.
+* **Stash:**
+  * `11BE840F` is archived after the membership check.
+  * `D8EF5443`, `5F1A1873`, `5A1C4D3F`, and `95DF7CE9` are annotated and stay active.
+  * New entries: `CB8887AF` (E1–E5 deferred-harvest tracker, which carries the D4/D6
+    closure) and `7CE12EE6` (allocator ID reservation).
+* **E1–E5:** planned and reviewed (19R.10), but not created yet (19R.11). They wait until PR
+  #449 merges or closes.
+
+## Amendment — Wave 19R rev22.4: 174.076-T reclassified after the D7 fail-closed return (2026-09-25)
+
+* **Trigger (H14 / D7 stall bound).**
+  * At W3, Ship's P-002.4 path pass rejected `.autoharness/harness-manifest.yaml` under
+    `docs-only` with `EXEMPT_DELTA_EXCEEDS_CLASS`
+    (`logs/diagnostics/174076-p0024-delta-report.json`).
+  * The exact pre-work probe had failed (exit 1), and the post-deliverable probe and the
+    regression selector had both passed. Only the class surface was wrong.
+  * Per 174.076-T AC6, Ship halted with W1/W2 local and unpushed, and returned the task to Stage.
+* **D8 — 174.076-T is a normal harness-required task (supersedes D7 for this task).**
+  * P-002.4 admits no YAML configuration file under any exempt class. It already names the
+    compliant route for one: a non-exempt task with its own red harness.
+  * The task therefore drops `harness-exempt`/`docs-only`, and its exemption contract block is
+    removed.
+  * In W3, harness-architect scaffolds one Go harness,
+    `TestHarnessManifestBudgetReconciliation`, in
+    `tests/integration/harness_manifest_budget_reconciliation_test.go`.
+  * The harness asserts that both manifest entries:
+    * parse without duplicate keys;
+    * keep `drift_allowed: true`;
+    * carry the `073-DL rev22` sentence exactly once;
+    * carry a 64-hex checksum rotated away from the pre-reconciliation value.
+  * It is assertion-red against the HEAD manifest and green on the deliverable. Stage verified
+    both states read-only.
+  * No policy text changes and no waiver is taken.
+* **D7's over-coupling objection is met rather than overridden.** The harness does not
+  recompute checksum currency from the target files. Future edits of `_ship.agent.md` or
+  `workflow-policies.md` therefore cannot fail CI through this test, and neither can the
+  operator-owned working-tree tools line. Exact currency remains a task-gate probe: the former
+  exempt command, with its marker renamed `CHECKSUM_PROBE_OK:174.076-T`.
+* **Closed exempt set (19R.6), amended:** {`174.075-T` docs-only}. `174.076-T` leaves the set.
+* **Sequencing.** The validated deliverable is uncommitted in the working tree. Ship must:
+  1. set it aside with a hash-verified backup under the ignored `logs/diagnostics/`;
+  2. restore the HEAD manifest, confirm red, commit the harness alone, and apply
+     `harness-ready`;
+  3. restore the backup byte-exactly, run the green gates, and commit the manifest alone.
+
+  The restore-over-uncommitted step is subject to P-002.5 / Principle VII screening. The full
+  contract is in 174.076-T AC1–AC9 and its implementation notes.
+* **Unchanged:**
+  * dependencies (`174.076-T` blocks on `174.075-T`);
+  * 155-S membership (39 items);
+  * W3 as the final wave and the push-after-W3 rule;
+  * the D1 full-suite deferral;
+  * the single 19R.8 governed-run authorization request after push.
+* **Rejected:**
+  * amending P-002.4 to admit harness-metadata YAML into `docs-only`: a contract change needing
+    operator authority and its own deliberated, harnessed work, and unnecessary given D8;
+  * `covered-by`: needs a new owner harness anyway, plus a contestable production-file
+    reading of YAML;
+  * dropping or deferring the task: contradicts finishing W1–W3;
+  * an operator P-002.4 waiver: operator-only, and not required.
+* **Review disposition.** This is the pre-authorized D7 stall-bound path ("Stage amends
+  174.076-T, for example to a non-exempt task"). The final `## Plan Review` gate (Wave 19R
+  attempt 3: `multi-agent-dispatch`, `ADVISORY`, `operator_authorization: approved`) is
+  unchanged, and no new review attempt is recorded.
+
+## Amendment — Wave 19R rev22.5: P-002.6 unit-prefix selector for 174.076-T (2026-09-25)
+
+* **Trigger.** Ship halted before implementation on a rev22.4 contract defect. The AC3
+  selector `^TestHarnessManifestBudgetReconciliation$` is not anchored to a task unit prefix, so
+  it violates P-002.6 task-scoped command requirement 4 (`-run '^TestU<unit>_'`), which Ship's
+  Step 4.2 `harness_cmd` rule enforces. The harness itself was sound: harness commit `edb8d88b`
+  was assertion-RED on (c)/(d) in both subtests.
+* **D9 — unit token `U19R3`.** 174.076-T is Wave 19R work unit 3 of 3, so its unit prefix is
+  `TestU19R3_`.
+  * The harness function is renamed `TestU19R3_ManifestBudgetReconciliation`, with no assertion
+    change.
+  * No other function in the repository carries the `TestU19R` prefix.
+  * The task-scoped `harness_cmd` is
+    `go test -count=1 -timeout=5m -v -run '^TestU19R3_' ./tests/integration`.
+  * It passes only on exactly one top-level `--- PASS: TestU19R3_ManifestBudgetReconciliation`
+    line. Exit 0 with `[no tests to run]`, `no test files`, or zero PASS lines is a failure.
+* **Regression declared canonically.** The `npx ` regression selector is now declared in a
+  P-002.6 `green-regression-contract` block rather than in prose:
+  `go test -count=1 -timeout=5m -v -run '^TestActivePluginDocsDoNotReferenceRetiredNPMWrapper$' ./tests/integration`.
+* **Checksum probe.** It stays an acceptance-evidence probe. It is neither `harness_cmd` nor a
+  `green_regression_cmds` entry, because it is a read-only PowerShell content check and not a
+  scoped Go test command.
+* **Procedure** (full detail in 174.076-T):
+  1. 174.076-T returns to `queued`, keeping `harness-ready`.
+  2. harness-architect makes a test-only rename commit.
+  3. RED is re-verified against the HEAD manifest, with the deliverable set aside under the
+     approved hash-verified backup.
+  4. Ship re-claims the task, capturing a new claim baseline equal to the rename commit.
+  5. The backup is restored, and the green gates and manifest-only commit follow.
+* **Unchanged:**
+  * dependencies and 155-S membership;
+  * D8 (non-exempt classification);
+  * the push-after-W3 rule;
+  * the D1 deferral;
+  * the single 19R.8 authorization request.
+* **Review disposition.** This is a mechanical selector and naming correction inside the D7
+  stall-bound path. The final `## Plan Review` gate is unchanged, and no new review attempt is
+  recorded.
+
+## Wave 20 — Corrective: 155-S final-review remediation (rev23.5) (2026-09-25)
+
+Revision history:
+
+* **rev23** was reviewed in attempt 1 and FAILED.
+* **rev23.1** resolved every attempt-1 P1 and P2 finding in place. It was reviewed in attempt 2 and FAILED.
+* **rev23.2** resolved every attempt-2 P1 and P2 finding in place. It was reviewed in attempt 3: **ADVISORY**
+  (P0 0, P1 0, P2 1).
+* **rev23.3** resolved the single attempt-3 P2 (U20C6 untested branches) in place and adopted the attempt-3 P3
+  clarifications; see the attempt-3 record below.
+* **rev23.4** recorded the operator decision of 2026-09-26: Ship's uncommitted draft tests are **folded** into the
+  U20C1 and U20C2 harnesses (W0, 20.5), replacing the backup-and-restore precondition. The operator granted one
+  extra review round, attempt 4, over rev23.3 plus rev23.4. It returned **ADVISORY** (P0 0, P1 0, P2 3 distinct).
+* **rev23.5** is this text. It resolves the attempt-4 P2s and the cheap P3s in place; see the attempt-4 record
+  below. rev23.5 was not re-reviewed. On 2026-09-26T04:05Z the operator (softwaresalt) **approved** the attempt-4
+  ADVISORY verdict for the rev23.5 text. Stage then harvested 174.077-T..174.082-T into 155-S; see the Wave 20
+  Harvest Record below.
+
+### 20.1 Trigger and provenance
+
+* **Trigger.** Waves W1–W3 are complete: 174.073-T through 174.076-T are done. The operator-authorized governed suite
+  `go test -timeout=30m ./...` then PASSED at `3a240fe091422e96d22b75b9af0854f66b60340f`. After that, the pre-PR
+  standard review returned **NOT READY** with P0 0, P1 0, and P2 3.
+* **Adversarial findings.** Ship validated the adversarial candidates and confirmed three of them as in scope.
+* **Why they must be fixed.** All six findings are on the blocked-lifecycle contract surface that 174-F owns, so under
+  P-021 C1/C3 they are fixed, not deferred.
+* **Consequence work.** Two further pieces are consequences of these fixes, not new findings:
+  * U20C1 Fix B completes STD-P2-01 at the lower write boundary.
+  * U20C6 is required by the ADV-B fix: once the warm path stops auto-recovering, the target guard must cover every
+    pending journal that references the target aggregate.
+
+  The mapping is therefore six findings → five finding tasks plus one consequence task.
+* **Why Ship stopped.** No queued harness-ready task covered the source fixes, so Ship halted at its Role Boundary.
+* **Evidence.** The evidence is Ship-owned and was uncommitted at `3a240fe0`; each finding is restated below, so this
+  section is self-contained:
+  * `docs/closure/2026-09-25-155-S-final-review.md`
+  * `docs/memory/2026-09-25/ship-155s-final-review-halt.md`
+  * `docs/memory/2026-09-25/ship-155s-remediation-stage-handoff.md`
+* **Findings** (line numbers at `3a240fe0`):
+
+| ID | Location | Defect |
+|---|---|---|
+| STD-P2-01 | `internal/core/artifacts.go:640-641` (`updateArtifactUngated`) | A generic update replaces `custom_fields` wholesale; only the reserved sizing keys survive. So it can replace or remove the blocked envelope while the shipment stays `blocked`. That covers `blocked_reason`, `blocked_at`, `member_status_snapshot`, and the optional `branch`, `blocked_by`, and `resume_checkpoint_ref`. The result is a malformed blocked shipment that the governed paths then refuse |
+| STD-P2-02 | `internal/core/shipment.go:714-720, 775-815` (`UnblockShipment`) | The unblock event delta leaves out the validated prior `reason`. The persist that deletes `blocked_reason`/`blocked_at`/`blocked_by` runs before the correlated `shipment_status_changed` event is appended. SBLK-R8 names that event explicitly: "a durable `shipment_status_changed` event (actor + reason + prior `resume_checkpoint_ref`) is emitted on the unblock edge BEFORE frontmatter is cleared" |
+| STD-P2-03 | `internal/core/shipment.go:476-490` (block), `:745-760` (unblock); recovery skip `:2600-2602` | Compensation writes the journal as `Phase = "compensated"` before it appends the terminal `compensated` event, and it never appends compensated status evidence. A failure or crash between the two steps leaves a terminal journal with incomplete evidence. Recovery skips it, because recovery reconciles only journals still in `intent` |
+| ADV-A | `internal/core/shipment.go:562` (block), `:825` (unblock) | The committed evidence (applied status plus terminal `committed`) is appended before the journal records `committed`. If the journal write then fails, `compensate` runs and appends a terminal `compensated` event. The log now holds both a `committed` and a `compensated` terminal, which `inspectShipmentLifecycleRecoveryEvidence` rejects as a conflict |
+| ADV-B | `internal/mcp/tools.go:2082` (`handleNormalizeBlockedShipment`) | The target-guarded normalizer is used only when workspace initialization fails. A warm server calls `core.NormalizeBlockedShipment`, which runs ordinary auto-recovery. An unrelated poison journal that appears later therefore blocks the very remediation tool meant to handle it |
+| ADV-C | `internal/mcp/tools.go:469` | The `backlogit_normalize_blocked_shipment` schema leaves `by` optional, but core rejects an empty or whitespace actor |
+
+### 20.2 Decision record (embedded; Wave 14 precedent, no separate DL)
+
+* **DR1 — STD-P2-03 and ADV-A are two units (U20C3 and U20C5), serialized.**
+  * *Why they are related.* They share one invariant and one oracle. A journal may record a terminal phase only after
+    that phase's evidence is durable. An operation must never compensate once its committed evidence is **known**
+    durable, meaning every committed-evidence append returned nil. The oracle is the unchanged recovery inspector:
+    the last applied status phase must equal the terminal phase, and `committed` and `compensated` terminals must
+    never both appear.
+  * *Invariant boundary (attempt-2 finding).* Tagged `ErrWriteIndeterminate` causes are already safe: `compensate`
+    returns early on `IsWriteIndeterminate` without restoring or appending anything (`shipment.go:455-457`, and
+    the same in unblock). The residual case is outside this invariant and outside Wave 20: an **untagged**
+    committed-terminal append failure that may follow partial bytes. That happens with durable writes off, where
+    `events.appendFast` returns an unclassified `Fprintf` error. It is captured as stash `FA6AE139` under P-021
+    C1/C2, because:
+    * it can only be reached through a new cross-package seam in `internal/events` (`appendFast` has no seam, and
+      `fsyncDirImpl` is unexported, per-instance, and durable-only);
+    * its fix is an event-writer classification decision.
+
+    So no test-first RED can be written inside Wave 20. The item is pre-dispositioned for the final-gate review brief
+    (20.5).
+  * *Compensation after a write that failed but may have landed (attempt-2 finding).* The compound rule "MUST NOT
+    roll back an indeterminate write" (`docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`)
+    is preserved: an indeterminate cause still skips compensation through the early return above. U20C3 only widens
+    compensation to not-applied or unclassified failures of the governed shipment write. An **unclassified** failure
+    may have landed. A not-applied failure is, by the writer contract, not landed, so restoring the unchanged preimage
+    is a no-op; whether any writer mislabels a landed relocation as not-applied is captured as stash `7D8717B1`
+    (attempt-3 finding). It does so under a durable `intent` journal with a `rollback`
+    policy, by restoring a fresh atomic copy of the locked preimage, and recovery re-drives the same restore if the
+    process dies.
+
+    When compensation fully succeeds, the returned error keeps its existing form, `<op> shipment <id>: %w` over the
+    original cause.
+  * *Why they are separate units.* They sit in different code regions: the compensate closures, and the commit tails.
+    Merging them would give 6 op-parameterized cases, over the fewer-than-4-scenario limit (attempt-1 finding).
+  * *ADV-A fix.* It is a classification change. The commit-journal failure is surfaced as
+    `blerrors.ErrWriteIndeterminate`; no new mechanism is added. Compound precedent:
+    `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`.
+* **DR2 — STD-P2-01: preserve at the generic update merge AND refuse at the write boundary.**
+  * *Generic update merge.* In `updateArtifactUngated`, when the preimage status is `blocked`, the prior values of
+    the blocked-envelope keys are carried forward and incoming values for those keys are ignored.
+    * The preimage status and the prior values come from the authoritative Markdown preimage, loaded after the
+      global and artifact locks are held. This is the `previousStatus` path that already exists.
+    * This is the reserved-sizing-key precedent (108-F). Callers that round-trip `custom_fields` keep working.
+  * *Write boundary.* In `writeArtifactFileGoverned`, the single lower rewrite boundary, an ungoverned write is
+    refused with `blerrors.ErrShipmentBlockedRequiresEnvelope` when all of these hold:
+    * the previous record is a blocked shipment. The previous record is the Markdown file parsed at the boundary
+      (`parseFile(currentPath)`), never a DB projection;
+    * the next record is still `blocked`;
+    * `!envelope.allowGovernedShipmentMutation`;
+    * any envelope key differs in presence or in canonical value. `blocked_at` is compared through
+      `canonicalBlockedTimestamp`, because YAML `time.Time` and RFC 3339 strings encode differently. The other keys
+      are compared by canonical JSON.
+
+    This is where the membership seal and the protected-transition rule already live, and it closes the envelope
+    bypass for ungoverned rewrites of the artifact's **current file**, through exported `WriteArtifactFile*` and
+    `persistArtifact`. A path-choice bypass is out of scope; see the *Limit* bullet below (attempt-4 finding).
+    * *Check order.* The new check runs **after** `guardBlockedShipmentMembershipMutation`, so an `items` change is
+      still refused first with `ErrShipmentConflict`, the precedence `TestP1C4_` asserts.
+    * *The exemption cannot be forged.* `allowGovernedShipmentMutation` travels only in the unexported
+      `artifactWriteEnvelopeContextKey{}` context value, which only in-package governed callers set. No public
+      option or update key reaches it.
+  * *Rejected: refusing at the merge.* That breaks round-trip callers and diverges from the precedent.
+  * *Rejected: protecting at the merge only.* That leaves the lower-boundary bypass open.
+  * *Unchanged.* `items` stays sealed. A round trip that drops `items` is still refused with `ErrShipmentConflict`.
+    U20C1 must not add preservation for `items`. Task-level `blocked_reason` behavior is unchanged, because the rule
+    applies only to `artifact_type: shipment`.
+  * *Blocked means still blocked.* A generic update cannot move a shipment out of `blocked`:
+    `isProtectedShipmentStatusTransition` refuses that first (artifacts.go:566). So "the preimage is blocked" in Fix A
+    implies the next status is blocked too, and `clearStaleBlockedReason` never runs on a blocked shipment.
+  * *Hook channel, stated.* Fix A runs after `FirePre`, so pre-update hooks see the request as it was submitted,
+    which is what a veto hook should see. Post hooks and the audit see the cleaned values. Whether pre-hooks should
+    see the cleaned values instead is captured as stash `8AF55264`.
+  * *Entry points,* audited at `3a240fe0`:
+    * `UpdateArtifact`/`UpdateArtifactWithGate` go through `updateArtifactUngated`, which loads through
+      `findArtifact` under the artifact lock. This covers MCP `update_item`/`move_item` and the CLI `update` field
+      flags. None of these exposes `custom_fields`, so the wholesale replace is reachable only through the core API.
+    * The size and complexity seams do **not** go through the boundary: `sizeSeamAtomicWrite` writes raw bytes.
+      They change only reserved sizing keys, so they carry no envelope risk.
+    * Link, dependency, and queue-move re-persists write the whole loaded record back, so the envelope is
+      unchanged. `AddDependency`/`RemoveDependency` (`dependencies.go`) and `AddArtifactLink` (`artifacts.go`) load
+      that record through `findArtifact`, the Markdown loader. If one of them ever loaded a stale envelope, Fix B
+      would refuse it, which fails closed.
+    * *Governed context scope, stated (attempt-3 finding).* The governed envelope context is built per call by the
+      lifecycle operation and passed only to its own `persistArtifact` calls. It is never handed to hooks or to a
+      nested generic update, so the exemption cannot leak.
+    * The status choke points `setArtifactStatus`, `cascadePersistedParentStatuses` (`shipment_lifecycle.go`), and
+      `BulkUpdateStatus` (`queue.go`) write through `persistArtifact`, so they reach `writeArtifactFileGoverned`. A
+      blocked→blocked envelope change by any of them fails closed under Fix B (attempt-4 finding).
+    * `BlockShipment`, `UnblockShipment`, normalize, compensation, and recovery are governed, and exempt by
+      construction.
+    * The test audit covered `internal/**/*_test.go` files that write `blocked_reason`/`member_status_snapshot`
+      through `persistArtifact`, `WriteArtifactFile*`, or `UpdateArtifact`: `shipment_blocked_writer_harness_test.go`,
+      `shipment_p021_remediation_test.go`, `shipment_p1_lifecycle_remediation_test.go`, and
+      `shipment_state_integrity_test.go`. Every blocked-envelope tamper there goes through `forceURArtifactFixture`
+      (`os.WriteFile`, outside the boundary), is an expected refusal (`TestP1C4_`), or targets a non-blocked record.
+      `TestP1C7_` (2) exercises envelope provenance and is added to U20C1's regressions.
+    * *Limit, stated.* Flipping `artifact_type` across several ungoverned writes can get around both the membership
+      seal and Fix B. So can an in-process caller that passes `WriteArtifactFileWithOptions` a path other than the
+      shipment's current file: `parseFile` then returns not-exist, and every preimage check is skipped (attempt-4
+      finding). Both need programmatic misuse, and both are captured as stash `8AF55264`.
+* **DR3 — STD-P2-02: status evidence before the envelope clear.**
+  * Add `reason`, the validated prior `envelope.reason`, to the unblock `eventDelta`. The existing key-presence
+    semantics of `unblocked_by`/`resume_checkpoint_ref` are kept.
+  * Append the correlated `shipment_status_changed` event (phase `applied`, target and status = the unblock target)
+    **before** the persist that clears the envelope.
+  * *Rejected alternative:* putting `reason` in `eventDelta` only and relying on the intent lifecycle event as the
+    pre-clear record. SBLK-R8 names the `shipment_status_changed` event specifically.
+  * *Recovery safety.* Unblock uses the `rollback` policy, so applied(committed) evidence with no terminal is never
+    trusted. Recovery rolls back through the `appliedPhase != journal.Phase` branch, and the recovery CAS accepts
+    either the preimage or the target state.
+  * *Intermediate-tree hazard (attempt-1 finding).* If the shipment persist fails, compensation must append
+    compensated status evidence after the applied evidence. That is why **U20C2 depends on U20C3**: the
+    compensation-ordering fix lands first, so no tree ever has early applied evidence without compensated
+    evidence.
+  * *Event-contract note.* Event-log readers other than recovery (history, metrics) should treat `applied` status
+    evidence as provisional until a correlated `committed` terminal exists. Documenting that is captured as stash
+    `9900D0DD`.
+* **DR4 — ADV-B: MCP normalize always uses the target-guarded normalizer, and the guard is widened (U20C6 before
+  U20C4).**
+  * The handler calls `core.NormalizeBlockedShipmentForRecovery` on both warm and cold workspaces. The
+    diagnostic-workspace fallback is kept for the cold case. This function takes the same `*Workspace` and has no
+    event-writer parameter, so a warm server uses its own workspace writer (LR-01 checked).
+  * *Behavior change, accepted.* Warm normalize no longer auto-recovers pending intents.
+    * A same-shipment nonterminal intent is **refused** with `ErrShipmentConflict`, not recovered first. This is the
+      operator's "keep target-shipment guard" instruction.
+    * The usual remedy is `backlogit_doctor` to inspect, then a workspace reopen, which runs recovery. Agents must not
+      issue a block or unblock only to trigger recovery (attempt-3 finding). *Reopen, per surface (attempt-4
+      finding):* a new CLI process that opens the workspace, for example the read-only `backlogit shipment get <id>`,
+      or an operator or host restart of the MCP server. A warm MCP server never re-runs open-time recovery, and no
+      MCP tool reopens the workspace; a reopen tool is captured as stash `09D06A75`.
+    * Unrelated pending intents are left for that same recovery.
+    * *When that remedy cannot work, stated.* It fails in two cases:
+      * an unrelated poison journal is also present, because `UnblockShipment` and `NewWorkspace` run
+        whole-workspace recovery first and fail on it, and blocking an already blocked shipment is refused;
+      * the referencing journal is itself unrecoverable.
+
+      This fails closed on purpose. The only current recourse is operator-only: Doctor evidence, then removal or
+      quarantine of the named journal, approved under Principle VII. Target-scoped recovery is captured as stash
+      `09D06A75`. The U20C6 aggregate refusal names the journal file, its kind, and the matched ID
+      (`kind=<kind> matched=<id>`). The unchanged same-shipment refusal names the correlation ID and operation
+      instead; its journal file is `shipmentLifecycleJournalName(<correlation ID>)`. A uniform refusal format is
+      captured as stash `9900D0DD` (attempt-4 finding). Either way, an agent can tell the operator exactly what
+      blocks.
+  * *Why widen the guard (security finding).* Today's guard sees only lifecycle intents for the same shipment. Once
+    the warm path uses it, that gap would widen an integrity hole that already exists on the cold path. U20C6
+    therefore adds an aggregate guard. It refuses when a pending journal references the target shipment or any of
+    its manifest member IDs.
+    * *Where it runs.* The existing same-shipment check stays where it is, with the same message and precedence. The
+      new aggregate check runs after the locked reload and membership-equality check in `normalizeBlockedShipment`,
+      and before `readShipmentBlockedSnapshot`. It uses exactly the `memberIDs` that are then locked and written.
+    * *Both normalizers share it.* Both reach this call site. After a successful whole-workspace recovery (the
+      `recoverPending` path) nothing pending remains, so there it is a no-op, with one stated exception
+      (attempt-3 finding): a finished return-blocked journal whose best-effort `removeShipmentOperationJournal`
+      failed is still present, so the guard refuses on it. That fails closed on purpose; the remedy is a workspace
+      reopen, which retries the removal, or operator removal of the named file.
+  * *Rejected:* changing core `NormalizeBlockedShipment` beyond the shared guard. It no longer has a production
+    caller. U20C6 updates only the `NormalizeBlockedShipmentForRecovery` doc comment. Retiring, or re-documenting,
+    `NormalizeBlockedShipment` is captured as stash `09D06A75`.
+  * *Registry.* Normalize is an intentional MCP-without-CLI exception (`mcpWithoutCLIIntentional`), not `mcp_only`.
+    There is no CLI change.
+  * *Limit, stated.* Two kinds of malformed file block normalize, and both fail closed because ownership cannot be
+    proven otherwise:
+    * any file whose name matches the lifecycle-journal pattern;
+    * a return-blocked file whose name attributes it to the target or a member.
+* **DR5 — ADV-C: `by` is `mcplib.Required()`**, with an explicit handler check.
+  * The handler checks `by` right after the existing `id` and `snapshot_ref` checks, at their current place. It
+    rejects `strings.TrimSpace(by) == ""` with the handler-specific `ValidationFailed("by is required")`.
+  * The `id`/`snapshot_ref` order relative to workspace acquisition is unchanged (attempt-2 finding: that reorder
+    had no RED of its own, and ADV-C does not need it).
+  * Core's actor check stays as defense in depth.
+  * The `ToolDefs().InputSchema.Required` assertion is the structural contract test. Required, not default:
+    `docs/compound/2026-07-16-jsonschema-default-nonenforcing-and-base-union-narrowing.md`.
+  * `by` is a self-reported attribution label, not authentication (SBLK-R7 "advisory").
+* **DR6 — Similar flows need no fix (verified, not deferred).**
+  * Claim restores snapshots and erases events, and writes no durable terminal event.
+  * Normalize already follows the target order through `reconcileShipmentLifecycleIntent`.
+  * Return uses its own `return-blocked/v2` journal.
+  * If an implementation finds a counter-example anyway, it is captured under P-021 C2 and not fixed in Wave 20.
+* **Excluded (not planned, not triaged):**
+  * Stash `388C586D` (the JSONL rewrite at `shipment_recovery.go:822`) stays deferred per the handoff.
+  * Stashes `3340E97C` (the Go/lint upgrade), `9CA03F5D`, `2F7FCA8B`, `4A0B7BCF`, and `7AA35A39` stay deferred and
+    untriaged.
+* **Deferred captures from plan review (P-021 C2, attempt-2 finding).** None of these is fixed in Wave 20. Each is
+  captured in the stash with the full C2 payload: the token, the C1 reason, per-field source refs with `N/A`, and
+  `requires deliberation: true`. The entries are grouped by contract surface. Stage appended them with
+  `backlogit stash add`, and they sit uncommitted in `.backlogit/stash.jsonl` next to the operator's and Ship's
+  pending entries, because that file is operator-dirty and is never committed by Stage.
+
+  | Stash | Surface | Items (rev23.1 letters) |
+  |---|---|---|
+  | `FA6AE139` | Event-writer durability classification | (a) An untagged committed-terminal append failure may still compensate (DR1) |
+  | `9900D0DD` | Agent/operator docs and CLI exit code | (b) `write_indeterminate` guidance and MCP recovery hint; (c) `docs/workflow.md` notes (`by`, the unblock `reason`, provisional `applied` evidence); (d) optional unblock actor; (g) mapping the malformed-journal refusal to `conflict`; (j) transaction-protocol comments; a CLI exit code for indeterminate outcomes |
+  | `09D06A75` | Normalize follow-ups | (e) retire or re-document `NormalizeBlockedShipment`; (f) `snapshot_ref` provenance; (i) target-scoped recovery and an operator escape; recovery reusing the U20C6 predicate |
+  | `8AF55264` | Blocked-envelope boundary follow-ups | (h) canonical key list (including the new `artifacts.go` copy); the `artifact_type` flip bypass; hook-channel semantics |
+  | `7D8717B1` | Error-classification follow-ups | Retiring EW-1 by reordering `domainError`; classifying restore double faults; `mutationApplied` for block member writes |
+
+  Wave 20 closure cites these IDs in its task-level, run-level, and closure residual-risk records (P-021 C3,
+  threadless). Stage reconciles the task IDs into them after harvest under its C6 authority.
+
+### 20.3 Work units (6 new tasks under `174-F`)
+
+**Naming.** The unit token is `U20C<n>`, and the P-002.6 prefix is `^TestU20C<n>_`. At `3a240fe0`, no function
+carries the `TestU20C` prefix. `TestU20_` does exist elsewhere, which is why the `C` is needed.
+
+**Task class.** All six tasks are **normal harness-required** tasks, and the P-002.4 exempt classes do not apply.
+
+**P-002.4 delta surface (every task):**
+
+* The harness commit changes exactly the one new harness file.
+* The implementation commit changes exactly the one production file.
+* The only other staged paths allowed are `.backlogit/**` metadata for the task and `docs/memory/**`.
+* RED and GREEN captures go to the git-ignored `logs/diagnostics/1740xx-*` and are never staged.
+
+**Harness packages.** The harness files are `package core` (U20C1–U20C3, U20C5, U20C6) or `package mcp` (U20C4),
+because they use unexported seams. No harness may call `t.Parallel`.
+
+**Unit list.** Task IDs are assigned in creation order.
+
+| Unit | Task | Finding | Production file (functions) | Harness file | Top-level functions × cases |
+|---|---|---|---|---|---|
+| U20C1 | 174.077-T | STD-P2-01 | `internal/core/artifacts.go` (`updateArtifactUngated`, `writeArtifactFileGoverned`, 1 envelope-key-list helper, ≤ 1 comparison helper) | `internal/core/shipment_blocked_envelope_u20c1_harness_test.go` | 2 |
+| U20C2 | 174.078-T | STD-P2-02 | `internal/core/shipment.go` (`UnblockShipment`) | `internal/core/shipment_unblock_audit_u20c2_harness_test.go` | 1 × {queued, active} |
+| U20C3 | 174.079-T | STD-P2-03 | `internal/core/shipment.go` (`BlockShipment`, `UnblockShipment` compensate closures, ≤ 1 shared helper) | `internal/core/shipment_compensation_order_u20c3_harness_test.go` | 2 × {block, unblock} |
+| U20C4 | 174.080-T | ADV-B + ADV-C | `internal/mcp/tools.go` (`RegisterTools` normalize schema, `handleNormalizeBlockedShipment`) | `internal/mcp/shipment_normalize_u20c4_harness_test.go` | 2 |
+| U20C5 | 174.081-T | ADV-A | `internal/core/shipment.go` (`BlockShipment`, `UnblockShipment` commit tails) | `internal/core/shipment_commit_journal_u20c5_harness_test.go` | 1 × {block, unblock} |
+| U20C6 | 174.082-T | ADV-B guard hardening | `internal/core/shipment_recovery.go` (`normalizeBlockedShipment` call site, 1 new aggregate-guard helper, ≤ 1 name-attribution helper, the `NormalizeBlockedShipmentForRecovery` doc comment) | `internal/core/shipment_normalize_guard_u20c6_harness_test.go` | 2 |
+
+**Size and domain.** Every unit touches 2 files and fewer than 5 declarations (at most 4), stays within a single Go
+domain (core or the MCP adapter), and ends with a verifiable RED→GREEN milestone. Both normalizers are declared in
+`shipment_recovery.go` (lines 1039 and 1053 at `3a240fe0`).
+
+**Documented granularity deviation (TG-1).** In U20C2, U20C3, and U20C5, one table-driven scenario runs over two
+symmetric governed operations (or targets) with identical assertions, and is counted as **one** scenario.
+Precedent: the `TestUR3_` tables. Splitting each task by operation was rejected: it would put two tasks on the same
+closure with a forced serial edge and no independent verification value. So U20C3 has 2 scenarios, and U20C2 and
+U20C5 have 1 each. That keeps every task under 4.
+
+**Documented granularity deviation (TG-2, attempt-2 finding).** An inline negative control does not count as a
+scenario. It asserts that an adjacent legitimate input is unchanged or still refused, it has no fixture of its own
+beyond a copy of the scenario's fixture, and it adds no production behavior. Error-shape rows in a table do not
+count either. Counted this way:
+
+| Unit | Behavioral scenarios | Inline controls |
+|---|---|---|
+| U20C1 | 3: `forged`, `omission`, ungoverned refusal | the drop-items refusal, the queued-shipment `branch`, the identical-envelope title change, the unparsable-`blocked_at` row |
+| U20C3 | 2 | error-shape rows: the conflict-wrapped row in function 1, and the conflict-wrapped and `ErrWriteNotApplied`-wrapped rows in function 2 |
+| U20C4 | 2 | the whitespace-actor row |
+| U20C6 | 2 | journal-shape rows: committed v2, legacy, malformed, and target-only malformed; plus the disjoint intent |
+
+*Rejected: splitting U20C1 Fix B into its own unit.* It would put two serialized tasks on `artifacts.go` and the same
+envelope invariant, and Fix A's `omission` scenario and Fix B's refusal share one fixture and one oracle
+(`validatePersistedBlockedShipmentEnvelope`).
+
+**U20C4 width note.** The `mcplib.Required()` edit changes the handler's own advertised tool contract, in the same
+file and for the same tool. It is not a data-schema change paired with an API handler.
+
+#### 20.3.1 U20C1 — STD-P2-01 (174.077-T)
+
+* **Fix A** (`updateArtifactUngated`, immediately **before** `mergePreserveReservedSizingKeys`; rev23.5 correction):
+  * Capture the prior `custom_fields` before the merge.
+  * If the artifact is a shipment and `previousStatus` (loaded under the locks) is `blocked`, first reassign the
+    local `updates` to a shallow clone whose `custom_fields` map is also cloned, so the caller's map is never mutated
+    (attempt-3 finding). Then, for **every** envelope key, delete it from the cloned map and copy the prior value
+    back if the key existed before (the `mergePreserveReservedSizingKeys` pattern). **Then** call
+    `mergePreserveReservedSizingKeys` with the cleaned clone. Because the merge edits and returns its `incoming` map
+    in place, the persisted `artifact.CustomFields`, the audited `changes`, and post hooks all share the one cleaned
+    map. So the audit trail never records forged envelope values, and the caller's map is also safe from the existing
+    sizing-key edit (attempt-4 finding).
+  * The envelope keys are `blocked_reason`, `blocked_at`, `member_status_snapshot`, `branch`, `blocked_by`, and
+    `resume_checkpoint_ref`. They are defined **once**, in a single key-list helper in `artifacts.go` that Fix A and
+    Fix B both use. Its doc comment points to stash `8AF55264`, the planned consolidation.
+  * Do not add preservation for `items`.
+* **Fix B** (`writeArtifactFileGoverned`, immediately **after** `guardBlockedShipmentMembershipMutation`):
+  * Refuse the write with `ErrShipmentBlockedRequiresEnvelope` when all of these hold:
+    * the previous record, parsed from Markdown at the boundary, is a blocked shipment;
+    * the next record is still blocked;
+    * `!envelope.allowGovernedShipmentMutation`;
+    * any envelope key differs.
+  * Compare by presence and canonical value, not by Go type identity. Compare `blocked_at` through
+    `canonicalBlockedTimestamp`, and every other key by canonical JSON. If `canonicalBlockedTimestamp` cannot parse
+    either side, compare that side's raw canonical JSON instead, so an unparsable value still counts as a difference
+    rather than an error (attempt-3 finding).
+* **Draft fold (rev23.4, W0).** Ship's relocated draft `TestBlockedShipmentGenericCustomFieldsPreserveEnvelope`
+  is renamed and refactored into function 1 below as the seed of its `forged` subtest; it is not kept as a separate
+  top-level function. The refactor drops the unused `root`, adds the unit prefix, and extends the draft's single
+  forged key to the full `forged` payload below.
+* **Harness function 1, `TestU20C1_GenericUpdatePreservesBlockedEnvelope`.**
+  * *Setup.* Block a shipment canonically: at least one member, `BlockedBy` set, and `ResumeCheckpointRef` set.
+    Before any update, assert with two-value lookups that `blocked_reason`, `blocked_at`, `member_status_snapshot`,
+    `blocked_by`, and `resume_checkpoint_ref` are present and non-empty, and that `branch` is absent. Then take a
+    snapshot of the envelope.
+  * *Subtest `forged`.* Send a round-trip generic `custom_fields` update containing:
+    * the current `items`, unchanged;
+    * `custom_note`;
+    * forged values for `blocked_reason`, `blocked_at`, and `blocked_by`;
+    * an empty `member_status_snapshot`;
+    * a new `branch`.
+
+    Expect `NoError`, the envelope deep-equal to the snapshot, `branch` still absent, and `custom_note` applied. The
+    correlated `artifact_mutation` audit event must not carry the forged values. Also assert that the submitted
+    `custom_fields` map still holds the forged values after the call, which proves the clone.
+  * *Inline control: dropping `items`.* It runs **while the shipment is still blocked**, after `forged` and before
+    `omission` (attempt-2 finding: the membership seal only fires on a blocked preimage). An update that drops
+    `items` is still refused with `ErrShipmentConflict`, and the file bytes are unchanged.
+  * *Subtest `omission`.* Send a round trip carrying `items` and `custom_note_2` only. Expect the envelope deep-equal
+    to the snapshot. Then assert:
+    * `validatePersistedBlockedShipmentEnvelope` returns `NoError`;
+    * Doctor reports no malformed-blocked finding;
+    * `UnblockShipment(queued, Confirm: true)` succeeds. This is the last step on this fixture.
+  * *Inline control: queued shipment.* On a separate queued shipment, a round-trip update of `branch` (with `items`
+    included) is applied.
+* **Harness function 2, `TestU20C1_UngovernedWriteCannotAlterBlockedEnvelope`.**
+  * Do a direct ungoverned `persistArtifact` of the blocked shipment (with no governed envelope in the context)
+    that changes `blocked_reason` and removes `member_status_snapshot`, with `items` unchanged. It must be refused
+    with `ErrShipmentBlockedRequiresEnvelope`, and the file bytes must be unchanged.
+  * *Inline control.* An ungoverned rewrite with an identical envelope and a changed `title` still succeeds. It
+    re-serializes `blocked_at` from the loaded model, which exercises the canonical timestamp comparison.
+  * *Inline error-shape row (TG-2, attempt-4 finding).* An ungoverned write that changes **only** `blocked_at`, to an
+    unparsable string, is refused with `ErrShipmentBlockedRequiresEnvelope`, and the file bytes are unchanged. This
+    covers the raw-canonical-JSON fallback. RED at `3a240fe0`: the write succeeds.
+* **RED at `3a240fe0`.** Function 1 fails on envelope equality. Function 2 fails because the write succeeds.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C1_' ./internal/core`. Expect exactly 2 top-level
+  PASS.
+* **green_regression_cmds:**
+  `go test -count=1 -timeout=15m -v -run '^(TestUpdateArtifact_|TestUR1B_|TestUR2_|TestUR3_|TestUR10_|TestP1C4_|TestP1C7_|TestNormalizeBlockedShipment)' ./internal/core`.
+  Expect exactly 34 top-level PASS (13 + 3 + 3 + 5 + 1 + 1 + 2 + 6).
+
+#### 20.3.2 U20C2 — STD-P2-02 (174.078-T; depends on 174.079-T)
+
+* **Fix** (`UnblockShipment`):
+  * Set `eventDelta["reason"] = envelope.reason`.
+  * Append the correlated `shipment_status_changed` event **before** the unblocked-shipment persist that deletes
+    `blocked_reason`/`blocked_at`/`blocked_by`. The event has phase `applied`, target and status = the unblock
+    target, and actor = `opts.UnblockedBy`.
+  * Member restores, the terminal `committed` event, and the journal commit keep their order after that persist.
+  * Add a guard comment in the code: for this rollback-policy operation, applied evidence is provisional until the
+    terminal event.
+* **Draft fold (rev23.4/rev23.5).** When the W2 harness for 174.078-T is scaffolded, Ship, through the
+  harness-architect skill, first re-checks the two W0 SHA-256 values (20.5 W0). It then ports the parked
+  `TestUnblockShipmentStatusEventPrecedesEnvelopeClear` from `logs/diagnostics/wave20-draft-u20c2.go.txt` into the
+  harness below as its single top-level function. The port does five things:
+  * renames it;
+  * replaces the `copy` shadow with a non-builtin name;
+  * makes the observer record at the **first** shipment write rather than at any write;
+  * adds the target table, the `applied` phase check, and the journal and terminal assertions;
+  * saves the prior `persistArtifactPreLockHook` and restores that saved value in `t.Cleanup`, instead of setting it
+    to `nil` (attempt-4 finding).
+
+  The parking file stays git-ignored and is never committed.
+* **Harness `TestU20C2_UnblockStatusEvidencePrecedesEnvelopeClear`**, table-driven over target ∈ {`queued`,
+  `active`}.
+  * *Setup.* A canonically blocked shipment with reason R, `BlockedBy`, and `ResumeCheckpointRef` C.
+  * *Observer.* After `BlockShipment` returns, install an observer on an existing seam (`persistArtifactWriteFn` or
+    `persistArtifactPreLockHook`, restored with `t.Cleanup`). At the first shipment write inside `UnblockShipment`,
+    it records two things:
+    * (a) whether the shipment on disk still has `blocked_reason == R`;
+    * (b) whether the shipment log already holds exactly one correlated `shipment_status_changed` event with phase
+      `applied`, target = the unblock target, `delta.reason == R`, `delta.unblocked_by == actor`,
+      `delta.resume_checkpoint_ref == C`, and `event.Actor == actor`.
+  * *Assertions.*
+    * (a) and (b) are both true.
+    * Afterwards the shipment has status = target and no `blocked_*` keys.
+    * The journal is `committed`, with exactly one correlated applied status event and one terminal `committed`
+      event.
+* **RED on the U20C3-green tree.** At the first write, (b) is false and `reason` is absent.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C2_' ./internal/core`. Expect exactly 1 top-level
+  PASS.
+* **green_regression_cmds:**
+  * `go test -count=1 -timeout=15m -v -run '^(TestUR1B_|TestUR3_|TestUR10_|TestU20C3_)' ./internal/core`. Expect
+    exactly 11 top-level PASS (3 + 5 + 1 + 2).
+  * `go test -count=1 -timeout=10m -v -run '^TestUR8_' ./internal/cli`. Expect exactly 3.
+
+#### 20.3.3 U20C3 — STD-P2-03 (174.079-T)
+
+* **Invariant.** On every compensation path that writes a terminal, in both `BlockShipment` and `UnblockShipment`:
+  1. Restore the preimages.
+  2. Append the compensated status evidence: phase `applied`, target and status = the preimage shipment status.
+  3. Append the terminal `compensated` event.
+  4. Write the journal as `compensated`.
+* **When compensation happens.** The governed shipment write counts as potentially applied from the moment it is
+  **attempted**. Set `mutationApplied` before that write. The preimage restore is idempotent, and this makes the
+  compensated evidence truthful even when the write failed after it landed. An indeterminate cause still skips
+  compensation through the existing early return (DR1).
+* **Step order.** Steps 2→4 run in order and **stop at the first failure**. No later step runs after an earlier one
+  fails, because a terminal event without status evidence is exactly the inspector conflict.
+* **When an evidence or journal step fails** (EW-1, extended in attempt 2). If step 2, 3, or 4 fails, the journal
+  stays `intent`. The returned error then:
+  * carries **only** `blerrors.ErrWriteIndeterminate` in its `%w` chain;
+  * renders both the original cause and the failed-step error with `%v`. So no `ErrShipmentConflict`,
+    `ErrValidation`, `ErrNotFound`, `ErrWriteNotApplied`, or blocked-envelope sentinel carried by either one can
+    outrank `write_indeterminate` in MCP `domainError`;
+  * names the step with its exact label: `append compensation status evidence` (new), `append compensation event`,
+    or `persist compensation journal`.
+* **What stays the same.**
+  * Restore-failure behavior is unchanged: the joined error, with the journal left in `intent`. Classifying that
+    double fault is captured as stash `7D8717B1`.
+  * `inspectShipmentLifecycleRecoveryEvidence`, `reconcileShipmentLifecycleIntent`, and
+    `recoverPendingShipmentOperations` are **not** modified; they are the oracle.
+  * A shared helper may own the step 2→4 sequence.
+  * Block member writes keep setting `mutationApplied` after they succeed (stash `7D8717B1`).
+* **Harness.** Two top-level functions, each table-driven over op ∈ {`block`, `unblock`}. The block fixture has at
+  least one active member.
+  * *Injection.* Use `persistArtifactWriteFn` on the **first** governed write of the shipment in the target status.
+    **Inside that same seam call, before returning, arm the obstruction.** Restore writes are unaffected, because
+    the compensation envelope has no `audit` and the locks live under `.backlogit/.locks`. The injection mode is
+    fixed **per function**, not a further axis (attempt-3 finding):
+    * function 1 injects **landed then failed**: the seam calls the real writer first, then returns the injected
+      sentinel;
+    * function 2 injects **failed before writing**: the seam returns the sentinel without writing.
+  * *Obstructions.* For the event log, move `events.LogPathForItem(WorkspaceLogsRoot(root), id)` aside and plant a
+    directory in its place. For the journal, move `shipmentOpsRoot(root)` aside and plant a regular file.
+  * *Obstruction helper.* One shared, uniquely named helper in the U20C3 harness file handles all of it:
+    * retry the rename a bounded number of times;
+    * check with `Lstat` that the obstruction is in place;
+    * restore by removing only the planted entry, then renaming the original back, with `require.NoError` on both;
+    * make the restore **idempotent** with a `restored` flag or `sync.Once`, so the `t.Cleanup` registration is a
+      no-op after the explicit call before recovery (attempt-2 finding).
+  * *Error-shape rows.* Function 1 adds one inline table row whose injected sentinel wraps
+    `blerrors.ErrShipmentConflict`. Function 2 adds two: one wrapping `blerrors.ErrShipmentConflict` and one wrapping
+    `blerrors.ErrWriteNotApplied`. These are error-shape rows, not new scenarios (TG-2).
+  * *Negative classification, every row.* `errors.Is` is false for `ErrShipmentConflict`, `ErrValidation`,
+    `ErrWriteNotApplied`, and `ErrNotFound`, and `errors.As` into `*blerrors.MutationPartialError` is false.
+  1. **`TestU20C3_CompensationEventFailureLeavesRecoverableIntent`** obstructs the log.
+     * The error satisfies `IsWriteIndeterminate`. Its message contains the injected sentinel's text and the label
+       `append compensation status evidence`.
+     * The journal is still `intent`.
+     * *Before recovery,* immediately after the failed call: shipment and members already equal the preimage. For
+       unblock, the blocked envelope is valid, which proves the landed write was restored (Principle II credit for
+       the early `mutationApplied`).
+     * After removing the obstruction, `recoverPendingShipmentOperations` returns `NoError` and the journal is
+       `compensated`. Shipment and members still equal the preimage.
+     * The log has exactly one correlated terminal `compensated` event, and the last applied status target is the
+       preimage status.
+     * Doctor reports no `torn_shipment_lifecycle_intent` and no evidence conflict.
+     * **RED at HEAD:** the journal is already `compensated` when the event append fails. For unblock, the landed
+       write is never restored, because `mutationApplied` is false, so the shipment stays unblocked.
+  2. **`TestU20C3_CompensationJournalFailureAfterTerminalEvidenceRecovers`** obstructs `shipmentOpsRoot(root)`.
+     * The error satisfies `IsWriteIndeterminate`. Its message contains the injected sentinel's text and the label
+       `persist compensation journal`.
+     * In the log, the compensated applied status evidence comes before exactly one terminal `compensated` event.
+     * After removing the obstruction, recovery returns `NoError`, the journal is `compensated`, Doctor is clean, and
+       there is no conflict.
+     * **RED at HEAD:** there is no compensated status evidence, so recovery fails with "terminal evidence lacks
+       matching final status evidence".
+  * If a case cannot be reached with the existing seams, or behaves nondeterministically on Windows,
+    harness-architect STOPS and returns the task to Stage. No production seam may enter the harness commit.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C3_' ./internal/core`. Expect exactly 2 top-level
+  PASS.
+* **green_regression_cmds:**
+  * `go test -count=1 -timeout=15m -v -run '^(TestUR1B_|TestUR3_|TestUR10_|TestP021|TestP1C4_|TestP1C6_)' ./internal/core`.
+    Expect exactly 17 top-level PASS (3 + 5 + 1 + 3 + 1 + 4).
+  * `go test -count=1 -timeout=10m -v -run '^TestUR8_' ./internal/cli`. Expect exactly 3.
+
+#### 20.3.4 U20C4 — ADV-B plus ADV-C (174.080-T; depends on 174.082-T)
+
+* **Fix.**
+  * `handleNormalizeBlockedShipment` keeps its current order: workspace or diagnostic-workspace acquisition, then
+    the `id` and `snapshot_ref` checks. Right after those, it rejects `strings.TrimSpace(by) == ""` with
+    `ValidationFailed("by is required")`.
+  * It then always calls `core.NormalizeBlockedShipmentForRecovery`. It passes the workspace from
+    `requireWorkspace` when that succeeds, and the diagnostic workspace otherwise. The `recoveryRemediation` branch
+    to `core.NormalizeBlockedShipment` is removed.
+  * The schema marks `by` as `mcplib.Required()`.
+  * The tool name, the other parameters, and the error mapping are unchanged.
+* **Harness.** Both functions dispatch through the registered tool (`s.InvokeTool` or the package's
+  `callToolForTest` equivalent), never through the handler directly.
+  1. **`TestU20C4_WarmServerNormalizeUsesTargetGuardedRecoveryPath`**
+     * *Setup.* Build the blocked-shipment fixture in the shape of `newPoisonedNormalizationWorkspace`, but with the
+       unrelated poison moved aside.
+     * *Warm the server.* A workspace-requiring read tool must succeed. Then register
+       `t.Cleanup(func(){ require.NoError(t, server.Workspace.Close()) })` so the cached SQLite handle closes before
+       `TempDir` removal.
+     * Restore the poison and invoke normalize with `by`.
+     * Expect: not `IsError`; the poison is still present and byte-identical; `core.NewWorkspace` on the root still
+       fails, and its error names the poison, meaning the message contains `unrelated-poison.json` or the
+       shipment-operation journal validation failure. That rules out a pass caused by lock contention.
+     * **RED at HEAD:** the warm path runs ordinary auto-recovery and fails on the poison.
+  2. **`TestU20C4_NormalizeToolRequiresActor`**
+     * `ToolDefs()` for `backlogit_normalize_blocked_shipment` has `InputSchema.Required` ⊇ {`id`, `snapshot_ref`,
+       `by`}.
+     * An invocation without `by` is `IsError`, with error code `validation_failed` and a message containing
+       `by is required`. That message is handler-specific and distinct from core's actor message.
+     * *Inline row.* The same holds for `by: "   "` (whitespace only).
+     * The shipment file bytes and the shipment event count are unchanged.
+     * **RED at HEAD:** `by` is not in `Required`, and the message is core's actor message.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C4_' ./internal/mcp`. Expect exactly 2 top-level
+  PASS.
+* **green_regression_cmds:**
+  * `go test -count=1 -timeout=10m -v -run '^TestDiagnosticToolsRemainAvailableWithPoisonedLifecycleJournal$' ./internal/mcp`.
+    Expect exactly 1.
+  * `go test -count=1 -timeout=10m -v -run '^(TestRegistryParity_|TestUR8_)' ./internal/cli`. Expect exactly 13.
+  * `go test -count=1 -timeout=10m -v -run '^(TestNormalizeBlockedShipmentForRecovery_|TestU20C6_)' ./internal/core`.
+    Expect exactly 6 (4 + 2).
+
+#### 20.3.5 U20C5 — ADV-A (174.081-T; depends on 174.078-T)
+
+* **Fix** (in the commit tails of `BlockShipment` and `UnblockShipment`):
+  * If the journal `committed` write fails after the terminal `committed` event is durable, do **not** call
+    `compensate`.
+  * Return an error whose `%w` chain carries `blerrors.ErrWriteIndeterminate` only. The journal cause is rendered
+    with `%v`, and the existing labels are kept verbatim: `persist block shipment commit` and
+    `persist unblock shipment commit`.
+  * The journal stays `intent`. Recovery later finalizes it as `committed` through the existing terminal-evidence
+    branch.
+* **Harness `TestU20C5_CommitJournalFailureAfterCommittedEvidenceDoesNotCompensate`**, table-driven over op ∈
+  {`block`, `unblock` (target `queued`)}.
+  * *Injection.* Let the operation's final governed artifact write go through the real writer, then obstruct
+    `shipmentOpsRoot(root)` inside the same seam call. Call the U20C3 obstruction helper **by name**, since it lands two
+    waves earlier. Never copy it, because a duplicate identifier in `package core` would break compilation.
+    * For block, the shipment write is the last one.
+    * For unblock to `queued`, the fixture's snapshot must need no member restore write. If that cannot be arranged,
+      arm the obstruction on the last member write instead.
+  * *Assertions after the failed call.*
+    * The returned artifact is `nil`, which matches the existing error signature; agents re-read state (stash
+      `9900D0DD`).
+    * `IsWriteIndeterminate` is true, and the message contains the op's label. `errors.Is` for `ErrValidation`,
+      `ErrShipmentConflict`, `ErrWriteNotApplied`, and `ErrNotFound` is false, and `errors.As` into
+      `*blerrors.MutationPartialError` is false.
+    * There is no correlated `compensated` lifecycle event and no compensated status event.
+    * The shipment is in the committed target state; for block, the envelope is canonical.
+  * *Assertions after the obstruction is removed.*
+    * Recovery returns `NoError` and the journal is `committed`.
+    * Doctor is clean and there is no conflict.
+    * For block, `validatePersistedBlockedShipmentEnvelope` returns `NoError`.
+* **RED on the U20C2-green tree.** `compensate` runs and appends a contradictory terminal `compensated` event.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C5_' ./internal/core`. Expect exactly 1 top-level
+  PASS.
+* **green_regression_cmds:**
+  * `go test -count=1 -timeout=15m -v -run '^(TestUR1B_|TestUR3_|TestUR10_|TestP021|TestU20C2_|TestU20C3_)' ./internal/core`.
+    Expect exactly 15 (3 + 5 + 1 + 3 + 1 + 2).
+  * `go test -count=1 -timeout=10m -v -run '^TestUR8_' ./internal/cli`. Expect exactly 3.
+
+#### 20.3.6 U20C6 — ADV-B guard hardening (174.082-T)
+
+* **Fix** (`internal/core/shipment_recovery.go`):
+  * `refusePendingShipmentLifecycleIntent` and its call site stay unchanged: the same-shipment check, its message,
+    and its precedence.
+  * Add one aggregate-guard helper, for example `refusePendingShipmentAggregateJournal(ws, shipmentID, memberIDs)`.
+    Call it in `normalizeBlockedShipment` right after the locked reload and the membership-equality check, and
+    before `readShipmentBlockedSnapshot`, passing exactly the locked `memberIDs`. Both normalizers reach this site.
+  * The helper refuses with `ErrShipmentConflict` when either of these holds.
+    * **A valid journal references the aggregate,** meaning the target ID or a member ID:
+      * *Lifecycle journals* in phase `intent`, the predicate `recoverPendingShipmentOperations` uses. Match on
+        `ShipmentID` and on the `Preimage.Shipment` and `Preimage.Members` IDs. Related-artifact IDs are **not**
+        matched in Wave 20: valid claim intents carry no related preimages, so that branch could not be tested
+        (attempt-3 finding); it is captured as stash `09D06A75`.
+      * *Return-blocked journals* in **any** phase or schema version, including legacy schema-less records and
+        committed-but-unremoved ones. Recovery reconciles every such record that is present. Match on the embedded
+        `journal.Shipment.ID` and `journal.Item.ID`, which legacy records also carry, and never on
+        `ShipmentID`/`ItemID`. A record with a nil `Shipment` or `Item` never reaches this match: validation
+        (`shipment_ops.go:416`) rejects it, so it arrives as a validation error and is handled by name attribution
+        below (attempt-3 finding).
+    * **A return-blocked validation error is attributed to the aggregate by file name.** Run
+      `validateShipmentOperationJournalName` on `filepath.Base(path)`. If it returns the return-blocked kind and the
+      captured shipment ID or item ID matches, refuse. Unrelated malformed files, such as `unrelated-poison.json`,
+      match no class and stay ignored.
+  * *Scan.* The new helper reads journals through `inspectShipmentOperationJournalsReadOnly`, so the helper itself
+    never writes or moves a journal. The unchanged same-shipment check that runs before it still uses the cleanup
+    variant, which may remove `.shipment-operation-*.tmp` residue; consolidating the two scans is left to stash
+    `09D06A75`. A scan error other than a missing ops root makes the helper refuse (wrapped as
+    `ErrShipmentConflict`). That branch is **defensive**: every such ops-root failure already makes the earlier
+    same-shipment check fail first, so no harness row can reach it (attempt-4 finding).
+  * *Match precedence (attempt-4 finding).* For every record, member IDs are checked first and the target shipment
+    ID second, and the first match is reported. For a return-blocked record or name, that means `Item.ID` /
+    `captures[1]` against the locked `memberIDs`, then `Shipment.ID` / `captures[0]` against the target.
+  * The refusal message names the journal file base name, its kind, and the matched ID, with the exact token
+    `kind=<kind> matched=<id>` next to the base name. The helper maps the internal kinds to the fixed display labels
+    `lifecycle` (`shipment_lifecycle`) and `return-blocked` (`return_blocked`); it never prints the raw kind value.
+  * Journals that reference neither the target nor its members are ignored. The existing lifecycle validation-error
+    behavior is unchanged.
+  * Update only the `NormalizeBlockedShipmentForRecovery` doc comment: it is now the only MCP normalize path, warm
+    and cold, and it is guarded at aggregate scope. The `NormalizeBlockedShipment` comment is left to stash
+    `09D06A75`.
+* **Harness.**
+  1. **`TestU20C6_RefusesPendingReturnBlockedJournalForTargetAggregate`.** Plant a v2 intent return-blocked journal
+     for a member of the target shipment, in the `TestNewWorkspace_RecoversPendingReturnBlockedJournal` fixture
+     shape.
+     * `NormalizeBlockedShipmentForRecovery` returns `ErrShipmentConflict`, and the message contains the journal
+       base name and `kind=return-blocked matched=<member ID>`.
+     * The shipment and member bytes are unchanged, and the journal count and bytes are unchanged.
+     * *Inline rows* (journal-shape rows with identical assertions, TG-1/TG-2):
+       * a v2 record in phase `committed`, left unremoved;
+       * a legacy schema-less record (the `writeReturnBlockedJournal` shape);
+       * a malformed file whose name is built with `filepath.Base(returnBlockedJournalPath(root, target, member))`,
+         pre-checked with `validateShipmentOperationJournalName` to return the return-blocked kind;
+       * *target-only row (attempt-4 finding):* a malformed file named with
+         `filepath.Base(returnBlockedJournalPath(root, target, nonMember))`, where `nonMember` is an ID outside the
+         manifest. Its message contains `kind=return-blocked matched=<target ID>`, which exercises the target branch
+         of the precedence rule.
+  2. **`TestU20C6_RefusesPendingLifecycleIntentReferencingTargetMembers`.** Plant a lifecycle intent for a
+     **different** shipment whose preimage members include a target member ID. Expect a refusal whose message names
+     the journal base name and `kind=lifecycle matched=<member ID>`, with the same no-write assertions.
+     * *Inline control.* A disjoint intent that references neither the target nor its members does not block
+       normalize, which succeeds.
+* **RED at `3a240fe0`.** In both functions normalize succeeds, because the guard sees only lifecycle intents for the
+  same shipment.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C6_' ./internal/core`. Expect exactly 2 top-level
+  PASS.
+* **green_regression_cmds:**
+  * `go test -count=1 -timeout=15m -v -run '^(TestNormalizeBlockedShipment|TestUR3_|TestP021|TestP1C7_)' ./internal/core`.
+    Expect exactly 16 (6 + 5 + 3 + 2).
+  * `go test -count=1 -timeout=10m -v -run '^TestDiagnosticToolsRemainAvailableWithPoisonedLifecycleJournal$' ./internal/mcp`.
+    Expect exactly 1.
+
+### 20.4 Common contract for all six tasks
+
+* **Canonical regression block.** Each task body carries a P-002.6 `green-regression-contract` block. It contains
+  only `green_regression_cmds`, copied verbatim from 20.3.x. Prose regression commands are not authoritative.
+* **P-002.6 command rules.** Every command names an explicit package, uses `-count=1`, an anchored `-run`, and `-v`.
+  * *Failure conditions.* A command fails closed on any of:
+    * `[no tests to run]` or `no test files`;
+    * zero top-level PASS lines;
+    * any top-level `--- FAIL` or `--- SKIP`;
+    * a top-level PASS count that differs from the declared count.
+  * *No weakening devices.* That means no `-short`, no skip gating, and no environment switch.
+  * *Count baseline.* The declared counts were verified with `git grep '^func <prefix>'` at `3a240fe0`:
+    * `TestUpdateArtifact_` 13, `TestUR1B_` 3, `TestUR2_` 3, `TestUR3_` 5, `TestUR10_` 1, `TestP021` 3, `TestP1C4_`
+      1, `TestP1C6_` 4, `TestP1C7_` 2, `TestNormalizeBlockedShipment` 6 (of which `…ForRecovery_` 4);
+    * cli: `TestUR8_` 3, `TestRegistryParity_` 10;
+    * mcp: `TestDiagnosticToolsRemainAvailableWithPoisonedLifecycleJournal` 1.
+
+    At claim, Ship re-counts at the claim baseline. If a count differs, Ship records both numbers and halts to
+    Stage; it never silently adopts the new count. The counts declared in the task body's acceptance criteria are the
+    authority for the count check (attempt-3 finding).
+* **Per-task SHAs** (attempt-2 finding: harnesses are scaffolded and committed before the claim).
+  * *One harness commit per task,* even when harness-architect scaffolds a whole wave in one pass. Call it
+    `HARNESS_COMMIT`.
+  * `HARNESS_BASE_SHA` is the parent of `HARNESS_COMMIT`. It is recorded in the task's RED capture metadata.
+  * `START_SHA` is the literal `git rev-parse HEAD` at the task's claim, before its first edit. It is recorded in
+    the task's claim and GREEN metadata.
+* **P-004.**
+  * Every top-level harness function must be observed assertion-RED while compilation passes. The compile check is
+    `go test -run '^$' -count=1 ./...`, repository-wide. This compile-only form is explicitly allowed.
+  * Controls are inline assertions or subtests, never separate top-level functions.
+  * Capture the output to `logs/diagnostics/1740xx-red-harness.txt` plus `.metadata.json`.
+  * Record `Compilation: PASS / Red Phase: CONFIRMED (scoped)` before `harness-ready` is applied. This scoped RED
+    record replaces the P-004 full-suite-fails precondition (deviation QG-2).
+  * Before scaffolding, harness-architect records the output of
+    `git grep -n 't.Parallel' -- internal/core/*_test.go internal/mcp/*_test.go` and confirms that no parallel test
+    reaches the overridden seams (H10).
+* **Per-task gates** (Go 1.24.0):
+  * `go vet ./...`
+  * `go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout=5m --new-from-rev=HARNESS_BASE_SHA ./internal/<pkg>/...`
+    must report 0 new findings in the task's files. The pinned module version is the one CI uses and is verified
+    against the Go checksum database, so it is a trusted, reproducible source, unlike an unpinned `npx --yes`.
+  * `go build -o logs/diagnostics/backlogit-wave20.exe ./cmd/backlogit` (the output stays under the git-ignored
+    `logs/diagnostics/`, so the gate never writes a binary into the tracked tree)
+  * For each task file, `git show HEAD:<file> | gofmt -l` must print nothing. Run it through `cmd /c` or bash, so
+    the pipe carries bytes unchanged. This checks the committed LF copy,
+    so the Windows CRLF checkout cannot produce false positives.
+  * `git diff --check HARNESS_BASE_SHA HEAD -- <task files>` must be clean.
+  * *Scope.* `git show --name-only --format= HARNESS_COMMIT` must list exactly the harness file (plus any allowed
+    `.backlogit/**` or `docs/memory/**` paths). `git diff --name-only START_SHA HEAD`, **unfiltered**, must list
+    exactly the production file plus any allowed `.backlogit/**`, `docs/memory/**`, or `logs/**` metadata paths
+    (attempt-3 finding: a pathspec filter could hide an out-of-scope edit).
+  * *Size.* If a task exceeds the 2-hour rule or its declared file or declaration counts during implementation, Ship
+    STOPs and returns it to Stage for a split; it never widens scope in place.
+* **Wave convergence.** At each wave close, run:
+  * `go test -run '^$' -count=1 ./...` (compile only);
+  * `go vet ./...`;
+  * the pinned `golangci-lint --new-from-rev=<wave base SHA>` for each touched package, where the wave base SHA is
+    the `HARNESS_BASE_SHA` of the wave's first harness commit;
+  * `git show HEAD:<file> | gofmt -l` for every task file in the wave;
+  * every task's `harness_cmd` in the wave;
+  * every task's `green_regression_cmds` in the wave;
+  * a `FULL_SUITE_OPERATOR_DEFERRED: wave <k>` line recorded in the wave's run record (QG-2).
+* **W3 pre-push gate** (attempt-2 finding). After W3 convergence, rerun every Wave 20 selector with exact counts,
+  captured to `logs/diagnostics/`:
+  * `go test -count=1 -timeout=15m -v -run '^TestU20C[12356]_' ./internal/core`, expecting exactly 8
+    (2 + 1 + 2 + 1 + 2);
+  * `go test -count=1 -timeout=10m -v -run '^TestU20C4_' ./internal/mcp`, expecting exactly 2;
+  * the de-duplicated union of every task's regressions (attempt-3 finding), each with exact counts:
+    * `go test -count=1 -timeout=20m -v -run '^(TestUpdateArtifact_|TestUR1B_|TestUR2_|TestUR3_|TestUR10_|TestP021|TestP1C4_|TestP1C6_|TestP1C7_|TestNormalizeBlockedShipment)' ./internal/core`,
+      expecting exactly 41 (13 + 3 + 3 + 5 + 1 + 3 + 1 + 4 + 2 + 6);
+    * `go test -count=1 -timeout=10m -v -run '^(TestRegistryParity_|TestUR8_)' ./internal/cli`, expecting exactly 13;
+    * `go test -count=1 -timeout=10m -v -run '^TestDiagnosticToolsRemainAvailableWithPoisonedLifecycleJournal$' ./internal/mcp`,
+      expecting exactly 1.
+* **Circuit.** No task, and no wave convergence, runs `go test ./...` with tests selected, or an unselected package
+  run. The operator authorization for the `3a240fe0` run is **consumed**.
+* **Posture and safety modes.** The suggested posture is test-first. The safety modes are investigate-first and
+  freeze-scope, plus **careful** for W0 (relocating an uncommitted draft) and for U20C1 (the write boundary every rewrite
+  passes through).
+
+### 20.5 Schedule, edges, 155-S membership, and final gate
+
+* **Precondition W0 — fold Ship's draft (Ship, before any Wave 20 harness; operator decision 2026-09-26, rev23.4).**
+  Ship's uncommitted draft addition to `internal/core/shipment_blocked_recovery_harness_test.go` is **folded** into
+  the Wave 20 harnesses. It is not restored to HEAD, and no `git restore`, `git checkout`, `git stash`, or other
+  discarding command is used on it.
+  * *The draft.* It is about +99 lines appended after `TestShipmentBlockedRecoveryR10SubprocessHelper`:
+    * `TestBlockedShipmentGenericCustomFieldsPreserveEnvelope` (the C1 portion);
+    * `TestUnblockShipmentStatusEventPrecedesEnvelopeClear` (the C2 portion).
+  * *Why it must move first.* The unused `root` at `:1498` breaks compilation of package `core`. The `copy` shadow
+    and the unprefixed names are hygiene defects; unfixed, the names would put unprefixed red functions into every
+    `internal/core` run (attempt-4 finding).
+  * *Owner (attempt-4 finding).* Ship runs every W0 step, the U20C1 refactor, and the W2 U20C2 port **through the
+    harness-architect skill** (P-010 test authoring). The 174.077-T scaffold adopts the W0-seeded U20C1 file **in
+    place** as its starting content and never recreates it. Its RED capture and `HARNESS_COMMIT` cover the completed
+    file. The same holds for the W2 port into the 174.078-T harness.
+  * *Encoding (attempt-4 finding; Windows).* Write every file with the editor tool or
+    `[IO.File]::WriteAllText(path, text, [Text.UTF8Encoding]::new($false))`, keeping each file's existing line
+    endings. Never use a PowerShell `>` redirect or `Set-Content`/`Out-File` without an explicit no-BOM encoding.
+    Before any verify step, the first three bytes of every file W0 writes or edits must not be `EF BB BF`.
+  * *Procedure* (careful mode):
+    1. *Provenance record.* Run
+       `git diff --output=logs/diagnostics/wave20-draft-fold.patch -- internal/core/shipment_blocked_recovery_harness_test.go`.
+       Record the file's `Get-FileHash -Algorithm SHA256` value in the W0 run record, and confirm the path is ignored
+       with `git check-ignore -q`. **Before step 2, check the patch.** It must be non-empty and contain both
+       `func TestBlockedShipmentGenericCustomFieldsPreserveEnvelope` and
+       `func TestUnblockShipmentStatusEventPrecedesEnvelopeClear`. If not, halt to the operator.
+    2. *Relocate the C1 portion.* Move `TestBlockedShipmentGenericCustomFieldsPreserveEnvelope` into the new U20C1
+       harness file `shipment_blocked_envelope_u20c1_harness_test.go` (20.3.1). Refactor it there in the same pass,
+       before any compile check, because the draft's unused `root` would otherwise still break package `core`.
+    3. *Park the C2 portion.* Move `TestUnblockShipmentStatusEventPrecedesEnvelopeClear` into the git-ignored
+       parking file `logs/diagnostics/wave20-draft-u20c2.go.txt`.
+       * The `.txt` extension keeps it out of every `./...` package build.
+       * `git check-ignore -q` on the parking file must pass.
+       * Record its SHA-256 next to the patch hash, and confirm its function body equals the C2 hunk in the patch.
+       * It is ported when the W2 harness for 174.078-T is scaffolded (20.3.2), because U20C2's RED is defined on
+         the U20C3-green tree and W1 must carry no open cross-wave RED selector.
+    4. *Verify.* The draft hunk is removed by relocation, which is an edit, not a discarding command.
+       * `git diff --quiet -- internal/core/shipment_blocked_recovery_harness_test.go` must succeed, meaning the
+         tracked file is again equal to HEAD. Because the draft was never committed, no Wave 20 commit touches that
+         file.
+       * `go test -run '^$' -count=1 ./internal/core` must pass (attempt-4 finding). Record it in the W0 run record,
+         and halt if it fails.
+  * *Staging.* Every harness commit stages by exact path only, never by directory, so the untracked W0-seeded file
+    cannot be swept into a sibling task's `HARNESS_COMMIT` (attempt-4 finding).
+  * *Split across harness commits.* "One harness commit per task" holds:
+    * the C1 portion lands only in 174.077-T's `HARNESS_COMMIT`;
+    * the C2 portion lands only in 174.078-T's `HARNESS_COMMIT`;
+    * neither commit lists `shipment_blocked_recovery_harness_test.go`.
+  * *Counts are unchanged.* The draft functions are renamed and refactored into the existing planned top-level
+    functions. They never become extra ones, so the declared `^TestU20C1_` = 2 and `^TestU20C2_` = 1 counts stand
+    (20.3.1, 20.3.2).
+  * *Stop condition.* Ship halts to the operator if either of these happens; it never discards content to get there:
+    * the relocation cannot leave the tracked file equal to HEAD, for example because other uncommitted edits are
+      found in it;
+    * at the W2 port, either recorded SHA-256 no longer matches.
+  * Stage does not touch the draft.
+* **Waves.** Within each wave the production files are disjoint. The sibling RED selectors of a task are the other
+  `^TestU20C<n>_` prefixes in its wave, and there are no open RED selectors across waves.
+  * **W1** = {174.077-T (U20C1, `artifacts.go`), 174.079-T (U20C3, `shipment.go`), 174.082-T (U20C6,
+    `shipment_recovery.go`)}.
+  * **W2** = {174.078-T (U20C2, `shipment.go`; after U20C3), 174.080-T (U20C4, `tools.go`; after U20C6)}.
+  * **W3** = {174.081-T (U20C5, `shipment.go`; after U20C2)}.
+* **Edges** (`depends-on`), exactly three:
+  * 174.078-T → 174.079-T
+  * 174.080-T → 174.082-T
+  * 174.081-T → 174.078-T
+* **155-S membership.** The tasks are appended after `174.076-T` in dependency order: 174.077-T, 174.079-T,
+  174.082-T, 174.078-T, 174.080-T, 174.081-T. That brings 155-S to 45 items. This is an authorized
+  membership amendment for review remediation; the shipment is active and claimed by Ship.
+* **Push.** Harness commits are designed-RED. Ship does not push from the first Wave 20 harness commit until W3
+  convergence and the W3 pre-push gate (20.4) are GREEN. It then pushes **once**, before the final gate. A tree with
+  U20C2 GREEN is not shippable on its own without U20C5.
+  * *Pre-push tree check (attempt-4 finding).* Immediately before the push, `git status --porcelain` must show no
+    modified or untracked path under `internal/**` or `cmd/**`. Only operator-dirty and Ship-evidence paths may
+    remain, for example `.backlogit/stash.jsonl`, `docs/closure/**`, and `docs/memory/**`; ignored `logs/**` does
+    not appear. Otherwise, Ship halts.
+* **Final gate** (a repeat of 19R.8 for the Wave 20 tree, run after the push):
+  0. *Precondition (attempt-3 finding).* `backlogit stash get` succeeds for each of `FA6AE139`, `9900D0DD`,
+     `09D06A75`, `8AF55264`, and `7D8717B1`. The captures live in the operator-dirty, uncommitted
+     `.backlogit/stash.jsonl`; if any is missing, Ship halts to Stage before the review.
+  1. Immediately before the run, request **one new** explicit operator authorization for a single governed
+     `go test -timeout=30m ./...`, captured to `logs/diagnostics/`.
+  2. Run exactly one standard review and one adversarial review over the 155-S branch diff, focused on the Wave 20
+     surfaces. The stop gate is P-014: zero P0/P1 and no unresolved in-scope P2 (P-021 C1).
+     * The review brief lists the pre-dispositioned P-021 C2 captures `FA6AE139`, `9900D0DD`, `09D06A75`,
+       `8AF55264`, and `7D8717B1` with their C1 reasons, so a re-raised item is matched to its capture rather than
+       counted as a new unresolved in-scope P2.
+     * An in-scope finding that is re-raised still halts under the C3 cycle-limit disposition.
+  3. A **second** NOT READY halts to the operator; it does not trigger an automatic Wave 21. New out-of-scope
+     findings go to P-021 C2 capture.
+
+### Plan Hardening Signals — Wave 20
+
+* Crash-recovery and transaction-ordering change (lifecycle journal and evidence order): **yes**.
+* Change to the lower governed write boundary used by every artifact rewrite (`writeArtifactFileGoverned`): **yes**.
+* Change to a recovery guard (the normalize ownership guard is widened): **yes**.
+* MCP tool contract change (a required parameter): **yes**, but a tightening only.
+* New executable, package, dependency, or schema migration: **no**.
+* Irreversible data change: **no**. Every fix is safe to revert, and old journals and logs stay readable by the
+  unchanged recovery code.
+* **Requires plan hardening: yes.**
+
+### Constitution Check — Wave 20
+
+| Principle / section | Mapping |
+|---|---|
+| I. Safety-First Go | No `panic`. Errors carry context. **Deviation EW-1 (temporary, scoped to U20C3/U20C5):** on the indeterminate paths, the `%w` chain carries only `ErrWriteIndeterminate`, and every other cause, both the original write cause and the step or journal error, is rendered with `%v`. The reason is that the MCP `domainError` checks not-found, conflict, blocked-envelope, `ErrValidation`, and `MutationPartialError` before `ErrWriteIndeterminate` (every mapping it checks first), so any wrapped cause would misreport a pending-intent outcome as retryable bad input. The alternative, reordering `domainError`, was rejected here because it is out of the two-file scope and changes every tool's mapping. It is captured as stash `7D8717B1`, which also retires EW-1 |
+| II. Test-First (NON-NEGOTIABLE) | Every task has an owner RED harness, observed assertion-RED before its implementation commit. Each production change has a failing assertion that is specific to it: U20C3's early `mutationApplied` has the landed-then-failed unblock restore assertion, checked before recovery in function 1, and U20C4's handler check has the handler-specific message. The U20C4 reorder that had no RED was dropped. The full suite is deferred to the single new authorized run (20.5), with a per-wave `FULL_SUITE_OPERATOR_DEFERRED` record (QG-2). It is deferred, not waived |
+| III. Workspace Isolation | Harnesses use `t.TempDir` workspaces only, and obstructions stay local to the temp root |
+| IV. CLI Containment (NON-NEGOTIABLE) | No CLI change. Normalize stays an intentional MCP-without-CLI exception |
+| V. Structured Observability | The unblock audit gains `reason`, and the evidence is written before the envelope is cleared. The generic-update audit envelope and post hooks no longer record forged envelope values; pre-hooks still see the submitted request (DR2). The U20C6 refusal names the journal, its kind, and the matched ID. RED/GREEN captures go to `logs/diagnostics/` |
+| VI. Single Responsibility | Each fix sits at the seam that owns it: the update merge and write boundary, the lifecycle operation, the recovery guard, and the MCP adapter. The recovery reconciler and inspector are unchanged and serve as the oracle |
+| VII. Destructive Approval (NON-NEGOTIABLE) | There is no destructive step (rev23.4). By operator decision on 2026-09-26, Ship's uncommitted draft is folded by relocation into the U20C1 harness and a git-ignored parking file for U20C2 (W0). It is never restored or discarded, a provenance patch is recorded, and a relocation that cannot leave the tracked file equal to HEAD halts to the operator. The pinned lint module is trusted (20.4) |
+| VIII. Safety Modes | investigate-first plus freeze-scope, and careful for the W0 relocation and for U20C1 |
+| IX. Git-Friendly Persistence | No format change to journals, events, or frontmatter; one additive event-delta key (`reason`) |
+| X. Context Efficiency | Six findings map to five finding tasks plus one consequence task (U20C6), each within one file pair. Deferred work is captured in the stash (P-021 C2), not swept in |
+| XI. Merge Commit History | Unaffected |
+| Quality Gates | **Deviation QG-1 (19R D3 restated):** lint and format are scoped, both per task and at wave convergence. Pinned `golangci-lint --new-from-rev` runs per touched package, and `gofmt -l` runs on the committed copy of the task files. The reasons are that raw `gofmt -l .` on Windows (CRLF checkout) is not authoritative and that pre-existing repo lint debt is out of scope. Full-repo lint was rejected for that reason. **Deviation QG-2 (19R D1, restated in attempt 2):** it deviates from the P-002.6 conditional clause that runs the unfiltered full suite at each wave convergence when no red deliverable is open, and from the P-004 precondition that `go test -timeout=30m ./...` exits non-zero. The justification is the 20.4 Circuit: the operator's authorization for a full run was consumed at `3a240fe0`, and a full run needs fresh authorization. The substitutes are the compile-only check, `go vet`, scoped lint and format, the exact-count scoped selectors, the W3 pre-push gate, and a scoped `Red Phase: CONFIRMED (scoped)` record. Each wave records `FULL_SUITE_OPERATOR_DEFERRED: wave <k>`. *Rejected alternative:* requesting operator authorization for a full run at each of the 3 waves. It adds 3 long governed runs with no extra coverage over the single final-gate run, because every changed surface is already covered by exact-count selectors |
+| Task Granularity (NON-NEGOTIABLE) | Every task has 2 files, at most 4 declarations, and a single domain. **Deviation TG-1:** a table over symmetric operations counts as one scenario. **Deviation TG-2:** inline negative controls, error-shape rows, and U20C6 journal-shape rows are not scenarios (20.3). So U20C1 has 3 behavioral scenarios and every other task at most 2 |
+| P-021 | Plan-review deferrals are captured with the full C2 payload as stash `FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, and `7D8717B1`. Closure must cite them in its residual-risk record (C3, threadless) |
+| Stop Conditions | 6 open tasks. The plan-review budget for this corrective design allowed 2 re-entries after FAIL. Attempt 3 returned ADVISORY. The operator then granted exactly one extra round, attempt 4, which also returned ADVISORY. The operator approved that ADVISORY for the rev23.5 text on 2026-09-26T04:05Z, and harvest followed. No further round runs without a new operator grant. A second final-gate NOT READY halts to the operator |
+| P-010 | Stage authored no code or test change and did not touch Ship's draft. Ship performs the fold (W0) and the U20C2 port through the harness-architect skill (test authoring) |
+
+Constitution Check: documented-deviations
+
+## Plan Hardening — Wave 20
+
+| # | Risk | Mitigation (bound to a unit and a check) |
+|---|---|---|
+| H1 | Moving the status event earlier (U20C2) opens a window where applied evidence exists but the envelope is not yet cleared | Recovery's rollback branch handles that state. U20C2 lands after U20C3, so a failed persist always gets compensated evidence. The `^TestUR3_`/`^TestUR10_` regressions are exact-count gates |
+| H2 | Compensation status evidence breaks the inspector | The inspector is unchanged and acts as the oracle. U20C3 functions 1 and 2 assert that recovery returns `NoError` with no conflict and that Doctor is clean |
+| H3 | Setting `mutationApplied` before the attempt restores a preimage that was never overwritten, or the restore itself fails | The restore is idempotent: the preimage equals the current file. The `^TestP021`/`^TestP1C4_` regressions and the U20C3 preimage-equality assertions cover it. *Accepted degradations, stated (attempt-2 finding):* (1) If the forward write failed for a persistent reason that also breaks the restore, compensation returns the unchanged "compensation failed" error with the journal in `intent`, where HEAD would sometimes have ended cleanly as `compensated`. (2) If the shipment log is unwritable, step 2 fails and the journal stays `intent`. In both cases `lockShipmentLifecycleGlobal` runs recovery as a barrier, so every lifecycle-locked writer (`updateArtifactUngated`, `AddItemToShipment`, `BulkUpdateStatus`, `CreateShipment`, and workspace open) fails closed until the fault clears. That is the truthful outcome for a possibly landed write. The diagnostic workspace keeps Doctor and normalize available, and double-fault classification is captured as stash `7D8717B1` |
+| H4 | The ADV-A indeterminate classification strands the shipment | Recovery's terminal-evidence branch finalizes `committed`. U20C5 proves convergence, a clean Doctor, and the error classification |
+| H5 | The write-boundary guard (U20C1 Fix B) blocks a legitimate writer | It applies only to blocked→blocked writes, only when the envelope differs, and only when the write is ungoverned. It runs after the membership seal, so the refusal precedence is preserved. Governed writers are exempt by construction, and the exemption cannot be forged (DR2). The audited test writers are listed in DR2. The `^TestUR2_`/`^TestUR3_`/`^TestUR10_`/`^TestNormalizeBlockedShipment`/`^TestP1C4_`/`^TestP1C7_` regressions (34 in total) are gates, and a regression failure STOPs the task |
+| H6 | U20C1 changes task-level `blocked_reason` behavior | Scoped to `artifact_type: shipment`. The 13 `^TestUpdateArtifact_` regressions include the task-level blocked-reason tests |
+| H7 | Warm routing (U20C4) changes normalize behavior or drops the guard | DR4 accepts the refusal change and documents the remedy and its limits. U20C6 adds the aggregate guard first (edge 174.080-T → 174.082-T). It runs after the locked reload using the locked `memberIDs`, and the existing same-shipment check keeps its message and precedence. The `^TestNormalizeBlockedShipmentForRecovery_` and `^TestU20C6_` regressions are gates for U20C4 |
+| H8 | Requiring `by` breaks MCP callers | Core already rejects an empty actor, so no caller could succeed without it. `^TestRegistryParity_` (10) and the diagnostic regression are gates |
+| H9 | A harness passes vacuously | Each case asserts the injected text or a specific message, and the exact step label. U20C4 asserts that the `NewWorkspace` failure names the poison. RED is captured per function, and exact PASS counts are required |
+| H10 | Package-global seams leak between tests | No `t.Parallel`. The recorded `t.Parallel` audit (20.4). Every seam and obstruction is restored via `t.Cleanup`, and explicitly before recovery. The obstruction restore is idempotent |
+| H11 | Windows file-handle, antivirus, or indexer interference makes an obstruction flaky | The shared helper uses bounded retry, an `Lstat` check, and the restore order "remove the planted entry, then rename back". If the behavior is nondeterministic, the task STOPs and returns to Stage |
+| H12 | Ship's uncompilable draft contaminates the gates, or its content is lost | The W0 fold is done first and moves the draft out of the compiled package. The C1 portion goes into the U20C1 harness file, and the C2 portion is parked as a git-ignored `.txt` file. A provenance patch and its SHA-256 are recorded. `git diff --quiet` must then show the tracked file equal to HEAD, and the harness-commit scope checks list only the new harness files. If a clean relocation is impossible, Ship halts |
+| H13 | Wave 20 widens into other flows | DR6 has verified that claim, return, and normalize are unaffected. Deferred work is captured in the stash (`FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, `7D8717B1`). The per-task scope check (20.4) runs on both the harness commit and the implementation delta |
+| H14 | A designed-RED harness is pushed, or a partial tree ships | No push until W3 convergence and the W3 pre-push gate are GREEN (20.4/20.5) |
+| H15 | U20C4's warm server leaks its SQLite handle on Windows | The harness closes `server.Workspace` in `t.Cleanup` |
+| H16 | The per-task gates cannot pass because harnesses are committed before the claim | Separate SHAs (`HARNESS_COMMIT`, `HARNESS_BASE_SHA`, `START_SHA`), one harness commit per task, and separate scope checks for the harness commit and the implementation delta (20.4) |
+
+<!-- plan-review-attempt: 20-1 -->
+
+## Plan Review — Wave 20 attempt 1 (rev23) (2026-09-25)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer, Security Lens Reviewer, Correctness Reviewer
+decision: FAIL
+```
+
+* **Budget.** Wave 20 starts a fresh review budget, because it is a new corrective design.
+* **Totals (after dedupe):** P0 0, P1 3, P2 12, P3 about 20.
+* **Plan hardening** was required. rev23 included it, but the P1s made parts of it inaccurate.
+* **Disposition.** Everything below is resolved in place as **rev23.1** (the text above). The rev23 text was
+  replaced rather than kept alongside.
+
+**P1, all resolved:**
+
+1. *U20C1 subtests omitted `items`* (Go, Correctness, Security). A wholesale replace drops the membership, so the
+   seal refuses the write with `ErrShipmentConflict`. The harness would have been RED for the wrong reason and
+   could never go GREEN. *Fix:* the updates now round-trip `items`, and an inline control shows that dropping
+   `items` is still refused. No preservation for `items`.
+2. *The U20C3 arming rule was unreachable for unblock* (Constitution, Go, Scope, Architecture, Correctness). If the
+   unblock shipment write fails, `mutationApplied` is false, so no restores run. The restore order was also stated
+   wrongly. *Fix:* arm inside the failing seam call. `mutationApplied` is now set before the attempt.
+3. *Error classification for agents* (Parity; Go P3 and LR-02 concur). Wrapping the ops `ErrValidation` with `%w`
+   maps to `validation_failed` ahead of `write_indeterminate`. *Fix:* deviation EW-1 renders the cause with `%v`
+   under the indeterminate class, with negative `errors.Is` assertions in U20C3 and U20C5.
+
+**P2, all resolved:**
+
+* Granularity: U20C3 had 6 cases. *Fix:* split into U20C3 and U20C5, plus TG-1.
+* Intermediate-tree hazard between U20C2 and U20C3. *Fix:* the edge is reversed; U20C2 now depends on U20C3.
+* Write-boundary bypass (Architecture, Security). *Fix:* DR2 Fix B.
+* Guard narrowness on the warm path (Security, Architecture, Correctness P3). *Fix:* the new U20C6, and the DR4
+  behavior change is documented.
+* The compile check `-run '^$' ./...` was wrongly banned. *Fix:* it is now allowed, with deviation QG-2.
+* Canonical `green-regression-contract` block. *Fix:* required by 20.4.
+* The U20C4 handler check had no RED of its own. *Fix:* the handler-specific message and code assertion.
+* DR3 had no rejected alternative. *Fix:* added, citing the SBLK-R8 text.
+* START_SHA ambiguity. *Fix:* defined per task.
+* Missing regression prefixes. *Fix:* `TestP1C4_` and `TestP1C6_` added.
+* The wrong function was named. *Fix:* now `updateArtifactUngated`.
+* The warm-server SQLite handle. *Fix:* H15.
+* LR-03 (the preimage must come from under the lock). *Fix:* DR2.
+* LR-04 (entry-point list). *Fix:* DR2.
+* LR-05 (dispatch through the registered tool). *Fix:* 20.3.4.
+* LR-06 (`t.Parallel` audit). *Fix:* 20.4.
+
+**Correctness P2 on an untagged terminal-commit append, deferred.** No existing seam can reach it without a
+production seam, so it is recorded as deferred capture (a) with the reasoning.
+
+**P3 items** were adopted where cheap: exact step labels, the obstruction helper, the snapshot-presence
+assertions, the W0 decline path, the `logs/` wording, and the DR6 verified analysis. The rest are listed as
+deferred captures (b)–(j).
+
+<!-- plan-review-attempt: 20-2 -->
+
+## Plan Review — Wave 20 attempt 2 (rev23.1) (2026-09-25)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer, Security Lens Reviewer, Correctness Reviewer
+decision: FAIL
+```
+
+* **Budget.** This is re-entry 1 of at most 2. Attempt 3 is the last before the P-013.6 escalation halts to the
+  operator.
+* **Totals (after dedupe):** P0 0, P1 3, P2 about 16, P3 about 25. Every attempt-1 P1 was verified resolved, except
+  that the EW-1 part of attempt-1 P1-3 was only partly fixed (see P1-1 below).
+* **Disposition.** Everything below is resolved in place as **rev23.2**, the text above. The rev23.1 text was
+  replaced rather than kept alongside.
+
+**P1, all resolved:**
+
+1. *U20C3 still wrapped the original cause with `%w`* (Parity, Learnings; Correctness, Go, and Constitution P2/P3
+   concur). The cause can carry `ErrShipmentConflict`, `ErrValidation`, `ErrNotFound`, `ErrWriteNotApplied`, or a
+   blocked-envelope sentinel, and `domainError` checks those before `write_indeterminate`. *Fix:* EW-1 is extended.
+   The indeterminate `%w` chain carries only `ErrWriteIndeterminate`, with the cause and the step rendered `%v`, plus
+   error-shape rows with negative `errors.Is` assertions (20.3.3). EW-1 is marked temporary, and retiring it is
+   captured as `7D8717B1`.
+2. *The START_SHA definition broke the per-task gates* (Constitution). Harnesses are committed before the claim.
+   *Fix:* `HARNESS_COMMIT`, `HARNESS_BASE_SHA`, and `START_SHA`, one harness commit per task, and separate scope
+   checks (20.4, H16).
+3. *Deferred items had no P-021 C2 capture* (Constitution). *Fix:* five stash entries with the full C2 payload,
+   grouped by contract surface: `FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, and `7D8717B1` (20.2). Closure cites
+   them in its residual-risk record.
+
+**P2, all resolved:**
+
+* The U20C1 drop-items control ran after the unblock, so it could never pass (Correctness). *Fix:* it now runs while
+  the shipment is still blocked.
+* The early `mutationApplied` in U20C3 had no RED of its own (Constitution), and the degradation when the restore
+  fails was unstated (Correctness). *Fix:* case 1 is landed-then-failed, and the unblock restore assertion is RED at
+  HEAD. H3 now states both degradations.
+* The U20C3 obstruction helper failed when its restore ran twice, and U20C5 could copy it (Go). *Fix:* the restore is
+  idempotent, and U20C5 calls the helper by name.
+* The DR2 entry-point claims were unaudited, the size-seam wording was wrong, and the regressions were missing
+  (Go, Learnings, Correctness P3). *Fix:* the test-writer audit is recorded, the wording is corrected, `TestP1C7_` is
+  added (U20C1 → 34, U20C6 → 16), Fix B runs after the membership seal, and it uses the Markdown preimage and
+  canonical timestamps.
+* The U20C6 call site, the return-blocked predicate, and malformed return-blocked journals (Architecture, Security,
+  Go, Correctness). *Fix:* the existing same-shipment check is kept. A new aggregate guard runs after the locked
+  reload using the locked `memberIDs`. It matches return-blocked records in any phase or schema by their embedded
+  IDs, attributes malformed return-blocked files by name, and its message names the journal, kind, and ID (20.3.6,
+  DR4).
+* The U20C4 `id`/`snapshot_ref` reorder had no RED (Constitution, Scope P3). *Fix:* the reorder is dropped. `by`
+  gets a `TrimSpace` check at the existing validation site, with a whitespace row.
+* QG-2 was incomplete, and wave convergence had no lint or format (Constitution). *Fix:* QG-2 is restated with the
+  violated clauses, its justification, and the rejected per-wave-authorization alternative. Each wave records
+  `FULL_SUITE_OPERATOR_DEFERRED`, and convergence runs scoped lint and format.
+* U20C1 went over the scenario count (Constitution). *Fix:* deviation TG-2, with the rejected split alternative.
+* There was no pre-push gate for all selectors, and the order of push and final gate was unstated (Scope). *Fix:*
+  the W3 pre-push gate (8 + 2), and the push happens before the final gate.
+* U20C6 reached 5 declarations and pulled in capture (e) (Scope, Constitution P3). *Fix:* only the `ForRecovery`
+  doc comment is updated, so at most 4 declarations.
+* Deferral (a) contradicted DR1 (Constitution, Scope, Learnings). *Fix:* DR1 is narrowed to committed evidence that
+  is known durable. The rationale is corrected: tagged indeterminate causes already skip compensation, and the
+  untagged `appendFast` residual needs a seam in `internal/events`. It is captured as `FA6AE139` and
+  pre-dispositioned in the final-gate brief.
+* DR4's remedy did not work with an unrelated poison present (Parity, Architecture P3, Security P3). *Fix:* the
+  limit is stated, the operator-only escape is named, and target-scoped recovery is captured (`09D06A75`).
+* Learnings LR-02/03 (reconciling with never-roll-back-indeterminate; loads coming from Markdown). *Fix:* DR1 and
+  DR2.
+
+**P3 items** were adopted where cheap:
+
+* careful mode;
+* the pinned-lint trust note;
+* `gofmt` run on the committed copy;
+* the U20C4 poison-attributed `NewWorkspace` assertion;
+* a statement of the `nil` result shape;
+* the governed-flag unforgeability statement;
+* the hook-channel statement;
+* the single key-list helper;
+* the X-row mapping wording;
+* the event-contract note.
+
+The rest are folded into the five stash captures.
+
+
+## Plan Review — Wave 20 attempt 3 (rev23.2) (2026-09-25)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer, Security Lens Reviewer, Correctness Reviewer
+decision: ADVISORY
+operator_authorization: pending
+```
+
+All 8 personas returned, so coverage is complete. Totals: **P0 0, P1 0, P2 1, P3 27.** Under the plan-review gate
+table, P2-only is ADVISORY. Stage does not self-authorize an ADVISORY verdict: harvest (task creation, edges, and the
+155-S membership amendment) waits until the operator appends `operator_authorization: approved` to this record or
+asks for a re-review of rev23.3. No attempt marker is appended, because this attempt did not FAIL.
+
+| Persona | P0 | P1 | P2 | P3 |
+|---|---|---|---|---|
+| Correctness Reviewer | 0 | 0 | 0 | 4 |
+| Go Reviewer | 0 | 0 | 0 | 5 |
+| Constitution Reviewer | 0 | 0 | 1 | 3 |
+| Scope Boundary Auditor | 0 | 0 | 0 | 4 |
+| Learnings Researcher | 0 | 0 | 0 | 3 (high confidence; no contradiction with the compound library) |
+| Architecture Strategist | 0 | 0 | 0 | 3 |
+| Agent-Native Parity Reviewer | 0 | 0 | 0 | 4 |
+| Security Lens Reviewer | 0 | 0 | 0 | 1 |
+
+**The P2 (Constitution, Principle II): U20C6 had helper branches with no RED row.** The related-artifact match, the
+nil `Shipment`/`Item` refusal, and committed-phase return-blocked records were specified but untested. *Resolved in
+place as rev23.3 (20.3.6):*
+
+* the related-artifact match is dropped from Wave 20 and captured as stash `09D06A75`;
+* the nil branch is removed from the helper contract: validation (`shipment_ops.go:416`) rejects such a record, so it
+  arrives as a validation error and is covered by the malformed-file row;
+* a committed-but-unremoved v2 return-blocked row is added to function 1.
+
+**P3 items adopted in rev23.3:**
+
+* U20C3: the injection mode is fixed per function; the error-shape rows are listed per function (TG-2); every row
+  asserts the negative classification, including `ErrNotFound` and `MutationPartialError`; function 1 checks the
+  preimage before recovery (the Principle II credit); function 2 asserts the injected text; the obstruction path is
+  `shipmentOpsRoot(root)`.
+* U20C1: Fix A works on a shallow clone and deletes-then-copies every envelope key; Fix B falls back to raw canonical
+  JSON when a timestamp cannot be parsed.
+* U20C5: verbatim labels and the extended negative classification.
+* U20C6: a read-only scan through `inspectShipmentOperationJournalsReadOnly`, where a scan error refuses; the exact
+  `kind=<kind> matched=<id>` token; the malformed file name is built with `returnBlockedJournalPath` and pre-checked.
+* DR1: "may have landed" now applies to unclassified failures only; relocation mislabelling goes to `7D8717B1`.
+* DR2: the link and dependency loaders are named (`findArtifact`), and the governed-context scope is stated.
+* DR4: the no-op claim now names the unremoved-journal exception; the remedy no longer uses block or unblock just to
+  trigger recovery.
+* EW-1 wording names `MutationPartialError`.
+* 20.4:
+  * `go build -o` writes under `logs/diagnostics/`;
+  * the scope diff is unfiltered;
+  * the counts declared in the task body are the authority;
+  * the 2-hour STOP-and-split rule is stated;
+  * the W3 pre-push gate reruns the regression union (41 / 13 / 1).
+* 20.5: the final gate starts with `stash get` on the five captures.
+
+The remaining P3s are wording nits that are already covered by the five captures, or they restate existing text.
+
+
+## Plan Review — Wave 20 attempt 4 (rev23.4, operator-granted) (2026-09-26)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer, Security Lens Reviewer, Correctness Reviewer
+decision: ADVISORY
+operator_authorization: approved
+operator_authorization_by: softwaresalt
+operator_authorization_at: 2026-09-26T04:05Z
+operator_authorization_scope: rev23.5 text (attempt-4 ADVISORY; P2s resolved in place, not re-reviewed)
+```
+
+This round was granted by the operator on 2026-09-26, beyond the exhausted retry budget. It reviewed rev23.3 plus the
+rev23.4 draft-fold W0. All 8 personas returned, so coverage is complete.
+
+**Totals: P0 0, P1 0, P2 5 raw (3 distinct), P3 22.** The operator's instruction for this round was: harvest only on
+PASS; on ADVISORY or FAIL, do not harvest, record `operator_authorization: pending`, and report. **No tasks were
+created and 155-S was not amended.** No attempt marker is appended, because this attempt did not FAIL.
+
+| Persona | P0 | P1 | P2 | P3 |
+|---|---|---|---|---|
+| Correctness Reviewer | 0 | 0 | 1 | 3 |
+| Go Reviewer | 0 | 0 | 1 | 4 |
+| Constitution Reviewer | 0 | 0 | 2 | 3 |
+| Scope Boundary Auditor | 0 | 0 | 0 | 3 |
+| Learnings Researcher | 0 | 0 | 1 | 2 (confidence: medium) |
+| Architecture Strategist | 0 | 0 | 0 | 3 |
+| Agent-Native Parity Reviewer | 0 | 0 | 0 | 2 |
+| Security Lens Reviewer | 0 | 0 | 0 | 2 |
+
+**Distinct P2s, each resolved in place as rev23.5.** rev23.5 has not been re-reviewed.
+
+1. **U20C6 match precedence was unstated** (Correctness, Go, and Constitution). Every function-1 row names both the
+   target and a member, and the rows asserted `matched=<member ID>`, so a correct implementation that checks the
+   shipment first would never reach GREEN. *Fix (20.3.6):*
+   * member IDs are checked first and the target ID second, and the first match is reported;
+   * a target-only malformed-name row was added (`matched=<target ID>`);
+   * the kinds map to the fixed display labels `lifecycle` and `return-blocked`.
+2. **Fail-closed branches added in rev23.3 had no RED row** (Constitution, Principle II). *Fix:*
+   * U20C1 function 2 gains an unparsable-`blocked_at`-only error-shape row;
+   * the U20C6 scan-error refusal is marked defensive and unreachable, because the unchanged same-shipment check
+     (`shipment_recovery.go:1091`, `inspectShipmentOperationJournals`) fails first on every ops-root error.
+3. **The W0 fold was not safe against Windows encoding** (Learnings). The relevant entries are
+   `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md` (the gofmt/BOM note) and
+   `docs/compound/runtime-errors/windows-mojibake-utf8-powershell-fix-2026-04-08.md`. *Fix (20.5 W0):*
+   * the patch is written with `git diff --output=`;
+   * files are written with the editor tool or UTF-8 without a BOM, keeping their line endings, and a no-BOM check
+     runs before verify;
+   * the patch is checked for non-empty content and both function names before any removal;
+   * the parking file is `check-ignore`d and hashed, and its hash is re-checked at the W2 port.
+
+**P3s adopted in rev23.5:**
+
+* Fix A now runs **before** the merge and passes the cleaned clone to `mergePreserveReservedSizingKeys`
+  (Correctness and Go).
+* W0:
+  * a compile check (`go test -run '^$' ./internal/core`) after the relocation;
+  * the owner is Ship acting through the harness-architect skill, and the W0-seeded file is adopted in place;
+  * harness commits stage by exact path only;
+  * the compile-defect wording now names `root` alone;
+  * the C2 port restores the saved `persistArtifactPreLockHook`.
+* The TG-2 table was updated.
+* A pre-push `git status --porcelain` check was added.
+* DR2:
+  * the status choke points were added to the audit;
+  * the Fix B claim is limited to the current file;
+  * the path-choice bypass is added to the Limit bullet and to stash `8AF55264`.
+* DR4:
+  * "reopen" is defined per surface, and a missing MCP reopen tool goes to `09D06A75`;
+  * the refusal-format statement now separates the U20C6 and same-shipment messages, with a uniform format going to
+    `9900D0DD`.
+* U20C6: the scan statement is limited to the new helper, and scan consolidation goes to `09D06A75`.
+* The P-010 row now names the harness-architect skill.
+
+Nothing was re-raised from the five captures. Every persona re-verified the declared counts: 34, 11, 17, 6, 15, 16,
+8, 2, and the 41/13/1 union.
+
+**Next step for the operator:**
+
+* **(a)** Authorize this ADVISORY verdict for the rev23.5 text by setting `operator_authorization: approved` here.
+  Stage then harvests with Step 4 `skip_review` validation.
+* **(b)** Grant one more review round over rev23.5.
+
+**Operator decision (2026-09-26T04:05Z, softwaresalt): (a).** The attempt-4 ADVISORY is approved for the rev23.5
+text. This final `## Plan Review` record satisfies the Step 4 gate (`dispatch_mode: multi-agent-dispatch`,
+`decision: ADVISORY`, `operator_authorization: approved`), so Stage harvested without a further review round.
+
+## Wave 20 Harvest Record (2026-09-26)
+
+Stage harvested the six rev23.5 work units under `174-F`. The IDs were assigned in creation order and match 20.3.
+
+| Unit | Task | Title | harness_cmd (exact count) | Depends on | Wave |
+|---|---|---|---|---|---|
+| U20C1 | 174.077-T | Protect blocked envelope in generic updates and write boundary | `-run '^TestU20C1_' ./internal/core` (2) | none | W1 |
+| U20C2 | 174.078-T | Record unblock reason before clearing blocked envelope | `-run '^TestU20C2_' ./internal/core` (1) | 174.079-T | W2 |
+| U20C3 | 174.079-T | Order compensation evidence before compensated journal phase | `-run '^TestU20C3_' ./internal/core` (2) | none | W1 |
+| U20C4 | 174.080-T | Route MCP normalize through guarded path and require actor | `-run '^TestU20C4_' ./internal/mcp` (2) | 174.082-T | W2 |
+| U20C5 | 174.081-T | Treat commit-journal failure after committed evidence as indeterminate | `-run '^TestU20C5_' ./internal/core` (1) | 174.078-T | W3 |
+| U20C6 | 174.082-T | Guard normalize against pending aggregate journals | `-run '^TestU20C6_' ./internal/core` (2) | none | W1 |
+
+* Every task is `queued`, priority `high`, labeled `wave-20,155-S,review-remediation,harness-required` plus its
+  domain (`core-lifecycle` or `mcp-adapter`), and carries its 20.3.x `green-regression-contract` block verbatim.
+  None is `harness-ready` yet; Ship applies that label after W0 and each scoped RED record.
+* Exactly three `blocks` edges were recorded: 174.078-T → 174.079-T, 174.080-T → 174.082-T, and
+  174.081-T → 174.078-T.
+* 155-S (active, claimed by Ship) was amended in the order 174.077-T, 174.079-T, 174.082-T, 174.078-T, 174.080-T,
+  174.081-T, after 174.076-T. It now has **45** items.
+* The five P-021 C2 captures (`FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, `7D8717B1`) stay in the operator-dirty
+  `.backlogit/stash.jsonl`. Their `task=N/A` source refs are truthful capture-time records and were not rewritten.

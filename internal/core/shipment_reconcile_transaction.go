@@ -25,11 +25,12 @@ const shipmentReconcileManifestDigestDomain = "backlogit/shipment-reconcile/mani
 // governed two-phase (A / B / C / D) transaction described by 167.008-T's
 // backlog task body:
 //
-//   - PHASE A: acquire lockShipmentMembership(shipmentID), HELD ACROSS EVERY
-//     later phase; take a cheap, lock-free read of the shipment manifest to
-//     freeze the "Phase-A member set" used both to size the Phase B/D lock
-//     batch and as the authoritative membership snapshot Phase D re-checks
-//     against; compute the cheap request-identity digest (no file I/O).
+//   - PHASE A: acquire shipment lifecycle global, then
+//     lockShipmentMembership(shipmentID), both HELD ACROSS EVERY later phase;
+//     take a cheap read of the shipment manifest to freeze the "Phase-A member
+//     set" used both to size the Phase B/D lock batch and as the authoritative
+//     membership snapshot Phase D re-checks against; compute the cheap
+//     request-identity digest (no file I/O).
 //   - PHASE B: acquire the item-log lock C, then the sorted artifact-mutation
 //     batch B (C-then-B, matching AssociateCommit); reload the shipment from
 //     Markdown and re-run the identity/location + classifier gates under that
@@ -82,7 +83,19 @@ func reconcileShipmentToShippedImpl(ctx context.Context, ws *Workspace, req Ship
 		return result, fmt.Errorf("reconcile shipment to shipped: %w", err)
 	}
 
-	// PHASE A: membership lock, held across every later phase.
+	// PHASE A: lifecycle-global then membership. Both remain held across every
+	// later phase, including the intentionally slower Phase C evidence I/O.
+	lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+	if err != nil {
+		return result, fmt.Errorf("reconcile shipment to shipped: acquire lifecycle-global lock: %w", err)
+	}
+	ctx = lockedCtx
+	defer func() {
+		if uerr := globalUnlock(); uerr != nil {
+			slog.WarnContext(ctx, "reconcile shipment to shipped: release lifecycle-global lock failed", "shipment_id", shipmentID, "error", uerr)
+		}
+	}()
+
 	unlockA, err := lockShipmentMembership(ctx, ws, shipmentID)
 	if err != nil {
 		return result, fmt.Errorf("reconcile shipment to shipped: acquire shipment %s membership lock: %w", shipmentID, err)
@@ -512,29 +525,37 @@ func syncShipmentReconcileItemIndex(ctx context.Context, ws *Workspace, shipment
 	}
 }
 
-// lockShipmentReconcileCThenB acquires the item-log lock (C) for itemLogID,
-// then the sorted artifact-mutation batch (B) for artifactIDs, in that
-// order — matching AssociateCommit's own C-then-B acquisition order so the
-// two writers can never form a reversed-order cycle. The returned release
-// function releases B first, then C, and is safe to call at most once (the
-// caller owns idempotent-release bookkeeping, matching every other lock
-// helper in this file family).
+// lockShipmentReconcileCThenB acquires lifecycle-global before the item-log
+// lock (C) for itemLogID and the sorted artifact-mutation batch (B) for
+// artifactIDs. C remains before B, matching AssociateCommit's own C-then-B
+// acquisition order; the canonical lifecycle invariant constrains only global
+// to precede both locks. The returned release function releases B, C, then
+// global and is safe to call at most once (the caller owns idempotent-release
+// bookkeeping, matching every other lock helper in this file family).
 func lockShipmentReconcileCThenB(ctx context.Context, ws *Workspace, itemLogID string, artifactIDs []string) (context.Context, func() error, error) {
-	ctxC, unlockC, err := lockShipmentReconcileItemLog(ctx, ws, itemLogID)
+	lockedCtx, unlockGlobal, err := lockShipmentLifecycleGlobal(ctx, ws)
 	if err != nil {
-		return ctx, nil, err
+		return ctx, nil, fmt.Errorf("lock shipment lifecycle before reconcile item-log/artifact locks: %w", err)
+	}
+	ctxC, unlockC, err := lockShipmentReconcileItemLog(lockedCtx, ws, itemLogID)
+	if err != nil {
+		return ctx, nil, errors.Join(err, unlockGlobal())
 	}
 	ctxB, unlockB, err := lockArtifactMutations(ctxC, ws, artifactIDs)
 	if err != nil {
+		var releaseErrs []error
 		if cerr := unlockC(); cerr != nil {
 			slog.WarnContext(ctx, "reconcile shipment to shipped: release item-log lock after failed artifact-lock acquisition", "item_id", itemLogID, "error", cerr)
+			releaseErrs = append(releaseErrs, cerr)
 		}
-		return ctx, nil, err
+		releaseErrs = append(releaseErrs, unlockGlobal())
+		return ctx, nil, errors.Join(append([]error{err}, releaseErrs...)...)
 	}
 	release := func() error {
 		errB := unlockB()
 		errC := unlockC()
-		return errors.Join(errB, errC)
+		errGlobal := unlockGlobal()
+		return errors.Join(errB, errC, errGlobal)
 	}
 	return ctxB, release, nil
 }

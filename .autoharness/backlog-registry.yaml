@@ -296,6 +296,41 @@ operations:
     params:
       shipment_id: "id"
 
+  block_shipment:
+    mcp_tool: "backlogit_block_shipment"
+    cli_command: "backlogit shipment block {{id}} --reason {{reason}} --by {{by}} --resume-checkpoint {{resume_checkpoint_ref}}"
+    params:
+      shipment_id: "id"
+      reason: "reason"
+      by: "by"
+      resume_checkpoint_ref: "resume_checkpoint_ref"
+
+  unblock_shipment:
+    mcp_tool: "backlogit_unblock_shipment"
+    # No automatic CLI fallback is exposed because the CLI uses a presence-only
+    # --confirm flag. Rendering that flag unconditionally would turn
+    # confirm:false or an ambiguous value into a confirmed unblock. Operators
+    # may use the explicit confirmed-only command below after independently
+    # establishing confirm:true.
+    cli_fallback:
+      automatic: false
+      confirmed_command: "backlogit shipment unblock {{id}} --to {{target}} --confirm --by {{by}}"
+      requires:
+        confirm: true
+      rationale: "fail closed unless confirmation is explicitly true; automatic fallback must never be more permissive than MCP"
+    params:
+      shipment_id: "id"
+      target: "target"
+      confirm: "confirm"
+      by: "by"
+
+  normalize_blocked_shipment:
+    mcp_tool: "backlogit_normalize_blocked_shipment"
+    params:
+      shipment_id: "id"
+      snapshot_ref: "snapshot_ref"
+      by: "by"
+
   ship_shipment:
     mcp_tool: "backlogit_ship_shipment"
     cli_command: "backlogit shipment ship {{id}}"

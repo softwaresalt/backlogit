@@ -100,7 +100,7 @@ resume) — no new command; retry policy is owned by the caller.`,
 				// results, not usage errors; silence Cobra's stderr error print
 				// and carry the code via ExitError so main can os.Exit(code).
 				cmd.SilenceErrors = true
-				ws, err := core.NewWorkspace(ctx, *cwd)
+				ws, err := core.NewDiagnosticWorkspace(ctx, *cwd)
 				if err != nil {
 					return &ExitError{Code: 3, Msg: fmt.Sprintf("open workspace: %v", err)}
 				}
@@ -114,7 +114,7 @@ resume) — no new command; retry policy is owned by the caller.`,
 				return &ExitError{Code: code, Msg: fmt.Sprintf("doctor target: %s (%s)", res.Kind, res.Message)}
 			}
 
-			ws, err := core.NewWorkspace(ctx, *cwd)
+			ws, err := core.NewDiagnosticWorkspace(ctx, *cwd)
 			if err != nil {
 				if len(preflightFindings) > 0 {
 					return writeDoctorPreflightReport(cmd.OutOrStdout(), outputFormatFlag, preflightFindings)
@@ -144,7 +144,13 @@ resume) — no new command; retry policy is owned by the caller.`,
 			if outputFormatFlag == "json" {
 				enc := json.NewEncoder(w)
 				enc.SetIndent("", "  ")
-				return enc.Encode(report)
+				if err := enc.Encode(report); err != nil {
+					return fmt.Errorf("encode doctor report: %w", err)
+				}
+				if report.HasErrors() {
+					return &ExitError{Code: 1, Msg: "doctor found error-severity integrity issues"}
+				}
+				return nil
 			}
 
 			// Text output.
@@ -159,6 +165,9 @@ resume) — no new command; retry policy is owned by the caller.`,
 				fmt.Fprintf(w, "[fix:%s] %s: %s\n", a.Type, a.ArtifactID, a.Detail)
 			}
 			fmt.Fprintf(w, "\n%d issue(s) found, %d fix(es) applied.\n", len(report.Findings), len(report.FixActions))
+			if report.HasErrors() {
+				return &ExitError{Code: 1, Msg: "doctor found error-severity integrity issues"}
+			}
 			return nil
 		},
 	}

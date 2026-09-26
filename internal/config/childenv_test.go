@@ -99,4 +99,3 @@ func TestScrubGateEvidenceKeyEnv_CaseInsensitive(t *testing.T) {
 		})
 	}
 }
-
