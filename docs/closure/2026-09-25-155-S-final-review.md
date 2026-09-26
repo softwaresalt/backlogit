@@ -1,11 +1,14 @@
 ---
-title: "155-S Final Review Halt Record"
-description: "Standard and adversarial report-only review results for shipment 155-S at the governed-suite HEAD."
+title: "155-S Final Review Record"
+description: "Final-gate Step 2 review, remediation, and post-remediation results for shipment 155-S; the governed suite remains withheld."
 doc_type: closure
 source: docs/closure/2026-09-25-155-S-final-review.md
 ---
 
-# 155-S Final Review Halt Record
+# 155-S Final Review Record
+
+> [!NOTE]
+> The earlier sections preserve the review history at each point in time. Their blocked or incomplete verdicts are historical and are superseded by the final-gate Step 2 outcome below.
 
 ## Post-push review attempt — 2026-09-26
 
@@ -289,3 +292,110 @@ No remediation commit was created or pushed. HEAD remains
 shipment archival, or post-merge closure was reached. The governed full suite
 was not rerun. A new operator authorization will be required for a governed
 full-suite run after any future production-code change.
+
+## Final-gate Step 2 — Wave 20 review and remediation
+
+* **Outcome:** `READY` for final-gate Step 2
+* **Shipment:** `155-S` only
+* **Review scope:** Wave 20 surfaces, per plan final-gate step 2
+* **PR:** None created.
+
+### Scope and review coverage
+
+The initial whole-branch diff was approximately 1.8 MB. The standard review
+could not complete that scope. The final-gate Step 2 review was therefore
+re-scoped to Wave 20:
+`git diff 3a240fe0..HEAD -- internal cmd tests`, captured at the round-1
+review HEAD `eeecf01d` in `logs/review/155-s-wave20.diff` (approximately
+90 KB).
+The file contained the Wave 20 implementation and harness surfaces. The
+adversarial-review custom agent refused to dispatch, citing external
+transmission; the Orchestrator determined that refusal was invalid and
+replaced it with direct dispatch to four independent code-review agents.
+
+### Standard review
+
+Eight personas reviewed the Wave 20 diff: Go Reviewer, Constitution Reviewer,
+Learnings Researcher, Architecture Strategist, Concurrency Reviewer, Scope
+Boundary Auditor, Agent-Native Parity Reviewer, and Security Reviewer.
+The review returned three P2 findings, no P0/P1 findings, and no other
+actionable findings.
+
+| ID | Severity | Finding | P-021 C1 disposition |
+|---|---|---|---|
+| STD-W20-01 | P2 | Fractional `blocked_at` values compare equal after `canonicalBlockedTimestamp` formats to whole seconds. | Out of scope: §20.3.1 prescribes this shared helper. Deferred as `DEFERRED SCOPE EXPANSION` stash `AC6B669D`. |
+| STD-W20-02 | P2 | Cold workspace initialization may run auto-recovery before the target-guarded normalize operation. | Out of scope: §20.3.4 preserves workspace or diagnostic-workspace acquisition order. Deferred as `DEFERRED SCOPE EXPANSION` stash `A4B62D86`, related to `09D06A75`. |
+| STD-W20-03 | P2 | The low-level artifact writer has a check/write race for blocked-envelope changes. | Out of scope; already deferred under stash `8AF55264`. No new entry or code change. |
+
+The candidates at `internal/core/shipment_recovery.go:1201` (scan-error
+classification) and `:1274` (unrecognized journal filenames) were dismissed
+against §20.3.6: the specified behavior wraps scan errors as
+`ErrShipmentConflict`, and only return-blocked validation errors attributed
+by the journal filename are considered by the aggregate guard.
+
+### Adversarial review — round 1
+
+All four slots received the Wave 20 diff file.
+
+| Slot | Route | Result |
+|---|---|---|
+| Anchor | `gpt-6-sol / openai / high` | `NOT READY`; P2 finding `ADV-W20-01`. |
+| Tier 1 | `gpt-6-luna / openai / xhigh` | `READY`; no findings. |
+| Tier 2 | `claude-sonnet-5 / anthropic / high` | `READY`; no findings. |
+| Tier 3 | `claude-opus-5.5 / anthropic / high` | `READY`; P3 observation on the same issue as `ADV-W20-01`. |
+
+Consensus classified `ADV-W20-01` as **MEDIUM confidence / plurality
+(2/4 reviewers)**, P2, in scope under P-021 C1, and `gated_auto`.
+The finding was that function 2 of
+`TestU20C3_CompensationJournalFailureAfterTerminalEvidenceRecovers` called
+`realWrite` before returning the injected error. That tested landed-then-failed
+behavior rather than the §20.3.3 required failed-before-writing behavior; the
+`error_shape_wrapping_write_not_applied` row therefore contradicted its
+intended case.
+
+### Remediation
+
+`ADV-W20-01` was fixed in commit
+`d9a01e6fb242a9d73824b2e8f0df865e4d227d69`. Function 2 now arms the obstruction
+and returns its injected error without calling `realWrite`; its injected-error
+messages consistently identify the pre-write failure. Contract assertions
+were retained.
+
+Verification passed: the U20C3 harness reported 2/2 top-level PASS; the core
+regression command reported 17/17; the CLI regression command reported 3/3;
+build, `go vet ./internal/core`, pinned golangci-lint v1.64.8, and the
+LF-normalized gofmt check passed. The full repository suite was not run.
+
+### Post-remediation re-review — cycle 1 of maximum 2
+
+The four slots reviewed `logs/review/155-s-wave20-remediation.diff` on the
+post-remediation commit:
+
+| Slot | Route | Result |
+|---|---|---|
+| Anchor | `gpt-6-sol / openai / high` | `READY`; zero findings. |
+| Tier 1 | `gpt-6-luna / openai / xhigh` | `READY`; zero findings. |
+| Tier 2 | `claude-sonnet-5 / anthropic / high` | `READY`; zero findings. |
+| Tier 3 | `claude-opus-5.5 / anthropic / high` | `READY`; zero findings. |
+
+**Residual findings:** None.
+
+### Final-gate disposition and process deviations
+
+Final-gate Step 2 is `READY`: zero P0/P1 findings and no unresolved in-scope
+P2 findings remain. Final-gate Step 1, the governed full suite, is still
+operator-withheld. Do not run it or create a PR until separately authorized.
+
+The following process deviations and harness corrections are recorded:
+
+* Commit `98367132` includes a 174.081-T production edit made directly rather
+  than through the build-feature skill. The Orchestrator accepted the
+  procedural deviation because all required gates passed.
+* Harness corrections `f7db30a3` (U20C1 over-assertion) and `b78ce24b`
+  (U20C5 presence-based count) were made to match the reviewed plan evidence.
+* The adversarial-review custom agent's refusal was invalid for this
+  workspace; the Orchestrator replaced it with direct four-slot review
+  dispatch.
+
+No PR, CI, P-018 Copilot-review, merge, shipment archival, or post-merge
+closure was started. The governed full suite remains withheld.
