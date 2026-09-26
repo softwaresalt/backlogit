@@ -420,8 +420,9 @@ The full-suite capture is
 `logs/diagnostics/155-s-go-test-governed-30m-20260926-1024.txt` with metadata
 in the adjacent `.meta.txt` file.
 
-**Fix commit SHA:** Pending; a follow-up documentation commit will record the
-SHA of the commit that adds these soft keys.
+**Fix commit SHA:** `24e75400507977dd5d0825252719f74e8773addb`
+(`docs(docs): add docline soft keys to 155-S review`). This record of the fix
+SHA is committed separately.
 
 **Targeted re-verification:**
 
