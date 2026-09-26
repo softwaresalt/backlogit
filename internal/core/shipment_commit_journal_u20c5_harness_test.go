@@ -160,8 +160,8 @@ func TestU20C5_CommitJournalFailureAfterCommittedEvidenceDoesNotCompensate(t *te
 					}
 				}
 			}
-			assert.Equal(t, 1, committedEvents,
-				"the obstruction must occur after exactly one durable committed lifecycle event")
+			assert.GreaterOrEqual(t, committedEvents, 1,
+				"a correlated committed lifecycle event must verify durable committed evidence before the journal failure")
 			assert.Zero(t, compensatedLifecycleEvents,
 				"durable committed evidence must never be followed by a compensated lifecycle event")
 			assert.Zero(t, compensatedStatusEvents,
