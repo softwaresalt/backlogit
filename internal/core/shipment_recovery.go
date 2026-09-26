@@ -1049,7 +1049,8 @@ func NormalizeBlockedShipment(
 // NormalizeBlockedShipmentForRecovery normalizes a blocked shipment without
 // first auto-recovering unrelated journals. It is reserved for diagnostic
 // remediation when ordinary workspace initialization is blocked by a poison
-// journal; the target aggregate still undergoes the normal snapshot CAS.
+// journal; pending operation journals that reference the target aggregate are
+// refused, and the aggregate still undergoes the normal snapshot CAS.
 func NormalizeBlockedShipmentForRecovery(
 	ctx context.Context,
 	ws *Workspace,
@@ -1131,6 +1132,9 @@ func normalizeBlockedShipment(
 		return nil, fmt.Errorf("shipment %s changed while acquiring normalization locks: %w",
 			shipmentID, blerrors.ErrShipmentConflict)
 	}
+	if err := refusePendingShipmentAggregateJournal(ws, shipmentID, memberIDs); err != nil {
+		return nil, err
+	}
 	snapshot, err := readShipmentBlockedSnapshot(ws, snapshotRef, shipmentID, memberIDs)
 	if err != nil {
 		return nil, err
@@ -1182,6 +1186,115 @@ func normalizeBlockedShipment(
 		return nil, fmt.Errorf("persist normalize shipment %s intent: %w", shipmentID, err)
 	}
 	return reconcileShipmentLifecycleIntent(lockedCtx, ws, journalPath, journal)
+}
+
+func refusePendingShipmentAggregateJournal(
+	ws *Workspace,
+	shipmentID string,
+	memberIDs []string,
+) error {
+	records, validationErrs, err := inspectShipmentOperationJournalsReadOnly(ws)
+	if err != nil {
+		return fmt.Errorf(
+			"inspect pending shipment aggregate journals for %s: %w",
+			shipmentID,
+			errors.Join(err, blerrors.ErrShipmentConflict),
+		)
+	}
+
+	matchAggregateID := func(candidateIDs ...string) string {
+		for _, memberID := range memberIDs {
+			for _, candidateID := range candidateIDs {
+				if candidateID == memberID {
+					return memberID
+				}
+			}
+		}
+		for _, candidateID := range candidateIDs {
+			if candidateID == shipmentID {
+				return shipmentID
+			}
+		}
+		return ""
+	}
+
+	findMatch := func(memberOnly bool) error {
+		for _, record := range records {
+			var (
+				displayKind  string
+				candidateIDs []string
+			)
+			switch record.kind {
+			case shipmentLifecycleJournalKind:
+				if record.lifecycle.Phase != "intent" {
+					continue
+				}
+				displayKind = "lifecycle"
+				candidateIDs = append(candidateIDs, record.lifecycle.ShipmentID)
+				if record.lifecycle.Preimage.Shipment != nil {
+					candidateIDs = append(candidateIDs, record.lifecycle.Preimage.Shipment.ID)
+				}
+				for _, member := range record.lifecycle.Preimage.Members {
+					if member != nil {
+						candidateIDs = append(candidateIDs, member.ID)
+					}
+				}
+			case returnBlockedJournalKind:
+				displayKind = "return-blocked"
+				if record.returnBlocked.Shipment != nil {
+					candidateIDs = append(candidateIDs, record.returnBlocked.Shipment.ID)
+				}
+				if record.returnBlocked.Item != nil {
+					candidateIDs = append(candidateIDs, record.returnBlocked.Item.ID)
+				}
+			default:
+				continue
+			}
+
+			matchedID := matchAggregateID(candidateIDs...)
+			if matchedID == "" || (memberOnly && matchedID == shipmentID) {
+				continue
+			}
+			return fmt.Errorf(
+				"shipment %s aggregate is referenced by journal %s kind=%s matched=%s: %w",
+				shipmentID,
+				filepath.Base(record.path),
+				displayKind,
+				matchedID,
+				blerrors.ErrShipmentConflict,
+			)
+		}
+
+		for _, validationErr := range validationErrs {
+			var journalErr *shipmentOperationJournalValidationError
+			if !errors.As(validationErr, &journalErr) ||
+				journalErr.kind != returnBlockedJournalKind {
+				continue
+			}
+			journalName := filepath.Base(journalErr.path)
+			kind, captures, nameErr := validateShipmentOperationJournalName(journalName)
+			if nameErr != nil || kind != returnBlockedJournalKind {
+				continue
+			}
+			matchedID := matchAggregateID(captures...)
+			if matchedID == "" || (memberOnly && matchedID == shipmentID) {
+				continue
+			}
+			return fmt.Errorf(
+				"shipment %s aggregate is referenced by journal %s kind=return-blocked matched=%s: %w",
+				shipmentID,
+				journalName,
+				matchedID,
+				blerrors.ErrShipmentConflict,
+			)
+		}
+		return nil
+	}
+
+	if err := findMatch(true); err != nil {
+		return err
+	}
+	return findMatch(false)
 }
 
 func refusePendingShipmentLifecycleIntent(ws *Workspace, shipmentID string) error {
