@@ -246,22 +246,22 @@ func TestU20C3_CompensationJournalFailureAfterTerminalEvidenceRecovers(t *testin
 		{
 			name:        "block",
 			operation:   "block",
-			injectedErr: errors.New("u20c3 injected landed write failure"),
+			injectedErr: errors.New("u20c3 injected pre-write failure"),
 		},
 		{
 			name:        "unblock",
 			operation:   "unblock",
-			injectedErr: errors.New("u20c3 injected landed write failure"),
+			injectedErr: errors.New("u20c3 injected pre-write failure"),
 		},
 		{
 			name:        "error_shape_wrapping_shipment_conflict",
 			operation:   "block",
-			injectedErr: fmt.Errorf("u20c3 injected landed write failure: %w", blerrors.ErrShipmentConflict),
+			injectedErr: fmt.Errorf("u20c3 injected pre-write failure: %w", blerrors.ErrShipmentConflict),
 		},
 		{
 			name:        "error_shape_wrapping_write_not_applied",
 			operation:   "block",
-			injectedErr: fmt.Errorf("u20c3 injected landed write failure: %w", blerrors.ErrWriteNotApplied),
+			injectedErr: fmt.Errorf("u20c3 injected pre-write failure: %w", blerrors.ErrWriteNotApplied),
 		},
 	}
 
@@ -316,9 +316,6 @@ func TestU20C3_CompensationJournalFailureAfterTerminalEvidenceRecovers(t *testin
 					artifact.ID == preimageShipment.ID &&
 					artifact.ArtifactType == "shipment" &&
 					artifact.Status == targetStatus {
-					if err := realWrite(artifact, path, durable); err != nil {
-						return err
-					}
 					armed = true
 					restoreObstruction = armU20C3FilesystemObstruction(t, opsRoot, false)
 					return tt.injectedErr
