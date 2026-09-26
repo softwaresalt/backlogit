@@ -466,7 +466,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Normalize an out-of-band blocked shipment from a machine-readable snapshot"),
 			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
 			mcplib.WithString("snapshot_ref", mcplib.Required(), mcplib.Description("Workspace-relative shipment-bootstrap-snapshot/v1 reference")),
-			mcplib.WithString("by", mcplib.Description("Actor normalizing the shipment")),
+			mcplib.WithString("by", mcplib.Required(), mcplib.Description("Actor normalizing the shipment")),
 		),
 		s.handleNormalizeBlockedShipment,
 	)
@@ -2055,7 +2055,6 @@ func (s *Server) handleUnblockShipment(ctx context.Context, request mcplib.CallT
 
 func (s *Server) handleNormalizeBlockedShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	ws, result := s.requireWorkspace(ctx)
-	recoveryRemediation := false
 	if result != nil {
 		diagnostic, err := core.NewDiagnosticWorkspace(ctx, s.RootPath)
 		if err != nil {
@@ -2063,7 +2062,6 @@ func (s *Server) handleNormalizeBlockedShipment(ctx context.Context, request mcp
 		}
 		defer diagnostic.Close()
 		ws = diagnostic
-		recoveryRemediation = true
 	}
 
 	id, _ := request.Params.Arguments["id"].(string)
@@ -2075,16 +2073,13 @@ func (s *Server) handleNormalizeBlockedShipment(ctx context.Context, request mcp
 		return ValidationFailed("snapshot_ref is required"), nil
 	}
 	actor, _ := request.Params.Arguments["by"].(string)
+	if strings.TrimSpace(actor) == "" {
+		return ValidationFailed("by is required"), nil
+	}
 
 	logger.Info("shipment tool invoked", "tool", "backlogit_normalize_blocked_shipment", "shipment_id", id)
 
-	var shipment *models.Artifact
-	var err error
-	if recoveryRemediation {
-		shipment, err = core.NormalizeBlockedShipmentForRecovery(ctx, ws, id, snapshotRef, actor)
-	} else {
-		shipment, err = core.NormalizeBlockedShipment(ctx, ws, id, snapshotRef, actor)
-	}
+	shipment, err := core.NormalizeBlockedShipmentForRecovery(ctx, ws, id, snapshotRef, actor)
 	if err != nil {
 		return domainError("normalize blocked shipment", err), nil
 	}
