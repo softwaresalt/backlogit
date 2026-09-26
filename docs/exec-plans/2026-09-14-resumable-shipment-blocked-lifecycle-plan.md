@@ -4976,3 +4976,990 @@ is available or needed.
 * **Review disposition.** This is a mechanical selector and naming correction inside the D7
   stall-bound path. The final `## Plan Review` gate is unchanged, and no new review attempt is
   recorded.
+
+## Wave 20 — Corrective: 155-S final-review remediation (rev23.3) (2026-09-25)
+
+Revision history:
+
+* **rev23** was reviewed in attempt 1 and FAILED.
+* **rev23.1** resolved every attempt-1 P1 and P2 finding in place. It was reviewed in attempt 2 and FAILED.
+* **rev23.2** resolved every attempt-2 P1 and P2 finding in place. It was reviewed in attempt 3: **ADVISORY**
+  (P0 0, P1 0, P2 1).
+* **rev23.3** is this text. It resolves the single attempt-3 P2 (U20C6 untested branches) in place and adopts the
+  attempt-3 P3 clarifications; see the attempt-3 record below. Harvest waits for operator authorization of the
+  attempt-3 ADVISORY verdict.
+
+### 20.1 Trigger and provenance
+
+* **Trigger.** Waves W1–W3 are complete: 174.073-T through 174.076-T are done. The operator-authorized governed suite
+  `go test -timeout=30m ./...` then PASSED at `3a240fe091422e96d22b75b9af0854f66b60340f`. After that, the pre-PR
+  standard review returned **NOT READY** with P0 0, P1 0, and P2 3.
+* **Adversarial findings.** Ship validated the adversarial candidates and confirmed three of them as in scope.
+* **Why they must be fixed.** All six findings are on the blocked-lifecycle contract surface that 174-F owns, so under
+  P-021 C1/C3 they are fixed, not deferred.
+* **Consequence work.** Two further pieces are consequences of these fixes, not new findings:
+  * U20C1 Fix B completes STD-P2-01 at the lower write boundary.
+  * U20C6 is required by the ADV-B fix: once the warm path stops auto-recovering, the target guard must cover every
+    pending journal that references the target aggregate.
+
+  The mapping is therefore six findings → five finding tasks plus one consequence task.
+* **Why Ship stopped.** No queued harness-ready task covered the source fixes, so Ship halted at its Role Boundary.
+* **Evidence.** The evidence is Ship-owned and was uncommitted at `3a240fe0`; each finding is restated below, so this
+  section is self-contained:
+  * `docs/closure/2026-09-25-155-S-final-review.md`
+  * `docs/memory/2026-09-25/ship-155s-final-review-halt.md`
+  * `docs/memory/2026-09-25/ship-155s-remediation-stage-handoff.md`
+* **Findings** (line numbers at `3a240fe0`):
+
+| ID | Location | Defect |
+|---|---|---|
+| STD-P2-01 | `internal/core/artifacts.go:640-641` (`updateArtifactUngated`) | A generic update replaces `custom_fields` wholesale; only the reserved sizing keys survive. So it can replace or remove the blocked envelope while the shipment stays `blocked`. That covers `blocked_reason`, `blocked_at`, `member_status_snapshot`, and the optional `branch`, `blocked_by`, and `resume_checkpoint_ref`. The result is a malformed blocked shipment that the governed paths then refuse |
+| STD-P2-02 | `internal/core/shipment.go:714-720, 775-815` (`UnblockShipment`) | The unblock event delta leaves out the validated prior `reason`. The persist that deletes `blocked_reason`/`blocked_at`/`blocked_by` runs before the correlated `shipment_status_changed` event is appended. SBLK-R8 names that event explicitly: "a durable `shipment_status_changed` event (actor + reason + prior `resume_checkpoint_ref`) is emitted on the unblock edge BEFORE frontmatter is cleared" |
+| STD-P2-03 | `internal/core/shipment.go:476-490` (block), `:745-760` (unblock); recovery skip `:2600-2602` | Compensation writes the journal as `Phase = "compensated"` before it appends the terminal `compensated` event, and it never appends compensated status evidence. A failure or crash between the two steps leaves a terminal journal with incomplete evidence. Recovery skips it, because recovery reconciles only journals still in `intent` |
+| ADV-A | `internal/core/shipment.go:562` (block), `:825` (unblock) | The committed evidence (applied status plus terminal `committed`) is appended before the journal records `committed`. If the journal write then fails, `compensate` runs and appends a terminal `compensated` event. The log now holds both a `committed` and a `compensated` terminal, which `inspectShipmentLifecycleRecoveryEvidence` rejects as a conflict |
+| ADV-B | `internal/mcp/tools.go:2082` (`handleNormalizeBlockedShipment`) | The target-guarded normalizer is used only when workspace initialization fails. A warm server calls `core.NormalizeBlockedShipment`, which runs ordinary auto-recovery. An unrelated poison journal that appears later therefore blocks the very remediation tool meant to handle it |
+| ADV-C | `internal/mcp/tools.go:469` | The `backlogit_normalize_blocked_shipment` schema leaves `by` optional, but core rejects an empty or whitespace actor |
+
+### 20.2 Decision record (embedded; Wave 14 precedent, no separate DL)
+
+* **DR1 — STD-P2-03 and ADV-A are two units (U20C3 and U20C5), serialized.**
+  * *Why they are related.* They share one invariant and one oracle. A journal may record a terminal phase only after
+    that phase's evidence is durable. An operation must never compensate once its committed evidence is **known**
+    durable, meaning every committed-evidence append returned nil. The oracle is the unchanged recovery inspector:
+    the last applied status phase must equal the terminal phase, and `committed` and `compensated` terminals must
+    never both appear.
+  * *Invariant boundary (attempt-2 finding).* Tagged `ErrWriteIndeterminate` causes are already safe: `compensate`
+    returns early on `IsWriteIndeterminate` without restoring or appending anything (`shipment.go:455-457`, and
+    the same in unblock). The residual case is outside this invariant and outside Wave 20: an **untagged**
+    committed-terminal append failure that may follow partial bytes. That happens with durable writes off, where
+    `events.appendFast` returns an unclassified `Fprintf` error. It is captured as stash `FA6AE139` under P-021
+    C1/C2, because:
+    * it can only be reached through a new cross-package seam in `internal/events` (`appendFast` has no seam, and
+      `fsyncDirImpl` is unexported, per-instance, and durable-only);
+    * its fix is an event-writer classification decision.
+
+    So no test-first RED can be written inside Wave 20. The item is pre-dispositioned for the final-gate review brief
+    (20.5).
+  * *Compensation after a write that failed but may have landed (attempt-2 finding).* The compound rule "MUST NOT
+    roll back an indeterminate write" (`docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`)
+    is preserved: an indeterminate cause still skips compensation through the early return above. U20C3 only widens
+    compensation to not-applied or unclassified failures of the governed shipment write. An **unclassified** failure
+    may have landed. A not-applied failure is, by the writer contract, not landed, so restoring the unchanged preimage
+    is a no-op; whether any writer mislabels a landed relocation as not-applied is captured as stash `7D8717B1`
+    (attempt-3 finding). It does so under a durable `intent` journal with a `rollback`
+    policy, by restoring a fresh atomic copy of the locked preimage, and recovery re-drives the same restore if the
+    process dies.
+
+    When compensation fully succeeds, the returned error keeps its existing form, `<op> shipment <id>: %w` over the
+    original cause.
+  * *Why they are separate units.* They sit in different code regions: the compensate closures, and the commit tails.
+    Merging them would give 6 op-parameterized cases, over the fewer-than-4-scenario limit (attempt-1 finding).
+  * *ADV-A fix.* It is a classification change. The commit-journal failure is surfaced as
+    `blerrors.ErrWriteIndeterminate`; no new mechanism is added. Compound precedent:
+    `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`.
+* **DR2 — STD-P2-01: preserve at the generic update merge AND refuse at the write boundary.**
+  * *Generic update merge.* In `updateArtifactUngated`, when the preimage status is `blocked`, the prior values of
+    the blocked-envelope keys are carried forward and incoming values for those keys are ignored.
+    * The preimage status and the prior values come from the authoritative Markdown preimage, loaded after the
+      global and artifact locks are held. This is the `previousStatus` path that already exists.
+    * This is the reserved-sizing-key precedent (108-F). Callers that round-trip `custom_fields` keep working.
+  * *Write boundary.* In `writeArtifactFileGoverned`, the single lower rewrite boundary, an ungoverned write is
+    refused with `blerrors.ErrShipmentBlockedRequiresEnvelope` when all of these hold:
+    * the previous record is a blocked shipment. The previous record is the Markdown file parsed at the boundary
+      (`parseFile(currentPath)`), never a DB projection;
+    * the next record is still `blocked`;
+    * `!envelope.allowGovernedShipmentMutation`;
+    * any envelope key differs in presence or in canonical value. `blocked_at` is compared through
+      `canonicalBlockedTimestamp`, because YAML `time.Time` and RFC 3339 strings encode differently. The other keys
+      are compared by canonical JSON.
+
+    This is where the membership seal and the protected-transition rule already live, and it closes the envelope
+    bypass for ungoverned callers of exported `WriteArtifactFile*` and of `persistArtifact`.
+    * *Check order.* The new check runs **after** `guardBlockedShipmentMembershipMutation`, so an `items` change is
+      still refused first with `ErrShipmentConflict`, the precedence `TestP1C4_` asserts.
+    * *The exemption cannot be forged.* `allowGovernedShipmentMutation` travels only in the unexported
+      `artifactWriteEnvelopeContextKey{}` context value, which only in-package governed callers set. No public
+      option or update key reaches it.
+  * *Rejected: refusing at the merge.* That breaks round-trip callers and diverges from the precedent.
+  * *Rejected: protecting at the merge only.* That leaves the lower-boundary bypass open.
+  * *Unchanged.* `items` stays sealed. A round trip that drops `items` is still refused with `ErrShipmentConflict`.
+    U20C1 must not add preservation for `items`. Task-level `blocked_reason` behavior is unchanged, because the rule
+    applies only to `artifact_type: shipment`.
+  * *Blocked means still blocked.* A generic update cannot move a shipment out of `blocked`:
+    `isProtectedShipmentStatusTransition` refuses that first (artifacts.go:566). So "the preimage is blocked" in Fix A
+    implies the next status is blocked too, and `clearStaleBlockedReason` never runs on a blocked shipment.
+  * *Hook channel, stated.* Fix A runs after `FirePre`, so pre-update hooks see the request as it was submitted,
+    which is what a veto hook should see. Post hooks and the audit see the cleaned values. Whether pre-hooks should
+    see the cleaned values instead is captured as stash `8AF55264`.
+  * *Entry points,* audited at `3a240fe0`:
+    * `UpdateArtifact`/`UpdateArtifactWithGate` go through `updateArtifactUngated`, which loads through
+      `findArtifact` under the artifact lock. This covers MCP `update_item`/`move_item` and the CLI `update` field
+      flags. None of these exposes `custom_fields`, so the wholesale replace is reachable only through the core API.
+    * The size and complexity seams do **not** go through the boundary: `sizeSeamAtomicWrite` writes raw bytes.
+      They change only reserved sizing keys, so they carry no envelope risk.
+    * Link, dependency, and queue-move re-persists write the whole loaded record back, so the envelope is
+      unchanged. `AddDependency`/`RemoveDependency` (`dependencies.go`) and `AddArtifactLink` (`artifacts.go`) load
+      that record through `findArtifact`, the Markdown loader. If one of them ever loaded a stale envelope, Fix B
+      would refuse it, which fails closed.
+    * *Governed context scope, stated (attempt-3 finding).* The governed envelope context is built per call by the
+      lifecycle operation and passed only to its own `persistArtifact` calls. It is never handed to hooks or to a
+      nested generic update, so the exemption cannot leak.
+    * `BlockShipment`, `UnblockShipment`, normalize, compensation, and recovery are governed, and exempt by
+      construction.
+    * The test audit covered `internal/**/*_test.go` files that write `blocked_reason`/`member_status_snapshot`
+      through `persistArtifact`, `WriteArtifactFile*`, or `UpdateArtifact`: `shipment_blocked_writer_harness_test.go`,
+      `shipment_p021_remediation_test.go`, `shipment_p1_lifecycle_remediation_test.go`, and
+      `shipment_state_integrity_test.go`. Every blocked-envelope tamper there goes through `forceURArtifactFixture`
+      (`os.WriteFile`, outside the boundary), is an expected refusal (`TestP1C4_`), or targets a non-blocked record.
+      `TestP1C7_` (2) exercises envelope provenance and is added to U20C1's regressions.
+    * *Limit, stated.* Flipping `artifact_type` across several ungoverned writes can get around both the membership
+      seal and Fix B. That can only happen through programmatic misuse, and it is captured as stash `8AF55264`.
+* **DR3 — STD-P2-02: status evidence before the envelope clear.**
+  * Add `reason`, the validated prior `envelope.reason`, to the unblock `eventDelta`. The existing key-presence
+    semantics of `unblocked_by`/`resume_checkpoint_ref` are kept.
+  * Append the correlated `shipment_status_changed` event (phase `applied`, target and status = the unblock target)
+    **before** the persist that clears the envelope.
+  * *Rejected alternative:* putting `reason` in `eventDelta` only and relying on the intent lifecycle event as the
+    pre-clear record. SBLK-R8 names the `shipment_status_changed` event specifically.
+  * *Recovery safety.* Unblock uses the `rollback` policy, so applied(committed) evidence with no terminal is never
+    trusted. Recovery rolls back through the `appliedPhase != journal.Phase` branch, and the recovery CAS accepts
+    either the preimage or the target state.
+  * *Intermediate-tree hazard (attempt-1 finding).* If the shipment persist fails, compensation must append
+    compensated status evidence after the applied evidence. That is why **U20C2 depends on U20C3**: the
+    compensation-ordering fix lands first, so no tree ever has early applied evidence without compensated
+    evidence.
+  * *Event-contract note.* Event-log readers other than recovery (history, metrics) should treat `applied` status
+    evidence as provisional until a correlated `committed` terminal exists. Documenting that is captured as stash
+    `9900D0DD`.
+* **DR4 — ADV-B: MCP normalize always uses the target-guarded normalizer, and the guard is widened (U20C6 before
+  U20C4).**
+  * The handler calls `core.NormalizeBlockedShipmentForRecovery` on both warm and cold workspaces. The
+    diagnostic-workspace fallback is kept for the cold case. This function takes the same `*Workspace` and has no
+    event-writer parameter, so a warm server uses its own workspace writer (LR-01 checked).
+  * *Behavior change, accepted.* Warm normalize no longer auto-recovers pending intents.
+    * A same-shipment nonterminal intent is **refused** with `ErrShipmentConflict`, not recovered first. This is the
+      operator's "keep target-shipment guard" instruction.
+    * The usual remedy is `backlogit_doctor` to inspect, then a workspace reopen, which runs recovery. Agents must not
+      issue a block or unblock only to trigger recovery (attempt-3 finding).
+    * Unrelated pending intents are left for that same recovery.
+    * *When that remedy cannot work, stated.* It fails in two cases:
+      * an unrelated poison journal is also present, because `UnblockShipment` and `NewWorkspace` run
+        whole-workspace recovery first and fail on it, and blocking an already blocked shipment is refused;
+      * the referencing journal is itself unrecoverable.
+
+      This fails closed on purpose. The only current recourse is operator-only: Doctor evidence, then removal or
+      quarantine of the named journal, approved under Principle VII. Target-scoped recovery is captured as stash
+      `09D06A75`. The refusal message names the journal file, its kind, and the matched ID, so an agent can tell
+      the operator exactly what blocks.
+  * *Why widen the guard (security finding).* Today's guard sees only lifecycle intents for the same shipment. Once
+    the warm path uses it, that gap would widen an integrity hole that already exists on the cold path. U20C6
+    therefore adds an aggregate guard. It refuses when a pending journal references the target shipment or any of
+    its manifest member IDs.
+    * *Where it runs.* The existing same-shipment check stays where it is, with the same message and precedence. The
+      new aggregate check runs after the locked reload and membership-equality check in `normalizeBlockedShipment`,
+      and before `readShipmentBlockedSnapshot`. It uses exactly the `memberIDs` that are then locked and written.
+    * *Both normalizers share it.* Both reach this call site. After a successful whole-workspace recovery (the
+      `recoverPending` path) nothing pending remains, so there it is a no-op, with one stated exception
+      (attempt-3 finding): a finished return-blocked journal whose best-effort `removeShipmentOperationJournal`
+      failed is still present, so the guard refuses on it. That fails closed on purpose; the remedy is a workspace
+      reopen, which retries the removal, or operator removal of the named file.
+  * *Rejected:* changing core `NormalizeBlockedShipment` beyond the shared guard. It no longer has a production
+    caller. U20C6 updates only the `NormalizeBlockedShipmentForRecovery` doc comment. Retiring, or re-documenting,
+    `NormalizeBlockedShipment` is captured as stash `09D06A75`.
+  * *Registry.* Normalize is an intentional MCP-without-CLI exception (`mcpWithoutCLIIntentional`), not `mcp_only`.
+    There is no CLI change.
+  * *Limit, stated.* Two kinds of malformed file block normalize, and both fail closed because ownership cannot be
+    proven otherwise:
+    * any file whose name matches the lifecycle-journal pattern;
+    * a return-blocked file whose name attributes it to the target or a member.
+* **DR5 — ADV-C: `by` is `mcplib.Required()`**, with an explicit handler check.
+  * The handler checks `by` right after the existing `id` and `snapshot_ref` checks, at their current place. It
+    rejects `strings.TrimSpace(by) == ""` with the handler-specific `ValidationFailed("by is required")`.
+  * The `id`/`snapshot_ref` order relative to workspace acquisition is unchanged (attempt-2 finding: that reorder
+    had no RED of its own, and ADV-C does not need it).
+  * Core's actor check stays as defense in depth.
+  * The `ToolDefs().InputSchema.Required` assertion is the structural contract test. Required, not default:
+    `docs/compound/2026-07-16-jsonschema-default-nonenforcing-and-base-union-narrowing.md`.
+  * `by` is a self-reported attribution label, not authentication (SBLK-R7 "advisory").
+* **DR6 — Similar flows need no fix (verified, not deferred).**
+  * Claim restores snapshots and erases events, and writes no durable terminal event.
+  * Normalize already follows the target order through `reconcileShipmentLifecycleIntent`.
+  * Return uses its own `return-blocked/v2` journal.
+  * If an implementation finds a counter-example anyway, it is captured under P-021 C2 and not fixed in Wave 20.
+* **Excluded (not planned, not triaged):**
+  * Stash `388C586D` (the JSONL rewrite at `shipment_recovery.go:822`) stays deferred per the handoff.
+  * Stashes `3340E97C` (the Go/lint upgrade), `9CA03F5D`, `2F7FCA8B`, `4A0B7BCF`, and `7AA35A39` stay deferred and
+    untriaged.
+* **Deferred captures from plan review (P-021 C2, attempt-2 finding).** None of these is fixed in Wave 20. Each is
+  captured in the stash with the full C2 payload: the token, the C1 reason, per-field source refs with `N/A`, and
+  `requires deliberation: true`. The entries are grouped by contract surface. Stage appended them with
+  `backlogit stash add`, and they sit uncommitted in `.backlogit/stash.jsonl` next to the operator's and Ship's
+  pending entries, because that file is operator-dirty and is never committed by Stage.
+
+  | Stash | Surface | Items (rev23.1 letters) |
+  |---|---|---|
+  | `FA6AE139` | Event-writer durability classification | (a) An untagged committed-terminal append failure may still compensate (DR1) |
+  | `9900D0DD` | Agent/operator docs and CLI exit code | (b) `write_indeterminate` guidance and MCP recovery hint; (c) `docs/workflow.md` notes (`by`, the unblock `reason`, provisional `applied` evidence); (d) optional unblock actor; (g) mapping the malformed-journal refusal to `conflict`; (j) transaction-protocol comments; a CLI exit code for indeterminate outcomes |
+  | `09D06A75` | Normalize follow-ups | (e) retire or re-document `NormalizeBlockedShipment`; (f) `snapshot_ref` provenance; (i) target-scoped recovery and an operator escape; recovery reusing the U20C6 predicate |
+  | `8AF55264` | Blocked-envelope boundary follow-ups | (h) canonical key list (including the new `artifacts.go` copy); the `artifact_type` flip bypass; hook-channel semantics |
+  | `7D8717B1` | Error-classification follow-ups | Retiring EW-1 by reordering `domainError`; classifying restore double faults; `mutationApplied` for block member writes |
+
+  Wave 20 closure cites these IDs in its task-level, run-level, and closure residual-risk records (P-021 C3,
+  threadless). Stage reconciles the task IDs into them after harvest under its C6 authority.
+
+### 20.3 Work units (6 new tasks under `174-F`)
+
+**Naming.** The unit token is `U20C<n>`, and the P-002.6 prefix is `^TestU20C<n>_`. At `3a240fe0`, no function
+carries the `TestU20C` prefix. `TestU20_` does exist elsewhere, which is why the `C` is needed.
+
+**Task class.** All six tasks are **normal harness-required** tasks, and the P-002.4 exempt classes do not apply.
+
+**P-002.4 delta surface (every task):**
+
+* The harness commit changes exactly the one new harness file.
+* The implementation commit changes exactly the one production file.
+* The only other staged paths allowed are `.backlogit/**` metadata for the task and `docs/memory/**`.
+* RED and GREEN captures go to the git-ignored `logs/diagnostics/1740xx-*` and are never staged.
+
+**Harness packages.** The harness files are `package core` (U20C1–U20C3, U20C5, U20C6) or `package mcp` (U20C4),
+because they use unexported seams. No harness may call `t.Parallel`.
+
+**Unit list.** Task IDs are assigned in creation order.
+
+| Unit | Task | Finding | Production file (functions) | Harness file | Top-level functions × cases |
+|---|---|---|---|---|---|
+| U20C1 | 174.077-T | STD-P2-01 | `internal/core/artifacts.go` (`updateArtifactUngated`, `writeArtifactFileGoverned`, 1 envelope-key-list helper, ≤ 1 comparison helper) | `internal/core/shipment_blocked_envelope_u20c1_harness_test.go` | 2 |
+| U20C2 | 174.078-T | STD-P2-02 | `internal/core/shipment.go` (`UnblockShipment`) | `internal/core/shipment_unblock_audit_u20c2_harness_test.go` | 1 × {queued, active} |
+| U20C3 | 174.079-T | STD-P2-03 | `internal/core/shipment.go` (`BlockShipment`, `UnblockShipment` compensate closures, ≤ 1 shared helper) | `internal/core/shipment_compensation_order_u20c3_harness_test.go` | 2 × {block, unblock} |
+| U20C4 | 174.080-T | ADV-B + ADV-C | `internal/mcp/tools.go` (`RegisterTools` normalize schema, `handleNormalizeBlockedShipment`) | `internal/mcp/shipment_normalize_u20c4_harness_test.go` | 2 |
+| U20C5 | 174.081-T | ADV-A | `internal/core/shipment.go` (`BlockShipment`, `UnblockShipment` commit tails) | `internal/core/shipment_commit_journal_u20c5_harness_test.go` | 1 × {block, unblock} |
+| U20C6 | 174.082-T | ADV-B guard hardening | `internal/core/shipment_recovery.go` (`normalizeBlockedShipment` call site, 1 new aggregate-guard helper, ≤ 1 name-attribution helper, the `NormalizeBlockedShipmentForRecovery` doc comment) | `internal/core/shipment_normalize_guard_u20c6_harness_test.go` | 2 |
+
+**Size and domain.** Every unit touches 2 files and fewer than 5 declarations (at most 4), stays within a single Go
+domain (core or the MCP adapter), and ends with a verifiable RED→GREEN milestone. Both normalizers are declared in
+`shipment_recovery.go` (lines 1039 and 1053 at `3a240fe0`).
+
+**Documented granularity deviation (TG-1).** In U20C2, U20C3, and U20C5, one table-driven scenario runs over two
+symmetric governed operations (or targets) with identical assertions, and is counted as **one** scenario.
+Precedent: the `TestUR3_` tables. Splitting each task by operation was rejected: it would put two tasks on the same
+closure with a forced serial edge and no independent verification value. So U20C3 has 2 scenarios, and U20C2 and
+U20C5 have 1 each. That keeps every task under 4.
+
+**Documented granularity deviation (TG-2, attempt-2 finding).** An inline negative control does not count as a
+scenario. It asserts that an adjacent legitimate input is unchanged or still refused, it has no fixture of its own
+beyond a copy of the scenario's fixture, and it adds no production behavior. Error-shape rows in a table do not
+count either. Counted this way:
+
+| Unit | Behavioral scenarios | Inline controls |
+|---|---|---|
+| U20C1 | 3: `forged`, `omission`, ungoverned refusal | the drop-items refusal, the queued-shipment `branch`, the identical-envelope title change |
+| U20C3 | 2 | the conflict-wrapped cause row |
+| U20C4 | 2 | the whitespace-actor row |
+| U20C6 | 2 | the legacy and malformed return-blocked rows, and the disjoint intent |
+
+*Rejected: splitting U20C1 Fix B into its own unit.* It would put two serialized tasks on `artifacts.go` and the same
+envelope invariant, and Fix A's `omission` scenario and Fix B's refusal share one fixture and one oracle
+(`validatePersistedBlockedShipmentEnvelope`).
+
+**U20C4 width note.** The `mcplib.Required()` edit changes the handler's own advertised tool contract, in the same
+file and for the same tool. It is not a data-schema change paired with an API handler.
+
+#### 20.3.1 U20C1 — STD-P2-01 (174.077-T)
+
+* **Fix A** (`updateArtifactUngated`, right after `mergePreserveReservedSizingKeys`):
+  * Capture the prior `custom_fields` before the merge.
+  * If the artifact is a shipment and `previousStatus` (loaded under the locks) is `blocked`, first reassign the
+    local `updates` to a shallow clone whose `custom_fields` map is also cloned, so the caller's map is never mutated
+    (attempt-3 finding). Then, for **every** envelope key, delete it from the incoming map and copy the prior value
+    back if the key existed before (the `mergePreserveReservedSizingKeys` pattern). All later code, including the
+    audited `changes` and post hooks, uses the cleaned clone, so the audit trail never records forged envelope values.
+  * The envelope keys are `blocked_reason`, `blocked_at`, `member_status_snapshot`, `branch`, `blocked_by`, and
+    `resume_checkpoint_ref`. They are defined **once**, in a single key-list helper in `artifacts.go` that Fix A and
+    Fix B both use. Its doc comment points to stash `8AF55264`, the planned consolidation.
+  * Do not add preservation for `items`.
+* **Fix B** (`writeArtifactFileGoverned`, immediately **after** `guardBlockedShipmentMembershipMutation`):
+  * Refuse the write with `ErrShipmentBlockedRequiresEnvelope` when all of these hold:
+    * the previous record, parsed from Markdown at the boundary, is a blocked shipment;
+    * the next record is still blocked;
+    * `!envelope.allowGovernedShipmentMutation`;
+    * any envelope key differs.
+  * Compare by presence and canonical value, not by Go type identity. Compare `blocked_at` through
+    `canonicalBlockedTimestamp`, and every other key by canonical JSON. If `canonicalBlockedTimestamp` cannot parse
+    either side, compare that side's raw canonical JSON instead, so an unparsable value still counts as a difference
+    rather than an error (attempt-3 finding).
+* **Harness function 1, `TestU20C1_GenericUpdatePreservesBlockedEnvelope`.**
+  * *Setup.* Block a shipment canonically: at least one member, `BlockedBy` set, and `ResumeCheckpointRef` set.
+    Before any update, assert with two-value lookups that `blocked_reason`, `blocked_at`, `member_status_snapshot`,
+    `blocked_by`, and `resume_checkpoint_ref` are present and non-empty, and that `branch` is absent. Then take a
+    snapshot of the envelope.
+  * *Subtest `forged`.* Send a round-trip generic `custom_fields` update containing:
+    * the current `items`, unchanged;
+    * `custom_note`;
+    * forged values for `blocked_reason`, `blocked_at`, and `blocked_by`;
+    * an empty `member_status_snapshot`;
+    * a new `branch`.
+
+    Expect `NoError`, the envelope deep-equal to the snapshot, `branch` still absent, and `custom_note` applied. The
+    correlated `artifact_mutation` audit event must not carry the forged values. Also assert that the submitted
+    `custom_fields` map still holds the forged values after the call, which proves the clone.
+  * *Inline control: dropping `items`.* It runs **while the shipment is still blocked**, after `forged` and before
+    `omission` (attempt-2 finding: the membership seal only fires on a blocked preimage). An update that drops
+    `items` is still refused with `ErrShipmentConflict`, and the file bytes are unchanged.
+  * *Subtest `omission`.* Send a round trip carrying `items` and `custom_note_2` only. Expect the envelope deep-equal
+    to the snapshot. Then assert:
+    * `validatePersistedBlockedShipmentEnvelope` returns `NoError`;
+    * Doctor reports no malformed-blocked finding;
+    * `UnblockShipment(queued, Confirm: true)` succeeds. This is the last step on this fixture.
+  * *Inline control: queued shipment.* On a separate queued shipment, a round-trip update of `branch` (with `items`
+    included) is applied.
+* **Harness function 2, `TestU20C1_UngovernedWriteCannotAlterBlockedEnvelope`.**
+  * Do a direct ungoverned `persistArtifact` of the blocked shipment (with no governed envelope in the context)
+    that changes `blocked_reason` and removes `member_status_snapshot`, with `items` unchanged. It must be refused
+    with `ErrShipmentBlockedRequiresEnvelope`, and the file bytes must be unchanged.
+  * *Inline control.* An ungoverned rewrite with an identical envelope and a changed `title` still succeeds. It
+    re-serializes `blocked_at` from the loaded model, which exercises the canonical timestamp comparison.
+* **RED at `3a240fe0`.** Function 1 fails on envelope equality. Function 2 fails because the write succeeds.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C1_' ./internal/core`. Expect exactly 2 top-level
+  PASS.
+* **green_regression_cmds:**
+  `go test -count=1 -timeout=15m -v -run '^(TestUpdateArtifact_|TestUR1B_|TestUR2_|TestUR3_|TestUR10_|TestP1C4_|TestP1C7_|TestNormalizeBlockedShipment)' ./internal/core`.
+  Expect exactly 34 top-level PASS (13 + 3 + 3 + 5 + 1 + 1 + 2 + 6).
+
+#### 20.3.2 U20C2 — STD-P2-02 (174.078-T; depends on 174.079-T)
+
+* **Fix** (`UnblockShipment`):
+  * Set `eventDelta["reason"] = envelope.reason`.
+  * Append the correlated `shipment_status_changed` event **before** the unblocked-shipment persist that deletes
+    `blocked_reason`/`blocked_at`/`blocked_by`. The event has phase `applied`, target and status = the unblock
+    target, and actor = `opts.UnblockedBy`.
+  * Member restores, the terminal `committed` event, and the journal commit keep their order after that persist.
+  * Add a guard comment in the code: for this rollback-policy operation, applied evidence is provisional until the
+    terminal event.
+* **Harness `TestU20C2_UnblockStatusEvidencePrecedesEnvelopeClear`**, table-driven over target ∈ {`queued`,
+  `active`}.
+  * *Setup.* A canonically blocked shipment with reason R, `BlockedBy`, and `ResumeCheckpointRef` C.
+  * *Observer.* After `BlockShipment` returns, install an observer on an existing seam (`persistArtifactWriteFn` or
+    `persistArtifactPreLockHook`, restored with `t.Cleanup`). At the first shipment write inside `UnblockShipment`,
+    it records two things:
+    * (a) whether the shipment on disk still has `blocked_reason == R`;
+    * (b) whether the shipment log already holds exactly one correlated `shipment_status_changed` event with phase
+      `applied`, target = the unblock target, `delta.reason == R`, `delta.unblocked_by == actor`,
+      `delta.resume_checkpoint_ref == C`, and `event.Actor == actor`.
+  * *Assertions.*
+    * (a) and (b) are both true.
+    * Afterwards the shipment has status = target and no `blocked_*` keys.
+    * The journal is `committed`, with exactly one correlated applied status event and one terminal `committed`
+      event.
+* **RED on the U20C3-green tree.** At the first write, (b) is false and `reason` is absent.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C2_' ./internal/core`. Expect exactly 1 top-level
+  PASS.
+* **green_regression_cmds:**
+  * `go test -count=1 -timeout=15m -v -run '^(TestUR1B_|TestUR3_|TestUR10_|TestU20C3_)' ./internal/core`. Expect
+    exactly 11 top-level PASS (3 + 5 + 1 + 2).
+  * `go test -count=1 -timeout=10m -v -run '^TestUR8_' ./internal/cli`. Expect exactly 3.
+
+#### 20.3.3 U20C3 — STD-P2-03 (174.079-T)
+
+* **Invariant.** On every compensation path that writes a terminal, in both `BlockShipment` and `UnblockShipment`:
+  1. Restore the preimages.
+  2. Append the compensated status evidence: phase `applied`, target and status = the preimage shipment status.
+  3. Append the terminal `compensated` event.
+  4. Write the journal as `compensated`.
+* **When compensation happens.** The governed shipment write counts as potentially applied from the moment it is
+  **attempted**. Set `mutationApplied` before that write. The preimage restore is idempotent, and this makes the
+  compensated evidence truthful even when the write failed after it landed. An indeterminate cause still skips
+  compensation through the existing early return (DR1).
+* **Step order.** Steps 2→4 run in order and **stop at the first failure**. No later step runs after an earlier one
+  fails, because a terminal event without status evidence is exactly the inspector conflict.
+* **When an evidence or journal step fails** (EW-1, extended in attempt 2). If step 2, 3, or 4 fails, the journal
+  stays `intent`. The returned error then:
+  * carries **only** `blerrors.ErrWriteIndeterminate` in its `%w` chain;
+  * renders both the original cause and the failed-step error with `%v`. So no `ErrShipmentConflict`,
+    `ErrValidation`, `ErrNotFound`, `ErrWriteNotApplied`, or blocked-envelope sentinel carried by either one can
+    outrank `write_indeterminate` in MCP `domainError`;
+  * names the step with its exact label: `append compensation status evidence` (new), `append compensation event`,
+    or `persist compensation journal`.
+* **What stays the same.**
+  * Restore-failure behavior is unchanged: the joined error, with the journal left in `intent`. Classifying that
+    double fault is captured as stash `7D8717B1`.
+  * `inspectShipmentLifecycleRecoveryEvidence`, `reconcileShipmentLifecycleIntent`, and
+    `recoverPendingShipmentOperations` are **not** modified; they are the oracle.
+  * A shared helper may own the step 2→4 sequence.
+  * Block member writes keep setting `mutationApplied` after they succeed (stash `7D8717B1`).
+* **Harness.** Two top-level functions, each table-driven over op ∈ {`block`, `unblock`}. The block fixture has at
+  least one active member.
+  * *Injection.* Use `persistArtifactWriteFn` on the **first** governed write of the shipment in the target status.
+    **Inside that same seam call, before returning, arm the obstruction.** Restore writes are unaffected, because
+    the compensation envelope has no `audit` and the locks live under `.backlogit/.locks`. The injection mode is
+    fixed **per function**, not a further axis (attempt-3 finding):
+    * function 1 injects **landed then failed**: the seam calls the real writer first, then returns the injected
+      sentinel;
+    * function 2 injects **failed before writing**: the seam returns the sentinel without writing.
+  * *Obstructions.* For the event log, move `events.LogPathForItem(WorkspaceLogsRoot(root), id)` aside and plant a
+    directory in its place. For the journal, move `shipmentOpsRoot(root)` aside and plant a regular file.
+  * *Obstruction helper.* One shared, uniquely named helper in the U20C3 harness file handles all of it:
+    * retry the rename a bounded number of times;
+    * check with `Lstat` that the obstruction is in place;
+    * restore by removing only the planted entry, then renaming the original back, with `require.NoError` on both;
+    * make the restore **idempotent** with a `restored` flag or `sync.Once`, so the `t.Cleanup` registration is a
+      no-op after the explicit call before recovery (attempt-2 finding).
+  * *Error-shape rows.* Function 1 adds one inline table row whose injected sentinel wraps
+    `blerrors.ErrShipmentConflict`. Function 2 adds two: one wrapping `blerrors.ErrShipmentConflict` and one wrapping
+    `blerrors.ErrWriteNotApplied`. These are error-shape rows, not new scenarios (TG-2).
+  * *Negative classification, every row.* `errors.Is` is false for `ErrShipmentConflict`, `ErrValidation`,
+    `ErrWriteNotApplied`, and `ErrNotFound`, and `errors.As` into `*blerrors.MutationPartialError` is false.
+  1. **`TestU20C3_CompensationEventFailureLeavesRecoverableIntent`** obstructs the log.
+     * The error satisfies `IsWriteIndeterminate`. Its message contains the injected sentinel's text and the label
+       `append compensation status evidence`.
+     * The journal is still `intent`.
+     * *Before recovery,* immediately after the failed call: shipment and members already equal the preimage. For
+       unblock, the blocked envelope is valid, which proves the landed write was restored (Principle II credit for
+       the early `mutationApplied`).
+     * After removing the obstruction, `recoverPendingShipmentOperations` returns `NoError` and the journal is
+       `compensated`. Shipment and members still equal the preimage.
+     * The log has exactly one correlated terminal `compensated` event, and the last applied status target is the
+       preimage status.
+     * Doctor reports no `torn_shipment_lifecycle_intent` and no evidence conflict.
+     * **RED at HEAD:** the journal is already `compensated` when the event append fails. For unblock, the landed
+       write is never restored, because `mutationApplied` is false, so the shipment stays unblocked.
+  2. **`TestU20C3_CompensationJournalFailureAfterTerminalEvidenceRecovers`** obstructs `shipmentOpsRoot(root)`.
+     * The error satisfies `IsWriteIndeterminate`. Its message contains the injected sentinel's text and the label
+       `persist compensation journal`.
+     * In the log, the compensated applied status evidence comes before exactly one terminal `compensated` event.
+     * After removing the obstruction, recovery returns `NoError`, the journal is `compensated`, Doctor is clean, and
+       there is no conflict.
+     * **RED at HEAD:** there is no compensated status evidence, so recovery fails with "terminal evidence lacks
+       matching final status evidence".
+  * If a case cannot be reached with the existing seams, or behaves nondeterministically on Windows,
+    harness-architect STOPS and returns the task to Stage. No production seam may enter the harness commit.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C3_' ./internal/core`. Expect exactly 2 top-level
+  PASS.
+* **green_regression_cmds:**
+  * `go test -count=1 -timeout=15m -v -run '^(TestUR1B_|TestUR3_|TestUR10_|TestP021|TestP1C4_|TestP1C6_)' ./internal/core`.
+    Expect exactly 17 top-level PASS (3 + 5 + 1 + 3 + 1 + 4).
+  * `go test -count=1 -timeout=10m -v -run '^TestUR8_' ./internal/cli`. Expect exactly 3.
+
+#### 20.3.4 U20C4 — ADV-B plus ADV-C (174.080-T; depends on 174.082-T)
+
+* **Fix.**
+  * `handleNormalizeBlockedShipment` keeps its current order: workspace or diagnostic-workspace acquisition, then
+    the `id` and `snapshot_ref` checks. Right after those, it rejects `strings.TrimSpace(by) == ""` with
+    `ValidationFailed("by is required")`.
+  * It then always calls `core.NormalizeBlockedShipmentForRecovery`. It passes the workspace from
+    `requireWorkspace` when that succeeds, and the diagnostic workspace otherwise. The `recoveryRemediation` branch
+    to `core.NormalizeBlockedShipment` is removed.
+  * The schema marks `by` as `mcplib.Required()`.
+  * The tool name, the other parameters, and the error mapping are unchanged.
+* **Harness.** Both functions dispatch through the registered tool (`s.InvokeTool` or the package's
+  `callToolForTest` equivalent), never through the handler directly.
+  1. **`TestU20C4_WarmServerNormalizeUsesTargetGuardedRecoveryPath`**
+     * *Setup.* Build the blocked-shipment fixture in the shape of `newPoisonedNormalizationWorkspace`, but with the
+       unrelated poison moved aside.
+     * *Warm the server.* A workspace-requiring read tool must succeed. Then register
+       `t.Cleanup(func(){ require.NoError(t, server.Workspace.Close()) })` so the cached SQLite handle closes before
+       `TempDir` removal.
+     * Restore the poison and invoke normalize with `by`.
+     * Expect: not `IsError`; the poison is still present and byte-identical; `core.NewWorkspace` on the root still
+       fails, and its error names the poison, meaning the message contains `unrelated-poison.json` or the
+       shipment-operation journal validation failure. That rules out a pass caused by lock contention.
+     * **RED at HEAD:** the warm path runs ordinary auto-recovery and fails on the poison.
+  2. **`TestU20C4_NormalizeToolRequiresActor`**
+     * `ToolDefs()` for `backlogit_normalize_blocked_shipment` has `InputSchema.Required` ⊇ {`id`, `snapshot_ref`,
+       `by`}.
+     * An invocation without `by` is `IsError`, with error code `validation_failed` and a message containing
+       `by is required`. That message is handler-specific and distinct from core's actor message.
+     * *Inline row.* The same holds for `by: "   "` (whitespace only).
+     * The shipment file bytes and the shipment event count are unchanged.
+     * **RED at HEAD:** `by` is not in `Required`, and the message is core's actor message.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C4_' ./internal/mcp`. Expect exactly 2 top-level
+  PASS.
+* **green_regression_cmds:**
+  * `go test -count=1 -timeout=10m -v -run '^TestDiagnosticToolsRemainAvailableWithPoisonedLifecycleJournal$' ./internal/mcp`.
+    Expect exactly 1.
+  * `go test -count=1 -timeout=10m -v -run '^(TestRegistryParity_|TestUR8_)' ./internal/cli`. Expect exactly 13.
+  * `go test -count=1 -timeout=10m -v -run '^(TestNormalizeBlockedShipmentForRecovery_|TestU20C6_)' ./internal/core`.
+    Expect exactly 6 (4 + 2).
+
+#### 20.3.5 U20C5 — ADV-A (174.081-T; depends on 174.078-T)
+
+* **Fix** (in the commit tails of `BlockShipment` and `UnblockShipment`):
+  * If the journal `committed` write fails after the terminal `committed` event is durable, do **not** call
+    `compensate`.
+  * Return an error whose `%w` chain carries `blerrors.ErrWriteIndeterminate` only. The journal cause is rendered
+    with `%v`, and the existing labels are kept verbatim: `persist block shipment commit` and
+    `persist unblock shipment commit`.
+  * The journal stays `intent`. Recovery later finalizes it as `committed` through the existing terminal-evidence
+    branch.
+* **Harness `TestU20C5_CommitJournalFailureAfterCommittedEvidenceDoesNotCompensate`**, table-driven over op ∈
+  {`block`, `unblock` (target `queued`)}.
+  * *Injection.* Let the operation's final governed artifact write go through the real writer, then obstruct
+    `shipmentOpsRoot(root)` inside the same seam call. Call the U20C3 obstruction helper **by name**, since it lands two
+    waves earlier. Never copy it, because a duplicate identifier in `package core` would break compilation.
+    * For block, the shipment write is the last one.
+    * For unblock to `queued`, the fixture's snapshot must need no member restore write. If that cannot be arranged,
+      arm the obstruction on the last member write instead.
+  * *Assertions after the failed call.*
+    * The returned artifact is `nil`, which matches the existing error signature; agents re-read state (stash
+      `9900D0DD`).
+    * `IsWriteIndeterminate` is true, and the message contains the op's label. `errors.Is` for `ErrValidation`,
+      `ErrShipmentConflict`, `ErrWriteNotApplied`, and `ErrNotFound` is false, and `errors.As` into
+      `*blerrors.MutationPartialError` is false.
+    * There is no correlated `compensated` lifecycle event and no compensated status event.
+    * The shipment is in the committed target state; for block, the envelope is canonical.
+  * *Assertions after the obstruction is removed.*
+    * Recovery returns `NoError` and the journal is `committed`.
+    * Doctor is clean and there is no conflict.
+    * For block, `validatePersistedBlockedShipmentEnvelope` returns `NoError`.
+* **RED on the U20C2-green tree.** `compensate` runs and appends a contradictory terminal `compensated` event.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C5_' ./internal/core`. Expect exactly 1 top-level
+  PASS.
+* **green_regression_cmds:**
+  * `go test -count=1 -timeout=15m -v -run '^(TestUR1B_|TestUR3_|TestUR10_|TestP021|TestU20C2_|TestU20C3_)' ./internal/core`.
+    Expect exactly 15 (3 + 5 + 1 + 3 + 1 + 2).
+  * `go test -count=1 -timeout=10m -v -run '^TestUR8_' ./internal/cli`. Expect exactly 3.
+
+#### 20.3.6 U20C6 — ADV-B guard hardening (174.082-T)
+
+* **Fix** (`internal/core/shipment_recovery.go`):
+  * `refusePendingShipmentLifecycleIntent` and its call site stay unchanged: the same-shipment check, its message,
+    and its precedence.
+  * Add one aggregate-guard helper, for example `refusePendingShipmentAggregateJournal(ws, shipmentID, memberIDs)`.
+    Call it in `normalizeBlockedShipment` right after the locked reload and the membership-equality check, and
+    before `readShipmentBlockedSnapshot`, passing exactly the locked `memberIDs`. Both normalizers reach this site.
+  * The helper refuses with `ErrShipmentConflict` when either of these holds.
+    * **A valid journal references the aggregate,** meaning the target ID or a member ID:
+      * *Lifecycle journals* in phase `intent`, the predicate `recoverPendingShipmentOperations` uses. Match on
+        `ShipmentID` and on the `Preimage.Shipment` and `Preimage.Members` IDs. Related-artifact IDs are **not**
+        matched in Wave 20: valid claim intents carry no related preimages, so that branch could not be tested
+        (attempt-3 finding); it is captured as stash `09D06A75`.
+      * *Return-blocked journals* in **any** phase or schema version, including legacy schema-less records and
+        committed-but-unremoved ones. Recovery reconciles every such record that is present. Match on the embedded
+        `journal.Shipment.ID` and `journal.Item.ID`, which legacy records also carry, and never on
+        `ShipmentID`/`ItemID`. A record with a nil `Shipment` or `Item` never reaches this match: validation
+        (`shipment_ops.go:416`) rejects it, so it arrives as a validation error and is handled by name attribution
+        below (attempt-3 finding).
+    * **A return-blocked validation error is attributed to the aggregate by file name.** Run
+      `validateShipmentOperationJournalName` on `filepath.Base(path)`. If it returns the return-blocked kind and the
+      captured shipment ID or item ID matches, refuse. Unrelated malformed files, such as `unrelated-poison.json`,
+      match no class and stay ignored.
+  * *Scan.* The helper reads journals through `inspectShipmentOperationJournalsReadOnly`, so it never writes or
+    moves a journal. A scan error other than a missing ops root refuses (wrapped as `ErrShipmentConflict`); it never
+    passes (attempt-3 finding).
+  * The refusal message names the journal file base name, its kind (`lifecycle` or `return-blocked`), and the
+    matched ID, with the exact token `kind=<kind> matched=<id>` next to the base name.
+  * Journals that reference neither the target nor its members are ignored. The existing lifecycle validation-error
+    behavior is unchanged.
+  * Update only the `NormalizeBlockedShipmentForRecovery` doc comment: it is now the only MCP normalize path, warm
+    and cold, and it is guarded at aggregate scope. The `NormalizeBlockedShipment` comment is left to stash
+    `09D06A75`.
+* **Harness.**
+  1. **`TestU20C6_RefusesPendingReturnBlockedJournalForTargetAggregate`.** Plant a v2 intent return-blocked journal
+     for a member of the target shipment, in the `TestNewWorkspace_RecoversPendingReturnBlockedJournal` fixture
+     shape.
+     * `NormalizeBlockedShipmentForRecovery` returns `ErrShipmentConflict`, and the message contains the journal
+       base name and `kind=return-blocked matched=<member ID>`.
+     * The shipment and member bytes are unchanged, and the journal count and bytes are unchanged.
+     * *Inline rows* (journal-shape rows with identical assertions, TG-1/TG-2):
+       * a v2 record in phase `committed`, left unremoved;
+       * a legacy schema-less record (the `writeReturnBlockedJournal` shape);
+       * a malformed file whose name is built with `filepath.Base(returnBlockedJournalPath(root, target, member))`,
+         pre-checked with `validateShipmentOperationJournalName` to return the return-blocked kind.
+  2. **`TestU20C6_RefusesPendingLifecycleIntentReferencingTargetMembers`.** Plant a lifecycle intent for a
+     **different** shipment whose preimage members include a target member ID. Expect a refusal whose message names
+     the journal base name and `kind=lifecycle matched=<member ID>`, with the same no-write assertions.
+     * *Inline control.* A disjoint intent that references neither the target nor its members does not block
+       normalize, which succeeds.
+* **RED at `3a240fe0`.** In both functions normalize succeeds, because the guard sees only lifecycle intents for the
+  same shipment.
+* **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C6_' ./internal/core`. Expect exactly 2 top-level
+  PASS.
+* **green_regression_cmds:**
+  * `go test -count=1 -timeout=15m -v -run '^(TestNormalizeBlockedShipment|TestUR3_|TestP021|TestP1C7_)' ./internal/core`.
+    Expect exactly 16 (6 + 5 + 3 + 2).
+  * `go test -count=1 -timeout=10m -v -run '^TestDiagnosticToolsRemainAvailableWithPoisonedLifecycleJournal$' ./internal/mcp`.
+    Expect exactly 1.
+
+### 20.4 Common contract for all six tasks
+
+* **Canonical regression block.** Each task body carries a P-002.6 `green-regression-contract` block. It contains
+  only `green_regression_cmds`, copied verbatim from 20.3.x. Prose regression commands are not authoritative.
+* **P-002.6 command rules.** Every command names an explicit package, uses `-count=1`, an anchored `-run`, and `-v`.
+  * *Failure conditions.* A command fails closed on any of:
+    * `[no tests to run]` or `no test files`;
+    * zero top-level PASS lines;
+    * any top-level `--- FAIL` or `--- SKIP`;
+    * a top-level PASS count that differs from the declared count.
+  * *No weakening devices.* That means no `-short`, no skip gating, and no environment switch.
+  * *Count baseline.* The declared counts were verified with `git grep '^func <prefix>'` at `3a240fe0`:
+    * `TestUpdateArtifact_` 13, `TestUR1B_` 3, `TestUR2_` 3, `TestUR3_` 5, `TestUR10_` 1, `TestP021` 3, `TestP1C4_`
+      1, `TestP1C6_` 4, `TestP1C7_` 2, `TestNormalizeBlockedShipment` 6 (of which `…ForRecovery_` 4);
+    * cli: `TestUR8_` 3, `TestRegistryParity_` 10;
+    * mcp: `TestDiagnosticToolsRemainAvailableWithPoisonedLifecycleJournal` 1.
+
+    At claim, Ship re-counts at the claim baseline. If a count differs, Ship records both numbers and halts to
+    Stage; it never silently adopts the new count. The counts declared in the task body's acceptance criteria are the
+    authority for the count check (attempt-3 finding).
+* **Per-task SHAs** (attempt-2 finding: harnesses are scaffolded and committed before the claim).
+  * *One harness commit per task,* even when harness-architect scaffolds a whole wave in one pass. Call it
+    `HARNESS_COMMIT`.
+  * `HARNESS_BASE_SHA` is the parent of `HARNESS_COMMIT`. It is recorded in the task's RED capture metadata.
+  * `START_SHA` is the literal `git rev-parse HEAD` at the task's claim, before its first edit. It is recorded in
+    the task's claim and GREEN metadata.
+* **P-004.**
+  * Every top-level harness function must be observed assertion-RED while compilation passes. The compile check is
+    `go test -run '^$' -count=1 ./...`, repository-wide. This compile-only form is explicitly allowed.
+  * Controls are inline assertions or subtests, never separate top-level functions.
+  * Capture the output to `logs/diagnostics/1740xx-red-harness.txt` plus `.metadata.json`.
+  * Record `Compilation: PASS / Red Phase: CONFIRMED (scoped)` before `harness-ready` is applied. This scoped RED
+    record replaces the P-004 full-suite-fails precondition (deviation QG-2).
+  * Before scaffolding, harness-architect records the output of
+    `git grep -n 't.Parallel' -- internal/core/*_test.go internal/mcp/*_test.go` and confirms that no parallel test
+    reaches the overridden seams (H10).
+* **Per-task gates** (Go 1.24.0):
+  * `go vet ./...`
+  * `go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout=5m --new-from-rev=HARNESS_BASE_SHA ./internal/<pkg>/...`
+    must report 0 new findings in the task's files. The pinned module version is the one CI uses and is verified
+    against the Go checksum database, so it is a trusted, reproducible source, unlike an unpinned `npx --yes`.
+  * `go build -o logs/diagnostics/backlogit-wave20.exe ./cmd/backlogit` (the output stays under the git-ignored
+    `logs/diagnostics/`, so the gate never writes a binary into the tracked tree)
+  * For each task file, `git show HEAD:<file> | gofmt -l` must print nothing. Run it through `cmd /c` or bash, so
+    the pipe carries bytes unchanged. This checks the committed LF copy,
+    so the Windows CRLF checkout cannot produce false positives.
+  * `git diff --check HARNESS_BASE_SHA HEAD -- <task files>` must be clean.
+  * *Scope.* `git show --name-only --format= HARNESS_COMMIT` must list exactly the harness file (plus any allowed
+    `.backlogit/**` or `docs/memory/**` paths). `git diff --name-only START_SHA HEAD`, **unfiltered**, must list
+    exactly the production file plus any allowed `.backlogit/**`, `docs/memory/**`, or `logs/**` metadata paths
+    (attempt-3 finding: a pathspec filter could hide an out-of-scope edit).
+  * *Size.* If a task exceeds the 2-hour rule or its declared file or declaration counts during implementation, Ship
+    STOPs and returns it to Stage for a split; it never widens scope in place.
+* **Wave convergence.** At each wave close, run:
+  * `go test -run '^$' -count=1 ./...` (compile only);
+  * `go vet ./...`;
+  * the pinned `golangci-lint --new-from-rev=<wave base SHA>` for each touched package, where the wave base SHA is
+    the `HARNESS_BASE_SHA` of the wave's first harness commit;
+  * `git show HEAD:<file> | gofmt -l` for every task file in the wave;
+  * every task's `harness_cmd` in the wave;
+  * every task's `green_regression_cmds` in the wave;
+  * a `FULL_SUITE_OPERATOR_DEFERRED: wave <k>` line recorded in the wave's run record (QG-2).
+* **W3 pre-push gate** (attempt-2 finding). After W3 convergence, rerun every Wave 20 selector with exact counts,
+  captured to `logs/diagnostics/`:
+  * `go test -count=1 -timeout=15m -v -run '^TestU20C[12356]_' ./internal/core`, expecting exactly 8
+    (2 + 1 + 2 + 1 + 2);
+  * `go test -count=1 -timeout=10m -v -run '^TestU20C4_' ./internal/mcp`, expecting exactly 2;
+  * the de-duplicated union of every task's regressions (attempt-3 finding), each with exact counts:
+    * `go test -count=1 -timeout=20m -v -run '^(TestUpdateArtifact_|TestUR1B_|TestUR2_|TestUR3_|TestUR10_|TestP021|TestP1C4_|TestP1C6_|TestP1C7_|TestNormalizeBlockedShipment)' ./internal/core`,
+      expecting exactly 41 (13 + 3 + 3 + 5 + 1 + 3 + 1 + 4 + 2 + 6);
+    * `go test -count=1 -timeout=10m -v -run '^(TestRegistryParity_|TestUR8_)' ./internal/cli`, expecting exactly 13;
+    * `go test -count=1 -timeout=10m -v -run '^TestDiagnosticToolsRemainAvailableWithPoisonedLifecycleJournal$' ./internal/mcp`,
+      expecting exactly 1.
+* **Circuit.** No task, and no wave convergence, runs `go test ./...` with tests selected, or an unselected package
+  run. The operator authorization for the `3a240fe0` run is **consumed**.
+* **Posture and safety modes.** The suggested posture is test-first. The safety modes are investigate-first and
+  freeze-scope, plus **careful** for W0 (a destructive restore) and for U20C1 (the write boundary every rewrite
+  passes through).
+
+### 20.5 Schedule, edges, 155-S membership, and final gate
+
+* **Precondition W0 (Ship, before any Wave 20 harness).** Ship's uncommitted draft addition to
+  `internal/core/shipment_blocked_recovery_harness_test.go` must be dispositioned first.
+  * *The draft.* It is about +99 lines: `TestBlockedShipmentGenericCustomFieldsPreserveEnvelope` and
+    `TestUnblockShipmentStatusEventPrecedesEnvelopeClear`.
+  * *Why it blocks.* It has an unused `root` compile defect, it shadows the builtin `copy`, and its names lack a unit
+    prefix. It breaks compilation of package `core`, and it would put unprefixed red functions into every
+    `internal/core` run.
+  * *Procedure.*
+    1. Take a hash-verified backup under the git-ignored `logs/diagnostics/`, and confirm the path is ignored with
+       `git check-ignore`.
+    2. With **explicit operator approval** (P-002.5 / Principle VII screening), restore that one file to HEAD with
+       `git restore --source=HEAD -- <file>`.
+    3. Verify with `git diff --quiet -- <file>`.
+  * *If approval is declined,* Ship halts to the operator and Wave 20 does not start. No agent edits the draft in
+    place.
+  * *Porting.* harness-architect may port the draft's intent into the U20C1 and U20C2 harness files under their
+    `TestU20C<n>_` names. The draft file itself must end byte-identical to HEAD. Stage does not touch it.
+* **Waves.** Within each wave the production files are disjoint. The sibling RED selectors of a task are the other
+  `^TestU20C<n>_` prefixes in its wave, and there are no open RED selectors across waves.
+  * **W1** = {174.077-T (U20C1, `artifacts.go`), 174.079-T (U20C3, `shipment.go`), 174.082-T (U20C6,
+    `shipment_recovery.go`)}.
+  * **W2** = {174.078-T (U20C2, `shipment.go`; after U20C3), 174.080-T (U20C4, `tools.go`; after U20C6)}.
+  * **W3** = {174.081-T (U20C5, `shipment.go`; after U20C2)}.
+* **Edges** (`depends-on`), exactly three:
+  * 174.078-T → 174.079-T
+  * 174.080-T → 174.082-T
+  * 174.081-T → 174.078-T
+* **155-S membership.** The tasks are appended after `174.076-T` in dependency order: 174.077-T, 174.079-T,
+  174.082-T, 174.078-T, 174.080-T, 174.081-T. That brings 155-S to 45 items. This is an authorized
+  membership amendment for review remediation; the shipment is active and claimed by Ship.
+* **Push.** Harness commits are designed-RED. Ship does not push from the first Wave 20 harness commit until W3
+  convergence and the W3 pre-push gate (20.4) are GREEN. It then pushes **once**, before the final gate. A tree with
+  U20C2 GREEN is not shippable on its own without U20C5.
+* **Final gate** (a repeat of 19R.8 for the Wave 20 tree, run after the push):
+  0. *Precondition (attempt-3 finding).* `backlogit stash get` succeeds for each of `FA6AE139`, `9900D0DD`,
+     `09D06A75`, `8AF55264`, and `7D8717B1`. The captures live in the operator-dirty, uncommitted
+     `.backlogit/stash.jsonl`; if any is missing, Ship halts to Stage before the review.
+  1. Immediately before the run, request **one new** explicit operator authorization for a single governed
+     `go test -timeout=30m ./...`, captured to `logs/diagnostics/`.
+  2. Run exactly one standard review and one adversarial review over the 155-S branch diff, focused on the Wave 20
+     surfaces. The stop gate is P-014: zero P0/P1 and no unresolved in-scope P2 (P-021 C1).
+     * The review brief lists the pre-dispositioned P-021 C2 captures `FA6AE139`, `9900D0DD`, `09D06A75`,
+       `8AF55264`, and `7D8717B1` with their C1 reasons, so a re-raised item is matched to its capture rather than
+       counted as a new unresolved in-scope P2.
+     * An in-scope finding that is re-raised still halts under the C3 cycle-limit disposition.
+  3. A **second** NOT READY halts to the operator; it does not trigger an automatic Wave 21. New out-of-scope
+     findings go to P-021 C2 capture.
+
+### Plan Hardening Signals — Wave 20
+
+* Crash-recovery and transaction-ordering change (lifecycle journal and evidence order): **yes**.
+* Change to the lower governed write boundary used by every artifact rewrite (`writeArtifactFileGoverned`): **yes**.
+* Change to a recovery guard (the normalize ownership guard is widened): **yes**.
+* MCP tool contract change (a required parameter): **yes**, but a tightening only.
+* New executable, package, dependency, or schema migration: **no**.
+* Irreversible data change: **no**. Every fix is safe to revert, and old journals and logs stay readable by the
+  unchanged recovery code.
+* **Requires plan hardening: yes.**
+
+### Constitution Check — Wave 20
+
+| Principle / section | Mapping |
+|---|---|
+| I. Safety-First Go | No `panic`. Errors carry context. **Deviation EW-1 (temporary, scoped to U20C3/U20C5):** on the indeterminate paths, the `%w` chain carries only `ErrWriteIndeterminate`, and every other cause, both the original write cause and the step or journal error, is rendered with `%v`. The reason is that the MCP `domainError` checks not-found, conflict, blocked-envelope, `ErrValidation`, and `MutationPartialError` before `ErrWriteIndeterminate` (every mapping it checks first), so any wrapped cause would misreport a pending-intent outcome as retryable bad input. The alternative, reordering `domainError`, was rejected here because it is out of the two-file scope and changes every tool's mapping. It is captured as stash `7D8717B1`, which also retires EW-1 |
+| II. Test-First (NON-NEGOTIABLE) | Every task has an owner RED harness, observed assertion-RED before its implementation commit. Each production change has a failing assertion that is specific to it: U20C3's early `mutationApplied` has the landed-then-failed unblock restore assertion, checked before recovery in function 1, and U20C4's handler check has the handler-specific message. The U20C4 reorder that had no RED was dropped. The full suite is deferred to the single new authorized run (20.5), with a per-wave `FULL_SUITE_OPERATOR_DEFERRED` record (QG-2). It is deferred, not waived |
+| III. Workspace Isolation | Harnesses use `t.TempDir` workspaces only, and obstructions stay local to the temp root |
+| IV. CLI Containment (NON-NEGOTIABLE) | No CLI change. Normalize stays an intentional MCP-without-CLI exception |
+| V. Structured Observability | The unblock audit gains `reason`, and the evidence is written before the envelope is cleared. The generic-update audit envelope and post hooks no longer record forged envelope values; pre-hooks still see the submitted request (DR2). The U20C6 refusal names the journal, its kind, and the matched ID. RED/GREEN captures go to `logs/diagnostics/` |
+| VI. Single Responsibility | Each fix sits at the seam that owns it: the update merge and write boundary, the lifecycle operation, the recovery guard, and the MCP adapter. The recovery reconciler and inspector are unchanged and serve as the oracle |
+| VII. Destructive Approval (NON-NEGOTIABLE) | W0 needs explicit operator approval for the scoped `git restore`, after a hash-verified backup. If approval is declined, Ship halts. There is no other destructive step. The pinned lint module is trusted (20.4) |
+| VIII. Safety Modes | investigate-first plus freeze-scope, and careful for W0 and U20C1 |
+| IX. Git-Friendly Persistence | No format change to journals, events, or frontmatter; one additive event-delta key (`reason`) |
+| X. Context Efficiency | Six findings map to five finding tasks plus one consequence task (U20C6), each within one file pair. Deferred work is captured in the stash (P-021 C2), not swept in |
+| XI. Merge Commit History | Unaffected |
+| Quality Gates | **Deviation QG-1 (19R D3 restated):** lint and format are scoped, both per task and at wave convergence. Pinned `golangci-lint --new-from-rev` runs per touched package, and `gofmt -l` runs on the committed copy of the task files. The reasons are that raw `gofmt -l .` on Windows (CRLF checkout) is not authoritative and that pre-existing repo lint debt is out of scope. Full-repo lint was rejected for that reason. **Deviation QG-2 (19R D1, restated in attempt 2):** it deviates from the P-002.6 conditional clause that runs the unfiltered full suite at each wave convergence when no red deliverable is open, and from the P-004 precondition that `go test -timeout=30m ./...` exits non-zero. The justification is the 20.4 Circuit: the operator's authorization for a full run was consumed at `3a240fe0`, and a full run needs fresh authorization. The substitutes are the compile-only check, `go vet`, scoped lint and format, the exact-count scoped selectors, the W3 pre-push gate, and a scoped `Red Phase: CONFIRMED (scoped)` record. Each wave records `FULL_SUITE_OPERATOR_DEFERRED: wave <k>`. *Rejected alternative:* requesting operator authorization for a full run at each of the 3 waves. It adds 3 long governed runs with no extra coverage over the single final-gate run, because every changed surface is already covered by exact-count selectors |
+| Task Granularity (NON-NEGOTIABLE) | Every task has 2 files, at most 4 declarations, and a single domain. **Deviation TG-1:** a table over symmetric operations counts as one scenario. **Deviation TG-2:** inline negative controls, error-shape rows, and U20C6 journal-shape rows are not scenarios (20.3). So U20C1 has 3 behavioral scenarios and every other task at most 2 |
+| P-021 | Plan-review deferrals are captured with the full C2 payload as stash `FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, and `7D8717B1`. Closure must cite them in its residual-risk record (C3, threadless) |
+| Stop Conditions | 6 open tasks. The plan-review budget for this corrective design allows at most 2 re-entries after FAIL; attempt 3 was the last and returned ADVISORY, so harvest waits for explicit operator authorization. A second final-gate NOT READY halts to the operator |
+| P-010 | Stage authored no code or test change, and Ship's draft is untouched |
+
+Constitution Check: documented-deviations
+
+## Plan Hardening — Wave 20
+
+| # | Risk | Mitigation (bound to a unit and a check) |
+|---|---|---|
+| H1 | Moving the status event earlier (U20C2) opens a window where applied evidence exists but the envelope is not yet cleared | Recovery's rollback branch handles that state. U20C2 lands after U20C3, so a failed persist always gets compensated evidence. The `^TestUR3_`/`^TestUR10_` regressions are exact-count gates |
+| H2 | Compensation status evidence breaks the inspector | The inspector is unchanged and acts as the oracle. U20C3 functions 1 and 2 assert that recovery returns `NoError` with no conflict and that Doctor is clean |
+| H3 | Setting `mutationApplied` before the attempt restores a preimage that was never overwritten, or the restore itself fails | The restore is idempotent: the preimage equals the current file. The `^TestP021`/`^TestP1C4_` regressions and the U20C3 preimage-equality assertions cover it. *Accepted degradations, stated (attempt-2 finding):* (1) If the forward write failed for a persistent reason that also breaks the restore, compensation returns the unchanged "compensation failed" error with the journal in `intent`, where HEAD would sometimes have ended cleanly as `compensated`. (2) If the shipment log is unwritable, step 2 fails and the journal stays `intent`. In both cases `lockShipmentLifecycleGlobal` runs recovery as a barrier, so every lifecycle-locked writer (`updateArtifactUngated`, `AddItemToShipment`, `BulkUpdateStatus`, `CreateShipment`, and workspace open) fails closed until the fault clears. That is the truthful outcome for a possibly landed write. The diagnostic workspace keeps Doctor and normalize available, and double-fault classification is captured as stash `7D8717B1` |
+| H4 | The ADV-A indeterminate classification strands the shipment | Recovery's terminal-evidence branch finalizes `committed`. U20C5 proves convergence, a clean Doctor, and the error classification |
+| H5 | The write-boundary guard (U20C1 Fix B) blocks a legitimate writer | It applies only to blocked→blocked writes, only when the envelope differs, and only when the write is ungoverned. It runs after the membership seal, so the refusal precedence is preserved. Governed writers are exempt by construction, and the exemption cannot be forged (DR2). The audited test writers are listed in DR2. The `^TestUR2_`/`^TestUR3_`/`^TestUR10_`/`^TestNormalizeBlockedShipment`/`^TestP1C4_`/`^TestP1C7_` regressions (34 in total) are gates, and a regression failure STOPs the task |
+| H6 | U20C1 changes task-level `blocked_reason` behavior | Scoped to `artifact_type: shipment`. The 13 `^TestUpdateArtifact_` regressions include the task-level blocked-reason tests |
+| H7 | Warm routing (U20C4) changes normalize behavior or drops the guard | DR4 accepts the refusal change and documents the remedy and its limits. U20C6 adds the aggregate guard first (edge 174.080-T → 174.082-T). It runs after the locked reload using the locked `memberIDs`, and the existing same-shipment check keeps its message and precedence. The `^TestNormalizeBlockedShipmentForRecovery_` and `^TestU20C6_` regressions are gates for U20C4 |
+| H8 | Requiring `by` breaks MCP callers | Core already rejects an empty actor, so no caller could succeed without it. `^TestRegistryParity_` (10) and the diagnostic regression are gates |
+| H9 | A harness passes vacuously | Each case asserts the injected text or a specific message, and the exact step label. U20C4 asserts that the `NewWorkspace` failure names the poison. RED is captured per function, and exact PASS counts are required |
+| H10 | Package-global seams leak between tests | No `t.Parallel`. The recorded `t.Parallel` audit (20.4). Every seam and obstruction is restored via `t.Cleanup`, and explicitly before recovery. The obstruction restore is idempotent |
+| H11 | Windows file-handle, antivirus, or indexer interference makes an obstruction flaky | The shared helper uses bounded retry, an `Lstat` check, and the restore order "remove the planted entry, then rename back". If the behavior is nondeterministic, the task STOPs and returns to Stage |
+| H12 | Ship's uncompilable draft contaminates the gates | The W0 precondition (operator-approved scoped restore after a hash-verified backup) must be met first; if approval is declined, Ship halts |
+| H13 | Wave 20 widens into other flows | DR6 has verified that claim, return, and normalize are unaffected. Deferred work is captured in the stash (`FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, `7D8717B1`). The per-task scope check (20.4) runs on both the harness commit and the implementation delta |
+| H14 | A designed-RED harness is pushed, or a partial tree ships | No push until W3 convergence and the W3 pre-push gate are GREEN (20.4/20.5) |
+| H15 | U20C4's warm server leaks its SQLite handle on Windows | The harness closes `server.Workspace` in `t.Cleanup` |
+| H16 | The per-task gates cannot pass because harnesses are committed before the claim | Separate SHAs (`HARNESS_COMMIT`, `HARNESS_BASE_SHA`, `START_SHA`), one harness commit per task, and separate scope checks for the harness commit and the implementation delta (20.4) |
+
+<!-- plan-review-attempt: 20-1 -->
+
+## Plan Review — Wave 20 attempt 1 (rev23) (2026-09-25)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer, Security Lens Reviewer, Correctness Reviewer
+decision: FAIL
+```
+
+* **Budget.** Wave 20 starts a fresh review budget, because it is a new corrective design.
+* **Totals (after dedupe):** P0 0, P1 3, P2 12, P3 about 20.
+* **Plan hardening** was required. rev23 included it, but the P1s made parts of it inaccurate.
+* **Disposition.** Everything below is resolved in place as **rev23.1** (the text above). The rev23 text was
+  replaced rather than kept alongside.
+
+**P1, all resolved:**
+
+1. *U20C1 subtests omitted `items`* (Go, Correctness, Security). A wholesale replace drops the membership, so the
+   seal refuses the write with `ErrShipmentConflict`. The harness would have been RED for the wrong reason and
+   could never go GREEN. *Fix:* the updates now round-trip `items`, and an inline control shows that dropping
+   `items` is still refused. No preservation for `items`.
+2. *The U20C3 arming rule was unreachable for unblock* (Constitution, Go, Scope, Architecture, Correctness). If the
+   unblock shipment write fails, `mutationApplied` is false, so no restores run. The restore order was also stated
+   wrongly. *Fix:* arm inside the failing seam call. `mutationApplied` is now set before the attempt.
+3. *Error classification for agents* (Parity; Go P3 and LR-02 concur). Wrapping the ops `ErrValidation` with `%w`
+   maps to `validation_failed` ahead of `write_indeterminate`. *Fix:* deviation EW-1 renders the cause with `%v`
+   under the indeterminate class, with negative `errors.Is` assertions in U20C3 and U20C5.
+
+**P2, all resolved:**
+
+* Granularity: U20C3 had 6 cases. *Fix:* split into U20C3 and U20C5, plus TG-1.
+* Intermediate-tree hazard between U20C2 and U20C3. *Fix:* the edge is reversed; U20C2 now depends on U20C3.
+* Write-boundary bypass (Architecture, Security). *Fix:* DR2 Fix B.
+* Guard narrowness on the warm path (Security, Architecture, Correctness P3). *Fix:* the new U20C6, and the DR4
+  behavior change is documented.
+* The compile check `-run '^$' ./...` was wrongly banned. *Fix:* it is now allowed, with deviation QG-2.
+* Canonical `green-regression-contract` block. *Fix:* required by 20.4.
+* The U20C4 handler check had no RED of its own. *Fix:* the handler-specific message and code assertion.
+* DR3 had no rejected alternative. *Fix:* added, citing the SBLK-R8 text.
+* START_SHA ambiguity. *Fix:* defined per task.
+* Missing regression prefixes. *Fix:* `TestP1C4_` and `TestP1C6_` added.
+* The wrong function was named. *Fix:* now `updateArtifactUngated`.
+* The warm-server SQLite handle. *Fix:* H15.
+* LR-03 (the preimage must come from under the lock). *Fix:* DR2.
+* LR-04 (entry-point list). *Fix:* DR2.
+* LR-05 (dispatch through the registered tool). *Fix:* 20.3.4.
+* LR-06 (`t.Parallel` audit). *Fix:* 20.4.
+
+**Correctness P2 on an untagged terminal-commit append, deferred.** No existing seam can reach it without a
+production seam, so it is recorded as deferred capture (a) with the reasoning.
+
+**P3 items** were adopted where cheap: exact step labels, the obstruction helper, the snapshot-presence
+assertions, the W0 decline path, the `logs/` wording, and the DR6 verified analysis. The rest are listed as
+deferred captures (b)–(j).
+
+<!-- plan-review-attempt: 20-2 -->
+
+## Plan Review — Wave 20 attempt 2 (rev23.1) (2026-09-25)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer, Security Lens Reviewer, Correctness Reviewer
+decision: FAIL
+```
+
+* **Budget.** This is re-entry 1 of at most 2. Attempt 3 is the last before the P-013.6 escalation halts to the
+  operator.
+* **Totals (after dedupe):** P0 0, P1 3, P2 about 16, P3 about 25. Every attempt-1 P1 was verified resolved, except
+  that the EW-1 part of attempt-1 P1-3 was only partly fixed (see P1-1 below).
+* **Disposition.** Everything below is resolved in place as **rev23.2**, the text above. The rev23.1 text was
+  replaced rather than kept alongside.
+
+**P1, all resolved:**
+
+1. *U20C3 still wrapped the original cause with `%w`* (Parity, Learnings; Correctness, Go, and Constitution P2/P3
+   concur). The cause can carry `ErrShipmentConflict`, `ErrValidation`, `ErrNotFound`, `ErrWriteNotApplied`, or a
+   blocked-envelope sentinel, and `domainError` checks those before `write_indeterminate`. *Fix:* EW-1 is extended.
+   The indeterminate `%w` chain carries only `ErrWriteIndeterminate`, with the cause and the step rendered `%v`, plus
+   error-shape rows with negative `errors.Is` assertions (20.3.3). EW-1 is marked temporary, and retiring it is
+   captured as `7D8717B1`.
+2. *The START_SHA definition broke the per-task gates* (Constitution). Harnesses are committed before the claim.
+   *Fix:* `HARNESS_COMMIT`, `HARNESS_BASE_SHA`, and `START_SHA`, one harness commit per task, and separate scope
+   checks (20.4, H16).
+3. *Deferred items had no P-021 C2 capture* (Constitution). *Fix:* five stash entries with the full C2 payload,
+   grouped by contract surface: `FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, and `7D8717B1` (20.2). Closure cites
+   them in its residual-risk record.
+
+**P2, all resolved:**
+
+* The U20C1 drop-items control ran after the unblock, so it could never pass (Correctness). *Fix:* it now runs while
+  the shipment is still blocked.
+* The early `mutationApplied` in U20C3 had no RED of its own (Constitution), and the degradation when the restore
+  fails was unstated (Correctness). *Fix:* case 1 is landed-then-failed, and the unblock restore assertion is RED at
+  HEAD. H3 now states both degradations.
+* The U20C3 obstruction helper failed when its restore ran twice, and U20C5 could copy it (Go). *Fix:* the restore is
+  idempotent, and U20C5 calls the helper by name.
+* The DR2 entry-point claims were unaudited, the size-seam wording was wrong, and the regressions were missing
+  (Go, Learnings, Correctness P3). *Fix:* the test-writer audit is recorded, the wording is corrected, `TestP1C7_` is
+  added (U20C1 → 34, U20C6 → 16), Fix B runs after the membership seal, and it uses the Markdown preimage and
+  canonical timestamps.
+* The U20C6 call site, the return-blocked predicate, and malformed return-blocked journals (Architecture, Security,
+  Go, Correctness). *Fix:* the existing same-shipment check is kept. A new aggregate guard runs after the locked
+  reload using the locked `memberIDs`. It matches return-blocked records in any phase or schema by their embedded
+  IDs, attributes malformed return-blocked files by name, and its message names the journal, kind, and ID (20.3.6,
+  DR4).
+* The U20C4 `id`/`snapshot_ref` reorder had no RED (Constitution, Scope P3). *Fix:* the reorder is dropped. `by`
+  gets a `TrimSpace` check at the existing validation site, with a whitespace row.
+* QG-2 was incomplete, and wave convergence had no lint or format (Constitution). *Fix:* QG-2 is restated with the
+  violated clauses, its justification, and the rejected per-wave-authorization alternative. Each wave records
+  `FULL_SUITE_OPERATOR_DEFERRED`, and convergence runs scoped lint and format.
+* U20C1 went over the scenario count (Constitution). *Fix:* deviation TG-2, with the rejected split alternative.
+* There was no pre-push gate for all selectors, and the order of push and final gate was unstated (Scope). *Fix:*
+  the W3 pre-push gate (8 + 2), and the push happens before the final gate.
+* U20C6 reached 5 declarations and pulled in capture (e) (Scope, Constitution P3). *Fix:* only the `ForRecovery`
+  doc comment is updated, so at most 4 declarations.
+* Deferral (a) contradicted DR1 (Constitution, Scope, Learnings). *Fix:* DR1 is narrowed to committed evidence that
+  is known durable. The rationale is corrected: tagged indeterminate causes already skip compensation, and the
+  untagged `appendFast` residual needs a seam in `internal/events`. It is captured as `FA6AE139` and
+  pre-dispositioned in the final-gate brief.
+* DR4's remedy did not work with an unrelated poison present (Parity, Architecture P3, Security P3). *Fix:* the
+  limit is stated, the operator-only escape is named, and target-scoped recovery is captured (`09D06A75`).
+* Learnings LR-02/03 (reconciling with never-roll-back-indeterminate; loads coming from Markdown). *Fix:* DR1 and
+  DR2.
+
+**P3 items** were adopted where cheap:
+
+* careful mode;
+* the pinned-lint trust note;
+* `gofmt` run on the committed copy;
+* the U20C4 poison-attributed `NewWorkspace` assertion;
+* a statement of the `nil` result shape;
+* the governed-flag unforgeability statement;
+* the hook-channel statement;
+* the single key-list helper;
+* the X-row mapping wording;
+* the event-contract note.
+
+The rest are folded into the five stash captures.
+
+
+## Plan Review — Wave 20 attempt 3 (rev23.2) (2026-09-25)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer, Security Lens Reviewer, Correctness Reviewer
+decision: ADVISORY
+operator_authorization: pending
+```
+
+All 8 personas returned, so coverage is complete. Totals: **P0 0, P1 0, P2 1, P3 27.** Under the plan-review gate
+table, P2-only is ADVISORY. Stage does not self-authorize an ADVISORY verdict: harvest (task creation, edges, and the
+155-S membership amendment) waits until the operator appends `operator_authorization: approved` to this record or
+asks for a re-review of rev23.3. No attempt marker is appended, because this attempt did not FAIL.
+
+| Persona | P0 | P1 | P2 | P3 |
+|---|---|---|---|---|
+| Correctness Reviewer | 0 | 0 | 0 | 4 |
+| Go Reviewer | 0 | 0 | 0 | 5 |
+| Constitution Reviewer | 0 | 0 | 1 | 3 |
+| Scope Boundary Auditor | 0 | 0 | 0 | 4 |
+| Learnings Researcher | 0 | 0 | 0 | 3 (high confidence; no contradiction with the compound library) |
+| Architecture Strategist | 0 | 0 | 0 | 3 |
+| Agent-Native Parity Reviewer | 0 | 0 | 0 | 4 |
+| Security Lens Reviewer | 0 | 0 | 0 | 1 |
+
+**The P2 (Constitution, Principle II): U20C6 had helper branches with no RED row.** The related-artifact match, the
+nil `Shipment`/`Item` refusal, and committed-phase return-blocked records were specified but untested. *Resolved in
+place as rev23.3 (20.3.6):*
+
+* the related-artifact match is dropped from Wave 20 and captured as stash `09D06A75`;
+* the nil branch is removed from the helper contract: validation (`shipment_ops.go:416`) rejects such a record, so it
+  arrives as a validation error and is covered by the malformed-file row;
+* a committed-but-unremoved v2 return-blocked row is added to function 1.
+
+**P3 items adopted in rev23.3:**
+
+* U20C3: the injection mode is fixed per function; the error-shape rows are listed per function (TG-2); every row
+  asserts the negative classification, including `ErrNotFound` and `MutationPartialError`; function 1 checks the
+  preimage before recovery (the Principle II credit); function 2 asserts the injected text; the obstruction path is
+  `shipmentOpsRoot(root)`.
+* U20C1: Fix A works on a shallow clone and deletes-then-copies every envelope key; Fix B falls back to raw canonical
+  JSON when a timestamp cannot be parsed.
+* U20C5: verbatim labels and the extended negative classification.
+* U20C6: a read-only scan through `inspectShipmentOperationJournalsReadOnly`, where a scan error refuses; the exact
+  `kind=<kind> matched=<id>` token; the malformed file name is built with `returnBlockedJournalPath` and pre-checked.
+* DR1: "may have landed" now applies to unclassified failures only; relocation mislabelling goes to `7D8717B1`.
+* DR2: the link and dependency loaders are named (`findArtifact`), and the governed-context scope is stated.
+* DR4: the no-op claim now names the unremoved-journal exception; the remedy no longer uses block or unblock just to
+  trigger recovery.
+* EW-1 wording names `MutationPartialError`.
+* 20.4:
+  * `go build -o` writes under `logs/diagnostics/`;
+  * the scope diff is unfiltered;
+  * the counts declared in the task body are the authority;
+  * the 2-hour STOP-and-split rule is stated;
+  * the W3 pre-push gate reruns the regression union (41 / 13 / 1).
+* 20.5: the final gate starts with `stash get` on the five captures.
+
+The remaining P3s are wording nits that are already covered by the five captures, or they restate existing text.
