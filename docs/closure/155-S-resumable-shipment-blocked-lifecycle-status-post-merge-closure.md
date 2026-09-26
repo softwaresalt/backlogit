@@ -249,18 +249,21 @@ was already resolved and archived; it is not an open follow-up.
 
 ## Source artifact boundary
 
-Feature `174-F` records `source_stash_id: 808E4323`; this provenance entry is
-not a shipment member and remains untouched. No `source_deliberation_id` is
-recorded. Descriptions reference unlisted deliberations `067-DL`–`073-DL`;
-they remain queued and were not archived or otherwise mutated.
+Feature `174-F` records `source_stash_id: 808E4323`. The stash archive records
+that it was archived on `2026-09-14T21:15:00.6390139Z` during harvest to
+`174-F`; it was already archived before the `155-S` close and the close did
+not mutate it. It is provenance, not a shipment member. No
+`source_deliberation_id` is recorded on the feature or explicit manifest.
+Descriptions reference unlisted deliberations `067-DL`–`073-DL`; they remain
+queued and were not archived or otherwise mutated.
 
 ## Post-merge main synchronization
 
-The existing worktree was safely synchronized after `MERGE_SUCCEEDED`:
+The Orchestrator completed the local main synchronization after
+`MERGE_SUCCEEDED`:
 
 1. The unrelated porcelain state was recorded.
-2. The Orchestrator fast-forwarded the local `main` ref with
-   `git fetch origin main:main`.
+2. The Orchestrator ran `git fetch origin main:main`.
 3. `git checkout main` completed without stashing, resetting, cleaning, or
    discarding local state.
 4. `git pull --ff-only origin main` completed.
@@ -269,5 +272,15 @@ The existing worktree was safely synchronized after `MERGE_SUCCEEDED`:
 6. Before/after porcelain captures are identical:
    `logs/diagnostics/155-s-postmerge-porcelain-before.txt` and
    `logs/diagnostics/155-s-postmerge-porcelain-after.txt`.
+
+The closure-PR review identified that the initial fetch destination was the
+local `main` ref rather than the remote-tracking ref. From the closure branch,
+the required explicit fetch `git fetch origin main:refs/remotes/origin/main`
+was run and both `main` and `origin/main` were verified at
+`2c8759c3f7583d678ef674b3c6566541b4945375`. The before/after porcelain
+captures `logs/diagnostics/155-s-closure-review-sync-before-e1f3d721.txt`
+and `logs/diagnostics/155-s-closure-review-sync-after-e1f3d721.txt` compare
+identically. This review-time verification did not switch branches or alter
+operator worktree state.
 
 The closure PR remains pending operator merge approval.
