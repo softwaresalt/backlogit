@@ -7,6 +7,96 @@ source: docs/closure/2026-09-25-155-S-final-review.md
 
 # 155-S Final Review Halt Record
 
+## Post-push review attempt — 2026-09-26
+
+**Outcome:** `BLOCKED — REVIEW INCOMPLETE`
+**Shipment:** `155-S` only
+**Branch:** `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`
+**Base:** `37a5cba4713953c855013fafd4fc05e479e5618c`
+**Reviewed HEAD:** `98367132efac9de97ddf312f34e8afd163d45589`
+**Remote HEAD at review start:** `98367132efac9de97ddf312f34e8afd163d45589`
+**Diff:** `logs/review/155-s-final.diff`
+**Changed-file list:** `logs/review/155-s-changed-files.txt`
+**Diff SHA-256:** `4D499FFE00CAD35AEE08866997080E070A9D36FC40AF4F2BB18BCB3FBAAC74FC`
+**PR:** None created.
+
+### Standard review
+
+The standard persona review returned candidate findings, but several reviewers
+reported incomplete coverage of the 1.8 MB diff. The outputs were not
+deduplicated into a complete, current-HEAD verdict. The following are
+provisional candidate areas, not final finding counts or accepted dispositions:
+
+* `internal/core/artifacts.go`: protected-status creation without canonical
+  preimage evidence; pre-update hooks observing unsanitized blocked-envelope
+  fields; and ambiguous errors after durable mutation with audit append failure.
+* `internal/core/shipment.go` and
+  `internal/core/shipment_recovery.go`: lock ordering and lock scope,
+  normalizer lock-release error handling, and nil-workspace behavior.
+* `.github/agents/_stage.agent.md`,
+  `.github/agents/_orchestrator.agent.md`, and `.github/agents/_ship.agent.md`:
+  role-boundary concerns about tool grants. The operator-approved
+  server-qualified tool syntax does not by itself resolve the separate
+  permission-scope question.
+* `.autoharness/backlog-registry.yaml`,
+  `internal/cli/shipment.go`, and
+  `docs/cli-reference/backlogit_doctor.md`: MCP-only metadata, required CLI
+  flags, and Doctor documentation parity.
+* `.backlogit/queue/155-S.md` retains an `UNAPPROVED / BLOCKED` active-residual
+  waiver statement, while the current Orchestrator directive identifies
+  plan rev23.5 as operator-approved. The exact per-shipment waiver evidence
+  was not reconciled in this review attempt.
+* The review also questioned whether the W3 AC5 gate evidence is recorded in
+  the archived task manifest. The selectors were run and their output is
+  captured in the session diagnostics, but the manifest discrepancy was not
+  resolved here.
+* Unrelated archived-memory moves were raised as a scope concern. No files
+  were restored or otherwise changed.
+
+No finding from this partial pass is marked fixed, deferred, or invalidated.
+No P-021 C1 disposition is final, and no out-of-scope candidate is treated as
+closed. Consequently, there are no authoritative standard-review P0/P1/P2/P3
+counts.
+
+### Adversarial review
+
+The requested four-slot review was not completed. The adversarial-review agent
+declined before reading the diff or dispatching any reviewer because the
+configured multi-provider dispatch would transmit repository source to
+external model providers.
+
+| Slot | Requested route | Result |
+|---|---|---|
+| Anchor | `openai / gpt-6-sol / high` | Not dispatched |
+| Tier 1 | `openai / gpt-6-luna / xhigh` | Not dispatched |
+| Tier 2 | `anthropic / claude-sonnet-5 / high` | Not dispatched |
+| Tier 3 | `anthropic / claude-opus-5.5 / high` | Not dispatched |
+
+No fallback retry was attempted. No reviewer accessed the diff, so there are
+no adversarial observations, consensus/majority/plurality/unique counts, or
+P-021 dispositions to report. The required minimum reviewer count was not
+met; this is a blocking review gate, not a clean or degraded review verdict.
+
+### Process deviations
+
+Commit `98367132efac9de97ddf312f34e8afd163d45589` contains the U20C5 source
+change made outside the `build-feature` workflow. The Orchestrator accepted
+this as a procedural deviation and directed that the commit stand; it was not
+rewritten, reverted, or re-routed. The harness-correction comment on
+`174.081-T` was recorded by the Orchestrator.
+
+### Gate disposition
+
+* Local review readiness is `BLOCKED`; the standard review is incomplete and
+  the adversarial review did not run.
+* No code remediation or post-remediation review was performed after this
+  push.
+* No PR, CI, P-018 Copilot-review, or merge gate was started.
+* The governed full suite remains withheld and was not rerun.
+* Do not create a PR until a complete review has been performed through an
+  approved review route, findings have final P-021 dispositions, and all
+  blocking in-scope findings are resolved.
+
 **Review date:** 2026-09-25  
 **Shipment:** `155-S` only  
 **Branch:** `feat/155-s-s14-resumable-shipment-blocked-lifecycle-status`  
