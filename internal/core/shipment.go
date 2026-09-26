@@ -770,6 +770,7 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 		"resume_checkpoint_ref":  resumeCheckpointRef,
 		"member_status_snapshot": memberStatuses,
 	}
+	eventDelta["reason"] = envelope.reason
 	mutationApplied := false
 	compensate := func(cause error) error {
 		if blerrors.IsWriteIndeterminate(cause) {
@@ -827,6 +828,21 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 		changes:                       eventDelta,
 		allowGovernedShipmentMutation: true,
 	})
+	statusDelta := maps.Clone(eventDelta)
+	statusDelta["phase"] = "applied"
+	statusDelta["status"] = string(opts.Target)
+	// Applied evidence is provisional until the terminal event for this rollback-policy operation.
+	if err := appendItemEventWithActorErr(
+		operationCtx,
+		ws,
+		shipmentID,
+		opts.UnblockedBy,
+		"shipment_status_changed",
+		statusDelta,
+	); err != nil {
+		return nil, compensate(fmt.Errorf("append unblocked status event: %w", err))
+	}
+
 	mutationApplied = true
 	if err := persistArtifact(governedCtx, ws, unblocked, true); err != nil {
 		return nil, compensate(fmt.Errorf("persist unblocked shipment: %w", err))
@@ -843,20 +859,6 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 		if err := persistArtifact(operationCtx, ws, updated, true); err != nil {
 			return nil, compensate(fmt.Errorf("restore shipment member %s to %s: %w", member.ID, desiredStatus, err))
 		}
-	}
-
-	statusDelta := maps.Clone(eventDelta)
-	statusDelta["phase"] = "applied"
-	statusDelta["status"] = string(opts.Target)
-	if err := appendItemEventWithActorErr(
-		operationCtx,
-		ws,
-		shipmentID,
-		opts.UnblockedBy,
-		"shipment_status_changed",
-		statusDelta,
-	); err != nil {
-		return nil, compensate(fmt.Errorf("append unblocked status event: %w", err))
 	}
 
 	commitDelta := maps.Clone(eventDelta)
