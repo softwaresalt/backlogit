@@ -163,12 +163,13 @@ func TestU20C3_CompensationEventFailureLeavesRecoverableIntent(t *testing.T) {
 				current := cloneArtifact(loadURCanonicalArtifact(t, ws, member.ID))
 				assertURArtifactEqual(t, member, current)
 			}
+
+			restoreObstruction()
 			if tt.operation == "unblock" {
 				_, validationErr := validatePersistedBlockedShipmentEnvelope(ctx, ws, shipmentAfterFailure)
 				assert.NoError(t, validationErr, "failed unblock compensation must restore a valid blocked envelope")
 			}
 
-			restoreObstruction()
 			recoveryErr := recoverPendingShipmentOperations(ctx, ws)
 			assert.NoError(t, recoveryErr, "recovery must resolve the retained compensation intent")
 
