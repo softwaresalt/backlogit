@@ -4991,8 +4991,9 @@ Revision history:
   U20C1 and U20C2 harnesses (W0, 20.5), replacing the backup-and-restore precondition. The operator granted one
   extra review round, attempt 4, over rev23.3 plus rev23.4. It returned **ADVISORY** (P0 0, P1 0, P2 3 distinct).
 * **rev23.5** is this text. It resolves the attempt-4 P2s and the cheap P3s in place; see the attempt-4 record
-  below. **rev23.5 has not been re-reviewed.** Harvest is blocked until the operator either authorizes the
-  attempt-4 ADVISORY or grants another round.
+  below. rev23.5 was not re-reviewed. On 2026-09-26T04:05Z the operator (softwaresalt) **approved** the attempt-4
+  ADVISORY verdict for the rev23.5 text. Stage then harvested 174.077-T..174.082-T into 155-S; see the Wave 20
+  Harvest Record below.
 
 ### 20.1 Trigger and provenance
 
@@ -5829,7 +5830,7 @@ file and for the same tool. It is not a data-schema change paired with an API ha
 | Quality Gates | **Deviation QG-1 (19R D3 restated):** lint and format are scoped, both per task and at wave convergence. Pinned `golangci-lint --new-from-rev` runs per touched package, and `gofmt -l` runs on the committed copy of the task files. The reasons are that raw `gofmt -l .` on Windows (CRLF checkout) is not authoritative and that pre-existing repo lint debt is out of scope. Full-repo lint was rejected for that reason. **Deviation QG-2 (19R D1, restated in attempt 2):** it deviates from the P-002.6 conditional clause that runs the unfiltered full suite at each wave convergence when no red deliverable is open, and from the P-004 precondition that `go test -timeout=30m ./...` exits non-zero. The justification is the 20.4 Circuit: the operator's authorization for a full run was consumed at `3a240fe0`, and a full run needs fresh authorization. The substitutes are the compile-only check, `go vet`, scoped lint and format, the exact-count scoped selectors, the W3 pre-push gate, and a scoped `Red Phase: CONFIRMED (scoped)` record. Each wave records `FULL_SUITE_OPERATOR_DEFERRED: wave <k>`. *Rejected alternative:* requesting operator authorization for a full run at each of the 3 waves. It adds 3 long governed runs with no extra coverage over the single final-gate run, because every changed surface is already covered by exact-count selectors |
 | Task Granularity (NON-NEGOTIABLE) | Every task has 2 files, at most 4 declarations, and a single domain. **Deviation TG-1:** a table over symmetric operations counts as one scenario. **Deviation TG-2:** inline negative controls, error-shape rows, and U20C6 journal-shape rows are not scenarios (20.3). So U20C1 has 3 behavioral scenarios and every other task at most 2 |
 | P-021 | Plan-review deferrals are captured with the full C2 payload as stash `FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, and `7D8717B1`. Closure must cite them in its residual-risk record (C3, threadless) |
-| Stop Conditions | 6 open tasks. The plan-review budget for this corrective design allowed 2 re-entries after FAIL. Attempt 3 returned ADVISORY. The operator then granted exactly one extra round, attempt 4, which also returned ADVISORY. No further round runs without a new operator grant, and harvest waits for operator authorization. A second final-gate NOT READY halts to the operator |
+| Stop Conditions | 6 open tasks. The plan-review budget for this corrective design allowed 2 re-entries after FAIL. Attempt 3 returned ADVISORY. The operator then granted exactly one extra round, attempt 4, which also returned ADVISORY. The operator approved that ADVISORY for the rev23.5 text on 2026-09-26T04:05Z, and harvest followed. No further round runs without a new operator grant. A second final-gate NOT READY halts to the operator |
 | P-010 | Stage authored no code or test change and did not touch Ship's draft. Ship performs the fold (W0) and the U20C2 port through the harness-architect skill (test authoring) |
 
 Constitution Check: documented-deviations
@@ -6063,7 +6064,10 @@ The remaining P3s are wording nits that are already covered by the five captures
 dispatch_mode: multi-agent-dispatch
 reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer, Security Lens Reviewer, Correctness Reviewer
 decision: ADVISORY
-operator_authorization: pending
+operator_authorization: approved
+operator_authorization_by: softwaresalt
+operator_authorization_at: 2026-09-26T04:05Z
+operator_authorization_scope: rev23.5 text (attempt-4 ADVISORY; P2s resolved in place, not re-reviewed)
 ```
 
 This round was granted by the operator on 2026-09-26, beyond the exhausted retry budget. It reviewed rev23.3 plus the
@@ -6136,3 +6140,30 @@ Nothing was re-raised from the five captures. Every persona re-verified the decl
 * **(a)** Authorize this ADVISORY verdict for the rev23.5 text by setting `operator_authorization: approved` here.
   Stage then harvests with Step 4 `skip_review` validation.
 * **(b)** Grant one more review round over rev23.5.
+
+**Operator decision (2026-09-26T04:05Z, softwaresalt): (a).** The attempt-4 ADVISORY is approved for the rev23.5
+text. This final `## Plan Review` record satisfies the Step 4 gate (`dispatch_mode: multi-agent-dispatch`,
+`decision: ADVISORY`, `operator_authorization: approved`), so Stage harvested without a further review round.
+
+## Wave 20 Harvest Record (2026-09-26)
+
+Stage harvested the six rev23.5 work units under `174-F`. The IDs were assigned in creation order and match 20.3.
+
+| Unit | Task | Title | harness_cmd (exact count) | Depends on | Wave |
+|---|---|---|---|---|---|
+| U20C1 | 174.077-T | Protect blocked envelope in generic updates and write boundary | `-run '^TestU20C1_' ./internal/core` (2) | none | W1 |
+| U20C2 | 174.078-T | Record unblock reason before clearing blocked envelope | `-run '^TestU20C2_' ./internal/core` (1) | 174.079-T | W2 |
+| U20C3 | 174.079-T | Order compensation evidence before compensated journal phase | `-run '^TestU20C3_' ./internal/core` (2) | none | W1 |
+| U20C4 | 174.080-T | Route MCP normalize through guarded path and require actor | `-run '^TestU20C4_' ./internal/mcp` (2) | 174.082-T | W2 |
+| U20C5 | 174.081-T | Treat commit-journal failure after committed evidence as indeterminate | `-run '^TestU20C5_' ./internal/core` (1) | 174.078-T | W3 |
+| U20C6 | 174.082-T | Guard normalize against pending aggregate journals | `-run '^TestU20C6_' ./internal/core` (2) | none | W1 |
+
+* Every task is `queued`, priority `high`, labeled `wave-20,155-S,review-remediation,harness-required` plus its
+  domain (`core-lifecycle` or `mcp-adapter`), and carries its 20.3.x `green-regression-contract` block verbatim.
+  None is `harness-ready` yet; Ship applies that label after W0 and each scoped RED record.
+* Exactly three `blocks` edges were recorded: 174.078-T → 174.079-T, 174.080-T → 174.082-T, and
+  174.081-T → 174.078-T.
+* 155-S (active, claimed by Ship) was amended in the order 174.077-T, 174.079-T, 174.082-T, 174.078-T, 174.080-T,
+  174.081-T, after 174.076-T. It now has **45** items.
+* The five P-021 C2 captures (`FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, `7D8717B1`) stay in the operator-dirty
+  `.backlogit/stash.jsonl`. Their `task=N/A` source refs are truthful capture-time records and were not rewritten.

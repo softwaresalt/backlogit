@@ -94,3 +94,20 @@ preserved:
   * (a) authorize the attempt-4 ADVISORY for rev23.5, after which Stage runs harvest with Step 4 `skip_review`
     validation;
   * (b) grant another review round over rev23.5.
+
+## Update — 2026-09-26T04:05Z (operator approval, harvest)
+
+* The operator (softwaresalt) **approved** the attempt-4 ADVISORY for the rev23.5 text. The attempt-4 record now says
+  `operator_authorization: approved`, and the plan carries a Wave 20 Harvest Record.
+* **Harvested** under 174-F (all queued, priority high, not yet harness-ready):
+  * 174.077-T U20C1 `^TestU20C1_` ./internal/core (2), W1
+  * 174.078-T U20C2 `^TestU20C2_` ./internal/core (1), W2, depends on 174.079-T
+  * 174.079-T U20C3 `^TestU20C3_` ./internal/core (2), W1
+  * 174.080-T U20C4 `^TestU20C4_` ./internal/mcp (2), W2, depends on 174.082-T
+  * 174.081-T U20C5 `^TestU20C5_` ./internal/core (1), W3, depends on 174.078-T
+  * 174.082-T U20C6 `^TestU20C6_` ./internal/core (2), W1
+* **155-S** is active with 45 items; the six were appended in the order 077, 079, 082, 078, 080, 081.
+* The MCP create call ignored `priority`, so priority was set to `high` with `backlogit update`.
+* The five stash captures were not rewritten; their `task=N/A` refs are truthful at capture time.
+* **Next:** Ship runs W0 (the draft fold via harness-architect), then the W1 harnesses. Checkpoint 005049 is still
+  active and untouched.
