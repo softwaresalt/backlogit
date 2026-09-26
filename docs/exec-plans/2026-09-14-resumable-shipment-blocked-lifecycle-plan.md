@@ -4977,7 +4977,7 @@ is available or needed.
   stall-bound path. The final `## Plan Review` gate is unchanged, and no new review attempt is
   recorded.
 
-## Wave 20 — Corrective: 155-S final-review remediation (rev23.3) (2026-09-25)
+## Wave 20 — Corrective: 155-S final-review remediation (rev23.5) (2026-09-25)
 
 Revision history:
 
@@ -4985,9 +4985,14 @@ Revision history:
 * **rev23.1** resolved every attempt-1 P1 and P2 finding in place. It was reviewed in attempt 2 and FAILED.
 * **rev23.2** resolved every attempt-2 P1 and P2 finding in place. It was reviewed in attempt 3: **ADVISORY**
   (P0 0, P1 0, P2 1).
-* **rev23.3** is this text. It resolves the single attempt-3 P2 (U20C6 untested branches) in place and adopts the
-  attempt-3 P3 clarifications; see the attempt-3 record below. Harvest waits for operator authorization of the
-  attempt-3 ADVISORY verdict.
+* **rev23.3** resolved the single attempt-3 P2 (U20C6 untested branches) in place and adopted the attempt-3 P3
+  clarifications; see the attempt-3 record below.
+* **rev23.4** recorded the operator decision of 2026-09-26: Ship's uncommitted draft tests are **folded** into the
+  U20C1 and U20C2 harnesses (W0, 20.5), replacing the backup-and-restore precondition. The operator granted one
+  extra review round, attempt 4, over rev23.3 plus rev23.4. It returned **ADVISORY** (P0 0, P1 0, P2 3 distinct).
+* **rev23.5** is this text. It resolves the attempt-4 P2s and the cheap P3s in place; see the attempt-4 record
+  below. **rev23.5 has not been re-reviewed.** Harvest is blocked until the operator either authorizes the
+  attempt-4 ADVISORY or grants another round.
 
 ### 20.1 Trigger and provenance
 
@@ -5074,7 +5079,8 @@ Revision history:
       are compared by canonical JSON.
 
     This is where the membership seal and the protected-transition rule already live, and it closes the envelope
-    bypass for ungoverned callers of exported `WriteArtifactFile*` and of `persistArtifact`.
+    bypass for ungoverned rewrites of the artifact's **current file**, through exported `WriteArtifactFile*` and
+    `persistArtifact`. A path-choice bypass is out of scope; see the *Limit* bullet below (attempt-4 finding).
     * *Check order.* The new check runs **after** `guardBlockedShipmentMembershipMutation`, so an `items` change is
       still refused first with `ErrShipmentConflict`, the precedence `TestP1C4_` asserts.
     * *The exemption cannot be forged.* `allowGovernedShipmentMutation` travels only in the unexported
@@ -5104,6 +5110,9 @@ Revision history:
     * *Governed context scope, stated (attempt-3 finding).* The governed envelope context is built per call by the
       lifecycle operation and passed only to its own `persistArtifact` calls. It is never handed to hooks or to a
       nested generic update, so the exemption cannot leak.
+    * The status choke points `setArtifactStatus`, `cascadePersistedParentStatuses` (`shipment_lifecycle.go`), and
+      `BulkUpdateStatus` (`queue.go`) write through `persistArtifact`, so they reach `writeArtifactFileGoverned`. A
+      blocked→blocked envelope change by any of them fails closed under Fix B (attempt-4 finding).
     * `BlockShipment`, `UnblockShipment`, normalize, compensation, and recovery are governed, and exempt by
       construction.
     * The test audit covered `internal/**/*_test.go` files that write `blocked_reason`/`member_status_snapshot`
@@ -5113,7 +5122,9 @@ Revision history:
       (`os.WriteFile`, outside the boundary), is an expected refusal (`TestP1C4_`), or targets a non-blocked record.
       `TestP1C7_` (2) exercises envelope provenance and is added to U20C1's regressions.
     * *Limit, stated.* Flipping `artifact_type` across several ungoverned writes can get around both the membership
-      seal and Fix B. That can only happen through programmatic misuse, and it is captured as stash `8AF55264`.
+      seal and Fix B. So can an in-process caller that passes `WriteArtifactFileWithOptions` a path other than the
+      shipment's current file: `parseFile` then returns not-exist, and every preimage check is skipped (attempt-4
+      finding). Both need programmatic misuse, and both are captured as stash `8AF55264`.
 * **DR3 — STD-P2-02: status evidence before the envelope clear.**
   * Add `reason`, the validated prior `envelope.reason`, to the unblock `eventDelta`. The existing key-presence
     semantics of `unblocked_by`/`resume_checkpoint_ref` are kept.
@@ -5140,7 +5151,10 @@ Revision history:
     * A same-shipment nonterminal intent is **refused** with `ErrShipmentConflict`, not recovered first. This is the
       operator's "keep target-shipment guard" instruction.
     * The usual remedy is `backlogit_doctor` to inspect, then a workspace reopen, which runs recovery. Agents must not
-      issue a block or unblock only to trigger recovery (attempt-3 finding).
+      issue a block or unblock only to trigger recovery (attempt-3 finding). *Reopen, per surface (attempt-4
+      finding):* a new CLI process that opens the workspace, for example the read-only `backlogit shipment get <id>`,
+      or an operator or host restart of the MCP server. A warm MCP server never re-runs open-time recovery, and no
+      MCP tool reopens the workspace; a reopen tool is captured as stash `09D06A75`.
     * Unrelated pending intents are left for that same recovery.
     * *When that remedy cannot work, stated.* It fails in two cases:
       * an unrelated poison journal is also present, because `UnblockShipment` and `NewWorkspace` run
@@ -5149,8 +5163,11 @@ Revision history:
 
       This fails closed on purpose. The only current recourse is operator-only: Doctor evidence, then removal or
       quarantine of the named journal, approved under Principle VII. Target-scoped recovery is captured as stash
-      `09D06A75`. The refusal message names the journal file, its kind, and the matched ID, so an agent can tell
-      the operator exactly what blocks.
+      `09D06A75`. The U20C6 aggregate refusal names the journal file, its kind, and the matched ID
+      (`kind=<kind> matched=<id>`). The unchanged same-shipment refusal names the correlation ID and operation
+      instead; its journal file is `shipmentLifecycleJournalName(<correlation ID>)`. A uniform refusal format is
+      captured as stash `9900D0DD` (attempt-4 finding). Either way, an agent can tell the operator exactly what
+      blocks.
   * *Why widen the guard (security finding).* Today's guard sees only lifecycle intents for the same shipment. Once
     the warm path uses it, that gap would widen an integrity hole that already exists on the cold path. U20C6
     therefore adds an aggregate guard. It refuses when a pending journal references the target shipment or any of
@@ -5252,10 +5269,10 @@ count either. Counted this way:
 
 | Unit | Behavioral scenarios | Inline controls |
 |---|---|---|
-| U20C1 | 3: `forged`, `omission`, ungoverned refusal | the drop-items refusal, the queued-shipment `branch`, the identical-envelope title change |
-| U20C3 | 2 | the conflict-wrapped cause row |
+| U20C1 | 3: `forged`, `omission`, ungoverned refusal | the drop-items refusal, the queued-shipment `branch`, the identical-envelope title change, the unparsable-`blocked_at` row |
+| U20C3 | 2 | error-shape rows: the conflict-wrapped row in function 1, and the conflict-wrapped and `ErrWriteNotApplied`-wrapped rows in function 2 |
 | U20C4 | 2 | the whitespace-actor row |
-| U20C6 | 2 | the legacy and malformed return-blocked rows, and the disjoint intent |
+| U20C6 | 2 | journal-shape rows: committed v2, legacy, malformed, and target-only malformed; plus the disjoint intent |
 
 *Rejected: splitting U20C1 Fix B into its own unit.* It would put two serialized tasks on `artifacts.go` and the same
 envelope invariant, and Fix A's `omission` scenario and Fix B's refusal share one fixture and one oracle
@@ -5266,13 +5283,16 @@ file and for the same tool. It is not a data-schema change paired with an API ha
 
 #### 20.3.1 U20C1 — STD-P2-01 (174.077-T)
 
-* **Fix A** (`updateArtifactUngated`, right after `mergePreserveReservedSizingKeys`):
+* **Fix A** (`updateArtifactUngated`, immediately **before** `mergePreserveReservedSizingKeys`; rev23.5 correction):
   * Capture the prior `custom_fields` before the merge.
   * If the artifact is a shipment and `previousStatus` (loaded under the locks) is `blocked`, first reassign the
     local `updates` to a shallow clone whose `custom_fields` map is also cloned, so the caller's map is never mutated
-    (attempt-3 finding). Then, for **every** envelope key, delete it from the incoming map and copy the prior value
-    back if the key existed before (the `mergePreserveReservedSizingKeys` pattern). All later code, including the
-    audited `changes` and post hooks, uses the cleaned clone, so the audit trail never records forged envelope values.
+    (attempt-3 finding). Then, for **every** envelope key, delete it from the cloned map and copy the prior value
+    back if the key existed before (the `mergePreserveReservedSizingKeys` pattern). **Then** call
+    `mergePreserveReservedSizingKeys` with the cleaned clone. Because the merge edits and returns its `incoming` map
+    in place, the persisted `artifact.CustomFields`, the audited `changes`, and post hooks all share the one cleaned
+    map. So the audit trail never records forged envelope values, and the caller's map is also safe from the existing
+    sizing-key edit (attempt-4 finding).
   * The envelope keys are `blocked_reason`, `blocked_at`, `member_status_snapshot`, `branch`, `blocked_by`, and
     `resume_checkpoint_ref`. They are defined **once**, in a single key-list helper in `artifacts.go` that Fix A and
     Fix B both use. Its doc comment points to stash `8AF55264`, the planned consolidation.
@@ -5287,6 +5307,10 @@ file and for the same tool. It is not a data-schema change paired with an API ha
     `canonicalBlockedTimestamp`, and every other key by canonical JSON. If `canonicalBlockedTimestamp` cannot parse
     either side, compare that side's raw canonical JSON instead, so an unparsable value still counts as a difference
     rather than an error (attempt-3 finding).
+* **Draft fold (rev23.4, W0).** Ship's relocated draft `TestBlockedShipmentGenericCustomFieldsPreserveEnvelope`
+  is renamed and refactored into function 1 below as the seed of its `forged` subtest; it is not kept as a separate
+  top-level function. The refactor drops the unused `root`, adds the unit prefix, and extends the draft's single
+  forged key to the full `forged` payload below.
 * **Harness function 1, `TestU20C1_GenericUpdatePreservesBlockedEnvelope`.**
   * *Setup.* Block a shipment canonically: at least one member, `BlockedBy` set, and `ResumeCheckpointRef` set.
     Before any update, assert with two-value lookups that `blocked_reason`, `blocked_at`, `member_status_snapshot`,
@@ -5318,6 +5342,9 @@ file and for the same tool. It is not a data-schema change paired with an API ha
     with `ErrShipmentBlockedRequiresEnvelope`, and the file bytes must be unchanged.
   * *Inline control.* An ungoverned rewrite with an identical envelope and a changed `title` still succeeds. It
     re-serializes `blocked_at` from the loaded model, which exercises the canonical timestamp comparison.
+  * *Inline error-shape row (TG-2, attempt-4 finding).* An ungoverned write that changes **only** `blocked_at`, to an
+    unparsable string, is refused with `ErrShipmentBlockedRequiresEnvelope`, and the file bytes are unchanged. This
+    covers the raw-canonical-JSON fallback. RED at `3a240fe0`: the write succeeds.
 * **RED at `3a240fe0`.** Function 1 fails on envelope equality. Function 2 fails because the write succeeds.
 * **harness_cmd:** `go test -count=1 -timeout=10m -v -run '^TestU20C1_' ./internal/core`. Expect exactly 2 top-level
   PASS.
@@ -5335,6 +5362,18 @@ file and for the same tool. It is not a data-schema change paired with an API ha
   * Member restores, the terminal `committed` event, and the journal commit keep their order after that persist.
   * Add a guard comment in the code: for this rollback-policy operation, applied evidence is provisional until the
     terminal event.
+* **Draft fold (rev23.4/rev23.5).** When the W2 harness for 174.078-T is scaffolded, Ship, through the
+  harness-architect skill, first re-checks the two W0 SHA-256 values (20.5 W0). It then ports the parked
+  `TestUnblockShipmentStatusEventPrecedesEnvelopeClear` from `logs/diagnostics/wave20-draft-u20c2.go.txt` into the
+  harness below as its single top-level function. The port does five things:
+  * renames it;
+  * replaces the `copy` shadow with a non-builtin name;
+  * makes the observer record at the **first** shipment write rather than at any write;
+  * adds the target table, the `applied` phase check, and the journal and terminal assertions;
+  * saves the prior `persistArtifactPreLockHook` and restores that saved value in `t.Cleanup`, instead of setting it
+    to `nil` (attempt-4 finding).
+
+  The parking file stays git-ignored and is never committed.
 * **Harness `TestU20C2_UnblockStatusEvidencePrecedesEnvelopeClear`**, table-driven over target ∈ {`queued`,
   `active`}.
   * *Setup.* A canonically blocked shipment with reason R, `BlockedBy`, and `ResumeCheckpointRef` C.
@@ -5542,11 +5581,18 @@ file and for the same tool. It is not a data-schema change paired with an API ha
       `validateShipmentOperationJournalName` on `filepath.Base(path)`. If it returns the return-blocked kind and the
       captured shipment ID or item ID matches, refuse. Unrelated malformed files, such as `unrelated-poison.json`,
       match no class and stay ignored.
-  * *Scan.* The helper reads journals through `inspectShipmentOperationJournalsReadOnly`, so it never writes or
-    moves a journal. A scan error other than a missing ops root refuses (wrapped as `ErrShipmentConflict`); it never
-    passes (attempt-3 finding).
-  * The refusal message names the journal file base name, its kind (`lifecycle` or `return-blocked`), and the
-    matched ID, with the exact token `kind=<kind> matched=<id>` next to the base name.
+  * *Scan.* The new helper reads journals through `inspectShipmentOperationJournalsReadOnly`, so the helper itself
+    never writes or moves a journal. The unchanged same-shipment check that runs before it still uses the cleanup
+    variant, which may remove `.shipment-operation-*.tmp` residue; consolidating the two scans is left to stash
+    `09D06A75`. A scan error other than a missing ops root makes the helper refuse (wrapped as
+    `ErrShipmentConflict`). That branch is **defensive**: every such ops-root failure already makes the earlier
+    same-shipment check fail first, so no harness row can reach it (attempt-4 finding).
+  * *Match precedence (attempt-4 finding).* For every record, member IDs are checked first and the target shipment
+    ID second, and the first match is reported. For a return-blocked record or name, that means `Item.ID` /
+    `captures[1]` against the locked `memberIDs`, then `Shipment.ID` / `captures[0]` against the target.
+  * The refusal message names the journal file base name, its kind, and the matched ID, with the exact token
+    `kind=<kind> matched=<id>` next to the base name. The helper maps the internal kinds to the fixed display labels
+    `lifecycle` (`shipment_lifecycle`) and `return-blocked` (`return_blocked`); it never prints the raw kind value.
   * Journals that reference neither the target nor its members are ignored. The existing lifecycle validation-error
     behavior is unchanged.
   * Update only the `NormalizeBlockedShipmentForRecovery` doc comment: it is now the only MCP normalize path, warm
@@ -5563,7 +5609,11 @@ file and for the same tool. It is not a data-schema change paired with an API ha
        * a v2 record in phase `committed`, left unremoved;
        * a legacy schema-less record (the `writeReturnBlockedJournal` shape);
        * a malformed file whose name is built with `filepath.Base(returnBlockedJournalPath(root, target, member))`,
-         pre-checked with `validateShipmentOperationJournalName` to return the return-blocked kind.
+         pre-checked with `validateShipmentOperationJournalName` to return the return-blocked kind;
+       * *target-only row (attempt-4 finding):* a malformed file named with
+         `filepath.Base(returnBlockedJournalPath(root, target, nonMember))`, where `nonMember` is an ID outside the
+         manifest. Its message contains `kind=return-blocked matched=<target ID>`, which exercises the target branch
+         of the precedence rule.
   2. **`TestU20C6_RefusesPendingLifecycleIntentReferencingTargetMembers`.** Plant a lifecycle intent for a
      **different** shipment whose preimage members include a target member ID. Expect a refusal whose message names
      the journal base name and `kind=lifecycle matched=<member ID>`, with the same no-write assertions.
@@ -5655,28 +5705,66 @@ file and for the same tool. It is not a data-schema change paired with an API ha
 * **Circuit.** No task, and no wave convergence, runs `go test ./...` with tests selected, or an unselected package
   run. The operator authorization for the `3a240fe0` run is **consumed**.
 * **Posture and safety modes.** The suggested posture is test-first. The safety modes are investigate-first and
-  freeze-scope, plus **careful** for W0 (a destructive restore) and for U20C1 (the write boundary every rewrite
+  freeze-scope, plus **careful** for W0 (relocating an uncommitted draft) and for U20C1 (the write boundary every rewrite
   passes through).
 
 ### 20.5 Schedule, edges, 155-S membership, and final gate
 
-* **Precondition W0 (Ship, before any Wave 20 harness).** Ship's uncommitted draft addition to
-  `internal/core/shipment_blocked_recovery_harness_test.go` must be dispositioned first.
-  * *The draft.* It is about +99 lines: `TestBlockedShipmentGenericCustomFieldsPreserveEnvelope` and
-    `TestUnblockShipmentStatusEventPrecedesEnvelopeClear`.
-  * *Why it blocks.* It has an unused `root` compile defect, it shadows the builtin `copy`, and its names lack a unit
-    prefix. It breaks compilation of package `core`, and it would put unprefixed red functions into every
-    `internal/core` run.
-  * *Procedure.*
-    1. Take a hash-verified backup under the git-ignored `logs/diagnostics/`, and confirm the path is ignored with
-       `git check-ignore`.
-    2. With **explicit operator approval** (P-002.5 / Principle VII screening), restore that one file to HEAD with
-       `git restore --source=HEAD -- <file>`.
-    3. Verify with `git diff --quiet -- <file>`.
-  * *If approval is declined,* Ship halts to the operator and Wave 20 does not start. No agent edits the draft in
-    place.
-  * *Porting.* harness-architect may port the draft's intent into the U20C1 and U20C2 harness files under their
-    `TestU20C<n>_` names. The draft file itself must end byte-identical to HEAD. Stage does not touch it.
+* **Precondition W0 — fold Ship's draft (Ship, before any Wave 20 harness; operator decision 2026-09-26, rev23.4).**
+  Ship's uncommitted draft addition to `internal/core/shipment_blocked_recovery_harness_test.go` is **folded** into
+  the Wave 20 harnesses. It is not restored to HEAD, and no `git restore`, `git checkout`, `git stash`, or other
+  discarding command is used on it.
+  * *The draft.* It is about +99 lines appended after `TestShipmentBlockedRecoveryR10SubprocessHelper`:
+    * `TestBlockedShipmentGenericCustomFieldsPreserveEnvelope` (the C1 portion);
+    * `TestUnblockShipmentStatusEventPrecedesEnvelopeClear` (the C2 portion).
+  * *Why it must move first.* The unused `root` at `:1498` breaks compilation of package `core`. The `copy` shadow
+    and the unprefixed names are hygiene defects; unfixed, the names would put unprefixed red functions into every
+    `internal/core` run (attempt-4 finding).
+  * *Owner (attempt-4 finding).* Ship runs every W0 step, the U20C1 refactor, and the W2 U20C2 port **through the
+    harness-architect skill** (P-010 test authoring). The 174.077-T scaffold adopts the W0-seeded U20C1 file **in
+    place** as its starting content and never recreates it. Its RED capture and `HARNESS_COMMIT` cover the completed
+    file. The same holds for the W2 port into the 174.078-T harness.
+  * *Encoding (attempt-4 finding; Windows).* Write every file with the editor tool or
+    `[IO.File]::WriteAllText(path, text, [Text.UTF8Encoding]::new($false))`, keeping each file's existing line
+    endings. Never use a PowerShell `>` redirect or `Set-Content`/`Out-File` without an explicit no-BOM encoding.
+    Before any verify step, the first three bytes of every file W0 writes or edits must not be `EF BB BF`.
+  * *Procedure* (careful mode):
+    1. *Provenance record.* Run
+       `git diff --output=logs/diagnostics/wave20-draft-fold.patch -- internal/core/shipment_blocked_recovery_harness_test.go`.
+       Record the file's `Get-FileHash -Algorithm SHA256` value in the W0 run record, and confirm the path is ignored
+       with `git check-ignore -q`. **Before step 2, check the patch.** It must be non-empty and contain both
+       `func TestBlockedShipmentGenericCustomFieldsPreserveEnvelope` and
+       `func TestUnblockShipmentStatusEventPrecedesEnvelopeClear`. If not, halt to the operator.
+    2. *Relocate the C1 portion.* Move `TestBlockedShipmentGenericCustomFieldsPreserveEnvelope` into the new U20C1
+       harness file `shipment_blocked_envelope_u20c1_harness_test.go` (20.3.1). Refactor it there in the same pass,
+       before any compile check, because the draft's unused `root` would otherwise still break package `core`.
+    3. *Park the C2 portion.* Move `TestUnblockShipmentStatusEventPrecedesEnvelopeClear` into the git-ignored
+       parking file `logs/diagnostics/wave20-draft-u20c2.go.txt`.
+       * The `.txt` extension keeps it out of every `./...` package build.
+       * `git check-ignore -q` on the parking file must pass.
+       * Record its SHA-256 next to the patch hash, and confirm its function body equals the C2 hunk in the patch.
+       * It is ported when the W2 harness for 174.078-T is scaffolded (20.3.2), because U20C2's RED is defined on
+         the U20C3-green tree and W1 must carry no open cross-wave RED selector.
+    4. *Verify.* The draft hunk is removed by relocation, which is an edit, not a discarding command.
+       * `git diff --quiet -- internal/core/shipment_blocked_recovery_harness_test.go` must succeed, meaning the
+         tracked file is again equal to HEAD. Because the draft was never committed, no Wave 20 commit touches that
+         file.
+       * `go test -run '^$' -count=1 ./internal/core` must pass (attempt-4 finding). Record it in the W0 run record,
+         and halt if it fails.
+  * *Staging.* Every harness commit stages by exact path only, never by directory, so the untracked W0-seeded file
+    cannot be swept into a sibling task's `HARNESS_COMMIT` (attempt-4 finding).
+  * *Split across harness commits.* "One harness commit per task" holds:
+    * the C1 portion lands only in 174.077-T's `HARNESS_COMMIT`;
+    * the C2 portion lands only in 174.078-T's `HARNESS_COMMIT`;
+    * neither commit lists `shipment_blocked_recovery_harness_test.go`.
+  * *Counts are unchanged.* The draft functions are renamed and refactored into the existing planned top-level
+    functions. They never become extra ones, so the declared `^TestU20C1_` = 2 and `^TestU20C2_` = 1 counts stand
+    (20.3.1, 20.3.2).
+  * *Stop condition.* Ship halts to the operator if either of these happens; it never discards content to get there:
+    * the relocation cannot leave the tracked file equal to HEAD, for example because other uncommitted edits are
+      found in it;
+    * at the W2 port, either recorded SHA-256 no longer matches.
+  * Stage does not touch the draft.
 * **Waves.** Within each wave the production files are disjoint. The sibling RED selectors of a task are the other
   `^TestU20C<n>_` prefixes in its wave, and there are no open RED selectors across waves.
   * **W1** = {174.077-T (U20C1, `artifacts.go`), 174.079-T (U20C3, `shipment.go`), 174.082-T (U20C6,
@@ -5693,6 +5781,10 @@ file and for the same tool. It is not a data-schema change paired with an API ha
 * **Push.** Harness commits are designed-RED. Ship does not push from the first Wave 20 harness commit until W3
   convergence and the W3 pre-push gate (20.4) are GREEN. It then pushes **once**, before the final gate. A tree with
   U20C2 GREEN is not shippable on its own without U20C5.
+  * *Pre-push tree check (attempt-4 finding).* Immediately before the push, `git status --porcelain` must show no
+    modified or untracked path under `internal/**` or `cmd/**`. Only operator-dirty and Ship-evidence paths may
+    remain, for example `.backlogit/stash.jsonl`, `docs/closure/**`, and `docs/memory/**`; ignored `logs/**` does
+    not appear. Otherwise, Ship halts.
 * **Final gate** (a repeat of 19R.8 for the Wave 20 tree, run after the push):
   0. *Precondition (attempt-3 finding).* `backlogit stash get` succeeds for each of `FA6AE139`, `9900D0DD`,
      `09D06A75`, `8AF55264`, and `7D8717B1`. The captures live in the operator-dirty, uncommitted
@@ -5729,16 +5821,16 @@ file and for the same tool. It is not a data-schema change paired with an API ha
 | IV. CLI Containment (NON-NEGOTIABLE) | No CLI change. Normalize stays an intentional MCP-without-CLI exception |
 | V. Structured Observability | The unblock audit gains `reason`, and the evidence is written before the envelope is cleared. The generic-update audit envelope and post hooks no longer record forged envelope values; pre-hooks still see the submitted request (DR2). The U20C6 refusal names the journal, its kind, and the matched ID. RED/GREEN captures go to `logs/diagnostics/` |
 | VI. Single Responsibility | Each fix sits at the seam that owns it: the update merge and write boundary, the lifecycle operation, the recovery guard, and the MCP adapter. The recovery reconciler and inspector are unchanged and serve as the oracle |
-| VII. Destructive Approval (NON-NEGOTIABLE) | W0 needs explicit operator approval for the scoped `git restore`, after a hash-verified backup. If approval is declined, Ship halts. There is no other destructive step. The pinned lint module is trusted (20.4) |
-| VIII. Safety Modes | investigate-first plus freeze-scope, and careful for W0 and U20C1 |
+| VII. Destructive Approval (NON-NEGOTIABLE) | There is no destructive step (rev23.4). By operator decision on 2026-09-26, Ship's uncommitted draft is folded by relocation into the U20C1 harness and a git-ignored parking file for U20C2 (W0). It is never restored or discarded, a provenance patch is recorded, and a relocation that cannot leave the tracked file equal to HEAD halts to the operator. The pinned lint module is trusted (20.4) |
+| VIII. Safety Modes | investigate-first plus freeze-scope, and careful for the W0 relocation and for U20C1 |
 | IX. Git-Friendly Persistence | No format change to journals, events, or frontmatter; one additive event-delta key (`reason`) |
 | X. Context Efficiency | Six findings map to five finding tasks plus one consequence task (U20C6), each within one file pair. Deferred work is captured in the stash (P-021 C2), not swept in |
 | XI. Merge Commit History | Unaffected |
 | Quality Gates | **Deviation QG-1 (19R D3 restated):** lint and format are scoped, both per task and at wave convergence. Pinned `golangci-lint --new-from-rev` runs per touched package, and `gofmt -l` runs on the committed copy of the task files. The reasons are that raw `gofmt -l .` on Windows (CRLF checkout) is not authoritative and that pre-existing repo lint debt is out of scope. Full-repo lint was rejected for that reason. **Deviation QG-2 (19R D1, restated in attempt 2):** it deviates from the P-002.6 conditional clause that runs the unfiltered full suite at each wave convergence when no red deliverable is open, and from the P-004 precondition that `go test -timeout=30m ./...` exits non-zero. The justification is the 20.4 Circuit: the operator's authorization for a full run was consumed at `3a240fe0`, and a full run needs fresh authorization. The substitutes are the compile-only check, `go vet`, scoped lint and format, the exact-count scoped selectors, the W3 pre-push gate, and a scoped `Red Phase: CONFIRMED (scoped)` record. Each wave records `FULL_SUITE_OPERATOR_DEFERRED: wave <k>`. *Rejected alternative:* requesting operator authorization for a full run at each of the 3 waves. It adds 3 long governed runs with no extra coverage over the single final-gate run, because every changed surface is already covered by exact-count selectors |
 | Task Granularity (NON-NEGOTIABLE) | Every task has 2 files, at most 4 declarations, and a single domain. **Deviation TG-1:** a table over symmetric operations counts as one scenario. **Deviation TG-2:** inline negative controls, error-shape rows, and U20C6 journal-shape rows are not scenarios (20.3). So U20C1 has 3 behavioral scenarios and every other task at most 2 |
 | P-021 | Plan-review deferrals are captured with the full C2 payload as stash `FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, and `7D8717B1`. Closure must cite them in its residual-risk record (C3, threadless) |
-| Stop Conditions | 6 open tasks. The plan-review budget for this corrective design allows at most 2 re-entries after FAIL; attempt 3 was the last and returned ADVISORY, so harvest waits for explicit operator authorization. A second final-gate NOT READY halts to the operator |
-| P-010 | Stage authored no code or test change, and Ship's draft is untouched |
+| Stop Conditions | 6 open tasks. The plan-review budget for this corrective design allowed 2 re-entries after FAIL. Attempt 3 returned ADVISORY. The operator then granted exactly one extra round, attempt 4, which also returned ADVISORY. No further round runs without a new operator grant, and harvest waits for operator authorization. A second final-gate NOT READY halts to the operator |
+| P-010 | Stage authored no code or test change and did not touch Ship's draft. Ship performs the fold (W0) and the U20C2 port through the harness-architect skill (test authoring) |
 
 Constitution Check: documented-deviations
 
@@ -5757,7 +5849,7 @@ Constitution Check: documented-deviations
 | H9 | A harness passes vacuously | Each case asserts the injected text or a specific message, and the exact step label. U20C4 asserts that the `NewWorkspace` failure names the poison. RED is captured per function, and exact PASS counts are required |
 | H10 | Package-global seams leak between tests | No `t.Parallel`. The recorded `t.Parallel` audit (20.4). Every seam and obstruction is restored via `t.Cleanup`, and explicitly before recovery. The obstruction restore is idempotent |
 | H11 | Windows file-handle, antivirus, or indexer interference makes an obstruction flaky | The shared helper uses bounded retry, an `Lstat` check, and the restore order "remove the planted entry, then rename back". If the behavior is nondeterministic, the task STOPs and returns to Stage |
-| H12 | Ship's uncompilable draft contaminates the gates | The W0 precondition (operator-approved scoped restore after a hash-verified backup) must be met first; if approval is declined, Ship halts |
+| H12 | Ship's uncompilable draft contaminates the gates, or its content is lost | The W0 fold is done first and moves the draft out of the compiled package. The C1 portion goes into the U20C1 harness file, and the C2 portion is parked as a git-ignored `.txt` file. A provenance patch and its SHA-256 are recorded. `git diff --quiet` must then show the tracked file equal to HEAD, and the harness-commit scope checks list only the new harness files. If a clean relocation is impossible, Ship halts |
 | H13 | Wave 20 widens into other flows | DR6 has verified that claim, return, and normalize are unaffected. Deferred work is captured in the stash (`FA6AE139`, `9900D0DD`, `09D06A75`, `8AF55264`, `7D8717B1`). The per-task scope check (20.4) runs on both the harness commit and the implementation delta |
 | H14 | A designed-RED harness is pushed, or a partial tree ships | No push until W3 convergence and the W3 pre-push gate are GREEN (20.4/20.5) |
 | H15 | U20C4's warm server leaks its SQLite handle on Windows | The harness closes `server.Workspace` in `t.Cleanup` |
@@ -5963,3 +6055,84 @@ place as rev23.3 (20.3.6):*
 * 20.5: the final gate starts with `stash get` on the five captures.
 
 The remaining P3s are wording nits that are already covered by the five captures, or they restate existing text.
+
+
+## Plan Review — Wave 20 attempt 4 (rev23.4, operator-granted) (2026-09-26)
+
+```text
+dispatch_mode: multi-agent-dispatch
+reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer, Security Lens Reviewer, Correctness Reviewer
+decision: ADVISORY
+operator_authorization: pending
+```
+
+This round was granted by the operator on 2026-09-26, beyond the exhausted retry budget. It reviewed rev23.3 plus the
+rev23.4 draft-fold W0. All 8 personas returned, so coverage is complete.
+
+**Totals: P0 0, P1 0, P2 5 raw (3 distinct), P3 22.** The operator's instruction for this round was: harvest only on
+PASS; on ADVISORY or FAIL, do not harvest, record `operator_authorization: pending`, and report. **No tasks were
+created and 155-S was not amended.** No attempt marker is appended, because this attempt did not FAIL.
+
+| Persona | P0 | P1 | P2 | P3 |
+|---|---|---|---|---|
+| Correctness Reviewer | 0 | 0 | 1 | 3 |
+| Go Reviewer | 0 | 0 | 1 | 4 |
+| Constitution Reviewer | 0 | 0 | 2 | 3 |
+| Scope Boundary Auditor | 0 | 0 | 0 | 3 |
+| Learnings Researcher | 0 | 0 | 1 | 2 (confidence: medium) |
+| Architecture Strategist | 0 | 0 | 0 | 3 |
+| Agent-Native Parity Reviewer | 0 | 0 | 0 | 2 |
+| Security Lens Reviewer | 0 | 0 | 0 | 2 |
+
+**Distinct P2s, each resolved in place as rev23.5.** rev23.5 has not been re-reviewed.
+
+1. **U20C6 match precedence was unstated** (Correctness, Go, and Constitution). Every function-1 row names both the
+   target and a member, and the rows asserted `matched=<member ID>`, so a correct implementation that checks the
+   shipment first would never reach GREEN. *Fix (20.3.6):*
+   * member IDs are checked first and the target ID second, and the first match is reported;
+   * a target-only malformed-name row was added (`matched=<target ID>`);
+   * the kinds map to the fixed display labels `lifecycle` and `return-blocked`.
+2. **Fail-closed branches added in rev23.3 had no RED row** (Constitution, Principle II). *Fix:*
+   * U20C1 function 2 gains an unparsable-`blocked_at`-only error-shape row;
+   * the U20C6 scan-error refusal is marked defensive and unreachable, because the unchanged same-shipment check
+     (`shipment_recovery.go:1091`, `inspectShipmentOperationJournals`) fails first on every ops-root error.
+3. **The W0 fold was not safe against Windows encoding** (Learnings). The relevant entries are
+   `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md` (the gofmt/BOM note) and
+   `docs/compound/runtime-errors/windows-mojibake-utf8-powershell-fix-2026-04-08.md`. *Fix (20.5 W0):*
+   * the patch is written with `git diff --output=`;
+   * files are written with the editor tool or UTF-8 without a BOM, keeping their line endings, and a no-BOM check
+     runs before verify;
+   * the patch is checked for non-empty content and both function names before any removal;
+   * the parking file is `check-ignore`d and hashed, and its hash is re-checked at the W2 port.
+
+**P3s adopted in rev23.5:**
+
+* Fix A now runs **before** the merge and passes the cleaned clone to `mergePreserveReservedSizingKeys`
+  (Correctness and Go).
+* W0:
+  * a compile check (`go test -run '^$' ./internal/core`) after the relocation;
+  * the owner is Ship acting through the harness-architect skill, and the W0-seeded file is adopted in place;
+  * harness commits stage by exact path only;
+  * the compile-defect wording now names `root` alone;
+  * the C2 port restores the saved `persistArtifactPreLockHook`.
+* The TG-2 table was updated.
+* A pre-push `git status --porcelain` check was added.
+* DR2:
+  * the status choke points were added to the audit;
+  * the Fix B claim is limited to the current file;
+  * the path-choice bypass is added to the Limit bullet and to stash `8AF55264`.
+* DR4:
+  * "reopen" is defined per surface, and a missing MCP reopen tool goes to `09D06A75`;
+  * the refusal-format statement now separates the U20C6 and same-shipment messages, with a uniform format going to
+    `9900D0DD`.
+* U20C6: the scan statement is limited to the new helper, and scan consolidation goes to `09D06A75`.
+* The P-010 row now names the harness-architect skill.
+
+Nothing was re-raised from the five captures. Every persona re-verified the declared counts: 34, 11, 17, 6, 15, 16,
+8, 2, and the 41/13/1 union.
+
+**Next step for the operator:**
+
+* **(a)** Authorize this ADVISORY verdict for the rev23.5 text by setting `operator_authorization: approved` here.
+  Stage then harvests with Step 4 `skip_review` validation.
+* **(b)** Grant one more review round over rev23.5.

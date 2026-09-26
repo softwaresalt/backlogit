@@ -1,6 +1,6 @@
 # Stage — 155-S Wave 20 review remediation (2026-09-25)
 
-Status: **HALTED at the Step 4 plan-review gate — ADVISORY, awaiting operator authorization.**
+Status: **HALTED at the Step 4 plan-review gate — attempt 4 ADVISORY (rev23.5), awaiting operator authorization.**
 
 ## Context
 
@@ -72,3 +72,25 @@ preserved:
   selected. They need operator disposition.
 * Ship checkpoints 202625 and 222732 were not touched.
 * Hook polling was skipped, because acknowledging would mutate the preserved `hooks_queue.jsonl`.
+
+## Update — 2026-09-26 (operator decisions, attempt 4)
+
+* **Routing** was confirmed by the Orchestrator as claude-opus-5.5, so this session is not ROUTING_DEGRADED.
+* **Ship's draft is folded, not restored** (operator decision). rev23.4 changes W0: the draft's C1 test goes into the
+  U20C1 harness file, and its C2 test is parked in the git-ignored `logs/diagnostics/wave20-draft-u20c2.go.txt` until
+  the W2 U20C2 harness is written. The backup/restore precondition is removed.
+* **Attempt 4** was one extra review round granted by the operator. It covered rev23.3 plus rev23.4, with all 8
+  personas, and returned **ADVISORY**: P0 0, P1 0, 3 distinct P2 findings, and 22 P3 findings.
+  * The P2s were about the U20C6 match order, fail-closed branches without a failing test, and W0 file encoding on
+    Windows.
+  * All three are resolved in place as **rev23.5**. rev23.5 has not been re-reviewed.
+  * The review record says `operator_authorization: pending`.
+* **Not harvested**, per the operator's instruction. No tasks exist and 155-S still has 39 items.
+* **Stash captures** 8AF55264, 09D06A75, and 9900D0DD were extended with attempt-4 follow-ups. They are still only in
+  the operator-dirty `.backlogit/stash.jsonl`.
+* **Checkpoints:** Stage checkpoint 20260924-223108 was deleted by the operator (commit dd0e3f52).
+  `checkpoint-20260925-005049` (E1-E5) is kept active and was not touched.
+* **To resume**, the operator chooses one:
+  * (a) authorize the attempt-4 ADVISORY for rev23.5, after which Stage runs harvest with Step 4 `skip_review`
+    validation;
+  * (b) grant another review round over rev23.5.
