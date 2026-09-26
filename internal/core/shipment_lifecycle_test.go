@@ -24,13 +24,8 @@ import (
 // MUST NOT call t.Parallel(): these tests override the package globals
 // persistArtifactWriteFn.
 
-// Regression 1: the defer ordering is DISCRIMINATING. A test that only asserts
-// "a post-closure archiveItems failure still restores the non-member covering
-// feature" passes identically before and after the swap and is therefore not a
-// regression test for this change. This test instead observes, at the moment
-// the fallback performs its restore write, whether the artifact mutation lock
-// is STILL HELD. Before the swap LIFO released the locks first, so the probe
-// would have acquired the lock; after the swap the probe must be refused.
+// Regression 1: a post-closure failure must not trigger any fallback write to
+// a hierarchy-derived non-member feature.
 func TestShipShipment_NonMemberFallbackRunsBeforeArtifactLockRelease(t *testing.T) {
 	ws := setupShipmentWorkspace(t)
 	ctx := context.Background()
@@ -52,37 +47,24 @@ func TestShipShipment_NonMemberFallbackRunsBeforeArtifactLockRelease(t *testing.
 	_, err = ClaimShipment(ctx, ws, shipment.ID)
 	require.NoError(t, err)
 
-	// Fail a POST-CLOSURE step so the deferred fallback (not the in-line
-	// success-path call, and not the in-closure rollback) is the code path that
-	// performs the restore. attachCommitToItems runs after the locked closure
-	// returns and re-persists each artifact with the commit stamped, which makes
-	// its writes uniquely identifiable.
+	// Fail a post-closure step. Before non-member rollup elimination, this path
+	// ran the deferred restore fallback.
 	const closingSHA = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 	commitFailure := errors.New("injected post-closure commit association failure")
 
 	preShipFeature, err := loadArtifact(ctx, ws, feature.ID)
 	require.NoError(t, err)
 	preShipStatus := preShipFeature.Status
+	baselineEvents := flatScopeEventCount(t, ws, feature.ID)
 
 	origFn := persistArtifactWriteFn
-	fallbackObservedLockHeld := -1
+	nonMemberWrites := 0
 	persistArtifactWriteFn = func(a *models.Artifact, filePath string, durable bool) error {
 		if a.Commit == closingSHA {
 			return commitFailure
 		}
-		// The restore write is uniquely identifiable: it is the only write that
-		// puts the covering feature BACK to its pre-ship status.
-		if a.ID == feature.ID && a.Status == preShipStatus && fallbackObservedLockHeld < 0 {
-			// Probe with a FRESH context so the reentrancy short-circuit in
-			// lockArtifactMutation (which keys on ctx ownership markers) cannot
-			// mask a genuinely released lock.
-			release, lockErr := lockArtifactMutation(context.Background(), ws, feature.ID)
-			if lockErr != nil {
-				fallbackObservedLockHeld = 1
-			} else {
-				fallbackObservedLockHeld = 0
-				_ = release()
-			}
+		if a.ID == feature.ID {
+			nonMemberWrites++
 		}
 		return origFn(a, filePath, durable)
 	}
@@ -93,15 +75,15 @@ func TestShipShipment_NonMemberFallbackRunsBeforeArtifactLockRelease(t *testing.
 	assert.Nil(t, result)
 	assert.ErrorIs(t, err, commitFailure)
 
-	require.NotEqual(t, -1, fallbackObservedLockHeld,
-		"the non-member fallback must have performed its restore write")
-	assert.Equal(t, 1, fallbackObservedLockHeld,
-		"the non-member fallback must run BEFORE releaseArtifactLocks, with the artifact lock still held")
+	assert.Zero(t, nonMemberWrites,
+		"shipment shipping must not persist a hierarchy-derived non-member feature")
 
-	restoredFeature, findErr := findArtifact(ctx, ws, feature.ID)
+	finalFeature, findErr := findArtifact(ctx, ws, feature.ID)
 	require.NoError(t, findErr)
-	assert.NotEqual(t, models.StatusDone, restoredFeature.Status)
-	assert.NotEqual(t, models.StatusArchived, restoredFeature.Status)
+	assert.Equal(t, preShipStatus, finalFeature.Status)
+	reasons := flatScopeStatusReasonsSince(t, ws, feature.ID, baselineEvents)
+	assert.NotContains(t, reasons, "child status rollup")
+	assert.NotContains(t, reasons, "reverted unintended rollup from partial-feature ship")
 }
 
 // Regression 2: every per-item failure source in the compensation loop yields
@@ -197,7 +179,7 @@ func TestClassifyShippedEventAppendFailure_PromotesPartialCompensation(t *testin
 		shipmentID: "001-S",
 		cause:      fmt.Errorf("open item log: %w: %w", blerrors.ErrWriteNotApplied, errors.New("boom")),
 	}
-	outcome := classifyShippedEventAppendFailure(ctx, ws, "001-S", appendErr, snapshots, nil)
+	outcome := classifyShippedEventAppendFailure(ctx, ws, "001-S", appendErr, snapshots)
 
 	var partial *blerrors.MutationPartialError
 	require.ErrorAs(t, outcome.err, &partial)

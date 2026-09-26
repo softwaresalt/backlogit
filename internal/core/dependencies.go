@@ -258,4 +258,3 @@ func lookupDependencyType(ctx context.Context, ws *Workspace, itemID, dependsOn 
 	}
 	return "", false, nil
 }
-

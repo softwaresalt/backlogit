@@ -442,6 +442,35 @@ func (s *Server) RegisterTools() {
 		s.handleClaimShipment,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_block_shipment",
+			mcplib.WithDescription("Block an active shipment"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason the shipment is blocked")),
+			mcplib.WithString("by", mcplib.Description("Actor blocking the shipment")),
+			mcplib.WithString("resume_checkpoint_ref", mcplib.Description("Checkpoint reference for resuming the shipment")),
+		),
+		s.handleBlockShipment,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_unblock_shipment",
+			mcplib.WithDescription("Unblock a shipment to queued or active"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("target", mcplib.Required(), mcplib.Description("Target shipment status (queued or active)")),
+			mcplib.WithBoolean("confirm", mcplib.Required(), mcplib.Description("Confirm the unblock transition")),
+			mcplib.WithString("by", mcplib.Description("Actor unblocking the shipment")),
+		),
+		s.handleUnblockShipment,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_normalize_blocked_shipment",
+			mcplib.WithDescription("Normalize an out-of-band blocked shipment from a machine-readable snapshot"),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("snapshot_ref", mcplib.Required(), mcplib.Description("Workspace-relative shipment-bootstrap-snapshot/v1 reference")),
+			mcplib.WithString("by", mcplib.Required(), mcplib.Description("Actor normalizing the shipment")),
+		),
+		s.handleNormalizeBlockedShipment,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_ship_shipment",
 			mcplib.WithDescription("Close a released shipment, archive the released scope, and record merge commit traceability"),
 			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
@@ -520,7 +549,7 @@ func (s *Server) RegisterTools() {
 	)
 	s.addTool(
 		mcplib.NewTool("backlogit_doctor",
-			mcplib.WithDescription("Scan the workspace for structural integrity issues such as orphaned artifacts and duplicate IDs. Use fix_orphans=true to archive orphaned artifacts automatically. Returns a DoctorReport with findings, fix_actions, and checked_at timestamp."),
+			mcplib.WithDescription("Scan the workspace for structural integrity issues such as orphaned artifacts, duplicate IDs, multiple active shipments, malformed blocked shipments, and torn shipment lifecycle intents. Error-severity findings remain a successful structured MCP result at parity with CLI JSON, whose process exits non-zero. Use fix_orphans=true to archive orphaned artifacts automatically. Returns a DoctorReport with findings, fix_actions, and checked_at timestamp."),
 			mcplib.WithBoolean("check_orphans", mcplib.Description("Enable orphaned-artifact check (default true)")),
 			mcplib.WithBoolean("check_duplicates", mcplib.Description("Enable duplicate-ID check (default true)")),
 			mcplib.WithBoolean("check_partial_mutations", mcplib.Description("Enable advisory detection of residual partial commit-association and dependency-linking state (default false)")),
@@ -1972,6 +2001,91 @@ func (s *Server) handleClaimShipment(ctx context.Context, request mcplib.CallToo
 	return toolResultJSON(shipment)
 }
 
+func (s *Server) handleBlockShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	reason, _ := request.Params.Arguments["reason"].(string)
+	blockedBy, _ := request.Params.Arguments["by"].(string)
+	resumeCheckpointRef, _ := request.Params.Arguments["resume_checkpoint_ref"].(string)
+
+	logger.Info("shipment tool invoked", "tool", "backlogit_block_shipment", "shipment_id", id)
+
+	shipment, err := core.BlockShipment(ctx, s.Workspace, id, core.BlockOptions{
+		Reason:              reason,
+		BlockedBy:           blockedBy,
+		ResumeCheckpointRef: resumeCheckpointRef,
+	})
+	if err != nil {
+		return domainError("block shipment", err), nil
+	}
+	return toolResultJSON(shipment)
+}
+
+func (s *Server) handleUnblockShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	target, _ := request.Params.Arguments["target"].(string)
+	confirm, _ := request.Params.Arguments["confirm"].(bool)
+	unblockedBy, _ := request.Params.Arguments["by"].(string)
+
+	logger.Info("shipment tool invoked", "tool", "backlogit_unblock_shipment", "shipment_id", id)
+
+	shipment, err := core.UnblockShipment(ctx, s.Workspace, id, core.UnblockOptions{
+		Target:      core.ShipmentStatus(target),
+		Confirm:     confirm,
+		UnblockedBy: unblockedBy,
+	})
+	if err != nil {
+		return domainError("unblock shipment", err), nil
+	}
+	return toolResultJSON(shipment)
+}
+
+func (s *Server) handleNormalizeBlockedShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	ws, result := s.requireWorkspace(ctx)
+	if result != nil {
+		diagnostic, err := core.NewDiagnosticWorkspace(ctx, s.RootPath)
+		if err != nil {
+			return result, nil
+		}
+		defer diagnostic.Close()
+		ws = diagnostic
+	}
+
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	snapshotRef, _ := request.Params.Arguments["snapshot_ref"].(string)
+	if snapshotRef == "" {
+		return ValidationFailed("snapshot_ref is required"), nil
+	}
+	actor, _ := request.Params.Arguments["by"].(string)
+	if strings.TrimSpace(actor) == "" {
+		return ValidationFailed("by is required"), nil
+	}
+
+	logger.Info("shipment tool invoked", "tool", "backlogit_normalize_blocked_shipment", "shipment_id", id)
+
+	shipment, err := core.NormalizeBlockedShipmentForRecovery(ctx, ws, id, snapshotRef, actor)
+	if err != nil {
+		return domainError("normalize blocked shipment", err), nil
+	}
+	return toolResultJSON(shipment)
+}
+
 func (s *Server) handleShipShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	if _, result := s.requireWorkspace(ctx); result != nil {
 		return result, nil
@@ -2196,15 +2310,27 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 		preflightFindings = findings
 	}
 
-	ws, result := s.requireWorkspace(ctx)
-	if result != nil {
-		if len(preflightFindings) > 0 {
-			return toolResultJSON(&core.DoctorReport{
-				Findings:  preflightFindings,
-				CheckedAt: time.Now().UTC(),
-			})
+	ws := s.Workspace
+	diagnosticOwned := false
+	if ws == nil {
+		diagnostic, err := core.NewDiagnosticWorkspace(ctx, s.RootPath)
+		if err != nil {
+			if len(preflightFindings) > 0 {
+				return toolResultJSON(&core.DoctorReport{
+					Findings:  preflightFindings,
+					CheckedAt: time.Now().UTC(),
+				})
+			}
+			if errors.Is(err, os.ErrNotExist) {
+				return WorkspaceNotInitialized(), nil
+			}
+			return InternalError(fmt.Sprintf("open diagnostic workspace: %v", err)), nil
 		}
-		return result, nil
+		ws = diagnostic
+		diagnosticOwned = true
+	}
+	if diagnosticOwned {
+		defer ws.Close()
 	}
 
 	// target mode: validate a single artifact file and return a structured,

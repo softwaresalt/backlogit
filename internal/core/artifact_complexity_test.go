@@ -42,7 +42,7 @@ func setupComplexityWorkspace(t *testing.T) (ws *core.Workspace, id, path string
 	require.NoError(t, os.MkdirAll(filepath.Join(backlogitDir, "queue"), 0o755))
 	require.NoError(t, config.WriteDefaults(backlogitDir))
 
-	ws, err := core.NewWorkspace(ctx, root)
+	ws, err := newRecoveryFreeFixtureWorkspace(ctx, root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ws.Close() })
 

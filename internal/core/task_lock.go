@@ -123,6 +123,9 @@ func lockTaskFileWithHeartbeat(ctx context.Context, taskFilePath string, bounded
 			// A genuine IO fault (permission, missing dir) — not contention.
 			return nil, err
 		}
+		if hook, ok := ctx.Value(shipmentLifecycleGlobalLockHookContextKey{}).(func(string)); ok {
+			hook("contended")
+		}
 		if !time.Now().Before(deadline) {
 			return nil, fmt.Errorf("task %s: %w", taskFilePath, bkerrors.ErrGateInProgress)
 		}

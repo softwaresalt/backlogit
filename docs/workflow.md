@@ -61,6 +61,183 @@ backlogit_return_blocked
 backlogit_add_to_shipment
 ```
 
+## Blocked Shipment Lifecycle
+
+A shipment in `blocked` is paused for a recoverable reason. The status is
+non-terminal and resumable. It preserves branch, checkpoint, reconciliation,
+member-status, and lifecycle evidence, but it does not occupy the single
+`active` shipment slot. A blocked shipment cannot be claimed, executed, shipped,
+or abandoned until it is unblocked through the governed lifecycle operation.
+
+### Governed transition matrix
+
+The `blocked` edges are deliberately narrow:
+
+| From | To | Governed operation | Result |
+|---|---|---|---|
+| `active` | `blocked` | `BlockShipment` | Captures the member-status snapshot, returns `active` or `review` members to `queued`, and records correlated lifecycle evidence |
+| `blocked` | `queued` | `UnblockShipment` with confirmation | Leaves every member `queued`, preserves the snapshot for later resumption, and releases the shipment to the queue |
+| `blocked` | `active` | `UnblockShipment` with confirmation | Requires a free active slot and restores each member to its exact captured status |
+
+In compact form, the governed edges are `active -> blocked`,
+`blocked -> queued`, and `blocked -> active`. There is no direct transition
+from `blocked` to `shipped` or `abandoned`.
+
+Only the shipment block and unblock commands, or their MCP equivalents, may
+cross a `blocked` edge:
+
+```bash
+backlogit shipment block 001-S \
+  --reason "waiting for prerequisite" \
+  --by operator \
+  --resume-checkpoint checkpoint.json
+
+backlogit shipment unblock 001-S --to queued --confirm --by operator
+backlogit shipment unblock 001-S --to active --confirm --by operator
+```
+
+The corresponding MCP tools are `backlogit_block_shipment` and
+`backlogit_unblock_shipment`. General-purpose status mutation and direct
+artifact writes refuse entry to or exit from `blocked` with
+`ErrShipmentBlockedRequiresEnvelope`. Do not edit shipment frontmatter to work
+around that refusal.
+
+Both operations run under the workspace-global lifecycle lock and persist an
+intent with a complete preimage before changing the shipment or its members.
+Unblock uses compare-and-swap checks over the shipment status, manifest, and
+every member. It refuses if the shipment is no longer blocked, membership
+changed, a member drifted from the expected blocked-state projection, the
+snapshot is incomplete, or another shipment occupies the active slot. Recovery
+also compares the current aggregate with the durable preimage or proven target;
+it rolls back or rolls forward only when that comparison succeeds.
+
+### Normalize an out-of-band blocked shipment
+
+An imported or externally written `blocked` record is not eligible for unblock
+until it has canonical metadata, member disposition, and lifecycle evidence.
+Use `backlogit_normalize_blocked_shipment` with a workspace-relative
+`shipment-bootstrap-snapshot/v1` JSON document:
+
+```json
+{
+  "schema_version": "shipment-bootstrap-snapshot/v1",
+  "shipment_id": "001-S",
+  "branch": "feat/preserved-shipment",
+  "target": "blocked",
+  "blocked_reason": "waiting for corrective shipment",
+  "blocked_at": "2026-09-22T00:00:00Z",
+  "blocked_by": "operator",
+  "resume_checkpoint_ref": "checkpoint.json",
+  "members": {
+    "001-F": "active",
+    "001.001-T": "active"
+  }
+}
+```
+
+Store the document under the workspace storage root, for example
+`.backlogit/bootstrap/001-S.snapshot.json`, and pass
+`bootstrap/001-S.snapshot.json` as `snapshot_ref`. The snapshot must identify
+the shipment, target `blocked`, contain a valid RFC3339 `blocked_at`, and cover
+the current manifest exactly with valid member statuses. Unknown fields,
+trailing content, paths outside the workspace, missing members, membership
+changes, or member states that cannot be proven from the snapshot cause a
+refusal. Free-form notes or memory files are not accepted as recovery evidence.
+
+### Branch-scoped bootstrap runbook for shipment 154-S
+
+> [!CAUTION]
+> This is an operator-owned recovery procedure. Do not run it while shipment
+> `155-S` is executing, and do not modify the preserved Ship branch.
+
+1. Ship `155-S` normally on `main`. During its execution, the repository has no
+   `blocked` shipment token. Use the normal topology gate and do not use a
+   topology override for `155-S`.
+2. After the merge, complete the required local-main synchronization and create
+   `chore/block-154` from that synchronized `main`. This branch is backlog-only;
+   use the existing worktree and do not add another worktree.
+3. Hydrate only this explicit allowlist from
+   `feat/shipment-claim-scheduler-baseline-marker-enabling-precondition` at
+   immutable precondition commit `dd9f01a1`:
+
+   ```text
+   .backlogit/checkpoints/checkpoint-20260914-070735.json
+   .backlogit/queue/154-S.md
+   .backlogit/queue/173-F.md
+   .backlogit/queue/173.006-T.md
+   .backlogit/reconcile/154-S-pre-20260914T053515Z.md
+   ```
+
+   Record the expected hash of every source blob from `dd9f01a1`, import only
+   those paths, and verify each resulting file hash before continuing. Reject
+   any path outside the allowlist. In particular, import no Go files, tests,
+   generated harnesses, agent definitions, or other source/configuration
+   content. The hydration must reconstruct the authoritative active shipment
+   and member provenance without changing the preserved branch.
+4. Write the authoritative machine-readable bootstrap snapshot at
+   `.backlogit/bootstrap/154-S.snapshot.json`. It must use
+   `shipment-bootstrap-snapshot/v1`, enumerate the exact hydrated manifest,
+   record the preserved branch, set target `blocked`, and reference
+   `checkpoint-20260914-070735.json`.
+5. Invoke governed `BlockShipment`, not a general status mutation:
+
+   ```bash
+   backlogit shipment block 154-S \
+     --reason "blocked pending correction for 7AA35A39" \
+     --by operator \
+     --resume-checkpoint checkpoint-20260914-070735.json
+   ```
+
+   Confirm that `154-S` is `blocked`, `173.006-T` is `queued`, the active slot
+   is free, and the governed metadata and correlated intent/commit evidence are
+   present.
+6. Commit the complete governed output on `chore/block-154` as one backlog-only
+   change. The commit must include the shipment record, every changed member
+   artifact, the durable intent and complete preimage under `.backlogit/ops/`,
+   `.backlogit/bootstrap/154-S.snapshot.json`, the reconciliation state, and
+   authoritative per-item event logs for the shipment and every dispositioned
+   member. A commit containing only `154-S` and the snapshot is incomplete.
+   Open a pull request from `chore/block-154` to `main`.
+7. After that pull request merges, create and ship the corrective release unit
+   for deferred defect `7AA35A39` on `main` while `154-S` remains blocked.
+8. After the correction ships, merge current `main` into the preserved 154
+   feature branch. Resolve its backlog view to the governed blocked provenance,
+   then run:
+
+   ```bash
+   backlogit shipment unblock 154-S --to active --confirm --by operator
+   ```
+
+   Resume from `checkpoint-20260914-070735.json` only after the unblock succeeds.
+
+### Topology compatibility
+
+The current external topology gate may reject the otherwise valid `blocked`
+token even though blocked shipments do not occupy the active slot. This does
+not affect the normal `155-S` execution described above.
+
+For the later corrective flow, prefer the upstream one-line allowlist change
+that adds `blocked` to the accepted live shipment statuses. If that change is
+unavailable, an audited per-phase `--force` is permitted only after the normal
+gate proves that its sole failure is the unsupported `blocked` status. Never
+use a standing override, and stop if any other topology finding is present.
+
+### Verify in a fixture workspace
+
+Run synchronization and integrity checks against a dedicated fixture workspace,
+never the live backlog corpus:
+
+```bash
+backlogit --cwd <dedicated-fixture-workspace> sync
+backlogit --cwd <dedicated-fixture-workspace> doctor --format json
+```
+
+The doctor check fails with error severity and exit code 1 for multiple active
+shipments, a blocked shipment without a non-empty `blocked_reason` and valid
+RFC3339 `blocked_at`, or a lifecycle intent without a correlated committed or
+compensated event. Keep the fixture path outside the live workspace's
+`.backlogit` storage root.
+
 ## Legacy orchestration path
 
 The older multi-agent path remains available for migration and targeted

@@ -23,8 +23,8 @@ import (
 
 // TestClaimShipment_RollsBackOnMidFlightActivationFailure asserts that when a
 // claim activates one item and then fails on a later item, the shipment, the
-// partially activated item, and any cascade-activated parent all revert to
-// queued (DB and on-disk file agree). (061.002-T)
+// partially activated explicit item revert to queued while an unlisted parent
+// remains untouched (DB and on-disk file agree). (061.002-T)
 func TestClaimShipment_RollsBackOnMidFlightActivationFailure(t *testing.T) {
 	// Arrange
 	ws := setupShipmentWorkspace(t)
@@ -69,7 +69,7 @@ func TestClaimShipment_RollsBackOnMidFlightActivationFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusQueued, fileTask.Status, "file: partially activated item must revert to queued")
 
-	// Assert — the cascade-activated parent reverted to queued (DB + file agree)
+	// Assert — the unlisted parent remained queued (DB + file agree).
 	dbFeat, err := bldb.GetItem(ctx, ws.DB, feat.ID)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusQueued, dbFeat.Status, "DB: cascade-activated parent must revert to queued")

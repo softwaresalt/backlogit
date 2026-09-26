@@ -9,10 +9,9 @@ import (
 	"github.com/softwaresalt/backlogit/internal/core"
 )
 
-// TestMoveShipmentStatus_EmitsUTCUpdatedAt proves the shipment status-transition
-// writer restamps the shipment's updated_at in canonical UTC even under a
-// non-UTC local zone (site: shipment.go moveShipmentStatusWithTopLevel).
-func TestMoveShipmentStatus_EmitsUTCUpdatedAt(t *testing.T) {
+// TestClaimShipment_EmitsUTCUpdatedAt proves the governed claim path restamps
+// the shipment's updated_at in canonical UTC even under a non-UTC local zone.
+func TestClaimShipment_EmitsUTCUpdatedAt(t *testing.T) {
 	withNonUTCLocal(t)
 	ws := setupTestWorkspace(t)
 	ctx := context.Background()
@@ -24,7 +23,8 @@ func TestMoveShipmentStatus_EmitsUTCUpdatedAt(t *testing.T) {
 	shipment, err := core.CreateShipment(ctx, ws, "Status delivery", []string{task.ID})
 	require.NoError(t, err)
 
-	require.NoError(t, core.MoveShipmentStatus(ctx, ws, shipment.ID, core.ShipmentActive))
+	_, err = core.ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
 
 	content := readArtifactContent(t, ctx, ws, shipment.ID)
 	assertFrontmatterUTC(t, content, "updated_at")

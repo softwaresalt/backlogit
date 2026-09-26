@@ -153,6 +153,7 @@ func checkpointUnknownFields(e *corerrors.CheckpointUnknownFieldError) *mcplib.C
 //	ErrCannotReturnItem               | conflict                              | 409
 //	ErrChildrenNotTerminal            | conflict                              | 409
 //	ErrShipmentShippedRequiresEnv…    | shipment_shipped_requires_envelope    | 409
+//	ErrShipmentBlockedRequiresEnv…    | shipment_blocked_requires_envelope    | 409
 //	ErrArchiveShippedRequiresEvent    | archive_shipped_requires_event        | 409
 //	ErrCheckpointTargetUnsafe        | checkpoint_target_unsafe              | 422
 //	ErrCheckpointUnknownField         | validation_failed (+ unknown_fields)  | 422
@@ -190,6 +191,9 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		// 144-F guard 1: generic shipped-transition refusal; distinct from
 		// generic conflict so agents can tailor remediation (use ship_shipment).
 		return makeErrorResult("shipment_shipped_requires_envelope",
+			fmt.Sprintf("%s: %v", op, err))
+	case errors.Is(err, corerrors.ErrShipmentBlockedRequiresEnvelope):
+		return makeErrorResult("shipment_blocked_requires_envelope",
 			fmt.Sprintf("%s: %v", op, err))
 	case errors.Is(err, corerrors.ErrArchiveShippedRequiresEvent):
 		// 144-F guard 2: archive of shipped shipment without durable event.

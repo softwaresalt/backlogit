@@ -125,4 +125,3 @@ func TestExecVersionRunner_NilEnvDefaultsToScrubbed(t *testing.T) {
 		t.Fatalf("Version() = %q, want a version-shaped token", out)
 	}
 }
-

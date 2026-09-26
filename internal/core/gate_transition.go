@@ -91,6 +91,21 @@ func UpdateArtifactWithGate(ctx context.Context, ws *Workspace, id string, updat
 		return nil, nil, fmt.Errorf("field %q is immutable and cannot be changed", "id")
 	}
 
+	// The global lock intentionally spans gate evaluation. The gate's per-artifact
+	// lock must never be acquired first because the pending-recovery barrier can
+	// need artifact locks while holding this same global lock.
+	lockedCtx, globalUnlock, globalLockErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if globalLockErr != nil {
+		return nil, nil, fmt.Errorf("lock shipment lifecycle for artifact update %s: %w", id, globalLockErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after gated artifact update",
+				"artifact_id", id, "error", unlockErr)
+		}
+	}()
+	ctx = lockedCtx
+
 	// Cheap peek (no lock) to decide whether the gate applies.
 	peek, err := findArtifact(ctx, ws, id)
 	if err != nil {
@@ -249,6 +264,7 @@ func (ws *Workspace) runGatedCompletion(ctx context.Context, id string, updates 
 		return nil, nil, err
 	}
 	defer func() { _ = unlock() }()
+	ctx = withShipmentLifecycleHeldLocks(ctx, ws, artifactMutationLockID(id))
 
 	// Reread under the lock: this status is the authoritative old_status.
 	current, err := findArtifact(ctx, ws, id)

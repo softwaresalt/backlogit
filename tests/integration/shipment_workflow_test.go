@@ -174,6 +174,10 @@ func TestShipmentWorkflow_ShipmentReleaseCleanup(t *testing.T) {
 	futureTask, err := core.CreateArtifact(ctx, ws, "Future integration task", "task", core.WithParent(feature.ID))
 	require.NoError(t, err)
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, futureTask))
+	futureTaskPath, err := core.FindArtifactPath(ctx, ws, futureTask.ID)
+	require.NoError(t, err)
+	futureTaskBefore, err := os.ReadFile(futureTaskPath)
+	require.NoError(t, err)
 
 	// Partial-feature manifest: only releasedTask is an explicit shipment
 	// member. The covering feature is NOT listed, so per the membership
@@ -197,7 +201,8 @@ func TestShipmentWorkflow_ShipmentReleaseCleanup(t *testing.T) {
 		"non-member covering feature must not be archived on a partial-feature ship")
 	assert.Contains(t, result.ArchivedIDs, releasedTask.ID)
 	assert.Contains(t, result.ArchivedIDs, shipment.ID)
-	assert.Contains(t, result.ReturnedIDs, futureTask.ID)
+	assert.NotContains(t, result.ReturnedIDs, futureTask.ID,
+		"unlisted descendants must remain outside the flat shipment manifest")
 
 	openFeature, err := db.GetItem(ctx, ws.DB, feature.ID)
 	require.NoError(t, err)
@@ -211,6 +216,10 @@ func TestShipmentWorkflow_ShipmentReleaseCleanup(t *testing.T) {
 	queuedFutureTask, err := db.GetItem(ctx, ws.DB, futureTask.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "queued", string(queuedFutureTask.Status))
+	futureTaskAfter, err := os.ReadFile(futureTaskPath)
+	require.NoError(t, err)
+	assert.Equal(t, futureTaskBefore, futureTaskAfter,
+		"unlisted descendant artifact must remain byte-for-byte unchanged")
 }
 
 // T008 / ST029: Migrate checked-in stash from .stash.md to stash.jsonl.

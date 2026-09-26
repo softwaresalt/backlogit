@@ -23,4 +23,3 @@ func TestGitCommandEnv_StripsGateEvidenceKey(t *testing.T) {
 		}
 	}
 }
-

@@ -59,9 +59,8 @@ func setupBatchComposition(t *testing.T, root string) (f1, f2, ship, task *model
 	_, err = core.SetArtifactSize(ctx, ws, tS.ID, "S")
 	require.NoError(t, err)
 
-	// The shipment references two direct tasks plus a FEATURE (f2), which must be
-	// expanded into its child tasks and never counted itself. This exercises the
-	// shipment feature-expansion path on both rollup paths.
+	// The shipment references two direct tasks plus a feature. The feature and
+	// its child are excluded because neither is an explicitly listed task.
 	ship, err = core.CreateShipment(ctx, ws, "Batch shipment", []string{tL.ID, tM.ID, f2.ID})
 	require.NoError(t, err)
 
@@ -116,12 +115,10 @@ func TestSizeCompositions_EmptyInput(t *testing.T) {
 
 // TestSizeCompositions_ShipmentDanglingAndFeatureMember asserts the batched
 // rollup matches the per-artifact rollup for a shipment whose manifest mixes a
-// directly-listed task, a feature (expanded into its child tasks and never
-// counted itself), and a dangling id (warn-skipped: counted in neither the
-// histogram nor the unsized total, but surfaced under Skipped). The shipment is
-// upserted directly to bypass CreateShipment manifest validation so the
-// dangling-member semantics can be exercised on both paths (117-F / A6A1B47E;
-// ratified composition semantics).
+// directly listed task, an excluded feature, and a dangling ID (warn-skipped:
+// counted in neither the histogram nor the unsized total, but surfaced under
+// Skipped). The shipment is upserted directly to bypass CreateShipment manifest
+// validation so the dangling-member semantics can be exercised on both paths.
 func TestSizeCompositions_ShipmentDanglingAndFeatureMember(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.Background()
@@ -164,7 +161,7 @@ func TestSizeCompositions_ShipmentDanglingAndFeatureMember(t *testing.T) {
 	assert.Equal(t, single, comps[ship.ID], "batched rollup must equal per-artifact for a dangling+feature manifest")
 
 	assert.EqualValues(t, 1, single.Histogram["S"], "directly-listed task S must be counted")
-	assert.EqualValues(t, 1, single.Histogram["M"], "expanded feature child M must be counted")
+	assert.Zero(t, single.Histogram["M"], "unlisted feature child M must not be counted")
 	assert.Equal(t, 0, single.Unsized, "a dangling id must not increment unsized")
 	assert.Contains(t, single.Skipped, "999.999-T", "a dangling manifest id must be surfaced as skipped")
 }

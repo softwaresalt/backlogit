@@ -2,11 +2,13 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -241,12 +243,24 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		return nil, fmt.Errorf("create artifact %q: initial status %q is not permitted (create then archive): %w",
 			artifactID, status, blerrors.ErrValidation)
 	}
+	if artifactType == "shipment" && models.ArtifactStatus(status) == models.StatusBlocked {
+		return nil, fmt.Errorf(
+			"create artifact %q: initial status %q is not permitted for shipments (normalize imported records or block via BlockShipment): %w",
+			artifactID,
+			status,
+			blerrors.ErrShipmentBlockedRequiresEnvelope,
+		)
+	}
 	// 144-F guard 1 (create seam): reject "shipped" as an initial status for
 	// shipments. Shipments are created at "queued" and reach "shipped" only via
 	// the ShipShipment governed envelope.
 	if artifactType == "shipment" && models.ArtifactStatus(status) == models.ArtifactStatus(ShipmentShipped) {
 		return nil, fmt.Errorf("create artifact %q: initial status %q is not permitted for shipments (ship via ShipShipment): %w",
 			artifactID, status, blerrors.ErrShipmentShippedRequiresEnvelope)
+	}
+	if artifactType == "shipment" && models.ArtifactStatus(status) == models.StatusActive {
+		return nil, fmt.Errorf("create artifact %q: initial status %q is not permitted for shipments (activate via ClaimShipment or UnblockShipment): %w",
+			artifactID, status, blerrors.ErrShipmentConflict)
 	}
 
 	now := models.NowUTC()
@@ -511,6 +525,17 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		return nil, fmt.Errorf("field %q is immutable and cannot be changed", "id")
 	}
 
+	lockedLifecycleCtx, globalUnlock, globalLockErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if globalLockErr != nil {
+		return nil, fmt.Errorf("lock shipment lifecycle for artifact update %s: %w", id, globalLockErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.WarnContext(ctx, "release shipment lifecycle lock after artifact update", "artifact_id", id, "error", unlockErr)
+		}
+	}()
+	ctx = lockedLifecycleCtx
+
 	lockedCtx, unlock, lockErr := lockArtifactMutations(ctx, ws, []string{id})
 	if lockErr != nil {
 		return nil, fmt.Errorf("lock artifact %s: %w", id, lockErr)
@@ -533,9 +558,21 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 	// flag is required here. Non-status updates to an already-shipped shipment
 	// are unaffected: they carry no "status" key in updates.
 	if artifact.ArtifactType == "shipment" {
-		if newStatus, _ := updates["status"].(string); newStatus == string(ShipmentShipped) {
-			return nil, fmt.Errorf("update artifact %s: locked write path refused shipment shipped transition: %w",
-				id, blerrors.ErrShipmentShippedRequiresEnvelope)
+		if newStatus, ok := updates["status"].(string); ok {
+			targetStatus := models.ArtifactStatus(newStatus)
+			if targetStatus == models.ArtifactStatus(ShipmentShipped) {
+				return nil, fmt.Errorf("update artifact %s: locked write path refused shipment shipped transition: %w",
+					id, blerrors.ErrShipmentShippedRequiresEnvelope)
+			}
+			if isProtectedShipmentStatusTransition(artifact.Status, targetStatus) {
+				return nil, fmt.Errorf(
+					"update artifact %s: refusing ungoverned shipment transition from %s to %s: %w",
+					id,
+					artifact.Status,
+					targetStatus,
+					blerrors.ErrShipmentBlockedRequiresEnvelope,
+				)
+			}
 		}
 	}
 
@@ -602,6 +639,25 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		artifact.ParentID = v
 	}
 	if v, ok := updates["custom_fields"].(map[string]any); ok {
+		if artifact.ArtifactType == "shipment" && previousStatus == models.StatusBlocked {
+			cleanedUpdates := make(map[string]any, len(updates))
+			for key, value := range updates {
+				cleanedUpdates[key] = value
+			}
+			cleanedCustomFields := make(map[string]any, len(v))
+			for key, value := range v {
+				cleanedCustomFields[key] = value
+			}
+			for _, key := range blockedShipmentEnvelopeKeys() {
+				delete(cleanedCustomFields, key)
+				if priorValue, exists := artifact.CustomFields[key]; exists {
+					cleanedCustomFields[key] = priorValue
+				}
+			}
+			cleanedUpdates["custom_fields"] = cleanedCustomFields
+			updates = cleanedUpdates
+			v = cleanedCustomFields
+		}
 		artifact.CustomFields = mergePreserveReservedSizingKeys(artifact.CustomFields, v)
 	}
 	if v, ok := updates["harness_status"].(string); ok {
@@ -639,6 +695,11 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		return nil, fmt.Errorf("validate artifact: %w", err)
 	}
 
+	ctx = context.WithValue(ctx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
+		operation: "update",
+		changes:   updates,
+		audit:     true,
+	})
 	if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previousStatus, artifact.Status)); err != nil {
 		return nil, fmt.Errorf("persist artifact %s: %w", id, err)
 	}
@@ -844,15 +905,48 @@ func WriteArtifactFile(artifact *models.Artifact, filePath string) error {
 	return WriteArtifactFileWithOptions(artifact, filePath, false)
 }
 
+type artifactWriteEnvelopeContextKey struct{}
+
+type artifactWriteEnvelope struct {
+	correlationID                 string
+	operation                     string
+	changes                       map[string]any
+	allowGovernedShipmentMutation bool
+	audit                         bool
+}
+
 // WriteArtifactFileWithOptions atomically writes an artifact to filePath through
-// the shared atomicfile primitive, applying the durable_writes fsync protocol
-// when durable is true. It is the single production choke point for artifact
-// rewrites: it enforces the archive-provenance invariant (shared with the
-// back-compat WriteArtifactFile wrapper) and delegates the write to
-// atomicfile.WriteFileAtomicWithOptions, so the U2 durability error classes
-// (ErrWriteNotApplied before commit, ErrWriteIndeterminate after) propagate to
-// callers unchanged.
+// the private governed writer, applying the durable_writes fsync protocol when
+// durable is true. With no operation envelope, the public boundary is
+// deliberately unable to persist shipment transitions reserved for governed
+// lifecycle operations.
 func WriteArtifactFileWithOptions(artifact *models.Artifact, filePath string, durable bool) error {
+	return writeArtifactFileGoverned(
+		artifact,
+		filePath,
+		filePath,
+		durable,
+		artifactWriteEnvelope{},
+		nil,
+	)
+}
+
+// writeArtifactFileGoverned is the sole lower artifact rewrite boundary. It
+// validates the existing canonical preimage before permitting protected
+// shipment transitions and then delegates to either the injected persistence
+// seam or the shared atomic writer.
+func writeArtifactFileGoverned(
+	artifact *models.Artifact,
+	filePath string,
+	currentPath string,
+	durable bool,
+	envelope artifactWriteEnvelope,
+	writeFn func(*models.Artifact, string, bool) error,
+) error {
+	if artifact == nil {
+		return fmt.Errorf("refusing to write a nil artifact: %w", blerrors.ErrValidation)
+	}
+
 	// Enforce the archive-provenance invariant at the write boundary itself.
 	// This choke point funnels every production rewrite, so it is the single
 	// place where "status archived <=> provenance present" can be guaranteed
@@ -864,13 +958,113 @@ func WriteArtifactFileWithOptions(artifact *models.Artifact, filePath string, du
 		return fmt.Errorf("refusing to write archived artifact %s without provenance (archived_from/archived_status); archive via the archive operation: %w", artifact.ID, blerrors.ErrValidation)
 	}
 
-	fm := artifact.ToFrontmatterMap()
+	if currentPath != "" {
+		previous, _, err := parseFile(currentPath)
+		switch {
+		case err == nil:
+			if err := guardBlockedShipmentMembershipMutation(previous, artifact); err != nil {
+				return err
+			}
+			if previous.ArtifactType == "shipment" &&
+				previous.Status == models.StatusBlocked &&
+				artifact.Status == models.StatusBlocked &&
+				!envelope.allowGovernedShipmentMutation {
+				for _, key := range blockedShipmentEnvelopeKeys() {
+					previousValue, previousPresent := previous.CustomFields[key]
+					nextValue, nextPresent := artifact.CustomFields[key]
+					if previousPresent != nextPresent ||
+						(previousPresent && !blockedShipmentEnvelopeValuesEqual(key, previousValue, nextValue)) {
+						return fmt.Errorf(
+							"refusing ungoverned blocked shipment envelope mutation %s: %w",
+							artifact.ID,
+							blerrors.ErrShipmentBlockedRequiresEnvelope,
+						)
+					}
+				}
+			}
+			protectedTransition := previous.ArtifactType == "shipment" &&
+				isProtectedShipmentStatusTransition(previous.Status, artifact.Status)
+			if protectedTransition && !envelope.allowGovernedShipmentMutation {
+				return fmt.Errorf(
+					"refusing ungoverned shipment transition %s from %s to %s: %w",
+					artifact.ID,
+					previous.Status,
+					artifact.Status,
+					blerrors.ErrShipmentBlockedRequiresEnvelope,
+				)
+			}
+		case !errors.Is(err, os.ErrNotExist):
+			return fmt.Errorf("read current artifact %s before governed write: %w", artifact.ID, err)
+		}
+	}
 
+	if writeFn != nil {
+		if err := writeFn(artifact, filePath, durable); err != nil {
+			return fmt.Errorf("write artifact file: %w", err)
+		}
+		return nil
+	}
+
+	fm := artifact.ToFrontmatterMap()
 	content := models.SerializeFrontmatter(fm, artifact.Description)
 	if err := atomicfile.WriteFileAtomicWithOptions(filePath, []byte(content), atomicfile.Options{DurableWrites: durable}); err != nil {
 		return fmt.Errorf("write artifact file: %w", err)
 	}
 	return nil
+}
+
+// blockedShipmentEnvelopeKeys returns the canonical blocked-shipment envelope keys.
+// Additional blocked-envelope stash fields are deferred to stash 8AF55264.
+func blockedShipmentEnvelopeKeys() [6]string {
+	return [...]string{
+		"blocked_reason",
+		"blocked_at",
+		"member_status_snapshot",
+		"branch",
+		"blocked_by",
+		"resume_checkpoint_ref",
+	}
+}
+
+func blockedShipmentEnvelopeValuesEqual(key string, previous, next any) bool {
+	if key == "blocked_at" {
+		previousTimestamp, previousOK := canonicalBlockedTimestamp(previous)
+		nextTimestamp, nextOK := canonicalBlockedTimestamp(next)
+		if previousOK && nextOK {
+			return previousTimestamp == nextTimestamp
+		}
+	}
+
+	previousJSON, previousErr := json.Marshal(previous)
+	if previousErr != nil {
+		return false
+	}
+	nextJSON, nextErr := json.Marshal(next)
+	if nextErr != nil {
+		return false
+	}
+	return string(previousJSON) == string(nextJSON)
+}
+
+func guardBlockedShipmentMembershipMutation(previous, next *models.Artifact) error {
+	if previous == nil || next == nil ||
+		previous.ArtifactType != "shipment" ||
+		previous.Status != models.StatusBlocked ||
+		slices.Equal(NormalizeShipmentItems(previous), NormalizeShipmentItems(next)) {
+		return nil
+	}
+	return fmt.Errorf(
+		"shipment %s membership is sealed while blocked: %w",
+		previous.ID,
+		blerrors.ErrShipmentConflict,
+	)
+}
+
+func isProtectedShipmentStatusTransition(previous, next models.ArtifactStatus) bool {
+	return previous != next &&
+		(next == models.StatusBlocked ||
+			previous == models.StatusBlocked ||
+			(previous == models.StatusQueued && next == models.StatusActive))
 }
 
 func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact, error) {
