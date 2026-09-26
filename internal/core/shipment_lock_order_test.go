@@ -353,15 +353,6 @@ func TestShipmentLifecycleLockOrder_ReconcileAndAddUseGlobalFirst(t *testing.T) 
 	candidate, err := CreateArtifact(ctx, ws, "reconcile add contention candidate", "task", WithParent(feature.ID))
 	require.NoError(t, err)
 
-	releaseMembershipGate, err := lockShipmentMembership(ctx, ws, shipmentID)
-	require.NoError(t, err)
-	membershipGateHeld := true
-	t.Cleanup(func() {
-		if membershipGateHeld {
-			require.NoError(t, releaseMembershipGate())
-		}
-	})
-
 	_, releaseItemLogGate, err := lockShipmentReconcileItemLog(ctx, ws, shipmentID)
 	require.NoError(t, err)
 	itemLogGateHeld := true
@@ -385,7 +376,7 @@ func TestShipmentLifecycleLockOrder_ReconcileAndAddUseGlobalFirst(t *testing.T) 
 	select {
 	case <-reconcileGlobalAttempted:
 	case <-time.After(defaultGateLockBoundedWait):
-		t.Fatal("reconcile never attempted the lifecycle-global lock while the test held membership and item-log gates")
+		t.Fatal("reconcile never attempted the lifecycle-global lock while blocked by the test-held item-log gate")
 	}
 	reconcileAcquiredBeforeRelease := false
 	select {
@@ -393,6 +384,43 @@ func TestShipmentLifecycleLockOrder_ReconcileAndAddUseGlobalFirst(t *testing.T) 
 		reconcileAcquiredBeforeRelease = true
 	case <-time.After(defaultGateLockBoundedWait):
 	}
+
+	membershipGateObserved := false
+	membershipProbeCtx, cancelMembershipProbe := context.WithTimeout(ctx, defaultGateLockBoundedWait)
+	defer cancelMembershipProbe()
+	for membershipProbeCtx.Err() == nil {
+		probeCtx, cancelProbe := context.WithTimeout(membershipProbeCtx, 50*time.Millisecond)
+		unlockMembership, probeErr := lockShipmentMembership(probeCtx, ws, shipmentID)
+		cancelProbe()
+		if probeErr != nil {
+			if errors.Is(probeErr, context.DeadlineExceeded) ||
+				errors.Is(probeErr, blerrors.ErrGateInProgress) {
+				membershipGateObserved = true
+				break
+			}
+			t.Fatalf("membership gate probe failed with an unexpected error: %v", probeErr)
+		}
+		if unlockMembership == nil {
+			t.Fatal("membership gate probe acquired the gate without an unlock function")
+		}
+		if err := unlockMembership(); err != nil {
+			t.Fatalf("release membership gate probe lock: %v", err)
+		}
+
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-membershipProbeCtx.Done():
+		case <-timer.C:
+		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}
+	require.True(t, membershipGateObserved,
+		"membership gate probe never observed Reconcile holding membership while blocked on the item-log gate")
 
 	addCtx, addGlobalAttempted, addGlobalAcquired := p021ObserveGlobalLock(ctx)
 	addResult := make(chan error, 1)
@@ -431,33 +459,31 @@ func TestShipmentLifecycleLockOrder_ReconcileAndAddUseGlobalFirst(t *testing.T) 
 
 	require.NoError(t, releaseItemLogGate())
 	itemLogGateHeld = false
-	require.NoError(t, releaseMembershipGate())
-	membershipGateHeld = false
 	if !reconcileCompletedWhileGated {
 		select {
 		case reconcileErr = <-reconcileResult:
 		case <-time.After(defaultGateLockBoundedWait + 5*time.Second):
-			t.Fatal("reconcile did not converge after the test released membership and item-log gates")
+			t.Fatal("reconcile did not converge after the test released the item-log gate")
 		}
 	}
 	if !addCompletedWhileGated {
 		select {
 		case addErr = <-addResult:
 		case <-time.After(defaultGateLockBoundedWait + 5*time.Second):
-			t.Fatal("add did not converge after the test released membership and item-log gates")
+			t.Fatal("add did not converge after Reconcile released the membership gate and the test released the item-log gate")
 		}
 	}
 
 	require.True(t, addAttempted,
-		"add never attempted the lifecycle-global lock while reconcile held it and was blocked by the test-held membership and item-log gates")
+		"add never attempted the lifecycle-global lock while Reconcile held it and was blocked by the test-held item-log gate with membership held")
 	require.True(t, reconcileAcquiredBeforeRelease,
-		"reconcile did not acquire lifecycle-global before attempting membership while the test held membership and item-log gates")
+		"reconcile did not acquire lifecycle-global before blocking on the test-held item-log gate while holding membership")
 	require.False(t, addAcquiredBeforeRelease,
-		"add acquired lifecycle-global while reconcile was blocked by the test-held membership and item-log gates, reproducing the inverse-order cycle")
+		"add acquired lifecycle-global while Reconcile held membership and was blocked by the test-held item-log gate, reproducing the inverse-order cycle")
 	require.False(t, reconcileCompletedWhileGated,
-		"reconcile unexpectedly completed while the test held membership and item-log gates")
+		"reconcile unexpectedly completed while blocked by the test-held item-log gate with membership held")
 	require.False(t, addCompletedWhileGated,
-		"add unexpectedly completed while the test held membership and item-log gates")
+		"add unexpectedly completed while Reconcile held membership and was blocked by the test-held item-log gate")
 	require.NotErrorIs(t, reconcileErr, blerrors.ErrGateInProgress)
 	require.NotErrorIs(t, reconcileErr, ErrShipmentReconcileLockBusy)
 	require.NotErrorIs(t, addErr, blerrors.ErrGateInProgress)
@@ -465,6 +491,6 @@ func TestShipmentLifecycleLockOrder_ReconcileAndAddUseGlobalFirst(t *testing.T) 
 	select {
 	case <-addGlobalAcquired:
 	default:
-		t.Fatal("add never acquired lifecycle-global after reconcile released it and the test released membership and item-log gates")
+		t.Fatal("add never acquired lifecycle-global after Reconcile released it and the test released the item-log gate")
 	}
 }
