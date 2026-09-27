@@ -37,13 +37,16 @@ real predecessor: decision condition (b) forbids claiming unrelated
 multi-member shipments before the `154-S` marker exists. Stage recorded
 `153-S` as blocked on `154-S` in commit `66431e46`, on branch
 `stage/153-s-dag-sequencing`. `141-S`, `152-S`, and `147-S` fall under the
-same rule. The eligibility memory from 2026-09-26 was corrected on the same
-branch.
+same rule, as do the newly harvested `177-S`, `178-S`, and `179-S`. The queue
+filter treats all six as unblocked. The eligibility memory from 2026-09-26 was
+corrected on the same branch.
 
 ## Next Steps
 
 1. The operator grants or denies the `154-S` bootstrap waiver
    (`bootstrap-bypass-unapproved`), with `C29EBEE5` re-validation.
-2. Stage considers adding explicit `blocks` edges from `141-S`, `152-S`, and
-   `147-S` onto `154-S`. Today that ordering exists only in prose.
+2. Stage triages deferred scope stash `513E62AB`: add explicit `blocks` edges
+   onto `154-S` (or document exemptions) for `141-S`, `152-S`, `147-S`,
+   `177-S`, `178-S`, and `179-S`. Until then, the Orchestrator must not route
+   any of them.
 3. Stage triages `FB0A850B`, which covers the routing drift.

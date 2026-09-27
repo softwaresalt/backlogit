@@ -63,7 +63,11 @@ The pipeline-topology pre-claim gate surfaced the gap for `153-S` with
 `153-S blocks-on 154-S` (commit 66431e46). The gate now reports
 `PREDECESSOR_NOT_SHIPPED`.
 
-`141-S` (7 members), `152-S` (7), and `147-S` (4) are also multi-member, so
-condition (b) holds them as well. None of them can ship until the operator
-grants the `154-S` bootstrap waiver, `154-S` ships, and the external
-scheduler consumes the marker.
+`141-S` (7 members), `152-S` (7), and `147-S` (4) are also multi-member, and so
+are the newly harvested `177-S` (3), `178-S` (4), and `179-S` (4). Those last
+three depend only on shipped `155-S`, so the queue filter treats them as
+unblocked. Condition (b) holds all six. None of them can ship until the
+operator grants the `154-S` bootstrap waiver, `154-S` ships, and the external
+scheduler consumes the marker. Adding explicit `154-S` guard edges for these
+six shipments is captured as deferred scope stash `513E62AB`. Until it lands,
+the Orchestrator must enforce condition (b) at routing time.
