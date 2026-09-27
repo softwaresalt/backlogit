@@ -34,12 +34,17 @@ pipeline-topology gate halted the `ship 153-S` request.
 
 The pre-claim gate returned `UNSEQUENCED_SHIPMENT` for `153-S`. Stage found a
 real predecessor: decision condition (b) forbids claiming unrelated
-multi-member shipments before the `154-S` marker exists. Stage recorded
-`153-S` as blocked on `154-S` in commit `66431e46`, on branch
-`stage/153-s-dag-sequencing`. `141-S`, `152-S`, and `147-S` fall under the
-same rule, as do the newly harvested `177-S`, `178-S`, and `179-S`. The queue
-filter treats all six as unblocked. The eligibility memory from 2026-09-26 was
-corrected on the same branch.
+multi-member shipments until the `154-S` marker exists and the external
+autoharness scheduler is consuming it. `154-S` shipping is necessary but not
+sufficient. Stage recorded `153-S` as blocked on `154-S` in commit `66431e46`,
+on branch `stage/153-s-dag-sequencing`. The edge encodes only the "`154-S`
+shipped" half. Before routing `153-S` or any held shipment, the Orchestrator
+must also verify, as a separate pre-claim check, that `154-S` is actually
+`shipped` (not merely terminal) and that the scheduler consumes the marker.
+`141-S`, `152-S`, and `147-S` fall under the same rule, as do the newly
+harvested `177-S`, `178-S`, and `179-S`. The queue filter treats all six as
+unblocked. The eligibility memory from 2026-09-26 was corrected on the same
+branch.
 
 ## Next Steps
 
@@ -47,6 +52,7 @@ corrected on the same branch.
    (`bootstrap-bypass-unapproved`), with `C29EBEE5` re-validation.
 2. Stage triages deferred scope stash `513E62AB`: add explicit `blocks` edges
    onto `154-S` (or document exemptions) for `141-S`, `152-S`, `147-S`,
-   `177-S`, `178-S`, and `179-S`. Until then, the Orchestrator must not route
-   any of them.
+   `177-S`, `178-S`, and `179-S`. Edges alone are not sufficient enforcement:
+   the follow-up must keep a separate consumption-aware, shipped-only
+   pre-claim check. Until then, the Orchestrator must not route any of them.
 3. Stage triages `FB0A850B`, which covers the routing drift.
