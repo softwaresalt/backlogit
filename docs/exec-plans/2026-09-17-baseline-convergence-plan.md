@@ -966,7 +966,9 @@ deliverable):**
 
 **Gate rationale.** No P0 or P1 remain after in-scope remediation. The remaining
 P2s are recorded as deferred follow-ups (`AF1E5075`, `C29EBEE5`, `2E0CDF27`,
-`6434A4D7`) on contract surfaces outside this planning-only refresh (P-021 C1).
-Decision: ADVISORY. `operator_authorization` stays `pending` until the operator
-explicitly accepts this verdict. That acceptance never extends to the `154-S`
-halt bypass, which remains UNAPPROVED / BLOCKED.
+`24D693E1`, `6434A4D7`) on contract surfaces outside this planning-only
+refresh (P-021 C1). Decision: ADVISORY. `operator_authorization` stays `pending`
+until the operator explicitly accepts this verdict. That acceptance never extends
+to the `154-S` halt bypass, which remains UNAPPROVED / BLOCKED. The escalated
+`168.001-T` lifecycle-state question falls outside this plan gate, but the
+Orchestrator/operator must decide it before #449 merges.
