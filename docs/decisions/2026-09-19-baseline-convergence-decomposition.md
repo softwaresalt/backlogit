@@ -140,8 +140,9 @@ Actual assigned shipment IDs (shipment ID counter is per-type, continued from 15
   `.backlogit/queue/149-S.md`.
 - **150-S / 151-S:** already `blocks`-depend on `149-S`; unchanged and therefore
   transitively gated behind the full replacement sequence.
-- **168.001-T:** remains archived / `done`; it is not re-listed in any replacement
-  shipment and is not re-executed.
+- **168.001-T:** untouched by this PR. It stays exactly as on `main` (`queued`, a
+  `149-S` member) and is not re-listed in any replacement shipment. An earlier
+  accidental archive move of Ship-owned state was reverted on 2026-09-26.
 
 ## Claim/Scheduler Execution Readiness (BLOCKED)
 
@@ -362,7 +363,7 @@ retained as **design specification**, not as committed tooling.
   an advisory `blocks` edge; shipped-only readiness is governed by claim-routing
   policy until tool-level enforcement lands (stash `6434A4D7`). The advisory edge
   is not a hard shipped-only guarantee (see the Dependency / Ordering Map).
-- 168.001-T remains archived / `done`.
+- 168.001-T is unchanged relative to `main` (still `queued` under `149-S`).
 - No source or workflow implementation files are modified on this branch.
 
 ## Plan Hardening
@@ -445,7 +446,7 @@ Shipment-level (`validate_shipments.py`), invariants 1–6:
   edge on any no-longer-blocking terminal status, and a direct claim bypasses
   dependencies). Shipped-only readiness is governed by claim-routing policy;
   tool-level enforcement is tracked in stash `6434A4D7`.
-- **INV6** — `168.001-T` status = `done`.
+- **INV6** — `168.001-T` is unchanged relative to `main` (no diff).
 
 Invariant 7 (no source/workflow implementation changed) verified via
 `git diff origin/main`: staged changes are confined to `.backlogit/` and `docs/`;

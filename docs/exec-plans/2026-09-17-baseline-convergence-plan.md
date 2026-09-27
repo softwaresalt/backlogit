@@ -949,12 +949,12 @@ deliverable):**
   cannot execute on a Windows Ship host. The choice between a native Linux
   runner and a compile-only cross-GOOS split needs deliberation. Deferred stash
   `24D693E1` (Copilot, 2026-09-27).
-* [Escalated; not a plan finding] Commit `46e17ee0` moved `168.001-T` to
-  `.backlogit/archive/` with `status: done` and `commit: c976315f`, but `main`
-  still has it `queued`. That commit exists only on
-  `feat/149-s-trust-anchor-verification-key-lifecycle`; it is not on `main`.
-  This is Ship-owned lifecycle state. Stage leaves it for an Orchestrator/operator
-  decision rather than normalizing or reverting it.
+* [Resolved 2026-09-26; not a plan finding] Commit `46e17ee0` had moved
+  `168.001-T` to `.backlogit/archive/` with `status: done` and
+  `commit: c976315f`, a commit that is only on the unmerged
+  `feat/149-s-trust-anchor-verification-key-lifecycle`. That is Ship-owned
+  lifecycle state. Per the Orchestrator's disposition (a), the move is reverted:
+  #449 now leaves `168.001-T` byte-identical to `main` (`queued`).
 * [P3] The attempt-3 note calls `IsNoLongerBlockingStatus` /
   `IsCascadeTerminalStatus` "deliberately divergent". On `main` they share one
   cascade set; the divergent pair is that set versus `IsReleasableStatus`. The
@@ -969,6 +969,5 @@ P2s are recorded as deferred follow-ups (`AF1E5075`, `C29EBEE5`, `2E0CDF27`,
 `24D693E1`, `6434A4D7`) on contract surfaces outside this planning-only
 refresh (P-021 C1). Decision: ADVISORY. `operator_authorization` stays `pending`
 until the operator explicitly accepts this verdict. That acceptance never extends
-to the `154-S` halt bypass, which remains UNAPPROVED / BLOCKED. The escalated
-`168.001-T` lifecycle-state question falls outside this plan gate, but the
-Orchestrator/operator must decide it before #449 merges.
+to the `154-S` halt bypass, which remains UNAPPROVED / BLOCKED. The `168.001-T`
+lifecycle-state question is resolved: the accidental change was reverted.

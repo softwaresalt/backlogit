@@ -14,7 +14,7 @@ status: complete
 ## What was done
 
 - Created clean staging branch from `origin/main` (P-016: no second worktree).
-- Ported only Stage-owned backlog (175-F + 98 tasks, 168.001-T archive move) and
+- Ported only Stage-owned backlog (175-F + 98 tasks, plus a 168.001-T archive move that was reverted 2026-09-26) and
   8 planning docs. Excluded all Ship-authored implementation (`ci.yml`, verifier
   scripts, tests, runtime). No Go source touched.
 - Decomposed single oversized shipment `156-S` (175-F + 98 tasks) into **13
@@ -25,7 +25,9 @@ status: complete
   added `SUPERSEDED — DO NOT CLAIM` banner + guard edge `156-S depends_on 169-S`.
 - Rewired `149-S`: removed `→156-S`, added `→169-S` (advisory ordering; governed by
   claim-routing policy, see stash `6434A4D7`).
-- `168.001-T` remains archived/`done` (not repeated).
+- `168.001-T` was recorded as archived/`done`. **Corrected 2026-09-26:** that move
+  carried Ship-owned state from an unmerged branch and was reverted; #449 leaves
+  `168.001-T` exactly as on `main` (`queued`).
 - **Runner-bootstrap prerequisite.** The three shared lint runners
   (`scripts/verify-task-lint.ps1`, `scripts/verify-baseline-lint.ps1`,
   `scripts/verify-terminal-lint.ps1`) had no owning task. Added three dependency-ordered
@@ -71,7 +73,7 @@ Chain: 158→157, 159→158, ..., 169→168. 149-S→169-S (advisory). 156-S→1
 INV1 101 unique executable tasks once (98 remediation + `175.099-T`/`175.100-T`/`175.101-T` bootstrap); INV2 no 175-F in
 any shipment; INV3 all queued (157-S..169-S + 176-S); INV4 acyclic ordered chain incl. the
 `176→157` / `175.099→175.100→175.101→175.001` prerequisite gate; INV5 149-S ordered behind 169-S (advisory);
-INV6 168.001-T done; INV7 only `.backlogit/` + `docs/` changed; INV8 176-S is the single
+INV6 168.001-T done (corrected 2026-09-26: reverted, unchanged vs `main`); INV7 only `.backlogit/` + `docs/` changed; INV8 176-S is the single
 prerequisite shipment, sole owner of the three bootstrap tasks, each present in no other shipment; INV9 each
 bootstrap gate is buildable before its runner exists (RED before / GREEN after).
 
