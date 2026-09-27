@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: "Deferred product/requirements spec proposing one YAML BDD acceptance contract per FUTURE shipment: Markdown/backlog stays the lifecycle source-of-truth while a hashed, referenced YAML file carries deterministic machine-readable acceptance (typed given/when/then, allowlisted runner IDs, stable scenario IDs, evidence binding). Explicitly does NOT retrofit any current baseline-convergence shipment (prerequisite 176-S, replacements 157-S–169-S, superseded 156-S, downstream 149-S). handoff_status: deferred; no backlog entries or plans created."
+description: "Deferred product/requirements spec proposing one YAML BDD acceptance contract per FUTURE shipment: Markdown/backlog stays the lifecycle source-of-truth while a hashed, referenced YAML file carries deterministic machine-readable acceptance (typed given/when/then, allowlisted runner IDs, stable scenario IDs, evidence binding). Explicitly does NOT retrofit any current baseline-convergence shipment (predecessors 155-S (shipped) and 154-S, prerequisite 176-S, replacements 157-S–169-S, superseded 156-S, downstream 149-S). handoff_status: deferred; no backlog entries or plans created."
 doc_type: spec
 schema_version: "1.0"
 source: docs/product-specs/2026-09-19-shipment-bdd-contracts-requirements.md
@@ -19,8 +19,9 @@ entries, no plan handoff created by this document).
 **Handoff:** `none` / `deferred`. There is intentionally **no**
 `BRAINSTORM_HANDOFF_READY` marker because no plan handoff was requested.
 **Adoption:** optional, future, pilot-first. **Do not retrofit** any current
-baseline-convergence shipment — prerequisite `176-S`, replacements
-`157-S`–`169-S`, superseded `156-S`, or downstream `149-S`.
+baseline-convergence shipment — predecessors `155-S` (shipped) and `154-S`,
+prerequisite `176-S`, replacements `157-S`–`169-S`, superseded `156-S`, or
+downstream `149-S`.
 
 ---
 
@@ -83,7 +84,7 @@ contract, not validated, and not bound to any shipment.
 ```yaml
 # ILLUSTRATIVE ONLY — not an active contract, not validated, not bound.
 schema_version: "1.0"
-shipment_id: "PILOT-S"          # a NEW future pilot shipment, never a current baseline-convergence shipment (176-S / 157-S–169-S / 156-S / 149-S)
+shipment_id: "PILOT-S"          # a NEW future pilot shipment, never a current baseline-convergence shipment (155-S / 154-S / 176-S / 157-S–169-S / 156-S / 149-S)
 revision: 1
 contract_sha256: "<computed-at-freeze>"   # placeholder; frozen at claim
 scenarios:
@@ -166,9 +167,10 @@ validation failure, not a warning.
 
 ## 9. Out of scope
 
-- Retrofitting any current baseline-convergence shipment — prerequisite
-  `176-S`, replacements `157-S`–`169-S`, superseded `156-S`, or downstream
-  `149-S` (explicitly excluded).
+- Retrofitting any current baseline-convergence shipment — predecessors
+  `155-S` (shipped) and `154-S`, prerequisite `176-S`, replacements
+  `157-S`–`169-S`, superseded `156-S`, or downstream `149-S` (explicitly
+  excluded).
 - Replacing backlog/Markdown lifecycle state with YAML.
 - Any new backlog entries, plans, or implementation from this document.
 - Registry/schema implementation details (deferred to a future decision).
@@ -214,8 +216,8 @@ validation failure, not a warning.
 ## 15. Recommended phased pilot
 
 Pilot on a **new, future shipment created specifically for the pilot (<= 5
-tasks)** — never any current baseline-convergence shipment (prerequisite `176-S`,
-replacements `157-S`–`169-S` such as the four-task `168-S`, superseded `156-S`,
+tasks)** — never any current baseline-convergence shipment (predecessors `155-S`
+(shipped) and `154-S`, prerequisite `176-S`, replacements `157-S`–`169-S` such as the four-task `168-S`, superseded `156-S`,
 or downstream `149-S`). Phase 1:
 schema + validator + one hand-authored contract + generated report. Phase 2:
 TDD-test generation and evidence binding. Phase 3: freeze-on-claim + governed

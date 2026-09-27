@@ -7,6 +7,20 @@ session_id: stage-449-convergence-2026-09-20
 status: complete
 ---
 
+## Post-refresh status (2026-09-26) — read before resuming
+
+This file is a historical session record; the sections below describe the
+2026-09-20 state and are **not** a current handoff. Since then `155-S` has
+SHIPPED (PR #450 at `2c8759c3`, closure PR #451) and is archived with
+`archived_status: shipped`. Do **not** re-bootstrap `155-S` and do **not**
+request a waiver for it. The only remaining bootstrap shipment is `154-S` (chain
+root `154-S → 176-S → 157-S..169-S`); its P-002.6 active-residual halt waiver
+remains **UNAPPROVED / BLOCKED** pending explicit operator confirmation, and
+external marker consumption is still outstanding. The authoritative current
+state is in
+`docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-deliberation.md`
+(Bootstrap Resolution) and `.backlogit/queue/154-S.md`.
+
 ## Scope
 
 Operator-approved shipment-claim / wave-scheduler convergence under
@@ -52,7 +66,8 @@ Artifact: `docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-d
 
 * `154-S`/`173-F` **REUSED** as the in-repo marker prerequisite — no duplicate created.
 * `6434A4D7` core hardening deferred (P-021 C1), not harvested.
-* Bootstrap (CORRECTED 2026-09-20): complete predecessor chain
+* Bootstrap (CORRECTED 2026-09-20; historical — superseded by the 2026-09-26
+  post-refresh status above): complete predecessor chain
   `155-S (DAG root) → 154-S → 176-S → 157-S..169-S`. Bounded, non-circular
   bootstrap set = {`155-S`, `154-S`} (marker predecessor closure; terminates at
   in-degree-0 root `155-S`; earlier record wrongly started at `154-S` and omitted
@@ -101,6 +116,9 @@ Artifact: `docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-d
   body/readiness-evidence update is a Ship/operator PR-lifecycle action.
 
 ## Blocker preventing #449 review-ready
+
+Historical (2026-09-20); superseded by the post-refresh status above — `155-S`
+has shipped, so only `154-S` remains to be bootstrapped.
 
 `#449` cannot reach executable/review-ready until: (1) the operator **explicitly
 approves the P-002.6 active-residual halt waiver** for the bootstrap set
