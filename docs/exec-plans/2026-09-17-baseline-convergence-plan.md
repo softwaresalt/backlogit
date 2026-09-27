@@ -551,6 +551,20 @@ into this single baseline-convergence covering feature.
 - Workspace isolation: all paths resolve within the workspace; U1's destructive
   refresh is operator-gated at execution.
 - Git-friendly persistence: artifacts are Markdown + YAML, LF-normalized.
+- Merge commit history preservation: this planning PR merges via merge commit.
+- Documented deviation — I. Safety-First Go: intermediate waves retain only
+  governed, owned golangci-lint findings until U12 per
+  `docs/decisions/2026-09-17-baseline-convergence-authorization.md`; no new or
+  unowned findings; zero-warning lint on both surfaces is mandatory at U12.
+- Documented deviation — Task Granularity: U1 exceeds the fewer-than-3-files
+  heuristic as one homogeneous byte-only line-ending migration; the 2-hour bound
+  holds (see `## U1`).
+- Documented deviation — VIII. Explicit Safety Modes: the `154-S` P-002.6
+  active-residual halt waiver is a proposed high-risk action recorded
+  UNAPPROVED / BLOCKED pending explicit operator confirmation (see
+  `## Plan Hardening`); this planning cycle executes no waiver.
+
+Constitution Check: documented-deviations
 
 ## Plan Review Status
 
@@ -573,9 +587,10 @@ re-review. Residual P0=0, P1=0.
 
 **Execution readiness: BLOCKED.** This topology is structurally well-formed but
 is **not executable** under the current shipment-claim and wave-scheduler
-contracts. `core.ClaimShipment` (`internal/core/shipment_lifecycle.go:46-98`)
-transitions **every** queued manifest member to `active` on claim, while Ship
-wave admission (`.github/agents/_ship.agent.md:526-535`) halts on **any** active
+contracts. `core.ClaimShipment` (`internal/core/shipment_lifecycle.go`,
+member-activation loop) transitions **every** queued manifest member to `active`
+on claim, while Ship
+wave admission (`.github/agents/_ship.agent.md`, Step 4.0 items 4 and 6) halts on **any** active
 member and computes `ready_k` only from `queued` tasks. Claiming `176-S`
 therefore makes all three bootstrap tasks `active` and immediately yields
 `WAVE_NO_PROGRESS`; the same applies to every replacement shipment
@@ -605,23 +620,37 @@ wave admission additively. Baseline execution readiness depends on:
 **Bootstrap of the marker prerequisite itself.** The marker becomes usable only
 after `154-S`/`173-F` ships **and** the external autoharness scheduler consumes
 it, so every shipment on the marker's predecessor closure must run before the
-marked-aware scheduler is available. That closure is the **complete predecessor
-chain** `155-S (DAG root) → 154-S → 176-S → 157-S..169-S`. Because
-`154-S depends_on 155-S` is a governed edge (DAG-root correction, commit
-`69e900be`), the earliest prerequisite is **`155-S`, not `154-S`** — and `155-S`
-(26 members: `174-F` + `174.039-T`..`174.063-T`) is exposed to the same
-all-members-active vs. strict wave-admission mismatch (claiming it activates all
-26 members unmarked → `WAVE_NO_PROGRESS`). The bootstrap set is therefore the
+marked-aware scheduler is available. That closure was recorded as the **complete
+predecessor chain** `155-S (DAG root) → 154-S → 176-S → 157-S..169-S`
+(`154-S depends_on 155-S` is a governed edge; DAG-root correction, commit
+`69e900be`). **Refresh (2026-09-26, `main` `c57185c1`): `155-S` has SHIPPED**
+(PR #450, merge `2c8759c3`; closure PR #451; `155-S` and all 45 manifest items
+— `174-F` + 44 tasks — archived), so the `154-S depends_on 155-S` edge is satisfied and
+retained as provenance, and the remaining chain is
+`154-S (chain root) → 176-S → 157-S..169-S`. The bootstrap set was the
 **bounded, non-circular two-shipment set {`155-S`, `154-S`}** — the marker's
-predecessor closure, terminating at the in-degree-0 root `155-S`; it does not
-extend to `176-S`..`169-S`, which use the marked-aware scheduler with no
-exception. Each is executed via an **operator-supervised bootstrap**: Ship claims
-the shipment, then drives the claim-activated members green in their declared
-dependency order **without** the strict active-residual halt — the just-claimed
-members ARE the intended working set. **The active-residual halt bypass is a
-high-risk action that the operator has NOT authorized; it remains UNAPPROVED /
-BLOCKED pending explicit per-shipment operator approval of that exact waiver for
-`155-S` and `154-S`.** See the convergence deliberation's "Bootstrap Resolution".
+predecessor closure; with `155-S` complete, **`154-S` is its only remaining
+shipment**, and it does not extend to `176-S`..`169-S`, which use the
+marked-aware scheduler with no exception. `154-S` is executed via an
+**operator-supervised bootstrap**: Ship claims it, then drives the
+claim-activated `173-F` members green in their declared dependency order
+**without** the strict active-residual halt — the just-claimed members ARE the
+intended working set. **The `154-S` active-residual halt bypass is a high-risk
+action that remains UNAPPROVED / BLOCKED pending explicit operator confirmation
+of that exact per-shipment waiver.** Ship's `155-S` records describe the original
+authorization as scoped to {`155-S`, `154-S`} and exercised for `155-S` only; the
+cited shipment comment exists only as a Ship-authored event in the local,
+git-ignored `.backlogit/logs/155-S.jsonl`, not as an operator-authored
+per-shipment approval on `154-S`, so it is not treated as the `154-S` approval.
+**Routing hold:** with `155-S` shipped, `154-S` has no unshipped predecessor, so
+the Orchestrator's status + dependency eligibility gate no longer holds it and
+the current Orchestrator/Ship contracts do not read labels; `154-S` is held only
+by its labels, body banner, and operator instruction and MUST NOT be routed by
+`ship next`, an inferred `ship next`, or a dark-mode scope (label-aware refusal:
+deferred stash `AF1E5075`; `173-F` contract re-validation against the
+post-`174-F` `ClaimShipment` before the bootstrap: deferred stash `C29EBEE5`).
+See the convergence deliberation's "Bootstrap Resolution"
+(refresh status and waiver provenance note).
 
 **Ready-state execution (once the prerequisite lands).** Ship executes the DAG
 wave by wave: `176-S` (`175.099-T` -> `175.100-T` -> `175.101-T`) ships first —
@@ -652,6 +681,16 @@ predecessor chain (earliest prerequisite `155-S`, not `154-S`; bounded two-shipm
 set {`155-S`, `154-S`}) and (b) corrects the authorization state — the P-002.6
 active-residual halt bypass is UNAPPROVED / BLOCKED, not operator-authorized.
 
+**Refresh (2026-09-26).** The bootstrap / authorization narrative was
+re-validated against `main` `c57185c1` after `155-S` shipped: the remaining
+bootstrap set is {`154-S`} (chain root), and the `154-S` halt bypass remains
+UNAPPROVED / BLOCKED pending explicit operator confirmation. The task
+decomposition and manifests are unchanged (101 tasks, each exactly once across
+`176-S` and `157-S`..`169-S`). The governed lint inventory and per-task owned
+group counts were **not** re-captured in this planning-only refresh; `155-S`
+modified `internal/core` Go sources, so drift is caught fail-closed at execution
+and a pre-claim drift check is deferred stash `2E0CDF27`.
+
 **Protected invariants.**
 
 - `core.ClaimShipment` all-members-active semantics are UNCHANGED (backward
@@ -665,15 +704,18 @@ active-residual halt bypass is UNAPPROVED / BLOCKED, not operator-authorized.
 
 **Risky actions (ProposedAction / ActionRisk).**
 
-- **ProposedAction:** execute the bootstrap set {`155-S`, `154-S`}/`173-F` via an
-  operator-supervised bootstrap that drives claim-activated members green without
-  the strict P-002.6 active-residual halt.
+- **ProposedAction:** execute the remaining bootstrap shipment `154-S`/`173-F`
+  (`155-S`, the other member of the bounded set {`155-S`, `154-S`}, has shipped)
+  via an operator-supervised bootstrap that drives claim-activated members green
+  without the strict P-002.6 active-residual halt.
   **ActionRisk:** high (bypasses a safety halt). **Approval:** operator-only,
   per-shipment; **UNAPPROVED — NOT authorized by this plan or by the durable
   lint-retention authorization; the bypass is BLOCKED until the operator
-  explicitly approves that exact waiver for `155-S` and `154-S`.**
-  **Mitigation:** bounded, non-circular two-shipment set {`155-S`, `154-S`}
-  (marker predecessor closure; terminates at DAG-root `155-S`); the halt being
+  explicitly confirms that exact waiver for `154-S`** (Ship's set-scoped
+  attestation from the `155-S` bootstrap is not treated as approval).
+  **Mitigation:** bounded, non-circular set (marker predecessor closure;
+  terminated at DAG-root `155-S`, now shipped; `154-S` is the only remaining
+  member); the halt being
   waived is a check against *orphaned prior-wave* claims, and the just-claimed
   members are the intended working set; every later shipment uses the normal
   marked-aware scheduler with no exception.
@@ -696,13 +738,19 @@ convergence deliberation
 `docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-deliberation.md`.
 
 **Unresolved operator decisions still blocking safe execution.** (1) **explicit
-operator approval of the P-002.6 active-residual halt waiver for the bootstrap set
-{`155-S`, `154-S`}** — the primary blocker; UNAPPROVED, so the bootstrap is
+operator confirmation of the P-002.6 active-residual halt waiver for `154-S`**
+(`155-S` has shipped) — the primary blocker; UNAPPROVED, so the bootstrap is
 BLOCKED; (2) external autoharness P-002.6 scheduler marker-consumption (P-017);
-(3) whether to formalize the two-shipment bootstrap exception as a Ship-contract
-clause (Ship-owned).
+(3) whether to formalize the bootstrap exception as a Ship-contract clause
+(Ship-owned).
 
 ## Plan Review
+
+> **SUPERSEDED (historical).** This attempt-3 record predates the 2026-09-26
+> refresh against `main` `c57185c1` (`155-S` shipped). Its references to the
+> {`155-S`, `154-S`} bypass, to `155-S` labels, and to `174-F` as deferred are
+> historical. The authoritative gate record is the final `## Plan Review`
+> section at the end of this document.
 
 dispatch_mode: multi-agent-dispatch
 decision: ADVISORY
@@ -797,3 +845,98 @@ active-residual halt bypass**, which remains UNAPPROVED / BLOCKED and requires a
 separate, explicit, per-shipment operator approval for `155-S` and `154-S` before
 any bootstrap execution. Learnings Researcher returned PASS (consistent with and
 building on the 2026-09-13 marker decision; no contradiction).
+
+## Plan Review
+
+dispatch_mode: multi-agent-dispatch
+decision: ADVISORY
+operator_authorization: pending
+operator_authorization_scope: >-
+  When approved, authorizes ONLY acceptance of this ADVISORY verdict on the
+  refreshed planning / decision / backlog deliverable. It EXPLICITLY EXCLUDES the
+  P-002.6 active-residual halt bypass for `154-S` (the only remaining bootstrap
+  shipment; `155-S` shipped), which remains UNAPPROVED / BLOCKED pending explicit
+  operator confirmation of that exact per-shipment waiver.
+
+**Refresh re-gate (2026-09-26).** Re-gates this plan after PR #449 was refreshed
+against `main` `c57185c1` (merge `63f8e7ea`; `155-S` / `174-F` shipped via PR #450
+and closure PR #451). Scope: the refreshed bootstrap / authorization narrative
+across this plan, the 2026-09-19 decomposition decision, the 2026-09-20
+convergence deliberation, and `.backlogit/queue/154-S.md`, plus staleness caused
+by `155-S` shipping. Task decomposition and manifests are unchanged: 101 tasks
+(`175.001-T`..`175.101-T`) each appear exactly once across `176-S` and
+`157-S`..`169-S`; no ID collides with `main`.
+
+Dispatched six personas as independent sub-agents — Constitution Reviewer, Go
+Reviewer, Scope Boundary Auditor, Learnings Researcher (always-on), Architecture
+Strategist, and Agent-Native Parity Reviewer (triggered: agent-facing claim
+routing). All six returned. Security Lens not triggered (no auth, API, secrets,
+or trust-boundary surface). Plan hardening was required
+(`Requires plan hardening: yes`) and is present (`## Plan Hardening`, with a
+2026-09-26 refresh note).
+
+**Findings and remediation (P0=0; P1=3 raised, all remediated in-scope):**
+
+* [P1, fixed] Structural gate: `## Constitution Check` had no verdict line. Added
+  the documented deviations (I lint retention to U12, Task Granularity for U1,
+  VIII the UNAPPROVED `154-S` waiver) and `Constitution Check: documented-deviations`.
+* [P1, fixed] Factual error in the refresh: the Ship waiver comment was recorded
+  as "not found". It exists only as a Ship-authored `comment` event in the local,
+  git-ignored `.backlogit/logs/155-S.jsonl`, and no tracked artifact carries it.
+  All four files now say so. It is still not treated as operator approval for
+  `154-S`, and no approval is claimed.
+* [P1, fixed in-scope + deferred] Routing hold: with `155-S` shipped, `154-S` has
+  no unshipped predecessor, and the Orchestrator/Ship contracts do not read
+  labels. The plan, decision records, and the `154-S` banner now state that
+  `154-S` is held only by labels, banner, and operator instruction, and MUST NOT
+  be routed by `ship next`, an inferred `ship next`, or a dark-mode scope. The
+  contract change (label-aware refusal plus a machine go-signal) is
+  Orchestrator/Ship-owned: deferred stash `AF1E5075`.
+* [P2, fixed] Stale code anchors (`shipment_lifecycle.go:46-98`,
+  `_ship.agent.md:526-535`) now use symbol/section anchors in the live readiness
+  sections. The deliberation's decision-time line refs are marked as dated.
+* [P2, fixed] The refresh note overclaimed re-validation. It now states that the
+  lint inventory and ownership counts were not re-captured.
+* [P2, fixed] The attempt-3 record's `{155-S, 154-S}` scope and gate rationale
+  were stale. That record is now marked historical and superseded here.
+* [P3, fixed] Double-counted "`155-S`, `174-F` and all 45 manifest items" now
+  reads "`155-S` and all 45 manifest items — `174-F` + 44 tasks". The
+  deliberation's `155-S` waiver statement is attributed to Ship's reconcile
+  record. The `176-S` pre-claim check accepts `archived` with
+  `archived_status: shipped`. The deliberation's Constitution Check maps the
+  safety-mode waiver.
+
+**Residual findings — accepted follow-ups (do not block this planning-only
+deliverable):**
+
+* [P2] `174-F` shipped a resumable shipment `blocked` status. It is reachable
+  only from `active` (active→blocked; confirmed unblock), so it cannot hold a
+  *queued* shipment. Do NOT use `shipment block` on `154-S`, because that
+  requires a claim, which activates all members. Status-level pre-claim refusal
+  remains `6434A4D7`'s governed non-claimable disposition. This corrects the
+  attempt-3 residual that called `174-F` deferred.
+* [P2] Before the `154-S` bootstrap, re-validate the `173-F` marker contracts
+  against the post-`174-F` `ClaimShipment` (journaled rollback; blocked→active
+  unblock restoration, which the claim-only marker seam would not mark). Also
+  confirm the installed binary includes `2c8759c3` or later. Deferred stash
+  `C29EBEE5`.
+* [P2] Before `176-S`/`157-S` is claimed, drift-check the governed lint inventory
+  (`bbb20803…`, 497 occurrences) and per-task ownership against the execution
+  base. Drift is caught fail-closed by the verifiers. Deferred stash `2E0CDF27`.
+* [P2] Label-aware Orchestrator/Ship claim refusal and a machine go-signal for
+  operator waiver confirmation. Deferred stash `AF1E5075`.
+* [P3] The attempt-3 note calls `IsNoLongerBlockingStatus` /
+  `IsCascadeTerminalStatus` "deliberately divergent". On `main` they share one
+  cascade set; the divergent pair is that set versus `IsReleasableStatus`. The
+  intent (do not mutate the shared taxonomy) is unchanged.
+* [P3] The merge renumbered the branch's 16 `hooks_queue.jsonl` events to seq
+  `3151`..`3166` (after `main`'s `3150`); no tracked artifact cites the old
+  values. The stash union added only `6434A4D7`, which is not in `main`'s stash
+  archive.
+
+**Gate rationale.** No P0 or P1 remain after in-scope remediation. The remaining
+P2s are recorded as deferred follow-ups (`AF1E5075`, `C29EBEE5`, `2E0CDF27`,
+`6434A4D7`) on contract surfaces outside this planning-only refresh (P-021 C1).
+Decision: ADVISORY. `operator_authorization` stays `pending` until the operator
+explicitly accepts this verdict. That acceptance never extends to the `154-S`
+halt bypass, which remains UNAPPROVED / BLOCKED.

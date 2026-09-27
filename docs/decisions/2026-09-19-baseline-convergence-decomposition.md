@@ -149,9 +149,9 @@ Actual assigned shipment IDs (shipment ID counter is per-type, continued from 15
 `runner-bootstrap` prerequisite gate above resolves the *lint-runner* bootstrap;
 it does **not** resolve a second, independent blocker: the shipment-claim /
 wave-scheduler contract mismatch. `core.ClaimShipment`
-(`internal/core/shipment_lifecycle.go:46-98`) transitions **every** queued
-manifest member to `active` on claim, while Ship wave admission
-(`.github/agents/_ship.agent.md:526-535`) halts on **any** active member and
+(`internal/core/shipment_lifecycle.go`, member-activation loop) transitions
+**every** queued manifest member to `active` on claim, while Ship wave admission
+(`.github/agents/_ship.agent.md`, Step 4.0 items 4 and 6) halts on **any** active member and
 computes `ready_k` only from `queued` tasks. Claiming `176-S` makes all three
 bootstrap tasks `active` and immediately yields `WAVE_NO_PROGRESS`; the same
 applies to `157-S`..`169-S`. (Identical to the mismatch that blocked `140-S`.)
@@ -182,26 +182,35 @@ additively via the scheduler-baseline marker plus its scheduler consumption.
 **Bootstrap of the marker prerequisite itself.** The marker becomes usable only
 after `154-S`/`173-F` ships and the external autoharness scheduler consumes it, so
 the shipments on the marker's predecessor closure must run before the marked-aware
-scheduler exists. The governed DAG makes the complete predecessor chain explicit:
-`155-S (in-degree 0 root) → 154-S → 176-S → 157-S..169-S`. Because
-`154-S depends_on 155-S` is a governed edge (DAG-root correction, commit
-`69e900be`), the earliest prerequisite is **`155-S`, not `154-S`**; `155-S`
-(26 members: `174-F` + `174.039-T`..`174.063-T`) is exposed to the same
-all-members-active vs. strict wave-admission mismatch. The bootstrap set is the
-**bounded, non-circular two-shipment set {`155-S`, `154-S`}** (terminating at the
-in-degree-0 root `155-S`); it does not extend to `176-S`..`169-S`. Each is
-executed via an **operator-supervised bootstrap**: Ship claims the shipment and
-drives the claim-activated members green in their declared dependency order
-**without** the strict active-residual halt, because the just-claimed members are
-the intended working set. **The active-residual halt bypass is UNAPPROVED /
-BLOCKED**: the operator approved pursuing the convergence recommendation but has
-not authorized the halt waiver, which requires explicit per-shipment operator
-approval for `155-S` and `154-S`.
+scheduler exists. The governed DAG originally recorded the complete predecessor
+chain `155-S (in-degree 0 root) → 154-S → 176-S → 157-S..169-S` (`154-S depends_on
+155-S` is a governed edge; DAG-root correction, commit `69e900be`). **As of the
+2026-09-26 refresh against `main` `c57185c1`, `155-S` has SHIPPED** (PR #450,
+merge `2c8759c3`; closure PR #451; `155-S` and all 45 manifest items — `174-F`
++ 44 tasks — archived), so that edge is satisfied and retained as provenance only, and the
+remaining chain is `154-S (chain root) → 176-S → 157-S..169-S`. The bootstrap set
+was the **bounded, non-circular two-shipment set {`155-S`, `154-S`}**; with
+`155-S` complete, `154-S` is its only remaining shipment, and it does not extend
+to `176-S`..`169-S`. `154-S` is executed via an **operator-supervised
+bootstrap**: Ship claims it and drives the claim-activated `173-F` members green
+in their declared dependency order **without** the strict active-residual halt,
+because the just-claimed members are the intended working set. **The `154-S`
+active-residual halt bypass is UNAPPROVED / BLOCKED pending explicit operator
+confirmation.** Ship's `155-S` records describe the original authorization as
+scoped to {`155-S`, `154-S`} and exercised for `155-S` only; the cited shipment
+comment exists only as a Ship-authored event in the local, git-ignored
+`.backlogit/logs/155-S.jsonl`, not as an operator-authored per-shipment approval
+on `154-S`, so it is not treated as the `154-S` approval (provenance: the
+convergence deliberation's "Bootstrap Resolution").
 
 **Consequence for `#449`:** this PR is a planning-only decomposition; it makes no
 shipment executable on its own. Until readiness dependencies (1) and (2) land, no
 member shipment may be claimed for wave execution. The Orchestrator claim-routing
-policy holds the sequence non-claimable in the interim.
+policy holds `176-S`..`169-S` non-claimable in the interim via the
+`154-S blocks 176-S` chain. `154-S` itself — with `155-S` shipped — has no
+unshipped predecessor and is held only by its labels, body banner, and operator
+instruction (the current Orchestrator/Ship contracts do not read labels;
+label-aware refusal is deferred stash `AF1E5075`).
 
 ## Runner-bootstrap prerequisite
 
