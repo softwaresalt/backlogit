@@ -39,8 +39,11 @@ autoharness scheduler is consuming it. `154-S` shipping is necessary but not
 sufficient. Stage recorded `153-S` as blocked on `154-S` in commit `66431e46`,
 on branch `stage/153-s-dag-sequencing`. The edge encodes only the "`154-S`
 shipped" half. Before routing `153-S` or any held shipment, the Orchestrator
-must also verify, as a separate pre-claim check, that `154-S` is actually
-`shipped` (not merely terminal) and that the scheduler consumes the marker.
+must also verify, as a separate pre-claim check, that `154-S` has shipped
+provenance and that the scheduler consumes the marker. Shipped provenance is
+either live `status: shipped` or the normal post-ship form, `status: archived`
+with `archived_status: shipped`, because `ShipShipment` archives the record.
+Terminal statuses such as `abandoned` do not count.
 `141-S`, `152-S`, and `147-S` fall under the same rule, as do the newly
 harvested `177-S`, `178-S`, and `179-S`. The queue filter treats all six as
 unblocked. The eligibility memory from 2026-09-26 was corrected on the same
