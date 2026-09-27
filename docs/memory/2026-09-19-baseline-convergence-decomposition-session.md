@@ -73,7 +73,7 @@ Chain: 158→157, 159→158, ..., 169→168. 149-S→169-S (advisory). 156-S→1
 INV1 101 unique executable tasks once (98 remediation + `175.099-T`/`175.100-T`/`175.101-T` bootstrap); INV2 no 175-F in
 any shipment; INV3 all queued (157-S..169-S + 176-S); INV4 acyclic ordered chain incl. the
 `176→157` / `175.099→175.100→175.101→175.001` prerequisite gate; INV5 149-S ordered behind 169-S (advisory);
-INV6 168.001-T done (corrected 2026-09-26: reverted, unchanged vs `main`); INV7 only `.backlogit/` + `docs/` changed; INV8 176-S is the single
+INV6 168.001-T unchanged vs `main` (`queued`; corrected 2026-09-26 after the archive move was reverted); INV7 only `.backlogit/` + `docs/` changed; INV8 176-S is the single
 prerequisite shipment, sole owner of the three bootstrap tasks, each present in no other shipment; INV9 each
 bootstrap gate is buildable before its runner exists (RED before / GREEN after).
 
