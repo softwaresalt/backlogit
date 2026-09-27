@@ -919,8 +919,12 @@ or trust-boundary surface). Plan hardening was required
   `hooks_queue.jsonl`). `175-F` is excluded because the claim's parent-status
   cascade is bounded to the manifest member set. The U12 `task-lint-contract`
   JSON changed, so its `task_contract_sha256` pin in `175-F` was recomputed; U1's
-  contract JSON is unchanged, so its pin still holds. The 2026-09-20 bootstrap
-  contracts (`175.099-T`..`175.101-T`) already model the full footprint.
+  contract JSON is unchanged, so its pin still holds.
+* [P2, fixed] The bootstrap contracts (`175.099-T`..`175.101-T`) over-modelled
+  the `176-S` claim footprint with `175-F` and cited a stale line anchor. `175-F`
+  is removed, so an unexpected feature mutation now fails closed, and the anchor
+  is the `core.ClaimShipment` symbol. The change is prose-only, so contract pins
+  are unchanged.
 
 **Residual findings — accepted follow-ups (do not block this planning-only
 deliverable):**
@@ -941,6 +945,16 @@ deliverable):**
   base. Drift is caught fail-closed by the verifiers. Deferred stash `2E0CDF27`.
 * [P2] Label-aware Orchestrator/Ship claim refusal and a machine go-signal for
   operator waiver confirmation. Deferred stash `AF1E5075`.
+* [P2] The `GOOS=linux go test` harness commands in `175.095-T`..`175.098-T`
+  cannot execute on a Windows Ship host. The choice between a native Linux
+  runner and a compile-only cross-GOOS split needs deliberation. Deferred stash
+  `24D693E1` (Copilot, 2026-09-27).
+* [Escalated; not a plan finding] Commit `46e17ee0` moved `168.001-T` to
+  `.backlogit/archive/` with `status: done` and `commit: c976315f`, but `main`
+  still has it `queued`. That commit exists only on
+  `feat/149-s-trust-anchor-verification-key-lifecycle`; it is not on `main`.
+  This is Ship-owned lifecycle state. Stage leaves it for an Orchestrator/operator
+  decision rather than normalizing or reverting it.
 * [P3] The attempt-3 note calls `IsNoLongerBlockingStatus` /
   `IsCascadeTerminalStatus` "deliberately divergent". On `main` they share one
   cascade set; the divergent pair is that set versus `IsReleasableStatus`. The
