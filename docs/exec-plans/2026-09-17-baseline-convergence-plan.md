@@ -382,7 +382,9 @@ U12's hardened verification protections are preserved exactly:
   evidence artifact under `docs/closure/`. Post-commit mode records `HEAD^`, and
   the current commit changes exactly the evidence artifact
   (`git diff --name-only HEAD^ HEAD`). The governed-claim union is the closed
-  allowlist `.backlogit/queue/175.012-T.md` and `.backlogit/hooks_queue.jsonl`;
+  allowlist of the full `169-S` claim footprint (`core.ClaimShipment` persists
+  the shipment and every queued member): `.backlogit/queue/169-S.md`,
+  `.backlogit/queue/175.012-T.md`, and `.backlogit/hooks_queue.jsonl`;
   both modes fail closed on ambiguous mode, a malformed porcelain record, or any
   non-allowlisted dirty source, config, test, script, or workflow path.
 
@@ -905,6 +907,20 @@ or trust-boundary surface). Plan hardening was required
   record. The `176-S` pre-claim check accepts `archived` with
   `archived_status: shipped`. The deliberation's Constitution Check maps the
   safety-mode waiver.
+
+**Copilot review findings on the refreshed heads (P-018, fixed in-scope):**
+
+* [P1, fixed] U1 (`175.001-T`) and U12 (`175.012-T`) claim allow-sets modelled
+  a single task transition and omitted the parent shipment manifest. Ship claims
+  through `core.ClaimShipment`, which persists the shipment transition plus every
+  queued member, so the normal claim footprint would have failed the closed
+  clean-tree / `-Phase PreCommit` set-equality check. Both allow-sets now carry
+  the full 3-path footprint (`157-S.md` / `169-S.md`, the member task, and
+  `hooks_queue.jsonl`). `175-F` is excluded because the claim's parent-status
+  cascade is bounded to the manifest member set. The U12 `task-lint-contract`
+  JSON changed, so its `task_contract_sha256` pin in `175-F` was recomputed; U1's
+  contract JSON is unchanged, so its pin still holds. The 2026-09-20 bootstrap
+  contracts (`175.099-T`..`175.101-T`) already model the full footprint.
 
 **Residual findings — accepted follow-ups (do not block this planning-only
 deliverable):**
