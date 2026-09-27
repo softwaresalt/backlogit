@@ -84,3 +84,27 @@ R10 was rejected and was not captured. The Orchestrator is routing-only; its Ste
 carve-out permits only `.backlogit/stash.jsonl`, `docs/memory/**`, `start.ps1`, and `.gitignore`.
 P-010 role enforcement remains fail-closed, and tool availability is not authority. The review
 identified no concrete unauthorized mutation.
+
+## Final bounded remediation halt
+
+The operator-authorized final remediation cycle added the R1/R2/R3/R4/R5/R8 tests first, observed
+assertion RED, and produced a nine-file implementation/test delta. All six required focused
+selectors passed, as did Go 1.24 compile, vet, CI-pinned golangci-lint v1.64.8, CLI build, and
+canonical-LF formatting.
+
+The broader required command
+`GOTOOLCHAIN=go1.24.0 go test ./internal/core -count=1` then timed out after ten minutes while
+`TestCheckChildrenTerminal_NonTerminalChild_ReturnsBlockingError` was blocked in the generic
+`UpdateArtifact` persistence path. The new R1 ordering holds `shipment-lifecycle-global` while
+acquiring artifact locks, but existing artifact-first mutation paths later enter the lifecycle
+barrier, creating an `artifact -> global` / `global -> artifact` inversion. A bounded follow-up
+confirmed that releasing the global lock after recovery breaks the existing
+`TestP021ClaimSerialization_MembershipAndGenericWritersUseGlobalLock/generic_update_waits`
+contract. Correcting every inverse caller requires production changes outside the operator's
+authorized surface.
+
+Exact halt gate: the authorized hard stop forbids expanding beyond the listed production files.
+The uncommitted nine-file remediation delta is preserved for operator review. No standard or
+adversarial review was run, no remediation commit or push occurred, no PR was created, shipment
+`155-S` was not shipped, and the active checkpoint remains unresolved. Shipment `154-S`, PR
+`#449`, and branch `stage/baseline-convergence-decomposed` remain untouched.
