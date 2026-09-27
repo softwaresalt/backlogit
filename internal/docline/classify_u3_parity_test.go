@@ -109,4 +109,3 @@ func TestU3_ClassifyParityMCPEquivalesCLI(t *testing.T) {
 		})
 	}
 }
-

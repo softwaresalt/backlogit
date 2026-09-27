@@ -63,21 +63,42 @@ func LoadHeaderDef(workspacePath string) (*HeaderDefConfig, error) {
 	return &cfg, nil
 }
 
-// upgradeLegacyGeneratedHeaderDef widens only the generated pre-complexity
-// header-def default so existing workspaces receive task complexity without
+// upgradeLegacyGeneratedHeaderDef widens recognized generated defaults without
 // overwriting operator-customized schemas.
 func upgradeLegacyGeneratedHeaderDef(cfg *HeaderDefConfig) {
 	if cfg == nil {
 		return
 	}
-	prior := defaultHeaderDef()
-	delete(prior.Types["task"].Fields, "complexity")
-	if !reflect.DeepEqual(cfg, prior) {
-		return
-	}
 
 	current := defaultHeaderDef()
-	cfg.Types["task"].Fields["complexity"] = current.Types["task"].Fields["complexity"]
+	priorVariants := []*HeaderDefConfig{
+		defaultHeaderDef(),
+		defaultHeaderDef(),
+		defaultHeaderDef(),
+	}
+	delete(priorVariants[0].Types["task"].Fields, "complexity")
+	removeHeaderDefValue(priorVariants[1].Types["shipment"].Fields["status"], "blocked")
+	delete(priorVariants[2].Types["task"].Fields, "complexity")
+	removeHeaderDefValue(priorVariants[2].Types["shipment"].Fields["status"], "blocked")
+
+	for _, prior := range priorVariants {
+		if !reflect.DeepEqual(cfg, prior) {
+			continue
+		}
+		cfg.Types["task"].Fields["complexity"] = current.Types["task"].Fields["complexity"]
+		cfg.Types["shipment"].Fields["status"] = current.Types["shipment"].Fields["status"]
+		return
+	}
+}
+
+func removeHeaderDefValue(field *FieldDef, value string) {
+	values := make([]string, 0, len(field.Values))
+	for _, candidate := range field.Values {
+		if candidate != value {
+			values = append(values, candidate)
+		}
+	}
+	field.Values = values
 }
 
 // ResolveFieldSchema returns the field definitions for a given artifact type,

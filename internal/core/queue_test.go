@@ -368,7 +368,8 @@ func TestShipmentQueueSuppression_DependentBecomesVisibleWhenPrereqTerminal(t *t
 	// Use "abandoned" instead of "shipped" — both are terminal for queue
 	// suppression purposes, and "abandoned" does not require the governed
 	// ShipShipment envelope that guard 1 now enforces (144-F).
-	require.NoError(t, core.MoveShipmentStatus(ctx, ws, prereq.ID, core.ShipmentActive))
+	_, err = core.ClaimShipment(ctx, ws, prereq.ID)
+	require.NoError(t, err)
 	require.NoError(t, core.MoveShipmentStatus(ctx, ws, prereq.ID, core.ShipmentAbandoned))
 
 	// Now the dependent must be visible in the queued view.

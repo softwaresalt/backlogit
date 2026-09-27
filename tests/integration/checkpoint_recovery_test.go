@@ -210,4 +210,3 @@ func TestCheckpointRecoveryFlow_MultipleCheckpoints(t *testing.T) {
 	assert.Equal(t, 1, result.Total)
 	assert.Equal(t, "recent-session", result.Checkpoints[0].SessionID)
 }
-

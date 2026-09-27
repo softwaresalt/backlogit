@@ -64,13 +64,13 @@ const maxCheckpointStateDumpSize = 65536 // 64 KiB
 // "-----BEGIN" and longer patterns that are unlikely to appear as word
 // substrings remain unanchored.
 var checkpointSecretPrefixes = []string{
-	`"ghp_`, `"gho_`, `"ghs_`, `"ghu_`,         // GitHub OAuth / server / user tokens (anchored)
-	`"github_pat_`,                               // GitHub fine-grained PAT (anchored)
-	`"ghr_`,                                      // GitHub refresh token (anchored)
-	`"AKIA`,  // AWS access key ID (anchored)
-	`"sk-`,   // OpenAI / generic secret-key prefix (anchored — avoids "task-", "risk-")
-	`"AIza`,  // Google API key (anchored)
-	`"SG.`,   // SendGrid API key (anchored)
+	`"ghp_`, `"gho_`, `"ghs_`, `"ghu_`, // GitHub OAuth / server / user tokens (anchored)
+	`"github_pat_`,                         // GitHub fine-grained PAT (anchored)
+	`"ghr_`,                                // GitHub refresh token (anchored)
+	`"AKIA`,                                // AWS access key ID (anchored)
+	`"sk-`,                                 // OpenAI / generic secret-key prefix (anchored — avoids "task-", "risk-")
+	`"AIza`,                                // Google API key (anchored)
+	`"SG.`,                                 // SendGrid API key (anchored)
 	`"xoxb-`, `"xoxp-`, `"xoxe-`, `"xoxa-`, // Slack token variants (anchored, specific)
 	// "eyJ" (JWT prefix) is intentionally ABSENT from the raw scan: a 3-char JSON
 	// string value starting with "eyJ" (e.g. {"note":"eyJ"}) would be a false positive.
@@ -154,8 +154,6 @@ func checkDecodedJSONStringsForSecrets(data []byte) error {
 	return nil
 }
 
-
-
 // decodedStringContainsSecret reports whether s contains a secret-material
 // pattern from a decoded JSON string value.
 //
@@ -170,11 +168,11 @@ func decodedStringContainsSecret(s string) bool {
 	// Distinctive prefixes: use unanchored Contains so embeddings (e.g.
 	// "token_ghp_secret", "auth_ghr_xxx") are not missed.
 	for _, prefix := range []string{
-		"ghp_", "gho_", "ghs_", "ghu_",   // GitHub OAuth / server / user tokens
+		"ghp_", "gho_", "ghs_", "ghu_", // GitHub OAuth / server / user tokens
 		"github_pat_",                      // GitHub fine-grained PAT
 		"ghr_",                             // GitHub refresh token
 		"xoxb-", "xoxp-", "xoxe-", "xoxa-", // Slack tokens
-		"-----BEGIN",                       // PEM header (distinctive; never mid-word)
+		"-----BEGIN", // PEM header (distinctive; never mid-word)
 	} {
 		if strings.Contains(s, prefix) {
 			return true
@@ -197,6 +195,7 @@ func decodedStringContainsSecret(s string) bool {
 	}
 	return containsSecretSKPrefix(s)
 }
+
 // containsAtWordBoundary reports whether s contains prefix at a position that
 // is either the start of the string or preceded by a non-word character
 // ([a-zA-Z0-9_]). This prevents false positives where a short prefix appears
@@ -218,6 +217,7 @@ func containsAtWordBoundary(s, prefix string) bool {
 	}
 	return false
 }
+
 // containsSecretSKPrefix reports whether s contains "sk-" preceded by a
 // word boundary (start of string or a non-[a-zA-Z0-9_] character). Hyphen
 // is intentionally NOT treated as a word character here: "openai-key-sk-proj-..."

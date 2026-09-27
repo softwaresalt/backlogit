@@ -80,6 +80,20 @@ func TestMCP_Guard1_CreateItemShipmentShipped_RefusedWithStableSentinel(t *testi
 		"handleCreateItem shipment with initial shipped must return shipment_shipped_requires_envelope")
 }
 
+func TestMCP_CreateItemShipmentBlocked_RefusedWithStableSentinel(t *testing.T) {
+	s, _ := setupBugFixServer(t)
+	ctx := context.Background()
+
+	result, err := s.handleCreateItem(ctx, contractRequest(map[string]any{
+		"title":         "Born-blocked shipment",
+		"artifact_type": "shipment",
+		"status":        "blocked",
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, "shipment_blocked_requires_envelope", contractErrorType(t, result),
+		"handleCreateItem shipment with initial blocked must return shipment_blocked_requires_envelope")
+}
+
 // TestMCP_Guard2_ArchiveShippedWithoutEvent_RefusedWithStableSentinel verifies
 // that backlogit_archive_item on a shipped-without-event shipment returns
 // "archive_shipped_requires_event".

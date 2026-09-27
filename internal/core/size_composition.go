@@ -44,14 +44,12 @@ type SizeCompositionResult struct {
 // SizeComposition computes the never-persisted size rollup for a feature or
 // shipment (108-F SE-4). Size estimation is task-only, so the rollup counts only
 // TASK members: feature membership is its direct task children by parent_id, and
-// shipment membership is the explicit custom_fields.items manifest with each
-// feature member expanded into its child tasks (the feature itself, a rollup
-// parent, is never counted). Members are de-duplicated so a manifest listing a
-// feature and its explicit child tasks counts each once. An existing task member
-// with no size increments Unsized; an unresolved manifest id is warn-skipped
-// (counted in neither Histogram nor Unsized). The result is computed on read and
-// never written to disk. ruleset_version is always null until a canonical ruleset
-// is owned.
+// shipment membership is limited to explicitly listed tasks. Listed features are
+// rollup parents rather than sizable members and do not expand to descendants.
+// Members are de-duplicated. An existing task member with no size increments
+// Unsized; an unresolved manifest id is warn-skipped (counted in neither
+// Histogram nor Unsized). The result is computed on read and never written to
+// disk. ruleset_version is always null until a canonical ruleset is owned.
 //
 // Staleness window: the rollup is computed from the SQLite index, which is a
 // disposable cache rebuilt from the Markdown source of truth on sync. Between an
@@ -278,11 +276,10 @@ func resolveMembersFromIndex(ctx context.Context, ws *Workspace, ids []string) (
 
 // compositionMemberIDs resolves the canonical member IDs for a size rollup. Size
 // estimation is task-only, so this yields only task members: for a feature, its
-// direct task children by parent_id; for a shipment, the explicit manifest with
-// directly-listed tasks kept and each feature member expanded into its child
-// tasks (rollup-parent types such as the feature itself are excluded). Index
-// access is routed through deps so the per-artifact and batched paths share this
-// resolution logic and cannot drift.
+// direct task children by parent_id; for a shipment, only explicitly listed
+// tasks (rollup-parent types such as features are excluded without descendant
+// expansion). Index access is routed through deps so the per-artifact and
+// batched paths share this resolution logic and cannot drift.
 func compositionMemberIDs(ctx context.Context, artifact *models.Artifact, deps memberDeps) ([]string, error) {
 	switch artifact.ArtifactType {
 	case "feature":
@@ -304,21 +301,8 @@ func compositionMemberIDs(ctx context.Context, artifact *models.Artifact, deps m
 				ids = append(ids, memberID)
 				continue
 			}
-			switch member.ArtifactType {
-			case "task":
-				// A directly-listed task is a sizable member.
+			if member.ArtifactType == "task" {
 				ids = append(ids, memberID)
-			case "feature":
-				// A feature is a rollup parent, not a sizable unit: expand it into
-				// its child tasks and do NOT count the feature itself.
-				childIDs, cerr := deps.childIDs(ctx, memberID)
-				if cerr != nil {
-					return nil, cerr
-				}
-				ids = append(ids, childIDs...)
-			default:
-				// Any other manifest member type (subtask, review, ...) is not a
-				// sizable unit and is excluded from the rollup.
 			}
 		}
 		return ids, nil

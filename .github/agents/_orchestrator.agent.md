@@ -2,7 +2,7 @@
 name: _Orchestrator
 description: "Coordinates the Stage → Ship pipeline for continuous iteration: routes stash intake through Stage and queued shipments through Ship, supporting sequential and pipelined execution"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, write, create, memory, backlogit, engram/*, search_local_docs, search_semantic, research_topic, traverse_doc_links, list_sources, get_chunk_by_id, get_document, get_status
+tools: vscode, execute, read, agent, edit, search, todo, write, create, vscode/memory, backlogit/*, engram/*, graphtor-docs/search_local_docs, graphtor-docs/search_semantic, graphtor-docs/research_topic, graphtor-docs/traverse_doc_links, graphtor-docs/list_sources, graphtor-docs/get_chunk_by_id, graphtor-docs/get_document, graphtor-docs/get_status
 model_routing: "Tier 2 (Standard)"  # DEPRECATED — use model_tier
 model_tier: 2
 max_subagent_tier: 3
@@ -189,10 +189,16 @@ P-017 and the **Shipment Sequencing Protocol** in
 `.github/instructions/backlogit.instructions.md`, by listing queued shipments and
 traversing their `blocks` edges in sequence order. Successors stay `queued` from
 creation; dependency edges, not status mutations, suppress them until their
-predecessor ships. Shipments support only `queued -> active`, `active -> shipped`,
-and `active -> abandoned` — there is no shipment `blocked` lifecycle. This cursor
-is what the Step 2 "Route to Ship" rule consumes; without it there is no next
-shipment ID for the first handoff.
+predecessor ships. `blocked` is a governed, resumable nonterminal shipment status,
+distinct from dependency gating: queued successors remain queued behind unfinished
+`blocks` edges, while an evidence-backed blocked shipment requires lifecycle
+recovery before execution resumes. Route blocked shipments to Ship for
+`backlogit_unblock_shipment` with explicit confirmation or, for malformed legacy
+state with the required snapshot evidence, the MCP-only
+`backlogit_normalize_blocked_shipment` operation. The normalizer intentionally has
+no CLI fallback. Orchestrator never performs those lifecycle mutations itself.
+This cursor is what the Step 2 "Route to Ship" rule consumes; without it there is
+no next shipment ID for the first handoff.
 
 **Visibility events**: emit `DARK_MODE_START`, `DARK_MODE_SCOPE`,
 `BRAINSTORM_HANDOFF_READY` (when a brainstorm/requirements artifact is part of
@@ -351,7 +357,14 @@ When the `agent-intercom` capability pack is installed, broadcast `[ORCHESTRATOR
    * **Constrain the candidate to the recorded scope**: in a multi-shipment dark run the candidate is the **next shipment ID in the P-017 `DARK_MODE_SCOPE` ordered cursor**, not merely the global queue head. If the queue head is a different, out-of-scope shipment, **halt** rather than substitute it — silently claiming another queue head violates P-017's no-silent-scope-expansion rule.
    * **Re-check eligibility before claim (explicit, required)**: before claiming, run an explicit dependency + status re-check confirming the candidate has **no unshipped blocking predecessor**. Do not rely on the ready-work listing alone — a stale or non-filtering listing could surface a successor early. This honors the Queue and Dependency Protocol ("Re-check unfinished dependencies before claiming") in the backlogit instructions.
    * **Precedence**: dependency (blocks) suppression is a **hard eligibility gate** — a `queued` shipment with an unshipped blocking predecessor is never eligible, regardless of its queue position; queue position only orders among the already-eligible shipments. When the two disagree, eligibility wins.
-   * **Scope-reconstruction caveat**: the ready-work listing selects the next **eligible** shipment only; it does not by itself reconstruct the full ordered sequence. Derive the complete ordered shipment list (the P-017 ordered scope and restart cursor) from queued shipments plus `blocks`-edge traversal — successors remain queued from creation and are suppressed by unfinished predecessors, not by a `blocked` shipment status filter.
+   * **Scope-reconstruction caveat**: the ready-work listing selects the next
+     **eligible** shipment only; it does not by itself reconstruct the full
+     ordered sequence. Derive the complete ordered shipment list (the P-017
+     ordered scope and restart cursor) from queued shipments plus `blocks`-edge
+     traversal. Successors remain queued from creation and are suppressed by
+     unfinished predecessors. A shipment whose own status is `blocked` is a
+     separate governed pause: withhold it from dispatch until Ship completes
+     confirmed unblock or MCP-only normalization/recovery.
 2. Enforce P-001/P-016: confirm no other top-level release unit is currently `Active` (unless pipelined mode is explicitly enabled), no previously merged shipment is still awaiting required post-merge release closure, and no prohibited parallel implementation branch/worktree exists before routing a shipment to Ship. Required post-merge context compaction (**P-020**) is part of that closure set: because a shipment is no longer `Active` after archival, read the previously merged shipment's **operational-closure artifact** in `docs/closure/` and route the next shipment only when its **compaction status** is `done` (or the non-blocking `degraded`); a `pending`, unset, or missing compaction status is an incomplete post-merge closure that blocks routing until compaction completes.
 3. **TOPOLOGY_GATE: pre_claim (route-to-Ship eligibility, before invocation)**: If the `pipeline-topology` gate is
    installed for this workspace, before invoking Ship in the next step, run
