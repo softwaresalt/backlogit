@@ -104,10 +104,13 @@ excluding `docs/`, `.backlogit/`, `plugin/`, `internal/`, and `cmd/`. A separate
      manifest).
    * Full ensemble-green checks sit only on tasks whose dependency closure covers every
      green maker: `178.004-T`, `179.005-T`, and `180.006-T`.
-4. **Constitution bump.** `180.002-T` specifies PATCH 1.0.0→1.0.1 under the constitution's
-   own rule ("Clarifications and wording fixes require PATCH"), which matches D4's
-   "clarification, not a principle violation". If a reviewer judges it MINOR, the task goes
-   back to Stage.
+4. **Constitution bump (reclassified after PR #452 review).** `180.002-T` now requires a
+   MINOR bump, 1.0.0→1.1.0, under the constitution's Amendments rule ("material expansions
+   require MINOR"). The harvest first specified PATCH 1.0.0→1.0.1; that decision is
+   superseded and must not be implemented. Bare `go test ./...` enforces Go's default
+   10-minute per-package timeout, so an explicit `-timeout=30m` budget materially loosens
+   the gate. The rationale must name that enforcement change. Only a MAJOR judgment sends
+   the task back to Stage (commit 80f06b1e).
 5. **E1 task 3** keeps the plan's bundling of the `ci.yml` step with the `ci_compliance`
    wiring assertion. If Ship's width or class pass rejects the mixed delta, the task goes back
    to Stage.
