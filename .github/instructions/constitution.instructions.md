@@ -230,13 +230,21 @@ gofmt -l .
    test harness before implementation begins.
 2. **Backlog-driven planning**: All task tracking MUST use the backlog system.
    Static markdown task lists outside `.backlogit/` are not permitted.
-3. **Branch per release unit**: Each feature or chore MUST be developed on a dedicated branch.
+3. **Single active implementation branch/worktree**: Each feature or chore MUST be
+   developed on one dedicated implementation branch in one active worktree. Agents
+   MUST NOT split implementation, backlog execution, PR preparation, or closure
+   across parallel branches or worktrees. The only exception is an explicit
+   Stage-owned, time-boxed spike/research worktree used for staging investigation;
+   that worktree MUST NOT perform implementation, template/source/config mutation,
+   shipment claim, PR preparation, or Ship execution.
 4. **Commit discipline**: Each commit MUST be coherent and buildable. Commit
    messages follow conventional commits format (`feat:`, `fix:`, `docs:`, `test:`).
 5. **No dead code**: Placeholder modules MUST be replaced or removed before a
    release unit is considered complete.
 6. **Operational closure**: Work is not complete at “green CI” if runtime validation,
-   monitoring setup, or release handoff remains unresolved.
+   monitoring setup, or release handoff remains unresolved. Required post-merge context
+   compaction (**P-020**) is part of the mandatory closure set: Ship MUST invoke the
+   compact-context skill at every post-merge closure.
 
 ### Task Granularity (NON-NEGOTIABLE)
 
@@ -301,7 +309,7 @@ with these principles.
 | II. Test-First Development | NON-NEGOTIABLE | P-002/P-004 policies; harness-architect red phase; build-feature green phase |
 | III. Workspace Isolation | MUST | Agent runtime path resolution within workspace root |
 | IV. CLI Containment | NON-NEGOTIABLE | Agent runtime cwd boundary enforcement |
-| V. Structured Observability | MUST | Broadcasting, commit messages, structured reporting |
+| V. Structured Observability | MUST | Broadcasting, commit messages, structured reporting; P-020 post-merge compaction closure gate |
 | VI. Single Responsibility | SHOULD | Code review persona checks on dependency additions |
 | VII. Destructive Approval | NON-NEGOTIABLE | P-005 violation telemetry; strict-safety enforcement when enabled |
 | VIII. Safety Modes | MUST | safety-modes skill invocation; strict-safety decision gate when enabled |

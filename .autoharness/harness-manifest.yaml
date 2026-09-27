@@ -1,6 +1,6 @@
 schema_version: "1.0.0"
 installed_at: "2026-05-17T23:40:00Z"
-tuned_at: "2026-08-31T00:00:00-07:00"
+tuned_at: "2026-09-27T00:00:00Z"
 autoharness_version: "1.5.0"
 autoharness_home: "C:\\Python\\Python314\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
@@ -121,7 +121,7 @@ artifacts:
   - path: ".github/instructions/backlog-integration.instructions.md"
     primitive: 6
     template: "templates/instructions/backlog-integration.instructions.md.tmpl"
-    checksum: "3dedf27e58268ef2b4ef1e3d3a93bef00b8f0d56b164eba014347bab6398bf28"
+    checksum: "505cbefa3647966ab23580f7d18474f6af09ca0eaea1f8127f33d14fc0b85da5"
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
@@ -131,7 +131,7 @@ artifacts:
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
-    checksum: "23b206be39c38e0ab68299b48f2f654d6c9fcacb2e29738a6e19015810c5fb95"
+    checksum: "2a6adbf66ebf5a791552bf6de5093712f97162f66bcd482abf6fe51159d05ae4"
   - path: ".github/skills/runtime-verification/SKILL.md"
     primitive: 10
     template: "templates/skills/runtime-verification/SKILL.md.tmpl"
@@ -179,11 +179,11 @@ artifacts:
   - path: ".github/agents/review/concurrency-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/concurrency-reviewer.agent.md.tmpl"
-    checksum: "f51a17ebec770322e15a499400a900b7c16e6a33eb205e2c455a11eabd9309c5"
+    checksum: "e2e5e0cf329e0f51ba61ed2b86902f747f3a2f89e8c19414b53e4342d1fcbd9e"
   - path: ".github/agents/review/agent-native-parity-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/agent-native-parity-reviewer.agent.md.tmpl"
-    checksum: "b39590ccb07a779775fae194dc73aeb6508d7107c37765ceb633566d9628f891"
+    checksum: "03cc0a6c5f7147fb706f729f12e204cd3f4f7ddb875ea3af0046360a73576c59"
   - path: ".github/instructions/ci-security.instructions.md"
     primitive: 6
     template: "templates/instructions/ci-security.instructions.md.tmpl"
@@ -205,17 +205,17 @@ artifacts:
   - path: ".github/instructions/constitution.instructions.md"
     primitive: 1
     template: "templates/foundation/constitution.instructions.md.tmpl"
-    checksum: "90924a2a3facdea5d094e0c2d1df6a9e6d474fa0905faba34e11b1454d818cf4"
+    checksum: "ec9ba258ef62f8f5eef064c4938963870cc9f2ca245592a5ab83f2097ee15157"
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
-    checksum: "13c865e0da2e3ec95adea0eabd8f0a720e9c1320a6719187f4b0a6212cf4e531"
+    checksum: "5b261d1e0fa52b6f47e834e65b960234b0d3c4724f6592d59a499d0eb7ff5586"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Same empty-substitution defect as the companion instruction file, across 7 locations including the reviewer routing table. Replaced with symbolic config key paths. Do not auto-revert. Round-3 fix: added `model_tier: 3` and raised `max_subagent_tier` from 1 to 3; the agent's own routing is claude-opus-4.8 (tier3) and its dispatch tables require Tier 2 and Tier 3 reviewers, which a ceiling of 1 made a P-013.2 violation. Round-4 fix: the readiness verdict let an UNACKNOWLEDGED medium-confidence P0/P1 fall through to READY; added an explicit BLOCKED branch so only acknowledged-and-deferred medium findings reach READY_WITH_FOLLOWUPS."
   - path: ".github/instructions/adversarial-review.instructions.md"
     primitive: 6
     template: "templates/instructions/adversarial-review.instructions.md.tmpl"
-    checksum: "949efd890554f4e2c2fb467e65187fc80685aa167a2c8bddb852b90e2f7e016a"
+    checksum: "f4ac467b3683114df38a51c49ae5b1ca37179a05660188e178cf0bc61df2e38f"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). ALT_REVIEW_PROVIDER / ALT_REVIEW_FAMILY resolve to empty strings when no alternate route is configured, so the rendered text lost the setting names entirely and read 'When `` and `` are configured'. Replaced with the symbolic config key paths plus an explicit note that both are unset here. Do not auto-revert."
   - path: ".github/instructions/circuit-breaker.instructions.md"
@@ -225,7 +225,7 @@ artifacts:
   - path: ".github/instructions/concurrency.instructions.md"
     primitive: 6
     template: "templates/instructions/concurrency.instructions.md.tmpl"
-    checksum: "e3a09c6ed5215be68bdb31344c6b3119147877e4a692349f58a464bb6b34d223"
+    checksum: "aef8eb294c52b140583541c3a50a24e2444d179d3d8e276389a442810b3c1e04"
   - path: ".github/instructions/release-observability.instructions.md"
     primitive: 6
     template: "templates/instructions/release-observability.instructions.md.tmpl"
@@ -233,7 +233,7 @@ artifacts:
   - path: ".github/skills/file-lock/SKILL.md"
     primitive: 5
     template: "templates/skills/file-lock/SKILL.md.tmpl"
-    checksum: "bb17bed11ef3555f034262b2913eb6e3858cba0cab825f01089c453cfdbd9808"
+    checksum: "354b9265eb337b597fc19e365bb72e4a2dc259b75fe5966e7aee567347b67558"
   - path: ".github/skills/skill-search/SKILL.md"
     primitive: 4
     template: "templates/skills/skill-search/SKILL.md.tmpl"
@@ -249,19 +249,19 @@ artifacts:
   - path: "scripts/acquire_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "14453d7e8a9c95ac5d917816b331c1a9fd6812a9ea1e49ac009c6f3bec7b5e3d"
+    checksum: "75b85db5ac73dd935131f7319be2ea3b1e056b7447f99ab0c11af546d91f7cf2"
   - path: "scripts/acquire_lock.sh"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "65c543969c5014f5c91623be6087986acaa57ef6e98eb5ea15b944962d8886e7"
+    checksum: "d53ee9beefdbc1388d78438a58342c2fb4a514872a25c7f4a2caa270dede67e7"
   - path: "scripts/release_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "a2bc60e95e61e3db64e6d90db825276895edd000207d4e046b4d83dc5e980e31"
+    checksum: "a23fe044ce880bf30fa4a2570c39137e836917c45dc896adf63288a7ac5dd450"
   - path: "scripts/release_lock.sh"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "975eefc6c944c93548988a87c158fa27d9683ea878b783a1e07d8ebd769a6b09"
+    checksum: "7194ed051960a36b949d5d6f58f6054bc586c00ef93f6624fb335e7492a537c7"
   - path: "scripts/search.ps1"
     primitive: 4
     template: "skill-search pack script"
@@ -295,27 +295,27 @@ artifacts:
   - path: ".github/agents/review/security-sentinel.agent.md"
     primitive: 5
     template: "templates/agents/security-sentinel.agent.md.tmpl"
-    checksum: "273c01e927f36527ee8e6831633acee30b23d48435235f0054c7d24d21539c0c"
+    checksum: "afba1cbcd1753860a32633d8f5a99027c346be7c412d58609697c7a7753ebf94"
   - path: ".github/agents/review/security-lens-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/security-lens-reviewer.agent.md.tmpl"
-    checksum: "aee084f76eea1638ad5fee2d9e55cf23cb333f9710a4850bed1ac49876c5dcd3"
+    checksum: "d6e2dca91357bdb0c0d56a7008eef291599173274bde9d49207e4a8833320d74"
   - path: ".github/agents/review/security-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/security-reviewer.agent.md.tmpl"
-    checksum: "5b6f2326f4264ba7e2fada46c8dc0d7dbeb74502d7440a2bf0da81a148588dfd"
+    checksum: "5307d347de65cdaff0395d539f9fa25e711d80a5d39856d2ddd74a25f4309c4b"
   - path: ".github/agents/review/template-integrity-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/template-integrity-reviewer.agent.md.tmpl"
-    checksum: "7185f00d6975fdb726f68a6a4d1e35c6ccac343bbbd13e70e3823a2c1879f80f"
+    checksum: "79160114b2f3572a2ca901e40c3995527a540a429b0deb0efe5b617e4688f3ef"
   - path: ".github/agents/review/schema-cli-docs-coupling-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/schema-cli-docs-coupling-reviewer.agent.md.tmpl"
-    checksum: "003a87eee29bbf38070e3622ecee26250a92f1f02e3b2257aeba266f4b95ea93"
+    checksum: "7f563db440e43eddf429e0383ac9a82f927707d165511fc4a15a1955ea8ce1c2"
   - path: ".github/skills/harness-doctor/SKILL.md"
     primitive: 9
     template: "templates/skills/harness-doctor/SKILL.md.tmpl"
-    checksum: "3b8ac834ac18d810f58f2fc5fc7d423a976c2d3f89ec8a4cd61fc2b77d2435dd"
+    checksum: "849f5059a9ed77fc405c73c6330fb06bebeb58dab5045482a89174c67dca4964"
   - path: ".github/skills/iterative-experiment/SKILL.md"
     primitive: 4
     template: "templates/skills/iterative-experiment/SKILL.md.tmpl"
@@ -349,31 +349,31 @@ artifacts:
   - path: ".github/agents/subagents/prompt-builder.agent.md"
     primitive: 3
     template: "templates/agents/prompt-builder.agent.md.tmpl"
-    checksum: "da985aac01f84889fa21a8a9aff91886ad9b0b7a2d86cabb6c11a195abeb0271"
+    checksum: "a40c99610057ccfa299857fc0f15d64240591b35936af452575a592767351cd1"
   - path: ".github/agents/subagents/go-engineer.agent.md"
     primitive: 6
     template: "templates/agents/language-engineer.agent.md.tmpl"
-    checksum: "99fca57813ad09a681074bf33385b0243eab2342feb9e30ef599ae7b57249407"
+    checksum: "0a73db2c8dc5b3e5db85e5d4a05556907e767a8b4a93209be47dcd4098740efd"
   - path: ".github/agents/research/learnings-researcher.agent.md"
     primitive: 1
     template: "templates/agents/research/learnings-researcher.agent.md.tmpl"
-    checksum: "caa459f26973dd6b701e64b53319383e9e7fc9389b352a1fcc7a80d2c7c4338a"
+    checksum: "7df2ea0f7f636e30207003542641b43f25fd0aa73c5a9f27f5a174d53e6d4f46"
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "f50aeb871281b1f9175e3abea00451dc1180963b8333ea8e64008b6729c750fa"
+    checksum: "44767979aeae3354a4f1beeb3db008892d73ba2c89c917aa9a525a3d0dd484bf"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert."
   - path: ".github/agents/_stage.agent.md"
     primitive: 1
     template: "templates/agents/_stage.agent.md.tmpl"
-    checksum: "0b2a863ce5c0f6a78ac5ebde3b9f1e795fae2f6b8f2e7126416527138b285f4e"
+    checksum: "d91168891f9b7ee6e4c4b17e34e79393095e8414fb7f3c1f98891f2b4952c7eb"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert."
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "e7715f0d03023283dc312d5dbb10659cf0a0c6526d2ef0a0b0218427396e8df0"
+    checksum: "e1967ea17604dc49cc2e4877384e4deff64f3d66316e22ab7579643f3b4eeefc"
     drift_allowed: true
     drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names."
   - path: ".github/skills/harness-architect/SKILL.md"
@@ -387,7 +387,7 @@ artifacts:
   - path: ".github/instructions/escalation-protocol.instructions.md"
     primitive: 1
     template: "templates/instructions/escalation-protocol.instructions.md.tmpl"
-    checksum: "b2c94cb05a420a151e2d8a1a75224b743cbfa41fddf62324619fe1e359481109"
+    checksum: "63061de05970fbdb5244ba72c7d503fc88c8c97600a7387bcacfbcce2077121c"
   - path: ".github/instructions/copilot-code-review.instructions.md"
     primitive: 7
     template: "templates/instructions/copilot-code-review.instructions.md.tmpl"
@@ -406,14 +406,14 @@ artifacts:
   - path: ".github/agents/review/correctness-reviewer.agent.md"
     primitive: 8
     template: "templates/agents/review/correctness-reviewer.agent.md.tmpl"
-    checksum: "2c90794b1603d57444b2d8d883f97c1dd3a8c6bb62cbc393ae31f258476a45c8"
+    checksum: "b246da3fc0f2ede00f37e89bf68459dca67e9864795e4c230d506c1a3aa812fd"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Added the missing `model_tier: 1`. P-013.4 requires every agent definition to declare both integer tier fields; this persona declared only `max_subagent_tier`, matching neither the policy nor its sibling Tier-1 personas. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Tier-1 routing rendered as reasoning_effort=low / provider=anthropic / family=claude-haiku-4.5, matching config.model_routing.tier1 and the lowercase convention of the newest installed personas. Placed in .github/agents/review/ to match this workspace's established persona layout (the deterministic verifier passes against that layout)."
   - path: ".github/agents/review/maintainability-reviewer.agent.md"
     primitive: 8
     template: "templates/agents/review/maintainability-reviewer.agent.md.tmpl"
-    checksum: "e712cb0adb5690ab2fdf3a6f92b7c507e198a0474aea56912bcf4a253cb51b53"
+    checksum: "b400d328ce2a0a476b6f20b5ddc2ad5d8aaff64992bd675ece3d30efb83225b1"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Added the missing `model_tier: 1`. P-013.4 requires every agent definition to declare both integer tier fields; this persona declared only `max_subagent_tier`, matching neither the policy nor its sibling Tier-1 personas. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Same tier-1 rendering and layout rationale as correctness-reviewer."
@@ -547,9 +547,9 @@ variables_used:
   DOCS_CLOSURE_DIR: "closure"
   DOCS_DESIGN_DOCS_DIR: "design-docs"
   DOCS_PRODUCT_SPECS_DIR: "product-specs"
-  MODEL_ROUTING_TIER1: "Claude Haiku 4.5"
-  MODEL_ROUTING_TIER2: "Claude Sonnet 4.6"
-  MODEL_ROUTING_TIER3: "Claude Opus 4.6"
+  MODEL_ROUTING_TIER1: "gpt-6-luna"
+  MODEL_ROUTING_TIER2: "claude-sonnet-5"
+  MODEL_ROUTING_TIER3: "claude-opus-5.5"
   PRIMARY_LANGUAGE: "Go"
   LANGUAGE_VERSION: "1.24.0"
   BUILD_COMMAND: "go build ./cmd/backlogit"
@@ -573,22 +573,22 @@ variables_used:
   BACKLOG_CONFIG_PATH: ".backlogit/config.yaml"
   BACKLOG_REGISTRY_PATH: ".autoharness/backlog-registry.yaml"
   COMMIT_STYLE: "conventional commits"
-  WORKSPACE_PATH: "d:\\Source\\GitHub\\backlogit"
+  WORKSPACE_PATH: "C:\\Source\\GitHub\\backlogit"
   REPO_OWNER: "softwaresalt"
   REPO_NAME: "backlogit"
   ALT_REVIEW_PROVIDER: ""
   ALT_REVIEW_FAMILY: ""
   ANCHOR_REVIEW_PROVIDER: "openai"
-  ANCHOR_REVIEW_FAMILY: "gpt-5.6-sol"
+  ANCHOR_REVIEW_FAMILY: "gpt-6-sol"
   ANCHOR_REVIEW_REASONING_EFFORT: "high"
   # P-013.6 auto-escalation route. Mirrors config.model_routing.escalation and is
   # deliberately a distinct provider/family from tier3 so Stage (already tier3) never
   # resolves a same-route ESCALATION_DEGRADED no-op. The tier3 per-field fallback
   # (claude-opus-4.8 / anthropic / high) remains the final fallback when no flat or
   # nested escalation override is declared.
-  ESCALATION_FAMILY: "gpt-5.4"
-  ESCALATION_PROVIDER: "openai"
-  ESCALATION_REASONING_EFFORT: "high"
+  ESCALATION_FAMILY: "claude-opus-5.5"
+  ESCALATION_PROVIDER: "anthropic"
+  ESCALATION_REASONING_EFFORT: "xhigh"
   PROJECT_NAME: "backlogit"
   HARNESS_ENFORCED_SUMMARY: |
     * Go formatting, linting, and vet mechanics (`gofmt -l .`, `golangci-lint run`, `go vet ./...`)
@@ -1019,4 +1019,8 @@ tuning_history:
       - ".github/agents/_ship.agent.md"
       - ".github/agents/_stage.agent.md"
       - ".github/agents/_orchestrator.agent.md"
+      - ".autoharness/harness-manifest.yaml"
+  - at: "2026-09-27T00:00:00Z"
+    summary: "Auto-Tune 1.5.0 drift pass on branch chore/autoharness-tune-2026-09-27. (1) Lock hardening: refreshed acquire/release lock scripts (.ps1/.sh) to the upstream capability-token + workspace-containment model, concurrency.instructions.md, file-lock/SKILL.md (H1 kept), and the Stage/Ship lock command lines; harness-doctor resolves version live. (2) Model routing: propagated config.model_routing tier routes into the frontmatter of 18 tiered agents (tier1 gpt-6-luna/openai/xhigh, tier2 claude-sonnet-5/anthropic/high, tier3 claude-opus-5.5/anthropic/high), anchor reviewer gpt-6-sol, escalation route claude-opus-5.5/anthropic/xhigh in _stage/_ship/escalation-protocol, and the _orchestrator routing table. (3) Fixed the verifier-failing ship_release_closure_sequence phrase in _ship. (4) Added 6 missing registry rows to backlog-integration; security-reviewer Scope Disposition section; constitution single-worktree + P-020 closure text; spike graphtor-docs preference and docline.* frontmatter guidance. Staged renders not adopted wholesale (drop model_tier, demote H1, unresolved QUALITY_GATE placeholders). See .autoharness/tuning-reports/2026-09-27-tuning-report.md."
+    artifacts:
       - ".autoharness/harness-manifest.yaml"

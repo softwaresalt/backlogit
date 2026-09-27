@@ -53,11 +53,14 @@ Use these operations for all backlog interactions. The operation names are abstr
 | `adopt_item` | `backlogit_adopt_item` | `backlogit adopt {{item_id}} --parent {{new_parent_id}}` | adopt item |
 | `append_comment` | `backlogit_append_comment` | `backlogit comment add {{item_id}} --actor {{actor}} --comment {{comment}}` | append comment |
 | `archive_item` | `backlogit_archive_item` | `backlogit archive {{id}}` | archive item |
+| `block_shipment` | `backlogit_block_shipment` | `backlogit shipment block {{id}} --reason {{reason}} --by {{by}} --resume-checkpoint {{resume_checkpoint_ref}}` | block shipment |
 | `claim_shipment` | `backlogit_claim_shipment` | `backlogit shipment claim {{id}}` | claim shipment |
 | `cleanup_checkpoints` | `backlogit_cleanup_checkpoints` | `backlogit checkpoint cleanup` | cleanup checkpoints |
+| `correct_stash_provenance` | `backlogit_correct_stash_provenance` | `` | correct stash provenance |
 | `create_checkpoint` | `backlogit_create_checkpoint` | `backlogit checkpoint create --state-dump {{state_dump}}` | create checkpoint |
 | `create_shipment` | `backlogit_create_shipment` | `backlogit shipment create --title {{title}} --items {{items}} --priority {{priority}}` | create shipment |
 | `deliberate` | `backlogit_deliberate` | `backlogit deliberate {{stash_id}}` | deliberate |
+| `docs_classify` | `backlogit_docs_classify` | `backlogit docs classify {{path}}` | docs classify |
 | `docs_lint` | `backlogit_docs_lint` | `backlogit docs lint --path {{path}} --profile {{profile}}` | docs lint |
 | `docs_migrate` | `backlogit_docs_migrate` | `backlogit docs migrate --path {{path}}` | docs migrate |
 | `docs_scope` | `backlogit_docs_scope` | `backlogit docs scope --format {{format}}` | docs scope |
@@ -79,9 +82,11 @@ Use these operations for all backlog interactions. The operation names are abstr
 | `list_types` | `backlogit_list_types` | `backlogit metadata types` | list types |
 | `log_telemetry` | `backlogit_log_telemetry` | `` | log telemetry |
 | `merge_sync` | `backlogit_merge_sync` | `` | merge sync |
+| `normalize_blocked_shipment` | `backlogit_normalize_blocked_shipment` | `` | normalize blocked shipment |
 | `poll_hook_events` | `backlogit_poll_hook_events` | `backlogit hooks poll --consumer-id {{consumer_id}}` | poll hook events |
 | `quarantine_checkpoint` | `backlogit_quarantine_checkpoint` | `backlogit checkpoint quarantine {{filename}} --reason {{reason}} --operator {{operator}}` | quarantine checkpoint |
 | `query` | `backlogit_query_sql` | `backlogit query {{sql}}` | query |
+| `reconcile_archived_lifecycle` | `backlogit_reconcile_archived_lifecycle` | `backlogit reconcile {{item_ids}} --reason {{reason}} --actor {{actor}}` | reconcile archived lifecycle |
 | `remove_dependency` | `backlogit_remove_dependency` | `backlogit dep remove {{task_id}} {{depends_on}}` | remove dependency |
 | `remove_link` | `backlogit_remove_link` | `backlogit link remove {{source_id}} {{target_id}} {{link_type}}` | remove link |
 | `repair_member_evidence` | `` | `backlogit shipment repair-evidence {{shipment_id}} --member {{member_id}} --reason {{reason}}` | repair member evidence |
@@ -97,6 +102,7 @@ Use these operations for all backlog interactions. The operation names are abstr
 | `sync_index` | `backlogit_sync_index` | `backlogit sync` | sync index |
 | `telemetry_harvest` | `backlogit_telemetry_harvest` | `backlogit telemetry harvest` | telemetry harvest |
 | `track_commit` | `backlogit_track_commit` | `backlogit update {{task_id}} --commit {{sha}}` | track commit |
+| `unblock_shipment` | `backlogit_unblock_shipment` | `` | unblock shipment |
 
 ## Agent Workflow Patterns
 

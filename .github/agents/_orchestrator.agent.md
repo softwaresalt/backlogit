@@ -465,33 +465,34 @@ Use `transmit` when a Stage or Ship failure requires operator intervention befor
 
 This agent operates at **Tier 2 (Standard)** by default, but supports an independent model override via `config.model_routing.orchestrator`. When the override is set, the orchestrator runs on the specified model regardless of the tier2 default.
 
-**Default routing** (when no orchestrator override is configured):
+**Current routing** (resolved from this workspace's `.autoharness/config.yaml`; re-read at session start rather than trusting this table):
 
-| Agent | Tier | Default Model Family |
+| Agent | Tier | Resolved Model Family |
 |---|---|---|
-| Orchestrator | 2 (overridable) | `gpt-5.4` |
-| Stage | 3 (Frontier) | `claude-opus-4.6` |
-| Ship | 2 (Standard) | `claude-sonnet-4.6` |
-| Auto-MergeInstall | 2 (Standard) | Inherits tier2 default |
-| Auto-Tune | 2 (Standard) | Inherits tier2 default |
+| Orchestrator | 2 (overridden via `model_routing.orchestrator`) | `claude-opus-5.5` |
+| Stage | 3 (Frontier, `model_routing.stage`) | `claude-opus-5.5` |
+| Ship | 2 (overridden via `model_routing.ship`) | `gpt-6-luna` |
+| Auto-MergeInstall | 2 (Standard) | Inherits tier2 default (`claude-sonnet-5`) |
+| Auto-Tune | 2 (Standard) | Inherits tier2 default (`claude-sonnet-5`) |
 
-**Cross-provider routing**: The orchestrator can run on a different provider (e.g., OpenAI GPT-5.4) while routing Stage and Ship to Anthropic models. This works when the environment supports the `model_family` and `model_provider` frontmatter fields and the operator's subscription includes both providers.
+**Cross-provider routing**: The orchestrator and Stage can run on one provider (Anthropic in this workspace) while Ship routes to another (OpenAI `gpt-6-luna`). This works when the environment supports the `model_family` and `model_provider` frontmatter fields and the operator's subscription includes both providers.
 
 **Configuration example** (in `.autoharness/config.yaml`):
 
 ```yaml
 model_routing:
   orchestrator:
-    model: gpt-5.4
-    model_family: gpt-5.4
-    model_provider: openai
+    model_family: claude-opus-5.5
+    model_provider: anthropic
     reasoning_effort: high
+  ship:
+    model_family: gpt-6-luna
+    model_provider: openai
+    reasoning_effort: xhigh
   tier2:
-    model: claude-sonnet-4.6
-    model_family: claude-sonnet-4.6
+    model_family: claude-sonnet-5
   tier3:
-    model: claude-opus-4.6
-    model_family: claude-opus-4.6
+    model_family: claude-opus-5.5
 ```
 
 **Environment support**: The `model_family` and `model_provider` frontmatter fields are supported by VS Code with GitHub Copilot (reads agent definition YAML metadata) and Copilot CLI. Other environments (Cursor, Claude Code) may ignore frontmatter model declarations and use their own model selection. In those environments, the operator may need to manually select the model when switching between orchestrator and subagent sessions.

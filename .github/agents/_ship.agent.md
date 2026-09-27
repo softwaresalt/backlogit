@@ -68,8 +68,10 @@ per-file locks unless one of the conditions above is met.
 
 Lock commands (when needed):
 
-* PowerShell: `scripts/acquire_lock.ps1 <filepath>` / `scripts/release_lock.ps1 <filepath>`
-* Bash: `scripts/acquire_lock.sh <filepath>` / `scripts/release_lock.sh <filepath>`
+* PowerShell: `scripts/acquire_lock.ps1 <filepath>` (capture the printed token) /
+  `scripts/release_lock.ps1 <filepath> -Token <token>`
+* Bash: `scripts/acquire_lock.sh <filepath>` (capture the printed token) /
+  `scripts/release_lock.sh <filepath> --token <token>`
 
 ## Skill Loading Strategy
 
@@ -1347,7 +1349,7 @@ A merged PR does not complete the top-level release unit by itself. For P-001 pu
 
 1. Complete the post-merge closure branch/PR workflow in Step 6.0 before declaring the release unit closed.
 2. When `feature_shipments` is `true`, also complete any required tag, publish, release-record, or other release checklist steps tied to this shipment.
-3. If any required post-merge release closure remains open, halt with `RELEASE_CLOSURE_INCOMPLETE: shipment {shipment_id} still awaiting required post-merge closure`. Treat the shipment as still active for P-001 purposes; another top-level release unit may not begin yet.
+3. If any required post-merge release closure remains open, halt with `RELEASE_CLOSURE_INCOMPLETE: shipment {shipment_id} still awaiting required post-merge closure`. Treat the shipment as still active for P-001 purposes, and do not allow another top-level release unit to begin yet.
 
 ## Circuit Breakers
 
@@ -1383,8 +1385,8 @@ before falling back to the operator-halt checkpoint:
    (threshold-kind + count = `consecutive_task_failures` / 3, failure
    summary, last-N action/observation refs, artifact refs, telemetry-
    evidence pointers, resumption checkpoint ref).
-2. **Resolve the escalation route**: `gpt-5.4` / `openai` /
-   `high`, resolving this workspace's currently-effective escalation route
+2. **Resolve the escalation route**: `claude-opus-5.5` / `anthropic` /
+   `xhigh`, resolving this workspace's currently-effective escalation route
    per the nested per-role -> legacy flat (DEPRECATED) -> tier3 precedence
    defined in `escalation-protocol.instructions.md` (F02FD596). This
    resolution always reads the freshly session-start-reloaded config
@@ -1403,7 +1405,7 @@ before falling back to the operator-halt checkpoint:
    Ship MUST NOT continue on a stale/baked route carried over from this
    file's frontmatter or a prior session's resolved value, and MUST NOT
    invent a last-known-good fallback. Falls back per field to
-   `claude-opus-4.8` / `anthropic` / `high` (this workspace's
+   `claude-opus-5.5` / `anthropic` / `high` (this workspace's
    `config.model_routing.tier3`) when no override for a field is declared
    at any tier. This is the config-resolved successor to ad hoc "suggest a
    frontier-tier model" prose — the route is now declared, not improvised.

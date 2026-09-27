@@ -97,6 +97,11 @@ When the `agent-engram` capability pack is installed, prefer indexed search for
 related modules, symbols, and prior context before falling back to broader
 file scans.
 
+When the `graphtor-docs` capability pack is installed, prefer graphtor-docs indexed
+documentation retrieval for concept, API, and prior-art documentation lookup before
+broad file or web search — use Engram for code relationships and graphtor-docs for
+documentation.
+
 When the `backlogit` capability pack is installed and search is supported, query
 the backlog for related spike items, deliberation outcomes, or tasks that may
 have already explored this question.
@@ -127,6 +132,12 @@ When the `agent-engram` capability pack is installed, follow
 `.github/instructions/agent-engram.instructions.md`: prefer indexed search for
 related modules, symbols, and prior context before falling back to broader file
 scans.
+
+When the `graphtor-docs` capability pack is installed, follow
+`.github/instructions/graphtor-docs.instructions.md`: prefer graphtor-docs indexed
+documentation retrieval for concept, API, and prior-art documentation lookup before
+broad file or web search — Engram for code relationships, graphtor-docs for
+documentation.
 
 #### Step 2.3: Hands-On Investigation
 
@@ -213,8 +224,8 @@ When `promote_to` includes `plan` (or `ask` resolved to `plan`):
    * Set the implementation scope to the recommendation from Step 3.2
    * Include the spike's success criteria and constraints as planning constraints
 2. The impl-plan skill writes a plan document to `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`
-3. Update the spike findings artifact's `promoted_to` frontmatter field to include `plan`
-   and add a `plan_artifact` field pointing to the generated plan path
+3. Update the spike findings artifact's `docline.promoted_to` frontmatter field to include
+   `plan` and add a `docline.plan_artifact` field pointing to the generated plan path
 4. If `linked_parent_work_item` was provided, the impl-plan output should reference that feature or chore
    so the planning chain is traceable
 
@@ -271,9 +282,9 @@ Write the findings artifact to `docs/decisions/{YYYY-MM-DD}-{slug}-spike.md`:
 ```markdown
 ---
 title: "{Goal question — short form}"
-source: docs/decisions/{YYYY-MM-DD}-{slug}-spike.md
+source: "docs/decisions/{YYYY-MM-DD}-{slug}-spike.md"
 doc_type: decision
-description: "{One-line summary of the spike}"
+description: "{One-sentence summary of the investigation and its outcome}"
 docline:
     type: spike
     date: {YYYY-MM-DD}
@@ -332,6 +343,16 @@ docline:
 
 {Links to code paths, documentation, prototypes, benchmarks examined}
 ```
+
+Substitute the real `{YYYY-MM-DD}` and `{slug}` used for the artifact's own filename into
+the `source` field above — `source` must resolve to the artifact's own repo-relative path
+(e.g. `docs/decisions/2026-08-16-example-topic-spike.md`), not a literal placeholder. An
+artifact whose `source` still contains an unsubstituted `{YYYY-MM-DD}` or `{slug}` is
+self-inconsistent even though presence-only lint rules would not catch it.
+
+`description` is handoff-required for downstream consumers even though neither the
+`authoring` nor the `ingestion` documentation lint profile currently enforces its
+presence — do not treat it as redundant and remove it.
 
 ## Quality Criteria
 

@@ -94,7 +94,7 @@ The escalation route resolves via a role-scoped precedence:
    `escalation` override, `model_routing.escalation` (the pre-F02FD596 flat,
    role-agnostic route) resolves instead, with a deprecation notice. This
    workspace's `.autoharness/config.yaml` **does** declare
-   `model_routing.escalation` (`gpt-5.4` / `openai` / `high`), and no nested
+   `model_routing.escalation` (`claude-opus-5.5` / `anthropic` / `xhigh`), and no nested
    `model_routing.<role>.escalation` override is declared, so this flat route
    is the route that actually resolves today for both Stage and Ship. It
    remains documented, unremoved, for backward compatibility; migrate to
@@ -104,7 +104,7 @@ The escalation route resolves via a role-scoped precedence:
    `model_routing.<role>.escalation` at session-start reload time (H6) rather
    than assuming either shape from this static instruction text.
 3. **Tier3 fallback**: any field still unresolved after (1)/(2) falls back
-   per-field to `model_routing.tier3` (`claude-opus-4.8` / `anthropic` /
+   per-field to `model_routing.tier3` (`claude-opus-5.5` / `anthropic` /
    `high` in this workspace's current configuration).
 
 This mirrors the P-013.5 `stage`/`ship` role-route fallback pattern: a
@@ -137,18 +137,20 @@ remove the nested override(s), to resolve the ambiguity.
    `ESCALATION_DEGRADED`.
 
    **Worked example (generic).** If Stage's role route is pinned to `tier3`
-   (`claude-opus-4.8` / `anthropic` / `high`) and Stage's escalation route
+   (`claude-opus-5.5` / `anthropic` / `high`) and Stage's escalation route
    were left unset so it fell back to `tier3` as well, the two tuples would
    be identical — not a real escalation, and therefore
    `ESCALATION_DEGRADED`.
 
    **Current workspace state (not degraded).** This workspace declares a flat
-   `model_routing.escalation` of `gpt-5.4` / `openai` / `high`, which differs
-   from Stage's tier3 role route (`claude-opus-4.8` / `anthropic` / `high`)
-   in both family and provider. Stage's escalation therefore resolves to a
-   genuinely distinct route and is **not** same-route degraded today. Ship
-   (tier2, `claude-sonnet-4.6` / `anthropic` / `high`) likewise resolves to a
-   distinct escalation route. Re-evaluate this comparison at session-start
+   `model_routing.escalation` of `claude-opus-5.5` / `anthropic` / `xhigh`,
+   which differs from Stage's role route (`claude-opus-5.5` / `anthropic` /
+   `high`) in `reasoning_effort` only. The tuples are not equal, so Stage's
+   escalation is **not** same-route degraded today; it is a reasoning-depth
+   escalation on the same model family rather than a cross-model one. Ship's
+   role route (`gpt-6-luna` / `openai` / `xhigh`) differs from the escalation
+   route in family and provider, so Ship likewise resolves to a distinct
+   escalation route. Re-evaluate this comparison at session-start
    reload time rather than treating either outcome as static.
 
 When `ESCALATION_DEGRADED` is declared, the halting agent MUST fall back to its

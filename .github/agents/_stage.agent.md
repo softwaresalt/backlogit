@@ -74,8 +74,10 @@ per-file locks unless one of the conditions above is met.
 
 Lock commands (when needed):
 
-* PowerShell: `scripts/acquire_lock.ps1 <filepath>` / `scripts/release_lock.ps1 <filepath>`
-* Bash: `scripts/acquire_lock.sh <filepath>` / `scripts/release_lock.sh <filepath>`
+* PowerShell: `scripts/acquire_lock.ps1 <filepath>` (capture the printed token) /
+  `scripts/release_lock.ps1 <filepath> -Token <token>`
+* Bash: `scripts/acquire_lock.sh <filepath>` (capture the printed token) /
+  `scripts/release_lock.sh <filepath> --token <token>`
 
 ## Skill Loading Strategy
 
@@ -927,8 +929,8 @@ halt without first following this auto-escalation directive
    (threshold-kind + count, failure summary, last-N action/observation
    refs, artifact refs, telemetry-evidence pointers, resumption checkpoint
    ref).
-2. **Resolve the escalation route**: `gpt-5.4` / `openai` /
-   `high`, resolving this workspace's currently-effective escalation route
+2. **Resolve the escalation route**: `claude-opus-5.5` / `anthropic` /
+   `xhigh`, resolving this workspace's currently-effective escalation route
    per the nested per-role -> legacy flat (DEPRECATED) -> tier3 precedence
    defined in `escalation-protocol.instructions.md` (F02FD596). This
    resolution always reads the freshly session-start-reloaded config (never
@@ -947,7 +949,7 @@ halt without first following this auto-escalation directive
    config — Stage MUST NOT continue on a stale/baked route carried over
    from this file's frontmatter or a prior session's resolved value, and
    MUST NOT invent a last-known-good fallback. Falls back per field to
-   `claude-opus-4.8` / `anthropic` / `high` (this workspace's
+   `claude-opus-5.5` / `anthropic` / `high` (this workspace's
    `config.model_routing.tier3`) when no override for a field is declared
    at any tier.
 3. **Same-route guard**: if the resolved escalation tuple equals this

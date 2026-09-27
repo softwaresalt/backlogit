@@ -8,7 +8,7 @@ model_tier: 3
 max_subagent_tier: 3
 reasoning_effort: "high"
 model_provider: "anthropic"
-model_family: "claude-opus-4.6"
+model_family: "claude-opus-5.5"
 subagent_depth: 0
 ---
 
