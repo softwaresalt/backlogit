@@ -67,10 +67,12 @@ release the lock, supplying the token captured at acquire time:
 1. PowerShell: `scripts/release_lock.ps1 <filepath> -Token <token>`
    Bash: `scripts/release_lock.sh <filepath> --token <token>`
    (the token may also be supplied via the `LOCK_TOKEN` environment variable
-   instead of the flag.) `release_lock.ps1` anchors a relative `<filepath>`
-   to the workspace root and refuses to delete a lock outside it.
-   `release_lock.sh` resolves it against the current directory, so run it
-   from the workspace root or pass `--workspace-root`.
+   instead of the flag.) Both release scripts anchor a relative `<filepath>`
+   to the same workspace root acquire uses (the explicit root, or the trusted
+   git-derived root) and refuse to delete a lock outside it. When no trusted
+   root resolves, they fall back to the current directory with a warning and
+   refuse `--force`. Under Git Bash on Windows the git-derived root does not
+   match, so pass `--workspace-root` to the `.sh` scripts there.
 2. If the release succeeds (exit code 0), you are done.
 3. If the release exits with a **non-zero** code, this is a **refusal**, not
    a routine warning: the script could not verify that this caller owns the

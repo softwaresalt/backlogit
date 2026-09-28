@@ -1,6 +1,6 @@
 schema_version: "1.0.0"
 installed_at: "2026-05-17T23:40:00Z"
-tuned_at: "2026-09-28T05:30:00Z"
+tuned_at: "2026-09-28T06:00:00Z"
 autoharness_version: "1.5.0"
 autoharness_home: "C:\\Python\\Python314\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
@@ -235,7 +235,7 @@ artifacts:
   - path: ".github/instructions/concurrency.instructions.md"
     primitive: 6
     template: "templates/instructions/concurrency.instructions.md.tmpl"
-    checksum: "4d495a41c10bf437998a20e08f309ca9a394e532301a0bda50f96e878567fead"
+    checksum: "e2d15fe60339ac12251bd6883d982e0aa2059c4ab3f88215fc089f2e21fdd26f"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: documents the locally hardened release_lock.ps1 default-root and containment behavior."
   - path: ".github/instructions/release-observability.instructions.md"
@@ -245,7 +245,7 @@ artifacts:
   - path: ".github/skills/file-lock/SKILL.md"
     primitive: 5
     template: "templates/skills/file-lock/SKILL.md.tmpl"
-    checksum: "555fbd69854eeae5c0cfd432a1f58b5aeeee84838282fa0002371f4e21a79750"
+    checksum: "f03ee9d27ea1e7e2264262107664f83e97746c05d778b97c27ba513449866f4b"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: documents PowerShell vs bash flag spelling and the hardened release default-root behavior."
   - path: ".github/skills/skill-search/SKILL.md"
@@ -1092,3 +1092,8 @@ tuning_history:
       - ".github/instructions/backlog-integration.instructions.md"
       - ".github/agents/_ship.agent.md"
       - ".github/skills/runtime-verification/SKILL.md"
+  - at: "2026-09-28T06:00:00Z"
+    summary: "PR #454 Copilot review round 2: concurrency instructions and file-lock skill now describe release_lock.sh deriving the trusted default root like acquire, plus the Git Bash --workspace-root caveat."
+    artifacts:
+      - ".github/instructions/concurrency.instructions.md"
+      - ".github/skills/file-lock/SKILL.md"
