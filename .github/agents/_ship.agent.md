@@ -662,6 +662,49 @@ Reached only after Step 4.1a has passed, or immediately for a `harness-ready` ta
 
 When the `agent-intercom` capability pack is installed, broadcast the task claim and current task ID.
 
+#### Step 4.1c: Begin Telemetry Context
+
+Immediately after claim and before pre-build knowledge retrieval, build-feature delegation,
+implementation tool work, or review feedback, start a stable telemetry context:
+
+```text
+autoharness telemetry begin --task-id {item_id} --backlog-item-id {item_id} \
+  --feature-id {parent_id} --shipment-id {shipment_id} --capture-backlogit-sizing --json
+```
+
+* Parse the structured result and carry `context_ref` plus the stable `epoch_id`
+  through the task loop **only when `status` is `created` or `idempotent_begin`**.
+* If the result is `disabled`, `unavailable`, or `conflict`, skip context carry
+  and record close for this task without failing the lifecycle or creating
+  telemetry artifacts. A `conflict` returns `enabled: true` but points
+  `context_ref` at a different-keyed pre-existing context, so carrying and closing
+  against it would mis-attribute the task roll-up to the wrong epoch.
+* Do not re-read backlogit size, hierarchy, or shipment membership after this
+  pre-execution capture; the context's `WorkSizingSnapshot` is immutable.
+* Telemetry is observational only. It never gates wave admission, the claim-time
+  gate, build, review, or the Step 4.6 wave convergence gate.
+
+#### Step 4.1d: Optional Tool-Event Emission
+
+When Step 4.1c carried a `context_ref` (`created`/`idempotent_begin`), tool use during
+Step 4.2's build-feature loop MAY optionally emit sanitized ToolTelemetryEvent records:
+
+```text
+autoharness telemetry event --context-ref {context_ref} --from-json {event_payload_path} --json
+```
+
+* Only schema-shaped fields belong in the event payload
+  (`schemas/tool-telemetry-event.schema.json`) — never raw tool output, prompts,
+  stderr, or credentials.
+* Track whether at least one `telemetry event` call reported `written: true`
+  during this task. Step 4.5 uses this observed-success signal — not the mere
+  presence of a `context_ref` — to decide whether `--compose-tool-events` is
+  safe to request at close.
+* Event emission is entirely observational: a failed, skipped, or degraded
+  `telemetry event` call is reported but NEVER blocks the build-feature loop,
+  quality gates, review, or task completion — proceed exactly as if telemetry
+  were disabled.
+
 #### Step 4.2: Delegate to Build Feature
 
 **TOPOLOGY_GATE: lifecycle (before build)** — if the `pipeline-topology` gate is installed for this workspace,
@@ -886,11 +929,25 @@ Both paths preserve identically: the mandatory capture-first ordering, the full 
 #### Step 4.5: Complete Task
 
 1. Commit changes with a conventional commit message
-2. Update task status to `done` using the backlog tool's complete operation
-3. If the `backlogit` capability pack is installed and commit-tracking is supported, associate the commit with the task
-4. Write a memory checkpoint to `docs/memory/`
-5. If the task required 3+ attempts, invoke the compound skill to capture learnings
-6. When the `continuous-learning` capability pack is installed, invoke the **observe** skill for any recurring patterns encountered during the task — repeated review findings, recurring build failures, operator corrections, or workarounds that kept appearing. Skip if the task was routine.
+2. If Step 4.1c returned `status` `created` or `idempotent_begin` with an enabled
+   `context_ref`, create a close-time epoch payload from the task roll-up metrics and
+   record it before marking the task done:
+   `autoharness telemetry record --context-ref {context_ref} --from-json {epoch_payload_path} [--compose-tool-events] --json`.
+   Add `--compose-tool-events` only when Step 4.1d observed at least one successful
+   (`written: true`) `telemetry event` call during this task; otherwise omit the flag.
+   Capture the close timestamp once and reuse that exact value on every retry of this
+   record call, so a retried record replays as `idempotent_replay` rather than
+   `conflict_rejected`. Skip the record close on `disabled`, `unavailable`, or
+   `conflict`. The record path keeps the same stable `epoch_id` and does not re-read
+   backlogit size, hierarchy, or shipment membership at close. Any telemetry failure,
+   including a missing event journal or a rejected hybrid payload, fails open: report
+   it as a task-loop diagnostic and continue to completion. Telemetry never gates the
+   lifecycle.
+3. Update task status to `done` using the backlog tool's complete operation
+4. If the `backlogit` capability pack is installed and commit-tracking is supported, associate the commit with the task
+5. Write a memory checkpoint to `docs/memory/`
+6. If the task required 3+ attempts, invoke the compound skill to capture learnings
+7. When the `continuous-learning` capability pack is installed, invoke the **observe** skill for any recurring patterns encountered during the task — repeated review findings, recurring build failures, operator corrections, or workarounds that kept appearing. Skip if the task was routine.
 
 **A red-deliverable task completes red.** Its criterion at this step is *scaffolded harness
 consumed, `red_selector_command` observed RED, delta empty, red evidence recorded* — never "scoped
@@ -1258,7 +1315,7 @@ refreshes, and knowledge graduation. These changes deserve the same review cycle
 work. Committing directly to `main` bypasses code review and violates the
 branch-per-release-unit principle.
 
-1. **Close the shipment** (when `Shipments group related work items into a single release unit. Each shipment tracks its items through queued -> active -> done -> shipped lifecycle.` is true):
+1. **Close the shipment** (shipments are enabled in this workspace):
    a0. **TOPOLOGY_GATE: lifecycle (before closure/safe-close)** — if the `pipeline-topology` gate is installed for
        this workspace, before the pre-archive reconciliation gate below, run
        `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0

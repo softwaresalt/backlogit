@@ -42,7 +42,7 @@ preserves both signals with appropriate confidence labels, rather than losing un
 findings or trusting any single model too much.
 
 Anchor Reviewer support (`openai` / `gpt-6-sol`)
-adds a first-class reviewer route, defaulting to OpenAI GPT-5.6 Sol where supported,
+adds a first-class reviewer route, defaulting to OpenAI GPT-6 Sol where supported,
 without replacing Tier 1/2/3 diversity. If the anchor route cannot be dispatched,
 record a declared fallback and continue only when the remaining reviewer pool still
 satisfies the consensus minimum.

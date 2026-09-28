@@ -47,3 +47,16 @@ Pre-edit backups are in `.autoharness/backups/2026-09-27/`.
   shipment-reconcile, workflow-policies, backlogit checkpoint contract).
 * Operator decisions: choose a cross-family escalation route, and decide on the
   custom `model:` keys in `sqlite-reviewer` and `go-mcp-expert`.
+
+## Second Session — Review Follow-Up
+
+* Applied TUNE-009 and TUNE-010, and parts of TUNE-011 and TUNE-012. See the
+  tuning report's Follow-Up Review Pass section.
+* Fixed the release/acquire lock-script bugs: default root, containment, and
+  exit codes.
+* The registry parity test rejects bracketed alternatives in `cli_command`.
+  Use plain `{{param}}` flags and document alternatives in `rationale`.
+* The verifier requires the literal `Source artifact cleanup` label in
+  operational-closure.
+* Next: open the PR, rebuild `backlogit.exe` from `main`, and upstream the lock
+  fixes and template defects.

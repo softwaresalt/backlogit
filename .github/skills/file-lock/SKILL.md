@@ -20,6 +20,10 @@ Agents MUST follow the concurrency protocol defined in
 
 * `filepath`: (Required) Path to the target file, relative to the workspace root.
 * `action`: (Required) One of `acquire` or `release`.
+Flag spellings differ by shell: the PowerShell scripts take `-WorkspaceRoot`,
+`-Token`, and `-Force`; the bash scripts take `--workspace-root`, `--token`,
+and `--force`. The flags below use the bash spelling.
+
 * `--workspace-root <path>` (acquire: optional, fail-closed default;
   release: optional, no default): explicit workspace root.
   * On `acquire`, this is the H2/H4 containment-check root. When omitted,
@@ -32,9 +36,11 @@ Agents MUST follow the concurrency protocol defined in
     instead of the process's current working directory, so a caller
     invoking acquire and release from two different working directories
     with the same workspace-relative path computes the same lock path in
-    both cases. Purely additive: omitting it preserves today's
-    CWD-relative resolution exactly, and an already-absolute `filepath` is
-    never affected.
+    both cases. When omitted, `release_lock.ps1` derives the same default
+    root as acquire and falls back to the current directory (with a
+    warning) only when no trusted root exists; `release_lock.sh` keeps
+    CWD-relative resolution. An already-absolute `filepath` is never
+    affected.
 * `--token <token>` (release only, optional): the capability token printed
   by `acquire_lock` at acquire time (`LOCK_TOKEN=<token>`). Falls back to
   the `LOCK_TOKEN` environment variable when not supplied. Required to
@@ -176,11 +182,21 @@ given.
    └─ Exit 1 → lock held (or path rejected), wait or prompt operator
 3. Agent modifies the file
 4. Agent verifies the modification (compile, test, etc.)
-5. Agent runs: scripts/release_lock.{ps1|sh} <filepath> --token <token>
+5. Agent runs, from the workspace root:
+     PowerShell: scripts/release_lock.ps1 <filepath> -Token <token>
+     Bash:       scripts/release_lock.sh <filepath> --token <token>
    ├─ Exit 0 → lock released
    └─ Non-zero → ownership could not be verified; surface to the operator
        rather than reaching for --force
 ```
+
+`release_lock.ps1` anchors a relative `filepath` to the same workspace root
+acquire uses (`-WorkspaceRoot`, or the git-derived root). It also refuses to
+delete a lock file outside that root, and refuses `-Force` when no root can be
+resolved. `release_lock.sh` still resolves a relative `filepath` against the
+current directory unless `--workspace-root` is passed. Run it from the
+workspace root: from a subdirectory it computes the wrong lock path, reports
+"No lock file found", and exits 0 while the real lock stays held.
 
 ## Lock Hygiene
 

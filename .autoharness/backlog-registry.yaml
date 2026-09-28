@@ -374,6 +374,25 @@ operations:
       member_id: "member_id"
       reason: "reason"
 
+  # reconcile_shipped is an operator-only governed repair that moves a legacy
+  # archived shipment (released before the governed ShipShipment envelope) to a
+  # durable, event-backed archived_status: shipped. It is idempotent and
+  # evidence-verified. A live run requires --confirm "reconcile-shipped <id>"
+  # (or the same phrase at an interactive TTY); --dry-run needs no confirmation
+  # and writes nothing. No MCP tool is registered for it.
+  reconcile_shipped:
+    cli_command: "backlogit shipment reconcile-shipped {{shipment_id}} --reason {{reason}} --actor {{actor}} --idempotency-key {{idempotency_key}} --merge-sha {{merge_sha}} --closure-evidence {{closure_evidence}} --confirm {{confirm}}"
+    cli_only: true
+    rationale: "legacy archived-shipment reconciliation is an operator-confirmed governed repair; no MCP surface exists. confirm must be the phrase 'reconcile-shipped <shipment-id>'; substitute --dry-run for --confirm to preview without writing"
+    params:
+      shipment_id: "shipment_id"
+      reason: "reason"
+      actor: "actor"
+      idempotency_key: "idempotency_key"
+      merge_sha: "merge_sha"
+      closure_evidence: "closure_evidence"
+      confirm: "confirm"
+
   # --- Stash management ---
 
   stash:

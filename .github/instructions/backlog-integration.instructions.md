@@ -87,6 +87,7 @@ Use these operations for all backlog interactions. The operation names are abstr
 | `quarantine_checkpoint` | `backlogit_quarantine_checkpoint` | `backlogit checkpoint quarantine {{filename}} --reason {{reason}} --operator {{operator}}` | quarantine checkpoint |
 | `query` | `backlogit_query_sql` | `backlogit query {{sql}}` | query |
 | `reconcile_archived_lifecycle` | `backlogit_reconcile_archived_lifecycle` | `backlogit reconcile {{item_ids}} --reason {{reason}} --actor {{actor}}` | reconcile archived lifecycle |
+| `reconcile_shipped` | `` | `backlogit shipment reconcile-shipped {{shipment_id}} --reason {{reason}} --actor {{actor}} --idempotency-key {{idempotency_key}} --merge-sha {{merge_sha}} --closure-evidence {{closure_evidence}} --confirm {{confirm}}` | reconcile legacy archived shipment to shipped (CLI-only; `confirm` is the phrase `reconcile-shipped <id>`, or use `--dry-run` instead to preview) |
 | `remove_dependency` | `backlogit_remove_dependency` | `backlogit dep remove {{task_id}} {{depends_on}}` | remove dependency |
 | `remove_link` | `backlogit_remove_link` | `backlogit link remove {{source_id}} {{target_id}} {{link_type}}` | remove link |
 | `repair_member_evidence` | `` | `backlogit shipment repair-evidence {{shipment_id}} --member {{member_id}} --reason {{reason}}` | repair member evidence |

@@ -131,12 +131,50 @@ an agent is presenting queue, stash, or triage choices remotely:
 At meaningful boundaries such as task completion, review handoff, or session end:
 
 1. Write the normal markdown memory artifact required by the harness.
-2. When memory or checkpoint operations are supported, also persist a concise structured summary through backlogit.
+2. When memory or checkpoint operations are supported, also persist a concise structured summary through backlogit, conforming to the Checkpoint Payload Contract below.
 3. Summaries should capture outcome, changed files or surfaces, decisions, blockers, and next steps.
 4. Do not dump raw transcript logs into backlogit memory fields.
 5. For a `schema_version: 1` checkpoint dump, any recovery keys you need beyond the four modeled fields (`shipment_id`, `feature_id`, `task_ids`, `branch`) belong INSIDE `context`, not at the top level and not inside `progress` — the top level and the nested `progress` object are a CLOSED schema namespace, while `context` is the OPEN one. An unmodeled key placed at the top level or inside `progress` fails the create as an unknown-field rejection rather than being silently accepted.
 6. If a checkpoint **create** is rejected for an unknown field, this means "retry with the offending keys nested under context", not "session state is lost" — no file is written on a rejected create, so there is nothing to recover; simply resubmit the same dump with the extra keys moved into `context`. This retry-and-nest advice applies **only to the create boundary**, where no file has been written yet. It does NOT apply to a stored (already-written) checkpoint: see the Checkpoint Disposition Protocol below for the read and rewrite surfaces (`resolve`, `abandon`, `quarantine`, `list`, `get`).
 7. Checkpoint context is unredacted, git-tracked durable state written to a path under the workspace storage root. Treat it exactly like any other tracked file: it MUST NOT carry secrets, credentials, tokens, or other sensitive values, whether in a modeled field or in an arbitrary `context` key.
+
+### Checkpoint Payload Contract
+
+Applies to backlogit structured checkpoints only. The markdown `docs/memory/`
+continuity artifact is a separate mechanism and takes no `schema_version`.
+
+A backlogit structured checkpoint payload MUST:
+
+1. declare `"schema_version": 1` as a top-level field — without it backlogit
+   skips V1 validation and auto-population entirely and writes the payload
+   through unvalidated;
+2. be written through the official create operation — MCP
+   `backlogit_create_checkpoint` (`state_dump`) or CLI
+   `backlogit checkpoint create --state-dump` — never by writing a file into
+   the checkpoints directory directly;
+3. carry `agent` (`stage` or `ship`), `session_id`, `phase`, and a
+   `resume_hint` specific enough to support a later recovery decision;
+4. nest all domain data (the modeled `shipment_id`, `feature_id`, `task_ids`,
+   and `branch` fields, plus any other recovery keys such as artifact paths,
+   completed/blocked items, mode, or route) inside the `context` object —
+   these MUST NOT be hoisted to the top level;
+5. rely on backlogit to populate `created_at`, `updated_at`, and `status`,
+   which it does only when rule 1 is satisfied.
+
+```json
+{
+  "schema_version": 1,
+  "agent": "stage",
+  "session_id": "stage-2026-08-17-example",
+  "phase": "harvest",
+  "resume_hint": "Harvest complete; next step is shipment assembly.",
+  "context": {
+    "feature_id": "130-F",
+    "shipment_id": "139-S",
+    "artifacts": { "plan": "docs/exec-plans/example-plan.md" }
+  }
+}
+```
 
 ## Checkpoint Disposition Protocol
 

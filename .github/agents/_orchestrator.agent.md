@@ -164,6 +164,20 @@ behavior. Dark-mode closure summaries MUST list decisions, gates, reviewed HEADs
 merge/fallback status, closure status, and follow-up items before
 `DARK_MODE_COMPLETE`.
 
+Dark mode does not change normal `run pipeline` behavior. It only changes
+autonomy and approval routing for the recorded scope, and it never permits
+Orchestrator to perform Stage or Ship work directly. Pass the `DARK_MODE_ACTIVE`
+record to Stage/Ship subagents as context so they enforce the same scope and stop
+conditions.
+
+When the activation scope explicitly covers "all stashed and/or queued work",
+resolve that phrase to concrete stash IDs and queued shipment IDs at activation
+time rather than leaving it open-ended, then continue Stage → Ship iteration until
+every scoped item is complete or a stop condition makes further autonomous work
+unsafe. Do not stop for routine coordination decisions while the operator is AFK;
+use the recorded activation contract. Halt instead of guessing when scope, safety,
+merge authority, required checks, or branch-protection state is ambiguous.
+
 **Preserved safety** (dark mode is NOT a waiver): P-001 single-release-unit
 completion, P-009 merge-commit-only, P-014 Copilot review merge gate, P-016
 no-parallel-branch/worktree, P-021 bounded fix-cycle scope containment,

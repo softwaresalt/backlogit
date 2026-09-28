@@ -203,17 +203,55 @@ function Get-AutoharnessSingleQuoted {
 # process CWD, so a caller invoking acquire and release from two DIFFERENT
 # working directories with the same documented workspace-relative path
 # computes the SAME lock path in both cases. An absolute $FilePath is left
-# untouched, and omitting -WorkspaceRoot preserves today's CWD-relative
-# behaviour exactly (no default root is derived or required).
+# untouched.
+#
+# Local fix (backlogit tune 2026-09-27): when -WorkspaceRoot is omitted,
+# derive the same default root acquire_lock.ps1 uses (git top-level, trusted
+# only when this script lives in that root's scripts/ directory) and anchor
+# to it. Without this, a release run from a subdirectory computed a
+# different lock path than acquire, reported "No lock file found", exited 0,
+# and left the real lock held. If no root can be derived, fall back to the
+# previous CWD-relative behaviour with a warning.
+$autoharnessPathComparisonMode = if ($autoharnessIsWindowsPlatform) {
+    [System.StringComparison]::OrdinalIgnoreCase
+} else {
+    [System.StringComparison]::Ordinal
+}
+
+function Get-AutoharnessDefaultWorkspaceRoot {
+    $scriptDir = $PSScriptRoot
+    if (-not $scriptDir) { return $null }
+    try {
+        $gitOutput = & git -C $scriptDir rev-parse --show-toplevel 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $gitOutput) { return $null }
+        $realGitTopLevel = Get-AutoharnessRealPath $gitOutput.Trim()
+        $realScriptDir = Get-AutoharnessRealPath $scriptDir
+        $expectedScriptsDir = Join-Path $realGitTopLevel 'scripts'
+        if ($expectedScriptsDir.Equals($realScriptDir, $autoharnessPathComparisonMode)) {
+            return $realGitTopLevel
+        }
+    }
+    catch {
+        return $null
+    }
+    return $null
+}
+
+$realWorkspaceRootForAnchoring = $null
 if ($WorkspaceRoot) {
     if (-not (Test-Path -LiteralPath $WorkspaceRoot)) {
-        Write-Error "--workspace-root does not exist: $WorkspaceRoot"
+        [Console]::Error.WriteLine("autoharness-file-lock: -WorkspaceRoot does not exist: $WorkspaceRoot")
         exit 1
     }
     $realWorkspaceRootForAnchoring = Get-AutoharnessRealPath (Resolve-Path -LiteralPath $WorkspaceRoot).Path
-    if (-not [System.IO.Path]::IsPathRooted($FilePath)) {
-        $FilePath = Join-Path $realWorkspaceRootForAnchoring $FilePath
+} else {
+    $realWorkspaceRootForAnchoring = Get-AutoharnessDefaultWorkspaceRoot
+    if (-not $realWorkspaceRootForAnchoring) {
+        Write-Warning "autoharness-file-lock: no -WorkspaceRoot supplied and no trusted git-derived root; resolving '$FilePath' against the current directory."
     }
+}
+if ($realWorkspaceRootForAnchoring -and -not [System.IO.Path]::IsPathRooted($FilePath)) {
+    $FilePath = Join-Path $realWorkspaceRootForAnchoring $FilePath
 }
 
 if (-not (Test-Path -LiteralPath $FilePath)) {
@@ -330,6 +368,22 @@ $resolvedDir = Split-Path -Parent $targetPath
 $fileName = Split-Path -Leaf $targetPath
 $lockFile = Join-Path $resolvedDir ".$fileName.lock"
 
+# Local fix (backlogit tune 2026-09-27): release, including -Force, may only
+# delete a lock file inside the workspace root. Without a resolved root the
+# containment boundary is unknown, so -Force is refused rather than allowed
+# to delete an arbitrary ".X.lock" anywhere on disk.
+if ($realWorkspaceRootForAnchoring) {
+    $normalizedRoot = $realWorkspaceRootForAnchoring.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $rootWithSeparator = $normalizedRoot + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $lockFile.StartsWith($rootWithSeparator, $autoharnessPathComparisonMode)) {
+        [Console]::Error.WriteLine("autoharness-file-lock: PATH_ESCAPE -- lock path '$lockFile' is outside the workspace root '$normalizedRoot'; refusing to release.")
+        exit 1
+    }
+} elseif ($Force) {
+    [Console]::Error.WriteLine("autoharness-file-lock: refusing -Force without a workspace root; pass -WorkspaceRoot so containment can be enforced.")
+    exit 1
+}
+
 if (-not (Test-Path -LiteralPath $lockFile)) {
     Write-Warning "No lock file found for: $FilePath (already released or never locked)"
     exit 0
@@ -377,7 +431,7 @@ if ($tokenMalformed) {
     # V-c2: fail closed before any digest is computed -- a wrong-length or
     # wrong-charset token is a distinct, named validation error, not merely
     # a digest mismatch.
-    Write-Error "autoharness-file-lock: TOKEN_MALFORMED -- supplied token is not 64 lowercase hex characters; refusing to verify ownership without computing a digest. Supply the exact value returned at acquire time, or have the operator supply -Force."
+[Console]::Error.WriteLine()
     exit 1
 }
 
@@ -388,7 +442,7 @@ if (-not $ownershipVerified) {
         # Decision (iii): a refusal is a non-zero exit -- exit 0 would make
         # the refusal indistinguishable from success.
         $quotedPath = Get-AutoharnessSingleQuoted -Value $FilePath
-        Write-Error "autoharness-file-lock: refusing to release -- ownership could not be verified ($ownerReport). Supply -Token with the value returned at acquire time, or have the operator run: release_lock.ps1 $quotedPath -Force"
+[Console]::Error.WriteLine()
         exit 1
     }
     Write-Warning "autoharness-file-lock: -Force supplied; breaking this lock without a verified token ($ownerReport). O3: this is an advisory lock, not an adversarial guarantee -- only the operator should do this."
@@ -451,7 +505,7 @@ if ($ownershipVerified) {
         }
     }
     if (-not ($recheckDigest -and $recheckDigest.Equals($recordedDigest, [System.StringComparison]::OrdinalIgnoreCase))) {
-        Write-Error "autoharness-file-lock: refusing to release -- the lock at '$lockFile' changed between verification and deletion (a different owner now holds it); this process's token no longer matches the current owner. Re-run release to re-verify against the new owner, or have the operator use -Force."
+[Console]::Error.WriteLine()
         exit 1
     }
 }
@@ -462,6 +516,6 @@ try {
     exit 0
 }
 catch {
-    Write-Error "Failed to remove lock file: $_"
+[Console]::Error.WriteLine()
     exit 1
 }
