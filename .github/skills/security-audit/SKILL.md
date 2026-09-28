@@ -37,16 +37,8 @@ This is a leaf executor. No subagent spawning. Maximum depth: 0.
 | `**/*.go` | Application source file patterns (e.g., `src/**/*.go`) |
 | `Go` | Primary language for pattern selection |
 | `docs/security` | Output directory for persisted reports (default: `docs/security`) |
-| `- Workspace root isolation enforcement
-- MCP tool input validation
-- File path resolution within sandbox
-- SQLite query parameterization` | Per-environment config rule table |
-| `- A01:2021 Broken Access Control (path traversal, workspace escape)
-- A03:2021 Injection (SQL injection, command injection)
-- A04:2021 Insecure Design (missing validation, unsafe defaults)
-- A05:2021 Security Misconfiguration (exposed config, permissive settings)
-- A07:2021 Authentication Failures (credential handling)
-- A09:2021 Security Logging Failures (missing audit trails)` | Language-specific OWASP detection patterns |
+| Workspace root isolation enforcement; MCP tool input validation; file path resolution within sandbox; SQLite query parameterization | Per-environment config rule table |
+| A01:2021 Broken Access Control (path traversal, workspace escape); A03:2021 Injection (SQL injection, command injection); A04:2021 Insecure Design (missing validation, unsafe defaults); A05:2021 Security Misconfiguration (exposed config, permissive settings); A07:2021 Authentication Failures (credential handling); A09:2021 Security Logging Failures (missing audit trails) | Language-specific OWASP detection patterns |
 
 ## Workflow
 
@@ -69,10 +61,7 @@ This is a leaf executor. No subagent spawning. Maximum depth: 0.
 
 Apply deterministic regex checks to config surfaces found in Phase 1. Findings in this tier are eligible for `mode:fix` auto-remediation.
 
-Rules from `- Workspace root isolation enforcement
-- MCP tool input validation
-- File path resolution within sandbox
-- SQLite query parameterization`:
+Rules from the per-environment config rule table (workspace root isolation enforcement, MCP tool input validation, file path resolution within sandbox, SQLite query parameterization):
 
 * Hardcoded credential patterns (passwords, tokens, keys) in config files
 * Overly permissive tool allow-lists (e.g., `always: true` on destructive terminal commands)
@@ -99,12 +88,7 @@ Apply judgment: record findings with reasoning, not just pattern matches. These 
 
 **Skip condition**: Skip unless `scope:full`, `scope:owasp`, or `scope:<path>`.
 
-Scan source files matching `**/*.go` (or the specified path) using `- A01:2021 Broken Access Control (path traversal, workspace escape)
-- A03:2021 Injection (SQL injection, command injection)
-- A04:2021 Insecure Design (missing validation, unsafe defaults)
-- A05:2021 Security Misconfiguration (exposed config, permissive settings)
-- A07:2021 Authentication Failures (credential handling)
-- A09:2021 Security Logging Failures (missing audit trails)`:
+Scan source files matching `**/*.go` (or the specified path) using the language-specific OWASP detection patterns from the variable table above (A01, A03, A04, A05, A07, A09):
 
 | Category | What to look for |
 |---|---|

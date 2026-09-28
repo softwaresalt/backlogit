@@ -5,9 +5,9 @@ maturity: stable
 tools: read, search
 model_tier: 1
 max_subagent_tier: 1
-reasoning_effort: "low"
-model_provider: "anthropic"
-model_family: "claude-haiku-4.5"
+reasoning_effort: "xhigh"
+model_provider: "openai"
+model_family: "gpt-6-luna"
 subagent_depth: 0
 ---
 

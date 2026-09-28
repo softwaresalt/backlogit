@@ -32,11 +32,11 @@ instances across different model tiers:
 
 ## Anchor Reviewer Support
 
-When `openai` and `gpt-5.6-sol` are configured,
+When `openai` and `gpt-6-sol` are configured,
 launch an **Anchor Reviewer** as a separately identified reviewer slot before
 standard Tier 1/2/3 assignment. Pass `high` to the
 anchor reviewer when it is non-empty; an empty value means use the model default.
-The default anchor route is OpenAI GPT-5.6 Sol, but generated artifacts stay
+The default anchor route is OpenAI GPT-6 Sol, but generated artifacts stay
 environment-agnostic by using the configured provider and family identifiers
 rather than hard-coding a runtime.
 

@@ -374,6 +374,39 @@ operations:
       member_id: "member_id"
       reason: "reason"
 
+  # reconcile_shipped is an operator-only governed repair that moves a legacy
+  # archived shipment (released before the governed ShipShipment envelope) to a
+  # durable, event-backed archived_status: shipped. It is idempotent and
+  # evidence-verified. A live run requires --confirm "reconcile-shipped <id>"
+  # (or the same phrase at an interactive TTY); --dry-run needs no confirmation
+  # and writes nothing. No MCP tool is registered for it.
+  reconcile_shipped:
+    cli_command: "backlogit shipment reconcile-shipped {{shipment_id}} --reason {{reason}} --actor {{actor}} --idempotency-key {{idempotency_key}} --merge-sha {{merge_sha}} --closure-evidence {{closure_evidence}} --confirm {{confirm}}"
+    cli_only: true
+    rationale: "legacy archived-shipment reconciliation is an operator-confirmed governed repair; no MCP surface exists. confirm must be the phrase 'reconcile-shipped <shipment-id>'. To preview without writing, use reconcile_shipped_preview instead (--dry-run and --confirm are separate invocations, not a value substitution)"
+    params:
+      shipment_id: "shipment_id"
+      reason: "reason"
+      actor: "actor"
+      idempotency_key: "idempotency_key"
+      merge_sha: "merge_sha"
+      closure_evidence: "closure_evidence"
+      confirm: "confirm"
+
+  # reconcile_shipped_preview evaluates every reconcile_shipped precondition and
+  # prints the planned outcome without writing. It needs no --confirm phrase.
+  reconcile_shipped_preview:
+    cli_command: "backlogit shipment reconcile-shipped {{shipment_id}} --dry-run --reason {{reason}} --actor {{actor}} --idempotency-key {{idempotency_key}} --merge-sha {{merge_sha}} --closure-evidence {{closure_evidence}}"
+    cli_only: true
+    rationale: "read-only dry-run preview of reconcile_shipped; writes nothing and requires no confirmation phrase. No MCP surface exists."
+    params:
+      shipment_id: "shipment_id"
+      reason: "reason"
+      actor: "actor"
+      idempotency_key: "idempotency_key"
+      merge_sha: "merge_sha"
+      closure_evidence: "closure_evidence"
+
   # --- Stash management ---
 
   stash:

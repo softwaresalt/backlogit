@@ -1,5 +1,5 @@
 ---
-description: "Produce release-readiness, monitoring, rollback, and feedback artifacts that close the loop after implementation and verification"
+description: "Produce release-readiness, releasability evidence, monitoring, rollback, and feedback artifacts that close the loop after implementation and verification"
 ---
 
 # Operational Closure
@@ -15,11 +15,12 @@ Invoke when a feature, fix, or risky change is ready to hand off into merge, dep
 * `mode`: (Required) One of `pre-merge`, `post-merge`, or `post-deploy`.
 * `context`: (Required) PR, task, feature, or release context.
 * `verification_report`: (Optional) Path to the runtime verification report.
+* `validator_evidence`: (Optional) Structured handoff from runtime-verification describing surface adapters, probe outcomes, manual checkpoint evidence, and verdict.
+* `releasability_expectations`: (Optional) Structured requirements from `runtime_validation.releasability`.
 
 ## Output
 
 * Closure artifact at `docs/closure/{YYYY-MM-DD}-{slug}-closure.md`
-* Explicit go/no-go or ready/blocked recommendation
 * Structured releasability evidence summarizing whether the change is `READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`
 * A **compaction status** field (`pending` → `done` / `degraded`) recording P-020 post-merge context compaction state
 * Follow-up tasks or compound-learnings triggers when needed
@@ -54,7 +55,7 @@ Collect:
 
 * Summary of the change
 * CI status and unresolved review items
-* Runtime verification report (required when runtime surfaces were changed) — including verdict (PASS / PASS WITH FOLLOW-UP / FAIL / BLOCKED), evidence, and follow-up recommendations. If verification was BLOCKED, record the blocked status and the missing prerequisite as a closure condition.
+* Runtime verification report or validator evidence (required when runtime surfaces were changed) — including verdict (`PASS`, `PASS_WITH_FOLLOW_UP`, `FAIL`, or `BLOCKED`), evidence, manual checkpoint evidence, and follow-up recommendations. If verification was BLOCKED, record the blocked status and the missing prerequisite as a closure condition.
 * Any risky actions that required approval, rollback planning, or explicit containment
 * Affected runtime surfaces
 * Deployment or release path, if applicable
@@ -66,6 +67,7 @@ Collect:
 The closure artifact MUST include:
 
 * **Invariants to preserve** — the behaviors or guarantees that cannot regress
+* **Validator evidence** — the structured summary of probes, manual checkpoints, verdict, and blocked prerequisites received from runtime-verification
 * **Pre-deploy audits** — migrations, flags, config, access, or rollout prerequisites that must be checked before release
 * **Deployment or rollout path** — merge-only, deploy, canary, phased rollout, maintenance window, or handoff path
 * **Post-deploy checks** — the first concrete observations or smoke checks to run after release
@@ -77,6 +79,7 @@ The closure artifact MUST include:
 * **Rollback procedure** — the actual rollback or mitigation action to take when the trigger fires
 * **Validation window** — how long the change should be watched
 * **Owner** — who is responsible for observing or acting
+* **Source artifact cleanup** (backlogit only; provenance record, no cleanup action) — for every shipped top-level item (feature or chore), record its `custom_fields.source_stash_id` and `custom_fields.source_deliberation_id` values, or `none` when the item declares no such field. These references are provenance, not shipment membership: neither this skill nor Ship archives or mutates a referenced source stash entry or deliberation unless that artifact's own ID is an explicit shipment member already handled by Ship's explicit-member archival. Record the untouched provenance IDs here so Stage can make any later triage decision; this section is the closure artifact's system of record for source-artifact provenance.
 * **Compaction status (P-020)** — the post-merge context compaction state, one of `pending`, `done`, or `degraded`. operational-closure initializes this field to `pending` when it creates the closure artifact; the Ship post-merge closure finalizes it to `done` after compact-context completes, or `degraded` if compact-context was invoked but failed (non-blocking). Allowed transitions are `pending` → `done` and `pending` → `degraded` only. The Orchestrator's next-shipment routing (P-001 + P-020) treats `pending`, unset, or missing as an incomplete post-merge closure that blocks routing, and `done` or `degraded` as satisfied.
 * **Releasability evidence** — the final structured record showing which required evidence from `runtime_validation.releasability` is satisfied, conditional, or still blocked
 
@@ -84,9 +87,13 @@ The closure artifact MUST include:
 
 Return one of:
 
-* **READY** — merge/deploy can proceed with the recorded monitoring plan
-* **READY WITH CONDITIONS** — proceed only if named conditions are satisfied
-* **BLOCKED** — missing verification, unclear rollback path, or unresolved runtime risk
+* **READY** / `READY` — merge/deploy can proceed with the recorded monitoring plan
+* **READY WITH CONDITIONS** / `READY_WITH_CONDITIONS` — proceed only if named conditions are satisfied
+* **BLOCKED** / `BLOCKED` — missing verification, unclear rollback path, or unresolved runtime risk
+
+The closure artifact is the canonical releasability evidence record. Do not
+collapse validator outcomes back into free-form prose after they have been
+structured.
 
 ### Step 4: Feed Back into the Harness
 
@@ -96,23 +103,6 @@ When the closure process reveals durable knowledge:
 * Update documentation if the release process or architecture knowledge changed
 * Add tuning proposals if the harness lacked a needed safety mode, verification pattern, or reviewer
 
-### Step 5: Source Artifact Cleanup (backlogit)
-
-When the `backlogit` capability pack is installed, record a **Source artifact cleanup**
-section in the closure artifact so retirement of the source artifacts that fed the
-shipped scope stays traceable instead of heuristically searching for "stale" items:
-
-* For each shipped top-level item (feature or chore) in scope, read
-  `custom_fields.source_stash_id`. If present, retire the source stash entry via
-  `backlogit_stash_archive` (preferred over the deprecated `backlogit_stash_remove` —
-  archiving preserves traceability; skip and log if it is already archived).
-* For each shipped top-level item in scope, read `custom_fields.source_deliberation_id`.
-  If present and the deliberation artifact exists and is not already archived, archive
-  it via `backlogit_archive_item` (skip and log if already archived or not found).
-* After processing the full shipped scope, record the archived and skipped source
-  artifact IDs in the closure artifact's `Source artifact cleanup` section so the
-  closure report remains the traceable system of record.
-
 ## Why This Skill Exists
 
 Operational closure is the compositional bridge from code production to safe absorption. It makes runtime verification actionable, keeps PRs honest about monitoring expectations, and turns release outcomes into future harness improvements.
@@ -120,6 +110,7 @@ Operational closure is the compositional bridge from code production to safe abs
 ## Quality Criteria
 
 * Closure artifacts include concrete release and monitoring signals, not generic advice
+* Validator evidence and releasability evidence remain structured rather than turning back into report-oriented runtime notes
 * Pre-deploy and post-deploy checks are explicit when the change has runtime or rollout risk
 * Risky actions and their outcomes are visible when they affect release safety
 * Rollback triggers and rollback procedures are explicit and actionable

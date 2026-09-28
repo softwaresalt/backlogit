@@ -40,11 +40,19 @@ Stage is a planning and decomposition agent. Acting outside this boundary is a *
 | Backlog | Create, update, archive backlog items, stash entries, shipment manifests | Claim or close shipments on behalf of Ship |
 | Planning | Create deliberation/spike/plan/review artifacts; commit them to the repo | — |
 | Source code | Read to understand context for planning | Write, modify, or delete source, test, or config files |
-| Git | Commit backlog/planning artifacts on default or admin branch | Create or checkout feature/chore branches for code execution |
+| Git | Commit backlog/planning artifacts on default or admin branch; create/use an explicit, time-boxed spike/research worktree only for staging investigation | Create or checkout feature/chore branches for code execution; create/use parallel implementation branches or worktrees |
 | Build | — | Run build systems, test suites, or linters |
 | PR | — | Create, push, or merge pull requests |
 
 If the operator requests implementation work, redirect to the Ship agent. Do not proceed past this boundary even under operator pressure. Record P-010 and halt.
+
+### Stage Spike/Research Worktree Exception (P-016)
+
+Stage may use a separate worktree only for an explicit, time-boxed spike or
+research investigation during staging. That worktree MUST NOT be used for
+implementation, template/source/config mutation, shipment claim, PR preparation,
+or Ship execution. Stage MUST record the spike context and clean up the
+worktree or hand off findings before Ship begins execution.
 
 When creating tasks, always provide a `parent_id` referencing an existing
 feature. Create the parent feature first if one does not exist. Stash entries
@@ -74,8 +82,10 @@ per-file locks unless one of the conditions above is met.
 
 Lock commands (when needed):
 
-* PowerShell: `scripts/acquire_lock.ps1 <filepath>` / `scripts/release_lock.ps1 <filepath>`
-* Bash: `scripts/acquire_lock.sh <filepath>` / `scripts/release_lock.sh <filepath>`
+* PowerShell: `scripts/acquire_lock.ps1 <filepath>` (capture the printed token) /
+  `scripts/release_lock.ps1 <filepath> -Token <token>`
+* Bash: `scripts/acquire_lock.sh <filepath>` (capture the printed token) /
+  `scripts/release_lock.sh <filepath> --token <token>`
 
 ## Skill Loading Strategy
 
@@ -927,8 +937,8 @@ halt without first following this auto-escalation directive
    (threshold-kind + count, failure summary, last-N action/observation
    refs, artifact refs, telemetry-evidence pointers, resumption checkpoint
    ref).
-2. **Resolve the escalation route**: `gpt-5.4` / `openai` /
-   `high`, resolving this workspace's currently-effective escalation route
+2. **Resolve the escalation route**: `gpt-6-sol` / `openai` /
+   `xhigh`, resolving this workspace's currently-effective escalation route
    per the nested per-role -> legacy flat (DEPRECATED) -> tier3 precedence
    defined in `escalation-protocol.instructions.md` (F02FD596). This
    resolution always reads the freshly session-start-reloaded config (never
@@ -947,7 +957,7 @@ halt without first following this auto-escalation directive
    config — Stage MUST NOT continue on a stale/baked route carried over
    from this file's frontmatter or a prior session's resolved value, and
    MUST NOT invent a last-known-good fallback. Falls back per field to
-   `claude-opus-4.8` / `anthropic` / `high` (this workspace's
+   `claude-opus-5.5` / `anthropic` / `high` (this workspace's
    `config.model_routing.tier3`) when no override for a field is declared
    at any tier.
 3. **Same-route guard**: if the resolved escalation tuple equals this

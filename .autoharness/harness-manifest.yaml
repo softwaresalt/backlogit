@@ -1,6 +1,6 @@
 schema_version: "1.0.0"
 installed_at: "2026-05-17T23:40:00Z"
-tuned_at: "2026-08-31T00:00:00-07:00"
+tuned_at: "2026-09-28T06:00:00Z"
 autoharness_version: "1.5.0"
 autoharness_home: "C:\\Python\\Python314\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
@@ -109,11 +109,15 @@ artifacts:
   - path: ".autoharness/backlog-registry.yaml"
     primitive: 9
     template: "templates/backlog/registries/backlogit.registry.yaml"
-    checksum: "78e81c59ba857c6c036917de4f4d95d484817ec63acc843eef69de32189d3f68"
+    checksum: "00eca1ed12e8e918f5a1bb0d3486750f439393cc4eaab7509cd9523b45b54fc9"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review: added CLI-only reconcile_shipped operation (registry parity verified); staged render not adopted because it drops ~200 workspace-specific lines."
   - path: ".github/instructions/backlogit.instructions.md"
     primitive: 6
     template: "templates/instructions/backlogit.instructions.md.tmpl"
-    checksum: "818d73af15eb9c8d9f71a1f0a374424a711ab73d60e7afcb1fa0afb8947e8c92"
+    checksum: "a098b828778fbad0f96eae22ca6a2da10ad2bb00b05023483a19050fbbe8ad55"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review (TUNE-011): adopted only the Checkpoint Payload Contract subsection; staged render rejected because it drops the Checkpoint Disposition Protocol and carries stale no-blocked-shipment-status text."
   - path: ".github/instructions/architecture-doc.instructions.md"
     primitive: 9
     template: "templates/instructions/architecture-doc.instructions.md.tmpl"
@@ -121,25 +125,31 @@ artifacts:
   - path: ".github/instructions/backlog-integration.instructions.md"
     primitive: 6
     template: "templates/instructions/backlog-integration.instructions.md.tmpl"
-    checksum: "3dedf27e58268ef2b4ef1e3d3a93bef00b8f0d56b164eba014347bab6398bf28"
+    checksum: "3637a5ad96bd3282c25035691e86da3de8c9cadb2609b767021fa5522501f732"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review: added reconcile_shipped CLI-only row matching the registry."
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "d6e67d03bb872709a3edd5faf7daf7f44a62042b0019862cee83c709cf164778"
+    checksum: "1633eef5937f17eff50680c8ef92ebbab2530dbe707f4ef6a073cdecc9166a78"
     drift_allowed: true
-    drift_reason: "Shipment 155-S final-review remediation. P-015 now matches the implemented flat explicit shipment scope: listed features do not imply descendant or linked-deliberation membership, and only explicit members plus the shipment control record participate in closure. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004)."
+    drift_reason: "Shipment 155-S final-review remediation. P-015 now matches the implemented flat explicit shipment scope: listed features do not imply descendant or linked-deliberation membership, and only explicit members plus the shipment control record participate in closure. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). 2026-09-27 tune review (TUNE-010): v1.31.0 P-013.1 resolved tier compliance and P-013.3 analyze-then-halt escalation."
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
-    checksum: "23b206be39c38e0ab68299b48f2f654d6c9fcacb2e29738a6e19015810c5fb95"
+    checksum: "2a6adbf66ebf5a791552bf6de5093712f97162f66bcd482abf6fe51159d05ae4"
   - path: ".github/skills/runtime-verification/SKILL.md"
     primitive: 10
     template: "templates/skills/runtime-verification/SKILL.md.tmpl"
-    checksum: "c474ff546aaec9b921990ac07f085310226f9a946260fc06305d5b524e0c8776"
+    checksum: "2fc6cbd1c5498ddc6e9b043d28899dbc308a8e19a1a460ccd9629ee9432577b7"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review (TUNE-009): adopted validator-contract render with H1 restored."
   - path: ".github/skills/operational-closure/SKILL.md"
     primitive: 10
     template: "templates/skills/operational-closure/SKILL.md.tmpl"
-    checksum: "e4b1b437cf9e97a0f45a670163d9f5688707d1ca2eabc5ed1a8315187d70fdae"
+    checksum: "64ec42d17c3813f0977a299d9e38d9a6b2656580df255c24230f47e05eb8576f"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review (TUNE-009): adopted validator-contract render with H1 restored; replaced source-artifact cleanup with a provenance-only bullet per the Ship Step 7 source artifact boundary."
   - path: ".github/skills/safety-modes/SKILL.md"
     primitive: 5
     template: "templates/skills/safety-modes/SKILL.md.tmpl"
@@ -179,11 +189,11 @@ artifacts:
   - path: ".github/agents/review/concurrency-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/concurrency-reviewer.agent.md.tmpl"
-    checksum: "f51a17ebec770322e15a499400a900b7c16e6a33eb205e2c455a11eabd9309c5"
+    checksum: "e2e5e0cf329e0f51ba61ed2b86902f747f3a2f89e8c19414b53e4342d1fcbd9e"
   - path: ".github/agents/review/agent-native-parity-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/agent-native-parity-reviewer.agent.md.tmpl"
-    checksum: "b39590ccb07a779775fae194dc73aeb6508d7107c37765ceb633566d9628f891"
+    checksum: "03cc0a6c5f7147fb706f729f12e204cd3f4f7ddb875ea3af0046360a73576c59"
   - path: ".github/instructions/ci-security.instructions.md"
     primitive: 6
     template: "templates/instructions/ci-security.instructions.md.tmpl"
@@ -205,17 +215,17 @@ artifacts:
   - path: ".github/instructions/constitution.instructions.md"
     primitive: 1
     template: "templates/foundation/constitution.instructions.md.tmpl"
-    checksum: "90924a2a3facdea5d094e0c2d1df6a9e6d474fa0905faba34e11b1454d818cf4"
+    checksum: "ec9ba258ef62f8f5eef064c4938963870cc9f2ca245592a5ab83f2097ee15157"
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
-    checksum: "13c865e0da2e3ec95adea0eabd8f0a720e9c1320a6719187f4b0a6212cf4e531"
+    checksum: "e1cb9c354000e4a3151c1a099d0b809a7f7f3ffe069601a6ea6e98de2bde3904"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). Same empty-substitution defect as the companion instruction file, across 7 locations including the reviewer routing table. Replaced with symbolic config key paths. Do not auto-revert. Round-3 fix: added `model_tier: 3` and raised `max_subagent_tier` from 1 to 3; the agent's own routing is claude-opus-4.8 (tier3) and its dispatch tables require Tier 2 and Tier 3 reviewers, which a ceiling of 1 made a P-013.2 violation. Round-4 fix: the readiness verdict let an UNACKNOWLEDGED medium-confidence P0/P1 fall through to READY; added an explicit BLOCKED branch so only acknowledged-and-deferred medium findings reach READY_WITH_FOLLOWUPS."
+    drift_reason: "Copilot review fix (PR #400). Same empty-substitution defect as the companion instruction file, across 7 locations including the reviewer routing table. Replaced with symbolic config key paths. Do not auto-revert. Round-3 fix: added `model_tier: 3` and raised `max_subagent_tier` from 1 to 3; the agent's own routing is claude-opus-4.8 (tier3) and its dispatch tables require Tier 2 and Tier 3 reviewers, which a ceiling of 1 made a P-013.2 violation. Round-4 fix: the readiness verdict let an UNACKNOWLEDGED medium-confidence P0/P1 fall through to READY; added an explicit BLOCKED branch so only acknowledged-and-deferred medium findings reach READY_WITH_FOLLOWUPS. 2026-09-27 tune review: anchor reviewer prose corrected to GPT-6 Sol."
   - path: ".github/instructions/adversarial-review.instructions.md"
     primitive: 6
     template: "templates/instructions/adversarial-review.instructions.md.tmpl"
-    checksum: "949efd890554f4e2c2fb467e65187fc80685aa167a2c8bddb852b90e2f7e016a"
+    checksum: "f4ac467b3683114df38a51c49ae5b1ca37179a05660188e178cf0bc61df2e38f"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). ALT_REVIEW_PROVIDER / ALT_REVIEW_FAMILY resolve to empty strings when no alternate route is configured, so the rendered text lost the setting names entirely and read 'When `` and `` are configured'. Replaced with the symbolic config key paths plus an explicit note that both are unset here. Do not auto-revert."
   - path: ".github/instructions/circuit-breaker.instructions.md"
@@ -225,7 +235,9 @@ artifacts:
   - path: ".github/instructions/concurrency.instructions.md"
     primitive: 6
     template: "templates/instructions/concurrency.instructions.md.tmpl"
-    checksum: "e3a09c6ed5215be68bdb31344c6b3119147877e4a692349f58a464bb6b34d223"
+    checksum: "e2d15fe60339ac12251bd6883d982e0aa2059c4ab3f88215fc089f2e21fdd26f"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review: documents the locally hardened release_lock.ps1 default-root and containment behavior."
   - path: ".github/instructions/release-observability.instructions.md"
     primitive: 6
     template: "templates/instructions/release-observability.instructions.md.tmpl"
@@ -233,7 +245,9 @@ artifacts:
   - path: ".github/skills/file-lock/SKILL.md"
     primitive: 5
     template: "templates/skills/file-lock/SKILL.md.tmpl"
-    checksum: "bb17bed11ef3555f034262b2913eb6e3858cba0cab825f01089c453cfdbd9808"
+    checksum: "f03ee9d27ea1e7e2264262107664f83e97746c05d778b97c27ba513449866f4b"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review: documents PowerShell vs bash flag spelling and the hardened release default-root behavior."
   - path: ".github/skills/skill-search/SKILL.md"
     primitive: 4
     template: "templates/skills/skill-search/SKILL.md.tmpl"
@@ -241,7 +255,9 @@ artifacts:
   - path: ".github/skills/review/SKILL.md"
     primitive: 7
     template: "templates/skills/review/SKILL.md.tmpl"
-    checksum: "98014e4f0b43f793a906611f800b503405b28a1cf07db3fa9d153bbe268d54b2"
+    checksum: "d48fc557618a75310cf076532fcc80c92101727ce9d116a677a1c964b3a235f3"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review: fixed multi-line-in-backticks security pattern substitution defect. Upstream template fix pending."
   - path: ".github/instructions/go.instructions.md"
     primitive: 6
     template: "templates/instructions/technology-go.instructions.md.tmpl"
@@ -249,19 +265,23 @@ artifacts:
   - path: "scripts/acquire_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "14453d7e8a9c95ac5d917816b331c1a9fd6812a9ea1e49ac009c6f3bec7b5e3d"
+    checksum: "926873500147222d2dc195f61551d4458a8a0be099d4759c63418dee86f82645"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review: Write-Error before exit 1 replaced with stderr WriteLine so exit codes are reliable in-session. Upstream fix pending."
   - path: "scripts/acquire_lock.sh"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "65c543969c5014f5c91623be6087986acaa57ef6e98eb5ea15b944962d8886e7"
+    checksum: "b8b6d07eb8e5fb2e5da1e05a7c80a53e3b435f86694a6d7c7eb06db40126d27f"
   - path: "scripts/release_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "a2bc60e95e61e3db64e6d90db825276895edd000207d4e046b4d83dc5e980e31"
+    checksum: "f4ec95d0da608f022de2974ee5a4afb05dc976b72d949e2dc543ed0d1c91a53f"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review: release derives the same git-top-level default root as acquire, refuses lock paths outside the root (PATH_ESCAPE), refuses -Force without a root, and uses stderr WriteLine before exit. Upstream fix pending."
   - path: "scripts/release_lock.sh"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "975eefc6c944c93548988a87c158fa27d9683ea878b783a1e07d8ebd769a6b09"
+    checksum: "aa0a4d5139769580f42f396a9fbc017fcbbe2d7ff66317fd537463b0bab62ff8"
   - path: "scripts/search.ps1"
     primitive: 4
     template: "skill-search pack script"
@@ -291,31 +311,35 @@ artifacts:
   - path: ".github/instructions/technology.instructions.md"
     primitive: 6
     template: "templates/instructions/technology.instructions.md.tmpl"
-    checksum: "4b2b011431cabf0eff4b30427e60f11fdf06c3e941795867ee66799ccf3f7cd0"
+    checksum: "9d2e6e1c87012bef8c4b8875e44ad654f2b5db355d4ef7dbcd5a21795d8a46a1"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review (TUNE-012): additive merge of staged repo-specific bullets; staged render would replace workspace bullets and narrow applyTo."
   - path: ".github/agents/review/security-sentinel.agent.md"
     primitive: 5
     template: "templates/agents/security-sentinel.agent.md.tmpl"
-    checksum: "273c01e927f36527ee8e6831633acee30b23d48435235f0054c7d24d21539c0c"
+    checksum: "5ff1d107b32fcb3c843611ccb62e683f144cc9816a571a64ac1214355659a44a"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review: fixed upstream template defect where a multi-line pattern list was substituted inside inline backticks. Upstream template fix pending."
   - path: ".github/agents/review/security-lens-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/security-lens-reviewer.agent.md.tmpl"
-    checksum: "aee084f76eea1638ad5fee2d9e55cf23cb333f9710a4850bed1ac49876c5dcd3"
+    checksum: "d6e2dca91357bdb0c0d56a7008eef291599173274bde9d49207e4a8833320d74"
   - path: ".github/agents/review/security-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/security-reviewer.agent.md.tmpl"
-    checksum: "5b6f2326f4264ba7e2fada46c8dc0d7dbeb74502d7440a2bf0da81a148588dfd"
+    checksum: "5307d347de65cdaff0395d539f9fa25e711d80a5d39856d2ddd74a25f4309c4b"
   - path: ".github/agents/review/template-integrity-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/template-integrity-reviewer.agent.md.tmpl"
-    checksum: "7185f00d6975fdb726f68a6a4d1e35c6ccac343bbbd13e70e3823a2c1879f80f"
+    checksum: "79160114b2f3572a2ca901e40c3995527a540a429b0deb0efe5b617e4688f3ef"
   - path: ".github/agents/review/schema-cli-docs-coupling-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/schema-cli-docs-coupling-reviewer.agent.md.tmpl"
-    checksum: "003a87eee29bbf38070e3622ecee26250a92f1f02e3b2257aeba266f4b95ea93"
+    checksum: "7f563db440e43eddf429e0383ac9a82f927707d165511fc4a15a1955ea8ce1c2"
   - path: ".github/skills/harness-doctor/SKILL.md"
     primitive: 9
     template: "templates/skills/harness-doctor/SKILL.md.tmpl"
-    checksum: "3b8ac834ac18d810f58f2fc5fc7d423a976c2d3f89ec8a4cd61fc2b77d2435dd"
+    checksum: "849f5059a9ed77fc405c73c6330fb06bebeb58dab5045482a89174c67dca4964"
   - path: ".github/skills/iterative-experiment/SKILL.md"
     primitive: 4
     template: "templates/skills/iterative-experiment/SKILL.md.tmpl"
@@ -323,7 +347,9 @@ artifacts:
   - path: ".github/skills/security-audit/SKILL.md"
     primitive: 5
     template: "templates/skills/security-audit/SKILL.md.tmpl"
-    checksum: "6f98865408143b8e1142c81082eff3cf33a735b43eb543c1ede2ed61882b9a66"
+    checksum: "4d7c8ded1f01c239898acffd7e80a4664f2a5f77f46486d05963e3b1f0afbf73"
+    drift_allowed: true
+    drift_reason: "2026-09-27 tune review: fixed multi-line-in-backticks security pattern substitution defect in the variable table and inline references. Upstream template fix pending."
   - path: ".github/skills/shipment-reconcile/SKILL.md"
     primitive: 4
     template: "templates/skills/shipment-reconcile/SKILL.md.tmpl"
@@ -349,33 +375,33 @@ artifacts:
   - path: ".github/agents/subagents/prompt-builder.agent.md"
     primitive: 3
     template: "templates/agents/prompt-builder.agent.md.tmpl"
-    checksum: "da985aac01f84889fa21a8a9aff91886ad9b0b7a2d86cabb6c11a195abeb0271"
+    checksum: "a40c99610057ccfa299857fc0f15d64240591b35936af452575a592767351cd1"
   - path: ".github/agents/subagents/go-engineer.agent.md"
     primitive: 6
     template: "templates/agents/language-engineer.agent.md.tmpl"
-    checksum: "99fca57813ad09a681074bf33385b0243eab2342feb9e30ef599ae7b57249407"
+    checksum: "0a73db2c8dc5b3e5db85e5d4a05556907e767a8b4a93209be47dcd4098740efd"
   - path: ".github/agents/research/learnings-researcher.agent.md"
     primitive: 1
     template: "templates/agents/research/learnings-researcher.agent.md.tmpl"
-    checksum: "caa459f26973dd6b701e64b53319383e9e7fc9389b352a1fcc7a80d2c7c4338a"
+    checksum: "7df2ea0f7f636e30207003542641b43f25fd0aa73c5a9f27f5a174d53e6d4f46"
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "f50aeb871281b1f9175e3abea00451dc1180963b8333ea8e64008b6729c750fa"
+    checksum: "00173cb089ea7f6f9f317874d96135b9636b5220ec3641c762c1ebbf304d0e73"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert."
+    drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert. 2026-09-27 tune review (TUNE-010): Dark Factory DARK_MODE_ACTIVE subagent propagation and concrete-ID scope resolution."
   - path: ".github/agents/_stage.agent.md"
     primitive: 1
     template: "templates/agents/_stage.agent.md.tmpl"
-    checksum: "0b2a863ce5c0f6a78ac5ebde3b9f1e795fae2f6b8f2e7126416527138b285f4e"
+    checksum: "d7bcde1b33b6244331cc3f7cde29b469cd645183aed7c0d873843bbf1e2c6b66"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert."
+    drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert. 2026-09-27 tune review (TUNE-010): P-016 Stage spike/research worktree exception."
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "e7715f0d03023283dc312d5dbb10659cf0a0c6526d2ef0a0b0218427396e8df0"
+    checksum: "fd69f15a7cd3bd0ad76db4fe22cf085fcd65cf4caddd61833aeac68f11f1cd67"
     drift_allowed: true
-    drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names."
+    drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix."
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"
@@ -387,7 +413,7 @@ artifacts:
   - path: ".github/instructions/escalation-protocol.instructions.md"
     primitive: 1
     template: "templates/instructions/escalation-protocol.instructions.md.tmpl"
-    checksum: "b2c94cb05a420a151e2d8a1a75224b743cbfa41fddf62324619fe1e359481109"
+    checksum: "856c463ab5c6302ef4e00ba0ff6ba3181b5aa653c52c3fb279d54d4231116c0c"
   - path: ".github/instructions/copilot-code-review.instructions.md"
     primitive: 7
     template: "templates/instructions/copilot-code-review.instructions.md.tmpl"
@@ -406,14 +432,14 @@ artifacts:
   - path: ".github/agents/review/correctness-reviewer.agent.md"
     primitive: 8
     template: "templates/agents/review/correctness-reviewer.agent.md.tmpl"
-    checksum: "2c90794b1603d57444b2d8d883f97c1dd3a8c6bb62cbc393ae31f258476a45c8"
+    checksum: "b246da3fc0f2ede00f37e89bf68459dca67e9864795e4c230d506c1a3aa812fd"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Added the missing `model_tier: 1`. P-013.4 requires every agent definition to declare both integer tier fields; this persona declared only `max_subagent_tier`, matching neither the policy nor its sibling Tier-1 personas. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Tier-1 routing rendered as reasoning_effort=low / provider=anthropic / family=claude-haiku-4.5, matching config.model_routing.tier1 and the lowercase convention of the newest installed personas. Placed in .github/agents/review/ to match this workspace's established persona layout (the deterministic verifier passes against that layout)."
   - path: ".github/agents/review/maintainability-reviewer.agent.md"
     primitive: 8
     template: "templates/agents/review/maintainability-reviewer.agent.md.tmpl"
-    checksum: "e712cb0adb5690ab2fdf3a6f92b7c507e198a0474aea56912bcf4a253cb51b53"
+    checksum: "b400d328ce2a0a476b6f20b5ddc2ad5d8aaff64992bd675ece3d30efb83225b1"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Added the missing `model_tier: 1`. P-013.4 requires every agent definition to declare both integer tier fields; this persona declared only `max_subagent_tier`, matching neither the policy nor its sibling Tier-1 personas. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Same tier-1 rendering and layout rationale as correctness-reviewer."
@@ -547,9 +573,9 @@ variables_used:
   DOCS_CLOSURE_DIR: "closure"
   DOCS_DESIGN_DOCS_DIR: "design-docs"
   DOCS_PRODUCT_SPECS_DIR: "product-specs"
-  MODEL_ROUTING_TIER1: "Claude Haiku 4.5"
-  MODEL_ROUTING_TIER2: "Claude Sonnet 4.6"
-  MODEL_ROUTING_TIER3: "Claude Opus 4.6"
+  MODEL_ROUTING_TIER1: "gpt-6-luna"
+  MODEL_ROUTING_TIER2: "claude-sonnet-5"
+  MODEL_ROUTING_TIER3: "claude-opus-5.5"
   PRIMARY_LANGUAGE: "Go"
   LANGUAGE_VERSION: "1.24.0"
   BUILD_COMMAND: "go build ./cmd/backlogit"
@@ -573,22 +599,22 @@ variables_used:
   BACKLOG_CONFIG_PATH: ".backlogit/config.yaml"
   BACKLOG_REGISTRY_PATH: ".autoharness/backlog-registry.yaml"
   COMMIT_STYLE: "conventional commits"
-  WORKSPACE_PATH: "d:\\Source\\GitHub\\backlogit"
+  WORKSPACE_PATH: "C:\\Source\\GitHub\\backlogit"
   REPO_OWNER: "softwaresalt"
   REPO_NAME: "backlogit"
   ALT_REVIEW_PROVIDER: ""
   ALT_REVIEW_FAMILY: ""
   ANCHOR_REVIEW_PROVIDER: "openai"
-  ANCHOR_REVIEW_FAMILY: "gpt-5.6-sol"
+  ANCHOR_REVIEW_FAMILY: "gpt-6-sol"
   ANCHOR_REVIEW_REASONING_EFFORT: "high"
   # P-013.6 auto-escalation route. Mirrors config.model_routing.escalation and is
   # deliberately a distinct provider/family from tier3 so Stage (already tier3) never
   # resolves a same-route ESCALATION_DEGRADED no-op. The tier3 per-field fallback
   # (claude-opus-4.8 / anthropic / high) remains the final fallback when no flat or
   # nested escalation override is declared.
-  ESCALATION_FAMILY: "gpt-5.4"
-  ESCALATION_PROVIDER: "openai"
-  ESCALATION_REASONING_EFFORT: "high"
+  ESCALATION_FAMILY: "claude-opus-5.5"
+  ESCALATION_PROVIDER: "anthropic"
+  ESCALATION_REASONING_EFFORT: "xhigh"
   PROJECT_NAME: "backlogit"
   HARNESS_ENFORCED_SUMMARY: |
     * Go formatting, linting, and vet mechanics (`gofmt -l .`, `golangci-lint run`, `go vet ./...`)
@@ -1020,3 +1046,54 @@ tuning_history:
       - ".github/agents/_stage.agent.md"
       - ".github/agents/_orchestrator.agent.md"
       - ".autoharness/harness-manifest.yaml"
+  - at: "2026-09-27T00:00:00Z"
+    summary: "Auto-Tune 1.5.0 drift pass on branch chore/autoharness-tune-2026-09-27. (1) Lock hardening: refreshed acquire/release lock scripts (.ps1/.sh) to the upstream capability-token + workspace-containment model, concurrency.instructions.md, file-lock/SKILL.md (H1 kept), and the Stage/Ship lock command lines; harness-doctor resolves version live. (2) Model routing: propagated config.model_routing tier routes into the frontmatter of 18 tiered agents (tier1 gpt-6-luna/openai/xhigh, tier2 claude-sonnet-5/anthropic/high, tier3 claude-opus-5.5/anthropic/high), anchor reviewer gpt-6-sol, escalation route claude-opus-5.5/anthropic/xhigh in _stage/_ship/escalation-protocol, and the _orchestrator routing table. (3) Fixed the verifier-failing ship_release_closure_sequence phrase in _ship. (4) Added 6 missing registry rows to backlog-integration; security-reviewer Scope Disposition section; constitution single-worktree + P-020 closure text; spike graphtor-docs preference and docline.* frontmatter guidance. Staged renders not adopted wholesale (drop model_tier, demote H1, unresolved QUALITY_GATE placeholders). See .autoharness/tuning-reports/2026-09-27-tuning-report.md."
+    artifacts:
+      - ".autoharness/harness-manifest.yaml"
+  - at: "2026-09-27T20:00:00Z"
+    summary: "Auto-Tune review follow-up on chore/autoharness-tune-2026-09-27. TUNE-009 validator-contract runtime-verification/operational-closure merges; TUNE-010 P-013.1/P-013.3 (policies v1.31.0), Ship telemetry steps, Stage P-016 spike worktree exception, Orchestrator dark-factory scope; TUNE-011 Checkpoint Payload Contract only; TUNE-012 additive technology bullets, security-pattern substitution defect fixes, reconcile_shipped registry entry; release/acquire lock script P1-P3 fixes. TUNE-013 handled upstream, TUNE-014 operator-fixed, TUNE-015 accepted debt."
+    artifacts:
+      - ".autoharness/backlog-registry.yaml"
+      - ".github/agents/_orchestrator.agent.md"
+      - ".github/agents/_ship.agent.md"
+      - ".github/agents/_stage.agent.md"
+      - ".github/agents/review/adversarial-review.agent.md"
+      - ".github/agents/review/security-sentinel.agent.md"
+      - ".github/instructions/backlog-integration.instructions.md"
+      - ".github/instructions/backlogit.instructions.md"
+      - ".github/instructions/concurrency.instructions.md"
+      - ".github/instructions/technology.instructions.md"
+      - ".github/policies/workflow-policies.md"
+      - ".github/skills/compact-context/SKILL.md"
+      - ".github/skills/file-lock/SKILL.md"
+      - ".github/skills/operational-closure/SKILL.md"
+      - ".github/skills/review/SKILL.md"
+      - ".github/skills/runtime-verification/SKILL.md"
+      - ".github/skills/security-audit/SKILL.md"
+      - "scripts/acquire_lock.ps1"
+      - "scripts/release_lock.ps1"
+  - at: "2026-09-28T05:00:00Z"
+    summary: "Operator follow-up: escalation route moved to cross-family gpt-6-sol/openai/xhigh (config, _stage, _ship, escalation-protocol); restored lock-script stderr messages dropped by the P3 fix; documented upstream fix proposals (lock scripts, security-pattern substitution defect, release check-then-delete race) in docs/decisions/2026-09-27-autoharness-upstream-fix-proposals.md; withdrew the tier-1 xhigh cost advisory."
+    artifacts:
+      - ".autoharness/config.yaml"
+      - ".github/agents/_stage.agent.md"
+      - ".github/agents/_ship.agent.md"
+      - ".github/instructions/escalation-protocol.instructions.md"
+      - "scripts/acquire_lock.ps1"
+      - "scripts/release_lock.ps1"
+      - "docs/decisions/2026-09-27-autoharness-upstream-fix-proposals.md"
+  - at: "2026-09-28T05:30:00Z"
+    summary: "PR #454 Copilot review fixes: release_lock.ps1 uses acquire's per-root case-sensitivity helper for containment; release_lock.sh derives a trusted default root, enforces containment, and refuses --force without a root; reconcile_shipped dry-run split into reconcile_shipped_preview; _ship Step 4.1c skips record close on disabled/unavailable/conflict; runtime-verification defines the empty validator-manifest fallback."
+    artifacts:
+      - "scripts/release_lock.ps1"
+      - "scripts/release_lock.sh"
+      - "scripts/acquire_lock.sh"
+      - ".autoharness/backlog-registry.yaml"
+      - ".github/instructions/backlog-integration.instructions.md"
+      - ".github/agents/_ship.agent.md"
+      - ".github/skills/runtime-verification/SKILL.md"
+  - at: "2026-09-28T06:00:00Z"
+    summary: "PR #454 Copilot review round 2: concurrency instructions and file-lock skill now describe release_lock.sh deriving the trusted default root like acquire, plus the Git Bash --workspace-root caveat."
+    artifacts:
+      - ".github/instructions/concurrency.instructions.md"
+      - ".github/skills/file-lock/SKILL.md"

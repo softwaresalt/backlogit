@@ -79,8 +79,8 @@ model_routing:
   # auto-escalation attempt is a genuine escalation, not a same-route no-op
   # (ESCALATION_DEGRADED guard, 011-DL(b)/106-F).
   escalation:
-    model_family: "claude-opus-5.5"
-    model_provider: "anthropic"
+    model_family: "gpt-6-sol"
+    model_provider: "openai"
     reasoning_effort: "xhigh"
   anchor_review:
     model_family: "gpt-6-sol"           # Anchor reviewer family (default: gpt-5.6-sol)
