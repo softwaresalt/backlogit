@@ -77,7 +77,7 @@ description: "Auto-Tune 1.5.0 drift pass: lock hardening, model-routing propagat
 
 ## Advisory — Escalation Route
 
-`model_routing.escalation` (`claude-opus-5.5`/anthropic/xhigh) differs from the Stage role route (`claude-opus-5.5`/anthropic/high) only in `reasoning_effort`. It is therefore not same-route degraded, but the config comment asks for a distinct vendor/family. Consider a cross-family escalation route (for example an OpenAI frontier model) so Stage escalations get a genuinely independent perspective. The config was not changed.
+**Resolved (second session).** At the time of the first pass, `model_routing.escalation` (`claude-opus-5.5`/anthropic/xhigh) differed from the Stage role route only in `reasoning_effort`. The operator approved a cross-family route, so escalation is now `gpt-6-sol`/openai/xhigh. For Stage this is a cross-vendor escalation. For Ship (`gpt-6-luna`/openai) it escalates from a fast model to a frontier model. `config.yaml`, `_stage`, `_ship`, and `escalation-protocol.instructions.md` were updated together.
 
 ## Verification
 
@@ -115,7 +115,8 @@ The operator asked the agent to review the committed tune diff and to resolve th
 * **Lock script P3, fixed.** `Write-Error` before `exit 1` has been replaced with stderr `WriteLine`, so in-session exit codes are reliable.
 * **TOCTOU (upstream).** A TOCTOU window remains between the digest recheck and the delete. Upstream should open the file with `FileShare.None` plus `DeleteOnClose`.
 * **Stale binary.** The installed `backlogit.exe` predates `shipment block`/`unblock`. Rebuild it from `main`.
-* **Advisory.** Tier-1 reviewers run `gpt-6-luna` at `xhigh`; consider `high` if cost matters. The Orchestrator routing table also duplicates config values and will drift on the next routing change.
+* **Advisory, withdrawn.** Tier-1 reviewers run `gpt-6-luna` at `xhigh`. Under Copilot premium-request billing, cost is charged per request with a per-model multiplier, not per reasoning token, so `xhigh` on a cheap model mainly costs latency. Keep `xhigh` unless review latency becomes a problem. The Orchestrator routing table still duplicates config values and will drift on the next routing change.
+* **Regression caught during follow-up.** The first P3 stderr replacement dropped the message argument at 11 sites, leaving bare `[Console]::Error.WriteLine()` calls. The messages were restored from the original `Write-Error` strings and verified under PowerShell 5.1 and 7. See `docs/decisions/2026-09-27-autoharness-upstream-fix-proposals.md` for the upstream fix and test proposals.
 
 ### Verification (second session)
 

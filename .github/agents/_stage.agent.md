@@ -937,7 +937,7 @@ halt without first following this auto-escalation directive
    (threshold-kind + count, failure summary, last-N action/observation
    refs, artifact refs, telemetry-evidence pointers, resumption checkpoint
    ref).
-2. **Resolve the escalation route**: `claude-opus-5.5` / `anthropic` /
+2. **Resolve the escalation route**: `gpt-6-sol` / `openai` /
    `xhigh`, resolving this workspace's currently-effective escalation route
    per the nested per-role -> legacy flat (DEPRECATED) -> tier3 precedence
    defined in `escalation-protocol.instructions.md` (F02FD596). This

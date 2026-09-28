@@ -1,6 +1,6 @@
 schema_version: "1.0.0"
 installed_at: "2026-05-17T23:40:00Z"
-tuned_at: "2026-09-27T20:00:00Z"
+tuned_at: "2026-09-28T05:00:00Z"
 autoharness_version: "1.5.0"
 autoharness_home: "C:\\Python\\Python314\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
@@ -265,7 +265,7 @@ artifacts:
   - path: "scripts/acquire_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "2f116455dab39514e89aeb042f90ecdde6ca681a76d2619892f8a750537229f4"
+    checksum: "926873500147222d2dc195f61551d4458a8a0be099d4759c63418dee86f82645"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: Write-Error before exit 1 replaced with stderr WriteLine so exit codes are reliable in-session. Upstream fix pending."
   - path: "scripts/acquire_lock.sh"
@@ -275,7 +275,7 @@ artifacts:
   - path: "scripts/release_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "c7abf192a9aba4209d68110550155504ea46013f4036a135b048b74fcfdb8e1e"
+    checksum: "847cf3503125285f80f96705815f7154146af75d7d3eb80a71593373892076a3"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: release derives the same git-top-level default root as acquire, refuses lock paths outside the root (PATH_ESCAPE), refuses -Force without a root, and uses stderr WriteLine before exit. Upstream fix pending."
   - path: "scripts/release_lock.sh"
@@ -393,13 +393,13 @@ artifacts:
   - path: ".github/agents/_stage.agent.md"
     primitive: 1
     template: "templates/agents/_stage.agent.md.tmpl"
-    checksum: "f4dba484f2adfa368aa5346d086487f8bfcbe1823dbc959c77d4b0a1440b45a2"
+    checksum: "d7bcde1b33b6244331cc3f7cde29b469cd645183aed7c0d873843bbf1e2c6b66"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert. 2026-09-27 tune review (TUNE-010): P-016 Stage spike/research worktree exception."
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "d66f69b4d2036a6df8026acb5c619cb323f8afcd169c48f4ae15d855dcd6c776"
+    checksum: "a4e3364c85640e9eafdad34bd90d60269cd627ef7438d654db683b228713f18f"
     drift_allowed: true
     drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix."
   - path: ".github/skills/harness-architect/SKILL.md"
@@ -413,7 +413,7 @@ artifacts:
   - path: ".github/instructions/escalation-protocol.instructions.md"
     primitive: 1
     template: "templates/instructions/escalation-protocol.instructions.md.tmpl"
-    checksum: "63061de05970fbdb5244ba72c7d503fc88c8c97600a7387bcacfbcce2077121c"
+    checksum: "856c463ab5c6302ef4e00ba0ff6ba3181b5aa653c52c3fb279d54d4231116c0c"
   - path: ".github/instructions/copilot-code-review.instructions.md"
     primitive: 7
     template: "templates/instructions/copilot-code-review.instructions.md.tmpl"
@@ -1072,3 +1072,13 @@ tuning_history:
       - ".github/skills/security-audit/SKILL.md"
       - "scripts/acquire_lock.ps1"
       - "scripts/release_lock.ps1"
+  - at: "2026-09-28T05:00:00Z"
+    summary: "Operator follow-up: escalation route moved to cross-family gpt-6-sol/openai/xhigh (config, _stage, _ship, escalation-protocol); restored lock-script stderr messages dropped by the P3 fix; documented upstream fix proposals (lock scripts, security-pattern substitution defect, release check-then-delete race) in docs/decisions/2026-09-27-autoharness-upstream-fix-proposals.md; withdrew the tier-1 xhigh cost advisory."
+    artifacts:
+      - ".autoharness/config.yaml"
+      - ".github/agents/_stage.agent.md"
+      - ".github/agents/_ship.agent.md"
+      - ".github/instructions/escalation-protocol.instructions.md"
+      - "scripts/acquire_lock.ps1"
+      - "scripts/release_lock.ps1"
+      - "docs/decisions/2026-09-27-autoharness-upstream-fix-proposals.md"

@@ -431,7 +431,7 @@ if ($tokenMalformed) {
     # V-c2: fail closed before any digest is computed -- a wrong-length or
     # wrong-charset token is a distinct, named validation error, not merely
     # a digest mismatch.
-[Console]::Error.WriteLine()
+    [Console]::Error.WriteLine("autoharness-file-lock: TOKEN_MALFORMED -- supplied token is not 64 lowercase hex characters; refusing to verify ownership without computing a digest. Supply the exact value returned at acquire time, or have the operator supply -Force.")
     exit 1
 }
 
@@ -442,7 +442,7 @@ if (-not $ownershipVerified) {
         # Decision (iii): a refusal is a non-zero exit -- exit 0 would make
         # the refusal indistinguishable from success.
         $quotedPath = Get-AutoharnessSingleQuoted -Value $FilePath
-[Console]::Error.WriteLine()
+        [Console]::Error.WriteLine("autoharness-file-lock: refusing to release -- ownership could not be verified ($ownerReport). Supply -Token with the value returned at acquire time, or have the operator run: release_lock.ps1 $quotedPath -Force")
         exit 1
     }
     Write-Warning "autoharness-file-lock: -Force supplied; breaking this lock without a verified token ($ownerReport). O3: this is an advisory lock, not an adversarial guarantee -- only the operator should do this."
@@ -505,7 +505,7 @@ if ($ownershipVerified) {
         }
     }
     if (-not ($recheckDigest -and $recheckDigest.Equals($recordedDigest, [System.StringComparison]::OrdinalIgnoreCase))) {
-[Console]::Error.WriteLine()
+        [Console]::Error.WriteLine("autoharness-file-lock: refusing to release -- the lock at '$lockFile' changed between verification and deletion (a different owner now holds it); this process's token no longer matches the current owner. Re-run release to re-verify against the new owner, or have the operator use -Force.")
         exit 1
     }
 }
@@ -516,6 +516,6 @@ try {
     exit 0
 }
 catch {
-[Console]::Error.WriteLine()
+    [Console]::Error.WriteLine("Failed to remove lock file: $_")
     exit 1
 }

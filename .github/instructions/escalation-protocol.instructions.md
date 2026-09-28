@@ -94,7 +94,7 @@ The escalation route resolves via a role-scoped precedence:
    `escalation` override, `model_routing.escalation` (the pre-F02FD596 flat,
    role-agnostic route) resolves instead, with a deprecation notice. This
    workspace's `.autoharness/config.yaml` **does** declare
-   `model_routing.escalation` (`claude-opus-5.5` / `anthropic` / `xhigh`), and no nested
+   `model_routing.escalation` (`gpt-6-sol` / `openai` / `xhigh`), and no nested
    `model_routing.<role>.escalation` override is declared, so this flat route
    is the route that actually resolves today for both Stage and Ship. It
    remains documented, unremoved, for backward compatibility; migrate to
@@ -143,14 +143,13 @@ remove the nested override(s), to resolve the ambiguity.
    `ESCALATION_DEGRADED`.
 
    **Current workspace state (not degraded).** This workspace declares a flat
-   `model_routing.escalation` of `claude-opus-5.5` / `anthropic` / `xhigh`,
+   `model_routing.escalation` of `gpt-6-sol` / `openai` / `xhigh`,
    which differs from Stage's role route (`claude-opus-5.5` / `anthropic` /
-   `high`) in `reasoning_effort` only. The tuples are not equal, so Stage's
-   escalation is **not** same-route degraded today; it is a reasoning-depth
-   escalation on the same model family rather than a cross-model one. Ship's
-   role route (`gpt-6-luna` / `openai` / `xhigh`) differs from the escalation
-   route in family and provider, so Ship likewise resolves to a distinct
-   escalation route. Re-evaluate this comparison at session-start
+   `high`) in family, provider, and `reasoning_effort`. Stage's escalation is
+   therefore a genuine cross-vendor escalation and **not** same-route
+   degraded. Ship's role route (`gpt-6-luna` / `openai` / `xhigh`) shares the
+   provider but differs in family (a fast model escalating to a frontier
+   model), so Ship likewise resolves to a distinct escalation route. Re-evaluate this comparison at session-start
    reload time rather than treating either outcome as static.
 
 When `ESCALATION_DEGRADED` is declared, the halting agent MUST fall back to its

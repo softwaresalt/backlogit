@@ -1442,7 +1442,7 @@ before falling back to the operator-halt checkpoint:
    (threshold-kind + count = `consecutive_task_failures` / 3, failure
    summary, last-N action/observation refs, artifact refs, telemetry-
    evidence pointers, resumption checkpoint ref).
-2. **Resolve the escalation route**: `claude-opus-5.5` / `anthropic` /
+2. **Resolve the escalation route**: `gpt-6-sol` / `openai` /
    `xhigh`, resolving this workspace's currently-effective escalation route
    per the nested per-role -> legacy flat (DEPRECATED) -> tier3 precedence
    defined in `escalation-protocol.instructions.md` (F02FD596). This

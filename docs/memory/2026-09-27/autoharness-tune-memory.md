@@ -60,3 +60,16 @@ Pre-edit backups are in `.autoharness/backups/2026-09-27/`.
   operational-closure.
 * Next: open the PR, rebuild `backlogit.exe` from `main`, and upstream the lock
   fixes and template defects.
+
+## Third Session — Operator Follow-Up
+
+* Escalation route is now `gpt-6-sol`/openai/xhigh, a cross-family route
+  approved by the operator.
+* The P3 lock-script fix dropped 11 stderr messages; restored and verified
+  under PowerShell 5.1 and 7.
+* Upstream proposals: `docs/decisions/2026-09-27-autoharness-upstream-fix-proposals.md`.
+* Built `bin\backlogit-main.exe` from `main` with a Go pseudo-version stamp. A
+  `git describe` stamp sorts as a prerelease and falsely reports an available
+  update.
+* Installing to `C:\Tools` is operator-owned: it is outside the workspace and
+  the executable is locked by running MCP servers.

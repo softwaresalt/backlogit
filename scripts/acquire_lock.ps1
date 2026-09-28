@@ -306,7 +306,7 @@ function Resolve-AutoharnessWorkspaceRoot {
 
     if ($ExplicitRoot) {
         if (-not (Test-Path -LiteralPath $ExplicitRoot)) {
-[Console]::Error.WriteLine()
+            [Console]::Error.WriteLine("autoharness-file-lock: -WorkspaceRoot does not exist: $ExplicitRoot")
             exit 1
         }
         return Get-AutoharnessRealPath (Resolve-Path -LiteralPath $ExplicitRoot).Path
@@ -318,7 +318,7 @@ function Resolve-AutoharnessWorkspaceRoot {
     # task 0's case-7 matrix entry for the exact rationale).
     $scriptDir = $PSScriptRoot
     if (-not $scriptDir) {
-[Console]::Error.WriteLine()
+        [Console]::Error.WriteLine("autoharness-file-lock: cannot derive a default workspace root (no script directory available); pass -WorkspaceRoot explicitly.")
         exit 1
     }
     $realScriptDir = Get-AutoharnessRealPath $scriptDir
@@ -335,7 +335,7 @@ function Resolve-AutoharnessWorkspaceRoot {
     }
 
     if (-not $gitTopLevel) {
-[Console]::Error.WriteLine()
+        [Console]::Error.WriteLine("autoharness-file-lock: no -WorkspaceRoot supplied and no git repository found from this script's directory; pass -WorkspaceRoot explicitly.")
         exit 1
     }
 
@@ -348,7 +348,7 @@ function Resolve-AutoharnessWorkspaceRoot {
     }
 
     if (-not $realExpectedScriptsDir.Equals($realScriptDir, $autoharnessPathComparisonMode)) {
-[Console]::Error.WriteLine()
+        [Console]::Error.WriteLine("autoharness-file-lock: git-derived root '$realGitTopLevel' does not match this script's own installed location; this workspace is likely a nested checkout without its own .git (widening guard, finding 2). Pass -WorkspaceRoot explicitly.")
         exit 1
     }
 
@@ -374,7 +374,7 @@ if (-not [System.IO.Path]::IsPathRooted($FilePath)) {
 }
 
 if (-not (Test-Path -LiteralPath $FilePath)) {
-[Console]::Error.WriteLine()
+    [Console]::Error.WriteLine("Target file does not exist: $FilePath")
     exit 1
 }
 
@@ -382,7 +382,7 @@ $resolvedPath = (Resolve-Path -LiteralPath $FilePath).Path
 $realTargetPath = Get-AutoharnessRealPath $resolvedPath
 
 if (-not (Test-AutoharnessPathContained -RealRoot $realWorkspaceRoot -RealCandidate $realTargetPath)) {
-[Console]::Error.WriteLine()
+    [Console]::Error.WriteLine("autoharness-file-lock: target path escapes the workspace root and was rejected (root=$realWorkspaceRoot, target=$realTargetPath).")
     exit 1
 }
 
@@ -463,6 +463,6 @@ catch [System.IO.IOException] {
     exit 1
 }
 catch {
-[Console]::Error.WriteLine()
+    [Console]::Error.WriteLine("Failed to create lock file: $_")
     exit 1
 }
