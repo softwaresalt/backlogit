@@ -675,8 +675,8 @@ autoharness telemetry begin --task-id {item_id} --backlog-item-id {item_id} \
 * Parse the structured result and carry `context_ref` plus the stable `epoch_id`
   through the task loop **only when `status` is `created` or `idempotent_begin`**.
 * If the result is `disabled`, `unavailable`, or `conflict`, skip context carry
-  and record close for this task without failing the lifecycle or creating
-  telemetry artifacts. A `conflict` returns `enabled: true` but points
+  and skip the Step 4.5 record close for this task, without failing the lifecycle
+  or creating telemetry artifacts. A `conflict` returns `enabled: true` but points
   `context_ref` at a different-keyed pre-existing context, so carrying and closing
   against it would mis-attribute the task roll-up to the wrong epoch.
 * Do not re-read backlogit size, hierarchy, or shipment membership after this

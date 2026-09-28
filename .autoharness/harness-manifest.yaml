@@ -1,6 +1,6 @@
 schema_version: "1.0.0"
 installed_at: "2026-05-17T23:40:00Z"
-tuned_at: "2026-09-28T05:00:00Z"
+tuned_at: "2026-09-28T05:30:00Z"
 autoharness_version: "1.5.0"
 autoharness_home: "C:\\Python\\Python314\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "updated"
@@ -109,7 +109,7 @@ artifacts:
   - path: ".autoharness/backlog-registry.yaml"
     primitive: 9
     template: "templates/backlog/registries/backlogit.registry.yaml"
-    checksum: "1a296babc592fcc06c56dc7cf974888d50515b035c21d2a97b206c7447f85e6a"
+    checksum: "00eca1ed12e8e918f5a1bb0d3486750f439393cc4eaab7509cd9523b45b54fc9"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: added CLI-only reconcile_shipped operation (registry parity verified); staged render not adopted because it drops ~200 workspace-specific lines."
   - path: ".github/instructions/backlogit.instructions.md"
@@ -125,7 +125,7 @@ artifacts:
   - path: ".github/instructions/backlog-integration.instructions.md"
     primitive: 6
     template: "templates/instructions/backlog-integration.instructions.md.tmpl"
-    checksum: "335cf528e90892495e01c0717bababb7934550bd57dcb65b958498c93e3624b0"
+    checksum: "3637a5ad96bd3282c25035691e86da3de8c9cadb2609b767021fa5522501f732"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: added reconcile_shipped CLI-only row matching the registry."
   - path: ".github/policies/workflow-policies.md"
@@ -141,7 +141,7 @@ artifacts:
   - path: ".github/skills/runtime-verification/SKILL.md"
     primitive: 10
     template: "templates/skills/runtime-verification/SKILL.md.tmpl"
-    checksum: "c9dfbb8008d14d578bb4326d6f65d5a56f9d0ca3ff4d63c1b671270f6320cbb6"
+    checksum: "2fc6cbd1c5498ddc6e9b043d28899dbc308a8e19a1a460ccd9629ee9432577b7"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review (TUNE-009): adopted validator-contract render with H1 restored."
   - path: ".github/skills/operational-closure/SKILL.md"
@@ -271,17 +271,17 @@ artifacts:
   - path: "scripts/acquire_lock.sh"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "d53ee9beefdbc1388d78438a58342c2fb4a514872a25c7f4a2caa270dede67e7"
+    checksum: "b8b6d07eb8e5fb2e5da1e05a7c80a53e3b435f86694a6d7c7eb06db40126d27f"
   - path: "scripts/release_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "847cf3503125285f80f96705815f7154146af75d7d3eb80a71593373892076a3"
+    checksum: "f4ec95d0da608f022de2974ee5a4afb05dc976b72d949e2dc543ed0d1c91a53f"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: release derives the same git-top-level default root as acquire, refuses lock paths outside the root (PATH_ESCAPE), refuses -Force without a root, and uses stderr WriteLine before exit. Upstream fix pending."
   - path: "scripts/release_lock.sh"
     primitive: 5
     template: "concurrency pack script"
-    checksum: "7194ed051960a36b949d5d6f58f6054bc586c00ef93f6624fb335e7492a537c7"
+    checksum: "aa0a4d5139769580f42f396a9fbc017fcbbe2d7ff66317fd537463b0bab62ff8"
   - path: "scripts/search.ps1"
     primitive: 4
     template: "skill-search pack script"
@@ -399,7 +399,7 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "a4e3364c85640e9eafdad34bd90d60269cd627ef7438d654db683b228713f18f"
+    checksum: "fd69f15a7cd3bd0ad76db4fe22cf085fcd65cf4caddd61833aeac68f11f1cd67"
     drift_allowed: true
     drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix."
   - path: ".github/skills/harness-architect/SKILL.md"
@@ -1082,3 +1082,13 @@ tuning_history:
       - "scripts/acquire_lock.ps1"
       - "scripts/release_lock.ps1"
       - "docs/decisions/2026-09-27-autoharness-upstream-fix-proposals.md"
+  - at: "2026-09-28T05:30:00Z"
+    summary: "PR #454 Copilot review fixes: release_lock.ps1 uses acquire's per-root case-sensitivity helper for containment; release_lock.sh derives a trusted default root, enforces containment, and refuses --force without a root; reconcile_shipped dry-run split into reconcile_shipped_preview; _ship Step 4.1c skips record close on disabled/unavailable/conflict; runtime-verification defines the empty validator-manifest fallback."
+    artifacts:
+      - "scripts/release_lock.ps1"
+      - "scripts/release_lock.sh"
+      - "scripts/acquire_lock.sh"
+      - ".autoharness/backlog-registry.yaml"
+      - ".github/instructions/backlog-integration.instructions.md"
+      - ".github/agents/_ship.agent.md"
+      - ".github/skills/runtime-verification/SKILL.md"

@@ -383,7 +383,7 @@ operations:
   reconcile_shipped:
     cli_command: "backlogit shipment reconcile-shipped {{shipment_id}} --reason {{reason}} --actor {{actor}} --idempotency-key {{idempotency_key}} --merge-sha {{merge_sha}} --closure-evidence {{closure_evidence}} --confirm {{confirm}}"
     cli_only: true
-    rationale: "legacy archived-shipment reconciliation is an operator-confirmed governed repair; no MCP surface exists. confirm must be the phrase 'reconcile-shipped <shipment-id>'; substitute --dry-run for --confirm to preview without writing"
+    rationale: "legacy archived-shipment reconciliation is an operator-confirmed governed repair; no MCP surface exists. confirm must be the phrase 'reconcile-shipped <shipment-id>'. To preview without writing, use reconcile_shipped_preview instead (--dry-run and --confirm are separate invocations, not a value substitution)"
     params:
       shipment_id: "shipment_id"
       reason: "reason"
@@ -392,6 +392,20 @@ operations:
       merge_sha: "merge_sha"
       closure_evidence: "closure_evidence"
       confirm: "confirm"
+
+  # reconcile_shipped_preview evaluates every reconcile_shipped precondition and
+  # prints the planned outcome without writing. It needs no --confirm phrase.
+  reconcile_shipped_preview:
+    cli_command: "backlogit shipment reconcile-shipped {{shipment_id}} --dry-run --reason {{reason}} --actor {{actor}} --idempotency-key {{idempotency_key}} --merge-sha {{merge_sha}} --closure-evidence {{closure_evidence}}"
+    cli_only: true
+    rationale: "read-only dry-run preview of reconcile_shipped; writes nothing and requires no confirmation phrase. No MCP surface exists."
+    params:
+      shipment_id: "shipment_id"
+      reason: "reason"
+      actor: "actor"
+      idempotency_key: "idempotency_key"
+      merge_sha: "merge_sha"
+      closure_evidence: "closure_evidence"
 
   # --- Stash management ---
 

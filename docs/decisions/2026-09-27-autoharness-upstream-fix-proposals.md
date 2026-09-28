@@ -80,9 +80,25 @@ paths outside the workspace.
 * If no root is known and `-Force` is supplied, release refuses. It will not
   break a lock without a containment boundary.
 
-The comparison is `OrdinalIgnoreCase` on Windows and `Ordinal` elsewhere.
-Acquire uses per-directory case sensitivity from `fsutil`. Upstream should
-share one comparison helper between the two scripts.
+The comparison uses the same per-root helper as acquire
+(`Get-AutoharnessContainmentComparisonMode`). It reads the root parent's
+per-directory case-sensitivity attribute from `fsutil` and falls back to
+`OrdinalIgnoreCase` on Windows and `Ordinal` elsewhere. An OS-wide
+`OrdinalIgnoreCase` check is not enough. Under a case-sensitive parent with
+sibling `ws` and `WS` directories, a lock under `WS` passes a prefix check
+for root `ws`. This was reproduced in PR #454: the pre-fix script deleted
+`WS\.t.txt.lock` with `-Force`, and the fixed script refuses with
+`PATH_ESCAPE`. Upstream should put the helper in one shared file that both
+scripts load, rather than keeping two copies.
+
+`release_lock.sh` had the same gap. With `--workspace-root` omitted, it applied
+no containment check at all. The local fix derives the same trusted default
+root as `acquire_lock.sh`, anchors relative paths to it, and rejects lock
+paths outside it with `PATH_ESCAPE`. It refuses `--force` when no root
+resolves. Under Git Bash on Windows, `git rev-parse --show-toplevel` returns
+`C:/...` while `pwd -P` returns `/c/...`. The derived-root check therefore
+fails in both scripts there, and callers must pass `--workspace-root`.
+Upstream should normalize both forms before comparing them.
 
 ### 1.3 P3: `Write-Error` Before `exit 1` Made Failures Unreliable
 

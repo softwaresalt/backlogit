@@ -16,11 +16,13 @@
 # process's current working directory, so a caller invoking acquire and
 # release from two DIFFERENT working directories with the same documented
 # workspace-relative path (e.g. "sub/file.txt") computes the SAME lock
-# path in both cases. When omitted, relative paths continue to resolve
-# against the process CWD exactly as before (no default root is derived
-# and no root is required) -- this option is purely additive and does not
-# change behaviour for any absolute-path invocation, or for any caller that
-# does not supply it.
+# When --workspace-root is omitted, release derives the same trusted default
+# root acquire_lock.sh uses (git top-level, trusted only when this script is
+# that root's scripts/ directory). Local fix (backlogit tune 2026-09-27): a
+# relative filepath is anchored to the resolved root, and the lock file must
+# sit inside that root before it is deleted. When no root can be resolved,
+# relative paths fall back to the process CWD with a warning, and --force is
+# refused because no containment boundary is available.
 #
 # Usage: scripts/release_lock.sh <filepath> [--token <token>] [--force] [--workspace-root <path>]
 
@@ -76,12 +78,31 @@ fi
 # resolve for it, matching acquire_lock.sh's own treatment of --workspace-root
 # (which affects containment decisions, never path resolution, for an
 # already-absolute target).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REAL_WORKSPACE_ROOT=""
 if [ -n "$WORKSPACE_ROOT" ]; then
     if [ ! -e "$WORKSPACE_ROOT" ]; then
         echo "Error: --workspace-root does not exist: $WORKSPACE_ROOT" >&2
         exit 1
     fi
     REAL_WORKSPACE_ROOT="$(realpath "$WORKSPACE_ROOT")"
+else
+    GIT_TOPLEVEL="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$GIT_TOPLEVEL" ] && [ -d "${GIT_TOPLEVEL}/scripts" ]; then
+        REAL_GIT_TOPLEVEL="$(realpath "$GIT_TOPLEVEL")"
+        if [ "$(realpath "${REAL_GIT_TOPLEVEL}/scripts")" = "$SCRIPT_DIR" ]; then
+            REAL_WORKSPACE_ROOT="$REAL_GIT_TOPLEVEL"
+        fi
+    fi
+    if [ -z "$REAL_WORKSPACE_ROOT" ]; then
+        if [ "$FORCE" -eq 1 ]; then
+            echo "Error: refusing --force without a workspace root; pass --workspace-root so containment can be enforced." >&2
+            exit 1
+        fi
+        echo "Warning: no --workspace-root supplied and no trusted git-derived root; resolving '$FILEPATH' against the current directory." >&2
+    fi
+fi
+if [ -n "$REAL_WORKSPACE_ROOT" ]; then
     case "$FILEPATH" in
         /*) ;;
         *) FILEPATH="${REAL_WORKSPACE_ROOT}/${FILEPATH}" ;;
@@ -169,6 +190,28 @@ fi
 RESOLVED_DIR="$(dirname "$TARGET_PATH")"
 FILENAME="$(basename "$TARGET_PATH")"
 LOCKFILE="${RESOLVED_DIR}/.${FILENAME}.lock"
+
+# Containment (local fix, backlogit tune 2026-09-27): release, including
+# --force, may only delete a lock file that is a proper descendant of the
+# workspace root. The root is matched literally (glob metacharacters are
+# escaped), mirroring acquire_lock.sh.
+if [ -n "$REAL_WORKSPACE_ROOT" ]; then
+    NORMALIZED_ROOT="${REAL_WORKSPACE_ROOT%/}"
+    if [ -z "$NORMALIZED_ROOT" ]; then
+        ROOT_DESCENDANT_PATTERN="/*"
+    else
+        ESCAPED_ROOT="$(printf '%s' "$NORMALIZED_ROOT" | sed -e 's/\\/\\\\/g' -e 's/\*/\\*/g' -e 's/?/\\?/g' -e 's/\[/\\[/g')"
+        ROOT_DESCENDANT_PATTERN="${ESCAPED_ROOT}/*"
+    fi
+    case "$LOCKFILE" in
+        $ROOT_DESCENDANT_PATTERN)
+            ;;
+        *)
+            echo "Error: PATH_ESCAPE -- lock path '$LOCKFILE' is outside the workspace root '$REAL_WORKSPACE_ROOT'; refusing to release." >&2
+            exit 1
+            ;;
+    esac
+fi
 
 if [ ! -e "$LOCKFILE" ]; then
     echo "Warning: No lock file found for: $FILEPATH (already released or never locked)" >&2

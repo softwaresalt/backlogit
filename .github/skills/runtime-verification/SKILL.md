@@ -85,7 +85,16 @@ concrete adapter from `validator_manifest.surfaces[].adapter_hint`:
 
 If `surface=auto`, infer the surface from the changed files and PR context, then
 confirm the selected surface appears in `validator_manifest.surfaces[]` before
-continuing. Record the main invariants that must still hold after the change.
+continuing. When `validator_manifest.surfaces[]` is empty:
+
+* if `validation_expectations.required` is `false`, continue with the inferred
+  surface and the `manual` adapter, and record that no validator manifest entry
+  exists for it
+* if `validation_expectations.required` is `true`, return **BLOCKED** and name
+  the missing validator manifest entry
+
+When the list is non-empty and the inferred surface is absent, apply the same
+rule. Record the main invariants that must still hold after the change.
 
 ### Step 2: Run Environment Prechecks
 

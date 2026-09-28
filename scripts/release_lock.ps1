@@ -237,6 +237,33 @@ function Get-AutoharnessDefaultWorkspaceRoot {
     return $null
 }
 
+function Get-AutoharnessContainmentComparisonMode {
+    # Same per-root helper as acquire_lock.ps1. Windows supports per-directory
+    # case sensitivity (`fsutil file setCaseSensitiveInfo`); when the root's
+    # parent has it enabled, sibling directories that differ only by case
+    # ("ws" and "WS") can coexist, so an OS-wide OrdinalIgnoreCase prefix
+    # check would treat a lock under "WS" as contained in root "ws". Query the
+    # parent's actual attribute and fall back to OrdinalIgnoreCase on any
+    # failure or when the root has no parent. Non-Windows always uses Ordinal.
+    param([Parameter(Mandatory = $true)][string]$RootPath)
+    if (-not $autoharnessIsWindowsPlatform) {
+        return [System.StringComparison]::Ordinal
+    }
+    $parentOfRoot = Split-Path -Parent $RootPath
+    if ([string]::IsNullOrEmpty($parentOfRoot)) {
+        return [System.StringComparison]::OrdinalIgnoreCase
+    }
+    try {
+        $fsutilOutput = & fsutil file queryCaseSensitiveInfo $parentOfRoot 2>$null
+        if ($LASTEXITCODE -eq 0 -and (($fsutilOutput -join "`n") -match 'is enabled')) {
+            return [System.StringComparison]::Ordinal
+        }
+    } catch {
+        # Fall through to the safe OrdinalIgnoreCase default below.
+    }
+    return [System.StringComparison]::OrdinalIgnoreCase
+}
+
 $realWorkspaceRootForAnchoring = $null
 if ($WorkspaceRoot) {
     if (-not (Test-Path -LiteralPath $WorkspaceRoot)) {
@@ -375,7 +402,8 @@ $lockFile = Join-Path $resolvedDir ".$fileName.lock"
 if ($realWorkspaceRootForAnchoring) {
     $normalizedRoot = $realWorkspaceRootForAnchoring.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
     $rootWithSeparator = $normalizedRoot + [System.IO.Path]::DirectorySeparatorChar
-    if (-not $lockFile.StartsWith($rootWithSeparator, $autoharnessPathComparisonMode)) {
+    $containmentComparisonMode = Get-AutoharnessContainmentComparisonMode -RootPath $normalizedRoot
+    if (-not $lockFile.StartsWith($rootWithSeparator, $containmentComparisonMode)) {
         [Console]::Error.WriteLine("autoharness-file-lock: PATH_ESCAPE -- lock path '$lockFile' is outside the workspace root '$normalizedRoot'; refusing to release.")
         exit 1
     }
