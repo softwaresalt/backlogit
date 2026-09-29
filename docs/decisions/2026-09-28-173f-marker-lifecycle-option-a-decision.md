@@ -75,6 +75,13 @@ Every other active item is **organic-active**. When there is no active
 shipment, no item is claim-activated. The marker is advisory: the backlogit
 claim gate stays authoritative.
 
+**Active-shipment cardinality guard** (added per plan-review attempt 6 P2-6):
+if a consumer's active-shipment read returns more than one active shipment,
+that is an invariant violation and the claim-activation state is
+**indeterminate**; the R3 consumer rule applies (fail closed, defer to the
+claim gate). The key is reserved but not write-protected, so consumers rely on
+the predicate, never on the raw value alone.
+
 ### Producer rules (U1, U1b)
 
 * Only `ClaimShipment` writes the marker. It writes it on every manifest
@@ -95,8 +102,8 @@ claim gate stays authoritative.
 
 ### Accepted residuals (documented by U5; not fixed in 173-F)
 
-* **R1: stale markers persist.** Returned, blocked, shipped and archived
-  items keep their last marker. The predicate neutralizes this. Raw readers
+* **R1: stale markers persist.** Returned, blocked, shipped, abandoned and
+  archived items keep their last marker. The predicate neutralizes this. Raw readers
   that ignore the predicate will be wrong.
 * **R2: any activation route for an item that carries the active shipment's
   marker and is in its manifest.** Such an item reads as claim-activated,
@@ -117,17 +124,38 @@ claim gate stays authoritative.
   completes. `backlogit shipment list` is index-backed on both transports, so
   it can also be stale. This R3 wording replaces the original "run any
   lifecycle operation" remedy, per attempt 6 P2-7, and is split in two:
+  * **Transport side effects (added per plan-review attempt 7 P2-D).** Every
+    CLI read (`backlogit get`, `backlogit shipment list`) opens a recovering
+    workspace: `core.NewWorkspace` runs `recoverPendingShipmentOperations`
+    before the read. A CLI read can therefore roll back a pending claim
+    journal as a side effect; this is sanctioned, fail-closed convergence, not
+    a consumer-invoked lifecycle command. A fresh CLI read almost never shows
+    the frontmatter/index split, which is observable only in-process or
+    through a long-lived MCP server. Starting an MCP server (`backlogit mcp`,
+    `openMCPServer` → `core.NewWorkspace`) also opens a recovering workspace,
+    so server **startup** can roll back a pending journal; only reads on an
+    already-running server skip recovery. A consumer that must avoid recovery
+    side effects reads through an MCP server that is already running and that
+    it did not start.
   * **Consumer rule (external agents, including the autoharness scheduler).**
     Treat the claim-activation state as **indeterminate** when any of these
     holds:
     * the frontmatter read and the index read disagree;
-    * a pending claim journal exists under `.backlogit/ops/`;
+    * a pending claim journal exists under `<storage-root>/ops/` (the storage
+      root may be `.backlogit`, `.backlog` or an override; `backlogit doctor`
+      is the portable check);
     * `backlogit doctor` reports a shipment-lifecycle journal finding or
-      conflict.
+      conflict;
+    * the active-shipment read returns more than one active shipment;
+    * a recipe read exits non-zero or errors (in particular with an `open
+      workspace: recover shipment operations` error), or an MCP tool call
+      returns an error;
+    * a re-read of the active shipment's ID or manifest differs from the
+      first read (the recipe reads are not atomic).
 
     While indeterminate, the consumer does not classify, route or act on the
     marker. It defers to the backlogit claim gate, which is authoritative. A
-    consumer never runs a lifecycle operation to clear the condition.
+    consumer never invokes a lifecycle command to clear the condition.
   * **Operator remediation (operator only, one specific trigger).**
     1. Run the CLI `backlogit sync` in a fresh process. Its workspace open
        (`core.NewWorkspace`) runs `recoverPendingShipmentOperations` before it
@@ -140,9 +168,12 @@ claim gate stays authoritative.
        `backlogit doctor` (a diagnostic workspace that does not run recovery)
        and escalate. Do not substitute another lifecycle operation.
 
-  The mixed-binary caveat (attempt 6 P2-9) applies: the recovering CLI must
-  include U1b, because an older binary can re-create the F1 wedge. Attempt 7
-  re-reviews this text together with the rest of the attempt-6 remediation.
+  The mixed-binary caveat (attempt 6 P2-9) applies to **any** binary that
+  opens the workspace, CLI or MCP server, including one a consumer invokes
+  or starts for a read: it must include U1b, because an older binary can re-create the F1 wedge. The plan's
+  rollout checkpoint (upgrade every binary before the first claim) governs
+  this. Attempt 7 re-reviews this text together with the rest of the
+  attempt-6 remediation.
 
 ## Consequences for the plan
 

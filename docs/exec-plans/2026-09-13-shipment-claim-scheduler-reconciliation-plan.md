@@ -17,27 +17,34 @@ Add an additive, backward-compatible **enabling precondition** to backlogit
 shipment-claim activation. After it lands, a claim-activated manifest task can
 be told apart from an organic active residual.
 
-This shipment delivers only:
+The bootstrap slice (`173-F`, shipped by `154-S`) delivers only:
 
 * the in-repo marker;
 * its claim-crash-recovery compatibility;
-* verification over the existing generic read surface;
+* verification of both claim rollback paths and of the existing generic read
+  surface;
 * the published consumer contract.
+
+The option A lifecycle regression net (U4) is **deferred** to a follow-on
+feature. No follow-on shipment is created now; a later Stage session packages
+it after `154-S` ships (see `## Size Validation and Decomposition`).
 
 The observable P-002.6 scheduler-misclassification defect is resolved only
 once the autoharness scheduler consumes the marker, which is out-of-workspace
 follow-up work. This shipment is an **enabling precondition, not full defect
 resolution**.
 
-**In-repo scope (revised 2026-09-28, finding F8):**
+**In-repo scope of the bootstrap slice (revised 2026-09-29, attempt 7):**
 
-* `internal/core/shipment_lifecycle.go`: the claim loop and the marker write.
+* `internal/core/shipment_lifecycle.go`: the claim loop, the marker write and
+  the one shared key constant.
 * `internal/core/shipment_recovery.go`: the claim recovery candidates (U1b).
 * Tests in `internal/core`, `internal/cli` and `internal/mcp`.
 * One operator doc.
 
 No other shipment lifecycle operation (Block, Unblock, ReturnBlocked, Ship,
-normalize) is changed. That follows from the option A decision below.
+normalize, Abandon) and no generic write path (`UpdateArtifact`, `move`,
+`update`) is changed. That follows from the option A decision below.
 
 **Sources:**
 
@@ -46,9 +53,13 @@ normalize) is changed. That follows from the option A decision below.
 * `docs/decisions/2026-09-28-173f-marker-lifecycle-option-a-decision.md`
   (F2 marker lifecycle, option A).
 
-**Review status:** attempt 5 recorded FAIL against post-`174-F` `main`. This
-revision is the re-plan for plan-review attempt 6. The attempt-2..4 PASS
-verdicts are superseded.
+**Review status:** attempt 6 recorded FAIL (one P1, ten P2s). The operator
+authorized one additional attempt past the circuit breaker on 2026-09-28
+("Yes on additional plan review; validate the size of the plan; if too large,
+decompose."). This revision applies every attempt-6 remediation, adds the
+operator-required size validation, and decomposes the plan. It is the input to
+plan-review attempt 7. If attempt 7 fails, Stage stops and escalates; there is
+no attempt 8 without new operator direction.
 
 ## Marker lifecycle decision (option A)
 
@@ -60,20 +71,34 @@ The full artifact is
   `scheduler_baseline_claim`. Its value is the ID of the activating shipment,
   as a non-empty string. The prior art is
   `docs/compound/2026-07-23-machine-readable-governance-field-contract.md`.
+  The key is **reserved but not write-protected**: a generic `update` can
+  still write it, and consumers must rely on the predicate, never on the raw
+  value alone.
 * **Producer:** only `ClaimShipment` writes the key. It writes it on every
   manifest member whose **preimage status was `queued`**, independent of
-  manifest order (F5). A re-claim overwrites a stale value. Members whose
-  preimage status is not `queued` are left byte-identical.
+  manifest order (F5). A re-claim overwrites a stale value, including a stale
+  value from a different shipment. Members whose preimage status is not
+  `queued` are left byte-identical.
 * **Kept, never cleared:** Block, Unblock (to `active` or `queued`),
-  `ReturnBlockedItem`, Ship and normalize leave the key as it is.
-  * They already preserve `custom_fields` through `cloneArtifact` +
-    `persistArtifact`.
+  `ReturnBlockedItem`, Ship, Abandon, normalize, and the generic
+  `UpdateArtifact`, `move` and `update` paths leave the key as it is.
+  * The shipment operations preserve `custom_fields` through
+    `cloneArtifact` (which uses `maps.Clone`) + `persistArtifact`. The generic
+    paths load, mutate named fields and persist the same map.
   * Their recovery candidates are clones of preimages taken at operation time,
     so they already carry any marker. No new write paths or candidate shapes
     are needed.
+  * **Learning waiver (attempt 6 P2-10).**
+    `docs/compound/best-practices/atomic-multi-item-claim-rollback-and-stale-blocked-clearing-2026-06-27.md`
+    teaches that claim-scoped state must be cleared when the item leaves the
+    claimed state. That rule is **explicitly waived for this advisory
+    marker**: option A keeps it and neutralizes staleness through the
+    three-part predicate, because clearing would add writes and recovery
+    candidates to four operations (option B, rejected). The learning's
+    all-or-nothing claim rollback rule is **not** waived; U3 verifies it.
 * **Removed only by rollback:** in-process snapshot restore, or journal
   recovery persisting the preimage clones, restores the exact pre-claim
-  bytes.
+  bytes, including a stale value the preimage carried.
 * **Consumer predicate (normative, published by U5):** an item is
   claim-activated if and only if all three hold:
   1. `status == active`;
@@ -83,19 +108,114 @@ The full artifact is
 
   Otherwise the item is organic-active. When no shipment is active, no item is
   claim-activated. "Non-empty ⇒ claim-activated" is **withdrawn**.
-* **Accepted residuals, documented by U5:**
-  * R1: stale markers persist on returned, blocked and terminal items. The
-    predicate neutralizes them.
-  * R2: a member that was organically activated while its shipment was
-    blocked or unblocked to `queued` keeps that shipment's earlier marker
-    across a re-claim.
+  **Active-shipment cardinality guard (attempt 6 P2-6):** if the consumer's
+  active-shipment read returns more than one active shipment, the state is
+  an invariant violation and is **indeterminate** (fail closed under the R3
+  consumer rule).
+* **Accepted residuals (summarized here; the decision artifact text is
+  normative and U5 copies it verbatim):**
+  * R1: stale markers persist on returned, blocked, shipped, abandoned and
+    archived items. The predicate neutralizes them.
+  * R2 (restated per attempt 6 P2-3): any activation route for an item that
+    carries the active shipment's marker and is in its manifest reads as
+    claim-activated, however it became active. Organic activation *while
+    blocked* is guarded and cannot happen. Examples: a member unblocked to
+    `queued` and activated organically before the re-claim; an item returned
+    with `ReturnBlockedItem` (which leaves it `blocked`), later activated
+    organically, then added back to the active shipment.
   * R3: after a double-fault partial compensation, CLI and MCP can disagree
-    until recovery runs and then `backlogit sync`.
+    until recovery runs, and `shipment list` is index-backed on both
+    transports. Split into a consumer rule (indeterminate → defer to the claim
+    gate) and an operator-only remediation (fresh-process CLI `backlogit
+    sync`, then `backlogit_sync_index`). See U5.
 
 ## Requires plan hardening: yes
 
 This work touches shipment lifecycle state, the claim crash-recovery CAS, and
 a cross-workspace contract. See `## Plan Hardening`.
+
+## Size Validation and Decomposition
+
+Operator requirement (2026-09-28): validate the plan's size and decompose it if
+it is too large. Rules: the 2-hour rule (fewer than 3 files, fewer than 5
+functions, fewer than 4 test scenarios per task), width isolation (one skill
+domain per task), atomic milestone, and an overall release unit that one
+supervised bootstrap shipment can carry.
+
+**Attempt-6 plan, as submitted:** 9 units (U0a, U0b, U0c, U1b, U1, U2, U3, U4,
+U5) plus the feature, so 9 tasks. At least 7 dependency waves:
+{U0a, U0b, U0c} → U1b → U1 → U2 → U3 → U4 → U5. 19 test scenarios, about 12
+files. Every unit individually met the 2-hour rule and width isolation, but
+the release unit was over the ~8-task ceiling for a single supervised
+bootstrap, and `154-S` is the one shipment that runs **without** the
+active-residual halt, so every extra wave is a supervised wave.
+
+**Verdict: too large for one bootstrap release unit. Decomposed.**
+
+**Decomposition.**
+
+1. **Retire U2 (`173.002-T`), folded into U0b.** Attempt 6 P1-1 showed U2
+   changes no production code and U1, not U2, turns U0b green. U2's
+   acceptance criteria (generic projection, no bespoke field, no mutation)
+   become U0b's post-implementation AC, and U2's optional helper is dropped.
+   `173.002-T` is closed as superseded (not implemented), with provenance.
+2. **Defer U4 (`173.004-T`) to a follow-on feature.** U4 is a regression net
+   over operations this shipment does **not** change (Block, Unblock,
+   `ReturnBlockedItem`, Ship). The bootstrap's own safety surface (claim
+   write, recovery, rollback) is fully verified by U0a, U0c, U1b and U3. U4
+   moves (reparented, not re-created) to a new follow-on feature and leaves
+   the `154-S` manifest.
+   * **No follow-on shipment now (attempt 7 P2-A).** The operator asked for no
+     new shipment unless needed, and one is not needed: U4 keeps task-level
+     `blocks` edges onto `173.001-T` (U1) and `173.003-T` (U3), so it cannot
+     start before the bootstrap code exists. A later Stage session packages
+     it (as a single-member shipment, one wave, claimable without a second
+     bootstrap waiver, the `182-S` precedent) after `154-S` ships.
+   * **Ordering relative to 074-DL.** U4 sits behind `154-S` and follows the
+     existing 074-DL rule like every other item behind it (shipped provenance
+     **and** the operator's autoharness-consumption attestation). The plan
+     does **not** require U4 to ship before the attestation, which avoids the
+     attestation ⇄ U4 loop the attempt-7 review found. The rows U4 would pin
+     are published as "by construction; regression net tracked by the
+     follow-on U4 task" (see U5), a wording that never needs a later edit.
+3. **Keep U5 in the bootstrap.** The contract must ship with its producer.
+   Deferring U5 would put a marker on disk with no published predicate, which
+   invites the withdrawn "non-empty ⇒ claim-activated" reading. U5 depends
+   on U3 (the last bootstrap verification) instead of U4 (attempt 6 P2-5 is
+   satisfied for everything the bootstrap verifies; see U5 for the
+   verification-status column that covers the deferred rows).
+4. **Move the widened regression gate** from U4 (3) to an AC of U3, the last
+   bootstrap test task (attempt 6 P2-2 "gate as an AC").
+
+**Bootstrap slice (`173-F`, `154-S`):**
+
+| Unit | Task | Domain | Files | Functions (approx.) | Scenarios | Wave |
+|---|---|---|---|---|---|---|
+| U0a | `173.006-T` | tests | 1 | 3 test funcs + 1 fixture helper | 3 | 1 |
+| U0b | `173.007-T` | tests | 2 (one per transport package) | 2 test funcs + 2 fixture helpers (one per package: `cli_test`, `mcp`) | 3 | 1 |
+| U0c | new | tests | 1 | 3 test funcs + 1 journal-fixture helper | 3 | 1 |
+| U1b | new | code | 2 (`shipment_recovery.go`; one constant line in `shipment_lifecycle.go`) | 1 changed | per U0c | 2 |
+| U1 | `173.001-T` | code | 1 | 3 (new extracted writer, `setArtifactStatus` as a delegating wrapper, `ClaimShipment` loop) | per U0a/U0b | 3 |
+| U3 | `173.003-T` | tests | 1 | 2 test funcs | 2 | 4 |
+| U5 | `173.005-T` | docs | 1 | n/a | n/a | 5 |
+
+Totals: 7 tasks (down from 9), 5 waves (down from at least 7), 11 test
+scenarios (6 RED, 3 characterization, 2 verification), 9 file touches over 8
+distinct files. Every task meets
+the 2-hour rule and has a single domain and an atomic, testable milestone.
+
+**Deferred slice (new follow-on feature; no shipment until a later Stage
+session):**
+
+| Unit | Task | Domain | Files | Scenarios | Gate |
+|---|---|---|---|---|---|
+| U4 | `173.004-T`, adopted under the follow-on feature (new ID) | tests | 1 | 2 | task `blocks` edges onto U1 and U3; routed only under the 074-DL rule after `154-S` has shipped provenance |
+
+**Why this is the minimal bootstrap slice.** Removing any remaining unit
+breaks a stated invariant: without U1b the marker wedges recovery (F1);
+without U0a/U0b/U0c there is no test-first RED; without U3 the claim
+all-or-nothing invariant is unverified for marked members; without U5 the
+marker ships with no published predicate.
 
 ## Implementation Units
 
@@ -104,54 +224,89 @@ Execution order (the dependency edges enforce it):
 1. U0a, U0b and U0c: the RED harnesses.
 2. U1b: recovery compatibility.
 3. U1: the marker write.
-4. U2 and U3: verification.
-5. U4: the regression net.
-6. U5: the docs.
+4. U3: rollback verification and the shipment regression gate.
+5. U5: the docs.
 
 **U1b lands before U1.** At no commit may the marker be written while claim
 crash recovery still rejects marked members, because that is the F1 wedge.
-Every unit whose gate runs `./internal/core/...` also depends on the
-UR3 crash-ready flake fix (`BDA56ED8`, see `## Verification`).
+The UR3 crash-ready flake prerequisite (`BDA56ED8`) has shipped (`182-S`,
+merge `70d72044`), so every `./internal/core/...` gate here runs without a
+known-flake rerun policy.
+
+Test-seam rule for every test unit below: no `t.Parallel` when a test swaps a
+package-global seam such as `persistArtifactWriteFn`; restore the seam with
+`t.Cleanup` (prior art:
+`docs/compound/2026-07-29-durable-writes-test-seam-patterns.md`).
+
+RED-compile rule (attempt 7 P3): the wave-1 harnesses (U0a, U0b, U0c) use the
+**literal string** `"scheduler_baseline_claim"`, never the
+`schedulerBaselineClaimKey` constant (which only arrives in U1b). Each RED
+therefore compiles and fails on behavior, and the tests pin the contract
+string independently of the constant.
 
 * **U0a: RED harness + characterization, claim marking (task 173.006-T).**
   * Domain: tests. File: `internal/core/shipment_claim_marker_test.go` (new).
   * Written before U1. No 173-F dependencies. 3 scenarios.
+  * Fixture rule: no non-queued member-parent that has queued member children
+    (that shape is not needed and muddies byte-identity).
   * **(1) RED.** `ClaimShipment` sets `scheduler_baseline_claim = <shipmentID>`
-    on every member whose preimage status is `queued`. Members that are not
-    queued (for example, already `active` or `done`) and the shipment
-    artifact are byte-identical to their preimage, apart from shipment
-    status.
+    on every member whose preimage status is `queued`.
+    * Fixture includes a queued member whose preimage already carries a
+      **stale foreign marker** (`"OLD-S"`, a different shipment); after the
+      claim its value is the new shipment ID (re-claim overwrite, attempt 6
+      P2-1).
+    * Fixture includes a queued member whose preimage has other non-empty
+      `custom_fields`; those keys survive unchanged. Key presence is asserted
+      with the two-value form (`v, ok := m[key]`).
+    * Members that are not queued (for example, already `active` or `done`)
+      are byte-identical to their preimage. The shipment artifact differs
+      from its preimage only in `status` and `updated_at`.
   * **(2) RED, ordering (F5).** The manifest lists a queued child before its
     queued member-parent (`[child, parent]`), so the bounded cascade activates
     the parent before the loop reaches it. Both child and parent end up
-    marked.
+    marked. One pair is enough because the claim loop walks the ordered
+    manifest slice, not a map; if a marking loop ever ranges over a map or
+    set, use at least 5 independent pairs (per the cited N-independent-pair
+    learning).
   * **(3) Characterization, not RED.** A non-claim `setArtifactStatus`
     caller, such as a queue move, produces byte-identical frontmatter before
-    and after.
+    and after. The fixture's preimage carries a stale `blocked_reason`, so the
+    existing `clearStaleBlockedReason` behavior is characterized too.
   * AC:
     * (1) and (2) fail against pre-implementation code.
     * (3) passes both before and after the implementation and is not counted
       as RED.
-    * The rollback-clears-marker scenario is not here; it moved to U3 as
-      verification (F4).
-* **U0b: RED harness + characterization, external read surface (task
-  173.007-T).**
+* **U0b: RED harness + characterization, external read surface and consumer
+  recipe (task 173.007-T; absorbs retired U2).**
   * Domain: tests. Files: one test file in `internal/cli` and one in
     `internal/mcp`.
-  * Written before U2. No 173-F dependencies. 3 scenarios, down from 4 (F7).
-  * **(1) RED.** After a real claim, CLI `get --format json`
-    (frontmatter-backed) shows `custom_fields.scheduler_baseline_claim ==
-    <shipmentID>`.
-  * **(2) RED.** MCP `backlogit_get_item` (index-backed) shows the identical
-    value for the same item.
-  * **(3) Characterization.** The key is absent on both transports for an
-    organic-active item.
-  * The old scenario (4), an "ignoring consumer", is **dropped** because there
-    is no in-repo consumer (YAGNI). Option A's stale-marker behavior is
-    covered by U4 (1).
+  * Written before U1 (attempt 6 P1-1). No 173-F dependencies. 3 scenarios.
+  * Each RED scenario walks the **exact U5 recipe paths** on one transport,
+    after a real claim of a shipment with one queued member:
+  * **(1) RED, CLI (frontmatter-backed item read).**
+    `backlogit shipment list --status active --format json` returns a JSON
+    array of length 1; `.[0].id` is the shipment ID; `.[0].custom_fields.items[]`
+    contains the member ID; `backlogit get <member> --format json` has
+    `.custom_fields.scheduler_baseline_claim == <shipmentID>`.
+  * **(2) RED, MCP (index-backed).** `backlogit_list_shipments`
+    `{"status":"active"}` returns an array of length 1 with the same
+    `.[0].custom_fields.items[]`; `backlogit_get_item` for the member has
+    the identical `.custom_fields.scheduler_baseline_claim` value.
+  * **(3) Characterization.** Before any claim, `shipment list --status
+    active` returns a present empty array `[]` (not `null`, not a missing
+    value) on both transports, and the key is absent on both transports for
+    an organic-active item (two-value presence assertion). Written as
+    `t.Run` subtests in each package's file.
   * AC:
-    * (1) and (2) fail before the implementation.
+    * (1) and (2) fail before U1 (the marker is absent) and pass after it.
     * (3) passes before and after.
+    * **Post-implementation AC (from retired U2):** the marker reaches both
+      transports through the existing generic `custom_fields` projection
+      (CLI `internal/cli/get.go` `buildDetailMap`; MCP
+      `internal/db/queries.go` `scanArtifactRow`, fed by `UpsertItem`, which
+      `persistArtifact` calls after the file write in the same call). No
+      bespoke projection field, no marker-specific filter, no read helper, and
+      no state mutation is added.
     * There are fewer than 4 scenarios.
 * **U0c: RED harness + characterization, claim crash recovery with marked
   members (new task, F1/F4).**
@@ -159,59 +314,72 @@ UR3 crash-ready flake fix (`BDA56ED8`, see `## Verification`).
     (new).
   * No 173-F dependencies. 3 scenarios.
   * The tests fabricate the crashed state directly: a `shipment-operation/v1`
-    claim intent journal with its preimage, plus current member files. They
-    do not depend on U1.
+    claim **intent** journal (the only phase recovery reconciles,
+    `shipment_recovery.go` `reconcileShipmentLifecycleIntent`) with its
+    preimage, plus current member files. Mechanism: in-package calls to
+    `writeShipmentLifecycleJournalForWorkspace` and `persistArtifact` under
+    `withShipmentOperation` (governed ctx for the shipment's active write).
+    Close the original workspace before reopening with `NewWorkspace`
+    (Windows SQLite and temp-dir cleanup). They do not depend on U1.
   * **(1) RED.** Crash after marking. The shipment is `active` and every
     preimage-queued member is `active` + marked with the journal's shipment
     ID.
-    * The next lifecycle operation, or `recoverPendingShipmentOperations`,
-      rolls back successfully.
+    * Fixture includes one member whose **preimage** carries a stale foreign
+      marker (`"OLD-S"`); after rollback its value is `"OLD-S"` again,
+      byte-for-byte (attempt 6 P2-1).
+    * `recoverPendingShipmentOperations`, invoked through a fresh
+      `NewWorkspace` open, rolls back successfully.
     * Every member and the shipment are byte-identical to the preimage: no
-      marker key, and `custom_fields` is nil if it was nil before the claim.
+      marker key where the preimage had none, and `custom_fields` is nil if it
+      was nil before the claim.
     * A following `ClaimShipment` of the same shipment succeeds, so nothing
       is wedged.
     * A direct assertion checks that the last claim candidate returned by
-      `memberRecoveryCandidates` carries the marker.
+      `memberRecoveryCandidates` carries the journal's marker.
   * **(2) RED.** Double-fault partial compensation. The shipment is already
     restored to its `queued` preimage. One member is restored and another is
     still `active` + marked. Recovery succeeds and converges to the preimage.
-  * **(3) Characterization, not RED.** A member marked with a **different**
-    shipment ID, or otherwise diverged, still fails closed with
-    `ErrShipmentConflict`. This guards against over-broad acceptance.
+  * **(3) Characterization, not RED.** A member carrying a marker whose value
+    differs from **both** the preimage's own value and `journal.ShipmentID`
+    (or otherwise diverged) still fails closed with `ErrShipmentConflict`.
+    This guards against over-broad acceptance.
   * AC:
     * (1) and (2) fail today with `ErrShipmentConflict`, which is the
       genuine RED for the recovery surface.
     * (3) passes before and after.
-    * The test does not run in parallel (`t.Parallel`) when it uses
-      package-global seams. Prior art:
-      `docs/compound/2026-07-29-durable-writes-test-seam-patterns.md`.
 * **U1b: claim-recovery marker compatibility (new task, F1).**
-  * Domain: code. Files: `internal/core/shipment_recovery.go`, plus at most
-    one shared constant.
+  * Domain: code. Files: `internal/core/shipment_recovery.go`, plus the one
+    shared constant line in `internal/core/shipment_lifecycle.go`.
   * Depends on **U0c**.
+  * Declare `const schedulerBaselineClaimKey = "scheduler_baseline_claim"` in
+    `internal/core/shipment_lifecycle.go`, next to `ClaimShipment` (the
+    producer). U1 reuses it. No other change to that file in U1b.
   * In `memberRecoveryCandidates`, the `rollback`+`claim` case for a
     preimage-`queued` member returns three candidates, in this order:
-    1. the preimage;
-    2. preimage + `Status=Active`, unmarked. This is the intermediate
-       member-parent cascade window, kept so rollback CAS accepts it.
+    1. the preimage (it may carry a stale marker, R1);
+    2. preimage + `Status=Active`, marker as in the preimage. This is the
+       intermediate member-parent cascade window, kept so rollback CAS
+       accepts it;
     3. preimage + `Status=Active` + `custom_fields.scheduler_baseline_claim
-       = journal.ShipmentID`, **last**. A nil map is lazily initialized.
-  * The marked target must be the **last** candidate, because
-    `validateShipmentLifecycleRecoveryOutcome` uses `candidates[len-1]` for
-    committed evidence and `candidates[0]` for compensated evidence. That
-    keeps the CAS path and the outcome path consistent.
+       = journal.ShipmentID`, **last**. Build `custom_fields` as a fresh map
+       copy of the preimage's map (nil → new one-entry map).
+  * The marked target is **last**. `validateShipmentLifecycleRecoveryOutcome`
+    uses `candidates[len-1]` for committed evidence and `candidates[0]` for
+    compensated evidence. For claim, the committed-evidence path is
+    **defensive only**: claim emits no correlation-tagged evidence events and
+    claim recovery rolls back before any terminal evidence is appended, so the
+    ordering keeps the two paths consistent without being reachable today.
   * Nothing changes for non-queued preimage members, for the shipment
     candidates, or for the block, unblock and normalize cases (option A).
-  * Define the key once as an unexported constant,
-    `schedulerBaselineClaimKey = "scheduler_baseline_claim"`, which U1 reuses.
   * AC:
     * U0c (1) and (2) turn GREEN and U0c (3) stays GREEN.
     * Existing recovery and UR3 tests stay green.
-    * A marker with any value other than `journal.ShipmentID` is never
-      accepted.
+    * The marker values accepted on a member are **only** the preimage's own
+      value (candidates 1 and 2) or `journal.ShipmentID` on the marked-last
+      candidate (candidate 3). Any other value fails closed.
 * **U1: persist the marker on claim activation (task 173.001-T).**
   * Domain: code. File: `internal/core/shipment_lifecycle.go`.
-  * Depends on **U0a** and **U1b**.
+  * Depends on **U0a**, **U0b** (attempt 6 P1-1) and **U1b**.
   * **Seam form (F5/P3).** Use an **explicit per-call parameter, not a context
     value.**
     * Extract the body of `setArtifactStatus` into an unexported writer that
@@ -220,13 +388,26 @@ UR3 crash-ready flake fix (`BDA56ED8`, see `## Verification`).
     * The claim loop in `ClaimShipment` calls it with the shipment ID.
     * The seam is never visible to `MoveShipmentStatus` or other downstream
       writes.
+    * A shared `applyClaimActivation` helper for U1 and U1b was considered and
+      rejected: U1b builds an in-memory candidate, U1 persists an artifact;
+      only the key constant is shared.
   * **Ordering-independent marking (F5).**
     * For each member whose preimage status is `queued`, the write sets
       `Status=Active` and the key in **one** `persistArtifact` call.
     * If the member is already `active` (a member-parent the bounded cascade
       activated earlier in the loop), the writer still persists the key. That
-      is a marker-only write: no `status_changed` event and no status
-      transition.
+      is a **marker-only write**: no status transition, no parent cascade, and
+      no `status_changed` event. It is therefore **unaudited** in the event
+      log; this is documented in U5.
+    * If the key already equals the shipment ID, the marker-only write is a
+      no-op (no persist). The comparison uses the artifact as `loadArtifact`
+      returns it (index-first), which is consistent in-process because the
+      cascade upserts before the loop reaches the member.
+    * A marker-only write bumps `UpdatedAt`; recovery candidates 2 and 3
+      already set `ignoreUpdatedAt`.
+    * The extracted writer keeps every existing side effect of
+      `setArtifactStatus`, including `clearStaleBlockedReason`, the event
+      append and the bounded cascade (U0a (3) characterizes it).
     * `custom_fields` semantics: `omitempty` applies to the whole map, not
       per key. The writer sets the key explicitly and lazily initializes a nil
       map.
@@ -238,146 +419,202 @@ UR3 crash-ready flake fix (`BDA56ED8`, see `## Verification`).
   * **Rollback coupling.** The claim is covered by the existing journaled
     preimage plus `snapshotShipArtifacts` / `restoreShipArtifactsDetailed`,
     which restore exact bytes. No compensating marker write is added (F3).
-    **`activatedIDs` no longer exists and is not referenced.**
+    `activatedIDs` no longer exists and is not referenced.
   * AC:
-    * U0a (1) and (2) turn GREEN and U0a (3) stays GREEN.
+    * U0a (1) and (2) and U0b (1) and (2) turn GREEN; U0a (3) and U0b (3)
+      stay GREEN.
     * The key is set exactly on preimage-queued manifest members.
     * Non-claim `setArtifactStatus` callers are byte-identical.
     * Non-member parents are not marked.
-    * Ignoring consumers see no behavior change.
-* **U2: verification of the generic read surface (task 173.002-T; PASSed in
-  attempt 5).**
-  * Domain: code, verification-first.
-  * Depends on **U1** and **U0b**.
-  * The marker rides the existing generic `custom_fields` projection, and no
-    bespoke field is added:
-    * CLI `get --format json`: `internal/cli/get.go` `buildDetailMap`.
-    * MCP `backlogit_get_item`: `internal/db/queries.go` `scanArtifactRow`,
-      through `UpsertItem`.
-  * **Index freshness:** file then index within **one** `persistArtifact`
-    call (attempt-5 P3 wording).
-  * The authoritative transports are CLI `get --format json` and MCP
-    `backlogit_get_item`. SQL `query` (`json_extract`) is secondary.
-  * An optional thin read-only helper is allowed, labeled as non-contract.
-  * AC:
-    * The pinned key is present on both transports for a claim-activated item
-      and absent for an organic-active item.
-    * The projection is the generic `custom_fields` copy, with no
-      marker-specific filtering, so option A stale markers project as they
-      are. The core-level behavior is covered by U4 (1); no extra transport
-      scenario is added.
-    * No bespoke projection field is added, and nothing mutates state.
-* **U3: verification of both claim rollback paths (task 173.003-T, converted
-  to tests-only, F3/F4).**
+    * Consumers that ignore the key see no behavior change. This is pinned by
+      U0a (3) byte-identity and U0b (3) key absence; there is no separate
+      ignoring-consumer test.
+* **U2: retired (task 173.002-T closed as superseded).** Folded into U0b's
+  post-implementation AC per attempt 6 P1-1. The optional helper is dropped.
+* **U3: verification of both claim rollback paths + shipment regression gate
+  (task 173.003-T, tests-only).**
   * Domain: tests. File: `internal/core/shipment_claim_marker_rollback_test.go`
     (new).
   * Depends on **U1** and **U1b**.
-  * 2 scenarios. Both are verification or characterization of existing
-    exact-restore machinery, **not RED**, and no production code changes.
+  * 2 scenarios. Both verify existing exact-restore machinery, are **not
+    RED**, and change no production code.
+  * Fixture for both scenarios: a shipment with at least 2 preimage-queued
+    members, `member1` before `member2` in the manifest.
   * **(1)** In-process snapshot rollback. A real `ClaimShipment` fails after
-    at least one member is marked; the failure is injected through the
-    `persistArtifactWriteFn` seam on a later member. Every member and the
-    shipment are byte-identical to the preimage, with no key and the nil map
-    restored.
-  * **(2)** Journal-recovery rollback after a real double-fault. Claim
-    compensation also fails and leaves at least one member marked; the
-    pattern is `TestP1C6_ClaimCompensationFailureIsClassifiedAndRecoverable`.
-    The next lifecycle operation recovers through the journal, converges to
-    the preimage and is not wedged. Afterwards, `backlogit sync` makes CLI
-    and MCP agree (R3).
-  * The stale references (`:100-133`, `~104-107`) and the "revert write"
-    mechanism are removed.
-  * AC: both scenarios pass. No production file is modified.
-* **U4: option A lifecycle + end-to-end regression net (task 173.004-T).**
-  * Domain: tests. File: `internal/core/shipment_claim_marker_lifecycle_test.go`
-    (new).
-  * Depends on **U1**, **U2** and **U3**, and on the UR3 flake fix.
-  * 3 scenarios.
-  * **(1) Option A lifecycle invariant.** This replaces the old "no
-    queued-but-marked" invariant, which is false under Block.
-    * The test runs claim → block → unblock(`active`) → `ReturnBlockedItem`
-      of one member.
-    * The marker equals the shipment ID on every claim-marked member
-      throughout, including queued-but-marked while blocked.
-    * Applying the published three-part predicate as an in-repo test helper:
-      restored-active members are claim-activated. The returned item is not,
-      because it is not in the manifest. After the item is organically
-      activated, it is organic-active.
-  * **(2) Crash-recovery end to end.**
-    * A real `ClaimShipment` is interrupted after at least one member is
-      marked. The interruption is a persisted intent journal plus a
-      failpoint. The subprocess crash-child harness from
-      `shipment_blocked_recovery_harness_test.go` may be used only after the
-      flake fix has landed.
-    * On reopen, both recovery paths converge:
-      * rollback CAS, then preimage restore;
-      * terminal evidence, where a compensated journal awaiting removal
-        validates against the preimage.
-    * This replaces the old concurrent claim + rollback `-race` scenario,
-      which mostly exercised the global lifecycle lock (F6).
-  * **(3) Regression gate.** `go test -race ./internal/core/...
-    ./internal/cli/... ./internal/mcp/... ./internal/db/...` is green (F6:
-    widened from `./internal/core/...`).
+    `member1` is marked. The failure is injected through the
+    `persistArtifactWriteFn` seam with the predicate
+    `artifact.ID == member2.ID && artifact.Status == models.StatusActive`, and
+    a counter in the seam proves `member1` was written marked before the
+    failure. The injected error is a **non-indeterminate** error (a plain error or `ErrWriteNotApplied`); an
+    `ErrWriteIndeterminate` must never be used, because the durable-writes
+    contract forbids rolling it back (attempt 6 P2-8,
+    `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`).
+    Every member and the shipment are byte-identical to the preimage, with no
+    key and the nil map restored.
+  * **(2)** Journal-recovery rollback after a real double-fault. The fixture
+    is specified exactly (attempt 7 P2-C), adapting the seam style of
+    `TestP1C6_ClaimCompensationFailureIsClassifiedAndRecoverable`:
+    * the forward write fails on `member2`'s activation with a plain error
+      (same predicate as (1));
+    * `restoreShipmentSnapshotFn` fails on `member1`'s **artifact file path**
+      (`snapshot.file.Path`), not its event log, so `member1`'s file keeps the
+      marked, active bytes while its index row is restored.
+    * Before recovery, assert R3 at the core level deterministically:
+      `member1`'s frontmatter **is** active and marked while `bldb.GetItem`
+      **does** show the queued preimage without the key. The test uses the
+      injected member ID it already knows; it does not parse the
+      `MutationPartialError` cause string.
+    * A fresh `NewWorkspace` open recovers through the journal (through U1b),
+      converges to the preimage, and a following claim is not wedged.
+    * Distinct from U0c: U0c fabricates the crashed state; U3 (2) produces it
+      with a real `ClaimShipment` run.
   * AC:
-    * All three pass.
-    * No U0a/U0b/U0c scenario is duplicated.
-    * The flake prerequisite has shipped. There is **no** known-flake rerun
-      policy.
+    * Both scenarios pass. No production file is modified.
+    * **Shipment regression gate (moved from U4):** `go test -race
+      ./internal/core/... ./internal/cli/... ./internal/mcp/...
+      ./internal/db/...` is green, with no known-flake rerun policy.
+    * A gate failure caused by U1 or U1b **reopens that task**; U3 never
+      patches production code.
+    * No U0a/U0b/U0c scenario is duplicated. U3 (2)'s distinct value over
+      U0c (2) is the real-claim path and the deterministic core-level R3
+      disagreement check.
+* **U4: DEFERRED to the follow-on feature (task 173.004-T, adopted).**
+  Option A lifecycle regression net. Out of the `154-S` manifest.
+  * Domain: tests. File: `internal/core/shipment_claim_marker_lifecycle_test.go`
+    (new). 2 scenarios. Depends on U1 (`173.001-T`) and U3 (`173.003-T`)
+    through task `blocks` edges; the dependency on the retired U2 is removed.
+    Routed only under the 074-DL rule after `154-S` ships.
+  * **(1) Option A lifecycle invariant.** claim → block → unblock(`active`)
+    → `ReturnBlockedItem` of one member. The marker equals the shipment ID on
+    every claim-marked member throughout, asserted via **both** the Markdown
+    frontmatter and the index row (`bldb.GetItem`). Applying the three-part
+    predicate as an in-repo test helper: restored-active members are
+    claim-activated; the returned item (`blocked`, out of the manifest) is
+    not.
+  * **(2) Terminal and generic paths keep the marker.** `ShipShipment`, a
+    shipment move to `abandoned`, and a generic `update`/`move` of a marked
+    item leave the key byte-identical; with no active shipment, the predicate classifies
+    nothing as claim-activated.
+  * The attempt-6 U4 (2) claim-crash scenario is **dropped** (attempt 6
+    P2-2): the claim terminal-evidence path is unreachable, and the rollback
+    path is covered by U0c (fabricated) and U3 (2) (real double-fault).
+  * AC: both pass; no U0a/U0b/U0c/U3 scenario duplicated; the `-race` gate of
+    U3 is green. U4 stays tests-only: it does **not** edit the U5 doc, whose
+    row is worded so it never needs a later edit (see U5).
 * **U5: operator docs, the marker contract (task 173.005-T).**
   * Domain: docs. File: `docs/design-docs/scheduler-baseline-marker-contract.md`
     (new, hand-written). Generated `docs/cli-reference/*` is not edited.
-  * Depends on **U2**.
+  * Depends on **U0b**, **U1** and **U3** (attempt 6 P2-5 as far as the
+    bootstrap verifies; U4 is deferred, see the verification-status column).
   * Publish:
-    * the pinned key and value shape;
-    * a copy-pasteable read recipe:
-      * find the active shipment: `backlogit shipment list --status active`
-        or MCP `backlogit_list_shipments` with `status: active`;
-      * read its manifest: `items`;
-      * read each item: `backlogit get <id> --format json` or MCP
-        `backlogit_get_item`, reading `.custom_fields.scheduler_baseline_claim`;
-    * the **three-part option A predicate** (normative). "Non-empty ⇒
-      claim-activated" is explicitly withdrawn;
+    * the pinned key and value shape; the key is reserved but not
+      write-protected;
+    * a **stability note**: contract version `scheduler-baseline-marker/v1`;
+      any change to the key, value shape or predicate is a breaking change
+      that needs a new version and a consumer notice;
+    * the copy-pasteable read recipe with **exact JSON paths** (the same paths
+      U0b asserts):
+      1. active shipment: `backlogit shipment list --status active --format
+         json` (or MCP `backlogit_list_shipments` with `{"status":"active"}`)
+         returns a JSON array. Length 0 → no item is claim-activated. Length
+         greater than 1 → indeterminate, fail closed. Length 1 → the shipment
+         ID is `.[0].id`;
+      2. its manifest: `.[0].custom_fields.items[]` (there is **no**
+         top-level `items`);
+      3. each item: `backlogit get <id> --format json` or MCP
+         `backlogit_get_item`, reading `.status` and
+         `.custom_fields.scheduler_baseline_claim`;
+    * the **three-part option A predicate** (normative), verbatim from the
+      decision artifact. "Non-empty ⇒ claim-activated" is explicitly
+      withdrawn;
     * that the marker is advisory, while the backlogit claim gate is
       authoritative;
-    * the option A lifecycle table: kept through block, unblock, return and
-      ship; removed by rollback; overwritten by re-claim;
-    * residuals R1–R3. R3 is the CLI/MCP divergence after partial
-      compensation (F8). Publish it as the split rule in the decision
-      artifact (attempt 6 P2-7), not as "run any lifecycle operation":
-      * the consumer rule: disagreement, a pending claim journal under
-        `.backlogit/ops/`, or a doctor journal finding means indeterminate,
-        so defer to the claim gate;
+    * the option A lifecycle table with a **verification-status column**:
+      * claim write, re-claim overwrite (including a stale foreign value):
+        verified by U0a;
+      * removed by rollback (in-process and journal): verified by U3 and
+        U0c;
+      * marker-only write on an already-active member-parent: unaudited (no
+        event);
+      * kept through block, unblock, return, ship, abandon, normalize and
+        generic update/move: by construction (code-cited); the regression net
+        is tracked by the follow-on feature's U4 task, named by ID, and
+        consumers read that task's status rather than this doc (so the row
+        never needs a later edit);
+    * residuals R1–R3, text identical to the decision artifact. R3 is
+      published as the split rule (attempt 6 P2-7, refined by attempt 7
+      P2-D):
+      * **transport side effects:** every CLI read (`get`, `shipment list`)
+        opens a recovering workspace (`core.NewWorkspace` runs
+        `recoverPendingShipmentOperations`), so a CLI read can roll back a
+        pending claim journal as sanctioned, fail-closed convergence, and a
+        fresh CLI read almost never shows the frontmatter/index split. MCP
+        server **startup** (`openMCPServer` → `core.NewWorkspace`) also
+        recovers; only reads on an already-running server do not. Consumers
+        that must avoid recovery side effects read through an MCP server that
+        is already running and that they did not start;
+      * the consumer rule: disagreement between the two reads, a pending claim
+        journal under `<storage-root>/ops/` (detect portably with `backlogit
+        doctor`), a doctor journal finding, more than one active shipment, any
+        non-zero exit or error from a recipe read (in particular an `open
+        workspace: recover shipment operations` error), or any MCP tool error
+        means indeterminate, so defer to the claim gate; a consumer never
+        invokes a lifecycle command;
+      * the recipe reads are not atomic: if a re-read of the active shipment's
+        ID or manifest differs from the first read, treat the result as
+        indeterminate. MCP results arrive as JSON text content that is parsed
+        before the paths apply. A missing `custom_fields` or a missing key
+        means "not marked";
       * the operator-only remediation: a fresh-process CLI `backlogit sync`
         (its workspace open runs journal recovery), then
         `backlogit_sync_index` if an MCP server is running; on a recovery
         error, `backlogit doctor` and escalate;
+    * the mixed-binary caveat: **any** binary that opens this workspace, CLI
+      or MCP server, including one a consumer invokes or starts for a read,
+      must include U1b;
+    * that the autoharness consumer should not treat the contract as
+      operative before the rollout checkpoint is recorded (per
+      `docs/compound/workflow-issues/stable-contract-before-two-agent-adoption-2026-04-05.md`);
     * that SQL `query` is secondary (`json_extract`);
     * that full defect resolution needs the autoharness follow-up.
-  * AC: the doc contains every item above, and the predicate text matches the
-    decision artifact verbatim.
+  * AC:
+    * The doc contains every item above.
+    * The predicate and residual text match the decision artifact verbatim.
+    * The recipe JSON paths are identical to the paths U0b (1) and (2)
+      assert.
 
 ## Constitution Check
 
 * **Test-first ordering (non-negotiable).** Each implementation unit has a
-  genuine RED predecessor:
+  genuine RED predecessor, enforced by a dependency edge:
   * U0a (1)/(2) → U1;
-  * U0c (1)/(2) → U1b;
-  * U0b (1)/(2) → U2.
+  * U0b (1)/(2) → U1 (attempt 6 P1-1; edge `173.001-T` → `173.007-T`);
+  * U0c (1)/(2) → U1b.
 
-  Characterization scenarios are labeled and not counted as RED. U3 and U4
-  are post-implementation verification. The dependency edges enforce the
-  order, and U1b precedes U1. Pass.
-* **Single-domain tasks.** The domains are: tests (U0a, U0b, U0c, U3, U4),
-  code (U1b, U1, U2), and docs (U5). Pass.
+  Characterization scenarios are labeled and not counted as RED. U3 (and the
+  deferred U4) are post-implementation verification. U1b precedes U1. The
+  retired U2 no longer claims a RED. Pass.
+* **Single-domain tasks.** Tests: U0a, U0b, U0c, U3 (and deferred U4). Code:
+  U1b, U1. Docs: U5. Pass.
 * **2-hour rule.** Every unit touches at most 2 files, fewer than 5 functions,
-  and at most 3 scenarios. U0b's two files are one test per transport package.
-  Pass.
+  and at most 3 scenarios (see `## Size Validation and Decomposition`). U1b's
+  second file is a one-line constant. Pass.
+* **Release-unit size.** The bootstrap slice is 7 tasks in 5 waves, under the
+  ~8-task ceiling; the deferred U4 moves to a follow-on feature with no
+  shipment until a later Stage session. Pass.
 * **Backward compatibility.** Default claim behavior is unchanged apart from
   the additive key on preimage-queued members. Non-claim writers are
-  byte-identical. Recovery still fails closed on every divergence except this
-  journal's own marker. Pass.
-* **Workspace containment (P-017).** All work is in-repo. Autoharness
-  consumption is a documented follow-up. Pass.
+  byte-identical. Recovery still fails closed on every divergence except the
+  preimage's own marker or this journal's marker. Pass.
+* **Workspace containment (P-017, Principle IV).** All agent work is in-repo.
+  The only out-of-repo step, the binary install in the rollout checkpoint, is
+  an **operator action, not an agent action** (Principle IV exception).
+  Autoharness consumption is a documented follow-up. Pass.
+* **Other principles (attempt 7 P3).** Errors wrap with `%w` and U1b keeps the
+  `ErrShipmentConflict` sentinel (I). The unaudited marker-only write is
+  documented in U5 (V). The U1b recovery change and the rollout checkpoint
+  run in careful mode (VII/VIII). The marker lives in Git-friendly
+  frontmatter (IX). Pass.
 
 Constitution Check: pass
 
@@ -389,16 +626,17 @@ Constitution Check: pass
 * the shared status-write seam;
 * the claim crash-recovery CAS (a fail-closed gate on every lifecycle
   operation);
-* a cross-workspace consumer contract.
+* a cross-workspace consumer contract;
+* a mixed-binary rollout window (new in attempt 7).
 
-Re-hardened on 2026-09-28 for the post-`174-F` code. The attempt-5 rollback
-bullet described a revert write that no longer exists.
+Re-hardened on 2026-09-29 for attempt 7 against `main` `7e4041ee`.
 
 **Protected invariants**
 
 * Claim stays all-or-nothing through the journaled preimage and exact
   snapshot restore.
-* Recovery never accepts a state it cannot prove came from this journal.
+* Recovery never accepts a state it cannot prove came from the preimage or
+  from this journal.
 * Non-claim writers are byte-identical.
 * There is at most one active shipment.
 * The backlogit claim gate stays authoritative, and the marker stays
@@ -411,8 +649,25 @@ bullet described a revert write that no longer exists.
 * `docs/compound/2026-08-01-n-independent-pair-test-design-for-go-map-iteration-nondeterminism.md`:
   cascade and ordering.
 * `docs/compound/2026-07-29-durable-writes-test-seam-patterns.md`:
-  `persistArtifactWriteFn` failure injection, and no `t.Parallel` with
-  package-global seams.
+  `persistArtifactWriteFn` failure injection, no `t.Parallel` with
+  package-global seams, `t.Cleanup` restore.
+* `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`:
+  inject only non-indeterminate errors when testing rollback (U3).
+* `docs/compound/2026-08-01-self-hosted-cli-version-skew-merged-fix-not-yet-operative.md`:
+  mixed-binary rollout checkpoint.
+* `docs/compound/best-practices/atomic-multi-item-claim-rollback-and-stale-blocked-clearing-2026-06-27.md`:
+  all-or-nothing claim rollback kept; clear-on-state-exit waived for the
+  advisory marker (see the option A section); `clearStaleBlockedReason` kept
+  by U1's extracted writer.
+* `docs/compound/2026-07-20-ship-gate-descoped-archived-member-exemption.md`
+  and
+  `docs/compound/2026-07-31-p015-single-artifact-safe-close-for-partial-feature-shipments.md`:
+  how the retired and deferred tasks leave `154-S` (see `## Harvest
+  Checklist`).
+* `docs/compound/2026-07-13-post-merge-lifecycle-requires-fresh-binary.md`:
+  prove the installed binary's commit by ancestry, not by file time.
+* `docs/compound/workflow-issues/stable-contract-before-two-agent-adoption-2026-04-05.md`:
+  versioned contract, not operative before the checkpoint.
 
 **Risky actions**
 
@@ -421,8 +676,11 @@ bullet described a revert write that no longer exists.
   * **ActionRisk: high.** A mistake either wedges every lifecycle operation
     (too strict) or accepts a forged or divergent state (too loose).
   * Mitigation:
-    * The only extra value accepted is exactly `journal.ShipmentID`.
+    * The only marker values accepted are the preimage's own value and
+      exactly `journal.ShipmentID` on the marked-last candidate.
     * U0c (3) keeps foreign or other divergence fail-closed.
+    * U0c (1) proves a stale foreign preimage value is restored
+      byte-for-byte.
     * The candidate order is pinned: the marked target is last.
     * U1b lands before U1.
   * No operator approval is needed beyond plan review.
@@ -434,44 +692,84 @@ bullet described a revert write that no longer exists.
     * There is no context-value inheritance.
     * U0a (3) characterizes non-claim callers.
     * A marker-only write on an already-active member emits no
-      `status_changed` event.
+      `status_changed` event and does not cascade.
 * **ProposedAction:** publish the three-part consumer predicate (U5).
   * **ActionRisk: medium.** It is a cross-workspace contract.
   * Mitigation:
-    * The predicate is copied verbatim from the decision artifact.
-    * The residuals are published.
-    * The marker is advisory-only.
+    * The predicate and residuals are copied verbatim from the decision
+      artifact.
+    * The recipe paths are test-pinned by U0b.
+    * The contract is versioned (`scheduler-baseline-marker/v1`) and
+      advisory-only.
+* **ProposedAction:** run the first claim after the `154-S` implementation
+  merge (the `154-S` claim itself happens **before** that merge, with a
+  pre-U1 binary, so it writes no marker; the first marker-writing claim is the
+  next one, most likely the later U4 follow-on shipment).
+  * **ActionRisk: high** while binaries are mixed. A post-U1 binary that
+    crashes mid-claim, followed by recovery from a pre-U1b binary, re-creates
+    the F1 wedge.
+  * Mitigation: the rollout checkpoint below. **Operator approval required**
+    (the existing `154-S` supervised-bootstrap condition).
+
+**Rollout checkpoint (attempt 6 P2-9; attempt 7 P2-E).** After the `154-S`
+implementation merge, the change is **merged but not operative** until every
+binary that can touch this workspace has been rebuilt from a commit that
+contains both U1b and U1. Steps 1–3 are performed **by the operator only**
+(they write outside the repository and replace installed binaries); no agent
+runs them:
+
+1. stop the MCP server;
+2. rebuild and install the PATH CLI and the MCP server binary;
+3. prove each binary's stamped commit descends from the merge with `git
+   merge-base --is-ancestor <merge-sha> <stamped-commit>`; a dirty or missing
+   stamp fails closed; file modification time is never evidence;
+4. only then may any `shipment claim` run.
+
+Ship (or the Orchestrator) only checks and records the operator-reported
+version strings and ancestry result on `154-S` closure. Until it is recorded,
+the marker contract is not operative and no consumer may rely on it.
 
 **Verification added**
 
-* The U0c recovery RED.
-* U3 exact-restore on both rollback paths.
-* U4 (1) option A lifecycle with the predicate as an in-repo consumer.
-* U4 (2) end-to-end crash recovery.
-* The widened `-race` gate.
+* The U0c recovery RED, including the stale-foreign preimage restore.
+* U0a re-claim overwrite of a stale foreign value.
+* U0b recipe-path assertions on both transports.
+* U3 exact-restore on both rollback paths, with the correct error class, and
+  the core-level R3 assertion.
+* The widened `-race` gate (U3 AC).
+* Deferred: U4 option A lifecycle net (follow-on).
 
 **Rollback**
 
 * **Mid-claim:** unchanged, exact restore. Journal recovery restores the
   preimage, including through U1b for marked members.
-* **Feature-level revert:**
-  * Revert U1 first, then U1b. A U1 revert alone is safe, because U1b only
-    widens acceptance.
-  * Markers already persisted on items stay as inert advisory data. The
-    predicate and ignoring consumers are unaffected, and a later re-claim
-    overwrites them.
+* **Feature-level revert (corrected per attempt 6 P2-4):**
+  * Revert U1 first, then U1b. A U1 revert alone is safe for recovery,
+    because U1b only widens acceptance.
+  * A U1 revert **withdraws the contract**: later claims no longer write
+    markers, so nothing is overwritten, and markers already on disk become
+    **unreliable**, not inert (an organically re-activated item could match a
+    later shipment ID only by coincidence, but the predicate can no longer be
+    trusted to find claim-activated items).
+  * **Operator step:** before or with the revert, notify the autoharness
+    consumer that `scheduler-baseline-marker/v1` is withdrawn, so it stops
+    consuming the marker.
   * Reverting U1b while marked claim **intent** journals exist on disk would
-    re-wedge. **Operator checkpoint:** confirm that `.backlogit/ops/` has no
-    pending claim lifecycle journal before reverting U1b.
+    re-wedge. **Operator checkpoint:** stop the MCP server first, then confirm
+    that `.backlogit/ops/` contains no pending claim lifecycle journal
+    (`shipment-operation/v1` files with `operation: claim` and
+    `phase: intent`) before reverting U1b.
 
 **Monitoring and closure**
 
 * After ship, `backlogit doctor` reports no shipment lifecycle evidence
   conflicts.
-* The first real claim after merge shows the key on its members through both
-  transports.
+* The first claim after the rollout checkpoint shows the key on its members
+  through both transports.
 * The owner is Ship for `154-S`. The validation window is the `154-S`
-  supervised bootstrap.
+  supervised bootstrap plus the first post-merge claim.
+* The deferred U4 follow-on is routed under the 074-DL rule like everything
+  else behind `154-S`; it is **not** a precondition of the attestation.
 
 **Review-gate markers**
 
@@ -479,36 +777,70 @@ bullet described a revert write that no longer exists.
 * If sub-agent dispatch is unavailable, declare
   `single-agent-declared-degradation` (P-012 principle).
 
-**Unresolved operator decisions:** none. F2 is decided (option A).
+**Unresolved operator decisions:** none for the design. F2 is decided
+(option A); the size decomposition follows the operator's 2026-09-28
+instruction. Proceeding to harvest on the attempt-7 ADVISORY gate requires
+the operator's `operator_authorization: approved`.
 
 ## Verification
 
 * Per unit, as listed in the ACs.
-* Shipment gate: `go test -race ./internal/core/... ./internal/cli/...
+* Shipment gate (U3 AC): `go test -race ./internal/core/... ./internal/cli/...
   ./internal/mcp/... ./internal/db/...`. `-race` runs on this Windows host:
   CGO is on and MinGW gcc is available.
-* **Flake prerequisite (operator, 2026-09-28):**
-  `TestUR3_ReopenRollsBackInterruptedBlockFromCompletePreimage`
-  (stash `BDA56ED8`, duplicate `46A898B8`) is fixed in its own shipment
-  **before** any `./internal/core/...` gate here runs. Enforcement:
-  * a shipment `blocks` edge from `154-S`;
-  * task-level `blocks` edges from U0a, U0c, U1b, U1, U3 and U4.
-
-  No known-flake rerun policy is used.
-
-  **Harvested (2026-09-28).** The fix is feature `181-F`, task
-  `181.001-T`, in shipment `182-S`.
-  * Recorded: `154-S` blocks-depends on `182-S`.
-  * Recorded: task edges onto `181.001-T` from `173.006-T` (U0a),
-    `173.001-T` (U1), `173.002-T` (U2), `173.003-T` (U3) and
-    `173.004-T` (U4). The U2 edge is added because its gate runs
-    `./internal/core/...`. It is redundant through U2→U1, but harmless.
-  * Not created: the U0c and U1b tasks, because attempt 6 FAILed. Add their
-    edges when they are harvested.
+* **Flake prerequisite: satisfied.**
+  `TestUR3_ReopenRollsBackInterruptedBlockFromCompletePreimage` (stash
+  `BDA56ED8`) was fixed by feature `181-F` / task `181.001-T` in shipment
+  `182-S`, which **shipped** (`archived_status: shipped`, merge `70d72044`).
+  * `154-S` blocks-depends on `182-S` (retained as provenance).
+  * Existing task edges onto `181.001-T` from `173.006-T`, `173.001-T`,
+    `173.003-T` and `173.004-T` are retained as provenance. New tasks (U0c,
+    U1b) do not need an edge, because the prerequisite has shipped.
+  * No known-flake rerun policy is used.
 * Existing shipment lifecycle, recovery and UR3 tests stay green.
+* **Shipment merge gate (constitution quality gates):** `go test ./...`,
+  `go vet ./...`, `golangci-lint run` and `gofmt -l .` (empty) all pass before
+  the `154-S` implementation PR merges, in addition to the U3 `-race` gate.
+
+## Harvest Checklist (on gate authorization)
+
+Performed by Stage only after the gate is satisfied (PASS, or ADVISORY with
+`operator_authorization: approved`), and **before** the `154-S` hold label is
+removed (attempt 7 P2-B):
+
+1. Create the follow-on feature ("Scheduler-baseline marker: option A
+   lifecycle regression net (173-F follow-on)"), referencing this plan.
+2. On `173.004-T`, **before** adopting it, remove its `173.002-T` edge
+   (its `173.001-T` and `173.003-T` edges stay). Then reparent it under the
+   follow-on feature with `backlogit adopt`, which assigns a new hierarchical
+   ID and rewrites its remaining edges. Update the adopted task's contract to
+   the deferred U4 text above. No follow-on shipment.
+3. Retire `173.002-T`: remove its edge from `173.005-T` (the only remaining
+   dependent after step 2), update its body with the supersession
+   provenance, then archive it **directly from `queued`** (so
+   `archived_status: queued` qualifies for the ship-gate descope
+   exemption).
+4. Create U0c and U1b as tasks under `173-F`. Edges: U1b → U0c;
+   `173.001-T` → U1b; `173.001-T` → `173.007-T` (P1-1).
+5. Rewrite `173.005-T` dependencies to `173.007-T`, `173.001-T` and
+   `173.003-T`; rewrite `173.003-T` to depend on `173.001-T` and U1b. Update
+   the contracts of `173.001-T`, `173.003-T`, `173.005-T`, `173.006-T` and
+   `173.007-T` to this plan's text, and the `173-F` description.
+6. Edit the `154-S` manifest to exactly: `173-F`, `173.006-T`, `173.007-T`,
+   U0c, U1b, `173.001-T`, `173.003-T`, `173.005-T` (remove `173.002-T` and
+   `173.004-T`).
+7. Pre-ship check, recorded in the `154-S` banner for Ship: at ship time no
+   child of `173-F` outside the manifest may be non-terminal (the adopted U4
+   is no longer a child; `173.002-T` is archived from `queued`).
+8. Archive stash `C29EBEE5` with provenance; remove only
+   `do-not-claim-until-convergence` from `154-S`; keep
+   `bootstrap-bypass-approved-conditional`; update the banner.
 
 ## Follow-ups (out of this shipment)
 
+* **Follow-on feature (created at harvest):** the option A lifecycle
+  regression net (U4, `173.004-T` adopted under it). No shipment now; a later
+  Stage session packages it after `154-S` ships, under the 074-DL rule.
 * The autoharness P-002.6 wave scheduler should apply the three-part
   predicate and exclude claim-activated tasks from residual classification
   (cross-workspace).
@@ -997,3 +1329,132 @@ mechanical:
 It needs no new design decision. Option A stands.
 
 <!-- plan-review-attempt: 6 -->
+
+## Plan Review
+
+dispatch_mode: multi-agent-dispatch
+decision: ADVISORY
+
+Attempt 7 was run by Stage on 2026-09-29 on branch
+`stage/173f-plan-review-attempt-7`, with code at `main` `7e4041ee`. The
+operator authorized it past the circuit breaker on 2026-09-28 ("Yes on
+additional plan review; validate the size of the plan; if too large,
+decompose."). It reviewed the attempt-7 revision: every attempt-6 remediation
+applied, the new `## Size Validation and Decomposition` (9 tasks → a 7-task,
+5-wave bootstrap slice; U2 retired into U0b; U4 deferred to a follow-on
+feature), and re-hardening (mixed-binary rollout checkpoint, corrected revert
+guidance).
+
+Six personas were dispatched and all six returned:
+
+| Persona | Verdict |
+|---|---|
+| Constitution Reviewer | ADVISORY (1 P2) |
+| Go Reviewer | ADVISORY (2 P2) |
+| Scope Boundary Auditor | ADVISORY (1 P2) |
+| Learnings Researcher | ADVISORY (1 P2) |
+| Architecture Strategist | ADVISORY (2 P2) |
+| Agent-Native Parity Reviewer | ADVISORY (1 P2) |
+
+Security Lens was not triggered: no auth, secrets, or new external
+integration.
+
+**Gate rationale.** No P0 or P1 findings; P2 findings only, so the gate is
+ADVISORY. The Constitution Check verdict is present and was confirmed correct.
+Plan hardening was required and is present and adequate.
+
+**Attempt-6 findings: all resolved.** Every persona that checked them
+confirmed P1-1 (U0b → U1 edge; U2 retired into U0b) and P2-1 through P2-10
+resolved, and the attempt-6 P3s addressed or dispositioned. P2-5 is resolved
+through the decomposition (U5 depends on U0b, U1 and U3, with a
+verification-status column for the rows the deferred U4 pins).
+
+**Size assessment: confirmed.** The Scope Boundary Auditor agreed that the
+attempt-6 plan (9 tasks, at least 7 waves) was too large for the one
+shipment that runs without the active-residual halt, that retiring U2 and
+deferring U4 are correct, that nothing left in the bootstrap is removable,
+and that keeping U5 in the bootstrap is justified. The Constitution Reviewer
+confirmed the table arithmetic (7 tasks, 5 waves, 11 scenarios: 6 RED,
+3 characterization, 2 verification; 9 file touches over 8 files) and that no
+task breaks the 2-hour rule or width isolation.
+
+### P2 (merged) — remediation applied in this revision
+
+* **P2-A (Scope, Architecture): follow-on vs the 074-DL gate.** A follow-on
+  shipment with a `blocks` edge onto `154-S` is "behind `154-S`" and needs the
+  074-DL attestation, while the plan required U4 to ship before that
+  attestation: a loop. **Applied:** no follow-on shipment is created now
+  (operator: no new shipment unless needed). U4 keeps task edges onto U1 and
+  U3, is routed under the 074-DL rule like everything else behind `154-S`,
+  and is not a precondition of the attestation. U5 publishes the affected
+  rows as "by construction; regression pin pending", and U4's AC flips that
+  row when it ships.
+* **P2-B (Architecture, Learnings; Scope P3): harvest steps unpinned.** How
+  `173.002-T` and `173.004-T` leave `154-S`, and which terminal status keeps
+  the ship gate satisfiable, were unspecified
+  (`docs/compound/2026-07-20-ship-gate-descoped-archived-member-exemption.md`).
+  **Applied:** new `## Harvest Checklist`: reparent `173.004-T` before any
+  claim; archive `173.002-T` directly from `queued`; exact manifest; exact
+  edge rewrites; pre-ship check for non-terminal non-manifest children.
+* **P2-C (Go; Constitution P3): U3 (2) fixture could not produce its
+  assertions.** The cited P1C6 pattern fails on the only member's event-log
+  restore, so nothing is marked and file and index agree. **Applied:** exact
+  fixture (2 members; forward failure on `member2`; restore failure on
+  `member1`'s artifact file path) and a deterministic "does disagree"
+  assertion keyed on the known member ID.
+* **P2-D (Go, Parity): CLI reads run journal recovery.** Every CLI read opens
+  `core.NewWorkspace`, which runs `recoverPendingShipmentOperations`, so a
+  consumer's CLI read performs rollback and the "never runs a lifecycle
+  operation" rule was inaccurate. **Applied** in U5 and in the decision
+  artifact's R3 (so the verbatim copy stays consistent): transport
+  side-effect note, MCP recommended for strictly read-only consumers, read
+  errors and non-atomic re-read mismatches are indeterminate,
+  `<storage-root>/ops/`, and the mixed-binary caveat extended to any CLI.
+* **P2-E (Constitution): rollout checkpoint actor.** Rebuilding and installing
+  binaries writes outside the repository. **Applied:** steps 1–3 are
+  operator-only, Ship only records the reported result, and the containment
+  line records the operator-action exception.
+
+### P3 (advisory) — applied unless noted
+
+* RED harnesses use the literal key string, not the U1b constant (compile
+  safety).
+* Size-table counts corrected: U1 changes 3 functions; U0b needs 2 fixture
+  helpers.
+* U1: `UpdatedAt` bump on the marker-only write; the index-first no-op
+  comparison; `clearStaleBlockedReason` and the other side effects kept (U0a
+  (3) characterizes it).
+* U0a (2): one pair suffices because the loop walks the ordered manifest
+  slice.
+* U0b (3): the zero-active `[]` case on both transports.
+* U0c: fabrication mechanism named; close before reopen.
+* U3: seam predicate plus counter; a gate failure reopens U1/U1b; the full
+  constitution quality gates added to `## Verification`.
+* Ancestry proof (`git merge-base --is-ancestor`) for binaries; the
+  stable-contract learning cited.
+* The risky-action wording now says the `154-S` claim itself precedes the
+  merge and writes no marker.
+* Other principles (I, V, VII/VIII, IX) are mapped in the Constitution Check.
+* Not applied (optional): splitting U0a (1) into table-driven subtests is left
+  to the implementer.
+
+**Operator decision required to continue.** An ADVISORY gate is satisfied
+only with `operator_authorization: approved` in this section. The P2
+remediation above is text-only and introduces no new design decision (option A
+stands; the decomposition follows the operator's instruction), so no further
+review attempt is proposed. On authorization, Stage runs the `## Harvest
+Checklist`. Until then the harvest is **not** updated and `154-S` stays held.
+
+**Post-review corrections (PR #463, Copilot review cycle 1, text only).**
+
+* MCP server startup also runs journal recovery (`openMCPServer` →
+  `core.NewWorkspace`). The R3 transport note and the mixed-binary caveat now
+  cover any binary that opens the workspace, CLI or MCP server.
+* U4 no longer edits the U5 doc, which keeps U4 tests-only (width
+  isolation). The U5 row is worded so it never needs a later edit. This
+  supersedes the "U4's AC flips that row" wording under P2-A above.
+* Harvest Checklist steps 2–3: the `173.002-T` edge is removed from
+  `173.004-T` before `adopt` renames it, and step 3 touches only
+  `173.005-T`.
+
+<!-- plan-review-attempt: 7 -->
