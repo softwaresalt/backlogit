@@ -350,6 +350,19 @@ func TestUR3CrashReady_PartialMarkerIsNotReady(t *testing.T) {
 }
 
 // readUR3CrashReady reads the crash child's readiness marker at path.
+//
+// The child publishes the marker with os.WriteFile, which creates or
+// truncates the file before writing it, so the parent can observe an empty
+// or partially written marker. The contract is:
+//
+//   - missing file: (zero, false, nil, nil), not ready yet;
+//   - complete JSON: (crash, true, nil, nil);
+//   - empty, partial or malformed JSON: (zero, false, decodeErr, nil), not
+//     ready; decodeErr is kept so a caller can report a marker that never
+//     becomes valid;
+//   - any other read error: (zero, false, nil, err), which is fatal.
+//
+// The helper holds no state; callers own polling and deadlines.
 func readUR3CrashReady(path string) (crash ur3CrashPoint, ready bool, decodeErr error, err error) {
 	data, readErr := os.ReadFile(path)
 	if readErr != nil {
@@ -360,7 +373,7 @@ func readUR3CrashReady(path string) (crash ur3CrashPoint, ready bool, decodeErr 
 	}
 	var decoded ur3CrashPoint
 	if unmarshalErr := json.Unmarshal(data, &decoded); unmarshalErr != nil {
-		return ur3CrashPoint{}, false, nil, fmt.Errorf("decode ur3 crash ready %s: %w", path, unmarshalErr)
+		return ur3CrashPoint{}, false, fmt.Errorf("decode ur3 crash ready %s: %w", path, unmarshalErr), nil
 	}
 	return decoded, true, nil, nil
 }
@@ -417,14 +430,21 @@ func runUR3CrashSubprocess(
 
 	var crash ur3CrashPoint
 	ready := false
+	// lastDecodeErr keeps the most recent partial or malformed marker decode
+	// error. It is never fatal before the deadline, because the child may still
+	// be writing the marker; it is reported only if readiness never arrives.
+	var lastDecodeErr error
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		readyCrash, readyOK, _, readyErr := readUR3CrashReady(readyPath)
+		readyCrash, readyOK, decodeErr, readyErr := readUR3CrashReady(readyPath)
 		require.NoError(t, readyErr)
 		if readyOK {
 			crash = readyCrash
 			ready = true
 			break
+		}
+		if decodeErr != nil {
+			lastDecodeErr = decodeErr
 		}
 		if failure, readErr := os.ReadFile(failurePath); readErr == nil {
 			stopChild()
@@ -439,7 +459,8 @@ func runUR3CrashSubprocess(
 	if !ready {
 		stopChild()
 		require.FailNow(t, "missing actual-operation/failpoint behavior",
-			"kill error: %v; wait error: %v; output:\n%s", killErr, waitErr, output.String())
+			"last ready-marker decode error: %v; kill error: %v; wait error: %v; output:\n%s",
+			lastDecodeErr, killErr, waitErr, output.String())
 	}
 
 	stopChild()
