@@ -817,9 +817,11 @@ removed (attempt 7 P2-B):
    the deferred U4 text above. No follow-on shipment.
 3. Retire `173.002-T`: remove its edge from `173.005-T` (the only remaining
    dependent after step 2), update its body with the supersession
-   provenance, then archive it **directly from `queued`** (so
-   `archived_status: queued` qualifies for the ship-gate descope
-   exemption).
+   provenance, then archive it **directly from `queued`**. Shipment
+   release scope is flat (an explicit feature member does not expand to
+   its descendants), so once `173.002-T` leaves the manifest the ship gate
+   never evaluates it; archival keeps this omitted child terminal so the
+   listed `173-F` can complete.
 4. Create U0c and U1b as tasks under `173-F`. Edges: U1b → U0c;
    `173.001-T` → U1b; `173.001-T` → `173.007-T` (P1-1).
 5. Rewrite `173.005-T` dependencies to `173.007-T`, `173.001-T` and
