@@ -85,7 +85,8 @@ model_routing:
     reasoning_effort: "high"  # Leave empty to use model default
   alt_doc_review:
     # Alternate route for the doc-review skill's review pass. Deliberately a
-    # third provider (tiers are Anthropic, escalation/anchor are OpenAI) for
+    # third provider (tiers are mostly Anthropic — tier1 is OpenAI — and
+    # escalation/anchor are OpenAI) for
     # cross-model diversity. Schema allows only these two keys (no
     # reasoning_effort). Clearing either field falls back to Tier 2.
     model_provider: "google"
