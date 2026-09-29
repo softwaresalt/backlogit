@@ -35,8 +35,8 @@ contracts, which is the last gate before the `154-S` hold comes off.
 ## Part 1: FB0A850B archived
 
 The archive criterion (the auto-tune PR merges) is met by PR #456 (merge
-`ba303ee2`, commits `ce40a29a` and `bddead5b`). I re-checked the three
-findings on `ba303ee2`:
+`ba303ee2`, commits `b855cfc3`, `ce40a29a` and `bddead5b`). I re-checked
+the three findings on `ba303ee2`:
 
 * R1: `harness-manifest.yaml:615-617` `ESCALATION_*` is now gpt-6-sol /
   openai / xhigh.
