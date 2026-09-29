@@ -187,10 +187,13 @@ below. It is not an automated or fail-closed guard.
 
 The target design has three layers:
 
-1. **L1, Orchestrator routing (target; not implemented).** Only this surface
-   can combine (P) and (C), and it runs before every claim. Once implemented,
-   for any shipment whose `blocks`-edge closure includes `154-S`, the
-   Orchestrator and Ship pre-claim must:
+1. **L1, Orchestrator routing (target; not implemented).** Among the surfaces
+   available today, only this one can combine (P) and (C) (L3 can too, once
+   `A592FC1C` is fixed), and it runs before every **agent-mediated** claim. It
+   is governance only: a direct `ClaimShipment` caller (CLI, MCP or code)
+   bypasses it, so it is not universal enforcement. Once implemented, for any
+   shipment whose `blocks`-edge closure includes `154-S`, the Orchestrator and
+   Ship pre-claim must:
    * read `154-S` provenance from Markdown source, not the index, and fail
      closed when it is missing;
    * require (P);

@@ -175,7 +175,11 @@ Same branch, `stage/triage-513e62ab-fb0a850b` (PR #455, prior head
     the pending auto-tune pass. Archive it, referencing `075-DL`, when the
     auto-tune PR merges.
   * `AF1E5075`: note appended (L1 contract folded in, plus the new
-    `bootstrap-bypass-approved-conditional` label for its refusal set).
+    `bootstrap-bypass-approved-conditional` label). Clarified after the PR #455
+    review: that label is approval provenance, not a refusal label. The hard
+    refusal label is `do-not-claim-until-convergence` (like
+    `bootstrap-bypass-unapproved`); the approval label stays after the hold is
+    released and must not keep `154-S` ineligible.
   * `6434A4D7`: cross-reference note appended (L2 requirements from 074-DL).
 * Untouched: `.autoharness/config.yaml` (operator edit), untracked
   `.backlogit/reconcile/155-S-*.md` and `.backlogit/telemetry.jsonl`.
