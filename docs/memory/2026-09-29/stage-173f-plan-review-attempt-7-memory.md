@@ -110,10 +110,12 @@ text-only and introduces no new design decision.
    section, quoting the operator's words.
 2. Run the plan's `## Harvest Checklist`, steps 1–8:
    1. Create the follow-on feature.
-   2. Run `backlogit adopt 173.004-T --parent <new>`, then rewrite its deps
-      (drop `173.002-T`; keep `173.001-T` and `173.003-T`).
-   3. Remove the `173.002-T` edges from `173.004-T` and `173.005-T`. Update
-      the `173.002-T` body with provenance, then archive it from `queued`.
+   2. Remove the `173.002-T` edge from `173.004-T` **before** adopting it,
+      then run `backlogit adopt 173.004-T --parent <new>` (new ID; the
+      `173.001-T` and `173.003-T` edges are rewritten by adopt).
+   3. Remove the `173.002-T` edge from `173.005-T` (the only remaining
+      dependent). Update the `173.002-T` body with provenance, then archive
+      it from `queued`.
    4. Create U0c and U1b under `173-F`. Edges: U1b → U0c; `173.001-T` → U1b;
       `173.001-T` → `173.007-T`.
    5. Deps: `173.005-T` → `173.007-T`, `173.001-T` and `173.003-T`;

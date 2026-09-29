@@ -131,8 +131,12 @@ the predicate, never on the raw value alone.
     journal as a side effect; this is sanctioned, fail-closed convergence, not
     a consumer-invoked lifecycle command. A fresh CLI read almost never shows
     the frontmatter/index split, which is observable only in-process or
-    through a long-lived MCP server. MCP reads do not run recovery. Consumers
-    that must stay strictly read-only use the MCP transport.
+    through a long-lived MCP server. Starting an MCP server (`backlogit mcp`,
+    `openMCPServer` → `core.NewWorkspace`) also opens a recovering workspace,
+    so server **startup** can roll back a pending journal; only reads on an
+    already-running server skip recovery. A consumer that must avoid recovery
+    side effects reads through an MCP server that is already running and that
+    it did not start.
   * **Consumer rule (external agents, including the autoharness scheduler).**
     Treat the claim-activation state as **indeterminate** when any of these
     holds:
@@ -164,9 +168,9 @@ the predicate, never on the raw value alone.
        `backlogit doctor` (a diagnostic workspace that does not run recovery)
        and escalate. Do not substitute another lifecycle operation.
 
-  The mixed-binary caveat (attempt 6 P2-9) applies to **any** CLI binary that
-  opens the workspace, including one a consumer invokes for a read: it must
-  include U1b, because an older binary can re-create the F1 wedge. The plan's
+  The mixed-binary caveat (attempt 6 P2-9) applies to **any** binary that
+  opens the workspace, CLI or MCP server, including one a consumer invokes
+  or starts for a read: it must include U1b, because an older binary can re-create the F1 wedge. The plan's
   rollout checkpoint (upgrade every binary before the first claim) governs
   this. Attempt 7 re-reviews this text together with the rest of the
   attempt-6 remediation.

@@ -176,7 +176,8 @@ active-residual halt, so every extra wave is a supervised wave.
      **and** the operator's autoharness-consumption attestation). The plan
      does **not** require U4 to ship before the attestation, which avoids the
      attestation ⇄ U4 loop the attempt-7 review found. The rows U4 would pin
-     are published as "by construction, regression pin pending" (see U5).
+     are published as "by construction; regression net tracked by the
+     follow-on U4 task" (see U5), a wording that never needs a later edit.
 3. **Keep U5 in the bootstrap.** The contract must ship with its producer.
    Deferring U5 would put a marker on disk with no published predicate, which
    invites the withdrawn "non-empty ⇒ claim-activated" reading. U5 depends
@@ -498,10 +499,8 @@ string independently of the constant.
     P2-2): the claim terminal-evidence path is unreachable, and the rollback
     path is covered by U0c (fabricated) and U3 (2) (real double-fault).
   * AC: both pass; no U0a/U0b/U0c/U3 scenario duplicated; the `-race` gate of
-    U3 is green; the same change flips the U5 contract doc's "kept through
-    …" row from "regression pin pending" to "verified by U4" (a one-line docs
-    edit carried with the tests, so the verification-status column cannot go
-    stale).
+    U3 is green. U4 stays tests-only: it does **not** edit the U5 doc, whose
+    row is worded so it never needs a later edit (see U5).
 * **U5: operator docs, the marker contract (task 173.005-T).**
   * Domain: docs. File: `docs/design-docs/scheduler-baseline-marker-contract.md`
     (new, hand-written). Generated `docs/cli-reference/*` is not edited.
@@ -538,8 +537,10 @@ string independently of the constant.
       * marker-only write on an already-active member-parent: unaudited (no
         event);
       * kept through block, unblock, return, ship, abandon, normalize and
-        generic update/move: by construction (code-cited); regression pin
-        **pending** (the deferred U4 follow-on flips this row when it ships);
+        generic update/move: by construction (code-cited); the regression net
+        is tracked by the follow-on feature's U4 task, named by ID, and
+        consumers read that task's status rather than this doc (so the row
+        never needs a later edit);
     * residuals R1–R3, text identical to the decision artifact. R3 is
       published as the split rule (attempt 6 P2-7, refined by attempt 7
       P2-D):
@@ -548,8 +549,10 @@ string independently of the constant.
         `recoverPendingShipmentOperations`), so a CLI read can roll back a
         pending claim journal as sanctioned, fail-closed convergence, and a
         fresh CLI read almost never shows the frontmatter/index split. MCP
-        reads do not recover. Consumers that must stay strictly read-only use
-        the MCP transport;
+        server **startup** (`openMCPServer` → `core.NewWorkspace`) also
+        recovers; only reads on an already-running server do not. Consumers
+        that must avoid recovery side effects read through an MCP server that
+        is already running and that they did not start;
       * the consumer rule: disagreement between the two reads, a pending claim
         journal under `<storage-root>/ops/` (detect portably with `backlogit
         doctor`), a doctor journal finding, more than one active shipment, any
@@ -566,8 +569,9 @@ string independently of the constant.
         (its workspace open runs journal recovery), then
         `backlogit_sync_index` if an MCP server is running; on a recovery
         error, `backlogit doctor` and escalate;
-    * the mixed-binary caveat: **any** CLI binary that opens this workspace,
-      including one a consumer invokes for a read, must include U1b;
+    * the mixed-binary caveat: **any** binary that opens this workspace, CLI
+      or MCP server, including one a consumer invokes or starts for a read,
+      must include U1b;
     * that the autoharness consumer should not treat the contract as
       operative before the rollout checkpoint is recorded (per
       `docs/compound/workflow-issues/stable-contract-before-two-agent-adoption-2026-04-05.md`);
@@ -806,13 +810,16 @@ removed (attempt 7 P2-B):
 
 1. Create the follow-on feature ("Scheduler-baseline marker: option A
    lifecycle regression net (173-F follow-on)"), referencing this plan.
-2. Reparent `173.004-T` under it with `backlogit adopt` (new ID). Rewrite its
-   dependencies: remove `173.002-T`; keep `173.001-T` and `173.003-T`.
-   Update its contract to the deferred U4 text above. No follow-on shipment.
-3. Retire `173.002-T`: update its body with the supersession provenance, then
-   archive it **directly from `queued`** (so `archived_status: queued`
-   qualifies for the ship-gate descope exemption). Remove the `173.002-T`
-   edges from `173.004-T` and `173.005-T` first.
+2. On `173.004-T`, **before** adopting it, remove its `173.002-T` edge
+   (its `173.001-T` and `173.003-T` edges stay). Then reparent it under the
+   follow-on feature with `backlogit adopt`, which assigns a new hierarchical
+   ID and rewrites its remaining edges. Update the adopted task's contract to
+   the deferred U4 text above. No follow-on shipment.
+3. Retire `173.002-T`: remove its edge from `173.005-T` (the only remaining
+   dependent after step 2), update its body with the supersession
+   provenance, then archive it **directly from `queued`** (so
+   `archived_status: queued` qualifies for the ship-gate descope
+   exemption).
 4. Create U0c and U1b as tasks under `173-F`. Edges: U1b → U0c;
    `173.001-T` → U1b; `173.001-T` → `173.007-T` (P1-1).
 5. Rewrite `173.005-T` dependencies to `173.007-T`, `173.001-T` and
@@ -1437,5 +1444,17 @@ remediation above is text-only and introduces no new design decision (option A
 stands; the decomposition follows the operator's instruction), so no further
 review attempt is proposed. On authorization, Stage runs the `## Harvest
 Checklist`. Until then the harvest is **not** updated and `154-S` stays held.
+
+**Post-review corrections (PR #463, Copilot review cycle 1, text only).**
+
+* MCP server startup also runs journal recovery (`openMCPServer` →
+  `core.NewWorkspace`). The R3 transport note and the mixed-binary caveat now
+  cover any binary that opens the workspace, CLI or MCP server.
+* U4 no longer edits the U5 doc, which keeps U4 tests-only (width
+  isolation). The U5 row is worded so it never needs a later edit. This
+  supersedes the "U4's AC flips that row" wording under P2-A above.
+* Harvest Checklist steps 2–3: the `173.002-T` edge is removed from
+  `173.004-T` before `adopt` renames it, and step 3 touches only
+  `173.005-T`.
 
 <!-- plan-review-attempt: 7 -->
