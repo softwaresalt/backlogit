@@ -88,9 +88,12 @@ The deliberation answers two questions:
   `archived_status: shipped`. The check has to read the Markdown source
   (`.backlogit/archive/154-S.md` once archived), and it must fail closed when
   provenance is missing. `2026-07-17-backlogit-update-drops-archive-provenance.md`
-  adds that `backlogit update` on an archived record drops
-  `archived_status`. Nothing may run `update` on the archived `154-S` record
-  before the check reads it.
+  is historical only: the bug it records, where `backlogit update` on an
+  archived record dropped `archived_from`/`archived_status`, is fixed
+  (`842b701d`, `e09befa8`). `models.Artifact` now carries both fields, the
+  typed update round-trip preserves them, and
+  `internal/core/archive_update_provenance_test.go` pins that behavior. It
+  places no constraint on the check.
 
 ## Q1 — Edges or exemptions
 

@@ -191,3 +191,31 @@ Same branch, `stage/triage-513e62ab-fb0a850b` (PR #455, prior head
    nothing behind it until an operator attestation comment on `154-S`
    confirms the scheduler consumes the marker.
 4. Stage, later: deliberate `AF1E5075` (with L1 folded in) and `6434A4D7`.
+
+## Session 3 — PR #455 review-fix cycle 2 (2026-09-28)
+
+Copilot re-reviewed `f87bd769` and left four threads. All four were verified
+against the code before any edit:
+
+* `models.Artifact` carries `ArchivedFrom`/`ArchivedStatus`
+  (`internal/models/artifact.go` ~63-69), and
+  `internal/core/archive_update_provenance_test.go` (~44-87) proves that a typed
+  `backlogit update` on an archived item preserves both keys. The fix landed on
+  `main` in `842b701d` and `e09befa8`. The "update drops `archived_status`"
+  warning was therefore stale. The index still does not project
+  `archived_status` (`internal/db` has no such column), so the
+  read-from-Markdown-source requirement stands.
+* Fixed every stale occurrence in the files this PR changes: `074-DL` Notes
+  prior-art clause, the `154-S` banner post-ship paragraph, and the decision
+  doc prior-art bullet. The compound note
+  `2026-07-17-backlogit-update-drops-archive-provenance.md` is now cited as
+  historical. The older archived stash lines that cite it are outside this
+  PR's diff and were left alone.
+* PR description: the summary now states the governance change up front
+  (conditional waiver approval, label swap, banner update, `074-DL`/`075-DL`
+  decided), and an explicit operator-decision list was added. The list covers
+  the remaining gate `C29EBEE5` and the pending auto-tune pass for `FB0A850B`.
+* `154-S` status, dependencies, labels and items are unchanged in this
+  session. Only the banner text changed. Nothing was claimed or merged.
+  `.autoharness/config.yaml` and the untracked reconcile/telemetry files were
+  untouched.
