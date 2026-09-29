@@ -494,7 +494,8 @@ bullet described a revert write that no longer exists.
   * Recorded: `154-S` blocks-depends on `182-S`.
   * Recorded: task edges onto `181.001-T` from `173.006-T` (U0a),
     `173.001-T` (U1), `173.002-T` (U2), `173.003-T` (U3) and
-    `173.004-T` (U4).
+    `173.004-T` (U4). The U2 edge is added because its gate runs
+    `./internal/core/...`. It is redundant through U2→U1, but harmless.
   * Not created: the U0c and U1b tasks, because attempt 6 FAILed. Add their
     edges when they are harvested.
 * Existing shipment lifecycle, recovery and UR3 tests stay green.

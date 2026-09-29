@@ -70,6 +70,8 @@ status: halted-part-1-circuit-breaker
   because U1 is what turns U0b green. U2 becomes verification-only.
 * **P2-1..P2-10:**
   * U1b acceptance-criteria wording, plus stale-foreign-marker fixtures.
+  * P2-3: corrections to residuals R1–R3 and to the `ReturnBlockedItem`
+    row. These are already applied in the decision doc.
   * U4(2) claim-crash scenario cannot be executed. Claims emit no evidence
     events, recovery skips journals that are not intent journals
     (`shipment_recovery.go:128`), and the UR3 crash child only handles
