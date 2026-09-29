@@ -47,25 +47,24 @@ overrides: {}
 # Model routing preferences (map tiers to model identifiers and per-tier config)
 model_routing:
   tier1:
-    model: gpt-6-luna              # Fast/cheap: memory, docs, compaction (e.g., gpt-5.4-mini)
+    model: gpt-6-luna              # Fast/cheap: memory, docs, compaction
     reasoning_effort: "xhigh"  # Leave empty to use model default
     model_provider: "openai"       # e.g., openai, anthropic — leave empty for default
     model_family: "gpt-6-luna"           # Resolved into Tier 1 agent frontmatter
   tier2:
-    model: claude-sonnet-5              # Standard: orchestration, code, review (e.g., claude-sonnet-5)
+    model: claude-sonnet-5
     reasoning_effort: "high"
     model_provider: "anthropic"
     model_family: "claude-sonnet-5"
   tier3:
-    model: claude-opus-5.5              # Frontier: planning, architecture, analysis (e.g., claude-opus-5)
+    model: claude-opus-5.5
     reasoning_effort: "high"
     model_provider: "anthropic"
     model_family: "claude-opus-5.5"
   orchestrator:
-    model_family: "claude-opus-5.5"     # Orchestrator model override (default: gpt-5.4)
+    model_family: "claude-opus-5.5"
     reasoning_effort: "high"
     model_provider: "anthropic"
-  # P-013.5: role routes — dogfood assignment (Stage -> claude-opus-5, Ship -> claude-sonnet-5)
   stage:
     model_family: "claude-opus-5.5"             # Stage role route (falls back to tier3 when empty)
     model_provider: "anthropic"
@@ -74,18 +73,24 @@ model_routing:
     model_family: "gpt-6-luna"
     model_provider: "openai"
     reasoning_effort: "xhigh"
-  # P-013.6: explicit escalation route — distinct vendor/family from the
-  # Stage role route (claude-opus-5/anthropic, already == tier3) so an
-  # auto-escalation attempt is a genuine escalation, not a same-route no-op
-  # (ESCALATION_DEGRADED guard, 011-DL(b)/106-F).
+  # P-013.6: explicit escalation route — distinct vendor/family from the Stage role route (tier3);
+  # auto-escalation attempt is a genuine escalation, not a same-route no-op (ESCALATION_DEGRADED guard, 011-DL(b)/106-F).
   escalation:
     model_family: "gpt-6-sol"
     model_provider: "openai"
     reasoning_effort: "xhigh"
   anchor_review:
-    model_family: "gpt-6-sol"           # Anchor reviewer family (default: gpt-5.6-sol)
-    model_provider: "openai"       # Anchor reviewer provider (default: openai)
+    model_family: "gpt-6-sol"
+    model_provider: "openai"
     reasoning_effort: "high"  # Leave empty to use model default
+  alt_doc_review:
+    # Alternate route for the doc-review skill's review pass. Deliberately a
+    # third provider (tiers are mostly Anthropic — tier1 is OpenAI — and
+    # escalation/anchor are OpenAI) for
+    # cross-model diversity. Schema allows only these two keys (no
+    # reasoning_effort). Clearing either field falls back to Tier 2.
+    model_provider: "google"
+    model_family: "gemini-3.8-flash"
 
 # Continuous-learning capability pack. Observations/instincts/learned artifacts
 # live under .autoharness/ alongside the rest of the harness-managed state.

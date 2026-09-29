@@ -452,10 +452,10 @@ artifacts:
   - path: ".github/skills/doc-review/SKILL.md"
     primitive: 8
     template: "templates/skills/doc-review/SKILL.md.tmpl"
-    checksum: "7cce50b954b107e8b43581e1e7d040d0c35f8d83b77529444b732257e5a9957d"
+    checksum: "3212a7c691d72f2446f3723384cc5c8195931d7f997c8bb0931186a41b222ca9"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). The skill unconditionally required a `ping` call at session start, but agent-intercom is not in capability_packs for this workspace, so doc-review would open with a nonexistent tool call and report an intentionally absent optional pack as degraded. Made communication conditional using the same wording the review skill already uses. Do not auto-revert. Round-3 fix: made skill `name` optional in Check 2 (14 of 25 installed skills omit it) and added a disabled-capability-pack exemption to Checks 4 and 5 so conditional references to the intentionally-absent agent-intercom instruction file are not reported as broken. Round-4 fix: the gated_auto action class named agent-intercom as its default owner, which is unavailable here and contradicted the skill's own Operator Communication section; retargeted to the local strict-safety decision gate with intercom as the installed-only route. Round-5 fix: the tier-annotation check asserted there is no `model_tier` frontmatter field and verified only `max_subagent_tier`, which is the opposite of P-013.4; it now requires both integer fields."
-    note: "Installed 2026-08-31 (1.5.0 merge-install gap pass); alternate doc-review route bound 2026-08-31. ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY resolve to google / gemini-3.1-pro-preview from config.yaml model_routing.alt_doc_review. Google is deliberately a third provider (tiers are Anthropic, escalation is OpenAI) so the documentation review pass is least likely to share blind spots with whichever model authored the docs. Clear either field in config.yaml AND in variables_used to fall back to Tier 2."
+    note: "Installed 2026-08-31 (1.5.0 merge-install gap pass); alternate doc-review route bound 2026-08-31. ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY resolve to google / gemini-3.8-flash from config.yaml model_routing.alt_doc_review (family refreshed 2026-09-28 per 075-DL). Google is deliberately a third provider (tiers are mostly Anthropic, escalation/anchor are OpenAI) so the documentation review pass is least likely to share blind spots with whichever model authored the docs. Clear either field in config.yaml AND in variables_used to fall back to Tier 2."
   - path: "scripts/pre-commit-markdownlint.ps1"
     primitive: 6
     template: "templates/scripts/pre-commit-markdownlint.ps1.tmpl"
@@ -525,12 +525,12 @@ variables_used:
   # rendered into the installed artifacts so the deterministic verifier's
   # re-render reproduces them byte-for-byte.
   #
-  # ALT_DOC_REVIEW_* are intentionally EMPTY: config.yaml declares no
-  # model_routing.alt_doc_review block, and the already-installed
-  # adversarial-review.instructions.md uses the same empty-render convention.
-  # Configure model_routing.alt_doc_review to bind a concrete alternate model.
+  # ALT_DOC_REVIEW_* mirror config.yaml model_routing.alt_doc_review (restored
+  # 2026-09-28 per 075-DL after unintentional removal in 2ac59314). Google is a
+  # deliberate third provider for cross-model doc-review diversity. Clear either
+  # field in config.yaml AND here to fall back to Tier 2.
   ALT_DOC_REVIEW_PROVIDER: "google"
-  ALT_DOC_REVIEW_FAMILY: "gemini-3.1-pro-preview"
+  ALT_DOC_REVIEW_FAMILY: "gemini-3.8-flash"
   LINT_TOOL: "golangci-lint"
   FORMAT_TOOL: "gofmt"
   # Go has no distinct typecheck binary; `go vet ./...` is Gate 2 in AGENTS.md and
@@ -610,10 +610,10 @@ variables_used:
   # P-013.6 auto-escalation route. Mirrors config.model_routing.escalation and is
   # deliberately a distinct provider/family from tier3 so Stage (already tier3) never
   # resolves a same-route ESCALATION_DEGRADED no-op. The tier3 per-field fallback
-  # (claude-opus-4.8 / anthropic / high) remains the final fallback when no flat or
+  # (claude-opus-5.5 / anthropic / high) remains the final fallback when no flat or
   # nested escalation override is declared.
-  ESCALATION_FAMILY: "claude-opus-5.5"
-  ESCALATION_PROVIDER: "anthropic"
+  ESCALATION_FAMILY: "gpt-6-sol"
+  ESCALATION_PROVIDER: "openai"
   ESCALATION_REASONING_EFFORT: "xhigh"
   PROJECT_NAME: "backlogit"
   HARNESS_ENFORCED_SUMMARY: |
@@ -1097,3 +1097,8 @@ tuning_history:
     artifacts:
       - ".github/instructions/concurrency.instructions.md"
       - ".github/skills/file-lock/SKILL.md"
+  - at: "2026-09-28T20:30:00-07:00"
+    summary: "075-DL routing-drift tune (freeze-scope). Synced ESCALATION_FAMILY/PROVIDER/REASONING_EFFORT to config model_routing.escalation (gpt-6-sol / openai / xhigh) and corrected the adjacent tier3-fallback comment to claude-opus-5.5. Synced ALT_DOC_REVIEW_FAMILY to the restored config model_routing.alt_doc_review (google / gemini-3.8-flash), replaced the stale comment claiming the variables were intentionally empty, and re-rendered the four alternate-model references in doc-review/SKILL.md. ANCHOR_REVIEW_* already matched config (gpt-6-sol / openai / high). _stage, _ship, and escalation-protocol already rendered the current escalation route and were not changed. Historical tuning_history entries naming earlier models are left as records."
+    artifacts:
+      - ".autoharness/harness-manifest.yaml"
+      - ".github/skills/doc-review/SKILL.md"
