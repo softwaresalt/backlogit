@@ -313,3 +313,182 @@ accessor. RED-vs-characterization labeling internally consistent. No P0/P1
 findings.
 
 <!-- plan-review-attempt: 4 -->
+
+## Plan Review
+
+dispatch_mode: multi-agent-dispatch
+decision: FAIL
+
+Attempt 5: the `C29EBEE5` re-validation (Stage, 2026-09-28, branch
+`stage/c29ebee5-154s-revalidation`). The plan and the 173-F task contracts
+were re-checked against `main` `ba303ee2`, i.e. after 174-F shipped (`155-S`,
+PR #450, merge `2c8759c3`).
+
+Six personas were dispatched and all returned: Architecture Strategist, Go
+Reviewer, Scope Boundary Auditor, Learnings Researcher, Constitution Reviewer,
+and Agent-Native Parity Reviewer. Security Lens was not triggered, since the
+plan touches no auth, secrets, or external integration. Each persona returned
+FAIL. Where personas disagreed, the more conservative severity was kept.
+
+**Gate rationale.** There are P1 findings that need a design decision and new
+work, not just contract-text fixes, so the gate is FAIL. The attempt-2..4 PASS
+verdicts were given against the pre-174-F `ClaimShipment` and no longer hold.
+
+* Plan hardening is still required. The `## Plan Hardening` section is
+  present, but its rollback bullet describes a mechanism that no longer exists,
+  so it has to be re-hardened.
+* The `Constitution Check: pass` verdict is stale:
+  * U0a scenario (3) cannot be a genuine RED.
+  * The recovery path has no RED.
+  * Backward compatibility is broken on the interrupted-claim path (see F1).
+
+**What changed in the code (verified on `ba303ee2`)**
+
+* `ClaimShipment` (`internal/core/shipment_lifecycle.go:51-178`) now:
+  * records a preimage and a `shipment-operation/v1` intent journal;
+  * snapshots the file, the index row, and the event log of every locked
+    artifact (`snapshotShipArtifacts`).
+* `activatedIDs` no longer exists.
+* `rollbackShipmentClaim` (`:183-225`) restores those snapshots exactly
+  (`restoreShipArtifactsDetailed`). There is no
+  `setArtifactStatus(StatusQueued)` revert write any more.
+* The cascade out of the claim loop is bounded to manifest members by
+  `shipmentMemberCascadeBoundaryContextKey`.
+* `BlockShipment` / `UnblockShipment` (`internal/core/shipment.go:382`, `:627`)
+  and `ReturnBlockedItem` (`:1572`) write members with
+  `cloneArtifact` + `persistArtifact`. That preserves `custom_fields`.
+* `ShipShipment` now always returns `ReturnedIDs: []`
+  (`shipment_lifecycle.go:692`).
+
+**Findings**
+
+* **F1 (P1, new work; 173.001-T, 173.006-T): crash-recovery CAS wedge.**
+  * `memberRecoveryCandidates` (`internal/core/shipment_recovery.go:~938`)
+    builds the claim target as the preimage clone with only `Status=Active`.
+    `recoveryArtifactMatchesAny` (`:~758`) compares full JSON and ignores only
+    `UpdatedAt`.
+  * So a member that was marked before a crash, or a partial compensation,
+    matches no candidate and recovery returns `ErrShipmentConflict`. The same
+    happens in `validateShipmentLifecycleRecoveryOutcome`.
+  * Claim, Block, Unblock, ReturnBlocked and Ship all run
+    `recoverPendingShipmentOperations` first. One interrupted marked claim
+    would therefore block the whole shipment lifecycle until an operator
+    repairs it by hand.
+  * No 173-F unit names `shipment_recovery.go`. Adding it to U1 breaks the
+    2-hour file budget, so this needs a new unit (U1b) with its own RED
+    harness. The fix: for preimage-queued members, the claim recovery target
+    also carries `scheduler_baseline_claim = journal.ShipmentID`, in both the
+    CAS path and the outcome path.
+* **F2 (P1, design decision; 173-F, 173.005-T, 173.007-T): the marker
+  lifecycle and the consumer rule are undefined.**
+  * Because block, unblock and return preserve `custom_fields`, the marker
+    survives:
+    * Block leaves members queued but still marked.
+    * Unblock to active restores them active and still marked. That refutes
+      the C29EBEE5 hypothesis that restored members would be "active +
+      unmarked".
+    * Unblock to queued leaves them queued and still marked.
+    * `ReturnBlockedItem` leaves a stale marker on an item that is no longer
+      in the named shipment.
+  * The published rule "non-empty marker ⇒ claim-activated" (U5) then
+    misclassifies organic activations of stale-marked items. That is the
+    inverse of the P-002.6 defect.
+  * Pick one:
+    * **(A)** Keep the marker through block, unblock and return (no new write
+      paths), and harden the consumer rule to: `status == active` AND marker
+      == the currently active shipment ID AND the item is in that shipment's
+      current manifest.
+    * **(B)** Clear the marker on block and return, and re-mark on unblock to
+      active. This changes Block, Unblock and ReturnBlocked and their
+      recovery candidates.
+  * Scope Boundary Auditor and Parity Reviewer recommend (A).
+* **F3 (P1/P2, text fix plus re-scope; 173.003-T).** The references
+  (`:100-133`, `~104-107`) and the revert-write mechanism are stale. Snapshot
+  restore, and the journal-recovery rollback that persists preimage clones,
+  already clear the marker and restore a nil map byte-for-byte.
+  * Make U3 a verification-only check of both rollback paths, or retire it.
+  * Do not add a second compensating write.
+  * "Even if rollback fails midway" now depends on journal recovery, so U3
+    must depend on U1b.
+* **F4 (P1, test-first; 173.006-T).** Scenario (3), "rollback clears the
+  marker", passes both before and after the implementation. It cannot be a
+  genuine RED, so reclassify it as characterization. The genuine RED for the
+  rollback/recovery surface is F1's recovery of a marked member, which fails
+  today.
+* **F5 (P2, design; 173.001-T): the marker is order-dependent for
+  member-parents.**
+  * When a child member comes before its member-parent in the manifest,
+    `cascadePersistedParentStatuses` activates the parent first
+    (`ComputeParentStatus`: an active child makes the parent active).
+  * The claim loop's `setArtifactStatus` then returns early on equal status
+    (`:~965`), so the gated option never writes the marker.
+  * Mark by "was queued in the preimage and is a manifest member" instead of
+    relying on the status-write seam, or require parent-first manifests, and
+    add an AC for this.
+  * `154-S` itself lists `173-F` first, so the 154-S bootstrap does not hit
+    this.
+  * Seam form (P3): use a per-call option that is not inherited, rather than
+    a context value that `MoveShipmentStatus` or other downstream writes would
+    also see.
+* **F6 (P2; 173.004-T).**
+  * The "no queued-but-marked" invariant is false under current block
+    semantics. Restate it once F2 is decided.
+  * Scenario (1) (concurrent claim + rollback) mostly exercises the global
+    lifecycle lock. Replace it with a crash-recovery scenario: an intent
+    journal where some members are already marked, run through both the
+    rollback path and the terminal-evidence path.
+  * The verification command `go test ./internal/core/... -race` does not
+    cover the U0b/U2 tests in `./internal/cli/...`, `./internal/mcp/...` and
+    `./internal/db/...`. Widen it.
+  * AC(3), "existing lifecycle tests stay green", runs the same package as
+    the flaky `TestUR3_ReopenRollsBackInterruptedBlockFromCompletePreimage`
+    (stash `46A898B8`; probable duplicate `BDA56ED8`). Fix it first, or
+    declare a known-flake rerun policy.
+* **F7 (P2; 173.007-T).** The task has 4 scenarios, which breaks the
+  "fewer than 4" rule; the 2026-09-14 review missed this. Scenario (4)
+  (ignoring consumer) has no in-repo consumer. Drop it, or swap in a
+  stale-marker case whose shape depends on F2.
+* **F8 (P2; 173-F, plan Objective).**
+  * "In-repo (`shipment_lifecycle.go`) only" and "Reviewed PASS (attempt 2)"
+    are stale.
+  * Partial compensation restores the file and the index row independently,
+    so the CLI and MCP transports can disagree for the IDs it reports. U5
+    must document this, with `sync` as the remedy.
+* **173.002-T: PASS.** These references are still valid:
+  * `internal/cli/get.go:97` `buildDetailMap`;
+  * `internal/db/queries.go:38` `scanArtifactRow`;
+  * `:129` `UpsertItem`;
+  * `persistArtifact`, which writes the file and then upserts the index.
+
+  Advisory P3: say "file then index within one `persistArtifact` call", and add
+  a stale-marker AC once F2 is decided.
+
+**Executability**
+
+* Stash `24D693E1` (GOOS=linux harness commands) does not affect 173-F. No
+  173-F task or plan section uses `GOOS=linux`.
+* Stash `46A898B8` does affect 173.004-T AC(3); see F6.
+* `-race` runs on this Windows host: CGO is enabled and MinGW gcc is on PATH.
+
+**Installed binary (C29EBEE5 condition): satisfied.**
+
+* MCP server: `v1.10.0-1023-g2c8759c3-dirty-debug` at commit `2c8759c3`.
+* PATH CLI: `C:\Tools\backlogit.exe` v1.11.0 at commit `131577c`, which
+  descends from `2c8759c3`.
+* Caveat: the MCP server is a local dirty debug build.
+
+**Required before the next review attempt**
+
+1. Deliberate F2, the marker lifecycle, as an operator decision (Step 2,
+   P-021 C6).
+2. Revise U1: remove `activatedIDs`, define the ordering-independent marking
+   rule (F5), and choose the seam form.
+3. Add U1b plus its RED (F1).
+4. Re-scope U3 (F3), U0a (F4), U4 (F6), U0b (F7) and U5 (F2/F8).
+5. Re-harden, re-run the Constitution Check, and re-run plan-review.
+6. Update the harvest: task text, new task(s), dependency edges, and the
+   `154-S` manifest.
+
+The `154-S` hold label stays until a later attempt passes.
+
+<!-- plan-review-attempt: 5 -->
