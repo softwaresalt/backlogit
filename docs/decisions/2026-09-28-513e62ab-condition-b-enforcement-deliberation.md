@@ -7,8 +7,8 @@ chunk_strategy: h1-h2-h3
 description: "Stage decision on deferred stash 513E62AB. It covers which queued multi-member shipments get a blocks edge onto 154-S and where the shipped-provenance and marker-consumption pre-claim check lives."
 topic: "Condition (b) pre-marker scheduling discipline: DAG edges and the pre-claim check"
 depth: "standard"
-decision_status: "decided-edges; open-operator-questions"
-promoted_to: "none (no harvest; edges recorded; check placement routed to existing items)"
+decision_status: "decided (operator, 2026-09-28)"
+promoted_to: "none (no harvest; edges recorded; check placement routed to existing items AF1E5075 and 6434A4D7)"
 linked_artifacts:
   - "docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-deliberation.md"
   - "docs/memory/2026-09-27/orchestrator-pr452-merge-and-153-s-halt-memory.md"
@@ -114,8 +114,9 @@ to these six:
 * The only technique that can run a claim-activated shipment without the
   marker is Model M2, the operator-supervised direct bootstrap. The 2026-09-20
   decision limits it to `{155-S, 154-S}` and says it "does not extend" to any
-  other shipment. For `154-S` it is still UNAPPROVED
-  (`bootstrap-bypass-unapproved`).
+  other shipment. For `154-S` it was UNAPPROVED at triage
+  (`bootstrap-bypass-unapproved`). The operator later approved it with
+  conditions, for `154-S` only (see OQ-4), so it still covers none of the six.
 * No shipment in the set is a marker predecessor. The marker producer's
   predecessor closure is `{155-S, 154-S}` and ends there.
 
@@ -127,13 +128,20 @@ authority:
 
 * Each edge only holds a shipment back. No edge releases anything.
 * No existing edge is removed.
-* `154-S` is unchanged: its labels, banner, status, and dependencies stay the
-  same.
+* The edge change leaves `154-S` itself unchanged: its status and dependencies
+  stay the same. (The later waiver record changed only its labels and banner;
+  see OQ-4.)
 * No shipment is claimed, routed, unblocked, or bootstrapped.
 
 The edges also mean the Orchestrator's existing Step 2 check, "no unshipped
 blocking predecessor", now catches all six. Before this change it could
 not.
+
+**Limit of the edges.** This hold is temporary. It works only while `154-S` is
+unshipped. The queue filter releases the edges as soon as `154-S` reaches any
+terminal status, including `abandoned`. Once `154-S` ships, the edges release
+while (C), marker consumption, is still unchecked. Nothing in the current
+Orchestrator or Ship contract picks up the check at that point (see Q2).
 
 An operator can later exempt a shipment by removing its edge. That requires a
 recorded concrete mechanism that avoids the pre-marker halt. Stage does not
@@ -153,36 +161,51 @@ The check has two parts:
 
 | Option | Can enforce (P) | Can enforce (C) | Enforcement strength | Owner / surface | Blockers |
 |---|---|---|---|---|---|
-| **L1 Orchestrator routing** (Step 2 pre-claim re-check) | Yes, if it reads source provenance | Yes, if it has a machine-checkable signal | Governance only; a direct Ship claim can bypass it | Harness agent contract (`_orchestrator.agent.md`, `_ship.agent.md` pre-claim), rendered by autoharness | Same surface as `AF1E5075`; Stage cannot edit agent contracts |
+| **L1 Orchestrator routing** (Step 2 pre-claim re-check) | Yes, if it reads source provenance | Yes, if it has a machine-checkable signal | Governance only; a direct Ship claim can bypass it. Not implemented today: current Step 2 checks only for an unshipped blocking predecessor and optionally runs `pipeline-topology` | Harness agent contract (`_orchestrator.agent.md`, `_ship.agent.md` pre-claim), rendered by autoharness | Same surface as `AF1E5075`; Stage cannot edit agent contracts |
 | **L2 backlogit claim** (`ClaimShipment` claim-time guard) | Yes, in code, for all callers | No: backlogit has no knowledge of the external scheduler | Code-enforced and cannot be bypassed | `internal/core` (Go) | Already scoped by active stash `6434A4D7` items (1) and (2); touches `ClaimShipment`, as the `154-S` / `173-F` marker work does (`C29EBEE5` re-validation) |
-| **L3 autoharness `pipeline-topology` gate** (`--phase pre_claim`) | Yes | Yes: it belongs to the scheduler that consumes the marker | Deterministic gate that the Orchestrator already runs before claim | External autoharness workspace (P-017) | Predecessor derivation is currently wrong (`A592FC1C`, numeric adjacency); out-of-workspace |
+| **L3 autoharness `pipeline-topology` gate** (`--phase pre_claim`) | Yes | Yes: it belongs to the scheduler that consumes the marker | Deterministic gate; the current Orchestrator Step 2 runs it only optionally before claim | External autoharness workspace (P-017) | Predecessor derivation is currently wrong (`A592FC1C`, numeric adjacency); out-of-workspace |
 
-### Decision (Q2): layered placement; no backlogit code harvest this session
+### Decision (Q2): layered target design; no backlogit code harvest this session
 
-1. **Authoritative today: L1, Orchestrator routing.** Only this surface can
-   combine (P) and (C), and it already runs before every claim. Until another
-   layer ships, condition (b) holds by an explicit Orchestrator pre-claim
-   check. For any shipment whose `blocks`-edge closure includes `154-S`, the
-   Orchestrator must:
+**Actual enforcement state today.** No agent contract implements a check for
+(P) or (C). The current Orchestrator Step 2 only checks for an unshipped
+blocking predecessor and optionally runs `pipeline-topology`. It has no
+`154-S` source-provenance read, no marker-consumption check, and no
+`CONDITION_B_UNSATISFIED` path. So condition (b) is enforced today only by:
+
+* the `blocks` edges onto `154-S`, which hold only while `154-S` is unshipped
+  (see "Limit of the edges" under Q1); and
+* a **manual** operator/Orchestrator policy: do not route anything behind
+  `154-S` unless (P) and (C) both hold, as the Orchestrator did in the
+  2026-09-27 halt.
+
+The manual policy stays in force until `AF1E5075` delivers the contract change
+below. It is not an automated or fail-closed guard.
+
+The target design has three layers:
+
+1. **L1, Orchestrator routing (target; not implemented).** Only this surface
+   can combine (P) and (C), and it runs before every claim. Once implemented,
+   for any shipment whose `blocks`-edge closure includes `154-S`, the
+   Orchestrator and Ship pre-claim must:
    * read `154-S` provenance from Markdown source, not the index, and fail
      closed when it is missing;
    * require (P);
-   * require (C) through the consumption signal the operator chooses (see
-     open question OQ-2);
+   * require (C) through the consumption signal decided in OQ-2;
    * halt with `CONDITION_B_UNSATISFIED` when either part fails.
 
    Writing this into the Orchestrator and Ship contracts is a harness-contract
-   change. Stage does not make it. It should be folded into the `AF1E5075`
+   change. Stage does not make it. Per OQ-3 it is folded into the `AF1E5075`
    release unit, which changes the same Orchestrator Step 2 and Ship pre-claim
-   surface. Until then, the Orchestrator applies this decision as
-   recorded-governance routing policy, as it did in the 2026-09-27 halt.
+   surface. A note recording this was appended to stash `AF1E5075`.
 2. **Code enforcement of (P): L2 through `6434A4D7`.** The shipped-only,
    claim-time dependency guard is already captured and prioritized in
    `6434A4D7`. A new Stage harvest here would duplicate it. It must be
    sequenced after `154-S`, or be re-validated with it, because both change
    `ClaimShipment` (see `C29EBEE5`). The guard must read `archived_status`
    from Markdown source, following the compound learning above. It is not
-   bounded enough to harvest in this session.
+   bounded enough to harvest in this session. A cross-reference note was
+   appended to stash `6434A4D7`.
 3. **Long-term home of (C): L3.** Once `A592FC1C` is fixed, the
    `pipeline-topology` pre_claim gate is the right deterministic owner of the
    consumption half. At that point L1 reduces to "run the gate and honor it".
@@ -195,44 +218,61 @@ The check has two parts:
 * L3 alone is external and currently mis-derives predecessors.
 * L1 alone is governance-only and can be bypassed.
 
-The layers do not duplicate each other: L2 owns (P) in code, L3 will own (C)
-deterministically, and L1 connects the two and serves as the stopgap.
+The layers do not duplicate each other: L2 will own (P) in code, L3 will own
+(C) deterministically, and L1 will connect the two. Until `AF1E5075` lands,
+the stopgap is the manual policy above, not L1.
 
-## Open Questions (operator decisions — not decided by Stage)
+## Operator decisions (recorded 2026-09-28)
 
-* **OQ-1 (exemptions).** Should any of the six be exempted and have its edge
-  removed? Stage found no concrete mechanism that avoids the halt. An
-  exemption requires one, such as a future approved extension of the M2
-  bootstrap. Default: no exemptions.
-* **OQ-2 (consumption signal).** What machine-checkable fact counts as "the
-  scheduler is consuming the marker" for the L1 check? Candidates:
-  * (a) a `pipeline-topology` gate capability or version the Orchestrator can
-    probe;
-  * (b) a declared autoharness scheduler capability in
-    `.autoharness/harness-manifest.yaml`;
-  * (c) an explicit operator attestation recorded as a comment or label on
-    `154-S`, after it ships.
+The operator accepted the remaining recommended decisions on 2026-09-28
+("And with that, I think we should move forward with the remaining
+recommended decisions.", 19:42 -07:00).
 
-  Without a decision, the L1 check fails closed: nothing behind `154-S` is
-  routed.
-* **OQ-3 (fold vs separate).** Should the L1 contract text be folded into
-  `AF1E5075`, as Stage recommends, or staged as its own release unit?
-* **OQ-4 (`154-S` waiver outcome).** This question is independent of this
-  decision. If the operator denies the `154-S` bootstrap waiver, every queued
-  multi-member shipment stays held indefinitely. The new edges make that hold
-  visible but do not cause it. The pre-marker halt applies whether or not the
-  edges exist.
+* **OQ-1 (exemptions): DECIDED — no exemptions.** All six keep their `blocks`
+  edge onto `154-S`. Stage found no concrete mechanism that avoids the halt.
+* **OQ-2 (consumption signal): DECIDED.**
+  * Interim: (c) an explicit operator attestation, recorded as a comment on
+    `154-S` after it ships, for example the operator confirming that the
+    external autoharness scheduler is consuming the marker.
+  * Long-term: (a) the `pipeline-topology` pre_claim gate, once `A592FC1C` is
+    fixed.
+  * Rejected: (b) a declared scheduler capability in
+    `.autoharness/harness-manifest.yaml`. It asserts capability, not
+    consumption.
+
+  Until the attestation exists, nothing behind `154-S` is routed.
+* **OQ-3 (fold vs separate): DECIDED — fold into `AF1E5075`.** The L1 contract
+  text is not a separate release unit.
+* **OQ-4 (`154-S` waiver outcome): APPROVED WITH CONDITIONS.** The operator
+  approved the `154-S` bootstrap waiver:
+  * it covers `154-S` only;
+  * stash `C29EBEE5` must pass first (re-check the `173-F` tasks against the
+    current claim code);
+  * the bootstrap is supervised, with nothing else active;
+  * it skips only the active-residual halt; local review, CI, Copilot review,
+    and merge-commit rules all still apply, with no admin bypass.
+
+  Stage recorded the approval as an operator comment on `154-S` and in its
+  banner, and replaced the label `bootstrap-bypass-unapproved` with
+  `bootstrap-bypass-approved-conditional`. The hold label
+  `do-not-claim-until-convergence` stays until a later Stage session records
+  `C29EBEE5` PASS. The waiver does not extend to any of the six shipments
+  above.
 
 ## Next Steps
 
-1. Done this session: add the six hold-only `blocks` edges onto `154-S`.
-2. Orchestrator: continue not routing `141-S`, `147-S`, `152-S`, `153-S`,
-   `177-S`, `178-S`, or `179-S`, or anything downstream of them, until `154-S`
-   passes both (P) and (C).
-3. Stage, in a later session when the operator selects it: deliberate
-   `AF1E5075` with the L1 contract text from this decision folded in, subject
-   to OQ-3.
-4. Stage, in a later session: deliberate `6434A4D7`, sequenced after `154-S`
+1. Done: add the six hold-only `blocks` edges onto `154-S`.
+2. Orchestrator (manual policy): do not route `141-S`, `147-S`, `152-S`,
+   `153-S`, `176-S`, `177-S`, `178-S`, or `179-S`, or anything downstream of
+   them, until `154-S` has shipped provenance (read from Markdown source) and
+   the operator attestation comment on `154-S` exists. This must be applied by
+   hand even after the edges release.
+3. Stage, in a later session: run the `C29EBEE5` re-validation. On PASS,
+   remove `do-not-claim-until-convergence` from `154-S` and route it to Ship
+   under the conditional waiver.
+4. Stage, in a later session when the operator selects it: deliberate
+   `AF1E5075` with the L1 contract text from this decision folded in.
+5. Stage, in a later session: deliberate `6434A4D7`, sequenced after `154-S`
    and `C29EBEE5`.
-5. External: fix `A592FC1C`, then move (C) into the `pipeline-topology`
+6. External: fix `A592FC1C`, then move (C) into the `pipeline-topology`
    pre_claim gate.

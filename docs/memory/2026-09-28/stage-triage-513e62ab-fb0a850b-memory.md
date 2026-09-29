@@ -13,11 +13,12 @@ high) to triage two deferred-scope stash entries: `513E62AB` (high) and
 * Base: local `main` matched `origin/main` at `131577c1` (PR #454 merged).
 * Branch: `stage/triage-513e62ab-fb0a850b`. Single branch, no worktrees
   (P-016).
-* Hard constraints:
+* Hard constraints (session 1; session 2 below records the operator's
+  waiver approval and the `154-S` label/banner update):
   * Stage claimed, shipped, unblocked, and bootstrapped nothing.
-  * Stage did not edit the `154-S` labels or banner.
-  * The `154-S` waiver (`bootstrap-bypass-unapproved`) is still NOT
-    approved.
+  * Stage did not edit the `154-S` labels or banner in session 1.
+  * In session 1 the `154-S` waiver (`bootstrap-bypass-unapproved`) was
+    NOT approved.
   * `153-S`, `141-S`, `152-S`, `147-S`, `177-S`, `178-S`, and `179-S` remain
     unrouted.
 
@@ -61,8 +62,9 @@ Stage re-verified each finding against `131577c1`.
   * R2 is an operator decision. Stage recommends restoring the block.
   * Deliver the fixes through an autoharness auto-tune pass, not a backlog
     harvest.
-* Nothing was harvested and the entry stays active, pending operator
-  answers to OQ-A, OQ-B, and OQ-C.
+* In session 1, nothing was harvested and the entry stayed active, pending
+  operator answers to OQ-A, OQ-B, and OQ-C (answered in session 2; the entry
+  stays active until the auto-tune pass merges).
 
 ## 513E62AB: condition (b) enforcement (triaged; deliberation `074-DL`)
 
@@ -73,14 +75,22 @@ Stage re-verified each finding against `131577c1`.
   and `179-S`.
 * Q1: Stage added six hold-only edges with `--type blocks`, each onto
   `154-S`, from `141-S`, `147-S`, `152-S`, `177-S`, `178-S`, and `179-S`.
-  * No exemptions: M2 is bounded to {155-S, 154-S} and is unapproved.
+  * No exemptions: M2 is bounded to {155-S, 154-S}, and at triage it was
+    unapproved even for `154-S`.
   * No edges were removed, and the graph has no cycles.
-  * `154-S` has no diff.
-* Q2: layered placement.
-  * L1, the Orchestrator pre-claim check, is authoritative now. It must read
-    `154-S` provenance from the Markdown source, because the index omits
-    `archived_status`. It fails closed and needs both P and C. Its contract
-    text should be folded into `AF1E5075`.
+  * `154-S` had no diff in session 1.
+* Actual enforcement state (corrected after PR #455 review): the new edges
+  are a temporary hold that works only while `154-S` is unshipped. The queue
+  filter releases them on any terminal status of `154-S`, and no agent
+  contract checks P or C: the current Orchestrator Step 2 only checks for an
+  unshipped blocking predecessor and optionally runs pipeline-topology.
+  Continued enforcement is a MANUAL operator/Orchestrator policy until
+  `AF1E5075` delivers the contract change.
+* Q2: layered target design (not yet implemented).
+  * L1, an Orchestrator/Ship pre-claim check, does not exist yet. When built
+    it must read `154-S` provenance from the Markdown source, because the
+    index omits `archived_status`, fail closed, and need both P and C. Its
+    contract text is folded into `AF1E5075`.
   * L2, the ClaimShipment guard for P, is the existing `6434A4D7`, sequenced
     after `154-S` and `C29EBEE5`.
   * L3, the pipeline-topology gate, becomes the long-term owner of C after
@@ -89,8 +99,8 @@ Stage re-verified each finding against `131577c1`.
   duplicate `6434A4D7`.
 * Related entries, not duplicates: `6434A4D7`, `AF1E5075`, `A592FC1C`, and
   `C29EBEE5`.
-* The entry stays active pending OQ-1 through OQ-3. OQ-4 is context for the
-  waiver.
+* In session 1 the entry stayed active pending OQ-1 through OQ-3. Session 2
+  recorded the answers and archived it.
 
 ## Steps Skipped (with reasons)
 
@@ -111,7 +121,73 @@ Stage re-verified each finding against `131577c1`.
    * OQ-A: restore or clear `alt_doc_review`.
    * OQ-B: auto-tune vs Ship chore.
    * OQ-C: was the removal in commit 2ac59314 intentional?
-3. Orchestrator: do not route any of the seven edged shipments, or anything
-   downstream of them, until `154-S` passes both P and C.
+3. Orchestrator: do not route anything behind `154-S` (the eight edged
+   shipments `141-S`, `147-S`, `152-S`, `153-S`, `176-S`, `177-S`, `178-S`,
+   `179-S`, and everything downstream of them) until `154-S` passes both P
+   and C. This is a manual policy; nothing automated enforces it once `154-S`
+   ships.
 4. The operator still has to decide the `154-S` bootstrap waiver, with
    `C29EBEE5` re-validation.
+
+(Items 1, 2 and 4 were resolved in session 2 below.)
+
+## Session 2: operator decisions, waiver record, PR #455 review fixes
+
+Same branch, `stage/triage-513e62ab-fb0a850b` (PR #455, prior head
+`5fd4fbba`). Route: claude-opus-5.5 / anthropic / high.
+
+* Operator acceptance, verbatim, 2026-09-28T19:42 -07:00: "And with that, I
+  think we should move forward with the remaining recommended decisions."
+  Earlier the operator explicitly chose the auto-tune pass and restoring
+  `alt_doc_review` with gemini-3.8-flash.
+* PR #455 review threads `PRRT_kwDORzozKM6m7u10` (074-DL), `...m7u2d`
+  (decision doc) and `...m7u2n` (this file) all flagged the same error: the
+  docs called the L1 Orchestrator check authoritative and fail-closed today,
+  but no contract implements it. Fixed in all three files, the PR body and
+  the `154-S` banner: edges are a temporary hold while `154-S` is unshipped;
+  enforcement of P and C is manual until `AF1E5075` lands.
+* `074-DL` → `done` (queued → active → done; the status hook forbids
+  queued → done). Moving to `done` relocated both DL files from
+  `.backlogit/queue/` to `.backlogit/archive/` (status stays `done`). OQ-1: no
+  exemptions. OQ-2: interim signal is an operator
+  attestation comment on `154-S` after it ships; long-term is the
+  pipeline-topology pre_claim gate after `A592FC1C`; manifest declaration
+  rejected. OQ-3: L1 folded into `AF1E5075`.
+* `075-DL` → `done`. OQ-A: restore `alt_doc_review` as google /
+  gemini-3.8-flash (operator's uncommitted config edit; travels with the
+  auto-tune branch). OQ-B: autoharness auto-tune pass. OQ-C: the removal in
+  `2ac59314` was not intentional.
+* `154-S` waiver (OQ-4): approved with conditions. Stage appended an operator
+  comment on `154-S` (actor "operator (relayed by Orchestrator)",
+  2026-09-28T19:45 -07:00) quoting the conditions and the acceptance. That
+  event log is git-ignored, so the `154-S` banner now carries the tracked
+  record. Label `bootstrap-bypass-unapproved` →
+  `bootstrap-bypass-approved-conditional`. `do-not-claim-until-convergence`
+  kept. Banner: remaining gate is `C29EBEE5` PASS, then remove the hold label
+  and route to Ship. The banner also records the post-ship manual policy.
+  `154-S` status and dependencies unchanged; nothing claimed.
+* Stash dispositions:
+  * `513E62AB`: ARCHIVED (non-destructive `stash archive`) referencing
+    `074-DL`, after a disposition note was appended. Follow-up owners:
+    `AF1E5075` (L1) and `6434A4D7` (L2), each with an appended note; `A592FC1C`
+    (L3, external).
+  * `FB0A850B`: kept ACTIVE with a decision note. It is the only tracker for
+    the pending auto-tune pass. Archive it, referencing `075-DL`, when the
+    auto-tune PR merges.
+  * `AF1E5075`: note appended (L1 contract folded in, plus the new
+    `bootstrap-bypass-approved-conditional` label for its refusal set).
+  * `6434A4D7`: cross-reference note appended (L2 requirements from 074-DL).
+* Untouched: `.autoharness/config.yaml` (operator edit), untracked
+  `.backlogit/reconcile/155-S-*.md` and `.backlogit/telemetry.jsonl`.
+
+### Next steps after session 2
+
+1. Operator/Orchestrator: run the autoharness auto-tune pass on its own branch
+   (includes the uncommitted config edit); then Stage archives `FB0A850B`.
+2. Stage: `C29EBEE5` re-validation. On PASS, remove
+   `do-not-claim-until-convergence` from `154-S` and route it to Ship under
+   the conditional waiver.
+3. Orchestrator: manual policy, as in the banner. After `154-S` ships, route
+   nothing behind it until an operator attestation comment on `154-S`
+   confirms the scheduler consumes the marker.
+4. Stage, later: deliberate `AF1E5075` (with L1 folded in) and `6434A4D7`.
