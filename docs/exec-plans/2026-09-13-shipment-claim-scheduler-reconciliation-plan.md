@@ -7,7 +7,7 @@ source: docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.
 title: "Implementation Plan: Shipment-claim activation reconciliation (universal scheduler-baseline marker)"
 docline:
     stash_id: CC0EBB59
-    status: revised
+    status: approved
     created_at: 2026-09-13T17:31:00Z
 ---
 
@@ -817,9 +817,11 @@ removed (attempt 7 P2-B):
    the deferred U4 text above. No follow-on shipment.
 3. Retire `173.002-T`: remove its edge from `173.005-T` (the only remaining
    dependent after step 2), update its body with the supersession
-   provenance, then archive it **directly from `queued`** (so
-   `archived_status: queued` qualifies for the ship-gate descope
-   exemption).
+   provenance, then archive it **directly from `queued`**. Shipment
+   release scope is flat (an explicit feature member does not expand to
+   its descendants), so once `173.002-T` leaves the manifest the ship gate
+   never evaluates it; archival keeps this omitted child terminal so the
+   listed `173-F` can complete.
 4. Create U0c and U1b as tasks under `173-F`. Edges: U1b → U0c;
    `173.001-T` → U1b; `173.001-T` → `173.007-T` (P1-1).
 5. Rewrite `173.005-T` dependencies to `173.007-T`, `173.001-T` and
@@ -1334,6 +1336,7 @@ It needs no new design decision. Option A stands.
 
 dispatch_mode: multi-agent-dispatch
 decision: ADVISORY
+operator_authorization: approved (2026-09-29T14:40:58-07:00; operator, relayed by the Orchestrator: "C29EBEE5 gate approved")
 
 Attempt 7 was run by Stage on 2026-09-29 on branch
 `stage/173f-plan-review-attempt-7`, with code at `main` `7e4041ee`. The
@@ -1456,5 +1459,12 @@ Checklist`. Until then the harvest is **not** updated and `154-S` stays held.
 * Harvest Checklist steps 2–3: the `173.002-T` edge is removed from
   `173.004-T` before `adopt` renames it, and step 3 touches only
   `173.005-T`.
+
+**Operator authorization (recorded 2026-09-29).** The operator approved the
+attempt-7 ADVISORY gate in chat at 2026-09-29T14:40:58-07:00 with the words
+"C29EBEE5 gate approved". The Orchestrator relayed the decision to Stage, which
+recorded `operator_authorization: approved` in this section's header. The gate
+is satisfied (ADVISORY + `operator_authorization: approved`), and Stage ran the
+`## Harvest Checklist` on branch `stage/173f-harvest`.
 
 <!-- plan-review-attempt: 7 -->
