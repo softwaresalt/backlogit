@@ -299,6 +299,72 @@ func requireUR3CommittedUnblockOutcome(
 	}
 }
 
+func TestUR3CrashReady_PartialMarkerIsNotReady(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ur3-crash-ready")
+	want := ur3CrashPoint{
+		JournalPath: filepath.Join("journal", "ur3.json"),
+		Journal: ur3OperationIntent{
+			SchemaVersion: "1",
+			CorrelationID: "corr-ur3-ready",
+			Operation:     "block",
+			ShipmentID:    "001-S",
+		},
+		PersistedArtifactID:   "001-S",
+		PersistedArtifactPath: filepath.Join("queue", "001-S.md"),
+		RealOperationWrite:    true,
+	}
+	complete, err := json.Marshal(want)
+	require.NoError(t, err)
+
+	_, ready, decodeErr, readErr := readUR3CrashReady(path)
+	require.NoError(t, readErr, "a missing marker is not an error")
+	require.NoError(t, decodeErr, "a missing marker has nothing to decode")
+	require.False(t, ready, "a missing marker is not ready")
+
+	for _, partial := range [][]byte{{}, complete[:len(complete)/2]} {
+		require.NoError(t, os.WriteFile(path, partial, 0o644))
+		crash, ready, decodeErr, readErr := readUR3CrashReady(path)
+		require.NoError(t, readErr, "a partially written marker (%d bytes) must not be fatal", len(partial))
+		require.Error(t, decodeErr, "a partially written marker (%d bytes) must report its decode error", len(partial))
+		require.False(t, ready, "a partially written marker (%d bytes) is not ready", len(partial))
+		require.Equal(t, ur3CrashPoint{}, crash, "a partially written marker must return the zero crash point")
+	}
+
+	require.NoError(t, os.WriteFile(path, complete, 0o644))
+	crash, ready, decodeErr, readErr := readUR3CrashReady(path)
+	require.NoError(t, readErr)
+	require.NoError(t, decodeErr)
+	require.True(t, ready, "a complete marker is ready")
+	require.Equal(t, want, crash)
+
+	t.Run("permanently malformed marker reports its decode error", func(t *testing.T) {
+		malformedPath := filepath.Join(t.TempDir(), "ur3-crash-ready")
+		require.NoError(t, os.WriteFile(malformedPath, []byte("{not json"), 0o644))
+		crash, ready, decodeErr, readErr := readUR3CrashReady(malformedPath)
+		require.NoError(t, readErr, "a malformed marker is diagnosed through decodeErr, not err")
+		require.Error(t, decodeErr)
+		require.Contains(t, decodeErr.Error(), malformedPath, "the decode error must carry path context")
+		require.False(t, ready)
+		require.Equal(t, ur3CrashPoint{}, crash)
+	})
+}
+
+// readUR3CrashReady reads the crash child's readiness marker at path.
+func readUR3CrashReady(path string) (crash ur3CrashPoint, ready bool, decodeErr error, err error) {
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return ur3CrashPoint{}, false, nil, nil
+		}
+		return ur3CrashPoint{}, false, nil, fmt.Errorf("read ur3 crash ready %s: %w", path, readErr)
+	}
+	var decoded ur3CrashPoint
+	if unmarshalErr := json.Unmarshal(data, &decoded); unmarshalErr != nil {
+		return ur3CrashPoint{}, false, nil, fmt.Errorf("decode ur3 crash ready %s: %w", path, unmarshalErr)
+	}
+	return decoded, true, nil, nil
+}
+
 func runUR3CrashSubprocess(
 	t *testing.T,
 	root string,
@@ -353,12 +419,12 @@ func runUR3CrashSubprocess(
 	ready := false
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if readyData, readErr := os.ReadFile(readyPath); readErr == nil {
-			require.NoError(t, json.Unmarshal(readyData, &crash))
+		readyCrash, readyOK, _, readyErr := readUR3CrashReady(readyPath)
+		require.NoError(t, readyErr)
+		if readyOK {
+			crash = readyCrash
 			ready = true
 			break
-		} else if !os.IsNotExist(readErr) {
-			require.NoError(t, readErr)
 		}
 		if failure, readErr := os.ReadFile(failurePath); readErr == nil {
 			stopChild()
