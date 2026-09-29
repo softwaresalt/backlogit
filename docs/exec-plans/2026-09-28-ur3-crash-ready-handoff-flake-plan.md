@@ -192,10 +192,16 @@ Ship's post-merge closure for `182-S` includes a governed close step:
 
 1. Complete the normal closure, and confirm from Markdown source that
    `181.001-T` is archived with shipped provenance.
-2. Only then run `backlogit move 181-F --status done` and
+2. Only then associate the `182-S` merge SHA with `181-F`, BEFORE archival:
+   `backlogit update 181-F --commit <merge-sha>` (MCP:
+   `backlogit_track_commit`). Both route through `core.AssociateCommit`,
+   which writes the frontmatter `commit` field, a `commit_links` row and a
+   `commit_tracked` event.
+3. Then run `backlogit move 181-F --status done` and
    `backlogit archive 181-F`.
-3. Record the `182-S` merge SHA on `181-F`, for example with
-   `backlogit comment`.
+4. Optional narrative: `backlogit comment add 181-F --actor ship --comment
+   "..."`. This writes only a `comment` event and does NOT associate the
+   commit, so it cannot replace step 2.
 
 If step 1 is not satisfied, leave `181-F` `queued` and report the gap.
 

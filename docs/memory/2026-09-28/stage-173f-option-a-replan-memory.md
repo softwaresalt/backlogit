@@ -179,7 +179,8 @@ breaker tripped and Part 1 **halted**:
 * Shipment `182-S`, "Flake prerequisite: deterministic UR3 crash-ready
   handoff (181-F)" (high, queued).
   * Items: `[181.001-T]`, a single member as the operator instructed (157-S
-    precedent). `181-F` is NOT in the manifest; this is an open decision.
+    precedent). `181-F` is NOT in the manifest. This was open at harvest
+    time and is now DECIDED (see "Open operator decisions" item 2).
   * Not claimed.
 
 **Dependency edges (verified with `get_dependencies`).**
@@ -215,8 +216,10 @@ breaker tripped and Part 1 **halted**:
    marker exists, and `154-S` depends on `182-S` (deadlock). A governed
    post-ship close step is recorded in the `182-S` body and the flake plan's
    `## Closure` section: after `181.001-T` is archived with shipped
-   provenance, Ship moves `181-F` to done, archives it and records the merge
-   SHA (157-S precedent).
+   provenance, Ship associates the merge SHA with `181-F`
+   (`backlogit update 181-F --commit <merge-sha>` or
+   `backlogit_track_commit`, before archival), then moves `181-F` to done
+   and archives it (157-S precedent).
 3. **Carried from earlier sessions:** label-aware claim refusal (`AF1E5075`)
    and the 074-DL post-ship attestation.
 
