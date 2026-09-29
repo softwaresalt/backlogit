@@ -7,7 +7,7 @@ source: docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.
 title: "Implementation Plan: Shipment-claim activation reconciliation (universal scheduler-baseline marker)"
 docline:
     stash_id: CC0EBB59
-    status: revised
+    status: approved
     created_at: 2026-09-13T17:31:00Z
 ---
 
@@ -1334,6 +1334,7 @@ It needs no new design decision. Option A stands.
 
 dispatch_mode: multi-agent-dispatch
 decision: ADVISORY
+operator_authorization: approved (2026-09-29T14:40:58-07:00; operator, relayed by the Orchestrator: "C29EBEE5 gate approved")
 
 Attempt 7 was run by Stage on 2026-09-29 on branch
 `stage/173f-plan-review-attempt-7`, with code at `main` `7e4041ee`. The
@@ -1456,5 +1457,12 @@ Checklist`. Until then the harvest is **not** updated and `154-S` stays held.
 * Harvest Checklist steps 2–3: the `173.002-T` edge is removed from
   `173.004-T` before `adopt` renames it, and step 3 touches only
   `173.005-T`.
+
+**Operator authorization (recorded 2026-09-29).** The operator approved the
+attempt-7 ADVISORY gate in chat at 2026-09-29T14:40:58-07:00 with the words
+"C29EBEE5 gate approved". The Orchestrator relayed the decision to Stage, which
+recorded `operator_authorization: approved` in this section's header. The gate
+is satisfied (ADVISORY + `operator_authorization: approved`), and Stage ran the
+`## Harvest Checklist` on branch `stage/173f-harvest`.
 
 <!-- plan-review-attempt: 7 -->
