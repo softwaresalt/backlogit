@@ -342,8 +342,15 @@ UR3 crash-ready flake fix (`BDA56ED8`, see `## Verification`).
     * the option A lifecycle table: kept through block, unblock, return and
       ship; removed by rollback; overwritten by re-claim;
     * residuals R1–R3. R3 is the CLI/MCP divergence after partial
-      compensation (F8); the remedy is to trigger recovery with any lifecycle
-      operation and then run `backlogit sync`;
+      compensation (F8). Publish it as the split rule in the decision
+      artifact (attempt 6 P2-7), not as "run any lifecycle operation":
+      * the consumer rule: disagreement, a pending claim journal under
+        `.backlogit/ops/`, or a doctor journal finding means indeterminate,
+        so defer to the claim gate;
+      * the operator-only remediation: a fresh-process CLI `backlogit sync`
+        (its workspace open runs journal recovery), then
+        `backlogit_sync_index` if an MCP server is running; on a recovery
+        error, `backlogit doctor` and escalate;
     * that SQL `query` is secondary (`json_extract`);
     * that full defect resolution needs the autoharness follow-up.
   * AC: the doc contains every item above, and the predicate text matches the

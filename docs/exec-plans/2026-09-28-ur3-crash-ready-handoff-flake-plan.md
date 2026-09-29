@@ -164,8 +164,43 @@ Constitution Check: pass
     * `154-S` blocks-depends on `182-S`;
     * `173.001-T`, `173.002-T`, `173.003-T`, `173.004-T` and `173.006-T`
       each blocks-depend on `181.001-T`.
-  * These edges release when `182-S` ships (merge, closure and archive).
-    The `154-S` hold label and `C29EBEE5` are separate gates.
+  * These edges are NOT a sufficient release condition on their own. Queue
+    dependency resolution stops blocking on any of the six cascade terminal
+    statuses, including `abandoned` and `rejected`, and `ClaimShipment` does
+    no dependency validation. The edges alone would therefore release if
+    `182-S` or `181.001-T` went terminal without shipping.
+  * **Shipped-provenance guard (manual policy until `AF1E5075`).** The
+    consumers proceed only when both of these hold, read from the Markdown
+    source (the index does not project `archived_status`):
+    * `182-S` has shipped provenance: live `status: shipped`, or
+      `status: archived` with `archived_status: shipped`;
+    * `181.001-T` is archived with `archived_status: done` or `shipped`, and
+      reached that state through `182-S`.
+
+    `154-S` stays held, and the `173-F` tasks above stay blocked, under any
+    other terminal outcome. The `154-S` hold label and `C29EBEE5` are
+    separate gates.
+
+## Closure (post-merge, Ship)
+
+`182-S` is single-member (`[181.001-T]`), so covering feature `181-F` is not
+closed by shipping it. This is an Orchestrator decision (2026-09-28, PR #459
+review cycle 1): adding `181-F` would make `182-S` multi-member, which
+condition (b) forbids claiming before the `154-S` marker exists. That would
+deadlock, because `154-S` depends on `182-S`. Following the 157-S precedent,
+Ship's post-merge closure for `182-S` includes a governed close step:
+
+1. Complete the normal closure, and confirm from Markdown source that
+   `181.001-T` is archived with shipped provenance.
+2. Only then run `backlogit move 181-F --status done` and
+   `backlogit archive 181-F`.
+3. Record the `182-S` merge SHA on `181-F`, for example with
+   `backlogit comment`.
+
+If step 1 is not satisfied, leave `181-F` `queued` and report the gap.
+
+This section and the guard above are post-PASS bookkeeping from PR #459
+review. They add no scope, units or acceptance criteria to `181.001-T`.
 
 ## Follow-ups
 

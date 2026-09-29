@@ -209,8 +209,28 @@ breaker tripped and Part 1 **halted**:
 
 1. **Authorize plan-review attempt 7 for `173-F`** after applying the
    attempt-6 remediation (P1-1, P2-1..P2-10).
-2. **`182-S` composition.** The shipment is single-member (`181.001-T` only),
-   so covering feature `181-F` is outside the manifest. Ship will need to
-   close `181-F` manually, or `181-F` can be added.
+2. **`182-S` composition — DECIDED (Orchestrator, PR #459 review cycle 1).**
+   `182-S` stays single-member (`[181.001-T]`). Adding `181-F` would make it
+   multi-member, which condition (b) forbids claiming before the `154-S`
+   marker exists, and `154-S` depends on `182-S` (deadlock). A governed
+   post-ship close step is recorded in the `182-S` body and the flake plan's
+   `## Closure` section: after `181.001-T` is archived with shipped
+   provenance, Ship moves `181-F` to done, archives it and records the merge
+   SHA (157-S precedent).
 3. **Carried from earlier sessions:** label-aware claim refusal (`AF1E5075`)
    and the 074-DL post-ship attestation.
+
+## PR #459 review cycle 1 (Copilot threads)
+
+* `154-S` banner: shipped-provenance guard added for `182-S`. The `blocks`
+  edge alone releases on any of the six cascade terminal statuses
+  (`filterByResolvedDependencies` / `IsNoLongerBlockingStatus`), and
+  `ClaimShipment` does no dependency validation.
+* `182-S` body: composition decision and governed `181-F` close step.
+* Decision doc R3: rewritten per attempt-6 P2-7 into a consumer rule
+  (indeterminate → defer to the claim gate) and an operator-only remediation
+  (fresh-process CLI `backlogit sync`, whose `NewWorkspace` open runs
+  `recoverPendingShipmentOperations`; MCP `backlogit_sync_index` alone does
+  not). The plan's U5 R3 bullet was aligned. Attempt 7 still re-reviews it.
+* Flake plan Verification: shipped-provenance guard for `182-S` and
+  `181.001-T`; new `## Closure` section.

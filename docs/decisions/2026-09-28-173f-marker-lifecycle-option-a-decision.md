@@ -114,8 +114,35 @@ claim gate stays authoritative.
   claim compensation restores files and index rows independently, so for the
   IDs it reports as unrestored, `backlogit get --format json` (frontmatter)
   and MCP `backlogit_get_item` (index) can disagree until journal recovery
-  completes. The remedy is to run any lifecycle operation, which triggers
-  recovery, and then `backlogit sync`.
+  completes. `backlogit shipment list` is index-backed on both transports, so
+  it can also be stale. This R3 wording replaces the original "run any
+  lifecycle operation" remedy, per attempt 6 P2-7, and is split in two:
+  * **Consumer rule (external agents, including the autoharness scheduler).**
+    Treat the claim-activation state as **indeterminate** when any of these
+    holds:
+    * the frontmatter read and the index read disagree;
+    * a pending claim journal exists under `.backlogit/ops/`;
+    * `backlogit doctor` reports a shipment-lifecycle journal finding or
+      conflict.
+
+    While indeterminate, the consumer does not classify, route or act on the
+    marker. It defers to the backlogit claim gate, which is authoritative. A
+    consumer never runs a lifecycle operation to clear the condition.
+  * **Operator remediation (operator only, one specific trigger).**
+    1. Run the CLI `backlogit sync` in a fresh process. Its workspace open
+       (`core.NewWorkspace`) runs `recoverPendingShipmentOperations` before it
+       rehydrates the shared index. An already-running MCP server's
+       `backlogit_sync_index` only rehydrates; it does not run journal
+       recovery.
+    2. If an MCP server is running, call `backlogit_sync_index` as well, so
+       both transports read the recovered state.
+    3. If step 1 fails with a recovery error, stop. Inspect with
+       `backlogit doctor` (a diagnostic workspace that does not run recovery)
+       and escalate. Do not substitute another lifecycle operation.
+
+  The mixed-binary caveat (attempt 6 P2-9) applies: the recovering CLI must
+  include U1b, because an older binary can re-create the F1 wedge. Attempt 7
+  re-reviews this text together with the rest of the attempt-6 remediation.
 
 ## Consequences for the plan
 
