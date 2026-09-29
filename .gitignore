@@ -48,6 +48,8 @@ prompt.md
 
 # Machine-local telemetry harvest checkpoint (changes per machine/run)
 .backlogit/.telemetry-checkpoint.json
+# Unbounded local telemetry event log (not development or documentation state)
+.backlogit/telemetry.jsonl
 
 # Engram runtime data (keep templates/, registry.yaml, .version)
 .engram/
