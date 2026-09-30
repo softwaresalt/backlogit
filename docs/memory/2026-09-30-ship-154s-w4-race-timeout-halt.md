@@ -26,6 +26,7 @@
 - The task comment and this run-level checkpoint cite `6E37FD63`. This was genuinely pre-PR and has no review thread; when a PR/closure residual-risk record is later created, cite the same entry and preserve the discovery candidate list. Do not edit the captured stash entry.
 - Existing risk entries `D116AF58` (per-member ship validation performance) and `67F17B6B` (harness/backlog lock-sidecar collision) were inspected and do not positively match this test timeout. Neither was edited.
 - Structured Ship checkpoint: `.backlogit/checkpoints/checkpoint-20260930-060618.json`.
+- The blocker-record commit is `e9d00076`; it contains only the queue/stash/checkpoint/memory records, not the uncommitted rollback-test source. The structured checkpoint's `head_sha` is its creation-time code HEAD (`86ad6daf`); this later metadata-only commit did not change the code baseline.
 
 ## Next action
 
