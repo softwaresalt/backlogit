@@ -47,7 +47,10 @@ func TestClaimMarkerRed_ClaimMarksQueuedMembers(t *testing.T) {
 	shipment, err := CreateShipment(ctx, ws, "Claim marker shipment", memberIDs)
 	require.NoError(t, err)
 
-	shipmentPreimage, err := loadArtifact(ctx, ws, shipment.ID)
+	// Seed the normalized hierarchy path before checking claim-only mutations.
+	shipment.HierarchyPath = "001"
+	require.NoError(t, persistArtifact(ctx, ws, shipment, false))
+	shipmentPreimage, err := GetShipment(ctx, ws, shipment.ID)
 	require.NoError(t, err)
 	nonQueuedPreimages := map[string][]byte{
 		activeMember.ID: claimMarkerArtifactFileBytes(t, ws, activeMember.ID),
@@ -87,6 +90,8 @@ func TestClaimMarkerRed_ClaimMarksQueuedMembers(t *testing.T) {
 
 	shipmentAfter, err := loadArtifact(ctx, ws, shipment.ID)
 	require.NoError(t, err)
+	normalizeShipmentArtifact(shipmentPreimage)
+	normalizeShipmentArtifact(shipmentAfter)
 	wantShipment := *shipmentPreimage
 	wantShipment.Status = models.StatusActive
 	wantShipment.UpdatedAt = shipmentAfter.UpdatedAt

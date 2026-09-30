@@ -56,7 +56,11 @@ func TestClaimMarkerReadSurface_MCP(t *testing.T) {
 		itemResult, err := server.InvokeTool(ctx, "backlogit_get_item", getRequest)
 		require.NoError(t, err)
 		item := extractResultJSON(t, itemResult)
-		itemFields, _ := item["custom_fields"].(map[string]any)
+		itemFields, ok := item["custom_fields"].(map[string]any)
+		require.True(t, ok, "organic item get must expose custom_fields")
+		fixture, fixturePresent := itemFields["fixture"]
+		require.True(t, fixturePresent, "organic item get must expose the fixture custom field")
+		assert.Equal(t, "preserved", fixture, "organic item get must preserve the fixture custom field")
 		_, markerPresent := itemFields["scheduler_baseline_claim"]
 		assert.False(t, markerPresent, "an organic-active item must not carry scheduler_baseline_claim")
 	})
