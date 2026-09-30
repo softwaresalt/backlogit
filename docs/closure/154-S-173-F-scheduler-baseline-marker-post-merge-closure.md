@@ -24,7 +24,7 @@ title: "154-S / 173-F Post-Merge Closure"
 | Merge commit | `6d233d21162a072ddbdfecb52ec62a8fb8a63793` |
 | Reviewed implementation HEAD | `c43689cf` |
 | Closure branch | `post-merge/154-s-closure` |
-| Closure PR | Pending creation |
+| Closure PR | [#467](https://github.com/softwaresalt/backlogit/pull/467) — open |
 | Closure status | `READY_WITH_CONDITIONS` |
 | Context compaction | `degraded` — P-020 `target: all` was invoked; one completed memory record was compacted, but the full candidate set was preserved for a later verified pass. See `2026-09-30-154-s-compaction-report.md`. |
 
