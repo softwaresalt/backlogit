@@ -209,10 +209,9 @@ alert automation.
   records that a harness-lock filename collision with backlogit's persistent
   lock sidecars blocked the 155-S post-merge closure at `2026-09-26T19:29:20Z`.
   Stash `D116AF58` records that shipment validation exceeded the five-minute
-  command timeout and was killed at `2026-09-26T19:55:20Z`; the associated
-  safe-close report is
-  `.backlogit/reconcile/155-S-safe-close-20260926T194947Z.md`. Recovery was
-  completed by the authorized retry recorded in
+  command timeout and was killed at `2026-09-26T19:55:20Z`; its committed
+  record in `.backlogit/stash.jsonl` is the durable timeout evidence. Recovery
+  was completed by the authorized retry recorded in
   `.backlogit/reconcile/155-S-post-20260926T203148Z.md`: exit `0`,
   `shipment_status: shipped`, and `returned_ids: []`. The shipped-event
   completeness check (`backlogit doctor --format json
