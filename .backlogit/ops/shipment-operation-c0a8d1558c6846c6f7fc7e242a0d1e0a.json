@@ -1,0 +1,248 @@
+{
+  "schema_version": "shipment-operation/v1",
+  "correlation_id": "c0a8d1558c6846c6f7fc7e242a0d1e0a",
+  "phase": "committed",
+  "operation": "block",
+  "recovery_policy": "rollback",
+  "shipment_id": "154-S",
+  "target": "blocked",
+  "reason": "P-002.2 WAVE_RED_MAPPING_UNRESOLVED: 173.006-T, 173.007-T, and 173.008-T declare RED harness deliverables, but no canonical red-deliverable-contract blocks are present. Halted before harness scaffolding or source implementation; Stage must amend the task contracts. Claim activation left all seven task members active and unmarked; only the approved 154-S bootstrap active-residual bypass applies. Resume from the recorded checkpoint after Stage amendment and operator selection.",
+  "blocked_by": "ship",
+  "snapshot_ref": "checkpoint-20260930-021714.json",
+  "preimage": {
+    "shipment": {
+      "id": "154-S",
+      "title": "Shipment-claim scheduler-baseline marker (enabling precondition)",
+      "status": "active",
+      "artifact_type": "shipment",
+      "priority": "high",
+      "description": "## Bootstrap prerequisite (chain root, marker producer) — do NOT auto-claim\n\n`154-S`/`173-F` produces the scheduler-baseline marker and is now the **root of\nthe remaining predecessor chain** `154-S → 176-S → 157-S..169-S`. Its governed\nprerequisite `155-S` (`154-S depends_on 155-S`, DAG-root correction commit\n`69e900be`) has **SHIPPED** (implementation PR #450, merge `2c8759c3`; closure\nPR #451, `main` `c57185c1`; `155-S` and all 45 manifest items — `174-F` + 44\ntasks — archived), so that edge is satisfied and retained as provenance only.\n\nThe marker does not exist at `154-S`'s own claim time and `173-F` is internally\nmulti-wave, so claiming it activates all members **unmarked** → standard P-002.6\nadmission halts `WAVE_NO_PROGRESS`. It runs only as an operator-supervised\nbootstrap (drive `173-F` members green in declared dependency order without the\nstrict active-residual halt). With `155-S` complete, `154-S` is the **only\nremaining** shipment of the bounded bootstrap set originally recorded as\n{`155-S`, `154-S`}; every later shipment uses the marked-aware scheduler.\n\n**Waiver status: APPROVED (CONDITIONAL) — 2026-09-28.** The operator approved\nthe `154-S` active-residual halt bypass with conditions (accepted verbatim\n2026-09-28T19:42 -07:00: \"And with that, I think we should move forward with the\nremaining recommended decisions.\"). Conditions: (1) covers `154-S` only; (2)\nstash `C29EBEE5` re-validation MUST PASS first; (3) supervised bootstrap with\nnothing else active; (4) skips ONLY the active-residual halt — local review, CI,\nCopilot review and merge-commit rules all still apply, no admin bypass. Label\n`bootstrap-bypass-unapproved` was replaced by\n`bootstrap-bypass-approved-conditional`.\n\n**Gate: `C29EBEE5` — SATISFIED 2026-09-29; bootstrap hold RELEASED.**\nPlan-review attempt 7 (2026-09-29) returned ADVISORY (no P0/P1), and the\noperator recorded `operator_authorization: approved` for it\n(2026-09-29T14:40:58-07:00, verbatim \"C29EBEE5 gate approved\", relayed by the\nOrchestrator; recorded in the plan's attempt-7 `## Plan Review`). Stage then ran\nthe plan's `## Harvest Checklist` (branch `stage/173f-harvest`), archived stash\n`C29EBEE5`, and removed only `do-not-claim-until-convergence`.\n`bootstrap-bypass-approved-conditional` stays: the waiver conditions above\n(1), (3) and (4) still bind the supervised bootstrap run; condition (2) is met\nby this gate.\n\n**Attempt 5 (FAIL).** Plan-review attempt 5 found F1–F8 (P1/P2): stale\n`173-F` contracts against the post-`174-F` code. Details are in\n`docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md`.\n\n**Option A decided.** The operator decided F2 on 2026-09-28T22:22 -07:00\n(\"Decision: option A\"). The marker is kept through block, unblock and\n`ReturnBlockedItem`. An item is claim-activated only if all three hold:\n\n* its status is `active`;\n* its marker equals the active shipment's ID;\n* it is in that shipment's manifest.\n\nRecorded in\n`docs/decisions/2026-09-28-173f-marker-lifecycle-option-a-decision.md`.\n\n**Attempt 6 (FAIL).** Stage re-planned `173-F` under option A:\n\n* new units U0c and U1b (claim-crash recovery accepts this shipment's\n  marker);\n* F1–F8 remediated;\n* re-hardened.\n\nPlan-review attempt 6 (six personas, `dispatch_mode: multi-agent-dispatch`)\nreturned **FAIL**:\n\n* one P1: U0b (`173.007-T`) must be a dependency of U1 (`173.001-T`), because\n  U1 turns it green;\n* ten P2s, including:\n  * U1b acceptance-criteria precision;\n  * a claim-crash scenario (U4(2)) that cannot be executed;\n  * revert guidance;\n  * U5 depending on U4;\n  * the manifest JSON path;\n  * the index-backed R3;\n  * error-class injection;\n  * a mixed-binary rollout checkpoint;\n  * the learning waiver.\n\nAttempts 5 and 6 are two consecutive FAILs, so the plan-review circuit\nbreaker tripped and it was escalated (P-013.6). The harvest was **not**\nupdated at that point (superseded by the 2026-09-29 harvest below).\n\n**Attempt 7 (ADVISORY, 2026-09-29).** Operator-authorized past the circuit\nbreaker. All attempt-6 findings were resolved. The operator-required size\nvalidation found the plan too large for one supervised bootstrap (9 tasks, at\nleast 7 waves) and decomposed it:\n\n* bootstrap slice for `154-S`: 7 tasks in 5 waves (`173.006-T`, `173.007-T`,\n  new U0c, new U1b, `173.001-T`, `173.003-T`, `173.005-T`);\n* `173.002-T` (U2) retired into `173.007-T`; archived from `queued` at\n  harvest;\n* `173.004-T` (U4) deferred to a new follow-on feature, with no new shipment.\n\nSix personas returned ADVISORY with five P2s, and the text remediation was\napplied in the plan. Details are in the plan's attempt-7 `## Plan Review`.\n\n**Harvest (2026-09-29, plan `## Harvest Checklist`).** Operator-authorized\n(`operator_authorization: approved`). Applied:\n\n* follow-on feature `182-F` (\"Scheduler-baseline marker: option A lifecycle\n  regression net (173-F follow-on)\") created; `173.004-T` had its\n  `173.002-T` edge removed, was adopted under `182-F` as **`182.001-T`**, and\n  carries the deferred U4 contract. **No follow-on shipment.** `182.001-T`\n  keeps `blocks` edges onto `173.001-T` and `173.003-T` and is routed only\n  under the 074-DL rule after `154-S` ships;\n* `173.002-T` (U2) retired into `173.007-T`: `173.005-T` → `173.002-T` edge\n  removed, supersession provenance recorded, removed from this manifest and\n  archived **directly from `queued`** (`archived_status: queued`). Release\n  scope is flat, so the ship gate no longer evaluates it; archival keeps this\n  omitted child terminal so `173-F` can complete;\n* new tasks `173.008-T` (U0c, RED claim-crash recovery harness) and\n  `173.009-T` (U1b, claim recovery accepts this shipment's marker);\n* edges added: `173.009-T` → `173.008-T`; `173.001-T` → `173.009-T`;\n  `173.001-T` → `173.007-T` (attempt-6 P1-1, U0b → U1); `173.003-T` →\n  `173.009-T`; `173.005-T` → `173.007-T`, `173.001-T`, `173.003-T`. Edge\n  removed: `173.003-T` → `173.006-T` (now transitive through `173.001-T`);\n* contracts of `173.001-T`, `173.003-T`, `173.005-T`, `173.006-T`,\n  `173.007-T` and the `173-F` description rewritten to the option A plan\n  text.\n\n**Manifest (bootstrap slice, 7 tasks in 5 waves).** `173-F`, then:\n\n1. wave 1: `173.006-T` (U0a), `173.007-T` (U0b), `173.008-T` (U0c);\n2. wave 2: `173.009-T` (U1b);\n3. wave 3: `173.001-T` (U1);\n4. wave 4: `173.003-T` (U3, incl. the `-race` shipment regression gate);\n5. wave 5: `173.005-T` (U5).\n\n**Pre-ship check for Ship (Harvest Checklist step 7).** At ship time, no child\nof `173-F` outside this manifest may be non-terminal. Expected state: the only\nnon-manifest child is `173.002-T`, archived from `queued`\n(`archived_status: queued`). Shipment release scope is flat (an explicit\nfeature member does not expand to its descendants), so the ship gate does not\nevaluate `173.002-T`; it must stay terminal so the listed `173-F` can\ncomplete. The adopted U4 is no longer a\nchild of `173-F` (it is `182.001-T` under `182-F`). If any other non-manifest\n`173-F` child is non-terminal, stop and return to Stage.\n\n`154-S` may now be routed to Ship as the operator-supervised bootstrap under the\nconditional waiver, subject to the `182-S` shipped-provenance guard below\n(satisfied: `182-S` is `archived` with `archived_status: shipped`, merge\n`70d72044`) and nothing else active.\n\n**Flake prerequisite: `182-S` must ship first (operator decision 2026-09-28).**\n`154-S` holds a `blocks` edge onto the new single-member shipment `182-S`:\n\n* `182-S` carries task `181.001-T` under feature `181-F`;\n* the fix makes the UR3 crash-ready handoff tolerate a partial marker;\n* it covers stash `BDA56ED8`, with duplicate `46A898B8` archived.\n\nThe fix is covered by the flake plan\n`docs/exec-plans/2026-09-28-ur3-crash-ready-handoff-flake-plan.md`\n(plan-review attempt 2 PASS).\n\nTask-level `blocks` edges onto `181.001-T` also exist from `173.001-T`,\n`173.003-T` and `173.006-T` (and from the archived `173.002-T` and the adopted\n`182.001-T`, formerly `173.004-T`), retained as provenance; `181.001-T` has\nshipped. The new `173.008-T`/`173.009-T` need no such edge. There is no\nknown-flake rerun waiver.\n\n**Shipped-provenance guard for `182-S` (manual policy until `AF1E5075`).**\nThe `blocks` edge onto `182-S` does NOT by itself enforce \"must ship first\":\n\n* queue dependency resolution (`filterByResolvedDependencies`, via\n  `IsNoLongerBlockingStatus`) stops blocking on ANY of the six cascade\n  terminal statuses (`done`, `accepted`, `archived`, `shipped`, `abandoned`,\n  `rejected`);\n* `ClaimShipment` performs no dependency validation at all.\n\nSo `154-S` may be routed only when `182-S` has **shipped provenance**: live\n`status: shipped`, or `status: archived` with `archived_status: shipped`, read\nfrom the Markdown source (the index does not project `archived_status`). If\n`182-S` reaches any other terminal status, `154-S` stays held even though the\nedge reads as resolved. This is the same manual-policy framing as the post-ship\nrule below. It is not an automated check, and it is in addition to the\n`C29EBEE5` gate (satisfied 2026-09-29).\n\n**Routing hold (RELEASED 2026-09-29).** With `155-S` shipped, `154-S` has no\nunshipped predecessor, so the Orchestrator's status + dependency eligibility\ngate no longer holds it, and the current Orchestrator/Ship contracts do not read\nlabels. The bootstrap hold label `do-not-claim-until-convergence` was released\nby the satisfied `C29EBEE5` gate (attempt-7 ADVISORY +\n`operator_authorization: approved`) under the approved conditional waiver, not\nby convergence (which `154-S` itself enables), and was removed at the\n2026-09-29 harvest. `154-S` still runs ONLY as the operator-supervised\nbootstrap under `bootstrap-bypass-approved-conditional` (nothing else active;\nonly the active-residual halt is skipped) and MUST NOT be routed through an\nunsupervised dark-mode scope.\nLabel-aware claim refusal is tracked as deferred stash `AF1E5075`.\n\n**After `154-S` ships (074-DL).** `141-S`, `147-S`, `152-S`, `153-S`, `176-S`,\n`177-S`, `178-S`, `179-S` hold `blocks` edges onto `154-S`; those edges release\non ANY terminal status of `154-S` and no agent contract yet checks shipped\nprovenance or marker consumption. Until `AF1E5075` delivers that contract, the\nOrchestrator MUST NOT route anything behind `154-S` unless `154-S` has shipped\nprovenance (`status: shipped`, or `archived` with `archived_status: shipped`,\nread from Markdown source) AND an operator attestation comment on `154-S`\nconfirms the external autoharness scheduler is consuming the marker. This is a\nmanual policy, not an automated check. (`backlogit update` on an archived\nrecord now preserves `archived_from`/`archived_status` — fixed by `842b701d`/\n`e09befa8`, pinned by `internal/core/archive_update_provenance_test.go` — but\nthe provenance read must still use Markdown source because the index does not\nproject `archived_status`.)\n\nWaiver provenance (factual): the conditional approval above is recorded as an\noperator comment event on `154-S` (2026-09-28T19:45 -07:00, actor \"operator\n(relayed by Orchestrator)\"); that event log (`.backlogit/logs/154-S.jsonl`) is\nlocal and git-ignored, so this banner, the Stage memory\n`docs/memory/2026-09-28/stage-triage-513e62ab-fb0a850b-memory.md`, and PR #455\nare the tracked record. Earlier history: Ship's `155-S` bootstrap records\ndescribe the original operator authorization as scoped to the bounded set\n{`155-S`, `154-S`} and exercised for `155-S` only —\n`docs/memory/2026-09-20/155-s-wave-1-quality-gate-blocker.md` (lines 15-18) and\nthe `waiver` field of `.backlogit/checkpoints/checkpoint-20260920-234325.json`;\n`.backlogit/reconcile/155-S-pre-20260920T233209Z.md` records the `155-S` waiver\nitself as operator-approved. See\n`docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-deliberation.md`\n(\"Bootstrap Resolution\").\n\n",
+      "labels": [
+        "bootstrap-exception",
+        "convergence-prerequisite",
+        "bootstrap-bypass-approved-conditional"
+      ],
+      "dependencies": [
+        {
+          "id": "155-S",
+          "type": "blocks"
+        },
+        {
+          "id": "182-S",
+          "type": "blocks"
+        }
+      ],
+      "custom_fields": {
+        "items": [
+          "173-F",
+          "173.006-T",
+          "173.007-T",
+          "173.008-T",
+          "173.009-T",
+          "173.001-T",
+          "173.003-T",
+          "173.005-T"
+        ],
+        "queue_position": 100
+      },
+      "created_at": "2026-09-14T01:20:31.1483683Z",
+      "updated_at": "2026-09-30T02:12:23.4341726Z",
+      "level": 1,
+      "hierarchy_path": "154"
+    },
+    "members": [
+      {
+        "id": "173-F",
+        "title": "Shipment-claim scheduler-baseline marker (enabling precondition)",
+        "status": "active",
+        "artifact_type": "feature",
+        "priority": "high",
+        "description": "Covering feature for CC0EBB59 (re-validated via stash C29EBEE5). ENABLING PRECONDITION, not full defect resolution: adds an additive, backward-compatible scheduler-baseline marker — the single custom_fields key scheduler_baseline_claim, value = activating shipment ID — written by ClaimShipment on every manifest member whose preimage status was queued, so a claim-activated manifest task can be told apart from an organic active residual. The observable P-002.6 misclassification is resolved only once the out-of-workspace autoharness scheduler consumes the marker.\n\nOption A lifecycle (operator decision 2026-09-28, docs/decisions/2026-09-28-173f-marker-lifecycle-option-a-decision.md): the marker is kept through block, unblock, ReturnBlockedItem, ship, abandon, normalize and generic writes; it is removed only by rollback (exact preimage restore). Consumer predicate (normative, published by U5): an item is claim-activated iff status == active AND its marker == the ID of the currently active shipment AND it is in that shipment's current items manifest; \"non-empty =\u003e claim-activated\" is withdrawn.\n\nPlan: docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md. Review: plan-review attempt 7 ADVISORY (no P0/P1), operator_authorization: approved 2026-09-29T14:40:58-07:00 (\"C29EBEE5 gate approved\", relayed by the Orchestrator); harvested 2026-09-29 per the plan's Harvest Checklist.\n\nBootstrap slice shipped by 154-S (7 tasks, 5 waves): wave 1 173.006-T (U0a), 173.007-T (U0b, absorbs retired U2), 173.008-T (U0c); wave 2 173.009-T (U1b, recovery accepts this shipment's marker; lands before U1); wave 3 173.001-T (U1, marker write); wave 4 173.003-T (U3, rollback verification + -race regression gate); wave 5 173.005-T (U5, marker contract doc). In-repo scope: internal/core/shipment_lifecycle.go (claim loop, marker write, shared key constant), internal/core/shipment_recovery.go (U1b), tests in internal/core, internal/cli and internal/mcp, and one operator doc. No other shipment lifecycle operation and no generic write path is changed.\n\nDecomposition at harvest: 173.002-T (U2) retired into 173.007-T and archived from queued (archived_status: queued) and removed from the 154-S manifest; shipment release scope is flat, so archival keeps this omitted child terminal and 173-F can complete. 173.004-T (U4, option A lifecycle regression net) deferred: adopted as 182.001-T under follow-on feature 182-F, no follow-on shipment; routed only under the 074-DL rule after 154-S ships.",
+        "references": [
+          "docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md",
+          "docs/decisions/2026-09-13-shipment-claim-scheduler-reconciliation-deliberation.md"
+        ],
+        "custom_fields": {
+          "harness_status": "pending",
+          "source_stash_id": "CC0EBB59"
+        },
+        "created_at": "2026-09-14T01:03:48.0559073Z",
+        "updated_at": "2026-09-30T02:12:28.3955655Z",
+        "level": 1,
+        "hierarchy_path": "173"
+      },
+      {
+        "id": "173.006-T",
+        "title": "RED harness: claim marking (activation, re-claim, ordering)",
+        "status": "active",
+        "artifact_type": "task",
+        "parent_id": "173-F",
+        "priority": "high",
+        "description": "U0a [CC0EBB59 / C29EBEE5] RED harness + characterization, claim marking. Contract rewritten to the option A plan text at the 173-F harvest (2026-09-29, plan Harvest Checklist step 5); supersedes the pre-option-A contract. Source: docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md (U0a, attempt 7). Wave 1 of the 154-S bootstrap slice.\n\nDomain: tests. File: internal/core/shipment_claim_marker_test.go (new). Written before U1 (173.001-T). No 173-F dependencies (the 181.001-T edge is retained as provenance; 181.001-T shipped in 182-S). 3 scenarios. Execution posture: test-first (RED).\n\nRED-compile rule: use the literal string \"scheduler_baseline_claim\", never the schedulerBaselineClaimKey constant (it arrives in U1b). Test-seam rule: no t.Parallel when swapping a package-global seam; restore via t.Cleanup. Fixture rule: no non-queued member-parent that has queued member children.\n\n(1) RED. ClaimShipment sets scheduler_baseline_claim = \u003cshipmentID\u003e on every member whose preimage status is queued. Fixture includes a queued member whose preimage already carries a stale foreign marker (\"OLD-S\"); after the claim its value is the new shipment ID (re-claim overwrite). Fixture includes a queued member whose preimage has other non-empty custom_fields; those keys survive unchanged (two-value presence assertions, v, ok := m[key]). Members that are not queued (e.g. already active or done) are byte-identical to their preimage. The shipment artifact differs from its preimage only in status and updated_at.\n(2) RED, ordering (F5). The manifest lists a queued child before its queued member-parent ([child, parent]), so the bounded cascade activates the parent before the loop reaches it. Both child and parent end up marked. One pair suffices because the claim loop walks the ordered manifest slice; if a marking loop ever ranges over a map or set, use at least 5 independent pairs.\n(3) Characterization, NOT RED. A non-claim setArtifactStatus caller (e.g. a queue move) produces byte-identical frontmatter before and after. The fixture's preimage carries a stale blocked_reason, so the existing clearStaleBlockedReason behavior is characterized too.\n\nAC: (1) and (2) fail against pre-implementation code; (3) passes both before and after the implementation and is not counted as RED; no production file modified.",
+        "dependencies": [
+          {
+            "id": "181.001-T",
+            "type": "blocks"
+          }
+        ],
+        "references": [
+          "docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md"
+        ],
+        "created_at": "2026-09-14T01:52:46.9487346Z",
+        "updated_at": "2026-09-30T02:12:33.6581338Z",
+        "level": 2,
+        "hierarchy_path": "173/173.006"
+      },
+      {
+        "id": "173.007-T",
+        "title": "RED harness: claim-marker external read surface (absorbs retired U2)",
+        "status": "active",
+        "artifact_type": "task",
+        "parent_id": "173-F",
+        "priority": "high",
+        "description": "U0b [CC0EBB59 / C29EBEE5] RED harness + characterization, external read surface and consumer recipe; ABSORBS the retired U2 (173.002-T, archived from queued at this harvest). Contract rewritten to the option A plan text at the 173-F harvest (2026-09-29, plan Harvest Checklist step 5). Source: docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md (U0b, attempt 7). Wave 1 of the 154-S bootstrap slice.\n\nDomain: tests. Files: one test file in internal/cli and one in internal/mcp (one fixture helper per package: cli_test, mcp). Written before U1 (173.001-T depends on this task — attempt 6 P1-1). No 173-F dependencies. 3 scenarios. Execution posture: test-first (RED). RED-compile rule: use the literal string \"scheduler_baseline_claim\". Test-seam rule: no t.Parallel when swapping a package-global seam; restore via t.Cleanup.\n\nEach RED scenario walks the EXACT U5 recipe paths on one transport, after a real claim of a shipment with one queued member:\n(1) RED, CLI (frontmatter-backed item read). backlogit shipment list --status active --format json returns a JSON array of length 1; .[0].id is the shipment ID; .[0].custom_fields.items[] contains the member ID; backlogit get \u003cmember\u003e --format json has .custom_fields.scheduler_baseline_claim == \u003cshipmentID\u003e.\n(2) RED, MCP (index-backed). backlogit_list_shipments {\"status\":\"active\"} returns an array of length 1 with the same .[0].custom_fields.items[]; backlogit_get_item for the member has the identical .custom_fields.scheduler_baseline_claim value.\n(3) Characterization. Before any claim, shipment list --status active returns a present empty array [] (not null, not missing) on both transports, and the key is absent on both transports for an organic-active item (two-value presence assertion). Written as t.Run subtests in each package's file.\n\nAC: (1) and (2) fail before U1 (marker absent) and pass after it; (3) passes before and after; fewer than 4 scenarios. Post-implementation AC (from retired U2): the marker reaches both transports through the existing generic custom_fields projection (CLI internal/cli/get.go buildDetailMap; MCP internal/db/queries.go scanArtifactRow, fed by UpsertItem, which persistArtifact calls after the file write in the same call); no bespoke projection field, no marker-specific filter, no read helper, and no state mutation is added.",
+        "references": [
+          "docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md"
+        ],
+        "created_at": "2026-09-14T01:52:56.2811241Z",
+        "updated_at": "2026-09-30T02:12:38.8426687Z",
+        "level": 2,
+        "hierarchy_path": "173/173.007"
+      },
+      {
+        "id": "173.008-T",
+        "title": "RED harness: claim crash recovery with marked members (U0c)",
+        "status": "active",
+        "artifact_type": "task",
+        "parent_id": "173-F",
+        "priority": "high",
+        "description": "U0c [CC0EBB59 / C29EBEE5] RED harness + characterization, claim crash recovery with marked members (F1/F4). Created at the 173-F harvest (2026-09-29, plan Harvest Checklist step 4). Contract per docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md (U0c, attempt 7). Wave 1 of the 154-S bootstrap slice.\n\nDomain: tests. File: internal/core/shipment_claim_marker_recovery_test.go (new). No 173-F dependencies (does not depend on U1). 3 scenarios. Execution posture: test-first (RED).\n\nRED-compile rule: use the literal string \"scheduler_baseline_claim\", never the schedulerBaselineClaimKey constant (it only arrives in U1b). Test-seam rule: no t.Parallel when swapping a package-global seam; restore via t.Cleanup.\n\nFixture mechanism: fabricate the crashed state directly — a shipment-operation/v1 claim INTENT journal (the only phase recovery reconciles, shipment_recovery.go reconcileShipmentLifecycleIntent) with its preimage, plus current member files — via in-package calls to writeShipmentLifecycleJournalForWorkspace and persistArtifact under withShipmentOperation (governed ctx for the shipment's active write). Close the original workspace before reopening with NewWorkspace (Windows SQLite and temp-dir cleanup).\n\n(1) RED. Crash after marking: the shipment is active and every preimage-queued member is active + marked with the journal's shipment ID. Fixture includes one member whose PREIMAGE carries a stale foreign marker (\"OLD-S\"); after rollback its value is \"OLD-S\" again, byte-for-byte. recoverPendingShipmentOperations, invoked through a fresh NewWorkspace open, rolls back successfully; every member and the shipment are byte-identical to the preimage (no marker key where the preimage had none; custom_fields nil if it was nil before the claim). A following ClaimShipment of the same shipment succeeds (nothing wedged). A direct assertion checks that the last claim candidate returned by memberRecoveryCandidates carries the journal's marker.\n(2) RED. Double-fault partial compensation: the shipment is already restored to its queued preimage; one member is restored and another is still active + marked. Recovery succeeds and converges to the preimage.\n(3) Characterization, NOT RED. A member carrying a marker whose value differs from BOTH the preimage's own value and journal.ShipmentID (or otherwise diverged) still fails closed with ErrShipmentConflict (guards against over-broad acceptance).\n\nAC: (1) and (2) fail today with ErrShipmentConflict (the genuine RED for the recovery surface); (3) passes before and after and is not counted as RED; fewer than 4 scenarios; no production file modified.",
+        "references": [
+          "docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md",
+          "docs/decisions/2026-09-28-173f-marker-lifecycle-option-a-decision.md"
+        ],
+        "created_at": "2026-09-29T21:48:03.8806773Z",
+        "updated_at": "2026-09-30T02:12:44.7065833Z",
+        "level": 2,
+        "hierarchy_path": "173/173.008"
+      },
+      {
+        "id": "173.009-T",
+        "title": "Claim recovery accepts this shipment's marker (U1b)",
+        "status": "active",
+        "artifact_type": "task",
+        "parent_id": "173-F",
+        "priority": "high",
+        "description": "U1b [CC0EBB59 / C29EBEE5] Claim-recovery marker compatibility (F1). Created at the 173-F harvest (2026-09-29, plan Harvest Checklist step 4). Contract per docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md (U1b, attempt 7). Wave 2 of the 154-S bootstrap slice. U1b lands BEFORE U1 (173.001-T): at no commit may the marker be written while claim crash recovery still rejects marked members (the F1 wedge).\n\nDomain: code. Files: internal/core/shipment_recovery.go, plus the one shared constant line in internal/core/shipment_lifecycle.go. Depends on U0c (173.008-T). Execution posture: test-first (turn U0c GREEN); careful mode (recovery CAS change).\n\nDeclare const schedulerBaselineClaimKey = \"scheduler_baseline_claim\" in internal/core/shipment_lifecycle.go, next to ClaimShipment (the producer). U1 reuses it. No other change to that file in U1b.\n\nIn memberRecoveryCandidates, the rollback+claim case for a preimage-queued member returns three candidates, in this order:\n1. the preimage (it may carry a stale marker, R1);\n2. preimage + Status=Active, marker as in the preimage (the intermediate member-parent cascade window, kept so rollback CAS accepts it);\n3. preimage + Status=Active + custom_fields.scheduler_baseline_claim = journal.ShipmentID, LAST. Build custom_fields as a fresh map copy of the preimage's map (nil -\u003e new one-entry map).\nThe marked target is last: validateShipmentLifecycleRecoveryOutcome uses candidates[len-1] for committed evidence and candidates[0] for compensated evidence. For claim the committed-evidence path is defensive only (claim emits no correlation-tagged evidence events and claim recovery rolls back before any terminal evidence is appended). Nothing changes for non-queued preimage members, for the shipment candidates, or for the block, unblock and normalize cases (option A). Errors wrap with %w; keep the ErrShipmentConflict sentinel.\n\nAC: U0c (1) and (2) turn GREEN and U0c (3) stays GREEN; existing recovery and UR3 tests stay green; the marker values accepted on a member are ONLY the preimage's own value (candidates 1 and 2) or journal.ShipmentID on the marked-last candidate (candidate 3) — any other value fails closed with ErrShipmentConflict.",
+        "dependencies": [
+          {
+            "id": "173.008-T",
+            "type": "blocks"
+          }
+        ],
+        "references": [
+          "docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md",
+          "docs/decisions/2026-09-28-173f-marker-lifecycle-option-a-decision.md"
+        ],
+        "created_at": "2026-09-29T21:48:41.1043571Z",
+        "updated_at": "2026-09-30T02:12:49.8469834Z",
+        "level": 2,
+        "hierarchy_path": "173/173.009"
+      },
+      {
+        "id": "173.001-T",
+        "title": "Persist scheduler-baseline marker on claim activation (explicit claimMarker writer)",
+        "status": "active",
+        "artifact_type": "task",
+        "parent_id": "173-F",
+        "priority": "high",
+        "description": "U1 [CC0EBB59 / C29EBEE5] Persist the marker on claim activation. Contract rewritten to the option A plan text at the 173-F harvest (2026-09-29, plan Harvest Checklist step 5); supersedes the pre-option-A contract (activatedIDs rollback tracking no longer exists). Source: docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md (U1, attempt 7) and docs/decisions/2026-09-28-173f-marker-lifecycle-option-a-decision.md. Wave 3 of the 154-S bootstrap slice.\n\nDomain: code. File: internal/core/shipment_lifecycle.go. Depends on U0a (173.006-T), U0b (173.007-T, attempt 6 P1-1) and U1b (173.009-T); the 181.001-T edge is retained as provenance. Execution posture: test-first (turn U0a/U0b GREEN). Reuse the schedulerBaselineClaimKey constant declared by U1b.\n\nMarker contract (pinned): single custom_fields key scheduler_baseline_claim; value = activating shipment ID (non-empty string). Reserved but not write-protected; consumers rely on the three-part predicate, never on the raw value alone.\n\nSeam form: explicit per-call parameter, not a context value. Extract the body of setArtifactStatus into an unexported writer taking a claimMarker string argument; setArtifactStatus calls it with \"\" (behavior unchanged); the ClaimShipment claim loop calls it with the shipment ID; the seam is never visible to MoveShipmentStatus or other downstream writes. (A shared applyClaimActivation helper with U1b was rejected; only the key constant is shared.)\n\nOrdering-independent marking (F5): for each member whose preimage status is queued, the write sets Status=Active and the key in ONE persistArtifact call. If the member is already active (a member-parent the bounded cascade activated earlier in the loop), the writer still persists the key as a marker-only write: no status transition, no parent cascade, no status_changed event (unaudited; documented in U5). If the key already equals the shipment ID, the marker-only write is a no-op (no persist), compared on the artifact as loadArtifact returns it (index-first). A marker-only write bumps UpdatedAt (recovery candidates 2 and 3 already set ignoreUpdatedAt). The extracted writer keeps every existing side effect of setArtifactStatus (clearStaleBlockedReason, event append, bounded cascade). custom_fields: omitempty applies to the whole map; set the key explicitly and lazily initialize a nil map. A re-claim overwrites a stale value (including another shipment's).\n\nParent-cascade safety: cascadePersistedParentStatuses (bounded by shipmentMemberCascadeBoundaryContextKey) never writes the key; non-member parents are neither mutated nor marked; member-parents are marked only by the loop. Rollback coupling: covered by the existing journaled preimage plus snapshotShipArtifacts / restoreShipArtifactsDetailed (exact-byte restore); no compensating marker write is added (F3). No other lifecycle operation (Block, Unblock, ReturnBlocked, Ship, normalize, Abandon) and no generic write path is changed (option A).\n\nAC: U0a (1)(2) and U0b (1)(2) turn GREEN; U0a (3) and U0b (3) stay GREEN; the key is set exactly on preimage-queued manifest members; non-claim setArtifactStatus callers are byte-identical; non-member parents are not marked; consumers that ignore the key see no behavior change (pinned by U0a (3) byte-identity and U0b (3) key absence).",
+        "dependencies": [
+          {
+            "id": "173.006-T",
+            "type": "blocks"
+          },
+          {
+            "id": "181.001-T",
+            "type": "blocks"
+          },
+          {
+            "id": "173.009-T",
+            "type": "blocks"
+          },
+          {
+            "id": "173.007-T",
+            "type": "blocks"
+          }
+        ],
+        "references": [
+          "docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md"
+        ],
+        "created_at": "2026-09-14T01:05:23.2654812Z",
+        "updated_at": "2026-09-30T02:12:55.1901595Z",
+        "level": 2,
+        "hierarchy_path": "173/173.001"
+      },
+      {
+        "id": "173.003-T",
+        "title": "Verify both claim rollback paths remove the marker + shipment regression gate",
+        "status": "active",
+        "artifact_type": "task",
+        "parent_id": "173-F",
+        "priority": "high",
+        "description": "U3 [CC0EBB59 / C29EBEE5] Verification of both claim rollback paths + shipment regression gate (tests-only). Contract rewritten to the option A plan text at the 173-F harvest (2026-09-29, plan Harvest Checklist step 5); supersedes the pre-option-A contract (no rollbackShipmentClaim marker-clear code change; rollback already restores exact bytes). Source: docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md (U3, attempt 7). Wave 4 of the 154-S bootstrap slice.\n\nDomain: tests. File: internal/core/shipment_claim_marker_rollback_test.go (new). Depends on U1 (173.001-T) and U1b (173.009-T); the 181.001-T edge is retained as provenance. 2 scenarios; both verify existing exact-restore machinery, are NOT RED, and change no production code. Test-seam rule: no t.Parallel; restore seams via t.Cleanup. Fixture for both: a shipment with at least 2 preimage-queued members, member1 before member2 in the manifest.\n\n(1) In-process snapshot rollback. A real ClaimShipment fails after member1 is marked; failure injected through the persistArtifactWriteFn seam with predicate artifact.ID == member2.ID \u0026\u0026 artifact.Status == models.StatusActive, and a counter in the seam proves member1 was written marked before the failure. The injected error is non-indeterminate (a plain error or ErrWriteNotApplied); ErrWriteIndeterminate must never be used (durable-writes contract). Every member and the shipment are byte-identical to the preimage, with no key and the nil map restored.\n(2) Journal-recovery rollback after a real double-fault (adapting TestP1C6_ClaimCompensationFailureIsClassifiedAndRecoverable): the forward write fails on member2's activation with a plain error (same predicate as (1)); restoreShipmentSnapshotFn fails on member1's ARTIFACT FILE PATH (snapshot.file.Path), not its event log, so member1's file keeps the marked, active bytes while its index row is restored. Before recovery, assert R3 at the core level deterministically: member1's frontmatter IS active and marked while bldb.GetItem DOES show the queued preimage without the key (use the known injected member ID; do not parse the MutationPartialError cause string). A fresh NewWorkspace open recovers through the journal (through U1b), converges to the preimage, and a following claim is not wedged.\n\nAC: both scenarios pass; no production file is modified. Shipment regression gate (moved from U4): go test -race ./internal/core/... ./internal/cli/... ./internal/mcp/... ./internal/db/... is green, with no known-flake rerun policy. A gate failure caused by U1 or U1b REOPENS that task; U3 never patches production code. No U0a/U0b/U0c scenario is duplicated (U3 (2)'s distinct value over U0c (2) is the real-claim path and the deterministic core-level R3 disagreement check).",
+        "dependencies": [
+          {
+            "id": "173.001-T",
+            "type": "blocks"
+          },
+          {
+            "id": "181.001-T",
+            "type": "blocks"
+          },
+          {
+            "id": "173.009-T",
+            "type": "blocks"
+          }
+        ],
+        "references": [
+          "docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md"
+        ],
+        "created_at": "2026-09-14T01:06:10.0113567Z",
+        "updated_at": "2026-09-30T02:13:00.8255887Z",
+        "level": 2,
+        "hierarchy_path": "173/173.003"
+      },
+      {
+        "id": "173.005-T",
+        "title": "Operator docs: scheduler-baseline marker contract (v1, option A predicate)",
+        "status": "active",
+        "artifact_type": "task",
+        "parent_id": "173-F",
+        "priority": "medium",
+        "description": "U5 [CC0EBB59 / C29EBEE5] Operator docs, the marker contract. Contract rewritten to the option A plan text at the 173-F harvest (2026-09-29, plan Harvest Checklist step 5); supersedes the pre-option-A contract (\"non-empty =\u003e claim-activated\" is WITHDRAWN). Source: docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md (U5, attempt 7) and docs/decisions/2026-09-28-173f-marker-lifecycle-option-a-decision.md. Wave 5 of the 154-S bootstrap slice.\n\nDomain: docs. File: docs/design-docs/scheduler-baseline-marker-contract.md (new, hand-written). Generated docs/cli-reference/* is not edited. Depends on U0b (173.007-T), U1 (173.001-T) and U3 (173.003-T) (the dependency on the retired U2 was removed; U4 is deferred — see the verification-status column).\n\nPublish:\n* the pinned key scheduler_baseline_claim and value shape (activating shipment ID, non-empty string); reserved but not write-protected;\n* a stability note: contract version scheduler-baseline-marker/v1; any change to key, value shape or predicate is a breaking change needing a new version and a consumer notice;\n* the copy-pasteable read recipe with EXACT JSON paths (the same paths U0b asserts): (1) active shipment: backlogit shipment list --status active --format json (or MCP backlogit_list_shipments {\"status\":\"active\"}) returns a JSON array — length 0 =\u003e no item is claim-activated; length \u003e 1 =\u003e indeterminate, fail closed; length 1 =\u003e shipment ID is .[0].id; (2) manifest: .[0].custom_fields.items[] (there is NO top-level items); (3) each item: backlogit get \u003cid\u003e --format json or MCP backlogit_get_item, reading .status and .custom_fields.scheduler_baseline_claim;\n* the three-part option A predicate (normative), verbatim from the decision artifact: claim-activated iff status == active AND the marker == the ID of the currently active shipment AND the item is in that shipment's current items manifest; \"non-empty =\u003e claim-activated\" explicitly withdrawn;\n* the marker is advisory; the backlogit claim gate is authoritative;\n* the option A lifecycle table with a verification-status column: claim write and re-claim overwrite (incl. stale foreign value) verified by U0a; removed by rollback (in-process and journal) verified by U3 and U0c; marker-only write on an already-active member-parent unaudited (no event); kept through block, unblock, return, ship, abandon, normalize and generic update/move by construction (code-cited), with the regression net tracked by the follow-on feature's U4 task named by ID (182.001-T under 182-F) — consumers read that task's status, so the row never needs a later edit;\n* residuals R1-R3, text identical to the decision artifact; R3 published as the split rule: transport side effects (every CLI read and MCP server startup open a recovering workspace via core.NewWorkspace; strictly read-only consumers use an already-running MCP server they did not start); the consumer rule (read disagreement, a pending claim journal under \u003cstorage-root\u003e/ops/ (detect with backlogit doctor), a doctor journal finding, \u003e1 active shipment, any non-zero exit/error from a recipe read — in particular \"open workspace: recover shipment operations\" — or any MCP tool error means indeterminate, defer to the claim gate; a consumer never invokes a lifecycle command; a re-read whose shipment ID or manifest differs from the first read is indeterminate; MCP results are JSON text content parsed before the paths apply; a missing custom_fields or key means \"not marked\"); the operator-only remediation (fresh-process CLI backlogit sync, then backlogit_sync_index if an MCP server is running; on recovery error, backlogit doctor and escalate);\n* the mixed-binary caveat: ANY binary that opens the workspace (CLI or MCP server, including one a consumer invokes or starts) must include U1b;\n* the autoharness consumer should not treat the contract as operative before the rollout checkpoint is recorded (docs/compound/workflow-issues/stable-contract-before-two-agent-adoption-2026-04-05.md);\n* SQL query is secondary (json_extract); full defect resolution needs the autoharness follow-up.\n\nAC: the doc contains every item above; the predicate and residual text match the decision artifact verbatim; the recipe JSON paths are identical to the paths U0b (1) and (2) assert.",
+        "dependencies": [
+          {
+            "id": "173.007-T",
+            "type": "blocks"
+          },
+          {
+            "id": "173.001-T",
+            "type": "blocks"
+          },
+          {
+            "id": "173.003-T",
+            "type": "blocks"
+          }
+        ],
+        "references": [
+          "docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md"
+        ],
+        "created_at": "2026-09-14T01:06:40.2315978Z",
+        "updated_at": "2026-09-30T02:13:06.529785Z",
+        "level": 2,
+        "hierarchy_path": "173/173.005"
+      }
+    ]
+  }
+}
