@@ -111,11 +111,16 @@ markers persist (R1), and the key is not write-protected.
 | Marker-only write on an already-active member-parent | Written without a status change | Verified by U0a and U1 (`internal/core/shipment_claim_marker_u1_behavior_test.go`), but unaudited: no event is appended (`setArtifactStatusWithClaimMarker`, `internal/core/shipment_lifecycle.go`) |
 | Kept through block, unblock, return, ship, abandon, normalize, and generic update/move | Kept unchanged (a generic update that explicitly writes `custom_fields` can still change it, because the key is not write-protected) | Kept by construction: these paths clone and persist `custom_fields` unchanged (`BlockShipment`, `UnblockShipment` and `ReturnBlockedItem` in `internal/core/shipment.go`; `ShipShipment` in `internal/core/shipment_lifecycle.go`; `NormalizeBlockedShipment` in `internal/core/shipment_recovery.go`; `UpdateArtifact` in `internal/core/artifacts.go`). The regression net is task `182.001-T` under feature `182-F`; read that task's status for the current verification state. |
 
-Only `ClaimShipment` writes the marker. Members whose preimage status is not
-`queued` are left byte-identical: not marked and not unmarked. Claim crash
-recovery (U1b) accepts a member that carries the recovering journal's own
-shipment ID as a valid mid-claim state, and fails closed on any other
-divergence.
+Only `ClaimShipment` writes the marker. It never marks or unmarks a member
+whose preimage status is not `queued`. Known gap (deferred stash `E52607F5`):
+the pre-existing bounded parent cascade can still move such a member-parent's
+status, for example to `active` when a queued child member activates first.
+That member-parent stays unmarked, so the predicate does not classify it as
+claim-activated, and a claim crash mid-way through that window is not
+recoverable by U1b. Treat that state as indeterminate and defer to the claim
+gate. Claim crash recovery (U1b) accepts a member that carries the recovering
+journal's own shipment ID as a valid mid-claim state, and fails closed on any
+other divergence.
 
 ## Accepted residuals
 
