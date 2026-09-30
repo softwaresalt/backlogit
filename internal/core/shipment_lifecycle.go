@@ -166,7 +166,7 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 		if member.Status != models.StatusQueued {
 			continue
 		}
-		if _, setErr := setArtifactStatus(claimCtx, ws, member.ID, models.StatusActive, "shipment claimed"); setErr != nil {
+		if _, setErr := setArtifactStatusWithClaimMarker(claimCtx, ws, member.ID, models.StatusActive, "shipment claimed", shipmentID); setErr != nil {
 			return nil, rollback(fmt.Errorf("activate item %s: %w", member.ID, setErr))
 		}
 	}
@@ -951,6 +951,17 @@ func featureScopeRoots(ctx context.Context, ws *Workspace, itemIDs []string) ([]
 }
 
 func setArtifactStatus(ctx context.Context, ws *Workspace, itemID string, newStatus models.ArtifactStatus, reason string) (*models.Artifact, error) {
+	return setArtifactStatusWithClaimMarker(ctx, ws, itemID, newStatus, reason, "")
+}
+
+func setArtifactStatusWithClaimMarker(
+	ctx context.Context,
+	ws *Workspace,
+	itemID string,
+	newStatus models.ArtifactStatus,
+	reason string,
+	claimMarker string,
+) (*models.Artifact, error) {
 	lockedCtx, globalUnlock, lockErr := lockShipmentLifecycleGlobal(ctx, ws)
 	if lockErr != nil {
 		return nil, fmt.Errorf("lock shipment lifecycle for status update %s: %w", itemID, lockErr)
@@ -967,6 +978,20 @@ func setArtifactStatus(ctx context.Context, ws *Workspace, itemID string, newSta
 		return nil, err
 	}
 	if artifact.Status == newStatus {
+		if claimMarker == "" {
+			return artifact, nil
+		}
+		if marker, ok := artifact.CustomFields[schedulerBaselineClaimKey].(string); ok && marker == claimMarker {
+			return artifact, nil
+		}
+		if artifact.CustomFields == nil {
+			artifact.CustomFields = make(map[string]any)
+		}
+		artifact.CustomFields[schedulerBaselineClaimKey] = claimMarker
+		artifact.UpdatedAt = models.NowUTC()
+		if err := persistArtifact(ctx, ws, artifact, false); err != nil {
+			return nil, fmt.Errorf("persist claim marker for artifact %s: %w", itemID, err)
+		}
 		return artifact, nil
 	}
 
@@ -974,6 +999,12 @@ func setArtifactStatus(ctx context.Context, ws *Workspace, itemID string, newSta
 	artifact.Status = newStatus
 	artifact.UpdatedAt = models.NowUTC()
 	clearStaleBlockedReason(artifact, previous)
+	if claimMarker != "" {
+		if artifact.CustomFields == nil {
+			artifact.CustomFields = make(map[string]any)
+		}
+		artifact.CustomFields[schedulerBaselineClaimKey] = claimMarker
+	}
 	if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previous, newStatus)); err != nil {
 		return nil, err
 	}
