@@ -43,6 +43,8 @@ type ShipShipmentResult struct {
 	CommitSHA      string   `json:"commit_sha,omitempty"`
 }
 
+const schedulerBaselineClaimKey = "scheduler_baseline_claim"
+
 // ClaimShipment moves a queued shipment to active and marks the included work
 // scope active. Activation is all-or-nothing: if any item fails to load or
 // activate mid-flight, the shipment and every already-activated explicit member
