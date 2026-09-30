@@ -2,6 +2,15 @@
 chunk_strategy: h1-h2-h3
 closure_status: READY_WITH_CONDITIONS
 compaction_status: degraded
+conditions:
+  - id: observation-window-outcome
+    description: "The 24-hour manual observation window outcome is recorded."
+    satisfied: true
+    evidence: "DEGRADED-RECOVERED accepted by operator 2026-09-29; retry .backlogit/reconcile/155-S-post-20260926T203148Z.md exit 0; follow-ups 67F17B6B, D116AF58; no rollback"
+  - id: closure-pr-merged
+    description: "The post-merge closure PR is merged."
+    satisfied: true
+    evidence: "PR #451 merged at c57185c10bbd7c256bf49ecd2069fa0b357badd5"
 description: "Post-merge operational closure for shipment 155-S and feature 174-F."
 doc_type: closure
 docline:
@@ -31,8 +40,11 @@ deliberations remain untouched. This report does not claim or bootstrap
 `154-S`.
 
 **Closure status:** `READY_WITH_CONDITIONS`. The technical close, validation,
-and compaction gates are recorded here; the manual observation window remains
-open, and this post-merge closure PR must still be reviewed and merged.
+and compaction gates are recorded here. The 24-hour manual observation window
+completed with a `DEGRADED-RECOVERED` outcome, explicitly accepted by the
+operator on 2026-09-29. Recovery succeeded through the authorized retry, and
+the remaining follow-ups are tracked as `67F17B6B` and `D116AF58`; no rollback
+trigger fired and no rollback was needed. The closure PR, #451, has merged.
 
 ## Governed shipment closure
 
@@ -192,6 +204,27 @@ alert automation.
 
 * **Observation window:** 24 hours from implementation merge, through
   `2026-09-27T19:21:03Z`.
+* **Observation-window outcome:** `DEGRADED-RECOVERED`. The window ran from
+  `2026-09-26T19:21:03Z` through `2026-09-27T19:21:03Z`. Stash `67F17B6B`
+  records that a harness-lock filename collision with backlogit's persistent
+  lock sidecars blocked the 155-S post-merge closure at `2026-09-26T19:29:20Z`.
+  Stash `D116AF58` records that shipment validation exceeded the five-minute
+  command timeout and was killed at `2026-09-26T19:55:20Z`; the associated
+  safe-close report is
+  `.backlogit/reconcile/155-S-safe-close-20260926T194947Z.md`. Recovery was
+  completed by the authorized retry recorded in
+  `.backlogit/reconcile/155-S-post-20260926T203148Z.md`: exit `0`,
+  `shipment_status: shipped`, and `returned_ids: []`. The shipped-event
+  completeness check (`backlogit doctor --format json
+  --check-shipped-event-completeness`) exited `0`; it reported only the
+  pre-existing 23 orphans and no shipped-event advisory for `155-S` or
+  `182-S`. There were no reverts or corrective production lifecycle commits
+  after `2c8759c3f7583d678ef674b3c6566541b4945375`, and `182-S` later completed
+  the governed lifecycle and archived cleanly. The operator explicitly
+  accepted this window outcome as `DEGRADED-RECOVERED` on `2026-09-29`; this is
+  an acceptance of a recovered degraded outcome, not a claim that the window
+  was healthy. No rollback trigger fired and no rollback was needed. Follow-ups
+  remain tracked as `67F17B6B` and `D116AF58`.
 * **Owner:** backlogit maintainers and the release operator.
 * **Post-merge checks:** during the window, review shipment-operation logs,
   run `backlogit doctor` or shipment reconciliation if any anomaly appears, and
@@ -214,8 +247,11 @@ alert automation.
 * **Approval:** operator-authorized normal close; no admin fallback.
 * **ActionResult:** applied; native exit `0`, `returned_ids: []`, post-close
   reconciliation `CLOSED`.
-* **Releasability:** `READY_WITH_CONDITIONS` — manual observation window is
-  still open; the monitoring checklist and rollback procedure are recorded.
+* **Releasability:** `READY_WITH_CONDITIONS` — the completed manual observation
+  window had a `DEGRADED-RECOVERED` outcome accepted by the operator on
+  `2026-09-29`; the authorized retry succeeded, no rollback trigger fired or
+  rollback was needed, and remaining follow-ups are tracked as `67F17B6B` and
+  `D116AF58`.
 
 ## Deferred follow-ups
 
