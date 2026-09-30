@@ -1,3 +1,11 @@
+---
+chunk_strategy: h1-h2-h3
+doc_type: closure
+schema_version: "1.0"
+source: docs/closure/154-S-residual-risk-prepr.md
+title: "154-S residual-risk record (pre-PR)"
+---
+
 # 154-S residual-risk record (pre-PR)
 
 ## Deferred finding
@@ -35,6 +43,15 @@ all cite `6E37FD63`. No PR review thread exists, so no reply or resolution actio
   positively the same failure as this Go test timeout.
 - `67F17B6B` concerns the harness/backlog lock-sidecar naming collision and was not observed.
 - Neither entry was changed.
+
+## Resolution update (2026-09-30)
+
+Stage commit `f8885c11` amended the `173.003-T` green-regression contract to carry an explicit
+budget:
+`go test -count=1 -race -timeout=30m ./internal/core/... ./internal/cli/... ./internal/mcp/... ./internal/db/...`.
+The amended command ran once and passed (`internal/core` 813.4s), and `173.003-T` completed.
+Stage archived `6E37FD63` as resolved; the residual race-suite duration concern is tracked in
+`5A1C4D3F`. The discovery record above is kept unchanged as history.
 
 This is a pre-PR residual-risk record, not a declaration that the shipment is release-ready.
 When PR readiness or post-merge closure is eventually prepared, carry forward `6E37FD63` and
