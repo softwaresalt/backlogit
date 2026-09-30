@@ -4,6 +4,8 @@ doc_type: design
 created: 2026-09-29
 source: autoharness PR #466 (201-S re-split), backlogit 1.11.0
 target: backlogit workspace (manual carry-over for feature consideration)
+chunk_strategy: h1-h2-h3
+schema_version: "1.0"
 ---
 
 # Feature request: shipment manifest reshuffle and reconstitution

@@ -3,6 +3,7 @@ title: "154-S Runtime Verification"
 source: docs/closure/154-S-173-F-scheduler-baseline-marker-post-merge-closure.md
 doc_type: closure
 schema_version: "1.0"
+chunk_strategy: h1-h2-h3
 ---
 
 # 154-S Runtime Verification

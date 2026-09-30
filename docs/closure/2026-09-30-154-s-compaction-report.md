@@ -1,6 +1,7 @@
 ---
 doc_type: closure
 schema_version: "1.0"
+chunk_strategy: h1-h2-h3
 target: all
 shipment_id: 154-S
 compaction_status: degraded
