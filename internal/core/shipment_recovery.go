@@ -948,6 +948,17 @@ func memberRecoveryCandidates(
 			return candidates, nil
 		}
 		target.Status = models.StatusActive
+		markedTarget := cloneArtifact(preimage)
+		markedTarget.Status = models.StatusActive
+		if markedTarget.CustomFields == nil {
+			markedTarget.CustomFields = make(map[string]any, 1)
+		}
+		markedTarget.CustomFields[schedulerBaselineClaimKey] = journal.ShipmentID
+		return append(
+			candidates,
+			recoveryArtifactCandidate{artifact: target, ignoreUpdatedAt: true},
+			recoveryArtifactCandidate{artifact: markedTarget, ignoreUpdatedAt: true},
+		), nil
 	case journal.RecoveryPolicy == "rollback" && journal.Operation == "block":
 		if preimage.Status != models.StatusActive && preimage.Status != models.StatusReview {
 			return candidates, nil
