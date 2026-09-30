@@ -1,9 +1,10 @@
 ---
-doc_type: compaction-report
+doc_type: closure
 schema_version: "1.0"
 target: all
 shipment_id: 154-S
 compaction_status: degraded
+source: docs/memory/2026-09-30-ship-154s-post-merge-closure.md
 title: "P-020 Context Compaction — 154-S Closure"
 ---
 

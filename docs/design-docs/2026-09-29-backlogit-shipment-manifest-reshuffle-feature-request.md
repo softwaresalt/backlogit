@@ -1,6 +1,6 @@
 ---
 title: "Feature request: shipment manifest reshuffle and reconstitution"
-doc_type: scratch
+doc_type: design
 created: 2026-09-29
 source: autoharness PR #466 (201-S re-split), backlogit 1.11.0
 target: backlogit workspace (manual carry-over for feature consideration)
