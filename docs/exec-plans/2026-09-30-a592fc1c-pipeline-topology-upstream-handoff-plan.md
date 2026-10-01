@@ -269,6 +269,21 @@ code risk.
 
 Delivery is an operator act at execution time and does not block harvest.
 
+## Attempt-4 Revision
+
+* Cycle authorization: the review cycle limit was reached at attempt 3. The
+  operator then said to keep working autonomously until the task is finished.
+  The parent recorded that instruction as authorization for exactly one more
+  in-scope review and fix cycle, raising the cap from 3 to 4 attempts in
+  total. It does not reset the counter, waive the gate, approve an ADVISORY
+  outcome, expand the three-item scope, or start Ship. No fifth review is
+  authorized.
+* Gating change: attempt 4 gates each plan on its own review findings. This
+  plan is no longer failed by findings on the other two plans.
+* Content: unchanged from the attempt-2 revision. The upstream gate stays
+  unfixed until the closure rule in this plan is met, and `F05661B1` stays
+  excluded.
+
 ## Plan Review
 
 * review_attempt: 1
@@ -334,3 +349,31 @@ Delivery is an operator act at execution time and does not block harvest.
   shipment, or stash archive happened.
 
 <!-- plan-review-attempt: 3 -->
+
+## Plan Review
+
+* review_attempt: 4
+* reviewed_at: 2026-10-01T01:38:05Z
+* dispatch_mode: multi-agent-dispatch
+* personas: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor,
+  Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer,
+  Security Lens Reviewer
+* decision: PASS
+* reviewed_revision: attempt-4 revision (U1 to U3, R1 to R7; content
+  unchanged since attempt 2)
+* cycle_authorization: attempt 4 is the single extra cycle the parent
+  recorded from the operator's instruction to keep working; the cap is 4
+  total and no fifth review is authorized.
+* gating: per plan, on this plan's own findings only.
+* P0 findings: none.
+* P1 findings: none.
+* P2 findings: none.
+* P3 findings: none.
+* Confirmations: all seven personas report no findings and confirm the
+  attempt-2 fixes still hold. The plan is documentation only, makes no write
+  outside the repository, keeps delivery an operator act, excludes
+  `F05661B1`, and never marks the upstream gate fixed. The `docs lint --path`
+  command and the U2 literal checks are valid. Learnings confidence: high.
+* Disposition: the gate is satisfied. Proceed to harvest.
+
+<!-- plan-review-attempt: 4 -->

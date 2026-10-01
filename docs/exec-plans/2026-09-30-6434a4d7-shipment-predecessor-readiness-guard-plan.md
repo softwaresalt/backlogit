@@ -115,15 +115,15 @@ Out of scope:
 |---|---|---|---|
 | R1 | A shipment `blocks` predecessor is satisfied only when it is live `shipped`, or `archived` with Markdown `archived_status: shipped`. Abandoned and disposed shipments never count | 6434A4D7 (1); 074-DL L2 | A-U1 to A-U4 |
 | R2 | Provenance is read from Markdown, not the SQLite index. A missing, unparsable, or non-shipment predecessor returns `false` with a reason; only infrastructure failures return an error | 074-DL L2; compound 2026-07-20 | A-U3, A-U4 |
-| R3 | The queue filter, `QueryQueueForWorkspace`, `MoveInQueue`, and both adapters apply R1 to shipment-to-shipment `blocks` edges, including edges with an empty type, and leave every other edge type and artifact pairing unchanged | 6434A4D7 (1) | A-U5 to A-U10 |
-| R4 | `ClaimShipment` refuses with a typed sentinel and the stable token `shipment_predecessor_not_shipped` before any member activation when R1 fails, reading edges from the reloaded Markdown and failing closed on unresolvable predecessors | 6434A4D7 (2); 2026-09-20 M2 | A-U11 to A-U13 |
+| R3 | The queue filter, `QueryQueueForWorkspace`, `MoveInQueue`, and both adapters apply R1 to shipment-to-shipment edges that the unchanged `isExecutionBlockingDependency` treats as blocking and whose type is `blocks`, and leave every other edge type and artifact pairing unchanged. Every non-test caller in `internal/` and `cmd/` reaches the queue through `QueryQueueForWorkspace` | 6434A4D7 (1) | A-U5 to A-U10 |
+| R4 | `ClaimShipment` refuses with a typed sentinel and the stable token `shipment_predecessor_not_shipped` before any member activation when R1 fails, reading edges from the reloaded Markdown, treating an empty Markdown edge type as `blocks` (the default every write and rehydration path applies), and failing closed on unresolvable predecessors | 6434A4D7 (2); 2026-09-20 M2 | A-U11 to A-U13 |
 | R5 | MCP maps the claim refusal to code `shipment_predecessor_not_shipped`, and the CLI claim returns an error carrying the token and the predecessor ID | 6434A4D7 (2) parity | A-U14, A-U15 |
 | R6 | `docs/workflow.md` and the backlogit harness instruction state the shipped-only rule and the refusal code, with the rendered-file drift recorded | Parity; harness hygiene | A-U16, A-U17 |
 | R7 | `queued` to `abandoned` on a shipment is refused on every generic write path (`MoveShipmentStatus`, `UpdateArtifact`, `UpdateArtifactWithGate`, `BulkUpdateStatus`) and opens only in `MoveShipmentStatus` under the governed-disposition marker | 6434A4D7 (3); review attempt 2 | B-U3 to B-U7 |
-| R8 | A pending `dispose` lifecycle journal is provable by recovery: an intent journal rolls back to the preimage, a committed journal keeps the on-disk target, and a leftover journal never blocks later lifecycle operations | 6434A4D7 (3); review attempt 2 | B-U8, B-U9 |
-| R9 | `DisposeQueuedShipment` requires `Confirm`, a reason, an actor (`By`), and an `AuthorizationRef` that resolves to an existing `deliberation` artifact whose `authorizes_disposition` custom field names the target shipment. It records provenance that survives later `update` and archive, activates nothing, mutates no member or feature, refuses non-queued targets and shipments with live dependents, and rolls back on a non-indeterminate failure | 6434A4D7 (3) | B-U10 to B-U13 |
+| R8 | The status and the disposition provenance land in one governed file write, so a crash leaves either the `queued` preimage or the complete `abandoned` target, never a mix. A pending `dispose` intent journal is provable by recovery and rolls back to the preimage. A leftover `committed` dispose journal passes journal validation and is left in place, as committed `claim` journals are today, and no leftover dispose journal blocks a later lifecycle operation | 6434A4D7 (3); review attempts 2 and 3 | B-U6 to B-U9, B-U11 |
+| R9 | `DisposeQueuedShipment` requires `Confirm`, a reason, an actor (`By`), and an `AuthorizationRef` that resolves to a decided `deliberation` (live `done`, or `archived` with Markdown `archived_status: done`) whose `authorizes_disposition` custom field names the target shipment. It records provenance that survives later `update` and archive, activates nothing, mutates no member or feature, refuses non-queued targets and shipments with live dependents, and rolls back on a non-indeterminate failure | 6434A4D7 (3); review attempt 3 | B-U10 to B-U13b |
 | R10 | The disposition is reachable through MCP and CLI with registry, parity-test, and docs parity. The registry exposes no automatic CLI fallback; only a confirmed-only command | 6434A4D7 (3); Constitution VII | B-U14 to B-U21 |
-| R11 | The Stage contract permits disposition only with an operator-authored, target-bound deliberation, in Careful mode with in-session operator approval; the Orchestrator contract states it never disposes; the drift is recorded | Stage role boundary | B-U22, B-U23 |
+| R11 | Only Stage may call the disposition tool. The Stage contract permits it only with an operator-authored, decided, target-bound deliberation that Stage did not create or change in the disposing session, in Careful mode with in-session operator approval. The Orchestrator contract states that neither it nor Ship disposes. The drift is recorded | Stage role boundary; review attempt 3 | B-U22, B-U23 |
 | R12 | New API declarations are pinned by an AST declaration harness before stubs exist | Repo convention | A-U1, A-U2, B-U1, B-U2 |
 | R13 | `156-S` and every other existing shipment stay unchanged by this work, verified in closure | 6434A4D7 scope | Closure |
 | R14 | Before `SA` merges, the live impact of the new readiness rule is inventoried and recorded | Review attempt 2 | Closure |
@@ -210,10 +210,12 @@ live backlog.
 * File: `internal/core/queue_shipment_readiness_test.go` (new).
 * The tests set the unexported resolver field on `QueueFilter` directly.
 * Scenarios:
-  1. Shipment edges: a queued shipment with a `blocks` edge, or an edge with
-     an empty type, onto an abandoned shipment, or onto an archived shipment
-     the resolver reports as not shipped, is excluded. One onto a predecessor
-     the resolver reports as shipped is included.
+  1. Shipment edges: a queued shipment with a `blocks` edge onto an abandoned
+     shipment, or onto an archived shipment the resolver reports as not
+     shipped, is excluded. One onto a predecessor the resolver reports as
+     shipped is included. No scenario uses an empty edge type: the index
+     never stores one, because every write and rehydration path defaults it
+     to `blocks`.
   2. Non-shipment semantics unchanged: a task blocked on an abandoned task is
      released, a shipment with a `blocks` edge onto a non-shipment keeps the
      six-status cascade, and `relates_to` and `parent_of` handling is
@@ -231,9 +233,10 @@ live backlog.
 * Add an unexported resolver field to `QueueFilter`. In
   `filterByResolvedDependencies`, also select `artifact_type` into the status
   map so the filter knows whether the predecessor is a shipment. For an edge
-  where both the item and the predecessor are shipments and the type is
-  `blocks` or empty, release the edge only when the index status is
-  `shipped`, or the resolver returns `true`. With no resolver, an `archived`
+  where both the item and the predecessor are shipments,
+  `isExecutionBlockingDependency` (unchanged) returns `true`, and the
+  trimmed, lowercased type is `blocks`, release the edge only when the index
+  status is `shipped`, or the resolver returns `true`. With no resolver, an `archived`
   shipment predecessor stays blocking. Every other edge keeps
   `IsNoLongerBlockingStatus`. Return resolver errors wrapped.
 * Before the edit, inventory the callers with
@@ -282,9 +285,12 @@ live backlog.
   2. CLI: through the real command tree
      (`cli.NewRootCommand()`, `SetArgs`, `Execute`),
      `queue view --type shipment` shows the same split.
-  3. Source scan, in the CLI test file: a `go/parser` scan of the non-test
-     files in `internal/cli` and `internal/mcp` finds no call to
-     `core.QueryQueue`; only `core.QueryQueueForWorkspace` is used.
+  3. Source scan, in the CLI test file: a `go/parser` scan of every non-test
+     `.go` file under `internal/` and `cmd/` finds exactly one call to
+     `QueryQueue`, inside the body of `QueryQueueForWorkspace` in
+     `internal/core`. Today's callers are `internal/cli/queue_cmd.go`,
+     `internal/mcp/tools.go`, and `MoveInQueue` in `internal/core/queue.go`;
+     A-U8 and A-U10 move all three.
 * RED: `go test ./internal/mcp ./internal/cli -run 'QueueShipmentReadiness' -count=1`
   fails, because the adapters still call `QueryQueue`.
 * Posture: test-first.
@@ -310,7 +316,8 @@ live backlog.
      `shipment_predecessor_not_shipped` and the predecessor ID. The shipment
      stays `queued`, no member changes status, and no claim intent, preimage,
      `scheduler_baseline_claim` marker, or reconcile file is written under
-     `.backlogit/`.
+     `.backlogit/`. A hand-written Markdown edge with an empty type onto the
+     same predecessor refuses the same way.
   2. Refuse, fail closed: the predecessor is archived with
      `archived_status: abandoned`; the edge names an ID that no longer
      resolves; the predecessor file cannot be parsed. The last two refuse
@@ -341,9 +348,12 @@ live backlog.
 
 * File: `internal/core/shipment_lifecycle.go`.
 * Add one helper, `requireShipmentPredecessorsShipped(ctx, ws, current)`.
-  It reads `blocks` edges, including edges with an empty type, from the
-  reloaded Markdown (`current.Dependencies`), not from the index. For each
-  edge: load the predecessor; an unresolvable ID refuses
+  It reads edges from the reloaded Markdown (`current.Dependencies`), not
+  from the index. It normalizes each edge type with `TrimSpace` and
+  `ToLower` and treats an empty type as `blocks`, the same default that
+  `internal/core/dependencies.go` and `internal/db/rehydration.go` apply, so
+  the claim and the queue see the same edge set. It evaluates only `blocks`
+  edges. For each one: load the predecessor; an unresolvable ID refuses
   (`provenance_missing`); a non-shipment is skipped; a shipment calls
   `ShipmentPredecessorShipped`. Call the helper in `ClaimShipment` after the
   reload and `queued` re-check under `lockArtifactMutations`, and before the
@@ -432,8 +442,9 @@ live backlog.
 * Files: `internal/core/shipment_disposition.go` (new),
   `internal/errors/errors.go`.
 * Declare the options struct, a stub that returns `ErrNotImplemented`, and an
-  unexported test seam `disposeAfterProvenanceHook func() error` that is nil
-  in production. Add
+  unexported test seam `disposeAfterGovernedWriteHook func() error` that is
+  nil in production. It runs after the single governed write and before the
+  journal is marked committed. Add
   `ErrShipmentDispositionRefused = errors.New("backlogit: shipment disposition refused")`.
 * Verify: the B-U1 command passes.
 
@@ -483,23 +494,39 @@ live backlog.
 
 * File: `internal/core/shipment_disposition_edge_test.go` (new).
 * Scenarios:
-  1. With the governed-disposition marker in the context,
-     `MoveShipmentStatus` moves a `queued` shipment to `abandoned` and
-     appends one `shipment_status_changed` event.
+  1. With the governed-disposition marker carrying a complete provenance
+     value (`Reason`, `By`, `AuthorizationRef`, `SupersededBy`),
+     `MoveShipmentStatus` moves a `queued` shipment to `abandoned`. The same
+     file write sets `disposition_reason`, `disposition_by`,
+     `disposition_authorization_ref`, and `superseded_by`; one
+     `shipment_status_changed` event is appended. With an empty
+     `SupersededBy`, the `superseded_by` key is absent.
   2. The marker opens no other edge: `queued` to `shipped` and `active` to
      `queued` are still refused with the marker present.
+  3. A marker whose `Reason`, `By`, or `AuthorizationRef` is empty returns
+     `ErrValidation`, and the shipment file is byte-for-byte unchanged.
 * RED: `go test ./internal/core -run '^TestGovernedShipmentDispositionEdge$' -count=1`
   fails.
 * Posture: test-first.
 
-#### B-U7: Governed disposition edge (code)
+#### B-U7: Governed disposition edge with a single provenance write (code)
 
 * File: `internal/core/shipment.go`.
 * Add `governedShipmentDispositionContextKey struct{}` next to
-  `governedShipmentActivationContextKey`. In `MoveShipmentStatus`, allow
-  `queued` to `abandoned` only when that marker is present, before the
-  generic `isValidShipmentTransition` check, and leave
-  `isValidShipmentTransition` unchanged. `MoveShipmentStatus` already sets
+  `governedShipmentActivationContextKey`. Its context value is an unexported
+  `shipmentDispositionProvenance` struct with the fields `Reason`, `By`,
+  `AuthorizationRef`, and `SupersededBy`.
+* In `moveShipmentStatusWithHeadGuard`, allow `queued` to `abandoned` only
+  when that marker is present, before the generic
+  `isValidShipmentTransition` check, and leave `isValidShipmentTransition`
+  unchanged. Validate that `Reason`, `By`, and `AuthorizationRef` are
+  non-empty before any write; otherwise return `ErrValidation`.
+* On the loaded shipment, set the status and the `disposition_*` and
+  `superseded_by` `custom_fields` keys together, so the existing single
+  persist call writes the status and the provenance in one atomic file
+  write. A `queued` shipment that carries disposition keys is then
+  unreachable by construction. The marker is ignored on every other
+  transition. `MoveShipmentStatus` already sets
   `allowGovernedShipmentMutation` for moves that do not involve `blocked`.
 * Verify: the B-U6 and B-U3 commands pass.
 
@@ -507,14 +534,25 @@ live backlog.
 
 * File: `internal/core/shipment_disposition_recovery_test.go` (new).
 * Each scenario writes a `dispose` lifecycle journal by hand to simulate a
-  crash, then runs `recoverPendingShipmentOperations`.
+  crash at a reachable point, then runs `recoverPendingShipmentOperations`.
+  The journal carries the shipment preimage, member preimages that cover the
+  manifest, no related preimages, `RecoveryPolicy: "rollback"`, target
+  `abandoned`, and the disposition reason in the existing `Reason` field.
 * Scenarios:
-  1. Intent journal after the provenance write, and after the status write:
-     recovery restores the shipment preimage (`queued`, no `disposition_*`
-     keys), leaves member files unchanged, keeps links, removes the dispose
-     events by correlation ID, and removes the journal.
-  2. Committed journal: recovery keeps the on-disk `abandoned` state with
-     its provenance and removes the journal.
+  1. Intent journal, crash before and after the single governed write: with
+     the shipment on disk as the `queued` preimage, and with it on disk as
+     `abandoned` with the four disposition keys, recovery restores the
+     preimage (`queued`, no `disposition_*` keys), leaves member file hashes
+     unchanged, keeps links, removes the dispose status event by correlation
+     ID, and removes the journal. A hand-written foreign state that no
+     candidate matches (`queued` with disposition keys) fails with
+     `ErrShipmentConflict` naming the journal.
+  2. Leftover committed journal, the reachable crash between marking the
+     journal committed and removing it: `loadShipmentOperationJournals`
+     accepts it, `recoverPendingShipmentOperations` leaves both the
+     `abandoned` shipment and the journal unchanged (the existing skip of
+     non-intent journals, characterized here and not changed), and a later
+     `ClaimShipment` of another queued shipment succeeds.
   3. A leftover intent journal does not block a later `ClaimShipment` of
      another shipment or an `AddItemToShipment`; recovery resolves it first.
 * RED: `go test ./internal/core -run '^TestDisposeJournalRecovery$' -count=1`
@@ -525,42 +563,64 @@ live backlog.
 
 * Files: `internal/core/shipment_ops.go`, `internal/core/shipment_recovery.go`.
 * `shipment_ops.go`: in `validateShipmentLifecycleJournalRecord`, allow the
-  `dispose` operation with the tuple `rollback`/`abandoned`.
+  `dispose` operation with the tuple `rollback`/`abandoned`. No new journal
+  field is added; the decoder keeps `DisallowUnknownFields`.
 * `shipment_recovery.go`:
-  * In `reconcileShipmentLifecycleIntent`, accept `dispose`. The intent
-    carries member preimages that cover the whole manifest, as the existing
-    check requires.
-  * In `shipmentRecoveryCandidates`, add a `dispose` case: the shipment
-    candidates are the preimage and the preimage with `abandoned` plus the
-    disposition provenance keys.
+  * In `reconcileShipmentLifecycleIntent`, accept `dispose` in the operation
+    allowlist. The existing manifest-coverage check on member preimages
+    applies unchanged.
+  * In `shipmentRecoveryCandidates`, add a `dispose` case. The candidates are
+    the preimage and, only when the on-disk status is `abandoned`, a clone of
+    the preimage with status `abandoned` and the disposition keys copied from
+    the on-disk file. The copy is accepted only when `disposition_reason`,
+    `disposition_by`, and `disposition_authorization_ref` are non-empty
+    strings, `disposition_reason` equals the journal `Reason`, and
+    `superseded_by` is absent or a non-empty string. The existing
+    full-artifact comparison, with `ignoreUpdatedAt`, proves nothing else
+    changed. This mirrors how the `block` case reads `blocked_at` from the
+    on-disk file.
   * In `memberRecoveryCandidates`, add a `dispose` case whose only candidate
     is each member preimage.
-  * Remove the dispose operation events by correlation ID on rollback, as
-    the claim branch does with `removeShipmentOperationEvents`.
+  * In the `rollback` branch, add a `dispose` case that restores only the
+    shipment preimage through `governedCtx`. It writes no member file.
+  * Add `dispose` to the operation condition of the claim-style
+    early-return branch, the `if journal.Operation == "claim"` block after
+    the policy switch. That branch removes the operation events by
+    correlation ID with `removeShipmentOperationEvents` (the
+    `MoveShipmentStatus` event is tagged through the `_shipment_operation`
+    context key), persists the terminal journal, and removes it. Dispose
+    therefore appends no `correlation_id` lifecycle event. The branch body is
+    unchanged for `claim`.
   * An on-disk state that matches no candidate keeps the existing
     `ErrShipmentConflict` behavior and names the journal for operator repair.
+* `internal/core/shipment.go` and its `recoverPendingShipmentOperations`
+  are not changed.
 * Verify: the B-U8 command passes, and
   `go test ./internal/core -run 'Recover' -count=1` passes.
 
 #### B-U10: DisposeQueuedShipment success and input tests (tests)
 
 * File: `internal/core/shipment_disposition_test.go` (new).
-* Scenarios:
-  1. Success: a `queued` shipment with a valid authorization moves to
+* Scenarios, as named subtests:
+  1. `Success`: a `queued` shipment with a valid authorization moves to
      `abandoned`. `custom_fields` records `disposition_reason`,
      `disposition_by`, `disposition_authorization_ref`, and `superseded_by`
      when set. Exactly one status event is written, no member or
      covering-feature file changes (hash before and after), no journal, claim
      marker, or preimage remains, and the members become assignable to
      another shipment.
-  2. Input refusals: `Confirm == false` returns `ErrConfirmationRequired`; an
-     empty `Reason`, `By`, or `AuthorizationRef` returns `ErrValidation`; a
-     `SupersededBy` that names a missing or non-shipment ID returns
+  2. `InputRefusals`: `Confirm == false` returns `ErrConfirmationRequired`;
+     an empty `Reason`, `By`, or `AuthorizationRef` returns `ErrValidation`;
+     a `SupersededBy` that names a missing or non-shipment ID returns
      `ErrValidation`.
-  3. Authorization refusals, each `ErrValidation`: an `AuthorizationRef` that
-     does not resolve; one that resolves to a non-`deliberation` artifact; a
-     `deliberation` whose `authorizes_disposition` custom field is missing or
-     names a different shipment.
+  3. `AuthorizationRefusals`, each `ErrValidation` with the shipment file
+     unchanged: an `AuthorizationRef` that does not resolve; one that
+     resolves to a non-`deliberation` artifact; a `deliberation` whose
+     `authorizes_disposition` custom field is missing or names a different
+     shipment; and the negative decided-status case, a `queued` deliberation
+     whose `authorizes_disposition` correctly names the target. A `done`
+     deliberation and an archived deliberation with
+     `archived_status: done` are accepted in the `Success` fixture variants.
 * RED: `go test ./internal/core -run '^TestDisposeQueuedShipment$' -count=1`
   fails against the stub.
 * Posture: test-first.
@@ -568,18 +628,20 @@ live backlog.
 #### B-U11: DisposeQueuedShipment state and failure tests (tests)
 
 * File: `internal/core/shipment_disposition_state_test.go` (new).
-* Scenarios:
-  1. State refusals with `ErrShipmentDispositionRefused`: the target is
+* Scenarios, as named subtests:
+  1. `StateRefusals`, each `ErrShipmentDispositionRefused`: the target is
      `active`, `blocked`, `shipped`, `abandoned`, `archived`, or not a
      shipment.
-  2. Live dependents: a non-terminal shipment holds a `blocks` edge onto the
+  2. `LiveDependents`: a non-terminal shipment holds a `blocks` edge onto the
      target. The refusal names the dependents. Edges are never carried over
      to `superseded_by`.
-  3. Failure handling through `disposeAfterProvenanceHook`: a
+  3. `FailureHandling`, through `disposeAfterGovernedWriteHook`: a
      non-indeterminate error rolls back to `queued` with no `disposition_*`
-     keys, no journal, and links intact; an `ErrWriteIndeterminate` error is
-     returned unchanged and leaves the journal for recovery to reconcile to
-     the on-disk state.
+     keys, removes the dispose status event, removes the journal, and keeps
+     links intact. An `ErrWriteIndeterminate` error is returned unchanged
+     and leaves the intent journal; the next
+     `recoverPendingShipmentOperations` restores the `queued` preimage and
+     removes the journal. This is the in-process crash proof for R8.
 * RED: `go test ./internal/core -run '^TestDisposeQueuedShipmentState$' -count=1`
   fails against the stub.
 * Posture: test-first.
@@ -599,29 +661,47 @@ live backlog.
 * Posture: test-first (learnings 2026-07-17 and 2026-07-28: provenance must
   survive reload from Markdown).
 
-#### B-U13: Implement DisposeQueuedShipment (code)
+#### B-U13a: DisposeQueuedShipment validation, locks, and refusals (code)
 
 * File: `internal/core/shipment_disposition.go`.
 * Steps, in order:
-  1. Validate inputs and the authorization. The `AuthorizationRef` must
-     resolve with `FindArtifactPath` to an artifact with
-     `artifact_type == deliberation` whose ID matches `deliberationIDPattern`
-     and whose `authorizes_disposition` custom field names the target.
-  2. Take the global shipment lifecycle lock, call
-     `recoverPendingShipmentOperations`, then take the membership and artifact
-     mutation locks in the `ClaimShipment` order.
-  3. Load the shipment once with `findArtifact` (Markdown). Require `queued`
+  1. Validate inputs (`Confirm`, `Reason`, `By`, `AuthorizationRef`,
+     `SupersededBy`).
+  2. Validate the authorization. The `AuthorizationRef` must match
+     `deliberationIDPattern` and resolve with `FindArtifactPath` to an
+     artifact with `artifact_type == deliberation` that is decided: live
+     `done`, or `archived` with Markdown `archived_status: done`. Its
+     `authorizes_disposition` custom field must name the target.
+  3. Take the global shipment lifecycle lock, call
+     `recoverPendingShipmentOperations`, then take the membership and
+     artifact mutation locks in the `ClaimShipment` order.
+  4. Load the shipment once with `findArtifact` (Markdown). Require `queued`
      and no live reverse `blocks` dependents.
-  4. Capture the shipment and member preimages and write the
+  5. Until B-U13b lands, return `ErrNotImplemented` after the refusals pass.
+* Verify:
+  `go test ./internal/core -run '^TestDisposeQueuedShipment$/^(InputRefusals|AuthorizationRefusals)$' -count=1`
+  and
+  `go test ./internal/core -run '^TestDisposeQueuedShipmentState$/^(StateRefusals|LiveDependents)$' -count=1`
+  pass.
+
+#### B-U13b: DisposeQueuedShipment journal, governed write, and rollback (code)
+
+* File: `internal/core/shipment_disposition.go`.
+* Replace the B-U13a placeholder return with these steps, in order:
+  1. Capture the shipment and member preimages and write the
      `shipmentLifecycleJournal` intent (operation `dispose`,
-     `RecoveryPolicy: "rollback"`, target `abandoned`) with a correlation ID.
-  5. Inside the journal window, write the provenance into `custom_fields`
-     and move the status through `MoveShipmentStatus` with the
-     governed-disposition marker, so the event carries the correlation ID.
-  6. Mark the journal committed, then remove it, as `ClaimShipment` does.
-  7. On a non-indeterminate failure, roll back to the preimage and remove the
-     journal. Return `ErrWriteIndeterminate` unchanged, without retry or
-     rollback, so recovery reconciles it.
+     `RecoveryPolicy: "rollback"`, target `abandoned`, `Reason` set) with a
+     correlation ID.
+  2. Inside the journal window, call `MoveShipmentStatus` once with the
+     shipment operation context and the governed-disposition marker carrying
+     the provenance value. That is the single governed write of status and
+     provenance (B-U7). Then run `disposeAfterGovernedWriteHook` when set.
+  3. Mark the journal committed, then remove it, as `ClaimShipment` does.
+  4. On a non-indeterminate failure after the intent is written, restore the
+     shipment preimage under the governed write envelope, remove the dispose
+     status event by correlation ID, and remove the journal. Return
+     `ErrWriteIndeterminate` unchanged, without retry or rollback, so
+     recovery rolls it back.
 * No archive, no cascade, no member write.
 * Verify: the B-U10, B-U11, B-U12, and B-U8 commands pass.
 
@@ -729,15 +809,17 @@ live backlog.
   * Edit the Role Boundary table row "Claim or close shipments on behalf of
     Ship" to add an explicit exception for `backlogit_dispose_shipment` on a
     `queued` shipment.
-  * Add the conditions: the authorizing `deliberation` records the operator's
-    decision with the operator quoted verbatim and names the target in
-    `authorizes_disposition`; Stage never creates that deliberation in the
+  * Add the conditions: only Stage may call `backlogit_dispose_shipment`;
+    the authorizing `deliberation` records the operator's decision with the
+    operator quoted verbatim, is decided (`done`, or archived as `done`), and
+    names the target in `authorizes_disposition`; Stage never creates or
+    changes that deliberation or its `authorizes_disposition` field in the
     same session in which it disposes; Stage enters Careful mode and gets
     in-session operator approval before the call; Stage never disposes on
     its own initiative, and never disposes an `active`, `blocked`, or
     `shipped` shipment.
-* Orchestrator: it never disposes shipments, and the `_Ship` tool list omits
-  the tool on purpose.
+* Orchestrator: neither the Orchestrator nor Ship ever disposes shipments,
+  and the `_Ship` tool list omits the tool on purpose.
 * Verify (docs RED): before the edit,
   `git grep -n "backlogit_dispose_shipment" -- .github/agents/_stage.agent.md .github/agents/_orchestrator.agent.md`
   returns no match; after the edit both match.
@@ -762,8 +844,8 @@ A-U4 -> A-U11 -> A-U12 -> A-U13 -> A-U14 -> A-U15
 A-U10 -> A-U16, A-U15 -> A-U16 -> A-U17
 Feature B (shipment SB)
 B-U1 -> B-U2 -> B-U3 -> B-U4 -> B-U5 -> B-U6 -> B-U7 -> B-U8 -> B-U9
-B-U9 -> B-U10 -> B-U11 -> B-U12 -> B-U13
-B-U13 -> B-U14 -> B-U15 -> B-U16 -> B-U17 -> B-U18 -> B-U19 -> B-U20 -> B-U21
+B-U9 -> B-U10 -> B-U11 -> B-U12 -> B-U13a -> B-U13b
+B-U13b -> B-U14 -> B-U15 -> B-U16 -> B-U17 -> B-U18 -> B-U19 -> B-U20 -> B-U21
 B-U19 -> B-U22 -> B-U23
 ```
 
@@ -773,8 +855,10 @@ Shipment edges:
   `internal/mcp/errors.go`, `internal/core/queue.go`, `docs/workflow.md`, and
   `.autoharness/harness-manifest.yaml`, and B-U12 uses the A-U4 predicate.
 * `SB` `blocks` on the `AF1E5075` shipment. Both edit
-  `.github/agents/_orchestrator.agent.md`, `.github/agents/_stage.agent.md`,
-  and `.autoharness/harness-manifest.yaml`.
+  `.github/agents/_orchestrator.agent.md` and
+  `.autoharness/harness-manifest.yaml`. After the attempt-4 revision the
+  `AF1E5075` plan no longer edits `_stage.agent.md`, so the overlap is those
+  two files.
 * `SA` and the `AF1E5075` shipment both append `drift_reason` text to
   different entries of `.autoharness/harness-manifest.yaml`. Single-active
   shipment execution serializes them, and the edits touch different lines, so
@@ -795,8 +879,16 @@ Shipment edges:
 * **Workspace queue entry point instead of an exported resolver field.**
   `QueryQueue(ctx, db, filter)` has no workspace. `QueryQueueForWorkspace`
   installs the resolver in core, so `MoveInQueue` and both adapters share one
-  path, the unexported field cannot be set by callers, and a source scan pins
-  the adapters to it.
+  path, the unexported field cannot be set by callers, and a source scan of
+  every non-test package pins all callers to it. A caller without the
+  resolver would hide shipments whose `154-S` marker edge points at an
+  archived shipped predecessor.
+* **Edge-type normalization.** The index never stores an empty dependency
+  type, because every write and rehydration path defaults it to `blocks`.
+  The queue therefore keys on the indexed `blocks` type and leaves
+  `isExecutionBlockingDependency` unchanged. The claim guard reads Markdown,
+  where a hand-edited edge may have an empty type, so it applies the same
+  empty-to-`blocks` default. Both views then see the same edge set.
 * **New predicate, not a taxonomy change.** The six-status cascade is shared
   by feature cascade, task release, and gate code. Changing it would widen the
   blast radius far beyond shipments.
@@ -809,17 +901,30 @@ Shipment edges:
   through `UpdateArtifact` and `BulkUpdateStatus`. A governed operation is
   only meaningful once those paths refuse the edge, so B-U5 lands before the
   governed edge.
-* **One governed edge, not a separate write path.** The disposition reuses
-  `MoveShipmentStatus`, the lifecycle journal, recovery, events, hooks, and
-  the write envelope. Only the context marker opens `queued` to `abandoned`.
-  This mirrors the governed-activation marker that `ClaimShipment` already
-  uses.
+* **One governed edge and one governed write, not a separate write path.**
+  The disposition reuses `MoveShipmentStatus`, the lifecycle journal,
+  recovery, events, hooks, and the write envelope. Only the context marker
+  opens `queued` to `abandoned`, and the marker carries the provenance so the
+  status and the `disposition_*` keys land in the same file write. A crash
+  can then leave only the preimage or the full target, and recovery derives
+  the target candidate from the on-disk file plus the existing journal
+  `Reason`, with no new journal field. This mirrors the governed-activation
+  marker that `ClaimShipment` already uses.
+* **Recovery coverage stays honest.** `recoverPendingShipmentOperations`
+  skips journals that are not intents, so a leftover committed dispose
+  journal is inert, as committed `claim` journals are today. B-U8 pins that
+  behavior instead of asserting a cleanup that the code does not perform, and
+  `internal/core/shipment.go` recovery is not changed for a hypothetical
+  test.
 * **Provenance in `custom_fields`.** No model change is needed, and B-U12
   proves the keys survive `update` and archive.
 * **Authorization reference.** backlogit has no `decision` artifact type, so
   the reference is a `deliberation`. Core enforces a structural, target-bound
-  reference: the deliberation exists and names the target in
-  `authorizes_disposition`. Core cannot prove the operator wrote it. Operator
+  reference: the deliberation exists, is decided, and names the target in
+  `authorizes_disposition`. The deliberation workflow has no `decided`
+  status; a deliberation is decided when it is live `done`, or archived with
+  Markdown `archived_status: done`, which matches `074-DL` today. A `queued`
+  deliberation is refused. Core cannot prove the operator wrote it. Operator
   origin is a governance rule in the Stage contract (B-U22), and the
   deliberation is the audit trail.
 * **No read-tool exposure of the predecessor verdict.** The queue omission
@@ -870,7 +975,8 @@ Shipment edges:
   and the item log. Pass.
 * X Context Efficiency: the plan cites exact functions and files. Pass.
 * XI Merge Commit History: unaffected. Pass.
-* Task Granularity: 40 units, each within the 2-hour rule. Pass.
+* Task Granularity: 41 units, each within the 2-hour rule. B-U13 is split
+  into B-U13a and B-U13b; the other unit IDs are unchanged. Pass.
 
 Constitution Check: pass
 
@@ -902,11 +1008,14 @@ Requires plan hardening: yes
   `149-S`-shaped shipment in a throwaway fixture under the git-ignored
   `logs/6434a4d7-fixture/` directory fails with a message containing
   `shipment_predecessor_not_shipped`.
-* Feature B runtime check after merge: `backlogit shipment dispose` on a
-  throwaway fixture shipment in `logs/6434a4d7-fixture/` returns `abandoned`
-  with provenance. The approval basis is that the fixture is throwaway and no
-  live shipment changes; removing the fixture directory needs operator
-  approval. `backlogit doctor` on the live workspace reports no new findings.
+* Feature B runtime check after merge: Ship enters Careful mode and gets
+  explicit in-session operator approval before it runs
+  `backlogit shipment dispose` on a throwaway fixture shipment in
+  `logs/6434a4d7-fixture/`, with the working directory set to that fixture.
+  The command returns `abandoned` with provenance. The fixture is throwaway
+  and no live shipment changes; removing the fixture directory afterwards
+  needs explicit operator approval in Careful mode. `backlogit doctor` on the
+  live workspace reports no new findings.
 * Closure (R13): each closure record states the binary version in use,
   states that the guard covers (P) only, confirms that `156-S` and every other
   existing shipment are unchanged, and states that the manual (P)+(C) policy
@@ -957,7 +1066,10 @@ reachable by Stage.
   same edge is protected on every generic path.
 * Edges other than shipment-to-shipment `blocks` keep the six-status cascade.
 * Existing recovery for `claim`, `block`, `unblock`, and `normalize` journals
-  is unchanged.
+  is unchanged. `dispose` only joins the operation condition of the
+  claim-style early-return branch.
+* The disposition status and its provenance land in one file write; no
+  state with `queued` plus disposition keys is ever written.
 * `156-S` and every other existing shipment are unchanged.
 
 ### Risky Actions
@@ -967,7 +1079,7 @@ reachable by Stage.
 | PA1: insert `requireShipmentPredecessorsShipped` into `ClaimShipment` (A-U13) | High: every claim caller | Plan-review PASS; Ship review and CI | Revert the A-U13 commit; the helper has one call site |
 | PA2: shipment-edge readiness in the queue (A-U6, A-U8, A-U10) | Medium: changes which shipments the queue lists | Plan-review PASS; live impact inventory | Revert A-U6, A-U8, and A-U10 |
 | PA3: protect `queued` to `abandoned` on generic paths (B-U5) | Medium: refuses a write that succeeds today | Plan-review PASS; B-U4 audit | Revert the B-U5 commit |
-| PA4: governed edge, dispose recovery, and `DisposeQueuedShipment` (B-U7, B-U9, B-U13, B-U15, B-U17) | Destructive: terminal state change on shipments | Plan-review PASS; per call: core-enforced confirmation and a target-bound deliberation | Code: revert the commits. Data: not reversible through the API; a mistaken disposition is corrected by a replacement shipment. Ship verification never runs it against the live backlog |
+| PA4: governed edge, dispose recovery, and `DisposeQueuedShipment` (B-U7, B-U9, B-U13a, B-U13b, B-U15, B-U17) | Destructive: terminal state change on shipments | Plan-review PASS. Per call: core-enforced confirmation and a decided, target-bound deliberation; only Stage may invoke the tool, in Careful mode with in-session operator approval; the Orchestrator and Ship never invoke it | Code: revert the commits. Data: not reversible through the API; a mistaken disposition is corrected by a replacement shipment. Ship verification never runs it against the live backlog |
 | PA5: registry entry and parity test (B-U18, B-U19) | Low | Plan-review PASS | Revert both; the parity test then fails, which is the signal |
 | PA6: agent role-contract and instruction text (A-U16, B-U22) | Medium: governs Stage and Orchestrator behavior | Plan-review PASS; Ship review | Revert the commits |
 
@@ -984,8 +1096,13 @@ reachable by Stage.
   * If B-U6 shows the marker cannot be honored without changing
     `isValidShipmentTransition`, stop and return to Stage.
   * If B-U8 shows dispose recovery needs changes to the existing `claim`,
-    `block`, `unblock`, or `normalize` recovery branches, stop and return to
-    Stage.
+    `block`, `unblock`, or `normalize` recovery behavior, or to
+    `recoverPendingShipmentOperations` in `internal/core/shipment.go`, stop
+    and return to Stage. Adding `dispose` to the operation condition of the
+    claim-style early-return branch is in scope; its body stays unchanged.
+  * If B-U6 shows the status and the provenance cannot land in one persist
+    call inside `moveShipmentStatusWithHeadGuard`, stop and return to Stage.
+    Do not fall back to two writes.
   * If deliberation artifacts cannot carry the `authorizes_disposition`
     custom field through the existing create and update operations, stop and
     return to Stage.
@@ -1014,6 +1131,36 @@ reachable by Stage.
 ### Unresolved Operator Decisions
 
 None block harvest. The `156-S` disposition stays a later decision.
+
+## Attempt-4 Revision
+
+* Cycle authorization: the review cycle limit was reached at attempt 3. The
+  operator then said to keep working autonomously until the task is finished.
+  The parent recorded that instruction as authorization for exactly one more
+  in-scope review and fix cycle, raising the cap from 3 to 4 attempts in
+  total. It does not reset the counter, waive the gate, approve an ADVISORY
+  outcome, expand the three-item scope, or start Ship. No fifth review is
+  authorized.
+* P1-1 (Option A): B-U7 writes the status and the disposition provenance in
+  one governed persist. B-U9 derives the target candidate from the on-disk
+  file and the existing journal `Reason`, so no journal field is added.
+  B-U13b makes one governed call. The hook is renamed
+  `disposeAfterGovernedWriteHook`.
+* P1-2: B-U8 scenario 2 now characterizes the reachable leftover committed
+  journal, which recovery leaves in place. B-U11 scenario 3 adds the
+  in-process indeterminate-crash proof. `internal/core/shipment.go` recovery
+  is not changed.
+* P2 fixes: the claim-style early-return branch is named (B-U9); the edge
+  type is normalized (R3, R4, A-U5, A-U6, A-U11, A-U13, Decisions); the
+  source scan covers every non-test package (A-U9); B-U13 is split into
+  B-U13a and B-U13b with named subtests; the authorizing deliberation must be
+  decided, with a negative case (R9, B-U10, B-U13a); B-U22 forbids Stage from
+  creating or changing the authorization in the disposing session and limits
+  the tool to Stage; PA4 and the Feature B fixture name Careful mode and
+  operator approval.
+* The `SB` edge onto the `AF1E5075` shipment now rests on the
+  `_orchestrator.agent.md` and manifest overlap, because the `AF1E5075`
+  scope-edge rule was deferred to stash `B88A3716`.
 
 ## Plan Review
 
@@ -1124,3 +1271,87 @@ None block harvest. The `156-S` disposition stays a later decision.
   shipment, or stash archive happened.
 
 <!-- plan-review-attempt: 3 -->
+
+## Plan Review
+
+* review_attempt: 4
+* reviewed_at: 2026-10-01T01:38:05Z
+* dispatch_mode: multi-agent-dispatch
+* personas: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor,
+  Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer,
+  Security Lens Reviewer
+* decision: ADVISORY
+* operator_authorization: not recorded. The cycle-4 extension explicitly
+  does not approve an ADVISORY outcome, so the gate is not satisfied.
+* reviewed_revision: attempt-4 revision (Feature A A-U1 to A-U17, Feature B
+  B-U1 to B-U23 with B-U13a and B-U13b; 41 units)
+* cycle_authorization: attempt 4 is the single extra cycle the parent
+  recorded from the operator's instruction to keep working; the cap is 4
+  total and no fifth review is authorized.
+* gating: per plan, on this plan's own findings only.
+* Attempt-3 fixes: verified by all seven personas, including against the
+  code. B-U7 persists status and provenance in one governed write; B-U9
+  builds dispose candidates from the on-disk file and the journal `Reason`
+  without new journal fields and uses the claim-style early-return branch;
+  B-U8 scenario 2 characterizes a reachable committed journal; B-U11
+  scenario 3 proves in-process `ErrWriteIndeterminate` recovery; empty edge
+  types are normalized; the A-U9 source scan covers all non-test packages;
+  B-U13 is split; the decided-deliberation rule has its negative case; and
+  B-U22, PA4, and the Feature B fixture name Careful mode, approval, and
+  Stage-only use.
+* P0 findings: none.
+* P1 findings: none.
+* P2 findings (new):
+  * Feature B runtime check vs B-U22, PA4, and R11 (Agent-Native Parity,
+    Security Lens): the runtime check has Ship run
+    `backlogit shipment dispose` on a fixture, while B-U22 and PA4 say only
+    Stage disposes. The ban also names only the MCP tool, so the confirmed
+    CLI command stays open to Ship, and it is written only in
+    `_orchestrator.agent.md`, which a directly started Ship session never
+    reads. Proposed fix: make the fixture disposition an operator-run step,
+    or add a narrow fixture-only CLI carve-out with a storage-root check;
+    cover both the MCP tool and the CLI command in B-U22; add a Ship Role
+    Boundary line.
+  * Feature A runtime check (Constitution): the throwaway-fixture claim
+    names no working directory and allows any installed binary. If it runs
+    from the repo root with a pre-guard binary, it could claim the live
+    `149-S`. Removing the fixture also lacks an approval rule. Proposed fix:
+    set the working directory to the fixture, check the storage root, use
+    `go run ./cmd/backlogit`, and require approval in Careful mode to remove
+    the fixture.
+  * B-U8 scenario 1 and B-U9 (Go): the foreign-state case asserts an
+    `ErrShipmentConflict` that names the journal. The existing CAS error at
+    `shipment_recovery.go` around line 615 and the wrap in
+    `recoverPendingShipmentOperations` do not include the journal path.
+    Proposed fix: assert `errors.Is(err, ErrShipmentConflict)` plus the
+    shipment ID, or wrap the error with the journal path inside
+    `reconcileShipmentLifecycleIntent`.
+  * B-U13b step 4, B-U11 `FailureHandling`, and R8 (Learnings,
+    `2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`):
+    leaving the intent journal after `ErrWriteIndeterminate`, so recovery
+    restores `queued`, conflicts with the commit-then-surface learning, and
+    the plan does not cite it. Proposed fix: either cite the learning and
+    record dispose as the same exception `ClaimShipment` uses, or switch to
+    commit-then-surface and adjust B-U8 and B-U11.
+* P3 findings: name `lockedCtx` in B-U13b step 2; keep the intent journal
+  and return `MutationPartialError` when a restore fails during rollback;
+  move `LiveDependents` into B-U13b's Verify; re-read the authorization
+  after the locks are taken; make the B-U22 verify check each condition;
+  check `--reason`, `--by`, and `--authorization-ref` on the live command in
+  B-U18; add a `write_indeterminate` case in B-U16; ban `t.Parallel()` in
+  tests that change the hook seam; add an `A-U10 -> A-U11` edge or narrow
+  A-U13's Verify; count every `QueryQueue` identifier in the A-U9 scan; add
+  `golangci-lint run` and `gofmt -l .` to the pre-merge gates.
+* Disposition: ADVISORY without operator authorization does not satisfy the
+  gate, and no fifth review is authorized. The findings are recorded but
+  the plan is not edited after the review, so the reviewed revision stays
+  the gated one. No harvest, shipment, or stash archive happens for
+  `6434A4D7`. Next step for the operator: either authorize this ADVISORY
+  outcome (record an explicit operator approval of it, after which Stage may
+  harvest with the P2 fixes carried as task acceptance criteria), or
+  authorize a further fix-and-review cycle.
+* Escalation: the authorized cycle cap of 4 is reached. engram is degraded,
+  so no analysis hand-off is possible: ESCALATION_DEGRADED. Halted for
+  operator decision.
+
+<!-- plan-review-attempt: 4 -->

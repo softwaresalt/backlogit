@@ -80,12 +80,9 @@ In scope:
   direct-assembly fallback path, for hold-label refusal, the
   approval-provenance label and its waiver-condition source, the go-signal,
   and the condition (b) (P)+(C) check.
-* A Stage Step 5.5 rule, mirrored in the Ship fallback path, that keeps new
-  queued shipments inside the L1 trigger scope unless a valid attestation is
-  proven.
 * Contract tests in `tests/integration/` that pin the text, the ordering, and
-  the state tables for all three agents.
-* A drift record in `.autoharness/harness-manifest.yaml` for the three
+  the state tables for the Orchestrator and Ship.
+* A drift record in `.autoharness/harness-manifest.yaml` for the two
   rendered agent files, marking the `154-S` clauses as a workspace-local
   overlay excluded from upstream template sync.
 
@@ -99,7 +96,14 @@ Out of scope:
   Decisions.
 * The autoharness `pipeline-topology` gate (`A592FC1C`, upstream) and its
   closure awareness (`F05661B1`).
-* Editing the agent contracts in this Stage session. Ship performs U5 to U8.
+* A standing Stage Step 5.5 rule, mirrored in the Ship fallback assembly
+  path, that gives every new queued shipment a `blocks` edge onto `154-S`.
+  It goes beyond the authorized L1 scope, so it was captured under P-021 C2
+  as stash `B88A3716` (`DEFERRED SCOPE EXPANSION`, `requires_deliberation:
+  true`) and removed from this plan. `.github/agents/_stage.agent.md` is not
+  edited.
+* Editing the agent contracts in this Stage session. Ship performs U5, U6,
+  and U8.
 
 ## Requirements Trace
 
@@ -113,9 +117,12 @@ Out of scope:
 | R6 | Require (C): a valid, unrevoked operator attestation recorded after the `154-S` ship event, per the Attestation Rule below. A manifest-declared capability is not consumption proof | 074-DL L1 (3), OQ-2 | U2, U5, U6 |
 | R7 | Halt with the exact token `CONDITION_B_UNSATISFIED` when (P) or (C) fails, and never fail open. Treat a core `shipment_predecessor_not_shipped` claim refusal as a terminal halt. Neither halt is retried; the Ship step 4a `CLAIM_NOT_OBSERVED` retry never applies to them | 074-DL L1 (4); 6434A4D7 | U2, U3, U5, U6 |
 | R8 | The checks run before the first `TOPOLOGY_GATE: pre_claim` in Orchestrator Step 2, and in Ship before the branch creation gate and again immediately before every `backlogit_claim_shipment` call, including the fallback path | Time-of-check hardening | U3, U5, U6 |
-| R9 | Stage gives every new queued shipment a `blocks` edge onto `154-S` unless a valid attestation is proven under the Attestation Rule. The Ship fallback path applies the same rule when it assembles a shipment | L1 trigger scope | U3, U4, U6, U7 |
 | R10 | The rendered-file drift is recorded, and the `154-S` clauses are marked as a workspace-local overlay excluded from upstream template sync | Harness hygiene | U8 |
 | R11 | The contract tests pin both the historical label state (`154-S` held by `do-not-claim-until-convergence`) and the current state (approval provenance only, waiver conditions recorded) | AF1E5075 | U1 |
+
+R9, the Stage scope-edge rule, was withdrawn in the attempt-4 revision and
+captured as stash `B88A3716`. The remaining IDs keep their numbers so earlier
+review records still resolve.
 
 ### Label State Table (R1 to R3, R11)
 
@@ -187,15 +194,23 @@ Every unit follows the 2-hour rule and stays in one skill domain. Test units
 come first. The contract tests read each agent file with `testRepoRoot`,
 slice the named section, normalize whitespace, and assert literal tokens,
 following `tests/integration/shipment_155_harness_contract_test.go`. Each test
-function runs one subtest per agent, named `Orchestrator`, `Ship`, or `Stage`,
-so later units can select subtests with `-run`.
+function runs one subtest per agent, named `Orchestrator` or `Ship`, so later
+units can select subtests with `-run`.
+
+Unit IDs `U4` and `U7` (the Stage scope-edge tests and rule) were withdrawn in
+the attempt-4 revision with R9 and captured as stash `B88A3716`. The other
+unit IDs keep their numbers.
+
+Execution safety mode: Ship executes U5, U6, and U8 in Careful mode (the
+`safety-modes` skill), because they change claim-routing agent contracts.
+Each contract edit is reviewed before commit, and no edit touches text
+outside the named step.
 
 Section slices:
 
 * Orchestrator: from `### Step 2: Route to Ship` to `### Step 3: Iteration Decision`.
 * Ship: from `### Step 0.5: Shipment Intake` to `### Validation Boundary`.
 * Ship fallback sub-slice: from `**Fallback path` to `### Validation Boundary`.
-* Stage: from `### Step 5.5: Shipment Assembly` to `### Step 5.6`.
 
 ### U1: Hold-label contract tests (tests)
 
@@ -253,24 +268,11 @@ Section slices:
      `backlogit_claim_shipment` in item 4; and the phrase
      `never retried` with `CONDITION_B_UNSATISFIED` occurs before
      `CLAIM_NOT_OBSERVED`.
-  3. `Ship` subtest, fallback sub-slice: the phrase `blocks edge onto 154-S`
-     occurs before `backlogit_claim_shipment`, and the phrase
-     `repeat the hold-label and condition (b) checks` occurs before the same
-     claim call.
+  3. `Ship` subtest, fallback sub-slice: the phrase
+     `repeat the hold-label and condition (b) checks` occurs before
+     `backlogit_claim_shipment`, and the phrase `never retried` occurs before
+     the same claim call.
 * RED: `go test ./tests/integration -run '^TestAF1E5075PreclaimOrder$' -count=1`
-  fails.
-* Posture: test-first.
-
-### U4: Stage scope-edge contract tests (tests)
-
-* File: `tests/integration/af1e5075_stage_scope_edge_contract_test.go` (new).
-* Scenarios, in the `Stage` subtest:
-  1. Default: the phrase `blocks edge onto 154-S`, the phrase
-     `unless a valid CONDITION_B_ATTESTED attestation is proven`, and the
-     path `.backlogit/logs/154-S.jsonl`.
-  2. Revocation: the phrase
-     `a later CONDITION_B_REVOKED restores the rule`.
-* RED: `go test ./tests/integration -run '^TestAF1E5075StageScopeEdge$' -count=1`
   fails.
 * Posture: test-first.
 
@@ -297,45 +299,36 @@ Section slices:
   `CONDITION_B_UNSATISFIED` halt or a `shipment_predecessor_not_shipped`
   refusal is a terminal halt that is never retried, so the step 4a
   `CLAIM_NOT_OBSERVED` retry does not apply.
-* Fallback path: in item 3b, after `backlogit_create_shipment`, add the
-  `blocks edge onto 154-S` rule from U7. Rewrite item 4 to name
-  `backlogit_claim_shipment` explicitly and to repeat the checks before it.
+* Fallback path: rewrite item 4 to name `backlogit_claim_shipment`
+  explicitly, to repeat the hold-label and condition (b) checks before it, and
+  to state that a `CONDITION_B_UNSATISFIED` halt is never retried. Do not add
+  any edge-creation rule to item 3b; that rule is deferred to `B88A3716`.
 * Format publication: state that Ship shows the operator the attestation
   leading-line format before relying on a proceed row.
 * Verify: `go test ./tests/integration -run '^TestAF1E5075(ClaimLabelContract|ConditionBContract|PreclaimOrder)$/^Ship$' -count=1`
   passes.
 
-### U7: Stage scope-edge rule (harness)
-
-* File: `.github/agents/_stage.agent.md`.
-* In Step 5.5, add: give every new queued shipment a `blocks` edge onto
-  `154-S`, recorded through `backlogit_add_dependency`, unless a valid
-  `CONDITION_B_ATTESTED` attestation is proven under the Attestation Rule
-  (`.backlogit/logs/154-S.jsonl`). When proof is uncertain, add the edge. A
-  later `CONDITION_B_REVOKED` restores the rule.
-* Verify: `go test ./tests/integration -run '^TestAF1E5075' -count=1` passes.
-
 ### U8: Record harness drift and the workspace-local overlay (config)
 
 * File: `.autoharness/harness-manifest.yaml`.
-* Append to the `drift_reason` of the `_orchestrator.agent.md`,
-  `_ship.agent.md`, and `_stage.agent.md` entries: "AF1E5075 hold-label
-  refusal and condition (b) pre-claim contract; the 154-S clauses are a
-  workspace-local overlay excluded from upstream template sync; generic
-  hold-label text is an upstream template sync candidate". Leave
-  `drift_allowed: true`.
+* Append to the `drift_reason` of the `_orchestrator.agent.md` and
+  `_ship.agent.md` entries: "AF1E5075 hold-label refusal and condition (b)
+  pre-claim contract; the 154-S clauses are a workspace-local overlay excluded
+  from upstream template sync; generic hold-label text is an upstream template
+  sync candidate". Leave `drift_allowed: true`. Do not change the
+  `_stage.agent.md` entry.
 * Verify: `git grep -n "AF1E5075 hold-label" -- .autoharness/harness-manifest.yaml`
-  matches three times. Do not run `autoharness verify-workspace` blindly; if
+  matches twice, and `go test ./tests/integration -run '^TestAF1E5075' -count=1`
+  passes. Do not run `autoharness verify-workspace` blindly; if
   Ship runs it, the acceptance is `strict_schema_blockers=[]` and no warning
   beyond the two known advisory portability warnings.
 
 ## Dependency Graph
 
 ```text
-U1 --> U5 --> U6 --> U7 --> U8
+U1 --> U5 --> U6 --> U8
 U2 --> U5
 U3 --> U5
-U4 --> U7
 ```
 
 Shipment edges:
@@ -346,7 +339,7 @@ Shipment edges:
   exists. This shipment is therefore itself held by the manual 074-DL policy
   and lands after the attestation.
 * The `6434A4D7` disposition shipment `blocks` on this shipment, because both
-  edit `_orchestrator.agent.md`, `_stage.agent.md`, and the manifest.
+  edit `_orchestrator.agent.md` and `.autoharness/harness-manifest.yaml`.
 * This shipment has no edge onto the `6434A4D7` readiness shipment. L1 does
   its own (P) read.
 
@@ -368,10 +361,11 @@ Shipment edges:
   `154-S`, so the live post-merge state can only show the "proceed" row. The
   three halt rows are verified in a disposable, git-ignored fixture. No
   operator exemption is requested.
-* **Closure trigger plus a fail-safe Stage scope rule.** 074-DL scopes L1 to
-  the `blocks` closure of `154-S`. Applying the check to every claim would
-  exceed that decision. The Stage rule (R9) closes the gap for new shipments
-  and defaults to adding the edge.
+* **Closure trigger only.** 074-DL scopes L1 to the `blocks` closure of
+  `154-S`. Applying the check to every claim would exceed that decision. A
+  standing Stage rule that adds the edge to every new shipment would also
+  exceed it, so that rule is deferred to stash `B88A3716` for its own
+  deliberation (P-021 C2, C6).
 * **Workspace-local overlay.** The `154-S` clauses only make sense in this
   backlog. The drift record keeps them out of upstream template sync.
 * **The mirror stays out of scope.** The hold labels and `154-S` are
@@ -392,25 +386,26 @@ Shipment edges:
 | The check halts every shipment behind `154-S` until the attestation exists | High, intended | This matches the 074-DL manual policy. The halt is the designed outcome |
 | A reader assumes the `A592FC1C` fix retires the attestation | Medium | The contract states the fix does not transfer (C) |
 | Direct CLI or MCP claims bypass L1 | Certain, by design | L2 covers (P) in code once shipped and installed; (C) stays an operator attestation |
+| A new shipment is assembled without a `blocks` edge onto `154-S` and falls outside the L1 trigger | Medium | Accepted under the 074-DL closure scope. The standing edge rule is captured as `B88A3716` for deliberation; the manual 074-DL policy still applies |
 
 ## Constitution Check
 
 * I Safety-First Go: no production Go code; contract tests only. Pass.
-* II Test-First: U1 to U4 are RED before U5 to U7. Pass.
+* II Test-First: U1 to U3 are RED before U5 and U6. Pass.
 * III Workspace Isolation and IV CLI Workspace Containment: tests read files
   under the repo root only. The runtime fixtures live in the git-ignored
   `logs/` directory inside the repo. Pass.
 * V Observability: halts use exact tokens. Pass.
 * VI Single Responsibility: one check per sub-bullet. Pass.
 * VII Destructive Command Approval: the only removal is the throwaway fixture
-  directory, which needs operator approval. Pass.
-* VIII Safety Modes: the checks run in every mode, with no DARK_MODE
-  exemption. Pass.
+  directory, which needs explicit operator approval in Careful mode. Pass.
+* VIII Safety Modes: Ship executes the contract edits in Careful mode. The
+  checks run in every mode, with no DARK_MODE exemption. Pass.
 * IX Git-Friendly Persistence and X Context Efficiency: text edits only. The
   git-ignored log gap fails closed, and the closure copies the attestation
   into tracked history. Pass.
 * XI Merge Commit History: unaffected. Pass.
-* Task Granularity: eight units within the 2-hour rule, each test unit at
+* Task Granularity: six units within the 2-hour rule, each test unit at
   three scenarios or fewer. Pass.
 
 Constitution Check: pass
@@ -430,17 +425,28 @@ Requires plan hardening: yes
   violations.
 * Halt rows, in a disposable fixture, never the live backlog:
   * Location: `logs/af1e5075-fixture/<row>/`, which `.gitignore` already
-    excludes. Ship seeds each row with the backlogit CLI run from inside that
-    directory: `154-S` as queued, as archived abandoned, and as archived
-    shipped without an attestation, plus one dependent shipment with a
-    `blocks` edge onto `154-S`.
+    excludes. There is one directory per row: `queued`, `abandoned`, and
+    `shipped-unattested`. Ship seeds each row with the backlogit CLI run from
+    inside that directory: `154-S` as queued, as archived abandoned, or as
+    archived shipped without an attestation, plus one dependent shipment with
+    a `blocks` edge onto `154-S`.
+  * Working directory: each row's Ship session runs with its working
+    directory set to `logs/af1e5075-fixture/<row>/`. Every backlogit call and
+    every Markdown or item-log read then resolves inside the fixture, never
+    against the live `.backlogit/`. The agent contract is the merged
+    repository `.github/agents/_ship.agent.md`.
   * Pass definition: a Ship session invoked as `ship <dependent-shipment-id>`
     against the fixture, with an explicit instruction to stop before any
     claim, halts with `CONDITION_B_UNSATISFIED` before the branch creation
-    gate and before any `backlogit_claim_shipment` call. Ship records the
-    transcript excerpt for each row in the closure artifact.
+    gate and before any `backlogit_claim_shipment` call. Each transcript must
+    show that row's reason: `queued` shows that `154-S` is not shipped,
+    `abandoned` shows `archived_status` other than `shipped`, and
+    `shipped-unattested` shows that no valid `CONDITION_B_ATTESTED` exists. A
+    halt with the wrong reason fails the row. Ship records the transcript
+    excerpt for each row in the closure artifact.
   * Approval basis: the fixture is throwaway, so no live state changes.
-    Removing the fixture directory afterwards needs operator approval.
+    Removing the fixture directory afterwards needs explicit operator
+    approval in Careful mode.
 * Proceed row, in the live workspace after merge: Ship first shows the
   operator the attestation format and checks the existing attestation against
   the rule. When it is valid, an Orchestrator dry routing pass for a shipment
@@ -487,11 +493,13 @@ every shipment and adds a fail-closed check that is expected to halt routing.
 
 | ProposedAction | ActionRisk | Approval | Rollback |
 |---|---|---|---|
-| PA1: Orchestrator Step 2 hard gates (U5) | High: halts routing for every shipment behind `154-S` until the attestation exists | Plan-review PASS; Ship review | Revert the U5 commit; the manual 074-DL policy resumes |
-| PA2: Ship Step 0.5 hard gates (U6) | High: same scope for direct Ship sessions and the fallback path | Plan-review PASS; Ship review | Revert the U6 commit |
-| PA3: Stage scope-edge rule (U7) | Medium: adds an edge to new shipments | Plan-review PASS | Revert the U7 commit |
-| PA4: manifest drift record (U8) | Low | Plan-review PASS | Revert the entry |
-| PA5: throwaway fixture under `logs/` | Low: git-ignored, no live state | Plan-review PASS; operator approval to remove | Remove the fixture directory |
+| PA1: Orchestrator Step 2 hard gates (U5) | High: halts routing for every shipment behind `154-S` until the attestation exists | Plan-review PASS; Ship review in Careful mode | Revert the U5 commit; the manual 074-DL policy resumes |
+| PA2: Ship Step 0.5 hard gates (U6) | High: same scope for direct Ship sessions and the fallback path | Plan-review PASS; Ship review in Careful mode | Revert the U6 commit |
+| PA4: manifest drift record (U8) | Low | Plan-review PASS; Careful mode | Revert the entry |
+| PA5: throwaway fixture under `logs/` | Low: git-ignored, no live state | Plan-review PASS; explicit operator approval in Careful mode to remove | Remove the fixture directory |
+
+PA3 (the Stage scope-edge rule) was withdrawn with R9 and captured as stash
+`B88A3716`.
 
 ### Added Verification
 
@@ -525,6 +533,24 @@ decided mechanism without changing it.
 
 None block harvest. Writing the `154-S` attestation is an operator act outside
 this plan.
+
+## Attempt-4 Revision
+
+* Cycle authorization: the review cycle limit was reached at attempt 3. The
+  operator then said to keep working autonomously until the task is finished.
+  The parent recorded that instruction as authorization for exactly one more
+  in-scope review and fix cycle, raising the cap from 3 to 4 attempts in
+  total. It does not reset the counter, waive the gate, approve an ADVISORY
+  outcome, expand the three-item scope, or start Ship. No fifth review is
+  authorized.
+* Scope: the Stage standing scope-edge rule (R9, U4, U7, PA3, the Ship
+  fallback edge, and the matching U3 assertion) was captured first as
+  P-021 C2 stash `B88A3716` and then removed. The L1 authorized scope (the
+  `154-S` transitive `blocks` closure, (P)+(C), and the hard refusal labels)
+  is unchanged.
+* Constitution: the halt rows now run with Ship's working directory set to
+  the fixture row, and each transcript must show the row-specific reason. Ship
+  executes the contract edits in Careful mode.
 
 ## Plan Review
 
@@ -605,3 +631,58 @@ this plan.
   shipment, or stash archive happened.
 
 <!-- plan-review-attempt: 3 -->
+
+## Plan Review
+
+* review_attempt: 4
+* reviewed_at: 2026-10-01T01:38:05Z
+* dispatch_mode: multi-agent-dispatch
+* personas: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor,
+  Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer,
+  Security Lens Reviewer
+* decision: ADVISORY
+* operator_authorization: not recorded. The cycle-4 extension explicitly
+  does not approve an ADVISORY outcome, so the gate is not satisfied.
+* reviewed_revision: attempt-4 revision (U1, U2, U3, U5, U6, U8; R9, U4, U7,
+  and PA3 withdrawn to stash `B88A3716`)
+* cycle_authorization: attempt 4 is the single extra cycle the parent
+  recorded from the operator's instruction to keep working; the cap is 4
+  total and no fifth review is authorized.
+* gating: per plan, on this plan's own findings only.
+* Attempt-3 fixes: verified by all seven personas. Halt rows set Ship's
+  working directory to the fixture row and require a row-specific reason;
+  Careful mode is named; the Stage scope-edge rule is captured as P-021
+  stash `B88A3716` and removed; `_stage.agent.md` is not edited; L1 scope is
+  unchanged.
+* P0 findings: none.
+* P1 findings: none.
+* P2 findings (new, one issue raised by three personas):
+  * Runtime Verification, halt rows (Constitution, Agent-Native Parity,
+    Security Lens): setting Ship's working directory isolates only CLI calls
+    and Markdown reads. A Ship session's backlogit MCP server stays bound to
+    the live workspace, so `backlogit_sync_index`, `backlogit_get_shipment`,
+    and `backlogit_list_shipments` can read live state, and fixture IDs can
+    collide with live shipments. The plan also does not say how each row's
+    workspace gets a `.backlogit/` storage root. Proposed fix: run each row
+    CLI-only or with a backlogit MCP server started with `--cwd` set to the
+    row; check before seeding that the resolved storage root is inside the
+    row; seed IDs that do not exist live; and require the transcript to show
+    the fixture root.
+* P3 findings: add `go vet`, `golangci-lint run`, and `gofmt -l .` to the
+  pre-merge gates for the new tests; list the U2 scenario-3 literals in U5
+  and U6; name `shipment_predecessor_not_shipped` in the fallback item 4 text
+  and U3 scenario 3; mark the `154-S` and (C)-ownership assertions as
+  transition-bound (source-shape harness learning, 2026-09-11).
+* Disposition: ADVISORY without operator authorization does not satisfy the
+  gate, and no fifth review is authorized. The findings are recorded but
+  the plan is not edited after the review, so the reviewed revision stays
+  the gated one. No harvest, shipment, or stash archive happens for
+  `AF1E5075`. Next step for the operator: either authorize this ADVISORY
+  outcome (record an explicit operator approval of it, after which Stage may
+  harvest with the P2 fix carried as a task acceptance criterion), or
+  authorize a further fix-and-review cycle.
+* Escalation: the authorized cycle cap of 4 is reached. engram is degraded,
+  so no analysis hand-off is possible: ESCALATION_DEGRADED. Halted for
+  operator decision.
+
+<!-- plan-review-attempt: 4 -->
