@@ -1417,3 +1417,967 @@ None block harvest. The `156-S` disposition stays a later decision.
   review, and Stage harvested under those conditions.
 
 <!-- plan-review-attempt: 4 -->
+
+## Shipment Decomposition Addendum
+
+This addendum covers packaging only. On 2026-09-30 the user said that `184-S`
+(18 tasks) and `185-S` (26 tasks) together carry far too many tasks per
+shipment and must be decomposed by size and complexity. The Orchestrator
+relayed that request to Stage.
+
+The addendum changes how the reviewed units are grouped into release units.
+It keeps every requirement, mandatory guard, design choice, and 074-DL
+decision.
+
+* The only task-body changes are the packaging refinements PR-1 to PR-4.
+  Each moves a stated requirement to a different unit or release, and each is
+  justified only by a green release boundary.
+* PR-5 changes release-closure text only.
+
+* The four Plan Review blocks above stay verbatim. They remain the gate record
+  for the plan body. The plan-review attempt counter stays at 4.
+* The packaging is reviewed on a new, separately authorized surface, the
+  Shipment Decomposition Review blocks below. Those blocks are not a fifth
+  plan review.
+* This text is revision 2. It replaces revision 1, which decomposition
+  review attempt 2 failed. Both failed attempts are recorded below with their
+  findings.
+* Out of scope:
+  * `183-F` and `183-S`.
+  * `186-F` and `186-S`, including `186.007-T` and G-E.
+  * Stash `B88A3716`, stash `84E54F92`, and every other stash entry.
+  * Any claim, ship, archive, abandon, or status change.
+
+### Release Semantics Checked
+
+These semantics were read in code at `153a6b0e`:
+
+* `ClaimShipment` activates only the explicit manifest members.
+* `ShipShipment` releases only the explicit manifest
+  (`releaseScopeItemIDs`):
+  * A feature listed in the manifest is marked `done` and archived.
+  * A feature not listed is left untouched.
+  * Parent cascades stop at the manifest boundary.
+  * Nothing requires all of a feature's children to be done.
+* `DeriveCoveringFeature` returns the first root (dotless) feature in the
+  manifest.
+* Stage invariants: every task in a shipment has the covering feature as its
+  parent, and the covering feature is listed first.
+* An item may belong to only one non-terminal shipment
+  (`validateShipmentItemIDs`).
+
+Two consequences follow:
+
+* A broad feature cannot sit in an early chunk. It would be archived as
+  `done` while most of its work is still queued.
+* A task cannot ship under a feature missing from its manifest.
+
+Each release unit therefore gets its own fully contained root feature.
+
+How tasks move:
+
+* Tasks move with `backlogit_adopt_item` (`AdoptItem` in
+  `internal/core/shipment_lifecycle.go`).
+  * It renames the hierarchical ID, the Markdown file, and the event log.
+    Renaming has existed since `170ae28b`.
+  * It rewrites `parent_id`, dependencies, links, and index rows in other
+    artifacts. That rewrite has existed since `ffd885b4`.
+  * It records `origin_feature`.
+  * If it cannot generate a new ID, it keeps the old one. Every adoption is
+    therefore read back.
+* `.github/instructions/backlogit-yaml-header-tooling.instructions.md` still
+  says that adopt does not rename. That text is stale, and this correction
+  leaves it unchanged as a recorded discrepancy.
+* It does not rewrite shipment manifests or body prose. Body prose cites plan
+  unit IDs (`A-Ux`, `B-Ux`), and those IDs do not change.
+* The old-to-new ID map is recorded in the Applied Mapping section after
+  apply.
+
+How the original IDs are used:
+
+* `184-F` and `184-S` keep the closing chunk A-U16, A-U17, and SA-CV.
+* `185-F` and `185-S` keep the closing chunk B-U20, B-U23, and SB-CV.
+* Each broad feature is released only by its own closure check, after every
+  predecessor release has shipped.
+* The existing edges stay as they are, and no edge is removed:
+  * `184-S` blocks on `154-S`.
+  * `185-S` blocks on `154-S`, `186-S`, and `184-S`.
+* The guarded closure tasks keep their IDs: `184.018-T` (G-A), and
+  `185.021-T`, `185.025-T`, and `185.026-T` (G-B).
+
+The other eight chunks become new features and shipments, placed before the
+two original IDs in the DAG.
+
+### Release Units
+
+Effort is in human-equivalent hours. Every task stays within the 2-hour rule.
+
+| Unit | Shipment / feature | Units (original task IDs) | Tasks | Effort (h) | Complexity / risk | Direct shipment prerequisites |
+|---|---|---|---|---|---|---|
+| A1 predicate | new / new | A-U1 to A-U4 (`184.001-T` to `184.004-T`) | 4 | 2.5 to 4.25 | medium / low | `154-S` |
+| A2 queue readiness | new / new | A-U5 to A-U10 (`184.005-T` to `184.010-T`) | 6 | 5.5 to 8.75 | high / moderate-high | A1, `154-S` |
+| A3 claim guard | new / new | A-U11 to A-U15 (`184.011-T` to `184.015-T`) | 5 | 4 to 7 | high / high | A1, A2, `154-S` |
+| A4 docs and closure | `184-S` / `184-F` | A-U16, A-U17, SA-CV (`184.016-T` to `184.018-T`) | 3 | 2 to 3 | medium / low-moderate | A2, A3, `154-S` |
+| B1 generic-path guard and governed edge | new / new | B-U3 to B-U7 (`185.003-T` to `185.007-T`) | 5 | 4.25 to 7.5 | high / high | A2, A3, `154-S` |
+| B2 dispose recovery | new / new | B-U8, B-U9 (`185.008-T`, `185.009-T`) | 2 | 3 to 4 | high / high | B1, `154-S` |
+| B3 disposition core | new / new | B-U1, B-U2, B-U10 to B-U13b (`185.001-T`, `185.002-T`, `185.010-T` to `185.014-T`) | 7 | 7 to 10.75 | high / high | A1, B2, `154-S` |
+| B4 Ship disposition ban | new / new | B-U22s (`185.024-T`) | 1 | 0.25 to 0.5 | low / moderate (agent contract) | `186-S`, `154-S` |
+| B5 adapters and role contract | new / new | B-U14 to B-U19, B-U21, B-U22 (`185.015-T` to `185.020-T`, `185.022-T`, `185.023-T`) | 8 | 6 to 8.75 | medium-high / high | A3, B3, B4, `186-S`, `154-S` |
+| B6 docs, drift, closure | `185-S` / `185-F` | B-U20, B-U23, SB-CV (`185.021-T`, `185.025-T`, `185.026-T`) | 3 | 2.25 to 3.25 | medium / moderate | `184-S` (A4), B5, `186-S`, `154-S` |
+
+Totals:
+
+* 44 tasks.
+* Feature A: 14 to 23 hours.
+* Feature B: 22.75 to 34.75 hours.
+
+Sizes:
+
+* Eight units are within the 4-to-6 target or smaller: A1 to A4, B1, B2, B4,
+  and B6.
+* B2 and B4 are small on purpose, because they are recovery work and an
+  authority boundary.
+* No unit is split by numeric slice.
+* B3 holds 7 tasks and B5 holds 8, with the rationale below.
+
+Why B3 holds 7 tasks (inseparable green boundary):
+
+* The exported `DisposeQueuedShipment` stub (B-U2) and the B-U13a
+  refusal-only placeholder both stay until B-U13b.
+* The B-U10, B-U11, and B-U12 suites stay red against the stub until B-U13b.
+* Any split would either release a stub or move a red test away from the
+  code that makes it pass.
+
+Why B5 holds 8 tasks (inseparable green boundary, at the cap):
+
+* User criterion: no release may carry an adapter inconsistency. Under G-B,
+  Stage-only authority must hold consistently across the MCP tool, the CLI
+  command, and the agent instructions. The CLI command (B-U15) and the MCP
+  tool (B-U17) therefore ship together.
+* The Stage exception with its safeguards and the Orchestrator ban (B-U22)
+  ship in the same release that first makes either form reachable. That
+  removes the unbounded interim window that attempt 1 left open.
+* The CI job `cli-reference-drift` (`.github/workflows/ci.yml`) fails a
+  change that adds `shipment dispose` without regenerating
+  `docs/cli-reference`. B-U21 therefore ships with B-U15.
+* `TestRegistryParity_EveryMCPToolMappedOrDeferred` turns red once the MCP
+  tool exists without a registry row. B-U18 and B-U19 therefore ship with
+  B-U17.
+* The Ship-side ban (B-U22s) is moved to B4, ahead of B5, so B5 stays within
+  8 tasks (PR-4).
+* B-U20 (docs) and B-U23 (drift reason) are not needed at the B5 boundary.
+
+Per-task effort (hours) and complexity:
+
+| Task | Unit | Domain | Effort | Complexity | Release |
+|---|---|---|---|---|---|
+| `184.001-T` | A-U1 | tests | 0.5 to 1 | low | A1 |
+| `184.002-T` | A-U2 | code | 0.25 to 0.5 | trivial | A1 |
+| `184.003-T` | A-U3 | tests | 1 to 1.5 | medium | A1 |
+| `184.004-T` | A-U4 | code | 0.75 to 1.25 | medium | A1 |
+| `184.005-T` | A-U5 | tests | 1 to 1.75 | medium | A2 |
+| `184.006-T` | A-U6 | code | 1.5 to 2 | high | A2 |
+| `184.007-T` | A-U7 | tests | 0.75 to 1.25 | medium | A2 |
+| `184.008-T` | A-U8 | code | 0.75 to 1.25 | medium | A2 |
+| `184.009-T` | A-U9 | tests | 1 to 1.5 | medium | A2 |
+| `184.010-T` | A-U10 | code | 0.5 to 1 | low | A2 |
+| `184.011-T` | A-U11 | tests | 1.25 to 1.75 | medium | A3 |
+| `184.012-T` | A-U12 | tests | 0.5 to 1.5 | medium | A3 |
+| `184.013-T` | A-U13 | code | 1.25 to 2 | high | A3 |
+| `184.014-T` | A-U14 | tests | 0.75 to 1 | low | A3 |
+| `184.015-T` | A-U15 | code | 0.25 to 0.75 | low | A3 |
+| `184.016-T` | A-U16 | docs | 0.75 to 1 | low | A4 |
+| `184.017-T` | A-U17 | config | 0.25 to 0.5 | trivial | A4 |
+| `184.018-T` | SA-CV | verification | 1 to 1.5 | medium | A4 |
+| `185.003-T` | B-U3 | tests | 0.75 to 1.25 | medium | B1 |
+| `185.004-T` | B-U4 | tests | 0.5 to 1.5 | medium | B1 |
+| `185.005-T` | B-U5 | code | 0.75 to 1.25 | medium | B1 |
+| `185.006-T` | B-U6 | tests | 1 to 1.5 | medium | B1 |
+| `185.007-T` | B-U7 | code | 1.25 to 2 | high | B1 |
+| `185.008-T` | B-U8 | tests | 1.5 to 2 | high | B2 |
+| `185.009-T` | B-U9 | code | 1.5 to 2 | high | B2 |
+| `185.001-T` | B-U1 | tests | 0.5 to 0.75 | low | B3 |
+| `185.002-T` | B-U2 | code | 0.5 to 0.75 | low | B3 |
+| `185.010-T` | B-U10 | tests | 1.25 to 2 | medium | B3 |
+| `185.011-T` | B-U11 | tests | 1.25 to 2 | high | B3 |
+| `185.012-T` | B-U12 | tests | 0.75 to 1.25 | medium | B3 |
+| `185.013-T` | B-U13a | code | 1.25 to 2 | high | B3 |
+| `185.014-T` | B-U13b | code | 1.5 to 2 | high | B3 |
+| `185.024-T` | B-U22s | harness | 0.25 to 0.5 | low | B4 |
+| `185.015-T` | B-U14 | tests | 1 to 1.25 | medium | B5 |
+| `185.016-T` | B-U15 | code | 0.75 to 1.25 | medium | B5 |
+| `185.017-T` | B-U16 | tests | 1 to 1.25 | medium | B5 |
+| `185.018-T` | B-U17 | code | 0.75 to 1.25 | medium | B5 |
+| `185.019-T` | B-U18 | tests | 0.75 to 1 | medium | B5 |
+| `185.020-T` | B-U19 | config | 0.5 to 0.75 | low | B5 |
+| `185.022-T` | B-U21 | docs (generated) | 0.25 to 0.5 | trivial | B5 |
+| `185.023-T` | B-U22 | harness | 1 to 1.5 | medium | B5 |
+| `185.021-T` | B-U20 | docs | 1 to 1.25 | low | B6 |
+| `185.025-T` | B-U23 | config | 0.25 to 0.5 | trivial | B6 |
+| `185.026-T` | SB-CV | verification | 1 to 1.5 | medium | B6 |
+
+The `size` and `complexity` fields on the backlog items are not set. The
+estimates live in this table only.
+
+### Green Boundaries
+
+Before it merges, every release must pass the gates that CI enforces in
+`.github/workflows/ci.yml`:
+
+* `golangci-lint`.
+* `go test -race ./...`.
+* `go vet ./...`.
+* The Windows job (`test-windows`).
+* `make docs-lint` and the docline soft-key test.
+* `make md-lint`, the P-008 heading gate.
+* `cli-reference-drift`. B5 is the first release that changes the CLI
+  surface.
+
+Ship runs these gates. Stage does not run builds, tests, or linters. P-008
+is therefore not verified by Stage for any future release.
+
+* A1:
+  * A-U2 stubs the predicate and declares the final sentinel. A-U4
+    implements the predicate. The narrowed A-U1 harness passes (PR-1).
+  * The sentinel `ErrShipmentPredecessorNotShipped` is an exact-text final
+    value, not a placeholder. It stays in A1 because the A-U1 pin and the
+    test-first order put it there, and A-U11's compile-but-fail harness needs
+    it before A3 (see I-1).
+* A2:
+  * Holds the whole A-U5 to A-U10 red window. A-U10 migrates every adapter.
+  * A-U5 pins the `QueryQueueForWorkspace` signature with an AST harness
+    before the stub exists, as R12 requires (PR-1). A-U6 declares the stub,
+    A-U7 compiles and fails against it, and A-U8 implements it. No stub
+    survives the release.
+* A3: green after A-U13. The A-U14 red step is closed by A-U15. The
+  `A-U10 -> A-U11` edge keeps A-U13's full-suite Verify outside the A2 red
+  window.
+* A4: docs, the drift record, and the Feature A closure check.
+* B1: green after B-U5 and B-U7.
+  * Generic paths refuse `queued` to `abandoned`.
+  * The governed edge is reachable only through the unexported
+    governed-disposition context marker (R7). Production code reads it, and
+    B3's `DisposeQueuedShipment` sets it. The B-U6 test sets it from inside
+    package `core`.
+* B2: recovery for `dispose` journals. No code writes them until B3. B-U8
+  tests recovery with hand-written journals, and G-C and G-D are met inside
+  B2.
+* B3: holds the B-U2 stub, the B-U13a placeholder, and the red suites until
+  B-U13b. B3 is green when it ends.
+* B4: a single fail-closed agent-contract line banning Ship from both
+  disposition forms (PR-4).
+* B5: holds the CLI, the MCP tool, the registry parity window B-U17 to
+  B-U19, the CLI reference regeneration, and the Stage and Orchestrator role
+  contract. At the B5 boundary the MCP tool, the CLI command, and all three
+  agent contracts state Stage-only authority consistently (G-B).
+* B6: workflow and parity-matrix docs, the drift reason, and the Feature B
+  closure check.
+
+### Packaging Refinements
+
+Each refinement keeps the unit's exact requirements and guards. Each is
+justified only by a green release boundary.
+
+#### PR-1 (A-U1, A-U2, A-U5, A-U6, A-U8)
+
+Problem: if A1 ended with the `QueryQueueForWorkspace` stub pinned by A-U1,
+it would release a stub. R12 also requires the pin to exist before the stub.
+
+Changes:
+
+* `184.001-T`: drop the `QueryQueueForWorkspace` pin and the "workspace
+  queue entry point" scenario. Keep the predicate and sentinel pins.
+* `184.002-T`: drop the `QueryQueueForWorkspace` stub. AC 3 now refers to
+  the predicate stub.
+* `184.005-T`:
+  * Add the signature pin to `TestShipmentReadinessDeclarations` in
+    `internal/core/shipment_readiness_decl_test.go`, without pinning the
+    unexported resolver field. The task now touches two files.
+  * Add an AC: the pin fails through `go/parser` until A-U6 declares the
+    stub. This is the R12 order, with the pin before the stub.
+  * The task remains a tests-only task.
+* `184.006-T`: declare the stub
+  `func QueryQueueForWorkspace(ctx context.Context, ws *Workspace, filter *QueueFilter) (*QueueView, error)`,
+  returning `nil, ErrNotImplemented`, in `internal/core/queue.go`. That is
+  still one file.
+* `184.007-T` is unchanged. Its AC 1 ("fails against the stub") already
+  matches this order.
+* `184.008-T`: add an AC that the declaration harness passes and that no
+  `ErrNotImplemented` remains in `QueryQueueForWorkspace`.
+
+Unchanged: the exact signature, the sentinel text, and the predicate stub
+that A-U4 replaces inside A1.
+
+#### PR-2 (B-U1, B-U2, B-U3, B-U10)
+
+Problem: the exported B-U2 stub would otherwise sit across B1 and B2.
+
+Changes:
+
+* B-U1 and B-U2 move into B3, ahead of B-U10.
+* Task edges:
+  * Remove `185.003-T -> 185.002-T`.
+  * Add `185.010-T -> 185.002-T`.
+  * `185.002-T -> 185.001-T` and `185.010-T -> 185.009-T` stay.
+* B-U3 uses no B-U2 symbol.
+* Only the "Plan dependencies" lines of `185.003-T` and `185.010-T` change.
+
+#### PR-3 (B-U20, B-U21, SB-CV)
+
+Problem: the CI job `cli-reference-drift` requires the regenerated CLI
+reference in the same release that adds `shipment dispose`. B-U20 is not
+test-enforced.
+
+Changes:
+
+* B-U21 moves into B5 and B-U20 moves to B6.
+* Task edges:
+  * Remove `185.022-T -> 185.021-T`.
+  * Add `185.022-T -> 185.020-T`.
+  * Add `185.026-T -> 185.021-T`.
+* Only the "Plan dependencies" lines of `185.022-T` and `185.026-T` change.
+
+#### PR-4 (B-U22, B-U22s, B-U23)
+
+Problem: G-B requires the Ship ban, the Orchestrator ban, and the Stage
+exception to be in place wherever either disposition form is reachable.
+Adapters plus all contracts make 9 tasks.
+
+Changes:
+
+* B-U22s, a pure Ship-side prohibition, moves ahead into B4. B-U22 ships
+  with the adapters in B5.
+* Task edges:
+  * Remove `185.024-T -> 185.023-T`.
+  * Add `185.023-T -> 185.024-T`.
+  * Add `185.025-T -> 185.023-T`. `185.025-T -> 185.024-T` stays.
+* Only the "Plan dependencies" lines of `185.023-T`, `185.024-T`, and
+  `185.025-T` change.
+* The ban text and every G-B block are unchanged.
+
+Why B-U22 cannot move to B4 with B-U22s:
+
+* B-U22 gives Stage permission to use the dispose tool and command. Before
+  B5 that tool does not exist, so the permission would be an unfulfilled
+  contract.
+* B-U22s is a ban. A ban on an absent capability fails closed.
+
+#### PR-5 (R14 timing, closure text only)
+
+Problem: the plan requires the read-only R14 live impact inventory "before
+SA merges". The first behavior-changing Feature A merge is now A2, whose
+queue filter hides shipments behind unshipped archived predecessors.
+
+Change: no task body changes. The Per-Release Closure Rule in the A2 and A3
+feature descriptions carries the R14 duty instead.
+
+* Before A2 merges, its closure record states the read-only R14 inventory,
+  using the same query as SA-CV, with no fixture and no live mutation.
+* Before A3 merges, its closure record either re-states the inventory or
+  states that it is unchanged since A2, with the query and its timestamp.
+* SA-CV keeps its own R14 AC and re-records the inventory before A4 merges.
+
+### Per-Release Closure Rule
+
+Each new feature's description carries this rule:
+
+* The release passes the CI-aligned gates listed under Green Boundaries.
+* Its closure record states the R13 items:
+  * the binary version;
+  * that the guard covers (P) only;
+  * that `156-S` and every other existing shipment are unchanged;
+  * that the manual (P)+(C) 074-DL policy stays in force until AF1E5075
+    lands and the `154-S` attestation exists.
+* For A2 and A3, the closure record also carries the R14 duty from PR-5.
+* The runtime fixture checks stay in SA-CV and SB-CV, under G-A and G-B.
+
+The new feature descriptions use this text:
+
+```text
+Release unit {unit} of the 6434A4D7 shipment decomposition. Source plan:
+docs/exec-plans/2026-09-30-6434a4d7-shipment-predecessor-readiness-guard-plan.md
+(Shipment Decomposition Addendum). Original feature: {184-F|185-F}.
+Per-release closure rule: {rule above, with the R14 line for A2 and A3}.
+Hold: condition B scheduler-consumption attestation C for 154-S is absent;
+not Ship-eligible until it exists.
+```
+
+`184-F` and `185-F` get this note appended to their descriptions. Nothing
+else in those descriptions changes.
+
+```text
+Decomposition note (2026-09-30): this feature now covers only its closing
+release ({A4|B6}). Earlier work moved to the release-unit features listed in
+the plan's Applied Mapping, via backlogit_adopt_item (origin_feature kept).
+```
+
+### Interim States Between Releases
+
+None of these states leaves a test red, a stub, or an adapter
+inconsistency. Each is recorded so reviewers can accept or reject it.
+
+* I-1 (after A1, through A2):
+  * The exported predicate has no production caller until A2.
+  * The final sentinel is returned first by A3. It stays in A1 because the
+    A-U1 pin and the test-first order put it there.
+* I-1b (after A2, before A3):
+  * The queue hides shipments behind unshipped archived predecessors.
+  * `ClaimShipment` still allows claiming them until A3.
+  * The existing Shipment Sequencing Protocol and the condition B hold
+    still apply.
+* I-2 (after B1): no supported queued-shipment disposition exists until B5.
+  * Generic `queued` to `abandoned` is refused, which fails closed.
+  * The governed-disposition context marker is read but never set in
+    production until B3.
+  * The manual 074-DL policy is unchanged.
+  * B-U4 returns the task to Stage if it finds a production caller.
+* I-3 (after B2): recovery accepts `dispose` journals that no code writes
+  yet. G-D forbids restoring over a complete disposition.
+* I-3b (after B3, before B5):
+  * The exported `DisposeQueuedShipment` is final, tested code.
+  * No CLI command or MCP tool reaches it until B5.
+* I-4 (after B4, before B5):
+  * Ship's contract bans both disposition forms before either exists. A
+    prohibition of an absent capability fails closed.
+  * Ship's tool list already omits the MCP tool. P-010 already blocks
+    unlisted CLI mutations.
+  * The harness-manifest drift reason for `_ship.agent.md` lags from B4
+    until B6 (B-U23). `drift_allowed: true` is already set.
+* I-5 (after A3, before A4): the claim refusal exists before the docs that
+  describe it. The existing Shipment Sequencing Protocol already requires
+  `shipped` predecessors.
+* I-6 (after B5, before B6):
+  * The workflow doc, the parity-matrix row, and the harness-manifest drift
+    reason lag behind.
+  * Every agent-facing surface already states Stage-only authority, so this
+    is a docs-only lag.
+  * `drift_allowed: true` is already set on the three agent files.
+* Follow-up note, not in scope: no row in the backlog-integration
+  instructions names the dispose operation. The plan did not include one,
+  and this addendum adds none.
+
+### Shipment DAG
+
+```text
+154-S <- A1 <- A2 <- A3 <- 184-S(A4)
+A1 <- A3; A2 <- 184-S(A4)
+A2 <- B1; A3 <- B1; B1 <- B2 <- B3; A1 <- B3
+186-S <- B4
+B3 <- B5; B4 <- B5; A3 <- B5; 186-S <- B5
+B5 <- 185-S(B6); 184-S(A4) <- 185-S(B6); 186-S <- 185-S(B6)
+every unit also blocks on 154-S
+```
+
+Edge reasons:
+
+* B1 needs A2 because both edit `internal/core/queue.go`.
+* B1 needs A3 so that A3 and B1 to B3 merge in a fixed order. The A-U12
+  claim-fixture audit and the B-U4 abandon-fixture audit then each see the
+  other's fixtures. This also keeps the original order, where all Feature A
+  code came before Feature B code.
+* B3 needs A1 because B-U12 uses the predicate and both edit
+  `internal/errors/errors.go`.
+* B5 needs A3 because both edit `internal/mcp/errors.go`. A-U15 touches
+  `internal/cli/shipment.go` only conditionally.
+* B4 and B5 need `186-S` because of file overlaps:
+  * `186.005-T` edits `_ship.agent.md`, and `186.007-T` verifies it.
+  * `186.004-T` edits `_orchestrator.agent.md`.
+* `185-S` keeps `186-S` and `184-S` because of overlaps in
+  `.autoharness/harness-manifest.yaml` and `docs/workflow.md`.
+* A4 (A-U17) also edits a different harness-manifest entry. As the reviewed
+  Dependency Graph says, that needs no edge to `186-S`.
+
+Task edges after PR-2 to PR-4 that cross releases. Each points to an earlier
+release:
+
+* `184.005-T -> 184.004-T`
+* `184.011-T -> 184.004-T` and `184.011-T -> 184.010-T`
+* `184.016-T -> 184.010-T` and `184.016-T -> 184.015-T`
+* `185.008-T -> 185.007-T`
+* `185.010-T -> 185.009-T`
+* `185.015-T -> 185.014-T`
+* `185.023-T -> 185.024-T`
+* `185.021-T -> 185.020-T`
+* `185.025-T -> 185.023-T` and `185.025-T -> 185.024-T`
+* `185.026-T -> 185.022-T`
+
+No task edge crosses from Feature A to Feature B. That ordering is carried by
+shipment edges.
+
+### Condition B Gate
+
+The condition B gate is unchanged.
+
+* Every release unit carries a `blocks` edge onto `154-S`.
+* The engine treats that edge as satisfied, because `154-S` is archived as
+  shipped.
+* Scheduler-consumption attestation C is still absent, so no unit is
+  Ship-eligible under 074-DL L1 policy.
+* Every new shipment gets a comment recording this hold.
+* This addendum invents no attestation.
+
+### Guard Preservation
+
+The guard text does not change. It moves with each task file.
+
+* G-A: `184.018-T` (kept).
+* G-B:
+  * `185.010-T` (B3).
+  * `185.015-T` to `185.018-T` and `185.020-T` (B5).
+  * `185.023-T` (B5).
+  * `185.024-T` (B4).
+  * `185.021-T`, `185.025-T`, and `185.026-T` (kept).
+* G-C: `185.008-T` and `185.009-T` (B2).
+* G-D: `185.008-T` and `185.009-T` (B2), and `185.011-T` and `185.014-T`
+  (B3).
+* G-E: `186.007-T`, out of scope and unchanged.
+
+Bodies changed by PR-1 to PR-4:
+
+* `184.001-T`, `184.002-T`, `184.005-T`, `184.006-T`, and `184.008-T`.
+* `185.003-T`, `185.010-T`, `185.022-T`, `185.023-T`, `185.024-T`,
+  `185.025-T`, and `185.026-T`.
+
+That is 12 bodies. Five of them hold a G-B block: `185.010-T` and
+`185.023-T` to `185.026-T`. Those blocks must stay byte-identical, which is
+checked by hash.
+
+The only title change is `184.002-T`, from "readiness API stubs" to
+"readiness predicate stub".
+
+### Packaging Hardening
+
+Requires plan hardening: yes. This is a high-blast-radius backlog
+restructuring: 38 renamed task IDs (15 from Feature A and 23 from Feature B)
+and edits to two manifests.
+
+Learnings consulted:
+
+* `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`
+* `docs/compound/workflow-issues/orphaned-tasks-without-parent-features-2026-04-10.md`
+* `docs/compound/2026-08-01-self-hosted-cli-version-skew-merged-fix-not-yet-operative.md`
+* `docs/compound/2026-09-03-stage-harvest-chore-id-collision-and-p008-gate.md`
+* `docs/compound/2026-07-20-manual-feature-harvest-provenance-backfill.md`
+
+Execution order (total). All steps run in Careful mode under the user's
+explicit authorization for this correction. After every step, Stage reads
+the result back. If a tool returns an indeterminate result, Stage reads the
+item back and does not retry.
+
+1. Preflight:
+   * Read the MCP server version (`backlogit_get_version`) and the CLI
+     version (`C:\Tools\backlogit.exe --version`). Confirm both include
+     `47dfcc93` (manifest-only release), `170ae28b` (adopt rename), and
+     `ffd885b4` (cross-artifact rewrite). If they do not, halt.
+   * Confirm that no file under `.backlogit/queue` or `.backlogit/archive`
+     uses the next root numbers.
+   * Confirm the baseline hashes.
+2. Commit the reviewed addendum as a rollback checkpoint, by explicit path.
+3. PA-P4: rewire task edges.
+4. PA-P5: edit the bodies of the original IDs.
+5. PA-P2: create eight root features.
+6. PA-P8: add hold comments to `184-S` and `185-S` that record the item
+   lists before the edit. Each comment supersedes the earlier
+   "Ready for Ship claim" comment and its item count.
+7. PA-P1: edit the manifests, then sync.
+8. PA-P3: adopt the tasks in dependency order.
+   * Halt after the first adoption. Read back the new ID, the renamed file,
+     and the renamed log before continuing.
+   * Record each returned new ID.
+9. PA-P7: create eight shipments from the read-back new IDs, with the
+   feature first. Add a hold comment to each.
+10. PA-P6: add shipment edges.
+11. Add comments to `184-S` and `185-S` with the item lists after the edit.
+    Append the feature notes to `184-F` and `185-F`. Fill in the Applied
+    Mapping and run the verification.
+12. Commit by explicit path list. Build the list from the read-back map.
+    Before staging, diff the unrelated dirty files against their baseline
+    hashes. The commit SHA is then added to the `184-S` and `185-S` comments
+    in a follow-up commit.
+
+Risky actions:
+
+* ProposedAction PA-P1: remove only the moved IDs from the
+  `custom_fields.items` lists of `184-S` and `185-S` with a surgical edit,
+  then run `backlogit_sync_index`.
+  * Targets: `.backlogit/queue/184-S.md` and `.backlogit/queue/185-S.md`.
+  * change_kind: manifest edit.
+  * ActionRisk: moderate.
+  * Approval: the user's correction request.
+  * Rollback: restore the two files from the checkpoint commit and sync.
+    This is valid only before PA-P3. After PA-P3, use the operator-level
+    rollback under PA-P3.
+  * ActionResult: planned.
+* ProposedAction PA-P2: create eight root features with the
+  `source-stash-6434A4D7` label, the plan and 074-DL references, a
+  `related_to` link to `184-F` or `185-F`, no `source_stash_id`, and the
+  description text above.
+  * Targets: eight new feature files.
+  * change_kind: create.
+  * ActionRisk: low.
+  * Approval: user request.
+  * Rollback: revert the Stage commit. Deletion is not authorized.
+  * ActionResult: planned.
+* ProposedAction PA-P3: adopt 38 tasks with `backlogit_adopt_item`, in
+  dependency order.
+  * Targets: the 38 task files and logs, plus every artifact that references
+    them.
+  * change_kind: rename and reparent.
+  * ActionRisk: high. IDs change, and the tool does not rewrite manifests or
+    prose.
+  * Approval: user request, in Careful mode.
+  * If the tool returns an indeterminate result, do not retry and do not
+    roll back. Read the item back.
+  * If the run fails partway, halt, read back, and report. Do not restore
+    or clean the tree, because unrelated dirty files are present.
+  * Operator-level rollback after completion: `git revert` of the Stage
+    commit, then `backlogit_sync_index`. Re-adopting would mint new IDs.
+  * ActionResult: planned.
+* ProposedAction PA-P4: rewire the eight task edges of PR-2 to PR-4 with
+  `backlogit_remove_dependency` and `backlogit_add_dependency`, on the
+  original IDs.
+  * Targets: the frontmatter of `185.003-T`, `185.010-T`, `185.022-T`,
+    `185.023-T`, `185.024-T`, `185.025-T`, and `185.026-T`.
+  * change_kind: dependency edit.
+  * ActionRisk: low.
+  * Approval: user request.
+  * Rollback: apply the inverse edge operations.
+  * ActionResult: planned.
+* ProposedAction PA-P5: edit the 12 task bodies listed above and one title,
+  through the official update operation.
+  * Targets: the 12 task files.
+  * change_kind: body edit.
+  * ActionRisk: moderate. Five bodies hold G-B blocks.
+  * Verification: every guard block hash is unchanged.
+  * Approval: user request.
+  * Rollback: restore each body from the checkpoint commit through the same
+    update operation.
+  * ActionResult: planned.
+* ProposedAction PA-P6: add 24 shipment `blocks` edges with
+  `backlogit_add_dependency`, which runs cycle detection.
+  * Targets: the eight new shipments, plus `184-S` and `185-S`.
+  * change_kind: dependency create.
+  * ActionRisk: low.
+  * Approval: user request.
+  * Rollback: `backlogit_remove_dependency` for each added edge.
+  * ActionResult: planned.
+* ProposedAction PA-P7: create eight queued shipments with
+  `backlogit_create_shipment`, using the read-back new IDs. Add a hold
+  comment to each.
+  * Targets: eight new shipment files.
+  * change_kind: create.
+  * ActionRisk: low.
+  * Approval: user request.
+  * Rollback: revert the Stage commit. Abandonment and deletion are not
+    authorized.
+  * ActionResult: planned.
+* ProposedAction PA-P8: append comments to `184-S`, `185-S`, `184-F`, and
+  `185-F`.
+  * change_kind: append-only comment or description note.
+  * ActionRisk: low.
+  * Approval: user request.
+  * Rollback: none needed. Comments are append-only and a later comment can
+    supersede them.
+  * ActionResult: planned.
+
+Verification:
+
+* Every original task maps to exactly one current ID and appears in exactly
+  one of the ten manifests.
+* No manifest contains a pre-adoption ID.
+* Every manifest lists its covering feature first, and that feature is the
+  parent of every task in the manifest.
+* No descendant of `184-F` or `185-F` sits outside A4 or B6.
+* No status changes.
+* The DAG has no cycle and no missing target, with a Kahn order recorded.
+  That covers both task edges and shipment edges, checked after adoption.
+* `backlogit doctor` reports no new orphan or duplicate.
+* Every guard block hash is unchanged.
+* The `183` and `186` files are unchanged.
+* The unrelated dirty files keep their hashes.
+* `backlogit docs lint` and `git diff --check` pass on the edited Markdown.
+* P-008 heading check: Stage does not run `make md-lint`, because that is a
+  linter. Stage checks the edited Markdown by hand for MD001, MD025, and
+  MD041 and records the result. Each hold comment states that P-008 was not
+  verified by Stage.
+
+Packaging Constitution Check:
+
+* II (test-first): every red step stays in the same release as its green
+  step. A-U5 pins the signature before A-U6 declares the stub (R12).
+* Workflow 1 (2-hour rule, width): no task grows past three files or two
+  hours. Two tasks gain one item each: A-U5 gains one pin and one file
+  (two files in total), and A-U6 gains a one-line stub.
+* Workflow 5 (no dead code): I-1 to I-3b ship tested, final code that no
+  production path reaches yet. None of it is a stub or placeholder, and each
+  case is recorded.
+* VII and VIII (role boundary, safety): G-B holds at every boundary. Each
+  risky action carries an ActionRisk.
+* No application source, test, instruction, agent, registry, or config file
+  changes.
+
+Constitution Check: pass.
+
+<!-- shipment-decomposition-addendum: revision 2 -->
+
+## Shipment Decomposition Review
+
+This block records the review of the packaging proposal. It is not a
+`## Plan Review` block and does not change the plan-review attempt counter,
+which stays at 4.
+
+* review_surface: shipment-decomposition (authorized by the user request
+  of 2026-09-30)
+* review_attempt: 1
+* dispatch_mode: multi-agent-dispatch
+* decision: FAIL
+* TOOL_OK: reviewer-subagent-dispatch
+* Personas: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor,
+  Learnings Researcher, Architecture Strategist, Agent-Native Parity
+  Reviewer, and Security Lens Reviewer. All seven returned.
+* Merged counts: P0=0, P1=7, P2=13, P3=14. Duplicates were merged.
+* Plan hardening was required and present. The Constitution Check verdict
+  was present.
+
+P1 findings and their dispositions in revision 1:
+
+* B4 split (Scope Boundary Auditor). The original rationale overclaimed
+  the registry window. Revision 1 rests B5's size on the user's
+  no-adapter-inconsistency criterion and G-B consistency across MCP, CLI, and
+  contracts. It also records the CI and registry-parity couplings exactly.
+* Old-to-new ID map missing (Scope Boundary Auditor), and stale manifests
+  from creating shipments before adoption (Learnings Researcher,
+  Architecture Strategist P2, Security Lens P2). Fixed: a total execution
+  order, PA-P7 from read-back IDs, the Applied Mapping section, and a
+  verification line.
+* CLI version skew (Learnings Researcher). Fixed: a preflight version and
+  ancestry check.
+* R14 timing (Architecture Strategist). Fixed by PR-5 and the Per-Release
+  Closure Rule.
+* G-B interim window between adapters and role contracts (Agent-Native
+  Parity Reviewer, two P1s; Security Lens Reviewer). Fixed by PR-4:
+  * The Stage and Orchestrator contract ships with the adapters in B5.
+  * The Ship ban ships first, in B4.
+  * B4 and B5 both block on `186-S`.
+
+P2 findings and their dispositions:
+
+* A-U7 compile-red window (Constitution, Go, Scope). Fixed: the stub moves
+  to A-U6, and A-U7 again fails against a stub.
+* Sentinel unused until A3 (Go). Recorded in I-1. It cannot move, because
+  A-U11 needs it to compile.
+* ActionRisk levels (Constitution, Scope). Fixed: they now use defined
+  levels, with approvals and ActionResult.
+* I-4 mitigations inaccurate (Constitution, Parity). Superseded by PR-4.
+* A3 and B1 to B3 ordering (Architecture). Fixed: added the edge B1 to A3.
+* Per-unit closure (Architecture). Fixed by the Per-Release Closure Rule.
+* Doctor audit (Learnings). Added to verification.
+* P-008 markdown gate (Learnings). Recorded: Stage runs the
+  documentation entrypoint `backlogit docs lint` and `git diff --check`.
+  Markdown linters are a Ship-side gate under Stage's role boundary.
+* Child-ID namespace check (Learnings). Added to preflight.
+* Provenance on new features (Learnings, Architecture P3). Fixed by PA-P2.
+* Rollback before commit (Security). Fixed: a checkpoint commit, plus halt
+  and read back.
+
+P3 findings, accepted as advisory:
+
+* Every cross-release edge is now listed.
+* The harness-manifest statement is qualified.
+* The A4 range is corrected: A-U17 is 0.25 to 0.5 hours.
+* The B5 to A3 rationale is narrowed.
+* The hold comment is added.
+* B6 is kept as a separate release.
+* Redundant direct edges are kept, each with its reason.
+* The B-U6 internal-package note is recorded in the B1 boundary.
+* Declined, to avoid requirement expansion: the optional extra AC on
+  `185.022-T`, and the optional per-condition grep on `185.023-T`.
+
+<!-- shipment-decomposition-review-attempt: 1 -->
+
+## Shipment Decomposition Review
+
+This block records decomposition review attempt 2, of revision 1. It is not
+a `## Plan Review` block. The plan-review attempt counter stays at 4.
+
+* review_surface: shipment-decomposition (authorized by the user request
+  of 2026-09-30)
+* review_attempt: 2
+* dispatch_mode: multi-agent-dispatch
+* decision: FAIL
+* TOOL_OK: reviewer-subagent-dispatch
+* Personas: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor,
+  Learnings Researcher, Architecture Strategist, Agent-Native Parity
+  Reviewer, and Security Lens Reviewer. All seven returned.
+* Merged counts: P0=0, P1=1, P2=11, P3=23. Duplicates were merged.
+* This is the second decomposition review cycle. One re-entry remains
+  (attempt 3). If attempt 3 fails, Stage halts and escalates.
+
+P1 finding and its disposition in revision 2:
+
+* SBA2-P1-1 (Scope Boundary Auditor; also Constitution P2 and Go P3). PR-1
+  put the `QueryQueueForWorkspace` pin in A-U7, after A-U6 declared the stub.
+  That breaks R12, which requires the AST pin before the stub exists. Fixed:
+  the pin moves to A-U5 (`184.005-T`, tests, before A-U6) and fails through
+  `go/parser` until A-U6. `184.007-T` is no longer edited. `184.005-T` grows
+  to two files and 1 to 1.75 hours.
+
+P2 findings and their dispositions in revision 2:
+
+* PR-5 edited the A-U10 body (Scope, Constitution, Architecture). Fixed: no
+  task body changes for R14. The duty moves to the Per-Release Closure Rule
+  for A2, and A3 re-states the inventory or states that it is unchanged.
+* Gates did not match CI (Go). Fixed: the Green Boundaries list the CI
+  gates, including `golangci-lint`, `go test -race ./...`, the Windows job,
+  `make docs-lint`, `make md-lint`, and `cli-reference-drift`.
+* P-008 unverified by Stage (Learnings). Recorded: Stage checks MD001,
+  MD025, and MD041 by hand and runs `backlogit docs lint`. The hold
+  comments state that P-008 was not verified by Stage.
+* Both binaries (Learnings). Fixed: preflight checks the MCP server and the
+  CLI.
+* Read-back for every step and missing targets after adoption (Learnings).
+  Fixed in the execution order and the verification list.
+* Explicit path commit with a dirty-hash diff (Security). Fixed: step 12.
+  The PA-P1 rollback is valid only before PA-P3.
+* Hold and superseding comments on `184-S` and `185-S`, with before and
+  after item lists and the SHA (Security). Fixed: PA-P8, steps 6, 11,
+  and 12.
+* Interim states after A2 and after B3 (Security). Fixed: I-1b and I-3b.
+* Rollback, targets, and change_kind for every PA (Constitution). Fixed.
+* Feature description text (Constitution, Scope). Fixed: exact templates.
+* Counts (Stage self-check). Fixed: 38 adoptions, eight units within the
+  target, five G-B bodies, and 12 edited bodies.
+
+P3 findings, accepted as advisory or fixed:
+
+* The B1 marker is named: the governed-disposition context marker (R7).
+* `186.005-T` edits `_ship.agent.md`, and `186.007-T` verifies it.
+* Why B-U22 cannot move to B4: a permission for an absent tool is an
+  unfulfilled contract, while a ban fails closed.
+* The `_ship.agent.md` drift-reason lag runs from B4 to B6 (I-4).
+* I-1 is reworded: the sentinel stays in A1 because of the A-U1 pin and
+  the test-first order.
+* Adopt provenance is cited in code (`170ae28b`, `ffd885b4`). The stale
+  YAML-header instruction is recorded, not edited.
+* Follow-up note, not in scope: no backlog-integration instructions row for
+  the dispose operation.
+* Advisory, left unchanged: the Stage exception sits in the Forbidden cell
+  of the role table, and the Orchestrator ban uses a wildcard. Both are
+  reviewed plan text under 074-DL.
+
+<!-- shipment-decomposition-review-attempt: 2 -->
+
+## Shipment Decomposition Review
+
+This block records decomposition review attempt 3, of revision 2. It is not
+a `## Plan Review` block. The plan-review attempt counter stays at 4.
+
+* review_surface: shipment-decomposition (authorized by the user request
+  of 2026-09-30)
+* review_attempt: 3
+* dispatch_mode: multi-agent-dispatch
+* decision: ADVISORY
+* operator_authorization: approved
+* Authorization provenance: the user's correction request, relayed by the
+  Orchestrator, delegates end-to-end execution of this correction to Stage.
+  That includes review and mutation. Stage accepts this ADVISORY under that
+  delegation, following the precedent of the plan's attempt-4 ADVISORY.
+  Every P2 below is converted into a mandatory condition. No P0 or P1
+  remains. The final report states this acceptance so that the operator can
+  object to it.
+* TOOL_OK: reviewer-subagent-dispatch
+* Personas: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor,
+  Learnings Researcher, Architecture Strategist, Agent-Native Parity
+  Reviewer, and Security Lens Reviewer. All seven returned ADVISORY.
+* Merged counts: P0=0, P1=0, P2=5, P3=15. Duplicates were merged.
+* Prior findings: all seven personas confirmed that the attempt-1 and
+  attempt-2 dispositions are present in revision 2.
+
+The revision 2 text above stays as reviewed. The mandatory conditions below
+supersede the sentences they name. Stage applies them during execution.
+
+Mandatory decomposition conditions (from the P2 findings):
+
+* MDC-1 (Constitution, Go, Scope: A-U5 red evidence). This supersedes the
+  PR-1 `184.005-T` AC sentence.
+  * The `184.005-T` AC reads: "RED (R12): before A-U6,
+    `go test ./internal/core -run '^TestShipmentReadinessDeclarations$' -count=1`
+    fails. Record whether it is a compile failure or a `go/parser`
+    failure. The test file for this task's resolver field also stops the
+    package from compiling until A-U6."
+  * `184.006-T` gains an AC: "`go test ./internal/core -run '^TestShipmentReadinessDeclarations$' -count=1`
+    passes."
+  * Both bodies were already in the edited set, so the count stays at 12.
+* MDC-2 (Scope: verification must check exact edges). Verification also
+  checks:
+  * The shipment edge set equals the Shipment DAG list. Every unit has a
+    `154-S` edge, and B4, B5, and B6 have a `186-S` edge.
+  * Every new shipment has a hold comment.
+  * The task edge set equals the stated post-PR-2-to-PR-4 set.
+  * The 12 edited bodies differ from the checkpoint only in the declared
+    text. Every other body is unchanged apart from ID rewrites by adopt.
+* MDC-3 (Learnings: frontmatter loss on update). Before and after each
+  update call, Stage compares the frontmatter key set and halts on any loss.
+  The title change is made in a separate call.
+* MDC-4 (Parity: the I-6 claim was too broad). This supersedes the I-6
+  sentence "Every agent-facing surface already states Stage-only authority".
+  The claim covers only `.github/agents/*`, the MCP tool description, the
+  CLI help, and the registry.
+  * The distributed plugin bundle (`plugin/agents/ship.agent.md` with
+    `backlogit/*`) has no ban. That gap was already in the unsplit `185-S`
+    and is not caused by this packaging.
+  * The gap is reported to the operator as a follow-up. The user did not
+    authorize any new stash capture in this correction.
+* MDC-5 (Security: dirty-state snapshot and path match).
+  * Preflight records `git status --porcelain` and a SHA-256 for every
+    dirty path.
+  * Before each commit, the changed paths must equal the expected set. That
+    set is the map, the old and new paths of each renamed file, the new
+    features and shipments, `184-S`, `185-S`, `184-F`, `185-F`, the plan,
+    and the memory files.
+  * Stage halts on an unexpected path, on a changed dirty hash, or on an
+    overlap with a dirty file.
+  * Staging uses `git add -- <paths>`, including the deleted old paths. The
+    follow-up commit uses the same rule.
+
+P3 findings, accepted (applied where cheap, otherwise recorded):
+
+* Exact new "Plan dependencies" lines:
+  * `185.003-T`: "none".
+  * `185.010-T`: "B-U9, B-U2".
+  * `185.022-T`: "B-U19".
+  * `185.023-T`: "B-U19, B-U22s".
+  * `185.024-T`: "none (the ban precedes the adapters)".
+  * `185.025-T`: "B-U22, B-U22s".
+  * `185.026-T`: "B-U20, B-U21, B-U23".
+* R12 trace: R12 for `QueryQueueForWorkspace` is now met by A-U5 (pin) and
+  A-U6 (stub).
+* The Applied Mapping is appended after this block as
+  `## Shipment Decomposition Applied Mapping`. The revision 2 text is not
+  edited.
+* The PA-P4 and PA-P5 rollbacks are valid only before PA-P3. After PA-P3,
+  use the PA-P3 operator rollback.
+* Shipments are created one at a time: create, add edges, add the hold
+  comment, then move to the next.
+* The A2 hold comment repeats the I-1b warning and the R14 duty. The A3
+  hold comment repeats the R14 duty.
+* The ID namespace is checked again after PA-P2, against the IDs actually
+  created, by globbing queue, archive, and logs.
+* Version commands: the CLI reports `backlogit version` commit `131577c`.
+  `git merge-base --is-ancestor` confirms that `47dfcc93`, `170ae28b`, and
+  `ffd885b4` are ancestors. The MCP server is checked with
+  `backlogit_get_version`.
+* An indeterminate adoption is read back by querying `parent_id` and by
+  checking both the old and the new filenames.
+* The P-008 hand check also covers the newly created `.backlogit/queue`
+  files.
+* Archived predecessors: `archived` is in `terminalCascadeStatuses`, so a
+  task edge onto an archived task does not block.
+* PA-P8 targets: `184-S`, `185-S`, `184-F`, and `185-F`. The Constitution
+  Check also counts the new AC on `184.008-T`.
+* Recorded rationale for the small units:
+  * A4 and B6 are the closing chunks that keep the original IDs.
+  * Moving B-U22s into B1 would hold B1 to B3 behind `186-S`.
+* The harness-manifest drift-reason lag is non-agent-facing metadata.
+
+<!-- shipment-decomposition-review-attempt: 3 -->
