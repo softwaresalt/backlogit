@@ -1,4 +1,4 @@
-# Stage memory: Condition B enforcement staging (attempt 4: one plan harvested, two halted)
+# Stage memory: Condition B enforcement staging (attempt 4: all three plans harvested)
 
 * Date: 2026-09-30, continued 2026-10-01
 * Agent: Stage (invoked by the Orchestrator; route claude-opus-5.5 / anthropic / high)
@@ -9,11 +9,14 @@
 * Source decision: `074-DL`
   (`docs/decisions/2026-09-28-513e62ab-condition-b-enforcement-deliberation.md`),
   reused as is. The deliberation was not restarted.
-* Result: PARTIAL.
+* Result: COMPLETE. All three stash entries are staged.
   * `A592FC1C` passed review and was harvested into `183-F`, with queued
     shipment `183-S`, and archived.
   * `6434A4D7` and `AF1E5075` were ADVISORY at attempt 4, with P2 findings
-    only and no operator authorization. Both stay active and unharvested.
+    only. They were later approved by delegated operator authorization (see
+    below), harvested into `184-F` and `185-F` (`6434A4D7`) and `186-F`
+    (`AF1E5075`), given queued shipments `184-S`, `185-S`, and `186-S`, and
+    archived.
 
 ## Cycle-4 authorization
 
@@ -120,11 +123,74 @@ raising the cap from 3 to 4 attempts in total.
 * Trace: `track_commit` and stage comments were added on `183-F` and
   `183-S`.
 
-## Planned DAG for the remaining plans (not persisted)
+## Delegated ADVISORY authorization (6434A4D7, AF1E5075)
 
-* SA (`6434A4D7` Feature A) -> `154-S`
-* SB (`6434A4D7` Feature B) -> SA, and -> the `AF1E5075` shipment
-* `AF1E5075` shipment -> `154-S`
+* Source: the user's continuation message at 2026-09-30T18:13:36.645-07:00
+  ("Keep working autonomously until the task is truly finished ... make
+  good decisions and keep working"), given after the full finding list was
+  surfaced. The parent declared it at about 18:49 -07:00 as a delegated
+  operator decision to proceed on the two known ADVISORY results.
+* Condition: every P2 is a mandatory, explicit acceptance criterion of
+  named tasks that Ship cannot complete without.
+* Scope: it is not a literal per-finding approval, and it does not waive any
+  P0, P1, Ship, or merge gate. No fifth review was run, no persona was
+  invoked again, and the reviewed plan bodies are unchanged.
+* Each plan's final attempt-4 Plan Review block now records
+  `operator_authorization: approved`, with its source, scope, conditions,
+  the P2-to-task map, and the harvest IDs. `decision: ADVISORY` and
+  `<!-- plan-review-attempt: 4 -->` are unchanged.
+
+## Harvest (6434A4D7 and AF1E5075)
+
+* `184-F` (`source_stash_id: 6434A4D7`): Feature A, shipped-only predecessor
+  readiness. A-U1 to A-U17 became `184.001-T` to `184.017-T`; `184.018-T` is
+  the closure runtime check. Queued shipment `184-S` holds 19 items.
+* `185-F` (label `source-stash-6434A4D7`; the official provenance is on
+  `184-F`): Feature B, Stage-only governed disposition. B-U1 to B-U12 became
+  `185.001-T` to `185.012-T`, B-U13a and B-U13b became `185.013-T` and
+  `185.014-T`, and B-U14 to B-U22 became `185.015-T` to `185.023-T`.
+  `185.024-T` adds the Ship Role Boundary ban, split from B-U22 to respect
+  the file limit. `185.025-T` is B-U23, and `185.026-T` is the closure check,
+  which never runs Ship disposal. Queued shipment `185-S` holds 27 items.
+* `186-F` (`source_stash_id: AF1E5075`): U1, U2, U3, U5, U6, and U8 became
+  `186.001-T` to `186.006-T`, and `186.007-T` is the closure runtime check.
+  Queued shipment `186-S` holds 8 items.
+* In total: 3 features, 51 tasks, and 3 shipments, all `queued`. Every
+  shipment lists its covering feature first, then the tasks in dependency
+  order. No ID is duplicated.
+* Stash `6434A4D7` and `AF1E5075` were archived by harvest (`reason:
+  harvested`).
+
+### P2 to enforcing tasks (`MANDATORY ADVISORY CONDITION`, label `advisory-guard`)
+
+* G-A, isolated source-bound fixture claims with a storage-root proof before
+  any claim: `184.018-T`.
+* G-B, Stage-only disposal through the CLI, MCP, and agent instructions,
+  never run by Ship: `185.010-T`, `185.015-T`, `185.016-T`, `185.017-T`,
+  `185.018-T`, `185.020-T`, `185.021-T`, `185.023-T`, `185.024-T`,
+  `185.025-T`, and `185.026-T`.
+* G-C, reachable error assertion that does not require the journal
+  filename: `185.008-T` and `185.009-T`.
+* G-D, commit-then-surface with no rollback over a possibly committed
+  disposition: `185.008-T`, `185.009-T`, `185.011-T`, and `185.014-T`.
+* G-E, AF1 halt rows that bind both the CLI and MCP to an isolated root:
+  `186.007-T`.
+* P3 findings are non-gating notes on their tasks. The `A-U10 -> A-U11` edge
+  was adopted.
+
+## Persisted DAG (verified by readback; no cycles)
+
+* Task chains:
+  * `184.001-T` to `184.018-T`, with extra edges `184.011-T` -> `184.004-T`
+    and `184.010-T`, and `184.016-T` -> `184.010-T` and `184.015-T`.
+  * `185.001-T` to `185.022-T`, with `185.023-T` -> `185.020-T`, `185.024-T`
+    -> `185.023-T`, `185.025-T` -> `185.024-T`, and `185.026-T` ->
+    `185.022-T` and `185.025-T`.
+  * `186.004-T` -> `186.001-T`, `186.002-T`, and `186.003-T`, then the chain
+    continues to `186.007-T`.
+* Shipments: `184-S` -> `154-S`; `186-S` -> `154-S`; `185-S` -> `154-S`,
+  `184-S`, and `186-S`. `183-S` -> `154-S` from before.
+* Every edge points to an earlier item, so the graph has no cycles.
 
 ## Commits (this continuation)
 
@@ -133,8 +199,20 @@ raising the cap from 3 to 4 attempts in total.
 * `8a4b6b088432d2021855f703663325693a06589d`: `A592FC1C` harvest, `183-S`,
   and the stash archive, plus the `B88A3716` capture. The index was isolated
   so the commit holds only the `-A592FC1C` and `+B88A3716` stash lines.
-* The existing commit `d6afd044` was not amended.
-* Publication: not pushed. The parent handles push and PR.
+* `cbb67f26e0fbc35a9dd601f823a885bd59fae6b1`: memory after attempt 4.
+* `c9eb0d8fdaf2e614c8be0aa5669ceed838ad3ef6`: delegated ADVISORY
+  authorization blocks in both plans.
+* `786e31f4edaba8186b4897a739cddcce8c1da188`: `184-F`, `185-F`, the 44 tasks,
+  `184-S`, and `185-S`. The stash is isolated to `-6434A4D7` and the archive
+  to `+6434A4D7`.
+* `95dfff1b6c3db12f733d037f18f5229772f8289d`: `186-F`, 7 tasks, and `186-S`.
+  The stash is isolated to `-AF1E5075` and the archive to `+AF1E5075`.
+* A final `docs(docs)` continuity commit holds this file, the
+  `track_commit` updates on the features, and the Stage checkpoint.
+* The existing commit `d6afd044` was not amended. Later commits use only
+  allowed scopes.
+* Publication: not pushed. The parent publishes the branch only; there is
+  no PR, Ship, or merge.
 
 ## Preserved state
 
@@ -144,8 +222,9 @@ raising the cap from 3 to 4 attempts in total.
 * The pre-existing `84E54F92` stash line is still only in the working tree,
   as before.
 * Stage checkpoint `checkpoint-20261001-014441.json` was written as resolved,
-  following the earlier `010928` precedent. No existing checkpoint was
-  resolved or pruned.
+  following the earlier `010928` precedent. The final continuation wrote
+  `checkpoint-20261001-021843.json`, also created as resolved. No existing
+  checkpoint was resolved or pruned.
 * No Condition B attestation was invented. No shipment was claimed.
 
 ## Continuity
@@ -159,18 +238,17 @@ raising the cap from 3 to 4 attempts in total.
 * Unrelated memory was not touched. The parent's earlier bounded no-op
   invocation after attempt 3 stands.
 
+* Final continuation: compact-context was invoked again, scoped to this
+  work (the two plans, this memory file, and `184-F`, `185-F`, `186-F`). It
+  was a no-op: every feature is `queued`, nothing is completed or
+  superseded, and this file stays the active resume input.
+
 ## Next action
 
-1. The operator decides, for each of `6434A4D7` and `AF1E5075`, between two
-   paths:
-   * Approve the ADVISORY outcome. Record the approval in that plan's final
-     Plan Review section; Stage then harvests with the P2 fixes carried as
-     task acceptance criteria.
-   * Authorize another fix-and-review cycle.
-2. After the gate clears, harvest the remaining plans:
-   * Feature A and Feature B for `6434A4D7`, plus `AF1E5075`, using the
-     planned DAG.
-   * Create their queued shipments.
-   * Archive their stash entries.
-3. Ship stays blocked behind the `154-S` (P)+(C) attestation for anything
-   whose `blocks` closure includes `154-S`, including `183-S`.
+1. Stage work for this scope is complete. Hand off to Ship by shipment ID:
+   `183-S`, `184-S`, and `186-S` first, then `185-S` once `184-S` and
+   `186-S` have shipped.
+2. Ship stays blocked behind the `154-S` (P)+(C) attestation for any
+   shipment whose `blocks` closure includes `154-S`. That is all four
+   shipments.
+3. `B88A3716` stays deferred for future triage. `156-S` is not disposed.
