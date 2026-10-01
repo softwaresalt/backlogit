@@ -2381,3 +2381,141 @@ P3 findings, accepted (applied where cheap, otherwise recorded):
 * The harness-manifest drift-reason lag is non-agent-facing metadata.
 
 <!-- shipment-decomposition-review-attempt: 3 -->
+
+## Shipment Decomposition Applied Mapping
+
+<!-- shipment-decomposition-applied-mapping: revision 2, review attempt 3 -->
+
+This section records what Stage applied under the attempt-3 ADVISORY
+decision. It does not edit the addendum text above.
+
+Execution record (2026-09-30, local time):
+
+* Preflight passed.
+  * MCP binary `2c8759c3` (dirty debug build) and CLI `131577c` both
+    contain `47dfcc93`, `170ae28b`, and `ffd885b4`.
+  * The 187+ root namespace was free.
+  * The unrelated dirty files matched their baseline hashes.
+* Rollback checkpoint commit `8725f50b` holds the addendum and review
+  records 1 to 3.
+* PA-P4 edges and PA-P5 bodies were applied before adoption. The task
+  frontmatter key sets were unchanged and the guard hashes were identical.
+* PA-P2 created `187-F` to `194-F`. Each carries the label
+  `source-stash-6434A4D7`, a `related_to` link to its original feature, and
+  no `source_stash_id`.
+* PA-P8 and PA-P1: hold comments recorded the before lists. Then the
+  `184-S` and `185-S` manifests were trimmed and synced.
+  * One MCP `backlogit_get_shipment` read right after the first sync
+    returned the old item list. The CLI read and the file were correct.
+  * A second MCP sync returned the trimmed lists before any adoption ran.
+* PA-P3: 38 adoptions in dependency order.
+  * `184.001-T` used MCP `backlogit_adopt_item`. Stage halted and read back
+    the new ID, the renamed file, and the renamed log.
+  * The other 37 used CLI `backlogit adopt --parent`, one at a time, with a
+    halt on any nonzero exit. All 38 returned exit 0.
+  * Each moved task carries `origin_feature` (`184-F` or `185-F`).
+* PA-P7 and PA-P6: eight shipments created with the feature first. Edges
+  were added one at a time.
+  * The `184-S` to `189-S` edge call timed out. A read-back showed the edge
+    was absent, so Stage added it once.
+* Each new shipment has one hold comment.
+  * The first A2 comment paraphrased R14 wrongly. A second comment on
+    `188-S` supersedes that sentence with the exact PR-5 duty. The comment
+    log is append-only and was not edited.
+* After-edit comments were added to `184-S` and `185-S`.
+* The decomposition note was appended to `184-F` and `185-F`. The key sets
+  were unchanged, and `184-F` keeps `custom_fields.source_stash_id`.
+* The `187-S` title is "Readiness A1: readiness API declarations and
+  predecessor sentinel". It differs from the `187-F` title. The other new
+  shipments use their feature titles.
+
+Task mapping (original ID to current ID to feature to shipment):
+
+| Original | Current | Unit | Feature | Shipment | Guard |
+|---|---|---|---|---|---|
+| `184.001-T` | `187.001-T` | A-U1 | `187-F` | `187-S` | |
+| `184.002-T` | `187.002-T` | A-U2 | `187-F` | `187-S` | |
+| `184.003-T` | `187.003-T` | A-U3 | `187-F` | `187-S` | |
+| `184.004-T` | `187.004-T` | A-U4 | `187-F` | `187-S` | |
+| `184.005-T` | `188.001-T` | A-U5 | `188-F` | `188-S` | |
+| `184.006-T` | `188.002-T` | A-U6 | `188-F` | `188-S` | |
+| `184.007-T` | `188.003-T` | A-U7 | `188-F` | `188-S` | |
+| `184.008-T` | `188.004-T` | A-U8 | `188-F` | `188-S` | |
+| `184.009-T` | `188.005-T` | A-U9 | `188-F` | `188-S` | |
+| `184.010-T` | `188.006-T` | A-U10 | `188-F` | `188-S` | |
+| `184.011-T` | `189.001-T` | A-U11 | `189-F` | `189-S` | |
+| `184.012-T` | `189.002-T` | A-U12 | `189-F` | `189-S` | |
+| `184.013-T` | `189.003-T` | A-U13 | `189-F` | `189-S` | |
+| `184.014-T` | `189.004-T` | A-U14 | `189-F` | `189-S` | |
+| `184.015-T` | `189.005-T` | A-U15 | `189-F` | `189-S` | |
+| `184.016-T` | `184.016-T` | A-U16 | `184-F` | `184-S` | |
+| `184.017-T` | `184.017-T` | A-U17 | `184-F` | `184-S` | |
+| `184.018-T` | `184.018-T` | SA-CV | `184-F` | `184-S` | G-A |
+| `185.003-T` | `190.001-T` | B-U3 | `190-F` | `190-S` | |
+| `185.004-T` | `190.002-T` | B-U4 | `190-F` | `190-S` | |
+| `185.005-T` | `190.003-T` | B-U5 | `190-F` | `190-S` | |
+| `185.006-T` | `190.004-T` | B-U6 | `190-F` | `190-S` | |
+| `185.007-T` | `190.005-T` | B-U7 | `190-F` | `190-S` | |
+| `185.008-T` | `191.001-T` | B-U8 | `191-F` | `191-S` | G-C, G-D |
+| `185.009-T` | `191.002-T` | B-U9 | `191-F` | `191-S` | G-C, G-D |
+| `185.001-T` | `192.001-T` | B-U1 | `192-F` | `192-S` | |
+| `185.002-T` | `192.002-T` | B-U2 | `192-F` | `192-S` | |
+| `185.010-T` | `192.003-T` | B-U10 | `192-F` | `192-S` | G-B |
+| `185.011-T` | `192.004-T` | B-U11 | `192-F` | `192-S` | G-D |
+| `185.012-T` | `192.005-T` | B-U12 | `192-F` | `192-S` | |
+| `185.013-T` | `192.006-T` | B-U13a | `192-F` | `192-S` | |
+| `185.014-T` | `192.007-T` | B-U13b | `192-F` | `192-S` | G-D |
+| `185.024-T` | `193.001-T` | B-U22s | `193-F` | `193-S` | G-B |
+| `185.015-T` | `194.001-T` | B-U14 | `194-F` | `194-S` | G-B |
+| `185.016-T` | `194.002-T` | B-U15 | `194-F` | `194-S` | G-B |
+| `185.017-T` | `194.003-T` | B-U16 | `194-F` | `194-S` | G-B |
+| `185.018-T` | `194.004-T` | B-U17 | `194-F` | `194-S` | G-B |
+| `185.019-T` | `194.005-T` | B-U18 | `194-F` | `194-S` | |
+| `185.020-T` | `194.006-T` | B-U19 | `194-F` | `194-S` | G-B |
+| `185.022-T` | `194.007-T` | B-U21 | `194-F` | `194-S` | |
+| `185.023-T` | `194.008-T` | B-U22 | `194-F` | `194-S` | G-B |
+| `185.021-T` | `185.021-T` | B-U20 | `185-F` | `185-S` | G-B |
+| `185.025-T` | `185.025-T` | B-U23 | `185-F` | `185-S` | G-B |
+| `185.026-T` | `185.026-T` | SB-CV | `185-F` | `185-S` | G-B |
+
+Shipment edges (`blocks`), as read back:
+
+| Shipment | Unit | Tasks | Prerequisites |
+|---|---|---|---|
+| `187-S` | A1 | 4 | `154-S` |
+| `188-S` | A2 | 6 | `154-S`, `187-S` |
+| `189-S` | A3 | 5 | `154-S`, `187-S`, `188-S` |
+| `184-S` | A4 | 3 | `154-S`, `188-S`, `189-S` |
+| `190-S` | B1 | 5 | `154-S`, `188-S`, `189-S` |
+| `191-S` | B2 | 2 | `154-S`, `190-S` |
+| `192-S` | B3 | 7 | `154-S`, `187-S`, `191-S` |
+| `193-S` | B4 | 1 | `154-S`, `186-S` |
+| `194-S` | B5 | 8 | `154-S`, `186-S`, `189-S`, `192-S`, `193-S` |
+| `185-S` | B6 | 3 | `154-S`, `184-S`, `186-S`, `194-S` |
+
+A topological order (Kahn) for the shipment graph is:
+`187-S`, `193-S`, `188-S`, `189-S`, `184-S`, `190-S`, `191-S`, `192-S`,
+`194-S`, `185-S`. The external predecessors are `154-S` (archived,
+`archived_status: shipped`) and `186-S` (queued). The graph has no cycle.
+
+Verification (2026-09-30):
+
+* Coverage: 44 tasks, 44 manifest memberships, 44 distinct, no duplicates.
+  No original ID file remains under `.backlogit/queue`.
+* Each manifest lists its feature first. Every listed task's `parent_id` is
+  that feature. Every task under each feature is in that feature's manifest.
+* Every artifact is `queued`. No task status changed.
+* Every task edge that crosses shipments points to a task in a shipment that
+  is a transitive prerequisite. There are 0 violations and no missing
+  targets.
+* No frontmatter in `.backlogit/queue` references an original moved ID.
+  No moved task body or closing-chunk body names an original moved ID in
+  prose.
+* The 17 guarded tasks keep the `advisory-guard` label. Their MANDATORY
+  ADVISORY CONDITION text hashes match the pre-edit baseline. G-E in
+  `186.007-T` is unchanged.
+* The `183-F`, `183-S`, `183.001-T` to `183.003-T`, `186-F`, `186-S`, and
+  `186.001-T` to `186.007-T` files match their baseline hashes.
+* Hold: condition B scheduler-consumption attestation C for `154-S` is
+  absent, so no unit is Ship-eligible. Stage did not run P-008 gates, builds,
+  or tests. Ship runs them per the Per-Release Closure Rule.
