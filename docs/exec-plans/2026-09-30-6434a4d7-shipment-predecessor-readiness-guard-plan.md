@@ -2519,3 +2519,54 @@ Verification (2026-09-30):
 * Hold: condition B scheduler-consumption attestation C for `154-S` is
   absent, so no unit is Ship-eligible. Stage did not run P-008 gates, builds,
   or tests. Ship runs them per the Per-Release Closure Rule.
+
+## Shipment Decomposition Readiness BLOCKED Addendum
+
+<!-- shipment-decomposition-readiness: BLOCKED, post-verification, 2026-09-30 -->
+
+Status: BLOCKED. This addendum records a HALT found after the Applied
+Mapping verification. It does not edit the review records, the mandatory
+conditions, or the Applied Mapping above.
+
+Blocker (P-002, P-004, R12; same-contract completion, not a deferred scope
+expansion):
+
+* MDC-1 (this plan, the `184.005-T` AC text) allows a compile failure as RED
+  evidence for `TestShipmentReadinessDeclarations`. It also states that the
+  resolver-field test file stops `internal/core` from compiling until A-U6.
+* `.backlogit/queue/188.001-T.md` AC4 (A-U5) permits "a compile failure or a
+  `go/parser` failure". The resolver-field test file stops compilation until
+  `188.002-T`.
+* `.backlogit/queue/188.002-T.md` (A-U6) depends on `188.001-T`. It adds the
+  resolver field and the `QueryQueueForWorkspace` stub, and its AC5 says the
+  declaration test passes afterward.
+* So the declaration signature pin is never seen failing as a compiling
+  `go/parser` test before its production declaration exists. A compile
+  failure cannot stand in for the required compiling-but-failing harness.
+* The requirement is not waived and not softened to an advisory.
+
+Review cycle budget:
+
+* Decomposition review attempts: 1 FAIL, 2 FAIL, 3 ADVISORY. MDC-1 to MDC-5
+  were applied after attempt 3. These records and the original plan-review
+  attempts 1 to 4 stay unchanged.
+* All three decomposition fix cycles are consumed. Another review or fix
+  cycle needs explicit operator disposition: extend the cycle limit, or
+  accept a documented residual risk. No counter reset and no fourth review
+  is authorized by this addendum.
+
+Applied result (stays in place, not undone): 10 queued manifests, 44 tasks.
+`187-S` 4, `188-S` 6, `189-S` 5, `184-S` 3, `190-S` 5, `191-S` 2, `192-S` 7,
+`193-S` 1, `194-S` 8, `185-S` 3. No status changed. The 17 guarded
+conditions are unchanged.
+
+Handoff:
+
+* No source work and no Ship claim is permitted from this handoff.
+* Operator-approved, in-scope remediation of the A-U5 and A-U6 RED and
+  green boundary is required first.
+* Condition B scheduler-consumption attestation C for `154-S` is still
+  absent. So no manifest is Ship-eligible, including manifests this blocker
+  does not touch.
+* Plan-readiness HOLD comments on `188-S` and `188.001-T` are notes only.
+  They are not a deterministic code claim gate.

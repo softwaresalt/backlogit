@@ -99,3 +99,29 @@
 
 No Stage work remains for this correction. Ship must not claim any unit
 until attestation C exists. The order is the Kahn order above.
+
+## Post-verification HALT (BLOCKED)
+
+* Status: BLOCKED. The Result line above ("COMPLETE") covers the applied
+  decomposition only. Plan readiness is BLOCKED.
+* Branch HEAD before this record: `f041e16d`, equal to origin.
+* Blocker: MDC-1 and `188.001-T` AC4 accept a compile failure as RED for
+  `TestShipmentReadinessDeclarations`. The resolver-field test stops
+  compilation until `188.002-T`, which adds the field and the
+  `QueryQueueForWorkspace` stub and then expects a pass. The pin is never
+  seen failing as a compiling `go/parser` test (P-002, P-004, R12). This is
+  a same-contract completion, not a deferred scope expansion. It is not
+  waived.
+* The parent emitted P-005 and halted mutation, review, and implementation.
+* Review cycles: decomposition attempts 1 FAIL, 2 FAIL, 3 ADVISORY are
+  consumed. A further cycle needs explicit operator disposition. No counter
+  reset and no fourth review.
+* Applied result kept: 10 queued manifests, 44 tasks (`187-S` 4, `188-S` 6,
+  `189-S` 5, `184-S` 3, `190-S` 5, `191-S` 2, `192-S` 7, `193-S` 1,
+  `194-S` 8, `185-S` 3). No status changes.
+* Recorded: the plan BLOCKED addendum, and HOLD comments on `188-S` and
+  `188.001-T` through `backlogit_append_comment`. The comments are notes,
+  not a code claim gate.
+* Next step: operator disposition and in-scope remediation of the A-U5 and
+  A-U6 boundary. No source work and no Ship. Attestation C for `154-S` is
+  still absent.
