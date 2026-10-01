@@ -125,3 +125,50 @@ until attestation C exists. The order is the Kahn order above.
 * Next step: operator disposition and in-scope remediation of the A-U5 and
   A-U6 boundary. No source work and no Ship. Attestation C for `154-S` is
   still absent.
+
+## Operator Continuation: Revision 3 (READY_FOR_STAGING_HANDOFF)
+
+* Timestamp: 2026-10-01. Branch `stage/condition-b-enforcement-staging`,
+  baseline `d5ee1642`. Route: claude-opus-5.5 / anthropic / high.
+* Authorization: the operator continuation relayed at 2026-10-01T04:08:18Z
+  authorizes one more in-scope packaging review/fix cycle. The packaging
+  budget goes from 3 to 4. No counter was reset. It is not individual-finding
+  approval and not dark mode. No attempt 5 is authorized.
+* Counters: packaging attempts 1 FAIL, 2 FAIL, 3 ADVISORY (historical), and
+  4 ADVISORY with `operator_authorization: approved`. The original plan's
+  four reviews are unchanged. The verifier and engram binding failure
+  counters stay at 2 each and were not replayed.
+* Attempt 4: five personas. No unresolved P0 or P1. The Learnings P1 on
+  FC-5 was resolved in the plan, with bound ACs. Every P2 was fixed or bound
+  to an AC. No out-of-scope finding, so no P-021 C2 capture.
+* Fix: the plan's Revision 3 supersedes MDC-1 and the named compile-failure
+  AC sentences. A compiler error is never valid RED. Historical text is
+  kept.
+* New tasks: `188.007-T` (A-U5a, standalone go/ast declaration harness,
+  0.5-0.75 h) and `188.008-T` (A-U5b, declaration-only field and stub,
+  0.25-0.5 h). Declaration duties were removed from `188.002-T`. `188.004-T`
+  AC4 requires that no `ErrNotImplemented` remains, so the stub closes
+  inside `188-S`.
+* Chain: `187.004-T -> 188.007-T -> 188.008-T -> 188.001-T -> 188.002-T ->
+  188.003-T -> 188.004-T -> 188.005-T -> 188.006-T`. The edge
+  `188.001-T -> 187.004-T` was removed. Downstream edges are kept.
+* Shipments (all queued): `187-S` 4, `188-S` 8 (5.75-9.25 h), `189-S` 5,
+  `184-S` 3, `190-S` 5, `191-S` 2, `192-S` 7, `193-S` 1, `194-S` 8,
+  `185-S` 3. That is 46 tasks: the original 44 plus 2 new. Feature A is
+  14.25-23.5 h and Feature B is 22.75-34.75 h.
+* Verification (documentary and structural only): 46 distinct queued tasks,
+  0 missing. 49 edges, acyclic, 0 missing targets. The `188` edge set equals
+  the target. 0 forbidden phrases in active bodies. Key sets match. The plan
+  is append-only. The 17 guards and the unrelated dirty-file hashes are
+  unchanged. No harness test was run; Ship produces the RED evidence.
+* Comments: informational notes on `188-S`, `188-F`, `188.001-T`,
+  `188.007-T`, and `188.008-T`. They are not a claim gate.
+* State: READY_FOR_STAGING_HANDOFF. This supersedes the packaging HALT
+  above. It is not Ship-eligible: the `154-S` attestation C hold remains on
+  all 10 shipments.
+* Next step: none for Stage. Ship waits for attestation C.
+* compact-context: invoked with target memory, scoped to this correction's
+  memory group. 1 file, 8.6 KB, newer than 14 days, still referenced. 0
+  candidates, so it is a no-op. No global archives.
+* Validation: `docs_lint` is valid (0 violations) for the plan and this
+  memory. `git diff --check` is clean.

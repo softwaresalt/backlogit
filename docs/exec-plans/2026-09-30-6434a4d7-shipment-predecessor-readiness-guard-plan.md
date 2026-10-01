@@ -2570,3 +2570,513 @@ Handoff:
   does not touch.
 * Plan-readiness HOLD comments on `188-S` and `188.001-T` are notes only.
   They are not a deterministic code claim gate.
+
+## Shipment Decomposition Correction Revision 3 (Packaging Attempt 4)
+
+<!-- shipment-decomposition-correction: revision 3, 2026-10-01 -->
+
+Status: proposed for packaging review attempt 4. This revision repairs the
+blocker in the BLOCKED addendum above. It does not edit any earlier review
+record, mandatory condition, the Applied Mapping, or the BLOCKED addendum.
+Those stay in place as historical records.
+
+### Authorization and Cycle Budget
+
+* Provenance: the operator instruction "You have not yet marked the task as
+  complete ... Keep working autonomously until the task is truly finished,
+  then call task_complete", relayed by the parent session at
+  2026-10-01T04:08:18Z. The parent treats it as authorization for one
+  additional in-scope review and fix cycle for this exact defect.
+* Budget: the packaging review limit rises from 3 to 4 attempts in total.
+  Attempts 1 FAIL, 2 FAIL, and 3 ADVISORY stay as recorded. This revision
+  is reviewed as packaging attempt 4. No counter is reset, and no attempt 5
+  is authorized.
+* The original plan-review counter (attempts 1 to 4) is unchanged. This is
+  not original plan-review attempt 5.
+* This authorization is not an approval of individual findings, not a
+  dark-mode activation, and not a waiver of P-002, P-004, or R12. It does not
+  authorize source implementation, Ship, a pull request, or a merge.
+
+### Superseded Text
+
+From this revision on, the text below is superseded. It stays in place as
+history and is no longer authoritative:
+
+* MDC-1, both bullets: the `184.005-T` RED AC that accepts a compile or
+  `go/parser` failure, and the `184.006-T` AC that
+  `TestShipmentReadinessDeclarations` passes.
+* PR-1, the `184.005-T` bullets (pin added to
+  `TestShipmentReadinessDeclarations`, two files, "fails through `go/parser`
+  until A-U6") and the `184.006-T` bullet (declare the stub). The
+  `184.001-T`, `184.002-T`, and `184.007-T` bullets stand. The `184.008-T`
+  bullet is restated below.
+* Green Boundaries, the second A2 sub-bullet ("A-U5 pins ... A-U6 declares
+  the stub"). It is restated below.
+* `188.001-T`: scenario 4, the second file, and AC4.
+* `188.002-T`: the resolver-field and stub declaration duties, and AC5.
+* `188.004-T`: AC4, restated with the new test name.
+* The `187.001-T` pointer "moved to A-U5" now resolves to A-U5a in the same
+  `188-S` release. The `187.001-T` body stays unchanged.
+
+RED rule for every A2 unit: a compile error, a type error, a
+`[build failed]` result, or a setup failure is never valid RED evidence.
+RED means the test binary compiles and the named test reports `--- FAIL`
+with its own assertion messages.
+
+### Resolver Field Binding
+
+* The plan never named the unexported resolver field or its type. A-U5 sets
+  the field directly, and A-U8 installs "a resolver over
+  `ShipmentPredecessorShipped`". A compiling A-U5 harness must name the
+  field, so the name and type must be declared before A-U5.
+* Binding, derived from A-U8 as the predicate with `ws` bound, with no new
+  behavior and no schema change:
+  `shipmentPredecessorResolver func(ctx context.Context, id string) (bool, string, error)`
+  on `QueueFilter`.
+* A-U1's sentence "The unexported resolver field on `QueueFilter` is
+  deliberately not pinned" governs the permanent public API harness
+  `TestShipmentReadinessDeclarations` (`187.001-T`), which stays unchanged.
+  The field pin lives only in the A2 harness A-U5a, inside the
+  `internal/core` package. An in-package refactor updates both together.
+
+### New Unit A-U5a: Queue Readiness Declaration Harness (tests)
+
+* Task: new, under `188-F` (expected ID `188.007-T`).
+* File: `internal/core/queue_readiness_decl_test.go` (new). Test:
+  `TestQueueReadinessDeclarations`.
+* Uses only `go/parser`, `go/token`, `go/ast`, and the standard library. It
+  parses each non-`_test.go` file in the `internal/core` package directory
+  and inspects the AST. It names no production identifier at compile time,
+  so it compiles before the declarations exist.
+* It asserts exactly two declarations, by parameter and result types:
+  1. `func QueryQueueForWorkspace(ctx context.Context, ws *Workspace, filter *QueueFilter) (*QueueView, error)`.
+  2. A `QueueFilter` field `shipmentPredecessorResolver` of type
+     `func(context.Context, string) (bool, string, error)`.
+* It does not assert function bodies, so both the stub and the final
+  implementation pass.
+* Plan dependencies: A-U4 (`187.004-T`).
+* AC:
+  1. RED (R12): before A-U5b,
+     `go test ./internal/core -run '^TestQueueReadinessDeclarations$' -count=1 -v`
+     compiles and reports `--- FAIL: TestQueueReadinessDeclarations`, with an
+     assertion message for each missing declaration. A compile error, a type
+     error, `[build failed]`, or a setup failure is not RED.
+  2. The RED run happens before `queue_shipment_readiness_test.go` (A-U5)
+     exists, so no other file can mask the result.
+  3. The RED output is recorded in the commit message or a task comment.
+* Effort: 0.5 to 0.75 hours. Complexity: low-medium. Posture: test-first.
+
+### New Unit A-U5b: Queue Readiness Declarations (code)
+
+* Task: new, under `188-F` (expected ID `188.008-T`).
+* File: `internal/core/queue.go`.
+* Add the `shipmentPredecessorResolver` field to `QueueFilter` with a doc
+  comment. Declare `QueryQueueForWorkspace` with the signature above,
+  returning `nil, blerrors.ErrNotImplemented`, with a doc comment.
+* No filtering change, no caller change, and no read of the field.
+* Plan dependencies: A-U5a.
+* AC:
+  1. `go test ./internal/core -run '^TestQueueReadinessDeclarations$' -count=1`
+     passes.
+  2. `filterByResolvedDependencies` and `QueryQueue` are unchanged.
+  3. `go build ./...` passes.
+* Known window: `golangci-lint` `unused` may flag the field until A-U6 reads
+  it. A-U6 closes this inside `188-S`, and the A2 release gate runs
+  `golangci-lint` before merge.
+* Effort: 0.25 to 0.5 hours. Complexity: low.
+
+### Changed Unit A-U5 (`188.001-T`)
+
+* One file: `internal/core/queue_shipment_readiness_test.go` (new).
+  Scenarios 1 to 3 stay as reviewed. Scenario 4 and the second file are
+  removed.
+* The tests set `shipmentPredecessorResolver` directly. A-U5b declares it,
+  so the file compiles.
+* Plan dependencies: A-U5b. This replaces the direct A-U4 dependency, which
+  stays transitive.
+* AC:
+  1. RED: `go test ./internal/core -run '^TestQueueShipmentReadiness$' -count=1 -v`
+     compiles and reports `--- FAIL`. Groups 1 and 3 each have at least one
+     failing behavior assertion. A compile error, a type error,
+     `[build failed]`, or a setup failure is not RED.
+  2. Scenario 2 passes against the code before A-U6 (characterization).
+  3. All three scenario groups are present.
+  4. `TestQueueReadinessDeclarations` still passes.
+* Effort: 0.75 to 1.25 hours. Complexity: medium.
+
+### Changed Unit A-U6 (`188.002-T`)
+
+* File: `internal/core/queue.go`. The resolver-field and stub declaration
+  duties move to A-U5b and are removed here. The rest stays: select
+  `artifact_type`, the shipment edge rule that reads
+  `shipmentPredecessorResolver`, wrapped resolver errors, and the caller
+  inventory.
+* ACs 1 to 4 stay as reviewed. AC5 is replaced: the field and
+  `QueryQueueForWorkspace` declarations are unchanged from A-U5b,
+  `TestQueueReadinessDeclarations` passes, and `QueryQueueForWorkspace`
+  still returns `ErrNotImplemented` so A-U7 fails against the stub.
+* Effort: 1.25 to 1.75 hours. Complexity: high.
+
+### Changed Unit A-U8 (`188.004-T`)
+
+* AC4 becomes:
+  `go test ./internal/core -run '^(TestShipmentReadinessDeclarations|TestQueueReadinessDeclarations)$' -count=1`
+  passes, and no `ErrNotImplemented` remains in `QueryQueueForWorkspace`.
+
+### Restated A2 Green Boundary
+
+* A-U5a pins the field and `QueryQueueForWorkspace` with a compiling AST
+  harness that fails before they exist (R12).
+* A-U5b declares them. `QueryQueueForWorkspace` is a stub.
+* A-U5 compiles and fails on behavior. A-U6 implements the filter.
+* A-U7 compiles and fails against the stub. A-U8 implements it.
+* A-U10 closes the adapter red window. No stub survives the release.
+
+### Task Chain and Edges
+
+Order: `187.004-T`, `188.007-T`, `188.008-T`, `188.001-T`, `188.002-T`,
+`188.003-T`, `188.004-T`, `188.005-T`, `188.006-T`.
+
+Task edge changes (task depends on predecessor):
+
+* Add `188.007-T -> 187.004-T`.
+* Add `188.008-T -> 188.007-T`.
+* Remove `188.001-T -> 187.004-T`.
+* Add `188.001-T -> 188.008-T`.
+
+Unchanged: `188.002-T -> 188.001-T`, `188.003-T -> 188.002-T`,
+`188.004-T -> 188.003-T`, `188.005-T -> 188.004-T`,
+`188.006-T -> 188.005-T`, `184.016-T -> 188.006-T`,
+`189.001-T -> 188.006-T`, and every shipment edge.
+
+### `188-S` Size: 8 Tasks
+
+Manifest order: `188-F`, `188.007-T`, `188.008-T`, then `188.001-T` to
+`188.006-T`.
+
+Why `188-S` holds 8 tasks, the same cap as B5:
+
+* The declarations and the stub cannot ship without their behavior. PR-1
+  forbids a stub-only release.
+* The harness must precede the declarations in the same release, and the
+  declarations must precede the compiling A-U5 harness.
+* The A-U5 to A-U10 red window must close inside one release.
+* The split is by dependency, not by numeric slice.
+
+### Effort Changes
+
+| Task | Unit | Domain | Old effort (h) | New effort (h) | Complexity |
+|---|---|---|---|---|---|
+| `188.007-T` | A-U5a | tests | none | 0.5 to 0.75 | low-medium |
+| `188.008-T` | A-U5b | code | none | 0.25 to 0.5 | low |
+| `188.001-T` | A-U5 | tests | 1 to 1.75 | 0.75 to 1.25 | medium |
+| `188.002-T` | A-U6 | code | 1.5 to 2 | 1.25 to 1.75 | high |
+
+Totals:
+
+* 46 tasks over the same 10 shipments.
+* A2 (`188-S`): 8 tasks, 5.75 to 9.25 hours (was 6 tasks, 5.5 to 8.75).
+  Complexity and risk stay high and moderate-high.
+* Feature A: 14.25 to 23.5 hours (was 14 to 23). Feature B is unchanged at
+  22.75 to 34.75 hours.
+* No other shipment changes membership or scope. Every shipment keeps the
+  `154-S` attestation C hold, so none is Ship-eligible.
+
+### Revision 3 Review Conditions (Packaging Attempt 4)
+
+These conditions resolve the attempt 4 findings. They are part of Revision 3
+and are bound into the task bodies when the revision is applied.
+
+#### FC-5 and P-002.1 Ordering
+
+* Finding LR-4-P1 (Learnings Researcher): FC-5 in
+  `docs/decisions/2026-08-30-p002-breach-incident-152f-134s.md` treats an
+  `ErrNotImplemented` stub as production behavior that must not precede its
+  RED. A-U5b lands the stub before the A-U7 behavior RED.
+* Disposition: resolved, not waived. The authoritative policy text is
+  P-002.1 in `.github/policies/workflow-policies.md`, cycle 31: "harness
+  first, declaration second". A declaration "whose body would absorb real
+  behaviour MUST be split into *declaration* -> *behaviour harness* ->
+  *implementation*, each gated by a harness that precedes it."
+* Revision 3 follows that split exactly. Each step is gated by an observed,
+  compiling RED that lands first:
+
+  | Step | Unit | Gating RED that lands first |
+  |---|---|---|
+  | Declaration of the field and `QueryQueueForWorkspace` | A-U5b (`188.008-T`) | A-U5a (`188.007-T`), source-shape |
+  | Filter behavior | A-U6 (`188.002-T`) | A-U5 (`188.001-T`), behavior |
+  | `QueryQueueForWorkspace` behavior | A-U8 (`188.004-T`) | A-U7 (`188.003-T`), behavior |
+
+* The stub body carries no behavior beyond the declared shape. It returns
+  `nil, blerrors.ErrNotImplemented`, reads no field, and changes no caller.
+  This matches the 140-S declaration-first precedent in
+  `docs/compound/best-practices/source-shape-harnesses-must-allow-lifecycle-successors-2026-09-11.md`.
+* Bound conditions:
+  * `188.008-T` AC: the A-U5b commit is a strict descendant of the commit
+    that records the A-U5a RED output. The stub reads no field and changes no
+    caller.
+  * `188.004-T` AC: the Ship FC-5 manual pre-flight names A-U5a as the
+    gating RED for the declaration, and A-U7 as the gating RED for the
+    `QueryQueueForWorkspace` behavior. `188.003-T` is unchanged: its RED
+    already runs against the compiling stub.
+* FC-5 stays a manual Ship pre-flight obligation, deferred to stash
+  `A2C91FE5`. Nothing in this plan automates it or claims to.
+
+#### AST Comparison Method (A-U5a)
+
+* Read the `internal/core` directory with `os.ReadDir`. Skip directories and
+  every `_test.go` file. Parse each remaining `.go` file with
+  `parser.ParseFile`.
+* Assert at least one file was parsed, so the check is not vacuous.
+* Imports: standard library only (for example `go/ast`, `go/parser`,
+  `go/token`, `go/types` for `types.ExprString`, `os`, `path/filepath`,
+  `strings`, `testing`), plus testify if wanted. No production package
+  import and no production identifier. This matches the existing harnesses
+  in `internal/canonical`.
+* Function check:
+  * Find the `*ast.FuncDecl` named `QueryQueueForWorkspace` with
+    `Recv == nil`.
+  * Expand parameters and results by `max(1, len(Names))`.
+  * Compare each type with `types.ExprString`, ignoring parameter names.
+  * Expected parameters: `context.Context`, `*Workspace`, `*QueueFilter`.
+    Expected results: `*QueueView`, `error`.
+* Field check:
+  * Find the `*ast.TypeSpec` named `QueueFilter` whose type is an
+    `*ast.StructType`.
+  * Find the field named `shipmentPredecessorResolver`.
+  * Compare its type with `types.ExprString`, ignoring parameter names.
+    Expected: `func(context.Context, string) (bool, string, error)`.
+* Messages: "missing" when a declaration is absent, and "wrong signature:
+  got X, want Y" when it is present with the wrong types.
+* Other declarations are allowed. The harness asserts that these two exist
+  with these types. It does not assert that they are the only ones. This
+  replaces "exactly two declarations" in A-U5a above.
+* A-U5a and A-U5 are `package core`.
+
+#### Lint Window (Principle I)
+
+* Conflict, recorded per the Constitution Governance section:
+  * Principle I wants `golangci-lint run` clean before any commit.
+  * Between A-U5b and A-U5, the unexported field has no reader, and the
+    `unused` linter may report it.
+* Narrowed window: it closes at A-U5 (`188.001-T`). Test writes to the field
+  count as uses, so A-U6 is not needed to close it. This replaces the "Known
+  window ... until A-U6" bullet in A-U5b above.
+* Simpler alternative rejected: declaring the field in A-U5 or A-U6 would
+  either make A-U5 fail to compile or put the declaration behind its own
+  behavior. Both are R12 and P-004 defects.
+* Bound conditions:
+  * `188.008-T`: run `golangci-lint run ./internal/core/...` and record the
+    output in a task comment. Only an `unused` report on
+    `shipmentPredecessorResolver` is tolerated, and only until `188.001-T`.
+  * `188.008-T`: `go vet ./...` passes. A func field makes `QueueFilter`
+    non-comparable, and vet catches any comparison of it.
+  * `188.001-T`: `golangci-lint run ./internal/core/...` reports nothing for
+    the field.
+
+#### Resolver-Error Fixture (A-U5 Group 3)
+
+* The group 3 resolver-error case stubs the resolver to return a sentinel
+  error for an archived predecessor.
+* It asserts with `errors.Is` that the error is wrapped.
+
+#### Additional Superseded Text
+
+The text below is also superseded. It stays in place as history:
+
+* A-U6 body: "Add an unexported resolver field to `QueueFilter`." A-U5b now
+  owns it.
+* Release Units: the A2 row (6 tasks, 5.5 to 8.75 hours) and the Totals
+  bullets ("44 tasks", "Feature A: 14 to 23 hours"). These are restated in
+  Effort Changes above.
+* Dependency Graph: `184.005-T -> 184.004-T`. It is restated as
+  `188.001-T -> 188.008-T`.
+* Packaging Constitution Check, the II and Workflow 1 bullets ("A-U5 pins
+  the signature before A-U6 declares the stub"; "A-U5 gains one pin and one
+  file"). These are restated in the Constitution Check below.
+* SBA2-P1-1 disposition (revision 2), and the revision 3 "R12 trace"
+  sentence ("met by A-U5 (pin) and A-U6 (stub)"). The R12 trace is now:
+  A-U5a pins, A-U5b declares, A-U7 tests behavior, A-U8 implements.
+* Applied Mapping: the `188-S` row count of 6, and the line "Coverage: 44
+  tasks". These are restated in the Revision 3 Applied Mapping.
+
+#### Constitution Check (Revision 3)
+
+* I (safety-first Go): the lint conflict and its narrowed window are
+  recorded above. `go vet` and `go build` are ACs on `188.008-T`.
+* II (test-first): every A2 production step lands after an observed,
+  compiling RED: A-U5a before A-U5b, A-U5 before A-U6, A-U7 before A-U8. A
+  compile error is never RED.
+* Workflow 1 (2-hour rule, width): each new task touches one file and one
+  domain, and each is under one hour. `188.001-T` shrinks to one file.
+  `188-S` holds 8 tasks, the same cap as B5, and the rationale is recorded
+  above.
+* Workflow 5 (no dead code): the stub is replaced inside `188-S` by A-U8.
+  The `188.004-T` AC rejects any remaining `ErrNotImplemented`.
+* The 17 mandatory guarded conditions, their provenance, and the original
+  four plan reviews are unchanged.
+* The operator authorization is read as one in-scope fix cycle for this
+  defect only. The operator may challenge that reading. The provenance is
+  recorded above.
+
+#### Proposed Actions (strict-safety)
+
+| ProposedAction | ActionRisk | Rollback | Approval |
+|---|---|---|---|
+| Create `188.007-T` and `188.008-T` under `188-F`, queued | moderate | Archive both new tasks and restore the edges | operator continuation |
+| Rewrite the bodies of `188.001-T`, `188.002-T`, and `188.004-T`, with frontmatter key sets checked before and after | moderate | Restore the bodies from git at `d5ee164` | operator continuation |
+| Edit dependencies: add 3, remove 1 | moderate | Invert each edge change | operator continuation |
+| Add the 2 tasks to `188-S` and reorder `items` | moderate | Restore `188-S.md` from git, then sync | operator continuation |
+| Append comments to `188-S`, `188-F`, `188.001-T`, `188.007-T`, and `188.008-T` | low | Append-only; correct with a later comment | operator continuation |
+
+No action is destructive. No status changes, and nothing is archived,
+claimed, shipped, or merged.
+
+#### Read-Back Verification Checklist
+
+* None of the task bodies for `188.001-T`, `188.002-T`, `188.007-T`, or
+  `188.008-T` contains "compile failure", "MDC-1", "Add the unexported
+  resolver field", or "declare the stub".
+* Dependency fields and `item_deps` match the edge list exactly. The DAG has
+  no cycle and no missing reference.
+* The `188-S` `items` list is in the manifest order above.
+* There are 46 distinct tasks over 10 manifests. Each task appears exactly
+  once, and all are `queued`.
+* Cross-shipment edge check: `188.007-T -> 187.004-T` targets `187-S`, a
+  prerequisite of `188-S`. That gives 0 violations.
+* The 17 guarded-condition bodies, the unrelated dirty-file hashes, and the
+  `154-S` C hold are unchanged.
+
+## Shipment Decomposition Review
+
+<!-- shipment-decomposition-review-attempt: 4 -->
+
+* review_surface: Shipment Decomposition Correction Revision 3 and its
+  Review Conditions. This is the `188-S` declaration handoff only.
+* review_attempt: 4 (packaging). This is the final authorized attempt. No
+  attempt 5 is authorized.
+* dispatch_mode: multi-agent-dispatch
+* decision: ADVISORY
+* operator_authorization: approved. Source: the operator continuation
+  relayed at 2026-10-01T04:08:18Z, which authorizes this one cycle and its
+  in-scope fixes. It is not individual-finding approval and not dark mode.
+
+Personas and verdicts:
+
+| Persona | Verdict | P0 | P1 | P2 | P3 |
+|---|---|---|---|---|---|
+| Constitution Reviewer | ADVISORY | 0 | 0 | 2 | 1 |
+| Go Reviewer | ADVISORY | 0 | 0 | 1 | 4 |
+| Scope Boundary Auditor | ADVISORY | 0 | 0 | 2 | 3 |
+| Architecture Strategist | PASS | 0 | 0 | 0 | 1 |
+| Learnings Researcher | finding | 0 | 1 | 0 | 0 |
+
+Not triggered:
+
+* Agent-Native Parity Reviewer: no MCP, CLI, or agent contract change.
+* Security Lens Reviewer: no auth, trust-boundary, or data-exposure change.
+
+Findings and dispositions:
+
+* LR-4-P1 (FC-5 stub-before-RED): resolved in the FC-5 and P-002.1
+  Ordering subsection, with bound ACs. This is not downgraded or waived.
+* Lint window (Principle I): resolved by a recorded conflict, the narrowed
+  window, and lint, vet, and build ACs.
+* Read-back verification: bound as the checklist above.
+* AST comparison method: specified above.
+* Superseded attempt 3 and Packaging Constitution Check sentences: listed
+  above.
+* Proposed actions, risk, and rollback: listed above.
+* P3 items (comparison wording, non-vacuity, `go vet`, package name,
+  resolver-error fixture, cross-shipment edge check, guards unchanged,
+  operator-reading note): all applied above.
+* Out of scope: none. The Scope Boundary Auditor reported no out-of-scope
+  finding, so no P-021 C2 capture is required.
+
+Gate result:
+
+* No unresolved P0 or P1 finding.
+* Every P2 finding is fixed in the revision text or bound into a task AC,
+  and is carried into the task bodies when the revision is applied.
+* Revision 3 is therefore approved for application.
+
+## Revision 3 Applied Mapping
+
+Applied on 2026-10-01 through official backlogit operations, after the
+attempt 4 gate above. This section records the applied state. It does not
+change any reviewed text above.
+
+New tasks under `188-F`:
+
+| Task | Plan unit | Title | Depends on | Effort |
+|---|---|---|---|---|
+| `188.007-T` | A-U5a | Tests: queue readiness declaration harness | `187.004-T` | 0.5-0.75 h, low-medium |
+| `188.008-T` | A-U5b | Code: declare queue readiness resolver field and entry point | `188.007-T` | 0.25-0.5 h, low |
+
+Neither new task carries `custom_fields.origin_feature`. Both are new units,
+not carry-overs from `184-F`.
+
+Rewritten task bodies:
+
+* `188.001-T` (A-U5): uses one test file only and has a compiling RED AC. A
+  compiler error is never valid RED. It now depends on `188.008-T`, and the
+  edge to `187.004-T` is removed because that order is now reached through
+  `188.007-T`.
+* `188.002-T` (A-U6): the field and stub declaration duties are removed. AC5
+  requires the declarations to stay unchanged.
+* `188.004-T` (A-U8): AC4 runs both declaration tests and requires that no
+  `ErrNotImplemented` remains. AC5 records the FC-5 pre-flight.
+
+Applied `188-S` chain:
+
+`187.004-T -> 188.007-T -> 188.008-T -> 188.001-T -> 188.002-T -> 188.003-T
+-> 188.004-T -> 188.005-T -> 188.006-T`
+
+The downstream edges `184.016-T -> 188.006-T` and `189.001-T -> {187.004-T,
+188.006-T}` are kept. The `188-S` manifest order is: `188-F`, `188.007-T`,
+`188.008-T`, `188.001-T`, `188.002-T`, `188.003-T`, `188.004-T`,
+`188.005-T`, `188.006-T`.
+
+| Shipment | Tasks | Status |
+|---|---|---|
+| `187-S` | 4 | queued |
+| `188-S` | 8 (5.75-9.25 h) | queued |
+| `189-S` | 5 | queued |
+| `184-S` | 3 | queued |
+| `190-S` | 5 | queued |
+| `191-S` | 2 | queued |
+| `192-S` | 7 | queued |
+| `193-S` | 1 | queued |
+| `194-S` | 8 | queued |
+| `185-S` | 3 | queued |
+
+That is 46 tasks: the original 44 plus `188.007-T` and `188.008-T`. Feature
+A is 14.25-23.5 h and Feature B is 22.75-34.75 h.
+
+Read-back verification results (staging-only):
+
+* `query_sql` found 46 manifest task references, 46 distinct, 46 `queued`,
+  0 missing.
+* `item_deps` for the 46 tasks has 49 edges and 0 missing targets. A
+  topological sort found no cycle, with 188.007 before 188.008, then
+  188.001, then 188.002.
+* The `188` edge set equals the target set exactly.
+* The phrases "compile failure", "MDC-1", "Add the unexported resolver
+  field", and "declare the stub" each appear 0 times in the active bodies of
+  `188.001-T`, `188.002-T`, `188.007-T`, and `188.008-T`.
+* Frontmatter key sets for `188-F`, `188-S`, `188.001-T`, `188.002-T`, and
+  `188.004-T` match the baseline.
+* This plan is append-only (0 deleted lines). The MANDATORY and guard line
+  counts in the rewritten task bodies are unchanged. The 17 guarded
+  conditions are unchanged.
+* The unrelated dirty-file hashes are unchanged.
+
+These checks verify documents and structure only. No harness test was
+written or run, and none is claimed. The compiling-RED evidence is for
+Ship to produce when the tasks run.
+
+Handoff state: READY_FOR_STAGING_HANDOFF. This supersedes the earlier
+packaging HALT for `188-S`. It does not make any shipment eligible for
+Ship: the `154-S` scheduler-consumption attestation C hold remains on all
+10 shipments. The informational comments on `188-S`, `188-F`, `188.001-T`,
+`188.007-T`, and `188.008-T` are not a claim gate.
