@@ -213,3 +213,49 @@ of the wave-one harness diff, followed by task completion and wave convergence.
   record. No PR or closure artifact exists yet. Unless the pinned lint reports
   a changed-file finding, do not copy entry `4A990AF9` into PR/closure residual
   risks. No thread reply or resolution was applicable.
+
+## 2026-10-02 report-only review halt
+
+- Branch: `feat/claimed-versus-started-bootstrap-repair-for-ship-wave-admission-2a355f83`
+- Reviewed HEAD: `9ee2a99cc741225303711dc976a1a2933cc40bf7`.
+- Current compile-only command `go test -run=^$ -count=1 ./...` passed.
+  The UCS1 selector remained assertion-red in Ship/Policy; the UCS3 selector
+  remained assertion-red in Fixture/Replay. The P1 evidence-only concern from
+  the Constitution Reviewer is satisfied by the compile and named assertion
+  results plus the task harness manifest.
+- Corrected local quality gates remain satisfied: CI-pinned
+  `golangci-lint@v1.64.8` passed, and changed committed Go blobs were gofmt-clean
+  after LF normalization. The earlier v2 lint / CRLF findings remain false
+  positives; entry `4A990AF9` stays unchanged and is not a PR residual unless
+  pinned lint reports changed-file findings.
+- Report-only review found unresolved in-scope harness defects:
+  - `195.001-T` / UCS1: four package-scope helpers are present, exceeding the
+    acceptance limit of two; three helper names also lack the required `ucs1`
+    prefix. Go Reviewer severity P2. Acceptance criterion 5 requires this to
+    be corrected before completion.
+  - `195.002-T` / UCS3: Go regex `\s` can consume a newline in the Replay
+    outcome-line checks, allowing malformed multi-line output to satisfy the
+    assertion. Go Reviewer severity P3.
+  Both are same-contract-surface completions under P-021 C1, not deferrable
+  scope expansions. No C2 entry was created.
+- Learnings search found `docs/compound/2026-09-08-parity-harness-design-patterns.md`,
+  `docs/compound/best-practices/source-shape-harnesses-must-allow-lifecycle-successors-2026-09-11.md`,
+  and `docs/compound/test-failures/go-analysistest-absolute-path-and-non-vacuity-2026-09-11.md`.
+  Relevant guidance: assert complete contract shape, avoid freezing temporary
+  states, and make harness execution non-vacuous.
+- Engram remained degraded: workspace-status timed out twice and
+  `list_symbols`, `map_code`, and `impact_analysis` also timed out. Reviewers
+  received the explicit degraded structural-context block and did not repeat
+  structural discovery.
+- P-005 telemetry and comments were recorded on `195.001-T` and `195.002-T`.
+  No source edits were made. `195.001-T` remains active with its single valid
+  start record; `195.002-T` remains active with no `WORK_STARTED` record.
+  Neither task is done; wave 1 has not converged; waves 2 and 3 have not
+  started. No PR, CI result, Copilot review, or merge exists.
+- Halt reason: the reviewed harnesses have same-surface acceptance defects,
+  but the current task sequence has already completed harness generation and
+  the red-deliverable build validation, whose branch is write-free. A repair
+  cannot be deferred under P-021 C1/C3, and Ship must not bypass the wave
+  harness gate or mutate task planning state. Return to Orchestrator/Stage for
+  a compliant repair path before any task completion or further wave work.
+- `ROUTING_DEGRADED` applies because the active Ship route was not confirmed.
