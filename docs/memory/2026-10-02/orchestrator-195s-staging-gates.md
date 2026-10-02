@@ -206,3 +206,30 @@ Read-only re-verification found no change:
 * No active or quarantine-flagged checkpoints (89 enumerated, none active)
 
 No PA1, PA2, or PA3 action was executed. Still blocked on operator approval.
+
+## Gate resolution segment (2026-10-02T06:15Z)
+
+Operator reply: "E1: Just build the binary as needed. ... E2: ... should
+automatically be included in the next commit ... E3: Execution granted. PA1 approved".
+
+* E2 done: dirty config/checkpoint/memory/stash files committed on
+  `stage/condition-b-enforcement-staging`, PR #468 merged with merge commit
+  `7c805f9baae7f74edd2b1eede47fcf35fbbc9066`; local `main` ff-synced, HEAD == origin/main
+* Copilot threads on #468: four config-routing-propagation threads deferred as stash
+  `731CE551` (DEFERRED SCOPE EXPANSION); MD041 fixed; E3-wording thread accepted
+* Stash `41FE00A1` captures widening the Step 1.5 carry-forward allowlist
+* E1 build: `bin\backlogit-7c805f9baae7f74edd2b1eede47fcf35fbbc9066.exe`,
+  `vcs.revision=7c805f9b...`, `vcs.modified=false`, SHA-256
+  `F188FB4344CFCD701938BA3AE2DB964CECE958C9361F564DF6FFE951315FF46A`, descends from
+  `6d233d21`; copied to `bin\backlogit.exe` (old image renamed
+  `bin\backlogit-2c8759c3-old.exe`)
+* E1 open: served MCP (PID 14288) still reports `2c8759c3-dirty-debug`; needs an
+  MCP reload, then re-check `backlogit_get_version {no_update_check:true}`
+* E3 NOT recognized: "E3: Execution granted." does not contain the exact
+  `e3-wording` text (plan lines 876-882). The grant file and the 195-S log carry a
+  correction. A valid grant must quote the block verbatim; then record it via a new
+  merged PR and a fresh `BOOTSTRAP_E3_GRANTED: 2A355F83 B=195-S` comment
+* `195-S` remains `queued`; no Ship dispatch, no VMR yet
+* E1 satisfied (2026-10-02T06:23Z): served MCP `backlogit_get_version` reports commit
+  `7c805f9baae7f74edd2b1eede47fcf35fbbc9066`, no `-dirty`
+* Second E3 reply "E3 granted" also lacks the exact `e3-wording`; still NOT recognized
