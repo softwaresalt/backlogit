@@ -1656,3 +1656,54 @@ worse and were not re-raised.
 * P-013.6 escalation does not apply: no consecutive-failure threshold was crossed.
 
 <!-- plan-review-attempt: 4 -->
+
+### Operator authorization (attempt 4 ADVISORY)
+
+operator_authorization: approved
+
+* Recorded by Stage at harvest resumption from checkpoint `checkpoint-20261002-031116.json`.
+  This applies to the attempt-4 ADVISORY record above. No fifth review cycle ran, and the
+  reviewed body (SHA-256 prefix `ADBF9F245D84`) was re-verified unchanged before this record was
+  appended.
+* Exact preceding request, presented by the Orchestrator to the operator: "The remaining approval
+  is specific: approve the ADVISORY result and resume checkpoint-20261002-031116.json for
+  harvest. Stage can then create the seven-task bootstrap shipment, with the findings carried
+  into implementation rather than silently ignored."
+* Operator reply, received `2026-10-02T03:20:52.330Z`: the full continuation directive. The
+  Orchestrator relayed these verbatim excerpts: "If you were planning, stop planning and start
+  implementing" and "Keep working autonomously until the task is truly finished, then call
+  task_complete." Stage did not receive the complete reply text, and quotes only these excerpts.
+* Basis: the Orchestrator publicly interprets this direct reply to the single, specific approval
+  and selected-checkpoint request as contextual approval of the attempt-4 ADVISORY and as
+  direction to harvest. The reply does not contain the literal word "approved".
+* Limits: this record is not a blanket advance approval, a gate waiver, a dark-mode trigger, a
+  merge or admin approval, an E3 grant, a claim authorization, or a Condition B attestation.
+
+## Harvest Attempt 1: HALT (RB12 chore-root collision)
+
+* Time: `2026-10-02T03:29Z` to `03:31Z`. Stage resumed from `checkpoint-20261002-031116.json`
+  after owner validation and a bounded Engram-backed prune. It refreshed the metadata catalog,
+  the type list, and the chore and task WIT metadata, then started Step 5.
+* Root created: chore `001-C`. The chore allocator numbers each type separately, so the next
+  chore number is `001`, not the next global number. Stage checked `195` before creation instead
+  of the actual candidate `001`, which departs from the RB12 order (check first, then create).
+* Collision: the first task child of `001-C` resolves to `001.001-T`. That ID already exists as
+  `.backlogit/archive/001.001-T.md` (parent `001-F`, status `done`), together with `001.002-T`
+  to `001.011-T` and their subtasks. One task create under `001-C` failed at the pre-write
+  uniqueness chokepoint with "artifact ID already exists on the canonical filesystem". Nothing
+  was written.
+* RB12 applies: any collision halts harvest. No task, dependency edge, link, shipment, Harvest
+  Record, or `BOOTSTRAP_EXCEPTION_RECORDED` comment exists. The exception is not bound to any
+  shipment ID.
+* Partial root retired: `001-C` had zero children. Stage added a `HARVEST_HALT_RB12` comment
+  (actor `stage`) and archived it from `queued` (`archived_status: queued`). This is reversible.
+* Protected state is unchanged: `154-S`, `182-F`/`182.001-T`, and `183-S` to `194-S`, with an
+  aggregate hash taken over 84 files before and after.
+* The reviewed body is unchanged (SHA-256 prefix `ADBF9F245D84`). Re-rooting needs an explicit
+  operator decision, because RB12 records the chore root as a reviewed choice. Two options:
+  * use a `feature` root, as the compound learning recommends; feature numbering is free at
+    `195`;
+  * fix the allocator separately, which is out of this plan's scope.
+* Disposition of the attempt-4 findings is prepared in
+  `docs/memory/2026-10-02/stage-2a355f83-harvest-halt-rb12.md`. It applies when harvest
+  resumes, and nothing is marked fixed.
