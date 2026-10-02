@@ -155,3 +155,47 @@ resolving the new-file locking barrier under the concurrency protocol.
 Resume at wave-1 harness generation after a safe, authorized lock path is
 established. The existing structured Ship checkpoint remains at
 `wave-schedule-frozen`, with exact M, wave partition, and red mapping.
+
+## 2026-10-02 resumed: wave-one harnesses generated; quality-gate halt
+
+The Orchestrator ruled that the earlier new-file lock halt was a
+misapplication: this is a serialized single-worker operation in one worktree,
+so no file locks are required. The two harnesses were generated sequentially
+without calling `acquire_lock`.
+
+- Branch: `feat/claimed-versus-started-bootstrap-repair-for-ship-wave-admission-2a355f83`
+- Harness commit: `8550556d5cd9b017bd064c5f0a39fa255d7dd437`
+  (`test: scaffold wave-one claim-start harnesses`).
+- New files: `tests/integration/claim_start_admission_contract_test.go` and
+  `tests/integration/claim_start_wave_sim_contract_test.go`.
+- Both tasks `195.001-T` and `195.002-T` now carry `harness-ready`, with
+  task-scoped commands, `Compilation: PASS`, and `Red Phase: CONFIRMED` notes.
+  `go test -run=^$ -count=1 ./...` passed. The UCS1 selector failed on its
+  intended Ship and Policy assertion checks; Preserved passed independently.
+  The UCS3 selector failed on its intended Fixture and Replay assertions;
+  Preserved passed independently. The two new files are gofmt-clean.
+- E3 task-start handling began for `195.001-T`: its log contains exactly one
+  actor-`ship` comment whose first line is `WORK_STARTED: 195-S`, after the
+  latest `shipment claimed` activation. The corresponding red baseline is
+  `8550556d5cd9b017bd064c5f0a39fa255d7dd437`. Telemetry begin returned
+  `disabled`; telemetry is not carried or closed.
+- Required lifecycle topology gate passed before dispatch. Build-feature's
+  red-deliverable compile check passed; the UCS1 selector remained assertion-red;
+  the tracked/staged/untracked zero-delta passes were all empty.
+
+Execution is halted before task completion because required global local
+quality gates are not green: `golangci-lint run` exited non-zero with 57
+diagnostics in existing files (none in either new harness), and `gofmt -l .`
+listed 6,146 paths, including local `.copilot/session-state` snapshots and
+pre-existing repository Go files. The two new harness files themselves were
+not listed. No out-of-scope lint or formatting fixes were made. The full
+quality-gate sequence and wave convergence did not pass; no task was marked
+done, no second task start was recorded, and there is no review, PR, CI, or
+Copilot review. Shipment `195-S` remains active; `195.001-T` is active with
+its start record, and `195.002-T` remains claim-assigned and active.
+
+Resume only after an authorized disposition for the failing global gates.
+Do not advance to wave 2, create a PR, or report merge readiness on the basis
+of the compile and task-scoped red checks alone. If the unrelated lint/format
+work is formally deferred, apply the P-021 C2 capture procedure before closing
+those findings.
