@@ -199,3 +199,19 @@ Do not advance to wave 2, create a PR, or report merge readiness on the basis
 of the compile and task-scoped red checks alone. If the unrelated lint/format
 work is formally deferred, apply the P-021 C2 capture procedure before closing
 those findings.
+
+### P-021 C2 threadless deferred-scope capture
+
+- Captured entry: `4A990AF9`. The entry is capture-only and was not edited
+  after creation.
+- Expansion: resolve the pre-existing repository-wide lint and `gofmt -l .`
+  failures. It is outside task `195.001-T` under P-021 C1; no code was changed.
+- Deferred-entry discovery found one source-matched but unconfirmed active
+  candidate, `B3701713` (a distinct CI-trigger expansion), and the configured
+  tools expose no archived-stash reader. The entry and this record carry
+  `DISCOVERY-STATUS: AMBIGUOUS B3701713` and
+  `DISCOVERY-STATUS: LOOKUP-UNAVAILABLE`.
+- The task-level record is the comment on `195.001-T`. This is the run-level
+  residual-risk record. No PR or closure artifact exists yet; carry the same
+  entry ID `4A990AF9` into the PR/closure residual-risk record if this shipment
+  later resumes. No thread reply or resolution was applicable.
