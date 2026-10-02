@@ -447,15 +447,55 @@ UCS3 was still unstarted until its Step 4.1b start.
   until 195.004-T and 195.005-T complete; full suite remains deferred to
   wave-two convergence.
 
-## Resume point
+## 195.004-T completion and resume point
+
+- `195.004-T` (UCS2b, covered by `195.001-T`) completed in
+  `.github/policies/workflow-policies.md` only. Its commit is
+  `00e8d578f13f02846e6ce506ef05c2159514fff7`
+  (`docs(harness): repair claim-start policy wording`; task ID is in the
+  commit body). The backlog move-to-done gate passed and the commit was linked.
+- Claim-time evidence: the exact pre-work probe exited 1 with `Preserved`
+  PASS and `Policy` assertion FAIL, with no `EXEMPT_VERIFY_OK` marker. The
+  clean baseline passed unchanged to build-feature was
+  `8789834d145485b29d8b4dc9bf1fd4c6bf25a65d`. Owner `195.001-T` remained
+  `harness-ready`, its committed harness was an ancestor, and exactly one
+  current-epoch `WORK_STARTED: 195-S` record was confirmed before dispatch.
+  Telemetry returned `disabled`; lifecycle topology passed for 195-S.
+- Build-feature completed in two harness attempts (6.61 seconds total). Its
+  completion wrapper and Ship's independent Step 4.3 rerun both produced
+  `EXEMPT_VERIFY_OK:195.004-T`, with `Preserved` and `Policy` passing and no
+  FAIL/SKIP. P-002.4 confirmed one non-empty policy-only delta from the
+  supplied baseline and no test/config changes. Compile-only passed;
+  CI-pinned golangci-lint v1.64.8 passed (after an initial parallel-run
+  contention, the serial retry passed); LF-normalized committed-blob gofmt
+  passed for both changed Go files. Report-only review at the task commit
+  was `READY`, P0/P1/P2/P3 = 0/0/0/0, with no runtime follow-up. Structural
+  discovery remained degraded because engram MCP and CLI readiness had failed;
+  direct source/diff review was used.
+- The previously captured stash `4A990AF9` was left unchanged. A comment on
+  195-S records that the old local lint-v2/CRLF gofmt findings were false
+  positives, pinned lint passes, and these are not PR residual risks unless
+  required CI lint reports a current-HEAD finding.
+- Wave 2 now has 195.003-T and 195.004-T done; 195.005-T (UCS4, covered by
+  195.002-T) remains. UCS1 is now closed/green; UCS3 remains open/red until
+  195.005-T. Therefore the full suite remains deferred until 195.005-T closes
+  UCS3 and the wave-two convergence gate recomputes an empty open-red set.
+  Wave 3 tasks 195.006-T and 195.007-T remain claim-assigned and wait on
+  wave-two dependencies.
+- Structured checkpoint `checkpoint-20261002-191649.json` now records the
+  completed 195.004-T state and the 195.005-T resume instructions; superseded
+  checkpoint `checkpoint-20261002-185820.json` was resolved after successful
+  resumption.
+
+### Resume point
 
 - Branch: `feat/claimed-versus-started-bootstrap-repair-for-ship-wave-admission-2a355f83`
-- Current source HEAD: `7c8e9a4e755ec22586a771d4c141f6f2970b758f`; 195.003-T is done.
-- Wave 2 still has 195.004-T (UCS2b, covered by 195.001-T) and 195.005-T
-  (UCS4, covered by 195.002-T) to start and complete sequentially. 195.006-T
-  and 195.007-T remain claim-assigned but wait on wave-two dependencies.
-- Re-run the next task's claim-time contract gate; use the exact item command,
-  capture its clean baseline before the verified `WORK_STARTED: 195-S` record,
-  run its lifecycle topology gate, and pass only its frozen scoped commands.
-- No PR, CI, Copilot gate, or merge has occurred. Continue through waves 2 and
-  3 and stop only when a merge-ready PR is fully gated; do not merge.
+- Last task/source commit: `00e8d578f13f02846e6ce506ef05c2159514fff7`;
+  continuity/backlog completion changes for 195.004-T are being recorded on
+  this feature branch.
+- Start 195.005-T sequentially: re-read its exemption contract and owner
+  evidence, run the exact pre-work probe once, capture a clean baseline,
+  verify the single current-epoch start record, and run the lifecycle topology
+  gate before build-feature.
+- No PR, CI, Copilot gate, or merge has occurred. Continue waves 2 and 3 and
+  stop only when a merge-ready PR is fully gated; do not merge.
