@@ -1707,3 +1707,60 @@ operator_authorization: approved
 * Disposition of the attempt-4 findings is prepared in
   `docs/memory/2026-10-02/stage-2a355f83-harvest-halt-rb12.md`. It applies when harvest
   resumes, and nothing is marked fixed.
+
+## Harvest-Time Deviation: Feature Root (RB12, operator-approved)
+
+This section records a packaging-only deviation made at harvest. It does not edit the reviewed
+body above, does not change any reviewed design choice other than the root artifact type, and is
+not a fifth plan review.
+
+* Preceding scope presented to the operator (quoted as relayed to Stage, spacing as received):
+
+  > Harvest hit a known ID collision: the chore allocator selected001-C, whose task IDs collide with archived tasks under001-F. No tasks were overwritten; the empty chore was archived, and no shipment exists yet. The documented workaround is a feature root for the same seven tasks, preserving the scope,DAG andexception without changing theGoallocator. Approve that packaging-only change and resume checkpoint-20261002-033403.json for harvest. The reviewedplan explicitlyspecifiedachore,soStagepausedratherthansilentlychangingit.
+
+* Operator reply, exactly: `Approved`, at `2026-10-02T03:52:58.782Z`.
+* What it approves: Option A only, a `feature` covering root for the same seven tasks, and the
+  owner resume of `checkpoint-20261002-033403.json`. It is not E3 or any temporary session
+  authority, not a merge or admin approval, not dark mode, not a scope expansion, not a claim
+  authorization, and not a Condition B attestation.
+* What changes: the root's artifact type, from the reviewed `chore` (D4, RB4, RB12) to `feature`
+  `195-F`. The scope is still internal maintenance. The feature type is a packaging workaround
+  for the per-type hierarchical ID collision recorded in Harvest Attempt 1; it does not claim a
+  new user-facing capability. The reviewed chore rationale above is left as written and is
+  superseded for packaging only. Units, DAG, waves, exception, gates, and findings are unchanged.
+* RB12 pre-create check, run this time against the actual allocator: the feature allocator takes
+  the highest root ordinal among `feature` items (`194`) plus one, so the candidate was `195-F`.
+  A recursive scan of `.backlogit` (queue, archive, logs, and all other subdirectories) and an
+  index query found no `195-F` and no `195.001-T` to `195.007-T` before creation. The shipment
+  candidate `195-S` was likewise absent before creation. There was no allocator change, no
+  counter manipulation, and no second chore attempt. `001-C` stays archived and untouched.
+* Stash provenance: no stash entry `2A355F83` exists (operator-directed bootstrap ID), and the
+  retired `001-C` carries no `source_stash_id`, so no provenance correction was needed and none
+  was made.
+* Reviewed body unchanged: SHA-256 prefix `ADBF9F245D84` over the bytes before the first
+  `## Plan Review` heading, re-verified after this append.
+
+## Harvest Record
+
+The block below is the authoritative binding named by the Exception and Dispatch Preconditions
+section. The member list is ordered and equals `195-S` `custom_fields.items` at harvest: the root
+comes first (`feature` under the approved deviation, in place of the reviewed chore root), then
+the tasks in harvest order.
+
+<!-- BEGIN:harvest-record -->
+
+```text
+scope: 2A355F83
+B: 195-S
+members: 195-F, 195.001-T, 195.002-T, 195.003-T, 195.004-T, 195.005-T, 195.006-T, 195.007-T
+root: 195-F (artifact_type feature; operator-approved RB12 packaging deviation, Approved 2026-10-02T03:52:58.782Z)
+unit_map: UCS1=195.001-T, UCS3=195.002-T, UCS2a=195.003-T, UCS2b=195.004-T, UCS4=195.005-T, UCS5a=195.006-T, UCS5b=195.007-T
+waves: 1={195.001-T, 195.002-T}; 2={195.003-T, 195.004-T, 195.005-T}; 3={195.006-T, 195.007-T}
+task_blocks_edges: 195.003-T->195.001-T; 195.004-T->195.001-T; 195.005-T->195.002-T; 195.006-T->195.003-T,195.004-T,195.005-T; 195.007-T->195.003-T,195.004-T,195.005-T
+shipment_blocks_edges: 195-S->154-S (P only; no edge onto any future Condition B shipment C)
+links: 195-F related_to 182.001-T
+reviewed_body_sha256_prefix: ADBF9F245D84
+recorded_at: 2026-10-02T04:17Z
+```
+
+<!-- END:harvest-record -->

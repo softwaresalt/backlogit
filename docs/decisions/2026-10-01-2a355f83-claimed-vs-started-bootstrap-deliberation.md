@@ -475,3 +475,22 @@ Current values (2026-10-02):
   one authorized read-only `workspace-status` succeeded, and the Engram CLI served attempt 4.
 * Full `verify-workspace`: the 2 earlier failures are carried forward and it was not re-run.
   Config validity was established by a focused schema check instead.
+
+## Harvest-Time Note: Root Type (2026-10-02)
+
+This note supplements D4 and RB4 without rewriting them. At harvest, the chore allocator
+selected `001-C`, whose first task ID `001.001-T` already exists in the archive under `001-F`
+(per-type hierarchical ID collision, plan RB12). Harvest halted, the empty `001-C` was archived,
+and the operator approved a packaging-only change: reply `Approved` at
+`2026-10-02T03:52:58.782Z`.
+
+* The root is now the `feature` `195-F`. The work is still internal maintenance, and the feature
+  type is a packaging workaround for the ID collision, not a new user-facing capability.
+* Seven tasks `195.001-T` to `195.007-T`, the same DAG and waves, and bootstrap shipment `B` =
+  `195-S` with one `blocks` edge onto `154-S`. Exception scope, gates (E1, E2, E3, P, C), and
+  findings are unchanged.
+* RB4 (first chore root) no longer applies to this bootstrap; `covering_feature` resolves to
+  `195-F`.
+* The approval is not a fifth review, E3, merge or admin authority, dark mode, scope expansion,
+  claim authorization, or Condition B attestation. Details: the plan's Harvest-Time Deviation and
+  Harvest Record sections.
