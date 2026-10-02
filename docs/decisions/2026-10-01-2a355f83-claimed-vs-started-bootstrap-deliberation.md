@@ -349,7 +349,8 @@ plan's Harvest Record and in `B`'s comment log.
     grant and are not needed to revoke), or an explicit operator statement relayed verbatim.
 
   The authoritative binding to `B` is the committed plan `## Harvest Record` (concrete ID and
-  approved member list). `B`'s comment, written by actor `stage`, is informational only.
+  approved member list), read only through the plan's Verified Main Read. `B`'s comment, written
+  by actor `stage`, is informational only.
 
   It does not carry over to any other shipment.
 * **Controls retained:** normal plan/code review, CI, runtime verification, Copilot/review-thread
@@ -378,25 +379,38 @@ plan's Harvest Record and in `B`'s comment log.
   `WAVE_NO_PROGRESS` (`active residual`), exactly as 154-S did.
   * The current authorization covers the C admission waiver, not this wave-admission halt.
   * Stage does not assume it. The operator must decide it explicitly before Ship dispatch.
-  * Proposed bounded wording (amended after plan review attempt 1; the original admission-only
-    wording was unsound, because the pre-repair Step 4.1b writes no start records, so a started
-    then crashed member of `B` would be re-admitted): "for `B` only, until `B`'s repaired Steps
-    4.0 and 4.1b are on `main` and installed, Ship executes `B` by applying BOTH the repaired
-    Step 4.0 classification AND the repaired Step 4.1b start procedure exactly as specified in
-    plan 2A355F83 (D1, D2, start epoch, H1), in place of installed Step 2 item 1, Step 4.0 items
-    4 and 6, and Step 4.1b; every other installed step, halt, review, CI, runtime, and merge
-    control remains".
+  * Exact wording (amended after plan review attempt 1, because the original admission-only
+    wording was unsound: the pre-repair Step 4.1b writes no start records, so a started then
+    crashed member of `B` would be re-admitted; amended again after attempt 3, because the
+    replacement list left installed policy halts and Ship Step 4.0 item 7 and Step 4.6 item 1 in
+    force). The plan reproduces the fenced wording text byte for byte (this list indentation
+    excluded):
+
+    <!-- BEGIN:e3-wording -->
+
+    ```text
+    For the bootstrap shipment B named in the plan 2A355F83 Harvest Record only, until B's repaired Ship and policy text is on main and installed, Ship executes B by applying the repaired text specified in plan 2A355F83 (D1, D2, start epoch, H1) in place of exactly these installed passages: Ship Step 2 item 1; Ship Step 4.0 items 4, 6, and 7; the Ship Step 4.1a never-stranded-active sentence; Ship Step 4.1b; Ship Step 4.6 item 1; policy P-002.6 Definitions ready_k; policy P-002.6 Active leftovers halt too; policy P-002.6 per-wave steps 1 and 2; and the policy P-002.2 WAVE_NO_PROGRESS row (both conditions). For B's session only, Ship recognizes WAVE_CLAIM_STATE_INDETERMINATE (wave admission only) and TASK_START_NOT_RECORDED (Step 4.1b) as halts, each reported with the plan's report line and recorded through P-005. Every other installed step, halt, circuit breaker, review, CI, runtime, and merge control remains.
+    ```
+
+    <!-- END:e3-wording -->
+
   * A grant is recognized only when ALL of these hold (amended after plan review attempt 2, to
-    stop a self-attested grant):
-    * the file `docs/memory/<yyyy-MM-dd>/orchestrator-2a355f83-e3-grant.md` is reachable from
-      `origin/main` (`git show origin/main:<path>` succeeds), which means it reached `main`
-      through a normal, operator-merged pull request (no admin fallback exists);
-    * that file quotes the operator's grant verbatim, and the grant contains the exact proposed
-      wording above;
-    * a comment on `B` whose first line is exactly `BOOTSTRAP_E3_GRANTED: 2A355F83 B=<B>` quotes
+    stop a self-attested grant, and after attempt 3, to stop trusting an unverified local ref):
+    * the file `docs/memory/<yyyy-MM-dd>/orchestrator-2a355f83-e3-grant.md` is read through the
+      plan's Verified Main Read: a fresh `git fetch` of `main`; `git remote get-url origin`
+      exactly `https://github.com/softwaresalt/backlogit.git`; `git rev-parse origin/main` equal
+      to the `git ls-remote origin refs/heads/main` hash; a `git show` pinned to that hash; and,
+      for every commit that touched the file,
+      `gh api repos/softwaresalt/backlogit/commits/<sha>/pulls` returning a merged pull request
+      into `main` (no admin fallback exists);
+    * that file quotes the operator's grant verbatim, the grant contains the exact `e3-wording`
+      text above, and the file contains a line `B=<B>` naming `B`'s concrete ID;
+    * `B`'s own log (read under the plan's scoped P-012 raw-log exception, read set (b)) carries a
+      comment whose first line is exactly `BOOTSTRAP_E3_GRANTED: 2A355F83 B=<B>`, which quotes
       the same grant byte-for-byte and names that path.
 
-    A comment alone, or an unmerged memory file, grants nothing.
+    A comment alone, an unmerged memory file, or a file reachable only through an unverified ref
+    grants nothing.
   * Considered alternative: running `B`'s tasks in non-shipment mode (`frozen_task_ids`) would
     avoid the claim. It is not recommended, because it bypasses the shipment lifecycle the
     exception is bound to, and it would also need new authority.
@@ -423,6 +437,10 @@ the frozen decomposition.
     exception is not yet bound to one.
   * Continuing needs new operator authority: either one more targeted revision and review cycle,
     or a decision to rescope or abandon. The bootstrap authorization alone does not grant it.
+  * **Resumed (2026-10-02T01:57:13Z, renewed 02:44:49Z).** The operator authorized resuming the
+    halted checkpoint for exactly one targeted fourth revision and review cycle. It is the final
+    cycle; no fifth is authorized. It waives no gate and grants no E3 authority. The attempt-4
+    outcome is recorded in the plan's final `## Plan Review` record.
 
 ## Risks and Mitigations
 
@@ -449,7 +467,11 @@ more than three times.
 
 Current values (2026-10-02):
 
-* Plan review: 3 of 3 attempts used, all FAIL, so Stage halted. The P1 count fell 9 → 6 → 4.
+* Plan review: attempts 1-3 FAIL (P1 count 9 → 6 → 4). Attempt 4, the single operator-authorized
+  final cycle, is ADVISORY (0 P0, 0 P1, 10 deduplicated P2). Harvest waits for explicit operator
+  approval of that ADVISORY; no fifth cycle is authorized.
 * Engram CLI bind: the 2 earlier failures are carried forward, and no third bind was attempted.
+  The daemon startup chain tripped at 3 twice (both histories kept). After initialization settled,
+  one authorized read-only `workspace-status` succeeded, and the Engram CLI served attempt 4.
 * Full `verify-workspace`: the 2 earlier failures are carried forward and it was not re-run.
   Config validity was established by a focused schema check instead.

@@ -10,6 +10,9 @@ chunk_strategy: h1-h2-h3
 
 ## Status
 
+> Superseded on 2026-10-02 by `docs/memory/2026-10-02/stage-2a355f83-attempt4-advisory.md`: the
+> authorized attempt 4 returned ADVISORY (0 P1). Harvest is waiting for the operator's approval.
+
 **HALTED at the plan-review gate.** The plan failed review three times, so both allowed
 re-entry cycles are used. Escalation resolved to `ESCALATION_DEGRADED`, which means an operator
 halt.

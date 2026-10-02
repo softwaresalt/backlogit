@@ -9,7 +9,7 @@ docline:
     bootstrap_id: 2A355F83
     status: draft
     created_at: 2026-10-02T01:40:00Z
-    revised_at: 2026-10-02T05:20:00Z
+    revised_at: 2026-10-02T03:10:00Z
 ---
 
 ## Objective
@@ -87,12 +87,17 @@ In scope (only):
   * Step 4.0 items 4, 6, and 7;
   * the "Scheduler replay validation" paragraph;
   * one qualifying sentence in Step 4.1a (the "never stranded `active`" sentence);
-  * Step 4.1b.
+  * Step 4.1b;
+  * Step 4.6 item 1, narrowed so that its `active` check reads "no member of `ready_k` is
+    `active`" (a claim-assigned member still waiting on unfinished dependencies is outside
+    `ready_k` and is classified by the next Step 4.0, never halted here).
 * `.github/policies/workflow-policies.md`:
   * P-002.6 Definitions (`ready_k`);
   * "Active leftovers halt too";
   * per-wave steps 1 and 2;
-  * the existing P-002.2 `WAVE_NO_PROGRESS` row, narrowed to the D2 residual class;
+  * the existing P-002.2 `WAVE_NO_PROGRESS` row: its first condition rewritten to "no `queued` or
+    claim-assigned member has all dependencies terminal", and its second condition narrowed to the
+    D2 residual class;
   * two new P-002.2 rows;
   * one version-history row.
 * The P-002.6 contract simulation: `scripts/wave-scheduler-sim.ps1` and
@@ -115,9 +120,9 @@ Out of scope (preserved fail closed; no follow-up shipment is created here):
   active-residual wording in `build-feature`;
 * the `plugin/agents/` copies. `plugin/agents/ship.agent.md` is a separately generated plugin
   surface, not a mirror that this contract edit must keep in sync;
-* the Step 4.6 item 1 text, except that its `active` check means "no member of `ready_k`
-  remains `active` after its build". UCS2a may add that clarifying phrase. The circuit-breaker row
-  is unchanged.
+* every other Step 4.6 line. Only item 1's `active` check changes (in scope above). The
+  circuit-breaker row "Active residual at wave admission" is unchanged: it still applies to the
+  D2 residual class.
 
 ## Requirements Trace
 
@@ -139,10 +144,19 @@ Out of scope (preserved fail closed; no follow-up shipment is created here):
   dispatch text, and Ship reads `<served storage root>\logs\<id>.jsonl` from it. Any CLI fallback
   uses `--cwd "<served workspace root>"`. The root is never a worktree-relative guess.
 * **Raw-log read, scoped P-012 exception.** No configured backlog tool returns an item's full
-  event stream with `actor` and `delta`, so this one read is a declared, scoped exception to
-  P-012 item 3 (no ad hoc filesystem read when a configured tool is available). It covers only
-  the item logs of `S`'s members at Step 4.0 and Step 4.1b. If a configured tool later returns
-  that stream, the tool is used instead.
+  event stream with `actor` and `delta`, so these reads are a declared, scoped exception to
+  P-012 (no ad hoc filesystem read when a configured tool is available). The exception covers
+  exactly two read-only sets, always under the served storage root, and nothing else:
+  * **(a) Task evidence.** The item logs `<served storage root>\logs\<id>.jsonl` of `S`'s
+    members, read at Step 4.0 classification and at Step 4.1b start-record verification.
+  * **(b) The bootstrap shipment's own log.** `<served storage root>\logs\<B>.jsonl`, read for
+    the in-force, revocation, and E3 recognition checks at each of the four dispatch checkpoints:
+    before `B`'s claim, at every wave admission of `B`, before pull request creation, and before
+    merge.
+
+  Every other backlog read still goes through the configured tools. Each use is declared in the
+  session record as `P-012 SCOPED RAW-LOG READ (2A355F83): <path>`. If a configured tool later
+  returns that stream, the tool is used instead.
 * **Log parse policy.**
   * Lines are read in file order. One trailing `\r` is stripped from each line, and blank lines
     are ignored.
@@ -255,6 +269,8 @@ open or close a slice:
   slice includes item 7 and the replay paragraph.
 * **Ship Step 4.1a:** from `#### Step 4.1a` to `#### Step 4.1b`.
 * **Ship Step 4.1b:** from `#### Step 4.1b: Claim Task` to `#### Step 4.1c`.
+* **Ship Step 4.6:** from `#### Step 4.6: Wave Convergence Gate (P-002.6)` to
+  `### Step 5: PR Lifecycle`.
 * **Policy P-002.6:** from `### P-002.6 — Dependency-Aware Harness Waves (Scheduling Contract)`
   to the next line that starts with `### `.
 * **Policy P-002.2 row `X`:** the table lines that start with `` | `X` | ``. Exactly one line
@@ -315,17 +331,29 @@ Execution safety modes (`safety-modes` skill):
        * Step 2 slice: ``the queued tasks of the target feature or chore whose dependencies are``;
        * Step 4.1b slice: ``Update task status to `active` using the backlog tool's move
          operation.``
+     * The Step 4.6 slice contains ``no member of `ready_k` is `active` `` and
+       ``A member of `ready_k` still `active` ``, and does not contain
+       ``and no member is `active`, `blocked`, or in an unsupported status`` (the pre-repair item 1
+       wording, which would halt a claim-assigned member that is still waiting on dependencies).
   3. `Policy` (red, `assert`):
      * The P-002.6 slice contains every token in `K`.
      * **Removed-sentence assertions (`assert.NotContains`, whitespace-normalized):**
        * ``ready_k = { t ∈ queued : deps(t) ⊆ terminal_success }``;
        * ``If `active` is non-empty → **halt** with `WAVE_NO_PROGRESS` ``;
-       * ``it never treats an `active` member as satisfied``.
+       * ``it never treats an `active` member as satisfied``;
+       * ``A member still carrying `active` at wave admission is a claim from a prior wave that
+         never reached `done` ``;
+       * ``The scheduler never admits a new wave over an unfinished claim``.
      * The single P-002.2 row for `WAVE_CLAIM_STATE_INDETERMINATE` contains
        `wave admission only`.
      * The single row for `TASK_START_NOT_RECORDED` contains `Step 4.1b`.
-     * The single row for `WAVE_NO_PROGRESS` contains `claim-assigned`, and does not contain
-       ``**or** a member is still `active` at wave admission``.
+     * The single row for `WAVE_NO_PROGRESS`:
+       * contains ``no `queued` or claim-assigned member has all dependencies terminal`` (the
+         rewritten first condition) and `claim-assigned`;
+       * does not contain ``no `queued` member has all dependencies terminal`` (the pre-repair
+         first condition, which contradicts the repaired `ready_k`);
+       * does not contain ``**or** a member is still `active` at wave admission`` (the pre-repair
+         second condition).
 * It compiles against the current tree (stdlib, `testify`, and `testRepoRoot` only), and it fails
   on named assertions. It is never a build error.
 * RED: `go test -count=1 -run '^TestUCS1_' ./tests/integration` fails with `--- FAIL:` lines for
@@ -379,9 +407,14 @@ green_maker_closes_wave: 2
   * the H1 ordering rule, using the words "before any dispatch".
 * Step 2 item 1: `ready_k` becomes "the queued or claim-assigned tasks of the target feature or
   chore whose dependencies are **all** `done`", matching Step 4.0 item 6.
-* Step 4.6 item 1 may gain the clarifying phrase "no member of `ready_k`". No other line
-  changes. Steps 0.5 and 3 are untouched, and the `#### Step 4.1b: Claim Task` heading is kept
-  verbatim.
+* Step 4.6 item 1 (mandatory): the first sentence becomes "Every member of `ready_k` is `done`
+  (or `archived`), no member of `ready_k` is `active`, and no member is `blocked` or in an
+  unsupported status." The halt sentence becomes "A member of `ready_k` still `active` → halt
+  with `WAVE_NO_PROGRESS` (detail: `active residual`)." A claim-assigned member waiting on
+  unfinished dependencies is outside `ready_k`, so convergence never halts on it; the next
+  Step 4.0 classifies it. The `blocked` and unsupported checks are unchanged. No other Step 4.6
+  line changes. Steps 0.5 and 3 are untouched, and the `#### Step 4.1b: Claim Task` heading is
+  kept verbatim.
 * Size: one file, no functions, and one harness subtest (`Ship`), so the unit is within the
   2-hour rule. Splitting admission from start was considered and rejected: the two halves edit
   the same file, so they would have to run in sequential waves, adding a fourth wave and a
@@ -393,7 +426,7 @@ green_maker_closes_wave: 2
 
 ```text
 harness_exemption_class: covered-by
-harness_exemption_reason: Edits only .github/agents/_ship.agent.md (Step 2 item 1, Step 4.0 items 4/6/7 and replay paragraph, one Step 4.1a sentence, Step 4.1b, optional Step 4.6 phrase) so that the Ship subtest of predecessor harness owner <UCS1> turns green; adds or modifies no *_test.go file.
+harness_exemption_reason: Edits only .github/agents/_ship.agent.md (Step 2 item 1, Step 4.0 items 4/6/7 and replay paragraph, one Step 4.1a sentence, Step 4.1b, Step 4.6 item 1) so that the Ship subtest of predecessor harness owner <UCS1> turns green; adds or modifies no *_test.go file.
 harness_owner: <UCS1>
 exempt_verification_command: $o = go test -count=1 -v -run '^TestUCS1_ClaimStartContract$/^(Preserved|Ship)$' ./tests/integration 2>&1 | Out-String; if ($LASTEXITCODE -ne 0) { Write-Output $o; Write-Error 'UCS1 Ship not green'; exit 1 }; foreach ($k in @('--- PASS: TestUCS1_ClaimStartContract/Preserved','--- PASS: TestUCS1_ClaimStartContract/Ship')) { if (-not $o.Contains($k)) { Write-Error "missing $k"; exit 1 } }; if ($o -match '--- FAIL:|--- SKIP:') { Write-Error 'fail or skip present'; exit 1 }; Write-Output 'EXEMPT_VERIFY_OK:<UCS2a>'
 exempt_precondition: must-fail-before-deliverable
@@ -408,12 +441,18 @@ harness_owner_command: go test -count=1 -v -run '^TestUCS1_ClaimStartContract$/^
 * P-002.6:
   * Definitions: `ready_k = { t ∈ queued or claim-assigned : deps(t) ⊆ terminal_success }`.
   * "Active leftovers halt too": the D2 classification, word-for-word consistent with Ship
-    (token set `K`).
+    (token set `K`). The two pre-repair sentences ("A member still carrying `active` at wave
+    admission is a claim from a prior wave that never reached `done`" and "The scheduler never
+    admits a new wave over an unfinished claim") are removed, and neither phrase is reused; the
+    rewrite speaks of an active residual instead.
   * Per-wave step 1: classify before halting on `active`.
   * Per-wave step 2: compute the frontier over queued or claim-assigned members.
 * P-002.2:
-  * Narrow the existing `WAVE_NO_PROGRESS` row's second condition to an `active` member that is
-    not claim-assigned (the D2 residual class).
+  * Rewrite the existing `WAVE_NO_PROGRESS` row's **first** condition from "no `queued` member
+    has all dependencies terminal" to "no `queued` or claim-assigned member has all dependencies
+    terminal", matching the repaired `ready_k`.
+  * Narrow the same row's **second** condition to an `active` member that is not claim-assigned
+    (the D2 residual class).
   * Add `WAVE_CLAIM_STATE_INDETERMINATE`, scope `**wave admission only** (Ship Step 4.0,
     P-002.6)`, condition per D2, with a report line naming each indeterminate member and its
     reason.
@@ -428,7 +467,7 @@ harness_owner_command: go test -count=1 -v -run '^TestUCS1_ClaimStartContract$/^
 
 ```text
 harness_exemption_class: covered-by
-harness_exemption_reason: Edits only .github/policies/workflow-policies.md (P-002.6 ready_k, Active leftovers, per-wave steps 1-2, the narrowed WAVE_NO_PROGRESS row, two new P-002.2 rows, one version row) so that the Policy subtest of predecessor harness owner <UCS1> turns green; adds or modifies no *_test.go file.
+harness_exemption_reason: Edits only .github/policies/workflow-policies.md (P-002.6 ready_k, Active leftovers, per-wave steps 1-2, both conditions of the WAVE_NO_PROGRESS row, two new P-002.2 rows, one version row) so that the Policy subtest of predecessor harness owner <UCS1> turns green; adds or modifies no *_test.go file.
 harness_owner: <UCS1>
 exempt_verification_command: $o = go test -count=1 -v -run '^TestUCS1_ClaimStartContract$/^(Preserved|Policy)$' ./tests/integration 2>&1 | Out-String; if ($LASTEXITCODE -ne 0) { Write-Output $o; Write-Error 'UCS1 Policy not green'; exit 1 }; foreach ($k in @('--- PASS: TestUCS1_ClaimStartContract/Preserved','--- PASS: TestUCS1_ClaimStartContract/Policy')) { if (-not $o.Contains($k)) { Write-Error "missing $k"; exit 1 } }; if ($o -match '--- FAIL:|--- SKIP:') { Write-Error 'fail or skip present'; exit 1 }; Write-Output 'EXEMPT_VERIFY_OK:<UCS2b>'
 exempt_precondition: must-fail-before-deliverable
@@ -771,8 +810,8 @@ The Exception Matrix in the source decision is authoritative. The binding is str
   exactly one fenced block delimited by `<!-- BEGIN:harvest-record -->` and
   `<!-- END:harvest-record -->`. It names `B`'s concrete ID and its approved member IDs as an
   ordered list (chore root first, then tasks in harvest order). It is committed and reaches `main`
-  through E2, and every check reads it from `git show origin/main:<plan path>`, never from a
-  working copy. The waiver applies to that ID only.
+  through E2. Every check reads it through the Verified Main Read below, never from a working
+  copy and never through an unverified local ref. The waiver applies to that ID only.
 * **Informational record.** Stage appends a comment on `B` with actor `stage`. Its first line is
   `BOOTSTRAP_EXCEPTION_RECORDED: 2A355F83 B=<B>`. It quotes the verbatim authorization and
   references the Harvest Record. The revocation token never appears on its first line. A
@@ -785,31 +824,81 @@ The Exception Matrix in the source decision is authoritative. The binding is str
   Actor fields confer no authority to grant. They are never needed to revoke.
 * **In-force check.** The exception is in force only when all of these hold (the same wording is
   copied verbatim into dispatch item (2)):
-  * the Harvest Record on `origin/main` names `B`;
+  * the Harvest Record, read through the Verified Main Read, names `B`;
   * `B`'s live `custom_fields.items`, as an ordered list, equals the recorded member list exactly;
-  * `B`'s log is present and parseable, and carries no revocation;
+  * `B`'s own log `<served storage root>\logs\<B>.jsonl` is present and parseable (log parse
+    policy above), and carries no revocation;
   * no stop or expiry condition has occurred.
 
   The check runs before `B`'s claim, at every wave admission of `B`, before pull request
   creation, and before merge. A missing or unparseable `B` log means "not in force".
+* **Scoped raw-log reads.** The `B` log read above and the E3 recognition read below are read set
+  (b) of the scoped P-012 exception (Start semantics). The member item logs read at Step 4.0 and
+  Step 4.1b are read set (a). No other backlog read bypasses the configured tools.
 * **Return-blocked interplay.** `backlogit_return_blocked` removes a member from `B`'s live items,
   so the in-force check fails and the exception expires. That is a terminal outcome for this
   exception: resuming needs new operator authority, and is never silent.
 * **E2** (staging merge) and **E4** (L1 interplay) are as decided.
-* **E3** (execution under the pre-repair installed contract) is new authority: NOT granted, and
-  not assumed. The proposed amended wording is in the source decision.
-  * It requires `B` to apply BOTH the repaired Step 4.0 classification AND the repaired Step 4.1b
-    start procedure exactly as specified here (D1, D2, start epoch, H1).
-  * A grant is recognized only when ALL of these hold:
-    * `docs/memory/<yyyy-MM-dd>/orchestrator-2a355f83-e3-grant.md` is reachable through
-      `git show origin/main:<path>`, which means it reached `main` through a normal,
-      operator-merged pull request (no admin fallback exists);
-    * that file quotes the operator's grant verbatim, and the grant contains the decision's
-      exact E3 wording;
-    * a comment on `B` whose first line is exactly `BOOTSTRAP_E3_GRANTED: 2A355F83 B=<B>` quotes
-      the same grant byte-for-byte and names that path.
 
-    A comment alone, or an unmerged memory file, grants nothing.
+### Verified Main Read (VMR)
+
+`origin/main` is a local ref that can be stale or forged, so it is never trusted on its own. Every
+read of an authority artifact from `main` (the Harvest Record in this plan, and the E3 grant file)
+runs this procedure fresh, at each checkpoint where the check runs. Any failed step fails the
+check that needed the read (`BOOTSTRAP_EXCEPTION_NOT_IN_FORCE` for the Harvest Record,
+`BOOTSTRAP_E3_NOT_GRANTED` for the grant), with observed detail `VMR step <n>`. There is no
+fallback to a cached result, a working copy, or an earlier checkpoint's read.
+
+1. **Fresh fetch.** `git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main` exits 0.
+2. **Canonical remote.** `git remote get-url origin` prints exactly
+   `https://github.com/softwaresalt/backlogit.git`. Any other value, including a fork, a mirror,
+   or an SSH form, fails.
+3. **Ref equality.** `$m = git rev-parse --verify 'origin/main^{commit}'`, and `$r` is the first
+   field of the single output line of `git ls-remote --exit-code origin refs/heads/main`. Both are
+   40 lowercase hex characters, and `$m` equals `$r`.
+4. **Pinned read.** The artifact is read only as `git show "${m}:<path>"`, pinned to the verified
+   SHA `$m`, never through the ref name.
+5. **Merged-PR provenance.** `git log --format=%H $m -- <path>` lists at least one commit. For
+   every listed commit `$h`, `gh api repos/softwaresalt/backlogit/commits/$h/pulls` succeeds and
+   returns at least one pull request with a non-null `merged_at` and `base.ref` equal to `main`.
+   A `gh` error (including missing authentication), an empty array, or no merged pull request
+   into `main` fails. The repository allows merge commits and disables squash and rebase merges,
+   so a pull request's commits keep their own SHAs on `main` and stay resolvable this way.
+
+The session record carries `VMR <path>: main=<$m> url=<url> commits=<$h:#PR,...>` for each read.
+
+### E3 Replacement List and Recognized Halts
+
+**E3** (execution under the pre-repair installed contract) is new authority: NOT granted, and not
+assumed. Its exact wording is the `e3-wording` block of the source decision, reproduced here byte
+for byte:
+
+<!-- BEGIN:e3-wording -->
+
+```text
+For the bootstrap shipment B named in the plan 2A355F83 Harvest Record only, until B's repaired Ship and policy text is on main and installed, Ship executes B by applying the repaired text specified in plan 2A355F83 (D1, D2, start epoch, H1) in place of exactly these installed passages: Ship Step 2 item 1; Ship Step 4.0 items 4, 6, and 7; the Ship Step 4.1a never-stranded-active sentence; Ship Step 4.1b; Ship Step 4.6 item 1; policy P-002.6 Definitions ready_k; policy P-002.6 Active leftovers halt too; policy P-002.6 per-wave steps 1 and 2; and the policy P-002.2 WAVE_NO_PROGRESS row (both conditions). For B's session only, Ship recognizes WAVE_CLAIM_STATE_INDETERMINATE (wave admission only) and TASK_START_NOT_RECORDED (Step 4.1b) as halts, each reported with the plan's report line and recorded through P-005. Every other installed step, halt, circuit breaker, review, CI, runtime, and merge control remains.
+```
+
+<!-- END:e3-wording -->
+
+The replacement list in that wording is the complete set of installed passages that would
+otherwise halt `B` on its own claim-assigned members or contradict the repaired `ready_k`. It
+matches the UCS2a and UCS2b edit scope, except the Step 4.0 replay paragraph, which is not
+replaced: the replay validates the simulation, not `B`'s live state. The installed
+circuit-breaker row "Active residual at wave admission" keeps applying to the D2 residual class.
+
+* A grant is recognized only when ALL of these hold:
+  * `docs/memory/<yyyy-MM-dd>/orchestrator-2a355f83-e3-grant.md` is read through the Verified
+    Main Read (all five steps, including merged-pull-request provenance of every commit that
+    touched the file);
+  * that file quotes the operator's grant verbatim, the grant contains the `e3-wording` text
+    above exactly, and the file contains a line `B=<B>` naming `B`'s concrete ID;
+  * `B`'s own log (scoped raw-log read set (b)) carries a comment whose first line is exactly
+    `BOOTSTRAP_E3_GRANTED: 2A355F83 B=<B>`, which quotes the same grant byte-for-byte and names
+    that path.
+
+  A comment alone, an unmerged memory file, or a file reachable only through an unverified ref
+  grants nothing.
 * `B` gets no `do-not-claim` label. The Orchestrator applies the precondition check at dispatch.
 
 Exact Orchestrator dispatch instruction (to be passed to Ship verbatim, with `<B>` substituted):
@@ -818,11 +907,13 @@ Exact Orchestrator dispatch instruction (to be passed to Ship verbatim, with `<B
 
 ```text
 DISPATCH B=<B> UNDER BOOTSTRAP 2A355F83.
-Served storage root: <absolute path, recorded by the Orchestrator>. E1 evidence: server commit X=<40-hex> from backlogit_get_version; operator go version -m record vcs.revision=X vcs.modified=false, binary <path>, SHA-256 <hash>.
+Served storage root: <absolute path, recorded by the Orchestrator>. Served workspace root: <absolute path, recorded by the Orchestrator>. E1 evidence: server commit X=<40-hex> from backlogit_get_version; operator go version -m record vcs.revision=X vcs.modified=false, binary <path>, SHA-256 <hash>.
+Scoped P-012 raw-log reads (declare each use as "P-012 SCOPED RAW-LOG READ (2A355F83): <path>"): (a) <served storage root>\logs\<id>.jsonl for members of <B>, at Step 4.0 classification and Step 4.1b start-record verification; (b) <served storage root>\logs\<B>.jsonl, at each checkpoint below. Every other backlog read uses the configured tools.
+Verified Main Read (VMR) for every read from main: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main exits 0; git remote get-url origin is exactly https://github.com/softwaresalt/backlogit.git; $m = git rev-parse --verify origin/main^{commit} equals the hash from git ls-remote --exit-code origin refs/heads/main (both 40-hex); read only with git show $m:<path>; every commit in git log --format=%H $m -- <path> has, via gh api repos/softwaresalt/backlogit/commits/<sha>/pulls, at least one pull request with non-null merged_at and base.ref main. Any failure fails the check that needed the read.
 Before claim, before every wave admission of <B>, before pull request creation, and before merge, verify, and halt on any failure (report "BOOTSTRAP HALT {token} B=<B>: {observed} — returned to Orchestrator" and record it through P-005):
 (1) BOOTSTRAP_E1_BINARY_UNMET unless the E1 evidence above is present and complete (the Orchestrator ran backlogit_get_version; a CLI version result never satisfies this item), and any CLI fallback binary shows vcs.modified=false with 6d233d21162a072ddbdfecb52ec62a8fb8a63793 an ancestor of its vcs.revision;
-(2) BOOTSTRAP_EXCEPTION_NOT_IN_FORCE unless all of these hold: the Harvest Record on origin/main names <B> (read with git show origin/main:docs/exec-plans/2026-10-01-2a355f83-claimed-vs-started-bootstrap-plan.md, exactly one BEGIN:harvest-record/END:harvest-record block); <B>'s live custom_fields.items, as an ordered list, equals the recorded member list exactly; <B>'s log is present and parseable, and carries no revocation (no comment on <B> whose first line is BOOTSTRAP_EXCEPTION_REVOKED: 2A355F83); and no stop or expiry condition has occurred;
-(3) BOOTSTRAP_E3_NOT_GRANTED unless git show origin/main:docs/memory/<yyyy-MM-dd>/orchestrator-2a355f83-e3-grant.md succeeds and quotes the operator's grant containing the decision's exact E3 wording, and a comment on <B> whose first line is exactly BOOTSTRAP_E3_GRANTED: 2A355F83 B=<B> quotes that grant byte-for-byte and names that path; under E3, apply the plan's repaired Step 4.0 classification and Step 4.1b start procedure (D1, D2, start epoch, H1) in place of installed Step 2 item 1, Step 4.0 items 4 and 6, and Step 4.1b, and keep every other installed step, halt, review, CI, runtime, and merge control;
+(2) BOOTSTRAP_EXCEPTION_NOT_IN_FORCE unless all of these hold: the Harvest Record, read through VMR from docs/exec-plans/2026-10-01-2a355f83-claimed-vs-started-bootstrap-plan.md with exactly one BEGIN:harvest-record/END:harvest-record block, names <B>; <B>'s live custom_fields.items, as an ordered list, equals the recorded member list exactly; <B>'s own log <served storage root>\logs\<B>.jsonl is present and parseable, and carries no revocation (no comment on <B> whose first line is BOOTSTRAP_EXCEPTION_REVOKED: 2A355F83); and no stop or expiry condition has occurred;
+(3) BOOTSTRAP_E3_NOT_GRANTED unless docs/memory/<yyyy-MM-dd>/orchestrator-2a355f83-e3-grant.md is read through VMR, quotes the operator's grant containing the decision's exact e3-wording block text, and contains the line B=<B>, and <B>'s own log carries a comment whose first line is exactly BOOTSTRAP_E3_GRANTED: 2A355F83 B=<B> that quotes that grant byte-for-byte and names that path; under E3, apply the plan's repaired text (D1, D2, start epoch, H1) in place of exactly the e3-wording replacement list (Ship Step 2 item 1; Ship Step 4.0 items 4, 6, and 7; the Ship Step 4.1a never-stranded-active sentence; Ship Step 4.1b; Ship Step 4.6 item 1; policy P-002.6 Definitions ready_k; policy P-002.6 Active leftovers halt too; policy P-002.6 per-wave steps 1 and 2; the policy P-002.2 WAVE_NO_PROGRESS row, both conditions), recognize WAVE_CLAIM_STATE_INDETERMINATE (wave admission only) and TASK_START_NOT_RECORDED (Step 4.1b) as halts of this session with the plan's report lines and P-005 recording, and keep every other installed step, halt, circuit breaker, review, CI, runtime, and merge control;
 (4) P: the blocks edge from <B> to 154-S exists and 154-S is shipped.
 C is waived for <B> only. This dispatch grants no attestation, no merge or admin fallback, no dark mode, and no authority over any other shipment.
 ```
@@ -894,6 +985,9 @@ C is waived for <B> only. This dispatch grants no attestation, no merge or admin
 * **XI Merge Commit History:** unaffected. Pass.
 * **Execution precondition:** a documented deviation. `B`'s dispatch depends on the ungranted
   E3. This is disclosed, not assumed.
+* **P-012 scoped raw-log reads:** a documented deviation. Exactly two read-only sets (member item
+  logs at Step 4.0 and Step 4.1b; `B`'s own log at the four dispatch checkpoints), each declared
+  per use. No configured tool returns the event stream; the tool is used if one later does.
 * **Task Granularity:** seven tasks, each with fewer than 3 files, at most 4 functions, and at
   most 3 scenarios. Every task has exactly one harness classification (two red deliverables,
   three `covered-by`, two `verification-only`). Pass.
@@ -997,7 +1091,7 @@ exception, and depends on binary provenance plus a workspace-local log as durabl
 
 | ProposedAction | ActionRisk | Approval | Rollback |
 |---|---|---|---|
-| PA1: edit Ship Step 4.0 items 4, 6, and 7, the replay paragraph, the Step 4.1a sentence, and Step 4.1b (UCS2a) | high (contract, all shipments) | Careful mode; normal PR review and CI | revert the commit through a normal PR |
+| PA1: edit Ship Step 2 item 1, Step 4.0 items 4, 6, and 7, the replay paragraph, the Step 4.1a sentence, Step 4.1b, and Step 4.6 item 1 (UCS2a) | high (contract, all shipments) | Careful mode; normal PR review and CI | revert the commit through a normal PR |
 | PA2: edit P-002.6, the P-002.2 rows, and version history (UCS2b) | high (policy contract) | Careful mode; normal PR review and CI | revert the commit through a normal PR |
 | PA3: edit the simulation model and fixture (UCS4) | medium (scheduler replay gate) | Careful mode; 21-scenario guard; `-VerifyAgainstQueue` | revert the commit |
 | PA4: provenance build and fixture CLI runs under ignored `logs/` (UCS5a, UCS5b) | medium (containment) | the Proof Protocol checks; abort on any mismatch | none needed, because the live state is untouched; fixture removal only with operator approval |
@@ -1036,15 +1130,18 @@ PA1–PA4 and PA6, and the operator for PA5.
 * Plan review must emit literal `dispatch_mode:` and `decision:` markers in a `## Plan Review`
   section.
 * Multi-agent dispatch is available through the custom reviewer agents.
-* Engram is degraded: the CLI bind failed twice, and no third bind is attempted. Reviewers use
-  targeted known-path reads. This is declared, not hidden, and it does not degrade the dispatch
-  mode.
+* Engram, attempts 1 to 3: degraded (the CLI bind failed twice; no third bind was attempted), so
+  reviewers used targeted known-path reads. Attempt 4: after the approved daemon restart and a
+  successful operator-directed `workspace-status` (bound path, scan complete, not stale), Engram
+  CLI `query-memory` and `search` calls succeed. Reviewers may use Engram CLI for bounded context
+  and still use known-path reads. Neither state degrades the dispatch mode.
 * agent-intercom is not installed, so there are no remote broadcasts.
 
 ### Unresolved Operator Decisions
 
-* **E3:** execution under the pre-repair contract, applying the plan's repaired Steps 4.0 and
-  4.1b. This is new authority, not granted. It blocks Ship dispatch of `B`, not harvest.
+* **E3:** execution under the pre-repair contract, applying the plan's repaired text in place of
+  exactly the `e3-wording` replacement list. This is new authority, not granted. It blocks Ship
+  dispatch of `B`, not harvest.
 * **E1:** the binary installation (operator infrastructure).
 * **C for successors:** the operator alone decides, after `B`'s runtime closure.
 * **Fixture removal:** optional, and needs operator approval.
@@ -1098,6 +1195,42 @@ read from `origin/main` with an ordered member comparison; report lines for the 
 raw-log exception and served-root handoff; md-lint gates; RB11 CI paths-filter follow-up; RB12
 queue and archive check and chore rationale; epoch edge cases; and the post-merge closure stated
 as Ship's standard closure.
+
+## Attempt-4 Revision Note
+
+This body supersedes the attempt-3 text that the third review below assessed (SHA-256 prefix
+`91305A6BBBF0`). It is the single targeted revision the operator authorized after the attempt-3
+halt; it changes no start semantics, no DAG edge, no unit count, and no exception-matrix row.
+Every attempt-3 P1 finding is addressed as follows:
+
+1. `WAVE_NO_PROGRESS` first condition: UCS2b rewrites it to "no `queued` or claim-assigned member
+   has all dependencies terminal"; UCS1 `Policy` asserts the new phrase in that row and
+   `assert.NotContains` the old "no `queued` member has all dependencies terminal" (Scope, UCS1,
+   UCS2b).
+2. `B`'s own shipment log: the scoped P-012 exception now has two read sets, (a) member item logs
+   at Step 4.0 and Step 4.1b and (b) `<served storage root>\logs\<B>.jsonl` at claim, every wave
+   admission, before pull request creation, and before merge; the dispatch block states both
+   (Start semantics, Exception section, dispatch block, Constitution Check).
+3. E3 replacement list: one canonical `e3-wording` block, identical in the source decision and
+   this plan, lists Ship Step 2 item 1, Step 4.0 items 4, 6, and 7, the Step 4.1a sentence, Step
+   4.1b, Step 4.6 item 1, P-002.6 Definitions `ready_k`, "Active leftovers halt too", per-wave
+   steps 1 and 2, and the `WAVE_NO_PROGRESS` row; it recognizes `WAVE_CLAIM_STATE_INDETERMINATE`
+   and `TASK_START_NOT_RECORDED` as session halts. Same-contract completion: Step 4.6 item 1's
+   `active` check becomes mandatory "no member of `ready_k` is `active`" in UCS2a and is asserted
+   in UCS1 `Ship`, and the two pre-repair "Active leftovers" sentences are asserted absent in UCS1
+   `Policy`, so the permanent text matches the replacement list.
+4. `origin/main` trust: the Verified Main Read (fresh fetch, canonical URL, `rev-parse` equal to
+   `ls-remote`, SHA-pinned `git show`, merged-pull-request provenance of every commit touching
+   the read path via `gh api .../commits/<sha>/pulls`) governs both the Harvest Record read and
+   the E3 grant read; the grant file must also carry `B=<B>`.
+
+The dispatch block also passes the served workspace root, which the CLI fallback's `--cwd`
+already required.
+
+Not changed (carried P2/P3 items left for review judgment, not scope): exempt-command deliverable
+probes, `len(scenarios)` instead of 24, evidence-marker regex hardening, fixture frontmatter
+backup, containment volatility and `GIT_CEILING_DIRECTORIES`, UCS5a-before-UCS5b ordering, the
+served-root Ship rule, R3 tool mapping, lenient revocation matching, and the remaining P3 items.
 
 ## Plan Review
 
@@ -1430,3 +1563,96 @@ A continuation needs new operator authority. The operator can either:
 * decide to rescope or abandon the work.
 
 <!-- plan-review-attempt: 3 -->
+
+## Plan Review
+
+dispatch_mode: multi-agent-dispatch
+decision: ADVISORY
+
+* Attempt: 4, the single operator-authorized final cycle. Reviewed body: SHA-256 of the UTF-8
+  text before the first `## Plan Review` line, prefix `ADBF9F245D84`. (The earlier
+  `91305A6BBBF0` convention is not reproducible, so attempt 4 defines it explicitly.)
+* `TOOL_OK: reviewer-subagent-dispatch`. 7 dispatched and 7 returned, the same persona set as
+  attempts 1 to 3. Engram CLI was live for this attempt (bounded `query-memory` and `search`).
+* Structural rows: plan hardening present, `Constitution Check: documented-deviations`, and the
+  risky actions carry `ProposedAction` / `ActionRisk` (strict-safety).
+* All four attempt-3 P1 findings are reported RESOLVED by every persona, including the three
+  personas that raised them (Architecture: 1 and 2; Parity: 3; Security: 4).
+* Raw counts, before deduplication:
+
+  | Persona | Verdict | P0 | P1 | P2 | P3 |
+  |---|---|---|---|---|---|
+  | Constitution | ADVISORY | 0 | 0 | 4 | 4 |
+  | Go | ADVISORY | 0 | 0 | 1 | 5 |
+  | Scope | ADVISORY | 0 | 0 | 2 | 3 |
+  | Learnings | ADVISORY | 0 | 0 | 1 | 4 |
+  | Architecture | ADVISORY | 0 | 0 | 1 | 4 |
+  | Parity | ADVISORY | 0 | 0 | 1 | 2 |
+  | Security | ADVISORY | 0 | 0 | 1 | 3 |
+
+Rationale: no P0 or P1 findings, and P2 findings remain, so the gate decision is ADVISORY. The
+operator decides whether to proceed with these findings recorded as follow-ups, or to revise.
+
+### P2 findings (deduplicated)
+
+1. **UCS1 literal delimiters.** The Step 4.6 `Contains` literal ``no member of `ready_k` is
+   `active` `` keeps a trailing space under CommonMark, while the mandated UCS2a sentence has a
+   comma after the backtick, so a literal copied exactly cannot pass. The same pattern occurs at
+   the other literals ending in a backtick. Fix: state that literals are trimmed. (Go)
+2. **Leftover `ready_k` prose.** The P-002.6 `Wave k` bullet ends with "the queued members whose
+   every dependency has reached a terminal-success status"; UCS2b respecifies only the formula.
+   Fix: UCS2b rewrites the whole bullet, and UCS1 `Policy` asserts the old prose absent.
+   Same-contract. (Scope, Architecture)
+3. **Dispatch block shell forms.** `git show $m:<path>` and unquoted `origin/main^{commit}` fail
+   in PowerShell; the VMR body already uses `"${m}:<path>"` and `'origin/main^{commit}'`. Fails
+   closed, but halts wrongly. Same-contract. (Parity; Go P3)
+4. **Grant provenance breadth.** VMR proves only that the grant file reached `main` through some
+   merged pull request, which could be a large unrelated one, including the staging pull
+   request. Fix: require the introducing pull request to change only the grant path and not be
+   the staging pull request. (Security)
+5. **VMR step 5 operability.** `commits/<sha>/pulls` may first report a pull request into an
+   intermediate branch; requiring `base.ref` `main` for every commit could halt a legitimate
+   read. Fix: dry-run VMR on the merged plan path before dispatch, or accept any merged pull
+   request chain ending at `main`. (Learnings)
+6. **Permanent P-012 declaration rule.** After merge, repaired Step 4.0 and Step 4.1b need member
+   log reads for every shipment, but the declaration rule is scoped to 2A355F83. Fix: one UCS2a
+   sentence requiring a session-record declaration until a configured tool returns the event
+   stream. (Constitution)
+7. **Principle VII.** UCS5b overwrites fixture frontmatter in place without a backup, and the
+   Constitution Check VII line omits it. Extends the carried backup item. (Constitution)
+8. **P-021 C2.** RB11 defers the CI paths-filter gap and the history-read tool without naming
+   who captures the `DEFERRED SCOPE EXPANSION` stash entry, and when. (Constitution)
+9. **P-021 C3/H14.** The carried P2/P3 items left "for review judgment" need an explicit operator
+   disposition (fold in or accept the risk) before completion. (Constitution)
+10. **UCS2a size.** Eight edit sites in one file; within the counts, but watch duration
+    telemetry. No plan change required. (Scope)
+
+### P3 findings (summary)
+
+Name the full Step 4.0 token set `K` in UCS2a; define `active_ids` as residuals only; resolve the
+"never treats an `active` member as satisfied" assertion against a still-true sentence; clarify
+`Preserved` counts for not-yet-existing rows; add a token check on Step 4.0 item 7; name the
+grant-file writer, merger, and `<yyyy-MM-dd>` resolution; clarify "claim" versus Step 4.1b and
+"claim or start" in Step 4.0 item 6; say the H1 crash note applies to claim-assigned members
+only; note the `WAVE_NO_PROGRESS` convergence scope and a separate claim-assigned census count;
+qualify the circuit-breaker row as the D2 residual class; confirm merge commits pass VMR step 5;
+pin `gh --hostname github.com`; check the URL before fetching; anchor Harvest Record delimiters
+at line start; state non-shipment-mode classification is skipped; note UCS5a/UCS5b fixture-only
+creation; record NotContains non-vacuity in UCS1 red evidence; UTF-8 without BOM for UCS5b
+fixture edits; quote `#` in evidence frontmatter; the chore-root choice; the unrequested `B=<B>`
+grant binding and extra dispatch field are harmless. Carried attempt-3 P2/P3 items are not
+worse and were not re-raised.
+
+### Gate outcome: HALT pending operator disposition
+
+* ADVISORY needs explicit operator confirmation before harvest. The standing direction to keep
+  working autonomously waives no gate, so no `operator_authorization` is recorded here.
+* No harvest ran. No backlog items, dependency edges, or shipment exist, and the exception is not
+  bound to any shipment ID.
+* No fifth review cycle is authorized or needed for approval. On explicit operator approval of
+  this ADVISORY, Stage appends `operator_authorization: approved` to this section and harvests
+  this body unchanged, recording the P2 findings above as follow-ups. Revising the body instead
+  would need new authority for a fifth cycle.
+* P-013.6 escalation does not apply: no consecutive-failure threshold was crossed.
+
+<!-- plan-review-attempt: 4 -->
