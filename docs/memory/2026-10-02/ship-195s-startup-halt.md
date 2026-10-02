@@ -476,26 +476,48 @@ UCS3 was still unstarted until its Step 4.1b start.
   195-S records that the old local lint-v2/CRLF gofmt findings were false
   positives, pinned lint passes, and these are not PR residual risks unless
   required CI lint reports a current-HEAD finding.
-- Wave 2 now has 195.003-T and 195.004-T done; 195.005-T (UCS4, covered by
-  195.002-T) remains. UCS1 is now closed/green; UCS3 remains open/red until
-  195.005-T. Therefore the full suite remains deferred until 195.005-T closes
-  UCS3 and the wave-two convergence gate recomputes an empty open-red set.
-  Wave 3 tasks 195.006-T and 195.007-T remain claim-assigned and wait on
-  wave-two dependencies.
-- Structured checkpoint `checkpoint-20261002-191649.json` now records the
-  completed 195.004-T state and the 195.005-T resume instructions; superseded
-  checkpoint `checkpoint-20261002-185820.json` was resolved after successful
-  resumption.
+- `195.005-T` (UCS4, covered by `195.002-T`) completed in
+  `scripts/wave-scheduler-sim.ps1` and
+  `tests/simulation/wave-scheduler-contract.json` only. Commit:
+  `4ea4120d2c5c7cb221b71ef79d8fee370db94823`; backlog move-to-done passed
+  and the commit was linked.
+- Claim-time evidence: pre-work probe exit 1, Preserved PASS, Fixture and
+  Replay assertion-red, no completion marker; clean baseline
+  `83e913c35a3dfb7a4b6114d8c1f6d434fb4f620b`. Owner 195.002-T remained
+  harness-ready with red-confirmed manifest and its scaffold commit on branch.
+  Exactly one current-epoch start record was verified before dispatch.
+  Telemetry disabled; lifecycle topology passed.
+- Fixture-first red, observed before model changes and recorded on 195.005-T:
+  seven named failures (`claim_assigned_all` admission count; residuals
+  outcome/detail/wave/IDs; indeterminate outcome/wave) and
+  `WAVE_SIM_FAIL: 167/174 assertions PASS, 7 FAIL`. Build-feature passed its
+  owner selector in attempt 1 (4.153s); the exact completion wrapper emitted
+  `EXEMPT_VERIFY_OK:195.005-T` with all three named subtests passing.
+  Simulator acceptance passed 174/174 across 24 scenarios and 196/196 with
+  `-VerifyAgainstQueue`; compile-only, vet, and pinned v1.64.8 lint passed.
+  Ship independently verified the selector, completion marker, P-002.4
+  two-path delta, pinned lint, and LF-blob gofmt. Report-only review at
+  `4ea4120d2c5c7cb221b71ef79d8fee370db94823` was READY, P0/P1/P2/P3 =
+  0/0/0/0, no runtime follow-up. No full Go suite ran inside the task.
+- Wave 2 tasks 195.003-T, 195.004-T, and 195.005-T are now all done. UCS1
+  and UCS3 are expected closed/green; the Step 4.6 convergence gate is still
+  required to re-confirm both selectors, rerun the repo-wide compile/static
+  gates and all wave-scoped commands, and then run the mandatory unfiltered
+  full suite because the open-red set should be empty. Do not advance wave
+  index until that gate passes. Wave 3 tasks 195.006-T and 195.007-T remain
+  claim-assigned, waiting on wave-two dependencies.
+- Structured checkpoint `checkpoint-20261002-192931.json` captures all wave-two
+  task completions with Step 4.6 pending; superseded checkpoint
+  `checkpoint-20261002-191649.json` was resolved after successful resumption.
 
 ### Resume point
 
 - Branch: `feat/claimed-versus-started-bootstrap-repair-for-ship-wave-admission-2a355f83`
-- Last task/source commit: `00e8d578f13f02846e6ce506ef05c2159514fff7`;
-  continuity/backlog completion changes for 195.004-T are being recorded on
-  this feature branch.
-- Start 195.005-T sequentially: re-read its exemption contract and owner
-  evidence, run the exact pre-work probe once, capture a clean baseline,
-  verify the single current-epoch start record, and run the lifecycle topology
-  gate before build-feature.
+- Last task/source commit: `4ea4120d2c5c7cb221b71ef79d8fee370db94823`;
+  current task/backlog/memory continuity changes are being recorded on this
+  feature branch before wave convergence.
+- Complete wave 2's Step 4.6 gate before any wave-3 admission. Then revalidate
+  bootstrap contract checks and frozen-M snapshot for wave 3, and start
+  195.006-T / 195.007-T sequentially.
 - No PR, CI, Copilot gate, or merge has occurred. Continue waves 2 and 3 and
   stop only when a merge-ready PR is fully gated; do not merge.
