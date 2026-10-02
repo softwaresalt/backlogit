@@ -1650,6 +1650,66 @@
           7
         ]
       }
+    },
+    {
+      "id": "claim_assigned_all",
+      "description": "Claim-assigned active members retain the baseline dependency waves and are admitted without a current-epoch start record.",
+      "mutations": {
+        "claim_overrides": {
+          "claim_all": "130-S"
+        }
+      },
+      "expect": {
+        "outcome": "COMPLETE",
+        "waves": 18,
+        "scheduled": 43,
+        "claim_assigned_at_admission": 43
+      }
+    },
+    {
+      "id": "claim_state_residuals",
+      "description": "A valid start record, a mismatched marker, and off-manifest membership each keep an active member residual while all other claim-assigned members are excluded from the residual list.",
+      "mutations": {
+        "claim_overrides": {
+          "claim_all": "130-S",
+          "started": [
+            "147.001-T"
+          ],
+          "marker": {
+            "147.002-T": "131-S"
+          },
+          "off_manifest": [
+            "147.003-T"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_NO_PROGRESS",
+        "halt_detail": "active residual",
+        "halt_wave": 1,
+        "active_ids": [
+          "147.001-T",
+          "147.002-T",
+          "147.003-T"
+        ]
+      }
+    },
+    {
+      "id": "claim_state_indeterminate",
+      "description": "More than one live active shipment makes claim-state classification indeterminate before residual admission.",
+      "mutations": {
+        "claim_overrides": {
+          "claim_all": "130-S",
+          "active_shipments": [
+            "130-S",
+            "131-S"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_CLAIM_STATE_INDETERMINATE",
+        "halt_wave": 1
+      }
     }
   ]
 }

@@ -986,6 +986,75 @@ function Invoke-QueueDriftCheck {
 }
 
 # --- scheduler ------------------------------------------------------------------
+function Apply-ClaimOverrides {
+    param($Fx, $Sc, $Members, $TerminalSuccess)
+
+    $shipmentID = "$($Fx.source.shipment)"
+    $state = @{
+        shipment_id      = $shipmentID
+        active_shipments = @($shipmentID)
+        markers          = @{}
+        claim_events     = @{}
+        started          = @{}
+        live_manifest    = @{}
+    }
+    foreach ($id in $Members.Keys) { $state.live_manifest[$id] = $true }
+
+    if (-not (Test-HasProperty $Sc.mutations 'claim_overrides')) {
+        return [pscustomobject]$state
+    }
+
+    $overrides = $Sc.mutations.claim_overrides
+    if (Test-HasProperty $overrides 'claim_all') {
+        $claimShipment = "$($overrides.claim_all)"
+        foreach ($id in $Members.Keys) {
+            if ($TerminalSuccess -contains $Members[$id].status) { continue }
+            $Members[$id].status = 'active'
+            $state.markers[$id] = $claimShipment
+            $state.claim_events[$id] = $true
+            $state.live_manifest[$id] = $true
+        }
+    }
+    if (Test-HasProperty $overrides 'started') {
+        foreach ($id in (ConvertTo-List $overrides.started)) { $state.started[$id] = $true }
+    }
+    if (Test-HasProperty $overrides 'marker') {
+        foreach ($id in (Get-PropertyNames $overrides.marker)) {
+            $state.markers[$id] = "$($overrides.marker.$id)"
+        }
+    }
+    if (Test-HasProperty $overrides 'off_manifest') {
+        foreach ($id in (ConvertTo-List $overrides.off_manifest)) {
+            $state.live_manifest.Remove($id) | Out-Null
+        }
+    }
+    if (Test-HasProperty $overrides 'active_shipments') {
+        $state.active_shipments = ConvertTo-List $overrides.active_shipments
+    }
+
+    return [pscustomobject]$state
+}
+
+function Get-ClaimStateClass {
+    param([string]$ShipmentID, [string]$MemberID, $ClaimState)
+
+    $activeShipments = ConvertTo-List $ClaimState.active_shipments
+    if ($activeShipments.Count -ne 1) { return 'indeterminate' }
+    if ("$($activeShipments[0])" -cne $ShipmentID) { return 'indeterminate' }
+
+    $hasMarker = $ClaimState.markers.ContainsKey($MemberID)
+    $markerMatches = $hasMarker -and "$($ClaimState.markers[$MemberID])" -ceq $ShipmentID
+    $hasClaimEvent = $ClaimState.claim_events.ContainsKey($MemberID) -and
+        [bool]$ClaimState.claim_events[$MemberID]
+    if ($markerMatches -and -not $hasClaimEvent) { return 'indeterminate' }
+    if ($markerMatches -and $hasClaimEvent -and
+        $ClaimState.live_manifest.ContainsKey($MemberID) -and
+        -not $ClaimState.started.ContainsKey($MemberID)) {
+        return 'claim-assigned'
+    }
+    return 'active residual'
+}
+
 function Invoke-WaveScheduler {
     param($Fx, $Sc)
 
@@ -1004,6 +1073,8 @@ function Invoke-WaveScheduler {
         unsupported              = @()
         blocked_ids              = @()
         active_ids               = @()
+        claim_state_indeterminate_ids = @()
+        claim_assigned_at_admission = 0
         dependency_impact        = @{}
         cycle_path               = @()
         members_dropped          = @()
@@ -1081,6 +1152,7 @@ function Invoke-WaveScheduler {
     foreach ($k in $M.Keys) { $liveItems[$k] = $true }
     $frozen = $true
     if (Test-HasProperty $mut 'freeze_m') { $frozen = ($mut.freeze_m -ne 'per-wave') }
+    $claimState = Apply-ClaimOverrides -Fx $Fx -Sc $Sc -Members $M -TerminalSuccess $terminalSuccess
 
     # ---- red-deliverable mapping (mechanical, fail closed) ----
     $redMap = @{}
@@ -1295,9 +1367,28 @@ function Invoke-WaveScheduler {
             }
             $result.member_retained_in_m = ($M.Contains($blocked[0]))
             break
-        }        if ($active.Count -gt 0) {
+        }
+        $claimAssigned = @()
+        $activeResidual = @()
+        $indeterminate = @()
+        foreach ($id in $active) {
+            $class = Get-ClaimStateClass -ShipmentID $claimState.shipment_id -MemberID $id -ClaimState $claimState
+            switch ($class) {
+                'claim-assigned' { $claimAssigned += $id }
+                'indeterminate' { $indeterminate += $id }
+                default { $activeResidual += $id }
+            }
+        }
+        $result.active_ids = @($activeResidual)
+        if ($indeterminate.Count -gt 0) {
+            $result.outcome = 'WAVE_CLAIM_STATE_INDETERMINATE'; $result.halt_wave = $waveIndex
+            $result.claim_state_indeterminate_ids = @($indeterminate)
+            $result.halt_detail = 'active claim state indeterminate'
+            break
+        }
+        if ($activeResidual.Count -gt 0) {
             $result.outcome = 'WAVE_NO_PROGRESS'; $result.halt_wave = $waveIndex
-            $result.halt_detail = 'active residual'; $result.active_ids = @($active)
+            $result.halt_detail = 'active residual'
             break
         }
         if ($terminal.Count -eq $scope.Count) {
@@ -1308,7 +1399,7 @@ function Invoke-WaveScheduler {
         }
 
         $ready = @()
-        foreach ($k in ($queued | Sort-Object)) {
+        foreach ($k in @(($queued + $claimAssigned) | Sort-Object -Unique)) {
             $ok = $true
             foreach ($d in $deps[$k]) {
                 if (-not $M.Contains($d)) { continue }
@@ -1343,7 +1434,12 @@ function Invoke-WaveScheduler {
         }
 
         # execute the wave, task-scoped: each member reaches done
-        foreach ($t in $ready) { $M[$t].status = 'done'; $waveOf[$t] = $waveIndex }
+        foreach ($t in $ready) {
+            if ($claimAssigned -contains $t) {
+                $result.claim_assigned_at_admission = $result.claim_assigned_at_admission + 1
+            }
+            $M[$t].status = 'done'; $waveOf[$t] = $waveIndex
+        }
 
         # completion-time status injections (e.g. descope of a green-maker)
         if (Test-HasProperty $mut 'set_status_at_wave') {
@@ -1488,6 +1584,7 @@ function Test-Scenario {
             'unsupported' { Test-Equal $id $key (ConvertTo-List $want) $r.unsupported }
             'blocked_ids' { Test-Equal $id $key (ConvertTo-List $want) $r.blocked_ids }
             'active_ids' { Test-Equal $id $key (ConvertTo-List $want) $r.active_ids }
+            'claim_assigned_at_admission' { Test-Equal $id $key $want $r.claim_assigned_at_admission }
             'unresolved' { Test-Equal $id $key (ConvertTo-List $want) $r.unresolved }
             'unclosed' { Test-Equal $id $key (ConvertTo-List $want) $r.unclosed }
             'members_dropped' { Test-Equal $id $key (ConvertTo-List $want) $r.members_dropped }
