@@ -248,6 +248,10 @@ of the wave-one harness diff, followed by task completion and wave convergence.
   received the explicit degraded structural-context block and did not repeat
   structural discovery.
 - P-005 telemetry and comments were recorded on `195.001-T` and `195.002-T`.
+  Structured resumption checkpoint:
+  `.backlogit/checkpoints/checkpoint-20261002-175053.json`. The two earlier
+  active same-session checkpoints remain unresolved pending wave-one
+  convergence, per Orchestrator direction.
   No source edits were made. `195.001-T` remains active with its single valid
   start record; `195.002-T` remains active with no `WORK_STARTED` record.
   Neither task is done; wave 1 has not converged; waves 2 and 3 have not
