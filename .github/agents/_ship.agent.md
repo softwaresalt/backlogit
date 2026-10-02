@@ -706,7 +706,8 @@ root from the worktree. If either root is unknown at wave admission, Step 4.0 ha
 2. Define the start epoch as the part of the item log beginning at the latest `status_changed`
    event whose `delta.to` is `active` and `delta.reason` is `shipment claimed`; if no such event
    exists, the epoch is the whole log. A valid start record is a `comment` event in that epoch
-   whose actor is `ship` and whose `delta.comment` first line is exactly `WORK_STARTED: <S>`.
+   whose actor is `ship` and whose `delta.comment` is split at `\n`, then one trailing `\r` is
+   stripped from the first line before exact comparison with `WORK_STARTED: <S>`.
 3. Read the member log and append `WORK_STARTED: <S>` only when no valid start record exists,
    using `backlogit_append_comment` with
    `{item_id: <t>, actor: "ship", comment: "WORK_STARTED: <S>"}`.
