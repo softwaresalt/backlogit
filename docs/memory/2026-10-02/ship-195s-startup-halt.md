@@ -263,3 +263,10 @@ of the wave-one harness diff, followed by task completion and wave convergence.
   harness gate or mutate task planning state. Return to Orchestrator/Stage for
   a compliant repair path before any task completion or further wave work.
 - `ROUTING_DEGRADED` applies because the active Ship route was not confirmed.
+- P-012 process note: during this review continuation, I viewed the two task
+  queue files before loading the deferred backlogit MCP schema. This was an
+  ordering error; the task details were subsequently re-read with
+  `backlogit_get_item`, and no filesystem backlog data was modified. The event
+  was recorded through P-005 telemetry. For resumption, load deferred backlogit
+  tools through tool search before every use and do not repeat direct queue-file
+  reads.
