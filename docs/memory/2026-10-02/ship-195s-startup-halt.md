@@ -499,25 +499,75 @@ UCS3 was still unstarted until its Step 4.1b start.
   two-path delta, pinned lint, and LF-blob gofmt. Report-only review at
   `4ea4120d2c5c7cb221b71ef79d8fee370db94823` was READY, P0/P1/P2/P3 =
   0/0/0/0, no runtime follow-up. No full Go suite ran inside the task.
-- Wave 2 tasks 195.003-T, 195.004-T, and 195.005-T are now all done. UCS1
-  and UCS3 are expected closed/green; the Step 4.6 convergence gate is still
-  required to re-confirm both selectors, rerun the repo-wide compile/static
-  gates and all wave-scoped commands, and then run the mandatory unfiltered
-  full suite because the open-red set should be empty. Do not advance wave
-  index until that gate passes. Wave 3 tasks 195.006-T and 195.007-T remain
-  claim-assigned, waiting on wave-two dependencies.
-- Structured checkpoint `checkpoint-20261002-192931.json` captures all wave-two
-  task completions with Step 4.6 pending; superseded checkpoint
-  `checkpoint-20261002-191649.json` was resolved after successful resumption.
+- Wave 2 tasks 195.003-T, 195.004-T, and 195.005-T are all done. The
+  convergence gate passed at HEAD `6c4369e211a91cbd931ba47c855541e4424109b4`:
+  compile-only, `go vet ./...`, CI-pinned golangci-lint v1.64.8, LF-blob
+  gofmt, all three task-scoped commands, both newly closed selectors
+  (`^TestUCS1_` and `^TestUCS3_`), and the mandatory unfiltered
+  `go test -timeout=30m ./...` all passed. The full suite completed with
+  `internal/core` at 508.728s; exit code 0. Open-red recomputed empty, so the
+  deferred full suite is discharged and wave 3 may be admitted.
+- Before wave-3 admission, fresh VMR main remained
+  `38aebf61aa6aeca88209ff9d85a8fd889f0b7a83`; canonical origin matched,
+  fresh fetch succeeded, and `ls-remote` matched. Verified path provenance:
+  plan commits `087bf0282f1d08260db2e286f71de2c75f0cf18e`,
+  `b9dd839f456f3edd6914aff3e7f397b3929d04fb` -> PR #469;
+  `cdef1bd354bb98416f8f1bb80c7322b68b63145d`,
+  `7af5911361fa8348e4369c689c5379034cfbd0b2` -> PR #468; decision
+  commits `888fccc90fc2ee4f7cf2010aa459bb8676af202e`,
+  `e3c20a4de50d4f67567185f40e2639ddf320d70c`,
+  `b715627e9cf3c81b96c0b6027ac168724c4197a6` -> PR #468; E3 grant
+  commits `888fccc90fc2ee4f7cf2010aa459bb8676af202e`,
+  `82cf88be5b7854990b2d7bb960e7ac20bf8e8b60`,
+  `e3c20a4de50d4f67567185f40e2639ddf320d70c`,
+  `b715627e9cf3c81b96c0b6027ac168724c4197a6` -> PR #468; topology
+  grant `9061ac4a06fd9ad1e04c5e8157eb6e2316ce00a6` -> PR #470. Every PR had non-null
+  `merged_at` and `base.ref=main`. Plan had exactly one anchored Harvest
+  Record: ordered members
+  `195-F, 195.001-T ... 195.007-T`, waves
+  `{001,002}`, `{003,004,005}`, `{006,007}`. The live 195-S manifest matched
+  exactly and was unchanged across two reads.
+- E1: orchestrator-supplied `backlogit_get_version` evidence states server
+  commit `7c805f9baae7f74edd2b1eede47fcf35fbbc9066`; independently verified
+  fallback binary metadata has `vcs.revision` equal to that SHA,
+  `vcs.modified=false`, and SHA-256
+  `F188FB4344CFCD701938BA3AE2DB964CECE958C9361F564DF6FFE951315FF46A`.
+  Producer `6d233d21` is its ancestor.
+- E3: source-decision wording matches the plan's `e3-wording` block after
+  stripping only nested Markdown indentation. VMR grant file contains
+  `B=195-S` and quotes `E3 granted: ` plus that exact block. Of two
+  same-prefix 195-S comments, one older grant was unrecognized/superseded;
+  the later event at `2026-10-01T23:32:27.274659-07:00` quotes the corrected
+  operator grant byte-for-byte and names the grant path. The scoped shipment
+  log is parseable, with no revocation. No stop/expiry condition occurred.
+  E3's exact replacement list was applied; all other workflow gates remain.
+- P: live dependency read confirms `195-S blocks -> 154-S`; the provenance-
+  verified backlog CLI reports `154-S` `status: archived`,
+  `archived_status: shipped`, merge `6d233d21`. Active-shipment listing
+  contains exactly 195-S.
+- Frozen task snapshot contains exactly seven task IDs. 001–005 are done;
+  006 and 007 are active, with the SQL snapshot and direct item reads
+  agreeing, markers `scheduler_baseline_claim=195-S`, and membership in the
+  live manifest. Their scoped logs each parse and contain a valid
+  `shipment claimed` event and zero current-epoch `WORK_STARTED: 195-S`
+  records; both therefore classify claim-assigned, not active residual.
+  The plan's closed exemption set includes UCS5a and UCS5b as
+  verification-only. Wave-3 frontier is exactly `{195.006-T,195.007-T}`.
+- Structured checkpoint `checkpoint-20261002-203542.json` records the
+  successful wave-two convergence and wave-three admission; superseded
+  checkpoint `checkpoint-20261002-192931.json` was resolved after successful
+  resumption.
 
 ### Resume point
 
 - Branch: `feat/claimed-versus-started-bootstrap-repair-for-ship-wave-admission-2a355f83`
-- Last task/source commit: `4ea4120d2c5c7cb221b71ef79d8fee370db94823`;
-  current task/backlog/memory continuity changes are being recorded on this
-  feature branch before wave convergence.
-- Complete wave 2's Step 4.6 gate before any wave-3 admission. Then revalidate
-  bootstrap contract checks and frozen-M snapshot for wave 3, and start
-  195.006-T / 195.007-T sequentially.
-- No PR, CI, Copilot gate, or merge has occurred. Continue waves 2 and 3 and
+- Source/status commit: `6c4369e211a91cbd931ba47c855541e4424109b4`;
+  this wave-three admission memory/checkpoint update is being committed
+  before task baselines.
+- Wave-3 admission passed. Next: perform the exact pre-work probe for
+  195.006-T, capture a clean baseline, record and verify its start epoch,
+  run lifecycle topology, then execute its verification-only proof. Do not
+  use live MCP tools during the proof window; finish 006 completely before
+  beginning 007's proof window.
+- No PR, CI, Copilot gate, or merge has occurred. Continue through wave 3 and
   stop only when a merge-ready PR is fully gated; do not merge.
