@@ -87,3 +87,71 @@ passed and was consumed. `ship_pre_claim` remains unused.
 Resume only after the worktree is clean through an authorized path that
 preserves this continuity note. Do not commit it on `main`, and do not bypass
 P-011.
+
+## 2026-10-02 resumed on shipment branch — schedule frozen
+
+- Branch: `feat/claimed-versus-started-bootstrap-repair-for-ship-wave-admission-2a355f83`
+- First branch commit: `474166ca` (`chore(backlog): claim 195-S and checkpoint Ship session`),
+  including this memory file and the CLI-generated shipment claim/hook-ack state.
+- Shipment `195-S` is active. The one-time pre-branch and pre-claim topology gates
+  passed with the authorized forced bootstrap grant; post-claim verification passed
+  and confirmed `195-S` is the sole active shipment on its matching branch.
+- P-001 had no other active artifact before claim. The compile-only pre-flight
+  `go test -run=^$ -count=1 ./...` passed.
+- Backlog MCP discovery returned no functions in this environment; the declared
+  CLI fallbacks are in use. Index sync and unfiltered checkpoint recovery scan
+  succeeded; the scan found 89 resolved/abandoned checkpoints and zero active
+  or quarantine-required entries. Concrete hooks through seq 3508 were processed
+  and acknowledged.
+- Dispatch contract checks: E1 dispatch evidence and local fallback binary
+  metadata/hash/ancestry verified; E2 harvest record matches the live ordered
+  manifest; E3 grant text and exact grant log comment verified; no revocation or
+  expiry condition found; `195-S blocks 154-S`, and `154-S` is archived with
+  `archived_status: shipped`.
+- VMR at `main=38aebf61aa6aeca88209ff9d85a8fd889f0b7a83` verified the bootstrap
+  plan, grant, and deliberation reads; every commit touching these authority
+  files maps to merged PR #468 or #469 into `main`.
+- Intake reconciliation (`pre`, expected `active`) resolved all eight exact
+  manifest members once at `active`; recommendation `PROCEED`. Report:
+  `.backlogit/reconcile/195-S-pre-20261002T165733Z.md`.
+
+### Frozen scheduler state (Step 3)
+
+- `S` has 8 explicit members. `M` is exactly the seven task IDs
+  `195.001-T`–`195.007-T`; the only excluded member is `195-F` (`feature`).
+- Configured catalog contains ten statuses. Executable:
+  `{queued, active, blocked}`; terminal-success: `{done, archived}`;
+  unsupported: every other token. Registry has SQL and shipment support enabled.
+- Exact dependency edges:
+  `195.003-T -> 195.001-T`,
+  `195.004-T -> 195.001-T`,
+  `195.005-T -> 195.002-T`,
+  `195.006-T -> 195.003-T, 195.004-T, 195.005-T`,
+  `195.007-T -> 195.003-T, 195.004-T, 195.005-T`.
+- Expected waves: 1 `{195.001-T, 195.002-T}`; 2
+  `{195.003-T, 195.004-T, 195.005-T}`; 3
+  `{195.006-T, 195.007-T}`.
+- Red deliverables: `195.001-T` selector
+  `go test -count=1 -run '^TestUCS1_' ./tests/integration`, green makers
+  `195.003-T` and `195.004-T`, close wave 2; `195.002-T` selector
+  `go test -count=1 -run '^TestUCS3_' ./tests/integration`, green maker
+  `195.005-T`, close wave 2. All seven green-regression arrays are `[]`.
+- The tracked read-only scheduler replay returned `WAVE_SIM_OK` (186/186
+  assertions, 21 scenarios). No task start record or implementation has been
+  dispatched yet; wave 1 harness generation/admission is next.
+
+## 2026-10-02 wave-1 harness lock stall
+
+The `Go Engineer` harness delegation attempted to acquire the required
+concurrency locks for the two new wave-1 test paths
+(`tests/integration/claim_start_admission_contract_test.go` and
+`tests/integration/claim_start_wave_sim_contract_test.go`). Each lock attempt
+and its one retry failed because the lock script rejects a target file that
+does not yet exist. The task-record locks were acquired and released. No test
+file, harness label, or task manifest was changed; no task start comment or
+build dispatch was issued. Do not create either source file without first
+resolving the new-file locking barrier under the concurrency protocol.
+
+Resume at wave-1 harness generation after a safe, authorized lock path is
+established. The existing structured Ship checkpoint remains at
+`wave-schedule-frozen`, with exact M, wave partition, and red mapping.
