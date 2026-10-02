@@ -270,3 +270,130 @@ of the wave-one harness diff, followed by task completion and wave convergence.
   was recorded through P-005 telemetry. For resumption, load deferred backlogit
   tools through tool search before every use and do not repeat direct queue-file
   reads.
+
+## 2026-10-02 resumed after authorized harness review repair
+
+The Orchestrator ruled that the UCS1 helper-count/prefix defect and UCS3
+newline-spanning outcome regex were same-contract-surface harness defects under
+P-021 C1/C3. Both tasks were returned to the harness phase without changing
+status or acceptance criteria. UCS1 retained its single valid start record;
+UCS3 was still unstarted until its Step 4.1b start.
+
+- Harnesses were revised serially on the existing feature branch without file
+  locks, per the single-agent/single-worktree concurrency ruling. UCS1 now has
+  zero package-scope helpers and local closures, with the three ordered
+  `Preserved`, `Ship`, and `Policy` subtests. UCS3 outcome-line regexes now use
+  `[ \t]`, and the rest of that file's regexes were checked for the same
+  newline-spanning issue.
+- Scaffold-revision commit: `c25f20779b8b6675fa4e63736dffc687efaab5dd`
+  (`test: revise 195.001-T and 195.002-T harness findings`). This supersedes
+  the prior scaffold anchor `8550556d5cd9b017bd064c5f0a39fa255d7dd437`.
+- `195.001-T` was redispatched with `red_baseline_sha=c25f20779b8b6675fa4e63736dffc687efaab5dd`.
+  It compiled; the anchored selector remained assertion-red in `Ship` and
+  `Policy`, with `Preserved` green; all 13 NotContains checks logged
+  `PRE-REPAIR PRESENT`; staged, unstaged, and untracked delta checks were empty.
+- `195.002-T` had no previous Step 4.2 baseline. Its prior scaffold anchor was
+  `8550556d5cd9b017bd064c5f0a39fa255d7dd437`; its new Step 4.2 baseline is
+  `c25f20779b8b6675fa4e63736dffc687efaab5dd`. After verifying no existing start
+  record and the post-claim epoch, exactly one `WORK_STARTED: 195-S` comment
+  was appended by `ship`. The selector remained assertion-red in `Fixture` and
+  `Replay`, with `Preserved` green; the missing scenarios and 21-vs-24 replay
+  assertions were observed; all three delta checks were empty. Both baseline
+  records and dispatch evidence were added to the respective task comments.
+- The post-revision compile-only command passed. CI-pinned
+  `golangci-lint@v1.64.8` passed; the two changed committed Go blobs were
+  gofmt-clean with LF normalization. No source changes occurred during the
+  write-free red-deliverable dispatches.
+- A task comment on `195.001-T` records that stash `4A990AF9` arose from the
+  local lint-version and Windows CRLF false positives, with CI-pinned lint and
+  changed-blob formatting passing. The stash is unchanged, remains for Stage
+  triage, and is not a PR residual absent a changed-file lint finding.
+- Report-only review of the revised HEAD
+  `c25f20779b8b6675fa4e63736dffc687efaab5dd` is `READY`: 0 P0, 0 P1, 0 P2,
+  0 P3; runtime verification follow-up is not required. The changed Go surface
+  is test-only: `TestUCS1_ClaimStartContract` and
+  `TestUCS3_WaveSimClaimStart`, with local helpers only and no production or
+  exported declaration changes. Engram remains degraded from earlier
+  timeouts; no repeated structural queries were made, and the exact changed
+  files were directly inspected.
+- `195.001-T` and `195.002-T` were moved to `done` after their Step 4.5
+  completion comments. Their red-deliverable selectors remain open. Wave-one
+  convergence passed: compile-only, `go vet ./...`, CI-pinned lint,
+  LF-normalized committed-blob gofmt, both task-scoped selectors, and both
+  open-red selectors were verified. Both selectors remain RED in their
+  intended named subtests; no `Preserved` subtest failure was reported.
+- `FULL_SUITE_DEFERRED: wave 1`. Open red entries in stable task order:
+  `go test -count=1 -run '^TestUCS1_' ./tests/integration` owned by
+  `195.001-T`, with `195.003-T` and `195.004-T` (both scheduled wave 2) not
+  yet done; `go test -count=1 -run '^TestUCS3_' ./tests/integration` owned by
+  `195.002-T`, with `195.005-T` (scheduled wave 2) not yet done. Compile,
+  vet, lint, format, and every declared scoped command passed or was observed
+  in its required red state; both still-open selectors were reconfirmed RED.
+  A full test run here would classify rather than verify the expected
+  red-deliverable failures and could hide unrelated package failures behind a
+  build error, panic, or timeout. Both entries are within their declared
+  wave-2 close budget.
+- The backlog completion operation removed the two `done` items from
+  `.backlogit/queue/` and produced tool-managed archive entries; no manual
+  restore or archive mutation was performed. The release remains on the same
+  feature branch and no PR exists. The same-session checkpoints remain
+  pending and are to be resolved after wave-one convergence as directed.
+
+## 2026-10-02 wave-two contract revalidation and admission
+
+- **VMR**: `git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main`
+  passed; origin was exactly
+  `https://github.com/softwaresalt/backlogit.git`; pinned
+  `origin/main = ls-remote = 38aebf61aa6aeca88209ff9d85a8fd889f0b7a83`.
+  Every read used `git show` at that SHA. Path provenance checks passed for
+  every commit: plan (4 commits, merged-main PR #468), deliberation (3, #468),
+  E3 grant record (4, #468/#469), and bootstrap-grant file (1, #470). The
+  line-delimited Harvest Record parser found exactly one actual fenced block;
+  an inline-code reference to the marker pair was excluded. The harvested
+  ordered list exactly equals live `195-S.custom_fields.items`:
+  `195-F`, then `195.001-T` through `195.007-T`.
+- **E1**: the Orchestrator-provided `backlogit_get_version` result remains the
+  required server-side evidence (`X=7c805f9baae7f74edd2b1eede47fcf35fbbc9066`).
+  The fallback CLI binary was independently checked: SHA-256
+  `F188FB4344CFCD701938BA3AE2DB964CECE958C9361F564DF6FFE951315FF46A`,
+  `go version -m` reports the expected `vcs.revision` and
+  `vcs.modified=false`, and `6d233d21` is an ancestor. Ship's plan assigns
+  the server-side version operation to the Orchestrator; CLI metadata was not
+  substituted for that proof.
+- **E2/E3**: the 195-S log was read under the declared P-012 scope, parsed as
+  7 events/5 comments, and contains no exception revocation. The VMR E3 record
+  contains `B=195-S` and the exact grant; the shipment log has two matching
+  grant-prefix comments, exactly one of which quotes the grant byte-for-byte
+  and names `docs/memory/2026-10-02/orchestrator-2a355f83-e3-grant.md`.
+  Shipment remains active, manifest reads were identical, no return-blocked
+  or scope change occurred, and no shipped/abandoned or explicit operator
+  stop/revocation condition occurred. The main branch still contains the
+  unrepaired contract, so the E3 end condition has not occurred.
+- **P**: the `195-S blocks -> 154-S` edge was returned by dependency lookup;
+  the configured CLI fallback reports `154-S` as `archived` with
+  `archived_status: shipped` (merge `6d233d21`).
+- The P-002.6 exact-ID SQL snapshot returned seven distinct task IDs
+  (`count(M)=7`) and the frozen dependency edges. Census: terminal-success
+  `{195.001-T,195.002-T}`; raw active
+  `{195.003-T,195.004-T,195.005-T,195.006-T,195.007-T}`;
+  queued 0, blocked 0, unsupported 0. One active shipment was listed and it
+  was `195-S`; two sequential shipment reads had the same ordered manifest.
+  Each active member had marker `scheduler_baseline_claim=195-S`, was present
+  in the manifest, and its item read agreed with the snapshot. Scoped P-012
+  task-log reads for `195.003-T` through `195.007-T` all parsed and contained
+  a claim event; none had a valid `WORK_STARTED: 195-S` record in its current
+  epoch. Thus all five are claim-assigned, not active residuals.
+- D2 frontier: `ready_k={195.003-T,195.004-T,195.005-T}` (all dependencies
+  terminal-success); `195.006-T` and `195.007-T` remain claim-assigned but
+  wait on unfinished dependencies. The plan's VMR-verified closed exemption
+  set includes UCS2a/UCS2b/UCS4 as `covered-by`; static P-002.1 intake passes
+  for the three ready members, with owners `195.001-T`, `195.001-T`, and
+  `195.002-T`, respectively. Owner labels, red manifests, and scaffold
+  commit are present. No harness-architect pass is needed for this wave;
+  claim-time probes and starts must still run before each build dispatch.
+- The three older same-session checkpoints were conforming Ship checkpoints
+  and were resolved after wave-one convergence. A new phase-tagged checkpoint
+  `checkpoint-20261002-182650.json` records the wave-one-converged resume
+  point. The current worktree contains only the expected shipment completion,
+  checkpoint, and memory changes; these are to be committed before the
+  claim-time probes so their required clean baseline is unambiguous.
