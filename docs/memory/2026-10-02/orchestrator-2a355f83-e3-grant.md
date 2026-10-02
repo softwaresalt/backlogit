@@ -2,9 +2,11 @@
 schema_version: "1.0"
 doc_type: memory
 title: Operator E3 execution grant for bootstrap 2A355F83
-description: Verbatim operator grant of E3 for shipment 195-S, with the exact e3-wording it grants.
+description: Verbatim operator reply on E3 for shipment 195-S; E3 is not yet recognized because the reply lacks the exact e3-wording.
 timestamp: "2026-10-02T05:52:01.137Z"
 ---
+
+# Operator E3 grant record for bootstrap 2A355F83
 
 ## Grant record
 
@@ -22,11 +24,12 @@ E3: Execution granted.
 PA1 approved
 ```
 
-## Granted wording
+## Requested wording
 
-The line `E3: Execution granted.` grants E3. E3 is defined by the `e3-wording`
-block of `docs/exec-plans/2026-10-01-2a355f83-claimed-vs-started-bootstrap-plan.md`.
-That block is reproduced byte for byte:
+E3 is defined by the `e3-wording` block of
+`docs/exec-plans/2026-10-01-2a355f83-claimed-vs-started-bootstrap-plan.md`.
+That block is reproduced byte for byte for reference only. Its presence in
+this file is not part of the operator's verbatim grant:
 
 <!-- BEGIN:e3-wording -->
 
@@ -36,14 +39,20 @@ For the bootstrap shipment B named in the plan 2A355F83 Harvest Record only, unt
 
 <!-- END:e3-wording -->
 
-## Disclosed deviation
+## Recognition status: NOT recognized
 
-The operator granted E3 by reference rather than restating the `e3-wording`
-text. The operator, who owns the recognition contract, stated the grant
-directly in reply to the explicit E3 request. The Orchestrator records that
-grant as satisfying dispatch item (3). The grant's scope is exactly the
-`e3-wording` above. It grants no merge, admin fallback, dark mode, Condition B
-attestation, or authority over any other shipment.
+The plan recognizes E3 only when the operator's verbatim grant itself contains
+the exact `e3-wording` text. The reply above grants E3 by reference
+(`E3: Execution granted.`) and does not contain that text. Reproducing the
+wording in this file does not make it part of the grant. E3 is therefore NOT
+recognized, and dispatch item (3) would halt with
+`BOOTSTRAP_E3_NOT_GRANTED B=195-S`.
+
+To recognize E3, the operator must send a grant whose text contains the
+`e3-wording` block exactly. The Orchestrator then records that grant verbatim
+in this file through a merged pull request and appends a matching
+`BOOTSTRAP_E3_GRANTED: 2A355F83 B=195-S` comment that quotes the new grant
+byte for byte.
 
 ## Related approvals in the same reply
 
