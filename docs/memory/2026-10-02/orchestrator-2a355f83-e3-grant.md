@@ -2,7 +2,7 @@
 schema_version: "1.0"
 doc_type: memory
 title: Operator E3 execution grant for bootstrap 2A355F83
-description: Verbatim operator E3 grant for shipment 195-S containing the exact e3-wording block; E3 is recognized once this file is on main.
+description: Verbatim operator E3 grant for shipment 195-S containing the exact e3-wording block; the grant text is valid; recognition still requires a Verified Main Read and the matching 195-S log comment.
 timestamp: "2026-10-02T06:25:25.944Z"
 ---
 
@@ -23,10 +23,10 @@ The grant contains the `e3-wording` block of
 `docs/exec-plans/2026-10-01-2a355f83-claimed-vs-started-bootstrap-plan.md`
 exactly, after the `E3 granted: ` prefix.
 
-## Recognition status: grant text valid
+## Recognition status: grant text valid, recognition pending
 
-The grant text satisfies the plan's exact-wording requirement. Recognition at
-dispatch also requires this file to be read through the Verified Main Read and
+The grant text satisfies the plan's exact-wording requirement. This file alone
+does not complete recognition. Recognition at dispatch also requires this file to be read through the Verified Main Read and
 `195-S`'s log to carry a comment whose first line is exactly
 `BOOTSTRAP_E3_GRANTED: 2A355F83 B=195-S` quoting this grant byte for byte.
 

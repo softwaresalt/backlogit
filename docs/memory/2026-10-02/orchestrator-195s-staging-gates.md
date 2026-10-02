@@ -219,7 +219,7 @@ automatically be included in the next commit ... E3: Execution granted. PA1 appr
   `731CE551` (DEFERRED SCOPE EXPANSION); MD041 fixed; E3-wording thread accepted
 * Stash `41FE00A1` captures widening the Step 1.5 carry-forward allowlist
 * E1 build: `bin\backlogit-7c805f9baae7f74edd2b1eede47fcf35fbbc9066.exe`,
-  `vcs.revision=7c805f9b...`, `vcs.modified=false`, SHA-256
+  `vcs.revision=7c805f9baae7f74edd2b1eede47fcf35fbbc9066`, `vcs.modified=false`, SHA-256
   `F188FB4344CFCD701938BA3AE2DB964CECE958C9361F564DF6FFE951315FF46A`, descends from
   `6d233d21`; copied to `bin\backlogit.exe` (old image renamed
   `bin\backlogit-2c8759c3-old.exe`)
