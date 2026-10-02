@@ -183,35 +183,33 @@ without calling `acquire_lock`.
   red-deliverable compile check passed; the UCS1 selector remained assertion-red;
   the tracked/staged/untracked zero-delta passes were all empty.
 
-Execution is halted before task completion because required global local
-quality gates are not green: `golangci-lint run` exited non-zero with 57
-diagnostics in existing files (none in either new harness), and `gofmt -l .`
-listed 6,146 paths, including local `.copilot/session-state` snapshots and
-pre-existing repository Go files. The two new harness files themselves were
-not listed. No out-of-scope lint or formatting fixes were made. The full
-quality-gate sequence and wave convergence did not pass; no task was marked
-done, no second task start was recorded, and there is no review, PR, CI, or
-Copilot review. Shipment `195-S` remains active; `195.001-T` is active with
-its start record, and `195.002-T` remains claim-assigned and active.
+Execution paused before task completion when the local v2 lint and Windows
+working-tree formatting checks failed. The Orchestrator subsequently
+dispositioned both as tooling false positives: use the CI-pinned
+`golangci-lint@v1.64.8` command, and format-check LF-normalized committed Go
+blobs changed since `38aebf61`. The pinned lint passed; both changed Go blobs
+were gofmt-clean. The earlier local failures are not shipment defects.
+Continue without carrying them as PR residual risk unless the pinned lint
+finds a changed-file finding.
 
-Resume only after an authorized disposition for the failing global gates.
-Do not advance to wave 2, create a PR, or report merge readiness on the basis
-of the compile and task-scoped red checks alone. If the unrelated lint/format
-work is formally deferred, apply the P-021 C2 capture procedure before closing
-those findings.
+No task is done yet. `195.001-T` is active with its single valid start record;
+`195.002-T` remains claim-assigned and active. The next step is local review
+of the wave-one harness diff, followed by task completion and wave convergence.
 
 ### P-021 C2 threadless deferred-scope capture
 
 - Captured entry: `4A990AF9`. The entry is capture-only and was not edited
   after creation.
-- Expansion: resolve the pre-existing repository-wide lint and `gofmt -l .`
-  failures. It is outside task `195.001-T` under P-021 C1; no code was changed.
+- The Orchestrator identified the captured premise as a local tool-version /
+  CRLF false positive. Keep entry `4A990AF9` unchanged for Stage to triage; do
+  not carry it as a PR residual risk unless the pinned lint reports a
+  changed-file finding.
 - Deferred-entry discovery found one source-matched but unconfirmed active
   candidate, `B3701713` (a distinct CI-trigger expansion), and the configured
   tools expose no archived-stash reader. The entry and this record carry
   `DISCOVERY-STATUS: AMBIGUOUS B3701713` and
   `DISCOVERY-STATUS: LOOKUP-UNAVAILABLE`.
-- The task-level record is the comment on `195.001-T`. This is the run-level
-  residual-risk record. No PR or closure artifact exists yet; carry the same
-  entry ID `4A990AF9` into the PR/closure residual-risk record if this shipment
-  later resumes. No thread reply or resolution was applicable.
+- The task-level record is the comment on `195.001-T`; this is the run-level
+  record. No PR or closure artifact exists yet. Unless the pinned lint reports
+  a changed-file finding, do not copy entry `4A990AF9` into PR/closure residual
+  risks. No thread reply or resolution was applicable.
