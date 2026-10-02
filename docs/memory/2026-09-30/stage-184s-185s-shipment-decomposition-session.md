@@ -1,0 +1,174 @@
+# Stage memory: 184-S / 185-S shipment decomposition
+
+* Date: 2026-09-30 (local), timestamps in UTC 2026-10-01
+* Agent: Stage, invoked by the Orchestrator for a user-authorized staging
+  correction. Route: claude-opus-5.5 / anthropic / high.
+* Branch: `stage/condition-b-enforcement-staging`, single worktree. No
+  checkout, no second branch, no PR, no Ship work.
+* Request: "Between 184-S and 185-S, the two combined have far too many
+  tasks assigned per shipment. These need to be further decomposed based on
+  size and complexity."
+* Result: COMPLETE. The 18-task and 26-task manifests became 10 release
+  units of 1 to 8 tasks each.
+
+## Decisions
+
+* Each release unit has its own root feature, because a shipment releases
+  only its explicit manifest and lists its covering feature first. A broad
+  root feature in an early shipment would mix scopes.
+* `184-S` and `184-F` keep the A4 closing chunk. `185-S` and `185-F` keep
+  the B6 closing chunk. Nothing was retired, abandoned, or archived.
+* The other 38 tasks were moved with `backlogit_adopt_item`, which keeps
+  `origin_feature`. No task was cloned or split.
+* B3 (7 tasks) and B5 (8 tasks) are above the 4-to-6 target. They are
+  inseparable green boundaries; the plan gives the rationale.
+* Packaging refinements PR-1 to PR-5 changed only task bodies, titles, task
+  edges, and closure text. They added no new requirements.
+
+## Review
+
+* A new packaging-only review surface was used: shipment decomposition
+  review attempts 1 to 3. The original plan-review attempts 1 to 4 are
+  unchanged.
+* Attempt 1: FAIL (7 P1). Attempt 2: FAIL (1 P1, the R12 pin timing).
+* Attempt 3: ADVISORY (P0 0, P1 0, P2 5, P3 15), seven personas.
+  * `operator_authorization: approved` was recorded as delegated through
+    the user's end-to-end correction request, following the attempt-4
+    precedent. The operator may object.
+  * Mandatory conditions MDC-1 to MDC-5 were applied.
+
+## Artifacts
+
+* Plan addendum, review records, and Applied Mapping:
+  `docs/exec-plans/2026-09-30-6434a4d7-shipment-predecessor-readiness-guard-plan.md`.
+* Checkpoint commit `8725f50b` (addendum and reviews only).
+* New features `187-F` to `194-F` and new shipments `187-S` to `194-S`.
+
+| Shipment | Unit | Tasks | Effort (h) | Prerequisites |
+|---|---|---|---|---|
+| `187-S` | A1 | 4 | 2.5 to 4.25 | `154-S` |
+| `188-S` | A2 | 6 | 5.5 to 8.75 | `154-S`, `187-S` |
+| `189-S` | A3 | 5 | 4 to 7 | `154-S`, `187-S`, `188-S` |
+| `184-S` | A4 | 3 | 2 to 3 | `154-S`, `188-S`, `189-S` |
+| `190-S` | B1 | 5 | 4.25 to 7.5 | `154-S`, `188-S`, `189-S` |
+| `191-S` | B2 | 2 | 3 to 4 | `154-S`, `190-S` |
+| `192-S` | B3 | 7 | 7 to 10.75 | `154-S`, `187-S`, `191-S` |
+| `193-S` | B4 | 1 | 0.25 to 0.5 | `154-S`, `186-S` |
+| `194-S` | B5 | 8 | 6 to 8.75 | `154-S`, `186-S`, `189-S`, `192-S`, `193-S` |
+| `185-S` | B6 | 3 | 2.25 to 3.25 | `154-S`, `184-S`, `186-S`, `194-S` |
+
+## Execution notes
+
+* One MCP `backlogit_get_shipment` read after the manifest sync was stale.
+  The second MCP sync was correct before any adoption.
+* The `184-S` to `189-S` edge call timed out. A read-back showed it was
+  absent, and it was added once.
+* The first `188-S` hold comment paraphrased R14 wrongly. A second comment
+  supersedes that sentence.
+* The trailing blank lines at the end of the `184-S` and `185-S` manifests
+  were trimmed for `git diff --check`.
+
+## Verification
+
+* 44 tasks, each in exactly one manifest. Feature first, parents correct,
+  all `queued`, no status changes.
+* Shipment edges exact. Kahn order: `187-S`, `193-S`, `188-S`, `189-S`,
+  `184-S`, `190-S`, `191-S`, `192-S`, `194-S`, `185-S`. No cycle.
+* There are no cross-shipment task edges outside the prerequisite closure,
+  no missing targets, and no old-ID references.
+* The 17 guarded tasks keep their label and their guard text hashes. The
+  `183` and `186` files are unchanged.
+* `backlogit docs lint`: valid, 0 violations. `backlogit_doctor`: only 23
+  pre-existing orphan findings (`016.001-R`, `106.012-T` to `106.033-T`).
+* Not run: builds, tests, P-008 gates (Ship owns these), and the full
+  autoharness verifier.
+
+## Holds and follow-ups
+
+* Condition B scheduler-consumption attestation C for `154-S` is absent, so
+  no unit is Ship-eligible.
+* Follow-ups (not acted on):
+  * The plugin bundle `plugin/agents/ship.agent.md` grants `backlogit/*`
+    with no disposition ban.
+  * There is no backlog-integration instructions row for dispose.
+  * The adopt instruction header is stale.
+  * `docs/memory` holds 103 files (402 KB), above the compact-context
+    trigger. Compacting it was out of scope.
+
+## Next step
+
+No Stage work remains for this correction. Ship must not claim any unit
+until attestation C exists. The order is the Kahn order above.
+
+## Post-verification HALT (BLOCKED)
+
+* Status: BLOCKED. The Result line above ("COMPLETE") covers the applied
+  decomposition only. Plan readiness is BLOCKED.
+* Branch HEAD before this record: `f041e16d`, equal to origin.
+* Blocker: MDC-1 and `188.001-T` AC4 accept a compile failure as RED for
+  `TestShipmentReadinessDeclarations`. The resolver-field test stops
+  compilation until `188.002-T`, which adds the field and the
+  `QueryQueueForWorkspace` stub and then expects a pass. The pin is never
+  seen failing as a compiling `go/parser` test (P-002, P-004, R12). This is
+  a same-contract completion, not a deferred scope expansion. It is not
+  waived.
+* The parent emitted P-005 and halted mutation, review, and implementation.
+* Review cycles: decomposition attempts 1 FAIL, 2 FAIL, 3 ADVISORY are
+  consumed. A further cycle needs explicit operator disposition. No counter
+  reset and no fourth review.
+* Applied result kept: 10 queued manifests, 44 tasks (`187-S` 4, `188-S` 6,
+  `189-S` 5, `184-S` 3, `190-S` 5, `191-S` 2, `192-S` 7, `193-S` 1,
+  `194-S` 8, `185-S` 3). No status changes.
+* Recorded: the plan BLOCKED addendum, and HOLD comments on `188-S` and
+  `188.001-T` through `backlogit_append_comment`. The comments are notes,
+  not a code claim gate.
+* Next step: operator disposition and in-scope remediation of the A-U5 and
+  A-U6 boundary. No source work and no Ship. Attestation C for `154-S` is
+  still absent.
+
+## Operator Continuation: Revision 3 (READY_FOR_STAGING_HANDOFF)
+
+* Timestamp: 2026-10-01. Branch `stage/condition-b-enforcement-staging`,
+  baseline `d5ee1642`. Route: claude-opus-5.5 / anthropic / high.
+* Authorization: the operator continuation relayed at 2026-10-01T04:08:18Z
+  authorizes one more in-scope packaging review/fix cycle. The packaging
+  budget goes from 3 to 4. No counter was reset. It is not individual-finding
+  approval and not dark mode. No attempt 5 is authorized.
+* Counters: packaging attempts 1 FAIL, 2 FAIL, 3 ADVISORY (historical), and
+  4 ADVISORY with `operator_authorization: approved`. The original plan's
+  four reviews are unchanged. The verifier and engram binding failure
+  counters stay at 2 each and were not replayed.
+* Attempt 4: five personas. No unresolved P0 or P1. The Learnings P1 on
+  FC-5 was resolved in the plan, with bound ACs. Every P2 was fixed or bound
+  to an AC. No out-of-scope finding, so no P-021 C2 capture.
+* Fix: the plan's Revision 3 supersedes MDC-1 and the named compile-failure
+  AC sentences. A compiler error is never valid RED. Historical text is
+  kept.
+* New tasks: `188.007-T` (A-U5a, standalone go/ast declaration harness,
+  0.5-0.75 h) and `188.008-T` (A-U5b, declaration-only field and stub,
+  0.25-0.5 h). Declaration duties were removed from `188.002-T`. `188.004-T`
+  AC4 requires that no `ErrNotImplemented` remains, so the stub closes
+  inside `188-S`.
+* Chain: `187.004-T -> 188.007-T -> 188.008-T -> 188.001-T -> 188.002-T ->
+  188.003-T -> 188.004-T -> 188.005-T -> 188.006-T`. The edge
+  `188.001-T -> 187.004-T` was removed. Downstream edges are kept.
+* Shipments (all queued): `187-S` 4, `188-S` 8 (5.75-9.25 h), `189-S` 5,
+  `184-S` 3, `190-S` 5, `191-S` 2, `192-S` 7, `193-S` 1, `194-S` 8,
+  `185-S` 3. That is 46 tasks: the original 44 plus 2 new. Feature A is
+  14.25-23.5 h and Feature B is 22.75-34.75 h.
+* Verification (documentary and structural only): 46 distinct queued tasks,
+  0 missing. 49 edges, acyclic, 0 missing targets. The `188` edge set equals
+  the target. 0 forbidden phrases in active bodies. Key sets match. The plan
+  is append-only. The 17 guards and the unrelated dirty-file hashes are
+  unchanged. No harness test was run; Ship produces the RED evidence.
+* Comments: informational notes on `188-S`, `188-F`, `188.001-T`,
+  `188.007-T`, and `188.008-T`. They are not a claim gate.
+* State: READY_FOR_STAGING_HANDOFF. This supersedes the packaging HALT
+  above. It is not Ship-eligible: the `154-S` attestation C hold remains on
+  all 10 shipments.
+* Next step: none for Stage. Ship waits for attestation C.
+* compact-context: invoked with target memory, scoped to this correction's
+  memory group. 1 file, 8.6 KB, newer than 14 days, still referenced. 0
+  candidates, so it is a no-op. No global archives.
+* Validation: `docs_lint` is valid (0 violations) for the plan and this
+  memory. `git diff --check` is clean.
