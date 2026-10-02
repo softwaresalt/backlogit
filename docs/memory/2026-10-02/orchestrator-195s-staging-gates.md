@@ -233,3 +233,10 @@ automatically be included in the next commit ... E3: Execution granted. PA1 appr
 * E1 satisfied (2026-10-02T06:23Z): served MCP `backlogit_get_version` reports commit
   `7c805f9baae7f74edd2b1eede47fcf35fbbc9066`, no `-dirty`
 * Second E3 reply "E3 granted" also lacks the exact `e3-wording`; still NOT recognized
+
+## Segment: topology pre_claim block (2026-10-02)
+
+- `autoharness gate pipeline-topology --phase pre_claim --shipment 195-S` -> exit 1, `PREDECESSOR_CLOSURE_INCOMPLETE` (154-S closure is `READY_WITH_CONDITIONS` with no machine-readable `conditions:` block).
+- This is the gate form of Condition C, waived for B=195-S only by plan 2A355F83 / deliberation Exception Matrix. P (blocks edge, 154-S shipped at 6d233d21) still holds.
+- Override path: operator-authored `.autoharness/bootstrap-grants/195-S.yaml` (agents may not author grants). Manifest digest for [195-F, 195.001-T..195.007-T] = `f9b61fe65a09847d10cec89082539e2d978af2e1e27ca8bf2d187326177586ad`.
+- Next: once the grant is on main, run the gate with `--bootstrap-grant-invocation orchestrator_pre_route`, then dispatch Ship (labels `ship_pre_branch`, `ship_pre_claim`).

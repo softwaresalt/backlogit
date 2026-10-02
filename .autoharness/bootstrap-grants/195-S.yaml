@@ -1,0 +1,12 @@
+schema_version: 1
+shipment_id: 195-S
+authorized_invocations:
+  - orchestrator_pre_route
+  - ship_pre_branch
+  - ship_pre_claim
+expected_token: PREDECESSOR_CLOSURE_INCOMPLETE
+expected_predecessor_id: 154-S
+manifest_digest: f9b61fe65a09847d10cec89082539e2d978af2e1e27ca8bf2d187326177586ad
+authorizing_decision: "Plan 2A355F83 Condition C waiver for B=195-S only (docs/exec-plans/2026-10-01-2a355f83-claimed-vs-started-bootstrap-plan.md dispatch contract; deliberation Exception Matrix); E3 grant docs/memory/2026-10-02/orchestrator-2a355f83-e3-grant.md (merged 5907da4b). P remains required; no CONDITION_B_ATTESTED is implied. Written by Copilot at the operator's explicit direction (2026-10-02)."
+operator: softwaresalt
+expires_on_claim: true
