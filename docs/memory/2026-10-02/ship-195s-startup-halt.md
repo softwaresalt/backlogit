@@ -394,6 +394,68 @@ UCS3 was still unstarted until its Step 4.1b start.
 - The three older same-session checkpoints were conforming Ship checkpoints
   and were resolved after wave-one convergence. A new phase-tagged checkpoint
   `checkpoint-20261002-182650.json` records the wave-one-converged resume
-  point. The current worktree contains only the expected shipment completion,
-  checkpoint, and memory changes; these are to be committed before the
-  claim-time probes so their required clean baseline is unambiguous.
+  point. The expected shipment completion, checkpoint, and memory changes were
+  committed on the feature branch as
+  `d64da076e3631fb527f79586a4221e9b27fa00d1` before the wave-two claim-time
+  probes, giving them a clean and explicit baseline.
+
+## Wave two — 195.003-T completed
+
+- Revalidated the bootstrap contract before wave-two admission. VMR again
+  pinned `origin/main` and `ls-remote` to
+  `38aebf61aa6aeca88209ff9d85a8fd889f0b7a83`; the canonical origin, merged-main
+  provenance for the plan, deliberation, E3 grant, and bootstrap-grant file,
+  single Harvest Record, exact ordered manifest, E1 fallback binary metadata,
+  E3/revocation state, P edge, and shipped predecessor all passed. The
+  read-only simulation returned `WAVE_SIM_OK: 186/186 assertions PASS across
+  21 scenario(s)`.
+- The exact frozen-M SQL snapshot still returned seven distinct task IDs:
+  `195.001-T` and `195.002-T` done; `195.003-T` through `195.007-T` active;
+  zero queued, blocked, or unsupported. The claim-assigned current-epoch
+  classification passed for wave-two members; `ready_k` was
+  `{195.003-T,195.004-T,195.005-T}`. The static covered-by exemption contracts
+  for 003/004/005 passed; owners were 001/001/002, with their
+  `harness-ready` labels, red manifests, and landed scaffold commit verified.
+  No harness generation was required for this all-exempt wave.
+- `195.003-T` Step 4.1a observed the exact pre-work command fail with exit 1,
+  Preserved ran, and no marker appeared. The clean baseline passed unchanged
+  to build-feature was
+  `d64da076e3631fb527f79586a4221e9b27fa00d1`. Exactly one current-epoch
+  `WORK_STARTED: 195-S` record was verified before telemetry/build dispatch.
+  The telemetry begin result was `disabled`. The lifecycle topology gate
+  passed for active shipment 195-S on the matching feature branch.
+- The task's first implementation commit was
+  `466f02a46d765447ea4e9358921c6fd9ce5dbeea`. The formal report-only review
+  then found one in-scope D1 completion gap: first-line start-record parsing
+  had omitted stripping one trailing `\r` after splitting at `\n`. It was
+  corrected in review-fix commit
+  `7c8e9a4e755ec22586a771d4c141f6f2970b758f`; no test file or other path
+  changed. This was fixed under P-021 C1/C3, not deferred.
+- At reviewed HEAD `7c8e9a4e755ec22586a771d4c141f6f2970b758f`, task-scoped
+  UCS1 Preserved+Ship passed; the exact completion command emitted
+  `EXEMPT_VERIFY_OK:195.003-T`; repo-wide compile-only passed; CI-pinned
+  golangci-lint v1.64.8 passed; LF-normalized committed-blob gofmt passed;
+  and the covered-by delta was non-empty and limited to
+  `.github/agents/_ship.agent.md`. Report-only local readiness: `READY`,
+  P0/P1/P2/P3 = 0/0/0/0, runtime follow-up not required. Engram MCP and its
+  CLI fallback were unavailable, so structural review context was degraded
+  and the review used direct source/diff inspection.
+- P2-10 duration was measured at 513.4 seconds and recorded in the task
+  completion comment; autoharness telemetry was disabled. Backlog completion
+  gate passed, 195.003-T was moved to `done`, and both task commits were
+  associated with the item. The two wave-one red deliverables remain open
+  until 195.004-T and 195.005-T complete; full suite remains deferred to
+  wave-two convergence.
+
+## Resume point
+
+- Branch: `feat/claimed-versus-started-bootstrap-repair-for-ship-wave-admission-2a355f83`
+- Current source HEAD: `7c8e9a4e755ec22586a771d4c141f6f2970b758f`; 195.003-T is done.
+- Wave 2 still has 195.004-T (UCS2b, covered by 195.001-T) and 195.005-T
+  (UCS4, covered by 195.002-T) to start and complete sequentially. 195.006-T
+  and 195.007-T remain claim-assigned but wait on wave-two dependencies.
+- Re-run the next task's claim-time contract gate; use the exact item command,
+  capture its clean baseline before the verified `WORK_STARTED: 195-S` record,
+  run its lifecycle topology gate, and pass only its frozen scoped commands.
+- No PR, CI, Copilot gate, or merge has occurred. Continue through waves 2 and
+  3 and stop only when a merge-ready PR is fully gated; do not merge.
