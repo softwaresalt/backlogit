@@ -162,7 +162,7 @@ func TestUCS3_WaveSimClaimStart(t *testing.T) {
 				"the final simulation output line must begin with WAVE_SIM_OK:")
 		}
 
-		outcomeLinePattern := regexp.MustCompile(`(?m)^\s*\S+\s+outcome=`)
+		outcomeLinePattern := regexp.MustCompile(`(?m)^[ \t]*\S+[ \t]+outcome=`)
 		outcomeLines := outcomeLinePattern.FindAllString(output, -1)
 		assert.GreaterOrEqual(t, len(fixture.Scenarios), 24,
 			"fixture must contain at least the 21 preserved and 3 claim-start scenarios")
@@ -181,8 +181,8 @@ func TestUCS3_WaveSimClaimStart(t *testing.T) {
 		}
 		for _, expected := range expectedOutcomes {
 			linePattern := regexp.MustCompile(
-				`(?m)^\s*` + regexp.QuoteMeta(expected.id) + `\s+outcome=` +
-					regexp.QuoteMeta(expected.outcome) + `(\s|$)`,
+				`(?m)^[ \t]*` + regexp.QuoteMeta(expected.id) + `[ \t]+outcome=` +
+					regexp.QuoteMeta(expected.outcome) + `([ \t]|$)`,
 			)
 			assert.Len(t, linePattern.FindAllString(output, -1), 1,
 				"simulation must emit exactly one %s outcome=%s line", expected.id, expected.outcome)
