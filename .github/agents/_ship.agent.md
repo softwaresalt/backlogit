@@ -732,8 +732,13 @@ applicable.
    `backlogit comment add <t> --actor ship --comment "WORK_STARTED: <S>"` and
    `--cwd "<served workspace root>"` only if the re-read still shows no valid start record; the
    CLI binary must pass the E1 provenance check. Construct the fallback invocation as an argv
-   array. Pass the fallback task ID, `--comment`, its comment value, `--cwd`, and its workspace-root
-   value as separate argv entries; never interpolate or evaluate a shell command string.
+   array. Derive the storage directory name from the supplied canonical served roots and require it
+   to be exactly `.backlog` or `.backlogit`, with that directory resolving under the served
+   workspace root to the supplied served storage root; otherwise fail closed. Set the fallback
+   child process's `BACKLOGIT_WORKSPACE_DIR` to that directory name, rather than inheriting the
+   caller's value, so `ResolveStorageRoot` selects the served store when both supported roots exist.
+   Pass the fallback task ID, `--comment`, its comment value, `--cwd`, and its workspace-root value
+   as separate argv entries; never interpolate or evaluate a shell command string.
 5. Re-read the item log and require exactly one valid start record. Zero records, multiple records,
    or an unparseable log halts `TASK_START_NOT_RECORDED`. The Report line names `<t>`, `S`, and the
    observed record count (or that the log is unparseable). Record the halt through P-005 and return

@@ -1710,6 +1710,40 @@
         "outcome": "WAVE_CLAIM_STATE_INDETERMINATE",
         "halt_wave": 1
       }
+    },
+    {
+      "id": "claim_state_foreign_active_shipment",
+      "description": "A sole live active shipment that differs from the scenario shipment makes claim-state classification indeterminate.",
+      "mutations": {
+        "claim_overrides": {
+          "claim_all": "130-S",
+          "active_shipments": [
+            "131-S"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_CLAIM_STATE_INDETERMINATE",
+        "halt_wave": 1
+      }
+    },
+    {
+      "id": "claim_marker_without_claim_event",
+      "description": "An active member with a matching shipment marker but no claim event makes claim-state classification indeterminate.",
+      "mutations": {
+        "set_status": {
+          "147.001-T": "active"
+        },
+        "claim_overrides": {
+          "marker": {
+            "147.001-T": "130-S"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_CLAIM_STATE_INDETERMINATE",
+        "halt_wave": 1
+      }
     }
   ]
 }
