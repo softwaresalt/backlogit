@@ -240,3 +240,23 @@ automatically be included in the next commit ... E3: Execution granted. PA1 appr
 - This is the gate form of Condition C, waived for B=195-S only by plan 2A355F83 / deliberation Exception Matrix. P (blocks edge, 154-S shipped at 6d233d21) still holds.
 - Override path: operator-authored `.autoharness/bootstrap-grants/195-S.yaml` (agents may not author grants). Manifest digest for [195-F, 195.001-T..195.007-T] = `f9b61fe65a09847d10cec89082539e2d978af2e1e27ca8bf2d187326177586ad`.
 - Next: once the grant is on main, run the gate with `--bootstrap-grant-invocation orchestrator_pre_route`, then dispatch Ship (labels `ship_pre_branch`, `ship_pre_claim`).
+## Segment: dispatch through closure (2026-10-03)
+
+- PR #470 (operator grant `.autoharness/bootstrap-grants/195-S.yaml`) merged; topology
+  gate passed with the grant; Ship dispatched (agent b8007b40, gpt-6-luna)
+- Orchestrator Rulings #1-#13 resolved Ship false-positive halts; operator granted a
+  fresh 5-attempt proof budget for 195.006-T / 195.007-T after a proof-driver fix
+- PR #471 (repaired Ship/policy text) merged at `58f5bdbac22d2c051aea41a9b0a2d508b5a7b9d0`;
+  E3 bootstrap exception ended at this merge
+- First closure attempt halted `RECONCILE_FAIL` (195-F still active). Stage moved 195-F
+  to done (154-S/173-F precedent); Ruling #14 reran Step 6: reconcile pre/post pass,
+  195-S shipped and archived
+- Ship then opened a breaker misapplying VMR to post-merge instruction reloads (48
+  commits/{sha}/pulls 404s). Ruling #15: VMR covers only Harvest Record and E3 grant
+  reads at in-force checkpoints; overruled as out of scope, not retried
+- Closure PR #472 merged at `1ccecd946de3577c31f4018166d1ea05a7faf848`; main ff-synced.
+  Closure `READY_WITH_CONDITIONS`, compaction `degraded`
+- Follow-ups for Stage triage: `227A2930` (pass authoritative served roots to Ship),
+  `B83081F5`, `359D8F32`; also `731CE551`, `41FE00A1`
+- Lesson: Ship's breaker batch kept issuing requests after the 3rd failure (execution
+  miss recorded in the breaker file)
