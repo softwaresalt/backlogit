@@ -5,8 +5,8 @@
 - Implementation PR #471 merged at
   `58f5bdbac22d2c051aea41a9b0a2d508b5a7b9d0`.
 - Closure branch: `post-merge/195-S-closure`.
-- Closure PR #472 is open at HEAD
-  `f71fe6477447ce134697cb0e47ab3f539d13a3c3`; no merge was performed.
+- Closure PR #472 is open; its current head and readiness state are recorded
+  in the PR body. No merge was performed.
 - Closure status is `READY_WITH_CONDITIONS`; P-020 `compaction_status` is
   `degraded`.
 - The PR is ready for operator merge approval. Do not merge without explicit
@@ -48,17 +48,16 @@
 
 ## Readiness and verification
 
-- Local review covers closure PR HEAD
-  `f71fe6477447ce134697cb0e47ab3f539d13a3c3`: `READY_WITH_FOLLOWUPS`,
-  `P0=0`, `P1=0`.
+- Local review covers the current closure PR HEAD; the PR body records its
+  exact SHA, `READY_WITH_FOLLOWUPS`, `P0=0`, and `P1=0`.
 - Full local build was not applicable because the PR changes documentation
   and backlog records only; no source code or tests changed.
-- Required checks passed: `test`, `Detect code changes`, `Docline frontmatter
-  gate`, and `Markdown lint (P-008)`. The additional `CLI Reference Drift`,
-  `Windows handle/lock tests`, and `pipeline-topology (ambient)` checks also
-  passed on PR #472.
-- Copilot reviewed the current HEAD, recommended approval, and reported no
-  findings. No review threads remain; the P-018 gate returned `SATISFIED`.
+- Required checks are `test`, `Detect code changes`, `Docline frontmatter
+  gate`, and `Markdown lint (P-008)`. The live PR checks and P-018 gate are
+  authoritative for the current head.
+- Copilot review and the P-018 gate are authoritative for the exact HEAD
+  recorded in the current PR readiness block. Re-run both if that HEAD
+  advances.
 - `ROUTING_DEGRADED` remains non-blocking and must remain visible in handoffs.
 
 ## Continuity evidence
@@ -81,6 +80,6 @@ required checks and P-018 Copilot-review gate against the new HEAD.
 
 ## Working tree at handoff
 
-The worktree was clean on `post-merge/195-S-closure` at
-`f71fe6477447ce134697cb0e47ab3f539d13a3c3`. The closure PR readiness block
-records the same HEAD. Do not repeat the governed shipment close.
+The worktree was clean on `post-merge/195-S-closure`; verify its live HEAD
+against the closure PR readiness block before resuming. Do not repeat the
+governed shipment close.
