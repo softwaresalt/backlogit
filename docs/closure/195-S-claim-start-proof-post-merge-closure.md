@@ -10,7 +10,7 @@ feature_id: 195-F
 source: docs/closure/195-S-claim-start-proof-post-merge-closure.md
 title: "195-S post-merge closure"
 docline:
-  date: 2026-10-03T05:50:08Z
+  date: 2026-10-03T06:26:40Z
   status: reviewed
   tags:
     - operational-closure
@@ -110,6 +110,19 @@ same-session checkpoints were re-read and both are valid, conforming, and
 * Preserve every explicit member's original `parent_id`.
 * Stop on any non-member mutation or P-007 archive-integrity failure.
 
+## Validator evidence
+
+| Field | Evidence |
+|---|---|
+| Affected runtime surfaces | None; PR #471 changed Ship instructions and scheduler simulation coverage |
+| Applicability | Not applicable; no application runtime or deployed-service surface changed |
+| Verdict | Not applicable; no runtime validator was required or run. This is not a passing validator result |
+| Surface adapters | None required |
+| Probe outcomes | None; no runtime probes were applicable |
+| Manual checkpoint evidence | None; no runtime manual checkpoint was applicable |
+| Blocked prerequisites | None for runtime validation |
+| Runtime follow-up recommendations | None from runtime verification; workflow follow-ups are recorded separately below |
+
 ## Runtime validation
 
 No application runtime or deployed-service surface changed in PR #471. The
@@ -126,6 +139,14 @@ archive evidence.
 * The implementation was merge-only and has already merged through PR #471.
 * Post-merge backlog archival completed after the Stage-owned feature status
   transition and a fresh reconciliation pass.
+
+## Post-deploy checks
+
+Not applicable: no application runtime was deployed or changed. The post-merge
+backlog close was verified by the passing pre-close and post-close
+reconciliation reports and the archived shipment/member records. Closure PR
+review, CI, and Copilot-review gates are tracked separately in the PR readiness
+block.
 
 ## Risky action record
 

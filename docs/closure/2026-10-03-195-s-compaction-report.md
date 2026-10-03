@@ -9,7 +9,7 @@ target: all
 shipment_id: 195-S
 title: "P-020 context compaction — 195-S"
 docline:
-  date: 2026-10-03T05:49:35Z
+  date: 2026-10-03T06:26:40Z
   status: degraded
   tags:
     - context-compaction
@@ -38,6 +38,15 @@ inventories contain 29 memory files, 121 plans, and 155 closure records past
 the age threshold. The dated plan scan also found numerous review-bearing
 plans; each candidate still needs completion, active/blocked-reference, and
 supersession checks before any archival move.
+
+## Earlier follow-up snapshot
+
+Follow-up `359D8F32` was captured at `2026-10-03T05:28:52Z`, before this
+post-close assessment. Its inventory of 115 memory files and 166 closure files
+is an earlier snapshot, not a conflicting result for this report's later
+assessment of 117 memory files and 169 closure files. The follow-up's
+candidate-review work remains open. Ship leaves the existing stash record
+unchanged; Stage retains authority to reconcile it during triage.
 
 ## Preservation and follow-up
 
