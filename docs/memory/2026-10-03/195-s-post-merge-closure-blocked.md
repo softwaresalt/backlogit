@@ -9,8 +9,9 @@
   in the PR body. No merge was performed.
 - Closure status is `READY_WITH_CONDITIONS`; P-020 `compaction_status` is
   `degraded`.
-- The PR is ready for operator merge approval. Do not merge without explicit
-  approval.
+- PR #472 is ready for operator merge approval only when its current-HEAD
+  readiness block, required checks, and P-018 gate all pass. Do not merge
+  without explicit approval.
 - All nine Ship-owned 195-S checkpoints are resolved; the two same-session
   checkpoint reads were valid and conforming.
 - The governed shipment close completed for merge SHA
