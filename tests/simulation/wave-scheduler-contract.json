@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "artifact": "wave-scheduler-contract-simulation",
-  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S itself, filters its task-type IDs into M, parses the live status catalog and registry mapping/features, exact-compares M with the explicit non-shipment fallback task-ID set, reports excluded non-task IDs, and projects task contracts from the live backlog; scenarios and expectations encode the cycle-34 corrected contract. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
+  "description": "Read-only, reproducible simulation fixture for the P-002.6 dependency-aware wave scheduler. Verification parses shipment 130-S itself, filters its task-type IDs into M, parses the live status catalog and registry mapping/features, exact-compares M with the explicit non-shipment fallback task-ID set, reports excluded non-task IDs, and projects task contracts from the live backlog; scenarios and expectations encode the cycle-34 corrected contract and the claim-start extension. Executed by scripts/wave-scheduler-sim.ps1; no repository state is mutated.",
   "contract": {
     "policy": ".github/policies/workflow-policies.md",
-    "policy_version": "1.24.0",
+    "policy_version": "1.32.0",
     "policies": [
       "P-002.2",
       "P-002.6"
@@ -1649,6 +1649,100 @@
           6,
           7
         ]
+      }
+    },
+    {
+      "id": "claim_assigned_all",
+      "description": "Claim-assigned active members retain the baseline dependency waves and are admitted without a current-epoch start record.",
+      "mutations": {
+        "claim_overrides": {
+          "claim_all": "130-S"
+        }
+      },
+      "expect": {
+        "outcome": "COMPLETE",
+        "waves": 18,
+        "scheduled": 43,
+        "claim_assigned_at_admission": 43
+      }
+    },
+    {
+      "id": "claim_state_residuals",
+      "description": "A valid start record, a mismatched marker, and off-manifest membership each keep an active member residual while all other claim-assigned members are excluded from the residual list.",
+      "mutations": {
+        "claim_overrides": {
+          "claim_all": "130-S",
+          "started": [
+            "147.001-T"
+          ],
+          "marker": {
+            "147.002-T": "131-S"
+          },
+          "off_manifest": [
+            "147.003-T"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_NO_PROGRESS",
+        "halt_detail": "active residual",
+        "halt_wave": 1,
+        "active_ids": [
+          "147.001-T",
+          "147.002-T",
+          "147.003-T"
+        ]
+      }
+    },
+    {
+      "id": "claim_state_indeterminate",
+      "description": "More than one live active shipment makes claim-state classification indeterminate before residual admission.",
+      "mutations": {
+        "claim_overrides": {
+          "claim_all": "130-S",
+          "active_shipments": [
+            "130-S",
+            "131-S"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_CLAIM_STATE_INDETERMINATE",
+        "halt_wave": 1
+      }
+    },
+    {
+      "id": "claim_state_foreign_active_shipment",
+      "description": "A sole live active shipment that differs from the scenario shipment makes claim-state classification indeterminate.",
+      "mutations": {
+        "claim_overrides": {
+          "claim_all": "130-S",
+          "active_shipments": [
+            "131-S"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_CLAIM_STATE_INDETERMINATE",
+        "halt_wave": 1
+      }
+    },
+    {
+      "id": "claim_marker_without_claim_event",
+      "description": "An active member with a matching shipment marker but no claim event makes claim-state classification indeterminate.",
+      "mutations": {
+        "set_status": {
+          "147.001-T": "active"
+        },
+        "claim_overrides": {
+          "marker": {
+            "147.001-T": "130-S"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "WAVE_CLAIM_STATE_INDETERMINATE",
+        "halt_wave": 1
       }
     }
   ]

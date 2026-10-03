@@ -300,9 +300,9 @@ When the `agent-intercom` capability pack is installed, broadcast
 
 Given the current wave's ready set `ready_k` from Step 4.0:
 
-1. Take `ready_k` — the queued tasks of the target feature or chore whose dependencies are **all**
-   `done`. Never widen this set. A queued task with an unfinished dependency belongs to a later
-   wave, and scaffolding it now is the deadlock this design removes.
+1. Take `ready_k` — the queued or claim-assigned tasks of the target feature or chore whose
+   dependencies are **all** `done`. Never widen this set. A queued task with an unfinished
+   dependency belongs to a later wave, and scaffolding it now is the deadlock this design removes.
 2. Partition `ready_k` into three sets:
    * **Already harnessed**: tasks carrying the `harness-ready` label — skip these.
    * **Exempt**: tasks carrying the `harness-exempt` label — evaluate each against P-002.1 **static
@@ -536,21 +536,55 @@ Run this step at the head of every wave, before anything in that wave is scaffol
    shipment semantics call for it, invoke `backlogit_return_blocked` and **record** that invocation
    in the report. A blocked member never leaves `M`, never re-enters `ready_k`, and never permits a
    completion claim.
-4. **Halt on an active residual.** If any member is still `active` at wave admission, it is an
-   unfinished claim from a prior wave, not progress → halt with `WAVE_NO_PROGRESS` (detail:
-   `active residual`), listing the active members alongside the blocked set.
+4. **Classify active members before any other active check.** Require both served roots before wave
+   admission. In shipment mode, when any member of `M` is `active`, classify every active member
+   against the live shipment `S` before deciding whether an active state blocks the wave. The full
+   Step 4.0 token set `K` is `{claim-assigned,
+   scheduler_baseline_claim, custom_fields.items, WORK_STARTED:, start epoch, shipment claimed,
+   logs/<id>.jsonl, manifest drift, stale read, WAVE_CLAIM_STATE_INDETERMINATE, active residual,
+   queued or claim-assigned, fail closed}`. Read each member's `scheduler_baseline_claim` marker,
+   `S`'s live `custom_fields.items`, and `logs/<id>.jsonl` under the served storage root.
+
+   Until a configured backlog tool returns a member's full event stream, every raw member item-log
+   read at Step 4.0 or Step 4.1b requires an explicit, session-recorded scoped P-012 declaration
+   naming the path; this requirement is permanent and not limited to 2A355F83.
+
+   Indeterminate takes precedence: if any member is indeterminate, halt with
+   `WAVE_CLAIM_STATE_INDETERMINATE` and report each indeterminate member with its reason, along
+   with the residuals. A member is indeterminate if the live active-shipment count is not exactly
+   one or the sole active shipment is not `S`; two reads of `S`'s `custom_fields.items` differ
+   (manifest drift); an item read errors or its status disagrees with the Step 4.0 snapshot (stale
+   read); an R3 condition of the marker contract holds when read using that contract's recipe; or
+   the member's marker equals `S` but its log is missing, unparseable, or lacks a claim event.
+   If either served root is unknown, fail closed: halt with
+   `WAVE_CLAIM_STATE_INDETERMINATE` and report an Orchestrator follow-up to provide both the
+   absolute served storage root and served workspace root. Never infer either root.
+   Apply the shared raw-log path-safety procedure in Step 4.1b to every raw item-log read here.
+
+   A member is **claim-assigned** only when it is `active`, its marker equals `S`, it is explicitly
+   listed in `S`'s live `custom_fields.items`, and its current start epoch has no valid start
+   record. `active_ids` contains only active residuals, never claim-assigned or indeterminate
+   members. Every other `active` member is an active residual (`WAVE_NO_PROGRESS`, detail:
+   `active residual`); this includes a valid start record in the current epoch, a missing or
+   non-`S` marker, or a member absent from the live manifest. In non-shipment mode
+   (`frozen_task_ids`, no session shipment), skip this classification; every `active` member is an
+   active residual.
 5. **Check for completion.** If `terminal_success = M` — every member of the frozen manifest is
    `done` or `archived` — the release unit is complete; exit the wave loop. This is the **only**
    completion condition. An empty `ready_k` is never one.
-6. **Compute the frontier.** `ready_k = { t in queued : every dependency of t is terminal_success }`.
-   If `ready_k` is empty while any member of `M` is non-terminal → halt with `WAVE_NO_PROGRESS`.
-   If the residual set contains a cycle → halt with `WAVE_CYCLE_DETECTED`. Never retry, never
-   widen the frontier, and never claim a task with an unfinished dependency.
-7. **Report deterministically on halt.** A `WAVE_NO_PROGRESS`, `WAVE_CYCLE_DETECTED`,
-   `WAVE_MEMBER_BLOCKED`, or `WAVE_STATUS_UNSUPPORTED` report MUST carry the full census in item
-   3's form (plus the cycle path for `WAVE_CYCLE_DETECTED`). "No ready tasks" alone is not a
-   report. Record it through P-005 telemetry and return the release unit to the operator or to
-   Stage for a graph, status, or manifest amendment.
+6. **Compute the frontier.** `ready_k = { t in queued or claim-assigned : every dependency of t is
+   terminal_success }`. A claim-assigned member with unfinished dependencies waits and is neither
+   progress nor a residual. A queued member is claimed at Step 4.1b; entering `ready_k` does not
+   itself claim or start a task. If `ready_k` is empty while any member of `M` is non-terminal →
+   halt with `WAVE_NO_PROGRESS`. If the residual set contains a cycle → halt with
+   `WAVE_CYCLE_DETECTED`. Never retry, never widen the frontier, and never claim a task with an
+   unfinished dependency.
+7. **Report deterministically on halt.** A `WAVE_NO_PROGRESS`, `WAVE_CLAIM_STATE_INDETERMINATE`,
+   `WAVE_CYCLE_DETECTED`, `WAVE_MEMBER_BLOCKED`, or `WAVE_STATUS_UNSUPPORTED` report MUST carry
+   the full census in item 3's form, including a separate `count(claim-assigned)` (plus the cycle
+   path for `WAVE_CYCLE_DETECTED`). "No ready tasks" alone is not a report. Record it through
+   P-005 telemetry and return the release unit to the operator or to Stage for a graph, status, or
+   manifest amendment.
 8. **Enforce the wave budget.** If the wave index exceeds `count(M)` from Step 3 → halt with
    `WAVE_BUDGET_EXCEEDED`. Exceeding it means a scheduler defect, not a graph property.
 9. **Recompute the open-red set.** From the Step 3 red-deliverable mapping and this snapshot,
@@ -579,9 +613,11 @@ wave loop against the tracked read-only simulation
 (`pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue`, Step 3 item 9). The
 replay MUST reproduce the expected wave partition and MUST halt with `WAVE_MEMBER_BLOCKED` on an
 injected blocked member — reporting the dependency impact, keeping the member in `M`, and never
-reporting completion — as well as with `WAVE_STATUS_UNSUPPORTED` on an unsupported token and
-`WAVE_NO_PROGRESS` on an active residual. A replay that completes, that silently drops a member, or
-that the fixture no longer matches is a scheduler defect and blocks the schedule from being used.
+reporting completion — as well as with `WAVE_STATUS_UNSUPPORTED` on an unsupported token,
+`WAVE_CLAIM_STATE_INDETERMINATE` on injected shipment ambiguity, and `WAVE_NO_PROGRESS` on an
+active residual. It must admit claim-assigned members without treating them as active residuals.
+A replay that completes, that silently drops a member, or that the fixture no longer matches is a
+scheduler defect and blocks the schedule from being used.
 
 **A task whose declared deliverable *is* a red harness** — a `covered-by` owner such as a
 harness-only contract unit, and equally a harness-only task with no `covered-by` dependent at all —
@@ -652,13 +688,71 @@ It is mandatory and it is the gate that owns the conditions Step 2a could not ev
 6. **Proceed.** Only after 1–5 pass does Step 4.1b claim the task and dispatch it to build-feature.
 
 A halt at any point above stops **before** Step 4.1b runs (cycle-24 correction): the task's status
-is untouched and it is never stranded `active`. Record any halt through P-005 telemetry with the
-P-002.2 code and return the task to the operator or to Stage for a contract amendment.
+is untouched and this gate never newly strands it as `active`; a member already classified as
+claim-assigned remains `active` without a start record. Record any halt through P-005 telemetry
+with the P-002.2 code and return the task to the operator or to Stage for a contract amendment.
 
 #### Step 4.1b: Claim Task
 
 Reached only after Step 4.1a has passed, or immediately for a `harness-ready` task, for which Step
-4.1a does not apply. Update task status to `active` using the backlog tool's move operation.
+4.1a does not apply. The Orchestrator must pass both absolute served roots: the storage root for
+`<served storage root>\logs\<id>.jsonl` and the workspace root for CLI `--cwd`. Never infer either
+root from the worktree. If either root is unknown at wave admission, Step 4.0 halts with
+`WAVE_CLAIM_STATE_INDETERMINATE` and an Orchestrator follow-up to supply both roots.
+
+**Raw-log path safety (shared read-only procedure):** Step 4.0 and Step 4.1b raw-log reads use this
+identical validation. The canonical logs root is the canonical served storage/logs root and must be
+contained within both served roots; every JSONL target must also remain within both. Canonicalize
+the served workspace root and the served storage/logs root; reject unless the canonical storage/logs
+root is contained within the canonical workspace root. Before constructing a log path, validate
+`<task_id>` against the canonical task-ID
+pattern `^\d{3,}(\.\d{3,})*-[A-Z]{1,2}$`. Reject every symlink or reparse-point component in the
+served workspace root, served storage/logs root, and JSONL target. Require the canonical JSONL
+target to be a direct child of the canonical logs root. Read the JSONL target using no-follow open
+and verify the opened path is the canonical target; fail closed if no-follow open or opened-path
+verification is unavailable. These reads are read-only: do not create, truncate, append to, or
+otherwise modify the log, and never traverse symlinks or reparse points. If any root, path,
+open, opened-path verification, read, or parse result fails or is unknown, fail closed to
+`WAVE_CLAIM_STATE_INDETERMINATE` at Step 4.0 or `TASK_START_NOT_RECORDED` at Step 4.1b, as
+applicable.
+
+**Shipment mode** (session shipment `S`):
+
+1. A claim-assigned task is never moved again. A queued member in `ready_k` is moved to `active`
+   with the backlog tool's move operation.
+2. Define the start epoch as the part of the item log beginning at the latest `status_changed`
+   event whose `delta.to` is `active` and `delta.reason` is `shipment claimed`; if no such event
+   exists, the epoch is the whole log. A valid start record is a `comment` event in that epoch
+   whose actor is `ship` and whose `delta.comment` is split at `\n`, then one trailing `\r` is
+   stripped from the first line before exact comparison with `WORK_STARTED: <S>`.
+3. Read the member log and append `WORK_STARTED: <S>` only when no valid start record exists,
+   using `backlogit_append_comment` with
+   `{item_id: <t>, actor: "ship", comment: "WORK_STARTED: <S>"}`.
+4. If the MCP append errors, Ship re-reads the item log before any CLI fallback. Append with
+   `backlogit comment add <t> --actor ship --comment "WORK_STARTED: <S>"` and
+   `--cwd "<served workspace root>"` only if the re-read still shows no valid start record; the
+   CLI binary must pass the E1 provenance check. Construct the fallback invocation as an argv
+   array. Derive the storage directory name from the supplied canonical served roots and require it
+   to be exactly `.backlog` or `.backlogit`, with that directory resolving under the served
+   workspace root to the supplied served storage root; otherwise fail closed. Set the fallback
+   child process's `BACKLOGIT_WORKSPACE_DIR` to that directory name, rather than inheriting the
+   caller's value, so `ResolveStorageRoot` selects the served store when both supported roots exist.
+   Pass the fallback task ID, `--comment`, its comment value, `--cwd`, and its workspace-root value
+   as separate argv entries; never interpolate or evaluate a shell command string.
+5. Re-read the item log and require exactly one valid start record. Zero records, multiple records,
+   or an unparseable log halts `TASK_START_NOT_RECORDED`. The Report line names `<t>`, `S`, and the
+   observed record count (or that the log is unparseable). Record the halt through P-005 and return
+   it to the operator; recovery from a duplicate is an operator decision, and Ship never deletes a
+   log line.
+
+**H1 ordering.** The crash note applies to claim-assigned members only. The post-append re-read
+must confirm exactly one valid start record; this confirmation is required before any dispatch,
+and no `build-feature` dispatch or Step 4.1c or later action for the task may precede it. "No valid
+record" therefore always means "nothing dispatched for this task in this epoch".
+
+**Non-shipment mode** (`frozen_task_ids`, no session shipment): nothing can be claim-assigned.
+Move a queued ready task to `active`; do not write a start record. Step 4.0 skips shipment-mode
+classification, and every `active` member at admission stays an active residual.
 
 When the `agent-intercom` capability pack is installed, broadcast the task claim and current task ID.
 
@@ -971,10 +1065,13 @@ advances. This is where the suite Steps 4.2/4.3 deliberately scoped away is exec
 part, and unfiltered whenever it can be.
 
 1. **Confirm the wave is individually converged.** Every member of `ready_k` is `done` (or
-   `archived`), and no member is `active`, `blocked`, or in an unsupported status. A member still
-   `active` → halt with `WAVE_NO_PROGRESS` (detail: `active residual`). A member `blocked` → halt
-   with `WAVE_MEMBER_BLOCKED` and run the Step 4.0 item 3 report. A member in an unsupported status
-   → halt with `WAVE_STATUS_UNSUPPORTED`. Do **not** converge around an unfinished member.
+   `archived`), no member of `ready_k` is `active`, and no member is `blocked` or in an unsupported
+   status. A member of `ready_k` still `active` → halt with `WAVE_NO_PROGRESS` (detail:
+   `active residual`). A member `blocked` → halt with `WAVE_MEMBER_BLOCKED` and run the Step 4.0
+   item 3 report. A member in an unsupported status → halt with `WAVE_STATUS_UNSUPPORTED`. This
+   convergence check scopes `WAVE_NO_PROGRESS` to the current `ready_k`; report
+   `count(claim-assigned)` separately from active residuals in any census. Do **not** converge
+   around an unfinished member.
 2. **Run the always-on part of the gate.** First recompute `open_red_deliverables_k` after this
    wave's completions (Step 4.0 item 9 rules; `archived` does not close a green-maker) — item 3
    consumes this same recomputed set. Then run these at every wave, unconditionally:
