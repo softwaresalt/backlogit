@@ -72,7 +72,7 @@ The final post-close classifications are:
 
 | ID | Observed state | Pre-close result |
 |---|---|---|
-| `195-S` | `shipped`, archive-only | `matched` |
+| `195-S` | `shipped`, archive-only | `record-consistent` |
 | `195-F` | `done`, archive-only | `pre-archived` at pre-close; `matched` post-close |
 | `195.001-T`–`195.007-T` | `done`, archive-only | `pre-archived` at pre-close; `matched` post-close |
 
