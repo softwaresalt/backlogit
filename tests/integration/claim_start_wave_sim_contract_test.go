@@ -162,14 +162,24 @@ func TestUCS3_WaveSimClaimStart(t *testing.T) {
 				"the final simulation output line must begin with WAVE_SIM_OK:")
 		}
 
-		outcomeLinePattern := regexp.MustCompile(`(?m)^[ \t]*\S+[ \t]+outcome=`)
-		outcomeLines := outcomeLinePattern.FindAllString(output, -1)
+		outcomeLinePattern := regexp.MustCompile(`(?m)^[ \t]*([^ \t\r\n]+)[ \t]+outcome=[^\r\n]*$`)
+		outcomeLineMatches := outcomeLinePattern.FindAllStringSubmatch(output, -1)
+		outcomeIDs := make([]string, 0, len(outcomeLineMatches))
+		for _, match := range outcomeLineMatches {
+			outcomeIDs = append(outcomeIDs, match[1])
+		}
 		assert.GreaterOrEqual(t, len(fixture.Scenarios), 24,
 			"fixture must contain at least the 21 preserved and 3 claim-start scenarios")
-		assert.GreaterOrEqual(t, len(outcomeLines), 24,
+		assert.GreaterOrEqual(t, len(outcomeLineMatches), 24,
 			"simulation must report at least the 21 preserved and 3 claim-start scenarios")
-		assert.Len(t, outcomeLines, len(fixture.Scenarios),
+		assert.Len(t, outcomeLineMatches, len(fixture.Scenarios),
 			"simulation outcome-line count must match the fixture scenario count")
+		fixtureIDs := make([]string, 0, len(fixture.Scenarios))
+		for _, item := range fixture.Scenarios {
+			fixtureIDs = append(fixtureIDs, item.ID)
+		}
+		assert.ElementsMatch(t, fixtureIDs, outcomeIDs,
+			"simulation outcome-line IDs must match all fixture scenario IDs, including multiplicity")
 
 		expectedOutcomes := []struct {
 			id      string

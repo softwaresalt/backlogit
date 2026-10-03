@@ -25,6 +25,13 @@
 ## Persistence and next steps
 
 - The authorized carry-forward files were restored byte-for-byte: `ship-195s-startup-halt.md` SHA-256 `0363C3042D84B7EC57BB00F2EFA4E8273AAC984DDCAD4488357E724D5F4F626F`, and `circuit-break-195-006-proof.md` SHA-256 `B749CAE0687A9CF3A6CC256DF358BEC20F12954E7BBD761BE09F1B65AEEC5495`.
-- The 195.007-T `done` transition remains to be committed with the authorized memory restoration in the wave-3 closure commit.
-- Before PR creation, re-verify the bootstrap dispatch contract and VMR requirements, run `go build ./cmd/backlogit`, and complete current-HEAD local review.
-- Create the PR only after those checks pass; finish hosted CI and review-thread handling, then stop with current-HEAD Local Review Readiness. Do not merge.
+- The 195.007-T `done` transition and authorized carry-forward memory restoration are included in closure commit `1b736922217b768fc9dd86dc0a71e85f4221e875`; neither remains uncommitted.
+- The earlier 195.006-T proof halt is superseded by the granted reset and successful proof completion. The historical circuit-breaker record remains unchanged.
+
+## Review remediation checkpoint
+
+- The report-only review initially blocked readiness. In-scope fixes now strengthen UCS1 admission assertions, compare all UCS3 scenario IDs, and constrain raw item-log reads and the CLI fallback to verified paths and argv-safe invocation.
+- Policy and simulation metadata now agree on P-002.6 version `1.32.0`; the simulator coverage comment names claim-assigned and indeterminate claim-start scenarios.
+- Two pre-existing out-of-scope findings were captured for Stage deliberation: `FBD6E6F8` from `195.003-T` and `8B9BD74A` from `195.005-T`. Both record the ambiguous discovery candidates `BFACAE09`, `B3701713`, and `4A990AF9`; task comments point to the captures.
+- Validation after these changes: `go test ./...` under Go 1.26.5, `go vet ./...`, the queue-backed scheduler simulation (`WAVE_SIM_OK: 196/196`), CI-pinned golangci-lint v1.64.8 under Go 1.24.0, changed-file LF-only `gofmt`, and the Go 1.24.0 CLI build passed.
+- Review fixes remain uncommitted; no PR exists. Re-run local review on the committed HEAD, then complete the bootstrap dispatch and VMR checks before PR creation. Stop at merge-ready; do not merge.

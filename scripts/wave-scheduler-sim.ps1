@@ -32,6 +32,8 @@
       * blocked-member injection (initial and mid-run)
       * unsupported status tokens (catalog, off-catalog, catalog unavailable)
       * active residual at wave admission
+      * claim-assigned shipment admission and active-residual classification
+      * indeterminate active-shipment state during claim-start classification
       * dependency-cycle injection
       * sibling-red wave: withdrawn repo-wide gate vs task-scoped gate
       * non-frozen-M negative control

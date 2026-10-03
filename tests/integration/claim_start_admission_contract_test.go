@@ -77,6 +77,13 @@ func TestUCS1_ClaimStartContract(t *testing.T) {
 		"queued or claim-assigned",
 		"fail closed",
 	}
+	rawLogPathSafetyContract := []string{
+		"Before constructing a log path, validate `<task_id>` against the canonical task-ID pattern `^\\d{3,}(\\.\\d{3,})*-[A-Z]{1,2}$`.",
+		"Canonicalize the served workspace root and the served storage/logs root; reject unless the canonical storage/logs root is contained within the canonical workspace root.",
+		"Reject every symlink or reparse-point component in the served workspace root, served storage/logs root, and JSONL target.",
+		"Require the canonical JSONL target to be a direct child of the canonical logs root.",
+		"Read the JSONL target using no-follow open and verify the opened path is the canonical target; fail closed if no-follow open or opened-path verification is unavailable.",
+	}
 
 	t.Run("Preserved", func(t *testing.T) {
 		step40, ok := sliceSection(ship, "#### Step 4.0: Wave Admission (P-002.6)", "#### Step 4.1a:")
@@ -157,6 +164,15 @@ func TestUCS1_ClaimStartContract(t *testing.T) {
 			assert.Contains(t, step40Normalized, normalizeWhitespace(token),
 				"Ship Step 4.0 must contain %q", token)
 		}
+		assert.Contains(t, step40Normalized,
+			"ready_k = { t in queued or claim-assigned : every dependency of t is terminal_success }",
+			"Ship Step 4.0 must admit queued and claim-assigned tasks only when dependencies are terminal-success")
+		assert.Contains(t, step40Normalized,
+			"A member is **claim-assigned** only when it is `active`, its marker equals `S`, it is explicitly listed in `S`'s live `custom_fields.items`, and its current start epoch has no valid start record.",
+			"Ship Step 4.0 must define claim-assigned by active status, shipment marker, explicit manifest membership, and no valid start record in the current epoch")
+		assert.Contains(t, step40Normalized,
+			"`active_ids` contains only active residuals, never claim-assigned or indeterminate members.",
+			"Ship Step 4.0 active_ids must exclude claim-assigned and indeterminate members")
 		assert.GreaterOrEqual(t, strings.Count(step40Normalized, "WAVE_CLAIM_STATE_INDETERMINATE"), 3,
 			"Ship Step 4.0 must name WAVE_CLAIM_STATE_INDETERMINATE in classification, item 7, and replay")
 
@@ -184,6 +200,14 @@ func TestUCS1_ClaimStartContract(t *testing.T) {
 			assert.Contains(t, normalizeWhitespace(step41b), phrase,
 				"Ship Step 4.1b must contain %q", phrase)
 		}
+		step41bNormalized := normalizeWhitespace(step41b)
+		for _, phrase := range rawLogPathSafetyContract {
+			assert.Contains(t, step41bNormalized, normalizeWhitespace(phrase),
+				"Ship Step 4.1b raw-log path safety must contain %q", phrase)
+		}
+		assert.Contains(t, step41bNormalized,
+			"Pass the fallback task ID, `--comment`, its comment value, `--cwd`, and its workspace-root value as separate argv entries; never interpolate or evaluate a shell command string.",
+			"Ship CLI fallback must pass task ID, comment, and --cwd as separate argv entries without shell command interpolation or evaluation")
 
 		for _, removed := range []struct {
 			section string
@@ -228,8 +252,15 @@ func TestUCS1_ClaimStartContract(t *testing.T) {
 			assert.Contains(t, policyWaveNormalized, normalizeWhitespace(token),
 				"P-002.6 must contain %q", token)
 		}
+		for _, phrase := range rawLogPathSafetyContract {
+			assert.Contains(t, policyWaveNormalized, normalizeWhitespace(phrase),
+				"P-002.6 raw-log path safety must contain %q", phrase)
+		}
 		assert.Contains(t, policyWaveNormalized, "none of them satisfies a dependency",
 			"P-002.6 must retain the rule that active members do not satisfy dependencies")
+		assert.Contains(t, policyWaveNormalized,
+			"ready_k = { t ∈ queued or claim-assigned : deps(t) ⊆ terminal_success }",
+			"P-002.6 must state the positive dependency-aware ready_k predicate")
 
 		for _, removed := range []string{
 			"ready_k = { t ∈ queued : deps(t) ⊆ terminal_success }",

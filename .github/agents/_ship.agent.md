@@ -559,6 +559,7 @@ Run this step at the head of every wave, before anything in that wave is scaffol
    If either served root is unknown, fail closed: halt with
    `WAVE_CLAIM_STATE_INDETERMINATE` and report an Orchestrator follow-up to provide both the
    absolute served storage root and served workspace root. Never infer either root.
+   Apply the shared raw-log path-safety procedure in Step 4.1b to every raw item-log read here.
 
    A member is **claim-assigned** only when it is `active`, its marker equals `S`, it is explicitly
    listed in `S`'s live `custom_fields.items`, and its current start epoch has no valid start
@@ -699,6 +700,22 @@ Reached only after Step 4.1a has passed, or immediately for a `harness-ready` ta
 root from the worktree. If either root is unknown at wave admission, Step 4.0 halts with
 `WAVE_CLAIM_STATE_INDETERMINATE` and an Orchestrator follow-up to supply both roots.
 
+**Raw-log path safety (shared read-only procedure):** Step 4.0 and Step 4.1b raw-log reads use this
+identical validation. The canonical logs root is the canonical served storage/logs root and must be
+contained within both served roots; every JSONL target must also remain within both. Canonicalize
+the served workspace root and the served storage/logs root; reject unless the canonical storage/logs
+root is contained within the canonical workspace root. Before constructing a log path, validate
+`<task_id>` against the canonical task-ID
+pattern `^\d{3,}(\.\d{3,})*-[A-Z]{1,2}$`. Reject every symlink or reparse-point component in the
+served workspace root, served storage/logs root, and JSONL target. Require the canonical JSONL
+target to be a direct child of the canonical logs root. Read the JSONL target using no-follow open
+and verify the opened path is the canonical target; fail closed if no-follow open or opened-path
+verification is unavailable. These reads are read-only: do not create, truncate, append to, or
+otherwise modify the log, and never traverse symlinks or reparse points. If any root, path,
+open, opened-path verification, read, or parse result fails or is unknown, fail closed to
+`WAVE_CLAIM_STATE_INDETERMINATE` at Step 4.0 or `TASK_START_NOT_RECORDED` at Step 4.1b, as
+applicable.
+
 **Shipment mode** (session shipment `S`):
 
 1. A claim-assigned task is never moved again. A queued member in `ready_k` is moved to `active`
@@ -714,7 +731,9 @@ root from the worktree. If either root is unknown at wave admission, Step 4.0 ha
 4. If the MCP append errors, Ship re-reads the item log before any CLI fallback. Append with
    `backlogit comment add <t> --actor ship --comment "WORK_STARTED: <S>"` and
    `--cwd "<served workspace root>"` only if the re-read still shows no valid start record; the
-   CLI binary must pass the E1 provenance check.
+   CLI binary must pass the E1 provenance check. Construct the fallback invocation as an argv
+   array. Pass the fallback task ID, `--comment`, its comment value, `--cwd`, and its workspace-root
+   value as separate argv entries; never interpolate or evaluate a shell command string.
 5. Re-read the item log and require exactly one valid start record. Zero records, multiple records,
    or an unparseable log halts `TASK_START_NOT_RECORDED`. The Report line names `<t>`, `S`, and the
    observed record count (or that the log is unparseable). Record the halt through P-005 and return
