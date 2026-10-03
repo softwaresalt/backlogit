@@ -571,3 +571,138 @@ UCS3 was still unstarted until its Step 4.1b start.
   beginning 007's proof window.
 - No PR, CI, Copilot gate, or merge has occurred. Continue through wave 3 and
   stop only when a merge-ready PR is fully gated; do not merge.
+
+### Wave-three proof halt
+
+- 195.006-T passed static exemption intake as `verification-only`. Its exact
+  Ship pre-work command was screened read-only and run once before work; it
+  exited 1 with `proof missing`, as required. Clean baseline:
+  `9f8d77569f254a0aae7b012e8a858a4f7cb36f68`. Exactly one current-epoch
+  `WORK_STARTED: 195-S` record was appended and verified in the scoped task
+  log. Task status was not moved or otherwise changed. Telemetry begin returned
+  `disabled`; lifecycle topology passed with `blocked=false`, `invalid=false`,
+  and branch/worktree/shipment checks passing.
+- Build-feature started the real-binary proof. The isolated proof root was
+  ignored by `.gitignore`'s `logs/` rule; its live baseline recorded HEAD
+  `9f8d77569f254a0aae7b012e8a858a4f7cb36f68` and a SHA-256 manifest of 4,072
+  `.backlogit` files. The private-clone binary was correctly stamped
+  `vcs.revision=9f8d77569f254a0aae7b012e8a858a4f7cb36f68`,
+  `vcs.modified=false`, and producer `6d233d21` was an ancestor.
+- The proof halted at protocol step 6 with
+  `PROOF_PRECHECK_FAILED`: the intended fixture `add --type task ...` setup
+  invocation passed no subcommand or arguments because PowerShell `$args`
+  shadowed the automatic argument array. The fixture binary printed root help
+  and exited 0, so no T1 task was created. The expected fixture was not
+  established. No row was run; evidence file, post-work marker, delta checks,
+  lint, and commit were not produced. The agent stopped immediately and did
+  not retry. Proof step 8 containment was not run, so the proof is incomplete
+  and must not be treated as passed. Partial artifacts remain under the
+  ignored proof run root; none were deleted. No live MCP or live backlog CLI
+  operation occurred during the proof window.
+- Exact halt report:
+  `PROOF ABORT 195.006-T step 6: PROOF_PRECHECK_FAILED — intended add --type task ... --parent 001-F --status queued invocation passed no subcommand or arguments because PowerShell parameter $args shadowed the automatic argument array; the fixture binary printed root help and exited 0, so no T1 task was created (expected: T1 and T2 are created in the fresh fixture using exact fixture CLI commands). P-005 telemetry status: disabled at session start; no backlog MCP/live CLI called.`
+  P-005 telemetry was not persisted: telemetry was disabled, and the
+  proof-window no-live-MCP boundary was maintained. Return the halt to the
+  Orchestrator; do not retry or start 195.007-T in this Ship session.
+- At halt: branch is still
+  `feat/claimed-versus-started-bootstrap-repair-for-ship-wave-admission-2a355f83`;
+  source HEAD is `9f8d77569f254a0aae7b012e8a858a4f7cb36f68`. 195.006-T remains
+  `active` with its one start record; 195.007-T remains claim-assigned with no
+  start record. Wave 3 did not converge. No PR, hosted CI, Copilot review, or
+  merge occurred. Only this memory update is pending as an E2 continuity
+  carry-forward.
+
+### Authorized proof restart and circuit-breaker halt
+
+- After the operator-authorized restart, the aborted first-run containment was
+  closed before any task-log comment: status exactly matched (171 entries);
+  the original path-sorted 4,072-file SHA-256 manifest matched. The abort was
+  recorded on 195.006-T, including run path
+  `logs/2a355f83-proof/195.006-T-20261002T203955Z`. The tracked memory edit
+  was copied to this ignored carry-forward file, SHA-verified, then restored
+  before proof work.
+- Fresh run `logs/2a355f83-proof/195.006-T-20261002T204945Z` stopped at
+  step 1 according to the build agent, but its saved `step1-ignore.txt`
+  contains the expected `.gitignore:3:logs/` match for the new `probe` path.
+  No step-2 baseline or live backlog operation occurred in that run.
+- Fresh run `logs/2a355f83-proof/195.006-T-20261002T205205Z` passed its
+  ignore check and captured a step-2 baseline (171 status entries and 4,072
+  manifest entries), confirmed `BACKLOGIT_WORKSPACE_DIR` unset, and built a
+  private-clone binary at
+  `9f8d77569f254a0aae7b012e8a858a4f7cb36f68` with `vcs.modified=false`;
+  version and producer ancestry checks passed. The `add --help` output
+  contained add-specific usage, but its checker falsely rejected indentation.
+  A PowerShell parser error (`Missing ')' in method call`) halted proof
+  prechecks at step 4; no row fixtures or proof rows ran. There is no
+  evidence deliverable, completion marker, lint result, or commit.
+- Ship closed containment after the abort: step-2 status and current status
+  matched exactly (171/171). After comparing manifests using the recorded
+  `.backlogit/`-prefixed path format, the exact 4,072/4,072 SHA-256 entries
+  matched; manifest-record SHA-256 was
+  `7f9355f7f7c4f4061addbc1518571b8edd41572cfee8138db8f6e7e971910966`.
+  The run directory remains in place. The abort and containment result were
+  appended to the 195.006-T log after proof-window closure.
+- Three consecutive build-feature proof invocations failed to complete the
+  task (first `$args` argument-splat failure, second false step-1 abort,
+  third step-4 PowerShell precheck/parser failure). Ship's consecutive-task
+  failure circuit breaker is open: no further proof attempt in this session.
+  This is not a same-error recurrence finding; the observed errors differ.
+  Operator disposition is required before resuming. A structured active
+  checkpoint `checkpoint-20261002-210303.json` captures the halt; superseded
+  `checkpoint-20261002-203542.json` was resolved.
+- Final state: source HEAD remains
+  `9f8d77569f254a0aae7b012e8a858a4f7cb36f68`; tracked working tree is clean.
+  195.006-T remains active with exactly one valid current-epoch
+  `WORK_STARTED: 195-S`; 195.007-T remains claim-assigned and unstarted.
+  Waves 1 and 2 passed, wave 3 did not converge. No PR, CI, Copilot review,
+  merge, or post-merge closure occurred. The user-required memory update
+  remains in `logs/carry-forward/` until wave 3 converges so it cannot enter
+  195.006-T's single-file delta.
+
+### Orchestrator reclassification and pre-dispatch delta halt
+
+- At 2026-10-02T21:11:52Z, the Orchestrator corrected the attempt accounting:
+  attempts 1–3 are 3/5 build/test attempts on 195.006-T, not three consecutive
+  task failures; the universal same-error breaker is not tripped. Attempt 4
+  was authorized after the required single-driver preflight.
+- Before starting attempt 4, `git status --short` showed exactly two pending
+  checkpoint paths: modified
+  `.backlogit/checkpoints/checkpoint-20261002-203542.json` and untracked
+  `.backlogit/checkpoints/checkpoint-20261002-210303.json`. The fixed
+  `exempt_baseline_sha` is
+  `9f8d77569f254a0aae7b012e8a858a4f7cb36f68`; both checkpoint changes are
+  required to remain untouched and be committed with closure state. They are
+  outside 195.006-T's `verification-only` delta surface, so the task delta
+  cannot be verified under the current constraints.
+- The task-log P-005 note records the pre-dispatch halt and requests an
+  explicit scope/baseline disposition. Attempt 4 did not start: no proof
+  driver was authored or run, no fixture row ran, and no evidence file was
+  written. The proof attempt count remains 3/5.
+- Branch remains
+  `feat/claimed-versus-started-bootstrap-repair-for-ship-wave-admission-2a355f83`
+  at `9f8d77569f254a0aae7b012e8a858a4f7cb36f68`. 195.006-T is still active
+  with one current start record; 195.007-T is still claim-assigned and
+  unstarted. Wave 3 remains unconverged. No PR, CI, Copilot review, merge, or
+  closure occurred. `ROUTING_DEGRADED` remains applicable because the required
+  runtime route was not confirmed.
+
+### Approved checkpoint set-aside before proof attempt 4
+
+- Orchestrator approved a reversible relocation (ActionRisk: moderate) without
+  quarantine, abandon, resolve, or content changes. Both source/copy pairs were
+  SHA-256 verified before moving:
+  - `checkpoint-20261002-203542.json`:
+    `738189A5E1E314E5C5731A72FB25D32C4FAA61CE4754CB16E2AD770B909F1703`
+  - `checkpoint-20261002-210303.json`:
+    `4ACAFBDB196DD3240A8CA545DB78A650E4E3B7DBC2BCA85667C932DCD0BF84F1`
+- The tracked checkpoint was restored to HEAD only after its byte-identical
+  copy was verified. The untracked checkpoint was moved after its copy was
+  verified. Both original checkpoint payloads remain under
+  `logs/carry-forward/checkpoints/` for restoration after 195.006-T Step 4.3.
+- Verification passed: `git status --porcelain` is empty, and
+  `git diff --name-only 9f8d77569f254a0aae7b012e8a858a4f7cb36f68` is empty.
+  The exact hashes and clean-state evidence were appended to the 195.006-T
+  task log via the documented CLI fallback because the MCP comment tool was
+  not exposed.
+- Attempt 4 has not started. The proof counter remains 3/5; do not write
+  checkpoints or tracked memory before the Step 4.3 gate passes.
