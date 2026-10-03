@@ -792,3 +792,14 @@ harvest. Stage ran under autopilot and did not self-authorize.
 **Residual (not counted):** U4's halt-on-failure exit covers the possibility that
 `gateShipmentCompletion` and `VerifyPostShipConsistency` reject explicit members that were
 pre-archived (GO3 residual).
+
+operator_authorization: approved
+
+* **Provenance:** the operator replied "Approved" at 2026-10-03T08:00:44Z
+  (2026-10-03T01:00:44-07:00), relayed by the Orchestrator. The reply was given after the
+  operator was shown this ADVISORY result (0 P0, 0 P1, 3 P2, 13 P3) together with Stage
+  checkpoint `checkpoint-20261003-075017.json` as the restart point.
+* **Scope:** this authorizes the ADVISORY outcome of attempt 3 for this plan only. Stage
+  resumed at Step 5 with `skip_review: true`. The `skip_review` gate validated this final
+  section: `dispatch_mode: multi-agent-dispatch`, `decision: ADVISORY`, and
+  `operator_authorization: approved`.
