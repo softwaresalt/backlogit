@@ -2,7 +2,7 @@
 name: "Go Engineer"
 description: "Expert Go implementation agent — applies language idioms, safety rules, and workspace conventions during feature work"
 maturity: stable
-tools: vscode, execute, read, edit, search
+tools: vscode, execute, read, edit, search, backlogit/*
 model_routing: "Tier 2 (Standard)"  # DEPRECATED — use model_tier
 model_tier: 2
 max_subagent_tier: 2
