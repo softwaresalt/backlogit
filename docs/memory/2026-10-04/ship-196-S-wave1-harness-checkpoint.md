@@ -4,7 +4,10 @@
 
 - Shipment: `196-S`, P-017 dark-mode scope; no other shipment is in scope.
 - Branch: `feat/196-s-195-s-follow-up-orchestrator-served-root-handoff-and-explicit-feature-reconcile-contract`
+- Current HEAD: `b34ae1c9`.
 - HEAD before wave-1 harness commit: `42fd2167`.
+- Harness scaffold commit: `413dff42` (`test(harness): scaffold 196-S wave 1 red contracts`).
+- Traceability commit: `b34ae1c9` (`chore(harness): link 196-S wave-1 harness evidence`).
 - Served workspace root: `C:\Source\GitHub\backlogit`.
 - Served storage root: `C:\Source\GitHub\backlogit\.backlogit`.
 - R14 use-time attestation passed at wave admission: MCP metadata catalog roots matched the supplied roots; `pragma_database_list` returned exactly one `main` row pointing to `.backlogit\backlogit.db`. Shipment `196-S` was the sole active shipment, and two live shipment reads agreed on the explicit manifest.
@@ -33,8 +36,7 @@ All three tasks now carry `harness-ready`; their statuses remain `active`. The t
 
 ## Pending work
 
-1. Commit only the three harness files, their task-label/hook updates, and this checkpoint. Do not include `.github/copilot/` or unrelated continuity files.
-2. Record an explicit P-004 harness manifest comment for each red owner after that commit, including `Compilation: PASS`, `Red Phase: CONFIRMED`, exact selector, named results, and the scaffold commit SHA.
-3. Start the wave-1 tasks sequentially. Before each task's first Step 4.1b log re-read, repeat the R14 `pragma_database_list` check. For U4/U7, run the exact screened pre-work probe once, require a non-zero precondition result, record the output, capture a clean-tree baseline, and halt on any real characterization defect without changing production Go.
-4. Red-deliverable U1/U3/U8 must be dispatched through build-feature's red-deliverable branch with a post-scaffold/pre-task baseline SHA and must remain assertion-red with an empty delta.
-5. Converge wave 1 before admitting wave 2. Continue all remaining work only within shipment `196-S` on this branch.
+1. The harness files, labels, hooks, and checkpoint are committed; the three task records are associated with `413dff42`. Explicit P-004 harness manifest comments record `Compilation: PASS`, `Red Phase: CONFIRMED`, exact selectors, named results, and the scaffold commit SHA.
+2. Start the wave-1 tasks sequentially. Before each task's first Step 4.1b log re-read, repeat the R14 `pragma_database_list` check. For U4/U7, run the exact screened pre-work probe once, require a non-zero precondition result, record the output, capture a clean-tree baseline, and halt on any real characterization defect without changing production Go.
+3. Red-deliverable U1/U3/U8 must be dispatched through build-feature's red-deliverable branch with a post-scaffold/pre-task baseline SHA and must remain assertion-red with an empty delta.
+4. Converge wave 1 before admitting wave 2. Continue all remaining work only within shipment `196-S` on this branch.
