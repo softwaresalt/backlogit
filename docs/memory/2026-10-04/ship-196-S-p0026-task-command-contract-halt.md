@@ -67,3 +67,43 @@ Keep the same feature branch and the immutable task manifest.
 - Operator-local `.github/copilot/` files remain untouched.
 - The user-requested stash discharge note for `227A2930`, `B83081F5`, and open
   `359D8F32` remains pending post-merge closure.
+
+## Resumption under Amendment 2
+
+- **Orchestrator re-dispatch:** 2026-10-04, P-017 dark mode remains bounded to `196-S`.
+  Stage's reviewed Amendment 2 is on this branch at `7cb55c4a`; its plan section,
+  Stage memory, task contracts, and closed exemption set were read. Stage reports ADVISORY
+  reviews with no P0/P1 findings and recorded operator authorization under the bounded
+  scope.
+- **Blocked-envelope pre-mode:** `.backlogit/reconcile/196-S-pre-blocked-resume-20261004T200843Z.md`.
+  The exact ten explicit members were present once in queue, all `queued`, no archive
+  copies existed, and the exact-manifest active-status snapshot and correlated committed
+  block-operation record matched. The report recommended the governed unblock.
+- **R14 resume attestation:** the metadata catalog reported the supplied canonical workspace
+  and storage roots; `pragma_database_list` returned exactly one `main` row at
+  `<served_storage_root>/backlogit.db`; path-component and direct-child checks passed; and
+  the static shipment frontmatter agreed with the MCP shipment ID, blocked status,
+  timestamp, and ordered manifest.
+- **Resume:** `backlogit_unblock_shipment` was invoked with `confirm: true`, target `active`,
+  actor `ship`. An independent shipment read showed `active`; the global post-claim topology
+  gate passed with `196-S` as the sole active shipment and the expected branch/worktree.
+  The extra `pre_claim` gate probe made while the shipment was still blocked returned
+  `BACKLOG_UNAVAILABLE` because that claim-admission phase rejects blocked status; it was
+  not a claim gate and was not used to authorize or bypass the separate governed unblock.
+- **Fresh schedule inputs:** after unblocking, the live ordered manifest still has 10
+  members; exact type resolution gives 9 task members (`M`) and excluded `196-F` (`feature`).
+  All nine tasks currently read `active`. The re-read dependency graph is acyclic and
+  yields waves `{196.001-T, 196.003-T, 196.004-T, 196.007-T, 196.008-T}`,
+  `{196.002-T, 196.005-T}`, `{196.009-T}`, `{196.006-T}`.
+- **Amended contracts:** red deliverables are `196.001-T` (`^TestUSR1_`, closes wave 2
+  via `196.002-T`), `196.003-T` (`^TestUSR3_`, closes wave 2 via `196.005-T`), and
+  `196.008-T` (`^TestUSR8_`, closes wave 3 via `196.009-T`). The closed exempt set is
+  `{196.002-T, 196.004-T, 196.005-T, 196.007-T, 196.009-T}`; each label, contract class,
+  owner/dependency where applicable, exact command, and plan membership passed static
+  intake. All nine frozen green-regression arrays are `[]`.
+- **Checks so far:** the preflight compile-only command passed. The required tracked
+  scheduler simulation returned `WAVE_SIM_OK` (200/200 assertions, 26 scenarios).
+- **Next:** perform Step 4.0's fresh whole-`M` snapshot and active-member classification.
+  Repeat full R14 immediately before any raw task-log read; use only the previously
+  declared nine exact paths and the no-follow path-safety procedure. No task start or
+  implementation has been dispatched yet.

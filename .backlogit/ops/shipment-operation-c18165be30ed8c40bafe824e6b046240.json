@@ -1,0 +1,390 @@
+{
+  "schema_version": "shipment-operation/v1",
+  "correlation_id": "c18165be30ed8c40bafe824e6b046240",
+  "phase": "committed",
+  "operation": "unblock",
+  "recovery_policy": "rollback",
+  "shipment_id": "196-S",
+  "target": "active",
+  "blocked_by": "ship",
+  "snapshot_ref": "checkpoint-20261004-192622.json",
+  "preimage": {
+    "shipment": {
+      "id": "196-S",
+      "title": "195-S follow-up: Orchestrator served-root handoff and explicit-feature reconcile contract (227A2930, B83081F5)",
+      "status": "blocked",
+      "artifact_type": "shipment",
+      "priority": "high",
+      "description": "**DAG-root waiver (Stage, 2026-10-03, dark-mode Orchestrator decision).**\n`196-S` is a reasoned exception, not a predecessor-free root like `182-S`: it\nfollows shipped `195-S` (merge `58f5bdba`, PR #471). The `dag-root` label\nwaives the topology gate's predecessor-closure check for `196-S` only. A\n`blocks` edge onto `195-S` fails `PREDECESSOR_CLOSURE_INCOMPLETE` because the\n`195-S` closure (`docs/closure/195-S-claim-start-proof-post-merge-closure.md`)\nis `READY_WITH_CONDITIONS` with no machine-readable satisfied `conditions:`\nblock. Those conditions include `227A2930` and `B83081F5`, which only `196-S`\ndischarges, while `359D8F32` remains separately open and is not covered by\n`196-S`. Lineage is a non-gating `related_to` link; do not add a `blocks`\nedge onto `195-S`. `359D8F32` (the P-020 `target: all` compaction candidate\nreview) does not gate successors, because P-020 treats incomplete compaction as\nnon-blocking `degraded`. The waiver therefore accepts no obligation that P-020\nwould block. Proceeding while it stays open is a recorded P-017 dark-mode\nOrchestrator decision under the operator's `196-S` scope, and `359D8F32`\nremains open for a later Stage cycle.\n\n**Post-merge closure note for Ship.** During `196-S` post-merge closure, Ship\nshould record in the `195-S` closure artifact (or in the `196-S` closure\nartifact, referencing it) that `227A2930` and `B83081F5` were discharged by the\n`196-S` merge SHA; `359D8F32` stays open.\n\n",
+      "labels": [
+        "dag-root"
+      ],
+      "links": [
+        {
+          "target_id": "195-S",
+          "link_type": "related_to"
+        }
+      ],
+      "custom_fields": {
+        "blocked_at": "2026-10-04T19:28:15Z",
+        "blocked_by": "ship",
+        "blocked_reason": "P-002.6 task-scoped harness command conflict: wave-1 tasks 196.004-T (U4) and 196.007-T (U7) lack harness-ready/exempt satisfaction; their accepted selectors do not meet the mandatory task-owned ^TestU\u003cunit\u003e_ command contract, and changing test names or adding alternate harnesses would conflict with the reviewed task scope. Paused for Stage contract amendment; no harness or implementation work began.",
+        "items": [
+          "196-F",
+          "196.001-T",
+          "196.003-T",
+          "196.004-T",
+          "196.007-T",
+          "196.008-T",
+          "196.002-T",
+          "196.005-T",
+          "196.009-T",
+          "196.006-T"
+        ],
+        "member_status_snapshot": {
+          "196-F": "active",
+          "196.001-T": "active",
+          "196.002-T": "active",
+          "196.003-T": "active",
+          "196.004-T": "active",
+          "196.005-T": "active",
+          "196.006-T": "active",
+          "196.007-T": "active",
+          "196.008-T": "active",
+          "196.009-T": "active"
+        },
+        "queue_position": 100,
+        "resume_checkpoint_ref": "checkpoint-20261004-192622.json"
+      },
+      "created_at": "2026-10-03T08:09:17.9453899Z",
+      "updated_at": "2026-10-04T19:29:13.3833966Z",
+      "level": 1,
+      "hierarchy_path": "196"
+    },
+    "members": [
+      {
+        "id": "196-F",
+        "title": "195-S follow-up: Orchestrator served-root handoff and explicit-feature reconcile contract (227A2930, B83081F5)",
+        "status": "queued",
+        "artifact_type": "feature",
+        "priority": "high",
+        "description": "\n\n\u003c!-- BEGIN:description --\u003e\nCovering feature for the two 195-S READY_WITH_CONDITIONS follow-ups that block the next autonomous pipeline cycle. Source stash entries: 227A2930 (served-root handoff; harvested into U2, with Ship use-time attestation in U8/U9 and surface pin U7) and B83081F5 (explicit-feature reconcile; harvested into U5). No production Go change, no new lifecycle authority, no new MCP surface.\n\n1. Served-root handoff (227A2930): every Orchestrator invocation of Ship (Step 2 item 5, Step 0.0b item 6 agent: ship, Dark Factory blocked-shipment routing, and operator `ship {id}` naming a non-queued shipment) first runs one named read-only Served-Root Handoff Procedure: resolve both absolute served roots, validate them, run the authoritative read-only Served-Root Attestation against the MCP server's own self-report (backlogit_get_metadata_catalog workspace.root_path and workspace.storage_root, plus backlogit_query_sql pragma_database_list naming \u003cstorage_root\u003e/backlogit.db) before any raw read, then a static manifest/MCP agreement check, and pass served_workspace_root and served_storage_root plus informational evidence to Ship. Any failure, error, or indeterminate result halts with SERVED_ROOTS_UNRESOLVED. Ship never treats the evidence as proof: it re-runs the attestation once per wave admission, repeats the pragma check at each task claim, and re-attests before the Step 4.1b CLI fallback, halting with SERVED_ROOT_ATTESTATION_FAILED.\n2. Explicit-feature reconcile (B83081F5): shipment-reconcile pre-close and safe-close accept an active explicit feature member as feature-pending-governed-completion when at least one explicit task member exists and every explicit task member is matched or pre-archived; governed ShipShipment completes and archives it. Every other feature state still halts.\n\nPlan: docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md (plan-review attempt 3 ADVISORY, operator 'Approved' 2026-10-03T08:00:44Z; Amendment 1 delta review ADVISORY 0 P0 / 0 P1 / 6 P2 / 5 P3, operator_authorization: approved via operator directive 'PR 474: Additional Copilot review comments to fix' 2026-10-03T21:07-07:00 relayed by the Orchestrator). Decision: docs/decisions/2026-10-03-195s-dispatch-closure-contract-deliberation.md (options P1-A and P2-A; Amendment 1 replaces the content-equality binding with the Served-Root Attestation).\n\nOut of scope (tracked separately): direct-Ship served-root intake, served-root halt mappings and policy mirror, payload key pinning, and attestation of Ship's other backlogit invocations (follow-up stash CDBCB258), 41FE00A1 (Step 1.5 continuity allowlist), 731CE551 (model-routing re-render), 359D8F32 (docs compaction).\n\u003c!-- END:description --\u003e\n\n\u003c!-- BEGIN:dod --\u003e\nAll nine child tasks done; U1, U3, and U8 RED before and GREEN after U2, U5, and U9; U4 and U7 GREEN on current code (or P-021 DEFERRED SCOPE EXPANSION halt); manifest drift records match installed hashes; full quality gates green (gofmt, go vet, golangci-lint, go test -timeout=30m ./...; markdownlint).\n\nBootstrap dispatch precondition (plan 'Exception and Dispatch Preconditions'): this shipment is dispatched before U2 lands; the dispatching Orchestrator applies R1-R8 from the reviewed plan only after recording explicit operator authorization (a P-017 dark-mode bounded scope naming this shipment counts), citing the plan path, the commit carrying Amendment 1, and the pass result of each step a-f in workspace-relative form; otherwise halt SERVED_ROOTS_UNRESOLVED. Until U9 is merged to main and loaded as Ship's served agent text, Ship applies R14 from the plan throughout this shipment (the Ship payload must cite the plan path and R14); failure halts SERVED_ROOT_ATTESTATION_FAILED.\n\nClosure precondition (this shipment only): before Ship Step 6 pre-close, Ship confirms the local checkout contains the PR merge commit, shipment-reconcile SKILL.md contains feature-pending-governed-completion, and the binary that runs ShipShipment descends from 47dfcc93 (git merge-base --is-ancestor exit 0 only). Otherwise halt RECONCILE_CONTRACT_NOT_IN_FORCE; do not ask Stage to move the feature. Runtime closure: this shipment's own pre-close classifies its feature feature-pending-governed-completion and proceeds.\n\u003c!-- END:dod --\u003e\n\n\u003c!-- BEGIN:goals --\u003e\nNine tests-first units (\u003c=2h each, ~18h) in four waves: {U1, U3, U4, U7, U8} -\u003e {U2, U5} -\u003e {U9} -\u003e {U6}. Dependency edges: U2 blocks-on U1 and U7; U5 blocks-on U3 and U4; U9 blocks-on U8, U7, and U5; U6 blocks-on U2, U5, and U9.\n\u003c!-- END:goals --\u003e",
+        "labels": [
+          "harness",
+          "workflow-contract",
+          "internal-maintenance",
+          "195s-followup"
+        ],
+        "references": [
+          "docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md",
+          "docs/decisions/2026-10-03-195s-dispatch-closure-contract-deliberation.md"
+        ],
+        "custom_fields": {
+          "harness_status": "pending",
+          "scheduler_baseline_claim": "196-S"
+        },
+        "created_at": "2026-10-03T08:03:25.4024805Z",
+        "updated_at": "2026-10-04T19:28:15.2060454Z",
+        "level": 1,
+        "hierarchy_path": "196"
+      },
+      {
+        "id": "196.001-T",
+        "title": "U1: Orchestrator served-root handoff contract test (RED)",
+        "status": "queued",
+        "artifact_type": "task",
+        "parent_id": "196-F",
+        "priority": "medium",
+        "description": "\n\n\u003c!-- BEGIN:acceptance-criteria --\u003e\n1. RED on current main: go test -count=1 -v -run '^TestUSR1_' ./tests/integration fails on named assertions in subtests ProcedureLiterals (scenario 1) and CallSites (scenario 2); subtest CrossReferenceInvariant (scenario 3) passes; red output recorded in this task.\n2. Every literal token and call-site anchor listed in plan section '### U1' is asserted verbatim; slicing uses explicit unique start and end anchors on whitespace-normalized text.\n3. Exactly 1 new file, 1 test function named exactly TestUSR1_OrchestratorServedRootHandoffContract, 3 t.Run scenarios named exactly ProcedureLiterals, CallSites, and CrossReferenceInvariant (plan Amendment 2; the covered-by command of 196.002-T asserts these names); helpers are local closures; no production Go declaration added.\n4. gofmt -l, go vet ./..., and golangci-lint run are clean for the file.\n\u003c!-- END:acceptance-criteria --\u003e\n\n\u003c!-- BEGIN:description --\u003e\nUnit U1 of 196-F (wave 1; no dependencies; requirements R1-R8). Authoritative spec: plan docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md, section '### U1' (Amendment 1 ADVISORY, operator_authorization: approved; PR #474 review thread PRRT_kwDORzozKM6olYEw). The plan unit text, including the exact literal token list, is authoritative.\n\nDomain: tests. Posture: test-first (RED is the deliverable before U2). File: tests/integration/orchestrator_served_root_handoff_contract_test.go (new), package integration_test, no build tag; shared testRepoRoot, testify/require, table-driven t.Run subtests; helpers as local closures (pattern: tests/integration/claim_start_admission_contract_test.go). Add TestUSR1_OrchestratorServedRootHandoffContract (plan Amendment 2 test unit token SR1): read .github/agents/_orchestrator.agent.md, normalize whitespace, slice by substring index with explicit unique start/end anchors (sliceSection ^anchor helper is unusable here). Step 2 slice: '### Step 2: Route to Ship' to '### Step 3'.\n\nScenarios (3): (1) procedure literals in the Step 2 slice (the 31 tokens listed in the plan, stable contract tokens; Amendment 1 removed the item-log-tail tokens and added the Served-Root Attestation tokens: 'Served-Root Attestation', '`backlogit_get_metadata_catalog`', '`workspace.root_path`', '`workspace.storage_root`', '`pragma_database_list`', 'before any raw read', 'exactly one row', '`backlogit.db` as a direct child', 'missing, empty, or relative', 'No sync or retry applies'); (2) every call site references the procedure (Step 2 item 5 ordering before 'Pass the `shipment_id` as the session scope'; '`ship {id}` that names a non-queued shipment'; Step 0.0b `agent: ship` slice; Dark Factory 'Route blocked shipments to Ship' slice); (3) permanent cross-reference invariant ('5. Invoke the **Ship** subagent:' and 'proceed to step 4/5' remain present), labeled in a comment as a stable contract.\n\nSize: 1 file, 1 test function with closures, 3 scenarios.\n\u003c!-- END:description --\u003e\n\n\u003c!-- BEGIN:implementation-notes --\u003e\n\u003c!-- BEGIN:red-deliverable-contract --\u003e\n```text\nred_deliverable: true\nred_deliverable_reason: Deliverable IS the persistent RED Orchestrator served-root handoff contract test; scenario 3 is green, scenarios 1 and 2 are driven green only by 196.002-T (U2) landing the procedure and call sites in wave 2.\nred_selector_command: go test -count=1 -v -run '^TestUSR1_' ./tests/integration\ngreen_maker_tasks: 196.002-T\ngreen_maker_closes_wave: 2\n```\n\u003c!-- END:red-deliverable-contract --\u003e\n\nHarness note (plan Amendment 2): harness-required red-path task; harness-architect scaffolds TestUSR1_OrchestratorServedRootHandoffContract at wave-1 admission and applies harness-ready then (not before). The P-002.6 task-scoped command is the red_selector_command above (explicit package, -count=1, anchored ^TestUSR1_ selector; SR1 is the collision-free unit token for U1). Harness-text tests may be skipped by the CI paths filter (B3701713); Ship runs go test -timeout=30m ./... locally.\n\u003c!-- END:implementation-notes --\u003e",
+        "labels": [
+          "195s-followup",
+          "tests",
+          "red-deliverable",
+          "wave-1"
+        ],
+        "references": [
+          "docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md",
+          "docs/decisions/2026-10-03-195s-dispatch-closure-contract-deliberation.md"
+        ],
+        "custom_fields": {
+          "scheduler_baseline_claim": "196-S"
+        },
+        "created_at": "2026-10-03T08:03:48.7637992Z",
+        "updated_at": "2026-10-04T19:28:21.1626223Z",
+        "level": 2,
+        "hierarchy_path": "196/196.001"
+      },
+      {
+        "id": "196.003-T",
+        "title": "U3: shipment-reconcile explicit-feature contract test (RED)",
+        "status": "queued",
+        "artifact_type": "task",
+        "parent_id": "196-F",
+        "priority": "medium",
+        "description": "\n\n\u003c!-- BEGIN:acceptance-criteria --\u003e\n1. RED on current main: go test -count=1 -v -run '^TestUSR3_' ./tests/integration fails on named assertions in subtests SkillLiterals (scenario 1) and ProceedAndShipStep6 (scenario 2) and the absence check in subtest SupersededAndPreserved (scenario 3); preserved-invariant checks pass; red output recorded in this task.\n2. Every literal and anchor in plan section '### U3' is asserted verbatim; the PROCEED start anchor is '* `PROCEED`:' (unique).\n3. Exactly 1 new file, 1 test function named exactly TestUSR3_ShipmentReconcileExplicitFeatureMemberContract, 3 t.Run scenarios named exactly SkillLiterals, ProceedAndShipStep6, and SupersededAndPreserved (plan Amendment 2; the covered-by command of 196.005-T asserts these names); no production Go declaration added.\n4. gofmt, go vet, and golangci-lint are clean.\n\u003c!-- END:acceptance-criteria --\u003e\n\n\u003c!-- BEGIN:description --\u003e\nUnit U3 of 196-F (wave 1; no dependencies; requirements R9-R11). Authoritative spec: plan docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md, section '### U3' (attempt-3 ADVISORY, operator_authorization: approved). The plan unit text, including the exact literal list, is authoritative.\n\nDomain: tests. Posture: test-first (RED is the deliverable before U5). File: tests/integration/shipment_reconcile_feature_member_contract_test.go (new), same package/helper/testify conventions as U1. Add TestUSR3_ShipmentReconcileExplicitFeatureMemberContract (plan Amendment 2 test unit token SR3): read .github/skills/shipment-reconcile/SKILL.md and .github/agents/_ship.agent.md, normalize whitespace, slice by substring index with explicit unique start and end anchors.\n\nScenarios (3): (1) skill literals (feature-pending-governed-completion; every explicit task member is matched or pre-archived; applies only to pre-close (expected_status: done); 'A manifest with no explicit task member does not qualify'; 'Any other explicit feature status remains status-mismatch'; 'Safe-close re-checks this condition on the state re-read under lock'; 'Explicit feature members are completed only by governed ShipShipment (backlogit_ship_shipment or its registered CLI fallback)'); (2) PROCEED bullet slice from '* `PROCEED`:' (with colon, unique) to '* `PAUSED' contains the new PROCEED wording, and the _ship.agent.md Step 6 item a slice ('Pre-archive reconciliation gate' to 'b. Call `backlogit_ship_shipment` with the merge commit SHA') contains feature-pending-governed-completion; (3) superseded sentence 'require every non-pre-archived explicit member to be `done`' absent; post-mode row 'Archive record exists with valid provenance' and safe-close step 5 rule still present.\n\nSize: 1 file, 1 test function, 3 scenarios.\n\u003c!-- END:description --\u003e\n\n\u003c!-- BEGIN:implementation-notes --\u003e\n\u003c!-- BEGIN:red-deliverable-contract --\u003e\n```text\nred_deliverable: true\nred_deliverable_reason: Deliverable IS the persistent RED shipment-reconcile explicit-feature contract test; it is driven green only by 196.005-T (U5) landing the skill classification, PROCEED, safe-close, and Ship Step 6 wording in wave 2.\nred_selector_command: go test -count=1 -v -run '^TestUSR3_' ./tests/integration\ngreen_maker_tasks: 196.005-T\ngreen_maker_closes_wave: 2\n```\n\u003c!-- END:red-deliverable-contract --\u003e\n\nHarness note (plan Amendment 2): harness-required red-path task; harness-architect scaffolds TestUSR3_ShipmentReconcileExplicitFeatureMemberContract at wave-1 admission and applies harness-ready then (not before). The P-002.6 task-scoped command is the red_selector_command above (explicit package, -count=1, anchored ^TestUSR3_ selector). Harness-text tests may be skipped by the CI paths filter (B3701713); Ship runs go test -timeout=30m ./... locally.\n\u003c!-- END:implementation-notes --\u003e",
+        "labels": [
+          "195s-followup",
+          "tests",
+          "red-deliverable",
+          "wave-1"
+        ],
+        "references": [
+          "docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md",
+          "docs/decisions/2026-10-03-195s-dispatch-closure-contract-deliberation.md"
+        ],
+        "custom_fields": {
+          "scheduler_baseline_claim": "196-S"
+        },
+        "created_at": "2026-10-03T08:05:01.4630868Z",
+        "updated_at": "2026-10-04T19:28:26.8705908Z",
+        "level": 2,
+        "hierarchy_path": "196/196.003"
+      },
+      {
+        "id": "196.004-T",
+        "title": "U4: ShipShipment explicit-feature release characterization test",
+        "status": "queued",
+        "artifact_type": "task",
+        "parent_id": "196-F",
+        "priority": "medium",
+        "description": "\n\n\u003c!-- BEGIN:acceptance-criteria --\u003e\n1. GREEN on current code: go test -count=1 -v -run '^TestUSR4_' ./internal/core passes with both scenarios and the require-asserted preconditions, and the exempt_verification_command in the implementation notes prints EXEMPT_VERIFY_OK:196.004-T (it failed before the file existed).\n2. Scenario 2 asserts both Delta[\"to\"] == done and the reason in {shipment released, feature released} for the feature's status_changed event, without an ordering claim.\n3. Exactly 1 new _test.go file with 1 test function named exactly TestUSR4_ShipShipmentActiveExplicitFeatureWithPreArchivedTasksIsReleased and 2 t.Run subtests named exactly CompletionAndArchival and GovernedStatusTransition (plan Amendment 2); no production Go change.\n4. If a precondition or scenario cannot be satisfied: record a P-021 DEFERRED SCOPE EXPANSION with the failing assertion, halt the wave, and return to Stage (do not change production Go).\n5. gofmt, go vet, and golangci-lint are clean.\n\u003c!-- END:acceptance-criteria --\u003e\n\n\u003c!-- BEGIN:description --\u003e\nUnit U4 of 196-F (wave 1; no dependencies; requirement R12). Authoritative spec: plan docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md, section '### U4' (attempt-3 ADVISORY, operator_authorization: approved).\n\nDomain: tests (Go core). Posture: characterization-first; expected GREEN on current code. File: internal/core/shipment_explicit_feature_release_test.go (new, package core). Add TestUSR4_ShipShipmentActiveExplicitFeatureWithPreArchivedTasksIsReleased (plan Amendment 2 test unit token SR4) using the fixtures of TestShipShipment_FeatureInclusiveManifestArchivesFeature (setupShipmentWorkspace, WithParent, bldb.UpsertItem, CreateShipment, ClaimShipment, loadArtifact): create a feature and two child tasks, all explicit members; claim; for each task UpdateArtifact(..., {status: done}) then ArchiveItem; setupShipmentWorkspace already disables the exec gate (shipment_test.go:38). Table-driven t.Run subtests over a shared arranged fixture.\n\nPreconditions (require before acting): each task archived with archived_status done; the feature active.\n\nScenarios (2): (1) completion and archival: ShipShipment succeeds; ArchivedIDs contains the feature ID and shipment ID and neither task ID; reloaded feature archived with archived_status done; both tasks remain archived. (2) governed status transition: read the durable item log inline or via a sibling helper in the new file (flatScopeStatusReasonsSince returns reasons only) and assert a status_changed event to done for the feature (Delta[\"to\"]) with reason 'shipment released' (completeReleaseScope, current path) or 'feature released'; no ordering claim.\n\nSize: 1 file, 1 test function, 2 scenarios.\n\u003c!-- END:description --\u003e\n\n\u003c!-- BEGIN:implementation-notes --\u003e\nTest-lifecycle classification: harness-exempt: verification-only (plan Amendment 2 closed exempt set). Not harness-ready and not a red deliverable; harness-architect does not scaffold this task. Test unit token SR4 (collision-free; `^TestU4_` would also match the pre-existing TestU4_ functions in internal/core/checkpoint_disposition_test.go).\n\n\u003c!-- BEGIN:harness-exemption-contract --\u003e\n\n```text\nharness_exemption_class: verification-only\nharness_exemption_reason: Adds only the new characterization test internal/core/shipment_explicit_feature_release_test.go pinning already-shipped ShipShipment explicit-feature release behavior (completeReleaseScope); green on arrival by design, so it records evidence and never ships a new red assertion; zero non-test Go.\nharness_owner: none\nexempt_verification_command: pwsh -NoProfile -Command '$f = \"internal/core/shipment_explicit_feature_release_test.go\"; if (-not (Test-Path -LiteralPath $f)) { Write-Error \"USR4 test file missing\"; exit 1 }; $o = go test -count=1 -v -run \"^TestUSR4_\" ./internal/core 2\u003e\u00261 | Out-String; if ($LASTEXITCODE -ne 0) { Write-Output $o; Write-Error \"USR4 not green\"; exit 1 }; if ($o -match \"no tests to run|no test files\") { Write-Error \"USR4 vacuous pass\"; exit 1 }; $n = \"TestUSR4_ShipShipmentActiveExplicitFeatureWithPreArchivedTasksIsReleased\"; foreach ($k in @(\"--- PASS: $n \", \"--- PASS: $n/CompletionAndArchival \", \"--- PASS: $n/GovernedStatusTransition \")) { if (-not $o.Contains($k)) { Write-Error \"missing $k\"; exit 1 } }; if ($o -match \"--- FAIL:|--- SKIP:\") { Write-Error \"USR4 fail or skip present\"; exit 1 }; Write-Output \"EXEMPT_VERIFY_OK:196.004-T\"; exit 0'\nexempt_precondition: must-fail-before-deliverable\n```\n\n\u003c!-- END:harness-exemption-contract --\u003e\n\nWhy this command is a gate: before the deliverable lands the test file is absent, so the probe exits 1 (must-fail-before-deliverable, observed at Stage authoring on 2026-10-04: `USR4 test file missing`, exit 1). After it lands, the command passes only when the file exists, `go test -count=1 -v -run \"^TestUSR4_\" ./internal/core` exits 0, the output is not vacuous (`no tests to run`/`no test files` fail), the named top-level line `--- PASS: TestUSR4_ShipShipmentActiveExplicitFeatureWithPreArchivedTasksIsReleased` and both named subtest lines (`/CompletionAndArchival`, `/GovernedStatusTransition`) are present, and no `--- FAIL:` or `--- SKIP:` line appears; only then is `EXEMPT_VERIFY_OK:196.004-T` printed as the last statement. It never relies on exit status alone (P-002.3 verification-only rule). Read-only: runs go test and Test-Path only (P-002.5 screen clean).\n\nClass delta surface (P-002.4 verification-only): exactly one new `*_test.go` file, internal/core/shipment_explicit_feature_release_test.go; zero non-test `*.go` files; no repository-configuration file.\n\nP-021 halt semantics preserved: if a precondition or scenario fails, the command fails; record a P-021 DEFERRED SCOPE EXPANSION with the failing assertion, halt the wave, and return to Stage. Never change production Go to make this pass.\n\nHarness note: characterization test, NOT a red deliverable (no red-deliverable contract); expected GREEN on arrival because it pins existing behavior (internal/core/shipment_lifecycle.go:711 completeReleaseScope). It is lifecycle evidence for 196.005-T (U5), which blocks on it. Residual (GO3): gateShipmentCompletion and VerifyPostShipConsistency could reject pre-archived explicit members; the halt-on-failure exit covers it.\n\u003c!-- END:implementation-notes --\u003e",
+        "labels": [
+          "195s-followup",
+          "tests",
+          "characterization",
+          "wave-1",
+          "harness-exempt",
+          "verification-only"
+        ],
+        "references": [
+          "docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md",
+          "docs/decisions/2026-10-03-195s-dispatch-closure-contract-deliberation.md"
+        ],
+        "custom_fields": {
+          "scheduler_baseline_claim": "196-S"
+        },
+        "created_at": "2026-10-03T08:05:24.0282927Z",
+        "updated_at": "2026-10-04T19:28:32.5821493Z",
+        "level": 2,
+        "hierarchy_path": "196/196.004"
+      },
+      {
+        "id": "196.007-T",
+        "title": "U7: MCP served-root self-report characterization test",
+        "status": "queued",
+        "artifact_type": "task",
+        "parent_id": "196-F",
+        "priority": "medium",
+        "description": "\n\n\u003c!-- BEGIN:acceptance-criteria --\u003e\n1. GREEN: go test -count=1 -v -run '^TestUSR7_' ./internal/mcp passes on current code, and the exempt_verification_command in the implementation notes prints EXEMPT_VERIFY_OK:196.007-T (it failed before the file existed).\n2. Both scenarios assert the exact values in plan section '### U7' (absolute root_path equal to the workspace root; storage_root equal to \u003croot\u003e/.backlogit as a direct child; exactly one pragma_database_list row whose file is \u003cstorage_root\u003e/backlogit.db; db.ValidateQuery Allowed for the exact query), with paths compared after filepath.EvalSymlinks.\n3. Exactly 1 new file, 1 test function named exactly TestUSR7_ServedRootSelfReportCharacterization, 2 t.Run scenarios named exactly MetadataCatalog and IndexFile (plan Amendment 2); no production Go declaration added or changed.\n4. gofmt -l, go vet ./..., and golangci-lint run are clean for the file.\n\u003c!-- END:acceptance-criteria --\u003e\n\n\u003c!-- BEGIN:description --\u003e\nUnit U7 of 196-F (wave 1; no dependencies; requirement R15). Added by plan Amendment 1 (operator-directed fix for PR #474 review thread PRRT_kwDORzozKM6olYEw, 2026-10-03T21:07-07:00; Amendment 1 ADVISORY, operator_authorization: approved). Authoritative spec: plan docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md, section '### U7'.\n\nDomain: tests (Go, MCP package). Posture: characterization-first; expected GREEN on arrival because it pins existing behavior and adds no production code. File: internal/mcp/served_root_self_report_test.go (new), package mcp (same package as metadata_parity_test.go); reuse setupCatalogServer, testify/require, table-driven t.Run subtests. Add TestUSR7_ServedRootSelfReportCharacterization (plan Amendment 2 test unit token SR7) with one arranged server over a temporary workspace whose storage root is .backlogit.\n\nScenarios (2): (1) Metadata catalog: handleGetMetadataCatalog succeeds; decoded workspace.root_path is absolute and equals the workspace root; workspace.storage_root is absolute and equals \u003croot\u003e/.backlogit, a direct child of root_path. (2) Index file: handleQuerySQL with \"SELECT name, file FROM pragma_database_list WHERE name = 'main'\" succeeds through the read-only gate, returns exactly one row whose file equals \u003cstorage_root\u003e/backlogit.db; the same subtest asserts db.ValidateQuery reports Allowed for that exact query (the query passes only because \\bPRAGMA\\b does not match inside pragma_database_list, so a gate tightening must fail here first). Compare paths after filepath.EvalSymlinks on both sides.\n\nThese two surfaces are what the Served-Root Attestation in U2 (Orchestrator) and U9 (Ship) rely on.\n\nSize: 1 file, 1 test function, 2 scenarios.\n\u003c!-- END:description --\u003e\n\n\u003c!-- BEGIN:implementation-notes --\u003e\nTest-lifecycle classification: harness-exempt: verification-only (plan Amendment 2 closed exempt set). Not harness-ready and not a red deliverable; harness-architect does not scaffold this task. Test unit token SR7 (collision-free; `^TestU7_` would also match the pre-existing TestU7_ functions in internal/mcp/checkpoint_disposition_test.go).\n\n\u003c!-- BEGIN:harness-exemption-contract --\u003e\n\n```text\nharness_exemption_class: verification-only\nharness_exemption_reason: Adds only the new characterization test internal/mcp/served_root_self_report_test.go pinning the already-shipped metadata-catalog workspace roots and pragma_database_list read-only-gate behavior; green on arrival by design, so it records evidence and never ships a new red assertion; zero non-test Go.\nharness_owner: none\nexempt_verification_command: pwsh -NoProfile -Command '$f = \"internal/mcp/served_root_self_report_test.go\"; if (-not (Test-Path -LiteralPath $f)) { Write-Error \"USR7 test file missing\"; exit 1 }; $o = go test -count=1 -v -run \"^TestUSR7_\" ./internal/mcp 2\u003e\u00261 | Out-String; if ($LASTEXITCODE -ne 0) { Write-Output $o; Write-Error \"USR7 not green\"; exit 1 }; if ($o -match \"no tests to run|no test files\") { Write-Error \"USR7 vacuous pass\"; exit 1 }; $n = \"TestUSR7_ServedRootSelfReportCharacterization\"; foreach ($k in @(\"--- PASS: $n \", \"--- PASS: $n/MetadataCatalog \", \"--- PASS: $n/IndexFile \")) { if (-not $o.Contains($k)) { Write-Error \"missing $k\"; exit 1 } }; if ($o -match \"--- FAIL:|--- SKIP:\") { Write-Error \"USR7 fail or skip present\"; exit 1 }; Write-Output \"EXEMPT_VERIFY_OK:196.007-T\"; exit 0'\nexempt_precondition: must-fail-before-deliverable\n```\n\n\u003c!-- END:harness-exemption-contract --\u003e\n\nWhy this command is a gate: before the deliverable lands the test file is absent, so the probe exits 1 (must-fail-before-deliverable, observed at Stage authoring on 2026-10-04: `USR7 test file missing`, exit 1). After it lands, the command passes only when the file exists, `go test -count=1 -v -run \"^TestUSR7_\" ./internal/mcp` exits 0, the output is not vacuous (`no tests to run`/`no test files` fail), the named top-level line `--- PASS: TestUSR7_ServedRootSelfReportCharacterization` and both named subtest lines (`/MetadataCatalog`, `/IndexFile`) are present, and no `--- FAIL:` or `--- SKIP:` line appears; only then is `EXEMPT_VERIFY_OK:196.007-T` printed as the last statement. It never relies on exit status alone (P-002.3 verification-only rule). Read-only: runs go test and Test-Path only (P-002.5 screen clean).\n\nClass delta surface (P-002.4 verification-only): exactly one new `*_test.go` file, internal/mcp/served_root_self_report_test.go; zero non-test `*.go` files; no repository-configuration file.\n\nHarness note: characterization test; no red-deliverable contract (expected GREEN on arrival). Task-scoped command: the exempt_verification_command above (its inner selector is go test -count=1 -v -run '^TestUSR7_' ./internal/mcp). If either scenario fails, record a P-021 DEFERRED SCOPE EXPANSION with the failing assertion, halt the wave, and return to Stage; do not change production Go. U2 (196.002-T) and U9 block on this task.\n\u003c!-- END:implementation-notes --\u003e",
+        "labels": [
+          "195s-followup",
+          "tests",
+          "characterization",
+          "wave-1",
+          "harness-exempt",
+          "verification-only"
+        ],
+        "references": [
+          "docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md",
+          "docs/decisions/2026-10-03-195s-dispatch-closure-contract-deliberation.md"
+        ],
+        "custom_fields": {
+          "scheduler_baseline_claim": "196-S"
+        },
+        "created_at": "2026-10-04T04:31:53.841063Z",
+        "updated_at": "2026-10-04T19:28:38.2547901Z",
+        "level": 2,
+        "hierarchy_path": "196/196.007"
+      },
+      {
+        "id": "196.008-T",
+        "title": "U8: Ship served-root attestation contract test (RED)",
+        "status": "queued",
+        "artifact_type": "task",
+        "parent_id": "196-F",
+        "priority": "medium",
+        "description": "\n\n\u003c!-- BEGIN:acceptance-criteria --\u003e\n1. RED on current main: go test -count=1 -v -run '^TestUSR8_' ./tests/integration fails on named assertions in subtests DefinitionLiterals (scenario 1) and CallSites (scenario 2); subtest PreservedInvariants (scenario 3) passes; red output recorded in this task.\n2. Every literal token, ordering constraint, and call-site anchor listed in plan section '### U8' is asserted verbatim; slicing uses explicit unique start and end anchors on whitespace-normalized text.\n3. Exactly 1 new file, 1 test function named exactly TestUSR8_ShipServedRootAttestationContract, 3 t.Run scenarios named exactly DefinitionLiterals, CallSites, and PreservedInvariants (plan Amendment 2; the covered-by command of 196.009-T asserts these names); helpers are local closures; no production Go declaration added.\n4. gofmt -l, go vet ./..., and golangci-lint run are clean for the file.\n\u003c!-- END:acceptance-criteria --\u003e\n\n\u003c!-- BEGIN:description --\u003e\nUnit U8 of 196-F (wave 1; no dependencies; requirement R14). Added by plan Amendment 1 (operator-directed fix for PR #474 review thread PRRT_kwDORzozKM6olYEw, 2026-10-03T21:07-07:00; Amendment 1 ADVISORY, operator_authorization: approved). Authoritative spec: plan docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md, section '### U8'. The plan unit text, including the exact literal token list, is authoritative.\n\nDomain: tests. Posture: test-first (RED is the deliverable before U9). File: tests/integration/ship_served_root_attestation_contract_test.go (new); same package, helper, and testify conventions as U1 (196.001-T); slice by substring index on whitespace-normalized text with explicit unique start and end anchors. Add TestUSR8_ShipServedRootAttestationContract (plan Amendment 2 test unit token SR8) reading .github/agents/_ship.agent.md. Scenario 1 tokens are stable contract tokens.\n\nScenarios (3): (1) Definition literals: the slice from '#### Step 4.1b: Claim Task' to '#### Step 4.1c' contains the 16 literals listed in the plan (including '**Served-Root Attestation (shared read-only procedure):**', which must occur before '**Raw-log path safety (shared read-only procedure):**', the catalog/pragma names, 'exactly one row', '`backlogit.db` as a direct child', 'missing, empty, or relative', 'No sync or retry applies', the three timing literals, '`SERVED_ROOT_ATTESTATION_FAILED`', and 'before any claim, raw item-log read, or CLI fallback'). (2) Call sites: Step 4.0 item 4 slice contains 'Served-Root Attestation' and 'SERVED_ROOT_ATTESTATION_FAILED'; the slice from '4. If the MCP append errors' to '5. Re-read the item log' contains 'Served-Root Attestation' before 're-reads the item log before any CLI fallback' and before '`backlogit comment add'. (3) Preserved invariants (stable contract comment): '**Raw-log path safety (shared read-only procedure):**', 'WAVE_CLAIM_STATE_INDETERMINATE', 'Never infer either root', and 're-reads the item log before any CLI fallback' remain present.\n\nSize: 1 file, 1 test function with closures, 3 scenarios.\n\u003c!-- END:description --\u003e\n\n\u003c!-- BEGIN:implementation-notes --\u003e\n\u003c!-- BEGIN:red-deliverable-contract --\u003e\n```text\nred_deliverable: true\nred_deliverable_reason: Deliverable IS the persistent RED Ship served-root attestation contract test; scenario 3 is green, scenarios 1 and 2 are driven green only by 196.009-T (U9) landing the attestation definition and call sites in wave 3.\nred_selector_command: go test -count=1 -v -run '^TestUSR8_' ./tests/integration\ngreen_maker_tasks: 196.009-T\ngreen_maker_closes_wave: 3\n```\n\u003c!-- END:red-deliverable-contract --\u003e\n\nHarness note (plan Amendment 2): harness-required red-path task; harness-architect scaffolds TestUSR8_ShipServedRootAttestationContract at wave-1 admission and applies harness-ready then (not before). The P-002.6 task-scoped command is the red_selector_command above (explicit package, -count=1, anchored ^TestUSR8_ selector). Harness-text tests may be skipped by the CI paths filter (B3701713); Ship runs go test -timeout=30m ./... locally. Existing pins in tests/integration/claim_start_admission_contract_test.go must stay satisfiable.\n\u003c!-- END:implementation-notes --\u003e",
+        "labels": [
+          "195s-followup",
+          "tests",
+          "red-deliverable",
+          "wave-1"
+        ],
+        "references": [
+          "docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md",
+          "docs/decisions/2026-10-03-195s-dispatch-closure-contract-deliberation.md"
+        ],
+        "custom_fields": {
+          "scheduler_baseline_claim": "196-S"
+        },
+        "created_at": "2026-10-04T04:32:23.0469198Z",
+        "updated_at": "2026-10-04T19:28:43.9959239Z",
+        "level": 2,
+        "hierarchy_path": "196/196.008"
+      },
+      {
+        "id": "196.002-T",
+        "title": "U2: Orchestrator Served-Root Handoff Procedure and call sites",
+        "status": "queued",
+        "artifact_type": "task",
+        "parent_id": "196-F",
+        "priority": "high",
+        "description": "Unit U2 of 196-F (wave 2; blocks-on U1 196.001-T and U7; requirements R1-R8). Source stash 227A2930 (served-root handoff). Authoritative spec: plan docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md, section '### U2' (Amendment 1 ADVISORY, operator_authorization: approved). The plan unit text is authoritative. Amendment 1 (operator-directed fix for PR #474 review thread PRRT_kwDORzozKM6olYEw, 2026-10-03T21:07-07:00) replaced the content-equality binding with an authoritative read-only Served-Root Attestation.\n\nDomain: docs (installed agent text). Posture: test-first (U1), with U7 pinning the self-report surfaces. Safety mode: careful. File: .github/agents/_orchestrator.agent.md (1 file, 4 localized edits). Use U1 literals verbatim, including capitalization.\n\nChange 1: add '#### Served-Root Handoff Procedure (all Ship invocations)' at the end of Step 2, immediately before '### Step 3' (do not renumber Step 2). It is a handoff precondition (no checkpoint state-dump read; no restore/prune/resolve), read-only except at most one derived-index backlogit_sync_index, writes no checkpoint, and records outcomes only in docs/memory/ in workspace-relative form. Steps a-f: (a) workspace root = canonical git rev-parse --show-toplevel of the Orchestrator's own main worktree (--git-common-dir equals --git-dir, both \u003croot\u003e/.git); never infer from a Ship worktree; (b) the served storage root is exactly one of .backlog or .backlogit; neither or both exist, fail closed; (c) canonicalize, reject symlink or reparse-point components, storage root a direct child of the served workspace root; (d) bind: shipment_id ^[0-9]+-S$; then the Served-Root Attestation before any raw read: backlogit_get_metadata_catalog (read only its workspace object) workspace.root_path and workspace.storage_root must equal the candidate roots, and backlogit_query_sql \"SELECT name, file FROM pragma_database_list WHERE name = 'main'\" must return exactly one row whose file is backlogit.db as a direct child of the served storage root; canonical OS-native compare; a missing, empty, or relative value, a row count other than one, or any mismatch fails; MCP-only; No sync or retry applies; then manifest in exactly one of queue or archive (default archive dir assumed; non-default fails closed), manifest and its directory direct children with no symlink/reparse point, no-follow raw read of frontmatter only with scoped P-012 declaration; static check vs backlogit_get_shipment (id, status, updated_at, ordered custom_fields.items) with one backlogit_sync_index on mismatch; a persisting mismatch fails and a sync error is indeterminate; (e) halt SERVED_ROOTS_UNRESOLVED: {reason} on any failure, error, or indeterminate result, do not invoke Ship, redacted/workspace-relative tokens, CLI-only fails closed intentionally; (f) pass served_workspace_root, served_storage_root, and the attested values as informational binding evidence in the Ship payload (Ship never treats evidence as proof and re-attests per U9).\n\nChange 2: Step 2 item 5 first bullet 'Run the Served-Root Handoff Procedure' before 'Pass the `shipment_id` as the session scope' (amended to pass both roots and evidence), plus the operator `ship {id}` that names a non-queued shipment sentence. Change 3: Step 0.0b item 6 agent: ship branch runs the procedure using the checkpoint summary's shipment ID only (none named: halt to operator). Change 4: Dark Factory blocked-shipment routing only after the procedure passes.\n\n\u003c!-- BEGIN:acceptance-criteria --\u003e\n1. 196.001-T (U1) goes GREEN: go test -count=1 -v -run '^TestUSR1_' ./tests/integration passes, and the exempt_verification_command in the implementation notes prints EXEMPT_VERIFY_OK:196.002-T.\n2. The procedure subsection sits at the end of Step 2, immediately before '### Step 3', without renumbering Step 2; all four call sites (Step 2 item 5 incl. non-queued `ship {id}`, Step 0.0b item 6 agent: ship, Dark Factory blocked-shipment routing) reference the procedure.\n3. Only .github/agents/_orchestrator.agent.md changes; markdownlint is clean; existing contract tests (claim_start_admission_contract_test.go, shipment_155_harness_contract_test.go) and U7 (TestUSR7_ServedRootSelfReportCharacterization, go test -count=1 -v -run '^TestUSR7_' ./internal/mcp) stay GREEN.\n4. Manual dry-run: the Ship author runs steps a-d read-only against the main checkout for one queued shipment and one archived shipment (e.g. 195-S), plus one negative attestation (the parent directory of the workspace supplied as the candidate root must fail the Served-Root Attestation), and records each step's pass/fail in the PR body in workspace-relative form only.\n\u003c!-- END:acceptance-criteria --\u003e\n\n\u003c!-- BEGIN:implementation-notes --\u003e\nTest-lifecycle classification: harness-exempt: covered-by (plan Amendment 2 closed exempt set); harness owner 196.001-T (a declared dependency, not itself exempt). harness-architect does not scaffold this task.\n\n\u003c!-- BEGIN:harness-exemption-contract --\u003e\n\n```text\nharness_exemption_class: covered-by\nharness_exemption_reason: Edits only .github/agents/_orchestrator.agent.md (Served-Root Handoff Procedure and its call sites) so that the ProcedureLiterals and CallSites subtests of predecessor harness owner 196.001-T turn green; adds or modifies no *_test.go file.\nharness_owner: 196.001-T\nexempt_verification_command: pwsh -NoProfile -Command '$o = go test -count=1 -v -run \"^TestUSR1_\" ./tests/integration 2\u003e\u00261 | Out-String; if ($LASTEXITCODE -ne 0) { Write-Output $o; Write-Error \"USR1 not green\"; exit 1 }; if ($o -match \"no tests to run|no test files\") { Write-Error \"USR1 vacuous pass\"; exit 1 }; $n = \"TestUSR1_OrchestratorServedRootHandoffContract\"; foreach ($k in @(\"--- PASS: $n \", \"--- PASS: $n/ProcedureLiterals \", \"--- PASS: $n/CallSites \", \"--- PASS: $n/CrossReferenceInvariant \")) { if (-not $o.Contains($k)) { Write-Error \"missing $k\"; exit 1 } }; if ($o -match \"--- FAIL:|--- SKIP:\") { Write-Error \"USR1 fail or skip present\"; exit 1 }; Write-Output \"EXEMPT_VERIFY_OK:196.002-T\"; exit 0'\nexempt_precondition: must-fail-before-deliverable\nharness_owner_command: go test -count=1 -v -run '^TestUSR1_' ./tests/integration\n```\n\n\u003c!-- END:harness-exemption-contract --\u003e\n\nWhy this command is a gate: before this deliverable lands, owner 196.001-T's harness is absent (pre-wave-1 the selector matches nothing and the command fails on the vacuous `no tests to run` check; observed at Stage authoring on 2026-10-04, exit 1) or RED (after wave 1 its named assertions fail, so go test exits non-zero). It passes only when `go test -count=1 -v -run \"^TestUSR1_\" ./tests/integration` exits 0, the output is not vacuous, the named top-level line `--- PASS: TestUSR1_OrchestratorServedRootHandoffContract` and every named subtest line (`/ProcedureLiterals`, `/CallSites`, `/CrossReferenceInvariant`) are present, and no `--- FAIL:` or `--- SKIP:` line appears; only then is `EXEMPT_VERIFY_OK:196.002-T` printed as the last statement. Read-only: runs go test only (P-002.5 screen clean). Owner red evidence is checked by Ship at claim time (Step 4.1a), not here.\n\nClass delta surface (P-002.4 covered-by): .github/agents/_orchestrator.agent.md only; no `*_test.go` file.\n\nHarness note: no red-deliverable contract; this task is the green maker for 196.001-T (U1, wave 1). Test-first gate: U1 must be RED on main before this edit lands, and U7 must be GREEN. Task-scoped command: the harness_owner_command above (go test -count=1 -v -run '^TestUSR1_' ./tests/integration), driven to the exempt_verification_command. Drift record for this file is applied by 196.006-T (U6). Ship-side use-time attestation is U8/U9 in this shipment. Follow-up out of scope: direct-Ship served-root intake, halt mappings, payload key pinning, and attestation of Ship's other backlogit invocations (Stage follow-up stash CDBCB258).\n\u003c!-- END:implementation-notes --\u003e",
+        "labels": [
+          "195s-followup",
+          "docs",
+          "installed-agent-text",
+          "wave-2",
+          "careful",
+          "harness-exempt",
+          "covered-by"
+        ],
+        "dependencies": [
+          {
+            "id": "196.001-T",
+            "type": "blocks"
+          },
+          {
+            "id": "196.007-T",
+            "type": "blocks"
+          }
+        ],
+        "custom_fields": {
+          "scheduler_baseline_claim": "196-S",
+          "source_stash_id": "227A2930",
+          "source_stash_kind": "bug",
+          "source_stash_path": "stash.jsonl",
+          "source_stash_priority": "high",
+          "source_stash_text": "DEFERRED SCOPE EXPANSION\nExpansion: Update the Orchestrator agent's shipment handoff so it obtains, validates, and passes both authoritative absolute served roots to Ship before shipment claim.\nOut-of-scope rationale: P-021 C1 — plan 2A355F83 UCS2a authorizes edits to `.github/agents/_ship.agent.md` only and requires the permanent Ship text to name an Orchestrator follow-up; editing `.github/agents/_orchestrator.agent.md` implements a separate contract surface outside the authorized change.\nSource refs: PR #471; review thread PRRT_kwDORzozKM6ojnF3; task 195.003-T; feature 195-F; shipment 195-S.\nrequires deliberation: true\nkind: bug; provisional_priority: medium (Stage-owned triage)\nSTAGE TRIAGE 2026-10-03: kind bug confirmed; priority raised to HIGH. Rationale: Ship Step 4.0 requires both served roots before every wave admission and Orchestrator Step 2 passes only shipment_id + route, so every future Ship dispatch fails closed with WAVE_CLAIM_STATE_INDETERMINATE (dispatch-path prerequisite for all 33 queued shipments). P-021 C6: deliberate route forced. Duplicate scan (A): clean, no duplicate. Late-identifier reconciliation (B): not triggered (no N/A source-ref field). Grouped with B83081F5 under one covering feature (195-S READY_WITH_CONDITIONS follow-ups)."
+        },
+        "created_at": "2026-10-03T08:04:11.2206711Z",
+        "updated_at": "2026-10-04T19:28:49.7043705Z",
+        "level": 2,
+        "hierarchy_path": "196/196.002"
+      },
+      {
+        "id": "196.005-T",
+        "title": "U5: shipment-reconcile contract text and Ship Step 6 wording",
+        "status": "queued",
+        "artifact_type": "task",
+        "parent_id": "196-F",
+        "priority": "high",
+        "description": "Unit U5 of 196-F (wave 2; blocks-on U3 196.003-T and U4 196.004-T; requirements R9-R11). Source stash B83081F5 (explicit-feature reconcile). Authoritative spec: plan docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md, section '### U5' (attempt-3 ADVISORY, operator_authorization: approved). Use the U3 sentences verbatim, including capitalization.\n\nDomain: docs (installed skill and agent text). Posture: test-first (U3), with U4 as lifecycle evidence. Safety mode: careful. Files: .github/skills/shipment-reconcile/SKILL.md and .github/agents/_ship.agent.md (one sentence only). 2 files, 5 localized edits.\n\n(1) Classification table: add a `feature-pending-governed-completion` row (pre-mode: an explicit feature member is active and every explicit task member is matched or pre-archived; applies only to pre-close (expected_status: done); 'A manifest with no explicit task member does not qualify.'; 'Any other explicit feature status remains `status-mismatch`.'; post-mode N/A). (2) Recommendations: PROCEED becomes 'every explicit member is `matched`, `pre-archived`, or `feature-pending-governed-completion` and the shipment record is consistent'. (3) Behavioral Constraints 'Explicit feature handling': add 'Explicit feature members are completed only by governed ShipShipment (`backlogit_ship_shipment` or its registered CLI fallback).' (4) Safe-Close step 2: replace the superseded sentence with three rules (non-pre-archived explicit task members done; explicit feature member done or meets feature-pending-governed-completion; 'Safe-close re-checks this condition on the state re-read under lock.'). (5) Ship Step 6 item a: replace 'verifies that every manifest item is present in queue with status: done, and scans for orphan items' with 'verifies that the skill's pre-close result is PROCEED, that is, every explicit member is classified matched, pre-archived, or feature-pending-governed-completion'; the orphan clause is dropped (removes no behavior: SKILL.md lines 15 and 60; Ship item b).\n\n\u003c!-- BEGIN:acceptance-criteria --\u003e\n1. 196.003-T (U3) goes GREEN: go test -count=1 -v -run '^TestUSR3_' ./tests/integration passes, and the exempt_verification_command in the implementation notes prints EXEMPT_VERIFY_OK:196.005-T.\n2. tests/integration/shipment_155_harness_contract_test.go and tests/integration/claim_start_admission_contract_test.go stay GREEN; 196.004-T (U4) characterization stays GREEN (go test -count=1 -v -run '^TestUSR4_' ./internal/core).\n3. Only .github/skills/shipment-reconcile/SKILL.md and one sentence of .github/agents/_ship.agent.md Step 6 item a change; the post-mode row 'Archive record exists with valid provenance' and safe-close step 5 rule are preserved.\n4. markdownlint is clean.\n\u003c!-- END:acceptance-criteria --\u003e\n\n\u003c!-- BEGIN:implementation-notes --\u003e\nTest-lifecycle classification: harness-exempt: covered-by (plan Amendment 2 closed exempt set); harness owner 196.003-T (a declared dependency, not itself exempt). harness-architect does not scaffold this task.\n\n\u003c!-- BEGIN:harness-exemption-contract --\u003e\n\n```text\nharness_exemption_class: covered-by\nharness_exemption_reason: Edits only .github/skills/shipment-reconcile/SKILL.md and one sentence of .github/agents/_ship.agent.md Step 6 item a so that the SkillLiterals, ProceedAndShipStep6, and SupersededAndPreserved subtests of predecessor harness owner 196.003-T turn green; adds or modifies no *_test.go file.\nharness_owner: 196.003-T\nexempt_verification_command: pwsh -NoProfile -Command '$o = go test -count=1 -v -run \"^TestUSR3_\" ./tests/integration 2\u003e\u00261 | Out-String; if ($LASTEXITCODE -ne 0) { Write-Output $o; Write-Error \"USR3 not green\"; exit 1 }; if ($o -match \"no tests to run|no test files\") { Write-Error \"USR3 vacuous pass\"; exit 1 }; $n = \"TestUSR3_ShipmentReconcileExplicitFeatureMemberContract\"; foreach ($k in @(\"--- PASS: $n \", \"--- PASS: $n/SkillLiterals \", \"--- PASS: $n/ProceedAndShipStep6 \", \"--- PASS: $n/SupersededAndPreserved \")) { if (-not $o.Contains($k)) { Write-Error \"missing $k\"; exit 1 } }; if ($o -match \"--- FAIL:|--- SKIP:\") { Write-Error \"USR3 fail or skip present\"; exit 1 }; Write-Output \"EXEMPT_VERIFY_OK:196.005-T\"; exit 0'\nexempt_precondition: must-fail-before-deliverable\nharness_owner_command: go test -count=1 -v -run '^TestUSR3_' ./tests/integration\n```\n\n\u003c!-- END:harness-exemption-contract --\u003e\n\nWhy this command is a gate: before this deliverable lands, owner 196.003-T's harness is absent (pre-wave-1 the selector matches nothing and the command fails on the vacuous `no tests to run` check; observed at Stage authoring on 2026-10-04, exit 1) or RED (after wave 1 its named assertions fail, so go test exits non-zero). It passes only when `go test -count=1 -v -run \"^TestUSR3_\" ./tests/integration` exits 0, the output is not vacuous, the named top-level line `--- PASS: TestUSR3_ShipmentReconcileExplicitFeatureMemberContract` and every named subtest line (`/SkillLiterals`, `/ProceedAndShipStep6`, `/SupersededAndPreserved`) are present, and no `--- FAIL:` or `--- SKIP:` line appears; only then is `EXEMPT_VERIFY_OK:196.005-T` printed as the last statement. Read-only: runs go test only (P-002.5 screen clean). Owner red evidence is checked by Ship at claim time (Step 4.1a), not here.\n\nClass delta surface (P-002.4 covered-by): .github/skills/shipment-reconcile/SKILL.md and .github/agents/_ship.agent.md only; no `*_test.go` file.\n\nHarness note: no red-deliverable contract; this task is the green maker for 196.003-T (U3, wave 1) and consumes 196.004-T (U4) as lifecycle evidence. If U4 halted with P-021, this task does not start. Task-scoped command: the harness_owner_command above (go test -count=1 -v -run '^TestUSR3_' ./tests/integration), driven to the exempt_verification_command. Drift records for both files are applied by 196.006-T (U6). Known intentional gap: raw backlogit shipment ship completes active explicit tasks; the skill guard is stricter (documented, not changed).\n\u003c!-- END:implementation-notes --\u003e",
+        "labels": [
+          "195s-followup",
+          "docs",
+          "installed-skill-text",
+          "wave-2",
+          "careful",
+          "harness-exempt",
+          "covered-by"
+        ],
+        "dependencies": [
+          {
+            "id": "196.003-T",
+            "type": "blocks"
+          },
+          {
+            "id": "196.004-T",
+            "type": "blocks"
+          }
+        ],
+        "custom_fields": {
+          "scheduler_baseline_claim": "196-S",
+          "source_stash_id": "B83081F5",
+          "source_stash_kind": "bug",
+          "source_stash_path": "stash.jsonl",
+          "source_stash_priority": "high",
+          "source_stash_text": "195-S post-merge closure follow-up: resolve the explicit feature-member status mismatch between shipment-reconcile pre-close and governed ShipShipment. For 195-S, all seven task members are done and archived, but explicit manifest feature 195-F is still active; pre-close expected done and returned RECONCILE_FAIL before any shipment mutation. ShipShipment completes an explicit feature inside the governed transaction, while Ship cannot manually move the feature status. Define a safe, tested lifecycle/reconciliation contract without bypassing the gate. Sources: docs/closure/195-S-claim-start-proof-post-merge-closure.md and .backlogit/reconcile/195-S-pre-20261003T051644Z.md. Requires Stage/Orchestrator triage.\nSTAGE TRIAGE 2026-10-03: reclassified task -\u003e bug (contract defect between the shipment-reconcile skill and governed ShipShipment); priority raised to HIGH. Rationale: Stage always places the covering feature as an explicit manifest member, so every future Ship Step 6 pre-close returns RECONCILE_FAIL and closure needs a cross-role Stage feature move (the 195-S workaround). Grouped with 227A2930 under one covering feature (195-S READY_WITH_CONDITIONS follow-ups)."
+        },
+        "created_at": "2026-10-03T08:05:43.5002713Z",
+        "updated_at": "2026-10-04T19:28:55.927478Z",
+        "level": 2,
+        "hierarchy_path": "196/196.005"
+      },
+      {
+        "id": "196.009-T",
+        "title": "U9: Ship use-time Served-Root Attestation",
+        "status": "queued",
+        "artifact_type": "task",
+        "parent_id": "196-F",
+        "priority": "high",
+        "description": "\n\n\u003c!-- BEGIN:acceptance-criteria --\u003e\n1. 196.008-T (U8) goes GREEN: go test -count=1 -v -run '^TestUSR8_' ./tests/integration passes, and the exempt_verification_command in the implementation notes prints EXEMPT_VERIFY_OK:196.009-T.\n2. The attestation definition paragraph sits in Step 4.1b immediately before '**Raw-log path safety (shared read-only procedure):**'; Step 4.0 item 4 and Step 4.1b item 4 reference it, and in item 4 the attestation precedes the re-read and the CLI fallback.\n3. Only .github/agents/_ship.agent.md changes (Step 4.0 item 4 and Step 4.1b); markdownlint is clean; claim_start_admission_contract_test.go, shipment_155_harness_contract_test.go, U3's test TestUSR3_ShipmentReconcileExplicitFeatureMemberContract (after U5), and U7 (TestUSR7_ServedRootSelfReportCharacterization, go test -count=1 -v -run '^TestUSR7_' ./internal/mcp) stay GREEN.\n\u003c!-- END:acceptance-criteria --\u003e\n\n\u003c!-- BEGIN:description --\u003e\nUnit U9 of 196-F (wave 3; blocks-on U8 196.008-T, U7 196.007-T, and U5 196.005-T; requirement R14). Source stash 227A2930. Added by plan Amendment 1 (operator-directed fix for PR #474 review thread PRRT_kwDORzozKM6olYEw, 2026-10-03T21:07-07:00; Amendment 1 ADVISORY, operator_authorization: approved). Authoritative spec: plan docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md, section '### U9'. The plan unit text is authoritative; use the U8 literals verbatim, including capitalization.\n\nDomain: docs (installed agent text). Posture: test-first (U8), with U7 pinning the surfaces. Safety mode: careful. File: .github/agents/_ship.agent.md (Step 4.0 item 4 and Step 4.1b only; 1 file, 3 localized edits). Runs after U5 so the two _ship.agent.md edits never run in parallel.\n\nChange 1 (Step 4.1b definition): insert a '**Served-Root Attestation (shared read-only procedure):**' paragraph immediately before '**Raw-log path safety (shared read-only procedure):**'. Ship never treats roots or binding evidence passed by the Orchestrator as proof; calls backlogit_get_metadata_catalog (workspace object only: workspace.root_path and workspace.storage_root must equal the canonical served roots) and backlogit_query_sql \"SELECT name, file FROM pragma_database_list WHERE name = 'main'\" (exactly one row whose file is backlogit.db as a direct child of the canonical served storage root); canonical OS-native compare (Windows case-insensitive); MCP-only, so there is no CLI attestation; No sync or retry applies. Timing: full attestation once per wave admission, before any raw item-log read, and immediately before any CLI fallback that passes the served workspace root; plus the pragma_database_list check alone at each task claim, before that task's first raw item-log read. Any error, timeout, unavailable tool, missing, empty, or relative value, row count other than one, or mismatch halts with SERVED_ROOT_ATTESTATION_FAILED: {reason} before any claim, raw item-log read, or CLI fallback (P-005 record, redacted/workspace-relative tokens, Orchestrator follow-up).\n\nChange 2 (Step 4.0 item 4): after 'Require both served roots before wave admission.', run the Served-Root Attestation once per wave admission before any raw item-log read; failure halts SERVED_ROOT_ATTESTATION_FAILED; an unknown root still halts WAVE_CLAIM_STATE_INDETERMINATE.\n\nChange 3 (Step 4.1b item 4): rewrite the opening so the attestation runs right after the MCP error and before the re-read: '4. If the MCP append errors, first run the Served-Root Attestation again. If it fails, halt with `SERVED_ROOT_ATTESTATION_FAILED` and do not use the CLI fallback. Only then Ship re-reads the item log before any CLI fallback.' The rest of item 4 stays verbatim.\n\nConstraints: every phrase pinned by tests/integration/claim_start_admission_contract_test.go stays verbatim; P-002.6 policy text is not edited (policy mirror is follow-up stash CDBCB258).\n\nSize: 1 file, 3 localized edits.\n\u003c!-- END:description --\u003e\n\n\u003c!-- BEGIN:implementation-notes --\u003e\nTest-lifecycle classification: harness-exempt: covered-by (plan Amendment 2 closed exempt set); harness owner 196.008-T (a declared dependency, not itself exempt). harness-architect does not scaffold this task.\n\n\u003c!-- BEGIN:harness-exemption-contract --\u003e\n\n```text\nharness_exemption_class: covered-by\nharness_exemption_reason: Edits only .github/agents/_ship.agent.md Step 4.0 item 4 and Step 4.1b (Served-Root Attestation definition and call sites) so that the DefinitionLiterals and CallSites subtests of predecessor harness owner 196.008-T turn green; adds or modifies no *_test.go file.\nharness_owner: 196.008-T\nexempt_verification_command: pwsh -NoProfile -Command '$o = go test -count=1 -v -run \"^TestUSR8_\" ./tests/integration 2\u003e\u00261 | Out-String; if ($LASTEXITCODE -ne 0) { Write-Output $o; Write-Error \"USR8 not green\"; exit 1 }; if ($o -match \"no tests to run|no test files\") { Write-Error \"USR8 vacuous pass\"; exit 1 }; $n = \"TestUSR8_ShipServedRootAttestationContract\"; foreach ($k in @(\"--- PASS: $n \", \"--- PASS: $n/DefinitionLiterals \", \"--- PASS: $n/CallSites \", \"--- PASS: $n/PreservedInvariants \")) { if (-not $o.Contains($k)) { Write-Error \"missing $k\"; exit 1 } }; if ($o -match \"--- FAIL:|--- SKIP:\") { Write-Error \"USR8 fail or skip present\"; exit 1 }; Write-Output \"EXEMPT_VERIFY_OK:196.009-T\"; exit 0'\nexempt_precondition: must-fail-before-deliverable\nharness_owner_command: go test -count=1 -v -run '^TestUSR8_' ./tests/integration\n```\n\n\u003c!-- END:harness-exemption-contract --\u003e\n\nWhy this command is a gate: before this deliverable lands, owner 196.008-T's harness is absent (pre-wave-1 the selector matches nothing and the command fails on the vacuous `no tests to run` check; observed at Stage authoring on 2026-10-04, exit 1) or RED (after wave 1 its named assertions fail, so go test exits non-zero). It passes only when `go test -count=1 -v -run \"^TestUSR8_\" ./tests/integration` exits 0, the output is not vacuous, the named top-level line `--- PASS: TestUSR8_ShipServedRootAttestationContract` and every named subtest line (`/DefinitionLiterals`, `/CallSites`, `/PreservedInvariants`) are present, and no `--- FAIL:` or `--- SKIP:` line appears; only then is `EXEMPT_VERIFY_OK:196.009-T` printed as the last statement. Read-only: runs go test only (P-002.5 screen clean). Owner red evidence is checked by Ship at claim time (Step 4.1a), not here.\n\nClass delta surface (P-002.4 covered-by): .github/agents/_ship.agent.md only; no `*_test.go` file.\n\nHarness note: no red-deliverable contract; this task is the green maker for 196.008-T (U8, wave 1), closing in wave 3. Test-first gate: U8 must be RED on main before this edit lands, and U7 must be GREEN. Task-scoped command: the harness_owner_command above (go test -count=1 -v -run '^TestUSR8_' ./tests/integration), driven to the exempt_verification_command. Drift record for _ship.agent.md (citing B83081F5 and 227A2930) is applied by 196.006-T (U6). Bootstrap: until this task is merged to main and loaded as Ship's served agent text, Ship applies plan R14 for 196-S from the plan (the Orchestrator's Ship payload cites the plan path and R14). Follow-up out of scope: attestation at Ship backlogit invocations outside Step 4.0 and Step 4.1b, halt mappings, and the P-002.2/P-002.6 policy mirror (stash CDBCB258).\n\u003c!-- END:implementation-notes --\u003e",
+        "labels": [
+          "195s-followup",
+          "docs",
+          "installed-agent-text",
+          "wave-3",
+          "careful",
+          "harness-exempt",
+          "covered-by"
+        ],
+        "dependencies": [
+          {
+            "id": "196.008-T",
+            "type": "blocks"
+          },
+          {
+            "id": "196.007-T",
+            "type": "blocks"
+          },
+          {
+            "id": "196.005-T",
+            "type": "blocks"
+          }
+        ],
+        "references": [
+          "docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md",
+          "docs/decisions/2026-10-03-195s-dispatch-closure-contract-deliberation.md"
+        ],
+        "custom_fields": {
+          "scheduler_baseline_claim": "196-S"
+        },
+        "created_at": "2026-10-04T04:32:53.6403362Z",
+        "updated_at": "2026-10-04T19:29:01.7876202Z",
+        "level": 2,
+        "hierarchy_path": "196/196.009"
+      },
+      {
+        "id": "196.006-T",
+        "title": "U6: Harness-manifest drift records for edited installed artifacts",
+        "status": "queued",
+        "artifact_type": "task",
+        "parent_id": "196-F",
+        "priority": "medium",
+        "description": "\n\n\u003c!-- BEGIN:acceptance-criteria --\u003e\n1. Each of the three checksums equals the SHA-256 of its installed file content with CRLF normalized to LF (the manifest's existing convention, equal to the committed blob under `* text=auto`; verified at staging: the current _orchestrator.agent.md and shipment-reconcile/SKILL.md checksums match LF-normalized content, not CRLF checkout bytes), computed after U2, U5, and U9 land; the recipe output for each file is recorded in this task's completion evidence beside the manifest value (one-time currency check; the harness does not re-hash). Recipe: pwsh -NoProfile -Command '$t = [IO.File]::ReadAllText(\"\u003cpath\u003e\").Replace(\"`r`n\", \"`n\"); [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($t))).ToLower()'.\n2. Each of the three entries has a drift_reason sentence ending 'Do not auto-revert.' and keeps drift_allowed: true: the _orchestrator.agent.md entry cites 227A2930; the shipment-reconcile SKILL.md entry cites B83081F5; the _ship.agent.md entry cites both B83081F5 (U5) and 227A2930 (U9 use-time Served-Root Attestation, plan Amendment 1).\n3. The YAML parses and the diff is limited to the three entries.\n4. Harness (plan Amendment 2): harness-architect scaffolds tests/integration/harness_manifest_196_drift_records_test.go at wave-4 admission with 1 test function named exactly TestUSR6_HarnessManifestDriftRecords and 3 t.Run subtests named exactly OrchestratorAgent, ShipmentReconcileSkill, and ShipAgent. Each parses .autoharness/harness-manifest.yaml (gopkg.in/yaml.v3) and, for the entry selected by exact `path`, asserts: exactly one such entry; drift_allowed is true; checksum is 64 lowercase hex characters and differs from the pinned pre-reconciliation value (_orchestrator.agent.md 00173cb089ea7f6f9f317874d96135b9636b5220ec3641c762c1ebbf304d0e73; shipment-reconcile/SKILL.md 8f15392dd8ba09de6a90bb2cca63c4565444f4e4a5341f47fe4cd70595c824e3; _ship.agent.md fd69f15a7cd3bd0ad76db4fe22cf085fcd65cf4caddd61833aeac68f11f1cd67); drift_reason contains 'Do not auto-revert.' and the AC2 citation token(s) (227A2930; B83081F5; both). The test carries a comment marking the citation and checksum-differs assertions as a stable 196-F contract (a later re-render such as 731CE551 must preserve the citations). It does NOT recompute file hashes (checksum currency is verified once by AC1, not pinned permanently). RED before this task's edit (no entry cites 227A2930 or B83081F5 at staging); GREEN after.\n5. Task-scoped command: go test -count=1 -v -run '^TestUSR6_' ./tests/integration exits 0 with the named top-level and three named subtest `--- PASS:` lines and no `--- FAIL:`/`--- SKIP:` line.\n\u003c!-- END:acceptance-criteria --\u003e\n\n\u003c!-- BEGIN:description --\u003e\nUnit U6 of 196-F (wave 4; blocks-on U2 196.002-T, U5 196.005-T, and U9; requirement R13). Authoritative spec: plan docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md, section '### U6' (Amendment 1 ADVISORY, operator_authorization: approved; PR #474 review thread PRRT_kwDORzozKM6olYEw).\n\nDomain: config. Posture: test-first (harness-required config task; plan Amendment 2), metadata-only delta. File: .autoharness/harness-manifest.yaml. For the _orchestrator.agent.md, shipment-reconcile/SKILL.md, and _ship.agent.md entries: set checksum to the SHA-256 of the installed file content with CRLF normalized to LF (AC1 recipe; never raw CRLF checkout bytes); append a drift_reason sentence citing the stash IDs in AC2 and ending 'Do not auto-revert.'; keep drift_allowed: true. Touch no other entry. Frontmatter model-routing re-render remains 731CE551's job. plugin/ holds no mirror of these three files (checked at staging), so no parity edit.\n\nSize: 1 file, 3 entries.\n\u003c!-- END:description --\u003e\n\n\u003c!-- BEGIN:implementation-notes --\u003e\nTest-lifecycle classification (plan Amendment 2): harness-required, NOT harness-exempt (P-002.4 bars repository configuration from every exempt class). No harness-ready label yet: harness-architect scaffolds TestUSR6_HarnessManifestDriftRecords (AC4) at wave-4 admission, observes red, and applies harness-ready then (precedent 174.076-T / TestU19R3_). Not a red deliverable: the wave that scaffolds it also drives it green. Test unit token SR6 (collision-free; `^TestU6_` exists in other packages). P-002.6 task-scoped command: go test -count=1 -v -run '^TestUSR6_' ./tests/integration. Harness note: config-only metadata task; no red-deliverable contract. Checksum currency verification (AC1): compute the LF-normalized SHA-256 recipe for the three installed files and compare to the manifest; parse the YAML. Must run after U2, U5, and U9 so hashes reflect final text (_ship.agent.md is edited by both U5 and U9). Line-ending risk: hash LF-normalized content (AC1), never raw CRLF checkout bytes.\n\u003c!-- END:implementation-notes --\u003e",
+        "labels": [
+          "195s-followup",
+          "config",
+          "harness-manifest",
+          "wave-4"
+        ],
+        "dependencies": [
+          {
+            "id": "196.005-T",
+            "type": "blocks"
+          },
+          {
+            "id": "196.002-T",
+            "type": "blocks"
+          },
+          {
+            "id": "196.009-T",
+            "type": "blocks"
+          }
+        ],
+        "references": [
+          "docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md",
+          "docs/decisions/2026-10-03-195s-dispatch-closure-contract-deliberation.md"
+        ],
+        "custom_fields": {
+          "scheduler_baseline_claim": "196-S"
+        },
+        "created_at": "2026-10-03T08:06:33.4111022Z",
+        "updated_at": "2026-10-04T19:29:07.4829886Z",
+        "level": 2,
+        "hierarchy_path": "196/196.006"
+      }
+    ]
+  }
+}
