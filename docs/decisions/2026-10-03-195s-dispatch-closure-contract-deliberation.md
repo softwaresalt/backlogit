@@ -119,9 +119,11 @@ this unless the contract changes.
   shows a defect, Ship records a P-021 deferred expansion and returns to Stage instead of
   widening this shipment.
 * A new MCP tool or field that reports served roots (Option P1-B below). This is captured as
-  a possible follow-up, not built now.
+  a possible follow-up, not built now. *Amendment 1: no new surface is needed, because
+  existing read-only surfaces already self-report the served roots. See Amendment 1.*
 * Edits to `_ship.agent.md`. Ship already states the requirement; this work only supplies
-  the missing producer.
+  the missing producer. *Superseded by Amendment 1: Ship-side use-time attestation is now in
+  scope.*
 * The Step 1.5 continuity allowlist (`41FE00A1`), the model-routing re-render (`731CE551`),
   and docs compaction (`359D8F32`).
 * The upstream autoharness templates. Local drift is recorded in the manifest. The upstream
@@ -208,6 +210,8 @@ server's resolved `workspace_root` and `storage_root`. The Orchestrator would co
   * Needs a released binary before agents can rely on it, which lengthens the bootstrap.
   * Still needs the Orchestrator-side validation from P1-A.
 * Effort: medium. Fit: medium.
+* *Amendment 1: the "new public MCP contract" premise was false. The self-report already
+  exists, so a new field is unnecessary.*
 
 #### Option P1-C: Operator supplies roots at each dispatch
 
@@ -294,7 +298,8 @@ Rationale:
 ## Rejected Alternatives
 
 * **P1-B:** deferred as a hardening follow-up (new public MCP contract, release dependency).
-  Not needed to close the condition.
+  Not needed to close the condition. *Amendment 1 adopts the self-report P1-B wanted through
+  existing surfaces, with no new contract.*
 * **P1-C:** incompatible with unattended dispatch.
 * **P2-B:** adds Ship lifecycle authority and a non-transactional window. It duplicates
   ShipShipment.
@@ -306,7 +311,8 @@ Rationale:
 
 * Should P1-B (MCP self-report of served roots) be stashed as a follow-up? Stage recommends
   stashing it only if the content-equality binding proves insufficient in practice. It is not
-  captured now, to avoid speculative backlog.
+  captured now, to avoid speculative backlog. *Resolved by Amendment 1: the PR #474 review
+  showed the content-equality binding was insufficient.*
 * Bootstrap for this shipment: the dispatching Orchestrator must apply the plan's served-root
   procedure (recorded in the plan's Dispatch Preconditions) before the text lands on `main`.
   If the Orchestrator cannot resolve and bind the roots, it halts and asks the operator. It
@@ -316,8 +322,44 @@ Rationale:
 
 | Risk | Mitigation |
 |---|---|
-| The content-equality binding is satisfied by a stale second checkout | Main-worktree requirement, P-016 no parallel worktrees, and comparison of the `id` plus the exact ordered `custom_fields.items` |
+| The content-equality binding is satisfied by a stale second checkout | Main-worktree requirement, P-016 no parallel worktrees, and comparison of the `id` plus the exact ordered `custom_fields.items`. *Amendment 1 replaces content equality with the Served-Root Attestation* |
 | The reconcile change accepts a feature that ShipShipment then fails to archive | The safe-close result envelope must list the feature in `archived_ids`, post-close still requires a valid feature archive, and the Go characterization test pins the behavior |
 | A later tune or re-render (`731CE551`) reverts the local edits | Manifest drift records (`drift_allowed`, `drift_reason`) for both installed files, and `731CE551` is sequenced after this shipment |
 | The CI paths-filter gap for harness-text tests (`B3701713`) hides the RED/GREEN contract tests in CI | Ship runs the governed full suite locally (`go test -timeout=30m ./...`), and the gap stays tracked under `B3701713` |
 | The edit renumbers Step 2 sub-steps and breaks cross-references ("proceed to step 4/5") | The plan requires the handoff as a sub-step of the existing step 5, with no renumbering |
+
+## Amendment 1: Served-Root Attestation (PR #474 review)
+
+* **Trigger:** PR #474 review thread `PRRT_kwDORzozKM6olYEw` on `196.002-T`. The P1-A
+  binding compares content that a workspace copied together with its gitignored `logs`
+  directory can reproduce. The MCP server stays bound to its startup root
+  (`internal/cli/root.go`, `internal/mcp/server.go` `newServer`), and Ship checks path
+  containment but never re-attests the server root. If the stores diverge, MCP writes and raw
+  reads or CLI writes can target different workspaces.
+* **Authorization:** the operator directed "PR 474: Additional Copilot review comments to
+  fix" at 2026-10-03T21:07-07:00, relayed by the Orchestrator as authorization to amend the
+  approved plan and the harvested items.
+* **Finding during the amendment:** the P1-B premise ("new public MCP contract") was false.
+  Two existing read-only surfaces already self-report the served roots:
+  * `backlogit_get_metadata_catalog` returns `workspace.root_path` and
+    `workspace.storage_root`.
+  * `backlogit_query_sql` accepts `SELECT name, file FROM pragma_database_list WHERE name =
+    'main'`, which names the index file the live server connection opened, under the served
+    storage root.
+* **Decision:** P1-A is kept for root resolution. The content-equality binding is replaced
+  by a read-only **Served-Root Attestation** against those two surfaces, run before any raw
+  read:
+  * by the Orchestrator at dispatch (plan U2)
+  * by Ship at use time (plan U8 and U9): at each wave admission, a `pragma_database_list`
+    check at each task claim, and before the Step 4.1b CLI fallback. A failure halts with
+    `SERVED_ROOT_ATTESTATION_FAILED`.
+  * A characterization test (plan U7) pins both surfaces. The static manifest check stays,
+    proving the named shipment is present and consistent in the attested store.
+* **Alternatives rejected for the amendment:**
+  * A freshness nonce written through MCP as a comment and read back raw. It adds a write
+    and log noise to every dispatch and wave admission. The Orchestrator would also need a
+    backlog write it otherwise lacks. It proves the same binding less directly.
+  * A new Go MCP field. Unnecessary, because the self-report already exists.
+* **Scope change:** edits to `_ship.agent.md` are now in scope for the use-time attestation.
+  Direct Ship invocation intake, halt mappings, payload key pinning, and attestation of
+  Ship's other backlogit invocations stay in follow-up stash `CDBCB258`.

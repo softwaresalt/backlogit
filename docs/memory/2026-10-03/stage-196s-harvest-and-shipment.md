@@ -81,3 +81,32 @@ No shipment exists for these entries yet, so no edge was created.
 
 The Orchestrator publishes the Stage commits through its Step 1.5 staging PR. After that
 merges, `196-S` is ready for Ship under the bootstrap dispatch precondition.
+
+## Amendment 1 (PR #474 review, 2026-10-03T21:07-07:00 operator directive)
+
+* **Trigger:** Copilot thread `PRRT_kwDORzozKM6olYEw` on `196.002-T`. The served-root
+  binding compared copyable content, so it could not tell a copied workspace from the store
+  the MCP server is bound to. Ship never re-attested the MCP root.
+* **Authorization:** the operator directed "PR 474: Additional Copilot review comments to
+  fix", relayed by the Orchestrator as authorization to amend the approved plan and the
+  harvested items.
+* **Design:** a read-only Served-Root Attestation against existing MCP self-report surfaces:
+  `backlogit_get_metadata_catalog` (`workspace.root_path`, `workspace.storage_root`) and
+  `backlogit_query_sql` `pragma_database_list`. It runs at dispatch (U2) and at Ship use
+  time (U9), and halts with `SERVED_ROOT_ATTESTATION_FAILED`. It needs no write, no Go
+  change, and no new MCP surface. The nonce comment-write design and the new Go field were
+  rejected. The Orchestrator brief's premise that no MCP tool reports the root was wrong.
+* **Review:** a focused delta review by two personas (Security Lens, Agent-Native Parity)
+  returned ADVISORY: 0 P0, 0 P1, 6 P2, 5 P3, all applied to the plan body. The plan's final
+  `## Plan Review` section records `operator_authorization: approved` with provenance.
+* **Backlog changes:**
+  * New tasks: `196.007-T` (U7, wave 1), `196.008-T` (U8, RED, wave 1), and `196.009-T`
+    (U9, wave 3).
+  * New `blocks` edges: `196.002-T` on `196.007-T`; `196.009-T` on `196.008-T`,
+    `196.007-T`, and `196.005-T`; `196.006-T` on `196.009-T`.
+  * Updated `196-F`, `196.001-T`, `196.002-T`, and `196.006-T` (now wave 4).
+  * `196-S` now has 10 items, reordered parent-first and by dependency.
+  * Stash `CDBCB258` was rescoped.
+* **Deferred residuals (`CDBCB258`):** direct-Ship intake; halt mappings for both tokens;
+  the P-002.2 and P-002.6 mirror; payload key pinning; and attestation of Ship backlogit
+  invocations outside Step 4.0 and Step 4.1b.
