@@ -376,10 +376,14 @@ artifacts:
     primitive: 3
     template: "templates/agents/prompt-builder.agent.md.tmpl"
     checksum: "a40c99610057ccfa299857fc0f15d64240591b35936af452575a592767351cd1"
+    drift_allowed: true
+    drift_reason: "Operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so this subagent's tools line adds backlogit/* to the template's vscode, execute, read, edit, search. Do not auto-revert or narrow to an explicit backlogit operation allowlist."
   - path: ".github/agents/subagents/go-engineer.agent.md"
     primitive: 6
     template: "templates/agents/language-engineer.agent.md.tmpl"
     checksum: "0a73db2c8dc5b3e5db85e5d4a05556907e767a8b4a93209be47dcd4098740efd"
+    drift_allowed: true
+    drift_reason: "Operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so this subagent's tools line adds backlogit/* to the template's vscode, execute, read, edit, search. Do not auto-revert or narrow to an explicit backlogit operation allowlist."
   - path: ".github/agents/research/learnings-researcher.agent.md"
     primitive: 1
     template: "templates/agents/research/learnings-researcher.agent.md.tmpl"
@@ -401,7 +405,7 @@ artifacts:
     template: "templates/agents/_ship.agent.md.tmpl"
     checksum: "fd69f15a7cd3bd0ad76db4fe22cf085fcd65cf4caddd61833aeac68f11f1cd67"
     drift_allowed: true
-    drift_reason: "Deliberate Ship drift: preserve the explicit scalar, no-wildcard governed tools allowlist with memory, every explicit backlogit operation, the block/unblock/MCP-only normalization lifecycle trio, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not replace the allowlist with backlogit/* or vscode/memory, and do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix."
+    drift_reason: "Deliberate Ship drift: preserve the scalar tools string with vscode/memory, the full backlogit/* MCP tool surface (operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so do not narrow it back to an explicit backlogit operation allowlist), engram/*, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix."
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"

@@ -34,15 +34,17 @@ func TestShipment155HarnessContractsUseFlatMembershipAndGovernedRecovery(t *test
 		filepath.Join(repoRoot, ".github", "agents", "_ship.agent.md"))
 	shipTools, ok := shipFrontmatter["tools"].(string)
 	require.True(t, ok, "Ship tools frontmatter must be a string")
-	require.NotContains(t, shipTools, "backlogit/*")
-
-	for _, operation := range []string{
-		"backlogit_block_shipment",
-		"backlogit_unblock_shipment",
-		"backlogit_normalize_blocked_shipment",
-	} {
-		require.Contains(t, shipTools, operation,
-			"Ship must declare governed shipment lifecycle operation %s", operation)
+	shipToolList := strings.Split(shipTools, ",")
+	for i := range shipToolList {
+		shipToolList[i] = strings.TrimSpace(shipToolList[i])
+	}
+	// The backlogit workspace dogfoods its own MCP server, so Ship is granted
+	// the full backlogit tool surface rather than a hand-maintained allowlist.
+	require.Contains(t, shipToolList, "backlogit/*",
+		"Ship must be granted the full backlogit MCP tool surface")
+	for _, tool := range shipToolList {
+		require.False(t, strings.HasPrefix(tool, "backlogit/backlogit_"),
+			"Ship must not narrow the backlogit wildcard with explicit tool %s", tool)
 	}
 
 	require.Contains(t, skillText, "Shipment membership is flat and explicit.")
@@ -63,4 +65,35 @@ func TestShipment155HarnessContractsUseFlatMembershipAndGovernedRecovery(t *test
 	require.Contains(t, orchestratorText, "MCP-only")
 	require.NotContains(t, orchestratorText, "there is no shipment `blocked` lifecycle")
 	require.Contains(t, orchestratorText, "no CLI fallback")
+}
+
+// TestWorkspaceAgentsGrantFullBacklogitToolSurface guards the 2026-10-04
+// operator directive: agents that mutate or dogfood this workspace receive
+// every backlogit MCP operation through the backlogit/* wildcard.
+func TestWorkspaceAgentsGrantFullBacklogitToolSurface(t *testing.T) {
+	repoRoot := testRepoRoot(t)
+	agents := []string{
+		".github/agents/_orchestrator.agent.md",
+		".github/agents/_stage.agent.md",
+		".github/agents/_ship.agent.md",
+		".github/agents/subagents/go-engineer.agent.md",
+		".github/agents/subagents/prompt-builder.agent.md",
+	}
+	for _, agent := range agents {
+		t.Run(agent, func(t *testing.T) {
+			frontmatter := parseFrontmatterDoc(t, filepath.Join(repoRoot, filepath.FromSlash(agent)))
+			tools, ok := frontmatter["tools"].(string)
+			require.True(t, ok, "tools frontmatter must be a scalar string")
+			toolList := strings.Split(tools, ",")
+			for i := range toolList {
+				toolList[i] = strings.TrimSpace(toolList[i])
+			}
+			require.Contains(t, toolList, "backlogit/*",
+				"agent must be granted the full backlogit MCP tool surface")
+			for _, tool := range toolList {
+				require.False(t, strings.HasPrefix(tool, "backlogit/backlogit_"),
+					"agent must not narrow the backlogit wildcard with explicit tool %s", tool)
+			}
+		})
+	}
 }
