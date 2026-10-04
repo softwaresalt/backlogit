@@ -819,7 +819,8 @@ validation. There is no destructive or data-migrating action.
 2. Root resolution and attestation are read-only, except for at most one index sync, which
    reconciles derived state only, and the R8 outcome record in `docs/memory/`. They write no
    checkpoint and no backlog item log.
-3. Shipment membership is flat and explicit. Only explicit task members are considered.
+3. Shipment membership is flat and explicit. Only explicit members (the explicit feature
+   member and explicit task members) are considered. Children are never inferred.
 4. Only governed ShipShipment completes or archives an explicit feature member.
 5. Post-close requires a valid archive record for every explicit member.
 6. No production Go change.

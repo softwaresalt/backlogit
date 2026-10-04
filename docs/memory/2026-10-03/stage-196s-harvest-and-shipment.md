@@ -60,6 +60,10 @@ and is the continuation of `stage-195s-followup-dispatch-closure-staging.md`.
   R1–R8 only after it records explicit operator authorization. A P-017 bounded dark-mode
   scope that names `196-S` counts as authorization. Otherwise it halts with
   `SERVED_ROOTS_UNRESOLVED`.
+* **Ship use-time attestation (Amendment 1).** Until U9 is merged to `main` and loaded as
+  Ship's served agent text, Ship applies plan R14 throughout `196-S` under the same
+  authorization. The Orchestrator's Ship payload must cite the plan path and R14. A failure
+  halts with `SERVED_ROOT_ATTESTATION_FAILED`.
 * **Closure.** Before pre-close, Ship confirms three things: the merge commit is local,
   `SKILL.md` contains `feature-pending-governed-completion`, and the binary that runs
   ShipShipment descends from `47dfcc93`. Otherwise Ship halts with

@@ -104,8 +104,9 @@ this unless the contract changes.
 * The Orchestrator resolves both roots read-only, validates them, binds them to the backlogit
   MCP server that serves the shipment, and passes them to Ship together with the
   `shipment_id`. Any failure halts dispatch with a named token and never invokes Ship.
-* Pre-close accepts an explicit feature member in `active` (or `done`) state when every
-  explicit task member is `matched` or `pre-archived`. Every other feature state still halts.
+* Pre-close accepts an explicit feature member in `active` state when at least one explicit
+  task member exists and every explicit task member is `matched` or `pre-archived`. A `done`
+  feature stays `matched`. Every other feature state still halts.
   Safe-close and post-close keep governed closure as the only path, and post-close still
   requires a valid archive record for the feature.
 * Both contracts are pinned by tests that fail before the text changes.
@@ -225,8 +226,9 @@ server's resolved `workspace_root` and `storage_root`. The Orchestrator would co
 The pre-close classification rules change as follows:
 
 * An explicit **feature** member whose queue record is `active` is classified
-  `feature-pending-governed-completion`. That classification is accepted only when every
-  explicit **task** member is `matched` or `pre-archived`.
+  `feature-pending-governed-completion`. That classification is accepted only when at
+  least one explicit **task** member exists and every explicit **task** member is
+  `matched` or `pre-archived`. A manifest with no explicit task member does not qualify.
 * A feature that is `done` remains `matched`. A feature that is pre-archived remains
   `pre-archived`.
 * Any other feature status (`queued`, `blocked`, `review`, and so on) remains
@@ -244,8 +246,8 @@ explicit feature whose explicit tasks are already done and archived (the 195-S s
   * Aligns the skill with the governed Go lifecycle.
   * No new authority for Ship.
   * The gate stays closed for every state ShipShipment does not handle.
-  * Membership stays flat and explicit, because the condition uses only explicit task
-    members.
+  * Membership stays flat and explicit, because the classification reads only explicit
+    members (the explicit feature and the explicit tasks) and never infers children.
 * Cons: adds one classification row and touches pre-close plus safe-close text.
 * Effort: low. Fit: high.
 
