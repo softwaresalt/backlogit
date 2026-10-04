@@ -38,7 +38,9 @@ autonomy within scope; it did not waive role boundaries.
 * Why: the `195-S` conditions include `227A2930` and `B83081F5`, which only `196-S`
   discharges, so a `blocks` edge cannot clear until `196-S` itself ships.
 * `195-S` obligations: `227A2930` and `B83081F5` are discharged by `196-S`; `359D8F32`
-  remains separately open and is not covered by `196-S`.
+  remains separately open and is not covered by `196-S`. It is non-gating: P-020 treats
+  incomplete compaction as non-blocking `degraded`, so leaving it open is a recorded P-017
+  dark-mode Orchestrator decision under the `196-S` scope.
 * Mutations: the edge was removed (dependency list empty), label `dag-root` and a
   non-gating `related_to` link `196-S` → `195-S` were added.
 * The `196-S` body paragraph and Ship post-merge closure note were edited directly in
