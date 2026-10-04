@@ -4,10 +4,10 @@
 
 - Shipment: `196-S`, P-017 dark-mode scope; no other shipment is in scope.
 - Branch: `feat/196-s-195-s-follow-up-orchestrator-served-root-handoff-and-explicit-feature-reconcile-contract`
-- Current HEAD: `b34ae1c9`.
 - HEAD before wave-1 harness commit: `42fd2167`.
 - Harness scaffold commit: `413dff42` (`test(harness): scaffold 196-S wave 1 red contracts`).
 - Traceability commit: `b34ae1c9` (`chore(harness): link 196-S wave-1 harness evidence`).
+- The live session HEAD is the latest commit on this feature branch; re-read it when resuming.
 - Served workspace root: `C:\Source\GitHub\backlogit`.
 - Served storage root: `C:\Source\GitHub\backlogit\.backlogit`.
 - R14 use-time attestation passed at wave admission: MCP metadata catalog roots matched the supplied roots; `pragma_database_list` returned exactly one `main` row pointing to `.backlogit\backlogit.db`. Shipment `196-S` was the sole active shipment, and two live shipment reads agreed on the explicit manifest.
