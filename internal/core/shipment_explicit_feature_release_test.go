@@ -71,56 +71,74 @@ func TestUSR4_ShipShipmentActiveExplicitFeatureWithPreArchivedTasksIsReleased(t 
 		}
 	}
 
-	t.Run("CompletionAndArchival", func(t *testing.T) {
-		fixture := prepareFixture(t)
+	tests := []struct {
+		name string
+		run  func(*testing.T, releaseFixture)
+	}{
+		{
+			name: "CompletionAndArchival",
+			run: func(t *testing.T, fixture releaseFixture) {
+				result, err := ShipShipment(fixture.ctx, fixture.ws, fixture.shipment.ID, nil)
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				assert.Contains(t, result.ArchivedIDs, fixture.feature.ID)
+				assert.Contains(t, result.ArchivedIDs, fixture.shipment.ID)
+				assert.NotContains(t, result.ArchivedIDs, fixture.taskOne.ID)
+				assert.NotContains(t, result.ArchivedIDs, fixture.taskTwo.ID)
 
-		result, err := ShipShipment(fixture.ctx, fixture.ws, fixture.shipment.ID, nil)
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Contains(t, result.ArchivedIDs, fixture.feature.ID)
-		assert.Contains(t, result.ArchivedIDs, fixture.shipment.ID)
-		assert.NotContains(t, result.ArchivedIDs, fixture.taskOne.ID)
-		assert.NotContains(t, result.ArchivedIDs, fixture.taskTwo.ID)
+				archivedShipment, err := findArtifact(fixture.ctx, fixture.ws, fixture.shipment.ID)
+				require.NoError(t, err)
+				assert.Equal(t, models.StatusArchived, archivedShipment.Status)
+				assert.Equal(t, string(ShipmentShipped), archivedShipment.ArchivedStatus)
 
-		archivedFeature, err := loadArtifact(fixture.ctx, fixture.ws, fixture.feature.ID)
-		require.NoError(t, err)
-		assert.Equal(t, models.StatusArchived, archivedFeature.Status)
-		archivedFeatureFile, err := findArtifact(fixture.ctx, fixture.ws, fixture.feature.ID)
-		require.NoError(t, err)
-		assert.Equal(t, string(models.StatusDone), archivedFeatureFile.ArchivedStatus)
+				archivedFeature, err := loadArtifact(fixture.ctx, fixture.ws, fixture.feature.ID)
+				require.NoError(t, err)
+				assert.Equal(t, models.StatusArchived, archivedFeature.Status)
+				archivedFeatureFile, err := findArtifact(fixture.ctx, fixture.ws, fixture.feature.ID)
+				require.NoError(t, err)
+				assert.Equal(t, string(models.StatusDone), archivedFeatureFile.ArchivedStatus)
 
-		for _, taskID := range []string{fixture.taskOne.ID, fixture.taskTwo.ID} {
-			archivedTask, err := findArtifact(fixture.ctx, fixture.ws, taskID)
-			require.NoError(t, err)
-			assert.Equal(t, models.StatusArchived, archivedTask.Status)
-			assert.Equal(t, string(models.StatusDone), archivedTask.ArchivedStatus)
-		}
-	})
+				for _, taskID := range []string{fixture.taskOne.ID, fixture.taskTwo.ID} {
+					archivedTask, err := findArtifact(fixture.ctx, fixture.ws, taskID)
+					require.NoError(t, err)
+					assert.Equal(t, models.StatusArchived, archivedTask.Status)
+					assert.Equal(t, string(models.StatusDone), archivedTask.ArchivedStatus)
+				}
+			},
+		},
+		{
+			name: "GovernedStatusTransition",
+			run: func(t *testing.T, fixture releaseFixture) {
+				_, err := ShipShipment(fixture.ctx, fixture.ws, fixture.shipment.ID, nil)
+				require.NoError(t, err)
 
-	t.Run("GovernedStatusTransition", func(t *testing.T) {
-		fixture := prepareFixture(t)
+				featureEvents, err := events.ReadAllEvents(fixture.ctx, WorkspaceLogsRoot(fixture.ws.RootPath), fixture.feature.ID)
+				require.NoError(t, err)
 
-		_, err := ShipShipment(fixture.ctx, fixture.ws, fixture.shipment.ID, nil)
-		require.NoError(t, err)
+				var releaseEvent *events.Event
+				for i := range featureEvents {
+					event := &featureEvents[i]
+					if event.EventType != "status_changed" {
+						continue
+					}
+					reason, ok := event.Delta["reason"].(string)
+					if ok && (reason == "shipment released" || reason == "feature released") {
+						releaseEvent = event
+						break
+					}
+				}
 
-		featureEvents, err := events.ReadAllEvents(fixture.ctx, WorkspaceLogsRoot(fixture.ws.RootPath), fixture.feature.ID)
-		require.NoError(t, err)
+				require.NotNil(t, releaseEvent, "feature release status event must be durable")
+				assert.Equal(t, string(models.StatusDone), releaseEvent.Delta["to"])
+				assert.Contains(t, []string{"shipment released", "feature released"}, releaseEvent.Delta["reason"])
+			},
+		},
+	}
 
-		var releaseEvent *events.Event
-		for i := range featureEvents {
-			event := &featureEvents[i]
-			if event.EventType != "status_changed" {
-				continue
-			}
-			reason, ok := event.Delta["reason"].(string)
-			if ok && (reason == "shipment released" || reason == "feature released") {
-				releaseEvent = event
-				break
-			}
-		}
-
-		require.NotNil(t, releaseEvent, "feature release status event must be durable")
-		assert.Equal(t, string(models.StatusDone), releaseEvent.Delta["to"])
-		assert.Contains(t, []string{"shipment released", "feature released"}, releaseEvent.Delta["reason"])
-	})
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := prepareFixture(t)
+			test.run(t, fixture)
+		})
+	}
 }
