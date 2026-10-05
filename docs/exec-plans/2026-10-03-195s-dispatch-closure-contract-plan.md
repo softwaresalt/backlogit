@@ -11,9 +11,15 @@ title: 'Implementation Plan: 195-S follow-up Orchestrator served-root handoff an
 
 ## Objective
 
-Close the two 195-S `READY_WITH_CONDITIONS` conditions that block the next autonomous
-pipeline cycle, without adding lifecycle authority, production Go changes, or a new MCP
-surface:
+Discharge the two 195-S `READY_WITH_CONDITIONS` follow-up conditions (`227A2930` and
+`B83081F5`), without adding lifecycle authority, production Go changes, or a new MCP
+surface. The only exception is the one-time, operator-ruled lifecycle exception that
+Amendment 3 (A3.4, Option A) may use; it adds no standing authority. P-001 does not block
+this shipment (Amendment 3): the operator ratified it as resolved on evidence. The 195-S
+closure PR #472 merged at 2026-10-03T06:46:16Z, and its merge commit
+`1ccecd946de3577c31f4018166d1ea05a7faf848` is an ancestor of the 196-S branch. The
+closure's `compaction_status: degraded` is non-blocking under P-020, and its "closure PR
+readiness open" text is stale. The conditions are:
 
 1. **Served-root handoff (`227A2930`).** Every Orchestrator invocation of the Ship subagent
    first runs one named, read-only procedure:
@@ -176,6 +182,8 @@ Out of scope:
 
 ### U1: Orchestrator served-root handoff contract test (RED)
 
+Amended by Amendment 3 (A3.2.1, A3.3, A3.5); Amendment 3 text governs.
+
 * **Domain:** tests. **Posture:** test-first. RED is the expected deliverable before U2.
 * **File:** `tests/integration/orchestrator_served_root_handoff_contract_test.go` (new).
   * Package `integration_test`, no build tag.
@@ -242,6 +250,8 @@ Out of scope:
 * **Size:** 1 file, 1 test function with closures, 3 scenarios.
 
 ### U2: Orchestrator Served-Root Handoff Procedure and call sites
+
+Amended by Amendment 3 (A3.2.1 green wording); Amendment 3 text governs.
 
 * **Domain:** docs (installed agent text). **Posture:** test-first (U1), with U7 pinning the
   self-report surfaces the attestation relies on. Safety mode: careful.
@@ -337,6 +347,8 @@ Out of scope:
 
 ### U3: shipment-reconcile explicit-feature contract test (RED)
 
+Amended by Amendment 3 (A3.2.2, A3.3, A3.5); Amendment 3 text governs.
+
 * **Domain:** tests. **Posture:** test-first. RED is the expected deliverable before U5.
 * **File:** `tests/integration/shipment_reconcile_feature_member_contract_test.go` (new).
   Same package, helper, and testify conventions as U1.
@@ -414,6 +426,8 @@ Out of scope:
 * **Size:** 1 file, 1 test function, 2 scenarios.
 
 ### U5: shipment-reconcile contract text and Ship Step 6 wording
+
+Amended by Amendment 3 (A3.2.2 Safe-Close step 2 text); Amendment 3 text governs.
 
 * **Domain:** docs (installed skill and agent text). **Posture:** test-first (U3), with U4 as
   lifecycle evidence. Safety mode: careful.
@@ -515,6 +529,8 @@ Added by Amendment 1.
 
 ### U8: Ship served-root attestation contract test (RED)
 
+Amended by Amendment 3 (A3.2.3, A3.3, A3.5); Amendment 3 text governs.
+
 Added by Amendment 1.
 
 * **Domain:** tests. **Posture:** test-first. RED is the expected deliverable before U9.
@@ -562,6 +578,8 @@ Added by Amendment 1.
 * **Size:** 1 file, 1 test function with closures, 3 scenarios.
 
 ### U9: Ship use-time Served-Root Attestation
+
+Amended by Amendment 3 (A3.2.3 green wording); Amendment 3 text governs.
 
 Added by Amendment 1.
 
@@ -1415,3 +1433,777 @@ operator_authorization: approved
   operator, and halt only if a step was unsafe.
 * **Scope:** this authorizes Amendment 2 and its ADVISORY outcome for 196-S only. It does not
   unblock the shipment, change any task status, or authorize any other release unit.
+
+## Amendment 3: Owner-Harness Completion for U8 Review Findings (reopen route)
+
+**Trigger.** Ship's report-only U8 review returned twelve findings, `U8-R01` through
+`U8-R12` (`docs/scratch/2026-10-05-196-S-u8-review-findings.md`). Ship halted on P-001
+(`docs/memory/2026-10-05/ship-196-S-u8-p001-review-halt.md`), and the Orchestrator halted
+at the checkpoint gate
+(`docs/memory/2026-10-05/orchestrator-196-S-dark-mode-halted-checkpoint-gate.md`).
+
+**Authority.** The operator's binding decisions of 2026-10-04T23:32-07:00, under P-017
+dark mode (`scope=[196-S]`, `merge_approval_pre_authorized=true`,
+`admin_fallback_pre_authorized=false`):
+
+1. `checkpoint-20261005-052350.json` is selected and confirmed for the Ship resume. Ship
+   restores it; Stage does not.
+2. Amendment 3 takes the "reopen route". The new assertions go into the OWNER harness of
+   each finding: R06 into U1 (196.001-T), R08 into U3 (196.003-T), and R04 and R07 into
+   U8 (196.008-T). U1 and U3 are reopened through a governed transition, and U8 returns
+   to harness-architect. Fresh red baselines are captured before the green tasks 002,
+   005, and 009 run. Shipment membership `M` is unchanged: no new tasks and no P-002.6
+   re-freeze.
+3. P-001 is ratified as resolved on evidence (see the Objective). `U8-R01` is resolved.
+4. The P-021 C2 deferral records are fixed (see the per-finding table).
+
+No governed operation can reopen a `done` task (A3.4). Decision 2's "via governed
+transition" therefore cannot be met as written, and Phase 2 (A3.5) is gated on an
+operator ruling. Everything else in decision 2 proceeds.
+
+**Precedence.** Where Amendment 3 conflicts with the text of U1, U2, U3, U5, U8, or U9,
+Amendment 3 governs. For 196.001-T, 196.003-T, and 196.008-T only, it also governs the
+timing and provenance of `red_baseline_sha`: Ship Step 4.1a item 5 and build-feature's
+"captured before this task was claimed" rule are replaced by A3.3 item 4, and Ship's
+dispatch payload states that the baseline is supplied under A3.3 item 4. Ship passes sections A3.1 through A3.6 to harness-architect and to
+build-feature together with the unit text.
+
+**What does not change:**
+
+* requirements R1–R15, the dependency graph, and shipment membership `M`
+* the Step 3 red-deliverable mapping: every task's `red_selector_command`,
+  `green_maker_tasks`, and `green_maker_closes_wave`
+* every `covered-by` command of 196.002-T, 196.005-T, and 196.009-T
+* every test function name, subtest name, and each harness's red/pass profile:
+  * U1: `ProcedureLiterals` and `CallSites` RED; `CrossReferenceInvariant` PASS
+  * U3: all three subtests RED
+  * U8: `DefinitionLiterals` and `CallSites` RED; `PreservedInvariants` PASS
+* AC3 of 196.001-T, 196.003-T, and 196.008-T ("Exactly 1 new file, 1 test function,
+  3 t.Run scenarios"). Every addition goes inside an existing subtest.
+
+Only the wave partition changes, and only under ruling A: the reopened tasks form their own
+wave, and the effective closing waves shift by one as an accepted, recorded drift (A3.5).
+
+### A3.1 Per-finding P-021 C1 disposition
+
+| Finding | C1 result | Disposition |
+|---|---|---|
+| U8-R01 | Resolved | P-001 ratified on evidence: PR #472 merged, `1ccecd94` is an ancestor of HEAD |
+| U8-R02 | N/A | Stage recovery-metadata correction under decision 1 (A3.6) |
+| U8-R03 | Out-of-scope | Deferred to stash `CDBCB258`, normalized to C2 under decision 4 |
+| U8-R04 | Same-surface | Fixed per C3 in the U8 harness (A3.2.3) |
+| U8-R05 | Out-of-scope | Deferred to new C2 stash `F6F3AA0E` (requires deliberation) |
+| U8-R06 | Same-surface | Fixed per C3 in the U1 harness (A3.2.1); green text bound in U2 |
+| U8-R07 | Same-surface | Fixed per C3 in the U8 harness (A3.2.3); green text bound in U9 |
+| U8-R08 | Same-surface | Fixed per C3 in the U3 harness (A3.2.2); green text bound in U5 |
+| U8-R09 | Out-of-scope | Deferred to new C2 stash `147BD825` (requires deliberation) |
+| U8-R10 | Out-of-scope | Deferred to stash `CDBCB258`, normalized to C2 under decision 4 |
+| U8-R11 | Covered | Dropped: already pinned by `TestUCS1_ClaimStartContract` |
+| U8-R12 | Out-of-scope | Already deferred to compliant C2 stash `3B25D37F` |
+
+**C1 reasoning, same-surface (R04, R06, R07, R08).** Each finding strengthens a contract
+this shipment already authorizes, on the same owner harness, against text that this
+shipment's green tasks already write:
+
+* R06: the 227A2930 handoff contract (U1 and U2)
+* R08: the B83081F5 safe-close rule (U3 and U5)
+* R04 and R07: the U8 and U9 use-time attestation contract
+
+The C3 symmetric guard applies. The pins are added only where the green text is already in
+scope, and every literal they require is bound verbatim to a green unit below. No new
+surface, file, task, or production code is added.
+
+**C1 reasoning, out-of-scope (R03, R05, R09, R10):**
+
+* **R03 and R10.** These edit Ship steps outside Step 4.0 item 4 and Step 4.1b, Ship's
+  direct-invocation intake contract, and policy text. 196-F excludes all of these (Risks;
+  Amendment 1 boundary). Interim limitation: route direct Ship requests through the
+  Orchestrator. 196-S claims no end-to-end served-root parity.
+* **R05.** The control-record status assertion is not a U4 acceptance criterion.
+  Removing or re-authorizing it is a design decision about a `done` task's deliverable,
+  not a same-surface fix.
+* **R09.** Formalizing the read-only gate or adding an MCP tool is production Go or a new
+  surface. Residual risk: if the gate is tightened later, Ship's attestation fails closed
+  with `SERVED_ROOT_ATTESTATION_FAILED`; it does not fail open.
+
+**C2 deferral records:**
+
+* `CDBCB258` was edited in place with `backlogit_stash_edit` rather than superseded.
+  Stage's anti-duplication rule reconciles into the earliest-captured entry, so a
+  replacement entry would be a duplicate. Decision 4 allowed either route; Stage chose
+  this one and flags it for the operator. The entry now carries:
+  * the `DEFERRED SCOPE EXPANSION` first line
+  * the C1 rationale for R03 and R10
+  * per-field source refs: PR and review-thread `N/A` (pre-PR local review), tasks
+    196.009-T and 196.002-T, feature 196-F, shipment 196-S
+  * `requires deliberation: yes`
+  * its original scope text, preserved
+  * the Step 4.0 items 1–3 ordering residual (A3.6)
+* `F6F3AA0E` (R05) and `147BD825` (R09) are new compliant C2 entries with
+  `requires deliberation: yes`. The duplicate scan of all 109 stash entries was clean:
+  only the distinct `69B0B3F0` (lifecycle state machine) and `6BF65C9D` (exempt-task
+  re-entry) touch nearby topics.
+* `3B25D37F` (R12) is verified compliant: all six C2 fields are present. Its
+  `requires deliberation: no` does not bypass C6, because Stage's precedence rule forces
+  deliberation for every `DEFERRED SCOPE EXPANSION` entry.
+* **R11 is covered.** `tests/integration/claim_start_admission_contract_test.go`
+  lines 80–86 (`rawLogPathSafetyContract` in `TestUCS1_ClaimStartContract`) already pin
+  the raw-log path-safety requirements. The U9 constraint keeps them verbatim.
+
+### A3.2 Assertion specifications (owner harnesses; additive only)
+
+Rules for every addition:
+
+* It is appended at the end of the named existing subtest closure, after its last
+  statement. No existing line is changed or deleted.
+* It uses the file's existing local helpers (`sliceBetweenUniqueAnchors`,
+  `assertContainsAll`) and the existing normalized-text variables.
+* New local variables use only the names given below. They must not reuse or shadow an
+  existing variable. `ok` is reused only through `name, ok :=` with a new `name`.
+* Every Go string literal and every assertion message sits on a single source line.
+* Literals in fenced blocks are copied byte-for-byte into Go double-quoted strings.
+* A new slice guard uses `require.True` with the unique message given. Guards pass at the
+  current HEAD and are not part of the expected red. `require` is used only for slice
+  guards. Every order check is `assert.True(t, <condition>, "<order message>")`, and the
+  U3 negative check is `assert.NotContains(t, closeReady, "<literal>", "<message>")`.
+* The harness compares whitespace-normalized text, so green wording may wrap across
+  lines in the Markdown as long as each literal's words stay in order.
+* `assertContainsAll` prints `<surface> is missing <kind> contract literals`. Red evidence
+  is matched on that full string, or on the full order message, never on the surface name
+  alone. Each full red string is unique in its file's output; none contains another.
+* Line endings stay as committed, and `gofmt -l <file>` prints nothing.
+
+#### A3.2.1 U1 (196.001-T), `TestUSR1_OrchestratorServedRootHandoffContract`, subtest `CallSites`
+
+Declare one local variable that holds the shared payload literal:
+
+```go
+payload := "only after the Served-Root Handoff Procedure passes, with `served_workspace_root`, `served_storage_root`, and the binding evidence in the Ship invocation payload"
+```
+
+1. **Item-5 payload (R06).**
+   * Slice and guard (message `Step 2 item 5 must have unique start and end anchors`),
+     then assert the payload (surface name `Step 2 item 5 Ship payload`) and its order
+     (message `item 5 must run the procedure before invoking Ship with the payload`):
+
+     ```go
+     item5, ok := sliceBetweenUniqueAnchors(step2, "5. Invoke the **Ship** subagent:", "6. Receive Ship's output:")
+     item5Run := strings.Index(item5, "Run the Served-Root Handoff Procedure")
+     item5Payload := strings.Index(item5, payload)
+     ```
+
+   * The order assertion is `item5Run >= 0 && item5Payload > item5Run`.
+2. **Binding evidence (R06).** `assertContainsAll` on `step2` with the literal below and
+   surface name `Step 2 binding evidence`.
+
+   ```text
+   Include the binding evidence: `id`, ordered items, and the attested `workspace.root_path`, `workspace.storage_root`, and index `file`
+   ```
+
+3. **Recovery route (R06).** `assertContainsAll` on the existing `recovery` slice with
+   `payload` plus the three literals below, surface name `Ship recovery payload`.
+
+   ```text
+   Use the checkpoint summary's shipment ID only
+   do not read the state dump
+   If the summary names no shipment, halt to the operator
+   ```
+
+4. **Blocked route (R06).** `assertContainsAll(t, blockedRoute, []string{payload},
+   "blocked-shipment payload")`.
+
+* **Expected red at the current HEAD** (each full string appears in `-v` output):
+  * `Step 2 item 5 Ship payload is missing handoff contract literals`
+  * `item 5 must run the procedure before invoking Ship with the payload`
+  * `Step 2 binding evidence is missing handoff contract literals`
+  * `Ship recovery payload is missing handoff contract literals`
+  * `blocked-shipment payload is missing handoff contract literals`
+
+  Stage verified that `payload` and "checkpoint summary's shipment ID" each have count 0 in
+  `_orchestrator.agent.md`, and both item-5 anchors have count 1.
+* **Green (196.002-T).** U2's Change 1 item f already contains literal 2 verbatim.
+  Amendment 3 binds this Change 2–4 wording verbatim:
+  * **Change 2.** Bullet 1 under item 5 reads: "Run the Served-Root Handoff Procedure.
+    Invoke Ship only after the Served-Root Handoff Procedure passes, with
+    `served_workspace_root`, `served_storage_root`, and the binding evidence in the Ship
+    invocation payload; otherwise halt with `SERVED_ROOTS_UNRESOLVED` and do not invoke
+    Ship. An operator `ship {id}` that names a non-queued shipment also runs the procedure
+    before Ship is invoked, or halts to the operator."
+  * **Change 3.** Keep the existing bullet text "`agent: ship` → invoke the **Ship**
+    subagent likewise, under its own Crash-Resumption / Startup Recovery Protocol (see the
+    Ship agent definition)." verbatim, so the slice anchor stays unique. Append in the same
+    bullet: "Before invoking Ship, run the Served-Root Handoff Procedure for the
+    checkpoint's shipment. Use the checkpoint summary's shipment ID only; do not read the
+    state dump. If the summary names no shipment, halt to the operator. Invoke Ship only
+    after the Served-Root Handoff Procedure passes, with `served_workspace_root`,
+    `served_storage_root`, and the binding evidence in the Ship invocation payload."
+  * **Change 4.** The sentence begins: "Route blocked shipments to Ship only after the
+    Served-Root Handoff Procedure passes, with `served_workspace_root`,
+    `served_storage_root`, and the binding evidence in the Ship invocation payload, for
+    `backlogit_unblock_shipment` …". Add after it: "The procedure binds that blocked
+    shipment's `shipment_id`." The anchor `Route blocked shipments to Ship` stays unique.
+
+#### A3.2.2 U3 (196.003-T), `TestUSR3_ShipmentReconcileExplicitFeatureMemberContract`, subtest `SupersededAndPreserved`
+
+1. **Safe-Close step 2 (R08).**
+   * Slice and guard with message
+     `Safe-Close step 2 must have unique start and end anchors`:
+
+     ```go
+     closeReady, ok := sliceBetweenUniqueAnchors(skill, "2. **Require close-ready state.**", "3. **Capture the baseline.**")
+     ```
+
+   * `assertContainsAll` on `closeReady` with the literals below and surface name
+     `Safe-Close step 2 acceptance rule`.
+
+     ```text
+     every non-pre-archived explicit task member must be `done`
+     a non-pre-archived explicit feature member must be `done` or meet the `feature-pending-governed-completion` condition
+     any other non-pre-archived explicit member must be `done`
+     any other status of a non-pre-archived explicit feature member halts before mutation
+     Safe-close re-checks this condition on the state re-read under lock
+     ```
+
+   * Assert `closeReady` does NOT contain `every non-pre-archived explicit member`, with
+     message `Safe-Close step 2 must not require every explicit member to be done`.
+
+* **Expected red at the current HEAD:**
+  * `Safe-Close step 2 acceptance rule is missing explicit-feature contract literals`
+  * `Safe-Close step 2 must not require every explicit member to be done`
+
+  Both anchors have count 1. The superseded generic sentence is present, and none of the
+  five literals is.
+* **Green (196.005-T).** Amendment 3 replaces U5's three-bullet Safe-Close step 2 with
+  this verbatim text. The `feature-pending-governed-completion` definition already
+  requires at least one explicit task member, so step 2 does not restate it. A pre-archived
+  feature member is exempt, like any pre-archived member.
+
+  > 2. **Require close-ready state.** Reject blocked or other nonterminal shipment
+  > state. Then apply these rules: every non-pre-archived explicit task member must be
+  > `done`; a non-pre-archived explicit feature member must be `done` or meet the
+  > `feature-pending-governed-completion` condition; any other non-pre-archived
+  > explicit member must be `done`; any other status of a non-pre-archived explicit
+  > feature member halts before mutation. Safe-close re-checks this condition on the
+  > state re-read under lock.
+
+#### A3.2.3 U8 (196.008-T), `TestUSR8_ShipServedRootAttestationContract`
+
+1. **Root equality (R07), in `DefinitionLiterals`.** `assertContainsAll` on the existing
+   `step41b` slice with the literals below and surface name
+   `Ship Step 4.1b root equality`.
+
+   ```text
+   `workspace.root_path` must equal the canonical served workspace root
+   `workspace.storage_root` must equal the canonical served storage root
+   SELECT name, file FROM pragma_database_list WHERE name = 'main'
+   exactly one row whose `file` is `backlogit.db` as a direct child of the canonical served storage root
+   or mismatch halts with `SERVED_ROOT_ATTESTATION_FAILED: {reason}` before any claim, raw item-log read, or CLI fallback
+   ```
+
+2. **Step 4.0 order (R07), in `CallSites`.** On the existing `step40Item4` slice:
+   * Compute:
+
+     ```go
+     rootReq40 := strings.Index(step40Item4, "Require both served roots before wave admission.")
+     attest40 := strings.Index(step40Item4, "Served-Root Attestation")
+     rawRead40 := strings.Index(step40Item4, "and `logs/<id>.jsonl` under the served storage root")
+     ```
+
+   * Assert `rootReq40 >= 0 && attest40 > rootReq40 && rawRead40 > attest40` with message
+     `Step 4.0 attestation must follow the root requirement and precede the first raw item-log read`.
+   * `assertContainsAll` on `step40Item4` with the literal below and surface name
+     `Ship Step 4.0 item 4 failure scope`.
+
+     ```text
+     A failure halts with `SERVED_ROOT_ATTESTATION_FAILED` before any claim or raw item-log read
+     ```
+
+3. **Fallback halt (R07), in `CallSites`.** `assertContainsAll` on the existing
+   `appendFallback` slice with the literal below and surface name
+   `Ship Step 4.1b fallback halt`.
+
+   ```text
+   If it fails, halt with `SERVED_ROOT_ATTESTATION_FAILED` and do not use the CLI fallback
+   ```
+
+4. **Fallback order (R04), in `CallSites`.** A NEW assertion; the existing one is not
+   edited. Reuse the closure's existing `attestation`, `reRead`, and `cliFallback`
+   variables and assert `attestation >= 0 && reRead > attestation && cliFallback > reRead`
+   with message `fallback item-log re-read must precede the CLI fallback`.
+   * The `reRead`-before-`cliFallback` order already holds today. The assertion is red
+     only because the attestation conjunct fails.
+   * It turns green only when U9 places the attestation first and keeps the re-read before
+     `` `backlogit comment add ``.
+   * Limitation: this pins textual order only, not runtime behavior.
+
+* **Expected red at the current HEAD:**
+  * `Ship Step 4.1b root equality is missing served-root attestation literals`
+  * `Step 4.0 attestation must follow the root requirement and precede the first raw item-log read`
+  * `Ship Step 4.0 item 4 failure scope is missing served-root attestation literals`
+  * `Ship Step 4.1b fallback halt is missing served-root attestation literals`
+  * `fallback item-log re-read must precede the CLI fallback`
+
+  `Served-Root Attestation` has count 0 in `_ship.agent.md`. In Step 4.0 item 4, the
+  root-requirement and raw-read anchors each have count 1 and are correctly ordered.
+* **Green (196.009-T):**
+  * The literals in item 1 are bound verbatim as substrings of U9 Change 1.
+  * U9 Change 3 already contains the item 3 literal verbatim.
+  * Amendment 3 binds U9 Change 2 verbatim. Insert immediately after "Require both served
+    roots before wave admission." and before "In shipment mode": "Once both are known,
+    run the Served-Root Attestation (Step 4.1b) once per wave admission, before any raw
+    item-log read. A failure halts with `SERVED_ROOT_ATTESTATION_FAILED` before any claim
+    or raw item-log read. An unknown root still halts with
+    `WAVE_CLAIM_STATE_INDETERMINATE`."
+
+### A3.3 TDD conditions (binding on Ship)
+
+1. **Additive only.** The harness commit for each owner touches only that owner's test
+   file. `git diff --numstat <parent> <harness commit> -- <owner test file>` shows 0
+   deleted lines. Backlog, label, implementation-note, and harness-manifest changes go in a
+   separate traceability commit (item 4).
+2. **No green yet, per owner.** Immediately before each owner's harness edit, prove that
+   `git --no-pager log --oneline origin/main..HEAD -- <green file>` is empty, where the
+   green file is `.github/agents/_ship.agent.md` for U8,
+   `.github/agents/_orchestrator.agent.md` for U1, and
+   `.github/skills/shipment-reconcile/SKILL.md` for U3. Stage verified this at HEAD
+   `e380ff3b`: the branch diff against `origin/main` contains only the five new test
+   files. If any green commit exists, halt, because a red baseline can no longer be
+   observed.
+3. **Observed red.** Run the owner's unchanged `red_selector_command` with `-v`:
+   * Every expected red string from A3.2 for that owner appears in the output.
+   * No new guard message appears.
+   * The subtest profile matches "What does not change".
+   * `go test -run=^$ -count=1 ./tests/integration` (compile) and
+     `go vet ./tests/integration` pass, and `gofmt -l` prints nothing for the file.
+   * Lint uses the repository's CI pin: golangci-lint v1.64.8 exits 0 for the package. If
+     the session also runs v2.13.2, it reports no new finding against the merge-base.
+4. **Clean tree, then a fresh red baseline, per task.** Build-feature Step 0.5b compares
+   the baseline against unstaged, staged, and untracked changes. Every bookkeeping change
+   must therefore be committed before the baseline is taken. **Clean tree** means, here and
+   everywhere in Amendment 3, that all three Step 0.5b commands print nothing:
+   `git diff --name-only HEAD`, `git diff --cached --name-only HEAD`, and
+   `git ls-files --others --exclude-standard`. There is no path exception. The one
+   uncommittable file, `checkpoint-20261005-052350.json`, is in `.git/info/exclude` (Stage
+   added it to the 196-S continuity block). Every other checkpoint and memory note Ship
+   writes follows the repository norm and is committed. For each owner task, in order:
+   * the harness commit (item 1)
+   * a `chore(backlog)` traceability commit with the label changes, harness-architect's
+     implementation note and harness-manifest record, any memory or checkpoint files
+     written since the last commit, and, in Phase 2, the task's Step 4.1b claim move
+   * clean tree
+   * `red_baseline_sha` := HEAD, then re-dispatch build-feature Step 0.5 for the owner
+     task: zero delta against `red_baseline_sha`, and the selector observed RED with the
+     A3.2 strings
+   * Step 4.3 gates, Step 4.4 review, and red-path `done` (Step 4.5), then a
+     `chore(backlog)` commit of that completion's bookkeeping (archive move, memory
+     note, checkpoint), so the next task starts from a clean tree
+
+   Baselines are never shared between tasks: `git diff <sha>` includes later commits, so
+   one task's completion would appear in a sibling's delta. This baseline supersedes
+   `e380ff3b` for U8 and the wave-1 baselines for U1 and U3. Record the output in the
+   task's completion evidence.
+5. **Baseline before green.** 196.009-T does not start until 196.008-T has its fresh
+   baseline committed and is `done` again; this holds under every ruling. Under ruling A,
+   the same applies to 196.002-T (owner 196.001-T) and 196.005-T (owner 196.003-T).
+   Under ruling C, 002 and 005 run against their owners' wave-1 baselines. Each green
+   task's `covered-by` command must then pass in full, which includes the Amendment 3
+   assertions that exist under the ruling in force.
+6. **Label routing.** Ship Step 2 item 2 and harness-architect Step 1 item 4 skip
+   `harness-ready` tasks. Before harness-architect runs, Ship removes `harness-ready` with
+   `backlogit_update_item` (full label list minus `harness-ready`). Harness-architect
+   re-applies it at its Step 6, and Ship verifies the label is back. P-002.4's
+   untracked-file caveat (AR-2) applies: stage the harness file before the completion
+   gate runs.
+7. **Fresh evidence.** Completion gates, Step 4.3 gates, and the Step 4.4 review for each
+   re-entered task run fresh at the new HEAD. Earlier evidence is not reused. For 001 and
+   003, every completion or shipment gate record must be timestamped after the Option A
+   window ends; their logs still hold `gate_passed` events from wave 1.
+8. **Harness-architect invocation contract.** Every Amendment 3 call passes
+   `feature=196-F` and an explicit task list: `tasks=196.008-T` in Phase 1, and one call
+   with `tasks=196.001-T,196.003-T` in Phase 2. Each call states:
+   * The task is in scope by this amendment. For 196.008-T, which is `active`, cite the
+     Phase 1 P-005 record; Step 1 item 3's non-ready exclusion is waived for this task
+     only. If any named task would still be excluded, halt; never drop it silently.
+   * The edit is append-only per A3.2: no new file, no stub, no `// TODO: implement`
+     marker, and no edit to an existing line.
+   * Step 5.2 is satisfied when the task's test function fails under its own selector
+     with the A3.2 strings. The PASS subtests named in "What does not change" stay
+     passing and are not "fixed".
+   * The Step 6 note and manifest record go in the traceability commit (item 4), never in
+     the harness commit.
+
+### A3.4 Governed reopen: BLOCKED (operator ruling required)
+
+The approved route requires reopening 196.001-T and 196.003-T "via governed transition".
+No governed operation can perform that reopen:
+
+* The lifecycle pre-hook (`internal/hooks/builtin_pre.go:16-24`, defaults in
+  `internal/config/defaults.go:503-520`) allows `done -> {archived}` only. No
+  `.backlogit/hooks.yaml` override exists, so the defaults apply.
+* `backlogit_move_item` and `backlogit_update_item` both run that pre-hook.
+* `backlogit_reconcile_archived_lifecycle` targets terminal states only.
+* `backlogit_return_blocked` removes the item from the shipment, which would change `M`.
+* No skill or agent defines a reopen procedure, and no item log shows a precedent.
+
+Stage does not invent a substitute (P-017 halt rule). This section is the HALT, and
+**Phase 2 in A3.5 is gated on the operator's ruling.**
+
+**Target status and start epoch.** Even with an exception, the target must be `queued`,
+never `active`. Ship's start epoch begins at the latest `status_changed` event to `active`
+with reason `shipment claimed`. The existing `WORK_STARTED: 196-S` record of each task is
+therefore in the task's current epoch. A task moved to `active` would be an active
+residual at Step 4.0. A `queued` task re-enters through Step 4.1b instead. There, Step
+4.1b appends a start record only when none is valid in the current epoch: if the claim
+move does not open a new epoch, the existing record satisfies it and nothing is appended;
+if it does, exactly one record is appended. Either way the re-read must show exactly one.
+
+**Ruling record.** The operator records the ruling in
+`docs/memory/<date>/operator-196-S-a3-ruling.md`. Its first line is exactly
+`A3_RULING: A`, `A3_RULING: B`, or `A3_RULING: C`. The file also carries:
+
+* `A3_RESUME_CHECKPOINT: <filename>`: the G-A3 checkpoint Ship recorded in its halt
+  note. This is the operator's explicit selection and restore confirmation for Phase 0′.
+  It replaces any further `resume_checkpoint_ref` hand edit: the manifest ref stays at
+  `checkpoint-20261005-052350.json` until a governed path refreshes it.
+* `A3_R02_RATIFIED: yes` or `no`: the operator's ratification of Stage's one R02 edit
+  (A3.6).
+* under ruling A, the Option A record (step 9).
+
+The operator commits the ruling file on its own, as `docs(memory): 196-S A3 ruling`. Under
+ruling A, that commit comes after the reopen commit (step 10). Under ruling B or C, it is
+made before Ship is re-invoked. The Orchestrator passes the ruling-file path in every Ship
+payload once that commit exists.
+
+**Options for the operator:**
+
+* **A (recommended; keeps `M` unchanged; closest to the approved intent).** A one-time
+  lifecycle exception, executed by the operator only. Ship's Role Boundary does not cover
+  writing lifecycle configuration, so Ship never runs it and only verifies the result.
+  Ruling A replaces decision 2's "via governed transition" with this exception for
+  196.001-T and 196.003-T only. It runs only after Phase 1 completes and while Ship is
+  halted at G-A3 (the wave-1 Step 4.6 record and Ship's committed G-A3 halt note both
+  exist). No Ship, Stage, or Orchestrator activity and no MCP mutation may take place
+  during the window.
+  1. **Pre-checks.** If `<served storage root>/hooks.yaml` exists, halt. If either task
+     file carries `archived_from` or `archived_status`, halt; at staging, neither does.
+     The tree must be clean (A3.3 item 4).
+  2. **Attest and record versions.** Run the Served-Root Attestation recipe this plan
+     defines (U2 step d and U9 Change 1, applied under R14) against the MCP server.
+     Record `backlogit_get_version` (MCP; `7c805f9` at staging) and `backlogit version`
+     (CLI; `131577c`, v1.11.0, at staging). `131577c` is an ancestor of `7c805f9`, and the
+     two differ in neither `internal/config` nor `internal/hooks`. They do differ in
+     `internal/core` (claim-marker files). The step 7 three-way read is the accepted
+     backstop for that skew.
+  3. **Snapshot.** For both tasks, record the full file content and SHA-256 under
+     `archive/`, the frontmatter key set (including
+     `custom_fields.scheduler_baseline_claim`, `labels`, `references`, `parent_id`, and
+     `commit`), and the body section markers.
+  4. **Build the hooks file.** Run `backlogit init` with the same CLI in a new empty
+     directory under the system temp folder, outside the repository and the served root,
+     with `BACKLOGIT_WORKSPACE_DIR` unset. Copy its `hooks.yaml` to
+     `<served storage root>/hooks.yaml`. Change only the `done` transition list to
+     `[archived, queued]`. A diff of the scratch file against the copy must show exactly
+     that row. A partial file would replace the defaults wholesale, so never hand-write
+     it. Delete the scratch directory. Record the file's SHA-256 and the window start
+     time.
+  5. **Move, then always clean up.** Inside a try/finally block, run
+     `backlogit move 196.001-T --status queued` and then
+     `backlogit move 196.003-T --status queued`. Run each as an argv array with
+     `--cwd <served workspace root>` and child `BACKLOGIT_WORKSPACE_DIR=.backlogit`. Stop
+     at the first failure. The `finally` block deletes `hooks.yaml` only if its SHA-256
+     still equals the recorded value; otherwise it leaves the file and halts. Record the
+     window end time.
+  6. **Verify removal.** `Test-Path` on the hooks file is false, and
+     `git status --short -- .backlogit/hooks.yaml` is empty. Do not test the exception by
+     attempting any other move.
+  7. **Sync and verify three ways.** Run CLI `backlogit sync` (A3.6 records that the MCP
+     sync missed a manual edit). For both tasks, the CLI item read shows `queued`, the raw
+     file sits under `queue/` with no copy under `archive/`, and MCP `backlogit_get_item`
+     shows `queued`. A partial result (one task moved, a failed move, or any mismatch)
+     halts: record each task's status and do not retry inside this window. A later window
+     may move only a task that is still `done`.
+  8. **Contract integrity.** The raw Markdown is the authority, because the index does
+     not project every frontmatter key. First, `git status --porcelain` must list exactly
+     the two archive paths (deleted) and the two queue paths (untracked); any other path
+     halts, and its diff goes in the ruling file. Then run `git add -A -- <both archive
+     paths> <both queue paths>`; `git diff --cached -M --name-status` must show an `R` row
+     for each task. Against the snapshot, only `status`, `updated_at`, and the location
+     may change. Any other change or loss halts with the diff.
+  9. **Commit and record.** Commit the two renames alone as
+     `chore(backlog): reopen 196.001-T and 196.003-T (196-S Amendment 3)`. Write the
+     ruling file with the window start and end times, the hooks file SHA-256, both
+     versions, the two moved items, the commit SHA, and the verification results. Append
+     a comment on each task with actor `operator`, never `ship`:
+     `REOPENED: 196-S Amendment 3 A3.4 Option A`. That comment is never a start record.
+     Comments go to the git-ignored `logs/`, so they leave the tree clean.
+  10. **Commit the ruling file** alone as `docs(memory): 196-S A3 ruling`, then confirm
+      the tree is clean.
+* **B.** Add new harness-required tasks for the U1 and U3 additions under an explicit
+  P-002.6 `M` re-freeze ruling. This contradicts decision 2's "`M` unchanged". It needs
+  new collision-free `TestUSR1H_` and `TestUSR3H_` functions, and the `covered-by`
+  commands of 196.002-T and 196.005-T must change. Stage must write Amendment 4 first, and
+  wave 2 is released only after the re-freeze. Not recommended.
+* **C.** Accept R06 and R08 as documented residual risk (P-021 C3) and ship U8's
+  additions only. U1 and U3 stay as they are, and Ship captures R06 and R08 under P-021
+  C2. This weakens the 227A2930 and B83081F5 contracts. Not recommended.
+
+A governed reopen operation in backlogit is production Go and is out of 196-S scope. Stash
+`69B0B3F0` (lifecycle state machine) is its natural home.
+
+### A3.5 Ordered Ship execution on resume
+
+The wave schedule is computed live by Step 4.0, so the reopen changes waves without a
+re-freeze. Ship carries the wave index forward across sessions: wave 1 is in progress
+now, and the first wave after G-A3 is wave 2.
+
+* **Ruling A:** 1 = {001, 003, 004, 007, 008}; 2 = {001, 003} (re-entered);
+  3 = {002, 005}; 4 = {009}; 5 = {006}. That is five waves, within the budget of
+  `count(M) = 9`.
+* **Ruling C:** waves 2–4 are {002, 005}, {009}, and {006}, as originally planned.
+
+**Closing-wave drift under ruling A.** The declared `green_maker_closes_wave` values stay
+2 (001), 2 (003), and 3 (008), but the green-makers now land in waves 3, 3, and 4. Step 3
+item 3's equality check was validated at freeze and is not re-run; ruling A accepts this
+drift. Step 4.6 item 4 is evaluated against the set recomputed at item 2, and it passes:
+at wave 2 the open entries are at their declared wave, not past it; at wave 3, 001 and 003
+close; at wave 4, 008 closes. Completion comments and `FULL_SUITE_DEFERRED` records cite
+both the declared and the effective closing wave. U6's "wave 4" references (Scope, the
+Dependency Graph, and the Amendment 2 table) read "wave 5" under ruling A.
+
+The Step 3 item 9 scheduler replay is pinned to the fixture shipment `130-S`
+(`tests/simulation/wave-scheduler-contract.json`) and does not model 196-S, so the reopen
+cannot change its result. No re-run is required.
+
+#### Phase 0: first resume (do NOT run Step 4.0)
+
+1. **Orchestrator payload.** Before invoking Ship, the Orchestrator re-supplies the
+   Amendment 1 bootstrap payload: both absolute served roots, this plan path, explicit
+   citations of R14 and Amendment 3, and decision 1 as the operator's confirmation of the
+   checkpoint restore. A missing item halts with `SERVED_ROOTS_UNRESOLVED`.
+2. **Restore.** Ship restores `checkpoint-20261005-052350.json` under its own recovery
+   protocol. Anomaly-first enumeration still runs. Decision 1 is the operator
+   confirmation, so Ship does not wait for another.
+3. **Preconditions.** Halt and report if any of these fails:
+   * MCP `backlogit_get_shipment` for `196-S` shows
+     `resume_checkpoint_ref: checkpoint-20261005-052350.json`, and its items are 196-F
+     plus the checkpoint's nine `task_ids`.
+   * The R14 Served-Root Attestation passes.
+   * `<served storage root>/hooks.yaml` does not exist.
+   * The tree is clean (A3.3 item 4). Stage's Amendment 3 commit already holds the plan,
+     manifest, stash, and 2026-10-05 memory files, and
+     `checkpoint-20261005-052350.json` is excluded locally. Any file Ship writes during
+     the restore is committed as `chore(backlog)` before this check.
+   * HEAD descends from `e380ff3b`, and A3.3 item 2 holds for all three green files.
+   * Live statuses: 001, 003, 004, and 007 are `done`. 008 is `active` with exactly one
+     current-epoch `WORK_STARTED: 196-S`. 002, 005, 006, and 009 are `active` and
+     claim-assigned, with no start record.
+4. **Mapping.** Compare `M` and the five red-deliverable contract keys of every member
+   with the frozen values (red deliverables 001, 003, and 008 with their declared
+   green-makers and closing waves). They must be equal. Do not recompute the Step 4.0
+   item 7 partition, do not re-run Step 3 item 3's post-partition validation (A3.5,
+   closing-wave drift), and do not re-freeze. The same rule applies at Phase 0′. Once
+   these checks pass, resolve `checkpoint-20261005-052350.json` under Ship's own
+   protocol.
+5. **No Step 4.0 now.** Wave 1 is in progress, and 008 is its only non-terminal member.
+   Running Step 4.0 now would classify 008 as an active residual and halt with
+   `WAVE_NO_PROGRESS`. Resume 196.008-T at its in-task cursor, Step 4.4, and disposition
+   the findings by A3.1. **Never append another `WORK_STARTED` to 008.**
+
+#### Phase 1: U8 in-task C3 remediation (not gated)
+
+6. Emit a P-005 event: "Amendment 3 harness-architect re-entry for 196.008-T, in-task
+   P-021 C3 remediation authorized by decision 2; not a wave admission." This one
+   single-task harness-architect call stands in for Step 4.0 item 10 for 008 only.
+7. Remove `harness-ready` from 008 (A3.3 item 6). Invoke harness-architect under the
+   A3.3 item 8 contract with `tasks=196.008-T` and the A3.2.3 additions only.
+8. Apply A3.3 items 1–3 with `go test -count=1 -v -run '^TestUSR8_' ./tests/integration`.
+   Expected: `DefinitionLiterals` FAIL, `CallSites` FAIL, `PreservedInvariants` PASS, and
+   all five A3.2.3 strings present. Commit with type `test` and scope `harness`.
+9. Verify that `harness-ready` is back, then apply A3.3 item 4: traceability commit, clean
+   tree, `red_baseline_sha` := HEAD, and build-feature Step 0.5.
+10. Re-run the Step 4.3 gates and the Step 4.4 review at the new HEAD. Handle new findings
+    under P-021.
+11. Complete 008 on its red-path `done` path (Step 4.5), then commit the completion
+    bookkeeping (A3.3 item 4).
+12. Run the wave-1 Step 4.6 convergence gate as usual. The open-red set is {001, 003,
+    008}, and each red selector must be observed RED.
+
+#### Gate G-A3 (HALT before wave 2)
+
+13. After wave 1 converges and before the next Step 4.0, Ship looks for the ruling file
+    (A3.4) in its payload. This check is mandatory: without it, Step 4.0 item 6 would
+    compute `ready_k = {002, 005}`, because 001 and 003 are `done`. From Phase 1 onward,
+    every Ship checkpoint `resume_hint` restates this gate.
+    * **No ruling file, or `A3_RULING: A` without a committed Option A record:** write a
+      fresh checkpoint under Ship's halt protocol, and record its filename in the P-005
+      event and in Ship's halt memory note. Commit the checkpoint and the note as
+      `chore(backlog)` so the tree is clean for Option A. Emit `DARK_MODE_HALTED` with
+      reason "Amendment 3 reopen pending operator lifecycle exception" and next action
+      "operator ruling A/B/C; under A, the operator executes A3.4 Option A". Halt. Ship
+      never edits the shipment manifest by hand. The operator names this checkpoint in
+      the ruling file's `A3_RESUME_CHECKPOINT` line; no manifest repoint is needed.
+    * **`A3_RULING: B` or `C`, or `A` with its Option A record and reopen commit already
+      present:** continue at Phase 0′ item 15, skipping the halt.
+14. As a second guard, at every later Step 4.0 item 6:
+    * If `<served storage root>/hooks.yaml` exists, halt with
+      `A3_LIFECYCLE_EXCEPTION_PRESENT` and do not claim.
+    * If `ready_k` contains 196.002-T or 196.005-T while Phase 2 is incomplete and the
+      ruling is not C, halt with the G-A3 record instead of claiming. Phase 2 is complete
+      when the wave-2 Step 4.6 record exists and 001 and 003 are `done` with gate records
+      timestamped after the Option A window ends.
+
+#### Phase 0′: resume after G-A3
+
+15. **Payload and preconditions.** The Orchestrator passes both served roots, this plan
+    path, the R14 and Amendment 3 citations, and the ruling file path. Ship restores the
+    checkpoint named by the ruling file's `A3_RESUME_CHECKPOINT` line under its own
+    protocol; that line is the operator's selection and confirmation. Under ruling A,
+    the checkpoint records 001 and 003 as `done` while they are now `queued`. That
+    divergence is the expected Option A result, confirmed by the ruling file, and is not a
+    restore anomaly. Ship halts if any of these fails:
+    * The R14 attestation passes.
+    * The ruling file is committed (an ancestor of HEAD), and its first line is
+      `A3_RULING: A`, `B`, or `C`.
+    * `<served storage root>/hooks.yaml` does not exist.
+    * 008 is `done`, and the wave-1 Step 4.6 record exists.
+    * The tree is clean (A3.3 item 4).
+    * **Ruling A only:** the ruling file carries the Option A record, and its reopen
+      commit is an ancestor of HEAD. 001 and 003 are `queued` under `queue/`, and each has
+      exactly one valid `WORK_STARTED: 196-S` under the Step 4.1b epoch rule.
+
+    Then: ruling A → Phase 2; ruling B → halt for Stage Amendment 4; ruling C → Phase 3.
+
+#### Phase 2: U1 and U3 (ruling A only)
+
+16. While both tasks are `queued`, remove `harness-ready` from each (A3.3 item 6).
+17. Run Step 4.0 for wave 2. Expect `ready_k = {001, 003}`; 002, 005, 006, and 009 wait as
+    claim-assigned members with unfinished dependencies. Any other result halts with the
+    item 7 report.
+18. At Step 4.0 item 10, harness-architect runs once, under the A3.3 item 8 contract, with
+    `tasks=196.001-T,196.003-T`, and adds the A3.2.1 and A3.2.2 assertions only. Apply
+    A3.3 items 1–3 per owner:
+    * U1 expects `ProcedureLiterals` FAIL, `CallSites` FAIL, `CrossReferenceInvariant`
+      PASS, and all five A3.2.1 strings.
+    * U3 expects all three subtests FAIL and both A3.2.2 strings.
+
+    Commit each owner file on its own `test(harness)` commit.
+19. Claim each task through Step 4.1b and apply its start-record rule exactly (A3.4). The
+    re-read must show exactly one valid record.
+20. Apply A3.3 item 4 to 196.001-T and then to 196.003-T, each with its own traceability
+    commit, clean tree, `red_baseline_sha`, build-feature Step 0.5, fresh gates and review
+    (A3.3 item 7), red-path `done`, and completion-bookkeeping commit. The first
+    traceability commit also carries both claim moves.
+21. Run the wave-2 Step 4.6 gate. The open-red set is again {001, 003, 008}, all RED.
+
+#### Phase 3: green tasks
+
+22. The next wave runs 196.002-T (U2 plus the A3.2.1 green wording) and 196.005-T (U5
+    plus the A3.2.2 text). Their `covered-by` selectors `^TestUSR1_` and `^TestUSR3_` must
+    pass in full. At Step 4.6, 001 and 003 are newly closed and must be GREEN.
+23. The following wave runs 196.009-T (U9 plus the A3.2.3 Change 2 wording). `^TestUSR8_`
+    must pass in full, and 008 must be GREEN at Step 4.6.
+24. The last wave runs 196.006-T. It computes the U6 checksums after the last
+    installed-file edit.
+
+### A3.6 Shipment record, telemetry, and residual risks
+
+* **R02.** Stage changed `resume_checkpoint_ref` in `.backlogit/queue/196-S.md` from
+  `checkpoint-20261004-192622.json` to `checkpoint-20261005-052350.json`, then ran CLI
+  `backlogit sync`. No governed operation sets the ref without blocking the shipment. The
+  MCP `backlogit_sync_index` did not pick up the edit; the CLI sync did, and MCP
+  `backlogit_get_shipment` now shows the new ref. The frontmatter has a single
+  `resume_checkpoint_ref` key. Stage also added a body note recording the P-001
+  ratification.
+* **R02 method.** Change only the single `resume_checkpoint_ref` frontmatter key, run CLI
+  `backlogit sync`, and confirm the new value through MCP `backlogit_get_shipment`. This
+  is a Stage task and was used once. Amendment 3 needs no further repoint: Phase 0′ takes
+  its checkpoint from the ruling file's `A3_RESUME_CHECKPOINT` line. Ship never edits the
+  shipment manifest by hand. The operator ratifies the one hand edit through the ruling
+  file's `A3_R02_RATIFIED` line.
+* `member_status_snapshot` is stale: it shows every member as `active`. Stage did not
+  hand-edit it. Refresh it only through a governed Ship or Orchestrator path.
+* **Stash citations.** Ship cites the deferrals with comments that change no status:
+  `CDBCB258` on 196.009-T and 196.002-T, `F6F3AA0E` on 196.004-T, and `147BD825` and
+  `3B25D37F` on 196.007-T. It also cites them in the run-level memory. No comment on
+  196.008-T may be a `WORK_STARTED` record.
+* **P-017 telemetry expected from Ship.** Each event carries the scope item, gate state,
+  outcome, and next action:
+  * `DARK_MODE_SCOPE` stays `[196-S]`.
+  * A P-005 event records the Phase 1 harness-architect re-entry on 196.008-T.
+  * `DARK_MODE_HALTED` is emitted at gate G-A3 if no ruling exists.
+  * A P-005 event records the Option A lifecycle exception, if ruled. It cites the ruling
+    file and the reopen commit.
+  * A P-005 event records the closing-wave drift accepted under ruling A (A3.5).
+  * The operator's ratification of the R02 hand edit is recorded in the ruling file.
+* **Option A residual risk.** For the length of the window, the lifecycle allows
+  `done -> queued` for every item in the served root. A PowerShell `finally` block does
+  not run if the process is killed, so the hard backstop is the "`hooks.yaml` absent"
+  check repeated at every Ship entry point (Phase 0, item 14, Phase 0′). The try/finally
+  block and the rule that no Ship, Stage, Orchestrator, or MCP mutation runs during the
+  window are additional bounds.
+* **P-021 C3 residual risks.** The PR body and the closure summary list:
+  * `CDBCB258` (R03, R10), `F6F3AA0E` (R05), `147BD825` (R09), and `3B25D37F` (R12) as
+    follow-ups
+  * the R10 interim limitation: direct Ship requests must go through the Orchestrator
+  * Step 4.0 items 1–3 read through MCP before the item 4 attestation runs (`CDBCB258`)
+  * the R04 assertion pins textual order only
+  * under ruling C, R06 and R08 as accepted residual risks
+  * R11 as covered by `TestUCS1_ClaimStartContract`
+  * R01 as resolved under ratified P-001
+* **Permanence.** The Amendment 3 pins become permanent contract tests once green. Later
+  edits to these surfaces must keep the pinned literals or amend the pins on purpose.
+
+<!-- plan-review-attempt: 1 -->
+<!-- plan-review-attempt: 2 -->
+<!-- plan-review-attempt: 3 -->
+
+## Plan Review
+
+<!-- plan-review: Amendment 3, attempt 3 of 3 (final record; supersedes earlier records for Amendment 3 only) -->
+
+* scope: Amendment 3 (A3.1 to A3.6) and the rewritten Objective. Earlier Plan Review
+  records for the base plan and Amendments 1 and 2 are not reopened.
+* dispatch_mode: multi-agent-dispatch
+* decision: FAIL
+* operator_authorization: none
+* reviewed_at: 2026-10-05 (Stage, P-017 dark mode, scope `[196-S]`)
+
+**Cycle history**
+
+| Cycle | Reviewers | Result | Blocking findings |
+|---|---|---|---|
+| 1 | Correctness, Agent-Native Parity, Architecture, Go, Learnings, Scope | FAIL | 1 P0 and several P1s: target status, start epoch, Step 4.0 sequencing, exact assertion specs |
+| 2 | Correctness (ADVISORY), Agent-Native Parity (FAIL), Architecture (ADVISORY), Go (ADVISORY), Learnings (ADVISORY) | FAIL | 3 P1s (Parity): zero-delta bookkeeping conflict; Option A delegated to Ship; no re-entry after G-A3 |
+| 3 | Agent-Native Parity (FAIL), Correctness (FAIL), Architecture (ADVISORY) | FAIL | 4 P1s; see below |
+
+**Cycle-3 P1 findings and remediation, applied after cycle 3 and NOT re-reviewed**
+
+| ID | Reviewer | Finding | Remediation in this text |
+|---|---|---|---|
+| C3-P1-a | Parity, Correctness | The clean-tree rule allowed untracked `.backlogit/checkpoints/`, but build-feature Step 0.5b's `git ls-files --others --exclude-standard` has no such exception | A3.3 item 4 defines clean tree as the exact Step 0.5b three-command union with no exception. The selected checkpoint is excluded in `.git/info/exclude`. Every other checkpoint and memory note is committed. |
+| C3-P1-b | Parity, Correctness | No committer for the ruling file, Ship's G-A3 halt note, Stage's edits, or the repoint | The ruling file gets an operator commit (A3.4 ruling record, Option A step 10). Ship commits its halt note and checkpoint (item 13). Stage's files are committed with this amendment. The second manifest repoint is removed (`A3_RESUME_CHECKPOINT`). Phase 0 gains a clean-tree precondition. |
+| C3-P1-c | Correctness | Phase 2 shared one `red_baseline_sha` between 001 and 003, so the first completion appears in the second task's delta | Baselines are per task, each followed by a completion-bookkeeping commit (A3.3 item 4, Phase 2 item 20) |
+
+The cycle-3 P2 and P3 findings are also remediated:
+* G-A3 skip rule: A without an Option A record halts.
+* Phase 0 item 4 compares the contract keys only.
+* A3.3 item 5 is scoped to the ruling.
+* Precedence covers the `red_baseline_sha` provenance.
+* Phase 0′ declares the expected 001/003 divergence.
+* The harness-architect call passes `feature=196-F` and a joint task list.
+* The scratch directory is in temp, outside the repository.
+* The `REOPENED` comment's actor is `operator`.
+* Step 8 checks the full status.
+* The `internal/core` skew is accepted with the three-way backstop.
+* `A3_LIFECYCLE_EXCEPTION_PRESENT` is defined.
+* Phase 2 completion is defined.
+* The residual-risk backstop is restated.
+
+**Gate consequence.** The final decision is FAIL. Under Stage's plan-review contract, a
+FAIL halts regardless of `skip_review`. Ship MUST NOT execute any part of Amendment 3,
+Phase 1 included, until a later Plan Review record for Amendment 3 shows `decision: PASS`,
+or `decision: ADVISORY` with `operator_authorization: approved`. The cycle cap is
+reached: the operator must either authorize a fourth review cycle of this remediated text
+or review it and record the authorization directly. Stage escalation status:
+`ESCALATION_DEGRADED`. No engram escalation-intake operation is available in this
+session, so the fallback is the operator halt.
