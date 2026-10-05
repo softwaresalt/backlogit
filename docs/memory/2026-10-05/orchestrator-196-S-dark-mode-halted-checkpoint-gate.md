@@ -77,3 +77,41 @@ Both reviewers accept that P-001 is **satisfied on evidence**. No `skip_policy: 
 4. Stage directed to fix deferral records (R03/R10 compliant C2 replacing CDBCB258 usage; R05/R09 new C2 entries routed to deliberation).
 
 Dark mode resumes: DARK_MODE_SCOPE ordered=[196-S], cursor next=196-S.
+
+## Second Halt (2026-10-05, after Stage Amendment 3)
+
+DARK_MODE_HALTED: scope=196-S; gate=plan-review FAIL at 3-cycle cap (operator_authorization: none) + no governed done->queued reopen path; outcome=Stage commit 69b86d80 (Amendment 3, C2 fixes CDBCB258 normalized for R03/R10, F6F3AA0E R05, 147BD825 R09, R02 ref -> 052350); next action=operator decision.
+
+Verified: 69b86d80 present; plan Plan Review record `decision: FAIL` / `operator_authorization: none`; default lifecycle (internal/hooks/builtin_pre.go ValidateStatusTransition + DefaultTransitions) has no done->queued edge, so Option A requires a temporary hooks.yaml transition override (high ActionRisk, config guard bypass, outside Orchestrator carve-out).
+
+Pending operator decisions:
+1. Plan review: authorize a 4th review cycle of the cycle-3-fixed Amendment 3 text, or record `operator_authorization: approved`.
+2. Reopen route for R06/R08: A (one-time temporary hooks.yaml done->queued exception for 001/003), B (new tasks + M re-freeze), or C (accept R06/R08 as residual risk with C2 capture).
+3. Who executes Option A (operator vs. explicitly authorized agent), since it is outside Orchestrator and Ship role boundaries as written.
+4. Ratify R02 hand edit (A3_R02_RATIFIED).
+Checkpoint 052350 remains active and confirmed; not yet restored.
+## Operator Resolution 2 (2026-10-05T13:58-07:00)
+
+Verbatim operator rulings:
+
+* **A: additional review cycle authorized.** Stage runs plan-review cycle 4 on the
+  remediated Amendment 3 text. This is an operator-authorized exception to the 3-cycle cap,
+  for one cycle only.
+* **B: one-time, temporary done -> queued exception approved**, with a caveat: stash and
+  stage a spike on whether to add a done -> queued allowance or another reopen mechanism,
+  including referencing closed work from new work items with a rationale. The concern is
+  traceability risk when reopening a task that belonged to a closed shipment.
+  * Captured as stash `DB071B5D` (high, task), related to `69B0B3F0`.
+  * Stage stages the spike as a queued item outside 196-S's membership `M`.
+  * Under ruling A, `A3_RULING: A` applies.
+* **C: manifest hand edit accepted.** `A3_R02_RATIFIED: yes`.
+
+Orchestrator decision on who executes Option A:
+
+* Plan A3.4 says Option A is "executed by the operator only". Plan-review cycle 2 rejected
+  delegating it to Ship.
+* The operator approved the exception but did not delegate execution.
+* The Orchestrator therefore does NOT execute Option A steps 1-10. Ship runs Phase 0 and
+  Phase 1 (U8) and halts at G-A3, as designed.
+* The Orchestrator prepares an operator-runnable script that performs Option A steps 1-10
+  and writes the ruling file with these rulings.
