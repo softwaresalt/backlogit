@@ -115,3 +115,18 @@ Orchestrator decision on who executes Option A:
   Phase 1 (U8) and halts at G-A3, as designed.
 * The Orchestrator prepares an operator-runnable script that performs Option A steps 1-10
   and writes the ruling file with these rulings.
+
+## Third Halt (2026-10-05, after plan-review cycle 4)
+
+DARK_MODE_HALTED: scope=196-S; gate=Amendment 3 plan-review cycle 4 FAIL (plan lines 2319-2392; operator_authorization: cycle-4 only, not approved); outcome=Stage commits 9968fd05 (cycle-4 record + text remediations, not re-reviewed) and fdad3f94 (spike 002-SP from DB071B5D, outside 196-S); next action=operator decision.
+
+Cycle-4 new P1s (fixed in text, unreviewed):
+
+1. Tracked runtime logs (hooks_queue.jsonl, telemetry) dirty the tree on every move, breaking Option A step 8.
+2. The step 8 git-status shape check is brittle against rename and git mv forms.
+3. Ship session-end writes land after the G-A3 halt commit.
+4. The Option A helper script and MCP reads lacked operator-only constraints.
+
+Verification: C3-P1-a and C3-P1-c were confirmed; C3-P1-b was disputed by 2 of 3 reviewers.
+
+The Orchestrator did not hand over the Option A script and did not invoke Ship. A fifth review cycle or a self-recorded approval would exceed the operator's one-cycle grant.
