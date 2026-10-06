@@ -462,15 +462,15 @@ no checkpoint. Its only other write is the outcome record in `docs/memory/`.
     once and compare again. A mismatch that persists after the sync is a failure, and a
     sync error is an indeterminate result.
 * e. **Halt.** On any failure, error, or indeterminate result in a–d, halt with
-  `SERVED_ROOTS_UNRESOLVED`, reporting `SERVED_ROOTS_UNRESOLVED: {reason}`, and do not
-  invoke Ship. Indeterminate results include detection that is unavailable, an MCP or sync
+  `SERVED_ROOTS_UNRESOLVED: {reason}` and do not invoke Ship. Indeterminate results include detection that is unavailable, an MCP or sync
   error, a timeout, and a missing or unparseable file. Write `{reason}` and the halt trace
   with workspace-relative or redacted path tokens. When only the CLI fallback is reachable,
   the Served-Root Attestation and the static check cannot run, and the procedure
   intentionally fails closed.
 * f. **Pass.** Put `served_workspace_root` (Ship's "served workspace root", Step 4.1b) and
   `served_storage_root` (Ship's "served storage root") in the Ship invocation payload as
-  canonical OS-native absolute paths. Include the binding evidence: `id`, ordered items, and the attested `workspace.root_path`, `workspace.storage_root`, and index `file`. The
+  canonical OS-native absolute paths. Include the binding evidence: `id`, ordered items,
+  and the attested `workspace.root_path`, `workspace.storage_root`, and index `file`. The
   evidence is informational. Ship re-runs the Served-Root Attestation itself at use time
   and never treats the evidence as proof. Record the outcome in `docs/memory/` in
   workspace-relative form only.
