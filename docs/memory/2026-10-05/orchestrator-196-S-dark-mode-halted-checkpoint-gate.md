@@ -179,3 +179,13 @@ Operator ruling, verbatim: "I authorize a cycle 5". Stage gets one more plan-rev
 - Still HALTED: operator Option A has not run (no ruling file; 196.001/003 remain `done`). After the operator
   relaunches via `./start.ps1`, the Option A script may use plain `backlogit`, and the CLI version
   should report commit `7c805f9`.
+## 2026-10-06 Option A executed under operator delegation
+
+- The operator delegated Option A to the Orchestrator ("I want YOU to run the script"). Steps 1-10 ran
+  as separate verified commands, using `.\bin\backlogit.exe` at commit `7c805f9` (CLI/MCP parity confirmed).
+- Window: 2026-10-06T06:54:58Z to 06:56:24Z. hooks.yaml SHA-256 `121124A2...C7B0`, removed and verified absent.
+- Reopen commit `7bc74325`; ruling file `docs/memory/2026-10-06/operator-196-S-a3-ruling.md`, committed
+  at `76851ccd` (`A3_RULING: A`, resume checkpoint `checkpoint-20261006-021519.json`, R02 ratified).
+- Deviation: pristine hooks.yaml generated via `backlogit init` in gitignored `logs\optionA\inittmp`
+  (workspace containment). The ruling file uses a trailing MD041 disable because line 1 is fixed by the plan.
+- Next: Ship Phase 0' resume, then Phase 2.
