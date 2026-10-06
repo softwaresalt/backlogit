@@ -1860,7 +1860,7 @@ payload := "only after the Served-Root Handoff Procedure passes, with `served_wo
    `.github/skills/shipment-reconcile/SKILL.md` for U3. Stage verified this at HEAD
    `e380ff3b`: the branch diff against `origin/main` contains only the five new test
    files. If any green commit exists, halt, because a red baseline can no longer be
-   observed.
+   observed. Corrected by Erratum E1 (E1.2; pending review, not yet effective).
 3. **Observed red.** Run the owner's unchanged `red_selector_command` with `-v`:
    * Every expected red string from A3.2 for that owner appears in the output.
    * No new guard message appears.
@@ -1902,7 +1902,7 @@ payload := "only after the Served-Root Handoff Procedure passes, with `served_wo
      stash appends, and, in Phase 2, the task's Step 4.1b claim move. Ship runs Step 4.1c
      and Step 4.2 before this commit. If an earlier commit already holds all of a task's
      pending changes, the clean-tree check satisfies this step; never make an empty
-     commit.
+     commit. Corrected by Erratum E1 (E1.1; pending review, not yet effective).
    * clean tree
    * `red_baseline_sha` := HEAD, then re-dispatch build-feature Step 0.5 for the owner
      task: zero delta against `red_baseline_sha`, and the selector observed RED with the
@@ -2596,3 +2596,130 @@ in A3.6.
 **Gate consequence.** The final decision is PASS. Ship may execute Amendment 3 Phase 0 and
 Phase 1 and must halt at G-A3 until the operator runs A3.4 Option A and commits the ruling
 file. Stage escalation status: not triggered (no further FAIL).
+
+## Amendment 3 Erratum E1 (2026-10-06)
+
+<!-- erratum: Amendment 3 E1, drafted by Stage 2026-10-06 under P-017 dark mode, scope [196-S]; NOT reviewed -->
+
+* status: draft
+* review: pending — requires operator authorization (cycle 6). Amendment 3 already used
+  cycles 4 and 5, each an explicit operator-authorized exception to the 3-cycle cap. Stage
+  did not run plan-review on E1.
+* effective: only after a Plan Review record for E1 shows `decision: PASS`, or
+  `decision: ADVISORY` with `operator_authorization: approved`, or the operator records
+  explicit approval of E1 in this file. Until then Ship stays halted.
+* scope: A3.3 item 4 (dispatch ordering) and A3.3 item 2 (evidence for 196.001-T and
+  196.003-T). No other Amendment 3 text changes.
+* trigger: Ship's Phase 2 wave-2 halt,
+  `docs/memory/2026-10-06/ship-196-S-phase2-wave2-halt.md`.
+* placement: E1 follows the cycle-5 Plan Review record so that record is not read as
+  covering E1.
+
+E1 changes none of the items listed under "What does not change": requirements R1–R15,
+the dependency graph, shipment membership `M`, the Step 3 red-deliverable mapping, the
+`covered-by` commands, test and subtest names, and each harness's red/pass profile. It
+touches no production code, test, task status, or label.
+
+### E1.1 A3.3 item 4: dispatch ordering
+
+**Defect.** The traceability-commit bullet says "Ship runs Step 4.1c and Step 4.2 before
+this commit." Step 4.2 in `.github/agents/_ship.agent.md` is the build-feature dispatch.
+The bullets that follow require a clean tree, then `red_baseline_sha` := HEAD, then the
+Step 0.5 dispatch with zero delta across unstaged, staged, and untracked changes, with no
+Ship write between the baseline and Step 0.5b. A dispatch before the traceability commit
+fails Step 0.5b, because the claim move and bookkeeping are still pending. A dispatch
+after it breaks the stated order. The bullet cannot be satisfied as written.
+
+**Correction.** In the traceability-commit bullet, replace "Ship runs Step 4.1c and
+Step 4.2 before this commit." with:
+
+> Ship runs Step 4.1b, Step 4.1c, and the Step 4.2 pre-dispatch actions (the lifecycle
+> `TOPOLOGY_GATE` and the intercom broadcast, each when installed) before this commit, so
+> any tracked write they make lands in it. The Step 4.2 build-feature dispatch itself
+> happens only after `red_baseline_sha` is taken, as the Step 0.5 dispatch below.
+
+**Unchanged.** The clean-tree definition, the item 4 path check before every `git add -A`,
+the Step 0.5b zero-delta check, the no-write window between `red_baseline_sha` and
+Step 0.5b, per-task baselines, and the no-empty-commit rule. E1.1 only states where the
+build-feature dispatch sits relative to the traceability commit.
+
+**Precedent.** Phase 1 ran 196.008-T in this order: traceability commit `f18fcb11`, then
+`red_baseline_sha` = `f18fcb11`, then the Step 0.5 dispatch with an empty zero-delta set
+and the selector RED. That run passed Ship's Step 4.4 three-persona review
+(`READY_WITH_FOLLOWUPS`, P0 0, P1 0); see
+`docs/memory/2026-10-05/ship-196-S-u8-a3-complete.md`.
+
+**Resume application (Phase 2 items 19–20).** These are already committed for both
+196.001-T and 196.003-T, in `ef0c0b58`, `6c510684`, `90a3500d`, and `4ca51a55`: the
+Step 4.1b claim moves (both `active`, each with one valid `WORK_STARTED: 196-S`),
+Step 4.1c (telemetry begin returned `disabled`, so no context is carried and no close is
+due), the label and harness-manifest evidence, the halt note, and the halt checkpoint.
+Item 20's first traceability commit is therefore already made. Stage confirmed a clean
+tree at `4ca51a55`. On resume:
+
+1. After the E1.3 restore, any pending change (restore or resolution writes, Orchestrator
+   notes under the committer rule, `RUNTIME_LOGS`) is pending traceability for 196.001-T.
+   Commit it as `chore(backlog)` after the item 4 path check. If nothing is pending, the
+   clean-tree check satisfies the traceability step; never make an empty commit.
+2. For 196.001-T, then 196.003-T:
+   1. Run the Step 4.2 pre-dispatch actions for the task. Commit any pending change they
+      leave as `chore(backlog)` after the item 4 path check; otherwise commit nothing.
+   2. Confirm a clean tree.
+   3. Take a fresh `red_baseline_sha` := HEAD immediately before this task's own Step 0.5
+      dispatch. Write nothing between the baseline and Step 0.5b.
+   4. Dispatch build-feature. Step 0.5 must show zero delta and the selector RED with
+      the A3.2.1 strings (001) or the A3.2.2 strings (003).
+   5. Run Step 4.3, Step 4.4, red-path `done` (Step 4.5), and the completion-bookkeeping
+      commit.
+
+Baselines are never shared: 001's completion commit lies between the two baselines.
+Phase 2 item 21 and Phase 3 follow unchanged.
+
+### E1.2 A3.3 item 2: evidence for 196.001-T and 196.003-T
+
+**Gap.** Ship did not record the item 2 check immediately before the U1 and U3 harness
+edits (halt note, "Additional evidence gap").
+
+**Recomputation.** Stage re-ran these read-only on 2026-10-06 after `git fetch origin`:
+
+| Check | Command | Result |
+|---|---|---|
+| `origin/main` | `git rev-parse origin/main` | `c4c458b9ea297ffc9d9298d8d3588df2962205ff` |
+| `origin/main` unmoved | `git log --oneline c4c458b9..origin/main` | empty |
+| Ref at edit time | `git reflog show --date=iso origin/main` | `c4c458b9` since 2026-10-05 23:10:00 -0700, before both harness commits (00:28:29 and 00:28:35 -0700 on 2026-10-06) |
+| U1 pre-edit parent | `git rev-parse d2248d7c^` | `e7454f15741345aca85ceb1827f9081055af6319` |
+| U1 item 2 | `git log --oneline origin/main..e7454f15 -- .github/agents/_orchestrator.agent.md` | empty |
+| U3 pre-edit parent | `git rev-parse e36ac003^` | `d2248d7c055856c66b31fc8ee3ad5e5b003d81fb` |
+| U3 item 2 | `git log --oneline origin/main..d2248d7c -- .github/skills/shipment-reconcile/SKILL.md` | empty |
+| U1 harness | `git show --numstat d2248d7c` | 11 added, 0 deleted; only `tests/integration/orchestrator_served_root_handoff_contract_test.go` |
+| U3 harness | `git show --numstat e36ac003` | 11 added, 0 deleted; only `tests/integration/shipment_reconcile_feature_member_contract_test.go` |
+| No green since | `git log --oneline origin/main..HEAD` on the three green files, at `4ca51a55` | empty |
+
+**Reasoning.** The item 2 check is a pure function of the `origin/main` SHA, the pre-edit
+HEAD SHA, and the path. Both SHAs are pinned commits and immutable, and the reflog shows
+the local `origin/main` held `c4c458b9` across the edit window. Re-running the check
+therefore reproduces the contemporaneous result exactly. This is equivalent evidence, not
+post-hoc inference. Item 2's purpose, that a red baseline is still observable, is also
+enforced independently at dispatch: build-feature Step 0.5 halts with
+`WAVE_RED_DELIVERABLE_EARLY_GREEN` if the selector is already green.
+
+**Disposition.** The recomputation satisfies item 2 for 196.001-T and 196.003-T. Ship
+cites E1.2 in each task's completion evidence and lists this residual risk with the A3.6
+P-021 C3 items: "Process deviation: A3.3 item 2 evidence for 196.001-T and 196.003-T was
+captured late; closed by deterministic recomputation against pinned SHAs (Erratum E1.2)."
+
+**Forward rule.** Item 2 gains this sentence: "If the check was not recorded
+contemporaneously, re-run it against the pinned pre-edit parent SHA and an unchanged
+`origin/main` SHA; any other condition halts." Unchanged means the remote-tracking reflog
+shows `origin/main` at that SHA from before the harness commit through the re-run.
+
+### E1.3 Resume
+
+* Checkpoint: `.backlogit/checkpoints/checkpoint-20261006-073956.json` (Ship-owned,
+  committed in `90a3500d`). The operator, or the Orchestrator under operator authority,
+  explicitly selects and confirms it. Ship's fail-closed recovery protocol applies in
+  full: no auto-pick, owner `ship` only, resolution only after a confirmed resume.
+* Preconditions: E1 is effective (see the header), `DARK_MODE_SCOPE` is still `[196-S]`,
+  the tree is clean, and HEAD descends from the commit that made E1 effective.
+* Order: restore, then E1.1's resume application, then Phase 2 item 21 and Phase 3.
+* Ship cites E1 in its resume record and in the completion evidence of both tasks.
