@@ -83,8 +83,14 @@ these outcomes; observe and classify.
    `archived_status: shipped`, and an `archived` event in the shipment item
    log. Steps 4–6 complete the check.
 4. Confirm the post-ship hook event (`event_type: ship_shipment`) in
-   `.backlogit/hooks_queue.jsonl`. It is the last step, so its presence proves
-   the call ran to completion.
+   `.backlogit/hooks_queue.jsonl`. The `emit_hook_event` post-hook writes it
+   at priority 50, before the webhook (priority 80) and index-stale
+   (priority 90) post-hooks (`internal/hooks/builtin_post.go`,
+   `internal/hooks/webhook.go`). It is not the last step. Its presence proves
+   only that core archival and post-ship consistency finished and post-hook
+   processing began. It does not prove the call returned. Completion proof is
+   still quiescence (step 2) together with the state checks in steps 3, 5,
+   and 6.
 5. Reconstruct the missing envelope from state:
    * `shipment_status: shipped`
    * `returned_ids: []` (no `returned_to_backlog` events)
