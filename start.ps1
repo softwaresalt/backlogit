@@ -24,6 +24,7 @@
 # runspace location after Copilot exits.
 Push-Location -LiteralPath $PSScriptRoot
 $copilotExitCode = 1
+$callerPath = $env:PATH
 try {
 
 # Load .env.local (gitignored per-developer overrides) if present. Each
@@ -53,37 +54,48 @@ if (Test-Path -LiteralPath $envLocalPath -PathType Leaf) {
 # declared in .mcp.json (a workspace-built dogfood binary). Put that binary's
 # directory first on PATH so the CLI, the sidecar sync below, and every agent
 # shell spawned by Copilot resolve the identical build. .env.local cannot do
-# this: its loader never overrides an already-set variable such as PATH.
+# this: its loader never overrides an already-set variable such as PATH. Other
+# tools in that directory (e.g. the repo-pinned golangci-lint) intentionally
+# take precedence too. The caller's PATH is restored when Copilot exits.
 $mcpConfigPath = Join-Path $PSScriptRoot ".mcp.json"
 if (Test-Path -LiteralPath $mcpConfigPath -PathType Leaf) {
-    $mcpBacklogitCommand = $null
     try {
         $mcpConfig = Get-Content -LiteralPath $mcpConfigPath -Raw | ConvertFrom-Json
         $mcpBacklogitCommand = $mcpConfig.mcpServers.backlogit.command
-    } catch {
-        Write-Warning "Unable to read backlogit command from .mcp.json (non-fatal): $_"
-    }
-    if ($mcpBacklogitCommand -and ($mcpBacklogitCommand -match '[\\/]')) {
-        $mcpBacklogitBinary = if ([System.IO.Path]::IsPathRooted($mcpBacklogitCommand)) {
-            $mcpBacklogitCommand
-        } else {
-            Join-Path $PSScriptRoot $mcpBacklogitCommand
-        }
-        $mcpBacklogitBinary = [System.IO.Path]::GetFullPath($mcpBacklogitBinary)
-        if (Test-Path -LiteralPath $mcpBacklogitBinary -PathType Leaf) {
-            $mcpBacklogitDir = (Split-Path -Parent $mcpBacklogitBinary).TrimEnd('\', '/')
-            $pathSeparator = [System.IO.Path]::PathSeparator
-            $otherPathEntries = @($env:PATH -split [regex]::Escape($pathSeparator) | Where-Object {
-                $_ -and ($_.TrimEnd('\', '/') -ine $mcpBacklogitDir)
-            })
-            $env:PATH = (@($mcpBacklogitDir) + $otherPathEntries) -join $pathSeparator
-            $resolvedBacklogit = Get-Command backlogit -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $resolvedBacklogit -or ([System.IO.Path]::GetFullPath($resolvedBacklogit.Source) -ine $mcpBacklogitBinary)) {
-                Write-Warning "backlogit CLI does not resolve to the MCP binary '$mcpBacklogitBinary'; CLI and MCP builds may differ."
+        # A bare command name already resolves from PATH for both MCP and CLI.
+        if ($mcpBacklogitCommand -and ($mcpBacklogitCommand -match '[\\/]')) {
+            $mcpBacklogitBinary = if ([System.IO.Path]::IsPathRooted($mcpBacklogitCommand)) {
+                $mcpBacklogitCommand
+            } else {
+                Join-Path $PSScriptRoot $mcpBacklogitCommand
             }
-        } else {
-            Write-Warning "backlogit MCP binary '$mcpBacklogitBinary' not found; the CLI resolves from PATH and may differ from the MCP server build."
+            $mcpBacklogitBinary = [System.IO.Path]::GetFullPath($mcpBacklogitBinary)
+            if (Test-Path -LiteralPath $mcpBacklogitBinary -PathType Leaf) {
+                $pathComparison = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+                    [StringComparison]::OrdinalIgnoreCase
+                } else {
+                    [StringComparison]::Ordinal
+                }
+                $mcpBacklogitDir = Split-Path -Parent $mcpBacklogitBinary
+                if ($mcpBacklogitDir -ne [System.IO.Path]::GetPathRoot($mcpBacklogitDir)) {
+                    $mcpBacklogitDir = $mcpBacklogitDir.TrimEnd('\', '/')
+                }
+                $mcpBacklogitDirKey = $mcpBacklogitDir.TrimEnd('\', '/')
+                $pathSeparator = [System.IO.Path]::PathSeparator
+                $otherPathEntries = @($env:PATH -split [regex]::Escape($pathSeparator) | Where-Object {
+                    $_ -and -not [string]::Equals($_.TrimEnd('\', '/'), $mcpBacklogitDirKey, $pathComparison)
+                })
+                $env:PATH = (@($mcpBacklogitDir) + $otherPathEntries) -join $pathSeparator
+                $resolvedBacklogit = Get-Command backlogit -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+                if (-not $resolvedBacklogit -or -not [string]::Equals([System.IO.Path]::GetFullPath($resolvedBacklogit.Source), $mcpBacklogitBinary, $pathComparison)) {
+                    Write-Warning "backlogit CLI does not resolve to the MCP binary '$mcpBacklogitBinary'; CLI and MCP builds may differ."
+                }
+            } else {
+                Write-Warning "backlogit MCP binary '$mcpBacklogitBinary' not found; the CLI resolves from PATH and may differ from the MCP server build."
+            }
         }
+    } catch {
+        Write-Warning "Unable to align the backlogit CLI with the .mcp.json MCP binary (non-fatal): $_"
     }
 }
 
@@ -145,7 +157,7 @@ if (-not $copilotExe) {
 $enabledSidecars = @("backlogit", "engram")
 
 if ($enabledSidecars -contains "backlogit") {
-    $backlogitCmd = Get-Command backlogit -ErrorAction SilentlyContinue
+    $backlogitCmd = Get-Command backlogit -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($backlogitCmd) {
         try {
             & $backlogitCmd.Source sync
@@ -191,6 +203,7 @@ $copilotArguments += $args
 & $copilotExe @copilotArguments
 $copilotExitCode = $LASTEXITCODE
 } finally {
+    $env:PATH = $callerPath
     Pop-Location
 }
 exit $copilotExitCode
