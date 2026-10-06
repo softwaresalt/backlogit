@@ -132,6 +132,9 @@ from task aggregation.
 3. **Inspect only explicit members.** For each ID in `M`, resolve exactly one
    queue/archive record, read `status` and `artifact_type`, and assign the
    per-member classification. Do not scan for related unlisted artifacts.
+   Classify every explicit non-feature member before any explicit feature
+   member, because `feature-pending-governed-completion` depends on the
+   explicit task member classifications.
 4. **Classify the shipment record.** Aggregate statuses only from explicit task
    members and apply the Shipment Record Classification table.
 5. **Validate the canonical blocked envelope.** A blocked record is resumable
