@@ -355,7 +355,7 @@ artifacts:
     template: "templates/skills/shipment-reconcile/SKILL.md.tmpl"
     checksum: "acef3aa9f6d10856672705c4cccf2aa2347b59201731b4850ed0d097439e37f4"
     drift_allowed: true
-    drift_reason: "Shipment 155-S final-review remediation supersedes the earlier safe-close workaround. The implemented governed ShipShipment transaction now uses flat explicit membership, so reconciliation checks only manifest IDs plus the shipment control record, never inferred descendants or linked deliberations, while preserving the pre/post lock and P-007 integrity gates. Do not auto-revert. 196-F / shipment 196-S (stash B83081F5): explicit feature members classify as feature-pending-governed-completion and Safe-Close step 2 delegates to the governed ShipShipment transaction. Do not auto-revert."
+    drift_reason: "Shipment 155-S final-review remediation supersedes the earlier safe-close workaround. The implemented governed ShipShipment transaction now uses flat explicit membership, so reconciliation checks only manifest IDs plus the shipment control record, never inferred descendants or linked deliberations, while preserving the pre/post lock and P-007 integrity gates. Do not auto-revert. 196-F / shipment 196-S (stash B83081F5): an active explicit feature member whose explicit task members are all matched or pre-archived classifies at pre-close as feature-pending-governed-completion; Safe-Close step 2 accepts that state as close-ready (re-checked under lock), and the feature is completed only by governed ShipShipment. Do not auto-revert."
   - path: ".github/prompts/stage-grouping-analysis.prompt.md"
     primitive: 4
     template: "templates/prompts/stage-grouping-analysis.prompt.md.tmpl"
