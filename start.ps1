@@ -49,6 +49,44 @@ if (Test-Path -LiteralPath $envLocalPath -PathType Leaf) {
     }
 }
 
+# backlogit CLI/MCP binary parity. The MCP server is launched from the command
+# declared in .mcp.json (a workspace-built dogfood binary). Put that binary's
+# directory first on PATH so the CLI, the sidecar sync below, and every agent
+# shell spawned by Copilot resolve the identical build. .env.local cannot do
+# this: its loader never overrides an already-set variable such as PATH.
+$mcpConfigPath = Join-Path $PSScriptRoot ".mcp.json"
+if (Test-Path -LiteralPath $mcpConfigPath -PathType Leaf) {
+    $mcpBacklogitCommand = $null
+    try {
+        $mcpConfig = Get-Content -LiteralPath $mcpConfigPath -Raw | ConvertFrom-Json
+        $mcpBacklogitCommand = $mcpConfig.mcpServers.backlogit.command
+    } catch {
+        Write-Warning "Unable to read backlogit command from .mcp.json (non-fatal): $_"
+    }
+    if ($mcpBacklogitCommand -and ($mcpBacklogitCommand -match '[\\/]')) {
+        $mcpBacklogitBinary = if ([System.IO.Path]::IsPathRooted($mcpBacklogitCommand)) {
+            $mcpBacklogitCommand
+        } else {
+            Join-Path $PSScriptRoot $mcpBacklogitCommand
+        }
+        $mcpBacklogitBinary = [System.IO.Path]::GetFullPath($mcpBacklogitBinary)
+        if (Test-Path -LiteralPath $mcpBacklogitBinary -PathType Leaf) {
+            $mcpBacklogitDir = (Split-Path -Parent $mcpBacklogitBinary).TrimEnd('\', '/')
+            $pathSeparator = [System.IO.Path]::PathSeparator
+            $otherPathEntries = @($env:PATH -split [regex]::Escape($pathSeparator) | Where-Object {
+                $_ -and ($_.TrimEnd('\', '/') -ine $mcpBacklogitDir)
+            })
+            $env:PATH = (@($mcpBacklogitDir) + $otherPathEntries) -join $pathSeparator
+            $resolvedBacklogit = Get-Command backlogit -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $resolvedBacklogit -or ([System.IO.Path]::GetFullPath($resolvedBacklogit.Source) -ine $mcpBacklogitBinary)) {
+                Write-Warning "backlogit CLI does not resolve to the MCP binary '$mcpBacklogitBinary'; CLI and MCP builds may differ."
+            }
+        } else {
+            Write-Warning "backlogit MCP binary '$mcpBacklogitBinary' not found; the CLI resolves from PATH and may differ from the MCP server build."
+        }
+    }
+}
+
 # COPILOT_HOME/ENGRAM_DATA_DIR redirect AI-tool state to workspace-local hidden
 # directories so agent memories, checkpoints, and database files are
 # git-visible and project-scoped rather than shared across all workspaces.
