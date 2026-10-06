@@ -45,3 +45,18 @@ Pointers added at A3.3 item 2 and item 4.
   Ship stays halted.
 - On resume, the operator or the Orchestrator under operator authority must explicitly
   select checkpoint `checkpoint-20261006-073956.json`.
+
+## Operator approval (2026-10-06)
+
+- Operator reply at 2026-10-06T12:31:35-07:00, verbatim: "I don't see an issue with the
+  clean worktree: git status shows no uncommitted or untracked files."
+- Orchestrator interpretation: the reply approves E1's clean-tree resume path (clean
+  tree, then fresh baseline, then dispatch) and gives authority to resume from checkpoint
+  `checkpoint-20261006-073956.json`. The operator runs in autopilot and is AFK.
+- Recorded in the plan: the E1 header now reads `status: effective (operator approval
+  recorded 2026-10-06)`, with an `approval:` bullet. The two Amendment 3 cross-references
+  now read "effective by recorded operator approval". Cycle-6 plan-review was not run.
+- Residual risk: the approval is inferred from the reply, not given as an explicit "I
+  approve E1". If the operator disputes it, E1 reverts to draft and Ship halts again.
+- The "Pending" section above is superseded by this approval. E1.1–E1.3 text, requirements,
+  tasks, tests, and code are unchanged.
