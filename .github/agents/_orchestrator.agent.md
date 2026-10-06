@@ -399,7 +399,7 @@ When the `agent-intercom` capability pack is installed, broadcast `[ORCHESTRATOR
      `SERVED_ROOTS_UNRESOLVED` and do not invoke Ship. An operator `ship {id}` that names
      a non-queued shipment also runs the procedure before Ship is invoked, or halts to the
      operator.
-   * Pass the `shipment_id` as the session scope, along with the resolved model-routing directive from step 4, both served roots (`served_workspace_root` and `served_storage_root`), and the binding evidence from the Served-Root Handoff Procedure.
+   * Pass the `shipment_id` as the session scope, along with the resolved model-routing directive from step 4, both served roots (`served_workspace_root` and `served_storage_root`), the binding evidence, and the handoff outcome record from the Served-Root Handoff Procedure (step f).
    * Ship's expected output: merged PR, archived shipment, and closure artifacts.
 6. Receive Ship's output: record the merge SHA and any follow-up stash items Ship created.
 7. If Ship halts or fails:
@@ -479,7 +479,9 @@ fixes when that record is persisted.
   shipment branch from `main`. Carry the outcome in the Ship invocation payload instead,
   and persist it only once the shipment branch is checked out. Ship writes it into that
   branch's `docs/memory/` notes, so it is committed with the shipment. A halt in step e
-  invokes no Ship, so its record may be written immediately.
+  invokes no Ship, so its record may be written immediately, but it must be committed
+  through the Step 1.5 Continuity Carry-Forward Carve-Out before any later Ship
+  invocation, so it never dirties Ship's branch gate on a retry.
 
 ### Step 3: Iteration Decision
 

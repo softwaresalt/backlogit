@@ -203,6 +203,11 @@ build work begins:
       e. Log `BRANCH_CREATED: {branch_name}`.
     - If on an unrelated non-default branch: halt with `BRANCH_MISMATCH: currently on {branch_name} — does not match shipment scope. Checkout the correct branch or create one manually.`
     - Note: All four git commands above are run as separate sequential steps, not chained.
+    - **Served-root handoff outcome.** When the invocation payload carries the Orchestrator's
+      served-root handoff outcome record (Orchestrator Served-Root Handoff Procedure step f),
+      write it into `docs/memory/` in workspace-relative form only after `BRANCH_OK` or
+      `BRANCH_CREATED`, never before, and commit it on the shipment branch with the
+      shipment's memory notes.
     - **TOPOLOGY_GATE: pre_claim (immediately before claim)** — if the gate is installed, immediately before the
       claim in step 4, re-run `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase
       pre_claim --json` to narrow the TOCTOU window between branch setup and the claim. Same exit-code handling as
