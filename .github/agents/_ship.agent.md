@@ -541,8 +541,8 @@ Run this step at the head of every wave, before anything in that wave is scaffol
    admission, before any raw item-log read. A failure halts with `SERVED_ROOT_ATTESTATION_FAILED`
    before any claim or raw item-log read. An unknown root still halts with
    `WAVE_CLAIM_STATE_INDETERMINATE`. In shipment mode, when any member of `M` is `active`,
-   classify every active member
-   against the live shipment `S` before deciding whether an active state blocks the wave. The full
+   classify every active member against the live shipment `S` before deciding whether an active
+   state blocks the wave. The full
    Step 4.0 token set `K` is `{claim-assigned,
    scheduler_baseline_claim, custom_fields.items, WORK_STARTED:, start epoch, shipment claimed,
    logs/<id>.jsonl, manifest drift, stale read, WAVE_CLAIM_STATE_INDETERMINATE, active residual,
@@ -710,17 +710,17 @@ only its `workspace` object: `workspace.root_path` must equal the canonical serv
 and `workspace.storage_root` must equal the canonical served storage root. Ship then calls
 `backlogit_query_sql` with `SELECT name, file FROM pragma_database_list WHERE name = 'main'`, which
 must return exactly one row whose `file` is `backlogit.db` as a direct child of the canonical served
-storage root. Comparisons use canonical OS-native absolute forms; on Windows, drive letters and path
+storage root. Comparisons use canonical OS-native absolute forms; on Windows, drive letters and
 components compare case-insensitively. The attestation is MCP-only, so there is no CLI attestation:
 a CLI invocation reports the root it was pointed at. No sync or retry applies, because a sync cannot
 change the root a server is bound to. Timing: the full attestation runs once per wave admission,
 before any raw item-log read (Step 4.0 item 4), and immediately before any CLI fallback that passes
-the served workspace root (item 4 below). In addition, Ship repeats the `pragma_database_list` check
-alone at each task claim, before that task's first raw item-log read, which narrows an MCP server
+the served workspace root. In addition, Ship repeats the `pragma_database_list` check
+alone at each task claim, before that task's first raw item-log read. This narrows an MCP server
 restart in the middle of a wave to at most one task. Any error, timeout, unavailable tool, missing,
 empty, or relative value, row count other than one, or mismatch halts with
 `SERVED_ROOT_ATTESTATION_FAILED: {reason}` before any claim, raw item-log read, or CLI fallback.
-Record a `SERVED_ROOT_ATTESTATION_FAILED` halt through P-005 with workspace-relative or redacted
+Record the halt through P-005 with workspace-relative or redacted
 path tokens, and report an Orchestrator follow-up.
 
 **Raw-log path safety (shared read-only procedure):** Step 4.0 and Step 4.1b raw-log reads use this
