@@ -8,6 +8,7 @@
 - Last committed HEAD before this checkpoint: `e36ac003833c480d0e9a4116bee1b1a0aa25c3e4`.
 - PR: none. Merge: none.
 - Scope remains unchanged; no production files were edited.
+- Structured Ship checkpoint: `.backlogit/checkpoints/checkpoint-20261006-073956.json`.
 
 ## Completed in this resume
 
@@ -16,6 +17,8 @@
 - Added the authorized A3.2.1 and A3.2.2 assertions, with zero deleted lines, and made separate harness commits:
   - `d2248d7c055856c66b31fc8ee3ad5e5b003d81fb` — U1 harness.
   - `e36ac003833c480d0e9a4116bee1b1a0aa25c3e4` — U3 harness.
+  - `ef0c0b5867d92ad18f873a743f34ee239dd0d55e` — wave-2 traceability and halt note.
+  - `6c5106844611d20c708b5eb5e8bebcf2050fc4d4` — task-to-commit associations.
 - Compile-only repository test passed. U1 and U3 scoped selectors showed the specified assertion-RED profiles. `go vet ./tests/integration`, committed-blob `gofmt -d`, and pinned `golangci-lint` v1.64.8 passed. The installed v2.13.2 reported eight errcheck findings in unchanged integration files and none in the two harness files.
 - Added `harness-ready` and the A3.3 harness-manifest evidence for both items.
 - Moved both tasks to `active`. Scoped no-follow log reads verified exactly one valid `WORK_STARTED: 196-S` record in each current epoch; no duplicate comments were appended.
