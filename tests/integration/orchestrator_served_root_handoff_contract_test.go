@@ -114,6 +114,17 @@ func TestUSR1_OrchestratorServedRootHandoffContract(t *testing.T) {
 					"Route blocked shipments to Ship", "never performs those lifecycle mutations itself")
 				require.True(t, ok, "blocked-shipment route must have unique start and end anchors")
 				assertContainsAll(t, blockedRoute, []string{"Served-Root Handoff Procedure"}, "blocked-shipment route")
+
+				payload := "only after the Served-Root Handoff Procedure passes, with `served_workspace_root`, `served_storage_root`, and the binding evidence in the Ship invocation payload"
+				item5, ok := sliceBetweenUniqueAnchors(step2, "5. Invoke the **Ship** subagent:", "6. Receive Ship's output:")
+				require.True(t, ok, "Step 2 item 5 must have unique start and end anchors")
+				assertContainsAll(t, item5, []string{payload}, "Step 2 item 5 Ship payload")
+				item5Run := strings.Index(item5, "Run the Served-Root Handoff Procedure")
+				item5Payload := strings.Index(item5, payload)
+				assert.True(t, item5Run >= 0 && item5Payload > item5Run, "item 5 must run the procedure before invoking Ship with the payload")
+				assertContainsAll(t, step2, []string{"Include the binding evidence: `id`, ordered items, and the attested `workspace.root_path`, `workspace.storage_root`, and index `file`"}, "Step 2 binding evidence")
+				assertContainsAll(t, recovery, []string{payload, "Use the checkpoint summary's shipment ID only", "do not read the state dump", "If the summary names no shipment, halt to the operator"}, "Ship recovery payload")
+				assertContainsAll(t, blockedRoute, []string{payload}, "blocked-shipment payload")
 			},
 		},
 		{
