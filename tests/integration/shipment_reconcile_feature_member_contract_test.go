@@ -97,6 +97,17 @@ func TestUSR3_ShipmentReconcileExplicitFeatureMemberContract(t *testing.T) {
 				assert.Contains(t, safeClose,
 					"require every member/control record that was not already validly archived at baseline to appear in `A`",
 					"safe-close Step 5 archive-set invariant must remain")
+
+				closeReady, ok := sliceBetweenUniqueAnchors(skill, "2. **Require close-ready state.**", "3. **Capture the baseline.**")
+				require.True(t, ok, "Safe-Close step 2 must have unique start and end anchors")
+				assertContainsAll(t, closeReady, []string{
+					"every non-pre-archived explicit task member must be `done`",
+					"a non-pre-archived explicit feature member must be `done` or meet the `feature-pending-governed-completion` condition",
+					"any other non-pre-archived explicit member must be `done`",
+					"any other status of a non-pre-archived explicit feature member halts before mutation",
+					"Safe-close re-checks this condition on the state re-read under lock",
+				}, "Safe-Close step 2 acceptance rule")
+				assert.NotContains(t, closeReady, "every non-pre-archived explicit member", "Safe-Close step 2 must not require every explicit member to be done")
 			},
 		},
 	}
