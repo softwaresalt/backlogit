@@ -148,3 +148,17 @@ Operator ruling, verbatim: "I authorize a cycle 5". Stage gets one more plan-rev
   pending for Ship's Phase 0 item 2 carry commit.
 - Next: Ship runs A3.5 Phase 0 and Phase 1, then halts at G-A3. Option A (A3.4) is operator-executed;
   the Orchestrator supplies helper-script text in chat only.
+
+## Ship G-A3 Halt (2026-10-06)
+
+- Ship completed A3.5 Phase 0 (all preconditions PASS, checkpoint 052350 restored and resolved) and
+  Phase 1 (U8 red contract extended; 196.008-T done on red path; Step 4.4 review P0/P1 = 0, two P2
+  captured as stash 1EF5BDC6 and 33C4B816; wave-1 Step 4.6 gate converged with open-red {001,003,008}).
+- Commits: 2911d017, 84b70a9f, f18fcb11, 3155af85, 203a3c56. Tree clean; nothing pushed.
+- G-A3 checkpoint: `checkpoint-20261006-021519.json` (only active checkpoint).
+- DARK_MODE_HALTED: Amendment 3 reopen requires operator-only A3.4 Option A. The Orchestrator supplied
+  the helper-script text in chat only (never written to disk by an agent). The `backlogit init` done row
+  was verified empirically as a block list (`done:` then `- archived`); the script inserts `- queued`.
+- Resume: after `docs(memory): 196-S A3 ruling` is committed, the Orchestrator re-invokes Ship for
+  Phase 0′, Phase 2 {001,003}, Phase 3 {002,005}->{009}->{006}, then review, PR, Copilot loops, merge,
+  and closure.
