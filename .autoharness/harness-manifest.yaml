@@ -391,7 +391,7 @@ artifacts:
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "87bb66dfab5c311e7c82f50deab72fa66ae276d304d55d23ee6fcc60b398556f"
+    checksum: "2b109518d981e2e980970b590c682ab66c01c3f20175b29396520a803b151cd7"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert. 2026-09-27 tune review (TUNE-010): Dark Factory DARK_MODE_ACTIVE subagent propagation and concrete-ID scope resolution. 196-F / shipment 196-S (stash 227A2930): Served-Root Handoff Procedure binding both absolute served roots and binding evidence into the Ship payload, with SERVED_ROOTS_UNRESOLVED fail-closed halts; the outcome record is carried to Ship and persisted on the shipment branch, never in the main worktree before Ship's branch gate, and a step e halt record is committed via the Step 1.5 carry-forward before any later Ship invocation (Copilot review and local review, PR #478). Do not auto-revert."
   - path: ".github/agents/_stage.agent.md"

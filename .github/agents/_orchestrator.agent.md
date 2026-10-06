@@ -208,7 +208,8 @@ distinct from dependency gating: queued successors remain queued behind unfinish
 `blocks` edges, while an evidence-backed blocked shipment requires lifecycle
 recovery before execution resumes. Route blocked shipments to Ship only after the
 Served-Root Handoff Procedure passes, with `served_workspace_root`,
-`served_storage_root`, and the binding evidence in the Ship invocation payload, for
+`served_storage_root`, and the binding evidence in the Ship invocation payload (plus the
+step f handoff outcome record), for
 `backlogit_unblock_shipment` with explicit confirmation or, for malformed legacy
 state with the required snapshot evidence, the MCP-only
 `backlogit_normalize_blocked_shipment` operation. The procedure binds that blocked
@@ -254,7 +255,7 @@ Immediately after the Tool Availability Gate and before Step 0 State Assessment,
 
 6. **Owner-exclusive routing (NEVER perform owner work directly)**: route ALL restore/resume/prune work for the selected checkpoint EXCLUSIVELY to the agent that owns it:
    * `agent: stage` → invoke the **Stage** subagent. Stage restores/resumes/prunes this checkpoint under its own Crash-Resumption / Startup Recovery Protocol (see the Stage agent definition).
-   * `agent: ship` → invoke the **Ship** subagent likewise, under its own Crash-Resumption / Startup Recovery Protocol (see the Ship agent definition). Before invoking Ship, run the Served-Root Handoff Procedure for the checkpoint's shipment. Use the checkpoint summary's shipment ID only; do not read the state dump. If the summary names no shipment, halt to the operator. Invoke Ship only after the Served-Root Handoff Procedure passes, with `served_workspace_root`, `served_storage_root`, and the binding evidence in the Ship invocation payload.
+   * `agent: ship` → invoke the **Ship** subagent likewise, under its own Crash-Resumption / Startup Recovery Protocol (see the Ship agent definition). Before invoking Ship, run the Served-Root Handoff Procedure for the checkpoint's shipment. Use the checkpoint summary's shipment ID only; do not read the state dump. If the summary names no shipment, halt to the operator. Invoke Ship only after the Served-Root Handoff Procedure passes,    with `served_workspace_root`, `served_storage_root`, and the binding evidence in the Ship invocation payload, plus the step f handoff outcome record.
    The Orchestrator MUST NEVER execute Stage-owned or Ship-owned restore/resume/prune/resolve work itself, directly. This preserves P-001 role separation / persona isolation — the Orchestrator routes; it never performs the owning agent's recovery work.
 
 7. **Fail closed on ambiguity — among existing candidates only**: when one or more candidates exist but a single checkpoint cannot be UNIQUELY selected (multiple active candidates with no explicit operator selection, or any other selection ambiguity), OR the selected checkpoint's `agent` field is missing, empty, or any value other than `stage`/`ship`, FAIL CLOSED: halt and hand off to the operator. Do NOT restore, resume, prune, or resolve anything. This fail-closed path is never triggered by the zero-candidate case in step 3 — zero candidates is the no-recovery-needed continuation, not an ambiguous selection.
