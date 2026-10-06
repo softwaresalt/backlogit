@@ -3568,3 +3568,4 @@
 {"seq":3570,"timestamp":"2026-10-06T07:27:22.148443Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"196.003-T","schema_version":1}}
 {"seq":3571,"timestamp":"2026-10-06T07:33:17.547527Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"196.001-T","schema_version":1,"status_delta":{"from":"queued","to":"active"}}}
 {"seq":3572,"timestamp":"2026-10-06T07:34:20.182921Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"196.003-T","schema_version":1,"status_delta":{"from":"queued","to":"active"}}}
+{"seq":3573,"timestamp":"2026-10-06T19:47:54.9438151Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"196.001-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
