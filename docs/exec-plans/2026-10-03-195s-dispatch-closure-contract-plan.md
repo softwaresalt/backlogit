@@ -2614,6 +2614,12 @@ file. Stage escalation status: not triggered (no further FAIL).
   the operator runs in autopilot and is AFK. Residual risk: the approval is inferred from
   the statement, not given as an explicit "I approve E1". If the operator disputes the
   interpretation, E1 reverts to draft and Ship halts again.
+* clarification: E1.4 was added on 2026-10-06 on the operator's explicit instruction,
+  verbatim: "I want us to be consistent on the second instance: clean tree, then record
+  the baseline, then start the build; however, it should be legal to stash uncommitted
+  work in the tree to achieve clean tree first." E1.4 takes effect on that instruction;
+  plan-review was not run. It stays within the A3.3 item 4 scope and changes no
+  requirement, task, test, or code.
 * effective: only after a Plan Review record for E1 shows `decision: PASS`, or
   `decision: ADVISORY` with `operator_authorization: approved`, or the operator records
   explicit approval of E1 in this file. Until then Ship stays halted.
@@ -2670,10 +2676,11 @@ tree at `4ca51a55`. On resume:
    notes under the committer rule, `RUNTIME_LOGS`) is pending traceability for 196.001-T.
    Commit it as `chore(backlog)` after the item 4 path check. If nothing is pending, the
    clean-tree check satisfies the traceability step; never make an empty commit.
-2. For 196.001-T, then 196.003-T:
+2. For 196.001-T, then 196.003-T, in the identical per-task order of E1.4 rule 1:
    1. Run the Step 4.2 pre-dispatch actions for the task. Commit any pending change they
-      leave as `chore(backlog)` after the item 4 path check; otherwise commit nothing.
-   2. Confirm a clean tree.
+      leave as `chore(backlog)` after the item 4 path check, or stash uncommitted work
+      the plan does not require committed, per E1.4; otherwise commit nothing.
+   2. Confirm a clean tree (`git status --porcelain` empty).
    3. Take a fresh `red_baseline_sha` := HEAD immediately before this task's own Step 0.5
       dispatch. Write nothing between the baseline and Step 0.5b.
    4. Dispatch build-feature. Step 0.5 must show zero delta and the selector RED with
@@ -2732,3 +2739,65 @@ shows `origin/main` at that SHA from before the harness commit through the re-ru
   the tree is clean, and HEAD descends from the commit that made E1 effective.
 * Order: restore, then E1.1's resume application, then Phase 2 item 21 and Phase 3.
 * Ship cites E1 in its resume record and in the completion evidence of both tasks.
+
+### E1.4 Operator clarification — stash-to-clean is legal
+
+Added 2026-10-06 on the operator's explicit instruction (quoted in the E1 header
+`clarification:` bullet), effective on that instruction without plan-review. E1.4 extends
+E1.1's "commit any pending change" route to the clean tree: Ship may also stash. It does
+not change the clean-tree definition (`git status --porcelain` empty), the item 4 path
+check, the Step 0.5b zero-delta check, the no-write window between `red_baseline_sha` and
+Step 0.5b, per-task baselines, or the no-empty-commit rule.
+
+1. **Per-task uniform order (no exceptions).** Every task runs this order, with no
+   variation between tasks. It applies to 196.001-T and to the second instance,
+   196.003-T, identically:
+   1. Run the Step 4.2 pre-dispatch actions.
+   2. Reach a clean tree by either (a) committing pending changes as `chore(backlog)`
+      after the item 4 path check, never as an empty commit, or (b) stashing them under
+      rule 2.
+   3. Verify `git status --porcelain` is empty.
+   4. Record a fresh `red_baseline_sha` := HEAD.
+   5. Dispatch build-feature (Step 0.5) with zero delta.
+2. **Stash mechanics.**
+   * Stash with
+     `git stash push --include-untracked -m "196-S <task-id> pre-baseline <UTC timestamp>"`,
+     with the timestamp in `YYYY-MM-DDTHH:MM:SSZ` form.
+   * Before taking the baseline, capture the stash commit SHA (`git rev-parse stash@{0}`)
+     and the stashed path list
+     (`git stash show --include-untracked --name-only stash@{0}`). Record both in the
+     task's completion evidence. Capturing them must not write a tracked file before the
+     baseline.
+   * Never use `git stash drop` (other than the post-apply drop in rule 4),
+     `git stash clear`, `git reset --hard`, or `git clean`.
+3. **What may not be stashed.** Content the plan requires to be committed before dispatch
+   must be committed, never stashed. Examples: the Step 4.2 traceability commit (claim
+   moves, bookkeeping, and tracked writes from Step 4.1b, Step 4.1c, and the Step 4.2
+   pre-dispatch actions, per E1.1), and harness or selector files the RED baseline
+   depends on. Stash only uncommitted work the plan does not require at the baseline.
+   Stashing required content is a halt condition (`DARK_MODE_HALTED`), because the
+   baseline would not reflect required state. Ship leaves the stash entry intact and
+   reports it.
+4. **Restore timing.**
+   * The build window runs from `red_baseline_sha` through build-feature, Step 4.3,
+     Step 4.4, and Step 4.5. Never restore stashed work inside it.
+   * Restore only after the task's completion-bookkeeping commit and before the next
+     task's pre-dispatch actions. Select the entry whose SHA matches the recorded SHA
+     (`git stash list --format="%gd %H"`). Restore it with `git stash pop`, or with
+     `git stash apply` followed by a recorded `git stash drop` of that entry, and only
+     after a verified clean apply: no conflicts, no unmerged paths, and the restored paths
+     match the recorded list.
+   * Whatever is restored must be committed or stashed again under rule 1 before the next
+     baseline.
+   * On a restore conflict, Ship halts (`DARK_MODE_HALTED`) and leaves the stash entry
+     intact. It never auto-resolves by discarding.
+5. **Before PR or closure.** No 196-S stash entry may remain when the PR is opened. Each
+   entry is either restored and committed, or explicitly reported as a residual item with
+   its SHA. Ship lists all stash usage (task ID, stash SHA, path list, and the restore
+   commit or residual status) in the Local Review Readiness evidence.
+6. **Not destructive.** `git stash push`, `git stash pop`, and `git stash apply` are
+   non-destructive (ActionRisk: low): the work stays preserved in the stash ref until a
+   verified restore. The following remain destructive and need operator approval:
+   `git stash drop` (other than rule 4's post-apply drop, which follows a verified clean
+   apply and so matches a successful `pop`), `git stash clear`, `git reset --hard`, and
+   `git clean`.

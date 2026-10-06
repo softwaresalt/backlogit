@@ -60,3 +60,28 @@ Pointers added at A3.3 item 2 and item 4.
   approve E1". If the operator disputes it, E1 reverts to draft and Ship halts again.
 - The "Pending" section above is superseded by this approval. E1.1–E1.3 text, requirements,
   tasks, tests, and code are unchanged.
+
+## E1.4 operator clarification (2026-10-06)
+
+- Operator instruction, verbatim: "I want us to be consistent on the second instance:
+  clean tree, then record the baseline, then start the build; however, it should be legal
+  to stash uncommitted work in the tree to achieve clean tree first."
+- Recorded as E1.4, "Operator clarification — stash-to-clean is legal", after E1.3. It
+  takes effect on the operator's explicit instruction; plan-review was not run.
+- Content: (1) the same order for every task, 196.001-T and 196.003-T alike: pre-dispatch
+  actions, then a clean tree by commit (never empty) or stash, then empty
+  `git status --porcelain`, then a fresh `red_baseline_sha`, then dispatch; (2) stash
+  mechanics (`push --include-untracked` with a 196-S message; SHA and path list recorded
+  in completion evidence; no drop, clear, `reset --hard`, or clean); (3) plan-required
+  content, such as traceability and RED-baseline harness or selector files, must be
+  committed, and stashing it is a halt condition; (4) no restore during the build window,
+  only after the completion-bookkeeping commit, and a conflict halts with the entry kept;
+  (5) no 196-S stash entry remains at PR time; (6) stash is non-destructive, while drop,
+  clear, reset, and clean stay destructive.
+- Also updated: an E1 header `clarification:` bullet quoting the instruction, and E1.1's
+  resume step 2 now points to E1.4 rule 1 and the stash route.
+- Reconciliation: rule 2 forbids `git stash drop`, but rule 4 allows apply followed by a
+  recorded drop. E1.4 allows only that post-apply drop of the matched entry after a
+  verified clean apply, which is equivalent to a successful `pop`. Every other drop stays
+  destructive.
+- No change to requirements, tasks, tests, code, or other amendments.
