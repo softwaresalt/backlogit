@@ -353,9 +353,9 @@ artifacts:
   - path: ".github/skills/shipment-reconcile/SKILL.md"
     primitive: 4
     template: "templates/skills/shipment-reconcile/SKILL.md.tmpl"
-    checksum: "8f15392dd8ba09de6a90bb2cca63c4565444f4e4a5341f47fe4cd70595c824e3"
+    checksum: "acef3aa9f6d10856672705c4cccf2aa2347b59201731b4850ed0d097439e37f4"
     drift_allowed: true
-    drift_reason: "Shipment 155-S final-review remediation supersedes the earlier safe-close workaround. The implemented governed ShipShipment transaction now uses flat explicit membership, so reconciliation checks only manifest IDs plus the shipment control record, never inferred descendants or linked deliberations, while preserving the pre/post lock and P-007 integrity gates. Do not auto-revert."
+    drift_reason: "Shipment 155-S final-review remediation supersedes the earlier safe-close workaround. The implemented governed ShipShipment transaction now uses flat explicit membership, so reconciliation checks only manifest IDs plus the shipment control record, never inferred descendants or linked deliberations, while preserving the pre/post lock and P-007 integrity gates. Do not auto-revert. 196-F / shipment 196-S (stash B83081F5): explicit feature members classify as feature-pending-governed-completion and Safe-Close step 2 delegates to the governed ShipShipment transaction. Do not auto-revert."
   - path: ".github/prompts/stage-grouping-analysis.prompt.md"
     primitive: 4
     template: "templates/prompts/stage-grouping-analysis.prompt.md.tmpl"
@@ -391,9 +391,9 @@ artifacts:
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "00173cb089ea7f6f9f317874d96135b9636b5220ec3641c762c1ebbf304d0e73"
+    checksum: "c608a6bd31a196d1662600bea2a38a0652b13f629a5e9ff031c9596249e421b3"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert. 2026-09-27 tune review (TUNE-010): Dark Factory DARK_MODE_ACTIVE subagent propagation and concrete-ID scope resolution."
+    drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert. 2026-09-27 tune review (TUNE-010): Dark Factory DARK_MODE_ACTIVE subagent propagation and concrete-ID scope resolution. 196-F / shipment 196-S (stash 227A2930): Served-Root Handoff Procedure binding both absolute served roots and binding evidence into the Ship payload, with SERVED_ROOTS_UNRESOLVED fail-closed halts. Do not auto-revert."
   - path: ".github/agents/_stage.agent.md"
     primitive: 1
     template: "templates/agents/_stage.agent.md.tmpl"
@@ -403,9 +403,9 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "fd69f15a7cd3bd0ad76db4fe22cf085fcd65cf4caddd61833aeac68f11f1cd67"
+    checksum: "4757ccb957982f50442357ae63251a793dc3e38bd1065370160156d6c0f35dfc"
     drift_allowed: true
-    drift_reason: "Deliberate Ship drift: preserve the scalar tools string with vscode/memory, the full backlogit/* MCP tool surface (operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so do not narrow it back to an explicit backlogit operation allowlist), engram/*, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix."
+    drift_reason: "Deliberate Ship drift: preserve the scalar tools string with vscode/memory, the full backlogit/* MCP tool surface (operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so do not narrow it back to an explicit backlogit operation allowlist), engram/*, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix. 196-F / shipment 196-S: Step 6 item a explicit-feature reconcile wording (stash B83081F5) and the Step 4.0 / Step 4.1b use-time Served-Root Attestation (stash 227A2930). Do not auto-revert."
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"
