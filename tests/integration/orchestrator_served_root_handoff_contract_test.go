@@ -128,6 +128,43 @@ func TestUSR1_OrchestratorServedRootHandoffContract(t *testing.T) {
 			},
 		},
 		{
+			name: "OutcomeRecordTiming",
+			run: func(t *testing.T) {
+				// Stable contract (PR #478 Copilot review): the R8 outcome record must never dirty
+				// the main worktree ahead of Ship Step 0.5 item 3a, which halts on any
+				// `git status --short` output when it creates the shipment branch from main.
+				step2, ok := sliceBetweenUniqueAnchors(orchestrator, "### Step 2: Route to Ship", "### Step 3")
+				require.True(t, ok, "Step 2 must have unique start and end anchors")
+				assertContainsAll(t, step2, []string{
+					"never in the main worktree before Ship is invoked",
+					"Ship Step 0.5 item 3a halts on any `git status --short` output",
+					"Carry the outcome in the Ship invocation payload instead, and persist it only once the shipment branch is checked out",
+					"committed through the Step 1.5 Continuity Carry-Forward Carve-Out before any later Ship invocation",
+				}, "step f outcome-record timing")
+
+				item5, ok := sliceBetweenUniqueAnchors(step2, "5. Invoke the **Ship** subagent:", "6. Receive Ship's output:")
+				require.True(t, ok, "Step 2 item 5 must have unique start and end anchors")
+				assertContainsAll(t, item5, []string{"handoff outcome record"}, "Step 2 item 5 outcome payload")
+				recovery, ok := sliceBetweenUniqueAnchors(orchestrator,
+					"`agent: ship` → invoke the **Ship** subagent", "The Orchestrator MUST NEVER execute")
+				require.True(t, ok, "Ship recovery route must have unique start and end anchors")
+				assertContainsAll(t, recovery, []string{"step f handoff outcome record"}, "Ship recovery outcome payload")
+				blockedRoute, ok := sliceBetweenUniqueAnchors(orchestrator,
+					"Route blocked shipments to Ship", "never performs those lifecycle mutations itself")
+				require.True(t, ok, "blocked-shipment route must have unique start and end anchors")
+				assertContainsAll(t, blockedRoute, []string{"step f handoff outcome record"}, "blocked-shipment outcome payload")
+
+				ship := normalizeWhitespace(readSource(".github/agents/_ship.agent.md"))
+				gate, ok := sliceBetweenUniqueAnchors(ship, "3a. **Branch Creation Gate (P-011, NON-NEGOTIABLE)**", "4. If the shipment is still in `queued` status")
+				require.True(t, ok, "Ship Step 0.5 item 3a must have unique start and end anchors")
+				assertContainsAll(t, gate, []string{
+					"served-root handoff outcome record",
+					"only after `BRANCH_OK` or `BRANCH_CREATED`, never before",
+					"commit it on the shipment branch",
+				}, "Ship Step 0.5 item 3a outcome write")
+			},
+		},
+		{
 			name: "CrossReferenceInvariant",
 			run: func(t *testing.T) {
 				// Stable contract: later edits may restructure surrounding recovery prose.
