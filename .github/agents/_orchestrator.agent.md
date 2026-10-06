@@ -416,7 +416,8 @@ Step 0.0b `agent: ship` recovery route, and Dark Factory blocked-shipment routin
 procedure is a handoff precondition: it never reads a checkpoint state dump and never
 performs restore, prune, or resolve work. The procedure is read-only except at most one
 derived-index `backlogit_sync_index`. It changes no source or backlog store file and writes
-no checkpoint. Its only other write is the outcome record in `docs/memory/`.
+no checkpoint. Its only other write is the outcome record in `docs/memory/`, and step f
+fixes when that record is persisted.
 
 * a. **Workspace root.** The served workspace root is the canonical absolute output of
   `git rev-parse --show-toplevel` in the Orchestrator's own checkout. The checkout must be
@@ -473,7 +474,12 @@ no checkpoint. Its only other write is the outcome record in `docs/memory/`.
   and the attested `workspace.root_path`, `workspace.storage_root`, and index `file`. The
   evidence is informational. Ship re-runs the Served-Root Attestation itself at use time
   and never treats the evidence as proof. Record the outcome in `docs/memory/` in
-  workspace-relative form only.
+  workspace-relative form only, but never in the main worktree before Ship is invoked:
+  Ship Step 0.5 item 3a halts on any `git status --short` output when it creates the
+  shipment branch from `main`. Carry the outcome in the Ship invocation payload instead,
+  and persist it only once the shipment branch is checked out. Ship writes it into that
+  branch's `docs/memory/` notes, so it is committed with the shipment. A halt in step e
+  invokes no Ship, so its record may be written immediately.
 
 ### Step 3: Iteration Decision
 
