@@ -134,3 +134,17 @@ The Orchestrator did not hand over the Option A script and did not invoke Ship. 
 ## Operator Resolution 3 (2026-10-05T17:27-07:00)
 
 Operator ruling, verbatim: "I authorize a cycle 5". Stage gets one more plan-review cycle (cycle 5) over the remediated Amendment 3 text. This is a one-cycle exception to the cap. Dark mode resumes with DARK_MODE_SCOPE ordered=[196-S], cursor next=196-S.
+
+## Cycle 5 Result and Ship Re-engagement (2026-10-05)
+
+- Stage plan-review cycle 5 (attempt 5 of 5, operator-authorized cap exception): `decision: PASS`,
+  record at plan lines 2504-2598, commit `64516671`. Pass 1 found new P1s (porcelain step 8 defect,
+  Orchestrator committer authority, step 4 rehearsal, agent-written script file); pass 2 (six personas)
+  found no P0/P1. Three residual P2s were fixed with reviewer-supplied wording without a further pass.
+- Orchestrator decision: accept PASS. Rationale: P2 findings are non-blocking under the plan-review gate,
+  the edits use the reviewers' own wording, and the cycle cap forbids another review. Fallback reading if
+  later contested: ADVISORY with those three P2s listed.
+- Under the C3-P1-b committer rule the Orchestrator commits nothing on this branch; this note is left
+  pending for Ship's Phase 0 item 2 carry commit.
+- Next: Ship runs A3.5 Phase 0 and Phase 1, then halts at G-A3. Option A (A3.4) is operator-executed;
+  the Orchestrator supplies helper-script text in chat only.
