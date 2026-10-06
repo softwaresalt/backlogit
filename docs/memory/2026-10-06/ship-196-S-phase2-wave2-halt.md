@@ -34,6 +34,10 @@ The A3.3 item 4 ordering is not executable as written for these red-deliverable 
 
 Before the required traceability commit, those claim and bookkeeping changes are pending and would make Step 0.5's zero-delta gate fail. After that commit, the required baseline can be captured and Step 0.5 can pass, but Step 4.2 would no longer be before the commit. No waiver or alternate ordering is authorized. Ship therefore halts rather than bypassing either gate.
 
+## Additional evidence gap
+
+A3.3 item 2's required green-file history check was not captured immediately before the harness edits. A post-edit lineage check found no commits to the U1/U3 green files before either harness commit, and each harness commit contains only its designated test file with 0 deleted lines. This post-hoc check does not replace the required contemporaneous evidence. Treat it as an open assurance gap for Stage/operator resolution before any resumed execution.
+
 ## Resume requirements
 
 - Do not dispatch build-feature or claim any other shipment.
