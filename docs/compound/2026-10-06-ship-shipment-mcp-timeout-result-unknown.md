@@ -1,10 +1,10 @@
 ---
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"
-title: "backlogit_ship_shipment MCP timeout is client-side; the governed close keeps running (195-S, 196-S)"
-description: "An MCP -32001 Request timed out on backlogit_ship_shipment does not abort the governed closure. The server keeps executing the single call, so never retry or restore. Wait for lock quiescence, then verify completion from item-log, hook, and doctor evidence."
+title: "backlogit_ship_shipment MCP timeout means result unknown; in 195-S and 196-S the governed close kept running"
+description: "An MCP -32001 Request timed out on backlogit_ship_shipment makes the outcome unknown: the call may still be running, may have completed, or may have been cancelled or failed. Never retry or restore. Observe through lock quiescence, then classify the resulting state from item-log, hook, and doctor evidence."
 doc_type: learning
-source: docs/compound/2026-10-06-ship-shipment-mcp-timeout-is-client-side.md
+source: docs/compound/2026-10-06-ship-shipment-mcp-timeout-result-unknown.md
 docline:
     date: 2026-10-06T00:00:00Z
     severity: high
@@ -17,7 +17,7 @@ docline:
         - ship-agent
 ---
 
-# backlogit_ship_shipment MCP timeout is client-side
+# backlogit_ship_shipment MCP timeout means result unknown
 
 ## Problem
 
@@ -26,8 +26,13 @@ Two consecutive post-merge closures each timed out on the governed close:
 * `195-S` (merge `58f5bdba`)
 * `196-S` (merge `651b066b`)
 
-The MCP client returned `MCP error -32001: Request timed out` while the server
-was still executing the call.
+The MCP client returned `MCP error -32001: Request timed out`. In both cases
+the server was still executing the call and later ran it to completion.
+
+Those two observations are not a contract. `handleShipShipment`
+(`internal/mcp/tools.go`) passes the MCP request context into
+`core.ShipShipment`. A future timeout could therefore coincide with
+cancellation or a failure rather than continued execution.
 
 `ShipShipment` runs these steps in order:
 
@@ -65,14 +70,18 @@ Each of these turns a transient in-flight state into real damage:
 
 ## Rule
 
-Treat a ship timeout as "result unknown, call still running".
+Treat a ship timeout as "result unknown". The call may still be running, may
+have completed, or may have been cancelled or failed. Do not assume any of
+these outcomes; observe and classify.
 
 1. Do not retry or mutate anything. Keep the shipment-reconcile lock held.
-2. Watch for progress. Recently touched `.backlogit/.locks/` files and archive
-   mtimes that are still advancing mean the call is still running.
-3. Wait until the shipment record lands at
-   `.backlogit/archive/{shipment_id}.md` with `archived_status: shipped`, and
-   the shipment item log carries its `archived` event.
+2. Observe until quiescence. Recently touched `.backlogit/.locks/` files and
+   archive mtimes that are still advancing mean the call is still running.
+   Quiescence means those signals have stopped advancing.
+3. After quiescence, classify the state. Completion requires, first, the
+   shipment record at `.backlogit/archive/{shipment_id}.md` with
+   `archived_status: shipped`, and an `archived` event in the shipment item
+   log. Steps 4–6 complete the check.
 4. Confirm the post-ship hook event (`event_type: ship_shipment`) in
    `.backlogit/hooks_queue.jsonl`. It is the last step, so its presence proves
    the call ran to completion.
@@ -86,10 +95,11 @@ Treat a ship timeout as "result unknown, call still running".
    parentage, and P-007. Record the timeout and the reconstruction in the
    safe-close report.
 
-Escalate only if progress stops while state is still torn: lock files go quiet,
-the archive is incomplete, and no hook event appears. That case is a genuine
-partial failure. Halt and follow P-007 and the doctor audit, still without
-retrying.
+Any other quiescent state is not completion. Examples are lock files gone
+quiet with an incomplete archive and no hook event, or a shipment that never
+reached `shipped`. Treat it as a cancelled or failed call with a possible
+partial mutation: halt, follow P-007 and the doctor audit, and hand off for
+operator reconciliation. Do not retry.
 
 ## Side effects that are expected, not non-member mutations
 

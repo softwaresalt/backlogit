@@ -101,7 +101,7 @@ the manifest plus `196-S`, and `returned_ids` is empty. Other checks:
   finished.
 
 The recurrence is captured in
-`docs/compound/2026-10-06-ship-shipment-mcp-timeout-is-client-side.md`.
+`docs/compound/2026-10-06-ship-shipment-mcp-timeout-result-unknown.md`.
 
 ## 195-S follow-up discharge
 
@@ -140,8 +140,9 @@ further stash mutation.
 * An `active` explicit feature at pre-close is
   `feature-pending-governed-completion` only when every explicit task member is
   `matched` or `pre-archived`.
-* A ship MCP timeout means the result is unknown: wait for the call to finish
-  and verify. Never retry or restore.
+* A ship MCP timeout means the result is unknown. The call may still be
+  running, may have completed, or may have been cancelled. Observe until
+  quiescence, then classify the state from evidence. Never retry or restore.
 
 ## Validator evidence
 

@@ -43,7 +43,7 @@ Selection keyed on `served root`, `feature-pending`, `explicit feature`,
 
 ## New learning
 
-`docs/compound/2026-10-06-ship-shipment-mcp-timeout-is-client-side.md` was
+`docs/compound/2026-10-06-ship-shipment-mcp-timeout-result-unknown.md` was
 captured through `compound`, not refreshed. The `backlogit_ship_shipment` MCP
 client timeout recurred in both the 195-S and 196-S closures. Neither occurrence
 was previously captured.

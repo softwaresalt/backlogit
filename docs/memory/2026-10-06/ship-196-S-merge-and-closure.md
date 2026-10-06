@@ -33,7 +33,7 @@
 - `backlogit_ship_shipment` returned an MCP client timeout (-32001), but the governed operation
   completed server-side about 10 minutes later. I did not retry and did not restore the archive.
   I verified completion via the shipment archived event and the hooks_queue `ship_shipment` hook.
-  The learning is in `docs/compound/2026-10-06-ship-shipment-mcp-timeout-is-client-side.md`.
+  The learning is in `docs/compound/2026-10-06-ship-shipment-mcp-timeout-result-unknown.md`.
 - Archive commit `4130b5e2`. P-007 is clean, and post-mode reconcile passed.
 - Stash `227A2930` and `B83081F5` were already archived at harvest. `359D8F32` is left open.
 - Compound-refresh: six entries kept, one new learning.

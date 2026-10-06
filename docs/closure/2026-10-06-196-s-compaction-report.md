@@ -39,7 +39,7 @@ The backlog has no `active` items and three `blocked` tasks: `164.001-T`,
 
 | Candidate | Rule matched | Disposition |
 |---|---|---|
-| 40 `196-S` memory notes (2026-10-04 to 2026-10-06) | Release unit complete (all tasks done; shipment shipped) | Summarized into the compacted record. Originals kept in place because 13 Ship checkpoints, both stash stores, and the governing plan (E1 operator-approval record) reference them by path. |
+| 45 `196-S` memory notes, 2026-10-03 to 2026-10-06 (file names containing `196-S` or `196s`, excluding the new closure note) | Release unit complete (all tasks done; shipment shipped) | Summarized into the compacted record. The first pass counted only the 40 uppercase `196-S` notes; Copilot review on PR #479 found the five lowercase `196s` notes, which were then added. Originals kept in place because 13 Ship checkpoints, both stash stores, and the governing plan (E1 operator-approval record) reference them by path. |
 | `docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md` (185,690 bytes) | Release unit complete; plan carries appended amendments, reviews, and erratum | Not consolidated. Archived 196-F and its tasks, and the 195-S and 196-S closures, cite this path. A decided-plan consolidation needs a reference-safe move that the wider review (`359D8F32`) owns. |
 | 195-S and 196-S closure records | Under 14 days old | Not candidates |
 | Older inventory (46 memory files, 121 plans, 155 closures) | Past age threshold | Deferred to `359D8F32`, which stays open by operator instruction |
