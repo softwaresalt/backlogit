@@ -1420,8 +1420,9 @@ branch-per-release-unit principle.
    a. **Pre-archive reconciliation gate (mandatory)**: Invoke the `shipment-reconcile`
       skill with `mode: pre`, `shipment_id`, and `expected_status: done`.
       This acquires the single-writer lock on `.backlogit/queue/{shipment_id}.md`
-      (via the `file-lock` skill) and verifies that every manifest item is present in
-      queue with `status: done`, and scans for orphan items.
+      (via the `file-lock` skill) and verifies that the skill's pre-close result is
+      `PROCEED`, that is, every explicit member is classified `matched`,
+      `pre-archived`, or `feature-pending-governed-completion`.
       * If the skill returns `RECONCILE_FAIL`: halt and surface the reconciliation report
         to the operator. Do NOT proceed to step 1.b.
       * If the skill returns `PROCEED`: continue. The lock remains held until post-mode
