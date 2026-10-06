@@ -130,3 +130,7 @@ Cycle-4 new P1s (fixed in text, unreviewed):
 Verification: C3-P1-a and C3-P1-c were confirmed; C3-P1-b was disputed by 2 of 3 reviewers.
 
 The Orchestrator did not hand over the Option A script and did not invoke Ship. A fifth review cycle or a self-recorded approval would exceed the operator's one-cycle grant.
+
+## Operator Resolution 3 (2026-10-05T17:27-07:00)
+
+Operator ruling, verbatim: "I authorize a cycle 5". Stage gets one more plan-review cycle (cycle 5) over the remediated Amendment 3 text. This is a one-cycle exception to the cap. Dark mode resumes with DARK_MODE_SCOPE ordered=[196-S], cursor next=196-S.
