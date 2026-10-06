@@ -162,3 +162,20 @@ Operator ruling, verbatim: "I authorize a cycle 5". Stage gets one more plan-rev
 - Resume: after `docs(memory): 196-S A3 ruling` is committed, the Orchestrator re-invokes Ship for
   Phase 0′, Phase 2 {001,003}, Phase 3 {002,005}->{009}->{006}, then review, PR, Copilot loops, merge,
   and closure.
+
+## Operator-Directed Parity Fix (2026-10-06)
+
+- The operator directed that the CLI and the MCP server use the same backlogit binary, and that this be fixed
+  before 196-S. This is a recorded, operator-directed deviation from P-001/P-016 sequencing.
+- Chore PR #477 (`chore/backlogit-cli-mcp-binary-parity`) passed adversarial review (4 reviewers; F3 deferred
+  as stash 3A31750F), CI, and the Copilot gate (SATISFIED, zero threads). It was merged with a merge commit
+  at `c4c458b9`. Local main was synchronized ff-only and verified with `HEAD == origin/main`.
+- `start.ps1` now prepends the `.mcp.json` backlogit command directory (`bin\`) to PATH. The fix applies
+  only to sessions relaunched via `./start.ps1`. CAE63C60 was updated: upstream template and parity check
+  remain.
+- Main was merged into the 196-S branch (`35182815`). The stash.jsonl conflict resolution kept the
+  196-S DEFERRED-SCOPE form of CDBCB258 and dropped main's stale merge-base copy. The 196-S branch is pushed;
+  there is no PR yet.
+- Still HALTED: operator Option A has not run (no ruling file; 196.001/003 remain `done`). After the operator
+  relaunches via `./start.ps1`, the Option A script may use plain `backlogit`, and the CLI version
+  should report commit `7c805f9`.
