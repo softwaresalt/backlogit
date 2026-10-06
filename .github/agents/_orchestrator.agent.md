@@ -206,10 +206,14 @@ creation; dependency edges, not status mutations, suppress them until their
 predecessor ships. `blocked` is a governed, resumable nonterminal shipment status,
 distinct from dependency gating: queued successors remain queued behind unfinished
 `blocks` edges, while an evidence-backed blocked shipment requires lifecycle
-recovery before execution resumes. Route blocked shipments to Ship for
+recovery before execution resumes. Route blocked shipments to Ship only after the
+Served-Root Handoff Procedure passes, with `served_workspace_root`,
+`served_storage_root`, and the binding evidence in the Ship invocation payload (plus the
+step f handoff outcome record), for
 `backlogit_unblock_shipment` with explicit confirmation or, for malformed legacy
 state with the required snapshot evidence, the MCP-only
-`backlogit_normalize_blocked_shipment` operation. The normalizer intentionally has
+`backlogit_normalize_blocked_shipment` operation. The procedure binds that blocked
+shipment's `shipment_id`. The normalizer intentionally has
 no CLI fallback. Orchestrator never performs those lifecycle mutations itself.
 This cursor is what the Step 2 "Route to Ship" rule consumes; without it there is
 no next shipment ID for the first handoff.
@@ -251,7 +255,7 @@ Immediately after the Tool Availability Gate and before Step 0 State Assessment,
 
 6. **Owner-exclusive routing (NEVER perform owner work directly)**: route ALL restore/resume/prune work for the selected checkpoint EXCLUSIVELY to the agent that owns it:
    * `agent: stage` → invoke the **Stage** subagent. Stage restores/resumes/prunes this checkpoint under its own Crash-Resumption / Startup Recovery Protocol (see the Stage agent definition).
-   * `agent: ship` → invoke the **Ship** subagent likewise, under its own Crash-Resumption / Startup Recovery Protocol (see the Ship agent definition).
+   * `agent: ship` → invoke the **Ship** subagent likewise, under its own Crash-Resumption / Startup Recovery Protocol (see the Ship agent definition). Before invoking Ship, run the Served-Root Handoff Procedure for the checkpoint's shipment. Use the checkpoint summary's shipment ID only; do not read the state dump. If the summary names no shipment, halt to the operator. Invoke Ship only after the Served-Root Handoff Procedure passes,    with `served_workspace_root`, `served_storage_root`, and the binding evidence in the Ship invocation payload, plus the step f handoff outcome record.
    The Orchestrator MUST NEVER execute Stage-owned or Ship-owned restore/resume/prune/resolve work itself, directly. This preserves P-001 role separation / persona isolation — the Orchestrator routes; it never performs the owning agent's recovery work.
 
 7. **Fail closed on ambiguity — among existing candidates only**: when one or more candidates exist but a single checkpoint cannot be UNIQUELY selected (multiple active candidates with no explicit operator selection, or any other selection ambiguity), OR the selected checkpoint's `agent` field is missing, empty, or any value other than `stage`/`ship`, FAIL CLOSED: halt and hand off to the operator. Do NOT restore, resume, prune, or resolve anything. This fail-closed path is never triggered by the zero-candidate case in step 3 — zero candidates is the no-recovery-needed continuation, not an ambiguous selection.
@@ -390,7 +394,13 @@ When the `agent-intercom` capability pack is installed, broadcast `[ORCHESTRATOR
    self-referential bootstrapping shipments that build the gate are not blocked by an as-yet-uninstalled gate.)
 4. **Resolve Ship's routed model (P-013.5, NON-NEGOTIABLE)**: before invoking Ship, resolve `config.model_routing.ship`, falling back per sub-field to `config.model_routing.tier2` when the `ship` route or an individual sub-field is absent or empty. This is intent-directive resolution, not a baked `--model` CLI flag: declare the resolved `model_family`/`model_provider`/`reasoning_effort` as the invocation override when the runtime supports honoring a per-invocation model directive for the Ship subagent. If the runtime cannot honor a per-invocation override, emit `ROUTING_DEGRADED: Ship invocation could not honor resolved route {model_family}/{model_provider} — falling back to session default` and surface it to the operator — never silently invoke Ship on the current session model without declaring the resolved route and the degradation.
 5. Invoke the **Ship** subagent:
-   * Pass the `shipment_id` as the session scope, along with the resolved model-routing directive from step 4.
+   * Run the Served-Root Handoff Procedure. Invoke Ship only after the Served-Root
+     Handoff Procedure passes, with `served_workspace_root`, `served_storage_root`, and
+     the binding evidence in the Ship invocation payload; otherwise halt with
+     `SERVED_ROOTS_UNRESOLVED` and do not invoke Ship. An operator `ship {id}` that names
+     a non-queued shipment also runs the procedure before Ship is invoked, or halts to the
+     operator.
+   * Pass the `shipment_id` as the session scope, along with the resolved model-routing directive from step 4, both served roots (`served_workspace_root` and `served_storage_root`), the binding evidence, and the handoff outcome record from the Served-Root Handoff Procedure (step f).
    * Ship's expected output: merged PR, archived shipment, and closure artifacts.
 6. Receive Ship's output: record the merge SHA and any follow-up stash items Ship created.
 7. If Ship halts or fails:
@@ -398,6 +408,81 @@ When the `agent-intercom` capability pack is installed, broadcast `[ORCHESTRATOR
    * Do not claim or invoke a second shipment until the active one is resolved.
 
 When the `agent-intercom` capability pack is installed, broadcast `[ORCHESTRATOR] Ship subagent invoked — executing shipment {shipment_id}` and `[ORCHESTRATOR] Ship complete: shipment {shipment_id} merged at {sha}`.
+
+#### Served-Root Handoff Procedure (all Ship invocations)
+
+Every Orchestrator invocation of the Ship subagent runs the Served-Root Handoff Procedure
+first. This covers Step 2 item 5, an operator `ship {id}` for a non-queued shipment, the
+Step 0.0b `agent: ship` recovery route, and Dark Factory blocked-shipment routing. The
+procedure is a handoff precondition: it never reads a checkpoint state dump and never
+performs restore, prune, or resolve work. The procedure is read-only except at most one
+derived-index `backlogit_sync_index`. It changes no source or backlog store file and writes
+no checkpoint. Its only other write is the outcome record in `docs/memory/`, and step f
+fixes when that record is persisted.
+
+* a. **Workspace root.** The served workspace root is the canonical absolute output of
+  `git rev-parse --show-toplevel` in the Orchestrator's own checkout. The checkout must be
+  the main worktree: `git rev-parse --path-format=absolute --git-common-dir` equals
+  `git rev-parse --path-format=absolute --git-dir`, and both resolve to `<root>/.git`.
+  Never infer either root from a Ship worktree.
+* b. **Storage root.** The served storage root is exactly one of `.backlog` or
+  `.backlogit`, existing as a directory under the served workspace root. If neither or both
+  exist, fail closed.
+* c. **Canonicalize.** Resolve both roots into canonical OS-native absolute form. On
+  Windows, git prints forward slashes, so compare drive letters and components
+  case-insensitively. Reject any symlink or reparse-point component. Require the served
+  storage root to be a direct child of the served workspace root.
+* d. **Bind.**
+  * Require `shipment_id` to match `^[0-9]+-S$`.
+  * **Served-Root Attestation, before any raw read.** Ask the MCP server which roots it is
+    bound to, and compare them with the candidate roots from a–c:
+    * Call `backlogit_get_metadata_catalog` and read only its `workspace` object.
+      `workspace.root_path` must equal the served workspace root, and
+      `workspace.storage_root` must equal the served storage root.
+    * Call `backlogit_query_sql` against `pragma_database_list` with
+      `SELECT name, file FROM pragma_database_list WHERE name = 'main'`. It must return
+      exactly one row, and its `file` must be `backlogit.db` as a direct child of the
+      served storage root. This is the index file the live server connection actually
+      opened, so it also catches a catalog value that was re-resolved after server start.
+    * Compare canonical OS-native absolute forms, using the same rules as step c. A
+      missing, empty, or relative value, a row count other than one, or any mismatch fails
+      the attestation.
+    * The attestation is MCP-only. A CLI invocation reports the root it was pointed at, so
+      it cannot attest the server. No sync or retry applies, because a sync cannot change
+      the root a server is bound to.
+  * The shipment manifest must exist in exactly one of `queue` or `archive` under the
+    served storage root, so a shipment archived by a crashed closure still binds. If it
+    exists in neither or both, fail closed. This assumes the default archive directory; a
+    manifest that exists only under a configured non-default archive directory is found in
+    neither and fails closed.
+  * Require the manifest and its directory to be direct children with no symlink or
+    reparse-point component. Apply Ship Step 4.1b's raw-read safety: no-follow open,
+    opened-path verification, and a scoped P-012 raw-read declaration.
+  * Read only the manifest frontmatter.
+  * Static check: `id`, `status`, `updated_at`, and the ordered `custom_fields.items` equal
+    the MCP `backlogit_get_shipment` result. On a mismatch, call `backlogit_sync_index`
+    once and compare again. A mismatch that persists after the sync is a failure, and a
+    sync error is an indeterminate result.
+* e. **Halt.** On any failure, error, or indeterminate result in a–d, halt with
+  `SERVED_ROOTS_UNRESOLVED: {reason}` and do not invoke Ship. Indeterminate results include detection that is unavailable, an MCP or sync
+  error, a timeout, and a missing or unparseable file. Write `{reason}` and the halt trace
+  with workspace-relative or redacted path tokens. When only the CLI fallback is reachable,
+  the Served-Root Attestation and the static check cannot run, and the procedure
+  intentionally fails closed.
+* f. **Pass.** Put `served_workspace_root` (Ship's "served workspace root", Step 4.1b) and
+  `served_storage_root` (Ship's "served storage root") in the Ship invocation payload as
+  canonical OS-native absolute paths. Include the binding evidence: `id`, ordered items,
+  and the attested `workspace.root_path`, `workspace.storage_root`, and index `file`. The
+  evidence is informational. Ship re-runs the Served-Root Attestation itself at use time
+  and never treats the evidence as proof. Record the outcome in `docs/memory/` in
+  workspace-relative form only, but never in the main worktree before Ship is invoked:
+  Ship Step 0.5 item 3a halts on any `git status --short` output when it creates the
+  shipment branch from `main`. Carry the outcome in the Ship invocation payload instead,
+  and persist it only once the shipment branch is checked out. Ship writes it into that
+  branch's `docs/memory/` notes, so it is committed with the shipment. A halt in step e
+  invokes no Ship, so its record may be written immediately, but it must be committed
+  through the Step 1.5 Continuity Carry-Forward Carve-Out before any later Ship
+  invocation, so it never dirties Ship's branch gate on a retry.
 
 ### Step 3: Iteration Decision
 

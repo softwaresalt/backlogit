@@ -53,7 +53,8 @@ Each explicit manifest member receives exactly one classification:
 | `matched` | Queue record exists and status equals `expected_status` | Archive record exists with valid provenance |
 | `pre-archived` | Queue record is absent and one valid archive record exists | N/A |
 | `missing` | No unique queue or archive record exists | Required archive record is absent |
-| `status-mismatch` | Queue status differs from `expected_status` | N/A |
+| `status-mismatch` | Queue status differs from `expected_status`, unless the member is classified `feature-pending-governed-completion` | N/A |
+| `feature-pending-governed-completion` | An explicit feature member is `active` and every explicit task member is `matched` or `pre-archived`. This row applies only to pre-close (`expected_status: done`). A manifest with no explicit task member does not qualify. Any other explicit feature status remains `status-mismatch`. | N/A |
 
 Do not classify an unlisted artifact. In particular, an unlisted child,
 sibling, ancestor, source stash, or linked deliberation is neither a missing
@@ -76,8 +77,8 @@ from task aggregation.
 
 ### Recommendations
 
-* `PROCEED`: every explicit member is `matched` or `pre-archived` and the
-  shipment record is consistent
+* `PROCEED`: every explicit member is `matched`, `pre-archived`, or
+  `feature-pending-governed-completion` and the shipment record is consistent
 * `PAUSED — governed unblock required`: intake/resume found
   `record-blocked-resumable`
 * `HALT — operator reconcile required`: an explicit member is missing or has a
@@ -99,7 +100,9 @@ from task aggregation.
   ancestors, references, source artifacts, or linked deliberations to enlarge
   `M`.
 * **Explicit feature handling.** A feature in `M` is completed and archived as
-  that one explicit member. Its relationships confer no scope.
+  that one explicit member. Its relationships confer no scope. Explicit feature
+  members are completed only by governed ShipShipment (`backlogit_ship_shipment`
+  or its registered CLI fallback).
 * **Non-member stays untouched.** Any queue/archive mutation outside
   `M` plus `shipment_id` is a hard failure. Do not reinterpret, return, orphan, or
   auto-add the affected ID.
@@ -129,6 +132,9 @@ from task aggregation.
 3. **Inspect only explicit members.** For each ID in `M`, resolve exactly one
    queue/archive record, read `status` and `artifact_type`, and assign the
    per-member classification. Do not scan for related unlisted artifacts.
+   Classify every explicit non-feature member before any explicit feature
+   member, because `feature-pending-governed-completion` depends on the
+   explicit task member classifications.
 4. **Classify the shipment record.** Aggregate statuses only from explicit task
    members and apply the Shipment Record Classification table.
 5. **Validate the canonical blocked envelope.** A blocked record is resumable
@@ -150,7 +156,12 @@ from task aggregation.
 1. **Re-read under lock.** Load the shipment and require its manifest to equal
    the pre-mode `M` exactly. Manifest drift halts before mutation.
 2. **Require close-ready state.** Reject blocked or other nonterminal shipment
-   state and require every non-pre-archived explicit member to be `done`.
+   state. Then apply these rules: every non-pre-archived explicit task member must be
+   `done`; a non-pre-archived explicit feature member must be `done` or meet the
+   `feature-pending-governed-completion` condition; any other non-pre-archived
+   explicit member must be `done`; any other status of a non-pre-archived explicit
+   feature member halts before mutation. Safe-close re-checks this condition on the
+   state re-read under lock.
 3. **Capture the baseline.** Record `git status --short -- .backlogit/queue/
    .backlogit/archive/` and the unique queue/archive location, status,
    `parent_id`, and content identity of every ID in `M` plus `shipment_id`.
