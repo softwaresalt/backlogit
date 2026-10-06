@@ -130,7 +130,7 @@ further stash mutation.
 | #477 P-001/P-016 deviation | origin/main (PR #477) was merged into the active 196-S branch at `35182815` while 196-S was the single active release unit. Recorded, not re-litigated; no topology violation followed. |
 | A3.6 items | `CDBCB258`, `F6F3AA0E`, `147BD825`, and `3B25D37F`, plus the R10 interim limitation, as recorded in plan A3.6 |
 | `F88FE051` | CI `pipeline-topology (ambient)` fails with `PREDECESSOR_CLOSURE_INCOMPLETE` on 195-S. PyPI `autoharness==1.5.0` lacks the `dag-root` declared-root waiver that the local build honours (local: `PASS`, `predecessor_source: declared_root`). Non-required check. |
-| Session deferrals | P-021 deferred entries captured this session: `180AA2C2`, `CB0F604E`, `6387A6A2`, `7C9340AC`, `0F428816`, `5B2F5EC1`, `4E0F44CE`, `5E3FBAC7`, `CC86D2E1`, `8F1CF1E1`, `F88FE051`; reused `52D18E44`. `2D682258` was discharged in-branch. |
+| Session deferrals | P-021 deferred entries captured this session: `180AA2C2`, `CB0F604E`, `6387A6A2`, `7C9340AC`, `0F428816`, `5B2F5EC1`, `4E0F44CE`, `5E3FBAC7`, `CC86D2E1`, `8F1CF1E1`, `F88FE051`; reused `52D18E44`; `2D682258` remains open. Only its Step 6 item a orphan-clause concern was resolved in-branch (`301a2568`). The rest is still unaddressed: the `NotContains` assertion on the removed clause, slicing `### Step 6:` before the anchor search, guard reordering and de-duplication, and the unreachable `start < 0` branch. |
 | Stash usage (E1.4 rule 5) | None. No `git stash push` was needed for 196.001-T or 196.003-T. |
 
 ## Invariants to preserve
