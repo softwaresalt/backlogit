@@ -782,10 +782,13 @@ Wave 4: U6 (config) <- U2, U5, U9
 | X. Agent Context Efficiency | pass | The procedure reads manifest frontmatter and only the `workspace` object of the metadata catalog |
 | XI. Merge Commit History Preservation (NON-NEGOTIABLE) | pass | Ships through a merge-commit PR |
 
-Amendment 3 note (rows IV, VII, and VIII): A3.4 Option A is executed by the operator only.
-Its temporary `hooks.yaml`, its deletions, and its temp-folder scratch directory are under
-operator authority and outside every agent's scope. No agent step is destructive or writes
-outside the working tree.
+Amendment 3 note (rows III, IV, VII, and VIII): A3.4 Option A is executed by the operator only.
+Its temporary `hooks.yaml`, its deletions, its irreversible lifecycle moves, and its
+temp-folder scratch directory are under operator authority and outside every agent's
+scope; no agent writes a script or any other file outside the working tree. Amendment 3
+adds these agent write targets inside the working tree: Ship checkpoints, memory and halt
+notes, backlog moves and label changes, harness and traceability commits, and the tracked
+`RUNTIME_LOGS`. No agent step is destructive or writes outside the working tree.
 
 Constitution Check: pass
 
@@ -795,7 +798,9 @@ Constitution Check: pass
   reconcile classification both change.
 * **Security, auth, permission, or compliance-sensitive behavior: present.** Path trust
   boundary and store binding.
-* **Migration, backfill, destructive, or irreversible step: absent.**
+* **Migration, backfill, destructive, or irreversible step: absent** in the base plan;
+  **present** in Amendment 3 (A3.4 Option A lifecycle exception and reopen moves,
+  executed by the operator only).
 * **External integration or operator checkpoint: present.** The bootstrap authorization.
 * **High runtime, rollout, or rollback risk: absent.** A PR revert restores prior behavior.
 
@@ -818,7 +823,8 @@ authorization.
 ## Plan Hardening
 
 **Hardening required: yes.** The triggers are a contract change and a path trust-boundary
-validation. There is no destructive or data-migrating action.
+validation. There is no destructive or data-migrating agent action; Amendment 3's
+operator-only Option A is hardened in A3.4.
 
 ### Context consulted
 
@@ -1470,26 +1476,55 @@ operator ruling. Everything else in decision 2 proceeds.
 `docs/memory/2026-10-05/orchestrator-196-S-dark-mode-halted-checkpoint-gate.md`
 ("Operator Resolution 2"):
 
-* **Ruling A is chosen** (A3.4 Option A). Option A stays executed by the operator only:
-  no agent runs any of its steps 1–10. Ship still runs Phase 0 and Phase 1 and halts at
-  G-A3 as designed. This note is not the ruling record: G-A3 and Phase 0′ still require
-  the committed ruling file (`A3_RULING: A`), its Option A record, and the reopen commit.
+* **Ruling A is chosen** (A3.4 Option A). Option A stays executed by the operator only.
+  No agent runs any mutating, committing, deciding, or file-writing part of steps 1–10.
+  The only agent involvement in executing steps 1–10 is the read-only MCP reads in steps
+  2 and 7 (A3.4), apart from chat-only script text under the Stage constraints below.
+  Ship still runs Phase 0 and Phase 1 and halts at G-A3 as designed. This note is not the
+  ruling record: G-A3 and Phase 0′ still require the committed ruling file
+  (`A3_RULING: A`), its Option A record, and the reopen commit.
 * **R02 is ratified.** The ruling file carries `A3_R02_RATIFIED: yes`.
-* **Plan-review cycle 4 is authorized** as a one-cycle exception to the 3-cycle cap.
+* **Plan-review cycles 4 and 5 are authorized**, each as a one-cycle exception to the
+  3-cycle cap: cycle 4 at 2026-10-05T13:58-07:00 (Resolution 2) and cycle 5 at
+  2026-10-05T17:27-07:00 (Resolution 3, "I authorize a cycle 5").
 * **Spike.** The reopen-mechanism question (a governed `done -> queued` allowance versus
   new work items that reference closed work) is captured as stash `DB071B5D` and staged as
-  a queued spike outside `M`. It is not a 196-S member and does not gate Amendment 3.
-* **Helper script.** Any Option A helper script that the Orchestrator prepares is only an
-  aid. The operator runs it in the operator's own shell, never through an agent's terminal
-  tool. It lives outside the repository and the served root. It never writes the
-  `A3_RULING`, `A3_RESUME_CHECKPOINT`, or `A3_R02_RATIFIED` lines; the operator enters
-  them. It never starts its own backlogit MCP server, and it stops at every Option A halt
-  condition. The ruling file records the script's path and SHA-256.
-* **Commits before each hand-off.** Stage commits its cycle-4 plan text, the review record,
-  the stash change, and the spike item. The Orchestrator commits each of its own memory
-  notes before it invokes Ship or hands Option A to the operator. Before each Ship
-  invocation and before Option A step 1, the invoking party runs the three clean-tree
-  commands (A3.3 item 4) and halts on any output.
+  the queued spike `002-SP` outside `M`. It is not a 196-S member and does not gate
+  Amendment 3.
+
+**Stage constraints (plan-review remediations; not operator rulings).**
+
+* **Helper script.** The Orchestrator may hand the operator Option A script text in chat
+  only; no agent writes a script file. The operator saves, reviews, and runs it in the
+  operator's own shell, outside the repository and the served root, never through an
+  agent's terminal tool. The script never writes the `A3_RULING`,
+  `A3_RESUME_CHECKPOINT`, or `A3_R02_RATIFIED` lines; the operator types them. It never
+  starts its own backlogit MCP server, and it stops at every Option A halt condition. If
+  one was used, the ruling file records only the script's base file name and SHA-256,
+  never its absolute path.
+* **Committer rule (resolves C3-P1-b).** Whoever writes a file in the repository commits it
+  before handing off, with two exceptions:
+  * The Orchestrator commits nothing on this branch while Amendment 3 is in flight, does
+    not use its Step 1.5 continuity carve-out for 196-S (see Precedence), and writes no
+    checkpoint (R8).
+  * `RUNTIME_LOGS` (A3.3 item 4) are shared append files and cannot be split by writer.
+
+  At every hand-off, the receiving party first lists pending paths with the three
+  clean-tree commands (A3.3 item 4). If every pending path is an Orchestrator note
+  (`docs/memory/<date>/orchestrator-196-S-*.md`) or in `RUNTIME_LOGS`, the receiver
+  commits them as its first repository action: Ship as
+  `chore(backlog): carry 196-S orchestrator notes`; Stage or the operator as
+  `docs(memory): carry 196-S orchestrator notes`. Any other pending path halts, naming
+  the path. Then the tree must be clean.
+
+  | Writer | Files it writes | Committed by | Before |
+  |---|---|---|---|
+  | Stage | plan text and review records, Stage memory notes, stash and spike items, their `RUNTIME_LOGS` appends | Stage | returning to the Orchestrator |
+  | Orchestrator | its memory notes, incidental `RUNTIME_LOGS` appends | the receiving party (Ship, Stage, or the operator) | that party's next action |
+  | Ship (including the skills Ship invokes) | every checkpoint, memory or halt note, backlog move, label change, harness file, `RUNTIME_LOGS` append | Ship, at every commit Amendment 3 assigns to Ship | every halt, hand-off, or Session End (its last write is a commit) |
+  | Operator | the reopen moves (Option A step 9) and the ruling file (Option A step 10) | the operator | re-invoking the Orchestrator |
+
+  Ship's calls to its own skills are not hand-offs.
 * The ruling B and C branches remain in this text only for an operator re-ruling after a
   halted Option A window.
 
@@ -1499,6 +1534,21 @@ timing and provenance of `red_baseline_sha`: Ship Step 4.1a item 5 and build-fea
 "captured before this task was claimed" rule are replaced by A3.3 item 4, and Ship's
 dispatch payload states that the baseline is supplied under A3.3 item 4. Ship passes sections A3.1 through A3.6 to harness-architect and to
 build-feature together with the unit text.
+
+For 196-S while Amendment 3 is in flight, Amendment 3 also governs these agent-file
+steps, and only as stated:
+
+* Ship Session End at G-A3 (A3.5 item 13): the G-A3 checkpoint is the single final
+  checkpoint that Session End step 2 permits; Session End steps 3 and 4 are deferred and
+  recorded as pending in the halt note.
+* Ship Step 0.5 intake at Phase 0′: the declared 196.001-T and 196.003-T `queued`
+  mismatch under ruling A (A3.5 item 15). Ship Step 4.0 is not run at Phase 0 (item 5).
+* Commits on the 196-S branch: Stage commits its planning artifacts there, only while
+  Ship is halted and never concurrently with Ship. The receiving party (Ship, Stage, or
+  the operator) commits Orchestrator notes under the committer rule above.
+* Orchestrator Step 1.5 for 196-S: run only its step 4 manifest check; do not invoke the
+  step 3 continuity carve-out. Pending Orchestrator notes and `RUNTIME_LOGS` changes are
+  not `STAGING_GATE_FAIL` paths; they are left for the receiving party.
 
 **What does not change:**
 
@@ -1607,9 +1657,12 @@ Rules for every addition:
   alone. Each full red string is unique in its file's output; none contains another.
 * Every existing fatal statement (`require.*`, `t.Fatal*`) in each target closure passes
   at the current HEAD (verified in cycle 4), so the appended code is reached.
-* Line endings stay as committed. The format check runs on the staged blob,
-  `git show :<file> | gofmt -l`, which must print nothing; `gofmt -l` on a Windows CRLF
-  checkout reports false positives.
+* Line endings stay as committed. The format check runs on the staged blob. First
+  `git cat-file -e ":<path>"` must exit 0 (`<path>` repository-relative with forward
+  slashes), then `cmd /c "git show :<path> | gofmt -l"` must exit 0 and print nothing on
+  stdout or stderr. The `cmd`
+  pipe passes bytes unchanged; `gofmt -l` on a Windows CRLF checkout, or a PowerShell
+  5.1 native pipe, reports false positives.
 
 #### A3.2.1 U1 (196.001-T), `TestUSR1_OrchestratorServedRootHandoffContract`, subtest `CallSites`
 
@@ -1812,9 +1865,9 @@ payload := "only after the Served-Root Handoff Procedure passes, with `served_wo
    * Every expected red string from A3.2 for that owner appears in the output.
    * No new guard message appears.
    * The subtest profile matches "What does not change".
-   * `go test -run=^$ -count=1 ./tests/integration` (compile) and
-     `go vet ./tests/integration` pass, and `git show :<file> | gofmt -l` prints nothing
-     once the file is staged.
+   * `go test '-run=^$' -count=1 ./tests/integration` (compile) and
+     `go vet ./tests/integration` pass, and the staged-blob format check in A3.2 prints
+     nothing once the file is staged.
    * Lint uses the repository's CI pin: golangci-lint v1.64.8 exits 0 for the package. If
      the session also runs v2.13.2, it reports no new finding against the merge-base.
 4. **Clean tree, then a fresh red baseline, per task.** Build-feature Step 0.5b compares
@@ -1823,16 +1876,25 @@ payload := "only after the Served-Root Handoff Procedure passes, with `served_wo
    everywhere in Amendment 3, that all three Step 0.5b commands print nothing:
    `git diff --name-only HEAD`, `git diff --cached --name-only HEAD`, and
    `git ls-files --others --exclude-standard`. The only path exception is the one
-   uncommittable file, `checkpoint-20261005-052350.json`, which Stage excluded in
-   `.git/info/exclude` (the 196-S continuity block). That entry is local to this clone:
+   uncommittable file, `checkpoint-20261005-052350.json`, which the 196-S continuity block
+   in `.git/info/exclude` excludes. That block is local to this clone, predates
+   Amendment 3, and is operator-owned; the operator removes it after 196-S closes.
    Phase 0 and Phase 0′ run in this clone and halt if
    `git check-ignore -v .backlogit/checkpoints/checkpoint-20261005-052350.json` reports
-   nothing. Stage removes the 196-S continuity block after 196-S closes. Every other
+   nothing. Every other
    checkpoint and memory note Ship writes follows the repository norm and is committed.
-   backlogit mutations (moves, label updates, comments) also append to tracked runtime
-   logs: `.backlogit/hooks_queue.jsonl`, `.backlogit/telemetry-sessions.jsonl`, and
-   `.backlogit/telemetry/*.jsonl`. Those appends, and any `.backlogit/stash.jsonl` change,
-   are pending changes like any other. For each owner task, in order:
+   backlogit operations can append to four tracked runtime logs, named `RUNTIME_LOGS`
+   everywhere in Amendment 3: `.backlogit/hooks_queue.jsonl`,
+   `.backlogit/telemetry-sessions.jsonl`, `.backlogit/telemetry/session-facts.jsonl`, and
+   `.backlogit/telemetry/tool-calls.jsonl`. Only `hooks_queue.jsonl` is append-only; the
+   telemetry files can be rewritten by a telemetry harvest. Those changes, and any
+   `.backlogit/stash.jsonl` change, are pending changes like any other. Before every
+   `git add -A` in Amendment 3, Ship checks that each pending path is one it (or a skill
+   it invoked) wrote, an Orchestrator note under the committer rule, or a `RUNTIME_LOGS`
+   path. A `stash.jsonl` change counts as Ship's only if `git diff --numstat` shows 0
+   deleted lines and every added line's `id` is an entry Ship captured under P-021 C2 in
+   this session; any other added or changed entry halts, naming it. Any other path halts,
+   naming the path. For each owner task, in order:
    * the harness commit (item 1)
    * a `chore(backlog)` traceability commit of every pending change (`git add -A`): the
      label changes, harness-architect's implementation note and harness-manifest record,
@@ -1946,7 +2008,13 @@ payload once that commit exists.
   during the window.
   1. **Pre-checks.** If `<served storage root>/hooks.yaml` exists, halt. If either task
      file carries `archived_from` or `archived_status`, halt; at staging, neither does.
-     The tree must be clean (A3.3 item 4).
+     The raw `.backlogit/queue/196-S.md` must show `status: active`, otherwise halt. Carry
+     any pending Orchestrator notes and `RUNTIME_LOGS` under the committer rule; then the
+     tree must be clean (A3.3 item 4). Then run CLI `backlogit sync` with the step 5
+     `--cwd` and child environment. Afterwards nothing outside `RUNTIME_LOGS` may be
+     pending, otherwise halt (nothing irreversible has happened yet); `RUNTIME_LOGS`
+     changes stay pending and are staged in step 8. The ruling file does not exist yet; the
+     operator writes it in step 9, or after a halt.
   2. **Attest and record versions.** Run the Served-Root Attestation recipe this plan
      defines (U2 step d and U9 Change 1, applied under R14) against the MCP server.
      Record `backlogit_get_version` (MCP; `7c805f9` at staging) and `backlogit version`
@@ -1954,28 +2022,29 @@ payload once that commit exists.
      two differ in neither `internal/config` nor `internal/hooks`. They do differ in
      `internal/core` (claim-marker files). The step 7 three-way read is the accepted
      backstop for that skew. The MCP reads here and in step 7 are read-only and fall
-     outside the window. The operator issues them, or directs a read-only chat turn that
-     is not Ship, Stage, or the Orchestrator, against the session's existing MCP server.
-     The results are copied verbatim into the ruling file. A separately started MCP server
+     outside the window. The operator issues them, or directs a chat turn that is not
+     Ship, Stage, or the Orchestrator, uses no edit or terminal tool, and makes only these
+     reads against the session's existing MCP server. The operator runs any non-MCP
+     filesystem checks of the recipe directly and copies all results
+     verbatim into the ruling file. A separately started MCP server
      does not satisfy this step.
   3. **Snapshot.** For both tasks, record the full file content and SHA-256 under
      `archive/`, the frontmatter key set (including
      `custom_fields.scheduler_baseline_claim`, `labels`, `references`, `parent_id`, and
      `commit`), and the body section markers.
-  4. **Build and rehearse the hooks file.** Run `backlogit init` with the same CLI in a new
+  4. **Build the hooks file.** Run `backlogit init` with the same CLI in a new
      empty directory under the system temp folder, outside the repository and the served
      root, with `BACKLOGIT_WORKSPACE_DIR` unset. Keep a pristine copy of its `hooks.yaml`.
      In the scratch `hooks.yaml`, change only the `done` transition list to
      `[archived, queued]`; a diff against the pristine copy must show exactly that row. A
-     partial file would replace the defaults wholesale, so never hand-write it.
-     **Rehearse** in the scratch workspace before the live window opens: run `git init`,
-     create a feature and a child task with the same CLI, move the task to `done` (it must
-     land under `archive/`), and commit everything. Then run `move --status queued` on the
-     task. Record the result, the `git status --porcelain` shape, and every changed path.
-     Halt before the live window if the move fails or touches any path other than the
-     task's two paths and the runtime logs named in A3.3 item 4. Then copy the edited file
-     to `<served storage root>/hooks.yaml`, delete the scratch directory, and record the
-     file's SHA-256 and the window start time.
+     partial file would replace the defaults wholesale, so never hand-write it. No scratch
+     rehearsal is run: cycle 5 verified in code that a `done -> queued` move writes, among
+     tracked files, only the task file (target written, source removed) and
+     `RUNTIME_LOGS` appends; its other writes are the git-ignored index and item logs and
+     transient lock sidecars removed on exit; a failed move is refused by the
+     pre-hook before any write; and step 8 is independent of the working-tree shape. Then
+     copy the edited file to `<served storage root>/hooks.yaml`, delete the scratch
+     directory, and record the file's SHA-256 and the window start time.
   5. **Move, then always clean up.** Inside a try/finally block, run
      `backlogit move 196.001-T --status queued` and then
      `backlogit move 196.003-T --status queued`. Run each as an argv array with
@@ -1992,34 +2061,56 @@ payload once that commit exists.
      shows `queued`. A partial result (one task moved, a failed move, or any mismatch)
      halts: record each task's status and do not retry inside this window. A later window
      may move only a task that is still `done`.
-  8. **Contract integrity.** The raw Markdown is the authority, because the index does
-     not project every frontmatter key. First,
-     `git status --porcelain --untracked-files=all` may list only the two archive paths
-     and the two queue paths, in either shape (unstaged deletes plus untracked adds, or
-     staged renames), plus the tracked runtime logs named in A3.3 item 4. Each runtime log
-     must be append-only (`git diff --numstat` shows 0 deleted lines). Any other path
-     halts, and its diff goes in the ruling file. Then run `git add -A -- <both archive
-     paths> <both queue paths> <changed runtime logs>`; `git diff --cached -M
-     --name-status` must show an `R` row for each task. Against the snapshot, only
-     `status`, `updated_at`, and the location may change. Any other change or loss halts
-     with the diff. Retained by design: each task's `commit`, completion-evidence
-     sections, and `custom_fields.scheduler_baseline_claim` still describe wave 1 until
-     Phase 2's red-path `done` replaces the evidence. Ship never treats a retained wave-1
-     value as Phase 2 evidence.
-  9. **Commit and record.** Commit the two renames and the runtime-log appends alone as
-     `chore(backlog): reopen 196.001-T and 196.003-T (196-S Amendment 3)`. Write the
-     ruling file with the window start and end times, the hooks file SHA-256, both
-     versions, the two moved items, the commit SHA, and the verification results. Append
-     a comment on each task with actor `operator`, never `ship`, through
-     `backlogit comment add` with the same argv, `--cwd`, and child environment as step 5:
-     `REOPENED: 196-S Amendment 3 A3.4 Option A`. That comment is never a start record.
-     Comment bodies go to the git-ignored `logs/`.
-  10. **Commit the ruling file**, together with any runtime-log appends from the step 9
-      comments, as `docs(memory): 196-S A3 ruling`, then confirm the tree is clean.
+  8. **Contract integrity (exact index set).** The raw Markdown is the authority, because
+     the index does not project every frontmatter key. Stage everything, then require the
+     index to hold exactly the expected change set:
+     * `git add -A` (no pathspec). This stages every change that is not ignored or
+       excluded, whatever its working-tree shape (delete plus untracked add, or a
+       rename), and cannot fail on a missing path.
+     * `git diff --cached -M --name-status` must print exactly one `R<score>` row from
+       `.backlogit/archive/196.001-T.md` to `.backlogit/queue/196.001-T.md`, the same for
+       196.003-T, and otherwise only `M` rows whose path is in `RUNTIME_LOGS`. Any other
+       row, including a `D` plus `A` pair for a task, halts: put the row list and its diff
+       in the ruling file, then run `git reset -q` so nothing stays staged. A leftover
+       `.backlogit/hooks_queue.jsonl.lock` sidecar is the one exception: delete it, run
+       `git reset -q`, and repeat step 8.
+     * `git diff --cached --numstat -- .backlogit/hooks_queue.jsonl` prints nothing or
+       shows 0 in the deleted column (append-only). The telemetry paths only need to be in
+       `RUNTIME_LOGS`.
+     * Against the step 3 snapshot, only `status`, `updated_at`, and the location may
+       change in each task file. Any other change or loss halts with the diff.
 
-  **After any Option A halt,** the operator records each task's state in the ruling file
-  and does not write `A3_RULING: A`. Ship stays halted at G-A3 until the operator re-rules
-  or Stage amends.
+     Retained by design: each task's `commit`, completion-evidence sections, and
+     `custom_fields.scheduler_baseline_claim` still describe wave 1 until Phase 2's
+     red-path `done` replaces the evidence. Ship never treats a retained wave-1 value as
+     Phase 2 evidence.
+  9. **Commit and record.** With exactly the step 8 index, run
+     `git commit -m "chore(backlog): reopen 196.001-T and 196.003-T (196-S Amendment 3)"`
+     (no `-a`, no other pathspec). Then append a comment on each task with actor
+     `operator`, never `ship`, through `backlogit comment add <id> --actor operator
+     --comment "REOPENED: 196-S Amendment 3 A3.4 Option A" --commit-sha <reopen commit>`,
+     with the same `--cwd` and child environment as step 5. That comment is never a start
+     record; comment events go to the git-ignored `.backlogit/logs/`. Then write the
+     ruling file with the window start and end times, the hooks file SHA-256, both
+     versions, the two moved items, the reopen commit SHA, the helper script's base file
+     name and SHA-256 if one was used, and the step 7 and 8 results.
+  10. **Commit the ruling file.** Run `git add -A`. `git diff --cached --name-status` must
+      show exactly one `A` row for the ruling file and otherwise only `M` rows whose path
+      is in `RUNTIME_LOGS`, with `hooks_queue.jsonl` append-only as in step 8; anything
+      else halts as in step 8. Then run `git commit -m "docs(memory): 196-S A3 ruling"` and
+      confirm the tree is clean (A3.3 item 4).
+
+  **After an Option A halt,** the operator never retries inside the same window:
+  * **Steps 1–4** (no move yet): nothing irreversible happened. Remove a placed
+    `hooks.yaml` if present; a later window may start again at step 1.
+  * **Steps 5–8** (a move may have happened, no reopen commit): record each task's state
+    in the ruling file and do not write `A3_RULING: A`. Leave the task files and the
+    ruling file uncommitted. Once a task has moved, a re-ruling to B or C cannot pass
+    Phase 0′, so only a Stage amendment can resume. Ship stays halted at G-A3.
+  * **Step 10** (the reopen commit exists): record the stray row, clear it (carry it
+    under the committer rule if it is an Orchestrator note or in `RUNTIME_LOGS`, delete
+    it if it is an Option A artifact, otherwise halt for a Stage amendment), run
+    `git reset -q`, and repeat step 10. `A3_RULING: A` stays.
 * **B.** Add new harness-required tasks for the U1 and U3 additions under an explicit
   P-002.6 `M` re-freeze ruling. This contradicts decision 2's "`M` unchanged". It needs
   new collision-free `TestUSR1H_` and `TestUSR3H_` functions, and the `covered-by`
@@ -2064,7 +2155,9 @@ cannot change its result. No re-run is required.
    Amendment 1 bootstrap payload: both absolute served roots, this plan path, explicit
    citations of R14 and Amendment 3, and decision 1 as the operator's confirmation of the
    checkpoint restore. A missing item halts with `SERVED_ROOTS_UNRESOLVED`.
-2. **Restore.** Ship restores `checkpoint-20261005-052350.json` under its own recovery
+2. **Restore.** First, Ship makes the committer-rule carry commit for any pending
+   Orchestrator notes and `RUNTIME_LOGS`. Then Ship restores
+   `checkpoint-20261005-052350.json` under its own recovery
    protocol. Anomaly-first enumeration still runs. Decision 1 is the operator
    confirmation, so Ship does not wait for another.
 3. **Preconditions.** Halt and report if any of these fails:
@@ -2073,11 +2166,10 @@ cannot change its result. No re-run is required.
      plus the checkpoint's nine `task_ids`.
    * The R14 Served-Root Attestation passes.
    * `<served storage root>/hooks.yaml` does not exist.
-   * The tree is clean (A3.3 item 4). Stage's Amendment 3 commits, through its cycle-4
-     commit, hold the plan, manifest, stash, spike item, and Stage's 2026-10-05 memory
-     files; the Orchestrator has committed its own notes, and
-     `checkpoint-20261005-052350.json` is excluded locally. Any file Ship writes during
-     the restore is committed as `chore(backlog)` before this check.
+   * Pending Orchestrator notes and `RUNTIME_LOGS` changes were carried in item 2 under the
+     committer rule, and any file Ship writes during the restore is committed as
+     `chore(backlog)`. Then the tree is clean (A3.3 item 4), with
+     `checkpoint-20261005-052350.json` excluded locally.
    * HEAD descends from `e380ff3b`, and A3.3 item 2 holds for all three green files.
    * Live statuses: 001, 003, 004, and 007 are `done`. 008 is `active` with exactly one
      current-epoch `WORK_STARTED: 196-S`. 002, 005, 006, and 009 are `active` and
@@ -2122,14 +2214,16 @@ cannot change its result. No re-run is required.
     every Ship checkpoint `resume_hint` restates this gate.
     * **No ruling file, or `A3_RULING: A` without a committed Option A record:** write a
       fresh checkpoint under Ship's halt protocol, and record its filename in the P-005
-      event and in Ship's halt memory note. Before committing, also write Ship's Session
-      End memory content into that note and resolve every other current-session
-      checkpoint. The G-A3 checkpoint stays `active`; Session End step 2 does not apply to
-      it. Commit the checkpoint, the note, the resolutions, and any runtime-log appends as
-      `chore(backlog)` so the tree is clean for Option A. That commit is Ship's last write
-      before the halt. Emit `DARK_MODE_HALTED` with
-      reason "Amendment 3 reopen pending operator lifecycle exception" and next action
-      "operator ruling A/B/C; under A, the operator executes A3.4 Option A". Halt. Ship
+      event and in Ship's halt memory note. Record the P-005 event and
+      `DARK_MODE_HALTED` (reason "Amendment 3 reopen pending operator lifecycle
+      exception"; next action "operator ruling A/B/C; under A, the operator executes A3.4
+      Option A") before committing. Also write Ship's Session End memory content into that
+      note, record Session End steps 3 and 4 as deferred, and resolve every other
+      current-session checkpoint. The G-A3 checkpoint stays `active` as the single final
+      checkpoint that Session End step 2 permits. Then commit every pending change
+      (`git add -A`, after the A3.3 item 4 path check) as `chore(backlog)` and confirm the
+      tree is clean. That commit is Ship's last write before the halt; after it Ship only
+      reports and halts, with no backlogit call. Ship
       never edits the shipment manifest by hand. The operator names this checkpoint in
       the ruling file's `A3_RESUME_CHECKPOINT` line; no manifest repoint is needed.
     * **`A3_RULING: B` or `C`, or `A` with its Option A record and reopen commit already
@@ -2145,7 +2239,9 @@ cannot change its result. No re-run is required.
 #### Phase 0′: resume after G-A3
 
 15. **Payload and preconditions.** The Orchestrator passes both served roots, this plan
-    path, the R14 and Amendment 3 citations, and the ruling file path. Ship restores the
+    path, the R14 and Amendment 3 citations, and the ruling file path. Ship first makes the
+    committer-rule carry commit for any pending Orchestrator notes and `RUNTIME_LOGS`, then
+    restores the
     checkpoint named by the ruling file's `A3_RESUME_CHECKPOINT` line under its own
     protocol; that line is the operator's selection and confirmation for Ship, and also for
     the Orchestrator's Step 0.0b selection gate on this re-invocation. Under ruling A,
@@ -2193,6 +2289,8 @@ cannot change its result. No re-run is required.
     carries every pending change from items 16–19, including both claim moves; 003 gets a
     traceability commit only if changes are pending when its turn comes.
 21. Run the wave-2 Step 4.6 gate. The open-red set is again {001, 003, 008}, all RED.
+    Then commit every pending change (`git add -A`, after the A3.3 item 4 path check) as
+    `chore(backlog)` so the tree is clean before Phase 3.
 
 #### Phase 3: green tasks
 
@@ -2245,6 +2343,18 @@ cannot change its result. No re-run is required.
   block and the rule that no Ship, Stage, Orchestrator, or MCP mutation runs during the
   window are additional bounds. Because no MCP mutation runs in the window, a long-lived
   MCP server never acts on the widened lifecycle.
+* **Option A rehearsal dropped (cycle 5; residual LR4-03/LR4-08).** A scratch rehearsal
+  could not pass as written (no scratch `.gitignore`, and `queued -> done` is not a legal
+  default transition), so step 4 relies on code evidence instead: the status move writes
+  the target file and removes the source (`internal/core/shipment.go`), its only other
+  tracked writes are `RUNTIME_LOGS` appends (`internal/events/hook_events.go` for
+  `.backlogit/hooks_queue.jsonl`), lock sidecars are transient, `backlogit comment add`
+  writes only the git-ignored logs, locks, and index (`internal/core/commits.go`
+  `AppendComment`), and the pre-hook refuses a disallowed move before
+  any write. Step 8's exact index set is the backstop for any CLI behavior that differs.
+* **Telemetry files are not append-only.** A telemetry harvest can rewrite
+  `telemetry-sessions.jsonl`, `telemetry/session-facts.jsonl`, and
+  `telemetry/tool-calls.jsonl`; only `hooks_queue.jsonl` is checked as append-only.
 * **Plan-local halt code.** `A3_LIFECYCLE_EXCEPTION_PRESENT` exists only in this plan,
   has no P-002.2 taxonomy entry, and expires when 196-S closes.
 * **P-021 C3 residual risks.** The PR body and the closure summary list:
@@ -2390,3 +2500,99 @@ with `operator_authorization: approved`, recorded by the operator or under a fre
 authorization. Stage escalation status: `ESCALATION_DEGRADED` (the escalation route equals
 Stage's own Tier-3 route and no engram escalation-intake operation is available), so the
 fallback is the operator halt.
+
+<!-- plan-review-attempt: 5 -->
+
+## Plan Review
+
+<!-- plan-review: Amendment 3, attempt 5 of 5 (operator-authorized cap exception; final record; supersedes the attempt-4 record for Amendment 3 only) -->
+
+* scope: Amendment 3 (A3.1 to A3.6), the rewritten Objective, the Operator rulings note,
+  the Stage constraints, Precedence, and the cycle-4 text remediations. Earlier Plan
+  Review records for the base plan and Amendments 1 and 2 are not reopened.
+* dispatch_mode: multi-agent-dispatch
+* decision: PASS
+* operator_authorization: cycle-5 authorized 2026-10-05T17:27-07:00
+  (Operator Resolution 3, "I authorize a cycle 5"; one-cycle exception to the cycle cap)
+* reviewed_at: 2026-10-05 (Stage, P-017 dark mode, scope `[196-S]`)
+* routing: ROUTING_DEGRADED (Stage cannot self-verify its runtime model binding)
+
+**Cycle-5 structure (stated for transparency).** Cycle 5 ran in two passes inside the one
+authorized cycle: (1) a full adversarial review by six personas; (2) after Stage fixed every
+P1 and P2 in text, a targeted remediation-confirmation pass by the same six personas,
+limited to the changed text. Pass 2 found no P0 or P1. Its three P2s and most P3s were then
+fixed in text, using the reviewers' own recommended wording; those last fixes were not
+re-dispatched. No further cycle was run.
+
+**Pass 1 (full review)**
+
+| Reviewer | Result | Blocking findings |
+|---|---|---|
+| Correctness | FAIL | C5-P1-a: step 8's `git status --porcelain` after staging always prints the staged rows, so steps 8 and 10 always halt after the irreversible moves |
+| Agent-Native Parity | FAIL | C5-P1-1 same porcelain defect; C5-P1-2 the Orchestrator committer row exceeded its authority (its only commit grant is the Step 1.5 carve-out; it writes no checkpoint) |
+| Architecture | FAIL | C5-P1-a porcelain; C5-P1-b the scratch rehearsal could never pass (no scratch `.gitignore`; `queued -> done` is not a legal default transition) |
+| Go | ADVISORY | G5-1/G5-2 P2 gofmt staged-blob check (PS 5.1 CRLF re-emit; fails open if `git show` errors) |
+| Learnings | FAIL | LR5-01 porcelain and pathspec shape; LR5-02 Orchestrator committer |
+| Scope/Constitution | FAIL | C5-F1 Orchestrator committer; C5-F2 porcelain; C5-F3 an agent-written helper script file outside the workspace |
+
+**Pass 2 (remediation confirmation, changed text only)**
+
+| Reviewer | Result | Remaining findings |
+|---|---|---|
+| Correctness | PASS | 4 P3 (all fixed) |
+| Agent-Native Parity | ADVISORY | N1 P2 Orchestrator Step 1.5 carve-out still reachable (fixed); 2 P3 (fixed) |
+| Architecture | PASS | 4 P3 (all fixed) |
+| Go | PASS | 1 P3 (fixed) |
+| Learnings | ADVISORY | NF-1 P2 per-path `stash.jsonl` ownership could sweep a foreign entry (fixed); 3 P3 (fixed) |
+| Scope/Constitution | ADVISORY | P2 absolute helper-script path in a committed file (fixed); 5 P3 (fixed) |
+
+**Cycle-4 P1 remediation verification (pass 2, all six personas)**
+
+| Cycle-4 P1 | Verdict | Final mechanism |
+|---|---|---|
+| (1) Tracked runtime-log appends in Option A step 8 and in the commit lists | VERIFIED | `RUNTIME_LOGS` defined in A3.3 item 4; step 8 and step 10 allow only `M` rows in `RUNTIME_LOGS` besides the expected rows; only `hooks_queue.jsonl` is checked append-only; every Ship commit uses `git add -A` after the item 4 path check |
+| (2) Robustness of the step 8 git-status shape | VERIFIED (after the C5-P1-a fix) | `git add -A` with no pathspec, then `git diff --cached -M --name-status` must be exactly two `R<score>` rows plus `RUNTIME_LOGS` `M` rows; a `D`+`A` pair halts; no porcelain check; `git reset -q` on halt. Rename similarity is about 98% (two changed lines in a ~4 KB file) |
+| (3) Ship Session End writes after the G-A3 halt commit; G-A3 checkpoint stays active | VERIFIED | Item 13 records P-005 and `DARK_MODE_HALTED`, writes Session End memory into the halt note, records Session End steps 3 and 4 as deferred, resolves other checkpoints, keeps the G-A3 checkpoint as the single final checkpoint Session End step 2 permits, then commits everything; no backlogit call after the commit. Precedence authorizes the deviation |
+| (4) Helper-script and MCP-read constraints; committer for Orchestrator-written files | VERIFIED | Script text in chat only, no agent writes a script file, the operator runs it outside the repository, the ruling file records only its base name and SHA-256; step 2/7 MCP reads come from the operator or an operator-directed non-agent-role chat turn with no edit or terminal tool; the Orchestrator commits nothing and the receiving party carries its notes |
+
+**C3-P1-b (committers) re-adjudication: VERIFIED, decisively (6 of 6 personas in pass 2).**
+Every writer has exactly one committer and a deadline (Stage constraints table). The
+Orchestrator commits nothing on the 196-S branch and does not use its Step 1.5 carve-out
+for 196-S (Precedence). The receiving party (Ship, Stage, or the operator) carries pending
+Orchestrator notes and `RUNTIME_LOGS` as its first repository action (Phase 0 item 2,
+Phase 0′ item 15, Option A step 1); any other pending path halts.
+
+**Pass-1 P1/P2 remediations**
+
+| Finding | Remediation |
+|---|---|
+| C5-P1-a / C5-P1-1 / LR5-01 / C5-F2 porcelain | Steps 8 and 10 use `git add -A` plus an exact cached name-status set; porcelain and pathspecs removed |
+| C5-P1-b rehearsal cannot pass | Rehearsal dropped; step 4 cites code evidence; A3.6 records the residual |
+| C5-P1-2 / LR5-02 / C5-F1 Orchestrator committer | Orchestrator commits nothing; receiving-party carry commit; Orchestrator Step 1.5 limited to its manifest check |
+| C5-F3 helper script file | Script text in chat only; no agent writes a script file |
+| Precedence for Session End, Step 0.5, Step 4.0 | Precedence agent-file-steps clause |
+| Step 2/7 reads vs operator-only | Step 2 rewritten; rulings note scoped to execution of steps 1–10 |
+| Stage constraints labeled as rulings | Separate "Stage constraints" section |
+| Stage commits on Ship's branch | Precedence: only while Ship is halted, never concurrently |
+| Step 7 sync could rewrite Markdown | Step 1 runs CLI sync before the window |
+| Telemetry not append-only; foreign `git add -A` sweep | Only `hooks_queue.jsonl` append-checked; A3.3 item 4 ownership check, per entry for `stash.jsonl` |
+| G5-1 / G5-2 gofmt | `git cat-file -e`, then `cmd /c "git show :<path> \| gofmt -l"` with exit 0 and no output |
+| Constitution Check stale | Write targets listed; rows III, IV, VII, VIII; irreversible-step signal present for Amendment 3 |
+| Phase 0 stale "cycle-4 commit" text; item 21 commit | Rewritten; item 21 commits pending changes |
+
+**Pass-2 P3s fixed:** `hooks_queue` numstat may print nothing; transient lock sidecars named
+and a leftover `hooks_queue.jsonl.lock` handled; halt disposition split by step range
+(1–4, 5–8, 10); carry commit before restore (Phase 0 item 2, Phase 0′ item 15); Option A
+step 1 checks the raw `196-S.md` shows `status: active`; step 2 non-MCP checks done by the
+operator; Precedence names all three receiving parties; `comment add` write targets cited
+in A3.6.
+
+**Residual items (P3, not blocking)**
+* LR4-03/LR4-08: no rehearsal; the live CLI behavior is checked only by step 8's exact set,
+  which fails closed after the moves (A3.6).
+* Ruling B/C branches retained only for a re-ruling after a halted window.
+* R02 ratification breadth: `A3_R02_RATIFIED` covers the ref edit and body note only.
+
+**Gate consequence.** The final decision is PASS. Ship may execute Amendment 3 Phase 0 and
+Phase 1 and must halt at G-A3 until the operator runs A3.4 Option A and commits the ruling
+file. Stage escalation status: not triggered (no further FAIL).
