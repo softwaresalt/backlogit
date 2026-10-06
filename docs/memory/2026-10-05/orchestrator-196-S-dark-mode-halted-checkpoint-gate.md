@@ -189,3 +189,23 @@ Operator ruling, verbatim: "I authorize a cycle 5". Stage gets one more plan-rev
 - Deviation: pristine hooks.yaml generated via `backlogit init` in gitignored `logs\optionA\inittmp`
   (workspace containment). The ruling file uses a trailing MD041 disable because line 1 is fixed by the plan.
 - Next: Ship Phase 0' resume, then Phase 2.
+
+## 2026-10-06 DARK_MODE_HALTED: Phase 2 wave 2, A3.3 contradiction
+
+- Ship (gpt-6-luna/openai/xhigh) completed Phase 0' (`59ccde12`, `e7454f15`) and the wave-2 harnesses
+  (U1 `d2248d7c`, U3 `e36ac003`, assertion-RED, additive only). 196.001-T and 196.003-T are `active`;
+  build-feature Step 0.5 was not dispatched. Ship checkpoint: `checkpoint-20261006-073956.json`.
+- Halt 1: A3.3 item 4 orders Step 4.2 (the build-feature dispatch) before the traceability commit, but the
+  zero-delta and no-write window after `red_baseline_sha` require it after. No execution satisfies the text.
+- Halt 2: the A3.3 item 2 "no green yet" check was not recorded before the harness edits.
+- Orchestrator recomputed item 2 read-only against pinned SHAs (origin/main `c4c458b9`, parents
+  `e7454f15`/`d2248d7c`): both green-file logs empty. Stage confirmed via reflog that origin/main was at
+  `c4c458b9` across the edit window.
+- Routing decision: fixing Amendment 3 needs a plan review, which would be plan-review cycle 6. Cycles 4
+  and 5 each needed explicit, one-at-a-time operator authorization, so the Orchestrator does not
+  self-authorize cycle 6.
+- Stage drafted Amendment 3 Erratum E1 (unreviewed, not effective), commit `4780bdc2`, plan lines
+  2600-2725: E1.1 reorders item 4 to match the Phase 1 precedent (pre-dispatch actions, commit, clean tree,
+  baseline, dispatch); E1.2 accepts the pinned-SHA recomputation for item 2 with a residual-risk note.
+- Operator decisions needed: (1) authorize review cycle 6 for E1, or approve E1 directly; (2) select the
+  resume checkpoint `checkpoint-20261006-073956.json`. Then Ship resumes Phase 2 under E1.
