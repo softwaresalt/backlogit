@@ -111,12 +111,12 @@ func WithCommit(commit string) Option {
 // loaded. The create/update write paths gate required-field validation and
 // default application on the header-def; an absent (nil) schema is a
 // system/config precondition fault, so the write must refuse rather than
-// silently skip validation and succeed — the same fail-open shape closed for
+// silently skip validation and succeed â€” the same fail-open shape closed for
 // the doctor --target path in 072-S. It is wrapped in blerrors.ErrConfig (NOT
 // blerrors.ErrValidation): a missing workspace schema is not a user-correctable
 // field error. ErrConfig is absent from domainError's validation case, so the
 // MCP layer still surfaces it as `internal` (500), never `validation_failed`
-// (422) — while giving callers/tests a positive errors.Is seam instead of a
+// (422) â€” while giving callers/tests a positive errors.Is seam instead of a
 // brittle message-substring match.
 //
 // This check is load-bearing at the call sites: it MUST run before
@@ -673,7 +673,7 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 	// archiving MUST go through ArchiveItem, which stamps
 	// archived_from/archived_status. The default matrix allows done -> archived,
 	// but the generic update path sets no provenance, so this transition would
-	// write status: archived with empty provenance — a non-invertible artifact
+	// write status: archived with empty provenance â€” a non-invertible artifact
 	// UnarchiveItem cannot restore. Reject any transition INTO archived from a
 	// non-archived status. An update on an already-archived item (provenance
 	// preserved by the status-gated serializer) is unaffected.
@@ -866,7 +866,7 @@ func ensureArtifactLookupContained(ws *Workspace, path string) error {
 // relative to the process working directory (it already embeds ws.RootPath, since
 // the walk root is WorkspaceStorageRoot(ws.RootPath)) or absolute. It is resolved
 // with filepath.Abs against the same working directory the storage root is resolved
-// against, so ws.RootPath is NOT re-joined — doing so would double-prefix a named
+// against, so ws.RootPath is NOT re-joined â€” doing so would double-prefix a named
 // relative --cwd (e.g. "workspace/.backlogit/..." -> "workspace/workspace/..."). The
 // leaf must already exist (callers use this immediately before reading the file).
 func resolveContainedArtifactPath(ws *Workspace, filePath string) (string, error) {
@@ -1177,6 +1177,7 @@ func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, 
 	if err != nil {
 		return fmt.Errorf("find source artifact %s: %w", sourceID, err)
 	}
+	preLockArchivedStatus := source.ArchivedStatus
 	filtered := source.Links[:0]
 	removed := false
 	for _, link := range source.Links {
@@ -1188,7 +1189,7 @@ func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, 
 	}
 	if !removed {
 		if err := db.RemoveLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
-			return fmt.Errorf("remove database link %s→%s (%s): %w", sourceID, targetID, linkType, err)
+			return fmt.Errorf("remove database link %sâ†’%s (%s): %w", sourceID, targetID, linkType, err)
 		}
 		return nil
 	}
@@ -1199,11 +1200,11 @@ func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, 
 		source.Links = filtered
 	}
 	source.UpdatedAt = models.NowUTC()
-	if err := persistArtifactWithoutDBOnlyLinks(ctx, ws, source, false); err != nil {
+	if err := persistArtifactWithoutDBOnlyLinksWithGuard(ctx, ws, source, false, guardArchivedStatusUnchangedSince(ws, sourceID, preLockArchivedStatus)); err != nil {
 		return fmt.Errorf("persist source artifact %s: %w", sourceID, err)
 	}
 	if err := db.RemoveLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {
-		return fmt.Errorf("remove database link %s→%s (%s) after Markdown persistence: %w", sourceID, targetID, linkType, err)
+		return fmt.Errorf("remove database link %sâ†’%s (%s) after Markdown persistence: %w", sourceID, targetID, linkType, err)
 	}
 	return nil
 }
