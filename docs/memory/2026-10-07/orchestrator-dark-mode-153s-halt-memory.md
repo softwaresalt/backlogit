@@ -43,9 +43,17 @@ rollback trigger, so the run halted per P-017 stop conditions.
 
 1. The external autoharness scheduler owner records the condition-b
    attestation for 154-S (tracked by stash `AF1E5075`).
-2. Complete the degraded 154-S P-020 compaction pass (stash `A17EE897`) if the
-   gate also requires `compaction_status: done`.
-3. Re-run `Run pipeline in dark mode` scoped to 153-S.
+2. Update the 154-S closure evidence so the topology gate observes the cleared
+   condition. Recording the attestation alone does not clear
+   `PREDECESSOR_CLOSURE_INCOMPLETE`: the gate reads `closure_status` from the
+   predecessor closure artifact. Either promote `closure_status` from
+   `READY_WITH_CONDITIONS` to `READY`, or record the condition as satisfied in
+   the artifact's `conditions:` block, citing the attestation evidence.
+3. `compaction_status: degraded` is non-blocking for routing. Completing the
+   degraded 154-S P-020 compaction pass (stash `A17EE897`) is still
+   recommended hygiene, but it is not a routing precondition.
+4. Re-run the pre-claim topology gate for 153-S and confirm exit 0, then
+   re-run `Run pipeline in dark mode` scoped to 153-S.
 
 ## Alternatives not taken
 
