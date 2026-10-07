@@ -22,27 +22,22 @@ type: session-memory
 1. MCP `backlogit_claim_shipment(153-S)` timed out.
 2. The single bounded CLI re-claim at `07:23:33Z` failed: `lock shipment lifecycle recovery: task .backlogit/.locks/shipment-lifecycle-global: backlogit: gate in progress for item`.
 3. The post-claim gate returned `CLAIM_NOT_OBSERVED` (exit 3). 153-S is still `queued`, `updated_at` is unchanged, and there are zero active shipments.
-4. Between `07:32Z` and `07:33Z`, `.shipment-lifecycle-global.lock`, `.153-S.lock`, and every 172-F/172.0xx-T member lock were re-touched about every 40 s with no state change.
+4. Between `07:32Z` and `07:33Z`, `.shipment-lifecycle-global.lock`, `.153-S.lock`, and every 172-F/172.0xx-T member lock were re-touched about every 40 s while the in-flight claim progressed.
 
-## Suspected cause
+## Correction (2026-10-07T20:14Z)
 
-Multiple long-lived `backlogit mcp` servers serve this workspace at the same time:
+The original diagnosis in this record was wrong. Verified evidence:
 
-* `C:\Tools\backlogit.exe` PIDs 18504, 17184, 18612, and 32260, started 2026-10-05 to 2026-10-06.
-* `bin\backlogit.exe` PID 37184, this session's server.
+* Process working directories (read from each process PEB) show only PID 37184 serves this workspace. PIDs 18504 and 18612 serve `engram`, PID 17184 serves `autoharness`, and PID 32260 had exited before it could be checked. There was no multi-server contention.
+* The timed-out MCP claim kept running inside PID 37184 and **succeeded**: `153-S.jsonl` records `shipment_status_changed` at `07:34:13Z`, and member `status_changed` events run through `07:36:11Z`. 153-S and all 16 members (172-F, 172.001-T to 172.015-T) are `active`.
+* Root cause: Ship's CLI re-claim at `07:23:33Z` collided with this session's own still-running MCP claim on the global lifecycle lock (self-contention). The post-claim gate sampled state before the background claim committed, so it returned `CLAIM_NOT_OBSERVED`.
 
-The timed-out MCP claim is probably still retrying inside PID 37184 and contending for the lifecycle gate with another server or a pending recovery record. This is not confirmed.
+## Resume guidance
 
-## Circuit breaker
-
-The claim has failed twice for the same operation. One more failure trips the universal breaker. Do not retry blindly.
-
-## Operator next steps
-
-1. Close stale editor and CLI sessions, or stop the stale `backlogit mcp` processes listed above. This is a destructive action and needs operator approval.
-2. Confirm that the `.backlogit/.locks` timestamps stop advancing and that `backlogit shipment get 153-S` still reports `queued`. If a stray claim succeeded, it reports `active` instead.
-3. Re-run the `pre_claim` topology gate, then re-invoke Ship on 153-S using the existing feat branch.
+* Do not re-claim. The shipment is already claimed.
+* The claim state (18 queue files plus `hooks_queue.jsonl`) is committed on this feat branch.
+* Resume Ship from the post-claim gate, then from the WORK_STARTED marker (Step 4.0), on this branch.
 
 ## Follow-up candidate
 
-backlogit claim path: an MCP client timeout should not leave a server-side claim retrying indefinitely. Multi-server lifecycle-gate contention should surface the holder's identity.
+backlogit claim path: when an MCP client times out, the server-side claim continues and can complete later, so a client retry races it. Either cancel the server-side operation on client timeout, or have the lifecycle-gate error identify the in-flight operation so callers wait instead of retrying. Ship's claim convergence should also poll for a delayed claim result before declaring `CLAIM_NOT_OBSERVED`.
