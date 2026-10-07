@@ -72,3 +72,15 @@ transition or start-log write was attempted. No other shipment was started.
   gate has cleared, re-read the shipment state, and re-run the required
   topology claim gates before any claim attempt. Do not bypass the gate or
   infer a successful claim from the timed-out request.
+
+## Addendum (2026-10-07T20:20Z, superseded halt)
+
+The halt above is superseded. The timed-out MCP `backlogit_claim_shipment`
+call kept running in the session's own MCP server and committed the claim at
+2026-10-07T07:34:08Z (`shipment_status_changed` logged at 07:34:13Z in
+`.backlogit/logs/153-S.jsonl`; member `status_changed` events through
+07:36:11Z). The CLI re-claim failure ("gate in progress") was self-contention
+with that in-flight claim. A resumed Ship session observed 153-S and all 16
+members `active` with `scheduler_baseline_claim: 153-S`, and the
+`pipeline-topology --phase post_claim` gate returned exit 0
+(`CLAIM_VERIFY_OK`). No re-claim was performed.
