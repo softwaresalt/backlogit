@@ -205,7 +205,10 @@ state at about L561–570. The `L552-554` citation in the verbatim evidence
 text is approximate. The operator's attestation is the source for two
 claims: that the 195-S fixture proof passed, and the binary `9f8d7756`
 reference. The upstream autoharness Ship template does not consume the
-marker yet. That gap is tracked as requirement R1 in stash `E6DC330E`.
+marker yet. That gap is tracked as requirement R1 in stash `E6DC330E`,
+which this attestation supersedes as a blocking precondition. R1 stays
+open so upstream consumption can replace the substitution, but it does not
+re-gate `154-S` successors unless `CONDITION_B_REVOKED` is recorded.
 
 Revocation: a later `CONDITION_B_REVOKED` comment on `154-S` withdraws this
 attestation. Whoever records the revocation, normally the repository
