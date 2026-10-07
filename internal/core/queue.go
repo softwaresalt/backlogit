@@ -466,12 +466,27 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 			continue
 		}
 		previousStatus := artifact.Status
+		preLockArchivedStatus := artifact.ArchivedStatus
 		artifact.Status = targetStatus
 		artifact.UpdatedAt = models.NowUTC()
-		if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previousStatus, artifact.Status)); err != nil {
+		if err := persistArtifactWithGuard(
+			ctx,
+			ws,
+			artifact,
+			shouldRelocateOnStatusChange(previousStatus, artifact.Status),
+			guardArchivedStatusUnchangedSince(ws, id, preLockArchivedStatus),
+		); err != nil {
 			slog.WarnContext(ctx, "bulk update status: persist failed, skipping",
 				"id", id, "error", err)
 			result.Failed = append(result.Failed, id)
+			if errors.Is(err, blerrors.ErrShipmentConflict) {
+				result.FailedDetails = append(result.FailedDetails, BulkUpdateConflict{
+					ID:         id,
+					Err:        err,
+					FromStatus: string(previousStatus),
+					ToStatus:   string(targetStatus),
+				})
+			}
 			continue
 		}
 		result.Succeeded++
