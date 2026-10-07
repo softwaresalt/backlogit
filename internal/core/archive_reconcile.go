@@ -114,17 +114,11 @@ func ReconcileArchivedLifecycle(ctx context.Context, database *sql.DB, ws *Works
 		}
 	}
 
-	lockedCtx, unlock, lockErr := lockArtifactMutations(ctx, ws, req.ItemIDs)
-	if lockErr != nil {
-		return nil, fmt.Errorf("acquire reconciliation locks: %w", lockErr)
-	}
-	defer func() { _ = unlock() }()
-
 	result := &ReconciliationResult{Items: make([]ReconciliationItemResult, 0, len(req.ItemIDs))}
 	var itemErrors []error
 	for _, itemID := range req.ItemIDs {
 		itemResult, itemErr := reconcileArchivedItem(
-			lockedCtx, database, ws,
+			ctx, database, ws,
 			itemID, targetStatus,
 			req.Reason, req.Actor, req.IdempotencyKey,
 		)
@@ -236,7 +230,7 @@ func reconcileArchivedItem(
 	// not be present in bare workspaces (e.g. reconciliation callers that hold only
 	// a RootPath+DB). The reconciliation contract only needs status + custom_fields;
 	// hook firing and relocation routing are intentionally skipped here.
-	if err := setItemStatusAndMeta(ctx, database, ws, itemID, targetStatus, cfUpdates); err != nil {
+	if err := setItemStatusAndMetaLocked(ctx, database, ws, itemID, targetStatus, cfUpdates); err != nil {
 		if blerrors.IsWriteIndeterminate(err) {
 			// Possibly applied — do NOT rollback; the caller must reconcile externally.
 			wrErr := fmt.Errorf("update status %s: write outcome indeterminate: %w", itemID, err)
@@ -289,6 +283,15 @@ func reconcileArchivedItem(
 	}
 
 	return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationCompleted, Error: eventNote}, nil
+}
+
+func setItemStatusAndMetaLocked(ctx context.Context, database *sql.DB, ws *Workspace, itemID, status string, cfUpdates map[string]any) error {
+	lockedCtx, releaseArtifactLock, lockErr := lockArtifactMutations(ctx, ws, []string{itemID})
+	if lockErr != nil {
+		return fmt.Errorf("acquire reconciliation mutation lock %s: %w", itemID, lockErr)
+	}
+	defer func() { _ = releaseArtifactLock() }()
+	return setItemStatusAndMeta(lockedCtx, database, ws, itemID, status, cfUpdates)
 }
 
 // setItemStatusAndMeta writes a targeted status + custom_fields update directly
