@@ -195,6 +195,13 @@ func newQueueBulkStatusCmd(cwd *string) *cobra.Command {
 			if len(result.Failed) > 0 {
 				fmt.Fprintf(cmd.OutOrStdout(), "Failed to update %d items: %s\n", len(result.Failed), strings.Join(result.Failed, ", "))
 			}
+			for _, detail := range result.FailedDetails {
+				fmt.Fprintf(cmd.OutOrStdout(), "Failed detail %s: %s -> %s", detail.ID, detail.FromStatus, detail.ToStatus)
+				if detail.Err != nil {
+					fmt.Fprintf(cmd.OutOrStdout(), ": %v", detail.Err)
+				}
+				fmt.Fprintln(cmd.OutOrStdout())
+			}
 			return nil
 		},
 	}
