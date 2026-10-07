@@ -106,15 +106,22 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		opt(&cfg)
 	}
 
+	operationCtx := ctx
 	lockedCtx, releaseLocks, lockErr := lockArchiveGovernance(ctx, database, ws, itemID, cfg.cascade)
 	if lockErr != nil {
 		return nil, fmt.Errorf("archive item %s: acquire governed locks: %w", itemID, lockErr)
 	}
-	defer func() {
-		if unlockErr := releaseLocks(); unlockErr != nil {
-			slog.WarnContext(ctx, "release archive governance locks", "item_id", itemID, "error", unlockErr)
+	archiveLocksReleased := false
+	releaseArchiveLocks := func() {
+		if archiveLocksReleased {
+			return
 		}
-	}()
+		archiveLocksReleased = true
+		if unlockErr := releaseLocks(); unlockErr != nil {
+			slog.WarnContext(operationCtx, "release archive governance locks", "item_id", itemID, "error", unlockErr)
+		}
+	}
+	defer releaseArchiveLocks()
 	ctx = lockedCtx
 
 	// 144-F guard 2 preflight: run BEFORE any cascade so a refusal leaves
@@ -309,6 +316,9 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		}
 		return nil, fmt.Errorf("sync archive state: %w", dbErr)
 	}
+
+	releaseArchiveLocks()
+	ctx = operationCtx
 
 	// Best-effort: log archive event to the item's JSONL log (non-fatal on failure).
 	// Errors are logged for diagnosability, matching the pattern in commits.go.
