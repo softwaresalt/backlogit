@@ -55,6 +55,32 @@ func TestU172_BulkUpdateStatusReportsArchivedStatusStaleWrite(t *testing.T) {
 	assert.Equal(t, string(ShipmentShipped), updated.ArchivedStatus)
 }
 
+func TestU172_BulkUpdateStatusRecordsTypedArchivedStatusConflict(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	feature, err := CreateArtifact(ctx, ws, "typed conflict feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "typed conflict task", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, setArchivedStatusForTest(ctx, ws, task.ID, string(models.StatusActive)))
+
+	installArchivedStatusReconcileHook(t, ctx, ws, task.ID)
+
+	result, err := BulkUpdateStatus(ctx, ws.DB, ws, []string{task.ID}, string(models.StatusActive))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, []string{task.ID}, result.Failed)
+	require.Len(t, result.FailedDetails, 1)
+	detail := result.FailedDetails[0]
+	assert.Equal(t, task.ID, detail.ID)
+	assert.ErrorIs(t, detail.Err, blerrors.ErrShipmentConflict)
+	assert.Equal(t, string(models.StatusArchived), detail.FromStatus)
+	assert.Equal(t, string(models.StatusActive), detail.ToStatus)
+	updated := readArtifactForTest(t, ctx, ws, task.ID)
+	assert.Equal(t, string(ShipmentShipped), updated.ArchivedStatus)
+}
+
 func TestU172_RemoveArtifactLinkGuardTreatsMissingArtifactAsConflict(t *testing.T) {
 	ctx := context.Background()
 	ws := setupShipmentWorkspace(t)
