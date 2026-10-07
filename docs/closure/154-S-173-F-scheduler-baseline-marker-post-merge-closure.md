@@ -4,8 +4,9 @@ chunk_strategy: h1-h2-h3
 # pipeline-topology reads all three via fm.get().
 closure_status: READY_WITH_CONDITIONS
 compaction_status: degraded
-# Tracked copy of the operator attestation. The item-log entry in `source` is
-# authoritative; every entry needs satisfied: true and non-empty evidence.
+# Tracked copy of the operator attestation recorded in the item log at
+# `source`. Until R6 (186-F) ships, this entry is the only enforced gate
+# input; every entry needs satisfied: true and non-empty evidence.
 conditions:
   - id: condition-b-scheduler-marker-consumption
     satisfied: true
@@ -191,10 +192,12 @@ The operator recorded `CONDITION_B_ATTESTED` on `154-S` at
 latest `shipped` event at `2026-09-30T15:44:25Z`.
 
 The `154-S` item-log entry in `.backlogit/logs/154-S.jsonl` is the
-authoritative attestation, and Ship reads it under the R6 rule. The
-`conditions:` frontmatter entry above is a tracked copy of that entry. It
-keeps the attestation in git history, because item logs are git-ignored, and
-it lets the pipeline-topology gate evaluate the condition.
+operator's source record. The `conditions:` frontmatter entry above is a
+tracked copy of that entry. It keeps the attestation in git history, because
+item logs are git-ignored, and it is what the pipeline-topology gate
+evaluates. No installed agent reads `CONDITION_B_*` item-log entries yet.
+That read (rule R6, newest revocation wins) is queued under `186-F`, so
+until it ships this tracked entry is the only enforced gate input.
 
 The operator decided that consumption by this workspace's Ship wave
 scheduler (P-002.6 Step 4.0 Wave Admission) satisfies condition (b). This
@@ -208,10 +211,12 @@ reference. The upstream autoharness Ship template does not consume the
 marker yet. That gap is tracked as requirement R1 in stash `E6DC330E`,
 which this attestation supersedes as a blocking precondition. R1 stays
 open so upstream consumption can replace the substitution, but it does not
-re-gate `154-S` successors unless `CONDITION_B_REVOKED` is recorded.
+re-gate `154-S` successors unless this attestation is revoked.
 
-Revocation: a later `CONDITION_B_REVOKED` comment on `154-S` withdraws this
-attestation. Whoever records the revocation, normally the repository
-operator, must also open a PR in the same change window that sets this
-`conditions:` entry to `satisfied: false`. Until that PR merges, Ship's R6
-log read is authoritative and fails closed.
+Revocation: until R6 ships, a log-only `CONDITION_B_REVOKED` comment is
+**not** enforced, and the topology gate keeps passing. To revoke, the
+operator must first merge a PR that sets this `conditions:` entry to
+`satisfied: false`. That merge is what re-gates `154-S` successors. Record
+the matching `CONDITION_B_REVOKED` comment on `154-S` in the same change
+window. Do not route a `154-S` successor while a revocation is pending,
+meaning a log comment exists but the PR has not merged.
