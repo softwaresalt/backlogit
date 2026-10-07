@@ -186,12 +186,20 @@ func withItemLogFileLock(ctx context.Context, key string) context.Context {
 	return context.WithValue(ctx, itemLogFileLockContextKey{}, set)
 }
 
+// itemLogLockBarrierHook is nil in production. Tests may install a synchronous
+// barrier to pause exactly before item-log lock (C) acquisition without changing
+// item-log append ordering.
+var itemLogLockBarrierHook func(itemID string)
+
 // acquireItemLogFileLock acquires the cross-process item-log lock (C) sidecar
 // handle. locksRoot is the STABLE root (independent of any logs directory,
 // see ItemLogLockPath) that the sidecar is rooted under; it must remain
 // identical across a logs-directory reconfiguration/replacement for the
 // mutual-exclusion guarantee to survive one (167.017-T).
 func acquireItemLogFileLock(ctx context.Context, locksRoot, itemID string) (func(), error) {
+	if itemLogLockBarrierHook != nil {
+		itemLogLockBarrierHook(itemID)
+	}
 	lockPath, err := ItemLogLockPath(locksRoot, itemID)
 	if err != nil {
 		return nil, err

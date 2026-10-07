@@ -1345,9 +1345,17 @@ func artifactMutationLockPath(ws *Workspace, artifactID string) (string, error) 
 	return stableKey, nil
 }
 
+// artifactMutationLockBarrierHook is nil in production. Tests may install a
+// synchronous barrier to pause exactly before artifact-mutation lock (B)
+// acquisition without changing lock ordering.
+var artifactMutationLockBarrierHook func(artifactID string)
+
 func lockArtifactMutation(ctx context.Context, ws *Workspace, artifactID string) (func() error, error) {
 	if artifactMutationLockHeld(ctx, artifactID) {
 		return func() error { return nil }, nil
+	}
+	if artifactMutationLockBarrierHook != nil {
+		artifactMutationLockBarrierHook(artifactID)
 	}
 	stableKey, err := artifactMutationLockPath(ws, artifactID)
 	if err != nil {
@@ -1381,6 +1389,9 @@ func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (co
 	for _, id := range uniqueIDs {
 		if artifactMutationLockHeld(ctx, id) {
 			continue
+		}
+		if artifactMutationLockBarrierHook != nil {
+			artifactMutationLockBarrierHook(id)
 		}
 		stableKey, err := artifactMutationLockPath(ws, id)
 		if err != nil {
