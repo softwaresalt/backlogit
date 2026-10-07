@@ -1,9 +1,21 @@
 ---
 chunk_strategy: h1-h2-h3
-# Keep both gate fields at the top-level frontmatter; pipeline-topology reads them via fm.get().
+# Keep closure_status, compaction_status, and conditions at the top level;
+# pipeline-topology reads all three via fm.get().
 closure_status: READY_WITH_CONDITIONS
 compaction_status: degraded
-description: "Post-merge closure for shipment 154-S and covering feature 173-F; successor routing remains gated by external scheduler marker-consumption attestation."
+# Tracked copy of the operator attestation recorded in the item log at
+# `source`. Until R6 (186-F) ships, this entry is the only enforced gate
+# input; every entry needs satisfied: true and non-empty evidence.
+conditions:
+  - id: condition-b-scheduler-marker-consumption
+    satisfied: true
+    attested_at: "2026-10-07T06:31:36Z"
+    attested_at_raw: "2026-10-06T23:31:36.0953115-07:00"
+    actor: operator
+    source: ".backlogit/logs/154-S.jsonl"
+    evidence: "CONDITION_B_ATTESTED: 154-S shipped 2026-09-30T15:44:25Z; ClaimShipment writes scheduler_baseline_claim; the active workspace scheduler (Ship P-002.6 Step 4.0 Wave Admission, .github/agents/_ship.agent.md L552-554) consumes it and fails closed on indeterminate state; proven by 195-S fixture PASS (binary 9f8d7756); no shipment claimed in the pre-marker window. Operator decision: in-workspace Ship consumption satisfies condition (b) until upstream autoharness R1 (stash E6DC330E) ships."
+description: "Post-merge closure for shipment 154-S and covering feature 173-F; on 2026-10-07 the operator satisfied successor-routing condition (b) by substituting in-workspace Ship consumption. External deployed-consumer consumption is not attested."
 doc_type: closure
 schema_version: "1.0"
 shipment_id: 154-S
@@ -93,6 +105,10 @@ member response did not expose a `scheduler_baseline_claim` field.
 3. The marker is advisory and does not replace backlogit claim authorization.
 4. Do not route any successor behind `154-S` until the external scheduler
    owner attests that the deployed consumer uses the marker contract.
+   *Update 2026-10-07:* the operator satisfied this condition by substitution.
+   In-workspace Ship consumption stands in for it, and external deployed
+   consumption is **not** attested. See
+   [Condition (b) attestation](#condition-b-attestation-2026-10-07).
 
 ### Rollout, monitoring, and rollback
 
@@ -102,7 +118,9 @@ member response did not expose a `scheduler_baseline_claim` field.
 - **Pre-route audit:** verify the running external scheduler reads the active
   shipment, its exact `custom_fields.items` manifest, and item `status` plus
   `custom_fields.scheduler_baseline_claim`; verify all binaries opening the
-  workspace include the shipped recovery compatibility.
+  workspace include the shipped recovery compatibility. *Update
+  2026-10-07:* by operator decision, this audit runs at successor admission in
+  Ship Step 4.0 Wave Admission, not against an external scheduler.
 - **Healthy signals:** CLI/MCP reads agree; at most one shipment is active;
   the consumer applies the three-part predicate; successor routing remains
   withheld until the attestation is recorded.
@@ -116,9 +134,11 @@ member response did not expose a `scheduler_baseline_claim` field.
   A code rollback, if required, must be a separately reviewed PR; do not
   revert or rewrite this shipped archive as an operational shortcut.
 - **Owner:** repository operator and the external autoharness scheduler
-  owner.
-- **Validation window:** until the attestation is recorded and the first
-  successor shipment has been observed applying the contract.
+  owner. While the operator substitution is in effect, the repository
+  operator owns this alone.
+- **Validation window (post-routing monitoring):** the attestation is now
+  recorded. The window stays open until the first successor shipment has been
+  observed applying the contract.
 
 ## Residual risks and follow-up
 
@@ -160,4 +180,43 @@ remaining work.
 verified. The closure PR may proceed through its review and CI gates, but
 successor routing remains blocked until the external scheduler-consumption
 attestation is recorded. No runtime deployment or external validation is
-claimed here.
+claimed here. *Update 2026-10-07:* condition (b) is satisfied by operator
+substitution, as described below. External deployed consumption is still not
+attested.
+
+### Condition (b) attestation (2026-10-07)
+
+The operator recorded `CONDITION_B_ATTESTED` on `154-S` at
+`2026-10-07T06:31:36Z` with actor `operator`. That timestamp is the log's
+`2026-10-06T23:31:36.0953115-07:00` converted to UTC, and it falls after the
+latest `shipped` event at `2026-09-30T15:44:25Z`.
+
+The `154-S` item-log entry in `.backlogit/logs/154-S.jsonl` is the
+operator's source record. The `conditions:` frontmatter entry above is a
+tracked copy of that entry. It keeps the attestation in git history, because
+item logs are git-ignored, and it is what the pipeline-topology gate
+evaluates. No installed agent reads `CONDITION_B_*` item-log entries yet.
+That read (rule R6, newest revocation wins) is queued under `186-F`, so
+until it ships this tracked entry is the only enforced gate input.
+
+The operator decided that consumption by this workspace's Ship wave
+scheduler (P-002.6 Step 4.0 Wave Admission) satisfies condition (b). This
+is a substitution: external deployed-consumer consumption is **not**
+attested. The scheduler reads `scheduler_baseline_claim` at about
+`.github/agents/_ship.agent.md` L553–555. It fails closed on indeterminate
+state at about L561–570. The `L552-554` citation in the verbatim evidence
+text is approximate. The operator's attestation is the source for two
+claims: that the 195-S fixture proof passed, and the binary `9f8d7756`
+reference. The upstream autoharness Ship template does not consume the
+marker yet. That gap is tracked as requirement R1 in stash `E6DC330E`,
+which this attestation supersedes as a blocking precondition. R1 stays
+open so upstream consumption can replace the substitution, but it does not
+re-gate `154-S` successors unless this attestation is revoked.
+
+Revocation: until R6 ships, a log-only `CONDITION_B_REVOKED` comment is
+**not** enforced, and the topology gate keeps passing. To revoke, the
+operator must first merge a PR that sets this `conditions:` entry to
+`satisfied: false`. That merge is what re-gates `154-S` successors. Record
+the matching `CONDITION_B_REVOKED` comment on `154-S` in the same change
+window. Do not route a `154-S` successor while a revocation is pending,
+meaning a log comment exists but the PR has not merged.
