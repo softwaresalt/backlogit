@@ -289,7 +289,7 @@ func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int
 		// directly would rewrite the Markdown with empty provenance, stranding an
 		// archived item reordered in an archived-inclusive queue view (same class
 		// as 111-F). Markdown is the source of truth, so reload it and mutate only
-		// the queue position and timestamp — mirroring BulkUpdateStatus.
+		// the queue position and timestamp â€” mirroring BulkUpdateStatus.
 		updated, reloadErr := findArtifact(ctx, ws, item.ID)
 		if reloadErr != nil {
 			if rollbackErr := rollbackQueueMove(ctx, ws, originals, persistedIDs); rollbackErr != nil {
@@ -367,7 +367,7 @@ func rollbackQueueMove(ctx context.Context, ws *Workspace, originals map[string]
 	// forward operation failed because that context was canceled or its deadline
 	// expired. WithoutCancel drops both the cancellation signal and the deadline
 	// while retaining context values (e.g., tracing metadata), so rollback is no
-	// longer bounded by the caller's deadline — an intentional trade to keep the
+	// longer bounded by the caller's deadline â€” an intentional trade to keep the
 	// queue consistent rather than leaving positions half-persisted.
 	ctx = context.WithoutCancel(ctx)
 	var rollbackErrs []error
@@ -386,15 +386,32 @@ func rollbackQueueMove(ctx context.Context, ws *Workspace, originals map[string]
 	return errors.Join(rollbackErrs...)
 }
 
+// BulkUpdateConflict describes a per-item BulkUpdateStatus failure with
+// enough detail for callers to distinguish stale-write conflicts from ordinary
+// missing-item or persistence failures.
+//
+// A future BulkUpdateStatus behavior task will map an ErrShipmentConflict from
+// the archived_status stale-write guard into this detail while preserving the
+// existing BulkUpdateResult.Failed list for backward compatibility.
+type BulkUpdateConflict struct {
+	ID         string `json:"id"`
+	Err        error  `json:"error,omitempty"`
+	FromStatus string `json:"from_status"`
+	ToStatus   string `json:"to_status"`
+}
+
 // BulkUpdateResult summarises the outcome of a BulkUpdateStatus operation.
 // Succeeded counts items whose Markdown file and DB index were both updated.
 // Failed lists item IDs that could not be updated (e.g., missing Markdown file).
+// FailedDetails carries optional typed per-item failure detail while preserving
+// Failed unchanged for existing callers.
 // Err carries a non-nil value only for workspace-level failures that prevent the
 // batch from starting at all (nil workspace, etc.).
 type BulkUpdateResult struct {
-	Succeeded int      `json:"succeeded"`
-	Failed    []string `json:"failed"`
-	Err       error    `json:"error,omitempty"`
+	Succeeded     int                  `json:"succeeded"`
+	Failed        []string             `json:"failed"`
+	FailedDetails []BulkUpdateConflict `json:"failed_details,omitempty"`
+	Err           error                `json:"error,omitempty"`
 }
 
 // BulkUpdateStatus changes the status of multiple items using a Markdown-first
