@@ -255,7 +255,19 @@ func reconcileArchivedItem(
 			return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationPartial, Error: wrErr.Error()}, wrErr
 		}
 		// Update failed cleanly; re-archive to restore the original archived state.
-		if _, archErr := ArchiveItem(ctx, database, ws, itemID, WithCascade(false), WithTopLevel(false)); archErr != nil {
+		// The rollback re-acquires B after the set step released it, so it
+		// re-validates under B that the item still carries archivedStatus; a
+		// concurrent writer's status is never archived over (172.003-T).
+		if _, archErr := ArchiveItem(ctx, database, ws, itemID, WithCascade(false), WithTopLevel(false), withExpectedStatus(archivedStatus)); archErr != nil {
+			if blerrors.IsWriteIndeterminate(archErr) {
+				wrErr := fmt.Errorf("update %s failed and rollback archive outcome indeterminate: update: %v; rollback: %w", itemID, err, archErr)
+				return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationIndeterminate, Error: wrErr.Error()}, wrErr
+			}
+			if errors.Is(archErr, blerrors.ErrShipmentConflict) {
+				wrErr := fmt.Errorf("update %s failed; rollback re-archive refused, concurrent change detected, item left as found in queue: update: %v; rollback: %w", itemID, err, archErr)
+				appendReconciliationConflictEvent(ctx, ws, itemID, actor, reason, archivedStatus, targetStatus, "rollback_archive", archErr)
+				return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationPartial, Error: wrErr.Error()}, wrErr
+			}
 			wrErr := fmt.Errorf("update %s failed and rollback archive also failed: update: %v; rollback: %w", itemID, err, archErr)
 			return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationPartial, Error: wrErr.Error()}, wrErr
 		}

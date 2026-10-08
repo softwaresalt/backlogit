@@ -114,10 +114,13 @@ scope.
   still succeeds.
 * `ReconcileArchivedLifecycle` no longer holds a batch-wide B (172.003-T). Its
   remaining bound is the window between the compare-and-set status step and the
-  re-archive. Another writer can change the queued status inside that window,
-  and `ArchiveItem` then stamps `archived_status` from the status it finds. The
-  set step detects a change made before it runs. A change made after it is
-  recorded faithfully by the re-archive rather than overwritten.
+  re-archive. Another writer can change the queued status inside that window.
+  The set step detects a change made before it runs. The step-12 re-archive
+  and the failed-update rollback re-archive both re-validate the expected
+  status under B. When the status changed, they refuse with
+  `ErrShipmentConflict`, record a reconciliation conflict event, and leave the
+  item in the queue as found. A concurrent writer's status is never archived
+  over.
 * Reconcile isolation is weaker than the removed batch-wide B. The unarchive,
   status set, and re-archive steps are each individually guarded, but another
   writer can interleave between them. Conflicts are reported per item and

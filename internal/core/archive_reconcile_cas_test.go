@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -394,4 +395,127 @@ func TestU172_ReconcileArchivedLifecycleReArchiveStepDetectsConcurrentDeletion(t
 		"a vanished item is a concurrent change, not a forward-recovery case")
 	assert.NotContains(t, events, "lifecycle_reconciliation",
 		"a refused re-archive must not report reconciliation completion")
+}
+
+// TestU172_ReconcileArchivedLifecycleRollbackArchiveDetectsConcurrentStatusChange
+// makes the reconciliation set step fail cleanly (a definite write failure),
+// then injects a same-item status write inside the rollback re-archive's own B
+// critical section, and asserts the rollback compare-and-swap refuses instead
+// of archiving the concurrent writer's status as the restored archived_status
+// (172.003-T, PR #485 Copilot round 3).
+//
+// Must not run with t.Parallel: swaps the replaceFileWriteFn and
+// artifactMutationLockBarrierHook package-global seams.
+func TestU172_ReconcileArchivedLifecycleRollbackArchiveDetectsConcurrentStatusChange(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	item, err := CreateArtifact(ctx, ws, "reconcile rollback cas", "feature")
+	require.NoError(t, err)
+	_, err = ArchiveItem(ctx, ws.DB, ws, item.ID)
+	require.NoError(t, err)
+
+	const (
+		targetStatus   = "done"
+		injectedStatus = "blocked"
+	)
+	queueDir := filepath.Join(workspaceStorageRoot(ws), "queue")
+	readQueueStatus := func(path string) (string, bool) {
+		if filepath.Clean(filepath.Dir(path)) != filepath.Clean(queueDir) {
+			return "", false
+		}
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return "", false
+		}
+		fm, _, parseErr := models.ParseFrontmatter(string(raw))
+		if parseErr != nil {
+			return "", false
+		}
+		status, _ := fm["status"].(string)
+		return status, true
+	}
+
+	// Fail the set step's write (the only queue write carrying targetStatus)
+	// with a definite, non-indeterminate error so the rollback path runs.
+	previousWrite := replaceFileWriteFn
+	replaceFileWriteFn = func(path string, data []byte, opts atomicfile.Options) error {
+		if filepath.Clean(filepath.Dir(path)) == filepath.Clean(queueDir) {
+			if fm, _, parseErr := models.ParseFrontmatter(string(data)); parseErr == nil && fm["status"] == targetStatus {
+				return errors.New("injected definite set-step write failure")
+			}
+		}
+		return previousWrite(path, data, opts)
+	}
+	t.Cleanup(func() { replaceFileWriteFn = previousWrite })
+
+	var (
+		mu           sync.Mutex
+		observations int
+		injected     bool
+		injectErr    error
+	)
+	previousHook := artifactMutationLockBarrierHook
+	artifactMutationLockBarrierHook = func(artifactID string) {
+		if artifactID != item.ID {
+			return
+		}
+		path, findErr := FindArtifactPath(ctx, ws, item.ID)
+		if findErr != nil {
+			return
+		}
+		status, inQueue := readQueueStatus(path)
+		if !inQueue || status == targetStatus || status == injectedStatus {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		observations++
+		// First queue observation at the original archived status is the set
+		// step; the second is the rollback re-archive.
+		if observations != 2 || injected {
+			return
+		}
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			injectErr = readErr
+			return
+		}
+		fm, body, parseErr := models.ParseFrontmatter(string(raw))
+		if parseErr != nil {
+			injectErr = parseErr
+			return
+		}
+		fm["status"] = injectedStatus
+		injectErr = os.WriteFile(path, []byte(models.SerializeFrontmatter(fm, body)), 0o644)
+		injected = injectErr == nil
+	}
+	t.Cleanup(func() { artifactMutationLockBarrierHook = previousHook })
+
+	result, err := ReconcileArchivedLifecycle(ctx, ws.DB, ws, ReconciliationRequest{
+		ItemIDs:      []string{item.ID},
+		TargetStatus: targetStatus,
+		Reason:       "rollback cas",
+		Actor:        "test-actor",
+	})
+
+	require.NoError(t, injectErr)
+	require.True(t, injected, "barrier hook never observed the item at the rollback re-archive step")
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.True(t, errors.Is(err, blerrors.ErrShipmentConflict), "expected ErrShipmentConflict, got %v", err)
+
+	path, err := FindArtifactPath(ctx, ws, item.ID)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Clean(queueDir), filepath.Clean(filepath.Dir(path)),
+		"a refused rollback re-archive must leave the item in the queue as found")
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	fm, _, err := models.ParseFrontmatter(string(raw))
+	require.NoError(t, err)
+	assert.Equal(t, injectedStatus, fm["status"], "concurrent writer's status must survive")
+	events := readU172ItemLogEventTypes(t, ws, item.ID)
+	assert.Contains(t, events, "lifecycle_reconciliation_conflict",
+		"a rollback CAS refusal must leave a durable conflict audit event")
+	assert.NotContains(t, events, "lifecycle_reconciliation",
+		"a refused rollback must not report reconciliation completion")
 }
