@@ -34,17 +34,27 @@ title: "153-S / 172-F Post-Merge Closure"
 
 ## Shipped scope
 
-* **Lock order.** Artifact-mutation writers acquire the shipment gate (B) before
-  the per-artifact lock (C) where both are held. Source-shape AST tests and a
-  lock-order test pin the order.
+* **Lock order.** Writers touch two cross-process lock domains: B, the
+  artifact-mutation lock (`lockArtifactMutation`, `lockArtifactMutations`),
+  and C, the item-log lock (`events.LockItemLogCrossProcess`). The canonical
+  order is C before B when a writer must hold both. Standalone `ArchiveItem`
+  and `archiveDescendants` cascade archival now release B before the deferred
+  archive event acquires C, so B and C never overlap on those paths.
+  `ShipShipment` still holds B while archival acquires C. That residual is
+  documented and tracked as stash `E4908F30`. See
+  `docs/design-docs/artifact-mutation-lock-order.md`.
 * **Compare-and-swap guards.** Archive, archive-reconcile, and
   archived-status writers re-read the on-disk status under lock and refuse a
   stale write. This includes the reconcile rollback path that Copilot round 3
   flagged.
 * **`BulkUpdateResult` conflict field.** Bulk status updates report per-item
   CAS conflicts rather than silently overwriting, and the CLI renders them.
-* **B/C barrier seam.** A test seam proves the barrier between the shipment
-  gate and artifact locks, with a race test over concurrent writers.
+* **B/C barrier seam.** Two nil-in-production acquisition hooks,
+  `artifactMutationLockBarrierHook` for B (fires immediately after B is
+  acquired) and `itemLogLockBarrierHook` for C (fires immediately before the
+  cross-process item-log lock is acquired), let tests pause a writer at a lock
+  and drive the B/C interleaving deterministically. `go test -race` is a
+  secondary diagnostic only.
 
 The work followed the wave harness discipline: each task landed a
 source-shape RED harness, then the declaration, then the behavior harness,
@@ -65,8 +75,11 @@ then the GREEN implementation.
 
 ## Shipment reconciliation
 
-* The pre-close `shipment-reconcile` run returned `PROCEED`: all 16 explicit
-  members were `done` and shipment `153-S` was active and unblocked.
+* The pre-close `shipment-reconcile` run returned `PROCEED`: the 15 task
+  members were `done`, covering feature `172-F` was `active` and classified
+  `feature-pending-governed-completion`, and shipment `153-S` was active and
+  unblocked. `ShipShipment` then marked `172-F` `done` during the governed
+  transaction.
 * Governed `backlogit_ship_shipment` was invoked with the merge SHA. The MCP
   client timed out. Following `2026-10-06-ship-shipment-mcp-timeout-result-unknown.md`,
   Ship did not retry. It observed the server-side call to completion: the
@@ -88,9 +101,34 @@ artifact was archived or mutated.
 `backlogit` ships as a CLI binary and MCP server with no deployed service.
 Runtime verification was the full local quality gate on the merged HEAD:
 `go build ./cmd/backlogit`, `go test ./...`, `go vet ./...`,
-`golangci-lint run`, and a CRLF-safe gofmt check. All passed. There is no
-monitoring surface, rollback trigger, or observation window to configure;
-rollback is a revert of merge commit `271c916e`.
+`golangci-lint run`, and a CRLF-safe gofmt check. All passed.
+
+The workspace has no monitoring system, so the release-observability
+monitoring plan is recorded here as a manual observation requirement.
+
+### Pre-deploy audit
+
+* **Rollout gate:** none. The change ships in the next `backlogit` binary
+  build; there is no feature flag.
+* **Rollback procedure:** revert merge commit `271c916e` with
+  `git revert -m 1 271c916e` on a branch, then merge through a PR.
+* **Data and schema:** no artifact, index, or log format migration. The
+  `BulkUpdateResult` conflict field is an additive JSON field.
+* **Dependent services:** none. MCP clients see only the additive field and
+  the new `ErrShipmentConflict` refusals on stale writes.
+
+### Manual observation plan
+
+| Item | Plan |
+|---|---|
+| Owner | Repository operator (softwaresalt). |
+| Observation window | The first 7 days after merge (through 2026-10-15T07:05Z), or the first 10 CLI/MCP sessions that mutate artifacts, whichever is later. |
+| Healthy signals | `go test ./...` stays green on `main`. `backlogit doctor` reports no orphans or duplicate IDs. Item logs show one event per governed mutation. |
+| Failure signals | A CLI/MCP mutation hangs or times out on a lock. `BulkUpdateResult` reports conflicts with no concurrent writer. `ErrShipmentConflict` refusals appear on an uncontended path. `backlogit doctor` reports torn, duplicated, or orphaned artifacts. An archive event is missing from an item log. |
+| Baseline | Before this change, no conflicts or CAS refusals were reported, because stale writes overwrote silently. |
+| Alert threshold | Any single lock hang, or any reproducible conflict or refusal on an uncontended path. |
+| Rollback trigger | A lock hang or deadlock in a CLI/MCP mutation, or `backlogit doctor` reporting artifact corruption attributable to these writers. Either triggers the revert above. |
+| Outcome record | At window close, the owner records `healthy`, `degraded`, or `rolled back` as a comment on `172-F`. |
 
 ## Residual risks
 
@@ -125,5 +163,8 @@ tracks the next pass.
 
 ## Releasability
 
-`READY`. All required gates passed, the shipment is closed, and nothing
-outstanding gates the release.
+`READY`. All required gates passed, the shipment is closed, the pre-deploy
+audit is complete, and the rollback procedure and trigger are documented.
+The manual observation plan above is a post-release obligation for the
+owner. It is not a pre-release condition, so it does not change the
+releasability decision.
