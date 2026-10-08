@@ -57,10 +57,28 @@ func TestU172_LockOrder_ArchiveItemDoesNotHoldArtifactLockWhileWaitingForItemLog
 	t.Cleanup(restoreItemLogHook)
 
 	archiveDone := make(chan error, 1)
+	archiveReturned := false
 	go func() {
 		_, archiveErr := ArchiveItem(ctx, ws.DB, ws, item.ID)
 		archiveDone <- archiveErr
 	}()
+	// Registered after the hook-restore cleanups so it runs before them: on an
+	// early t.Fatal it releases C and drains ArchiveItem, so the goroutine never
+	// reads a hook while a cleanup restores it and never outlives the workspace.
+	t.Cleanup(func() {
+		if archiveReturned {
+			return
+		}
+		if itemLogLocked {
+			unlockItemLog()
+			itemLogLocked = false
+		}
+		select {
+		case <-archiveDone:
+		case <-time.After(u172ObservationWait):
+			t.Errorf("ArchiveItem goroutine did not exit during cleanup")
+		}
+	})
 
 	select {
 	case <-archiveAttemptedArtifactLock:
@@ -81,6 +99,7 @@ func TestU172_LockOrder_ArchiveItemDoesNotHoldArtifactLockWhileWaitingForItemLog
 
 	select {
 	case archiveErr := <-archiveDone:
+		archiveReturned = true
 		require.NoError(t, archiveErr)
 	case <-time.After(u172ObservationWait):
 		t.Fatal("ArchiveItem did not finish after the item-log lock was released")

@@ -187,8 +187,9 @@ func withItemLogFileLock(ctx context.Context, key string) context.Context {
 }
 
 // itemLogLockBarrierHook is nil in production. Tests may install a synchronous
-// barrier to pause exactly before item-log lock (C) acquisition without changing
-// item-log append ordering.
+// barrier that fires immediately before the cross-process item-log file lock
+// (C) is acquired, after the in-process item-log mutex is already held, without
+// changing item-log append ordering.
 var itemLogLockBarrierHook func(itemID string)
 
 // SetItemLogLockBarrierHookForTest installs fn as the item-log lock (C)

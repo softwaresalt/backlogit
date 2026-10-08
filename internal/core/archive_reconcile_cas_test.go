@@ -176,6 +176,46 @@ func TestU172_ReconcileArchivedLifecycleUnarchiveStepDetectsConcurrentArchivedSt
 		"a CAS refusal must leave a durable conflict audit event")
 }
 
+// TestU172_UnarchiveExpectingRefusesVanishedItemAsConflict pins that the
+// unarchive compare-and-swap reports an item that disappeared between the
+// unlocked read and B as a conflict while keeping ErrNotFound in the chain,
+// so reconciliation records a conflict audit event (172.003-T).
+func TestU172_UnarchiveExpectingRefusesVanishedItemAsConflict(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	item, err := CreateArtifact(ctx, ws, "unarchive vanished", "feature")
+	require.NoError(t, err)
+	_, err = ArchiveItem(ctx, ws.DB, ws, item.ID)
+	require.NoError(t, err)
+	archived := readArtifactForTest(t, ctx, ws, item.ID)
+
+	previousHook := artifactMutationLockBarrierHook
+	var removeErr error
+	artifactMutationLockBarrierHook = func(artifactID string) {
+		if artifactID != item.ID {
+			return
+		}
+		path, findErr := FindArtifactPath(ctx, ws, item.ID)
+		if findErr != nil {
+			return
+		}
+		removeErr = os.Remove(path)
+	}
+	t.Cleanup(func() { artifactMutationLockBarrierHook = previousHook })
+
+	err = unarchiveItemExpecting(ctx, ws.DB, ws, item.ID, archived.ArchivedStatus)
+	require.NoError(t, removeErr)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, blerrors.ErrShipmentConflict), "expected ErrShipmentConflict, got %v", err)
+	assert.True(t, errors.Is(err, blerrors.ErrNotFound), "expected ErrNotFound to stay in the chain, got %v", err)
+
+	t.Run("plain unarchive keeps lookup error", func(t *testing.T) {
+		err := UnarchiveItem(ctx, ws.DB, ws, "998-F")
+		require.Error(t, err)
+		assert.False(t, errors.Is(err, blerrors.ErrShipmentConflict), "plain unarchive must not report a conflict, got %v", err)
+	})
+}
+
 // TestU172_SetItemStatusAndMetaRefusesMissingOrReArchivedItem pins the
 // set-step compare-and-swap's existence and location guards (172.003-T).
 func TestU172_SetItemStatusAndMetaRefusesMissingOrReArchivedItem(t *testing.T) {

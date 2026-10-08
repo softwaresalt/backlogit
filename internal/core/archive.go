@@ -956,6 +956,12 @@ func unarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	backlogDir := workspaceStorageRoot(ws)
 	archivePath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
+		if expectedArchivedStatus != nil && errors.Is(err, blerrors.ErrNotFound) {
+			// The unlocked read saw the item archived; it vanishing before B was
+			// taken is a concurrent change, not a plain lookup failure.
+			return fmt.Errorf("unarchive item %s: artifact no longer exists since read (expected archived_status=%q): %w: %w",
+				itemID, *expectedArchivedStatus, blerrors.ErrShipmentConflict, err)
+		}
 		return fmt.Errorf("find archived artifact: %w", err)
 	}
 
