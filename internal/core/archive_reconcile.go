@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -230,11 +231,18 @@ func reconcileArchivedItem(
 	// not be present in bare workspaces (e.g. reconciliation callers that hold only
 	// a RootPath+DB). The reconciliation contract only needs status + custom_fields;
 	// hook firing and relocation routing are intentionally skipped here.
-	if err := setItemStatusAndMetaLocked(ctx, database, ws, itemID, targetStatus, cfUpdates); err != nil {
+	if err := setItemStatusAndMetaLocked(ctx, database, ws, itemID, archivedStatus, targetStatus, cfUpdates); err != nil {
 		if blerrors.IsWriteIndeterminate(err) {
 			// Possibly applied — do NOT rollback; the caller must reconcile externally.
 			wrErr := fmt.Errorf("update status %s: write outcome indeterminate: %w", itemID, err)
 			return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationIndeterminate, Error: wrErr.Error()}, wrErr
+		}
+		if errors.Is(err, blerrors.ErrShipmentConflict) {
+			// 172.003-T: a concurrent writer changed the item between the
+			// unarchive and this set step. That writer now owns the state, so a
+			// rollback re-archive would clobber it; leave the item as found.
+			wrErr := fmt.Errorf("update status %s: %w", itemID, err)
+			return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationPartial, Error: wrErr.Error()}, wrErr
 		}
 		// Update failed cleanly; re-archive to restore the original archived state.
 		if _, archErr := ArchiveItem(ctx, database, ws, itemID, WithCascade(false), WithTopLevel(false)); archErr != nil {
@@ -285,13 +293,19 @@ func reconcileArchivedItem(
 	return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationCompleted, Error: eventNote}, nil
 }
 
-func setItemStatusAndMetaLocked(ctx context.Context, database *sql.DB, ws *Workspace, itemID, status string, cfUpdates map[string]any) error {
+// setItemStatusAndMetaLocked acquires the artifact-mutation lock (B) for
+// itemID and applies the reconciliation set step only if the item is still a
+// queue artifact whose status equals expectedStatus. ReconcileArchivedLifecycle
+// holds no batch-wide B (172.003-T), so a same-item writer can interleave
+// between UnarchiveItem and this step; the compare-and-swap rejects that with
+// blerrors.ErrShipmentConflict instead of clobbering the concurrent write.
+func setItemStatusAndMetaLocked(ctx context.Context, database *sql.DB, ws *Workspace, itemID, expectedStatus, status string, cfUpdates map[string]any) error {
 	lockedCtx, releaseArtifactLock, lockErr := lockArtifactMutations(ctx, ws, []string{itemID})
 	if lockErr != nil {
 		return fmt.Errorf("acquire reconciliation mutation lock %s: %w", itemID, lockErr)
 	}
 	defer func() { _ = releaseArtifactLock() }()
-	return setItemStatusAndMeta(lockedCtx, database, ws, itemID, status, cfUpdates)
+	return setItemStatusAndMeta(lockedCtx, database, ws, itemID, expectedStatus, status, cfUpdates)
 }
 
 // setItemStatusAndMeta writes a targeted status + custom_fields update directly
@@ -303,10 +317,17 @@ func setItemStatusAndMetaLocked(ctx context.Context, database *sql.DB, ws *Works
 // The write is atomic via replaceFileWithOptions. On a successful file write
 // followed by a DB failure the file is restored from its pre-write snapshot so
 // the caller's rollback path (re-archive) sees the original status.
-func setItemStatusAndMeta(ctx context.Context, database *sql.DB, ws *Workspace, itemID, status string, cfUpdates map[string]any) error {
+func setItemStatusAndMeta(ctx context.Context, database *sql.DB, ws *Workspace, itemID, expectedStatus, status string, cfUpdates map[string]any) error {
 	artifactPath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
+		if errors.Is(err, blerrors.ErrNotFound) {
+			return fmt.Errorf("%s: artifact no longer exists since unarchive: %w", itemID, blerrors.ErrShipmentConflict)
+		}
 		return fmt.Errorf("find artifact: %w", err)
+	}
+	archiveDir := filepath.Join(workspaceStorageRoot(ws), "archive")
+	if filepath.Clean(filepath.Dir(artifactPath)) == filepath.Clean(archiveDir) {
+		return fmt.Errorf("%s: artifact was re-archived since unarchive: %w", itemID, blerrors.ErrShipmentConflict)
 	}
 	rawBefore, err := os.ReadFile(artifactPath)
 	if err != nil {
@@ -315,6 +336,10 @@ func setItemStatusAndMeta(ctx context.Context, database *sql.DB, ws *Workspace, 
 	fm, body, err := models.ParseFrontmatter(string(rawBefore))
 	if err != nil {
 		return fmt.Errorf("parse artifact: %w", err)
+	}
+	if current, _ := fm["status"].(string); current != expectedStatus {
+		return fmt.Errorf("%s: status changed from %q to %q since unarchive: %w",
+			itemID, expectedStatus, current, blerrors.ErrShipmentConflict)
 	}
 
 	fm["status"] = status
