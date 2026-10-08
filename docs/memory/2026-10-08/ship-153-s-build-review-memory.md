@@ -51,3 +51,15 @@ A0C733C6 (findArtifact TOCTOU) predates this session and was reused, not duplica
 ## Next steps
 
 Push the branch, then open the PR with the Local Review Readiness block. Then run the Copilot review loop, the copilot-review gate, a merge-commit merge, post-merge main sync, and the closure PR.
+
+## Copilot round 2 (review 5451737450 on c89227e9)
+
+* One body-only Medium finding (no review thread): Reconcile Step 12 re-archive returned nil when the item was deleted concurrently, because `lockArchiveGovernance` reload produced `ErrNotFound`, which Step 12 does not classify as a conflict.
+* Fix: `ArchiveItem` translates not-found into `ErrShipmentConflict` (wrapping `ErrNotFound`) only when an expected-status CAS is set. Only Reconcile Step 12 and the archive CAS path set it, so plain archive callers keep `ErrNotFound`.
+* RED-first test: `TestU172_ReconcileArchivedLifecycleReArchiveStepDetectsConcurrentDeletion`.
+
+## Race watchdog flake
+
+* Full suite failed once in `TestU172_Race_ReconcileArchivedLifecycleBatchAndSameItemWriterConverge`: the 10s watchdog fired, then the goroutines finished after cleanup (`sql: database is closed`), so the run was slow, not deadlocked. Neighbouring tests showed heavy load (7s workspace init).
+* Isolated re-run passed 3/3 in 23s.
+* Fix (P-021 C1, hardening this shipment's own tests): the three U172 race tests use `u172RaceDeadline = 45s`. A real lock-order deadlock never completes, so detection is preserved.
