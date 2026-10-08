@@ -14,6 +14,11 @@ import (
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
+// u172RaceDeadline bounds each race scenario. It is generous because a real lock-order
+// deadlock never completes, while full-suite load on slow runners can stretch healthy
+// interleavings well past 10s.
+const u172RaceDeadline = 45 * time.Second
+
 func TestU172_Race_ArchiveItemAndAssociateCommitSameItemConverge(t *testing.T) {
 	ctx := context.Background()
 	ws := setupShipmentWorkspace(t)
@@ -21,7 +26,7 @@ func TestU172_Race_ArchiveItemAndAssociateCommitSameItemConverge(t *testing.T) {
 	require.NoError(t, err)
 	ew := NewWorkspaceEventWriter(ws, WorkspaceLogsRoot(ws.RootPath))
 
-	results := u20AwaitWithDeadline(t, 10*time.Second, map[string]func() error{
+	results := u20AwaitWithDeadline(t, u172RaceDeadline, map[string]func() error{
 		"archive_item": func() error {
 			_, archiveErr := ArchiveItem(ctx, ws.DB, ws, item.ID)
 			return archiveErr
@@ -46,7 +51,7 @@ func TestU172_Race_CascadeArchiveAndChildAssociateCommitConverge(t *testing.T) {
 	require.NoError(t, err)
 	ew := NewWorkspaceEventWriter(ws, WorkspaceLogsRoot(ws.RootPath))
 
-	results := u20AwaitWithDeadline(t, 10*time.Second, map[string]func() error{
+	results := u20AwaitWithDeadline(t, u172RaceDeadline, map[string]func() error{
 		"cascade_archive_parent": func() error {
 			record, archiveErr := ArchiveItem(ctx, ws.DB, ws, parent.ID, WithCascade(true))
 			if archiveErr == nil && len(record.FailedItems) > 0 {
@@ -92,7 +97,7 @@ func TestU172_Race_ReconcileArchivedLifecycleBatchAndSameItemWriterConverge(t *t
 	require.NoError(t, err)
 	ew := NewWorkspaceEventWriter(ws, WorkspaceLogsRoot(ws.RootPath))
 
-	results := u20AwaitWithDeadline(t, 10*time.Second, map[string]func() error{
+	results := u20AwaitWithDeadline(t, u172RaceDeadline, map[string]func() error{
 		"reconcile_archived_lifecycle": func() error {
 			_, reconcileErr := ReconcileArchivedLifecycle(ctx, ws.DB, ws, ReconciliationRequest{
 				ItemIDs:      []string{first.ID, second.ID},
