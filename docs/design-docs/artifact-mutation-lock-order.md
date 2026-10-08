@@ -57,11 +57,15 @@ primitive keeps a stable acquisition order.
 
 ### Causal item-log ordering
 
-For a given item, C serializes observable JSONL events. Moving C relative to B
-must not reorder, duplicate, or drop the event sequence that an operator can read
-from the item log. If a mutation records an event, the event must remain causally
-attached to the mutation: no event may be visible as completed before the guarded
-mutation exists, and no successful governed mutation may lose its required event.
+For a given item, C serializes observable JSONL events. For mutations whose
+event append is serialized under C together with the mutation, moving C relative
+to B must not reorder, duplicate, or drop the event sequence that an operator can
+read from the item log. If a mutation records an event, the event must remain
+causally attached to the mutation: no event may be visible as completed before
+the guarded mutation exists, and no successful governed mutation may lose its
+required event. The deferred archive event is a documented, bounded exception:
+its append can be reordered relative to a concurrent writer's event, as described
+under Residual and bound.
 Best-effort events, such as archive logging, may continue to warn and skip on log
 failure when that is the existing contract.
 
@@ -76,7 +80,8 @@ inversion is absent.
 The existing `persistArtifactPreLockHook` is not sufficient for Unit 1 lock-order
 proofs because it fires before B acquisition. Task 172.013-T declares nil-in-production
 acquisition hooks for both locks: `artifactMutationLockBarrierHook` for B and
-`itemLogLockBarrierHook` for C, which fires immediately before C is acquired.
+`itemLogLockBarrierHook` for C, which fires immediately before the cross-process
+item-log file lock is acquired, after the in-process item-log mutex is held.
 Task 172.004-T makes the B hook fire immediately
 after B is acquired, in both `lockArtifactMutation` and `lockArtifactMutations`, so
 tests can pause a writer while it holds B and drive the interleaving
@@ -103,7 +108,8 @@ scope.
 
 ## Residual and bound
 
-* `ArchiveItem` no longer holds B while acquiring C (172.002-T). The archive
+* Standalone and cascade `ArchiveItem` calls no longer hold B while acquiring C
+  (172.002-T). Archival under `ShipShipment` is the exception noted below. The archive
   event append remains best-effort: on log failure it warns and the archive
   still succeeds.
 * `ReconcileArchivedLifecycle` no longer holds a batch-wide B (172.003-T). Its
@@ -125,8 +131,10 @@ scope.
 * Cascaded child hooks run while the parent's batch B is still held. A hook that
   takes C, or a B for an item outside the cascade set, would reintroduce an
   inversion. No current hook does this.
-* `ShipShipment` archival still acquires C while the lifecycle global lock is
-  held. This predates 153-S and is outside the B and C reorder scope.
+* `ShipShipment` holds the lifecycle global lock and the batch B for its members
+  while archival acquires C, so B-then-C ordering still applies on that path.
+  This predates 153-S and is outside the B and C reorder scope; moving it to the
+  deferred event sink is tracked as follow-up work.
 * Future snapshot-before-lock writers that can persist `archived_status` must opt
   into `guardArchivedStatusUnchangedSince` or an equivalent source-of-truth
   Markdown comparison before shipment 153-S can claim the class is closed.
