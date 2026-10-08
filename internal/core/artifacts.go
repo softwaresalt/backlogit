@@ -1177,6 +1177,7 @@ func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, 
 	if err != nil {
 		return fmt.Errorf("find source artifact %s: %w", sourceID, err)
 	}
+	preLockArchivedStatus := source.ArchivedStatus
 	filtered := source.Links[:0]
 	removed := false
 	for _, link := range source.Links {
@@ -1199,7 +1200,7 @@ func RemoveArtifactLink(ctx context.Context, ws *Workspace, sourceID, targetID, 
 		source.Links = filtered
 	}
 	source.UpdatedAt = models.NowUTC()
-	if err := persistArtifactWithoutDBOnlyLinks(ctx, ws, source, false); err != nil {
+	if err := persistArtifactWithoutDBOnlyLinksWithGuard(ctx, ws, source, false, guardArchivedStatusUnchangedSince(ws, sourceID, preLockArchivedStatus)); err != nil {
 		return fmt.Errorf("persist source artifact %s: %w", sourceID, err)
 	}
 	if err := db.RemoveLink(ctx, ws.DB, sourceID, targetID, linkType); err != nil {

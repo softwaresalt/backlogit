@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -191,14 +192,27 @@ func newQueueBulkStatusCmd(cwd *string) *cobra.Command {
 				}
 				return fmt.Errorf("bulk update status: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Updated %d items to status %q\n", result.Succeeded, status)
-			if len(result.Failed) > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Failed to update %d items: %s\n", len(result.Failed), strings.Join(result.Failed, ", "))
-			}
+			writeBulkStatusResult(cmd.OutOrStdout(), status, result)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&ids, "ids", "", "comma-separated list of item IDs")
 	cmd.Flags().StringVar(&status, "status", "", "target status")
 	return cmd
+}
+
+// writeBulkStatusResult renders a bulk status update result, including one
+// detail line per typed conflict in FailedDetails.
+func writeBulkStatusResult(w io.Writer, status string, result *core.BulkUpdateResult) {
+	fmt.Fprintf(w, "Updated %d items to status %q\n", result.Succeeded, status)
+	if len(result.Failed) > 0 {
+		fmt.Fprintf(w, "Failed to update %d items: %s\n", len(result.Failed), strings.Join(result.Failed, ", "))
+	}
+	for _, detail := range result.FailedDetails {
+		fmt.Fprintf(w, "Failed detail %s: %s -> %s", detail.ID, detail.FromStatus, detail.ToStatus)
+		if detail.Err != nil {
+			fmt.Fprintf(w, ": %v", detail.Err)
+		}
+		fmt.Fprintln(w)
+	}
 }

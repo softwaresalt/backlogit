@@ -55,6 +55,10 @@ type archiveConfig struct {
 	commitSHA string
 	topLevel  *bool // nil means default true
 	cascade   bool  // when true, archive children recursively before the parent
+	// expectedStatus, when non-nil, makes the archive a compare-and-swap: the
+	// item's status read under the governed locks must equal it, otherwise the
+	// archive is refused with ErrShipmentConflict before any write.
+	expectedStatus *string
 }
 
 type archiveShipmentMembershipLocksContextKey struct{}
@@ -97,6 +101,14 @@ func WithCascade(cascade bool) ArchiveOpt {
 	return func(c *archiveConfig) { c.cascade = cascade }
 }
 
+// withExpectedStatus makes ArchiveItem refuse, with ErrShipmentConflict and no
+// side effects, when the item's status observed under the governed locks
+// differs from status. Reconciliation uses it so a writer that changed the
+// item after the set step released its lock is not archived over (172.003-T).
+func withExpectedStatus(status string) ArchiveOpt {
+	return func(c *archiveConfig) { c.expectedStatus = &status }
+}
+
 // ArchiveItem moves an artifact from its active directory to the archive directory,
 // updating the SQLite index and storing the original path in frontmatter for restoration.
 // When WithCascade(true) is set, child items are archived bottom-up before the parent.
@@ -106,14 +118,39 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		opt(&cfg)
 	}
 
+	operationCtx := ctx
 	lockedCtx, releaseLocks, lockErr := lockArchiveGovernance(ctx, database, ws, itemID, cfg.cascade)
 	if lockErr != nil {
+		if cfg.expectedStatus != nil && errors.Is(lockErr, blerrors.ErrNotFound) {
+			// The caller expected the item at a known status; it vanishing while
+			// B was being acquired is a concurrent change, not a lookup failure.
+			return nil, fmt.Errorf("archive item %s: artifact no longer exists (expected status %q): %w: %w",
+				itemID, *cfg.expectedStatus, blerrors.ErrShipmentConflict, lockErr)
+		}
 		return nil, fmt.Errorf("archive item %s: acquire governed locks: %w", itemID, lockErr)
 	}
-	defer func() {
-		if unlockErr := releaseLocks(); unlockErr != nil {
-			slog.WarnContext(ctx, "release archive governance locks", "item_id", itemID, "error", unlockErr)
+	archiveLocksReleased := false
+	releaseArchiveLocks := func() {
+		if archiveLocksReleased {
+			return
 		}
+		archiveLocksReleased = true
+		if unlockErr := releaseLocks(); unlockErr != nil {
+			slog.WarnContext(operationCtx, "release archive governance locks", "item_id", itemID, "error", unlockErr)
+		}
+	}
+	// 172-F (C-under-B): a cascaded child inherits the parent's artifact
+	// mutation locks (B), so its own release is a no-op. It must therefore not
+	// take the item-log lock (C) itself; it hands its event to the outermost
+	// ArchiveItem, which appends every deferred event only after B is released.
+	parentEventSink := deferredArchiveEventsFrom(operationCtx)
+	var ownEventSink *deferredArchiveEvents
+	if parentEventSink == nil && cfg.cascade {
+		lockedCtx, ownEventSink = withDeferredArchiveEvents(lockedCtx)
+	}
+	defer func() {
+		releaseArchiveLocks()
+		ownEventSink.drain(operationCtx, database, ws)
 	}()
 	ctx = lockedCtx
 
@@ -135,6 +172,12 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	backlogDir := workspaceStorageRoot(ws)
 	currentPath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
+		if cfg.expectedStatus != nil && errors.Is(err, blerrors.ErrNotFound) {
+			// The caller expected the item at a known status; it vanishing after
+			// B was taken is a concurrent change, not a plain lookup failure.
+			return nil, fmt.Errorf("archive %s: artifact no longer exists (expected status %q): %w: %w",
+				itemID, *cfg.expectedStatus, blerrors.ErrShipmentConflict, err)
+		}
 		return nil, fmt.Errorf("find artifact: %w", err)
 	}
 
@@ -166,6 +209,10 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		fm = map[string]any{}
 	}
 	oldStatus, _ := fm["status"].(string)
+	if cfg.expectedStatus != nil && oldStatus != *cfg.expectedStatus {
+		return nil, fmt.Errorf("archive %s: status changed concurrently (expected %q, found %q): %w",
+			itemID, *cfg.expectedStatus, oldStatus, blerrors.ErrShipmentConflict)
+	}
 	isTopLevel := cfg.topLevel == nil || *cfg.topLevel // default true
 
 	// path-keyed archive destination. Computed and checked here -- before the
@@ -310,31 +357,25 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		return nil, fmt.Errorf("sync archive state: %w", dbErr)
 	}
 
+	releaseArchiveLocks()
+	ctx = operationCtx
+
 	// Best-effort: log archive event to the item's JSONL log (non-fatal on failure).
 	// Errors are logged for diagnosability, matching the pattern in commits.go.
-	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
-	if lockErr != nil {
-		slog.Warn("archive item: failed to lock item log", "item_id", itemID, "error", lockErr)
-	} else {
-		defer unlockLog()
-		ctx = lockedCtx
+	event := events.Event{
+		Timestamp: time.Now(),
+		Actor:     "backlogit",
+		ItemID:    itemID,
+		EventType: "archived",
+		Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
+		CommitSHA: cfg.commitSHA,
 	}
-	if lockErr == nil {
-		ew := NewWorkspaceEventWriter(ws, logsDir)
-		event := events.Event{
-			Timestamp: time.Now(),
-			Actor:     "backlogit",
-			ItemID:    itemID,
-			EventType: "archived",
-			Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
-			CommitSHA: cfg.commitSHA,
-		}
-		if evErr := ew.AppendEvent(ctx, event); evErr != nil {
-			slog.Warn("archive item: failed to append event to item log", "item_id", itemID, "error", evErr)
-		} else if indexErr := db.IndexEvent(ctx, database, logsDir, event); indexErr != nil {
-			slog.Warn("archive item: failed to index event", "item_id", itemID, "error", indexErr)
-		}
+	if parentEventSink != nil {
+		parentEventSink.add(event)
+	} else {
+		// Cascaded children's events precede the parent's own archive event.
+		ownEventSink.drain(ctx, database, ws)
+		appendArchiveEvent(ctx, database, ws, event)
 	}
 
 	// Fire post-archive hooks.
@@ -920,6 +961,19 @@ func canonicalTargetPath(targetPath string) string {
 
 // UnarchiveItem restores an artifact from the archive back to its original path.
 func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) error {
+	return unarchiveItem(ctx, database, ws, itemID, nil)
+}
+
+// unarchiveItemExpecting is UnarchiveItem with a compare-and-swap guard: under
+// the artifact mutation lock (B) it refuses with blerrors.ErrShipmentConflict,
+// moving nothing, unless the item is still archived with archived_status equal
+// to expectedArchivedStatus. Reconciliation validates that state from an
+// unlocked read, so the guard closes the window before the restore (172.003-T).
+func unarchiveItemExpecting(ctx context.Context, database *sql.DB, ws *Workspace, itemID, expectedArchivedStatus string) error {
+	return unarchiveItem(ctx, database, ws, itemID, &expectedArchivedStatus)
+}
+
+func unarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string, expectedArchivedStatus *string) error {
 	lockedCtx, releaseArtifactLock, lockErr := lockArtifactMutations(ctx, ws, []string{itemID})
 	if lockErr != nil {
 		return fmt.Errorf("unarchive item %s: acquire mutation lock: %w", itemID, lockErr)
@@ -930,6 +984,12 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	backlogDir := workspaceStorageRoot(ws)
 	archivePath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
+		if expectedArchivedStatus != nil && errors.Is(err, blerrors.ErrNotFound) {
+			// The unlocked read saw the item archived; it vanishing before B was
+			// taken is a concurrent change, not a plain lookup failure.
+			return fmt.Errorf("unarchive item %s: artifact no longer exists since read (expected archived_status=%q): %w: %w",
+				itemID, *expectedArchivedStatus, blerrors.ErrShipmentConflict, err)
+		}
 		return fmt.Errorf("find archived artifact: %w", err)
 	}
 
@@ -940,6 +1000,14 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	fm, body, err := models.ParseFrontmatter(string(raw))
 	if err != nil {
 		return fmt.Errorf("parse archive file: %w", err)
+	}
+	if expectedArchivedStatus != nil {
+		currentStatus, _ := fm["status"].(string)
+		currentArchivedStatus, _ := fm["archived_status"].(string)
+		if currentStatus != string(models.StatusArchived) || currentArchivedStatus != *expectedArchivedStatus {
+			return fmt.Errorf("unarchive item %s: state changed since read (status=%q, archived_status=%q, expected archived_status=%q): %w",
+				itemID, currentStatus, currentArchivedStatus, *expectedArchivedStatus, blerrors.ErrShipmentConflict)
+		}
 	}
 
 	originalPath, _ := fm["archived_from"].(string)
@@ -1269,4 +1337,64 @@ func archiveShippedEventPreflight(ctx context.Context, ws *Workspace, itemID str
 		return fmt.Errorf("archive shipment %s: %w", itemID, blerrors.ErrArchiveShippedRequiresEvent)
 	}
 	return nil
+}
+
+// deferredArchiveEventsKey carries the outermost cascading ArchiveItem's
+// deferred item-log event sink through a context.
+type deferredArchiveEventsKey struct{}
+
+// deferredArchiveEvents collects "archived" events produced by cascaded
+// children while the parent still holds the artifact mutation locks (B). The
+// events are appended only after B is released, preserving the canonical
+// item-log (C) before B lock order.
+type deferredArchiveEvents struct {
+	events []events.Event
+}
+
+// withDeferredArchiveEvents returns a context carrying a new deferred event sink.
+func withDeferredArchiveEvents(ctx context.Context) (context.Context, *deferredArchiveEvents) {
+	sink := &deferredArchiveEvents{}
+	return context.WithValue(ctx, deferredArchiveEventsKey{}, sink), sink
+}
+
+// deferredArchiveEventsFrom returns the deferred event sink carried by ctx, if any.
+func deferredArchiveEventsFrom(ctx context.Context) *deferredArchiveEvents {
+	sink, _ := ctx.Value(deferredArchiveEventsKey{}).(*deferredArchiveEvents)
+	return sink
+}
+
+// add records an event for later append.
+func (d *deferredArchiveEvents) add(event events.Event) {
+	d.events = append(d.events, event)
+}
+
+// drain appends every deferred event, each under its own item-log lock. It is
+// idempotent and safe on a nil receiver. Callers must not hold B.
+func (d *deferredArchiveEvents) drain(ctx context.Context, database *sql.DB, ws *Workspace) {
+	if d == nil {
+		return
+	}
+	pending := d.events
+	d.events = nil
+	for _, event := range pending {
+		appendArchiveEvent(ctx, database, ws, event)
+	}
+}
+
+// appendArchiveEvent appends and indexes an "archived" event under the item's
+// cross-process item-log lock. Failures are logged and never fatal.
+func appendArchiveEvent(ctx context.Context, database *sql.DB, ws *Workspace, event events.Event) {
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, event.ItemID)
+	if lockErr != nil {
+		slog.Warn("archive item: failed to lock item log", "item_id", event.ItemID, "error", lockErr)
+		return
+	}
+	defer unlockLog()
+	ew := NewWorkspaceEventWriter(ws, logsDir)
+	if evErr := ew.AppendEvent(lockedCtx, event); evErr != nil {
+		slog.Warn("archive item: failed to append event to item log", "item_id", event.ItemID, "error", evErr)
+	} else if indexErr := db.IndexEvent(lockedCtx, database, logsDir, event); indexErr != nil {
+		slog.Warn("archive item: failed to index event", "item_id", event.ItemID, "error", indexErr)
+	}
 }

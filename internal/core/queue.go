@@ -386,15 +386,35 @@ func rollbackQueueMove(ctx context.Context, ws *Workspace, originals map[string]
 	return errors.Join(rollbackErrs...)
 }
 
+// BulkUpdateConflict describes a per-item BulkUpdateStatus failure with
+// enough detail for callers to distinguish stale-write conflicts from ordinary
+// missing-item or persistence failures.
+//
+// BulkUpdateStatus records one entry here for each item whose persist was
+// refused by the archived_status stale-write guard (ErrShipmentConflict).
+// FailedDetails is therefore the conflict-only subset of
+// BulkUpdateResult.Failed; Failed remains unchanged for backward compatibility.
+// Err is not JSON-serializable as a message; callers that need the error text
+// should render it via Err.Error().
+type BulkUpdateConflict struct {
+	ID         string `json:"id"`
+	Err        error  `json:"error,omitempty"`
+	FromStatus string `json:"from_status"`
+	ToStatus   string `json:"to_status"`
+}
+
 // BulkUpdateResult summarises the outcome of a BulkUpdateStatus operation.
 // Succeeded counts items whose Markdown file and DB index were both updated.
 // Failed lists item IDs that could not be updated (e.g., missing Markdown file).
+// FailedDetails carries optional typed per-item failure detail while preserving
+// Failed unchanged for existing callers.
 // Err carries a non-nil value only for workspace-level failures that prevent the
 // batch from starting at all (nil workspace, etc.).
 type BulkUpdateResult struct {
-	Succeeded int      `json:"succeeded"`
-	Failed    []string `json:"failed"`
-	Err       error    `json:"error,omitempty"`
+	Succeeded     int                  `json:"succeeded"`
+	Failed        []string             `json:"failed"`
+	FailedDetails []BulkUpdateConflict `json:"failed_details,omitempty"`
+	Err           error                `json:"error,omitempty"`
 }
 
 // BulkUpdateStatus changes the status of multiple items using a Markdown-first
@@ -449,12 +469,27 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 			continue
 		}
 		previousStatus := artifact.Status
+		preLockArchivedStatus := artifact.ArchivedStatus
 		artifact.Status = targetStatus
 		artifact.UpdatedAt = models.NowUTC()
-		if err := persistArtifact(ctx, ws, artifact, shouldRelocateOnStatusChange(previousStatus, artifact.Status)); err != nil {
+		if err := persistArtifactWithGuard(
+			ctx,
+			ws,
+			artifact,
+			shouldRelocateOnStatusChange(previousStatus, artifact.Status),
+			guardArchivedStatusUnchangedSince(ws, id, preLockArchivedStatus),
+		); err != nil {
 			slog.WarnContext(ctx, "bulk update status: persist failed, skipping",
 				"id", id, "error", err)
 			result.Failed = append(result.Failed, id)
+			if errors.Is(err, blerrors.ErrShipmentConflict) {
+				result.FailedDetails = append(result.FailedDetails, BulkUpdateConflict{
+					ID:         id,
+					Err:        err,
+					FromStatus: string(previousStatus),
+					ToStatus:   string(targetStatus),
+				})
+			}
 			continue
 		}
 		result.Succeeded++

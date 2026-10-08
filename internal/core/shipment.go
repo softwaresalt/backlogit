@@ -1345,6 +1345,13 @@ func artifactMutationLockPath(ws *Workspace, artifactID string) (string, error) 
 	return stableKey, nil
 }
 
+// artifactMutationLockBarrierHook is nil in production. Tests may install a
+// synchronous barrier to pause immediately after artifact-mutation lock (B)
+// acquisition without changing lock ordering. It is unsynchronized package
+// state, so tests that install it must not call t.Parallel and must restore
+// the previous value in t.Cleanup.
+var artifactMutationLockBarrierHook func(artifactID string)
+
 func lockArtifactMutation(ctx context.Context, ws *Workspace, artifactID string) (func() error, error) {
 	if artifactMutationLockHeld(ctx, artifactID) {
 		return func() error { return nil }, nil
@@ -1353,7 +1360,14 @@ func lockArtifactMutation(ctx context.Context, ws *Workspace, artifactID string)
 	if err != nil {
 		return nil, err
 	}
-	return lockTaskFile(stableKey)
+	unlock, err := lockTaskFile(stableKey)
+	if err != nil {
+		return nil, err
+	}
+	if artifactMutationLockBarrierHook != nil {
+		artifactMutationLockBarrierHook(artifactID)
+	}
+	return unlock, nil
 }
 
 func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (context.Context, func() error, error) {
@@ -1391,6 +1405,9 @@ func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (co
 			return ctx, nil, releaseAfterFailure(fmt.Errorf("lock artifact %s: %w", id, err), unlocks)
 		}
 		unlocks = append(unlocks, unlock)
+		if artifactMutationLockBarrierHook != nil {
+			artifactMutationLockBarrierHook(id)
+		}
 	}
 	lockedCtx := withArtifactMutationLocks(ctx, uniqueIDs)
 	orderedLockIDs := make([]string, 0, len(uniqueIDs))
@@ -1879,8 +1896,8 @@ func persistArtifact(ctx context.Context, ws *Workspace, artifact *models.Artifa
 	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, true, nil)
 }
 
-func persistArtifactWithoutDBOnlyLinks(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool) error {
-	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, false, nil)
+func persistArtifactWithoutDBOnlyLinksWithGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool, guard func(context.Context) error) error {
+	return persistArtifactWithLinkPolicyAndGuard(ctx, ws, artifact, relocate, false, guard)
 }
 
 func persistArtifactWithGuard(ctx context.Context, ws *Workspace, artifact *models.Artifact, relocate bool, guard func(context.Context) error) error {
