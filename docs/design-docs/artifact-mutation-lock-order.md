@@ -36,7 +36,8 @@ with the mutation it records.
 | `BulkUpdateStatus` | Lifecycle global, then B per item | The writer takes the shipment lifecycle global lock, loads each artifact before B, and persists with B. It does not acquire C. 172.006-T guards each persist with `guardArchivedStatusUnchangedSince` and reports stale items through the typed `BulkUpdateResult` conflict details declared by 172.011-T. |
 | Governed reconcile-to-shipped transaction | C, then B | The reconcile path is the governed majority path for shipment repair. It owns the durable item-log event before mutating artifact state. |
 | `ReconcileArchivedLifecycle` | Per-item B, never held across C | 172.003-T removes the batch-wide B. `UnarchiveItem`, the status set step, and `ArchiveItem` each take their own B, and none holds B while acquiring C. The set step re-reads the artifact under B and refuses with `ErrShipmentConflict` when the queued status no longer matches the unarchived status. |
-| `archiveDescendants` cascade | Batch B over parent and descendants | Cascade locks are gathered ancestor-before-descendant and sorted by lock key through `lockArtifactMutations`. Inner calls reuse context-held B rather than taking a second independent B lock. |
+| `archiveDescendants` cascade | Batch B over parent and descendants, then C per item after release | Cascade locks are gathered ancestor-before-descendant and sorted by lock key through `lockArtifactMutations`. Inner calls reuse context-held B rather than taking a second independent B lock. Cascaded descendants add their `archived` events to a deferred sink carried in context. The outermost `ArchiveItem` drains that sink only after it releases B, so no cascaded event acquires C while the parent's batch B is held. |
+| `UnarchiveItem` (reconcile step) | B only, compare-and-swap | The reconcile path calls `unarchiveItemExpecting`, which re-reads the archived artifact under B and refuses with `ErrShipmentConflict` when `archived_status` no longer matches the value the reconcile plan observed. |
 
 ## Load-bearing invariants
 
@@ -111,6 +112,21 @@ scope.
   and `ArchiveItem` then stamps `archived_status` from the status it finds. The
   set step detects a change made before it runs. A change made after it is
   recorded faithfully by the re-archive rather than overwritten.
+* Reconcile isolation is weaker than the removed batch-wide B. The unarchive,
+  status set, and re-archive steps are each individually guarded, but another
+  writer can interleave between them. Conflicts are reported per item and
+  recorded as reconciliation conflict events rather than prevented.
+* Releasing B before acquiring C introduces a small gap. A second writer can
+  mutate the item between the archive mutation and its deferred event append, so
+  two events for the same item can be appended in a different order than the
+  mutations ran. Each event still describes a mutation that already happened.
+* Post-archive hooks and stash side effects run after the governance locks are
+  released. They are not serialized against concurrent writers.
+* Cascaded child hooks run while the parent's batch B is still held. A hook that
+  takes C, or a B for an item outside the cascade set, would reintroduce an
+  inversion. No current hook does this.
+* `ShipShipment` archival still acquires C while the lifecycle global lock is
+  held. This predates 153-S and is outside the B and C reorder scope.
 * Future snapshot-before-lock writers that can persist `archived_status` must opt
   into `guardArchivedStatusUnchangedSince` or an equivalent source-of-truth
   Markdown comparison before shipment 153-S can claim the class is closed.
