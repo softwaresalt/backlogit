@@ -289,7 +289,7 @@ func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int
 		// directly would rewrite the Markdown with empty provenance, stranding an
 		// archived item reordered in an archived-inclusive queue view (same class
 		// as 111-F). Markdown is the source of truth, so reload it and mutate only
-		// the queue position and timestamp â€” mirroring BulkUpdateStatus.
+		// the queue position and timestamp — mirroring BulkUpdateStatus.
 		updated, reloadErr := findArtifact(ctx, ws, item.ID)
 		if reloadErr != nil {
 			if rollbackErr := rollbackQueueMove(ctx, ws, originals, persistedIDs); rollbackErr != nil {
@@ -367,7 +367,7 @@ func rollbackQueueMove(ctx context.Context, ws *Workspace, originals map[string]
 	// forward operation failed because that context was canceled or its deadline
 	// expired. WithoutCancel drops both the cancellation signal and the deadline
 	// while retaining context values (e.g., tracing metadata), so rollback is no
-	// longer bounded by the caller's deadline â€” an intentional trade to keep the
+	// longer bounded by the caller's deadline — an intentional trade to keep the
 	// queue consistent rather than leaving positions half-persisted.
 	ctx = context.WithoutCancel(ctx)
 	var rollbackErrs []error
@@ -390,9 +390,12 @@ func rollbackQueueMove(ctx context.Context, ws *Workspace, originals map[string]
 // enough detail for callers to distinguish stale-write conflicts from ordinary
 // missing-item or persistence failures.
 //
-// A future BulkUpdateStatus behavior task will map an ErrShipmentConflict from
-// the archived_status stale-write guard into this detail while preserving the
-// existing BulkUpdateResult.Failed list for backward compatibility.
+// BulkUpdateStatus records one entry here for each item whose persist was
+// refused by the archived_status stale-write guard (ErrShipmentConflict).
+// FailedDetails is therefore the conflict-only subset of
+// BulkUpdateResult.Failed; Failed remains unchanged for backward compatibility.
+// Err is not JSON-serializable as a message; callers that need the error text
+// should render it via Err.Error().
 type BulkUpdateConflict struct {
 	ID         string `json:"id"`
 	Err        error  `json:"error,omitempty"`

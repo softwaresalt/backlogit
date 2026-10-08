@@ -121,7 +121,19 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 			slog.WarnContext(operationCtx, "release archive governance locks", "item_id", itemID, "error", unlockErr)
 		}
 	}
-	defer releaseArchiveLocks()
+	// 172-F (C-under-B): a cascaded child inherits the parent's artifact
+	// mutation locks (B), so its own release is a no-op. It must therefore not
+	// take the item-log lock (C) itself; it hands its event to the outermost
+	// ArchiveItem, which appends every deferred event only after B is released.
+	parentEventSink := deferredArchiveEventsFrom(operationCtx)
+	var ownEventSink *deferredArchiveEvents
+	if parentEventSink == nil && cfg.cascade {
+		lockedCtx, ownEventSink = withDeferredArchiveEvents(lockedCtx)
+	}
+	defer func() {
+		releaseArchiveLocks()
+		ownEventSink.drain(operationCtx, database, ws)
+	}()
 	ctx = lockedCtx
 
 	// 144-F guard 2 preflight: run BEFORE any cascade so a refusal leaves
@@ -322,29 +334,20 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 
 	// Best-effort: log archive event to the item's JSONL log (non-fatal on failure).
 	// Errors are logged for diagnosability, matching the pattern in commits.go.
-	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
-	if lockErr != nil {
-		slog.Warn("archive item: failed to lock item log", "item_id", itemID, "error", lockErr)
-	} else {
-		defer unlockLog()
-		ctx = lockedCtx
+	event := events.Event{
+		Timestamp: time.Now(),
+		Actor:     "backlogit",
+		ItemID:    itemID,
+		EventType: "archived",
+		Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
+		CommitSHA: cfg.commitSHA,
 	}
-	if lockErr == nil {
-		ew := NewWorkspaceEventWriter(ws, logsDir)
-		event := events.Event{
-			Timestamp: time.Now(),
-			Actor:     "backlogit",
-			ItemID:    itemID,
-			EventType: "archived",
-			Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
-			CommitSHA: cfg.commitSHA,
-		}
-		if evErr := ew.AppendEvent(ctx, event); evErr != nil {
-			slog.Warn("archive item: failed to append event to item log", "item_id", itemID, "error", evErr)
-		} else if indexErr := db.IndexEvent(ctx, database, logsDir, event); indexErr != nil {
-			slog.Warn("archive item: failed to index event", "item_id", itemID, "error", indexErr)
-		}
+	if parentEventSink != nil {
+		parentEventSink.add(event)
+	} else {
+		// Cascaded children's events precede the parent's own archive event.
+		ownEventSink.drain(ctx, database, ws)
+		appendArchiveEvent(ctx, database, ws, event)
 	}
 
 	// Fire post-archive hooks.
@@ -930,6 +933,19 @@ func canonicalTargetPath(targetPath string) string {
 
 // UnarchiveItem restores an artifact from the archive back to its original path.
 func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string) error {
+	return unarchiveItem(ctx, database, ws, itemID, nil)
+}
+
+// unarchiveItemExpecting is UnarchiveItem with a compare-and-swap guard: under
+// the artifact mutation lock (B) it refuses with blerrors.ErrShipmentConflict,
+// moving nothing, unless the item is still archived with archived_status equal
+// to expectedArchivedStatus. Reconciliation validates that state from an
+// unlocked read, so the guard closes the window before the restore (172.003-T).
+func unarchiveItemExpecting(ctx context.Context, database *sql.DB, ws *Workspace, itemID, expectedArchivedStatus string) error {
+	return unarchiveItem(ctx, database, ws, itemID, &expectedArchivedStatus)
+}
+
+func unarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID string, expectedArchivedStatus *string) error {
 	lockedCtx, releaseArtifactLock, lockErr := lockArtifactMutations(ctx, ws, []string{itemID})
 	if lockErr != nil {
 		return fmt.Errorf("unarchive item %s: acquire mutation lock: %w", itemID, lockErr)
@@ -950,6 +966,14 @@ func UnarchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID 
 	fm, body, err := models.ParseFrontmatter(string(raw))
 	if err != nil {
 		return fmt.Errorf("parse archive file: %w", err)
+	}
+	if expectedArchivedStatus != nil {
+		currentStatus, _ := fm["status"].(string)
+		currentArchivedStatus, _ := fm["archived_status"].(string)
+		if currentStatus != string(models.StatusArchived) || currentArchivedStatus != *expectedArchivedStatus {
+			return fmt.Errorf("unarchive item %s: state changed since read (status=%q, archived_status=%q, expected archived_status=%q): %w",
+				itemID, currentStatus, currentArchivedStatus, *expectedArchivedStatus, blerrors.ErrShipmentConflict)
+		}
 	}
 
 	originalPath, _ := fm["archived_from"].(string)
@@ -1279,4 +1303,64 @@ func archiveShippedEventPreflight(ctx context.Context, ws *Workspace, itemID str
 		return fmt.Errorf("archive shipment %s: %w", itemID, blerrors.ErrArchiveShippedRequiresEvent)
 	}
 	return nil
+}
+
+// deferredArchiveEventsKey carries the outermost cascading ArchiveItem's
+// deferred item-log event sink through a context.
+type deferredArchiveEventsKey struct{}
+
+// deferredArchiveEvents collects "archived" events produced by cascaded
+// children while the parent still holds the artifact mutation locks (B). The
+// events are appended only after B is released, preserving the canonical
+// item-log (C) before B lock order.
+type deferredArchiveEvents struct {
+	events []events.Event
+}
+
+// withDeferredArchiveEvents returns a context carrying a new deferred event sink.
+func withDeferredArchiveEvents(ctx context.Context) (context.Context, *deferredArchiveEvents) {
+	sink := &deferredArchiveEvents{}
+	return context.WithValue(ctx, deferredArchiveEventsKey{}, sink), sink
+}
+
+// deferredArchiveEventsFrom returns the deferred event sink carried by ctx, if any.
+func deferredArchiveEventsFrom(ctx context.Context) *deferredArchiveEvents {
+	sink, _ := ctx.Value(deferredArchiveEventsKey{}).(*deferredArchiveEvents)
+	return sink
+}
+
+// add records an event for later append.
+func (d *deferredArchiveEvents) add(event events.Event) {
+	d.events = append(d.events, event)
+}
+
+// drain appends every deferred event, each under its own item-log lock. It is
+// idempotent and safe on a nil receiver. Callers must not hold B.
+func (d *deferredArchiveEvents) drain(ctx context.Context, database *sql.DB, ws *Workspace) {
+	if d == nil {
+		return
+	}
+	pending := d.events
+	d.events = nil
+	for _, event := range pending {
+		appendArchiveEvent(ctx, database, ws, event)
+	}
+}
+
+// appendArchiveEvent appends and indexes an "archived" event under the item's
+// cross-process item-log lock. Failures are logged and never fatal.
+func appendArchiveEvent(ctx context.Context, database *sql.DB, ws *Workspace, event events.Event) {
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, event.ItemID)
+	if lockErr != nil {
+		slog.Warn("archive item: failed to lock item log", "item_id", event.ItemID, "error", lockErr)
+		return
+	}
+	defer unlockLog()
+	ew := NewWorkspaceEventWriter(ws, logsDir)
+	if evErr := ew.AppendEvent(lockedCtx, event); evErr != nil {
+		slog.Warn("archive item: failed to append event to item log", "item_id", event.ItemID, "error", evErr)
+	} else if indexErr := db.IndexEvent(lockedCtx, database, logsDir, event); indexErr != nil {
+		slog.Warn("archive item: failed to index event", "item_id", event.ItemID, "error", indexErr)
+	}
 }

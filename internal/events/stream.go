@@ -191,6 +191,17 @@ func withItemLogFileLock(ctx context.Context, key string) context.Context {
 // item-log append ordering.
 var itemLogLockBarrierHook func(itemID string)
 
+// SetItemLogLockBarrierHookForTest installs fn as the item-log lock (C)
+// acquisition barrier and returns a function that restores the previous hook.
+// It exists only so tests in other packages can observe C acquisition order;
+// production code must never call it. The hook is a package global, so tests
+// that install it must not run with t.Parallel.
+func SetItemLogLockBarrierHookForTest(fn func(itemID string)) (restore func()) {
+	previous := itemLogLockBarrierHook
+	itemLogLockBarrierHook = fn
+	return func() { itemLogLockBarrierHook = previous }
+}
+
 // acquireItemLogFileLock acquires the cross-process item-log lock (C) sidecar
 // handle. locksRoot is the STABLE root (independent of any logs directory,
 // see ItemLogLockPath) that the sidecar is rooted under; it must remain

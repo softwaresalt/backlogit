@@ -911,7 +911,7 @@ const returnBlockedJournalSchemaVersion = "return-blocked/v2"
 //
 // Optional Option values (e.g. WithPriority) are accepted via the variadic opts
 // parameter and will be forwarded to CreateArtifact at the create path.
-// Zero options yield the current behavior â€” backward-compatible.
+// Zero options yield the current behavior — backward-compatible.
 //
 // Worker: Create a new shipment Markdown artifact with YAML frontmatter containing
 // the items list, set status to queued, generate ID with S prefix, write to queue
@@ -989,7 +989,7 @@ func MoveShipmentStatus(ctx context.Context, ws *Workspace, shipmentID string, n
 // moveShipmentStatusWithTopLevel is the internal variant that accepts an explicit
 // topLevel flag. Top-level callers use true; nested callers (e.g. ShipShipment)
 // use false to suppress duplicate post-hook event emission. It carries no
-// repository-ref CAS guard of its own â€” see moveShipmentStatusWithHeadGuard.
+// repository-ref CAS guard of its own — see moveShipmentStatusWithHeadGuard.
 func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipmentID string, newStatus ShipmentStatus, topLevel bool) error {
 	return moveShipmentStatusWithHeadGuard(ctx, ws, shipmentID, newStatus, topLevel, "")
 }
@@ -1002,9 +1002,9 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 // OWN evaluation window (the shipment-level gate Evaluate call plus the
 // member-evidence scan). Once that call returns, ShipShipment still performs
 // a series of further, in-process operations before this function's own
-// persist â€” completing the release scope, returning unreleased feature
+// persist — completing the release scope, returning unreleased feature
 // items, cascading feature statuses, and firing this function's own pre-hook
-// â€” during which a concurrent commit could still advance the repository's
+// — during which a concurrent commit could still advance the repository's
 // real HEAD out from under the completing shipment. A signed manifest-binding
 // proof would then attest to a reviewed commit while the shipment's own
 // declared status transition completes against a HEAD that has already moved
@@ -1023,7 +1023,7 @@ func moveShipmentStatusWithTopLevel(ctx context.Context, ws *Workspace, shipment
 //
 // An empty expectedHeadSHA (every existing call site other than ShipShipment's
 // active->shipped transition, and that transition itself whenever
-// gateShipmentCompletion's own bracket did not run â€” broker nil, gate not
+// gateShipmentCompletion's own bracket did not run — broker nil, gate not
 // enforced, or genuine no-repo) leaves this guard inert, identical to
 // moveShipmentStatusWithTopLevel's prior behavior.
 func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmentID string, newStatus ShipmentStatus, topLevel bool, expectedHeadSHA string) error {
@@ -1134,7 +1134,7 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 	// MoveShipmentStatus passes true and stays best-effort. Gating on the status
 	// alone would make the exported entry point fail closed WITHOUT the
 	// classification and compensation that only ShipShipment's locked closure
-	// provides, persisting the status and then returning a bare error â€” an
+	// provides, persisting the status and then returning a bare error — an
 	// uncompensated residue on a path this change declares ungoverned.
 	//
 	// The append is never retried. events.EventWriter.AppendEvent's contract is
@@ -1229,7 +1229,7 @@ func checkShipmentPersistHeadGuard(ctx context.Context, ws *Workspace, shipmentI
 }
 
 // Shipment membership lock design notes:
-// shipment.CustomFields["items"] â€” reusing task_lock.go's per-file-path
+// shipment.CustomFields["items"] — reusing task_lock.go's per-file-path
 // keyed-mutex-plus-sidecar mechanism (despite its "task" naming, it is
 // generic: keyed by resolved file path, not by artifact type). Every
 // function that reads-then-writes shipment membership, or that signs a
@@ -1241,7 +1241,7 @@ func checkShipmentPersistHeadGuard(ctx context.Context, ws *Workspace, shipmentI
 // (106-F F1 review finding).
 //
 // The lock key is a STABLE synthetic path derived from the workspace root and
-// shipment ID alone â€” NOT the shipment's actual current markdown file path.
+// shipment ID alone — NOT the shipment's actual current markdown file path.
 // persistArtifact relocates a shipment's file whenever its target directory
 // changes (e.g. archival, or a registry configured to route active/shipped
 // shipments to different directories), and moveShipmentStatusWithTopLevel
@@ -1347,7 +1347,9 @@ func artifactMutationLockPath(ws *Workspace, artifactID string) (string, error) 
 
 // artifactMutationLockBarrierHook is nil in production. Tests may install a
 // synchronous barrier to pause immediately after artifact-mutation lock (B)
-// acquisition without changing lock ordering.
+// acquisition without changing lock ordering. It is unsynchronized package
+// state, so tests that install it must not call t.Parallel and must restore
+// the previous value in t.Cleanup.
 var artifactMutationLockBarrierHook func(artifactID string)
 
 func lockArtifactMutation(ctx context.Context, ws *Workspace, artifactID string) (func() error, error) {
@@ -1439,7 +1441,7 @@ func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID strin
 	// through any symlinks and verify the REAL path still resolves within
 	// the (also symlink-resolved) workspace storage root BEFORE any lock
 	// operation runs, reusing the same containment pattern
-	// resolveContainedArtifactPath already establishes for artifact leaves â€”
+	// resolveContainedArtifactPath already establishes for artifact leaves —
 	// otherwise every subsequent lock operation (create, touch,
 	// stale-reclaim-and-delete) would actually operate through that external
 	// symlink target (106-F F1 review finding, round 6). All further
@@ -1448,7 +1450,7 @@ func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID strin
 	if containErr != nil {
 		return nil, fmt.Errorf("resolve shipment membership locks directory containment: %w", containErr)
 	}
-	// stableKey need not (and must not) point at a real artifact file â€”
+	// stableKey need not (and must not) point at a real artifact file —
 	// lockTaskFile only ever creates a ".<name>.lock" sidecar adjacent to
 	// the path it is given; it never requires the path itself to exist.
 	stableKey := filepath.Join(realLocksDir, shipmentID)
@@ -1457,7 +1459,7 @@ func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID strin
 	// A value containing path-traversal segments (e.g. "../../escape") could
 	// otherwise resolve stableKey outside locksDir entirely, letting this
 	// code create, touch, or stale-reclaim-and-delete a lock artifact outside
-	// the workspace â€” a path traversal / workspace escape (Constitution
+	// the workspace — a path traversal / workspace escape (Constitution
 	// Principle III), not merely a lock-key naming concern. Fail closed
 	// rather than trusting filepath.Join's result unchecked (106-F F1 review
 	// finding, round 5).
@@ -1469,7 +1471,7 @@ func lockShipmentMembership(ctx context.Context, ws *Workspace, shipmentID strin
 
 // shipmentMembershipLocksDirName is the fixed, dotfile-prefixed subdirectory
 // (under the workspace's backlogit storage root) holding ONLY the synthetic
-// lock-key placeholders lockShipmentMembership uses â€” never real artifact
+// lock-key placeholders lockShipmentMembership uses — never real artifact
 // content. The leading dot keeps it alongside the existing `.*.lock`
 // .gitignore convention for advisory lock sidecars.
 const shipmentMembershipLocksDirName = ".locks"
@@ -2065,7 +2067,7 @@ func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, a
 		// power loss could resurrect the old dirent alongside the new one, leaving a
 		// duplicate canonical artifact. This runs BEFORE the sole DB upsert below,
 		// so surfacing ErrWriteIndeterminate here keeps the caller's error path
-		// consistent â€” the upsert does not run and no completed-move rollback is
+		// consistent — the upsert does not run and no completed-move rollback is
 		// disturbed.
 		if srcDir := filepath.Dir(currentPath); srcDir != filepath.Dir(targetPath) {
 			if err := fsyncDirIfDurable(srcDir, WorkspaceDurableWrites(ws)); err != nil {
@@ -2224,7 +2226,7 @@ func removeString(values []string, target string) []string {
 // wraps this reader to canonicalize items on the CREATE/GET write path).
 //
 // It maps the lossy on-the-way-out representations of the SQLite JSON array
-// (see docs/compound/go-patterns/f015-shipment-stash-patterns.md â€” treat
+// (see docs/compound/go-patterns/f015-shipment-stash-patterns.md — treat
 // []interface{} shipment CustomFields as lossy and normalize on every read):
 // a []string is cloned, a []any is filtered to its string elements
 // order-preserving, and nil/absent/unknown inputs yield an empty slice.
@@ -2236,7 +2238,7 @@ func removeString(values []string, target string) []string {
 // marshaled by BOTH the CLI and the MCP list/get surfaces, so a nil here would
 // surface as items: null on the wire. The end-to-end guard for this is
 // TestListShipments_EmptyItems_NeverNull (internal/mcp). Do NOT "simplify" the
-// []string branch back to the nil-able append([]string(nil), ...) form â€” that
+// []string branch back to the nil-able append([]string(nil), ...) form — that
 // silently reintroduces the null-on-empty regression this consolidation removed.
 func NormalizeShipmentItems(artifact *models.Artifact) []string {
 	if artifact == nil || artifact.CustomFields == nil {
