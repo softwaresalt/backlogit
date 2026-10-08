@@ -63,3 +63,22 @@ Push the branch, then open the PR with the Local Review Readiness block. Then ru
 * Full suite failed once in `TestU172_Race_ReconcileArchivedLifecycleBatchAndSameItemWriterConverge`: the 10s watchdog fired, then the goroutines finished after cleanup (`sql: database is closed`), so the run was slow, not deadlocked. Neighbouring tests showed heavy load (7s workspace init).
 * Isolated re-run passed 3/3 in 23s.
 * Fix (P-021 C1, hardening this shipment's own tests): the three U172 race tests use `u172RaceDeadline = 45s`. A real lock-order deadlock never completes, so detection is preserved.
+
+## Merge and post-merge closure (2026-10-08 UTC)
+
+* Copilot round 3 raised 2 threads, fixed in `b7a06d53`, replied and
+  resolved. The track-commit state landed as `1655bf2f`. Round 4 on
+  `1655bf2f` returned 0 findings.
+* `autoharness gate copilot-review 485` returned `SATISFIED`, and required CI
+  was green. PR #485 merged by merge commit at 07:05:39Z as `271c916e`.
+* Post-merge main sync: `POST_MERGE_SYNC_OK`. Closure branch:
+  `post-merge/153-s-concurrency-safety-hardening`.
+* Pre-reconcile returned `PROCEED`. The MCP `ship_shipment` call timed out on
+  the client and was not retried; it completed server-side (shipped 07:14:45Z,
+  archived 07:30:33Z). P-007 was clean, the post-reconcile report recommends
+  `CLOSED`, and the archive state was committed as `c5d6bb06`.
+* Closure artifact:
+  `docs/closure/153-S-172-F-concurrency-safety-hardening-post-merge-closure.md`
+  (closure `READY`, compaction `degraded`). compound-refresh classified all four
+  candidates `keep`.
+* Next: the closure PR loop, then merge, main re-sync, and STOP.
