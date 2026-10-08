@@ -30,12 +30,12 @@ with the mutation it records.
 
 | Writer | Current order | Notes and bound |
 |---|---|---|
-| `ArchiveItem` | B, then C | `lockArchiveGovernance` holds B for the item and cascade set, then the best-effort archive event acquires C near the end of the function. This is the known inversion targeted by later lock-order tasks. |
+| `ArchiveItem` | B, released, then C | `lockArchiveGovernance` holds B for the item and cascade set through the file move and DB update. 172.002-T releases the archive governance locks before the best-effort archive event acquires C, so B and C never overlap. The event is appended after the mutation it records, which preserves causal order. |
 | `AssociateCommit` | C, then B | The function acquires C before the compensating frontmatter persist. The later persist uses B while C is already held, matching the canonical order. |
-| `RemoveArtifactLink` | B only | The writer loads from Markdown before B and persists through the artifact write path. It does not append an item-log event. The stale `archived_status` guard is added by 172.005-T. |
-| `BulkUpdateStatus` | Lifecycle global, then B per item | The writer takes the shipment lifecycle global lock, loads each artifact before B, and persists with B. It does not acquire C. The stale `archived_status` guard and typed conflict population are later tasks. |
+| `RemoveArtifactLink` | B only | The writer loads from Markdown before B and persists through the artifact write path. It does not append an item-log event. 172.005-T guards the persist with `guardArchivedStatusUnchangedSince`. |
+| `BulkUpdateStatus` | Lifecycle global, then B per item | The writer takes the shipment lifecycle global lock, loads each artifact before B, and persists with B. It does not acquire C. 172.006-T guards each persist with `guardArchivedStatusUnchangedSince` and reports stale items through the typed `BulkUpdateResult` conflict details declared by 172.011-T. |
 | Governed reconcile-to-shipped transaction | C, then B | The reconcile path is the governed majority path for shipment repair. It owns the durable item-log event before mutating artifact state. |
-| `ReconcileArchivedLifecycle` | Batch B, then inner archive paths | The batch path takes `lockArtifactMutations` for the affected set and then calls item-level archive/unarchive helpers. Context reentrancy prevents self-deadlock on B, but it does not by itself prove safety against a same-item C-then-B writer. Later Unit 1 tasks must remove or bound any remaining B-to-C overlap. |
+| `ReconcileArchivedLifecycle` | Per-item B, never held across C | 172.003-T removes the batch-wide B. `UnarchiveItem`, the status set step, and `ArchiveItem` each take their own B, and none holds B while acquiring C. The set step re-reads the artifact under B and refuses with `ErrShipmentConflict` when the queued status no longer matches the unarchived status. |
 | `archiveDescendants` cascade | Batch B over parent and descendants | Cascade locks are gathered ancestor-before-descendant and sorted by lock key through `lockArtifactMutations`. Inner calls reuse context-held B rather than taking a second independent B lock. |
 
 ## Load-bearing invariants
@@ -44,8 +44,7 @@ with the mutation it records.
 
 `lockArtifactMutations` records held artifact locks in context. Inner archive,
 unarchive, and persist calls on the same item skip reacquiring a B lock already
-held by the same call tree. This prevents self-deadlock in cascade and reconcile
-batch flows.
+held by the same call tree. This prevents self-deadlock in cascade flows.
 
 ### Ancestor and sorted batch order
 
@@ -74,9 +73,13 @@ secondary diagnostic only; a passing race run is not proof that a lock-order
 inversion is absent.
 
 The existing `persistArtifactPreLockHook` is not sufficient for Unit 1 lock-order
-proofs because it fires before B acquisition and there is no matching C acquisition
-hook. Task 172.013-T adds no-op acquisition hooks for both B and C so later tests
-can drive the interleaving deterministically.
+proofs because it fires before B acquisition. Task 172.013-T declares nil-in-production
+acquisition hooks for both locks: `artifactMutationLockBarrierHook` for B and
+`itemLogLockBarrierHook` for C, which fires immediately before C is acquired.
+Task 172.004-T makes the B hook fire immediately
+after B is acquired, in both `lockArtifactMutation` and `lockArtifactMutations`, so
+tests can pause a writer while it holds B and drive the interleaving
+deterministically.
 
 ## archived_status shipped clobber audit
 
@@ -84,10 +87,10 @@ can drive the interleaving deterministically.
 |---|---|---|
 | `AssociateCommit` | Yes, snapshot-before-lock writer | Already guarded by `guardArchivedStatusUnchangedSince`. |
 | `AddArtifactLink` | Yes, snapshot-before-lock writer | Already guarded by `guardArchivedStatusUnchangedSince`. |
-| `RemoveArtifactLink` | Yes, snapshot-before-lock writer | Planned guard in 172.005-T; GREEN regression in 172.007-T. |
-| `BulkUpdateStatus` | Yes, snapshot-before-lock writer | Planned guard and typed conflict population in 172.006-T; GREEN regression in 172.010-T. The compatibility surface is prepared by 172.011-T and 172.012-T. |
+| `RemoveArtifactLink` | Yes, snapshot-before-lock writer | Guarded by 172.005-T; GREEN regression in 172.007-T. |
+| `BulkUpdateStatus` | Yes, snapshot-before-lock writer | Guarded with typed conflict population by 172.006-T; GREEN regression in 172.010-T. 172.011-T declares the result fields and 172.012-T surfaces them in the CLI. |
 | `ArchiveItem` | Can stamp or preserve archive provenance | Existing archive reconcile guard preserves non-empty reconciled `archived_status`; Unit 1 handles lock-order risk, not the CAS guard. |
-| `ReconcileArchivedLifecycle` | Writes the governed target `archived_status` | Governed source of truth for the repair, not a clobbering stale writer. Batch lock-order residual is handled by later Unit 1 tasks. |
+| `ReconcileArchivedLifecycle` | Writes the governed target `archived_status` | Governed source of truth for the repair, not a clobbering stale writer. The set step is compare-and-set on the queued status (172.003-T). |
 | `archiveDescendants` cascade | Can archive descendants and stamp provenance | Covered by archive governance and cascade ordering; no new CAS guard is planned in this shipment. |
 | `UpdateArtifactWithGate` / direct update path | Can mutate artifacts through locked update flow | Existing shipped-transition and blocked-shipment guards apply. General content-staleness protection is out of scope for this shipment. |
 
@@ -99,10 +102,15 @@ scope.
 
 ## Residual and bound
 
-* `ArchiveItem` currently retains the B-to-C inversion until the later Unit 1
-  implementation tasks move or bound the C append.
-* `ReconcileArchivedLifecycle` remains a batch-path residual until later Unit 1
-  tasks prove or remove any same-item B-to-C overlap.
+* `ArchiveItem` no longer holds B while acquiring C (172.002-T). The archive
+  event append remains best-effort: on log failure it warns and the archive
+  still succeeds.
+* `ReconcileArchivedLifecycle` no longer holds a batch-wide B (172.003-T). Its
+  remaining bound is the window between the compare-and-set status step and the
+  re-archive. Another writer can change the queued status inside that window,
+  and `ArchiveItem` then stamps `archived_status` from the status it finds. The
+  set step detects a change made before it runs. A change made after it is
+  recorded faithfully by the re-archive rather than overwritten.
 * Future snapshot-before-lock writers that can persist `archived_status` must opt
   into `guardArchivedStatusUnchangedSince` or an equivalent source-of-truth
   Markdown comparison before shipment 153-S can claim the class is closed.
