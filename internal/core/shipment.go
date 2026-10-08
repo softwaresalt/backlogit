@@ -1346,7 +1346,7 @@ func artifactMutationLockPath(ws *Workspace, artifactID string) (string, error) 
 }
 
 // artifactMutationLockBarrierHook is nil in production. Tests may install a
-// synchronous barrier to pause exactly before artifact-mutation lock (B)
+// synchronous barrier to pause immediately after artifact-mutation lock (B)
 // acquisition without changing lock ordering.
 var artifactMutationLockBarrierHook func(artifactID string)
 
@@ -1354,14 +1354,18 @@ func lockArtifactMutation(ctx context.Context, ws *Workspace, artifactID string)
 	if artifactMutationLockHeld(ctx, artifactID) {
 		return func() error { return nil }, nil
 	}
-	if artifactMutationLockBarrierHook != nil {
-		artifactMutationLockBarrierHook(artifactID)
-	}
 	stableKey, err := artifactMutationLockPath(ws, artifactID)
 	if err != nil {
 		return nil, err
 	}
-	return lockTaskFile(stableKey)
+	unlock, err := lockTaskFile(stableKey)
+	if err != nil {
+		return nil, err
+	}
+	if artifactMutationLockBarrierHook != nil {
+		artifactMutationLockBarrierHook(artifactID)
+	}
+	return unlock, nil
 }
 
 func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (context.Context, func() error, error) {
@@ -1390,9 +1394,6 @@ func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (co
 		if artifactMutationLockHeld(ctx, id) {
 			continue
 		}
-		if artifactMutationLockBarrierHook != nil {
-			artifactMutationLockBarrierHook(id)
-		}
 		stableKey, err := artifactMutationLockPath(ws, id)
 		if err != nil {
 			return ctx, nil, releaseAfterFailure(err, unlocks)
@@ -1402,6 +1403,9 @@ func lockArtifactMutations(ctx context.Context, ws *Workspace, ids []string) (co
 			return ctx, nil, releaseAfterFailure(fmt.Errorf("lock artifact %s: %w", id, err), unlocks)
 		}
 		unlocks = append(unlocks, unlock)
+		if artifactMutationLockBarrierHook != nil {
+			artifactMutationLockBarrierHook(id)
+		}
 	}
 	lockedCtx := withArtifactMutationLocks(ctx, uniqueIDs)
 	orderedLockIDs := make([]string, 0, len(uniqueIDs))
