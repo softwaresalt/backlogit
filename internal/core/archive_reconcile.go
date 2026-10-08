@@ -264,10 +264,18 @@ func reconcileArchivedItem(
 	}
 
 	// Step 12: Re-archive the item — archived_status is stamped as targetStatus by ArchiveItem.
-	if _, err := ArchiveItem(ctx, database, ws, itemID, WithCascade(false), WithTopLevel(false)); err != nil {
+	// 172.003-T: the set step released B before this re-archive re-acquires
+	// it, so the re-archive re-validates under B that the item still carries
+	// targetStatus; a concurrent writer's status is never archived over.
+	if _, err := ArchiveItem(ctx, database, ws, itemID, WithCascade(false), WithTopLevel(false), withExpectedStatus(targetStatus)); err != nil {
 		if blerrors.IsWriteIndeterminate(err) {
 			wrErr := fmt.Errorf("re-archive %s: write outcome indeterminate: %w", itemID, err)
 			return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationIndeterminate, Error: wrErr.Error()}, wrErr
+		}
+		if errors.Is(err, blerrors.ErrShipmentConflict) {
+			wrErr := fmt.Errorf("re-archive %s: concurrent change detected, item left as found in queue: %w", itemID, err)
+			appendReconciliationConflictEvent(ctx, ws, itemID, actor, reason, archivedStatus, targetStatus, "re_archive", err)
+			return ReconciliationItemResult{ID: itemID, Outcome: ReconciliationPartial, Error: wrErr.Error()}, wrErr
 		}
 		// Forward-recovery: item is at targetStatus in queue; operator must archive manually.
 		_ = appendItemEventErr(ctx, ws, itemID, "lifecycle_reconciliation_forward_recovery", map[string]any{

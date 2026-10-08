@@ -55,6 +55,10 @@ type archiveConfig struct {
 	commitSHA string
 	topLevel  *bool // nil means default true
 	cascade   bool  // when true, archive children recursively before the parent
+	// expectedStatus, when non-nil, makes the archive a compare-and-swap: the
+	// item's status read under the governed locks must equal it, otherwise the
+	// archive is refused with ErrShipmentConflict before any write.
+	expectedStatus *string
 }
 
 type archiveShipmentMembershipLocksContextKey struct{}
@@ -95,6 +99,14 @@ func WithTopLevel(topLevel bool) ArchiveOpt {
 // Default is false.
 func WithCascade(cascade bool) ArchiveOpt {
 	return func(c *archiveConfig) { c.cascade = cascade }
+}
+
+// withExpectedStatus makes ArchiveItem refuse, with ErrShipmentConflict and no
+// side effects, when the item's status observed under the governed locks
+// differs from status. Reconciliation uses it so a writer that changed the
+// item after the set step released its lock is not archived over (172.003-T).
+func withExpectedStatus(status string) ArchiveOpt {
+	return func(c *archiveConfig) { c.expectedStatus = &status }
 }
 
 // ArchiveItem moves an artifact from its active directory to the archive directory,
@@ -185,6 +197,10 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		fm = map[string]any{}
 	}
 	oldStatus, _ := fm["status"].(string)
+	if cfg.expectedStatus != nil && oldStatus != *cfg.expectedStatus {
+		return nil, fmt.Errorf("archive %s: status changed concurrently (expected %q, found %q): %w",
+			itemID, *cfg.expectedStatus, oldStatus, blerrors.ErrShipmentConflict)
+	}
 	isTopLevel := cfg.topLevel == nil || *cfg.topLevel // default true
 
 	// path-keyed archive destination. Computed and checked here -- before the

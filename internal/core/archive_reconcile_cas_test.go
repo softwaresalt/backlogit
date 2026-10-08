@@ -245,3 +245,82 @@ func TestU172_SetItemStatusAndMetaRefusesMissingOrReArchivedItem(t *testing.T) {
 		assert.Equal(t, before.ArchivedStatus, after.ArchivedStatus)
 	})
 }
+
+// TestU172_ReconcileArchivedLifecycleReArchiveStepDetectsConcurrentStatusChange
+// injects a same-item status write after the reconciliation set step released
+// B and before the re-archive reads the item (inside the re-archive's own B
+// critical section), and asserts the re-archive compare-and-swap refuses
+// instead of archiving the concurrent writer's status while reporting the
+// reconciliation target as the new archived status (172.003-T, PR #485).
+func TestU172_ReconcileArchivedLifecycleReArchiveStepDetectsConcurrentStatusChange(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	item, err := CreateArtifact(ctx, ws, "reconcile re-archive cas", "feature")
+	require.NoError(t, err)
+	_, err = ArchiveItem(ctx, ws.DB, ws, item.ID)
+	require.NoError(t, err)
+
+	const (
+		targetStatus   = "done"
+		injectedStatus = "blocked"
+	)
+	queueDir := filepath.Join(workspaceStorageRoot(ws), "queue")
+	var (
+		injectOnce sync.Once
+		injected   bool
+		injectErr  error
+	)
+	previousHook := artifactMutationLockBarrierHook
+	artifactMutationLockBarrierHook = func(artifactID string) {
+		if artifactID != item.ID {
+			return
+		}
+		path, findErr := FindArtifactPath(ctx, ws, item.ID)
+		if findErr != nil || filepath.Clean(filepath.Dir(path)) != filepath.Clean(queueDir) {
+			return
+		}
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return
+		}
+		fm, body, parseErr := models.ParseFrontmatter(string(raw))
+		if parseErr != nil || fm["status"] != targetStatus {
+			// Only the re-archive acquisition observes the item at targetStatus.
+			return
+		}
+		injectOnce.Do(func() {
+			fm["status"] = injectedStatus
+			injectErr = os.WriteFile(path, []byte(models.SerializeFrontmatter(fm, body)), 0o644)
+			injected = injectErr == nil
+		})
+	}
+	t.Cleanup(func() { artifactMutationLockBarrierHook = previousHook })
+
+	result, err := ReconcileArchivedLifecycle(ctx, ws.DB, ws, ReconciliationRequest{
+		ItemIDs:      []string{item.ID},
+		TargetStatus: targetStatus,
+		Reason:       "re-archive cas",
+		Actor:        "test-actor",
+	})
+
+	require.NoError(t, injectErr)
+	require.True(t, injected, "barrier hook never observed the item at the re-archive step")
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.True(t, errors.Is(err, blerrors.ErrShipmentConflict), "expected ErrShipmentConflict, got %v", err)
+
+	path, err := FindArtifactPath(ctx, ws, item.ID)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Clean(queueDir), filepath.Clean(filepath.Dir(path)),
+		"conflicting re-archive must leave the item in the queue as found")
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	fm, _, err := models.ParseFrontmatter(string(raw))
+	require.NoError(t, err)
+	assert.Equal(t, injectedStatus, fm["status"], "concurrent writer's status must survive")
+	events := readU172ItemLogEventTypes(t, ws, item.ID)
+	assert.Contains(t, events, "lifecycle_reconciliation_conflict",
+		"a re-archive CAS refusal must leave a durable conflict audit event")
+	assert.NotContains(t, events, "lifecycle_reconciliation",
+		"a refused re-archive must not report reconciliation completion")
+}
