@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,48 @@ func TestU172_Race_ArchiveItemAndAssociateCommitSameItemConverge(t *testing.T) {
 		requireU172NoLockOrderRaceFailure(t, result)
 	}
 	u20AssertArtifactCoherent(t, ws, item.ID)
+}
+
+func TestU172_Race_CascadeArchiveAndChildAssociateCommitConverge(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	parent, err := CreateArtifact(ctx, ws, "cascade race parent", "feature")
+	require.NoError(t, err)
+	child, err := CreateArtifact(ctx, ws, "cascade race child", "task", WithParent(parent.ID))
+	require.NoError(t, err)
+	ew := NewWorkspaceEventWriter(ws, WorkspaceLogsRoot(ws.RootPath))
+
+	results := u20AwaitWithDeadline(t, 10*time.Second, map[string]func() error{
+		"cascade_archive_parent": func() error {
+			record, archiveErr := ArchiveItem(ctx, ws.DB, ws, parent.ID, WithCascade(true))
+			if archiveErr == nil && len(record.FailedItems) > 0 {
+				return fmt.Errorf("cascade failed items: %+v", record.FailedItems)
+			}
+			return archiveErr
+		},
+		"associate_commit_child": func() error {
+			return AssociateCommit(ctx, ws, ew, child.ID, strings.Repeat("e", 40), "cascade concurrent commit", "u172-tester")
+		},
+	})
+
+	var commitErr error
+	for _, result := range results {
+		requireU172NoLockOrderRaceFailure(t, result)
+		if result.name == "cascade_archive_parent" {
+			require.NoError(t, result.err)
+		}
+		if result.name == "associate_commit_child" {
+			commitErr = result.err
+		}
+	}
+	u20AssertArtifactCoherent(t, ws, parent.ID)
+	u20AssertArtifactCoherent(t, ws, child.ID)
+	require.Contains(t, readU172ItemLogEventTypes(t, ws, parent.ID), "archived")
+	childEvents := readU172ItemLogEventTypes(t, ws, child.ID)
+	require.Contains(t, childEvents, "archived")
+	if commitErr == nil {
+		require.Contains(t, childEvents, "commit_tracked")
+	}
 }
 
 func TestU172_Race_ReconcileArchivedLifecycleBatchAndSameItemWriterConverge(t *testing.T) {
@@ -79,5 +122,15 @@ func requireU172NoLockOrderRaceFailure(t *testing.T, result u20GuardedResult) {
 	}
 	require.Falsef(t, errors.Is(result.err, blerrors.ErrGateInProgress), "%s returned lock contention: %v", result.name, result.err)
 	require.Falsef(t, errors.Is(result.err, ErrShipmentReconcileLockBusy), "%s returned reconcile lock contention: %v", result.name, result.err)
+	if errors.Is(result.err, ErrTaskBusy) {
+		// AssociateCommit takes the artifact mutation lock with TryLock by design,
+		// so a concurrent archive/reconcile on the same item may legitimately make
+		// it refuse cleanly. That refusal must be a not-applied partial with no
+		// side effects; bounded-wait writers must never surface ErrTaskBusy.
+		require.Truef(t, strings.HasPrefix(result.name, "associate_commit"), "%s returned artifact lock contention: %v", result.name, result.err)
+		var partialErr *blerrors.MutationPartialError
+		require.Truef(t, errors.As(result.err, &partialErr), "%s try-lock refusal must be a mutation partial: %v", result.name, result.err)
+		require.Equalf(t, "not-applied", partialErr.Class, "%s try-lock refusal must be not-applied: %v", result.name, result.err)
+	}
 	require.NotContains(t, result.err.Error(), "item log lock", "%s returned item-log lock contention: %v", result.name, result.err)
 }

@@ -141,6 +141,49 @@ func TestU172_RemoveArtifactLinkPreservesDBOnlyPolicyAndNoOpBranch(t *testing.T)
 	})
 }
 
+func TestU172_ArchivedStatusGuardReadsMarkdownNotDBProjection(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	source, err := CreateArtifact(ctx, ws, "projection source", "feature")
+	require.NoError(t, err)
+	target, err := CreateArtifact(ctx, ws, "projection target", "feature")
+	require.NoError(t, err)
+	require.NoError(t, AddArtifactLink(ctx, ws, source.ID, target.ID, "related_to"))
+	require.NoError(t, setArchivedStatusForTest(ctx, ws, source.ID, string(ShipmentShipped)))
+
+	projected, err := db.GetItem(ctx, ws.DB, source.ID)
+	require.NoError(t, err)
+	require.Empty(t, projected.ArchivedStatus, "SQLite fast-path projection omits archived_status")
+
+	err = guardArchivedStatusUnchangedSince(ws, source.ID, projected.ArchivedStatus)(ctx)
+	assert.ErrorIs(t, err, blerrors.ErrShipmentConflict, "a zero-valued projected snapshot must not compare equal to the Markdown value")
+
+	require.NoError(t, guardArchivedStatusUnchangedSince(ws, source.ID, string(ShipmentShipped))(ctx))
+
+	require.NoError(t, RemoveArtifactLink(ctx, ws, source.ID, target.ID, "related_to"))
+	updated := readArtifactForTest(t, ctx, ws, source.ID)
+	assert.Equal(t, string(ShipmentShipped), updated.ArchivedStatus)
+	assert.Empty(t, updated.Links)
+}
+
+func TestU172_BulkUpdateStatusNoFalseConflictForStableArchivedStatus(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	feature, err := CreateArtifact(ctx, ws, "stable bulk feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "stable bulk task", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	require.NoError(t, setArchivedStatusForTest(ctx, ws, task.ID, string(ShipmentShipped)))
+
+	result, err := BulkUpdateStatus(ctx, ws.DB, ws, []string{task.ID}, string(models.StatusActive))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.Succeeded)
+	assert.Empty(t, result.Failed)
+	assert.Empty(t, result.FailedDetails)
+}
+
 func setArchivedStatusForTest(ctx context.Context, ws *Workspace, id, archivedStatus string) error {
 	artifact, err := findArtifact(ctx, ws, id)
 	if err != nil {

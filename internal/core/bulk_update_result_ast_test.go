@@ -53,7 +53,7 @@ func findStructType(t *testing.T, file *ast.File, name string) *ast.StructType {
 			return structType
 		}
 	}
-	require.Failf(t, "%s is not declared in parsed source", name)
+	require.Failf(t, "struct not declared", "%s is not declared in parsed source", name)
 	return nil
 }
 
