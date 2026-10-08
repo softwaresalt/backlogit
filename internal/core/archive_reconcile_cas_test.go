@@ -324,3 +324,74 @@ func TestU172_ReconcileArchivedLifecycleReArchiveStepDetectsConcurrentStatusChan
 	assert.NotContains(t, events, "lifecycle_reconciliation",
 		"a refused re-archive must not report reconciliation completion")
 }
+
+// TestU172_ReconcileArchivedLifecycleReArchiveStepDetectsConcurrentDeletion
+// deletes the item after the reconciliation set step released B and before the
+// re-archive locates it (inside the re-archive's own B critical section), and
+// asserts the vanished item is classified as a compare-and-swap conflict with a
+// durable conflict audit event rather than a generic forward recovery
+// (172.003-T, PR #485 Copilot round 2).
+func TestU172_ReconcileArchivedLifecycleReArchiveStepDetectsConcurrentDeletion(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	item, err := CreateArtifact(ctx, ws, "reconcile re-archive vanished", "feature")
+	require.NoError(t, err)
+	_, err = ArchiveItem(ctx, ws.DB, ws, item.ID)
+	require.NoError(t, err)
+
+	const targetStatus = "done"
+	queueDir := filepath.Join(workspaceStorageRoot(ws), "queue")
+	var (
+		deleteOnce sync.Once
+		deleted    bool
+		deleteErr  error
+	)
+	previousHook := artifactMutationLockBarrierHook
+	artifactMutationLockBarrierHook = func(artifactID string) {
+		if artifactID != item.ID {
+			return
+		}
+		path, findErr := FindArtifactPath(ctx, ws, item.ID)
+		if findErr != nil || filepath.Clean(filepath.Dir(path)) != filepath.Clean(queueDir) {
+			return
+		}
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return
+		}
+		fm, _, parseErr := models.ParseFrontmatter(string(raw))
+		if parseErr != nil || fm["status"] != targetStatus {
+			// Only the re-archive acquisition observes the item at targetStatus.
+			return
+		}
+		deleteOnce.Do(func() {
+			deleteErr = os.Remove(path)
+			deleted = deleteErr == nil
+		})
+	}
+	t.Cleanup(func() { artifactMutationLockBarrierHook = previousHook })
+
+	result, err := ReconcileArchivedLifecycle(ctx, ws.DB, ws, ReconciliationRequest{
+		ItemIDs:      []string{item.ID},
+		TargetStatus: targetStatus,
+		Reason:       "re-archive vanished",
+		Actor:        "test-actor",
+	})
+
+	require.NoError(t, deleteErr)
+	require.True(t, deleted, "barrier hook never observed the item at the re-archive step")
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.True(t, errors.Is(err, blerrors.ErrShipmentConflict), "expected ErrShipmentConflict, got %v", err)
+	assert.True(t, errors.Is(err, blerrors.ErrNotFound), "expected the not-found cause to be preserved, got %v", err)
+
+	_, err = FindArtifactPath(ctx, ws, item.ID)
+	assert.True(t, errors.Is(err, blerrors.ErrNotFound), "a refused re-archive must not resurrect a deleted item")
+	events := readU172ItemLogEventTypes(t, ws, item.ID)
+	assert.Contains(t, events, "lifecycle_reconciliation_conflict",
+		"a vanished item at re-archive must leave a durable conflict audit event")
+	assert.NotContains(t, events, "lifecycle_reconciliation_forward_recovery",
+		"a vanished item is a concurrent change, not a forward-recovery case")
+	assert.NotContains(t, events, "lifecycle_reconciliation",
+		"a refused re-archive must not report reconciliation completion")
+}

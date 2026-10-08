@@ -121,6 +121,12 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	operationCtx := ctx
 	lockedCtx, releaseLocks, lockErr := lockArchiveGovernance(ctx, database, ws, itemID, cfg.cascade)
 	if lockErr != nil {
+		if cfg.expectedStatus != nil && errors.Is(lockErr, blerrors.ErrNotFound) {
+			// The caller expected the item at a known status; it vanishing while
+			// B was being acquired is a concurrent change, not a lookup failure.
+			return nil, fmt.Errorf("archive item %s: artifact no longer exists (expected status %q): %w: %w",
+				itemID, *cfg.expectedStatus, blerrors.ErrShipmentConflict, lockErr)
+		}
 		return nil, fmt.Errorf("archive item %s: acquire governed locks: %w", itemID, lockErr)
 	}
 	archiveLocksReleased := false
@@ -166,6 +172,12 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 	backlogDir := workspaceStorageRoot(ws)
 	currentPath, err := FindArtifactPath(ctx, ws, itemID)
 	if err != nil {
+		if cfg.expectedStatus != nil && errors.Is(err, blerrors.ErrNotFound) {
+			// The caller expected the item at a known status; it vanishing after
+			// B was taken is a concurrent change, not a plain lookup failure.
+			return nil, fmt.Errorf("archive %s: artifact no longer exists (expected status %q): %w: %w",
+				itemID, *cfg.expectedStatus, blerrors.ErrShipmentConflict, err)
+		}
 		return nil, fmt.Errorf("find artifact: %w", err)
 	}
 
