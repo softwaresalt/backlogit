@@ -1,6 +1,6 @@
 ---
-title: "Stage PR 487 findings: corrections applied, validation pending"
-description: "Provenance, CT sequencing, and durable evidence corrections are verified; external markdownlint remains required before checkpoint resolution."
+title: "Stage PR 487/489 findings: provenance and continuity corrections"
+description: "Complete stash provenance and CT pre-claim semantics are verified; prior validation completed and the selected Stage checkpoint is resolved."
 doc_type: reference
 source: docs/memory/2026-10-08/stage-copilot-findings-memory.md
 schema_version: "1.0"
@@ -8,9 +8,17 @@ chunk_strategy: h1-h2-h3
 ingested_at: "2026-10-09T04:48:31Z"
 ---
 
-# Stage PR 487 findings: corrections applied, validation pending
+# Stage PR 487/489 findings: provenance and continuity corrections
 
 ## Scope and status
+
+The current operator-authorized follow-up is findings A-D (six review
+findings grouped by correction) on PR #489, branch
+`chore/stage-copilot-findings-2026-10-08`, starting HEAD `f2900db9`.
+It extends the earlier artifact-repair scope below only to the specified
+provenance fields, CT wording, completion memory, and checkpoint closure.
+No Go, test, config, lock, PR-body, branch, or push changes are authorized.
+The earlier scope and interrupted baseline below are historical.
 
 Operator-authorized scope is findings 1-3 on merged PR 487. Finding 4,
 PR 488, existing memory, PR bodies, application code, tests, configuration,
@@ -85,8 +93,10 @@ Rollback: revert only this correction's allowlisted local commit.
 ActionResult: applied; native provenance, DAG, and doctor proofs passed.
 
 P-010 boundary: Stage cannot execute markdownlint or any other linter.
-The operator/Orchestrator must run the requested pinned markdownlint
-command; the selected checkpoint remains active until validation succeeds.
+The Orchestrator completed markdownlint on the prior 34 files with zero
+issues, as confirmed by the operator for this run. That old validation wait
+is complete. This run's changed Markdown requires a separate Orchestrator
+lint pass; Stage does not execute or delegate it.
 
 ### Interrupted batch (historical)
 
@@ -135,12 +145,14 @@ the failed batch. No lock was acquired on the shipment or configuration.
 - [x] Membership and queue positions unchanged for CT and 152-S.
 - [x] Durable evidence and references repaired; docline authoring fields
   reviewed against the source contract (reference is a recognized doc_type).
-- [ ] Markdownlint: requires Orchestrator execution, not Stage.
+- [x] Prior-batch markdownlint: 34 files, zero issues, run by Orchestrator.
 - [x] Backlog doctor: exactly the 23 pre-existing orphans, no other findings.
 - [x] Local correction commit: 33 allowlisted artifacts, config excluded.
-- [x] Native readback validated the updated active checkpoint as conforming.
-- [ ] Session-end final index refresh (performed after continuity commit).
-- [ ] Resolve selected checkpoint only after successful external validation.
+- [x] Native readback validated the updated resolved checkpoint as conforming.
+- [x] Session-end index refresh: 1,964 artifacts after correction commit and
+  checkpoint resolution; repeat after continuity commit before handoff.
+- [x] Selected checkpoint resolved after prior external validation was
+  confirmed and all other review fixes completed.
 
 Steps 1, 1.5, 1.8, 2, 3, 4, 5, 5.5, and 5.6 are inherited approved state
 from the completed staging, not gates bypassed or work to replay. There is
@@ -148,24 +160,43 @@ no new intake, deliberation outcome, implementation scope, harvest, shipment,
 or stash archival in this correction session. Continuous-learning and
 compound capture are not triggered: this is bounded artifact repair.
 
-This is not a completed validation handoff. Active Stage checkpoint:
-`checkpoint-20261009-044824.json`. Its original force-release/reacquisition
-resume hint is superseded by the operator's single-agent decision above.
-Do not acquire, release, delete, or force locks on resumption.
+The prior validation blocker is cleared. The operator explicitly selected
+`checkpoint-20261009-044824.json` for owner-Stage closure after this run's
+corrections. Its lock-recovery and validation-pending hints are obsolete.
+Do not acquire, release, delete, or force locks.
 
 ## Applied provenance map and proof
 
-Only `custom_fields.source_stash_id` was added to the existing canonical
-task Markdown, the source of truth for rehydration. No artifact body,
-acceptance criterion, label, parent, archive record, or index/cache was
-hand-edited. The update MCP and CLI do not expose arbitrary custom fields;
-canonical Markdown plus native sync is the supported existing mechanism.
-The source contract is `internal/db/rehydration.go:137-143,621-653`.
+The first correction added only `custom_fields.source_stash_id`. PR #489
+review correctly identified that this recreated links but overwrote the
+archived stash priority/kind/text with incomplete artifact-derived values
+during rehydration. This run backfills the full normal-harvest metadata:
+`source_stash_id`, `source_stash_priority`, `source_stash_kind`,
+`source_stash_text`, and `source_stash_path` (`stash.jsonl`).
+`source_deliberation_id` is conditional in the normal harvest; none of the
+29 archived entries has that field, so it remains absent rather than
+invented from free-text references.
+
+All values come verbatim from `.backlogit/archive/stash.jsonl`.
+No artifact body, acceptance criterion, label, parent, archive record, or
+index/cache was hand-edited. The update MCP and CLI do not expose arbitrary
+custom fields; canonical Markdown plus native sync is the supported
+existing mechanism. Contracts: `internal/core/stash.go:344-353`,
+`internal/db/rehydration.go:621-653`, and `internal/db/stash.go:168-181`.
 
 Every selected task appears in its stash archive's explicit task_ids.
 For entries covering multiple tasks, the existing labels/body retain the
 full traceability set; the scalar field selects one of those tasks as the
-canonical indexed link. No new historical harvest is fabricated to bypass
+canonical indexed link. Conversely, nine canonical artifacts carry multiple
+stash IDs in their bodies: 197.001-T, 197.003-T, 197.004-T, 197.009-T,
+197.010-T, 197.011-T, 197.019-T, 200.011-T, and 200.012-T.
+`stashRecordFromArtifact` reads only one string `source_stash_id`; it neither
+expands a list nor derives additional rows from labels/body text.
+Their complete many-to-many relationships cannot be represented by that
+scalar rehydration contract. Each of the 29 distinct stash entries does
+have its own distinct canonical artifact, so all 29 canonical links and
+full stash records are representable without changing Go or fabricating
+extra artifacts. No new historical harvest is fabricated to bypass
 `CorrectStashProvenance`'s unmet prior-harvest precondition.
 
 | Stash ID | Canonical artifact | Fresh-sync result |
@@ -217,8 +248,11 @@ Native `backlogit_add_dependency` added only
 After rehydration, native SQL verified:
 
 - Blocks edges: 1,388 to 1,389; transitive-closure cycle count remains zero.
-- Dependency-ready set: `{197-S, 198-S}` to `{197-S}`.
-- 198-S stays queued but is withheld while 197-S is not shipped.
+- Dependency-ready set for the newly assembled 197-S through 201-S
+  cohort: `{197-S, 198-S}` to `{197-S}`.
+- 198-S stays queued but is withheld from dependency-aware queue results
+  while 197-S is unresolved. Queue resolution accepts six terminal statuses,
+  including abandoned; it is not an exactly-shipped guarantee.
 - 152-S retains blocks edges to 154-S, 197-S, and 198-S.
 - 198-S retains all six members, root first, and queue_position 150.
 - 152-S retains all nine members and queue_position 400.
@@ -226,8 +260,14 @@ After rehydration, native SQL verified:
 
 Dependency readiness is not a claim authorization or a topology-gate PASS.
 No claim, lifecycle change, PR edit, or push occurred.
-CT D6, the plan graph, and the residual advisory now record the enforced
-CX prerequisite and this correction's operator authority.
+CT D6, the plan graph, and the residual advisory record the native queue
+edge and this correction's operator authority. The required after-merge
+guarantee is a separate Orchestrator/Ship pre-claim check: read 197-S
+immediately before claiming 198-S and require status exactly `shipped`,
+not abandoned or another terminal status. `ClaimShipment` only checks
+queued status and the active slot; it does not enforce dependencies.
+A Go claim-time guard is noted only as a future candidate in the decision;
+no new implementation scope or stash capture was required.
 
 ## Durable evidence and verification limits
 
@@ -246,7 +286,7 @@ Doctor at 2026-10-09T05:01:09Z reported only 016.001-R and
 106.012-T through 106.033-T as orphans: 23 pre-existing, out of scope.
 No automatic repair was requested.
 
-## Remaining cursor
+## PR #489 follow-up run and verification
 
 Local correction commit:
 `f255156e165e98e0cee1052b56f16fc6db2560e8`
@@ -254,20 +294,86 @@ Local correction commit:
 It contains exactly the 29 canonical task files, 198-S, the two CT planning
 files, and the new evidence: 33 artifacts. The dirty operator-owned config
 and every lock file were excluded. No active Git commit hook was installed.
-This note and the updated active checkpoint are the only two remaining
-continuity artifacts to commit locally; a final index refresh follows.
-No commit has been pushed.
+The prior correction and continuity are already committed through starting
+HEAD `f2900db9`. This run changes 29 canonical tasks, the two CT planning
+documents, `stage-corrective-resume-completion-memory.md`, this note, and
+the selected checkpoint: 33 Markdown files plus one JSON file.
+Correction commit:
+`cae15841ee7ae0660e14e45e09eb00c1c4fcca5c`
+(`fix(docs): preserve full stash provenance and narrow CT claim semantics`).
+It contains 32 Markdown files; checkpoint and this memory are committed
+separately as continuity closure artifacts.
+198-S has no prose claiming native claim enforcement, so its manifest is
+unchanged; the edge itself is preserved.
 
-The operator/Orchestrator must run
-`npx markdownlint-cli2@0.23.1` against the changed Markdown files.
-Stage does not execute or delegate a prohibited linter run. After a
-successful result is supplied, resolve only
-`checkpoint-20261009-044824.json` via backlogit_resolve_checkpoint,
-record the validation in this note, and commit the closure artifacts.
-Do not reapply the corrections, reharvest, or duplicate the dependency.
+ProposedAction: non-destructive provenance and planning-state repair only.
+ActionRisk: moderate (indexed provenance and execution-order wording).
+Approval: explicit operator authorization for PR #489 findings A-D.
+Rollback: revert only this run's allowlisted local commits.
+ActionResult: edits applied and data/graph proofs passed.
 
-The checkpoint was updated in place as a planning-state artifact, not
-resolved or replaced with a second active checkpoint. Native get_checkpoint
-confirmed agent stage, status active, valid true, conforming true, and zero
-unknown fields. Its phase now records the external validation wait rather
-than the obsolete lock blocker.
+### Native verification evidence
+
+* TOOL_OK: version/query/checkpoint reads; ALL_TOOLS_OK.
+* Fresh config schema validation passed; SHA-256 remains
+  `92091d6a5ea44eac34d8f0fd3a43c7cb2dd407213f65a65d9af784b9ac6ac371`.
+* Full checkpoint enumeration: 46 valid summaries, no anomalies, exactly
+  one active Stage checkpoint (the operator-selected file). Native get
+  confirmed Stage ownership, valid/conforming true, no unknown fields.
+  Engram was reachable but its indexed branch is main; cited current
+  code was read directly rather than trusting a mismatched branch index.
+  Recovery retained the bounded correction cursor and did not replay work.
+* INDEX_SYNC_OK: native sync indexed 1,964 artifacts before and after
+  provenance edits. No fallback was needed in this run.
+* Native `backlogit_query_sql` read all 29 full stash records after sync.
+  Each record was compared exactly with the archived JSONL: priority,
+  kind, full text, and optional deliberation ID all match 29/29.
+  Source path is `stash.jsonl`, state is harvested, and canonical links
+  match 29/29. Priorities: seven high, 20 medium, two low. Kinds: 28 bug,
+  one task. Full archived text preserved: 43,042 UTF-8 bytes.
+* Parsed artifact comparison against `f2900db9` proved all 29 task bodies
+  and all non-provenance frontmatter unchanged. No source deliberation ID
+  was invented. The five non-harvest dispositions still have zero links.
+* Native recursive SQL audit: 1,389 blocks edges, zero cyclic nodes,
+  zero active shipments. CT still depends on CX; 152-S still depends on
+  154-S, CX, and CT. No edge was added or removed in this follow-up.
+* The dependency-ready set within the new 197-S through 201-S cohort is
+  exactly `{197-S}`. This is not a whole-workspace readiness assertion:
+  unfiltered queue semantics also return pre-existing 147-S, 176-S,
+  177-S, 178-S, 179-S, 183-S, 186-S, and 187-S. None was changed or claimed.
+  Queue readiness is not topology clearance or claim authorization.
+* The SQL read-only gate rejected a leading `WITH`; the equivalent
+  recursive CTE nested beneath `SELECT` succeeded. No index write was
+  attempted through SQL.
+* Doctor at `2026-10-09T05:23:44Z`: exactly 23 pre-existing orphans
+  (016.001-R and 106.012-T through 106.033-T), no other findings.
+  Automatic repair was not requested.
+* Finding D: the earlier completion memory now records that PR #489 added
+  `198-S blocks-on 197-S`, plus the separate exactly-shipped pre-claim duty.
+
+### Continuity and external lint cursor
+
+The operator confirmed prior markdownlint completed: 34 files, zero issues,
+run by Orchestrator; prior HEAD CI was green. Stage ran no builds, tests,
+or linters. These results do not claim validation of this run's new edits.
+After all other fixes were completed and committed, the selected checkpoint
+was updated with this completed validation evidence. Native
+`backlogit_get_checkpoint` verified ownership and conformance before the
+owner-Stage `backlogit_resolve_checkpoint` call succeeded at
+`2026-10-09T05:27:43.9096049Z`. Native readback confirms status `resolved`,
+valid/conforming true, no unknown fields, and the completed prior
+markdownlint evidence intact. This resolved file, not an active snapshot,
+is the continuity artifact being committed. No new recovery candidate was
+created and no Ship-owned checkpoint was touched.
+
+The Orchestrator must lint the 29 canonical task Markdown files in the map
+above, plus these four files (33 total):
+
+* `docs/decisions/2026-10-08-ct-test-suite-health-deliberation.md`
+* `docs/exec-plans/2026-10-08-ct-test-suite-health-plan.md`
+* `docs/memory/2026-10-08/stage-corrective-resume-completion-memory.md`
+* `docs/memory/2026-10-08/stage-copilot-findings-memory.md`
+
+No push, PR-body edit, new branch, application/config change, shipment
+claim/closure, or lock operation occurred. The dirty config and all stale
+lock files stay untouched and excluded from commits.
