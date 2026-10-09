@@ -196,3 +196,21 @@ option A stands.
   `docs/decisions/2026-09-13-shipment-claim-scheduler-reconciliation-deliberation.md`
   and
   `docs/decisions/2026-09-20-shipment-claim-wave-scheduler-convergence-deliberation.md`.
+
+## Amendment E52607F5 (2026-10-08): claim recovery for cascaded non-queued member-parents
+
+`ClaimShipment`'s bounded parent cascade can move a manifest member-parent
+whose preimage is not `queued` (for example `review`, `done`, or
+`blocked` with no blocked child) to `active` when a queued child member
+activates first. Claim crash recovery then rejected that mid-claim state with
+`ErrShipmentConflict`. Source: stash E52607F5 (PR #466, review thread
+PRRT_kwDORzozKM6ncEMm).
+
+Decision (option B in
+`docs/decisions/2026-10-08-stage-foldins-and-dispositions.md`, F2): the
+producer rules above are unchanged. Such a member is still neither marked nor
+unmarked. Claim crash recovery additionally accepts an unmarked `active`
+state for a member whose preimage is not `queued`, and rollback restores
+that member's exact preimage. Any other divergence still fails closed. The
+change is implemented and regression-tested by the 189-F fold-in tasks
+listed in `docs/exec-plans/2026-10-08-stage-foldins-plan.md`.

@@ -2801,3 +2801,17 @@ Step 0.5b, per-task baselines, or the no-empty-commit rule.
    `git stash drop` (other than rule 4's post-apply drop, which follows a verified clean
    apply and so matches a successful `pop`), `git stash clear`, `git reset --hard`, and
    `git clean`.
+
+## Amendment 4 Pointer: R4(c) superseded by CX (2026-10-08)
+
+Requirement R4(c) bound the shipment manifest to exactly one of the default
+`<storage>/queue/<id>.md` or `<storage>/archive/<id>.md` locations. Stash
+8F1CF1E1 (PR #478, review thread PRRT_kwDORzozKM6pqgRI) showed that a valid
+workspace with a non-default queue root then fails closed on every Ship
+invocation. Requirement R7 of
+`docs/exec-plans/2026-10-08-cx-s-ship-closure-gate-correctness-plan.md`
+supersedes R4(c): the manifest must exist in exactly one of the attested
+`workspace.queue_path` or `workspace.archive_path` directories, each
+contained in the served storage root. The U1 harness literal changes in the
+same CX release (CX unit U3). All other requirements of this plan are
+unchanged.
