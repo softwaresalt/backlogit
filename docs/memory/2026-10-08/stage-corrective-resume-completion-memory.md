@@ -11,7 +11,9 @@ source: docs/memory/2026-10-08/stage-corrective-resume-completion-memory.md
 
 ## Authoritative status
 
-Output gate: PASS. Local commit finalization is in progress.
+Output gate: PASS. Required planning and backlog commits succeeded.
+The selected Stage checkpoint is resolved. Owned intake and final recovery
+evidence are included in the final chore commit containing this record.
 This record supersedes the blocked status in the earlier P-003 and config
 memory records; their historical decisions, mappings, edges, and dispositions
 remain preserved.
@@ -60,7 +62,9 @@ and was not acted on.
 The resolved output-gate audit snapshot is
 `checkpoint-20261009-013356.json`. It is a historical milestone record,
 not another active recovery cursor. The operator-selected recovery checkpoint
-remains active until the authorized local commits succeed.
+remained active until the required planning/backlog commits succeeded.
+It was then resolved at `2026-10-09T01:39:16.1603859Z`; no other recovery
+checkpoint was resolved during this continuation.
 
 ## Shipment handoff tokens
 
@@ -169,10 +173,17 @@ chore commit.
 
 - Planning/decision commit:
   `a48cd17f63ae6d17d8aea744972b75f354e86b90`.
-- Queue/backlog artifact commit: pending.
-- Final owned intake, memory, and resolved-checkpoint chore commit: pending.
-- Selected checkpoint resolution: pending authorized local commits.
-- Final index synchronization: pending final mutations.
+- Queue/backlog artifact commit:
+  `8f8cfe3da287308bbb3135b88af02d7fda105bdd`.
+- Final owned intake, memory, and resolved-checkpoint chore commit:
+  the commit containing this finalized memory record, subject
+  `chore(core): archive corrective intake and finalize Stage recovery`.
+  Its own hash is obtained from Git HEAD rather than embedded in its content.
+- Selected checkpoint resolution: complete, filename
+  `checkpoint-20261009-005935.json`, resolved at
+  `2026-10-09T01:39:16.1603859Z`.
+- Index synchronization succeeded after the repair and before checkpoint
+  resolution. A final repeat follows the final chore commit before the report.
 
 Every commit must use explicit owned paths, remain local on main, and exclude
 the operator-owned `.autoharness/config.yaml` and logs backup.
@@ -196,10 +207,20 @@ Configuration SHA-256 before/after Stage operations:
   parent/reference/source checks, and per-plan unit mapping.
 - [x] Step 5.5: five corrective manifests and accepted fold-in hosts verified.
 - [x] Step 5.6: 34 source/duplicate/fixed stash dispositions verified.
-- [ ] Commit/checkpoint finalization and final index sync.
-- [ ] Step 6: concise final report, only after finalization.
+- [x] Required local planning and backlog commits succeeded.
+- [x] Only the operator-selected recovery checkpoint resolved.
+- [x] Final owned intake/recovery commit scope prepared and verified.
+- [x] Step 6 facts assembled; emit the concise report only after the final
+  chore commit and ending index-sync result are verified.
 
 Continuous-learning observe/learn/evolve skill files are absent in this
 workspace; no learning-store mutation or routing-drift remediation was made.
 No new compound solution or additional deliberation was needed for this
 operator-specified persistence repair. Relevant session memory remains bounded.
+
+## Remaining execution obligations
+
+No Stage planning/output blocker remains. Source benchmark/spike decisions,
+runtime green evidence, closure registration implementation, and claim-time
+gates remain future Ship work. Pending-green and rejected stash entries stay
+active. No shipment was claimed or closed by Stage.
