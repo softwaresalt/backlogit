@@ -47,40 +47,47 @@ overrides: {}
 # Model routing preferences (map tiers to model identifiers and per-tier config)
 model_routing:
   tier1:
-    model: gpt-6-luna              # Fast/cheap: memory, docs, compaction
+    model: claude-haiku-5.5              # Fast/cheap: memory, docs, compaction (e.g., gpt-5.4-mini)
     reasoning_effort: "xhigh"  # Leave empty to use model default
-    model_provider: "openai"       # e.g., openai, anthropic — leave empty for default
-    model_family: "gpt-6-luna"           # Resolved into Tier 1 agent frontmatter
+    model_provider: "anthropic"       # e.g., openai, anthropic — leave empty for default
+    model_family: "claude-haiku-5.5"           # Resolved into Tier 1 agent frontmatter
+    context_tier: "default"        # 194-F/C7: context-capacity class (default | long_context)
   tier2:
     model: claude-sonnet-5.5
     reasoning_effort: "high"
     model_provider: "anthropic"
     model_family: "claude-sonnet-5.5"
+    context_tier: "default"
   tier3:
     model: "gpt-6.1-sol"
     model_family: "gpt-6.1-sol"
     model_provider: "openai"
     reasoning_effort: "xhigh"
+    context_tier: "default"
   orchestrator:
     model_family: "claude-opus-5.5"
     reasoning_effort: "high"
     model_provider: "anthropic"
+    context_tier: "default"
   stage:
     model_family: "claude-opus-5.5"             # Stage role route (falls back to tier3 when empty)
     model_provider: "anthropic"
     reasoning_effort: "high"
+    context_tier: "default"
   ship:
-    model_family: "gpt-6-luna"
-    model_provider: "openai"
+    model_family: "claude-haiku-5.5"             # Ship role route (falls back to tier2 when empty)
+    model_provider: "anthropic"
     reasoning_effort: "xhigh"
+    context_tier: "long_context"   # 194-F/C4a operator ruling 5a: Ship pin
     escalation:
-      model_provider: "anthropic"
       model_family: "claude-sonnet-5.5"
+      model_provider: "anthropic"
       reasoning_effort: "high"
+      context_tier: "default"               # unset: resolves tier3 -> default (D-C2)
   anchor_review:
-    model_family: "gpt-6.1-sol"
-    model_provider: "openai"
-    reasoning_effort: "xhigh"  # Leave empty to use model default
+    model_provider: "openai"       # Anchor reviewer provider (default: openai)
+    model_family: "gpt-6.1-sol"           # Anchor reviewer family (default: gpt-5.6-sol)
+    reasoning_effort: "high"  # Leave empty to use model default
   alt_doc_review:
     # Alternate route for the doc-review skill's review pass. Deliberately a
     # third provider (tiers are mostly Anthropic — tier1 is OpenAI — and
@@ -89,7 +96,6 @@ model_routing:
     # reasoning_effort). Clearing either field falls back to Tier 2.
     model_provider: "google"
     model_family: "gemini-3.8-flash"
-
 # Continuous-learning capability pack. Observations/instincts/learned artifacts
 # live under .autoharness/ alongside the rest of the harness-managed state.
 continuous_learning:
