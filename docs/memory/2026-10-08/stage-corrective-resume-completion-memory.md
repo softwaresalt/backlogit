@@ -118,8 +118,14 @@ Before PR #489's CT-to-CX edge correction, native
 - CT now blocks on CX: `198-S blocks-on 197-S` was added in PR #489.
   The edge withholds CT from dependency-aware queue results until CX is
   resolved. T5 requires CX merged before runtime verification, so
-  Orchestrator/Ship must separately require 197-S status exactly `shipped`
-  before claiming 198-S; native claim does not enforce dependencies.
+  Orchestrator/Ship must separately read 197-S from canonical Markdown
+  (not the SQLite index, which does not project `archived_status`)
+  immediately before claiming 198-S and require effective shipped provenance:
+  `status: shipped`, or `status: archived` with `archived_status: shipped`
+  (the normal post-`ShipShipment` form). Abandoned (live or
+  archived-from-abandoned), rejected, any other terminal state, and missing
+  or unparsable provenance FAIL CLOSED; native claim does not enforce
+  dependencies.
 
 These are planning/DAG checks, not claim-time topology-gate clearance or
 runtime-green claims.

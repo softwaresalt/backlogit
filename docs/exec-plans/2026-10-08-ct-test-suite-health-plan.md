@@ -215,8 +215,13 @@ per-package times.
   edge withholds CT from dependency-aware queue results until CX is resolved,
   but queue filtering accepts done, accepted, archived, shipped, abandoned,
   and rejected. `ClaimShipment` does not check dependencies.
-  Orchestrator/Ship MUST separately verify that 197-S is exactly `shipped`
-  immediately before claiming 198-S; abandoned or any other terminal status
-  does not satisfy T5's after-CX-merge requirement. Queue positions and
-  shipment membership remain unchanged. No implementation scope is added.
+  Orchestrator/Ship MUST separately read 197-S from canonical Markdown
+  (not the SQLite index, which does not project `archived_status`)
+  immediately before claiming 198-S and require effective shipped provenance:
+  `status: shipped`, or `status: archived` with `archived_status: shipped`
+  (the normal post-`ShipShipment` form). Abandoned (live or
+  archived-from-abandoned), rejected, any other terminal state, and missing
+  or unparsable provenance FAIL CLOSED and do not satisfy T5's after-CX-merge
+  requirement. Queue positions and shipment membership remain unchanged.
+  No implementation scope is added.
 * operator_authorization: approved (operator APPROVED this scope and directed autonomous work without routine confirmations, relayed by the Orchestrator on 2026-10-08)

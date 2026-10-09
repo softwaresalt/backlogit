@@ -108,9 +108,13 @@ look fixed in code. They can't be closed as fixed while the suite is red.
   six terminal statuses: done, accepted, archived, shipped, abandoned, and
   rejected. It does not establish the after-merge guarantee, and
   `ClaimShipment` checks queued status and the active slot, not dependencies.
-  Orchestrator/Ship MUST separately read 197-S immediately before claiming
-  198-S and require its status to be exactly `shipped`; abandoned or any other
-  terminal status is insufficient. queue_position 150 remains an ordering
+  Orchestrator/Ship MUST separately read 197-S from canonical Markdown
+  (not the SQLite index, which does not project `archived_status`)
+  immediately before claiming 198-S and require effective shipped provenance:
+  `status: shipped`, or `status: archived` with `archived_status: shipped`
+  (the normal post-`ShipShipment` form). Abandoned (live or
+  archived-from-abandoned), rejected, any other terminal state, and missing
+  or unparsable provenance FAIL CLOSED. queue_position 150 remains an ordering
   preference, not a readiness gate. No new edge involving 141-S is added.
   Correction authority: the operator's 2026-10-08 authorization for finding 2
   on merged PR #487 supersedes the earlier direction that CT had no blocker.
@@ -121,9 +125,9 @@ look fixed in code. They can't be closed as fixed while the suite is red.
   verification run.
 * Out of scope: changes to production lock semantics, test timeout policy, and
   package splits. These are spike outputs for later triage.
-* Follow-up candidate only: a native Go claim-time dependency guard. This
-  correction documents the existing pre-claim duty and adds no implementation
-  scope or new stash entry.
+* The native Go claim-time dependency guard is already tracked by queued
+  feature 184-F (source stash 6434A4D7). This correction documents the existing
+  pre-claim duty and adds no implementation scope or new stash entry.
 
 ## P-021 C5/C6 Records
 

@@ -262,12 +262,17 @@ Dependency readiness is not a claim authorization or a topology-gate PASS.
 No claim, lifecycle change, PR edit, or push occurred.
 CT D6, the plan graph, and the residual advisory record the native queue
 edge and this correction's operator authority. The required after-merge
-guarantee is a separate Orchestrator/Ship pre-claim check: read 197-S
-immediately before claiming 198-S and require status exactly `shipped`,
-not abandoned or another terminal status. `ClaimShipment` only checks
-queued status and the active slot; it does not enforce dependencies.
-A Go claim-time guard is noted only as a future candidate in the decision;
-no new implementation scope or stash capture was required.
+guarantee is a separate Orchestrator/Ship pre-claim check: read 197-S from
+canonical Markdown (not the SQLite index, which does not project
+`archived_status`) immediately before claiming 198-S and require effective
+shipped provenance: `status: shipped`, or `status: archived` with
+`archived_status: shipped` (the normal post-`ShipShipment` form).
+Abandoned (live or archived-from-abandoned), rejected, any other terminal
+state, and missing or unparsable provenance FAIL CLOSED. `ClaimShipment`
+only checks queued status and the active slot; it does not enforce
+dependencies.
+Queued feature 184-F (source stash 6434A4D7) already tracks the native Go
+claim-time guard; no new implementation scope or stash entry was added.
 
 ## Durable evidence and verification limits
 
