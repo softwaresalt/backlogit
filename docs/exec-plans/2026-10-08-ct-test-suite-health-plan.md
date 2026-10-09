@@ -132,12 +132,16 @@ AC:
 
 ```text
 T1, T2, T3 -> T5; T4 independent
-Shipments: CT blocks on nothing (operator direction); 152-S blocks-on CT
+Shipments: 198-S (CT) blocks-on 197-S (CX)
+152-S retains blocks-on 197-S (CX) and 198-S (CT)
 ```
 
 ## Decisions
 
 * D1-D6 are in the deliberation. queue_position is 150.
+* The operator-authorized PR #487 finding-2 correction makes the existing
+  T5 after-CX-merge requirement an explicit shipment prerequisite.
+  queue_position alone is not evidence of dependency readiness.
 
 ## Risks
 
@@ -205,5 +209,19 @@ per-package times.
 * attempt: 1
 * reviewers: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor, Architecture Strategist
 * findings and revisions: T2 and T3 declare harness-ready red assertions; T2 helper location and restore order fixed, AC compares against saved values; T1 names bkerrors.ErrGateInProgress; T5 no longer waits on T4 and has a red-run policy; T5 runs after CX merges.
-* residual advisory: Architecture Strategist recommended CT blocks-on CX. Not adopted: the operator directed that CT blocks on nothing; queue_position 150 (after CX at 100) gives the intended order.
+* residual advisory disposition: Architecture Strategist's CT blocks-on CX
+  recommendation is now adopted under the operator's 2026-10-08 PR #487
+  finding-2 correction authorization. The native `198-S blocks-on 197-S`
+  edge withholds CT from dependency-aware queue results until CX is resolved,
+  but queue filtering accepts done, accepted, archived, shipped, abandoned,
+  and rejected. `ClaimShipment` does not check dependencies.
+  Orchestrator/Ship MUST separately read 197-S from canonical Markdown
+  (not the SQLite index, which does not project `archived_status`)
+  immediately before claiming 198-S and require effective shipped provenance:
+  `status: shipped`, or `status: archived` with `archived_status: shipped`
+  (the normal post-`ShipShipment` form). Abandoned (live or
+  archived-from-abandoned), rejected, any other terminal state, and missing
+  or unparsable provenance FAIL CLOSED and do not satisfy T5's after-CX-merge
+  requirement. Queue positions and shipment membership remain unchanged.
+  No implementation scope is added.
 * operator_authorization: approved (operator APPROVED this scope and directed autonomous work without routine confirmations, relayed by the Orchestrator on 2026-10-08)
