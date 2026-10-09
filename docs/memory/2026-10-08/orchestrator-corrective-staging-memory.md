@@ -25,4 +25,4 @@ date: 2026-10-08
 - 156-S stays do-not-claim until 185-S ships a governed abandon path.
 - Ship routing is blocked: the dirty `.autoharness/config.yaml` fails Ship's clean-main gate. The operator must commit or stash it.
 - The operator's 194-F `context_tier` edits conflict with the installed schema; the schema or agent definitions need updating.
-- The Ship route in the operator's config is now claude-haiku-5.5/anthropic. Confirm it is a supported subagent model before routing.
+- The committed Ship route is gpt-6-luna/openai/xhigh. The operator's uncommitted working-tree edit sets claude-haiku-5.5/anthropic; that route is not committed. Confirm which route applies, and that it is a supported subagent model, before routing.

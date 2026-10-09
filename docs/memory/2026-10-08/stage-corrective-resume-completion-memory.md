@@ -127,6 +127,9 @@ runtime-green claims.
 | 95379DBA | 183.004-T in 183-S, now 5 members | Archived with provenance |
 | 8CCB29CF | Scope correction into surviving active DE3E7B67 | Archived with provenance |
 
+The table holds three fold-ins into existing shipments (152-S, 189-S, 183-S)
+and one stash scope correction (DE3E7B67), which is not a shipment fold-in.
+
 All 34 archived source/duplicate/fixed entry IDs and their disposition
 relationships remain listed in `stage-p003-acceptance-criteria-halt-memory.md`.
 The archive diff contains precisely these 34 entries, including the
