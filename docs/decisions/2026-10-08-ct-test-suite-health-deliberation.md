@@ -10,7 +10,7 @@ depth: standard
 decision_status: accepted
 promoted_to: docs/exec-plans/2026-10-08-ct-test-suite-health-plan.md
 linked_artifacts:
-  - logs/fulltest-2026-10-08.txt
+  - docs/evidence/2026-10-08-ct-full-suite-failure.md
   - docs/decisions/2026-10-08-cx-s-ship-closure-gate-correctness-deliberation.md
 ---
 
@@ -20,7 +20,7 @@ linked_artifacts:
 
 On 2026-10-08 the Orchestrator ran `go test ./... -count=1 -timeout 30m` on
 main at d2f3ff97. It failed with EXIT=1 after 28m41s (evidence
-`logs/fulltest-2026-10-08.txt`). The only failing test was
+`docs/evidence/2026-10-08-ct-full-suite-failure.md`). The only failing test was
 `TestAppendGateEvidence_ConcurrentSameItem_NoDuplicateCounters` in
 internal/core. internal/core took 1656s of the 1800s timeout (92%). Every
 other package passed. The operator asked for a CT group: the new flake entry
@@ -98,13 +98,16 @@ look fixed in code. They can't be closed as fixed while the suite is red.
   the evidence that DB48A817, FF1F3AC7, and 885263D2 are fixed. The three
   entries stay active, annotated with a pointer to that task. Stage archives
   them at the next triage that sees the green closure record.
-* D6: 152-S blocks on CT. Ship runs `go test ./...` before every PR. With an
+* D6: 198-S (CT) blocks on 197-S (CX); 152-S retains its blocks edges to
+  both CX and CT. Ship runs `go test ./...` before every PR. With an
   intermittent internal/core failure and 92% of the timeout budget used, 152-S
   (which adds tests under internal/events and internal/core) has a real chance
-  of a red quality gate for reasons it does not own. CT blocks on nothing. Its
-  queue_position (150) puts it right after CX (100) and before 141-S (300). No
-  edge from 141-S is added because the operator scoped this judgment to 152-S
-  and the queue order already places CT first.
+  of a red quality gate for reasons it does not own. T5 requires CX to have
+  merged, so the native `198-S blocks-on 197-S` edge enforces that prerequisite
+  for CT claim eligibility. queue_position 150 remains an ordering preference,
+  not a readiness gate. No new edge involving 141-S is added.
+  Correction authority: the operator's 2026-10-08 authorization for finding 2
+  on merged PR #487 supersedes the earlier direction that CT had no blocker.
 
 ## Scope Boundaries
 
