@@ -103,9 +103,15 @@ look fixed in code. They can't be closed as fixed while the suite is red.
   intermittent internal/core failure and 92% of the timeout budget used, 152-S
   (which adds tests under internal/events and internal/core) has a real chance
   of a red quality gate for reasons it does not own. T5 requires CX to have
-  merged, so the native `198-S blocks-on 197-S` edge enforces that prerequisite
-  for CT claim eligibility. queue_position 150 remains an ordering preference,
-  not a readiness gate. No new edge involving 141-S is added.
+  merged. The native `198-S blocks-on 197-S` edge keeps CT out of
+  dependency-aware queue results until CX is resolved. Queue filtering accepts
+  six terminal statuses: done, accepted, archived, shipped, abandoned, and
+  rejected. It does not establish the after-merge guarantee, and
+  `ClaimShipment` checks queued status and the active slot, not dependencies.
+  Orchestrator/Ship MUST separately read 197-S immediately before claiming
+  198-S and require its status to be exactly `shipped`; abandoned or any other
+  terminal status is insufficient. queue_position 150 remains an ordering
+  preference, not a readiness gate. No new edge involving 141-S is added.
   Correction authority: the operator's 2026-10-08 authorization for finding 2
   on merged PR #487 supersedes the earlier direction that CT had no blocker.
 
@@ -115,6 +121,9 @@ look fixed in code. They can't be closed as fixed while the suite is red.
   verification run.
 * Out of scope: changes to production lock semantics, test timeout policy, and
   package splits. These are spike outputs for later triage.
+* Follow-up candidate only: a native Go claim-time dependency guard. This
+  correction documents the existing pre-claim duty and adds no implementation
+  scope or new stash entry.
 
 ## P-021 C5/C6 Records
 

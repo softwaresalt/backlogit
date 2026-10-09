@@ -103,17 +103,23 @@ criteria repair.
 
 ### Queue-view result
 
-Native `get_queue(type=shipment, status=queued, limit=50)` returned exactly:
+Before PR #489's CT-to-CX edge correction, native
+`get_queue(type=shipment, status=queued, limit=50)` returned exactly:
 197-S, 198-S, 147-S, 176-S, 177-S, 178-S, 179-S, 183-S, 186-S, 187-S.
 
-- CX is first and CT immediately follows.
+- CX was first and CT immediately followed in that historical result.
+  The current dependency-ready set for the new 197-S through 201-S cohort
+  is `{197-S}`.
 - CY-A is withheld by CX; CY-B by CY-A; CY-C by CY-B.
 - 152-S is withheld by both CX and CT.
 - 141-S is withheld by CX.
 - 189-S is withheld by 187-S, 188-S, and CY-A.
 - 156-S is withheld by 169-S and remains independently DO-NOT-CLAIM.
-- CT has no shipment prerequisite. T5 still requires CX merged before its
-  runtime verification. No CT-to-CX shipment edge was introduced.
+- CT now blocks on CX: `198-S blocks-on 197-S` was added in PR #489.
+  The edge withholds CT from dependency-aware queue results until CX is
+  resolved. T5 requires CX merged before runtime verification, so
+  Orchestrator/Ship must separately require 197-S status exactly `shipped`
+  before claiming 198-S; native claim does not enforce dependencies.
 
 These are planning/DAG checks, not claim-time topology-gate clearance or
 runtime-green claims.

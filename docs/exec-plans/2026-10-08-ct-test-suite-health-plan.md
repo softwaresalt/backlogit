@@ -212,6 +212,11 @@ per-package times.
 * residual advisory disposition: Architecture Strategist's CT blocks-on CX
   recommendation is now adopted under the operator's 2026-10-08 PR #487
   finding-2 correction authorization. The native `198-S blocks-on 197-S`
-  edge enforces T5's after-CX-merge requirement; queue positions and shipment
-  membership remain unchanged. No implementation scope is added.
+  edge withholds CT from dependency-aware queue results until CX is resolved,
+  but queue filtering accepts done, accepted, archived, shipped, abandoned,
+  and rejected. `ClaimShipment` does not check dependencies.
+  Orchestrator/Ship MUST separately verify that 197-S is exactly `shipped`
+  immediately before claiming 198-S; abandoned or any other terminal status
+  does not satisfy T5's after-CX-merge requirement. Queue positions and
+  shipment membership remain unchanged. No implementation scope is added.
 * operator_authorization: approved (operator APPROVED this scope and directed autonomous work without routine confirmations, relayed by the Orchestrator on 2026-10-08)
