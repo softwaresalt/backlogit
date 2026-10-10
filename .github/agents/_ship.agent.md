@@ -1443,7 +1443,7 @@ work. Committing directly to `main` bypasses code review and violates the
 branch-per-release-unit principle.
 
 1. **Close the shipment** (only when the backlog registry declares features.shipments: true):
-   When the key is absent or false, skip item 1 and record why in the closure artifact.
+   When the registry is readable and the key is absent or false, skip item 1 and record why in the closure artifact; if the registry file cannot be read or parsed, halt with `SHIPMENT_REGISTRY_UNREADABLE` and do not skip.
    a0. **TOPOLOGY_GATE: lifecycle (before closure/safe-close)** — if the `pipeline-topology` gate is installed for
        this workspace, before the pre-archive reconciliation gate below, run
        `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
@@ -1502,12 +1502,17 @@ branch-per-release-unit principle.
    e. **Allowlisted staging, then commit.** Build the allowlist from the safe-close report
       (`.backlogit/reconcile/{shipment_id}-safe-close-{timestamp}.md`), keyed by work-item ID
       rather than by internal core paths: paths under the configured queue, archive, and logs
-      directories whose base name begins with an ID in `M` or with `shipment_id`, plus the
-      shipment's `.backlogit/reconcile/{shipment_id}-*` reports. Shared index or side-effect
-      files that the governed closure writes are added only by name pattern when the
-      safe-close report lists them. Do not hardcode a file list. Stage the changed paths with
-      `git add -- <paths>`, verify that `git diff --cached --name-only` equals the changed
-      subset of the allowlist, and halt on any other staged path. Commit in a separate
+      directories whose base name begins with an ID in `M` or with `shipment_id`, where an ID
+      matches only when followed by a dot, a hyphen, or the file extension (so `197.00` never
+      matches `197.001-T`), plus the shipment's `.backlogit/reconcile/{shipment_id}-*` reports.
+      Shared index or side-effect files that the governed closure writes are added only when
+      the safe-close report lists their exact path; a name pattern means an exact path match
+      against allowlist entries, never a substring or glob. Do not hardcode a file list.
+      Stage the allowlisted paths that changed with `git add -- <paths>`. Then verify that the
+      *changed paths* (the exact output lines of `git diff --cached --name-only --no-renames`)
+      equal the changed subset of the allowlist, and halt on any other staged path.
+      `--no-renames`, placed after `--name-only`, lists both sides of an archive rename, so the
+      old queue path is checked too. Commit in a separate
       command: `git commit -m "chore: archive {shipment_id} backlog artifacts"`
 2. **Runtime validation and releasability evidence**: If the shipped work touches runtime surfaces, load `.autoharness/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces **validator evidence** for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites (do not fake unsupported automation). Then invoke `operational-closure` in `mode=post-merge` with that validator evidence plus `runtime_validation.releasability` so closure produces explicit **releasability evidence** (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) covering monitoring, rollback, owner, validation-window, and follow-up requirements — alongside the release-readiness, monitoring, and rollback artifacts in `docs/closure/`. The closure artifact carries a **compaction status** field (initialized `pending`) that step 8 finalizes to `done`/`degraded`; the Orchestrator's closure-gated routing treats a `pending`/unset compaction status as an incomplete post-merge closure (P-020).
    In dark mode, the closure summary must list decisions, gates, reviewed HEADs,
