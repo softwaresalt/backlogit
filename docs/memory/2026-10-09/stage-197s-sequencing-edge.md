@@ -3,7 +3,7 @@ schema_version: "1.0"
 doc_type: memory
 title: Stage 197-S sequencing edge resolved as dag-root
 description: The 197-S pre-claim topology gate blocked as UNSEQUENCED_SHIPMENT; the Orchestrator decided, and Stage executed, a scoped dag-root declaration with a non-gating related_to link to 196-S. Post-change gate verification on the staging branch was blocked by BRANCH_MISMATCH and is deferred to the Orchestrator.
-timestamp: "2026-10-10T02:30:00Z"
+timestamp: "2026-10-10T02:20:00Z"
 ---
 
 # Stage 197-S sequencing edge resolved as dag-root
