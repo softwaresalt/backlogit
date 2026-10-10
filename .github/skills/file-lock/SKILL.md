@@ -137,8 +137,10 @@ Both PowerShell and Bash equivalents are provided for cross-platform
 compatibility. Use whichever matches the runtime environment.
 
 The scripts create, check, and remove only the `.{filename}.agent-lock`
-sidecar. The `.{filename}.lock` name belongs to backlogit and is never created
-or removed by these scripts.
+sidecar, with one exception: the test-only `AUTOHARNESS_TEST_RELEASE_RACE_SIGNAL`
+variable makes release also create a `.{filename}.agent-lock.race-signal`
+marker, which is never set in normal operation. The `.{filename}.lock` name
+belongs to backlogit and is never created or removed by these scripts.
 
 ### acquire_lock (.ps1 / .sh)
 

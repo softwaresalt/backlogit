@@ -148,6 +148,10 @@ guarantee.
 
 If an agent session terminates abnormally and leaves stale locks:
 
-* The operator can remove `.*.agent-lock` files manually.
+* The operator can break a stale lock only through the scripted force path:
+  `scripts/release_lock.ps1 <filepath> -Force` (PowerShell) or
+  `scripts/release_lock.sh <filepath> --force` (Bash). `-Force`/`--force`
+  skips token verification by design, but workspace containment still applies.
+  Do not delete `.*.agent-lock` files by hand; that bypasses both checks.
 * The next agent session should check lock file timestamps and warn if
   any lock is older than 1 hour — it is likely stale.
