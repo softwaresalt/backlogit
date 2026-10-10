@@ -181,6 +181,21 @@ func isContractField(key string) bool {
 	return ok
 }
 
+// closureGateKeys is the closed set of pipeline-topology keys that closure
+// discovery reads from the top level of a closure document's frontmatter. They
+// stay top-level on closure paths instead of being folded under docline.
+var closureGateKeys = map[string]struct{}{
+	"closure_status":    {},
+	"compaction_status": {},
+	"conditions":        {},
+}
+
+// isClosureGateKey reports whether key is a closure pipeline-topology gate key.
+func isClosureGateKey(key string) bool {
+	_, ok := closureGateKeys[key]
+	return ok
+}
+
 // pathRule maps a repo-relative POSIX directory prefix to a doc_type.
 type pathRule struct {
 	prefix  string
