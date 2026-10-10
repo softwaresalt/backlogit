@@ -2,8 +2,8 @@
 schema_version: "1.0"
 doc_type: memory
 title: Stage 197-S red-deliverable contract amendment
-description: Stage authored the seven canonical red-deliverable contracts and the P-002.1 exemption contracts for 197-S so Ship Step 3 admits the wave schedule. It formalizes the reviewed plan without changing scope. Two members (197.016-T, 197.019-T) are harness-required under the Orchestrator decision, the selector prefixes follow the P-002.6 requirement 4 TestU convention, and Erratum E1 records the postures in the plan.
-timestamp: "2026-10-10T03:44:40.3159990Z"
+description: Stage authored the seven canonical red-deliverable contracts and the P-002.1 exemption contracts for 197-S so Ship Step 3 admits the wave schedule. It formalizes the reviewed plan without changing scope. Two members (197.016-T, 197.019-T) are harness-required under the Orchestrator decision, the selector prefixes follow the P-002.6 requirement 4 TestU convention, and Erratum E1 records the postures in the plan. A final section records the operator-ruled descoping of U15 (197.016-T), the 18-task manifest, and Erratum E2.
+timestamp: "2026-10-10T05:57:50.0000000Z"
 ---
 
 # Stage 197-S red-deliverable contract amendment
@@ -11,7 +11,9 @@ timestamp: "2026-10-10T03:44:40.3159990Z"
 ## Status
 
 **Contracts amended; the U15 and U17 postures are resolved (Orchestrator decision, P-017).**
-Scope `[197-S]` only. This note formalizes the already-reviewed plan
+Scope `[197-S]` only. **Superseded in part by the final section ("U15 descoped by operator
+ruling"): U15 (197.016-T) is no longer in 197-S, so `S` is 197-F plus 18 tasks and `M` is 18
+tasks.** The text below is the historical record of the earlier passes. This note formalizes the already-reviewed plan
 `docs/exec-plans/2026-10-08-cx-s-ship-closure-gate-correctness-plan.md`. It does **not** change
 scope, shipment membership `S` (197-F plus the 19 tasks), the task set `M` (the 19 tasks),
 dependencies, waves, acceptance criteria, task titles, or statuses. The only label change is that
@@ -366,3 +368,88 @@ establish an optimization for U15.
   owners are the wave 1 red tasks and Ship's Step 3 check passed. The 197.019-T Amendment A2
   harness reference (`tests/integration/harness_manifest_196_drift_records_test.go`) exists.
 * The `197.018-T` progress callback is independent of U15's performance outcome.
+
+## U15 descoped by operator ruling; manifest re-frozen at 18 tasks (2026-10-10T05:57:50Z)
+
+Scope `[197-S]` only, P-017 dark factory mode. Stage executed the recommended option exactly as
+described in the Orchestrator memory `docs/memory/2026-10-10/orchestrator-197s-wave2-halt-memory.md`
+("Decisions needed", option 1) and in the "Options" list above (option 2 there).
+
+### Operator ruling (verbatim)
+
+> "Descope U15 as recommended."
+
+Ruled 2026-10-09T22:47-07:00 (2026-10-10T05:47Z). This is the explicit operator authorization
+for a Stage manifest amendment and an explicit re-freeze of `M`. Nothing was claimed, shipped, or
+committed. The branch is `feat/cx-ship-closure-protocol-and-gate-correctness`, HEAD `45dea2f8`.
+
+### What changed
+
+| Artifact | Change |
+|---|---|
+| Stash `76553D8D` (new, kind `task`, priority `high`) | "Profile the real ShipShipment path and optimize per-member snapshot/lock cost (R10 remainder)". Self-contained: provenance (D116AF58, 197-S, descoped U15 by this ruling), U6 evidence (`ReadAllEvents` about 80.2%, `loadArtifact` about 13.6%, `findArtifact` WalkDir 0%, about 0.9 to 3.4 ms per member against about 10 s observed), the unprofiled suspects (`snapshotShipArtifacts`, `LockItemLogCrossProcess`, `attachCommitToItems`, the second gate pass at `:607` and `:627`, the 1 MiB scanner buffer at 13.0%), and the constraint "needs deliberation and a new profiling spike first; keep verdicts, error classification, and lock order". No other stash entry was touched; `D116AF58` stays `harvested`. |
+| `197-S` manifest (`.backlogit/queue/197-S.md`) | `197.016-T` removed from `custom_fields.items`. The order of the rest, `queue_position: 100`, status `active`, priority, label `dag-root`, and the `related_to` 196-S link are unchanged. An amendment paragraph was appended to the body; the old "197-F plus exactly 19 atomic tasks" wording is superseded (now 197-F plus 18 tasks). `get_shipment` shows 19 items and 18 task members. |
+| Dependency edge | `197.018-T` to `197.016-T` removed with `backlogit_remove_dependency`. `197.018-T` now depends only on `197.017-T`. Amendment A4 appended to the body of `197.018-T`: deliverable, files, and acceptance criteria unchanged. |
+| `197.016-T` (U15) | Comment (actor `stage`) recording the ruling, the refuted premise, and the follow-up stash. Then archived with the governed `backlogit_archive_item`: status `archived`, `archived_status: active`, file moved to `.backlogit/archive/197.016-T.md`. No lifecycle hook is configured for `archive_item`, the governed op ran its own lock and shipment-membership checks, and no hook or config was bypassed or edited. The task is not claimed, not in any shipment, and not an active orphan under 197-F. Its own edge to `197.007-T` stays on the archived record. The linked stash `D116AF58` was already `harvested`, so the archive's best-effort stash archival archived nothing. |
+| `197-F` | Not edited. One comment (actor `stage`) records the amendment and the follow-up stash ID so the follow-up is traceable from 197-F. Stash IDs cannot be a native semantic-link target, so no link was added; no dependency was added. |
+| `197.017-T` (archived, done) | Single-key edit under this authorization: `green_maker_closes_wave: 3` became `2` in the red-deliverable contract block. The diff is one line, every other byte is preserved. |
+| Plan | Erratum E2 appended at the end (158 added lines when end-of-line whitespace is ignored, no existing line changed). |
+
+### Recomputed wave partition (18 tasks, acyclic)
+
+* W1 = 197.001-T to 197.008-T and 197.017-T (done)
+* W2 = 197.009-T, 197.011-T, 197.012-T, 197.013-T, 197.014-T, 197.015-T, 197.018-T
+* W3 = 197.010-T (needs 197.003-T and 197.009-T)
+* W4 = 197.019-T (depends on 197.009-T to 197.014-T; the real edge to 197.010-T keeps it in W4)
+
+`197.018-T` moves up from W3 to W2. `197.019-T` never depended on `197.016-T` or `197.018-T`, so
+its wave and Amendment A2 are unchanged.
+
+### R10 coverage and the follow-up
+
+R10 ("profiled, fixed, and reports progress") is now covered by profiled (U6, done) plus reports
+progress (U16a, U16b). The "fixed" part moves to stash `76553D8D`. Amendment A1 on the archived
+`197.016-T` is moot and no A1.1 was written.
+
+### Contract re-validation
+
+* Only one contract changed: `197.017-T` `green_maker_closes_wave` from 3 to 2, because its
+  green-maker `197.018-T` now lands in wave 2 (strictly later than wave 1).
+* The other six red contracts (`197.001-T` to `197.006-T`) are unchanged and valid: green-makers in
+  `M`, strictly later waves, close waves 2, 2, 3, 2, 2, 2 equal to the actual latest green-maker
+  waves.
+* Ten exemption contracts re-checked (`197.007-T` to `197.015-T` and `197.018-T`): five or six keys
+  in order, owners are declared dependencies, red deliverables, and not exempt, the sixth key
+  matches the owner's selector (`197.009-T` is the documented union of co-owners `197.001-T` and
+  `197.002-T`), the marker is unique and last, and no destructive pattern. The exempt set on 197-F
+  is unchanged and equals the ten `harness-exempt` labels. `197.019-T` stays the only
+  harness-required member that is neither a red deliverable nor exempt.
+* Two prose spots on the archived `197.017-T` were deliberately not edited, because the
+  authorization covers only the single key: the `red_deliverable_reason` phrase "in wave 3" and
+  the Harness Manifest line in its implementation notes ("green_maker_closes_wave: 3"). They are
+  historical, are superseded by Erratum E2, and the scheduler parses only the contract keys.
+
+### Validation
+
+* Inline contract checker (not committed; reuses the scheduler's own `Get-DelimitedContractBlock`,
+  `Read-RedDeliverableContract`, and `Test-TaskScopedCommandShape`): `S=19 M=18`, excluded `197-F`,
+  acyclic, partition W1 to W4 as above, seven red contracts and ten exemption contracts valid,
+  needs-harness set `197.019-T`, no green-regression blocks. Result: `CONTRACT_CHECK_OK`.
+* `scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue`: `WAVE_SIM_OK: 200/200 assertions PASS
+  across 26 scenario(s)` (bound to the 130-S fixture; it proves scheduler logic, not 197-S).
+* `backlogit_doctor` (including the partial-mutation advisory check): no finding names any 197.*
+  artifact (no orphan, no duplicate ID). Its only findings are pre-existing orphans `016.001-R` and
+  `106.012-T` to `106.033-T`, unrelated to this work.
+* `item_deps` after the amendment shows 17 edges: 16 among the 18 members, matching the task
+  frontmatter the checker read, plus `197.016-T`'s own dependency on `197.007-T` on the archived
+  record.
+* Lint: `npx markdownlint-cli2@0.23.1` reported 0 issues on the plan and this note, and
+  `backlogit docs lint` reported `valid: true`, `violation_count: 0` on both paths.
+* `backlogit_sync_index` was run after the manifest edit and again at the end of the session.
+
+## Resume point (amended)
+
+Ship may re-run Step 3 with `M` = the 18 tasks. Wave 2 (`197.009-T`, `197.011-T` to `197.015-T`,
+`197.018-T`) is no longer blocked on U15. No git operation was run by Stage. The governed archive
+of `197.016-T` staged its rename in the git index (the archive operation uses `git mv`); every other
+change is in the working tree.

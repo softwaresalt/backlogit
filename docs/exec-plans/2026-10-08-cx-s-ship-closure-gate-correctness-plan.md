@@ -740,3 +740,161 @@ Shipment membership S (197-F plus the 19 tasks), the task set M (the 19 tasks),
 dependencies, waves (W1 U1, U1b, U2-U7, and U16a; W2 U8 and
 U10-U15; W3 U9 and U16b; W4 U17), titles, and acceptance criteria are
 unchanged.
+
+## Erratum E2 (2026-10-10)
+
+This erratum records an operator-authorized manifest amendment: unit U15
+(197.016-T) is descoped from 197-S. It was made under P-017 dark factory mode
+(scope [197-S] only). Unlike Erratum E1, it changes scope (shipment membership
+S and the task set M shrink by one task), so it cites the operator ruling
+verbatim. No plan line above was edited, and plan-review was not re-run: the
+change removes one unit and one dependency edge under explicit operator
+authority and adds no scope. The full record is
+`docs/memory/2026-10-10/stage-197s-red-contract-amendment.md`.
+
+### Operator ruling (verbatim)
+
+> "Descope U15 as recommended."
+
+Ruled 2026-10-09T22:47-07:00 (2026-10-10T05:47Z). It is the explicit operator
+authorization for a Stage manifest amendment and an explicit re-freeze of M.
+"As recommended" is option 1 ("Descope U15 (recommended)") under "Decisions
+needed" in `docs/memory/2026-10-10/orchestrator-197s-wave2-halt-memory.md`,
+and the last section of the Stage note named above. The other two options
+(re-plan U15 as a new profiling spike plus a retargeted fix, or keep U15 as
+written with no RED harness) were not chosen.
+
+### Why U15 is descoped
+
+The U6 benchmark (197.007-T, done) and Stage's code analysis refuted U15's
+premise:
+
+* One `validateMemberGateEvidence` call, which is what U6 timed, already reads
+  each member's event log once (`events.ReadAllEvents`, one `os.Open` and one
+  scan, no lock) and resolves its artifact once (`loadArtifact`, database
+  first, filesystem walk only on a miss). The U6 profile attributes about
+  80.2% to `ReadAllEvents`, 13.6% to `loadArtifact`, and 0% to the
+  `findArtifact` WalkDir. The redundant share inside the function U15 may
+  change is 0%, so the share of time attributable to per-member lookup and log
+  reads (93.8%) is essential cost, and U15 AC1 cannot be met by removing
+  redundant work.
+* U6 measured about 0.9 to 3.4 ms per member (39 to 153 ms per op over 45
+  members; the host noise band is 3.9x). Stash D116AF58 reports about 10 s per
+  member. The real cost sits outside `validateMemberGateEvidence`, in code U6
+  did not profile: `snapshotShipArtifacts` (`findArtifact` WalkDir at
+  `shipment_lifecycle.go:238`, `FindArtifactPath` at `:246`,
+  `LockItemLogCrossProcess` at `:254`) and `attachCommitToItems`
+  (`findArtifact` at `:877`). Those are outside U15's declared file
+  (`internal/core/shipment_gate.go`).
+* The only duplicate read on the real path is the deliberate second gate pass
+  (`shipment_lifecycle.go:607` and `:627`, re-validation after the artifact
+  locks are taken). Removing it changes verdict timing and lock order, which
+  U15 forbids.
+* A timing-only target is not defensible, so no valid RED harness exists
+  (Amendment A1 HALT class). The 1 MiB scanner buffer in
+  `internal/events/reader.go` (13.0% of the U6 loop, `memclrNoHeapPointers`) is
+  a different file and also outside U15.
+
+### Amended manifest and task set
+
+| | Before E2 | After E2 |
+|---|---|---|
+| Shipment membership S | 197-F plus 19 tasks (20 items) | 197-F plus 18 tasks (19 items) |
+| Frozen task set M (Ship re-derives it at its next Step 3) | 19 tasks | 18 tasks |
+| 197.016-T (U15) | member, `active`, claim-assigned | removed from S and M; archived (governed `backlogit_archive_item`) with a comment citing this ruling |
+
+The old wording "197-F plus exactly 19 atomic tasks" in the 197-S description
+is superseded: the manifest is 197-F plus exactly 18 atomic tasks. Order,
+`queue_position`, status, priority, labels (including `dag-root`), and links of
+197-S are unchanged. The follow-up for the performance fix is stash entry
+76553D8D ("Profile the real ShipShipment path and optimize per-member
+snapshot/lock cost (R10 remainder)"), which cites D116AF58, this plan, the U6
+evidence, the unprofiled suspects, and the constraints (keep verdicts, error
+classification, and lock order; needs deliberation and a new profiling spike
+first). It is an ordinary Stage follow-up capture, not a P-021 Ship capture.
+
+### Removed dependency edge
+
+The edge 197.018-T to 197.016-T (U16b depends on U15) is removed with the
+governed `backlogit_remove_dependency`. U16b's "same file" ordering was never a
+real dependency: its progress callback is optional and does not need U15's
+refactor. 197.018-T now depends only on 197.017-T (U16a). Amendment A4 on
+197.018-T records this. The unit text above, "Depends on U16a and U15 (same
+file)", and the Dependency Graph line "U16b <- U15, U16a" are superseded: U16b
+depends on U16a only. Its deliverable, files, acceptance criteria, and
+`covered-by` exemption contract (owner 197.017-T) are unchanged.
+
+### R10 coverage
+
+Requirement R10 ("profiled, fixed, and reports progress") is now covered as
+follows:
+
+* Profiled: U6 (197.007-T, done), with the limits stated above.
+* Reports progress: U16a (197.017-T, done, RED) and U16b (197.018-T).
+* Fixed: moved to follow-up stash 76553D8D. It is not delivered by 197-S.
+
+U15's own amendments are moot: Amendment A1 stays on the archived 197.016-T
+as history, and no Amendment A1.1 (a numeric U6-derived target) is written.
+
+### Recomputed wave partition
+
+Topological layering of the 18-task amended graph (verified against
+`item_deps`; the graph is acyclic and every dependency of a member is a
+member):
+
+| Wave | Tasks | Notes |
+|---|---|---|
+| W1 | 197.001-T to 197.008-T (U1, U1b, U2 to U7) and 197.017-T (U16a) | done |
+| W2 | 197.009-T (U8), 197.011-T (U10), 197.012-T to 197.014-T (U11 to U13), 197.015-T (U14), 197.018-T (U16b) | 197.018-T moves up from W3: it depends only on 197.017-T (W1) |
+| W3 | 197.010-T (U9) | depends on 197.003-T (W1) and 197.009-T (W2) |
+| W4 | 197.019-T (U17) | depends on 197.009-T to 197.014-T; the real edge to 197.010-T (W3) keeps it in W4 |
+
+Before E2 the partition was W2 = U8 and U10 to U15, W3 = U9 and U16b, and
+W4 = U17. The plan's Dependency Graph lines "Wave 2 ... U15 <- U6" and
+"Wave 3 ... U16b <- U15, U16a" are superseded for U15 and U16b. U17 never
+depended on U15 or U16b (its dependencies are U8 to U13), so its wave and its
+Amendment A2 are unchanged.
+
+### 197.017-T close-wave correction
+
+The red-deliverable contract of 197.017-T (U16a) names 197.018-T as its
+green-maker. 197.018-T now lands in wave 2, so `green_maker_closes_wave` moves
+from 3 to 2. This is the only contract change. The line is the single key
+`green_maker_closes_wave` in the red-deliverable contract block of the archived
+`.backlogit/archive/197.017-T.md`. That archived file is edited only for this
+key, under the operator authorization for this amendment, and the diff is one
+line. Two prose spots on that task stay as written and are historical: the
+`red_deliverable_reason` phrase "in wave 3" and the Harness Manifest record in
+its implementation notes ("green_maker_closes_wave: 3"). They are superseded by
+this erratum. The scheduler parses only the contract keys, so they do not
+affect admission.
+
+| Red deliverable | Green-maker(s) | Green-maker wave | Close wave |
+|---|---|---|---|
+| 197.001-T (U1) | 197.009-T (U8) | 2 | 2 |
+| 197.002-T (U1b) | 197.009-T (U8) | 2 | 2 |
+| 197.003-T (U2) | 197.010-T (U9) | 3 | 3 |
+| 197.004-T (U3) | 197.011-T (U10) | 2 | 2 |
+| 197.005-T (U4) | 197.012-T, 197.013-T, 197.014-T (U11 to U13) | 2 | 2 |
+| 197.006-T (U5) | 197.015-T (U14) | 2 | 2 |
+| 197.017-T (U16a) | 197.018-T (U16b) | 2 (was 3) | 2 (was 3) |
+
+All seven red contracts and all ten exemption contracts were re-validated
+against the amended partition: every green-maker is in M, is not the task
+itself, and lands in a strictly later wave than its red deliverable; each close
+wave equals the latest green-maker wave; every `covered-by` owner is a declared
+dependency of the exempt task, is a red deliverable, and is not itself exempt;
+every task-scoped selector matches the `^TestU` anchored shape; and the closed
+exempt set on 197-F is unchanged (ten tasks, equal to the `harness-exempt`
+labels). 197-F was not edited. Its statement that 197.016-T (U15) is
+deliberately not an exempt member remains true. 197.019-T (U17) remains the
+only harness-required member that is neither a red deliverable nor exempt.
+
+### Unchanged
+
+The acceptance criteria, deliverables, files, titles, and dependencies of every
+other unit, the P-002.1 exemption contracts, Amendments A2 (U17) and A3 (U16a),
+and all statuses and claims of the remaining members are unchanged. No other
+shipment or stash entry was touched. The only archived task files affected are
+197.016-T (moved to the archive by the governed archive operation) and
+197.017-T (the single key above).
