@@ -1425,11 +1425,11 @@ compound refresh, compact-context). These commits MUST NOT land directly on `mai
    `git push -u origin post-merge/{feature_slug}`
    Then invoke the **pr-lifecycle** skill for the closure PR. The closure PR title
    should be: `chore: post-merge closure for {feature_id} — {feature_title}`.
-   The closure PR is **not exempt** from the pre-merge gates: run the Step 5 item 6 CI confirmation, the Step 5 item 7b
+   The closure PR is **not exempt** from the pre-merge gates: run the Step 5 item 7 CI confirmation, the Step 5 item 7b
    **P-014 local review readiness gate** (local review of the closure diff at its current
    HEAD, with the `## Local Review Readiness` block in the PR body) and the Step 5 item 7c
    **P-018 Copilot-review completion gate** against the closure PR exactly as for the
-   feature PR. See `.github/instructions/github-pr-automation.instructions.md` §1.10. The Step 5 item 5a lifecycle pipeline-topology gate does not apply to Step 6.0 closure PRs; no other pre-merge gate is waived for the closure PR, including the Step 5 item 6 CI confirmation.
+   feature PR. See `.github/instructions/github-pr-automation.instructions.md` §1.10. The Step 5 item 5a lifecycle pipeline-topology gate does not apply to Step 6.0 closure PRs; no other pre-merge gate is waived for the closure PR, including the Step 5 item 7 CI confirmation.
 5. **Await operator approval** for the closure PR before merge, just like the feature PR.
    Never merge closure work automatically. P-014 approval for the feature PR does **not**
    carry over to the closure PR — the operator must approve each merge individually.
@@ -1443,11 +1443,12 @@ work. Committing directly to `main` bypasses code review and violates the
 branch-per-release-unit principle.
 
 1. **Close the shipment** (only when the backlog registry declares features.shipments: true):
-   Run item 1 only when the registry is readable and `features.shipments` is literal `true`. Skip item 1 and record why in the closure artifact only when the registry is readable and either `features.shipments` is literal `false` or the `features.shipments` key is absent from it. Halt with `SHIPMENT_REGISTRY_UNREADABLE` and do not skip when the registry file is missing, cannot be read or parsed, or `features.shipments` holds any non-boolean value (for example a string, number, or null).
+   Run item 1 only when the registry is readable and `features.shipments` is literal `true`. Skip item 1 and record why in the closure artifact only when the registry is readable and either `features.shipments` is literal `false` or the `features.shipments` key is absent from it. An ABSENT registry file is handled exactly as Step 0.0 item 1 says (manual/file-backed mode, the intentional operating mode, not a degradation): skip item 1 and record why in the closure artifact. Halt with `SHIPMENT_REGISTRY_UNREADABLE` and do not skip when the registry file exists but cannot be read or parsed, or when `features.shipments` holds any non-boolean value (for example a string, number, or null).
    a0. **TOPOLOGY_GATE: lifecycle (before closure/safe-close)** — if the `pipeline-topology` gate is installed for
        this workspace, before the pre-archive reconciliation gate below, run
        `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
        proceeds; exit 1/2 halts immediately with the reported token/message (never inferred, never fail-open).
+   a0b. **Pre-closure baseline (read-only, before any closure write)**: run `git diff --name-only` and `git diff --cached --name-only` and keep both outputs as the pre-closure baseline. Step 6 item 1e uses this baseline to refuse a closure whose allowlisted paths already carried changes that this closure did not produce.
    a. **Pre-archive reconciliation gate (mandatory)**: Invoke the `shipment-reconcile`
       skill with `mode: pre`, `shipment_id`, and `expected_status: done`.
       This acquires the single-writer lock on `.backlogit/queue/{shipment_id}.md`
@@ -1502,7 +1503,7 @@ branch-per-release-unit principle.
    e. **Allowlisted staging, then commit.** Build the allowlist from the safe-close report
       (`.backlogit/reconcile/{shipment_id}-safe-close-{timestamp}.md`), keyed by work-item ID
       rather than by internal core paths. The allowlist holds EXACT paths only: an entry matches
-      by exact path equality, and a name pattern or glob is never an entry. The entries are
+      by exact path equality, a name pattern or glob is never an entry, a queue path is admitted only when it is tracked in HEAD (for example `git ls-files --error-unmatch -- <path>` succeeds, so a pre-archived member with no queue file is skipped), and an archive path is admitted only when the file exists in the working tree. The entries are
       `.backlogit/queue/{shipment_id}.md`; `.backlogit/archive/{shipment_id}.md` for the archived
       shipment control record; for each explicit member `{member_id}` (an ID in `M`) that the
       governed closure archived, both `.backlogit/queue/{member_id}.md` (the queue file the archive
@@ -1511,7 +1512,7 @@ branch-per-release-unit principle.
       path the safe-close report lists for those IDs. Shared index or side-effect files that the governed
       closure writes are added only when the safe-close report lists their exact path. Do not
       hardcode a file list. If the safe-close report is missing, unreadable, or yields an EMPTY
-      allowlist, halt with `SAFE_CLOSE_REPORT_UNAVAILABLE`, stage nothing, and do not commit.
+      allowlist, halt with `SAFE_CLOSE_REPORT_UNAVAILABLE`, stage nothing, and do not commit. If any allowlisted path appears in the a0b pre-closure baseline (it already had unstaged or staged changes that this closure did not produce), halt with `CLOSURE_PRE_EXISTING_CHANGES`, stage nothing, and do not commit.
       Stage every allowlisted path with `git add -- <each allowlisted path>`; staging a removed
       tracked file stages its deletion, so each archived member's queue-side removal is staged
       along with its archive addition. Then verify that the

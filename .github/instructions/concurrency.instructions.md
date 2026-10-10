@@ -140,9 +140,10 @@ guarantee.
    `-Force`/`--force`. Agents MUST NOT delete lock files directly, and MUST
    NOT supply `--force` on their own initiative.
 4. **Lock files are ephemeral.** They MUST NOT be committed to version
-   control. The workspace `.gitignore` should include `.*.agent-lock` entries
-   (or `**/.*.agent-lock` for an explicit recursive pattern) for agent lock
-   files.
+   control. The repository `.gitignore` currently ignores `.*.lock` but NOT `.*.agent-lock`.
+   An ignore entry for `.*.agent-lock` (or `**/.*.agent-lock`) is a tracked follow-up that has
+   not landed yet. Until it lands, agents MUST stage only explicit paths (never `git add .` or a
+   directory-wide add) and MUST never stage a `.*.agent-lock` sidecar.
 
 ## Recovery
 
