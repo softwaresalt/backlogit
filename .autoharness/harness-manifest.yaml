@@ -235,7 +235,7 @@ artifacts:
   - path: ".github/instructions/concurrency.instructions.md"
     primitive: 6
     template: "templates/instructions/concurrency.instructions.md.tmpl"
-    checksum: "004ea64405d45aae35f6d53cbaa10e4148e4462e947f22bd16e885fcb406a709"
+    checksum: "edb851cdc46b64cf2bfc9d60b297d12ba4a7bc3a0411235342662e9b0dc0f4ff"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: documents the locally hardened release_lock.ps1 default-root and containment behavior. CX U17 refresh (197-S): checksum refreshed to the LF-normalized SHA-256 for the ship closure protocol and gate correctness release; governing stash 75E02C17, 52D18E44, 497D20E3, 67F17B6B, FBD6E6F8, 8F1CF1E1, 6AB5E7FC, F05661B1."
   - path: ".github/instructions/release-observability.instructions.md"
@@ -395,7 +395,7 @@ artifacts:
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "d1365178d3cae21dfbdd44449a0c3fce33abcc94f5655dfd961d13d781b4040e"
+    checksum: "a6ecc972c232e705e1c97d918fdecd01e4c93071fb2725bf695c142c06833c2d"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert. 2026-09-27 tune review (TUNE-010): Dark Factory DARK_MODE_ACTIVE subagent propagation and concrete-ID scope resolution. 196-F / shipment 196-S (stash 227A2930): Served-Root Handoff Procedure binding both absolute served roots and binding evidence into the Ship payload, with SERVED_ROOTS_UNRESOLVED fail-closed halts; the outcome record is carried to Ship and persisted on the shipment branch, never in the main worktree before Ship's branch gate, and a step e halt record is committed via the Step 1.5 carry-forward before any later Ship invocation (Copilot review and local review, PR #478). Do not auto-revert. CX U17 refresh (197-S): checksum refreshed to the LF-normalized SHA-256 for the ship closure protocol and gate correctness release; governing stash 75E02C17, 52D18E44, 497D20E3, 67F17B6B, FBD6E6F8, 8F1CF1E1, 6AB5E7FC, F05661B1."
   - path: ".github/agents/_stage.agent.md"
@@ -407,7 +407,7 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "2a7db026872f76e7b6f327c05cfa03eb7bb19bdf2979416e31caba92b1895f46"
+    checksum: "6d18f7b990488ba58e735124b4d9a1dec351fa66f9114ec83db46321d4700c0e"
     drift_allowed: true
     drift_reason: "Deliberate Ship drift: preserve the scalar tools string with vscode/memory, the full backlogit/* MCP tool surface (operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so do not narrow it back to an explicit backlogit operation allowlist), engram/*, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix. 196-F / shipment 196-S: Step 6 item a explicit-feature reconcile wording (stash B83081F5) and the Step 4.0 / Step 4.1b use-time Served-Root Attestation (stash 227A2930), plus the Step 0.5 item 3a write of the Orchestrator-supplied served-root handoff outcome after BRANCH_OK or BRANCH_CREATED (local review, PR #478). Do not auto-revert. CX U17 refresh (197-S): checksum refreshed to the LF-normalized SHA-256 for the ship closure protocol and gate correctness release; governing stash 75E02C17, 52D18E44, 497D20E3, 67F17B6B, FBD6E6F8, 8F1CF1E1, 6AB5E7FC, F05661B1."
   - path: ".github/skills/harness-architect/SKILL.md"
