@@ -1197,7 +1197,7 @@ After all tasks in the queue are complete:
     `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Same
     exit-code handling as above. This 5a lifecycle pipeline-topology gate does not apply to Step 6.0 closure PRs; this exemption covers only the topology gate, and closure PRs remain subject to every other pre-merge gate (Step 6.0 item 4).
 6. Invoke the **pr-lifecycle** skill to create or update the pull request
-7. CI confirmation is required whether or not any check failed: before advancing past item 6, every required check must report success for the current `headRefOid`. If CI or optional shadow-review comments fail:
+7. CI confirmation is required whether or not any check failed: before advancing past item 7, every required check must report success for the current `headRefOid`. If CI or optional shadow-review comments fail:
    * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking fix-ci for shipment PR` before invoking the skill.
    * Invoke the **fix-ci** skill before proceeding. The build/CI-fix loop carries the SAME P-021 classification requirement as the review-fix loop: classify every CI/build failure against **P-021 C1** before fixing it, per Step 4.4a above. A build or CI failure whose real fix lies outside the approved scope is deferred via the Step 4.4a defer-capture procedure, never expanded into.
    * **CI confirmation**: before advancing past this item, confirm every required CI check reports success for the current `headRefOid`. A pending, missing, cancelled, or failed required check is not a pass — re-run fix-ci or halt. Never infer CI success from a stale run against an earlier HEAD.
