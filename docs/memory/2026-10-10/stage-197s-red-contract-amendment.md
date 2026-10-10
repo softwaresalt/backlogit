@@ -307,3 +307,62 @@ done (REFUTED U6 verdict, missed target, or no valid RED harness), Ship halts an
 In wave 4 the harness-architect scaffolds the 196-shape drift-record RED harness for 197.019-T
 (Amendment A2). No
 P-021 deferred-scope entry was created.
+
+## U6 target determination: REFUTED-like finding, STOPPED (2026-10-10T05:34:27Z)
+
+Stage was asked to record a numeric U6-derived target for 197.016-T (Amendment A1). The code
+shows no work-count reduction exists inside U15's declared scope, so Stage recorded no target and
+did not append Amendment A1.1 or Erratum E2. Nothing else changed: 197.016-T, the plan, statuses,
+dependencies, and membership are as before. Wave 2 admission stays halted. This is the A1 HALT
+class ("no way to form a valid RED harness") and returns to the operator/Stage for a re-plan.
+
+### Work counts from the code (task or subtask member, DB-hit case)
+
+| Scope | `events.ReadAllEvents` | `loadArtifact` | `findArtifact` WalkDir |
+|---|---|---|---|
+| One `validateMemberGateEvidence` call (what U6 timed) | 1 (`shipment_gate.go:716`) | 1 (`shipment_gate.go:703`) | 0 |
+| One `ShipShipment` | 2 (gate runs at `shipment_lifecycle.go:607` and `:627`) | 2 in the gate, plus others | 0 in the gate |
+
+* `loadArtifact` reads the DB first (`shipment.go:1836`) and calls `findArtifact` (WalkDir) only on
+  a DB miss (`shipment.go:1844`), then upserts. U6 measured `findArtifact` at 0% for this reason.
+* `ReadAllEvents` (`internal/events/reader.go:26`) is one `os.Open` and one scan, with no lock.
+* A single gate pass is already at the single-resolution, single-read floor. The redundant share
+  of the benchmarked loop is 0%. The 93.8% (80.2% + 13.6%) that U6 attributes to log reads and
+  lookups is the essential cost of reading each member once, so AC1's "share attributable to
+  per-member lookup and log reads" cannot be met by removing redundant work in this function.
+* The only duplicate read is the second gate pass (`shipment_lifecycle.go:627`). It is a
+  deliberate re-validation after the artifact locks are taken (comment at `:624`-`:626`). Removing
+  it changes verdict timing and lock order and edits `shipment_lifecycle.go`, which breaks U15's
+  "do not change verdicts, error classification, or lock order" and its one-file scope.
+* A timing-only target is not defensible: the host noise band is 39 to 153 ms/op (3.9x), and no
+  work removal exists to justify a percentage.
+
+### Where the per-member cost sits (code-derived, not measured)
+
+U6's 39 to 153 ms over 45 members is about 0.9 to 3.4 ms per member, against the stash D116AF58
+report of about 10 s per member with `.backlogit/.locks/itemlog` timestamps. The per-member
+lock and walk cost is outside `validateMemberGateEvidence`, in `snapshotShipArtifacts`:
+`findArtifact` WalkDir (`shipment_lifecycle.go:238`), `FindArtifactPath` walk (`:246`), and
+`LockItemLogCrossProcess` (`:254`), plus `attachCommitToItems` `findArtifact` (`:877`). U6 did not
+profile that path, so U6's CONFIRMED verdict is true for its narrow function and does not
+establish an optimization for U15.
+
+### Options for the next Stage or operator decision (not executed)
+
+1. Re-plan U15 through Stage: a new profiling spike of the real `ShipShipment` path, then a U15
+   that targets the per-member walks and itemlog locks. This changes U15's files
+   (`shipment_lifecycle.go`) and needs plan review.
+2. Descope U15 from 197-S and keep U16b (`197.018-T`, progress output) by removing its edge to
+   197.016-T. This changes membership and dependencies, so it needs an operator decision.
+3. A separate task for the 1 MiB scanner buffer in `internal/events/reader.go` (13.0% of the loop
+   is `memclrNoHeapPointers`). It is a different file, so it is outside U15.
+
+### Wave 2, 3, and 4 contract check (read-only)
+
+* 197.016-T blocks wave 2 (P-002.6 allows no partial wave), so 197.009-T, 197.011-T to
+  197.015-T stay unadmitted. By wave sequencing, wave 3 (`197.010-T`, `197.018-T`) and wave 4
+  (`197.019-T`) wait too. `197.018-T` also depends on `197.016-T` directly.
+* No other wave 2, 3, or 4 contract needs a wave 1 input that was not recorded. The harness
+  owners are the wave 1 red tasks and Ship's Step 3 check passed. The 197.019-T Amendment A2
+  harness reference (`tests/integration/harness_manifest_196_drift_records_test.go`) exists.
+* The `197.018-T` progress callback is independent of U15's performance outcome.
