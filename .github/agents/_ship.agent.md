@@ -1197,7 +1197,7 @@ After all tasks in the queue are complete:
     `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Same
     exit-code handling as above. This 5a lifecycle pipeline-topology gate does not apply to Step 6.0 closure PRs; this exemption covers only the topology gate, and closure PRs remain subject to every other pre-merge gate (Step 6.0 item 4).
 6. Invoke the **pr-lifecycle** skill to create or update the pull request
-7. If CI or optional shadow-review comments fail:
+7. CI confirmation is required whether or not any check failed: before advancing past item 6, every required check must report success for the current `headRefOid`. If CI or optional shadow-review comments fail:
    * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking fix-ci for shipment PR` before invoking the skill.
    * Invoke the **fix-ci** skill before proceeding. The build/CI-fix loop carries the SAME P-021 classification requirement as the review-fix loop: classify every CI/build failure against **P-021 C1** before fixing it, per Step 4.4a above. A build or CI failure whose real fix lies outside the approved scope is deferred via the Step 4.4a defer-capture procedure, never expanded into.
    * **CI confirmation**: before advancing past this item, confirm every required CI check reports success for the current `headRefOid`. A pending, missing, cancelled, or failed required check is not a pass — re-run fix-ci or halt. Never infer CI success from a stale run against an earlier HEAD.
@@ -1448,7 +1448,7 @@ branch-per-release-unit principle.
        this workspace, before the pre-archive reconciliation gate below, run
        `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
        proceeds; exit 1/2 halts immediately with the reported token/message (never inferred, never fail-open).
-   a0b. **Pre-closure baseline (read-only, before any closure write)**: run `git diff --name-only` and `git diff --cached --name-only` and keep both outputs as the pre-closure baseline. Step 6 item 1e uses this baseline to refuse a closure whose allowlisted paths already carried changes that this closure did not produce.
+   a0b. **Pre-closure baseline and pre-existing-change refusal (read-only, before any closure write)**: run `git diff --name-only`, `git diff --cached --name-only`, and `git ls-files --others --exclude-standard`, and keep all three outputs as the pre-closure baseline (unstaged, staged, and untracked). Build the predicted write set before pre-mode: the queue and archive paths for `{shipment_id}` and for every ID in `custom_fields.items`, any existing `.backlogit/reconcile/{shipment_id}-*` report, and any item-log path the backlog index reports for those IDs. If any path in the predicted write set has a staged, unstaged, or untracked change in the baseline, halt with `CLOSURE_PRE_EXISTING_CHANGES`: write nothing, stage nothing, and change no shipment state. This comparison runs here, before pre-mode step a; it never runs after pre-mode or safe-close has written reports or changed shipment state.
    a. **Pre-archive reconciliation gate (mandatory)**: Invoke the `shipment-reconcile`
       skill with `mode: pre`, `shipment_id`, and `expected_status: done`.
       This acquires the single-writer lock on `.backlogit/queue/{shipment_id}.md`
@@ -1505,14 +1505,14 @@ branch-per-release-unit principle.
       rather than by internal core paths. The allowlist holds EXACT paths only: an entry matches
       by exact path equality, a name pattern or glob is never an entry, a queue path is admitted only when it is tracked in HEAD (for example `git ls-files --error-unmatch -- <path>` succeeds, so a pre-archived member with no queue file is skipped), and an archive path is admitted only when the file exists in the working tree. The entries are
       `.backlogit/queue/{shipment_id}.md`; `.backlogit/archive/{shipment_id}.md` for the archived
-      shipment control record; for each explicit member `{member_id}` (an ID in `M`) that the
+      shipment control record; for each explicit member `{member_id}` (every ID in `custom_fields.items`, feature members included, not only the task manifest `M`) that the
       governed closure archived, both `.backlogit/queue/{member_id}.md` (the queue file the archive
       move deletes) and `.backlogit/archive/{member_id}.md` (the archive file it adds); and the
       exact report paths returned by the pre, safe-close, and post invocations, plus any exact log
       path the safe-close report lists for those IDs. Shared index or side-effect files that the governed
       closure writes are added only when the safe-close report lists their exact path. Do not
-      hardcode a file list. If the safe-close report is missing, unreadable, or yields an EMPTY
-      allowlist, halt with `SAFE_CLOSE_REPORT_UNAVAILABLE`, stage nothing, and do not commit. If any allowlisted path appears in the a0b pre-closure baseline (it already had unstaged or staged changes that this closure did not produce), halt with `CLOSURE_PRE_EXISTING_CHANGES`, stage nothing, and do not commit.
+            hardcode a file list. An artifact that is not an explicit member of `custom_fields.items` is never staged, even when the closure touched it (for example a descendant or a linked deliberation). If the safe-close report is missing, unreadable, or yields an EMPTY
+      allowlist, halt with `SAFE_CLOSE_REPORT_UNAVAILABLE`, stage nothing, and do not commit. The `CLOSURE_PRE_EXISTING_CHANGES` refusal is decided at a0b, before any closure write, and is not repeated here.
       Stage every allowlisted path with `git add -- <each allowlisted path>`; staging a removed
       tracked file stages its deletion, so each archived member's queue-side removal is staged
       along with its archive addition. Then verify that the

@@ -78,7 +78,7 @@ positively confirmed, the capture cites it as `DISCOVERY-STATUS: AMBIGUOUS`.
 
 ## Residual risks and follow-ups (not blocking wave 2)
 
-* Lock-name cutover: before upgrading the lock scripts (197.012-T, 197.013-T), clear only harness lock targets left by the superseded scripts (the `.<file>.lock` sidecar name for a harness lock target), and only after confirming no process holds that lock. Never delete a backlogit-managed sidecar; those zero-byte OS-lock files share the `.*.lock` pattern.
+* Lock-name cutover: the lock-script cutover (197.012-T, 197.013-T) deletes no lock file. A legacy `.<file>.lock` left by the superseded scripts is reported as an operator decision; no agent removes it, even after confirming no process holds that lock. Backlogit-managed sidecars must never be deleted; those zero-byte OS-lock files share the `.*.lock` pattern.
 * `internal/cli` progress: stderr is written while the shipment membership lock is held (advisory, 197.018-T).
 * `internal/core` full suite exceeds the default 10 minute timeout; the wave gate uses `-timeout=30m`.
   Related performance follow-up: stash `76553D8D`. The R10 "fixed" part is NOT delivered by 197-S.

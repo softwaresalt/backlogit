@@ -283,7 +283,7 @@ Gather the full current backlog state:
    - If found: record as `queued_shipments`.
    - For each DAG-ready queued candidate (no unshipped `blocks`-type predecessor, per the re-check in Step 2 item 1), run
      `autoharness gate pipeline-topology --mode agent --shipment {id} --phase pre_claim --json`
-     and show its gate verdict and token next to DAG readiness. A candidate is reported as **eligible** ONLY when BOTH hold: (a) DAG readiness passes, using the same criteria as the Step 2 item 1 re-check (no unshipped `blocks`-type predecessor and, when `DARK_MODE_ACTIVE`, it is the next entry in the P-017 `DARK_MODE_SCOPE` ordered cursor, not merely a scope member, and passes the P-017 scope filter); and (b) its pre_claim gate verdict passes (exit 0). A DAG-ready candidate that the pre_claim gate refuses (exit 1 `blocked` or exit 2 `invalid`, for example `PREDECESSOR_CLOSURE_INCOMPLETE`) is NOT eligible: list it under a separate `blocked by gate` heading with that refusal token. The gate verdict is shown beside every candidate, in either list. Step 0 eligibility is advisory and is not a claim; Ship's pre_claim gate (Step 2 item 3) remains the authority.
+     and show its gate verdict and token next to DAG readiness. A candidate is reported as **eligible** ONLY when BOTH hold: (a) DAG readiness passes, using the same criteria as the Step 2 item 1 re-check (no unshipped `blocks`-type predecessor and, when `DARK_MODE_ACTIVE`, it is the next entry in the P-017 `DARK_MODE_SCOPE` ordered cursor, not merely a scope member, and passes the P-017 scope filter); and (b) its pre_claim gate verdict passes (exit 0). A DAG-ready candidate that the pre_claim gate refuses (exit 1 `blocked` or exit 2 `invalid`, for example `PREDECESSOR_CLOSURE_INCOMPLETE`) is NOT eligible: list it under a separate `blocked by gate` heading with that refusal token. The gate verdict is shown beside every candidate, in either list. Step 0 eligibility is advisory and is not a claim; the `pipeline-topology` pre_claim gate that the Orchestrator itself invokes (Step 2 item 3) remains the authority, and Ship's separate claim-time gates are not part of this advisory check.
    - When the `pipeline-topology` gate is not installed in this workspace, say so, show the gate verdict as `not installed`, and do not invent a verdict. Report DAG readiness and scope as usual; eligibility then follows DAG readiness and scope alone, because Step 2 item 3's bootstrap exemption also skips the gate, and no candidate is listed under `blocked by gate` on that basis.
    - Eligibility reporting never claims a shipment and never invokes Ship.
 
@@ -300,7 +300,7 @@ Gather the full current backlog state:
    ORCHESTRATOR STATE:
    - Active Ship work: {shipment_id or none}
    - Queued shipments: {count}
-   - Eligible shipments (DAG readiness and pre_claim gate verdict both pass; when dark mode is active, also the next `DARK_MODE_SCOPE` cursor entry that passes the P-017 scope filter; gate verdict shown beside each): {id, gate verdict and token, or none}
+   - Eligible shipments (DAG readiness and pre_claim gate verdict both pass (or, when the `pipeline-topology` gate is not installed, say so and do not invent a verdict); when dark mode is active, also the next `DARK_MODE_SCOPE` cursor entry that passes the P-017 scope filter; gate verdict shown beside each): {id, gate verdict and token, or none}
    - Blocked by gate (DAG-ready, refused by the pre_claim gate): {id, refusal token, or none}
    - Stash entries: {count}
    - Mode: {sequential | pipelined | dark-factory}
