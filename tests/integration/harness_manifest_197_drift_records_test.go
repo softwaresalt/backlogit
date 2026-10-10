@@ -15,11 +15,13 @@ import (
 // TestUCXS17_RefreshedDriftRecords pins the 197-F (U17, 197.019-T) harness-manifest drift records
 // for the eight files refreshed by this release.
 //
-// Shape-and-pin contract: each entry must keep exactly one manifest record with drift_allowed
-// true, a 64-character lowercase hex checksum that differs from the pre-refresh value pinned
-// below, the drift_reason phrases and citations already present today, and the governing stash
-// IDs. This test does NOT recompute file hashes and does NOT assert that a checksum equals the
-// current file hash, so later edits to these files do not redden it.
+// Shape-and-pin contract: each refreshed entry must have exactly one manifest record with
+// drift_allowed true, a 64-character lowercase hex checksum that differs from the pre-refresh
+// value pinned below, and a drift_reason citing the governing stash IDs. The _ship and
+// _orchestrator agent entries also keep the phrase "Do not auto-revert." and their pre-refresh
+// citations (227A2930; B83081F5 for _ship). No other drift_reason text is pinned. This test does
+// NOT recompute file hashes and does NOT assert that a checksum equals the current file hash, so
+// later edits to these files do not redden it.
 func TestUCXS17_RefreshedDriftRecords(t *testing.T) {
 	type artifact struct {
 		Path         string `yaml:"path"`
