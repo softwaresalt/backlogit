@@ -160,8 +160,9 @@ func isKnownProfile(p Profile) bool {
 }
 
 // contractFields is the closed set of top-level keys that belong on the docline
-// contract surface. Any other key is folded under the docline namespace by the
-// normalizer (move, never drop).
+// contract surface. Non-closure documents fold all non-contract keys under the
+// docline namespace. Closure documents keep the closure gate keys top-level,
+// copied unchanged. No key is dropped or renamed.
 var contractFields = map[string]struct{}{
 	"title":          {},
 	"source":         {},
