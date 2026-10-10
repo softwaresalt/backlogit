@@ -283,8 +283,8 @@ Gather the full current backlog state:
    - If found: record as `queued_shipments`.
    - For each DAG-ready queued candidate (no unshipped `blocks`-type predecessor, per the re-check in Step 2 item 1), run
      `autoharness gate pipeline-topology --mode agent --shipment {id} --phase pre_claim --json`
-     and show its gate verdict and token next to DAG readiness. Report a candidate as eligible only when both DAG readiness and the gate verdict pass.
-   - When the `pipeline-topology` gate is not installed in this workspace, say so, show the gate verdict as `not installed`, and do not invent a verdict. Report DAG readiness only; such a candidate is not reported as eligible.
+     and show its gate verdict and token next to DAG readiness. Report a candidate as eligible when it meets the same criteria as the Step 2 item 1 re-check: no unshipped `blocks`-type predecessor and, when `DARK_MODE_ACTIVE`, membership in the P-017 `DARK_MODE_SCOPE` (the scope filter applies at Step 0 too). The gate verdict is shown beside each eligible candidate; eligibility is not a claim, and Ship's pre_claim gate (Step 2 item 3) remains the authority.
+   - When the `pipeline-topology` gate is not installed in this workspace, say so, show the gate verdict as `not installed`, and do not invent a verdict. Report DAG readiness and scope as usual; eligibility then follows the same criteria, because Step 2 item 3's bootstrap exemption also skips the gate.
    - Eligibility reporting never claims a shipment and never invokes Ship.
 
 3. Check stash for pending entries (entries not yet promoted to backlog):
@@ -300,7 +300,7 @@ Gather the full current backlog state:
    ORCHESTRATOR STATE:
    - Active Ship work: {shipment_id or none}
    - Queued shipments: {count}
-   - Eligible shipments (DAG-ready and gate verdict pass): {id, gate verdict and token, or none}
+   - Eligible shipments (DAG-ready and, when dark mode is active, within the P-017 `DARK_MODE_SCOPE`; gate verdict shown beside each): {id, gate verdict and token, or none}
    - Stash entries: {count}
    - Mode: {sequential | pipelined | dark-factory}
    - DARK_MODE_ACTIVE: {inactive | active(scope={ids})}
@@ -462,11 +462,15 @@ fixes when that record is persisted.
     or `workspace.archive_path` directories, each contained in the served storage root
     (the canonical path lies under it, compared component-wise by the step c rules). A
     shipment archived by a crashed closure still binds through `workspace.archive_path`.
-    If it exists in neither or both, fail closed. Configured queue and archive locations
-    are honored as attested; no default directory is assumed.
-  * Require the manifest directory to be contained in the served storage root with no
-    symlink or reparse-point component, and the manifest file itself to have no symlink or
-    reparse-point component. Apply Ship Step 4.1b's raw-read safety: no-follow open,
+    If it exists in neither or both, fail closed. The metadata catalog hardcodes
+    `<storage>/queue` and `<storage>/archive`, so the attested paths are those defaults.
+    Manifests that declare non-default queue or archive locations fail closed: they are not
+    honored, and a manifest that exists only under a non-default archive directory is found
+    in neither and fails closed.
+  * Require the canonical manifest directory to be a direct child of the canonical served
+    storage root, and the canonical manifest file to be a direct child of that directory.
+    Reject every symlink or reparse-point component in the served storage root, manifest
+    directory, and manifest file. Apply Ship Step 4.1b's raw-read safety: no-follow open,
     opened-path verification, and a scoped P-012 raw-read declaration.
   * Read only the manifest frontmatter.
   * Static check: `id`, `status`, `updated_at`, and the ordered `custom_fields.items` equal
@@ -483,8 +487,9 @@ fixes when that record is persisted.
   `served_storage_root` (Ship's "served storage root") in the Ship invocation payload as
   canonical OS-native absolute paths. Include the binding evidence: `id`, ordered items,
   and the attested `workspace.root_path`, `workspace.storage_root`, and index `file`. The
-  evidence is informational. Ship re-runs the Served-Root Attestation itself at use time
-  and never treats the evidence as proof. Record the outcome in `docs/memory/` in
+  evidence is informational. Ship runs the full Served-Root Attestation once per wave
+  admission and runs only the `pragma_database_list` check at each task claim, before any
+  raw item-log read, and never treats the evidence as proof. Record the outcome in `docs/memory/` in
   workspace-relative form only, but never in the main worktree before Ship is invoked:
   Ship Step 0.5 item 3a halts on any `git status --short` output when it creates the
   shipment branch from `main`. Carry the outcome in the Ship invocation payload instead,
