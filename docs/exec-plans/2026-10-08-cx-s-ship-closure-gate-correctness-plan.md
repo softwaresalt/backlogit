@@ -584,3 +584,159 @@ Requires plan hardening: yes
 * revisions: U1b split from U1; U16 split into U16a (RED) and U16b; U15 harness exemption recorded in Constitution Check with a U6-derived target; U8 allowlist keyed by work-item ID; U17 AC3 re-run before merge; 8F41D60D single-rerun rule; U13 AC limited to documentation rows.
 * residual advisories: Go Reviewer note that U14 must write closure keys back after ToMap (already stated in U14); Scope Boundary Auditor note that U16b could depend only on U6 (kept on U15 because both edit shipment_gate.go).
 * operator_authorization: approved (operator APPROVED this scope and directed autonomous work without routine confirmations, relayed by the Orchestrator on 2026-10-08)
+
+## Erratum E1 (2026-10-10)
+
+This erratum documents an already-reviewed plan. It records planning fields
+that Stage wrote onto the backlog tasks and the covering feature 197-F so that
+Ship can admit the wave schedule under the P-002 red-first rules. It was made
+under P-017 dark factory mode (scope [197-S] only). It does not change scope:
+shipment membership S (197-F plus the 19 tasks, 20 items) and the task set M
+(the 19 tasks), dependencies, waves, task titles, and acceptance criteria are
+unchanged, no plan line above was edited, and plan-review was not re-run. The
+full record is `docs/memory/2026-10-10/stage-197s-red-contract-amendment.md`.
+
+### P-002.2 red-deliverable contracts
+
+Seven red deliverables carry a canonical red-deliverable contract on their
+backlog task. The validated red, green-makers, close-wave mapping follows. It
+is derived from the unit text and the Dependency Graph above. Every
+green-maker is in M, is not the red deliverable itself, and lands in a
+strictly later wave. The close wave equals the latest green-maker wave.
+
+| Red deliverable | Green-maker(s) | Green-maker wave | Close wave |
+|---|---|---|---|
+| 197.001-T (U1, `TestUCXS1_`) | 197.009-T (U8) | 2 | 2 |
+| 197.002-T (U1b, `TestUSR3_`) | 197.009-T (U8) | 2 | 2 |
+| 197.003-T (U2, `TestUCXS2_`) | 197.010-T (U9) | 3 | 3 |
+| 197.004-T (U3, `TestUCXS3_` and `TestUSR1_`) | 197.011-T (U10) | 2 | 2 |
+| 197.005-T (U4, `TestUCXS4_`) | 197.012-T, 197.013-T, 197.014-T (U11-U13) | 2 | 2 |
+| 197.006-T (U5, `TestUCXS6_NormalizeClosureGateKeysStayTopLevel`) | 197.015-T (U14) | 2 | 2 |
+| 197.017-T (U16a, `TestUCXS5_`) | 197.018-T (U16b) | 3 | 3 |
+
+Selector declaration for U16a (197.017-T): the plan leaves the test name to
+the implementer, but the red selector command must be exact. Stage declared
+the next unused collision-free unit token, `CXS5`, so the test prefix is
+`TestUCXS5_` (see the rename below), and the package `./internal/cli`, where
+the `shipment ship` command and its tests live. It declares no test body and no
+scope. Amendment A3 on 197.017-T records that a differently named test would
+match nothing under the declared selector (`WAVE_RED_DELIVERABLE_VACUOUS`).
+
+### Selector prefix rename (P-002.6 requirement 4)
+
+The test names that this plan gives (`TestCXS1_` to `TestCXS4_` in U1 to U4, and
+`TestNormalize_ClosureGateKeysStayTopLevel` in U5) do not start with `TestU`.
+P-002.6 requirement 4 (`.github/policies/workflow-policies.md`,
+`build-feature` Step 0.5, and `_ship.agent.md`) requires every task-scoped
+harness command to be anchored to `-run '^TestU<unit>_'`, and the scheduler
+replay rejects a red selector that is not (`Test-TaskScopedCommandShape` in
+`scripts/wave-scheduler-sim.ps1`; Ship would halt `WAVE_RED_MAPPING_UNRESOLVED`
+at wave-1 dispatch of all seven red deliverables). The policy wins over the
+plan's names. Stage therefore declared the repository convention `TestU` plus a
+unit token on the backlog tasks, and the tasks govern wherever they differ from
+the plan text above:
+
+| Plan unit | Unit token | Declared test prefix or name | Package |
+|---|---|---|---|
+| U1 | `CXS1` | `TestUCXS1_` (was `TestCXS1_`) | `./tests/integration` |
+| U2 | `CXS2` | `TestUCXS2_` (was `TestCXS2_`) | `./tests/integration` |
+| U3 | `CXS3` | `TestUCXS3_` (was `TestCXS3_`); also `TestUSR1_` | `./tests/integration` |
+| U4 | `CXS4` | `TestUCXS4_` (was `TestCXS4_`) | `./tests/integration` |
+| U16a | `CXS5` | `TestUCXS5_` | `./internal/cli` |
+| U5 | `CXS6` | `TestUCXS6_NormalizeClosureGateKeysStayTopLevel` (was `TestNormalize_ClosureGateKeysStayTopLevel`) | `./internal/docline` |
+
+`TestUSR1_`, `TestUSR3_`, and `TestUSR6_` are unchanged. Union selectors keep the
+required anchor: `'^TestU(CXS3_|SR1_)'` (197.004-T red selector and the 197.011-T
+owner command) and `'^TestU(CXS1_|SR3_)'` (197.009-T owner command, because U8
+turns both 197.001-T and 197.002-T green). Every covered-by owner command is
+byte-identical to its owner's red selector, except that documented union.
+Subtests and the function suffixes are unchanged.
+
+### P-002.1 exemption contracts and the closed exempt set
+
+Ten tasks carry a P-002.1 exemption contract. The closed exempt set is
+recorded on 197-F and is exactly these ten tasks:
+
+* 197.007-T (U6), verification-only: the new benchmark file only.
+* 197.008-T (U7), docs-only: one new markdown file.
+* 197.009-T (U8), 197.010-T (U9), 197.011-T (U10), 197.012-T (U11),
+  197.013-T (U12), 197.014-T (U13), 197.015-T (U14), and 197.018-T (U16b),
+  covered by the red deliverable that each one turns green (table above).
+
+No other task may claim an exemption without a reviewed amendment.
+
+### U15 harness posture (supersedes the Constitution Check deviation)
+
+The Constitution Check line "Justified deviation: U15 is harness-exempt" and
+the U15 unit line "Harness: exempt, covered by the U6 benchmark" above are
+superseded. P-002.1 withdrew a prose-only exemption, and U6 is itself exempt,
+so it cannot own U15's harness. U15 is harness-required. It carries no
+exemption label and no exemption contract. Ship's harness-architect scaffolds
+its RED harness at the start of wave 2, after U6 is done and its verdict,
+ns/op, profile, and target are recorded in the U6 task notes. The harness must
+fail on main for the right reason and pass only after the refactor, derive its
+failing condition from the U6 verdict and target, and be task-scoped. Its shape
+is the harness-architect's choice. For example, (a) a work-count
+characterization test, (b) a U6-derived performance budget, or (c) a
+source-shape assertion. These three are examples, not a closed list. A
+work-count RED may use `_test.go`-only seams and must add no production seam and
+no production stub, because P-002.1 (cycle 31) forbids a production declaration
+ahead of its harness. A timing or performance budget may only corroborate a RED
+and is never the sole RED condition, because timing is nondeterministic. Every
+existing shipment gate test, verdict, error classification, and lock order must
+stay unchanged. A REFUTED U6 verdict, a missed target, or no valid
+RED harness halts and returns to Stage; U15 is never exempted and no substitute
+harness is scaffolded. The deliverable, file, acceptance criteria, and
+dependencies of U15 are unchanged. The tightened wording is Amendment A1 on
+197.016-T, which also adds a pointer line after the stale "Harness: exempt"
+prose there.
+
+### U17 harness posture (Amendment A2)
+
+U17 (197.019-T) is harness-required, not exempt. It edits a repository
+configuration file, `.autoharness/harness-manifest.yaml`, which no exempt class
+admits. The U17 unit line "Posture: verification-only" above is therefore only
+its execution posture. Ship's harness-architect scaffolds its harness at the
+start of wave 4, after U8 to U14 (including U9) have landed. The RED harness
+follows the 196 drift-record shape
+(`tests/integration/harness_manifest_196_drift_records_test.go`). Per manifest
+entry for the files this release changes, it asserts exactly one entry,
+`drift_allowed: true`, a 64-hex lowercase checksum that differs from the
+pre-refresh value pinned at wave-4 start, and a `drift_reason` that keeps
+`Do not auto-revert.` and the existing citations and cites this release's
+governing stash IDs. It fails at wave-4 start because those entries are still
+stale and passes only after the refresh. It must not assert that the checksum
+equals the current file hash, because that would redden every later shipment
+that edits those files, and like the 196 test it does not recompute hashes.
+`TestUSR6_HarnessManifestDriftRecords` (U17 AC1) is already green on main, so it
+is a regression guard and not the RED harness. The one-time currency check in
+U17 AC2 uses the manifest's LF-normalized SHA-256 convention (the recipe in the
+archived 196.006-T AC1), because raw `Get-FileHash` on a CRLF checkout does not
+match it. If no valid RED shape can be formed, the task halts and returns to
+Stage. U17 carries no exemption label and no contract.
+
+### Other task-body amendments
+
+* Amendment A3 on 197.017-T: the declared selector is
+  `-run '^TestUCXS5_'` in package `./internal/cli`; it supersedes "implementer
+  names it" for the test name and package.
+* 197.008-T (U7): the content probe in its exemption command was loosened so a
+  line-wrapped gate-required comment still matches. It was checked as a
+  positive control against a document structured like
+  `docs/closure/136-S-154-F-post-merge-closure.md` and still fails before the
+  deliverable exists. An evidence note records that U7 AC1's gate-run output can
+  be observed only after 197-S leaves `active` (the known
+  `PRECLAIM_ACTIVE_SHIPMENT_PRESENT`); the AC text is unchanged.
+* 197.007-T (U6): a sentence records that its verdict, ns/op, top-five
+  profile, and target are the input Amendment A1 of 197.016-T requires, and that
+  missing evidence is a wave-2 halt for 197.016-T.
+* 197.005-T (U4): one line requires every table-row subtest to be named after
+  its file path, because the exempt gates of 197.012-T to 197.014-T filter
+  `--- FAIL:` rows by path.
+
+### Unchanged
+
+Shipment membership S (197-F plus the 19 tasks), the task set M (the 19 tasks),
+dependencies, waves (W1 U1, U1b, U2-U7, and U16a; W2 U8 and
+U10-U15; W3 U9 and U16b; W4 U17), titles, and acceptance criteria are
+unchanged.
