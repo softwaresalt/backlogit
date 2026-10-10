@@ -1504,19 +1504,24 @@ branch-per-release-unit principle.
       rather than by internal core paths. The allowlist holds EXACT paths only: an entry matches
       by exact path equality, and a name pattern or glob is never an entry. The entries are
       `.backlogit/queue/{shipment_id}.md`; `.backlogit/archive/{shipment_id}.md` for the archived
-      shipment control record; `.backlogit/archive/{member_id}.md` for each explicit member
-      `{member_id}` (an ID in `M`) that the governed closure archived; and the exact report paths
-      returned by the pre, safe-close, and post invocations, plus any exact log path the
-      safe-close report lists for those IDs. Shared index or side-effect files that the governed
+      shipment control record; for each explicit member `{member_id}` (an ID in `M`) that the
+      governed closure archived, both `.backlogit/queue/{member_id}.md` (the queue file the archive
+      move deletes) and `.backlogit/archive/{member_id}.md` (the archive file it adds); and the
+      exact report paths returned by the pre, safe-close, and post invocations, plus any exact log
+      path the safe-close report lists for those IDs. Shared index or side-effect files that the governed
       closure writes are added only when the safe-close report lists their exact path. Do not
       hardcode a file list. If the safe-close report is missing, unreadable, or yields an EMPTY
       allowlist, halt with `SAFE_CLOSE_REPORT_UNAVAILABLE`, stage nothing, and do not commit.
-      Stage the allowlisted paths that changed with `git add -- <paths>`. Then verify that the
+      Stage every allowlisted path with `git add -- <each allowlisted path>`; staging a removed
+      tracked file stages its deletion, so each archived member's queue-side removal is staged
+      along with its archive addition. Then verify that the
       *changed paths* (the exact output lines of `git diff --cached --name-only --no-renames`)
       equal the changed subset of the allowlist, and halt on any other staged path.
       Git accepts `--no-renames` in either position, but the command must keep the exact substring
       `git diff --cached --name-only`, so write it as `git diff --cached --name-only --no-renames`.
-      The flag lists both sides of an archive rename, so the old queue path is checked too. Commit in a separate
+      With `--no-renames`, each archive move appears as two changed paths (the deleted queue path
+      and the added archive path). Both are allowlisted, so the check covers the queue side of
+      every archived member. Commit in a separate
       command: `git commit -m "chore: archive {shipment_id} backlog artifacts"`
 2. **Runtime validation and releasability evidence**: If the shipped work touches runtime surfaces, load `.autoharness/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces **validator evidence** for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites (do not fake unsupported automation). Then invoke `operational-closure` in `mode=post-merge` with that validator evidence plus `runtime_validation.releasability` so closure produces explicit **releasability evidence** (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) covering monitoring, rollback, owner, validation-window, and follow-up requirements — alongside the release-readiness, monitoring, and rollback artifacts in `docs/closure/`. The closure artifact carries a **compaction status** field (initialized `pending`) that step 8 finalizes to `done`/`degraded`; the Orchestrator's closure-gated routing treats a `pending`/unset compaction status as an incomplete post-merge closure (P-020).
    In dark mode, the closure summary must list decisions, gates, reviewed HEADs,
