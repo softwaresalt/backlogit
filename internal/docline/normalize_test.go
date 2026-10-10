@@ -224,3 +224,48 @@ func TestNormalize_PreservesCollidingFoldedKeys(t *testing.T) {
 	second := normalizeOnce(t, "docs/decisions/x.md", got)
 	assert.Equal(t, got, second, "collision-preserving normalization is idempotent")
 }
+
+func TestUCXS6_NormalizeClosureGateKeysStayTopLevel(t *testing.T) {
+	t.Parallel()
+	const closurePath = "docs/closure/141-S-x-post-merge-closure.md"
+	raw := "---\ntitle: Closure\nclosure_status: READY_WITH_CONDITIONS\ncompaction_status: pending\n" +
+		"conditions: owner sign-off\nunknown_key: kept\n---\nBody.\n"
+
+	t.Run("GateKeysStayTopLevel", func(t *testing.T) {
+		got := normalizeOnce(t, closurePath, raw)
+		md, err := Decode([]byte(got))
+		require.NoError(t, err)
+
+		assert.Equal(t, "READY_WITH_CONDITIONS", md.Frontmatter["closure_status"],
+			"closure_status must stay top-level on a closure path")
+		assert.Equal(t, "pending", md.Frontmatter["compaction_status"],
+			"compaction_status must stay top-level on a closure path")
+		assert.Equal(t, "owner sign-off", md.Frontmatter["conditions"],
+			"conditions must stay top-level on a closure path")
+	})
+
+	t.Run("UnknownKeyFoldsUnderDocline", func(t *testing.T) {
+		got := normalizeOnce(t, closurePath, raw)
+		md, err := Decode([]byte(got))
+		require.NoError(t, err)
+
+		dl, ok := md.Frontmatter["docline"].(map[string]any)
+		require.True(t, ok, "docline namespace present on a closure path")
+		assert.Equal(t, "kept", dl["unknown_key"], "unknown key folds under docline")
+		_, present := md.Frontmatter["unknown_key"]
+		assert.False(t, present, "unknown key must not stay top-level")
+	})
+
+	t.Run("NonClosurePathFoldsClosureStatus", func(t *testing.T) {
+		got := normalizeOnce(t, "docs/decisions/x.md", raw)
+		md, err := Decode([]byte(got))
+		require.NoError(t, err)
+
+		dl, ok := md.Frontmatter["docline"].(map[string]any)
+		require.True(t, ok, "docline namespace present on a non-closure path")
+		assert.Equal(t, "READY_WITH_CONDITIONS", dl["closure_status"],
+			"closure_status folds under docline outside closure documents")
+		_, present := md.Frontmatter["closure_status"]
+		assert.False(t, present, "closure_status must not stay top-level outside closure documents")
+	})
+}
