@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Releases an advisory file lock for agent concurrency control.
-# Deletes the .{filename}.lock file created by acquire_lock.sh.
+# Deletes the .{filename}.agent-lock file created by acquire_lock.sh.
 # If the lock file does not exist, emits a warning but exits successfully.
 #
 # Requires proof of ownership (O2): the caller must supply, via --token or
@@ -189,7 +189,7 @@ fi
 
 RESOLVED_DIR="$(dirname "$TARGET_PATH")"
 FILENAME="$(basename "$TARGET_PATH")"
-LOCKFILE="${RESOLVED_DIR}/.${FILENAME}.lock"
+LOCKFILE="${RESOLVED_DIR}/.${FILENAME}.agent-lock"
 
 # Containment (local fix, backlogit tune 2026-09-27): release, including
 # --force, may only delete a lock file that is a proper descendant of the
