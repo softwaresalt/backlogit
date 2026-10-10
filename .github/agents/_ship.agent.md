@@ -1442,7 +1442,8 @@ refreshes, and knowledge graduation. These changes deserve the same review cycle
 work. Committing directly to `main` bypasses code review and violates the
 branch-per-release-unit principle.
 
-1. **Close the shipment** (shipments are enabled in this workspace):
+1. **Close the shipment** (only when the backlog registry declares features.shipments: true):
+   When the key is absent or false, skip item 1 and record why in the closure artifact.
    a0. **TOPOLOGY_GATE: lifecycle (before closure/safe-close)** — if the `pipeline-topology` gate is installed for
        this workspace, before the pre-archive reconciliation gate below, run
        `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
@@ -1457,31 +1458,35 @@ branch-per-release-unit principle.
         to the operator. Do NOT proceed to step 1.b.
       * If the skill returns `PROCEED`: continue. The lock remains held until post-mode
         completes in step 1.d.
-   b. Call `backlogit_ship_shipment` with the merge commit SHA. Shipment
-      membership is flat and explicit: the governed transaction completes and
-      archives exactly the IDs in `custom_fields.items`, plus the shipment
-      control record. A listed feature does not imply shipment membership for
-      any descendant or linked deliberation. Explicit feature members retain
-      governed feature completion and archival, while every unlisted artifact
-      remains untouched. Reconciliation must not expect an unlisted descendant
-      or deliberation to archive, return to backlog, or appear as an orphan.
+   b. **Governed closure (safe-close)**: Invoke `shipment-reconcile` with
+      `mode: safe-close`, `shipment_id`, and `merge_commit_sha`. Safe-close is the only
+      caller of `backlogit_ship_shipment`. It re-reads the shipment under the lock, requires
+      its manifest (`M`) to equal the pre-mode manifest, and returns `CLOSED` only when its
+      result envelope validates. Shipment membership is flat and explicit: the governed
+      transaction completes and archives exactly the IDs in `custom_fields.items`, plus the
+      shipment control record. A listed feature does not imply shipment membership for any
+      descendant or linked deliberation. Explicit feature members retain governed feature
+      completion and archival, while every unlisted artifact remains untouched.
+      Reconciliation must not expect an unlisted descendant or deliberation to archive,
+      return to backlog, or appear as an orphan.
 
-      **Third branch — halted archival (143-F)**: `backlogit_ship_shipment` no longer
-      always reaches its archival step. If it returns `mutation_partial` with
-      `classification: indeterminate` and `failed_step: shipped-event-append`, the
-      governed ship path deliberately halted BEFORE the archive collector ran because
-      the shipped-event append outcome could not be proven. Do NOT treat the absent
-      archive files as a P-007 violation and do NOT run `git restore .backlogit/archive/`.
+      **Third branch — halted archival (143-F)**: the governed ship inside safe-close no
+      longer always reaches its archival step. If the safe-close result envelope reports
+      `mutation_partial` with `classification: indeterminate` and
+      `failed_step: shipped-event-append`, the governed ship path deliberately halted BEFORE
+      the archive collector ran because the shipped-event append outcome could not be
+      proven. Do NOT treat the absent archive files as a P-007 violation and do NOT run
+      `git restore .backlogit/archive/`.
       Instead run `backlogit doctor --check-shipped-event-completeness` (or
       `backlogit_doctor` with `check_shipped_event_completeness`), follow the
       named-limitation procedure in P-007, and halt closure pending operator
       reconciliation. There is no supported forward transition out of `shipped`.
 
-      A `classification: not-applied` result with `compensation_state: compensated`
-      reverted the ship cleanly and may be retried. `compensation_state:
-      partially-compensated` names release-scope items compensation could not restore;
-      reconcile those IDs before retrying, and note the audit may report clean while
-      they remain torn.
+      In the safe-close result envelope, `classification: not-applied` with
+      `compensation_state: compensated` reverted the ship cleanly and safe-close may be
+      retried. `compensation_state: partially-compensated` in the envelope names
+      release-scope items compensation could not restore; reconcile those IDs before
+      retrying, and note the audit may report clean while they remain torn.
    c. **Verify archive integrity (P-007)**: Run `git status -- ".backlogit/archive/"`.
       If any archive files appear as working-tree deletions, restore them immediately:
       `git restore .backlogit/archive/`. See P-007 in workflow-policies for the
@@ -1494,9 +1499,16 @@ branch-per-release-unit principle.
       `HALT — shipped-event reconciliation required`, do NOT restore; halt closure and
       surface the audit output and the stranded release-scope items to the operator.
       The lock is released by the skill at the end of post-mode.
-   e. Commit the backlog state in two separate terminal commands:
-      `git add .backlogit/`
-      `git commit -m "chore: archive {shipment_id} backlog artifacts"`
+   e. **Allowlisted staging, then commit.** Build the allowlist from the safe-close report
+      (`.backlogit/reconcile/{shipment_id}-safe-close-{timestamp}.md`), keyed by work-item ID
+      rather than by internal core paths: paths under the configured queue, archive, and logs
+      directories whose base name begins with an ID in `M` or with `shipment_id`, plus the
+      shipment's `.backlogit/reconcile/{shipment_id}-*` reports. Shared index or side-effect
+      files that the governed closure writes are added only by name pattern when the
+      safe-close report lists them. Do not hardcode a file list. Stage the changed paths with
+      `git add -- <paths>`, verify that `git diff --cached --name-only` equals the changed
+      subset of the allowlist, and halt on any other staged path. Commit in a separate
+      command: `git commit -m "chore: archive {shipment_id} backlog artifacts"`
 2. **Runtime validation and releasability evidence**: If the shipped work touches runtime surfaces, load `.autoharness/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces **validator evidence** for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites (do not fake unsupported automation). Then invoke `operational-closure` in `mode=post-merge` with that validator evidence plus `runtime_validation.releasability` so closure produces explicit **releasability evidence** (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) covering monitoring, rollback, owner, validation-window, and follow-up requirements — alongside the release-readiness, monitoring, and rollback artifacts in `docs/closure/`. The closure artifact carries a **compaction status** field (initialized `pending`) that step 8 finalizes to `done`/`degraded`; the Orchestrator's closure-gated routing treats a `pending`/unset compaction status as an incomplete post-merge closure (P-020).
    In dark mode, the closure summary must list decisions, gates, reviewed HEADs,
    merge/fallback status, admin fallback result if any, **compaction status (P-020)**,
