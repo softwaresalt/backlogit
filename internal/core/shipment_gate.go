@@ -400,6 +400,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		if ws.formalGateEnforced() {
 			return "", formalGateShipmentRefusal(shipmentID, "gate broker is not wired (disabled or unconfigured) but formal gate evidence is enforced")
 		}
+		reportSkippedMemberValidation(ctx, releaseScope, "gate disabled or unwired")
 		return "", nil
 	}
 
@@ -436,6 +437,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		if ws.formalGateEnforced() {
 			return "", formalGateShipmentRefusal(shipmentID, "gates are not enforceable in this environment (auto fail-open) but formal gate evidence is required")
 		}
+		reportSkippedMemberValidation(ctx, releaseScope, "gate not enforced in this environment")
 		return "", nil
 	}
 
@@ -652,6 +654,37 @@ func manifestItemsUnchanged(original, current []string) bool {
 	return true
 }
 
+// WithShipmentProgress returns a copy of ctx that carries report, so shipment
+// completion can report per-member validation progress through it. A context
+// without a reporter emits nothing, which keeps callers that do not render
+// progress (such as the MCP surface) unchanged.
+func WithShipmentProgress(ctx context.Context, report func(msg string)) context.Context {
+	return context.WithValue(ctx, shipmentProgressKey{}, report)
+}
+
+// shipmentProgressKey is the context key for the reporter installed by
+// WithShipmentProgress.
+type shipmentProgressKey struct{}
+
+// reportShipmentProgress forwards a formatted progress line to the reporter
+// carried by ctx, if one was installed.
+func reportShipmentProgress(ctx context.Context, format string, args ...any) {
+	report, ok := ctx.Value(shipmentProgressKey{}).(func(msg string))
+	if !ok || report == nil {
+		return
+	}
+	report(fmt.Sprintf(format, args...))
+}
+
+// reportSkippedMemberValidation reports every release-scope member as skipped
+// when gate evidence is not checked, so the progress stream never claims a
+// validation that did not run.
+func reportSkippedMemberValidation(ctx context.Context, releaseScope []string, reason string) {
+	for i, id := range releaseScope {
+		reportShipmentProgress(ctx, "validating member %d/%d: %s (skipped: %s)", i+1, len(releaseScope), id, reason)
+	}
+}
+
 // validateMemberGateEvidence verifies every task/subtask member in the release
 // scope is terminal AND carries passing (or forced) gate evidence. When
 // shipmentHead is non-empty, the member's recorded evidence head must be an
@@ -699,7 +732,8 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 		expectedBaseRef = baseRefs[0]
 	}
 
-	for _, id := range releaseScope {
+	for i, id := range releaseScope {
+		reportShipmentProgress(ctx, "validating member %d/%d: %s", i+1, len(releaseScope), id)
 		item, err := loadArtifact(ctx, ws, id)
 		if err != nil {
 			return fmt.Errorf("validate member evidence: load %s: %w", id, err)

@@ -392,7 +392,10 @@ func newShipmentShipCmd() *cobra.Command {
 			}
 			defer ws.Close()
 
-			result, err := core.ShipShipment(ctx, ws, shipmentID, &core.CommitMetadata{
+			progressCtx := core.WithShipmentProgress(ctx, func(msg string) {
+				fmt.Fprintln(cmd.ErrOrStderr(), msg)
+			})
+			result, err := core.ShipShipment(progressCtx, ws, shipmentID, &core.CommitMetadata{
 				SHA:     sha,
 				Message: message,
 				Author:  author,
