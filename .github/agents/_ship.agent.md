@@ -1500,7 +1500,7 @@ branch-per-release-unit principle.
       `HALT — shipped-event reconciliation required`, do NOT restore; halt closure and
       surface the audit output and the stranded release-scope items to the operator.
       The lock is released by the skill at the end of post-mode.
-   e. **Allowlisted staging, then commit.** Build the allowlist from the safe-close report
+   e. **Allowlisted staging, then commit.** Every path in this item is rooted at the attested served storage directory (`workspace.storage_root` from Step 4.1b, named `.backlog` or `.backlogit`), never an assumed directory. Before any ID is interpolated into a path, validate it against `^\d{3,}(\.\d{3,})*-[A-Z]{1,2}$`; on mismatch halt with `CLOSURE_ALLOWLIST_INVALID_ID` and stage nothing. Build the allowlist from the safe-close report
       (`.backlogit/reconcile/{shipment_id}-safe-close-{timestamp}.md`), keyed by work-item ID
       rather than by internal core paths. The allowlist holds EXACT paths only: an entry matches
       by exact path equality, a name pattern or glob is never an entry, a queue path is admitted only when it is tracked in HEAD (for example `git ls-files --error-unmatch -- <path>` succeeds, so a pre-archived member with no queue file is skipped), and an archive path is admitted only when the file exists in the working tree. The entries are
