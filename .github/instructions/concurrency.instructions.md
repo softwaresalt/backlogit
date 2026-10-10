@@ -95,8 +95,10 @@ example, a nested checkout without its own `.git`).
 ### Lock Scope
 
 * Locks are per-file, not per-directory.
-* Lock files are created as `.<filename>.lock` in the same directory as
+* Lock files are created as `.<filename>.agent-lock` in the same directory as
   the target file.
+* The `.<filename>.lock` name belongs to backlogit. The harness lock scripts
+  never create, read, or remove a `.<filename>.lock` file.
 * Lock files contain the agent name, timestamp, and process context for
   diagnostic purposes only — this identity metadata is never treated as
   proof of ownership. Ownership is proven by a capability token: lock
@@ -122,8 +124,8 @@ surfaced to the operator, not silently bypassed.
 convenience for well-behaved cooperating agents, not a security boundary.
 It defends against accidental or confused releases (one agent's session
 releasing a lock it never acquired), not against a hostile local process,
-which can always delete the `.<filename>.lock` file directly regardless of
-any token. Do not rely on this mechanism to imply an adversarial security
+which can always delete the `.<filename>.agent-lock` file directly regardless
+of any token. Do not rely on this mechanism to imply an adversarial security
 guarantee.
 
 ## Rules
@@ -138,13 +140,14 @@ guarantee.
    `-Force`/`--force`. Agents MUST NOT delete lock files directly, and MUST
    NOT supply `--force` on their own initiative.
 4. **Lock files are ephemeral.** They MUST NOT be committed to version
-   control. The workspace `.gitignore` should include `.*.lock` entries
-   (or `**/.*.lock` for an explicit recursive pattern) for agent lock files.
+   control. The workspace `.gitignore` should include `.*.agent-lock` entries
+   (or `**/.*.agent-lock` for an explicit recursive pattern) for agent lock
+   files.
 
 ## Recovery
 
 If an agent session terminates abnormally and leaves stale locks:
 
-* The operator can remove `.*.lock` files manually.
+* The operator can remove `.*.agent-lock` files manually.
 * The next agent session should check lock file timestamps and warn if
   any lock is older than 1 hour — it is likely stale.
