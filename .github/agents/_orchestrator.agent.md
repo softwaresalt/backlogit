@@ -281,6 +281,11 @@ Gather the full current backlog state:
 2. Check for queued shipments ready for Ship:
    `backlogit_list_shipments` filtered to `queued`
    - If found: record as `queued_shipments`.
+   - For each DAG-ready queued candidate (no unshipped `blocks`-type predecessor, per the re-check in Step 2 item 1), run
+     `autoharness gate pipeline-topology --mode agent --shipment {id} --phase pre_claim --json`
+     and show its gate verdict and token next to DAG readiness. Report a candidate as eligible only when both DAG readiness and the gate verdict pass.
+   - When the `pipeline-topology` gate is not installed in this workspace, say so, show the gate verdict as `not installed`, and do not invent a verdict. Report DAG readiness only; such a candidate is not reported as eligible.
+   - Eligibility reporting never claims a shipment and never invokes Ship.
 
 3. Check stash for pending entries (entries not yet promoted to backlog):
    Read stash via the configured backlog tool (MCP or CLI) as declared in the backlog registry.
@@ -295,6 +300,7 @@ Gather the full current backlog state:
    ORCHESTRATOR STATE:
    - Active Ship work: {shipment_id or none}
    - Queued shipments: {count}
+   - Eligible shipments (DAG-ready and gate verdict pass): {id, gate verdict and token, or none}
    - Stash entries: {count}
    - Mode: {sequential | pipelined | dark-factory}
    - DARK_MODE_ACTIVE: {inactive | active(scope={ids})}
@@ -438,7 +444,9 @@ fixes when that record is persisted.
     bound to, and compare them with the candidate roots from a–c:
     * Call `backlogit_get_metadata_catalog` and read only its `workspace` object.
       `workspace.root_path` must equal the served workspace root, and
-      `workspace.storage_root` must equal the served storage root.
+      `workspace.storage_root` must equal the served storage root. The attested
+      `workspace.queue_path` and `workspace.archive_path` are the only manifest
+      directories used below.
     * Call `backlogit_query_sql` against `pragma_database_list` with
       `SELECT name, file FROM pragma_database_list WHERE name = 'main'`. It must return
       exactly one row, and its `file` must be `backlogit.db` as a direct child of the
@@ -450,12 +458,14 @@ fixes when that record is persisted.
     * The attestation is MCP-only. A CLI invocation reports the root it was pointed at, so
       it cannot attest the server. No sync or retry applies, because a sync cannot change
       the root a server is bound to.
-  * The shipment manifest must exist in exactly one of `queue` or `archive` under the
-    served storage root, so a shipment archived by a crashed closure still binds. If it
-    exists in neither or both, fail closed. This assumes the default archive directory; a
-    manifest that exists only under a configured non-default archive directory is found in
-    neither and fails closed.
-  * Require the manifest and its directory to be direct children with no symlink or
+  * The shipment manifest must exist in exactly one of the attested `workspace.queue_path`
+    or `workspace.archive_path` directories, each contained in the served storage root
+    (the canonical path lies under it, compared component-wise by the step c rules). A
+    shipment archived by a crashed closure still binds through `workspace.archive_path`.
+    If it exists in neither or both, fail closed. Configured queue and archive locations
+    are honored as attested; no default directory is assumed.
+  * Require the manifest directory to be contained in the served storage root with no
+    symlink or reparse-point component, and the manifest file itself to have no symlink or
     reparse-point component. Apply Ship Step 4.1b's raw-read safety: no-follow open,
     opened-path verification, and a scoped P-012 raw-read declaration.
   * Read only the manifest frontmatter.
