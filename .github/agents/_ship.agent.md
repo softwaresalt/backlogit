@@ -513,7 +513,7 @@ Run this step at the head of every wave, before anything in that wave is scaffol
 1. **Snapshot the whole task wave set from live state.** Take one logical status+dependency
    snapshot over frozen `M`, including every status. When `features.sql_query: true`, use the
    P-002.6 join constrained by `i.artifact_type = 'task'` and a safely bound or safely quoted
-   `i.id IN (<exact frozen M>)` list; never query `parent_id`. Otherwise directly retrieve each
+   `i.id IN (<exact frozen M>)` list; never query `parent_id`. Otherwise, first validate each frozen ID against `^[0-9]+\.[0-9]+-T$` and pass any CLI `backlogit get` argument as a discrete argv element, never interpolated into a shell string; a non-matching ID halts with `WAVE_SNAPSHOT_UNRELIABLE`. Then directly retrieve each
    frozen ID exactly once with `backlogit_get_item` / `backlogit get {id} --format json` (or an
    equivalent exact-ID batch), verify the returned ID and task type, and reject any missing,
    duplicate, extra, or non-task result. `backlogit list --type task` and every parent-child
@@ -1195,7 +1195,7 @@ After all tasks in the queue are complete:
 5a. **TOPOLOGY_GATE: lifecycle (before PR creation)** — if the `pipeline-topology` gate is installed for this
     workspace, before invoking **pr-lifecycle** below, run
     `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Same
-    exit-code handling as above.
+    exit-code handling as above. This 5a lifecycle gate does not apply to Step 6.0 closure PRs, which require only the P-014 and P-018 gates (Step 6.0 item 4).
 6. Invoke the **pr-lifecycle** skill to create or update the pull request
 7. If CI or optional shadow-review comments fail:
    * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking fix-ci for shipment PR` before invoking the skill.
@@ -1429,7 +1429,7 @@ compound refresh, compact-context). These commits MUST NOT land directly on `mai
    **P-014 local review readiness gate** (local review of the closure diff at its current
    HEAD, with the `## Local Review Readiness` block in the PR body) and the Step 5 item 7c
    **P-018 Copilot-review completion gate** against the closure PR exactly as for the
-   feature PR. See `.github/instructions/github-pr-automation.instructions.md` §1.10.
+   feature PR. See `.github/instructions/github-pr-automation.instructions.md` §1.10. The Step 5 item 5a lifecycle gate does not apply to Step 6.0 closure PRs; this item requires only the P-014 and P-018 gates.
 5. **Await operator approval** for the closure PR before merge, just like the feature PR.
    Never merge closure work automatically. P-014 approval for the feature PR does **not**
    carry over to the closure PR — the operator must approve each merge individually.
