@@ -3,7 +3,7 @@ schema_version: "1.0"
 doc_type: memory
 title: Ship 197-S post-merge closure session (DARK_MODE, P-017): archive committed, closure artifacts written, closure PR pending
 description: Resumed 197-S after the governed safe-close MCP timeout. Archived the explicit change set under the Orchestrator-ratified SAFE_CLOSE exception, wrote the closure artifact, compaction, and learning notes, recorded follow-up stashes and the P-005 event, and staged the closure PR. Merge, main sync, and checkpoint completion follow the closure PR.
-timestamp: "2026-10-11T01:55:00Z"
+timestamp: "2026-10-11T01:48:00Z"
 ---
 
 # Ship 197-S post-merge closure session

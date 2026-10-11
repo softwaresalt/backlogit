@@ -6,7 +6,7 @@ description: "In 197-S, an unfiltered go test ./... run concurrent with review s
 doc_type: learning
 source: docs/compound/2026-10-11-unfiltered-suite-evidence-under-load.md
 docline:
-    date: 2026-10-11T01:50:00Z
+    date: 2026-10-11T01:48:00Z
     severity: medium
     tags:
         - testing

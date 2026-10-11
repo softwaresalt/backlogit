@@ -6,7 +6,7 @@ description: "compact-context target all for the 197-S closure. Additive summary
 doc_type: closure
 source: docs/closure/2026-10-11-197-s-compaction-report.md
 docline:
-  date: 2026-10-11T01:52:00Z
+  date: 2026-10-11T01:48:00Z
   status: draft
   tags:
     - compaction
