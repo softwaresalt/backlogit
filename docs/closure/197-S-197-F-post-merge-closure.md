@@ -164,9 +164,12 @@ Run after 197-S left `active`, with `autoharness gate pipeline-topology --mode a
 * Blocking predecessor: `154-S`, not 197-S. The 154-S closure candidates
   (`docs/closure/154-S-173-F-scheduler-baseline-marker-post-merge-closure.md` and
   siblings) do not match `{shipment_id}-{feature_id}-post-merge-closure.md`.
-* The 141-S predecessor list is `140-S`, `154-S`, `197-S`. This closure is named to the
-  expected pattern, so 197-S is no longer a discovery candidate. Follow-up `BB669732`
-  routes the 154-S naming question to Stage.
+* The 141-S predecessor list is `140-S`, `154-S`, `197-S`. The gate stops at the first
+  blocking predecessor, `154-S`, so 197-S is not evaluated in this probe. This closure is
+  named to the expected pattern (`197-S-197-F-post-merge-closure.md`). Its recognition
+  is unverified until 154-S is resolved. Follow-up `BB669732` routes the 154-S naming
+  question to Stage.
+* Re-run on the clean committed tree (after the closure docs commit): same verdict.
 
 141-S was not claimed. This probe is read-only.
 
