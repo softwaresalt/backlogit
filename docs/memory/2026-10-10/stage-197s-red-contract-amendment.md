@@ -453,3 +453,11 @@ Ship may re-run Step 3 with `M` = the 18 tasks. Wave 2 (`197.009-T`, `197.011-T`
 `197.018-T`) is no longer blocked on U15. No git operation was run by Stage. The governed archive
 of `197.016-T` staged its rename in the git index (the archive operation uses `git mv`); every other
 change is in the working tree.
+
+## Amendment: Erratum E3 (2026-10-11T00:05Z)
+
+Stage (P-017 dark mode) annotated the plan's R10 and R7 Requirements Trace rows to stop
+over-claiming (review findings P1-5, P1-1), appended Erratum E3 to the plan, accepted R7 as
+PARTIAL (capture 00A9D01C) and P1-4 as documented P2 residual risk, and extended the review-fix
+cap by exactly one cycle for in-scope P0/P1 findings. Membership, criteria, dependencies, and
+waves are unchanged. No git write operation was run.

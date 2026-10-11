@@ -57,10 +57,10 @@ autoharness upstream templates and the upstream `post_ship` phase ask,
 | R4 | FBD6E6F8 | Step 4.0 item 1 CLI fallback validates canonical task IDs and passes them as discrete argv | U2, U9 |
 | R5 | F05661B1 | The 5a lifecycle gate applies only to the feature PR; Step 6.0 closure PRs run P-014 and P-018 only | U2, U9 |
 | R6 | 6AB5E7FC | Orchestrator eligibility reports show the `pre_claim` gate verdict next to DAG readiness | U3, U10 |
-| R7 | 8F1CF1E1 | Served-root manifest lookup uses attested `workspace.queue_path` and `workspace.archive_path` (supersedes 195s plan R4(c)) | U3, U10 |
+| R7 | 8F1CF1E1 | Served-root manifest lookup uses attested `workspace.queue_path` and `workspace.archive_path` (supersedes 195s plan R4(c)) (delivered as the Orchestrator text contract; the Go metadata catalog still reports hard-coded `storage/queue` and `storage/archive` for non-default `queue_layout.root_dir`, which can only produce a false fail-closed; named limitation, follow-up capture 00A9D01C; see Erratum E3) | U3, U10 |
 | R8 | 67F17B6B | Harness lock files are named `.<file>.agent-lock` in all four scripts and both docs | U4, U11, U12, U13 |
 | R9 | 1293086D | Normalization keeps `closure_status`, `compaction_status`, and `conditions` top-level for closure docs | U5, U14 |
-| R10 | D116AF58 | Ship-time member validation is profiled, fixed, and reports progress | U6, U15, U16a, U16b |
+| R10 | D116AF58 | Ship-time member validation is profiled and reports progress; the performance fix is NOT delivered (U15 descoped by operator ruling; see Erratum E2; follow-up stash 76553D8D) | U6, U15, U16a, U16b |
 | R11 | 141-S gate | A 140-S gate-registration closure record exists and the 141-S `pre_claim` gate passes the closure check | U7 |
 | R12 | harness | Every edited installed artifact has a current drift record | U17 |
 
@@ -898,3 +898,22 @@ and all statuses and claims of the remaining members are unchanged. No other
 shipment or stash entry was touched. The only archived task files affected are
 197.016-T (moved to the archive by the governed archive operation) and
 197.017-T (the single key above).
+
+## Erratum E3 (2026-10-10)
+
+* **Row annotations.** Ship's branch-wide adversarial review found the Requirements Trace
+  over-claimed. Finding P1-5: the R10 row said validation was "fixed", but U15 was descoped (E2),
+  so the row now states profiling and progress only, with follow-up stash 76553D8D. Finding P1-1:
+  the R7 row now notes the Go metadata catalog still hard-codes `storage/queue` and
+  `storage/archive` for non-default `queue_layout.root_dir`, with follow-up capture 00A9D01C.
+* **Orchestrator disposition (P-017 dark mode; operator AFK, sound-judgement authority; subject
+  to operator veto).** R7 is accepted as PARTIAL for non-default queue layouts, with 00A9D01C as
+  the named limitation; it fails closed only, with no unsafe behavior. Finding P1-4 (the
+  safe-close report does not list exact tracked side-effect paths such as
+  `.backlogit/hooks_queue.jsonl`, so the closure allowlist never auto-stages them; the closure
+  commit stages them by explicit path) is accepted as documented residual risk, practical severity
+  P2, to be captured by Ship.
+* **Cycle cap.** The review-fix cycle cap (3) is extended by exactly ONE additional cycle,
+  limited to in-scope P0/P1 findings of the confirming review. After it, Ship must halt rather
+  than iterate.
+* **Unchanged.** Acceptance criteria, membership M (18 tasks), dependencies, and waves.
