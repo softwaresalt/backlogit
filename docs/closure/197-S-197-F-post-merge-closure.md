@@ -11,7 +11,7 @@ conditions:
     satisfied: true
     evidence: "gh pr view 491: state MERGED, mergedAt 2026-10-11T01:16:04Z, mergeCommit f8d35936deae71a468ccba6d769a3dfa2bdb3e20, headRefOid b0f611eaef2ac3bf2c9baa7d866700eb759e21d5. Local main synchronized to origin/main at f8d35936 (POST_MERGE_SYNC_OK recorded at the halt)."
   - id: governed-closure-archived
-    description: "Shipment 197-S, its covering feature 197-F, and its 18 explicit task members are archived with merge provenance; the post-mode reconcile passes; the archive commit is pushed."
+    description: "Shipment 197-S, its covering feature 197-F, and its 18 explicit task members are archived with merge provenance; post-mode checks 1-6 pass (the report's overall decision is HALT for the missing safe-close report, and the Orchestrator ratified that exception); the archive commit is pushed."
     satisfied: true
     evidence: "backlogit_get_shipment 197-S: status archived, commit f8d35936. Post-mode report .backlogit/reconcile/197-S-post-20261011T013645Z.md: checks 1-6 PASS. Archive commit 4d6b2189 pushed to origin/post-merge/197-s-ship-closure-protocol. The safe-close envelope and report were not returned (MCP timeout); the Orchestrator ratified the exception after independent change-set verification (see Governed closure)."
   - id: final-head-unfiltered-suite
@@ -52,7 +52,7 @@ title: "197-S post-merge closure"
 | Final reviewed HEAD | `b0f611ea` (local review readiness `READY_WITH_FOLLOWUPS`, P0 0, P1 0; Copilot 0 threads; `copilot-review` gate `SATISFIED`; required CI 7 of 7) |
 | Archive commit | `4d6b2189` (`chore(harness): archive 197-S backlog artifacts`), pushed to `post-merge/197-s-ship-closure-protocol` |
 | Closure branch | `post-merge/197-s-ship-closure-protocol` |
-| Closure PR | Recorded in the closure session memory note after creation |
+| Closure PR | The PR opened from this branch. Its number is in the PR body and the Ship return message. |
 | Closure status | `READY_WITH_CONDITIONS` |
 | Context compaction | `degraded` (non-blocking, P-020); see the P-020 section |
 | Routing | `ROUTING_DEGRADED`; see Routing and reviewers |
@@ -86,7 +86,7 @@ Scope changes that bound this record:
 | Pre-close (`expected_status: done`) | `.backlogit/reconcile/197-S-pre-20261011T011730Z.md` | `PROCEED` |
 | Governed ship (`backlogit_ship_shipment`, safe-close) | Item log `.backlogit/logs/197-S.jsonl`; MCP call timed out (`-32001`) | Server completed: `shipped` 18:21:45 PDT, `commit_tracked f8d35936` 18:21:59 PDT, `archived` (archive_path `.backlogit/archive/197-S.md`) 18:34:48 PDT |
 | Safe-close result envelope and report | Not returned to Ship | `SAFE_CLOSE_REPORT_UNAVAILABLE`; see the exception below |
-| Post-close (`mode: post`) | `.backlogit/reconcile/197-S-post-20261011T013645Z.md` | Checks 1-6 PASS: no `mutation_partial`; no live control record; `archive/197-S.md` has `archived_status: shipped`; all explicit members archived with `commit: f8d35936`; no non-member change; zero tracked archive deletions (P-007 guard not triggered) |
+| Post-close (`mode: post`) | `.backlogit/reconcile/197-S-post-20261011T013645Z.md` | Overall decision HALT for the missing safe-close report (exception ratified). Checks 1-6 PASS: no `mutation_partial`; no live control record; `archive/197-S.md` has `archived_status: shipped`; all explicit members archived with `commit: f8d35936`; no non-member change; zero tracked archive deletions (P-007 guard not triggered) |
 
 ### Exception: `SAFE_CLOSE_REPORT_UNAVAILABLE` (Orchestrator-ratified)
 
@@ -122,8 +122,7 @@ reconstructed beyond the verified set.
 * The server completed the governed operation afterwards. The item log shows the
   archive event at 18:34:48 PDT.
 * Ship did not retry the ship operation and did not delete or edit any lock file.
-  `backlogit doctor` showed only the pre-existing orphans (`016.001-R`, `106.*`). No
-  data loss was observed, and the post-mode reconcile passed.
+  Doctor evidence. The pre-archive run (`logs/doctor-197s-shipped-events.txt`, 18:27:36 PDT) reported 42 issues: 23 `orphaned_artifact`, 18 `missing_shipped_event` for historical shipments 060-S to 124-S, and one `shipped_unarchived_residue` for 197-S itself, which the archive event cleared. A post-archive run reported 23 issues, all `orphaned_artifact` for the pre-existing `016.001-R` and `106.012-T` to `106.033-T`, with none for 197-S. No data loss was observed, and post-mode checks 1-6 passed.
 * Telemetry recorded through `backlogit_log_telemetry` (P-005).
 
 ## Release gate evidence
@@ -136,9 +135,9 @@ reconstructed beyond the verified set.
 | `becfca4e` | Branch-review run, concurrent with review subagents | 1 | Two load-sensitive lock-timing tests failed (`TestU172_LockOrder_ArchiveItemDoesNotHoldArtifactLockWhileWaitingForItemLog`, `TestArchiveItemGovernance_WaitsForGlobalLifecycleLock`). Both PASS in isolation. |
 | `df4a2df9` | Quiet run | 1 | One package (`internal/core`) failed with one panic line; the test name was not captured. `go test -count=1 ./internal/core` alone exited 0 (907.6s). |
 | `de1f8adf` | Orchestrator diagnostic run | 0 | 40 packages ok |
-| `b0f611ea` | Final reviewed HEAD, quiet | 0 | 40 packages ok, 1 without tests (`logs/full-suite-197s-b0f611ea.txt`) |
+| `b0f611ea` | Final reviewed HEAD, unfiltered (quietness not separately recorded) | 0 | 40 packages ok, 1 without tests (`logs/full-suite-197s-b0f611ea.txt`) |
 
-The unnamed panic in `df4a2df9` was not reproduced in the two later quiet runs. Its
+The unnamed panic in `df4a2df9` was not reproduced in the two later unfiltered runs (`de1f8adf`, `b0f611ea`). Its
 origin is not proven. It is captured as follow-up `63909DAE`.
 
 ### Other gates
@@ -261,7 +260,7 @@ Not applicable to a runtime. The post-merge checks are the reconcile reports, th
 
 | Item | Status | Note |
 |---|---|---|
-| R10 partial | Accepted partial (Orchestrator decision 1 and 4) | Profiled and progress reporting delivered. The performance fix is NOT delivered: follow-up `76553D8D`. |
+| R10 partial | Accepted partial (operator ruling 2026-10-09T22:47-07:00, "Descope U15 as recommended"; 197-F amendment; plan Erratum E2) | Profiled and progress reporting delivered. The performance fix is NOT delivered: follow-up `76553D8D`. |
 | R7 partial, non-default queue layouts | Accepted partial (Orchestrator decision 1) | Default layout correct. Capture `00A9D01C`. |
 | P1-4 safe-close allowlist completeness | Accepted residual (Orchestrator decision 2) | The safe-close report does not list exact tracked side-effect paths such as `.backlogit/hooks_queue.jsonl`. This closure staged it by explicit path. Capture `2C8615A5`. |
 | Bash lock round-trip | Not run on this host | CI ubuntu rows of `TestUCXS4_` passed. Follow-up `F6322B45`. |
@@ -278,7 +277,7 @@ Not applicable to a runtime. The post-merge checks are the reconcile reports, th
   was not counted.
 * Confirming pass: the anchor was dispatched as `gpt-6.1-sol` (high). The runtime-reported
   identity was not exposed to Ship.
-* Closure PR reviewer: pinned to `claude-sonnet-5.5` (non-haiku), per Orchestrator decision 5.
+* Closure PR reviewer: dispatched with model `claude-sonnet-5.5` (non-haiku), per Orchestrator PR-stage decision 6 in `docs/memory/2026-10-10/orchestrator-197s-pr-stage-decisions-memory.md`. The local reviewer reported it could not confirm its runtime model; the dispatch pin is recorded here.
   The model is recorded in the closure PR readiness block.
 
 ## Follow-ups (non-gating)
@@ -288,9 +287,11 @@ do not block successors.
 
 | ID | Kind | Status | Owner | Note |
 |---|---|---|---|---|
-| `63909DAE` | Stash, high | Open | Stage | Load-sensitive suite failures and the unnamed `internal/core` panic |
+| `63909DAE` | Stash, high | Open | Stage | Load-sensitive suite failures and the unnamed `internal/core` panic. The stash text calls `de1f8adf` and `b0f611ea` quiet runs; this artifact records them only as unfiltered runs. |
 | `F6322B45` | Stash, medium | Open | Stage | Bash lock round-trip on a Bash host |
 | `BB669732` | Stash, high | Open | Stage or operator | `PREDECESSOR_CLOSURE_UNRECOGNIZED` for 154-S blocks 141-S pre-claim |
+| `3FF72EB8` | Stash, medium | Open | Stage or harness owner | Closure-evidence gate requires `close_path` (`cascade` or `safe_close`); the closure template does not carry it (140-S fails the same way) |
+| `BFB44A08` | Stash, high (stale duplicate) | Open, stale | Stage | Written by the timed-out first stash call. Its text ("queue/197-S.md is NOT archived") is now false. Stage should remove or archive it. Ship does not remove stash entries. |
 | `76553D8D` | Stash | Open | Stage | R10 ship-time validation performance fix (descoped U15) |
 | `00A9D01C` | Capture | Open | Stage | R7 catalog hard-coded `storage/queue` and `storage/archive` for non-default layouts |
 | `2C8615A5` | Capture (reused) | Open | Stage | P1-4 exact side-effect paths in the safe-close report |

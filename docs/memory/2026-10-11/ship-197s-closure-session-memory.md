@@ -14,7 +14,7 @@ timestamp: "2026-10-11T01:48:00Z"
 * Governed shipment `197-S` is `archived` with commit `f8d35936`. Post-mode reconcile PASS.
 * Archive commit `4d6b2189` (23 exact paths, `SAFE_CLOSE_REPORT_UNAVAILABLE` exception ratified by the Orchestrator after independent change-set verification) is pushed to `post-merge/197-s-ship-closure-protocol`.
 * Closure artifact `docs/closure/197-S-197-F-post-merge-closure.md`: `READY_WITH_CONDITIONS`, `compaction_status: degraded` (P-020, non-blocking).
-* Closure PR: opened from this branch. Its number is in the PR body and the return message. Merge pending P-018 and CI on the current HEAD.
+* Closure PR: to be opened from this branch. Its number is in the PR body and the Ship return message. Merge pending P-018 and CI on the current HEAD.
 
 ## Decisions and exceptions recorded
 
@@ -28,7 +28,7 @@ timestamp: "2026-10-11T01:48:00Z"
 
 ## Follow-ups (stashed, non-gating)
 
-`63909DAE` (load-sensitive suite and unnamed panic, high), `F6322B45` (Bash lock round-trip, medium), `BB669732` (154-S closure naming blocks 141-S pre-claim, high, Stage). Existing items: `76553D8D`, `00A9D01C`, `2C8615A5`, and the captures in the closure artifact.
+`63909DAE` (load-sensitive suite and unnamed panic, high), `F6322B45` (Bash lock round-trip, medium), `BB669732` (154-S closure naming blocks 141-S pre-claim, high, Stage), `3FF72EB8` (closure-evidence gate `close_path` drift, medium). Stale duplicate `BFB44A08` (high, written by the timed-out first stash call) is listed for Stage to remove or archive. Existing items: `76553D8D`, `00A9D01C`, `2C8615A5`, and the captures in the closure artifact.
 
 ## Not done in this session (by design)
 

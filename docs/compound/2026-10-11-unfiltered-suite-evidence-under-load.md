@@ -23,7 +23,7 @@ In 197-S, the unfiltered `go test -timeout=30m ./...` gate gave three kinds of r
 
 * A run concurrent with review subagents failed two lock-timing tests. Both passed in isolation.
 * A quiet run failed one package (`internal/core`) with a panic line. The test name was not captured, so the origin is unproven. The same package passed alone.
-* Two later quiet runs exited 0.
+* Two later unfiltered runs exited 0.
 
 ## Rule
 
