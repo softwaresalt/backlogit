@@ -14,10 +14,6 @@ conditions:
     description: "Shipment 197-S, its covering feature 197-F, and its 18 explicit task members are archived with merge provenance; post-mode checks 1-6 pass (the report's overall decision is HALT for the missing safe-close report, and the Orchestrator ratified that exception); the archive commit is pushed."
     satisfied: true
     evidence: "backlogit_get_shipment 197-S: status archived, commit f8d35936. Post-mode report .backlogit/reconcile/197-S-post-20261011T013645Z.md: checks 1-6 PASS. Archive commit 4d6b2189 pushed to origin/post-merge/197-s-ship-closure-protocol. The safe-close envelope and report were not returned (MCP timeout); the Orchestrator ratified the exception after independent change-set verification (see Governed closure)."
-  - id: final-head-unfiltered-suite
-    description: "The unfiltered full repository suite exits 0 at the final reviewed HEAD."
-    satisfied: true
-    evidence: "go test -timeout=30m ./... exit 0 at b0f611ea (40 packages ok, 1 without tests; logs/full-suite-197s-b0f611ea.txt, gitignored). No open red deliverable at final closure."
   - id: final-head-copilot-and-ci
     description: "Copilot review is complete on the final HEAD with zero unresolved threads, the copilot-review gate is SATISFIED, and all required CI checks pass."
     satisfied: true
@@ -138,7 +134,7 @@ reconstructed beyond the verified set.
 | `b0f611ea` | Final reviewed HEAD, unfiltered (quietness not separately recorded) | 0 | 40 packages ok, 1 without tests (`logs/full-suite-197s-b0f611ea.txt`) |
 
 The unnamed panic in `df4a2df9` was not reproduced in the two later unfiltered runs (`de1f8adf`, `b0f611ea`). Its
-origin is not proven. It is captured as follow-up `63909DAE`.
+origin is not proven. It is captured as follow-up `63909DAE`. The unfiltered `b0f611ea` run (exit 0, 40 packages ok) is body evidence only. Its quietness was not recorded, so it is not a closure condition.
 
 ### Other gates
 
@@ -303,7 +299,7 @@ do not block successors.
 
 ## Releasability evidence
 
-**Status: `READY_WITH_CONDITIONS`.** The four conditions in the frontmatter are satisfied
+**Status: `READY_WITH_CONDITIONS`.** The three conditions in the frontmatter are satisfied
 with evidence. The release is complete for P-001 once this closure PR merges. The
 non-gating follow-ups and accepted partial coverage above are residual risks for Stage
 and the operator, not blockers.
@@ -320,5 +316,4 @@ and the operator, not blockers.
   reason and status as the 196-S closure.
 * Decided-plan consolidation was not performed. It is a plan artifact, Stage-owned
   under P-010.
-* Nine active 197-S `ship` checkpoints remain pointers. They are resolved as the
-  completion disposition after the closure PR merges.
+* Nine superseded 197-S `ship` checkpoints were resolved when closure PR 492 opened (2026-10-11T02:07Z). One current-state pointer, `checkpoint-20261011-020732.json`, is retained. It is resolved at completion, after the merge and the main sync.
