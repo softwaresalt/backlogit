@@ -316,4 +316,4 @@ and the operator, not blockers.
   reason and status as the 196-S closure.
 * Decided-plan consolidation was not performed. It is a plan artifact, Stage-owned
   under P-010.
-* Nine superseded 197-S `ship` checkpoints were resolved when closure PR 492 opened (2026-10-11T02:07Z). One current-state pointer, `checkpoint-20261011-020732.json`, is retained. It is resolved at completion, after the merge and the main sync.
+* Nine superseded 197-S `ship` checkpoints were resolved when closure PR 492 opened (2026-10-11T02:07Z). The first pointer (`checkpoint-20261011-020732.json`) went stale at the next Copilot pass and was resolved. The current pointer is `checkpoint-20261011-021224.json`. It records no head SHA, because the PR head is authoritative. It is resolved at completion, after the merge and the main sync.
