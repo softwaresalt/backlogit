@@ -122,7 +122,7 @@ reconstructed beyond the verified set.
 * The server completed the governed operation afterwards. The item log shows the
   archive event at 18:34:48 PDT.
 * Ship did not retry the ship operation and did not delete or edit any lock file.
-  Doctor evidence. The pre-archive run (`logs/doctor-197s-shipped-events.txt`, 18:27:36 PDT) reported 42 issues: 23 `orphaned_artifact`, 18 `missing_shipped_event` for historical shipments 060-S to 124-S, and one `shipped_unarchived_residue` for 197-S itself, which the archive event cleared. A post-archive run reported 23 issues, all `orphaned_artifact` for the pre-existing `016.001-R` and `106.012-T` to `106.033-T`, with none for 197-S. No data loss was observed, and post-mode checks 1-6 passed.
+  Doctor evidence. The pre-archive run (`logs/doctor-197s-shipped-events.txt`, 18:27:36 PDT) reported 42 issues: 23 `orphaned_artifact`, 18 `missing_shipped_event` for 18 historical shipments from 060-S to 134-S (not contiguous), and one `shipped_unarchived_residue` for 197-S itself, which the archive event cleared. A post-archive run reported 23 issues, all `orphaned_artifact` for the pre-existing `016.001-R` and `106.012-T` to `106.033-T`, with none for 197-S. No data loss was observed, and post-mode checks 1-6 passed.
 * Telemetry recorded through `backlogit_log_telemetry` (P-005).
 
 ## Release gate evidence
@@ -233,7 +233,7 @@ Not applicable to a runtime. The post-merge checks are the reconcile reports, th
 
 | ProposedAction | ActionRisk | Approval | ActionResult | Rollback |
 |---|---|---|---|---|
-| Governed safe-close of 197-S at `f8d35936` (`backlogit_ship_shipment`) | High | P-017 dark-mode activation, scope `[197-S]` | Applied server-side; MCP timed out; envelope not returned; post-mode PASS | P-007 applies. Restore archives only on a missing-archive signal. None observed. |
+| Governed safe-close of 197-S at `f8d35936` (`backlogit_ship_shipment`) | High | P-017 dark-mode activation, scope `[197-S]` | Applied server-side; MCP timed out; envelope not returned; post-mode checks 1-6 PASS, overall HALT (exception ratified) | P-007 applies. Restore archives only on a missing-archive signal. None observed. |
 | Archive commit `4d6b2189` (exact-path staging of 23 paths) | Medium | Orchestrator ratification of the SAFE_CLOSE exception, subject to operator veto | Applied; pushed to the closure branch | `git revert` on a branch plus a PR |
 | Merge PR #491 (merge commit) | High | `merge_approval_pre_authorized: true`; current-HEAD readiness, Copilot gate, and CI all passed | Applied; `f8d35936` | `git revert -m 1 f8d35936` on a branch plus a PR |
 | Lock files under `.backlogit/.locks/` | Low | None needed | Not touched by Ship | Not applicable |
@@ -242,7 +242,7 @@ Not applicable to a runtime. The post-merge checks are the reconcile reports, th
 
 | Area | Evidence or action |
 |---|---|
-| Healthy signal | Shipment `archived`; all explicit members archived with merge provenance; post-mode PASS; topology probe verdict recorded |
+| Healthy signal | Shipment `archived`; all explicit members archived with merge provenance; post-mode checks 1-6 PASS; topology probe verdict recorded |
 | Failure signal | Missing archive, non-member delta, `mutation_partial`, P-007 deletion, or a `doctor` finding beyond the pre-existing orphans |
 | Monitoring plan | Not applicable to a runtime. Reconcile and doctor checks in the next closure. |
 | Rollback trigger | A contract regression observed in a later Orchestrator-to-Ship handoff, reconcile pass, or successor gate (141-S, 152-S, 198-S, 199-S) that traces to 197-F |
@@ -264,7 +264,7 @@ Not applicable to a runtime. The post-merge checks are the reconcile reports, th
 | R7 partial, non-default queue layouts | Accepted partial (Orchestrator decision 1) | Default layout correct. Capture `00A9D01C`. |
 | P1-4 safe-close allowlist completeness | Accepted residual (Orchestrator decision 2) | The safe-close report does not list exact tracked side-effect paths such as `.backlogit/hooks_queue.jsonl`. This closure staged it by explicit path. Capture `2C8615A5`. |
 | Bash lock round-trip | Not run on this host | CI ubuntu rows of `TestUCXS4_` passed. Follow-up `F6322B45`. |
-| Load-sensitive full suite; unnamed panic | Open, not proven as regression | Quiet runs at `de1f8adf` and `b0f611ea` exited 0. Follow-up `63909DAE`. |
+| Load-sensitive full suite; unnamed panic | Open, not proven as regression | Unfiltered runs at `de1f8adf` and `b0f611ea` exited 0. Follow-up `63909DAE`. |
 | Legacy lock sidecars and cutover | Operator decision | Legacy `.<file>.lock` files are not removed by any script or agent. Capture `B2B4BE2A`. |
 | Model-routing config `45dea2f8` | Not 197-S scope | Operator-directed routing edit. |
 

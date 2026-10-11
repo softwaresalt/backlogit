@@ -11,7 +11,7 @@ timestamp: "2026-10-11T01:48:00Z"
 ## Status
 
 * Feature PR #491 merged at `f8d35936`. Head `b0f611ea`. Copilot one pass, zero threads, gate SATISFIED. CI 7 of 7 green.
-* Governed shipment `197-S` is `archived` with commit `f8d35936`. Post-mode reconcile PASS.
+* Governed shipment `197-S` is `archived` with commit `f8d35936`. Post-mode checks 1-6 PASS, overall decision HALT for the missing safe-close report (exception ratified).
 * Archive commit `4d6b2189` (23 exact paths, `SAFE_CLOSE_REPORT_UNAVAILABLE` exception ratified by the Orchestrator after independent change-set verification) is pushed to `post-merge/197-s-ship-closure-protocol`.
 * Closure artifact `docs/closure/197-S-197-F-post-merge-closure.md`: `READY_WITH_CONDITIONS`, `compaction_status: degraded` (P-020, non-blocking).
 * Closure PR: to be opened from this branch. Its number is in the PR body and the Ship return message. Merge pending P-018 and CI on the current HEAD.
