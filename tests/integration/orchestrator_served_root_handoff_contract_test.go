@@ -70,7 +70,9 @@ func TestUSR1_OrchestratorServedRootHandoffContract(t *testing.T) {
 					"neither or both exist, fail closed",
 					"symlink or reparse-point",
 					"direct child of the served workspace root",
-					"exactly one of `queue` or `archive`",
+					"`workspace.queue_path`",
+					"`workspace.archive_path`",
+					"contained in the served storage root",
 					"`backlogit_get_shipment`",
 					"`custom_fields.items`",
 					"Served-Root Attestation",
@@ -91,6 +93,8 @@ func TestUSR1_OrchestratorServedRootHandoffContract(t *testing.T) {
 					"Never infer either root from a Ship worktree",
 				}
 				assertContainsAll(t, step2, procedureLiterals, "Step 2")
+				assert.NotContains(t, step2, "This assumes the default archive directory",
+					"Step 2 must not keep the default-archive-directory caveat")
 			},
 		},
 		{

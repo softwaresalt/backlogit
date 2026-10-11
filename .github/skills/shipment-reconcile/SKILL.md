@@ -155,8 +155,8 @@ from task aggregation.
 
 1. **Re-read under lock.** Load the shipment and require its manifest to equal
    the pre-mode `M` exactly. Manifest drift halts before mutation.
-2. **Require close-ready state.** Reject blocked or other nonterminal shipment
-   state. Then apply these rules: every non-pre-archived explicit task member must be
+2. **Require close-ready state.** Reject blocked, queued, or any other nonterminal shipment
+   state other than `active` (the admissible pre-close state). Then apply these rules: every non-pre-archived explicit task member must be
    `done`; a non-pre-archived explicit feature member must be `done` or meet the
    `feature-pending-governed-completion` condition; any other non-pre-archived
    explicit member must be `done`; any other status of a non-pre-archived explicit

@@ -2,7 +2,7 @@
 .SYNOPSIS
     Releases an advisory file lock for agent concurrency control.
 .DESCRIPTION
-    Deletes the .{filename}.lock file created by acquire_lock.ps1.
+    Deletes the .{filename}.agent-lock file created by acquire_lock.ps1.
     If the lock file does not exist, emits a warning but exits successfully.
 
     Requires proof of ownership (O2): the caller must supply, via -Token or
@@ -393,12 +393,12 @@ $targetPath = Resolve-AutoharnessBestEffortRealPath -AbsolutePath $absolutePath
 
 $resolvedDir = Split-Path -Parent $targetPath
 $fileName = Split-Path -Leaf $targetPath
-$lockFile = Join-Path $resolvedDir ".$fileName.lock"
+$lockFile = Join-Path $resolvedDir ".$fileName.agent-lock"
 
 # Local fix (backlogit tune 2026-09-27): release, including -Force, may only
 # delete a lock file inside the workspace root. Without a resolved root the
 # containment boundary is unknown, so -Force is refused rather than allowed
-# to delete an arbitrary ".X.lock" anywhere on disk.
+# to delete an arbitrary ".X.agent-lock" anywhere on disk.
 if ($realWorkspaceRootForAnchoring) {
     $normalizedRoot = $realWorkspaceRootForAnchoring.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
     $rootWithSeparator = $normalizedRoot + [System.IO.Path]::DirectorySeparatorChar

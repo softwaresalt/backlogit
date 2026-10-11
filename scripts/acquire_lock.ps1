@@ -2,7 +2,7 @@
 .SYNOPSIS
     Acquires an advisory file lock for agent concurrency control.
 .DESCRIPTION
-    Creates a .{filename}.lock file in the same directory as the target file.
+    Creates a .{filename}.agent-lock file in the same directory as the target file.
     Fails with exit code 1 if the lock already exists (another process holds it).
 
     Enforces workspace-root containment (H2/H4): the target file must resolve,
@@ -224,7 +224,7 @@ function Test-AutoharnessPathContained {
     # The root itself is deliberately NOT treated as contained: accepting
     # equality would let a caller pass the workspace root directory itself
     # as the lock target, and Split-Path would then place the lock file
-    # (".<root-name>.lock") in the root's PARENT -- outside the containment
+    # (".<root-name>.agent-lock") in the root's PARENT -- outside the containment
     # boundary this check exists to enforce. Only a proper descendant of the
     # root is a valid lock target.
     #
@@ -388,7 +388,7 @@ if (-not (Test-AutoharnessPathContained -RealRoot $realWorkspaceRoot -RealCandid
 
 $directory = Split-Path -Parent $realTargetPath
 $fileName = Split-Path -Leaf $realTargetPath
-$lockFile = Join-Path $directory ".$fileName.lock"
+$lockFile = Join-Path $directory ".$fileName.agent-lock"
 
 if (Test-Path -LiteralPath $lockFile) {
     # TC5d: the lock content now carries owner_digest (O2). Printing the raw

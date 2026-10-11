@@ -88,9 +88,9 @@ and let them decide.
 for well-behaved cooperating agents, not a security boundary. The token
 defends against accidental or confused releases — for example, one agent's
 session mistakenly releasing a lock it never acquired — not against a
-hostile local process, which can always delete the `.{filename}.lock` file
-directly regardless of any token. Do not rely on this mechanism, or on any
-text in this skill, to imply an adversarial security guarantee.
+hostile local process, which can always delete the `.{filename}.agent-lock`
+file directly regardless of any token. Do not rely on this mechanism, or on
+any text in this skill, to imply an adversarial security guarantee.
 
 ## Token exposure and safe handling
 
@@ -136,9 +136,15 @@ assumed:
 Both PowerShell and Bash equivalents are provided for cross-platform
 compatibility. Use whichever matches the runtime environment.
 
+The scripts create, check, and remove only the `.{filename}.agent-lock`
+sidecar, with one exception: the test-only `AUTOHARNESS_TEST_RELEASE_RACE_SIGNAL`
+variable makes release also create a `.{filename}.agent-lock.race-signal`
+marker, which is never set in normal operation. The `.{filename}.lock` name
+belongs to backlogit and is never created or removed by these scripts.
+
 ### acquire_lock (.ps1 / .sh)
 
-Acquires a file lock by creating a `.{filename}.lock` file in the same
+Acquires a file lock by creating a `.{filename}.agent-lock` file in the same
 directory as the target file, after verifying the target is contained
 within the workspace root (H2/H4). Fails if the lock already exists or the
 target escapes the root.
@@ -160,7 +166,7 @@ The lock file contains:
 
 ### release_lock (.ps1 / .sh)
 
-Releases a file lock by deleting the `.{filename}.lock` file, after
+Releases a file lock by deleting the `.{filename}.agent-lock` file, after
 verifying the caller can prove ownership of it.
 
 ```text

@@ -32,11 +32,13 @@ func Normalize(relPath string, raw []byte, opts NormalizeOptions) ([]byte, error
 	if fm == nil {
 		fm = map[string]any{}
 	}
+	docType := Classify(relPath)
+	keepGateKeys := docType == DocTypeClosure
 
 	// Build the docline namespace: start from any existing docline map, then
-	// fold every non-contract top-level key into it (move, never drop).
-	// Collisions and a non-map existing docline value are preserved without
-	// dropping data.
+	// fold every non-contract top-level key into it (move, never drop), except
+	// closure gate keys on a closure path. Collisions and a non-map existing
+	// docline value are preserved without dropping data.
 	docline := map[string]any{}
 	switch existing := fm["docline"].(type) {
 	case map[string]any:
@@ -51,7 +53,7 @@ func Normalize(relPath string, raw []byte, opts NormalizeOptions) ([]byte, error
 		foldUnderDocline(docline, "docline", existing)
 	}
 	for k, v := range fm {
-		if k == "docline" || isContractField(k) {
+		if k == "docline" || isContractField(k) || (keepGateKeys && isClosureGateKey(k)) {
 			continue
 		}
 		foldUnderDocline(docline, k, v)
@@ -59,7 +61,7 @@ func Normalize(relPath string, raw []byte, opts NormalizeOptions) ([]byte, error
 
 	// Read the contract surface, then override the repo-derived fields.
 	b := FromMap(fm)
-	b.DocType = string(Classify(relPath))
+	b.DocType = string(docType)
 	// Source defaults to the repo-relative POSIX path, but a pre-existing
 	// full-URI source (a known online source) is preserved verbatim and never
 	// rewritten — Q2 sign-off, task 065.002-T.
@@ -77,9 +79,19 @@ func Normalize(relPath string, raw []byte, opts NormalizeOptions) ([]byte, error
 	}
 	b.Docline = docline
 
+	// Closure gate keys stay at the top level, carried through unchanged.
+	frontmatter := b.ToMap()
+	if keepGateKeys {
+		for k := range closureGateKeys {
+			if v, ok := fm[k]; ok {
+				frontmatter[k] = v
+			}
+		}
+	}
+
 	out := &Markdown{
 		HasFrontmatter: true,
-		Frontmatter:    b.ToMap(),
+		Frontmatter:    frontmatter,
 		Body:           md.Body,
 	}
 	encoded, err := out.Encode()

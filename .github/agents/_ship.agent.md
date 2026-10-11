@@ -513,7 +513,7 @@ Run this step at the head of every wave, before anything in that wave is scaffol
 1. **Snapshot the whole task wave set from live state.** Take one logical status+dependency
    snapshot over frozen `M`, including every status. When `features.sql_query: true`, use the
    P-002.6 join constrained by `i.artifact_type = 'task'` and a safely bound or safely quoted
-   `i.id IN (<exact frozen M>)` list; never query `parent_id`. Otherwise directly retrieve each
+   `i.id IN (<exact frozen M>)` list; never query `parent_id`. Otherwise, first validate each frozen ID against `^[0-9]+\.[0-9]+-T$` and pass any CLI `backlogit get` argument as a discrete argv element, never interpolated into a shell string; a non-matching ID halts with `WAVE_SNAPSHOT_UNRELIABLE`. Then directly retrieve each
    frozen ID exactly once with `backlogit_get_item` / `backlogit get {id} --format json` (or an
    equivalent exact-ID batch), verify the returned ID and task type, and reject any missing,
    duplicate, extra, or non-task result. `backlogit list --type task` and every parent-child
@@ -1195,9 +1195,9 @@ After all tasks in the queue are complete:
 5a. **TOPOLOGY_GATE: lifecycle (before PR creation)** — if the `pipeline-topology` gate is installed for this
     workspace, before invoking **pr-lifecycle** below, run
     `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Same
-    exit-code handling as above.
+    exit-code handling as above. This 5a lifecycle pipeline-topology gate does not apply to Step 6.0 closure PRs; this exemption covers only the topology gate, and closure PRs remain subject to every other pre-merge gate (Step 6.0 item 4).
 6. Invoke the **pr-lifecycle** skill to create or update the pull request
-7. If CI or optional shadow-review comments fail:
+7. CI confirmation is required whether or not any check failed: before advancing past item 7, every required check must report success for the current `headRefOid`. If CI or optional shadow-review comments fail:
    * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking fix-ci for shipment PR` before invoking the skill.
    * Invoke the **fix-ci** skill before proceeding. The build/CI-fix loop carries the SAME P-021 classification requirement as the review-fix loop: classify every CI/build failure against **P-021 C1** before fixing it, per Step 4.4a above. A build or CI failure whose real fix lies outside the approved scope is deferred via the Step 4.4a defer-capture procedure, never expanded into.
    * **CI confirmation**: before advancing past this item, confirm every required CI check reports success for the current `headRefOid`. A pending, missing, cancelled, or failed required check is not a pass — re-run fix-ci or halt. Never infer CI success from a stale run against an earlier HEAD.
@@ -1425,11 +1425,11 @@ compound refresh, compact-context). These commits MUST NOT land directly on `mai
    `git push -u origin post-merge/{feature_slug}`
    Then invoke the **pr-lifecycle** skill for the closure PR. The closure PR title
    should be: `chore: post-merge closure for {feature_id} — {feature_title}`.
-   The closure PR is **not exempt** from the pre-merge gates: run the Step 5 item 7b
+   The closure PR is **not exempt** from the pre-merge gates: run the Step 5 item 7 CI confirmation, the Step 5 item 7b
    **P-014 local review readiness gate** (local review of the closure diff at its current
    HEAD, with the `## Local Review Readiness` block in the PR body) and the Step 5 item 7c
    **P-018 Copilot-review completion gate** against the closure PR exactly as for the
-   feature PR. See `.github/instructions/github-pr-automation.instructions.md` §1.10.
+   feature PR. See `.github/instructions/github-pr-automation.instructions.md` §1.10. The Step 5 item 5a lifecycle pipeline-topology gate does not apply to Step 6.0 closure PRs; no other pre-merge gate is waived for the closure PR, including the Step 5 item 7 CI confirmation.
 5. **Await operator approval** for the closure PR before merge, just like the feature PR.
    Never merge closure work automatically. P-014 approval for the feature PR does **not**
    carry over to the closure PR — the operator must approve each merge individually.
@@ -1442,11 +1442,13 @@ refreshes, and knowledge graduation. These changes deserve the same review cycle
 work. Committing directly to `main` bypasses code review and violates the
 branch-per-release-unit principle.
 
-1. **Close the shipment** (shipments are enabled in this workspace):
+1. **Close the shipment** (only when the backlog registry declares features.shipments: true):
+   Run item 1 only when the registry is readable and `features.shipments` is literal `true`. Skip item 1 and record why in the closure artifact only when the registry is readable and either `features.shipments` is literal `false` or the `features.shipments` key is absent from it. An ABSENT registry file is handled exactly as Step 0.0 item 1 says (manual/file-backed mode, the intentional operating mode, not a degradation): skip item 1 and record why in the closure artifact. Halt with `SHIPMENT_REGISTRY_UNREADABLE` and do not skip when the registry file exists but cannot be read or parsed, or when `features.shipments` holds any non-boolean value (for example a string, number, or null).
    a0. **TOPOLOGY_GATE: lifecycle (before closure/safe-close)** — if the `pipeline-topology` gate is installed for
        this workspace, before the pre-archive reconciliation gate below, run
        `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
        proceeds; exit 1/2 halts immediately with the reported token/message (never inferred, never fail-open).
+   a0b. **Pre-closure baseline and pre-existing-change refusal (read-only, before any closure write)**: run `git diff --name-only`, `git diff --cached --name-only`, and `git ls-files --others --exclude-standard`, and keep all three outputs as the pre-closure baseline (unstaged, staged, and untracked). Build the predicted write set before pre-mode: the queue and archive paths for `{shipment_id}` and for every ID in `custom_fields.items`, any existing `.backlogit/reconcile/{shipment_id}-*` report, and any item-log path the backlog index reports for those IDs. If any path in the predicted write set has a staged, unstaged, or untracked change in the baseline, halt with `CLOSURE_PRE_EXISTING_CHANGES`: write nothing, stage nothing, and change no shipment state. This comparison runs here, before pre-mode step a; it never runs after pre-mode or safe-close has written reports or changed shipment state.
    a. **Pre-archive reconciliation gate (mandatory)**: Invoke the `shipment-reconcile`
       skill with `mode: pre`, `shipment_id`, and `expected_status: done`.
       This acquires the single-writer lock on `.backlogit/queue/{shipment_id}.md`
@@ -1457,31 +1459,35 @@ branch-per-release-unit principle.
         to the operator. Do NOT proceed to step 1.b.
       * If the skill returns `PROCEED`: continue. The lock remains held until post-mode
         completes in step 1.d.
-   b. Call `backlogit_ship_shipment` with the merge commit SHA. Shipment
-      membership is flat and explicit: the governed transaction completes and
-      archives exactly the IDs in `custom_fields.items`, plus the shipment
-      control record. A listed feature does not imply shipment membership for
-      any descendant or linked deliberation. Explicit feature members retain
-      governed feature completion and archival, while every unlisted artifact
-      remains untouched. Reconciliation must not expect an unlisted descendant
-      or deliberation to archive, return to backlog, or appear as an orphan.
+   b. **Governed closure (safe-close)**: Invoke `shipment-reconcile` with
+      `mode: safe-close`, `shipment_id`, and `merge_commit_sha`. Safe-close is the only
+      caller of `backlogit_ship_shipment`. It re-reads the shipment under the lock, requires
+      its manifest (`M`) to equal the pre-mode manifest, and returns `CLOSED` only when its
+      result envelope validates. Shipment membership is flat and explicit: the governed
+      transaction completes and archives exactly the IDs in `custom_fields.items`, plus the
+      shipment control record. A listed feature does not imply shipment membership for any
+      descendant or linked deliberation. Explicit feature members retain governed feature
+      completion and archival, while every unlisted artifact remains untouched.
+      Reconciliation must not expect an unlisted descendant or deliberation to archive,
+      return to backlog, or appear as an orphan.
 
-      **Third branch — halted archival (143-F)**: `backlogit_ship_shipment` no longer
-      always reaches its archival step. If it returns `mutation_partial` with
-      `classification: indeterminate` and `failed_step: shipped-event-append`, the
-      governed ship path deliberately halted BEFORE the archive collector ran because
-      the shipped-event append outcome could not be proven. Do NOT treat the absent
-      archive files as a P-007 violation and do NOT run `git restore .backlogit/archive/`.
+      **Third branch — halted archival (143-F)**: the governed ship inside safe-close no
+      longer always reaches its archival step. If the safe-close result envelope reports
+      `mutation_partial` with `classification: indeterminate` and
+      `failed_step: shipped-event-append`, the governed ship path deliberately halted BEFORE
+      the archive collector ran because the shipped-event append outcome could not be
+      proven. Do NOT treat the absent archive files as a P-007 violation and do NOT run
+      `git restore .backlogit/archive/`.
       Instead run `backlogit doctor --check-shipped-event-completeness` (or
       `backlogit_doctor` with `check_shipped_event_completeness`), follow the
       named-limitation procedure in P-007, and halt closure pending operator
       reconciliation. There is no supported forward transition out of `shipped`.
 
-      A `classification: not-applied` result with `compensation_state: compensated`
-      reverted the ship cleanly and may be retried. `compensation_state:
-      partially-compensated` names release-scope items compensation could not restore;
-      reconcile those IDs before retrying, and note the audit may report clean while
-      they remain torn.
+      In the safe-close result envelope, `classification: not-applied` with
+      `compensation_state: compensated` reverted the ship cleanly and safe-close may be
+      retried. `compensation_state: partially-compensated` in the envelope names
+      release-scope items compensation could not restore; reconcile those IDs before
+      retrying, and note the audit may report clean while they remain torn.
    c. **Verify archive integrity (P-007)**: Run `git status -- ".backlogit/archive/"`.
       If any archive files appear as working-tree deletions, restore them immediately:
       `git restore .backlogit/archive/`. See P-007 in workflow-policies for the
@@ -1494,9 +1500,30 @@ branch-per-release-unit principle.
       `HALT — shipped-event reconciliation required`, do NOT restore; halt closure and
       surface the audit output and the stranded release-scope items to the operator.
       The lock is released by the skill at the end of post-mode.
-   e. Commit the backlog state in two separate terminal commands:
-      `git add .backlogit/`
-      `git commit -m "chore: archive {shipment_id} backlog artifacts"`
+   e. **Allowlisted staging, then commit.** Every path in this item is rooted at the attested served storage directory (`workspace.storage_root` from Step 4.1b, named `.backlog` or `.backlogit`), never an assumed directory. Before any ID is interpolated into a path, validate it against `^\d{3,}(\.\d{3,})*-[A-Z]{1,2}$`; on mismatch halt with `CLOSURE_ALLOWLIST_INVALID_ID` and stage nothing. Build the allowlist from the safe-close report
+      (`.backlogit/reconcile/{shipment_id}-safe-close-{timestamp}.md`), keyed by work-item ID
+      rather than by internal core paths. The allowlist holds EXACT paths only: an entry matches
+      by exact path equality, a name pattern or glob is never an entry, a queue path is admitted only when it is tracked in HEAD (for example `git ls-files --error-unmatch -- <path>` succeeds, so a pre-archived member with no queue file is skipped), and an archive path is admitted only when the file exists in the working tree. The entries are
+      `.backlogit/queue/{shipment_id}.md`; `.backlogit/archive/{shipment_id}.md` for the archived
+      shipment control record; for each explicit member `{member_id}` (every ID in `custom_fields.items`, feature members included, not only the task manifest `M`) that the
+      governed closure archived, both `.backlogit/queue/{member_id}.md` (the queue file the archive
+      move deletes) and `.backlogit/archive/{member_id}.md` (the archive file it adds); and the
+      exact report paths returned by the pre, safe-close, and post invocations, plus any exact log
+      path the safe-close report lists for those IDs. Shared index or side-effect files that the governed
+      closure writes are added only when the safe-close report lists their exact path. Do not
+            hardcode a file list. An artifact that is not an explicit member of `custom_fields.items` is never staged, even when the closure touched it (for example a descendant or a linked deliberation). If the safe-close report is missing, unreadable, or yields an EMPTY
+      allowlist, halt with `SAFE_CLOSE_REPORT_UNAVAILABLE`, stage nothing, and do not commit. The `CLOSURE_PRE_EXISTING_CHANGES` refusal is decided at a0b, before any closure write, and is not repeated here.
+      Stage every allowlisted path with `git add -- <each allowlisted path>`; staging a removed
+      tracked file stages its deletion, so each archived member's queue-side removal is staged
+      along with its archive addition. Then verify that the
+      *changed paths* (the exact output lines of `git diff --cached --name-only --no-renames`)
+      equal the changed subset of the allowlist, and halt on any other staged path.
+      Git accepts `--no-renames` in either position, but the command must keep the exact substring
+      `git diff --cached --name-only`, so write it as `git diff --cached --name-only --no-renames`.
+      With `--no-renames`, each archive move appears as two changed paths (the deleted queue path
+      and the added archive path). Both are allowlisted, so the check covers the queue side of
+      every archived member. Commit in a separate
+      command: `git commit -m "chore: archive {shipment_id} backlog artifacts"`
 2. **Runtime validation and releasability evidence**: If the shipped work touches runtime surfaces, load `.autoharness/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces **validator evidence** for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites (do not fake unsupported automation). Then invoke `operational-closure` in `mode=post-merge` with that validator evidence plus `runtime_validation.releasability` so closure produces explicit **releasability evidence** (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) covering monitoring, rollback, owner, validation-window, and follow-up requirements — alongside the release-readiness, monitoring, and rollback artifacts in `docs/closure/`. The closure artifact carries a **compaction status** field (initialized `pending`) that step 8 finalizes to `done`/`degraded`; the Orchestrator's closure-gated routing treats a `pending`/unset compaction status as an incomplete post-merge closure (P-020).
    In dark mode, the closure summary must list decisions, gates, reviewed HEADs,
    merge/fallback status, admin fallback result if any, **compaction status (P-020)**,

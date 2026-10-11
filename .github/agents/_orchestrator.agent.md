@@ -281,6 +281,11 @@ Gather the full current backlog state:
 2. Check for queued shipments ready for Ship:
    `backlogit_list_shipments` filtered to `queued`
    - If found: record as `queued_shipments`.
+   - For each DAG-ready queued candidate (no unshipped `blocks`-type predecessor, per the re-check in Step 2 item 1), run
+     `autoharness gate pipeline-topology --mode agent --shipment {id} --phase pre_claim --json`
+     and show its gate verdict and token next to DAG readiness. A candidate is reported as **eligible** ONLY when BOTH hold: (a) DAG readiness passes, using the same criteria as the Step 2 item 1 re-check (no unshipped `blocks`-type predecessor and, when `DARK_MODE_ACTIVE`, it is the next entry in the P-017 `DARK_MODE_SCOPE` ordered cursor, not merely a scope member, and passes the P-017 scope filter); and (b) its pre_claim gate verdict passes (exit 0). A DAG-ready candidate that the pre_claim gate refuses (exit 1 `blocked` or exit 2 `invalid`, for example `PREDECESSOR_CLOSURE_INCOMPLETE`) is NOT eligible: list it under a separate `blocked by gate` heading with that refusal token. The gate verdict is shown beside every candidate, in either list. Step 0 eligibility is advisory and is not a claim; the `pipeline-topology` pre_claim gate that the Orchestrator itself invokes (Step 2 item 3) remains the authority, and Ship's separate claim-time gates are not part of this advisory check.
+   - When the `pipeline-topology` gate is not installed in this workspace, say so, show the gate verdict as `not installed`, and do not invent a verdict. Report DAG readiness and scope as usual; eligibility then follows DAG readiness and scope alone, because Step 2 item 3's bootstrap exemption also skips the gate, and no candidate is listed under `blocked by gate` on that basis.
+   - Eligibility reporting never claims a shipment and never invokes Ship.
 
 3. Check stash for pending entries (entries not yet promoted to backlog):
    Read stash via the configured backlog tool (MCP or CLI) as declared in the backlog registry.
@@ -295,6 +300,8 @@ Gather the full current backlog state:
    ORCHESTRATOR STATE:
    - Active Ship work: {shipment_id or none}
    - Queued shipments: {count}
+   - Eligible shipments (DAG readiness and pre_claim gate verdict both pass (or, when the `pipeline-topology` gate is not installed, say so and do not invent a verdict); when dark mode is active, also the next `DARK_MODE_SCOPE` cursor entry that passes the P-017 scope filter; gate verdict shown beside each): {id, gate verdict and token, or none}
+   - Blocked by gate (DAG-ready, refused by the pre_claim gate): {id, refusal token, or none}
    - Stash entries: {count}
    - Mode: {sequential | pipelined | dark-factory}
    - DARK_MODE_ACTIVE: {inactive | active(scope={ids})}
@@ -389,7 +396,7 @@ When the `agent-intercom` capability pack is installed, broadcast `[ORCHESTRATOR
    `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase pre_claim --json`
    against the selected shipment ID from step 1. Exit 0: proceed to step 4/5. Exit 1 (`blocked`) or exit 2
    (`invalid`): halt routing to Ship with the reported token/message rather than invoking Ship against an
-   ineligible candidate — never inferred, never fail-open. (Bootstrap exemption: while
+   ineligible candidate — never inferred, never fail-open. Step 0 item 2 applies the same verdict: a candidate refused here is listed under its `blocked by gate` heading, never as eligible. (Bootstrap exemption: while
    `autoharness gate pipeline-topology` is not yet installed in this workspace, skip this sub-step;
    self-referential bootstrapping shipments that build the gate are not blocked by an as-yet-uninstalled gate.)
 4. **Resolve Ship's routed model (P-013.5, NON-NEGOTIABLE)**: before invoking Ship, resolve `config.model_routing.ship`, falling back per sub-field to `config.model_routing.tier2` when the `ship` route or an individual sub-field is absent or empty. This is intent-directive resolution, not a baked `--model` CLI flag: declare the resolved `model_family`/`model_provider`/`reasoning_effort` as the invocation override when the runtime supports honoring a per-invocation model directive for the Ship subagent. If the runtime cannot honor a per-invocation override, emit `ROUTING_DEGRADED: Ship invocation could not honor resolved route {model_family}/{model_provider} — falling back to session default` and surface it to the operator — never silently invoke Ship on the current session model without declaring the resolved route and the degradation.
@@ -438,7 +445,9 @@ fixes when that record is persisted.
     bound to, and compare them with the candidate roots from a–c:
     * Call `backlogit_get_metadata_catalog` and read only its `workspace` object.
       `workspace.root_path` must equal the served workspace root, and
-      `workspace.storage_root` must equal the served storage root.
+      `workspace.storage_root` must equal the served storage root. The attested
+      `workspace.queue_path` and `workspace.archive_path` are the only manifest
+      directories used below.
     * Call `backlogit_query_sql` against `pragma_database_list` with
       `SELECT name, file FROM pragma_database_list WHERE name = 'main'`. It must return
       exactly one row, and its `file` must be `backlogit.db` as a direct child of the
@@ -450,14 +459,18 @@ fixes when that record is persisted.
     * The attestation is MCP-only. A CLI invocation reports the root it was pointed at, so
       it cannot attest the server. No sync or retry applies, because a sync cannot change
       the root a server is bound to.
-  * The shipment manifest must exist in exactly one of `queue` or `archive` under the
-    served storage root, so a shipment archived by a crashed closure still binds. If it
-    exists in neither or both, fail closed. This assumes the default archive directory; a
-    manifest that exists only under a configured non-default archive directory is found in
-    neither and fails closed.
-  * Require the manifest and its directory to be direct children with no symlink or
-    reparse-point component. Apply Ship Step 4.1b's raw-read safety: no-follow open,
-    opened-path verification, and a scoped P-012 raw-read declaration.
+  * The shipment manifest must exist in exactly one of the attested `workspace.queue_path`
+    or `workspace.archive_path` directories, each contained in the served storage root
+    (the canonical path lies under it, compared component-wise by the step c rules). A
+    shipment archived by a crashed closure still binds through `workspace.archive_path`.
+    If it exists in neither or both, fail closed. The metadata catalog reports these paths as
+    `<storage>/queue` and `<storage>/archive`; the procedure searches only the paths the catalog
+    attests, so a manifest outside them is not found and fails closed.
+  * Require the canonical manifest directory to be contained in the canonical served storage
+    root (the canonical path lies under it, compared component-wise), and the canonical manifest
+    file to be a direct child of that directory. Reject every symlink or reparse-point component
+    in the served storage root, manifest directory, and manifest file. Apply Ship Step 4.1b's
+    raw-read safety: no-follow open, opened-path verification, and a scoped P-012 raw-read declaration.
   * Read only the manifest frontmatter.
   * Static check: `id`, `status`, `updated_at`, and the ordered `custom_fields.items` equal
     the MCP `backlogit_get_shipment` result. On a mismatch, call `backlogit_sync_index`
@@ -473,8 +486,10 @@ fixes when that record is persisted.
   `served_storage_root` (Ship's "served storage root") in the Ship invocation payload as
   canonical OS-native absolute paths. Include the binding evidence: `id`, ordered items,
   and the attested `workspace.root_path`, `workspace.storage_root`, and index `file`. The
-  evidence is informational. Ship re-runs the Served-Root Attestation itself at use time
-  and never treats the evidence as proof. Record the outcome in `docs/memory/` in
+  evidence is informational. Ship runs the full Served-Root Attestation once per wave
+  admission, again before any CLI fallback, and again after an MCP append error, and runs only
+  the `pragma_database_list` check at each task claim, before any raw item-log read, and never
+  treats the evidence as proof. Record the outcome in `docs/memory/` in
   workspace-relative form only, but never in the main worktree before Ship is invoked:
   Ship Step 0.5 item 3a halts on any `git status --short` output when it creates the
   shipment branch from `main`. Carry the outcome in the Ship invocation payload instead,

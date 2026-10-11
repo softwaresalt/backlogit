@@ -57,10 +57,10 @@ autoharness upstream templates and the upstream `post_ship` phase ask,
 | R4 | FBD6E6F8 | Step 4.0 item 1 CLI fallback validates canonical task IDs and passes them as discrete argv | U2, U9 |
 | R5 | F05661B1 | The 5a lifecycle gate applies only to the feature PR; Step 6.0 closure PRs run P-014 and P-018 only | U2, U9 |
 | R6 | 6AB5E7FC | Orchestrator eligibility reports show the `pre_claim` gate verdict next to DAG readiness | U3, U10 |
-| R7 | 8F1CF1E1 | Served-root manifest lookup uses attested `workspace.queue_path` and `workspace.archive_path` (supersedes 195s plan R4(c)) | U3, U10 |
+| R7 | 8F1CF1E1 | Served-root manifest lookup uses attested `workspace.queue_path` and `workspace.archive_path` (supersedes 195s plan R4(c)) (delivered as the Orchestrator text contract; the Go metadata catalog still reports hard-coded `storage/queue` and `storage/archive` for non-default `queue_layout.root_dir`, which can only produce a false fail-closed; named limitation, follow-up capture 00A9D01C; see Erratum E3) | U3, U10 |
 | R8 | 67F17B6B | Harness lock files are named `.<file>.agent-lock` in all four scripts and both docs | U4, U11, U12, U13 |
 | R9 | 1293086D | Normalization keeps `closure_status`, `compaction_status`, and `conditions` top-level for closure docs | U5, U14 |
-| R10 | D116AF58 | Ship-time member validation is profiled, fixed, and reports progress | U6, U15, U16a, U16b |
+| R10 | D116AF58 | Ship-time member validation is profiled and reports progress; the performance fix is NOT delivered (U15 descoped by operator ruling; see Erratum E2; follow-up stash 76553D8D) | U6, U15, U16a, U16b |
 | R11 | 141-S gate | A 140-S gate-registration closure record exists and the 141-S `pre_claim` gate passes the closure check | U7 |
 | R12 | harness | Every edited installed artifact has a current drift record | U17 |
 
@@ -584,3 +584,336 @@ Requires plan hardening: yes
 * revisions: U1b split from U1; U16 split into U16a (RED) and U16b; U15 harness exemption recorded in Constitution Check with a U6-derived target; U8 allowlist keyed by work-item ID; U17 AC3 re-run before merge; 8F41D60D single-rerun rule; U13 AC limited to documentation rows.
 * residual advisories: Go Reviewer note that U14 must write closure keys back after ToMap (already stated in U14); Scope Boundary Auditor note that U16b could depend only on U6 (kept on U15 because both edit shipment_gate.go).
 * operator_authorization: approved (operator APPROVED this scope and directed autonomous work without routine confirmations, relayed by the Orchestrator on 2026-10-08)
+
+## Erratum E1 (2026-10-10)
+
+This erratum documents an already-reviewed plan. It records planning fields
+that Stage wrote onto the backlog tasks and the covering feature 197-F so that
+Ship can admit the wave schedule under the P-002 red-first rules. It was made
+under P-017 dark factory mode (scope [197-S] only). It does not change scope:
+shipment membership S (197-F plus the 19 tasks, 20 items) and the task set M
+(the 19 tasks), dependencies, waves, task titles, and acceptance criteria are
+unchanged, no plan line above was edited, and plan-review was not re-run. The
+full record is `docs/memory/2026-10-10/stage-197s-red-contract-amendment.md`.
+
+### P-002.2 red-deliverable contracts
+
+Seven red deliverables carry a canonical red-deliverable contract on their
+backlog task. The validated red, green-makers, close-wave mapping follows. It
+is derived from the unit text and the Dependency Graph above. Every
+green-maker is in M, is not the red deliverable itself, and lands in a
+strictly later wave. The close wave equals the latest green-maker wave.
+
+| Red deliverable | Green-maker(s) | Green-maker wave | Close wave |
+|---|---|---|---|
+| 197.001-T (U1, `TestUCXS1_`) | 197.009-T (U8) | 2 | 2 |
+| 197.002-T (U1b, `TestUSR3_`) | 197.009-T (U8) | 2 | 2 |
+| 197.003-T (U2, `TestUCXS2_`) | 197.010-T (U9) | 3 | 3 |
+| 197.004-T (U3, `TestUCXS3_` and `TestUSR1_`) | 197.011-T (U10) | 2 | 2 |
+| 197.005-T (U4, `TestUCXS4_`) | 197.012-T, 197.013-T, 197.014-T (U11-U13) | 2 | 2 |
+| 197.006-T (U5, `TestUCXS6_NormalizeClosureGateKeysStayTopLevel`) | 197.015-T (U14) | 2 | 2 |
+| 197.017-T (U16a, `TestUCXS5_`) | 197.018-T (U16b) | 3 | 3 |
+
+Selector declaration for U16a (197.017-T): the plan leaves the test name to
+the implementer, but the red selector command must be exact. Stage declared
+the next unused collision-free unit token, `CXS5`, so the test prefix is
+`TestUCXS5_` (see the rename below), and the package `./internal/cli`, where
+the `shipment ship` command and its tests live. It declares no test body and no
+scope. Amendment A3 on 197.017-T records that a differently named test would
+match nothing under the declared selector (`WAVE_RED_DELIVERABLE_VACUOUS`).
+
+### Selector prefix rename (P-002.6 requirement 4)
+
+The test names that this plan gives (`TestCXS1_` to `TestCXS4_` in U1 to U4, and
+`TestNormalize_ClosureGateKeysStayTopLevel` in U5) do not start with `TestU`.
+P-002.6 requirement 4 (`.github/policies/workflow-policies.md`,
+`build-feature` Step 0.5, and `_ship.agent.md`) requires every task-scoped
+harness command to be anchored to `-run '^TestU<unit>_'`, and the scheduler
+replay rejects a red selector that is not (`Test-TaskScopedCommandShape` in
+`scripts/wave-scheduler-sim.ps1`; Ship would halt `WAVE_RED_MAPPING_UNRESOLVED`
+at wave-1 dispatch of all seven red deliverables). The policy wins over the
+plan's names. Stage therefore declared the repository convention `TestU` plus a
+unit token on the backlog tasks, and the tasks govern wherever they differ from
+the plan text above:
+
+| Plan unit | Unit token | Declared test prefix or name | Package |
+|---|---|---|---|
+| U1 | `CXS1` | `TestUCXS1_` (was `TestCXS1_`) | `./tests/integration` |
+| U2 | `CXS2` | `TestUCXS2_` (was `TestCXS2_`) | `./tests/integration` |
+| U3 | `CXS3` | `TestUCXS3_` (was `TestCXS3_`); also `TestUSR1_` | `./tests/integration` |
+| U4 | `CXS4` | `TestUCXS4_` (was `TestCXS4_`) | `./tests/integration` |
+| U16a | `CXS5` | `TestUCXS5_` | `./internal/cli` |
+| U5 | `CXS6` | `TestUCXS6_NormalizeClosureGateKeysStayTopLevel` (was `TestNormalize_ClosureGateKeysStayTopLevel`) | `./internal/docline` |
+
+`TestUSR1_`, `TestUSR3_`, and `TestUSR6_` are unchanged. Union selectors keep the
+required anchor: `'^TestU(CXS3_|SR1_)'` (197.004-T red selector and the 197.011-T
+owner command) and `'^TestU(CXS1_|SR3_)'` (197.009-T owner command, because U8
+turns both 197.001-T and 197.002-T green). Every covered-by owner command is
+byte-identical to its owner's red selector, except that documented union.
+Subtests and the function suffixes are unchanged.
+
+### P-002.1 exemption contracts and the closed exempt set
+
+Ten tasks carry a P-002.1 exemption contract. The closed exempt set is
+recorded on 197-F and is exactly these ten tasks:
+
+* 197.007-T (U6), verification-only: the new benchmark file only.
+* 197.008-T (U7), docs-only: one new markdown file.
+* 197.009-T (U8), 197.010-T (U9), 197.011-T (U10), 197.012-T (U11),
+  197.013-T (U12), 197.014-T (U13), 197.015-T (U14), and 197.018-T (U16b),
+  covered by the red deliverable that each one turns green (table above).
+
+No other task may claim an exemption without a reviewed amendment.
+
+### U15 harness posture (supersedes the Constitution Check deviation)
+
+The Constitution Check line "Justified deviation: U15 is harness-exempt" and
+the U15 unit line "Harness: exempt, covered by the U6 benchmark" above are
+superseded. P-002.1 withdrew a prose-only exemption, and U6 is itself exempt,
+so it cannot own U15's harness. U15 is harness-required. It carries no
+exemption label and no exemption contract. Ship's harness-architect scaffolds
+its RED harness at the start of wave 2, after U6 is done and its verdict,
+ns/op, profile, and target are recorded in the U6 task notes. The harness must
+fail on main for the right reason and pass only after the refactor, derive its
+failing condition from the U6 verdict and target, and be task-scoped. Its shape
+is the harness-architect's choice. For example, (a) a work-count
+characterization test, (b) a U6-derived performance budget, or (c) a
+source-shape assertion. These three are examples, not a closed list. A
+work-count RED may use `_test.go`-only seams and must add no production seam and
+no production stub, because P-002.1 (cycle 31) forbids a production declaration
+ahead of its harness. A timing or performance budget may only corroborate a RED
+and is never the sole RED condition, because timing is nondeterministic. Every
+existing shipment gate test, verdict, error classification, and lock order must
+stay unchanged. A REFUTED U6 verdict, a missed target, or no valid
+RED harness halts and returns to Stage; U15 is never exempted and no substitute
+harness is scaffolded. The deliverable, file, acceptance criteria, and
+dependencies of U15 are unchanged. The tightened wording is Amendment A1 on
+197.016-T, which also adds a pointer line after the stale "Harness: exempt"
+prose there.
+
+### U17 harness posture (Amendment A2)
+
+U17 (197.019-T) is harness-required, not exempt. It edits a repository
+configuration file, `.autoharness/harness-manifest.yaml`, which no exempt class
+admits. The U17 unit line "Posture: verification-only" above is therefore only
+its execution posture. Ship's harness-architect scaffolds its harness at the
+start of wave 4, after U8 to U14 (including U9) have landed. The RED harness
+follows the 196 drift-record shape
+(`tests/integration/harness_manifest_196_drift_records_test.go`). Per manifest
+entry for the files this release changes, it asserts exactly one entry,
+`drift_allowed: true`, a 64-hex lowercase checksum that differs from the
+pre-refresh value pinned at wave-4 start, and a `drift_reason` that keeps
+`Do not auto-revert.` and the existing citations and cites this release's
+governing stash IDs. It fails at wave-4 start because those entries are still
+stale and passes only after the refresh. It must not assert that the checksum
+equals the current file hash, because that would redden every later shipment
+that edits those files, and like the 196 test it does not recompute hashes.
+`TestUSR6_HarnessManifestDriftRecords` (U17 AC1) is already green on main, so it
+is a regression guard and not the RED harness. The one-time currency check in
+U17 AC2 uses the manifest's LF-normalized SHA-256 convention (the recipe in the
+archived 196.006-T AC1), because raw `Get-FileHash` on a CRLF checkout does not
+match it. If no valid RED shape can be formed, the task halts and returns to
+Stage. U17 carries no exemption label and no contract.
+
+### Other task-body amendments
+
+* Amendment A3 on 197.017-T: the declared selector is
+  `-run '^TestUCXS5_'` in package `./internal/cli`; it supersedes "implementer
+  names it" for the test name and package.
+* 197.008-T (U7): the content probe in its exemption command was loosened so a
+  line-wrapped gate-required comment still matches. It was checked as a
+  positive control against a document structured like
+  `docs/closure/136-S-154-F-post-merge-closure.md` and still fails before the
+  deliverable exists. An evidence note records that U7 AC1's gate-run output can
+  be observed only after 197-S leaves `active` (the known
+  `PRECLAIM_ACTIVE_SHIPMENT_PRESENT`); the AC text is unchanged.
+* 197.007-T (U6): a sentence records that its verdict, ns/op, top-five
+  profile, and target are the input Amendment A1 of 197.016-T requires, and that
+  missing evidence is a wave-2 halt for 197.016-T.
+* 197.005-T (U4): one line requires every table-row subtest to be named after
+  its file path, because the exempt gates of 197.012-T to 197.014-T filter
+  `--- FAIL:` rows by path.
+
+### Unchanged
+
+Shipment membership S (197-F plus the 19 tasks), the task set M (the 19 tasks),
+dependencies, waves (W1 U1, U1b, U2-U7, and U16a; W2 U8 and
+U10-U15; W3 U9 and U16b; W4 U17), titles, and acceptance criteria are
+unchanged.
+
+## Erratum E2 (2026-10-10)
+
+This erratum records an operator-authorized manifest amendment: unit U15
+(197.016-T) is descoped from 197-S. It was made under P-017 dark factory mode
+(scope [197-S] only). Unlike Erratum E1, it changes scope (shipment membership
+S and the task set M shrink by one task), so it cites the operator ruling
+verbatim. No plan line above was edited, and plan-review was not re-run: the
+change removes one unit and one dependency edge under explicit operator
+authority and adds no scope. The full record is
+`docs/memory/2026-10-10/stage-197s-red-contract-amendment.md`.
+
+### Operator ruling (verbatim)
+
+> "Descope U15 as recommended."
+
+Ruled 2026-10-09T22:47-07:00 (2026-10-10T05:47Z). It is the explicit operator
+authorization for a Stage manifest amendment and an explicit re-freeze of M.
+"As recommended" is option 1 ("Descope U15 (recommended)") under "Decisions
+needed" in `docs/memory/2026-10-10/orchestrator-197s-wave2-halt-memory.md`,
+and the last section of the Stage note named above. The other two options
+(re-plan U15 as a new profiling spike plus a retargeted fix, or keep U15 as
+written with no RED harness) were not chosen.
+
+### Why U15 is descoped
+
+The U6 benchmark (197.007-T, done) and Stage's code analysis refuted U15's
+premise:
+
+* One `validateMemberGateEvidence` call, which is what U6 timed, already reads
+  each member's event log once (`events.ReadAllEvents`, one `os.Open` and one
+  scan, no lock) and resolves its artifact once (`loadArtifact`, database
+  first, filesystem walk only on a miss). The U6 profile attributes about
+  80.2% to `ReadAllEvents`, 13.6% to `loadArtifact`, and 0% to the
+  `findArtifact` WalkDir. The redundant share inside the function U15 may
+  change is 0%, so the share of time attributable to per-member lookup and log
+  reads (93.8%) is essential cost, and U15 AC1 cannot be met by removing
+  redundant work.
+* U6 measured about 0.9 to 3.4 ms per member (39 to 153 ms per op over 45
+  members; the host noise band is 3.9x). Stash D116AF58 reports about 10 s per
+  member. The real cost sits outside `validateMemberGateEvidence`, in code U6
+  did not profile: `snapshotShipArtifacts` (`findArtifact` WalkDir at
+  `shipment_lifecycle.go:238`, `FindArtifactPath` at `:246`,
+  `LockItemLogCrossProcess` at `:254`) and `attachCommitToItems`
+  (`findArtifact` at `:877`). Those are outside U15's declared file
+  (`internal/core/shipment_gate.go`).
+* The only duplicate read on the real path is the deliberate second gate pass
+  (`shipment_lifecycle.go:607` and `:627`, re-validation after the artifact
+  locks are taken). Removing it changes verdict timing and lock order, which
+  U15 forbids.
+* A timing-only target is not defensible, so no valid RED harness exists
+  (Amendment A1 HALT class). The 1 MiB scanner buffer in
+  `internal/events/reader.go` (13.0% of the U6 loop, `memclrNoHeapPointers`) is
+  a different file and also outside U15.
+
+### Amended manifest and task set
+
+| | Before E2 | After E2 |
+|---|---|---|
+| Shipment membership S | 197-F plus 19 tasks (20 items) | 197-F plus 18 tasks (19 items) |
+| Frozen task set M (Ship re-derives it at its next Step 3) | 19 tasks | 18 tasks |
+| 197.016-T (U15) | member, `active`, claim-assigned | removed from S and M; archived (governed `backlogit_archive_item`) with a comment citing this ruling |
+
+The old wording "197-F plus exactly 19 atomic tasks" in the 197-S description
+is superseded: the manifest is 197-F plus exactly 18 atomic tasks. Order,
+`queue_position`, status, priority, labels (including `dag-root`), and links of
+197-S are unchanged. The follow-up for the performance fix is stash entry
+76553D8D ("Profile the real ShipShipment path and optimize per-member
+snapshot/lock cost (R10 remainder)"), which cites D116AF58, this plan, the U6
+evidence, the unprofiled suspects, and the constraints (keep verdicts, error
+classification, and lock order; needs deliberation and a new profiling spike
+first). It is an ordinary Stage follow-up capture, not a P-021 Ship capture.
+
+### Removed dependency edge
+
+The edge 197.018-T to 197.016-T (U16b depends on U15) is removed with the
+governed `backlogit_remove_dependency`. U16b's "same file" ordering was never a
+real dependency: its progress callback is optional and does not need U15's
+refactor. 197.018-T now depends only on 197.017-T (U16a). Amendment A4 on
+197.018-T records this. The unit text above, "Depends on U16a and U15 (same
+file)", and the Dependency Graph line "U16b <- U15, U16a" are superseded: U16b
+depends on U16a only. Its deliverable, files, acceptance criteria, and
+`covered-by` exemption contract (owner 197.017-T) are unchanged.
+
+### R10 coverage
+
+Requirement R10 ("profiled, fixed, and reports progress") is now covered as
+follows:
+
+* Profiled: U6 (197.007-T, done), with the limits stated above.
+* Reports progress: U16a (197.017-T, done, RED) and U16b (197.018-T).
+* Fixed: moved to follow-up stash 76553D8D. It is not delivered by 197-S.
+
+U15's own amendments are moot: Amendment A1 stays on the archived 197.016-T
+as history, and no Amendment A1.1 (a numeric U6-derived target) is written.
+
+### Recomputed wave partition
+
+Topological layering of the 18-task amended graph (verified against
+`item_deps`; the graph is acyclic and every dependency of a member is a
+member):
+
+| Wave | Tasks | Notes |
+|---|---|---|
+| W1 | 197.001-T to 197.008-T (U1, U1b, U2 to U7) and 197.017-T (U16a) | done |
+| W2 | 197.009-T (U8), 197.011-T (U10), 197.012-T to 197.014-T (U11 to U13), 197.015-T (U14), 197.018-T (U16b) | 197.018-T moves up from W3: it depends only on 197.017-T (W1) |
+| W3 | 197.010-T (U9) | depends on 197.003-T (W1) and 197.009-T (W2) |
+| W4 | 197.019-T (U17) | depends on 197.009-T to 197.014-T; the real edge to 197.010-T (W3) keeps it in W4 |
+
+Before E2 the partition was W2 = U8 and U10 to U15, W3 = U9 and U16b, and
+W4 = U17. The plan's Dependency Graph lines "Wave 2 ... U15 <- U6" and
+"Wave 3 ... U16b <- U15, U16a" are superseded for U15 and U16b. U17 never
+depended on U15 or U16b (its dependencies are U8 to U13), so its wave and its
+Amendment A2 are unchanged.
+
+### 197.017-T close-wave correction
+
+The red-deliverable contract of 197.017-T (U16a) names 197.018-T as its
+green-maker. 197.018-T now lands in wave 2, so `green_maker_closes_wave` moves
+from 3 to 2. This is the only contract change. The line is the single key
+`green_maker_closes_wave` in the red-deliverable contract block of the archived
+`.backlogit/archive/197.017-T.md`. That archived file is edited only for this
+key, under the operator authorization for this amendment, and the diff is one
+line. Two prose spots on that task stay as written and are historical: the
+`red_deliverable_reason` phrase "in wave 3" and the Harness Manifest record in
+its implementation notes ("green_maker_closes_wave: 3"). They are superseded by
+this erratum. The scheduler parses only the contract keys, so they do not
+affect admission.
+
+| Red deliverable | Green-maker(s) | Green-maker wave | Close wave |
+|---|---|---|---|
+| 197.001-T (U1) | 197.009-T (U8) | 2 | 2 |
+| 197.002-T (U1b) | 197.009-T (U8) | 2 | 2 |
+| 197.003-T (U2) | 197.010-T (U9) | 3 | 3 |
+| 197.004-T (U3) | 197.011-T (U10) | 2 | 2 |
+| 197.005-T (U4) | 197.012-T, 197.013-T, 197.014-T (U11 to U13) | 2 | 2 |
+| 197.006-T (U5) | 197.015-T (U14) | 2 | 2 |
+| 197.017-T (U16a) | 197.018-T (U16b) | 2 (was 3) | 2 (was 3) |
+
+All seven red contracts and all ten exemption contracts were re-validated
+against the amended partition: every green-maker is in M, is not the task
+itself, and lands in a strictly later wave than its red deliverable; each close
+wave equals the latest green-maker wave; every `covered-by` owner is a declared
+dependency of the exempt task, is a red deliverable, and is not itself exempt;
+every task-scoped selector matches the `^TestU` anchored shape; and the closed
+exempt set on 197-F is unchanged (ten tasks, equal to the `harness-exempt`
+labels). 197-F was not edited. Its statement that 197.016-T (U15) is
+deliberately not an exempt member remains true. 197.019-T (U17) remains the
+only harness-required member that is neither a red deliverable nor exempt.
+
+### Unchanged
+
+The acceptance criteria, deliverables, files, titles, and dependencies of every
+other unit, the P-002.1 exemption contracts, Amendments A2 (U17) and A3 (U16a),
+and all statuses and claims of the remaining members are unchanged. No other
+shipment or stash entry was touched. The only archived task files affected are
+197.016-T (moved to the archive by the governed archive operation) and
+197.017-T (the single key above).
+
+## Erratum E3 (2026-10-10)
+
+* **Row annotations.** Ship's branch-wide adversarial review found the Requirements Trace
+  over-claimed. Finding P1-5: the R10 row said validation was "fixed", but U15 was descoped (E2),
+  so the row now states profiling and progress only, with follow-up stash 76553D8D. Finding P1-1:
+  the R7 row now notes the Go metadata catalog still hard-codes `storage/queue` and
+  `storage/archive` for non-default `queue_layout.root_dir`, with follow-up capture 00A9D01C.
+* **Orchestrator disposition (P-017 dark mode; operator AFK, sound-judgement authority; subject
+  to operator veto).** R7 is accepted as PARTIAL for non-default queue layouts, with 00A9D01C as
+  the named limitation; it fails closed only, with no unsafe behavior. Finding P1-4 (the
+  safe-close report does not list exact tracked side-effect paths such as
+  `.backlogit/hooks_queue.jsonl`, so the closure allowlist never auto-stages them; the closure
+  commit stages them by explicit path) is accepted as documented residual risk, practical severity
+  P2, to be captured by Ship.
+* **Cycle cap.** The review-fix cycle cap (3) is extended by exactly ONE additional cycle,
+  limited to in-scope P0/P1 findings of the confirming review. After it, Ship must halt rather
+  than iterate.
+* **Unchanged.** Acceptance criteria, membership M (18 tasks), dependencies, and waves.

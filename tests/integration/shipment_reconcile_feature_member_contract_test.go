@@ -76,7 +76,7 @@ func TestUSR3_ShipmentReconcileExplicitFeatureMemberContract(t *testing.T) {
 				}, "PROCEED recommendation")
 
 				step6Close, ok := sliceBetweenUniqueAnchors(ship,
-					"Pre-archive reconciliation gate", "b. Call `backlogit_ship_shipment` with the merge commit SHA")
+					"Pre-archive reconciliation gate", "mode: safe-close")
 				require.True(t, ok, "Ship Step 6 close path must have unique start and end anchors")
 				assertContainsAll(t, step6Close, []string{"feature-pending-governed-completion"}, "Ship Step 6 close path")
 			},

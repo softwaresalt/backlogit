@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Acquires an advisory file lock for agent concurrency control.
-# Creates a .{filename}.lock file in the same directory as the target file.
+# Creates a .{filename}.agent-lock file in the same directory as the target file.
 # Fails with exit code 1 if the lock already exists (another process holds it).
 #
 # Enforces workspace-root containment (H2/H4): the target file must resolve,
@@ -131,7 +131,7 @@ fi
 # The root itself is deliberately NOT an accepted target: accepting
 # equality would let a caller pass the workspace root directory as
 # FILEPATH, and dirname/basename below would then place the lock file
-# (".<root-name>.lock") in the root's PARENT -- outside the containment
+# (".<root-name>.agent-lock") in the root's PARENT -- outside the containment
 # boundary this check exists to enforce. Only a proper descendant of the
 # root is a valid lock target.
 case "$REAL_TARGET" in
@@ -145,7 +145,7 @@ esac
 
 DIRECTORY="$(dirname "$REAL_TARGET")"
 FILENAME="$(basename "$REAL_TARGET")"
-LOCKFILE="${DIRECTORY}/.${FILENAME}.lock"
+LOCKFILE="${DIRECTORY}/.${FILENAME}.agent-lock"
 
 if [ -e "$LOCKFILE" ]; then
     # TC5d: the lock content now carries owner_digest (O2). Printing the raw

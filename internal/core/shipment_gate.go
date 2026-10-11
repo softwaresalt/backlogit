@@ -400,6 +400,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		if ws.formalGateEnforced() {
 			return "", formalGateShipmentRefusal(shipmentID, "gate broker is not wired (disabled or unconfigured) but formal gate evidence is enforced")
 		}
+		reportSkippedMemberValidation(ctx, releaseScope, "gate disabled or unwired")
 		return "", nil
 	}
 
@@ -436,6 +437,7 @@ func gateShipmentCompletion(ctx context.Context, ws *Workspace, shipmentID strin
 		if ws.formalGateEnforced() {
 			return "", formalGateShipmentRefusal(shipmentID, "gates are not enforceable in this environment (auto fail-open) but formal gate evidence is required")
 		}
+		reportSkippedMemberValidation(ctx, releaseScope, "gate not enforced in this environment")
 		return "", nil
 	}
 
@@ -652,6 +654,43 @@ func manifestItemsUnchanged(original, current []string) bool {
 	return true
 }
 
+// WithShipmentProgress returns a copy of ctx that carries report, so shipment
+// completion can report per-member validation progress through it. A context
+// without a reporter emits nothing, which keeps callers that do not render
+// progress (such as the MCP surface) unchanged.
+func WithShipmentProgress(ctx context.Context, report func(msg string)) context.Context {
+	return context.WithValue(ctx, shipmentProgressKey{}, report)
+}
+
+// shipmentProgressKey is the context key for the reporter installed by
+// WithShipmentProgress.
+type shipmentProgressKey struct{}
+
+// reportShipmentProgress forwards a formatted progress line to the reporter
+// carried by ctx, if one was installed.
+func reportShipmentProgress(ctx context.Context, format string, args ...any) {
+	report, ok := ctx.Value(shipmentProgressKey{}).(func(msg string))
+	if !ok || report == nil {
+		return
+	}
+	report(fmt.Sprintf(format, args...))
+}
+
+// reportSkippedMemberValidation reports every release-scope member as skipped
+// when gate evidence is not checked, so the progress stream never claims a
+// validation that did not run.
+func reportSkippedMemberValidation(ctx context.Context, releaseScope []string, reason string) {
+	for i, id := range releaseScope {
+		reportMemberSkipped(ctx, i, len(releaseScope), id, reason)
+	}
+}
+
+// reportMemberSkipped reports the release-scope member at zero-based index i of
+// total as skipped, naming the reason its evidence check did not run.
+func reportMemberSkipped(ctx context.Context, i, total int, id, reason string) {
+	reportShipmentProgress(ctx, "validating member %d/%d: %s (skipped: %s)", i+1, total, id, reason)
+}
+
 // validateMemberGateEvidence verifies every task/subtask member in the release
 // scope is terminal AND carries passing (or forced) gate evidence. When
 // shipmentHead is non-empty, the member's recorded evidence head must be an
@@ -699,12 +738,13 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 		expectedBaseRef = baseRefs[0]
 	}
 
-	for _, id := range releaseScope {
+	for i, id := range releaseScope {
 		item, err := loadArtifact(ctx, ws, id)
 		if err != nil {
 			return fmt.Errorf("validate member evidence: load %s: %w", id, err)
 		}
 		if item.ArtifactType != "task" && item.ArtifactType != "subtask" {
+			reportMemberSkipped(ctx, i, len(releaseScope), id, "not a task or subtask member")
 			continue
 		}
 		// A non-terminal gated member has not been completed through the gate;
@@ -718,38 +758,42 @@ func validateMemberGateEvidence(ctx context.Context, ws *Workspace, releaseScope
 			return fmt.Errorf("validate member evidence: read events for %s: %w", id, rerr)
 		}
 		latest := latestGatePassEvidence(evs)
-		if latest == nil {
-			// A GENUINELY DESCOPED member (archived directly from a
-			// DESCOPE-ELIGIBLE status — an in-flight status or a non-completion
-			// terminal) was taken out of the release rather than completed
-			// through the gate, so it carries no per-member evidence and MUST NOT block
-			// the shipment. A task scaffolded-then-descoped may remain explicitly
-			// listed in the flat shipment manifest; demanding evidence for it would
-			// permanently block the shipment with no operator recourse (archived is a
-			// terminal sink with no allowed status transitions, so it cannot be
-			// force-gated).
-			//
-			// The exemption is deliberately narrow: it applies ONLY when the member was
-			// archived from a DESCOPE-ELIGIBLE status — an in-flight status (queued,
-			// active, blocked, review) or a non-completion terminal (abandoned,
-			// rejected). ArchiveItem accepts completed items too and preserves the
-			// pre-archive status in archived_status, so a member driven to a COMPLETION
-			// status (done/accepted/shipped) with NO valid evidence — e.g. whose only
-			// "pass" is a fail-open EventGatePassed{ran:false} rejected by the F4
-			// predicate — and then archived MUST still refuse; exempting it on the bare
-			// archived status would bypass that predicate. archived_status is read from
-			// the Markdown source because the DB-backed loadArtifact omits it; a
-			// missing/empty archived_status fails closed (not a proven descope). The
-			// shipment-level aggregate diff gate still covers the full shipment diff.
-			if item.Status == models.StatusArchived {
-				descoped, derr := archivedFromDescopeEligibleStatus(ctx, ws, id)
-				if derr != nil {
-					return fmt.Errorf("validate member evidence: %s: %w", id, derr)
-				}
-				if descoped {
-					continue
-				}
+		// A GENUINELY DESCOPED member (archived directly from a
+		// DESCOPE-ELIGIBLE status — an in-flight status or a non-completion
+		// terminal) was taken out of the release rather than completed
+		// through the gate, so it carries no per-member evidence and MUST NOT block
+		// the shipment. A task scaffolded-then-descoped may remain explicitly
+		// listed in the flat shipment manifest; demanding evidence for it would
+		// permanently block the shipment with no operator recourse (archived is a
+		// terminal sink with no allowed status transitions, so it cannot be
+		// force-gated).
+		//
+		// The exemption is deliberately narrow: it applies ONLY when the member was
+		// archived from a DESCOPE-ELIGIBLE status — an in-flight status (queued,
+		// active, blocked, review) or a non-completion terminal (abandoned,
+		// rejected). ArchiveItem accepts completed items too and preserves the
+		// pre-archive status in archived_status, so a member driven to a COMPLETION
+		// status (done/accepted/shipped) with NO valid evidence — e.g. whose only
+		// "pass" is a fail-open EventGatePassed{ran:false} rejected by the F4
+		// predicate — and then archived MUST still refuse; exempting it on the bare
+		// archived status would bypass that predicate. archived_status is read from
+		// the Markdown source because the DB-backed loadArtifact omits it; a
+		// missing/empty archived_status fails closed (not a proven descope). The
+		// shipment-level aggregate diff gate still covers the full shipment diff.
+		if latest == nil && item.Status == models.StatusArchived {
+			descoped, derr := archivedFromDescopeEligibleStatus(ctx, ws, id)
+			if derr != nil {
+				return fmt.Errorf("validate member evidence: %s: %w", id, derr)
 			}
+			if descoped {
+				reportMemberSkipped(ctx, i, len(releaseScope), id, "descoped, archived from a descope-eligible status")
+				continue
+			}
+		}
+		// Emitted only once the member is known to be evidence-checked: a descoped
+		// member has already been reported as skipped above.
+		reportShipmentProgress(ctx, "validating member %d/%d: %s", i+1, len(releaseScope), id)
+		if latest == nil {
 			return shipmentMemberEvidenceError(id, "missing passing gate evidence")
 		}
 		if enforced {
