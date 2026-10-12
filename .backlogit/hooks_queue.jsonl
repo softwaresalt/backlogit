@@ -3736,3 +3736,4 @@
 {"seq":3738,"timestamp":"2026-10-12T19:03:52.6184169Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["description"],"item_id":"198.005-T","schema_version":1}}
 {"seq":3739,"timestamp":"2026-10-12T21:41:32.0828797Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["description"],"item_id":"198.005-T","schema_version":1}}
 {"seq":3740,"timestamp":"2026-10-12T22:34:08.7407815Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"198.003-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
+{"seq":3741,"timestamp":"2026-10-12T22:43:47.6546574Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"198.001-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
