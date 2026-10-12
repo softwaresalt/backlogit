@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"log"
 	"log/slog"
 	"testing"
 
@@ -36,6 +37,7 @@ func TestGateBaseOverrideShadowed_WarnsAdvisory(t *testing.T) {
 
 	// Capture default-logger output for the duration of this (non-parallel) test.
 	var buf bytes.Buffer
+	captureSlogAndLogState(t)
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(prev) })
@@ -60,6 +62,7 @@ func TestGateBaseNoShadow_NoWarn(t *testing.T) {
 	injectBroker(ws, gate.EnabledTrue, runner, fakeVersion{v: okVersion})
 
 	var buf bytes.Buffer
+	captureSlogAndLogState(t)
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(prev) })
@@ -70,4 +73,21 @@ func TestGateBaseNoShadow_NoWarn(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, buf.String(), "shadowed",
 		"a gate_base-only override must not be flagged as shadowed")
+}
+
+// captureSlogAndLogState restores the slog default and the stdlib log writer,
+// flags, and prefix when t ends. Installing a non-default slog handler also
+// redirects the log package, so the slog restore alone leaves log output in the
+// capture buffer. Cleanups run last-in-first-out, so the caller's own slog
+// restore runs before this one, and log state is restored last.
+func captureSlogAndLogState(t *testing.T) {
+	t.Helper()
+	prevSlog := slog.Default()
+	prevWriter, prevFlags, prevPrefix := log.Writer(), log.Flags(), log.Prefix()
+	t.Cleanup(func() {
+		slog.SetDefault(prevSlog)
+		log.SetOutput(prevWriter)
+		log.SetFlags(prevFlags)
+		log.SetPrefix(prevPrefix)
+	})
 }
