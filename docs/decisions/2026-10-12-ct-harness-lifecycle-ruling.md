@@ -7,7 +7,7 @@ chunk_strategy: h1-h2-h3
 description: 'Stage decision after the 198-S wave-1 P-002 halt: 198.004-T is harness-exempt docs-only and 198.005-T is harness-exempt verification-only, with follow-up stash captures moved out of the gated delta and both runs pinned to a 40-minute timeout; Ship''s mutation-kill red evidence for 198.001-T and 198.003-T was not ratified by Stage because P-004 and the INC-P002-131S-148F forward controls reserve relaxation to the operator, and the operator then ruled Option A for both tasks, recorded with conditions R1 to R6.'
 topic: test-suite-health
 depth: standard
-decision_status: "decided (Decision 1 accepted by Stage; Decision 2 ruled by the operator on 2026-10-12: Option A for T1 and T3)"
+decision_status: "decided (Decision 1 accepted by Stage; Decision 2 ruled by the operator on 2026-10-12: Option A for T1 and T3, confirmed on 2026-10-13 to reach Principle II ordering, Development Workflow item 1, and P-002's red-phase statements for those two tasks only)"
 promoted_to: docs/exec-plans/2026-10-08-ct-test-suite-health-plan.md
 linked_artifacts:
   - docs/decisions/2026-10-08-ct-test-suite-health-deliberation.md
@@ -30,7 +30,11 @@ pass on `main`. The normative text is Amendment A1 of
 reasoning. A1 was first written as an escalation; the operator then ruled
 ("Ruling: option A", 2026-10-12T17:35:08Z, Copilot CLI session
 a3f32a34-316b-4580-965d-f0a3e5ca2ab4) and a second revision recorded the ruling
-and resolved the other open items inside policy.
+and resolved the other open items inside policy. After Ship's pre-PR review halted
+(`docs/memory/2026-10-13-ship-198s-prepr-review-halt.md`), the operator answered
+its decisions on 2026-10-13T03:26:01Z ("D1 yes, D2 yes, D3 yes, D5 delete, D7
+accept, D8 ratify"); Decision 3 below records the dispositions and Amendment A1.8
+of the plan holds the errata.
 
 ## Decision 1: T4 and T5 are harness-exempt
 
@@ -171,11 +175,15 @@ The ruling. The operator wrote "Ruling: option A", which the Orchestrator read a
 applying to both T1 and T3 (B is T1-only and no descope was chosen). Stage
 recorded it as `T1=A; T3=A` and relaxed exactly the controls Option A listed, for
 these two tasks only and as no precedent. P-002's own red-phase statements state
-the same requirement as P-004's wording but are not named in the quoted option;
-Stage did not extend the ruling to them and left the question to the operator
-(A1.7 item 1). Constitution Principle II is not relaxed: its operative rule
-governs production code, CT writes none (R2 proves it), and the mutation-kill
-experiment preserves the observation the principle exists for.
+the same requirement as P-004's wording but were not named in the quoted option,
+so Stage did not extend the ruling to them and left the question to the operator
+(A1.7 item 1). The operator answered it on 2026-10-13 (D-2, yes): Option A's
+wording reaches Principle II's ordering requirement, Development Workflow item 1,
+and P-002's red-phase statements, for 198.001-T and 198.003-T only, and nothing
+else. That is recorded as a documented Constitution-Check deviation with operator
+authority (A1.6), not a general relaxation. Principle II stays in force for all
+production code: CT writes none (R2 proves it), and the mutation-kill experiment
+preserves the observation the principle exists for.
 
 How Stage made the ruling runnable without running it. P-010 bars Stage from
 running Go. R6 therefore specifies a `go test -overlay` experiment on mutant
@@ -210,7 +218,49 @@ Rejected alternatives:
   first revision kept this as a fallback; it puts a production file in the delta
   and was dropped, so a failed overlay returns to Stage instead.
 
+## Decision 3: dispositions after Ship's pre-PR review (2026-10-13)
+
+The operator's answers, read against Ship's memo (the plan's A1.4 confirmation
+line records them): D-1 yes, the operator confirms the plan-review ADVISORY
+approval (the marker was first supplied by the Orchestrator as dark-mode proxy on
+2026-10-12T22:15:18Z; the confirmation makes it genuine, and no new review cycle
+is required); D-2 yes, as in Decision 2 (T1 and T3 only); D-3 yes, a spike
+deliverable produced by an executor under Ship's dispatch and an R6 executor
+writing only ignored scratch files are within Ship's boundary; D-5 delete, the
+operator approved deleting `%TEMP%\stage-198s` (the directory was then found
+already absent at 2026-10-13T03:39Z, removed by an unknown earlier step, so no
+action was needed; this record does not say who or what removed it). A1.6 records
+a Principle IV violation honestly and the P-010 event of the
+first revision as operator-reviewed with no re-execution; D-7 accept, the
+2026-10-11 in-tree production mutation during wave-1 scaffolding (reverted, R2
+empty at HEAD `d3aff2c5`) is a disclosed P-005 event; D-8 ratify, the second
+plan-review series of four cycles after the first series' three-attempt cap,
+including the Orchestrator's cycle-4 authorization.
+
+Decided by the Orchestrator within scope, not by the operator: D-4, Ship's
+exact-name selector for 198.002-T AC2 (eight PASS) stands as that criterion's
+disposition, because the criterion's pattern matched no test (A1.8 E-1); D-6, T5's
+result is GREEN-AFTER-RERUN, stash 63909DAE is the recurrence, and "the isolation
+fixes held" is not stated (A1.8 E-8). Stage recorded both and edited text only.
+
+Errata (A1.8): E-1 the AC2 disposition; E-2 T2's third file and the fourth
+`slog.SetDefault` site (stash 8640432F), the plan's "only three sites" premise
+being true at `d2f3ff97` and false at the branch base `c5758918`; E-3 the base
+reference pinned to `c5758918`; E-4 one T5 non-green trigger set; E-5 the dangling
+"returns the shipment" definition; E-6 the 198-F prerequisite text; E-7 T4 does not
+reuse T5's run; E-8 the T5 result and isolation wording; E-9 the Stage memo
+timestamp and stash 253E2505's status text. The wording defects were captured by
+Ship in stash FBD0BB95 (P-021 C2) and are Stage's to correct. Each fix was checked
+against its source, and none changes a task, an acceptance-criterion text, a
+dependency, or M.
+
 ## Follow-ups (captured as stash entries, not acted on)
+
+* Stash FBD0BB95 (task, low): the wording defects corrected by A1.8 E-3 to E-9;
+  Stage's correction is recorded there and the entry can be archived at triage.
+* Stash 8640432F (bug, low): the fourth `slog.SetDefault` site, benchmark-only
+  (`silenceBenchLogs`), deferred by P-021 C1.
+* Stash 63909DAE: the T5 first-run failure is its recurrence.
 
 * Stash 920BCA5B (task, medium): P-002.1 and P-004 give no admissible path to a
   tests-only stabilization whose red cannot be observed before the deliverable
@@ -240,10 +290,15 @@ Rejected alternatives:
   A1.5 lists them. A difference is a halt returned to Stage.
 * Ship's own gates keep a 30-minute test timeout, with a four-run exposure near
   the `internal/core` budget (stash F8936891). A halt there goes to the operator.
-* Two Stage process events stay open for the operator: the first fixtures written
-  under `%TEMP%\stage-198s` (Principle IV) and the P-010 reading of Stage's
-  earlier authoring probes. A third, Ship's Role Boundary on a spike artifact, is
-  noted in A1.7 item 4(c).
+* Stage process events: the first fixtures written under `%TEMP%\stage-198s`
+  (a Principle IV violation, recorded in A1.6) and the first revision's P-010
+  authoring probes. The operator reviewed both (D-5): deletion of the directory was
+  approved, and the directory was found already absent at 2026-10-13T03:39Z
+  (removed by an unknown earlier step; no further action; this note does not say
+  who or what removed it); the P-010 event needs no re-execution.
+* The T5 artifact's "Isolation fixes" prose says the three isolation fixes held;
+  that sentence cannot stand for a GREEN-AFTER-RERUN result (A1.8 E-8). It is
+  Ship's deliverable, so Ship corrects or annotates it before the PR.
 * Landing is working-tree only, for Ship to commit by explicit path, because the
   Orchestrator's concurrency rule keeps Stage and Ship off the same branch and
   P-010 names the default or an admin branch as Stage's commit venue. Rollback is
