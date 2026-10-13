@@ -2,6 +2,8 @@
 
 Recorded: 2026-10-13T05:55Z (UTC). Shipment 198-S (CT: Restore test-suite health and runtime diagnostics). Feature 198-F. Tasks 198.001-T through 198.005-T. Branch `feat/ct-restore-test-suite-health-and-runtime-diagnostics`. Dark-mode scope: 198-S only. Admin fallback not authorized.
 
+> **Superseded in part (2026-10-13, round 3).** The following corrections in this memo are withdrawn or replaced by `docs/memory/2026-10-13-ship-198s-round3-review-halt.md`, section 8: (a) the section 2 bucket that lists C-4 (D-4) and P-1 (D-6) under "Operator-decided" (D-4 and D-6 are the Orchestrator's dark-mode calls, O1); (b) the C-3 "controls independently" wording; (c) the M-2 timing, which was not disclosed; (d) the D-7 file-list source, which is the pre-PR halt memo item 7, not the wave-1 halt memo; (e) the wave-2 command, which included `-timeout=30m`; (f) the round-2 reviewer summary; (g) the race row label "CI-parity".
+
 ## 1. Status
 
 Outcome: HALTED. Pull request not opened. Readiness block not issued. The halt needs operator decisions listed in section 5.
