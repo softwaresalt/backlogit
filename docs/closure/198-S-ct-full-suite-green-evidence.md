@@ -94,4 +94,12 @@ This session ran no other go command, build, lint, scan, or heavy process during
 
 The failed test is TestU172_LockOrder_ArchiveItemDoesNotHoldArtifactLockWhileWaitingForItemLog. It is defined in internal/core/artifact_mutation_lock_order_test.go, which is not one of the five files T1 to T3 edited (internal/core/gate_baseref_warn_test.go, internal/core/gate_evidence_formal_test.go, internal/core/log_state_restore_test.go, internal/core/shipment_shipped_event_durability_test.go, and internal/release/release_test.go). The test is also outside the CT-scope test names. This is the red-run policy's rerun case: one package failed on a test outside CT's scope, and the rerun passed.
 
-This is a load-sensitivity finding: the test failed under full-suite load and passed when the package ran alone. It is not a waiver. CT does not widen to fix it. Ship captures the flake as a stash entry at post-merge closure (A1.3), and Ship's own CT-scope-file check (A1.5, step 2) is still to be run. This task captures no stash entry.
+This is a load-sensitivity finding: the test failed under full-suite load and passed when the package ran alone. It is not a waiver. CT does not widen to fix it. This task captures no stash entry.
+
+## Ship annotation (2026-10-13, per plan Amendment A1.8 E-8 and the delta review)
+
+This annotation supersedes the statements above that the isolation fixes held and that Ship's CT-scope-file check is still to be run. It does not change the gated scalars.
+
+1. The sentences above that say the DB48A817, FF1F3AC7, and 885263D2 isolation fixes held do not apply to this result. The run is GREEN-AFTER-RERUN, not a clean green, so this artifact does not show that those fixes held. The CT_ISOLATION_FIXES_HELD line names the three stash IDs that the gate requires; it is not a claim that they held.
+2. Ship's CT-scope-file check (A1.5, step 2) has been run. The failing test is defined in internal/core/artifact_mutation_lock_order_test.go. The branch diff against the merge base c5758918 changes only five Go test files, none of which is that file, so the overlap is zero and the failure is not CT-scope. The result is recorded on task 198.005-T.
+3. The first-run failure recurs the load-sensitivity flake already tracked by stash 63909DAE. No new stash entry is created for it in this task.
