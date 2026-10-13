@@ -220,28 +220,46 @@ Rejected alternatives:
 
 ## Decision 3: dispositions after Ship's pre-PR review (2026-10-13)
 
-The operator's answers, read against Ship's memo (the plan's A1.4 confirmation
-line records them): D-1 yes, the operator confirms the plan-review ADVISORY
-approval (the marker was first supplied by the Orchestrator as dark-mode proxy on
-2026-10-12T22:15:18Z; the confirmation makes it genuine, and no new review cycle
-is required); D-2 yes, as in Decision 2 (T1 and T3 only); D-3 yes, a spike
+The operator's six answers, in exactly these words, at 2026-10-13T03:26:01Z: "D1 yes,
+D2 yes, D3 yes, D5 delete, D7 accept, D8 ratify". Read against Ship's memo (the
+plan's A1.4 confirmation line records them): D-1 yes, the operator confirms the
+plan-review ADVISORY approval (the marker was first supplied by the Orchestrator
+as dark-mode proxy on 2026-10-12T22:15:18Z; the confirmation makes it genuine);
+D-2 yes, as in Decision 2 (T1 and T3 only); D-3 yes, a spike
 deliverable produced by an executor under Ship's dispatch and an R6 executor
-writing only ignored scratch files are within Ship's boundary; D-5 delete, the
-operator approved deleting `%TEMP%\stage-198s` (the directory was then found
-already absent at 2026-10-13T03:39Z, removed by an unknown earlier step, so no
-action was needed; this record does not say who or what removed it). A1.6 records
-a Principle IV violation honestly and the P-010 event of the
-first revision as operator-reviewed with no re-execution; D-7 accept, the
+writing only ignored scratch files are within Ship's boundary; D-5 delete, which
+answered a prompt that described both the `%TEMP%\stage-198s` fixtures and Stage's
+first-revision linter, `backlogit docs lint`, and `go list` runs. The operator
+approved deleting the directory (it was then found already absent at
+2026-10-13T03:39Z, removed by an unknown earlier step, so no action was needed;
+this record does not say who or what removed it). A1.6 records a Principle IV
+violation honestly. Stage reads nothing more about the P-010 runs into "D5
+delete"; the operator accepted those separately (below). D-7 accept, the
 2026-10-11 in-tree production mutation during wave-1 scaffolding (reverted, R2
 empty at HEAD `d3aff2c5`) is a disclosed P-005 event; D-8 ratify, the second
 plan-review series of four cycles after the first series' three-attempt cap,
 including the Orchestrator's cycle-4 authorization.
 
+Later, at 2026-10-13T14:20:54Z, the operator answered two decisions of Ship's
+round-2 memo with exactly "02: Accepted" and "03: Accepted", read as that memo's O2
+and O3: Stage's first-revision P-010 runs (linters, `backlogit docs lint`, `go
+list`, pwsh fixtures) are accepted as a disclosed P-010 event with no
+re-execution, and the A1.8 errata, as corrected by the attribution fix, are
+accepted as residual risk.
+
 Decided by the Orchestrator within scope, not by the operator: D-4, Ship's
 exact-name selector for 198.002-T AC2 (eight PASS) stands as that criterion's
 disposition, because the criterion's pattern matched no test (A1.8 E-1); D-6, T5's
 result is GREEN-AFTER-RERUN, stash 63909DAE is the recurrence, and "the isolation
-fixes held" is not stated (A1.8 E-8). Stage recorded both and edited text only.
+fixes held" is not stated (A1.8 E-8); O1, D-4 and D-6 are the Orchestrator's
+calls and the attribution in Stage's text was corrected; O4, the T5 scalar
+`CT_ISOLATION_FIXES_HELD` stays as a gate-required token whose recorded value is
+the three IDs and not a claim, and the PR body must not assert the fixes held
+(A1.8 E-8); O5, the unattested executor model for the R5 mutation runs is accepted
+as disclosed residual risk, with an optional operator spot-check of the `--- FAIL:`
+lines. Stage recorded these and edited plan text and the 198.002-T and 198.005-T
+body notes. With the operator's O2 and O3 answers, no decision from Ship's O1 to
+O5 remains open.
 
 Errata (A1.8): E-1 the AC2 disposition; E-2 T2's third file and the fourth
 `slog.SetDefault` site (stash 8640432F), the plan's "only three sites" premise
@@ -249,15 +267,26 @@ being true at `d2f3ff97` and false at the branch base `c5758918`; E-3 the base
 reference pinned to `c5758918`; E-4 one T5 non-green trigger set; E-5 the dangling
 "returns the shipment" definition; E-6 the 198-F prerequisite text; E-7 T4 does not
 reuse T5's run; E-8 the T5 result and isolation wording; E-9 the Stage memo
-timestamp and stash 253E2505's status text. The wording defects were captured by
-Ship in stash FBD0BB95 (P-021 C2) and are Stage's to correct. Each fix was checked
-against its source, and none changes a task, an acceptance-criterion text, a
-dependency, or M.
+timestamp and stash 253E2505's status text; E-10 the corrections after Ship's
+round-2 delta review. E-1 and E-8 are dispositions (an evidence substitution for
+an acceptance criterion whose text is unchanged, and a rule for what the T5
+evidence and closure may say), not text-only corrections; E-2, E-6, and E-7 also
+edit a task or feature body. The wording defects were captured by Ship in stash
+FBD0BB95 (P-021 C2) and are Stage's to correct. Each fix was checked against its
+source, and none changes a task, an acceptance-criterion text, a dependency, or M.
+The errata postdate the operator's six answers, so those answers do not accept
+them; the operator accepted them as corrected, as residual risk, with "03:
+Accepted".
 
 ## Follow-ups (captured as stash entries, not acted on)
 
-* Stash FBD0BB95 (task, low): the wording defects corrected by A1.8 E-3 to E-9;
-  Stage's correction is recorded there and the entry can be archived at triage.
+* Stash FBD0BB95 (task, low): the wording defects corrected by A1.8 E-2 to E-9
+  (E-9 records the stash 253E2505 correction); Stage's correction is recorded
+  there and the entry can be archived at triage.
+* Stash 7802D798 (task, medium) and 901C79CC (low): Stage-owned plan and record
+  text from Ship's round-2 delta review, corrected by A1.8 E-10. Declined, because
+  the text is Ship's: 901C79CC items (b) and (d), Ship's disposition record and
+  its decision-ID mismatch with the operator's D-1 to D-8.
 * Stash 8640432F (bug, low): the fourth `slog.SetDefault` site, benchmark-only
   (`silenceBenchLogs`), deferred by P-021 C1.
 * Stash 63909DAE: the T5 first-run failure is its recurrence.
@@ -291,14 +320,18 @@ dependency, or M.
 * Ship's own gates keep a 30-minute test timeout, with a four-run exposure near
   the `internal/core` budget (stash F8936891). A halt there goes to the operator.
 * Stage process events: the first fixtures written under `%TEMP%\stage-198s`
-  (a Principle IV violation, recorded in A1.6) and the first revision's P-010
-  authoring probes. The operator reviewed both (D-5): deletion of the directory was
-  approved, and the directory was found already absent at 2026-10-13T03:39Z
-  (removed by an unknown earlier step; no further action; this note does not say
-  who or what removed it); the P-010 event needs no re-execution.
-* The T5 artifact's "Isolation fixes" prose says the three isolation fixes held;
-  that sentence cannot stand for a GREEN-AFTER-RERUN result (A1.8 E-8). It is
-  Ship's deliverable, so Ship corrects or annotates it before the PR.
+  (a Principle IV violation, recorded in A1.6; the operator approved deleting the
+  directory, D-5, and it was found already absent at 2026-10-13T03:39Z, removed by
+  an unknown earlier step, no further action; this note does not say who or what
+  removed it) and the first revision's P-010 authoring probes (the operator
+  accepted them as a disclosed event without re-execution, "02: Accepted",
+  2026-10-13T14:20:54Z).
+* The R5 mutation executor's model could not be attested. The Orchestrator
+  accepted that as disclosed residual risk (O5); an operator spot-check of the
+  `--- FAIL:` lines in the T1 and T3 mutation runs is optional and available.
+* The T5 artifact's original "Isolation fixes" prose said the three isolation
+  fixes held; that sentence cannot stand for a GREEN-AFTER-RERUN result (A1.8 E-8).
+  Ship's "Ship annotation" section in the artifact supersedes it.
 * Landing is working-tree only, for Ship to commit by explicit path, because the
   Orchestrator's concurrency rule keeps Stage and Ship off the same branch and
   P-010 names the default or an admin branch as Stage's commit venue. Rollback is

@@ -314,7 +314,8 @@ touch a criterion's wording say so, and T5's non-green outcome replaces a plan o
   (which names none) is not a rerun case. The policy's "record CT closure as
   verification-incomplete" branch is not a completion of T5 (A1.3).
 * "T4 may reuse T5's run" cannot apply, because T4 is in wave 1 and T5 is in
-  wave 2. The sentence is permissive, so it stands; T4 performs its own run.
+  wave 2. The original sentence is superseded (A1.8 E-7), and the 198.005-T body
+  no longer carries it; T4 performs its own run.
 
 ### A1.2 Closed harness-exempt set (P-002.1 contract membership)
 
@@ -414,7 +415,9 @@ same point. The procedure:
   file `docs/closure/198-S-ct-full-suite-green-evidence.md` distinct, and cites
   that path in it.
 * The closure lists T4's `FU-<n>` rows and, when the rerun branch was used, T5's
-  flake, and any R3 detection-power finding (A1.4 R3), as follow-ups, so Step 6's follow-up item applies as written. The
+  flake, and any R3 detection-power finding (A1.4 R3), as follow-ups (the flake
+  only when no active entry already tracks it: for 198-S, 63909DAE does, so Ship
+  cites it and captures none; A1.8 E-8), so Step 6's follow-up item applies as written. The
   pre-merge closure artifact (Step 5 item 9) and readiness result must not list
   them (or an R3 detection-power finding) as follow-ups, or Step 5 item 10 would capture them early and duplicate
   the capture; they may be mentioned there only as "captured at Step 6".
@@ -435,8 +438,11 @@ same point. The procedure:
   a task comment is best-effort through `backlogit_append_comment`). Before it
   reports `DARK_MODE_COMPLETE`, and before the stash commit below, it re-reads each recorded ID through
   `backlogit_fetch_stash`, and the mapping must list exactly `SPIKE_FOLLOWUP_COUNT`
-  IDs, plus one if T5 used the rerun branch and one for each R3 detection-power
-  finding. The check covers only those follow-ups: other closure captures (Step
+  IDs, plus one if T5 used the rerun branch and no active stash entry already
+  tracks the flake, and one for each R3 detection-power
+  finding. (When an active entry already tracks the flake, Ship cites it as the
+  recurrence and creates none, as P-021 C2 asks; for 198-S that entry is 63909DAE,
+  so the T5 term is zero: A1.8 E-8.) The check covers only those follow-ups: other closure captures (Step
   6's own follow-up item may stash more) and any duplicate Ship recorded are
   listed on a separate line and are outside the exact count. A mismatch, or a
   read that cannot answer, is a P-005 halt with the stash state recorded as
@@ -586,9 +592,12 @@ has an `ok`, `?`, or `FAIL` line in the log (so a partial or single-package log
 fails); and every `ok` line has its row, with the `internal/core` and row matches
 end-anchored. The three
 isolation stash IDs are named literally and are not resolved against the stash,
-because Stage archives them after this evidence exists. The artifact also states,
-in prose, that the DB48A817, FF1F3AC7, and 885263D2 isolation fixes held, and
-what else was running on the host during the run (the gate cannot check either).
+because Stage archives them after this evidence exists. For a `GREEN` run the
+artifact also states, in prose, that the DB48A817, FF1F3AC7, and 885263D2
+isolation fixes held. For a `GREEN-AFTER-RERUN` run it must not state that: A1.8
+E-8 takes precedence and says what is recorded instead. Either way it states
+what else was running on the host during the run (the gate cannot check either
+statement).
 Ship's post-merge closure cites this artifact's path.
 
 Under the existing red-run policy, a green rerun is recorded with
@@ -609,7 +618,7 @@ that is green for that package, with the pinned unfiltered command and no
 it falls in the scope of the three isolation fixes, because a package that fails
 under suite load and passes alone is a load-sensitivity finding, not a waiver
 (`docs/compound/2026-10-11-unfiltered-suite-evidence-under-load.md`), and Stage
-reads "held" only from that statement. The gate's CT-scope name match lists only the T1, T2 (`TestUT2_`), and T3 tests, not every test T2 edits (T2 edits three files, A1.8 E-2, and its AC2 pattern matched no test, A1.8 E-1), so the artifact also says whether the failed test is defined in a file that T1 to T3 edited (`git diff --name-only c5758918 HEAD`, the branch base that R2 names); a failure in such a file is a CT-scope failure, and Ship treats it as verification-incomplete (the Erratum path), not as a flake. Ship runs that check itself between the Step 4.3 gate and Step 4.4 (A1.5), because Step 4.4 is the report-only review skill; the command does not check it. Ship captures the flake as a stash entry
+reads "held" only from that statement. The gate's CT-scope name match lists only the T1, T2 (`TestUT2_`), and T3 tests, not every test T2 edits (T2 edits three files, A1.8 E-2, and its AC2 pattern matched no test, A1.8 E-1), so the artifact also says whether the failed test is defined in a file that T1 to T3 edited (`git diff --name-only c5758918 HEAD`, the branch base that R2 names); a failure in such a file is a CT-scope failure, and Ship treats it as verification-incomplete (the Erratum path), not as a flake. Ship runs that check itself between the Step 4.3 gate and Step 4.4 (A1.5), because Step 4.4 is the report-only review skill; the command does not check it. Ship captures the flake as a stash entry, unless an active entry already tracks it (then Ship cites that entry: A1.8 E-8),
 at the post-merge closure, as described above. A quiet-host attestation, an
 `internal/core` exclusion, and an `Elapsed` cross-check against the saved
 output were considered and not adopted: the gate cannot verify the first, the
@@ -645,8 +654,11 @@ and those gates keep their 92% exposure (stash F8936891).
 
 Erratum. A red outcome that the red-run policy classifies as
 verification-incomplete (a second failure of the same package, or a failure with
-no named test such as a package timeout or a build failure, a first run that fails in two or more packages, or a failure inside CT's scope, including a failed test defined in a file T1 to T3 edited, which Ship checks per A1.5) cannot pass this gate, because a gate
-that exits 0 over a red suite would be vacuous. The plan's "record CT closure as
+no named test such as a package timeout or a build failure, a first run that fails in two or more packages, or a failure inside CT's scope) cannot pass this gate, because a gate
+that exits 0 over a red suite would be vacuous. The one case the gate accepts is a
+failed test defined in a file T1 to T3 edited whose name is not in the gate's
+CT-scope list (for example a `TestShipShipment_` test); Ship's A1.5 step 2 check
+rejects it. The plan's "record CT closure as
 verification-incomplete" branch is therefore not a completion of T5. Ship leaves
 T5 non-done, reports the failed gate through P-005 with the package, the failed
 test names or panic text, and the run log path, and halts with 198-S left active and unchanged (A1.5; no `backlogit_return_blocked` call); Stage
@@ -746,22 +758,43 @@ the operator's own words and names the option by letter.
 Operator confirmation of 2026-10-13. Ship's pre-PR review halted on governance
 items (`docs/memory/2026-10-13-ship-198s-prepr-review-halt.md`, decisions D-1 to
 D-8). The operator answered in the same Copilot CLI session, in a message at
-2026-10-13T03:26:01Z (2026-10-12 20:26 PDT), with these words: "D1 yes, D2 yes,
-D3 yes, D5 delete, D7 accept, D8 ratify". Read against Ship's memo (the
-Orchestrator's reading, stated for the record), they mean: D-1, the operator
-confirms the plan-review ADVISORY approval in the final `## Plan Review`; D-2,
-Option A's wording reaches Principle II's ordering requirement, Development
-Workflow item 1, and P-002's own red-phase statements, for 198.001-T and
-198.003-T only; D-3, A1.7 item 4(c) and 4(d) are within Ship's boundary; D-5,
-deleting `%TEMP%\stage-198s` is approved (the directory was then found already
-absent, A1.6); D-7, the
-2026-10-11 in-tree production mutation is accepted as a disclosed event; D-8, the
-second plan-review series is ratified. The operator did not answer D-4 or D-6;
-the Orchestrator decided those within scope (A1.1 Errata, A1.3). The confirmation
-has its own sentinel key, so the ruling line above stays the only column-0 line
-that matches the ruling's acceptance rule:
+2026-10-13T03:26:01Z (2026-10-12 20:26 PDT), with exactly these words: "D1 yes,
+D2 yes, D3 yes, D5 delete, D7 accept, D8 ratify". That is six answers. Read
+against Ship's memo (the Orchestrator's reading, stated for the record), they
+mean: D-1, the operator confirms the plan-review ADVISORY approval in the final
+`## Plan Review`; D-2, Option A's wording reaches Principle II's ordering
+requirement, Development Workflow item 1, and P-002's own red-phase statements,
+for 198.001-T and 198.003-T only; D-3, A1.7 item 4(c) and 4(d) are within Ship's
+boundary; D-5, the reply "D5 delete" answered a prompt that described both the
+`%TEMP%\stage-198s` fixtures and Stage's first-revision linter, `backlogit docs
+lint`, and `go list` runs (Ship's memo words it: "Stage wrote fixtures under
+`%TEMP%\stage-198s`, outside the workspace (`stage-198s` directory retained, not
+deleted). Stage also ran linters, `backlogit docs lint`, and `go list` in the
+first revision. The plan's A1.6 records Principle IV as "pass". Operator
+disposition needed; the Constitution Check should record a violation."); the
+reply names deletion, and Stage reads nothing more about the P-010 runs into it
+(the operator accepted those separately, below), and the directory was then found
+already absent (A1.6); D-7, the 2026-10-11 in-tree production mutation is accepted
+as a disclosed event; D-8, the second plan-review series is ratified. The
+operator did not answer D-4 or D-6. They are the Orchestrator's in-scope judgment
+calls under the dark-mode activation, not operator decisions (A1.8 E-1 and E-8).
 
-a1_4_operator_confirmation: D-1=yes; D-2=yes (T1 and T3 only); D-3=yes; D-5=delete (directory found already absent at 2026-10-13T03:39Z); D-7=accept; D-8=ratify: "D1 yes, D2 yes, D3 yes, D5 delete, D7 accept, D8 ratify" (operator; 2026-10-13T03:26:01Z; Copilot CLI session a3f32a34-316b-4580-965d-f0a3e5ca2ab4)
+Later on 2026-10-13, at 2026-10-13T14:20:54Z in the same session, the operator
+answered two decisions of Ship's round-2 memo
+(`docs/memory/2026-10-13-ship-198s-delta-review-and-readiness.md`, section 5)
+with exactly "02: Accepted" and "03: Accepted". Read as that memo's O2 and O3 (the
+Orchestrator's reading): O2, Stage's first-revision P-010 runs (linters,
+`backlogit docs lint`, `go list`, and pwsh fixtures) are accepted as a disclosed
+P-010 event with no re-execution; O3, the A1.8 errata as corrected by the
+attribution fix of 2026-10-13 (O1) are accepted as residual risk. The
+Orchestrator decided O1, O4, and O5 under the dark-mode activation (A1.7 item 9).
+With these, no decision from Ship's O1 to O5 remains open. Each answer has its
+own sentinel key, so the ruling line above stays the only column-0 line that
+matches the ruling's acceptance rule:
+
+a1_4_operator_confirmation: D-1=yes; D-2=yes (T1 and T3 only); D-3=yes; D-5=delete; D-7=accept; D-8=ratify: "D1 yes, D2 yes, D3 yes, D5 delete, D7 accept, D8 ratify" (operator; 2026-10-13T03:26:01Z; Copilot CLI session a3f32a34-316b-4580-965d-f0a3e5ca2ab4)
+
+a1_4_operator_acceptance: O2=accepted (Stage's first-revision P-010 runs, no re-execution); O3=accepted (A1.8 errata as corrected by O1): "02: Accepted" and "03: Accepted" (operator; 2026-10-13T14:20:54Z; Copilot CLI session a3f32a34-316b-4580-965d-f0a3e5ca2ab4)
 
 What the ruling covers. Option A, as quoted below from this section as it stood
 when the operator chose it, relaxes for T1 and T3 only: P-004's literal wording
@@ -912,11 +945,18 @@ operator (or to Stage when only plan text must change).
   observed on the committed harness. The evidence goes in one task comment per
   task and in a committed `docs/memory/` note a reviewer can read (R6 step 6). The
   executor's identity and model are in the note (the dispatch pin, if the model
-  is not exposed), and because the same model family wrote the tests, a reviewer
-  or the operator should spot-check the `--- FAIL:` lines there. The PR body
+  is not exposed). The executor model could not be attested for 198-S; the
+  Orchestrator accepted that as disclosed residual risk on 2026-10-13 under the
+  dark-mode activation (O5), and an operator spot-check of the `--- FAIL:` lines
+  in the T1 and T3 mutation runs is optional and available (the same model
+  family wrote the tests). The PR body
   carries a compliance annotation naming 198.001-T,
   198.003-T, this section, both incidents (INC-P002-131S-148F and
-  INC-P002-152F-134S), and the two open Stage process events (A1.7 item 4). Ship's
+  INC-P002-152F-134S), the Stage process events (A1.7 item 4: the Principle IV
+  violation, found absent, and the first-revision P-010 event, accepted by the
+  operator without re-execution), the 2026-10-11 in-tree production mutation
+  (A1.7 item 7), D-4 and D-6 as the Orchestrator's in-scope calls, and the
+  executor-model residual risk. Ship's
   closure P-002 compliance section names INC-P002-131S-148F, states, with SHA
   `9762e75f`, that the red phase was not
   observed on the committed harness and the basis was mutation-kill, and
@@ -929,10 +969,10 @@ operator (or to Stage when only plan text must change).
      start-record ordering expects a task dispatch) or, if present, the operator.
      Ship's Role Boundary lists delegation of reads and writes "to build/fix
      skills", and this executor writes only ignored scratch files and no source;
-     A1.7 item 4(d) asked the operator to confirm that reading, and the operator confirmed it on 2026-10-13 (D-3, A1.4 confirmation line). If Ship reads the
-     boundary as forbidding it, Ship halts with P-010 and the Orchestrator, which
-     Ship's boundary does not bind, dispatches the executor or the operator runs
-     R6. The executor invokes the `safety-modes` skill in `careful` mode (the risk
+     A1.7 item 4(d) asked the operator to confirm that reading, and the operator
+     confirmed it on 2026-10-13 (D-3, A1.4 confirmation line), so the executor is
+     within Ship's boundary. The executor invokes the `safety-modes` skill in
+     `careful` mode (the risk
      list goes in the evidence note), then `freeze-scope` with write access to
      `logs/_ct-mutation/` only and read access to the two production files. Ship
      does not write the scratch files or any source. The leading underscore makes
@@ -1119,7 +1159,12 @@ counter lock, and mutation-kill covers only the unlock-after-append revert; stas
   4.2 and owns them: no stash capture inside the task (quote this clause verbatim in the T4 dispatch, because T4's original text above its notes still says to capture each follow-up as a stash entry); no `gofmt -w .` (none of
   the five tasks changes Go source beyond test files, and T2's uncommitted helper edit may be formatted file by file; the
   `gofmt -l` gate is unchanged, and Ship's memo notes it reports false positives
-  on CRLF working copies); a zero-delta, green-on-arrival completion is expected
+  on CRLF working copies; build-feature's Post-Loop Format step runs `gofmt -l .`
+  and, on any listing, `gofmt -w .`, which this constraint forbids, so the
+  dispatch tells the executor to run `gofmt -l` on the files the task changed
+  only, to judge them on committed-blob content (`git show HEAD:<path>`, because
+  CRLF working copies list falsely), and to run `gofmt -w` on one named file,
+  never `.`, only for a violation that content shows); a zero-delta, green-on-arrival completion is expected
   for T1 and T3 (R6 step 8). For T4 and T5 the deliverable is a new, untracked
   file, and build-feature's completion gate (Post-Loop item 4) measures
   `git diff --name-only {exempt_baseline_sha}` and
@@ -1174,7 +1219,9 @@ counter lock, and mutation-kill covers only the unlock-after-append revert; stas
   in a file in that diff is a CT-scope failure and takes the same halt as (1),
   with the committed artifact left in place for Stage to read at triage. The
   command does not check this, so Ship's own run is the check, not the
-  artifact's statement. (3) Ship's Step 4.4 inputs say that T4's follow-ups and
+  artifact's statement. The list of failed names must be non-empty and every name
+  must resolve to exactly one test file; an empty list or an unresolved name takes
+  the same halt, so the check cannot pass vacuously. (3) Ship's Step 4.4 inputs say that T4's follow-ups and
   T5's flake are "captured at Step 6", so a reviewer's follow-up list does not
   trigger an early Step 5 item 10 capture (A1.3).
 * Green-regression validity. The two blocks use `-count=30`, `-count=200`, and
@@ -1268,9 +1315,10 @@ earlier `Constitution Check: pass` (above the amendment) for the plan as amended
   Stage-granted one. It also records two Stage process events: the Principle IV
   violation above and a P-010 event (in the first revision Stage ran linters,
   `backlogit docs lint`, and `go list` while authoring the exempt commands). The
-  P-010 event's disposition is operator-reviewed (D-5), with no re-execution
-  required. Stage waives neither; the operator's D-5 disposition is the
-  authority. The 2026-10-11 in-tree production mutation during the wave-1
+  P-010 event was accepted by the operator as a disclosed event with no
+  re-execution on 2026-10-13T14:20:54Z ("02: Accepted", A1.4 acceptance line); the
+  earlier "D5 delete" reply is not read as accepting it. Stage waives neither;
+  the operator's answers are the authority. The 2026-10-11 in-tree production mutation during the wave-1
   scaffold is a Ship-side P-005 event, reverted, with R2 empty at HEAD, and the
   operator accepted it as disclosed (D-7, A1.7 item 7).
 
@@ -1384,7 +1432,7 @@ Constitution Check: documented-deviations
      to the operator; the 197-S final-gate halt
      (`docs/memory/2026-10-10/ship-197s-final-gate-halt-memory.md`) shows the path.
   4. **Stage process disclosures and role-boundary readings (closed by the operator
-     on 2026-10-13, D-3 and D-5).** (a) Stage's first fixture run wrote under
+     on 2026-10-13: D-3, D-5, and the later O2 acceptance).** (a) Stage's first fixture run wrote under
      `%TEMP%\stage-198s`, outside the workspace (Principle IV; recorded as a
      violation in A1.6). The operator approved deleting it (D-5). It was found
      already absent at 2026-10-13T03:39Z (the operator's `Remove-Item` reported the
@@ -1393,8 +1441,12 @@ Constitution Check: documented-deviations
      it was removed by an unknown earlier step, and no further action is needed. (b) In the first
      revision Stage ran `backlogit docs lint`, `scripts/md-lint.ps1`, `go list`,
      and pwsh fixtures to test the exempt commands, a P-010 event (P-010 lists
-     linters and build systems as forbidden for Stage). Disposition:
-     operator-reviewed (D-5), with no re-execution required. The second
+     linters and build systems as forbidden for Stage). Disposition: the operator
+     accepted it as a disclosed P-010 event with no re-execution on
+     2026-10-13T14:20:54Z ("02: Accepted", A1.4 acceptance line). The earlier
+     "D5 delete" reply answered a prompt that described these runs together with
+     the `%TEMP%` fixtures, and Stage does not read it as accepting them; the
+     separate "02: Accepted" does. The second
      revision's 85 fixture runs were pwsh and read-only git with a `go` shim (stash
      2462F1B0). (c) Ship's Role Boundary lists spike artifacts as forbidden for
      Ship, and T4's deliverable is a spike findings document produced through an
@@ -1433,22 +1485,47 @@ Constitution Check: documented-deviations
      cycle 3 returned ADVISORY. The operator ratified the series, including that
      cycle-4 authorization, on 2026-10-13 (D-8), and confirmed the ADVISORY
      approval in the final `## Plan Review` (D-1).
-  9. **Dispositions the Orchestrator decided within scope (the operator did not
-     answer these).** D-4: Ship's exact-name selector for 198.002-T AC2 is
-     accepted as that criterion's disposition (A1.8 E-1). D-6: T5's result is
-     GREEN-AFTER-RERUN, stash 63909DAE is the recurrence, and "the isolation fixes
-     held" is not stated (A1.8 E-8). A1.8 also records the wording defects of
+  9. **Decisions made by the Orchestrator within scope (not operator answers).**
+     D-4: Ship's exact-name selector for 198.002-T AC2 is accepted as that
+     criterion's disposition (A1.8 E-1). D-6: T5's result is GREEN-AFTER-RERUN,
+     stash 63909DAE is the recurrence, and "the isolation fixes held" is not stated
+     (A1.8 E-8). O1: D-4 and D-6 are the Orchestrator's calls, and the attribution
+     in Stage's text was corrected on 2026-10-13. O4: the T5 scalar
+     `CT_ISOLATION_FIXES_HELD` stays, as a gate-required token governed by A1.8
+     E-8. O5: the unattested executor model for the R5 mutation runs is accepted
+     as disclosed residual risk, and an operator spot-check of the `--- FAIL:`
+     lines is optional and available. A1.8 also records the wording defects of
      stash FBD0BB95 and the fourth `slog.SetDefault` site of stash 8640432F.
+  10. **Operator answers to Ship's round-2 memo (2026-10-13T14:20:54Z).** "02:
+     Accepted" and "03: Accepted", read as O2 (the first-revision P-010 runs,
+     accepted as a disclosed event without re-execution) and O3 (the A1.8 errata,
+     as corrected by O1, accepted as residual risk). No decision from Ship's O1
+     to O5 remains open.
 
 ### A1.8 Errata after Ship's pre-PR review (2026-10-13)
 
 Ship's pre-PR review halted
-(`docs/memory/2026-10-13-ship-198s-prepr-review-halt.md`), and the operator
-answered its decisions D-1 to D-8 (A1.4 confirmation line). These errata are
-text corrections and dispositions. No task, acceptance-criterion text, dependency,
-or the manifest M changes. The operator ratified the plan's review gate (D-1, D-8),
-so no further review cycle was run; the final `## Plan Review` records that. Each
-fix was checked against the source it names.
+(`docs/memory/2026-10-13-ship-198s-prepr-review-halt.md`). The operator answered
+six of its decisions (D-1, D-2, D-3, D-5, D-7, and D-8) with the words "D1 yes, D2
+yes, D3 yes, D5 delete, D7 accept, D8 ratify" (A1.4 confirmation line). It did not
+answer D-4 or D-6, which are the Orchestrator's in-scope calls. These errata were
+written after that reply, so the reply does not accept them. Ship's round-2
+delta review examined them (`docs/memory/2026-10-13-ship-198s-delta-review-and-readiness.md`),
+this section was then corrected for attribution and wording (E-10), and the
+operator accepted the errata as corrected, as residual risk, on
+2026-10-13T14:20:54Z ("03: Accepted", A1.4 acceptance line). These errata are
+text corrections and dispositions. No task, acceptance-criterion text,
+dependency, or the manifest M changes. Classification, so each can be read for
+what it is: E-1 is a disposition that substitutes the evidence for an
+acceptance criterion (its text is unchanged), and E-8 is a disposition that
+fixes what the T5 evidence and the closure may say; both are the Orchestrator's
+in-scope calls. E-2, E-6, and E-7 are record-accuracy corrections that also edit
+a task or feature body. E-3, E-4, and E-5 are wording corrections to Stage-owned
+plan text. E-9 and E-10 are record-accuracy corrections. Bodies changed:
+`.backlogit/archive/198.002-T.md` (E-1, E-2), `.backlogit/archive/198.005-T.md`
+(E-4, E-7, E-8), `.backlogit/queue/198-F.md` (E-6), stash 253E2505 (E-9), and the
+plan, the decision note, and the Stage memo. Each fix was checked against the
+source it names.
 
 1. **E-1, 198.002-T AC2 (D-4, the Orchestrator's in-scope call).** AC2 as written,
    `go test -count=1 ./internal/core -run 'BaseRef|ShippedEventDurability'`,
@@ -1463,8 +1540,8 @@ fix was checked against the source it names.
    `UnrestorableItemReportsPartialCompensation`,
    `FailClosedShippedAppendSuppressesMoveStatusPostHook`, and
    `ShippedEventAppendFailureLogsFixedShape`: 8 PASS, 0 FAIL, exit 0
-   (`logs/ship-198s/t2-ac2-file-tests.log`, ignored). That run is accepted as
-   AC2's disposition. AC2's text stands unchanged; the deviation is the
+   (`logs/ship-198s/t2-ac2-file-tests.log`, ignored). The Orchestrator accepted
+   that run as AC2's disposition. AC2's text stands unchanged; the deviation is the
    substituted selector, and the intent AC2 states (the tests in the edited files
    still pass) is met. A selector in an acceptance criterion should name tests,
    not files.
@@ -1490,7 +1567,10 @@ fix was checked against the source it names.
    package timeout; a first-run failure that names no `--- FAIL:` test (a panic
    outside a test, a build failure); a first run that fails in two or more
    packages; a failure in a CT-scope test or in a file T1 to T3 edited. The gate
-   already rejects each case; only the prose was incomplete.
+   rejects the first four cases and a failure in a test the CT-scope list names. It
+   accepts a failure in a test defined in a file T1 to T3 edited whose name is not
+   on that list (for example a `TestShipShipment_` test), and Ship's A1.5 step 2
+   check is what rejects that one. The prose was incomplete.
 5. **E-5, "returns the shipment".** A1.5 defined the phrase for A1.1, A1.3, and
    A1.7, which cycle 4 had already reworded to "halts with 198-S left active", so
    the definition was dangling. A1.5 now states what Ship does under that
@@ -1511,20 +1591,51 @@ fix was checked against the source it names.
    outside the branch diff, so the rerun branch stands. Stash 63909DAE is the
    recurrence of that test under load; under compound rule 3 a failure that
    passes alone is a load-sensitivity finding, not a waiver. "The DB48A817,
-   FF1F3AC7, and 885263D2 isolation fixes held" must not be stated for this run,
-   in the closure, in Stage's archival decision, or anywhere else, and the three
-   entries stay active. The committed T5 artifact
-   (`docs/closure/198-S-ct-full-suite-green-evidence.md`) says it anyway in its
-   "Isolation fixes" prose; its `CT_ISOLATION_FIXES_HELD` scalar only names the
-   IDs, and the gate requires it literally, so the scalar stays. The artifact is
-   Ship's deliverable, so Stage does not edit it: Ship corrects or annotates that
-   sentence before the PR (the gate does not check prose) and does not repeat the
-   claim in the post-merge closure.
+   FF1F3AC7, and 885263D2 isolation fixes held" must not be stated for this run:
+   not in the T5 artifact, the closure, the PR body, Stage's archival decision, or
+   anywhere else. The three entries stay active, and Ship cites 63909DAE and
+   captures no new entry for the flake (P-021 C2; A1.3's closure count then has no
+   T5 term). What Ship records for a GREEN-AFTER-RERUN run: the gate requires the
+   scalar line `CT_ISOLATION_FIXES_HELD: DB48A817, FF1F3AC7, 885263D2` literally,
+   so Ship keeps exactly that line, whose value is the three IDs and nothing more.
+   It is a gate-required token that names the entries this run concerns. It is not
+   a claim that the fixes held, and Ship's annotation in the artifact says so. The PR body
+   must not assert that the isolation fixes held; it states GREEN-AFTER-RERUN, the
+   first-run failure, and the 63909DAE recurrence. The T5 artifact's original
+   "Isolation fixes" sentence (`docs/closure/198-S-ct-full-suite-green-evidence.md`)
+   said they held; Ship's "Ship annotation" section in that artifact supersedes it,
+   and Stage did not edit the artifact (Ship's deliverable; the gate does not check
+   prose). The Orchestrator decided this on 2026-10-13 (O4); it is not an operator
+   decision.
 9. **E-9, two Stage-owned text fixes.** The Stage memo's timestamp
    (`docs/memory/2026-10-12-stage-198s-exempt-amendment.md`) read 19:40Z against
    events recorded at 22:15Z; it now carries the time of its last write. Stash
    253E2505's status text cited a Step 5 item 10 capture, which A1.3 superseded
    with the post-merge closure (Step 6); it is corrected.
+10. **E-10, corrections after Ship's round-2 delta review (2026-10-13; stashes
+   7802D798 and 901C79CC).** Corrected, each checked against its source: the
+   attribution of D-4 and D-6 (the Orchestrator's calls, not the operator's) in the
+   plan, the decision note, and the Stage memo (O1); E-8's value rule and the PR
+   body rule (O4); the executor-model gap recorded as disclosed residual risk
+   (O5, A1.4 R5); the A1.4 reference to where D-4 and D-6 are recorded (A1.8 E-1
+   and E-8, not A1.1 and A1.3); the A1.4 confirmation line, which no longer places
+   the Orchestrator's 03:39Z observation under the 03:26:01Z reply; the A1.3
+   Erratum and E-4 statements about what the gate rejects (it accepts a failure in
+   a test defined in a file T1 to T3 edited whose name is off its CT-scope list,
+   and Ship's A1.5 step 2 rejects it); the A1.3 T5 declared-evidence paragraph,
+   which now says E-8 takes precedence over the "held" prose for a
+   GREEN-AFTER-RERUN run; the A1.3 closure count (no T5 capture when an active
+   entry already tracks the flake); the A1.1 T4-reuse bullet (superseded, as E-7
+   says); the stale R5 PR-annotation list and the R6 step 1 P-010 conditional,
+   which D-3 made moot; a non-empty and resolvable-name guard for A1.5 step 2; and
+   the build-feature Post-Loop `gofmt -w .` clash with the exempt dispatch
+   (A1.5). Declined, because the text is Ship's and not Stage's: stash 901C79CC
+   items (b) and (d) concern Ship's own disposition record and memo (wrong erratum
+   citations, the decision-ID mismatch with the operator's D-1 to D-8), which
+   Ship corrects; Stage's records use the operator's D-1 to D-8 throughout. Already
+   done before this round: the decision-note range (item (a): the FBD0BB95
+   corrections are A1.8 E-2 to E-9) is now stated that way, and the Stage memo
+   timestamp (item (e)) is set to its last write.
 
 ## Plan Review
 
@@ -1585,10 +1696,15 @@ fix was checked against the source it names.
   review cycle. Ship's A1.5 intake accepted that marker textually, and Ship's
   pre-PR review then found that `.github/skills/plan-review/SKILL.md` allows the
   marker only where the user has explicitly confirmed, which the operator's D-1
-  now supplies. The operator also ratified the second review series (D-8). No new
-  review cycle is required. Residual risk, now accepted by the operator: the six
-  cycle-4 P2 text fixes, about 20 P3 fixes, and the 2026-10-13 errata (A1.8) were
-  not re-reviewed. Mitigation (kept): Ship's Step 4.4 adversarial review
+  now supplies. The operator also ratified the second review series (D-8). The
+  operator answered six decisions (D-1, D-2, D-3, D-5, D-7, and D-8) and not D-4 or
+  D-6, which are the Orchestrator's in-scope calls. Residual risk accepted by the
+  operator through D-1 and D-8: the six cycle-4 P2 text fixes and about 20 P3
+  fixes were not re-reviewed. The 2026-10-13 errata (A1.8) postdate that reply:
+  Ship's round-2 delta review examined them, Stage corrected their attribution and
+  wording (A1.8 E-10), and the operator accepted them as corrected, as residual
+  risk, on 2026-10-13T14:20:54Z ("03: Accepted", A1.4 acceptance line). No new
+  Stage review cycle is required. Mitigation (kept): Ship's Step 4.4 adversarial review
   re-checks A1.5's dispatch constraints and its T4 and T5 bullets, and Ship
   captures any wording defects as stash entries (P-021 C2) instead of editing the
   plan (P-010). This is not a policy relaxation: no NON-NEGOTIABLE control is
@@ -1751,8 +1867,12 @@ fix was checked against the source it names.
 * closed on 2026-10-13: `%TEMP%\stage-198s` (the operator approved deletion, D-5;
   the directory was found already absent at 2026-10-13T03:39Z, no further action;
   A1.6 and A1.7 item 4(a)). The P-002 mirror
-  question, the two Ship Role Boundary readings, and the first-revision P-010
-  probes are likewise closed by D-2, D-3, and D-5 (A1.7). No open operator item
-  remains in this section.
+  question and the two Ship Role Boundary readings are closed by D-2 and D-3
+  (A1.7). The first-revision P-010 runs were accepted by the operator as a
+  disclosed event without re-execution on 2026-10-13T14:20:54Z ("02: Accepted"),
+  and the A1.8 errata, as corrected by the attribution fix (O1), were accepted as
+  residual risk at the same time ("03: Accepted"; A1.4 acceptance line). No
+  decision from Ship's O1 to O5 remains open (O1, O4, and O5 were decided by the
+  Orchestrator under the dark-mode activation, A1.7 item 9).
 
 <!-- plan-review-attempt: 1 -->
