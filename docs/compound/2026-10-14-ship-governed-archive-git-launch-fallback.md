@@ -2,7 +2,7 @@
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"
 title: "A governed backlogit archive that errors on the git launch is recovered by the approved CLI with a process-scoped git on PATH, not by a retry or a hand move"
-description: "When the backlogit MCP server cannot launch git (its PATH resolves a broken Git for Windows launcher), governed archive and sync operations error before any move. Do not retry the same MCP call and do not hand-move files. Verify the shipped event and the served roots, then run the governed CLI once with a process-scoped PATH prefix (no system change), then verify read-only."
+description: "When the backlogit MCP server cannot launch git (its PATH resolves a broken Git for Windows launcher), governed archive operations error before any move. Do not retry the same MCP call and do not hand-move files. Verify the shipped event and the served roots, then run the governed CLI once with a process-scoped PATH prefix (no system change), then verify read-only."
 doc_type: learning
 source: docs/compound/2026-10-14-ship-governed-archive-git-launch-fallback.md
 docline:
