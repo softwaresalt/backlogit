@@ -78,6 +78,14 @@ The governed safe-close timed out after the shipped event and the commit associa
 2. Direct a governed recovery through the backlog owner (for example a fix to the shipped-unarchived residue), then Ship re-runs post-mode.
 3. Approve one manual archive of the control record by Ship, recorded as a P-005 event, verified by the doctor. This is a second close path and needs explicit approval.
 
+## Archive attempt after the Orchestrator's decision (2026-10-14)
+
+* The shipped event is confirmed in `.backlogit/logs/198-S.jsonl`: `shipment_status_changed` to `shipped` at 2026-10-13T21:22:49-07:00, and `commit_tracked` for `c315219373e44269a8d7874a2a660aced7a10225` at 21:22:59. Containment checks passed (no reparse point; direct child of the logs directory).
+* The doctor audit (`backlogit doctor --check-shipped-event-completeness`) reports `shipped_unarchived_residue` for 198-S and no `missing_shipped_event` for 198-S. Other shipments show `missing_shipped_event` advisories that predate this closure.
+* The governed archive call `backlogit_archive_item(id 198-S, commit_sha c315219373e44269a8d7874a2a660aced7a10225)` returned: `internal: archive item: plan archive move: detect git worktree: git rev-parse --show-toplevel: exit status 1: error launching git: The system cannot find the path specified`. The error occurs before any move. Read-only check after the error: queue `198-S.md` present, archive `198-S.md` absent, queue `198-F.md` absent.
+* The operation was not retried, per the Orchestrator's rule. The backlogit MCP server resolves git from PATH, and PATH resolves to the broken Git for Windows launcher. The cause is the environment, not the shipment record. Repair of the Git install needs operator approval.
+* Halted. Pending: the governed archive of 198-S, then the audit re-run, then the rest of closure.
+
 ## Follow-ups (to capture after the decision)
 
 FU-1 to FU-9 from the T4 spike, the T5 flake note (63909DAE, no new capture), and the round-3 captures already on record: `4685ECD4`, `DC6ADACB`, `A03C7EB0`, `2BF9DC26`, `A69EEF4C`, `0F3C563E`, `9111589C`, `6DB63934`. The carried items `8640432F`, `FBD0BB95`, `7802D798`, `901C79CC`, `63909DAE`, `5A6F54BB`, `253E2505`, `F8936891` remain open.
