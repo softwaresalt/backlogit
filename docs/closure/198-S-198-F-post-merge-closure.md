@@ -8,7 +8,7 @@ compaction_status: pending
 description: "198-S (CT: restore test-suite health and runtime diagnostics) post-merge closure for PR #494, merge c315219373e44269a8d7874a2a660aced7a10225. BLOCKED: the feature PR is merged and gated, but the governed safe-close archive of the shipment control record is incomplete; closure is held for an operator decision."
 doc_type: closure
 docline:
-  date: 2026-10-14T05:10:00Z
+  date: 2026-10-14T04:33:00Z
   status: draft
   tags:
     - operational-closure
