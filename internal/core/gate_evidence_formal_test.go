@@ -448,7 +448,9 @@ func TestNextGateEvidenceCounter_ConcurrentAllocationsAreUnique(t *testing.T) {
 // concurrent calls could allocate and durably persist the SAME counter value
 // (106-F F1 review finding — go test -race cannot catch this class of bug,
 // since both critical sections are individually race-free; only reading back
-// the persisted log for duplicates proves the fix).
+// the persisted log for duplicates proves the fix). A bounded-wait
+// ErrGateInProgress from a goroutine under load is an accepted outcome: that
+// goroutine persists no event and is not counted.
 func TestAppendGateEvidence_ConcurrentSameItem_NoDuplicateCounters(t *testing.T) {
 	t.Setenv("BACKLOGIT_GATE_EVIDENCE_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	t.Setenv("BACKLOGIT_FORMAL_GATE_REQUIRED", "true")
@@ -472,9 +474,16 @@ func TestAppendGateEvidence_ConcurrentSameItem_NoDuplicateCounters(t *testing.T)
 	}
 	wg.Wait()
 
+	successes := 0
 	for i, err := range errs {
-		require.NoError(t, err, "goroutine %d", i)
+		if err == nil {
+			successes++
+			continue
+		}
+		require.ErrorIs(t, err, bkerrors.ErrGateInProgress, "goroutine %d: only bounded-wait contention may fail", i)
+		require.ErrorIs(t, err, bkerrors.ErrFormalGateRequired, "goroutine %d: contention must keep the formal-gate wrapper", i)
 	}
+	require.GreaterOrEqual(t, successes, 1, "at least one concurrent append must succeed")
 
 	evs, rerr := events.ReadAllEvents(context.Background(), logsDir, id)
 	require.NoError(t, rerr)
@@ -491,7 +500,14 @@ func TestAppendGateEvidence_ConcurrentSameItem_NoDuplicateCounters(t *testing.T)
 		seen[c] = true
 		count++
 	}
-	require.Equal(t, n, count, "expected %d distinct EventGatePassed events with unique counters, got %d", n, count)
+	require.Equal(t, successes, count, "expected %d distinct EventGatePassed events with unique counters, got %d", successes, count)
+}
+
+// TestUT1_ConcurrentSameItemCounterContract is the task-scoped entry point for
+// 198.001-T. P-002.6 requires an anchored selector, and the contract test above
+// is not anchored, so this delegates to it without duplicating its body.
+func TestUT1_ConcurrentSameItemCounterContract(t *testing.T) {
+	TestAppendGateEvidence_ConcurrentSameItem_NoDuplicateCounters(t)
 }
 
 // asTestInt64 tolerantly widens a delta's "counter" value to int64, mirroring

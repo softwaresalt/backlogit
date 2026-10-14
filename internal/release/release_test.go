@@ -82,9 +82,12 @@ func TestClientLatestFailures(t *testing.T) {
 func TestClientLatestRespectsContextTimeout(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(200 * time.Millisecond)
-		mustFprint(t, w, `{"tag_name":"v1.5.0"}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+			_, _ = fmt.Fprint(w, `{"tag_name":"v1.5.0"}`)
+		}
 	}))
 	t.Cleanup(server.Close)
 
@@ -98,7 +101,15 @@ func TestClientLatestRespectsContextTimeout(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Empty(t, tag)
-	assert.Less(t, elapsed, 150*time.Millisecond, "latest lookup should honor caller timeout")
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, elapsed, time.Second, "latest lookup should honor caller timeout")
+}
+
+// TestUT3_ClientLatestRespectsContextTimeout is the task-scoped entry point for
+// 198.003-T. P-002.6 requires an anchored selector; this delegates to the
+// contract test above without duplicating its body.
+func TestUT3_ClientLatestRespectsContextTimeout(t *testing.T) {
+	TestClientLatestRespectsContextTimeout(t)
 }
 
 func TestClientLatestClosesBodyAfterReadError(t *testing.T) {

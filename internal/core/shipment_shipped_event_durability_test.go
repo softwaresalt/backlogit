@@ -391,6 +391,7 @@ func TestShipShipment_ShippedEventAppendFailureLogsFixedShape(t *testing.T) {
 			fixture.injectShippedAppend(t, func(context.Context) error { return testCase.injected })
 
 			var captured bytes.Buffer
+			captureSlogAndLogState(t)
 			previous := slog.Default()
 			slog.SetDefault(slog.New(slog.NewJSONHandler(&captured, &slog.HandlerOptions{Level: slog.LevelError})))
 			t.Cleanup(func() { slog.SetDefault(previous) })
