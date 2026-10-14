@@ -175,9 +175,17 @@ Round-3 verdict table, updated with the decision cites. Every BLOCKED verdict no
 | Go quality | ADVISORY | none (0 P0, 0 P1) | GO-R3-01 and GO-R3-02 captured (0F3C563E, 9111589C) | No blocker |
 | Concurrency | ADVISORY | none (0 P0, 0 P1) | CCY-02, CCY-05, CCY-07, CCY-08 captured (0F3C563E); CCY-06 captured (9111589C); CCY-03 recorded in the T5 annotation under 63909DAE | No blocker |
 
-## 10. Next steps (executed; see the readiness block and the PR)
+## 10. Next steps and status (updated at each PR state change)
 
-The next steps below were executed in the PR flow after this section: the readiness block, PR creation, Copilot review under P-018, CI, the §1.9 gate, the merge commit, and post-merge closure.
+Status when this section was last written (PR #494 open at `c001a935`):
+
+1. Done: decisions recorded (section 11); readiness block issued in the PR body for `c001a935`; PR #494 opened against `main` with a merge-commit strategy.
+2. Done: Copilot review completed on `c001a935` (P-018 gate: `UNRESOLVED_THREADS`, 2 threads). Thread 1 (checkpoint staleness) and thread 2 (this section's wording) are being fixed in the next commit.
+3. Pending: reply to and resolve the two threads; refresh the readiness block for the new HEAD; wait for Copilot review on the new HEAD (P-018, `--max-wait 900`, no `--force`).
+4. Pending: CI green on the current HEAD; section 1.9 readiness gate; merge commit only; no `--admin`.
+5. Pending: post-merge closure at `docs/closure/198-S-198-F-post-merge-closure.md`.
+
+Nothing in items 3 to 5 has occurred yet. This section will be updated as each item completes.
 
 
 1. CON-01, CON-02, CON-03 answered with `accept` or `unknown` or `re-review` as stated in section 6. If CON-03 is `re-review`, Stage runs one review cycle on the cycle-4 text, then a targeted round-3b review.
