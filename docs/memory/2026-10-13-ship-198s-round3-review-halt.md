@@ -177,15 +177,15 @@ Round-3 verdict table, updated with the decision cites. Every BLOCKED verdict no
 
 ## 10. Next steps and status (updated at each PR state change)
 
-Status when this section was last written (PR #494 open at `c001a935`):
+Status when this section was last written (PR #494 open; the live head is read from GitHub, not recorded here):
 
-1. Done: decisions recorded (section 11); readiness block issued in the PR body for `c001a935`; PR #494 opened against `main` with a merge-commit strategy.
-2. Done: Copilot review completed on `c001a935` (P-018 gate: `UNRESOLVED_THREADS`, 2 threads). Thread 1 (checkpoint staleness) and thread 2 (this section's wording) are being fixed in the next commit.
-3. Pending: reply to and resolve the two threads; refresh the readiness block for the new HEAD; wait for Copilot review on the new HEAD (P-018, `--max-wait 900`, no `--force`).
-4. Pending: CI green on the current HEAD; section 1.9 readiness gate; merge commit only; no `--admin`.
+1. Done: decisions recorded (section 11); readiness block issued in the PR body; PR #494 opened against `main` with a merge-commit strategy.
+2. Done: Copilot review round 1 on `c001a935` found two threads. Both were fixed (`3d00a504`, `5a41fd4e`), replied to with those SHAs, and resolved.
+3. Done: Copilot review round 2 on `3d00a504` raised one thread (the replacement checkpoint's wording). It was fixed in the commit after `3d00a504`; the reply cites that SHA, and the thread is resolved.
+4. Pending: P-018 copilot-review gate on the live head (`--max-wait 900`, no `--force`); refresh the readiness block for the live head; CI green on the live head; section 1.9 gate; merge commit only; no `--admin`.
 5. Pending: post-merge closure at `docs/closure/198-S-198-F-post-merge-closure.md`.
 
-Nothing in items 3 to 5 has occurred yet. This section will be updated as each item completes.
+Items 4 and 5 have not occurred yet. This section will be updated as each item completes.
 
 
 1. CON-01, CON-02, CON-03 answered with `accept` or `unknown` or `re-review` as stated in section 6. If CON-03 is `re-review`, Stage runs one review cycle on the cycle-4 text, then a targeted round-3b review.
