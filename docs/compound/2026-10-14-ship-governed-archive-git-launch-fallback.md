@@ -42,4 +42,4 @@ The backlogit MCP server resolves git from the PATH it inherited. On this Window
 
 ## Rule
 
-A governed backlog operation that errors on an environment dependency is retried only through an approved fallback that keeps the same governed operation. Verify the state before and after. Never synthesize an event, and never edit a shipment record directly.
+A governed backlog operation that errors on an environment dependency may be retried only through an approved fallback that keeps the same governed operation, and only for an archive operation proven to have failed before any move. Verify the state before and after. This does not authorize any mutation after an unknown or partial shipment timeout: an incomplete quiescent `backlogit_ship_shipment` outcome halts for operator reconciliation (see the 2026-10-06 timeout learning). Never synthesize an event, and never edit a shipment record directly.
