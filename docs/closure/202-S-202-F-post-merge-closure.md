@@ -4,7 +4,7 @@ chunk_strategy: h1-h2-h3
 # gate reads them with fm.get(). conditions entries are gate input (satisfied: true with
 # non-empty evidence). Open follow-ups are non-gating and live in the body.
 closure_status: READY_WITH_CONDITIONS
-compaction_status: degraded
+compaction_status: done
 conditions:
   - id: feature-pr-502-merged
     description: "PR #502 (202-S implementation) is merged as a merge commit into main."
@@ -18,7 +18,7 @@ conditions:
     description: "Copilot review is complete on the final HEAD with zero threads, the copilot-review gate is SATISFIED, and required CI checks pass."
     satisfied: true
     evidence: "PR #502 at 835dec44: one Copilot review ('Approval recommended', 0 open findings, 0 inline comments); autoharness gate copilot-review SATISFIED. CI run 38821556019 concluded success; the advisory pipeline-topology (ambient) job failed with PREDECESSOR_NOT_SHIPPED for 201-S and is already tracked as stash F88FE051."
-description: "202-S (conform 154-S closure record name, BB669732) post-merge closure for PR #502, merge 350db437. READY_WITH_CONDITIONS: conditions are gate input; open follow-ups and the degraded compaction are non-gating residuals recorded in the body."
+description: "202-S (conform 154-S closure record name, BB669732) post-merge closure for PR #502, merge 350db437. READY_WITH_CONDITIONS: conditions are gate input; open follow-ups are non-gating residuals recorded in the body."
 doc_type: closure
 docline:
   date: 2026-10-15T23:20:00Z
@@ -48,7 +48,7 @@ title: "202-S post-merge closure"
 | Final reviewed HEAD | `835dec44` (local review `READY_WITH_FOLLOWUPS`, P0 0, P1 0, P2 2, P3 3; Copilot 0 threads; `copilot-review` gate `SATISFIED`) |
 | Closure branch | `post-merge/202-closure-name-conform` |
 | Closure status | `READY_WITH_CONDITIONS` |
-| Context compaction | `degraded` (non-blocking, P-020); see the P-020 section |
+| Context compaction | `done` (P-020: compact-context invoked, no safe candidates); see the P-020 section |
 | Mode | P-017 dark mode, scope sequence `202-S -> 176-S -> 157-S -> 158-S`; this invocation covered `202-S` only |
 
 ## Summary
@@ -96,9 +96,7 @@ the renamed 154-S closure record is recognized and there is no
 
 ## P-020 compaction
 
-compact-context was assessed. `docs/memory` is about 1.1 MB (over the 500 KB threshold).
-Bulk compaction of unrelated historical memory is out of scope for this docs-only chore,
-so `compaction_status` is `degraded` (non-blocking). Tracked in stash E2B351F3.
+compact-context was invoked with `target: all` (P-020). `docs/memory` is over the thresholds (198 files, about 1,071 KB). Assessment found 45 memory files and 13 plan/closure files older than 14 days, but every memory candidate is referenced by path from another tracked file, and the four unreferenced closure records were skipped as not clearly safe (age was file mtime). The run completed with no safe candidates and made no changes. Outcome: `done-with-no-safe-candidates`, recorded as `compaction_status: done` because the invocation did not fail (the `degraded` value is reserved for a failed run). The over-threshold state is tracked in stash E2B351F3.
 
 ## Follow-ups
 
