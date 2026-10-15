@@ -3763,3 +3763,4 @@
 {"seq":3765,"timestamp":"2026-10-15T07:38:45.9926706Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"199.007-T","schema_version":1}}
 {"seq":3766,"timestamp":"2026-10-15T07:39:28.0223037Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"199.008-T","schema_version":1}}
 {"seq":3767,"timestamp":"2026-10-15T07:40:16.8353481Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"199.008-T","schema_version":1}}
+{"seq":3768,"timestamp":"2026-10-15T08:22:09.9241555Z","event_type":"move_shipment_status","payload":{"actor":"backlogit","artifact_type":"shipment","changed_fields":["status"],"item_id":"199-S","schema_version":1,"status_delta":{"from":"queued","to":"active"}}}
