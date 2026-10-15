@@ -115,7 +115,7 @@ Not required: `runtime_validation.validation_expectations.required` is false and
 
 ## Releasability
 
-`BLOCKED`. The Stage-governed Option A exception for `close-evidence-record` is satisfied with compensating evidence. The P-020 `compaction-p020` condition is not satisfied, and the lock release with `--force` awaits operator ratification. Monitoring plan, rollback procedure, and owner are recorded above.
+`BLOCKED`. The Stage-governed Option A exception for `close-evidence-record` is satisfied with compensating evidence. The P-020 `compaction-p020` condition is not satisfied, and the lock release with `--force` awaits operator ratification. Also pending: the operator's confirmation of the Copilot human-acceptance reading and the P-020 path decision. Monitoring plan, rollback procedure, and owner are recorded above.
 
 ## Owner
 
