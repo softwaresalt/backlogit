@@ -117,10 +117,12 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 		require.ErrorAs(t, ierr, &ee, "runner must not be git-ignored")
 		assert.Equal(t, 1, ee.ExitCode(), "git check-ignore must report not ignored")
 
-		const ps = `$e=$null;$t=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile($args[0],[ref]$t,[ref]$e);` +
+		const ps = `$e=$null;$t=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile($env:U175_RUNNER_PATH,[ref]$t,[ref]$e);` +
 			`$n=@();if($ast.ParamBlock){$n=@($ast.ParamBlock.Parameters|ForEach-Object{$_.Name.VariablePath.UserPath})};` +
 			`@{errors=@($e).Count;params=$n}|ConvertTo-Json -Compress`
-		out, err := exec.Command(u099Pwsh(t), "-NoProfile", "-NonInteractive", "-Command", ps, script).Output()
+		pc := exec.Command(u099Pwsh(t), "-NoProfile", "-NonInteractive", "-Command", ps)
+		pc.Env = append(os.Environ(), "U175_RUNNER_PATH="+script)
+		out, err := pc.Output()
 		require.NoError(t, err)
 		var res struct {
 			Errors int      `json:"errors"`
