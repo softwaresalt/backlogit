@@ -126,7 +126,7 @@ func TestU20C3_CompensationEventFailureLeavesRecoverableIntent(t *testing.T) {
 				assert.Contains(t, operationErr.Error(), "append compensation status evidence")
 				assert.False(t, errors.Is(operationErr, blerrors.ErrShipmentConflict))
 				assert.False(t, errors.Is(operationErr, blerrors.ErrValidation))
-				assert.False(t, errors.Is(operationErr, blerrors.ErrWriteNotApplied))
+				assert.True(t, errors.Is(operationErr, blerrors.ErrWriteNotApplied))
 				assert.False(t, errors.Is(operationErr, blerrors.ErrNotFound))
 				var partialErr *blerrors.MutationPartialError
 				assert.False(t, errors.As(operationErr, &partialErr))
@@ -345,7 +345,7 @@ func TestU20C3_CompensationJournalFailureAfterTerminalEvidenceRecovers(t *testin
 				assert.Contains(t, operationErr.Error(), tt.injectedErr.Error())
 				assert.Contains(t, operationErr.Error(), "persist compensation journal")
 				assert.False(t, errors.Is(operationErr, blerrors.ErrShipmentConflict))
-				assert.False(t, errors.Is(operationErr, blerrors.ErrValidation))
+				assert.True(t, errors.Is(operationErr, blerrors.ErrValidation))
 				assert.False(t, errors.Is(operationErr, blerrors.ErrWriteNotApplied))
 				assert.False(t, errors.Is(operationErr, blerrors.ErrNotFound))
 				var partialErr *blerrors.MutationPartialError

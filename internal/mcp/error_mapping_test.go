@@ -8,9 +8,12 @@ package mcp
 // domainError comment in errors.go.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -20,7 +23,10 @@ import (
 
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 
+	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
+	"github.com/softwaresalt/backlogit/internal/events"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
 
 // domainErrorType calls domainError and returns the "error" field from the JSON body.
@@ -354,4 +360,204 @@ func TestDomainError_MutationPartial_QuarantineNotRequired(t *testing.T) {
 	require.True(t, ok)
 	assert.NotContains(t, text.Text, "quarantine_required",
 		"quarantine_required must be omitted (omitempty) when the cause is unrelated to quarantine")
+}
+
+// TestUCYA1_WriteIndeterminateWinsOverSiblingSentinels pins the precedence rule
+// that an indeterminate write outranks not-found, conflict, and validation
+// sentinels, because callers must not retry an operation whose outcome is unknown.
+func TestUCYA1_WriteIndeterminateWinsOverSiblingSentinels(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "ErrWriteIndeterminate with ErrShipmentConflict",
+			err:  fmt.Errorf("%w: %w", corerrors.ErrWriteIndeterminate, corerrors.ErrShipmentConflict),
+		},
+		{
+			name: "ErrWriteIndeterminate with ErrNotFound",
+			err:  fmt.Errorf("%w: %w", corerrors.ErrWriteIndeterminate, corerrors.ErrNotFound),
+		},
+		{
+			name: "ErrWriteIndeterminate with ErrValidation",
+			err:  fmt.Errorf("%w: %w", corerrors.ErrWriteIndeterminate, corerrors.ErrValidation),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, "write_indeterminate", domainErrorType(t, tt.err),
+				"%s must map to write_indeterminate ahead of its sibling sentinel", tt.name)
+		})
+	}
+}
+
+// TestUCYA1_ShipmentLifecycleStepErrorsKeepSentinelChain drives the real U20C3
+// compensation-event failure and the U20C5 commit-journal failure through core
+// and through the backlogit_block_shipment handler. The core error must keep the
+// failed step's sentinel wrapped with %w, and the wire code must stay
+// write_indeterminate.
+func TestUCYA1_ShipmentLifecycleStepErrorsKeepSentinelChain(t *testing.T) {
+	tests := []struct {
+		name         string
+		arm          func(*testing.T, string, string) func()
+		stepLabel    string
+		wantSentinel error
+		sentinelName string
+	}{
+		{
+			name:         "U20C3 compensation event append",
+			arm:          armUCYA1LogDirectory,
+			stepLabel:    "append compensation status evidence",
+			wantSentinel: corerrors.ErrWriteNotApplied,
+			sentinelName: "ErrWriteNotApplied",
+		},
+		{
+			name:         "U20C5 commit journal",
+			arm:          armUCYA1OpsRegularFile,
+			stepLabel:    "persist block shipment commit",
+			wantSentinel: corerrors.ErrValidation,
+			sentinelName: "ErrValidation",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, shipmentID := newUCYA1ActiveShipmentRoot(t)
+			err := blockUCYA1ThroughCore(t, root, shipmentID, tt.arm)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.stepLabel, "the fault must reach the intended lifecycle step")
+			assert.True(t, errors.Is(err, corerrors.ErrWriteIndeterminate))
+			assert.True(t, errors.Is(err, tt.wantSentinel),
+				"the %s step error must wrap %s, got: %v", tt.stepLabel, tt.sentinelName, err)
+			assert.False(t, errors.Is(err, corerrors.ErrShipmentConflict),
+				"the pre-compensation cause must stay isolated behind %%v")
+			assert.False(t, errors.Is(err, corerrors.ErrNotFound),
+				"the pre-compensation cause must stay isolated behind %%v")
+
+			root, shipmentID = newUCYA1ActiveShipmentRoot(t)
+			assert.Equal(t, "write_indeterminate", blockUCYA1ThroughHandler(t, root, shipmentID, tt.arm))
+		})
+	}
+}
+
+// newUCYA1ActiveShipmentRoot creates a workspace holding one active shipment with
+// one member, closes it, and returns the root and shipment ID so the caller can
+// reopen the workspace through core or the MCP server.
+func newUCYA1ActiveShipmentRoot(t *testing.T) (string, string) {
+	t.Helper()
+
+	ctx := context.Background()
+	root := t.TempDir()
+	storageRoot := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(storageRoot, 0o755))
+	require.NoError(t, config.WriteDefaults(storageRoot))
+
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	feature, err := core.CreateArtifact(ctx, ws, "UCYA1 feature", "feature")
+	require.NoError(t, err)
+	member, err := core.CreateArtifact(
+		ctx,
+		ws,
+		"UCYA1 member",
+		"task",
+		core.WithParent(feature.ID),
+		core.WithStatus(string(models.StatusActive)),
+	)
+	require.NoError(t, err)
+	shipment, err := core.CreateShipment(ctx, ws, "UCYA1 shipment", []string{member.ID})
+	require.NoError(t, err)
+	_, err = core.ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	require.NoError(t, ws.Close())
+
+	return root, shipment.ID
+}
+
+// armUCYA1LogDirectory replaces the shipment's item log with a directory when the
+// first append for the shipment begins. The lifecycle intent append and the
+// compensation evidence append both fail before any byte is written.
+func armUCYA1LogDirectory(t *testing.T, root, shipmentID string) func() {
+	t.Helper()
+
+	logPath := events.LogPathForItem(core.WorkspaceLogsRoot(root), shipmentID)
+	armed := false
+	restore := events.SetItemLogLockBarrierHookForTest(func(itemID string) {
+		if armed || itemID != shipmentID {
+			return
+		}
+		armed = true
+		require.NoError(t, os.RemoveAll(logPath))
+		require.NoError(t, os.Mkdir(logPath, 0o755))
+	})
+	t.Cleanup(restore)
+	return restore
+}
+
+// armUCYA1OpsRegularFile replaces the shipment operations directory with a regular
+// file just before the third lifecycle append for the shipment (the committed
+// evidence). The commit journal write then fails after committed evidence is
+// durable, which is the U20C5 failure shape.
+func armUCYA1OpsRegularFile(t *testing.T, root, shipmentID string) func() {
+	t.Helper()
+
+	opsRoot := filepath.Join(root, ".backlogit", "ops")
+	appends := 0
+	restore := events.SetItemLogLockBarrierHookForTest(func(itemID string) {
+		if itemID != shipmentID {
+			return
+		}
+		appends++
+		if appends != 3 {
+			return
+		}
+		require.NoError(t, os.RemoveAll(opsRoot))
+		require.NoError(t, os.WriteFile(opsRoot, []byte("ucya1 obstruction"), 0o644))
+	})
+	t.Cleanup(restore)
+	return restore
+}
+
+// blockUCYA1ThroughCore runs core.BlockShipment on a reopened workspace with the
+// fault armed and returns the real error value.
+func blockUCYA1ThroughCore(t *testing.T, root, shipmentID string, arm func(*testing.T, string, string) func()) error {
+	t.Helper()
+
+	ctx := context.Background()
+	ws, err := core.NewWorkspace(ctx, root)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, ws.Close()) }()
+	restore := arm(t, root, shipmentID)
+	defer restore()
+
+	_, blockErr := core.BlockShipment(ctx, ws, shipmentID, core.BlockOptions{
+		Reason:    "ucya1 lifecycle fault",
+		BlockedBy: "UCYA1",
+	})
+	return blockErr
+}
+
+// blockUCYA1ThroughHandler drives backlogit_block_shipment through the MCP server
+// with the fault armed and returns the wire error code.
+func blockUCYA1ThroughHandler(t *testing.T, root, shipmentID string, arm func(*testing.T, string, string) func()) string {
+	t.Helper()
+
+	server := NewServerForRoot(root)
+	t.Cleanup(func() {
+		if server.Workspace != nil {
+			assert.NoError(t, server.Workspace.Close())
+		}
+	})
+	restore := arm(t, root, shipmentID)
+	defer restore()
+
+	request := mcplib.CallToolRequest{}
+	request.Params.Arguments = map[string]any{
+		"id":     shipmentID,
+		"reason": "ucya1 lifecycle fault",
+		"by":     "UCYA1",
+	}
+	result, err := server.InvokeTool(context.Background(), "backlogit_block_shipment", request)
+	require.NoError(t, err)
+	require.True(t, result.IsError, "the injected lifecycle fault must surface as a tool error")
+	return shipmentErrorField(t, result)
 }

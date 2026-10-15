@@ -884,6 +884,9 @@ func shipmentRecoveryCandidates(
 		if err != nil {
 			return nil, fmt.Errorf("shipment %s recovery branch: %w", journal.ShipmentID, err)
 		}
+		for _, key := range blockedShipmentEnvelopeKeys() {
+			delete(target.CustomFields, key)
+		}
 		target.CustomFields["blocked_reason"] = journal.Reason
 		target.CustomFields["blocked_at"] = blockedAt
 		setBlockedEnvelopeOptionalString(target.CustomFields, "branch", branch)
@@ -912,6 +915,9 @@ func shipmentRecoveryCandidates(
 		target.Status = models.StatusBlocked
 		if target.CustomFields == nil {
 			target.CustomFields = map[string]any{}
+		}
+		for _, key := range blockedShipmentEnvelopeKeys() {
+			delete(target.CustomFields, key)
 		}
 		setBlockedEnvelopeOptionalString(target.CustomFields, "branch", snapshot.Branch)
 		target.CustomFields["blocked_reason"] = snapshot.BlockedReason

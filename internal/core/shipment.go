@@ -330,7 +330,7 @@ func finishShipmentLifecycleCompensation(
 ) error {
 	compensationStepError := func(step string, err error) error {
 		return fmt.Errorf(
-			"%s shipment %s compensation failed during %s (cause: %v; step error: %v): %w",
+			"%s shipment %s compensation failed during %s (cause: %v; step error: %w): %w",
 			journal.Operation,
 			journal.ShipmentID,
 			step,
@@ -532,7 +532,12 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 			}
 		}
 		if compensationErr != nil {
-			return fmt.Errorf("block shipment %s: %w; compensation failed: %w", shipmentID, cause, compensationErr)
+			return fmt.Errorf(
+				"block shipment %s: %w; compensation failed: %w",
+				shipmentID,
+				cause,
+				fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, compensationErr),
+			)
 		}
 		if err := finishShipmentLifecycleCompensation(
 			compensateCtx,
@@ -561,10 +566,11 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 		updated := cloneArtifact(member)
 		updated.Status = models.StatusQueued
 		updated.UpdatedAt = models.NowUTC()
+		// Set before the write: a failed attempt may already have landed the relocated copy.
+		mutationApplied = true
 		if err := persistArtifact(operationCtx, ws, updated, true); err != nil {
 			return nil, compensate(fmt.Errorf("queue shipment member %s: %w", member.ID, err))
 		}
-		mutationApplied = true
 	}
 
 	blocked := cloneArtifact(shipment)
@@ -572,6 +578,10 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 	blocked.UpdatedAt = models.NowUTC()
 	if blocked.CustomFields == nil {
 		blocked.CustomFields = map[string]any{}
+	}
+	// Rebuild the envelope from a clean slate so no stale canonical key survives the block.
+	for _, key := range blockedShipmentEnvelopeKeys() {
+		delete(blocked.CustomFields, key)
 	}
 	blocked.CustomFields["blocked_reason"] = opts.Reason
 	blocked.CustomFields["blocked_at"] = blockedAt
@@ -612,7 +622,7 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 	journal.Phase = "committed"
 	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); err != nil {
 		return nil, fmt.Errorf(
-			"block shipment %s: persist block shipment commit: %v: %w",
+			"block shipment %s: persist block shipment commit: %w: %w",
 			shipmentID,
 			err,
 			blerrors.ErrWriteIndeterminate,
@@ -799,7 +809,12 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 			}
 		}
 		if compensationErr != nil {
-			return fmt.Errorf("unblock shipment %s: %w; compensation failed: %w", shipmentID, cause, compensationErr)
+			return fmt.Errorf(
+				"unblock shipment %s: %w; compensation failed: %w",
+				shipmentID,
+				cause,
+				fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, compensationErr),
+			)
 		}
 		if err := finishShipmentLifecycleCompensation(
 			compensateCtx,
@@ -874,7 +889,7 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 	journal.Phase = "committed"
 	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); err != nil {
 		return nil, fmt.Errorf(
-			"unblock shipment %s: persist unblock shipment commit: %v: %w",
+			"unblock shipment %s: persist unblock shipment commit: %w: %w",
 			shipmentID,
 			err,
 			blerrors.ErrWriteIndeterminate,
@@ -2055,11 +2070,13 @@ func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, a
 	}
 	if currentPath != targetPath {
 		if err := os.Remove(currentPath); err != nil {
+			// The relocated copy already landed, so the move outcome stays indeterminate even when cleanup succeeds.
+			indeterminate := fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, err)
 			cleanupErr := os.Remove(targetPath)
 			if cleanupErr != nil && !os.IsNotExist(cleanupErr) {
-				return fmt.Errorf("remove old artifact file: %w; cleanup new artifact file: %v", err, cleanupErr)
+				return fmt.Errorf("remove old artifact file: %w; cleanup new artifact file: %v", indeterminate, cleanupErr)
 			}
-			return fmt.Errorf("remove old artifact file: %w", err)
+			return fmt.Errorf("remove old artifact file: %w", indeterminate)
 		}
 		// Durable cross-directory move: WriteArtifactFileWithOptions already made
 		// the new dirent in the destination parent durable. Now fsync the SOURCE

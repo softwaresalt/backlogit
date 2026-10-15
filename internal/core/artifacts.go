@@ -576,7 +576,9 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		}
 	}
 
-	// Fire pre-update hooks.
+	// Fire pre-update hooks. Pre-update hooks keep seeing the submitted request:
+	// the blocked-envelope cleanup below only rewrites a copy of updates, and it
+	// runs after this hook fires.
 	if ws.HookRunner != nil {
 		hookCtx := hooks.HookContext{
 			ItemID:       id,
@@ -962,6 +964,11 @@ func writeArtifactFileGoverned(
 		previous, _, err := parseFile(currentPath)
 		switch {
 		case err == nil:
+			if !envelope.allowGovernedShipmentMutation {
+				if err := guardBlockedShipmentArtifactTypeFlip(previous, artifact); err != nil {
+					return err
+				}
+			}
 			if err := guardBlockedShipmentMembershipMutation(previous, artifact); err != nil {
 				return err
 			}
@@ -1013,19 +1020,6 @@ func writeArtifactFileGoverned(
 	return nil
 }
 
-// blockedShipmentEnvelopeKeys returns the canonical blocked-shipment envelope keys.
-// Additional blocked-envelope stash fields are deferred to stash 8AF55264.
-func blockedShipmentEnvelopeKeys() [6]string {
-	return [...]string{
-		"blocked_reason",
-		"blocked_at",
-		"member_status_snapshot",
-		"branch",
-		"blocked_by",
-		"resume_checkpoint_ref",
-	}
-}
-
 func blockedShipmentEnvelopeValuesEqual(key string, previous, next any) bool {
 	if key == "blocked_at" {
 		previousTimestamp, previousOK := canonicalBlockedTimestamp(previous)
@@ -1057,6 +1051,27 @@ func guardBlockedShipmentMembershipMutation(previous, next *models.Artifact) err
 		"shipment %s membership is sealed while blocked: %w",
 		previous.ID,
 		blerrors.ErrShipmentConflict,
+	)
+}
+
+// guardBlockedShipmentArtifactTypeFlip refuses an ungoverned artifact_type change
+// into or out of shipment while the shipment side is blocked, so a multi-write
+// type change cannot bypass the blocked envelope or membership seal.
+func guardBlockedShipmentArtifactTypeFlip(previous, next *models.Artifact) error {
+	if previous == nil || next == nil || previous.ArtifactType == next.ArtifactType {
+		return nil
+	}
+	blockedShipment := (previous.ArtifactType == "shipment" && previous.Status == models.StatusBlocked) ||
+		(next.ArtifactType == "shipment" && next.Status == models.StatusBlocked)
+	if !blockedShipment {
+		return nil
+	}
+	return fmt.Errorf(
+		"refusing ungoverned artifact type flip %s from %s to %s while shipment is blocked: %w",
+		next.ID,
+		previous.ArtifactType,
+		next.ArtifactType,
+		blerrors.ErrShipmentBlockedRequiresEnvelope,
 	)
 }
 

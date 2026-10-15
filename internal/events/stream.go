@@ -325,20 +325,31 @@ func (w *EventWriter) AppendEvent(ctx context.Context, event Event) error {
 	return w.appendFast(event.ItemID, data)
 }
 
-// appendFast is the durable-off path: it preserves the historical behavior
-// (MkdirAll + O_APPEND|O_CREATE open + Fprintf, no fsync) byte-for-byte.
+// appendFast is the durable-off path: it appends without fsync through the same
+// classified primitive as appendDurable (syncAppendLineDetailed with a no-op
+// sync). A failure before any bytes are written is ErrWriteNotApplied; a write,
+// short write, or close failure is ErrWriteIndeterminate.
 func (w *EventWriter) appendFast(itemID string, data []byte) error {
 	if err := os.MkdirAll(w.logsDir, 0o755); err != nil {
-		return fmt.Errorf("create logs dir: %w", err)
+		return fmt.Errorf("create logs dir: %w",
+			fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
 	}
 	path := LogPathForItem(w.logsDir, itemID)
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("open item log file: %w", err)
+
+	line := make([]byte, 0, len(data)+1)
+	line = append(line, data...)
+	line = append(line, '\n')
+
+	res := syncAppendLineDetailed(path, line, func(*os.File) error { return nil })
+	if res.err != nil {
+		if res.preWrite {
+			return fmt.Errorf("open item log file: %w",
+				fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, res.err))
+		}
+		return fmt.Errorf("append event: %w",
+			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, res.err))
 	}
-	defer f.Close()
-	_, err = fmt.Fprintf(f, "%s\n", data)
-	return err
+	return nil
 }
 
 // appendDurable performs a fsync-backed append. Failures before any bytes are

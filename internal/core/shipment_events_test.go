@@ -137,8 +137,8 @@ func TestAppendShipmentEventErr_WriterErrorClassPassthrough(t *testing.T) {
 			"status": string(ShipmentShipped),
 		})
 		require.Error(t, err)
-		assert.False(t, blerrors.IsWriteNotApplied(err),
-			"the default non-durable path cannot prove pre-write status, got: %v", err)
+		assert.True(t, blerrors.IsWriteNotApplied(err),
+			"the non-durable path tags a pre-write open failure not-applied, got: %v", err)
 		assert.False(t, blerrors.IsWriteIndeterminate(err),
 			"the appender must add no class of its own, got: %v", err)
 	})

@@ -128,6 +128,17 @@ func UpdateArtifactWithGate(ctx context.Context, ws *Workspace, id string, updat
 		}
 	}
 
+	if peek != nil && peek.ArtifactType == "shipment" && peek.Status == models.StatusBlocked {
+		if customFields, ok := updates["custom_fields"].(map[string]any); ok {
+			for _, key := range blockedShipmentEnvelopeKeys() {
+				if _, touched := customFields[key]; touched {
+					slog.DebugContext(ctx, "blocked envelope key present in update request; the ungated update may drop it when no persisted value exists",
+						"artifact_id", id, "key", key)
+				}
+			}
+		}
+	}
+
 	if !ws.gateApplies(peek, updates) {
 		// gateApplies returns false uniformly both for a genuinely
 		// non-applicable transition (wrong artifact type, non-terminal
