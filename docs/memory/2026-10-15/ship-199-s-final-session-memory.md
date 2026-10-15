@@ -59,7 +59,7 @@ This is the final session memory for shipment 199-S. It covers the Option A resu
 
 ## State left behind
 
-* Branch `post-merge/199-f-cy-a-lifecycle-hardening` at `bf8abb84` plus this memory commit, pushed to origin.
+* Branch `post-merge/199-f-cy-a-lifecycle-hardening` at `6ef809a5`, pushed to origin. Commits after `bf8abb84` are `efe0afeb` (this memory), and `6ef809a5` (source-only rollback in the closure record, and the compaction decision fidelity fix). The Copilot gate was re-run and is SATISFIED at `6ef809a5`. The gate and CI results recorded above are for `bf8abb84` and earlier HEADs.
 * PR #499 open, not merged.
 * Carry-forward files `.autoharness/config.yaml` and `.backlogit/stash.jsonl` remain dirty and unstaged, as authorized. Untracked `.backlogit/checkpoints/*.json` are untouched except for the Ship checkpoint lifecycle below.
 * Ship checkpoint `checkpoint-20261015-191423.json` is resolved once this halt state is recorded, and a new halt checkpoint records the resume hint.
