@@ -87,7 +87,12 @@ Releasability: `READY_WITH_CONDITIONS`.
 ## Successor probe (plan U3)
 
 `autoharness gate pipeline-topology --mode agent --shipment 176-S --phase pre_claim --json`
-on the merged tree: see the Successor probe result section below.
+on the merged tree (closure branch, 202-S archived, only carry-forward `.backlogit`
+state uncommitted): exit 0, `topology gate pass`, `predecessor_source: explicit`, so
+the renamed 154-S closure record is recognized and there is no
+`PREDECESSOR_CLOSURE_UNRECOGNIZED`. The initial blocking token for 176-S was
+`PREDECESSOR_CLOSURE_UNRECOGNIZED`, as predicted. The read-only re-probe on clean
+`main` after this closure PR merges is reported in the Ship return message.
 
 ## P-020 compaction
 
