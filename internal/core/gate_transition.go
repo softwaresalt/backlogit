@@ -132,7 +132,7 @@ func UpdateArtifactWithGate(ctx context.Context, ws *Workspace, id string, updat
 		if customFields, ok := updates["custom_fields"].(map[string]any); ok {
 			for _, key := range blockedShipmentEnvelopeKeys() {
 				if _, touched := customFields[key]; touched {
-					slog.DebugContext(ctx, "blocked envelope key in update request; the ungated update keeps the persisted value",
+					slog.DebugContext(ctx, "blocked envelope key present in update request; the ungated update may drop it when no persisted value exists",
 						"artifact_id", id, "key", key)
 				}
 			}

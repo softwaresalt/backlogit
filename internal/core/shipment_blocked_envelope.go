@@ -22,8 +22,10 @@ type blockedShipmentEnvelope struct {
 }
 
 // blockedShipmentEnvelopeKeys returns the canonical blocked-shipment envelope
-// keys in canonical order. Every consumer that validates, writes, or rewrites
-// the blocked envelope reads this single list.
+// keys in canonical order. validateBlockedShipmentEnvelope, UpdateArtifactWithGate,
+// writeArtifactFileGoverned, BlockShipment, and shipmentRecoveryCandidates read
+// this single list. UnblockShipment and reconcileShipmentLifecycleIntent still
+// use literal keys; migrating them is out of this change's surface.
 func blockedShipmentEnvelopeKeys() [6]string {
 	return [...]string{
 		"blocked_reason",
