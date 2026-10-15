@@ -74,6 +74,20 @@ after commit. `persistArtifact` Site-1 (`internal/core/shipment.go`) is the
 before-commit variant: it fsyncs the source parent before the sole `UpsertItem`,
 so it surfaces indeterminate cleanly.
 
+### Refresh 2026-10-15 (shipment 199-S, PR #498, merge 1f25d10d)
+
+Classification: **update**. The two-class contract and the commit-then-surface pattern remain accurate. On 2026-10-15 the cited anchors still exist: `internal/errors/durability_errors.go`, `adoptDurabilityErr` in `internal/core`, and `persistArtifact` in `internal/core/shipment.go`.
+
+Drift addressed:
+
+* The two-class contract also governs the **non-durable append path** in `internal/events/stream.go`. Pre-write mkdir and open failures return `ErrWriteNotApplied`. Post-write, short-write, and close failures return `ErrWriteIndeterminate`. The body above describes only the durable Markdown and JSONL primitives.
+* `domainError` in `internal/mcp/errors.go` checks `ErrWriteIndeterminate` before its sibling sentinels, so an indeterminate write surfaces as `write_indeterminate` even when a sibling sentinel also matches.
+* Compensation restore failures in BlockShipment and UnblockShipment are `ErrWriteIndeterminate`. `mutationApplied` is set before each member write, so a failed compensation is not reported as not applied.
+
+Open caveat: AdoptItem's re-ID of blocked or shipped shipment artifacts is a pre-existing gap. The adversarial review rated it P1, and it is captured as stash `34C23BE7` for Stage triage. The gap concerns re-ID, not the fsync ordering documented above. Do not cite AdoptItem as a fully correct reference for re-ID behavior until that gap is resolved.
+
+Sources: `docs/closure/199-S-199-F-post-merge-closure.md`, `docs/closure/2026-10-15-199-s-compound-refresh.md`.
+
 ## Source-parent fsync on cross-directory durable moves
 
 A durable move that fsyncs only the **destination** parent can, after power loss,

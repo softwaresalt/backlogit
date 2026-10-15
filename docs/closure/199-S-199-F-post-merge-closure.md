@@ -1,6 +1,6 @@
 ---
 closure_status: BLOCKED
-compaction_status: pending
+compaction_status: degraded
 description: "199-S (CY-A: harden lifecycle errors and blocked-envelope boundaries) post-merge closure for PR #498, merge commit 1f25d10daed74ce209a1f14ec7160041bb0a4b6e. Closure is blocked on the 192-F close-evidence record, which cannot be produced post-hoc."
 doc_type: closure
 docline:
@@ -36,13 +36,13 @@ conditions:
     evidence: "No record exists. The governed close ran through the backlogit_ship_shipment path without the classify-only pre-close step required by the staged Ship protocol. autoharness shipment cascade-close --classify-only refuses post-hoc (shipment '199-S' is no longer open; no verdict record after the fact). The record is not backfilled or fabricated (staged operational-closure rule for post-192-F artifacts). Requires a Stage or operator decision."
   - id: compaction-p020
     description: "compact-context has run for this closure (P-020) and compaction_status is finalized to done or degraded."
-    satisfied: false
-    evidence: "Pending; compact-context is to run when the closure resumes."
+    satisfied: true
+    evidence: "compact-context ran as a bounded batch on 2026-10-15 (P-020). compaction_status is degraded: 35 originals archived, 17 skipped for queued or active references, closure and plan targets not assessed. See the Compaction section."
 ---
 
 # 199-S (CY-A: harden lifecycle errors and blocked-envelope boundaries) post-merge closure
 
-Status: BLOCKED. Every shipment-side condition is satisfied. The close-evidence record required for the 192-F closure-evidence gate cannot be produced for this shipment, and compact-context has not yet run.
+Status: BLOCKED. Every shipment-side condition is satisfied. The close-evidence record required for the 192-F closure-evidence gate cannot be produced for this shipment, and compact-context ran as a bounded batch (degraded; see Compaction).
 
 ## Summary of the shipped change
 
@@ -96,3 +96,15 @@ Not required: `runtime_validation.validation_expectations.required` is false and
 ## Owner
 
 Operator (dispatch owner) for the close-evidence decision. Ship for the remaining closure work once the decision is recorded.
+
+## Compaction (P-020)
+
+compact-context ran as a bounded batch on 2026-10-15, not a full target-all pass. Result: `compaction_status: degraded`. The batch moved 35 memory originals dated 2026-08-20 through 2026-09-30 to `docs/archive/memory/<date>/` by rename, with no deletions. It wrote one summary to `docs/memory/compacted/2026-10-15-memory-2026-08-20-to-2026-09-30-compacted.md`, which has a traceability table. It skipped 17 files that reference queued or active items (149-S, 073-DL, 141-S, 157-S, 182-F, 184-F, 156-S, 155-S, 168.001-T, 072-DL). The closure-record and plan targets were not assessed in this run. A full target-all pass remains a follow-up.
+
+## Compound refresh
+
+`docs/closure/2026-10-15-199-s-compound-refresh.md` records one in-place update to `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`. The update adds the non-durable append classification and compensation accounting from this shipment, and records the AdoptItem re-ID caveat. One related entry was kept unchanged.
+
+## Closure PR hold
+
+The closure PR is not yet open. P-001 keeps the release unit open until closure is complete. Opening and merging a closure PR while `closure_status` is `BLOCKED` would merge a closure artifact that the closure-evidence gate rejects. The branch `post-merge/199-f-cy-a-lifecycle-hardening` is pushed and ready to open once the operator records the close-evidence decision (Option A or Option B above).
