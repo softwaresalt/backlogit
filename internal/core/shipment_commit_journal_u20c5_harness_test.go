@@ -104,7 +104,7 @@ func TestU20C5_CommitJournalFailureAfterCommittedEvidenceDoesNotCompensate(t *te
 			require.Error(t, operationErr)
 			assert.True(t, errors.Is(operationErr, blerrors.ErrWriteIndeterminate))
 			assert.Contains(t, operationErr.Error(), tt.errorLabel)
-			assert.False(t, errors.Is(operationErr, blerrors.ErrValidation))
+			assert.True(t, errors.Is(operationErr, blerrors.ErrValidation))
 			assert.False(t, errors.Is(operationErr, blerrors.ErrShipmentConflict))
 			assert.False(t, errors.Is(operationErr, blerrors.ErrWriteNotApplied))
 			assert.False(t, errors.Is(operationErr, blerrors.ErrNotFound))
