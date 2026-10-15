@@ -63,7 +63,7 @@ content, no code, schema, lifecycle, or security surface, and trivial rollback
   * `backlogit docs lint` reports no new findings
 * Depends on U1. Posture: characterization-first
 
-### U3: Re-probe the successor gate and record the result (Ship post-merge verification, docs)
+### U3: Post-merge closure obligation, re-probe the successor gate (no backlog task)
 
 * On the merged clean `main` tree, run
   `autoharness gate pipeline-topology --mode agent --shipment 141-S --phase pre_claim --json`
@@ -78,16 +78,19 @@ content, no code, schema, lifecycle, or security surface, and trivial rollback
     closes, and a new blocker only produces a stash entry
   * The initial token (`UNRECOGNIZED` versus `INCOMPLETE`) is confirmed or
     corrected in the note
-* Depends on U1 and U2. Posture: spike-style verification (no mutation outside
-  the closure note)
+* Not a task in shipment 202-S: it needs the merged rename on clean main, and
+  Ship runs every manifest task before the PR lifecycle, so a manifest task
+  would depend on its own merge. Ship performs it as a mandatory post-merge
+  closure obligation for 202-S
+* Depends on U1 and U2 being merged
 
 ## Dependency order
 
-`U1 -> U2 -> U3`
+`U1 -> U2`, then the post-merge closure obligation U3
 
 ## Effort
 
-3 tasks x under 2 hours each, one skill domain (docs).
+2 tasks x under 2 hours each, one skill domain (docs).
 
 ## Rollback
 
@@ -100,5 +103,5 @@ git is changed.
 * decision: ADVISORY
 * attempt: 1
 * reviewers: Scope Boundary, Correctness, Schema-CLI-Docs Coupling lenses (one reviewer agent)
-* findings: lint and repo-wide stem search ACs added, U1 hash step replaced by diff check, U3 reframed as Ship post-merge verification. Findings applied.
+* findings: lint and repo-wide stem search ACs added, U1 hash step replaced by diff check, U3 reframed as Ship post-merge verification. Copilot review then showed a circular manifest dependency, so U3 left the task manifest and became a post-merge closure obligation. Findings applied.
 * operator_authorization: approved (dark mode P-017, Stage judgment under pre-authorization)

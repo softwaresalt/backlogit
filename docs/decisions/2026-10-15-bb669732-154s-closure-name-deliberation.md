@@ -59,7 +59,7 @@ title: 'Deliberation: 154-S closure record name versus the pipeline-topology gat
 
 ## Chosen direction
 
-Option A, as a single chore with three tasks. It runs as its own queued
+Option A, as a single chore with two tasks plus a post-merge verification obligation. It runs as its own queued
 shipment with no dependency edges to or from `176-S`, `157-S`, `158-S`, or any
 other shipment, so the declared ship order `176-S -> 157-S -> 158-S` is
 unchanged. Operators choose when to claim it. It is a prerequisite only in the
