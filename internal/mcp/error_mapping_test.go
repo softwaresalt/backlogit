@@ -542,6 +542,11 @@ func blockUCYA1ThroughHandler(t *testing.T, root, shipmentID string, arm func(*t
 	t.Helper()
 
 	server := NewServerForRoot(root)
+	t.Cleanup(func() {
+		if server.Workspace != nil {
+			assert.NoError(t, server.Workspace.Close())
+		}
+	})
 	restore := arm(t, root, shipmentID)
 	defer restore()
 
