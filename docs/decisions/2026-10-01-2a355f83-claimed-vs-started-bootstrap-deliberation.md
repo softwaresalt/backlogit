@@ -14,7 +14,7 @@ linked_artifacts:
   - "docs/memory/2026-10-01/orchestrator-shipment-ledger-clarification-memory.md"
   - "docs/design-docs/scheduler-baseline-marker-contract.md"
   - "docs/decisions/2026-09-28-513e62ab-condition-b-enforcement-deliberation.md"
-  - "docs/closure/154-S-173-F-scheduler-baseline-marker-post-merge-closure.md"
+  - "docs/closure/154-S-173-F-post-merge-closure.md"
   - "docs/closure/2026-09-30-154-s-runtime-verification.md"
   - "docs/memory/2026-09-29-ship-154s-wave-schedule-contract-halt.md"
 bootstrap_id: "2A355F83"

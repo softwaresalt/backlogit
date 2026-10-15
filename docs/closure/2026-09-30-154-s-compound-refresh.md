@@ -1,6 +1,6 @@
 ---
 title: "Compound Refresh — 154-S"
-source: docs/closure/154-S-173-F-scheduler-baseline-marker-post-merge-closure.md
+source: docs/closure/154-S-173-F-post-merge-closure.md
 doc_type: closure
 schema_version: "1.0"
 chunk_strategy: h1-h2-h3

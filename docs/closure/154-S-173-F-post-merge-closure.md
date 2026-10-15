@@ -220,3 +220,12 @@ operator must first merge a PR that sets this `conditions:` entry to
 the matching `CONDITION_B_REVOKED` comment on `154-S` in the same change
 window. Do not route a `154-S` successor while a revocation is pending,
 meaning a log comment exists but the PR has not merged.
+
+## Rename note
+
+This record was renamed from
+`docs/closure/154-S-173-F-scheduler-baseline-marker-post-merge-closure.md` to
+`docs/closure/154-S-173-F-post-merge-closure.md` so the pipeline-topology
+`pre_claim` predecessor check recognizes the `{shipment}-{feature}-post-merge-closure.md`
+pattern (stash `BB669732`, shipment `202-S`). Front matter and the closure
+content above are unchanged.

@@ -1,7 +1,7 @@
 ---
 doc_type: memory
 schema_version: "1.0"
-source: docs/closure/154-S-173-F-scheduler-baseline-marker-post-merge-closure.md
+source: docs/closure/154-S-173-F-post-merge-closure.md
 title: "Ship 154-S post-merge closure checkpoint"
 ---
 
