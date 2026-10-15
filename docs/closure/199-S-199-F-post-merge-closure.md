@@ -1,11 +1,15 @@
 ---
-closure_status: BLOCKED
+chunk_strategy: h1-h2-h3
+# closure_status and compaction_status MUST stay at the top level: the pipeline-topology
+# gate reads them with fm.get(). conditions entries are gate input (satisfied: true with
+# non-empty evidence). Open follow-ups are non-gating and live in the body, not here.
+closure_status: READY_WITH_CONDITIONS
 compaction_status: degraded
-description: "199-S (CY-A: harden lifecycle errors and blocked-envelope boundaries) post-merge closure for PR #498, merge commit 1f25d10daed74ce209a1f14ec7160041bb0a4b6e. Closure is blocked on the 192-F close-evidence record, which cannot be produced post-hoc."
+description: "199-S (CY-A: harden lifecycle errors and blocked-envelope boundaries) post-merge closure for PR #498, merge commit 1f25d10daed74ce209a1f14ec7160041bb0a4b6e. READY_WITH_CONDITIONS: every closure condition is satisfied, including the Stage-governed exception for the un-adopted 192-F close-evidence record (same harness-drift class as 197-S and 198-S; tracked under 3FF72EB8 and 73B7C429)."
 doc_type: closure
 docline:
   date: 2026-10-15T19:40:00Z
-  status: draft
+  status: final
   tags:
     - operational-closure
     - post-merge
@@ -31,9 +35,12 @@ conditions:
     satisfied: true
     evidence: "archive/199-S.md archived_status shipped; archive/199-F.md and archive/199.001-T.md through archive/199.009-T.md status archived with commit 1f25d10daed74ce209a1f14ec7160041bb0a4b6e (corrected from a mistyped SHA by backlogit_track_commit, 11 of 11); item log shipped event present (shipment_status_changed to shipped); doctor shipped-event-completeness reports no missing shipped event for 199-S."
   - id: close-evidence-record
-    description: "A 192-F close-evidence record docs/closure/evidence/199-S-199-F-close-evidence.json written by a governed cascade-close or safe-close run, selected close path recorded, and the closure-evidence gate passes."
-    satisfied: false
-    evidence: "No record exists. The governed close ran through the backlogit_ship_shipment path without the classify-only pre-close step required by the staged Ship protocol. autoharness shipment cascade-close --classify-only refuses post-hoc (shipment '199-S' is no longer open; no verdict record after the fact). The record is not backfilled or fabricated (staged operational-closure rule for post-192-F artifacts). Requires a Stage or operator decision."
+    description: "Closure evidence for 199-S is verified either via a 192-F close-evidence record or via a documented, Stage-governed protocol exception backed by complete GI/GR shipment-reconcile reports and verified archive provenance (same precedent as 197-S and 198-S)."
+    satisfied: true
+    actor: stage
+    attested_at: "2026-10-15T19:28:00Z"
+    owner: Stage
+    evidence: "STAGE_EXCEPTION_RATIFIED (Option A, dark-mode P-017 scope 199-S, 2026-10-15T19:28:00Z): No docs/closure/evidence/199-S-199-F-close-evidence.json record or close_path/close_evidence frontmatter key exists because the live installed backlogit harness (.github/agents/_ship.agent.md, .github/skills/shipment-reconcile/SKILL.md, .github/skills/operational-closure/SKILL.md) uses flat-manifest backlogit_ship_shipment (155-S / 197-S deliberate drift in .autoharness/harness-manifest.yaml) and has not adopted the .autoharness/staging/ 192-F autoharness shipment cascade-close --classify-only pre-close step (tracked under 3FF72EB8 and 73B7C429; docs/closure/evidence/ is empty across the repo, and 197-S and 198-S closed under the same posture). Post-hoc cascade-close --classify-only refuses because 199-S is already archived (archived_status: shipped); no evidence record or close_path key is fabricated or backfilled. Compensating evidence verified: (1) PR #498 merged as merge commit 1f25d10daed74ce209a1f14ec7160041bb0a4b6e from reviewed HEAD e7961c8d7d480aef54ce6f62dcd3b045ad11f296; (2) local review READY_WITH_FOLLOWUPS (P0=0, P1=0), adversarial review READY (P0=0, P1=0), copilot-review gate SATISFIED, all 7 required CI checks green, unfiltered go test -count=1 -timeout=30m ./... exit 0 (40 packages); (3) GI/GR shipment-reconcile reports .backlogit/reconcile/199-S-pre-20261015T190500Z.md (PROCEED), .backlogit/reconcile/199-S-safe-close-20261015T192000Z.md (CLOSED), and .backlogit/reconcile/199-S-post-20261015T192500Z.md (PROCEED); (4) all 11 archive records (.backlogit/archive/199-S.md, 199-F.md, 199.001-T.md..199.009-T.md) carry commit 1f25d10daed74ce209a1f14ec7160041bb0a4b6e and doctor check_shipped_event_completeness reports 0 findings for 199-S; (5) topology._closure_artifact_complete and discoverability pass."
   - id: compaction-p020
     description: "compact-context has run for this closure (P-020) and compaction_status is finalized to done or degraded."
     satisfied: true
@@ -42,7 +49,7 @@ conditions:
 
 # 199-S (CY-A: harden lifecycle errors and blocked-envelope boundaries) post-merge closure
 
-Status: BLOCKED. Every shipment-side condition is satisfied. The close-evidence record required for the 192-F closure-evidence gate cannot be produced for this shipment, and compact-context ran as a bounded batch (degraded; see Compaction).
+Status: `READY_WITH_CONDITIONS`. Every shipment-side condition is satisfied, and the missing 192-F `close-evidence` JSON record is governed by a documented Stage exception (Option A, matching the `197-S` and `198-S` closure precedent) without fabricating or backfilling evidence. `compact-context` ran as a bounded batch (`compaction_status: degraded`, non-blocking per P-020; see Compaction).
 
 ## Summary of the shipped change
 
@@ -62,18 +69,35 @@ Nine tasks under covering feature 199-F, executed in three P-002.6 waves, all do
 ## Incidents and corrections (disclosed)
 
 1. Governed ship timeout: `backlogit_ship_shipment` returned a client timeout. The server-side transaction completed (shipped event at 11:45:51 local, archive completed later). The CLI fallback failed on the global shipment-lifecycle lock before writing anything.
-2. Mistyped merge SHA: the governed ship and the first provenance writes used a 40-character SHA that is one character off (`1f25d10dae74...`). The correct SHA is `1f25d10daed74...`. All eleven archive records and the 199-S item-log commit event carried the wrong SHA. Corrected through `backlogit_track_commit` (eleven of eleven archive records now show the correct SHA; the wrong-SHA events remain in the append-only item logs with correcting events after them).
+2. Mistyped merge SHA: the governed ship and the first provenance writes used a 39-character hex string missing one character (`1f25d10dae74ce209a1f14ec7160041bb0a4b6e`). The correct 40-character SHA is `1f25d10daed74ce209a1f14ec7160041bb0a4b6e`. All eleven archive records and the 199-S item-log commit event initially carried the mistyped string. Corrected through `backlogit_track_commit` in commit `23597705` (eleven of eleven archive records now show the correct 40-character SHA; the initial events remain in the append-only item logs with correcting events after them; the three `.backlogit/reconcile/199-S-{pre,safe-close,post}-*.md` reports committed in `a690ad18` before `23597705` retain the initial 39-character string as historical snapshots).
 3. Shipment lock: the closure lock was acquired for `.backlogit/queue/199-S.md`. Its token was only partly echoed to the transcript (9 characters), so the lock was released with the operator-only force path after verifying no other process held the shipment file. Recorded in the post-mode reconcile report.
 
-## Closure-evidence gate result
+## Closure-evidence gate result and Stage exception decision (Option A)
 
-`autoharness gate closure-evidence --path docs/closure/199-S-199-F-post-merge-closure.md` fails. The artifact cannot declare a valid `close_path` and `close_evidence` pair because no 192-F record exists for this close. This is a process gap, not a fabricated pass.
+* **Authoritative topology acceptance predicate (`topology._closure_artifact_complete`)**: **PASS** (`FilesystemTopologyReaders('.').closure_complete('199-S') == True`). Successor readiness check `_shipment_readiness_check('pre_claim', '200-S', ...)` passes (`status: passed`).
+* **`autoharness gate closure-evidence` result**: `autoharness gate closure-evidence --path docs/closure/199-S-199-F-post-merge-closure.md --shipment 199-S --json` passes `workspace_containment`, `input`, `filename`, `frontmatter_predicate` (`topology._closure_artifact_complete`), and `discoverability`, and exits 1 at `failed_check: "close_path"` (`"closure artifact must declare close_path: cascade | safe_close (got None)"`) — identical to `197-S-197-F-post-merge-closure.md` and `198-S-198-F-post-merge-closure.md`.
+* **Why `close_path` and `close_evidence` are absent (no fabrication)**: The live installed `backlogit` harness (`.github/agents/_ship.agent.md`, `.github/skills/shipment-reconcile/SKILL.md`, `.github/skills/operational-closure/SKILL.md`) intentionally preserves flat-manifest `backlogit_ship_shipment` (`.autoharness/harness-manifest.yaml` `drift_allowed: true` from 155-S / 197-S) and has not adopted the `.autoharness/staging/` 192-F `autoharness shipment cascade-close --classify-only` pre-close step (`docs/closure/evidence/` contains zero files across the repository). Once `backlogit_ship_shipment` archived `199-S`, `autoharness shipment cascade-close --classify-only` refuses post-hoc (`shipment '199-S' is no longer open`). Per protocol, neither `close_path` nor `docs/closure/evidence/199-S-199-F-close-evidence.json` is guessed, backdated, or fabricated.
+* **Stage decision (Option A ratified under P-017 dark-mode scope `199-S`, 2026-10-15T19:28:00Z)**: Record `closure_status: READY_WITH_CONDITIONS` with `close-evidence-record` satisfied by this documented Stage exception and the verified compensating evidence (`PR #498` merge commit `1f25d10daed74ce209a1f14ec7160041bb0a4b6e`, reviewed HEAD `e7961c8d`, green required CI, `copilot-review` gate `SATISFIED`, GI/GR reconcile reports `.backlogit/reconcile/199-S-{pre,safe-close,post}-*.md`, and verified archive provenance across all 11 records).
+* **PREVENTION-2 (`23D47703`) disposition**: No blocking condition backlog item or `blocks` edge on successor shipments (`200-S`, `201-S`, `189-S`) is created. Unlike an open external runtime precondition (such as `154-S` Condition b), the missing 192-F pre-close JSON for `199-S` is a closed historical process exception on an already-archived shipment that cannot be produced later without prohibited fabrication, and adding a `blocks` edge to `200-S` would mutate out-of-scope shipments and stall the successor chain behind an unsatisfiable condition. Forward-looking protocol alignment between the live Ship/reconcile/closure skills and `autoharness gate closure-evidence` is tracked in stash `3FF72EB8` and newly captured P-021 C2 entry `73B7C429`.
 
-## Decisions required (operator or Stage)
+## Operational closure checklist
 
-* Option A (preferred): accept this shipment's close as a documented exception to the 192-F evidence requirement, with the artifact status recorded as READY_WITH_CONDITIONS and the evidence condition named explicitly. This needs an explicit operator decision and a Stage-owned contract note; it must not be a backfilled record.
-* Option B: keep the closure BLOCKED. The P-001 release closure stays open for this release unit until the evidence contract is decided. The next shipment's routing treats this closure as incomplete.
-* In both options, the staged Ship protocol's classify-only pre-close step should be made mandatory in the live protocol before any future governed close, so the record exists before the ship.
+* **Invariants to preserve**: `domainError` maps `ErrWriteIndeterminate` ahead of sibling sentinels; `appendFast` classifies pre-write open/mkdir failures as `ErrWriteNotApplied` and post-write/short-write/close failures as `ErrWriteIndeterminate`; `BlockShipment` sets `mutationApplied` before each member write and classifies compensation restore failures in `BlockShipment` and `UnblockShipment` as `ErrWriteIndeterminate`; `guardBlockedShipmentArtifactTypeFlip` refuses ungoverned `artifact_type` flips into or out of `shipment` while blocked; P-007 archive integrity holds across all 11 `199-S` records.
+* **Validator evidence**: Not applicable. `runtime_validation.validation_expectations.required` is `false` and `validator_manifest.surfaces` is `[]` in `.autoharness/workspace-profile.yaml`.
+* **Pre-deploy audits**: Not applicable (CLI and MCP library binary; no service deployment, database migration, feature flag, or config change).
+* **Deployment or rollout path**: Merge-only to `main` via PR #498 (`1f25d10daed74ce209a1f14ec7160041bb0a4b6e`).
+* **Post-deploy checks**: `backlogit doctor --check-shipped-event-completeness` (0 findings for `199-S`), post-mode `shipment-reconcile` (`PROCEED`), and CI on the closure PR and subsequent `main` merges.
+* **Risky action record**:
+  * Governed `backlogit_ship_shipment` for `199-S` (`ActionRisk: high`, approved under P-017 dark-mode scope `199-S`, `ActionResult: applied` — client timed out, server completed `shipped` + archival).
+  * Provenance SHA correction via `backlogit_track_commit` across 11 archive records (`ActionRisk: moderate`, governed tool repair of mistyped SHA to `1f25d10daed74ce209a1f14ec7160041bb0a4b6e`, `ActionResult: applied` in commit `23597705`).
+  * Release of `.backlogit/queue/.199-S.md.agent-lock` with `--force` (`ActionRisk: low`, single-agent session-owned lock with truncated token transcript, verified no other holder, `ActionResult: applied`).
+* **Healthy signals**: `go test -count=1 -timeout=30m ./...` green on `main`; `TestUCYA1_`, `TestUCYA3_`, `TestUCYA5_`, `TestUCYA7_`, `TestU20C3_`, and `TestU20C5_` remain green; `backlogit doctor` reports zero `199-S` anomalies.
+* **Failure signals**: Regression in `TestUCYA*` or `TestU20C*` selectors, unexpected `write_indeterminate` or `ErrShipmentBlockedRequiresEnvelope` refusals on valid governed operations, or `doctor` shipped-event findings on `199-S`.
+* **Monitoring plan**: Manual observation across the next two shipment executions (`200-S`, `201-S`) and their `main` CI runs (no automated telemetry daemon in workspace).
+* **Rollback trigger**: Any reproducible lifecycle corruption or false-positive `write_indeterminate` / blocked-envelope refusal attributable to `1f25d10daed74ce209a1f14ec7160041bb0a4b6e`.
+* **Rollback procedure**: Revert merge commit `1f25d10daed74ce209a1f14ec7160041bb0a4b6e` via `git revert -m 1 1f25d10daed74ce209a1f14ec7160041bb0a4b6e` on a dedicated branch and PR through P-014 and P-018 gates; do not reopen or mutate the archived `199-S` records (P-007).
+* **Validation window**: 7 days from merge (through `2026-10-22T18:42:00Z`) or completion of `200-S` and `201-S`, whichever is later.
+* **Source artifact cleanup (provenance only)**: `199-F` declares `custom_fields.source_stash_id: none` and `custom_fields.source_deliberation_id: none`. Prose references in the `199-F` body (`7D8717B1`, `8AF55264`, `FA6AE139`, and `docs/decisions/2026-10-08-cy-concurrency-lifecycle-hardening-deliberation.md`) are provenance only and were left untouched.
 
 ## Residual risks (carried from PR #498)
 
@@ -83,7 +107,7 @@ Nine tasks under covering feature 199-F, executed in three P-002.6 waves, all do
 
 ## Follow-ups (captured for Stage triage, P-021 C2)
 
-`CC50FA47`, `8CB19B1F`, `4275BA19`, `843DE45B`, `AB174524`, `E411531A`, `BB80F0B2`, `4E7E1095`, `C04A0292`, `792C391E`, `19A6E9BB`, `34C23BE7`, `1D41F1C3`, `4399BF41`, `0C9FC425`, `FA754084`, `3B0B54A8`, `946B8775`, `D30D02CC`, `E29CFB5D`, `406AA1E0`, `14BF35E3`, `8624E9CB`, `1AC0EDBA`, `2CC696FE`, `85923985`, `DFD58CB2`, `54EEF1AA`. These are the follow-ups for Stage. No duplicate stash entries were created at closure.
+`CC50FA47`, `8CB19B1F`, `4275BA19`, `843DE45B`, `AB174524`, `E411531A`, `BB80F0B2`, `4E7E1095`, `C04A0292`, `792C391E`, `19A6E9BB`, `34C23BE7`, `1D41F1C3`, `4399BF41`, `0C9FC425`, `FA754084`, `3B0B54A8`, `946B8775`, `D30D02CC`, `E29CFB5D`, `406AA1E0`, `14BF35E3`, `8624E9CB`, `1AC0EDBA`, `2CC696FE`, `85923985`, `DFD58CB2`, `54EEF1AA`, plus `73B7C429` (reconcile live Ship Step 6 / `shipment-reconcile` / `operational-closure` with the 192-F `cascade-close --classify-only` pre-close step and `closure-evidence` gate; overlaps `3FF72EB8`). These are the follow-ups for Stage.
 
 ## Runtime verification
 
@@ -91,11 +115,11 @@ Not required: `runtime_validation.validation_expectations.required` is false and
 
 ## Releasability
 
-`READY` is not claimed. Releasability is BLOCKED on the close-evidence condition above. Monitoring plan, rollback procedure, and owner are not required by the profile (`releasability.required_evidence` marks them optional).
+`READY_WITH_CONDITIONS`. Every closure condition in frontmatter is satisfied (including the Stage-governed Option A exception for `close-evidence-record` with full compensating evidence). Monitoring plan, rollback procedure, and owner are recorded above.
 
 ## Owner
 
-Operator (dispatch owner) for the close-evidence decision. Ship for the remaining closure work once the decision is recorded.
+Stage (closure exception decision recorded under P-017 dark mode for `199-S`) and repository operator (`softwaresalt`) for the post-merge observation window; Ship / Orchestrator for opening and merging the closure PR.
 
 ## Compaction (P-020)
 
@@ -105,6 +129,6 @@ compact-context ran as a bounded batch on 2026-10-15, not a full target-all pass
 
 `docs/closure/2026-10-15-199-s-compound-refresh.md` records one in-place update to `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`. The update adds the non-durable append classification and compensation accounting from this shipment, and records the AdoptItem re-ID caveat. One related entry was kept unchanged.
 
-## Closure PR hold
+## Closure PR status
 
-The closure PR is not yet open. P-001 keeps the release unit open until closure is complete. Opening and merging a closure PR while `closure_status` is `BLOCKED` would merge a closure artifact that the closure-evidence gate rejects. The branch `post-merge/199-f-cy-a-lifecycle-hardening` is pushed and ready to open once the operator records the close-evidence decision (Option A or Option B above).
+With Option A recorded by Stage (`closure_status: READY_WITH_CONDITIONS`, `compaction_status: degraded`, all frontmatter `conditions` satisfied, `topology._closure_artifact_complete` returning `True`), branch `post-merge/199-f-cy-a-lifecycle-hardening` is ready to open as a closure PR, pass P-014 local review readiness, P-018 Copilot review, and required CI checks, and merge with a merge commit (P-009).

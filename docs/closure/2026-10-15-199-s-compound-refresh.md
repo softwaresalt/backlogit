@@ -1,4 +1,6 @@
 ---
+chunk_strategy: h1-h2-h3
+description: "Compound-refresh report for 199-S (PR #498): updated the durable-writes two-class learning in place for non-durable append classification and compensation accounting, and kept the test-seam learning unchanged."
 doc_type: closure
 docline:
   date: 2026-10-15T20:00:00Z
@@ -8,6 +10,8 @@ docline:
     - 199-S
     - durable-writes
 schema_version: "1.0"
+shipment_id: 199-S
+source: docs/closure/199-S-199-F-post-merge-closure.md
 title: "199-S compound refresh"
 ---
 
