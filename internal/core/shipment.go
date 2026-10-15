@@ -573,6 +573,10 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 	if blocked.CustomFields == nil {
 		blocked.CustomFields = map[string]any{}
 	}
+	// Rebuild the envelope from a clean slate so no stale canonical key survives the block.
+	for _, key := range blockedShipmentEnvelopeKeys() {
+		delete(blocked.CustomFields, key)
+	}
 	blocked.CustomFields["blocked_reason"] = opts.Reason
 	blocked.CustomFields["blocked_at"] = blockedAt
 	blocked.CustomFields["member_status_snapshot"] = memberStatuses

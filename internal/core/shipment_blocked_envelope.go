@@ -21,6 +21,20 @@ type blockedShipmentEnvelope struct {
 	memberStatuses      map[string]string
 }
 
+// blockedShipmentEnvelopeKeys returns the canonical blocked-shipment envelope
+// keys in canonical order. Every consumer that validates, writes, or rewrites
+// the blocked envelope reads this single list.
+func blockedShipmentEnvelopeKeys() [6]string {
+	return [...]string{
+		"blocked_reason",
+		"blocked_at",
+		"member_status_snapshot",
+		"branch",
+		"blocked_by",
+		"resume_checkpoint_ref",
+	}
+}
+
 func validatePersistedBlockedShipmentEnvelope(
 	ctx context.Context,
 	ws *Workspace,
@@ -55,32 +69,39 @@ func validateBlockedShipmentEnvelope(
 	if shipment.CustomFields == nil {
 		return envelope, blockedShipmentEnvelopeError(shipment.ID, "blocked metadata is absent")
 	}
+	// Only canonical envelope keys are validated; other custom fields are not part of the envelope.
+	envelopeFields := make(map[string]any)
+	for _, key := range blockedShipmentEnvelopeKeys() {
+		if value, present := shipment.CustomFields[key]; present {
+			envelopeFields[key] = value
+		}
+	}
 
-	reason, ok := shipment.CustomFields["blocked_reason"].(string)
+	reason, ok := envelopeFields["blocked_reason"].(string)
 	if !ok || strings.TrimSpace(reason) == "" {
 		return envelope, blockedShipmentEnvelopeError(shipment.ID, "blocked_reason must be a non-empty string")
 	}
-	blockedAt, ok := canonicalBlockedTimestamp(shipment.CustomFields["blocked_at"])
+	blockedAt, ok := canonicalBlockedTimestamp(envelopeFields["blocked_at"])
 	if !ok {
 		return envelope, blockedShipmentEnvelopeError(shipment.ID, "blocked_at must be an RFC3339 timestamp")
 	}
-	blockedBy, err := persistedBlockedEnvelopeOptionalString(shipment.CustomFields, "blocked_by")
+	blockedBy, err := persistedBlockedEnvelopeOptionalString(envelopeFields, "blocked_by")
 	if err != nil {
 		return envelope, blockedShipmentEnvelopeError(shipment.ID, err.Error())
 	}
-	branch, err := persistedBlockedEnvelopeOptionalString(shipment.CustomFields, "branch")
+	branch, err := persistedBlockedEnvelopeOptionalString(envelopeFields, "branch")
 	if err != nil {
 		return envelope, blockedShipmentEnvelopeError(shipment.ID, err.Error())
 	}
 	resumeCheckpointRef, err := persistedBlockedEnvelopeOptionalString(
-		shipment.CustomFields,
+		envelopeFields,
 		"resume_checkpoint_ref",
 	)
 	if err != nil {
 		return envelope, blockedShipmentEnvelopeError(shipment.ID, err.Error())
 	}
 	memberStatuses, err := decodeBlockedMemberStatusSnapshot(
-		shipment.CustomFields["member_status_snapshot"],
+		envelopeFields["member_status_snapshot"],
 		memberIDs,
 	)
 	if err != nil {

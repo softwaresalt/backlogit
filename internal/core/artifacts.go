@@ -576,7 +576,9 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 		}
 	}
 
-	// Fire pre-update hooks.
+	// Fire pre-update hooks. Pre-update hooks keep seeing the submitted request:
+	// the blocked-envelope cleanup below only rewrites a copy of updates, and it
+	// runs after this hook fires.
 	if ws.HookRunner != nil {
 		hookCtx := hooks.HookContext{
 			ItemID:       id,
@@ -1011,19 +1013,6 @@ func writeArtifactFileGoverned(
 		return fmt.Errorf("write artifact file: %w", err)
 	}
 	return nil
-}
-
-// blockedShipmentEnvelopeKeys returns the canonical blocked-shipment envelope keys.
-// Additional blocked-envelope stash fields are deferred to stash 8AF55264.
-func blockedShipmentEnvelopeKeys() [6]string {
-	return [...]string{
-		"blocked_reason",
-		"blocked_at",
-		"member_status_snapshot",
-		"branch",
-		"blocked_by",
-		"resume_checkpoint_ref",
-	}
 }
 
 func blockedShipmentEnvelopeValuesEqual(key string, previous, next any) bool {
