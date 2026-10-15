@@ -964,6 +964,11 @@ func writeArtifactFileGoverned(
 		previous, _, err := parseFile(currentPath)
 		switch {
 		case err == nil:
+			if !envelope.allowGovernedShipmentMutation {
+				if err := guardBlockedShipmentArtifactTypeFlip(previous, artifact); err != nil {
+					return err
+				}
+			}
 			if err := guardBlockedShipmentMembershipMutation(previous, artifact); err != nil {
 				return err
 			}
@@ -1046,6 +1051,27 @@ func guardBlockedShipmentMembershipMutation(previous, next *models.Artifact) err
 		"shipment %s membership is sealed while blocked: %w",
 		previous.ID,
 		blerrors.ErrShipmentConflict,
+	)
+}
+
+// guardBlockedShipmentArtifactTypeFlip refuses an ungoverned artifact_type change
+// into or out of shipment while the shipment side is blocked, so a multi-write
+// type change cannot bypass the blocked envelope or membership seal.
+func guardBlockedShipmentArtifactTypeFlip(previous, next *models.Artifact) error {
+	if previous == nil || next == nil || previous.ArtifactType == next.ArtifactType {
+		return nil
+	}
+	blockedShipment := (previous.ArtifactType == "shipment" && previous.Status == models.StatusBlocked) ||
+		(next.ArtifactType == "shipment" && next.Status == models.StatusBlocked)
+	if !blockedShipment {
+		return nil
+	}
+	return fmt.Errorf(
+		"refusing ungoverned artifact type flip %s from %s to %s while shipment is blocked: %w",
+		next.ID,
+		previous.ArtifactType,
+		next.ArtifactType,
+		blerrors.ErrShipmentBlockedRequiresEnvelope,
 	)
 }
 
