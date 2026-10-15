@@ -330,7 +330,7 @@ func finishShipmentLifecycleCompensation(
 ) error {
 	compensationStepError := func(step string, err error) error {
 		return fmt.Errorf(
-			"%s shipment %s compensation failed during %s (cause: %v; step error: %v): %w",
+			"%s shipment %s compensation failed during %s (cause: %v; step error: %w): %w",
 			journal.Operation,
 			journal.ShipmentID,
 			step,
@@ -612,7 +612,7 @@ func BlockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts B
 	journal.Phase = "committed"
 	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); err != nil {
 		return nil, fmt.Errorf(
-			"block shipment %s: persist block shipment commit: %v: %w",
+			"block shipment %s: persist block shipment commit: %w: %w",
 			shipmentID,
 			err,
 			blerrors.ErrWriteIndeterminate,
@@ -874,7 +874,7 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 	journal.Phase = "committed"
 	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); err != nil {
 		return nil, fmt.Errorf(
-			"unblock shipment %s: persist unblock shipment commit: %v: %w",
+			"unblock shipment %s: persist unblock shipment commit: %w: %w",
 			shipmentID,
 			err,
 			blerrors.ErrWriteIndeterminate,
