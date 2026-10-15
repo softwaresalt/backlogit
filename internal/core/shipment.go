@@ -809,7 +809,12 @@ func UnblockShipment(ctx context.Context, ws *Workspace, shipmentID string, opts
 			}
 		}
 		if compensationErr != nil {
-			return fmt.Errorf("unblock shipment %s: %w; compensation failed: %w", shipmentID, cause, compensationErr)
+			return fmt.Errorf(
+				"unblock shipment %s: %w; compensation failed: %w",
+				shipmentID,
+				cause,
+				fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, compensationErr),
+			)
 		}
 		if err := finishShipmentLifecycleCompensation(
 			compensateCtx,
