@@ -14,6 +14,11 @@ func ParseMarkdownFile(path string) (*models.Artifact, string, error) {
 		return nil, "", fmt.Errorf("read file %s: %w", path, err)
 	}
 
+	return ParseMarkdownBytes(data)
+}
+
+// ParseMarkdownBytes extracts the artifact and body from Markdown content.
+func ParseMarkdownBytes(data []byte) (*models.Artifact, string, error) {
 	fm, body, err := models.ParseFrontmatter(string(data))
 	if err != nil {
 		return nil, "", fmt.Errorf("parse frontmatter: %w", err)

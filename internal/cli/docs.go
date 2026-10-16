@@ -42,6 +42,7 @@ inspect the active scope, and classify a path's doc_type.`,
 
 func newDocsLintCommand(cwd *string) *cobra.Command {
 	var profile, format, path string
+	var rules []string
 	cmd := &cobra.Command{
 		Use:   "lint",
 		Short: "Validate in-scope documentation frontmatter (retains non-zero exit on violations)",
@@ -74,10 +75,15 @@ retained for this case exactly as for any other violation.`,
 			if err != nil {
 				return err
 			}
+			ruleSet, err := docline.ParseRules(rules)
+			if err != nil {
+				return err
+			}
 			findings, err := docline.LintTree(docline.Options{
 				Root:    root,
 				Path:    path,
 				Profile: prof,
+				Rules:   ruleSet,
 			})
 			if err != nil {
 				return err
@@ -99,6 +105,7 @@ retained for this case exactly as for any other violation.`,
 	cmd.Flags().StringVar(&profile, "profile", "authoring", "validation profile: authoring, ingestion")
 	cmd.Flags().StringVar(&format, "format", "", "output format: text, json (default: text on TTY, json otherwise)")
 	cmd.Flags().StringVar(&path, "path", "", "limit to a repo-relative sub-path")
+	cmd.Flags().StringSliceVar(&rules, "rules", nil, "opt-in rule groups to run in addition to the contract: structural, references")
 	return cmd
 }
 
