@@ -64,28 +64,49 @@ try {
     $task = $fixture.tasks.PSObject.Properties[$TaskId]
     if ($null -eq $task) { Stop-Closed "unknown task id '$TaskId'" }
 
+    $taskObj = $task.Value
+    if ($null -eq $taskObj -or $taskObj -isnot [pscustomobject] -or
+        $null -eq $taskObj.PSObject.Properties['expected_group_residual_after_task'] -or
+        $taskObj.expected_group_residual_after_task -isnot [System.Array]) {
+        Stop-Closed "task '$TaskId' must be an object with an expected_group_residual_after_task array"
+    }
+    foreach ($m in $taskObj.expected_group_residual_after_task) {
+        if ($null -eq $m -or $m -isnot [pscustomobject]) { Stop-Closed "task '$TaskId' residual members must be objects" }
+    }
+
     if ($Phase -eq 'Schema') {
         Write-Output "TASK-LINT-OK:$TaskId"
         exit 0
     }
 
-    $expected = @{}
-    foreach ($e in @($task.Value.expected_group_residual_after_task)) {
-        if ($null -eq $e) { continue }
+    $expected = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
+    foreach ($e in $taskObj.expected_group_residual_after_task) {
         $fp = Get-Fingerprint $e
-        $expected[$fp] = [int]$expected[$fp] + [int]$e.count
+        $prev = 0
+        [void]$expected.TryGetValue($fp, [ref]$prev)
+        $expected[$fp] = $prev + [int]$e.count
     }
-    $actual = @{}
+    $actual = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
     foreach ($f in @($fixture.findings)) {
-        if ([string]$f.owner -ne $TaskId) { continue }
+        if ($null -eq $f -or [string]$f.owner -cne $TaskId) { continue }
         $fp = Get-Fingerprint $f
-        $actual[$fp] = [int]$actual[$fp] + 1
+        $prev = 0
+        [void]$actual.TryGetValue($fp, [ref]$prev)
+        $actual[$fp] = $prev + 1
     }
 
+    $keys = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($k in $expected.Keys) { [void]$keys.Add($k) }
+    foreach ($k in $actual.Keys) { [void]$keys.Add($k) }
+    $sorted = [string[]]@($keys)
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+
     $mismatch = @()
-    foreach ($fp in (@($expected.Keys) + @($actual.Keys) | Sort-Object -Unique)) {
-        $e = [int]$expected[$fp]
-        $a = [int]$actual[$fp]
+    foreach ($fp in $sorted) {
+        $e = 0
+        $a = 0
+        [void]$expected.TryGetValue($fp, [ref]$e)
+        [void]$actual.TryGetValue($fp, [ref]$a)
         if ($a -ne $e) { $mismatch += "$fp expected=$e actual=$a" }
     }
     if ($mismatch.Count -gt 0) {

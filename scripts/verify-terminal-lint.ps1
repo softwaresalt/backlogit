@@ -59,7 +59,12 @@ try {
         if ($null -eq $doc.PSObject.Properties['goos'] -or $doc.goos -isnot [string] -or $doc.goos -cne $goos) {
             Stop-Closed "malformed $goos fixture: goos must equal '$goos'"
         }
-        $residual[$goos] = @($doc.findings | Where-Object { $null -ne $_ })
+        $list = $doc.findings
+        if ($list -isnot [System.Array]) { Stop-Closed "malformed $goos fixture: findings must be an array" }
+        foreach ($m in $list) {
+            if ($null -eq $m) { Stop-Closed "malformed $goos fixture: findings members must be non-null" }
+        }
+        $residual[$goos] = $list
     }
 
     $failed = $false

@@ -86,27 +86,52 @@ try {
         Stop-Closed 'malformed inventory: expected schema baseline-inventory/v1 with groups and remaining'
     }
 
-    $expected = @{}
-    foreach ($g in @($inv.groups)) {
-        if ($null -eq $g) { continue }
-        $resolved = 0
-        foreach ($o in @($g.owners)) {
-            if ($null -ne $o -and $o.completed -eq $true) { $resolved += [int]$o.resolves }
+    foreach ($name in 'groups', 'remaining') {
+        $list = $inv.PSObject.Properties[$name].Value
+        if ($list -isnot [System.Array]) { Stop-Closed "malformed inventory: $name must be an array" }
+        foreach ($m in $list) {
+            if ($null -eq $m -or $m -isnot [pscustomobject]) { Stop-Closed "malformed inventory: $name members must be objects" }
         }
-        $fp = Get-Fingerprint $g
-        $expected[$fp] = [int]$expected[$fp] + [int]$g.baseline_count - $resolved
     }
-    $actual = @{}
-    foreach ($r in @($inv.remaining)) {
-        if ($null -eq $r) { continue }
-        $fp = Get-Fingerprint $r
-        $actual[$fp] = [int]$actual[$fp] + 1
+    foreach ($g in $inv.groups) {
+        $owners = $g.PSObject.Properties['owners']
+        if ($null -eq $owners -or $owners.Value -isnot [System.Array]) { Stop-Closed 'malformed inventory: group owners must be an array' }
+        foreach ($o in $owners.Value) {
+            if ($null -eq $o -or $o -isnot [pscustomobject]) { Stop-Closed 'malformed inventory: owners members must be objects' }
+        }
     }
 
+    $expected = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
+    foreach ($g in $inv.groups) {
+        $resolved = 0
+        foreach ($o in $g.owners) {
+            if ($o.completed -eq $true) { $resolved += [int]$o.resolves }
+        }
+        $fp = Get-Fingerprint $g
+        $prev = 0
+        [void]$expected.TryGetValue($fp, [ref]$prev)
+        $expected[$fp] = $prev + [int]$g.baseline_count - $resolved
+    }
+    $actual = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
+    foreach ($r in $inv.remaining) {
+        $fp = Get-Fingerprint $r
+        $prev = 0
+        [void]$actual.TryGetValue($fp, [ref]$prev)
+        $actual[$fp] = $prev + 1
+    }
+
+    $keys = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($k in $expected.Keys) { [void]$keys.Add($k) }
+    foreach ($k in $actual.Keys) { [void]$keys.Add($k) }
+    $sorted = [string[]]@($keys)
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+
     $violations = @()
-    foreach ($fp in (@($expected.Keys) + @($actual.Keys) | Sort-Object -Unique)) {
-        $e = [int]$expected[$fp]
-        $a = [int]$actual[$fp]
+    foreach ($fp in $sorted) {
+        $e = 0
+        $a = 0
+        [void]$expected.TryGetValue($fp, [ref]$e)
+        [void]$actual.TryGetValue($fp, [ref]$a)
         if (-not $expected.ContainsKey($fp)) { $violations += "new fingerprint: $fp actual=$a" }
         elseif ($a -gt $e) { $violations += "unresolved: $fp expected=$e actual=$a" }
         elseif ($a -lt $e) { $violations += "resolved by no completed owner: $fp expected=$e actual=$a" }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -180,6 +181,28 @@ func TestU175_101_TerminalLintRunnerBootstrap(t *testing.T) {
 				assert.Contains(t, out, "INVALID-INPUT")
 				assert.NotContains(t, out, "TERMINAL-LINT-OK:")
 			})
+		}
+	})
+
+	t.Run("fail_closed_findings_shape", func(t *testing.T) {
+		bodies := map[string]string{
+			"null_findings":    `{"goos":"windows","findings":null}`,
+			"missing_findings": `{"goos":"windows"}`,
+			"null_member":      `{"goos":"windows","findings":[null]}`,
+			"object_findings":  `{"goos":"windows","findings":{}}`,
+		}
+		for name, body := range bodies {
+			for _, surface := range []string{"windows", "linux"} {
+				t.Run(name+"_"+surface, func(t *testing.T) {
+					dir := u101Fixture(t, nil, nil)
+					b := strings.Replace(body, `"goos":"windows"`, `"goos":"`+surface+`"`, 1)
+					require.NoError(t, os.WriteFile(filepath.Join(dir, surface+".json"), []byte(b), 0o600))
+					out, code := u101Run(t, root, "-FeatureId", "175-F", "-FixtureRoot", dir)
+					assert.Equal(t, 2, code, out)
+					assert.Contains(t, out, "INVALID-INPUT")
+					assert.NotContains(t, out, "TERMINAL-LINT-OK:")
+				})
+			}
 		}
 	})
 }

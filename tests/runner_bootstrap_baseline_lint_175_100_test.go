@@ -190,7 +190,7 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 				i.Remaining = append(i.Remaining, u100Finding{Path: "internal/a.go", Linter: "errcheck", Message: u100Msg, Line: 77, Column: 1})
 			}, reason: "MONOTONICITY-VIOLATION"},
 			{name: "resolved_by_no_completed_owner", mutate: func(i *u100Inventory) {
-				i.Remaining = nil
+				i.Remaining = []u100Finding{}
 			}, reason: "MONOTONICITY-VIOLATION"},
 			{name: "new_fingerprint", mutate: func(i *u100Inventory) {
 				i.Remaining = append(i.Remaining, u100Finding{Path: "internal/new.go", Linter: "revive", Message: "brand new", Line: 1, Column: 1})
@@ -233,6 +233,43 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 				out, code := u100Run(t, root, u100Args(tc.path, tc.sum)...)
 				assert.Equal(t, 2, code, out)
 				assert.Contains(t, out, "INVALID-INPUT")
+			})
+		}
+	})
+
+	t.Run("fail_closed_shape_and_case", func(t *testing.T) {
+		const g = `{"path":"internal/a.go","linter":"errcheck","message":"Error return value is not checked","baseline_count":1,"owners":[]}`
+		const r = `{"path":"internal/a.go","linter":"errcheck","message":"Error return value is not checked","line":1,"column":1}`
+		shapes := map[string]string{
+			"null_groups_remaining": `{"schema":"baseline-inventory/v1","groups":null,"remaining":null}`,
+			"null_members":          `{"schema":"baseline-inventory/v1","groups":[null],"remaining":[null]}`,
+			"null_group_member":     `{"schema":"baseline-inventory/v1","groups":[null],"remaining":[` + r + `]}`,
+			"null_remaining_member": `{"schema":"baseline-inventory/v1","groups":[` + g + `],"remaining":[null]}`,
+			"null_owners":           `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":null}],"remaining":[]}`,
+			"null_owner_member":     `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[null]}],"remaining":[]}`,
+			"object_groups":         `{"schema":"baseline-inventory/v1","groups":{},"remaining":[]}`,
+		}
+		for name, body := range shapes {
+			t.Run(name, func(t *testing.T) {
+				path, sum := u100Write(t, []byte(body))
+				out, code := u100Run(t, root, u100Args(path, sum)...)
+				assert.Equal(t, 2, code, out)
+				assert.Contains(t, out, "INVALID-INPUT")
+			})
+		}
+
+		cases := map[string]func(*u100Inventory){
+			"path_case":    func(i *u100Inventory) { i.Remaining[0].Path = "internal/A.go" },
+			"message_case": func(i *u100Inventory) { i.Remaining[0].Message = "error return value is not checked" },
+		}
+		for name, mutate := range cases {
+			t.Run(name, func(t *testing.T) {
+				inv := u100Base()
+				mutate(&inv)
+				path, sum := u100Write(t, u100Marshal(t, inv))
+				out, code := u100Run(t, root, u100Args(path, sum)...)
+				assert.Equal(t, 1, code, out)
+				assert.Contains(t, out, "MONOTONICITY-VIOLATION")
 			})
 		}
 	})

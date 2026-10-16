@@ -157,10 +157,10 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 			mutate func(*u099Fixture)
 		}{
 			{"retained_owned_finding", func(f *u099Fixture) {
-				f.Tasks[id] = u099Task{}
+				f.Tasks[id] = u099Task{Expected: []u099Expected{}}
 			}},
 			{"line_shift_stays_above_expected", func(f *u099Fixture) {
-				f.Tasks[id] = u099Task{}
+				f.Tasks[id] = u099Task{Expected: []u099Expected{}}
 				f.Findings[0].Line = 99
 			}},
 			{"duplicate_resolved_below_expected", func(f *u099Fixture) {
@@ -202,6 +202,42 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 				assert.Equal(t, 2, code, out)
 				assert.Contains(t, out, "INVALID-INPUT", out)
 				assert.False(t, strings.Contains(out, "TASK-LINT-OK:"), out)
+			})
+		}
+	})
+
+	t.Run("schema_phase_validates_task_object", func(t *testing.T) {
+		for name, body := range map[string]string{
+			"null_task":  `{"tasks":{"175.001-T":null},"findings":[]}`,
+			"empty_task": `{"tasks":{"175.001-T":{}},"findings":[]}`,
+		} {
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "task-lint.json"), []byte(body), 0o600))
+				out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-Phase", "Schema", "-FixtureRoot", dir)
+				assert.Equal(t, 2, code, out)
+				assert.Contains(t, out, "INVALID-INPUT", out)
+				assert.NotContains(t, out, marker)
+			})
+		}
+	})
+
+	t.Run("case_sensitive_fingerprints", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			mutate func(*u099Fixture)
+		}{
+			{"path_case", func(f *u099Fixture) { f.Findings[0].Path = "internal/A.go" }},
+			{"message_case", func(f *u099Fixture) { f.Findings[0].Message = "error return value is not checked" }},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				fx := u099Base(id)
+				tc.mutate(&fx)
+				out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", u099WriteFixture(t, fx))
+				assert.Equal(t, 1, code, out)
+				assert.Contains(t, out, "RESIDUAL-MISMATCH", out)
+				assert.NotContains(t, out, marker)
 			})
 		}
 	})
