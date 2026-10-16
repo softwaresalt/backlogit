@@ -54,7 +54,7 @@ func Run(plan Plan, cfg Config) (Report, error) {
 	for _, r := range rules {
 		known[r.id] = true
 	}
-	if err := cfg.validate(known); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return Report{}, fmt.Errorf("run soundness engine: %w", err)
 	}
 

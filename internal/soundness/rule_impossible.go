@@ -1,6 +1,9 @@
 package soundness
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const ruleImpossibleTest = "impossible-test"
 
@@ -26,7 +29,7 @@ func impossibleReason(t TestSpec) string {
 		if a.Op != OpEqual && a.Op != OpNotEqual {
 			return fmt.Sprintf("unknown operator %q on %q", a.Op, a.Subject)
 		}
-		s, v := normalizeText(a.Subject), normalizeText(a.Value)
+		s, v := strings.TrimSpace(a.Subject), strings.TrimSpace(a.Value)
 		if a.Op == OpEqual {
 			if prev, ok := eq[s]; ok && prev != v {
 				return fmt.Sprintf("%q must equal both %q and %q", a.Subject, prev, a.Value)

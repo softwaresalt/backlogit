@@ -34,3 +34,19 @@ func TestU160010_IndependentVerifiability_CleanPasses(t *testing.T) {
 	b.Acceptance = []string{"B returns 3 for input 2", "go test ./internal/x exits 0"}
 	assert.Empty(t, findingsFor(t, "independent-verifiability", a, b))
 }
+
+func TestCopilotR1_IndependentVerifiability_ObjectiveCriteriaWithKeywordsAreClean(t *testing.T) {
+	for _, c := range []string{
+		"Creates exactly one work item with status queued",
+		"Reading /etc/config returns ENOENT when absent",
+	} {
+		u := soundUnit("1-T", "A")
+		u.Acceptance = []string{c}
+		assert.Empty(t, findingsFor(t, "independent-verifiability", u), c)
+	}
+	for _, c := range []string{"It works properly", "Handles errors appropriately", "Output is good", "Configs, etc."} {
+		u := soundUnit("1-T", "A")
+		u.Acceptance = []string{c}
+		assert.Len(t, findingsFor(t, "independent-verifiability", u), 1, c)
+	}
+}

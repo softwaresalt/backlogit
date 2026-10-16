@@ -7,7 +7,7 @@ import (
 
 const ruleIndependentVerifiability = "independent-verifiability"
 
-var vagueCriterion = regexp.MustCompile(`(?i)\b(works?|working|properly|correctly|as expected|appropriate(ly)?|etc|good|nice|reasonable|as needed|should work)\b`)
+var vagueCriterion = regexp.MustCompile(`(?i)(?:\b(?:works?|working)\s+(?:properly|correctly|well|fine)\b|\b(?:it|this|that|everything)\s+(?:should\s+)?works?\b|\bshould work\b|\bproperly\b|\bcorrectly\b|\bas expected\b|\bappropriate(?:ly)?\b|\bas needed\b|\breasonabl[ey]\b|\b(?:is|are|be|looks?|feels?)\s+(?:good|nice)\b|(?:^|[\s,;(])etc\b)`)
 
 // checkIndependentVerifiability flags units whose acceptance cannot be
 // verified on its own: no acceptance criteria, vague criteria, or

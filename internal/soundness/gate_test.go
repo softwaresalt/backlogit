@@ -129,3 +129,13 @@ func TestU160004_RuleErrorFindingBlocksEnforce(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, d.Blocked)
 }
+
+func TestCopilotR1_Run_EnforceWithAllRulesDisabledIsRejected(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Mode = ModeEnforce
+	for _, id := range RuleIDs() {
+		cfg.Rules[id] = false
+	}
+	_, err := Run(unsoundPlan(), cfg)
+	require.ErrorIs(t, err, ErrInvalidConfig)
+}

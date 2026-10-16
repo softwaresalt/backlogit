@@ -116,3 +116,18 @@ func TestRemediation_CLI_ReadWorkspaceFileConfined(t *testing.T) {
 	_, err = readWorkspaceFile(root, "../"+filepath.Base(outside)+"/x.json")
 	require.Error(t, err)
 }
+
+func TestCopilotR1_CLI_SoundnessLint_MissingPlanPrintsDiagnostic(t *testing.T) {
+	root := t.TempDir()
+	out, err := runDocs(t, root, "soundness", "lint")
+	require.Error(t, err)
+	assert.Contains(t, out, "--plan is required")
+}
+
+func TestCopilotR1_CLI_SoundnessLint_BlockedNotDoublePrinted(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureDoc(t, root, "plan.json", soundnessUnsoundPlan)
+	out, err := runDocs(t, root, "soundness", "lint", "--plan", "plan.json", "--mode", "enforce", "--format", "text")
+	require.ErrorIs(t, err, errSoundnessBlocked)
+	assert.NotContains(t, out, "Error:")
+}

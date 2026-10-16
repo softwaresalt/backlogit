@@ -52,8 +52,7 @@ workspace root.`,
 		Example: `  backlogit soundness lint --plan plan.json
   backlogit soundness lint --plan plan.json --mode enforce --config soundness.conf
   backlogit soundness lint --plan plan.json --disable-rule budget --format json`,
-		SilenceErrors: true,
-		SilenceUsage:  true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			root, err := resolveDocsRoot(cwd)
 			if err != nil {
@@ -103,6 +102,8 @@ workspace root.`,
 				printSoundnessText(cmd.OutOrStdout(), decision)
 			}
 			if decision.Blocked {
+				// findings are already printed; avoid a redundant cobra error line
+				cmd.SilenceErrors = true
 				return errSoundnessBlocked
 			}
 			return nil
