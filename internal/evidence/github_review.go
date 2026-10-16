@@ -70,7 +70,7 @@ type ReviewResult struct {
 const reviewQuery = `query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
 repository(owner:$owner,name:$repo){pullRequest(number:$pr){
 headRefOid author{login}
-reviewRequests(first:100){nodes{requestedReviewer{__typename ... on User{login} ... on Bot{login} ... on Team{name}}} pageInfo{hasNextPage}}
+reviewRequests(first:100){nodes{requestedReviewer{__typename ... on User{login} ... on Team{name}}} pageInfo{hasNextPage}}
 reviews(last:100){nodes{state author{login} commit{oid}} pageInfo{hasPreviousPage}}
 reviewThreads(first:100,after:$cursor){nodes{isResolved} pageInfo{hasNextPage endCursor}}}}}`
 

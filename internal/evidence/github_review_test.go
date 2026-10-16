@@ -170,3 +170,9 @@ func TestU159001_ScrubRedactsTokenShapes(t *testing.T) {
 		assert.Equal(t, "HTTP 502 bad gateway", Scrub("HTTP 502 bad gateway"))
 	})
 }
+
+func TestReviewQuery_SchemaGuards(t *testing.T) {
+	assert.NotContains(t, reviewQuery, "on Bot")
+	assert.Contains(t, reviewQuery, "on User")
+	assert.Contains(t, reviewQuery, "on Team")
+}
