@@ -66,6 +66,9 @@ func (b *Backlog) load(id string) (*models.Artifact, error) {
 	for _, dir := range []string{"queue", "archive"} {
 		a, _, err := parser.ParseMarkdownFile(filepath.Join(b.Root, dir, id+".md"))
 		if err == nil {
+			if a.ID != id {
+				return nil, fmt.Errorf("load %s: file declares id %q", id, a.ID)
+			}
 			return a, nil
 		}
 		if !errors.Is(err, fs.ErrNotExist) {

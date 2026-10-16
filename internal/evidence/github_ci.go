@@ -55,6 +55,18 @@ type ciPayload struct {
 	} `json:"statusCheckRollup"`
 }
 
+// maxRollupContexts is the gh statusCheckRollup cap; reaching it means the
+// list may be truncated.
+const maxRollupContexts = 100
+
+func isNonSuccessPass(typename, conclusion string) bool {
+	if typename == "StatusContext" {
+		return false
+	}
+	c := strings.ToUpper(conclusion)
+	return c == "SKIPPED" || c == "NEUTRAL"
+}
+
 func normalizeCheckRun(status, conclusion string) CheckState {
 	if !strings.EqualFold(status, "COMPLETED") {
 		return CheckPending
@@ -84,6 +96,9 @@ func (g *GitHub) CIEvidence(ctx context.Context, pr int) CIResult {
 	fail := func(reason string) CIResult {
 		return CIResult{Status: StatusDegraded, Reason: reason, PR: pr}
 	}
+	if pr <= 0 {
+		return fail(fmt.Sprintf("invalid pull request number %d", pr))
+	}
 	if _, _, ok := splitRepo(g.Repo); !ok {
 		return fail(fmt.Sprintf("invalid repository slug %q", g.Repo))
 	}
@@ -101,8 +116,13 @@ func (g *GitHub) CIEvidence(ctx context.Context, pr int) CIResult {
 		return fail(fmt.Sprintf("pull request %d not found", pr))
 	}
 
+	if len(p.StatusCheckRollup) >= maxRollupContexts {
+		return fail(fmt.Sprintf("status check rollup has %d contexts; completeness cannot be proven", len(p.StatusCheckRollup)))
+	}
+
 	res := CIResult{Status: StatusVerified, PR: pr, HeadSHA: p.HeadRefOid}
-	allPassed := len(p.StatusCheckRollup) > 0
+	allPassed := true
+	anySuccess := false
 	for _, c := range p.StatusCheckRollup {
 		chk := Check{Name: c.Name}
 		if c.Typename == "StatusContext" {
@@ -111,12 +131,15 @@ func (g *GitHub) CIEvidence(ctx context.Context, pr int) CIResult {
 		} else {
 			chk.State = normalizeCheckRun(c.Status, c.Conclusion)
 		}
+		if chk.State == CheckPassed && !isNonSuccessPass(c.Typename, c.Conclusion) {
+			anySuccess = true
+		}
 		if chk.State != CheckPassed {
 			allPassed = false
 		}
 		res.Checks = append(res.Checks, chk)
 	}
-	res.AllPassed = allPassed
+	res.AllPassed = allPassed && anySuccess
 
 	if strings.EqualFold(p.State, "MERGED") {
 		if p.MergeCommit == nil || p.MergeCommit.Oid == "" {

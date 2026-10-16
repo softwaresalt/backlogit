@@ -69,16 +69,19 @@ type ReviewResult struct {
 
 const reviewQuery = `query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
 repository(owner:$owner,name:$repo){pullRequest(number:$pr){
-headRefOid
-reviewRequests(first:100){nodes{requestedReviewer{__typename ... on User{login} ... on Bot{login} ... on Team{name}}}}
-reviews(last:100){nodes{state commit{oid}}}
+headRefOid author{login}
+reviewRequests(first:100){nodes{requestedReviewer{__typename ... on User{login} ... on Bot{login} ... on Team{name}}} pageInfo{hasNextPage}}
+reviews(last:100){nodes{state author{login} commit{oid}} pageInfo{hasPreviousPage}}
 reviewThreads(first:100,after:$cursor){nodes{isResolved} pageInfo{hasNextPage endCursor}}}}}`
 
 type reviewPayload struct {
 	Data struct {
 		Repository struct {
 			PullRequest *struct {
-				HeadRefOid     string `json:"headRefOid"`
+				HeadRefOid string `json:"headRefOid"`
+				Author     struct {
+					Login string `json:"login"`
+				} `json:"author"`
 				ReviewRequests struct {
 					Nodes []struct {
 						RequestedReviewer struct {
@@ -86,14 +89,23 @@ type reviewPayload struct {
 							Name  string `json:"name"`
 						} `json:"requestedReviewer"`
 					} `json:"nodes"`
+					PageInfo struct {
+						HasNextPage bool `json:"hasNextPage"`
+					} `json:"pageInfo"`
 				} `json:"reviewRequests"`
 				Reviews struct {
 					Nodes []struct {
 						State  string `json:"state"`
+						Author struct {
+							Login string `json:"login"`
+						} `json:"author"`
 						Commit struct {
 							Oid string `json:"oid"`
 						} `json:"commit"`
 					} `json:"nodes"`
+					PageInfo struct {
+						HasPreviousPage bool `json:"hasPreviousPage"`
+					} `json:"pageInfo"`
 				} `json:"reviews"`
 				ReviewThreads struct {
 					Nodes []struct {
@@ -118,6 +130,9 @@ const maxThreadPages = 50
 func (g *GitHub) ReviewEvidence(ctx context.Context, pr int) ReviewResult {
 	fail := func(reason string) ReviewResult {
 		return ReviewResult{Status: StatusDegraded, Reason: reason, PR: pr}
+	}
+	if pr <= 0 {
+		return fail(fmt.Sprintf("invalid pull request number %d", pr))
 	}
 	owner, repo, ok := splitRepo(g.Repo)
 	if !ok {
@@ -146,11 +161,20 @@ func (g *GitHub) ReviewEvidence(ctx context.Context, pr int) ReviewResult {
 		if prd == nil || prd.HeadRefOid == "" {
 			return fail(fmt.Sprintf("pull request %d not found", pr))
 		}
+		if page > 0 && prd.HeadRefOid != res.HeadSHA {
+			return fail("pull request head changed while paginating review threads")
+		}
 		if page == 0 {
+			if prd.ReviewRequests.PageInfo.HasNextPage || prd.Reviews.PageInfo.HasPreviousPage {
+				return fail("review or review request list is incomplete (more pages exist)")
+			}
 			res.HeadSHA = prd.HeadRefOid
 			seen := map[string]bool{}
 			for _, r := range prd.Reviews.Nodes {
-				if r.State == "PENDING" {
+				if r.State == "PENDING" || r.State == "DISMISSED" {
+					continue
+				}
+				if login := r.Author.Login; login != "" && login == prd.Author.Login {
 					continue
 				}
 				res.ReviewCycles++

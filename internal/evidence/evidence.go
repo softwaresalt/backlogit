@@ -57,13 +57,28 @@ var scrubPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+`),
 	regexp.MustCompile(`github_pat_[A-Za-z0-9_]+`),
 	regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{20,}`),
+	regexp.MustCompile(`\b[0-9a-fA-F]{40}\b`),
 }
+
+var scrubReplacements = []struct {
+	re   *regexp.Regexp
+	repl string
+}{
+	{regexp.MustCompile(`(?i)(https?://)[^/\s:@]+:[^@\s/]*@`), "${1}[REDACTED]@"},
+	{regexp.MustCompile(`(?i)([?&](?:access_)?token=)[^&\s]+`), "${1}[REDACTED]"},
+}
+
+// maxStderrReason caps the stderr bytes included in a degradation reason.
+const maxStderrReason = 512
 
 const redacted = "[REDACTED]"
 
 // Scrub redacts credential-like values (GitHub token shapes, Authorization
 // headers, Bearer values) from s.
 func Scrub(s string) string {
+	for _, r := range scrubReplacements {
+		s = r.re.ReplaceAllString(s, r.repl)
+	}
 	for _, re := range scrubPatterns {
 		s = re.ReplaceAllString(s, redacted)
 	}
@@ -73,11 +88,17 @@ func Scrub(s string) string {
 // degraded builds the standard scrubbed degradation reason for a failed
 // subprocess. Known secrets are removed in addition to pattern scrubbing.
 func degraded(what string, err error, stderr []byte, secrets ...string) string {
-	msg := fmt.Sprintf("%s: %v: %s", what, err, strings.TrimSpace(string(stderr)))
-	for _, s := range secrets {
-		if s != "" {
-			msg = strings.ReplaceAll(msg, s, redacted)
+	redact := func(s string) string {
+		for _, sec := range secrets {
+			if sec != "" {
+				s = strings.ReplaceAll(s, sec, redacted)
+			}
 		}
+		return Scrub(s)
 	}
-	return Scrub(msg)
+	se := redact(strings.TrimSpace(string(stderr)))
+	if len(se) > maxStderrReason {
+		se = se[:maxStderrReason]
+	}
+	return redact(fmt.Sprintf("%s: %v: %s", what, err, se))
 }

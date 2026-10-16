@@ -57,7 +57,19 @@ const minSHAPrefix = 6
 func shaMatches(claimed, actual string) bool {
 	claimed = strings.ToLower(strings.TrimSpace(claimed))
 	actual = strings.ToLower(actual)
-	return len(claimed) >= minSHAPrefix && strings.HasPrefix(actual, claimed)
+	if len(claimed) < minSHAPrefix || !isHex(claimed) {
+		return false
+	}
+	return strings.HasPrefix(actual, claimed)
+}
+
+func isHex(s string) bool {
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return s != ""
 }
 
 func verified(claim string) Finding {
