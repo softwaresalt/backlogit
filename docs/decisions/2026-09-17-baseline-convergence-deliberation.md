@@ -165,6 +165,13 @@ specialized meanings.
 
 ### U1 - Line-ending migration
 
+> **Amendment 2026-10-15 (supersedes the fixed 548 count below):** the U1 frozen
+> set is the LIVE claim-time set of tracked `*.go`/`*.json` paths with a CRLF
+> working tree and LF index (564 = 528 Go + 36 JSON on clean main `c8f7c7e9`),
+> captured to a recorded path-list artifact before any refresh. The 548/518/30
+> figures below are the historical baseline. See task `175.001-T` for the
+> authoritative definition and the operator approval record.
+
 U1 owns `.gitattributes` hardening plus path-scoped renormalization of exactly
 548 tracked CRLF *working-tree* paths (518 `*.go` + 30 `*.json`). Baseline
 evidence records `indexCRLF=0` (all 548 target paths are already `i/lf`), so the
