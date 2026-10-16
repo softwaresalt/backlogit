@@ -123,7 +123,7 @@ func TestExecute_FunctionExists(t *testing.T) {
 	// Verify the signature compiles — we cannot call cli.Execute() directly in
 	// tests without controlling os.Args. The function's os.Args dependency is
 	// tested via the binary in integration tests.
-	var fn func() error = Execute
+	fn := Execute
 	assert.NotNil(t, fn)
 }
 
