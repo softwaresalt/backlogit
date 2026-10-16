@@ -29,7 +29,7 @@ func TestUpdateCommand_StatusChange(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -57,7 +57,7 @@ func TestUpdateCommand_TitleChange(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -85,7 +85,7 @@ func TestUpdateCommand_IDChangeRejected(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -127,7 +127,7 @@ func TestUpdateCommand_Description(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -150,7 +150,7 @@ func TestUpdateCommand_AssignedTo(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -173,7 +173,7 @@ func TestUpdateCommand_Labels(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -200,7 +200,7 @@ func TestUpdateCommand_EmptyLabels(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -226,7 +226,7 @@ func TestUpdateCommand_StatusAndSection(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -259,7 +259,7 @@ func TestUpdateCommand_NoDuplicateWrites(t *testing.T) {
 	require.NoError(t, err)
 	origPath, err := core.FindArtifactPath(ctx, ws, artifact.ID)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
