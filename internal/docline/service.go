@@ -99,6 +99,15 @@ func LintTree(opts Options) ([]Finding, error) {
 		profile = ProfileAuthoring
 	}
 
+	var taskIDs func(string) bool
+	if opts.Rules.References {
+		ids, err := resolveTaskIDLookup(opts)
+		if err != nil {
+			return nil, err
+		}
+		taskIDs = ids
+	}
+
 	var findings []Finding
 	for _, rel := range files {
 		md, err := decodeDoc(opts.Root, rel)
@@ -113,6 +122,9 @@ func LintTree(opts Options) ([]Finding, error) {
 		b := FromMap(frontmatterOrEmpty(md))
 		if opts.Rules.Structural {
 			findings = append(findings, lintStructural(opts.Root, rel, md)...)
+		}
+		if opts.Rules.References {
+			findings = append(findings, lintReferences(opts.Root, rel, md, opts.Rules, taskIDs)...)
 		}
 		for _, v := range ValidateFields(b, profile) {
 			findings = append(findings, Finding{
