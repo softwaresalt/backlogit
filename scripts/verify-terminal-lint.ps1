@@ -40,7 +40,7 @@ function Stop-Closed([string]$Message, [int]$Code = 2) {
 
 function Test-DupKey([System.Text.Json.JsonElement]$El) {
     if ($El.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
-        $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($p in $El.EnumerateObject()) {
             if (-not $seen.Add($p.Name)) { return $true }
             if (Test-DupKey $p.Value) { return $true }
@@ -55,8 +55,11 @@ function Test-DupKey([System.Text.Json.JsonElement]$El) {
 function ConvertFrom-JsonElement([System.Text.Json.JsonElement]$El) {
     switch ($El.ValueKind) {
         ([System.Text.Json.JsonValueKind]::Object) {
-            $h = [ordered]@{}
-            foreach ($p in $El.EnumerateObject()) { $h[$p.Name] = ConvertFrom-JsonElement $p.Value }
+            $h = [System.Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal)
+            foreach ($p in $El.EnumerateObject()) {
+                if ($h.Contains($p.Name)) { throw "duplicate JSON member: $($p.Name)" }
+                $h[$p.Name] = ConvertFrom-JsonElement $p.Value
+            }
             return [pscustomobject]$h
         }
         ([System.Text.Json.JsonValueKind]::Array) {

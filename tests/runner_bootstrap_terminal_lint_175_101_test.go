@@ -209,21 +209,22 @@ func TestU175_101_TerminalLintRunnerBootstrap(t *testing.T) {
 
 	t.Run("validation_sweep", func(t *testing.T) {
 		bodies := map[string]string{
-			"finding_empty_object":    `{"goos":"%s","findings":[{}]}`,
-			"finding_scalar":          `{"goos":"%s","findings":[1]}`,
-			"finding_path_number":     `{"goos":"%s","findings":[{"path":1,"linter":"l","message":"m"}]}`,
-			"finding_linter_null":     `{"goos":"%s","findings":[{"path":"a","linter":null,"message":"m"}]}`,
-			"finding_message_number":  `{"goos":"%s","findings":[{"path":"a","linter":"l","message":123}]}`,
-			"finding_message_missing": `{"goos":"%s","findings":[{"path":"a","linter":"l"}]}`,
-			"finding_path_empty":      `{"goos":"%s","findings":[{"path":"","linter":"l","message":"m"}]}`,
-			"goos_number":             `{"goos":1,"findings":[]}`,
-			"goos_null":               `{"goos":null,"findings":[]}`,
-			"duplicate_goos_key":      `{"goos":"%s","goos":"%s","findings":[]}`,
-			"duplicate_findings_key":  `{"goos":"%s","findings":[],"findings":[]}`,
-			"top_level_array":         `[{"goos":"%s","findings":[]}]`,
-			"top_level_scalar":        `42`,
-			"top_level_null":          `null`,
-			"empty_file":              ``,
+			"finding_empty_object":          `{"goos":"%s","findings":[{}]}`,
+			"finding_scalar":                `{"goos":"%s","findings":[1]}`,
+			"finding_path_number":           `{"goos":"%s","findings":[{"path":1,"linter":"l","message":"m"}]}`,
+			"finding_linter_null":           `{"goos":"%s","findings":[{"path":"a","linter":null,"message":"m"}]}`,
+			"finding_message_number":        `{"goos":"%s","findings":[{"path":"a","linter":"l","message":123}]}`,
+			"finding_message_missing":       `{"goos":"%s","findings":[{"path":"a","linter":"l"}]}`,
+			"finding_path_empty":            `{"goos":"%s","findings":[{"path":"","linter":"l","message":"m"}]}`,
+			"goos_number":                   `{"goos":1,"findings":[]}`,
+			"goos_null":                     `{"goos":null,"findings":[]}`,
+			"duplicate_goos_key":            `{"goos":"%s","goos":"%s","findings":[]}`,
+			"case_insensitive_findings_key": `{"goos":"%s","findings":[{"path":"a","linter":"l","message":"m"}],"FINDINGS":[]}`,
+			"duplicate_findings_key":        `{"goos":"%s","findings":[],"findings":[]}`,
+			"top_level_array":               `[{"goos":"%s","findings":[]}]`,
+			"top_level_scalar":              `42`,
+			"top_level_null":                `null`,
+			"empty_file":                    ``,
 		}
 		for name, body := range bodies {
 			for _, surface := range []string{"windows", "linux"} {

@@ -358,6 +358,8 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 			"owner_task_bad_shape":                      inv(`{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[{"task":"t","resolves":0,"completed":false}]}`, ``),
 			"schema_number":                             `{"schema":1,"groups":[],"remaining":[]}`,
 			"schema_wrong_case":                         `{"schema":"BASELINE-INVENTORY/V1","groups":[],"remaining":[]}`,
+			"case_insensitive_remaining_key":            `{"schema":"baseline-inventory/v1","groups":[],"remaining":[` + rem(`"a"`, `"l"`, `"m"`) + `],"REMAINING":[]}`,
+			"case_insensitive_groups_key":               `{"schema":"baseline-inventory/v1","groups":[` + okGroup + `],"GROUPS":[],"remaining":[]}`,
 			"duplicate_top_level_key":                   `{"schema":"baseline-inventory/v1","groups":[],"remaining":[],"remaining":[]}`,
 			"top_level_array":                           `[{"schema":"baseline-inventory/v1","groups":[],"remaining":[]}]`,
 			"top_level_scalar":                          `42`,

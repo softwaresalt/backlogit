@@ -420,6 +420,7 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 			"residual_linter_array":           wrap(`{"path":"a","linter":["l"],"message":"m","count":0}`, ``),
 			"duplicate_residual_group":        wrap(fmt.Sprintf(grp, "m")+`,`+fmt.Sprintf(grp, "  m "), ``),
 			"duplicate_task_key":              `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]},"175.001-T":{"expected_group_residual_after_task":[]}},"findings":[]}`,
+			"case_insensitive_findings_key":   `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]}},"findings":[{"path":"a","linter":"l","message":"m"}],"FINDINGS":[]}`,
 			"duplicate_top_level_key":         `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]}},"findings":[],"findings":[]}`,
 			"bad_task_key_shape":              `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]},"x":{"expected_group_residual_after_task":[]}},"findings":[]}`,
 			"other_task_malformed":            `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]},"175.002-T":null},"findings":[]}`,
