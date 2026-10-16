@@ -76,6 +76,29 @@ func u101Fixture(t *testing.T, windows, linux []u101Finding) string {
 	return dir
 }
 
+// u101GoosFixture writes clean surface fixtures with explicit goos values; an empty value omits the field.
+func u101GoosFixture(t *testing.T, windowsGoos, linuxGoos string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, goos := range map[string]string{"windows": windowsGoos, "linux": linuxGoos} {
+		doc := map[string]any{"findings": []u101Finding{}}
+		if goos != "" {
+			doc["goos"] = goos
+		}
+		data, err := json.Marshal(doc)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name+".json"), data, 0o600))
+	}
+	return dir
+}
+
+func u101MalformedFixture(t *testing.T) string {
+	t.Helper()
+	dir := u101Fixture(t, nil, nil)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "linux.json"), []byte("{not json"), 0o600))
+	return dir
+}
+
 func TestU175_101_TerminalLintRunnerBootstrap(t *testing.T) {
 	root := u101RepoRoot(t)
 	script := filepath.Join(root, filepath.FromSlash(u101Runner))
@@ -91,6 +114,11 @@ func TestU175_101_TerminalLintRunnerBootstrap(t *testing.T) {
 		var ee *exec.ExitError
 		require.ErrorAs(t, ierr, &ee, "runner must not be git-ignored")
 		assert.Equal(t, 1, ee.ExitCode(), "git check-ignore must report not ignored")
+
+		trk := exec.Command("git", "ls-files", "--error-unmatch", "--", u101Runner)
+		trk.Dir = root
+		tout, terr := trk.CombinedOutput()
+		require.NoError(t, terr, "runner must be git-tracked: %s", tout)
 
 		const ps = `$e=$null;$t=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile($env:U175_RUNNER_PATH,[ref]$t,[ref]$e);` +
 			`$n=@();if($ast.ParamBlock){$n=@($ast.ParamBlock.Parameters|ForEach-Object{$_.Name.VariablePath.UserPath})};` +
@@ -125,7 +153,8 @@ func TestU175_101_TerminalLintRunnerBootstrap(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				out, code := u101Run(t, root, "-FeatureId", "175-F", "-FixtureRoot", u101Fixture(t, tc.windows, tc.linux))
-				assert.NotZero(t, code, out)
+				assert.Equal(t, 1, code, out)
+				assert.Contains(t, out, "SURFACE-RESIDUAL")
 				assert.NotContains(t, out, u101Marker)
 			})
 		}
@@ -139,11 +168,16 @@ func TestU175_101_TerminalLintRunnerBootstrap(t *testing.T) {
 			{"missing_feature_id", []string{"-FixtureRoot", u101Fixture(t, nil, nil)}},
 			{"missing_fixture_root", []string{"-FeatureId", "175-F"}},
 			{"absent_fixture_files", []string{"-FeatureId", "175-F", "-FixtureRoot", t.TempDir()}},
+			{"wrong_goos", []string{"-FeatureId", "175-F", "-FixtureRoot", u101GoosFixture(t, "windows", "darwin")}},
+			{"missing_goos", []string{"-FeatureId", "175-F", "-FixtureRoot", u101GoosFixture(t, "", "linux")}},
+			{"uppercase_goos", []string{"-FeatureId", "175-F", "-FixtureRoot", u101GoosFixture(t, "WINDOWS", "linux")}},
+			{"malformed_surface_json", []string{"-FeatureId", "175-F", "-FixtureRoot", u101MalformedFixture(t)}},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				out, code := u101Run(t, root, tc.args...)
-				assert.NotZero(t, code, out)
+				assert.Equal(t, 2, code, out)
+				assert.Contains(t, out, "INVALID-INPUT")
 				assert.NotContains(t, out, "TERMINAL-LINT-OK:")
 			})
 		}

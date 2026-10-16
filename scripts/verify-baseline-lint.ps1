@@ -46,7 +46,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Stop-Closed([string]$Message, [int]$Code = 2) {
-    [Console]::Error.WriteLine("BASELINE-LINT-FAIL: $Message")
+    $reason = if ($Code -eq 1) { 'HASH-MISMATCH' } else { 'INVALID-INPUT' }
+    [Console]::Error.WriteLine("BASELINE-LINT-FAIL: ${reason}: $Message")
     exit $Code
 }
 
@@ -118,6 +119,6 @@ try {
     exit 0
 }
 catch {
-    [Console]::Error.WriteLine("BASELINE-LINT-FAIL: $($_.Exception.Message)")
+    [Console]::Error.WriteLine("BASELINE-LINT-FAIL: INVALID-INPUT: $($_.Exception.Message)")
     exit 2
 }

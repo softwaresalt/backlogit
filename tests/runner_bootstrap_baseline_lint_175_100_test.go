@@ -140,6 +140,11 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 		require.ErrorAs(t, ierr, &ee, "runner must not be git-ignored")
 		assert.Equal(t, 1, ee.ExitCode(), "git check-ignore must report not ignored")
 
+		trk := exec.Command("git", "ls-files", "--error-unmatch", "--", u100Runner)
+		trk.Dir = root
+		tout, terr := trk.CombinedOutput()
+		require.NoError(t, terr, "runner must be git-tracked: %s", tout)
+
 		const ps = `$e=$null;$t=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile($env:U175_RUNNER_PATH,[ref]$t,[ref]$e);` +
 			`$n=@();if($ast.ParamBlock){$n=@($ast.ParamBlock.Parameters|ForEach-Object{$_.Name.VariablePath.UserPath})};` +
 			`@{errors=@($e).Count;params=$n}|ConvertTo-Json -Compress`
@@ -162,6 +167,7 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 		inv, sum := u100Write(t, u100Marshal(t, u100Base()))
 		out, code := u100Run(t, root, u100Args(inv, sum)...)
 		assert.Zero(t, code, out)
+		assert.Contains(t, out, "BASELINE-LINT-OK:176-S")
 
 		// Uppercase hash and a shifted line both remain green: identity ignores line/column.
 		shifted := u100Base()
@@ -169,6 +175,7 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 		inv, sum = u100Write(t, u100Marshal(t, shifted))
 		out, code = u100Run(t, root, u100Args(inv, strings.ToUpper(sum))...)
 		assert.Zero(t, code, out)
+		assert.Contains(t, out, "BASELINE-LINT-OK:176-S")
 	})
 
 	t.Run("red_integrity_monotonicity", func(t *testing.T) {
@@ -176,17 +183,18 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 			name   string
 			mutate func(*u100Inventory)
 			badSum bool
+			reason string
 		}{
-			{name: "tampered_hash", mutate: func(*u100Inventory) {}, badSum: true},
+			{name: "tampered_hash", mutate: func(*u100Inventory) {}, badSum: true, reason: "HASH-MISMATCH"},
 			{name: "shifted_descendant_unresolved", mutate: func(i *u100Inventory) {
 				i.Remaining = append(i.Remaining, u100Finding{Path: "internal/a.go", Linter: "errcheck", Message: u100Msg, Line: 77, Column: 1})
-			}},
+			}, reason: "MONOTONICITY-VIOLATION"},
 			{name: "resolved_by_no_completed_owner", mutate: func(i *u100Inventory) {
 				i.Remaining = nil
-			}},
+			}, reason: "MONOTONICITY-VIOLATION"},
 			{name: "new_fingerprint", mutate: func(i *u100Inventory) {
 				i.Remaining = append(i.Remaining, u100Finding{Path: "internal/new.go", Linter: "revive", Message: "brand new", Line: 1, Column: 1})
-			}},
+			}, reason: "MONOTONICITY-VIOLATION"},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
@@ -197,25 +205,34 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 					sum = strings.Repeat("0", 64)
 				}
 				out, code := u100Run(t, root, u100Args(path, sum)...)
-				assert.NotZero(t, code, out)
+				assert.Equal(t, 1, code, out)
+				assert.Contains(t, out, tc.reason)
 			})
 		}
 	})
 
 	t.Run("fail_closed_input", func(t *testing.T) {
 		malformed, msum := u100Write(t, []byte("{not json"))
+		wrongSchema := u100Base()
+		wrongSchema.Schema = "baseline-inventory/v0"
+		wspath, wssum := u100Write(t, u100Marshal(t, wrongSchema))
+		okPath, _ := u100Write(t, u100Marshal(t, u100Base()))
 		tests := []struct {
 			name string
 			path string
 			sum  string
 		}{
+			{"wrong_inventory_schema", wspath, wssum},
+			{"malformed_sha256_short", okPath, "abc123"},
+			{"malformed_sha256_non_hex", okPath, strings.Repeat("g", 64)},
 			{"missing_inventory", filepath.Join(t.TempDir(), "absent.json"), strings.Repeat("0", 64)},
 			{"malformed_inventory_with_matching_hash", malformed, msum},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				out, code := u100Run(t, root, u100Args(tc.path, tc.sum)...)
-				assert.NotZero(t, code, out)
+				assert.Equal(t, 2, code, out)
+				assert.Contains(t, out, "INVALID-INPUT")
 			})
 		}
 	})

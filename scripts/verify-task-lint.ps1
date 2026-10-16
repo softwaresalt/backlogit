@@ -40,7 +40,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Stop-Closed([string]$Message, [int]$Code = 2) {
-    [Console]::Error.WriteLine("TASK-LINT-FAIL: $Message")
+    [Console]::Error.WriteLine("TASK-LINT-FAIL: INVALID-INPUT: $Message")
     exit $Code
 }
 
@@ -96,6 +96,6 @@ try {
     exit 0
 }
 catch {
-    [Console]::Error.WriteLine("TASK-LINT-FAIL: $($_.Exception.Message)")
+    [Console]::Error.WriteLine("TASK-LINT-FAIL: INVALID-INPUT: $($_.Exception.Message)")
     exit 2
 }

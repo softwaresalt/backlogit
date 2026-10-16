@@ -14,6 +14,8 @@ and linux.json, each:
 A surface is clean iff its findings array is empty. Missing FixtureRoot or a
 missing/malformed surface fixture fails closed.
 
+Each fixture goos must equal its surface name (case-sensitive); otherwise fail closed.
+
 Exit codes: 0 both clean; 1 residual warnings on at least one surface;
 2 invalid or missing input / precondition.
 
@@ -32,7 +34,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Stop-Closed([string]$Message, [int]$Code = 2) {
-    [Console]::Error.WriteLine("TERMINAL-LINT-FAIL: $Message")
+    [Console]::Error.WriteLine("TERMINAL-LINT-FAIL: INVALID-INPUT: $Message")
     exit $Code
 }
 
@@ -54,13 +56,16 @@ try {
         if ($null -eq $doc -or $doc -isnot [pscustomobject] -or $null -eq $doc.PSObject.Properties['findings']) {
             Stop-Closed "malformed $goos fixture: findings missing"
         }
+        if ($null -eq $doc.PSObject.Properties['goos'] -or $doc.goos -isnot [string] -or $doc.goos -cne $goos) {
+            Stop-Closed "malformed $goos fixture: goos must equal '$goos'"
+        }
         $residual[$goos] = @($doc.findings | Where-Object { $null -ne $_ })
     }
 
     $failed = $false
     foreach ($goos in @('windows', 'linux')) {
         foreach ($f in $residual[$goos]) {
-            Write-Output ("RESIDUAL[{0}]: {1} {2} {3}" -f $goos, $f.path, $f.linter, $f.message)
+            Write-Output ("SURFACE-RESIDUAL[{0}]: {1} {2} {3}" -f $goos, $f.path, $f.linter, $f.message)
             $failed = $true
         }
     }
@@ -70,6 +75,6 @@ try {
     exit 0
 }
 catch {
-    [Console]::Error.WriteLine("TERMINAL-LINT-FAIL: $($_.Exception.Message)")
+    [Console]::Error.WriteLine("TERMINAL-LINT-FAIL: INVALID-INPUT: $($_.Exception.Message)")
     exit 2
 }

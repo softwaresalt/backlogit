@@ -117,6 +117,11 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 		require.ErrorAs(t, ierr, &ee, "runner must not be git-ignored")
 		assert.Equal(t, 1, ee.ExitCode(), "git check-ignore must report not ignored")
 
+		trk := exec.Command("git", "ls-files", "--error-unmatch", "--", u099Runner)
+		trk.Dir = root
+		tout, terr := trk.CombinedOutput()
+		require.NoError(t, terr, "runner must be git-tracked: %s", tout)
+
 		const ps = `$e=$null;$t=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile($env:U175_RUNNER_PATH,[ref]$t,[ref]$e);` +
 			`$n=@();if($ast.ParamBlock){$n=@($ast.ParamBlock.Parameters|ForEach-Object{$_.Name.VariablePath.UserPath})};` +
 			`@{errors=@($e).Count;params=$n}|ConvertTo-Json -Compress`
@@ -169,7 +174,8 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 				fx := u099Base(id)
 				tc.mutate(&fx)
 				out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", u099WriteFixture(t, fx))
-				assert.NotZero(t, code, out)
+				assert.Equal(t, 1, code, out)
+				assert.Contains(t, out, "RESIDUAL-MISMATCH", out)
 				assert.NotContains(t, out, marker)
 			})
 		}
@@ -177,6 +183,8 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 
 	t.Run("fail_closed_input", func(t *testing.T) {
 		dir := u099WriteFixture(t, u099Base(id))
+		badDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(badDir, "task-lint.json"), []byte("{not json"), 0o600))
 		tests := []struct {
 			name string
 			args []string
@@ -185,11 +193,14 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 			{"empty_task_id", []string{"-TaskId", "", "-FeatureId", u099Feature, "-FixtureRoot", dir}},
 			{"unknown_task_id", []string{"-TaskId", "175.777-T", "-FeatureId", u099Feature, "-FixtureRoot", dir}},
 			{"missing_feature_id", []string{"-TaskId", id, "-FixtureRoot", dir}},
+			{"missing_fixture_root", []string{"-TaskId", id, "-FeatureId", u099Feature}},
+			{"malformed_fixture_json", []string{"-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", badDir}},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				out, code := u099Run(t, root, tc.args...)
-				assert.NotZero(t, code, out)
+				assert.Equal(t, 2, code, out)
+				assert.Contains(t, out, "INVALID-INPUT", out)
 				assert.False(t, strings.Contains(out, "TASK-LINT-OK:"), out)
 			})
 		}
