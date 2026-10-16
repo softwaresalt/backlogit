@@ -33,6 +33,7 @@ internal/mcp/            ← MCP server: tool registrations, handlers
 internal/release/        ← Latest release lookup and SemVer comparison (stdlib-only HTTP/JSON leaf)
 internal/version/        ← Canonical build version and ldflags/module-build-info resolution leaf
 internal/docline/        ← Documentation frontmatter contract: classifier, normalizer, lint/migrate service (codec via internal/mdfront alias)
+internal/evidence/       ← Read-only claim-vs-evidence validator: gh-based GitHub review/CI evidence and backlogit evidence (141-S)
 internal/mdfront/        ← Body-preserving frontmatter codec (stdlib-only leaf; shared by docline + core)
 internal/atomicfile/     ← Hardened atomic file write: WriteFileAtomic, temp+rename (stdlib-only leaf)
 internal/models/         ← Shared domain models (work item types, statuses)
