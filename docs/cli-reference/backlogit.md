@@ -75,6 +75,7 @@ stash follow-up work for later planning.
 * [backlogit reconcile](backlogit_reconcile.md)	 - Reconcile archived items by correcting their lifecycle status
 * [backlogit search](backlogit_search.md)	 - Full-text search across artifacts
 * [backlogit shipment](backlogit_shipment.md)	 - Manage shipment work groups
+* [backlogit soundness](backlogit_soundness.md)	 - Lint plans and work items for decomposition soundness
 * [backlogit stash](backlogit_stash.md)	 - Manage the deferred work stash
 * [backlogit status](backlogit_status.md)	 - Show workspace artifact summary
 * [backlogit sync](backlogit_sync.md)	 - Rehydrate the SQLite index from Markdown source files

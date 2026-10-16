@@ -244,6 +244,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(newDoctorCommand(&cwd))
 	root.AddCommand(newReconcileCommand(&cwd))
 	root.AddCommand(newDocsCommand(&cwd))
+	root.AddCommand(newSoundnessCommand(&cwd))
 	root.AddCommand(newVersionCommandWithLookup(latestLookup))
 	root.AddCommand(newManifestCommand(&cwd))
 
