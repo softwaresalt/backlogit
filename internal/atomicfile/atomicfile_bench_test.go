@@ -45,7 +45,11 @@ func BenchmarkFsyncFile(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			b.Errorf("close %s: %v", path, err)
+		}
+	}()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// Dirty the file each iteration so Sync has new bytes to flush.
