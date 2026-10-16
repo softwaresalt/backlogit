@@ -155,6 +155,11 @@ func checkCommentDrift(root, rel, body string) []Finding {
 		for _, m := range commentRefTag.FindAllStringSubmatch(l.text, -1) {
 			attrs := parseAttrs(m[1])
 			field := fmt.Sprintf("line %d", l.n)
+			if attrs["path"] == "" || attrs["symbol"] == "" {
+				out = append(out, warnFinding(rel, field, RuleCommentDrift,
+					"malformed comment reference: path and symbol attributes are required"))
+				continue
+			}
 			_, content, err := loadAnchor(root, Anchor{Path: attrs["path"], Symbol: attrs["symbol"]})
 			if err != nil {
 				if errors.Is(err, ErrAnchorOutsideRoot) {

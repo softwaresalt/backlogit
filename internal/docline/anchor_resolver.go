@@ -3,6 +3,7 @@ package docline
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -41,8 +42,9 @@ type Anchor struct {
 
 // Resolved is a verified anchor target inside the workspace root.
 type Resolved struct {
-	Abs string // absolute path
-	Rel string // repo-relative POSIX path
+	Abs  string // absolute path
+	Real string // symlink-resolved path actually read; always inside the root
+	Rel  string // repo-relative POSIX path
 }
 
 var lineSpec = regexp.MustCompile(`^(\d+)(?:-(\d+))?$`)
@@ -80,7 +82,7 @@ func ParseAnchor(s string) (Anchor, error) {
 // workspace root. It rejects absolute paths, drive-qualified paths, ".."
 // traversal and symlinks whose real target leaves the root, wrapping
 // ErrAnchorOutsideRoot; a missing target wraps ErrAnchorNotFound. The returned
-// Resolved carries the lexical absolute path (already verified).
+// Resolved carries the lexical absolute path and the symlink-resolved Real path, both verified.
 func ResolveWorkspacePath(root, rel string) (Resolved, error) {
 	outside := func() (Resolved, error) {
 		return Resolved{}, fmt.Errorf("%w: %w: %q", ErrAnchorOutsideRoot, ErrPathEscapesWorkspace, rel)
@@ -116,7 +118,7 @@ func ResolveWorkspacePath(root, rel string) (Resolved, error) {
 	if err != nil {
 		return outside()
 	}
-	return Resolved{Abs: abs, Rel: filepath.ToSlash(relOut)}, nil
+	return Resolved{Abs: abs, Real: realTarget, Rel: filepath.ToSlash(relOut)}, nil
 }
 
 // ResolveAnchor verifies that a resolves inside root: the file exists, any
@@ -143,16 +145,24 @@ func loadAnchor(root string, a Anchor) (Resolved, string, error) {
 	if err != nil {
 		return Resolved{}, "", err
 	}
-	info, err := os.Stat(r.Abs)
-	if err != nil || info.IsDir() {
+	info, err := os.Stat(r.Real)
+	if err != nil || !info.Mode().IsRegular() {
 		return Resolved{}, "", fmt.Errorf("%w: %q", ErrAnchorNotFound, a.Path)
 	}
 	if info.Size() > maxAnchorFileBytes {
 		return Resolved{}, "", fmt.Errorf("%w: %q exceeds %d bytes", ErrAnchorNotFound, a.Path, maxAnchorFileBytes)
 	}
-	raw, err := os.ReadFile(r.Abs)
+	f, err := os.Open(r.Real)
 	if err != nil {
 		return Resolved{}, "", fmt.Errorf("docline.loadAnchor: read %q: %w", a.Path, err)
+	}
+	defer func() { _ = f.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(f, maxAnchorFileBytes+1))
+	if err != nil {
+		return Resolved{}, "", fmt.Errorf("docline.loadAnchor: read %q: %w", a.Path, err)
+	}
+	if len(raw) > maxAnchorFileBytes {
+		return Resolved{}, "", fmt.Errorf("%w: %q exceeds %d bytes", ErrAnchorNotFound, a.Path, maxAnchorFileBytes)
 	}
 	content := string(raw)
 	if a.Line > 0 {

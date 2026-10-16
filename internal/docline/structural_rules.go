@@ -1,6 +1,7 @@
 package docline
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -184,19 +185,6 @@ func parseAttrs(s string) map[string]string {
 	return out
 }
 
-// claimTarget resolves a claim-relative pattern inside root, rejecting
-// absolute patterns and any that escape the workspace.
-func claimTarget(root, pattern string) (string, bool) {
-	if pattern == "" || filepath.IsAbs(pattern) || strings.HasPrefix(pattern, "/") || strings.HasPrefix(pattern, "\\") {
-		return "", false
-	}
-	abs, err := core.SafeResolve(root, pattern)
-	if err != nil {
-		return "", false
-	}
-	return abs, true
-}
-
 // checkClaims verifies <!-- docline:count glob="..." expect=N --> and
 // <!-- docline:topology path="..." kind=file|dir --> claims against the
 // workspace tree. Claim targets are confined to the workspace root.
@@ -219,32 +207,82 @@ func checkClaims(root, rel, body string) []Finding {
 	return fs
 }
 
+const globMeta = "*?["
+
+// countClaimMatches returns the number of workspace entries matching pattern.
+// Every match must resolve, after symlink evaluation, inside the workspace root.
+func countClaimMatches(root, pattern string) (int, bool) {
+	if !strings.ContainsAny(pattern, globMeta) {
+		if _, err := ResolveWorkspacePath(root, pattern); err != nil {
+			if errors.Is(err, ErrAnchorNotFound) {
+				return 0, true
+			}
+			return 0, false
+		}
+		return 1, true
+	}
+	if pattern == "" || filepath.IsAbs(pattern) || strings.HasPrefix(pattern, "/") || strings.HasPrefix(pattern, "\\") {
+		return 0, false
+	}
+	abs, err := core.SafeResolve(root, pattern)
+	if err != nil {
+		return 0, false
+	}
+	matches, err := filepath.Glob(abs)
+	if err != nil {
+		return 0, false
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return 0, false
+	}
+	for _, m := range matches {
+		real, err := filepath.EvalSymlinks(m)
+		if err != nil {
+			return 0, false
+		}
+		within, err := filepath.Rel(realRoot, real)
+		if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) || filepath.IsAbs(within) {
+			return 0, false
+		}
+	}
+	return len(matches), true
+}
+
 func checkCountClaim(root, rel, field string, attrs map[string]string) []Finding {
 	expect, err := strconv.Atoi(attrs["expect"])
-	pattern, ok := claimTarget(root, attrs["glob"])
-	if err != nil || !ok {
+	if err != nil || attrs["glob"] == "" {
 		return []Finding{warnFinding(rel, field, RuleNumericClaim,
 			"count claim needs a workspace-relative glob and an integer expect")}
 	}
-	matches, gerr := filepath.Glob(pattern)
-	if gerr != nil {
-		return []Finding{warnFinding(rel, field, RuleNumericClaim, "count claim glob is malformed")}
-	}
-	if len(matches) != expect {
+	n, ok := countClaimMatches(root, attrs["glob"])
+	if !ok {
 		return []Finding{warnFinding(rel, field, RuleNumericClaim,
-			fmt.Sprintf("claim says %d matches for %q; workspace has %d", expect, attrs["glob"], len(matches)))}
+			"count claim needs a workspace-relative glob that stays inside the workspace and is well-formed")}
+	}
+	if n != expect {
+		return []Finding{warnFinding(rel, field, RuleNumericClaim,
+			fmt.Sprintf("claim says %d matches for %q; workspace has %d", expect, attrs["glob"], n))}
 	}
 	return nil
 }
 
 func checkTopologyClaim(root, rel, field string, attrs map[string]string) []Finding {
 	kind := attrs["kind"]
-	abs, ok := claimTarget(root, attrs["path"])
-	if !ok || (kind != "file" && kind != "dir") {
+	if kind != "file" && kind != "dir" {
 		return []Finding{warnFinding(rel, field, RuleTopologyClaim,
 			"topology claim needs a workspace-relative path and kind=file|dir")}
 	}
-	info, err := os.Stat(abs)
+	r, err := ResolveWorkspacePath(root, attrs["path"])
+	if err != nil {
+		if errors.Is(err, ErrAnchorNotFound) {
+			return []Finding{warnFinding(rel, field, RuleTopologyClaim,
+				fmt.Sprintf("claimed %s %q does not exist", kind, attrs["path"]))}
+		}
+		return []Finding{warnFinding(rel, field, RuleTopologyClaim,
+			"topology claim needs a workspace-relative path and kind=file|dir")}
+	}
+	info, err := os.Stat(r.Real)
 	switch {
 	case err != nil:
 		return []Finding{warnFinding(rel, field, RuleTopologyClaim,
