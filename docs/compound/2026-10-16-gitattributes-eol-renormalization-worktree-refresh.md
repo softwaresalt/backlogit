@@ -39,8 +39,11 @@ difference between index and worktree under the new attributes and rewrote nothi
    `origin/main`.
 
 Deleting tracked files is destructive in form, so run it only under explicit operator
-approval, scoped to the verified set. Refreshing also rewrote 26 `testdata` paths, which
-the operator approved by digest because only line endings changed.
+approval, scoped to the verified set. In 157-S the refresh also rewrote 26 `testdata`
+paths on a digest-based reading of the operator approval (only line endings changed).
+That interpretation is PENDING operator acknowledgement (see the closure record); the
+task contract requires testdata paths to be approved by name, so do not treat it as a
+precedent for future destructive refreshes.
 
 ## Related
 
