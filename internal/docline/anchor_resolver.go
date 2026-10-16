@@ -139,24 +139,57 @@ func ResolveAnchorString(root, s string) (Resolved, error) {
 	return ResolveAnchor(root, a)
 }
 
+// afterAnchorResolveHook is a test seam invoked between path resolution and open.
+var afterAnchorResolveHook func(real string)
+
+// openConfined opens real through a root-confined handle on the workspace root,
+// so a symlink swapped in after resolution cannot lead outside the root.
+func openConfined(root, real string) (*os.File, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("docline.openConfined: %w", err)
+	}
+	realRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return nil, fmt.Errorf("docline.openConfined: %w", err)
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil {
+		return nil, fmt.Errorf("docline.openConfined: %w", err)
+	}
+	rt, err := os.OpenRoot(realRoot)
+	if err != nil {
+		return nil, fmt.Errorf("docline.openConfined: %w", err)
+	}
+	defer func() { _ = rt.Close() }()
+	f, err := rt.Open(rel)
+	if err != nil {
+		return nil, fmt.Errorf("docline.openConfined: %w", err)
+	}
+	return f, nil
+}
+
 // loadAnchor resolves a and returns the verified file content.
 func loadAnchor(root string, a Anchor) (Resolved, string, error) {
 	r, err := ResolveWorkspacePath(root, a.Path)
 	if err != nil {
 		return Resolved{}, "", err
 	}
-	info, err := os.Stat(r.Real)
+	if afterAnchorResolveHook != nil {
+		afterAnchorResolveHook(r.Real)
+	}
+	f, err := openConfined(root, r.Real)
+	if err != nil {
+		return Resolved{}, "", fmt.Errorf("%w: %q", ErrAnchorNotFound, a.Path)
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
 	if err != nil || !info.Mode().IsRegular() {
 		return Resolved{}, "", fmt.Errorf("%w: %q", ErrAnchorNotFound, a.Path)
 	}
 	if info.Size() > maxAnchorFileBytes {
 		return Resolved{}, "", fmt.Errorf("%w: %q exceeds %d bytes", ErrAnchorNotFound, a.Path, maxAnchorFileBytes)
 	}
-	f, err := os.Open(r.Real)
-	if err != nil {
-		return Resolved{}, "", fmt.Errorf("docline.loadAnchor: read %q: %w", a.Path, err)
-	}
-	defer func() { _ = f.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(f, maxAnchorFileBytes+1))
 	if err != nil {
 		return Resolved{}, "", fmt.Errorf("docline.loadAnchor: read %q: %w", a.Path, err)
