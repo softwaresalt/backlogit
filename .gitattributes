@@ -4,3 +4,12 @@
 # contributor's core.autocrlf setting, preventing spurious CRLF/LF churn.
 * text=auto
 internal/faultline/testdata/parity_v1.golden.json text eol=lf
+*.go eol=lf
+*.json eol=lf
+*.exe -text
+*.db -text
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.gif -text
+*.ico -text
