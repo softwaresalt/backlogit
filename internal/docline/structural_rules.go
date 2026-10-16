@@ -336,6 +336,16 @@ func rootGlob(fsys fs.FS, segs []string, dir string) ([]string, error) {
 			out = append(out, join(ent.Name()))
 			continue
 		}
+		info, err := fs.Stat(fsys, join(ent.Name()))
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("docline.rootGlob: stat %s: %w", join(ent.Name()), err)
+		}
+		if !info.IsDir() {
+			continue
+		}
 		sub, err := rootGlob(fsys, rest, join(ent.Name()))
 		if err != nil {
 			return nil, err

@@ -142,3 +142,11 @@ func TestCountClaim_MissingDirZeroMatchesPasses(t *testing.T) {
 	root := t.TempDir()
 	assert.Empty(t, checkClaims(root, "docs/x.md", "<!-- docline:count glob=\"nope/*.go\" expect=0 -->\n"))
 }
+
+func TestCountClaim_WildcardDirSkipsRegularFiles(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "pkg"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "README.md"), []byte("x"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "pkg", "a.go"), []byte("x"), 0o644))
+	assert.Empty(t, checkClaims(root, "docs/x.md", "<!-- docline:count glob=\"*/*.go\" expect=1 -->\n"))
+}
