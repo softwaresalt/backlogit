@@ -225,7 +225,7 @@ func encodeString(s string, sb *strings.Builder) error {
 		default:
 			if r < 0x20 {
 				// Other control characters: \u00xx with lowercase hex.
-				sb.WriteString(fmt.Sprintf(`\u%04x`, r))
+				fmt.Fprintf(sb, `\u%04x`, r)
 			} else {
 				sb.WriteRune(r)
 			}
