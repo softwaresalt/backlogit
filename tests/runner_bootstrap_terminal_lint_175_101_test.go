@@ -150,6 +150,7 @@ func TestU175_101_TerminalLintRunnerBootstrap(t *testing.T) {
 		}{
 			{"windows_only_residual", []u101Finding{{Path: "internal/x_windows.go", Linter: "errcheck", Message: "unchecked", Line: 3, Column: 1}}, nil},
 			{"linux_only_residual", nil, []u101Finding{{Path: "internal/x_unix.go", Linter: "errcheck", Message: "unchecked", Line: 3, Column: 1}}},
+			{"date_like_message", []u101Finding{{Path: "internal/x_windows.go", Linter: "errcheck", Message: "2020-01-01T00:00:00Z", Line: 3, Column: 1}}, nil},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {

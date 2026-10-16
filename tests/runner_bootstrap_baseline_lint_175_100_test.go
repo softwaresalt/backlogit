@@ -263,8 +263,8 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 			"baseline_string":       `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":"1","owners":[]}],"remaining":[]}`,
 			"baseline_fractional":   `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1.5,"owners":[]}],"remaining":[]}`,
 			"baseline_too_large":    `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":2147483648,"owners":[]}],"remaining":[]}`,
-			"resolves_negative":     `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[{"task":"t","resolves":-1,"completed":true}]}],"remaining":[{"path":"a","linter":"l","message":"m","line":1,"column":1},{"path":"a","linter":"l","message":"m","line":2,"column":1}]}`,
-			"resolves_null":         `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[{"task":"t","resolves":null,"completed":false}]}],"remaining":[]}`,
+			"resolves_negative":     `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[{"task":"175.001-T","resolves":-1,"completed":true}]}],"remaining":[{"path":"a","linter":"l","message":"m","line":1,"column":1},{"path":"a","linter":"l","message":"m","line":2,"column":1}]}`,
+			"resolves_null":         `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[{"task":"175.001-T","resolves":null,"completed":false}]}],"remaining":[]}`,
 			"object_groups":         `{"schema":"baseline-inventory/v1","groups":{},"remaining":[]}`,
 		}
 		for name, body := range shapes {
@@ -295,9 +295,9 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 
 	t.Run("completed_must_be_boolean", func(t *testing.T) {
 		owners := map[string]string{
-			"string_true": `{"task":"t","resolves":1,"completed":"true"}`,
-			"numeric_one": `{"task":"t","resolves":1,"completed":1}`,
-			"missing":     `{"task":"t","resolves":1}`,
+			"string_true": `{"task":"175.001-T","resolves":1,"completed":"true"}`,
+			"numeric_one": `{"task":"175.001-T","resolves":1,"completed":1}`,
+			"missing":     `{"task":"175.001-T","resolves":1}`,
 		}
 		for name, o := range owners {
 			t.Run(name, func(t *testing.T) {

@@ -78,6 +78,34 @@ function Test-DupKey([System.Text.Json.JsonElement]$El) {
     return $false
 }
 
+function ConvertFrom-JsonElement([System.Text.Json.JsonElement]$El) {
+    switch ($El.ValueKind) {
+        ([System.Text.Json.JsonValueKind]::Object) {
+            $h = [ordered]@{}
+            foreach ($p in $El.EnumerateObject()) { $h[$p.Name] = ConvertFrom-JsonElement $p.Value }
+            return [pscustomobject]$h
+        }
+        ([System.Text.Json.JsonValueKind]::Array) {
+            $l = [System.Collections.Generic.List[object]]::new()
+            foreach ($e in $El.EnumerateArray()) { $l.Add((ConvertFrom-JsonElement $e)) }
+            return , $l.ToArray()
+        }
+        ([System.Text.Json.JsonValueKind]::String) { return $El.GetString() }
+        ([System.Text.Json.JsonValueKind]::True) { return $true }
+        ([System.Text.Json.JsonValueKind]::False) { return $false }
+        ([System.Text.Json.JsonValueKind]::Number) {
+            $raw = $El.GetRawText()
+            if ($raw -cmatch '^-?[0-9]+\z') {
+                $n = [System.Numerics.BigInteger]::Parse($raw, [System.Globalization.CultureInfo]::InvariantCulture)
+                if ($n -ge [long]::MinValue -and $n -le [long]::MaxValue) { return [long]$n }
+                return $n
+            }
+            return [double]::Parse($raw, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture)
+        }
+        default { return $null }
+    }
+}
+
 function Read-StrictJson([byte[]]$Bytes) {
     $start = 0
     if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) { $start = 3 }
@@ -88,11 +116,9 @@ function Read-StrictJson([byte[]]$Bytes) {
     try {
         if ($doc.RootElement.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { Stop-Closed 'malformed inventory: top level must be an object' }
         if (Test-DupKey $doc.RootElement) { Stop-Closed 'malformed inventory: duplicate object keys' }
+        return (ConvertFrom-JsonElement $doc.RootElement)
     }
     finally { $doc.Dispose() }
-    $opts = @{}
-    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) { $opts['DateKind'] = 'String' }
-    return (ConvertFrom-Json -InputObject $text @opts)
 }
 
 function Assert-Fingerprint($Item, [string]$Where) {
