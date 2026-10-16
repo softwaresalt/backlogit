@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -52,7 +53,7 @@ automatically when the configured queue layout supports the requested type.`,
 		Example: `  backlogit add --type feature --title "Authentication hardening"
   backlogit add --type task --title "Add token rotation" --parent 001-F
   backlogit add --type subtask --title "Write expiry tests" --parent 001.001-T --section description="Cover refresh and expiry flows"`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			if artifactType == "" {
 				return fmt.Errorf("--type is required")
 			}
@@ -65,7 +66,11 @@ automatically when the configured queue layout supports the requested type.`,
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			opts := []core.Option{}
 			if description != "" {
@@ -117,7 +122,9 @@ automatically when the configured queue layout supports the requested type.`,
 			if err != nil {
 				return fmt.Errorf("create artifact: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Created %s: %s\n", artifact.ArtifactType, artifact.ID)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Created %s: %s\n", artifact.ArtifactType, artifact.ID); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 			return nil
 		},
 	}

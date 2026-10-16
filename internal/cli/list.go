@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -197,13 +198,17 @@ when filtering by complexity.`,
   backlogit list --status active --type task
   backlogit list --group-by status
   backlogit list --json`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			if filterComplexity != "" {
 				if err := core.ValidateComplexityValue(ws, "task", filterComplexity); err != nil {
@@ -258,7 +263,9 @@ when filtering by complexity.`,
 						Composition: composition,
 					}
 				}
-				fmt.Fprint(cmd.OutOrStdout(), FormatGroupedView(items, groupBy))
+				if _, err := fmt.Fprint(cmd.OutOrStdout(), FormatGroupedView(items, groupBy)); err != nil {
+					return fmt.Errorf("write output: %w", err)
+				}
 				return nil
 			}
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -40,13 +41,17 @@ func newMetadataTypesCommand(cwd *string) *cobra.Command {
 		Use:     "types",
 		Short:   "List all configured work item types",
 		Example: `  backlogit metadata types`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			headerDef, tmpls, layout, err := loadWITInputs(ws)
 			if err != nil {
@@ -76,13 +81,17 @@ func newMetadataWITCommand(cwd *string) *cobra.Command {
 		Short:   "Describe metadata for a single work item type",
 		Example: `  backlogit metadata wit feature`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			headerDef, tmpls, layout, err := loadWITInputs(ws)
 			if err != nil {
@@ -106,13 +115,17 @@ func newMetadataTemplatesCommand(cwd *string) *cobra.Command {
 		Use:     "templates",
 		Short:   "List registered template types and their section definitions",
 		Example: `  backlogit metadata templates`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			svc, err := templates.NewService(ctx, filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), "templates"))
 			if err != nil {
@@ -206,7 +219,9 @@ over backlogit commands and metadata without re-discovering them each run.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Wrote command map to %s\n", writtenPath)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Wrote command map to %s\n", writtenPath); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 			return nil
 		},
 	}
@@ -214,12 +229,16 @@ over backlogit commands and metadata without re-discovering them each run.`,
 	return cmd
 }
 
-func loadMetadataCatalog(ctx context.Context, cwd string) (*core.MetadataCatalog, error) {
+func loadMetadataCatalog(ctx context.Context, cwd string) (catalog *core.MetadataCatalog, retErr error) {
 	ws, err := core.NewWorkspace(ctx, cwd)
 	if err != nil {
 		return nil, fmt.Errorf("open workspace: %w", err)
 	}
-	defer ws.Close()
+	defer func() {
+		if cerr := ws.Close(); cerr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+		}
+	}()
 
 	backlogitDir := core.WorkspaceStorageRoot(ws.RootPath)
 	registry, err := config.LoadRegistry(backlogitDir)

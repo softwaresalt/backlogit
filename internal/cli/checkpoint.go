@@ -341,21 +341,32 @@ func RenderCheckpointRemediationBlock(w io.Writer, intent *events.RemediationInt
 	if intent == nil {
 		return
 	}
-	fmt.Fprintf(w, "Disposition required: %s\n", intent.Verb)
-	fmt.Fprintf(w, "  Workspace : %s\n", core.WorkspaceStorageRoot(workspaceRoot))
-	fmt.Fprintf(w, "  Target    : %s\n", strconv.Quote(intent.TargetFilename))
-	fmt.Fprintln(w, "  Approval  : A4c — operator approval is REQUIRED immediately before execution")
-	fmt.Fprintln(w, "  Preimage  : take a byte copy of the target before running the command")
-	fmt.Fprintf(w, "  Destination: archive/checkpoints/%s must be ABSENT (no-clobber)\n", strconv.Quote(intent.TargetFilename))
+	var writeErr error
+	emit := func(format string, args ...any) {
+		if writeErr == nil {
+			_, writeErr = fmt.Fprintf(w, format, args...)
+		}
+	}
+	defer func() {
+		if writeErr != nil {
+			slog.Warn("render checkpoint remediation block", "error", writeErr)
+		}
+	}()
+	emit("Disposition required: %s\n", intent.Verb)
+	emit("  Workspace : %s\n", core.WorkspaceStorageRoot(workspaceRoot))
+	emit("  Target    : %s\n", strconv.Quote(intent.TargetFilename))
+	emit("  Approval  : A4c — operator approval is REQUIRED immediately before execution\n")
+	emit("  Preimage  : take a byte copy of the target before running the command\n")
+	emit("  Destination: archive/checkpoints/%s must be ABSENT (no-clobber)\n", strconv.Quote(intent.TargetFilename))
 
 	absRoot, absErr := filepath.Abs(workspaceRoot)
 	if absErr != nil || requiresManualQuoting(absRoot) || requiresManualQuoting(intent.TargetFilename) {
-		fmt.Fprintln(w, "command not rendered: workspace or filename requires manual quoting")
+		emit("command not rendered: workspace or filename requires manual quoting\n")
 		return
 	}
 
-	fmt.Fprintln(w, "Command (run only after approval):")
-	fmt.Fprintf(w, "  backlogit --cwd %s checkpoint %s %s --operator \"<you>\" --reason \"<why>\"\n",
+	emit("Command (run only after approval):\n")
+	emit("  backlogit --cwd %s checkpoint %s %s --operator \"<you>\" --reason \"<why>\"\n",
 		absRoot, intent.Verb, intent.TargetFilename)
 }
 
@@ -496,7 +507,7 @@ this command refuses and directs you to "checkpoint quarantine" instead,
 which is the sole accepting verb for that class.`,
 		Example: `  backlogit checkpoint abandon checkpoint-20260423-100000.json --reason "superseded by newer session"`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			filename := args[0]
 			slog.Info("checkpoint command invoked", "operation", "checkpoint-abandon", "filename", filename)
@@ -513,7 +524,11 @@ which is the sole accepting verb for that class.`,
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			logsDir := core.WorkspaceLogsRoot(ws.RootPath)
 			ew := core.NewWorkspaceEventWriter(ws, logsDir)
@@ -565,7 +580,7 @@ are moved verbatim (byte-identical) into the workspace archive/checkpoints
 directory.`,
 		Example: `  backlogit checkpoint quarantine checkpoint-20260423-100000.json --reason "corrupt JSON"`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			filename := args[0]
 			slog.Info("checkpoint command invoked", "operation", "checkpoint-quarantine", "filename", filename)
@@ -582,7 +597,11 @@ directory.`,
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			logsDir := core.WorkspaceLogsRoot(ws.RootPath)
 			ew := core.NewWorkspaceEventWriter(ws, logsDir)

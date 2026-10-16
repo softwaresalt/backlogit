@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/softwaresalt/backlogit/internal/core"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -60,7 +61,7 @@ func TestU172_WriteBulkStatusResult_RendersFailedDetails(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			writeBulkStatusResult(&buf, "done", tt.result)
+			require.NoError(t, writeBulkStatusResult(&buf, "done", tt.result))
 			assert.Equal(t, tt.want, buf.String())
 		})
 	}
