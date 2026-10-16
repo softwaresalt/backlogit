@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/softwaresalt/backlogit/internal/docline"
 	"github.com/softwaresalt/backlogit/internal/soundness"
 )
 
@@ -40,11 +40,13 @@ func newSoundnessLintCommand(cwd *string) *cobra.Command {
 		Use:   "lint",
 		Short: "Run the soundness linter over a plan file (report-only by default)",
 		Long: `Run the soundness engine over a JSON plan of units (plans, features, tasks,
-subtasks) before shipment assembly.
+subtasks) as a standalone check. Wiring this check into shipment assembly is a
+follow-up.
 
 The default mode is report-only: findings are printed as warnings and the exit
 status stays zero. In enforce mode any error finding is printed and the command
-exits non-zero. A misconfiguration (unknown mode, unknown rule, invalid budget)
+exits non-zero; --mode may tighten a report-only config but never relax an
+enforce config. An empty plan is an error in enforce mode. A misconfiguration (unknown mode, unknown rule, invalid budget)
 is always an error, never a pass. Plan and config paths are confined to the
 workspace root.`,
 		Example: `  backlogit soundness lint --plan plan.json
@@ -80,6 +82,9 @@ workspace root.`,
 			}
 			cfg.Root = root
 			if mode != "" {
+				if cfg.Mode == soundness.ModeEnforce && soundness.Mode(mode) != soundness.ModeEnforce {
+					return fmt.Errorf("--mode %q would relax the configured enforce mode; the flag may only tighten", mode)
+				}
 				cfg.Mode = soundness.Mode(mode)
 			}
 			for _, id := range disable {
@@ -112,11 +117,12 @@ workspace root.`,
 }
 
 func readWorkspaceFile(root, rel string) ([]byte, error) {
-	res, err := docline.ResolveWorkspacePath(root, rel)
+	r, err := os.OpenRoot(root)
 	if err != nil {
-		return nil, fmt.Errorf("resolve %q: %w", rel, err)
+		return nil, fmt.Errorf("open workspace root: %w", err)
 	}
-	f, err := os.Open(res.Real)
+	defer func() { _ = r.Close() }()
+	f, err := r.Open(filepath.ToSlash(rel))
 	if err != nil {
 		return nil, fmt.Errorf("open %q: %w", rel, err)
 	}
@@ -140,6 +146,9 @@ func decodeWorkspaceJSON(root, rel string, v any) error {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("decode %q: %w", rel, err)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("decode %q: unexpected data after the first JSON value", rel)
 	}
 	return nil
 }

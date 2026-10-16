@@ -35,6 +35,10 @@ func allRules() []rule {
 	}
 }
 
+func warnFinding(rule, unit, format string, args ...any) Finding {
+	return Finding{Rule: rule, UnitID: unit, Severity: SeverityWarn, Message: fmt.Sprintf(format, args...)}
+}
+
 func errFinding(rule, unit, format string, args ...any) Finding {
 	return Finding{Rule: rule, UnitID: unit, Severity: SeverityError, Message: fmt.Sprintf(format, args...)}
 }
@@ -56,6 +60,13 @@ func Run(plan Plan, cfg Config) (Report, error) {
 
 	ctx := &checkContext{plan: plan, cfg: cfg, byID: map[string]*Unit{}}
 	report := Report{Findings: []Finding{}, RulesRun: []string{ruleUnverifiable}}
+	if len(plan.Units) == 0 {
+		if cfg.Mode == ModeEnforce {
+			return Report{}, fmt.Errorf("run soundness engine: %w", ErrEmptyPlan)
+		}
+		report.Findings = append(report.Findings, errFinding(ruleUnverifiable, "", "plan has no units; nothing was verified"))
+		return report, nil
+	}
 	report.Findings = append(report.Findings, structuralFindings(ctx)...)
 
 	for _, r := range rules {

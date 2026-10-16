@@ -28,6 +28,7 @@ func TestU160009_MissingArtifact_ProducedOrExistingPasses(t *testing.T) {
 	producer, consumer := soundUnit("1-T", "Make"), soundUnit("2-T", "Use")
 	producer.Deliverables = []string{"internal/x/new.go"}
 	consumer.Requires = []string{"internal/x/new.go", "present.md"}
+	consumer.Dependencies = []string{"1-T"}
 	assert.Empty(t, rulesOf(runPlan(t, Plan{Units: []Unit{producer, consumer}}, cfg))["missing-artifact"])
 }
 

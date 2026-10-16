@@ -19,7 +19,7 @@ func checkDuplicatedWork(ctx *checkContext) ([]Finding, error) {
 				continue
 			}
 			for _, prior := range owners[key] {
-				if !related(prior, u) {
+				if prior != u && !related(prior, u) {
 					out = append(out, errFinding(ruleDuplicatedWork, u.ID, "deliverable %q is already delivered by unrelated unit %s", d, prior.ID))
 					reported[key] = true
 					break

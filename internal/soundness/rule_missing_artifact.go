@@ -3,14 +3,22 @@ package soundness
 const ruleMissingArtifact = "missing-artifact"
 
 // checkMissingArtifact flags required artifacts that neither exist in the
-// workspace nor are delivered by another unit. Without a workspace root an
-// artifact that no unit delivers cannot be verified and is flagged.
+// workspace nor are delivered by another unit. Every required and delivered
+// path is confined to the workspace before producers are matched, so an
+// out-of-root path can never be satisfied by a producer. A requirement met
+// only by producers outside the consumer's transitive dependencies yields a
+// warning. Without a workspace root an artifact that no unit delivers cannot
+// be verified and is flagged.
 func checkMissingArtifact(ctx *checkContext) ([]Finding, error) {
 	var out []Finding
 	delivered := map[string]map[string]bool{} // artifact -> delivering unit IDs
 	for _, u := range ctx.plan.Units {
 		for _, d := range u.Deliverables {
-			k := normalizePath(d)
+			k, err := confinedArtifact(d)
+			if err != nil {
+				out = append(out, errFinding(ruleMissingArtifact, u.ID, "delivered artifact %q is invalid: %v", d, err))
+				continue
+			}
 			if delivered[k] == nil {
 				delivered[k] = map[string]bool{}
 			}
@@ -19,8 +27,26 @@ func checkMissingArtifact(ctx *checkContext) ([]Finding, error) {
 	}
 	for _, u := range ctx.plan.Units {
 		for _, req := range u.Requires {
-			producers := delivered[normalizePath(req)]
-			if len(producers) > 1 || (len(producers) == 1 && !producers[u.ID]) {
+			k, err := confinedArtifact(req)
+			if err != nil {
+				out = append(out, errFinding(ruleMissingArtifact, u.ID, "required artifact %q is invalid: %v", req, err))
+				continue
+			}
+			var producers []string
+			for id := range delivered[k] {
+				if id != u.ID {
+					producers = append(producers, id)
+				}
+			}
+			if len(producers) > 0 {
+				deps := transitiveDependencies(ctx, u.ID)
+				ordered := false
+				for _, id := range producers {
+					ordered = ordered || deps[id]
+				}
+				if !ordered {
+					out = append(out, warnFinding(ruleMissingArtifact, u.ID, "required artifact %q is delivered only by units that are not among its dependencies", req))
+				}
 				continue
 			}
 			if ctx.cfg.Root == "" {
@@ -33,4 +59,25 @@ func checkMissingArtifact(ctx *checkContext) ([]Finding, error) {
 		}
 	}
 	return out, nil
+}
+
+// transitiveDependencies returns every unit ID reachable from id through
+// dependency edges.
+func transitiveDependencies(ctx *checkContext, id string) map[string]bool {
+	seen := map[string]bool{}
+	var walk func(string)
+	walk = func(cur string) {
+		u := ctx.byID[cur]
+		if u == nil {
+			return
+		}
+		for _, d := range u.Dependencies {
+			if !seen[d] {
+				seen[d] = true
+				walk(d)
+			}
+		}
+	}
+	walk(id)
+	return seen
 }

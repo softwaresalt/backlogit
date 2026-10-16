@@ -14,7 +14,8 @@ type GateDecision struct {
 	Report   Report    `json:"report"`
 }
 
-// Gate runs the soundness engine as a pre-shipment-assembly gate. It holds no
+// Gate runs the soundness engine as a pre-assembly gate. Wiring it into
+// shipment assembly is a follow-up; it holds no
 // rule logic of its own: every decision comes from the shared Run engine.
 type Gate struct {
 	cfg    Config
@@ -88,8 +89,8 @@ func (g *Gate) Assess(plan Plan) (GateDecision, error) {
 	return d, nil
 }
 
-// Assess is the library entrypoint shared by the pre-assembly gate and the
-// S10 plan/task soundness DAG node: both run the same Run engine.
+// Assess is the library entrypoint for the soundness gate; it runs the same
+// Run engine as every other caller.
 func Assess(plan Plan, cfg Config) (GateDecision, error) {
 	g, err := NewGate(cfg)
 	if err != nil {

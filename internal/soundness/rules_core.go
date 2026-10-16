@@ -97,7 +97,13 @@ func resolveReference(root, ref string) error {
 func checkVerificationSurface(ctx *checkContext) ([]Finding, error) {
 	var out []Finding
 	for _, u := range ctx.plan.Units {
-		if len(u.Verification) == 0 {
+		surface := 0
+		for _, v := range u.Verification {
+			if strings.TrimSpace(v) != "" {
+				surface++
+			}
+		}
+		if surface == 0 {
 			out = append(out, errFinding(ruleVerificationSurface, u.ID, "no explicit verification surface"))
 		}
 	}

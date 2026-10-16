@@ -20,6 +20,9 @@ const (
 // is always an explicit error, never a silent pass.
 var ErrInvalidConfig = errors.New("soundness: invalid config")
 
+// ErrEmptyPlan marks a plan with no units. An empty plan is never a silent pass.
+var ErrEmptyPlan = errors.New("soundness: plan has no units")
+
 // ruleUnverifiable is the always-on structural check; it is not a flaggable rule.
 const ruleUnverifiable = "unverifiable-unit"
 

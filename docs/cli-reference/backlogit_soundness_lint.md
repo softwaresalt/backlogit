@@ -15,11 +15,13 @@ Run the soundness linter over a plan file (report-only by default)
 ### Synopsis
 
 Run the soundness engine over a JSON plan of units (plans, features, tasks,
-subtasks) before shipment assembly.
+subtasks) as a standalone check. Wiring this check into shipment assembly is a
+follow-up.
 
 The default mode is report-only: findings are printed as warnings and the exit
 status stays zero. In enforce mode any error finding is printed and the command
-exits non-zero. A misconfiguration (unknown mode, unknown rule, invalid budget)
+exits non-zero; --mode may tighten a report-only config but never relax an
+enforce config. An empty plan is an error in enforce mode. A misconfiguration (unknown mode, unknown rule, invalid budget)
 is always an error, never a pass. Plan and config paths are confined to the
 workspace root.
 

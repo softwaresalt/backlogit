@@ -5,7 +5,8 @@ import "strings"
 const ruleDependencyConsistency = "dependency-consistency"
 
 // checkDependencyConsistency flags dangling and self dependency edges and
-// dependency cycles (one finding per cycle).
+// dependency cycles (one finding per back edge, so distinct cycles that share
+// a back edge are reported once).
 func checkDependencyConsistency(ctx *checkContext) ([]Finding, error) {
 	var out []Finding
 	for _, u := range ctx.plan.Units {
