@@ -3,8 +3,9 @@ package evidence
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
-	"path/filepath"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -58,13 +59,49 @@ var itemIDPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*-[A-Z]+$`)
 // doneStatuses are effective statuses that count a task as complete.
 var doneStatuses = map[string]bool{"done": true, "shipped": true, "accepted": true}
 
+// parseConfined reads and parses name through a root-confined handle, so
+// symlinks that leave the root are rejected.
+func parseConfined(rt *os.Root, name string) (*models.Artifact, error) {
+	f, err := rt.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", name, err)
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat %s: %w", name, err)
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxItemBytes {
+		return nil, fmt.Errorf("%s is not a regular file within the size limit", name)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxItemBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", name, err)
+	}
+	if len(data) > maxItemBytes {
+		return nil, fmt.Errorf("%s exceeds %d bytes", name, maxItemBytes)
+	}
+	a, _, err := parser.ParseMarkdownBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", name, err)
+	}
+	return a, nil
+}
+
+const maxItemBytes = 4 << 20
+
 // load reads one item from queue/ then archive/, never leaving Root.
 func (b *Backlog) load(id string) (*models.Artifact, error) {
 	if !itemIDPattern.MatchString(id) {
 		return nil, fmt.Errorf("invalid item id %q", id)
 	}
+	rt, err := os.OpenRoot(b.Root)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: open root: %w", id, err)
+	}
+	defer func() { _ = rt.Close() }()
 	for _, dir := range []string{"queue", "archive"} {
-		a, _, err := parser.ParseMarkdownFile(filepath.Join(b.Root, dir, id+".md"))
+		a, err := parseConfined(rt, dir+"/"+id+".md")
 		if err == nil {
 			if a.ID != id {
 				return nil, fmt.Errorf("load %s: file declares id %q", id, a.ID)

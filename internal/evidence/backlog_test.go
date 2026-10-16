@@ -104,3 +104,40 @@ func TestU159003_TraversalMemberIDDegrades(t *testing.T) {
 	res := (&Backlog{Root: root}).ShipmentEvidence("902-S")
 	assert.Equal(t, StatusDegraded, res.Status)
 }
+
+func symlinkOrSkip(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("cannot create symlink on this OS/user: %v", err)
+	}
+}
+
+func TestBacklogLoad_FileSymlinkEscapeDegrades(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "ws")
+	outside := filepath.Join(base, "outside")
+	writeItem(t, outside, "queue", "905-S", "shipment", "active", "custom_fields:\n  items: []\n")
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "queue"), 0o755))
+	symlinkOrSkip(t, filepath.Join(outside, "queue", "905-S.md"), filepath.Join(root, "queue", "905-S.md"))
+	res := (&Backlog{Root: root}).ShipmentEvidence("905-S")
+	assert.Equal(t, StatusDegraded, res.Status)
+}
+
+func TestBacklogLoad_DirSymlinkEscapeDegrades(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "ws")
+	outside := filepath.Join(base, "outside")
+	writeItem(t, outside, "queue", "906-S", "shipment", "active", "custom_fields:\n  items: []\n")
+	require.NoError(t, os.MkdirAll(root, 0o755))
+	symlinkOrSkip(t, filepath.Join(outside, "queue"), filepath.Join(root, "queue"))
+	res := (&Backlog{Root: root}).ShipmentEvidence("906-S")
+	assert.Equal(t, StatusDegraded, res.Status)
+}
+
+func TestBacklogLoad_InRootSymlinkStillWorks(t *testing.T) {
+	root := t.TempDir()
+	writeItem(t, root, "real", "907-S", "shipment", "active", "custom_fields:\n  items: []\n")
+	symlinkOrSkip(t, "real", filepath.Join(root, "queue"))
+	res := (&Backlog{Root: root}).ShipmentEvidence("907-S")
+	assert.Equal(t, StatusVerified, res.Status, res.Reason)
+}
