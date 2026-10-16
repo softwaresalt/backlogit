@@ -4,7 +4,7 @@ chunk_strategy: h1-h2-h3
 # gate reads them with fm.get(). conditions entries are gate input (satisfied: true with
 # non-empty evidence). Open follow-ups are non-gating and live in the body.
 closure_status: READY_WITH_CONDITIONS
-compaction_status: done
+compaction_status: degraded
 conditions:
   - id: feature-pr-504-merged
     description: "PR #504 (176-S implementation) is merged as a merge commit into main."
@@ -49,7 +49,7 @@ title: "176-S post-merge closure"
 | Final reviewed HEAD | `bc6e181c` (local review `READY_WITH_FOLLOWUPS`, P0 0, P1 0; Copilot 10 rounds, 0 open threads; `copilot-review` gate `SATISFIED`) |
 | Closure branch | `post-merge/176-baseline-bootstrap-runners` |
 | Closure status | `READY_WITH_CONDITIONS` |
-| Context compaction | `done` (P-020: compact-context invoked, no safe candidates); see the P-020 section |
+| Context compaction | `degraded` (P-020: compact-context invoked; the backlog active-work cross-check was not completed, so no file was compacted); see the P-020 section |
 | Mode | P-017 dark mode, scope sequence `202-S -> 176-S -> 157-S -> 158-S`; this invocation covered `176-S` only |
 
 ## Summary
@@ -86,7 +86,7 @@ so runtime-verification is not applicable and no validator evidence is produced.
 Releasability: `READY_WITH_CONDITIONS`.
 
 * Monitoring: none required. The runners are exercised by the harnesses in CI.
-* Rollback: `git revert` of merge commit `d48f15cb` removes the runners and harnesses.
+* Rollback: Source-only rollback: a rollback PR limited to the three runners and their harnesses (`scripts/verify-{task,baseline,terminal}-lint.ps1`, `tests/runner_bootstrap_*_175_0{99,100,101}_test.go`), preserving `.backlogit/` state. Do not revert merge `d48f15cb` wholesale: it also moved the three tasks into the archive and changed `.backlogit/stash.jsonl`.
 * Owner: Ship / operator.
 * Validation window: the next successor `pre_claim` probe and the first replacement-baseline
   shipment that invokes the runners.
@@ -105,16 +105,12 @@ Releasability: `READY_WITH_CONDITIONS`.
 
 ## Closure-evidence gate posture
 
-`autoharness gate closure-evidence --path docs/closure/176-S-175-F-post-merge-closure.md --shipment 176-S` fails with `close_path` / `close_evidence` absent. The record would have to come from `autoharness shipment cascade-close --classify-only`, which cannot run post-hoc: 176-S is already archived, and the tool also refuses the workspace-resident `bin/backlogit.EXE`. The installed harness closes through flat-manifest `backlogit_ship_shipment` (the 197-S, 199-S and 202-S posture), so neither key nor an evidence record is fabricated. The successor `pre_claim` gate recognizes this record without them (see the probe below).
+`autoharness gate closure-evidence --path docs/closure/176-S-175-F-post-merge-closure.md --shipment 176-S` fails with `close_path` / `close_evidence` absent. The record would have to come from `autoharness shipment cascade-close --classify-only`, which cannot run post-hoc: 176-S is already archived, and the tool also refuses the workspace-resident `bin/backlogit.EXE`. The installed harness closes through flat-manifest `backlogit_ship_shipment` (the 197-S, 199-S and 202-S posture), so neither key nor an evidence record is fabricated. Successor acceptance is NOT asserted by this record: the 157-S `pre_claim` verdict is determined by the post-merge probe `autoharness gate pipeline-topology --mode agent --shipment 157-S --phase pre_claim --json` run on clean `main` after this closure PR merges and is reported in the Ship return message, not here. At authoring time the probe returned `WORKTREE_DIRTY` only because this closure was uncommitted and `.autoharness/config.yaml` carried an unrelated local edit; it is unverified until the post-merge run.
 
 ## P-020 compaction
 
 compact-context was invoked with `target: all` (P-020). `docs/memory` remains over the
-thresholds (198 files, about 1.07 MB); 41 stale files are not referenced by name, but the
-active-work guard was not run against the queue, so none were removed. The run completed with
-no safe candidates and made no changes. Outcome: `done-with-no-safe-candidates`, recorded as
-`compaction_status: done` because the invocation did not fail. The over-threshold state is
-already tracked in stash E2B351F3.
+thresholds (198 files, about 1.07 MB); 41 stale files are not referenced by name, but the backlog active-work cross-check required by compact-context was not completed in this run, so none of them was assessed or removed. The run made no changes. Outcome: `degraded` (assessment incomplete; the over-threshold state remains and is tracked in stash E2B351F3, whose scope now also covers completing the active-work check for these 41 files).
 
 ## Follow-ups
 
