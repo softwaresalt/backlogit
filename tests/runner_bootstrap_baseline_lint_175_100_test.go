@@ -417,6 +417,41 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 	})
 }
 
+// TestU175_100_RelativeInventoryUsesPowerShellLocation guards the PowerShell-location vs process-cwd split.
+func TestU175_100_RelativeInventoryUsesPowerShellLocation(t *testing.T) {
+	root := u100RepoRoot(t)
+	script := filepath.Join(root, filepath.FromSlash(u100Runner))
+	data := u100Marshal(t, u100Base())
+	inv, sum := u100Write(t, data)
+	dir := filepath.Dir(inv)
+
+	// Arguments travel through the environment, never through command-string interpolation.
+	const ps = `Set-Location -LiteralPath $env:U175_LOC; & $env:U175_RUNNER -Inventory $env:U175_INV -InventorySha256 $env:U175_SUM -Shipment 176-S -FeatureId 175-F -TerminalTask 175.012-T; exit $LASTEXITCODE`
+	run := func(t *testing.T, sumArg string) (string, int) {
+		cmd := exec.Command(u100Pwsh(t), "-NoProfile", "-NonInteractive", "-Command", ps)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "U175_LOC="+dir, "U175_RUNNER="+script, "U175_INV=inventory.json", "U175_SUM="+sumArg)
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			return string(out), 0
+		}
+		var ee *exec.ExitError
+		require.ErrorAs(t, err, &ee)
+		return string(out), ee.ExitCode()
+	}
+
+	t.Run("relative_path_resolves_against_powershell_location", func(t *testing.T) {
+		out, code := run(t, sum)
+		assert.Zero(t, code, out)
+		assert.Contains(t, out, "BASELINE-LINT-OK:176-S")
+	})
+	t.Run("hash_still_enforced", func(t *testing.T) {
+		out, code := run(t, strings.Repeat("0", 64))
+		assert.Equal(t, 1, code, out)
+		assert.NotContains(t, out, "BASELINE-LINT-OK:")
+	})
+}
+
 // TestU175_100_InventorySingleRead guards against hashing one snapshot and parsing another.
 func TestU175_100_InventorySingleRead(t *testing.T) {
 	root := u100RepoRoot(t)

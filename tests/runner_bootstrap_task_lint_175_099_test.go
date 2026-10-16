@@ -38,10 +38,19 @@ type u099Task struct {
 	Expected []u099Expected `json:"expected_group_residual_after_task"`
 }
 
-type u099Fixture struct {
-	Tasks    map[string]u099Task `json:"tasks"`
-	Findings []u099Finding       `json:"findings"`
+type u099Known struct {
+	Path    string `json:"path"`
+	Linter  string `json:"linter"`
+	Message string `json:"message"`
 }
+
+type u099Fixture struct {
+	Tasks       map[string]u099Task `json:"tasks"`
+	KnownGroups []u099Known         `json:"known_groups"`
+	Findings    []u099Finding       `json:"findings"`
+}
+
+var u099UnrelatedKnown = u099Known{Path: "internal/other.go", Linter: "revive", Message: "unrelated"}
 
 func u099RepoRoot(t *testing.T) string {
 	t.Helper()
@@ -84,6 +93,9 @@ func u099Run(t *testing.T, root string, args ...string) (string, int) {
 func u099WriteFixture(t *testing.T, fx u099Fixture) string {
 	t.Helper()
 	dir := t.TempDir()
+	if fx.KnownGroups == nil {
+		fx.KnownGroups = []u099Known{}
+	}
 	data, err := json.Marshal(fx)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "task-lint.json"), data, 0o600))
@@ -95,11 +107,17 @@ func u099Base(id string) u099Fixture {
 		Tasks: map[string]u099Task{id: {Expected: []u099Expected{
 			{Path: "internal/a.go", Linter: "errcheck", Message: "Error return value is not checked", Count: 1},
 		}}},
+		KnownGroups: []u099Known{u099UnrelatedKnown},
 		Findings: []u099Finding{
 			{Path: "internal/a.go", Linter: "errcheck", Message: "Error return value is not checked", Line: 10, Column: 2, Owner: id},
 			{Path: "internal/other.go", Linter: "revive", Message: "unrelated", Line: 1, Column: 1, Owner: "999.001-T"},
 		},
 	}
+}
+
+// u099WithKnown inserts an empty known_groups array so a raw body fails only for its intended defect.
+func u099WithKnown(body string) string {
+	return strings.Replace(body, `"findings"`, `"known_groups":[],"findings"`, 1)
 }
 
 func u099Group(count int) u099Expected {
@@ -267,8 +285,8 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 
 	t.Run("schema_phase_validates_task_object", func(t *testing.T) {
 		for name, body := range map[string]string{
-			"null_task":  `{"tasks":{"175.001-T":null},"findings":[]}`,
-			"empty_task": `{"tasks":{"175.001-T":{}},"findings":[]}`,
+			"null_task":  `{"tasks":{"175.001-T":null},"known_groups":[],"findings":[]}`,
+			"empty_task": `{"tasks":{"175.001-T":{}},"known_groups":[],"findings":[]}`,
 		} {
 			t.Run(name, func(t *testing.T) {
 				dir := t.TempDir()
@@ -294,6 +312,7 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 			"count_string":               `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[` + fmt.Sprintf(g, `"1"`) + `]}},"findings":[]}`,
 		}
 		for name, body := range bodies {
+			body = u099WithKnown(body)
 			for _, phase := range []string{"Schema", "PreCommit", "PostCommit"} {
 				t.Run(name+"_"+phase, func(t *testing.T) {
 					dir := t.TempDir()
@@ -305,6 +324,48 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 				})
 			}
 		}
+	})
+
+	t.Run("task_scope_new_fingerprints", func(t *testing.T) {
+		t.Run("zero_residual_replacement_changed_message_rejected", func(t *testing.T) {
+			fx := u099Base(id)
+			fx.Tasks[id] = u099Task{Expected: []u099Expected{u099Group(0)}}
+			fx.Findings = []u099Finding{
+				{Path: "internal/a.go", Linter: "errcheck", Message: "new message", Line: 10, Column: 2, Owner: id},
+				{Path: "internal/other.go", Linter: "revive", Message: "unrelated", Line: 1, Column: 1, Owner: "999.001-T"},
+			}
+			for _, phase := range []string{"PreCommit", "PostCommit"} {
+				out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-Phase", phase, "-FixtureRoot", u099WriteFixture(t, fx))
+				assert.Equal(t, 1, code, "phase %s: %s", phase, out)
+				assert.Contains(t, out, "NEW-FINGERPRINT", out)
+				assert.NotContains(t, out, marker)
+			}
+		})
+		t.Run("unrelated_known_group_passes", func(t *testing.T) {
+			fx := u099Base(id)
+			fx.Tasks[id] = u099Task{Expected: []u099Expected{u099Group(0)}}
+			fx.Findings = u099Split()
+			out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", u099WriteFixture(t, fx))
+			assert.Zero(t, code, out)
+			assert.Contains(t, out, marker)
+		})
+		t.Run("unlisted_unrelated_finding_rejected", func(t *testing.T) {
+			fx := u099Base(id)
+			fx.KnownGroups = []u099Known{}
+			out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", u099WriteFixture(t, fx))
+			assert.Equal(t, 1, code, out)
+			assert.Contains(t, out, "NEW-FINGERPRINT", out)
+			assert.NotContains(t, out, marker)
+		})
+		t.Run("missing_known_groups_is_invalid_input", func(t *testing.T) {
+			body := `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]}},"findings":[]}`
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "task-lint.json"), []byte(body), 0o600))
+			out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", dir)
+			assert.Equal(t, 2, code, out)
+			assert.Contains(t, out, "INVALID-INPUT", out)
+			assert.NotContains(t, out, marker)
+		})
 	})
 
 	t.Run("case_sensitive_fingerprints", func(t *testing.T) {
@@ -345,7 +406,7 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 	t.Run("validation_sweep", func(t *testing.T) {
 		const grp = `{"path":"a","linter":"l","message":"%s","count":0}`
 		wrap := func(expected, findings string) string {
-			return `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[` + expected + `]}},"findings":[` + findings + `]}`
+			return `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[` + expected + `]}},"known_groups":[],"findings":[` + findings + `]}`
 		}
 		bodies := map[string]string{
 			"numeric_message_vs_string_group": wrap(fmt.Sprintf(grp, "123"), `{"path":"a","linter":"l","message":123}`),
@@ -369,6 +430,7 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 			"empty_file":                      ``,
 		}
 		for name, body := range bodies {
+			body = u099WithKnown(body)
 			for _, phase := range []string{"Schema", "PreCommit", "PostCommit"} {
 				t.Run(name+"_"+phase, func(t *testing.T) {
 					dir := t.TempDir()
@@ -380,6 +442,35 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 				})
 			}
 		}
+
+		t.Run("known_groups_validation", func(t *testing.T) {
+			const head = `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]}},`
+			kg := map[string]string{
+				"missing":            ``,
+				"null":               `"known_groups":null,`,
+				"object":             `"known_groups":{},`,
+				"string":             `"known_groups":"x",`,
+				"scalar_member":      `"known_groups":[1],`,
+				"null_member":        `"known_groups":[null],`,
+				"missing_message":    `"known_groups":[{"path":"a","linter":"l"}],`,
+				"numeric_message":    `"known_groups":[{"path":"a","linter":"l","message":1}],`,
+				"empty_path":         `"known_groups":[{"path":"","linter":"l","message":"m"}],`,
+				"duplicate_group":    `"known_groups":[{"path":"a","linter":"l","message":"m"},{"path":"a","linter":"l","message":" m "}],`,
+				"duplicate_top_keys": `"known_groups":[],"known_groups":[],`,
+			}
+			for name, frag := range kg {
+				for _, phase := range []string{"Schema", "PreCommit", "PostCommit"} {
+					t.Run(name+"_"+phase, func(t *testing.T) {
+						dir := t.TempDir()
+						require.NoError(t, os.WriteFile(filepath.Join(dir, "task-lint.json"), []byte(head+frag+`"findings":[]}`), 0o600))
+						out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-Phase", phase, "-FixtureRoot", dir)
+						assert.Equal(t, 2, code, out)
+						assert.Contains(t, out, "INVALID-INPUT", out)
+						assert.NotContains(t, out, marker)
+					})
+				}
+			}
+		})
 
 		t.Run("utf8_bom_and_date_like_message_pass", func(t *testing.T) {
 			body := "\xef\xbb\xbf" + wrap(`{"path":"a","linter":"l","message":"2020-01-01T00:00:00Z","count":1}`, `{"path":"a","linter":"l","message":"2020-01-01T00:00:00Z"}`)

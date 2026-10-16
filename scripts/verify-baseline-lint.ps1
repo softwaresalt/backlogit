@@ -116,8 +116,12 @@ try {
     if ($InventorySha256 -cnotmatch '^[0-9A-Fa-f]{64}\z') { Stop-Closed 'InventorySha256 must be 64 hex characters' }
     if (-not (Test-Path -LiteralPath $Inventory -PathType Leaf)) { Stop-Closed "inventory not found: $Inventory" }
 
-    # Single read: the hashed bytes are the exact bytes parsed below.
-    $inventoryBytes = [System.IO.File]::ReadAllBytes($Inventory)
+    $resolvedInventory = Resolve-Path -LiteralPath $Inventory
+    if ($resolvedInventory.Provider.Name -cne 'FileSystem') { Stop-Closed "inventory is not a file-system path: $Inventory" }
+
+    # Single read: the hashed bytes are the exact bytes parsed below. The path is resolved
+    # against PowerShell's current location, not the process working directory.
+    $inventoryBytes = [System.IO.File]::ReadAllBytes($resolvedInventory.ProviderPath)
     $actualHash = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($inventoryBytes))
     if ($actualHash -ine $InventorySha256) {
         Stop-Closed "inventory hash mismatch (actual $actualHash)" 1
