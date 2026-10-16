@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -57,7 +58,7 @@ core mutation. It is idempotent when the item already belongs to this shipment;
 adding an item already assigned to another shipment is refused.`,
 		Example: `  backlogit shipment add 001-S 001.001-T`,
 		Args:    cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			shipmentID := args[0]
 			itemID := args[1]
@@ -72,7 +73,11 @@ adding an item already assigned to another shipment is refused.`,
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			if err := core.AddItemToShipment(ctx, ws, shipmentID, itemID); err != nil {
 				return fmt.Errorf("add item to shipment: %w", err)
@@ -99,7 +104,7 @@ func newShipmentCreateCmd() *cobra.Command {
 		Use:     "create",
 		Short:   "Create a shipment",
 		Example: `  backlogit shipment create --title "Sprint 1" --items 001-F,001.001-T`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			slog.Info("shipment command invoked", "operation", "shipment-create")
 
@@ -107,7 +112,11 @@ func newShipmentCreateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			var opts []core.Option
 			if priority != "" {
@@ -146,7 +155,7 @@ The response also carries a computed-on-read "size_composition" rollup, at
 parity with the MCP get_shipment tool.`,
 		Example: `  backlogit shipment get 001-S`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			shipmentID := args[0]
 			slog.Info("shipment command invoked", "operation", "shipment-get", "shipment_id", shipmentID)
@@ -155,7 +164,11 @@ parity with the MCP get_shipment tool.`,
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			shipment, err := core.GetShipment(ctx, ws, shipmentID)
 			if err != nil {
@@ -185,7 +198,7 @@ manifest (never stored) and is blank/omitted when a shipment has no covering
 feature. JSON output also carries a computed-on-read "size_composition" rollup
 per shipment, at parity with the MCP list_shipments tool.`,
 		Example: `  backlogit shipment list --status active`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			slog.Info("shipment command invoked", "operation", "shipment-list", "status", status)
 
@@ -193,7 +206,11 @@ per shipment, at parity with the MCP list_shipments tool.`,
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			shipments, err := db.QueryItems(ctx, ws.DB, db.QueryFilters{
 				Type:   "shipment",
@@ -265,7 +282,7 @@ func newShipmentClaimCmd() *cobra.Command {
 		Short:   "Claim a queued shipment",
 		Example: `  backlogit shipment claim 001-S`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			shipmentID := args[0]
 			slog.Info("shipment command invoked", "operation", "shipment-claim", "shipment_id", shipmentID)
@@ -274,7 +291,11 @@ func newShipmentClaimCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			shipment, err := core.ClaimShipment(ctx, ws, shipmentID)
 			if err != nil {
@@ -298,7 +319,7 @@ func newShipmentBlockCmd() *cobra.Command {
 		Short:   "Block an active shipment",
 		Example: `  backlogit shipment block 001-S --reason "waiting for prerequisite" --by agent --resume-checkpoint checkpoint.json`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			shipmentID := args[0]
 			slog.Info("shipment command invoked", "operation", "shipment-block", "shipment_id", shipmentID)
@@ -307,7 +328,11 @@ func newShipmentBlockCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			shipment, err := core.BlockShipment(ctx, ws, shipmentID, core.BlockOptions{
 				Reason:              reason,
@@ -339,7 +364,7 @@ func newShipmentUnblockCmd() *cobra.Command {
 		Short:   "Unblock a shipment",
 		Example: `  backlogit shipment unblock 001-S --to active --confirm --by agent`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			shipmentID := args[0]
 			slog.Info("shipment command invoked", "operation", "shipment-unblock", "shipment_id", shipmentID)
@@ -348,7 +373,11 @@ func newShipmentUnblockCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			shipment, err := core.UnblockShipment(ctx, ws, shipmentID, core.UnblockOptions{
 				Target:      core.ShipmentStatus(target),
@@ -381,7 +410,7 @@ func newShipmentShipCmd() *cobra.Command {
 		Short:   "Close a released shipment and archive the released scope",
 		Example: `  backlogit shipment ship 001-S --sha deadbeef --message "merge: release" --author "dev@example.com"`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			shipmentID := args[0]
 			slog.Info("shipment command invoked", "operation", "shipment-ship", "shipment_id", shipmentID)
@@ -390,10 +419,17 @@ func newShipmentShipCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
+			var progressErr error
 			progressCtx := core.WithShipmentProgress(ctx, func(msg string) {
-				fmt.Fprintln(cmd.ErrOrStderr(), msg)
+				if _, werr := fmt.Fprintln(cmd.ErrOrStderr(), msg); werr != nil && progressErr == nil {
+					progressErr = werr
+				}
 			})
 			result, err := core.ShipShipment(progressCtx, ws, shipmentID, &core.CommitMetadata{
 				SHA:     sha,
@@ -408,6 +444,10 @@ func newShipmentShipCmd() *cobra.Command {
 					return ee
 				}
 				return fmt.Errorf("ship shipment: %w", err)
+			}
+
+			if progressErr != nil {
+				return fmt.Errorf("write shipment progress: %w", progressErr)
 			}
 
 			enc := json.NewEncoder(cmd.OutOrStdout())
@@ -433,7 +473,9 @@ func shipmentShipGateError(cmd *cobra.Command, err error) *ExitError {
 		return nil
 	}
 	cmd.SilenceErrors = true
-	fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+	if _, werr := fmt.Fprintln(cmd.ErrOrStderr(), err.Error()); werr != nil {
+		ee.Err = errors.Join(ee.Err, fmt.Errorf("write gate reason: %w", werr))
+	}
 	return ee
 }
 
@@ -447,7 +489,7 @@ func newShipmentReturnBlockedCmd() *cobra.Command {
 		Use:     "return-blocked",
 		Short:   "Return a blocked item from a shipment",
 		Example: `  backlogit shipment return-blocked --shipment 001-S --item 001.001-T --reason "blocked"`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			slog.Info(
 				"shipment command invoked",
@@ -460,7 +502,11 @@ func newShipmentReturnBlockedCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			if err := core.ReturnBlockedItem(ctx, ws, shipmentID, itemID, reason); err != nil {
 				return fmt.Errorf("return blocked item: %w", err)
@@ -513,7 +559,7 @@ ship will accept the member in its ancestry check.
 The --reason flag is required and is recorded verbatim in the audit log.`,
 		Example: `  backlogit shipment repair-evidence 129-S --member 146.006-T --reason "orphaned by PR review-fix rebase; diff verified at current main HEAD"`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			shipmentID := args[0]
 			slog.Info("shipment command invoked",
@@ -526,7 +572,11 @@ The --reason flag is required and is recorded verbatim in the audit log.`,
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			if err := core.RepairShipmentMemberEvidence(ctx, ws, shipmentID, memberID, reason); err != nil {
 				return fmt.Errorf("repair member evidence: %w", err)
