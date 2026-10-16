@@ -104,6 +104,24 @@ func ciUsable(claim string, c *CIResult) (Finding, bool) {
 	return Finding{}, true
 }
 
+// ciBound checks that CI evidence describes the same pull request and head
+// as the claimed reviewed head and any verified review evidence.
+func ciBound(claim string, c Claims, d Derived) (Finding, bool) {
+	ci := d.CI
+	if c.ReviewedHead != nil && !shaMatches(*c.ReviewedHead, ci.HeadSHA) {
+		return unverifiable(claim, fmt.Sprintf("CI evidence head %s does not match claimed reviewed head %s", ci.HeadSHA, *c.ReviewedHead)), false
+	}
+	if r := d.Review; r != nil && r.Status == StatusVerified {
+		if r.PR != ci.PR {
+			return unverifiable(claim, fmt.Sprintf("CI evidence is for pull request %d but review evidence is for pull request %d", ci.PR, r.PR)), false
+		}
+		if !strings.EqualFold(r.HeadSHA, ci.HeadSHA) {
+			return unverifiable(claim, fmt.Sprintf("CI evidence head %s does not match review evidence head %s", ci.HeadSHA, r.HeadSHA)), false
+		}
+	}
+	return Finding{}, true
+}
+
 func backlogUsable(claim string, b *BacklogResult) (Finding, bool) {
 	if b == nil {
 		return unverifiable(claim, "no backlog evidence was derived"), false
@@ -158,6 +176,8 @@ func Validate(c Claims, d Derived) Report {
 		const k = "ci_passed"
 		if f, ok := ciUsable(k, d.CI); !ok {
 			add(f)
+		} else if f, ok := ciBound(k, c, d); !ok {
+			add(f)
 		} else if *c.CIPassed != d.CI.AllPassed {
 			add(contradicted(k, "claimed ci passed=%t but ci checks passed=%t", *c.CIPassed, d.CI.AllPassed))
 		} else {
@@ -167,6 +187,8 @@ func Validate(c Claims, d Derived) Report {
 	if c.MergeSHA != nil {
 		const k = "merge_sha"
 		if f, ok := ciUsable(k, d.CI); !ok {
+			add(f)
+		} else if f, ok := ciBound(k, c, d); !ok {
 			add(f)
 		} else if !d.CI.Merged {
 			add(contradicted(k, "claimed merge sha %s but the pull request is not merged", *c.MergeSHA))

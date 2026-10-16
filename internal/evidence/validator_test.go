@@ -150,3 +150,28 @@ func TestU159004_MergeClaimWhenNotMerged(t *testing.T) {
 	assert.False(t, r.Pass)
 	assert.Equal(t, VerdictContradicted, findingFor(t, r, "merge_sha").Verdict)
 }
+
+func TestValidate_CIAndReviewMustBindToSameHead(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*Derived)
+		reason string
+	}{
+		{"ci head differs from claimed reviewed head", func(d *Derived) { d.CI.HeadSHA = "aaa111" }, "head"},
+		{"different pr numbers", func(d *Derived) { d.Review.PR = 1; d.CI.PR = 2 }, "pull request"},
+		{"review head differs from ci head", func(d *Derived) { d.Review.HeadSHA = "bbb222ff"; d.CI.HeadSHA = "bbb222" }, "head"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := goodDerived()
+			tc.mutate(&d)
+			r := Validate(accurateClaims(), d)
+			assert.False(t, r.Pass)
+			for _, k := range []string{"ci_passed", "merge_sha"} {
+				f := findingFor(t, r, k)
+				assert.Equal(t, VerdictUnverifiable, f.Verdict, k)
+				assert.Contains(t, f.Reason, tc.reason)
+			}
+		})
+	}
+}
