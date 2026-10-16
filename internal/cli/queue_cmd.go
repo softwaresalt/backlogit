@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -57,13 +58,17 @@ priority as the secondary sort after any manually assigned queue positions.`,
 		Example: `  backlogit queue view
   backlogit queue view --status active --group-by type
   backlogit queue view --sort priority`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			filter := &core.QueueFilter{
 				GroupBy: groupBy,
@@ -131,13 +136,17 @@ Positions are 1-based and use the same default scope as queue view: queued,
 active, blocked, and review items.`,
 		Example: `  backlogit queue move 001.001-T --position 1`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			filter := &core.QueueFilter{
 				Statuses: append([]string(nil), defaultQueueStatuses...),
@@ -146,7 +155,9 @@ active, blocked, and review items.`,
 			if err := core.MoveInQueue(ctx, ws, args[0], position, filter); err != nil {
 				return fmt.Errorf("move in queue: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Moved %s to position %d\n", args[0], position)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Moved %s to position %d\n", args[0], position); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 			return nil
 		},
 	}
@@ -167,7 +178,7 @@ func newQueueBulkStatusCmd(cwd *string) *cobra.Command {
 		Use:     "bulk-status",
 		Short:   "Update status for multiple items",
 		Example: `  backlogit queue bulk-status --ids 001.001-T,001.002-T,001.003-T --status active`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			if ids == "" {
 				return fmt.Errorf("--ids is required")
 			}
@@ -179,7 +190,11 @@ func newQueueBulkStatusCmd(cwd *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			itemIDs := strings.Split(ids, ",")
 			result, err := core.BulkUpdateStatus(ctx, ws.DB, ws, itemIDs, status)
@@ -187,13 +202,14 @@ func newQueueBulkStatusCmd(cwd *string) *cobra.Command {
 				// 144-F: map governance refusal to exit code 9.
 				if eeGov := shipmentGovernanceExitError(err); eeGov != nil {
 					cmd.SilenceErrors = true
-					fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+					if _, werr := fmt.Fprintln(cmd.ErrOrStderr(), err.Error()); werr != nil {
+						eeGov.Err = errors.Join(eeGov.Err, fmt.Errorf("write governance reason: %w", werr))
+					}
 					return eeGov
 				}
 				return fmt.Errorf("bulk update status: %w", err)
 			}
-			writeBulkStatusResult(cmd.OutOrStdout(), status, result)
-			return nil
+			return writeBulkStatusResult(cmd.OutOrStdout(), status, result)
 		},
 	}
 	cmd.Flags().StringVar(&ids, "ids", "", "comma-separated list of item IDs")
@@ -203,16 +219,27 @@ func newQueueBulkStatusCmd(cwd *string) *cobra.Command {
 
 // writeBulkStatusResult renders a bulk status update result, including one
 // detail line per typed conflict in FailedDetails.
-func writeBulkStatusResult(w io.Writer, status string, result *core.BulkUpdateResult) {
-	fmt.Fprintf(w, "Updated %d items to status %q\n", result.Succeeded, status)
+func writeBulkStatusResult(w io.Writer, status string, result *core.BulkUpdateResult) error {
+	if _, err := fmt.Fprintf(w, "Updated %d items to status %q\n", result.Succeeded, status); err != nil {
+		return fmt.Errorf("write bulk status summary: %w", err)
+	}
 	if len(result.Failed) > 0 {
-		fmt.Fprintf(w, "Failed to update %d items: %s\n", len(result.Failed), strings.Join(result.Failed, ", "))
+		if _, err := fmt.Fprintf(w, "Failed to update %d items: %s\n", len(result.Failed), strings.Join(result.Failed, ", ")); err != nil {
+			return fmt.Errorf("write bulk status failures: %w", err)
+		}
 	}
 	for _, detail := range result.FailedDetails {
-		fmt.Fprintf(w, "Failed detail %s: %s -> %s", detail.ID, detail.FromStatus, detail.ToStatus)
-		if detail.Err != nil {
-			fmt.Fprintf(w, ": %v", detail.Err)
+		if _, err := fmt.Fprintf(w, "Failed detail %s: %s -> %s", detail.ID, detail.FromStatus, detail.ToStatus); err != nil {
+			return fmt.Errorf("write bulk status detail: %w", err)
 		}
-		fmt.Fprintln(w)
+		if detail.Err != nil {
+			if _, err := fmt.Fprintf(w, ": %v", detail.Err); err != nil {
+				return fmt.Errorf("write bulk status detail error: %w", err)
+			}
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return fmt.Errorf("write bulk status detail terminator: %w", err)
+		}
 	}
+	return nil
 }

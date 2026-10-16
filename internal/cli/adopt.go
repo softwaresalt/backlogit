@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -20,7 +21,7 @@ func newAdoptCommand(cwd *string) *cobra.Command {
 		Short:   "Adopt an orphaned item under a new parent feature",
 		Example: `  backlogit adopt 015.009-T --parent 016-F`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			slog.Info("adopt command invoked", "item_id", args[0], "new_parent_id", parentID)
 
@@ -28,7 +29,11 @@ func newAdoptCommand(cwd *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			result, err := core.AdoptItem(ctx, ws, args[0], parentID)
 			if err != nil {
