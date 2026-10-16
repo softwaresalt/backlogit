@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -94,8 +95,8 @@ func TestU175_040_DataGuard(t *testing.T) {
 		repo := u040NewRepo(t)
 		u040WriteFile(t, filepath.Join(repo, "a.go"), []byte("package a\r\n\r\nvar x = 1\r\n"))
 		out, err := u040RunGuard(t, repo)
-		if err == nil {
-			t.Fatalf("guard passed on CRLF worktree file; output:\n%s", out)
+		if err == nil || !strings.Contains(out, "WORKTREE-CRLF: a.go") {
+			t.Fatalf("guard must fail on CRLF worktree file (err=%v); output:\n%s", err, out)
 		}
 	})
 
@@ -112,8 +113,8 @@ func TestU175_040_DataGuard(t *testing.T) {
 		u040Git(t, repo, "update-index", "--add", "--cacheinfo", "100644,"+string(oid[:len(oid)-1])+",blob_crlf.go")
 		u040WriteFile(t, blob, []byte("package a\n"))
 		out, runErr := u040RunGuard(t, repo)
-		if runErr == nil {
-			t.Fatalf("guard passed on CRLF committed blob; output:\n%s", out)
+		if runErr == nil || !strings.Contains(out, "BLOB-CRLF: blob_crlf.go") {
+			t.Fatalf("guard must fail on CRLF committed blob (err=%v); output:\n%s", runErr, out)
 		}
 	})
 
