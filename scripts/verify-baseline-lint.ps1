@@ -51,8 +51,16 @@ function Stop-Closed([string]$Message, [int]$Code = 2) {
     exit $Code
 }
 
+function Test-NonNegInt($Value) {
+    if ($null -eq $Value -or $Value -is [bool] -or $Value -is [string]) { return $false }
+    if ($Value -isnot [int] -and $Value -isnot [long] -and $Value -isnot [double] -and $Value -isnot [decimal] -and $Value -isnot [System.Numerics.BigInteger]) { return $false }
+    if ($Value -is [double] -and ([double]::IsNaN($Value) -or [double]::IsInfinity($Value))) { return $false }
+    if ($Value -lt 0 -or $Value -gt 2147483647) { return $false }
+    return ($Value -eq [math]::Truncate([decimal]$Value))
+}
 function Get-Fingerprint($Item) {
-    $msg = ([string]$Item.message -replace '\s+', ' ').Trim()
+    $msg = ([string]$Item.message).Normalize([System.Text.NormalizationForm]::FormC)
+    $msg = ($msg -replace '\s+', ' ').Trim()
     return ('{0}|{1}|{2}' -f $Item.path, $Item.linter, $msg)
 }
 
@@ -98,7 +106,9 @@ try {
         if ($null -eq $owners -or $owners.Value -isnot [System.Array]) { Stop-Closed 'malformed inventory: group owners must be an array' }
         foreach ($o in $owners.Value) {
             if ($null -eq $o -or $o -isnot [pscustomobject]) { Stop-Closed 'malformed inventory: owners members must be objects' }
+            if (-not (Test-NonNegInt $o.PSObject.Properties['resolves']?.Value)) { Stop-Closed 'malformed inventory: owner resolves must be a non-negative integer' }
         }
+        if (-not (Test-NonNegInt $g.PSObject.Properties['baseline_count']?.Value)) { Stop-Closed 'malformed inventory: baseline_count must be a non-negative integer' }
     }
 
     $expected = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)

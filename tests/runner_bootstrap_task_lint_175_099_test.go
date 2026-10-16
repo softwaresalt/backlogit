@@ -2,6 +2,7 @@ package tests_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -164,6 +165,15 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 		}
 	})
 
+	t.Run("nfc_equivalent_groups_pass", func(t *testing.T) {
+		fx := u099Base(id)
+		fx.Tasks[id] = u099Task{Expected: []u099Expected{{Path: "internal/a.go", Linter: "errcheck", Message: "caf\u00e9 unchecked", Count: 1}}}
+		fx.Findings = []u099Finding{{Path: "internal/a.go", Linter: "errcheck", Message: "cafe\u0301  unchecked", Line: 1, Column: 1, Owner: id}}
+		out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", u099WriteFixture(t, fx))
+		assert.Zero(t, code, out)
+		assert.Contains(t, out, marker)
+	})
+
 	t.Run("split_owner_group_residual_passes", func(t *testing.T) {
 		tests := []struct {
 			name     string
@@ -207,6 +217,10 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 			{"zero_residual_group_kept_by_later_owner", func(f *u099Fixture) {
 				f.Tasks[id] = u099Task{Expected: []u099Expected{u099Group(0)}}
 				f.Findings = u099Split("176.001-T")
+			}},
+			{"nfc_zero_group_kept_by_decomposed_form", func(f *u099Fixture) {
+				f.Tasks[id] = u099Task{Expected: []u099Expected{{Path: "internal/a.go", Linter: "errcheck", Message: "caf\u00e9 unchecked", Count: 0}}}
+				f.Findings = []u099Finding{{Path: "internal/a.go", Linter: "errcheck", Message: "cafe\u0301   unchecked", Line: 1, Column: 1, Owner: "176.001-T"}}
 			}},
 			{"duplicate_resolved_below_expected", func(f *u099Fixture) {
 				f.Tasks[id] = u099Task{Expected: []u099Expected{
@@ -264,6 +278,32 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 				assert.Contains(t, out, "INVALID-INPUT", out)
 				assert.NotContains(t, out, marker)
 			})
+		}
+	})
+
+	t.Run("invalid_findings_and_counts", func(t *testing.T) {
+		const g = `{"path":"a","linter":"l","message":"m","count":%s}`
+		bodies := map[string]string{
+			"null_finding_zero_expected": `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]}},"findings":[null]}`,
+			"null_finding_with_group":    `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[{"path":"a","linter":"l","message":"m","count":0}]}},"findings":[null]}`,
+			"scalar_finding":             `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]}},"findings":[1]}`,
+			"object_findings":            `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]}},"findings":{}}`,
+			"count_null":                 `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[` + fmt.Sprintf(g, "null") + `]}},"findings":[]}`,
+			"count_negative":             `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[` + fmt.Sprintf(g, "-1") + `]}},"findings":[]}`,
+			"count_fractional":           `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[` + fmt.Sprintf(g, "1.5") + `]}},"findings":[]}`,
+			"count_string":               `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[` + fmt.Sprintf(g, `"1"`) + `]}},"findings":[]}`,
+		}
+		for name, body := range bodies {
+			for _, phase := range []string{"Schema", "PreCommit", "PostCommit"} {
+				t.Run(name+"_"+phase, func(t *testing.T) {
+					dir := t.TempDir()
+					require.NoError(t, os.WriteFile(filepath.Join(dir, "task-lint.json"), []byte(body), 0o600))
+					out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-Phase", phase, "-FixtureRoot", dir)
+					assert.Equal(t, 2, code, out)
+					assert.Contains(t, out, "INVALID-INPUT", out)
+					assert.NotContains(t, out, marker)
+				})
+			}
 		}
 	})
 

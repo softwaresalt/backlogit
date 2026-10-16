@@ -176,6 +176,15 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 		out, code = u100Run(t, root, u100Args(inv, strings.ToUpper(sum))...)
 		assert.Zero(t, code, out)
 		assert.Contains(t, out, "BASELINE-LINT-OK:176-S")
+
+		// Composed and decomposed forms are the same group under NFC.
+		nfc := u100Base()
+		nfc.Groups[0].Message = "caf\u00e9  unchecked"
+		nfc.Remaining[0].Message = "cafe\u0301 unchecked"
+		inv, sum = u100Write(t, u100Marshal(t, nfc))
+		out, code = u100Run(t, root, u100Args(inv, sum)...)
+		assert.Zero(t, code, out)
+		assert.Contains(t, out, "BASELINE-LINT-OK:176-S")
 	})
 
 	t.Run("red_integrity_monotonicity", func(t *testing.T) {
@@ -247,6 +256,13 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 			"null_remaining_member": `{"schema":"baseline-inventory/v1","groups":[` + g + `],"remaining":[null]}`,
 			"null_owners":           `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":null}],"remaining":[]}`,
 			"null_owner_member":     `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[null]}],"remaining":[]}`,
+			"baseline_null":         `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":null,"owners":[]}],"remaining":[]}`,
+			"baseline_negative":     `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":-1,"owners":[]}],"remaining":[]}`,
+			"baseline_string":       `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":"1","owners":[]}],"remaining":[]}`,
+			"baseline_fractional":   `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1.5,"owners":[]}],"remaining":[]}`,
+			"baseline_too_large":    `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":2147483648,"owners":[]}],"remaining":[]}`,
+			"resolves_negative":     `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[{"task":"t","resolves":-1,"completed":true}]}],"remaining":[{"path":"a","linter":"l","message":"m","line":1,"column":1},{"path":"a","linter":"l","message":"m","line":2,"column":1}]}`,
+			"resolves_null":         `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[{"task":"t","resolves":null,"completed":false}]}],"remaining":[]}`,
 			"object_groups":         `{"schema":"baseline-inventory/v1","groups":{},"remaining":[]}`,
 		}
 		for name, body := range shapes {
@@ -255,6 +271,7 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 				out, code := u100Run(t, root, u100Args(path, sum)...)
 				assert.Equal(t, 2, code, out)
 				assert.Contains(t, out, "INVALID-INPUT")
+				assert.NotContains(t, out, "BASELINE-LINT-OK")
 			})
 		}
 

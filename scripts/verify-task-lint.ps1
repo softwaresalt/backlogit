@@ -46,8 +46,16 @@ function Stop-Closed([string]$Message, [int]$Code = 2) {
     exit $Code
 }
 
+function Test-NonNegInt($Value) {
+    if ($null -eq $Value -or $Value -is [bool] -or $Value -is [string]) { return $false }
+    if ($Value -isnot [int] -and $Value -isnot [long] -and $Value -isnot [double] -and $Value -isnot [decimal] -and $Value -isnot [System.Numerics.BigInteger]) { return $false }
+    if ($Value -is [double] -and ([double]::IsNaN($Value) -or [double]::IsInfinity($Value))) { return $false }
+    if ($Value -lt 0 -or $Value -gt 2147483647) { return $false }
+    return ($Value -eq [math]::Truncate([decimal]$Value))
+}
 function Get-Fingerprint($Item) {
-    $msg = ([string]$Item.message -replace '\s+', ' ').Trim()
+    $msg = ([string]$Item.message).Normalize([System.Text.NormalizationForm]::FormC)
+    $msg = ($msg -replace '\s+', ' ').Trim()
     return ('{0}|{1}|{2}' -f $Item.path, $Item.linter, $msg)
 }
 
@@ -74,6 +82,14 @@ try {
     }
     foreach ($m in $taskObj.expected_group_residual_after_task) {
         if ($null -eq $m -or $m -isnot [pscustomobject]) { Stop-Closed "task '$TaskId' residual members must be objects" }
+    }
+
+    foreach ($m in $taskObj.expected_group_residual_after_task) {
+        if (-not (Test-NonNegInt $m.PSObject.Properties['count']?.Value)) { Stop-Closed "task '$TaskId' residual count must be a non-negative integer" }
+    }
+    if ($fixture.findings -isnot [System.Array]) { Stop-Closed 'fixture findings must be an array' }
+    foreach ($f in $fixture.findings) {
+        if ($null -eq $f -or $f -isnot [pscustomobject]) { Stop-Closed 'fixture findings members must be objects' }
     }
 
     if ($Phase -eq 'Schema') {
