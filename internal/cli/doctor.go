@@ -79,7 +79,7 @@ resume) — no new command; retry policy is owned by the caller.`,
   backlogit doctor --target .backlogit/queue/001.001-T.md
   backlogit doctor --target .backlogit/queue/001.001-T.md --format json`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			if outputFormatFlag != "text" && outputFormatFlag != "json" {
 				return fmt.Errorf("unsupported format %q (expected text or json)", outputFormatFlag)
 			}
@@ -104,7 +104,11 @@ resume) — no new command; retry policy is owned by the caller.`,
 				if err != nil {
 					return &ExitError{Code: 3, Msg: fmt.Sprintf("open workspace: %v", err)}
 				}
-				defer ws.Close()
+				defer func() {
+					if cerr := ws.Close(); cerr != nil {
+						retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+					}
+				}()
 
 				code, res := runDoctorTargetMode(ctx, ws, targetFlag,
 					outputFormatFlag, doctorTargetTimeout, core.ValidateDoctorTargetResolved, cmd.OutOrStdout())
@@ -121,7 +125,11 @@ resume) — no new command; retry policy is owned by the caller.`,
 				}
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			report, err := core.Doctor(ctx, ws, &core.DoctorOptions{
 				CheckOrphans:                  checkOrphans,
@@ -155,16 +163,24 @@ resume) — no new command; retry policy is owned by the caller.`,
 
 			// Text output.
 			if len(report.Findings) == 0 && len(report.FixActions) == 0 {
-				fmt.Fprintln(w, "No issues found.")
+				if _, err := fmt.Fprintln(w, "No issues found."); err != nil {
+					return fmt.Errorf("write doctor report: %w", err)
+				}
 				return nil
 			}
 			for _, f := range report.Findings {
-				fmt.Fprintf(w, "[%s] %s: %s\n", f.Type, f.ArtifactID, f.Description)
+				if _, err := fmt.Fprintf(w, "[%s] %s: %s\n", f.Type, f.ArtifactID, f.Description); err != nil {
+					return fmt.Errorf("write doctor report: %w", err)
+				}
 			}
 			for _, a := range report.FixActions {
-				fmt.Fprintf(w, "[fix:%s] %s: %s\n", a.Type, a.ArtifactID, a.Detail)
+				if _, err := fmt.Fprintf(w, "[fix:%s] %s: %s\n", a.Type, a.ArtifactID, a.Detail); err != nil {
+					return fmt.Errorf("write doctor report: %w", err)
+				}
 			}
-			fmt.Fprintf(w, "\n%d issue(s) found, %d fix(es) applied.\n", len(report.Findings), len(report.FixActions))
+			if _, err := fmt.Fprintf(w, "\n%d issue(s) found, %d fix(es) applied.\n", len(report.Findings), len(report.FixActions)); err != nil {
+				return fmt.Errorf("write doctor report: %w", err)
+			}
 			if report.HasErrors() {
 				return &ExitError{Code: 1, Msg: "doctor found error-severity integrity issues"}
 			}
@@ -229,8 +245,7 @@ func runDoctorTargetMode(
 ) (int, *core.DoctorTargetResult) {
 	absTarget, unlock, short := core.PrepareDoctorTarget(ws, target)
 	if short != nil {
-		writeDoctorTargetOutput(w, short, format)
-		return doctorTargetExitCode(short), short
+		return emitDoctorTargetOutput(w, short, format, doctorTargetExitCode(short))
 	}
 	// Deferred here — in the command's synchronous call frame — so the sidecar
 	// is released even if the validation below times out. This is the whole
@@ -278,17 +293,14 @@ func runDoctorTargetWithTimeout(
 		if errors.Is(tctx.Err(), context.DeadlineExceeded) {
 			res := core.NewDoctorTargetResult(target, core.DoctorTargetTimeout)
 			res.Message = fmt.Sprintf("validation exceeded the %s deadline", timeout)
-			writeDoctorTargetOutput(w, res, format)
-			return 2, res
+			return emitDoctorTargetOutput(w, res, format, 2)
 		}
 		// Parent context cancelled for another reason → treat as IO/scope.
 		res := core.NewDoctorTargetResult(target, core.DoctorTargetIO)
 		res.Message = tctx.Err().Error()
-		writeDoctorTargetOutput(w, res, format)
-		return 3, res
+		return emitDoctorTargetOutput(w, res, format, 3)
 	case res := <-resCh:
-		writeDoctorTargetOutput(w, res, format)
-		return doctorTargetExitCode(res), res
+		return emitDoctorTargetOutput(w, res, format, doctorTargetExitCode(res))
 	}
 }
 
@@ -311,21 +323,47 @@ func doctorTargetExitCode(res *core.DoctorTargetResult) int {
 	}
 }
 
+// emitDoctorTargetOutput writes the target-mode result and returns its exit
+// code. A failed write is never lost: it turns a passing outcome into an IO
+// failure (exit 3) and is appended to the message of an already failing one.
+func emitDoctorTargetOutput(w io.Writer, res *core.DoctorTargetResult, format string, code int) (int, *core.DoctorTargetResult) {
+	err := writeDoctorTargetOutput(w, res, format)
+	if err == nil {
+		return code, res
+	}
+	if code == 0 {
+		failed := core.NewDoctorTargetResult(res.Path, core.DoctorTargetIO)
+		failed.Message = fmt.Sprintf("write output: %v", err)
+		return 3, failed
+	}
+	res.Message = fmt.Sprintf("%s; write output: %v", res.Message, err)
+	return code, res
+}
+
 // writeDoctorTargetOutput emits the target-mode result as versioned JSON or a
 // concise text line.
-func writeDoctorTargetOutput(w io.Writer, res *core.DoctorTargetResult, format string) {
+func writeDoctorTargetOutput(w io.Writer, res *core.DoctorTargetResult, format string) error {
 	if format == "json" {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(res)
-		return
+		if err := enc.Encode(res); err != nil {
+			return fmt.Errorf("encode target result: %w", err)
+		}
+		return nil
 	}
 	if res.OK {
-		fmt.Fprintf(w, "PASS %s (%s)\n", res.Path, res.ArtifactID)
-		return
+		if _, err := fmt.Fprintf(w, "PASS %s (%s)\n", res.Path, res.ArtifactID); err != nil {
+			return fmt.Errorf("write target result: %w", err)
+		}
+		return nil
 	}
-	fmt.Fprintf(w, "%s %s: %s\n", string(res.Kind), res.Path, res.Message)
+	if _, err := fmt.Fprintf(w, "%s %s: %s\n", string(res.Kind), res.Path, res.Message); err != nil {
+		return fmt.Errorf("write target result: %w", err)
+	}
 	for _, fe := range res.FieldErrors {
-		fmt.Fprintf(w, "  - %s\n", fe)
+		if _, err := fmt.Fprintf(w, "  - %s\n", fe); err != nil {
+			return fmt.Errorf("write target result: %w", err)
+		}
 	}
+	return nil
 }

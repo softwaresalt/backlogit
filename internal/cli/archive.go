@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -21,13 +22,17 @@ Archived items are moved into .backlogit\archive and tracked in the index.`,
 		Example: `  backlogit archive 001.001-T
   backlogit archive --all-done`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			if allDone {
 				policy := &core.ArchivePolicy{
@@ -38,7 +43,9 @@ Archived items are moved into .backlogit\archive and tracked in the index.`,
 				if err != nil {
 					return fmt.Errorf("auto-archive: %w", err)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Archived %d items\n", count)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Archived %d items\n", count); err != nil {
+					return fmt.Errorf("write output: %w", err)
+				}
 				return nil
 			}
 
@@ -50,12 +57,16 @@ Archived items are moved into .backlogit\archive and tracked in the index.`,
 				// 144-F guard 2: map governance refusals to exit code 9.
 				if eeGov := shipmentGovernanceExitError(err); eeGov != nil {
 					cmd.SilenceErrors = true
-					fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+					if _, werr := fmt.Fprintln(cmd.ErrOrStderr(), err.Error()); werr != nil {
+						eeGov.Err = errors.Join(eeGov.Err, fmt.Errorf("write governance reason: %w", werr))
+					}
 					return eeGov
 				}
 				return fmt.Errorf("archive: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Archived %s → %s\n", record.ID, record.ArchivePath)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Archived %s → %s\n", record.ID, record.ArchivePath); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 			return nil
 		},
 	}
