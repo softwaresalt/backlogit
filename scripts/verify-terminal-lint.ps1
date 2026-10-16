@@ -84,7 +84,11 @@ function ConvertFrom-JsonElement([System.Text.Json.JsonElement]$El) {
 }
 
 function Read-StrictJson([string]$Path, [string]$Goos) {
-    $text = Get-Content -LiteralPath $Path -Raw
+    $resolved = Resolve-Path -LiteralPath $Path
+    $bytes = [System.IO.File]::ReadAllBytes($resolved.ProviderPath)
+    $start = 0
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { $start = 3 }
+    $text = [System.Text.UTF8Encoding]::new($false, $true).GetString($bytes, $start, $bytes.Length - $start)
     if ([string]::IsNullOrWhiteSpace($text)) { Stop-Closed "malformed $Goos fixture: empty" }
     try { $jd = [System.Text.Json.JsonDocument]::Parse($text) }
     catch { Stop-Closed "malformed $Goos fixture: $($_.Exception.Message)" }

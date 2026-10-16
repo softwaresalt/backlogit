@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -535,4 +536,50 @@ func TestU175_100_InventorySingleRead(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestU175_100_ExactCountTokensAndMalformedUTF8(t *testing.T) {
+	root := u100RepoRoot(t)
+	const okMarker = "BASELINE-LINT-OK:176-S"
+	body := func(baseline, resolves string) []byte {
+		return []byte(`{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":` + baseline +
+			`,"owners":[{"task":"175.001-T","resolves":` + resolves + `,"completed":false}]}],"remaining":[{"path":"a","linter":"l","message":"m"}]}`)
+	}
+	for token, valid := range map[string]bool{
+		"1.0": true, "1e0": true, "10e-1": true, "1": true,
+		"1.0000000000000001": false, "1e-400": false, "0.5": false, "1e400": false, "-0": false,
+	} {
+		t.Run("baseline_count_"+token, func(t *testing.T) {
+			path, sum := u100Write(t, body(token, "0"))
+			out, code := u100Run(t, root, u100Args(path, sum)...)
+			if valid {
+				assert.Zero(t, code, out)
+				assert.Contains(t, out, okMarker)
+				return
+			}
+			assert.Equal(t, 2, code, out)
+			assert.NotContains(t, out, okMarker)
+		})
+		t.Run("resolves_"+token, func(t *testing.T) {
+			path, sum := u100Write(t, body("1", token))
+			out, code := u100Run(t, root, u100Args(path, sum)...)
+			if valid {
+				assert.Zero(t, code, out)
+				assert.Contains(t, out, okMarker)
+				return
+			}
+			assert.Equal(t, 2, code, out)
+			assert.NotContains(t, out, okMarker)
+		})
+	}
+
+	for _, bad := range []string{"\xff", "\xfe"} {
+		t.Run(fmt.Sprintf("malformed_utf8_%x", bad), func(t *testing.T) {
+			raw := []byte(`{"schema":"baseline-inventory/v1","groups":[],"remaining":[{"path":"a` + bad + `","linter":"l","message":"m"}]}`)
+			path, sum := u100Write(t, raw)
+			out, code := u100Run(t, root, u100Args(path, sum)...)
+			assert.Equal(t, 2, code, out)
+			assert.NotContains(t, out, okMarker)
+		})
+	}
 }

@@ -2,6 +2,7 @@ package tests_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -271,4 +272,20 @@ func TestU175_101_TerminalLintRunnerBootstrap(t *testing.T) {
 			}
 		})
 	})
+}
+
+func TestU175_101_MalformedUTF8SurfaceFixture(t *testing.T) {
+	root := u101RepoRoot(t)
+	for _, bad := range []string{"\xff", "\xfe"} {
+		for _, surface := range []string{"windows", "linux"} {
+			t.Run(fmt.Sprintf("%s_%x", surface, bad), func(t *testing.T) {
+				dir := u101Fixture(t, nil, nil)
+				raw := `{"goos":"` + surface + `","findings":[{"path":"a` + bad + `","linter":"l","message":"m"}]}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, surface+".json"), []byte(raw), 0o600))
+				out, code := u101Run(t, root, "-FeatureId", "175-F", "-FixtureRoot", dir)
+				assert.Equal(t, 2, code, out)
+				assert.NotContains(t, out, u101Marker)
+			})
+		}
+	}
 }

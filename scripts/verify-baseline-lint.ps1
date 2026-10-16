@@ -78,6 +78,29 @@ function Test-DupKey([System.Text.Json.JsonElement]$El) {
     return $false
 }
 
+function ConvertTo-ExactInteger([string]$Raw) {
+    # Exact integral value of a JSON number token, or NaN when it is not exactly an integer (or is -0).
+    $m = [regex]::Match($Raw, '^(-?)([0-9]+)(?:\.([0-9]+))?(?:[eE]([+-]?[0-9]+))?\z')
+    if (-not $m.Success) { return [double]::NaN }
+    $neg = $m.Groups[1].Value -ceq '-'
+    $frac = $m.Groups[3].Value
+    $digits = ($m.Groups[2].Value + $frac).TrimStart('0')
+    if ($digits.Length -eq 0) { if ($neg) { return [double]::NaN } else { return [long]0 } }
+    $exp = [System.Numerics.BigInteger]::Zero
+    if ($m.Groups[4].Success) { $exp = [System.Numerics.BigInteger]::Parse($m.Groups[4].Value, [System.Globalization.CultureInfo]::InvariantCulture) }
+    $exp = $exp - $frac.Length
+    if ($exp -lt 0) {
+        $trim = $digits.Length - $digits.TrimEnd('0').Length
+        if (-$exp -gt $trim) { return [double]::NaN }
+        $digits = $digits.Substring(0, $digits.Length - [int](-$exp))
+        $exp = [System.Numerics.BigInteger]::Zero
+    }
+    if ($exp -gt 40) { return [double]::NaN }
+    $n = [System.Numerics.BigInteger]::Parse($digits + ('0' * [int]$exp), [System.Globalization.CultureInfo]::InvariantCulture)
+    if ($neg) { $n = -$n }
+    if ($n -ge [long]::MinValue -and $n -le [long]::MaxValue) { return [long]$n }
+    return $n
+}
 function ConvertFrom-JsonElement([System.Text.Json.JsonElement]$El) {
     switch ($El.ValueKind) {
         ([System.Text.Json.JsonValueKind]::Object) {
@@ -98,12 +121,12 @@ function ConvertFrom-JsonElement([System.Text.Json.JsonElement]$El) {
         ([System.Text.Json.JsonValueKind]::False) { return $false }
         ([System.Text.Json.JsonValueKind]::Number) {
             $raw = $El.GetRawText()
-            if ($raw -cmatch '^-?[0-9]+\z') {
+            if ($raw -cmatch '^-?[0-9]+\z' -and $raw -cnotmatch '^-0+\z') {
                 $n = [System.Numerics.BigInteger]::Parse($raw, [System.Globalization.CultureInfo]::InvariantCulture)
                 if ($n -ge [long]::MinValue -and $n -le [long]::MaxValue) { return [long]$n }
                 return $n
             }
-            return [double]::Parse($raw, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture)
+            return (ConvertTo-ExactInteger $raw)
         }
         default { return $null }
     }
@@ -112,7 +135,7 @@ function ConvertFrom-JsonElement([System.Text.Json.JsonElement]$El) {
 function Read-StrictJson([byte[]]$Bytes) {
     $start = 0
     if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) { $start = 3 }
-    $text = [System.Text.Encoding]::UTF8.GetString($Bytes, $start, $Bytes.Length - $start)
+    $text = [System.Text.UTF8Encoding]::new($false, $true).GetString($Bytes, $start, $Bytes.Length - $start)
     if ([string]::IsNullOrWhiteSpace($text)) { Stop-Closed 'malformed inventory: empty' }
     try { $doc = [System.Text.Json.JsonDocument]::Parse($text) }
     catch { Stop-Closed "malformed inventory: $($_.Exception.Message)" }

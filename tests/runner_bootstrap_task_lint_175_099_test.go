@@ -509,3 +509,46 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 		})
 	})
 }
+
+func TestU175_099_ExactCountTokensAndMalformedUTF8(t *testing.T) {
+	root := u099RepoRoot(t)
+	const id = "175.001-T"
+	marker := "TASK-LINT-OK:" + id
+	body := func(count string) string {
+		return `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[{"path":"a","linter":"l","message":"m","count":` + count + `}]}},"known_groups":[],"findings":[{"path":"a","linter":"l","message":"m"}]}`
+	}
+	run := func(t *testing.T, raw []byte, phase string) (string, int) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "task-lint.json"), raw, 0o600))
+		return u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-Phase", phase, "-FixtureRoot", dir)
+	}
+
+	for token, valid := range map[string]bool{
+		"1.0": true, "1e0": true, "10e-1": true, "1": true,
+		"1.0000000000000001": false, "1e-400": false, "0.5": false, "1e400": false, "-0": false,
+	} {
+		for _, phase := range []string{"Schema", "PreCommit", "PostCommit"} {
+			t.Run("count_"+token+"_"+phase, func(t *testing.T) {
+				out, code := run(t, []byte(body(token)), phase)
+				if valid {
+					assert.Zero(t, code, out)
+					assert.Contains(t, out, marker)
+					return
+				}
+				assert.Equal(t, 2, code, out)
+				assert.NotContains(t, out, marker)
+			})
+		}
+	}
+
+	for _, bad := range []string{"\xff", "\xfe"} {
+		for _, phase := range []string{"Schema", "PreCommit", "PostCommit"} {
+			t.Run(fmt.Sprintf("malformed_utf8_%x_%s", bad, phase), func(t *testing.T) {
+				raw := []byte(`{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]}},"known_groups":[],"findings":[{"path":"a` + bad + `","linter":"l","message":"m"}]}`)
+				out, code := run(t, raw, phase)
+				assert.Equal(t, 2, code, out)
+				assert.NotContains(t, out, marker)
+			})
+		}
+	}
+}
