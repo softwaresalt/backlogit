@@ -28,8 +28,13 @@ difference between index and worktree under the new attributes and rewrote nothi
 
 1. Verify the target set first: compare the live file list against the pinned baseline
    digest (here 564 files, 528 Go and 36 JSON). Never widen beyond that set.
-2. Delete only those worktree files, then run `git restore -- <the same paths>`. Checkout
-   now writes each file with LF.
+   The digest proves only the path list, not file contents. Before deleting anything,
+   for every listed path require HEAD blob == index blob, and require the worktree bytes
+   to equal the index blob after replacing only CRLF with LF (compare SHA-256 of both
+   canonicalized forms). Halt on any mismatch: a line-ending approval never authorizes
+   discarding an unstaged content edit.
+2. Only after that check passes, delete those worktree files, then run
+   `git restore -- <the same paths>`. Checkout now writes each file with LF.
 3. Confirm no tracked `*.go` or `*.json` file contains CRLF and that `main` still equals
    `origin/main`.
 
