@@ -64,17 +64,54 @@ function Get-Fingerprint($Item) {
     return (ConvertTo-Json -InputObject @($Item.path, $Item.linter, $msg) -Compress)
 }
 
-function Assert-Id([string]$Name, [string]$Value) {
+function Test-DupKey([System.Text.Json.JsonElement]$El) {
+    if ($El.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
+        $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($p in $El.EnumerateObject()) {
+            if (-not $seen.Add($p.Name)) { return $true }
+            if (Test-DupKey $p.Value) { return $true }
+        }
+    }
+    elseif ($El.ValueKind -eq [System.Text.Json.JsonValueKind]::Array) {
+        foreach ($e in $El.EnumerateArray()) { if (Test-DupKey $e) { return $true } }
+    }
+    return $false
+}
+
+function Read-StrictJson([string]$Path) {
+    $text = Get-Content -LiteralPath $Path -Raw
+    if ([string]::IsNullOrWhiteSpace($text)) { Stop-Closed 'malformed inventory: empty' }
+    try { $doc = [System.Text.Json.JsonDocument]::Parse($text) }
+    catch { Stop-Closed "malformed inventory: $($_.Exception.Message)" }
+    try {
+        if ($doc.RootElement.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { Stop-Closed 'malformed inventory: top level must be an object' }
+        if (Test-DupKey $doc.RootElement) { Stop-Closed 'malformed inventory: duplicate object keys' }
+    }
+    finally { $doc.Dispose() }
+    $opts = @{}
+    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) { $opts['DateKind'] = 'String' }
+    return (ConvertFrom-Json -InputObject $text @opts)
+}
+
+function Assert-Fingerprint($Item, [string]$Where) {
+    foreach ($n in 'path', 'linter') {
+        $v = $Item.PSObject.Properties[$n]?.Value
+        if ($v -isnot [string] -or [string]::IsNullOrWhiteSpace($v)) { Stop-Closed "malformed inventory: $Where $n must be a non-empty string" }
+    }
+    if ($Item.PSObject.Properties['message']?.Value -isnot [string]) { Stop-Closed "malformed inventory: $Where message must be a string" }
+}
+
+function Assert-Id([string]$Name, [string]$Value, [string]$Pattern) {
     if ([string]::IsNullOrWhiteSpace($Value)) { Stop-Closed "$Name is required" }
-    if ($Value -cnotmatch '^[0-9]+(\.[0-9]+)*-[A-Z]{1,2}$') { Stop-Closed "invalid $Name '$Value'" }
+    if ($Value -cnotmatch $Pattern) { Stop-Closed "invalid $Name '$Value'" }
 }
 
 try {
-    Assert-Id 'Shipment' $Shipment
-    Assert-Id 'FeatureId' $FeatureId
-    Assert-Id 'TerminalTask' $TerminalTask
+    Assert-Id 'Shipment' $Shipment '^[0-9]+-S\z'
+    Assert-Id 'FeatureId' $FeatureId '^[0-9]+-F\z'
+    Assert-Id 'TerminalTask' $TerminalTask '^[0-9]+(\.[0-9]+)*-(T|ST)\z'
     if ([string]::IsNullOrWhiteSpace($Inventory)) { Stop-Closed 'Inventory is required' }
-    if ($InventorySha256 -cnotmatch '^[0-9A-Fa-f]{64}$') { Stop-Closed 'InventorySha256 must be 64 hex characters' }
+    if ($InventorySha256 -cnotmatch '^[0-9A-Fa-f]{64}\z') { Stop-Closed 'InventorySha256 must be 64 hex characters' }
     if (-not (Test-Path -LiteralPath $Inventory -PathType Leaf)) { Stop-Closed "inventory not found: $Inventory" }
 
     $actualHash = (Get-FileHash -LiteralPath $Inventory -Algorithm SHA256).Hash
@@ -82,14 +119,9 @@ try {
         Stop-Closed "inventory hash mismatch (actual $actualHash)" 1
     }
 
-    try {
-        $inv = Get-Content -LiteralPath $Inventory -Raw | ConvertFrom-Json
-    }
-    catch {
-        Stop-Closed "malformed inventory: $($_.Exception.Message)"
-    }
+    $inv = Read-StrictJson $Inventory
     if ($null -eq $inv -or $inv -isnot [pscustomobject] -or
-        $null -eq $inv.PSObject.Properties['schema'] -or $inv.schema -ne 'baseline-inventory/v1' -or
+        $null -eq $inv.PSObject.Properties['schema'] -or $inv.schema -isnot [string] -or $inv.schema -cne 'baseline-inventory/v1' -or
         $null -eq $inv.PSObject.Properties['groups'] -or $null -eq $inv.PSObject.Properties['remaining']) {
         Stop-Closed 'malformed inventory: expected schema baseline-inventory/v1 with groups and remaining'
     }
@@ -99,13 +131,20 @@ try {
         if ($list -isnot [System.Array]) { Stop-Closed "malformed inventory: $name must be an array" }
         foreach ($m in $list) {
             if ($null -eq $m -or $m -isnot [pscustomobject]) { Stop-Closed "malformed inventory: $name members must be objects" }
+            Assert-Fingerprint $m $name
         }
     }
+    $seenGroups = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($g in $inv.groups) {
+        if (-not $seenGroups.Add((Get-Fingerprint $g))) { Stop-Closed 'malformed inventory: duplicate group fingerprint' }
         $owners = $g.PSObject.Properties['owners']
         if ($null -eq $owners -or $owners.Value -isnot [System.Array]) { Stop-Closed 'malformed inventory: group owners must be an array' }
+        $seenOwners = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         foreach ($o in $owners.Value) {
             if ($null -eq $o -or $o -isnot [pscustomobject]) { Stop-Closed 'malformed inventory: owners members must be objects' }
+            $ot = $o.PSObject.Properties['task']?.Value
+            if ($ot -isnot [string] -or $ot -cnotmatch '^[0-9]+(\.[0-9]+)*-(T|ST)\z') { Stop-Closed 'malformed inventory: owner task must be a task id string' }
+            if (-not $seenOwners.Add($ot)) { Stop-Closed 'malformed inventory: duplicate owner task in group' }
             if ($o.PSObject.Properties['completed']?.Value -isnot [bool]) { Stop-Closed 'malformed inventory: owner completed must be a boolean' }
             if (-not (Test-NonNegInt $o.PSObject.Properties['resolves']?.Value)) { Stop-Closed 'malformed inventory: owner resolves must be a non-negative integer' }
         }

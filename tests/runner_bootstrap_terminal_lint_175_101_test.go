@@ -205,4 +205,68 @@ func TestU175_101_TerminalLintRunnerBootstrap(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("validation_sweep", func(t *testing.T) {
+		bodies := map[string]string{
+			"finding_empty_object":    `{"goos":"%s","findings":[{}]}`,
+			"finding_scalar":          `{"goos":"%s","findings":[1]}`,
+			"finding_path_number":     `{"goos":"%s","findings":[{"path":1,"linter":"l","message":"m"}]}`,
+			"finding_linter_null":     `{"goos":"%s","findings":[{"path":"a","linter":null,"message":"m"}]}`,
+			"finding_message_number":  `{"goos":"%s","findings":[{"path":"a","linter":"l","message":123}]}`,
+			"finding_message_missing": `{"goos":"%s","findings":[{"path":"a","linter":"l"}]}`,
+			"finding_path_empty":      `{"goos":"%s","findings":[{"path":"","linter":"l","message":"m"}]}`,
+			"goos_number":             `{"goos":1,"findings":[]}`,
+			"goos_null":               `{"goos":null,"findings":[]}`,
+			"duplicate_goos_key":      `{"goos":"%s","goos":"%s","findings":[]}`,
+			"duplicate_findings_key":  `{"goos":"%s","findings":[],"findings":[]}`,
+			"top_level_array":         `[{"goos":"%s","findings":[]}]`,
+			"top_level_scalar":        `42`,
+			"top_level_null":          `null`,
+			"empty_file":              ``,
+		}
+		for name, body := range bodies {
+			for _, surface := range []string{"windows", "linux"} {
+				t.Run(name+"_"+surface, func(t *testing.T) {
+					dir := u101Fixture(t, nil, nil)
+					b := strings.ReplaceAll(body, "%s", surface)
+					require.NoError(t, os.WriteFile(filepath.Join(dir, surface+".json"), []byte(b), 0o600))
+					out, code := u101Run(t, root, "-FeatureId", "175-F", "-FixtureRoot", dir)
+					assert.Equal(t, 2, code, out)
+					assert.Contains(t, out, "INVALID-INPUT")
+					assert.NotContains(t, out, "TERMINAL-LINT-OK:")
+				})
+			}
+		}
+
+		t.Run("utf8_bom_passes", func(t *testing.T) {
+			dir := u101Fixture(t, nil, nil)
+			for _, surface := range []string{"windows", "linux"} {
+				b := "\xef\xbb\xbf" + `{"goos":"` + surface + `","findings":[]}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, surface+".json"), []byte(b), 0o600))
+			}
+			out, code := u101Run(t, root, "-FeatureId", "175-F", "-FixtureRoot", dir)
+			assert.Zero(t, code, out)
+			assert.Contains(t, out, u101Marker)
+		})
+
+		t.Run("invalid_parameters", func(t *testing.T) {
+			dir := u101Fixture(t, nil, nil)
+			tests := map[string][]string{
+				"feature_task_shape":   {"-FeatureId", "175.001-F", "-FixtureRoot", dir},
+				"feature_wrong_suffix": {"-FeatureId", "175-T", "-FixtureRoot", dir},
+				"feature_trailing_nl":  {"-FeatureId", "175-F\n", "-FixtureRoot", dir},
+				"feature_empty":        {"-FeatureId", "", "-FixtureRoot", dir},
+				"fixture_root_empty":   {"-FeatureId", "175-F", "-FixtureRoot", ""},
+				"fixture_root_missing": {"-FeatureId", "175-F", "-FixtureRoot", filepath.Join(dir, "absent")},
+			}
+			for name, args := range tests {
+				t.Run(name, func(t *testing.T) {
+					out, code := u101Run(t, root, args...)
+					assert.Equal(t, 2, code, out)
+					assert.Contains(t, out, "INVALID-INPUT")
+					assert.NotContains(t, out, "TERMINAL-LINT-OK:")
+				})
+			}
+		})
+	})
 }

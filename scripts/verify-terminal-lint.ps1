@@ -38,21 +38,45 @@ function Stop-Closed([string]$Message, [int]$Code = 2) {
     exit $Code
 }
 
+function Test-DupKey([System.Text.Json.JsonElement]$El) {
+    if ($El.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
+        $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($p in $El.EnumerateObject()) {
+            if (-not $seen.Add($p.Name)) { return $true }
+            if (Test-DupKey $p.Value) { return $true }
+        }
+    }
+    elseif ($El.ValueKind -eq [System.Text.Json.JsonValueKind]::Array) {
+        foreach ($e in $El.EnumerateArray()) { if (Test-DupKey $e) { return $true } }
+    }
+    return $false
+}
+
+function Read-StrictJson([string]$Path, [string]$Goos) {
+    $text = Get-Content -LiteralPath $Path -Raw
+    if ([string]::IsNullOrWhiteSpace($text)) { Stop-Closed "malformed $Goos fixture: empty" }
+    try { $jd = [System.Text.Json.JsonDocument]::Parse($text) }
+    catch { Stop-Closed "malformed $Goos fixture: $($_.Exception.Message)" }
+    try {
+        if ($jd.RootElement.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { Stop-Closed "malformed $Goos fixture: top level must be an object" }
+        if (Test-DupKey $jd.RootElement) { Stop-Closed "malformed $Goos fixture: duplicate object keys" }
+    }
+    finally { $jd.Dispose() }
+    $opts = @{}
+    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) { $opts['DateKind'] = 'String' }
+    return (ConvertFrom-Json -InputObject $text @opts)
+}
+
 try {
     if ([string]::IsNullOrWhiteSpace($FeatureId)) { Stop-Closed 'FeatureId is required' }
-    if ($FeatureId -cnotmatch '^[0-9]+(\.[0-9]+)*-[A-Z]{1,2}$') { Stop-Closed "invalid FeatureId '$FeatureId'" }
+    if ($FeatureId -cnotmatch '^[0-9]+-F\z') { Stop-Closed "invalid FeatureId '$FeatureId'" }
     if ([string]::IsNullOrWhiteSpace($FixtureRoot)) { Stop-Closed 'FixtureRoot is required (real lint is never run)' }
 
     $residual = @{}
     foreach ($goos in @('windows', 'linux')) {
         $path = Join-Path $FixtureRoot "$goos.json"
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { Stop-Closed "missing $goos surface fixture: $path" }
-        try {
-            $doc = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-        }
-        catch {
-            Stop-Closed "malformed $goos fixture: $($_.Exception.Message)"
-        }
+        $doc = Read-StrictJson $path $goos
         if ($null -eq $doc -or $doc -isnot [pscustomobject] -or $null -eq $doc.PSObject.Properties['findings']) {
             Stop-Closed "malformed $goos fixture: findings missing"
         }
@@ -62,7 +86,12 @@ try {
         $list = $doc.findings
         if ($list -isnot [System.Array]) { Stop-Closed "malformed $goos fixture: findings must be an array" }
         foreach ($m in $list) {
-            if ($null -eq $m) { Stop-Closed "malformed $goos fixture: findings members must be non-null" }
+            if ($null -eq $m -or $m -isnot [pscustomobject]) { Stop-Closed "malformed $goos fixture: findings members must be objects" }
+            foreach ($n in 'path', 'linter') {
+                $v = $m.PSObject.Properties[$n]?.Value
+                if ($v -isnot [string] -or [string]::IsNullOrWhiteSpace($v)) { Stop-Closed "malformed $goos fixture: finding $n must be a non-empty string" }
+            }
+            if ($m.PSObject.Properties['message']?.Value -isnot [string]) { Stop-Closed "malformed $goos fixture: finding message must be a string" }
         }
         $residual[$goos] = $list
     }

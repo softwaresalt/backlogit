@@ -341,4 +341,79 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 		assert.Contains(t, out, "RESIDUAL-MISMATCH", out)
 		assert.NotContains(t, out, marker)
 	})
+
+	t.Run("validation_sweep", func(t *testing.T) {
+		const grp = `{"path":"a","linter":"l","message":"%s","count":0}`
+		wrap := func(expected, findings string) string {
+			return `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[` + expected + `]}},"findings":[` + findings + `]}`
+		}
+		bodies := map[string]string{
+			"numeric_message_vs_string_group": wrap(fmt.Sprintf(grp, "123"), `{"path":"a","linter":"l","message":123}`),
+			"numeric_group_message":           wrap(`{"path":"a","linter":"l","message":123,"count":0}`, ``),
+			"count_only_residual_member":      wrap(`{"count":0}`, ``),
+			"empty_finding":                   wrap(``, `{}`),
+			"finding_path_number":             wrap(``, `{"path":1,"linter":"l","message":"m"}`),
+			"finding_linter_null":             wrap(``, `{"path":"a","linter":null,"message":"m"}`),
+			"finding_message_missing":         wrap(``, `{"path":"a","linter":"l"}`),
+			"finding_path_empty":              wrap(``, `{"path":"","linter":"l","message":"m"}`),
+			"residual_linter_array":           wrap(`{"path":"a","linter":["l"],"message":"m","count":0}`, ``),
+			"duplicate_residual_group":        wrap(fmt.Sprintf(grp, "m")+`,`+fmt.Sprintf(grp, "  m "), ``),
+			"duplicate_task_key":              `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]},"175.001-T":{"expected_group_residual_after_task":[]}},"findings":[]}`,
+			"duplicate_top_level_key":         `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]}},"findings":[],"findings":[]}`,
+			"bad_task_key_shape":              `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]},"x":{"expected_group_residual_after_task":[]}},"findings":[]}`,
+			"other_task_malformed":            `{"tasks":{"175.001-T":{"expected_group_residual_after_task":[]},"175.002-T":null},"findings":[]}`,
+			"tasks_array":                     `{"tasks":[],"findings":[]}`,
+			"top_level_array":                 `[{"tasks":{},"findings":[]}]`,
+			"top_level_scalar":                `42`,
+			"top_level_null":                  `null`,
+			"empty_file":                      ``,
+		}
+		for name, body := range bodies {
+			for _, phase := range []string{"Schema", "PreCommit", "PostCommit"} {
+				t.Run(name+"_"+phase, func(t *testing.T) {
+					dir := t.TempDir()
+					require.NoError(t, os.WriteFile(filepath.Join(dir, "task-lint.json"), []byte(body), 0o600))
+					out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-Phase", phase, "-FixtureRoot", dir)
+					assert.Equal(t, 2, code, out)
+					assert.Contains(t, out, "INVALID-INPUT", out)
+					assert.NotContains(t, out, marker)
+				})
+			}
+		}
+
+		t.Run("utf8_bom_and_date_like_message_pass", func(t *testing.T) {
+			body := "\xef\xbb\xbf" + wrap(`{"path":"a","linter":"l","message":"2020-01-01T00:00:00Z","count":1}`, `{"path":"a","linter":"l","message":"2020-01-01T00:00:00Z"}`)
+			for _, phase := range []string{"Schema", "PreCommit", "PostCommit"} {
+				dir := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "task-lint.json"), []byte(body), 0o600))
+				out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-Phase", phase, "-FixtureRoot", dir)
+				assert.Zero(t, code, "phase %s: %s", phase, out)
+				assert.Contains(t, out, marker)
+			}
+		})
+
+		t.Run("invalid_parameters", func(t *testing.T) {
+			dir := u099WriteFixture(t, u099Base(id))
+			tests := map[string][]string{
+				"phase_unknown":         {"-TaskId", id, "-FeatureId", u099Feature, "-Phase", "Bogus", "-FixtureRoot", dir},
+				"phase_lowercase":       {"-TaskId", id, "-FeatureId", u099Feature, "-Phase", "schema", "-FixtureRoot", dir},
+				"phase_empty":           {"-TaskId", id, "-FeatureId", u099Feature, "-Phase", "", "-FixtureRoot", dir},
+				"feature_is_task_shape": {"-TaskId", id, "-FeatureId", "175.001-F", "-FixtureRoot", dir},
+				"feature_wrong_suffix":  {"-TaskId", id, "-FeatureId", "175-T", "-FixtureRoot", dir},
+				"feature_trailing_nl":   {"-TaskId", id, "-FeatureId", "175-F\n", "-FixtureRoot", dir},
+				"task_feature_shape":    {"-TaskId", "175-F", "-FeatureId", u099Feature, "-FixtureRoot", dir},
+				"task_trailing_nl":      {"-TaskId", id + "\n", "-FeatureId", u099Feature, "-FixtureRoot", dir},
+				"fixture_root_empty":    {"-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", ""},
+				"fixture_root_missing":  {"-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", filepath.Join(dir, "absent")},
+			}
+			for name, args := range tests {
+				t.Run(name, func(t *testing.T) {
+					out, code := u099Run(t, root, args...)
+					assert.Equal(t, 2, code, out)
+					assert.Contains(t, out, "INVALID-INPUT", out)
+					assert.NotContains(t, out, marker)
+				})
+			}
+		})
+	})
 }

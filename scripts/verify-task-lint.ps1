@@ -33,7 +33,6 @@ Directory holding deterministic JSON fixtures.
 param(
     [string]$TaskId,
     [string]$FeatureId,
-    [ValidateSet('Schema', 'PreCommit', 'PostCommit')]
     [string]$Phase = 'PostCommit',
     [string]$FixtureRoot
 )
@@ -59,37 +58,82 @@ function Get-Fingerprint($Item) {
     return (ConvertTo-Json -InputObject @($Item.path, $Item.linter, $msg) -Compress)
 }
 
+function Test-DupKey([System.Text.Json.JsonElement]$El) {
+    if ($El.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
+        $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($p in $El.EnumerateObject()) {
+            if (-not $seen.Add($p.Name)) { return $true }
+            if (Test-DupKey $p.Value) { return $true }
+        }
+    }
+    elseif ($El.ValueKind -eq [System.Text.Json.JsonValueKind]::Array) {
+        foreach ($e in $El.EnumerateArray()) { if (Test-DupKey $e) { return $true } }
+    }
+    return $false
+}
+
+function Read-StrictJson([string]$Path) {
+    $text = Get-Content -LiteralPath $Path -Raw
+    if ([string]::IsNullOrWhiteSpace($text)) { Stop-Closed 'fixture is empty' }
+    try { $doc = [System.Text.Json.JsonDocument]::Parse($text) }
+    catch { Stop-Closed "malformed fixture: $($_.Exception.Message)" }
+    try {
+        if ($doc.RootElement.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { Stop-Closed 'fixture top level must be an object' }
+        if (Test-DupKey $doc.RootElement) { Stop-Closed 'fixture contains duplicate object keys' }
+    }
+    finally { $doc.Dispose() }
+    $opts = @{}
+    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) { $opts['DateKind'] = 'String' }
+    return (ConvertFrom-Json -InputObject $text @opts)
+}
+
+function Assert-Fingerprint($Item, [string]$Where) {
+    foreach ($n in 'path', 'linter') {
+        $v = $Item.PSObject.Properties[$n]?.Value
+        if ($v -isnot [string] -or [string]::IsNullOrWhiteSpace($v)) { Stop-Closed "$Where $n must be a non-empty string" }
+    }
+    if ($Item.PSObject.Properties['message']?.Value -isnot [string]) { Stop-Closed "$Where message must be a string" }
+}
+
 try {
     if ([string]::IsNullOrWhiteSpace($TaskId)) { Stop-Closed 'TaskId is required' }
-    if ($TaskId -cnotmatch '^[0-9]+(\.[0-9]+)*-[A-Z]{1,2}$') { Stop-Closed "invalid TaskId '$TaskId'" }
+    if ($TaskId -cnotmatch '^[0-9]+(\.[0-9]+)*-(T|ST)\z') { Stop-Closed "invalid TaskId '$TaskId'" }
     if ([string]::IsNullOrWhiteSpace($FeatureId)) { Stop-Closed 'FeatureId is required' }
-    if ($FeatureId -cnotmatch '^[0-9]+(\.[0-9]+)*-[A-Z]{1,2}$') { Stop-Closed "invalid FeatureId '$FeatureId'" }
+    if ($FeatureId -cnotmatch '^[0-9]+-F\z') { Stop-Closed "invalid FeatureId '$FeatureId'" }
+    if ($Phase -cnotin 'Schema', 'PreCommit', 'PostCommit') { Stop-Closed "invalid Phase '$Phase'" }
     if ([string]::IsNullOrWhiteSpace($FixtureRoot)) { Stop-Closed 'FixtureRoot is required (real lint is never run)' }
 
     $fixturePath = Join-Path $FixtureRoot 'task-lint.json'
     if (-not (Test-Path -LiteralPath $fixturePath -PathType Leaf)) { Stop-Closed "fixture not found: $fixturePath" }
-    $fixture = Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json
-    if ($null -eq $fixture.tasks -or $null -eq $fixture.findings) { Stop-Closed 'fixture missing tasks/findings' }
+    $fixture = Read-StrictJson $fixturePath
+    if ($null -eq $fixture.PSObject.Properties['tasks'] -or $null -eq $fixture.PSObject.Properties['findings']) { Stop-Closed 'fixture missing tasks/findings' }
+    if ($fixture.tasks -isnot [pscustomobject]) { Stop-Closed 'fixture tasks must be an object' }
 
     $task = $fixture.tasks.PSObject.Properties[$TaskId]
     if ($null -eq $task) { Stop-Closed "unknown task id '$TaskId'" }
 
+    foreach ($tp in $fixture.tasks.PSObject.Properties) {
+        if ($tp.Name -cnotmatch '^[0-9]+(\.[0-9]+)*-(T|ST)\z') { Stop-Closed "invalid task key '$($tp.Name)'" }
+        $tobj = $tp.Value
+        if ($null -eq $tobj -or $tobj -isnot [pscustomobject] -or
+            $null -eq $tobj.PSObject.Properties['expected_group_residual_after_task'] -or
+            $tobj.expected_group_residual_after_task -isnot [System.Array]) {
+            Stop-Closed "task '$($tp.Name)' must be an object with an expected_group_residual_after_task array"
+        }
+        $seenGroups = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($m in $tobj.expected_group_residual_after_task) {
+            if ($null -eq $m -or $m -isnot [pscustomobject]) { Stop-Closed "task '$($tp.Name)' residual members must be objects" }
+            Assert-Fingerprint $m "task '$($tp.Name)' residual"
+            if (-not (Test-NonNegInt $m.PSObject.Properties['count']?.Value)) { Stop-Closed "task '$($tp.Name)' residual count must be a non-negative integer" }
+            if (-not $seenGroups.Add((Get-Fingerprint $m))) { Stop-Closed "task '$($tp.Name)' has duplicate residual group fingerprint" }
+        }
+    }
     $taskObj = $task.Value
-    if ($null -eq $taskObj -or $taskObj -isnot [pscustomobject] -or
-        $null -eq $taskObj.PSObject.Properties['expected_group_residual_after_task'] -or
-        $taskObj.expected_group_residual_after_task -isnot [System.Array]) {
-        Stop-Closed "task '$TaskId' must be an object with an expected_group_residual_after_task array"
-    }
-    foreach ($m in $taskObj.expected_group_residual_after_task) {
-        if ($null -eq $m -or $m -isnot [pscustomobject]) { Stop-Closed "task '$TaskId' residual members must be objects" }
-    }
 
-    foreach ($m in $taskObj.expected_group_residual_after_task) {
-        if (-not (Test-NonNegInt $m.PSObject.Properties['count']?.Value)) { Stop-Closed "task '$TaskId' residual count must be a non-negative integer" }
-    }
     if ($fixture.findings -isnot [System.Array]) { Stop-Closed 'fixture findings must be an array' }
     foreach ($f in $fixture.findings) {
         if ($null -eq $f -or $f -isnot [pscustomobject]) { Stop-Closed 'fixture findings members must be objects' }
+        Assert-Fingerprint $f 'finding'
     }
 
     if ($Phase -eq 'Schema') {

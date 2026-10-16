@@ -326,4 +326,91 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 		assert.Contains(t, out, "MONOTONICITY-VIOLATION")
 		assert.NotContains(t, out, "BASELINE-LINT-OK")
 	})
+
+	t.Run("validation_sweep", func(t *testing.T) {
+		const okOwner = `{"task":"175.001-T","resolves":0,"completed":false}`
+		grp := func(path, linter, msg string) string {
+			return `{"path":` + path + `,"linter":` + linter + `,"message":` + msg + `,"baseline_count":1,"owners":[` + okOwner + `]}`
+		}
+		rem := func(path, linter, msg string) string {
+			return `{"path":` + path + `,"linter":` + linter + `,"message":` + msg + `,"line":1,"column":1}`
+		}
+		inv := func(groups, remaining string) string {
+			return `{"schema":"baseline-inventory/v1","groups":[` + groups + `],"remaining":[` + remaining + `]}`
+		}
+		okGroup := grp(`"a"`, `"l"`, `"123"`)
+		bodies := map[string]string{
+			"numeric_remaining_message_vs_string_group": inv(okGroup, rem(`"a"`, `"l"`, `123`)),
+			"numeric_group_message_vs_string_remaining": inv(grp(`"a"`, `"l"`, `123`), rem(`"a"`, `"l"`, `"123"`)),
+			"group_path_number":                         inv(grp(`1`, `"l"`, `"m"`), ``),
+			"group_linter_null":                         inv(grp(`"a"`, `null`, `"m"`), ``),
+			"group_path_empty":                          inv(grp(`""`, `"l"`, `"m"`), ``),
+			"group_message_missing":                     inv(`{"path":"a","linter":"l","baseline_count":1,"owners":[]}`, ``),
+			"remaining_empty_object":                    inv(okGroup, `{}`),
+			"remaining_linter_array":                    inv(okGroup, rem(`"a"`, `["l"]`, `"123"`)),
+			"remaining_path_missing":                    inv(okGroup, `{"linter":"l","message":"123"}`),
+			"duplicate_group_fingerprint":               inv(okGroup+`,`+grp(`"a"`, `"l"`, `" 123 "`), ``),
+			"duplicate_owner_task":                      inv(`{"path":"a","linter":"l","message":"m","baseline_count":2,"owners":[`+okOwner+`,`+okOwner+`]}`, ``),
+			"owner_task_number":                         inv(`{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[{"task":1,"resolves":0,"completed":false}]}`, ``),
+			"owner_task_missing":                        inv(`{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[{"resolves":0,"completed":false}]}`, ``),
+			"owner_task_bad_shape":                      inv(`{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[{"task":"t","resolves":0,"completed":false}]}`, ``),
+			"schema_number":                             `{"schema":1,"groups":[],"remaining":[]}`,
+			"schema_wrong_case":                         `{"schema":"BASELINE-INVENTORY/V1","groups":[],"remaining":[]}`,
+			"duplicate_top_level_key":                   `{"schema":"baseline-inventory/v1","groups":[],"remaining":[],"remaining":[]}`,
+			"top_level_array":                           `[{"schema":"baseline-inventory/v1","groups":[],"remaining":[]}]`,
+			"top_level_scalar":                          `42`,
+			"top_level_null":                            `null`,
+			"empty_file":                                ``,
+		}
+		for name, body := range bodies {
+			t.Run(name, func(t *testing.T) {
+				path, sum := u100Write(t, []byte(body))
+				out, code := u100Run(t, root, u100Args(path, sum)...)
+				assert.Equal(t, 2, code, out)
+				assert.Contains(t, out, "INVALID-INPUT")
+				assert.NotContains(t, out, "BASELINE-LINT-OK")
+			})
+		}
+
+		t.Run("utf8_bom_and_date_like_message_pass", func(t *testing.T) {
+			body := "\xef\xbb\xbf" + inv(grp(`"a"`, `"l"`, `"2020-01-01T00:00:00Z"`), rem(`"a"`, `"l"`, `"2020-01-01T00:00:00Z"`))
+			path, sum := u100Write(t, []byte(body))
+			out, code := u100Run(t, root, u100Args(path, sum)...)
+			assert.Zero(t, code, out)
+			assert.Contains(t, out, "BASELINE-LINT-OK:176-S")
+		})
+
+		t.Run("invalid_parameters", func(t *testing.T) {
+			path, sum := u100Write(t, u100Marshal(t, u100Base()))
+			mk := func(key, val string) []string {
+				m := map[string]string{"-Inventory": path, "-InventorySha256": sum, "-Shipment": "176-S", "-FeatureId": "175-F", "-TerminalTask": "175.012-T"}
+				m[key] = val
+				var a []string
+				for k, v := range m {
+					a = append(a, k, v)
+				}
+				return a
+			}
+			tests := map[string][]string{
+				"shipment_feature_shape": mk("-Shipment", "176-F"),
+				"shipment_empty":         mk("-Shipment", ""),
+				"shipment_trailing_nl":   mk("-Shipment", "176-S\n"),
+				"feature_subtask_shape":  mk("-FeatureId", "175.001-F"),
+				"feature_wrong_suffix":   mk("-FeatureId", "175-S"),
+				"terminal_feature_shape": mk("-TerminalTask", "175-F"),
+				"terminal_trailing_nl":   mk("-TerminalTask", "175.012-T\n"),
+				"inventory_empty":        mk("-Inventory", ""),
+				"sha_empty":              mk("-InventorySha256", ""),
+				"sha_trailing_nl":        mk("-InventorySha256", sum+"\n"),
+			}
+			for name, args := range tests {
+				t.Run(name, func(t *testing.T) {
+					out, code := u100Run(t, root, args...)
+					assert.Equal(t, 2, code, out)
+					assert.Contains(t, out, "INVALID-INPUT")
+					assert.NotContains(t, out, "BASELINE-LINT-OK")
+				})
+			}
+		})
+	})
 }
