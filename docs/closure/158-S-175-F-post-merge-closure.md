@@ -13,7 +13,7 @@ conditions:
   - id: governed-closure-archived
     description: "Shipment 158-S and its ten task members are archived with merge provenance."
     satisfied: true
-    evidence: "backlogit_ship_shipment 158-S --sha ba2c333a: MCP timeout, completed server-side; .backlogit/archive/158-S.md has status archived, archived_status shipped, commit ba2c333a. Members 175.002-T..175.010-T and 175.040-T archived with commit ba2c333a. No archive file deleted in the working tree (P-007)."
+    evidence: "backlogit_ship_shipment 158-S --sha ba2c333a: MCP timeout, completion established after quiescence (no lock or archive mtime advance for 11+ minutes; item log shipped, commit_tracked and archived events; ship_shipment hook event seq 3808; reconstructed envelope shipped, returned_ids empty, archived_ids equal manifest plus 158-S; doctor --check-shipped-event-completeness clean for 158-S). .backlogit/archive/158-S.md has status archived, archived_status shipped, commit ba2c333a. Members 175.002-T..175.010-T and 175.040-T archived with commit ba2c333a. No archive file deleted in the working tree (P-007)."
   - id: final-head-copilot-and-ci
     description: "Copilot review is complete on the final HEAD with zero unresolved threads, the copilot-review gate is SATISFIED, and all CI checks pass."
     satisfied: true
@@ -78,7 +78,7 @@ is not applicable. Releasability: `READY_WITH_CONDITIONS`.
 
 ## Governed closure
 
-* `backlogit_ship_shipment 158-S --sha ba2c333a` timed out at MCP (-32001) but completed server-side; state was verified independently, with no blind retry. Shipment is `archived` with `archived_status: shipped`.
+* `backlogit_ship_shipment 158-S --sha ba2c333a` timed out at MCP (-32001); no blind retry. Completion was established per `docs/compound/2026-10-06-ship-shipment-mcp-timeout-result-unknown.md`: quiescence, `archived` and `shipped` item-log events, the `ship_shipment` hook event (seq 3808), a reconstructed result envelope, and a clean shipped-event completeness audit for 158-S (see `.backlogit/reconcile/158-S-safe-close-20261016T160000Z.md`). Shipment is `archived` with `archived_status: shipped`.
 * Pre-close: all ten members were pre-archived (auto-archived on `done`); shipment `active`; recommendation `PROCEED`. Allowed changed-ID set `{158-S, 10 members}` equals the observed set; no non-member mutation. P-007: no deleted archive files.
 * Post-merge main sync: `main == origin/main @ ba2c333a`.
 * Local `golangci-lint` v1.64.8 (go1.24-built) reports nothing even on unfixed code; lint evidence is CI. `task_lint_cmd` (`scripts/verify-task-lint.ps1`) fails closed without a FixtureRoot and was not run green.
