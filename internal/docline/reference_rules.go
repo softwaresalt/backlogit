@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -31,8 +31,8 @@ var (
 	// anchorCandidate keeps ordinary code spans (host:port, bare file names)
 	// out of the anchor rule: it needs a known extension plus :line or ::symbol.
 	anchorCandidate = regexp.MustCompile(`^(?:[A-Za-z]:)?[^\s:]+\.(?:go|md|ya?ml|json|sql|ps1|sh|ts|py|toml)(?::\d+(?:-\d+)?|::[A-Za-z_][\w.]*)$`)
-	taskIDPattern   = regexp.MustCompile(`\b\d{3}(?:\.\d{3}){0,2}-[A-Z]{1,3}\b`)
-	itemFileName    = regexp.MustCompile(`^(\d{3}(?:\.\d{3}){0,2}-[A-Z]{1,3})\.md$`)
+	taskIDPattern   = regexp.MustCompile(`\b(?:\d{3,}(?:\.\d{3,}){0,2}-[A-Z]{1,3}|[A-Z]{1,3}\d{3,})\b`)
+	prefixIDPattern = regexp.MustCompile(`^([A-Z]{1,3})\d{3,}$`)
 	commentRefTag   = regexp.MustCompile(`<!--\s*docline:comment-ref\s+(.*?)\s*-->`)
 )
 
@@ -184,32 +184,72 @@ func checkCommentDrift(root, rel, body string) []Finding {
 	return out
 }
 
-// workspaceTaskIDs returns the set of backlog item IDs found under the
-// workspace backlog directories (.backlogit and .backlog), keyed by file name.
-// A workspace with no backlog directory yields an empty set.
-func workspaceTaskIDs(root string) (map[string]bool, error) {
+// workspaceTaskIDs returns the set of backlog item IDs declared by `id:`
+// frontmatter in markdown files under the queue and archive directories of
+// .backlogit and .backlog. All reads are confined to the workspace root. The
+// boolean reports whether any backlog directory exists; unreadable or
+// malformed item files are reported as errors rather than skipped.
+func workspaceTaskIDs(root string) (map[string]bool, bool, error) {
 	ids := map[string]bool{}
-	for _, dir := range []string{".backlogit", ".backlog"} {
-		base := filepath.Join(root, dir)
-		info, err := os.Stat(base)
-		if err != nil || !info.IsDir() {
-			continue
-		}
-		walkErr := filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
+	rt, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, false, fmt.Errorf("docline.workspaceTaskIDs: open root: %w", err)
+	}
+	defer func() { _ = rt.Close() }()
+	fsys := rt.FS()
+	present := false
+	for _, base := range []string{".backlogit", ".backlog"} {
+		for _, sub := range []string{"queue", "archive"} {
+			dir := base + "/" + sub
+			if _, err := fs.Stat(fsys, dir); err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					continue
+				}
+				return nil, false, fmt.Errorf("docline.workspaceTaskIDs: stat %s: %w", dir, err)
 			}
-			if d.IsDir() {
+			present = true
+			walkErr := fs.WalkDir(fsys, dir, func(p string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if d.IsDir() || !strings.EqualFold(path.Ext(p), ".md") {
+					return nil
+				}
+				id, err := frontmatterID(fsys, p)
+				if err != nil {
+					return err
+				}
+				if id != "" {
+					ids[id] = true
+				}
 				return nil
+			})
+			if walkErr != nil {
+				return nil, false, fmt.Errorf("docline.workspaceTaskIDs: walk %s: %w", dir, walkErr)
 			}
-			if m := itemFileName.FindStringSubmatch(d.Name()); m != nil {
-				ids[m[1]] = true
-			}
-			return nil
-		})
-		if walkErr != nil {
-			return nil, fmt.Errorf("docline.workspaceTaskIDs: walk %s: %w", dir, walkErr)
 		}
 	}
-	return ids, nil
+	return ids, present, nil
+}
+
+// frontmatterID returns the `id:` value of a file's frontmatter block, or ""
+// when the file has no frontmatter or no id. An unterminated block is an error.
+func frontmatterID(fsys fs.FS, name string) (string, error) {
+	data, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", name, err)
+	}
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return "", nil
+	}
+	for _, l := range lines[1:] {
+		if strings.TrimSpace(l) == "---" {
+			return "", nil
+		}
+		if v, ok := strings.CutPrefix(l, "id:"); ok {
+			return strings.Trim(strings.TrimSpace(v), `"'`), nil
+		}
+	}
+	return "", fmt.Errorf("parse %s: unterminated frontmatter block", name)
 }

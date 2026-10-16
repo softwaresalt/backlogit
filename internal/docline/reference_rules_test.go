@@ -136,19 +136,21 @@ func TestU159006_TaskIDs(t *testing.T) {
 
 func TestU159006_WorkspaceTaskIDs(t *testing.T) {
 	root := t.TempDir()
-	writeDoc(t, root, ".backlogit/queue/159.006-T.md", "x")
-	writeDoc(t, root, ".backlogit/archive/old/001-F.md", "x")
+	writeDoc(t, root, ".backlogit/queue/159.006-T.md", "---\nid: 159.006-T\n---\nbody\n")
+	writeDoc(t, root, ".backlogit/archive/old/001-F.md", "---\nid: 001-F\n---\n")
 	writeDoc(t, root, ".backlogit/queue/.159.007-T.md.lock", "x")
 
-	ids, err := workspaceTaskIDs(root)
+	ids, present, err := workspaceTaskIDs(root)
 	require.NoError(t, err)
 	assert.True(t, ids["159.006-T"])
 	assert.True(t, ids["001-F"])
 	assert.False(t, ids["159.007-T"])
 
-	empty, err := workspaceTaskIDs(t.TempDir())
+	empty, present2, err := workspaceTaskIDs(t.TempDir())
 	require.NoError(t, err)
 	assert.Empty(t, empty)
+	assert.True(t, present)
+	assert.False(t, present2)
 }
 
 func TestU159006_StaleTerms(t *testing.T) {
@@ -184,7 +186,7 @@ func TestU159006_CommentDrift(t *testing.T) {
 
 func TestU159006_LintTreeOptIn(t *testing.T) {
 	root := t.TempDir()
-	writeDoc(t, root, ".backlogit/queue/159-F.md", "x")
+	writeDoc(t, root, ".backlogit/queue/159-F.md", "---\nid: 159-F\n---\n")
 	writeDoc(t, root, "docs/decisions/x.md", "---\ntitle: X\nsource: y\ndoc_type: decision\n---\n# A\n\nSee `missing.go:1`, 777.001-T, old Gizmo.\n")
 
 	base, err := LintTree(Options{Root: root, Rules: RuleSet{Structural: true}})
@@ -201,4 +203,43 @@ func TestU159006_LintTreeOptIn(t *testing.T) {
 	rs, err := ParseRules([]string{"structural", "references"})
 	require.NoError(t, err)
 	assert.True(t, rs.Structural && rs.References)
+}
+
+func TestWorkspaceTaskIDs_FrontmatterIDsSlugsPrefixAndLarge(t *testing.T) {
+	root := t.TempDir()
+	writeDoc(t, root, ".backlogit/queue/159.006-T-some-title.md", "---\nid: 159.006-T\ntitle: x\n---\n")
+	writeDoc(t, root, ".backlogit/queue/T001.md", "---\nid: T001\n---\n")
+	writeDoc(t, root, ".backlog/queue/1000-F-big.md", "---\nid: \"1000-F\"\n---\n")
+
+	ids, present, err := workspaceTaskIDs(root)
+	require.NoError(t, err)
+	assert.True(t, present)
+	for _, id := range []string{"159.006-T", "T001", "1000-F"} {
+		assert.True(t, ids[id], id)
+	}
+}
+
+func TestWorkspaceTaskIDs_MalformedFrontmatterReported(t *testing.T) {
+	root := t.TempDir()
+	writeDoc(t, root, ".backlogit/queue/001-F.md", "---\ntitle: x\nno closing delimiter\n")
+	_, _, err := workspaceTaskIDs(root)
+	require.Error(t, err)
+}
+
+func TestCheckTaskIDs_SupportedFormats(t *testing.T) {
+	exists := func(id string) bool { return id == "1000-F" || id == "T001" }
+	assert.Empty(t, checkTaskIDs("d.md", "See 1000-F and T001.\n", exists))
+	got := checkTaskIDs("d.md", "See 1001-F and T002.\n", func(id string) bool { return false })
+	assert.Len(t, got, 2)
+}
+
+func TestLintTree_SluggedAndPrefixIDsResolve(t *testing.T) {
+	root := t.TempDir()
+	writeDoc(t, root, ".backlogit/queue/001-F-slug.md", "---\nid: 001-F\n---\n")
+	writeDoc(t, root, ".backlogit/queue/T001.md", "---\nid: T001\n---\n")
+	writeDoc(t, root, "docs/decisions/x.md", "---\ntitle: X\nsource: y\ndoc_type: decision\n---\n# A\n\nSee 001-F, T001, T999 and SHA256.\n")
+	got, err := LintTree(Options{Root: root, Rules: RuleSet{References: true}})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Contains(t, got[0].Fix, "T999")
 }

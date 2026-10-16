@@ -41,17 +41,30 @@ func ParseRules(names []string) (RuleSet, error) {
 }
 
 // resolveTaskIDLookup returns the task-ID existence check for opts, or nil when
-// existence cannot be verified (no override and no backlog items found).
+// no backlog directory exists.
 func resolveTaskIDLookup(opts Options) (func(string) bool, error) {
 	if opts.Rules.TaskIDExists != nil {
 		return opts.Rules.TaskIDExists, nil
 	}
-	ids, err := workspaceTaskIDs(opts.Root)
+	ids, present, err := workspaceTaskIDs(opts.Root)
 	if err != nil {
 		return nil, err
 	}
-	if len(ids) == 0 {
+	if !present {
 		return nil, nil
 	}
-	return func(id string) bool { return ids[id] }, nil
+	prefixes := map[string]bool{}
+	for id := range ids {
+		if m := prefixIDPattern.FindStringSubmatch(id); m != nil {
+			prefixes[m[1]] = true
+		}
+	}
+	return func(id string) bool {
+		// A prefix-shaped token whose letters are not a declared prefix (SHA256)
+		// is not an item reference.
+		if m := prefixIDPattern.FindStringSubmatch(id); m != nil && !prefixes[m[1]] {
+			return true
+		}
+		return ids[id]
+	}, nil
 }
