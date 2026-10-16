@@ -78,7 +78,7 @@ runtime-verification is not applicable and no validator evidence is produced.
 Releasability: `READY_WITH_CONDITIONS`.
 
 * Monitoring: none required beyond CI, which passes on the merged tree.
-* Rollback: Source-only rollback: a rollback PR that reverts the renormalization and the nine `.gitattributes` rule lines, preserving `.backlogit/` state. Do not revert merge `8ccd75e0` wholesale: it also moved `157-S` and `175.001-T` into the archive.
+* Rollback: Source-only rollback: a rollback PR that reverts the nine `.gitattributes` rule lines AND the LF harness `tests/lineending_baseline_175_test.go` together (the harness rejects CRLF working trees, so reverting only the attributes would leave the suite failing on CRLF-configured checkouts), preserving `.backlogit/` state. Do not revert merge `8ccd75e0` wholesale: it also moved `157-S` and `175.001-T` into the archive.
 * Owner: Ship / operator.
 * Validation window: the next successor `pre_claim` probe and the first replacement-baseline
   shipment that runs on the renormalized tree.
