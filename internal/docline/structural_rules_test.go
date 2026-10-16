@@ -1,6 +1,8 @@
 package docline
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -123,4 +125,20 @@ func TestU159005_LintTreeOptIn(t *testing.T) {
 	got, err := LintTree(Options{Root: root, Rules: RuleSet{Structural: true}})
 	require.NoError(t, err)
 	assert.Equal(t, []string{RuleHeadingSkippedLevel}, rulesOf(got))
+}
+
+func TestCountClaim_OutwardDirSymlinkZeroMatchesFlagged(t *testing.T) {
+	outside := t.TempDir()
+	root := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	got := checkClaims(root, "docs/x.md", "<!-- docline:count glob=\"link/*.go\" expect=0 -->\n")
+	require.Len(t, got, 1)
+	assert.Equal(t, RuleNumericClaim, got[0].Rule)
+}
+
+func TestCountClaim_MissingDirZeroMatchesPasses(t *testing.T) {
+	root := t.TempDir()
+	assert.Empty(t, checkClaims(root, "docs/x.md", "<!-- docline:count glob=\"nope/*.go\" expect=0 -->\n"))
 }

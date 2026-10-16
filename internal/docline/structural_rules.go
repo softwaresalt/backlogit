@@ -3,7 +3,9 @@ package docline
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -224,25 +226,20 @@ func countClaimMatches(root, pattern string) (int, bool) {
 	if pattern == "" || filepath.IsAbs(pattern) || strings.HasPrefix(pattern, "/") || strings.HasPrefix(pattern, "\\") {
 		return 0, false
 	}
-	abs, err := core.SafeResolve(root, pattern)
+	if _, err := core.SafeResolve(root, pattern); err != nil {
+		return 0, false
+	}
+	rt, err := os.OpenRoot(root)
 	if err != nil {
 		return 0, false
 	}
-	matches, err := filepath.Glob(abs)
-	if err != nil {
-		return 0, false
-	}
-	realRoot, err := filepath.EvalSymlinks(root)
+	defer func() { _ = rt.Close() }()
+	matches, err := rootGlob(rt.FS(), strings.Split(path.Clean(filepath.ToSlash(pattern)), "/"), ".")
 	if err != nil {
 		return 0, false
 	}
 	for _, m := range matches {
-		real, err := filepath.EvalSymlinks(m)
-		if err != nil {
-			return 0, false
-		}
-		within, err := filepath.Rel(realRoot, real)
-		if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) || filepath.IsAbs(within) {
+		if _, err := fs.Stat(rt.FS(), m); err != nil {
 			return 0, false
 		}
 	}
@@ -292,4 +289,58 @@ func checkTopologyClaim(root, rel, field string, attrs map[string]string) []Find
 			fmt.Sprintf("%q exists but is not a %s", attrs["path"], kind))}
 	}
 	return nil
+}
+
+// rootGlob expands the remaining pattern segments below dir inside fsys, an
+// os.Root-backed file system. Unlike filepath.Glob it reports directory-read
+// failures (including symlink escapes) instead of treating them as zero matches;
+// only a missing directory counts as no match.
+func rootGlob(fsys fs.FS, segs []string, dir string) ([]string, error) {
+	seg, rest := segs[0], segs[1:]
+	join := func(name string) string {
+		if dir == "." {
+			return name
+		}
+		return dir + "/" + name
+	}
+	if !strings.ContainsAny(seg, globMeta) {
+		next := join(seg)
+		if len(rest) == 0 {
+			if _, err := fs.Stat(fsys, next); err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					return nil, nil
+				}
+				return nil, fmt.Errorf("docline.rootGlob: stat %s: %w", next, err)
+			}
+			return []string{next}, nil
+		}
+		return rootGlob(fsys, rest, next)
+	}
+	entries, err := fs.ReadDir(fsys, dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("docline.rootGlob: read %s: %w", dir, err)
+	}
+	var out []string
+	for _, ent := range entries {
+		ok, err := path.Match(seg, ent.Name())
+		if err != nil {
+			return nil, fmt.Errorf("docline.rootGlob: pattern %q: %w", seg, err)
+		}
+		if !ok {
+			continue
+		}
+		if len(rest) == 0 {
+			out = append(out, join(ent.Name()))
+			continue
+		}
+		sub, err := rootGlob(fsys, rest, join(ent.Name()))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sub...)
+	}
+	return out, nil
 }
