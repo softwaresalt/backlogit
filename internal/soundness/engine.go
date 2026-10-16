@@ -24,6 +24,14 @@ func allRules() []rule {
 		{ruleOneResponsibility, checkOneResponsibility},
 		{ruleReferences, checkReferences},
 		{ruleVerificationSurface, checkVerificationSurface},
+		{ruleDependencyConsistency, checkDependencyConsistency},
+		{ruleImpossibleTest, checkImpossibleTest},
+		{ruleUniqueTitles, checkUniqueTitles},
+		{ruleCanonicalProcedure, checkCanonicalProcedure},
+		{ruleContradiction, checkContradiction},
+		{ruleDuplicatedWork, checkDuplicatedWork},
+		{ruleMissingArtifact, checkMissingArtifact},
+		{ruleIndependentVerifiability, checkIndependentVerifiability},
 	}
 }
 
