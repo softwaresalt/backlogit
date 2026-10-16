@@ -42,6 +42,7 @@ backlogit docs lint [flags]
   -h, --help             help for lint
       --path string      limit to a repo-relative sub-path
       --profile string   validation profile: authoring, ingestion (default "authoring")
+      --rules strings    opt-in rule groups to run in addition to the contract: structural, references
 ```
 
 ### Options inherited from parent commands
