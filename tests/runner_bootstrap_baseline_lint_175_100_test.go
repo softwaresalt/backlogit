@@ -290,4 +290,40 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("completed_must_be_boolean", func(t *testing.T) {
+		owners := map[string]string{
+			"string_true": `{"task":"t","resolves":1,"completed":"true"}`,
+			"numeric_one": `{"task":"t","resolves":1,"completed":1}`,
+			"missing":     `{"task":"t","resolves":1}`,
+		}
+		for name, o := range owners {
+			t.Run(name, func(t *testing.T) {
+				body := `{"schema":"baseline-inventory/v1","groups":[{"path":"a","linter":"l","message":"m","baseline_count":1,"owners":[` + o + `]}],"remaining":[]}`
+				path, sum := u100Write(t, []byte(body))
+				out, code := u100Run(t, root, u100Args(path, sum)...)
+				assert.Equal(t, 2, code, out)
+				assert.Contains(t, out, "INVALID-INPUT")
+				assert.NotContains(t, out, "BASELINE-LINT-OK")
+			})
+		}
+	})
+
+	t.Run("pipe_collision_fingerprints_distinct", func(t *testing.T) {
+		inv := u100Inventory{
+			Schema: "baseline-inventory/v1",
+			Groups: []u100Group{{
+				Path: "a.go", Linter: "errcheck", Message: "b.go|errcheck|unchecked", BaselineCount: 1,
+				Owners: []u100Owner{{Task: "175.001-T", Resolves: 0, Completed: false}},
+			}},
+			Remaining: []u100Finding{
+				{Path: "a.go|errcheck|b.go", Linter: "errcheck", Message: "unchecked", Line: 1, Column: 1},
+			},
+		}
+		path, sum := u100Write(t, u100Marshal(t, inv))
+		out, code := u100Run(t, root, u100Args(path, sum)...)
+		assert.Equal(t, 1, code, out)
+		assert.Contains(t, out, "MONOTONICITY-VIOLATION")
+		assert.NotContains(t, out, "BASELINE-LINT-OK")
+	})
 }

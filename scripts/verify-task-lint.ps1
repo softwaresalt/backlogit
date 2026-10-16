@@ -56,7 +56,7 @@ function Test-NonNegInt($Value) {
 function Get-Fingerprint($Item) {
     $msg = ([string]$Item.message).Normalize([System.Text.NormalizationForm]::FormC)
     $msg = ($msg -replace '\s+', ' ').Trim()
-    return ('{0}|{1}|{2}' -f $Item.path, $Item.linter, $msg)
+    return (ConvertTo-Json -InputObject @($Item.path, $Item.linter, $msg) -Compress)
 }
 
 try {

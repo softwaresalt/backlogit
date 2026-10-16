@@ -61,7 +61,7 @@ function Test-NonNegInt($Value) {
 function Get-Fingerprint($Item) {
     $msg = ([string]$Item.message).Normalize([System.Text.NormalizationForm]::FormC)
     $msg = ($msg -replace '\s+', ' ').Trim()
-    return ('{0}|{1}|{2}' -f $Item.path, $Item.linter, $msg)
+    return (ConvertTo-Json -InputObject @($Item.path, $Item.linter, $msg) -Compress)
 }
 
 function Assert-Id([string]$Name, [string]$Value) {
@@ -106,6 +106,7 @@ try {
         if ($null -eq $owners -or $owners.Value -isnot [System.Array]) { Stop-Closed 'malformed inventory: group owners must be an array' }
         foreach ($o in $owners.Value) {
             if ($null -eq $o -or $o -isnot [pscustomobject]) { Stop-Closed 'malformed inventory: owners members must be objects' }
+            if ($o.PSObject.Properties['completed']?.Value -isnot [bool]) { Stop-Closed 'malformed inventory: owner completed must be a boolean' }
             if (-not (Test-NonNegInt $o.PSObject.Properties['resolves']?.Value)) { Stop-Closed 'malformed inventory: owner resolves must be a non-negative integer' }
         }
         if (-not (Test-NonNegInt $g.PSObject.Properties['baseline_count']?.Value)) { Stop-Closed 'malformed inventory: baseline_count must be a non-negative integer' }

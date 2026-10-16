@@ -326,4 +326,19 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("pipe_collision_fingerprints_distinct", func(t *testing.T) {
+		fx := u099Fixture{
+			Tasks: map[string]u099Task{id: {Expected: []u099Expected{
+				{Path: "a.go", Linter: "errcheck", Message: "b.go|errcheck|unchecked", Count: 1},
+			}}},
+			Findings: []u099Finding{
+				{Path: "a.go|errcheck|b.go", Linter: "errcheck", Message: "unchecked", Line: 1, Column: 1, Owner: id},
+			},
+		}
+		out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", u099WriteFixture(t, fx))
+		assert.Equal(t, 1, code, out)
+		assert.Contains(t, out, "RESIDUAL-MISMATCH", out)
+		assert.NotContains(t, out, marker)
+	})
 }
