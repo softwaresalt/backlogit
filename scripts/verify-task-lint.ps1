@@ -3,15 +3,17 @@
 Per-task lint verification runner for the baseline-convergence feature.
 
 .DESCRIPTION
-Compares the actual residual multiset owned by -TaskId against the task's
-expected_group_residual_after_task under the line-stable-group-multiset/v1
+Compares, for each group fingerprint listed by -TaskId (including zero-count
+groups), the number of ALL remaining findings with that fingerprint (any owner)
+against the task's expected_group_residual_after_task under the line-stable-group-multiset/v1
 identity model: findings are keyed on (path, linter, normalized_message) with
 multiplicity; line and column are never compared.
 
 Fixture injection: -FixtureRoot points at a directory containing task-lint.json:
   { "tasks": { "<id>": { "expected_group_residual_after_task":
         [ { "path", "linter", "message", "count" } ] } },
-    "findings": [ { "path", "linter", "message", "line", "column", "owner" } ] }
+    "findings": [ { "path", "linter", "message", "line", "column", "owner" (optional, ignored) } ] }
+Groups not listed for the task are not compared.
 Without -FixtureRoot the runner fails closed (it never runs real golangci-lint
 and never mutates the repository).
 
@@ -88,24 +90,22 @@ try {
     }
     $actual = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
     foreach ($f in @($fixture.findings)) {
-        if ($null -eq $f -or [string]$f.owner -cne $TaskId) { continue }
+        if ($null -eq $f) { continue }
         $fp = Get-Fingerprint $f
+        # Group residual counts every remaining occurrence regardless of owner.
+        if (-not $expected.ContainsKey($fp)) { continue }
         $prev = 0
         [void]$actual.TryGetValue($fp, [ref]$prev)
         $actual[$fp] = $prev + 1
     }
 
-    $keys = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($k in $expected.Keys) { [void]$keys.Add($k) }
-    foreach ($k in $actual.Keys) { [void]$keys.Add($k) }
-    $sorted = [string[]]@($keys)
+    $sorted = [string[]]@($expected.Keys)
     [Array]::Sort($sorted, [StringComparer]::Ordinal)
 
     $mismatch = @()
     foreach ($fp in $sorted) {
-        $e = 0
+        $e = $expected[$fp]
         $a = 0
-        [void]$expected.TryGetValue($fp, [ref]$e)
         [void]$actual.TryGetValue($fp, [ref]$a)
         if ($a -ne $e) { $mismatch += "$fp expected=$e actual=$a" }
     }

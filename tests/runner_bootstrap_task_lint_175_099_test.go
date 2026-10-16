@@ -101,6 +101,19 @@ func u099Base(id string) u099Fixture {
 	}
 }
 
+func u099Group(count int) u099Expected {
+	return u099Expected{Path: "internal/a.go", Linter: "errcheck", Message: "Error return value is not checked", Count: count}
+}
+
+// u099Split returns one identical finding per owner, plus an unrelated finding in an unlisted group.
+func u099Split(owners ...string) []u099Finding {
+	out := []u099Finding{{Path: "internal/other.go", Linter: "revive", Message: "unrelated", Line: 1, Column: 1, Owner: "999.001-T"}}
+	for i, o := range owners {
+		out = append(out, u099Finding{Path: "internal/a.go", Linter: "errcheck", Message: "Error return value is not checked", Line: 10 + i, Column: 2, Owner: o})
+	}
+	return out
+}
+
 func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 	root := u099RepoRoot(t)
 	script := filepath.Join(root, filepath.FromSlash(u099Runner))
@@ -151,17 +164,49 @@ func TestU175_099_TaskLintRunnerBootstrap(t *testing.T) {
 		}
 	})
 
+	t.Run("split_owner_group_residual_passes", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			expected int
+			owners   []string
+		}{
+			{"current_removed_later_slice_remains", 1, []string{"176.001-T"}},
+			{"two_remain_expected_two", 2, []string{id, "176.001-T"}},
+			{"zero_residual_group_cleared", 0, nil},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				fx := u099Base(id)
+				fx.Tasks[id] = u099Task{Expected: []u099Expected{u099Group(tc.expected)}}
+				fx.Findings = u099Split(tc.owners...)
+				out, code := u099Run(t, root, "-TaskId", id, "-FeatureId", u099Feature, "-FixtureRoot", u099WriteFixture(t, fx))
+				assert.Zero(t, code, out)
+				assert.Contains(t, out, marker)
+			})
+		}
+	})
+
 	t.Run("red_owned_residual", func(t *testing.T) {
 		tests := []struct {
 			name   string
 			mutate func(*u099Fixture)
 		}{
 			{"retained_owned_finding", func(f *u099Fixture) {
-				f.Tasks[id] = u099Task{Expected: []u099Expected{}}
+				f.Tasks[id] = u099Task{Expected: []u099Expected{u099Group(0)}}
 			}},
 			{"line_shift_stays_above_expected", func(f *u099Fixture) {
-				f.Tasks[id] = u099Task{Expected: []u099Expected{}}
+				f.Tasks[id] = u099Task{Expected: []u099Expected{u099Group(0)}}
 				f.Findings[0].Line = 99
+			}},
+			{"split_owner_both_remain_expected_one", func(f *u099Fixture) {
+				f.Findings = u099Split(id, "176.001-T", "176.002-T")
+			}},
+			{"split_owner_all_removed_expected_one", func(f *u099Fixture) {
+				f.Findings = u099Split()
+			}},
+			{"zero_residual_group_kept_by_later_owner", func(f *u099Fixture) {
+				f.Tasks[id] = u099Task{Expected: []u099Expected{u099Group(0)}}
+				f.Findings = u099Split("176.001-T")
 			}},
 			{"duplicate_resolved_below_expected", func(f *u099Fixture) {
 				f.Tasks[id] = u099Task{Expected: []u099Expected{
