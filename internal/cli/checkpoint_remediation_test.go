@@ -165,7 +165,7 @@ func TestU16_TargetAndDestinationLinesQuoteTheFilename(t *testing.T) {
 // returns both the execution error and the captured stderr text, so tests
 // can assert on operator-facing messages the CLI writes alongside its
 // returned error (e.g. a rendered remediation block).
-func runCLICombined(t *testing.T, root string, args ...string) (error, string) {
+func runCLICombined(t *testing.T, root string, args ...string) (string, error) {
 	t.Helper()
 	cmd := cli.NewRootCommand()
 	out := new(bytes.Buffer)
@@ -174,7 +174,7 @@ func runCLICombined(t *testing.T, root string, args ...string) (error, string) {
 	cmd.SetErr(errBuf)
 	cmd.SetArgs(append([]string{"--cwd", root}, args...))
 	err := cmd.Execute()
-	return err, errBuf.String()
+	return errBuf.String(), err
 }
 
 // TestU16_ResolveRefusalRendersRemediationBlockToStderr is a regression test
@@ -190,7 +190,7 @@ func TestU16_ResolveRefusalRendersRemediationBlockToStderr(t *testing.T) {
 		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",`+
 			`"created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z","extra_key":"x"}`)
 
-	err, stderr := runCLICombined(t, root, "checkpoint", "resolve", name)
+	stderr, err := runCLICombined(t, root, "checkpoint", "resolve", name)
 	require.Error(t, err)
 	assert.Contains(t, stderr, "Disposition required: quarantine")
 	assert.Contains(t, stderr, "A4c")
@@ -210,7 +210,7 @@ func TestU16_QuarantineRefusalNamesAbandonAsRequiredVerb(t *testing.T) {
 		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","status":"active",`+
 			`"created_at":"2026-08-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z"}`)
 
-	err, stderr := runCLICombined(t, root, "checkpoint", "quarantine", name, "--reason", "x", "--operator", "tester@example.com")
+	stderr, err := runCLICombined(t, root, "checkpoint", "quarantine", name, "--reason", "x", "--operator", "tester@example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "required verb: abandon")
 	assert.Contains(t, stderr, "Disposition required: abandon")

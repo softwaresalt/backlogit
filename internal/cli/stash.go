@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -39,13 +40,17 @@ func newStashAddCommand(cwd *string) *cobra.Command {
 		Example: `  backlogit stash add "Investigate tenant-specific rate limits" --kind feature --priority high
   backlogit stash add "Document migration edge cases" --kind task`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			entry, err := core.AddStashEntry(ctx, ws, kind, priority, args[0])
 			if err != nil {
@@ -70,13 +75,17 @@ func newStashListCommand(cwd *string) *cobra.Command {
   backlogit stash list --priority high
   backlogit stash list --kind feature
   backlogit stash list --group-by-priority`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 			entries, err := core.FetchStash(ctx, ws, core.FetchStashOptions{
 				Priority:        priority,
 				Kind:            kind,
@@ -135,13 +144,17 @@ func newStashGetCommand(cwd *string) *cobra.Command {
 		Short:   "Get a stash entry by ID",
 		Example: `  backlogit stash get ABCD1234`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 			entry, err := core.GetStashEntry(ctx, ws, args[0])
 			if err != nil {
 				return err
@@ -162,7 +175,7 @@ func newStashEditCommand(cwd *string) *cobra.Command {
   backlogit stash edit ABCD1234 --priority high
   backlogit stash edit ABCD1234 --text "Updated description"`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			if text == "" && kind == "" && priority == "" {
 				return fmt.Errorf("at least one of --text, --kind, or --priority is required")
 			}
@@ -171,7 +184,11 @@ func newStashEditCommand(cwd *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 			entry, err := core.EditStashEntry(ctx, ws, args[0], core.EditStashOptions{
 				Text:     text,
 				Kind:     kind,
@@ -199,13 +216,17 @@ func newStashArchiveCommand(cwd *string) *cobra.Command {
 		Example: `  backlogit stash archive ABCD1234
   backlogit stash remove ABCD1234`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 			entry, err := core.ArchiveStashEntry(ctx, ws, args[0])
 			if err != nil {
 				return err
@@ -229,13 +250,17 @@ func newStashHarvestCommand(cwd *string) *cobra.Command {
   backlogit stash harvest ABCD1234 --type task --parent-id 001-F --status active
   backlogit stash harvest --priority critical --type feature`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			if len(args) == 0 && priority == "" {
 				return fmt.Errorf("either stash-id or --priority is required")
