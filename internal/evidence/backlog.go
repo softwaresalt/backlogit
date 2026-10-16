@@ -115,6 +115,37 @@ func (b *Backlog) load(id string) (*models.Artifact, error) {
 	return nil, fmt.Errorf("item %s not found in queue or archive", id)
 }
 
+// manifestIDs validates the shipment items manifest before normalizing it.
+func manifestIDs(ship *models.Artifact) ([]string, error) {
+	raw, ok := ship.CustomFields["items"]
+	if !ok || raw == nil {
+		return []string{}, nil
+	}
+	var list []any
+	switch v := raw.(type) {
+	case []string:
+		for _, s := range v {
+			list = append(list, s)
+		}
+	case []any:
+		list = v
+	default:
+		return nil, fmt.Errorf("items is not a list (%T)", raw)
+	}
+	seen := map[string]bool{}
+	for i, e := range list {
+		s, ok := e.(string)
+		if !ok {
+			return nil, fmt.Errorf("items[%d] is a non-string entry (%T)", i, e)
+		}
+		if seen[s] {
+			return nil, fmt.Errorf("duplicate item id %q", s)
+		}
+		seen[s] = true
+	}
+	return core.NormalizeShipmentItems(ship), nil
+}
+
 func effectiveStatus(a *models.Artifact) string {
 	if a.ArchivedStatus != "" && string(a.Status) == "archived" {
 		return a.ArchivedStatus
@@ -150,8 +181,12 @@ func (b *Backlog) ShipmentEvidence(shipmentID string) BacklogResult {
 	}
 	res.Closed = res.ShipmentStatus == "shipped"
 
+	ids, err := manifestIDs(ship)
+	if err != nil {
+		return fail("shipment manifest invalid: %v", err)
+	}
 	var missing []string
-	for _, id := range core.NormalizeShipmentItems(ship) {
+	for _, id := range ids {
 		a, err := b.load(id)
 		if err != nil {
 			missing = append(missing, id)

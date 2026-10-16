@@ -141,3 +141,24 @@ func TestBacklogLoad_InRootSymlinkStillWorks(t *testing.T) {
 	res := (&Backlog{Root: root}).ShipmentEvidence("907-S")
 	assert.Equal(t, StatusVerified, res.Status, res.Reason)
 }
+
+func TestShipmentManifestValidation(t *testing.T) {
+	cases := []struct {
+		name, items, reason string
+	}{
+		{"non-string entry", "custom_fields:\n  items: [900.001-T, 42]\n", "non-string"},
+		{"non-list value", "custom_fields:\n  items: 900.001-T\n", "not a list"},
+		{"duplicate ids", "custom_fields:\n  items: [900.001-T, 900.001-T]\n", "duplicate"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeItem(t, root, "queue", "910-S", "shipment", "active", tc.items)
+			writeItem(t, root, "queue", "900.001-T", "task", "done", "")
+			res := (&Backlog{Root: root}).ShipmentEvidence("910-S")
+			assert.Equal(t, StatusDegraded, res.Status)
+			assert.Contains(t, res.Reason, tc.reason)
+			assert.Empty(t, res.Members)
+		})
+	}
+}
