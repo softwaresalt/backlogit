@@ -1,6 +1,7 @@
 package tests_test
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -412,5 +414,88 @@ func TestU175_100_BaselineLintRunnerBootstrap(t *testing.T) {
 				})
 			}
 		})
+	})
+}
+
+// TestU175_100_InventorySingleRead guards against hashing one snapshot and parsing another.
+func TestU175_100_InventorySingleRead(t *testing.T) {
+	root := u100RepoRoot(t)
+	script := filepath.Join(root, filepath.FromSlash(u100Runner))
+
+	t.Run("static_single_read", func(t *testing.T) {
+		const ps = `$e=$null;$t=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile($env:U175_RUNNER_PATH,[ref]$t,[ref]$e);` +
+			`$c=$ast.FindAll({param($n) $n -is [System.Management.Automation.Language.CommandAst]},$true)|ForEach-Object{$_.GetCommandName()};` +
+			`$m=$ast.FindAll({param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst]},$true)|ForEach-Object{$_.Member.Extent.Text};` +
+			`@{commands=@($c|Where-Object{$_});members=@($m)}|ConvertTo-Json -Compress`
+		pc := exec.Command(u100Pwsh(t), "-NoProfile", "-NonInteractive", "-Command", ps)
+		pc.Env = append(os.Environ(), "U175_RUNNER_PATH="+script)
+		out, err := pc.Output()
+		require.NoError(t, err)
+		var res struct {
+			Commands []string `json:"commands"`
+			Members  []string `json:"members"`
+		}
+		require.NoError(t, json.Unmarshal(out, &res))
+		reads := 0
+		for _, c := range res.Commands {
+			assert.NotEqual(t, "get-filehash", strings.ToLower(c), "hashing must use the captured bytes, not reopen the file")
+			if lc := strings.ToLower(c); lc == "get-content" || lc == "gc" || lc == "cat" || lc == "type" {
+				reads++
+			}
+		}
+		for _, m := range res.Members {
+			if strings.HasPrefix(m, "ReadAll") || m == "OpenRead" || m == "Open" {
+				reads++
+			}
+		}
+		assert.Equal(t, 1, reads, "inventory must be read from disk exactly once")
+		assert.Contains(t, res.Members, "ReadAllBytes")
+	})
+
+	t.Run("concurrent_replacement", func(t *testing.T) {
+		a := u100Marshal(t, u100Base())
+		bad := u100Base()
+		bad.Remaining = append(bad.Remaining, u100Finding{Path: "internal/a.go", Linter: "errcheck", Message: u100Msg, Line: 77, Column: 1})
+		b := u100Marshal(t, bad)
+		require.False(t, bytes.Equal(a, b))
+		inv, sum := u100Write(t, a)
+
+		stop := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; ; i++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				data := a
+				if i%2 == 1 {
+					data = b
+				}
+				_ = os.WriteFile(inv, data, 0o600)
+			}
+		}()
+		defer func() {
+			close(stop)
+			wg.Wait()
+		}()
+
+		// Hash of A is pinned: any run must either see A (OK) or fail the hash check;
+		// a monotonicity verdict would mean B was parsed after A was hashed.
+		for i := 0; i < 8; i++ {
+			out, code := u100Run(t, root, u100Args(inv, sum)...)
+			switch code {
+			case 0:
+				assert.Contains(t, out, "BASELINE-LINT-OK:176-S")
+			case 1:
+				assert.Contains(t, out, "HASH-MISMATCH", out)
+				assert.NotContains(t, out, "MONOTONICITY-VIOLATION", out)
+			default:
+				assert.Contains(t, out, "BASELINE-LINT-FAIL", out)
+			}
+		}
 	})
 }

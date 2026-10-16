@@ -78,8 +78,10 @@ function Test-DupKey([System.Text.Json.JsonElement]$El) {
     return $false
 }
 
-function Read-StrictJson([string]$Path) {
-    $text = Get-Content -LiteralPath $Path -Raw
+function Read-StrictJson([byte[]]$Bytes) {
+    $start = 0
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) { $start = 3 }
+    $text = [System.Text.Encoding]::UTF8.GetString($Bytes, $start, $Bytes.Length - $start)
     if ([string]::IsNullOrWhiteSpace($text)) { Stop-Closed 'malformed inventory: empty' }
     try { $doc = [System.Text.Json.JsonDocument]::Parse($text) }
     catch { Stop-Closed "malformed inventory: $($_.Exception.Message)" }
@@ -114,12 +116,14 @@ try {
     if ($InventorySha256 -cnotmatch '^[0-9A-Fa-f]{64}\z') { Stop-Closed 'InventorySha256 must be 64 hex characters' }
     if (-not (Test-Path -LiteralPath $Inventory -PathType Leaf)) { Stop-Closed "inventory not found: $Inventory" }
 
-    $actualHash = (Get-FileHash -LiteralPath $Inventory -Algorithm SHA256).Hash
+    # Single read: the hashed bytes are the exact bytes parsed below.
+    $inventoryBytes = [System.IO.File]::ReadAllBytes($Inventory)
+    $actualHash = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($inventoryBytes))
     if ($actualHash -ine $InventorySha256) {
         Stop-Closed "inventory hash mismatch (actual $actualHash)" 1
     }
 
-    $inv = Read-StrictJson $Inventory
+    $inv = Read-StrictJson $inventoryBytes
     if ($null -eq $inv -or $inv -isnot [pscustomobject] -or
         $null -eq $inv.PSObject.Properties['schema'] -or $inv.schema -isnot [string] -or $inv.schema -cne 'baseline-inventory/v1' -or
         $null -eq $inv.PSObject.Properties['groups'] -or $null -eq $inv.PSObject.Properties['remaining']) {
