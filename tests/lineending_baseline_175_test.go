@@ -12,7 +12,6 @@ import (
 
 const (
 	u175FrozenList   = "docs/memory/2026-10-15/175-001-frozen-path-list.txt"
-	u175GoldenJSON   = "internal/faultline/testdata/parity_v1.golden.json"
 	u175MaxOffenders = 20
 )
 
@@ -96,9 +95,9 @@ func TestU175_001_BaselineEol(t *testing.T) {
 	var indexCRLF, workCRLF, workMixed []string
 	checked, excluded := 0, 0
 	for path, e := range all {
-		inTestdata := strings.HasPrefix(path, "testdata/") || strings.Contains(path, "/testdata/")
-		if (inTestdata && path != u175GoldenJSON) || strings.Contains(e.attr, "-text") {
+		if strings.Contains(e.attr, "-text") {
 			excluded++
+			t.Logf("excluded (declared binary, attr/%s): %s", e.attr, path)
 			continue
 		}
 		checked++
@@ -142,8 +141,8 @@ func TestU175_001_BaselineEol(t *testing.T) {
 		e, ok := all[line]
 		if !ok {
 			notLF = append(notLF, line+" (not tracked)")
-		} else if e.work != "lf" && e.work != "none" {
-			notLF = append(notLF, line+" (w/"+e.work+")")
+		} else if e.index != "lf" || e.work != "lf" {
+			notLF = append(notLF, line+" (i/"+e.index+" w/"+e.work+")")
 		}
 	}
 	if err := sc.Err(); err != nil {
@@ -153,5 +152,5 @@ func TestU175_001_BaselineEol(t *testing.T) {
 		t.Fatal("frozen path list contains no paths")
 	}
 	u175Report(t, "frozen list paths must end in .go or .json", badExt)
-	u175Report(t, "frozen list paths must be w/lf", notLF)
+	u175Report(t, "frozen list paths must be i/lf and w/lf", notLF)
 }
