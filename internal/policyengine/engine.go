@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/evidence"
@@ -329,7 +330,7 @@ func (e *Engine) Check(ctx context.Context, req Request) (Decision, error) {
 	for id, f := range facts {
 		verdicts[string(id)] = f.verdict()
 	}
-	tokens, denials := e.prepareOverrides(req)
+	plan := e.prepareOverrides(req)
 	decl, err := e.reg.Declaration(req.TaskID)
 	if err != nil {
 		return blocked(req, e.mode, Violation{Code: CodeInvalidRequest, Reason: clip(err.Error(), MaxErrorBytes)}, err)
@@ -341,29 +342,35 @@ func (e *Engine) Check(ctx context.Context, req Request) (Decision, error) {
 	dec, err := gate.Check(ctx, evidencedag.GateInput{
 		Shipment:     evidencedag.Shipment{ID: req.TaskID, HeadCommit: req.HeadCommit, Attributes: e.reg.gateAttributes()},
 		Verdicts:     verdicts,
-		WaiverTokens: tokens,
+		WaiverTokens: plan.tokens,
 	})
 	if err != nil {
 		return blocked(req, e.mode, Violation{Code: CodeInvalidRequest, Reason: clip(err.Error(), MaxErrorBytes)}, fmt.Errorf("policyengine: evaluate gates: %w", err))
 	}
-	return e.decide(req, gates, facts, dec, denials), nil
+	return e.decide(req, gates, facts, dec, plan), nil
 }
 
 // decide maps the core gate decision to the engine decision.
-func (e *Engine) decide(req Request, gates []GateDecl, facts map[NodeType]fact, dec evidencedag.Decision, denials []OverrideDenial) Decision {
+func (e *Engine) decide(req Request, gates []GateDecl, facts map[NodeType]fact, dec evidencedag.Decision, plan overridePlan) Decision {
 	out := Decision{
 		Surface: req.Surface, TaskID: req.TaskID, HeadCommit: req.HeadCommit, Mode: e.mode,
 		ReviewReady: dec.ReviewReady, Allowed: dec.Allowed, Gates: make([]GateResult, 0, len(gates)),
-		Errors: []Violation{}, OverrideDenials: denials,
+		Errors: []Violation{}, OverrideDenials: plan.denials,
 	}
 	for _, d := range dec.Denials {
-		out.OverrideDenials = append(out.OverrideDenials, OverrideDenial{Index: d.Index, Reason: clip(d.Reason, MaxErrorBytes)})
+		out.OverrideDenials = append(out.OverrideDenials, OverrideDenial{Index: plan.original(d.Index), Reason: clip(d.Reason, MaxErrorBytes)})
 	}
 	for _, g := range gates {
 		nr, _ := dec.Report.Node(string(g.ID))
 		res := GateResult{Node: g.ID, Status: string(nr.Status), Reason: clip(nr.Reason, MaxErrorBytes), Waiver: clip(nr.Waiver, 96)}
 		f, has := facts[g.ID]
 		switch nr.Status {
+		case evidencedag.StatusWaived:
+			if !g.Overridable {
+				// Defense in depth: peeking already refuses such tokens.
+				res.Code = CodeOverrideNotPermitted
+				out.Errors = append(out.Errors, Violation{Code: CodeOverrideNotPermitted, Node: string(g.ID), Reason: "a waiver was accepted for a gate that is not overridable"})
+			}
 		case evidencedag.StatusUnmet, evidencedag.StatusError:
 			code, reason := CodeUpstreamUnmet, res.Reason
 			if nr.Status == evidencedag.StatusError {
@@ -379,6 +386,7 @@ func (e *Engine) decide(req Request, gates []GateDecl, facts map[NodeType]fact, 
 		}
 		out.Gates = append(out.Gates, res)
 	}
+	sort.SliceStable(out.OverrideDenials, func(i, j int) bool { return out.OverrideDenials[i].Index < out.OverrideDenials[j].Index })
 	if dec.ReviewReady && len(out.Errors) > 0 {
 		// The core rolls up terminal nodes only, and a disabled (not-applicable)
 		// gate does not bridge propagation, so an enabled gate that failed

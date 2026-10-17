@@ -95,6 +95,10 @@ func Execute() error {
 			if errors.As(err, &blocked) {
 				return format.WrapErrorData(cmdPath, format.ErrCodeServerError, blocked.Error(), blocked.Decision)
 			}
+			var policyBlocked *policyBlockedError
+			if errors.As(err, &policyBlocked) {
+				return format.WrapErrorData(cmdPath, format.ErrCodeServerError, policyBlocked.Error(), policyBlocked.Decision)
+			}
 			return format.WrapError(cmdPath, format.ErrCodeServerError, err.Error())
 		}()
 		if wrapErr != nil {
@@ -249,6 +253,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(newReconcileCommand(&cwd))
 	root.AddCommand(newDocsCommand(&cwd))
 	root.AddCommand(newSoundnessCommand(&cwd))
+	root.AddCommand(newPolicyCommand(&cwd))
 	root.AddCommand(newVersionCommandWithLookup(latestLookup))
 	root.AddCommand(newManifestCommand(&cwd))
 

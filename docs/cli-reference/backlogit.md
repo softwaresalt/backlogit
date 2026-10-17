@@ -70,6 +70,7 @@ stash follow-up work for later planning.
 * [backlogit metadata](backlogit_metadata.md)	 - Discover backlogit metadata for agents and tooling
 * [backlogit migrate](backlogit_migrate.md)	 - Migrate backlog data between supported formats and layouts
 * [backlogit move](backlogit_move.md)	 - Change artifact status
+* [backlogit policy](backlogit_policy.md)	 - Enforce workflow-policy gates (harness, red/green, review, CI, merge-ready)
 * [backlogit query](backlogit_query.md)	 - Execute a read-only SQL query against the index
 * [backlogit queue](backlogit_queue.md)	 - Manage the work queue
 * [backlogit reconcile](backlogit_reconcile.md)	 - Reconcile archived items by correcting their lifecycle status
