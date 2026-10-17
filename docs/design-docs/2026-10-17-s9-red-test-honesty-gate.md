@@ -2,6 +2,7 @@
 chunk_strategy: h1-h2-h3
 description: 'Design note for the S9 red-test honesty gate (143-S / 161-F): how new tests are identified, run against an immutable baseline, classified, and recorded as shared-contract red_green evidence for the S10/S11 consumers'
 doc_type: design
+schema_version: "1.0"
 docline:
     date: 2026-10-17T00:00:00Z
     status: accepted
