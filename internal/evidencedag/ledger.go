@@ -22,8 +22,14 @@ const (
 	ledgerDomain    = "backlogit/evidencedag/ledger/v1\n"
 	maxLedgerLine   = 8 << 10
 	maxSidecarBytes = 1 << 10
-	lockWait        = 10 * time.Second
-	lockStale       = 30 * time.Second
+)
+
+// Lock timing and the write seam are variables only so tests can shorten the
+// wait and inject write faults.
+var (
+	lockWait    = 10 * time.Second
+	lockStale   = 30 * time.Second
+	ledgerWrite = func(f *os.File, b []byte, off int64) (int, error) { return f.WriteAt(b, off) }
 )
 
 var (
@@ -42,52 +48,47 @@ func tampered(format string, args ...any) error {
 }
 
 // OpenLedger returns a Ledger handle for path without creating anything. The
-// parent directory must exist and an existing ledger must be a regular file.
-func OpenLedger(path string) (*Ledger, error) {
+// parent directory must exist, an existing ledger must be a regular file, and
+// the canonical ledger path must lie outside every forbidden root (the
+// agent-writable evidence and workspace-output roots). At least one forbidden
+// root is required; an empty list is a configuration error, never a wildcard.
+func OpenLedger(path string, forbiddenRoots ...string) (*Ledger, error) {
 	if path == "" {
 		return nil, errors.New("evidencedag: ledger path is required")
 	}
-	abs, err := filepath.Abs(path)
+	dir, name, err := splitCanonical(path)
 	if err != nil {
-		return nil, fmt.Errorf("evidencedag: resolve ledger path: %w", err)
+		return nil, fmt.Errorf("evidencedag: ledger path: %w", err)
 	}
-	if di, err := os.Stat(filepath.Dir(abs)); err != nil || !di.IsDir() {
+	if di, err := os.Stat(dir); err != nil || !di.IsDir() {
 		return nil, errors.New("evidencedag: ledger directory does not exist")
 	}
-	if fi, err := os.Lstat(abs); err == nil && !fi.Mode().IsRegular() {
+	canon := filepath.Join(dir, name)
+	if err := checkOutsideRoots(canon, forbiddenRoots); err != nil {
+		return nil, fmt.Errorf("evidencedag: ledger path: %w", err)
+	}
+	if fi, err := os.Lstat(canon); err == nil && !fi.Mode().IsRegular() {
 		return nil, errors.New("evidencedag: ledger path is not a regular file")
 	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("evidencedag: stat ledger: %w", err)
 	}
-	return &Ledger{path: abs}, nil
+	return &Ledger{path: canon, dir: dir, name: name}, nil
 }
 
-// readBounded reads a regular file up to max bytes; a missing file reports
-// exists=false. Anything else (symlink, directory, oversize) is tampering.
-func readBounded(path string, max int) (data []byte, exists bool, err error) {
-	li, err := os.Lstat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, false, nil
+// readBounded reads a regular file beneath the ledger directory up to max
+// bytes; a missing file reports exists=false. Anything else (symlink,
+// directory, oversize) is tampering.
+func (l *Ledger) readBounded(name string, max int) (data []byte, exists bool, err error) {
+	data, exists, err = readRegularBounded(l.dir, name, max)
+	switch {
+	case errors.Is(err, errNotRegular):
+		return nil, true, tampered("%s is not a regular file", name)
+	case errors.Is(err, errTooLarge):
+		return nil, true, tampered("%s exceeds %d bytes", name, max)
+	case err != nil:
+		return nil, true, fmt.Errorf("evidencedag: read %s: %w", name, err)
 	}
-	if err != nil {
-		return nil, false, fmt.Errorf("evidencedag: stat %s: %w", filepath.Base(path), err)
-	}
-	if !li.Mode().IsRegular() {
-		return nil, true, tampered("%s is not a regular file", filepath.Base(path))
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, true, fmt.Errorf("evidencedag: open %s: %w", filepath.Base(path), err)
-	}
-	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, int64(max)+1))
-	if err != nil {
-		return nil, true, fmt.Errorf("evidencedag: read %s: %w", filepath.Base(path), err)
-	}
-	if len(raw) > max {
-		return nil, true, tampered("%s exceeds %d bytes", filepath.Base(path), max)
-	}
-	return raw, true, nil
+	return data, exists, nil
 }
 
 func recordHash(r LedgerRecord) (string, error) {
@@ -101,47 +102,67 @@ func recordHash(r LedgerRecord) (string, error) {
 }
 
 // load reads and fully verifies the chain, the head sidecar and, when given,
-// the external anchor. Any inconsistency is ErrLedgerTampered.
-func (l *Ledger) load(anchor *Anchor) ([]LedgerRecord, error) {
-	data, _, err := readBounded(l.path, MaxLedgerBytes)
+// the external anchor. Any inconsistency is ErrLedgerTampered. With exact set
+// the ledger must hold precisely the anchored records (a ledger ahead of its
+// anchor is refused). With repairTorn set, a single trailing unterminated
+// line (a torn append) is ignored and its verified prefix length returned so a
+// writer can truncate it away. validLen is the byte length of the verified
+// prefix.
+func (l *Ledger) load(anchor *Anchor, exact, repairTorn bool) (recs []LedgerRecord, validLen int64, err error) {
+	data, _, err := l.readBounded(l.name, MaxLedgerBytes)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	var recs []LedgerRecord
-	if len(data) > 0 {
-		if data[len(data)-1] != '\n' {
-			return nil, tampered("ledger does not end with a newline (partial or appended data)")
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		if !repairTorn {
+			return nil, 0, tampered("ledger does not end with a newline (partial or appended data)")
 		}
+		cut := bytes.LastIndexByte(data, '\n') + 1
+		if len(data)-cut > maxLedgerLine {
+			return nil, 0, tampered("ledger tail is oversized and unterminated")
+		}
+		data = data[:cut]
+	}
+	validLen = int64(len(data))
+	if len(data) > 0 {
 		lines := bytes.Split(data[:len(data)-1], []byte{'\n'})
 		if len(lines) > MaxLedgerRecords {
-			return nil, tampered("ledger exceeds %d records", MaxLedgerRecords)
+			return nil, 0, tampered("ledger exceeds %d records", MaxLedgerRecords)
 		}
 		prev := genesisHash
 		for i, line := range lines {
 			rec, err := decodeLedgerLine(line)
 			if err != nil {
-				return nil, tampered("record %d: %v", i+1, err)
+				return nil, 0, tampered("record %d: %v", i+1, err)
 			}
 			if rec.Seq != i+1 || rec.PrevHash != prev {
-				return nil, tampered("record %d breaks the chain (seq or prev_hash)", i+1)
+				return nil, 0, tampered("record %d breaks the chain (seq or prev_hash)", i+1)
 			}
 			want, err := recordHash(rec)
 			if err != nil || want != rec.Hash {
-				return nil, tampered("record %d hash mismatch", i+1)
+				return nil, 0, tampered("record %d hash mismatch", i+1)
 			}
 			prev = rec.Hash
 			recs = append(recs, rec)
 		}
 	}
 	if err := l.checkSidecar(recs); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if anchor != nil {
-		if anchor.Seq < 1 || anchor.Seq > len(recs) || recs[anchor.Seq-1].Hash != anchor.Hash {
-			return nil, tampered("ledger does not contain the anchored head (truncated or rewritten)")
+		if err := validateAnchor(*anchor); err != nil {
+			return nil, 0, tampered("%v", err)
+		}
+		switch {
+		case anchor.Seq == 0 && len(recs) != 0:
+			return nil, 0, tampered("ledger is not empty but its anchor says genesis (rolled back or replaced)")
+		case anchor.Seq > 0 && (anchor.Seq > len(recs) || recs[anchor.Seq-1].Hash != anchor.Hash):
+			return nil, 0, tampered("ledger does not contain the anchored head (truncated, deleted or rewritten)")
+		case exact && len(recs) != anchor.Seq:
+			return nil, 0, tampered("ledger is ahead of its external anchor (uncommitted or forged tail); verify it and re-anchor with AdoptHead")
 		}
 	}
-	return recs, nil
+	return recs, validLen, nil
 }
 
 func decodeLedgerLine(line []byte) (LedgerRecord, error) {
@@ -172,9 +193,12 @@ func decodeLedgerLine(line []byte) (LedgerRecord, error) {
 
 // checkSidecar compares the head sidecar with the verified chain. A sidecar
 // exactly one record behind is the crash window between the record write and
-// the sidecar update and is healed by the next append.
+// the sidecar update and is healed by the next append. The sidecar is a
+// convenience cross-check only: it is rewritable by whoever can rewrite the
+// ledger, so tamper evidence against such an actor rests on the external
+// anchor.
 func (l *Ledger) checkSidecar(recs []LedgerRecord) error {
-	raw, exists, err := readBounded(l.path+".head", maxSidecarBytes)
+	raw, exists, err := l.readBounded(l.name+".head", maxSidecarBytes)
 	if err != nil {
 		return err
 	}
@@ -200,28 +224,123 @@ func (l *Ledger) checkSidecar(recs []LedgerRecord) error {
 	return tampered("ledger does not match its head sidecar (truncated, deleted or rewritten)")
 }
 
-func (l *Ledger) lock() (func(), error) {
-	lp := l.path + ".lock"
-	deadline := time.Now().Add(lockWait)
-	for {
-		f, err := os.OpenFile(lp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			_, _ = fmt.Fprintf(f, "%d\n", os.Getpid())
-			_ = f.Close()
-			return func() { _ = os.Remove(lp) }, nil
+type lockInfo struct {
+	PID   int    `json:"pid"`
+	Token string `json:"token"`
+}
+
+func (l *Ledger) lockName() string { return l.name + ".lock" }
+
+// lockContended reports whether a failed exclusive create means the lock is
+// held (as opposed to a real error such as a read-only directory). Windows
+// reports a delete-pending or held lock file as a permission error.
+func (l *Ledger) lockContended(err error) bool {
+	if errors.Is(err, fs.ErrExist) {
+		return true
+	}
+	if errors.Is(err, fs.ErrPermission) {
+		_, lerr := os.Lstat(filepath.Join(l.dir, l.lockName()))
+		return lerr == nil
+	}
+	return false
+}
+
+func (l *Ledger) readLock() (lockInfo, error) {
+	raw, exists, err := readRegularBounded(l.dir, l.lockName(), maxSidecarBytes)
+	if err != nil {
+		return lockInfo{}, err
+	}
+	if !exists {
+		return lockInfo{}, fs.ErrNotExist
+	}
+	var li lockInfo
+	if err := json.Unmarshal(raw, &li); err != nil {
+		return lockInfo{}, nil
+	}
+	return li, nil
+}
+
+// reapStale moves a lock file older than lockStale aside by atomic rename (so
+// two reapers cannot both claim it) and removes it. If the file it moved turns
+// out to be a different, fresh lock, the lock is put back.
+func (l *Ledger) reapStale() {
+	lp := filepath.Join(l.dir, l.lockName())
+	fi, err := os.Lstat(lp)
+	if err != nil || time.Since(fi.ModTime()) <= lockStale {
+		return
+	}
+	seen, _ := l.readLock()
+	aside := lp + ".stale-" + randHex(8)
+	if err := os.Rename(lp, aside); err != nil {
+		return // someone else reaped it, or it is held: keep waiting
+	}
+	got, _ := readLockAt(aside)
+	if got.Token != seen.Token {
+		if err := os.Link(aside, lp); err != nil {
+			// The live owner's unlock reports the lost lock; the chain check
+			// then fails closed on any fork.
+			_ = os.Remove(aside)
+			return
 		}
-		if !errors.Is(err, fs.ErrExist) && !errors.Is(err, fs.ErrPermission) {
+	}
+	_ = os.Remove(aside)
+}
+
+func readLockAt(path string) (lockInfo, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return lockInfo{}, err
+	}
+	var li lockInfo
+	_ = json.Unmarshal(b, &li)
+	return li, nil
+}
+
+// lock takes the single-writer lock, honouring lockWait with a bounded
+// exponential back-off. The returned release verifies that the lock file still
+// carries this holder's token before removing it.
+func (l *Ledger) lock() (release func() error, err error) {
+	token := randHex(16)
+	deadline := time.Now().Add(lockWait)
+	delay := 2 * time.Millisecond
+	for {
+		f, err := createExclusive(l.dir, l.lockName(), 0o600)
+		if err == nil {
+			info, _ := json.Marshal(lockInfo{PID: os.Getpid(), Token: token})
+			_, werr := f.Write(info)
+			cerr := f.Close()
+			if werr != nil || cerr != nil {
+				_ = os.Remove(filepath.Join(l.dir, l.lockName()))
+				return nil, fmt.Errorf("evidencedag: write ledger lock: %w", errors.Join(werr, cerr))
+			}
+			return func() error { return l.unlock(token) }, nil
+		}
+		if !l.lockContended(err) {
 			return nil, fmt.Errorf("evidencedag: acquire ledger lock: %w", err)
 		}
-		if fi, serr := os.Stat(lp); serr == nil && time.Since(fi.ModTime()) > lockStale {
-			_ = os.Remove(lp)
-			continue
-		}
-		if time.Now().After(deadline) {
+		l.reapStale()
+		if !time.Now().Before(deadline) {
 			return nil, ErrLedgerBusy
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(delay)
+		if delay < 50*time.Millisecond {
+			delay *= 2
+		}
 	}
+}
+
+func (l *Ledger) unlock(token string) error {
+	li, err := l.readLock()
+	if err != nil {
+		return fmt.Errorf("ledger lock was lost: %w", err)
+	}
+	if li.Token != token {
+		return errors.New("ledger lock is held by another owner (it was reclaimed)")
+	}
+	if err := os.Remove(filepath.Join(l.dir, l.lockName())); err != nil {
+		return fmt.Errorf("remove ledger lock: %w", err)
+	}
+	return nil
 }
 
 func validateEntry(e LedgerEntry) error {
@@ -238,7 +357,7 @@ func validateEntry(e LedgerEntry) error {
 		return errors.New("principal or key id is invalid")
 	case !knownFamily(Family(e.Family)):
 		return errors.New("family is unknown")
-	case e.Kind != claimKindWaiver && e.Kind != claimKindNotApplicable:
+	case e.Kind != claimKindWaiver:
 		return errors.New("kind is invalid")
 	case !noncePattern.MatchString(e.Nonce):
 		return errors.New("nonce is invalid")
@@ -250,31 +369,70 @@ func validateEntry(e LedgerEntry) error {
 	return nil
 }
 
-// Append adds one record under the single-writer lock. The whole chain is
+// Append adds one record under the single-writer lock, without an external
+// anchor (use a WaiverService for anchored acceptance). The whole chain is
 // re-verified under the lock first, so an append can never extend a tampered
-// ledger or race another writer into a forked chain.
+// ledger or race another writer into a forked chain; a torn trailing line from
+// a crashed append is discarded first. A returned ErrSidecarStale means the
+// record is committed (the returned record is valid) but the sidecar was not
+// refreshed.
 func (l *Ledger) Append(e LedgerEntry) (LedgerRecord, error) {
-	rec, _, err := l.appendUnique(e, false)
+	rec, _, err := l.appendUnique(e, appendOpts{})
 	return rec, err
 }
 
-// appendUnique appends e. With uniqueNonce set, a record already holding the
-// nonce is returned unchanged (existed=true) when it carries the same token
-// digest, and rejected as a replay otherwise.
-func (l *Ledger) appendUnique(e LedgerEntry, uniqueNonce bool) (rec LedgerRecord, existed bool, err error) {
-	if err := validateEntry(e); err != nil {
+type appendOpts struct {
+	// unique makes the nonce single-use: a record already holding it is
+	// returned unchanged when it has the same token digest, and rejected as a
+	// replay otherwise.
+	unique bool
+	// store, when set, makes the append anchored: the ledger must match the
+	// anchor exactly (or be absent for a genesis anchor) and the anchor is
+	// advanced after the commit.
+	store AnchorStore
+	// stamp, when set, is called under the lock and yields AcceptedAt; an
+	// error aborts the append.
+	stamp func() (int64, error)
+}
+
+func (l *Ledger) appendUnique(e LedgerEntry, o appendOpts) (rec LedgerRecord, existed bool, err error) {
+	probe := e
+	if o.stamp != nil {
+		probe.AcceptedAt = 1
+	}
+	if err := validateEntry(probe); err != nil {
 		return rec, false, fmt.Errorf("evidencedag: invalid ledger entry: %w", err)
 	}
 	unlock, err := l.lock()
 	if err != nil {
 		return rec, false, err
 	}
-	defer unlock()
-	recs, err := l.load(nil)
+	defer func() {
+		if uerr := unlock(); uerr != nil {
+			err = errors.Join(err, fmt.Errorf("evidencedag: release ledger lock: %w", uerr))
+		}
+	}()
+	var anchor *Anchor
+	genesis := false
+	if o.store != nil {
+		a, ok, aerr := o.store.Load()
+		if aerr != nil {
+			return rec, false, fmt.Errorf("evidencedag: load ledger anchor: %w", aerr)
+		}
+		if ok {
+			anchor = &a
+		} else {
+			genesis = true
+		}
+	}
+	recs, valid, err := l.load(anchor, anchor != nil, true)
 	if err != nil {
 		return rec, false, err
 	}
-	if uniqueNonce {
+	if genesis && len(recs) > 0 {
+		return rec, false, tampered("ledger has records but no external anchor exists")
+	}
+	if o.unique {
 		for _, r := range recs {
 			if r.Nonce == e.Nonce {
 				if r.TokenDigest == e.TokenDigest {
@@ -282,6 +440,16 @@ func (l *Ledger) appendUnique(e LedgerEntry, uniqueNonce bool) (rec LedgerRecord
 				}
 				return rec, false, ErrNonceReplayed
 			}
+		}
+	}
+	if o.stamp != nil {
+		at, serr := o.stamp()
+		if serr != nil {
+			return rec, false, serr
+		}
+		e.AcceptedAt = at
+		if err := validateEntry(e); err != nil {
+			return rec, false, fmt.Errorf("evidencedag: invalid ledger entry: %w", err)
 		}
 	}
 	if len(recs) >= MaxLedgerRecords {
@@ -304,69 +472,86 @@ func (l *Ledger) appendUnique(e LedgerEntry, uniqueNonce bool) (rec LedgerRecord
 		return LedgerRecord{}, false, fmt.Errorf("evidencedag: marshal ledger record: %w", err)
 	}
 	line = append(line, '\n')
-	var size int64
-	if fi, serr := os.Lstat(l.path); serr == nil {
-		size = fi.Size()
-	}
-	if len(line) > maxLedgerLine || size+int64(len(line)) > MaxLedgerBytes {
+	if len(line) > maxLedgerLine || valid+int64(len(line)) > MaxLedgerBytes {
 		return LedgerRecord{}, false, errors.New("evidencedag: ledger record would exceed size bounds")
 	}
-	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return LedgerRecord{}, false, fmt.Errorf("evidencedag: open ledger: %w", err)
-	}
-	if _, err := f.Write(line); err != nil {
-		_ = f.Close()
-		return LedgerRecord{}, false, fmt.Errorf("evidencedag: append ledger: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return LedgerRecord{}, false, fmt.Errorf("evidencedag: sync ledger: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return LedgerRecord{}, false, fmt.Errorf("evidencedag: close ledger: %w", err)
-	}
-	if err := l.writeSidecar(rec); err != nil {
+	if err := l.writeRecord(line, valid); err != nil {
 		return LedgerRecord{}, false, err
 	}
-	return rec, false, nil
+	var stale error
+	if err := l.writeSidecar(rec); err != nil {
+		stale = fmt.Errorf("%w: %v", ErrSidecarStale, err)
+	}
+	if o.store != nil {
+		if err := o.store.Store(Anchor{Seq: rec.Seq, Hash: rec.Hash}); err != nil {
+			return rec, false, fmt.Errorf("%w: %v", ErrAnchorStale, err)
+		}
+	}
+	return rec, false, stale
+}
+
+// writeRecord writes line at offset valid (discarding any torn tail beyond the
+// verified prefix) and, on any failure, truncates back so a partial record is
+// never left behind.
+func (l *Ledger) writeRecord(line []byte, valid int64) error {
+	f, err := openBeneath(l.dir, l.name, os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("evidencedag: open ledger: %w", err)
+	}
+	fail := func(what string, cause error) error {
+		terr := f.Truncate(valid)
+		cerr := f.Close()
+		out := fmt.Errorf("evidencedag: %s ledger: %w", what, cause)
+		if terr != nil || cerr != nil {
+			out = errors.Join(out, fmt.Errorf("evidencedag: restore ledger size: %w", errors.Join(terr, cerr)))
+		}
+		return out
+	}
+	if fi, serr := f.Stat(); serr != nil {
+		return fail("stat", serr)
+	} else if fi.Size() > valid {
+		if err := f.Truncate(valid); err != nil {
+			return fail("discard torn tail of", err)
+		}
+	}
+	if _, err := ledgerWrite(f, line, valid); err != nil {
+		return fail("append", err)
+	}
+	if err := f.Sync(); err != nil {
+		return fail("sync", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("evidencedag: close ledger: %w", err)
+	}
+	return nil
 }
 
 func (l *Ledger) writeSidecar(rec LedgerRecord) error {
 	b, err := json.Marshal(sidecar{Seq: rec.Seq, Hash: rec.Hash})
 	if err != nil {
-		return fmt.Errorf("evidencedag: marshal sidecar: %w", err)
+		return fmt.Errorf("marshal sidecar: %w", err)
 	}
-	tmp := l.path + ".head.tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("evidencedag: stage sidecar: %w", err)
-	}
-	if _, err := f.Write(b); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("evidencedag: write sidecar: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("evidencedag: sync sidecar: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("evidencedag: close sidecar: %w", err)
-	}
-	if err := os.Rename(tmp, l.path+".head"); err != nil {
-		return fmt.Errorf("evidencedag: publish sidecar: %w", err)
-	}
-	return nil
+	return writeFileAtomic(l.dir, l.name+".head", b)
 }
 
-// Records verifies the chain (and the optional external anchor) and returns
-// every record. A missing ledger is an empty history, never tampering, unless
-// its head sidecar says records once existed.
+// Records verifies the chain (and the optional external anchor) under the
+// writer lock, so it never observes a half-finished append, and returns every
+// record. A missing ledger is an empty history, never tampering, unless its
+// head sidecar or the anchor says records once existed. The lock file is
+// created beside the ledger, so callers need write access to its directory.
 func (l *Ledger) Records(anchor *Anchor) ([]LedgerRecord, error) {
 	if l == nil {
 		return nil, errors.New("evidencedag: nil ledger")
 	}
-	return l.load(anchor)
+	unlock, err := l.lock()
+	if err != nil {
+		return nil, err
+	}
+	recs, _, lerr := l.load(anchor, false, false)
+	if uerr := unlock(); uerr != nil && lerr == nil {
+		return nil, fmt.Errorf("evidencedag: release ledger lock: %w", uerr)
+	}
+	return recs, lerr
 }
 
 // Head returns the verified chain head, suitable for retention as an Anchor.
@@ -379,4 +564,43 @@ func (l *Ledger) Head() (Anchor, error) {
 		return Anchor{}, nil
 	}
 	return Anchor{Seq: len(recs), Hash: recs[len(recs)-1].Hash}, nil
+}
+
+// AdoptHead is the operator recovery action for a ledger that is ahead of its
+// external anchor (for example after a crash between the record commit and the
+// anchor update). It verifies the chain, requires any existing anchor to still
+// be contained in it, and advances the anchor to the verified head. Run it
+// only after confirming that the extra records are legitimate: when no anchor
+// exists it trusts the current ledger on first use.
+func (l *Ledger) AdoptHead(store AnchorStore) error {
+	if l == nil || store == nil {
+		return ErrAnchorRequired
+	}
+	unlock, err := l.lock()
+	if err != nil {
+		return err
+	}
+	var anchor *Anchor
+	a, ok, err := store.Load()
+	if err == nil && ok {
+		anchor = &a
+	}
+	var recs []LedgerRecord
+	if err == nil {
+		recs, _, err = l.load(anchor, false, false)
+	}
+	if err == nil {
+		head := Anchor{}
+		if len(recs) > 0 {
+			head = Anchor{Seq: len(recs), Hash: recs[len(recs)-1].Hash}
+		}
+		err = store.Store(head)
+	}
+	if uerr := unlock(); uerr != nil {
+		err = errors.Join(err, fmt.Errorf("evidencedag: release ledger lock: %w", uerr))
+	}
+	if err != nil {
+		return fmt.Errorf("evidencedag: adopt ledger head: %w", err)
+	}
+	return nil
 }

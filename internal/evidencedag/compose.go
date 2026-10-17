@@ -11,23 +11,33 @@ import (
 // authoritative terminal set that Gate evaluates, so no contributor can gate
 // review-ready independently. A contribution may add nodes and edges whose
 // source node it contributes; it cannot add, remove or alter edges of nodes it
-// does not own, so it cannot weaken or rewire the base DAG.
+// does not own, so it cannot rewire the base DAG. Contributed nodes record their Source, a source may be supplied only once, and a contributed terminal cannot weaken a base node: blocking semantics propagate downstream from unmet upstream nodes.
 func Compose(base *Declaration, contribs ...Contribution) (*Declaration, error) {
 	if base == nil {
 		return nil, fmt.Errorf("%w: nil base declaration", ErrInvalidDeclaration)
 	}
 	merged := cloneDeclaration(base)
+	sources := map[string]struct{}{}
 	for _, c := range contribs {
 		if !validID(c.Source) {
 			return nil, fmt.Errorf("%w: contribution source %q is invalid", ErrInvalidDeclaration, truncate(c.Source))
 		}
+		if _, dup := sources[c.Source]; dup {
+			return nil, fmt.Errorf("%w: contribution source %q is supplied more than once", ErrInvalidDeclaration, c.Source)
+		}
+		sources[c.Source] = struct{}{}
 		if len(c.Nodes) == 0 {
 			return nil, fmt.Errorf("%w: contribution %s declares no nodes", ErrInvalidDeclaration, c.Source)
 		}
 		own := make(map[string]struct{}, len(c.Nodes))
 		for _, n := range c.Nodes {
+			if n.Source != "" && n.Source != c.Source {
+				return nil, fmt.Errorf("%w: contribution %s declares node %q with a different source", ErrInvalidDeclaration, c.Source, truncate(n.ID))
+			}
 			own[n.ID] = struct{}{}
-			merged.Nodes = append(merged.Nodes, cloneNode(n))
+			cn := cloneNode(n)
+			cn.Source = c.Source
+			merged.Nodes = append(merged.Nodes, cn)
 		}
 		for _, e := range c.Edges {
 			if _, ok := own[e.Node]; !ok {

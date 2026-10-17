@@ -313,13 +313,12 @@ func TestU162_001_ReportOnlyTerminalDoesNotBlockButIsAdvisory(t *testing.T) {
 
 func TestU162_001_WaiversMustBeVerified(t *testing.T) {
 	d := decl([]Node{pnode("t", true)})
-	forged := Waiver{ID: "w1", ShipmentID: "144-S", NodeID: "t", HeadCommit: testHead, Principal: "mallory"}
+	forged := Waiver{id: "w1", shipmentID: "144-S", nodeID: "t", headCommit: testHead, principal: "mallory"}
 	rep, err := mustEval(t, d).Evaluate(Input{Shipment: ship(), Waivers: map[string]Waiver{"t": forged}})
 	require.NoError(t, err)
 	assert.Equal(t, StatusError, statusOf(t, rep, "t"))
 
-	ok := forged
-	ok.verified = true
+	ok := newWaiver("w1", "144-S", "t", testHead, "mallory")
 	rep, err = mustEval(t, d).Evaluate(Input{Shipment: ship(), Waivers: map[string]Waiver{"t": ok}})
 	require.NoError(t, err)
 	assert.Equal(t, StatusWaived, statusOf(t, rep, "t"))
@@ -328,7 +327,7 @@ func TestU162_001_WaiversMustBeVerified(t *testing.T) {
 	assert.Equal(t, "mallory", n.Waiver)
 
 	wrong := ok
-	wrong.HeadCommit = otherHead
+	wrong.headCommit = otherHead
 	rep, err = mustEval(t, d).Evaluate(Input{Shipment: ship(), Waivers: map[string]Waiver{"t": wrong}})
 	require.NoError(t, err)
 	assert.Equal(t, StatusError, statusOf(t, rep, "t"))

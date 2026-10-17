@@ -56,16 +56,17 @@ func signClaims(s testSigner, c WaiverClaims) []byte {
 }
 
 type fixture struct {
-	t      *testing.T
-	now    time.Time
-	alice  testSigner
-	bot    testSigner
-	carol  testSigner
-	rogue  testSigner
-	trust  *Trust
-	ledger *Ledger
-	svc    *WaiverService
-	dir    string
+	t       *testing.T
+	now     time.Time
+	alice   testSigner
+	bot     testSigner
+	carol   testSigner
+	rogue   testSigner
+	trust   *Trust
+	ledger  *Ledger
+	anchors *MemoryAnchorStore
+	svc     *WaiverService
+	dir     string
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -78,9 +79,10 @@ func newFixture(t *testing.T) *fixture {
 	tr, err := ParseTrust(doc)
 	require.NoError(t, err)
 	f.trust = tr
-	f.ledger, err = OpenLedger(filepath.Join(f.dir, "waivers.jsonl"))
+	f.anchors = &MemoryAnchorStore{}
+	f.ledger, err = openLedger(filepath.Join(f.dir, "waivers.jsonl"))
 	require.NoError(t, err)
-	f.svc, err = NewWaiverService(tr, f.ledger, func() time.Time { return f.now })
+	f.svc, err = NewWaiverService(tr, f.ledger, f.anchors, func() time.Time { return f.now })
 	require.NoError(t, err)
 	return f
 }
@@ -312,9 +314,9 @@ func TestU162_003_AcceptReturnsDeniedSentinels(t *testing.T) {
 	assert.ErrorIs(t, err, ErrWaiverDenied)
 	w, err := f.svc.Accept(signClaims(f.alice, f.claims()), ship(), lookupFor(d))
 	require.NoError(t, err)
-	assert.Equal(t, "alice", w.Principal)
-	assert.Equal(t, "t", w.NodeID)
-	assert.True(t, w.verified)
+	assert.Equal(t, "alice", w.Principal())
+	assert.Equal(t, "t", w.NodeID())
+	assert.True(t, w.valid())
 }
 
 func TestU162_003_ReplayedNonceDenied(t *testing.T) {

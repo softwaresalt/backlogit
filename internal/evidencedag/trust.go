@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -136,50 +135,32 @@ func within(root, p string) bool {
 }
 
 // LoadTrust reads the trust configuration at the absolute path. The file must
-// be a real regular file and, after resolving every symlink, must lie outside
-// every forbidden root (the agent-writable evidence and workspace-output
-// roots), so the keys and authorization policy cannot be supplied through the
-// same channel as the evidence they are meant to authenticate. An empty
-// forbidden root is a configuration error, never a wildcard.
+// be a real regular file (a symlink or reparse point leaf is refused) and,
+// after resolving its directory, must lie outside every forbidden root (the
+// agent-writable evidence and workspace-output roots), so the keys and
+// authorization policy cannot be supplied through the same channel as the
+// evidence they are meant to authorize. At least one forbidden root is
+// required: an empty list or an empty root is a configuration error, never a
+// wildcard.
 func LoadTrust(path string, forbiddenRoots ...string) (*Trust, error) {
 	if !filepath.IsAbs(path) {
 		return nil, trustErr("trust path must be absolute")
 	}
-	li, err := os.Lstat(path)
-	if err != nil {
-		return nil, trustErr("stat trust file: %v", err)
-	}
-	if !li.Mode().IsRegular() {
-		return nil, trustErr("trust path is not a regular file (symlinks are refused)")
-	}
-	canon, err := filepath.EvalSymlinks(path)
+	dir, name, err := splitCanonical(path)
 	if err != nil {
 		return nil, trustErr("resolve trust path: %v", err)
 	}
-	for _, r := range forbiddenRoots {
-		if r == "" {
-			return nil, trustErr("forbidden root must not be empty")
-		}
-		cr, err := filepath.EvalSymlinks(r)
-		if err != nil {
-			return nil, trustErr("resolve forbidden root: %v", err)
-		}
-		if within(cr, canon) {
-			return nil, trustErr("trust configuration must live outside agent-writable evidence")
-		}
+	if err := checkOutsideRoots(filepath.Join(dir, name), forbiddenRoots); err != nil {
+		return nil, trustErr("%v", err)
 	}
-	f, err := os.Open(canon)
-	if err != nil {
-		return nil, trustErr("open trust file: %v", err)
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() || !os.SameFile(fi, li) {
-		return nil, trustErr("trust file changed or is not a regular file")
-	}
-	raw, err := io.ReadAll(io.LimitReader(f, MaxTrustBytes+1))
-	if err != nil {
-		return nil, trustErr("read trust file: %v", err)
+	raw, exists, err := readRegularBounded(dir, name, MaxTrustBytes)
+	switch {
+	case err != nil && errors.Is(err, errTooLarge):
+		return nil, trustErr("document exceeds %d bytes", MaxTrustBytes)
+	case err != nil:
+		return nil, trustErr("read trust file (symlinks and non-regular files are refused): %v", err)
+	case !exists:
+		return nil, trustErr("trust file does not exist")
 	}
 	return ParseTrust(raw)
 }

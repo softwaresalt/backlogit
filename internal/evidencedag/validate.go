@@ -190,6 +190,12 @@ func validateNode(n Node, add func(code, subject, detail string)) {
 	if n.OnUnmet != OnUnmetBlock && n.OnUnmet != OnUnmetReport {
 		add("on_unmet", n.ID, `on_unmet must be "block" or "report"`)
 	}
+	if !n.Terminal && n.OnUnmet == OnUnmetReport {
+		add("on_unmet", n.ID, `a non-terminal node must declare on_unmet "block": report semantics apply only to terminal nodes, so a blocking upstream can never be downgraded`)
+	}
+	if n.Source != "" && !validID(n.Source) {
+		add("source", n.ID, "source must be a valid identifier")
+	}
 	if n.RequiredEvidence != "" {
 		want, ok := evidenceFamilyFor(n.Family)
 		if !ok || want != n.RequiredEvidence {

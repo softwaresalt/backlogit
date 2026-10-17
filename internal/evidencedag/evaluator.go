@@ -147,15 +147,8 @@ func (e *Evaluator) Evaluate(in Input) (Report, error) {
 	if err := validateShipment(in.Shipment); err != nil {
 		return Report{}, err
 	}
-	for id := range in.Evidence {
-		if _, ok := e.nodes[id]; !ok {
-			return Report{}, fmt.Errorf("%w: evidence supplied for undeclared node %q", ErrInvalidInput, truncate(id))
-		}
-	}
-	for id := range in.Waivers {
-		if _, ok := e.nodes[id]; !ok {
-			return Report{}, fmt.Errorf("%w: waiver supplied for undeclared node %q", ErrInvalidInput, truncate(id))
-		}
+	if err := e.validateInput(in); err != nil {
+		return Report{}, err
 	}
 
 	e.mu.Lock()
@@ -166,14 +159,18 @@ func (e *Evaluator) Evaluate(in Input) (Report, error) {
 	for _, id := range e.order {
 		n := e.nodes[id]
 		key := e.nodeKey(n, in, results, dup)
-		if ce, ok := e.cache[id]; ok && ce.key == key {
+		ck := cacheKey(in.Shipment, id)
+		if ce, ok := e.cache[ck]; ok && ce.key == key {
 			results[id] = ce.result
 			rep.CacheHits++
 			continue
 		}
 		res := e.computeNode(n, in, results, dup)
 		res.Key = key
-		e.cache[id] = cacheEntry{key: key, result: res}
+		if len(e.cache) >= maxCacheEntries {
+			e.cache = map[string]cacheEntry{}
+		}
+		e.cache[ck] = cacheEntry{key: key, result: res}
 		results[id] = res
 		rep.Computed++
 	}
@@ -183,6 +180,39 @@ func (e *Evaluator) Evaluate(in Input) (Report, error) {
 	}
 	sort.Slice(rep.Nodes, func(i, j int) bool { return rep.Nodes[i].ID < rep.Nodes[j].ID })
 	return rep, nil
+}
+
+// maxCacheEntries bounds the per-evaluator cache across many shipments.
+const maxCacheEntries = 8 * MaxNodes
+
+func cacheKey(s Shipment, id string) string { return s.ID + "\x00" + s.HeadCommit + "\x00" + id }
+
+// validateInput rejects evidence, waivers and failures naming undeclared nodes
+// and failures without a reason. It performs no evaluation and consumes
+// nothing, so callers may run it before any irreversible step.
+func (e *Evaluator) validateInput(in Input) error {
+	if err := validateShipment(in.Shipment); err != nil {
+		return err
+	}
+	for id := range in.Evidence {
+		if _, ok := e.nodes[id]; !ok {
+			return fmt.Errorf("%w: evidence supplied for undeclared node %q", ErrInvalidInput, truncate(id))
+		}
+	}
+	for id := range in.Waivers {
+		if _, ok := e.nodes[id]; !ok {
+			return fmt.Errorf("%w: waiver supplied for undeclared node %q", ErrInvalidInput, truncate(id))
+		}
+	}
+	for id, reason := range in.Failures {
+		if _, ok := e.nodes[id]; !ok {
+			return fmt.Errorf("%w: failure supplied for undeclared node %q", ErrInvalidInput, truncate(id))
+		}
+		if reason == "" {
+			return fmt.Errorf("%w: failure for node %q has no reason", ErrInvalidInput, truncate(id))
+		}
+	}
+	return nil
 }
 
 func writeField(h hash.Hash, s string) {
@@ -200,7 +230,10 @@ func (e *Evaluator) nodeKey(n Node, in Input, results map[string]NodeResult, dup
 	writeField(h, "evidencedag/key/v1")
 	writeField(h, in.Shipment.ID)
 	writeField(h, in.Shipment.HeadCommit)
-	nb, _ := json.Marshal(n)
+	nb, err := json.Marshal(n)
+	if err != nil {
+		return uncacheableKey()
+	}
 	writeField(h, string(nb))
 	if n.Applicability != nil {
 		keys := make([]string, 0, len(n.Applicability.Requires))
@@ -215,16 +248,21 @@ func (e *Evaluator) nodeKey(n Node, in Input, results map[string]NodeResult, dup
 		}
 	}
 	if r, ok := in.Evidence[n.ID]; ok {
-		rb, _ := json.Marshal(r)
+		rb, err := json.Marshal(r)
+		if err != nil {
+			return uncacheableKey()
+		}
 		writeField(h, "evidence")
 		writeField(h, string(rb))
 	} else {
 		writeField(h, "no-evidence")
 	}
 	_, isDup := dup[n.ID]
-	writeField(h, fmt.Sprintf("dup:%t|failure:%s", isDup, in.Failures[n.ID]))
+	failure, failed := in.Failures[n.ID]
+	writeField(h, fmt.Sprintf("dup:%t|failed:%t", isDup, failed))
+	writeField(h, failure)
 	if w, ok := in.Waivers[n.ID]; ok {
-		writeField(h, fmt.Sprintf("waiver:%s|%s|%s|%s|%s|%t", w.ID, w.ShipmentID, w.NodeID, w.HeadCommit, w.Principal, w.verified))
+		writeField(h, fmt.Sprintf("waiver:%s|%s|%s|%s|%s|%t", w.id, w.shipmentID, w.nodeID, w.headCommit, w.principal, w.valid()))
 	} else {
 		writeField(h, "no-waiver")
 	}
@@ -234,6 +272,10 @@ func (e *Evaluator) nodeKey(n Node, in Input, results map[string]NodeResult, dup
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+
+// uncacheableKey is a unique key, so a node whose inputs cannot be digested is
+// always recomputed and never served from the cache.
+func uncacheableKey() string { return "uncacheable:" + randHex(16) }
 
 func (e *Evaluator) computeNode(n Node, in Input, results map[string]NodeResult, dup map[string]struct{}) NodeResult {
 	res := NodeResult{ID: n.ID, Family: n.Family, Terminal: n.Terminal, OnUnmet: n.OnUnmet}
@@ -262,14 +304,19 @@ func (e *Evaluator) computeNode(n Node, in Input, results map[string]NodeResult,
 	}
 
 	if w, ok := in.Waivers[n.ID]; ok {
-		if !w.verified || w.NodeID != n.ID || w.ShipmentID != in.Shipment.ID || w.HeadCommit != in.Shipment.HeadCommit {
+		if !w.valid() || w.nodeID != n.ID || w.shipmentID != in.Shipment.ID || w.headCommit != in.Shipment.HeadCommit {
 			return set(StatusError, "waiver is unverified or not bound to this shipment, node and head commit")
 		}
-		res.Waiver = w.Principal
+		res.Waiver = w.principal
 		return set(StatusWaived, "waived by authorized, authenticated principal")
 	}
 
+	// Non-applicable upstream nodes are neutral: they neither block nor
+	// satisfy their dependents. Unmet upstream nodes propagate their strongest
+	// blocking semantics, so a report-mode terminal cannot launder a blocking
+	// upstream into an advisory.
 	var unmetUp, errUp string
+	blockUp := false
 	for _, d := range e.deps[n.ID] {
 		switch results[d].Status {
 		case StatusError:
@@ -280,12 +327,18 @@ func (e *Evaluator) computeNode(n Node, in Input, results map[string]NodeResult,
 			if unmetUp == "" {
 				unmetUp = d
 			}
+			if results[d].OnUnmet == OnUnmetBlock {
+				blockUp = true
+			}
 		}
 	}
 	if errUp != "" {
 		return set(StatusError, "upstream node "+errUp+" is unverifiable")
 	}
 	if unmetUp != "" {
+		if blockUp {
+			res.OnUnmet = OnUnmetBlock
+		}
 		return set(StatusUnmet, "upstream node "+unmetUp+" is unmet")
 	}
 
@@ -333,7 +386,7 @@ func (r Report) Node(id string) (NodeResult, bool) {
 // Rollup computes the shipment roll-up over applicable terminal nodes. An
 // empty applicable-terminal set is unverifiable, never "all satisfied".
 func (r Report) Rollup() Rollup {
-	ru := Rollup{}
+	ru := Rollup{Unmet: []string{}, Unverifiable: []string{}, Advisory: []string{}}
 	for _, n := range r.Nodes {
 		if !n.Terminal || n.Status == StatusNotApplicable {
 			continue

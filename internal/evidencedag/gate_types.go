@@ -37,6 +37,15 @@ var (
 	ErrLedgerTampered = errors.New("evidencedag: ledger tampered")
 	// ErrLedgerBusy indicates the ledger writer lock could not be acquired.
 	ErrLedgerBusy = errors.New("evidencedag: ledger busy")
+	// ErrSidecarStale indicates a ledger record was committed but its head
+	// sidecar could not be refreshed; the next append heals it.
+	ErrSidecarStale = errors.New("evidencedag: ledger record committed but head sidecar is stale")
+	// ErrAnchorStale indicates a ledger record was committed but the external
+	// anchor could not be advanced; further anchored appends fail closed until
+	// an operator re-anchors with Ledger.AdoptHead.
+	ErrAnchorStale = errors.New("evidencedag: ledger record committed but external anchor is stale")
+	// ErrAnchorRequired indicates an anchored operation without an anchor store.
+	ErrAnchorRequired = errors.New("evidencedag: an external ledger anchor is required")
 	// ErrTrustInvalid indicates an invalid trust configuration.
 	ErrTrustInvalid = errors.New("evidencedag: invalid trust configuration")
 )
@@ -127,24 +136,29 @@ type LedgerRecord struct {
 	Hash        string `json:"hash"`
 }
 
-// Anchor is an externally retained ledger head used to detect truncation.
+// Anchor is an externally retained ledger head used to detect truncation,
+// deletion and rollback. Seq 0 with an empty hash is the genesis (empty) head.
 type Anchor struct {
-	Seq  int
-	Hash string
+	Seq  int    `json:"seq"`
+	Hash string `json:"hash"`
 }
 
 // Ledger is an append-only, tamper-evident waiver ledger stored as a JSONL
 // hash chain.
 type Ledger struct {
 	path string
+	dir  string
+	name string
 }
 
 // WaiverService verifies waiver tokens against the trust anchor and records
-// accepted waivers in the ledger.
+// accepted waivers in the ledger. Acceptance is anchored: it requires an
+// external AnchorStore and fails closed without one.
 type WaiverService struct {
-	trust  *Trust
-	ledger *Ledger
-	now    func() time.Time
+	trust   *Trust
+	ledger  *Ledger
+	anchors AnchorStore
+	now     func() time.Time
 }
 
 // Mode is the gate enforcement mode. There is no default: it must be explicit.

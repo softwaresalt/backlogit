@@ -15,15 +15,16 @@ type EvidenceRecord struct {
 }
 
 // Waiver is an authorized, authenticated waiver accepted by a WaiverService.
-// It can only be constructed inside this package, so an evaluation input can
-// never carry a forged waiver.
+// Its fields are unexported and sealed at acceptance: it can only be produced
+// by WaiverService, and the evaluator rejects any copy altered afterwards, so
+// an evaluation input can never carry a forged or retargeted waiver.
 type Waiver struct {
-	ID         string
-	ShipmentID string
-	NodeID     string
-	HeadCommit string
-	Principal  string
-	verified   bool
+	id         string
+	shipmentID string
+	nodeID     string
+	headCommit string
+	principal  string
+	seal       string
 }
 
 // Input is one evaluation request.
@@ -38,26 +39,28 @@ type Input struct {
 
 // NodeResult is the evaluated outcome of one node.
 type NodeResult struct {
-	ID       string
-	Family   Family
-	Terminal bool
-	OnUnmet  OnUnmet
-	Status   Status
-	Reason   string
+	ID       string `json:"id"`
+	Family   Family `json:"family"`
+	Terminal bool   `json:"terminal"`
+	// OnUnmet is the effective blocking semantics: the node's declared value
+	// strengthened to block when an unmet upstream node blocks.
+	OnUnmet OnUnmet `json:"on_unmet"`
+	Status  Status  `json:"status"`
+	Reason  string  `json:"reason"`
 	// Waiver is the principal that waived the node, when Status is waived.
-	Waiver string
+	Waiver string `json:"waiver,omitempty"`
 	// Key is the content digest of the node and its transitive inputs.
-	Key string
+	Key string `json:"key"`
 }
 
 // Report is the deterministic evaluation result, ordered by node ID.
 type Report struct {
-	ShipmentID string
-	HeadCommit string
-	Nodes      []NodeResult
+	ShipmentID string       `json:"shipment_id"`
+	HeadCommit string       `json:"head_commit"`
+	Nodes      []NodeResult `json:"nodes"`
 	// Computed and CacheHits describe incremental evaluation effort.
-	Computed  int
-	CacheHits int
+	Computed  int `json:"computed"`
+	CacheHits int `json:"cache_hits"`
 }
 
 // RollupState is the shipment-level roll-up verdict.
@@ -75,10 +78,10 @@ const (
 
 // Rollup is the shipment roll-up over applicable terminal nodes.
 type Rollup struct {
-	State               RollupState
-	ApplicableTerminals int
-	Unmet               []string
-	Unverifiable        []string
-	Advisory            []string
-	Reason              string
+	State               RollupState `json:"state"`
+	ApplicableTerminals int         `json:"applicable_terminals"`
+	Unmet               []string    `json:"unmet"`
+	Unverifiable        []string    `json:"unverifiable"`
+	Advisory            []string    `json:"advisory"`
+	Reason              string      `json:"reason"`
 }

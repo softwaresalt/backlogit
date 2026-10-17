@@ -33,7 +33,8 @@ func (g *Gate) Declaration() *Declaration { return cloneDeclaration(g.decl) }
 // Check evaluates the shipment. A shipment is review-ready only when at least
 // one terminal node is applicable and every applicable terminal node is
 // verified or validly waived. Waiver tokens are verified here, one waiver per
-// node per check; a denied token never satisfies a node. In report-only mode
+// node per check; a denied token never satisfies a node and a token that cannot
+// take effect (invalid input, non-applicable node, duplicate) is not consumed. In report-only mode
 // the truthful verdict is preserved in ReviewReady and only Allowed relaxes.
 func (g *Gate) Check(ctx context.Context, in GateInput) (Decision, error) {
 	var zero Decision
@@ -49,23 +50,51 @@ func (g *Gate) Check(ctx context.Context, in GateInput) (Decision, error) {
 	if err := validateShipment(in.Shipment); err != nil {
 		return zero, err
 	}
+	if err := g.eval.validateInput(Input{Shipment: in.Shipment, Evidence: in.Evidence, Failures: in.Failures}); err != nil {
+		return zero, err
+	}
 	lookup := func(id string) (Node, bool) { n, ok := g.eval.nodes[id]; return n, ok }
-	waivers := map[string]Waiver{}
+	// Every token is fully verified, and checked for applicability and
+	// per-node uniqueness, before any nonce is consumed: a token that cannot
+	// take effect in this check is denied without being burned.
+	type candidate struct {
+		index int
+		p     preparedWaiver
+	}
 	var denials []WaiverDenial
+	var cands []candidate
+	seen := map[string]struct{}{}
 	for i, tok := range in.WaiverTokens {
 		if err := ctx.Err(); err != nil {
 			return zero, fmt.Errorf("evidencedag: gate check interrupted: %w", err)
 		}
-		w, err := g.waivers.Accept(tok, in.Shipment, lookup)
+		p, err := g.waivers.prepare(tok, in.Shipment, lookup)
 		if err != nil {
 			denials = append(denials, WaiverDenial{Index: i, Reason: truncate(err.Error())})
 			continue
 		}
-		if _, dup := waivers[w.NodeID]; dup {
+		if applicable, aerr := ResolveApplicability(p.node, in.Shipment); aerr != nil || !applicable {
+			denials = append(denials, WaiverDenial{Index: i, Reason: "waiver names a node that is not applicable to this shipment"})
+			continue
+		}
+		if _, dup := seen[p.node.ID]; dup {
 			denials = append(denials, WaiverDenial{Index: i, Reason: "more than one waiver for the same node in one check"})
 			continue
 		}
-		waivers[w.NodeID] = w
+		seen[p.node.ID] = struct{}{}
+		cands = append(cands, candidate{index: i, p: p})
+	}
+	waivers := map[string]Waiver{}
+	for _, c := range cands {
+		if err := ctx.Err(); err != nil {
+			return zero, fmt.Errorf("evidencedag: gate check interrupted: %w", err)
+		}
+		w, err := g.waivers.commit(c.p)
+		if err != nil {
+			denials = append(denials, WaiverDenial{Index: c.index, Reason: truncate(err.Error())})
+			continue
+		}
+		waivers[w.nodeID] = w
 	}
 	rep, err := g.eval.Evaluate(Input{Shipment: in.Shipment, Evidence: in.Evidence, Waivers: waivers, Failures: in.Failures})
 	if err != nil {

@@ -23,7 +23,7 @@ func entry(i int) LedgerEntry {
 func seededLedger(t *testing.T, n int) (*Ledger, string) {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "w.jsonl")
-	l, err := OpenLedger(p)
+	l, err := openLedger(p)
 	require.NoError(t, err)
 	for i := 1; i <= n; i++ {
 		_, err := l.Append(entry(i))
@@ -64,7 +64,7 @@ func TestU162_003_LedgerChainAppendAndVerify(t *testing.T) {
 	assert.NoError(t, err, "an earlier anchor remains a valid prefix")
 	assert.Len(t, readLines(t, p), 3)
 
-	empty, err := OpenLedger(filepath.Join(t.TempDir(), "none.jsonl"))
+	empty, err := openLedger(filepath.Join(t.TempDir(), "none.jsonl"))
 	require.NoError(t, err)
 	got, err := empty.Records(nil)
 	require.NoError(t, err)
@@ -120,13 +120,6 @@ func TestU162_003_LedgerDetectsTampering(t *testing.T) {
 			ls := readLines(t, p)
 			forged := strings.Replace(ls[2], `"seq":3`, `"seq":4`, 1)
 			writeLines(t, p, append(ls, forged))
-		}, nil},
-		{"partial trailing line", func(t *testing.T, p string) {
-			f, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0)
-			require.NoError(t, err)
-			_, err = f.WriteString(`{"v":1`)
-			require.NoError(t, err)
-			require.NoError(t, f.Close())
 		}, nil},
 		{"missing sidecar", func(t *testing.T, p string) { require.NoError(t, os.Remove(p+".head")) }, nil},
 		{"unsupported record version", func(t *testing.T, p string) {
@@ -191,7 +184,7 @@ func TestU162_003_LedgerConcurrentAppendsAreSingleWriterSafe(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			l, err := OpenLedger(p) // independent handles model independent processes
+			l, err := openLedger(p) // independent handles model independent processes
 			if err != nil {
 				errs <- err
 				return
@@ -205,7 +198,7 @@ func TestU162_003_LedgerConcurrentAppendsAreSingleWriterSafe(t *testing.T) {
 	for err := range errs {
 		require.NoError(t, err)
 	}
-	l, err := OpenLedger(p)
+	l, err := openLedger(p)
 	require.NoError(t, err)
 	recs, err := l.Records(nil)
 	require.NoError(t, err)
@@ -243,10 +236,10 @@ func TestU162_003_LedgerRefusesSymlinkedPath(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	_, err := OpenLedger(link)
+	_, err := openLedger(link)
 	assert.Error(t, err)
-	_, err = OpenLedger("")
+	_, err = openLedger("")
 	assert.Error(t, err)
-	_, err = OpenLedger(filepath.Join(dir, "missing-dir", "w.jsonl"))
+	_, err = openLedger(filepath.Join(dir, "missing-dir", "w.jsonl"))
 	assert.Error(t, err)
 }

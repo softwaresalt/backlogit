@@ -3,6 +3,8 @@ package evidencedag
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -19,21 +21,89 @@ const (
 	maxClaimsBytes         = 8 << 10
 )
 
-// NewWaiverService builds a WaiverService over the out-of-band trust anchor
-// and the append-only ledger. A nil clock uses time.Now. There is deliberately
-// no issuance API here: tokens are minted out of band by a human-held key.
-func NewWaiverService(t *Trust, l *Ledger, clock func() time.Time) (*WaiverService, error) {
+// waiverSeal is a per-process secret that binds a Waiver's fields to the
+// moment WaiverService accepted it. Waiver fields are unexported, so code
+// outside this package cannot forge or mutate one; the seal additionally makes
+// the evaluator reject a copy whose fields were altered after acceptance.
+var waiverSeal = func() []byte {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("evidencedag: system entropy unavailable: " + err.Error())
+	}
+	return b
+}()
+
+func sealWaiver(id, shipmentID, nodeID, headCommit, principal string) string {
+	m := hmac.New(sha256.New, waiverSeal)
+	for _, f := range []string{id, shipmentID, nodeID, headCommit, principal} {
+		writeField(m, f)
+	}
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+func newWaiver(id, shipmentID, nodeID, headCommit, principal string) Waiver {
+	return Waiver{
+		id: id, shipmentID: shipmentID, nodeID: nodeID, headCommit: headCommit, principal: principal,
+		seal: sealWaiver(id, shipmentID, nodeID, headCommit, principal),
+	}
+}
+
+// valid reports whether the waiver was produced by WaiverService and has not
+// been altered since.
+func (w Waiver) valid() bool {
+	if w.seal == "" {
+		return false
+	}
+	want := sealWaiver(w.id, w.shipmentID, w.nodeID, w.headCommit, w.principal)
+	return hmac.Equal([]byte(want), []byte(w.seal))
+}
+
+// ID is the consumed waiver nonce.
+func (w Waiver) ID() string { return w.id }
+
+// ShipmentID is the shipment the waiver is bound to.
+func (w Waiver) ShipmentID() string { return w.shipmentID }
+
+// NodeID is the node the waiver is bound to.
+func (w Waiver) NodeID() string { return w.nodeID }
+
+// HeadCommit is the head commit the waiver is bound to.
+func (w Waiver) HeadCommit() string { return w.headCommit }
+
+// Principal is the human principal that authorized the waiver.
+func (w Waiver) Principal() string { return w.principal }
+
+// NewWaiverService builds a WaiverService over the out-of-band trust anchor,
+// the append-only ledger and the external ledger anchor store. The anchor
+// store is mandatory: without an anchor outside the ledger, deletion, rollback
+// and forged tails cannot be detected. A nil clock uses time.Now. There is
+// deliberately no issuance API here: tokens are minted out of band by a
+// human-held key.
+func NewWaiverService(t *Trust, l *Ledger, anchors AnchorStore, clock func() time.Time) (*WaiverService, error) {
 	if t == nil || l == nil {
 		return nil, errors.New("evidencedag: waiver service requires a trust anchor and a ledger")
+	}
+	if anchors == nil {
+		return nil, ErrAnchorRequired
 	}
 	if clock == nil {
 		clock = time.Now
 	}
-	return &WaiverService{trust: t, ledger: l, now: clock}, nil
+	return &WaiverService{trust: t, ledger: l, anchors: anchors, now: clock}, nil
 }
 
 func deny(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrWaiverDenied, fmt.Sprintf(format, args...))
+}
+
+// preparedWaiver is a token that passed every check that needs no ledger
+// access. Nothing is consumed until commit.
+type preparedWaiver struct {
+	claims WaiverClaims
+	key    TrustedKey
+	node   Node
+	ship   Shipment
+	digest string
 }
 
 // Accept verifies a waiver token for the shipment and, only when every check
@@ -43,10 +113,19 @@ func deny(format string, args ...any) error {
 // the exact claims bytes, a principal equal to the key's principal (never
 // self-asserted), binding to this shipment, node and head commit, a bounded
 // short-lived validity window, an explicit authorization policy entry for the
-// node's waiver family, and a never-before-consumed nonce.
+// node's waiver family, and a never-before-consumed nonce. Only the "waiver"
+// kind is implemented; "not-applicable" tokens are denied.
 func (s *WaiverService) Accept(raw []byte, ship Shipment, lookup func(string) (Node, bool)) (Waiver, error) {
-	var zero Waiver
-	if s == nil || s.trust == nil || s.ledger == nil || s.now == nil || lookup == nil {
+	p, err := s.prepare(raw, ship, lookup)
+	if err != nil {
+		return Waiver{}, err
+	}
+	return s.commit(p)
+}
+
+func (s *WaiverService) prepare(raw []byte, ship Shipment, lookup func(string) (Node, bool)) (preparedWaiver, error) {
+	var zero preparedWaiver
+	if s == nil || s.trust == nil || s.ledger == nil || s.anchors == nil || s.now == nil || lookup == nil {
 		return zero, deny("waivers are not enabled")
 	}
 	if err := validateShipment(ship); err != nil {
@@ -90,7 +169,11 @@ func (s *WaiverService) Accept(raw []byte, ship Shipment, lookup func(string) (N
 	if !noncePattern.MatchString(claims.Nonce) {
 		return zero, deny("nonce must be 16-64 lowercase hex characters")
 	}
-	if claims.Kind != claimKindWaiver && claims.Kind != claimKindNotApplicable {
+	switch claims.Kind {
+	case claimKindWaiver:
+	case claimKindNotApplicable:
+		return zero, deny("the not-applicable waiver kind is not implemented")
+	default:
 		return zero, deny("unknown waiver kind")
 	}
 	if claims.Reason == "" || len(claims.Reason) > MaxReasonBytes {
@@ -106,33 +189,50 @@ func (s *WaiverService) Accept(raw []byte, ship Shipment, lookup func(string) (N
 	if claims.NotBefore >= claims.ExpiresAt || time.Duration(claims.ExpiresAt-claims.NotBefore)*time.Second > MaxWaiverLifetime {
 		return zero, deny("validity window is inverted or longer than %s", MaxWaiverLifetime)
 	}
-	now := s.now().Unix()
-	if now < claims.NotBefore {
-		return zero, deny("token is not yet valid")
-	}
-	if now >= claims.ExpiresAt {
-		return zero, deny("token has expired")
+	if err := claims.checkWindow(s.now().Unix()); err != nil {
+		return zero, err
 	}
 	family := node.WaiverAuthorityFamily()
 	if !s.trust.authorized(key.Principal, family) {
 		return zero, deny("principal is not authorized to waive family %s", family)
 	}
 	sum := sha256.Sum256(append(append([]byte{}, payload...), sig...))
-	_, _, err = s.ledger.appendUnique(LedgerEntry{
-		AcceptedAt: now, ShipmentID: ship.ID, NodeID: node.ID, HeadCommit: ship.HeadCommit,
-		Principal: key.Principal, KeyID: key.KeyID, Family: string(family), Kind: claims.Kind,
-		Nonce: claims.Nonce, Reason: claims.Reason, TokenDigest: hex.EncodeToString(sum[:]),
-	}, true)
-	if err != nil {
-		if errors.Is(err, ErrNonceReplayed) {
-			return zero, err
-		}
-		return zero, fmt.Errorf("%w: ledger: %w", ErrWaiverDenied, err)
+	return preparedWaiver{claims: claims, key: key, node: node, ship: ship, digest: hex.EncodeToString(sum[:])}, nil
+}
+
+func (c WaiverClaims) checkWindow(now int64) error {
+	if now < c.NotBefore {
+		return deny("token is not yet valid")
 	}
-	return Waiver{
-		ID: claims.Nonce, ShipmentID: ship.ID, NodeID: node.ID, HeadCommit: ship.HeadCommit,
-		Principal: key.Principal, verified: true,
-	}, nil
+	if now >= c.ExpiresAt {
+		return deny("token has expired")
+	}
+	return nil
+}
+
+// commit consumes the nonce in the anchored ledger. The clock is read again
+// under the ledger lock, so a token that expired while waiting for the lock is
+// denied.
+func (s *WaiverService) commit(p preparedWaiver) (Waiver, error) {
+	_, _, err := s.ledger.appendUnique(LedgerEntry{
+		ShipmentID: p.ship.ID, NodeID: p.node.ID, HeadCommit: p.ship.HeadCommit,
+		Principal: p.key.Principal, KeyID: p.key.KeyID, Family: string(p.node.WaiverAuthorityFamily()), Kind: p.claims.Kind,
+		Nonce: p.claims.Nonce, Reason: p.claims.Reason, TokenDigest: p.digest,
+	}, appendOpts{
+		unique: true,
+		store:  s.anchors,
+		stamp: func() (int64, error) {
+			now := s.now().Unix()
+			return now, p.claims.checkWindow(now)
+		},
+	})
+	if err != nil && !errors.Is(err, ErrSidecarStale) {
+		if errors.Is(err, ErrNonceReplayed) || errors.Is(err, ErrWaiverDenied) {
+			return Waiver{}, err
+		}
+		return Waiver{}, fmt.Errorf("%w: ledger: %w", ErrWaiverDenied, err)
+	}
+	return newWaiver(p.claims.Nonce, p.ship.ID, p.node.ID, p.ship.HeadCommit, p.key.Principal), nil
 }
 
 func decodeToken(raw []byte) (waiverToken, error) {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -124,16 +125,20 @@ type Applicability struct {
 
 // Node is one required check in a shipment DAG.
 type Node struct {
-	ID               string         `json:"id" yaml:"id"`
-	Family           Family         `json:"family" yaml:"family"`
-	Applicability    *Applicability `json:"applicability" yaml:"applicability"`
-	Validator        string         `json:"validator" yaml:"validator"`
-	RequiredEvidence string         `json:"required_evidence,omitempty" yaml:"required_evidence,omitempty"`
-	ProducingTask    string         `json:"producing_task" yaml:"producing_task"`
-	ProducingCommit  string         `json:"producing_commit" yaml:"producing_commit"`
-	WaiverFamily     Family         `json:"waiver_family,omitempty" yaml:"waiver_family,omitempty"`
-	OnUnmet          OnUnmet        `json:"on_unmet" yaml:"on_unmet"`
-	Terminal         bool           `json:"terminal" yaml:"terminal"`
+	ID            string         `json:"id" yaml:"id"`
+	Family        Family         `json:"family" yaml:"family"`
+	Applicability *Applicability `json:"applicability" yaml:"applicability"`
+	Validator     string         `json:"validator" yaml:"validator"`
+	// RequiredEvidence is an optional assertion that must equal the S4 evidence
+	// family bound to Family; it is validated but adds no behaviour of its own.
+	RequiredEvidence string  `json:"required_evidence,omitempty" yaml:"required_evidence,omitempty"`
+	ProducingTask    string  `json:"producing_task" yaml:"producing_task"`
+	ProducingCommit  string  `json:"producing_commit" yaml:"producing_commit"`
+	WaiverFamily     Family  `json:"waiver_family,omitempty" yaml:"waiver_family,omitempty"`
+	OnUnmet          OnUnmet `json:"on_unmet" yaml:"on_unmet"`
+	Terminal         bool    `json:"terminal" yaml:"terminal"`
+	// Source names the contribution a node was composed in; Compose sets it.
+	Source string `json:"source,omitempty" yaml:"source,omitempty"`
 }
 
 // WaiverAuthorityFamily returns the family used for waiver authorization.
@@ -178,7 +183,7 @@ func validID(s string) bool {
 // characters so reasons are safe to render.
 func truncate(s string) string {
 	s = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || r == 0x7f || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return ' '
 		}
 		return r
