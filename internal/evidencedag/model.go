@@ -62,13 +62,16 @@ const (
 	FamilyPlanTaskSoundness Family = "plan-task-soundness"
 	// FamilyRedTestHonesty covers red-test honesty evidence (S9).
 	FamilyRedTestHonesty Family = "red-test-honesty"
+	// FamilyWorkflowPolicy covers workflow-policy gate nodes (S11). Its nodes
+	// are decided by caller-supplied Verdicts, never by S4 evidence.
+	FamilyWorkflowPolicy Family = "workflow-policy"
 )
 
 // Families returns the closed, sorted set of known families.
 func Families() []Family {
 	return []Family{
 		FamilyCompatError, FamilyDocsAudit, FamilyMutationState,
-		FamilyParity, FamilyPlanTaskSoundness, FamilyRedTestHonesty,
+		FamilyParity, FamilyPlanTaskSoundness, FamilyRedTestHonesty, FamilyWorkflowPolicy,
 	}
 }
 
@@ -179,9 +182,9 @@ func validID(s string) bool {
 	return len(s) > 0 && len(s) <= MaxIDLength && idPattern.MatchString(s)
 }
 
-// validTaskID reports whether s is a bounded task or shipment identifier. The
+// ValidTaskID reports whether s is a bounded task or shipment identifier. The
 // length is checked before the pattern so oversized input is never scanned.
-func validTaskID(s string) bool {
+func ValidTaskID(s string) bool {
 	return len(s) > 0 && len(s) <= MaxIDLength && taskPattern.MatchString(s)
 }
 

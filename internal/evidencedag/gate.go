@@ -53,7 +53,7 @@ func (g *Gate) Check(ctx context.Context, in GateInput) (Decision, error) {
 	if err := validateShipment(in.Shipment); err != nil {
 		return zero, err
 	}
-	if err := g.eval.validateInput(Input{Shipment: in.Shipment, Evidence: in.Evidence, Failures: in.Failures}); err != nil {
+	if err := g.eval.validateInput(Input{Shipment: in.Shipment, Evidence: in.Evidence, Failures: in.Failures, Verdicts: in.Verdicts}); err != nil {
 		return zero, err
 	}
 	lookup := func(id string) (Node, bool) { n, ok := g.eval.nodes[id]; return n, ok }
@@ -113,7 +113,7 @@ func (g *Gate) Check(ctx context.Context, in GateInput) (Decision, error) {
 		}
 		waivers[w.nodeID] = w
 	}
-	rep, err := g.eval.Evaluate(Input{Shipment: in.Shipment, Evidence: in.Evidence, Waivers: waivers, Failures: in.Failures})
+	rep, err := g.eval.Evaluate(Input{Shipment: in.Shipment, Evidence: in.Evidence, Waivers: waivers, Failures: in.Failures, Verdicts: in.Verdicts})
 	if err != nil {
 		return zero, err
 	}

@@ -56,6 +56,12 @@ func reservedDeviceName(p string) bool {
 }
 
 func validateRelPath(rel string) ([]string, error) {
+	return validateRelPathOpt(rel, false)
+}
+
+// validateRelPathOpt is validateRelPath with an option to allow hidden (dot-
+// or underscore-prefixed) components, such as a workspace's .github directory.
+func validateRelPathOpt(rel string, allowHidden bool) ([]string, error) {
 	if rel == "" || len(rel) > maxRelPathBytes || strings.ContainsRune(rel, 0) {
 		return nil, errors.New("evidence path is empty, too long or contains NUL")
 	}
@@ -74,7 +80,7 @@ func validateRelPath(rel string) ([]string, error) {
 		switch {
 		case p == "." || p == "..":
 			return nil, errors.New("evidence path must not contain . or .. components")
-		case strings.HasPrefix(p, ".") || strings.HasPrefix(p, "_"):
+		case !allowHidden && (strings.HasPrefix(p, ".") || strings.HasPrefix(p, "_")):
 			return nil, errors.New("evidence path must not contain hidden or underscore-prefixed components")
 		case strings.ContainsAny(p, `:*?"<>|`) || len(p) > maxPathComponent || hasControl(p):
 			return nil, errors.New("evidence path component is not allowed")
@@ -103,24 +109,53 @@ func validateRelPath(rel string) ([]string, error) {
 // writable only by trusted producers.
 func LoadEvidenceFile(root, rel string) (EvidenceRecord, error) {
 	var zero EvidenceRecord
-	if root == "" {
-		return zero, errors.New("evidencedag: evidence root is required")
-	}
 	parts, err := validateRelPath(rel)
 	if err != nil {
 		return zero, fmt.Errorf("evidencedag: %w", err)
 	}
+	raw, err := readRegularUnder(root, parts, maxRecordBytes, "evidence")
+	if err != nil {
+		return zero, err
+	}
+	return decodeRecord(raw)
+}
+
+// ReadWorkspaceFile reads the regular file at rel beneath root, at most max
+// bytes, with the same containment as LoadEvidenceFile: no traversal,
+// absolute or device-name components, no symlink or reparse point on the
+// path, a regular-file check before the open and a non-blocking open (so a
+// FIFO cannot hang the reader). Unlike evidence paths, hidden components such
+// as .github are allowed because workspace policy files live there.
+func ReadWorkspaceFile(root, rel string, max int) ([]byte, error) {
+	parts, err := validateRelPathOpt(rel, true)
+	if err != nil {
+		return nil, fmt.Errorf("evidencedag: %w", err)
+	}
+	for _, p := range parts {
+		if (strings.HasPrefix(p, ".") || strings.HasPrefix(p, "_")) && p != ".github" {
+			return nil, errors.New("evidencedag: workspace path may only contain the .github hidden component")
+		}
+	}
+	return readRegularUnder(root, parts, max, "workspace")
+}
+
+// readRegularUnder reads a bounded regular file at the already validated
+// components parts beneath root; what names the file kind in errors.
+func readRegularUnder(root string, parts []string, max int, what string) ([]byte, error) {
+	if root == "" {
+		return nil, fmt.Errorf("evidencedag: %s root is required", what)
+	}
 	canon, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return zero, fmt.Errorf("evidencedag: resolve evidence root: %w", err)
+		return nil, fmt.Errorf("evidencedag: resolve %s root: %w", what, err)
 	}
 	ri, err := os.Lstat(canon)
 	if err != nil || !ri.IsDir() {
-		return zero, errors.New("evidencedag: evidence root is not a directory")
+		return nil, fmt.Errorf("evidencedag: %s root is not a directory", what)
 	}
 	r, err := os.OpenRoot(canon)
 	if err != nil {
-		return zero, fmt.Errorf("evidencedag: open evidence root: %w", err)
+		return nil, fmt.Errorf("evidencedag: open %s root: %w", what, err)
 	}
 	defer r.Close()
 
@@ -128,38 +163,38 @@ func LoadEvidenceFile(root, rel string) (EvidenceRecord, error) {
 	for i := range parts {
 		fi, err := r.Lstat(strings.Join(parts[:i+1], "/"))
 		if err != nil {
-			return zero, fmt.Errorf("evidencedag: stat evidence path: %w", err)
+			return nil, fmt.Errorf("evidencedag: stat %s path: %w", what, err)
 		}
 		if fi.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
-			return zero, errors.New("evidencedag: evidence path crosses a symlink or reparse point")
+			return nil, fmt.Errorf("evidencedag: %s path crosses a symlink or reparse point", what)
 		}
 		if i < len(parts)-1 && !fi.IsDir() {
-			return zero, errors.New("evidencedag: evidence path component is not a directory")
+			return nil, fmt.Errorf("evidencedag: %s path component is not a directory", what)
 		}
 		if i == len(parts)-1 {
 			if !fi.Mode().IsRegular() {
-				return zero, errors.New("evidencedag: evidence file is not a regular file")
+				return nil, fmt.Errorf("evidencedag: %s file is not a regular file", what)
 			}
 			leaf = fi
 		}
 	}
 	f, err := r.OpenFile(strings.Join(parts, "/"), os.O_RDONLY|readOnlyOpenFlags, 0)
 	if err != nil {
-		return zero, fmt.Errorf("evidencedag: open evidence file: %w", err)
+		return nil, fmt.Errorf("evidencedag: open %s file: %w", what, err)
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil || !fi.Mode().IsRegular() || !os.SameFile(leaf, fi) {
-		return zero, errors.New("evidencedag: evidence file is not a regular file")
+		return nil, fmt.Errorf("evidencedag: %s file is not a regular file", what)
 	}
-	raw, err := io.ReadAll(io.LimitReader(f, maxRecordBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(f, int64(max)+1))
 	if err != nil {
-		return zero, fmt.Errorf("evidencedag: read evidence file: %w", err)
+		return nil, fmt.Errorf("evidencedag: read %s file: %w", what, err)
 	}
-	if len(raw) > maxRecordBytes {
-		return zero, fmt.Errorf("evidencedag: evidence file exceeds %d bytes", maxRecordBytes)
+	if len(raw) > max {
+		return nil, fmt.Errorf("evidencedag: %s file exceeds %d bytes", what, max)
 	}
-	return decodeRecord(raw)
+	return raw, nil
 }
 
 func decodeRecord(raw []byte) (EvidenceRecord, error) {

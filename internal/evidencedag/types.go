@@ -31,6 +31,17 @@ type Waiver struct {
 	seal       string
 }
 
+// Verdict is a caller-computed own-evidence outcome for a node of
+// FamilyWorkflowPolicy (S11). It replaces only the S4 artifact check: node
+// applicability, waivers, executor failures and upstream propagation still
+// apply, so a verdict can never launder an unmet upstream. Only StatusVerified,
+// StatusUnmet and StatusError are valid; verdicts for nodes of any other family
+// are refused.
+type Verdict struct {
+	Status Status
+	Reason string
+}
+
 // Input is one evaluation request.
 type Input struct {
 	Shipment Shipment
@@ -39,6 +50,8 @@ type Input struct {
 	// Failures maps a node ID to a reason when its executor could not produce
 	// evidence; such an applicable node evaluates as unverifiable.
 	Failures map[string]string
+	// Verdicts maps a workflow-policy node ID to its caller-computed outcome.
+	Verdicts map[string]Verdict
 }
 
 // NodeResult is the evaluated outcome of one node.
