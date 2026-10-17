@@ -78,6 +78,13 @@ func checkReferences(ctx *checkContext) ([]Finding, error) {
 
 // resolveReference resolves an anchor (path:line, path::Symbol) or plain path.
 func resolveReference(root, ref string) error {
+	refPath := ref
+	if a, perr := docline.ParseAnchor(ref); perr == nil {
+		refPath = a.Path
+	}
+	if hasRawDotDot(refPath) {
+		return errors.New("path escapes the workspace root")
+	}
 	if _, perr := docline.ParseAnchor(ref); perr == nil {
 		if _, err := docline.ResolveAnchorString(root, ref); err != nil {
 			return fmt.Errorf("resolve anchor: %w", err)
