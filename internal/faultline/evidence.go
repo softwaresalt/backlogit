@@ -154,6 +154,12 @@ type EvidenceView struct {
 	SchemaVersion int
 	// NodeFamily is the envelope NodeFamily discriminator.
 	NodeFamily string
+	// ProducingTask is the envelope ProducingTask (lets a family bind its
+	// payload to the producing task without importing producer packages).
+	ProducingTask string
+	// ProducingCommit is the envelope ProducingCommit (lets a family bind its
+	// payload to the commit the envelope claims).
+	ProducingCommit string
 }
 
 // ParityEvidence is the v1 "parity" family payload: cross-surface parity
@@ -182,14 +188,20 @@ type FamilyPayload interface {
 // binary-independent (static, not derived from linked packages) so two binaries
 // can never freeze different family sets for a version. Adding or removing a
 // family REQUIRES a version bump; the v1 set is {parity} forever.
+//
+// v2 ({parity, red_green}) is the superset added by S9 (red-test honesty). v1
+// stays {parity} forever; a producer binds to the version whose closed set
+// contains its family.
 var familyManifest = map[int][]string{
-	EvidenceSchemaVersion: {NodeFamilyParity},
+	EvidenceSchemaVersion:   {NodeFamilyParity},
+	EvidenceSchemaVersionV2: {NodeFamilyParity, NodeFamilyRedGreen},
 }
 
 // knownVersions is the set of accepted schema versions. A version absent here
 // yields ErrUnknownVersion.
 var knownVersions = map[int]struct{}{
-	EvidenceSchemaVersion: {},
+	EvidenceSchemaVersion:   {},
+	EvidenceSchemaVersionV2: {},
 }
 
 // registry holds the frozen family-factory snapshot keyed by composite
@@ -350,6 +362,9 @@ func Validate(a EvidenceArtifact) error {
 		Applicability: a.Applicability,
 		SchemaVersion: a.SchemaVersion,
 		NodeFamily:    a.NodeFamily,
+
+		ProducingTask:   a.ProducingTask,
+		ProducingCommit: a.ProducingCommit,
 	}
 	return fp.Validate(view)
 }
@@ -804,12 +819,21 @@ func scanArray(dec *json.Decoder, depth int) error {
 	return nil
 }
 
-// init registers the v1 parity family so the frozen registry matches the
-// foundation-owned manifest.
+// init registers the v1 and v2 families so the frozen registry matches the
+// foundation-owned manifest exactly. The parity payload type is shared by v1
+// and v2; red_green exists only at v2.
 func init() {
-	if err := RegisterFamily(EvidenceSchemaVersion, NodeFamilyParity, func() FamilyPayload {
-		return &ParityEvidence{}
-	}); err != nil {
-		panic(fmt.Sprintf("faultline: register parity family: %v", err))
+	for _, reg := range []struct {
+		version int
+		name    string
+		factory func() FamilyPayload
+	}{
+		{EvidenceSchemaVersion, NodeFamilyParity, func() FamilyPayload { return &ParityEvidence{} }},
+		{EvidenceSchemaVersionV2, NodeFamilyParity, func() FamilyPayload { return &ParityEvidence{} }},
+		{EvidenceSchemaVersionV2, NodeFamilyRedGreen, func() FamilyPayload { return &RedGreenEvidence{} }},
+	} {
+		if err := RegisterFamily(reg.version, reg.name, reg.factory); err != nil {
+			panic(fmt.Sprintf("faultline: register %s family (v%d): %v", reg.name, reg.version, err))
+		}
 	}
 }
