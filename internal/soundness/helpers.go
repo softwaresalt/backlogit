@@ -2,9 +2,14 @@ package soundness
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/softwaresalt/backlogit/internal/docline"
 )
 
 // helpers shared by the consistency rules.
@@ -38,6 +43,33 @@ func confinedArtifact(p string) (string, error) {
 		return "", errors.New("absolute path is outside the workspace")
 	case key == ".." || strings.HasPrefix(key, "../"):
 		return "", errors.New("path escapes the workspace root")
+	}
+	return key, nil
+}
+
+// confinedArtifactIn applies confinedArtifact and, when root is set, also
+// resolves the deepest existing ancestor of the path so a symlink or reparse
+// point that leaves the workspace is rejected. Missing in-root outputs remain
+// valid because only the existing prefix is resolved.
+func confinedArtifactIn(root, p string) (string, error) {
+	key, err := confinedArtifact(p)
+	if err != nil || root == "" {
+		return key, err
+	}
+	rel := path.Clean(strings.ReplaceAll(strings.TrimSpace(p), "\\", "/"))
+	for rel != "." {
+		_, rerr := docline.ResolveWorkspacePath(root, rel)
+		switch {
+		case rerr == nil:
+			return key, nil
+		case !errors.Is(rerr, docline.ErrAnchorNotFound):
+			return "", fmt.Errorf("path escapes the workspace root: %w", rerr)
+		}
+		// A dangling link is not "missing": it could later resolve outside the root.
+		if _, lerr := os.Lstat(filepath.Join(root, filepath.FromSlash(rel))); lerr == nil {
+			return "", errors.New("path is a dangling link and cannot be confined to the workspace")
+		}
+		rel = path.Dir(rel)
 	}
 	return key, nil
 }

@@ -91,6 +91,10 @@ func Execute() error {
 				}
 				return format.WrapErrorData(cmdPath, format.ErrCodeServerError, unknownField.Error(), data)
 			}
+			var blocked *soundnessBlockedError
+			if errors.As(err, &blocked) {
+				return format.WrapErrorData(cmdPath, format.ErrCodeServerError, blocked.Error(), blocked.Decision)
+			}
 			return format.WrapError(cmdPath, format.ErrCodeServerError, err.Error())
 		}()
 		if wrapErr != nil {

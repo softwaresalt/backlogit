@@ -131,3 +131,13 @@ func TestCopilotR1_CLI_SoundnessLint_BlockedNotDoublePrinted(t *testing.T) {
 	require.ErrorIs(t, err, errSoundnessBlocked)
 	assert.NotContains(t, out, "Error:")
 }
+
+func TestCopilotR2_CLI_SoundnessBlockedCarriesFindingsInJSONRPC(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureDoc(t, root, "plan.json", soundnessUnsoundPlan)
+	_, err := runDocs(t, root, "soundness", "lint", "--plan", "plan.json", "--mode", "enforce", "--format", "json")
+	require.ErrorIs(t, err, errSoundnessBlocked)
+	var blocked *soundnessBlockedError
+	require.ErrorAs(t, err, &blocked)
+	assert.NotEmpty(t, blocked.Decision.Findings)
+}

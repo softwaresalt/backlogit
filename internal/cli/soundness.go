@@ -19,6 +19,17 @@ import (
 // plan has blocking findings, so the process exits non-zero.
 var errSoundnessBlocked = errors.New("soundness: plan blocked by findings")
 
+// soundnessBlockedError carries the blocking gate decision so structured
+// (JSON-RPC) callers receive the findings, not only the sentinel message.
+type soundnessBlockedError struct {
+	Decision soundness.GateDecision
+}
+
+func (e *soundnessBlockedError) Error() string { return errSoundnessBlocked.Error() }
+
+// Unwrap lets errors.Is(err, errSoundnessBlocked) keep matching.
+func (e *soundnessBlockedError) Unwrap() error { return errSoundnessBlocked }
+
 // maxSoundnessInputBytes bounds the plan and config files the linter reads.
 const maxSoundnessInputBytes = 4 << 20
 
@@ -104,7 +115,7 @@ workspace root.`,
 			if decision.Blocked {
 				// findings are already printed; avoid a redundant cobra error line
 				cmd.SilenceErrors = true
-				return errSoundnessBlocked
+				return &soundnessBlockedError{Decision: decision}
 			}
 			return nil
 		},

@@ -14,7 +14,7 @@ func checkMissingArtifact(ctx *checkContext) ([]Finding, error) {
 	delivered := map[string]map[string]bool{} // artifact -> delivering unit IDs
 	for _, u := range ctx.plan.Units {
 		for _, d := range u.Deliverables {
-			k, err := confinedArtifact(d)
+			k, err := confinedArtifactIn(ctx.cfg.Root, d)
 			if err != nil {
 				out = append(out, errFinding(ruleMissingArtifact, u.ID, "delivered artifact %q is invalid: %v", d, err))
 				continue
@@ -27,7 +27,7 @@ func checkMissingArtifact(ctx *checkContext) ([]Finding, error) {
 	}
 	for _, u := range ctx.plan.Units {
 		for _, req := range u.Requires {
-			k, err := confinedArtifact(req)
+			k, err := confinedArtifactIn(ctx.cfg.Root, req)
 			if err != nil {
 				out = append(out, errFinding(ruleMissingArtifact, u.ID, "required artifact %q is invalid: %v", req, err))
 				continue
