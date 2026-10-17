@@ -217,6 +217,19 @@ func (r *Registry) Declaration(taskID string) (*evidencedag.Declaration, error) 
 	return d, nil
 }
 
+// predecessors returns the gates id directly depends on, in canonical order.
+func (r *Registry) predecessors(id NodeType) []NodeType {
+	var out []NodeType
+	for _, g := range r.gates {
+		for _, e := range r.edges {
+			if e.Node == string(id) && e.DependsOn == string(g.ID) {
+				out = append(out, g.ID)
+			}
+		}
+	}
+	return out
+}
+
 // gateAttributes returns the per-gate rollout attributes for a shipment.
 func (r *Registry) gateAttributes() map[string]string {
 	attrs := make(map[string]string, len(r.gates))

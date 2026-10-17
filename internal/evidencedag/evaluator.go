@@ -242,6 +242,24 @@ func (e *Evaluator) validateInput(in Input) error {
 			return fmt.Errorf("%w: node %q has both evidence and an executor failure", ErrInvalidInput, truncate(id))
 		}
 	}
+	for id, v := range in.Verdicts {
+		n, ok := e.nodes[id]
+		if !ok {
+			return fmt.Errorf("%w: verdict supplied for undeclared node %q", ErrInvalidInput, truncate(id))
+		}
+		if n.Family != FamilyWorkflowPolicy {
+			return fmt.Errorf("%w: verdicts are accepted only for %s nodes, not %q", ErrInvalidInput, FamilyWorkflowPolicy, truncate(id))
+		}
+		if v.Status != StatusVerified && v.Status != StatusUnmet && v.Status != StatusError {
+			return fmt.Errorf("%w: verdict for node %q has an unsupported status", ErrInvalidInput, truncate(id))
+		}
+		if _, both := in.Evidence[id]; both {
+			return fmt.Errorf("%w: node %q has both evidence and a verdict", ErrInvalidInput, truncate(id))
+		}
+		if _, both := in.Failures[id]; both {
+			return fmt.Errorf("%w: node %q has both an executor failure and a verdict", ErrInvalidInput, truncate(id))
+		}
+	}
 	return nil
 }
 
@@ -291,6 +309,13 @@ func (e *Evaluator) nodeKey(n Node, in Input, results map[string]NodeResult, dup
 	failure, failed := in.Failures[n.ID]
 	writeField(h, fmt.Sprintf("dup:%t|failed:%t", isDup, failed))
 	writeField(h, failure)
+	if v, ok := in.Verdicts[n.ID]; ok {
+		writeField(h, "verdict")
+		writeField(h, string(v.Status))
+		writeField(h, v.Reason)
+	} else {
+		writeField(h, "no-verdict")
+	}
 	if w, ok := in.Waivers[n.ID]; ok {
 		writeField(h, fmt.Sprintf("waiver:%s|%s|%s|%s|%s|%s|%s|%t", w.id, w.shipmentID, w.nodeID, w.headCommit, w.principal, w.family, w.nodeDigest, w.valid()))
 	} else {
@@ -383,6 +408,9 @@ func (e *Evaluator) computeNode(n Node, in Input, results map[string]NodeResult,
 		return set(StatusUnmet, "upstream node "+unmetUp+" is unmet")
 	}
 
+	if v, ok := in.Verdicts[n.ID]; ok {
+		return set(v.Status, v.Reason)
+	}
 	return verifyEvidence(n, rec, has, set)
 }
 

@@ -216,6 +216,7 @@ type GateInput struct {
 	Shipment     Shipment
 	Evidence     map[string]EvidenceRecord
 	Failures     map[string]string
+	Verdicts     map[string]Verdict
 	WaiverTokens [][]byte
 }
 
