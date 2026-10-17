@@ -11,10 +11,6 @@ conditions:
     description: "Shipment 142-S and its explicit members are archived."
     satisfied: true
     evidence: "ship_shipment recorded status archived/shipped with sha a61d409e; archive commit 6aaf85b5 on the closure branch."
-  - id: soundness-gate-not-wired
-    description: "The soundness linter is not wired into shipment assembly or CI."
-    satisfied: false
-    evidence: "Deferred as stash 09B597EE; run `backlogit soundness lint` in report mode before enforcing."
 description: "142-S (160-F plan and work-item soundness linter) post-merge closure for PR #515, merge a61d409e. READY_WITH_CONDITIONS: the linter is not yet wired into assembly or CI."
 doc_type: closure
 docline:
