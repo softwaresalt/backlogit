@@ -10,12 +10,14 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
 	"github.com/softwaresalt/backlogit/internal/evidence"
 	"github.com/softwaresalt/backlogit/internal/evidencedag"
+	"github.com/softwaresalt/backlogit/internal/faultline"
 	"github.com/softwaresalt/backlogit/internal/policyengine"
 )
 
@@ -365,22 +367,34 @@ func runPolicyCheck(cmd *cobra.Command, cwd *string, f policyCheckFlags) error {
 	return nil
 }
 
+// safeText makes untrusted text safe for a terminal: C0/C1 control characters
+// (including ESC and CSI) are removed or escaped.
+func safeText(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r >= 0x80 && unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	return faultline.SanitizeDiagnostic(s)
+}
+
 func printPolicyText(w io.Writer, d policyengine.Decision) {
-	_, _ = fmt.Fprintf(w, "policy check %s @ %.12s (%s, %s)\n", d.TaskID, d.HeadCommit, d.Mode, d.Surface)
+	_, _ = fmt.Fprintf(w, "policy check %s @ %.12s (%s, %s)\n", safeText(d.TaskID), safeText(d.HeadCommit), safeText(string(d.Mode)), safeText(string(d.Surface)))
 	for _, g := range d.Gates {
-		line := fmt.Sprintf("  %-20s %-14s", g.Node, g.Status)
+		line := fmt.Sprintf("  %-20s %-14s", safeText(string(g.Node)), safeText(string(g.Status)))
 		if g.Waiver != "" {
-			line += " waived by " + g.Waiver
+			line += " waived by " + safeText(g.Waiver)
 		}
 		_, _ = fmt.Fprintln(w, strings.TrimRight(line, " "))
 	}
 	for _, v := range d.Errors {
-		_, _ = fmt.Fprintf(w, "error [%s] %s: %s\n", v.Code, v.Node, v.Reason)
+		_, _ = fmt.Fprintf(w, "error [%s] %s: %s\n", safeText(v.Code), safeText(v.Node), safeText(v.Reason))
 	}
 	for _, dn := range d.OverrideDenials {
-		_, _ = fmt.Fprintf(w, "override %d denied: %s\n", dn.Index, dn.Reason)
+		_, _ = fmt.Fprintf(w, "override %d denied: %s\n", dn.Index, safeText(dn.Reason))
 	}
-	_, _ = fmt.Fprintf(w, "policy (%s): %s\n", d.Disposition, d.Reason)
+	_, _ = fmt.Fprintf(w, "policy (%s): %s\n", safeText(string(d.Disposition)), safeText(d.Reason))
 }
 
 func newPolicyVerifyOverridesCommand(cwd *string) *cobra.Command {
@@ -435,7 +449,7 @@ write access to the ledger directory.`,
 				return writeDocsJSON(cmd.OutOrStdout(), log)
 			}
 			for _, e := range log.Entries {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%d %s %s %s %s\n", e.Seq, e.TaskID, e.Gate, e.Principal, e.Justification)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%d %s %s %s %s\n", e.Seq, safeText(e.TaskID), safeText(e.Gate), safeText(e.Principal), safeText(e.Justification))
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "override log: %d record(s), chain verified\n", log.Records)
 			return nil

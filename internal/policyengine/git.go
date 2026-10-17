@@ -203,6 +203,10 @@ func (g ExecGit) run(ctx context.Context, args ...string) (string, int, error) {
 	cmd.Stdout = out
 	cmd.Stderr = &limitedBuffer{max: maxGitOutput}
 	err := cmd.Run()
+	// A killed or timed-out git must never be read as an exit-code verdict.
+	if cerr := ctx.Err(); cerr != nil {
+		return "", -1, fmt.Errorf("policyengine: git %s: %w", args[0], cerr)
+	}
 	if out.overflow {
 		return "", -1, errors.New("policyengine: git output exceeded its bound")
 	}

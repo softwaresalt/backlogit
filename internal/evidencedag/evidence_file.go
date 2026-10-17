@@ -131,6 +131,11 @@ func ReadWorkspaceFile(root, rel string, max int) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("evidencedag: %w", err)
 	}
+	for _, p := range parts {
+		if (strings.HasPrefix(p, ".") || strings.HasPrefix(p, "_")) && p != ".github" {
+			return nil, errors.New("evidencedag: workspace path may only contain the .github hidden component")
+		}
+	}
 	return readRegularUnder(root, parts, max, "workspace")
 }
 

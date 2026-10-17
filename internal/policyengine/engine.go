@@ -327,7 +327,13 @@ func (e *Engine) Check(ctx context.Context, req Request) (Decision, error) {
 			facts[g.ID] = e.recordedFact(ctx, g.ID, byNode[g.ID], req, now)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return blocked(req, e.mode, Violation{Code: CodeInvalidRequest, Reason: "evaluation was cancelled"}, fmt.Errorf("policyengine: %w", err))
+	}
 	e.checkOrdering(ctx, facts)
+	if err := ctx.Err(); err != nil {
+		return blocked(req, e.mode, Violation{Code: CodeInvalidRequest, Reason: "evaluation was cancelled"}, fmt.Errorf("policyengine: %w", err))
+	}
 
 	verdicts := make(map[string]evidencedag.Verdict, len(facts))
 	for id, f := range facts {
