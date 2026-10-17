@@ -356,7 +356,11 @@ func TestU161_001_PrepareBaseline_WorkspaceContainedAndIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rel, err := filepath.Rel(root, dir)
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(realRoot, dir)
 	if err != nil || strings.HasPrefix(rel, "..") {
 		t.Fatalf("baseline dir %q escapes workspace %q", dir, root)
 	}
