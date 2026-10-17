@@ -16,8 +16,12 @@ Verify the tamper-evident override ledger against its external anchor
 
 Verify the append-only, hash-chained override ledger against its external
 anchor and list its entries (authenticated principal, justification, gate).
-An edited, reordered, extended, truncated, emptied or deleted ledger fails.
-Both paths must be absolute and outside the workspace.
+An edited, reordered, extended, truncated, emptied or deleted ledger fails,
+and so does a missing anchor unless --genesis declares that no override has
+ever been recorded (the ledger must then be empty).
+Both paths must be absolute, outside the repository and in different
+directories. Verification takes the ledger's lock file, so it needs
+write access to the ledger directory.
 
 ```text
 backlogit policy verify-overrides [flags]
@@ -26,16 +30,18 @@ backlogit policy verify-overrides [flags]
 ### Examples
 
 ```text
-  backlogit policy verify-overrides --ledger /secure/overrides.jsonl --anchor /secure/anchor.json
+  backlogit policy verify-overrides --ledger /secure/ledger/overrides.jsonl --anchor /secure/anchor/anchor.json
+  backlogit policy verify-overrides --genesis --ledger /secure/ledger/overrides.jsonl --anchor /secure/anchor/anchor.json
 ```
 
 ### Options
 
 ```text
-      --anchor string   absolute path of the ledger anchor (outside the workspace)
+      --anchor string   absolute path of the ledger anchor (outside the repository, not in the ledger's directory)
       --format string   output format: text, json (default: text on TTY, json otherwise)
+      --genesis         accept a missing anchor as the genesis state (the ledger must then be empty)
   -h, --help            help for verify-overrides
-      --ledger string   absolute path of the override ledger (outside the workspace)
+      --ledger string   absolute path of the override ledger (outside the repository)
 ```
 
 ### Options inherited from parent commands

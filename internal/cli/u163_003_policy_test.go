@@ -106,12 +106,13 @@ func (f *policyFixture) writeBundle(name string, mutate func(*policyengine.Bundl
 
 func installPolicySeams(t *testing.T, mem *policyengine.MemGit, interactive bool) {
 	t.Helper()
-	pg, pd, pi, pn := policyGit, policyDerivation, policyInteractive, policyNow
+	pg, pd, pi, pn, pr := policyGit, policyDerivation, policyInteractive, policyNow, policyRepo
 	policyGit = func(string) policyengine.Git { return mem }
 	policyDerivation = func(string) policyengine.Derivation { return policyFakeDeriv{} }
 	policyInteractive = func(io.Writer) bool { return interactive }
 	policyNow = func() time.Time { return policyT0.Add(time.Hour) }
-	t.Cleanup(func() { policyGit, policyDerivation, policyInteractive, policyNow = pg, pd, pi, pn })
+	policyRepo = func(dir string) (string, string, error) { return dir, "https://github.com/o/r.git", nil }
+	t.Cleanup(func() { policyGit, policyDerivation, policyInteractive, policyNow, policyRepo = pg, pd, pi, pn, pr })
 }
 
 func runPolicy(t *testing.T, root string, args ...string) (string, error) {
@@ -290,11 +291,11 @@ func TestU163_003_PolicyCheckOverridesNeedAnInteractiveContext(t *testing.T) {
 
 func TestU163_003_PolicyVerifyOverridesDetectsTampering(t *testing.T) {
 	f := newPolicyFixture(t, policyTestRegistry)
-	outside := t.TempDir()
-	lpath := filepath.Join(outside, "overrides.jsonl")
-	apath := filepath.Join(outside, "anchor.json")
+	installPolicySeams(t, f.mem, false)
+	lpath := filepath.Join(t.TempDir(), "overrides.jsonl")
+	apath := filepath.Join(t.TempDir(), "anchor.json")
 
-	out, err := runPolicy(t, f.root, "policy", "verify-overrides", "--ledger", lpath, "--anchor", apath, "--format", "json")
+	out, err := runPolicy(t, f.root, "policy", "verify-overrides", "--genesis", "--ledger", lpath, "--anchor", apath, "--format", "json")
 	require.NoError(t, err, out)
 	var log policyengine.OverrideLog
 	require.NoError(t, json.Unmarshal([]byte(out), &log), out)
@@ -309,12 +310,13 @@ func TestU163_003_PolicyVerifyOverridesDetectsTampering(t *testing.T) {
 	})
 	require.NoError(t, err)
 	// The ledger now extends a genesis anchor: that is a forged tail.
-	_, err = runPolicy(t, f.root, "policy", "verify-overrides", "--ledger", lpath, "--anchor", apath, "--format", "json")
+	_, err = runPolicy(t, f.root, "policy", "verify-overrides", "--genesis", "--ledger", lpath, "--anchor", apath, "--format", "json")
 	require.Error(t, err)
+	assert.ErrorIs(t, err, evidencedag.ErrLedgerTampered)
 
 	inside := filepath.Join(f.root, "overrides.jsonl")
-	_, err = runPolicy(t, f.root, "policy", "verify-overrides", "--ledger", inside, "--anchor", apath, "--format", "json")
+	_, err = runPolicy(t, f.root, "policy", "verify-overrides", "--genesis", "--ledger", inside, "--anchor", apath, "--format", "json")
 	require.Error(t, err, "a ledger inside the agent-writable workspace is refused")
-	_, err = runPolicy(t, f.root, "policy", "verify-overrides", "--ledger", "relative.jsonl", "--anchor", apath, "--format", "json")
+	_, err = runPolicy(t, f.root, "policy", "verify-overrides", "--genesis", "--ledger", "relative.jsonl", "--anchor", apath, "--format", "json")
 	require.Error(t, err, "ledger paths must be absolute")
 }

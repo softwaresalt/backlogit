@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,7 +29,85 @@ var (
 	policyDerivation  = func(repo string) policyengine.Derivation { return &evidence.GitHub{Repo: repo} }
 	policyInteractive = func(out io.Writer) bool { return term.IsTerminal(int(os.Stdin.Fd())) && isTerminal(out) }
 	policyNow         = time.Now
+	// policyRepo resolves the git toplevel containing dir and the URL of its
+	// origin remote (empty with an error when there is none).
+	policyRepo = func(dir string) (toplevel, origin string, err error) {
+		g := policyengine.ExecGit{Dir: dir}
+		toplevel, err = g.Toplevel(context.Background())
+		if err != nil {
+			return "", "", fmt.Errorf("resolve git toplevel: %w", err)
+		}
+		origin, err = g.OriginURL(context.Background())
+		if err != nil {
+			return toplevel, "", fmt.Errorf("resolve origin remote: %w", err)
+		}
+		return toplevel, origin, nil
+	}
 )
+
+// githubRemote matches the GitHub remote URL forms and captures owner and name.
+var githubRemote = regexp.MustCompile(`^(?:https?://(?:[^@/\s]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$`)
+
+// githubSlug derives owner/name from a GitHub remote URL.
+func githubSlug(origin string) (string, bool) {
+	if len(origin) > 512 {
+		return "", false
+	}
+	m := githubRemote.FindStringSubmatch(origin)
+	if m == nil {
+		return "", false
+	}
+	return m[1] + "/" + m[2], true
+}
+
+// checkRepoAgainstOrigin binds --repo to the checkout: when origin resolves to
+// a GitHub slug it must equal repo (derived review/CI evidence for a different
+// repository is refused). An origin that does not resolve to a GitHub slug
+// cannot be checked, so enforce mode fails closed; report-only mode warns.
+func checkRepoAgainstOrigin(repo, origin string, originErr error, enforce bool, warn io.Writer) error {
+	if repo == "" {
+		return nil
+	}
+	slug, ok := githubSlug(origin)
+	if originErr != nil || !ok {
+		if enforce {
+			return fmt.Errorf("--repo %.80q cannot be checked: the origin remote does not resolve to a github.com owner/name (enforce mode fails closed)", repo)
+		}
+		_, _ = fmt.Fprintf(warn, "warning: --repo %.80q is not verified against the origin remote: it does not resolve to a github.com owner/name\n", repo)
+		return nil
+	}
+	if !strings.EqualFold(slug, repo) {
+		return fmt.Errorf("--repo %.80q does not match the origin remote %q", repo, slug)
+	}
+	return nil
+}
+
+// commandContext returns the command's context, or Background when unset.
+func commandContext(cmd *cobra.Command) context.Context {
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
+// repoRoot resolves the git toplevel for the --cwd directory. It is the single
+// root for workspace-relative inputs and the forbidden root for the trust,
+// ledger and anchor paths, so a checkout subdirectory cannot widen the
+// agent-writable area. It fails closed outside a git repository.
+func repoRoot(cwd *string) (root, origin string, originErr error, err error) {
+	dir, err := resolveDocsRoot(cwd)
+	if err != nil {
+		return "", "", nil, err
+	}
+	top, origin, originErr := policyRepo(dir)
+	if top == "" || !filepath.IsAbs(top) {
+		if originErr == nil {
+			originErr = errors.New("git toplevel is unavailable")
+		}
+		return "", "", nil, fmt.Errorf("policy commands require a git repository: %w", originErr)
+	}
+	return top, origin, originErr, nil
+}
 
 // errPolicyBlocked is returned by `policy check` when the transition is not
 // allowed, so the process exits non-zero.
@@ -75,8 +154,11 @@ policyengine Engine.Check); no surface has a separate path. Every gate fails
 closed: absent, ambiguous, unverifiable or out-of-order evidence blocks.
 Evidence commits are verified against the protected remote-tracking refs
 (--protected-ref), never only a local branch. review-complete and ci-pass are
-derived from the pull request in the evidence bundle (requires --repo);
-self-asserted records for them are refused.
+derived from the pull request in the evidence bundle (requires --repo, which
+must match the github.com owner/name of the origin remote; when origin does
+not resolve to one, enforce mode fails closed and report-only mode warns);
+self-asserted records for them are refused. Workspace-relative paths resolve
+against the git toplevel, not the current directory.
 
 The registry's mode applies (the shipped registry is report-only: violations
 are reported and the exit status stays zero). --mode may tighten a report-only
@@ -85,7 +167,8 @@ error.
 
 Overrides (P-002.1 harness-exempt) need a signed operator token verified
 against --trust, recorded in the hash-chained --ledger and anchored in
---anchor. All three must be absolute paths outside the workspace. Tokens are
+--anchor. All three must be absolute paths outside the git toplevel, and the
+ledger and anchor must be in different directories. Tokens are
 refused outside an interactive terminal; operator identity is never read from
 the evidence or the command line.`,
 		Example: `  backlogit policy check --evidence evidence/163.003-T.json --protected-ref refs/remotes/origin/main --protected-ref refs/remotes/origin/feat/x --repo owner/name
@@ -101,9 +184,9 @@ the evidence or the command line.`,
 	cmd.Flags().StringVar(&f.repo, "repo", "", "owner/name repository used to derive review and CI evidence")
 	cmd.Flags().StringVar(&f.mode, "mode", "", "enforcement mode: report-only, enforce (may only tighten the registry mode)")
 	cmd.Flags().StringArrayVar(&f.tokenFiles, "override-token", nil, "workspace-relative signed operator override token file (repeatable)")
-	cmd.Flags().StringVar(&f.trust, "trust", "", "absolute path of the operator trust configuration (outside the workspace)")
-	cmd.Flags().StringVar(&f.ledger, "ledger", "", "absolute path of the override ledger (outside the workspace)")
-	cmd.Flags().StringVar(&f.anchor, "anchor", "", "absolute path of the ledger anchor (outside the workspace)")
+	cmd.Flags().StringVar(&f.trust, "trust", "", "absolute path of the operator trust configuration (outside the repository)")
+	cmd.Flags().StringVar(&f.ledger, "ledger", "", "absolute path of the override ledger (outside the repository)")
+	cmd.Flags().StringVar(&f.anchor, "anchor", "", "absolute path of the ledger anchor (outside the repository)")
 	cmd.Flags().StringVar(&f.format, "format", "", "output format: text, json (default: text on TTY, json otherwise)")
 	return cmd
 }
@@ -126,36 +209,45 @@ func validateWorkspaceRel(flag, rel string) error {
 	return nil
 }
 
-// readPolicyFile reads a workspace-confined regular file of at most max bytes.
-func readPolicyFile(root, flag, rel string, max int) ([]byte, error) {
+// readPolicyFile reads a workspace-confined regular file of at most limit
+// bytes through the shared bounded reader (no traversal or symlinks, regular
+// file checked before a non-blocking open, so a FIFO cannot hang the command).
+func readPolicyFile(root, flag, rel string, limit int) ([]byte, error) {
 	if err := validateWorkspaceRel(flag, rel); err != nil {
 		return nil, err
 	}
-	r, err := os.OpenRoot(root)
+	data, err := evidencedag.ReadWorkspaceFile(root, rel, limit)
 	if err != nil {
-		return nil, fmt.Errorf("open workspace root: %w", err)
-	}
-	defer func() { _ = r.Close() }()
-	f, err := r.Open(filepath.ToSlash(rel))
-	if err != nil {
-		return nil, fmt.Errorf("open %q: %w", rel, err)
-	}
-	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("stat %q: %w", rel, err)
-	}
-	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("%q is not a regular file", rel)
-	}
-	data, err := io.ReadAll(io.LimitReader(f, int64(max)+1))
-	if err != nil {
-		return nil, fmt.Errorf("read %q: %w", rel, err)
-	}
-	if len(data) > max {
-		return nil, fmt.Errorf("%q exceeds %d bytes", rel, max)
+		return nil, fmt.Errorf("read --%s %q: %w", flag, clipFlagValue(rel), err)
 	}
 	return data, nil
+}
+
+func clipFlagValue(s string) string {
+	if len(s) > 80 {
+		return s[:80]
+	}
+	return s
+}
+
+// requireDistinctDirs refuses a ledger and an anchor that share a directory:
+// whoever can write one could rewrite the other, defeating the external anchor.
+func requireDistinctDirs(ledgerPath, anchorPath string) error {
+	ld, lerr := os.Stat(filepath.Dir(ledgerPath))
+	ad, aerr := os.Stat(filepath.Dir(anchorPath))
+	if lerr == nil && aerr == nil && os.SameFile(ld, ad) {
+		return errors.New("--ledger and --anchor must live in different directories")
+	}
+	return nil
+}
+
+func requireAbsolute(flags []struct{ name, path string }) error {
+	for _, fl := range flags {
+		if fl.path == "" || !filepath.IsAbs(fl.path) {
+			return fmt.Errorf("--%s must be an absolute path", fl.name)
+		}
+	}
+	return nil
 }
 
 func buildWaiverService(root string, f policyCheckFlags) (*evidencedag.WaiverService, error) {
@@ -172,10 +264,11 @@ func buildWaiverService(root string, f policyCheckFlags) (*evidencedag.WaiverSer
 	default:
 		return nil, errors.New("--trust, --ledger and --anchor must be given together")
 	}
-	for flag, p := range map[string]string{"trust": f.trust, "ledger": f.ledger, "anchor": f.anchor} {
-		if !filepath.IsAbs(p) {
-			return nil, fmt.Errorf("--%s must be an absolute path", flag)
-		}
+	if err := requireAbsolute([]struct{ name, path string }{{"trust", f.trust}, {"ledger", f.ledger}, {"anchor", f.anchor}}); err != nil {
+		return nil, err
+	}
+	if err := requireDistinctDirs(f.ledger, f.anchor); err != nil {
+		return nil, err
 	}
 	trust, err := evidencedag.LoadTrust(f.trust, root)
 	if err != nil {
@@ -197,7 +290,7 @@ func buildWaiverService(root string, f policyCheckFlags) (*evidencedag.WaiverSer
 }
 
 func runPolicyCheck(cmd *cobra.Command, cwd *string, f policyCheckFlags) error {
-	root, err := resolveDocsRoot(cwd)
+	root, origin, originErr, err := repoRoot(cwd)
 	if err != nil {
 		return err
 	}
@@ -213,6 +306,10 @@ func runPolicyCheck(cmd *cobra.Command, cwd *string, f policyCheckFlags) error {
 	reg, err := policyengine.LoadRegistry(regData)
 	if err != nil {
 		return fmt.Errorf("load registry: %w", err)
+	}
+	enforce := reg.Mode() == policyengine.ModeEnforce || policyengine.Mode(f.mode) == policyengine.ModeEnforce
+	if err := checkRepoAgainstOrigin(f.repo, origin, originErr, enforce, cmd.ErrOrStderr()); err != nil {
+		return err
 	}
 	bundleData, err := readPolicyFile(root, "evidence", f.evidence, policyengine.MaxBundleBytes)
 	if err != nil {
@@ -249,7 +346,7 @@ func runPolicyCheck(cmd *cobra.Command, cwd *string, f policyCheckFlags) error {
 	req.Interactive = policyInteractive(out)
 	req.OverrideTokens = tokens
 
-	dec, checkErr := eng.Check(context.Background(), req)
+	dec, checkErr := eng.Check(commandContext(cmd), req)
 	if outFormat == "json" {
 		if err := writeDocsJSON(out, dec); err != nil {
 			return err
@@ -288,17 +385,23 @@ func printPolicyText(w io.Writer, d policyengine.Decision) {
 
 func newPolicyVerifyOverridesCommand(cwd *string) *cobra.Command {
 	var ledgerPath, anchorPath, format string
+	var genesis bool
 	cmd := &cobra.Command{
 		Use:   "verify-overrides",
 		Short: "Verify the tamper-evident override ledger against its external anchor",
 		Long: `Verify the append-only, hash-chained override ledger against its external
 anchor and list its entries (authenticated principal, justification, gate).
-An edited, reordered, extended, truncated, emptied or deleted ledger fails.
-Both paths must be absolute and outside the workspace.`,
-		Example:      `  backlogit policy verify-overrides --ledger /secure/overrides.jsonl --anchor /secure/anchor.json`,
+An edited, reordered, extended, truncated, emptied or deleted ledger fails,
+and so does a missing anchor unless --genesis declares that no override has
+ever been recorded (the ledger must then be empty).
+Both paths must be absolute, outside the repository and in different
+directories. Verification takes the ledger's lock file, so it needs
+write access to the ledger directory.`,
+		Example: `  backlogit policy verify-overrides --ledger /secure/ledger/overrides.jsonl --anchor /secure/anchor/anchor.json
+  backlogit policy verify-overrides --genesis --ledger /secure/ledger/overrides.jsonl --anchor /secure/anchor/anchor.json`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			root, err := resolveDocsRoot(cwd)
+			root, _, _, err := repoRoot(cwd)
 			if err != nil {
 				return err
 			}
@@ -306,10 +409,11 @@ Both paths must be absolute and outside the workspace.`,
 			if err != nil {
 				return err
 			}
-			for flag, p := range map[string]string{"ledger": ledgerPath, "anchor": anchorPath} {
-				if p == "" || !filepath.IsAbs(p) {
-					return fmt.Errorf("--%s must be an absolute path", flag)
-				}
+			if err := requireAbsolute([]struct{ name, path string }{{"ledger", ledgerPath}, {"anchor", anchorPath}}); err != nil {
+				return err
+			}
+			if err := requireDistinctDirs(ledgerPath, anchorPath); err != nil {
+				return err
 			}
 			ledger, err := evidencedag.OpenLedger(ledgerPath, root)
 			if err != nil {
@@ -319,7 +423,11 @@ Both paths must be absolute and outside the workspace.`,
 			if err != nil {
 				return fmt.Errorf("open anchor: %w", err)
 			}
-			log, err := policyengine.VerifyOverrideLog(ledger, anchors)
+			var opts []policyengine.VerifyOption
+			if genesis {
+				opts = append(opts, policyengine.AllowGenesis())
+			}
+			log, err := policyengine.VerifyOverrideLog(ledger, anchors, opts...)
 			if err != nil {
 				return fmt.Errorf("policy verify-overrides: %w", err)
 			}
@@ -333,8 +441,9 @@ Both paths must be absolute and outside the workspace.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&ledgerPath, "ledger", "", "absolute path of the override ledger (outside the workspace)")
-	cmd.Flags().StringVar(&anchorPath, "anchor", "", "absolute path of the ledger anchor (outside the workspace)")
+	cmd.Flags().StringVar(&ledgerPath, "ledger", "", "absolute path of the override ledger (outside the repository)")
+	cmd.Flags().StringVar(&anchorPath, "anchor", "", "absolute path of the ledger anchor (outside the repository, not in the ledger's directory)")
+	cmd.Flags().BoolVar(&genesis, "genesis", false, "accept a missing anchor as the genesis state (the ledger must then be empty)")
 	cmd.Flags().StringVar(&format, "format", "", "output format: text, json (default: text on TTY, json otherwise)")
 	return cmd
 }
