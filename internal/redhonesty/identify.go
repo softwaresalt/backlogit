@@ -37,9 +37,11 @@ func isTestName(name string) bool {
 	return !unicode.IsLower(r)
 }
 
-// isTestSignature reports whether fd has the shape func(*testing.T). When the
-// file dot-imports "testing" the unqualified func(*T) form is accepted too.
-func isTestSignature(fd *ast.FuncDecl, dotTesting bool) bool {
+// isTestSignature reports whether fd has the shape func(*testing.T) the way the
+// go tool discovers tests: the parameter is a pointer to a type named T, either
+// qualified (testing.T) or not (a dot import or a `type T = testing.T` alias).
+// A type that is not really *testing.T is rejected later by the compiler.
+func isTestSignature(fd *ast.FuncDecl) bool {
 	if fd.Recv != nil || fd.Type.TypeParams != nil || fd.Type.Results != nil {
 		return false
 	}
@@ -59,17 +61,7 @@ func isTestSignature(fd *ast.FuncDecl, dotTesting bool) bool {
 		_, ok = x.X.(*ast.Ident)
 		return ok
 	case *ast.Ident:
-		return dotTesting && x.Name == "T"
-	}
-	return false
-}
-
-// importsTestingDot reports whether f has `import . "testing"`.
-func importsTestingDot(f *ast.File) bool {
-	for _, imp := range f.Imports {
-		if imp.Name != nil && imp.Name.Name == "." && imp.Path != nil && imp.Path.Value == `"testing"` {
-			return true
-		}
+		return x.Name == "T"
 	}
 	return false
 }
@@ -98,9 +90,8 @@ func testFuncNames(file string, src []byte) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	dot := importsTestingDot(f)
 	for _, d := range f.Decls {
-		if fd, ok := d.(*ast.FuncDecl); ok && isTestName(fd.Name.Name) && isTestSignature(fd, dot) {
+		if fd, ok := d.(*ast.FuncDecl); ok && isTestName(fd.Name.Name) && isTestSignature(fd) {
 			out[fd.Name.Name] = f.Name.Name
 		}
 	}

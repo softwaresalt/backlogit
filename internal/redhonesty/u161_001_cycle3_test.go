@@ -41,7 +41,7 @@ func TestU161_001_PrepareBaseline_DoesNotExpandExportSubst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cleanup()
+	defer func() { _ = cleanup() }()
 	b, err := os.ReadFile(filepath.Join(dir, "p", "version.go"))
 	if err != nil {
 		t.Fatal(err)

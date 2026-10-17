@@ -22,7 +22,7 @@ func TestU161_001_PrepareBaseline_IgnoresHostAutoCRLFAndIsByteFaithful(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cleanup()
+	defer func() { _ = cleanup() }()
 	b, err := os.ReadFile(filepath.Join(dir, "p", "golden.txt"))
 	if err != nil || string(b) != "line1\nline2\n" {
 		t.Fatalf("baseline bytes differ from the committed blob: %q %v", b, err)

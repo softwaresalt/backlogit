@@ -89,7 +89,7 @@ func gitEnv() []string {
 		}
 		env = append(env, kv)
 	}
-	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
+	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_NO_REPLACE_OBJECTS=1")
 }
 
 var secretEnvMarkers = []string{
@@ -229,14 +229,14 @@ func (e GoTestExecutor) Run(ctx context.Context, dir, pkg string, names []string
 	if out.exceeded {
 		return nil, fmt.Errorf("redhonesty: go test %s: %w", pkg, errOutputTooLarge)
 	}
+	var exitErr *exec.ExitError
+	failedExit := errors.As(waitErr, &exitErr)
 	// go test's own timeout fires first (see above) and test2json then reports
 	// the hung test as a failure, which would look like an honest red. A timed-out
 	// run is an abort, never a result.
-	if bytes.Contains(out.buf.Bytes(), []byte("test timed out after")) {
+	if harnessTimedOut(out.buf.Bytes(), failedExit) {
 		return nil, fmt.Errorf("redhonesty: go test %s: test run timed out", pkg)
 	}
-	var exitErr *exec.ExitError
-	failedExit := errors.As(waitErr, &exitErr)
 	if waitErr != nil && !failedExit {
 		return nil, fmt.Errorf("redhonesty: go test %s: %w: %s", pkg, waitErr, strings.TrimSpace(stderr.String()))
 	}
@@ -245,6 +245,14 @@ func (e GoTestExecutor) Run(ctx context.Context, dir, pkg string, names []string
 		return nil, err
 	}
 	return reconcileExit(res, failedExit), nil
+}
+
+// harnessTimedOut reports whether the run was killed by go test's own timeout.
+// It requires an UNSUCCESSFUL run and the harness's panic diagnostic, so a
+// passing test that merely logs the phrase "test timed out after" (for example a
+// test of timeout diagnostics) is never mistaken for a timeout.
+func harnessTimedOut(out []byte, failedExit bool) bool {
+	return failedExit && bytes.Contains(out, []byte("panic: test timed out after"))
 }
 
 // reconcileExit applies the process exit status to the parsed results. A

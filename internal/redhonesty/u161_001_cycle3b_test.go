@@ -9,10 +9,13 @@ import (
 	"testing"
 )
 
-func TestU161_001_IdentifyNewTests_DotImportedTesting(t *testing.T) {
+func TestU161_001_IdentifyNewTests_DotImportedAndAliasedTesting(t *testing.T) {
 	got, err := IdentifyNewTests([]FileChange{
 		{Path: "p/dot_test.go", Status: 'A', Head: []byte("package p\nimport . \"testing\"\nfunc TestDot(t *T) {}\nfunc TestQualifiedSibling(t *T) {}\n")},
-		{Path: "p/plain_test.go", Status: 'A', Head: []byte("package p\nimport \"testing\"\nfunc TestPlain(t *testing.T) {}\nfunc TestNotT(t *T) {}\n")}, // *T without a dot import is not a test
+		// `type T = testing.T` alias with a conventional test beside it: the go tool
+		// discovers *T by name, so the alias test must not be silently omitted.
+		{Path: "p/alias_test.go", Status: 'A', Head: []byte("package p\nimport \"testing\"\ntype T = testing.T\nfunc TestAlias(t *T) {}\nfunc TestPlain(t *testing.T) {}\n")},
+		{Path: "p/notatest_test.go", Status: 'A', Head: []byte("package p\nimport \"testing\"\nfunc TestNotATest(b *testing.B) {}\nfunc TestTwoArgs(t *T, x int) {}\n")},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -21,7 +24,7 @@ func TestU161_001_IdentifyNewTests_DotImportedTesting(t *testing.T) {
 	for _, n := range got {
 		names[n.Name] = true
 	}
-	if !names["TestDot"] || !names["TestQualifiedSibling"] || !names["TestPlain"] || names["TestNotT"] {
+	if !names["TestDot"] || !names["TestQualifiedSibling"] || !names["TestAlias"] || !names["TestPlain"] || names["TestNotATest"] || names["TestTwoArgs"] {
 		t.Fatalf("got %+v", got)
 	}
 }

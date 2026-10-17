@@ -194,7 +194,7 @@ func (s *Store) Write(a faultline.EvidenceArtifact) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("redhonesty: stage evidence: %w", err)
 	}
-	defer tr.Remove(tmpName)
+	defer func() { _ = tr.Remove(tmpName) }()
 	realDir, err := s.realTaskDir(a.ProducingTask)
 	if err != nil {
 		return "", err

@@ -298,6 +298,12 @@ func treeBlobs(ctx context.Context, g Git, root, sha string) (map[string]string,
 			continue
 		}
 		f := strings.Fields(string(meta)) // mode type oid
+		if len(f) == 3 && f[1] == "commit" {
+			// A gitlink (submodule): git archive omits its contents, so a baseline
+			// test reading a submodule fixture would fail for a reason the real
+			// base never had. Fail closed until faithful export is supported.
+			return nil, fmt.Errorf("redhonesty: base tree contains a submodule at %s; the baseline cannot be reproduced faithfully", truncate(string(p)))
+		}
 		if len(f) == 3 && f[1] == "blob" {
 			tree[string(p)] = f[2]
 		}
