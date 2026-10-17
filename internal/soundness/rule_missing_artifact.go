@@ -66,7 +66,7 @@ func checkMissingArtifact(ctx *checkContext) ([]Finding, error) {
 				out = append(out, errFinding(ruleMissingArtifact, u.ID, "required artifact %q is not delivered by any unit and cannot be verified: no workspace root configured", req))
 				continue
 			}
-			if err := resolveReference(ctx.cfg.Root, req); err != nil {
+			if err := ctx.resolveRef(req); err != nil {
 				out = append(out, errFinding(ruleMissingArtifact, u.ID, "required artifact %q is missing: %v", req, err))
 			}
 		}

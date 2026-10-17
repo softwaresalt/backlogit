@@ -13,6 +13,11 @@ type checkContext struct {
 	dependents map[string][]string
 	// walks counts dependency-graph traversals; tests assert it stays bounded.
 	walks int
+	// refCache memoizes reference resolution for this run only; refResolver and
+	// refCalls make resolution observable to tests.
+	refCache    map[refKey]error
+	refResolver func(root, ref string) error
+	refCalls    int
 }
 
 // rule is one independently flaggable soundness check.
@@ -58,7 +63,7 @@ func Run(plan Plan, cfg Config) (Report, error) {
 		return Report{}, fmt.Errorf("run soundness engine: %w", err)
 	}
 
-	ctx := &checkContext{plan: plan, cfg: cfg, byID: map[string]*Unit{}}
+	ctx := newCheckContext(plan, cfg)
 	report := Report{Findings: []Finding{}, RulesRun: []string{ruleUnverifiable}}
 	if len(plan.Units) == 0 {
 		if cfg.Mode == ModeEnforce {

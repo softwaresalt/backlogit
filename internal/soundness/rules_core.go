@@ -68,7 +68,7 @@ func checkReferences(ctx *checkContext) ([]Finding, error) {
 				out = append(out, errFinding(ruleReferences, u.ID, "reference %q cannot be verified: no workspace root configured", ref))
 				continue
 			}
-			if err := resolveReference(ctx.cfg.Root, ref); err != nil {
+			if err := ctx.resolveRef(ref); err != nil {
 				out = append(out, errFinding(ruleReferences, u.ID, "unresolvable reference %q: %v", ref, err))
 			}
 		}
