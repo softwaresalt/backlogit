@@ -332,6 +332,13 @@ func (l *Ledger) appendUnique(e LedgerEntry, o appendOpts) (rec LedgerRecord, ex
 		for _, r := range recs {
 			if r.Nonce == e.Nonce {
 				if r.TokenDigest == e.TokenDigest {
+					// A retry is a fresh authorization decision: validity is re-read
+					// under the lock, while the original acceptance time is kept.
+					if o.stamp != nil {
+						if _, serr := o.stamp(); serr != nil {
+							return rec, false, serr
+						}
+					}
 					// An identical retry must not report success on the strength of an
 					// anchor whose durability may never have been established (a prior
 					// Store can fail after its rename, leaving a readable but unsynced

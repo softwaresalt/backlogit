@@ -352,3 +352,8 @@ unsupported.
   its unmet or erroring upstreams, which are only visible through
   `NodeResult.MaskedUpstreams`.
 * The cache is in-memory per `Evaluator`; it is not persisted.
+* Waiver acceptance re-reads the clock under the ledger lock on both the fresh-append
+  and identical-token retry paths, so a token that expires (or is not yet valid)
+  while waiting for the lock is denied; a valid retry keeps the original
+  acceptance timestamp. Trust is immutable per service, so it cannot change between
+  preparation and commit.
