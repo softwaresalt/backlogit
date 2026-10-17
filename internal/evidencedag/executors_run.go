@@ -6,14 +6,26 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"sync"
 	"time"
 )
 
+// DefaultNodeTimeout bounds each executor call when ExecOptions.NodeTimeout is
+// zero.
+const DefaultNodeTimeout = 30 * time.Second
+
+// maxAbandonedExecutors caps timed-out executors still running; it is a
+// variable only so tests can lower it.
+var maxAbandonedExecutors = 16
+
 // ExecOptions tunes RunExecutorsWith.
 type ExecOptions struct {
-	// NodeTimeout bounds each executor call when positive. An executor that
-	// ignores its context is abandoned (its goroutine runs on until it
-	// returns) and the node fails closed as timed out.
+	// NodeTimeout bounds each executor call. Zero means DefaultNodeTimeout;
+	// negative is invalid. Executors must honour the context they are given.
+	// One that does not is abandoned on timeout (its goroutine keeps running
+	// until it returns, possibly forever) and the node fails closed. Once
+	// maxAbandonedExecutors such goroutines are alive, RunExecutorsWith stops
+	// with ErrExecutorsAbandoned instead of leaking more.
 	NodeTimeout time.Duration
 }
 
@@ -43,6 +55,13 @@ func RunExecutorsWith(ctx context.Context, d *Declaration, s Shipment, bindings 
 	}
 	if err := validateShipment(s); err != nil {
 		return res, err
+	}
+	timeout := opts.NodeTimeout
+	if timeout < 0 {
+		return res, fmt.Errorf("%w: negative node timeout", ErrInvalidInput)
+	}
+	if timeout == 0 {
+		timeout = DefaultNodeTimeout
 	}
 	nodes := make(map[string]Node, len(d.Nodes))
 	for _, n := range d.Nodes {
@@ -82,7 +101,10 @@ func RunExecutorsWith(ctx context.Context, d *Declaration, s Shipment, bindings 
 			res.Failures[id] = "executor identity does not match the node validator"
 			continue
 		}
-		rec, err := runOne(ctx, x, ExecRequest{Shipment: s, Node: n}, opts.NodeTimeout)
+		if abandonedCount() >= maxAbandonedExecutors {
+			return res, fmt.Errorf("%w: %d still running", ErrExecutorsAbandoned, abandonedCount())
+		}
+		rec, err := runOne(ctx, x, ExecRequest{Shipment: s, Node: n}, timeout)
 		if err != nil {
 			res.Failures[id] = truncate(err.Error())
 			continue
@@ -118,14 +140,58 @@ type runOutcome struct {
 	err error
 }
 
-func runOne(ctx context.Context, x NodeExecutor, req ExecRequest, timeout time.Duration) (EvidenceRecord, error) {
-	if timeout <= 0 {
-		return runGuarded(ctx, x, req)
+// abandonedExecutors counts executors whose node timed out or was interrupted
+// but whose goroutine has not returned yet. Executors that ignore their
+// context cannot be killed, so the count is capped to bound leaked goroutines.
+var abandonedExecutors struct {
+	mu sync.Mutex
+	n  int
+}
+
+func abandonedCount() int {
+	abandonedExecutors.mu.Lock()
+	defer abandonedExecutors.mu.Unlock()
+	return abandonedExecutors.n
+}
+
+type runState struct {
+	mu        sync.Mutex
+	done      bool
+	abandoned bool
+}
+
+func (s *runState) abandon() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.done {
+		return
 	}
+	s.abandoned = true
+	abandonedExecutors.mu.Lock()
+	abandonedExecutors.n++
+	abandonedExecutors.mu.Unlock()
+}
+
+func (s *runState) finish() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.done = true
+	if s.abandoned {
+		abandonedExecutors.mu.Lock()
+		abandonedExecutors.n--
+		abandonedExecutors.mu.Unlock()
+	}
+}
+
+// runOne always runs the executor in its own goroutine and waits for its
+// result, the timeout or cancellation of ctx, whichever comes first.
+func runOne(ctx context.Context, x NodeExecutor, req ExecRequest, timeout time.Duration) (EvidenceRecord, error) {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ch := make(chan runOutcome, 1)
+	st := &runState{}
 	go func() {
+		defer st.finish()
 		rec, err := runGuarded(cctx, x, req)
 		ch <- runOutcome{rec, err}
 	}()
@@ -133,6 +199,7 @@ func runOne(ctx context.Context, x NodeExecutor, req ExecRequest, timeout time.D
 	case o := <-ch:
 		return o.rec, o.err
 	case <-cctx.Done():
+		st.abandon()
 		if errors.Is(cctx.Err(), context.DeadlineExceeded) {
 			return EvidenceRecord{}, fmt.Errorf("executor timed out after %s", timeout)
 		}

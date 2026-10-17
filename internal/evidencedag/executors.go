@@ -30,6 +30,9 @@ func NewFuncExecutor(identity string, fn ExecFunc) (NodeExecutor, error) {
 func (f *funcExecutor) Identity() string { return f.identity }
 
 func (f *funcExecutor) Execute(ctx context.Context, req ExecRequest) (faultline.EvidenceArtifact, error) {
+	if ctx == nil {
+		return faultline.EvidenceArtifact{}, fmt.Errorf("%w: nil context", ErrInvalidInput)
+	}
 	return f.fn(ctx, req)
 }
 
@@ -41,6 +44,9 @@ func (x *RedHonestyExecutor) Identity() string { return redhonesty.ValidatorIden
 func (x *RedHonestyExecutor) Execute(ctx context.Context, req ExecRequest) (faultline.EvidenceArtifact, error) {
 	if x == nil || x.Gate == nil {
 		return faultline.EvidenceArtifact{}, errors.New("evidencedag: red-test honesty gate is not configured")
+	}
+	if ctx == nil {
+		return faultline.EvidenceArtifact{}, fmt.Errorf("%w: nil context", ErrInvalidInput)
 	}
 	if req.Node.ProducingCommit != CommitHead {
 		// The S9 gate always judges the shipment head commit, so evidence for a
@@ -63,6 +69,9 @@ func (x *ParityExecutor) Execute(ctx context.Context, req ExecRequest) (faultlin
 	var zero faultline.EvidenceArtifact
 	if x == nil || x.Source == nil {
 		return zero, errors.New("evidencedag: parity source is not configured")
+	}
+	if ctx == nil {
+		return zero, fmt.Errorf("%w: nil context", ErrInvalidInput)
 	}
 	res, err := x.Source(ctx, req)
 	if err != nil {

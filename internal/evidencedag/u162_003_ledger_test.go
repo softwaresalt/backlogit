@@ -60,8 +60,12 @@ func TestU162_003_LedgerChainAppendAndVerify(t *testing.T) {
 	head, err := l.Head()
 	require.NoError(t, err)
 	assert.Equal(t, Anchor{Seq: 3, Hash: recs[2].Hash}, head)
-	_, err = l.Records(&Anchor{Seq: 2, Hash: recs[1].Hash})
+	_, err = l.RecordsPrefix(&Anchor{Seq: 2, Hash: recs[1].Hash})
 	assert.NoError(t, err, "an earlier anchor remains a valid prefix")
+	_, err = l.Records(&Anchor{Seq: 2, Hash: recs[1].Hash})
+	assert.ErrorIs(t, err, ErrLedgerTampered, "Records requires an exact anchor match")
+	_, err = l.Records(&Anchor{Seq: 3, Hash: recs[2].Hash})
+	assert.NoError(t, err, "the exact head anchor matches")
 	assert.Len(t, readLines(t, p), 3)
 
 	empty, err := openLedger(filepath.Join(t.TempDir(), "none.jsonl"))

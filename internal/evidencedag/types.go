@@ -49,6 +49,10 @@ type NodeResult struct {
 	Reason  string  `json:"reason"`
 	// Waiver is the principal that waived the node, when Status is waived.
 	Waiver string `json:"waiver,omitempty"`
+	// MaskedUpstreams lists the direct upstream nodes that were unmet or
+	// unverifiable but not consulted because this node is waived: a waiver
+	// covers its node as a whole.
+	MaskedUpstreams []string `json:"masked_upstreams,omitempty"`
 	// Key is the content digest of the node and its transitive inputs.
 	Key string `json:"key"`
 }
@@ -74,14 +78,22 @@ const (
 	RollupBlocked RollupState = "blocked"
 	// RollupUnverifiable means the verdict cannot be established.
 	RollupUnverifiable RollupState = "unverifiable"
+	// RollupUnproven means no applicable terminal node is blocked or
+	// unverifiable, but none is verified or waived either (every applicable
+	// terminal is an advisory, unmet report-mode node). Nothing proves the
+	// shipment, so it is never ready.
+	RollupUnproven RollupState = "unproven"
 )
 
 // Rollup is the shipment roll-up over applicable terminal nodes.
 type Rollup struct {
 	State               RollupState `json:"state"`
 	ApplicableTerminals int         `json:"applicable_terminals"`
-	Unmet               []string    `json:"unmet"`
-	Unverifiable        []string    `json:"unverifiable"`
-	Advisory            []string    `json:"advisory"`
-	Reason              string      `json:"reason"`
+	// ProvenTerminals counts applicable terminal nodes that are verified or
+	// waived; ready requires at least one.
+	ProvenTerminals int      `json:"proven_terminals"`
+	Unmet           []string `json:"unmet"`
+	Unverifiable    []string `json:"unverifiable"`
+	Advisory        []string `json:"advisory"`
+	Reason          string   `json:"reason"`
 }

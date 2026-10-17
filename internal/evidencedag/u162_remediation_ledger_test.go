@@ -15,6 +15,9 @@ import (
 )
 
 func TestRemediation_LedgerConcurrentAppendsFormOneLinearChain(t *testing.T) {
+	old := lockWait
+	lockWait = 2 * time.Minute // generous: -race on a loaded host can be many times slower
+	defer func() { lockWait = old }()
 	p := filepath.Join(t.TempDir(), "w.jsonl")
 	const writers, per = 12, 2
 	var wg sync.WaitGroup
@@ -73,7 +76,7 @@ func TestRemediation_StaleLockIsReapedByRenameAndUnlockVerifiesOwnership(t *test
 	release, err := l.lock()
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(lp, []byte(`{"pid":2,"token":"someone-else"}`), 0o600))
-	assert.Error(t, release(), "unlock refuses to remove a lock this holder does not own")
+	assert.Error(t, release.release(), "unlock refuses to remove a lock this holder does not own")
 	_, statErr = os.Lstat(lp)
 	assert.NoError(t, statErr, "the other owner's lock is left in place")
 }
@@ -82,7 +85,7 @@ func TestRemediation_FreshLockHonorsDeadlineWithoutSpinning(t *testing.T) {
 	l, _ := seededLedger(t, 1)
 	release, err := l.lock()
 	require.NoError(t, err)
-	defer func() { _ = release() }()
+	defer func() { _ = release.release() }()
 	orig := lockWait
 	lockWait = 150 * time.Millisecond
 	defer func() { lockWait = orig }()
@@ -139,7 +142,9 @@ func TestRemediation_FailedWriteTruncatesBackToPreAppendSize(t *testing.T) {
 func TestRemediation_SidecarRenameRetriedThenReportedStaleAndHealed(t *testing.T) {
 	l, _ := seededLedger(t, 1)
 	orig := renameFile
-	defer func() { renameFile = orig }()
+	origWait := renameWait
+	renameWait = 50 * time.Millisecond
+	defer func() { renameFile, renameWait = orig, origWait }()
 
 	fails := 2
 	renameFile = func(a, b string) error {

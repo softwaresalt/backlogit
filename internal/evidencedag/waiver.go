@@ -186,8 +186,9 @@ func (s *WaiverService) prepare(raw []byte, ship Shipment, lookup func(string) (
 	if !ok {
 		return zero, deny("token names a node that is not declared")
 	}
-	if claims.NotBefore >= claims.ExpiresAt || time.Duration(claims.ExpiresAt-claims.NotBefore)*time.Second > MaxWaiverLifetime {
-		return zero, deny("validity window is inverted or longer than %s", MaxWaiverLifetime)
+	if c := claims; c.NotBefore < 0 || c.ExpiresAt > maxWaiverTimestamp || c.NotBefore >= c.ExpiresAt ||
+		c.ExpiresAt-c.NotBefore > int64(MaxWaiverLifetime/time.Second) {
+		return zero, deny("validity window is out of range, inverted or longer than %s", MaxWaiverLifetime)
 	}
 	if err := claims.checkWindow(s.now().Unix()); err != nil {
 		return zero, err
@@ -226,13 +227,20 @@ func (s *WaiverService) commit(p preparedWaiver) (Waiver, error) {
 			return now, p.claims.checkWindow(now)
 		},
 	})
-	if err != nil && !errors.Is(err, ErrSidecarStale) {
+	if err != nil && !committedAndUsable(err) {
 		if errors.Is(err, ErrNonceReplayed) || errors.Is(err, ErrWaiverDenied) {
 			return Waiver{}, err
 		}
 		return Waiver{}, fmt.Errorf("%w: ledger: %w", ErrWaiverDenied, err)
 	}
 	return newWaiver(p.claims.Nonce, p.ship.ID, p.node.ID, p.ship.HeadCommit, p.key.Principal), nil
+}
+
+// committedAndUsable reports whether err is a durable commit whose only
+// warnings are cosmetic (close, sidecar, lock release): the record is anchored,
+// so the waiver stands. A stale anchor or a lost lock denies it.
+func committedAndUsable(err error) bool {
+	return errors.Is(err, ErrCommitted) && !errors.Is(err, ErrAnchorStale) && !errors.Is(err, ErrLockLost)
 }
 
 func decodeToken(raw []byte) (waiverToken, error) {

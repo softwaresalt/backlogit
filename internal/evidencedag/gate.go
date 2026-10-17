@@ -41,6 +41,9 @@ func (g *Gate) Check(ctx context.Context, in GateInput) (Decision, error) {
 	if g == nil || g.eval == nil {
 		return zero, errors.New("evidencedag: nil gate")
 	}
+	if ctx == nil {
+		return zero, fmt.Errorf("%w: nil context", ErrInvalidInput)
+	}
 	if err := ctx.Err(); err != nil {
 		return zero, fmt.Errorf("evidencedag: gate check interrupted: %w", err)
 	}
@@ -64,6 +67,7 @@ func (g *Gate) Check(ctx context.Context, in GateInput) (Decision, error) {
 	var denials []WaiverDenial
 	var cands []candidate
 	seen := map[string]struct{}{}
+	dupEvidence := duplicateDigests(in.Evidence)
 	for i, tok := range in.WaiverTokens {
 		if err := ctx.Err(); err != nil {
 			return zero, fmt.Errorf("evidencedag: gate check interrupted: %w", err)
@@ -80,6 +84,19 @@ func (g *Gate) Check(ctx context.Context, in GateInput) (Decision, error) {
 		if _, dup := seen[p.node.ID]; dup {
 			denials = append(denials, WaiverDenial{Index: i, Reason: "more than one waiver for the same node in one check"})
 			continue
+		}
+		// Evidence that fails authenticity or replay checks makes the node an
+		// error whatever a waiver says, so the token would be burned for
+		// nothing: deny it before the ledger is touched.
+		if rec, has := in.Evidence[p.node.ID]; has {
+			if aerr := authenticate(p.node, in.Shipment, rec); aerr != nil {
+				denials = append(denials, WaiverDenial{Index: i, Reason: truncate("node evidence is rejected, waiver not consumed: " + aerr.Error())})
+				continue
+			}
+			if _, replayed := dupEvidence[p.node.ID]; replayed {
+				denials = append(denials, WaiverDenial{Index: i, Reason: "node evidence digest is presented for more than one node, waiver not consumed"})
+				continue
+			}
 		}
 		seen[p.node.ID] = struct{}{}
 		cands = append(cands, candidate{index: i, p: p})

@@ -13,6 +13,9 @@ const (
 	MaxWaiverTokenBytes = 16 << 10
 	// MaxWaiverLifetime caps ExpiresAt-NotBefore of a waiver token.
 	MaxWaiverLifetime = 24 * time.Hour
+	// maxWaiverTimestamp bounds NotBefore and ExpiresAt (Unix seconds, about
+	// the year 36800) so window arithmetic cannot overflow.
+	maxWaiverTimestamp = int64(1) << 40
 	// MaxTrustBytes caps the trusted-key/policy configuration file.
 	MaxTrustBytes = 64 << 10
 	// MaxLedgerBytes caps the waiver ledger file.
@@ -48,7 +51,34 @@ var (
 	ErrAnchorRequired = errors.New("evidencedag: an external ledger anchor is required")
 	// ErrTrustInvalid indicates an invalid trust configuration.
 	ErrTrustInvalid = errors.New("evidencedag: invalid trust configuration")
+	// ErrLockLost indicates that a held lock file no longer carries its
+	// holder's token (it was reclaimed or replaced).
+	ErrLockLost = errors.New("evidencedag: lock ownership lost")
+	// ErrCommitted is matched (errors.Is) by a CommittedError.
+	ErrCommitted = errors.New("evidencedag: ledger record committed with a warning")
+	// ErrExecutorsAbandoned indicates that too many timed-out executors are
+	// still running, so no further executor is started.
+	ErrExecutorsAbandoned = errors.New("evidencedag: too many abandoned executors are still running")
 )
+
+// CommittedError reports that a ledger record is durable (and must not be
+// appended again) although a later step failed: closing the ledger file,
+// refreshing the head sidecar, advancing the external anchor or releasing the
+// lock. Callers must not retry the append blindly; Record is the committed
+// record and Err carries every warning (errors.Is matches ErrSidecarStale,
+// ErrAnchorStale and ErrLockLost where applicable).
+type CommittedError struct {
+	Record LedgerRecord
+	Err    error
+}
+
+// Error implements error.
+func (e *CommittedError) Error() string {
+	return fmt.Sprintf("%v (record %d is durable, do not retry): %v", ErrCommitted, e.Record.Seq, e.Err)
+}
+
+// Unwrap exposes ErrCommitted and the underlying warnings to errors.Is/As.
+func (e *CommittedError) Unwrap() []error { return []error{ErrCommitted, e.Err} }
 
 // KeyKind classifies who may hold a trusted signing key.
 type KeyKind string

@@ -128,7 +128,8 @@ func TestRemediation_WaiverTokensNotBurnedBeforeTheyCanTakeEffect(t *testing.T) 
 		recs, err := f.ledger.Records(nil)
 		require.NoError(t, err)
 		assert.Empty(t, recs, "no nonce was consumed")
-		_, ok, _ := f.anchors.Load()
+		_, ok, err := f.anchors.Load()
+		require.NoError(t, err)
 		assert.False(t, ok)
 	}
 	t.Run("non-applicable node", func(t *testing.T) {

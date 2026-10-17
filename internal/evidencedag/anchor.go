@@ -56,17 +56,42 @@ func (m *MemoryAnchorStore) Store(a Anchor) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.ok && a.Seq < m.a.Seq {
-		return errors.New("anchor must not move backwards")
+	if m.ok {
+		if err := checkAdvance(m.a, a); err != nil {
+			return err
+		}
 	}
 	m.a, m.ok = a, true
 	return nil
 }
 
+// ErrAnchorFork indicates an attempt to store an anchor that contradicts the
+// retained one: an older sequence, or the same sequence with a different hash.
+var ErrAnchorFork = errors.New("evidencedag: anchor must not move backwards or fork")
+
+func checkAdvance(cur, next Anchor) error {
+	switch {
+	case next.Seq < cur.Seq:
+		return fmt.Errorf("%w: sequence %d is behind the retained %d", ErrAnchorFork, next.Seq, cur.Seq)
+	case next.Seq == cur.Seq && next.Hash != cur.Hash:
+		return fmt.Errorf("%w: sequence %d is retained with a different hash", ErrAnchorFork, cur.Seq)
+	}
+	return nil
+}
+
+// anchorLocks serializes in-process Store calls per anchor file, even across
+// distinct FileAnchorStore values for the same path.
+var anchorLocks sync.Map
+
 // FileAnchorStore keeps the anchor in a small file that must lie outside every
 // caller-supplied agent-writable root.
 type FileAnchorStore struct {
 	dir, name string
+}
+
+func (s *FileAnchorStore) mutex() *sync.Mutex {
+	mu, _ := anchorLocks.LoadOrStore(filepath.Join(s.dir, s.name), &sync.Mutex{})
+	return mu.(*sync.Mutex)
 }
 
 // NewFileAnchorStore returns a store for the anchor file at path. At least one
@@ -109,21 +134,40 @@ func (s *FileAnchorStore) Load() (Anchor, bool, error) {
 	return a, true, nil
 }
 
-// Store implements AnchorStore. It refuses to move the anchor backwards.
-func (s *FileAnchorStore) Store(a Anchor) error {
+// Store implements AnchorStore. The check-and-write is serialized in-process
+// and across processes by an anchor lock file; it refuses to move the anchor
+// backwards or to replace a sequence with a different hash.
+func (s *FileAnchorStore) Store(a Anchor) (err error) {
 	if err := validateAnchor(a); err != nil {
 		return fmt.Errorf("evidencedag: %w", err)
 	}
+	mu := s.mutex()
+	mu.Lock()
+	defer mu.Unlock()
+	hl, err := dirLock{dir: s.dir, name: s.name + ".lock"}.acquire()
+	if err != nil {
+		return fmt.Errorf("evidencedag: lock anchor: %w", err)
+	}
+	defer func() {
+		if uerr := hl.release(); uerr != nil {
+			err = errors.Join(err, fmt.Errorf("evidencedag: release anchor lock: %w", uerr))
+		}
+	}()
 	cur, ok, err := s.Load()
 	if err != nil {
 		return err
 	}
-	if ok && a.Seq < cur.Seq {
-		return errors.New("evidencedag: anchor must not move backwards")
+	if ok {
+		if err := checkAdvance(cur, a); err != nil {
+			return err
+		}
 	}
 	b, err := json.Marshal(a)
 	if err != nil {
 		return fmt.Errorf("evidencedag: marshal anchor: %w", err)
+	}
+	if err := hl.verify(); err != nil {
+		return fmt.Errorf("evidencedag: store anchor: %w", err)
 	}
 	if err := writeFileAtomic(s.dir, s.name, b); err != nil {
 		return fmt.Errorf("evidencedag: store anchor: %w", err)

@@ -41,19 +41,53 @@ func splitCanonical(path string) (dir, name string, err error) {
 	return canon, name, nil
 }
 
-// checkOutsideRoots requires a non-empty list of existing roots and that
-// canonPath lies beneath none of them.
+// canonicalRoot makes a forbidden root absolute and canonical: symlinks are
+// resolved on the longest existing prefix and any not-yet-existing remainder
+// is appended. A root that cannot be canonicalized is an error, never skipped.
+func canonicalRoot(r string) (string, error) {
+	abs, err := filepath.Abs(r)
+	if err != nil {
+		return "", fmt.Errorf("resolve forbidden root: %w", err)
+	}
+	existing, rest := filepath.Clean(abs), ""
+	for {
+		_, err := os.Lstat(existing)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("resolve forbidden root: %w", err)
+		}
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return "", errors.New("resolve forbidden root: no existing ancestor")
+		}
+		rest = filepath.Join(filepath.Base(existing), rest)
+		existing = parent
+	}
+	canon, err := filepath.EvalSymlinks(existing)
+	if err != nil {
+		return "", fmt.Errorf("resolve forbidden root: %w", err)
+	}
+	return filepath.Join(canon, rest), nil
+}
+
+// checkOutsideRoots requires a non-empty list of roots, each canonicalized
+// (absolute, symlinks resolved), and that canonPath lies beneath none of them.
 func checkOutsideRoots(canonPath string, roots []string) error {
 	if len(roots) == 0 {
 		return errors.New("at least one forbidden root is required")
+	}
+	if !filepath.IsAbs(canonPath) {
+		return errors.New("path is not absolute")
 	}
 	for _, r := range roots {
 		if r == "" {
 			return errors.New("forbidden root must not be empty")
 		}
-		cr, err := filepath.EvalSymlinks(r)
+		cr, err := canonicalRoot(r)
 		if err != nil {
-			return fmt.Errorf("resolve forbidden root: %w", err)
+			return err
 		}
 		if within(cr, canonPath) {
 			return errors.New("path lies inside an agent-writable root")
@@ -94,12 +128,19 @@ func openBeneath(dir, name string, flag int, perm os.FileMode) (*os.File, error)
 		return nil, err
 	}
 	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() || (lerr == nil && !os.SameFile(li, fi)) {
+	if err != nil || !fi.Mode().IsRegular() {
 		_ = f.Close()
 		return nil, errNotRegular
 	}
+	if lerr == nil && !os.SameFile(li, fi) {
+		_ = f.Close()
+		return nil, errChanged
+	}
 	return f, nil
 }
+
+// errChanged reports that the leaf was replaced between inspection and open.
+var errChanged = errors.New("file changed while it was being opened")
 
 // readRegularBounded reads a regular file up to max bytes. exists is false only
 // for a missing leaf.
@@ -162,13 +203,19 @@ func writeFileAtomic(dir, name string, data []byte) error {
 	}
 	var rerr error
 	delay := 10 * time.Millisecond
-	for i := 0; i < 6; i++ {
+	deadline := time.Now().Add(renameWait)
+	for {
 		if rerr = renameFile(filepath.Join(dir, tmp), filepath.Join(dir, name)); rerr == nil {
 			syncDir(dir)
 			return nil
 		}
+		if !time.Now().Before(deadline) {
+			break
+		}
 		time.Sleep(delay)
-		delay *= 2
+		if delay < 500*time.Millisecond {
+			delay *= 2
+		}
 	}
 	cleanup()
 	return fmt.Errorf("%w: %s: %v", errRenameFailed, name, rerr)
@@ -176,5 +223,10 @@ func writeFileAtomic(dir, name string, data []byte) error {
 
 var errRenameFailed = errors.New("rename failed")
 
-// renameFile is a seam so tests can inject rename failures.
-var renameFile = os.Rename
+// renameFile is a seam so tests can inject rename failures; renameWait bounds
+// the retry window (Windows can refuse a rename for seconds while an antivirus
+// scanner or indexer holds the target).
+var (
+	renameFile = os.Rename
+	renameWait = 5 * time.Second
+)

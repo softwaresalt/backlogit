@@ -211,6 +211,9 @@ func (e *Evaluator) validateInput(in Input) error {
 		if reason == "" {
 			return fmt.Errorf("%w: failure for node %q has no reason", ErrInvalidInput, truncate(id))
 		}
+		if _, both := in.Evidence[id]; both {
+			return fmt.Errorf("%w: node %q has both evidence and an executor failure", ErrInvalidInput, truncate(id))
+		}
 	}
 	return nil
 }
@@ -308,7 +311,18 @@ func (e *Evaluator) computeNode(n Node, in Input, results map[string]NodeResult,
 			return set(StatusError, "waiver is unverified or not bound to this shipment, node and head commit")
 		}
 		res.Waiver = w.principal
+		for _, d := range e.deps[n.ID] {
+			if s := results[d].Status; s == StatusUnmet || s == StatusError {
+				res.MaskedUpstreams = append(res.MaskedUpstreams, d)
+			}
+		}
 		return set(StatusWaived, "waived by authorized, authenticated principal")
+	}
+
+	// A node's own executor failure is accounted for before upstream state is
+	// consulted, so it is never reported as merely an unmet upstream.
+	if reason, failed := in.Failures[n.ID]; failed && !has {
+		return set(StatusError, "executor failed: "+reason)
 	}
 
 	// Non-applicable upstream nodes are neutral: they neither block nor
@@ -342,9 +356,6 @@ func (e *Evaluator) computeNode(n Node, in Input, results map[string]NodeResult,
 		return set(StatusUnmet, "upstream node "+unmetUp+" is unmet")
 	}
 
-	if reason, failed := in.Failures[n.ID]; failed && !has {
-		return set(StatusError, "executor failed: "+reason)
-	}
 	return verifyEvidence(n, rec, has, set)
 }
 
@@ -394,6 +405,7 @@ func (r Report) Rollup() Rollup {
 		ru.ApplicableTerminals++
 		switch n.Status {
 		case StatusVerified, StatusWaived:
+			ru.ProvenTerminals++
 		case StatusUnmet:
 			if n.OnUnmet == OnUnmetBlock {
 				ru.Unmet = append(ru.Unmet, n.ID)
@@ -411,8 +423,10 @@ func (r Report) Rollup() Rollup {
 		ru.State, ru.Reason = RollupUnverifiable, "an applicable terminal node is unverifiable"
 	case len(ru.Unmet) > 0:
 		ru.State, ru.Reason = RollupBlocked, "an applicable terminal node is unmet"
+	case ru.ProvenTerminals == 0:
+		ru.State, ru.Reason = RollupUnproven, "no applicable terminal node is verified or waived: advisory nodes alone prove nothing"
 	default:
-		ru.State, ru.Reason = RollupReady, "every applicable terminal node is verified or waived"
+		ru.State, ru.Reason = RollupReady, "every applicable terminal node is verified or waived, or advisory"
 	}
 	return ru
 }
