@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,16 +19,16 @@ func sha(n int) string { return fmt.Sprintf("%040x", n) }
 type fakeDeriv struct {
 	review evidence.ReviewResult
 	ci     evidence.CIResult
-	calls  int
+	calls  atomic.Int64
 }
 
 func (f *fakeDeriv) ReviewEvidence(_ context.Context, _ int) evidence.ReviewResult {
-	f.calls++
+	f.calls.Add(1)
 	return f.review
 }
 
 func (f *fakeDeriv) CIEvidence(_ context.Context, _ int) evidence.CIResult {
-	f.calls++
+	f.calls.Add(1)
 	return f.ci
 }
 

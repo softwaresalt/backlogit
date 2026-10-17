@@ -1,0 +1,28 @@
+{
+  "id": "INC-P002-152F-134S",
+  "description": "152-F / 134-S: every piece of evidence exists but in the wrong order. The harness scaffold commit lands after the green phase, so the red-phase proof is bound to a commit that does not descend from the harness commit. The engine must block the ordering violation and everything downstream of it.",
+  "mode": "enforce",
+  "task_id": "152.001-T",
+  "commits": [
+    {"name": "base", "at_s": 0, "parents": []},
+    {"name": "red", "at_s": 60, "parents": ["base"]},
+    {"name": "green", "at_s": 120, "parents": ["red"]},
+    {"name": "harness", "at_s": 180, "parents": ["green"]},
+    {"name": "head", "at_s": 240, "parents": ["harness"]}
+  ],
+  "head": "head",
+  "records": [
+    {"node": "harness-scaffold", "commit": "harness", "at_s": 190, "outcome": "pass"},
+    {"node": "red-phase-verify", "commit": "red", "at_s": 70, "outcome": "pass", "red_artifact": true},
+    {"node": "green-phase-verify", "commit": "green", "at_s": 130, "outcome": "pass"},
+    {"node": "merge-ready", "commit": "head", "at_s": 250, "outcome": "pass"}
+  ],
+  "expect": {
+    "disposition": "block",
+    "violations": [
+      {"node": "red-phase-verify", "code": "out_of_order"},
+      {"node": "green-phase-verify", "code": "upstream_unverifiable"},
+      {"node": "merge-ready", "code": "upstream_unverifiable"}
+    ]
+  }
+}

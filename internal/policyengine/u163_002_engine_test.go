@@ -137,7 +137,7 @@ func TestU163_002_DerivationCalledOnlyForEnabledDerivedGates(t *testing.T) {
 	e := newEnv(t, doc)
 	d := check(t, e.engine(), e.request(e.good()))
 	assert.True(t, d.Allowed, "%+v", d.Errors)
-	assert.Zero(t, e.deriv.calls)
+	assert.Zero(t, e.deriv.calls.Load())
 	assert.Equal(t, "not-applicable", gateStatus(d, NodeReviewComplete))
 }
 

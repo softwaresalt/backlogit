@@ -1,0 +1,25 @@
+{
+  "id": "INC-P002-131S-148F",
+  "description": "131-S / 148-F: implementation was committed and verified green with no harness scaffold and no red-phase evidence ever recorded (P-002 test-first violated). The engine must block.",
+  "mode": "enforce",
+  "task_id": "148.001-T",
+  "commits": [
+    {"name": "base", "at_s": 0, "parents": []},
+    {"name": "impl", "at_s": 120, "parents": ["base"]},
+    {"name": "head", "at_s": 240, "parents": ["impl"]}
+  ],
+  "head": "head",
+  "records": [
+    {"node": "green-phase-verify", "commit": "impl", "at_s": 150, "outcome": "pass"},
+    {"node": "merge-ready", "commit": "head", "at_s": 250, "outcome": "pass"}
+  ],
+  "expect": {
+    "disposition": "block",
+    "violations": [
+      {"node": "harness-scaffold", "code": "evidence_absent"},
+      {"node": "red-phase-verify", "code": "evidence_absent"},
+      {"node": "green-phase-verify", "code": "upstream_unmet"},
+      {"node": "merge-ready", "code": "upstream_unmet"}
+    ]
+  }
+}

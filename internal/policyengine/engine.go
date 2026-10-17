@@ -364,16 +364,20 @@ func (e *Engine) decide(req Request, gates []GateDecl, facts map[NodeType]fact, 
 		nr, _ := dec.Report.Node(string(g.ID))
 		res := GateResult{Node: g.ID, Status: string(nr.Status), Reason: clip(nr.Reason, MaxErrorBytes), Waiver: clip(nr.Waiver, 96)}
 		f, has := facts[g.ID]
-		switch nr.Status {
-		case evidencedag.StatusWaived:
+		switch {
+		case nr.Status == evidencedag.StatusVerified, nr.Status == evidencedag.StatusNotApplicable && !g.Enabled:
+		case nr.Status == evidencedag.StatusWaived:
 			if !g.Overridable {
 				// Defense in depth: peeking already refuses such tokens.
 				res.Code = CodeOverrideNotPermitted
 				out.Errors = append(out.Errors, Violation{Code: CodeOverrideNotPermitted, Node: string(g.ID), Reason: "a waiver was accepted for a gate that is not overridable"})
 			}
-		case evidencedag.StatusUnmet, evidencedag.StatusError:
+		default:
+			// Anything that is not positively verified, waived or disabled (an
+			// unmet or unverifiable gate, but also an unexpected or missing
+			// status) is a violation: nothing fails open.
 			code, reason := CodeUpstreamUnmet, res.Reason
-			if nr.Status == evidencedag.StatusError {
+			if nr.Status != evidencedag.StatusUnmet {
 				code = CodeUpstreamUnverifiable
 			}
 			if has && f.status != evidencedag.StatusVerified {

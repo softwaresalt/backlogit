@@ -1,0 +1,21 @@
+{
+  "id": "CONTROL-satisfied",
+  "description": "Control: the same shape as the incidents with every prerequisite recorded in order. The replay harness must not block everything.",
+  "mode": "enforce",
+  "task_id": "148.001-T",
+  "commits": [
+    {"name": "base", "at_s": 0, "parents": []},
+    {"name": "harness", "at_s": 60, "parents": ["base"]},
+    {"name": "red", "at_s": 120, "parents": ["harness"]},
+    {"name": "green", "at_s": 180, "parents": ["red"]},
+    {"name": "head", "at_s": 240, "parents": ["green"]}
+  ],
+  "head": "head",
+  "records": [
+    {"node": "harness-scaffold", "commit": "harness", "at_s": 70, "outcome": "pass"},
+    {"node": "red-phase-verify", "commit": "red", "at_s": 130, "outcome": "pass", "red_artifact": true},
+    {"node": "green-phase-verify", "commit": "green", "at_s": 190, "outcome": "pass"},
+    {"node": "merge-ready", "commit": "head", "at_s": 250, "outcome": "pass"}
+  ],
+  "expect": {"disposition": "pass", "violations": []}
+}
