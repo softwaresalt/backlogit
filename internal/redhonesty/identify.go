@@ -16,7 +16,18 @@ import (
 )
 
 func isTestdata(p string) bool {
-	return strings.HasPrefix(p, "testdata/") || strings.Contains(p, "/testdata/")
+	return strings.HasPrefix(p, "testdata/") || strings.Contains(p, "/testdata/") || hasIgnoredComponent(p)
+}
+
+// hasIgnoredComponent reports a path the go tool never builds: any element
+// (directory or file name) beginning with "_" or ".".
+func hasIgnoredComponent(p string) bool {
+	for _, el := range strings.Split(p, "/") {
+		if strings.HasPrefix(el, "_") || (strings.HasPrefix(el, ".") && el != "." && el != "..") {
+			return true
+		}
+	}
+	return false
 }
 
 // isTestFile reports a real Go test file. Anything under testdata is fixture
