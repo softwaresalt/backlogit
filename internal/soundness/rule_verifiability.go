@@ -25,10 +25,20 @@ func checkIndependentVerifiability(ctx *checkContext) ([]Finding, error) {
 				out = append(out, errFinding(ruleIndependentVerifiability, u.ID, "acceptance criterion %q is not objectively verifiable (vague term %q)", c, m))
 			}
 		}
+		reliedOn := map[string]bool{}
+		var deps map[string]bool // computed once per unit, only when needed
 		for _, other := range u.VerifiedWith {
-			if other != u.ID && !contains(u.Dependencies, other) {
-				out = append(out, errFinding(ruleIndependentVerifiability, u.ID, "verification relies on %s, which is not a declared dependency", other))
+			if other == u.ID || reliedOn[other] {
+				continue
 			}
+			if deps == nil {
+				deps = transitiveDependencies(ctx, u.ID)
+			}
+			if deps[other] {
+				continue
+			}
+			reliedOn[other] = true
+			out = append(out, errFinding(ruleIndependentVerifiability, u.ID, "verification relies on %s, which is not a declared dependency", other))
 		}
 	}
 	return out, nil

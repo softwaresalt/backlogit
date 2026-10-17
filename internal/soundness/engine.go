@@ -9,6 +9,10 @@ type checkContext struct {
 	plan Plan
 	cfg  Config
 	byID map[string]*Unit
+	// dependents is the lazily built reverse dependency adjacency (O(edges)).
+	dependents map[string][]string
+	// walks counts dependency-graph traversals; tests assert it stays bounded.
+	walks int
 }
 
 // rule is one independently flaggable soundness check.
@@ -50,10 +54,6 @@ func errFinding(rule, unit, format string, args ...any) Finding {
 // non-nil error means the run itself was misconfigured.
 func Run(plan Plan, cfg Config) (Report, error) {
 	rules := allRules()
-	known := make(map[string]bool, len(rules))
-	for _, r := range rules {
-		known[r.id] = true
-	}
 	if err := cfg.Validate(); err != nil {
 		return Report{}, fmt.Errorf("run soundness engine: %w", err)
 	}

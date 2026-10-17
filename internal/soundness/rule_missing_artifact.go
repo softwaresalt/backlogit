@@ -13,7 +13,12 @@ func checkMissingArtifact(ctx *checkContext) ([]Finding, error) {
 	var out []Finding
 	delivered := map[string]map[string]bool{} // artifact -> delivering unit IDs
 	for _, u := range ctx.plan.Units {
+		seenDeliverable := map[string]bool{}
 		for _, d := range u.Deliverables {
+			if seenDeliverable[d] {
+				continue
+			}
+			seenDeliverable[d] = true
 			k, err := confinedArtifactIn(ctx.cfg.Root, d)
 			if err != nil {
 				out = append(out, errFinding(ruleMissingArtifact, u.ID, "delivered artifact %q is invalid: %v", d, err))
@@ -26,7 +31,13 @@ func checkMissingArtifact(ctx *checkContext) ([]Finding, error) {
 		}
 	}
 	for _, u := range ctx.plan.Units {
+		var deps map[string]bool // computed once per unit, only when needed
+		seenRequire := map[string]bool{}
 		for _, req := range u.Requires {
+			if seenRequire[req] {
+				continue
+			}
+			seenRequire[req] = true
 			k, err := confinedArtifactIn(ctx.cfg.Root, req)
 			if err != nil {
 				out = append(out, errFinding(ruleMissingArtifact, u.ID, "required artifact %q is invalid: %v", req, err))
@@ -39,7 +50,9 @@ func checkMissingArtifact(ctx *checkContext) ([]Finding, error) {
 				}
 			}
 			if len(producers) > 0 {
-				deps := transitiveDependencies(ctx, u.ID)
+				if deps == nil {
+					deps = transitiveDependencies(ctx, u.ID)
+				}
 				ordered := false
 				for _, id := range producers {
 					ordered = ordered || deps[id]
@@ -59,25 +72,4 @@ func checkMissingArtifact(ctx *checkContext) ([]Finding, error) {
 		}
 	}
 	return out, nil
-}
-
-// transitiveDependencies returns every unit ID reachable from id through
-// dependency edges.
-func transitiveDependencies(ctx *checkContext, id string) map[string]bool {
-	seen := map[string]bool{}
-	var walk func(string)
-	walk = func(cur string) {
-		u := ctx.byID[cur]
-		if u == nil {
-			return
-		}
-		for _, d := range u.Dependencies {
-			if !seen[d] {
-				seen[d] = true
-				walk(d)
-			}
-		}
-	}
-	walk(id)
-	return seen
 }

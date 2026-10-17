@@ -13,15 +13,24 @@ func checkDuplicatedWork(ctx *checkContext) ([]Finding, error) {
 			continue
 		}
 		reported := map[string]bool{}
+		var rel *relation // built once per unit: two graph walks, not one per prior owner
 		for _, d := range u.Deliverables {
 			key := normalizePath(d)
 			if key == "" || reported[key] {
 				continue
 			}
+			// Mark the key processed even when no conflict is found, so a
+			// unit repeating a path is neither rescanned nor re-appended.
+			reported[key] = true
 			for _, prior := range owners[key] {
-				if prior != u && !related(prior, u) {
+				if prior == u {
+					continue
+				}
+				if rel == nil {
+					rel = newRelation(ctx, u)
+				}
+				if !rel.with(prior) {
 					out = append(out, errFinding(ruleDuplicatedWork, u.ID, "deliverable %q is already delivered by unrelated unit %s", d, prior.ID))
-					reported[key] = true
 					break
 				}
 			}

@@ -5,8 +5,11 @@ import (
 )
 
 // GateDecision is the outcome of the pre-assembly gate. In report-only mode
-// Blocked is always false and Findings carry warn severity; in enforce mode
-// Blocked is true when any error-severity finding exists.
+// Blocked is always false and every finding is downgraded to warn severity
+// (the original error severity is intentionally not preserved in Findings;
+// the unmodified findings remain available in Report). In enforce mode Blocked
+// is true when any error-severity finding exists. A decision produced by a
+// misconfigured or zero-value gate is Blocked.
 type GateDecision struct {
 	Mode     Mode      `json:"mode"`
 	Blocked  bool      `json:"blocked"`
@@ -55,7 +58,8 @@ func (c Config) Validate() error {
 }
 
 // failsClosed reports whether a misconfigured run in mode must be treated as
-// blocked. Only the explicit report-only modes may proceed.
+// blocked. Only the explicit report-only modes (including the unset default)
+// may proceed; an unknown mode fails closed.
 func failsClosed(mode Mode) bool { return mode != "" && mode != ModeReportOnly }
 
 // NewGate builds a gate over cfg. A misconfigured cfg is an explicit error.
@@ -63,17 +67,33 @@ func NewGate(cfg Config) (*Gate, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("new soundness gate: %w", err)
 	}
-	return &Gate{cfg: cfg, engine: Run}, nil
+	return &Gate{cfg: cloneConfig(cfg), engine: Run}, nil
+}
+
+// cloneConfig copies the reference-typed fields so later caller mutation
+// cannot change a constructed gate.
+func cloneConfig(cfg Config) Config {
+	rules := make(map[string]bool, len(cfg.Rules))
+	for k, v := range cfg.Rules {
+		rules[k] = v
+	}
+	cfg.Rules = rules
+	cfg.CanonicalProcedures = append([]string(nil), cfg.CanonicalProcedures...)
+	return cfg
 }
 
 // Assess evaluates plan. An engine failure in enforce mode returns a blocked
 // decision together with the error, so enforcement never fails open.
 func (g *Gate) Assess(plan Plan) (GateDecision, error) {
+	if g == nil || g.engine == nil {
+		return GateDecision{Blocked: true}, fmt.Errorf("%w: gate was not built with NewGate", ErrInvalidConfig)
+	}
 	mode, err := parseMode(string(g.cfg.Mode))
 	if err != nil {
 		return GateDecision{Blocked: true}, fmt.Errorf("%w: %w", ErrInvalidConfig, err)
 	}
-	report, err := g.engine(plan, g.cfg)
+	run := g.engine
+	report, err := run(plan, g.cfg)
 	if err != nil {
 		return GateDecision{Mode: mode, Blocked: failsClosed(mode)}, fmt.Errorf("assess plan: %w", err)
 	}

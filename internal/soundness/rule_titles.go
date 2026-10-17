@@ -16,8 +16,12 @@ func checkUniqueTitles(ctx *checkContext) ([]Finding, error) {
 		if key == "" {
 			continue
 		}
+		var rel *relation
 		for _, prior := range firstByTitle[key] {
-			if !related(prior, u) {
+			if rel == nil {
+				rel = newRelation(ctx, u)
+			}
+			if !rel.with(prior) {
 				out = append(out, errFinding(ruleUniqueTitles, u.ID, "title duplicates unrelated unit %s: %q", prior.ID, u.Title))
 				break
 			}

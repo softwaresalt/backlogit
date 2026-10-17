@@ -42,9 +42,14 @@ func impossibleReason(t TestSpec) string {
 			ne[s][v] = true
 		}
 	}
-	for s, v := range eq {
-		if ne[s][v] {
-			return fmt.Sprintf("%q must both equal and not equal %q", s, v)
+	// Scan in declaration order so the reported conflict is deterministic.
+	for _, a := range t.Assertions {
+		if a.Op != OpEqual {
+			continue
+		}
+		s := strings.TrimSpace(a.Subject)
+		if ne[s][eq[s]] {
+			return fmt.Sprintf("%q must both equal and not equal %q", s, eq[s])
 		}
 	}
 	return ""

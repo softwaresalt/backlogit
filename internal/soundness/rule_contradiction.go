@@ -7,6 +7,8 @@ const (
 	// maxSiblingContradictionFindings bounds aggregated sibling findings so a
 	// plan with many opposing siblings cannot produce quadratic output.
 	maxSiblingContradictionFindings = 5
+	// maxDecisionContradictionFindings bounds unit-vs-decision findings the same way.
+	maxDecisionContradictionFindings = 5
 )
 
 // siblingGroup accumulates the stances declared on one subject by the children
@@ -63,32 +65,71 @@ func (g *siblingGroup) pairs() (n int, a, b string) {
 // unknown stance cannot be evaluated and is flagged.
 func checkContradiction(ctx *checkContext) ([]Finding, error) {
 	var out []Finding
-	type holder struct{ id, stance string }
+	// holders records, per stance, the first decision and the count of distinct decisions.
+	type holders struct {
+		first [2]string
+		n     [2]int
+		last  [2]string
+	}
 	validStance := func(s string) bool { return s == StanceRequire || s == StanceForbid }
 
-	decided := map[string][]holder{}
+	decided := map[string]*holders{}
 	for _, d := range ctx.plan.Decisions {
 		for _, dir := range d.Directives {
 			if !validStance(dir.Stance) {
 				return nil, fmt.Errorf("decision %q has unknown stance %q", d.ID, dir.Stance)
 			}
 			s := normalizeText(dir.Subject)
-			decided[s] = append(decided[s], holder{d.ID, dir.Stance})
+			h := decided[s]
+			if h == nil {
+				h = &holders{}
+				decided[s] = h
+			}
+			i := stanceIndex(dir.Stance)
+			if h.last[i] == d.ID && h.n[i] > 0 {
+				continue
+			}
+			h.last[i] = d.ID
+			if h.n[i] == 0 {
+				h.first[i] = d.ID
+			}
+			h.n[i]++
 		}
 	}
 
 	groups := map[string]*siblingGroup{}
 	var order []*siblingGroup
+	decisionEmitted, decisionOmitted := 0, false
 	for _, u := range ctx.plan.Units {
+		seenDirective := map[string]bool{}
 		for _, dir := range u.Directives {
 			if !validStance(dir.Stance) {
 				out = append(out, errFinding(ruleContradiction, u.ID, "unknown directive stance %q on %q", dir.Stance, dir.Subject))
 				continue
 			}
 			s := normalizeText(dir.Subject)
-			for _, h := range decided[s] {
-				if h.stance != dir.Stance {
-					out = append(out, errFinding(ruleContradiction, u.ID, "%s %q contradicts decision %s (%s)", dir.Stance, dir.Subject, h.id, h.stance))
+			if dk := s + "\x00" + dir.Stance; seenDirective[dk] {
+				continue
+			} else {
+				seenDirective[dk] = true
+			}
+			if h := decided[s]; h != nil {
+				opp := 1 - stanceIndex(dir.Stance)
+				if h.n[opp] > 0 {
+					switch {
+					case decisionEmitted < maxDecisionContradictionFindings:
+						decisionEmitted++
+						msg := "%s %q contradicts decision %s (%s)"
+						args := []any{dir.Stance, dir.Subject, h.first[opp], stanceName(opp)}
+						if h.n[opp] > 1 {
+							msg += "; %d decisions oppose it"
+							args = append(args, h.n[opp])
+						}
+						out = append(out, errFinding(ruleContradiction, u.ID, msg, args...))
+					case !decisionOmitted:
+						decisionOmitted = true
+						out = append(out, errFinding(ruleContradiction, "", "additional unit-vs-decision contradictions omitted after %d findings", decisionEmitted))
+					}
 				}
 			}
 			if u.ParentID == "" {
@@ -118,4 +159,18 @@ func checkContradiction(ctx *checkContext) ([]Finding, error) {
 		out = append(out, errFinding(ruleContradiction, b, "%q is required by sibling %s but forbidden by sibling %s under %s (%d conflicting sibling pairs)", g.subject, a, b, g.parent, n))
 	}
 	return out, nil
+}
+
+func stanceIndex(stance string) int {
+	if stance == StanceForbid {
+		return 1
+	}
+	return 0
+}
+
+func stanceName(i int) string {
+	if i == 1 {
+		return StanceForbid
+	}
+	return StanceRequire
 }

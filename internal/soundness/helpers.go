@@ -32,6 +32,9 @@ func normalizePath(s string) string {
 
 var driveLetter = regexp.MustCompile(`^[a-z]:[/\\]`)
 
+// driveRelative matches c:foo, a path relative to a drive's current directory.
+var driveRelative = regexp.MustCompile(`^[a-z]:`)
+
 // confinedArtifact validates that an artifact path stays inside the workspace
 // and returns its normalized key. Absolute and parent-escaping paths are rejected.
 func confinedArtifact(p string) (string, error) {
@@ -46,6 +49,10 @@ func confinedArtifact(p string) (string, error) {
 	switch {
 	case key == "":
 		return "", errors.New("empty path")
+	case key == ".":
+		return "", errors.New("path names the workspace root, not a file")
+	case driveRelative.MatchString(key) && !driveLetter.MatchString(key):
+		return "", errors.New("drive-relative path is outside the workspace")
 	case strings.HasPrefix(key, "/") || driveLetter.MatchString(key):
 		return "", errors.New("absolute path is outside the workspace")
 	case key == ".." || strings.HasPrefix(key, "../"):
@@ -69,8 +76,10 @@ func confinedArtifactIn(root, p string) (string, error) {
 		switch {
 		case rerr == nil:
 			return key, nil
-		case !errors.Is(rerr, docline.ErrAnchorNotFound):
+		case errors.Is(rerr, docline.ErrAnchorOutsideRoot):
 			return "", fmt.Errorf("path escapes the workspace root: %w", rerr)
+		case !errors.Is(rerr, docline.ErrAnchorNotFound):
+			return "", fmt.Errorf("path cannot be confined to the workspace: %w", rerr)
 		}
 		// A dangling link is not "missing": it could later resolve outside the root.
 		if _, lerr := os.Lstat(filepath.Join(root, filepath.FromSlash(rel))); lerr == nil {
@@ -90,10 +99,78 @@ func contains(list []string, id string) bool {
 	return false
 }
 
-// related reports whether two units are intentionally linked by a
-// dependency, parent/child relationship or explicit related edge.
-func related(a, b *Unit) bool {
-	return contains(a.Dependencies, b.ID) || contains(b.Dependencies, a.ID) ||
-		contains(a.Related, b.ID) || contains(b.Related, a.ID) ||
-		a.ParentID == b.ID || b.ParentID == a.ID
+// relation answers "is this unit intentionally linked to that one" for one
+// fixed unit. Transitive dependency sets in both directions are computed once,
+// lazily, and discarded with the relation, so no per-unit reach sets are kept
+// on the context (memory stays O(units) at any instant).
+type relation struct {
+	ctx  *checkContext
+	u    *Unit
+	up   map[string]bool // units u transitively depends on
+	down map[string]bool // units that transitively depend on u
+}
+
+func newRelation(ctx *checkContext, u *Unit) *relation { return &relation{ctx: ctx, u: u} }
+
+// with reports whether other is linked to the relation's unit by a
+// parent/child edge, an explicit related edge or a transitive dependency in
+// either direction. Dependency cycles terminate.
+func (r *relation) with(other *Unit) bool {
+	u := r.u
+	if u.ParentID == other.ID || other.ParentID == u.ID ||
+		contains(u.Related, other.ID) || contains(other.Related, u.ID) {
+		return true
+	}
+	if r.up == nil {
+		r.up = transitiveDependencies(r.ctx, u.ID)
+		r.down = transitiveDependents(r.ctx, u.ID)
+	}
+	return r.up[other.ID] || r.down[other.ID]
+}
+
+// transitiveDependents returns every unit ID that transitively depends on id.
+func transitiveDependents(ctx *checkContext, id string) map[string]bool {
+	if ctx.dependents == nil {
+		ctx.dependents = map[string][]string{}
+		for i := range ctx.plan.Units {
+			u := &ctx.plan.Units[i]
+			if ctx.byID[u.ID] != u {
+				continue
+			}
+			for _, d := range u.Dependencies {
+				ctx.dependents[d] = append(ctx.dependents[d], u.ID)
+			}
+		}
+	}
+	ctx.walks++
+	return walk(id, func(cur string) []string { return ctx.dependents[cur] })
+}
+
+// transitiveDependencies returns every unit ID reachable from id through
+// dependency edges. The walk is iterative and cycle-safe and the result is not
+// cached; callers hold it only as long as needed.
+func transitiveDependencies(ctx *checkContext, id string) map[string]bool {
+	ctx.walks++
+	return walk(id, func(cur string) []string {
+		if u := ctx.byID[cur]; u != nil {
+			return u.Dependencies
+		}
+		return nil
+	})
+}
+
+func walk(start string, next func(string) []string) map[string]bool {
+	seen := map[string]bool{}
+	stack := []string{start}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for _, d := range next(cur) {
+			if !seen[d] {
+				seen[d] = true
+				stack = append(stack, d)
+			}
+		}
+	}
+	return seen
 }
