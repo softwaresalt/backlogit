@@ -4,16 +4,37 @@
 // A claimed regression ("red") test is only honest when it demonstrably fails
 // against the pre-fix baseline and passes at head. The gate:
 //
-//   - U1 identifies newly added tests between an immutable base SHA and head and
-//     runs them against baseline production code (base tree plus ONLY the head
-//     test-file overlay) inside a workspace-contained, git-ignored directory;
-//   - U2 rejects dishonest reds (already green at baseline, not exercising the
+//   - U1 identifies newly added top-level tests between an immutable base SHA
+//     (which must be an ancestor of head) and head and runs them against
+//     baseline production code (base tree plus ONLY the head test-file overlay)
+//     inside a workspace-contained, git-ignored directory;
+//   - U2 rejects dishonest reds (already green at baseline, not referencing the
 //     changed code, asserting only sibling fields, or deriving the expected value
-//     through the changed production path) and fails closed when the baseline
+//     from the changed production function) and fails closed when the baseline
 //     cannot be verified;
 //   - U3 records the observed red/green outcome as a RedGreenEvidence artifact
 //     conforming to the shared internal/faultline evidence contract (S9 is a
 //     producer, not the schema owner).
+//
+// Honest limits. The behavioural rules (baseline result, head result) are exact.
+// The structural rules are NAME-BASED SYNTACTIC HEURISTICS over the test's AST:
+// they match bare identifier and selector names with no type resolution, only
+// follow helper functions in the same file (depth-bounded), and only recognise an
+// expected value bound to a variable/field named want/expected/exp/golden. They
+// reduce, but do not eliminate, false greens; false rejections are possible too.
+// Only NEW top-level Test functions are gated: cases added as subtests or table
+// rows inside an existing test are not. A test that cannot build at the baseline
+// (for example it references a symbol the fix introduces) is unverifiable and is
+// rejected; declaration-adding work is covered by source-shape harnesses instead.
+//
+// Trust model. The gate runs the repository's own test code, exactly as CI does;
+// it is not a sandbox. It strips likely credentials from the child environment,
+// pins the local toolchain and bounds time and output, but a malicious test can
+// still act as the invoking user, so run it only on code you would run in CI.
+// Evidence integrity is a consumer obligation (S4 accept path: authenticate the
+// Canonical() bytes, check the producer, anti-replay); stored evidence here is
+// shape-validated, bound to task and commit, and not silently replaceable, but
+// not signed.
 //
 // All external effects (git, go test) sit behind small interfaces and every
 // read, extraction and output path is bounded.
@@ -27,8 +48,9 @@ import (
 // Result is the observed outcome of one test run.
 type Result string
 
-// Result values. ResultUnrunnable covers build failures, missing tests, skips
-// and timeouts: anything that is not a verifiable pass or assertion failure.
+// Result values. ResultUnrunnable covers build failures, tests the run did not
+// report, and skips: anything that is not a verifiable pass or assertion
+// failure. (A run that times out aborts with an error instead.)
 const (
 	ResultPass       Result = "pass"
 	ResultFail       Result = "fail"
@@ -96,11 +118,14 @@ type RejectionClass string
 const (
 	// RejectAlreadyPasses: the test passes against the baseline.
 	RejectAlreadyPasses RejectionClass = "already_passes_at_baseline"
-	// RejectNoChangedBranch: the test never references changed production code.
+	// RejectNoChangedBranch: the test (and same-file helpers) mention no changed
+	// production identifier (name-based heuristic, no type resolution).
 	RejectNoChangedBranch RejectionClass = "does_not_exercise_changed_code"
-	// RejectSiblingOnly: the test asserts only sibling fields of a changed struct.
+	// RejectSiblingOnly: the test selects only unchanged sibling fields of a
+	// changed struct, never a changed field (name-based heuristic).
 	RejectSiblingOnly RejectionClass = "asserts_only_sibling_fields"
-	// RejectBuggyPathExpected: the expected value is computed by the changed code.
+	// RejectBuggyPathExpected: an expected-value binding (want/expected/exp/golden)
+	// is computed by calling a changed production function (name-based heuristic).
 	RejectBuggyPathExpected RejectionClass = "expected_output_via_changed_path"
 	// RejectUnverifiableBaseline: the baseline run produced no verifiable result.
 	RejectUnverifiableBaseline RejectionClass = "baseline_unverifiable"

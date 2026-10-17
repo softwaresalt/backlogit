@@ -120,6 +120,7 @@ func TestU161_003_RedGreenNegativeInvariants(t *testing.T) {
 		"duplicate test":    func(p *RedGreenEvidence, _ *EvidenceArtifact) { p.Tests = append(p.Tests, p.Tests[0]) },
 		"empty test name":   func(p *RedGreenEvidence, _ *EvidenceArtifact) { p.Tests[0].Test = "" },
 		"package traversal": func(p *RedGreenEvidence, _ *EvidenceArtifact) { p.Tests[0].Package = "../x" },
+		"package wildcard":  func(p *RedGreenEvidence, _ *EvidenceArtifact) { p.Tests[0].Package = "internal/..." },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

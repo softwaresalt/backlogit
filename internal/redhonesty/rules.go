@@ -28,7 +28,7 @@ type reach struct {
 //
 // The structural rules (NoChangedBranch, SiblingOnly, BuggyPathExpected) are
 // syntactic heuristics over the test's AST and are skipped when no production
-// symbol changed (a fault-injected baseline). The behavioural rules
+// symbol changed (a tests-only change with no production delta). The behavioural rules
 // (AlreadyPasses, UnverifiableBaseline, HeadNotGreen) are exact.
 func Evaluate(in EvalInput) []Verdict {
 	type parsed struct {
@@ -155,7 +155,7 @@ func analyze(f *ast.File, name string, syms Symbols) *reach {
 			switch n := n.(type) {
 			case *ast.Ident:
 				r.idents[n.Name] = struct{}{}
-				if _, isFn := funcs[n.Name]; isFn && n.Name != fd.Name.Name {
+				if _, isFn := funcs[n.Name]; isFn {
 					callees = append(callees, n.Name)
 				}
 			case *ast.SelectorExpr:
@@ -168,7 +168,7 @@ func analyze(f *ast.File, name string, syms Symbols) *reach {
 				}
 			case *ast.ValueSpec:
 				for i, id := range n.Names {
-					if i < len(n.Values) && expectedNamePattern.MatchString(id.Name) && callsChanged(n.Values[i], syms.Funcs) {
+					if i < len(n.Values) && bindsExpected(id) && callsChanged(n.Values[i], syms.Funcs) {
 						r.buggyWant = true
 					}
 				}

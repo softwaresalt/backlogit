@@ -8,6 +8,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/softwaresalt/backlogit/internal/faultline"
 )
 
 type goTestEvent struct {
@@ -62,12 +64,14 @@ type countingReader struct {
 	exceeded bool
 }
 
+var errOutputLimit = errors.New("redhonesty: output limit exceeded")
+
 func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
 	c.n += int64(n)
 	if c.n > c.max {
 		c.exceeded = true
-		return n, errors.New("output limit exceeded")
+		return n, errOutputLimit
 	}
 	return n, err
 }
@@ -82,7 +86,7 @@ func RunTests(ctx context.Context, ex TestExecutor, dir string, tests []NewTest)
 		if err := validPackageDir(t.Package); err != nil {
 			return nil, err
 		}
-		if !testNamePattern.MatchString(t.Name) {
+		if !faultline.ValidTestName(t.Name) {
 			return nil, fmt.Errorf("redhonesty: unsafe test name %q", truncate(t.Name))
 		}
 		byPkg[t.Package] = append(byPkg[t.Package], t.Name)
@@ -100,7 +104,7 @@ func RunTests(ctx context.Context, ex TestExecutor, dir string, tests []NewTest)
 			return nil, fmt.Errorf("redhonesty: run %s: %w", p, err)
 		}
 		for n, r := range res {
-			observed[p+"::"+n] = r
+			observed[NewTest{Package: p, Name: n}.Key()] = r
 		}
 	}
 	out := make(map[string]Result, len(tests))

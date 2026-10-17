@@ -13,12 +13,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/softwaresalt/backlogit/internal/faultline"
 )
 
 var (
-	shaPattern = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 	// baselineRel is the sanctioned workspace-contained, git-ignored location.
 	baselineRel = []string{".backlogit", "runtime", "redhonesty"}
+	// windowsReserved are device names Windows cannot hold as file names.
+	windowsReserved = regexp.MustCompile(`(?i)^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$`)
 )
 
 // ResolveCommit resolves ref to a full immutable commit SHA. The ref is vetted
@@ -39,7 +42,7 @@ func ResolveCommit(ctx context.Context, g Git, root, ref string) (string, error)
 		return "", fmt.Errorf("redhonesty: resolve %q: %w", truncate(ref), err)
 	}
 	sha := strings.TrimSpace(string(out))
-	if !shaPattern.MatchString(sha) {
+	if !faultline.ValidCommitSHA(sha) {
 		return "", fmt.Errorf("redhonesty: %q did not resolve to a full commit SHA", truncate(ref))
 	}
 	return sha, nil
@@ -67,7 +70,7 @@ func validRelPath(p string) error {
 		return fmt.Errorf("redhonesty: non-canonical path %q", truncate(p))
 	}
 	for _, el := range strings.Split(p, "/") {
-		if el == ".." || el == "." || el == "" {
+		if el == ".." || el == "." || el == "" || strings.HasSuffix(el, ".") || strings.HasSuffix(el, " ") || windowsReserved.MatchString(el) {
 			return fmt.Errorf("redhonesty: unsafe path element in %q", truncate(p))
 		}
 	}
@@ -75,11 +78,11 @@ func validRelPath(p string) error {
 }
 
 func validPackageDir(p string) error {
+	if !faultline.ValidPackageDir(p) {
+		return fmt.Errorf("redhonesty: unsafe package %q", truncate(p))
+	}
 	if p == "." {
 		return nil
-	}
-	if strings.HasPrefix(p, "-") {
-		return fmt.Errorf("redhonesty: unsafe package %q", truncate(p))
 	}
 	return validRelPath(p)
 }
@@ -95,7 +98,7 @@ func isOverlayPath(p string) bool {
 // SHAs with their base and head contents. Renames are reported as a delete plus
 // an add. Entries are sorted by path.
 func CollectChanges(ctx context.Context, g Git, root, baseSHA, headSHA string) ([]FileChange, error) {
-	if !shaPattern.MatchString(baseSHA) || !shaPattern.MatchString(headSHA) {
+	if !faultline.ValidCommitSHA(baseSHA) || !faultline.ValidCommitSHA(headSHA) {
 		return nil, errors.New("redhonesty: CollectChanges requires full commit SHAs")
 	}
 	raw, err := gitOutput(ctx, g, root, maxGitOutputBytes, "diff", "--name-status", "-z", "--no-renames", "--no-ext-diff", baseSHA, headSHA, "--")
@@ -110,13 +113,15 @@ func CollectChanges(ctx context.Context, g Git, root, baseSHA, headSHA string) (
 		return nil, errors.New("redhonesty: malformed git diff output")
 	}
 	var out []FileChange
+	var held int // cumulative blob bytes retained for this change
 	for i := 0; i < len(fields); i += 2 {
 		status, p := string(fields[i]), string(fields[i+1])
-		if err := validRelPath(p); err != nil {
-			return nil, err
-		}
+		// Filter first so an unrelated file with an exotic name cannot abort the gate.
 		if !isGoSource(p) && !isOverlayPath(p) {
 			continue
+		}
+		if err := validRelPath(p); err != nil {
+			return nil, err
 		}
 		if len(out) >= maxChangedFiles {
 			return nil, fmt.Errorf("redhonesty: more than %d changed files", maxChangedFiles)
@@ -136,11 +141,16 @@ func CollectChanges(ctx context.Context, g Git, root, baseSHA, headSHA string) (
 			if c.Base, err = blob(ctx, g, root, baseSHA, p); err != nil {
 				return nil, err
 			}
+			held += len(c.Base)
 		}
 		if c.Status != 'D' {
 			if c.Head, err = blob(ctx, g, root, headSHA, p); err != nil {
 				return nil, err
 			}
+			held += len(c.Head)
+		}
+		if held > maxChangeBytes {
+			return nil, fmt.Errorf("redhonesty: changed content exceeds %d bytes", maxChangeBytes)
 		}
 		out = append(out, c)
 	}
@@ -208,6 +218,11 @@ func extractArchive(r io.Reader, dir string) error {
 			if err := writeNew(target, io.LimitReader(tr, h.Size)); err != nil {
 				return err
 			}
+		case tar.TypeSymlink, tar.TypeLink:
+			// Links are never materialized: nothing can be redirected outside the
+			// baseline. A baseline that needed one fails to build and is
+			// therefore unrunnable (fail-closed), never silently green.
+			continue
 		default:
 			return fmt.Errorf("redhonesty: archive entry %q has unsupported type %q", truncate(h.Name), string(h.Typeflag))
 		}
@@ -226,9 +241,11 @@ func writeNew(target string, r io.Reader) error {
 	return f.Close()
 }
 
-// applyOverlay writes ONLY the head test files and testdata over the baseline
-// tree. Production changes are never applied (that would erase the baseline)
-// and deletions are skipped. Every path is validated, including skipped ones.
+// applyOverlay makes the baseline's TEST state equal head's: head test files
+// and testdata are written over the baseline tree and test files/testdata that
+// head deleted (including the old half of a moved test) are removed. Production
+// changes are never applied (that would erase the baseline). Every path is
+// validated, including skipped ones.
 func applyOverlay(dir string, changes []FileChange) error {
 	for _, c := range changes {
 		if err := validRelPath(c.Path); err != nil {
@@ -236,10 +253,19 @@ func applyOverlay(dir string, changes []FileChange) error {
 		}
 	}
 	for _, c := range changes {
-		if c.Status == 'D' || c.Head == nil || !isOverlayPath(c.Path) {
+		if !isOverlayPath(c.Path) {
 			continue
 		}
 		target := filepath.Join(dir, filepath.FromSlash(c.Path))
+		if c.Status == 'D' {
+			if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			continue
+		}
+		if c.Head == nil {
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
@@ -276,7 +302,7 @@ func noSymlinkChain(root string, rel []string) error {
 // The location must be git-ignored (verified before anything is created) and
 // contain no symlink component. cleanup removes the directory.
 func PrepareBaseline(ctx context.Context, g Git, root, baseSHA string, overlay []FileChange) (string, func() error, error) {
-	if !shaPattern.MatchString(baseSHA) {
+	if !faultline.ValidCommitSHA(baseSHA) {
 		return "", nil, errors.New("redhonesty: baseline requires a full immutable commit SHA")
 	}
 	absRoot, err := filepath.Abs(root)

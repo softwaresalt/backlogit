@@ -32,7 +32,7 @@ func BuildArtifact(taskID, baseSHA, headSHA string, verdicts []Verdict) (faultli
 	if !taskIDPattern.MatchString(taskID) {
 		return zero, fmt.Errorf("redhonesty: invalid task id %q", truncate(taskID))
 	}
-	if !shaPattern.MatchString(baseSHA) || !shaPattern.MatchString(headSHA) {
+	if !faultline.ValidCommitSHA(baseSHA) || !faultline.ValidCommitSHA(headSHA) {
 		return zero, errors.New("redhonesty: base and head must be full commit SHAs")
 	}
 	if len(verdicts) == 0 {
@@ -45,7 +45,6 @@ func BuildArtifact(taskID, baseSHA, headSHA string, verdicts []Verdict) (faultli
 		for _, r := range v.Rejections {
 			classes = append(classes, string(r))
 		}
-		sort.Strings(classes)
 		if !v.Honest() {
 			status = faultline.StatusFail
 		}
@@ -104,7 +103,7 @@ func (s *Store) pathFor(task, commit string) (string, error) {
 	if !taskIDPattern.MatchString(task) {
 		return "", fmt.Errorf("redhonesty: invalid task id %q", truncate(task))
 	}
-	if !shaPattern.MatchString(commit) {
+	if !faultline.ValidCommitSHA(commit) {
 		return "", fmt.Errorf("redhonesty: invalid commit %q", truncate(commit))
 	}
 	return filepath.Join(s.dir, task, commit+".json"), nil
@@ -131,6 +130,19 @@ func (s *Store) Write(a faultline.EvidenceArtifact) (string, error) {
 	if _, _, err := faultline.DecodeAndValidate(raw); err != nil {
 		return "", fmt.Errorf("redhonesty: refusing to persist invalid evidence: %w", err)
 	}
+	// Recorded evidence is not silently replaceable: re-recording the same
+	// canonical artifact is idempotent, a different one for the same task and
+	// commit is refused.
+	if existing, err := s.Load(a.ProducingTask, a.ProducingCommit); err == nil {
+		old, e1 := existing.Canonical()
+		cur, e2 := a.Canonical()
+		if e1 == nil && e2 == nil && string(old) == string(cur) {
+			return p, nil
+		}
+		return "", fmt.Errorf("redhonesty: evidence already recorded for %s at %s and differs", a.ProducingTask, a.ProducingCommit[:12])
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("redhonesty: existing evidence for %s at %s is unreadable or invalid: %w", a.ProducingTask, a.ProducingCommit[:12], err)
+	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "", err
 	}
@@ -150,18 +162,21 @@ func (s *Store) Load(task, commit string) (faultline.EvidenceArtifact, error) {
 	if err != nil {
 		return zero, err
 	}
-	fi, err := os.Lstat(p)
-	if err != nil {
-		return zero, err
-	}
-	if !fi.Mode().IsRegular() {
-		return zero, fmt.Errorf("redhonesty: evidence %s is not a regular file", filepath.Base(p))
+	if di, err := os.Lstat(filepath.Dir(p)); err == nil && !di.IsDir() {
+		return zero, fmt.Errorf("redhonesty: evidence directory for %s is not a real directory", task)
 	}
 	f, err := os.Open(p)
 	if err != nil {
 		return zero, err
 	}
 	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return zero, err
+	}
+	if !fi.Mode().IsRegular() {
+		return zero, fmt.Errorf("redhonesty: evidence %s is not a regular file", filepath.Base(p))
+	}
 	raw, err := io.ReadAll(io.LimitReader(f, faultline.MaxArtifactBytes+2))
 	if err != nil {
 		return zero, err

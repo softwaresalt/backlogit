@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 )
 
 // EvidenceSchemaVersionV2 is the schema version whose closed family set is
@@ -51,6 +52,20 @@ func validRedGreenResult(s string) bool {
 	}
 }
 
+// ValidCommitSHA reports whether s is a full lowercase hex commit object name
+// (SHA-1 or SHA-256 length). Producers use it so they and this contract can
+// never disagree about what an immutable commit identifier is.
+func ValidCommitSHA(s string) bool { return redGreenSHAPattern.MatchString(s) }
+
+// ValidTestName reports whether s is a safe top-level Go test function name
+// (also safe to embed in an anchored `go test -run` regular expression).
+func ValidTestName(s string) bool { return redGreenTestPattern.MatchString(s) }
+
+// ValidPackageDir reports whether p is "." or a safe slash-separated relative
+// package directory: no empty, "." or ".." elements, no "..." wildcard, no
+// backslash, colon, control character, leading slash or leading dash.
+func ValidPackageDir(p string) bool { return validRedGreenPackage(p) }
+
 // validRedGreenPackage reports whether p is a slash-separated relative package
 // directory ("." or elements without "..", backslashes or a leading slash).
 func validRedGreenPackage(p string) bool {
@@ -64,7 +79,7 @@ func validRedGreenPackage(p string) bool {
 	for i := 0; i <= len(p); i++ {
 		if i == len(p) || p[i] == '/' {
 			el := p[start:i]
-			if el == "" || el == "." || el == ".." {
+			if el == "" || el == "." || el == ".." || strings.Contains(el, "...") {
 				return false
 			}
 			start = i + 1

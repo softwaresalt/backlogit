@@ -181,12 +181,27 @@ func TestU161_001_ExtractArchiveContainment(t *testing.T) {
 		{Name: "a/../../evil.go", Typeflag: tar.TypeReg, Mode: 0o644},
 		{Name: "/abs.go", Typeflag: tar.TypeReg, Mode: 0o644},
 		{Name: `C:\abs.go`, Typeflag: tar.TypeReg, Mode: 0o644},
-		{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "../outside", Mode: 0o777},
-		{Name: "hard", Typeflag: tar.TypeLink, Linkname: "a.go", Mode: 0o644},
+		{Name: "pkg/NUL.go", Typeflag: tar.TypeReg, Mode: 0o644},
+		{Name: "pkg/trailingdot.", Typeflag: tar.TypeReg, Mode: 0o644},
+		{Name: "pkg/dev", Typeflag: tar.TypeChar, Mode: 0o644},
 	} {
 		dir := t.TempDir()
 		if err := extractArchive(tarOf(t, h), dir); err == nil {
 			t.Errorf("entry %q (%c) accepted", h.Name, h.Typeflag)
+		}
+	}
+	// Links are never materialized (and never followed), but do not abort the run.
+	ldir := t.TempDir()
+	if err := extractArchive(tarOf(t,
+		tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "../outside", Mode: 0o777},
+		tar.Header{Name: "hard", Typeflag: tar.TypeLink, Linkname: "a.go", Mode: 0o644},
+		tar.Header{Name: "a.go", Typeflag: tar.TypeReg, Mode: 0o644},
+	), ldir); err != nil {
+		t.Fatalf("link entries must be skipped: %v", err)
+	}
+	for _, n := range []string{"link", "hard"} {
+		if _, err := os.Lstat(filepath.Join(ldir, n)); err == nil {
+			t.Errorf("%s was materialized", n)
 		}
 	}
 	dir := t.TempDir()

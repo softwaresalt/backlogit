@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/softwaresalt/backlogit/internal/faultline"
@@ -66,6 +67,11 @@ func (g *Gate) Check(ctx context.Context, req Request) (Report, error) {
 	if err := g.requireHeadCheckedOut(ctx, headSHA); err != nil {
 		return rep, err
 	}
+	// The base must be an ancestor of head: an arbitrary (older) base could make
+	// any test look red because the code it depends on did not exist yet.
+	if err := g.Git.Run(ctx, g.Root, io.Discard, "merge-base", "--is-ancestor", baseSHA, headSHA); err != nil {
+		return rep, fmt.Errorf("redhonesty: base %s is not an ancestor of head %s: %w", baseSHA[:12], headSHA[:12], err)
+	}
 	changes, err := CollectChanges(ctx, g.Git, g.Root, baseSHA, headSHA)
 	if err != nil {
 		return rep, err
@@ -77,6 +83,9 @@ func (g *Gate) Check(ctx context.Context, req Request) (Report, error) {
 	if len(tests) == 0 {
 		return rep, ErrNoNewTests
 	}
+	if len(tests) > faultline.MaxArrayElements {
+		return rep, fmt.Errorf("redhonesty: %d new tests exceed the evidence limit of %d; split the change", len(tests), faultline.MaxArrayElements)
+	}
 	symbols, err := ChangedSymbols(changes)
 	if err != nil {
 		return rep, err
@@ -87,14 +96,19 @@ func (g *Gate) Check(ctx context.Context, req Request) (Report, error) {
 		return rep, err
 	}
 	baseline, runErr := RunTests(ctx, g.Exec, dir, tests)
-	if cerr := cleanup(); cerr != nil && runErr == nil {
-		runErr = fmt.Errorf("redhonesty: cleanup baseline: %w", cerr)
+	if cerr := cleanup(); cerr != nil {
+		runErr = errors.Join(runErr, fmt.Errorf("redhonesty: cleanup baseline: %w", cerr))
 	}
 	if runErr != nil {
 		return rep, runErr
 	}
 	head, err := RunTests(ctx, g.Exec, g.Root, tests)
 	if err != nil {
+		return rep, err
+	}
+	// The head run can take minutes; re-prove the tree is still the commit the
+	// evidence will be bound to before anything is recorded.
+	if err := g.requireHeadCheckedOut(ctx, headSHA); err != nil {
 		return rep, err
 	}
 
@@ -133,9 +147,15 @@ func (g *Gate) requireHeadCheckedOut(ctx context.Context, headSHA string) error 
 	if err != nil {
 		return fmt.Errorf("redhonesty: inspect working tree: %w", err)
 	}
-	for _, p := range strings.Split(strings.TrimRight(string(out), "\x00"), "\x00") {
-		if p != "" && (isGoSource(p) || p == "go.mod" || p == "go.sum" || isOverlayPath(p)) {
-			return fmt.Errorf("redhonesty: working tree has uncommitted Go changes (%s); head evidence would not match the commit", truncate(p))
+	untracked, err := gitOutput(ctx, g.Git, g.Root, maxGitOutputBytes, "ls-files", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return fmt.Errorf("redhonesty: inspect untracked files: %w", err)
+	}
+	for _, list := range [][]byte{out, untracked} {
+		for _, p := range strings.Split(strings.TrimRight(string(list), "\x00"), "\x00") {
+			if p != "" && (isGoSource(p) || p == "go.mod" || p == "go.sum" || p == "go.work" || isOverlayPath(p)) {
+				return fmt.Errorf("redhonesty: working tree has uncommitted or untracked Go inputs (%s); head evidence would not match the commit", truncate(p))
+			}
 		}
 	}
 	return nil

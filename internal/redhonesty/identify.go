@@ -65,7 +65,7 @@ func parseSource(file string, src []byte) (*token.FileSet, *ast.File, error) {
 
 func testFuncNames(file string, src []byte) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
-	if src == nil {
+	if len(src) == 0 {
 		return out, nil
 	}
 	_, f, err := parseSource(file, src)
@@ -145,7 +145,7 @@ func normText(b []byte) string {
 
 func inventory(file string, src []byte) (*declSet, error) {
 	ds := &declSet{funcs: map[string]string{}, types: map[string]string{}, fields: map[string]map[string]string{}}
-	if src == nil {
+	if len(src) == 0 {
 		return ds, nil
 	}
 	fset, f, err := parseSource(file, src)
@@ -159,12 +159,21 @@ func inventory(file string, src []byte) (*declSet, error) {
 		}
 		return normText(src[s:e])
 	}
+	// init functions and blank identifiers may be declared many times; give
+	// each occurrence its own key so a change to an earlier one is not lost.
+	ordinal := 0
+	multi := func(name string) string {
+		ordinal++
+		return fmt.Sprintf("%s\x00%s#%d", name, file, ordinal)
+	}
 	for _, d := range f.Decls {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
 			key := d.Name.Name
 			if d.Recv != nil && len(d.Recv.List) == 1 {
 				key = text(d.Recv.List[0].Type) + "." + key
+			} else if key == "init" || key == "_" {
+				key = multi(key)
 			}
 			ds.funcs[key] = text(d)
 		case *ast.GenDecl:
@@ -191,7 +200,11 @@ func inventory(file string, src []byte) (*declSet, error) {
 					}
 				case *ast.ValueSpec:
 					for _, n := range sp.Names {
-						ds.types[n.Name] = text(sp)
+						key := n.Name
+						if key == "_" {
+							key = multi(key)
+						}
+						ds.types[key] = text(sp)
 					}
 				}
 			}
@@ -215,19 +228,47 @@ func embeddedName(e ast.Expr) string {
 }
 
 func bareFuncName(key string) string {
+	key, _, _ = strings.Cut(key, "\x00")
 	if i := strings.LastIndex(key, "."); i >= 0 {
 		return key[i+1:]
 	}
 	return key
 }
 
+// merge unions src into d (used to compare declarations per package directory
+// so a declaration moved between files is not mistaken for a change).
+func (d *declSet) merge(src *declSet) {
+	for k, v := range src.funcs {
+		d.funcs[k] = v
+	}
+	for k, v := range src.types {
+		d.types[k] = v
+	}
+	for t, fm := range src.fields {
+		if d.fields[t] == nil {
+			d.fields[t] = map[string]string{}
+		}
+		for k, v := range fm {
+			d.fields[t][k] = v
+		}
+	}
+}
+
+func newDeclSet() *declSet {
+	return &declSet{funcs: map[string]string{}, types: map[string]string{}, fields: map[string]map[string]string{}}
+}
+
 // ChangedSymbols computes the production-symbol delta across non-test Go
 // files: functions/methods and named declarations that were added, deleted or
 // whose text changed, struct fields that were added/deleted/changed, and the
-// untouched sibling fields of structs that have a changed field. An unparseable
-// production file fails closed.
+// untouched sibling fields of structs that have a changed field. Declarations
+// are compared per package directory, so moving one between files of the same
+// package is not a change. Symbols are matched by bare name only (no type
+// resolution). An unparseable production file fails closed.
 func ChangedSymbols(changes []FileChange) (Symbols, error) {
 	s := Symbols{Funcs: map[string]struct{}{}, Types: map[string]struct{}{}, Fields: map[string]struct{}{}, Siblings: map[string]struct{}{}}
+	bases, heads := map[string]*declSet{}, map[string]*declSet{}
+	var dirs []string
 	for _, c := range changes {
 		if !isGoSource(c.Path) || isTestFile(c.Path) {
 			continue
@@ -240,8 +281,18 @@ func ChangedSymbols(changes []FileChange) (Symbols, error) {
 		if err != nil {
 			return Symbols{}, err
 		}
-		diffFuncs(s, base, head)
-		diffTypes(s, base, head)
+		dir := path.Dir(c.Path)
+		if bases[dir] == nil {
+			bases[dir], heads[dir] = newDeclSet(), newDeclSet()
+			dirs = append(dirs, dir)
+		}
+		bases[dir].merge(base)
+		heads[dir].merge(head)
+	}
+	sort.Strings(dirs)
+	for _, dir := range dirs {
+		diffFuncs(s, bases[dir], heads[dir])
+		diffTypes(s, bases[dir], heads[dir])
 	}
 	for f := range s.Fields {
 		delete(s.Siblings, f) // a field changed anywhere is never merely a sibling
