@@ -1,7 +1,6 @@
 package redhonesty
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -30,6 +29,7 @@ const (
 	maxArchiveEntries  = 200000    // extracted entries
 	maxStderrBytes     = 4 << 10   // retained stderr for diagnostics
 	defaultTestTimeout = 10 * time.Minute
+	gitTimeout         = 10 * time.Minute // wall-clock bound for any one git invocation
 	processWaitDelay   = 5 * time.Second
 )
 
@@ -92,19 +92,28 @@ func gitEnv() []string {
 	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 }
 
-var secretEnvMarkers = []string{"TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "APIKEY", "API_KEY", "PRIVATE_KEY"}
+var secretEnvMarkers = []string{
+	"TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "APIKEY", "API_KEY", "PRIVATE_KEY",
+	"ACCESS_KEY", "AUTH", "DSN", "DATABASE_URL", "_PAT",
+}
 
 // goTestEnv returns the environment for `go test`: the caller's environment
-// without likely credentials, with the toolchain pinned to the local one, the
-// workspace file disabled and any ambient GOFLAGS dropped so the measurement is
-// reproducible. This limits accidental exposure; it is not a sandbox (see the
-// package trust-model note).
+// without likely credentials or git redirection variables (GIT_DIR and friends
+// would point repository tests at the live repository instead of the exported
+// baseline), with the toolchain pinned to the local one, the workspace file and
+// go env file disabled and any ambient GOFLAGS/GOCACHEPROG dropped so the
+// measurement is reproducible. This limits accidental exposure; it is not a
+// sandbox (see the package trust-model note).
 func goTestEnv() []string {
 	env := make([]string, 0, 64)
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
 		upper := strings.ToUpper(name)
-		if upper == "GOFLAGS" || upper == "GOTOOLCHAIN" || upper == "GOWORK" || upper == "GOENV" {
+		switch upper {
+		case "GOFLAGS", "GOTOOLCHAIN", "GOWORK", "GOENV", "GOCACHEPROG":
+			continue
+		}
+		if strings.HasPrefix(upper, "GIT_") {
 			continue
 		}
 		secret := false
@@ -128,6 +137,8 @@ type ExecGit struct{}
 // Run implements Git. Arguments are passed as discrete argv entries; nothing is
 // interpolated into a shell string.
 func (ExecGit) Run(ctx context.Context, dir string, stdout io.Writer, args ...string) error {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	cmd.Stdout = stdout
@@ -218,6 +229,12 @@ func (e GoTestExecutor) Run(ctx context.Context, dir, pkg string, names []string
 	if out.exceeded {
 		return nil, fmt.Errorf("redhonesty: go test %s: %w", pkg, errOutputTooLarge)
 	}
+	// go test's own timeout fires first (see above) and test2json then reports
+	// the hung test as a failure, which would look like an honest red. A timed-out
+	// run is an abort, never a result.
+	if bytes.Contains(out.buf.Bytes(), []byte("test timed out after")) {
+		return nil, fmt.Errorf("redhonesty: go test %s: test run timed out", pkg)
+	}
 	var exitErr *exec.ExitError
 	failedExit := errors.As(waitErr, &exitErr)
 	if waitErr != nil && !failedExit {
@@ -252,11 +269,4 @@ func reconcileExit(res map[string]Result, failedExit bool) map[string]Result {
 		}
 	}
 	return res
-}
-
-// bufioLineScanner builds a scanner whose single-line limit is maxJSONLineBytes.
-func bufioLineScanner(r io.Reader) *bufio.Scanner {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64<<10), maxJSONLineBytes)
-	return sc
 }

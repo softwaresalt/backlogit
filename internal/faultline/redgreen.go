@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // EvidenceSchemaVersionV2 is the schema version whose closed family set is
@@ -40,7 +42,7 @@ type RedGreenEvidence struct {
 var (
 	redGreenSHAPattern   = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 	redGreenClassPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
-	redGreenTestPattern  = regexp.MustCompile(`^Test[\p{L}\p{N}_]*$`)
+	redGreenTestPattern  = regexp.MustCompile(`^Test[\p{L}\p{Nd}_]*$`)
 )
 
 func validRedGreenResult(s string) bool {
@@ -58,8 +60,21 @@ func validRedGreenResult(s string) bool {
 func ValidCommitSHA(s string) bool { return redGreenSHAPattern.MatchString(s) }
 
 // ValidTestName reports whether s is a safe top-level Go test function name
-// (also safe to embed in an anchored `go test -run` regular expression).
-func ValidTestName(s string) bool { return redGreenTestPattern.MatchString(s) }
+// (also safe to embed in an anchored `go test -run` regular expression): "Test"
+// followed by nothing or a rune that is not a lower-case letter, then only
+// letters, decimal digits and underscores — the same rule the producer applies
+// to discover tests, so contract and producer cannot disagree.
+func ValidTestName(s string) bool {
+	rest, ok := strings.CutPrefix(s, "Test")
+	if !ok || !redGreenTestPattern.MatchString(s) {
+		return false
+	}
+	if rest == "" {
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(rest)
+	return !unicode.IsLower(r)
+}
 
 // ValidPackageDir reports whether p is "." or a safe slash-separated relative
 // package directory: no empty, "." or ".." elements, no "..." wildcard, no
@@ -146,7 +161,7 @@ func (p *RedGreenEvidence) Validate(view EvidenceView) error {
 		if !validRedGreenPackage(t.Package) {
 			return fmt.Errorf("%w: tests[%d].package is not a safe relative package path", ErrValidation, i)
 		}
-		if !redGreenTestPattern.MatchString(t.Test) {
+		if !ValidTestName(t.Test) {
 			return fmt.Errorf("%w: tests[%d].test is not a valid test name", ErrValidation, i)
 		}
 		if _, dup := seen[t.key()]; dup {

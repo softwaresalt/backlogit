@@ -261,10 +261,15 @@ func TestU161_001_ParseGoTestJSON(t *testing.T) {
 	}
 }
 
-func TestU161_001_ParseGoTestJSON_Bounded(t *testing.T) {
+func TestU161_001_ParseGoTestJSON_OverlongLinesAreSkippedNotFatal(t *testing.T) {
 	huge := `{"Action":"output","Output":"` + strings.Repeat("x", maxJSONLineBytes+10) + `"}`
-	if _, err := parseGoTestJSON(strings.NewReader(huge)); err == nil {
-		t.Fatal("oversized line accepted")
+	in := huge + "\n" + `{"Action":"pass","Package":"m/p","Test":"TestA"}` + "\n"
+	got, err := parseGoTestJSON(strings.NewReader(in))
+	if err != nil {
+		t.Fatalf("one noisy line aborted the whole run: %v", err)
+	}
+	if got["TestA"] != ResultPass || len(got) != 1 {
+		t.Fatalf("got %v", got)
 	}
 }
 

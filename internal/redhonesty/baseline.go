@@ -4,13 +4,18 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -85,6 +90,10 @@ func validRelPath(p string) error {
 func validArchivePath(p string) error {
 	if p == "" || len(p) > 4096 || strings.ContainsAny(p, "\\\x00") || strings.HasPrefix(p, "/") || filepath.IsAbs(p) || filepath.VolumeName(p) != "" || (len(p) >= 2 && p[1] == ':') {
 		return fmt.Errorf("redhonesty: unsafe archive path %q", truncate(p))
+	}
+	if runtime.GOOS == "windows" && strings.Contains(p, ":") {
+		// NTFS alternate data streams (file.go:stream) write into another file.
+		return fmt.Errorf("redhonesty: archive path %q cannot be reproduced faithfully on this host", truncate(p))
 	}
 	for _, el := range strings.Split(p, "/") {
 		if el == ".." || el == "." || el == "" {
@@ -193,15 +202,17 @@ func blob(ctx context.Context, g Git, root, sha, p string) ([]byte, error) {
 // directories are accepted; links, devices, absolute or escaping names and
 // over-budget archives are rejected. Nothing is ever created outside dir.
 func extractArchive(r io.Reader, dir string) error {
-	_, err := extractArchiveCount(r, dir)
+	_, err := extractArchiveFiles(r, dir)
 	return err
 }
 
-// extractArchiveCount is extractArchive that also reports how many regular files
-// it created, so the caller can prove the export is complete.
-func extractArchiveCount(r io.Reader, dir string) (int, error) {
+// extractArchiveFiles is extractArchive that also reports the slash-separated
+// relative paths of the regular files it created, so the caller can prove the
+// export is complete and faithful.
+func extractArchiveFiles(r io.Reader, dir string) ([]string, error) {
 	tr := tar.NewReader(r)
-	var entries, files int
+	var entries int
+	var files []string
 	var total int64
 	for {
 		h, err := tr.Next()
@@ -249,7 +260,7 @@ func extractArchiveCount(r io.Reader, dir string) (int, error) {
 			if err := writeNew(target, io.LimitReader(tr, h.Size), perm); err != nil {
 				return files, err
 			}
-			files++
+			files = append(files, name)
 		default:
 			// Links, devices and everything else are refused rather than dropped: a
 			// baseline missing a linked fixture would manufacture a failure the real
@@ -271,22 +282,79 @@ func writeNew(target string, r io.Reader, perm os.FileMode) error {
 	return f.Close()
 }
 
-// treeBlobCount returns how many files (blobs) commit sha contains. It is the
-// ground truth the exported baseline is compared with, because git archive
-// silently honours export-ignore attributes and would otherwise drop files.
-func treeBlobCount(ctx context.Context, g Git, root, sha string) (int, error) {
+// treeBlobs lists every file (blob) of commit sha as path -> object id. It is
+// the ground truth the exported baseline is verified against, because git
+// archive honours export-ignore, export-subst, eol/ident/filter conversions and
+// the host filesystem may rename or drop names.
+func treeBlobs(ctx context.Context, g Git, root, sha string) (map[string]string, error) {
 	out, err := gitOutput(ctx, g, root, maxTreeListBytes, "ls-tree", "-r", "-z", "--full-tree", sha)
 	if err != nil {
-		return 0, fmt.Errorf("redhonesty: list base tree: %w", err)
+		return nil, fmt.Errorf("redhonesty: list base tree: %w", err)
 	}
-	n := 0
+	tree := map[string]string{}
 	for _, rec := range bytes.Split(bytes.TrimRight(out, "\x00"), []byte{0}) {
-		meta, _, ok := bytes.Cut(rec, []byte{'\t'})
-		if ok && bytes.Contains(meta, []byte(" blob ")) {
-			n++
+		meta, p, ok := bytes.Cut(rec, []byte{'\t'})
+		if !ok {
+			continue
+		}
+		f := strings.Fields(string(meta)) // mode type oid
+		if len(f) == 3 && f[1] == "blob" {
+			tree[string(p)] = f[2]
 		}
 	}
-	return n, nil
+	return tree, nil
+}
+
+// blobOID computes the git object id of the file at p as git would store it,
+// using the hash algorithm implied by the length of want (40 = SHA-1, 64 =
+// SHA-256). Reading from disk (not from the tar stream) proves what the
+// filesystem actually holds.
+func blobOID(p string, want string) (string, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("not a regular file")
+	}
+	var h hash.Hash = sha1.New()
+	if len(want) == 64 {
+		h = sha256.New()
+	}
+	fmt.Fprintf(h, "blob %d\x00", fi.Size())
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return "", err
+	}
+	if n != fi.Size() {
+		return "", fmt.Errorf("short read")
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// verifyExport proves the extracted baseline is byte-identical to the committed
+// tree: the same set of files, each with exactly the committed object id.
+func verifyExport(dir string, extracted []string, tree map[string]string) error {
+	if len(extracted) != len(tree) {
+		return fmt.Errorf("redhonesty: export holds %d files but the commit has %d (export-ignore attributes?); the baseline would be incomplete", len(extracted), len(tree))
+	}
+	paths := make([]string, 0, len(tree))
+	for p := range tree {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		got, err := blobOID(filepath.Join(dir, filepath.FromSlash(p)), tree[p])
+		if err != nil || got != tree[p] {
+			return fmt.Errorf("redhonesty: exported %s differs from the committed content (attribute conversion, filter or host filesystem?); the baseline cannot be reproduced faithfully", truncate(p))
+		}
+	}
+	return nil
 }
 
 // applyOverlay makes the baseline's TEST state equal head's: head test files
@@ -421,15 +489,16 @@ func PrepareBaseline(ctx context.Context, g Git, root, baseSHA string, overlay [
 	pr, pw := io.Pipe()
 	gitErr := make(chan error, 1)
 	go func() {
-		// Archive the peeled TREE, not the commit: export-subst only expands
-		// $Format:...$ placeholders when archiving a commit, so this keeps every
-		// file byte-identical to what is committed (export-ignore is covered by
-		// the blob-count proof below).
-		err := g.Run(ctx, absRoot, pw, "archive", "--format=tar", baseSHA+"^{tree}")
+		// Archive the peeled TREE, not the commit (export-subst only expands for
+		// commits), with working-tree conversions neutralized. Whatever
+		// attributes still alter content or drop files (export-ignore, explicit
+		// eol, ident, filters) are caught by verifyExport below, which compares
+		// every exported file with its committed object id.
+		err := g.Run(ctx, absRoot, pw, "-c", "core.autocrlf=false", "-c", "core.eol=lf", "archive", "--format=tar", baseSHA+"^{tree}")
 		_ = pw.CloseWithError(err)
 		gitErr <- err
 	}()
-	extracted, extractErr := extractArchiveCount(pr, dir)
+	extracted, extractErr := extractArchiveFiles(pr, dir)
 	if extractErr == nil {
 		// The tar reader stops at the end-of-archive marker; drain git's trailing
 		// padding so git exits cleanly instead of failing on a closed pipe.
@@ -442,14 +511,12 @@ func PrepareBaseline(ctx context.Context, g Git, root, baseSHA string, overlay [
 	if extractErr != nil {
 		return fail(extractErr)
 	}
-	// git archive honours export-ignore attributes and would silently omit files;
-	// prove the export holds every blob of the base commit before trusting it.
-	want, err := treeBlobCount(ctx, g, absRoot, baseSHA)
+	tree, err := treeBlobs(ctx, g, absRoot, baseSHA)
 	if err != nil {
 		return fail(err)
 	}
-	if extracted != want {
-		return fail(fmt.Errorf("redhonesty: export of %s holds %d files but the commit has %d (export-ignore attributes?); the baseline would be incomplete", baseSHA[:12], extracted, want))
+	if err := verifyExport(dir, extracted, tree); err != nil {
+		return fail(err)
 	}
 	if err := applyOverlay(dir, overlay); err != nil {
 		return fail(err)

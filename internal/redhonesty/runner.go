@@ -1,6 +1,7 @@
 package redhonesty
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,11 +26,31 @@ type goTestEvent struct {
 // and in total.
 func parseGoTestJSON(r io.Reader) (map[string]Result, error) {
 	cr := &countingReader{r: r, max: maxTestOutputBytes}
-	sc := bufioLineScanner(cr)
+	br := bufio.NewReaderSize(cr, maxJSONLineBytes)
 	out := map[string]Result{}
 	terminal := map[string]bool{}
-	for sc.Scan() {
-		line := sc.Bytes()
+	for {
+		line, isPrefix, err := br.ReadLine()
+		if err != nil {
+			if cr.exceeded {
+				return nil, fmt.Errorf("redhonesty: go test output exceeds %d bytes", maxTestOutputBytes)
+			}
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("redhonesty: read go test output: %w", err)
+		}
+		if isPrefix {
+			// An over-long line is test chatter, never a result event (those are
+			// tiny): discard it so one noisy test cannot abort the whole run.
+			for isPrefix && err == nil {
+				_, isPrefix, err = br.ReadLine()
+			}
+			if cr.exceeded {
+				return nil, fmt.Errorf("redhonesty: go test output exceeds %d bytes", maxTestOutputBytes)
+			}
+			continue
+		}
 		if len(line) == 0 || line[0] != '{' {
 			continue
 		}
@@ -58,12 +79,6 @@ func parseGoTestJSON(r io.Reader) (map[string]Result, error) {
 		case "skip":
 			out[ev.Test] = ResultUnrunnable
 		}
-	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("redhonesty: read go test output: %w", err)
-	}
-	if cr.exceeded {
-		return nil, fmt.Errorf("redhonesty: go test output exceeds %d bytes", maxTestOutputBytes)
 	}
 	return out, nil
 }

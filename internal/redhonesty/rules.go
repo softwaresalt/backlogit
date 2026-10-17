@@ -11,7 +11,7 @@ const maxHelperDepth = 4
 
 // expectedNamePattern matches identifiers conventionally holding the expected
 // value of an assertion (want, wantErr, expected, exp, golden, ...).
-var expectedNamePattern = regexp.MustCompile(`^(?i:want|wanted|expect|expected|exp|golden)($|[A-Z_0-9])`)
+var expectedNamePattern = regexp.MustCompile(`^(?i:want|wanted|expect|expected|exp|golden)(s?$|[A-Z_0-9])`)
 
 // reach is what a test (plus its bounded same-file helper closure) references.
 type reach struct {
@@ -217,13 +217,24 @@ func pairedValue(values []ast.Expr, i, n int) (ast.Expr, bool) {
 }
 
 func bindsExpected(e ast.Expr) bool {
-	switch e := e.(type) {
-	case *ast.Ident:
-		return expectedNamePattern.MatchString(e.Name)
-	case *ast.SelectorExpr: // tc.want = ..., got.expected = ...
-		return expectedNamePattern.MatchString(e.Sel.Name)
+	for {
+		switch x := e.(type) {
+		case *ast.Ident:
+			return expectedNamePattern.MatchString(x.Name)
+		case *ast.SelectorExpr: // tc.want = ..., got.expected = ...
+			return expectedNamePattern.MatchString(x.Sel.Name)
+		case *ast.IndexExpr: // want[i] = ..., tc.wants["k"] = ...
+			e = x.X
+		case *ast.IndexListExpr:
+			e = x.X
+		case *ast.StarExpr: // *want = ...
+			e = x.X
+		case *ast.ParenExpr:
+			e = x.X
+		default:
+			return false
+		}
 	}
-	return false
 }
 
 // calleeName returns the bare name of the called function, looking through
