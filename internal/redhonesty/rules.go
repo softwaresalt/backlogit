@@ -148,7 +148,7 @@ func analyze(f *ast.File, name string, syms Symbols) *reach {
 	}
 	r := &reach{idents: map[string]struct{}{}, selectors: map[string]struct{}{}}
 	changing := changingHelpers(funcs, syms.Funcs)
-	visited := map[string]bool{name: true}
+	best := map[string]int{name: 0} // minimum call depth at which each helper was walked
 	var walk func(fd *ast.FuncDecl, depth int)
 	walk = func(fd *ast.FuncDecl, depth int) {
 		var callees []string
@@ -191,8 +191,10 @@ func analyze(f *ast.File, name string, syms Symbols) *reach {
 			return
 		}
 		for _, c := range callees {
-			if !visited[c] {
-				visited[c] = true
+			// Revisit a helper when reached by a shallower path, so a deep first
+			// encounter cannot hide what a direct call within the bound would reach.
+			if d, seen := best[c]; !seen || depth+1 < d {
+				best[c] = depth + 1
 				walk(funcs[c], depth+1)
 			}
 		}

@@ -111,7 +111,7 @@ func TestU161_001_CollectChanges_FiltersBeforeValidatingAndBoundsContent(t *test
 	b, h := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	// An unrelated file with an exotic name must not abort the gate.
 	g := scriptedGit{
-		diff:  "A\x00docs/we:ird\\name.md\x00M\x00p/p.go\x00",
+		diff:  ":000000 100644 0000000 1111111 A\x00docs/we:ird\\name.md\x00:100644 100644 1111111 2222222 M\x00p/p.go\x00",
 		blobs: map[string]string{b + ":p/p.go": "package p\n", h + ":p/p.go": "package p\nfunc F(){}\n"},
 	}
 	got, err := CollectChanges(context.Background(), g, ".", b, h)
@@ -119,7 +119,7 @@ func TestU161_001_CollectChanges_FiltersBeforeValidatingAndBoundsContent(t *test
 		t.Fatalf("got %+v err %v", got, err)
 	}
 	// A relevant file with an unsafe name is refused.
-	bad := scriptedGit{diff: "A\x00p/NUL.go\x00"}
+	bad := scriptedGit{diff: ":000000 100644 0000000 1111111 A\x00p/NUL.go\x00"}
 	if _, err := CollectChanges(context.Background(), bad, ".", b, h); err == nil {
 		t.Fatal("reserved device name accepted")
 	}
@@ -129,7 +129,7 @@ func TestU161_001_CollectChanges_FiltersBeforeValidatingAndBoundsContent(t *test
 	blobs := map[string]string{}
 	for i := 0; i < 20; i++ { // 20 files x 2 blobs x ~4 MiB exceeds 64 MiB
 		name := "p/f" + string(rune('a'+i)) + ".go"
-		diff.WriteString("M\x00" + name + "\x00")
+		diff.WriteString(":100644 100644 1111111 2222222 M\x00" + name + "\x00")
 		blobs[b+":"+name], blobs[h+":"+name] = big, big
 	}
 	if _, err := CollectChanges(context.Background(), scriptedGit{diff: diff.String(), blobs: blobs}, ".", b, h); err == nil {

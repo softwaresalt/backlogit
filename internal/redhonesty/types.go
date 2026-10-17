@@ -65,6 +65,9 @@ type FileChange struct {
 	Status byte // 'A', 'M' or 'D'
 	Base   []byte
 	Head   []byte
+	// Exec is true when the file is executable (mode 100755) at head, so the
+	// overlay can reproduce head's test state faithfully.
+	Exec bool
 }
 
 // NewTest identifies one newly added test function.

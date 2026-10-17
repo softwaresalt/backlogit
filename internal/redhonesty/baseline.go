@@ -118,21 +118,27 @@ func CollectChanges(ctx context.Context, g Git, root, baseSHA, headSHA string) (
 	if !faultline.ValidCommitSHA(baseSHA) || !faultline.ValidCommitSHA(headSHA) {
 		return nil, errors.New("redhonesty: CollectChanges requires full commit SHAs")
 	}
-	raw, err := gitOutput(ctx, g, root, maxGitOutputBytes, "diff", "--name-status", "-z", "--no-renames", "--no-ext-diff", baseSHA, headSHA, "--")
+	raw, err := gitOutput(ctx, g, root, maxGitOutputBytes, "diff", "--raw", "-z", "--no-renames", "--no-ext-diff", baseSHA, headSHA, "--")
 	if err != nil {
 		return nil, fmt.Errorf("redhonesty: list changes: %w", err)
 	}
-	fields := bytes.Split(bytes.TrimRight(raw, "\x00"), []byte{0})
 	if len(raw) == 0 {
 		return nil, nil
 	}
+	fields := bytes.Split(bytes.TrimRight(raw, "\x00"), []byte{0})
 	if len(fields)%2 != 0 {
 		return nil, errors.New("redhonesty: malformed git diff output")
 	}
 	var out []FileChange
 	var held int // cumulative blob bytes retained for this change
 	for i := 0; i < len(fields); i += 2 {
-		status, p := string(fields[i]), string(fields[i+1])
+		// Header: ":<oldmode> <newmode> <oldsha> <newsha> <status>", then the path.
+		meta := strings.Fields(strings.TrimPrefix(string(fields[i]), ":"))
+		p := string(fields[i+1])
+		if len(meta) != 5 || meta[4] == "" {
+			return nil, errors.New("redhonesty: malformed git diff header")
+		}
+		status := meta[4][:1]
 		// Filter first so an unrelated file with an exotic name cannot abort the gate.
 		if !isGoSource(p) && !isOverlayPath(p) {
 			continue
@@ -143,7 +149,7 @@ func CollectChanges(ctx context.Context, g Git, root, baseSHA, headSHA string) (
 		if len(out) >= maxChangedFiles {
 			return nil, fmt.Errorf("redhonesty: more than %d changed files", maxChangedFiles)
 		}
-		c := FileChange{Path: p}
+		c := FileChange{Path: p, Exec: meta[1] == "100755"}
 		switch status {
 		case "A":
 			c.Status = 'A'
@@ -317,7 +323,16 @@ func applyOverlay(dir string, changes []FileChange) error {
 		if fi, err := os.Lstat(target); err == nil && !fi.Mode().IsRegular() {
 			return fmt.Errorf("redhonesty: overlay target %q is not a regular file", truncate(c.Path))
 		}
-		if err := os.WriteFile(target, c.Head, 0o644); err != nil {
+		perm := os.FileMode(0o644)
+		if c.Exec {
+			perm = 0o755
+		}
+		if err := os.WriteFile(target, c.Head, perm); err != nil {
+			return err
+		}
+		// WriteFile keeps an existing file's mode; apply head's explicitly so
+		// mode-only changes and replaced files match head's test state.
+		if err := os.Chmod(target, perm); err != nil {
 			return err
 		}
 	}

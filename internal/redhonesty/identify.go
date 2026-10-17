@@ -30,8 +30,9 @@ func isTestName(name string) bool {
 	return !unicode.IsLower(r)
 }
 
-// isTestSignature reports whether fd has the shape func(*testing.T).
-func isTestSignature(fd *ast.FuncDecl) bool {
+// isTestSignature reports whether fd has the shape func(*testing.T). When the
+// file dot-imports "testing" the unqualified func(*T) form is accepted too.
+func isTestSignature(fd *ast.FuncDecl, dotTesting bool) bool {
 	if fd.Recv != nil || fd.Type.TypeParams != nil || fd.Type.Results != nil {
 		return false
 	}
@@ -43,12 +44,27 @@ func isTestSignature(fd *ast.FuncDecl) bool {
 	if !ok {
 		return false
 	}
-	sel, ok := star.X.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != "T" {
-		return false
+	switch x := star.X.(type) {
+	case *ast.SelectorExpr:
+		if x.Sel.Name != "T" {
+			return false
+		}
+		_, ok = x.X.(*ast.Ident)
+		return ok
+	case *ast.Ident:
+		return dotTesting && x.Name == "T"
 	}
-	_, ok = sel.X.(*ast.Ident)
-	return ok
+	return false
+}
+
+// importsTestingDot reports whether f has `import . "testing"`.
+func importsTestingDot(f *ast.File) bool {
+	for _, imp := range f.Imports {
+		if imp.Name != nil && imp.Name.Name == "." && imp.Path != nil && imp.Path.Value == `"testing"` {
+			return true
+		}
+	}
+	return false
 }
 
 func parseSource(file string, src []byte) (*token.FileSet, *ast.File, error) {
@@ -72,8 +88,9 @@ func testFuncNames(file string, src []byte) (map[string]struct{}, error) {
 	if err != nil {
 		return nil, err
 	}
+	dot := importsTestingDot(f)
 	for _, d := range f.Decls {
-		if fd, ok := d.(*ast.FuncDecl); ok && isTestName(fd.Name.Name) && isTestSignature(fd) {
+		if fd, ok := d.(*ast.FuncDecl); ok && isTestName(fd.Name.Name) && isTestSignature(fd, dot) {
 			out[fd.Name.Name] = struct{}{}
 		}
 	}
