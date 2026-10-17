@@ -318,7 +318,7 @@ func TestU162_001_WaiversMustBeVerified(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, StatusError, statusOf(t, rep, "t"))
 
-	ok := newWaiver("w1", "144-S", "t", testHead, "mallory")
+	ok := newWaiver("w1", "144-S", testHead, "mallory", pnode("t", true))
 	rep, err = mustEval(t, d).Evaluate(Input{Shipment: ship(), Waivers: map[string]Waiver{"t": ok}})
 	require.NoError(t, err)
 	assert.Equal(t, StatusWaived, statusOf(t, rep, "t"))

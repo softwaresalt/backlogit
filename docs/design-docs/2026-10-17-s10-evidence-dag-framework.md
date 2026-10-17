@@ -186,7 +186,13 @@ environment shortcut and no issuance API: tokens are minted out of band.
 `Waiver` has only unexported fields, sealed with a per-process HMAC at
 acceptance. `WaiverService.Accept` is the only producer, and the evaluator
 rejects a zero value or any copy whose node, shipment, head or principal was
-altered, so a waiver cannot be retargeted. **A waiver covers its node as a whole,
+altered, so a waiver cannot be retargeted. The seal also covers the authorized
+waiver family and a digest of the node definition (id, family, waiver family,
+terminal, applicability, validator, producing task and commit), so a waiver is
+not honored by a declaration where the same node ID has a different definition.
+Trust parsing fails closed on aliasing: any reuse of the same public key bytes
+across entries, case-fold collisions of key IDs or principals, and a principal
+holding keys of more than one kind are all rejected. **A waiver covers its node as a whole,
 masking that node's unmet or erroring upstreams** (listed in
 `NodeResult.MaskedUpstreams`); grant waivers accordingly.
 

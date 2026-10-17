@@ -265,7 +265,7 @@ func (e *Evaluator) nodeKey(n Node, in Input, results map[string]NodeResult, dup
 	writeField(h, fmt.Sprintf("dup:%t|failed:%t", isDup, failed))
 	writeField(h, failure)
 	if w, ok := in.Waivers[n.ID]; ok {
-		writeField(h, fmt.Sprintf("waiver:%s|%s|%s|%s|%s|%t", w.id, w.shipmentID, w.nodeID, w.headCommit, w.principal, w.valid()))
+		writeField(h, fmt.Sprintf("waiver:%s|%s|%s|%s|%s|%s|%s|%t", w.id, w.shipmentID, w.nodeID, w.headCommit, w.principal, w.family, w.nodeDigest, w.valid()))
 	} else {
 		writeField(h, "no-waiver")
 	}
@@ -307,8 +307,8 @@ func (e *Evaluator) computeNode(n Node, in Input, results map[string]NodeResult,
 	}
 
 	if w, ok := in.Waivers[n.ID]; ok {
-		if !w.valid() || w.nodeID != n.ID || w.shipmentID != in.Shipment.ID || w.headCommit != in.Shipment.HeadCommit {
-			return set(StatusError, "waiver is unverified or not bound to this shipment, node and head commit")
+		if !w.valid() || !w.boundTo(n) || w.shipmentID != in.Shipment.ID || w.headCommit != in.Shipment.HeadCommit {
+			return set(StatusError, "waiver is unverified or not bound to this shipment, node definition and head commit")
 		}
 		res.Waiver = w.principal
 		for _, d := range e.deps[n.ID] {

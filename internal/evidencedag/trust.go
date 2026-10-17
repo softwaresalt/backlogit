@@ -75,6 +75,10 @@ func ParseTrust(data []byte) (*Trust, error) {
 	}
 	t := &Trust{keys: map[string]TrustedKey{}, policy: map[string]map[Family]struct{}{}}
 	principals := map[string]struct{}{}
+	keyIDFolds := map[string]struct{}{}
+	byMaterial := map[string]string{}
+	principalFolds := map[string]string{}
+	principalKinds := map[string]KeyKind{}
 	for _, k := range *doc.Keys {
 		if !validPrincipalName(k.KeyID) || !validPrincipalName(k.Principal) {
 			return nil, trustErr("key_id and principal must match %s", principalPattern)
@@ -90,6 +94,26 @@ func ParseTrust(data []byte) (*Trust, error) {
 		if _, dup := t.keys[k.KeyID]; dup {
 			return nil, trustErr("duplicate key_id %q", truncate(k.KeyID))
 		}
+		idFold := strings.ToLower(k.KeyID)
+		if _, dup := keyIDFolds[idFold]; dup {
+			return nil, trustErr("key_id %q aliases another key_id under case folding", truncate(k.KeyID))
+		}
+		keyIDFolds[idFold] = struct{}{}
+		// One key, one binding: reusing key material under another key_id would
+		// let a key of one kind or principal be selected as another.
+		if prev, dup := byMaterial[string(pub)]; dup {
+			return nil, trustErr("key %q reuses the public key of key %q", truncate(k.KeyID), truncate(prev))
+		}
+		byMaterial[string(pub)] = k.KeyID
+		pFold := strings.ToLower(k.Principal)
+		if prev, seen := principalFolds[pFold]; seen && prev != k.Principal {
+			return nil, trustErr("principal %q aliases principal %q under case folding", truncate(k.Principal), truncate(prev))
+		}
+		principalFolds[pFold] = k.Principal
+		if prev, seen := principalKinds[k.Principal]; seen && prev != kind {
+			return nil, trustErr("principal %q is bound to more than one key kind", truncate(k.Principal))
+		}
+		principalKinds[k.Principal] = kind
 		t.keys[k.KeyID] = TrustedKey{KeyID: k.KeyID, Principal: k.Principal, Kind: kind, PublicKey: ed25519.PublicKey(pub)}
 		principals[k.Principal] = struct{}{}
 	}

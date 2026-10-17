@@ -24,6 +24,10 @@ type Waiver struct {
 	nodeID     string
 	headCommit string
 	principal  string
+	// family is the authorized waiver family and nodeDigest the digest of the
+	// node definition the waiver was authorized for; both are sealed.
+	family     string
+	nodeDigest string
 	seal       string
 }
 

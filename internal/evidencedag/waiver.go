@@ -33,18 +33,37 @@ var waiverSeal = func() []byte {
 	return b
 }()
 
-func sealWaiver(id, shipmentID, nodeID, headCommit, principal string) string {
+func sealWaiver(id, shipmentID, nodeID, headCommit, principal, family, nodeDigest string) string {
 	m := hmac.New(sha256.New, waiverSeal)
-	for _, f := range []string{id, shipmentID, nodeID, headCommit, principal} {
+	for _, f := range []string{id, shipmentID, nodeID, headCommit, principal, family, nodeDigest} {
 		writeField(m, f)
 	}
 	return hex.EncodeToString(m.Sum(nil))
 }
 
-func newWaiver(id, shipmentID, nodeID, headCommit, principal string) Waiver {
+// nodeDefinitionDigest digests the parts of a node a waiver authorizes: its
+// identity, family, waiver authority, terminality, applicability, validator
+// and producing task/commit.
+func nodeDefinitionDigest(n Node) string {
+	h := sha256.New()
+	writeField(h, "evidencedag/waiver-node/v1")
+	for _, f := range []string{n.ID, string(n.Family), string(n.WaiverAuthorityFamily()), fmt.Sprintf("%t", n.Terminal), n.Validator, n.ProducingTask, n.ProducingCommit} {
+		writeField(h, f)
+	}
+	ab, err := json.Marshal(n.Applicability)
+	if err != nil {
+		ab = []byte("unmarshalable:" + randHex(16))
+	}
+	writeField(h, string(ab))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func newWaiver(id, shipmentID, headCommit, principal string, n Node) Waiver {
+	family, digest := string(n.WaiverAuthorityFamily()), nodeDefinitionDigest(n)
 	return Waiver{
-		id: id, shipmentID: shipmentID, nodeID: nodeID, headCommit: headCommit, principal: principal,
-		seal: sealWaiver(id, shipmentID, nodeID, headCommit, principal),
+		id: id, shipmentID: shipmentID, nodeID: n.ID, headCommit: headCommit, principal: principal,
+		family: family, nodeDigest: digest,
+		seal: sealWaiver(id, shipmentID, n.ID, headCommit, principal, family, digest),
 	}
 }
 
@@ -54,8 +73,14 @@ func (w Waiver) valid() bool {
 	if w.seal == "" {
 		return false
 	}
-	want := sealWaiver(w.id, w.shipmentID, w.nodeID, w.headCommit, w.principal)
+	want := sealWaiver(w.id, w.shipmentID, w.nodeID, w.headCommit, w.principal, w.family, w.nodeDigest)
 	return hmac.Equal([]byte(want), []byte(w.seal))
+}
+
+// boundTo reports whether the waiver was authorized for exactly this node
+// definition.
+func (w Waiver) boundTo(n Node) bool {
+	return w.nodeID == n.ID && w.family == string(n.WaiverAuthorityFamily()) && w.nodeDigest == nodeDefinitionDigest(n)
 }
 
 // ID is the consumed waiver nonce.
@@ -233,7 +258,7 @@ func (s *WaiverService) commit(p preparedWaiver) (Waiver, error) {
 		}
 		return Waiver{}, fmt.Errorf("%w: ledger: %w", ErrWaiverDenied, err)
 	}
-	return newWaiver(p.claims.Nonce, p.ship.ID, p.node.ID, p.ship.HeadCommit, p.key.Principal), nil
+	return newWaiver(p.claims.Nonce, p.ship.ID, p.ship.HeadCommit, p.key.Principal, p.node), nil
 }
 
 // committedAndUsable reports whether err is a durable commit whose only
