@@ -92,7 +92,7 @@ func RunExecutorsWith(ctx context.Context, d *Declaration, s Shipment, bindings 
 			res.Failures[id] = "executor binding is nil"
 			continue
 		}
-		rec, err := runOne(ctx, x, ExecRequest{Shipment: s, Node: n}, timeout)
+		rec, err := runOne(ctx, x, ExecRequest{Shipment: cloneShipment(s), Node: cloneNode(n)}, timeout)
 		if errors.Is(err, ErrExecutorsAbandoned) {
 			return res, err
 		}
@@ -178,7 +178,7 @@ func runGuarded(ctx context.Context, x NodeExecutor, req ExecRequest) (rec Evide
 	if x.Identity() != req.Node.Validator {
 		return EvidenceRecord{}, errors.New("executor identity does not match the node validator")
 	}
-	a, err := x.Execute(ctx, req)
+	a, err := x.Execute(ctx, ExecRequest{Shipment: cloneShipment(req.Shipment), Node: cloneNode(req.Node)})
 	if err != nil {
 		return EvidenceRecord{}, boundedExecError(err)
 	}

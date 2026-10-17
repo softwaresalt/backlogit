@@ -63,6 +63,9 @@ func NewEvidenceRecord(s Shipment, nodeID string, a faultline.EvidenceArtifact) 
 	if err != nil {
 		return zero, fmt.Errorf("evidencedag: marshal artifact: %w", err)
 	}
+	if err := rejectDuplicateKeys(a.VerifiedEvidence); err != nil {
+		return zero, fmt.Errorf("evidencedag: artifact violates the shared evidence contract: %s", faultline.SanitizeDiagnostic(err.Error()))
+	}
 	return EvidenceRecord{
 		SchemaVersion: RecordSchemaVersion, ShipmentID: s.ID, NodeID: nodeID,
 		HeadCommit: s.HeadCommit, Digest: digest, Artifact: raw,

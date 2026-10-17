@@ -60,12 +60,39 @@ func cloneNode(n Node) Node {
 		if n.Applicability.Requires != nil {
 			a.Requires = make(map[string][]string, len(n.Applicability.Requires))
 			for k, v := range n.Applicability.Requires {
-				a.Requires[k] = append([]string(nil), v...)
+				if v == nil {
+					a.Requires[k] = nil
+					continue
+				}
+				c := make([]string, len(v))
+				copy(c, v)
+				a.Requires[k] = c
 			}
 		}
 		n.Applicability = a
 	}
 	return n
+}
+
+// cloneShipment returns a Shipment that shares no mutable state with s.
+func cloneShipment(s Shipment) Shipment {
+	if s.Attributes != nil {
+		attrs := make(map[string]string, len(s.Attributes))
+		for k, v := range s.Attributes {
+			attrs[k] = v
+		}
+		s.Attributes = attrs
+	}
+	return s
+}
+
+// cloneResult returns a NodeResult that shares no slice with r, so neither a
+// cached result nor a caller's report can be corrupted through the other.
+func cloneResult(r NodeResult) NodeResult {
+	if r.MaskedUpstreams != nil {
+		r.MaskedUpstreams = append([]string{}, r.MaskedUpstreams...)
+	}
+	return r
 }
 
 // topoOrder returns dependencies-first order, ties broken by node ID.
@@ -170,13 +197,13 @@ func (e *Evaluator) Evaluate(in Input) (Report, error) {
 		if len(e.cache) >= maxCacheEntries {
 			e.cache = map[string]cacheEntry{}
 		}
-		e.cache[ck] = cacheEntry{key: key, result: res}
+		e.cache[ck] = cacheEntry{key: key, result: cloneResult(res)}
 		results[id] = res
 		rep.Computed++
 	}
 	rep.Nodes = make([]NodeResult, 0, len(results))
 	for _, id := range e.order {
-		rep.Nodes = append(rep.Nodes, results[id])
+		rep.Nodes = append(rep.Nodes, cloneResult(results[id]))
 	}
 	sort.Slice(rep.Nodes, func(i, j int) bool { return rep.Nodes[i].ID < rep.Nodes[j].ID })
 	return rep, nil
@@ -372,9 +399,9 @@ func verifyEvidence(n Node, rec EvidenceRecord, has bool, set func(Status, strin
 	if len(rec.Artifact) == 0 {
 		return set(StatusError, "evidence record carries no artifact")
 	}
-	a, _, err := faultline.DecodeAndValidate(rec.Artifact)
+	a, err := decodeEvidenceArtifact(rec.Artifact)
 	if err != nil {
-		return set(StatusError, "evidence does not conform to the S4 contract: "+faultline.SanitizeDiagnostic(err.Error()))
+		return set(StatusError, err.Error())
 	}
 	if a.NodeFamily != want {
 		return set(StatusError, fmt.Sprintf("evidence family %q does not match required %q", a.NodeFamily, want))

@@ -286,6 +286,12 @@ unsupported.
 - Executor errors are flattened to a bounded plain error inside the timed, panic-protected goroutine; executor `Error`, `Is` and `Unwrap` never run on the caller's goroutine.
 - An identical waiver retry that finds its nonce already in the ledger re-stores the current head anchor and requires success, so acceptance never rests on an anchor whose directory sync failed.
 
+## Review hardening (round 6)
+
+- Every in-memory path that decodes S4 evidence (`authenticate`, the evaluator's family check, `NewEvidenceRecord`) applies the same bounded Unicode-simple-fold duplicate-key check as `LoadEvidenceFile`, because the shared S4 decoder folds nested keys with `strings.ToLower` and would keep a `U+017F` variant of a key. The shared decoder is unchanged.
+- Each executor receives a private deep copy of the shipment attributes and node applicability, and the package keeps a separate pristine copy for binding the result, so a callback (including one abandoned after a timeout) cannot change caller state, another node's applicability or later gate checks.
+- Reports hand callers copies of cached node results, so mutating a report cannot corrupt the evaluator cache.
+
 ## Documented limitations
 
 * Only `parity` (v1/v2) and `red-test-honesty` (`red_green`, v2) have S4 U4

@@ -30,9 +30,9 @@ func authenticate(n Node, s Shipment, rec EvidenceRecord) error {
 	if len(rec.Artifact) == 0 {
 		return errors.New("evidence record carries no artifact")
 	}
-	a, _, err := faultline.DecodeAndValidate(rec.Artifact)
+	a, err := decodeEvidenceArtifact(rec.Artifact)
 	if err != nil {
-		return fmt.Errorf("evidence does not conform to the S4 contract: %s", faultline.SanitizeDiagnostic(err.Error()))
+		return err
 	}
 	digest, err := artifactDigest(a)
 	if err != nil || digest != rec.Digest {
@@ -48,6 +48,25 @@ func authenticate(n Node, s Shipment, rec EvidenceRecord) error {
 		return errors.New("evidence validator identity does not match the node declaration")
 	}
 	return nil
+}
+
+// decodeEvidenceArtifact is the single in-memory decoder of S4 evidence. The
+// shared S4 decoder matches nested keys with strings.ToLower, so a Unicode
+// fold variant of a key (U+017F, U+212A) would silently replace the original;
+// the artifact is therefore bounded and checked for fold-duplicate keys first.
+func decodeEvidenceArtifact(raw []byte) (faultline.EvidenceArtifact, error) {
+	var zero faultline.EvidenceArtifact
+	if len(raw) > faultline.MaxArtifactBytes {
+		return zero, fmt.Errorf("evidence does not conform to the S4 contract: artifact exceeds %d bytes", faultline.MaxArtifactBytes)
+	}
+	if err := rejectDuplicateKeys(raw); err != nil {
+		return zero, fmt.Errorf("evidence does not conform to the S4 contract: %s", faultline.SanitizeDiagnostic(err.Error()))
+	}
+	a, _, err := faultline.DecodeAndValidate(raw)
+	if err != nil {
+		return zero, fmt.Errorf("evidence does not conform to the S4 contract: %s", faultline.SanitizeDiagnostic(err.Error()))
+	}
+	return a, nil
 }
 
 // duplicateDigests returns the node IDs whose presented evidence digest is
