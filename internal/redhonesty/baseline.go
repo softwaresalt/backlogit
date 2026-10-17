@@ -114,10 +114,10 @@ func validPackageDir(p string) error {
 }
 
 // isOverlayPath is the OVERLAY-eligibility predicate: real test files and
-// explicit testdata paths only. Hidden/underscore production inputs (p/.config)
+// explicit testdata paths only (Go-ignored names such as p/_x_test.go are\n// production-readable assets, not tests). Hidden/underscore production inputs (p/.config)
 // are production state and must stay at baseline contents.
 func isOverlayPath(p string) bool {
-	return strings.HasSuffix(p, "_test.go") || isTestdataDir(p)
+	return isTestFile(p) || isTestdataDir(p)
 }
 
 // CollectChanges lists the changed Go sources and testdata between two commit

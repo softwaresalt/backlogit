@@ -25,11 +25,17 @@ func TestU161_001_OverlayLeavesHiddenProductionInputsAtBaseline(t *testing.T) {
 	write("p/.config", "base")
 	write("p/_data.txt", "base")
 	write("p/.gone", "base")
+	write("p/_config_test.go", "base")
+	write("p/_x/asset_test.go", "base")
+	write("p/.hid_test.go", "base")
 	write("p/testdata/.fixture", "base")
 	err := applyOverlay(dir, []FileChange{
 		{Path: "p/.config", Status: 'M', Base: []byte("base"), Head: []byte("head")},
 		{Path: "p/_data.txt", Status: 'M', Base: []byte("base"), Head: []byte("head")},
 		{Path: "p/.gone", Status: 'D', Base: []byte("base")},
+		{Path: "p/_config_test.go", Status: 'M', Base: []byte("base"), Head: []byte("v2:3")},
+		{Path: "p/_x/asset_test.go", Status: 'M', Base: []byte("base"), Head: []byte("v2:3")},
+		{Path: "p/.hid_test.go", Status: 'D', Base: []byte("base")},
 		{Path: "p/testdata/.fixture", Status: 'M', Base: []byte("base"), Head: []byte("head")},
 		{Path: "p/new_test.go", Status: 'A', Head: []byte("package p\n")},
 	})
@@ -43,7 +49,7 @@ func TestU161_001_OverlayLeavesHiddenProductionInputsAtBaseline(t *testing.T) {
 		}
 		return string(b)
 	}
-	for _, rel := range []string{"p/.config", "p/_data.txt", "p/.gone"} {
+	for _, rel := range []string{"p/.config", "p/_data.txt", "p/.gone", "p/_config_test.go", "p/_x/asset_test.go", "p/.hid_test.go"} {
 		if got := read(rel); got != "base" {
 			t.Fatalf("%s overlaid with %q; production inputs must stay at baseline", rel, got)
 		}
@@ -54,7 +60,7 @@ func TestU161_001_OverlayLeavesHiddenProductionInputsAtBaseline(t *testing.T) {
 	if got := read("p/new_test.go"); got != "package p\n" {
 		t.Fatalf("test file not overlaid: %q", got)
 	}
-	if isOverlayPath("p/.config") || !isOverlayPath("p/testdata/.x") || !isOverlayPath("p/a_test.go") {
+	if isOverlayPath("p/.config") || isOverlayPath("p/_config_test.go") || !isOverlayPath("p/testdata/.x") || !isOverlayPath("p/a_test.go") {
 		t.Fatal("overlay predicate wrong")
 	}
 }
