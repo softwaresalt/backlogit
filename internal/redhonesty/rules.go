@@ -276,18 +276,23 @@ func changingHelpers(funcs map[string]*ast.FuncDecl, changed map[string]struct{}
 		return out
 	}
 	for round := 0; round < maxHelperDepth; round++ {
-		progress := false
+		// Collect this round's discoveries and publish them afterwards, so the
+		// result never depends on map iteration order: after k rounds exactly the
+		// helpers within k call levels of a changed function are included.
+		var found []string
 		for name, fd := range funcs {
 			if out[name] {
 				continue
 			}
 			if callsChanged(fd.Body, changed, out) {
-				out[name] = true
-				progress = true
+				found = append(found, name)
 			}
 		}
-		if !progress {
+		if len(found) == 0 {
 			break
+		}
+		for _, name := range found {
+			out[name] = true
 		}
 	}
 	return out

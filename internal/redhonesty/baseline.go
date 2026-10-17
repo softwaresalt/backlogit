@@ -190,64 +190,74 @@ func blob(ctx context.Context, g Git, root, sha, p string) ([]byte, error) {
 // directories are accepted; links, devices, absolute or escaping names and
 // over-budget archives are rejected. Nothing is ever created outside dir.
 func extractArchive(r io.Reader, dir string) error {
+	_, err := extractArchiveCount(r, dir)
+	return err
+}
+
+// extractArchiveCount is extractArchive that also reports how many regular files
+// it created, so the caller can prove the export is complete.
+func extractArchiveCount(r io.Reader, dir string) (int, error) {
 	tr := tar.NewReader(r)
-	var entries int
+	var entries, files int
 	var total int64
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
-			return nil
+			return files, nil
 		}
 		if err != nil {
-			return fmt.Errorf("redhonesty: read archive: %w", err)
+			return files, fmt.Errorf("redhonesty: read archive: %w", err)
 		}
 		if h.Typeflag == tar.TypeXGlobalHeader {
 			continue
 		}
 		entries++
 		if entries > maxArchiveEntries {
-			return fmt.Errorf("redhonesty: archive exceeds %d entries", maxArchiveEntries)
+			return files, fmt.Errorf("redhonesty: archive exceeds %d entries", maxArchiveEntries)
 		}
 		name := strings.TrimSuffix(h.Name, "/")
 		if err := validArchivePath(name); err != nil {
-			return err
+			return files, err
 		}
 		target := filepath.Join(dir, filepath.FromSlash(name))
 		if rel, err := filepath.Rel(dir, target); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("redhonesty: archive entry %q escapes the baseline directory", truncate(h.Name))
+			return files, fmt.Errorf("redhonesty: archive entry %q escapes the baseline directory", truncate(h.Name))
 		}
 		switch h.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
+				return files, err
 			}
 		case tar.TypeReg:
 			if h.Size < 0 || h.Size > maxArchiveFileSize {
-				return fmt.Errorf("redhonesty: archive file %q exceeds %d bytes", truncate(h.Name), maxArchiveFileSize)
+				return files, fmt.Errorf("redhonesty: archive file %q exceeds %d bytes", truncate(h.Name), maxArchiveFileSize)
 			}
 			total += h.Size
 			if total > maxArchiveBytes {
-				return fmt.Errorf("redhonesty: archive exceeds %d bytes", int64(maxArchiveBytes))
+				return files, fmt.Errorf("redhonesty: archive exceeds %d bytes", int64(maxArchiveBytes))
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
+				return files, err
 			}
-			if err := writeNew(target, io.LimitReader(tr, h.Size)); err != nil {
-				return err
+			perm := os.FileMode(0o644)
+			if h.Mode&0o111 != 0 { // preserve executable bits (scripts the tests run)
+				perm = 0o755
 			}
-		case tar.TypeSymlink, tar.TypeLink:
-			// Links are never materialized: nothing can be redirected outside the
-			// baseline. A baseline that needed one fails to build and is
-			// therefore unrunnable (fail-closed), never silently green.
-			continue
+			if err := writeNew(target, io.LimitReader(tr, h.Size), perm); err != nil {
+				return files, err
+			}
+			files++
 		default:
-			return fmt.Errorf("redhonesty: archive entry %q has unsupported type %q", truncate(h.Name), string(h.Typeflag))
+			// Links, devices and everything else are refused rather than dropped: a
+			// baseline missing a linked fixture would manufacture a failure the real
+			// base never had, which would be accepted as honest red evidence.
+			return files, fmt.Errorf("redhonesty: archive entry %q has unsupported type %q; the baseline cannot be reproduced faithfully", truncate(h.Name), string(h.Typeflag))
 		}
 	}
 }
 
-func writeNew(target string, r io.Reader) error {
-	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+func writeNew(target string, r io.Reader, perm os.FileMode) error {
+	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
 		return err
 	}
@@ -256,6 +266,24 @@ func writeNew(target string, r io.Reader) error {
 		return err
 	}
 	return f.Close()
+}
+
+// treeBlobCount returns how many files (blobs) commit sha contains. It is the
+// ground truth the exported baseline is compared with, because git archive
+// silently honours export-ignore attributes and would otherwise drop files.
+func treeBlobCount(ctx context.Context, g Git, root, sha string) (int, error) {
+	out, err := gitOutput(ctx, g, root, maxTreeListBytes, "ls-tree", "-r", "-z", "--full-tree", sha)
+	if err != nil {
+		return 0, fmt.Errorf("redhonesty: list base tree: %w", err)
+	}
+	n := 0
+	for _, rec := range bytes.Split(bytes.TrimRight(out, "\x00"), []byte{0}) {
+		meta, _, ok := bytes.Cut(rec, []byte{'\t'})
+		if ok && bytes.Contains(meta, []byte(" blob ")) {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // applyOverlay makes the baseline's TEST state equal head's: head test files
@@ -377,7 +405,7 @@ func PrepareBaseline(ctx context.Context, g Git, root, baseSHA string, overlay [
 		_ = pw.CloseWithError(err)
 		gitErr <- err
 	}()
-	extractErr := extractArchive(pr, dir)
+	extracted, extractErr := extractArchiveCount(pr, dir)
 	if extractErr == nil {
 		// The tar reader stops at the end-of-archive marker; drain git's trailing
 		// padding so git exits cleanly instead of failing on a closed pipe.
@@ -389,6 +417,15 @@ func PrepareBaseline(ctx context.Context, g Git, root, baseSHA string, overlay [
 	}
 	if extractErr != nil {
 		return fail(extractErr)
+	}
+	// git archive honours export-ignore attributes and would silently omit files;
+	// prove the export holds every blob of the base commit before trusting it.
+	want, err := treeBlobCount(ctx, g, absRoot, baseSHA)
+	if err != nil {
+		return fail(err)
+	}
+	if extracted != want {
+		return fail(fmt.Errorf("redhonesty: export of %s holds %d files but the commit has %d (export-ignore attributes?); the baseline would be incomplete", baseSHA[:12], extracted, want))
 	}
 	if err := applyOverlay(dir, overlay); err != nil {
 		return fail(err)

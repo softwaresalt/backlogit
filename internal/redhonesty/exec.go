@@ -19,6 +19,7 @@ import (
 // hostile repository or runaway test cannot exhaust memory or disk.
 const (
 	maxGitOutputBytes  = 8 << 20   // listing-style git output
+	maxTreeListBytes   = 64 << 20  // full `git ls-tree -r` of the base commit
 	maxSourceBytes     = 4 << 20   // one source/test file
 	maxChangeBytes     = 64 << 20  // cumulative blob content held for one change
 	maxChangedFiles    = 5000      // files considered in one change

@@ -189,18 +189,18 @@ func TestU161_001_ExtractArchiveContainment(t *testing.T) {
 			t.Errorf("entry %q (%c) accepted", h.Name, h.Typeflag)
 		}
 	}
-	// Links are never materialized (and never followed), but do not abort the run.
-	ldir := t.TempDir()
-	if err := extractArchive(tarOf(t,
-		tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "../outside", Mode: 0o777},
-		tar.Header{Name: "hard", Typeflag: tar.TypeLink, Linkname: "a.go", Mode: 0o644},
-		tar.Header{Name: "a.go", Typeflag: tar.TypeReg, Mode: 0o644},
-	), ldir); err != nil {
-		t.Fatalf("link entries must be skipped: %v", err)
-	}
-	for _, n := range []string{"link", "hard"} {
-		if _, err := os.Lstat(filepath.Join(ldir, n)); err == nil {
-			t.Errorf("%s was materialized", n)
+	// Links are refused, not silently dropped: a baseline missing a linked
+	// fixture would manufacture a failure the real base never had.
+	for _, h := range []tar.Header{
+		{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "../outside", Mode: 0o777},
+		{Name: "hard", Typeflag: tar.TypeLink, Linkname: "a.go", Mode: 0o644},
+	} {
+		ldir := t.TempDir()
+		if err := extractArchive(tarOf(t, h), ldir); err == nil {
+			t.Errorf("link entry %q accepted", h.Name)
+		}
+		if _, err := os.Lstat(filepath.Join(ldir, h.Name)); err == nil {
+			t.Errorf("%s was materialized", h.Name)
 		}
 	}
 	dir := t.TempDir()
