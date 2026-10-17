@@ -1,8 +1,11 @@
 package redhonesty
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"go/ast"
+	"go/build/constraint"
 	"go/parser"
 	"go/token"
 	"path"
@@ -66,6 +69,39 @@ func isTestSignature(fd *ast.FuncDecl) bool {
 		return ok
 	case *ast.Ident:
 		return x.Name == "T"
+	}
+	return false
+}
+
+var knownGOOS = map[string]bool{"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true, "hurd": true, "illumos": true, "ios": true, "js": true, "linux": true, "nacl": true, "netbsd": true, "openbsd": true, "plan9": true, "solaris": true, "wasip1": true, "windows": true, "zos": true}
+
+var knownGOARCH = map[string]bool{"386": true, "amd64": true, "amd64p32": true, "arm": true, "armbe": true, "arm64": true, "arm64be": true, "loong64": true, "mips": true, "mipsle": true, "mips64": true, "mips64le": true, "mips64p32": true, "mips64p32le": true, "ppc": true, "ppc64": true, "ppc64le": true, "riscv": true, "riscv64": true, "s390": true, "s390x": true, "sparc": true, "sparc64": true, "wasm": true}
+
+// isBuildConstrained reports whether the go tool may include or exclude the
+// file depending on build inputs: a GOOS/GOARCH file-name suffix, or a
+// //go:build or // +build line before the package clause. Tests are attributed
+// by package directory and name, so a new test whose file is conditionally
+// built cannot be told apart from a same-named test in an unchanged variant
+// file; such a test is unverifiable.
+func isBuildConstrained(file string, src []byte) bool {
+	name := strings.TrimSuffix(path.Base(file), ".go")
+	name = strings.TrimSuffix(name, "_test")
+	parts := strings.Split(name, "_")
+	if n := len(parts); n >= 2 {
+		if knownGOOS[parts[n-1]] || knownGOARCH[parts[n-1]] {
+			return true
+		}
+	}
+	sc := bufio.NewScanner(bytes.NewReader(src))
+	sc.Buffer(make([]byte, 0, 64*1024), maxSourceBytes+1)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if strings.HasPrefix(line, "package ") || line == "package" {
+			return false
+		}
+		if constraint.IsGoBuild(line) || constraint.IsPlusBuild(line) {
+			return true
+		}
 	}
 	return false
 }
@@ -157,6 +193,9 @@ func IdentifyNewTests(changes []FileChange) ([]NewTest, error) {
 					return nil, fmt.Errorf("redhonesty: test %s in %s exists at base in package %s and at head in package %s; it cannot be attributed to one test", n, dir, bp, pkg)
 				}
 				continue
+			}
+			if isBuildConstrained(c.Path, c.Head) {
+				return nil, fmt.Errorf("redhonesty: new test %s in %s is declared in a file with a build constraint; its results cannot be attributed to this declaration (unverifiable)", n, c.Path)
 			}
 			out = append(out, NewTest{Package: dir, File: c.Path, Name: n})
 		}
