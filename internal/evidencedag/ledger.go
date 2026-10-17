@@ -427,7 +427,14 @@ func (l *Ledger) writeRecord(line []byte, valid int64) (closeErr, err error) {
 		return nil, fail("sync", err)
 	}
 	if err := f.Close(); err != nil {
-		return fmt.Errorf("evidencedag: close ledger: %w", err), nil
+		cerr := fmt.Errorf("evidencedag: close ledger: %w", err)
+		if derr := syncDirFn(l.dir); derr != nil {
+			cerr = errors.Join(cerr, fmt.Errorf("evidencedag: sync ledger directory: %w", derr))
+		}
+		return cerr, nil
+	}
+	if err := syncDirFn(l.dir); err != nil {
+		return fmt.Errorf("evidencedag: sync ledger directory: %w", err), nil
 	}
 	return nil, nil
 }

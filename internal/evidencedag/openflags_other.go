@@ -6,5 +6,6 @@ package evidencedag
 // pre-open type check and descriptor re-validation still apply.
 const readOnlyOpenFlags = 0
 
-// syncDir is a no-op where directories cannot be fsynced (Windows).
-func syncDir(string) {}
+// syncDir is an explicit no-op where directories cannot be fsynced (Windows):
+// it reports success because durability there rests on the file sync alone.
+func syncDir(string) error { return nil }

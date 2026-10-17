@@ -206,7 +206,9 @@ func writeFileAtomic(dir, name string, data []byte) error {
 	deadline := time.Now().Add(renameWait)
 	for {
 		if rerr = renameFile(filepath.Join(dir, tmp), filepath.Join(dir, name)); rerr == nil {
-			syncDir(dir)
+			if err := syncDirFn(dir); err != nil {
+				return fmt.Errorf("%w: %s: %v", errDirSyncFailed, name, err)
+			}
 			return nil
 		}
 		if !time.Now().Before(deadline) {
@@ -222,6 +224,14 @@ func writeFileAtomic(dir, name string, data []byte) error {
 }
 
 var errRenameFailed = errors.New("rename failed")
+
+// errDirSyncFailed reports that the rename happened but the directory entry
+// could not be made durable, so the new content is not guaranteed to survive a
+// crash.
+var errDirSyncFailed = errors.New("directory sync failed")
+
+// syncDirFn is a seam so tests can inject directory-sync failures.
+var syncDirFn = syncDir
 
 // renameFile is a seam so tests can inject rename failures; renameWait bounds
 // the retry window (Windows can refuse a rename for seconds while an antivirus

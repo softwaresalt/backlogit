@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -92,19 +92,10 @@ func RunExecutorsWith(ctx context.Context, d *Declaration, s Shipment, bindings 
 			res.Failures[id] = "executor binding is nil"
 			continue
 		}
-		identity, err := safeIdentity(x)
-		if err != nil {
-			res.Failures[id] = truncate(err.Error())
-			continue
-		}
-		if identity != n.Validator {
-			res.Failures[id] = "executor identity does not match the node validator"
-			continue
-		}
-		if abandonedCount() >= maxAbandonedExecutors {
-			return res, fmt.Errorf("%w: %d still running", ErrExecutorsAbandoned, abandonedCount())
-		}
 		rec, err := runOne(ctx, x, ExecRequest{Shipment: s, Node: n}, timeout)
+		if errors.Is(err, ErrExecutorsAbandoned) {
+			return res, err
+		}
 		if err != nil {
 			res.Failures[id] = truncate(err.Error())
 			continue
@@ -126,72 +117,44 @@ func isNilExecutor(x NodeExecutor) bool {
 	return false
 }
 
-func safeIdentity(x NodeExecutor) (id string, err error) {
-	defer func() {
-		if p := recover(); p != nil {
-			err = fmt.Errorf("executor identity panicked: %v", p)
-		}
-	}()
-	return x.Identity(), nil
-}
-
 type runOutcome struct {
 	rec EvidenceRecord
 	err error
 }
 
-// abandonedExecutors counts executors whose node timed out or was interrupted
-// but whose goroutine has not returned yet. Executors that ignore their
-// context cannot be killed, so the count is capped to bound leaked goroutines.
-var abandonedExecutors struct {
-	mu sync.Mutex
-	n  int
-}
+// execSlots counts executor goroutines that were launched and have not
+// returned yet, abandoned ones included. Executors that ignore their context
+// cannot be killed, so a slot is reserved atomically before each launch and
+// released only when the goroutine actually exits; this bounds live goroutines
+// across concurrent runs.
+var execSlots atomic.Int64
 
-func abandonedCount() int {
-	abandonedExecutors.mu.Lock()
-	defer abandonedExecutors.mu.Unlock()
-	return abandonedExecutors.n
-}
+func abandonedCount() int { return int(execSlots.Load()) }
 
-type runState struct {
-	mu        sync.Mutex
-	done      bool
-	abandoned bool
-}
-
-func (s *runState) abandon() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.done {
-		return
-	}
-	s.abandoned = true
-	abandonedExecutors.mu.Lock()
-	abandonedExecutors.n++
-	abandonedExecutors.mu.Unlock()
-}
-
-func (s *runState) finish() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.done = true
-	if s.abandoned {
-		abandonedExecutors.mu.Lock()
-		abandonedExecutors.n--
-		abandonedExecutors.mu.Unlock()
+func reserveSlot() bool {
+	for {
+		cur := execSlots.Load()
+		if cur >= int64(maxAbandonedExecutors) {
+			return false
+		}
+		if execSlots.CompareAndSwap(cur, cur+1) {
+			return true
+		}
 	}
 }
 
-// runOne always runs the executor in its own goroutine and waits for its
-// result, the timeout or cancellation of ctx, whichever comes first.
+// runOne runs the executor, identity lookup included, in its own goroutine and
+// waits for its result, the timeout or cancellation of ctx, whichever comes
+// first. With no free slot it returns ErrExecutorsAbandoned without launching.
 func runOne(ctx context.Context, x NodeExecutor, req ExecRequest, timeout time.Duration) (EvidenceRecord, error) {
+	if !reserveSlot() {
+		return EvidenceRecord{}, fmt.Errorf("%w: %d still running", ErrExecutorsAbandoned, abandonedCount())
+	}
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ch := make(chan runOutcome, 1)
-	st := &runState{}
 	go func() {
-		defer st.finish()
+		defer execSlots.Add(-1)
 		rec, err := runGuarded(cctx, x, req)
 		ch <- runOutcome{rec, err}
 	}()
@@ -199,7 +162,6 @@ func runOne(ctx context.Context, x NodeExecutor, req ExecRequest, timeout time.D
 	case o := <-ch:
 		return o.rec, o.err
 	case <-cctx.Done():
-		st.abandon()
 		if errors.Is(cctx.Err(), context.DeadlineExceeded) {
 			return EvidenceRecord{}, fmt.Errorf("executor timed out after %s", timeout)
 		}
@@ -213,6 +175,9 @@ func runGuarded(ctx context.Context, x NodeExecutor, req ExecRequest) (rec Evide
 			err = fmt.Errorf("executor panicked: %v", p)
 		}
 	}()
+	if x.Identity() != req.Node.Validator {
+		return EvidenceRecord{}, errors.New("executor identity does not match the node validator")
+	}
 	a, err := x.Execute(ctx, req)
 	if err != nil {
 		return EvidenceRecord{}, err

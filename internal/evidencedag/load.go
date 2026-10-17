@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
@@ -74,7 +75,7 @@ func rejectYAMLIndirection(n *yaml.Node, depth int, count *int) error {
 				return errors.New("YAML merge keys are not allowed")
 			}
 			if k.Kind == yaml.ScalarNode {
-				folded := strings.ToLower(k.Value)
+				folded := foldKey(k.Value)
 				if _, dup := seen[folded]; dup {
 					return fmt.Errorf("duplicate key %q", k.Value)
 				}
@@ -129,9 +130,9 @@ func decodeJSON(data []byte, d *Declaration) error {
 
 // rejectDuplicateKeys walks the JSON token stream and refuses repeated object
 // keys (encoding/json would silently keep the last one) and excessive depth.
-// Keys are compared case-insensitively, because encoding/json matches struct
-// fields that way and a differently-cased duplicate would otherwise be a
-// parser differential.
+// Keys are compared under Unicode simple folding (see foldKey), because
+// encoding/json matches struct fields that way and a differently-cased or
+// folded duplicate would otherwise be a parser differential.
 func rejectDuplicateKeys(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	type frame struct {
@@ -152,7 +153,7 @@ func rejectDuplicateKeys(data []byte) error {
 			top := &stack[len(stack)-1]
 			if top.isObj && top.expect {
 				if k, ok := tok.(string); ok {
-					folded := strings.ToLower(k)
+					folded := foldKey(k)
 					if _, dup := top.keys[folded]; dup {
 						return fmt.Errorf("duplicate key %q", k)
 					}
@@ -182,6 +183,24 @@ func rejectDuplicateKeys(data []byte) error {
 			stack[len(stack)-1].expect = true
 		}
 	}
+}
+
+// foldKey canonicalizes a key under the equivalence encoding/json uses to match
+// object keys to struct fields: each rune maps to the smallest member of its
+// unicode.SimpleFold orbit (so U+017F and U+212A fold to 's' and 'k').
+func foldKey(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		m := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			if f < m {
+				m = f
+			}
+		}
+		b.WriteRune(m)
+	}
+	return b.String()
 }
 
 func joinSorted(parts []string) string { return strings.Join(parts, "; ") }

@@ -34,8 +34,12 @@ identity, optional `required_evidence`, `producing_task`, `producing_commit`
 (`head` or a pinned SHA), `waiver_family`, `on_unmet` (`block` or `report`) and
 `terminal`. Families: `parity`, `mutation-state`, `compat-error`, `docs-audit`,
 `plan-task-soundness`, `red-test-honesty`. `Load` also refuses YAML anchors,
-aliases and merge keys and compares object keys case-insensitively, so a
-document cannot hide a duplicate from one parser that another would honour.
+aliases and merge keys and compares object keys under Unicode simple folding
+(the equivalence `encoding/json` uses, so U+017F and the Kelvin sign U+212A count
+as `s` and `k`), so a document cannot hide a duplicate from one parser that
+another would honour. The same check guards every JSON entry point: declarations,
+trust documents, waiver tokens and claims, evidence records, ledger lines and
+anchors.
 
 `Declaration.Validate` is deterministic and fail-closed: duplicate IDs, dangling,
 self and duplicate edges, cycles (reported as `a -> b -> a`, rotated to the
@@ -123,9 +127,12 @@ executor must honour the context it is given. `RunExecutorsWith` always runs
 each executor in its own goroutine bounded by `ExecOptions.NodeTimeout` (default
 `DefaultNodeTimeout`, 30 s; negative is invalid) and by the caller's context.
 An executor that ignores its context is abandoned on timeout: it cannot be
-killed and keeps running until it returns, possibly forever. Abandoned
-goroutines are counted and capped (16); once the cap is reached the run stops
-with `ErrExecutorsAbandoned` instead of leaking more. A nil context is rejected
+killed and keeps running until it returns, possibly forever. The executor's
+`Identity()` call runs inside the same timed goroutine as `Execute`, so a
+blocking identity is bounded too. A slot is reserved atomically (compare and
+swap) before every launch and released only when that goroutine exits, so live
+callbacks, abandoned ones included, never exceed 16 across concurrent runs; with
+no free slot the run stops with `ErrExecutorsAbandoned` without launching. A nil context is rejected
 (`ErrInvalidInput`) by the runner, the gate and the adapters. A run with no
 applicable bound node is vacuous: it produces no evidence and no failures, and
 the evaluator reports the nodes as unmet; since advisory-only or empty
@@ -231,8 +238,15 @@ written beneath their canonical directory through `os.Root`, refusing symlink an
 non-regular leaves. Lock-file operations use `os.Root` for create and read but
 plain `os.Rename`/`os.Remove`/`os.Link` on the canonical directory path for the
 reap and release steps (none of which follow a leaf symlink); lock leaves that
-are not regular files are rejected before any of them runs. On Windows the
-directory cannot be fsynced, so the durability of a rename (the sidecar and the
+are not regular files are rejected before any of them runs. Directory fsync
+errors are never discarded on Unix: `writeFileAtomic` returns them (the anchor
+`Store` then fails, so the waiver path treats the anchor as stale and denies
+acceptance; the sidecar reports `ErrSidecarStale`), and the ledger append syncs
+the directory after creating the record and reports a failure as a
+`CommittedError`. Only `EINVAL`/`ENOTSUP` (a filesystem with no directory
+fsync) is treated as unsupported. On Windows the
+directory cannot be fsynced, so `syncDir` is an explicit no-op there and the
+durability of a rename (the sidecar and the
 anchor) after a power loss is weaker than on Unix; the ledger record itself is
 fsynced.
 
@@ -314,8 +328,8 @@ unsupported.
   `fs.ModeIrregular` and `os.OpenRoot`, so it needs Go 1.24 (the module's
   minimum).
 * `RunExecutorsWith` timeouts abandon, but cannot kill, an executor that ignores
-  its context; at most 16 abandoned executors are tolerated per process before
-  runs fail with `ErrExecutorsAbandoned`.
+  its context; at most 16 such goroutines (abandoned or still running) are
+  tolerated per process before runs fail with `ErrExecutorsAbandoned`.
 * `Waiver`-masking is intentional (see the evaluation rules): a waived node hides
   its unmet or erroring upstreams, which are only visible through
   `NodeResult.MaskedUpstreams`.
