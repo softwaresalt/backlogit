@@ -11,7 +11,7 @@ const maxHelperDepth = 4
 
 // expectedNamePattern matches identifiers conventionally holding the expected
 // value of an assertion (want, wantErr, expected, exp, golden, ...).
-var expectedNamePattern = regexp.MustCompile(`^(want|wanted|expect|expected|exp|golden)($|[A-Z_0-9])`)
+var expectedNamePattern = regexp.MustCompile(`^(?i:want|wanted|expect|expected|exp|golden)($|[A-Z_0-9])`)
 
 // reach is what a test (plus its bounded same-file helper closure) references.
 type reach struct {
@@ -147,6 +147,7 @@ func analyze(f *ast.File, name string, syms Symbols) *reach {
 		return nil
 	}
 	r := &reach{idents: map[string]struct{}{}, selectors: map[string]struct{}{}}
+	changing := changingHelpers(funcs, syms.Funcs)
 	visited := map[string]bool{name: true}
 	var walk func(fd *ast.FuncDecl, depth int)
 	walk = func(fd *ast.FuncDecl, depth int) {
@@ -162,18 +163,25 @@ func analyze(f *ast.File, name string, syms Symbols) *reach {
 				r.selectors[n.Sel.Name] = struct{}{}
 			case *ast.AssignStmt:
 				for i, lhs := range n.Lhs {
-					if i < len(n.Rhs) && bindsExpected(lhs) && callsChanged(n.Rhs[i], syms.Funcs) {
+					if !bindsExpected(lhs) {
+						continue
+					}
+					// `a, want := f()` has one call feeding several results.
+					if rhs, ok := pairedValue(n.Rhs, i, len(n.Lhs)); ok && callsChanged(rhs, syms.Funcs, changing) {
 						r.buggyWant = true
 					}
 				}
 			case *ast.ValueSpec:
 				for i, id := range n.Names {
-					if i < len(n.Values) && bindsExpected(id) && callsChanged(n.Values[i], syms.Funcs) {
+					if !bindsExpected(id) {
+						continue
+					}
+					if v, ok := pairedValue(n.Values, i, len(n.Names)); ok && callsChanged(v, syms.Funcs, changing) {
 						r.buggyWant = true
 					}
 				}
 			case *ast.KeyValueExpr:
-				if bindsExpected(n.Key) && callsChanged(n.Value, syms.Funcs) {
+				if bindsExpected(n.Key) && callsChanged(n.Value, syms.Funcs, changing) {
 					r.buggyWant = true
 				}
 			}
@@ -193,6 +201,19 @@ func analyze(f *ast.File, name string, syms Symbols) *reach {
 	return r
 }
 
+// pairedValue returns the right-hand expression that feeds the i-th of n
+// left-hand bindings: the i-th value when there are as many values as bindings,
+// or the sole value when one expression (a multi-result call) feeds them all.
+func pairedValue(values []ast.Expr, i, n int) (ast.Expr, bool) {
+	switch {
+	case len(values) == n && i < len(values):
+		return values[i], true
+	case len(values) == 1:
+		return values[0], true
+	}
+	return nil, false
+}
+
 func bindsExpected(e ast.Expr) bool {
 	switch e := e.(type) {
 	case *ast.Ident:
@@ -203,9 +224,31 @@ func bindsExpected(e ast.Expr) bool {
 	return false
 }
 
+// calleeName returns the bare name of the called function, looking through
+// parentheses and explicit generic instantiation (f[int](x), f[int, string](x)).
+func calleeName(fun ast.Expr) string {
+	for {
+		switch f := fun.(type) {
+		case *ast.ParenExpr:
+			fun = f.X
+		case *ast.IndexExpr:
+			fun = f.X
+		case *ast.IndexListExpr:
+			fun = f.X
+		case *ast.Ident:
+			return f.Name
+		case *ast.SelectorExpr:
+			return f.Sel.Name
+		default:
+			return ""
+		}
+	}
+}
+
 // callsChanged reports whether expr contains a call to a changed function or
-// method (matched by bare name).
-func callsChanged(expr ast.Expr, changed map[string]struct{}) bool {
+// method, or to a same-file helper that (transitively) calls one. Matching is by
+// bare name.
+func callsChanged(expr ast.Node, changed map[string]struct{}, changing map[string]bool) bool {
 	if len(changed) == 0 {
 		return false
 	}
@@ -215,17 +258,37 @@ func callsChanged(expr ast.Expr, changed map[string]struct{}) bool {
 		if !ok {
 			return !found
 		}
-		var name string
-		switch fn := ce.Fun.(type) {
-		case *ast.Ident:
-			name = fn.Name
-		case *ast.SelectorExpr:
-			name = fn.Sel.Name
-		}
-		if _, hit := changed[name]; hit {
+		name := calleeName(ce.Fun)
+		if _, hit := changed[name]; hit || changing[name] {
 			found = true
 		}
 		return !found
 	})
 	return found
+}
+
+// changingHelpers returns the same-file functions whose bodies call a changed
+// function, directly or through other such helpers (fixpoint bounded by
+// maxHelperDepth rounds).
+func changingHelpers(funcs map[string]*ast.FuncDecl, changed map[string]struct{}) map[string]bool {
+	out := map[string]bool{}
+	if len(changed) == 0 {
+		return out
+	}
+	for round := 0; round < maxHelperDepth; round++ {
+		progress := false
+		for name, fd := range funcs {
+			if out[name] {
+				continue
+			}
+			if callsChanged(fd.Body, changed, out) {
+				out[name] = true
+				progress = true
+			}
+		}
+		if !progress {
+			break
+		}
+	}
+	return out
 }

@@ -296,6 +296,12 @@ func applyOverlay(dir string, changes []FileChange) error {
 	return nil
 }
 
+// within reports whether path is root or lies inside it (both already resolved).
+func within(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 func noSymlinkChain(root string, rel []string) error {
 	cur := root
 	for _, el := range rel {
@@ -346,6 +352,12 @@ func PrepareBaseline(ctx context.Context, g Git, root, baseSHA string, overlay [
 	dir, err := os.MkdirTemp(parent, "base-")
 	if err != nil {
 		return "", nil, err
+	}
+	// Re-verify containment after creation: the resolved directory must still be
+	// inside the resolved workspace root even if a path component was swapped.
+	if real, rerr := filepath.EvalSymlinks(dir); rerr != nil || !within(absRoot, real) {
+		_ = os.RemoveAll(dir)
+		return "", nil, fmt.Errorf("redhonesty: baseline directory escaped the workspace root")
 	}
 	cleanup := func() error {
 		if rel, err := filepath.Rel(parent, dir); err != nil || strings.HasPrefix(rel, "..") || rel == "." {

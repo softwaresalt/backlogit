@@ -1,6 +1,7 @@
 package redhonesty
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"time"
 
 	"github.com/softwaresalt/backlogit/internal/faultline"
 )
@@ -83,7 +85,10 @@ func BuildArtifact(taskID, baseSHA, headSHA string, verdicts []Verdict) (faultli
 }
 
 // Store persists RedGreenEvidence artifacts per task and commit under a root
-// directory as <root>/<task>/<commit>.json.
+// directory as <root>/<task>/<commit>.json. Every filesystem operation after the
+// root is opened goes through os.Root, so a symlink inside the store can never
+// redirect a read or a write outside it, and recorded evidence is created with
+// O_EXCL so it cannot be silently replaced.
 type Store struct{ dir string }
 
 // NewStore creates a Store rooted at dir. The directory is created lazily.
@@ -98,27 +103,65 @@ func NewStore(dir string) (*Store, error) {
 	return &Store{dir: abs}, nil
 }
 
-func (s *Store) pathFor(task, commit string) (string, error) {
+func recordName(task, commit string) (string, error) {
 	if !taskIDPattern.MatchString(task) {
 		return "", fmt.Errorf("redhonesty: invalid task id %q", truncate(task))
 	}
 	if !faultline.ValidCommitSHA(commit) {
 		return "", fmt.Errorf("redhonesty: invalid commit %q", truncate(commit))
 	}
-	return filepath.Join(s.dir, task, commit+".json"), nil
+	return commit + ".json", nil
 }
 
 func isRedGreen(a faultline.EvidenceArtifact) bool {
 	return a.NodeFamily == faultline.NodeFamilyRedGreen && a.SchemaVersion == faultline.EvidenceSchemaVersionV2
 }
 
+// taskRoot opens <store>/<task> as an os.Root. The store root and the task
+// directory must be real directories (no symlink or junction); with create set
+// both are created as needed.
+func (s *Store) taskRoot(task string, create bool) (*os.Root, error) {
+	if create {
+		if err := os.MkdirAll(s.dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	fi, err := os.Lstat(s.dir)
+	if err != nil {
+		return nil, err
+	}
+	if !fi.IsDir() {
+		return nil, errors.New("redhonesty: evidence store root is not a real directory")
+	}
+	root, err := os.OpenRoot(s.dir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	if create {
+		if err := root.Mkdir(task, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+	}
+	di, err := root.Lstat(task)
+	if err != nil {
+		return nil, err
+	}
+	if !di.IsDir() {
+		return nil, fmt.Errorf("redhonesty: evidence directory for %s is not a real directory", task)
+	}
+	return root.OpenRoot(task)
+}
+
 // Write validates a through the shared contract (a full decode round trip) and
-// persists it atomically. Only red_green artifacts are accepted.
+// persists it without ever replacing an existing record. Re-recording the same
+// canonical artifact is idempotent; a different artifact for the same task and
+// commit is refused. Only red_green artifacts are accepted.
 func (s *Store) Write(a faultline.EvidenceArtifact) (string, error) {
 	if !isRedGreen(a) {
 		return "", fmt.Errorf("redhonesty: store accepts only red_green v%d artifacts", faultline.EvidenceSchemaVersionV2)
 	}
-	p, err := s.pathFor(a.ProducingTask, a.ProducingCommit)
+	name, err := recordName(a.ProducingTask, a.ProducingCommit)
 	if err != nil {
 		return "", err
 	}
@@ -129,75 +172,106 @@ func (s *Store) Write(a faultline.EvidenceArtifact) (string, error) {
 	if _, _, err := faultline.DecodeAndValidate(raw); err != nil {
 		return "", fmt.Errorf("redhonesty: refusing to persist invalid evidence: %w", err)
 	}
-	// Recorded evidence is not silently replaceable. Publication is a no-clobber
-	// atomic link of a fully written temp file, so concurrent writers cannot both
-	// win: the loser sees the existing record and either matches it (idempotent)
-	// or is refused.
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return "", err
-	}
-	tmp, err := writeTemp(filepath.Dir(p), append(raw, '\n'))
+	tr, err := s.taskRoot(a.ProducingTask, true)
 	if err != nil {
 		return "", err
 	}
-	defer os.Remove(tmp)
-	err = os.Link(tmp, p)
+	defer tr.Close()
+	path := filepath.Join(s.dir, a.ProducingTask, name)
+
+	f, err := tr.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err == nil {
-		return p, nil
+		if err := writeSynced(f, append(raw, '\n')); err != nil {
+			_ = tr.Remove(name) // never leave a partial record behind
+			return "", fmt.Errorf("redhonesty: write evidence: %w", err)
+		}
+		return path, nil
 	}
 	if !errors.Is(err, os.ErrExist) {
-		return "", fmt.Errorf("redhonesty: publish evidence: %w", err)
+		return "", fmt.Errorf("redhonesty: create evidence: %w", err)
 	}
-	existing, lerr := s.Load(a.ProducingTask, a.ProducingCommit)
+	existing, lerr := loadFrom(tr, a.ProducingTask, a.ProducingCommit, name, true)
 	if lerr != nil {
 		return "", fmt.Errorf("redhonesty: existing evidence for %s at %s is unreadable or invalid: %w", a.ProducingTask, a.ProducingCommit[:12], lerr)
 	}
 	old, e1 := existing.Canonical()
 	cur, e2 := a.Canonical()
-	if e1 == nil && e2 == nil && string(old) == string(cur) {
-		return p, nil
+	if e1 == nil && e2 == nil && bytes.Equal(old, cur) {
+		return path, nil
 	}
 	return "", fmt.Errorf("redhonesty: evidence already recorded for %s at %s and differs", a.ProducingTask, a.ProducingCommit[:12])
 }
 
-// writeTemp writes data to a new, synced temp file in dir and returns its path.
-func writeTemp(dir string, data []byte) (string, error) {
-	f, err := os.CreateTemp(dir, ".evidence-*.tmp")
-	if err != nil {
-		return "", err
-	}
-	name := f.Name()
+func writeSynced(f *os.File, data []byte) error {
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
-		_ = os.Remove(name)
-		return "", err
+		return err
 	}
 	if err := f.Sync(); err != nil {
 		_ = f.Close()
-		_ = os.Remove(name)
-		return "", err
+		return err
 	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(name)
-		return "", err
-	}
-	return name, nil
+	return f.Close()
 }
 
 // Load retrieves and re-validates the artifact for a task and commit. The file
 // must be a regular file within the size budget and must be bound to exactly
 // the requested task and commit, so an artifact copied to another key is
-// refused.
+// refused. Special files (for example a FIFO) are never opened blocking.
 func (s *Store) Load(task, commit string) (faultline.EvidenceArtifact, error) {
 	var zero faultline.EvidenceArtifact
-	p, err := s.pathFor(task, commit)
+	name, err := recordName(task, commit)
 	if err != nil {
 		return zero, err
 	}
-	if di, err := os.Lstat(filepath.Dir(p)); err == nil && !di.IsDir() {
-		return zero, fmt.Errorf("redhonesty: evidence directory for %s is not a real directory", task)
+	tr, err := s.taskRoot(task, false)
+	if err != nil {
+		return zero, err
 	}
-	f, err := os.Open(p)
+	defer tr.Close()
+	return loadFrom(tr, task, commit, name, false)
+}
+
+// loadFrom reads one record from an already-opened task root. When retry is set
+// a decode failure is retried briefly, covering a concurrent writer that created
+// the file but has not finished writing it.
+func loadFrom(tr *os.Root, task, commit, name string, retry bool) (faultline.EvidenceArtifact, error) {
+	var zero faultline.EvidenceArtifact
+	attempts := 1
+	if retry {
+		attempts = 10
+	}
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		a, err := readRecord(tr, name)
+		if err == nil {
+			if !isRedGreen(a) || a.ProducingTask != task || a.ProducingCommit != commit {
+				return zero, errors.New("redhonesty: stored evidence is not bound to the requested task and commit")
+			}
+			return a, nil
+		}
+		lastErr = err
+		if !retry || errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return zero, lastErr
+}
+
+func readRecord(tr *os.Root, name string) (faultline.EvidenceArtifact, error) {
+	var zero faultline.EvidenceArtifact
+	// Check the entry type BEFORE opening so a FIFO or device cannot block the
+	// open, then open non-blocking (where supported) and re-validate the
+	// descriptor so a swap between the two cannot recreate the hang.
+	li, err := tr.Lstat(name)
+	if err != nil {
+		return zero, err
+	}
+	if !li.Mode().IsRegular() {
+		return zero, fmt.Errorf("redhonesty: evidence %s is not a regular file", name)
+	}
+	f, err := tr.OpenFile(name, os.O_RDONLY|readOnlyOpenFlags, 0)
 	if err != nil {
 		return zero, err
 	}
@@ -207,21 +281,21 @@ func (s *Store) Load(task, commit string) (faultline.EvidenceArtifact, error) {
 		return zero, err
 	}
 	if !fi.Mode().IsRegular() {
-		return zero, fmt.Errorf("redhonesty: evidence %s is not a regular file", filepath.Base(p))
+		return zero, fmt.Errorf("redhonesty: evidence %s is not a regular file", name)
 	}
 	raw, err := io.ReadAll(io.LimitReader(f, faultline.MaxArtifactBytes+2))
 	if err != nil {
 		return zero, err
 	}
-	if len(raw) > faultline.MaxArtifactBytes+1 { // allow the trailing newline
+	// Write appends exactly one newline; strip it before the size check so an
+	// artifact of exactly MaxArtifactBytes round-trips.
+	raw = bytes.TrimSuffix(raw, []byte{'\n'})
+	if len(raw) > faultline.MaxArtifactBytes {
 		return zero, fmt.Errorf("redhonesty: evidence exceeds %d bytes", faultline.MaxArtifactBytes)
 	}
 	a, _, err := faultline.DecodeAndValidate(raw)
 	if err != nil {
 		return zero, fmt.Errorf("redhonesty: stored evidence invalid: %w", err)
-	}
-	if !isRedGreen(a) || a.ProducingTask != task || a.ProducingCommit != commit {
-		return zero, errors.New("redhonesty: stored evidence is not bound to the requested task and commit")
 	}
 	return a, nil
 }
