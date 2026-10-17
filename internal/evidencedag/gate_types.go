@@ -3,6 +3,7 @@ package evidencedag
 import (
 	"crypto/ed25519"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -31,7 +32,7 @@ var (
 	// ErrWaiverDenied is the root of every waiver denial.
 	ErrWaiverDenied = errors.New("evidencedag: waiver denied")
 	// ErrNonceReplayed indicates a waiver nonce that was already consumed.
-	ErrNonceReplayed = errors.New("evidencedag: waiver denied: nonce replayed")
+	ErrNonceReplayed = fmt.Errorf("%w: nonce replayed", ErrWaiverDenied)
 	// ErrLedgerTampered indicates the ledger failed chain verification.
 	ErrLedgerTampered = errors.New("evidencedag: ledger tampered")
 	// ErrLedgerBusy indicates the ledger writer lock could not be acquired.

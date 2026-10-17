@@ -214,7 +214,8 @@ func TestU162_003_TextReportDeterministicAndBounded(t *testing.T) {
 	assert.Contains(t, txt, "144-S")
 	assert.Contains(t, txt, testHead)
 	assert.Contains(t, txt, "rollup: blocked")
-	ia, im, iz := strings.Index(txt, "a-base"), strings.Index(txt, "m-term"), strings.Index(txt, "z-term")
+	section := txt[strings.Index(txt, "nodes:"):]
+	ia, im, iz := strings.Index(section, "a-base"), strings.Index(section, "m-term"), strings.Index(section, "z-term")
 	assert.True(t, ia >= 0 && ia < im && im < iz, "nodes listed in ID order")
 	assert.Contains(t, txt, "m-term")
 	assert.LessOrEqual(t, len(txt), MaxReportBytes)
