@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/softwaresalt/backlogit/internal/faultline"
@@ -24,6 +25,36 @@ const (
 // visible components: no "..", no absolute or rooted or drive-qualified forms,
 // no alternate data streams, and no hidden (dot-prefixed) or underscore-
 // prefixed components.
+var shortNamePattern = regexp.MustCompile(`~[0-9]`)
+
+func hasControl(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+// reservedDeviceName reports Windows device names (with or without an
+// extension), which open devices instead of files.
+func reservedDeviceName(p string) bool {
+	stem := strings.ToUpper(strings.TrimRight(strings.SplitN(p, ".", 2)[0], " "))
+	switch stem {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", "CLOCK$":
+		return true
+	}
+	for _, pre := range []string{"COM", "LPT"} {
+		if rest, ok := strings.CutPrefix(stem, pre); ok {
+			switch rest {
+			case "1", "2", "3", "4", "5", "6", "7", "8", "9", "¹", "²", "³":
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func validateRelPath(rel string) ([]string, error) {
 	if rel == "" || len(rel) > maxRelPathBytes || strings.ContainsRune(rel, 0) {
 		return nil, errors.New("evidence path is empty, too long or contains NUL")
@@ -31,9 +62,13 @@ func validateRelPath(rel string) ([]string, error) {
 	if strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, `\`) || filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" {
 		return nil, errors.New("evidence path must be relative")
 	}
-	parts := strings.FieldsFunc(rel, func(r rune) bool { return r == '/' || r == '\\' })
-	if len(parts) == 0 || strings.Contains(rel, "//") || strings.Contains(rel, `\\`) {
-		return nil, errors.New("evidence path has empty components")
+	// Both separators are normalised first, so every mixed form ("a/\\b",
+	// "a\\/b", a trailing separator) yields an empty component and is refused.
+	parts := strings.Split(strings.ReplaceAll(rel, `\`, "/"), "/")
+	for _, p := range parts {
+		if p == "" {
+			return nil, errors.New("evidence path has empty components")
+		}
 	}
 	for _, p := range parts {
 		switch {
@@ -41,8 +76,14 @@ func validateRelPath(rel string) ([]string, error) {
 			return nil, errors.New("evidence path must not contain . or .. components")
 		case strings.HasPrefix(p, ".") || strings.HasPrefix(p, "_"):
 			return nil, errors.New("evidence path must not contain hidden or underscore-prefixed components")
-		case strings.ContainsAny(p, `:*?"<>|`) || len(p) > maxPathComponent:
+		case strings.ContainsAny(p, `:*?"<>|`) || len(p) > maxPathComponent || hasControl(p):
 			return nil, errors.New("evidence path component is not allowed")
+		case strings.HasSuffix(p, ".") || strings.HasSuffix(p, " "):
+			return nil, errors.New("evidence path component must not end with a dot or space")
+		case reservedDeviceName(p):
+			return nil, errors.New("evidence path component is a reserved device name")
+		case shortNamePattern.MatchString(p):
+			return nil, errors.New("evidence path component looks like an 8.3 short name")
 		}
 	}
 	if !filepath.IsLocal(filepath.Join(parts...)) {
@@ -54,8 +95,12 @@ func validateRelPath(rel string) ([]string, error) {
 // LoadEvidenceFile reads one evidence record at rel under root. The path is
 // validated and contained by canonicalising root and opening through os.Root;
 // every component must be a real directory and the target a regular file
-// (symlinks, junctions and other reparse points are refused). The read is
-// bounded and the record decoded strictly.
+// (symlinks, junctions and other reparse points are refused) and the opened
+// descriptor must be the very file that was inspected. The read is bounded and
+// the record decoded strictly. A residual time-of-check/time-of-use window
+// remains between the inspection and the open for a writer that can swap
+// directories inside the evidence root, which is why that root must be
+// writable only by trusted producers.
 func LoadEvidenceFile(root, rel string) (EvidenceRecord, error) {
 	var zero EvidenceRecord
 	if root == "" {
@@ -79,6 +124,7 @@ func LoadEvidenceFile(root, rel string) (EvidenceRecord, error) {
 	}
 	defer r.Close()
 
+	var leaf fs.FileInfo
 	for i := range parts {
 		fi, err := r.Lstat(strings.Join(parts[:i+1], "/"))
 		if err != nil {
@@ -90,8 +136,11 @@ func LoadEvidenceFile(root, rel string) (EvidenceRecord, error) {
 		if i < len(parts)-1 && !fi.IsDir() {
 			return zero, errors.New("evidencedag: evidence path component is not a directory")
 		}
-		if i == len(parts)-1 && !fi.Mode().IsRegular() {
-			return zero, errors.New("evidencedag: evidence file is not a regular file")
+		if i == len(parts)-1 {
+			if !fi.Mode().IsRegular() {
+				return zero, errors.New("evidencedag: evidence file is not a regular file")
+			}
+			leaf = fi
 		}
 	}
 	f, err := r.OpenFile(strings.Join(parts, "/"), os.O_RDONLY|readOnlyOpenFlags, 0)
@@ -100,7 +149,7 @@ func LoadEvidenceFile(root, rel string) (EvidenceRecord, error) {
 	}
 	defer f.Close()
 	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() {
+	if err != nil || !fi.Mode().IsRegular() || !os.SameFile(leaf, fi) {
 		return zero, errors.New("evidencedag: evidence file is not a regular file")
 	}
 	raw, err := io.ReadAll(io.LimitReader(f, maxRecordBytes+1))

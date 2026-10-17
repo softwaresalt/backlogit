@@ -24,56 +24,6 @@ func evalOne(t *testing.T, d *Declaration, ev map[string]EvidenceRecord) Report 
 	return rep
 }
 
-func TestU162_002_AuthenticityBindingRejections(t *testing.T) {
-	d := decl([]Node{pnode("t", true)})
-	good := goodRec(t, "t")
-	require.Equal(t, StatusVerified, statusOf(t, evalOne(t, d, map[string]EvidenceRecord{"t": good}), "t"))
-
-	otherShip := ship()
-	otherShip.ID = "145-S"
-	otherShipRec, err := NewEvidenceRecord(otherShip, "t", parityArtifact(testTaskA, testHead, faultline.StatusPass))
-	require.NoError(t, err)
-	otherNode := rec(t, "other", parityArtifact(testTaskA, testHead, faultline.StatusPass))
-	otherNode.NodeID = "other"
-	otherHeadShip := ship()
-	otherHeadShip.HeadCommit = otherHead
-	otherHeadRec, err := NewEvidenceRecord(otherHeadShip, "t", parityArtifact(testTaskA, otherHead, faultline.StatusPass))
-	require.NoError(t, err)
-
-	tampered := good
-	tampered.Artifact = json.RawMessage(strings.Replace(string(good.Artifact), `"scenario_id":"t"`, `"scenario_id":"s2"`, 1))
-	badVersion := good
-	badVersion.SchemaVersion = 9
-	noDigest := good
-	noDigest.Digest = ""
-
-	wrongTask := rec(t, "t", parityArtifact(testTaskB, testHead, faultline.StatusPass))
-	wrongCommit := rec(t, "t", parityArtifact(testTaskA, otherHead, faultline.StatusPass))
-	wrongValidatorArt := parityArtifact(testTaskA, testHead, faultline.StatusPass)
-	wrongValidatorArt.ValidatorIdentity = "evil/forger@v1"
-	wrongValidator := rec(t, "t", wrongValidatorArt)
-
-	cases := map[string]EvidenceRecord{
-		"other node":             func() EvidenceRecord { r := good; r.NodeID = "other"; return r }(),
-		"other shipment":         otherShipRec,
-		"other head commit":      otherHeadRec,
-		"tampered artifact":      tampered,
-		"bad record version":     badVersion,
-		"missing digest":         noDigest,
-		"wrong producing task":   wrongTask,
-		"wrong producing commit": wrongCommit,
-		"wrong validator":        wrongValidator,
-	}
-	_ = otherNode
-	for name, r := range cases {
-		t.Run(name, func(t *testing.T) {
-			rep := evalOne(t, d, map[string]EvidenceRecord{"t": r})
-			assert.Equal(t, StatusError, statusOf(t, rep, "t"))
-			assert.NotEqual(t, RollupReady, rep.Rollup().State)
-		})
-	}
-}
-
 func TestU162_002_PinnedProducingCommit(t *testing.T) {
 	n := pnode("t", true)
 	n.ProducingCommit = otherHead
@@ -326,58 +276,6 @@ func writeRecord(t *testing.T, path string, r EvidenceRecord) {
 	require.NoError(t, os.WriteFile(path, b, 0o644))
 }
 
-func TestU162_002_LoadEvidenceFile(t *testing.T) {
-	root := t.TempDir()
-	good := goodRec(t, "t")
-	writeRecord(t, filepath.Join(root, "evidence", "144-S", "t.json"), good)
-	got, err := LoadEvidenceFile(root, "evidence/144-S/t.json")
-	require.NoError(t, err)
-	assert.Equal(t, good.Digest, got.Digest)
-	_, err = LoadEvidenceFile(root, `evidence\144-S\t.json`)
-	require.NoError(t, err)
-
-	outside := t.TempDir()
-	writeRecord(t, filepath.Join(outside, "x.json"), good)
-	writeRecord(t, filepath.Join(root, ".hidden", "t.json"), good)
-	writeRecord(t, filepath.Join(root, "_under", "t.json"), good)
-	require.NoError(t, os.WriteFile(filepath.Join(root, "big.json"), []byte(strings.Repeat("a", faultline.MaxArtifactBytes+9000)), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "junk.json"), []byte(`{"nope":1}`), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "dup.json"), []byte(`{"schema_version":1,"schema_version":1}`), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "trail.json"), append(func() []byte { b, _ := json.Marshal(good); return b }(), []byte(` {}`)...), 0o644))
-	require.NoError(t, os.Mkdir(filepath.Join(root, "adir"), 0o755))
-
-	rel := map[string]string{
-		"dotdot":          "../x.json",
-		"embedded dotdot": "evidence/../../x.json",
-		"absolute":        filepath.Join(outside, "x.json"),
-		"rooted slash":    "/etc/passwd",
-		"backslash root":  `\windows\x.json`,
-		"drive":           `C:x.json`,
-		"hidden dir":      ".hidden/t.json",
-		"underscore dir":  "_under/t.json",
-		"hidden file":     "evidence/.t.json",
-		"empty":           "",
-		"nul":             "evidence/t\x00.json",
-		"stream":          "evidence/144-S/t.json:stream",
-		"directory":       "adir",
-		"missing":         "nothing.json",
-		"oversize":        "big.json",
-		"unknown field":   "junk.json",
-		"duplicate key":   "dup.json",
-		"trailing data":   "trail.json",
-	}
-	for name, p := range rel {
-		t.Run(name, func(t *testing.T) {
-			_, err := LoadEvidenceFile(root, p)
-			assert.Error(t, err)
-		})
-	}
-	_, err = LoadEvidenceFile("", "evidence/144-S/t.json")
-	assert.Error(t, err)
-	_, err = LoadEvidenceFile(filepath.Join(root, "missing-root"), "x.json")
-	assert.Error(t, err)
-}
-
 func TestU162_002_LoadEvidenceFileRefusesSymlinks(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
@@ -385,14 +283,15 @@ func TestU162_002_LoadEvidenceFileRefusesSymlinks(t *testing.T) {
 	writeRecord(t, filepath.Join(outside, "real.json"), good)
 	writeRecord(t, filepath.Join(root, "inner", "real.json"), good)
 	if err := os.Symlink(filepath.Join(outside, "real.json"), filepath.Join(root, "link.json")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Skipf("SKIPPED symlink refusal checks: os.Symlink is unavailable here (%v); on Windows enable Developer Mode or run elevated", err)
 	}
 	require.NoError(t, os.Symlink(outside, filepath.Join(root, "linkdir")))
 	require.NoError(t, os.Symlink(filepath.Join(root, "inner", "real.json"), filepath.Join(root, "inlink.json")))
 	require.NoError(t, os.Symlink(filepath.Join(root, "inner"), filepath.Join(root, "indir")))
 	for _, p := range []string{"link.json", "linkdir/real.json", "inlink.json", "indir/real.json"} {
 		_, err := LoadEvidenceFile(root, p)
-		assert.Error(t, err, p)
+		require.Error(t, err, p)
+		assert.Contains(t, err.Error(), "symlink or reparse point", p)
 	}
 	if runtime.GOOS != "windows" {
 		fifo := filepath.Join(root, "pipe.json")

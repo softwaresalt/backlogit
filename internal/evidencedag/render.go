@@ -34,7 +34,7 @@ func (r Report) Text() string {
 		ids  []string
 	}{{"unmet", ru.Unmet}, {"unverifiable", ru.Unverifiable}, {"advisory", ru.Advisory}} {
 		if len(l.ids) > 0 {
-			fmt.Fprintf(&b, "%s: %s\n", l.name, strings.Join(l.ids, ", "))
+			fmt.Fprintf(&b, "%s: %s\n", l.name, sanitize(strings.Join(l.ids, ", ")))
 		}
 	}
 	b.WriteString("nodes:\n")
@@ -55,12 +55,41 @@ var dotColors = map[Status]string{
 	StatusError: "orange", StatusNotApplicable: "gray",
 }
 
+// dotWriter accumulates DOT lines under the output bound, always leaving room
+// for the closing brace so truncated output is still a well-formed graph.
+type dotWriter struct {
+	b         strings.Builder
+	truncated bool
+}
+
+const dotTruncationTail = "  // output truncated: further nodes and edges omitted\n}\n"
+
+func (w *dotWriter) line(s string) {
+	if w.truncated {
+		return
+	}
+	if w.b.Len()+len(s)+len(dotTruncationTail) > MaxReportBytes {
+		w.truncated = true
+		return
+	}
+	w.b.WriteString(s)
+}
+
+func (w *dotWriter) String() string {
+	if w.truncated {
+		return w.b.String() + dotTruncationTail
+	}
+	return w.b.String() + "}\n"
+}
+
 // DOT renders a deterministic, bounded Graphviz graph of the declaration.
 // Edges point from a node to the node it depends on. When r is non-nil, each
-// node is labelled and coloured with its evaluated status.
+// node is labelled and coloured with its evaluated status. Output beyond
+// MaxReportBytes is dropped but the graph is still closed and carries a
+// truncation comment.
 func (d *Declaration) DOT(r *Report) string {
-	var b strings.Builder
-	b.WriteString("digraph evidence {\n  rankdir=LR;\n")
+	var w dotWriter
+	w.line("digraph evidence {\n  rankdir=LR;\n")
 	nodes := append([]Node(nil), d.Nodes...)
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 	for _, n := range nodes {
@@ -76,7 +105,7 @@ func (d *Declaration) DOT(r *Report) string {
 		if n.Terminal {
 			shape = "doubleoctagon"
 		}
-		fmt.Fprintf(&b, "  %s [label=%s, shape=%s%s];\n", dotQuote(n.ID), `"`+label+`"`, shape, attrs)
+		w.line(fmt.Sprintf("  %s [label=%s, shape=%s%s];\n", dotQuote(n.ID), `"`+label+`"`, shape, attrs))
 	}
 	edges := append([]Edge(nil), d.Edges...)
 	sort.Slice(edges, func(i, j int) bool {
@@ -86,8 +115,7 @@ func (d *Declaration) DOT(r *Report) string {
 		return edges[i].DependsOn < edges[j].DependsOn
 	})
 	for _, e := range edges {
-		fmt.Fprintf(&b, "  %s -> %s;\n", dotQuote(e.Node), dotQuote(e.DependsOn))
+		w.line(fmt.Sprintf("  %s -> %s;\n", dotQuote(e.Node), dotQuote(e.DependsOn)))
 	}
-	b.WriteString("}\n")
-	return boundOutput(b.String())
+	return w.String()
 }

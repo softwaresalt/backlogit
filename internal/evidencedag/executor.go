@@ -59,10 +59,14 @@ type ParityResult struct {
 	Status string
 }
 
-// ParitySource runs the S4 parity detectors for a node.
+// ParitySource is a caller-supplied function that produces parity detector
+// results for a node. The caller owns the detectors; this package does not run
+// the S4 detectors itself.
 type ParitySource func(ctx context.Context, req ExecRequest) (ParityResult, error)
 
-// ParityExecutor adapts the S4 parity detectors as a node executor.
+// ParityExecutor wraps a caller-supplied ParitySource in the shared S4 evidence
+// envelope. It does not run S4 detectors: it trusts the source's result and
+// only enforces the shared contract on the wrapped artifact.
 type ParityExecutor struct {
 	Source ParitySource
 }

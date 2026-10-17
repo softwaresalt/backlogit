@@ -44,7 +44,62 @@ func Load(data []byte) (*Declaration, error) {
 	return &d, nil
 }
 
+const (
+	maxYAMLDepth = 32
+	maxYAMLNodes = 50000
+)
+
+// rejectYAMLIndirection refuses anchors, aliases and merge keys (which let a
+// small document expand or smuggle keys past duplicate checks) and bounds
+// depth and node count.
+func rejectYAMLIndirection(n *yaml.Node, depth int, count *int) error {
+	*count++
+	if *count > maxYAMLNodes {
+		return errors.New("YAML document has too many nodes")
+	}
+	if depth > maxYAMLDepth {
+		return errors.New("YAML nesting too deep")
+	}
+	if n.Kind == yaml.AliasNode || n.Alias != nil {
+		return errors.New("YAML aliases are not allowed")
+	}
+	if n.Anchor != "" {
+		return errors.New("YAML anchors are not allowed")
+	}
+	if n.Kind == yaml.MappingNode {
+		seen := map[string]struct{}{}
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k := n.Content[i]
+			if k.Tag == "!!merge" || (k.Kind == yaml.ScalarNode && k.Value == "<<") {
+				return errors.New("YAML merge keys are not allowed")
+			}
+			if k.Kind == yaml.ScalarNode {
+				folded := strings.ToLower(k.Value)
+				if _, dup := seen[folded]; dup {
+					return fmt.Errorf("duplicate key %q", k.Value)
+				}
+				seen[folded] = struct{}{}
+			}
+		}
+	}
+	for _, c := range n.Content {
+		if err := rejectYAMLIndirection(c, depth+1, count); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func decodeYAML(data []byte, d *Declaration) error {
+	var root yaml.Node
+	pre := yaml.NewDecoder(bytes.NewReader(data))
+	if err := pre.Decode(&root); err != nil {
+		return err
+	}
+	count := 0
+	if err := rejectYAMLIndirection(&root, 0, &count); err != nil {
+		return err
+	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := dec.Decode(d); err != nil {
@@ -74,6 +129,9 @@ func decodeJSON(data []byte, d *Declaration) error {
 
 // rejectDuplicateKeys walks the JSON token stream and refuses repeated object
 // keys (encoding/json would silently keep the last one) and excessive depth.
+// Keys are compared case-insensitively, because encoding/json matches struct
+// fields that way and a differently-cased duplicate would otherwise be a
+// parser differential.
 func rejectDuplicateKeys(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	type frame struct {
@@ -94,10 +152,11 @@ func rejectDuplicateKeys(data []byte) error {
 			top := &stack[len(stack)-1]
 			if top.isObj && top.expect {
 				if k, ok := tok.(string); ok {
-					if _, dup := top.keys[k]; dup {
+					folded := strings.ToLower(k)
+					if _, dup := top.keys[folded]; dup {
 						return fmt.Errorf("duplicate key %q", k)
 					}
-					top.keys[k] = struct{}{}
+					top.keys[folded] = struct{}{}
 					top.expect = false
 					continue
 				}

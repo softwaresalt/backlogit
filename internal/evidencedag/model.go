@@ -179,15 +179,21 @@ func validID(s string) bool {
 	return len(s) > 0 && len(s) <= MaxIDLength && idPattern.MatchString(s)
 }
 
-// truncate bounds s to MaxReasonBytes on a UTF-8 boundary and strips control
-// characters so reasons are safe to render.
-func truncate(s string) string {
-	s = strings.Map(func(r rune) rune {
+// sanitize replaces invalid UTF-8, control characters and Unicode format
+// characters (such as bidi overrides) so text is safe to render.
+func sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return ' '
 		}
 		return r
 	}, strings.ToValidUTF8(s, "?"))
+}
+
+// truncate bounds s to MaxReasonBytes on a UTF-8 boundary and sanitizes it so
+// reasons are safe to render.
+func truncate(s string) string {
+	s = sanitize(s)
 	if len(s) <= MaxReasonBytes {
 		return s
 	}
