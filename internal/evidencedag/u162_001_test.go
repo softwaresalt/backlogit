@@ -39,7 +39,11 @@ func ship() Shipment {
 }
 
 func parityArtifact(task, commit, status string) faultline.EvidenceArtifact {
-	ev := faultline.ParityEvidence{ScenarioID: "s1", Dimension: "d1", Surfaces: []string{"cli"}, DivergentFields: []string{}}
+	return parityArtifactFor("s1", task, commit, status)
+}
+
+func parityArtifactFor(scenario, task, commit, status string) faultline.EvidenceArtifact {
+	ev := faultline.ParityEvidence{ScenarioID: scenario, Dimension: "d1", Surfaces: []string{"cli"}, DivergentFields: []string{}}
 	if status == faultline.StatusFail {
 		ev.DivergentFields = []string{"title"}
 	}
@@ -59,7 +63,7 @@ func rec(t *testing.T, node string, a faultline.EvidenceArtifact) EvidenceRecord
 }
 
 func goodRec(t *testing.T, node string) EvidenceRecord {
-	return rec(t, node, parityArtifact(testTaskA, testHead, faultline.StatusPass))
+	return rec(t, node, parityArtifactFor(node, testTaskA, testHead, faultline.StatusPass))
 }
 
 func mustEval(t *testing.T, d *Declaration) *Evaluator {

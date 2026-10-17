@@ -162,15 +162,16 @@ func (e *Evaluator) Evaluate(in Input) (Report, error) {
 	defer e.mu.Unlock()
 	rep := Report{ShipmentID: in.Shipment.ID, HeadCommit: in.Shipment.HeadCommit}
 	results := make(map[string]NodeResult, len(e.order))
+	dup := duplicateDigests(in.Evidence)
 	for _, id := range e.order {
 		n := e.nodes[id]
-		key := e.nodeKey(n, in, results)
+		key := e.nodeKey(n, in, results, dup)
 		if ce, ok := e.cache[id]; ok && ce.key == key {
 			results[id] = ce.result
 			rep.CacheHits++
 			continue
 		}
-		res := e.computeNode(n, in, results)
+		res := e.computeNode(n, in, results, dup)
 		res.Key = key
 		e.cache[id] = cacheEntry{key: key, result: res}
 		results[id] = res
@@ -194,7 +195,7 @@ func writeField(h hash.Hash, s string) {
 // nodeKey digests everything that can influence the node's result: the
 // declaration, the resolved applicability inputs, the evidence and waiver
 // presented, and (transitively, via their keys) every dependency.
-func (e *Evaluator) nodeKey(n Node, in Input, results map[string]NodeResult) string {
+func (e *Evaluator) nodeKey(n Node, in Input, results map[string]NodeResult, dup map[string]struct{}) string {
 	h := sha256.New()
 	writeField(h, "evidencedag/key/v1")
 	writeField(h, in.Shipment.ID)
@@ -220,6 +221,8 @@ func (e *Evaluator) nodeKey(n Node, in Input, results map[string]NodeResult) str
 	} else {
 		writeField(h, "no-evidence")
 	}
+	_, isDup := dup[n.ID]
+	writeField(h, fmt.Sprintf("dup:%t|failure:%s", isDup, in.Failures[n.ID]))
 	if w, ok := in.Waivers[n.ID]; ok {
 		writeField(h, fmt.Sprintf("waiver:%s|%s|%s|%s|%s|%t", w.ID, w.ShipmentID, w.NodeID, w.HeadCommit, w.Principal, w.verified))
 	} else {
@@ -232,11 +235,22 @@ func (e *Evaluator) nodeKey(n Node, in Input, results map[string]NodeResult) str
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func (e *Evaluator) computeNode(n Node, in Input, results map[string]NodeResult) NodeResult {
+func (e *Evaluator) computeNode(n Node, in Input, results map[string]NodeResult, dup map[string]struct{}) NodeResult {
 	res := NodeResult{ID: n.ID, Family: n.Family, Terminal: n.Terminal, OnUnmet: n.OnUnmet}
 	set := func(s Status, reason string) NodeResult {
 		res.Status, res.Reason = s, truncate(reason)
 		return res
+	}
+
+	// Authenticity is established before applicability is consulted.
+	rec, has := in.Evidence[n.ID]
+	if has {
+		if err := authenticate(n, in.Shipment, rec); err != nil {
+			return set(StatusError, "evidence rejected: "+err.Error())
+		}
+		if _, replayed := dup[n.ID]; replayed {
+			return set(StatusError, "evidence rejected: digest is presented for more than one node")
+		}
 	}
 
 	applicable, err := ResolveApplicability(n, in.Shipment)
@@ -275,7 +289,9 @@ func (e *Evaluator) computeNode(n Node, in Input, results map[string]NodeResult)
 		return set(StatusUnmet, "upstream node "+unmetUp+" is unmet")
 	}
 
-	rec, has := in.Evidence[n.ID]
+	if reason, failed := in.Failures[n.ID]; failed && !has {
+		return set(StatusError, "executor failed: "+reason)
+	}
 	return verifyEvidence(n, rec, has, set)
 }
 

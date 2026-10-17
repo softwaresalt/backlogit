@@ -41,7 +41,7 @@ func TestU162_002_AuthenticityBindingRejections(t *testing.T) {
 	require.NoError(t, err)
 
 	tampered := good
-	tampered.Artifact = json.RawMessage(strings.Replace(string(good.Artifact), `"scenario_id":"s1"`, `"scenario_id":"s2"`, 1))
+	tampered.Artifact = json.RawMessage(strings.Replace(string(good.Artifact), `"scenario_id":"t"`, `"scenario_id":"s2"`, 1))
 	badVersion := good
 	badVersion.SchemaVersion = 9
 	noDigest := good
@@ -126,7 +126,7 @@ func fnExec(t *testing.T, fn ExecFunc) NodeExecutor {
 
 func passFn(task string) ExecFunc {
 	return func(_ context.Context, req ExecRequest) (faultline.EvidenceArtifact, error) {
-		return parityArtifact(task, req.Shipment.HeadCommit, faultline.StatusPass), nil
+		return parityArtifactFor(req.Node.ID, task, req.Shipment.HeadCommit, faultline.StatusPass), nil
 	}
 }
 
