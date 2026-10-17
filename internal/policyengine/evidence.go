@@ -93,11 +93,13 @@ func (r Record) checkShape() error {
 func (r Record) computeDigest() (string, error) {
 	var art string
 	if len(r.Artifact) > 0 {
-		var c bytes.Buffer
-		if err := json.Compact(&c, r.Artifact); err != nil {
-			return "", fmt.Errorf("compact artifact: %w", err)
+		// Marshal applies the same compaction and HTML/U+2028 escaping a bundle
+		// round trip does, so the digest is stable across serialization.
+		c, err := json.Marshal(r.Artifact)
+		if err != nil {
+			return "", fmt.Errorf("normalize artifact: %w", err)
 		}
-		sum := sha256.Sum256(c.Bytes())
+		sum := sha256.Sum256(c)
 		art = hex.EncodeToString(sum[:])
 	}
 	h := sha256.New()

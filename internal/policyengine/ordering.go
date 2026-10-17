@@ -2,6 +2,7 @@ package policyengine
 
 import (
 	"context"
+	"time"
 
 	"github.com/softwaresalt/backlogit/internal/evidencedag"
 )
@@ -14,6 +15,38 @@ func (e *Engine) checkOrdering(ctx context.Context, facts map[NodeType]fact) {
 	base := make(map[NodeType]fact, len(facts))
 	for id, f := range facts {
 		base[id] = f
+	}
+	// Untimed derived facts inherit the latest timestamp of their timestamped
+	// ancestors so ordering is still compared across them.
+	visiting := map[NodeType]bool{}
+	var effective func(id NodeType) (time.Time, bool)
+	effective = func(id NodeType) (time.Time, bool) {
+		f, ok := base[id]
+		if !ok || !f.ok {
+			return time.Time{}, false
+		}
+		if f.hasAt {
+			return f.at, true
+		}
+		if visiting[id] {
+			return time.Time{}, false
+		}
+		visiting[id] = true
+		defer delete(visiting, id)
+		var latest time.Time
+		found := false
+		for _, p := range e.reg.predecessors(id) {
+			if at, ok := effective(p); ok && (!found || at.After(latest)) {
+				latest, found = at, true
+			}
+		}
+		return latest, found
+	}
+	for id, f := range base {
+		if at, ok := effective(id); ok && !f.hasAt {
+			f.at, f.hasAt = at, true
+			base[id] = f
+		}
 	}
 	for _, g := range e.reg.Gates() {
 		n, ok := base[g.ID]
