@@ -75,6 +75,7 @@ const (
 	CodeUpstreamUnverifiable  = "upstream_unverifiable"
 	CodeHeadUnpublished       = "head_unpublished"
 	CodeNoProtectedRef        = "no_protected_ref"
+	CodeNotReady              = "gate_not_ready"
 	CodeInvalidRequest        = "invalid_request"
 )
 
@@ -284,7 +285,7 @@ func (e *Engine) Check(ctx context.Context, req Request) (Decision, error) {
 	switch {
 	case !knownSurface(req.Surface):
 		return invalidRequest(req, e.mode, "surface %q is not a known surface", clip(string(req.Surface), 32))
-	case !validTaskID(req.TaskID):
+	case !evidencedag.ValidTaskID(req.TaskID):
 		return invalidRequest(req, e.mode, "task id is not a canonical backlog task ID")
 	case !faultline.ValidCommitSHA(req.HeadCommit):
 		return invalidRequest(req, e.mode, "head commit must be a full lowercase commit SHA")
@@ -303,7 +304,9 @@ func (e *Engine) Check(ctx context.Context, req Request) (Decision, error) {
 		byNode[r.Node] = append(byNode[r.Node], r)
 	}
 
-	if v := e.verifyPublished(ctx, req.HeadCommit); v != nil {
+	if v, err := e.verifyPublished(ctx, req.HeadCommit); err != nil {
+		return blocked(req, e.mode, Violation{Code: CodeInvalidRequest, Reason: "evaluation was cancelled"}, fmt.Errorf("policyengine: %w", err))
+	} else if v != nil {
 		return e.unverifiableHead(req, *v), nil
 	}
 
@@ -398,6 +401,15 @@ func (e *Engine) decide(req Request, gates []GateDecl, facts map[NodeType]fact, 
 		out.ReviewReady = false
 		out.Allowed = e.mode == ModeReportOnly
 	}
+	if !out.ReviewReady && len(out.Errors) == 0 {
+		// The core refused without any gate-level cause the engine can name;
+		// never report a blocked decision with no violation.
+		reason := dec.Reason
+		if reason == "" {
+			reason = "the gate roll-up is not review-ready"
+		}
+		out.Errors = append(out.Errors, Violation{Code: CodeNotReady, Reason: clip(reason, MaxErrorBytes)})
+	}
 	switch {
 	case out.ReviewReady:
 		out.Disposition, out.Reason = DispositionPass, "every applicable gate is satisfied"
@@ -433,25 +445,59 @@ func (e *Engine) unverifiableHead(req Request, v Violation) Decision {
 }
 
 // verifyPublished proves the head commit is reachable from a protected
-// remote-tracking ref. A nil result means it is.
-func (e *Engine) verifyPublished(ctx context.Context, head string) *Violation {
+// remote-tracking ref. A nil violation with a nil error means it is. A
+// cancelled context is returned as an error, never as a violation, so even
+// report-only mode cannot turn a cancelled check into an allowed one. A git
+// execution failure is reported with its (clipped) error rather than as a
+// generic unpublished head.
+func (e *Engine) verifyPublished(ctx context.Context, head string) (*Violation, error) {
 	var tips []string
+	var gitErr error
+	note := func(err error) {
+		if gitErr == nil {
+			gitErr = err
+		}
+	}
 	for _, ref := range e.refs {
 		tip, err := e.opts.Git.ResolveCommit(ctx, ref)
-		if err != nil || !faultline.ValidCommitSHA(tip) {
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, cerr
+		}
+		switch {
+		case errors.Is(err, ErrRefNotFound):
+			continue
+		case err != nil:
+			note(err)
+			continue
+		case !faultline.ValidCommitSHA(tip):
+			note(errors.New("git returned an invalid commit for a protected ref"))
 			continue
 		}
 		tips = append(tips, tip)
 	}
 	if len(tips) == 0 {
-		return &Violation{Code: CodeNoProtectedRef, Reason: "none of the protected remote refs resolves; the head commit cannot be verified"}
+		if gitErr != nil {
+			return &Violation{Code: CodeSHAUnverifiable, Reason: clip("the protected remote refs could not be resolved: "+gitErr.Error(), MaxErrorBytes)}, nil
+		}
+		return &Violation{Code: CodeNoProtectedRef, Reason: "none of the protected remote refs resolves; the head commit cannot be verified"}, nil
 	}
 	for _, tip := range tips {
-		if ok, err := e.opts.Git.IsAncestor(ctx, head, tip); err == nil && ok {
-			return nil
+		ok, err := e.opts.Git.IsAncestor(ctx, head, tip)
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, cerr
+		}
+		if err != nil {
+			note(err)
+			continue
+		}
+		if ok {
+			return nil, nil
 		}
 	}
-	return &Violation{Code: CodeHeadUnpublished, Reason: "the head commit is not reachable from any protected remote ref (a local branch is not trusted)"}
+	if gitErr != nil {
+		return &Violation{Code: CodeSHAUnverifiable, Reason: clip("the head commit's publication could not be verified: "+gitErr.Error(), MaxErrorBytes)}, nil
+	}
+	return &Violation{Code: CodeHeadUnpublished, Reason: "the head commit is not reachable from any protected remote ref (a local branch is not trusted)"}, nil
 }
 
 func (e *Engine) derivedFact(ctx context.Context, node NodeType, recs []Record, req Request) (f fact) {
@@ -463,7 +509,7 @@ func (e *Engine) derivedFact(ctx context.Context, node NodeType, recs []Record, 
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			f = failed(evidencedag.StatusError, CodeDerivationDegraded, "the derivation source failed for %s", node)
+			f = failed(evidencedag.StatusError, CodeDerivationDegraded, "the derivation source failed for %s: %s", node, clip(fmt.Sprint(r), 120))
 		}
 	}()
 	var status evidence.Status

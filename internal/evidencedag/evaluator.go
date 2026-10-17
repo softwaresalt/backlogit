@@ -263,12 +263,17 @@ func (e *Evaluator) validateInput(in Input) error {
 	return nil
 }
 
-func writeField(h hash.Hash, s string) {
+// WriteField writes s to h with an 8-byte big-endian length prefix, so a
+// concatenation of fields can never be ambiguous. It is shared with the S11
+// policy engine's record digests.
+func WriteField(h hash.Hash, s string) {
 	var l [8]byte
 	binary.BigEndian.PutUint64(l[:], uint64(len(s)))
 	h.Write(l[:])
 	h.Write([]byte(s))
 }
+
+func writeField(h hash.Hash, s string) { WriteField(h, s) }
 
 // nodeKey digests everything that can influence the node's result: the
 // declaration, the resolved applicability inputs, the evidence and waiver

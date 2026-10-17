@@ -72,7 +72,7 @@ func (e *Engine) CheckShipment(ctx context.Context, req ShipmentRequest) (Shipme
 	switch {
 	case !knownSurface(req.Surface):
 		return shipmentBlocked(req, e.mode, "surface %q is not a known surface", clip(string(req.Surface), 32))
-	case !validTaskID(req.ShipmentID):
+	case !evidencedag.ValidTaskID(req.ShipmentID):
 		return shipmentBlocked(req, e.mode, "shipment id is not a canonical backlog ID")
 	case len(req.Manifest) == 0:
 		return shipmentBlocked(req, e.mode, "the shipment manifest is empty: nothing can be verified")
@@ -81,7 +81,7 @@ func (e *Engine) CheckShipment(ctx context.Context, req ShipmentRequest) (Shipme
 	}
 	manifest := make(map[string]struct{}, len(req.Manifest))
 	for _, id := range req.Manifest {
-		if !validTaskID(id) {
+		if !evidencedag.ValidTaskID(id) {
 			return shipmentBlocked(req, e.mode, "manifest task id %q is not canonical", clip(id, 64))
 		}
 		if _, dup := manifest[id]; dup {

@@ -233,7 +233,7 @@ func validateEntry(e LedgerEntry) error {
 	switch {
 	case e.AcceptedAt <= 0:
 		return errors.New("accepted_at is required")
-	case !validTaskID(e.ShipmentID):
+	case !ValidTaskID(e.ShipmentID):
 		return errors.New("shipment id is invalid")
 	case !validID(e.NodeID):
 		return errors.New("node id is invalid")

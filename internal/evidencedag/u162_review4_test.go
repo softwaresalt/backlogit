@@ -17,9 +17,9 @@ import (
 func TestReview4_IdentifierLengthIsCheckedBeforePatterns(t *testing.T) {
 	taskID := func(n int) string { return strings.Repeat("1", n-2) + "-S" }
 	t.Run("task id boundary", func(t *testing.T) {
-		assert.True(t, validTaskID(taskID(MaxIDLength)))
-		assert.False(t, validTaskID(taskID(MaxIDLength+1)))
-		assert.False(t, validTaskID(taskID(1<<20)))
+		assert.True(t, ValidTaskID(taskID(MaxIDLength)))
+		assert.False(t, ValidTaskID(taskID(MaxIDLength+1)))
+		assert.False(t, ValidTaskID(taskID(1<<20)))
 	})
 	t.Run("shipment validation", func(t *testing.T) {
 		for _, c := range []struct {

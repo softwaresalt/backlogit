@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -193,7 +194,9 @@ func (g ExecGit) run(ctx context.Context, args ...string) (string, int, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
+	// Replace refs and grafts must never rewrite the ancestry being verified.
+	full := append([]string{"--no-replace-objects", "-c", "core.useReplaceRefs=false"}, args...)
+	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Dir = g.Dir
 	cmd.Env = gitEnv()
 	out := &limitedBuffer{max: maxGitOutput}
@@ -211,6 +214,31 @@ func (g ExecGit) run(ctx context.Context, args ...string) (string, int, error) {
 		return "", ee.ExitCode(), fmt.Errorf("policyengine: git %s failed with exit code %d", args[0], ee.ExitCode())
 	}
 	return "", -1, fmt.Errorf("policyengine: run git %s: %w", args[0], err)
+}
+
+// Toplevel returns the repository's top-level working directory.
+func (g ExecGit) Toplevel(ctx context.Context) (string, error) {
+	out, _, err := g.run(ctx, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	if out == "" || strings.ContainsRune(out, 0) {
+		return "", errors.New("policyengine: git returned an invalid repository root")
+	}
+	return filepath.Clean(filepath.FromSlash(out)), nil
+}
+
+// OriginURL returns the configured URL of the origin remote. A repository
+// without an origin is an error.
+func (g ExecGit) OriginURL(ctx context.Context) (string, error) {
+	out, _, err := g.run(ctx, "remote", "get-url", "origin")
+	if err != nil {
+		return "", err
+	}
+	if out == "" || strings.ContainsRune(out, 0) {
+		return "", errors.New("policyengine: git returned an invalid origin URL")
+	}
+	return out, nil
 }
 
 // ResolveCommit implements Git.

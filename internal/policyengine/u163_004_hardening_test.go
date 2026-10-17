@@ -31,35 +31,51 @@ func TestU163_004_HardeningHostileRecordsBlockWithoutPanicking(t *testing.T) {
 	e := newEnv(t, enforceRegistry)
 	eng := e.engine()
 	good := e.good()
-	hostile := map[string]func(*Record){
-		"huge artifact":      func(r *Record) { r.Artifact = json.RawMessage(`"` + strings.Repeat("a", MaxArtifactBytes) + `"`) },
-		"null artifact":      func(r *Record) { r.Artifact = json.RawMessage(`null`) },
-		"truncated artifact": func(r *Record) { r.Artifact = json.RawMessage(`{"a":`) },
-		"far future":         func(r *Record) { r.RecordedAt = time.Date(2199, 1, 1, 0, 0, 0, 0, time.UTC) },
-		"far past":           func(r *Record) { r.RecordedAt = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC) },
-		"control characters": func(r *Record) { r.Node = NodeType("green-phase-verify\x00\x1b[31m") },
-		"empty digest":       func(r *Record) { r.Digest = "" },
-		"digest of zeros":    func(r *Record) { r.Digest = strings.Repeat("0", 64) },
+	// Every mutation is re-digested (unless the digest is the hostile part), so
+	// the record is rejected for its own defect and not for a stale digest.
+	hostile := map[string]struct {
+		mut      func(*Record)
+		redigest bool
+		code     string
+	}{
+		"huge artifact": {func(r *Record) {
+			r.Artifact = json.RawMessage(`"` + strings.Repeat("a", MaxArtifactBytes) + `"`)
+		}, true, CodeEvidenceInvalid},
+		"null artifact":      {func(r *Record) { r.Artifact = json.RawMessage(`null`) }, true, CodeEvidenceInvalid},
+		"truncated artifact": {func(r *Record) { r.Artifact = json.RawMessage(`{"a":`) }, true, CodeEvidenceInvalid},
+		"far future":         {func(r *Record) { r.RecordedAt = time.Date(2199, 1, 1, 0, 0, 0, 0, time.UTC) }, true, CodeTimestampFuture},
+		"far past":           {func(r *Record) { r.RecordedAt = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC) }, true, CodeEvidenceInvalid},
+		"control characters": {func(r *Record) { r.Node = NodeType("green-phase-verify\x00\x1b[31m") }, true, CodeInvalidRequest},
+		"empty digest":       {func(r *Record) { r.Digest = "" }, false, CodeDigestMismatch},
+		"digest of zeros":    {func(r *Record) { r.Digest = strings.Repeat("0", 64) }, false, CodeDigestMismatch},
 	}
-	for name, mut := range hostile {
+	for name, tc := range hostile {
 		t.Run(name, func(t *testing.T) {
 			recs := map[NodeType]Record{}
 			for k, v := range good {
 				recs[k] = v
 			}
 			r := recs[NodeGreenPhaseVerify]
-			mut(&r)
+			tc.mut(&r)
+			if tc.redigest {
+				if d, err := r.computeDigest(); err == nil {
+					r.Digest = d
+				}
+			}
 			recs[NodeGreenPhaseVerify] = r
 			req := e.request(recs)
 			assert.NotPanics(t, func() {
-				d, err := eng.Check(context.Background(), req)
-				_ = err
+				d, _ := eng.Check(context.Background(), req)
 				assert.False(t, d.Allowed)
 				assert.NotEqual(t, DispositionPass, d.Disposition)
+				require.NotEmpty(t, d.Errors)
+				codes := make([]string, 0, len(d.Errors))
 				for _, v := range d.Errors {
+					codes = append(codes, v.Code)
 					assert.LessOrEqual(t, len(v.Reason), MaxErrorBytes)
 					assert.NotContains(t, v.Reason, "\x1b")
 				}
+				assert.Contains(t, codes, tc.code, "%+v", d.Errors)
 			})
 		})
 	}

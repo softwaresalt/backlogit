@@ -182,9 +182,9 @@ func validID(s string) bool {
 	return len(s) > 0 && len(s) <= MaxIDLength && idPattern.MatchString(s)
 }
 
-// validTaskID reports whether s is a bounded task or shipment identifier. The
+// ValidTaskID reports whether s is a bounded task or shipment identifier. The
 // length is checked before the pattern so oversized input is never scanned.
-func validTaskID(s string) bool {
+func ValidTaskID(s string) bool {
 	return len(s) > 0 && len(s) <= MaxIDLength && taskPattern.MatchString(s)
 }
 

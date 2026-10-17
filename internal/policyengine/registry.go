@@ -3,7 +3,6 @@ package policyengine
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -20,13 +19,6 @@ const (
 	gateEnabled           = "enabled"
 	gateDisabled          = "disabled"
 )
-
-var taskIDPattern = regexp.MustCompile(`^\d{3,}(\.\d{3,})*-[A-Z]{1,2}$`)
-
-// validTaskID is the length-first check for a canonical backlog task ID.
-func validTaskID(s string) bool {
-	return len(s) > 0 && len(s) <= evidencedag.MaxIDLength && taskIDPattern.MatchString(s)
-}
 
 type gateDoc struct {
 	ID          string `json:"id" yaml:"id"`
@@ -121,6 +113,9 @@ func LoadRegistry(data []byte) (*Registry, error) {
 			add("node %s must declare enabled and overridable explicitly", id)
 			continue
 		}
+		if *n.Overridable && id != NodeHarnessScaffold && id != NodeRedPhaseVerify {
+			add("node %s must not be overridable: only %s and %s may be (P-002.1)", id, NodeHarnessScaffold, NodeRedPhaseVerify)
+		}
 		seen[id] = GateDecl{ID: id, Enabled: *n.Enabled, Overridable: *n.Overridable}
 	}
 	gates := make([]GateDecl, 0, len(seen))
@@ -192,7 +187,7 @@ func GateAttribute(id NodeType) string { return "gate." + string(id) }
 // workflow-policy node per gate whose applicability is keyed off the per-gate
 // rollout attribute, and the registry's ordering edges.
 func (r *Registry) Declaration(taskID string) (*evidencedag.Declaration, error) {
-	if !validTaskID(taskID) {
+	if !evidencedag.ValidTaskID(taskID) {
 		return nil, errors.New("policyengine: task id must be a canonical backlog task ID")
 	}
 	d := &evidencedag.Declaration{

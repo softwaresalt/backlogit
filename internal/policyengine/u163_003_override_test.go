@@ -160,7 +160,7 @@ func TestU163_003_NonOverridableGatesAreDeniedWithoutConsumingTheToken(t *testin
 			require.Len(t, d.OverrideDenials, 1)
 			assert.Contains(t, d.OverrideDenials[0].Reason, "not overridable")
 			assert.Equal(t, 0, d.OverrideDenials[0].Index)
-			log, err := VerifyOverrideLog(o.ledger, o.anchors)
+			log, err := VerifyOverrideLog(o.ledger, o.anchors, AllowGenesis())
 			require.NoError(t, err)
 			assert.Zero(t, log.Records, "a denied token must not be recorded")
 		})
@@ -194,7 +194,7 @@ func TestU163_003_OverridesFromNonInteractiveContextsAreDeniedByDefault(t *testi
 			if !tc.want {
 				require.Len(t, d.OverrideDenials, 1)
 				assert.Contains(t, d.OverrideDenials[0].Reason, "non-interactive")
-				log, err := VerifyOverrideLog(o.ledger, o.anchors)
+				log, err := VerifyOverrideLog(o.ledger, o.anchors, AllowGenesis())
 				require.NoError(t, err)
 				assert.Zero(t, log.Records)
 			}
@@ -252,7 +252,7 @@ func TestU163_003_SelfAssertedOrUnverifiableIdentityIsDenied(t *testing.T) {
 			d := check(t, o.engine(), overrideRequest(e, recs, true, mk(o)))
 			assert.False(t, d.Allowed, "%+v", d.Errors)
 			require.NotEmpty(t, d.OverrideDenials)
-			log, err := VerifyOverrideLog(o.ledger, o.anchors)
+			log, err := VerifyOverrideLog(o.ledger, o.anchors, AllowGenesis())
 			require.NoError(t, err)
 			assert.Zero(t, log.Records)
 		})
@@ -303,7 +303,8 @@ func TestU163_003_TokenForADisabledGateIsDenied(t *testing.T) {
 	o := newOverrideEnv(t, e)
 	d := check(t, o.engine(), overrideRequest(e, e.good(), true, o.human(NodeRedPhaseVerify)))
 	assert.NotEmpty(t, d.OverrideDenials)
-	log, err := VerifyOverrideLog(o.ledger, o.anchors)
+	assert.Contains(t, d.OverrideDenials[0].Reason, "not applicable")
+	log, err := VerifyOverrideLog(o.ledger, o.anchors, AllowGenesis())
 	require.NoError(t, err)
 	assert.Zero(t, log.Records)
 }
@@ -401,7 +402,7 @@ func TestU163_003_OverrideLogIsTamperEvident(t *testing.T) {
 func TestU163_003_VerifyOverrideLogEmptyAndUnanchored(t *testing.T) {
 	e := newEnv(t, enforceRegistry)
 	o := newOverrideEnv(t, e)
-	log, err := VerifyOverrideLog(o.ledger, o.anchors)
+	log, err := VerifyOverrideLog(o.ledger, o.anchors, AllowGenesis())
 	require.NoError(t, err)
 	assert.Zero(t, log.Records)
 	assert.NotNil(t, log.Entries, "an empty log is an empty list, not nil")
@@ -413,8 +414,9 @@ func TestU163_003_VerifyOverrideLogEmptyAndUnanchored(t *testing.T) {
 
 	// A ledger that exists while the anchor says genesis is tampering, not "no anchor".
 	require.NoError(t, os.WriteFile(o.lpath, []byte("{}\n"), 0o600))
-	_, err = VerifyOverrideLog(o.ledger, o.anchors)
-	assert.Error(t, err)
+	_, err = VerifyOverrideLog(o.ledger, o.anchors, AllowGenesis())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, evidencedag.ErrLedgerTampered)
 }
 
 var identityFieldPattern = regexp.MustCompile(`(?i)principal|operator|identity|actor|user|approver|author`)

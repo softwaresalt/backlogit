@@ -14,7 +14,7 @@ const RecordSchemaVersion = 1
 
 // validateShipment checks the shipment identity and attribute bounds.
 func validateShipment(s Shipment) error {
-	if !validTaskID(s.ID) {
+	if !ValidTaskID(s.ID) {
 		return fmt.Errorf("%w: shipment id is invalid", ErrInvalidInput)
 	}
 	if len(s.HeadCommit) > 64 || !faultline.ValidCommitSHA(s.HeadCommit) {

@@ -3,12 +3,10 @@ package policyengine
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/evidencedag"
@@ -66,19 +64,12 @@ func knownNode(n NodeType) bool {
 	return false
 }
 
-func writeField(h hash.Hash, s string) {
-	var l [8]byte
-	binary.BigEndian.PutUint64(l[:], uint64(len(s)))
-	h.Write(l[:])
-	h.Write([]byte(s))
-}
-
 // checkShape validates every field of r except its digest.
 func (r Record) checkShape() error {
 	switch {
 	case r.SchemaVersion != EvidenceSchemaVersion:
 		return fmt.Errorf("unsupported record schema version %d", r.SchemaVersion)
-	case !validTaskID(r.TaskID):
+	case !evidencedag.ValidTaskID(r.TaskID):
 		return errors.New("task id is not a canonical backlog task ID")
 	case !knownNode(r.Node):
 		return fmt.Errorf("unknown node %q", clip(string(r.Node), 64))
@@ -114,7 +105,7 @@ func (r Record) computeDigest() (string, error) {
 		"policyengine/record/v1", r.TaskID, string(r.Node), r.CommitSHA,
 		fmt.Sprintf("%d", r.RecordedAt.UTC().UnixNano()), r.Outcome, art,
 	} {
-		writeField(h, f)
+		evidencedag.WriteField(h, f)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }

@@ -19,22 +19,9 @@ const maxJSONDepth = 16
 // fields, duplicate keys, multiple documents and trailing data are refused,
 // and the schema version must match SchemaVersion exactly.
 func Load(data []byte) (*Declaration, error) {
-	if len(data) > MaxDeclarationBytes {
-		return nil, fmt.Errorf("%w: declaration exceeds %d bytes", ErrInvalidDeclaration, MaxDeclarationBytes)
-	}
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 {
-		return nil, fmt.Errorf("%w: declaration is empty", ErrInvalidDeclaration)
-	}
 	var d Declaration
-	var err error
-	if trimmed[0] == '{' {
-		err = decodeJSON(trimmed, &d)
-	} else {
-		err = decodeYAML(trimmed, &d)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidDeclaration, truncate(err.Error()))
+	if err := DecodeStrict(data, &d); err != nil {
+		return nil, err
 	}
 	if d.SchemaVersion != SchemaVersion {
 		return nil, fmt.Errorf("%w: got %d, want %d", ErrUnsupportedVersion, d.SchemaVersion, SchemaVersion)

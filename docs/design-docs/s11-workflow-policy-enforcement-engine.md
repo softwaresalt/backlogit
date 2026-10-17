@@ -108,7 +108,10 @@ valid for at most 24 hours, with a single-use nonce. Automation keys are denied.
 * Every accepted override is appended to the S10 hash-chained ledger, anchored in an
   external anchor store, recording principal, justification and gate.
   `VerifyOverrideLog` (CLI `policy verify-overrides`) detects edited, reordered,
-  extended, truncated, emptied or deleted logs (`evidencedag.ErrLedgerTampered`).
+  extended, truncated, emptied or deleted logs (`evidencedag.ErrLedgerTampered`). A
+  missing anchor is an error (`ErrAnchorMissing`) unless the caller passes
+  `AllowGenesis` (CLI `--genesis`); the ledger and anchor must be in different
+  directories, and verification needs write access for the ledger lock file.
   Re-presenting the identical token is an idempotent retry bound to the same task, gate
   and head; a different token reusing a consumed nonce is denied.
 
@@ -135,7 +138,7 @@ Incident replays are fixtures in `internal/policyengine/testdata/incidents`:
 `INC-P002-152F-134S` (evidence recorded out of order) must block, and a control
 scenario must pass.
 
-## Known limitations
+## Known limitations / deferred
 
 * **Library wiring.** The roll-up is not yet called from `backlogit shipment ship` or
   the move-to-review transition, and no MCP tool or agent dispatch calls `CheckBundle`
@@ -154,6 +157,35 @@ scenario must pass.
 * **Override interactivity** is a TTY heuristic (stdin and stdout) plus the token; it is
   not an identity proof. The signed token is the authority.
 * **Remote derivation** requires the `gh` CLI and `--repo`; without it the derived gates
-  block.
-* **Local git trust.** `ExecGit` strips ambient `GIT_*` variables but trusts the working
-  repository's object database.
+  block. `--repo` must equal the github.com slug of the `origin` remote; when origin does
+  not resolve to one, enforce mode fails closed and report-only mode warns.
+* **Local git trust.** `ExecGit` strips ambient `GIT_*` variables and disables replace
+  refs and grafts (`--no-replace-objects`, `core.useReplaceRefs=false`) so they cannot
+  forge ancestry, but it trusts the working repository's object database.
+
+### Deferred (accepted for this release)
+
+These are known, documented gaps. Each is deferred deliberately, not overlooked.
+
+* **Unsigned records.** Harness, green and merge-ready evidence records are digested but
+  not signed; anyone who can write the evidence file can attest to them.
+* **Registry not pinned to a protected ref.** The registry is read from the working tree,
+  so whoever can edit it can change modes and gates (overridable flags are limited to
+  `harness-scaffold` and `red-phase-verify`, but enabling or disabling gates is not
+  pinned). Pinning it to a protected ref is future work.
+* **Override trust root on argv; TTY is heuristic.** The trust file, ledger and anchor
+  paths are supplied on the command line, and interactivity is a stdin/stdout TTY
+  heuristic, not an identity proof. The signed token remains the authority.
+* **Remote-tracking refs are local mirrors.** Protected refs are not verified against
+  the remote (`git ls-remote`); a local user can move them with `git update-ref`.
+* **Review-complete counts any review.** The S7 `ReviewedCurrent` derivation counts
+  COMMENTED and CHANGES_REQUESTED reviews of the head commit, not only APPROVED ones.
+* **Derived evidence is not bound to the task.** Review and CI evidence is bound to the
+  pull request and head commit, not to the task-to-PR association.
+* **`MemGit` is exported.** The in-memory `Git` test double is part of the public API
+  surface; it should move behind a test-only package.
+* **Engine cache unused across calls.** The core evaluator's result cache is not reused
+  between `Engine.Check` calls; every check recomputes.
+* **Override tokens are consumed even when the gate was already verified.** A token is
+  burned by the core gate when it is accepted for an applicable gate, even if that
+  gate's own evidence would have verified without it.

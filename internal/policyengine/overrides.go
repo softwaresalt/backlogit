@@ -43,12 +43,32 @@ type OverrideLog struct {
 	Entries []OverrideEntry    `json:"entries"`
 }
 
+// ErrAnchorMissing reports that no external anchor has ever been stored for
+// the override ledger, so the ledger cannot be verified against anything.
+var ErrAnchorMissing = errors.New("policyengine: the override ledger has no external anchor")
+
+// VerifyOption configures VerifyOverrideLog.
+type VerifyOption func(*verifyOptions)
+
+type verifyOptions struct{ genesis bool }
+
+// AllowGenesis declares that a missing anchor is an expected genesis state, so
+// the ledger is verified as empty. Without it a missing anchor is an error:
+// an operator who deleted the anchor must not get a silent pass.
+func AllowGenesis() VerifyOption { return func(o *verifyOptions) { o.genesis = true } }
+
 // VerifyOverrideLog verifies the append-only override ledger against its
 // external anchor and returns its entries. The ledger must match the anchor
 // exactly: an edited, reordered, extended, truncated, emptied or deleted
-// ledger fails with evidencedag.ErrLedgerTampered. A missing anchor means a
-// genesis state: the ledger must then be empty.
-func VerifyOverrideLog(l *evidencedag.Ledger, anchors evidencedag.AnchorStore) (OverrideLog, error) {
+// ledger fails with evidencedag.ErrLedgerTampered. A missing anchor fails with
+// ErrAnchorMissing unless AllowGenesis is passed, in which case the ledger
+// must be empty. Verification takes the ledger's lock file, so the caller
+// needs write access to the ledger directory.
+func VerifyOverrideLog(l *evidencedag.Ledger, anchors evidencedag.AnchorStore, opts ...VerifyOption) (OverrideLog, error) {
+	var vo verifyOptions
+	for _, o := range opts {
+		o(&vo)
+	}
 	if l == nil {
 		return OverrideLog{}, errors.New("policyengine: an override ledger is required")
 	}
@@ -60,6 +80,9 @@ func VerifyOverrideLog(l *evidencedag.Ledger, anchors evidencedag.AnchorStore) (
 		return OverrideLog{}, fmt.Errorf("policyengine: load override anchor: %w", err)
 	}
 	if !ok {
+		if !vo.genesis {
+			return OverrideLog{}, ErrAnchorMissing
+		}
 		a = evidencedag.Anchor{}
 	}
 	recs, err := l.Records(&a)

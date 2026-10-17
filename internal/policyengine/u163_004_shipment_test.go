@@ -372,7 +372,12 @@ func TestU163_004_IncidentReplayScenariosBlock(t *testing.T) {
 				d, err := eng.Check(context.Background(), req)
 				require.NoError(t, err)
 				assert.Equal(t, fx.Expect.Disposition, d.Disposition, "%s on %s: %+v", fx.ID, s, d.Errors)
-				assert.Equal(t, fx.Expect.Disposition == DispositionPass, d.Allowed)
+				wantAllowed := fx.Expect.Disposition == DispositionPass || fx.Expect.Disposition == DispositionReportOnly
+				assert.Equal(t, wantAllowed, d.Allowed, "%s on %s", fx.ID, s)
+				if fx.Expect.Disposition != DispositionPass {
+					assert.NotEmpty(t, fx.Expect.Violations, "%s: a non-pass fixture must name its violations", fx.ID)
+					assert.NotEmpty(t, d.Errors, "%s on %s: a non-pass decision must carry a violation", fx.ID, s)
+				}
 				for _, want := range fx.Expect.Violations {
 					assert.True(t, hasViolation(d, NodeType(want.Node), want.Code), "%s: expected %s/%s in %+v", fx.ID, want.Node, want.Code, d.Errors)
 				}

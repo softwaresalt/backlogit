@@ -181,7 +181,7 @@ func validateNode(n Node, add func(code, subject, detail string)) {
 	if n.Validator == "" || len(n.Validator) > MaxIDLength {
 		add("validator", n.ID, "validator reference is required and at most 96 bytes")
 	}
-	if !validTaskID(n.ProducingTask) {
+	if !ValidTaskID(n.ProducingTask) {
 		add("bad_task", n.ID, "producing_task must be a canonical backlog task ID")
 	}
 	if n.ProducingCommit != CommitHead && !faultline.ValidCommitSHA(n.ProducingCommit) {
