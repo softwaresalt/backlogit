@@ -31,6 +31,9 @@ type Input struct {
 	Shipment Shipment
 	Evidence map[string]EvidenceRecord
 	Waivers  map[string]Waiver
+	// Failures maps a node ID to a reason when its executor could not produce
+	// evidence; such an applicable node evaluates as unverifiable.
+	Failures map[string]string
 }
 
 // NodeResult is the evaluated outcome of one node.
