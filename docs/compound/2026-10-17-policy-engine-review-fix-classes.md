@@ -28,6 +28,6 @@ The S11 engine (`internal/policyengine`, 145-S) drew findings in eight classes t
 * **Normalize `json.RawMessage` before digesting.** `encoding/json` HTML-escapes (`<`, `>`, `&`) when re-marshalling, so a digest over re-encoded bytes differs from one over the original. Normalize consistently on both sides.
 * **Disable git replace refs.** Run git with `--no-replace-objects` (and ignore `refs/replace`) so history inspection cannot be redirected by replacement objects.
 * **Cancellation versus exit code.** On Windows a cancelled context can surface as a process exit code rather than `ctx.Err()`. Check `ctx.Err()` first and classify cancellation separately from tool failure.
-* **Pass the trust root explicitly via argv.** Do not infer the trust root from environment or cwd; take it as an explicit argument.
+* **Trust root must be operator-controlled.** Do not infer the trust root from environment or cwd, and do not let the invoking caller choose it: a caller that can select the file can select keys it controls. Argv is acceptable only when a trusted launcher pins the value independently of the caller. S11 currently takes it from argv, which is a deferred limitation (stash `10D36FF6`).
 * **Keep fixtures EOL-stable.** CRLF fixtures fail `TestU175_001_BaselineEol`; write test fixtures with LF.
 * **Audit by class.** Before pushing a fix, grep for sibling paths that share the flaw.
