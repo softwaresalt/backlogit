@@ -105,10 +105,7 @@ func validPackageDir(p string) error {
 }
 
 func isOverlayPath(p string) bool {
-	if isTestFile(p) {
-		return true
-	}
-	return strings.HasPrefix(p, "testdata/") || strings.Contains(p, "/testdata/")
+	return strings.HasSuffix(p, "_test.go") || isTestdata(p)
 }
 
 // CollectChanges lists the changed Go sources and testdata between two commit
@@ -416,7 +413,11 @@ func PrepareBaseline(ctx context.Context, g Git, root, baseSHA string, overlay [
 	pr, pw := io.Pipe()
 	gitErr := make(chan error, 1)
 	go func() {
-		err := g.Run(ctx, absRoot, pw, "archive", "--format=tar", baseSHA)
+		// Archive the peeled TREE, not the commit: export-subst only expands
+		// $Format:...$ placeholders when archiving a commit, so this keeps every
+		// file byte-identical to what is committed (export-ignore is covered by
+		// the blob-count proof below).
+		err := g.Run(ctx, absRoot, pw, "archive", "--format=tar", baseSHA+"^{tree}")
 		_ = pw.CloseWithError(err)
 		gitErr <- err
 	}()

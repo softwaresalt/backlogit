@@ -3,6 +3,8 @@ package redhonesty
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -25,6 +27,27 @@ func TestU161_002_HelperChainDepthIsDeterministic(t *testing.T) {
 		wantRejections(t, within, RejectBuggyPathExpected)
 		beyond := evalOne(t, build(maxHelperDepth+2), ResultFail, ResultPass, s)
 		wantRejections(t, beyond) // documented bound: deeper chains are not followed
+	}
+}
+
+func TestU161_001_PrepareBaseline_DoesNotExpandExportSubst(t *testing.T) {
+	root := newRepo(t, true)
+	writeFile(t, root, "p/version.go", "package p\n\nconst Subject = \"$Format:%s$\"\n")
+	writeFile(t, root, ".gitattributes", "p/version.go export-subst\n")
+	gitCmd(t, root, "add", "-A")
+	gitCmd(t, root, "commit", "-q", "-m", "first subject")
+	base := gitCmd(t, root, "rev-parse", "HEAD")
+	dir, cleanup, err := PrepareBaseline(context.Background(), ExecGit{}, root, base, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	b, err := os.ReadFile(filepath.Join(dir, "p", "version.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "$Format:%s$") || strings.Contains(string(b), "first subject") {
+		t.Fatalf("export-subst expanded the committed content: %q", b)
 	}
 }
 

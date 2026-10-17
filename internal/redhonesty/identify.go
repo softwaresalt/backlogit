@@ -12,9 +12,16 @@ import (
 	"unicode/utf8"
 )
 
-func isTestFile(p string) bool { return strings.HasSuffix(p, "_test.go") }
+func isTestdata(p string) bool {
+	return strings.HasPrefix(p, "testdata/") || strings.Contains(p, "/testdata/")
+}
 
-func isGoSource(p string) bool { return strings.HasSuffix(p, ".go") }
+// isTestFile reports a real Go test file. Anything under testdata is fixture
+// data the go tool ignores, never a test or production source.
+func isTestFile(p string) bool { return strings.HasSuffix(p, "_test.go") && !isTestdata(p) }
+
+// isGoSource reports a Go source file the go tool compiles (testdata excluded).
+func isGoSource(p string) bool { return strings.HasSuffix(p, ".go") && !isTestdata(p) }
 
 // isTestName reports whether name is a valid Go test function name: "Test"
 // followed by nothing or a rune that is not a lower-case letter.
