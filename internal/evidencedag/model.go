@@ -62,13 +62,16 @@ const (
 	FamilyPlanTaskSoundness Family = "plan-task-soundness"
 	// FamilyRedTestHonesty covers red-test honesty evidence (S9).
 	FamilyRedTestHonesty Family = "red-test-honesty"
+	// FamilyWorkflowPolicy covers workflow-policy gate nodes (S11). Its nodes
+	// are decided by caller-supplied Verdicts, never by S4 evidence.
+	FamilyWorkflowPolicy Family = "workflow-policy"
 )
 
 // Families returns the closed, sorted set of known families.
 func Families() []Family {
 	return []Family{
 		FamilyCompatError, FamilyDocsAudit, FamilyMutationState,
-		FamilyParity, FamilyPlanTaskSoundness, FamilyRedTestHonesty,
+		FamilyParity, FamilyPlanTaskSoundness, FamilyRedTestHonesty, FamilyWorkflowPolicy,
 	}
 }
 

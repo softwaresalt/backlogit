@@ -1,0 +1,17 @@
+schema_version: 1
+# Workflow-policy registry (S11). Rolls out report-only first: violations are
+# reported but do not block until `mode` is changed to `enforce`.
+mode: report-only
+nodes:
+  - {id: harness-scaffold, enabled: true, overridable: true}
+  - {id: red-phase-verify, enabled: true, overridable: true}
+  - {id: green-phase-verify, enabled: true, overridable: false}
+  - {id: review-complete, enabled: true, overridable: false}
+  - {id: ci-pass, enabled: true, overridable: false}
+  - {id: merge-ready, enabled: true, overridable: false}
+edges:
+  - {node: red-phase-verify, depends_on: harness-scaffold}
+  - {node: green-phase-verify, depends_on: red-phase-verify}
+  - {node: review-complete, depends_on: green-phase-verify}
+  - {node: ci-pass, depends_on: review-complete}
+  - {node: merge-ready, depends_on: ci-pass}
