@@ -35,6 +35,13 @@ var driveLetter = regexp.MustCompile(`^[a-z]:[/\\]`)
 // confinedArtifact validates that an artifact path stays inside the workspace
 // and returns its normalized key. Absolute and parent-escaping paths are rejected.
 func confinedArtifact(p string) (string, error) {
+	// A raw ".." is rejected before cleaning: cleaning would hide a symlink
+	// followed by ".." (link/../x resolves outside the root but cleans to x).
+	for _, seg := range strings.Split(strings.ReplaceAll(p, "\\", "/"), "/") {
+		if strings.TrimSpace(seg) == ".." {
+			return "", errors.New("path escapes the workspace root")
+		}
+	}
 	key := normalizePath(p)
 	switch {
 	case key == "":

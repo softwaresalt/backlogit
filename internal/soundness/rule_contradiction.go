@@ -2,7 +2,61 @@ package soundness
 
 import "fmt"
 
-const ruleContradiction = "contradiction"
+const (
+	ruleContradiction = "contradiction"
+	// maxSiblingContradictionFindings bounds aggregated sibling findings so a
+	// plan with many opposing siblings cannot produce quadratic output.
+	maxSiblingContradictionFindings = 5
+)
+
+// siblingGroup accumulates the stances declared on one subject by the children
+// of one parent, so conflicts are counted in O(n) rather than enumerated.
+type siblingGroup struct {
+	parent, subject string
+	units           map[string]int // unit ID -> stance bitmask (1 require, 2 forbid)
+	req, forbid     []string       // first two units holding each stance
+	nReq, nForbid   int
+	nBoth           int
+}
+
+func (g *siblingGroup) add(id, stance string) {
+	bit := 1
+	if stance == StanceForbid {
+		bit = 2
+	}
+	prev := g.units[id]
+	if prev&bit != 0 {
+		return
+	}
+	g.units[id] = prev | bit
+	if prev != 0 {
+		g.nBoth++
+	}
+	if bit == 1 {
+		g.nReq++
+		if len(g.req) < 2 {
+			g.req = append(g.req, id)
+		}
+		return
+	}
+	g.nForbid++
+	if len(g.forbid) < 2 {
+		g.forbid = append(g.forbid, id)
+	}
+}
+
+// pairs returns the number of conflicting sibling pairs and a representative one.
+func (g *siblingGroup) pairs() (n int, a, b string) {
+	n = g.nReq*g.nForbid - g.nBoth
+	for _, r := range g.req {
+		for _, f := range g.forbid {
+			if r != f {
+				return n, r, f
+			}
+		}
+	}
+	return n, "", ""
+}
 
 // checkContradiction flags units whose directives oppose an originating
 // decision, or oppose a sibling unit's directive on the same subject. An
@@ -23,7 +77,8 @@ func checkContradiction(ctx *checkContext) ([]Finding, error) {
 		}
 	}
 
-	siblings := map[string]map[string][]holder{} // parent -> subject -> holders
+	groups := map[string]*siblingGroup{}
+	var order []*siblingGroup
 	for _, u := range ctx.plan.Units {
 		for _, dir := range u.Directives {
 			if !validStance(dir.Stance) {
@@ -39,16 +94,28 @@ func checkContradiction(ctx *checkContext) ([]Finding, error) {
 			if u.ParentID == "" {
 				continue
 			}
-			if siblings[u.ParentID] == nil {
-				siblings[u.ParentID] = map[string][]holder{}
+			key := u.ParentID + "\x00" + s
+			g := groups[key]
+			if g == nil {
+				g = &siblingGroup{parent: u.ParentID, subject: dir.Subject, units: map[string]int{}}
+				groups[key] = g
+				order = append(order, g)
 			}
-			for _, h := range siblings[u.ParentID][s] {
-				if h.stance != dir.Stance && h.id != u.ID {
-					out = append(out, errFinding(ruleContradiction, u.ID, "%s %q contradicts sibling %s (%s)", dir.Stance, dir.Subject, h.id, h.stance))
-				}
-			}
-			siblings[u.ParentID][s] = append(siblings[u.ParentID][s], holder{u.ID, dir.Stance})
+			g.add(u.ID, dir.Stance)
 		}
+	}
+	emitted := 0
+	for _, g := range order {
+		n, a, b := g.pairs()
+		if n <= 0 {
+			continue
+		}
+		if emitted == maxSiblingContradictionFindings {
+			out = append(out, errFinding(ruleContradiction, "", "additional sibling contradictions omitted after %d groups", emitted))
+			break
+		}
+		emitted++
+		out = append(out, errFinding(ruleContradiction, b, "%q is required by sibling %s but forbidden by sibling %s under %s (%d conflicting sibling pairs)", g.subject, a, b, g.parent, n))
 	}
 	return out, nil
 }

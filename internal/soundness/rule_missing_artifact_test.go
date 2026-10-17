@@ -75,3 +75,19 @@ func TestCopilotR2_MissingArtifact_SymlinkEscapingProducerFlagged(t *testing.T) 
 	got := rulesOf(runPlan(t, Plan{Units: []Unit{producer, consumer}}, cfg))["missing-artifact"]
 	assert.NotEmpty(t, got)
 }
+
+func TestCopilotR3_ConfinedArtifact_RejectsDotDotComponents(t *testing.T) {
+	for _, p := range []string{"a/../b.go", "link/../artifact.go", "a\\..\\b.go", "x/.."} {
+		_, err := confinedArtifact(p)
+		assert.Error(t, err, p)
+	}
+	_, err := confinedArtifact("a/..b/c.go")
+	assert.NoError(t, err)
+
+	root, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Skipf("symlink creation unsupported: %v", err)
+	}
+	_, err = confinedArtifactIn(root, "link/../artifact.go")
+	assert.Error(t, err)
+}

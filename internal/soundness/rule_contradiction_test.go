@@ -1,6 +1,7 @@
 package soundness
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,4 +42,27 @@ func TestU160007_Contradiction_UnknownStanceFailsClosed(t *testing.T) {
 	u := soundUnit("1-T", "A")
 	u.Directives = []Directive{{Subject: "x", Stance: "maybe"}}
 	assert.Len(t, findingsFor(t, "contradiction", u), 1)
+}
+
+func TestCopilotR3_Contradiction_SiblingFindingsAreBounded(t *testing.T) {
+	var units []Unit
+	for i := 0; i < 4096; i++ {
+		u := soundUnit(fmt.Sprintf("%d-T", i+1), "U")
+		u.ParentID = "1-F"
+		stance := StanceRequire
+		if i%2 == 1 {
+			stance = StanceForbid
+		}
+		u.Directives = []Directive{{Subject: "use cgo", Stance: stance}}
+		units = append(units, u)
+	}
+	cfg := DefaultConfig()
+	cfg.Mode = ModeEnforce
+	d, err := Assess(Plan{Units: units}, cfg)
+	require.NoError(t, err)
+	got := rulesOf(Report{Findings: d.Findings})["contradiction"]
+	require.NotEmpty(t, got)
+	assert.LessOrEqual(t, len(got), 10)
+	assert.Equal(t, SeverityError, got[0].Severity)
+	assert.True(t, d.Blocked)
 }
