@@ -15,8 +15,16 @@ import (
 	"unicode/utf8"
 )
 
+// isTestdataDir reports a path under an explicit testdata directory (fixture data).
+func isTestdataDir(p string) bool {
+	return strings.HasPrefix(p, "testdata/") || strings.Contains(p, "/testdata/")
+}
+
+// isTestdata is the DISCOVERY-exclusion predicate: paths the go tool never
+// treats as tests or sources (testdata, and "_"/"." prefixed names). It must
+// not be used for overlay eligibility; see isOverlayPath.
 func isTestdata(p string) bool {
-	return strings.HasPrefix(p, "testdata/") || strings.Contains(p, "/testdata/") || hasIgnoredComponent(p)
+	return isTestdataDir(p) || hasIgnoredComponent(p)
 }
 
 // hasIgnoredComponent reports a path the go tool never builds: any element

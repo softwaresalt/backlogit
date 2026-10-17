@@ -79,3 +79,6 @@ applicability, then apply the status policy (`pass` satisfies, `fail` blocks).
 - The gate runs repository test code as CI does; it scrubs likely credentials and
   pins the local toolchain but is not a sandbox. On timeout the run aborts with an
   error; orphaned grandchildren are bounded by `WaitDelay` but not tree-killed.
+
+* Overlay vs discovery: discovery excludes `testdata` and `_`/`.`-prefixed paths (the go tool never builds them), but the baseline overlay applies head contents only to real `*_test.go` files and explicit `testdata` paths. Hidden or underscore production inputs (for example `p/.config`) stay at baseline contents.
+* Out of contract: Go-toolchain shapes beyond the documented discovery rules (exotic build systems, generated tests, toolchain-specific heuristics) are not guessed at; where the gate cannot verify it reports unverifiable (fail closed).
