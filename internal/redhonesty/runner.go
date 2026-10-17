@@ -27,6 +27,7 @@ func parseGoTestJSON(r io.Reader) (map[string]Result, error) {
 	cr := &countingReader{r: r, max: maxTestOutputBytes}
 	sc := bufioLineScanner(cr)
 	out := map[string]Result{}
+	terminal := map[string]bool{}
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(line) == 0 || line[0] != '{' {
@@ -37,16 +38,25 @@ func parseGoTestJSON(r io.Reader) (map[string]Result, error) {
 			continue
 		}
 		switch ev.Action {
+		case "pass", "fail", "skip":
+		default:
+			continue
+		}
+		// A second terminal event for one top-level name means two tests share it
+		// (an internal and an external test package, or a rerun): the outcome is
+		// not attributable to a single test, so it is unverifiable, never merged.
+		if terminal[ev.Test] {
+			out[ev.Test] = ResultUnrunnable
+			continue
+		}
+		terminal[ev.Test] = true
+		switch ev.Action {
 		case "pass":
-			if out[ev.Test] != ResultFail {
-				out[ev.Test] = ResultPass
-			}
+			out[ev.Test] = ResultPass
 		case "fail":
 			out[ev.Test] = ResultFail
 		case "skip":
-			if _, seen := out[ev.Test]; !seen {
-				out[ev.Test] = ResultUnrunnable
-			}
+			out[ev.Test] = ResultUnrunnable
 		}
 	}
 	if err := sc.Err(); err != nil {

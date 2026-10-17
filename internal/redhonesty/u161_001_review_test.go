@@ -154,7 +154,7 @@ func TestU161_001_ChildEnvironmentIsScrubbed(t *testing.T) {
 			t.Errorf("%s leaked into go test child", bad)
 		}
 	}
-	for _, want := range []string{"GOTOOLCHAIN=local", "GOWORK=off", "PLAIN_VAR=ok"} {
+	for _, want := range []string{"GOTOOLCHAIN=local", "GOWORK=off", "GOENV=off", "PLAIN_VAR=ok"} {
 		if !strings.Contains(joined, "\n"+want+"\n") {
 			t.Errorf("go test env missing %s", want)
 		}

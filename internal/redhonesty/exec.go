@@ -104,7 +104,7 @@ func goTestEnv() []string {
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
 		upper := strings.ToUpper(name)
-		if upper == "GOFLAGS" || upper == "GOTOOLCHAIN" || upper == "GOWORK" {
+		if upper == "GOFLAGS" || upper == "GOTOOLCHAIN" || upper == "GOWORK" || upper == "GOENV" {
 			continue
 		}
 		secret := false
@@ -119,7 +119,7 @@ func goTestEnv() []string {
 		}
 		env = append(env, kv)
 	}
-	return append(env, "GOTOOLCHAIN=local", "GOWORK=off", "GOFLAGS=")
+	return append(env, "GOTOOLCHAIN=local", "GOWORK=off", "GOFLAGS=", "GOENV=off")
 }
 
 // ExecGit is the production Git implementation backed by the git binary.

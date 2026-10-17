@@ -399,6 +399,14 @@ func PrepareBaseline(ctx context.Context, g Git, root, baseSHA string, overlay [
 		_ = os.RemoveAll(dir)
 		return "", nil, fmt.Errorf("redhonesty: baseline directory escaped the workspace root")
 	}
+	// Check the ACTUAL allocated directory is git-ignored (the pre-creation probe
+	// uses a placeholder name, which a selective ignore rule could treat
+	// differently), before anything is extracted or run.
+	actual := strings.Join(baselineRel, "/") + "/" + filepath.Base(dir) + "/x"
+	if err := g.Run(ctx, absRoot, io.Discard, "check-ignore", "-q", "--no-index", "--", actual); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", nil, fmt.Errorf("redhonesty: allocated baseline directory %s is not git-ignored: %w", filepath.Base(dir), err)
+	}
 	cleanup := func() error {
 		if rel, err := filepath.Rel(parent, dir); err != nil || strings.HasPrefix(rel, "..") || rel == "." {
 			return fmt.Errorf("redhonesty: refusing to remove %q outside the baseline root", dir)

@@ -86,8 +86,11 @@ func parseSource(file string, src []byte) (*token.FileSet, *ast.File, error) {
 	return fset, f, nil
 }
 
-func testFuncNames(file string, src []byte) (map[string]struct{}, error) {
-	out := map[string]struct{}{}
+// testFuncNames returns the top-level test functions declared in src mapped to
+// the Go package clause of the file (so internal and external test packages are
+// distinguishable).
+func testFuncNames(file string, src []byte) (map[string]string, error) {
+	out := map[string]string{}
 	if len(src) == 0 {
 		return out, nil
 	}
@@ -98,18 +101,24 @@ func testFuncNames(file string, src []byte) (map[string]struct{}, error) {
 	dot := importsTestingDot(f)
 	for _, d := range f.Decls {
 		if fd, ok := d.(*ast.FuncDecl); ok && isTestName(fd.Name.Name) && isTestSignature(fd, dot) {
-			out[fd.Name.Name] = struct{}{}
+			out[fd.Name.Name] = f.Name.Name
 		}
 	}
 	return out, nil
 }
 
+// ambiguousPkg marks a base test name declared in more than one Go package.
+const ambiguousPkg = "\x00ambiguous"
+
 // IdentifyNewTests returns the top-level test functions present at head that
 // were not present at base in the same package directory (so a test moved
 // between files of one package is not reported as new). The result is sorted
-// by package, file and name. An unparseable test file fails closed.
+// by package, file and name. An unparseable test file fails closed, and so does
+// a test name declared in two different Go packages of one directory (an
+// internal and an external test package): `go test -run` cannot tell them apart,
+// so their results could not be attributed to a single test.
 func IdentifyNewTests(changes []FileChange) ([]NewTest, error) {
-	baseNames := map[string]map[string]struct{}{} // package dir -> names at base
+	baseNames := map[string]map[string]string{} // package dir -> name -> Go package clause at base
 	for _, c := range changes {
 		if !isTestFile(c.Path) || c.Base == nil {
 			continue
@@ -120,12 +129,16 @@ func IdentifyNewTests(changes []FileChange) ([]NewTest, error) {
 		}
 		dir := path.Dir(c.Path)
 		if baseNames[dir] == nil {
-			baseNames[dir] = map[string]struct{}{}
+			baseNames[dir] = map[string]string{}
 		}
-		for n := range names {
-			baseNames[dir][n] = struct{}{}
+		for n, pkg := range names {
+			if prev, ok := baseNames[dir][n]; ok && prev != pkg {
+				pkg = ambiguousPkg
+			}
+			baseNames[dir][n] = pkg
 		}
 	}
+	headNames := map[string]map[string]string{}
 	var out []NewTest
 	for _, c := range changes {
 		if !isTestFile(c.Path) || c.Head == nil || c.Status == 'D' {
@@ -136,8 +149,18 @@ func IdentifyNewTests(changes []FileChange) ([]NewTest, error) {
 			return nil, err
 		}
 		dir := path.Dir(c.Path)
-		for n := range names {
-			if _, existed := baseNames[dir][n]; existed {
+		if headNames[dir] == nil {
+			headNames[dir] = map[string]string{}
+		}
+		for n, pkg := range names {
+			if prev, ok := headNames[dir][n]; ok && prev != pkg {
+				return nil, fmt.Errorf("redhonesty: test %s in %s is declared in both package %s and %s; it cannot be attributed to one test", n, dir, prev, pkg)
+			}
+			headNames[dir][n] = pkg
+			if bp, existed := baseNames[dir][n]; existed {
+				if bp != pkg && bp != ambiguousPkg {
+					return nil, fmt.Errorf("redhonesty: test %s in %s exists at base in package %s and at head in package %s; it cannot be attributed to one test", n, dir, bp, pkg)
+				}
 				continue
 			}
 			out = append(out, NewTest{Package: dir, File: c.Path, Name: n})
