@@ -236,22 +236,41 @@ func bareFuncName(key string) string {
 }
 
 // merge unions src into d (used to compare declarations per package directory
-// so a declaration moved between files is not mistaken for a change).
+// so a declaration moved between files is not mistaken for a change). Same-named
+// declarations with different text (for example build-tag variants in different
+// files) are all retained, so a change to any variant is visible.
 func (d *declSet) merge(src *declSet) {
 	for k, v := range src.funcs {
-		d.funcs[k] = v
+		d.funcs[k] = combine(d.funcs[k], v)
 	}
 	for k, v := range src.types {
-		d.types[k] = v
+		d.types[k] = combine(d.types[k], v)
 	}
 	for t, fm := range src.fields {
 		if d.fields[t] == nil {
 			d.fields[t] = map[string]string{}
 		}
 		for k, v := range fm {
-			d.fields[t][k] = v
+			d.fields[t][k] = combine(d.fields[t][k], v)
 		}
 	}
+}
+
+// combine joins distinct declaration texts into one canonical (sorted,
+// de-duplicated) value so equal sets compare equal regardless of file order.
+func combine(existing, add string) string {
+	if existing == "" || existing == add {
+		return add
+	}
+	parts := strings.Split(existing, "\x02")
+	for _, p := range parts {
+		if p == add {
+			return existing
+		}
+	}
+	parts = append(parts, add)
+	sort.Strings(parts)
+	return strings.Join(parts, "\x02")
 }
 
 func newDeclSet() *declSet {

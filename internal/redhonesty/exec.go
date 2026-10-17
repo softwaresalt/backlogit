@@ -34,15 +34,19 @@ const (
 
 var errOutputTooLarge = errors.New("redhonesty: command output exceeds limit")
 
-// limitedBuffer collects at most max bytes and then fails the write.
+// limitedBuffer collects at most max bytes. Past the limit it keeps accepting
+// (and discarding) writes and records the overflow, so the child never blocks on
+// a full pipe; callers check exceeded after the process ends.
 type limitedBuffer struct {
-	buf bytes.Buffer
-	max int
+	buf      bytes.Buffer
+	max      int
+	exceeded bool
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
-	if b.buf.Len()+len(p) > b.max {
-		return 0, errOutputTooLarge
+	if b.exceeded || b.buf.Len()+len(p) > b.max {
+		b.exceeded = true
+		return len(p), nil
 	}
 	return b.buf.Write(p)
 }
@@ -149,6 +153,9 @@ func gitOutput(ctx context.Context, g Git, dir string, max int, args ...string) 
 	if err := g.Run(ctx, dir, lb, args...); err != nil {
 		return nil, err
 	}
+	if lb.exceeded {
+		return nil, errOutputTooLarge
+	}
 	return lb.buf.Bytes(), nil
 }
 
@@ -207,7 +214,7 @@ func (e GoTestExecutor) Run(ctx context.Context, dir, pkg string, names []string
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("redhonesty: go test %s: %w", pkg, ctx.Err())
 	}
-	if errors.Is(waitErr, errOutputTooLarge) {
+	if out.exceeded {
 		return nil, fmt.Errorf("redhonesty: go test %s: %w", pkg, errOutputTooLarge)
 	}
 	var exitErr *exec.ExitError

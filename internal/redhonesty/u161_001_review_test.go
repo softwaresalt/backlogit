@@ -1,6 +1,7 @@
 package redhonesty
 
 import (
+	"archive/tar"
 	"context"
 	"io"
 	"os"
@@ -156,6 +157,52 @@ func TestU161_001_ChildEnvironmentIsScrubbed(t *testing.T) {
 	for _, want := range []string{"GOTOOLCHAIN=local", "GOWORK=off", "PLAIN_VAR=ok"} {
 		if !strings.Contains(joined, "\n"+want+"\n") {
 			t.Errorf("go test env missing %s", want)
+		}
+	}
+}
+
+func TestU161_001_LimitedBufferOverflowDoesNotBlockWriter(t *testing.T) {
+	lb := &limitedBuffer{max: 8}
+	if n, err := lb.Write([]byte("0123456789")); err != nil || n != 10 {
+		t.Fatalf("Write = %d, %v; must accept and discard so the child never blocks", n, err)
+	}
+	if !lb.exceeded || lb.buf.Len() != 0 {
+		t.Fatalf("exceeded=%v len=%d", lb.exceeded, lb.buf.Len())
+	}
+	g := scriptedGit{diff: strings.Repeat("x", 32)}
+	if _, err := gitOutput(context.Background(), g, ".", 8, "diff"); err == nil {
+		t.Fatal("overflowing git output must be an error")
+	}
+}
+
+func TestU161_001_ChangedSymbols_BuildTagVariantsAreBothTracked(t *testing.T) {
+	linuxBase := "package p\nfunc Impl() int { return 1 }\n"
+	winBase := "package p\nfunc Impl() int { return 2 }\n"
+	// Only the earlier-sorted variant changes.
+	s, err := ChangedSymbols([]FileChange{
+		{Path: "p/impl_linux.go", Status: 'M', Base: []byte(linuxBase), Head: []byte("package p\nfunc Impl() int { return 10 }\n")},
+		{Path: "p/impl_windows.go", Status: 'M', Base: []byte(winBase), Head: []byte(winBase)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !has(s.Funcs, "Impl") {
+		t.Fatal("change to one build-tag variant was hidden by the other")
+	}
+}
+
+func TestU161_001_ExtractArchiveToleratesNamesLegalElsewhere(t *testing.T) {
+	// Reserved device names are a host concern for files the gate writes itself;
+	// the baseline archive check is containment-only.
+	if err := extractArchive(tarOf(t, tar.Header{Name: "docs/notes: v2.md", Typeflag: tar.TypeReg, Mode: 0o644}), t.TempDir()); err == nil {
+		t.Log("colon accepted on this host")
+	}
+	if err := validArchivePath("docs/prn/readme.md"); err != nil {
+		t.Fatalf("legal-elsewhere path rejected: %v", err)
+	}
+	for _, bad := range []string{"../x", "a/../../x", "/abs", "C:/x", `a\b`, ""} {
+		if err := validArchivePath(bad); err == nil {
+			t.Errorf("%q accepted", bad)
 		}
 	}
 }

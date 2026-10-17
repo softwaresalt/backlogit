@@ -77,6 +77,23 @@ func validRelPath(p string) error {
 	return nil
 }
 
+// validArchivePath checks a baseline archive entry name for containment only:
+// non-empty, relative, no backslash, NUL or ".." element. The stricter
+// validRelPath (reserved device names, ':' and trailing dots) applies to paths
+// the gate itself writes or runs, not to every file a repository may legally
+// hold on another platform.
+func validArchivePath(p string) error {
+	if p == "" || len(p) > 4096 || strings.ContainsAny(p, "\\\x00") || strings.HasPrefix(p, "/") || filepath.IsAbs(p) || filepath.VolumeName(p) != "" || (len(p) >= 2 && p[1] == ':') {
+		return fmt.Errorf("redhonesty: unsafe archive path %q", truncate(p))
+	}
+	for _, el := range strings.Split(p, "/") {
+		if el == ".." || el == "." || el == "" {
+			return fmt.Errorf("redhonesty: unsafe archive path element in %q", truncate(p))
+		}
+	}
+	return nil
+}
+
 func validPackageDir(p string) error {
 	if !faultline.ValidPackageDir(p) {
 		return fmt.Errorf("redhonesty: unsafe package %q", truncate(p))
@@ -192,7 +209,7 @@ func extractArchive(r io.Reader, dir string) error {
 			return fmt.Errorf("redhonesty: archive exceeds %d entries", maxArchiveEntries)
 		}
 		name := strings.TrimSuffix(h.Name, "/")
-		if err := validRelPath(name); err != nil {
+		if err := validArchivePath(name); err != nil {
 			return err
 		}
 		target := filepath.Join(dir, filepath.FromSlash(name))

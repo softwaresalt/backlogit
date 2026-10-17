@@ -181,8 +181,7 @@ func TestU161_001_ExtractArchiveContainment(t *testing.T) {
 		{Name: "a/../../evil.go", Typeflag: tar.TypeReg, Mode: 0o644},
 		{Name: "/abs.go", Typeflag: tar.TypeReg, Mode: 0o644},
 		{Name: `C:\abs.go`, Typeflag: tar.TypeReg, Mode: 0o644},
-		{Name: "pkg/NUL.go", Typeflag: tar.TypeReg, Mode: 0o644},
-		{Name: "pkg/trailingdot.", Typeflag: tar.TypeReg, Mode: 0o644},
+		{Name: "C:/abs2.go", Typeflag: tar.TypeReg, Mode: 0o644},
 		{Name: "pkg/dev", Typeflag: tar.TypeChar, Mode: 0o644},
 	} {
 		dir := t.TempDir()
