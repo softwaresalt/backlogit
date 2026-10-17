@@ -42,7 +42,11 @@ func isTestName(name string) bool {
 // qualified (testing.T) or not (a dot import or a `type T = testing.T` alias).
 // A type that is not really *testing.T is rejected later by the compiler.
 func isTestSignature(fd *ast.FuncDecl) bool {
-	if fd.Recv != nil || fd.Type.TypeParams != nil || fd.Type.Results != nil {
+	// An empty but non-nil result list (`func TestX(t *testing.T) ()`) is
+	// syntactically distinct from an absent one yet declares no results, so
+	// only a non-empty list disqualifies the function.
+	if fd.Recv != nil || fd.Type.TypeParams != nil ||
+		(fd.Type.Results != nil && len(fd.Type.Results.List) > 0) {
 		return false
 	}
 	params := fd.Type.Params
