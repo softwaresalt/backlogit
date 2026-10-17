@@ -154,6 +154,12 @@ type EvidenceView struct {
 	SchemaVersion int
 	// NodeFamily is the envelope NodeFamily discriminator.
 	NodeFamily string
+	// ProducingTask is the envelope ProducingTask (lets a family bind its
+	// payload to the producing task without importing producer packages).
+	ProducingTask string
+	// ProducingCommit is the envelope ProducingCommit (lets a family bind its
+	// payload to the commit the envelope claims).
+	ProducingCommit string
 }
 
 // ParityEvidence is the v1 "parity" family payload: cross-surface parity
@@ -350,6 +356,9 @@ func Validate(a EvidenceArtifact) error {
 		Applicability: a.Applicability,
 		SchemaVersion: a.SchemaVersion,
 		NodeFamily:    a.NodeFamily,
+
+		ProducingTask:   a.ProducingTask,
+		ProducingCommit: a.ProducingCommit,
 	}
 	return fp.Validate(view)
 }
