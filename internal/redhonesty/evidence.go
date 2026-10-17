@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/faultline"
 )
 
@@ -130,26 +129,59 @@ func (s *Store) Write(a faultline.EvidenceArtifact) (string, error) {
 	if _, _, err := faultline.DecodeAndValidate(raw); err != nil {
 		return "", fmt.Errorf("redhonesty: refusing to persist invalid evidence: %w", err)
 	}
-	// Recorded evidence is not silently replaceable: re-recording the same
-	// canonical artifact is idempotent, a different one for the same task and
-	// commit is refused.
-	if existing, err := s.Load(a.ProducingTask, a.ProducingCommit); err == nil {
-		old, e1 := existing.Canonical()
-		cur, e2 := a.Canonical()
-		if e1 == nil && e2 == nil && string(old) == string(cur) {
-			return p, nil
-		}
-		return "", fmt.Errorf("redhonesty: evidence already recorded for %s at %s and differs", a.ProducingTask, a.ProducingCommit[:12])
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("redhonesty: existing evidence for %s at %s is unreadable or invalid: %w", a.ProducingTask, a.ProducingCommit[:12], err)
-	}
+	// Recorded evidence is not silently replaceable. Publication is a no-clobber
+	// atomic link of a fully written temp file, so concurrent writers cannot both
+	// win: the loser sees the existing record and either matches it (idempotent)
+	// or is refused.
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "", err
 	}
-	if err := atomicfile.WriteFileAtomic(p, append(raw, '\n')); err != nil {
+	tmp, err := writeTemp(filepath.Dir(p), append(raw, '\n'))
+	if err != nil {
 		return "", err
 	}
-	return p, nil
+	defer os.Remove(tmp)
+	err = os.Link(tmp, p)
+	if err == nil {
+		return p, nil
+	}
+	if !errors.Is(err, os.ErrExist) {
+		return "", fmt.Errorf("redhonesty: publish evidence: %w", err)
+	}
+	existing, lerr := s.Load(a.ProducingTask, a.ProducingCommit)
+	if lerr != nil {
+		return "", fmt.Errorf("redhonesty: existing evidence for %s at %s is unreadable or invalid: %w", a.ProducingTask, a.ProducingCommit[:12], lerr)
+	}
+	old, e1 := existing.Canonical()
+	cur, e2 := a.Canonical()
+	if e1 == nil && e2 == nil && string(old) == string(cur) {
+		return p, nil
+	}
+	return "", fmt.Errorf("redhonesty: evidence already recorded for %s at %s and differs", a.ProducingTask, a.ProducingCommit[:12])
+}
+
+// writeTemp writes data to a new, synced temp file in dir and returns its path.
+func writeTemp(dir string, data []byte) (string, error) {
+	f, err := os.CreateTemp(dir, ".evidence-*.tmp")
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(name)
+		return "", err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(name)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(name)
+		return "", err
+	}
+	return name, nil
 }
 
 // Load retrieves and re-validates the artifact for a task and commit. The file

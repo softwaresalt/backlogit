@@ -2,6 +2,8 @@
 chunk_strategy: h1-h2-h3
 description: 'Design note for the S9 red-test honesty gate (143-S / 161-F): how new tests are identified, run against an immutable baseline, classified, and recorded as shared-contract red_green evidence for the S10/S11 consumers'
 doc_type: design
+title: "S9 Red-Test Honesty Gate"
+source: docs/design-docs/2026-10-17-s9-red-test-honesty-gate.md
 schema_version: "1.0"
 docline:
     date: 2026-10-17T00:00:00Z
@@ -22,8 +24,9 @@ wiring it into shipment assembly or the S11 enforcement engine is a follow-up.
 ## Flow
 
 1. **Resolve.** `BaseRef` and `HeadRef` are resolved to full commit SHAs. The base
-   must be an ancestor of head and head must be the checked-out commit with no
-   uncommitted or untracked Go inputs.
+   must be an ancestor of head. Head need not be checked out: it is exported like the
+   baseline, so the working tree (dirty, untracked or ignored files) never
+   influences the result.
 2. **Identify (U1).** Newly added top-level `Test*` functions are found by
    comparing base and head with `go/parser`; a test moved between files of one
    package is not new. `ChangedSymbols` diffs production declarations per package.
@@ -32,6 +35,9 @@ wiring it into shipment assembly or the S11 enforcement engine is a follow-up.
    before anything is created; no worktree is used). Only the head test files and
    `testdata` are overlaid; head deletions of tests are mirrored; production
    changes are never applied. `go test -json` runs the anchored `-run` selector.
+   Head is measured the same way from an immutable export of `headSHA` (no
+   overlay). A non-zero exit with no reported test failure (for example a
+   `TestMain` that exits non-zero) makes that run's passes unverifiable.
 4. **Classify (U2).** `Evaluate` rejects: `baseline_unverifiable` (build failure,
    missing test, skip), `already_passes_at_baseline`, `does_not_exercise_changed_code`,
    `asserts_only_sibling_fields`, `expected_output_via_changed_path`,

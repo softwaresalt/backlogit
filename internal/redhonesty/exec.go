@@ -218,12 +218,39 @@ func (e GoTestExecutor) Run(ctx context.Context, dir, pkg string, names []string
 		return nil, fmt.Errorf("redhonesty: go test %s: %w", pkg, errOutputTooLarge)
 	}
 	var exitErr *exec.ExitError
-	if waitErr != nil && !errors.As(waitErr, &exitErr) {
+	failedExit := errors.As(waitErr, &exitErr)
+	if waitErr != nil && !failedExit {
 		return nil, fmt.Errorf("redhonesty: go test %s: %w: %s", pkg, waitErr, strings.TrimSpace(stderr.String()))
 	}
-	// A non-zero exit is the normal signal of a failing or unbuildable package;
-	// the parsed events (or their absence) carry the per-test truth.
-	return parseGoTestJSON(bytes.NewReader(out.buf.Bytes()))
+	res, err := parseGoTestJSON(bytes.NewReader(out.buf.Bytes()))
+	if err != nil {
+		return nil, err
+	}
+	return reconcileExit(res, failedExit), nil
+}
+
+// reconcileExit applies the process exit status to the parsed results. A
+// non-zero exit is the normal signal of a failing or unbuildable package, and a
+// reported test failure explains it (those results are kept as observed). A
+// non-zero exit with NO reported test failure (a TestMain that exits non-zero
+// after m.Run, a panic outside any test, a build error) means the run as a whole
+// failed for a reason the per-test events do not capture, so any "pass" it
+// printed is not trustworthy evidence and becomes unrunnable.
+func reconcileExit(res map[string]Result, failedExit bool) map[string]Result {
+	if !failedExit {
+		return res
+	}
+	for _, r := range res {
+		if r == ResultFail {
+			return res
+		}
+	}
+	for n, r := range res {
+		if r == ResultPass {
+			res[n] = ResultUnrunnable
+		}
+	}
+	return res
 }
 
 // bufioLineScanner builds a scanner whose single-line limit is maxJSONLineBytes.

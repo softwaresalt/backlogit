@@ -194,8 +194,13 @@ func analyze(f *ast.File, name string, syms Symbols) *reach {
 }
 
 func bindsExpected(e ast.Expr) bool {
-	id, ok := e.(*ast.Ident)
-	return ok && expectedNamePattern.MatchString(id.Name)
+	switch e := e.(type) {
+	case *ast.Ident:
+		return expectedNamePattern.MatchString(e.Name)
+	case *ast.SelectorExpr: // tc.want = ..., got.expected = ...
+		return expectedNamePattern.MatchString(e.Sel.Name)
+	}
+	return false
 }
 
 // callsChanged reports whether expr contains a call to a changed function or

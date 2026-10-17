@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/softwaresalt/backlogit/internal/faultline"
 )
@@ -16,8 +15,9 @@ type Request struct {
 	TaskID string
 	// BaseRef is the pre-fix/base ref; it is resolved to an immutable SHA.
 	BaseRef string
-	// HeadRef is the change under review; empty means HEAD. The working tree
-	// must be that commit.
+	// HeadRef is the change under review; empty means HEAD. It is resolved to an
+	// immutable SHA and exported like the baseline, so the working tree (dirty,
+	// untracked or git-ignored files included) never influences the result.
 	HeadRef string
 }
 
@@ -34,8 +34,8 @@ type Report struct {
 }
 
 // Gate orchestrates the honesty check: identify new tests, run them against the
-// immutable baseline plus the test overlay, run them at head, classify, and
-// record the evidence.
+// immutable baseline plus the test overlay, run them against an immutable export
+// of head, classify, and record the evidence.
 type Gate struct {
 	Git   Git
 	Exec  TestExecutor
@@ -64,9 +64,6 @@ func (g *Gate) Check(ctx context.Context, req Request) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	if err := g.requireHeadCheckedOut(ctx, headSHA); err != nil {
-		return rep, err
-	}
 	// The base must be an ancestor of head: an arbitrary (older) base could make
 	// any test look red because the code it depends on did not exist yet.
 	if err := g.Git.Run(ctx, g.Root, io.Discard, "merge-base", "--is-ancestor", baseSHA, headSHA); err != nil {
@@ -91,24 +88,14 @@ func (g *Gate) Check(ctx context.Context, req Request) (Report, error) {
 		return rep, err
 	}
 
-	dir, cleanup, err := PrepareBaseline(ctx, g.Git, g.Root, baseSHA, changes)
+	baseline, err := g.runIn(ctx, baseSHA, changes, tests)
 	if err != nil {
 		return rep, err
 	}
-	baseline, runErr := RunTests(ctx, g.Exec, dir, tests)
-	if cerr := cleanup(); cerr != nil {
-		runErr = errors.Join(runErr, fmt.Errorf("redhonesty: cleanup baseline: %w", cerr))
-	}
-	if runErr != nil {
-		return rep, runErr
-	}
-	head, err := RunTests(ctx, g.Exec, g.Root, tests)
+	// Head is measured from an immutable export of headSHA with NO overlay, so
+	// only committed inputs can influence the result.
+	head, err := g.runIn(ctx, headSHA, nil, tests)
 	if err != nil {
-		return rep, err
-	}
-	// The head run can take minutes; re-prove the tree is still the commit the
-	// evidence will be bound to before anything is recorded.
-	if err := g.requireHeadCheckedOut(ctx, headSHA); err != nil {
 		return rep, err
 	}
 
@@ -133,30 +120,19 @@ func (g *Gate) Check(ctx context.Context, req Request) (Report, error) {
 	return rep, nil
 }
 
-// requireHeadCheckedOut ensures the working tree is exactly headSHA for Go
-// inputs, so the head run measures the code the evidence is bound to.
-func (g *Gate) requireHeadCheckedOut(ctx context.Context, headSHA string) error {
-	cur, err := ResolveCommit(ctx, g.Git, g.Root, "HEAD")
+// runIn exports sha (plus an optional test overlay) into a fresh ignored
+// directory, runs the tests there and always removes the directory.
+func (g *Gate) runIn(ctx context.Context, sha string, overlay []FileChange, tests []NewTest) (map[string]Result, error) {
+	dir, cleanup, err := PrepareBaseline(ctx, g.Git, g.Root, sha, overlay)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if cur != headSHA {
-		return fmt.Errorf("redhonesty: head %s is not checked out (HEAD is %s)", headSHA[:12], cur[:12])
+	res, runErr := RunTests(ctx, g.Exec, dir, tests)
+	if cerr := cleanup(); cerr != nil {
+		runErr = errors.Join(runErr, fmt.Errorf("redhonesty: cleanup %s: %w", sha[:12], cerr))
 	}
-	out, err := gitOutput(ctx, g.Git, g.Root, maxGitOutputBytes, "diff", "--name-only", "-z", "HEAD", "--")
-	if err != nil {
-		return fmt.Errorf("redhonesty: inspect working tree: %w", err)
+	if runErr != nil {
+		return nil, runErr
 	}
-	untracked, err := gitOutput(ctx, g.Git, g.Root, maxGitOutputBytes, "ls-files", "--others", "--exclude-standard", "-z")
-	if err != nil {
-		return fmt.Errorf("redhonesty: inspect untracked files: %w", err)
-	}
-	for _, list := range [][]byte{out, untracked} {
-		for _, p := range strings.Split(strings.TrimRight(string(list), "\x00"), "\x00") {
-			if p != "" && (isGoSource(p) || p == "go.mod" || p == "go.sum" || p == "go.work" || isOverlayPath(p)) {
-				return fmt.Errorf("redhonesty: working tree has uncommitted or untracked Go inputs (%s); head evidence would not match the commit", truncate(p))
-			}
-		}
-	}
-	return nil
+	return res, nil
 }

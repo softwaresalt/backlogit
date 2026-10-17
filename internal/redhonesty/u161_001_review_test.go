@@ -218,13 +218,111 @@ func TestU161_003_GateRequiresBaseToBeAncestorOfHead(t *testing.T) {
 	}
 }
 
-func TestU161_003_GateRefusesUntrackedGoInputs(t *testing.T) {
+func TestU161_003_GateHeadRunIgnoresWorkingTreeState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs go test in a seeded repository")
+	}
 	r := seedRepo(t,
 		"package p\n\nfunc Compute(x int) int { return x + 1 }\n",
 		"package p\n\nimport \"testing\"\n\nfunc TestFix(t *testing.T) { if Compute(2) != 3 { t.Fatal(\"x\") } }\n")
-	writeFile(t, r.root, "p/sneaky.go", "package p\n")
-	if _, err := newGate(t, r).Check(context.Background(), Request{TaskID: "161.003-T", BaseRef: r.base, HeadRef: r.head}); err == nil {
-		t.Fatal("untracked Go file accepted; head run would not match the commit")
+	// Untracked and ignored files that would break or alter a working-tree run
+	// must not influence evidence bound to the committed head.
+	writeFile(t, r.root, "p/sneaky.go", "package p\n\nfunc Compute(x int) int { return 0 }\n")
+	writeFile(t, r.root, ".backlogit/runtime/ignored.go", "package broken\n")
+	rep, err := newGate(t, r).Check(context.Background(), Request{TaskID: "161.003-T", BaseRef: r.base, HeadRef: r.head})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Honest {
+		t.Fatalf("working-tree state leaked into the head run: %+v", rep.Verdicts)
+	}
+}
+
+func TestU161_003_ReconcileExitDistrustsPassesOfAFailedRun(t *testing.T) {
+	// TestMain exiting non-zero after m.Run: tests printed pass but the run failed.
+	got := reconcileExit(map[string]Result{"TestA": ResultPass, "TestB": ResultPass}, true)
+	if got["TestA"] != ResultUnrunnable || got["TestB"] != ResultUnrunnable {
+		t.Fatalf("passes of a failed run must be unverifiable: %v", got)
+	}
+	// An ordinary failing test explains the non-zero exit; results are kept.
+	got = reconcileExit(map[string]Result{"TestA": ResultPass, "TestB": ResultFail}, true)
+	if got["TestA"] != ResultPass || got["TestB"] != ResultFail {
+		t.Fatalf("ordinary failure results must be preserved: %v", got)
+	}
+	got = reconcileExit(map[string]Result{"TestA": ResultPass}, false)
+	if got["TestA"] != ResultPass {
+		t.Fatalf("clean exit must not alter results: %v", got)
+	}
+}
+
+func TestU161_002_ExpectedFieldAssignmentIsCaught(t *testing.T) {
+	src := `package p
+import "testing"
+func TestX(t *testing.T) {
+	var tc struct{ want int }
+	tc.want = Compute(2)
+	if Compute(2) != tc.want { t.Fatal("x") }
+}
+`
+	v := evalOne(t, src, ResultFail, ResultPass, syms([]string{"Compute"}, nil, nil, nil))
+	wantRejections(t, v, RejectBuggyPathExpected)
+	tableSrc := `package p
+import "testing"
+func TestX(t *testing.T) {
+	cases := []struct{ in, want int }{{in: 2, want: Compute(2)}}
+	for _, c := range cases { if Compute(c.in) != c.want { t.Fatal("x") } }
+}
+`
+	wantRejections(t, evalOne(t, tableSrc, ResultFail, ResultPass, syms([]string{"Compute"}, nil, nil, nil)), RejectBuggyPathExpected)
+}
+
+func TestU161_003_StoreConcurrentWritersCannotReplaceEachOther(t *testing.T) {
+	st, _ := NewStore(t.TempDir())
+	good, _ := BuildArtifact("161.003-T", u3Base, u3Head, []Verdict{honestVerdict("TestA")})
+	bad := honestVerdict("TestA")
+	bad.Baseline = ResultPass
+	bad.Rejections = []RejectionClass{RejectAlreadyPasses}
+	other, _ := BuildArtifact("161.003-T", u3Base, u3Head, []Verdict{bad})
+
+	const n = 16
+	results := make(chan error, n)
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		a := good
+		if i%2 == 1 {
+			a = other
+		}
+		go func() {
+			<-start
+			_, err := st.Write(a)
+			results <- err
+		}()
+	}
+	close(start)
+	okGood := 0
+	for i := 0; i < n; i++ {
+		if err := <-results; err == nil {
+			okGood++ // compared below with the number of writers of the winning content
+		}
+	}
+	loaded, err := st.Load("161.003-T", u3Head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exactly one artifact content won; every successful writer wrote that content.
+	winner := loaded.Status
+	wantOK := 0
+	for i := 0; i < n; i++ {
+		a := good
+		if i%2 == 1 {
+			a = other
+		}
+		if a.Status == winner {
+			wantOK++
+		}
+	}
+	if okGood != wantOK {
+		t.Fatalf("successful writers = %d, want exactly the %d writers of the winning content (%s)", okGood, wantOK, winner)
 	}
 }
 
