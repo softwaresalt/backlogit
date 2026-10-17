@@ -274,6 +274,12 @@ output (control and bidi characters become spaces); truncated DOT output is stil
 a closed graph with a truncation comment. Versioned records are refused when
 unsupported.
 
+## Review hardening (round 4)
+
+- Every identifier validator (shipment/task ID, principal, key ID, nonce, digest) checks length before its regular expression, so oversized input is never scanned and evaluator cache keys stay bounded by `MaxIDLength`.
+- Executor errors are flattened to a bounded plain error inside the timed, panic-protected goroutine; executor `Error`, `Is` and `Unwrap` never run on the caller's goroutine.
+- An identical waiver retry that finds its nonce already in the ledger re-stores the current head anchor and requires success, so acceptance never rests on an anchor whose directory sync failed.
+
 ## Documented limitations
 
 * Only `parity` (v1/v2) and `red-test-honesty` (`red_green`, v2) have S4 U4

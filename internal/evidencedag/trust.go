@@ -76,7 +76,7 @@ func ParseTrust(data []byte) (*Trust, error) {
 	t := &Trust{keys: map[string]TrustedKey{}, policy: map[string]map[Family]struct{}{}}
 	principals := map[string]struct{}{}
 	for _, k := range *doc.Keys {
-		if !principalPattern.MatchString(k.KeyID) || !principalPattern.MatchString(k.Principal) {
+		if !validPrincipalName(k.KeyID) || !validPrincipalName(k.Principal) {
 			return nil, trustErr("key_id and principal must match %s", principalPattern)
 		}
 		kind := KeyKind(k.Kind)

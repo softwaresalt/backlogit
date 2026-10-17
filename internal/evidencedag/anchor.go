@@ -28,7 +28,7 @@ func validateAnchor(a Anchor) error {
 		return errors.New("anchor sequence out of range")
 	case a.Seq == 0 && a.Hash != "":
 		return errors.New("genesis anchor must carry no hash")
-	case a.Seq > 0 && !hexPattern64.MatchString(a.Hash):
+	case a.Seq > 0 && !validHex64(a.Hash):
 		return errors.New("anchor hash is invalid")
 	}
 	return nil

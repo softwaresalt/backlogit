@@ -179,6 +179,27 @@ func validID(s string) bool {
 	return len(s) > 0 && len(s) <= MaxIDLength && idPattern.MatchString(s)
 }
 
+// validTaskID reports whether s is a bounded task or shipment identifier. The
+// length is checked before the pattern so oversized input is never scanned.
+func validTaskID(s string) bool {
+	return len(s) > 0 && len(s) <= MaxIDLength && taskPattern.MatchString(s)
+}
+
+// validPrincipalName is the length-first check for principals and key IDs.
+func validPrincipalName(s string) bool {
+	return len(s) > 0 && len(s) <= MaxIDLength && principalPattern.MatchString(s)
+}
+
+// validNonce is the length-first check for waiver nonces.
+func validNonce(s string) bool {
+	return len(s) >= 16 && len(s) <= 64 && noncePattern.MatchString(s)
+}
+
+// validHex64 is the length-first check for 64-character lowercase hex digests.
+func validHex64(s string) bool {
+	return len(s) == 64 && hexPattern64.MatchString(s)
+}
+
 // sanitize replaces invalid UTF-8, control characters and Unicode format
 // characters (such as bidi overrides) so text is safe to render.
 func sanitize(s string) string {

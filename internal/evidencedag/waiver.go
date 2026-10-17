@@ -166,7 +166,7 @@ func (s *WaiverService) prepare(raw []byte, ship Shipment, lookup func(string) (
 	if claims.Principal != key.Principal {
 		return zero, deny("claimed principal does not match the signing key's principal")
 	}
-	if !noncePattern.MatchString(claims.Nonce) {
+	if !validNonce(claims.Nonce) {
 		return zero, deny("nonce must be 16-64 lowercase hex characters")
 	}
 	switch claims.Kind {

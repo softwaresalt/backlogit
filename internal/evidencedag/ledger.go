@@ -233,23 +233,23 @@ func validateEntry(e LedgerEntry) error {
 	switch {
 	case e.AcceptedAt <= 0:
 		return errors.New("accepted_at is required")
-	case !taskPattern.MatchString(e.ShipmentID):
+	case !validTaskID(e.ShipmentID):
 		return errors.New("shipment id is invalid")
 	case !validID(e.NodeID):
 		return errors.New("node id is invalid")
 	case !faultline.ValidCommitSHA(e.HeadCommit):
 		return errors.New("head commit is invalid")
-	case !principalPattern.MatchString(e.Principal) || !principalPattern.MatchString(e.KeyID):
+	case !validPrincipalName(e.Principal) || !validPrincipalName(e.KeyID):
 		return errors.New("principal or key id is invalid")
 	case !knownFamily(Family(e.Family)):
 		return errors.New("family is unknown")
 	case e.Kind != claimKindWaiver:
 		return errors.New("kind is invalid")
-	case !noncePattern.MatchString(e.Nonce):
+	case !validNonce(e.Nonce):
 		return errors.New("nonce is invalid")
 	case e.Reason == "" || len(e.Reason) > MaxReasonBytes:
 		return errors.New("reason is required and bounded")
-	case !hexPattern64.MatchString(e.TokenDigest):
+	case !validHex64(e.TokenDigest):
 		return errors.New("token digest is invalid")
 	}
 	return nil
@@ -332,6 +332,19 @@ func (l *Ledger) appendUnique(e LedgerEntry, o appendOpts) (rec LedgerRecord, ex
 		for _, r := range recs {
 			if r.Nonce == e.Nonce {
 				if r.TokenDigest == e.TokenDigest {
+					// An identical retry must not report success on the strength of an
+					// anchor whose durability may never have been established (a prior
+					// Store can fail after its rename, leaving a readable but unsynced
+					// anchor). Re-anchor the current head and require success.
+					if o.store != nil {
+						head := recs[len(recs)-1]
+						if err := hl.verify(); err != nil {
+							return rec, false, fmt.Errorf("%w: %v", ErrAnchorStale, err)
+						}
+						if err := o.store.Store(Anchor{Seq: head.Seq, Hash: head.Hash}); err != nil {
+							return rec, false, fmt.Errorf("%w: re-establishing anchor durability: %v", ErrAnchorStale, err)
+						}
+					}
 					return r, true, nil
 				}
 				return rec, false, ErrNonceReplayed

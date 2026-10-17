@@ -14,10 +14,10 @@ const RecordSchemaVersion = 1
 
 // validateShipment checks the shipment identity and attribute bounds.
 func validateShipment(s Shipment) error {
-	if !taskPattern.MatchString(s.ID) {
+	if !validTaskID(s.ID) {
 		return fmt.Errorf("%w: shipment id is invalid", ErrInvalidInput)
 	}
-	if !faultline.ValidCommitSHA(s.HeadCommit) {
+	if len(s.HeadCommit) > 64 || !faultline.ValidCommitSHA(s.HeadCommit) {
 		return fmt.Errorf("%w: head commit must be a full lowercase commit SHA", ErrInvalidInput)
 	}
 	if len(s.Attributes) > MaxAttributes {

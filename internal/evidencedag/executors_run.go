@@ -172,7 +172,7 @@ func runOne(ctx context.Context, x NodeExecutor, req ExecRequest, timeout time.D
 func runGuarded(ctx context.Context, x NodeExecutor, req ExecRequest) (rec EvidenceRecord, err error) {
 	defer func() {
 		if p := recover(); p != nil {
-			err = fmt.Errorf("executor panicked: %v", p)
+			err = errors.New("executor panicked")
 		}
 	}()
 	if x.Identity() != req.Node.Validator {
@@ -180,7 +180,20 @@ func runGuarded(ctx context.Context, x NodeExecutor, req ExecRequest) (rec Evide
 	}
 	a, err := x.Execute(ctx, req)
 	if err != nil {
-		return EvidenceRecord{}, err
+		return EvidenceRecord{}, boundedExecError(err)
 	}
 	return NewEvidenceRecord(req.Shipment, req.Node.ID, a)
+}
+
+// boundedExecError flattens an executor-supplied error into a plain, bounded
+// error. It runs inside the guarded goroutine, so a blocking or panicking
+// Error method is covered by the node timeout and recover, and no executor
+// Error/Is/Unwrap method is ever invoked by the caller.
+func boundedExecError(err error) (out error) {
+	defer func() {
+		if recover() != nil {
+			out = errors.New("executor failed (error text unavailable)")
+		}
+	}()
+	return errors.New(truncate(sanitize(err.Error())))
 }
