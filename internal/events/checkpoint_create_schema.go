@@ -142,6 +142,32 @@ func buildCanonicalV1(data []byte) ([]byte, []string, error) {
 	return out, keys, nil
 }
 
+// nullRejectedFields are the create-time defaultable members. json.Unmarshal
+// maps a present JSON null to the Go zero value, which is indistinguishable
+// from an absent member and would be silently defaulted; a present-null member
+// is invalid, and only an absent one is defaulted.
+var nullRejectedFields = [...]string{"status", "created_at", "updated_at"}
+
+// rejectPresentNullDefaultables makes a raw map[string]json.RawMessage
+// presence pass over the top-level members and reports an error naming the
+// first defaultable member whose value is JSON null. Member names match
+// case-insensitively, mirroring encoding/json decoding. Non-object input is
+// left to the downstream pipeline to classify.
+func rejectPresentNullDefaultables(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	for _, field := range nullRejectedFields {
+		for key, val := range raw {
+			if strings.EqualFold(key, field) && bytes.Equal(bytes.TrimSpace(val), []byte("null")) {
+				return fmt.Errorf("checkpoint field %q is present but null; omit it to use the default", field)
+			}
+		}
+	}
+	return nil
+}
+
 // legacyDryRun upgrades a legacy-eligible dump to schema_version 1 and runs
 // the full pipeline. Size and secret failures keep their native errors so the
 // caller can remediate; every other failure is structural (opt-in cannot
