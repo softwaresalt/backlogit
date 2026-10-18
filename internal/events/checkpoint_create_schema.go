@@ -148,6 +148,9 @@ func buildCanonicalV1(data []byte) ([]byte, []string, error) {
 // help) and is reported as ErrCheckpointSchemaUnsupported with the cause
 // preserved via a second %w.
 func legacyDryRun(data []byte) ([]byte, []string, error) {
+	if err := rejectPresentNullDefaultables(data); err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", backlogiterrors.ErrCheckpointSchemaUnsupported, err)
+	}
 	upgraded, err := coerceSchemaVersionToV1(data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %w", backlogiterrors.ErrCheckpointSchemaUnsupported, err)

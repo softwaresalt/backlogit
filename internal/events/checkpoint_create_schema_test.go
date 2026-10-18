@@ -96,6 +96,40 @@ func TestCreateCheckpoint_SchemaMatrix_OptInFailClosed(t *testing.T) {
 	}
 }
 
+// F1a (171.007-T): a present-but-null status/created_at/updated_at in a legacy
+// dump is invalid (not defaultable); only an absent key is defaulted. The
+// "dry-run" scenario is the default (no opt-in) path, which runs the same
+// dry-run to decide the window; the "upgrade" scenario is the opt-in path.
+func TestCreateCheckpoint_SchemaMatrix_PresentNullFieldsInvalid(t *testing.T) {
+	rows := []struct {
+		name string
+		dump string
+	}{
+		{"null status", `{"agent":"ship","session_id":"s1","phase":"build","status":null}`},
+		{"null created_at", `{"agent":"ship","session_id":"s1","phase":"build","created_at":null}`},
+		{"null updated_at", `{"agent":"ship","session_id":"s1","phase":"build","updated_at":null}`},
+	}
+	scenarios := []struct {
+		name string
+		opts []events.CreateCheckpointOption
+	}{
+		{"upgrade", []events.CreateCheckpointOption{events.WithAllowLegacyImport()}},
+		{"dry-run", nil},
+	}
+	for _, sc := range scenarios {
+		for _, row := range rows {
+			t.Run(sc.name+"/"+row.name, func(t *testing.T) {
+				dir := t.TempDir()
+				_, err := events.CreateCheckpoint(context.Background(), dir, row.dump, sc.opts...)
+				require.Error(t, err)
+				assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointSchemaUnsupported), "got %v", err)
+				assert.False(t, errors.Is(err, backlogiterrors.ErrCheckpointSchemaRejected))
+				assertNoCheckpointWritten(t, dir)
+			})
+		}
+	}
+}
+
 func TestCreateCheckpoint_SchemaMatrix_CorpusFixturesFailClosed(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("testdata", "legacy-corpus", "*.json"))
 	require.NoError(t, err)
