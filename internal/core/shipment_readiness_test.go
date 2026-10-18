@@ -44,6 +44,7 @@ func TestShipmentPredecessorShipped(t *testing.T) {
 		{name: "reject archived without archived_status", dir: "archive", id: "903-S", content: readinessShipmentMarkdown("903-S", "status: archived\n"), wantReason: "not_shipped:archived/unknown"},
 		{name: "reject live abandoned", dir: "queue", id: "904-S", content: readinessShipmentMarkdown("904-S", "status: abandoned\n"), wantReason: "not_shipped:abandoned"},
 		{name: "reject live queued", dir: "queue", id: "905-S", content: readinessShipmentMarkdown("905-S", "status: queued\n"), wantReason: "not_shipped:queued"},
+		{name: "reject live queued despite stale archived_status shipped", dir: "queue", id: "911-S", content: readinessShipmentMarkdown("911-S", "status: queued\narchived_status: shipped\n"), wantReason: "not_shipped:queued"},
 		{name: "reject disposed shipment live", dir: "queue", id: "906-S", content: readinessShipmentMarkdown("906-S", "status: abandoned\ncustom_fields:\n    disposition: disposed\n    disposition_reason: superseded\n"), wantReason: "not_shipped:abandoned"},
 		{name: "reject disposed shipment archived", dir: "archive", id: "907-S", content: readinessShipmentMarkdown("907-S", "status: archived\narchived_status: abandoned\ncustom_fields:\n    disposition: disposed\n"), wantReason: "not_shipped:archived/abandoned"},
 		{name: "unknown id fails closed", queryID: "999-S", wantReason: "provenance_missing"},
