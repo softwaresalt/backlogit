@@ -127,7 +127,7 @@ func u014Validate(raw []byte) error {
 					return fmt.Errorf("checkout persist-credentials must be false")
 				}
 			}
-			if strings.Contains(st.Run, "scripts/check-line-endings.ps1") {
+			if strings.TrimSpace(st.Run) == "pwsh scripts/check-line-endings.ps1" {
 				guardIdx = i
 			}
 		}
@@ -172,6 +172,7 @@ func TestU175_014_Workflow(t *testing.T) {
 	t.Run("missing_or_malformed_invocation_red", func(t *testing.T) {
 		mutants := map[string]string{
 			"no_guard":     strings.Replace(u014ValidWorkflow, "pwsh scripts/check-line-endings.ps1", "echo skip", 1),
+			"echo_guard":   strings.Replace(u014ValidWorkflow, "pwsh scripts/check-line-endings.ps1", "echo scripts/check-line-endings.ps1", 1),
 			"wrong_runner": strings.Replace(u014ValidWorkflow, "windows-latest", "ubuntu-latest", 1),
 			"malformed":    "on: [unterminated\n",
 		}
