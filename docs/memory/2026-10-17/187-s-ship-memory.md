@@ -1,3 +1,11 @@
+---
+schema_version: "1.0"
+doc_type: memory
+title: "Ship session memory: 187-S implementation"
+description: "187-S readiness predicate and sentinel implementation, local review and deferrals."
+chunk_strategy: h1-h2-h3
+---
+
 # 187-S Ship session memory (2026-10-17)
 
 * Shipment: 187-S (feature 187-F, tasks 187.001-T..187.004-T), branch `feat/readiness-a1-readiness-api-declarations-and-predecessor-sentinel`.
