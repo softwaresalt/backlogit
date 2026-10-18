@@ -30,7 +30,8 @@ func TestCreateCheckpoint_WritesFile(t *testing.T) {
 	dir := t.TempDir()
 
 	// Act
-	result, err := events.CreateCheckpoint(context.Background(), dir, `{"state": "test"}`)
+	result, err := events.CreateCheckpoint(context.Background(), dir,
+		`{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build"}`)
 
 	// Assert
 	require.NoError(t, err)

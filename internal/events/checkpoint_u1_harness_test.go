@@ -59,17 +59,17 @@ func TestCreateCheckpoint_U1_MalformedJSON_BareOpenBrace(t *testing.T) {
 	assertNoCheckpointWritten(t, dir)
 }
 
-// TestCreateCheckpoint_U1_ValidLegacyJSON_PassesThrough asserts that valid
-// non-V1 JSON still flows through the legacy path unchanged after U1.
-// Preserves backward compatibility.
-func TestCreateCheckpoint_U1_ValidLegacyJSON_PassesThrough(t *testing.T) {
+// TestCreateCheckpoint_U1_ValidLegacyJSON_Rejected asserts that valid non-V1
+// JSON is no longer passed through (171.002-T): it is rejected with no file.
+func TestCreateCheckpoint_U1_ValidLegacyJSON_Rejected(t *testing.T) {
 	dir := t.TempDir()
 	stateDump := `{"state": "legacy-test", "some_key": "value"}`
 
-	result, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
+	_, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
 
-	require.NoError(t, err, "valid legacy JSON must succeed after U1")
-	assert.FileExists(t, result.Path)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointSchemaUnsupported))
+	assertNoCheckpointWritten(t, dir)
 }
 
 // TestCreateCheckpoint_U1_ValidV1JSON_UnchangedBehavior asserts that a
