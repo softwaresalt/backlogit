@@ -176,6 +176,25 @@ build work begins:
      fallback or synthesize blocked metadata.
 2. Confirm the shipment has explicit item membership (feature + tasks).
 3. Verify no item in the shipment is missing a covering feature parent.
+3.1. **Pre-claim hold-label and condition (b) checks (AF1E5075, hard eligibility gates)**: run both checks below before the branch creation gate and before any claim. A failure halts intake; no later step overrides it.
+    * **Hold-label check**: read the shipment's labels from the `backlogit_get_shipment` result. `do-not-claim-until-convergence` and `bootstrap-bypass-unapproved` are each a hard claim refusal label: a shipment carrying either is refused. `bootstrap-bypass-approved-conditional` is approval provenance, not a refusal label: a claim needs no refusal label and every one of the recorded waiver conditions satisfied, read from the shipment's Markdown banner or a recorded operator comment; fail closed when the waiver source is missing.
+      * Label state table:
+        * `do-not-claim-until-convergence` and `bootstrap-bypass-unapproved`, waiver source any: Refuse
+        * `do-not-claim-until-convergence` and `bootstrap-bypass-approved-conditional`, waiver source any: Refuse (the historical `154-S` state)
+        * `bootstrap-bypass-approved-conditional` only, waiver source recorded with every condition satisfied: Continue to condition (b)
+        * `bootstrap-bypass-approved-conditional` only, waiver source missing or a condition unsatisfied: Refuse
+      * GO_SIGNAL: do-not-claim-until-convergence removed after a recorded C29EBEE5 PASS. The removal counts only when the shipment's Markdown banner carries the `Gate: C29EBEE5 — SATISFIED` record citing the operator's `operator_authorization: approved` on the plan's `## Plan Review` section (for `154-S`, `.backlogit/archive/154-S.md`). When that record is missing, treat the label removal as unverified and refuse the claim. The approval label never bypasses a refusal label or condition (b), and there is no DARK_MODE exemption.
+    * **Condition (b) check (074-DL layer L1)**: applies when the shipment's blocks-edge closure includes 154-S (walk the `blocks` edges transitively). Require (P) and (C); otherwise halt with `CONDITION_B_UNSATISFIED`, never failing open.
+      * (P) Read Rule: locate `.backlogit/queue/154-S.md` while it is live, `.backlogit/archive/154-S.md` once archived, and parse its YAML frontmatter `status` and `archived_status`. This is a Markdown read, never an index read: do not use `backlogit_get_item`, `backlogit_query_sql`, or any other index read. A missing file, unparseable frontmatter, or missing required field fails closed with `CONDITION_B_UNSATISFIED`. (P) holds only for `status: shipped`, or `archived` with `archived_status: shipped`; abandoned and other terminal states do not count.
+      * State table:
+        * `154-S` not shipped: `CONDITION_B_UNSATISFIED`
+        * `154-S` archived without `archived_status: shipped`: `CONDITION_B_UNSATISFIED`
+        * `154-S` shipped without a valid attestation: `CONDITION_B_UNSATISFIED`
+        * `154-S` shipped with a valid attestation: proceed
+      * Attestation rule (C): the source is the `154-S` item log, `.backlogit/logs/154-S.jsonl` (append-only; the index can lag it, so never rely on the index). A candidate is a `comment` event whose text starts with the line `CONDITION_B_ATTESTED: <evidence>` or `CONDITION_B_REVOKED: <reason>`. The actor is exactly `operator`, or `operator (relayed by Orchestrator)` only when the comment quotes the operator's words verbatim; agents never originate an attestation. Compare RFC3339 instants: a candidate counts only when its timestamp is after the latest `shipment_status_changed` event to `shipped`; any unparseable timestamp fails closed. Ordering rule, newest wins: the latest valid candidate decides, a newer `CONDITION_B_REVOKED` cancels an older attestation, and when both share the same instant, revocation wins. A missing log (item logs are git-ignored), or a log without the `shipment_status_changed` event to `shipped`, fails closed and the gate stays closed: a new attestation alone cannot recover it because no shipped timestamp baseline exists. Recovery requires first restoring authoritative shipped-event evidence for `154-S` (for example the original item log), and only then does the operator re-attest; never synthesize a shipped event.
+      * Root binding and safe read (applies to both (P) and (C) evidence reads, main and fallback intake): before reading `154-S` Markdown or `.backlogit/logs/154-S.jsonl`, attest the served workspace root and served storage root (the metadata catalog workspace root and storage root plus the index database location, as in the Ship Step 4.1b Served-Root Attestation); derive both evidence paths from the attested storage root only; require containment within that root, reject every symlink or reparse-point component, open read-only with no-follow, and verify the opened path equals the canonical target. If any of this fails or is unavailable, halt `CONDITION_B_UNSATISFIED` (fail closed).
+      * Format publication: before relying on a proceed row, Ship shows the operator the attestation leading-line format (`CONDITION_B_ATTESTED: <evidence>`). An existing attestation that does not conform is invalid and the operator re-attests. No agent writes the attestation.
+      * Boundaries: a manifest-declared capability is not consumption proof. Fixing the upstream `pipeline-topology` predecessor derivation (`A592FC1C`) does not transfer (C); the attestation stays required until a recorded operator or Stage decision confirms the gate checks consumption. A `CONDITION_B_UNSATISFIED` halt and a core `shipment_predecessor_not_shipped` claim refusal are each a terminal halt that is never retried. This 154-S clause set is a workspace-local overlay excluded from upstream template sync.
 3a. **Branch Creation Gate (P-011, NON-NEGOTIABLE)**: Before claiming (the first workspace mutation), ensure a feature branch is active:
     - **TOPOLOGY_GATE: pre_claim (before branch/worktree creation)** — if the `pipeline-topology` gate is installed
       for this workspace, before any branch creation or selection below, run
@@ -211,8 +230,8 @@ build work begins:
       claim in step 4, re-run `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase
       pre_claim --json` to narrow the TOCTOU window between branch setup and the claim. Same exit-code handling as
       above: exit 0 proceeds to the claim; exit 1/2 halts immediately.
-4. If the shipment is still in `queued` status, claim it using `backlogit_claim_shipment` before
-   build work begins. Broadcast `[SHIP] Shipment claimed: {shipment_id}`.
+4. If the shipment is still in `queued` status, repeat the hold-label and condition (b) checks from item 3.1 immediately before the claim, then claim it using `backlogit_claim_shipment` before
+   build work begins. A `CONDITION_B_UNSATISFIED` halt or a `shipment_predecessor_not_shipped` claim refusal is a terminal halt that is never retried; the step 4a `CLAIM_NOT_OBSERVED` retry does not apply to it. Broadcast `[SHIP] Shipment claimed: {shipment_id}`.
 4a. **TOPOLOGY_GATE: post_claim (immediately after claim, GLOBAL verification)** — Post-claim shipment-status
     verification. Immediately after the claim and before any task moves to `active`:
     - If the `pipeline-topology` gate is installed for this workspace, run
@@ -258,7 +277,7 @@ When `shipment_id` is not provided (Ship invoked directly by the operator):
    c. Add each task in dependency order. Add each subtask after its parent task.
    d. Broadcast `[SHIP] Shipment assembled (fallback): {shipment_id} — {feature_id} +
       {task_count} tasks`.
-4. Claim and record `shipment_id` as the session scope.
+4. Claim and record `shipment_id` as the session scope. First repeat the hold-label and condition (b) checks from item 3.1 (primary path) against the assembled shipment. A `CONDITION_B_UNSATISFIED` halt is never retried, and a `shipment_predecessor_not_shipped` claim refusal is a terminal halt that is never retried. Only then claim the shipment with `backlogit_claim_shipment`.
 
 When the `agent-intercom` capability pack is also installed, broadcast each sub-step with
 its outcome.
