@@ -1,21 +1,25 @@
 package cli_test
 
 import (
+	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestCheckpointCreate_LegacyDumpContextKeysNamesActualKeys is scenario 1 of
-// 146.014-T (U5b): a legacy dump (no schema_version) whose context object
-// carries keys yields a context_keys list naming exactly those keys on both
-// surfaces, proving the legacy path reports what it actually wrote rather
-// than defaulting to [].
-func TestCheckpointCreate_LegacyDumpContextKeysNamesActualKeys(t *testing.T) {
-	stateDump := `{"phase":"build","context":{"shipment_id":"129-S","pr_number":372}}`
+// TestCheckpointCreate_ContextKeysNamesActualKeys is scenario 1 of 146.014-T
+// (U5b), updated for 171.002-T (create now requires schema_version 1): a V1
+// dump whose context object carries keys yields a context_keys list naming
+// exactly those keys on both surfaces.
+func TestCheckpointCreate_ContextKeysNamesActualKeys(t *testing.T) {
+	stateDump := `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","context":{"shipment_id":"129-S","pr_number":372}}`
 
 	t.Run("cli", func(t *testing.T) {
 		root := setupCLIWorkspace(t)
@@ -37,28 +41,16 @@ func TestCheckpointCreate_LegacyDumpContextKeysNamesActualKeys(t *testing.T) {
 	})
 }
 
-// TestCheckpointCreate_DegenerateLegacyShapes_ContextKeysPresentEmpty is
-// scenario 2 of 146.014-T (U5b): a table over four degenerate legacy dumps —
-// context absent, "context": null, "context": 42, and a top level that is a
-// JSON array rather than an object — each asserts the create succeeds and
-// context_keys decodes as a present, empty .([]any) on both surfaces, an
-// assertion that fails for both an absent key and a JSON null.
-//
-// Note: 146.001-T (U0a) already declares CreateCheckpointResult.ContextKeys
-// with no omitempty and always populates it with make([]string, 0), so this
-// scenario's "present, empty" half is already satisfied ahead of 146.015-T
-// (U6). It is retained as the specified forward-compatible shape guard for
-// U6 (which must not regress it to nil/omitted for any degenerate legacy
-// shape) rather than weakened, per the acceptance criteria in the plan.
-func TestCheckpointCreate_DegenerateLegacyShapes_ContextKeysPresentEmpty(t *testing.T) {
+// TestCheckpointCreate_DegenerateShapes_ContextKeysPresentEmpty is scenario 2
+// of 146.014-T (U5b), updated for 171.002-T: V1 dumps with context absent or
+// null still yield a present, empty context_keys array on both surfaces.
+func TestCheckpointCreate_DegenerateShapes_ContextKeysPresentEmpty(t *testing.T) {
 	tests := []struct {
 		name string
 		dump string
 	}{
-		{"context_absent", `{"phase":"build"}`},
-		{"context_null", `{"phase":"build","context":null}`},
-		{"context_number", `{"phase":"build","context":42}`},
-		{"top_level_array", `[1,2,3]`},
+		{"context_absent", `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build"}`},
+		{"context_null", `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","context":null}`},
 	}
 
 	for _, tc := range tests {
@@ -80,6 +72,57 @@ func TestCheckpointCreate_DegenerateLegacyShapes_ContextKeysPresentEmpty(t *test
 			assert.Empty(t, raw)
 		})
 	}
+}
+
+// TestCheckpointCreate_NonObjectAndSchemaLessRejected pins (171.002-T) that
+// arrays, scalars, null, and schema-less/legacy-shaped objects are rejected on
+// both surfaces by default, writing no checkpoint file.
+func TestCheckpointCreate_NonObjectAndSchemaLessRejected(t *testing.T) {
+	tests := []struct {
+		name string
+		dump string
+	}{
+		{"top_level_array", `[1,2,3]`},
+		{"top_level_number", `42`},
+		{"top_level_string", `"x"`},
+		{"top_level_null", `null`},
+		{"legacy_no_schema", `{"phase":"build"}`},
+		{"legacy_context_number", `{"schema_version":1,"agent":"ship","session_id":"s1","phase":"build","context":42}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name+"_cli", func(t *testing.T) {
+			root := setupCLIWorkspace(t)
+			err := runCLIErr(t, root, "checkpoint", "create", "--state-dump", tc.dump)
+			require.Error(t, err)
+			assertNoCheckpointFiles(t, root)
+		})
+		t.Run(tc.name+"_mcp", func(t *testing.T) {
+			root := setupCLIWorkspace(t)
+			srv := newMCPServerForRoot(t, root)
+			request := mcplib.CallToolRequest{}
+			request.Params.Arguments = map[string]any{"state_dump": tc.dump}
+			result, err := srv.InvokeTool(context.Background(), "backlogit_create_checkpoint", request)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.True(t, result.IsError)
+			assertNoCheckpointFiles(t, root)
+		})
+	}
+}
+
+// assertNoCheckpointFiles fails if any checkpoint-*.json exists under root.
+func assertNoCheckpointFiles(t *testing.T, root string) {
+	t.Helper()
+	require.NoError(t, filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasPrefix(d.Name(), "checkpoint-") && strings.HasSuffix(d.Name(), ".json") {
+			t.Errorf("rejected create wrote a file: %s", p)
+		}
+		return nil
+	}))
 }
 
 // TestCheckpointCreate_EmptyTaskIDsContextKeysMatchWrittenBytes is scenario 3

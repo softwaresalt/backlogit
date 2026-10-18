@@ -14,7 +14,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
@@ -560,4 +562,126 @@ func blockUCYA1ThroughHandler(t *testing.T, root, shipmentID string, arm func(*t
 	require.NoError(t, err)
 	require.True(t, result.IsError, "the injected lifecycle fault must surface as a tool error")
 	return shipmentErrorField(t, result)
+}
+
+// schemaErrorBody decodes the structured body of a checkpoint-schema error
+// result so tests assert on the serialized CallToolResult, not a Go error.
+func schemaErrorBody(t *testing.T, result *mcplib.CallToolResult) map[string]any {
+	t.Helper()
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	require.NotEmpty(t, result.Content)
+	text, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok, "expected text content, got %T", result.Content[0])
+	var body map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text.Text), &body))
+	return body
+}
+
+// TestDomainError_CheckpointSchema_SentinelsAreStructurallyDistinct (171.004-T)
+// asserts the two schema sentinels are validation-class and distinguishable by
+// machine-readable fields (not message wording), with the opt-in remediation
+// present only for the legacy-eligible sentinel and spelled as the MCP
+// parameter, not the CLI flag.
+func TestDomainError_CheckpointSchema_SentinelsAreStructurallyDistinct(t *testing.T) {
+	rejected := schemaErrorBody(t, domainError("create checkpoint",
+		fmt.Errorf("create: %w: schema_version is missing or 0", corerrors.ErrCheckpointSchemaRejected)))
+	unsupported := schemaErrorBody(t, domainError("create checkpoint",
+		fmt.Errorf("create: %w: %w", corerrors.ErrCheckpointSchemaUnsupported, corerrors.ErrCheckpointUnknownField)))
+
+	assert.Equal(t, "validation_failed", rejected["error"])
+	assert.Equal(t, "validation_failed", unsupported["error"],
+		"unsupported wraps the unknown-field cause but must not be shadowed by that mapping")
+
+	assert.Equal(t, "checkpoint_schema_rejected", rejected["code"])
+	assert.Equal(t, "checkpoint_schema_unsupported", unsupported["code"])
+	assert.NotEqual(t, rejected["code"], unsupported["code"])
+
+	assert.Equal(t, true, rejected["retry_with_opt_in"])
+	assert.Equal(t, false, unsupported["retry_with_opt_in"])
+
+	assert.Equal(t, "allow_legacy_import", rejected["remediation"])
+	assert.NotContains(t, rejected["message"], "--allow-legacy-import", "MCP must not use the CLI flag spelling")
+	assert.NotContains(t, unsupported, "remediation", "no opt-in remediation when enabling it cannot help")
+	assert.NotContains(t, unsupported["message"], "allow_legacy_import")
+	assert.NotContains(t, unsupported["message"], "allow-legacy-import")
+
+	assert.NotContains(t, unsupported, "unknown_fields", "unsupported must not adopt the unknown-fields shape")
+}
+
+// TestHandleCreateCheckpoint_SchemaSentinels_SerializedResult drives the real
+// handler (which returns a nil Go error) and asserts the structured distinction
+// on the serialized result.
+func TestHandleCreateCheckpoint_SchemaSentinels_SerializedResult(t *testing.T) {
+	s, _ := setupBugFixServer(t)
+	tests := []struct {
+		name          string
+		dump          string
+		wantCode      string
+		wantRetryable bool
+	}{
+		{"in-window legacy", `{"agent":"ship","session_id":"s1","phase":"build"}`, "checkpoint_schema_rejected", true},
+		{"out-of-window legacy", `{"consumer":"ship","phase":"build"}`, "checkpoint_schema_unsupported", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			request := mcplib.CallToolRequest{}
+			request.Params.Name = "backlogit_create_checkpoint"
+			request.Params.Arguments = map[string]any{"state_dump": tc.dump}
+			result, err := s.handleCreateCheckpoint(context.Background(), request)
+			require.NoError(t, err, "handler converts domain errors into results")
+			body := schemaErrorBody(t, result)
+			assert.Equal(t, "validation_failed", body["error"])
+			assert.Equal(t, tc.wantCode, body["code"])
+			assert.Equal(t, tc.wantRetryable, body["retry_with_opt_in"])
+		})
+	}
+}
+
+// 171.004-T: the serialized schema error must stay bounded even when the
+// wrapped cause echoes caller-controlled input that fits the 64-KiB input cap.
+func TestHandleCreateCheckpoint_SchemaError_DiagnosticIsBounded(t *testing.T) {
+	s, _ := setupBugFixServer(t)
+	const maxSerialized = 2048
+	tests := []struct {
+		name string
+		dump string
+	}{
+		{"invalid created_at 60000 chars",
+			`{"agent":"ship","session_id":"s1","phase":"build","created_at":"` + strings.Repeat("x", 60000) + `"}`},
+		{"duplicated 30000 byte context key",
+			`{"agent":"ship","session_id":"s1","phase":"build","context":{"` +
+				strings.Repeat("k", 30000) + `":1,"` + strings.Repeat("k", 30000) + `":2}}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			request := mcplib.CallToolRequest{}
+			request.Params.Name = "backlogit_create_checkpoint"
+			request.Params.Arguments = map[string]any{"state_dump": tc.dump}
+			result, err := s.handleCreateCheckpoint(context.Background(), request)
+			require.NoError(t, err)
+			body := schemaErrorBody(t, result)
+			raw, mErr := json.Marshal(result)
+			require.NoError(t, mErr)
+			assert.Less(t, len(raw), maxSerialized, "serialized CallToolResult must be bounded")
+			assert.Equal(t, "validation_failed", body["error"])
+			assert.Equal(t, "checkpoint_schema_unsupported", body["code"])
+			assert.Equal(t, false, body["retry_with_opt_in"])
+			assert.Contains(t, body["message"], "[truncated]")
+			assert.True(t, utf8.ValidString(body["message"].(string)))
+		})
+	}
+}
+
+func TestCheckpointSchemaError_BoundedPreservesOptInFieldsAndRuneBoundary(t *testing.T) {
+	cause := fmt.Errorf("%w: %s", corerrors.ErrCheckpointSchemaRejected, strings.Repeat("é", 5000))
+	body := schemaErrorBody(t, domainError("create checkpoint", cause))
+	msg, _ := body["message"].(string)
+	assert.True(t, utf8.ValidString(msg), "truncation must not split a rune")
+	assert.Contains(t, msg, "[truncated]")
+	assert.Contains(t, msg, "allow_legacy_import", "opt-in advice must survive truncation")
+	assert.Less(t, len(msg), 1024)
+	assert.Equal(t, "checkpoint_schema_rejected", body["code"])
+	assert.Equal(t, true, body["retry_with_opt_in"])
+	assert.Equal(t, "allow_legacy_import", body["remediation"])
 }

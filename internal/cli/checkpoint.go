@@ -57,6 +57,7 @@ func checkpointDir(cwd string) (string, error) {
 // the written path is returned as JSON ({"path": ...}).
 func newCheckpointCreateCmd(cwd *string) *cobra.Command {
 	var stateDump string
+	var allowLegacyImport bool
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -66,7 +67,22 @@ func newCheckpointCreateCmd(cwd *string) *cobra.Command {
 The state dump is written to the workspace checkpoints directory. When the dump
 declares schema_version=1, it is validated as a V1 checkpoint and missing
 created_at, updated_at, and status fields are auto-populated. A dump without
-schema_version=1 (legacy) is written verbatim with no schema validation.
+schema_version=1 (legacy: schema_version missing or 0) is rejected by default.
+
+LEGACY IMPORT (migration-only): pass --allow-legacy-import to opt in. The
+opt-in accepts only in-window legacy shapes (schema_version missing or 0
+with a recognizable agent, session_id, and phase). The import is an upgrade:
+the dump is converted to a valid V1 checkpoint and is never persisted as-is.
+The flag cannot rescue future, unsupported, wrong-typed, or malformed dumps,
+or records that would need remapping or an identity they lack; those remain
+rejected with or without the flag.
+
+SCHEMA_VERSION SEMANTICS (default / with --allow-legacy-import):
+  1 (valid V1)              accept / accept (opt-in inert)
+  missing or integer 0      reject, no file / upgrade to V1 if in window, else reject
+  2, negative (unsupported) reject, no file / reject (opt-in does not apply)
+  wrong-typed, duplicate    reject, no file / reject
+  malformed JSON            reject, no file / reject
 
 For a schema_version=1 dump, the top level and the nested progress object are
 a CLOSED schema namespace: any key outside the modeled set (schema_version,
@@ -107,9 +123,13 @@ before creating a checkpoint.`,
 			if err != nil {
 				return fmt.Errorf("resolve checkpoint dir: %w", err)
 			}
-			result, err := events.CreateCheckpoint(ctx, dir, stateDump)
+			var opts []events.CreateCheckpointOption
+			if allowLegacyImport {
+				opts = append(opts, events.WithAllowLegacyImport())
+			}
+			result, err := events.CreateCheckpoint(ctx, dir, stateDump, opts...)
 			if err != nil {
-				return fmt.Errorf("create checkpoint: %w", err)
+				return checkpointCreateError(err)
 			}
 
 			enc := jsonutil.NewEncoder(cmd.OutOrStdout())
@@ -118,8 +138,38 @@ before creating a checkpoint.`,
 		},
 	}
 	cmd.Flags().StringVar(&stateDump, "state-dump", "", "JSON checkpoint state dump")
+	cmd.Flags().BoolVar(&allowLegacyImport, "allow-legacy-import", false,
+		"migration-only: upgrade an in-window legacy dump (schema_version missing or 0) to a valid V1 checkpoint instead of rejecting it")
 	_ = cmd.MarkFlagRequired("state-dump")
 	return cmd
+}
+
+// boundedCreateError carries a diagnostic-budgeted message while keeping the
+// original cause reachable through errors.Is/As.
+type boundedCreateError struct {
+	msg   string
+	cause error
+}
+
+func (e *boundedCreateError) Error() string { return e.msg }
+func (e *boundedCreateError) Unwrap() error { return e.cause }
+
+// checkpointCreateError wraps a create failure with CLI context. The
+// --allow-legacy-import remediation is appended ONLY for
+// ErrCheckpointSchemaRejected (legacy-eligible); it is never appended for
+// ErrCheckpointSchemaUnsupported, where enabling the flag cannot help.
+func checkpointCreateError(err error) error {
+	if errors.Is(err, blerrors.ErrCheckpointSchemaRejected) {
+		return &boundedCreateError{
+			msg: blerrors.BoundDiagnostic("create checkpoint: "+err.Error()) +
+				"; to import this legacy dump as an upgraded V1 checkpoint, re-run with --allow-legacy-import",
+			cause: err,
+		}
+	}
+	if errors.Is(err, blerrors.ErrCheckpointSchemaUnsupported) {
+		return &boundedCreateError{msg: blerrors.BoundDiagnostic("create checkpoint: " + err.Error()), cause: err}
+	}
+	return fmt.Errorf("create checkpoint: %w", err)
 }
 
 func newCheckpointListCmd(cwd *string) *cobra.Command {

@@ -219,21 +219,14 @@ func TestCreateCheckpoint_V1Schema_InvalidRejected(t *testing.T) {
 func TestCreateCheckpoint_LegacyFormat(t *testing.T) {
 	s := setupRealMCPServer(t)
 
-	// Legacy format without schema_version.
+	// Schema-less legacy format is rejected by default (171.002-T) and never
+	// written verbatim.
 	legacy := `{"agent":"ship","phase":"test","custom_data":"hello"}`
-	data := callToolAndParseJSON(t, s, "backlogit_create_checkpoint", map[string]any{
+	result, err := callToolForTest(t, s, "backlogit_create_checkpoint", map[string]any{
 		"state_dump": legacy,
 	})
-	assert.Contains(t, data["path"], "checkpoint-")
-
-	// Verify written as-is.
-	path := data["path"].(string)
-	fileData, err := os.ReadFile(path)
 	require.NoError(t, err)
-
-	var parsed map[string]any
-	require.NoError(t, json.Unmarshal(fileData, &parsed))
-	assert.Equal(t, "hello", parsed["custom_data"])
+	require.True(t, result.IsError, "schema-less dump must be rejected by default")
 }
 
 func TestGetCheckpoint_ValidationError(t *testing.T) {

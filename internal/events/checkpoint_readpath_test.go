@@ -2,6 +2,7 @@ package events_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -78,18 +79,18 @@ func TestParseCheckpoint_DuplicateContextKeyAliases(t *testing.T) {
 	}
 }
 
-// TestCreateCheckpoint_LegacyDumpWrittenVerbatim is scenario 3 of 146.008-T
-// (U3b): a dump with no schema_version is written verbatim and is never
-// subjected to the unknown-key probe (which does not exist before 146.011-T,
-// U4, and even once it exists only applies to the V1 path).
-func TestCreateCheckpoint_LegacyDumpWrittenVerbatim(t *testing.T) {
+// TestCreateCheckpoint_LegacyDumpRejectedNotWrittenVerbatim replaces the former
+// verbatim-write contract (171.002-T): a schema-less dump is never written
+// verbatim; with no foreign-member-free identity it is rejected as unsupported
+// and no file lands.
+func TestCreateCheckpoint_LegacyDumpRejectedNotWrittenVerbatim(t *testing.T) {
 	dir := t.TempDir()
 	stateDump := `{"anything_at_all":"x","nested":{"a":1}}`
 
-	result, err := events.CreateCheckpoint(context.Background(), dir, stateDump)
-	require.NoError(t, err)
-
-	raw, err := readCheckpointFile(t, result.Path)
-	require.NoError(t, err)
-	assert.Equal(t, stateDump, string(raw), "a legacy (non-V1) dump must be written byte-for-byte verbatim")
+	for _, opts := range [][]events.CreateCheckpointOption{nil, {events.WithAllowLegacyImport()}} {
+		_, err := events.CreateCheckpoint(context.Background(), dir, stateDump, opts...)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, backlogiterrors.ErrCheckpointSchemaUnsupported))
+		assertNoCheckpointWritten(t, dir)
+	}
 }

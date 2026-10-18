@@ -8,13 +8,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	backlogiterrors "github.com/softwaresalt/backlogit/internal/errors"
-	"github.com/softwaresalt/backlogit/internal/jsonutil"
 )
 
 // memoriesMu serializes concurrent SaveMemory calls on the same process.
@@ -273,22 +271,27 @@ func containsJWTPrefix(s string) bool {
 }
 
 // CreateCheckpoint writes a timestamped state dump to the checkpoints directory.
-// If the state dump contains a V1 schema (schema_version=1), it is parsed and
-// validated before writing. Missing created_at, updated_at, and status fields
-// are auto-populated. Legacy (non-V1) dumps are written as-is with atomic writes.
+// Only schema_version=1 dumps are accepted by default: they are parsed,
+// validated, canonicalized (missing created_at, updated_at, and status are
+// auto-populated) and written atomically. A schema-less (absent or 0
+// schema_version) dump is rejected with ErrCheckpointSchemaRejected when it
+// would upgrade cleanly, or ErrCheckpointSchemaUnsupported when it cannot;
+// unsupported, future, wrong-typed, ambiguous and non-object schemas are
+// rejected with ErrCheckpointSchemaUnsupported. With WithAllowLegacyImport an
+// in-window legacy dump is upgraded to canonical V1 (never written verbatim).
+// Identity (agent, session_id) is never synthesized. All rejections occur
+// before any file is written.
 //
 // CreateCheckpointResult.ContextKeys (146.015-T / U6) reports the exact
-// context key names persisted to disk. On the V1 path it comes from
-// CheckpointContext.Keys(), whose error is PROPAGATED, never discarded; per
-// the pinned call ordering, Keys() runs BEFORE the write, so a serialization
-// failure deterministically prevents a file from landing on disk whose keys
-// could not be reported. On the legacy (non-V1) path it comes from a
-// strictly best-effort scan of the WRITTEN bytes' top-level context object,
-// sorted with sort.Strings: any decode failure or non-object context yields
-// an empty, non-nil array, and the create still succeeds regardless.
-func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string) (CreateCheckpointResult, error) {
-	if err := os.MkdirAll(checkpointDir, 0o755); err != nil {
-		return CreateCheckpointResult{}, fmt.Errorf("create checkpoint dir: %w", err)
+// context key names persisted to disk, from CheckpointContext.Keys(), whose
+// error is PROPAGATED; Keys() runs BEFORE the write, so a serialization
+// failure deterministically prevents a file from landing on disk.
+func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string, opts ...CreateCheckpointOption) (CreateCheckpointResult, error) {
+	var cfg createCheckpointConfig
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
 	}
 	name := fmt.Sprintf("checkpoint-%s.json", time.Now().UTC().Format("20060102-150405"))
 	path := filepath.Join(checkpointDir, name)
@@ -315,71 +318,32 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 		return CreateCheckpointResult{}, err
 	}
 
-	// Probe for V1 schema.
-	var probe struct {
-		SchemaVersion int `json:"schema_version"`
-	}
-	if json.Unmarshal(data, &probe) == nil && probe.SchemaVersion == 1 {
-		cp, err := ParseCheckpoint(data)
-		if err != nil {
-			// Preserve the ErrCheckpointCorrupt sentinel from ParseCheckpoint.
-			return CreateCheckpointResult{}, fmt.Errorf("parse v1 checkpoint: %w", err)
-		}
-		// Pass 2 (146.011-T / U4): only after pass 1 (ParseCheckpoint) has
-		// already succeeded, enforce the closed CheckpointV1 top-level and
-		// nested-progress schema namespace. The typed error is returned
-		// directly, not wrapped again, so errors.As still recovers it in one
-		// hop.
-		if err := checkClosedSchemaNamespace(data); err != nil {
-			return CreateCheckpointResult{}, err
-		}
-		// 148-F / U2: check for duplicate or case-fold-aliased context member
-		// names at the create boundary. Returns typed
-		// *CheckpointDuplicateContextKeyError so callers can recover the offending
-		// key names via errors.As. Ordered after checkClosedSchemaNamespace so
-		// the top-level and progress namespace is already clean.
-		if dupKeys := contextDuplicateCreateKeys(data); len(dupKeys) > 0 {
-			return CreateCheckpointResult{}, &backlogiterrors.CheckpointDuplicateContextKeyError{Keys: dedupeSorted(dupKeys)}
-		}
-		if cp.CreatedAt.IsZero() {
-			cp.CreatedAt = time.Now().UTC()
-		}
-		if cp.UpdatedAt.IsZero() {
-			cp.UpdatedAt = time.Now().UTC()
-		}
-		if cp.Status == "" {
-			cp.Status = "active"
-		}
-		if err := ValidateCheckpoint(cp); err != nil {
-			return CreateCheckpointResult{}, err
-		}
-
-		// Call ordering is pinned (146.015-T / U6): Keys() MUST run before the
-		// write below, so a serialization failure prevents the write instead
-		// of leaving a file on disk whose keys cannot be reported.
-		keys, keysErr := cp.Context.Keys()
-		if keysErr != nil {
-			return CreateCheckpointResult{}, fmt.Errorf("compute checkpoint context keys: %w", keysErr)
-		}
-		contextKeys = keys
-
-		var marshalErr error
-		data, marshalErr = jsonutil.MarshalReadable(cp)
-		if marshalErr != nil {
-			return CreateCheckpointResult{}, fmt.Errorf("marshal v1 checkpoint: %w", marshalErr)
-		}
-		// 153.003-T (S1 U3 / adversarial-review F4 remediation): re-check the
-		// size against the final re-marshaled bytes, not the raw input. V1 auto-
-		// population (created_at, updated_at, status defaults) may grow the
-		// buffer past the fail-closed limit. This second check runs against the
-		// exact bytes that will be written to disk.
-		if sizeErr := checkStateDumpSize(data); sizeErr != nil {
-			return CreateCheckpointResult{}, sizeErr
-		}
-	}
-
-	if err := checkStateDumpSecrets(data); err != nil {
+	class, err := classifyCreateSchema(data)
+	if err != nil {
 		return CreateCheckpointResult{}, err
+	}
+	switch class {
+	case createSchemaV1:
+		data, contextKeys, err = buildCanonicalV1(data)
+		if err != nil {
+			return CreateCheckpointResult{}, err
+		}
+	default: // createSchemaLegacy
+		// The dry-run decides the window on BOTH paths and its canonical
+		// output is the only thing ever written; legacy bytes are never
+		// persisted verbatim.
+		canonical, keys, dryErr := legacyDryRun(data)
+		if dryErr != nil {
+			return CreateCheckpointResult{}, dryErr
+		}
+		if !cfg.allowLegacyImport {
+			return CreateCheckpointResult{}, fmt.Errorf("%w: schema_version is missing or 0", backlogiterrors.ErrCheckpointSchemaRejected)
+		}
+		data, contextKeys = canonical, keys
+	}
+
+	if err := os.MkdirAll(checkpointDir, 0o755); err != nil {
+		return CreateCheckpointResult{}, fmt.Errorf("create checkpoint dir: %w", err)
 	}
 
 	// 148-F / U3: route through the seam so tests can simulate ErrWriteIndeterminate
@@ -388,36 +352,5 @@ func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string)
 		return CreateCheckpointResult{}, fmt.Errorf("write checkpoint: %w", err)
 	}
 
-	if contextKeys == nil {
-		// Legacy (non-V1) path: CheckpointContext.Keys() never ran above, so
-		// scan the bytes that were actually written.
-		contextKeys = legacyContextKeys(data)
-	}
 	return CreateCheckpointResult{Path: path, ContextKeys: contextKeys}, nil
-}
-
-// legacyContextKeys performs a strictly best-effort scan of a written
-// checkpoint's top-level context object for a legacy (non-V1) dump. It never
-// fails: an unparseable document, an absent context key, or a context value
-// that is not a JSON object (null, a scalar, an array) all yield an empty,
-// non-nil slice. When keys are found they are sorted with sort.Strings.
-func legacyContextKeys(data []byte) []string {
-	var doc map[string]json.RawMessage
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return make([]string, 0)
-	}
-	ctxRaw, ok := doc["context"]
-	if !ok {
-		return make([]string, 0)
-	}
-	var ctx map[string]json.RawMessage
-	if err := json.Unmarshal(ctxRaw, &ctx); err != nil {
-		return make([]string, 0)
-	}
-	keys := make([]string, 0, len(ctx))
-	for k := range ctx {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

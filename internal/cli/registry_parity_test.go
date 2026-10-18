@@ -953,6 +953,47 @@ func TestRegistryParity_GovernedOperationBehavioralParity(t *testing.T) {
 				assert.Equal(t, cliCP.Phase, mcpCP.Phase, "op %q: phase must match across surfaces", opName)
 				assert.Equal(t, cliCP.Status, mcpCP.Status, "op %q: status must match across surfaces", opName)
 
+				// Explicit opt-in scenario (171.006-T): the registry cli_command is
+				// strict-by-default and omits --allow-legacy-import, so the flag is
+				// dispatched ONLY here, paired with MCP allow_legacy_import:true.
+				// Separate workspaces per surface.
+				require.NotContains(t, op.CLICommand, "--allow-legacy-import",
+					"op %q: base cli_command must stay strict-by-default", opName)
+				const legacyDump = `{"agent":"ship","session_id":"gov-cp-legacy","phase":"build"}`
+				optCLIRoot, _ := setupGovernedWorkspace(t)
+				var optOut bytes.Buffer
+				optCmd := NewRootCommand()
+				optCmd.SetOut(&optOut)
+				optCmd.SetErr(new(bytes.Buffer))
+				optCmd.SetArgs([]string{"--cwd", optCLIRoot, "checkpoint", "create", "--state-dump", legacyDump, "--allow-legacy-import"})
+				require.NoError(t, optCmd.Execute(), "op %q: CLI explicit opt-in must import", opName)
+				var optResp map[string]any
+				require.NoError(t, json.Unmarshal(optOut.Bytes(), &optResp))
+				optCLIData, err := os.ReadFile(optResp["path"].(string))
+				require.NoError(t, err)
+				optCLICP, err := events.ParseCheckpoint(optCLIData)
+				require.NoError(t, err)
+
+				_, optMCPWS := setupGovernedWorkspace(t)
+				optServer := mcpinternal.NewServer(optMCPWS)
+				optReq := mcplib.CallToolRequest{}
+				optReq.Params.Name = "backlogit_create_checkpoint"
+				optReq.Params.Arguments = map[string]any{"state_dump": legacyDump, "allow_legacy_import": true}
+				optRes, optErr := optServer.InvokeTool(context.Background(), "backlogit_create_checkpoint", optReq)
+				require.NoError(t, optErr)
+				require.False(t, optRes.IsError, "op %q: MCP explicit opt-in must import: %v", opName, optRes.Content)
+				optTC, ok := optRes.Content[0].(mcplib.TextContent)
+				require.True(t, ok)
+				var optMCPResp map[string]any
+				require.NoError(t, json.Unmarshal([]byte(optTC.Text), &optMCPResp))
+				optMCPData, err := os.ReadFile(optMCPResp["path"].(string))
+				require.NoError(t, err)
+				optMCPCP, err := events.ParseCheckpoint(optMCPData)
+				require.NoError(t, err)
+				assert.Equal(t, 1, optMCPCP.SchemaVersion)
+				assert.Equal(t, optCLICP.SessionID, optMCPCP.SessionID, "op %q: opt-in session_id parity", opName)
+				assert.Equal(t, optCLICP.Status, optMCPCP.Status, "op %q: opt-in status parity", opName)
+
 			default:
 				t.Fatalf("governed op %q mcp_tool=%q: no behavioral fixture defined; add one to registry_parity_test.go", opName, op.MCPTool)
 			}

@@ -19,7 +19,22 @@ Create a session state checkpoint from a JSON state dump.
 The state dump is written to the workspace checkpoints directory. When the dump
 declares schema_version=1, it is validated as a V1 checkpoint and missing
 created_at, updated_at, and status fields are auto-populated. A dump without
-schema_version=1 (legacy) is written verbatim with no schema validation.
+schema_version=1 (legacy: schema_version missing or 0) is rejected by default.
+
+LEGACY IMPORT (migration-only): pass --allow-legacy-import to opt in. The
+opt-in accepts only in-window legacy shapes (schema_version missing or 0
+with a recognizable agent, session_id, and phase). The import is an upgrade:
+the dump is converted to a valid V1 checkpoint and is never persisted as-is.
+The flag cannot rescue future, unsupported, wrong-typed, or malformed dumps,
+or records that would need remapping or an identity they lack; those remain
+rejected with or without the flag.
+
+SCHEMA_VERSION SEMANTICS (default / with --allow-legacy-import):
+  1 (valid V1)              accept / accept (opt-in inert)
+  missing or integer 0      reject, no file / upgrade to V1 if in window, else reject
+  2, negative (unsupported) reject, no file / reject (opt-in does not apply)
+  wrong-typed, duplicate    reject, no file / reject
+  malformed JSON            reject, no file / reject
 
 For a schema_version=1 dump, the top level and the nested progress object are
 a CLOSED schema namespace: any key outside the modeled set (schema_version,
@@ -61,8 +76,9 @@ backlogit checkpoint create [flags]
 ### Options
 
 ```text
-  -h, --help                help for create
-      --state-dump string   JSON checkpoint state dump
+      --allow-legacy-import   migration-only: upgrade an in-window legacy dump (schema_version missing or 0) to a valid V1 checkpoint instead of rejecting it
+  -h, --help                  help for create
+      --state-dump string     JSON checkpoint state dump
 ```
 
 ### Options inherited from parent commands

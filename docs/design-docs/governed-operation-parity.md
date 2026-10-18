@@ -131,11 +131,23 @@ The following fields in `.autoharness/backlog-registry.yaml` carry this contract
 | `governed_name: dependency_remove` | `remove_dependency` | Requires parity for dependency-edge removal |
 | `governed_name: checkpoint_abandon_disposition` | `abandon_checkpoint` | Requires parity for valid checkpoint disposition |
 | `governed_name: checkpoint_quarantine_disposition` | `quarantine_checkpoint` | Requires parity for malformed checkpoint quarantine |
-| `governed_name: checkpoint_create` | `create_checkpoint` | Requires parity for V1 checkpoint creation across CLI and MCP surfaces |
+| `governed_name: checkpoint_create` | `create_checkpoint` | Requires parity for V1 creation, default-reject error class, and opt-in upgrade |
 | `cli_param_gaps.message` | `track_commit` | Documents that CLI stores empty string |
 | `cli_param_gaps.author` | `track_commit` | Documents that CLI stores empty string |
 | `cli_only_flags.force-gates.human_terminal_only` | `update_task` | Gate-forcing is operator-only |
 | `cli_only_flags.gate-base.human_terminal_only` | `update_task` | Base-ref override is operator-only |
+
+## `create_checkpoint`: Strict-by-Default and the Optional Opt-in
+
+`create_checkpoint` rejects non-V1 dumps by default on both surfaces (see
+`checkpoint-administrative-disposition.md`). The migration-only opt-in follows the
+optional-flag convention used by `archive_item.commit_sha`: `allow_legacy_import` is
+listed in the registry `params`, but the base `cli_command` deliberately omits
+`--allow-legacy-import` so the registry-derived CLI fallback stays strict. The parity
+fixture dispatches the flag (CLI) and `allow_legacy_import: true` (MCP) only in the
+explicit opt-in scenario, using a separate workspace per surface. Agents on a cached
+tool schema simply omit the parameter and get the strict default plus a bounded error
+that names `allow_legacy_import` as the remediation when it can help.
 
 ## Deprecated: `core.LinkCommit`
 
