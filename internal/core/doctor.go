@@ -1123,12 +1123,16 @@ func strandedArchiveCandidates(refs map[string][]artifactRef, shipmentRef artifa
 	return candidates
 }
 
-func detectPartialCommitAssociations(ctx context.Context, ws *Workspace, logsDir string) ([]DoctorFinding, error) {
+func detectPartialCommitAssociations(ctx context.Context, ws *Workspace, logsDir string) (_ []DoctorFinding, err error) {
 	rows, err := ws.DB.QueryContext(ctx, `SELECT item_id, commit_sha FROM commit_links ORDER BY item_id, commit_sha`)
 	if err != nil {
 		return nil, fmt.Errorf("query commit links: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close commit link rows: %w", cerr))
+		}
+	}()
 
 	eventCache := make(map[string][]events.Event)
 	findings := make([]DoctorFinding, 0)
@@ -1680,16 +1684,15 @@ func checkWorkspaceRootConflict(rootPath string) ([]DoctorFinding, error) {
 // returned_to_backlog entry, indicating intentional orphaning by ShipShipment.
 func hasReturnedToBacklogEvent(logsDir, itemID string) bool {
 	path := events.LogPathForItem(logsDir, itemID)
-	f, err := os.Open(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
-	defer f.Close()
 
 	var ev struct {
 		EventType string `json:"event_type"`
 	}
-	dec := json.NewDecoder(f)
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	for {
 		if decErr := dec.Decode(&ev); decErr != nil {
 			break
@@ -1752,14 +1755,12 @@ func scanReturnedFeatureIDs(logsDir string) (map[string]struct{}, error) {
 			continue
 		}
 		path := filepath.Join(logsDir, entry.Name())
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			continue
+		}
 		func() {
-			f, openErr := os.Open(path)
-			if openErr != nil {
-				return
-			}
-			defer f.Close()
-
-			dec := json.NewDecoder(f)
+			dec := json.NewDecoder(bytes.NewReader(raw))
 			for {
 				var ev struct {
 					EventType string         `json:"event_type"`

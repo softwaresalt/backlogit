@@ -52,7 +52,7 @@ func setupDuplicateArchiveWorkspaceWithQueueRoot(t *testing.T, queueRoot string)
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	configYAML := fmt.Sprintf("artifact_types:\n  task:\n    prefix: T\n    suffix: \"-T\"\n    name_format: \"{NNN}{suffix}\"\nmax_slug_length: 60\nqueue_layout:\n  root_dir: %s\n", queueRoot)
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"), []byte(configYAML), 0o644))
@@ -158,7 +158,7 @@ func setupArchiveStatusWorkspace(t *testing.T) (*core.Workspace, string) {
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"),
 		[]byte("artifact_types:\n  task:\n    prefix: T\n    suffix: \"-T\"\n    name_format: \"{NNN}{suffix}\"\nmax_slug_length: 60\n"), 0o644))

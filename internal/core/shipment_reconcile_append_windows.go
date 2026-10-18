@@ -3,6 +3,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -48,7 +49,7 @@ var shipmentReconcileAppendWindowsTOCTOUHook func()
 // writing anything — unless that final path still lands directly inside the
 // snapshot. Any swap occurring between the snapshot and the open is thereby
 // caught after the fact instead of trusted blindly.
-func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventBytes []byte) (shipmentReconcileAppendResult, error) {
+func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventBytes []byte) (_ shipmentReconcileAppendResult, err error) {
 	if reparse, err := isReparsePointPath(logsDir); err != nil {
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: stat logs directory %s: %w", blerrors.ErrWriteNotApplied, logsDir, err)
 	} else if reparse {
@@ -87,7 +88,11 @@ func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventB
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: open item log %s: %w", blerrors.ErrWriteNotApplied, logPath, err)
 	}
 	file := os.NewFile(uintptr(handle), logPath)
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("%w: close item log %s: %w", blerrors.ErrWriteIndeterminate, logPath, cerr))
+		}
+	}()
 
 	// Post-open containment re-validation: reject if the opened object is
 	// itself a reparse point (FILE_FLAG_OPEN_REPARSE_POINT opens it as the

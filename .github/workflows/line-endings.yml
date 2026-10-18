@@ -1,0 +1,35 @@
+name: Line Endings
+
+# Always-running line-ending guard (U14, baseline convergence 175-F). The reusable
+# guard logic lives in scripts/check-line-endings.ps1 (U40). Do not add
+# trigger-level paths filters or a needs/if skip gate: a docs-only PR or a direct
+# push to main must still run the guard. It runs on windows-latest because CRLF
+# re-drift is only observable on a Windows checkout.
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-endings-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  line-endings:
+    name: Line endings guard
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check line endings
+        shell: pwsh
+        run: pwsh scripts/check-line-endings.ps1

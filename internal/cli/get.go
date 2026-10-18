@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -34,14 +35,18 @@ JSON output, or a specific named body section.`,
   backlogit get 001-F --format json
   backlogit get 001-F --section description`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			id := args[0]
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					err = errors.Join(err, cerr)
+				}
+			}()
 
 			filePath, err := core.FindArtifactPath(ctx, ws, id)
 			if err != nil {
@@ -67,7 +72,9 @@ JSON output, or a specific named body section.`,
 				if !ok {
 					return fmt.Errorf("section %q not found in artifact %s", section, id)
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), content)
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), content); err != nil {
+					return fmt.Errorf("write output: %w", err)
+				}
 				return nil
 			}
 
@@ -139,7 +146,9 @@ func printDetailView(cmd *cobra.Command, fm map[string]any, body string, ctx con
 	orderedKeys := []string{"id", "title", "status", "artifact_type", "priority", "parent_id", "sprint", "assigned_to", "owner"}
 	for _, key := range orderedKeys {
 		if v, ok := fm[key]; ok && v != nil && fmt.Sprint(v) != "" {
-			fmt.Fprintf(w, "%s:\t%v\n", key, v)
+			if _, err := fmt.Fprintf(w, "%s:\t%v\n", key, v); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 		}
 	}
 	// Remaining fields not in the ordered set
@@ -150,7 +159,9 @@ func printDetailView(cmd *cobra.Command, fm map[string]any, body string, ctx con
 		if isInSlice(key, orderedKeys) {
 			continue
 		}
-		fmt.Fprintf(w, "%s:\t%v\n", key, val)
+		if _, err := fmt.Fprintf(w, "%s:\t%v\n", key, val); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -159,24 +170,34 @@ func printDetailView(cmd *cobra.Command, fm map[string]any, body string, ctx con
 	// Description body
 	trimmed := strings.TrimSpace(body)
 	if trimmed != "" {
-		fmt.Fprintf(out, "\n--- Description ---\n%s\n", trimmed)
+		if _, err := fmt.Fprintf(out, "\n--- Description ---\n%s\n", trimmed); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
 	}
 
 	// Dependencies
 	deps, err := db.GetDependencies(ctx, ws.DB, id)
 	if err == nil && len(deps) > 0 {
-		fmt.Fprintln(out, "\n--- Dependencies ---")
+		if _, err := fmt.Fprintln(out, "\n--- Dependencies ---"); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
 		for _, d := range deps {
-			fmt.Fprintf(out, "  %s → %s (%s)\n", d.ItemID, d.DependsOn, d.DepType)
+			if _, err := fmt.Fprintf(out, "  %s → %s (%s)\n", d.ItemID, d.DependsOn, d.DepType); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 		}
 	}
 
 	// Commits
 	commits, err := core.GetCommitLinks(ctx, ws.DB, id)
 	if err == nil && len(commits) > 0 {
-		fmt.Fprintln(out, "\n--- Commits ---")
+		if _, err := fmt.Fprintln(out, "\n--- Commits ---"); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
 		for _, c := range commits {
-			fmt.Fprintf(out, "  %s  %s  (%s)\n", c.CommitSHA, c.Message, c.Author)
+			if _, err := fmt.Fprintf(out, "  %s  %s  (%s)\n", c.CommitSHA, c.Message, c.Author); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 		}
 	}
 	return nil

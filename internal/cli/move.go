@@ -35,7 +35,7 @@ autoharness gate check. On a gate refusal this command exits 6 (blocked),
   backlogit move 001-F --status done
   backlogit move 001.001-T --status done --gate-base origin/release`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			if status == "" {
 				return fmt.Errorf("--status is required")
 			}
@@ -57,7 +57,11 @@ autoharness gate check. On a gate refusal this command exits 6 (blocked),
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					err = errors.Join(err, cerr)
+				}
+			}()
 
 			artifact, outcome, err := core.UpdateArtifactWithGate(ctx, ws, id, map[string]any{"status": status}, opts)
 			if err != nil {
@@ -84,10 +88,14 @@ autoharness gate check. On a gate refusal this command exits 6 (blocked),
 				if mErr != nil {
 					return mErr
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), payload)
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), payload); err != nil {
+					return fmt.Errorf("write output: %w", err)
+				}
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Moved %s → %s\n", id, resultStatus)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Moved %s → %s\n", id, resultStatus); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 			return nil
 		},
 	}
@@ -108,7 +116,9 @@ func moveGateError(cmd *cobra.Command, id string, err error, jsonOut bool) error
 	// exit code (9) surfaces instead of the generic 1.
 	if eeGov := shipmentGovernanceExitError(err); eeGov != nil {
 		cmd.SilenceErrors = true
-		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+		if _, wErr := fmt.Fprintln(cmd.ErrOrStderr(), err.Error()); wErr != nil {
+			return errors.Join(eeGov, fmt.Errorf("write output: %w", wErr))
+		}
 		return eeGov
 	}
 	ee := gateExitError(err)
@@ -122,19 +132,27 @@ func moveGateError(cmd *cobra.Command, id string, err error, jsonOut bool) error
 		switch {
 		case errors.As(err, &be):
 			if payload, mErr := renderGateBlockedJSON(id, be); mErr == nil {
-				fmt.Fprintln(cmd.OutOrStdout(), payload)
+				if _, wErr := fmt.Fprintln(cmd.OutOrStdout(), payload); wErr != nil {
+					return errors.Join(ee, fmt.Errorf("write output: %w", wErr))
+				}
 			}
 		case errors.As(err, &ge):
 			if payload, mErr := renderGateErrorJSON(id, ge); mErr == nil {
-				fmt.Fprintln(cmd.OutOrStdout(), payload)
+				if _, wErr := fmt.Fprintln(cmd.OutOrStdout(), payload); wErr != nil {
+					return errors.Join(ee, fmt.Errorf("write output: %w", wErr))
+				}
 			}
 		}
 		return ee
 	}
+	var msg string
 	if errors.As(err, &be) {
-		fmt.Fprintln(cmd.ErrOrStderr(), gateHumanMessage(id, be))
+		msg = gateHumanMessage(id, be)
 	} else {
-		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+		msg = err.Error()
+	}
+	if _, wErr := fmt.Fprintln(cmd.ErrOrStderr(), msg); wErr != nil {
+		return errors.Join(ee, fmt.Errorf("write output: %w", wErr))
 	}
 	return ee
 }

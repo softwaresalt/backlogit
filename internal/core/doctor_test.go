@@ -186,7 +186,7 @@ This task has no parent.
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 	ws.DB = database
 
 	// Index the artifact.
@@ -241,7 +241,7 @@ Returned to backlog.
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 	ws.DB = database
 
 	report, err := Doctor(context.Background(), ws, &DoctorOptions{

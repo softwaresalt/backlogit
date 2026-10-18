@@ -3,6 +3,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,7 +13,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func readShipmentReconcileClosureEvidenceFile(rootPath, closurePath string) ([]byte, string, error) {
+func readShipmentReconcileClosureEvidenceFile(rootPath, closurePath string) (_ []byte, _ string, err error) {
 	rootAbs, err := filepath.Abs(filepath.Clean(rootPath))
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve workspace root %s: %w", rootPath, err)
@@ -53,7 +54,11 @@ func readShipmentReconcileClosureEvidenceFile(rootPath, closurePath string) ([]b
 		return nil, "", fmt.Errorf("open closure evidence %s: %w", candidateAbs, err)
 	}
 	file := os.NewFile(uintptr(handle), candidateAbs)
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close closure evidence %s: %w", candidateAbs, cerr))
+		}
+	}()
 
 	var info windows.ByHandleFileInformation
 	if err := windows.GetFileInformationByHandle(handle, &info); err != nil {
