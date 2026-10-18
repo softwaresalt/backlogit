@@ -286,7 +286,7 @@ func containsJWTPrefix(s string) bool {
 // strictly best-effort scan of the WRITTEN bytes' top-level context object,
 // sorted with sort.Strings: any decode failure or non-object context yields
 // an empty, non-nil array, and the create still succeeds regardless.
-func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string) (CreateCheckpointResult, error) {
+func CreateCheckpoint(_ context.Context, checkpointDir string, stateDump string, _ ...CreateCheckpointOption) (CreateCheckpointResult, error) {
 	if err := os.MkdirAll(checkpointDir, 0o755); err != nil {
 		return CreateCheckpointResult{}, fmt.Errorf("create checkpoint dir: %w", err)
 	}

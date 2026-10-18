@@ -109,6 +109,19 @@ var (
 	// file is written. Use errors.As to recover *CheckpointMalformedInputError.
 	ErrCheckpointMalformedInput = errors.New("backlogit: checkpoint state_dump is not valid JSON")
 
+	// ErrCheckpointSchemaRejected indicates a checkpoint create request carried
+	// a legacy-eligible shape (schema_version absent or the integer literal 0)
+	// that would upgrade to a valid CheckpointV1. It is rejected by default;
+	// surfaces append the --allow-legacy-import / allow_legacy_import
+	// remediation. No file is written.
+	ErrCheckpointSchemaRejected = errors.New("backlogit: checkpoint schema_version is missing or 0; legacy import requires explicit opt-in")
+
+	// ErrCheckpointSchemaUnsupported indicates a checkpoint create request
+	// carried an unsupported, future, wrong-typed, ambiguous, or non-upgradable
+	// schema. It is rejected on BOTH the default and opt-in paths; no opt-in
+	// remediation applies. No file is written.
+	ErrCheckpointSchemaUnsupported = errors.New("backlogit: checkpoint schema is unsupported or cannot be upgraded to V1")
+
 	// ErrCheckpointDuplicateContextKey indicates a checkpoint create request
 	// supplied a context object with duplicate or case-fold-aliased member names.
 	// Use errors.As to recover *CheckpointDuplicateContextKeyError.
