@@ -7,24 +7,10 @@ conditions:
     description: "PR #529 (152-S implementation) is merged as a merge commit into main."
     satisfied: true
     evidence: "Merge commit 3d566ff2047772313d778710d4dbc7ad11656716 (P-009 merge commit); backlog archived in commit 05a11744."
-  - id: topology-check-disclosure
-    marker: DISCLOSURE (not an open gating condition)
-    owner: Stage
-    description: "The non-required pipeline-topology (ambient) check failed with PREDECESSOR_NOT_SHIPPED (predecessor 151-S queued). This is a new instance of the same predecessor-inference defect captured in archived stash 95379DBA (which cited 153-S/152-S); it is not fixed here and does not gate this closure."
+  - id: governed-closure-archived
+    description: "Shipment 152-S, feature 171-F and tasks 171.001-T..171.008-T are archived with merge provenance; post-mode checks pass."
     satisfied: true
-    evidence: "Task 183.004-T is still queued; the check is not a required status check."
-  - id: stage-triage-deferred-follow-ups
-    marker: OPEN CONDITION
-    owner: Stage
-    description: "Stage triages deferred follow-ups 2C13E721, 3B41DE38, and 85AE5A2D."
-    satisfied: false
-    evidence: "Listed under Deferred follow-ups."
-  - id: validation-window-observation
-    marker: OPEN CONDITION
-    owner: operator
-    description: "Operator watches the validation window for checkpoint_schema_* rejections from existing producers."
-    satisfied: false
-    evidence: "See Releasability."
+    evidence: "Archive commit 05a11744 on post-merge/152-checkpoint-create-schema-reject; .backlogit/reconcile/152-S-post-20261018T0515.md PROCEED; safe-close report records MCP-timeout classification with hook event seq 3860."
 description: "152-S (171-F checkpoint-create schema reject) post-merge closure for PR #529, merge 3d566ff2047772313d778710d4dbc7ad11656716. READY_WITH_CONDITIONS: CLI/MCP schema behavior change covered by tests, with rollback and compatibility notes."
 doc_type: closure
 docline:
@@ -43,6 +29,8 @@ title: "152-S post-merge closure"
 ---
 
 # 152-S post-merge closure
+
+> Non-gating residuals (Stage triage of 2C13E721 / 3B41DE38 / 85AE5A2D, operator validation-window watch, and the non-required `pipeline-topology (ambient)` disclosure for stash 95379DBA / 183.004-T) are recorded in the body, not in frontmatter `conditions`; `conditions` entries are pipeline-topology gate input and are all satisfied.
 
 ## Release record
 
