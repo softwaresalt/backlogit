@@ -44,6 +44,6 @@ func TestU175_011_LintFix(t *testing.T) {
 			}
 			return true
 		})
-		assert.LessOrEqual(t, len(offenders), limit, "%s: unchecked error returns exceed residual: %v", name, offenders)
+		assert.Len(t, offenders, limit, "%s: unchecked error returns must equal the later-slice residual: %v", name, offenders)
 	}
 }
