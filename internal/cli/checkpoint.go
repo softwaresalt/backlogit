@@ -148,9 +148,26 @@ before creating a checkpoint.`,
 // --allow-legacy-import remediation is appended ONLY for
 // ErrCheckpointSchemaRejected (legacy-eligible); it is never appended for
 // ErrCheckpointSchemaUnsupported, where enabling the flag cannot help.
+// boundedCreateError carries a diagnostic-budgeted message while keeping the
+// original cause reachable through errors.Is/As.
+type boundedCreateError struct {
+	msg   string
+	cause error
+}
+
+func (e *boundedCreateError) Error() string { return e.msg }
+func (e *boundedCreateError) Unwrap() error { return e.cause }
+
 func checkpointCreateError(err error) error {
 	if errors.Is(err, blerrors.ErrCheckpointSchemaRejected) {
-		return fmt.Errorf("create checkpoint: %w; to import this legacy dump as an upgraded V1 checkpoint, re-run with --allow-legacy-import", err)
+		return &boundedCreateError{
+			msg: blerrors.BoundDiagnostic("create checkpoint: "+err.Error()) +
+				"; to import this legacy dump as an upgraded V1 checkpoint, re-run with --allow-legacy-import",
+			cause: err,
+		}
+	}
+	if errors.Is(err, blerrors.ErrCheckpointSchemaUnsupported) {
+		return &boundedCreateError{msg: blerrors.BoundDiagnostic("create checkpoint: " + err.Error()), cause: err}
 	}
 	return fmt.Errorf("create checkpoint: %w", err)
 }

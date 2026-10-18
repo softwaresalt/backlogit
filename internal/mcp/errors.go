@@ -65,7 +65,7 @@ func checkpointSchemaError(op string, err error, optInEligible bool) *mcplib.Cal
 	resp := checkpointSchemaResponse{
 		Error:   "validation_failed",
 		Code:    "checkpoint_schema_unsupported",
-		Message: fmt.Sprintf("%s: %v", op, err),
+		Message: corerrors.BoundDiagnostic(fmt.Sprintf("%s: %v", op, err)),
 	}
 	if optInEligible {
 		resp.Code = "checkpoint_schema_rejected"
