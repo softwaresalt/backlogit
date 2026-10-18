@@ -10,7 +10,7 @@ conditions:
   - id: governed-closure-archived
     description: "Shipment 187-S, feature 187-F and tasks 187.001-T..187.004-T are archived with merge provenance; post-mode checks pass."
     satisfied: true
-    evidence: ".backlogit/reconcile/187-S-post-20261018T0655.md PROCEED; 187-S archived_status shipped."
+    evidence: ".backlogit/reconcile/187-S-post-20261018T0655.md PROCEED; 187-S archived_status shipped; item-level commit association 04e91160e822e17cb189ad278e1df5db87f34428 recorded on 187-S, 187-F and 187.001-T..187.004-T via backlogit_track_commit and verified in .backlogit/archive/."
 description: "187-S (187-F readiness A1 predicate and predecessor sentinel) post-merge closure for PR #531, merge 04e91160e822e17cb189ad278e1df5db87f34428. READY_WITH_CONDITIONS: additive internal API, not yet consumed by queue or claim."
 doc_type: closure
 docline:
