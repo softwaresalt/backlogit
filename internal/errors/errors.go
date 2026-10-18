@@ -14,14 +14,15 @@ var (
 	ErrNotImplemented = errors.New("backlogit: not implemented")
 
 	// Shipment sentinel errors (F015 / T002 / ST011).
-	ErrShipmentNotFound          = errors.New("backlogit: shipment not found")
-	ErrItemAlreadyAssigned       = errors.New("backlogit: item already assigned to a shipment")
-	ErrShipmentConflict          = errors.New("backlogit: shipment status conflict")
-	ErrShipmentReconcileEvidence = errors.New("backlogit: shipment reconcile evidence invalid or unverifiable")
-	ErrShipmentReconcileConflict = errors.New("backlogit: shipment reconcile state conflict")
-	ErrUnsupportedLegacyPreState = errors.New("backlogit: unsupported legacy shipment reconcile pre-state")
-	ErrUnsupportedLegacyDescope  = errors.New("backlogit: unsupported legacy shipment reconcile descope")
-	ErrCannotReturnItem          = errors.New("backlogit: cannot return item from shipment")
+	ErrShipmentNotFound              = errors.New("backlogit: shipment not found")
+	ErrItemAlreadyAssigned           = errors.New("backlogit: item already assigned to a shipment")
+	ErrShipmentConflict              = errors.New("backlogit: shipment status conflict")
+	ErrShipmentReconcileEvidence     = errors.New("backlogit: shipment reconcile evidence invalid or unverifiable")
+	ErrShipmentReconcileConflict     = errors.New("backlogit: shipment reconcile state conflict")
+	ErrUnsupportedLegacyPreState     = errors.New("backlogit: unsupported legacy shipment reconcile pre-state")
+	ErrUnsupportedLegacyDescope      = errors.New("backlogit: unsupported legacy shipment reconcile descope")
+	ErrCannotReturnItem              = errors.New("backlogit: cannot return item from shipment")
+	ErrShipmentPredecessorNotShipped = errors.New("backlogit: shipment predecessor has not shipped")
 
 	// ErrConfirmationRequired is returned when a CLI-level explicit-confirmation
 	// guard denies a live (non-dry-run) mutating operation because neither a
