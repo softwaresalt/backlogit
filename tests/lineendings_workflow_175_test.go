@@ -12,7 +12,9 @@ import (
 
 const u014WorkflowRel = ".github/workflows/line-endings.yml"
 
-const u014CheckoutPin = "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2"
+// u014CheckoutSHA is the parsed `uses:` value (the trailing "# v4.2.2" is a YAML
+// comment and is not part of the parsed value).
+const u014CheckoutSHA = "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"
 
 const u014ValidWorkflow = `name: Line Endings
 on:
@@ -114,12 +116,12 @@ func u014Validate(raw []byte) error {
 		if job.Needs != nil || job.If != "" {
 			return fmt.Errorf("job %s must have no needs/if skip gate", name)
 		}
-		if !strings.Contains(string(raw), "uses: "+u014CheckoutPin) {
-			return fmt.Errorf("checkout must be pinned to %s", u014CheckoutPin)
-		}
 		checkoutIdx, guardIdx := -1, -1
 		for i, st := range job.Steps {
 			if strings.HasPrefix(st.Uses, "actions/checkout@") {
+				if st.Uses != u014CheckoutSHA {
+					return fmt.Errorf("checkout must be pinned to %s, got %s", u014CheckoutSHA, st.Uses)
+				}
 				checkoutIdx = i
 				if v, ok := st.With["persist-credentials"].(bool); !ok || v {
 					return fmt.Errorf("checkout persist-credentials must be false")
@@ -184,14 +186,15 @@ func TestU175_014_Workflow(t *testing.T) {
 	})
 	t.Run("insecure_or_skippable_contract_red", func(t *testing.T) {
 		mutants := map[string]string{
-			"no_permissions": strings.Replace(u014ValidWorkflow, "permissions:\n  contents: read\n", "", 1),
-			"unpinned":       strings.Replace(u014ValidWorkflow, "11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2", "v4", 1),
-			"persist_creds":  strings.Replace(u014ValidWorkflow, "persist-credentials: false", "persist-credentials: true", 1),
-			"no_push":        strings.Replace(u014ValidWorkflow, "  push:\n    branches:\n      - main\n", "", 1),
-			"paths_filter":   strings.Replace(u014ValidWorkflow, "  pull_request:\n    branches:\n      - main\n", "  pull_request:\n    branches:\n      - main\n    paths:\n      - '**.go'\n", 1),
-			"needs_changes":  strings.Replace(u014ValidWorkflow, "    runs-on: windows-latest\n", "    needs: changes\n    if: needs.changes.outputs.code == 'true'\n    runs-on: windows-latest\n", 1),
-			"no_concurrency": strings.Replace(u014ValidWorkflow, "concurrency:\n  group: line-endings-${{ github.ref }}\n  cancel-in-progress: true\n", "", 1),
-			"no_cancel":      strings.Replace(u014ValidWorkflow, "cancel-in-progress: true", "cancel-in-progress: false", 1),
+			"no_permissions":              strings.Replace(u014ValidWorkflow, "permissions:\n  contents: read\n", "", 1),
+			"unpinned_old_pin_in_comment": strings.Replace(u014ValidWorkflow, "        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2\n", "        # uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2\n        uses: actions/checkout@v4\n", 1),
+			"unpinned":                    strings.Replace(u014ValidWorkflow, "11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2", "v4", 1),
+			"persist_creds":               strings.Replace(u014ValidWorkflow, "persist-credentials: false", "persist-credentials: true", 1),
+			"no_push":                     strings.Replace(u014ValidWorkflow, "  push:\n    branches:\n      - main\n", "", 1),
+			"paths_filter":                strings.Replace(u014ValidWorkflow, "  pull_request:\n    branches:\n      - main\n", "  pull_request:\n    branches:\n      - main\n    paths:\n      - '**.go'\n", 1),
+			"needs_changes":               strings.Replace(u014ValidWorkflow, "    runs-on: windows-latest\n", "    needs: changes\n    if: needs.changes.outputs.code == 'true'\n    runs-on: windows-latest\n", 1),
+			"no_concurrency":              strings.Replace(u014ValidWorkflow, "concurrency:\n  group: line-endings-${{ github.ref }}\n  cancel-in-progress: true\n", "", 1),
+			"no_cancel":                   strings.Replace(u014ValidWorkflow, "cancel-in-progress: true", "cancel-in-progress: false", 1),
 		}
 		for name, m := range mutants {
 			if m == u014ValidWorkflow {

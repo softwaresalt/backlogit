@@ -433,7 +433,11 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 			if info.parentID != "" {
 				continue
 			}
-			if hasReturnedToBacklogEvent(logsDir, info.id) {
+			returnedToBacklog, returnedErr := hasReturnedToBacklogEvent(logsDir, info.id)
+			if returnedErr != nil {
+				return nil, fmt.Errorf("doctor: read item log for %s: %w", info.id, returnedErr)
+			}
+			if returnedToBacklog {
 				continue
 			}
 			report.Findings = append(report.Findings, DoctorFinding{
@@ -1682,26 +1686,31 @@ func checkWorkspaceRootConflict(rootPath string) ([]DoctorFinding, error) {
 
 // hasReturnedToBacklogEvent reports whether the item's event log contains a
 // returned_to_backlog entry, indicating intentional orphaning by ShipShipment.
-func hasReturnedToBacklogEvent(logsDir, itemID string) bool {
+func hasReturnedToBacklogEvent(logsDir, itemID string) (found bool, err error) {
 	path := events.LogPathForItem(logsDir, itemID)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return false
+	f, openErr := os.Open(path)
+	if openErr != nil {
+		return false, nil
 	}
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close item log %s: %w", path, cerr))
+		}
+	}()
 
 	var ev struct {
 		EventType string `json:"event_type"`
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec := json.NewDecoder(f)
 	for {
 		if decErr := dec.Decode(&ev); decErr != nil {
 			break
 		}
 		if ev.EventType == "returned_to_backlog" {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // scanShipmentManifestFeatureIDs derives the union of every item ID ever
@@ -1755,12 +1764,17 @@ func scanReturnedFeatureIDs(logsDir string) (map[string]struct{}, error) {
 			continue
 		}
 		path := filepath.Join(logsDir, entry.Name())
-		raw, readErr := os.ReadFile(path)
-		if readErr != nil {
+		f, openErr := os.Open(path)
+		if openErr != nil {
 			continue
 		}
-		func() {
-			dec := json.NewDecoder(bytes.NewReader(raw))
+		scanErr := func() (err error) {
+			defer func() {
+				if cerr := f.Close(); cerr != nil {
+					err = errors.Join(err, fmt.Errorf("close item log %s: %w", path, cerr))
+				}
+			}()
+			dec := json.NewDecoder(f)
 			for {
 				var ev struct {
 					EventType string         `json:"event_type"`
@@ -1777,6 +1791,9 @@ func scanReturnedFeatureIDs(logsDir string) (map[string]struct{}, error) {
 				}
 			}
 		}()
+		if scanErr != nil {
+			return nil, scanErr
+		}
 	}
 	return returned, nil
 }
