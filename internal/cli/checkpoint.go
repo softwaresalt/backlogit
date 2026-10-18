@@ -77,6 +77,13 @@ The flag cannot rescue future, unsupported, wrong-typed, or malformed dumps,
 or records that would need remapping or an identity they lack; those remain
 rejected with or without the flag.
 
+SCHEMA_VERSION SEMANTICS (default / with --allow-legacy-import):
+  1 (valid V1)              accept / accept (opt-in inert)
+  missing or integer 0      reject, no file / upgrade to V1 if in window, else reject
+  2, negative (unsupported) reject, no file / reject (opt-in does not apply)
+  wrong-typed, duplicate    reject, no file / reject
+  malformed JSON            reject, no file / reject
+
 For a schema_version=1 dump, the top level and the nested progress object are
 a CLOSED schema namespace: any key outside the modeled set (schema_version,
 agent, session_id, phase, status, created_at, updated_at, context, progress,

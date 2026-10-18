@@ -137,6 +137,18 @@ The following fields in `.autoharness/backlog-registry.yaml` carry this contract
 | `cli_only_flags.force-gates.human_terminal_only` | `update_task` | Gate-forcing is operator-only |
 | `cli_only_flags.gate-base.human_terminal_only` | `update_task` | Base-ref override is operator-only |
 
+## `create_checkpoint`: Strict-by-Default and the Optional Opt-in
+
+`create_checkpoint` rejects non-V1 dumps by default on both surfaces (see
+`checkpoint-administrative-disposition.md`). The migration-only opt-in follows the
+optional-flag convention used by `archive_item.commit_sha`: `allow_legacy_import` is
+listed in the registry `params`, but the base `cli_command` deliberately omits
+`--allow-legacy-import` so the registry-derived CLI fallback stays strict. The parity
+fixture dispatches the flag (CLI) and `allow_legacy_import: true` (MCP) only in the
+explicit opt-in scenario, using a separate workspace per surface. Agents on a cached
+tool schema simply omit the parameter and get the strict default plus a bounded error
+that names `allow_legacy_import` as the remediation when it can help.
+
 ## Deprecated: `core.LinkCommit`
 
 `core.LinkCommit` is deprecated. It is retained for backward compatibility but must not be used for

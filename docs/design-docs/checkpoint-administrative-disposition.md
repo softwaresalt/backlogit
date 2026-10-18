@@ -171,6 +171,42 @@ not a state machine — a checkpoint disposition never reads or writes artifact
 frontmatter, and an artifact status transition never reads or writes
 checkpoint disposition fields.
 
+## Create Is Strict-by-Default; Legacy Import Is an Opt-in (171-F)
+
+Checkpoint **create** (`checkpoint create` / `backlogit_create_checkpoint`) rejects
+any non-V1 state dump before the write site and creates no file. Earlier
+behavior wrote a schema-less or non-1 `schema_version` dump verbatim, producing a
+file that the read path then flagged for quarantine; that write/read inversion is
+closed. The legacy path survives only as an explicit, migration-only
+**upgrade-or-reject** opt-in (`--allow-legacy-import` on the CLI,
+`allow_legacy_import: true` on MCP, `events.WithAllowLegacyImport()` in core);
+no dump is ever persisted verbatim.
+
+| `schema_version` | Default | With opt-in |
+|---|---|---|
+| `1` (valid V1) | accept | accept (opt-in inert) |
+| missing or integer `0` | reject (`checkpoint_schema_rejected` when in the upgrade window, else `checkpoint_schema_unsupported`), no file | upgrade to valid V1 if in window, else reject (`checkpoint_schema_unsupported`) |
+| future/unsupported (`2`, negative) | reject (`checkpoint_schema_unsupported`) | reject (opt-in does not apply) |
+| wrong-typed, `null`, non-integral, duplicate members | reject (`checkpoint_schema_unsupported`) | reject |
+| malformed JSON | reject (malformed-input error) | reject |
+
+"In window" means a full upgraded-V1 dry-run (coerce `schema_version` to 1,
+apply create-time defaults, closed-namespace and duplicate-key checks,
+`ValidateCheckpoint`, canonical marshal, size and secret guards) would produce a
+valid V1 checkpoint. `agent`, `session_id`, and `phase` are never synthesized, so
+records needing field remapping or identity are rejected. Only the default-path
+rejection of an in-window dump carries opt-in remediation (MCP
+`retry_with_opt_in: true`, `remediation: allow_legacy_import`; CLI hint).
+
+**Compatibility note.** This is a behavior change for callers that relied on
+the verbatim legacy write. Agents holding a cached copy of the
+`backlogit_create_checkpoint` tool schema will not know about
+`allow_legacy_import`; they keep the strict default and receive a bounded,
+machine-readable rejection (`code`, `retry_with_opt_in`, `remediation`) that
+names the parameter, so they can retry once the schema refreshes or the operator
+opts in. Omitting the parameter is always strict, and the registry-derived CLI
+fallback omits the flag for the same reason.
+
 ## Residual Exposure
 
 This repository dogfoods a separately pinned `C:\Tools\backlogit.exe` binary
