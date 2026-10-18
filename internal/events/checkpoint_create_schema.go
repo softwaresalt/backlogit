@@ -148,19 +148,21 @@ func buildCanonicalV1(data []byte) ([]byte, []string, error) {
 // is invalid, and only an absent one is defaulted.
 var nullRejectedFields = [...]string{"status", "created_at", "updated_at"}
 
-// rejectPresentNullDefaultables makes a raw map[string]json.RawMessage
-// presence pass over the top-level members and reports an error naming the
+// rejectPresentNullDefaultables scans the ordered top-level members (every
+// occurrence, including duplicates) and reports an error naming the
 // first defaultable member whose value is JSON null. Member names match
 // case-insensitively, mirroring encoding/json decoding. Non-object input is
 // left to the downstream pipeline to classify.
 func rejectPresentNullDefaultables(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
+	// Ordered member scan (not a map decode, which collapses duplicate keys
+	// last-wins and would hide an earlier null).
+	entries, err := decodeTopLevelEntries(data)
+	if err != nil {
 		return nil
 	}
 	for _, field := range nullRejectedFields {
-		for key, val := range raw {
-			if strings.EqualFold(key, field) && bytes.Equal(bytes.TrimSpace(val), []byte("null")) {
+		for _, e := range entries {
+			if strings.EqualFold(e.key, field) && bytes.Equal(bytes.TrimSpace(e.value), []byte("null")) {
 				return fmt.Errorf("checkpoint field %q is present but null; omit it to use the default", field)
 			}
 		}
