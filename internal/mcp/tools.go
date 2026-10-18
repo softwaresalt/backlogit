@@ -173,7 +173,7 @@ func (s *Server) RegisterTools() {
 				"legacy dump; it accepts only legacy shapes in the upgrade window - an absent or integer-literal 0 "+
 				"schema_version on a record that is otherwise V1-valid - and upgrades it to valid V1 (never copied as-is). Future/unsupported, wrong-typed, or malformed schema_version values and records needing "+
 				"field remapping or identity synthesis remain rejected even with the opt-in. A rejection with "+
-				"retry_with_opt_in=true means allow_legacy_import=true will succeed; checkpoint_schema_unsupported "+
+				"retry_with_opt_in=true means allow_legacy_import=true is expected to succeed; checkpoint_schema_unsupported "+
 				"means it cannot help. The successful result "+
 				"reports context_keys: the exact list of context key names persisted to disk. "+
 				"WRITE CONSTRAINTS (153.003-T / S1 U3): the state_dump must not exceed 64 KiB (validation_failed "+

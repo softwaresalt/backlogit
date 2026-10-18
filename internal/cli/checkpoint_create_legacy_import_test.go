@@ -76,6 +76,24 @@ func TestCheckpointCreate_OutOfWindowDumpStillFailsWithoutFlagRemediation(t *tes
 	}
 }
 
+// With the opt-in set, unsupported dumps (out-of-window, future schema) must never advise the flag.
+func TestCheckpointCreate_OptInUnsupportedDumpNeverAdvisesFlag(t *testing.T) {
+	dumps := map[string]string{
+		"out_of_window":  cliOutOfWindowDump,
+		"future_version": `{"schema_version":2,"agent":"ship","session_id":"s1","phase":"build"}`,
+	}
+	for name, dump := range dumps {
+		t.Run(name, func(t *testing.T) {
+			root := setupCLIWorkspace(t)
+			err := runCLIErr(t, root, "checkpoint", "create", "--allow-legacy-import", "--state-dump", dump)
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "--allow-legacy-import")
+			assert.NotContains(t, err.Error(), "re-run with")
+			assertNoCheckpointFiles(t, root)
+		})
+	}
+}
+
 func TestCheckpointCreate_HelpDescribesDefaultRejectAndOptInScope(t *testing.T) {
 	cmd := cli.NewRootCommand()
 	out := new(bytes.Buffer)

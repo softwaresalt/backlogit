@@ -196,7 +196,9 @@ apply create-time defaults, closed-namespace and duplicate-key checks,
 valid V1 checkpoint. `agent`, `session_id`, and `phase` are never synthesized, so
 records needing field remapping or identity are rejected. Only the default-path
 rejection of an in-window dump carries opt-in remediation (MCP
-`retry_with_opt_in: true`, `remediation: allow_legacy_import`; CLI hint).
+`retry_with_opt_in: true`, `remediation: allow_legacy_import`; CLI hint). On the opt-in path, a closed-schema unknown-field failure surfaces as
+`checkpoint_schema_unsupported` with the key paths in the message text (no structured
+`unknown_fields` list).
 
 **Compatibility note.** This is a behavior change for callers that relied on
 the verbatim legacy write. Agents holding a cached copy of the

@@ -131,7 +131,7 @@ The following fields in `.autoharness/backlog-registry.yaml` carry this contract
 | `governed_name: dependency_remove` | `remove_dependency` | Requires parity for dependency-edge removal |
 | `governed_name: checkpoint_abandon_disposition` | `abandon_checkpoint` | Requires parity for valid checkpoint disposition |
 | `governed_name: checkpoint_quarantine_disposition` | `quarantine_checkpoint` | Requires parity for malformed checkpoint quarantine |
-| `governed_name: checkpoint_create` | `create_checkpoint` | Requires parity for V1 checkpoint creation across CLI and MCP surfaces |
+| `governed_name: checkpoint_create` | `create_checkpoint` | Requires parity for V1 creation, default-reject error class, and opt-in upgrade |
 | `cli_param_gaps.message` | `track_commit` | Documents that CLI stores empty string |
 | `cli_param_gaps.author` | `track_commit` | Documents that CLI stores empty string |
 | `cli_only_flags.force-gates.human_terminal_only` | `update_task` | Gate-forcing is operator-only |

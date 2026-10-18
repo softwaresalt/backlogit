@@ -138,7 +138,8 @@ operations:
   # create_checkpoint is governed: both the MCP tool and the CLI subcommand
   # route through the shared events.CreateCheckpoint pipeline and must produce
   # identical observable state (V1 checkpoint file written, path returned, status
-  # defaulting to active). See docs/design-docs/governed-operation-parity.md.
+  # defaulting to active). Non-V1 dumps are rejected with no file written and a
+  # bounded error code. See docs/design-docs/governed-operation-parity.md.
   create_checkpoint:
     mcp_tool: "backlogit_create_checkpoint"
     cli_command: "backlogit checkpoint create --state-dump {{state_dump}}"
