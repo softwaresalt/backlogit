@@ -144,8 +144,13 @@ operations:
     cli_command: "backlogit checkpoint create --state-dump {{state_dump}}"
     governed: true
     governed_name: "checkpoint_create"
+    # allow_legacy_import is an OPTIONAL migration-only MCP boolean. It is listed in
+    # params but intentionally omitted from the base cli_command so the registry-derived
+    # CLI fallback stays strict-by-default; append --allow-legacy-import only for an
+    # explicit opt-in (same optional-flag convention as archive_item.commit_sha).
     params:
       state_dump: "state_dump"
+      allow_legacy_import: "allow_legacy_import"
 
   list_checkpoints:
     mcp_tool: "backlogit_list_checkpoints"

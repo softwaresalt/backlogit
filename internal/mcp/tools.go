@@ -166,8 +166,15 @@ func (s *Server) RegisterTools() {
 				"only governed path to that state; status:\"active\" and status:\"resolved\" remain accepted. "+
 				"The context object is the OPEN "+
 				"counterpart: shipment_id, feature_id, task_ids, and branch are modeled, but any other key you "+
-				"supply there survives the create round-trip unchanged. A legacy state_dump (no schema_version, "+
-				"or a value other than 1) is written verbatim with no schema validation. The successful result "+
+				"supply there survives the create round-trip unchanged. DEFAULT CHANGED: a non-V1 state_dump "+
+				"(no schema_version, or a value other than 1) is now REJECTED before any write (validation_failed, "+
+				"code checkpoint_schema_rejected or checkpoint_schema_unsupported) and no file is created. "+
+				"MIGRATION-ONLY OPT-IN: set allow_legacy_import=true (optional boolean, default false) to import a "+
+				"legacy dump; it accepts only legacy shapes in the upgrade window - an absent or integer-literal 0 "+
+				"schema_version on a record that is otherwise V1-valid - and upgrades it to valid V1 (never copied as-is). Future/unsupported, wrong-typed, or malformed schema_version values and records needing "+
+				"field remapping or identity synthesis remain rejected even with the opt-in. A rejection with "+
+				"retry_with_opt_in=true means allow_legacy_import=true will succeed; checkpoint_schema_unsupported "+
+				"means it cannot help. The successful result "+
 				"reports context_keys: the exact list of context key names persisted to disk. "+
 				"WRITE CONSTRAINTS (153.003-T / S1 U3): the state_dump must not exceed 64 KiB (validation_failed "+
 				"on oversize); it must not contain a heuristically detected secret pattern such as a GitHub "+
@@ -176,6 +183,7 @@ func (s *Server) RegisterTools() {
 				"and are fail-closed: a matching dump is rejected without writing. Redact all secrets before "+
 				"creating a checkpoint."),
 			mcplib.WithString("state_dump", mcplib.Required(), mcplib.Description("JSON state dump to persist (max 64 KiB; must not contain secret material)")),
+			mcplib.WithBoolean("allow_legacy_import", mcplib.Description("Migration-only opt-in (default false): upgrade an in-window legacy dump (absent or 0 schema_version, otherwise V1-valid) to V1 instead of rejecting it")),
 		),
 		s.handleCreateCheckpoint,
 	)
@@ -1191,7 +1199,11 @@ func (s *Server) handleCreateCheckpoint(ctx context.Context, request mcplib.Call
 		return ValidationFailed("state_dump is required"), nil
 	}
 	checkpointDir := filepath.Join(s.backlogitDir(), "checkpoints")
-	result, err := events.CreateCheckpoint(ctx, checkpointDir, stateDump)
+	var opts []events.CreateCheckpointOption
+	if allow, _ := request.Params.Arguments["allow_legacy_import"].(bool); allow {
+		opts = append(opts, events.WithAllowLegacyImport())
+	}
+	result, err := events.CreateCheckpoint(ctx, checkpointDir, stateDump, opts...)
 	if err != nil {
 		return domainError("create checkpoint", err), nil
 	}
