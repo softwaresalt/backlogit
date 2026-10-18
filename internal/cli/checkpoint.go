@@ -144,10 +144,6 @@ before creating a checkpoint.`,
 	return cmd
 }
 
-// checkpointCreateError wraps a create failure with CLI context. The
-// --allow-legacy-import remediation is appended ONLY for
-// ErrCheckpointSchemaRejected (legacy-eligible); it is never appended for
-// ErrCheckpointSchemaUnsupported, where enabling the flag cannot help.
 // boundedCreateError carries a diagnostic-budgeted message while keeping the
 // original cause reachable through errors.Is/As.
 type boundedCreateError struct {
@@ -158,6 +154,10 @@ type boundedCreateError struct {
 func (e *boundedCreateError) Error() string { return e.msg }
 func (e *boundedCreateError) Unwrap() error { return e.cause }
 
+// checkpointCreateError wraps a create failure with CLI context. The
+// --allow-legacy-import remediation is appended ONLY for
+// ErrCheckpointSchemaRejected (legacy-eligible); it is never appended for
+// ErrCheckpointSchemaUnsupported, where enabling the flag cannot help.
 func checkpointCreateError(err error) error {
 	if errors.Is(err, blerrors.ErrCheckpointSchemaRejected) {
 		return &boundedCreateError{

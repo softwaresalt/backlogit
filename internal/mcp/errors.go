@@ -61,6 +61,10 @@ type checkpointSchemaResponse struct {
 // opt-in can help) and ErrCheckpointSchemaUnsupported (the opt-in cannot help)
 // to distinguishable structured results. Callers MUST have already detected
 // the sentinel with errors.Is on the unserialized error.
+//
+// The byte budget (corerrors.DiagnosticBudget) applies to the echoed cause
+// only; the opt-in advice is appended after bounding. The valid-UTF-8
+// guarantee assumes valid-UTF-8 input; JSON marshaling sanitizes the rest.
 func checkpointSchemaError(op string, err error, optInEligible bool) *mcplib.CallToolResult {
 	resp := checkpointSchemaResponse{
 		Error:   "validation_failed",
