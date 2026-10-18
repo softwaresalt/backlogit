@@ -8,7 +8,7 @@ chunk_strategy: h1-h2-h3
 
 # 198-S ship sessions (compacted, 2026-10-18 UTC)
 
-Compacts seven 198-S memory notes (2026-10-12 to 2026-10-14). Originals were moved, not deleted, to `docs/archive/memory/2026-10-12/`, `2026-10-13/` and `2026-10-14/`. The authoritative closure record is `docs/closure/198-S-198-F-post-merge-closure.md`.
+Compacts eight 198-S memory notes (2026-10-12 to 2026-10-14); `2026-10-12-ship-198s-wave1-converged.md` was also covered by the earlier 2026-10-16 compaction. All eight originals were moved, not deleted, to `docs/archive/memory/2026-10-12/`, `2026-10-13/` and `2026-10-14/`. The authoritative closure record is `docs/closure/198-S-198-F-post-merge-closure.md`.
 
 ## Sequence and outcomes
 
