@@ -108,6 +108,14 @@ func TestCreateCheckpoint_SchemaMatrix_PresentNullFieldsInvalid(t *testing.T) {
 		{"null status", `{"agent":"ship","session_id":"s1","phase":"build","status":null}`},
 		{"null created_at", `{"agent":"ship","session_id":"s1","phase":"build","created_at":null}`},
 		{"null updated_at", `{"agent":"ship","session_id":"s1","phase":"build","updated_at":null}`},
+		{"status null then value", `{"agent":"ship","session_id":"s1","phase":"build","status":null,"status":"active"}`},
+		{"status value then null", `{"agent":"ship","session_id":"s1","phase":"build","status":"active","status":null}`},
+		{"created_at null then value", `{"agent":"ship","session_id":"s1","phase":"build","created_at":null,"created_at":"2026-01-01T00:00:00Z"}`},
+		{"created_at value then null", `{"agent":"ship","session_id":"s1","phase":"build","created_at":"2026-01-01T00:00:00Z","created_at":null}`},
+		{"updated_at null then value", `{"agent":"ship","session_id":"s1","phase":"build","updated_at":null,"updated_at":"2026-01-01T00:00:00Z"}`},
+		{"updated_at value then null", `{"agent":"ship","session_id":"s1","phase":"build","updated_at":"2026-01-01T00:00:00Z","updated_at":null}`},
+		{"status case-folded null then value", `{"agent":"ship","session_id":"s1","phase":"build","STATUS":null,"status":"active"}`},
+		{"status value then case-folded null", `{"agent":"ship","session_id":"s1","phase":"build","status":"active","Status":null}`},
 	}
 	scenarios := []struct {
 		name string
