@@ -14,7 +14,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
@@ -634,4 +636,52 @@ func TestHandleCreateCheckpoint_SchemaSentinels_SerializedResult(t *testing.T) {
 			assert.Equal(t, tc.wantRetryable, body["retry_with_opt_in"])
 		})
 	}
+}
+
+// 171.004-T: the serialized schema error must stay bounded even when the
+// wrapped cause echoes caller-controlled input that fits the 64-KiB input cap.
+func TestHandleCreateCheckpoint_SchemaError_DiagnosticIsBounded(t *testing.T) {
+	s, _ := setupBugFixServer(t)
+	const maxSerialized = 2048
+	tests := []struct {
+		name string
+		dump string
+	}{
+		{"invalid created_at 60000 chars",
+			`{"agent":"ship","session_id":"s1","phase":"build","created_at":"` + strings.Repeat("x", 60000) + `"}`},
+		{"duplicated 30000 byte context key",
+			`{"agent":"ship","session_id":"s1","phase":"build","context":{"` +
+				strings.Repeat("k", 30000) + `":1,"` + strings.Repeat("k", 30000) + `":2}}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			request := mcplib.CallToolRequest{}
+			request.Params.Name = "backlogit_create_checkpoint"
+			request.Params.Arguments = map[string]any{"state_dump": tc.dump}
+			result, err := s.handleCreateCheckpoint(context.Background(), request)
+			require.NoError(t, err)
+			body := schemaErrorBody(t, result)
+			raw, mErr := json.Marshal(result)
+			require.NoError(t, mErr)
+			assert.Less(t, len(raw), maxSerialized, "serialized CallToolResult must be bounded")
+			assert.Equal(t, "validation_failed", body["error"])
+			assert.Equal(t, "checkpoint_schema_unsupported", body["code"])
+			assert.Equal(t, false, body["retry_with_opt_in"])
+			assert.Contains(t, body["message"], "[truncated]")
+			assert.True(t, utf8.ValidString(body["message"].(string)))
+		})
+	}
+}
+
+func TestCheckpointSchemaError_BoundedPreservesOptInFieldsAndRuneBoundary(t *testing.T) {
+	cause := fmt.Errorf("%w: %s", corerrors.ErrCheckpointSchemaRejected, strings.Repeat("é", 5000))
+	body := schemaErrorBody(t, domainError("create checkpoint", cause))
+	msg, _ := body["message"].(string)
+	assert.True(t, utf8.ValidString(msg), "truncation must not split a rune")
+	assert.Contains(t, msg, "[truncated]")
+	assert.Contains(t, msg, "allow_legacy_import", "opt-in advice must survive truncation")
+	assert.Less(t, len(msg), 1024)
+	assert.Equal(t, "checkpoint_schema_rejected", body["code"])
+	assert.Equal(t, true, body["retry_with_opt_in"])
+	assert.Equal(t, "allow_legacy_import", body["remediation"])
 }

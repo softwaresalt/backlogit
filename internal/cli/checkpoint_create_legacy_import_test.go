@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,4 +108,24 @@ func TestCheckpointCreate_HelpDescribesDefaultRejectAndOptInScope(t *testing.T) 
 	assert.NotContains(t, help, "written verbatim")
 	assert.Contains(t, help, "rejected")
 	assert.Contains(t, help, "upgrade")
+}
+
+// 171.004-T: the CLI error must not echo unbounded caller-controlled input.
+func TestCheckpointCreate_SchemaErrorDiagnosticIsBounded(t *testing.T) {
+	dumps := map[string]string{
+		"invalid_created_at": `{"agent":"ship","session_id":"s1","phase":"build","created_at":"` + strings.Repeat("x", 60000) + `"}`,
+		"duplicate_key": `{"agent":"ship","session_id":"s1","phase":"build","context":{"` +
+			strings.Repeat("k", 30000) + `":1,"` + strings.Repeat("k", 30000) + `":2}}`,
+	}
+	for name, dump := range dumps {
+		t.Run(name, func(t *testing.T) {
+			root := setupCLIWorkspace(t)
+			err := runCLIErr(t, root, "checkpoint", "create", "--state-dump", dump)
+			require.Error(t, err)
+			assert.Less(t, len(err.Error()), 2048)
+			assert.Contains(t, err.Error(), "[truncated]")
+			assert.True(t, utf8.ValidString(err.Error()))
+			assert.True(t, errors.Is(err, blerrors.ErrCheckpointSchemaUnsupported), "sentinel must survive: %v", err)
+		})
+	}
 }
