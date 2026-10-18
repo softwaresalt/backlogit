@@ -22,15 +22,15 @@ touched), no deliberation. All mutations went through the backlogit stash operat
 
 | Measure | Before | After |
 |---|---|---|
-| Active stash entries | 230 | 217 |
-| Archived this pass | - | 13 (9 resolved, obsolete or superseded; 4 merged duplicates) |
-| Entries carrying `DEFERRED SCOPE EXPANSION` | 173 | 164 |
-| High priority | 22 | 12 |
+| Active stash entries | 230 | 220 |
+| Archived this pass | - | 10 (6 resolved, obsolete or superseded; 4 merged duplicates) |
+| Entries carrying `DEFERRED SCOPE EXPANSION` | 173 | 167 |
+| High priority | 22 | 15 |
 | Medium priority | 122 | 123 |
 | Low priority | 86 | 82 |
 | Priority changes | - | 7 (5 lowered, 2 raised) |
 | Kind reclassified | - | 2 (bug to feature) |
-| Annotated with a `STAGE TRIAGE 2026-10-18` note | - | 34 |
+| Annotated with a `STAGE TRIAGE 2026-10-18` note | - | 37 |
 
 The brief estimated about 235 entries with about 20 new deferred ones; the real store held 230 active entries,
 173 of them deferred-scope-expansion captures accumulated since 2026-09-03 (not only the 16 from this run).
@@ -46,9 +46,6 @@ Archival uses `backlogit stash archive` (never remove). Evidence was verified ag
 | BFB44A08 | Superseded | B53056C0 declares it supersedes this text; 197-S archived (`.backlogit/archive/197-S.md`, no queue file). |
 | B53056C0 | Resolved | 197-S merge f8d35936 and closure archive commit 4d6b2189 are ancestors of main; `docs/closure/197-S-197-F-post-merge-closure.md` is READY_WITH_CONDITIONS with the ratified exception; post-mode report `.backlogit/reconcile/197-S-post-20261011T013645Z.md` checks 1-6 PASS. |
 | 7BAC5217 | Resolved by operator decision | Gap accepted (G2 ratified 2026-10-14T05:25Z; "do not synthesize the event"), recorded in `docs/memory/2026-10-14-ship-198s-closure-ratification.md` and the 198-S closure; `ship_shipment` hook events exist again for 199-S, 157-S, 158-S, 141-S to 145-S (seq 3783 to 3848), so the gap did not recur. |
-| 885263D2 | Resolved | `NewWorkspaceWithoutRecoveryForTest` exists in `internal/core` (commits cfe37339, 3049e0b2; task 174.073-T) and `artifacts_expansion_test.go` uses it. |
-| DB48A817 | Resolved | `disableExecGateForTest` is applied in `setupShipmentWorkspace` (shipment_test.go:38) and `newGateTestWorkspace` (gate_transition_test.go:56); commit 14084d9b; tasks 174.069-T and 174.070-T archived. |
-| FF1F3AC7 | Resolved | `newShipDurabilityFixture` installs `fakeVersion` and `fakeGateRunner` and asserts no `Exec*` runner (shipment_shipped_event_durability_test.go:98-105); `shipWithWatchdog` bounds `ShipShipment` with `context.WithTimeout` (line 151). |
 | 2F7FCA8B | Resolved | `docs/scratch/2026-09-24-155-s-session-resumption.md` now carries `source` and `doc_type`. |
 | 2E0CDF27 | Obsolete precondition | The guard was "before 176-S/157-S is claimed"; 176-S (PR #504) and 157-S (PR #507) are shipped and archived. |
 | B88A3716 | Obsolete | 154-S is archived and `CONDITION_B_ATTESTED` (2026-10-07T06:31Z, `docs/closure/154-S-173-F-post-merge-closure.md`); the general mechanism lives in 23D47703. |
@@ -57,7 +54,7 @@ Archival uses `backlogit stash archive` (never remove). Evidence was verified ag
 | 359D8F32 | Duplicate of A17EE897 | Same P-020 target-all compaction review; survivor is the earliest capture. |
 | 4A990AF9 | Duplicate of 4DB1DFF1 | Same repo-wide lint/gofmt baseline expansion; counts (57 diagnostics, 6,146 gofmt paths) preserved on the survivor. |
 
-Not archived after checking (still open): 8E3EDE49 (199-S closure still reads `closure_status: BLOCKED` on
+Reversal after PR review: 885263D2, DB48A817 and FF1F3AC7 were first archived on implementation-presence evidence, then restored. Plan Amendment A1.8 E-8 (`docs/exec-plans/2026-10-08-ct-test-suite-health-plan.md`) and `docs/closure/198-S-ct-full-suite-green-evidence.md` keep them active because 198-S T5 was GREEN-AFTER-RERUN and does not establish that the isolation fixes held. The implementation is present (`NewWorkspaceWithoutRecoveryForTest`, `disableExecGateForTest`, fake gate broker in the durability fixture) but the entries stay active, annotated, until a qualifying clean full-suite result or an explicit superseding disposition exists. They are grouped in theme A with 63909DAE. (199-S closure still reads `closure_status: BLOCKED` on
 main), A42A17B8 (no UTC rule in AGENTS.md or instructions), 86A0B65B (`applyDecodeFailure` still exists),
 8B9BD74A and 48FC866D (fixture unchanged), 9A8E1879 (decision still `status: authoritative`), 3340E97C
 (go.mod still go 1.24.0), 4DB1DFF1 (baseline convergence is wave-based and unfinished), 41FE00A1 (allowlist
@@ -100,7 +97,7 @@ dependency, not by priority.
 |---|---|---|---|---|---|
 | H | Closure and dark-mode governance | 8E3EDE49 (first), A42A17B8, AC530DE2, CFBD7C8C with E2B351F3, 23D47703, EB95F5F7, 43BB6B88, 8664E2A1, A17EE897, 3FF72EB8, 73B7C429, F88FE051, 1FDD2E00 | 8E3EDE49 gates 200-S, 201-S and 189-S. 23D47703 is the model the PREVENTION-4/5/6 entries build on. Docs and harness only. | about 10 tasks, 20 h | CFBD7C8C, 23D47703 |
 | F | Ship baseline gate | 7AA35A39, 9CA03F5D, 253E2505, 920BCA5B, 5F5D7384, 6BF65C9D, 2462F1B0 | One shared Ship/build-feature contract; fix as one unit. | 5 tasks, 10 h | 7AA35A39, 920BCA5B |
-| A | Test runtime and flakiness | 63909DAE, 9A07B24C, then FU-1..FU-8 (5C185050, 96FC7CD9, 39B5EB54, 79F743DA, 30F6A010, 7CED062B, 0E8EC7AE, AD7039AD), 36D86223, 5F1A1873, 5A1C4D3F, F8936891, 1D919906, C7FAE4D5, 965C5C05, 0F3C563E, 9111589C, 8640432F, 6DB63934, 95DF7CE9 | 63909DAE (diagnose) and 9A07B24C (profile) gate every optimisation. 95DF7CE9 is upstream autoharness work. | about 20 tasks over 2 to 3 shipments | 95DF7CE9 |
+| A | Test runtime and flakiness | 63909DAE, 885263D2, DB48A817, FF1F3AC7, 9A07B24C, then FU-1..FU-8 (5C185050, 96FC7CD9, 39B5EB54, 79F743DA, 30F6A010, 7CED062B, 0E8EC7AE, AD7039AD), 36D86223, 5F1A1873, 5A1C4D3F, F8936891, 1D919906, C7FAE4D5, 965C5C05, 0F3C563E, 9111589C, 8640432F, 6DB63934, 95DF7CE9 | 63909DAE (diagnose) and 9A07B24C (profile) gate every optimisation. 95DF7CE9 is upstream autoharness work. | about 20 tasks over 2 to 3 shipments | 95DF7CE9 |
 | J | Ship-time performance | 76553D8D, 5E0CCF91, 18B2B8EF, 0D1B5D5C, 2C01BD52 | MCP ship timeouts recurred on 197-S and 198-S. 76553D8D first (profile), progress-line fixes after. | 5 tasks, 10 h | no |
 | B | Wire S8-S11 gates (report-only first) | Prereqs F9C8E8C1, D399A888, 10D36FF6 (a)(b); then 09B597EE, 19E87B10, 0527C687, plus 3A2C710D, E6EE4ACD | Single deliberation on a common wiring seam; enforce mode only after prerequisites. | 10 to 14 tasks | 09B597EE, 19E87B10, 0527C687, 3A2C710D, 10D36FF6 |
 | C | Signed evidence and trust | 5BDD615F, 0ACF635E, 7679EE0D | Order: 0ACF635E, 5BDD615F, 7679EE0D. Change to shared S4 decode and evidence contract. | 6 to 8 tasks | all |
@@ -122,7 +119,7 @@ items 3F06493B/7B71AD77 overlap 200-S/201-S, so they are excluded.
    docs only. 8E3EDE49 may alternatively go as a small direct closure PR before any claim.
 2. **Ship baseline gate (theme F)**: 7AA35A39, 9CA03F5D, 253E2505 plus the P-002.1/P-004 policy gaps
    (920BCA5B, 5F5D7384). Removes a repeat blocker of build-feature Step 0.5 for later shipments.
-3. **Ship-time performance and test health (themes J and A, first wave)**: 76553D8D, 63909DAE, 9A07B24C,
+3. **Ship-time performance and test health (themes J and A, first wave)**: 76553D8D, 63909DAE (with the three held-isolation verification entries 885263D2, DB48A817, FF1F3AC7), 9A07B24C,
    5E0CCF91, 18B2B8EF, 36D86223. Timeouts and load-sensitive failures affect every shipment. Theme B (wiring
    the S8-S11 gates report-only) is the next candidate after one deliberation.
 
