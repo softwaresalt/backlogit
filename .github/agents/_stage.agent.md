@@ -7,8 +7,8 @@ model_routing: "Tier 3 (Frontier)"  # DEPRECATED — use model_tier
 model_tier: 3
 max_subagent_tier: 3
 reasoning_effort: "high"
-model_provider: "anthropic"
-model_family: "claude-opus-5.5"
+model_provider: "google"
+model_family: "gemini-4-argon"
 subagent_depth: 2
 ---
 
