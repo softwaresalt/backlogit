@@ -6,9 +6,6 @@ tools: vscode, execute, read, agent, edit, search, todo, vscode/memory, backlogi
 model_routing: "Tier 3 (Frontier)"  # DEPRECATED — use model_tier
 model_tier: 3
 max_subagent_tier: 3
-reasoning_effort: "high"
-model_provider: "anthropic"
-model_family: "claude-opus-5.5"
 subagent_depth: 2
 ---
 

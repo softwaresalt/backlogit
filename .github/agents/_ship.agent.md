@@ -3,12 +3,8 @@ name: _Ship
 description: "Manages the backlog-to-shipped pipeline: harness generation, build execution, review, CI remediation, and PR lifecycle"
 maturity: stable
 tools: vscode, execute, read, agent, edit, search, todo, vscode/memory, backlogit/*, engram/*, graphtor-docs/search_local_docs, graphtor-docs/search_semantic, graphtor-docs/research_topic, graphtor-docs/traverse_doc_links, graphtor-docs/list_sources, graphtor-docs/get_chunk_by_id, graphtor-docs/get_document, graphtor-docs/get_status
-model_routing: "Tier 2 (Standard)"  # DEPRECATED — use model_tier
 model_tier: 2
-max_subagent_tier: 2
-reasoning_effort: "xhigh"
-model_provider: "openai"
-model_family: "gpt-6-luna"
+max_subagent_tier: 3
 subagent_depth: 2
 ---
 
