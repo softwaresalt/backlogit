@@ -535,7 +535,7 @@ func observeGovernedState(t *testing.T, rootPath, itemID, sha string) (frontmatt
 	// Fresh workspace for authoritative DB state.
 	freshWS, err := core.NewWorkspace(ctx, rootPath)
 	require.NoError(t, err)
-	defer freshWS.Close()
+	t.Cleanup(func() { require.NoError(t, freshWS.Close()) })
 
 	// 1. Frontmatter scalar — read from markdown, not DB cache.
 	artPath, err := core.FindArtifactPath(ctx, freshWS, itemID)
@@ -584,7 +584,7 @@ func observeGovernedCommentState(t *testing.T, rootPath, itemID, actor, comment,
 	ctx := context.Background()
 	freshWS, err := core.NewWorkspace(ctx, rootPath)
 	require.NoError(t, err)
-	defer freshWS.Close()
+	t.Cleanup(func() { require.NoError(t, freshWS.Close()) })
 
 	state := governedCommentState{Actor: actor, Comment: comment, CommitSHA: commitSHA}
 	for _, event := range mustReadEvents(t, rootPath, itemID) {
@@ -625,7 +625,7 @@ func observeGovernedDependency(t *testing.T, rootPath, itemID, dependsOn, depTyp
 	ctx := context.Background()
 	freshWS, err := core.NewWorkspace(ctx, rootPath)
 	require.NoError(t, err)
-	defer freshWS.Close()
+	t.Cleanup(func() { require.NoError(t, freshWS.Close()) })
 
 	var count int
 	err = freshWS.DB.QueryRowContext(ctx,

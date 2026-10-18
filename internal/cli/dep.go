@@ -38,7 +38,7 @@ func NewDepAddCmd() *cobra.Command {
 		Example: `  backlogit dep add 001.002-T 001.001-T
   backlogit dep add 010-T 002-F --type blocks`,
 		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			itemID := args[0]
 			dependsOn := args[1]
 
@@ -47,7 +47,11 @@ func NewDepAddCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					err = errors.Join(err, cerr)
+				}
+			}()
 
 			// Route shipment→shipment blocks edges through AddShipmentBlock so the
 			// CLI cannot bypass endpoint validation for that edge shape.
@@ -72,7 +76,9 @@ func NewDepAddCmd() *cobra.Command {
 					if err := core.AddShipmentBlock(ctx, ws, itemID, dependsOn); err != nil {
 						return err
 					}
-					fmt.Fprintf(cmd.OutOrStdout(), "Added dependency %s → %s\n", itemID, dependsOn)
+					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Added dependency %s → %s\n", itemID, dependsOn); err != nil {
+						return fmt.Errorf("write output: %w", err)
+					}
 					return nil
 				}
 			}
@@ -80,7 +86,9 @@ func NewDepAddCmd() *cobra.Command {
 			if err := core.AddDependency(ctx, ws, itemID, dependsOn, depType); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Added dependency %s → %s\n", itemID, dependsOn)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Added dependency %s → %s\n", itemID, dependsOn); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 			return nil
 		},
 	}
@@ -95,7 +103,7 @@ func NewDepRemoveCmd() *cobra.Command {
 		Short:   "Remove a dependency edge",
 		Example: `  backlogit dep remove 001.002-T 001.001-T`,
 		Args:    cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			itemID := args[0]
 			dependsOn := args[1]
 
@@ -104,12 +112,18 @@ func NewDepRemoveCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					err = errors.Join(err, cerr)
+				}
+			}()
 
 			if err := core.RemoveDependency(ctx, ws, itemID, dependsOn); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Removed dependency %s → %s\n", itemID, dependsOn)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Removed dependency %s → %s\n", itemID, dependsOn); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 			return nil
 		},
 	}
@@ -125,7 +139,7 @@ func NewDepListCmd() *cobra.Command {
 		Example: `  backlogit dep list 001.002-T
   backlogit dep list 001.001-T --reverse`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			itemID := args[0]
 
 			ctx := context.Background()
@@ -133,7 +147,11 @@ func NewDepListCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					err = errors.Join(err, cerr)
+				}
+			}()
 
 			var edges []db.DependencyEdge
 			if reverse {
@@ -145,7 +163,9 @@ func NewDepListCmd() *cobra.Command {
 				return err
 			}
 			for _, e := range edges {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s → %s (%s)\n", e.ItemID, e.DependsOn, e.DepType)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s → %s (%s)\n", e.ItemID, e.DependsOn, e.DepType); err != nil {
+					return fmt.Errorf("write output: %w", err)
+				}
 			}
 			return nil
 		},

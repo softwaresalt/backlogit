@@ -33,7 +33,7 @@ func setupArchiveWorkspace(t *testing.T) *core.Workspace {
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	// Write config.yaml
 	configData := []byte("artifact_types:\n  task:\n    prefix: T\n    suffix: \"-T\"\n    name_format: \"{NNN}{suffix}\"\n  bug:\n    prefix: B\n    suffix: \"-B\"\n    name_format: \"{NNN}{suffix}\"\nmax_slug_length: 60\n")
@@ -380,7 +380,7 @@ func setupArchiveCascadeWorkspace(t *testing.T) *core.Workspace {
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	configData := []byte(`artifact_types:
   feature:
@@ -590,11 +590,11 @@ func TestUnarchiveItem_LegacyArchivedFromAfterMigration(t *testing.T) {
 	require.NoError(t, os.Rename(oldDir, newDir))
 
 	// Close old DB and reopen from the migrated location
-	ws.DB.Close()
+	require.NoError(t, ws.DB.Close())
 	newDBPath := filepath.Join(newDir, "backlogit.db")
 	newDB, dbErr := db.Open(newDBPath)
 	require.NoError(t, dbErr)
-	t.Cleanup(func() { newDB.Close() })
+	t.Cleanup(func() { require.NoError(t, newDB.Close()) })
 
 	// Update workspace to use the new storage root
 	ws.StorageRoot = newDir

@@ -34,7 +34,7 @@ func setupBatchComposition(t *testing.T, root string) (f1, f2, ship, task *model
 	initBatchWorkspace(t, root)
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	f1, err = core.CreateArtifact(ctx, ws, "Feature one", "feature")
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestSizeCompositions_MatchesPerArtifact(t *testing.T) {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	comps, err := core.SizeCompositions(ctx, ws, []*models.Artifact{f1, f2, ship, task, nil})
 	require.NoError(t, err)
@@ -105,7 +105,7 @@ func TestSizeCompositions_EmptyInput(t *testing.T) {
 	initBatchWorkspace(t, root)
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	comps, err := core.SizeCompositions(ctx, ws, nil)
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestSizeCompositions_ShipmentDanglingAndFeatureMember(t *testing.T) {
 	initBatchWorkspace(t, root)
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	featA, err := core.CreateArtifact(ctx, ws, "Expanded feature", "feature")
 	require.NoError(t, err)

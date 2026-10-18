@@ -74,7 +74,7 @@ func setupDurableArchiveWorkspace(t *testing.T) (ws *Workspace, itemID, archiveP
 	ctx := context.Background()
 	workspace, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { workspace.Close() })
+	t.Cleanup(func() { require.NoError(t, workspace.Close()) })
 
 	feat, err := CreateArtifact(ctx, workspace, "Archive feat", "feature")
 	require.NoError(t, err)

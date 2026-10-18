@@ -433,7 +433,11 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 			if info.parentID != "" {
 				continue
 			}
-			if hasReturnedToBacklogEvent(logsDir, info.id) {
+			returnedToBacklog, returnedErr := hasReturnedToBacklogEvent(logsDir, info.id)
+			if returnedErr != nil {
+				return nil, fmt.Errorf("doctor: read item log for %s: %w", info.id, returnedErr)
+			}
+			if returnedToBacklog {
 				continue
 			}
 			report.Findings = append(report.Findings, DoctorFinding{
@@ -1123,12 +1127,16 @@ func strandedArchiveCandidates(refs map[string][]artifactRef, shipmentRef artifa
 	return candidates
 }
 
-func detectPartialCommitAssociations(ctx context.Context, ws *Workspace, logsDir string) ([]DoctorFinding, error) {
+func detectPartialCommitAssociations(ctx context.Context, ws *Workspace, logsDir string) (_ []DoctorFinding, err error) {
 	rows, err := ws.DB.QueryContext(ctx, `SELECT item_id, commit_sha FROM commit_links ORDER BY item_id, commit_sha`)
 	if err != nil {
 		return nil, fmt.Errorf("query commit links: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close commit link rows: %w", cerr))
+		}
+	}()
 
 	eventCache := make(map[string][]events.Event)
 	findings := make([]DoctorFinding, 0)
@@ -1678,13 +1686,17 @@ func checkWorkspaceRootConflict(rootPath string) ([]DoctorFinding, error) {
 
 // hasReturnedToBacklogEvent reports whether the item's event log contains a
 // returned_to_backlog entry, indicating intentional orphaning by ShipShipment.
-func hasReturnedToBacklogEvent(logsDir, itemID string) bool {
+func hasReturnedToBacklogEvent(logsDir, itemID string) (found bool, err error) {
 	path := events.LogPathForItem(logsDir, itemID)
-	f, err := os.Open(path)
-	if err != nil {
-		return false
+	f, openErr := os.Open(path)
+	if openErr != nil {
+		return false, nil
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close item log %s: %w", path, cerr))
+		}
+	}()
 
 	var ev struct {
 		EventType string `json:"event_type"`
@@ -1695,10 +1707,10 @@ func hasReturnedToBacklogEvent(logsDir, itemID string) bool {
 			break
 		}
 		if ev.EventType == "returned_to_backlog" {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // scanShipmentManifestFeatureIDs derives the union of every item ID ever
@@ -1752,13 +1764,16 @@ func scanReturnedFeatureIDs(logsDir string) (map[string]struct{}, error) {
 			continue
 		}
 		path := filepath.Join(logsDir, entry.Name())
-		func() {
-			f, openErr := os.Open(path)
-			if openErr != nil {
-				return
-			}
-			defer f.Close()
-
+		f, openErr := os.Open(path)
+		if openErr != nil {
+			continue
+		}
+		scanErr := func() (err error) {
+			defer func() {
+				if cerr := f.Close(); cerr != nil {
+					err = errors.Join(err, fmt.Errorf("close item log %s: %w", path, cerr))
+				}
+			}()
 			dec := json.NewDecoder(f)
 			for {
 				var ev struct {
@@ -1776,6 +1791,9 @@ func scanReturnedFeatureIDs(logsDir string) (map[string]struct{}, error) {
 				}
 			}
 		}()
+		if scanErr != nil {
+			return nil, scanErr
+		}
 	}
 	return returned, nil
 }

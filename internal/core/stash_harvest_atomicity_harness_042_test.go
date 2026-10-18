@@ -41,7 +41,7 @@ func setupHarvestWorkspace(t *testing.T) *core.Workspace {
 
 	ws, wsErr := core.NewWorkspace(context.Background(), tmpDir)
 	require.NoError(t, wsErr)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	return ws
 }
 
@@ -84,7 +84,7 @@ func TestHarvestStashEntry_DBFailureAfterStashRewrite_WorkspaceConsistent(t *tes
 	ctx := context.Background()
 
 	// Close DB to force all DB operations to fail.
-	ws.DB.Close()
+	require.NoError(t, ws.DB.Close())
 
 	_, err := core.HarvestStashEntry(ctx, ws, core.HarvestStashOptions{
 		StashID:      "AAAABBBB",
@@ -96,7 +96,7 @@ func TestHarvestStashEntry_DBFailureAfterStashRewrite_WorkspaceConsistent(t *tes
 	// Re-open workspace to inspect stash JSONL state.
 	ws2, wsErr := core.NewWorkspace(context.Background(), ws.RootPath)
 	require.NoError(t, wsErr)
-	defer ws2.Close()
+	t.Cleanup(func() { require.NoError(t, ws2.Close()) })
 
 	fetched, fetchErr := core.FetchStash(ctx, ws2, core.FetchStashOptions{})
 	require.NoError(t, fetchErr)

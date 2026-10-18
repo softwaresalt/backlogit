@@ -27,7 +27,7 @@ func setupUpdateTestWorkspace(t *testing.T) (string, *core.Workspace) {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	return root, ws
 }
@@ -62,7 +62,7 @@ func TestUpdateCommand_SectionWrite_SyncsDB(t *testing.T) {
 	// Reopen workspace to get fresh DB connection
 	ws2, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws2.Close()
+	t.Cleanup(func() { require.NoError(t, ws2.Close()) })
 
 	after, err := db.GetItem(ctx, ws2.DB, artifact.ID)
 	require.NoError(t, err)

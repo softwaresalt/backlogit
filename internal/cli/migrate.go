@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -102,12 +103,16 @@ layout migrations, not source imports. Use --workspace-dir to rename a legacy
 				if rehydErr != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr)
 				} else {
-					fmt.Fprintf(cmd.OutOrStdout(), "Rehydrated %d artifacts\n", count)
+					if _, wErr := fmt.Fprintf(cmd.OutOrStdout(), "Rehydrated %d artifacts\n", count); wErr != nil {
+						return fmt.Errorf("write output: %w", wErr)
+					}
 				}
 			}
 
 			for _, e := range report.Errors {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", e)
+				if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", e); wErr != nil {
+					return fmt.Errorf("write output: %w", wErr)
+				}
 			}
 			return nil
 		},
@@ -123,7 +128,7 @@ layout migrations, not source imports. Use --workspace-dir to rename a legacy
 	return cmd
 }
 
-func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter string, dryRun bool, detect bool, validate bool, format string) error {
+func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter string, dryRun bool, detect bool, validate bool, format string) (err error) {
 	ctx := context.Background()
 	sourcePath, err := resolveImportSourcePath(cwd, source)
 	if err != nil {
@@ -135,7 +140,9 @@ func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter s
 		if err != nil {
 			return fmt.Errorf("detect adapter: %w", err)
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), detected.Name())
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), detected.Name()); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
 		return nil
 	}
 
@@ -143,7 +150,11 @@ func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter s
 	if err != nil {
 		return fmt.Errorf("open workspace: %w", err)
 	}
-	defer ws.Close()
+	defer func() {
+		if cerr := ws.Close(); cerr != nil {
+			err = errors.Join(err, cerr)
+		}
+	}()
 
 	report, err := parser.MigrateWithOptions(ctx, sourcePath, parser.MigrateOptions{
 		DryRun:   dryRun,
@@ -168,7 +179,9 @@ func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter s
 	}
 
 	if dryRun || validate {
-		fmt.Fprint(cmd.OutOrStdout(), formatted)
+		if _, err := fmt.Fprint(cmd.OutOrStdout(), formatted); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
 		if validate && report.ItemsFailed > 0 {
 			return fmt.Errorf("migration validation failed")
 		}
@@ -182,7 +195,9 @@ func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter s
 
 	if imported.Errors != nil {
 		for _, importErr := range imported.Errors {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", importErr)
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", importErr); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 		}
 	}
 
@@ -191,13 +206,21 @@ func runSourceMigration(cmd *cobra.Command, cwd string, source string, adapter s
 	}
 	count, rehydErr := db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	if rehydErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr)
+		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
 	}
 
-	fmt.Fprint(cmd.OutOrStdout(), formatted)
-	fmt.Fprintf(cmd.OutOrStdout(), "Imported %d artifacts, skipped %d, failed %d\n", imported.Imported, imported.Skipped, imported.Failed)
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), formatted); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Imported %d artifacts, skipped %d, failed %d\n", imported.Imported, imported.Skipped, imported.Failed); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
 	if rehydErr == nil {
-		fmt.Fprintf(cmd.OutOrStdout(), "Rehydrated %d artifacts\n", count)
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Rehydrated %d artifacts\n", count); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
 	}
 	return nil
 }

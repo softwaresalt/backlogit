@@ -3,6 +3,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -77,7 +78,7 @@ var shipmentReconcileFSWindowsTOCTOUHook func()
 // codebase does not otherwise depend on. The call still always fails
 // closed (ErrWriteIndeterminate, never a false success) once the
 // containment check runs.
-func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string, content []byte, seams shipmentReconcileFSSeams) error {
+func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string, content []byte, seams shipmentReconcileFSSeams) (err error) {
 	if reparse, err := isReparsePointPath(archiveDir); err != nil {
 		return fmt.Errorf("%w: stat archive directory %s: %w", blerrors.ErrWriteNotApplied, archiveDir, err)
 	} else if reparse {
@@ -151,7 +152,11 @@ func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string
 	if openErr != nil {
 		return fmt.Errorf("%w: open archive directory for post-rename fsync: %w", blerrors.ErrWriteIndeterminate, openErr)
 	}
-	defer dirFile.Close()
+	defer func() {
+		if cerr := dirFile.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("%w: close archive directory after fsync: %w", blerrors.ErrWriteIndeterminate, cerr))
+		}
+	}()
 	if syncErr := seams.syncDir(dirFile); syncErr != nil {
 		return fmt.Errorf("%w: fsync archive directory after rename: %w", blerrors.ErrWriteIndeterminate, syncErr)
 	}

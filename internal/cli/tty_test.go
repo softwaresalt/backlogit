@@ -16,8 +16,8 @@ func TestIsTerminal_NonFileWriterReturnsFalse(t *testing.T) {
 func TestIsTerminal_PipeReturnsFalse(t *testing.T) {
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
-	defer r.Close()
-	defer w.Close()
+	t.Cleanup(func() { require.NoError(t, r.Close()) })
+	t.Cleanup(func() { require.NoError(t, w.Close()) })
 	assert.False(t, isTerminal(r), "pipe read-end should not be detected as a terminal")
 	assert.False(t, isTerminal(w), "pipe write-end should not be detected as a terminal")
 }
