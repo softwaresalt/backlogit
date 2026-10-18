@@ -5,6 +5,9 @@ maturity: stable
 tools: vscode, execute, read, agent, edit, search, todo, vscode/memory, backlogit/*, engram/*, graphtor-docs/search_local_docs, graphtor-docs/search_semantic, graphtor-docs/research_topic, graphtor-docs/traverse_doc_links, graphtor-docs/list_sources, graphtor-docs/get_chunk_by_id, graphtor-docs/get_document, graphtor-docs/get_status
 model_tier: 2
 max_subagent_tier: 3
+reasoning_effort: "medium"
+model_provider: "anthropic"
+model_family: "claude-sonnet-5.5"
 subagent_depth: 2
 ---
 
