@@ -65,6 +65,7 @@ During Step 1.5 only, the Orchestrator may validate, commit, push, open, update,
 and merge a staging pull request for these exact continuity paths:
 
 * `.backlogit/stash.jsonl`
+* `.backlogit/hooks_queue.jsonl`
 * `docs/memory/**`
 * `start.ps1`
 * `.gitignore`
@@ -336,7 +337,8 @@ After Stage completes and before routing to Ship, verify that all staging artifa
    - Stage-owned backlog or planning artifacts must already be committed by
      Stage.
    - Uncommitted continuity changes are permitted only at
-     `.backlogit/stash.jsonl`, `docs/memory/**`, `start.ps1`, and `.gitignore`.
+     `.backlogit/stash.jsonl`, `.backlogit/hooks_queue.jsonl`, `docs/memory/**`,
+     `start.ps1`, and `.gitignore`.
    - If any other path is dirty, halt with
      `STAGING_GATE_FAIL: unclassified dirty path {path}`.
    - If an allowlisted path is dirty, validate that its content is legitimate
