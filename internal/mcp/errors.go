@@ -44,6 +44,42 @@ type checkpointUnknownFieldsResponse struct {
 	UnknownFieldsShortened int      `json:"unknown_fields_shortened"`
 }
 
+// checkpointSchemaResponse is the structured MCP error shape for a checkpoint
+// create rejected by the schema_version policy (171.004-T). Both sentinels are
+// validation-class (Error == "validation_failed"); Code and RetryWithOptIn
+// let an agent decide "retry with allow_legacy_import" vs "give up" without
+// parsing Message. Remediation is present only when the opt-in can help.
+type checkpointSchemaResponse struct {
+	Error          string `json:"error"`
+	Code           string `json:"code"`
+	Message        string `json:"message"`
+	RetryWithOptIn bool   `json:"retry_with_opt_in"`
+	Remediation    string `json:"remediation,omitempty"`
+}
+
+// checkpointSchemaError maps ErrCheckpointSchemaRejected (legacy-eligible; the
+// opt-in can help) and ErrCheckpointSchemaUnsupported (the opt-in cannot help)
+// to distinguishable structured results. Callers MUST have already detected
+// the sentinel with errors.Is on the unserialized error.
+func checkpointSchemaError(op string, err error, optInEligible bool) *mcplib.CallToolResult {
+	resp := checkpointSchemaResponse{
+		Error:   "validation_failed",
+		Code:    "checkpoint_schema_unsupported",
+		Message: fmt.Sprintf("%s: %v", op, err),
+	}
+	if optInEligible {
+		resp.Code = "checkpoint_schema_rejected"
+		resp.RetryWithOptIn = true
+		resp.Remediation = "allow_legacy_import"
+		resp.Message += "; retry with allow_legacy_import=true to upgrade this legacy dump to a valid V1 checkpoint"
+	}
+	data, mErr := json.Marshal(resp)
+	if mErr != nil {
+		return InternalError(fmt.Sprintf("marshal checkpoint schema response: %v", mErr))
+	}
+	return mcplib.NewToolResultError(string(data))
+}
+
 type mutationPartialResponse struct {
 	Error             string   `json:"error"`
 	Message           string   `json:"message"`
@@ -156,6 +192,8 @@ func checkpointUnknownFields(e *corerrors.CheckpointUnknownFieldError) *mcplib.C
 //	ErrShipmentBlockedRequiresEnv…    | shipment_blocked_requires_envelope    | 409
 //	ErrArchiveShippedRequiresEvent    | archive_shipped_requires_event        | 409
 //	ErrCheckpointTargetUnsafe        | checkpoint_target_unsafe              | 422
+//	ErrCheckpointSchemaRejected       | validation_failed (code checkpoint_schema_rejected, retry_with_opt_in) | 422
+//	ErrCheckpointSchemaUnsupported    | validation_failed (code checkpoint_schema_unsupported)                 | 422
 //	ErrCheckpointUnknownField         | validation_failed (+ unknown_fields)  | 422
 //	ErrCheckpointMalformedInput       | validation_failed                     | 422
 //	ErrCheckpointStateDumpTooLarge    | validation_failed                     | 422
@@ -217,6 +255,15 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 			return WorkspaceRootAmbiguous(ambiguous.Roots)
 		}
 		return WorkspaceRootAmbiguous(core.WorkspaceRootCandidates())
+	case errors.Is(err, corerrors.ErrCheckpointSchemaRejected):
+		// 171.004-T: legacy-eligible dump rejected by default; the opt-in can
+		// help. Detected with errors.Is here, before serialization, because
+		// handlers return a nil Go error alongside the result.
+		return checkpointSchemaError(op, err, true)
+	case errors.Is(err, corerrors.ErrCheckpointSchemaUnsupported):
+		// 171.004-T: placed before ErrCheckpointUnknownField and friends, whose
+		// sentinels the unsupported error may also wrap as its cause.
+		return checkpointSchemaError(op, err, false)
 	case errors.Is(err, corerrors.ErrCheckpointUnknownField):
 		// Dedicated case (146.012-T / U4b), placed before the general
 		// ErrValidation case: the general ValidationFailed path returns a
