@@ -29,23 +29,25 @@ acquires locks in sorted item-ID order. 200.002-T fixes this order as the single
 rule that ShipShipment (200.005-T) and standalone and cascade `ArchiveItem`
 (200.007-T) follow.
 
-The canonical order is **C before B** for any writer that must hold both locks.
-A writer must not acquire C while it is already holding B for the same item. A
-writer may avoid overlap by completing the B-held mutation before acquiring C for
-a best-effort event append, provided the item-log event remains causally ordered
-with the mutation it records.
+A writer must not acquire C while it is already holding B, unless the call tree
+already holds that C in its context. A writer that records an event for a
+mutation appends it under the C it took before B, so the item-log event stays
+causally ordered with the mutation it records. Releasing B before acquiring C for
+a best-effort event append, the 172.002-T approach, is superseded by 200.007-T
+because it leaves a gap for a concurrent C-then-B writer.
 
 ## Current writer lock order
 
 | Writer | Current order | Notes and bound |
 |---|---|---|
-| `ArchiveItem` | B, released, then C | `lockArchiveGovernance` holds B for the item and cascade set through the file move and DB update. 172.002-T releases the archive governance locks before the best-effort archive event acquires C, so B and C never overlap. The event is appended after the mutation it records, which preserves causal order. |
+| `ArchiveItem` | Lifecycle global, A, C, then B | 200.007-T. `lockArchiveGovernance` takes C for the archive set (the item and, for a cascade, its descendants) in sorted item-ID order between the membership locks and `lockArtifactMutations`. The archive event is appended under that C after the mutation, and the locks are released B first, then C. A C request while B is held and not context-held fails closed. This supersedes 172.002-T, which released B before it acquired C and left a gap for a concurrent C-then-B writer. |
 | `AssociateCommit` | C, then B | The function acquires C before the compensating frontmatter persist. The later persist uses B while C is already held, matching the canonical order. |
 | `RemoveArtifactLink` | B only | The writer loads from Markdown before B and persists through the artifact write path. It does not append an item-log event. 172.005-T guards the persist with `guardArchivedStatusUnchangedSince`. |
 | `BulkUpdateStatus` | Lifecycle global, then B per item | The writer takes the shipment lifecycle global lock, loads each artifact before B, and persists with B. It does not acquire C. 172.006-T guards each persist with `guardArchivedStatusUnchangedSince` and reports stale items through the typed `BulkUpdateResult` conflict details declared by 172.011-T. |
 | Governed reconcile-to-shipped transaction | C, then B | The reconcile path is the governed majority path for shipment repair. It owns the durable item-log event before mutating artifact state. |
 | `ReconcileArchivedLifecycle` | Per-item B, never held across C | 172.003-T removes the batch-wide B. `UnarchiveItem`, the status set step, and `ArchiveItem` each take their own B, and none holds B while acquiring C. The set step re-reads the artifact under B and refuses with `ErrShipmentConflict` when the queued status no longer matches the unarchived status. |
-| `archiveDescendants` cascade | Batch B over parent and descendants, then C per item after release | Cascade locks are gathered ancestor-before-descendant and sorted by lock key through `lockArtifactMutations`. Inner calls reuse context-held B rather than taking a second independent B lock. Cascaded descendants add their `archived` events to a deferred sink carried in context. The outermost `ArchiveItem` drains that sink only after it releases B, so no cascaded event acquires C while the parent's batch B is held. |
+| `archiveDescendants` cascade | C over parent and descendants, then batch B | 200.007-T. The outermost `ArchiveItem` takes C for the whole cascade set in sorted item-ID order, then batch B, which `lockArtifactMutations` sorts by lock key. Inner calls reuse the context-held C and B and never acquire either themselves. Each cascaded child appends its own `archived` event under the reused C right after its mutation, so the deferred event sink is retired. |
+| `ShipShipment` | Lifecycle global, A, C, then B | 200.005-T. Under the lifecycle global lock and the shipment membership lock, ShipShipment takes C for every archive-set item (the shipment, the release scope, the explicit member features, and their descendants) in sorted item-ID order before it takes batch B. Nested `ArchiveItem` calls reuse that C. B is released first, then C. |
 | `UnarchiveItem` (reconcile step) | B only, compare-and-swap | The reconcile path calls `unarchiveItemExpecting`, which re-reads the archived artifact under B and refuses with `ErrShipmentConflict` when `archived_status` no longer matches the value the reconcile plan observed. |
 
 ## Lock-domain decision: reconciliation and membership writers (200.002-T)
@@ -133,9 +135,9 @@ to B must not reorder, duplicate, or drop the event sequence that an operator ca
 read from the item log. If a mutation records an event, the event must remain
 causally attached to the mutation: no event may be visible as completed before
 the guarded mutation exists, and no successful governed mutation may lose its
-required event. The deferred archive event is a documented, bounded exception:
-its append can be reordered relative to a concurrent writer's event, as described
-under Residual and bound.
+required event. Archive events follow the same rule since 200.007-T: they are
+appended under C after the mutation they record, so no concurrent writer's event
+can land between the archive mutation and the archive event.
 Best-effort events, such as archive logging, may continue to warn and skip on log
 failure when that is the existing contract.
 
@@ -165,7 +167,7 @@ deterministically.
 | `AddArtifactLink` | Yes, snapshot-before-lock writer | Already guarded by `guardArchivedStatusUnchangedSince`. |
 | `RemoveArtifactLink` | Yes, snapshot-before-lock writer | Guarded by 172.005-T; GREEN regression in 172.007-T. |
 | `BulkUpdateStatus` | Yes, snapshot-before-lock writer | Guarded with typed conflict population by 172.006-T; GREEN regression in 172.010-T. 172.011-T declares the result fields and 172.012-T surfaces them in the CLI. |
-| `ArchiveItem` | Can stamp or preserve archive provenance | Existing archive reconcile guard preserves non-empty reconciled `archived_status`; Unit 1 handles lock-order risk, not the CAS guard. |
+| `ArchiveItem` | Can stamp or preserve archive provenance | Existing archive reconcile guard preserves non-empty reconciled `archived_status`; Unit 1 handles lock-order risk, not the CAS guard. 200.009-T adds a compare-and-swap guard to the post-archive stash side effect. |
 | `ReconcileArchivedLifecycle` | Writes the governed target `archived_status` | Governed source of truth for the repair, not a clobbering stale writer. The set step is compare-and-set on the queued status (172.003-T). |
 | `archiveDescendants` cascade | Can archive descendants and stamp provenance | Covered by archive governance and cascade ordering; no new CAS guard is planned in this shipment. |
 | `UpdateArtifactWithGate` / direct update path | Can mutate artifacts through locked update flow | Existing shipped-transition and blocked-shipment guards apply. General content-staleness protection is out of scope for this shipment. |
@@ -178,10 +180,37 @@ scope.
 
 ## Residual and bound
 
-* Standalone and cascade `ArchiveItem` calls no longer hold B while acquiring C
-  (172.002-T). Archival under `ShipShipment` is the exception noted below. The archive
-  event append remains best-effort: on log failure it warns and the archive
-  still succeeds.
+### Closed by CY-B
+
+* **ShipShipment B-across-C residual: closed by 200.005-T.** ShipShipment no
+  longer holds batch B while it acquires C. It takes C for its whole archive set,
+  in sorted item-ID order, before B, appends each archive event under C after the
+  mutation, and releases B, then C. The 200.004-T probe, built on
+  `artifactMutationLockBarrierHook` and `itemLogLockBarrierHook`, shows no C
+  acquisition under B during a ship.
+* **Archive event ordering exception: closed by 200.007-T.** Standalone and
+  cascade `ArchiveItem` take C for the archive set before B and append the
+  archive event under C. The deferred event sink is retired, so there is no gap
+  in which a concurrent C-then-B writer can append its event between the archive
+  mutation and the archive event. The 200.006-T test forces that interleaving
+  with the existing barrier hooks. A C request made while B is held, for a C the
+  call tree does not already hold, fails closed with an error.
+* **Post-archive side-effect residual: closed by 200.009-T.** The linked-stash
+  archive that follows the archive commit is a compare-and-swap guarded side
+  effect. Under the item's artifact-mutation lock it re-reads the item from
+  Markdown and refuses the stash update when the item is no longer archived with
+  the provenance this archive stamped. The 200.008-T test injects a concurrent
+  unarchive through the post-archive hook point. A hook-queue append failure is
+  unchanged: post-archive hooks stay non-fatal.
+* **Reconciliation versus membership writers: closed by 200.003-T as not
+  needed.** See the lock-domain decision above.
+
+### Remaining bounds
+
+* The archive event append remains best-effort: on log failure it warns and the
+  archive still succeeds. The faultline declaration reflects this since
+  200.012-T, which marks EventsJSONL conditional for `CreateItem` and
+  `ArchiveItem`.
 * `ReconcileArchivedLifecycle` no longer holds a batch-wide B (172.003-T). Its
   remaining bound is the window between the compare-and-set status step and the
   re-archive. Another writer can change the queued status inside that window.
@@ -195,19 +224,11 @@ scope.
   status set, and re-archive steps are each individually guarded, but another
   writer can interleave between them. Conflicts are reported per item and
   recorded as reconciliation conflict events rather than prevented.
-* Releasing B before acquiring C introduces a small gap. A second writer can
-  mutate the item between the archive mutation and its deferred event append, so
-  two events for the same item can be appended in a different order than the
-  mutations ran. Each event still describes a mutation that already happened.
-* Post-archive hooks and stash side effects run after the governance locks are
-  released. They are not serialized against concurrent writers.
+* Post-archive hooks run after the governance locks are released and are not
+  serialized against concurrent writers. Only the stash side effect is guarded.
 * Cascaded child hooks run while the parent's batch B is still held. A hook that
   takes C, or a B for an item outside the cascade set, would reintroduce an
   inversion. No current hook does this.
-* `ShipShipment` holds the lifecycle global lock and the batch B for its members
-  while archival acquires C, so B-then-C ordering still applies on that path.
-  This predates 153-S and is outside the B and C reorder scope; moving it to the
-  deferred event sink is tracked as follow-up work.
 * Future snapshot-before-lock writers that can persist `archived_status` must opt
   into `guardArchivedStatusUnchangedSince` or an equivalent source-of-truth
   Markdown comparison before shipment 153-S can claim the class is closed.
