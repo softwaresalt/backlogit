@@ -47,7 +47,7 @@ because it leaves a gap for a concurrent C-then-B writer.
 | Governed reconcile-to-shipped transaction | C, then B | The reconcile path is the governed majority path for shipment repair. It owns the durable item-log event before mutating artifact state. |
 | `ReconcileArchivedLifecycle` | Per-item B, never held across C | 172.003-T removes the batch-wide B. `UnarchiveItem`, the status set step, and `ArchiveItem` each take their own B, and none holds B while acquiring C. The set step re-reads the artifact under B and refuses with `ErrShipmentConflict` when the queued status no longer matches the unarchived status. |
 | `archiveDescendants` cascade | C over parent and descendants, then batch B | 200.007-T. The outermost `ArchiveItem` takes C for the whole cascade set in sorted item-ID order, then batch B, which `lockArtifactMutations` sorts by lock key. Inner calls reuse the context-held C and B and never acquire either themselves. Each cascaded child appends its own `archived` event under the reused C right after its mutation, so the deferred event sink is retired. |
-| `ShipShipment` | Lifecycle global, A, C, then B | 200.005-T. Under the lifecycle global lock and the shipment membership lock, ShipShipment takes C for every archive-set item (the shipment, the release scope, the explicit member features, and their descendants) in sorted item-ID order before it takes batch B. Nested `ArchiveItem` calls reuse that C. B is released first, then C. |
+| `ShipShipment` | Lifecycle global, A, C, then B | 200.005-T. Under the lifecycle global lock and the shipment membership lock, ShipShipment takes C for every archive-set item (the shipment, the release scope, and the explicit member features; unlisted descendants are not locked because nothing archives them or appends events for them) in sorted item-ID order before it takes batch B. Nested `ArchiveItem` calls are non-cascading, so each one's scope is its own item and reuses that C. B is released first, then C. |
 | `UnarchiveItem` (reconcile step) | B only, compare-and-swap | The reconcile path calls `unarchiveItemExpecting`, which re-reads the archived artifact under B and refuses with `ErrShipmentConflict` when `archived_status` no longer matches the value the reconcile plan observed. |
 
 ## Lock-domain decision: reconciliation and membership writers (200.002-T)
@@ -90,7 +90,8 @@ mutation. They release B first and then C.**
 * The C set is computed from the same scope-ID snapshot that sizes B. For
   standalone `ArchiveItem` that is the target item. For cascade `ArchiveItem` it
   is the target and every descendant. For `ShipShipment` it is the shipment, the
-  release scope, the explicit member features, and their descendants.
+  release scope, and the explicit member features. It is flat: it never includes
+  unlisted descendants.
 * Where a writer already holds C in its context, the nested acquisition is a
   reuse and is not a new lock request. A nested `ArchiveItem` under a
   `ShipShipment` or a cascade parent reuses the context-held C.
@@ -259,16 +260,16 @@ touched, and the B4 probe asserts its C is never requested. `ShipShipment` does
 not write `returned_to_backlog` events; only the doctor reads them. No C set
 change was needed.
 
-### Stale-descendant race
+### Stale-descendant race (retired for ShipShipment)
 
-A child created after `shipItemLogScopeIDs` snapshots the C set but before the
-nested `ArchiveItem` computes its scope makes that scope larger than the held C.
-The nested call fails closed before any mutation, with an error that wraps
-`errArchiveScopeChanged` ("archive item-log lock set incomplete ... retry if transient") and
-`errItemLogLockUnderArtifactLocks`. The failure leaves the archive untouched;
-the caller retries `ShipShipment`, which recomputes the C set. The window is not
-closed by redesign.
-
+The C set is flat, and the nested `ArchiveItem` calls made by `archiveItems`
+do not cascade, so each nested archive scope is exactly its own item, which is
+already in the C set. A child created during a ship therefore cannot enlarge
+the nested scope, and a busy item-log lock on an unlisted descendant neither
+delays nor fails `ShipShipment`
+(`TestShipShipment_LockedUnlistedDescendantItemLogDoesNotBlockShip`). The
+fail-closed `errArchiveScopeChanged` path still guards any caller that holds B
+without the matching C.
 ### Probe soundness
 
 The B4 probe detects a held B with `lockTaskFile`, which first calls
