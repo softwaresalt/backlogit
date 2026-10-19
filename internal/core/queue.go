@@ -129,7 +129,7 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 
 	// Filter out items with unresolved dependencies (dependency-aware queue).
 	if len(items) > 0 {
-		items, err = filterByResolvedDependencies(ctx, db, items)
+		items, err = filterByResolvedDependencies(ctx, db, items, filter.shipmentPredecessorResolver)
 		if err != nil {
 			return nil, fmt.Errorf("filter queue by resolved dependencies: %w", err)
 		}
@@ -511,11 +511,17 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 // dependencies have not yet stopped blocking. A dependency stops blocking when its
 // status is no-longer-blocking (the 6-status cascade set: done, accepted, archived,
 // shipped, abandoned, rejected), evaluated via IsNoLongerBlockingStatus.
-func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items []*models.Artifact) ([]*models.Artifact, error) {
+//
+// A shipment `blocks` edge onto another shipment is stricter: it releases only
+// when the indexed status is shipped or the resolver reports the predecessor
+// shipped. Without a resolver, an archived shipment predecessor stays blocking.
+func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items []*models.Artifact, resolver func(context.Context, string) (bool, string, error)) ([]*models.Artifact, error) {
 	// Build a set of all item IDs and their statuses from the current result set.
 	statusMap := make(map[string]string)
+	typeMap := make(map[string]string)
 	for _, item := range items {
 		statusMap[item.ID] = string(item.Status)
+		typeMap[item.ID] = item.ArtifactType
 	}
 
 	result := make([]*models.Artifact, 0, len(items))
@@ -533,14 +539,16 @@ func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items [
 		for _, dep := range deps {
 			// Check if the dependency is in a terminal state.
 			depStatus := ""
+			depType := ""
 			if s, ok := statusMap[dep.DependsOn]; ok {
 				depStatus = s
+				depType = typeMap[dep.DependsOn]
 			} else {
 				// Look up from DB if not in current result set.
-				var s sql.NullString
-				if scanErr := database.QueryRowContext(ctx, "SELECT status FROM items WHERE id = ?", dep.DependsOn).Scan(&s); scanErr != nil {
+				var s, at sql.NullString
+				if scanErr := database.QueryRowContext(ctx, "SELECT status, artifact_type FROM items WHERE id = ?", dep.DependsOn).Scan(&s, &at); scanErr != nil {
 					if errors.Is(scanErr, sql.ErrNoRows) {
-						s = sql.NullString{}
+						s, at = sql.NullString{}, sql.NullString{}
 					} else {
 						return nil, fmt.Errorf("look up dependency status for %s (dependency of %s): %w", dep.DependsOn, item.ID, scanErr)
 					}
@@ -548,8 +556,29 @@ func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items [
 				if s.Valid {
 					depStatus = s.String
 				}
+				if at.Valid {
+					depType = at.String
+				}
 			}
-			if isExecutionBlockingDependency(dep.DepType) && !IsNoLongerBlockingStatus(depStatus) {
+			if !isExecutionBlockingDependency(dep.DepType) {
+				continue
+			}
+			if item.ArtifactType == "shipment" && depType == "shipment" && strings.ToLower(strings.TrimSpace(dep.DepType)) == "blocks" {
+				released := depStatus == string(models.StatusShipped)
+				if !released && resolver != nil {
+					shipped, _, rerr := resolver(ctx, dep.DependsOn)
+					if rerr != nil {
+						return nil, fmt.Errorf("resolve shipment predecessor %s of %s: %w", dep.DependsOn, item.ID, rerr)
+					}
+					released = shipped
+				}
+				if !released {
+					blocked = true
+					break
+				}
+				continue
+			}
+			if !IsNoLongerBlockingStatus(depStatus) {
 				blocked = true
 				break
 			}
@@ -560,7 +589,6 @@ func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items [
 	}
 	return result, nil
 }
-
 func isExecutionBlockingDependency(depType string) bool {
 	switch strings.ToLower(strings.TrimSpace(depType)) {
 	case "blocks", "parent_of", "relates_to":
