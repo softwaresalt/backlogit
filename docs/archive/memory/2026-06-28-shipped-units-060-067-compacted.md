@@ -107,7 +107,7 @@ archive commit was `35dae96f`. The feature had stale `active` status, but
 `ComputeParentStatus` resolved it to `done`, so closure moved it through the
 normal lifecycle rather than forcing state.
 
-Durable closure pointer: `docs/closure/2026-06-25-066-s-root-id-conflict-integrity-closure.md`.
+Durable closure pointer: `docs/archive/closure/2026-06-25-066-s-root-id-conflict-integrity-closure.md`.
 
 ### Key decisions
 
@@ -144,7 +144,7 @@ Durable closure pointer: `docs/closure/2026-06-25-066-s-root-id-conflict-integri
 `8411a0b8`. Adjacent shipment `061-S` was explicitly verified queued and
 untouched.
 
-Durable closure pointer: `docs/closure/2026-06-27-060-S-shipment-state-integrity-closure.md`.
+Durable closure pointer: `docs/archive/closure/2026-06-27-060-S-shipment-state-integrity-closure.md`.
 
 ### Key decisions
 
@@ -183,7 +183,7 @@ offset was confirmed benign and left intact. Implementation PR #145 merged as
 artifacts, and opened closure PR #146 on
 `post-merge/062-metadata-section-sync-integrity`.
 
-Durable closure pointer: `docs/closure/2026-06-27-061-S-metadata-section-sync-integrity-closure.md`.
+Durable closure pointer: `docs/archive/closure/2026-06-27-061-S-metadata-section-sync-integrity-closure.md`.
 
 ### Key decisions
 

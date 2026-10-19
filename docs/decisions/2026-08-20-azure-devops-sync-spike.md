@@ -14,7 +14,7 @@ docline:
     linked_parent_work_item: null
     promoted_to:
         - "plan"
-    plan_artifact: docs/exec-plans/2026-08-20-azure-devops-sync-plan.md
+    plan_artifact: docs/archive/plans/2026-08-20-azure-devops-sync-plan.md
     tags:
         - "azure-devops"
         - "integration"
@@ -736,7 +736,7 @@ dependency (`blackfriday/v2`) and adds no new external dependency.
 ## Next Steps
 
 1. Implementation plan at
-   `docs/exec-plans/2026-08-20-azure-devops-sync-plan.md`, written as part of
+   `docs/archive/plans/2026-08-20-azure-devops-sync-plan.md`, written as part of
    this spike's promotion path.
 2. Confirm the six external unknowns against a scratch Azure DevOps project
    during the client implementation phase; record the results in the plan's

@@ -32,7 +32,7 @@ changed is the binary → clean second-shipment proof the fix is real.
 | `backlogit shipment ship 083-S` | ✅ exit 0 — shipped, 11 items archived, none returned |
 | 083-S | ✅ `archived` |
 | Post-gate reconcile | ✅ PASS — all 11 items in `.backlogit/archive/`, no queue residue, P-007 clean |
-| Closure doc | `docs/closure/2026-07-07-083-S-post-merge-closure-RESOLVED.md` |
+| Closure doc | `docs/archive/closure/2026-07-07-083-S-post-merge-closure-RESOLVED.md` |
 | compound-refresh | updated `2026-07-06-ancestor-aware-shipment-gate-staleness.md` with 083-S original-exposure cross-ref |
 | Closure PR | pending push + PR creation (branch `post-merge/083-S-reclose`) |
 

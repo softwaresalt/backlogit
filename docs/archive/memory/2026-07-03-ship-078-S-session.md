@@ -74,7 +74,7 @@
 - **Copilot review**: 6 threads resolved across 2 review-fix cycles:
   - Cycle 1 (8a7f8d4): docs_lint `--profile`, docs_migrate `--apply --yes`, docs_scope `--format` added; compound-doc ref fixed (docs/compound/go-patterns/). 3 auto-resolved (outdated) + 1 replied/resolved.
   - Cycle 2 (9dcf510/0ea9ea2): (A) reverted docs_migrate to safe plan-only form — `--apply --yes` was higher blast radius than MCP apply=false default; apply kept as documented gated escalation. (B) deliberation-doc location drift → NOT editable by Ship (P-010); routed to Stage as stash 2827CB5F.
-- **Runtime-verification**: PASS — docs/closure/2026-07-03-078-S-cli-mcp-command-parity-runtime-verification.md (U3 shipment add, U4 list items normalization, U6 checkpoint create all verified in scratch workspace built from HEAD)
+- **Runtime-verification**: PASS — docs/archive/closure/2026-07-03-078-S-cli-mcp-command-parity-runtime-verification.md (U3 shipment add, U4 list items normalization, U6 checkpoint create all verified in scratch workspace built from HEAD)
 - **§1.9 pre-merge gate**: Check1 (no pending)=pass, Check3 (0 unresolved Copilot threads)=pass; Check2 (freshness) required a fresh Copilot review on final HEAD — re-requested; see report for final outcome.
 - **Follow-ups stashed**: 2827CB5F (deliberation-record reconciliation, kind=deliberation, for Stage)
 - **HALT**: merge-ready, awaiting explicit operator merge approval (P-014 / Principle VII). DID NOT MERGE.
@@ -87,7 +87,7 @@
 - **Reconcile**: pre PROCEED (15 pre-archived, 0 orphans) · post PROCEED (15 items + 078-S present, status archived). Reports in .backlogit/reconcile/. P-007: no archive deletions.
 - **Closure branch**: `post-merge/078-cli-mcp-command-parity` (from main@e2ab16c). Archival committed e454cd2.
 - **Knowledge graduation**: NEW compound entry docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md (lint-clean, 4 rules) + compound-refresh report (existing parity entries = keep). Discoverability design doc already on main.
-- **Post-merge closure artifact**: docs/closure/2026-07-03-078-S-cli-mcp-command-parity-post-merge-closure.md (lint-clean).
+- **Post-merge closure artifact**: docs/archive/closure/2026-07-03-078-S-cli-mcp-command-parity-post-merge-closure.md (lint-clean).
 - **Source artifacts**: 078-F has no source_stash_id/source_deliberation_id (no-op retirement). Originating stash E16F4664 + folded 7ECBAC7E already retired by Stage. Deliberation record LEFT for Stage (stash 2827CB5F) per operator + P-010.
 - **Compact-context**: assessed (18 files / 82.5 KB; 078 unit = 1 file) → below all thresholds, no compaction.
 - **Branch cleanup**: remote feat/078-cli-mcp-command-parity deleted by --delete-branch; local deleted.

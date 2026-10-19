@@ -44,7 +44,7 @@ The run preserved every current or unfinished-work checkpoint, including:
 * `docs/memory/2026-09-03-stage-pr404-405-remediation-closure.md`
 * `docs/memory/2026-09-03/134-s-gate-registration-session-memory.md`
 * `docs/memory/2026-09-05-stage-s4-138s-replan-closure.md`
-* `docs/memory/2026-08-20/azure-devops-sync-design-memory.md`
+* `docs/archive/memory/2026-08-20/azure-devops-sync-design-memory.md`
 
 The protected older files either describe unfinished queued or blocked work or
 remain active design context. No active task checkpoint was compacted.

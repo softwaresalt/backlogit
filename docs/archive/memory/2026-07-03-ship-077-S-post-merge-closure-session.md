@@ -28,8 +28,8 @@
    queue→archive `D` moves, zero archive deletions.
 6. `backlogit doctor`: only pre-existing unrelated orphan `016.001-R`; no new orphans/dups.
 7. Wrote + lint-clean (docline, 0 violations):
-   - docs/closure/2026-07-03-077-S-shipment-items-normalization-runtime-verification.md
-   - docs/closure/2026-07-03-077-S-shipment-items-normalization-post-merge-closure.md
+   - docs/archive/closure/2026-07-03-077-S-shipment-items-normalization-runtime-verification.md
+   - docs/archive/closure/2026-07-03-077-S-shipment-items-normalization-post-merge-closure.md
 8. Knowledge graduation: NO new compound / no duplicate — never-null + single-shaper invariants
    already in exported-cache-zero-value-bypass + 075-S covering-feature closure.
 9. Compact-context: assessed, no compaction (below all thresholds).

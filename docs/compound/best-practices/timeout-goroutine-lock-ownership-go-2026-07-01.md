@@ -145,5 +145,5 @@ event the timeout actually bounds.
 
 * `best-practices/advisory-file-lock-stale-ttl-go-2026-04-08.md` — the sidecar
   lock + stale-TTL mechanism this ownership model builds on.
-* `docs/closure/2026-06-30-071-S-deterministic-gates-slice-closure.md` — the
+* `docs/archive/closure/2026-06-30-071-S-deterministic-gates-slice-closure.md` — the
   frozen `doctor --target` exit-code contract (0/1/2/3/4) this pattern protects.

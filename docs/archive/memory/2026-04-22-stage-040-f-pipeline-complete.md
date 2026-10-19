@@ -17,7 +17,7 @@ Completed the full Stage pipeline for feature 040-F (Write Durability and Hook R
 
 | Artifact | Path/ID |
 |---|---|
-| Implementation plan | `docs/exec-plans/2026-04-22-write-durability-hook-reliability-plan.md` |
+| Implementation plan | `docs/archive/plans/2026-04-22-write-durability-hook-reliability-plan.md` |
 | Shipment | 041-S (queued) |
 | Feature link | 040-F → informs → 041-S |
 | Session memory | This file |

@@ -73,8 +73,8 @@ mandatory post-merge closure. **COMPLETE.** 118-S explicitly NOT started.
   updated across review rounds to reflect final implementation reality.
 * `docs/compound/security-issues/` (new dir), `docs/compound/concurrency-issues/`
   (new dir) — 3 new compound learnings graduated from this review cycle.
-* `docs/closure/2026-08-09-117-S-formal-gate-f1-runtime-verification.md`,
-  `2026-08-09-117-S-formal-gate-f1-closure.md`,
+* `docs/archive/closure/2026-08-09-117-S-formal-gate-f1-runtime-verification.md`,
+  `docs/archive/closure/2026-08-09-117-S-formal-gate-f1-closure.md`,
   `2026-08-09-117-S-compound-refresh.md` — closure artifacts.
 * `.backlogit/queue/106.032-T.md`, `106.033-T.md`,
   `.backlogit/reconcile/117-S-{pre,post}-*.md` — backlog/reconcile state.

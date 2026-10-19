@@ -104,7 +104,7 @@ Two distinct shipment-lifecycle defects shipped together as "Shipment State Inte
   (`internal/core/shipment_atomic_test.go`, `shipment_state_integrity_test.go`).
 - Live production-path confirmation: `shipment ship 060-S` returned `returned_ids: []`
   (no item left torn) and archived the full manifest cleanly (merge `7a51904b`, PR #143).
-- Closure: `docs/closure/2026-06-27-060-S-shipment-state-integrity-closure.md`.
+- Closure: `docs/archive/closure/2026-06-27-060-S-shipment-state-integrity-closure.md`.
 - Plan: `docs/exec-plans/2026-05-22-shipment-state-integrity-plan.md`.
 
 ## Applicability

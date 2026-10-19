@@ -19,7 +19,7 @@ compaction_status: done
 # governance ratification has been received — see "Pending Operator Action"
 # below for why this is not conflated with closure_status.
 operator_ratification_status: pending_167.015-T
-description: "Topology gate registration for 148-S/167-F post-merge closure — machine-readable predecessor-closure record. Authoritative narrative evidence is in docs/closure/2026-09-13-148-s-operational-closure.md."
+description: "Topology gate registration for 148-S/167-F post-merge closure — machine-readable predecessor-closure record. Authoritative narrative evidence is in docs/archive/closure/2026-09-13-148-s-operational-closure.md."
 doc_type: closure
 docline:
   backlogit:
@@ -51,7 +51,7 @@ was blocked pending 147-S's own closure.
 
 The full narrative closure record (validator evidence, releasability assessment,
 follow-up stash-entry table, and the `167.015-T` ratification request) lives in
-`docs/closure/2026-09-13-148-s-operational-closure.md`. This file satisfies only the
+`docs/archive/closure/2026-09-13-148-s-operational-closure.md`. This file satisfies only the
 gate's filename pattern and required frontmatter fields; it does not supersede or
 weaken that evidence.
 

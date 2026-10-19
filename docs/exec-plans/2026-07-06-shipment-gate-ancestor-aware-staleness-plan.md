@@ -11,7 +11,7 @@ title: 'Ancestor-aware shipment member-evidence staleness check'
 
 **Source deliberation:** `docs/decisions/2026-07-06-shipment-gate-ancestor-aware-staleness-deliberation.md`
 **Stash:** `885A7F65` (medium/bug)
-**Prior art:** `docs/closure/2026-07-06-083-S-post-merge-closure-BLOCKED.md`,
+**Prior art:** `docs/archive/closure/2026-07-06-083-S-post-merge-closure-BLOCKED.md`,
 `docs/compound/2026-07-06-autoharness-gate-broker-integration-contract.md`,
 `docs/compound/2026-07-06-external-process-timeout-before-probe.md`,
 `docs/compound/2026-07-06-exec-binary-config-must-be-bare-path-validated.md`
@@ -390,7 +390,7 @@ read from evidence JSONL).
 * `docs/compound/2026-07-06-autoharness-gate-broker-integration-contract.md` — the shipment
   member scan contract; the one-way `core → gate` boundary; the injected-runner principle scoped
   to the autoharness seam (not core's own git helpers).
-* `docs/closure/2026-07-06-083-S-post-merge-closure-BLOCKED.md` — the reproduction, the nine
+* `docs/archive/closure/2026-07-06-083-S-post-merge-closure-BLOCKED.md` — the reproduction, the nine
   ancestor SHAs, and the "no supported bypass / do not force" boundary.
 * `.github/instructions/strict-safety.instructions.md`, `.github/instructions/go.instructions.md`.
 

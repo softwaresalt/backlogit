@@ -71,7 +71,7 @@ closure. The verbose originals are archived under
 Two equally aged notes stay in place because live closure records link to
 them:
 
-* `docs/memory/2026-09-08-ship-138s-compact-context.md`, linked from
-  `docs/closure/138-S-156-F-post-merge-closure.md`
-* `docs/memory/2026-08-20/azure-devops-sync-design-memory.md`, linked from
-  `docs/closure/2026-09-11-140-s-p020-compact-context-report.md`
+* `docs/archive/memory/2026-09-08-ship-138s-compact-context.md`, linked from
+  `docs/archive/closure/138-S-156-F-post-merge-closure.md`
+* `docs/archive/memory/2026-08-20/azure-devops-sync-design-memory.md`, linked from
+  `docs/archive/closure/2026-09-11-140-s-p020-compact-context-report.md`

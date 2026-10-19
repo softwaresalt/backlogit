@@ -76,7 +76,7 @@ this bounded-fuzz pattern recurs or becomes a reusable contract.
 
 * PR [#436](https://github.com/softwaresalt/backlogit/pull/436)
 * `docs/closure/2026-09-11-140-s-158-f-pr-436-closure.md`
-* `docs/closure/2026-09-11-140-s-pr-436-runtime-verification.md`
+* `docs/archive/closure/2026-09-11-140-s-pr-436-runtime-verification.md`
 * `internal/faultline/compatcorpus/declarations_shape_test.go`
 * `internal/faultline/compatcorpus/fuzz_test.go`
 * `internal/faultline/compatcorpus/fuzz_hardening_test.go`

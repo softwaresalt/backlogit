@@ -46,7 +46,7 @@ title: "Ship — PR #373 merge and 129-S / 146-F post-merge closure"
   auto-archived on terminal-status transition, per workspace convention).
 * `.backlogit/hooks_queue.jsonl` — append-only event log entry for the 146-F status change.
 * `.backlogit/reconcile/129-S-pre-20260822-192054.md` — pre-ship reconciliation report.
-* `docs/closure/2026-08-22-146-f-129-s-runtime-verification.md` — runtime verification
+* `docs/archive/closure/2026-08-22-146-f-129-s-runtime-verification.md` — runtime verification
   (PASS) for both defect fixes.
 * `docs/closure/2026-08-22-146-f-129-s-closure.md` — full operational closure artifact,
   including the shipment-gate blocker analysis and READY WITH CONDITIONS verdict.

@@ -17,7 +17,7 @@ title: 072-S doctor --target nil-HeaderDef — Pre-Merge Operational Closure
 - **Mode**: `pre-merge`
 - **Shipment**: `072-S` · Feature `072-F` · Task `072.001-T`
 - **PR**: #158 (`feat/072-doctor-target-nil-headerdef` → `main`)
-- **Verification report**: `docs/closure/2026-07-01-072-S-doctor-nil-headerdef-runtime-verification.md`
+- **Verification report**: `docs/archive/closure/2026-07-01-072-S-doctor-nil-headerdef-runtime-verification.md`
 - **Readiness**: **READY** (pending operator P-014 merge approval + branch-protection approving review)
 
 ## Change summary

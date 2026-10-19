@@ -30,7 +30,7 @@ title: "097-S Ship closure — session memory"
 * NEW `internal/docline/schema_contract_test.go` (4 subtests)
 * NEW `docs/decisions/2026-07-16-docline-backlogit-owner-profile-model-a-decision.md`
 * MOD `docs/docline-frontmatter-authoring-guide.md`
-* NEW `docs/closure/2026-07-16-097-S-ship-closure.md`
+* NEW `docs/archive/closure/2026-07-16-097-S-ship-closure.md`
 * NEW `docs/compound/2026-07-16-jsonschema-default-nonenforcing-and-base-union-narrowing.md`
 * Backlog state: `097-S` + `052-DL` queue→archive; member archive status stamps.
 

@@ -58,7 +58,7 @@ Restored (CRLF-only noise, not content changes):
 
 ## Session Work Plan
 
-1. Create docs/closure/2026-08-28-130-s-closure.md (operational closure document)
+1. Create docs/archive/closure/2026-08-28-130-s-closure.md (operational closure document)
 2. Stage all real changes (archives + hooks_queue)
 3. Commit: chore(harness): archive 147-F deliverables and ship 130-S post-merge closure
 4. Push branch chore/130-s-post-merge-closure to origin

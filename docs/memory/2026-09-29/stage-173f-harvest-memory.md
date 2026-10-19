@@ -86,7 +86,7 @@
 * `backlogit_doctor` (full, `check_partial_mutations`): 23 `orphaned_artifact`
   findings (`016.001-R`, `106.012-T`..`106.033-T`), all pre-existing and
   unrelated (same 23 recorded in
-  `docs/memory/2026-09-16/stage-155s-hooks-trace-repair-memory.md` and
+  `docs/archive/memory/2026-09-16/stage-155s-hooks-trace-repair-memory.md` and
   `docs/memory/2026-09-26/stage-cb8887af-e1-e5-harvest.md`); no partial-mutation
   findings.
 * Targeted doctor: `154-S`, `173-F`, `173.001/003/005/006/007/008/009-T`,

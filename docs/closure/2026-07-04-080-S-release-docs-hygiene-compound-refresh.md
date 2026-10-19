@@ -56,4 +56,4 @@ caveat, not a durable engineering learning, so it is intentionally **not** promo
 - Security Reviewer confirmed SHA pins intact, `contents: read` + `persist-credentials: false`
   preserved, secret handled via boolean-only `$GITHUB_OUTPUT`.
 - Runtime verification PASS WITH FOLLOW-UP:
-  `docs/closure/2026-07-04-080-S-release-docs-hygiene-runtime-verification.md`.
+  `docs/archive/closure/2026-07-04-080-S-release-docs-hygiene-runtime-verification.md`.

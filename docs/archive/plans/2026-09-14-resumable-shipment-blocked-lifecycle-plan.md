@@ -5014,8 +5014,8 @@ Revision history:
 * **Evidence.** The evidence is Ship-owned and was uncommitted at `3a240fe0`; each finding is restated below, so this
   section is self-contained:
   * `docs/closure/2026-09-25-155-S-final-review.md`
-  * `docs/memory/2026-09-25/ship-155s-final-review-halt.md`
-  * `docs/memory/2026-09-25/ship-155s-remediation-stage-handoff.md`
+  * `docs/archive/memory/2026-09-25/ship-155s-final-review-halt.md`
+  * `docs/archive/memory/2026-09-25/ship-155s-remediation-stage-handoff.md`
 * **Findings** (line numbers at `3a240fe0`):
 
 | ID | Location | Defect |

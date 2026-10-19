@@ -146,5 +146,5 @@ verify no caller depended on those paths being unclassified.
 - `internal/core/durable_fs.go` — thin wrapper with `ErrWriteNotApplied` at boundary.
 - `internal/events/stream.go` — nil-safe `syncDir` closure, fallback to `fsutil.FsyncDir`.
 - PR #318, merge commit `899b70e2`, feature 131-F, shipment 112-S.
-- Closure: `docs/closure/2026-07-29-112-S-fsutil-leaf-extraction-closure.md`.
+- Closure: `docs/archive/closure/2026-07-29-112-S-fsutil-leaf-extraction-closure.md`.
 - Deliberation: `docs/decisions/2026-07-29-fsutil-durable-mkdir-extraction-deliberation.md`.

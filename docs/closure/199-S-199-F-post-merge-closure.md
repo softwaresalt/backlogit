@@ -3,9 +3,9 @@ chunk_strategy: h1-h2-h3
 # closure_status and compaction_status MUST stay at the top level: the pipeline-topology
 # gate reads them with fm.get(). conditions entries are gate input (satisfied: true with
 # non-empty evidence). Open follow-ups are non-gating and live in the body, not here.
-closure_status: BLOCKED
-compaction_status: degraded
-description: "199-S (CY-A: harden lifecycle errors and blocked-envelope boundaries) post-merge closure for PR #498, merge commit 1f25d10daed74ce209a1f14ec7160041bb0a4b6e. BLOCKED pending operator decisions: the Stage-governed close-evidence exception is satisfied, but the P-020 target-all compaction postcondition is not met and an agent-initiated lock release with --force (P-005) awaits operator ratification. Same harness-drift class as 197-S and 198-S; tracked under 3FF72EB8 and 73B7C429."
+closure_status: READY_WITH_CONDITIONS
+compaction_status: done
+description: "199-S (CY-A: harden lifecycle errors and blocked-envelope boundaries) post-merge closure for PR #498, merge commit 1f25d10daed74ce209a1f14ec7160041bb0a4b6e. READY_WITH_CONDITIONS: the Stage-governed close-evidence exception is satisfied, the operator ratified the agent-initiated lock release (A1), and a full P-020 target-all compaction pass completed (A2, compaction_status done). Same harness-drift class as 197-S and 198-S; tracked under 3FF72EB8 and 73B7C429."
 doc_type: closure
 docline:
   date: 2026-10-15T19:40:00Z
@@ -42,14 +42,22 @@ conditions:
     owner: Stage
     evidence: "STAGE_EXCEPTION_RATIFIED (Option A, dark-mode P-017 scope 199-S, 2026-10-15T19:28:00Z): No docs/closure/evidence/199-S-199-F-close-evidence.json record or close_path/close_evidence frontmatter key exists because the live installed backlogit harness (.github/agents/_ship.agent.md, .github/skills/shipment-reconcile/SKILL.md, .github/skills/operational-closure/SKILL.md) uses flat-manifest backlogit_ship_shipment (155-S / 197-S deliberate drift in .autoharness/harness-manifest.yaml) and has not adopted the .autoharness/staging/ 192-F autoharness shipment cascade-close --classify-only pre-close step (tracked under 3FF72EB8 and 73B7C429; docs/closure/evidence/ is empty across the repo, and 197-S and 198-S closed under the same posture). Post-hoc cascade-close --classify-only refuses because 199-S is already archived (archived_status: shipped); no evidence record or close_path key is fabricated or backfilled. Compensating evidence verified: (1) PR #498 merged as merge commit 1f25d10daed74ce209a1f14ec7160041bb0a4b6e from reviewed HEAD e7961c8d7d480aef54ce6f62dcd3b045ad11f296; (2) local review READY_WITH_FOLLOWUPS (P0=0, P1=0), adversarial review READY (P0=0, P1=0), copilot-review gate SATISFIED, all 7 required CI checks green, unfiltered go test -count=1 -timeout=30m ./... exit 0 (40 packages); (3) GI/GR shipment-reconcile reports .backlogit/reconcile/199-S-pre-20261015T190500Z.md (PROCEED), .backlogit/reconcile/199-S-safe-close-20261015T192000Z.md (CLOSED), and .backlogit/reconcile/199-S-post-20261015T192500Z.md (PROCEED); (4) all 11 archive records (.backlogit/archive/199-S.md, 199-F.md, 199.001-T.md..199.009-T.md) carry commit 1f25d10daed74ce209a1f14ec7160041bb0a4b6e and doctor check_shipped_event_completeness reports 0 findings for 199-S; (5) topology._closure_artifact_complete and discoverability pass."
   - id: compaction-p020
-    description: "compact-context runs with target: all at this closure (P-020) and compaction_status is finalized to done or degraded. The 2026-10-15 memory-only run does not meet the target: all postcondition, so this condition stays unsatisfied until a target-all pass or a recorded waiver."
-    satisfied: false
-    evidence: "P-020 requires compact-context with target: all at every post-merge closure. The 2026-10-15 invocation was memory-only and bounded (7 originals archived, 28 with incoming references retained in place, 17 skipped, closure and plan targets not assessed), so the postcondition is not met. compaction_status is degraded. Operator decision required: a full target-all pass, or an explicit waiver. See the Compaction section."
+    description: "compact-context runs with target: all at this closure (P-020) and compaction_status is finalized to done or degraded."
+    satisfied: true
+    actor: ship
+    attested_at: "2026-10-18T23:55:00Z"
+    evidence: "Operator decision A2 (actor operator softwaresalt, 2026-10-18T23:48:00Z): perform a full P-020 compaction with target: all. A full pass ran on branch chore/199-S-closure-repair: memory 55 candidates assessed (8 archived, 47 retained: 21 reference queued or blocked items, 26 referenced from .backlogit/), plans 131 assessed (6 consolidated into decided-plans and archived, 125 retained: non-terminal items, already decided-plans, or incoming references from .backlogit/), closure 142 assessed (109 archived into four monthly closure summaries, 33 retained). 123 files moved to docs/archive/{memory,plans,closure}/ by rename, zero deletions, 92 live docs references updated to archived paths, nothing outside docs/ changed, and files with .backlogit/ incoming references were left in place (stash BDDB9F9C lesson). Summaries (script-extracted, originals remain authoritative) carry traceability tables. compaction_status is done."
+  - id: force-release-ratified
+    description: "The agent-initiated release of .backlogit/queue/.199-S.md.agent-lock with --force (P-005) is ratified by the operator."
+    satisfied: true
+    actor: operator softwaresalt
+    attested_at: "2026-10-18T23:48:00Z"
+    evidence: "Operator decision A1, received verbatim in the 2026-10-18 dark-mode closure-repair dispatch: 'the agent-initiated --force release of .backlogit/queue/.199-S.md.agent-lock (P-005) is RATIFIED by the operator.' Actor operator softwaresalt, timestamp 2026-10-18T23:48:00Z. The release itself was initially an agent-initiated P-005 violation and the post-mode reconcile report remains an unmodified historical snapshot; the ratification is recorded here and does not rewrite history."
 ---
 
 # 199-S (CY-A: harden lifecycle errors and blocked-envelope boundaries) post-merge closure
 
-Status: `BLOCKED` (operator decisions pending; see Closure PR status). Every shipment-side condition is satisfied, and the missing 192-F `close-evidence` JSON record is governed by a documented Stage exception (Option A, matching the `197-S` and `198-S` closure precedent) without fabricating or backfilling evidence. `compact-context` ran for memory only, as a bounded batch, which does not meet the P-020 `target: all` postcondition (`compaction_status: degraded`; see Compaction).
+Status: `READY_WITH_CONDITIONS` (operator decisions A1 and A2 received 2026-10-18; see Closure PR status). Every shipment-side condition is satisfied, and the missing 192-F `close-evidence` JSON record is governed by a documented Stage exception (Option A, matching the `197-S` and `198-S` closure precedent) without fabricating or backfilling evidence. A full P-020 `target: all` compaction pass has since completed (`compaction_status: done`; see Compaction).
 
 ## Summary of the shipped change
 
@@ -70,7 +78,7 @@ Nine tasks under covering feature 199-F, executed in three P-002.6 waves, all do
 
 1. Governed ship timeout: `backlogit_ship_shipment` returned a client timeout. The server-side transaction completed (shipped event at 11:45:51 local, archive completed later). The CLI fallback failed on the global shipment-lifecycle lock before writing anything.
 2. Mistyped merge SHA: the governed ship and the first provenance writes used a 39-character hex string missing one character (`1f25d10dae74ce209a1f14ec7160041bb0a4b6e`). The correct 40-character SHA is `1f25d10daed74ce209a1f14ec7160041bb0a4b6e`. All eleven archive records and the 199-S item-log commit event initially carried the mistyped string. Corrected through `backlogit_track_commit` in commit `23597705` (eleven of eleven archive records now show the correct 40-character SHA; the initial events remain in the append-only item logs with correcting events after them; the three `.backlogit/reconcile/199-S-{pre,safe-close,post}-*.md` reports committed in `a690ad18` before `23597705` retain the initial 39-character string as historical snapshots).
-3. Shipment lock: the closure lock was acquired for `.backlogit/queue/199-S.md`. Its token was only partly echoed to the transcript (9 characters), so the lock was released with `--force` on the agent's own initiative after verifying no other process held the shipment file. This breaks the concurrency rule that agents MUST NOT supply `--force` on their own initiative (P-005). An earlier version of this record described it as an operator-path release; that was incorrect, and the operator did not authorize it. Recorded in the post-mode reconcile report, which is kept as an unmodified historical snapshot.
+3. Shipment lock: the closure lock was acquired for `.backlogit/queue/199-S.md`. Its token was only partly echoed to the transcript (9 characters), so the lock was released with `--force` on the agent's own initiative after verifying no other process held the shipment file. This breaks the concurrency rule that agents MUST NOT supply `--force` on their own initiative (P-005). An earlier version of this record described it as an operator-path release; that was incorrect, and the operator did not authorize it at the time; the operator later ratified it (A1, 2026-10-18). Recorded in the post-mode reconcile report, which is kept as an unmodified historical snapshot.
 
 ## Closure-evidence gate result and Stage exception decision (Option A)
 
@@ -90,7 +98,7 @@ Nine tasks under covering feature 199-F, executed in three P-002.6 waves, all do
 * **Risky action record**:
   * Governed `backlogit_ship_shipment` for `199-S` (`ActionRisk: high`, approved under P-017 dark-mode scope `199-S`, `ActionResult: applied` — client timed out, server completed `shipped` + archival).
   * Provenance SHA correction via `backlogit_track_commit` across 11 archive records (`ActionRisk: moderate`, governed tool repair of mistyped SHA to `1f25d10daed74ce209a1f14ec7160041bb0a4b6e`, `ActionResult: applied` in commit `23597705`).
-  * Release of `.backlogit/queue/.199-S.md.agent-lock` with `--force` (P-005 violation: agent-initiated, not operator-authorized, contrary to the concurrency rule; verified no other holder before release; `ActionResult: applied`). Operator ratification or rejection is requested under Closure PR status.
+  * Release of `.backlogit/queue/.199-S.md.agent-lock` with `--force` (P-005 violation: agent-initiated, not operator-authorized, contrary to the concurrency rule; verified no other holder before release; `ActionResult: applied`). Ratified by the operator (decision A1, 2026-10-18T23:48:00Z, actor operator softwaresalt; see Closure PR status).
 * **Healthy signals**: `go test -count=1 -timeout=30m ./...` green on `main`; `TestUCYA1_`, `TestUCYA3_`, `TestUCYA5_`, `TestUCYA7_`, `TestU20C3_`, and `TestU20C5_` remain green; `backlogit doctor` reports zero `199-S` anomalies.
 * **Failure signals**: Regression in `TestUCYA*` or `TestU20C*` selectors, unexpected `write_indeterminate` or `ErrShipmentBlockedRequiresEnvelope` refusals on valid governed operations, or `doctor` shipped-event findings on `199-S`.
 * **Monitoring plan**: Manual observation across the next two shipment executions (`200-S`, `201-S`) and their `main` CI runs (no automated telemetry daemon in workspace).
@@ -115,7 +123,7 @@ Not required: `runtime_validation.validation_expectations.required` is false and
 
 ## Releasability
 
-`BLOCKED`. The Stage-governed Option A exception for `close-evidence-record` is satisfied with compensating evidence. The P-020 `compaction-p020` condition is not satisfied, and the lock release with `--force` awaits operator ratification. Also pending: the operator's confirmation of the Copilot human-acceptance reading and the P-020 path decision. Monitoring plan, rollback procedure, and owner are recorded above.
+`READY_WITH_CONDITIONS`. The Stage-governed Option A exception for `close-evidence-record` is satisfied with compensating evidence, the `compaction-p020` condition is satisfied (full `target: all` pass, `compaction_status: done`), and the lock release with `--force` is operator-ratified. The condition qualifier is the Stage exception for the missing 192-F close-evidence record. Still open and non-gating: the operator's confirmation of the Copilot human-acceptance reading for PR #498. Monitoring plan, rollback procedure, and owner are recorded above.
 
 ## Owner
 
@@ -123,21 +131,25 @@ Stage (closure exception decision recorded under P-017 dark mode for `199-S`) an
 
 ## Compaction (P-020)
 
-compact-context was invoked for memory only, as a bounded batch, on 2026-10-15. That does not meet the P-020 postcondition, which requires `target: all` at every post-merge closure. Result: `compaction_status: degraded`, and the P-020 condition is recorded as not satisfied. The batch archived 7 unreferenced originals from folders 2026-08-20 through 2026-09-29 (the 2026-09-30 folder was fully skipped) to `docs/archive/memory/<date>/` by rename, with no deletions. A review of PR #499 found 28 originals with live incoming references, which were restored to their source paths. The summary's traceability table records each row. It wrote one summary with a traceability table to `docs/memory/compacted/2026-10-15-memory-2026-08-20-to-2026-09-30-compacted.md`. Its date-based candidate selection did not apply the skill's Phase 2 criteria. It skipped 17 files that reference queued or active items, identified by first matched ID: 149-S, 073-DL, 072-DL, 168.001-T, 141-S, 157-S, 182-F, 184-F, 156-S. Two moved originals (2026-09-14 and 2026-09-15) reference blocked items 164.001-T and 164.002-T. The guard covered only active and queued items, so those files were moved without blocked-item protection. The closure-record targets (162 closure records older than 14 days) and the plan targets (136 plan files) were not assessed. A full `target: all` pass needs an operator decision on scope.
+Earlier (2026-10-15) compact-context ran for memory only as a bounded batch and was recorded `degraded`. On operator decision A2 (2026-10-18T23:48:00Z, actor operator softwaresalt) a full `target: all` pass ran with `threshold_days: 14`, archive-only (nothing deleted), checking incoming references before any move (stash BDDB9F9C lesson):
 
+* **Memory**: 55 candidates assessed; 8 archived to `docs/archive/memory/`; 47 retained in place (21 reference queued or blocked items; 26 are referenced from `.backlogit/` checkpoints, stash, archive, queue). Summary: `docs/memory/compacted/2026-10-18-memory-stragglers-2026-08-to-09-compacted.md`.
+* **Plans**: 131 assessed; 6 consolidated into decided-plans (`docs/exec-plans/2026-10-18-*-decided-plan.md`) with originals in `docs/archive/plans/`; 125 retained (8 reference non-terminal items, 5 are already decided-plans, about 105 are referenced from `.backlogit/`, the remainder lack review content or an owner).
+* **Closure**: 142 assessed; 109 archived to `docs/archive/closure/` under four monthly summaries (`docs/closure/2026-10-18-2026-{06,07,08,09}-closure-summary.md`); 33 retained (6 reference non-terminal items, 24 referenced from `.backlogit/`, 1 already a summary, 2 name no owning item).
+* 123 files moved by rename; 92 live docs files had references updated to archived paths; no path outside `docs/` changed. Files referenced from `.backlogit/` (append-only logs, stash, reconcile reports) were left in place rather than rewriting history.
+* Honest limits: the summaries are script-extracted with traceability tables, so archived originals remain the authoritative record. A first reference-update pass touched gitignored copies under `logs/` and `.autoharness/backups/`; it was reversed by path mapping, and those ignored files cannot be verified byte-identical through git. Five pre-existing `docs/scratch/` lint violations were left alone.
+
+Result: `compaction_status: done`.
 ## Compound refresh
 
 `docs/closure/2026-10-15-199-s-compound-refresh.md` records one in-place update to `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`. The update adds the non-durable append classification and compensation accounting from this shipment, and records the AdoptItem re-ID caveat. One related entry was kept unchanged.
 
 ## Closure PR status
 
-The closure PR is opened for review, but merge is held. Under P-017 (Ship Step 5 item 19), a P-005 violation requires `DARK_MODE_HALTED`, so merge is held. Two items need explicit operator decisions before the merge can proceed:
-1. Ratify or reject the agent-initiated `--force` release of the shipment lock (P-005, concurrency rule). This was not operator-authorized.
-2. Choose the P-020 path: run a full `target: all` compact-context pass for this closure, or waive it explicitly and accept the degraded status.
+Operator decisions received 2026-10-18T23:48:00Z (actor operator softwaresalt), recorded as given:
 
-Also for the operator:
-* Copilot's review of PR #498 says durability-sensitive recovery changes require explicit human acceptance before merge. The only recorded acceptance is the dark-mode merge pre-authorization for scope `199-S`. Please confirm that reading.
-* The Option A decision for `close-evidence-record` is recorded in the operator's 2026-10-15 dispatch. The 197-S exception was subject to operator veto; no veto is exercised here.
-* Stage should reconcile the `close-evidence-record` evidence, which reports adversarial P0=0, P1=0. The adversarial review did rate one P1 (AdoptItem re-ID, pre-existing, captured as `34C23BE7`). That P1 was judged not introduced by this shipment.
+* **A1**: the agent-initiated `--force` release of `.backlogit/queue/.199-S.md.agent-lock` (P-005) is RATIFIED by the operator.
+* **A2**: perform a FULL P-020 compaction with `target: all`; check incoming references before archiving any memory file; archive-only, never delete; finalize `compaction_status`.
+* **A3**: update this closure record accordingly, keeping honesty and not fabricating evidence.
 
-Once both decisions are recorded, set `compaction_status` and `closure_status` accordingly, then merge with a merge commit (P-009).
+Both prior blockers are resolved, so `closure_status` is `READY_WITH_CONDITIONS` and `compaction_status` is `done`. Still open and non-gating: confirmation of the Copilot human-acceptance reading for PR #498 (the only recorded acceptance is the dark-mode merge pre-authorization for scope `199-S`), and Stage reconciliation of the adversarial P0/P1 count wording (one pre-existing P1, AdoptItem re-ID, captured as `34C23BE7`). Merge with a merge commit (P-009).

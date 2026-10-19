@@ -2,7 +2,7 @@
 chunk_strategy: h1-h2-h3
 compacted_at: 2026-09-13T20:55:00Z
 compacted_from:
-  - docs/closure/2026-09-13-148-s-operational-closure.md
+  - docs/archive/closure/2026-09-13-148-s-operational-closure.md
 doc_type: closure
 schema_version: "1.0"
 source: docs/closure/2026-09-13-148-s-operational-closure-summary.md
@@ -12,7 +12,7 @@ title: "148-S operational closure summary"
 ## Outcome
 
 Shipment `148-S` / feature `167-F` is operationally closed and remains the
-authoritative shipped record at `docs/closure/2026-09-13-148-s-operational-closure.md`.
+authoritative shipped record at `docs/archive/closure/2026-09-13-148-s-operational-closure.md`.
 The release shipped at `c74a55d1e40d1181688f0c87b85a4ff326fc43de` and the
 closure record covers PR #440.
 

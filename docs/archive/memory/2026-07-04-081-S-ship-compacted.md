@@ -7,7 +7,7 @@
 
 ## What shipped
 
-Docs-only, archive-only, reversible housekeeping. `docs/closure/` had grown to 88 files / ~585 KB (over the compact-context 500 KB + 40-file thresholds). Consolidated the 37 stale closure records (dated ≤ 2026-05-30, all shipment-closed, all > 14 days old) into one born-docline-compliant summary (`docs/closure/2026-07-04-closure-archive-compaction-summary.md`) and moved the 37 verbose originals archive-only (git `R100` renames, 0 deletions) to `docs/archive/closure/**`. Preserved the 51 records inside the 14-day window (≥ 2026-06-25). Result: `docs/closure/` = 52 files / ~380 KB (under 500 KB).
+Docs-only, archive-only, reversible housekeeping. `docs/closure/` had grown to 88 files / ~585 KB (over the compact-context 500 KB + 40-file thresholds). Consolidated the 37 stale closure records (dated ≤ 2026-05-30, all shipment-closed, all > 14 days old) into one born-docline-compliant summary (`docs/archive/closure/2026-07-04-closure-archive-compaction-summary.md`) and moved the 37 verbose originals archive-only (git `R100` renames, 0 deletions) to `docs/archive/closure/**`. Preserved the 51 records inside the 14-day window (≥ 2026-06-25). Result: `docs/closure/` = 52 files / ~380 KB (under 500 KB).
 
 ## Acceptance criteria (all met)
 

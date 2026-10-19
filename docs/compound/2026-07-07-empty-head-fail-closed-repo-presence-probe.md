@@ -125,9 +125,9 @@ Then: under a real work tree (`true`), an empty shipment head or empty member he
   exactly those seams.
 - `docs/compound/2026-07-06-bounded-helper-timeout-hard-cap.md` — the bounded-helper
   DoS lesson reused by `boundedHelperTimeout()` on this probe.
-- `docs/closure/2026-07-07-085-S-adversarial-review.md` — F1 BLOCK → fix → RE-REVIEW
+- `docs/archive/closure/2026-07-07-085-S-adversarial-review.md` — F1 BLOCK → fix → RE-REVIEW
   PASS, N1/N2 remediation, SEC-1/SEC-2 confirmation (3 models).
-- `docs/closure/2026-07-07-085-S-feature-pr-runtime-verification.md` — real-subprocess
+- `docs/archive/closure/2026-07-07-085-S-feature-pr-runtime-verification.md` — real-subprocess
   behavioral matrix (refuse-in-repo / ship-no-repo / skip-no-repo-member /
   fail-closed-broken-repo / fail-closed-expired-ctx).
-- `docs/closure/2026-07-07-085-S-post-merge-closure.md` — closure + bootstrapping proof.
+- `docs/archive/closure/2026-07-07-085-S-post-merge-closure.md` — closure + bootstrapping proof.

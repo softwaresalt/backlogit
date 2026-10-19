@@ -14,7 +14,7 @@ Source files archived:
 * `docs/archive/memory/2026-08-19/ship-128s-144f-implementation-memory.md`
   (superseded — the full backlog-state detail is preserved below;
   see this session's own
-  `docs/closure/2026-08-19/128-s-144-f-runtime-verification-and-closure.md`
+  `docs/archive/closure/2026-08-19/128-s-144-f-runtime-verification-and-closure.md`
   for the merge/closure outcome)
 * `docs/archive/memory/2026-08-19/ship-128s-pr370-readiness.md`
   (**explicitly stale** — names parent HEAD `6350115a`, not the actual
@@ -119,6 +119,6 @@ Source files archived:
 Both 127-S and 128-S/144-F are now fully shipped/archived. This compacted
 entry is the durable record of the full staging→implementation arc for
 144-F; consult the current closure record
-(`docs/closure/2026-08-19/128-s-144-f-runtime-verification-and-closure.md`)
+(`docs/archive/closure/2026-08-19/128-s-144-f-runtime-verification-and-closure.md`)
 for the actual merge, backlog-reconciliation, and runtime-verification
 outcome of shipment 128-S itself.

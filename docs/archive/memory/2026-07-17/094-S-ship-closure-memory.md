@@ -66,7 +66,7 @@ converged to 0 threads:
 
 * `.backlogit/archive/{094-S,105-F,105.001-T}.md` — `commit: 98b0522…` scalar +
   restamped `updated_at`; `archived_from`/`archived_status` preserved.
-* `docs/closure/2026-07-17-094-S-ship-closure.md` — traceability section expanded
+* `docs/archive/closure/2026-07-17-094-S-ship-closure.md` — traceability section expanded
   (version-controlled scalar vs gitignored index/log projections; event
   equivalence not byte-identical); Q1–Q7 gap count; PR #248 file inventory.
 * `.backlogit/backlogit.db` + `.backlogit/logs/*.jsonl` (both gitignored) —

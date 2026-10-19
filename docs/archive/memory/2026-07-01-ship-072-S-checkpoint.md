@@ -101,7 +101,7 @@
   Stage-domain, flagged only.
 - **Follow-up carried forward for Stage**: `266816CE` (active) — `artifacts.go` write-path
   fail-open shape. No new post-merge follow-ups.
-- **Post-merge closure artifact**: `docs/closure/2026-07-02-072-S-doctor-nil-headerdef-post-merge-closure.md`.
+- **Post-merge closure artifact**: `docs/archive/closure/2026-07-02-072-S-doctor-nil-headerdef-post-merge-closure.md`.
 - **Remaining**: closure PR opened for `post-merge/072-...`, awaiting separate operator P-014
   approval. No self-merge of the closure PR.
 

@@ -134,7 +134,7 @@ listed below without implying 15 (or 12) distinct shipments:
   on legacy header-def upgrade, task-only projection enforcement, MCP
   non-string mutation clearing, and priority wording — fixed in `12ea3e36`,
   reaching `READY`. Confirmed archived (query verified 2026-08-01); full
-  closure record at `docs/closure/2026-07-30-113-S-complexity-metadata-closure.md`.
+  closure record at `docs/archive/closure/2026-07-30-113-S-complexity-metadata-closure.md`.
 * **114-S** (feature `106-F` tasks F2/F3 only — `106-F` itself stays `active`,
   spanning F1-F6 across future cycles) — canonical serialization + SHA-256 hash
   primitive (`internal/canonical/`, stdlib-only leaf; deliberate RFC 8785

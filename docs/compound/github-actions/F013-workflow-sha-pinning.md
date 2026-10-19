@@ -100,7 +100,7 @@ if ($response.object.type -eq "tag") {
 * Workflow-level `paths` / `paths-ignore` remain forbidden for required workflows; expensive steps are gated inside jobs.
 * `tests/integration/ci_compliance_test.go` now encodes the trigger model, required-context names, single Go target, SHA pins, drift consolidation, and release provenance.
 
-Evidence: `docs/closure/2026-07-10-089-S-ci-cost-reduction-closure.md` and PR #201 merge `fd5cc60c92bbcd478de62fac20fa8f2d1d636911`.
+Evidence: `docs/archive/closure/2026-07-10-089-S-ci-cost-reduction-closure.md` and PR #201 merge `fd5cc60c92bbcd478de62fac20fa8f2d1d636911`.
 
 ## Test Strategy: Characterization-First
 

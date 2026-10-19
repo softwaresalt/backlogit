@@ -19,7 +19,7 @@ title: 065-S Docline Frontmatter — Post-Merge Closure
 **Recorded shipment merge SHA**: `23a8b045`
 **Closure branch**: post-merge/065-docline-frontmatter
 **Mode**: post-merge
-**Verification report**: [065-S runtime verification](2026-06-26-065-S-docline-frontmatter-runtime-verification.md)
+**Verification report**: [065-S runtime verification](docs/archive/closure/2026-06-26-065-S-docline-frontmatter-runtime-verification.md)
 **Readiness**: **READY** (merge already completed; this is post-merge closure)
 
 ---

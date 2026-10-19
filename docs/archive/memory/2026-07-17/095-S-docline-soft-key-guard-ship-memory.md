@@ -35,7 +35,7 @@ workflow as finished until #251 merges.
 
 - `.backlogit/archive/095-S.md` (RM from queue), member + 107-F archive stamps,
   hooks_queue.jsonl — from `ship_shipment 095-S`.
-- NEW `docs/closure/2026-07-18-095-S-docline-soft-key-guard-closure.md`.
+- NEW `docs/archive/closure/2026-07-18-095-S-docline-soft-key-guard-closure.md`.
 - Commit tracked on 095-S: 9f11df7.
 
 ## Decisions + rationale

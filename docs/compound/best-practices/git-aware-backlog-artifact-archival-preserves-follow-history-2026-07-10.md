@@ -106,7 +106,7 @@ tracked.
 
 ## Evidence
 
-- `docs/closure/2026-07-09-088-S-git-aware-archival-closure.md` records shipment
+- `docs/archive/closure/2026-07-09-088-S-git-aware-archival-closure.md` records shipment
   `088-S`, PR #198, and merge commit
   `e370af1d737a2fcf881f865a92a354874487b766`.
 - `internal/core/archive.go` implements `planArtifactMove`, `performArtifactMove`,

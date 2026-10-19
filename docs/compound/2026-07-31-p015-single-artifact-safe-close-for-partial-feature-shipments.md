@@ -66,7 +66,7 @@ installed CLI's embedded commit is at or after `47dfcc93`, not merely that
 
 The verification, code diff, and code-comment rationale for this fix are
 recorded in
-`docs/closure/2026-08-01-133-shipshipment-cascade-fix-runtime-verification.md`
+`docs/archive/closure/2026-08-01-133-shipshipment-cascade-fix-runtime-verification.md`
 and this shipment's post-merge closure artifact. The remainder of this entry
 (below) is preserved verbatim as the historically accurate incident record for
 114-S and the pre-fix era.

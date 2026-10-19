@@ -7,7 +7,7 @@ chunk_strategy: h1-h2-h3
 # fields under docline: and silently re-break the 135-S predecessor-closure gate.
 closure_status: READY
 compaction_status: degraded
-description: "Topology gate registration for 134-S/152-F post-merge closure — machine-readable predecessor-closure record. Authoritative narrative and P-002 incident disposition are in docs/closure/2026-08-30-152f-134s-p002-incident-closure.md."
+description: "Topology gate registration for 134-S/152-F post-merge closure — machine-readable predecessor-closure record. Authoritative narrative and P-002 incident disposition are in docs/archive/closure/2026-08-30-152f-134s-p002-incident-closure.md."
 doc_type: closure
 docline:
   backlogit:
@@ -26,7 +26,7 @@ title: "134-S / 152-F Post-Merge Closure Gate Registration"
 **Feature:** 152-F — Governed lifecycle reconciliation and stash provenance correction  
 **Merge commit:** `b415f40354e48dd238d4348f1be5eaca0ea2f1ad` (PR #396)  
 **Closure date:** 2026-08-30  
-**Authoritative closure narrative:** `docs/closure/2026-08-30-152f-134s-p002-incident-closure.md`  
+**Authoritative closure narrative:** `docs/archive/closure/2026-08-30-152f-134s-p002-incident-closure.md`  
 **Gate registration created:** 2026-09-03
 
 ## Purpose
@@ -36,7 +36,7 @@ The `autoharness gate pipeline-topology` predecessor-closure check looks for a f
 matching `{shipment_id}-*-post-merge-closure.md` in `docs/closure/` and reads the
 top-level `closure_status` and `compaction_status` frontmatter fields from it.
 
-The original closure narrative (`2026-08-30-152f-134s-p002-incident-closure.md`) does
+The original closure narrative (`docs/archive/closure/2026-08-30-152f-134s-p002-incident-closure.md`) does
 not satisfy the gate's glob on two counts: its filename does not carry the
 `post-merge-closure` suffix required by the pattern, and it uses the token `134s`
 rather than `134-S` as the shipment identifier. This gate-registration file satisfies
@@ -81,7 +81,7 @@ relabeled by this gate-registration file.
 **READY.** All shipment closure criteria were met or formally acknowledged as of
 2026-08-30. The full closure rationale and per-criterion evidence table are in the
 authoritative narrative at
-`docs/closure/2026-08-30-152f-134s-p002-incident-closure.md`.
+`docs/archive/closure/2026-08-30-152f-134s-p002-incident-closure.md`.
 
 The P-002 breach (INC-P002-152F-134S) is a permanent historical process incident.
 P-002 (TDD Gate / Harness-Satisfied Precondition) and Constitution Principle II

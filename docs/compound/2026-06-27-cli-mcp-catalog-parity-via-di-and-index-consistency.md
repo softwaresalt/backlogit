@@ -143,7 +143,7 @@ no duplication) + `TestUpdateCommand_InvalidSectionName_Rejected`.
 
 - PR #145 — fix(core): metadata and section sync integrity (061-S / 062-F)
 - Merge commit `006bb854afa6f56c87f4a80f5d3d6668feef0b58`
-- Closure: `docs/closure/2026-06-27-061-S-metadata-section-sync-integrity-closure.md`
+- Closure: `docs/archive/closure/2026-06-27-061-S-metadata-section-sync-integrity-closure.md`
 - Related (complementary, kept): `docs/compound/2026-05-07-mcp-cli-config-parity.md`
   — config-option loading in both handlers; this entry is about catalog *data*
   parity via DI + the broader index/dry-run/typed-error rules.

@@ -60,8 +60,8 @@ U1 → U4 → U5 → U2 → U3 → U6 → U7 → U8 → U9 (U3/U9 MCP deferrable
     - J (doctor_target.go PrepareDoctorTarget): confineToStorageRoot resolution error → kind=scope loses error text (exit code identical, both →3). P3.
     - K (doctor_target.go ValidateDoctorTargetResolved): nil ws.HeaderDef → kind=pass (no validation). Defensive; HeaderDef always loaded via config.WriteDefaults. P2.
 - **Artifacts**:
-  - `docs/closure/2026-06-30-071-S-deterministic-gates-slice-runtime-verification.md` (committed edd4349, verdict PASS).
-  - `docs/closure/2026-06-30-071-S-deterministic-gates-slice-closure.md` (pre-merge operational closure, READY WITH CONDITIONS; **uncommitted on disk** — to be committed on post-merge branch per prior-shipment pattern; docline valid).
+  - `docs/archive/closure/2026-06-30-071-S-deterministic-gates-slice-runtime-verification.md` (committed edd4349, verdict PASS).
+  - `docs/archive/closure/2026-06-30-071-S-deterministic-gates-slice-closure.md` (pre-merge operational closure, READY WITH CONDITIONS; **uncommitted on disk** — to be committed on post-merge branch per prior-shipment pattern; docline valid).
 - **Backlog**: all 10 items (071-F + 9 tasks) archived, status=done. Shipment 071-S still `active` (ship at post-merge with merge SHA).
 - **Feature branch frozen at 1d7ee3a** to preserve the clean green-CI + reviewed HEAD for the operator's P-014 decision (avoid reopening the Copilot loop at the merge gate).
 - **Uncommitted operator files (NEVER commit)**: .github/agents/*.agent.md (auto-mergeinstall, auto-tune, .ship, .stage, _orchestrator), .gitignore, .cursor/, .github/copilot/. Plus the on-disk closure artifact (071-S, commit on post-merge branch).

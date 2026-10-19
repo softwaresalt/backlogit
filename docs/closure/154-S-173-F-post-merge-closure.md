@@ -38,7 +38,7 @@ title: "154-S / 173-F Post-Merge Closure"
 | Closure branch | `post-merge/154-s-closure` |
 | Closure PR | [#467](https://github.com/softwaresalt/backlogit/pull/467) — open |
 | Closure status | `READY_WITH_CONDITIONS` |
-| Context compaction | `degraded` — P-020 `target: all` was invoked; one completed memory record was compacted, but the full candidate set was preserved for a later verified pass. See `2026-09-30-154-s-compaction-report.md`. |
+| Context compaction | `degraded` — P-020 `target: all` was invoked; one completed memory record was compacted, but the full candidate set was preserved for a later verified pass. See `docs/closure/2026-09-30-154-s-compaction-report.md`. |
 
 ## Shipment reconciliation
 
@@ -171,7 +171,7 @@ archived its verbose original at
 (507 bytes recovered), but did not complete classification and compaction of
 the remaining target set. The current 154-S session checkpoint was preserved
 because its closure PR is still pending. See
-`2026-09-30-154-s-compaction-report.md` for the bounded run result and
+`docs/closure/2026-09-30-154-s-compaction-report.md` for the bounded run result and
 remaining work.
 
 ## Releasability

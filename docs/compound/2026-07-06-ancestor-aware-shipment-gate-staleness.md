@@ -110,7 +110,7 @@ end-to-end proof the fix is real and complete.
 expose** this false-staleness bug: it built after member `head_sha` recording became
 active and closed post-merge, so strict equality refused its own members (exit 6). At
 that time closure was correctly HALTED rather than forced (see
-`docs/closure/2026-07-06-083-S-post-merge-closure-BLOCKED.md`), and the ancestor-aware
+`docs/archive/closure/2026-07-06-083-S-post-merge-closure-BLOCKED.md`), and the ancestor-aware
 fix was stashed (`885A7F65`) and graduated through 084-S. After 084-F landed on `main`,
 083-S was **re-closed with the new binary** — `shipment ship 083-S --sha ac41bb1…`
 passed the completion gate (exit 0, **11 items archived**, `returned_ids: []`) where the
@@ -118,7 +118,7 @@ strict-equality binary had refused it. This is the independent confirmation (a s
 shipment, not the fix's own) that the ancestor-aware admission is real and correct: the
 member heads (`be1bf1e`…`c93080d`) are all ancestors of the shipment head, so
 `--is-ancestor` returns exit 0 and the gate accepts. Closure record:
-`docs/closure/2026-07-07-083-S-post-merge-closure-RESOLVED.md`.
+`docs/archive/closure/2026-07-07-083-S-post-merge-closure-RESOLVED.md`.
 
 ## Related
 
@@ -132,7 +132,7 @@ member heads (`be1bf1e`…`c93080d`) are all ancestors of the shipment head, so
   lesson: even a *bounded* lineage/head helper must impose its own hard timeout cap.
 - `docs/compound/2026-07-06-external-process-timeout-before-probe.md` — bound the
   first lock-holding external call (082-S).
-- `docs/closure/2026-07-06-084-S-feature-pr-adversarial-review.md` — non-weakening
+- `docs/archive/closure/2026-07-06-084-S-feature-pr-adversarial-review.md` — non-weakening
   and fail-closed confirmation (3 models, 0 P0/P1).
-- `docs/closure/2026-07-06-084-S-feature-pr-runtime-verification.md` — 5-scenario
+- `docs/archive/closure/2026-07-06-084-S-feature-pr-runtime-verification.md` — 5-scenario
   real-subprocess proof (ancestor pass, divergent refuse, equality pass, fail-closed).

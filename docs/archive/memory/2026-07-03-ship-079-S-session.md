@@ -79,8 +79,8 @@ U1‖U2‖U3‖U4‖U5 (independent) → U6 (registry flip + drift flag-parity, 
 - **Copilot review (round 2, HEAD `6257fab`)**: re-requested via REST `requested_reviewers` (gh `--add-reviewer copilot` fails in this env); fresh review `COMMENTED` on `6257fab`, **no new line-level threads**.
 - **CI**: 4/4 green at both `9895ced` and `6257fab` — `test (1.23)`, `test (1.24)`, `CLI Reference Drift`, `Docline frontmatter gate`. No fix-ci cycle needed (U8 regen was idempotent).
 - **§1.9 pre-merge readiness gate: PASS** — Check1 (no pending Copilot review) ✅, Check2 (latest Copilot review covers HEAD `6257fab`) ✅, Check3 (zero unresolved Copilot threads) ✅. `reviewDecision: REVIEW_REQUIRED` = branch-protection ruleset needs an approving review the author-identity can't self-supply (operator admin-bypass at merge, as 078-S).
-- **Runtime verification: PASS** (`docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-runtime-verification.md`) — all 5 CLI families smoke-tested end-to-end against the built binary; happy paths return MCP-isomorphic JSON, error paths validate (invalid link type, unknown artifact type).
-- **Operational closure (pre-merge): READY WITH CONDITIONS** (`docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-closure.md`).
+- **Runtime verification: PASS** (`docs/archive/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-runtime-verification.md`) — all 5 CLI families smoke-tested end-to-end against the built binary; happy paths return MCP-isomorphic JSON, error paths validate (invalid link type, unknown artifact type).
+- **Operational closure (pre-merge): READY WITH CONDITIONS** (`docs/archive/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-closure.md`).
 - **Follow-ups**: none net-new. `merge_sync` (phase-3), `export-command-map` pairing (phase-3), `log_telemetry` (permanent mcp_only) are all pre-documented deferrals in the plan (R7/R9/D1/D5) + U7 parity docs; external `.tmpl` already tracked as stash `EED25928`. No redundant re-stash.
 
 ## Status (pre-merge): MERGE-READY — HALTED before merge (P-014). Awaiting operator merge approval + admin bypass.
@@ -102,7 +102,7 @@ U1‖U2‖U3‖U4‖U5 (independent) → U6 (registry flip + drift flag-parity, 
 - **Knowledge graduation**:
   - New compound learning: `docs/compound/2026-07-04-core-extraction-shared-eventwriter-append-serialization.md` (shared-`EventWriter` threading for append serialization; the Copilot Round-1 fix, generalized).
   - Compound-refresh report: `docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-compound-refresh.md` (3 existing parity entries **keep**; 1 new capture).
-  - Post-merge operational closure: `docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-post-merge-closure.md` (release-readiness SHIPPED, monitoring, rollback = `git revert a8e07ea`).
+  - Post-merge operational closure: `docs/archive/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-post-merge-closure.md` (release-readiness SHIPPED, monitoring, rollback = `git revert a8e07ea`).
   - **Docline gate**: `valid: true, violation_count: 0` on all new artifacts (no follow-up frontmatter fix needed, unlike 078-S).
 - **Source-artifact cleanup**: `079-F` has no structured `source_stash_id`/`source_deliberation_id` (no-op). Originating stash `6C6ACE00` already retired by Stage during harvest (not in active stash). Deliberation `051-DL` co-archived by `shipment ship`.
 - **Deferred / out-of-scope left untouched** (per operator): stashes `21E17BFC`, `9140F65C`, `EED25928`, `B55985DD` all still active; `merge_sync`→phase-3, `export-command-map`→phase-3, `log_telemetry`→permanent mcp_only (all pre-documented, not re-stashed).

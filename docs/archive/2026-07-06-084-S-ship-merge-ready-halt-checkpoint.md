@@ -56,7 +56,7 @@ shipment closure while keeping every git-exec/timeout/cancel/malformed/head-drif
   ADV-8 (test env-var order; accept). Deferred follow-ups for Stage: ADV-2 (ABA/there-and-back
   HEAD race — not a regression), ADV-3 (ambient-HEAD vs `--sha` anchor — pre-existing),
   ADV-5 (scope interaction with B85DAEE8/F3844849). Recorded in operational-closure §6.
-- Findings doc: `docs/closure/2026-07-06-084-S-feature-pr-adversarial-review.md`.
+- Findings doc: `docs/archive/closure/2026-07-06-084-S-feature-pr-adversarial-review.md`.
 
 ## Copilot review
 
@@ -75,8 +75,8 @@ shipment closure while keeping every git-exec/timeout/cancel/malformed/head-drif
   (1) ancestor member head PASSES [the fix; strict-equality would reject], (2) divergent refused,
   (3) equality passes, (4) absent object fails closed, (5) cancelled context fails closed. Scratch
   driver deleted after capturing transcript (not committed).
-- Transcript: `docs/closure/2026-07-06-084-S-feature-pr-runtime-verification.md`.
-- Operational closure: `docs/closure/2026-07-06-084-S-feature-pr-operational-closure.md`.
+- Transcript: `docs/archive/closure/2026-07-06-084-S-feature-pr-runtime-verification.md`.
+- Operational closure: `docs/archive/closure/2026-07-06-084-S-feature-pr-operational-closure.md`.
 
 ## HALT
 

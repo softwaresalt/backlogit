@@ -103,5 +103,5 @@ concerns into `core`.
 - `internal/events/stream.go` — `EventWriter.mu` (instance-scoped append mutex)
 - `internal/cli/comment.go` — `newCommentAddCmd` (passes `nil`)
 - Test: `internal/mcp/append_comment_test.go`
-- Runtime verification: `docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-runtime-verification.md`
+- Runtime verification: `docs/archive/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-runtime-verification.md`
 - Related (complementary, kept): `docs/compound/2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`

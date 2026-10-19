@@ -73,7 +73,7 @@ verification, and operational closure for shipment 128-S / feature 144-F.
     changes applied. Report:
     `docs/closure/2026-08-19-128-s-144-f-compound-refresh.md`.
 13. **Runtime verification + closure record** written:
-    `docs/closure/2026-08-19/128-s-144-f-runtime-verification-and-closure.md`.
+    `docs/archive/closure/2026-08-19/128-s-144-f-runtime-verification-and-closure.md`.
 
 ## Decisions and Rationale
 
@@ -106,7 +106,7 @@ verification, and operational closure for shipment 128-S / feature 144-F.
 * `.backlogit/reconcile/128-S-pre-20260819-204955.md`,
   `128-S-post-20260819-211430.md` — new reconcile reports
 * `.backlogit/hooks_queue.jsonl` — updated (mutation event trail)
-* `docs/closure/2026-08-19/128-s-144-f-runtime-verification-and-closure.md` — new
+* `docs/archive/closure/2026-08-19/128-s-144-f-runtime-verification-and-closure.md` — new
 * `docs/closure/2026-08-19-128-s-144-f-compound-refresh.md` — new
 * `docs/memory/2026-08-19/128-s-144-f-ship-continuation-memory.md` — new (this file)
 

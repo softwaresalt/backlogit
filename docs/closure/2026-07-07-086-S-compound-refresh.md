@@ -20,7 +20,7 @@ title: 086-S Malformed-JSONL-Line Convergence — Compound Refresh (Propose)
 - **Context**: shipment 086-S converged two divergent per-item JSONL parsers
   (`internal/events/reader.go:ReadAllEvents`, `internal/db/rehydration.go:parseItemLogFile`)
   onto a single skip-with-warning policy via a shared `events.ParseEventLine`
-  helper. See `docs/closure/2026-07-07-086-S-closure.md`.
+  helper. See `docs/archive/closure/2026-07-07-086-S-closure.md`.
 
 ## Entries reviewed
 

@@ -85,5 +85,5 @@ respected; a command-sized 600s is clamped away.
   when you *have* bounded it, check that the bound fits the workload.
 - `docs/compound/2026-07-06-ancestor-aware-shipment-gate-staleness.md` — the fix
   these helpers serve.
-- `docs/closure/2026-07-06-084-S-feature-pr-operational-closure.md` — Copilot
+- `docs/archive/closure/2026-07-06-084-S-feature-pr-operational-closure.md` — Copilot
   remediation record.

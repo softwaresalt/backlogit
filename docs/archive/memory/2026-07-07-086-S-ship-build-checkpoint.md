@@ -11,7 +11,7 @@
 - **Harness (P-004 red gate CONFIRMED):** `internal/db/rehydration_malformed_line_test.go` — convergence subtest fails on pre-change code (`parse item log line: invalid character 'N'`), harness compiles. `harness-ready` label applied to 086.001-T.
 - **Implementation (green):** shared `events.ParseEventLine(line,itemID)(Event,ok,err)` in `internal/events/reader.go`; both `ReadAllEvents` (doctor fallback) and `parseItemLogFile` (SQLite rehydration) route through it under skip-with-warning; removed now-unused `encoding/json` import from `rehydration.go`. Added `internal/events/reader_test.go` contract table test.
 - **Quality gates:** `go build ./...` PASS · `go vet ./...` PASS · `golangci-lint run` (scoped) PASS · `gofmt -l` LF-normalized clean · `go test ./...` PASS (all packages).
-- **Adversarial review (3-model, pre-PR):** gpt-5.3-codex + gemini-3.1-pro-preview + claude-opus-4.7 — unanimous PASS, **zero findings**. Data-integrity verdicts all CONFIRMED: (a) convergence, (b) observable-skip/no silent data loss, (c) no masking of transient/retryable failure. Report: `docs/closure/2026-07-07-086-S-feature-pr-adversarial-review.md`.
+- **Adversarial review (3-model, pre-PR):** gpt-5.3-codex + gemini-3.1-pro-preview + claude-opus-4.7 — unanimous PASS, **zero findings**. Data-integrity verdicts all CONFIRMED: (a) convergence, (b) observable-skip/no silent data loss, (c) no masking of transient/retryable failure. Report: `docs/archive/closure/2026-07-07-086-S-feature-pr-adversarial-review.md`.
 
 ## Backlog state
 

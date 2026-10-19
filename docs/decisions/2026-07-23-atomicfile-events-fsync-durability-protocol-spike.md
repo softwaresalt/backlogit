@@ -392,7 +392,7 @@ Prior work:
 * `docs/archive/closure/2026-04-23-041-s-write-durability-closure.md` — 040-F /
   041-S write-durability shipment (added fsync to JSONL/checkpoint paths, not the
   shared writers).
-* `docs/exec-plans/2026-04-22-write-durability-hook-reliability-plan.md` — 040-F
+* `docs/archive/plans/2026-04-22-write-durability-hook-reliability-plan.md` — 040-F
   plan.
 * `.backlogit/archive/120-F.md` — this spike's work item and routing note.
 

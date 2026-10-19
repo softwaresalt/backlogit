@@ -68,7 +68,7 @@ Created `docs/closure/134-S-p002-incident-post-merge-closure.md`:
 
 ## Preserved Invariants
 
-- `docs/closure/2026-08-30-152f-134s-p002-incident-closure.md` — UNCHANGED
+- `docs/archive/closure/2026-08-30-152f-134s-p002-incident-closure.md` — UNCHANGED
 - P-002 breach INC-P002-152F-134S — NOT weakened, NOT relabeled
 - `start.ps1` — operator-owned, NEVER staged or committed
 - No source code changed

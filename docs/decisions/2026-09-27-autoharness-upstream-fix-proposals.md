@@ -11,7 +11,7 @@ decision_status: "proposed"
 promoted_to: "upstream"
 linked_artifacts:
   - ".autoharness/tuning-reports/2026-09-27-tuning-report.md"
-  - "docs/memory/2026-09-27/autoharness-tune-memory.md"
+  - "docs/archive/memory/2026-09-27/autoharness-tune-memory.md"
   - "scripts/acquire_lock.ps1"
   - "scripts/release_lock.ps1"
 ---

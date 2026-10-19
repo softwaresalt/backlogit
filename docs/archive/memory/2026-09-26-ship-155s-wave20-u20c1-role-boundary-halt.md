@@ -68,10 +68,10 @@ No checkpoint was restored, resolved, or otherwise mutated during this continuat
 
 The memory inventory contained 77 files totaling 279,598 bytes. The file-count threshold is exceeded, so the memory-only compact-context assessment was run. Four older files were reviewed:
 
-* `docs/memory/2026-08-20/azure-devops-sync-design-memory.md` — unresolved design questions; no clear completed-work replacement identified.
+* `docs/archive/memory/2026-08-20/azure-devops-sync-design-memory.md` — unresolved design questions; no clear completed-work replacement identified.
 * `docs/memory/2026-09-03/134-s-gate-registration-session-memory.md` — describes completed post-merge closure for PR #406; backlog query confirms shipment `134-S` is archived.
 * `docs/memory/2026-09-08/carry-forward-continuity-files-compound-memory.md` — references a prior Stage round for `139-S`; backlog query confirms shipment `139-S` is archived.
-* `docs/memory/2026-09-11/fl005-review-remediation-memory.md` — says task `158.007-T` was active, while backlog query now reports it archived.
+* `docs/archive/memory/2026-09-11/fl005-review-remediation-memory.md` — says task `158.007-T` was active, while backlog query now reports it archived.
 
 No historical file was moved or rewritten: these records are outside the `155-S` scope and must be preserved under the operator's working-tree instructions. The memory-only assessment is complete for this session, with unrelated archival/reconciliation deferred to the owning maintenance workflow.
 
