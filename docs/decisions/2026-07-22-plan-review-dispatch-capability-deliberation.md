@@ -41,7 +41,7 @@ closure records:
   self-assessment, "no formal plan-review gate evidence exists".
 - `docs/closure/2026-07-13-092-S-item-writer-utc-closure.md` — "not the formal
   multi-persona `plan-review` skill"; "No formal plan-review gate was satisfied".
-- `docs/closure/2026-07-14-093-S-ship-closure.md` — "an inline single-agent
+- `docs/archive/closure/2026-07-14-093-S-ship-closure.md` — "an inline single-agent
   self-assessment".
 
 The result is a gate that is **structurally unsatisfiable** in some environments

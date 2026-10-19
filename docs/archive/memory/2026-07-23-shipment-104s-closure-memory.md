@@ -57,7 +57,7 @@ final HEAD.
 |---|---|
 | `.backlogit/queue/{104-S,124-F,124.002-T,124.003-T,124.004-T}.md` | Moved → `.backlogit/archive/` |
 | `.backlogit/hooks_queue.jsonl` | Updated by shipment lifecycle ops |
-| `docs/closure/2026-07-23-104-S-return-to-queued-transition-closure.md` | NEW closure record |
+| `docs/archive/closure/2026-07-23-104-S-return-to-queued-transition-closure.md` | NEW closure record |
 
 ## Files Added — Session Completion (PR #296)
 

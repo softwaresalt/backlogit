@@ -75,6 +75,6 @@ A gate that can **never fire** is as much a defect as one that fires incorrectly
 
 - `docs/compound/github-actions/F013-workflow-sha-pinning.md` — workflow SHA-pinning / Go-version alignment.
 - `docs/compound/workflow-issues/cli-reference-drift-check-manual-edits-bypass-gen-docs-2026-04-25.md` — CLI Reference Drift gate behavior.
-- `docs/closure/2026-07-10-089-S-ci-cost-reduction-closure.md` — shipped PR-only CI cost reduction and required-context evidence.
+- `docs/archive/closure/2026-07-10-089-S-ci-cost-reduction-closure.md` — shipped PR-only CI cost reduction and required-context evidence.
 - `tests/integration/ci_compliance_test.go` — characterization tests for trigger model, required contexts, fail-safe gates, and release provenance.
 - `docs/exec-plans/2026-07-04-ci-cost-gating-plan.md` — original deferred design dossier that led to the shipped 089-S work.

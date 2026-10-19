@@ -73,4 +73,4 @@ plan and deliberation (`051-DL`) remain the point-in-time decision record.
 - Drift + flag-parity gate: `internal/cli/registry_parity_test.go`
   `TestRegistryParity_FlagAndPositionalParity` (required-flag coverage added in `c19b5c2`).
 - Runtime verification PASS:
-  `docs/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-runtime-verification.md`.
+  `docs/archive/closure/2026-07-03-079-S-cli-mcp-command-parity-phase2-runtime-verification.md`.

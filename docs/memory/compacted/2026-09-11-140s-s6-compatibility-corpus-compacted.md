@@ -22,7 +22,7 @@ Shipment `140-S` and feature `158-F` delivered the S6 compatibility corpus,
 bounded fuzzing, cancellation and concurrency fixtures, and FL001-FL005 static
 analyzers through PR #436. The implementation merged to `main` through merge
 commit `c5978bc2`. The newest pre-PR checkpoint remains in place at
-`docs/memory/2026-09-11-ship-140-s-pre-pr.md`.
+`docs/archive/memory/2026-09-11-ship-140-s-pre-pr.md`.
 
 ## Final Decisions
 

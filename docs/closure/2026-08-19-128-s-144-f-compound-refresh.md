@@ -29,6 +29,6 @@ reviewed entries remain accurate against the current merged code (commit
 461b670c). The new 2026-08-18 entry from PR #370 is a keep — it documents a
 pattern independently confirmed via live runtime verification in this
 closure session (see
-`docs/closure/2026-08-19/128-s-144-f-runtime-verification-and-closure.md`).
+`docs/archive/closure/2026-08-19/128-s-144-f-runtime-verification-and-closure.md`).
 
 No files changed in `docs/compound/` as part of this refresh.

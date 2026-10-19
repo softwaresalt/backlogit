@@ -22,7 +22,7 @@
 - Backlog state committed: `47304a1b` "chore: archive 068-S backlog artifacts".
 - Verified: `query` shows 068-S/068-F/4 tasks all `archived`; queue empty for 068.
 
-## Runtime verification (PASS) — `docs/closure/2026-06-28-068-S-codec-extraction-runtime-verification.md`
+## Runtime verification (PASS) — `docs/archive/closure/2026-06-28-068-S-codec-extraction-runtime-verification.md`
 
 - E1: `go test ./internal/mdfront/... ./internal/atomicfile/... ./internal/docline/... ./internal/core/...` all green.
 - E2: `go run ./cmd/gen-docs docs/cli-reference` + `git diff --exit-code` → 0 drift (CLI Reference Drift green).
@@ -32,8 +32,8 @@
 
 ## Closure artifacts created
 
-- `docs/closure/2026-06-28-068-S-codec-extraction-runtime-verification.md` (PASS)
-- `docs/closure/2026-06-28-068-S-codec-extraction-closure.md` (READY)
+- `docs/archive/closure/2026-06-28-068-S-codec-extraction-runtime-verification.md` (PASS)
+- `docs/archive/closure/2026-06-28-068-S-codec-extraction-closure.md` (READY)
 - `docs/closure/2026-06-28-068-S-codec-extraction-compound-refresh.md`
 - `docs/compound/2026-06-28-codec-extraction-leaf-packages.md` (new learning: leaf-package extraction + true type alias + golden byte-equality tests)
 - `docs/design-docs/2026-06-28-frontmatter-codec-leaf-packages.md` (new design doc; design-docs dir created)

@@ -15,7 +15,7 @@ merge SHA; P-007 archive integrity passed with no deletions. Runtime
 verification was not applicable, and releasability was READY.
 
 Post-merge closure PR #435 merged on 2026-09-09. The closure record remains at
-`docs/closure/139-S-157-F-post-merge-closure.md`. The implementation decisions
+`docs/archive/closure/139-S-157-F-post-merge-closure.md`. The implementation decisions
 and seven P-021 follow-ups are preserved in
 `docs/memory/compacted/2026-09-09-139s-s5-mutation-framework-compacted.md`.
 

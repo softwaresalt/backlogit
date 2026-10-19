@@ -63,4 +63,4 @@ reconciliation flow now recorded in the final closure artifact.
 ### Traceability
 
 `148-S`, `167-F`, `167.015-T`, `866FDC8C`, issue #423, implementation PR #440, final
-closure record `docs/closure/2026-09-13-148-s-operational-closure.md`.
+closure record `docs/archive/closure/2026-09-13-148-s-operational-closure.md`.

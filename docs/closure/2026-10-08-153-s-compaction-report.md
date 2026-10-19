@@ -24,7 +24,7 @@ was not processed, so the status is `degraded`, not `done`.
 | Completed | Compacted eight memory notes dated 2026-09-03 to 2026-09-08 into `docs/memory/compacted/2026-10-08-early-sept-stage-ship-compacted.md`. |
 | Originals preserved | Moved with `git mv` to `docs/archive/memory/2026-10-08/` (8 files, 17,913 bytes). No source was deleted. |
 | Reference check | No queue item, exec plan, agent, or `AGENTS.md` references the archived notes. Repository references came only from `docs/archive/`. |
-| Excluded | `docs/memory/2026-09-08-ship-138s-compact-context.md` and `docs/memory/2026-08-20/azure-devops-sync-design-memory.md` are linked from live closure records and stay in place. |
+| Excluded | `docs/archive/memory/2026-09-08-ship-138s-compact-context.md` and `docs/archive/memory/2026-08-20/azure-devops-sync-design-memory.md` are linked from live closure records and stay in place. |
 | 153-S cursor | `docs/memory/2026-10-07/` and `docs/memory/2026-10-08/` are preserved; the 153-S closure PR is still open. |
 | Remaining target | `docs/memory/` still holds 164 files and about 717 KB after the run. Aged plan and closure records were not classified in this pass. |
 

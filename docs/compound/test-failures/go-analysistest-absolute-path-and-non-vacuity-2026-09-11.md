@@ -10,7 +10,7 @@ docline:
     - ".backlogit/archive/158.006-T.md"
     - ".backlogit/archive/158.007-T.md"
     - ".backlogit/archive/158.010-T.md"
-    - "docs/closure/2026-09-11-140-s-pr-436-runtime-verification.md"
+    - "docs/archive/closure/2026-09-11-140-s-pr-436-runtime-verification.md"
     - "https://github.com/softwaresalt/backlogit/pull/436"
     - "commit:3d0786949dc115ce4509b56593b94ac584f7da1b"
     - "commit:e0dbf176f368adde0f6a3bdb8c25c6f95a54d1f3"

@@ -104,10 +104,10 @@ prevented.
 - **Verification**: behavior preservation proven by differential golden
   byte-equality tests over the codec and `rewriteArchivedFromField`, a green CLI
   Reference Drift check, a body-preserving docs-migrate dry-run, and live ship
-  dogfooding. See `docs/closure/2026-06-28-068-S-codec-extraction-runtime-verification.md`.
+  dogfooding. See `docs/archive/closure/2026-06-28-068-S-codec-extraction-runtime-verification.md`.
 
 ## Related
 
 - Learning: `docs/compound/2026-06-28-codec-extraction-leaf-packages.md`
 - Contract: `docs/compound/2026-06-26-docline-frontmatter-contract.md`
-- Closure: `docs/closure/2026-06-28-068-S-codec-extraction-closure.md`
+- Closure: `docs/archive/closure/2026-06-28-068-S-codec-extraction-closure.md`

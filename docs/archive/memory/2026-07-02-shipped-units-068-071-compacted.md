@@ -26,7 +26,7 @@ golden-byte-equality tests, so `cmd/gen-docs` and the core share one encoder.
 * Durable learning: leaf-package extraction + type-alias compatibility + golden
   byte-equality is the safe pattern for relocating a serializer without churn.
 
-Durable pointers: `docs/closure/2026-06-28-068-S-codec-extraction-closure.md`
+Durable pointers: `docs/archive/closure/2026-06-28-068-S-codec-extraction-closure.md`
 (+ `-runtime-verification.md`, `-compound-refresh.md`).
 
 ## 069-S: docline + doctor robustness hardening
@@ -71,7 +71,7 @@ canonical-uniqueness scan in `CreateArtifact` (`CanonicalCache`, commit lineage
   boundary.)
 
 Durable pointers:
-`docs/closure/2026-06-29-070-S-internal-robustness-cluster-closure.md`
+`docs/archive/closure/2026-06-29-070-S-internal-robustness-cluster-closure.md`
 (+ `-runtime-verification.md`, `-compound-refresh.md`).
 
 ## 071-S: deterministic-gates slice
@@ -98,7 +98,7 @@ scoped strictly to 071-S (the same isolation pattern reused for 072-S).
   shipment **072-S** (PR #158, merge `d3f0fac`).
 
 Durable pointers:
-`docs/closure/2026-06-30-071-S-deterministic-gates-slice-closure.md`
+`docs/archive/closure/2026-06-30-071-S-deterministic-gates-slice-closure.md`
 (+ `-runtime-verification.md`).
 
 ## Stage session checkpoints (2026-06-27 → 2026-06-30)

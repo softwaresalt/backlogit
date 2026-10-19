@@ -43,7 +43,7 @@ dark-factory posture. Command: `Ship next; run in dark_mode`.
 ## Files modified (closure)
 
 - Backlog state: `109-S.md` queue->archive; 123-F + 123.001-T..009-T commit-stamped.
-- `docs/closure/2026-07-28-109-S-durable-writes-closure.md` (new).
+- `docs/archive/closure/2026-07-28-109-S-durable-writes-closure.md` (new).
 - `docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md` (new).
 - `.backlogit/archive/123-F.md` — restored dropped `spike_ref` link to 120-F.
 

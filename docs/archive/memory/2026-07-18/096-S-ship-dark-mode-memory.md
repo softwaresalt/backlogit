@@ -45,7 +45,7 @@ DARK_MODE (P-017) dark-factory pipeline, operator AFK. Ordered scope:
 - `docs/decisions/2026-07-18-size-extension-contract-architecture-spike.md`
   (commits `c0257c3`, `d7e377a`, `dc6bc78`, `ed016e3`, `e845145`).
 - `internal/core/docline_codec_roundtrip_test.go` (`d7e377a`).
-- `docs/closure/2026-07-18-096-S-size-extension-spike-post-merge-closure.md` (this closure).
+- `docs/archive/closure/2026-07-18-096-S-size-extension-spike-post-merge-closure.md` (this closure).
 - Backlog: `096-S` queue->archive; member archive metadata; `hooks_queue.jsonl`.
 
 ## Failed approaches / corrections

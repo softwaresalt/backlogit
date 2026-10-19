@@ -49,8 +49,8 @@ this session is closure / knowledge-graduation only (no re-implementation).
 
 ## Artifacts authored
 
-- `docs/closure/2026-06-27-061-S-metadata-section-sync-integrity-runtime-verification.md`
-- `docs/closure/2026-06-27-061-S-metadata-section-sync-integrity-closure.md`
+- `docs/archive/closure/2026-06-27-061-S-metadata-section-sync-integrity-runtime-verification.md`
+- `docs/archive/closure/2026-06-27-061-S-metadata-section-sync-integrity-closure.md`
 - `docs/closure/2026-06-27-061-S-metadata-section-sync-integrity-compound-refresh.md`
 - `docs/compound/2026-06-27-cli-mcp-catalog-parity-via-di-and-index-consistency.md` (new learning)
 - `docs/ARCHITECTURE.md` — graduated the DI-seam rule (mcp↛cli; `CLICommandProvider`) into the

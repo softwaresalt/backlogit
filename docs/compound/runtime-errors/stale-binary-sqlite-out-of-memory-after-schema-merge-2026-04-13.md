@@ -82,4 +82,4 @@ binaries outside the checkout.
 - Affected commands: `backlogit sync`, `backlogit shipment ship`
 - Fixed by: `go build -o backlogit-test.exe ./cmd/backlogit && .\backlogit-test.exe sync`
 - Reinforced during 088-S git-aware archival (2026-07-10): v1.4.1 `C:\Tools\backlogit.exe` did not contain the shipped `git mv` archival behavior; v1.4.2 `.\backlogit-dev.exe` did.
-- Evidence: `docs/closure/2026-07-09-088-S-git-aware-archival-closure.md`, `internal/core/archive.go`, `internal/core/archive_git_test.go`.
+- Evidence: `docs/archive/closure/2026-07-09-088-S-git-aware-archival-closure.md`, `internal/core/archive.go`, `internal/core/archive_git_test.go`.

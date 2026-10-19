@@ -114,7 +114,7 @@ any future regression of the extracted logic.
   re-stamped 6 records canonically with 0 doctor self-refs and preserved body bytes.
 - Plan: `docs/exec-plans/2026-06-27-shared-frontmatter-codec-extraction-plan.md`.
 - Deliberation: `docs/decisions/2026-06-27-shared-frontmatter-codec-extraction-deliberation.md`.
-- Closure: `docs/closure/2026-06-28-068-S-codec-extraction-closure.md`.
+- Closure: `docs/archive/closure/2026-06-28-068-S-codec-extraction-closure.md`.
 - Design rationale: `docs/design-docs/2026-06-28-frontmatter-codec-leaf-packages.md`.
 
 ## Applicability

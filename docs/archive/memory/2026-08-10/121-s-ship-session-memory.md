@@ -28,7 +28,7 @@ session: ship-121-s-135-f
 - internal/mcp/server.go — rebind Telemetry/HookEvents on lazy workspace init
 - internal/core/migrate_workspace_dir.go — probeWorkspaceCandidate validation
 - internal/core/migrate_workspace_dir_test.go — RejectsNonWorkspaceDirectory test
-- docs/closure/121-S-closure.md — operational closure record
+- docs/archive/closure/121-S-closure.md — operational closure record
 - .backlogit/archive/121-S.md — shipment archived
 
 ## Key Decisions

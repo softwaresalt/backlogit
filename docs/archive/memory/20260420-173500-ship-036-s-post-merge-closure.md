@@ -52,7 +52,7 @@ Three waves of Copilot review comments across PR #47 — all 21 threads resolved
 * `.github/agents/ship.agent.md` — Step 2 post-merge closure: source artifact archival loop
 * `.github/skills/operational-closure/SKILL.md` — Source Artifact Cleanup section added
 * `docs/compound/workflow-issues/source-artifact-archival-pattern-2026-04-20.md` — compound learning
-* `docs/exec-plans/2026-04-20-source-artifact-archival-plan.md` — implementation plan
+* `docs/archive/plans/2026-04-20-source-artifact-archival-plan.md` — implementation plan
 * `.backlogit/archive/033-F.md` — workspace repair: 033-F restored to archive
 * `.backlogit/archive/033.002-R-035-s-branch-review.md` — workspace repair: orphaned review archived
 * `.backlogit/archive/036-DL.md` — workspace repair: `archived_from` stamped

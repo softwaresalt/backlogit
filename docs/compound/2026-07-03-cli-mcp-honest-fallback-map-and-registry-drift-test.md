@@ -136,6 +136,6 @@ radius must be equal or *lower* on the fallback path, never higher.
 - Gap-fill tests: `internal/cli/shipment_add_test.go`, `internal/cli/checkpoint_create_test.go`
 - Discoverability guide: `docs/design-docs/2026-07-03-mcp-to-cli-fallback-guide.md`
 - Parity audit matrix: `docs/reviews/2026-07-03-cli-mcp-parity-matrix.md`
-- Runtime verification: `docs/closure/2026-07-03-078-S-cli-mcp-command-parity-runtime-verification.md`
+- Runtime verification: `docs/archive/closure/2026-07-03-078-S-cli-mcp-command-parity-runtime-verification.md`
 - Related (complementary, kept): `docs/compound/2026-06-27-cli-mcp-catalog-parity-via-di-and-index-consistency.md`,
   `docs/compound/2026-05-07-mcp-cli-config-parity.md`

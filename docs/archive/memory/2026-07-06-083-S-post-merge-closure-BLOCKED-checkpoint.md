@@ -16,7 +16,7 @@
 | Quality gates | `go test ./...`, `go vet ./...`, `golangci-lint run`, `gofmt -l .` — all GREEN |
 | Adversarial review (feature, pre-push) | PASS — 2 HIGH P1 gate-blockers remediated pre-push |
 | Copilot (feature PR) | 3 threads / 4 rounds — all replied + graphql-resolved; final 2 rounds clean, 0 unresolved |
-| §1.9 gate (feature) | PASS (`docs/closure/2026-07-06-083-S-feature-pr-operational-closure.md`) |
+| §1.9 gate (feature) | PASS (`docs/archive/closure/2026-07-06-083-S-feature-pr-operational-closure.md`) |
 | Pre-mode reconcile | PASS (`.backlogit/reconcile/083-S-pre-2026-07-06T183000.md`) — 10 items pre-archived[done], no orphans |
 | **`backlogit shipment ship 083-S`** | **REFUSED (exit 6)** — shipment-gate false staleness |
 | **083-S** | still **`active`** — clean, recoverable no-op (no state mutated, no blocked event) |
@@ -43,7 +43,7 @@ No supported bypass: no `hooks.yaml` gate config; no `--force`/break-glass flag 
 no evidence-refresh path for archived members. Forcing would require log tampering or an unplanned
 gate-semantics change in the shipping binary — both out of bounds.
 
-Full analysis: `docs/closure/2026-07-06-083-S-post-merge-closure-BLOCKED.md`.
+Full analysis: `docs/archive/closure/2026-07-06-083-S-post-merge-closure-BLOCKED.md`.
 
 ---
 

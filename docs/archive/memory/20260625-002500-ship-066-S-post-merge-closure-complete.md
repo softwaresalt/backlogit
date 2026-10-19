@@ -42,8 +42,8 @@
 
 ## Closure artifacts (on branch)
 
-- `docs/closure/2026-06-25-066-s-root-id-conflict-integrity-runtime-verification.md` (PASS)
-- `docs/closure/2026-06-25-066-s-root-id-conflict-integrity-closure.md` (READY) — monitoring
+- `docs/archive/closure/2026-06-25-066-s-root-id-conflict-integrity-runtime-verification.md` (PASS)
+- `docs/archive/closure/2026-06-25-066-s-root-id-conflict-integrity-closure.md` (READY) — monitoring
   framed as doctor-audit / CI guardrails (CLI/library integrity change, no runtime service);
   rollback = revert `80ce5f12`.
 - `docs/closure/2026-06-25-066-s-root-id-conflict-integrity-compound-refresh.md` (all keep)

@@ -19,7 +19,7 @@ title: 067-S archived_from Integrity — Post-Merge Operational Closure
 - **Merge commit**: `41f6ff7d309ccb7c388accd85d2c438205370a77` (merge commit on `main`, P-009 compliant; squash/rebase disabled repo-wide)
 - **Closure branch**: `post-merge/067-archived-from-integrity`
 - **Mode**: post-merge
-- **Verification**: `docs/closure/2026-06-27-067-S-archived-from-integrity-runtime-verification.md` — **PASS**
+- **Verification**: `docs/archive/closure/2026-06-27-067-S-archived-from-integrity-runtime-verification.md` — **PASS**
 - **Readiness**: **READY** (the change is already merged; this artifact records monitoring + rollback for the shipped scope)
 
 ## Summary of the change

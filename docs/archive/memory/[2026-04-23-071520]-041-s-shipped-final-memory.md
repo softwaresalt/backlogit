@@ -34,7 +34,7 @@ and post-merge closure complete.
 - `internal/events/hook_checkpoint_harness_041_test.go`
 - `internal/telemetry/checkpoint_harness_041_test.go`
 - `internal/telemetry/shipment_041_harness_test.go`
-- `docs/exec-plans/2026-04-22-write-durability-hook-reliability-plan.md`
+- `docs/archive/plans/2026-04-22-write-durability-hook-reliability-plan.md`
 - `docs/closure/2026-04-23-041-s-write-durability-closure.md`
 - `docs/compound/best-practices/windows-safe-atomic-rename-goos-gate-2026-04-23.md`
 - `docs/compound/best-practices/go-file-write-short-write-guard-2026-04-23.md`

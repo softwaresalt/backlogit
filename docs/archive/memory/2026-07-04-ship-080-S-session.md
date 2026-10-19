@@ -97,8 +97,8 @@ Shipment `080-S` "Release pipeline and documentation hygiene" (feature `080-F`),
 - §1.9 readiness gate at afab513: Check1 (no pending req) PASS; Check2 (freshness commit.oid==HEAD) PASS; Check3 (0 unresolved Copilot threads) PASS. reviewDecision=REVIEW_REQUIRED (branch-protection PR-Review ruleset; needs operator admin-bypass — expected, same as 078/079-S).
 - P-009 verified: repo allows merge_commit only (squash+rebase disabled).
 - Closure artifacts (docs/closure/, docline-clean):
-  - 2026-07-04-080-S-release-docs-hygiene-runtime-verification.md (PASS WITH FOLLOW-UP)
-  - 2026-07-04-080-S-release-docs-hygiene-closure.md (READY WITH CONDITIONS)
+  - docs/archive/closure/2026-07-04-080-S-release-docs-hygiene-runtime-verification.md (PASS WITH FOLLOW-UP)
+  - docs/archive/closure/2026-07-04-080-S-release-docs-hygiene-closure.md (READY WITH CONDITIONS)
 - Closure commit is docs-only -> re-request Copilot + re-run §1.9 on the closure HEAD before halt.
 - Follow-up (deferred): observe guard on next real tagged release; P3 exec.CommandContext timeout in test wrapper; external stash 34F11E5A + EED25928 out of scope (Principle IV).
 

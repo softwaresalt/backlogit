@@ -116,6 +116,6 @@ the item's good events.
 - `docs/compound/runtime-errors/bufio-scanner-incomplete-fix-missed-db-package-2026-04-25.md`
   — oversized JSONL lines (`bufio.Scanner` 1 MB limit). The event-log parsers
   converged here do not yet apply that handling; deferred follow-up.
-- Citations: `docs/closure/2026-07-07-086-S-closure.md`,
+- Citations: `docs/archive/closure/2026-07-07-086-S-closure.md`,
   `docs/exec-plans/2026-07-07-malformed-jsonl-line-handling-convergence-plan.md`,
   `docs/decisions/2026-07-07-malformed-jsonl-line-handling-convergence-deliberation.md`.

@@ -13,7 +13,7 @@ docline:
         - parity
         - bounded-output
         - s3
-source: docs/closure/137-S-155-F-post-merge-closure.md
+source: docs/archive/closure/137-S-155-F-post-merge-closure.md
 title: S3 — Bounded error projection and CLI/MCP shared validation patterns
 ---
 

@@ -17,7 +17,7 @@ date: 2026-08-29
 - **Copilot review cycle 1**: 1 comment (doc wording), fixed in 471ad54c, thread PRRT_kwDORzozKM6dYacE resolved
 - **Copilot review cycle 2**: 0 new threads; advisory suppressed
 - **All CI green** on final HEAD 471ad54c5d6bef0f0db2db676084b2adfa42daf4
-- **FC-3 closure artifact** written at docs/closure/2026-08-29-132-s-closure.md
+- **FC-3 closure artifact** written at docs/archive/closure/2026-08-29-132-s-closure.md
 
 ## Files Modified
 
@@ -40,7 +40,7 @@ date: 2026-08-29
 
 FC-1: COMPLETE (red observed, green confirmed)
 FC-2: COMPLETE (preflight check passed)
-FC-3: COMPLETE (audit trail in docs/closure/2026-08-29-132-s-closure.md)
+FC-3: COMPLETE (audit trail in docs/archive/closure/2026-08-29-132-s-closure.md)
 
 ## Worktree
 

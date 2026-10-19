@@ -30,8 +30,8 @@ phase: post-merge-closure
 
 ## Closure artifacts authored (all pass docline gate; `docs lint` full-repo valid, 0 violations)
 
-- `docs/closure/2026-06-27-060-S-shipment-state-integrity-runtime-verification.md` — **PASS** (5 core tests + live ship).
-- `docs/closure/2026-06-27-060-S-shipment-state-integrity-closure.md` — operational closure, **READY**.
+- `docs/archive/closure/2026-06-27-060-S-shipment-state-integrity-runtime-verification.md` — **PASS** (5 core tests + live ship).
+- `docs/archive/closure/2026-06-27-060-S-shipment-state-integrity-closure.md` — operational closure, **READY**.
 - `docs/compound/best-practices/atomic-multi-item-claim-rollback-and-stale-blocked-clearing-2026-06-27.md` — new learning.
 - `docs/closure/2026-06-27-060-S-shipment-state-integrity-compound-refresh.md` — 4 overlapping entries classified **keep** (distinct mechanisms).
 

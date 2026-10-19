@@ -8,7 +8,7 @@
 ## Work completed (build-feature cycle)
 
 - Classified `docs/closure/` (88 files — 87 top-level + 1 `2026-04-06/` subdir — / 585 KB): STALE (<=2026-05-30, all closed + >14d) = 37 files (36 top-level + 1 subdir); PRESERVE (>2026-06-20, <14d window) = 51 files.
-- Wrote consolidated `docs/closure/2026-07-04-closure-archive-compaction-summary.md` (born docline-compliant): per-unit digests + complete 37-file archived index + AC-5 residual note.
+- Wrote consolidated `docs/archive/closure/2026-07-04-closure-archive-compaction-summary.md` (born docline-compliant): per-unit digests + complete 37-file archived index + AC-5 residual note.
 - `git mv` moved 37 stale originals archive-only to `docs/archive/closure/**` (mirror-mapped; 37 renames R; no deletions). Empty `docs/closure/2026-04-06/` cleaned.
 
 ## Gate results

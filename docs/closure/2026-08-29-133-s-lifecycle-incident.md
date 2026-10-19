@@ -11,7 +11,7 @@ title: 133-S Lifecycle Incident — P-001 Task Lifecycle Gap (150.001-T, 150.002
 
 **Detected**: 2026-08-29T19:06:31Z (post-Ship read-only remote check, after PR #391 merge)
 **Reported by**: Ship agent (autonomous post-closure verification)
-**Status**: RESOLVED — 2026-08-30. `ReconcileArchivedLifecycle` (152-F, PR #394) implements the Option B path. Applied in application PR #395. Both `150.001-T` and `150.002-T` now have `archived_status: done`. See `docs/closure/2026-08-29-133-s-cleanupcheckpoints-closure.md` Lifecycle Reconciliation Addendum.
+**Status**: RESOLVED — 2026-08-30. `ReconcileArchivedLifecycle` (152-F, PR #394) implements the Option B path. Applied in application PR #395. Both `150.001-T` and `150.002-T` now have `archived_status: done`. See `docs/archive/closure/2026-08-29-133-s-cleanupcheckpoints-closure.md` Lifecycle Reconciliation Addendum.
 
 ## P-001 Contradiction
 
@@ -57,7 +57,7 @@ Both tasks were effectively complete when archived. The lifecycle gap is procedu
 | RED commit (150.001-T) | `6fdd5c58` — `TestCleanupCheckpoints_NoPreRemoveInAST` FAILS as required |
 | GREEN commit (150.002-T) | `1ace3861` — pre-Remove block and runtime import removed; test PASSES |
 | Final Copilot fix | `af54c6a3` — test comment precision |
-| All quality gates | PASS at `af54c6a3` (see closure record `2026-08-29-133-s-cleanupcheckpoints-closure.md`) |
+| All quality gates | PASS at `af54c6a3` (see closure record `docs/archive/closure/2026-08-29-133-s-cleanupcheckpoints-closure.md`) |
 | PR #390 merge | `e3deede6` — code fix merged into `origin/main` |
 | PR #391 merge | `1dfdd6ce` — closure merged into `origin/main` |
 
@@ -108,7 +108,7 @@ Only one safe option exists with the current tooling:
 
 The lifecycle gap is permanently documented in:
 1. This incident record (`docs/closure/2026-08-29-133-s-lifecycle-incident.md`)
-2. The main closure record addendum (`docs/closure/2026-08-29-133-s-cleanupcheckpoints-closure.md`)
+2. The main closure record addendum (`docs/archive/closure/2026-08-29-133-s-cleanupcheckpoints-closure.md`)
 3. The merged remediation PR
 
 **P-001 status**: Lifecycle gap acknowledged; the historical record (`archived_status: active`)

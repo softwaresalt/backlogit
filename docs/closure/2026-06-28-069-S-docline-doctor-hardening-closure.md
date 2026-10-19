@@ -19,7 +19,7 @@ title: 069-S Docline + Doctor Robustness Hardening — Post-Merge Operational Cl
 - **Merge commit**: `1dd4e69a8fcefdf18f13efe90f49031d865c95db` (merge commit on `main`, P-009 compliant; squash/rebase disabled repo-wide)
 - **Closure branch**: `post-merge/069-docline-doctor-hardening`
 - **Mode**: post-merge
-- **Verification**: `docs/closure/2026-06-28-069-S-docline-doctor-hardening-runtime-verification.md` — **PASS**
+- **Verification**: `docs/archive/closure/2026-06-28-069-S-docline-doctor-hardening-runtime-verification.md` — **PASS**
 - **Readiness**: **READY** (already merged; this artifact records monitoring + rollback for the shipped scope)
 
 ## Summary of the change

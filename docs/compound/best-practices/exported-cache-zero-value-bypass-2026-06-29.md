@@ -143,8 +143,8 @@ against a nil map before assigning, so a zero-value cache that somehow reaches
   (priority harvest). Single interactive creates pass no cache and scan per call.
 - Surfaced by Copilot review on PR #154 (zero-value `&core.CanonicalCache{}`
   bypass), fixed in-cycle and re-reviewed.
-- Closure: `docs/closure/2026-06-29-070-S-internal-robustness-cluster-closure.md`.
-- Runtime verification: `docs/closure/2026-06-29-070-S-internal-robustness-cluster-runtime-verification.md`.
+- Closure: `docs/archive/closure/2026-06-29-070-S-internal-robustness-cluster-closure.md`.
+- Runtime verification: `docs/archive/closure/2026-06-29-070-S-internal-robustness-cluster-runtime-verification.md`.
 
 ## Applicability
 
@@ -194,7 +194,7 @@ fail-closed path, never to skip-and-succeed.**
   `internal/core/doctor_target_test.go` (nil-HeaderDef → io/exit-3 scenario +
   loaded-HeaderDef pass regression guard).
 - Closure: `docs/closure/2026-07-01-072-S-doctor-nil-headerdef-closure.md`,
-  `docs/closure/2026-07-02-072-S-doctor-nil-headerdef-post-merge-closure.md`.
+  `docs/archive/closure/2026-07-02-072-S-doctor-nil-headerdef-post-merge-closure.md`.
 
 ## Reinforcement — 073-S (2026-07-02): 3rd instance / recurrence family CLOSED
 
@@ -252,8 +252,8 @@ and inverted to fail closed.
   fails closed with `errors.Is(err, ErrConfig)` && not `ErrValidation` and no file
   persisted; update nil-HeaderDef fails closed with on-disk title unchanged;
   loaded-path create+update regression green).
-- Closure: `docs/closure/2026-07-02-073-S-artifacts-nil-headerdef-closure.md`,
-  `docs/closure/2026-07-02-073-S-artifacts-nil-headerdef-runtime-verification.md`.
+- Closure: `docs/archive/closure/2026-07-02-073-S-artifacts-nil-headerdef-closure.md`,
+  `docs/archive/closure/2026-07-02-073-S-artifacts-nil-headerdef-runtime-verification.md`.
 
 ## Reinforcement — 075-S (2026-07-02): distinct shape — nil-DB guard in a read-only derivation (family stays CLOSED)
 

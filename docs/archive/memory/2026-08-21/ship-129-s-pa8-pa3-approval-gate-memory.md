@@ -21,7 +21,7 @@ tasks require gate approval, per explicit operator instruction.
 * Root worktree `C:\Source\GitHub\backlogit` was on `chore/stage-129-s` (the merged staging
   branch) with three untracked Azure DevOps artifacts that had to remain untouched:
   `docs/decisions/2026-08-20-azure-devops-sync-spike.md`,
-  `docs/exec-plans/2026-08-20-azure-devops-sync-plan.md`, `docs/memory/2026-08-20/`.
+  `docs/archive/plans/2026-08-20-azure-devops-sync-plan.md`, `docs/memory/2026-08-20/`.
 * Verified `git status --short --untracked-files=no` was clean (zero tracked changes) before
   switching branches, so the untracked Azure DevOps files were provably unaffected by the
   in-place branch switch (git preserves untracked files across checkout).

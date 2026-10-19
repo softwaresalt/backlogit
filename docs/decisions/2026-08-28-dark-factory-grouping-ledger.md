@@ -38,7 +38,7 @@ title: "Dark-Factory Bounded Stash Grouping Ledger"
 **Risk**: MODERATE — single-function bug fix with AST-verified regression coverage
 **Status**: Staged as shipment 132-S
 **Provenance**: Post-activation causal item from 131-S P-002 audit (CB71B412)
-**Plan**: docs/exec-plans/2026-08-29-remove-syncwritefileatomic-preremove-plan.md
+**Plan**: docs/archive/plans/2026-08-29-remove-syncwritefileatomic-preremove-plan.md
 
 | Stash ID | Priority | Kind | Summary |
 |---|---|---|---|

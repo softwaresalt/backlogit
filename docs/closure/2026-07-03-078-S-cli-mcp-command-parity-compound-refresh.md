@@ -57,4 +57,4 @@ record.
 - Test names cited verbatim from `internal/cli/registry_parity_test.go`,
   `internal/cli/shipment_list_items_test.go`, `internal/cli/shipment_add_test.go`,
   `internal/cli/checkpoint_create_test.go`.
-- Runtime verification PASS: `docs/closure/2026-07-03-078-S-cli-mcp-command-parity-runtime-verification.md`.
+- Runtime verification PASS: `docs/archive/closure/2026-07-03-078-S-cli-mcp-command-parity-runtime-verification.md`.

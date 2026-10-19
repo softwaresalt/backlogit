@@ -54,13 +54,13 @@
 - **PASS** — source build (`go build ./cmd/backlogit`, exit 0): loaded-path `add feature` (exit 0)
   and `update --title` (exit 0) non-regressed; nil branch covered by the two new unit tests. Temp
   binary removed (not committed). Report:
-  `docs/closure/2026-07-02-073-S-artifacts-nil-headerdef-runtime-verification.md`.
+  `docs/archive/closure/2026-07-02-073-S-artifacts-nil-headerdef-runtime-verification.md`.
 
 ## Operational closure
 
 - **READY** — merge-only, zero-blast-radius; no monitoring/rollback. No new follow-up stash
   (artifacts.go was the third/last recurrence site). Deferred advisories recorded, not stashed.
-  Report: `docs/closure/2026-07-02-073-S-artifacts-nil-headerdef-closure.md`.
+  Report: `docs/archive/closure/2026-07-02-073-S-artifacts-nil-headerdef-closure.md`.
 
 ## Branch / PR state
 

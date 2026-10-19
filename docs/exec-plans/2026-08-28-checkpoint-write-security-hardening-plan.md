@@ -218,7 +218,7 @@ Findings addressed:
 7. U4: O_NOFOLLOW on open, not Lstat-then-open (avoids TOCTOU in detection itself)
 8. Adversarial review: ESCALATED — multi-persona review completed post-merge
    (see Adversarial Review Gate section below and
-   docs/closure/2026-08-28-131s-adversarial-review-evidence.md)
+   docs/archive/closure/2026-08-28-131s-adversarial-review-evidence.md)
 
 ## Adversarial Review Gate
 
@@ -227,7 +227,7 @@ dispatch_mode: multi-persona (3 independent reviewers via Adversarial Review age
 reviewers: Reviewer-A (Tier 1, gemini-3.5-flash), Reviewer-B (Tier 2, gpt-5.5), Reviewer-C (Tier 3, claude-opus-5)
 assembly_model: claude-sonnet-5
 decision: PASS — no verified P0/P1 findings after independent verification
-evidence: docs/closure/2026-08-28-131s-adversarial-review-evidence.md
+evidence: docs/archive/closure/2026-08-28-131s-adversarial-review-evidence.md
 
 ### Remediation Queue (adversarial-review.instructions.md §43-53)
 
