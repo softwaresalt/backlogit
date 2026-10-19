@@ -10,7 +10,7 @@ chunk_strategy: h1-h2-h3
 
 P-020 compaction (2026-10-18, closure of 199-S). These ten notes were already referenced by earlier compacted summaries (for example `docs/memory/compacted/2026-10-15-memory-2026-08-20-to-2026-09-30-compacted.md`); this file adds a per-note extract and the path traceability. Originals are preserved in the archive.
 
-### Azure DevOps Sync Design Session Memory
+## Azure DevOps Sync Design Session Memory
 
 * Date: 2026-08-20; original: `docs/archive/memory/2026-08-20/azure-devops-sync-design-memory.md`
 
@@ -22,19 +22,19 @@ P-020 compaction (2026-10-18, closure of 199-S). These ten notes were already re
 
 **Next Steps**: 1. Obtain operator approval for the spike and implementation plan. 2. On explicit instruction, harvest the plan into backlog items and a queued    shipment. 3. Begin implementation test-first with configuration, REST transport, and    pure mapping units.
 
-### 2026-09-08-ship-138s-compact-context.md
+## 2026-09-08-ship-138s-compact-context.md
 
 * Date: 2026-09-08; original: `docs/archive/memory/2026-09-08-ship-138s-compact-context.md`
 
 **Status**: compaction: done (below threshold, no consolidation required)
 
-### 2026-09-11-ship-140-s-pre-pr.md
+## 2026-09-11-ship-140-s-pre-pr.md
 
 * Date: 2026-09-11; original: `docs/archive/memory/2026-09-11-ship-140-s-pre-pr.md`
 
 **Next step**: Push the current branch, run a current-HEAD report-only review including this checkpoint, prepare the pull request with local review/build evidence, confirm required CI and Copilot-review state, and merge with a merge commit under the recorded dark-mode preauthorization if every last-mile gate passes.
 
-### FL005 Review Remediation Memory
+## FL005 Review Remediation Memory
 
 * Date: 2026-09-11; original: `docs/archive/memory/2026-09-11/fl005-review-remediation-memory.md`
 
@@ -46,7 +46,7 @@ P-020 compaction (2026-10-18, closure of 199-S). These ten notes were already re
 
 **Next Step**: Keep 158.007-T active for the owning review workflow. Do not push this local commit.
 
-### stage-155s-hooks-trace-repair-memory.md
+## stage-155s-hooks-trace-repair-memory.md
 
 * Date: 2026-09-16; original: `docs/archive/memory/2026-09-16/stage-155s-hooks-trace-repair-memory.md`
 
@@ -59,7 +59,7 @@ P-020 compaction (2026-10-18, closure of 199-S). These ten notes were already re
 events for only 6 of the 9 new tasks (`174.055/056/057/058/061/062-T`). Tasks
 `174.059-T`, ...
 
-### ship-155s-final-review-halt.md
+## ship-155s-final-review-halt.md
 
 * Date: 2026-09-25; original: `docs/archive/memory/2026-09-25/ship-155s-final-review-halt.md`
 
@@ -72,7 +72,7 @@ events for only 6 of the 9 new tasks (`174.055/056/057/058/061/062-T`). Tasks
   same-HEAD capture measured `529.521s` but exited 1 because stray gitignored
  ...
 
-### Ship 155-S Review Remediation Stage Handoff
+## Ship 155-S Review Remediation Stage Handoff
 
 * Date: 2026-09-25; original: `docs/archive/memory/2026-09-25/ship-155s-remediation-stage-handoff.md`
 * Description: Records the review-fix handoff required because no queued shipment task covers the requested remediation.
@@ -86,7 +86,7 @@ events for only 6 of the 9 new tasks (`174.055/056/057/058/061/062-T`). Tasks
   `checkpoint-20260925-202625.json` (superseded W3 P-002.4 halt) and
   `checkpoint-20260923-222732.json` (superseded ...
 
-### Autoharness tune 2026-09-27 session memory
+## Autoharness tune 2026-09-27 session memory
 
 * Date: 2026-09-27; original: `docs/archive/memory/2026-09-27/autoharness-tune-memory.md`
 
