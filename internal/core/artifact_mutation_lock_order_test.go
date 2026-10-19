@@ -33,12 +33,16 @@ func TestU172_LockOrder_ArchiveItemDoesNotHoldArtifactLockWhileWaitingForItemLog
 		}
 	})
 
-	archiveAttemptedArtifactLock := make(chan struct{})
+	// 200.007-T supersedes the original 172.002-T observation order. ArchiveItem
+	// now takes C for its archive set before B, so while the test holds C it must
+	// be waiting for C holding no B, and must never reach B. The B hook is
+	// therefore a negative probe: firing means ArchiveItem took B ahead of C.
+	archiveReachedArtifactLock := make(chan struct{})
 	previousHook := artifactMutationLockBarrierHook
 	var hookOnce sync.Once
 	artifactMutationLockBarrierHook = func(artifactID string) {
 		if artifactID == item.ID {
-			hookOnce.Do(func() { close(archiveAttemptedArtifactLock) })
+			hookOnce.Do(func() { close(archiveReachedArtifactLock) })
 		}
 	}
 	t.Cleanup(func() { artifactMutationLockBarrierHook = previousHook })
@@ -56,10 +60,21 @@ func TestU172_LockOrder_ArchiveItemDoesNotHoldArtifactLockWhileWaitingForItemLog
 	})
 	t.Cleanup(restoreItemLogHook)
 
+	// The lifecycle-global hook reports when ArchiveItem holds the global lock,
+	// the step that precedes its wait for C, so the writer below cannot run
+	// before ArchiveItem has started contending.
+	archiveHoldsGlobal := make(chan struct{})
+	var globalOnce sync.Once
+	archiveCtx := context.WithValue(ctx, shipmentLifecycleGlobalLockHookContextKey{}, func(phase string) {
+		if phase == "acquired" {
+			globalOnce.Do(func() { close(archiveHoldsGlobal) })
+		}
+	})
+
 	archiveDone := make(chan error, 1)
 	archiveReturned := false
 	go func() {
-		_, archiveErr := ArchiveItem(ctx, ws.DB, ws, item.ID)
+		_, archiveErr := ArchiveItem(archiveCtx, ws.DB, ws, item.ID)
 		archiveDone <- archiveErr
 	}()
 	// Registered after the hook-restore cleanups so it runs before them: on an
@@ -81,16 +96,18 @@ func TestU172_LockOrder_ArchiveItemDoesNotHoldArtifactLockWhileWaitingForItemLog
 	})
 
 	select {
-	case <-archiveAttemptedArtifactLock:
+	case <-archiveHoldsGlobal:
 	case <-time.After(u172ObservationWait):
-		t.Fatal("ArchiveItem never attempted the artifact mutation lock")
+		t.Fatal("ArchiveItem never acquired the lifecycle global lock")
 	}
-	waitForU172ArtifactStatus(t, ctx, ws, item.ID, models.StatusArchived)
+	select {
+	case <-archiveReachedArtifactLock:
+		t.Fatal("ArchiveItem acquired the artifact mutation lock B while another writer held C: it must take C before B")
+	case <-time.After(250 * time.Millisecond):
+	}
 
 	// The writer try-locks B, so a B held by ArchiveItem while it waits for C
 	// surfaces as ErrTaskBusy until the deadline instead of a timing guess.
-	// Retrying only absorbs the short window between the archived status
-	// becoming visible and ArchiveItem releasing B.
 	writerErr := runU172CBeforeBWriter(cLockedCtx, ws, item.ID, defaultGateLockBoundedWait)
 	require.Zero(t, archiveCAttempts.Load(), "ArchiveItem acquired the item-log file lock while the test still held C")
 
@@ -134,20 +151,6 @@ func runU172CBeforeBWriter(cLockedCtx context.Context, ws *Workspace, itemID str
 // deliberately decoupled from defaultGateLockBoundedWait: nothing contends the
 // locks while the test observes, so this only absorbs slow I/O on loaded hosts.
 const u172ObservationWait = 30 * time.Second
-
-func waitForU172ArtifactStatus(t *testing.T, ctx context.Context, ws *Workspace, itemID string, status models.ArtifactStatus) {
-	t.Helper()
-	deadline := time.Now().Add(u172ObservationWait)
-	for time.Now().Before(deadline) {
-		artifact, err := findArtifact(ctx, ws, itemID)
-		if err == nil && artifact.Status == status {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	artifact := readArtifactForTest(t, ctx, ws, itemID)
-	require.Equal(t, status, artifact.Status)
-}
 
 func readU172ItemLogEventTypes(t *testing.T, ws *Workspace, itemID string) []string {
 	t.Helper()

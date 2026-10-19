@@ -540,6 +540,14 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	var explicitScope, releaseScope, featureIDs []string
 	var explicitScopeSet map[string]struct{}
 	var shipSnapshots map[string]shipArtifactSnapshot
+	// The C release is registered before the B release so deferred calls run
+	// B first, then C, the reverse of the global, A, C, B acquisition order.
+	var releaseItemLogLocks func()
+	defer func() {
+		if releaseItemLogLocks != nil {
+			releaseItemLogLocks()
+		}
+	}()
 	var releaseArtifactLocks func() error
 	defer func() {
 		if releaseArtifactLocks != nil {
@@ -616,6 +624,17 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 
 		rollbackIDs := append([]string{shipmentID}, releaseScope...)
+		// 200.005-T: canonical order is lifecycle global, A (held above), C, then
+		// B. Take C for every archive-set item, in sorted item-ID order, before B
+		// so the archive loop below appends each archive event under a C this
+		// call already holds. A nested ArchiveItem reuses it and never acquires C
+		// itself while B is held.
+		itemLogIDs := shipItemLogScopeIDs(ctx, ws, shipmentID, releaseScope, featureIDs, explicitScopeSet)
+		var itemLogLockErr error
+		ctx, releaseItemLogLocks, itemLogLockErr = lockItemLogsSorted(ctx, ws, itemLogIDs)
+		if itemLogLockErr != nil {
+			return fmt.Errorf("lock release scope item logs: %w", itemLogLockErr)
+		}
 		var artifactLockErr error
 		ctx, releaseArtifactLocks, artifactLockErr = lockArtifactMutations(ctx, ws, rollbackIDs)
 		if artifactLockErr != nil {
@@ -713,6 +732,30 @@ func completeReleaseScope(ctx context.Context, ws *Workspace, releaseScope []str
 		}
 	}
 	return nil
+}
+
+// shipItemLogScopeIDs returns the item IDs whose item-log lock (C) ShipShipment
+// must hold before it takes batch B (200.005-T): every item it may archive or
+// append an event for during the closure and the archive loop. That is the
+// shipment, the release scope, the explicit member features, and every
+// descendant of those, so a nested ArchiveItem scope (including cascade
+// descendants) is always covered by a context-held C. Extra IDs are harmless:
+// a larger sorted C set cannot introduce a lock-order cycle.
+func shipItemLogScopeIDs(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, featureIDs []string, explicitScope map[string]struct{}) []string {
+	roots := append([]string{shipmentID}, releaseScope...)
+	for _, featureID := range featureIDs {
+		if _, isMember := explicitScope[featureID]; isMember {
+			roots = append(roots, featureID)
+		}
+	}
+	roots = uniqueNonEmptyStrings(roots)
+	ids := append([]string(nil), roots...)
+	visited := make(map[string]bool, len(roots))
+	maxDepth := maxCascadeDepth(ws)
+	for _, root := range roots {
+		ids = append(ids, collectDescendants(ctx, ws.DB, root, visited, 0, maxDepth)...)
+	}
+	return uniqueNonEmptyStrings(ids)
 }
 
 func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, featureIDs []string, explicitScope map[string]struct{}) ([]string, error) {
