@@ -601,6 +601,7 @@ func filterByResolvedDependencies(ctx context.Context, database *sql.DB, items [
 	}
 	return result, nil
 }
+
 func isExecutionBlockingDependency(depType string) bool {
 	switch strings.ToLower(strings.TrimSpace(depType)) {
 	case "blocks", "parent_of", "relates_to":
