@@ -46,11 +46,13 @@ type VerificationResult struct {
 	MissingReps []RepresentationKind
 }
 
-// VerifySuccess verifies that all declared representations for snap.Op differ
-// between snap.Before and snap.After, indicating that a mutation fully
-// committed. A representation kind is considered missing (not updated) when
-// its Before and After bytes are equal. The result's Passed field is true only
-// when every declared kind was changed. MissingReps contains the kinds that
+// VerifySuccess verifies that all declared unconditional representations for
+// snap.Op differ between snap.Before and snap.After, indicating that a mutation
+// fully committed. A representation kind is considered missing (not updated)
+// when its Before and After bytes are equal. Kinds the declaration marks
+// conditional (RepresentationSet.Conditional) are optional on success: they may
+// change or stay unchanged and are never reported missing. The result's Passed
+// field is true only when every unconditional declared kind was changed. MissingReps contains the kinds that
 // were not updated, sorted by kind string value.
 //
 // If any declared representation is absent from both Before and After, the
@@ -81,6 +83,9 @@ func VerifySuccess(snap MutationSnapshot) (VerificationResult, error) {
 
 	missing := make([]RepresentationKind, 0, len(set.Representations))
 	for _, k := range set.Representations {
+		if set.IsConditional(k) {
+			continue
+		}
 		if bytes.Equal(snap.Before[k], snap.After[k]) {
 			missing = append(missing, k)
 		}
@@ -103,7 +108,8 @@ func VerifySuccess(snap MutationSnapshot) (VerificationResult, error) {
 // considered drifted (unexpectedly changed) when its Before and After bytes
 // differ. The result's Passed field is true only when every declared kind is
 // unchanged. DriftedReps contains the kinds that changed, sorted by kind
-// string value.
+// string value. Conditional representations are checked too: an event or other
+// write that lands on a failed mutation is drift.
 //
 // If any declared representation is absent from both Before and After, the
 // result carries IncompleteSnapshot=true and Passed=false; DriftedReps is not

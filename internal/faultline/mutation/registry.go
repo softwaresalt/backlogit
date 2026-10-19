@@ -37,6 +37,7 @@ func Register(set RepresentationSet) error {
 	cp := make([]RepresentationKind, len(set.Representations))
 	copy(cp, set.Representations)
 	set.Representations = cp
+	set.Conditional = copyKinds(set.Conditional)
 	reg[set.Op] = set
 	return nil
 }
@@ -56,7 +57,18 @@ func Lookup(opName string) (RepresentationSet, bool) {
 	cp := make([]RepresentationKind, len(set.Representations))
 	copy(cp, set.Representations)
 	set.Representations = cp
+	set.Conditional = copyKinds(set.Conditional)
 	return set, true
+}
+
+// copyKinds returns an independent copy of kinds, preserving nil.
+func copyKinds(kinds []RepresentationKind) []RepresentationKind {
+	if kinds == nil {
+		return nil
+	}
+	cp := make([]RepresentationKind, len(kinds))
+	copy(cp, kinds)
+	return cp
 }
 
 // Registered returns the names of all registered ops in sorted order.
