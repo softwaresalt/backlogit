@@ -53,10 +53,22 @@ const queuePositionCustomField = "queue_position"
 // QueryQueueForWorkspace retrieves the queue view for a workspace, resolving
 // shipment predecessor readiness from Markdown provenance.
 func QueryQueueForWorkspace(ctx context.Context, ws *Workspace, filter *QueueFilter) (*QueueView, error) {
-	return nil, blerrors.ErrNotImplemented
+	if ws == nil {
+		return nil, fmt.Errorf("workspace is required")
+	}
+	scoped := QueueFilter{}
+	if filter != nil {
+		scoped = *filter
+	}
+	scoped.shipmentPredecessorResolver = func(ctx context.Context, id string) (bool, string, error) {
+		return ShipmentPredecessorShipped(ctx, ws, id)
+	}
+	return QueryQueue(ctx, ws.DB, &scoped)
 }
 
 // QueryQueue retrieves artifacts matching the filter criteria, with optional grouping.
+// Callers that hold a Workspace must use QueryQueueForWorkspace so shipment
+// predecessor readiness is resolved from Markdown provenance.
 func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueView, error) {
 	if filter == nil {
 		filter = &QueueFilter{}
@@ -260,7 +272,7 @@ func MoveInQueue(ctx context.Context, ws *Workspace, itemID string, position int
 		return fmt.Errorf("position must be >= 1")
 	}
 
-	view, err := QueryQueue(ctx, ws.DB, filter)
+	view, err := QueryQueueForWorkspace(ctx, ws, filter)
 	if err != nil {
 		return fmt.Errorf("load queue view: %w", err)
 	}
