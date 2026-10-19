@@ -25,7 +25,7 @@ status: halted-part-1-circuit-breaker
   * `.backlogit/checkpoints/checkpoint-20260929-033703.json`
   * `.backlogit/reconcile/155-S-*.md`
   * `.backlogit/telemetry.jsonl`
-  * `docs/memory/2026-09-28/orchestrator-decisions-and-154-s-revalidation-memory.md`
+  * `docs/archive/memory/2026-09-28/orchestrator-decisions-and-154-s-revalidation-memory.md`
 
 ## Operator decisions consumed (2026-09-28T22:22 -07:00)
 

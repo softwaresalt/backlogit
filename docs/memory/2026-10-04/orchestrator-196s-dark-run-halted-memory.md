@@ -11,7 +11,7 @@
 
 - Staging PR #475 (196-S `dag-root` waiver + `docs/memory/2026-10-03/stage-196s-sequencing-edge.md`): adversarial review (4 reviewers, F1–F8 remediated), 2 Copilot rounds (1 thread fixed in `ef820639`, replied, resolved via GraphQL), CI green, `autoharness gate copilot-review` PASS, merged with merge commit `2e89bfb6`, post-merge ff-only sync verified.
 - Topology `pre_claim` gate PASS on clean `main` (`predecessor_source: declared_root`).
-- Served-Root Handoff Procedure steps a–f PASS; R8 record: `docs/memory/2026-10-04/orchestrator-196s-served-root-handoff.md`.
+- Served-Root Handoff Procedure steps a–f PASS; R8 record: `docs/archive/memory/2026-10-04/orchestrator-196s-served-root-handoff.md`.
 
 ## Halt cause (plan defect)
 

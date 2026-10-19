@@ -32,6 +32,6 @@ This is the R8 outcome record and the bootstrap authorization record. They are r
 ## Prior Halt
 
 The first Ship dispatch halted with `SERVED_ROOTS_UNRESOLVED`, because it did not include the
-handoff. See `docs/memory/2026-10-04/ship-196-S-preclaim-blocked-served-roots.md` and the
+handoff. See `docs/archive/memory/2026-10-04/ship-196-S-preclaim-blocked-served-roots.md` and the
 checkpoint `.backlogit/checkpoints/checkpoint-20261004-190203.json`. No claim or mutation
 occurred.
