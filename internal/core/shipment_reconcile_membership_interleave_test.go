@@ -193,10 +193,11 @@ func TestReconcileMembershipInterleave_CharacterizesCurrentBehavior(t *testing.T
 // i.e. a membership writer strictly follows the whole closure and the manifest
 // the closure froze in Phase A is the manifest it finishes with.
 //
-// Skipped until B3 (200.003-T), which either binds reconciliation to the
-// membership lock domain or records, with B1's evidence, that it already is.
+// Enabled by B3 (200.003-T). B2 (200.002-T) recorded, with the characterization
+// evidence above, that reconciliation already runs inside the membership lock
+// domain (lifecycle global then A held across every phase), so B3 needed no
+// production change and only enables this assertion.
 func TestReconcileMembershipInterleave_TargetClosureObservesConsistentSnapshot(t *testing.T) {
-	t.Skip("target assertion is enabled by CY-B B3 (200.003-T)")
 	for name, writer := range reconcileMembershipWriters {
 		t.Run(name, func(t *testing.T) {
 			obs := observeReconcileMembershipInterleave(t, writer)
