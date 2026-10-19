@@ -13,12 +13,21 @@ docline:
 
 ## Context
 
-Artifact-mutation writers touch two cross-process lock domains:
+Artifact-mutation writers touch three cross-process lock domains, in addition to
+the shipment lifecycle global lock:
 
+* **A: shipment membership lock** from `lockShipmentMembership` and
+  `lockArchiveShipmentMemberships`
 * **B: artifact-mutation lock** from `lockArtifactMutation` and
   `lockArtifactMutations`
 * **C: item-log lock** from `events.LockItemLogCrossProcess` and
   `EventWriter.AppendEvent`
+
+The canonical order is **lifecycle global, then A, then C, then B** for any
+writer that must hold more than one of them. Within C and within B, a writer
+acquires locks in sorted item-ID order. 200.002-T fixes this order as the single
+rule that ShipShipment (200.005-T) and standalone and cascade `ArchiveItem`
+(200.007-T) follow.
 
 The canonical order is **C before B** for any writer that must hold both locks.
 A writer must not acquire C while it is already holding B for the same item. A
@@ -38,6 +47,67 @@ with the mutation it records.
 | `ReconcileArchivedLifecycle` | Per-item B, never held across C | 172.003-T removes the batch-wide B. `UnarchiveItem`, the status set step, and `ArchiveItem` each take their own B, and none holds B while acquiring C. The set step re-reads the artifact under B and refuses with `ErrShipmentConflict` when the queued status no longer matches the unarchived status. |
 | `archiveDescendants` cascade | Batch B over parent and descendants, then C per item after release | Cascade locks are gathered ancestor-before-descendant and sorted by lock key through `lockArtifactMutations`. Inner calls reuse context-held B rather than taking a second independent B lock. Cascaded descendants add their `archived` events to a deferred sink carried in context. The outermost `ArchiveItem` drains that sink only after it releases B, so no cascaded event acquires C while the parent's batch B is held. |
 | `UnarchiveItem` (reconcile step) | B only, compare-and-swap | The reconcile path calls `unarchiveItemExpecting`, which re-reads the archived artifact under B and refuses with `ErrShipmentConflict` when `archived_status` no longer matches the value the reconcile plan observed. |
+
+## Lock-domain decision: reconciliation and membership writers (200.002-T)
+
+**Decision: reconciliation already runs inside the membership lock domain, so
+no new lock binding is needed. 200.003-T is closed as not needed.**
+
+Evidence from the 200.001-T characterization test
+(`internal/core/shipment_reconcile_membership_interleave_test.go`):
+
+* `ReconcileShipmentToShipped` acquires the lifecycle global lock and then the
+  shipment membership lock A in Phase A, and keeps both held across Phases B, C,
+  and D. Phase B and Phase D take C and then B on top of them.
+* `AddItemToShipment` and `ReturnBlockedItem`, the membership writers, take the
+  lifecycle global lock first. The test pauses reconcile while it holds global,
+  A, C, and B (through `artifactMutationLockBarrierHook`), starts each writer,
+  and observes the writer's global-lock acquisition report contention. The
+  manifest is identical at the pause and at the instant reconcile returns, and
+  the writer completes only after reconcile returns.
+
+The membership snapshot that reconcile freezes in Phase A is therefore the
+membership it finishes with. A membership writer is excluded at the global lock
+before it can reach A. The deadlock argument is the existing one: every writer
+that needs A takes the lifecycle global lock first, so there is no
+A-then-global edge, and reconcile takes C before B, matching the canonical
+order. Adding a second membership acquisition to the reconcile closure would
+add no exclusion and would add an acquisition site to audit. 200.003-T
+therefore enables the target assertion in the characterization test and makes
+no production change. A future reconcile path that releases the lifecycle global
+lock between phases must revisit this decision. The position for any such A
+acquisition is after the lifecycle global lock and before C, as the canonical
+order above states.
+
+## Archive event mechanism for ShipShipment and ArchiveItem (200.002-T)
+
+**Decision: archive writers take C for the whole archive set, in sorted item-ID
+order, before they take B. They append each archive event under C after the
+mutation. They release B first and then C.**
+
+* The C set is computed from the same scope-ID snapshot that sizes B. For
+  standalone `ArchiveItem` that is the target item. For cascade `ArchiveItem` it
+  is the target and every descendant. For `ShipShipment` it is the shipment, the
+  release scope, the explicit member features, and their descendants.
+* Where a writer already holds C in its context, the nested acquisition is a
+  reuse and is not a new lock request. A nested `ArchiveItem` under a
+  `ShipShipment` or a cascade parent reuses the context-held C.
+* A request for C while B is held, for an item whose C is not context-held, fails
+  closed with an error. It never acquires C. This keeps the B-then-C overlap that
+  172.002-T removed from returning through a nested call.
+* The deferred archive event sink is retired for these paths. Each archive event
+  is appended in the call that performs the mutation, under C.
+
+Rejected alternative: a sequence stamp on archive events, so that readers can
+reorder events appended after B is released. Nothing in the event writer or the
+event readers would consume the stamp, so it would add a field with no reader.
+
+Deadlock argument: every writer that holds more than one of the three domains
+acquires them in the order global, A, C, B, and sorts item IDs inside C and
+inside B. `AssociateCommit` and the reconcile-to-shipped transaction already
+follow that order. With archive writers on the same order there is no
+B-then-C edge anywhere, so no cycle can form between an archive writer and a
+C-then-B writer.
 
 ## Load-bearing invariants
 
