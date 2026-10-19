@@ -477,6 +477,14 @@ func eventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []events.
 // ShipShipment closes a shipped scope, returns untouched descendants to backlog,
 // archives the released artifacts, and records the closing commit in item logs.
 func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit *CommitMetadata) (result *ShipShipmentResult, err error) {
+	// Nested ArchiveItem calls queue their linked-stash side effects here. This
+	// defer is registered first so it runs last: after B, C, and the lifecycle
+	// global lock are released, so the stash work never waits for stashMu under C.
+	if archiveStashQueueFrom(ctx) == nil {
+		stashQueue := &archiveStashQueue{}
+		defer stashQueue.run(ctx, ws)
+		ctx = withArchiveStashQueue(ctx, stashQueue)
+	}
 	lockedCtx, globalUnlock, globalLockErr := lockShipmentLifecycleGlobal(ctx, ws)
 	if globalLockErr != nil {
 		return nil, fmt.Errorf("lock shipment lifecycle for ship %s: %w", shipmentID, globalLockErr)

@@ -203,6 +203,17 @@ scope.
   the provenance this archive stamped. The 200.008-T test injects a concurrent
   unarchive through the post-archive hook point. A hook-queue append failure is
   unchanged: post-archive hooks stay non-fatal.
+* **Stash side effect versus item-log locks: closed by the 200.009-T review
+  follow-up.** `ArchiveStashEntry` waits for the process-wide `stashMu`, and
+  `CorrectStashProvenance` holds `stashMu` while it requests C. A nested
+  `ArchiveItem` (cascade child or `ShipShipment` archive loop) inherits C, so
+  running the stash side effect there interlocked the two uncancellable waits.
+  A nested `ArchiveItem` now only queues the effect on a context-carried queue.
+  The outermost owner, a top-level `ArchiveItem` or `ShipShipment`, runs the
+  queue after it released B, C, A, and the lifecycle global lock. Each queued
+  effect keeps its compare-and-swap check at execution time and stays
+  non-fatal. A forced-interleaving regression holds `stashMu` and requests C for
+  the archived child; it fails with a timeout, not a hang, if C is still held.
 * **Reconciliation versus membership writers: closed by 200.003-T as not
   needed.** See the lock-domain decision above.
 

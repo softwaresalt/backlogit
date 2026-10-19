@@ -119,6 +119,18 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		opt(&cfg)
 	}
 
+	// Post-archive stash side effects are queued on a context-carried queue and
+	// run by the outermost owner after it released B and C. A nested ArchiveItem
+	// (cascade child, or a call under ShipShipment) only registers its effect, so
+	// it never waits for stashMu while an inherited C is held. The deferred flush
+	// is registered first so it runs after every lock release below.
+	stashQueue := archiveStashQueueFrom(ctx)
+	if stashQueue == nil {
+		stashQueue = &archiveStashQueue{}
+		defer stashQueue.run(ctx, ws)
+		ctx = withArchiveStashQueue(ctx, stashQueue)
+	}
+
 	operationCtx := ctx
 	lockedCtx, releaseLocks, lockErr := lockArchiveGovernance(ctx, database, ws, itemID, cfg.cascade)
 	if lockErr != nil {
@@ -389,7 +401,7 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 
 	// Archive any stash entries linked to this item (best-effort), but only when
 	// the item is still in the archived state this call committed (200.009-T).
-	archiveLinkedStashIfStillArchived(ctx, ws, itemID, archiveCommitState{
+	stashQueue.add(itemID, archiveCommitState{
 		archivedFrom:   fmString(fm, "archived_from"),
 		archivedStatus: fmString(fm, "archived_status"),
 	})
@@ -503,6 +515,50 @@ type archiveCommitState struct {
 func fmString(fm map[string]any, key string) string {
 	value, _ := fm[key].(string)
 	return value
+}
+
+type archiveStashQueueContextKey struct{}
+
+type archiveStashEffect struct {
+	itemID    string
+	committed archiveCommitState
+}
+
+// archiveStashQueue collects the linked-stash side effects of every ArchiveItem
+// in one archive operation so the outermost owner runs them after releasing the
+// item-log (C) and artifact-mutation (B) locks. Running them under C would wait
+// for the process-wide stashMu while a stash writer (CorrectStashProvenance)
+// holds stashMu and waits for C.
+type archiveStashQueue struct {
+	mu      sync.Mutex
+	effects []archiveStashEffect
+}
+
+func withArchiveStashQueue(ctx context.Context, q *archiveStashQueue) context.Context {
+	return context.WithValue(ctx, archiveStashQueueContextKey{}, q)
+}
+
+func archiveStashQueueFrom(ctx context.Context) *archiveStashQueue {
+	q, _ := ctx.Value(archiveStashQueueContextKey{}).(*archiveStashQueue)
+	return q
+}
+
+func (q *archiveStashQueue) add(itemID string, committed archiveCommitState) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.effects = append(q.effects, archiveStashEffect{itemID: itemID, committed: committed})
+}
+
+// run executes the queued effects, each behind its execution-time CAS guard. The
+// caller must have released every lock the queue's operation held.
+func (q *archiveStashQueue) run(ctx context.Context, ws *Workspace) {
+	q.mu.Lock()
+	effects := q.effects
+	q.effects = nil
+	q.mu.Unlock()
+	for _, effect := range effects {
+		archiveLinkedStashIfStillArchived(ctx, ws, effect.itemID, effect.committed)
+	}
 }
 
 // archiveLinkedStashIfStillArchived archives the stash entries linked to itemID
