@@ -103,6 +103,10 @@ func observeReconcileMembershipInterleave(t *testing.T, writer reconcileMembersh
 		artifactMutationLockBarrierHook = previousHook
 	})
 
+	// obs is written by the reconcile and writer goroutines and read only after
+	// their done channels close (the wait loop below), which orders those writes
+	// before every read. The one read before that point, membershipAtPause, is a
+	// field no goroutine writes, so no mutex is needed.
 	var obs reconcileInterleaveObservation
 	req := validShipmentReconcilePreconditionRequest(shipmentID)
 	reconcileStarted = true
@@ -149,6 +153,14 @@ func observeReconcileMembershipInterleave(t *testing.T, writer reconcileMembersh
 		case <-time.After(interleaveWait):
 			t.Fatalf("%s did not finish after reconcile was resumed", name)
 		}
+	}
+	// The writer runs after reconcile released its locks. It either succeeds
+	// (reconcile left the shipment active) or is refused by the shipment status
+	// guard (reconcile moved it out of active). Any other error, such as a lock
+	// failure, is a defect.
+	if obs.writerErr != nil {
+		require.ErrorIs(t, obs.writerErr, blerrors.ErrShipmentConflict,
+			"the membership writer may only be refused by the shipment status guard")
 	}
 	return obs
 }

@@ -39,10 +39,12 @@ func TestShipShipment_NeverAcquiresItemLogLockWhileBatchArtifactLocksHeld(t *tes
 		mu         sync.Mutex
 		violations = map[string]struct{}{}
 		probeErrs  []error
+		cRequested = map[string]struct{}{}
 	)
 	restoreItemLogHook := events.SetItemLogLockBarrierHookForTest(func(itemID string) {
 		mu.Lock()
 		defer mu.Unlock()
+		cRequested[itemID] = struct{}{}
 		for _, artifactID := range scope {
 			stableKey, pathErr := artifactMutationLockPath(ws, artifactID)
 			if pathErr != nil {
@@ -74,4 +76,36 @@ func TestShipShipment_NeverAcquiresItemLogLockWhileBatchArtifactLocksHeld(t *tes
 	require.NoError(t, errors.Join(probeErrs...), "the B-held probe itself must not fail")
 	require.Empty(t, violations,
 		"ShipShipment must acquire C for its archive set before B and never request a new C while B is held")
+
+	// Non-vacuity: the probe only means something if the barrier fired, so the
+	// ship's own C set must have been requested through it.
+	require.NotEmpty(t, cRequested, "the item-log barrier must fire for the ship's C set, or the probe observed nothing")
+	// The feature is a NON-member parent of both member tasks. The bounded
+	// parent cascade stops at it (cascadePersistedParentStatuses), so ShipShipment
+	// never appends events for it and never needs its C.
+	require.NotContains(t, cRequested, fixture.featureID,
+		"a non-member parent must not be touched by the ship's parent cascade")
+}
+
+// TestShipShipmentLockOrderProbe_BDetectionIsInProcess proves the B probe above
+// cannot pass vacuously: lockTaskFile reports ErrTaskBusy for a held B through
+// its in-process per-path mutex (TryLock), which is platform independent, before
+// any OS-level flock/LockFileEx is consulted.
+func TestShipShipmentLockOrderProbe_BDetectionIsInProcess(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	item, err := CreateArtifact(t.Context(), ws, "probe control", "feature")
+	require.NoError(t, err)
+
+	_, release, err := lockArtifactMutations(t.Context(), ws, []string{item.ID})
+	require.NoError(t, err)
+	stableKey, err := artifactMutationLockPath(ws, item.ID)
+	require.NoError(t, err)
+
+	_, busyErr := lockTaskFile(stableKey)
+	require.ErrorIs(t, busyErr, ErrTaskBusy, "a held B must read as busy to the probe")
+
+	require.NoError(t, release())
+	unlock, freeErr := lockTaskFile(stableKey)
+	require.NoError(t, freeErr, "a released B must read as free to the probe")
+	require.NoError(t, unlock())
 }
