@@ -27,7 +27,7 @@ next action=operator-confirmed checkpoint recovery.
   inside U7's window):
   * `.backlogit/checkpoints/checkpoint-20261005-005349.json` (active Ship halt checkpoint)
   * `docs/memory/2026-10-04/ship-196-S-halted-u7-exempt-delta-conflict.md`
-  * `docs/memory/2026-10-04/orchestrator-196-S-u7-revert-remediation-direction.md`
+  * `docs/archive/memory/2026-10-04/orchestrator-196-S-u7-revert-remediation-direction.md`
   * this file
 * Checkpoint 235817 is active again after the revert. It is a known stale candidate: do not
   infer it as a recovery target.
