@@ -42,9 +42,19 @@ type QueueFilter struct {
 	Limit       int      `json:"limit,omitempty"`
 	Offset      int      `json:"offset,omitempty"`
 	OrphansOnly bool     `json:"orphans_only,omitempty"` // when true, return only orphaned items
+
+	// shipmentPredecessorResolver reports whether a shipment predecessor has
+	// shipped, returning a not-ready reason when it has not.
+	shipmentPredecessorResolver func(ctx context.Context, id string) (bool, string, error)
 }
 
 const queuePositionCustomField = "queue_position"
+
+// QueryQueueForWorkspace retrieves the queue view for a workspace, resolving
+// shipment predecessor readiness from Markdown provenance.
+func QueryQueueForWorkspace(ctx context.Context, ws *Workspace, filter *QueueFilter) (*QueueView, error) {
+	return nil, blerrors.ErrNotImplemented
+}
 
 // QueryQueue retrieves artifacts matching the filter criteria, with optional grouping.
 func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueView, error) {
