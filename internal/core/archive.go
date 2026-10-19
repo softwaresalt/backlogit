@@ -458,6 +458,12 @@ func lockArchiveGovernance(
 	// for an item in the set, this fails closed instead of acquiring C under B.
 	lockedCtx, itemLogUnlock, err := lockItemLogsSorted(lockedCtx, ws, scopeIDs)
 	if err != nil {
+		if errors.Is(err, errItemLogLockUnderArtifactLocks) {
+			// The archive set was larger than the C set the caller took before B:
+			// a descendant was created in between. Nothing was mutated, so the
+			// whole operation is safe to retry and recomputes the C set.
+			return ctx, nil, fmt.Errorf("lock item logs for archive %s: %w: %w", itemID, errArchiveScopeChanged, err)
+		}
 		return ctx, nil, fmt.Errorf("lock item logs for archive %s: %w", itemID, err)
 	}
 	releaseItemLogs := true
@@ -580,9 +586,9 @@ func archiveCommitStateDrift(ctx context.Context, ws *Workspace, itemID string, 
 	case status != string(models.StatusArchived):
 		return status, fmt.Errorf("status is %q, not archived", status)
 	case fmString(fm, "archived_from") != committed.archivedFrom:
-		return status, fmt.Errorf("archived_from changed")
+		return status, errors.New("archived_from changed")
 	case fmString(fm, "archived_status") != committed.archivedStatus:
-		return status, fmt.Errorf("archived_status changed")
+		return status, errors.New("archived_status changed")
 	}
 	return status, nil
 }
@@ -1511,6 +1517,12 @@ func requireItemLogLockOrder(ctx context.Context, ws *Workspace, itemID string) 
 // errItemLogLockUnderArtifactLocks reports a lock-order violation: C requested
 // while B is held and the C is not already held by the call tree.
 var errItemLogLockUnderArtifactLocks = errors.New("item log lock requested under artifact mutation locks")
+
+// errArchiveScopeChanged marks a fail-closed archive whose scope grew after the
+// caller took its item-log locks (C), for example a child created between
+// ShipShipment's C-set snapshot and the nested ArchiveItem. The archive left the
+// item untouched, so the caller can retry the whole operation.
+var errArchiveScopeChanged = errors.New("archive scope changed during ship; retry")
 
 // appendArchiveEvent appends and indexes an "archived" event under the item's
 // cross-process item-log lock. The caller must already hold C for the item in
