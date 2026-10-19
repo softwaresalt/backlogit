@@ -264,7 +264,7 @@ change was needed.
 A child created after `shipItemLogScopeIDs` snapshots the C set but before the
 nested `ArchiveItem` computes its scope makes that scope larger than the held C.
 The nested call fails closed before any mutation, with an error that wraps
-`errArchiveScopeChanged` ("archive scope changed during ship; retry") and
+`errArchiveScopeChanged` ("archive item-log lock set incomplete ... retry if transient") and
 `errItemLogLockUnderArtifactLocks`. The failure leaves the archive untouched;
 the caller retries `ShipShipment`, which recomputes the C set. The window is not
 closed by redesign.

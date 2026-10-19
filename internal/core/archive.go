@@ -1522,7 +1522,7 @@ var errItemLogLockUnderArtifactLocks = errors.New("item log lock requested under
 // caller took its item-log locks (C), for example a child created between
 // ShipShipment's C-set snapshot and the nested ArchiveItem. The archive left the
 // item untouched, so the caller can retry the whole operation.
-var errArchiveScopeChanged = errors.New("archive scope changed during ship; retry")
+var errArchiveScopeChanged = errors.New("archive item-log lock set incomplete (the archive scope may have changed during ship); retry if transient")
 
 // appendArchiveEvent appends and indexes an "archived" event under the item's
 // cross-process item-log lock. The caller must already hold C for the item in

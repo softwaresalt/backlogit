@@ -50,7 +50,7 @@ func TestLockItemLogsSorted_FailsClosedWhenBHeldAndCNotContextHeld(t *testing.T)
 		_, archiveErr := ArchiveItem(bCtx, ws.DB, ws, item.ID)
 		require.ErrorIs(t, archiveErr, errItemLogLockUnderArtifactLocks)
 		require.ErrorIs(t, archiveErr, errArchiveScopeChanged)
-		require.ErrorContains(t, archiveErr, "archive scope changed during ship; retry")
+		require.ErrorContains(t, archiveErr, "archive item-log lock set incomplete")
 		require.Zero(t, cAcquisitions.Load(), "C must not be acquired while B is held")
 		require.NotEqual(t, models.StatusArchived, readArtifactForTest(t, ctx, ws, item.ID).Status,
 			"a refused archive must leave the item untouched")
