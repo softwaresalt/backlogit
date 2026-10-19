@@ -290,3 +290,103 @@ func TestU2_NilSliceEquality(t *testing.T) {
 		assert.Empty(t, result.MissingReps)
 	})
 }
+
+// 200.010-T (CY-B B10): declaration accuracy for conditional EventsJSONL.
+//
+// Per deliberation D5, a declaration lists EventsJSONL as required only when the
+// core path makes the event write fatal. CreateItem writes no item event, and
+// ArchiveItem's event append is best-effort: on a log failure it warns and the
+// archive still succeeds. For those ops a successful mutation may leave
+// EventsJSONL unchanged, so EventsJSONL must be conditional (optional on
+// success) while still being checked for drift on a failed mutation.
+
+// TestU10_VerifySuccess_ConditionalEventsJSONLMayBeUnchanged verifies that
+// VerifySuccess accepts a successful CreateItem with no item event and a
+// successful ArchiveItem whose event append degraded to a warning.
+func TestU10_VerifySuccess_ConditionalEventsJSONLMayBeUnchanged(t *testing.T) {
+	t.Run("create_item_without_item_event", func(t *testing.T) {
+		result, err := mutation.VerifySuccess(mutation.MutationSnapshot{
+			Op: mutation.OpCreateItem,
+			Before: map[mutation.RepresentationKind][]byte{
+				mutation.Frontmatter: nil,
+				mutation.SQLite:      nil,
+				mutation.EventsJSONL: nil,
+			},
+			After: map[mutation.RepresentationKind][]byte{
+				mutation.Frontmatter: []byte("created-fm"),
+				mutation.SQLite:      []byte("created-row"),
+				mutation.EventsJSONL: nil, // CreateItem wrote no item event.
+			},
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Passed, "a successful CreateItem with no item event must verify; missing=%v", result.MissingReps)
+		assert.Empty(t, result.MissingReps)
+	})
+
+	t.Run("archive_item_event_append_degraded_to_warning", func(t *testing.T) {
+		result, err := mutation.VerifySuccess(mutation.MutationSnapshot{
+			Op: mutation.OpArchiveItem,
+			Before: map[mutation.RepresentationKind][]byte{
+				mutation.Frontmatter: []byte("active-fm"),
+				mutation.SQLite:      []byte("active-row"),
+				mutation.EventsJSONL: []byte("prior-events"),
+				mutation.ArchiveFile: nil,
+			},
+			After: map[mutation.RepresentationKind][]byte{
+				mutation.Frontmatter: []byte("archived-fm"),
+				mutation.SQLite:      []byte("archived-row"),
+				mutation.EventsJSONL: []byte("prior-events"), // append failed: warn and skip.
+				mutation.ArchiveFile: []byte("archived-copy"),
+			},
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Passed, "a successful ArchiveItem whose event append degraded must verify; missing=%v", result.MissingReps)
+		assert.Empty(t, result.MissingReps)
+	})
+
+	t.Run("required_representation_still_must_change", func(t *testing.T) {
+		result, err := mutation.VerifySuccess(mutation.MutationSnapshot{
+			Op: mutation.OpArchiveItem,
+			Before: map[mutation.RepresentationKind][]byte{
+				mutation.Frontmatter: []byte("active-fm"),
+				mutation.SQLite:      []byte("active-row"),
+				mutation.EventsJSONL: []byte("prior-events"),
+				mutation.ArchiveFile: nil,
+			},
+			After: map[mutation.RepresentationKind][]byte{
+				mutation.Frontmatter: []byte("archived-fm"),
+				mutation.SQLite:      []byte("active-row"), // unchanged: required update missing.
+				mutation.EventsJSONL: []byte("prior-events"),
+				mutation.ArchiveFile: []byte("archived-copy"),
+			},
+		})
+		require.NoError(t, err)
+		assert.False(t, result.Passed)
+		assert.Equal(t, []mutation.RepresentationKind{mutation.SQLite}, result.MissingReps,
+			"only the required representation is missing; conditional EventsJSONL is never reported missing")
+	})
+}
+
+// TestU10_VerifyFailure_ConditionalEventsJSONLStillReportsDrift verifies that a
+// conditional EventsJSONL representation is still checked on a failed mutation:
+// an event appended by a mutation that reported failure is drift.
+func TestU10_VerifyFailure_ConditionalEventsJSONLStillReportsDrift(t *testing.T) {
+	for _, op := range []string{mutation.OpCreateItem, mutation.OpArchiveItem} {
+		t.Run(op, func(t *testing.T) {
+			set, ok := mutation.Lookup(op)
+			require.True(t, ok)
+			before := make(map[mutation.RepresentationKind][]byte, len(set.Representations))
+			after := make(map[mutation.RepresentationKind][]byte, len(set.Representations))
+			for _, kind := range set.Representations {
+				before[kind] = []byte("unchanged")
+				after[kind] = []byte("unchanged")
+			}
+			after[mutation.EventsJSONL] = []byte("unchanged\nleaked-event")
+
+			result, err := mutation.VerifyFailure(mutation.MutationSnapshot{Op: op, Before: before, After: after})
+			require.NoError(t, err)
+			assert.False(t, result.Passed, "an event-log change on a failed mutation must be reported")
+			assert.Equal(t, []mutation.RepresentationKind{mutation.EventsJSONL}, result.DriftedReps)
+		})
+	}
+}

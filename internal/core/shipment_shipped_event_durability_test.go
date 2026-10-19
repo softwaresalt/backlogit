@@ -18,7 +18,6 @@ import (
 	"github.com/softwaresalt/backlogit/internal/core/gate"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
-	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/hooks"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -288,37 +287,37 @@ func TestShipShipment_IndeterminateShippedEventNeverRollsBack(t *testing.T) {
 }
 
 // Scenario 3: compensation reports itself when it cannot complete. A proven
-// not-applied append plus one release-scope item whose log lock cannot be
-// re-acquired must surface partially-compensated naming the un-restored ID,
-// never a silently skipped item.
+// not-applied append plus one release-scope item whose snapshot cannot be
+// restored must surface partially-compensated naming the un-restored ID, never a
+// silently skipped item.
 //
-// Contention is armed from INSIDE the seam callback by planting a directory at
-// the item's lock sidecar path, which fails openItemLogLockHandle immediately.
-// The harness must never call events.LockItemLog or LockItemLogCrossProcess to
-// create it: holding the in-process mutex would block restoreShipArtifacts on an
-// uncancellable, deadline-free mutex.Lock and hang the test binary.
+// 200.005-T: ShipShipment now holds the item-log lock C for its whole archive
+// set across the closure, so the earlier technique of planting a directory at the
+// item's lock sidecar from inside the seam no longer applies (the held sidecar
+// cannot be replaced, and compensation reuses the context-held C instead of
+// re-acquiring it). The un-restorable item is armed through the existing
+// restoreShipmentSnapshotFn seam instead, failing only the blocked item's
+// artifact-file restore.
 func TestShipShipment_UnrestorableItemReportsPartialCompensation(t *testing.T) {
 	fixture := newShipDurabilityFixture(t, false)
 
 	blockedID := fixture.taskOneID
-	sidecar, sidecarErr := events.ItemLogLockPath(WorkspaceLocksRoot(fixture.ws.RootPath), blockedID)
-	require.NoError(t, sidecarErr)
+	blockedPath, pathErr := FindArtifactPath(context.Background(), fixture.ws, blockedID)
+	require.NoError(t, pathErr)
+
+	originalRestore := restoreShipmentSnapshotFn
+	restoreShipmentSnapshotFn = func(snapshot fileSnapshot) error {
+		if filepath.Clean(snapshot.Path) == filepath.Clean(blockedPath) {
+			return errors.New("injected restore failure")
+		}
+		return originalRestore(snapshot)
+	}
+	t.Cleanup(func() { restoreShipmentSnapshotFn = originalRestore })
 
 	injected := fmt.Errorf("open item log: %w: %w", blerrors.ErrWriteNotApplied, errors.New("injected pre-write failure"))
 	fixture.injectShippedAppend(t, func(context.Context) error {
-		// snapshotShipArtifacts has already taken and released its own locks by
-		// the time the seam runs, so planting the directory here cannot abort
-		// the ship before the rollback map is populated.
-		if err := os.RemoveAll(sidecar); err != nil {
-			return fmt.Errorf("clear lock sidecar: %w", err)
-		}
-		if err := os.MkdirAll(sidecar, 0o755); err != nil {
-			return fmt.Errorf("plant lock sidecar directory: %w", err)
-		}
 		return injected
 	})
-	t.Cleanup(func() { _ = os.RemoveAll(sidecar) })
-
 	result, err := shipWithWatchdog(t, fixture.ws, fixture.shipmentID)
 	assert.Nil(t, result)
 

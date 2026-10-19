@@ -175,6 +175,16 @@ func itemLogFileLockHeld(ctx context.Context, key string) bool {
 	return held
 }
 
+// ItemLogCrossProcessLockHeld reports whether ctx already carries the complete
+// item-log lock (C) for itemID: both the in-process mutex and the cross-process
+// file lock, as returned by LockItemLogCrossProcess. Callers use it to tell a
+// reuse of a context-held C from a new C acquisition, for example to fail closed
+// on a C request made while the artifact-mutation locks (B) are held.
+func ItemLogCrossProcessLockHeld(ctx context.Context, logsDir, itemID string) bool {
+	key := itemLogLockKey(logsDir, itemID)
+	return itemLogLockHeld(ctx, key) && itemLogFileLockHeld(ctx, key)
+}
+
 func withItemLogFileLock(ctx context.Context, key string) context.Context {
 	set := make(itemLogFileLockSet)
 	if existing, ok := ctx.Value(itemLogFileLockContextKey{}).(itemLogFileLockSet); ok {

@@ -224,3 +224,76 @@ func TestU1_DeclarationsSchemaValidates(t *testing.T) {
 		assert.Contains(t, set.Representations, mutation.ArchiveFile)
 	})
 }
+
+// TestU11_ConditionalRepresentation covers the 200.011-T conditional
+// (optional-on-success) marker on RepresentationSet.
+func TestU11_ConditionalRepresentation(t *testing.T) {
+	t.Run("validate_rejects_conditional_not_declared", func(t *testing.T) {
+		err := mutation.RepresentationSet{
+			Op:              uniqueOp("U11Undeclared"),
+			Representations: []mutation.RepresentationKind{mutation.Frontmatter},
+			Conditional:     []mutation.RepresentationKind{mutation.EventsJSONL},
+		}.Validate()
+		assert.ErrorIs(t, err, mutation.ErrInvalidConditional)
+	})
+
+	t.Run("validate_rejects_duplicate_conditional", func(t *testing.T) {
+		err := mutation.RepresentationSet{
+			Op:              uniqueOp("U11Dup"),
+			Representations: []mutation.RepresentationKind{mutation.Frontmatter, mutation.EventsJSONL},
+			Conditional:     []mutation.RepresentationKind{mutation.EventsJSONL, mutation.EventsJSONL},
+		}.Validate()
+		assert.ErrorIs(t, err, mutation.ErrInvalidConditional)
+	})
+
+	t.Run("lookup_returns_independent_conditional_copy", func(t *testing.T) {
+		op := uniqueOp("U11Copy")
+		conditional := []mutation.RepresentationKind{mutation.EventsJSONL}
+		require.NoError(t, mutation.Register(mutation.RepresentationSet{
+			Op:              op,
+			Representations: []mutation.RepresentationKind{mutation.Frontmatter, mutation.EventsJSONL},
+			Conditional:     conditional,
+		}))
+		conditional[0] = mutation.SQLite // caller mutation after Register must not leak in.
+
+		first, ok := mutation.Lookup(op)
+		require.True(t, ok)
+		assert.Equal(t, []mutation.RepresentationKind{mutation.EventsJSONL}, first.Conditional)
+		first.Conditional[0] = mutation.SQLite // caller mutation after Lookup must not leak in.
+
+		second, ok := mutation.Lookup(op)
+		require.True(t, ok)
+		assert.Equal(t, []mutation.RepresentationKind{mutation.EventsJSONL}, second.Conditional)
+		assert.True(t, second.IsConditional(mutation.EventsJSONL))
+		assert.False(t, second.IsConditional(mutation.Frontmatter))
+	})
+
+	t.Run("verify_skips_conditional_on_success_and_checks_it_on_failure", func(t *testing.T) {
+		op := uniqueOp("U11Verify")
+		require.NoError(t, mutation.Register(mutation.RepresentationSet{
+			Op:              op,
+			Representations: []mutation.RepresentationKind{mutation.Frontmatter, mutation.EventsJSONL},
+			Conditional:     []mutation.RepresentationKind{mutation.EventsJSONL},
+		}))
+		unchangedEvents := map[mutation.RepresentationKind][]byte{
+			mutation.Frontmatter: []byte("before"),
+			mutation.EventsJSONL: []byte("log"),
+		}
+		changedFrontmatter := map[mutation.RepresentationKind][]byte{
+			mutation.Frontmatter: []byte("after"),
+			mutation.EventsJSONL: []byte("log"),
+		}
+		success, err := mutation.VerifySuccess(mutation.MutationSnapshot{Op: op, Before: unchangedEvents, After: changedFrontmatter})
+		require.NoError(t, err)
+		assert.True(t, success.Passed)
+
+		driftedEvents := map[mutation.RepresentationKind][]byte{
+			mutation.Frontmatter: []byte("before"),
+			mutation.EventsJSONL: []byte("log\nleak"),
+		}
+		failure, err := mutation.VerifyFailure(mutation.MutationSnapshot{Op: op, Before: unchangedEvents, After: driftedEvents})
+		require.NoError(t, err)
+		assert.False(t, failure.Passed)
+		assert.Equal(t, []mutation.RepresentationKind{mutation.EventsJSONL}, failure.DriftedReps)
+	})
+}

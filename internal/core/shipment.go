@@ -1300,6 +1300,13 @@ func artifactMutationLockHeld(ctx context.Context, id string) bool {
 	return ok
 }
 
+// artifactMutationLocksHeldAny reports whether ctx carries any artifact-mutation
+// lock (B), that is, whether the call tree is inside a batch B critical section.
+func artifactMutationLocksHeldAny(ctx context.Context) bool {
+	set, ok := ctx.Value(artifactMutationLockContextKey{}).(artifactMutationLockSet)
+	return ok && len(set) > 0
+}
+
 func artifactMutationLockPath(ws *Workspace, artifactID string) (string, error) {
 	storageRoot, err := filepath.Abs(WorkspaceStorageRoot(ws.RootPath))
 	if err != nil {

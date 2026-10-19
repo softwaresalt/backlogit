@@ -477,6 +477,14 @@ func eventsSinceSnapshot(snapshot fileSnapshot, itemID string, current []events.
 // ShipShipment closes a shipped scope, returns untouched descendants to backlog,
 // archives the released artifacts, and records the closing commit in item logs.
 func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit *CommitMetadata) (result *ShipShipmentResult, err error) {
+	// Nested ArchiveItem calls queue their linked-stash side effects here. This
+	// defer is registered first so it runs last: after B, C, and the lifecycle
+	// global lock are released, so the stash work never waits for stashMu under C.
+	if archiveStashQueueFrom(ctx) == nil {
+		stashQueue := &archiveStashQueue{}
+		defer stashQueue.run(ctx, ws)
+		ctx = withArchiveStashQueue(ctx, stashQueue)
+	}
 	lockedCtx, globalUnlock, globalLockErr := lockShipmentLifecycleGlobal(ctx, ws)
 	if globalLockErr != nil {
 		return nil, fmt.Errorf("lock shipment lifecycle for ship %s: %w", shipmentID, globalLockErr)
@@ -540,6 +548,14 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 	var explicitScope, releaseScope, featureIDs []string
 	var explicitScopeSet map[string]struct{}
 	var shipSnapshots map[string]shipArtifactSnapshot
+	// The C release is registered before the B release so deferred calls run
+	// B first, then C, the reverse of the global, A, C, B acquisition order.
+	var releaseItemLogLocks func()
+	defer func() {
+		if releaseItemLogLocks != nil {
+			releaseItemLogLocks()
+		}
+	}()
 	var releaseArtifactLocks func() error
 	defer func() {
 		if releaseArtifactLocks != nil {
@@ -616,6 +632,17 @@ func ShipShipment(ctx context.Context, ws *Workspace, shipmentID string, commit 
 		}
 
 		rollbackIDs := append([]string{shipmentID}, releaseScope...)
+		// 200.005-T: canonical order is lifecycle global, A (held above), C, then
+		// B. Take C for every archive-set item, in sorted item-ID order, before B
+		// so the archive loop below appends each archive event under a C this
+		// call already holds. A nested ArchiveItem reuses it and never acquires C
+		// itself while B is held.
+		itemLogIDs := shipItemLogScopeIDs(shipmentID, releaseScope, featureIDs, explicitScopeSet)
+		var itemLogLockErr error
+		ctx, releaseItemLogLocks, itemLogLockErr = lockItemLogsSorted(ctx, ws, itemLogIDs)
+		if itemLogLockErr != nil {
+			return fmt.Errorf("lock release scope item logs: %w", itemLogLockErr)
+		}
 		var artifactLockErr error
 		ctx, releaseArtifactLocks, artifactLockErr = lockArtifactMutations(ctx, ws, rollbackIDs)
 		if artifactLockErr != nil {
@@ -713,6 +740,26 @@ func completeReleaseScope(ctx context.Context, ws *Workspace, releaseScope []str
 		}
 	}
 	return nil
+}
+
+// shipItemLogScopeIDs returns the item IDs whose item-log lock (C) ShipShipment
+// must hold before it takes batch B (200.005-T): every item it archives or
+// appends an event for during the closure and the archive loop. That is the
+// shipment, the release scope (the explicit members), and the explicit member
+// features. The set is deliberately flat. releaseScopeItemIDs does not expand
+// descendants, archiveItems calls ArchiveItem without cascade (so each nested
+// archive scope is just its own item), and the parent status rollup stops at
+// the first non-member, so no event is ever appended for an unlisted
+// descendant. Locking descendants would make an unrelated busy item log delay
+// or fail ShipShipment while it holds the lifecycle-global lock.
+func shipItemLogScopeIDs(shipmentID string, releaseScope, featureIDs []string, explicitScope map[string]struct{}) []string {
+	ids := append([]string{shipmentID}, releaseScope...)
+	for _, featureID := range featureIDs {
+		if _, isMember := explicitScope[featureID]; isMember {
+			ids = append(ids, featureID)
+		}
+	}
+	return uniqueNonEmptyStrings(ids)
 }
 
 func collectArchiveCandidateIDs(ctx context.Context, ws *Workspace, shipmentID string, releaseScope, featureIDs []string, explicitScope map[string]struct{}) ([]string, error) {

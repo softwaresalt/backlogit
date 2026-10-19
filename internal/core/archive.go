@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
@@ -118,6 +119,18 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		opt(&cfg)
 	}
 
+	// Post-archive stash side effects are queued on a context-carried queue and
+	// run by the outermost owner after it released B and C. A nested ArchiveItem
+	// (cascade child, or a call under ShipShipment) only registers its effect, so
+	// it never waits for stashMu while an inherited C is held. The deferred flush
+	// is registered first so it runs after every lock release below.
+	stashQueue := archiveStashQueueFrom(ctx)
+	if stashQueue == nil {
+		stashQueue = &archiveStashQueue{}
+		defer stashQueue.run(ctx, ws)
+		ctx = withArchiveStashQueue(ctx, stashQueue)
+	}
+
 	operationCtx := ctx
 	lockedCtx, releaseLocks, lockErr := lockArchiveGovernance(ctx, database, ws, itemID, cfg.cascade)
 	if lockErr != nil {
@@ -139,19 +152,13 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 			slog.WarnContext(operationCtx, "release archive governance locks", "item_id", itemID, "error", unlockErr)
 		}
 	}
-	// 172-F (C-under-B): a cascaded child inherits the parent's artifact
-	// mutation locks (B), so its own release is a no-op. It must therefore not
-	// take the item-log lock (C) itself; it hands its event to the outermost
-	// ArchiveItem, which appends every deferred event only after B is released.
-	parentEventSink := deferredArchiveEventsFrom(operationCtx)
-	var ownEventSink *deferredArchiveEvents
-	if parentEventSink == nil && cfg.cascade {
-		lockedCtx, ownEventSink = withDeferredArchiveEvents(lockedCtx)
-	}
-	defer func() {
-		releaseArchiveLocks()
-		ownEventSink.drain(operationCtx, database, ws)
-	}()
+	// 200.007-T: a cascaded child inherits the parent's artifact mutation locks
+	// (B) AND the parent's item-log locks (C), which the outermost ArchiveItem
+	// took for the whole archive set, in sorted item-ID order, before it took B
+	// (lifecycle global, A, C, B). Every ArchiveItem therefore appends its own
+	// archive event under the C it holds, after its mutation, and the locks are
+	// released in the order B, then C.
+	defer releaseArchiveLocks()
 	ctx = lockedCtx
 
 	// 144-F guard 2 preflight: run BEFORE any cascade so a refusal leaves
@@ -357,11 +364,12 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		return nil, fmt.Errorf("sync archive state: %w", dbErr)
 	}
 
-	releaseArchiveLocks()
-	ctx = operationCtx
-
-	// Best-effort: log archive event to the item's JSONL log (non-fatal on failure).
-	// Errors are logged for diagnosability, matching the pattern in commits.go.
+	// Append the archive event under the item-log lock (C) the governance step
+	// already holds, after the mutation it records and before B and C are
+	// released. A concurrent C-then-B writer therefore cannot append its event
+	// between the archive mutation and the archive event (200.007-T). The append
+	// stays best-effort: a failure is logged and never fatal, matching the
+	// pattern in commits.go.
 	event := events.Event{
 		Timestamp: time.Now(),
 		Actor:     "backlogit",
@@ -370,13 +378,12 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		Delta:     map[string]any{"archive_path": workspaceRelativePath(ws.RootPath, archivePath)},
 		CommitSHA: cfg.commitSHA,
 	}
-	if parentEventSink != nil {
-		parentEventSink.add(event)
-	} else {
-		// Cascaded children's events precede the parent's own archive event.
-		ownEventSink.drain(ctx, database, ws)
-		appendArchiveEvent(ctx, database, ws, event)
-	}
+	appendArchiveEvent(ctx, database, ws, event)
+
+	// The archive commit and its event are done: release B, then C, before any
+	// post-archive side effect.
+	releaseArchiveLocks()
+	ctx = operationCtx
 
 	// Fire post-archive hooks.
 	if ws.HookRunner != nil {
@@ -392,15 +399,12 @@ func ArchiveItem(ctx context.Context, database *sql.DB, ws *Workspace, itemID st
 		ws.HookRunner.FirePost(ctx, hooks.HookArchiveItem, hookCtx)
 	}
 
-	// Archive any stash entries linked to this item (best-effort).
-	if n, stashErr := ArchiveLinkedStashEntries(ctx, ws, itemID); stashErr != nil {
-		slog.Warn("archive item: failed to archive linked stash entries",
-			"item_id", itemID, "error", stashErr)
-	} else if n > 0 {
-		slog.Info("archive item: archived linked stash entries",
-			"item_id", itemID, "count", n)
-	}
-
+	// Archive any stash entries linked to this item (best-effort), but only when
+	// the item is still in the archived state this call committed (200.009-T).
+	stashQueue.add(itemID, archiveCommitState{
+		archivedFrom:   fmString(fm, "archived_from"),
+		archivedStatus: fmString(fm, "archived_status"),
+	})
 	return &ArchiveRecord{
 		ID:            itemID,
 		ArchivedAt:    time.Now(),
@@ -458,6 +462,28 @@ func lockArchiveGovernance(
 	if err != nil {
 		return ctx, nil, err
 	}
+	// 200.007-T: canonical order is lifecycle global, A (membership locks above),
+	// C, then B. C covers the archive set (the target and, for a cascade, every
+	// descendant) in sorted item-ID order, computed from the same scopeIDs
+	// snapshot B is sized from, so nested ArchiveItem calls reuse a context-held
+	// C and never acquire C themselves. When the caller already holds B and not C
+	// for an item in the set, this fails closed instead of acquiring C under B.
+	lockedCtx, itemLogUnlock, err := lockItemLogsSorted(lockedCtx, ws, scopeIDs)
+	if err != nil {
+		if errors.Is(err, errItemLogLockUnderArtifactLocks) {
+			// The archive set was larger than the C set the caller took before B:
+			// a descendant was created in between. Nothing was mutated, so the
+			// whole operation is safe to retry and recomputes the C set.
+			return ctx, nil, fmt.Errorf("lock item logs for archive %s: %w: %w", itemID, errArchiveScopeChanged, err)
+		}
+		return ctx, nil, fmt.Errorf("lock item logs for archive %s: %w", itemID, err)
+	}
+	releaseItemLogs := true
+	defer func() {
+		if releaseItemLogs {
+			itemLogUnlock()
+		}
+	}()
 	lockedCtx, artifactUnlock, err := lockArtifactMutations(lockedCtx, ws, artifactIDs)
 	if err != nil {
 		return ctx, nil, err
@@ -469,9 +495,158 @@ func lockArchiveGovernance(
 
 	releaseGlobal = false
 	releaseMembership = false
+	releaseItemLogs = false
+	// Release in reverse acquisition order: B, then C, then A, then global.
 	return lockedCtx, func() error {
-		return errors.Join(artifactUnlock(), membershipUnlock(), globalUnlock())
+		artifactErr := artifactUnlock()
+		itemLogUnlock()
+		return errors.Join(artifactErr, membershipUnlock(), globalUnlock())
 	}, nil
+}
+
+// archiveCommitState is the archive provenance a committed ArchiveItem stamped
+// into the artifact, used to compare-and-swap guard the side effects that run
+// after the governance locks are released.
+type archiveCommitState struct {
+	archivedFrom   string
+	archivedStatus string
+}
+
+func fmString(fm map[string]any, key string) string {
+	value, _ := fm[key].(string)
+	return value
+}
+
+type archiveStashQueueContextKey struct{}
+
+type archiveStashEffect struct {
+	itemID    string
+	committed archiveCommitState
+}
+
+// archiveStashQueue collects the linked-stash side effects of every ArchiveItem
+// in one archive operation so the outermost owner runs them after releasing the
+// item-log (C) and artifact-mutation (B) locks. Running them under C would wait
+// for the process-wide stashMu while a stash writer (CorrectStashProvenance)
+// holds stashMu and waits for C.
+type archiveStashQueue struct {
+	mu      sync.Mutex
+	effects []archiveStashEffect
+}
+
+func withArchiveStashQueue(ctx context.Context, q *archiveStashQueue) context.Context {
+	return context.WithValue(ctx, archiveStashQueueContextKey{}, q)
+}
+
+func archiveStashQueueFrom(ctx context.Context) *archiveStashQueue {
+	q, _ := ctx.Value(archiveStashQueueContextKey{}).(*archiveStashQueue)
+	return q
+}
+
+func (q *archiveStashQueue) add(itemID string, committed archiveCommitState) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.effects = append(q.effects, archiveStashEffect{itemID: itemID, committed: committed})
+}
+
+// run executes the queued effects, each behind its execution-time CAS guard. The
+// caller must have released every lock the queue's operation held.
+func (q *archiveStashQueue) run(ctx context.Context, ws *Workspace) {
+	q.mu.Lock()
+	effects := q.effects
+	q.effects = nil
+	q.mu.Unlock()
+	for _, effect := range effects {
+		archiveLinkedStashIfStillArchived(ctx, ws, effect.itemID, effect.committed)
+	}
+}
+
+// archiveLinkedStashIfStillArchived archives the stash entries linked to itemID
+// only while the item is still in the archived state this ArchiveItem committed
+// (200.009-T). The post-archive side effects run after the governance locks are
+// released, so a concurrent writer (for example an unarchive) can change the
+// item between the archive commit and the stash state update. The check and the
+// stash update run under the item's artifact-mutation lock (B), so a writer that
+// needs B cannot interleave between them; a stale side effect is refused with a
+// warning and the archive result is unchanged. The side effect stays
+// best-effort: a failure to take B or to read the item also skips it.
+func archiveLinkedStashIfStillArchived(ctx context.Context, ws *Workspace, itemID string, committed archiveCommitState) {
+	releaseLock, lockErr := lockArtifactMutationBounded(ctx, ws, itemID, defaultGateLockBoundedWait)
+	if lockErr != nil {
+		slog.Warn("archive item: skipped linked stash archive: could not lock item for state check",
+			"item_id", itemID, "error", lockErr)
+		return
+	}
+	defer func() {
+		if unlockErr := releaseLock(); unlockErr != nil {
+			slog.Warn("archive item: release lock after linked stash archive", "item_id", itemID, "error", unlockErr)
+		}
+	}()
+
+	if current, stale := archiveCommitStateDrift(ctx, ws, itemID, committed); stale != nil {
+		slog.Warn("archive item: refused stale linked stash archive: item changed after the archive committed",
+			"item_id", itemID, "reason", stale, "current_status", current)
+		return
+	}
+
+	if n, stashErr := ArchiveLinkedStashEntries(ctx, ws, itemID); stashErr != nil {
+		slog.Warn("archive item: failed to archive linked stash entries",
+			"item_id", itemID, "error", stashErr)
+	} else if n > 0 {
+		slog.Info("archive item: archived linked stash entries",
+			"item_id", itemID, "count", n)
+	}
+}
+
+// lockArtifactMutationBounded is lockArtifactMutation with a bounded retry on
+// contention, so a briefly busy B does not make a best-effort side effect skip
+// itself. It never waits past boundedWait or ctx cancellation.
+func lockArtifactMutationBounded(ctx context.Context, ws *Workspace, artifactID string, boundedWait time.Duration) (func() error, error) {
+	deadline := time.Now().Add(boundedWait)
+	backoff := 20 * time.Millisecond
+	for {
+		unlock, err := lockArtifactMutation(ctx, ws, artifactID)
+		if err == nil || !errors.Is(err, ErrTaskBusy) || !time.Now().Before(deadline) {
+			return unlock, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 250*time.Millisecond {
+			backoff *= 2
+		}
+	}
+}
+
+// archiveCommitStateDrift reads the item from Markdown, the source of truth, and
+// reports a non-nil error when it is no longer archived with the provenance the
+// archive commit stamped. The first return value is the status read, for
+// diagnostics.
+func archiveCommitStateDrift(ctx context.Context, ws *Workspace, itemID string, committed archiveCommitState) (string, error) {
+	currentPath, err := FindArtifactPath(ctx, ws, itemID)
+	if err != nil {
+		return "", fmt.Errorf("find artifact: %w", err)
+	}
+	raw, err := os.ReadFile(currentPath)
+	if err != nil {
+		return "", fmt.Errorf("read artifact: %w", err)
+	}
+	fm, _, err := models.ParseFrontmatter(string(raw))
+	if err != nil {
+		return "", fmt.Errorf("parse artifact: %w", err)
+	}
+	status := fmString(fm, "status")
+	switch {
+	case status != string(models.StatusArchived):
+		return status, fmt.Errorf("status is %q, not archived", status)
+	case fmString(fm, "archived_from") != committed.archivedFrom:
+		return status, errors.New("archived_from changed")
+	case fmString(fm, "archived_status") != committed.archivedStatus:
+		return status, errors.New("archived_status changed")
+	}
+	return status, nil
 }
 
 func archiveGovernedArtifactIDs(
@@ -1339,51 +1514,82 @@ func archiveShippedEventPreflight(ctx context.Context, ws *Workspace, itemID str
 	return nil
 }
 
-// deferredArchiveEventsKey carries the outermost cascading ArchiveItem's
-// deferred item-log event sink through a context.
-type deferredArchiveEventsKey struct{}
-
-// deferredArchiveEvents collects "archived" events produced by cascaded
-// children while the parent still holds the artifact mutation locks (B). The
-// events are appended only after B is released, preserving the canonical
-// item-log (C) before B lock order.
-type deferredArchiveEvents struct {
-	events []events.Event
-}
-
-// withDeferredArchiveEvents returns a context carrying a new deferred event sink.
-func withDeferredArchiveEvents(ctx context.Context) (context.Context, *deferredArchiveEvents) {
-	sink := &deferredArchiveEvents{}
-	return context.WithValue(ctx, deferredArchiveEventsKey{}, sink), sink
-}
-
-// deferredArchiveEventsFrom returns the deferred event sink carried by ctx, if any.
-func deferredArchiveEventsFrom(ctx context.Context) *deferredArchiveEvents {
-	sink, _ := ctx.Value(deferredArchiveEventsKey{}).(*deferredArchiveEvents)
-	return sink
-}
-
-// add records an event for later append.
-func (d *deferredArchiveEvents) add(event events.Event) {
-	d.events = append(d.events, event)
-}
-
-// drain appends every deferred event, each under its own item-log lock. It is
-// idempotent and safe on a nil receiver. Callers must not hold B.
-func (d *deferredArchiveEvents) drain(ctx context.Context, database *sql.DB, ws *Workspace) {
-	if d == nil {
-		return
+// lockItemLogsSorted acquires the cross-process item-log lock (C) for every ID
+// in sorted item-ID order and returns a context that carries them, so nested
+// archive calls reuse the held C instead of acquiring it themselves. The returned
+// release function drops the locks in reverse order and is safe to call more
+// than once. It is the canonical C step of the order lifecycle global, A, C, B
+// (docs/design-docs/artifact-mutation-lock-order.md), so callers must call it
+// before they acquire B.
+//
+// A request for a C that the context does not already hold fails closed while
+// B is held: acquiring C under B would reintroduce the B-then-C overlap that
+// 172.002-T removed, and 200.007-T forbids it.
+func lockItemLogsSorted(ctx context.Context, ws *Workspace, itemIDs []string) (context.Context, func(), error) {
+	ordered := uniqueNonEmptyStrings(itemIDs)
+	sort.Strings(ordered)
+	locksRoot := WorkspaceLocksRoot(ws.RootPath)
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	unlocks := make([]func(), 0, len(ordered))
+	release := func() {
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			unlocks[i]()
+		}
+		unlocks = nil
 	}
-	pending := d.events
-	d.events = nil
-	for _, event := range pending {
-		appendArchiveEvent(ctx, database, ws, event)
+	lockedCtx := ctx
+	for _, id := range ordered {
+		if err := requireItemLogLockOrder(lockedCtx, ws, id); err != nil {
+			release()
+			return ctx, nil, err
+		}
+		var unlock func()
+		var err error
+		lockedCtx, unlock, err = events.LockItemLogCrossProcess(lockedCtx, locksRoot, logsDir, id)
+		if err != nil {
+			release()
+			return ctx, nil, fmt.Errorf("lock item log %s: %w", id, err)
+		}
+		unlocks = append(unlocks, unlock)
 	}
+	var once sync.Once
+	return lockedCtx, func() { once.Do(release) }, nil
 }
+
+// requireItemLogLockOrder fails closed when a caller would acquire the
+// item-log lock (C) for itemID while holding artifact-mutation locks (B) without
+// already holding that C. A C the context holds is a reuse and always passes.
+func requireItemLogLockOrder(ctx context.Context, ws *Workspace, itemID string) error {
+	if !artifactMutationLocksHeldAny(ctx) {
+		return nil
+	}
+	if events.ItemLogCrossProcessLockHeld(ctx, WorkspaceLogsRoot(ws.RootPath), itemID) {
+		return nil
+	}
+	return fmt.Errorf("item log lock C for %s requested while artifact mutation locks B are held and C is not context-held: %w",
+		itemID, errItemLogLockUnderArtifactLocks)
+}
+
+// errItemLogLockUnderArtifactLocks reports a lock-order violation: C requested
+// while B is held and the C is not already held by the call tree.
+var errItemLogLockUnderArtifactLocks = errors.New("item log lock requested under artifact mutation locks")
+
+// errArchiveScopeChanged marks a fail-closed archive whose scope grew after the
+// caller took its item-log locks (C), for example a child created between
+// ShipShipment's C-set snapshot and the nested ArchiveItem. The archive left the
+// item untouched, so the caller can retry the whole operation.
+var errArchiveScopeChanged = errors.New("archive item-log lock set incomplete (the archive scope may have changed during ship); retry if transient")
 
 // appendArchiveEvent appends and indexes an "archived" event under the item's
-// cross-process item-log lock. Failures are logged and never fatal.
+// cross-process item-log lock. The caller must already hold C for the item in
+// ctx (lockItemLogsSorted); when B is held and C is not, the append fails
+// closed with a warning instead of acquiring C. Failures are logged and never
+// fatal: the archive event stays best-effort.
 func appendArchiveEvent(ctx context.Context, database *sql.DB, ws *Workspace, event events.Event) {
+	if err := requireItemLogLockOrder(ctx, ws, event.ItemID); err != nil {
+		slog.Warn("archive item: refused to append event", "item_id", event.ItemID, "error", err)
+		return
+	}
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, event.ItemID)
 	if lockErr != nil {
