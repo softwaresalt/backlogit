@@ -232,3 +232,47 @@ scope.
 * Future snapshot-before-lock writers that can persist `archived_status` must opt
   into `guardArchivedStatusUnchangedSince` or an equivalent source-of-truth
   Markdown comparison before shipment 153-S can claim the class is closed.
+
+## Hardening audit (CY-B review follow-up)
+
+### Audited `ArchiveItem` callers
+
+No caller reaches `ArchiveItem` with B in its context and C not held, except the
+`ShipShipment` archive loop, which holds C for its whole scope first.
+
+| Caller | Locks in context at the call | Result |
+|---|---|---|
+| CLI `archive`, CLI `migrate`, MCP `archive_item`, doctor `--fix-orphans`, retention archive | None | Outermost call; takes C then B itself. |
+| `archiveDescendants` cascade | Parent's C and B | C covers the whole set, so the nested call reuses it. |
+| `ReconcileArchivedLifecycle` rollback and step-12 re-archive | None | The set step's B lives only inside `setItemStatusAndMetaLocked` and its `lockedCtx` is not returned to the caller. |
+| `BulkUpdateStatus`, hooks, reconcile-to-shipped transaction | n/a | None of them calls `ArchiveItem` or `archiveItems`. |
+| `ShipShipment` via `archiveItems` | A, C for the ship set, B | C-first; see below. |
+
+### ShipShipment C set is complete for parent cascades
+
+The ship closure's parent cascade runs with `shipmentMemberCascadeBoundaryContextKey`
+set to the explicit member set, and `cascadePersistedParentStatuses` returns at
+the first ancestor that is not a member. Every ancestor that can receive a
+`status_changed` event is therefore a member, and every member is a root of the
+C set. A non-member parent (the covering feature in the probe fixture) is never
+touched, and the B4 probe asserts its C is never requested. `ShipShipment` does
+not write `returned_to_backlog` events; only the doctor reads them. No C set
+change was needed.
+
+### Stale-descendant race
+
+A child created after `shipItemLogScopeIDs` snapshots the C set but before the
+nested `ArchiveItem` computes its scope makes that scope larger than the held C.
+The nested call fails closed before any mutation, with an error that wraps
+`errArchiveScopeChanged` ("archive scope changed during ship; retry") and
+`errItemLogLockUnderArtifactLocks`. The failure leaves the archive untouched;
+the caller retries `ShipShipment`, which recomputes the C set. The window is not
+closed by redesign.
+
+### Probe soundness
+
+The B4 probe detects a held B with `lockTaskFile`, which first calls
+`TryLock` on a process-wide per-path mutex and returns `ErrTaskBusy` before any
+OS-level lock, so detection is identical on Windows and Linux. A control test
+proves held B reads busy and released B reads free, and the probe asserts the
+barrier fired.
