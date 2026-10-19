@@ -270,6 +270,7 @@ delays nor fails `ShipShipment`
 (`TestShipShipment_LockedUnlistedDescendantItemLogDoesNotBlockShip`). The
 fail-closed `errArchiveScopeChanged` path still guards any caller that holds B
 without the matching C.
+
 ### Probe soundness
 
 The B4 probe detects a held B with `lockTaskFile`, which first calls
