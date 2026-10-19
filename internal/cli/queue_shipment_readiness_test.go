@@ -33,6 +33,9 @@ func TestQueueShipmentReadiness_CLIViewSplitsOnArchivedProvenance(t *testing.T) 
 	writeQueueReadinessFixture(t, root, "queue", "960-S", "status: queued\ndependencies:\n    - id: 950-S\n      type: blocks\n")
 	writeQueueReadinessFixture(t, root, "queue", "961-S", "status: queued\ndependencies:\n    - id: 951-S\n      type: blocks\n")
 
+	syncOutput, err := runRootCommand(t, "--cwd", root, "sync")
+	require.NoError(t, err, syncOutput)
+
 	output, err := runRootCommand(t, "--cwd", root, "queue", "view", "--type", "shipment", "--status", "queued", "--format", "json")
 	require.NoError(t, err, output)
 

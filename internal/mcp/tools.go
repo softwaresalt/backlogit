@@ -1687,7 +1687,7 @@ func (s *Server) handleGetQueue(ctx context.Context, request mcplib.CallToolRequ
 	if v, ok := request.Params.Arguments["group_by"].(string); ok && v != "" {
 		filter.GroupBy = v
 	}
-	view, err := core.QueryQueue(ctx, s.Workspace.DB, filter)
+	view, err := core.QueryQueueForWorkspace(ctx, s.Workspace, filter)
 	if err != nil {
 		return InternalError(fmt.Sprintf("get queue: %v", err)), nil
 	}
