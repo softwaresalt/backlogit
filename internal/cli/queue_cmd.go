@@ -82,7 +82,7 @@ priority as the secondary sort after any manually assigned queue positions.`,
 			} else {
 				filter.Statuses = append([]string(nil), defaultQueueStatuses...)
 			}
-			view, err := core.QueryQueue(ctx, ws.DB, filter)
+			view, err := core.QueryQueueForWorkspace(ctx, ws, filter)
 			if err != nil {
 				return fmt.Errorf("query queue: %w", err)
 			}
