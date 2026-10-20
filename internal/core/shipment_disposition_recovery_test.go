@@ -186,6 +186,37 @@ func TestDisposeJournalRecovery(t *testing.T) {
 		require.Equal(t, models.StatusAbandoned, loadURCanonicalArtifact(t, f.ws, f.shipmentID).Status)
 	})
 
+	t.Run("intent_after_write_with_db_only_link_disposition_is_kept", func(t *testing.T) {
+		f := newDisposeRecoveryFixture(t)
+		// The journal preimage (unchanged production shape) has no link; the
+		// governed write then materializes the DB-only link into Markdown.
+		require.NoError(t, bldb.AddLink(ctx, f.ws.DB, f.shipmentID, f.featureID, "related_to"))
+		f.applyDisposition(t)
+		require.NotEmpty(t, loadURCanonicalArtifact(t, f.ws, f.shipmentID).Links)
+		require.Empty(t, f.journal.Preimage.Shipment.Links)
+		f.writeJournal(t, "intent")
+
+		require.NoError(t, recoverPendingShipmentOperations(ctx, f.ws))
+
+		got := loadURCanonicalArtifact(t, f.ws, f.shipmentID)
+		require.Equal(t, models.StatusAbandoned, got.Status)
+		f.requireJournalGone(t)
+	})
+
+	t.Run("db_only_link_does_not_mask_unrelated_change", func(t *testing.T) {
+		f := newDisposeRecoveryFixture(t)
+		require.NoError(t, bldb.AddLink(ctx, f.ws.DB, f.shipmentID, f.featureID, "related_to"))
+		f.applyDisposition(t)
+		changed := cloneArtifact(loadURCanonicalArtifact(t, f.ws, f.shipmentID))
+		changed.Title = "unrelated edit"
+		forceURArtifactFixture(t, f.ws, changed)
+		f.writeJournal(t, "intent")
+
+		err := recoverPendingShipmentOperations(ctx, f.ws)
+
+		require.ErrorIs(t, err, blerrors.ErrShipmentConflict)
+	})
+
 	t.Run("kept_disposition_repairs_stale_queued_index", func(t *testing.T) {
 		f := newDisposeRecoveryFixture(t)
 		f.applyDisposition(t)

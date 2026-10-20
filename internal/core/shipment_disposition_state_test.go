@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -252,6 +253,45 @@ func TestDisposeQueuedShipmentState(t *testing.T) {
 			require.NoError(t, recoverPendingShipmentOperations(ctx, f.ws))
 			requireKeptDisposition(t)
 			f.requireNoJournals(t)
+		})
+
+		t.Run("finalize_failure_with_db_only_link_recovers_and_unblocks_claim", func(t *testing.T) {
+			f := newDisposeFixture(t)
+			authorizationRef := f.deliberation(t, "done", f.shipmentID)
+			require.NoError(t, bldb.AddLink(ctx, f.ws.DB, f.shipmentID, f.featureID, "related_to"))
+			var saved shipmentOperationJournalRecord
+			setDisposeHook(t, func() error {
+				records, loadErr := loadShipmentOperationJournals(f.ws)
+				if loadErr != nil {
+					return loadErr
+				}
+				if len(records) != 1 {
+					return fmt.Errorf("expected one journal, got %d", len(records))
+				}
+				saved = records[0]
+				if rmErr := os.Remove(saved.path); rmErr != nil {
+					return rmErr
+				}
+				return os.Mkdir(saved.path, 0o755)
+			})
+
+			_, err := DisposeQueuedShipment(ctx, f.ws, f.shipmentID, f.opts(authorizationRef))
+			require.True(t, errors.Is(err, blerrors.ErrWriteIndeterminate))
+			disposed := loadURCanonicalArtifact(t, f.ws, f.shipmentID)
+			require.Equal(t, models.StatusAbandoned, disposed.Status)
+			require.NotEmpty(t, disposed.Links, "the governed write materialized the DB-only link")
+
+			setDisposeHook(t, nil)
+			require.NoError(t, os.Remove(saved.path))
+			_, writeErr := writeShipmentLifecycleJournalForWorkspace(f.ws, saved.name, saved.lifecycle)
+			require.NoError(t, writeErr)
+			require.NoError(t, recoverPendingShipmentOperations(ctx, f.ws))
+			require.Equal(t, models.StatusAbandoned, loadURCanonicalArtifact(t, f.ws, f.shipmentID).Status)
+			f.requireNoJournals(t)
+
+			claimed, claimErr := ClaimShipment(ctx, f.ws, f.otherID)
+			require.NoError(t, claimErr)
+			require.Equal(t, models.StatusActive, claimed.Status)
 		})
 
 		t.Run("post_commit_indeterminate_is_not_rolled_back", func(t *testing.T) {

@@ -637,7 +637,7 @@ func validateShipmentLifecycleRecoveryCAS(
 	if err != nil {
 		return fmt.Errorf("load shipment %s recovery CAS state: %w", journal.ShipmentID, err)
 	}
-	shipmentCandidates, err := shipmentRecoveryCandidates(journal, currentShipment, snapshot)
+	shipmentCandidates, err := shipmentRecoveryCandidates(ctx, ws, journal, currentShipment, snapshot)
 	if err != nil {
 		return err
 	}
@@ -725,7 +725,7 @@ func validateShipmentLifecycleRecoveryOutcome(
 	if err != nil {
 		return fmt.Errorf("load shipment %s recovery outcome: %w", journal.ShipmentID, err)
 	}
-	shipmentCandidates, err := shipmentRecoveryCandidates(journal, currentShipment, snapshot)
+	shipmentCandidates, err := shipmentRecoveryCandidates(ctx, ws, journal, currentShipment, snapshot)
 	if err != nil {
 		return err
 	}
@@ -891,6 +891,8 @@ func filterShipmentOperationEventBytes(content []byte, itemID, operationID strin
 }
 
 func shipmentRecoveryCandidates(
+	ctx context.Context,
+	ws *Workspace,
 	journal shipmentLifecycleJournal,
 	current *models.Artifact,
 	snapshot *ShipmentBlockedSnapshot,
@@ -935,6 +937,12 @@ func shipmentRecoveryCandidates(
 			target.CustomFields["superseded_by"] = supersededBy
 		} else {
 			delete(target.CustomFields, "superseded_by")
+		}
+		// The governed write persists with DB-only link preservation, so the
+		// committed artifact carries item_links rows the preimage Markdown
+		// lacked. Derive them the same way; no other field is relaxed.
+		if err := mergeDBOnlyLinksIntoArtifact(ctx, ws, target); err != nil {
+			return nil, fmt.Errorf("shipment %s dispose recovery links: %w", journal.ShipmentID, err)
 		}
 	case journal.RecoveryPolicy == "rollback" && journal.Operation == "claim":
 		target.Status = models.StatusActive
