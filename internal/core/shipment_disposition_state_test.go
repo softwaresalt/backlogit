@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -197,6 +198,60 @@ func TestDisposeQueuedShipmentState(t *testing.T) {
 			records, loadErr := loadShipmentOperationJournals(f.ws)
 			require.NoError(t, loadErr)
 			require.Len(t, records, 1, "the intent journal stays as recovery evidence")
+		})
+
+		t.Run("finalize_failure_after_successful_write_is_not_rolled_back", func(t *testing.T) {
+			// G-D: when the governed write succeeded and only journal finalization
+			// fails, the disposition is never compensated; the journal stays as
+			// recovery evidence and ErrWriteIndeterminate is surfaced.
+			f := newDisposeFixture(t)
+			authorizationRef := f.deliberation(t, "done", f.shipmentID)
+			var saved shipmentOperationJournalRecord
+			setDisposeHook(t, func() error {
+				records, loadErr := loadShipmentOperationJournals(f.ws)
+				if loadErr != nil {
+					return loadErr
+				}
+				if len(records) != 1 {
+					return fmt.Errorf("expected one journal, got %d", len(records))
+				}
+				saved = records[0]
+				// Make the journal path unwritable by replacing it with a directory.
+				if rmErr := os.Remove(saved.path); rmErr != nil {
+					return rmErr
+				}
+				return os.Mkdir(saved.path, 0o755)
+			})
+
+			got, err := DisposeQueuedShipment(ctx, f.ws, f.shipmentID, f.opts(authorizationRef))
+
+			require.Error(t, err)
+			require.Nil(t, got)
+			require.True(t, errors.Is(err, blerrors.ErrWriteIndeterminate))
+			requireKeptDisposition := func(t *testing.T) {
+				t.Helper()
+				disposed := loadURCanonicalArtifact(t, f.ws, f.shipmentID)
+				require.Equal(t, models.StatusAbandoned, disposed.Status, "no compensating rollback")
+				require.Equal(t, "superseded by a newer plan", disposed.CustomFields["disposition_reason"])
+				require.Equal(t, "operator", disposed.CustomFields["disposition_by"])
+				require.Equal(t, authorizationRef, disposed.CustomFields["disposition_authorization_ref"])
+				require.Equal(t, f.otherID, disposed.CustomFields["superseded_by"])
+				require.Equal(t, 1, f.abandonedStatusEvents(t, f.shipmentID), "the status event is kept")
+			}
+			requireKeptDisposition(t)
+			info, statErr := os.Stat(saved.path)
+			require.NoError(t, statErr, "the journal path is left in place")
+			require.True(t, info.IsDir())
+
+			// Restore a readable intent journal, then recovery keeps abandoned and
+			// finalizes the journal.
+			setDisposeHook(t, nil)
+			require.NoError(t, os.Remove(saved.path))
+			_, writeErr := writeShipmentLifecycleJournalForWorkspace(f.ws, saved.name, saved.lifecycle)
+			require.NoError(t, writeErr)
+			require.NoError(t, recoverPendingShipmentOperations(ctx, f.ws))
+			requireKeptDisposition(t)
+			f.requireNoJournals(t)
 		})
 
 		t.Run("post_commit_indeterminate_is_not_rolled_back", func(t *testing.T) {

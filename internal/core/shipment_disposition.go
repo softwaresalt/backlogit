@@ -193,7 +193,12 @@ func DisposeQueuedShipment(ctx context.Context, ws *Workspace, id string, opts S
 		}
 	}
 	if err := finalize(); err != nil {
-		return nil, fail(err)
+		// G-D: the governed write succeeded; never compensate over a possibly
+		// committed disposition. Keep the journal as recovery evidence.
+		slog.WarnContext(ctx, "finalize shipment disposition failed; journal kept as recovery evidence",
+			"shipment_id", id, "error", err)
+		return nil, fmt.Errorf("dispose shipment %s: %w", id,
+			errors.Join(blerrors.ErrWriteIndeterminate, err))
 	}
 
 	disposed, err := findArtifact(lockedCtx, ws, id)
