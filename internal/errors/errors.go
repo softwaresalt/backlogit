@@ -23,6 +23,7 @@ var (
 	ErrUnsupportedLegacyDescope      = errors.New("backlogit: unsupported legacy shipment reconcile descope")
 	ErrCannotReturnItem              = errors.New("backlogit: cannot return item from shipment")
 	ErrShipmentPredecessorNotShipped = errors.New("backlogit: shipment predecessor has not shipped")
+	ErrShipmentDispositionRefused    = errors.New("backlogit: shipment disposition refused")
 
 	// ErrConfirmationRequired is returned when a CLI-level explicit-confirmation
 	// guard denies a live (non-dry-run) mutating operation because neither a
