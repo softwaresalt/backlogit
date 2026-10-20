@@ -951,7 +951,18 @@ func memberRecoveryCandidates(
 	switch {
 	case journal.RecoveryPolicy == "rollback" && journal.Operation == "claim":
 		if preimage.Status != models.StatusQueued {
-			return candidates, nil
+			// The bounded claim cascade can move a non-queued member-parent to
+			// active without a marker. It writes only status and updated_at,
+			// plus clearStaleBlockedReason when the preimage was blocked.
+			// The preimage stays first (compensated) and last (committed).
+			cascaded := cloneArtifact(preimage)
+			cascaded.Status = models.StatusActive
+			clearStaleBlockedReason(cascaded, preimage.Status)
+			return []recoveryArtifactCandidate{
+				{artifact: preimage},
+				{artifact: cascaded, ignoreUpdatedAt: true},
+				{artifact: preimage},
+			}, nil
 		}
 		target.Status = models.StatusActive
 		markedTarget := cloneArtifact(preimage)
