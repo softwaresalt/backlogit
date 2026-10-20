@@ -293,6 +293,17 @@ func reconcileShipmentLifecycleIntent(
 				}
 				if current.Status == models.StatusAbandoned &&
 					journal.Preimage.Shipment.Status != models.StatusAbandoned {
+					// A crash between the Markdown write and the index upsert
+					// leaves a stale queued cache row. Repair the index only
+					// (no Markdown, event, or journal rewrite); on failure the
+					// intent journal stays so a later pass retries.
+					indexed := cloneArtifact(current)
+					if err := mergeDBOnlyLinksIntoArtifact(ctx, ws, indexed); err != nil {
+						return nil, fmt.Errorf("preserve shipment %s database-only links: %w", journal.ShipmentID, err)
+					}
+					if err := bldb.UpsertItem(ctx, ws.DB, indexed); err != nil {
+						return nil, fmt.Errorf("repair shipment %s dispose index: %w", journal.ShipmentID, err)
+					}
 					keepDisposition = true
 					journal.Phase = "committed"
 					result = current
@@ -361,7 +372,7 @@ func reconcileShipmentLifecycleIntent(
 			}
 		}
 		if _, err := writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal); err != nil {
-			return nil, fmt.Errorf("persist shipment %s claim recovery journal: %w", journal.ShipmentID, err)
+			return nil, fmt.Errorf("persist shipment %s %s recovery journal: %w", journal.ShipmentID, journal.Operation, err)
 		}
 		removeShipmentOperationJournal(ctx, ws, journalPath)
 		return result, nil

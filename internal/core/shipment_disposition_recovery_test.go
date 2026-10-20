@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -183,6 +184,31 @@ func TestDisposeJournalRecovery(t *testing.T) {
 		// A second pass is a no-op.
 		require.NoError(t, recoverPendingShipmentOperations(ctx, f.ws))
 		require.Equal(t, models.StatusAbandoned, loadURCanonicalArtifact(t, f.ws, f.shipmentID).Status)
+	})
+
+	t.Run("kept_disposition_repairs_stale_queued_index", func(t *testing.T) {
+		f := newDisposeRecoveryFixture(t)
+		f.applyDisposition(t)
+		// Simulate a crash after the Markdown write but before the index upsert.
+		require.NoError(t, bldb.UpsertItem(ctx, f.ws.DB, f.preimage))
+		stale, err := bldb.GetItem(ctx, f.ws.DB, f.shipmentID)
+		require.NoError(t, err)
+		require.Equal(t, models.StatusQueued, stale.Status)
+		f.writeJournal(t, "intent")
+		before := f.fileBytes(t, f.shipmentID)
+
+		require.NoError(t, recoverPendingShipmentOperations(ctx, f.ws))
+
+		indexed, err := bldb.GetItem(ctx, f.ws.DB, f.shipmentID)
+		require.NoError(t, err)
+		require.Equal(t, models.StatusAbandoned, indexed.Status)
+		got, err := GetShipment(ctx, f.ws, f.shipmentID)
+		require.NoError(t, err)
+		require.Equal(t, models.StatusAbandoned, got.Status)
+		require.Equal(t, f.reason, got.CustomFields["disposition_reason"])
+		require.Equal(t, before, f.fileBytes(t, f.shipmentID), "Markdown must not be rewritten")
+		require.Equal(t, 1, f.abandonedStatusEvents(t))
+		f.requireJournalGone(t)
 	})
 
 	t.Run("intent_foreign_state_fails_with_shipment_conflict", func(t *testing.T) {
