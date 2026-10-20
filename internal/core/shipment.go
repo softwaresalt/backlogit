@@ -1099,6 +1099,10 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 				"move shipment %s to abandoned requires non-empty disposition reason, by, and authorization_ref: %w",
 				shipmentID, blerrors.ErrValidation)
 		}
+		provenance.Reason = strings.TrimSpace(provenance.Reason)
+		provenance.By = strings.TrimSpace(provenance.By)
+		provenance.AuthorizationRef = strings.TrimSpace(provenance.AuthorizationRef)
+		provenance.SupersededBy = strings.TrimSpace(provenance.SupersededBy)
 		governedDisposition = &provenance
 	}
 	if shipment.ArtifactType == "shipment" &&

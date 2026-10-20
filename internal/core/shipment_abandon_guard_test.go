@@ -41,7 +41,7 @@ func TestShipmentQueuedAbandonProtected(t *testing.T) {
 		require.ErrorIs(t, err, blerrors.ErrShipmentConflict)
 
 		_, err = UpdateArtifact(ctx, ws, id, map[string]any{"status": "active"})
-		require.Error(t, err)
+		require.ErrorIs(t, err, blerrors.ErrShipmentBlockedRequiresEnvelope)
 		require.Equal(t, before, readFile(t, path))
 	})
 

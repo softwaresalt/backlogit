@@ -68,6 +68,36 @@ func TestGovernedShipmentDispositionEdge(t *testing.T) {
 		require.False(t, present, "superseded_by must be absent when empty")
 	})
 
+	t.Run("padded_provenance_is_stored_trimmed", func(t *testing.T) {
+		ws, id, _ := newQueued(t)
+		err := MoveShipmentStatus(withMarker(shipmentDispositionProvenance{
+			Reason: "  superseded \t", By: " operator ", AuthorizationRef: "\tDL-1 ", SupersededBy: "  002-S ",
+		}), ws, id, ShipmentAbandoned)
+		require.NoError(t, err)
+
+		got := loadURCanonicalArtifact(t, ws, id)
+		require.Equal(t, "superseded", got.CustomFields["disposition_reason"])
+		require.Equal(t, "operator", got.CustomFields["disposition_by"])
+		require.Equal(t, "DL-1", got.CustomFields["disposition_authorization_ref"])
+		require.Equal(t, "002-S", got.CustomFields["superseded_by"])
+	})
+
+	t.Run("marker_ignored_on_active_to_abandoned", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		fixture := newURBlockedActiveFixture(t, ws)
+		err := MoveShipmentStatus(withMarker(shipmentDispositionProvenance{
+			Reason: "r", By: "b", AuthorizationRef: "a", SupersededBy: "002-S",
+		}), ws, fixture.shipment.ID, ShipmentAbandoned)
+		require.NoError(t, err)
+
+		got := loadURCanonicalArtifact(t, ws, fixture.shipment.ID)
+		require.Equal(t, models.StatusAbandoned, got.Status)
+		for _, key := range []string{"disposition_reason", "disposition_by", "disposition_authorization_ref", "superseded_by"} {
+			_, present := got.CustomFields[key]
+			require.False(t, present, "%s must not be written on active -> abandoned", key)
+		}
+	})
+
 	t.Run("marker_opens_no_other_edge", func(t *testing.T) {
 		ws, id, path := newQueued(t)
 		marker := withMarker(shipmentDispositionProvenance{
@@ -96,6 +126,9 @@ func TestGovernedShipmentDispositionEdge(t *testing.T) {
 			{"empty_reason", shipmentDispositionProvenance{By: "b", AuthorizationRef: "a"}},
 			{"empty_by", shipmentDispositionProvenance{Reason: "r", AuthorizationRef: "a"}},
 			{"empty_authorization_ref", shipmentDispositionProvenance{Reason: "r", By: "b"}},
+			{"whitespace_reason", shipmentDispositionProvenance{Reason: "  \t", By: "b", AuthorizationRef: "a"}},
+			{"whitespace_by", shipmentDispositionProvenance{Reason: "r", By: "  \t", AuthorizationRef: "a"}},
+			{"whitespace_authorization_ref", shipmentDispositionProvenance{Reason: "r", By: "b", AuthorizationRef: "  \t"}},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
