@@ -477,7 +477,8 @@ func BulkUpdateStatus(ctx context.Context, _ *sql.DB, ws *Workspace, itemIDs []s
 		}
 		if artifact.ArtifactType == "shipment" &&
 			isProtectedShipmentStatusTransition(artifact.Status, targetStatus) &&
-			(artifact.Status == models.StatusBlocked || targetStatus == models.StatusBlocked) {
+			(artifact.Status == models.StatusBlocked || targetStatus == models.StatusBlocked ||
+				(artifact.Status == models.StatusQueued && targetStatus == models.StatusAbandoned)) {
 			result.Failed = append(result.Failed, itemIDs...)
 			return result, nil
 		}

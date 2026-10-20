@@ -1079,7 +1079,8 @@ func isProtectedShipmentStatusTransition(previous, next models.ArtifactStatus) b
 	return previous != next &&
 		(next == models.StatusBlocked ||
 			previous == models.StatusBlocked ||
-			(previous == models.StatusQueued && next == models.StatusActive))
+			(previous == models.StatusQueued && next == models.StatusActive) ||
+			(previous == models.StatusQueued && next == models.StatusAbandoned))
 }
 
 func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact, error) {
