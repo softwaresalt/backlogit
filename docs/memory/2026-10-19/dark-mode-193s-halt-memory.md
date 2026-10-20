@@ -1,0 +1,46 @@
+# Dark mode halt: 193-S blocked by 186-S closure evidence (2026-10-19)
+
+## Completed in this dark run
+
+| Shipment | Feature PR merge | Closure PR merge |
+|---|---|---|
+| 188-S | d9412f90 (#543) | dee11dd5 (#544) |
+| 189-S | b5660192 (#546) | cb346b01 (#547) |
+| 190-S | 1d75be28 (#548) | 1a41011e (#549) |
+| 191-S | c22fea94 (#550) | dc9440d6 (#551) |
+| 192-S | 13dddf8d (#552) | 1c33818d (#553) |
+
+The earlier 189-S claim stall cleared on its own; no process held the lock.
+
+## Halt: DARK_MODE_HALTED before 193-S
+
+* `autoharness gate pipeline-topology --phase pre_claim` for 193-S returns
+  `PREDECESSOR_CLOSURE_INCOMPLETE: predecessor 186-S is terminal but missing required closure evidence`.
+* Cause: `docs/closure/186-S-186-F-post-merge-closure.md` is `READY_WITH_CONDITIONS` with prose
+  conditions and no frontmatter `conditions:` list. The predicate requires every condition
+  to be `satisfied: true` with evidence. The conditions are genuinely open:
+  1. live fixture-bound Ship halt-row sessions not run;
+  2. the Orchestrator dry routing pass not run;
+  3. fixture directories under `logs/af1e5075-fixture/` await operator approval for removal.
+* Declared dependencies of the remaining scope: 193-S needs 186-S and 154-S (blocked by this gate);
+  194-S needs 193-S (plus 189-S, 192-S); 185-S needs 184-S and 194-S. 184-S needs only 154-S, 188-S and
+  189-S, so it is dependency-eligible and in scope: dark mode continues with 184-S (see the
+  addendum below), and only 193-S, 194-S and 185-S remain paused.
+* Not done: marking those conditions satisfied without evidence would falsify a gate record, and
+  item 3 is a deletion that needs operator approval.
+
+## Operator options
+
+1. Decide conditions 1 and 2 (the live Ship runs 188-S to 192-S exercised the proceed path),
+   approve removing the fixtures, then amend the 186-S closure frontmatter with a `conditions:` list
+   (`satisfied: true` plus evidence per entry).
+2. Keep 193-S halted until remediation produces a passing pre_claim gate. No supported override
+   exists: the Orchestrator and Ship halt on a gate exit of 1 or 2.
+
+Then re-run dark mode for 193-S -> 194-S -> 185-S, with 184-S before 185-S.
+
+## Addendum
+
+At the time of this note 184-S was still `queued` and had no closure record. It is
+dependency-eligible and remains in the resumed scope; 185-S must wait for it.
+Check `docs/closure/184-S-*` and the shipment status for the actual outcome.
