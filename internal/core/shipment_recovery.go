@@ -927,6 +927,10 @@ func shipmentRecoveryCandidates(
 			}
 		}
 		target.Status = models.StatusAbandoned
+		// MoveShipmentStatus normalizes before writing, so only this expected
+		// abandoned candidate carries the normalized items list; the journal
+		// preimage stays as loaded.
+		normalizeShipmentArtifact(target)
 		if target.CustomFields == nil {
 			target.CustomFields = map[string]any{}
 		}

@@ -78,7 +78,7 @@ func DisposeQueuedShipment(ctx context.Context, ws *Workspace, id string, opts S
 		}
 	}()
 
-	current, err := loadDispositionTarget(ctx, ws, id)
+	current, _, err := loadDispositionTarget(ctx, ws, id)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func DisposeQueuedShipment(ctx context.Context, ws *Workspace, id string, opts S
 	if err := validateDispositionRequest(lockedCtx, ws, id, opts); err != nil {
 		return nil, err
 	}
-	current, err = loadDispositionTarget(lockedCtx, ws, id)
+	current, rawCurrent, err := loadDispositionTarget(lockedCtx, ws, id)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func DisposeQueuedShipment(ctx context.Context, ws *Workspace, id string, opts S
 	}
 
 	preimage := shipmentLifecyclePreimage{
-		Shipment: cloneArtifact(current),
+		Shipment: rawCurrent,
 		Members:  make([]*models.Artifact, 0, len(memberIDs)),
 	}
 	for _, memberID := range memberIDs {
@@ -323,24 +323,27 @@ func validateDispositionAuthorization(ctx context.Context, ws *Workspace, id, re
 
 // loadDispositionTarget loads the target from Markdown and refuses anything
 // that is not a queued shipment.
-func loadDispositionTarget(ctx context.Context, ws *Workspace, id string) (*models.Artifact, error) {
+func loadDispositionTarget(ctx context.Context, ws *Workspace, id string) (*models.Artifact, *models.Artifact, error) {
 	current, err := findArtifact(ctx, ws, id)
 	if errors.Is(err, blerrors.ErrNotFound) {
-		return nil, fmt.Errorf("dispose shipment %s: %w: %w", id, blerrors.ErrShipmentNotFound, err)
+		return nil, nil, fmt.Errorf("dispose shipment %s: %w: %w", id, blerrors.ErrShipmentNotFound, err)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load shipment %s for disposition: %w", id, err)
+		return nil, nil, fmt.Errorf("load shipment %s for disposition: %w", id, err)
 	}
 	if current.ArtifactType != "shipment" {
-		return nil, fmt.Errorf("dispose shipment %s: artifact is a %s, not a shipment: %w",
+		return nil, nil, fmt.Errorf("dispose shipment %s: artifact is a %s, not a shipment: %w",
 			id, current.ArtifactType, blerrors.ErrShipmentDispositionRefused)
 	}
+	// raw keeps the shipment as loaded (no inserted items list) for the journal
+	// preimage; current is normalized for validation only.
+	raw := cloneArtifact(current)
 	normalizeShipmentArtifact(current)
 	if current.Status != models.StatusQueued {
-		return nil, fmt.Errorf("dispose shipment %s: status is %s, only queued shipments can be disposed: %w",
+		return nil, nil, fmt.Errorf("dispose shipment %s: status is %s, only queued shipments can be disposed: %w",
 			id, current.Status, blerrors.ErrShipmentDispositionRefused)
 	}
-	return current, nil
+	return current, raw, nil
 }
 
 // requireNoLiveShipmentDependents refuses while a non-terminal shipment still
