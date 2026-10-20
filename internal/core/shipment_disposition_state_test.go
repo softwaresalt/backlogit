@@ -101,7 +101,10 @@ func TestDisposeQueuedShipmentState(t *testing.T) {
 			f.requireUnchanged(t, f.otherID, dependentBefore)
 			f.requireNoJournals(t)
 		})
+	})
 
+	t.Run("TerminalDependentAllowed", func(t *testing.T) {
+		// Needs the full disposition; green once the governed write lands.
 		t.Run("terminal_dependent_is_not_live_and_edges_are_not_carried", func(t *testing.T) {
 			f := newDisposeFixture(t)
 			authorizationRef := f.deliberation(t, "done", f.shipmentID)

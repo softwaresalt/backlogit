@@ -219,23 +219,29 @@ func TestDisposeQueuedShipment(t *testing.T) {
 	})
 
 	t.Run("AuthorizationRefusals", func(t *testing.T) {
-		f := newDisposeFixture(t)
-		nonDeliberation := f.deliberation(t, "done", f.shipmentID)
-		retyped := cloneArtifact(loadURCanonicalArtifact(t, f.ws, nonDeliberation))
-		retyped.ArtifactType = "task"
-		forceURArtifactFixture(t, f.ws, retyped)
-
 		cases := []struct {
 			name string
-			ref  func(*testing.T) string
+			ref  func(*testing.T, *disposeFixture) string
 		}{
-			{"unresolvable_ref", func(*testing.T) string { return "999-DL" }},
-			{"malformed_ref", func(*testing.T) string { return "not-a-deliberation" }},
-			{"non_deliberation_artifact", func(*testing.T) string { return nonDeliberation }},
-			{"missing_authorizes_disposition", func(t *testing.T) string { return f.deliberation(t, "done", "") }},
-			{"wrong_authorizes_disposition", func(t *testing.T) string { return f.deliberation(t, "done", f.otherID) }},
-			{"queued_deliberation_naming_target", func(t *testing.T) string { return f.deliberation(t, "queued", f.shipmentID) }},
-			{"archived_but_not_done_deliberation", func(t *testing.T) string {
+			{"unresolvable_ref", func(*testing.T, *disposeFixture) string { return "999-DL" }},
+			{"malformed_ref", func(*testing.T, *disposeFixture) string { return "not-a-deliberation" }},
+			{"non_deliberation_artifact", func(t *testing.T, f *disposeFixture) string {
+				id := f.deliberation(t, "done", f.shipmentID)
+				retyped := cloneArtifact(loadURCanonicalArtifact(t, f.ws, id))
+				retyped.ArtifactType = "task"
+				forceURArtifactFixture(t, f.ws, retyped)
+				return id
+			}},
+			{"missing_authorizes_disposition", func(t *testing.T, f *disposeFixture) string {
+				return f.deliberation(t, "done", "")
+			}},
+			{"wrong_authorizes_disposition", func(t *testing.T, f *disposeFixture) string {
+				return f.deliberation(t, "done", f.otherID)
+			}},
+			{"queued_deliberation_naming_target", func(t *testing.T, f *disposeFixture) string {
+				return f.deliberation(t, "queued", f.shipmentID)
+			}},
+			{"archived_but_not_done_deliberation", func(t *testing.T, f *disposeFixture) string {
 				id := f.deliberation(t, "queued", f.shipmentID)
 				_, err := ArchiveItem(ctx, f.ws.DB, f.ws, id)
 				require.NoError(t, err)
@@ -245,7 +251,8 @@ func TestDisposeQueuedShipment(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				ref := tc.ref(t)
+				f := newDisposeFixture(t)
+				ref := tc.ref(t, f)
 				before := f.fileBytes(t, f.shipmentID)
 
 				got, err := DisposeQueuedShipment(ctx, f.ws, f.shipmentID, f.opts(ref))
