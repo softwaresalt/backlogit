@@ -1085,6 +1085,22 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 		)
 	}
 	_, governedActivation := ctx.Value(governedShipmentActivationContextKey{}).(struct{})
+
+	var governedDisposition *shipmentDispositionProvenance
+	// B-U7: the governed-disposition marker opens only queued -> abandoned and
+	// is ignored on every other transition. Provenance is validated before any
+	// write and set together with the status so one persist writes both.
+	if provenance, ok := ctx.Value(governedShipmentDispositionContextKey{}).(shipmentDispositionProvenance); ok &&
+		oldShipmentStatus == models.StatusQueued && newStatus == ShipmentAbandoned {
+		if strings.TrimSpace(provenance.Reason) == "" ||
+			strings.TrimSpace(provenance.By) == "" ||
+			strings.TrimSpace(provenance.AuthorizationRef) == "" {
+			return fmt.Errorf(
+				"move shipment %s to abandoned requires non-empty disposition reason, by, and authorization_ref: %w",
+				shipmentID, blerrors.ErrValidation)
+		}
+		governedDisposition = &provenance
+	}
 	if shipment.ArtifactType == "shipment" &&
 		newStatus == ShipmentActive &&
 		!governedActivation {
@@ -1095,7 +1111,7 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 		)
 	}
 
-	if !isValidShipmentTransition(shipment.Status, newStatus) {
+	if governedDisposition == nil && !isValidShipmentTransition(shipment.Status, newStatus) {
 		return fmt.Errorf(
 			"move shipment %s from %s to %s: %w",
 			shipmentID,
@@ -1132,6 +1148,19 @@ func moveShipmentStatusWithHeadGuard(ctx context.Context, ws *Workspace, shipmen
 
 	shipment.Status = models.ArtifactStatus(newStatus)
 	shipment.UpdatedAt = models.NowUTC()
+	if governedDisposition != nil {
+		if shipment.CustomFields == nil {
+			shipment.CustomFields = map[string]any{}
+		}
+		shipment.CustomFields["disposition_reason"] = governedDisposition.Reason
+		shipment.CustomFields["disposition_by"] = governedDisposition.By
+		shipment.CustomFields["disposition_authorization_ref"] = governedDisposition.AuthorizationRef
+		if governedDisposition.SupersededBy != "" {
+			shipment.CustomFields["superseded_by"] = governedDisposition.SupersededBy
+		} else {
+			delete(shipment.CustomFields, "superseded_by")
+		}
+	}
 	ctx = context.WithValue(ctx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
 		operation: "move_shipment_status",
 		changes: map[string]any{
