@@ -131,7 +131,8 @@ func reconcileShipmentLifecycleIntent(
 	if journal.Operation != "block" &&
 		journal.Operation != "unblock" &&
 		journal.Operation != "normalize" &&
-		journal.Operation != "claim" {
+		journal.Operation != "claim" &&
+		journal.Operation != "dispose" {
 		return nil, fmt.Errorf("shipment lifecycle journal %s has unsupported operation %q: %w",
 			journalPath, journal.Operation, blerrors.ErrValidation)
 	}
@@ -234,6 +235,7 @@ func reconcileShipmentLifecycleIntent(
 		allowGovernedShipmentMutation: true,
 	})
 	var result *models.Artifact
+	keepDisposition := false
 	journal.Phase = recoveryTerminalPhase(journal)
 	if recoveryEvidence.appliedPhase == journal.Phase {
 		if err := validateShipmentLifecycleRecoveryOutcome(
@@ -280,6 +282,32 @@ func reconcileShipmentLifecycleIntent(
 				if err := persistArtifact(governedCtx, ws, cloneArtifact(journal.Preimage.Shipment), true); err != nil {
 					return nil, fmt.Errorf("restore shipment %s preimage: %w", journal.ShipmentID, err)
 				}
+			} else if journal.Operation == "dispose" {
+				// G-D: dispose recovery never writes. The CAS above proved the
+				// on-disk shipment is the queued preimage or the complete,
+				// validated disposition. A complete disposition is kept; the
+				// queued preimage needs no restore.
+				current, loadErr := findArtifact(ctx, ws, journal.ShipmentID)
+				if loadErr != nil {
+					return nil, fmt.Errorf("load shipment %s dispose recovery state: %w", journal.ShipmentID, loadErr)
+				}
+				if current.Status == models.StatusAbandoned &&
+					journal.Preimage.Shipment.Status != models.StatusAbandoned {
+					// A crash between the Markdown write and the index upsert
+					// leaves a stale queued cache row. Repair the index only
+					// (no Markdown, event, or journal rewrite); on failure the
+					// intent journal stays so a later pass retries.
+					indexed := cloneArtifact(current)
+					if err := mergeDBOnlyLinksIntoArtifact(ctx, ws, indexed); err != nil {
+						return nil, fmt.Errorf("preserve shipment %s database-only links: %w", journal.ShipmentID, err)
+					}
+					if err := bldb.UpsertItem(ctx, ws.DB, indexed); err != nil {
+						return nil, fmt.Errorf("repair shipment %s dispose index: %w", journal.ShipmentID, err)
+					}
+					keepDisposition = true
+					journal.Phase = "committed"
+					result = current
+				}
 			} else {
 				if err := persistArtifact(governedCtx, ws, cloneArtifact(journal.Preimage.Shipment), true); err != nil {
 					return nil, fmt.Errorf("restore shipment %s preimage: %w", journal.ShipmentID, err)
@@ -291,7 +319,9 @@ func reconcileShipmentLifecycleIntent(
 					}
 				}
 			}
-			result = cloneArtifact(journal.Preimage.Shipment)
+			if result == nil {
+				result = cloneArtifact(journal.Preimage.Shipment)
+			}
 		case "roll_forward":
 			for _, memberID := range memberIDs {
 				member := cloneArtifact(preimageMembers[memberID])
@@ -330,16 +360,19 @@ func reconcileShipmentLifecycleIntent(
 				journalPath, journal.RecoveryPolicy, blerrors.ErrValidation)
 		}
 	}
-	if journal.Operation == "claim" {
+	if journal.Operation == "claim" || journal.Operation == "dispose" {
 		claimArtifactIDs := append([]string{journal.ShipmentID}, memberIDs...)
 		for _, related := range journal.Preimage.Related {
 			claimArtifactIDs = append(claimArtifactIDs, related.ID)
 		}
-		if err := removeShipmentOperationEvents(operationCtx, ws, claimArtifactIDs, journal.CorrelationID); err != nil {
-			return nil, fmt.Errorf("restore shipment %s claim event logs: %w", journal.ShipmentID, err)
+		// G-D: a kept complete disposition keeps its status event.
+		if !keepDisposition {
+			if err := removeShipmentOperationEvents(operationCtx, ws, claimArtifactIDs, journal.CorrelationID); err != nil {
+				return nil, fmt.Errorf("restore shipment %s %s event logs: %w", journal.ShipmentID, journal.Operation, err)
+			}
 		}
 		if _, err := writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal); err != nil {
-			return nil, fmt.Errorf("persist shipment %s claim recovery journal: %w", journal.ShipmentID, err)
+			return nil, fmt.Errorf("persist shipment %s %s recovery journal: %w", journal.ShipmentID, journal.Operation, err)
 		}
 		removeShipmentOperationJournal(ctx, ws, journalPath)
 		return result, nil
@@ -865,6 +898,44 @@ func shipmentRecoveryCandidates(
 	candidates := []recoveryArtifactCandidate{{artifact: journal.Preimage.Shipment}}
 	target := cloneArtifact(journal.Preimage.Shipment)
 	switch {
+	case journal.RecoveryPolicy == "rollback" && journal.Operation == "dispose":
+		// Only an on-disk abandoned shipment can add a candidate: the
+		// disposition keys are copied from disk and accepted only when they form
+		// a complete, valid disposition for this journal. The full-artifact
+		// comparison (ignoreUpdatedAt) then proves nothing else changed.
+		if current == nil || current.Status != models.StatusAbandoned {
+			return candidates, nil
+		}
+		keys := map[string]string{}
+		for _, key := range []string{"disposition_reason", "disposition_by", "disposition_authorization_ref"} {
+			value, ok := current.CustomFields[key].(string)
+			if !ok || strings.TrimSpace(value) == "" {
+				return candidates, nil
+			}
+			keys[key] = value
+		}
+		if keys["disposition_reason"] != journal.Reason {
+			return candidates, nil
+		}
+		supersededBy, supersededPresent := current.CustomFields["superseded_by"]
+		if supersededPresent {
+			value, ok := supersededBy.(string)
+			if !ok || strings.TrimSpace(value) == "" {
+				return candidates, nil
+			}
+		}
+		target.Status = models.StatusAbandoned
+		if target.CustomFields == nil {
+			target.CustomFields = map[string]any{}
+		}
+		for key, value := range keys {
+			target.CustomFields[key] = value
+		}
+		if supersededPresent {
+			target.CustomFields["superseded_by"] = supersededBy
+		} else {
+			delete(target.CustomFields, "superseded_by")
+		}
 	case journal.RecoveryPolicy == "rollback" && journal.Operation == "claim":
 		target.Status = models.StatusActive
 	case journal.RecoveryPolicy == "rollback" && journal.Operation == "block":
@@ -949,6 +1020,9 @@ func memberRecoveryCandidates(
 	candidates := []recoveryArtifactCandidate{{artifact: preimage}}
 	target := cloneArtifact(preimage)
 	switch {
+	case journal.RecoveryPolicy == "rollback" && journal.Operation == "dispose":
+		// Members are never written by a dispose; the preimage is the only state.
+		return candidates, nil
 	case journal.RecoveryPolicy == "rollback" && journal.Operation == "claim":
 		if preimage.Status != models.StatusQueued {
 			// The bounded claim cascade can move a non-queued member-parent to

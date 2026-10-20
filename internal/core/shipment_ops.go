@@ -333,7 +333,7 @@ func validateShipmentLifecycleJournalRecord(
 		return fmt.Errorf("unsupported lifecycle phase %q: %w", journal.Phase, blerrors.ErrValidation)
 	}
 	switch journal.Operation {
-	case "block", "unblock", "normalize", "claim":
+	case "block", "unblock", "normalize", "claim", "dispose":
 	default:
 		return fmt.Errorf("unsupported lifecycle operation %q: %w", journal.Operation, blerrors.ErrValidation)
 	}
@@ -360,6 +360,10 @@ func validateShipmentLifecycleJournalRecord(
 	case "claim":
 		if journal.RecoveryPolicy != "rollback" || journal.Target != "active" {
 			return fmt.Errorf("claim lifecycle tuple must be rollback/active: %w", blerrors.ErrValidation)
+		}
+	case "dispose":
+		if journal.RecoveryPolicy != "rollback" || journal.Target != "abandoned" {
+			return fmt.Errorf("dispose lifecycle tuple must be rollback/abandoned: %w", blerrors.ErrValidation)
 		}
 	case "block":
 		if journal.Target != "blocked" ||
