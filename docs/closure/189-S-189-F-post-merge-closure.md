@@ -37,4 +37,4 @@ READY. Core claim-path change with MCP error mapping; rollback is a revert of th
 
 ## Compaction (P-020)
 
-Done: compact-context (target all) archived three stale memory notes into one summary under `docs/memory/compacted/`; plans and closure compaction found nothing to do.
+Done: compact-context (target all) ran. Its first pass archived three memory notes, but Copilot review showed retained decision and plan documents still reference their `docs/memory/` paths, so those moves were reverted and nothing was compacted. Plans and closure compaction found nothing to do.
