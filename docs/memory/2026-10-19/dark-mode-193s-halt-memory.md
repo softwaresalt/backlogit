@@ -37,8 +37,10 @@ The earlier 189-S claim stall cleared on its own; no process held the lock.
 2. Keep 193-S halted until remediation produces a passing pre_claim gate. No supported override
    exists: the Orchestrator and Ship halt on a gate exit of 1 or 2.
 
-Then re-run dark mode for 193-S -> 194-S -> 185-S.
+Then re-run dark mode for 193-S -> 194-S -> 185-S, with 184-S before 185-S.
 
 ## Addendum
 
-184-S was dependency-eligible and was routed next; its outcome is recorded in its closure file.
+At the time of this note 184-S was still `queued` and had no closure record. It is
+dependency-eligible and remains in the resumed scope; 185-S must wait for it.
+Check `docs/closure/184-S-*` and the shipment status for the actual outcome.
