@@ -80,6 +80,18 @@ const shipmentLifecycleGlobalLockID = "shipment-lifecycle-global"
 
 type governedShipmentActivationContextKey struct{}
 
+// governedShipmentDispositionContextKey marks a context as carrying a
+// shipmentDispositionProvenance that authorizes the queued -> abandoned edge.
+type governedShipmentDispositionContextKey struct{}
+
+// shipmentDispositionProvenance is the governed-disposition marker value.
+type shipmentDispositionProvenance struct {
+	Reason           string
+	By               string
+	AuthorizationRef string
+	SupersededBy     string
+}
+
 type shipmentLifecycleGlobalLockContextKey struct{}
 
 type shipmentLifecycleGlobalLockHookContextKey struct{}
