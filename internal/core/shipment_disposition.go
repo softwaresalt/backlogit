@@ -2,9 +2,12 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -107,7 +110,134 @@ func DisposeQueuedShipment(ctx context.Context, ws *Workspace, id string, opts S
 		return nil, err
 	}
 
-	return nil, fmt.Errorf("dispose queued shipment %s: %w", id, blerrors.ErrNotImplemented)
+	preimage := shipmentLifecyclePreimage{
+		Shipment: cloneArtifact(current),
+		Members:  make([]*models.Artifact, 0, len(memberIDs)),
+	}
+	for _, memberID := range memberIDs {
+		member, loadErr := findArtifact(lockedCtx, ws, memberID)
+		if loadErr != nil {
+			return nil, fmt.Errorf("load shipment %s disposition member %s: %w", id, memberID, loadErr)
+		}
+		preimage.Members = append(preimage.Members, cloneArtifact(member))
+	}
+	// Only the shipment file is ever written, so only it needs a restore
+	// snapshot; members are captured in the journal preimage for recovery.
+	snapshots, err := snapshotShipArtifacts(lockedCtx, ws, []string{id})
+	if err != nil {
+		return nil, fmt.Errorf("snapshot shipment %s for disposition: %w", id, err)
+	}
+
+	var correlationBytes [16]byte
+	if _, err := rand.Read(correlationBytes[:]); err != nil {
+		return nil, fmt.Errorf("generate dispose shipment correlation id: %w", err)
+	}
+	correlationID := hex.EncodeToString(correlationBytes[:])
+	journal := shipmentLifecycleJournal{
+		SchemaVersion:  "shipment-operation/v1",
+		CorrelationID:  correlationID,
+		Phase:          "intent",
+		Operation:      "dispose",
+		RecoveryPolicy: "rollback",
+		ShipmentID:     id,
+		Target:         string(ShipmentAbandoned),
+		Reason:         opts.Reason,
+		Preimage:       preimage,
+	}
+	journalName := shipmentLifecycleJournalName(correlationID)
+	journalPath, err := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal)
+	if err != nil {
+		return nil, fmt.Errorf("persist dispose shipment %s intent: %w", id, err)
+	}
+
+	operationCtx := withShipmentOperation(lockedCtx, correlationID)
+	// finalize marks the journal committed, then removes it. A failure to mark
+	// it leaves the journal in place as recovery evidence.
+	finalize := func() error {
+		journal.Phase = "committed"
+		if _, writeErr := writeShipmentLifecycleJournalForWorkspace(ws, journalName, journal); writeErr != nil {
+			return fmt.Errorf("persist dispose shipment %s commit: %w", id, writeErr)
+		}
+		removeShipmentOperationJournal(operationCtx, ws, journalPath)
+		return nil
+	}
+	// fail routes a failure after the intent was written. G-D: an indeterminate
+	// error means the disposition may be committed, so it is never rolled back
+	// or retried; the normal path is finished and the classified error is
+	// surfaced. Only a failure that is not indeterminate is compensated.
+	fail := func(cause error) error {
+		if blerrors.IsWriteIndeterminate(cause) {
+			if finalizeErr := finalize(); finalizeErr != nil {
+				slog.WarnContext(ctx, "finalize indeterminate shipment disposition; journal kept as recovery evidence",
+					"shipment_id", id, "error", finalizeErr)
+				cause = errors.Join(cause, finalizeErr)
+			}
+			return fmt.Errorf("dispose shipment %s: %w", id, cause)
+		}
+		return rollbackShipmentDisposition(operationCtx, ws, journalPath, journal, snapshots, cause)
+	}
+
+	// The single governed write of status and provenance (B-U7).
+	governedCtx := context.WithValue(operationCtx, governedShipmentDispositionContextKey{}, shipmentDispositionProvenance{
+		Reason:           opts.Reason,
+		By:               opts.By,
+		AuthorizationRef: opts.AuthorizationRef,
+		SupersededBy:     opts.SupersededBy,
+	})
+	if err := MoveShipmentStatus(governedCtx, ws, id, ShipmentAbandoned); err != nil {
+		return nil, fail(err)
+	}
+	if hook := disposeAfterGovernedWriteHook; hook != nil {
+		if err := hook(); err != nil {
+			return nil, fail(err)
+		}
+	}
+	if err := finalize(); err != nil {
+		return nil, fail(err)
+	}
+
+	disposed, err := findArtifact(lockedCtx, ws, id)
+	if err != nil {
+		return nil, fmt.Errorf("%w: reload shipment %s after disposition: %w", blerrors.ErrWriteIndeterminate, id, err)
+	}
+	return disposed, nil
+}
+
+// rollbackShipmentDisposition restores the exact pre-disposition shipment file,
+// index row, and event log (which removes the dispose status event by its
+// correlation ID) and then removes the journal. If the restore itself fails the
+// intent journal is kept and a MutationPartialError joins both errors.
+func rollbackShipmentDisposition(
+	ctx context.Context,
+	ws *Workspace,
+	journalPath string,
+	journal shipmentLifecycleJournal,
+	snapshots map[string]shipArtifactSnapshot,
+	cause error,
+) error {
+	unrestored, rollbackErr := restoreShipArtifactsDetailed(ctx, ws, snapshots)
+	if rollbackErr == nil {
+		journal.Phase = "compensated"
+		if _, err := writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal); err != nil {
+			rollbackErr = fmt.Errorf("persist dispose compensation journal: %w", err)
+		} else {
+			removeShipmentOperationJournal(ctx, ws, journalPath)
+		}
+	}
+	if rollbackErr == nil {
+		return fmt.Errorf("dispose shipment %s: %w", journal.ShipmentID, cause)
+	}
+	joined := errors.Join(cause, rollbackErr)
+	if len(unrestored) > 0 {
+		joined = errors.Join(joined, fmt.Errorf("dispose compensation could not restore: %s", strings.Join(unrestored, ", ")))
+	}
+	return &blerrors.MutationPartialError{
+		Completed:         []string{"dispose-write"},
+		FailedStep:        "dispose-compensation",
+		CompensationState: "partially-compensated",
+		Class:             "double-fault",
+		Cause:             joined,
+	}
 }
 
 // validateDispositionInputs checks the caller-supplied options before any
