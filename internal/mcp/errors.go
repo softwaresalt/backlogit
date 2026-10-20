@@ -188,6 +188,7 @@ func checkpointUnknownFields(e *corerrors.CheckpointUnknownFieldError) *mcplib.C
 //	ErrNotFound                       | not_found                             | 404
 //	ErrShipmentNotFound               | not_found                             | 404
 //	ErrCheckpointNotFound             | not_found                             | 404
+//	ErrShipmentPredecessorNotShipped  | shipment_predecessor_not_shipped      | 409
 //	ErrShipmentConflict               | conflict                              | 409
 //	ErrItemAlreadyAssigned            | conflict                              | 409
 //	ErrCannotReturnItem               | conflict                              | 409
@@ -235,6 +236,11 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 	case errors.Is(err, corerrors.ErrShipmentNotFound), errors.Is(err, corerrors.ErrNotFound),
 		errors.Is(err, corerrors.ErrCheckpointNotFound):
 		return NotFound(err.Error())
+	case errors.Is(err, corerrors.ErrShipmentPredecessorNotShipped):
+		// Claim refused: a blocks predecessor shipment has not shipped.
+		// Checked before the generic conflict case so agents can tell it apart.
+		return makeErrorResult("shipment_predecessor_not_shipped",
+			fmt.Sprintf("%s: %v", op, err))
 	case errors.Is(err, corerrors.ErrShipmentConflict),
 		errors.Is(err, corerrors.ErrItemAlreadyAssigned),
 		errors.Is(err, corerrors.ErrCannotReturnItem),

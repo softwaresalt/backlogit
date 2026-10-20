@@ -111,6 +111,10 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 		return nil, fmt.Errorf("shipment %s changed while acquiring claim locks: %w", shipmentID, blerrors.ErrShipmentConflict)
 	}
 
+	if err := requireShipmentPredecessorsShipped(lockedCtx, ws, current); err != nil {
+		return nil, err
+	}
+
 	preimage := shipmentLifecyclePreimage{
 		Shipment: cloneArtifact(current),
 		Members:  make([]*models.Artifact, 0, len(memberIDs)),
@@ -177,6 +181,34 @@ func ClaimShipment(ctx context.Context, ws *Workspace, shipmentID string) (*mode
 	}
 	removeShipmentOperationJournal(operationCtx, ws, journalPath)
 	return shipment, nil
+}
+
+// requireShipmentPredecessorsShipped refuses a claim while any shipment
+// predecessor reached through a `blocks` edge has not shipped. Edges are read
+// from the reloaded Markdown; an empty type defaults to `blocks`. Unresolvable
+// predecessors fail closed (provenance_missing) and non-shipment predecessors
+// are not evaluated. Only `blocks` is checked here; the queue additionally
+// holds on relates_to and parent_of.
+func requireShipmentPredecessorsShipped(ctx context.Context, ws *Workspace, current *models.Artifact) error {
+	for _, edge := range current.Dependencies {
+		depType := strings.ToLower(strings.TrimSpace(edge.Type))
+		if depType == "" {
+			depType = "blocks"
+		}
+		if depType != "blocks" {
+			continue
+		}
+		ok, reason, err := ShipmentPredecessorShipped(ctx, ws, edge.ID)
+		if err != nil {
+			return fmt.Errorf("claim %s: evaluate predecessor %s: %w", current.ID, edge.ID, err)
+		}
+		if ok || reason == readinessReasonNotShipment {
+			continue
+		}
+		return fmt.Errorf("claim %s: shipment_predecessor_not_shipped: predecessor %s (%s): %w",
+			current.ID, edge.ID, reason, blerrors.ErrShipmentPredecessorNotShipped)
+	}
+	return nil
 }
 
 // rollbackShipmentClaim restores the exact pre-claim artifact and event
