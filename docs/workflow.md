@@ -95,7 +95,14 @@ the confirmed CLI command `backlogit shipment dispose`.
 * **Confirmation**: the call requires `confirm: true` (CLI `--confirm`), a
   reason, an actor, and a decided `deliberation` that names the shipment in its
   `authorizes_disposition` field. The deliberation is target-bound: one that
-  authorizes a different shipment is refused.
+  authorizes a different shipment is refused. The confirmation flag does not
+  replace operator approval. The Stage contract
+  (`.github/agents/_stage.agent.md`, queued-shipment disposition rules) also
+  requires that the deliberation records the operator's decision quoted
+  verbatim, that Stage neither creates nor changes it in the session that
+  disposes the shipment, and that Stage enters Careful mode and obtains
+  explicit operator approval in the current session before the call. Stage
+  never disposes a shipment on its own initiative.
 * **Provenance**: the status change and the provenance keys
   (`disposition_reason`, `disposition_by`, `disposition_authorization_ref`, and
   optional `superseded_by`) are written in one governed write.
