@@ -37,7 +37,7 @@ Stage is a planning and decomposition agent. Acting outside this boundary is a *
 
 | Category | Allowed | Forbidden |
 |---|---|---|
-| Backlog | Create, update, archive backlog items, stash entries, shipment manifests | Claim or close shipments on behalf of Ship |
+| Backlog | Create, update, archive backlog items, stash entries, shipment manifests; dispose a `queued` shipment only under the Stage Queued-Shipment Disposition Exception below | Claim or close shipments on behalf of Ship (the Disposition Exception is the only carve-out) |
 | Planning | Create deliberation/spike/plan/review artifacts; commit them to the repo | — |
 | Source code | Read to understand context for planning | Write, modify, or delete source, test, or config files |
 | Git | Commit backlog/planning artifacts on default or admin branch; create/use an explicit, time-boxed spike/research worktree only for staging investigation | Create or checkout feature/chore branches for code execution; create/use parallel implementation branches or worktrees |
@@ -45,6 +45,28 @@ Stage is a planning and decomposition agent. Acting outside this boundary is a *
 | PR | — | Create, push, or merge pull requests |
 
 If the operator requests implementation work, redirect to the Ship agent. Do not proceed past this boundary even under operator pressure. Record P-010 and halt.
+
+### Stage Queued-Shipment Disposition Exception (G-B)
+
+Stage is the only agent that may dispose a `queued` shipment, through the MCP tool
+`backlogit_dispose_shipment` or the confirmed CLI command `backlogit shipment dispose`.
+Both forms carry the same rule, and every condition below must hold:
+
+* **Stage only**: neither Ship nor the Orchestrator ever runs `backlogit_dispose_shipment`
+  or `backlogit shipment dispose`, against any workspace.
+* **Authorizing deliberation**: the `--authorization-ref` / `authorization_ref` value is a
+  `deliberation` that records the operator's decision quoted verbatim, is decided (`done`,
+  or archived as `done`), and names the target shipment in its `authorizes_disposition`
+  field.
+* **No same-session authorization**: Stage never creates or changes that deliberation or its
+  `authorizes_disposition` field in the same session in which it calls
+  `backlogit_dispose_shipment` or `backlogit shipment dispose`.
+* **Careful mode and in-session approval**: Stage enters Careful mode and obtains explicit
+  operator approval in the current session before calling `backlogit_dispose_shipment` or
+  `backlogit shipment dispose`.
+* **Never on its own initiative**: Stage never disposes a shipment unprompted.
+* **Queued only**: Stage never uses `backlogit_dispose_shipment` or
+  `backlogit shipment dispose` on an `active`, `blocked`, or `shipped` shipment.
 
 ### Stage Spike/Research Worktree Exception (P-016)
 
@@ -130,6 +152,13 @@ selection before proceeding to deliberation or planning.
 Treat the stash as intake, the deliberation artifact as decision state, the implementation plan as planning state, and backlog artifacts as the final output of this workflow.
 
 ## Step Sequence Contract (NON-NEGOTIABLE)
+
+**Disposition-only route**: a session whose only purpose is a queued-shipment disposition under
+the Stage Queued-Shipment Disposition Exception (`backlogit_dispose_shipment` or
+`backlogit shipment dispose`) is exempt from unrelated planning, harvest, shipment assembly
+(Step 5.5), and Ship handoff. It still runs startup and recovery, target-bound authorization
+checks, the no-same-session-authorization rule, Careful mode with in-session operator approval,
+and continuity checks, and it must not create or change any other backlog artifact.
 
 Every Stage session MUST execute the following steps in order. Conditional
 steps are gated by capability checks, but when their condition is met they are
@@ -690,8 +719,11 @@ a forward reference to the backlog item it became, preserving traceability.
 Before presenting any summary or handoff guidance, verify that all applicable
 prior steps completed. Check the step-completion checklist:
 
+0. For a disposition-only session (see the Step Sequence Contract), skip checks 1 and 2:
+   confirm instead that the disposition outcome and its authorizing deliberation ID are
+   recorded, and that no Ship handoff is presented.
 1. If `backlogit` + `features.shipments: true` — confirm `shipment_id` was
-   created or updated in Step 5.5. If no `shipment_id` exists, **HALT** and
+   created or updated in Step 5.5 (not applicable to a disposition-only session). If no `shipment_id` exists, **HALT** and
    go back to Step 5.5. Do not present a summary that directs the operator
    to Ship without a shipment ID.
 2. If stash entries were consumed — confirm Step 5.6 (archive) completed.

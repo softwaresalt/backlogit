@@ -470,6 +470,18 @@ func (s *Server) RegisterTools() {
 		s.handleUnblockShipment,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_dispose_shipment",
+			mcplib.WithDescription("Dispose a queued shipment to abandoned. Stage-only operation (MCP tool backlogit_dispose_shipment; CLI backlogit shipment dispose): needs a decided operator deliberation whose authorizes_disposition names this shipment, plus in-session operator approval. Ship and the Orchestrator never call it."),
+			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID (must be queued)")),
+			mcplib.WithString("reason", mcplib.Required(), mcplib.Description("Reason for disposing the shipment")),
+			mcplib.WithString("by", mcplib.Required(), mcplib.Description("Actor disposing the shipment")),
+			mcplib.WithString("authorization_ref", mcplib.Required(), mcplib.Description("Decided deliberation ID whose authorizes_disposition names this shipment")),
+			mcplib.WithString("superseded_by", mcplib.Description("Shipment ID that supersedes the disposed shipment")),
+			mcplib.WithBoolean("confirm", mcplib.Required(), mcplib.Description("Confirm the disposition")),
+		),
+		s.handleDisposeShipment,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_normalize_blocked_shipment",
 			mcplib.WithDescription("Normalize an out-of-band blocked shipment from a machine-readable snapshot"),
 			mcplib.WithString("id", mcplib.Required(), mcplib.Description("Shipment ID")),
@@ -2061,6 +2073,38 @@ func (s *Server) handleUnblockShipment(ctx context.Context, request mcplib.CallT
 	})
 	if err != nil {
 		return domainError("unblock shipment", err), nil
+	}
+	return toolResultJSON(shipment)
+}
+
+// handleDisposeShipment disposes a queued shipment to abandoned. It is a
+// Stage-only operation: Ship and the Orchestrator never call it.
+func (s *Server) handleDisposeShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if _, result := s.requireWorkspace(ctx); result != nil {
+		return result, nil
+	}
+
+	id, _ := request.Params.Arguments["id"].(string)
+	if id == "" {
+		return ValidationFailed("id is required"), nil
+	}
+	reason, _ := request.Params.Arguments["reason"].(string)
+	by, _ := request.Params.Arguments["by"].(string)
+	authorizationRef, _ := request.Params.Arguments["authorization_ref"].(string)
+	supersededBy, _ := request.Params.Arguments["superseded_by"].(string)
+	confirm, _ := request.Params.Arguments["confirm"].(bool)
+
+	logger.Info("shipment tool invoked", "tool", "backlogit_dispose_shipment", "shipment_id", id)
+
+	shipment, err := core.DisposeQueuedShipment(ctx, s.Workspace, id, core.ShipmentDispositionOptions{
+		Reason:           reason,
+		SupersededBy:     supersededBy,
+		By:               by,
+		AuthorizationRef: authorizationRef,
+		Confirm:          confirm,
+	})
+	if err != nil {
+		return domainError("dispose shipment", err), nil
 	}
 	return toolResultJSON(shipment)
 }

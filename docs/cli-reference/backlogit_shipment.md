@@ -41,6 +41,7 @@ shipments in the workspace, claim queued shipments, and return blocked items.
 * [backlogit shipment block](backlogit_shipment_block.md)	 - Block an active shipment
 * [backlogit shipment claim](backlogit_shipment_claim.md)	 - Claim a queued shipment
 * [backlogit shipment create](backlogit_shipment_create.md)	 - Create a shipment
+* [backlogit shipment dispose](backlogit_shipment_dispose.md)	 - Dispose a queued shipment (Stage-only; needs operator deliberation and approval)
 * [backlogit shipment get](backlogit_shipment_get.md)	 - Get a shipment by ID
 * [backlogit shipment list](backlogit_shipment_list.md)	 - List shipments
 * [backlogit shipment reconcile-shipped](backlogit_shipment_reconcile-shipped.md)	 - Governed repair: reconcile a legacy archived shipment to archived_status=shipped

@@ -216,6 +216,15 @@ state with the required snapshot evidence, the MCP-only
 `backlogit_normalize_blocked_shipment` operation. The procedure binds that blocked
 shipment's `shipment_id`. The normalizer intentionally has
 no CLI fallback. Orchestrator never performs those lifecycle mutations itself.
+
+**Queued-shipment disposition is Stage-only**: neither the Orchestrator nor Ship ever
+disposes a shipment, through the MCP tool `backlogit_dispose_shipment` or the CLI command
+`backlogit shipment dispose`, against any workspace and including as runtime verification.
+Only Stage may, under its Queued-Shipment Disposition Exception (decided, target-bound
+operator deliberation, Careful mode, in-session operator approval). The `_Ship` tool list is the `backlogit/*` wildcard, so the ban on
+Ship is enforced by Ship's Role Boundary, which forbids both forms, and not by the tool
+list. Route
+any operator disposition request to Stage and never perform it from the Orchestrator.
 This cursor is what the Step 2 "Route to Ship" rule consumes; without it there is
 no next shipment ID for the first handoff.
 
