@@ -41,7 +41,7 @@ Context: feature 185-F (tasks 185.021-T, 185.025-T, 185.026-T), PR #564, merge `
 * Binary version: `backlogit` built from the repository at the merged tree with the local toolchain; the CLI reports commit and build date as `unknown` for this local build.
 * Unchanged shipments: `156-S` and every other existing shipment record are unchanged. No live disposition happened. The diff touched only the 185 records, the hooks queue, the stash, docs, the manifest, and memory.
 * Manual policy: the manual (P)+(C) 074-DL policy stays in force until AF1E5075 lands and the `154-S` attestation exists. `READY` does not relax it.
-* Read-only doctor on the live workspace was not run in this session (MCP and CLI calls took minutes each under load); CI passed and no code changed.
+* Post-merge read-only `go run ./cmd/backlogit doctor` (source-bound binary) on the live workspace after the governed ship: 23 findings, all pre-existing `orphaned_artifact` records for `016.001-R` and `106.012-T` to `106.033-T`. No finding references 185 records, so there are no new findings.
 
 ## Compaction status (P-020)
 
