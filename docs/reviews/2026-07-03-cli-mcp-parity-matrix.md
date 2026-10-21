@@ -74,6 +74,7 @@ corrections landed.
 | `backlogit_resolve_checkpoint` | `backlogit checkpoint resolve` | `parity` | Registry cli_command correct; flag-level parity verified |
 | `backlogit_return_blocked` | `backlogit shipment return-blocked` | `parity` | Registry cli_command correct; flag-level parity verified |
 | `backlogit_search_items` | `backlogit search` | `parity` | Registry cli_command correct; flag-level parity verified |
+| `backlogit_dispose_shipment` | `backlogit shipment dispose` | `parity` | CLI fallback confirmed-only: no automatic fallback; the manual CLI requires `--confirm`. Stage-only for both forms (G-B) |
 | `backlogit_ship_shipment` | `backlogit shipment ship` | `parity` | Registry cli_command correct; flag-level parity verified |
 | `backlogit_stash` | `backlogit stash add` | `parity` | Registry cli_command correct; flag-level parity verified |
 | `backlogit_sync_index` | `backlogit sync` | `parity` | Registry cli_command correct; flag-level parity verified |
