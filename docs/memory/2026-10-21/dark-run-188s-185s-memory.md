@@ -30,7 +30,9 @@ Final main: b51c5a29.
 
 ## Open items
 
-* Compaction is `degraded` on every closure: retained docs and checkpoints reference docs/memory paths.
+* Compaction is `degraded` on the 188-S, 190-S, 191-S, 192-S, 193-S, 194-S and 185-S closures
+  (184-S and 189-S record `done` after an evaluation with no lasting file moves): retained docs and
+  checkpoints reference docs/memory paths.
   Repoint them, then compact (needs operator approval).
 * Fixture folders under logs/af1e5075-fixture and logs/6434a4d7-fixture await removal approval
   (stashes CBB7997C, E22DDC43).
