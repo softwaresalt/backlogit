@@ -233,6 +233,10 @@ func domainError(op string, err error) *mcplib.CallToolResult {
 		// envelope-wrapped callers (AbandonCheckpoint, QuarantineCheckpoint)
 		// already surface this via mutationPartialError above.
 		return makeErrorResult("write_indeterminate", fmt.Sprintf("%s: %v", op, err))
+	case errors.Is(err, corerrors.ErrConfirmationRequired):
+		return makeErrorResult("confirmation_required", fmt.Sprintf("%s: %v", op, err))
+	case errors.Is(err, corerrors.ErrShipmentDispositionRefused):
+		return makeErrorResult("shipment_disposition_refused", fmt.Sprintf("%s: %v", op, err))
 	case errors.Is(err, corerrors.ErrShipmentNotFound), errors.Is(err, corerrors.ErrNotFound),
 		errors.Is(err, corerrors.ErrCheckpointNotFound):
 		return NotFound(err.Error())
