@@ -33,6 +33,7 @@ shipments in the workspace, claim queued shipments, and return blocked items.`,
 	cmd.AddCommand(newShipmentClaimCmd())
 	cmd.AddCommand(newShipmentBlockCmd())
 	cmd.AddCommand(newShipmentUnblockCmd())
+	cmd.AddCommand(newShipmentDisposeCmd())
 	cmd.AddCommand(newShipmentShipCmd())
 	cmd.AddCommand(newShipmentReturnBlockedCmd())
 	cmd.AddCommand(newShipmentRepairEvidenceCmd())
@@ -396,6 +397,66 @@ func newShipmentUnblockCmd() *cobra.Command {
 	cmd.Flags().StringVar(&target, "to", "", "target shipment status (queued or active)")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "confirm the unblock transition")
 	cmd.Flags().StringVar(&unblockedBy, "by", "", "actor unblocking the shipment")
+	return cmd
+}
+
+// newShipmentDisposeCmd returns the `backlogit shipment dispose <id>`
+// subcommand, the CLI form of the MCP tool backlogit_dispose_shipment.
+func newShipmentDisposeCmd() *cobra.Command {
+	var reason string
+	var by string
+	var authorizationRef string
+	var supersededBy string
+	var confirm bool
+
+	cmd := &cobra.Command{
+		Use:   "dispose <id>",
+		Short: "Dispose a queued shipment (Stage-only; needs operator deliberation and approval)",
+		Long: `Move a queued shipment to abandoned under a decided operator deliberation.
+
+This is a Stage-only operation (MCP tool backlogit_dispose_shipment; CLI
+backlogit shipment dispose). It needs a decided deliberation that names this
+shipment in its authorizes_disposition field, and in-session operator approval
+before the call. Ship and the Orchestrator never run it, against any
+workspace. Only queued shipments can be disposed.`,
+		Example: `  backlogit shipment dispose 001-S --reason "superseded" --by stage --authorization-ref 001-DL --confirm`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
+			ctx := context.Background()
+			shipmentID := args[0]
+			slog.Info("shipment command invoked", "operation", "shipment-dispose", "shipment_id", shipmentID)
+
+			ws, err := core.NewWorkspace(ctx, shipmentCWD(cmd))
+			if err != nil {
+				return fmt.Errorf("open workspace: %w", err)
+			}
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
+
+			shipment, err := core.DisposeQueuedShipment(ctx, ws, shipmentID, core.ShipmentDispositionOptions{
+				Reason:           reason,
+				SupersededBy:     supersededBy,
+				By:               by,
+				AuthorizationRef: authorizationRef,
+				Confirm:          confirm,
+			})
+			if err != nil {
+				return fmt.Errorf("dispose shipment: %w", err)
+			}
+
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(shipment)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for disposing the shipment (required)")
+	cmd.Flags().StringVar(&by, "by", "", "actor disposing the shipment (required)")
+	cmd.Flags().StringVar(&authorizationRef, "authorization-ref", "", "decided deliberation ID that authorizes this disposition (required)")
+	cmd.Flags().StringVar(&supersededBy, "superseded-by", "", "shipment ID that supersedes the disposed shipment")
+	cmd.Flags().BoolVar(&confirm, "confirm", false, "confirm the disposition (required)")
 	return cmd
 }
 
