@@ -74,7 +74,10 @@ edge, and a predecessor that cannot be resolved fails closed.
   evaluates only `blocks` edges: `shipment claim` (and
   `backlogit_claim_shipment`) refuses an unmet `blocks` edge with the error code
   `shipment_predecessor_not_shipped` and leaves the shipment `queued`. The
-  difference in edge types is intentional.
+  difference in edge types is intentional. Only a `blocks` edge requires the
+  predecessor to be shipped; `relates_to` and `parent_of` edges release the queue
+  hold on any status that no longer blocks execution, and the claim skips an edge
+  whose target is not a shipment.
 * **Scope**: the core guard covers the shipped-state condition (P) only. It
   never covers the operator attestation condition (C); the manual (P)+(C)
   policy stays in force until the attestation check lands.
