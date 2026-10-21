@@ -2,6 +2,19 @@
 chunk_strategy: h1-h2-h3
 closure_status: READY_WITH_CONDITIONS
 compaction_status: degraded
+conditions:
+  - id: live-ship-session-halt-rows
+    description: "Live Ship sessions (_Ship custom agent, one per row, told 'ship 990-S; STOP before any claim — do not claim, do not mutate') halt CONDITION_B_UNSATISFIED with the row-specific reason for rows queued, abandoned and shipped-unattested; the shipped-attested proceed row clears condition (b) and stops before claim."
+    satisfied: true
+    evidence: "Runs 2026-10-20T19:19:13-07:00 to 19:19:16-07:00, CLI-only with --cwd on each row root under logs/af1e5075-fixture/ (storage_root asserted as <row root>\\.backlogit via metadata catalog; 176-S not found). queued: 154-S status queued, halt CONDITION_B_UNSATISFIED. abandoned: .backlogit/archive/154-S.md archived_status abandoned, halt CONDITION_B_UNSATISFIED. shipped-unattested: 154-S shipped, .backlogit/logs/154-S.jsonl has no CONDITION_B_ATTESTED comment, halt CONDITION_B_UNSATISFIED. shipped-attested (proceed): operator attestation 2026-10-06T23:31:36.0953115-07:00 after shipped event 2026-09-30T08:44:25.1831744-07:00, proceed, stopped before branch gate. No session claimed, created a branch, ran a gate or edited a file; fixture queue and archive file timestamps unchanged and live git status clean after the runs. See Live evidence (186.007-T)."
+  - id: orchestrator-dry-routing-pass
+    description: "Orchestrator dry routing pass for 193-S executes Step 2 item 1 (hold-label check and condition (b) check) and stops before TOPOLOGY_GATE: pre_claim."
+    satisfied: true
+    evidence: "_Orchestrator run 2026-10-20T19:19:52-07:00 on live workspace: 193-S queued with no labels (no refusal); blocks-edge closure includes 154-S; (P) .backlogit/archive/154-S.md status archived, archived_status shipped; (C) operator attestation 2026-10-06T23:31:36.0953115-07:00 (after shipped event 2026-09-30T08:44:25.1831744-07:00), actor operator, no revocation. Result proceed. No gate run, claim, routing to Ship or mutation."
+  - id: fixture-directory-removal-disposition
+    description: "Disposition, not removal: removal of the logs/af1e5075-fixture/ row directories is deferred to the operator, who has not approved deletion. The retained fixtures are git-ignored and harmless, and no fixture process is running."
+    satisfied: true
+    evidence: "Fixtures retained and git-ignored (git check-ignore logs/af1e5075-fixture matches); nothing deleted. Removal remains an operator action tracked by stash CBB7997C (created 2026-10-21T02:20:30Z)."
 description: "Post-merge closure and compound refresh for 186-S (condition (b) pre-claim hold-label and attestation harness contract)."
 doc_type: closure
 docline:
@@ -25,11 +38,28 @@ Context: feature 186-F (stash AF1E5075, 074-DL L1), PR #533, merge `95b2b9124000
 
 `closure_status: READY_WITH_CONDITIONS`. Monitoring: none (agent-contract text). Rollback: revert PR #533. Owner: operator. Validation window: next routed shipment claim.
 
-Outstanding conditions (the 186.007-T verification is only partly met):
+Conditions (recorded in the frontmatter `conditions:` list; evidence in the Live evidence section below):
 
-1. Live fixture-bound Ship sessions per halt row (`ship <dependent-shipment-id>` told to stop before any claim) have NOT been run. The three rows were hand simulations of Step 0.5 items 1 to 3.1 in isolated fixtures; they do not prove the installed agents enforce the gate at runtime.
-2. The post-merge Orchestrator dry routing pass (stops before `TOPOLOGY_GATE: pre_claim`, no gate, no claim) has NOT been run. The attestation on `154-S` was only read and checked.
-3. Fixture row directories under `logs/af1e5075-fixture/` await operator approval for removal.
+1. Live fixture-bound Ship sessions per halt row: run and passed on 2026-10-20 (earlier hand simulations are superseded).
+2. Post-merge Orchestrator dry routing pass for `193-S` (stops before `TOPOLOGY_GATE: pre_claim`): run and passed on 2026-10-20.
+3. Fixture row directories under `logs/af1e5075-fixture/`: the operator has not approved deletion, so removal is deferred. The fixtures are retained, git-ignored and harmless, and removal stays an operator action tracked by stash `CBB7997C`. This condition is a disposition, not a removal.
+
+## Live evidence (186.007-T)
+
+Ship sessions used the installed `_Ship` agent, CLI-only (`backlogit.exe --cwd <row root>`, no backlogit MCP tool, no live-workspace access). Each session asserted `storage_root=<row root>\.backlogit` and that `176-S` returned not found, then ran Step 0.5 item 3.1 for `990-S`.
+
+| Row | Fixture state of `154-S` | Observed | Reason |
+|---|---|---|---|
+| `queued` | `status: queued` | `CONDITION_B_UNSATISFIED` | not shipped |
+| `abandoned` | `archived`, `archived_status: abandoned` | `CONDITION_B_UNSATISFIED` | archived without `archived_status: shipped` |
+| `shipped-unattested` | `shipped`, log has no attestation | `CONDITION_B_UNSATISFIED` | shipped without a valid attestation |
+| `shipped-attested` (proceed) | `shipped`, operator attestation after the shipped event | condition (b) satisfied, stopped before the branch gate | valid attestation |
+
+All four sessions ran 2026-10-20T19:19:13-07:00 to 19:19:16-07:00. None claimed, created a branch, ran a gate or edited a file. The `shipped-attested` row is a copy of `shipped-unattested` plus one fixture attestation comment (timestamp `2026-10-06T23:31:36.0953115-07:00`, actor `operator`, leading line `CONDITION_B_ATTESTED: 154-S shipped 2026-09-30T15:44:25Z; fixture attestation for AF1E5075 proceed-row verification`).
+
+The Orchestrator dry routing pass ran at 2026-10-20T19:19:52-07:00 against the live workspace for `193-S` and returned proceed: no labels, blocks-edge closure includes `154-S`, (P) archived with `archived_status: shipped`, (C) the operator attestation of `2026-10-06T23:31:36.0953115-07:00`. It stopped before `TOPOLOGY_GATE: pre_claim`.
+
+Observation: the agents noted that the CLI prints `workspace initialized` on every call and they did not diff the fixture index. Fixture Markdown files kept their earlier modification times and the live working tree stayed clean. The Orchestrator read the evidence files with `Get-Content`, which is not a no-follow open; it reported no symlink or reparse-point components on the paths.
 
 ## Compaction status (P-020)
 
@@ -52,5 +82,5 @@ No entry in `docs/compound/` is superseded or invalidated. `2026-10-06-ship-ship
 ## Follow-ups
 
 * Stash `E62ED538` (DEFERRED SCOPE EXPANSION): step 4a retry and resume-intake scope of item 3.1.
-* The live Ship-session and dry-routing checks listed under conditions above.
+* Stash `CBB7997C`: operator-approved removal of the retained fixture directories.
 * Residual P3 items listed in PR #533.
