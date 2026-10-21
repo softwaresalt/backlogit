@@ -32,6 +32,15 @@ Context: feature 193-F (task 193.001-T), PR #559, merge `d81585ef96232c0fd879fd1
 
 * Closure-evidence gate: `autoharness gate closure-evidence --path <this file> --shipment 193-S` passes the filename, frontmatter predicate and discoverability checks and fails only at `close_path` (got None); the identical failure occurs on the already-merged 186-S and 192-S closures. The installed harness does not produce `close_path` or `close_evidence` (this closure used `backlogit shipment ship`, neither cascade nor an evidence JSON), so they are not fabricated here. Tracked by existing stash `3FF72EB8`.
 
+## R13 release-specific items (193-F, source plan Per-Release Closure Rule)
+
+* Binary version: `backlogit version 1.11.1-0.20261002061024-7c805f9baae7` (commit `7c805f9baae7`, go1.26.5, build date unknown). Used for the claim, task move and governed ship.
+* Guard scope: the predecessor guard covers shipped provenance (P) only, not scheduler consumption (C). This release itself adds no guard; it adds the Ship-side ban on the disposition commands (B4, ahead of the adapters).
+* Unchanged shipments: `156-S` (still `queued`, last touched by PR #449) and every other existing shipment record are unchanged: the 193-S feature PR diff touched only `.github/agents/_ship.agent.md` and the 193-S, 193-F and 193.001-T backlog records plus the hooks queue, and this closure PR touches only those same records and this document.
+* Manual policy: the manual (P)+(C) 074-DL policy stays in force until AF1E5075 lands and the `154-S` attestation exists; `READY` with no conditions does not relax it.
+* CI-aligned gates: for PR #559 the CI jobs `test`, `Windows handle/lock tests`, `Markdown lint (P-008)`, `Docline frontmatter gate`, `CLI Reference Drift`, `Line endings guard` and `pipeline-topology (ambient)` all passed on the reviewed HEAD. Local golangci-lint and `-race` were not separately run for this markdown-only change; only the compile check (`go test -run=^$ -count=1 ./...`) ran locally.
+* Runtime fixture checks stay in SA-CV and SB-CV under G-A and G-B; none were run here.
+
 ## Compaction status (P-020)
 
 `compaction_status: degraded`. compact-context was not allowed to move files: retained docs and checkpoints still reference existing `docs/memory/` paths, so no files were moved. `docs/memory/` is unchanged by this closure.
