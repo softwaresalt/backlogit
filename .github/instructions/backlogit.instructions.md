@@ -68,6 +68,13 @@ Protocol above.
   candidate. This matches the Ship agent's own readiness rule that treats unmet
   `dependencies` as blocking eligibility through `dependencies`; lifecycle
   `blocked` separately records a governed pause with resumable state.
+* **Shipped-only predecessor rule**: a shipment predecessor satisfies a `blocks`
+  edge only when it is live `shipped`, or `archived` with `archived_status:
+  shipped`. An `abandoned` or otherwise disposed shipment never satisfies the
+  edge, and an unresolvable predecessor fails closed. `ClaimShipment` refuses an
+  unmet edge with the error code `shipment_predecessor_not_shipped`. The core
+  guard covers the shipped-state condition (P) only; it never covers the
+  operator attestation condition (C), which stays a manual policy.
 * **Reconstruct the full ordered sequence (scope / audit / resume)**: because
   dependency-gated successors remain `status: queued` while lifecycle-paused
   shipments may be `status: blocked`, use an unfiltered shipment listing when

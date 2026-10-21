@@ -61,6 +61,24 @@ backlogit_return_blocked
 backlogit_add_to_shipment
 ```
 
+## Shipment Predecessor Readiness
+
+A shipment-to-shipment `blocks` edge is satisfied only by a shipped predecessor:
+a predecessor that is live `shipped`, or `archived` with `archived_status:
+shipped`. An `abandoned` or otherwise disposed predecessor never satisfies the
+edge, and a predecessor that cannot be resolved fails closed.
+
+* **Queue versus claim**: `queue view --type shipment` is a first-pass filter
+  and withholds a shipment held by a shipment predecessor on `blocks`,
+  `relates_to`, and `parent_of` edges. The claim is the authoritative check and
+  evaluates only `blocks` edges: `shipment claim` (and
+  `backlogit_claim_shipment`) refuses an unmet `blocks` edge with the error code
+  `shipment_predecessor_not_shipped` and leaves the shipment `queued`. The
+  difference in edge types is intentional.
+* **Scope**: the core guard covers the shipped-state condition (P) only. It
+  never covers the operator attestation condition (C); the manual (P)+(C)
+  policy stays in force until the attestation check lands.
+
 ## Blocked Shipment Lifecycle
 
 A shipment in `blocked` is paused for a recoverable reason. The status is
