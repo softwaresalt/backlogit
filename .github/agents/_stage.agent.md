@@ -153,6 +153,13 @@ Treat the stash as intake, the deliberation artifact as decision state, the impl
 
 ## Step Sequence Contract (NON-NEGOTIABLE)
 
+**Disposition-only route**: a session whose only purpose is a queued-shipment disposition under
+the Stage Queued-Shipment Disposition Exception (`backlogit_dispose_shipment` or
+`backlogit shipment dispose`) is exempt from unrelated planning, harvest, shipment assembly
+(Step 5.5), and Ship handoff. It still runs startup and recovery, target-bound authorization
+checks, the no-same-session-authorization rule, Careful mode with in-session operator approval,
+and continuity checks, and it must not create or change any other backlog artifact.
+
 Every Stage session MUST execute the following steps in order. Conditional
 steps are gated by capability checks, but when their condition is met they are
 **mandatory, not advisory**. The agent MUST maintain a running step-completion
@@ -712,8 +719,11 @@ a forward reference to the backlog item it became, preserving traceability.
 Before presenting any summary or handoff guidance, verify that all applicable
 prior steps completed. Check the step-completion checklist:
 
+0. For a disposition-only session (see the Step Sequence Contract), skip checks 1 and 2:
+   confirm instead that the disposition outcome and its authorizing deliberation ID are
+   recorded, and that no Ship handoff is presented.
 1. If `backlogit` + `features.shipments: true` — confirm `shipment_id` was
-   created or updated in Step 5.5. If no `shipment_id` exists, **HALT** and
+   created or updated in Step 5.5 (not applicable to a disposition-only session). If no `shipment_id` exists, **HALT** and
    go back to Step 5.5. Do not present a summary that directs the operator
    to Ship without a shipment ID.
 2. If stash entries were consumed — confirm Step 5.6 (archive) completed.
