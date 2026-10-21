@@ -330,6 +330,26 @@ operations:
       confirm: "confirm"
       by: "by"
 
+  dispose_shipment:
+    mcp_tool: "backlogit_dispose_shipment"
+    # No automatic CLI fallback is exposed because the CLI uses a presence-only
+    # --confirm flag. Operators may use the explicit confirmed-only command
+    # below after independently establishing confirm:true; the operator adds
+    # --superseded-by <id> by hand when a successor shipment exists.
+    cli_fallback:
+      automatic: false
+      confirmed_command: "backlogit shipment dispose {{id}} --reason {{reason}} --by {{by}} --authorization-ref {{authorization_ref}} --confirm"
+      requires:
+        confirm: true
+      rationale: "Stage-only operation (backlogit_dispose_shipment / backlogit shipment dispose): needs a decided, target-bound operator deliberation and in-session operator approval, and is never a Ship or Orchestrator fallback; fail closed unless confirmation is explicitly true; the operator adds --superseded-by by hand"
+    params:
+      shipment_id: "id"
+      reason: "reason"
+      by: "by"
+      authorization_ref: "authorization_ref"
+      superseded_by: "superseded_by"
+      confirm: "confirm"
+
   normalize_blocked_shipment:
     mcp_tool: "backlogit_normalize_blocked_shipment"
     params:
