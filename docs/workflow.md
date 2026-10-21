@@ -82,6 +82,34 @@ edge, and a predecessor that cannot be resolved fails closed.
   never covers the operator attestation condition (C); the manual (P)+(C)
   policy stays in force until the attestation check lands.
 
+## Queued Shipment Disposition
+
+A queued shipment that will never run can be moved to `abandoned` without
+activating it. The operation is the MCP tool `backlogit_dispose_shipment` and
+the confirmed CLI command `backlogit shipment dispose`.
+
+* **Execution authority**: only Stage may run it, through either the MCP tool or
+  the CLI command. Ship and the Orchestrator never invoke either form against any
+  workspace, including as runtime verification. Ship's evidence for the
+  capability is in-process unit and handler tests on temp-dir fixtures.
+* **Confirmation**: the call requires `confirm: true` (CLI `--confirm`), a
+  reason, an actor, and a decided `deliberation` that names the shipment in its
+  `authorizes_disposition` field. The deliberation is target-bound: one that
+  authorizes a different shipment is refused.
+* **Provenance**: the status change and the provenance keys
+  (`disposition_reason`, `disposition_by`, `disposition_authorization_ref`, and
+  optional `superseded_by`) are written in one governed write.
+* **No activation, no member changes**: the operation never activates the
+  shipment, never moves or cascades to members, and never archives. Archival
+  stays a separate step.
+* **Refusals**: `active`, `blocked`, and `shipped` shipments are refused, as is
+  a shipment with live `blocks` dependents. Re-declare each dependent first.
+* **Generic paths**: `UpdateArtifact` and `BulkUpdateStatus` refuse the
+  `queued` to `abandoned` transition, so disposition is the only way to make it.
+* **CLI fallback**: the registry exposes no automatic CLI fallback, because the
+  CLI `--confirm` flag is presence-only. Use the manual CLI only with an explicit
+  confirmation.
+
 ## Blocked Shipment Lifecycle
 
 A shipment in `blocked` is paused for a recoverable reason. The status is
