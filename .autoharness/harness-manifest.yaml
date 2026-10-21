@@ -117,7 +117,7 @@ artifacts:
     template: "templates/instructions/backlogit.instructions.md.tmpl"
     checksum: "a098b828778fbad0f96eae22ca6a2da10ad2bb00b05023483a19050fbbe8ad55"
     drift_allowed: true
-    drift_reason: "2026-09-27 tune review (TUNE-011): adopted only the Checkpoint Payload Contract subsection; staged render rejected because it drops the Checkpoint Disposition Protocol and carries stale no-blocked-shipment-status text."
+    drift_reason: "2026-09-27 tune review (TUNE-011): adopted only the Checkpoint Payload Contract subsection; staged render rejected because it drops the Checkpoint Disposition Protocol and carries stale no-blocked-shipment-status text. 6434A4D7 shipped-only shipment predecessor rule and shipment_predecessor_not_shipped refusal; upstream template sync pending"
   - path: ".github/instructions/architecture-doc.instructions.md"
     primitive: 9
     template: "templates/instructions/architecture-doc.instructions.md.tmpl"
