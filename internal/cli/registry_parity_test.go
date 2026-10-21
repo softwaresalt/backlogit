@@ -96,6 +96,7 @@ var cliOnlyIntentional = []string{
 var mcpWithoutCLIIntentional = map[string]bool{
 	"backlogit_normalize_blocked_shipment": true,
 	"backlogit_unblock_shipment":           true,
+	"backlogit_dispose_shipment":           true,
 }
 
 // resolveCLIPath extracts the cobra command path from a registry cli_command
@@ -253,6 +254,45 @@ func TestRegistryParity_UnblockConfirmationFailClosed(t *testing.T) {
 	path := resolveCLIPath(op.CLIFallback.ConfirmedCommand)
 	cmd := findCommandByPath(root, path)
 	require.NotNil(t, cmd, "confirmed-only CLI command must resolve to a live command")
+	confirmFlag := lookupFlag(cmd, "confirm")
+	require.NotNil(t, confirmFlag, "confirmed-only CLI command must expose --confirm")
+	assert.Equal(t, "bool", confirmFlag.Value.Type())
+}
+
+// TestRegistryParity_DisposeConfirmationFailClosed pins the Stage-only
+// dispose_shipment registry shape: no automatic CLI fallback, a confirmed-only
+// manual command, and a live `shipment dispose` command with the flags it names.
+func TestRegistryParity_DisposeConfirmationFailClosed(t *testing.T) {
+	ops := loadRegistryOperations(t)
+	op, found := ops["dispose_shipment"]
+	require.True(t, found, "registry operation dispose_shipment must exist")
+
+	assert.Equal(t, "backlogit_dispose_shipment", op.MCPTool)
+	assert.Empty(t, op.CLICommand,
+		"dispose_shipment must not expose an automatic CLI fallback that can convert confirm:false into --confirm")
+	require.NotNil(t, op.CLIFallback,
+		"dispose_shipment must document its confirmed-only manual CLI fallback")
+	assert.False(t, op.CLIFallback.Automatic,
+		"dispose_shipment CLI fallback must remain non-automatic")
+	for _, want := range []string{"--confirm", "--authorization-ref", "--by", "--reason"} {
+		assert.Contains(t, op.CLIFallback.ConfirmedCommand, want,
+			"the explicit confirmed CLI command must carry %s", want)
+	}
+	assert.Equal(t, map[string]bool{"confirm": true}, op.CLIFallback.Requires,
+		"confirmed-only fallback must require confirm:true")
+	assert.NotEmpty(t, strings.TrimSpace(op.CLIFallback.Rationale),
+		"confirmed-only fallback requires an explicit fail-closed rationale")
+	assert.Equal(t, "confirm", op.Params["confirm"],
+		"registry must preserve the MCP confirmation parameter mapping")
+
+	root := NewRootCommand()
+	path := resolveCLIPath(op.CLIFallback.ConfirmedCommand)
+	assert.Equal(t, "backlogit shipment dispose", path)
+	cmd := findCommandByPath(root, path)
+	require.NotNil(t, cmd, "confirmed-only CLI command must resolve to a live command")
+	for _, name := range []string{"reason", "by", "authorization-ref"} {
+		assert.NotNilf(t, lookupFlag(cmd, name), "shipment dispose must expose --%s", name)
+	}
 	confirmFlag := lookupFlag(cmd, "confirm")
 	require.NotNil(t, confirmFlag, "confirmed-only CLI command must expose --confirm")
 	assert.Equal(t, "bool", confirmFlag.Value.Type())
