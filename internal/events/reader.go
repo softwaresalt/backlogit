@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,7 +24,7 @@ func TailEvents(_ context.Context, logsDir string, itemID string, limit int) ([]
 }
 
 // ReadAllEvents reads all events from a work item's JSONL log file.
-func ReadAllEvents(_ context.Context, logsDir string, itemID string) ([]Event, error) {
+func ReadAllEvents(_ context.Context, logsDir string, itemID string) (result []Event, returnErr error) {
 	path := LogPathForItem(logsDir, itemID)
 	f, err := os.Open(path)
 	if err != nil {
@@ -32,9 +33,12 @@ func ReadAllEvents(_ context.Context, logsDir string, itemID string) ([]Event, e
 		}
 		return nil, fmt.Errorf("open item log file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close item log file: %w", closeErr))
+		}
+	}()
 
-	var result []Event
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 1<<20), 1<<20)
 	lineNum := 0
