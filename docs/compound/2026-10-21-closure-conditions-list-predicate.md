@@ -44,7 +44,9 @@ as a retained-and-deferred disposition and the choice was disclosed in the PR.
 
 ## Prevention
 
-* When closing a shipment, either complete every condition or use `closure_status: READY`.
+* When closing a shipment, complete every condition before recording `closure_status: READY`;
+  reserve READY for closures with no outstanding conditions, because the predicate accepts it
+  without checking the conditions list.
 * If conditions remain, write them as a frontmatter `conditions:` list from the start, and
   expect dependents to stay blocked until each is satisfied with evidence.
 * Run `autoharness gate pipeline-topology --phase pre_claim` for the next shipment right

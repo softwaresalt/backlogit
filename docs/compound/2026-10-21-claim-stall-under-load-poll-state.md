@@ -35,7 +35,11 @@ recovery contended for it. A Windows handle scan across all processes found no h
 
 ## Resolution
 
-Wait and re-check with a read-only command (`backlogit shipment get <id>`). Recovery
+Wait and re-check, preferring non-mutating observation (the shipment log and the
+`pipeline-topology --phase post_claim` gate). `backlogit shipment get <id>` is not purely
+observation-only: it opens the workspace, which runs pending-journal shipment recovery
+(`internal/cli/shipment.go`, `internal/core/shipment_recovery.go`) and can restore preimages,
+so treat it as an operator-directed recovery step rather than passive polling. Recovery
 completed without intervention and the claim was confirmed. Do not kill `backlogit mcp`
 processes or delete lock or journal files.
 
