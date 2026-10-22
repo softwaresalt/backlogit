@@ -36,7 +36,7 @@ func assertConnectionPragmas(t *testing.T, database *sql.DB) {
 func TestOpen_PragmasApplied(t *testing.T) {
 	database, err := db.Open(filepath.Join(t.TempDir(), "pragma-all.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	assertConnectionPragmas(t, database)
 }
@@ -44,7 +44,7 @@ func TestOpen_PragmasApplied(t *testing.T) {
 func TestOpen_ForeignKeysEnforced(t *testing.T) {
 	database, err := db.Open(filepath.Join(t.TempDir(), "pragma-test.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	_, err = database.Exec(`
 		CREATE TABLE parent (id TEXT PRIMARY KEY);
@@ -64,7 +64,7 @@ func TestOpen_ForeignKeysEnforced(t *testing.T) {
 func TestOpen_WALMode(t *testing.T) {
 	database, err := db.Open(filepath.Join(t.TempDir(), "wal-test.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	var mode string
 	require.NoError(t, database.QueryRow(`PRAGMA journal_mode`).Scan(&mode))
@@ -74,7 +74,7 @@ func TestOpen_WALMode(t *testing.T) {
 func TestOpen_BusyTimeout(t *testing.T) {
 	database, err := db.Open(filepath.Join(t.TempDir(), "busy-timeout.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	var timeout int
 	require.NoError(t, database.QueryRow(`PRAGMA busy_timeout`).Scan(&timeout))
@@ -90,11 +90,11 @@ func TestOpen_MultipleOpenSameFile(t *testing.T) {
 
 	first, err := db.Open(dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { first.Close() })
+	t.Cleanup(func() { require.NoError(t, first.Close()) })
 
 	second, err := db.Open(dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { second.Close() })
+	t.Cleanup(func() { require.NoError(t, second.Close()) })
 
 	t.Run("first_handle", func(t *testing.T) {
 		assertConnectionPragmas(t, first)
@@ -109,11 +109,11 @@ func TestOpen_MultipleOpenSameFile_InheritsSettings(t *testing.T) {
 
 	first, err := db.Open(dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { first.Close() })
+	t.Cleanup(func() { require.NoError(t, first.Close()) })
 
 	second, err := db.Open(dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { second.Close() })
+	t.Cleanup(func() { require.NoError(t, second.Close()) })
 
 	_, err = first.Exec(`
 		CREATE TABLE parent (id TEXT PRIMARY KEY);
@@ -147,7 +147,7 @@ func TestOpen_RehydrationPreservesPragmas(t *testing.T) {
 
 	database, err := db.Open(filepath.Join(backlogRoot, "backlogit.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 	require.NoError(t, db.EnsureSchema(database))
 
 	ctx := context.Background()
