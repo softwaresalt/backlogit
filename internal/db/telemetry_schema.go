@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -116,7 +117,7 @@ func EnsureTelemetrySchema(db *sql.DB) error {
 // Single write path: JSONL → rehydrate → SQLite (Plan Review F5).
 // No direct upserts during harvest — RehydrateTelemetry is the only writer.
 // Idempotent: calling twice with the same JSONL produces the same table state.
-func RehydrateTelemetry(ctx context.Context, workspacePath string, sqlDB *sql.DB) error {
+func RehydrateTelemetry(ctx context.Context, workspacePath string, sqlDB *sql.DB) (returnErr error) {
 	jsonlPath := filepath.Join(workspaceStorageRoot(workspacePath), "telemetry-sessions.jsonl")
 	f, err := os.Open(jsonlPath)
 	if err != nil {
@@ -126,7 +127,11 @@ func RehydrateTelemetry(ctx context.Context, workspacePath string, sqlDB *sql.DB
 		}
 		return fmt.Errorf("open telemetry-sessions.jsonl: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close telemetry-sessions.jsonl: %w", closeErr))
+		}
+	}()
 
 	tx, err := sqlDB.BeginTx(ctx, nil)
 	if err != nil {
