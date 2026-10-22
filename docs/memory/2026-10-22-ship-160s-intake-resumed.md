@@ -28,7 +28,8 @@ shipment membership. This intake observation is not the frozen P-002.6 task
 set `M`; Ship freezes `M` only at Step 3 after resolving every manifest
 member's artifact type and the status model.
 
-The shipment response carried no hold/refusal labels. The transitive blocks chain is
+The shipment response contained no hold/refusal labels. The transitive blocks
+chain is
 `160-S -> 159-S -> 158-S -> 157-S -> 176-S -> 154-S`. Condition (b) passed
 using the authoritative archived Markdown and append-only item log after
 served-root attestation: `154-S` is `archived` with `archived_status: shipped`;
@@ -74,9 +75,10 @@ post-claim re-verification passed with `160-S` as the sole active shipment.
 No claim retry was issued. The selected stale checkpoint was resolved after
 the branch and memory note were established.
 
-The compile-only preflight `go test -run=^$ -count=1 ./...` passed. A preliminary
-P-001 CLI query used an unsupported flag and is not evidence; the proper
-read-only MCP count query returned `active_release_units: 0`, so P-001 passed.
+The compile-only preflight `go test -run=^$ -count=1 ./...` passed. A
+preliminary P-001 CLI query used an unsupported flag and is not evidence; the
+proper read-only MCP count query returned `active_release_units: 0`, so P-001
+passed.
 
 ## Step 3 Wave Freeze
 
@@ -114,5 +116,49 @@ each frozen regression-command array is exactly `[]`. The tracked scheduler
 simulation returned `WAVE_SIM_OK` with 200/200 assertions passing across 26
 scenarios.
 
-Next: run Step 4.0 admission and classify all active members using the served
-roots, claim markers, explicit shipment manifest, and safe item-log reads.
+## Step 4.0 and Harness Gate
+
+The wave snapshot returned exactly the nine frozen task IDs. All nine were
+`active`, carried `scheduler_baseline_claim: 160-S`, were present in both
+identical live shipment-manifest reads, and had one dependency on archived
+`175.011-T`. The live active-shipment list contained only `160-S`. The safe
+no-follow reads of the nine declared task logs verified one shipment-claim
+event and zero `WORK_STARTED: 160-S` records per current epoch. All nine were
+classified `claim-assigned`; the census was active 9, claim-assigned 9,
+active residual 0, queued 0, blocked 0, terminal-success 0, unsupported 0.
+The ready frontier is all of `M`, and `open_red_deliverables` is empty.
+
+Scoped P-012 declarations named each member log path before reads. The served
+roots and database binding were re-attested for wave admission; every log path
+passed containment, direct-child, reparse-point, no-follow-open, and opened-path
+checks.
+
+P-002.1 static intake found no `harness-exempt` tasks. The harness architect
+scaffolded the nine reserved test files:
+
+* `internal/core/lintfix_175_022_test.go` - named assertion red for 3 findings.
+* `internal/core/lintfix_175_023_test.go` - named assertion red for 8 findings.
+* `internal/core/lintfix_175_024_test.go` - named assertion red for 6
+  `workspace.go` and 9 `migrate_links_canonical_test.go` findings.
+* `internal/db/lintfix_175_025_test.go` - named assertion red for 6 findings.
+* `internal/db/lintfix_175_026_test.go` - named assertion red for 13 findings.
+* `internal/db/lintfix_175_027_test.go` - named assertion red for 5 findings.
+* `internal/events/lintfix_175_028_test.go` - named assertion red for 2 findings.
+* `internal/gateevidence/lintfix_175_029_test.go` - named assertion red for 1
+  finding.
+* `internal/hooks/lintfix_175_030_test.go` - named assertion red for 1 finding.
+
+The repo-wide compile-only check passed after the final scaffold. Each task's
+scoped selector failed on its named assertion, not a build error or vacuous
+selector. All nine tasks now have `harness-ready` labels and implementation
+notes recording `Compilation: PASS`, `Red Phase: CONFIRMED`, the reserved
+harness path, and the exact scoped command. Several label-update RPCs timed out;
+the subsequent exact-ID SQL read confirmed all nine labels and manifests.
+For 175.024-T, the task description names `NewWorkspace`, a wrapper around
+`newWorkspace`; the six owned `workspace.go` findings remain in the declared
+file and finding group. The harness tests the actual helper without widening
+the file or finding scope.
+
+No task has a `WORK_STARTED` record, no build implementation has begun, and no
+production source file has changed. The next action is the isolated wave
+scaffolding commit, followed by task 175.022-T's start record and build.
