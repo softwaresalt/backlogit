@@ -78,6 +78,41 @@ The compile-only preflight `go test -run=^$ -count=1 ./...` passed. A preliminar
 P-001 CLI query used an unsupported flag and is not evidence; the proper
 read-only MCP count query returned `active_release_units: 0`, so P-001 passed.
 
-Next: run intake reconciliation for `expected_status: active`. Freeze `M` only
-at Step 3 after the required manifest, status, dependency, harness,
-red-deliverable, regression-command, and scheduler-simulation checks.
+## Step 3 Wave Freeze
+
+The live workspace status catalog is
+`queued`, `active`, `blocked`, `review`, `done`, `accepted`, `rejected`,
+`archived`, `shipped`, and `abandoned`. Registry status mappings cover
+`queued`, `active`, `done`, and `blocked`; both configured status sets are
+present in the catalog and disjoint. Executable statuses are `queued`,
+`active`, and `blocked`; terminal-success statuses are `done` and `archived`.
+All other catalog tokens and every off-catalog token are unsupported.
+`features.sql_query` and `features.shipments` are both literal `true`.
+
+At this Step 3 anchor, the active shipment's complete `custom_fields.items`
+manifest was resolved to nine task artifacts. The frozen immutable set is:
+
+* `175.022-T`
+* `175.023-T`
+* `175.024-T`
+* `175.025-T`
+* `175.026-T`
+* `175.027-T`
+* `175.028-T`
+* `175.029-T`
+* `175.030-T`
+
+Thus `count(S) = 9`, `count(M) = 9`, and there are no excluded non-task
+manifest members. The approved covering feature `175-F` is a parent, not a
+manifest member. Every task depends on `175.011-T`, which is archived
+(terminal-success); the in-`M` dependency graph has no edges or cycles. The
+expected schedule is one wave containing all nine frozen tasks.
+
+No member has a canonical `red-deliverable-contract`; the red-deliverable
+mapping is empty. No member has a canonical `green-regression-contract`, so
+each frozen regression-command array is exactly `[]`. The tracked scheduler
+simulation returned `WAVE_SIM_OK` with 200/200 assertions passing across 26
+scenarios.
+
+Next: run Step 4.0 admission and classify all active members using the served
+roots, claim markers, explicit shipment manifest, and safe item-log reads.
