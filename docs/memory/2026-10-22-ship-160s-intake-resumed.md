@@ -160,5 +160,45 @@ file and finding group. The harness tests the actual helper without widening
 the file or finding scope.
 
 No task has a `WORK_STARTED` record, no build implementation has begun, and no
-production source file has changed. The next action is the isolated wave
-scaffolding commit, followed by task 175.022-T's start record and build.
+production source file changed during harness scaffolding.
+
+## Task 175.022 Build-Gate Halt
+
+Task `175.022-T` received exactly one verified `WORK_STARTED: 160-S` record.
+Its build-feature loop changed only the two declared files:
+`internal/core/shipment_reconcile_snapshot_windows.go` and
+`internal/core/artifacts_expansion_test.go`. The task-scoped harness changed
+from the three named assertion failures to a passing `TestU175_022_LintFix`.
+Compile-only tests, `go vet ./...`, `git diff --check`, and the LF-normalized
+format check over tracked Go files passed. No code commit was made because the
+mandatory lint-related gates below remain unresolved.
+
+The exact declared verifier,
+`pwsh -NoProfile -File scripts/verify-task-lint.ps1 -TaskId 175.022-T -FeatureId 175-F`,
+exited 2 with `FixtureRoot is required (real lint is never run)`. The verifier
+requires a `-FixtureRoot` containing `task-lint.json`, but the task's canonical
+command supplies no fixture path. The verifier is fixture-only and will not run
+real lint; Ship must not invent a fixture or weaken the declared command.
+
+The expected `golangci-lint` v2.13.2 binary exists at the user Go bin path, but
+the environment selects Go 1.27.0 while `go.mod` declares Go 1.24.0. The v2.13.2
+binary was built with Go 1.26.5 and panicked with `file requires newer Go
+version go1.27 (application built with go1.26)`. The repository-local
+golangci-lint v1.64.8 binary also failed package loading/typechecking. No tool
+was installed or replaced.
+
+Raw `gofmt -l .` also traversed ignored `.copilot/session-state` module-cache
+files and reported untracked cache paths. The LF-normalized check over tracked
+Go files passed; the cache was not changed or staged.
+
+The task contract must be amended by Stage to provide a valid task-lint fixture
+input or corrected verifier contract, and the workspace must provide a
+golangci-lint/toolchain pair that supports the required Go version. Ship has
+not changed the task contract, verifier, or tool installation. Task
+`175.022-T` remains active with its start record; no other task has started.
+The source changes remain uncommitted. Shipment `160-S` remains active, no PR
+or merge exists, and `161-S` is not eligible.
+
+Resume only after Stage resolves the declared task-lint verification contract
+and the compatible lint toolchain is available. Re-run all required gates on
+the existing `175.022-T` changes before committing or completing the task.
