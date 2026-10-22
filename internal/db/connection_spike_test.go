@@ -83,7 +83,11 @@ func TestDSNPragmaSpike(t *testing.T) {
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
-		defer db.Close()
+		defer func() {
+			if err := db.Close(); err != nil {
+				t.Errorf("close database: %v", err)
+			}
+		}()
 		if err := db.Ping(); err != nil {
 			t.Fatalf("ping: %v", err)
 		}
@@ -109,7 +113,11 @@ func TestDSNPragmaSpike(t *testing.T) {
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
-		defer db.Close()
+		defer func() {
+			if err := db.Close(); err != nil {
+				t.Errorf("close database: %v", err)
+			}
+		}()
 		if err := db.Ping(); err != nil {
 			t.Fatalf("ping: %v", err)
 		}
@@ -140,7 +148,11 @@ func TestDSNPragmaSpike(t *testing.T) {
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
-		defer db.Close()
+		defer func() {
+			if err := db.Close(); err != nil {
+				t.Errorf("close database: %v", err)
+			}
+		}()
 		if err := db.Ping(); err != nil {
 			t.Fatalf("ping: %v", err)
 		}
@@ -165,7 +177,11 @@ func TestDSNPragmaSpike(t *testing.T) {
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
-		defer db.Close()
+		defer func() {
+			if err := db.Close(); err != nil {
+				t.Errorf("close database: %v", err)
+			}
+		}()
 		if err := db.Ping(); err != nil {
 			t.Fatalf("ping: %v", err)
 		}
@@ -181,7 +197,11 @@ func TestDSNPragmaSpike(t *testing.T) {
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
-		defer db.Close()
+		defer func() {
+			if err := db.Close(); err != nil {
+				t.Errorf("close database: %v", err)
+			}
+		}()
 		db.SetMaxOpenConns(1) // Ensure one connection so pragmas persist.
 		for _, p := range []string{
 			"PRAGMA journal_mode=WAL",
