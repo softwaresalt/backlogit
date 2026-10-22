@@ -1,10 +1,12 @@
-# Ship Session — 160-S Intake Resumed
+---
+title: "Ship Session 160-S Intake Resumed"
+date: 2026-10-22
+---
 
-Date: 2026-10-22
 Shipment: `160-S`
 Scope: this invocation only; dark-factory scope does not include `161-S` or later.
 
-## Intake history and dispositions
+## Intake History and Dispositions
 
 Two prior intake attempts halted: the first on a covering-feature membership
 interpretation, and the second on `WORKTREE_DIRTY`. The prior memory note was
@@ -19,12 +21,14 @@ The approved membership design is task-only for multi-wave covering feature
 `docs/decisions/2026-09-19-baseline-convergence-decomposition.md` H6 and
 shipments `157-S`, `158-S`, `159-S`, and `176-S`. Adding `175-F` would archive
 the feature while its remaining queued tasks were outside this shipment. The
-nine explicit members are `175.022-T` through `175.030-T`; each retrieved task
-has `parent_id: 175-F`. This satisfies the covering-parent check without
-expanding shipment membership.
+shipment manifest was inspected only for intake validation and remains
+unchanged. Exact task lookups confirmed the explicit members have
+`parent_id: 175-F`, satisfying the covering-parent check without expanding
+shipment membership. This intake observation is not the frozen P-002.6 task
+set `M`; Ship freezes `M` only at Step 3 after resolving every manifest
+member's artifact type and the status model.
 
-`160-S` was queued with those nine task IDs, and the shipment response carried
-no hold/refusal labels. The transitive blocks chain is
+The shipment response carried no hold/refusal labels. The transitive blocks chain is
 `160-S -> 159-S -> 158-S -> 157-S -> 176-S -> 154-S`. Condition (b) passed
 using the authoritative archived Markdown and append-only item log after
 served-root attestation: `154-S` is `archived` with `archived_status: shipped`;
@@ -36,15 +40,15 @@ RFC3339. Reads used no-follow opens, canonical-handle verification, and
 reparse-point/containment checks. The operator's earlier report that
 condition (b) had passed was independently reconfirmed.
 
-## Served-root and branch evidence
+## Served-Root and Branch Evidence
 
 The metadata catalog's served workspace and storage roots matched the
 Orchestrator handoff. The read-only `pragma_database_list` check returned one
 `main` database at `.backlogit/backlogit.db`. Workspace-relative roots:
 
-- workspace: `.`
-- storage: `.backlogit`
-- database: `.backlogit/backlogit.db`
+* workspace: `.`
+* storage: `.backlogit`
+* database: `.backlogit/backlogit.db`
 
 `pipeline-topology` `pre_claim` passed with
 `BRANCH_CREATE_ELIGIBLE` and `CARRY_FORWARD_ELIGIBLE`; the only carry-forward
@@ -54,16 +58,26 @@ isolated-carry-forward instruction, the checkpoint was committed first:
 `e1a200b7` (`chore(ship): carry forward 160-S intake checkpoint`), with the
 required Copilot co-author trailer.
 
-## Dark-mode authority and next action
+## Dark-Mode Authority and Execution State
 
 The operator's dark-mode activation covers the ordered sequence beginning
 `160-S`, but this invocation is limited to `160-S`. Merge is pre-authorized
 only for merge-commit strategy after all mandatory gates pass. Admin fallback
 is not authorized and cannot bypass CI, current-HEAD local review, P-018
-Copilot review, P-009, or P-016. No PR, merge, or task implementation has
-occurred yet.
+Copilot review, P-009, or P-016.
 
-Next: re-run the hold-label and condition (b) checks immediately before claim;
-re-run `pipeline-topology --phase pre_claim`; claim `160-S`; confirm active
-state via post-claim verification; then reconcile and freeze the immutable
-task manifest and waves before harness/build work.
+The initial `backlogit_claim_shipment` RPC timed out. The first post-claim
+topology check returned `CLAIM_NOT_OBSERVED` (exit 3). The registry-declared
+CLI status fallback then failed because a shipment-lifecycle gate was in
+progress. An exact MCP item read observed `160-S` as `active`; the bounded
+post-claim re-verification passed with `160-S` as the sole active shipment.
+No claim retry was issued. The selected stale checkpoint was resolved after
+the branch and memory note were established.
+
+The compile-only preflight `go test -run=^$ -count=1 ./...` passed. A preliminary
+P-001 CLI query used an unsupported flag and is not evidence; the proper
+read-only MCP count query returned `active_release_units: 0`, so P-001 passed.
+
+Next: run intake reconciliation for `expected_status: active`. Freeze `M` only
+at Step 3 after the required manifest, status, dependency, harness,
+red-deliverable, regression-command, and scheduler-simulation checks.
