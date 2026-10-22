@@ -34,7 +34,7 @@ func setupShipmentWorkspace(t *testing.T) *Workspace {
 	ctx := context.Background()
 	workspace, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { workspace.Close() })
+	t.Cleanup(func() { require.NoError(t, workspace.Close()) })
 	disableExecGateForTest(t, workspace)
 	return workspace
 }
@@ -1267,7 +1267,9 @@ func TestNewWorkspace_RecoversPendingReturnBlockedJournal(t *testing.T) {
 	// Act
 	reopened, err := NewWorkspace(ctx, rootPath)
 	require.NoError(t, err)
-	defer reopened.Close()
+	defer func() {
+		require.NoError(t, reopened.Close())
+	}()
 
 	// Assert
 	recoveredShipment, err := GetShipment(ctx, reopened, shipment.ID)
@@ -1293,10 +1295,12 @@ func TestShipment_RehydrationConsistency(t *testing.T) {
 	require.NoError(t, err)
 
 	// Force rehydration by closing and reopening workspace
-	ws.Close()
+	require.NoError(t, ws.Close())
 	ws2, err := NewWorkspace(ctx, ws.RootPath)
 	require.NoError(t, err)
-	defer ws2.Close()
+	defer func() {
+		require.NoError(t, ws2.Close())
+	}()
 
 	// Act
 	recovered, err := GetShipment(ctx, ws2, shipment.ID)
