@@ -3,6 +3,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -39,7 +40,7 @@ import (
 // syscall.Errno) implements the same Is(os.ErrNotExist) contract unix.Errno
 // does on the Unix build, so the caller's existing not-exist handling
 // (shipment_reconcile_snapshot.go) is unaffected.
-func readShipmentReconcileArchiveSnapshotFile(archiveDir, fileName string) ([]byte, error) {
+func readShipmentReconcileArchiveSnapshotFile(archiveDir, fileName string) (content []byte, retErr error) {
 	realArchiveDir, err := filepath.EvalSymlinks(archiveDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve archive directory %s: %w", archiveDir, err)
@@ -63,7 +64,11 @@ func readShipmentReconcileArchiveSnapshotFile(archiveDir, fileName string) ([]by
 		return nil, fmt.Errorf("open archive file %s: %w", archivePath, err)
 	}
 	file := os.NewFile(uintptr(handle), archivePath)
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close archive file %s: %w", archivePath, closeErr))
+		}
+	}()
 
 	var info windows.ByHandleFileInformation
 	if infoErr := windows.GetFileInformationByHandle(handle, &info); infoErr != nil {
@@ -84,7 +89,7 @@ func readShipmentReconcileArchiveSnapshotFile(archiveDir, fileName string) ([]by
 		return nil, fmt.Errorf("%w: archive file %s resolves outside archive directory %s", blerrors.ErrValidation, finalPath, realArchiveDir)
 	}
 
-	content, err := io.ReadAll(file)
+	content, err = io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("read archive file %s: %w", archivePath, err)
 	}
