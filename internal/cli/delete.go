@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -21,17 +22,23 @@ func newDeleteCommand(cwd *string) *cobra.Command {
 This is a destructive operation and requires --force.`,
 		Example: `  backlogit delete 001.001-T --force`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			id := args[0]
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			if !force {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Delete %s? Use --force to confirm.\n", id)
+				if _, werr := fmt.Fprintf(cmd.ErrOrStderr(), "Delete %s? Use --force to confirm.\n", id); werr != nil {
+					return fmt.Errorf("write output: %w", werr)
+				}
 				return fmt.Errorf("use --force to delete %s", id)
 			}
 
@@ -39,7 +46,9 @@ This is a destructive operation and requires --force.`,
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted %s\n", id)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Deleted %s\n", id); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 			return nil
 		},
 	}

@@ -30,7 +30,7 @@ func TestDeleteCommand_Force(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -74,7 +74,7 @@ func TestSearchCommand_FindsResults(t *testing.T) {
 		ID: "T050", Title: "Searchable authentication fix", Status: models.StatusQueued,
 		ArtifactType: "task", CreatedAt: now, UpdatedAt: now,
 	}))
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -122,7 +122,7 @@ func TestSearchCommand_WithLimit(t *testing.T) {
 			CreatedAt: now, UpdatedAt: now,
 		}))
 	}
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
