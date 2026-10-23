@@ -1,6 +1,10 @@
 ---
 chunk_strategy: h1-h2-h3
 closure_status: READY_WITH_CONDITIONS
+conditions:
+  - id: D8391636-close-error-branches-behaviourally-tested
+    satisfied: true
+    evidence: "PR #572 adds TestReadSessionStore_PropagatesDBCloseError, TestReadSessionStore_PropagatesRowsCloseError, TestReadSessionStore_JoinsBothCloseErrors, TestHarvestEventsFacts_PropagatesFactFileCloseErrors (internal/telemetry) and TestMigrateStashMDToJSONL_JoinsTempRemovalError, TestMigrateStashMDToJSONL_IgnoresMissingTempOnCleanup (internal/stash); uncached go test -count=1 ok for both packages; golangci-lint clean for touched files"
 compaction_status: done
 description: "Post-merge closure and compound refresh for 161-S (baseline convergence RS-W04 lint remediation wave 4)."
 doc_type: closure
@@ -23,7 +27,7 @@ Context: feature 175-F (baseline convergence), PR #570, merge `c639db6d137702101
 
 ## Releasability
 
-`closure_status: READY_WITH_CONDITIONS`. There is no deployed runtime surface (library/CLI only), but PR #570 changed production error paths: `ReadSessionStore` and `HarvestEventsFacts` now propagate close failures, and `internal/stash/jsonl.go` temp-file cleanup now joins removal errors. Validation evidence: existing behavioural tests for those paths pass with uncached per-package `go test -count=1` (`internal/stash`, `internal/telemetry`) and in CI `test`; the nine scoped AST harnesses pass. Gap: no test forces a close/remove failure, so the new error-joining branches are shape-verified, not behaviourally exercised. Condition: stash `D8391636` adds the behavioural test; until then those branches are covered only by review. Monitoring: CI `test` on the next PR to main. Rollback: revert PR #570. Owner: operator. Validation window: next PR to main.
+`closure_status: READY_WITH_CONDITIONS`. There is no deployed runtime surface (library/CLI only), but PR #570 changed production error paths: `ReadSessionStore` and `HarvestEventsFacts` now propagate close failures, and `internal/stash/jsonl.go` temp-file cleanup now joins removal errors. Validation evidence: existing behavioural tests for those paths pass with uncached per-package `go test -count=1` (`internal/stash`, `internal/telemetry`) and in CI `test`; the nine scoped AST harnesses pass. Gap: no test forces a close/remove failure, so the new error-joining branches are shape-verified, not behaviourally exercised. Condition: stash `D8391636` adds the behavioural test. Satisfied by PR #572 (see the `conditions:` frontmatter); stash `D8391636` is pending Stage archival. Monitoring: CI `test` on the next PR to main. Rollback: revert PR #570. Owner: operator. Validation window: next PR to main.
 
 ## Compaction status (P-020)
 
@@ -50,3 +54,4 @@ No entry in `docs/compound/` is superseded or invalidated. `2026-10-06-ship-ship
 
 * Stash `558861F9`, `C007D571`, `3C2B15C4`, `8E8CD750`, `69AF7B15` (previously captured; unchanged).
 * Stash `D8391636` (advisory): harness 175.038 hardcodes residual count 14 (update when slice 2/2 lands); optional behavioural test for `internal/stash/jsonl.go` temp-file cleanup.
+* Condition remediation: PR #572 (stash `D8391636`). `autoharness gate closure-evidence --path <this file> --shipment 161-S --json` passes `frontmatter_predicate` (`conditions:` block verified) and fails only at `close_path` (got None), the same documented posture as 157-S, 158-S, 176-S, 184-S and 193-S (tracked by stash `3FF72EB8`); no `close_path` or evidence record is fabricated. `closure_status` stays `READY_WITH_CONDITIONS` with the condition now satisfied; stash `D8391636` is left for Stage to archive (Ship may not archive stash entries).
