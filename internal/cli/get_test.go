@@ -30,7 +30,7 @@ func TestGetCommand_DisplaysArtifact(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -59,7 +59,7 @@ func TestGetCommand_JSONOutput(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -91,7 +91,7 @@ func TestGetCommand_SectionExtraction(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
