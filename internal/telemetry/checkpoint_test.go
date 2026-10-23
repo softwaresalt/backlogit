@@ -109,7 +109,7 @@ func TestHarvestTelemetry_Force_ReprocessesAllLogs(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	// Seed a checkpoint that would skip the only log file if respected.
 	bigOffset := &telemetry.HarvestCheckpoint{
@@ -138,7 +138,7 @@ func TestHarvestTelemetry_Incremental_SkipsProcessedBytes(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	// First (full) harvest to establish checkpoint.
 	r1, err := telemetry.HarvestTelemetry(
@@ -169,7 +169,7 @@ func TestHarvestTelemetry_NewLogFile_FullyProcessed(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	// First harvest: 2 sessions from process-001.log.
 	r1, err := telemetry.HarvestTelemetry(

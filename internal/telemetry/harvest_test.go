@@ -43,7 +43,7 @@ func TestHarvestTelemetry_ProducesSessionSummaries(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	result, err := telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB, telemetry.HarvestOptions{})
 	require.NoError(t, err)
@@ -61,7 +61,7 @@ func TestHarvestTelemetry_ReHarvestIsIdempotent(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	r1, err := telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB, telemetry.HarvestOptions{})
 	require.NoError(t, err)
@@ -79,7 +79,7 @@ func TestHarvestTelemetry_WritesTokensByServerToJSONL(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	_, err = telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB, telemetry.HarvestOptions{})
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestHarvestTelemetry_MissingCopilotDir(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	_, err = telemetry.HarvestTelemetry(context.Background(), workspacePath, "/nonexistent/.copilot", sqliteDB, telemetry.HarvestOptions{})
 	require.Error(t, err)
@@ -133,7 +133,7 @@ func TestHarvestTelemetry_WritesModelClassToJSONL(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	_, err = telemetry.HarvestTelemetry(context.Background(), workspacePath, copilotPath, sqliteDB, telemetry.HarvestOptions{})
 	require.NoError(t, err)

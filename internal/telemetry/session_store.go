@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,8 +15,8 @@ import (
 // repository, work directory, and timing data. Returns an empty map (not an
 // error) when the database is missing or inaccessible — graceful fallback per
 // Plan Review F3.
-func ReadSessionStore(dbPath string) (map[string]SessionMeta, error) {
-	result := make(map[string]SessionMeta)
+func ReadSessionStore(dbPath string) (result map[string]SessionMeta, retErr error) {
+	result = make(map[string]SessionMeta)
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		slog.Debug("session-store.db not found, skipping", "path", dbPath)
 		return result, nil
@@ -25,13 +26,21 @@ func ReadSessionStore(dbPath string) (map[string]SessionMeta, error) {
 		slog.Warn("failed to open session-store.db", "path", dbPath, "err", err)
 		return result, nil
 	}
-	defer db.Close()
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close session-store.db: %w", closeErr))
+		}
+	}()
 
 	rows, err := db.Query(`SELECT id, COALESCE(repository,''), COALESCE(branch,''), COALESCE(cwd,''), COALESCE(created_at,'') FROM sessions`)
 	if err != nil {
 		return nil, fmt.Errorf("query session-store: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close session-store rows: %w", closeErr))
+		}
+	}()
 
 	for rows.Next() {
 		var meta SessionMeta

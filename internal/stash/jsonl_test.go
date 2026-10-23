@@ -121,7 +121,7 @@ stash_version: "1"
 	// Verify JSONL file exists and can be read back
 	f, err := os.Open(dstPath)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { require.NoError(t, f.Close()) }()
 
 	recovered, err := ReadJSONL(f)
 	require.NoError(t, err)

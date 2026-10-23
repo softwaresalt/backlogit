@@ -59,7 +59,7 @@ func appendProcessLogLines(t *testing.T, logsDir, fileName string, lines []strin
 
 	f, err := os.OpenFile(filepath.Join(logsDir, fileName), os.O_APPEND|os.O_WRONLY, 0o644)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { require.NoError(t, f.Close()) }()
 
 	_, err = f.WriteString(strings.Join(lines, "\n") + "\n")
 	require.NoError(t, err)
@@ -70,7 +70,7 @@ func writeSessionStoreFixture(t *testing.T, copilotPath, sessionID, repository, 
 
 	storeDB, err := db.Open(filepath.Join(copilotPath, "session-store.db"))
 	require.NoError(t, err)
-	defer storeDB.Close()
+	defer func() { require.NoError(t, storeDB.Close()) }()
 
 	_, err = storeDB.Exec(`
 		CREATE TABLE sessions (
@@ -123,7 +123,7 @@ func readTelemetryJSONL(t *testing.T, workspacePath string) ([]telemetry.Session
 
 	f, err := os.Open(filepath.Join(workspacePath, "telemetry-sessions.jsonl"))
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { require.NoError(t, f.Close()) }()
 
 	var sessions []telemetry.SessionSummaryRecord
 	var tools []telemetry.ToolUsageRecord
@@ -156,7 +156,7 @@ func openTelemetryIndexDB(t *testing.T, workspacePath string) *sql.DB {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { sqliteDB.Close() })
+	t.Cleanup(func() { require.NoError(t, sqliteDB.Close()) })
 	return sqliteDB
 }
 

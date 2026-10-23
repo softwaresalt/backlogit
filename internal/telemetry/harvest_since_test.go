@@ -77,7 +77,7 @@ func TestHarvestTelemetry_Since_ExcludesOlderEvents(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	// Only events on or after 2026-04-10 should be included.
 	cutoff := time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)
@@ -95,7 +95,7 @@ func TestHarvestTelemetry_Since_FullHarvestWhenAllEventsNewer(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	// Cutoff before all events — both sessions must be included.
 	cutoff := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -113,7 +113,7 @@ func TestHarvestTelemetry_Since_FutureDate_ReturnsZeroSessions(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	future := time.Now().Add(365 * 24 * time.Hour)
 	result, err := telemetry.HarvestTelemetry(
@@ -138,7 +138,7 @@ func TestHarvestTelemetry_ZeroTimestampEvents_AlwaysIncluded(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	// Use a recent cutoff that would normally exclude old events.
 	cutoff := time.Now().Add(-time.Hour)

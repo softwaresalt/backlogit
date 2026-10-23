@@ -39,7 +39,7 @@ func TestEnsureWorkspace_ConcurrentCallsShareWorkspace(t *testing.T) {
 	wg.Wait()
 	t.Cleanup(func() {
 		if s.Workspace != nil {
-			s.Workspace.Close()
+			require.NoError(t, s.Workspace.Close())
 		}
 	})
 

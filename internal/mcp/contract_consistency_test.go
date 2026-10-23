@@ -193,7 +193,7 @@ func TestMCP_ConcurrentEnsureWorkspace_NoRace(t *testing.T) {
 	wg.Wait()
 
 	if results[0] != nil {
-		t.Cleanup(func() { results[0].Close() })
+		t.Cleanup(func() { require.NoError(t, results[0].Close()) })
 	}
 
 	for i, e := range errs {
