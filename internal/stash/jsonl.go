@@ -70,6 +70,7 @@ type yamlEntry struct {
 }
 
 // removeTempFile is a test seam for forcing temp-file removal failures.
+// Tests that override it must not use t.Parallel and must restore it with t.Cleanup.
 var removeTempFile = os.Remove
 
 // MigrateStashMDToJSONL reads the legacy .stash.md file at srcPath, parses entries,

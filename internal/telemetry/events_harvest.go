@@ -259,6 +259,7 @@ func parseEventTimestamp(s string) time.Time {
 }
 
 // closeFactFile is a test seam for forcing fact-file close failures.
+// Tests that override it must not use t.Parallel and must restore it with t.Cleanup.
 var closeFactFile = func(f *os.File) error { return f.Close() }
 
 // HarvestEventsFacts scans .copilot/session-state/ for events.jsonl files and

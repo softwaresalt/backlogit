@@ -11,6 +11,7 @@ import (
 )
 
 // closeSessionDB and closeSessionRows are test seams for forcing close failures.
+// Tests that override it must not use t.Parallel and must restore it with t.Cleanup.
 var (
 	closeSessionDB   = func(db *sql.DB) error { return db.Close() }
 	closeSessionRows = func(rows *sql.Rows) error { return rows.Close() }
