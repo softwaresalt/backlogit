@@ -69,6 +69,10 @@ type yamlEntry struct {
 	Deliberation string `yaml:"deliberation"`
 }
 
+// removeTempFile is a test seam for forcing temp-file removal failures.
+// Tests that override it must not use t.Parallel and must restore it with t.Cleanup.
+var removeTempFile = os.Remove
+
 // MigrateStashMDToJSONL reads the legacy .stash.md file at srcPath, parses entries,
 // and writes them as JSONL to dstPath using atomic temp-file-then-rename.
 // Returns the number of migrated entries and any error.
@@ -98,7 +102,7 @@ func MigrateStashMDToJSONL(srcPath, dstPath string) (int, error) {
 		return 0, fmt.Errorf("create temp jsonl: %w", err)
 	}
 	removeTemp := func(cause error) error {
-		if rmErr := os.Remove(tmpPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+		if rmErr := removeTempFile(tmpPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
 			return errors.Join(cause, fmt.Errorf("remove temp jsonl: %w", rmErr))
 		}
 		return cause

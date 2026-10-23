@@ -258,6 +258,10 @@ func parseEventTimestamp(s string) time.Time {
 	return time.Time{}
 }
 
+// closeFactFile is a test seam for forcing fact-file close failures.
+// Tests that override it must not use t.Parallel and must restore it with t.Cleanup.
+var closeFactFile = func(f *os.File) error { return f.Close() }
+
 // HarvestEventsFacts scans .copilot/session-state/ for events.jsonl files and
 // appends ToolCallFact and SessionFact records to .backlogit/telemetry/.
 //
@@ -302,7 +306,7 @@ func HarvestEventsFacts(copilotPath, workspacePath string, cp *HarvestCheckpoint
 		return 0, 0, fmt.Errorf("open tool-calls.jsonl: %w", err)
 	}
 	defer func() {
-		if closeErr := tcFile.Close(); closeErr != nil {
+		if closeErr := closeFactFile(tcFile); closeErr != nil {
 			retErr = errors.Join(retErr, fmt.Errorf("close tool-calls.jsonl: %w", closeErr))
 		}
 	}()
@@ -312,7 +316,7 @@ func HarvestEventsFacts(copilotPath, workspacePath string, cp *HarvestCheckpoint
 		return 0, 0, fmt.Errorf("open session-facts.jsonl: %w", err)
 	}
 	defer func() {
-		if closeErr := sfFile.Close(); closeErr != nil {
+		if closeErr := closeFactFile(sfFile); closeErr != nil {
 			retErr = errors.Join(retErr, fmt.Errorf("close session-facts.jsonl: %w", closeErr))
 		}
 	}()

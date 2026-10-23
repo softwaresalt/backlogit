@@ -10,6 +10,13 @@ import (
 	_ "modernc.org/sqlite" // SQLite driver registration
 )
 
+// closeSessionDB and closeSessionRows are test seams for forcing close failures.
+// Tests that override it must not use t.Parallel and must restore it with t.Cleanup.
+var (
+	closeSessionDB   = func(db *sql.DB) error { return db.Close() }
+	closeSessionRows = func(rows *sql.Rows) error { return rows.Close() }
+)
+
 // ReadSessionStore opens the session-store.db SQLite database at dbPath
 // (read-only) and returns a map of sessionID → SessionMeta with branch,
 // repository, work directory, and timing data. Returns an empty map (not an
@@ -29,7 +36,7 @@ func ReadSessionStore(dbPath string) (result map[string]SessionMeta, retErr erro
 		return result, nil
 	}
 	defer func() {
-		if closeErr := db.Close(); closeErr != nil {
+		if closeErr := closeSessionDB(db); closeErr != nil {
 			retErr = errors.Join(retErr, fmt.Errorf("close session-store.db: %w", closeErr))
 		}
 	}()
@@ -39,7 +46,7 @@ func ReadSessionStore(dbPath string) (result map[string]SessionMeta, retErr erro
 		return nil, fmt.Errorf("query session-store: %w", err)
 	}
 	defer func() {
-		if closeErr := rows.Close(); closeErr != nil {
+		if closeErr := closeSessionRows(rows); closeErr != nil {
 			retErr = errors.Join(retErr, fmt.Errorf("close session-store rows: %w", closeErr))
 		}
 	}()
