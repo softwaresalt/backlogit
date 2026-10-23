@@ -106,22 +106,28 @@ layout migrations, not source imports. Use --workspace-dir to rename a legacy
 					return fmt.Errorf("write output: %w", err)
 				}
 			} else {
+				// The files have already moved, so a failed summary write must not skip
+				// link preservation or cache rehydration; retain it and return it last.
+				var outErr error
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Migrated %d files, %d skipped\n",
 					report.FilesMoved, report.FilesSkipped); err != nil {
-					return fmt.Errorf("write output: %w", err)
+					outErr = fmt.Errorf("write output: %w", err)
 				}
 				if _, migrateErr := core.MigrateDBOnlyLinksBeforeRehydrate(ctx, ws); migrateErr != nil {
-					return migrateErr
+					return errors.Join(migrateErr, outErr)
 				}
 				count, rehydErr := db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 				if rehydErr != nil {
 					if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr); wErr != nil {
-						return fmt.Errorf("write output: %w", errors.Join(wErr, rehydErr))
+						outErr = errors.Join(outErr, fmt.Errorf("write output: %w", errors.Join(wErr, rehydErr)))
 					}
 				} else {
 					if _, wErr := fmt.Fprintf(cmd.OutOrStdout(), "Rehydrated %d artifacts\n", count); wErr != nil {
-						return fmt.Errorf("write output: %w", wErr)
+						outErr = errors.Join(outErr, fmt.Errorf("write output: %w", wErr))
 					}
+				}
+				if outErr != nil {
+					return outErr
 				}
 			}
 
