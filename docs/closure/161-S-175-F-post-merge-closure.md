@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-closure_status: READY
+closure_status: READY_WITH_CONDITIONS
 compaction_status: done
 description: "Post-merge closure and compound refresh for 161-S (baseline convergence RS-W04 lint remediation wave 4)."
 doc_type: closure
@@ -23,7 +23,7 @@ Context: feature 175-F (baseline convergence), PR #570, merge `c639db6d137702101
 
 ## Releasability
 
-`closure_status: READY`. No runtime surface, so runtime-verification is not applicable. Monitoring: CI `test` and lint-related checks on the next PR. Rollback: revert PR #570. Owner: operator. Validation window: next PR to main.
+`closure_status: READY_WITH_CONDITIONS`. No runtime surface, so runtime-verification is not applicable. Monitoring: CI `test` and lint-related checks on the next PR. Rollback: revert PR #570. Owner: operator. Validation window: next PR to main.
 
 ## Compaction status (P-020)
 
