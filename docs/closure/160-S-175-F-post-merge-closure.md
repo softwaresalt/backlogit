@@ -36,7 +36,7 @@ Context: feature 175-F (baseline convergence), PR #568, merge `c866d072f6454c6c3
 * Copilot: one review iteration with one thread (stale active checkpoint); fixed by resolving the superseded checkpoints, replied, resolved; P-018 gate SATISFIED at `c64040f7`.
 * CI: all checks green at `c64040f7`.
 * Full suite: `go build`, `go vet`, gofmt clean; `internal/core` 740s ok and all other packages ok with `-count=1`. Note: an unfiltered cached `go test ./...` stalled in the go tool after test binaries finished (no child processes); running uncached per package avoided it.
-* Transient: `backlogit_ship_shipment` timed out client-side and converged server-side (shipped event present); the shipment record was left in queue as shipped, so it was archived with `backlogit_archive_item`. Not retried.
+* Transient: `backlogit_ship_shipment` timed out client-side and was not retried. Completion was verified by quiescence polling and independent evidence, not by the shipped event alone: the item log records `shipment_status_changed` (shipped) 21:27:06, `commit_tracked` (c866d072) 21:27:15 and the server's own shipment `archived` event 21:32:46; the hook queue carries the `ship_shipment` event (seq 3991); all nine member archive records carry commit `c866d072`; and `backlogit doctor --check-shipped-event-completeness` reports no `160-S` finding (the earlier `shipped_unarchived_residue` was a transient in-flight observation made before the server archived). A redundant `backlogit_archive_item` call at 21:33:07 produced a second, harmless `archived` event and `archive_item` hook seq 3992. No operator reconciliation was required.
 
 ## Source artifact provenance (untouched)
 
