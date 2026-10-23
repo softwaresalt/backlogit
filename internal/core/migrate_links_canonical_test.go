@@ -25,7 +25,11 @@ func TestMigrateDBOnlyLinksBuildsOneCanonicalIndex(t *testing.T) {
 
 	ws, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() {
+		if closeErr := ws.Close(); closeErr != nil {
+			t.Errorf("close workspace: %v", closeErr)
+		}
+	}()
 
 	feature, err := CreateArtifact(ctx, ws, "Canonical migration feature", "feature")
 	require.NoError(t, err)
@@ -55,7 +59,11 @@ func TestMigrateDBOnlyLinksRejectsDuplicateArtifactIDs(t *testing.T) {
 
 	ws, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() {
+		if closeErr := ws.Close(); closeErr != nil {
+			t.Errorf("close workspace: %v", closeErr)
+		}
+	}()
 
 	artifact, err := CreateArtifact(ctx, ws, "Duplicate migration artifact", "feature")
 	require.NoError(t, err)
@@ -85,7 +93,11 @@ func TestMigrateDBOnlyLinksCountsUnresolvedSourceAsSkipped(t *testing.T) {
 
 	ws, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() {
+		if closeErr := ws.Close(); closeErr != nil {
+			t.Errorf("close workspace: %v", closeErr)
+		}
+	}()
 
 	require.NoError(t, db.AddLink(ctx, ws.DB, "999-T", "998-T", "informs"))
 	result, err := MigrateDBOnlyLinks(ctx, ws)
@@ -115,7 +127,11 @@ func TestNewWorkspaceDefersDBOnlyLinkMigration(t *testing.T) {
 
 	ws, err = NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() {
+		if closeErr := ws.Close(); closeErr != nil {
+			t.Errorf("close workspace: %v", closeErr)
+		}
+	}()
 
 	path, err := FindArtifactPath(ctx, ws, source.ID)
 	require.NoError(t, err)
@@ -154,7 +170,11 @@ func BenchmarkMigrateDBOnlyLinksCanonicalIndex(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer ws.Close()
+	defer func() {
+		if closeErr := ws.Close(); closeErr != nil {
+			b.Errorf("close workspace: %v", closeErr)
+		}
+	}()
 
 	feature, err := CreateArtifact(ctx, ws, "Benchmark feature", "feature")
 	if err != nil {
@@ -210,7 +230,11 @@ func TestRemoveArtifactLinkDeletesDBOnlyLink(t *testing.T) {
 
 	ws, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() {
+		if closeErr := ws.Close(); closeErr != nil {
+			t.Errorf("close workspace: %v", closeErr)
+		}
+	}()
 
 	source, err := CreateArtifact(ctx, ws, "DB-only removal source", "feature")
 	require.NoError(t, err)
@@ -234,7 +258,11 @@ func TestRemoveArtifactLinkKeepsCacheWhenMarkdownWriteIsNotApplied(t *testing.T)
 
 	ws, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() {
+		if closeErr := ws.Close(); closeErr != nil {
+			t.Errorf("close workspace: %v", closeErr)
+		}
+	}()
 
 	source, err := CreateArtifact(ctx, ws, "Write failure source", "feature")
 	require.NoError(t, err)
@@ -266,7 +294,11 @@ func TestMigrateDBOnlyLinksFailsClosedOnParseFailure(t *testing.T) {
 
 	ws, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() {
+		if closeErr := ws.Close(); closeErr != nil {
+			t.Errorf("close workspace: %v", closeErr)
+		}
+	}()
 
 	target, err := CreateArtifact(ctx, ws, "Parse failure target", "feature")
 	require.NoError(t, err)
@@ -292,7 +324,11 @@ func TestMigrateDBOnlyLinksIgnoresUnlinkedDuplicateIDs(t *testing.T) {
 
 	ws, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() {
+		if closeErr := ws.Close(); closeErr != nil {
+			t.Errorf("close workspace: %v", closeErr)
+		}
+	}()
 
 	artifact, err := CreateArtifact(ctx, ws, "Unlinked duplicate artifact", "feature")
 	require.NoError(t, err)

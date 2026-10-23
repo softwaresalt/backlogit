@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	blErrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -55,8 +56,18 @@ func GetDependencies(ctx context.Context, db *sql.DB, itemID string) ([]Dependen
 	if err != nil {
 		return nil, fmt.Errorf("get dependencies for %s: %w", itemID, err)
 	}
-	defer rows.Close()
-	return scanEdges(rows)
+	edges, scanErr := scanEdges(rows)
+	closeErr := rows.Close()
+	if scanErr != nil {
+		scanErr = fmt.Errorf("get dependencies for %s: %w", itemID, scanErr)
+	}
+	if closeErr != nil {
+		closeErr = fmt.Errorf("close dependency rows for %s: %w", itemID, closeErr)
+	}
+	if err := errors.Join(scanErr, closeErr); err != nil {
+		return nil, err
+	}
+	return edges, nil
 }
 
 // GetDependents returns all items that depend on the given item (downstream/reverse edges).
@@ -66,8 +77,18 @@ func GetDependents(ctx context.Context, db *sql.DB, dependsOn string) ([]Depende
 	if err != nil {
 		return nil, fmt.Errorf("get dependents of %s: %w", dependsOn, err)
 	}
-	defer rows.Close()
-	return scanEdges(rows)
+	edges, scanErr := scanEdges(rows)
+	closeErr := rows.Close()
+	if scanErr != nil {
+		scanErr = fmt.Errorf("get dependents of %s: %w", dependsOn, scanErr)
+	}
+	if closeErr != nil {
+		closeErr = fmt.Errorf("close dependent rows for %s: %w", dependsOn, closeErr)
+	}
+	if err := errors.Join(scanErr, closeErr); err != nil {
+		return nil, err
+	}
+	return edges, nil
 }
 
 // DetectCycle checks whether adding a dependency from itemID to dependsOn
@@ -193,14 +214,31 @@ func detectCycleTx(ctx context.Context, tx *sql.Tx, itemID, dependsOn string) (b
 		for rows.Next() {
 			var dep string
 			if err := rows.Scan(&dep); err != nil {
-				rows.Close()
-				return false, fmt.Errorf("scan dep at %s: %w", current, err)
+				closeErr := rows.Close()
+				scanErr := fmt.Errorf("scan dep at %s: %w", current, err)
+				if closeErr != nil {
+					return false, errors.Join(
+						scanErr,
+						fmt.Errorf("close cycle rows at %s: %w", current, closeErr),
+					)
+				}
+				return false, scanErr
 			}
 			deps = append(deps, dep)
 		}
-		rows.Close()
+		closeErr := rows.Close()
 		if err := rows.Err(); err != nil {
-			return false, fmt.Errorf("detect cycle rows at %s: %w", current, err)
+			rowsErr := fmt.Errorf("detect cycle rows at %s: %w", current, err)
+			if closeErr != nil {
+				return false, errors.Join(
+					rowsErr,
+					fmt.Errorf("close cycle rows at %s: %w", current, closeErr),
+				)
+			}
+			return false, rowsErr
+		}
+		if closeErr != nil {
+			return false, fmt.Errorf("close cycle rows at %s: %w", current, closeErr)
 		}
 		queue = append(queue, deps...)
 	}

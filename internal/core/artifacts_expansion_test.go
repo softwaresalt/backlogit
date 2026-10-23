@@ -31,7 +31,7 @@ func setupTestWorkspace(t *testing.T) *core.Workspace {
 	ctx := context.Background()
 	ws, err := core.NewWorkspaceWithoutRecoveryForTest(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	return ws
 }
 
@@ -52,7 +52,7 @@ func setupTestWorkspaceWithBugLevel(t *testing.T, level int) *core.Workspace {
 	ctx := context.Background()
 	ws, err := core.NewWorkspaceWithoutRecoveryForTest(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	return ws
 }
 

@@ -220,14 +220,15 @@ func envelopeFromEvent(ev events.Event, ctx FormalContext, requireExpectedBaseRe
 	if !ok {
 		return gateproof.Envelope{}, "", errMissingField("base_ref")
 	}
-	if schema == gateproof.Schema {
+	switch schema {
+	case gateproof.Schema:
 		if baseRef == "" {
 			return gateproof.Envelope{}, "", errMissingField("base_ref")
 		}
 		if requireExpectedBaseRef && (ctx.BaseRef == "" || baseRef != ctx.BaseRef) {
 			return gateproof.Envelope{}, "", errBaseRefMismatch
 		}
-	} else if schema == gateproof.SchemaLegacy {
+	case gateproof.SchemaLegacy:
 		baseRef = ""
 	}
 

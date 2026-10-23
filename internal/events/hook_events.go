@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -115,7 +116,7 @@ func (w *HookEventWriter) AppendHookEvent(ctx context.Context, event HookEvent) 
 
 // ReadHookEvents reads all events from the queue file in append order.
 // Returns nil if the queue file does not exist.
-func (w *HookEventWriter) ReadHookEvents(_ context.Context) ([]HookEvent, error) {
+func (w *HookEventWriter) ReadHookEvents(_ context.Context) (evs []HookEvent, returnErr error) {
 	qf, err := os.Open(w.queuePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -123,9 +124,12 @@ func (w *HookEventWriter) ReadHookEvents(_ context.Context) ([]HookEvent, error)
 		}
 		return nil, fmt.Errorf("open hook queue: %w", err)
 	}
-	defer qf.Close()
+	defer func() {
+		if closeErr := qf.Close(); closeErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close hook queue: %w", closeErr))
+		}
+	}()
 
-	var evs []HookEvent
 	scanner := bufio.NewScanner(qf)
 	// Raise the default 64 KiB token limit to 1 MiB to handle large event payloads.
 	scanner.Buffer(make([]byte, 1<<20), 1<<20)

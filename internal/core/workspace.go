@@ -162,8 +162,14 @@ func newWorkspace(ctx context.Context, rootPath string, autoRecover bool) (*Work
 	headerDef, hdErr := config.LoadHeaderDef(backlogitDir)
 	if hdErr != nil {
 		if !errors.Is(hdErr, os.ErrNotExist) {
-			database.Close()
-			return nil, fmt.Errorf("load header-def: %w", hdErr)
+			workspaceErr := fmt.Errorf("load header-def: %w", hdErr)
+			if closeErr := database.Close(); closeErr != nil {
+				workspaceErr = errors.Join(
+					workspaceErr,
+					fmt.Errorf("close database after header-def load failure: %w", closeErr),
+				)
+			}
+			return nil, workspaceErr
 		}
 		headerDef = nil
 	}
@@ -171,15 +177,27 @@ func newWorkspace(ctx context.Context, rootPath string, autoRecover bool) (*Work
 	// Load templates (optional — nil if templates dir is absent).
 	templates, templatesErr := config.LoadTemplates(filepath.Join(backlogitDir, "templates"))
 	if templatesErr != nil {
-		database.Close()
-		return nil, fmt.Errorf("load templates: %w", templatesErr)
+		workspaceErr := fmt.Errorf("load templates: %w", templatesErr)
+		if closeErr := database.Close(); closeErr != nil {
+			workspaceErr = errors.Join(
+				workspaceErr,
+				fmt.Errorf("close database after template load failure: %w", closeErr),
+			)
+		}
+		return nil, workspaceErr
 	}
 
 	// Load hooks configuration and initialize hook runner.
 	hooksCfg, hooksErr := config.LoadHooks(backlogitDir)
 	if hooksErr != nil {
-		database.Close()
-		return nil, fmt.Errorf("load hooks config: %w", hooksErr)
+		workspaceErr := fmt.Errorf("load hooks config: %w", hooksErr)
+		if closeErr := database.Close(); closeErr != nil {
+			workspaceErr = errors.Join(
+				workspaceErr,
+				fmt.Errorf("close database after hooks config load failure: %w", closeErr),
+			)
+		}
+		return nil, workspaceErr
 	}
 
 	var hookRunner *hooks.HookRunner
@@ -237,13 +255,25 @@ func newWorkspace(ctx context.Context, rootPath string, autoRecover bool) (*Work
 
 	if headerDef != nil {
 		if err := db.EnsureSchemaWithExtensions(database, headerDef); err != nil {
-			database.Close()
-			return nil, fmt.Errorf("ensure schema: %w", err)
+			workspaceErr := fmt.Errorf("ensure schema: %w", err)
+			if closeErr := database.Close(); closeErr != nil {
+				workspaceErr = errors.Join(
+					workspaceErr,
+					fmt.Errorf("close database after schema setup failure: %w", closeErr),
+				)
+			}
+			return nil, workspaceErr
 		}
 	} else {
 		if err := db.EnsureSchema(database); err != nil {
-			database.Close()
-			return nil, fmt.Errorf("ensure schema: %w", err)
+			workspaceErr := fmt.Errorf("ensure schema: %w", err)
+			if closeErr := database.Close(); closeErr != nil {
+				workspaceErr = errors.Join(
+					workspaceErr,
+					fmt.Errorf("close database after schema setup failure: %w", closeErr),
+				)
+			}
+			return nil, workspaceErr
 		}
 	}
 	slog.DebugContext(ctx, "workspace initialization phase complete",
@@ -284,8 +314,14 @@ func newWorkspace(ctx context.Context, rootPath string, autoRecover bool) (*Work
 	// item_links cache, keeping the MCP handshake free of filesystem-wide scans.
 	if autoRecover {
 		if err := recoverPendingShipmentOperations(ctx, workspace); err != nil {
-			database.Close()
-			return nil, fmt.Errorf("recover shipment operations: %w", err)
+			workspaceErr := fmt.Errorf("recover shipment operations: %w", err)
+			if closeErr := database.Close(); closeErr != nil {
+				workspaceErr = errors.Join(
+					workspaceErr,
+					fmt.Errorf("close database after shipment recovery failure: %w", closeErr),
+				)
+			}
+			return nil, workspaceErr
 		}
 	}
 	slog.InfoContext(ctx, "workspace initialized",

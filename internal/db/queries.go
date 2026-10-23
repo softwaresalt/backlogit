@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -302,12 +303,16 @@ type rowQuerier interface {
 
 // queryItemsInto runs a SELECT that returns artifact rows and scans each into
 // dst keyed by ID. It isolates rows.Close handling so GetItemsByIDs stays flat.
-func queryItemsInto(ctx context.Context, q rowQuerier, query string, args []any, dst map[string]*models.Artifact) error {
+func queryItemsInto(ctx context.Context, q rowQuerier, query string, args []any, dst map[string]*models.Artifact) (returnErr error) {
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("query items by ids: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close items by ids rows: %w", closeErr))
+		}
+	}()
 	for rows.Next() {
 		a, scanErr := scanArtifactRow(rows)
 		if scanErr != nil {
@@ -324,12 +329,16 @@ func queryItemsInto(ctx context.Context, q rowQuerier, query string, args []any,
 // queryChildrenInto runs a SELECT returning artifact rows and appends each into
 // dst grouped by the row's ParentID. It isolates rows.Close handling so
 // GetTaskChildrenByParentIDs stays flat.
-func queryChildrenInto(ctx context.Context, q rowQuerier, query string, args []any, dst map[string][]*models.Artifact) error {
+func queryChildrenInto(ctx context.Context, q rowQuerier, query string, args []any, dst map[string][]*models.Artifact) (returnErr error) {
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("query task children by parent ids: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close task children rows: %w", closeErr))
+		}
+	}()
 	for rows.Next() {
 		a, scanErr := scanArtifactRow(rows)
 		if scanErr != nil {
@@ -410,7 +419,7 @@ func DeleteItemCascade(ctx context.Context, database *sql.DB, id string) error {
 }
 
 // QueryItems retrieves artifacts matching the provided filters.
-func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*models.Artifact, error) {
+func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) (artifacts []*models.Artifact, returnErr error) {
 	query := `SELECT ` + selectCols + ` FROM items`
 	var conditions []string
 	var args []any
@@ -471,7 +480,11 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 	if err != nil {
 		return nil, fmt.Errorf("query items: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close queried item rows: %w", closeErr))
+		}
+	}()
 
 	return scanArtifacts(rows)
 }
@@ -480,7 +493,7 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) ([]*model
 // The query is wrapped in FTS5 phrase-quote delimiters so that hyphens and
 // other FTS5 operator characters in the input are treated as literal phrase
 // content rather than query operators.
-func SearchItems(ctx context.Context, db *sql.DB, query string, limit int) ([]*models.Artifact, error) {
+func SearchItems(ctx context.Context, db *sql.DB, query string, limit int) (artifacts []*models.Artifact, returnErr error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT i.`+strings.ReplaceAll(selectCols, ", ", ", i.")+
 			` FROM items i
@@ -492,7 +505,11 @@ func SearchItems(ctx context.Context, db *sql.DB, query string, limit int) ([]*m
 	if err != nil {
 		return nil, fmt.Errorf("search items: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close searched item rows: %w", closeErr))
+		}
+	}()
 
 	return scanArtifacts(rows)
 }

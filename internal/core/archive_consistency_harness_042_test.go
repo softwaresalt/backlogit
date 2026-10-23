@@ -39,7 +39,7 @@ func setupArchiveConsistencyWorkspace(t *testing.T) (*core.Workspace, string) {
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	configData := []byte("artifact_types:\n  task:\n    prefix: T\n    suffix: \"-T\"\n    name_format: \"{NNN}{suffix}\"\nmax_slug_length: 60\n")
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"), configData, 0o644))
@@ -83,7 +83,7 @@ func TestArchiveItem_DBFailureAfterFileMove_OriginalFileRestored(t *testing.T) {
 	ctx := context.Background()
 
 	// Close the DB so the UPDATE items SET status fails.
-	ws.DB.Close()
+	require.NoError(t, ws.DB.Close())
 
 	_, err := core.ArchiveItem(ctx, ws.DB, ws, "098-T")
 
@@ -131,7 +131,7 @@ func TestArchiveItem_DBFailure_DBStatusUnchanged(t *testing.T) {
 	ctx := context.Background()
 
 	// Close DB to force failure.
-	database.Close()
+	require.NoError(t, database.Close())
 
 	_, archErr := core.ArchiveItem(ctx, ws.DB, ws, "097-T")
 	require.Error(t, archErr)
@@ -139,7 +139,9 @@ func TestArchiveItem_DBFailure_DBStatusUnchanged(t *testing.T) {
 	// Re-open DB and check status is unchanged.
 	database2, openErr := db.Open(dbPath)
 	require.NoError(t, openErr)
-	defer database2.Close()
+	defer func() {
+		require.NoError(t, database2.Close())
+	}()
 
 	item, getErr := db.GetItem(ctx, database2, "097-T")
 	require.NoError(t, getErr)

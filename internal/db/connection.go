@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -85,7 +86,9 @@ func Open(dbPath string) (*sql.DB, error) {
 	db.SetMaxIdleConns(4)
 
 	if err := db.Ping(); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			return nil, fmt.Errorf("ping database: %w", errors.Join(err, fmt.Errorf("close database after ping failure: %w", closeErr)))
+		}
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 	return db, nil

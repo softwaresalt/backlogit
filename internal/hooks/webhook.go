@@ -169,7 +169,11 @@ func (n *WebhookNotifier) dispatchToEndpoint(_ context.Context, ep WebhookEndpoi
 			n.logger.Warn("webhook dispatch error", "url", ep.URL, "error", err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				n.logger.Warn("webhook response body close error", "url", ep.URL, "error", err)
+			}
+		}()
 
 		if resp.StatusCode >= 400 {
 			n.logger.Warn("webhook endpoint returned error",
