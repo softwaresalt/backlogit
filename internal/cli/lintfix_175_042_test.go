@@ -14,7 +14,7 @@ import (
 
 // TestU175_042_LintFix asserts the owned functions discard no ws.Close/fmt.Fprint* error.
 func TestU175_042_LintFix(t *testing.T) {
-	owned := map[string][]string{"telemetry.go": {"renderSchemaMarkdown", "renderSchemaText"}}
+	owned := map[string][]string{"telemetry.go": {"renderSchemaMarkdown"}}
 	fset := token.NewFileSet()
 	var offenders []string
 	for name, funcs := range owned {

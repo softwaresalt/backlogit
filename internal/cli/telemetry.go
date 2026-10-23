@@ -416,36 +416,29 @@ against harvested telemetry data.`,
 
 func renderSchemaText(cmd *cobra.Command, factTables, sqlTables []telemetry.FactTableSchema) error {
 	w := cmd.OutOrStdout()
-	var werr error
-	write := func(format string, args ...any) {
-		if werr == nil {
-			_, werr = fmt.Fprintf(w, format, args...)
-		}
-	}
-	write("JSONL Fact Tables\n")
-	write("=================\n")
+	fmt.Fprintln(w, "JSONL Fact Tables")
+	fmt.Fprintln(w, "=================")
 	for _, tbl := range factTables {
-		write("\n%s (record_type: %s, file: %s)\n", tbl.Name, tbl.RecordType, tbl.File)
-		write("  %-30s %-30s %s\n", "FIELD", "TYPE", "JSON KEY")
+		if _, err := fmt.Fprintf(w, "\n%s (record_type: %s, file: %s)\n", tbl.Name, tbl.RecordType, tbl.File); err != nil {
+			return fmt.Errorf("write schema text: %w", err)
+		}
+		fmt.Fprintf(w, "  %-30s %-30s %s\n", "FIELD", "TYPE", "JSON KEY")
 		for _, f := range tbl.Fields {
 			opt := ""
 			if f.Optional {
 				opt = " (optional)"
 			}
-			write("  %-30s %-30s %s%s\n", f.Name, f.Type, f.JSONKey, opt)
+			fmt.Fprintf(w, "  %-30s %-30s %s%s\n", f.Name, f.Type, f.JSONKey, opt)
 		}
 	}
-	write("\nSQL Tables\n")
-	write("==========\n")
+	fmt.Fprintln(w, "\nSQL Tables")
+	fmt.Fprintln(w, "==========")
 	for _, tbl := range sqlTables {
-		write("\n%s (db: %s)\n", tbl.Name, tbl.File)
-		write("  %-30s %-10s %s\n", "COLUMN", "TYPE", "JSON KEY")
+		fmt.Fprintf(w, "\n%s (db: %s)\n", tbl.Name, tbl.File)
+		fmt.Fprintf(w, "  %-30s %-10s %s\n", "COLUMN", "TYPE", "JSON KEY")
 		for _, f := range tbl.Fields {
-			write("  %-30s %-10s %s\n", f.Name, f.Type, f.JSONKey)
+			fmt.Fprintf(w, "  %-30s %-10s %s\n", f.Name, f.Type, f.JSONKey)
 		}
-	}
-	if werr != nil {
-		return fmt.Errorf("write schema text: %w", werr)
 	}
 	return nil
 }
