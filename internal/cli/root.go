@@ -350,7 +350,9 @@ file, default YAML configuration files, and default artifact templates.`,
 			if err := config.WriteMigrationDefaults(dir); err != nil {
 				return fmt.Errorf("write migration defaults: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Initialized backlogit workspace at %s\n", dir)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Initialized backlogit workspace at %s\n", dir); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 			return nil
 		},
 	}
@@ -367,13 +369,17 @@ Use this after making manual changes to .backlog or .backlogit files or when you
 force the disposable cache to match the file-backed source of truth.`,
 		Example: `  backlogit sync
   backlogit --cwd D:\Source\MyProject sync`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			if _, migrateErr := core.MigrateDBOnlyLinksBeforeRehydrate(ctx, ws); migrateErr != nil {
 				return migrateErr
@@ -388,7 +394,9 @@ force the disposable cache to match the file-backed source of truth.`,
 			if err != nil {
 				return fmt.Errorf("sync: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Indexed %d artifacts\n", count)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Indexed %d artifacts\n", count); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
 			return nil
 		},
 	}

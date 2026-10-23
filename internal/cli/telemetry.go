@@ -419,7 +419,9 @@ func renderSchemaText(cmd *cobra.Command, factTables, sqlTables []telemetry.Fact
 	fmt.Fprintln(w, "JSONL Fact Tables")
 	fmt.Fprintln(w, "=================")
 	for _, tbl := range factTables {
-		fmt.Fprintf(w, "\n%s (record_type: %s, file: %s)\n", tbl.Name, tbl.RecordType, tbl.File)
+		if _, err := fmt.Fprintf(w, "\n%s (record_type: %s, file: %s)\n", tbl.Name, tbl.RecordType, tbl.File); err != nil {
+			return fmt.Errorf("write schema text: %w", err)
+		}
 		fmt.Fprintf(w, "  %-30s %-30s %s\n", "FIELD", "TYPE", "JSON KEY")
 		for _, f := range tbl.Fields {
 			opt := ""
@@ -456,29 +458,38 @@ func renderSchemaJSON(cmd *cobra.Command, factTables, sqlTables []telemetry.Fact
 
 func renderSchemaMarkdown(cmd *cobra.Command, factTables, sqlTables []telemetry.FactTableSchema) error {
 	w := cmd.OutOrStdout()
-	fmt.Fprintln(w, "## JSONL Fact Tables")
+	var werr error
+	write := func(format string, args ...any) {
+		if werr == nil {
+			_, werr = fmt.Fprintf(w, format, args...)
+		}
+	}
+	write("## JSONL Fact Tables\n")
 	for _, tbl := range factTables {
-		fmt.Fprintf(w, "\n### %s\n\n", tbl.Name)
-		fmt.Fprintf(w, "File: `%s` | Record type: `%s`\n\n", tbl.File, tbl.RecordType)
-		fmt.Fprintln(w, "| Field | Type | JSON Key | Optional |")
-		fmt.Fprintln(w, "|---|---|---|---|")
+		write("\n### %s\n\n", tbl.Name)
+		write("File: `%s` | Record type: `%s`\n\n", tbl.File, tbl.RecordType)
+		write("| Field | Type | JSON Key | Optional |\n")
+		write("|---|---|---|---|\n")
 		for _, f := range tbl.Fields {
 			opt := ""
 			if f.Optional {
 				opt = "yes"
 			}
-			fmt.Fprintf(w, "| %s | %s | %s | %s |\n", f.Name, f.Type, f.JSONKey, opt)
+			write("| %s | %s | %s | %s |\n", f.Name, f.Type, f.JSONKey, opt)
 		}
 	}
-	fmt.Fprintln(w, "\n## SQL Tables")
+	write("\n## SQL Tables\n")
 	for _, tbl := range sqlTables {
-		fmt.Fprintf(w, "\n### %s\n\n", tbl.Name)
-		fmt.Fprintf(w, "Database: `%s`\n\n", tbl.File)
-		fmt.Fprintln(w, "| Column | Type | JSON Key |")
-		fmt.Fprintln(w, "|---|---|---|")
+		write("\n### %s\n\n", tbl.Name)
+		write("Database: `%s`\n\n", tbl.File)
+		write("| Column | Type | JSON Key |\n")
+		write("|---|---|---|\n")
 		for _, f := range tbl.Fields {
-			fmt.Fprintf(w, "| %s | %s | %s |\n", f.Name, f.Type, f.JSONKey)
+			write("| %s | %s | %s |\n", f.Name, f.Type, f.JSONKey)
 		}
+	}
+	if werr != nil {
+		return fmt.Errorf("write schema markdown: %w", werr)
 	}
 	return nil
 }

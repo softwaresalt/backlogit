@@ -48,7 +48,7 @@ func reconcileShippedBuildFixture(t *testing.T, root string) string {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 
 	feature, err := core.CreateArtifact(ctx, ws, "Reconcile CLI feature", "feature")
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func reconcileShippedBuildUnarchivedFixture(t *testing.T, root string) string {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 
 	feature, err := core.CreateArtifact(ctx, ws, "Reconcile CLI unarchived feature", "feature")
 	require.NoError(t, err)
@@ -103,7 +103,7 @@ func reconcileShippedArchivePath(t *testing.T, root, shipmentID string) string {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 	path, err := core.FindArtifactPath(ctx, ws, shipmentID)
 	require.NoError(t, err)
 	return path

@@ -68,7 +68,7 @@ left unchanged).`,
     --idempotency-key idem-048-s-1 --merge-sha 0123456789abcdef0123456789abcdef01234567 \
     --closure-evidence docs/closure/048-S.md`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			shipmentID := args[0]
 
 			if err := requireShipmentReconcileTrimmedFields(map[string]string{
@@ -84,7 +84,9 @@ left unchanged).`,
 			if !dryRun {
 				if err := shipmentReconcileConfirm(cmd, shipmentID, confirm); err != nil {
 					cmd.SilenceErrors = true
-					fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+					if _, werr := fmt.Fprintln(cmd.ErrOrStderr(), err.Error()); werr != nil {
+						slog.Warn("write confirmation error output failed", "error", werr)
+					}
 					return &ExitError{Code: ExitConfirmationRequired, Msg: err.Error(), Err: err}
 				}
 			}
@@ -101,7 +103,11 @@ left unchanged).`,
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			req := core.ShipmentShippedReconcileRequest{
 				ShipmentID:      shipmentID,
@@ -118,7 +124,9 @@ left unchanged).`,
 			result, err := core.ReconcileShipmentToShipped(ctx, ws, req)
 			if ee := shipmentReconcileExitError(result, err); ee != nil {
 				cmd.SilenceErrors = true
-				fmt.Fprintln(cmd.ErrOrStderr(), ee.Msg)
+				if _, werr := fmt.Fprintln(cmd.ErrOrStderr(), ee.Msg); werr != nil {
+					slog.Warn("write reconcile error output failed", "error", werr)
+				}
 				return ee
 			}
 			if err != nil {
@@ -215,7 +223,9 @@ func shipmentReconcileConfirm(cmd *cobra.Command, shipmentID, confirmFlag string
 		return nil
 	}
 	if shipmentReconcileStdinIsInteractive() {
-		fmt.Fprintf(cmd.OutOrStdout(), "Type %q to confirm this shipment reconciliation: ", phrase)
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Type %q to confirm this shipment reconciliation: ", phrase); err != nil {
+			return fmt.Errorf("write confirmation prompt: %w", err)
+		}
 		reader := bufio.NewReader(cmd.InOrStdin())
 		line, _ := reader.ReadString('\n')
 		if strings.TrimRight(line, "\r\n") == phrase {

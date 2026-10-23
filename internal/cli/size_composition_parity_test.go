@@ -20,7 +20,7 @@ func setupSizedFeature(t *testing.T, root string) string {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 
 	feat, err := core.CreateArtifact(ctx, ws, "Composition feature", "feature")
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestGetJSON_TaskOmitsSizeComposition(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	out, err := runRootCommand(t, "--cwd", root, "get", task.ID, "--json")
 	require.NoError(t, err)
@@ -103,7 +103,7 @@ func TestGetJSON_ShipmentExposesSizeComposition(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	out, err := runRootCommand(t, "--cwd", root, "get", ship.ID, "--json")
 	require.NoError(t, err)
@@ -154,7 +154,7 @@ func setupSizedShipment(t *testing.T, root string) string {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 
 	feat, err := core.CreateArtifact(ctx, ws, "Ship feature", "feature")
 	require.NoError(t, err)

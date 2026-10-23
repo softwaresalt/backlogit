@@ -193,12 +193,12 @@ func formatSessionTable(sessions []SessionSummaryRecord, limit int) string {
 	}
 	const modelWidth = 20
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s  %-*s\n",
-		"SESSION", "TOKENS", "MODEL_CALLS", "TOOL_CALLS", modelWidth, "PRIMARY_MODEL"))
-	sb.WriteString(fmt.Sprintf("%-36s  %8s  %11s  %10s  %-*s\n",
+	fmt.Fprintf(&sb, "%-36s  %8s  %11s  %10s  %-*s\n",
+		"SESSION", "TOKENS", "MODEL_CALLS", "TOOL_CALLS", modelWidth, "PRIMARY_MODEL")
+	fmt.Fprintf(&sb, "%-36s  %8s  %11s  %10s  %-*s\n",
 		strings.Repeat("-", 36), strings.Repeat("-", 8),
 		strings.Repeat("-", 11), strings.Repeat("-", 10),
-		modelWidth, strings.Repeat("-", modelWidth)))
+		modelWidth, strings.Repeat("-", modelWidth))
 	for _, s := range rows {
 		sessionDisplay := s.SessionID
 		if IsGhostSession(s) {
@@ -211,8 +211,8 @@ func formatSessionTable(sessions []SessionSummaryRecord, limit int) string {
 		if len(pm) > modelWidth {
 			pm = pm[:modelWidth]
 		}
-		sb.WriteString(fmt.Sprintf("%-36s  %8d  %11d  %10d  %-*s\n",
-			sessionDisplay, s.TotalTokens, s.ModelCalls, s.ToolCalls, modelWidth, pm))
+		fmt.Fprintf(&sb, "%-36s  %8d  %11d  %10d  %-*s\n",
+			sessionDisplay, s.TotalTokens, s.ModelCalls, s.ToolCalls, modelWidth, pm)
 	}
 	return sb.String()
 }
@@ -271,10 +271,10 @@ func formatServerTable(sessions []SessionSummaryRecord, limit int) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-24s  %10s\n", "SERVER", "TOKENS"))
-	sb.WriteString(fmt.Sprintf("%-24s  %10s\n", strings.Repeat("-", 24), strings.Repeat("-", 10)))
+	fmt.Fprintf(&sb, "%-24s  %10s\n", "SERVER", "TOKENS")
+	fmt.Fprintf(&sb, "%-24s  %10s\n", strings.Repeat("-", 24), strings.Repeat("-", 10))
 	for _, r := range rows {
-		sb.WriteString(fmt.Sprintf("%-24s  %10d\n", r.name, r.tokens))
+		fmt.Fprintf(&sb, "%-24s  %10d\n", r.name, r.tokens)
 	}
 	return sb.String()
 }
@@ -315,14 +315,14 @@ func formatSessionMarkdown(sessions []SessionSummaryRecord, limit int) string {
 		if pm == "" {
 			pm = "-"
 		}
-		sb.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&sb,
 			"| %s | %d | %d | %d | %s |\n",
 			sessionDisplay,
 			row.TotalTokens,
 			row.ModelCalls,
 			row.ToolCalls,
 			escapeMarkdownCell(pm),
-		))
+		)
 	}
 	return sb.String()
 }
@@ -354,7 +354,7 @@ func formatServerMarkdown(sessions []SessionSummaryRecord, limit int) string {
 	sb.WriteString("| Server | Tokens |\n")
 	sb.WriteString("|---|---:|\n")
 	for _, r := range rows {
-		sb.WriteString(fmt.Sprintf("| %s | %d |\n", escapeMarkdownCell(r.name), r.tokens))
+		fmt.Fprintf(&sb, "| %s | %d |\n", escapeMarkdownCell(r.name), r.tokens)
 	}
 	return sb.String()
 }
@@ -552,12 +552,12 @@ func GenerateTrendReport(workspacePath string, opts TrendOptions) (string, error
 
 func formatTrendTable(groups []TrendGroup) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-12s  %8s  %12s  %18s  %15s  %13s  %15s  %14s\n",
-		"GROUP", "SESSIONS", "TOTAL_TOKENS", "AVG_TOKENS/SESSION", "AVG_TOKENS/TASK", "AVG_PEAK_UTIL", "AVG_MODEL_CALLS", "AVG_TOOL_CALLS"))
-	sb.WriteString(fmt.Sprintf("%-12s  %8s  %12s  %18s  %15s  %13s  %15s  %14s\n",
+	fmt.Fprintf(&sb, "%-12s  %8s  %12s  %18s  %15s  %13s  %15s  %14s\n",
+		"GROUP", "SESSIONS", "TOTAL_TOKENS", "AVG_TOKENS/SESSION", "AVG_TOKENS/TASK", "AVG_PEAK_UTIL", "AVG_MODEL_CALLS", "AVG_TOOL_CALLS")
+	fmt.Fprintf(&sb, "%-12s  %8s  %12s  %18s  %15s  %13s  %15s  %14s\n",
 		strings.Repeat("-", 12), strings.Repeat("-", 8), strings.Repeat("-", 12),
 		strings.Repeat("-", 18), strings.Repeat("-", 15), strings.Repeat("-", 13),
-		strings.Repeat("-", 15), strings.Repeat("-", 14)))
+		strings.Repeat("-", 15), strings.Repeat("-", 14))
 	for _, g := range groups {
 		tpt := "-"
 		if g.AvgTokensTask != nil {
@@ -567,9 +567,9 @@ func formatTrendTable(groups []TrendGroup) string {
 		if g.AvgPeakUtil != nil {
 			pu = fmt.Sprintf("%.1f%%", *g.AvgPeakUtil*100)
 		}
-		sb.WriteString(fmt.Sprintf("%-12s  %8d  %12d  %18.0f  %15s  %13s  %15.1f  %14.1f\n",
+		fmt.Fprintf(&sb, "%-12s  %8d  %12d  %18.0f  %15s  %13s  %15.1f  %14.1f\n",
 			g.Group, g.Sessions, g.TotalTokens, g.AvgTokensSession, tpt, pu,
-			g.AvgModelCalls, g.AvgToolCalls))
+			g.AvgModelCalls, g.AvgToolCalls)
 	}
 	return sb.String()
 }
@@ -588,9 +588,9 @@ func formatTrendMarkdown(groups []TrendGroup) string {
 		if g.AvgPeakUtil != nil {
 			pu = fmt.Sprintf("%.1f%%", *g.AvgPeakUtil*100)
 		}
-		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %.0f | %s | %s | %.1f | %.1f |\n",
+		fmt.Fprintf(&sb, "| %s | %d | %d | %.0f | %s | %s | %.1f | %.1f |\n",
 			escapeMarkdownCell(g.Group), g.Sessions, g.TotalTokens, g.AvgTokensSession, tpt, pu,
-			g.AvgModelCalls, g.AvgToolCalls))
+			g.AvgModelCalls, g.AvgToolCalls)
 	}
 	return sb.String()
 }
@@ -654,10 +654,10 @@ func formatModelTable(sessions []SessionSummaryRecord, limit int, byClass bool) 
 	}
 	const nameWidth = 24
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-*s  %8s  %10s\n", nameWidth, header, "TOKENS", "SESSIONS"))
-	sb.WriteString(fmt.Sprintf("%-*s  %8s  %10s\n",
+	fmt.Fprintf(&sb, "%-*s  %8s  %10s\n", nameWidth, header, "TOKENS", "SESSIONS")
+	fmt.Fprintf(&sb, "%-*s  %8s  %10s\n",
 		nameWidth, strings.Repeat("-", nameWidth),
-		strings.Repeat("-", 8), strings.Repeat("-", 10)))
+		strings.Repeat("-", 8), strings.Repeat("-", 10))
 	for _, g := range groups {
 		name := g.Group
 		if len(name) > nameWidth {

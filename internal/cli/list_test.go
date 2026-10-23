@@ -23,7 +23,7 @@ func TestListCommand_TableOutput(t *testing.T) {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 
 	// Seed a task
 	now := time.Now()
@@ -54,7 +54,7 @@ func TestListCommand_JSONOutput(t *testing.T) {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 
 	now := time.Now()
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{
@@ -83,7 +83,7 @@ func TestListCommand_FilterByType(t *testing.T) {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 
 	now := time.Now()
 	require.NoError(t, db.UpsertItem(ctx, ws.DB, &models.Artifact{

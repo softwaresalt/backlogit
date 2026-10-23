@@ -31,7 +31,7 @@ func TestMoveCommand_ChangesStatus(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -57,7 +57,7 @@ func TestMoveCommand_MissingStatus(t *testing.T) {
 	require.NoError(t, err)
 	artifact, err := core.CreateArtifact(ctx, ws, "Move no status", "task", core.WithParent(feat.ID))
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -102,7 +102,7 @@ func TestMoveCommand_OutputContainsConfirmation(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
