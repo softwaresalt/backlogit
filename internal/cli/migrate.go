@@ -39,7 +39,7 @@ layout migrations, not source imports. Use --workspace-dir to rename a legacy
   backlogit migrate --workspace-dir
   backlogit migrate --dry-run
   backlogit migrate --rollback`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			if workspaceDir {
 				if source != "" || adapter != "" || detect || validate || rollback {
 					return fmt.Errorf("--workspace-dir cannot be combined with source-import or rollback flags")
@@ -50,15 +50,19 @@ layout migrations, not source imports. Use --workspace-dir to rename a legacy
 					return fmt.Errorf("migrate workspace dir: %w", err)
 				}
 
+				var werr error
 				switch {
 				case result.AlreadyDone:
-					fmt.Fprintf(cmd.OutOrStdout(), "Workspace directory already uses %s\n", filepath.Base(result.Destination))
+					_, werr = fmt.Fprintf(cmd.OutOrStdout(), "Workspace directory already uses %s\n", filepath.Base(result.Destination))
 				case len(result.Files) == 0:
-					fmt.Fprintln(cmd.OutOrStdout(), "No legacy .backlogit workspace directory found")
+					_, werr = fmt.Fprintln(cmd.OutOrStdout(), "No legacy .backlogit workspace directory found")
 				case result.DryRun:
-					fmt.Fprintf(cmd.OutOrStdout(), "Dry run: workspace directory would move from %s to %s\n", result.Source, result.Destination)
+					_, werr = fmt.Fprintf(cmd.OutOrStdout(), "Dry run: workspace directory would move from %s to %s\n", result.Source, result.Destination)
 				default:
-					fmt.Fprintf(cmd.OutOrStdout(), "Migrated workspace directory from %s to %s\n", result.Source, result.Destination)
+					_, werr = fmt.Fprintf(cmd.OutOrStdout(), "Migrated workspace directory from %s to %s\n", result.Source, result.Destination)
+				}
+				if werr != nil {
+					return fmt.Errorf("write output: %w", werr)
 				}
 				return nil
 			}
@@ -75,13 +79,19 @@ layout migrations, not source imports. Use --workspace-dir to rename a legacy
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			if rollback {
 				if err := core.RollbackMigration(ws); err != nil {
 					return fmt.Errorf("rollback: %w", err)
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), "Migration rolled back")
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Migration rolled back"); err != nil {
+					return fmt.Errorf("write output: %w", err)
+				}
 				return nil
 			}
 
@@ -91,17 +101,23 @@ layout migrations, not source imports. Use --workspace-dir to rename a legacy
 			}
 
 			if dryRun {
-				fmt.Fprintf(cmd.OutOrStdout(), "Dry run: %d files would move, %d skipped\n",
-					report.FilesMoved, report.FilesSkipped)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Dry run: %d files would move, %d skipped\n",
+					report.FilesMoved, report.FilesSkipped); err != nil {
+					return fmt.Errorf("write output: %w", err)
+				}
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Migrated %d files, %d skipped\n",
-					report.FilesMoved, report.FilesSkipped)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Migrated %d files, %d skipped\n",
+					report.FilesMoved, report.FilesSkipped); err != nil {
+					return fmt.Errorf("write output: %w", err)
+				}
 				if _, migrateErr := core.MigrateDBOnlyLinksBeforeRehydrate(ctx, ws); migrateErr != nil {
 					return migrateErr
 				}
 				count, rehydErr := db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 				if rehydErr != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr)
+					if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr); wErr != nil {
+						return fmt.Errorf("write output: %w", wErr)
+					}
 				} else {
 					if _, wErr := fmt.Fprintf(cmd.OutOrStdout(), "Rehydrated %d artifacts\n", count); wErr != nil {
 						return fmt.Errorf("write output: %w", wErr)
