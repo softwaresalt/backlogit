@@ -23,7 +23,7 @@ Context: feature 175-F (baseline convergence), PR #570, merge `c639db6d137702101
 
 ## Releasability
 
-`closure_status: READY_WITH_CONDITIONS`. No runtime surface, so runtime-verification is not applicable. Monitoring: CI `test` and lint-related checks on the next PR. Rollback: revert PR #570. Owner: operator. Validation window: next PR to main.
+`closure_status: READY_WITH_CONDITIONS`. There is no deployed runtime surface (library/CLI only), but PR #570 changed production error paths: `ReadSessionStore` and `HarvestEventsFacts` now propagate close failures, and `internal/stash/jsonl.go` temp-file cleanup now joins removal errors. Validation evidence: existing behavioural tests for those paths pass with uncached per-package `go test -count=1` (`internal/stash`, `internal/telemetry`) and in CI `test`; the nine scoped AST harnesses pass. Gap: no test forces a close/remove failure, so the new error-joining branches are shape-verified, not behaviourally exercised. Condition: stash `D8391636` adds the behavioural test; until then those branches are covered only by review. Monitoring: CI `test` on the next PR to main. Rollback: revert PR #570. Owner: operator. Validation window: next PR to main.
 
 ## Compaction status (P-020)
 
