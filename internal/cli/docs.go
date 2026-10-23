@@ -261,9 +261,9 @@ func writeMigrateResult(cmd *cobra.Command, format string, plan docline.Migratio
 
 	out := cmd.OutOrStdout()
 	var werr error
-	write := func(format string, args ...any) {
+	write := func(f string, args ...any) {
 		if werr == nil {
-			_, werr = fmt.Fprintf(out, format, args...)
+			_, werr = fmt.Fprintf(out, f, args...)
 		}
 	}
 	if dryRun {

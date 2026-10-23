@@ -116,7 +116,7 @@ layout migrations, not source imports. Use --workspace-dir to rename a legacy
 				count, rehydErr := db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 				if rehydErr != nil {
 					if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: rehydration failed: %v\n", rehydErr); wErr != nil {
-						return fmt.Errorf("write output: %w", wErr)
+						return fmt.Errorf("write output: %w", errors.Join(wErr, rehydErr))
 					}
 				} else {
 					if _, wErr := fmt.Fprintf(cmd.OutOrStdout(), "Rehydrated %d artifacts\n", count); wErr != nil {

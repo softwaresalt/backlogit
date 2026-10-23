@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -20,6 +21,15 @@ func TestU175_048_LintFix(t *testing.T) {
 	}
 	fset := token.NewFileSet()
 	var offenders []string
+	visited := map[string]bool{}
+	allBlank := func(exprs []ast.Expr) bool {
+		for _, e := range exprs {
+			if id, ok := e.(*ast.Ident); !ok || id.Name != "_" {
+				return false
+			}
+		}
+		return true
+	}
 	for name, funcs := range owned {
 		file, err := parser.ParseFile(fset, name, nil, 0)
 		require.NoError(t, err)
@@ -28,6 +38,7 @@ func TestU175_048_LintFix(t *testing.T) {
 			if !ok || !slices.Contains(funcs, fn.Name.Name) {
 				continue
 			}
+			visited[name+":"+fn.Name.Name] = true
 			ast.Inspect(fn, func(n ast.Node) bool {
 				var call *ast.CallExpr
 				switch s := n.(type) {
@@ -35,6 +46,12 @@ func TestU175_048_LintFix(t *testing.T) {
 					call, _ = s.X.(*ast.CallExpr)
 				case *ast.DeferStmt:
 					call = s.Call
+				case *ast.GoStmt:
+					call = s.Call
+				case *ast.AssignStmt:
+					if len(s.Rhs) == 1 && allBlank(s.Lhs) {
+						call, _ = s.Rhs[0].(*ast.CallExpr)
+					}
 				}
 				if call == nil {
 					return true
@@ -51,5 +68,18 @@ func TestU175_048_LintFix(t *testing.T) {
 			})
 		}
 	}
+	var missing []string
+	for name, funcs := range owned {
+		for _, f := range funcs {
+			if !visited[name+":"+f] {
+				missing = append(missing, name+":"+f)
+			}
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Fatalf("owned functions not found: %v", missing)
+	}
+	sort.Strings(offenders)
 	assert.Empty(t, offenders, "unchecked error returns remain")
 }
