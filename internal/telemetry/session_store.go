@@ -15,6 +15,8 @@ import (
 // repository, work directory, and timing data. Returns an empty map (not an
 // error) when the database is missing or inaccessible — graceful fallback per
 // Plan Review F3.
+// A failure while closing the read-only handles is joined into the returned
+// error alongside any populated map; callers must treat the map as valid data.
 func ReadSessionStore(dbPath string) (result map[string]SessionMeta, retErr error) {
 	result = make(map[string]SessionMeta)
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
