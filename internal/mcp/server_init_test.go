@@ -46,7 +46,7 @@ func TestEnsureWorkspace_RetryOnFailure(t *testing.T) {
 	require.NoError(t, secondErr,
 		"call after .backlogit is created must succeed")
 	require.NotNil(t, ws)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 }
 
 // TestEnsureWorkspace_CachesSuccess verifies that two consecutive successful
@@ -64,7 +64,7 @@ func TestEnsureWorkspace_CachesSuccess(t *testing.T) {
 	ws1, err := s.ensureWorkspace(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, ws1)
-	t.Cleanup(func() { ws1.Close() })
+	t.Cleanup(func() { require.NoError(t, ws1.Close()) })
 
 	ws2, err := s.ensureWorkspace(ctx)
 	require.NoError(t, err)
@@ -103,7 +103,7 @@ func TestEnsureWorkspace_ConcurrentSafe(t *testing.T) {
 
 	// Cleanup the shared workspace once.
 	if results[0] != nil {
-		t.Cleanup(func() { results[0].Close() })
+		t.Cleanup(func() { require.NoError(t, results[0].Close()) })
 	}
 
 	for i, err := range errs {

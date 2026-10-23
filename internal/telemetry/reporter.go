@@ -663,7 +663,7 @@ func formatModelTable(sessions []SessionSummaryRecord, limit int, byClass bool) 
 		if len(name) > nameWidth {
 			name = name[:nameWidth]
 		}
-		sb.WriteString(fmt.Sprintf("%-*s  %8d  %10d\n", nameWidth, name, g.Tokens, g.Sessions))
+		fmt.Fprintf(&sb, "%-*s  %8d  %10d\n", nameWidth, name, g.Tokens, g.Sessions)
 	}
 	return sb.String()
 }
@@ -676,12 +676,12 @@ func formatModelMarkdown(sessions []SessionSummaryRecord, limit int, byClass boo
 	}
 	var sb strings.Builder
 	sb.WriteString("# Telemetry Report\n\n")
-	sb.WriteString(fmt.Sprintf("## Tokens by %s\n\n", header))
-	sb.WriteString(fmt.Sprintf("| %s | Tokens | Sessions |\n", header))
+	fmt.Fprintf(&sb, "## Tokens by %s\n\n", header)
+	fmt.Fprintf(&sb, "| %s | Tokens | Sessions |\n", header)
 	sb.WriteString("|---|---:|---:|\n")
 	for _, g := range groups {
-		sb.WriteString(fmt.Sprintf("| %s | %d | %d |\n",
-			escapeMarkdownCell(g.Group), g.Tokens, g.Sessions))
+		fmt.Fprintf(&sb, "| %s | %d | %d |\n",
+			escapeMarkdownCell(g.Group), g.Tokens, g.Sessions)
 	}
 	return sb.String()
 }
@@ -728,7 +728,7 @@ func GenerateFactsReport(workspacePath, groupBy string, format ReportFormat, lim
 	}
 }
 
-func readToolCallFacts(path string) ([]ToolCallFact, error) {
+func readToolCallFacts(path string) (_ []ToolCallFact, retErr error) {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -736,7 +736,11 @@ func readToolCallFacts(path string) ([]ToolCallFact, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close %s: %w", path, closeErr))
+		}
+	}()
 
 	var facts []ToolCallFact
 	dec := json.NewDecoder(f)
@@ -753,7 +757,7 @@ func readToolCallFacts(path string) ([]ToolCallFact, error) {
 	return facts, nil
 }
 
-func readSessionFacts(path string) ([]SessionFact, error) {
+func readSessionFacts(path string) (_ []SessionFact, retErr error) {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -761,7 +765,11 @@ func readSessionFacts(path string) ([]SessionFact, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close %s: %w", path, closeErr))
+		}
+	}()
 
 	var facts []SessionFact
 	dec := json.NewDecoder(f)
@@ -879,13 +887,13 @@ func formatToolFacts(facts []ToolCallFact, format ReportFormat, limit int) (stri
 			if r.CallCount > 0 {
 				ad = float64(r.TotalMs) / float64(r.CallCount)
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %d | %.1f | %.0f | %d | %d |\n",
+			fmt.Fprintf(&sb, "| %s | %s | %d | %.1f | %.0f | %d | %d |\n",
 				escapeMarkdownCell(r.ToolName),
 				escapeMarkdownCell(r.ServerName),
 				r.CallCount,
 				sp, ad, r.TotalMs,
 				len(r.Sessions),
-			))
+			)
 		}
 		return sb.String(), nil
 
@@ -893,15 +901,15 @@ func formatToolFacts(facts []ToolCallFact, format ReportFormat, limit int) (stri
 		const nameWidth = 36
 		const srvWidth = 20
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("%-*s  %-*s  %6s  %8s  %8s  %11s  %8s\n",
+		fmt.Fprintf(&sb, "%-*s  %-*s  %6s  %8s  %8s  %11s  %8s\n",
 			nameWidth, "TOOL", srvWidth, "SERVER",
-			"CALLS", "SUCCESS%", "AVG_MS", "TOTAL_MS", "SESSIONS"))
-		sb.WriteString(fmt.Sprintf("%-*s  %-*s  %6s  %8s  %8s  %11s  %8s\n",
+			"CALLS", "SUCCESS%", "AVG_MS", "TOTAL_MS", "SESSIONS")
+		fmt.Fprintf(&sb, "%-*s  %-*s  %6s  %8s  %8s  %11s  %8s\n",
 			nameWidth, strings.Repeat("-", nameWidth),
 			srvWidth, strings.Repeat("-", srvWidth),
 			strings.Repeat("-", 6), strings.Repeat("-", 8),
 			strings.Repeat("-", 8), strings.Repeat("-", 11),
-			strings.Repeat("-", 8)))
+			strings.Repeat("-", 8))
 		for _, r := range rows {
 			sp := 0.0
 			if r.CallCount > 0 {
@@ -922,12 +930,12 @@ func formatToolFacts(facts []ToolCallFact, format ReportFormat, limit int) (stri
 			if len(srv) > srvWidth {
 				srv = srv[:srvWidth]
 			}
-			sb.WriteString(fmt.Sprintf("%-*s  %-*s  %6d  %7.1f%%  %8.0f  %11d  %8d\n",
+			fmt.Fprintf(&sb, "%-*s  %-*s  %6d  %7.1f%%  %8.0f  %11d  %8d\n",
 				nameWidth, name,
 				srvWidth, srv,
 				r.CallCount, sp, ad, r.TotalMs,
 				len(r.Sessions),
-			))
+			)
 		}
 		return sb.String(), nil
 	}
@@ -998,12 +1006,12 @@ func formatContextFacts(facts []SessionFact, format ReportFormat, limit int) (st
 		sb.WriteString("|---|---|---:|---:|---:|---:|---:|---:|\n")
 		for _, sf := range rows {
 			r := toRow(sf)
-			sb.WriteString(fmt.Sprintf("| %s | %s | %.1f | %.1f | %.1f | %.1f | %d | %d |\n",
+			fmt.Fprintf(&sb, "| %s | %s | %.1f | %.1f | %.1f | %.1f | %d | %d |\n",
 				escapeMarkdownCell(r.SessionID),
 				escapeMarkdownCell(r.Branch),
 				r.SystemPct, r.ConvPct, r.ToolDefPct, r.CachePct,
 				r.CurrentCtx, r.TotalInput,
-			))
+			)
 		}
 		return sb.String(), nil
 
@@ -1011,15 +1019,15 @@ func formatContextFacts(facts []SessionFact, format ReportFormat, limit int) (st
 		const sidWidth = 36
 		const branchWidth = 20
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("%-*s  %-*s  %7s  %5s  %8s  %6s  %7s  %11s\n",
+		fmt.Fprintf(&sb, "%-*s  %-*s  %7s  %5s  %8s  %6s  %7s  %11s\n",
 			sidWidth, "SESSION", branchWidth, "BRANCH",
-			"SYSTEM%", "CONV%", "TOOLDEF%", "CACHE%", "CTX_TOK", "TOTAL_INPUT"))
-		sb.WriteString(fmt.Sprintf("%-*s  %-*s  %7s  %5s  %8s  %6s  %7s  %11s\n",
+			"SYSTEM%", "CONV%", "TOOLDEF%", "CACHE%", "CTX_TOK", "TOTAL_INPUT")
+		fmt.Fprintf(&sb, "%-*s  %-*s  %7s  %5s  %8s  %6s  %7s  %11s\n",
 			sidWidth, strings.Repeat("-", sidWidth),
 			branchWidth, strings.Repeat("-", branchWidth),
 			strings.Repeat("-", 7), strings.Repeat("-", 5),
 			strings.Repeat("-", 8), strings.Repeat("-", 6),
-			strings.Repeat("-", 7), strings.Repeat("-", 11)))
+			strings.Repeat("-", 7), strings.Repeat("-", 11))
 		for _, sf := range rows {
 			r := toRow(sf)
 			sid := r.SessionID
@@ -1030,12 +1038,12 @@ func formatContextFacts(facts []SessionFact, format ReportFormat, limit int) (st
 			if len(br) > branchWidth {
 				br = br[:branchWidth]
 			}
-			sb.WriteString(fmt.Sprintf("%-*s  %-*s  %6.1f%%  %4.1f%%  %7.1f%%  %5.1f%%  %7d  %11d\n",
+			fmt.Fprintf(&sb, "%-*s  %-*s  %6.1f%%  %4.1f%%  %7.1f%%  %5.1f%%  %7d  %11d\n",
 				sidWidth, sid,
 				branchWidth, br,
 				r.SystemPct, r.ConvPct, r.ToolDefPct, r.CachePct,
 				r.CurrentCtx, r.TotalInput,
-			))
+			)
 		}
 		return sb.String(), nil
 	}

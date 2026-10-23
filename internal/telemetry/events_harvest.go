@@ -266,7 +266,7 @@ func parseEventTimestamp(s string) time.Time {
 // When force is true, all sessions are re-processed and existing fact files cleared.
 //
 // Returns the number of tool call facts and session facts written.
-func HarvestEventsFacts(copilotPath, workspacePath string, cp *HarvestCheckpoint, harvestedAt time.Time, force bool) (int, int, error) {
+func HarvestEventsFacts(copilotPath, workspacePath string, cp *HarvestCheckpoint, harvestedAt time.Time, force bool) (_, _ int, retErr error) {
 	sessionStateDir := filepath.Join(copilotPath, "session-state")
 	entries, err := os.ReadDir(sessionStateDir)
 	if os.IsNotExist(err) {
@@ -301,13 +301,21 @@ func HarvestEventsFacts(copilotPath, workspacePath string, cp *HarvestCheckpoint
 	if err != nil {
 		return 0, 0, fmt.Errorf("open tool-calls.jsonl: %w", err)
 	}
-	defer tcFile.Close()
+	defer func() {
+		if closeErr := tcFile.Close(); closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close tool-calls.jsonl: %w", closeErr))
+		}
+	}()
 
 	sfFile, err := os.OpenFile(sessionFactsPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return 0, 0, fmt.Errorf("open session-facts.jsonl: %w", err)
 	}
-	defer sfFile.Close()
+	defer func() {
+		if closeErr := sfFile.Close(); closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close session-facts.jsonl: %w", closeErr))
+		}
+	}()
 
 	tcEnc := json.NewEncoder(tcFile)
 	tcEnc.SetEscapeHTML(false)
@@ -336,7 +344,9 @@ func HarvestEventsFacts(copilotPath, workspacePath string, cp *HarvestCheckpoint
 		}
 
 		facts, sessionFact, err := ParseEventFacts(f, sessionID)
-		f.Close()
+		if closeErr := f.Close(); closeErr != nil {
+			slog.Warn("failed to close events.jsonl", "session", sessionID, "err", closeErr)
+		}
 		if err != nil {
 			slog.Warn("failed to parse event facts", "session", sessionID, "err", err)
 			continue

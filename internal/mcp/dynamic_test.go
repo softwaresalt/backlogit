@@ -28,7 +28,7 @@ func setupSectionAwareServer(t *testing.T) (*mcpinternal.Server, *templates.Serv
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	templatesDir := filepath.Join(backlogitDir, "templates")
 	svc, err := templates.NewService(ctx, templatesDir)
@@ -82,7 +82,7 @@ func TestListTemplates_EmptyWhenNoWorkspace(t *testing.T) {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	s := mcpinternal.NewServer(ws)
 	mcpinternal.RegisterSectionAwareTools(s, nil)

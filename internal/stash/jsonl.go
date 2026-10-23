@@ -3,6 +3,7 @@ package stash
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -96,18 +97,24 @@ func MigrateStashMDToJSONL(srcPath, dstPath string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("create temp jsonl: %w", err)
 	}
+	removeTemp := func(cause error) error {
+		if rmErr := os.Remove(tmpPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			return errors.Join(cause, fmt.Errorf("remove temp jsonl: %w", rmErr))
+		}
+		return cause
+	}
 	if err := WriteJSONL(tmp, entries); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return 0, fmt.Errorf("write jsonl: %w", err)
+		cause := fmt.Errorf("write jsonl: %w", err)
+		if closeErr := tmp.Close(); closeErr != nil {
+			cause = errors.Join(cause, fmt.Errorf("close temp jsonl: %w", closeErr))
+		}
+		return 0, removeTemp(cause)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return 0, fmt.Errorf("close temp jsonl: %w", err)
+		return 0, removeTemp(fmt.Errorf("close temp jsonl: %w", err))
 	}
 	if err := os.Rename(tmpPath, dstPath); err != nil {
-		os.Remove(tmpPath)
-		return 0, fmt.Errorf("rename jsonl: %w", err)
+		return 0, removeTemp(fmt.Errorf("rename jsonl: %w", err))
 	}
 
 	slog.Info("stash migration complete", "src", filepath.Base(srcPath), "count", len(entries))
