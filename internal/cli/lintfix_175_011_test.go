@@ -13,9 +13,9 @@ import (
 
 // TestU175_011_LintFix asserts migrate.go (slice 1/2) has retired its owned
 // share of unchecked Close/fmt.Fprint* error returns. 19 occurrences existed at
-// baseline; slice 1 owns 10, leaving at most 9 for the later slice.
+// baseline; slice 1 owns 10 and slice 2 (175.041-T) retired the remaining 9.
 func TestU175_011_LintFix(t *testing.T) {
-	limits := map[string]int{"migrate.go": 9}
+	limits := map[string]int{"migrate.go": 0}
 	for name, limit := range limits {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, name, nil, 0)
