@@ -93,8 +93,8 @@ retained for this case exactly as for any other violation.`,
 				if err := writeDocsJSON(cmd.OutOrStdout(), docline.NewLintReport(findings)); err != nil {
 					return err
 				}
-			} else {
-				printLintText(cmd, findings)
+			} else if err := printLintText(cmd, findings); err != nil {
+				return err
 			}
 			if !valid {
 				return errLintViolations
@@ -194,13 +194,22 @@ func newDocsScopeCommand(cwd *string) *cobra.Command {
 				return writeDocsJSON(cmd.OutOrStdout(), sc)
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, "docline scope")
-			fmt.Fprintf(out, "  include dirs:  %v\n", sc.IncludeDirs)
-			fmt.Fprintf(out, "  include files: %v\n", sc.IncludeFiles)
-			fmt.Fprintf(out, "  exclude dirs:  %v\n", sc.ExcludeDirs)
-			fmt.Fprintf(out, "  exclude files: %v\n", sc.ExcludeFiles)
-			fmt.Fprintf(out, "  profiles:      %v\n", sc.Profiles)
-			fmt.Fprintf(out, "  doc_types:     %v\n", sc.DocTypes)
+			var werr error
+			write := func(format string, args ...any) {
+				if werr == nil {
+					_, werr = fmt.Fprintf(out, format, args...)
+				}
+			}
+			write("docline scope\n")
+			write("  include dirs:  %v\n", sc.IncludeDirs)
+			write("  include files: %v\n", sc.IncludeFiles)
+			write("  exclude dirs:  %v\n", sc.ExcludeDirs)
+			write("  exclude files: %v\n", sc.ExcludeFiles)
+			write("  profiles:      %v\n", sc.Profiles)
+			write("  doc_types:     %v\n", sc.DocTypes)
+			if werr != nil {
+				return fmt.Errorf("write scope output: %w", werr)
+			}
 			return nil
 		},
 	}
@@ -251,37 +260,53 @@ func writeMigrateResult(cmd *cobra.Command, format string, plan docline.Migratio
 	}
 
 	out := cmd.OutOrStdout()
+	var werr error
+	write := func(format string, args ...any) {
+		if werr == nil {
+			_, werr = fmt.Fprintf(out, format, args...)
+		}
+	}
 	if dryRun {
-		fmt.Fprintln(out, "docline migrate (dry-run)")
+		write("docline migrate (dry-run)\n")
 	} else {
-		fmt.Fprintln(out, "docline migrate (applied)")
+		write("docline migrate (applied)\n")
 	}
 	for _, c := range plan.Changes {
-		fmt.Fprintf(out, "  %-6s %s\n", c.Action, c.File)
+		write("  %-6s %s\n", c.Action, c.File)
 	}
 	if len(plan.Findings) > 0 {
-		fmt.Fprintf(out, "docline migrate: %d finding(s)\n", len(plan.Findings))
+		write("docline migrate: %d finding(s)\n", len(plan.Findings))
 		for _, f := range plan.Findings {
-			fmt.Fprintf(out, "  %s [%s] %s: %s\n", f.File, f.Rule, f.Field, f.Fix)
+			write("  %s [%s] %s: %s\n", f.File, f.Rule, f.Field, f.Fix)
 		}
 	}
 	if res != nil {
-		fmt.Fprintf(out, "applied=%d skipped=%d\n", len(res.Applied), len(res.Skipped))
+		write("applied=%d skipped=%d\n", len(res.Applied), len(res.Skipped))
+	}
+	if werr != nil {
+		return fmt.Errorf("write migrate output: %w", werr)
 	}
 	return nil
 }
 
 // printLintText renders findings as a human-readable list.
-func printLintText(cmd *cobra.Command, findings []docline.Finding) {
+func printLintText(cmd *cobra.Command, findings []docline.Finding) error {
 	out := cmd.OutOrStdout()
 	if len(findings) == 0 {
-		fmt.Fprintln(out, "docline lint: OK (0 violations)")
-		return
+		if _, err := fmt.Fprintln(out, "docline lint: OK (0 violations)"); err != nil {
+			return fmt.Errorf("write lint output: %w", err)
+		}
+		return nil
 	}
-	fmt.Fprintf(out, "docline lint: %d violation(s)\n", len(findings))
+	if _, err := fmt.Fprintf(out, "docline lint: %d violation(s)\n", len(findings)); err != nil {
+		return fmt.Errorf("write lint output: %w", err)
+	}
 	for _, f := range findings {
-		fmt.Fprintf(out, "  %s [%s] %s: %s\n", f.File, f.Rule, f.Field, f.Fix)
+		if _, err := fmt.Fprintf(out, "  %s [%s] %s: %s\n", f.File, f.Rule, f.Field, f.Fix); err != nil {
+			return fmt.Errorf("write lint output: %w", err)
+		}
 	}
+	return nil
 }
 
 // writeDocsJSON encodes v as indented JSON to w.
