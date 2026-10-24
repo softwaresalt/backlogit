@@ -36,6 +36,7 @@ Context: feature 175-F (baseline convergence), PR #575, merge `3103b25a39f3071fb
 * Lint: golangci-lint v2.13.2 shows no owned finding; the 12 remaining findings in `telemetry.go` belong to 175.044. `task_lint_cmd` remains a recorded non-gating TOOL_DEGRADED (stash `C007D571`).
 * Tests: `go test ./internal/cli -count=1` ok; build, vet and gofmt clean.
 * Transient: `backlogit_claim_shipment`, several `backlogit_move_item` calls, and `backlogit_ship_shipment` timed out client-side. Each completed server-side and was verified by quiescence polling; ship was not retried.
+* Commit traceability: closure review (Copilot) found no `commit` field on the shipment and member archive records. Repaired with `backlogit_track_commit` for all ten records and verified in frontmatter.
 * Reconcile reports: `.backlogit/reconcile/163-S-pre-20261023T232500.md`, `163-S-safe-close-20261023T234500.md`, `163-S-post-20261023T234600.md`.
 
 ## Source artifact provenance (untouched)
