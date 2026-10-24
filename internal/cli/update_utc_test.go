@@ -80,7 +80,7 @@ func TestHelperUpdateSectionUTCChild(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -93,7 +93,7 @@ func TestHelperUpdateSectionUTCChild(t *testing.T) {
 	require.NoError(t, err)
 	filePath, err := core.FindArtifactPath(ctx, ws2, task.ID)
 	require.NoError(t, err)
-	ws2.Close()
+	require.NoError(t, ws2.Close())
 
 	raw, err := os.ReadFile(filePath)
 	require.NoError(t, err)

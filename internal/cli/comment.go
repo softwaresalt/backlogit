@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -36,7 +37,7 @@ func newCommentAddCmd(cwd *string) *cobra.Command {
 		Short:   "Append a comment to an artifact",
 		Example: `  backlogit comment add 001-F --actor ship --comment "built U4"`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			itemID := args[0]
 			if itemID == "" {
@@ -47,7 +48,11 @@ func newCommentAddCmd(cwd *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			// The CLI is a one-shot process, so a nil writer (fresh per-call
 			// EventWriter) is safe; the MCP server passes its shared writer to

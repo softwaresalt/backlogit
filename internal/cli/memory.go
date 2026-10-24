@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -36,7 +37,7 @@ func newMemorySaveCmd(cwd *string) *cobra.Command {
 		Use:     "save",
 		Short:   "Save a keyed memory summary to .backlogit/memories.json",
 		Example: `  backlogit memory save --key session-079 --summary "shipped U1-U8"`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			if key == "" {
 				return fmt.Errorf("key is required")
@@ -45,7 +46,11 @@ func newMemorySaveCmd(cwd *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			// Resolve the memories path from the workspace root (not raw --cwd) so a
 			// save invoked from a subdirectory writes to the correct .backlogit,

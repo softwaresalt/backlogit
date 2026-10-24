@@ -75,7 +75,7 @@ func TestDepAddCLI_ShipmentBlocksRoutesToShipmentValidation(t *testing.T) {
 	require.NoError(t, err)
 	feat, err := core.CreateArtifact(ctx, ws, "Non-shipment feature", "feature")
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// `dep add <shipment> <feature> --type blocks` must fail because the
 	// feature is not a shipment (once the CLI routes through AddShipmentBlock).
@@ -111,7 +111,7 @@ func TestDepAddCLI_NonBlocksTypeUsesGenericPath(t *testing.T) {
 	require.NoError(t, err)
 	feat, err := core.CreateArtifact(ctx, ws, "Feature for relates_to", "feature")
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// `dep add <shipment> <feature> --type relates_to` must SUCCEED
 	// because relates_to uses the generic AddDependency path regardless of types.

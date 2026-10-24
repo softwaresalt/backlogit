@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"text/tabwriter"
 
@@ -24,14 +25,18 @@ Use this when you want quick keyword lookup without writing SQL.`,
 		Example: `  backlogit search authentication
   backlogit search "token rotation" --limit 10`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			query := args[0]
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			results, err := db.SearchItems(ctx, ws.DB, query, limit)
 			if err != nil {
@@ -40,7 +45,9 @@ Use this when you want quick keyword lookup without writing SQL.`,
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			for _, a := range results {
-				fmt.Fprintf(w, "%s\t%s\t%s\n", a.ID, a.Title, a.Status)
+				if _, werr := fmt.Fprintf(w, "%s\t%s\t%s\n", a.ID, a.Title, a.Status); werr != nil {
+					return fmt.Errorf("write search result: %w", werr)
+				}
 			}
 			return w.Flush()
 		},

@@ -29,7 +29,7 @@ func TestQueryCommand_SelectStatement(t *testing.T) {
 		ID: "T001", Title: "Query test", Status: models.StatusQueued,
 		ArtifactType: "task", CreatedAt: now, UpdatedAt: now,
 	}))
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -78,7 +78,7 @@ func TestStatusCommand_DisplaysSummary(t *testing.T) {
 		ID: "B001", Title: "Bug status", Status: models.StatusActive,
 		ArtifactType: "bug", CreatedAt: now, UpdatedAt: now,
 	}))
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	cmd := cli.NewRootCommand()
 	buf := new(bytes.Buffer)

@@ -65,7 +65,7 @@ when complexity is set or cleared.`,
   backlogit update 001-F --section goals="Ship passwordless sign-in"
   backlogit update 001-F --harness-status passing`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			if idFlag != "" {
 				return fmt.Errorf("field \"id\" is immutable and cannot be changed")
 			}
@@ -94,7 +94,11 @@ when complexity is set or cleared.`,
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			// --size is a single-purpose, body-preserving mutation routed through
 			// core.SetArtifactSize. It is MUTUALLY EXCLUSIVE with every other
@@ -331,11 +335,15 @@ when complexity is set or cleared.`,
 				if mErr != nil {
 					return mErr
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), payload)
+				if _, werr := fmt.Fprintln(cmd.OutOrStdout(), payload); werr != nil {
+					return fmt.Errorf("write update result: %w", werr)
+				}
 				return nil
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id)
+			if _, werr := fmt.Fprintf(cmd.OutOrStdout(), "Updated %s\n", id); werr != nil {
+				return fmt.Errorf("write update result: %w", werr)
+			}
 			return nil
 		},
 	}

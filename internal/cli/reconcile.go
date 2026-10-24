@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -34,13 +35,17 @@ as no_op without modification.`,
 		Example: `  backlogit reconcile 001-T 002-T --reason "P-001 lifecycle fix" --actor "ship-agent"
   backlogit reconcile 001-T --reason "closed without resolution" --actor "ops" --target-status rejected`,
 		Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			req := core.ReconciliationRequest{
 				ItemIDs:        args,

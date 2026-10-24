@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -23,14 +24,18 @@ items, dependencies, logs, and indexed stash data.`,
 		Example: `  backlogit query "SELECT id, title, status FROM items ORDER BY updated_at DESC LIMIT 20"
   backlogit query "SELECT stash_id, kind, state FROM stash_entries ORDER BY updated_at DESC"`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			sqlStr := args[0]
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			results, err := db.ExecuteGatedQuery(ws.DB, sqlStr)
 			if err != nil {

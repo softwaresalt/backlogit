@@ -74,7 +74,7 @@ func observeState(t *testing.T, ws *core.Workspace, itemID, sha string) commitOb
 	// 2. commit_links row — open a fresh connection to get the latest committed state.
 	freshWS, err := core.NewWorkspace(ctx, ws.RootPath)
 	require.NoError(t, err, "open fresh workspace for commit_links check")
-	defer freshWS.Close()
+	defer func() { require.NoError(t, freshWS.Close()) }()
 	var linkCount int
 	_ = freshWS.DB.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM commit_links WHERE item_id = ? AND commit_sha = ?`,
