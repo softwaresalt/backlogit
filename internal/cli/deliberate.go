@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -30,13 +31,17 @@ the full collaborative context.`,
   backlogit deliberate ABCD1234 --options "- Keep the current feature set narrow\n- Pull the work into the next feature wave"
   backlogit deliberate ABCD1234 --chosen-direction "Split the backlog work and defer reporting polish"`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			svc, err := templates.NewService(ctx, filepath.Join(core.WorkspaceStorageRoot(ws.RootPath), "templates"))
 			if err != nil {

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -36,7 +37,7 @@ func newHooksPollCmd(cwd *string) *cobra.Command {
 		Use:     "poll",
 		Short:   "Poll for unacknowledged hook events since the consumer checkpoint",
 		Example: `  backlogit hooks poll --consumer-id ship`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			if consumerID == "" {
 				return fmt.Errorf("consumer-id is required")
@@ -45,7 +46,11 @@ func newHooksPollCmd(cwd *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			backlogitDir := core.WorkspaceStorageRoot(ws.RootPath)
 			hw := events.NewHookEventWriter(backlogitDir)
@@ -85,7 +90,7 @@ func newHooksAckCmd(cwd *string) *cobra.Command {
 		Use:     "ack",
 		Short:   "Acknowledge processed hook events up to and including --seq",
 		Example: `  backlogit hooks ack --consumer-id ship --seq 12`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (retErr error) {
 			ctx := context.Background()
 			if consumerID == "" {
 				return fmt.Errorf("consumer-id is required")
@@ -97,7 +102,11 @@ func newHooksAckCmd(cwd *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			backlogitDir := core.WorkspaceStorageRoot(ws.RootPath)
 			cs := events.NewCheckpointStore(backlogitDir)

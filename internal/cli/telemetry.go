@@ -288,7 +288,7 @@ Use --format json for machine-readable output.`,
 			case telemetry.FormatJSON:
 				return renderBranchJSON(cmd, profiles)
 			case telemetry.FormatMarkdown:
-				renderBranchMarkdown(cmd, profiles)
+				return renderBranchMarkdown(cmd, profiles)
 			default:
 				renderBranchTable(cmd, profiles)
 			}
@@ -338,12 +338,18 @@ func renderBranchJSON(cmd *cobra.Command, profiles []telemetry.BranchProfile) er
 	return enc.Encode(profiles)
 }
 
-func renderBranchMarkdown(cmd *cobra.Command, profiles []telemetry.BranchProfile) {
+func renderBranchMarkdown(cmd *cobra.Command, profiles []telemetry.BranchProfile) error {
 	w := cmd.OutOrStdout()
 	fmt.Fprintln(w, "## Branch Telemetry Metrics")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "| Branch | Type | Sessions | Tokens | Avg/Session | Tasks | PR | Feature | Shipment | Lifespan |")
-	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|")
+	var werr error
+	write := func(format string, args ...any) {
+		if werr == nil {
+			_, werr = fmt.Fprintf(w, format, args...)
+		}
+	}
+	write("%s\n", "| Branch | Type | Sessions | Tokens | Avg/Session | Tasks | PR | Feature | Shipment | Lifespan |")
+	write("%s\n", "|---|---|---|---|---|---|---|---|---|---|")
 	for _, p := range profiles {
 		pr := p.PRNumber
 		if pr == "" {
@@ -358,10 +364,14 @@ func renderBranchMarkdown(cmd *cobra.Command, profiles []telemetry.BranchProfile
 			ship = "-"
 		}
 		lifespan := formatLifespan(p.LastSeen.Sub(p.FirstSeen))
-		fmt.Fprintf(w, "| %s | %s | %d | %d | %.0f | %d | %s | %s | %s | %s |\n",
+		write("| %s | %s | %d | %d | %.0f | %d | %s | %s | %s | %s |\n",
 			escapeMDCell(p.Branch), escapeMDCell(p.BranchType), p.Sessions, p.TotalTokens, p.AvgTokens,
 			p.TaskCount, pr, feat, ship, lifespan)
 	}
+	if werr != nil {
+		return fmt.Errorf("write branch markdown: %w", werr)
+	}
+	return nil
 }
 
 // escapeMDCell replaces pipe characters that would break Markdown table cells.
@@ -416,29 +426,36 @@ against harvested telemetry data.`,
 
 func renderSchemaText(cmd *cobra.Command, factTables, sqlTables []telemetry.FactTableSchema) error {
 	w := cmd.OutOrStdout()
-	fmt.Fprintln(w, "JSONL Fact Tables")
-	fmt.Fprintln(w, "=================")
-	for _, tbl := range factTables {
-		if _, err := fmt.Fprintf(w, "\n%s (record_type: %s, file: %s)\n", tbl.Name, tbl.RecordType, tbl.File); err != nil {
-			return fmt.Errorf("write schema text: %w", err)
+	var werr error
+	write := func(format string, args ...any) {
+		if werr == nil {
+			_, werr = fmt.Fprintf(w, format, args...)
 		}
-		fmt.Fprintf(w, "  %-30s %-30s %s\n", "FIELD", "TYPE", "JSON KEY")
+	}
+	write("%s\n", "JSONL Fact Tables")
+	write("%s\n", "=================")
+	for _, tbl := range factTables {
+		write("\n%s (record_type: %s, file: %s)\n", tbl.Name, tbl.RecordType, tbl.File)
+		write("  %-30s %-30s %s\n", "FIELD", "TYPE", "JSON KEY")
 		for _, f := range tbl.Fields {
 			opt := ""
 			if f.Optional {
 				opt = " (optional)"
 			}
-			fmt.Fprintf(w, "  %-30s %-30s %s%s\n", f.Name, f.Type, f.JSONKey, opt)
+			write("  %-30s %-30s %s%s\n", f.Name, f.Type, f.JSONKey, opt)
 		}
 	}
-	fmt.Fprintln(w, "\nSQL Tables")
-	fmt.Fprintln(w, "==========")
+	write("%s\n", "\nSQL Tables")
+	write("%s\n", "==========")
 	for _, tbl := range sqlTables {
-		fmt.Fprintf(w, "\n%s (db: %s)\n", tbl.Name, tbl.File)
-		fmt.Fprintf(w, "  %-30s %-10s %s\n", "COLUMN", "TYPE", "JSON KEY")
+		write("\n%s (db: %s)\n", tbl.Name, tbl.File)
+		write("  %-30s %-10s %s\n", "COLUMN", "TYPE", "JSON KEY")
 		for _, f := range tbl.Fields {
-			fmt.Fprintf(w, "  %-30s %-10s %s\n", f.Name, f.Type, f.JSONKey)
+			write("  %-30s %-10s %s\n", f.Name, f.Type, f.JSONKey)
 		}
+	}
+	if werr != nil {
+		return fmt.Errorf("write schema text: %w", werr)
 	}
 	return nil
 }

@@ -204,7 +204,7 @@ func getArtifactFromCLIWorkspace(t *testing.T, root, id string) *models.Artifact
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
 	artifact, err := db.GetItem(ctx, ws.DB, id)

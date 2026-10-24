@@ -57,7 +57,7 @@ func dbRowJSON(t *testing.T, root, id string) string {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 	art, err := bldb.GetItem(ctx, ws.DB, id)
 	require.NoError(t, err)
 	b, err := json.Marshal(art)

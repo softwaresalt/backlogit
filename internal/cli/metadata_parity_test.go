@@ -37,7 +37,7 @@ func TestMetadataCatalog_CLIAndMCPParity(t *testing.T) {
 	// MCP metadata path, wired exactly as the live server wires it.
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 	srv := mcpinternal.NewServer(ws)
 	wireMCPMetadataProvider(srv, root)
 
