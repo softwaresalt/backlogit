@@ -8,7 +8,8 @@ model_tier: 2
 max_subagent_tier: 2
 reasoning_effort: "high"
 model_provider: "anthropic"
-model_family: "claude-sonnet-5"
+model_family: "claude-sonnet-5.5"
+context_tier: "default"
 subagent_depth: 0
 ---
 

@@ -20,6 +20,8 @@ This workspace uses **backlogit** for structured backlog management. All agents 
 
 Use these operations for all backlog interactions. The operation names are abstract — the actual tool names and parameters are mapped through the backlog registry.
 
+**Surface choice (P-012)**: an operation may declare an MCP tool, a CLI command, or both. Every declared surface is an equal supported surface: use either declared surface that works without trying the other first, report `TOOL_OK: {operation} via {mcp|cli}`, report `TOOL_DEGRADED` naming the failed and selected surfaces when the selected one fails and another declared surface works, and halt with `TOOL_UNAVAILABLE: {operation}` when none works. Never substitute an undeclared command or a filesystem or cache edit.
+
 ### Core Operations (All Tools)
 
 | Operation | MCP Tool | CLI Command | Purpose |
@@ -60,6 +62,7 @@ Use these operations for all backlog interactions. The operation names are abstr
 | `create_checkpoint` | `backlogit_create_checkpoint` | `backlogit checkpoint create --state-dump {{state_dump}}` | create checkpoint |
 | `create_shipment` | `backlogit_create_shipment` | `backlogit shipment create --title {{title}} --items {{items}} --priority {{priority}}` | create shipment |
 | `deliberate` | `backlogit_deliberate` | `backlogit deliberate {{stash_id}}` | deliberate |
+| `dispose_shipment` | `backlogit_dispose_shipment` | `` | dispose shipment |
 | `docs_classify` | `backlogit_docs_classify` | `backlogit docs classify {{path}}` | docs classify |
 | `docs_lint` | `backlogit_docs_lint` | `backlogit docs lint --path {{path}} --profile {{profile}}` | docs lint |
 | `docs_migrate` | `backlogit_docs_migrate` | `backlogit docs migrate --path {{path}}` | docs migrate |

@@ -8,6 +8,7 @@ max_subagent_tier: 3
 reasoning_effort: "medium"
 model_provider: "anthropic"
 model_family: "claude-sonnet-5.5"
+context_tier: "long_context"
 subagent_depth: 2
 ---
 
@@ -1562,10 +1563,12 @@ branch-per-release-unit principle.
    deliberation references as provenance, not implicit shipment membership.
    Read `custom_fields.source_stash_id` and
    `custom_fields.source_deliberation_id` only to record provenance. Do not
-   archive or mutate a referenced source artifact unless its own ID is an
-   explicit shipment member and was already handled by step 1. Record the
-   untouched provenance IDs in the closure artifact so Stage can make any
-   later triage decision.
+   archive or mutate a referenced source artifact on any surface (for example
+   via `backlogit_stash_archive`, `backlogit_archive_item`, or their CLI
+   equivalents `backlogit stash archive` and `backlogit archive`) unless its
+   own ID is an explicit shipment member and was already handled by step 1.
+   Record the untouched provenance IDs in the closure artifact so Stage can
+   make any later triage decision.
 8. **Mandatory (P-020)**: Invoke **compact-context** with `target: all` to consolidate memory checkpoints, finalize any decided-plans, and compact closure artifacts. This is required because built-in AI assistant memory features do not write to the repository's `docs/` directory — compact-context is the mechanism that ensures durable persistence. Per **P-020**, the *invocation* is guaranteed at every post-merge closure while the skill's own threshold-gated candidate selection is unchanged; record the resulting compaction status in the operational-closure artifact. Skipping the invocation is a P-020 violation (closure incomplete); a compact-context run that *fails* is non-blocking — record `compaction: degraded` and continue closure.
 9. **Backlog index resync** (backlogit only): After all explicit-member archival and knowledge graduation are complete, call `backlogit_sync_index` (or CLI fallback `backlogit sync`) to rebuild the backlogit index so it reflects all closure mutations.
    - On success: log `CLOSURE_INDEX_SYNC_OK`. When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Backlog index resynced after closure`.
@@ -1615,8 +1618,8 @@ before falling back to the operator-halt checkpoint:
    (threshold-kind + count = `consecutive_task_failures` / 3, failure
    summary, last-N action/observation refs, artifact refs, telemetry-
    evidence pointers, resumption checkpoint ref).
-2. **Resolve the escalation route**: `gpt-6-sol` / `openai` /
-   `xhigh`, resolving this workspace's currently-effective escalation route
+2. **Resolve the escalation route**: `claude-sonnet-5.5` / `anthropic` /
+   `high`, resolving this workspace's currently-effective escalation route
    per the nested per-role -> legacy flat (DEPRECATED) -> tier3 precedence
    defined in `escalation-protocol.instructions.md` (F02FD596). This
    resolution always reads the freshly session-start-reloaded config
@@ -1635,10 +1638,20 @@ before falling back to the operator-halt checkpoint:
    Ship MUST NOT continue on a stale/baked route carried over from this
    file's frontmatter or a prior session's resolved value, and MUST NOT
    invent a last-known-good fallback. Falls back per field to
-   `claude-opus-5.5` / `anthropic` / `high` (this workspace's
+   `claude-sonnet-5.5` / `anthropic` / `xhigh` (this workspace's
    `config.model_routing.tier3`) when no override for a field is declared
    at any tier. This is the config-resolved successor to ad hoc "suggest a
    frontier-tier model" prose — the route is now declared, not improvised.
+   Separately, the escalation `context_tier` resolves to `long_context`
+   (nested `ship.escalation.context_tier` -> legacy flat
+   `escalation.context_tier` only when the flat route is the selected
+   source -> `tier3.context_tier` -> `default`).
+   Record it in the compiled payload's separate
+   `resolved_escalation_context_tier` field — it is not part of the
+   `resolved_escalation_route` tuple and is excluded from the same-route
+   guard. When the runtime cannot honor a non-`default` escalation
+   `context_tier`, record `ROUTING_DEGRADED: context_tier` and hand off at
+   the default context; this never blocks the handoff.
 3. **Same-route guard**: if the resolved escalation tuple equals this
    agent's own role route tuple (P-013.5), treat this as
    `ESCALATION_DEGRADED` (same-route no-op) per the canonical definition in

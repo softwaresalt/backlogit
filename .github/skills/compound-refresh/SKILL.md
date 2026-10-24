@@ -1,4 +1,5 @@
 ---
+name: compound-refresh
 description: "Review and maintain institutional learnings in docs/compound/ so the compound library stays accurate, deduplicated, and evidence-backed"
 ---
 
