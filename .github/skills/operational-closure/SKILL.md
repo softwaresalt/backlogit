@@ -1,4 +1,5 @@
 ---
+name: operational-closure
 description: "Produce release-readiness, releasability evidence, monitoring, rollback, and feedback artifacts that close the loop after implementation and verification"
 ---
 
@@ -90,6 +91,9 @@ Return one of:
 * **READY** / `READY` — merge/deploy can proceed with the recorded monitoring plan
 * **READY WITH CONDITIONS** / `READY_WITH_CONDITIONS` — proceed only if named conditions are satisfied
 * **BLOCKED** / `BLOCKED` — missing verification, unclear rollback path, or unresolved runtime risk
+
+**Post-merge closure frontmatter contract (pipeline-topology `pre_claim` gate)**:
+When writing a post-merge closure artifact (`docs/closure/{shipment_id}-{feature_id}-post-merge-closure.md`), declare top-level YAML frontmatter fields `closure_status` (`READY` | `READY_WITH_CONDITIONS` | `BLOCKED`) and `compaction_status` (finalized to `done` or `degraded` after Step 8 P-020 compaction; never leave `pending`). Prefer `closure_status: READY` plus stash follow-ups when no condition is genuinely unmet. When `closure_status: READY_WITH_CONDITIONS` is used, you MUST include a non-empty top-level frontmatter `conditions:` list where every entry is a mapping with `id` (non-empty string), `satisfied: true` (literal boolean once satisfied), and `evidence` (non-empty string); prose-only conditions without this frontmatter list will cause `autoharness gate pipeline-topology --phase pre_claim` to reject successor shipments with `PREDECESSOR_CLOSURE_INCOMPLETE`.
 
 The closure artifact is the canonical releasability evidence record. Do not
 collapse validator outcomes back into free-form prose after they have been

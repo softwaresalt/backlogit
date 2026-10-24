@@ -78,6 +78,7 @@ payload containing the following fields before handing off and halting:
 | `evidence_path` | Path to any structured telemetry evidence backing the failure (when telemetry is enabled). Absent/empty when telemetry is disabled — this is not itself a failure condition. |
 | `resumption_checkpoint_ref` | A reference (checkpoint filename, memory doc path, or backlog comment) that lets the resolved escalation route (or the operator) resume the unit of work without losing state. |
 | `resolved_escalation_route` | The `(model_family, model_provider, reasoning_effort)` tuple actually resolved for this handoff, per the Escalation Route Resolution section below. Recorded here — not merely resolved in-memory — so a handoff consumer has a contract-defined route on which to run the promised independent analysis without re-deriving the resolution precedence itself. Present only when the resolution is not `ESCALATION_DEGRADED` (see below); a degraded route is never recorded in this field. |
+| `resolved_escalation_context_tier` | The escalation `context_tier` resolved for this handoff — a provider- and environment-agnostic capacity class (`default` or `long_context`) — recorded as its own field, never as a fourth member of the `resolved_escalation_route` tuple, so the same-route guard and every tuple consumer are unchanged. It resolves on the same source selection as the route: the acting role's nested `<role>.escalation.context_tier`, else the legacy flat `escalation.context_tier` only when the flat route is the selected source, else `tier3.context_tier`, else `default`. When the runtime cannot honor a non-`default` value, the agent records `ROUTING_DEGRADED: context_tier` and hands off at the default context; this never declares `ESCALATION_DEGRADED` and never blocks the handoff. Present whenever `resolved_escalation_route` is present. |
 
 ## Escalation Route Resolution (P-013.6 / F02FD596 nested per-role hierarchy)
 
@@ -91,21 +92,22 @@ The escalation route resolves via a role-scoped precedence:
    **never** to the legacy flat route below; an explicit nested override
    never silently defers to the shared legacy route.
 2. **Legacy flat fallback (DEPRECATED)**: when the acting role has no nested
-   `escalation` override, `model_routing.escalation` (the pre-F02FD596 flat,
-   role-agnostic route) resolves instead, with a deprecation notice. This
-   workspace's `.autoharness/config.yaml` **does** declare
-   `model_routing.escalation` (`gpt-6-sol` / `openai` / `xhigh`), and no nested
-   `model_routing.<role>.escalation` override is declared, so this flat route
-   is the route that actually resolves today for both Stage and Ship. It
-   remains documented, unremoved, for backward compatibility; migrate to
-   nested per-role escalation when role-specific routes are needed. Whether
-   this fallback is active for the acting role at any later point still
-   depends on whether a nested override is declared for that role — check
-   `model_routing.<role>.escalation` at session-start reload time (H6) rather
-   than assuming either shape from this static instruction text.
+   `escalation` override, `model_routing.escalation`
+   (`claude-sonnet-5.5` / `anthropic` / `xhigh`
+   — the pre-F02FD596 flat, role-agnostic route) resolves instead, with a
+   deprecation notice. This is retained, unremoved, for backward
+   compatibility. Whether this fallback is actually active for the acting
+   role in this installed workspace depends on whether a nested override is
+   declared for that role — check `model_routing.<role>.escalation` at
+   session-start reload time (H6) rather than assuming either shape from this
+   static instruction text, which describes the general precedence rule for
+   any workspace, not a fixed installed fact about this one.
 3. **Tier3 fallback**: any field still unresolved after (1)/(2) falls back
-   per-field to `model_routing.tier3` (`claude-opus-5.5` / `anthropic` /
-   `high` in this workspace's current configuration).
+   per-field to `model_routing.tier3`
+   (`claude-sonnet-5.5` / `anthropic` / `xhigh`).
+   An unresolved escalation `context_tier` falls back the same way, per field,
+   to `model_routing.tier3.context_tier`, and then to the terminal default
+   `default` when `tier3` declares none.
 
 This mirrors the P-013.5 `stage`/`ship` role-route fallback pattern: a
 targeted override, never a parallel tier taxonomy.
@@ -137,20 +139,28 @@ remove the nested override(s), to resolve the ambiguity.
    `ESCALATION_DEGRADED`.
 
    **Worked example (generic).** If Stage's role route is pinned to `tier3`
-   (`claude-opus-5.5` / `anthropic` / `high`) and Stage's escalation route
+   (`claude-sonnet-5.5` / `anthropic` / `xhigh`) and Stage's escalation route
    were left unset so it fell back to `tier3` as well, the two tuples would
    be identical — not a real escalation, and therefore
    `ESCALATION_DEGRADED`.
 
-   **Current workspace state (not degraded).** This workspace declares a flat
-   `model_routing.escalation` of `gpt-6-sol` / `openai` / `xhigh`,
-   which differs from Stage's role route (`claude-opus-5.5` / `anthropic` /
-   `high`) in family, provider, and `reasoning_effort`. Stage's escalation is
-   therefore a genuine cross-vendor escalation and **not** same-route
-   degraded. Ship's role route (`gpt-6-luna` / `openai` / `xhigh`) shares the
-   provider but differs in family (a fast model escalating to a frontier
-   model), so Ship likewise resolves to a distinct escalation route. Re-evaluate this comparison at session-start
+   **Current workspace state (not degraded).** This workspace declares Stage's
+   role route as `gemini-4-argon` / `google` / `high` with no nested
+   `stage.escalation` override, so Stage's escalation falls back to `tier3`
+   (`claude-sonnet-5.5` / `anthropic` / `xhigh`) — a cross-vendor escalation
+   and **not** same-route degraded. Ship declares a nested `ship.escalation`
+   of `claude-sonnet-5.5` / `anthropic` / `high` (`long_context`) against its
+   role route of `claude-sonnet-5.5` / `anthropic` / `medium`, differing in
+   `reasoning_effort` and therefore also resolving to a distinct escalation
+   tuple. Re-evaluate this comparison at session-start
    reload time rather than treating either outcome as static.
+
+`context_tier` is excluded from the same-route comparison: the compared tuple
+stays `(model_family, model_provider, reasoning_effort)`, so two routes that
+differ only in `context_tier` are still a same-route no-op. An escalation
+`context_tier` the runtime cannot honor is never a cause of
+`ESCALATION_DEGRADED`: the agent records `ROUTING_DEGRADED: context_tier`
+and the handoff proceeds at the default context without being blocked.
 
 When `ESCALATION_DEGRADED` is declared, the halting agent MUST fall back to its
 existing **operator-halt** path (the Stop Conditions escalation prompt already
@@ -162,7 +172,9 @@ templates.
 ## Terminal Engram Handoff
 
 When the resolved route is available and not degraded, the halting agent
-records the route in the payload's `resolved_escalation_route` field, hands
+records the route in the payload's `resolved_escalation_route` field,
+records the resolved escalation `context_tier` in the separate
+`resolved_escalation_context_tier` field, hands
 the compiled payload to engram for asynchronous or operator review, and
 halts. It MUST NOT re-execute the failing
 operation after its circuit is open. The handoff is for asynchronous or
