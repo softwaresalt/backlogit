@@ -4020,3 +4020,4 @@
 {"seq":4022,"timestamp":"2026-10-23T22:25:43.906755Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"175.050-T","schema_version":1}}
 {"seq":4023,"timestamp":"2026-10-23T22:27:01.4671055Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"175.051-T","schema_version":1}}
 {"seq":4024,"timestamp":"2026-10-23T22:27:29.3465958Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"175.050-T","schema_version":1}}
+{"seq":4025,"timestamp":"2026-10-23T22:56:07.2784175Z","event_type":"ship_shipment","payload":{"actor":"backlogit","artifact_type":"shipment","changed_fields":["status"],"item_id":"162-S","schema_version":1,"status_delta":{"from":"active","to":"shipped"}}}
