@@ -307,7 +307,10 @@ nothing to resolve. Handle it as follows:
    marker only from an `OWNER`, `MEMBER`, or `COLLABORATOR` author.
 5. A review whose findings were all fixed by later pushes still needs its marker.
 6. Build the comment with the §1.5 Shell-Safe Comment Body Construction rules.
-7. Post the comment only after the fixing push, as §1.4 step 6 requires.
+7. When any finding in the review was fixed in code, post the comment only after
+   the fixing push, as §1.4 step 6 requires. When every finding in the review was
+   deferred or declined (no code change), post the comment after the P-021 C2
+   capture(s) and rationale are complete.
 
 `autoharness gate copilot-review` BLOCKS with `UNDISPOSITIONED_BODY_FINDINGS` until
 these markers exist (see §1.9.4 Check 5). Post a marker only after you have verified

@@ -131,7 +131,7 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "f0a406c982b215b1d9e7f214f5603323ddc08fdff188fadf0e4ba53a2be5c5de"
+    checksum: "6e8771c3fecc91056d959d59444d2974d57473d6ff4d54093c66cd179654f81d"
     drift_allowed: true
     drift_reason: "Shipment 155-S final-review remediation. P-015 now matches the implemented flat explicit shipment scope: listed features do not imply descendant or linked-deliberation membership, and only explicit members plus the shipment control record participate in closure. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). 2026-09-27 tune review (TUNE-010): v1.31.0 P-013.1 resolved tier compliance and P-013.3 analyze-then-halt escalation."
   - path: ".github/skills/spike/SKILL.md"
@@ -307,7 +307,9 @@ artifacts:
   - path: ".github/instructions/github-pr-automation.instructions.md"
     primitive: 4
     template: "templates/instructions/github-pr-automation.instructions.md.tmpl"
-    checksum: "0bf7d41bfc610ade2a2ced073d0555248816fe3b6eefe364cdd89de3ef375e8f"
+    checksum: "eda2be78d0afca2f2ac9afc02ad852c2791d0aa7bf36b09965a7b8d776a495c4"
+    drift_allowed: true
+    drift_reason: "Copilot review fix (PR #577). §1.6.1 item 7 unconditionally required a fixing push before posting a threadless review-body disposition comment, which deadlocks reviews containing only deferred or declined body findings (no code change). Scoped the push prerequisite to code-fixed findings and permitted posting after P-021 C2 capture/rationale when all findings are deferred or declined. Do not auto-revert."
   - path: ".github/instructions/continuous-learning.instructions.md"
     primitive: 1
     template: "templates/instructions/continuous-learning.instructions.md.tmpl"
@@ -407,7 +409,7 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "c28bceee993a818828a853c65894d49bc1ff30c67b1be2cd63611d7f0a800729"
+    checksum: "0f8043760668056b584c92e00c978d34695b3be491806650a20d8d8887568c81"
     drift_allowed: true
     drift_reason: "Deliberate Ship drift: preserve the scalar tools string with vscode/memory, the full backlogit/* MCP tool surface (operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so do not narrow it back to an explicit backlogit operation allowlist), engram/*, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix. 196-F / shipment 196-S: Step 6 item a explicit-feature reconcile wording (stash B83081F5) and the Step 4.0 / Step 4.1b use-time Served-Root Attestation (stash 227A2930), plus the Step 0.5 item 3a write of the Orchestrator-supplied served-root handoff outcome after BRANCH_OK or BRANCH_CREATED (local review, PR #478). Do not auto-revert. CX U17 refresh (197-S): checksum refreshed to the LF-normalized SHA-256 for the ship closure protocol and gate correctness release; governing stash 75E02C17, 52D18E44, 497D20E3, 67F17B6B, FBD6E6F8,     8F1CF1E1, 6AB5E7FC, F05661B1. AF1E5075 hold-label refusal and condition (b) pre-claim contract; the 154-S clauses are a workspace-local overlay excluded from upstream template sync;     generic hold-label text is an upstream template sync candidate. 6434A4D7 governed queued-shipment disposition role contract; upstream template sync pending"
   - path: ".github/skills/harness-architect/SKILL.md"

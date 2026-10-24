@@ -1928,7 +1928,7 @@ emitted.
 
 **Relationship to P-017**: Modeled on P-018's wording (hardening H9): in dark factory mode P-021 is preserved in full. A `DARK_MODE_ACTIVE` activation record does not satisfy or waive it; capture (C2), bounded resolution (C3), and non-bypass (C4) apply exactly as they do outside dark mode.
 
-**Relationship to P-018**: WHERE A REVIEW THREAD EXISTS, C3's reply + resolve + residual-risk disposition satisfies P-018's zero-unresolved-threads requirement honestly, without fabricating scope. Because P-018 governs review threads only, a threadless C3 discharge leaves no unresolved thread and therefore raises no P-018 obligation to satisfy.
+**Relationship to P-018**: WHERE A REVIEW THREAD EXISTS, C3's reply + resolve + residual-risk disposition satisfies P-018's zero-unresolved-threads requirement honestly, without fabricating scope. For pre-PR local-review and build/CI threadless findings, C3's residual-risk record discharges the reference obligation with no P-018 thread or marker requirement. For threadless Copilot review-body findings (`Previously missed (N)`, `Suppressed comments (N)`, or open findings with no review thread), P-018 additionally requires the trusted `Copilot-Review-Body-Disposition: <review id>` PR comment (`github-pr-automation.instructions.md` §1.6.1) quoting the finding and citing the C2 deferred entry ID (`deferred to stash <id>`) in addition to the C3 residual-risk record.
 
 **Violation Action**: See C7 — implementing an out-of-scope expansion inside a fix cycle, or closing an out-of-scope finding with no captured deferred entry, records a P-021 violation via P-005 telemetry (`violation_policy: P-021`) and halts.
 

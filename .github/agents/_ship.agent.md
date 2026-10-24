@@ -1563,11 +1563,12 @@ branch-per-release-unit principle.
    deliberation references as provenance, not implicit shipment membership.
    Read `custom_fields.source_stash_id` and
    `custom_fields.source_deliberation_id` only to record provenance. Do not
-   call `backlogit_stash_archive` or `backlogit_archive_item` to archive or
-   mutate a referenced source artifact unless its own ID is an explicit
-   shipment member and was already handled by step 1. Record the untouched
-   provenance IDs in the closure artifact so Stage can make any later triage
-   decision.
+   archive or mutate a referenced source artifact on any surface (for example
+   via `backlogit_stash_archive`, `backlogit_archive_item`, or their CLI
+   equivalents `backlogit stash archive` and `backlogit archive`) unless its
+   own ID is an explicit shipment member and was already handled by step 1.
+   Record the untouched provenance IDs in the closure artifact so Stage can
+   make any later triage decision.
 8. **Mandatory (P-020)**: Invoke **compact-context** with `target: all` to consolidate memory checkpoints, finalize any decided-plans, and compact closure artifacts. This is required because built-in AI assistant memory features do not write to the repository's `docs/` directory — compact-context is the mechanism that ensures durable persistence. Per **P-020**, the *invocation* is guaranteed at every post-merge closure while the skill's own threshold-gated candidate selection is unchanged; record the resulting compaction status in the operational-closure artifact. Skipping the invocation is a P-020 violation (closure incomplete); a compact-context run that *fails* is non-blocking — record `compaction: degraded` and continue closure.
 9. **Backlog index resync** (backlogit only): After all explicit-member archival and knowledge graduation are complete, call `backlogit_sync_index` (or CLI fallback `backlogit sync`) to rebuild the backlogit index so it reflects all closure mutations.
    - On success: log `CLOSURE_INDEX_SYNC_OK`. When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Backlog index resynced after closure`.
