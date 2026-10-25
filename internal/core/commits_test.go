@@ -28,7 +28,7 @@ func setupCommitWorkspace(t *testing.T) *core.Workspace {
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	// Write config
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"),
