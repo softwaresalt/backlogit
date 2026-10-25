@@ -69,7 +69,7 @@ func QueryQueueForWorkspace(ctx context.Context, ws *Workspace, filter *QueueFil
 // QueryQueue retrieves artifacts matching the filter criteria, with optional grouping.
 // Callers that hold a Workspace must use QueryQueueForWorkspace so shipment
 // predecessor readiness is resolved from Markdown provenance.
-func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueView, error) {
+func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (_ *QueueView, err error) {
 	if filter == nil {
 		filter = &QueueFilter{}
 	}
@@ -125,7 +125,11 @@ func QueryQueue(ctx context.Context, db *sql.DB, filter *QueueFilter) (*QueueVie
 	if err != nil {
 		return nil, fmt.Errorf("query queue: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close queue rows: %w", cerr))
+		}
+	}()
 
 	var items []*models.Artifact
 	for rows.Next() {

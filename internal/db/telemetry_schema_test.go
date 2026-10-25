@@ -20,7 +20,7 @@ func setupTelemetryDB(t *testing.T) *sql.DB {
 	t.Helper()
 	sqliteDB, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { sqliteDB.Close() })
+	t.Cleanup(func() { require.NoError(t, sqliteDB.Close()) })
 	return sqliteDB
 }
 
@@ -36,11 +36,11 @@ func TestEnsureTelemetrySchema_CreatesTablesIdempotently(t *testing.T) {
 	// Tables should exist and be SELECTable.
 	rows1, err := sqliteDB.Query("SELECT session_id, total_tokens FROM telemetry_sessions LIMIT 0")
 	require.NoError(t, err, "telemetry_sessions table should exist after EnsureTelemetrySchema")
-	rows1.Close()
+	require.NoError(t, rows1.Close())
 
 	rows2, err := sqliteDB.Query("SELECT session_id, server_name, tool_name, call_count FROM telemetry_tool_usage LIMIT 0")
 	require.NoError(t, err, "telemetry_tool_usage table should exist after EnsureTelemetrySchema")
-	rows2.Close()
+	require.NoError(t, rows2.Close())
 }
 
 func TestRehydrateTelemetry_IsIdempotent(t *testing.T) {
@@ -92,7 +92,7 @@ func TestTelemetryTablesQueryableViaGate(t *testing.T) {
 
 	rows, err := sqliteDB.Query("SELECT session_id, total_tokens FROM telemetry_sessions LIMIT 10")
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { require.NoError(t, rows.Close()) }()
 	assert.NoError(t, rows.Err())
 }
 

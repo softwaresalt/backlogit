@@ -148,7 +148,7 @@ func TestEnsureSchemaWithExtensions_FreshSchemaIncludesComplexity(t *testing.T) 
 	dbPath := filepath.Join(t.TempDir(), "fresh.db")
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	require.NoError(t, db.EnsureSchemaWithExtensions(database, loadDefaultHeaderDef(t)))
 
@@ -188,7 +188,7 @@ func setupSchemaGenTestDB(t *testing.T) *sql.DB {
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 	return database
 }
 
@@ -205,7 +205,7 @@ func columnExists(t *testing.T, database *sql.DB, table, column string) bool {
 	t.Helper()
 	rows, err := database.Query(`PRAGMA table_info(` + table + `)`)
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { require.NoError(t, rows.Close()) }()
 
 	for rows.Next() {
 		var cid int

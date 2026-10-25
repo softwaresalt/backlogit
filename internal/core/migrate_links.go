@@ -209,7 +209,7 @@ func mergeDBOnlyLinksIntoArtifact(ctx context.Context, ws *Workspace, artifact *
 // The function is idempotent and best-effort: source artifacts that cannot be
 // located on disk are logged at Debug level and counted as skipped. Links
 // already present in Markdown frontmatter are never duplicated.
-func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinksResult, error) {
+func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (_ *MigrateDBOnlyLinksResult, err error) {
 	started := time.Now()
 	result := &MigrateDBOnlyLinksResult{IndexBuilds: 1}
 	defer func() {
@@ -226,7 +226,11 @@ func MigrateDBOnlyLinks(ctx context.Context, ws *Workspace) (*MigrateDBOnlyLinks
 	if err != nil {
 		return nil, fmt.Errorf("migrate db-only links: query item_links: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("migrate db-only links: close rows: %w", cerr))
+		}
+	}()
 
 	type dbLink struct {
 		targetID string

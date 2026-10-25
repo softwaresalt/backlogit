@@ -144,12 +144,16 @@ func snapshotShipmentReconcileArchiveFile(ws *Workspace, shipmentID string) ([]b
 	return append([]byte(nil), content...), nil
 }
 
-func snapshotShipmentReconcileRow(ctx context.Context, ws *Workspace, shipmentID string) (bool, map[string]any, error) {
+func snapshotShipmentReconcileRow(ctx context.Context, ws *Workspace, shipmentID string) (_ bool, _ map[string]any, err error) {
 	rows, err := ws.DB.QueryContext(ctx, `SELECT * FROM items WHERE id = ?`, shipmentID)
 	if err != nil {
 		return false, nil, fmt.Errorf("snapshot shipment reconcile %s row: query items row: %w", shipmentID, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("snapshot shipment reconcile %s row: close rows: %w", shipmentID, cerr))
+		}
+	}()
 
 	columns, err := rows.Columns()
 	if err != nil {

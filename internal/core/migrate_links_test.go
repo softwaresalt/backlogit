@@ -34,7 +34,7 @@ func setupMigrateLinksWorkspace(t *testing.T) *core.Workspace {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	return ws
 }
 

@@ -32,7 +32,7 @@ func setupProvenanceWorkspace(t *testing.T) *core.Workspace {
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	configData := []byte(
 		"artifact_types:\n" +

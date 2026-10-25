@@ -58,7 +58,7 @@ func TestRehydrate_InvalidLinkType_NotIndexed(t *testing.T) {
 
 	database, err := db.Open(filepath.Join(tmpDir, "backlogit.db"))
 	require.NoError(t, err)
-	defer database.Close()
+	defer func() { require.NoError(t, database.Close()) }()
 	require.NoError(t, db.EnsureSchema(database))
 
 	_, rehydErr := db.Rehydrate(context.Background(), tmpDir, database)
@@ -87,7 +87,7 @@ func TestRehydrate_ValidLinkType_Indexed(t *testing.T) {
 
 	database, err := db.Open(filepath.Join(tmpDir, "backlogit.db"))
 	require.NoError(t, err)
-	defer database.Close()
+	defer func() { require.NoError(t, database.Close()) }()
 	require.NoError(t, db.EnsureSchema(database))
 
 	_, rehydErr := db.Rehydrate(context.Background(), tmpDir, database)
@@ -124,7 +124,7 @@ func TestRehydrate_MixedLinkTypes_OnlyValidIndexed(t *testing.T) {
 
 	database, err := db.Open(filepath.Join(tmpDir, "backlogit.db"))
 	require.NoError(t, err)
-	defer database.Close()
+	defer func() { require.NoError(t, database.Close()) }()
 	require.NoError(t, db.EnsureSchema(database))
 
 	_, rehydErr := db.Rehydrate(context.Background(), tmpDir, database)
@@ -156,7 +156,7 @@ func TestMergeSync_InvalidLinkType_NotIndexed(t *testing.T) {
 
 	database, err := db.Open(filepath.Join(tmpDir, "backlogit.db"))
 	require.NoError(t, err)
-	defer database.Close()
+	defer func() { require.NoError(t, database.Close()) }()
 	require.NoError(t, db.EnsureSchema(database))
 
 	_, manifest, rehydErr := db.RehydrateWithManifest(context.Background(), tmpDir, database)

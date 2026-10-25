@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -314,7 +315,7 @@ func compositionMemberIDs(ctx context.Context, artifact *models.Artifact, deps m
 // childIDsByParent returns the IDs of the direct TASK children (the only sizable
 // unit) of parentID from the SQLite index. Non-task children (e.g. review) are
 // excluded so they never skew the rollup as spurious unsized members.
-func childIDsByParent(ctx context.Context, ws *Workspace, parentID string) ([]string, error) {
+func childIDsByParent(ctx context.Context, ws *Workspace, parentID string) (_ []string, err error) {
 	if ws == nil || ws.DB == nil {
 		return nil, nil
 	}
@@ -322,7 +323,11 @@ func childIDsByParent(ctx context.Context, ws *Workspace, parentID string) ([]st
 	if err != nil {
 		return nil, fmt.Errorf("query children of %s: %w", parentID, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close children of %s: %w", parentID, cerr))
+		}
+	}()
 	var ids []string
 	for rows.Next() {
 		var id string

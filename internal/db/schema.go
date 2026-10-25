@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -80,13 +81,17 @@ type tableEntry struct {
 
 // listTables enumerates user-defined tables from sqlite_master, identifying
 // FTS5 virtual tables by their CREATE VIRTUAL TABLE statement.
-func listTables(ctx context.Context, tx *sql.Tx) ([]tableEntry, error) {
+func listTables(ctx context.Context, tx *sql.Tx) (_ []tableEntry, err error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT name, type, sql FROM sqlite_master WHERE type IN ('table') ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("query sqlite_master: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close sqlite_master rows: %w", cerr))
+		}
+	}()
 
 	var entries []tableEntry
 	for rows.Next() {
@@ -157,13 +162,17 @@ func introspectTable(ctx context.Context, tx *sql.Tx, name string, isVirtual boo
 }
 
 // introspectColumns queries PRAGMA table_info for column metadata.
-func introspectColumns(ctx context.Context, tx *sql.Tx, tableName string) ([]ColumnSchema, error) {
+func introspectColumns(ctx context.Context, tx *sql.Tx, tableName string) (_ []ColumnSchema, err error) {
 	//nolint:gosec // tableName validated by columnNameRe above.
 	rows, err := tx.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", tableName))
 	if err != nil {
 		return nil, fmt.Errorf("pragma table_info(%s): %w", tableName, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close table_info(%s) rows: %w", tableName, cerr))
+		}
+	}()
 
 	var cols []ColumnSchema
 	for rows.Next() {
@@ -185,13 +194,17 @@ func introspectColumns(ctx context.Context, tx *sql.Tx, tableName string) ([]Col
 }
 
 // introspectIndexes queries PRAGMA index_list and index_info for index metadata.
-func introspectIndexes(ctx context.Context, tx *sql.Tx, tableName string) ([]IndexSchema, error) {
+func introspectIndexes(ctx context.Context, tx *sql.Tx, tableName string) (_ []IndexSchema, err error) {
 	//nolint:gosec // tableName validated by columnNameRe above.
 	rows, err := tx.QueryContext(ctx, fmt.Sprintf("PRAGMA index_list(%s)", tableName))
 	if err != nil {
 		return nil, fmt.Errorf("pragma index_list(%s): %w", tableName, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close index_list(%s) rows: %w", tableName, cerr))
+		}
+	}()
 
 	var indexes []IndexSchema
 	for rows.Next() {
@@ -226,7 +239,7 @@ func introspectIndexes(ctx context.Context, tx *sql.Tx, tableName string) ([]Ind
 }
 
 // introspectIndexColumns queries PRAGMA index_info for the columns in an index.
-func introspectIndexColumns(ctx context.Context, tx *sql.Tx, indexName string) ([]string, error) {
+func introspectIndexColumns(ctx context.Context, tx *sql.Tx, indexName string) (_ []string, err error) {
 	if !columnNameRe.MatchString(indexName) {
 		return nil, fmt.Errorf("invalid index name %q", indexName)
 	}
@@ -235,7 +248,11 @@ func introspectIndexColumns(ctx context.Context, tx *sql.Tx, indexName string) (
 	if err != nil {
 		return nil, fmt.Errorf("pragma index_info(%s): %w", indexName, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close index_info(%s) rows: %w", indexName, cerr))
+		}
+	}()
 
 	var cols []string
 	for rows.Next() {
