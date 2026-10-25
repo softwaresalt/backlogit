@@ -22,7 +22,13 @@ Context: feature 175-F (baseline convergence), PR #580, merge `c826980140ae29c11
 
 ## Releasability
 
-`closure_status: READY`. There is no deployed runtime surface (library and CLI only), so runtime-verification is not applicable. Behaviour change: a failed row close in the touched query helpers now surfaces as an error. No unmet condition exists, so no `conditions:` block is required. Monitoring: CI `test` on the next PR to main. Rollback: revert PR #580. Owner: operator. Validation window: next PR to main.
+`closure_status: READY`. There is no deployed service, but the changed `QueryQueue` and `NextID` helpers back the CLI queue view and the MCP queue handler, so runtime verification was performed on those surfaces (validator evidence below). Behaviour change: a failed row close in the touched query helpers now surfaces as an error. No unmet condition exists, so no `conditions:` block is required. Monitoring: CI `test` on the next PR to main. Rollback: revert PR #580. Owner: operator. Validation window: next PR to main.
+
+## Runtime verification (validator evidence)
+
+* CLI probe: built `./cmd/backlogit` from synchronized `main` (`c8269801`) and ran `backlogit queue view --group-by status` against this workspace; exit 0 and a populated grouped table (`QueryQueue` path).
+* MCP probe: `backlogit_get_queue` with `limit: 3` returned a prioritized item list (the handler shares `QueryQueue`).
+* Manual checkpoints and blocked prerequisites: none. No automation was faked.
 
 ## Compaction status (P-020)
 
