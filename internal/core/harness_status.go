@@ -45,13 +45,18 @@ func ValidateTransition(cfg *StatusConfig, artifactType, currentStatus, newStatu
 
 // ComputeParentStatus determines the rollup status for a parent artifact based
 // on the statuses of its children.
-func ComputeParentStatus(ctx context.Context, db *sql.DB, parentID string) (models.ArtifactStatus, error) {
+func ComputeParentStatus(ctx context.Context, db *sql.DB, parentID string) (status models.ArtifactStatus, err error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT status FROM items WHERE parent_id = ?`, parentID)
 	if err != nil {
 		return "", fmt.Errorf("query children: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			status = ""
+			err = errors.Join(err, fmt.Errorf("close children rows: %w", cerr))
+		}
+	}()
 
 	var statuses []string
 	for rows.Next() {
