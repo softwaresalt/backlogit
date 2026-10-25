@@ -31,7 +31,7 @@ func newCacheTestWorkspace(t *testing.T) *Workspace {
 	require.NoError(t, config.WriteDefaults(backlogDir))
 	ws, err := NewWorkspace(context.Background(), tmp)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	return ws
 }
 
@@ -67,7 +67,7 @@ func seedStashWorkspace(t *testing.T, ids ...string) *Workspace {
 
 	ws, err := NewWorkspace(context.Background(), tmp)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	return ws
 }
 
