@@ -39,7 +39,8 @@ func lf175044Findings(t *testing.T, pkg string) map[string]int {
 	root := lf175044Root(t)
 	lint := lf175044Linter(t)
 	cmd := exec.Command(lint, "run", "--default=none", "--enable=errcheck",
-		"--output.json.path=stdout", "--output.text.path=", "--issues-exit-code=0", pkg)
+		"--output.json.path=stdout", "--output.text.path=", "--issues-exit-code=0",
+		"--max-issues-per-linter=0", "--max-same-issues=0", "--uniq-by-line=false", pkg)
 	cmd.Dir = root
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
