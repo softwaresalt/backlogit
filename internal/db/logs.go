@@ -197,7 +197,7 @@ func deleteAllItemLogs(ctx context.Context, execer execContexter) error {
 }
 
 // ListItemLogEntries returns indexed log entries for a single work item.
-func ListItemLogEntries(ctx context.Context, database *sql.DB, itemID string, limit int) ([]ItemLogEntry, error) {
+func ListItemLogEntries(ctx context.Context, database *sql.DB, itemID string, limit int) (entries []ItemLogEntry, err error) {
 	query := `SELECT id, item_id, log_path, timestamp, actor, event_type, content, delta_json
 		FROM item_log_entries
 		WHERE item_id = ?
@@ -212,13 +212,17 @@ func ListItemLogEntries(ctx context.Context, database *sql.DB, itemID string, li
 	if err != nil {
 		return nil, fmt.Errorf("list item log entries: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close item log rows: %w", closeErr))
+		}
+	}()
 
 	return scanItemLogEntries(rows)
 }
 
 // SearchItemLogEntries performs FTS5 search across indexed log entry content.
-func SearchItemLogEntries(ctx context.Context, database *sql.DB, query string, limit int) ([]ItemLogEntry, error) {
+func SearchItemLogEntries(ctx context.Context, database *sql.DB, query string, limit int) (entries []ItemLogEntry, err error) {
 	rows, err := database.QueryContext(ctx,
 		`SELECT e.id, e.item_id, e.log_path, e.timestamp, e.actor, e.event_type, e.content, e.delta_json
 		   FROM item_log_entries e
@@ -232,7 +236,11 @@ func SearchItemLogEntries(ctx context.Context, database *sql.DB, query string, l
 	if err != nil {
 		return nil, fmt.Errorf("search item log entries: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close item log rows: %w", closeErr))
+		}
+	}()
 
 	return scanItemLogEntries(rows)
 }

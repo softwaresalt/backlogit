@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -145,12 +146,16 @@ func projectedCustomFields(ctx context.Context, q itemColumnQuerier, artifact *m
 	return projected, nil
 }
 
-func existingColumnsFromQuerier(ctx context.Context, q itemColumnQuerier) (map[string]bool, error) {
+func existingColumnsFromQuerier(ctx context.Context, q itemColumnQuerier) (result map[string]bool, err error) {
 	rows, err := q.QueryContext(ctx, "PRAGMA table_info(items)")
 	if err != nil {
 		return nil, fmt.Errorf("pragma table_info: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close table_info rows: %w", closeErr))
+		}
+	}()
 
 	cols := make(map[string]bool)
 	for rows.Next() {

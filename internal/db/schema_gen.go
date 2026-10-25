@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 
@@ -94,12 +95,16 @@ func ApplySchemaExtensions(db *sql.DB, headerDef *config.HeaderDefConfig) error 
 }
 
 // existingColumns returns a set of column names already present in the items table.
-func existingColumns(db *sql.DB) (map[string]bool, error) {
+func existingColumns(db *sql.DB) (result map[string]bool, err error) {
 	rows, err := db.Query("PRAGMA table_info(items)")
 	if err != nil {
 		return nil, fmt.Errorf("pragma table_info: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close table_info rows: %w", closeErr))
+		}
+	}()
 
 	cols := make(map[string]bool)
 	for rows.Next() {

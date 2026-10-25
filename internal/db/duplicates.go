@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -17,7 +18,7 @@ type DuplicateGroup struct {
 // FindDuplicates returns groups of artifacts that share identical normalized titles.
 // Normalization lowercases the title and trims surrounding whitespace before comparison.
 // Groups with only one member are excluded from the result.
-func FindDuplicates(ctx context.Context, db *sql.DB) ([]DuplicateGroup, error) {
+func FindDuplicates(ctx context.Context, db *sql.DB) (result []DuplicateGroup, err error) {
 	const query = `
 		SELECT lower(trim(title)) AS norm_title,
 		       group_concat(id)   AS ids,
@@ -31,7 +32,11 @@ func FindDuplicates(ctx context.Context, db *sql.DB) ([]DuplicateGroup, error) {
 	if err != nil {
 		return nil, fmt.Errorf("find duplicates: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close duplicate rows: %w", closeErr))
+		}
+	}()
 
 	var groups []DuplicateGroup
 	for rows.Next() {

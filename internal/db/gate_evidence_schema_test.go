@@ -35,7 +35,11 @@ func TestEnsureSchema_GateEvidenceProjection(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "gate_evidence_schema.db")
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 	require.NoError(t, db.EnsureSchema(database))
 
 	// (1) table + index exist.
@@ -60,7 +64,7 @@ func TestEnsureSchema_GateEvidenceProjection(t *testing.T) {
 		}
 	}
 	require.NoError(t, rows.Err())
-	rows.Close()
+	require.NoError(t, rows.Close())
 	sort.Strings(cols)
 	assert.Equal(t, []string{"evidence_sha", "gate_status", "head_sha", "item_id"}, cols,
 		"gate_evidence must store only the status token + SHAs (no report JSON/stderr/force_reason)")

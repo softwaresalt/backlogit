@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -112,7 +113,7 @@ func ValidateQuery(sqlStr string) GateResult {
 }
 
 // ExecuteGatedQuery runs a validated read-only query capped at MaxRows.
-func ExecuteGatedQuery(db *sql.DB, query string, params ...any) ([]map[string]interface{}, error) {
+func ExecuteGatedQuery(db *sql.DB, query string, params ...any) (out []map[string]interface{}, err error) {
 	gate := ValidateQuery(query)
 	if !gate.Allowed {
 		return nil, fmt.Errorf("query rejected: %s", gate.Reason)
@@ -122,7 +123,11 @@ func ExecuteGatedQuery(db *sql.DB, query string, params ...any) ([]map[string]in
 	if err != nil {
 		return nil, fmt.Errorf("execute query: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close query rows: %w", closeErr))
+		}
+	}()
 
 	columns, err := rows.Columns()
 	if err != nil {

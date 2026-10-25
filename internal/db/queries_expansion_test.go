@@ -23,7 +23,11 @@ func setupTestDB(t *testing.T) *sql.DB {
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 	return database
 }
 
