@@ -107,7 +107,7 @@ func TestShipmentListTable_ShowsSizeAndComposition(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	out, err := runRootCommand(t, "--cwd", root, "shipment", "list", "--format", "table")
 	require.NoError(t, err)
