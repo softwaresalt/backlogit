@@ -38,7 +38,7 @@ func setupHarvestRollbackWorkspace(t *testing.T) *Workspace {
 
 	ws, wsErr := NewWorkspace(context.Background(), tmpDir)
 	require.NoError(t, wsErr)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	return ws
 }
 
