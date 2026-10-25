@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -28,13 +29,17 @@ historically auto-harvested artifact. Preserves the original harvested_artifact_
 appends an append-only correction record to provenance_corrections.jsonl.`,
 		Example: `  backlogit stash correct --stash-id 11FFF601 --canonical-delivery 150-F \
     --reason "Actual delivery was 150-F/133-S, not auto-harvested 151-F" --actor "ship-agent"`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (err error) {
 			ctx := context.Background()
 			ws, err := core.NewWorkspace(ctx, *cwd)
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					err = errors.Join(err, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			req := core.StashProvenanceCorrectionRequest{
 				StashID:                     stashID,

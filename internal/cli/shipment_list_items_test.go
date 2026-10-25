@@ -125,7 +125,7 @@ func TestShipmentList_NullStoredItems_MCPPipelineNeverNull(t *testing.T) {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws.Close()
+	defer func() { require.NoError(t, ws.Close()) }()
 
 	shipments, err := bldb.QueryItems(ctx, ws.DB, bldb.QueryFilters{Type: "shipment"})
 	require.NoError(t, err)

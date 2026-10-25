@@ -36,7 +36,7 @@ func setupDeleteWorkspace(t *testing.T) (*core.Workspace, string) {
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	content := "---\nid: 099-T\ntitle: Delete harness task\nstatus: queued\nartifact_type: task\n---\nBody\n"
 	filePath := filepath.Join(queueDir, "099-T.md")
@@ -72,7 +72,7 @@ func TestDeleteArtifact_DBFailure_FilePreserved(t *testing.T) {
 	ctx := context.Background()
 
 	// Close the DB to force all DB operations to fail.
-	ws.DB.Close()
+	require.NoError(t, ws.DB.Close())
 
 	err := core.DeleteArtifact(ctx, ws, "099-T")
 

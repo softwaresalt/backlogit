@@ -42,7 +42,7 @@ func setupCLIStashCorrectWorkspace(t *testing.T) string {
 		ID: "002-F", Title: "Canonical delivery", Status: models.StatusActive,
 		ArtifactType: "feature", CustomFields: map[string]any{"source_stash_id": "STASH001"},
 	}))
-	database.Close()
+	require.NoError(t, database.Close())
 
 	return tmpDir
 }

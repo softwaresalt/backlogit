@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -30,11 +31,8 @@ func ResolveHierarchicalPath(layout *config.QueueLayoutConfig, parentID string, 
 // Root-level IDs must be purely numeric segments (e.g., "001", "002"); items
 // with non-numeric IDs such as legacy prefix IDs ("T001", "BUG-3") are excluded
 // from the ordinal computation.
-func NextHierarchicalID(db *sql.DB, parentID string, layout *config.QueueLayoutConfig) (string, error) {
-	var (
-		rows *sql.Rows
-		err  error
-	)
+func NextHierarchicalID(db *sql.DB, parentID string, layout *config.QueueLayoutConfig) (id string, err error) {
+	var rows *sql.Rows
 	if parentID == "" {
 		rows, err = db.Query(`SELECT id FROM items WHERE parent_id IS NULL`)
 	} else {
@@ -43,7 +41,12 @@ func NextHierarchicalID(db *sql.DB, parentID string, layout *config.QueueLayoutC
 	if err != nil {
 		return "", fmt.Errorf("next hierarchical id: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			id = ""
+			err = errors.Join(err, fmt.Errorf("close hierarchical id rows: %w", cerr))
+		}
+	}()
 
 	maxOrdinal := 0
 	for rows.Next() {
@@ -96,7 +99,7 @@ func NextTypedHierarchicalID(
 	artifactType string,
 	typeCfg *config.ArtifactTypeConfig,
 	layout *config.QueueLayoutConfig,
-) (string, error) {
+) (id string, err error) {
 	if typeCfg == nil {
 		return "", fmt.Errorf("artifact type config is required")
 	}
@@ -104,10 +107,7 @@ func NextTypedHierarchicalID(
 		return "", err
 	}
 
-	var (
-		rows *sql.Rows
-		err  error
-	)
+	var rows *sql.Rows
 	if parentID == "" {
 		// Restrict to root-level IDs (no dot separator) so that child IDs like
 		// "019.001-T" are not counted when computing the next root ordinal.
@@ -126,7 +126,12 @@ func NextTypedHierarchicalID(
 	if err != nil {
 		return "", fmt.Errorf("query hierarchical ids: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			id = ""
+			err = errors.Join(err, fmt.Errorf("close hierarchical id rows: %w", cerr))
+		}
+	}()
 
 	maxOrdinal := 0
 	for rows.Next() {

@@ -304,7 +304,7 @@ func AppendComment(ctx context.Context, ws *Workspace, ew *events.EventWriter, i
 }
 
 // GetCommitLinks retrieves all commit associations for a given artifact.
-func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) ([]CommitLinkInfo, error) {
+func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) (links []CommitLinkInfo, err error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT item_id, commit_sha, message, author FROM commit_links WHERE item_id = ?`,
 		itemID,
@@ -312,9 +312,13 @@ func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) ([]CommitLin
 	if err != nil {
 		return nil, fmt.Errorf("get commit links: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			links = nil
+			err = errors.Join(err, fmt.Errorf("close commit links rows: %w", cerr))
+		}
+	}()
 
-	var links []CommitLinkInfo
 	for rows.Next() {
 		var l CommitLinkInfo
 		if err := rows.Scan(&l.ItemID, &l.CommitSHA, &l.Message, &l.Author); err != nil {

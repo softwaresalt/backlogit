@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -72,7 +73,7 @@ A harvest checkpoint is saved to .backlogit/.telemetry-checkpoint.json after eac
 successful run. The checkpoint records file offsets for each parsed log file so
 subsequent runs read only new log entries. Delete the checkpoint or use --force to
 reparse all logs from the beginning.`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (err error) {
 			since, _ := cmd.Flags().GetString("since")
 			force, _ := cmd.Flags().GetBool("force")
 
@@ -90,7 +91,11 @@ reparse all logs from the beginning.`,
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
 			}
-			defer ws.Close()
+			defer func() {
+				if cerr := ws.Close(); cerr != nil {
+					err = errors.Join(err, fmt.Errorf("close workspace: %w", cerr))
+				}
+			}()
 
 			if ws.Config != nil && ws.Config.Telemetry != nil {
 				opts.AttributionPrefixes = ws.Config.Telemetry.AttributionPrefixes
@@ -108,7 +113,9 @@ reparse all logs from the beginning.`,
 				msg += fmt.Sprintf("Facts indexed: %d tool call(s), %d session(s).\n",
 					result.FactToolCallsAdded, result.FactSessionsAdded)
 			}
-			fmt.Fprint(cmd.OutOrStdout(), msg)
+			if _, werr := fmt.Fprint(cmd.OutOrStdout(), msg); werr != nil {
+				return fmt.Errorf("write harvest summary: %w", werr)
+			}
 			return nil
 		},
 	}
@@ -129,7 +136,9 @@ func newTelemetryListCmd(cwd *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(cmd.OutOrStdout(), out)
+			if _, werr := fmt.Fprint(cmd.OutOrStdout(), out); werr != nil {
+				return fmt.Errorf("write session list: %w", werr)
+			}
 			return nil
 		},
 	}
@@ -149,7 +158,9 @@ func newTelemetryTopCmd(cwd *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(cmd.OutOrStdout(), out)
+			if _, werr := fmt.Fprint(cmd.OutOrStdout(), out); werr != nil {
+				return fmt.Errorf("write top servers: %w", werr)
+			}
 			return nil
 		},
 	}
@@ -176,7 +187,9 @@ func newTelemetryReportCmd(cwd *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(cmd.OutOrStdout(), out)
+			if _, werr := fmt.Fprint(cmd.OutOrStdout(), out); werr != nil {
+				return fmt.Errorf("write telemetry report: %w", werr)
+			}
 			return nil
 		},
 	}
@@ -216,7 +229,9 @@ Use --by class to group by model class (sonnet, haiku, gpt, o-series, etc.).`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(cmd.OutOrStdout(), out)
+			if _, werr := fmt.Fprint(cmd.OutOrStdout(), out); werr != nil {
+				return fmt.Errorf("write telemetry trend: %w", werr)
+			}
 			return nil
 		},
 	}
@@ -258,7 +273,9 @@ Use --format json for machine-readable output.`,
 				return fmt.Errorf("read telemetry data: %w", err)
 			}
 			if len(sessions) == 0 {
-				fmt.Fprint(cmd.OutOrStdout(), "No telemetry data found. Run `backlogit telemetry harvest` first.\n")
+				if _, werr := fmt.Fprint(cmd.OutOrStdout(), "No telemetry data found. Run `backlogit telemetry harvest` first.\n"); werr != nil {
+					return fmt.Errorf("write branch output: %w", werr)
+				}
 				return nil
 			}
 
@@ -290,9 +307,8 @@ Use --format json for machine-readable output.`,
 			case telemetry.FormatMarkdown:
 				return renderBranchMarkdown(cmd, profiles)
 			default:
-				renderBranchTable(cmd, profiles)
+				return renderBranchTable(cmd, profiles)
 			}
-			return nil
 		},
 	}
 	cmd.Flags().String("format", "table", "Output format: table, json, markdown")
@@ -301,11 +317,17 @@ Use --format json for machine-readable output.`,
 	return cmd
 }
 
-func renderBranchTable(cmd *cobra.Command, profiles []telemetry.BranchProfile) {
+func renderBranchTable(cmd *cobra.Command, profiles []telemetry.BranchProfile) error {
 	w := cmd.OutOrStdout()
-	fmt.Fprintf(w, "%-40s %-12s %8s %12s %14s %5s %-6s %-8s %-8s %s\n",
+	var werr error
+	write := func(format string, args ...any) {
+		if werr == nil {
+			_, werr = fmt.Fprintf(w, format, args...)
+		}
+	}
+	write("%-40s %-12s %8s %12s %14s %5s %-6s %-8s %-8s %s\n",
 		"BRANCH", "TYPE", "SESSIONS", "TOKENS", "AVG/SESSION", "TASKS", "PR", "FEATURE", "SHIPMENT", "LIFESPAN")
-	fmt.Fprintf(w, "%-40s %-12s %8s %12s %14s %5s %-6s %-8s %-8s %s\n",
+	write("%-40s %-12s %8s %12s %14s %5s %-6s %-8s %-8s %s\n",
 		"----------------------------------------", "------------", "--------", "------------",
 		"--------------", "-----", "------", "--------", "--------", "--------")
 	for _, p := range profiles {
@@ -326,10 +348,14 @@ func renderBranchTable(cmd *cobra.Command, profiles []telemetry.BranchProfile) {
 			ship = "-"
 		}
 		lifespan := formatLifespan(p.LastSeen.Sub(p.FirstSeen))
-		fmt.Fprintf(w, "%-40s %-12s %8d %12d %14.0f %5d %-6s %-8s %-8s %s\n",
+		write("%-40s %-12s %8d %12d %14.0f %5d %-6s %-8s %-8s %s\n",
 			branch, p.BranchType, p.Sessions, p.TotalTokens, p.AvgTokens,
 			p.TaskCount, pr, feat, ship, lifespan)
 	}
+	if werr != nil {
+		return fmt.Errorf("write branch table: %w", werr)
+	}
+	return nil
 }
 
 func renderBranchJSON(cmd *cobra.Command, profiles []telemetry.BranchProfile) error {
@@ -340,14 +366,14 @@ func renderBranchJSON(cmd *cobra.Command, profiles []telemetry.BranchProfile) er
 
 func renderBranchMarkdown(cmd *cobra.Command, profiles []telemetry.BranchProfile) error {
 	w := cmd.OutOrStdout()
-	fmt.Fprintln(w, "## Branch Telemetry Metrics")
-	fmt.Fprintln(w, "")
 	var werr error
 	write := func(format string, args ...any) {
 		if werr == nil {
 			_, werr = fmt.Fprintf(w, format, args...)
 		}
 	}
+	write("%s\n", "## Branch Telemetry Metrics")
+	write("\n")
 	write("%s\n", "| Branch | Type | Sessions | Tokens | Avg/Session | Tasks | PR | Feature | Shipment | Lifespan |")
 	write("%s\n", "|---|---|---|---|---|---|---|---|---|---|")
 	for _, p := range profiles {

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -51,7 +52,7 @@ func (e *ChildBlockingError) Is(target error) bool {
 // status. It returns a *ChildBlockingError when any non-terminal children are
 // found, and nil when all children are terminal (or the parent has no children).
 // Pass SkipChildCheck() to bypass this check entirely.
-func CheckChildrenTerminal(ctx context.Context, database *sql.DB, parentID string, opts ...StatusOption) error {
+func CheckChildrenTerminal(ctx context.Context, database *sql.DB, parentID string, opts ...StatusOption) (err error) {
 	o := &statusCheckOptions{}
 	for _, opt := range opts {
 		opt(o)
@@ -66,7 +67,11 @@ func CheckChildrenTerminal(ctx context.Context, database *sql.DB, parentID strin
 	if err != nil {
 		return fmt.Errorf("query children of %s: %w", parentID, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close children rows of %s: %w", parentID, cerr))
+		}
+	}()
 
 	var blocking []ChildStatus
 	for rows.Next() {
