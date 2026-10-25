@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -52,12 +53,16 @@ func ResolveFileName(cfg *config.ArtifactTypeConfig, artifactID string, title st
 }
 
 // NextID queries for the next sequential artifact ID.
-func NextID(ctx context.Context, db *sql.DB, artifactType string, typeCfg *config.ArtifactTypeConfig) (int, error) {
+func NextID(ctx context.Context, db *sql.DB, artifactType string, typeCfg *config.ArtifactTypeConfig) (_ int, err error) {
 	rows, err := db.QueryContext(ctx, "SELECT id FROM items WHERE artifact_type = ?", artifactType)
 	if err != nil {
 		return 0, fmt.Errorf("next id query: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close next id rows: %w", cerr))
+		}
+	}()
 
 	maxOrdinal := 0
 	for rows.Next() {

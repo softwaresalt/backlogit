@@ -47,7 +47,7 @@ directories:
 
 	ws, err := core.NewWorkspace(context.Background(), root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	return ws
 }
 

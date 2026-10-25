@@ -140,10 +140,14 @@ func TestHelperProcess(t *testing.T) {
 	}
 	switch behavior {
 	case "exit1":
-		fmt.Fprint(os.Stdout, `{"repeated_failure":{"count":1,"threshold":3,"reached":false,"action":"block"}}`)
+		if _, err := fmt.Fprint(os.Stdout, `{"repeated_failure":{"count":1,"threshold":3,"reached":false,"action":"block"}}`); err != nil {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	case "exit0":
-		fmt.Fprint(os.Stdout, "ok")
+		if _, err := fmt.Fprint(os.Stdout, "ok"); err != nil {
+			os.Exit(2)
+		}
 		os.Exit(0)
 	case "sleep":
 		time.Sleep(5 * time.Second)

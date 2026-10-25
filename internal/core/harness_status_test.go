@@ -67,7 +67,7 @@ func setupStatusWorkspace(t *testing.T) *core.Workspace {
 	database, err := db.Open(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, db.EnsureSchema(database))
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
 
 	require.NoError(t, os.WriteFile(filepath.Join(backlogDir, "config.yaml"),
 		[]byte("artifact_types:\n  - task\nid_prefix_map:\n  task: T\nmax_slug_length: 60\n"), 0o644))
