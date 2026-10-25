@@ -46,7 +46,7 @@ type ArchivedStashEntry struct {
 
 // appendToStashArchive appends an ArchivedStashEntry to .backlogit/archive/stash.jsonl,
 // creating the archive directory and file on first write.
-func appendToStashArchive(rootPath string, entry ArchivedStashEntry) error {
+func appendToStashArchive(rootPath string, entry ArchivedStashEntry) (err error) {
 	archiveDir := filepath.Join(WorkspaceStorageRoot(rootPath), "archive")
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		return fmt.Errorf("create stash archive dir: %w", err)
@@ -61,7 +61,11 @@ func appendToStashArchive(rootPath string, entry ArchivedStashEntry) error {
 	if err != nil {
 		return fmt.Errorf("open stash archive: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close stash archive: %w", cerr))
+		}
+	}()
 	if _, err := f.Write(line); err != nil {
 		return fmt.Errorf("write stash archive entry: %w", err)
 	}
@@ -616,14 +620,18 @@ func stashRelativePath() string {
 	return filepath.ToSlash(stash.JSONLFileName)
 }
 
-func readStashEntries(path string) ([]stash.Entry, error) {
+func readStashEntries(path string) (entries []stash.Entry, err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open stash file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close stash file: %w", cerr))
+		}
+	}()
 
-	entries, err := stash.ReadJSONL(file)
+	entries, err = stash.ReadJSONL(file)
 	if err != nil {
 		return nil, fmt.Errorf("read stash jsonl: %w", err)
 	}
