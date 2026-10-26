@@ -3,6 +3,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -18,13 +19,23 @@ import (
 // newline-terminated) trailing line without writing anything, appends
 // eventBytes, and fsyncs the file. A brand-new file's dirent is also made
 // durable via a directory fsync.
-func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventBytes []byte) (shipmentReconcileAppendResult, error) {
+func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventBytes []byte) (result shipmentReconcileAppendResult, retErr error) {
 	dirFD, err := unix.Open(logsDir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: open logs directory %s: %w", blerrors.ErrWriteNotApplied, logsDir, err)
 	}
 	dirFile := os.NewFile(uintptr(dirFD), logsDir)
-	defer dirFile.Close()
+	defer func() {
+		if closeErr := dirFile.Close(); closeErr != nil {
+			result = shipmentReconcileAppendResult{}
+			if retErr != nil {
+				// Keep the original write classification; do not add a second sentinel.
+				retErr = errors.Join(retErr, fmt.Errorf("close logs directory %s: %w", logsDir, closeErr))
+			} else {
+				retErr = fmt.Errorf("%w: close logs directory %s: %w", blerrors.ErrWriteIndeterminate, logsDir, closeErr)
+			}
+		}
+	}()
 
 	// O_RDWR (not O_WRONLY): the trailing-byte partial-line check below
 	// reads from this same file descriptor via ReadAt before writing.
@@ -37,7 +48,17 @@ func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventB
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: open item log %s relative to %s: %w", blerrors.ErrWriteNotApplied, fileName, logsDir, err)
 	}
 	file := os.NewFile(uintptr(fd), fileName)
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			result = shipmentReconcileAppendResult{}
+			if retErr != nil {
+				// Keep the original write classification; do not add a second sentinel.
+				retErr = errors.Join(retErr, fmt.Errorf("close item log %s: %w", fileName, closeErr))
+			} else {
+				retErr = fmt.Errorf("%w: close item log %s: %w", blerrors.ErrWriteIndeterminate, fileName, closeErr)
+			}
+		}
+	}()
 
 	info, err := file.Stat()
 	if err != nil {

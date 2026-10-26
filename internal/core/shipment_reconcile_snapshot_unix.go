@@ -3,6 +3,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,20 +24,30 @@ import (
 // surfaces as an error satisfying errors.Is(err, os.ErrNotExist) (unix.Errno
 // implements the same Is(os.ErrNotExist) contract os.PathError does), so the
 // caller's existing not-exist handling is unaffected.
-func readShipmentReconcileArchiveSnapshotFile(archiveDir, fileName string) ([]byte, error) {
+func readShipmentReconcileArchiveSnapshotFile(archiveDir, fileName string) (data []byte, retErr error) {
 	dirFD, err := unix.Open(archiveDir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open archive directory %s: %w", archiveDir, err)
 	}
 	dirFile := os.NewFile(uintptr(dirFD), archiveDir)
-	defer dirFile.Close()
+	defer func() {
+		if closeErr := dirFile.Close(); closeErr != nil {
+			data = nil
+			retErr = errors.Join(retErr, fmt.Errorf("close archive directory %s: %w", archiveDir, closeErr))
+		}
+	}()
 
 	fd, err := unix.Openat(int(dirFile.Fd()), fileName, unix.O_RDONLY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open archive file %s relative to %s: %w", fileName, archiveDir, err)
 	}
 	file := os.NewFile(uintptr(fd), fileName)
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			data = nil
+			retErr = errors.Join(retErr, fmt.Errorf("close archive file %s: %w", fileName, closeErr))
+		}
+	}()
 
 	var stat unix.Stat_t
 	if err := unix.Fstat(int(file.Fd()), &stat); err != nil {

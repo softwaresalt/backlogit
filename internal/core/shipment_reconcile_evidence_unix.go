@@ -29,7 +29,7 @@ import (
 // openShipmentReconcileLockHandleRelative (shipment_reconcile_lock_unix.go)
 // and writeShipmentReconcileArchiveFileHandleRelative
 // (shipment_reconcile_fs_unix.go).
-func readShipmentReconcileClosureEvidenceFile(rootPath, closurePath string) ([]byte, string, error) {
+func readShipmentReconcileClosureEvidenceFile(rootPath, closurePath string) (content []byte, resolvedPath string, retErr error) {
 	rootAbs, err := filepath.Abs(filepath.Clean(rootPath))
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve workspace root %s: %w", rootPath, err)
@@ -96,7 +96,12 @@ func readShipmentReconcileClosureEvidenceFile(rootPath, closurePath string) ([]b
 	}
 	openedPath := filepath.Join(currentPath, fileName)
 	file := os.NewFile(uintptr(fd), openedPath)
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			content, resolvedPath = nil, ""
+			retErr = errors.Join(retErr, fmt.Errorf("close closure evidence %s: %w", openedPath, closeErr))
+		}
+	}()
 
 	var stat unix.Stat_t
 	if err := unix.Fstat(int(file.Fd()), &stat); err != nil {
