@@ -92,7 +92,9 @@ func LoadSessionEvents(sessionStateDir string) (map[string][]CompactionEvent, er
 			continue
 		}
 		events, err := ParseSessionEvents(f)
-		f.Close()
+		if closeErr := f.Close(); closeErr != nil {
+			slog.Warn("failed to close session events file", "session_id", sessionID, "err", closeErr)
+		}
 		if err != nil {
 			slog.Warn("failed to parse session events", "session_id", sessionID, "err", err)
 			continue

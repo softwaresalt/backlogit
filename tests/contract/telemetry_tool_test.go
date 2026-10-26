@@ -41,7 +41,7 @@ func setupTelemetryMCPServer(t *testing.T) (s *mcpinternal.Server, copilotDir st
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	return mcpinternal.NewServer(ws), copilotDir
 }
@@ -116,7 +116,7 @@ func TestTelemetryHarvestTool_EmptyLogsDir_SucceedsWithZeroSessions(t *testing.T
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	s := mcpinternal.NewServer(ws)
 
 	data := callToolAndParseJSON(t, s, "backlogit_telemetry_harvest", map[string]any{

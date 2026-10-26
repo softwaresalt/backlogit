@@ -39,7 +39,7 @@ func TestReadSessionStore_ReadsSessionMetadata(t *testing.T) {
 func createMinimalSessionStoreDB(t *testing.T, dbPath string) {
 	t.Helper()
 	db := openTestDB(t, dbPath)
-	defer db.Close()
+	defer func() { require.NoError(t, db.Close()) }()
 
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS sessions (
 		id         TEXT PRIMARY KEY,

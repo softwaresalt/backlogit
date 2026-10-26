@@ -5,8 +5,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -241,7 +243,7 @@ func parseLogFiles(logsDir string, cp *HarvestCheckpoint, opts HarvestOptions) (
 		if startOffset > 0 {
 			if _, err := f.Seek(startOffset, io.SeekStart); err != nil {
 				slog.Warn("failed to seek log file", "path", logPath, "err", err)
-				f.Close()
+				closeLogFile(f, logPath)
 				continue
 			}
 		}
@@ -260,7 +262,7 @@ func parseLogFiles(logsDir string, cp *HarvestCheckpoint, opts HarvestOptions) (
 		if eofOffset, seekErr := f.Seek(0, io.SeekEnd); seekErr == nil {
 			newOffsets[base] = eofOffset
 		}
-		f.Close()
+		closeLogFile(f, logPath)
 		if parseErr != nil {
 			slog.Warn("log parse error", "path", logPath, "err", parseErr)
 		}
@@ -286,7 +288,7 @@ func readSessionJSONL(jsonlPath string, excludeIDs map[string]bool) ([]SessionSu
 	if err != nil {
 		return nil, nil, fmt.Errorf("open telemetry JSONL: %w", err)
 	}
-	defer f.Close()
+	defer closeLogFile(f, jsonlPath)
 
 	reader := bufio.NewReader(f)
 
@@ -398,9 +400,7 @@ func writeTelemetryJSONL(
 	// Write prior session summaries unchanged.
 	for _, rec := range priorSessions {
 		if err := enc.Encode(rec); err != nil {
-			f.Close()
-			os.Remove(tmpPath)
-			return fmt.Errorf("encode prior session summary %q: %w", rec.SessionID, err)
+			return abortTempJSONL(f, tmpPath, fmt.Errorf("encode prior session summary %q: %w", rec.SessionID, err))
 		}
 	}
 
@@ -437,18 +437,14 @@ func writeTelemetryJSONL(
 			rec.MaxContextTokens = &cw.MaxContextTokens
 		}
 		if err := enc.Encode(rec); err != nil {
-			f.Close()
-			os.Remove(tmpPath)
-			return fmt.Errorf("encode session summary %q: %w", s.SessionID, err)
+			return abortTempJSONL(f, tmpPath, fmt.Errorf("encode session summary %q: %w", s.SessionID, err))
 		}
 	}
 
 	// Write prior tool usage records unchanged.
 	for _, rec := range priorTools {
 		if err := enc.Encode(rec); err != nil {
-			f.Close()
-			os.Remove(tmpPath)
-			return fmt.Errorf("encode prior tool usage %q/%q: %w", rec.SessionID, rec.ToolName, err)
+			return abortTempJSONL(f, tmpPath, fmt.Errorf("encode prior tool usage %q/%q: %w", rec.SessionID, rec.ToolName, err))
 		}
 	}
 
@@ -464,20 +460,15 @@ func writeTelemetryJSONL(
 			TotalDurMs:  stat.durMs,
 		}
 		if err := enc.Encode(rec); err != nil {
-			f.Close()
-			os.Remove(tmpPath)
-			return fmt.Errorf("encode tool usage %q/%q: %w", key.sessionID, key.toolName, err)
+			return abortTempJSONL(f, tmpPath, fmt.Errorf("encode tool usage %q/%q: %w", key.sessionID, key.toolName, err))
 		}
 	}
 
 	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("sync %s: %w", tmpPath, err)
+		return abortTempJSONL(f, tmpPath, fmt.Errorf("sync %s: %w", tmpPath, err))
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("close %s: %w", tmpPath, err)
+		return removeTempJSONL(tmpPath, fmt.Errorf("close %s: %w", tmpPath, err))
 	}
 	// On POSIX, os.Rename atomically replaces the destination (no pre-remove needed).
 	// On Windows, os.Rename fails when the destination already exists; remove first.
@@ -486,10 +477,35 @@ func writeTelemetryJSONL(
 		_ = os.Remove(jsonlPath)
 	}
 	if err := os.Rename(tmpPath, jsonlPath); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("commit %s: %w", jsonlPath, err)
+		return removeTempJSONL(tmpPath, fmt.Errorf("commit %s: %w", jsonlPath, err))
 	}
 	return nil
+}
+
+// closeLogFile closes a read-only log file, logging any close failure.
+func closeLogFile(f *os.File, path string) {
+	if err := f.Close(); err != nil {
+		slog.Warn("failed to close log file", "path", path, "err", err)
+	}
+}
+
+// abortTempJSONL closes the temp file and removes it after a failed write,
+// returning cause joined with any close or removal failure.
+func abortTempJSONL(f *os.File, tmpPath string, cause error) error {
+	errs := []error{cause}
+	if err := f.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("close %s: %w", tmpPath, err))
+	}
+	return removeTempJSONL(tmpPath, stderrors.Join(errs...))
+}
+
+// removeTempJSONL removes the temp file and returns cause joined with any
+// removal failure other than the file already being absent.
+func removeTempJSONL(tmpPath string, cause error) error {
+	if err := os.Remove(tmpPath); err != nil && !stderrors.Is(err, fs.ErrNotExist) {
+		return stderrors.Join(cause, fmt.Errorf("remove %s: %w", tmpPath, err))
+	}
+	return cause
 }
 
 // groupModelCallsBySession groups model call events by their session ID.

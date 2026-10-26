@@ -31,7 +31,7 @@ func setupShipmentIntegrationWorkspace(t *testing.T) (string, *core.Workspace) {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 	return root, ws
 }
 
@@ -54,7 +54,7 @@ func TestShipmentWorkflow_StashJSONLRoundTrip(t *testing.T) {
 
 	f2, err := os.Open(jsonlPath)
 	require.NoError(t, err)
-	defer f2.Close()
+	defer func() { require.NoError(t, f2.Close()) }()
 	recovered, err := stash.ReadJSONL(f2)
 
 	// Assert
@@ -125,13 +125,13 @@ func TestShipmentWorkflow_RehydrationConsistency(t *testing.T) {
 	require.NoError(t, core.AddItemToShipment(ctx, ws, shipment.ID, task.ID))
 
 	// Force rehydration by closing, deleting db, and reopening
-	ws.Close()
+	require.NoError(t, ws.Close())
 	dbPath := filepath.Join(root, ".backlogit", "backlogit.db")
 	_ = os.Remove(dbPath)
 
 	ws2, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws2.Close()
+	defer func() { require.NoError(t, ws2.Close()) }()
 
 	// Act: Query after rehydration
 	recovered, err := core.GetShipment(ctx, ws2, shipment.ID)
@@ -250,7 +250,7 @@ stash_version: "1"
 	// Verify JSONL is readable
 	f, err := os.Open(jsonlPath)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { require.NoError(t, f.Close()) }()
 	entries, err := stash.ReadJSONL(f)
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
@@ -272,13 +272,13 @@ func TestShipmentWorkflow_StashJSONLRehydration(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	// Force rehydration
-	ws.Close()
+	require.NoError(t, ws.Close())
 	dbPath := filepath.Join(root, ".backlogit", "backlogit.db")
 	_ = os.Remove(dbPath)
 
 	ws2, err := core.NewWorkspace(context.Background(), root)
 	require.NoError(t, err)
-	defer ws2.Close()
+	defer func() { require.NoError(t, ws2.Close()) }()
 
 	// Act: Verify stash entry appears in DB after rehydration
 	count, err := db.Rehydrate(context.Background(), filepath.Join(root, ".backlogit"), ws2.DB)

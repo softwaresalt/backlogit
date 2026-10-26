@@ -59,7 +59,7 @@ func setupMergeSyncWorkspace(t *testing.T) (root string, database *sql.DB, manif
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	queueDir := filepath.Join(backlogitDir, "queue")
 	require.NoError(t, os.MkdirAll(queueDir, 0o755))

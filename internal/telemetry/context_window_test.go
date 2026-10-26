@@ -136,7 +136,7 @@ func TestHarvestTelemetry_ProducesContextWindowMetrics(t *testing.T) {
 
 	sqliteDB, err := db.Open(filepath.Join(workspacePath, "index.db"))
 	require.NoError(t, err)
-	defer sqliteDB.Close()
+	defer func() { require.NoError(t, sqliteDB.Close()) }()
 
 	_, err = telemetry.HarvestTelemetry(
 		context.Background(), workspacePath, copilotPath, sqliteDB,

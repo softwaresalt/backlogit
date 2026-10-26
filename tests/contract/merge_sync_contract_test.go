@@ -126,7 +126,7 @@ func setupRealMCPServerWithRoot(t *testing.T) (s *mcpinternal.Server, root strin
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	return mcpinternal.NewServer(ws), root
 }
