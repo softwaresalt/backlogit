@@ -87,7 +87,7 @@ func TestWorkflow_AddThenGet(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// Act
 	output, err := runCLI(t, root, "get", artifact.ID)
@@ -108,7 +108,7 @@ func TestWorkflow_UpdateStatus(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// Act
 	_, err = runCLI(t, root, "update", artifact.ID, "--status", "active")
@@ -131,7 +131,7 @@ func TestWorkflow_MoveToDone(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// Act
 	_, err = runCLI(t, root, "move", artifact.ID, "--status", "done")
@@ -151,7 +151,7 @@ func TestWorkflow_SearchFindsArtifact(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// Act
 	output, err := runCLI(t, root, "search", "xyz")
@@ -172,7 +172,7 @@ func TestWorkflow_DeleteRemovesArtifact(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// Act
 	_, err = runCLI(t, root, "delete", artifact.ID, "--force")
@@ -183,7 +183,7 @@ func TestWorkflow_DeleteRemovesArtifact(t *testing.T) {
 	// Verify artifact is gone from index
 	ws2, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	defer ws2.Close()
+	defer func() { require.NoError(t, ws2.Close()) }()
 	_, err = db.GetItem(ctx, ws2.DB, artifact.ID)
 	assert.Error(t, err)
 }
@@ -199,7 +199,7 @@ func TestWorkflow_QuerySQL(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// Act
 	output, err := runCLI(t, root, "query", "SELECT id, title FROM items")
@@ -224,7 +224,7 @@ func TestWorkflow_StatusSummary(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// Act
 	output, err := runCLI(t, root, "status")
@@ -273,7 +273,7 @@ func TestWorkflow_GetSection(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// Act — get with --section flag to extract a specific section
 	output, err := runCLI(t, root, "get", artifact.ID, "--section", "description")
@@ -300,7 +300,7 @@ func TestWorkflow_UpdateSection(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Rehydrate(ctx, core.WorkspaceStorageRoot(ws.RootPath), ws.DB)
 	require.NoError(t, err)
-	ws.Close()
+	require.NoError(t, ws.Close())
 
 	// Act — update a specific section
 	_, err = runCLI(t, root, "update", artifact.ID,

@@ -42,7 +42,7 @@ func TestDepTypeParity_CLIAndMCPReturnCanonicalShape(t *testing.T) {
 	ctx := context.Background()
 	ws, err := core.NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { require.NoError(t, ws.Close()) })
 
 	feat, err := core.CreateArtifact(ctx, ws, "Parity feature", "feature")
 	require.NoError(t, err)

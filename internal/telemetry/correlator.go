@@ -209,7 +209,11 @@ func doneTasksFromLog(logPath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("failed to close log file", "path", logPath, "err", err)
+		}
+	}()
 
 	var tasks []string
 	sc := bufio.NewScanner(f)
