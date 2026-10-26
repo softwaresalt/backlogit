@@ -3,6 +3,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,13 +22,17 @@ import (
 // descriptor for both the temp file and the destination, never by
 // re-walking a joined pathname a second time (167.006-T requirement:
 // handle-relative, not by pathname).
-func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string, content []byte, seams shipmentReconcileFSSeams) error {
+func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string, content []byte, seams shipmentReconcileFSSeams) (retErr error) {
 	dirFD, err := unix.Open(archiveDir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return fmt.Errorf("%w: open archive directory %s: %w", blerrors.ErrWriteNotApplied, archiveDir, err)
 	}
 	dirFile := os.NewFile(uintptr(dirFD), archiveDir)
-	defer dirFile.Close()
+	defer func() {
+		if closeErr := dirFile.Close(); closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("%w: close archive directory %s: %w", blerrors.ErrWriteIndeterminate, archiveDir, closeErr))
+		}
+	}()
 
 	tmpName := fmt.Sprintf(".%s.%d.tmp", fileName, os.Getpid())
 	cleanupTmp := func() { _ = unix.Unlinkat(int(dirFile.Fd()), tmpName, 0) }

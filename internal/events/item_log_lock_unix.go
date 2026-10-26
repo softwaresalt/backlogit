@@ -27,7 +27,7 @@ import (
 // re-derived from a (possibly since-swapped) ancestor pathname. A symlink
 // planted at the sidecar's own name is rejected the same way via O_NOFOLLOW
 // on the openat call itself.
-func openItemLogLockHandle(lockPath string) (*os.File, bool, error) {
+func openItemLogLockHandle(lockPath string) (lockFile *os.File, contended bool, retErr error) {
 	namespaceDir := filepath.Dir(lockPath)
 	fileName := filepath.Base(lockPath)
 
@@ -36,7 +36,22 @@ func openItemLogLockHandle(lockPath string) (*os.File, bool, error) {
 		return nil, false, fmt.Errorf("open item log lock namespace directory %s: %w", namespaceDir, err)
 	}
 	dirFile := os.NewFile(uintptr(dirFD), namespaceDir)
-	defer dirFile.Close()
+	defer func() {
+		dirCloseErr := dirFile.Close()
+		if dirCloseErr == nil {
+			return
+		}
+		// A failed directory close must not hand the caller a lock it cannot
+		// trust: release the just-acquired lock and surface both errors.
+		retErr = errors.Join(retErr, fmt.Errorf("close item log lock namespace directory %s: %w", namespaceDir, dirCloseErr))
+		if lockFile != nil {
+			if lockCloseErr := lockFile.Close(); lockCloseErr != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("release item log lock sidecar %s: %w", lockPath, lockCloseErr))
+			}
+			lockFile = nil
+		}
+		contended = false
+	}()
 
 	fd, err := unix.Openat(int(dirFile.Fd()), fileName, unix.O_CREAT|unix.O_RDWR|unix.O_NOFOLLOW, 0o644)
 	if err != nil {
