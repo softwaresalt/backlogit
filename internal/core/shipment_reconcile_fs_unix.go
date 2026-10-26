@@ -30,7 +30,12 @@ func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string
 	dirFile := os.NewFile(uintptr(dirFD), archiveDir)
 	defer func() {
 		if closeErr := dirFile.Close(); closeErr != nil {
-			retErr = errors.Join(retErr, fmt.Errorf("%w: close archive directory %s: %w", blerrors.ErrWriteIndeterminate, archiveDir, closeErr))
+			if retErr != nil {
+				// Keep the original write classification; do not add a second sentinel.
+				retErr = errors.Join(retErr, fmt.Errorf("close archive directory %s: %w", archiveDir, closeErr))
+			} else {
+				retErr = fmt.Errorf("%w: close archive directory %s: %w", blerrors.ErrWriteIndeterminate, archiveDir, closeErr)
+			}
 		}
 	}()
 

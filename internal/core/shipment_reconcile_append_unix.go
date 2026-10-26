@@ -28,7 +28,12 @@ func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventB
 	defer func() {
 		if closeErr := dirFile.Close(); closeErr != nil {
 			result = shipmentReconcileAppendResult{}
-			retErr = errors.Join(retErr, fmt.Errorf("%w: close logs directory %s: %w", blerrors.ErrWriteIndeterminate, logsDir, closeErr))
+			if retErr != nil {
+				// Keep the original write classification; do not add a second sentinel.
+				retErr = errors.Join(retErr, fmt.Errorf("close logs directory %s: %w", logsDir, closeErr))
+			} else {
+				retErr = fmt.Errorf("%w: close logs directory %s: %w", blerrors.ErrWriteIndeterminate, logsDir, closeErr)
+			}
 		}
 	}()
 
@@ -46,7 +51,12 @@ func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventB
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
 			result = shipmentReconcileAppendResult{}
-			retErr = errors.Join(retErr, fmt.Errorf("%w: close item log %s: %w", blerrors.ErrWriteIndeterminate, fileName, closeErr))
+			if retErr != nil {
+				// Keep the original write classification; do not add a second sentinel.
+				retErr = errors.Join(retErr, fmt.Errorf("close item log %s: %w", fileName, closeErr))
+			} else {
+				retErr = fmt.Errorf("%w: close item log %s: %w", blerrors.ErrWriteIndeterminate, fileName, closeErr)
+			}
 		}
 	}()
 
