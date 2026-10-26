@@ -20,7 +20,11 @@ func explainPlan(t *testing.T, database *sql.DB, query string, args ...any) stri
 	t.Helper()
 	rows, err := database.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+query, args...)
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			t.Errorf("close rows: %v", err)
+		}
+	}()
 
 	var plan strings.Builder
 	for rows.Next() {

@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -80,7 +81,7 @@ func LinkStashEntry(ctx context.Context, database *sql.DB, stashID, itemID strin
 }
 
 // ListStashEntries returns indexed stash entries with any harvested item links.
-func ListStashEntries(ctx context.Context, database *sql.DB, includeHarvested bool) ([]StashRecord, error) {
+func ListStashEntries(ctx context.Context, database *sql.DB, includeHarvested bool) (result []StashRecord, err error) {
 	query := `SELECT se.stash_id, se.priority, se.kind, se.text, se.deliberation_id, se.state, se.source_path, se.updated_at, sl.item_id, sl.linked_at
 		FROM stash_entries se
 		LEFT JOIN stash_links sl ON sl.stash_id = se.stash_id`
@@ -95,7 +96,11 @@ func ListStashEntries(ctx context.Context, database *sql.DB, includeHarvested bo
 	if err != nil {
 		return nil, fmt.Errorf("list stash entries: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close stash rows: %w", closeErr))
+		}
+	}()
 
 	var records []StashRecord
 	for rows.Next() {
@@ -209,7 +214,7 @@ func DeleteStashLink(ctx context.Context, database *sql.DB, stashID string) erro
 }
 
 // GetStashLinksForItem returns active stash entry IDs linked to the given item ID.
-func GetStashLinksForItem(ctx context.Context, database *sql.DB, itemID string) ([]string, error) {
+func GetStashLinksForItem(ctx context.Context, database *sql.DB, itemID string) (result []string, err error) {
 	rows, err := database.QueryContext(ctx,
 		`SELECT sl.stash_id
 		 FROM stash_links sl
@@ -220,7 +225,11 @@ func GetStashLinksForItem(ctx context.Context, database *sql.DB, itemID string) 
 	if err != nil {
 		return nil, fmt.Errorf("get stash links for item %s: %w", itemID, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close stash link rows: %w", closeErr))
+		}
+	}()
 
 	var ids []string
 	for rows.Next() {

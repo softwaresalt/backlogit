@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -28,7 +29,7 @@ func NewTelemetryWriter(path string) *TelemetryWriter {
 }
 
 // LogTelemetry appends a telemetry entry to telemetry.jsonl.
-func (w *TelemetryWriter) LogTelemetry(_ context.Context, entry TelemetryEntry) error {
+func (w *TelemetryWriter) LogTelemetry(_ context.Context, entry TelemetryEntry) (err error) {
 	if entry.Timestamp.IsZero() {
 		entry.Timestamp = time.Now()
 	}
@@ -42,7 +43,11 @@ func (w *TelemetryWriter) LogTelemetry(_ context.Context, entry TelemetryEntry) 
 	if err != nil {
 		return fmt.Errorf("open telemetry file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close telemetry file: %w", closeErr))
+		}
+	}()
 	_, err = fmt.Fprintf(f, "%s\n", data)
 	return err
 }

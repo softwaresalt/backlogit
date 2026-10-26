@@ -53,7 +53,11 @@ func queryGateEvidence(t *testing.T, database *sql.DB) map[string]gateRow {
 	t.Helper()
 	rows, err := database.Query(`SELECT item_id, gate_status, evidence_sha, head_sha FROM gate_evidence`)
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			t.Errorf("close rows: %v", err)
+		}
+	}()
 	out := map[string]gateRow{}
 	for rows.Next() {
 		var id, status, esha, hsha string

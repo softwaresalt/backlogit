@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -24,16 +25,20 @@ import (
 // The gate_status IN (...) predicate is served by idx_gate_evidence_status. The
 // literal status tokens are asserted to match the gateevidence.Status* constants
 // by TestLoadPassingGateEvidence_StatusTokensMatchConstants (drift guard).
-func LoadPassingGateEvidence(ctx context.Context, database *sql.DB) (map[string]string, error) {
+func LoadPassingGateEvidence(ctx context.Context, database *sql.DB) (out map[string]string, err error) {
 	const query = `SELECT item_id, gate_status FROM gate_evidence
 WHERE gate_status IN ('passed', 'forced', 'forced_no_run')`
 	rows, err := database.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("query gate_evidence: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close gate_evidence rows: %w", closeErr))
+		}
+	}()
 
-	out := make(map[string]string)
+	out = make(map[string]string)
 	for rows.Next() {
 		var id, status string
 		if scanErr := rows.Scan(&id, &status); scanErr != nil {

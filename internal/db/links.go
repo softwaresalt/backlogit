@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -67,7 +68,7 @@ func RemoveLink(ctx context.Context, database *sql.DB, sourceID, targetID, linkT
 }
 
 // GetLinks returns all outgoing links from sourceID, regardless of type.
-func GetLinks(ctx context.Context, database *sql.DB, sourceID string) ([]LinkEdge, error) {
+func GetLinks(ctx context.Context, database *sql.DB, sourceID string) (edges []LinkEdge, err error) {
 	rows, err := database.QueryContext(ctx,
 		`SELECT source_id, target_id, link_type, created_at FROM item_links WHERE source_id = ?`,
 		sourceID,
@@ -75,12 +76,16 @@ func GetLinks(ctx context.Context, database *sql.DB, sourceID string) ([]LinkEdg
 	if err != nil {
 		return nil, fmt.Errorf("get links for %s: %w", sourceID, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close link rows: %w", closeErr))
+		}
+	}()
 	return scanLinkEdges(rows)
 }
 
 // GetLinksByType returns all outgoing links from sourceID that match linkType.
-func GetLinksByType(ctx context.Context, database *sql.DB, sourceID, linkType string) ([]LinkEdge, error) {
+func GetLinksByType(ctx context.Context, database *sql.DB, sourceID, linkType string) (edges []LinkEdge, err error) {
 	rows, err := database.QueryContext(ctx,
 		`SELECT source_id, target_id, link_type, created_at FROM item_links WHERE source_id = ? AND link_type = ?`,
 		sourceID, linkType,
@@ -88,7 +93,11 @@ func GetLinksByType(ctx context.Context, database *sql.DB, sourceID, linkType st
 	if err != nil {
 		return nil, fmt.Errorf("get links for %s by type %s: %w", sourceID, linkType, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close link rows: %w", closeErr))
+		}
+	}()
 	return scanLinkEdges(rows)
 }
 
