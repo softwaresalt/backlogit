@@ -16,7 +16,9 @@ docline:
 * Owner of the fix: the external autoharness workspace (P-017 boundary).
 * Local status: hand-off authored. Nothing is fixed. This document does not
   claim, and must not be read as claiming, that the upstream defect is fixed.
-* Upstream delivery state: `pending-operator-delivery`. Delivery is an
+* Upstream delivery state: `pending-operator-delivery`. Not delivered as of
+  2026-10-27: Operator AFK during dark-factory execution of 183-S; hand-off
+  reviewed in-repo and ready for operator out-of-band delivery. Delivery is an
   operator act through a channel the operator chooses. No agent writes to
   any external system: no agent opens an upstream issue, sends a message, or
   writes to the external autoharness filesystem. The backlogit task that
@@ -51,6 +53,12 @@ disagrees with numeric order, the gate blocks the wrong shipment.
   suppressed.
 * The gate result was therefore inverted against the DAG. The authoritative
   root could not be claimed, and its dependent could not be claimed either.
+* Second occurrence, CI evidence (stash `95379DBA`): on PR #485 (153-S), the CI
+  pipeline-topology ambient job, pinned to `autoharness==1.5.0`, reported
+  `PREDECESSOR_NOT_SHIPPED` for 153-S naming 152-S, although 153-S's only
+  `item_deps` edge is 154-S (shipped). The locally installed 1.5.0 passed the
+  same run with `predecessor_source=explicit`. CI run 37728825570, job
+  113153060905. The CI pin bump (`F88FE051`) is related and out of scope here.
 * Live DAG today (backlogit index, 2026-09-30): `154-S` `blocks`-depends on
   `155-S` and `182-S`, and both are archived as shipped. Several queued
   shipments are not numerically adjacent to their real predecessors, for
@@ -115,3 +123,27 @@ decision confirms that the gate checks consumption.
 * No closure-awareness change (`F05661B1`) and no other gate defect.
 * No supersession notice for other numeric-gate records, such as the one
   tracked by stash `9A8E1879`.
+
+## Delivery Record
+
+Pre-delivery content review of this hand-off (task 183.002-T, shipment 183-S).
+
+* Review date: 2026-10-27
+* Reviewed hand-off revision: `14dcd672425590fedf3bb7439e7086679d778789`
+  (`git log -1 --format=%H -- <this file>` at review time). Later edits changed
+  only this Delivery Record and the delivery-state wording in the Status
+  section.
+* Checklist results:
+  1. No secrets, tokens, or machine-local paths: PASS.
+  2. No copied autoharness source or test code: PASS.
+  3. Every statement about the upstream fix is a request or recommendation, and
+     the status line never says the defect is fixed or resolved: PASS.
+  4. Evidence commit and shipment IDs match the live backlog (`69e900be`
+     exists; `154-S` blocks-depends on `155-S` and `182-S`, `149-S` on `169-S`,
+     `177-S` on `154-S` and `155-S`; `154-S`, `155-S`, `182-S` archived as
+     shipped): PASS.
+  5. No agent-run delivery command and no instruction for an agent to write
+     outside the repository: PASS.
+  6. Completeness: names T1 to T4, states the fix does not transfer (C), and
+     excludes `F05661B1`: PASS.
+* No agent performed any external write.

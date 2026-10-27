@@ -13,6 +13,15 @@ docline:
 
 ## Disposition Record: 6D53A33F
 
+### Superseded in part
+
+Stash A592FC1C supersedes **only** the conclusion below that numeric-adjacency
+predecessors are a presentation-only (misleading-readiness-presentation)
+concern: the implicit predecessor derivation is now tracked
+as an upstream defect, and the upstream hand-off is recorded in
+[the A592FC1C hand-off](2026-09-30-a592fc1c-pipeline-topology-dag-predecessor-upstream-handoff.md).
+The workspace-containment determination in this record still stands.
+
 **Kind**: bug (as stashed) → reclassified for routing as a cross-workspace
 product/contract decision. **Priority**: high. **Route**: `deliberate`
 (requires deliberation: true). **Outcome**: recorded disposition, **no in-repo
