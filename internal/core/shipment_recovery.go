@@ -76,7 +76,7 @@ func readShipmentBlockedSnapshot(
 	if err != nil {
 		return snapshot, fmt.Errorf("read shipment %s snapshot: %w", shipmentID, err)
 	}
-	if err := rejectDuplicateJSONMemberNames(data); err != nil {
+	if err := rejectDuplicateJSONMembers(data); err != nil {
 		return snapshot, fmt.Errorf("shipment %s snapshot: %w", shipmentID, err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -121,57 +121,6 @@ func readShipmentBlockedSnapshot(
 	snapshot.BlockedBy = normalizeBlockedEnvelopeOptionalString(snapshot.BlockedBy)
 	snapshot.ResumeCheckpointRef = normalizeBlockedEnvelopeOptionalString(snapshot.ResumeCheckpointRef)
 	return snapshot, nil
-}
-
-// rejectDuplicateJSONMemberNames scans data token by token and fails with
-// blerrors.ErrValidation when any object, at any depth, repeats a member name.
-// Names are compared case-insensitively because encoding/json matches struct
-// fields that way, so a case-only variant would silently alias a field.
-// Malformed JSON is not reported here; the decoder that follows reports it.
-func rejectDuplicateJSONMemberNames(data []byte) error {
-	err := scanJSONValueForDuplicateMembers(json.NewDecoder(bytes.NewReader(data)))
-	if err != nil && errors.Is(err, blerrors.ErrValidation) {
-		return err
-	}
-	return nil
-}
-
-func scanJSONValueForDuplicateMembers(decoder *json.Decoder) error {
-	token, err := decoder.Token()
-	if err != nil {
-		return err
-	}
-	delim, isDelim := token.(json.Delim)
-	if !isDelim {
-		return nil
-	}
-	switch delim {
-	case '{':
-		seen := make(map[string]struct{})
-		for decoder.More() {
-			keyToken, keyErr := decoder.Token()
-			if keyErr != nil {
-				return keyErr
-			}
-			key, _ := keyToken.(string)
-			folded := strings.ToLower(key)
-			if _, duplicate := seen[folded]; duplicate {
-				return fmt.Errorf("duplicate JSON member name %q: %w", key, blerrors.ErrValidation)
-			}
-			seen[folded] = struct{}{}
-			if valueErr := scanJSONValueForDuplicateMembers(decoder); valueErr != nil {
-				return valueErr
-			}
-		}
-	case '[':
-		for decoder.More() {
-			if valueErr := scanJSONValueForDuplicateMembers(decoder); valueErr != nil {
-				return valueErr
-			}
-		}
-	}
-	_, err = decoder.Token()
-	return err
 }
 
 func reconcileShipmentLifecycleIntent(

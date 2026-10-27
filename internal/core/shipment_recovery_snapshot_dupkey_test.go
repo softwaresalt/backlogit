@@ -32,6 +32,8 @@ func TestReadShipmentBlockedSnapshot_DuplicateMemberNamesRejected(t *testing.T) 
 		{"top-level names differing only in case", `{` + head + `"Shipment_ID":"201-S",` + tail + `,"members":{"201.001-T":"queued"}}`, true},
 		{"duplicate nested member", `{` + head + tail + `,"members":{"201.001-T":"queued","201.001-T":"done"}}`, true},
 		{"nested names differing only in case", `{` + head + tail + `,"members":{"201.001-T":"queued","201.001-t":"done"}}`, true},
+		{"top-level long s alias", `{` + head + `"\u017fhipment_id":"201-S",` + tail + `,"members":{"201.001-T":"queued"}}`, true},
+		{"trailing data after root", `{` + head + tail + `,"members":{"201.001-T":"queued"}} {}`, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
