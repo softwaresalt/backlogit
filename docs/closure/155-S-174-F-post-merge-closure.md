@@ -329,4 +329,4 @@ This record was renamed to match the `pipeline-topology` gate pattern
 
 * Previous path:
   `docs/closure/155-S-resumable-shipment-blocked-lifecycle-status-post-merge-closure.md`
-* Gate keys `closure_status`, `compaction_status`, and `conditions` are unchanged
+* Gate keys `closure_status`, `compaction_status`, and `conditions` are unchanged.
