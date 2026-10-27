@@ -350,9 +350,9 @@ byte-identical. U14 owns zero lint findings and uses a canonical
 U12 (`175.012-T`) is the unique terminal sink and the sole harness-exempt unit
 (P-002.1 `verification-only`, `harness-exempt` label, `harness_owner: none`,
 `must-fail-before-deliverable` precondition). It runs the mandatory build/vet/format
-gates — `go test ./...`, `go vet ./...`, and `gofmt -l .` — and delegates the mandatory
+gates — `go test -p 1 -timeout=30m -skip "^TestU175_[0-9]+_LintFix$" ./...`, `go vet ./...`, and `gofmt -l` across all tracked `.go` files (enumerated via `git ls-files -z -- "*.go"`, excluding git-ignored directories) — and delegates the mandatory
 zero-warning terminal LINT gate to the canonical terminal runner
-`scripts/verify-terminal-lint.ps1 -FeatureId 175-F`; it fails on any nonzero exit, a
+`scripts/verify-terminal-lint.ps1 -FeatureId 175-F -FixtureRoot $td` over live `golangci-lint` v2 findings materialized for both `windows` and `linux` across the 166 governed baseline paths in `docs/decisions/baseline-lint-inventory.json`; it fails on any nonzero exit, a
 missing `TERMINAL-LINT-OK:175-F` marker, or non-empty gofmt output, then validates its
 evidence artifact and a machine-readable full-identity `//nolint` suppression inventory.
 
