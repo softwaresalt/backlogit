@@ -15,8 +15,9 @@ docline:
 
 ### Superseded in part
 
-Stash A592FC1C supersedes **only** the "presentation-only" conclusion below about
-numeric-adjacency predecessors: the implicit predecessor derivation is now tracked
+Stash A592FC1C supersedes **only** the conclusion below that numeric-adjacency
+predecessors are a presentation-only (misleading-readiness-presentation)
+concern: the implicit predecessor derivation is now tracked
 as an upstream defect, and the upstream hand-off is recorded in
 [the A592FC1C hand-off](2026-09-30-a592fc1c-pipeline-topology-dag-predecessor-upstream-handoff.md).
 The workspace-containment determination in this record still stands.

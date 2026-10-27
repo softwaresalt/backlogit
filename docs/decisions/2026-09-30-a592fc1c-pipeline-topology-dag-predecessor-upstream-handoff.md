@@ -130,7 +130,9 @@ Pre-delivery content review of this hand-off (task 183.002-T, shipment 183-S).
 
 * Review date: 2026-10-27
 * Reviewed hand-off revision: `14dcd672425590fedf3bb7439e7086679d778789`
-  (`git log -1 --format=%H -- <this file>`)
+  (`git log -1 --format=%H -- <this file>` at review time). Later edits changed
+  only this Delivery Record and the delivery-state wording in the Status
+  section.
 * Checklist results:
   1. No secrets, tokens, or machine-local paths: PASS.
   2. No copied autoharness source or test code: PASS.
