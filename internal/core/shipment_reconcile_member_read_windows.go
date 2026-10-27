@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/sys/windows"
 
@@ -70,8 +71,26 @@ func readShipmentReconcileMemberFile(storageRoot, path string) (content []byte, 
 	if err != nil {
 		return nil, fmt.Errorf("resolve final path for member file %s: %w", pathAbs, err)
 	}
-	if finalPath != realRoot && !pathContained(realRoot, finalPath) {
-		return nil, fmt.Errorf("%w: member file %s resolves outside storage root %s", blerrors.ErrValidation, finalPath, realRoot)
+	expected, err := shipmentReconcileExpectedMemberPath(rootAbs, realRoot, pathAbs)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(finalPath, expected) {
+		return nil, fmt.Errorf("%w: member file %s resolves to %s instead of the expected path %s", blerrors.ErrValidation, pathAbs, finalPath, expected)
 	}
 	return readAllShipmentReconcileBounded(file, "member file "+pathAbs)
+}
+
+// shipmentReconcileExpectedMemberPath returns the canonical path the handle
+// must resolve to: the resolved storage root joined with the requested path's
+// components relative to the (resolved or unresolved) root.
+func shipmentReconcileExpectedMemberPath(rootAbs, realRoot, pathAbs string) (string, error) {
+	for _, base := range []string{realRoot, rootAbs} {
+		rel, err := filepath.Rel(base, pathAbs)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+			continue
+		}
+		return filepath.Join(realRoot, rel), nil
+	}
+	return "", fmt.Errorf("%w: member file %s is outside storage root %s", blerrors.ErrValidation, pathAbs, realRoot)
 }
