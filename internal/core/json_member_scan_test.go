@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -48,4 +49,15 @@ func TestDetectDuplicateJSONMembers_MatchesEncodingJSONKeyBinding(t *testing.T) 
 			assert.ErrorIs(t, err, blerrors.ErrValidation)
 		})
 	}
+}
+
+func TestRejectDuplicateJSONMembers_EnforcesNestingDepthLimit(t *testing.T) {
+	build := func(depth int) []byte {
+		return []byte(strings.Repeat("[", depth) + strings.Repeat("]", depth))
+	}
+	require.NoError(t, rejectDuplicateJSONMembers(build(maxJSONNestingDepth)))
+
+	err := rejectDuplicateJSONMembers(build(maxJSONNestingDepth + 1))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrValidation)
 }

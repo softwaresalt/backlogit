@@ -11,6 +11,11 @@ import (
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
+// maxJSONNestingDepth matches the nesting limit encoding/json enforces.
+const maxJSONNestingDepth = 10000
+
+var errJSONTooDeep = fmt.Errorf("%w: JSON exceeds maximum nesting depth of %d", blerrors.ErrValidation, maxJSONNestingDepth)
+
 type jsonScanFrame struct {
 	object    bool
 	expectKey bool
@@ -24,7 +29,11 @@ type jsonScanFrame struct {
 // unicode.SimpleFold orbit minimum of each rune, the same equivalence
 // encoding/json uses to bind keys to struct fields, so case-only variants and
 // Unicode aliases (U+017F, U+212A) are detected whether written literally or
-// as \u escapes (the decoder unescapes before this comparison).
+// as \u escapes (the decoder unescapes before this comparison). Names are
+// folded at every object level, including objects that encoding/json decodes
+// into map[string]T where keys are case-sensitive, so the walker is stricter
+// than encoding/json there; this fails closed by design. Nesting deeper than
+// maxJSONNestingDepth is rejected, as encoding/json does.
 func rejectDuplicateJSONMembers(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	var stack []jsonScanFrame
@@ -37,8 +46,14 @@ func rejectDuplicateJSONMembers(data []byte) error {
 		if delim, ok := token.(json.Delim); ok {
 			switch delim {
 			case '{':
+				if len(stack) >= maxJSONNestingDepth {
+					return errJSONTooDeep
+				}
 				stack = append(stack, jsonScanFrame{object: true, expectKey: true, seen: make(map[string]struct{})})
 			case '[':
+				if len(stack) >= maxJSONNestingDepth {
+					return errJSONTooDeep
+				}
 				stack = append(stack, jsonScanFrame{})
 			default:
 				stack = stack[:len(stack)-1]
