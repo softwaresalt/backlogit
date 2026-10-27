@@ -251,7 +251,7 @@ func validateShipmentReconcileManifestMembers(ctx context.Context, ws *Workspace
 	}
 
 	for _, memberID := range memberIDs {
-		member, err := findArtifact(ctx, ws, memberID)
+		member, err := loadShipmentReconcileManifestMember(ctx, ws, memberID)
 		if err != nil {
 			return fmt.Errorf("validate shipment reconcile preconditions: reload shipment member %s from markdown: %w", memberID, err)
 		}
@@ -260,6 +260,26 @@ func validateShipmentReconcileManifestMembers(ctx context.Context, ws *Workspace
 		}
 	}
 	return nil
+}
+
+// shipmentReconcileMemberReadSeam is a test-only seam (nil in production)
+// invoked after a manifest member path has been resolved and
+// containment-checked and before its bytes are read.
+var shipmentReconcileMemberReadSeam func(path string)
+
+func loadShipmentReconcileManifestMember(ctx context.Context, ws *Workspace, memberID string) (*models.Artifact, error) {
+	path, err := FindArtifactPath(ctx, ws, memberID)
+	if err != nil {
+		return nil, err
+	}
+	if shipmentReconcileMemberReadSeam != nil {
+		shipmentReconcileMemberReadSeam(path)
+	}
+	member, _, err := parseFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read shipment member %s: %w", memberID, err)
+	}
+	return member, nil
 }
 
 func validateShipmentReconcileManifestMember(member *models.Artifact) error {
