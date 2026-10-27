@@ -51,24 +51,12 @@ func TestWriteShipmentReconcileArchiveFileHandleRelative_RejectsIntermediateJunc
 }
 
 // TestWriteShipmentReconcileArchiveFileHandleRelative_TOCTOUSwapLeaksRealPayload
-// (Copilot PR #440 review residual-risk investigation) proves the SHARPER
-// version of the finding above: the post-rename containment check detects
-// the race only AFTER os.CreateTemp, Write, and Rename have already
-// followed the swapped junction, so the file left behind in the swapped-in
-// (outside-workspace) target carries the REAL requested payload bytes, not
-// merely an empty placeholder. This is a materially worse residual than
-// "an empty file may leak": actual archive content can reach a location
-// outside the workspace before the call reports failure. There is no
-// call-order fix available with only the stdlib primitives this codebase
-// otherwise depends on here — os.CreateTemp(realArchiveDir, ...) is itself
-// a plain pathname operation that re-walks (and, if an intermediate segment
-// was swapped, transparently follows) realArchiveDir a first time before
-// any content is ever written, so by the time Write runs the temp file may
-// already exist at the wrong location; only a true handle-relative
-// directory create (requiring NT-native APIs this codebase does not use
-// elsewhere) would close this fully. The call must still fail closed
-// (ErrWriteIndeterminate) and never report success, which this test also
-// verifies.
+// (Copilot PR #440 review residual-risk investigation; flipped by 201.005-T)
+// asserts the SHARPER form of the finding above: when the archive directory is
+// swapped for a junction pointing OUTSIDE the workspace after validation, no
+// payload byte may reach the outside location, and the call must still fail
+// closed. The writer binds every create and rename to a pinned directory
+// handle, so a swapped path can no longer redirect the write.
 func TestWriteShipmentReconcileArchiveFileHandleRelative_TOCTOUSwapLeaksRealPayload(t *testing.T) {
 	base := t.TempDir()
 	archiveDir := filepath.Join(base, "archive")
@@ -91,18 +79,15 @@ func TestWriteShipmentReconcileArchiveFileHandleRelative_TOCTOUSwapLeaksRealPayl
 
 	entries, readErr := os.ReadDir(outside)
 	require.NoError(t, readErr)
-	foundPayload := false
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		data, readFileErr := os.ReadFile(filepath.Join(outside, entry.Name()))
 		require.NoError(t, readFileErr)
-		if string(data) == payload {
-			foundPayload = true
-		}
+		assert.NotContains(t, string(data), payload[:8], "no payload byte may reach the swapped-in outside location (found in %s)", entry.Name())
+		assert.Empty(t, data, "no file content may be written to the swapped-in outside location (found in %s)", entry.Name())
 	}
-	assert.True(t, foundPayload, "the real archive payload bytes were expected to have leaked into the swapped-in outside location before the post-rename containment check could catch the race -- confirming the sharper residual-risk finding")
 }
 
 // TestWriteShipmentReconcileArchiveFileHandleRelative_SucceedsWithoutSwap is
