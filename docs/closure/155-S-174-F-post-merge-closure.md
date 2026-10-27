@@ -22,7 +22,7 @@ docline:
     - 155-S
     - 174-F
 schema_version: "1.0"
-source: docs/closure/155-S-resumable-shipment-blocked-lifecycle-status-post-merge-closure.md
+source: docs/closure/155-S-174-F-post-merge-closure.md
 title: "155-S post-merge operational closure"
 ---
 
@@ -319,3 +319,14 @@ identically. This review-time verification did not switch branches or alter
 operator worktree state.
 
 The closure PR remains pending operator merge approval.
+
+## Rename note
+
+This record was renamed to match the `pipeline-topology` gate pattern
+`docs/closure/{shipment_id}-{feature_id}-post-merge-closure.md` so the
+`pre_claim` gate recognizes predecessor `155-S`. Stash `CFBD7C8C`, shipment
+`203-S`.
+
+* Previous path:
+  `docs/closure/155-S-resumable-shipment-blocked-lifecycle-status-post-merge-closure.md`
+* Gate keys `closure_status`, `compaction_status`, and `conditions` are unchanged.

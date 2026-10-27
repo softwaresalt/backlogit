@@ -24,7 +24,7 @@ The completed release is PR #450, merged at
 `2c8759c3f7583d678ef674b3c6566541b4945375`. The implementation and review
 history remain in the archived source plan and
 `docs/closure/2026-09-25-155-S-final-review.md`; operational evidence is in
-`docs/closure/155-S-resumable-shipment-blocked-lifecycle-status-post-merge-closure.md`.
+`docs/closure/155-S-174-F-post-merge-closure.md`.
 
 ## Scope and invariants
 
@@ -170,4 +170,4 @@ boundaries, and detailed implementation assertions.
 * Final review:
   `docs/closure/2026-09-25-155-S-final-review.md`.
 * Post-merge operational closure:
-  `docs/closure/155-S-resumable-shipment-blocked-lifecycle-status-post-merge-closure.md`.
+  `docs/closure/155-S-174-F-post-merge-closure.md`.
