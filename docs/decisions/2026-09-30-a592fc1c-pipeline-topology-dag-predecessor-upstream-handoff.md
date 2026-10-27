@@ -121,3 +121,25 @@ decision confirms that the gate checks consumption.
 * No closure-awareness change (`F05661B1`) and no other gate defect.
 * No supersession notice for other numeric-gate records, such as the one
   tracked by stash `9A8E1879`.
+
+## Delivery Record
+
+Pre-delivery content review of this hand-off (task 183.002-T, shipment 183-S).
+
+* Review date: 2026-10-27
+* Reviewed hand-off revision: `14dcd672425590fedf3bb7439e7086679d778789`
+  (`git log -1 --format=%H -- <this file>`)
+* Checklist results:
+  1. No secrets, tokens, or machine-local paths: PASS.
+  2. No copied autoharness source or test code: PASS.
+  3. Every statement about the upstream fix is a request or recommendation, and
+     the status line never says the defect is fixed or resolved: PASS.
+  4. Evidence commit and shipment IDs match the live backlog (`69e900be`
+     exists; `154-S` blocks-depends on `155-S` and `182-S`, `149-S` on `169-S`,
+     `177-S` on `154-S` and `155-S`; `154-S`, `155-S`, `182-S` archived as
+     shipped): PASS.
+  5. No agent-run delivery command and no instruction for an agent to write
+     outside the repository: PASS.
+  6. Completeness: names T1 to T4, states the fix does not transfer (C), and
+     excludes `F05661B1`: PASS.
+* No agent performed any external write.
