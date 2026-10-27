@@ -16,7 +16,9 @@ docline:
 * Owner of the fix: the external autoharness workspace (P-017 boundary).
 * Local status: hand-off authored. Nothing is fixed. This document does not
   claim, and must not be read as claiming, that the upstream defect is fixed.
-* Upstream delivery state: `pending-operator-delivery`. Delivery is an
+* Upstream delivery state: `pending-operator-delivery`. Not delivered as of
+  2026-10-27: Operator AFK during dark-factory execution of 183-S; hand-off
+  reviewed in-repo and ready for operator out-of-band delivery. Delivery is an
   operator act through a channel the operator chooses. No agent writes to
   any external system: no agent opens an upstream issue, sends a message, or
   writes to the external autoharness filesystem. The backlogit task that
