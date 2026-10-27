@@ -140,3 +140,11 @@ func TestAppendShipmentReconcileEventHandleRelative_SucceedsWithoutSwap(t *testi
 	require.NoError(t, readErr)
 	assert.Equal(t, "{\"x\":1}\n", string(got))
 }
+
+func TestAppendShipmentReconcileEvent_RefusesOutsidePointingLogsJunction(t *testing.T) {
+	requireAppendRefusesOutsideLogsLink(t, func(logsDir, outside string) {
+		if err := createReconcileTestJunction(t, logsDir, outside); err != nil {
+			t.Skipf("junction unavailable: %v", err)
+		}
+	})
+}
