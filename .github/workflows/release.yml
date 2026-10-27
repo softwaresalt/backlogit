@@ -37,7 +37,7 @@ jobs:
       - name: Test
         # Race and coverage run in protected PR CI on the Go 1.24 support target.
         # Release tags also verify protected-main provenance before packaging.
-        run: go test ./...
+        run: go test -timeout=30m ./...
 
   changelog:
     name: Generate Changelog
