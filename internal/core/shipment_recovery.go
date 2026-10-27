@@ -40,6 +40,11 @@ type ShipmentBlockedSnapshot struct {
 	Members             map[string]string `json:"members"`
 }
 
+// shipmentSnapshotReadSeam is a test-only seam (nil in production) invoked
+// after the snapshot path was resolved and containment-checked and before its
+// bytes are read.
+var shipmentSnapshotReadSeam func(path string)
+
 func readShipmentBlockedSnapshot(
 	ws *Workspace,
 	reference string,
@@ -64,9 +69,15 @@ func readShipmentBlockedSnapshot(
 	if err != nil {
 		return snapshot, fmt.Errorf("resolve shipment %s snapshot reference: %w", shipmentID, err)
 	}
-	data, err := os.ReadFile(snapshotPath)
+	if shipmentSnapshotReadSeam != nil {
+		shipmentSnapshotReadSeam(snapshotPath)
+	}
+	data, err := readShipmentReconcileMemberFile(WorkspaceStorageRoot(ws.RootPath), snapshotPath)
 	if err != nil {
 		return snapshot, fmt.Errorf("read shipment %s snapshot: %w", shipmentID, err)
+	}
+	if err := rejectDuplicateJSONMembers(data); err != nil {
+		return snapshot, fmt.Errorf("shipment %s snapshot: %w", shipmentID, err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()

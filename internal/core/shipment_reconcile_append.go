@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -97,7 +98,31 @@ func appendShipmentReconcileEventImplWithSeams(ctx context.Context, ws *Workspac
 	}
 	logPath := events.LogPathForItem(logsDir, itemID)
 
-	result, err := seams.appendHandleRelative(logsDir, itemID+".jsonl", eventBytes)
+	// Resolve the destination once, up front, so the platform writer can bind
+	// to this canonical path instead of re-resolving it inside the swap window.
+	// The logs directory itself must not be a link, and its resolved form must
+	// stay inside the resolved storage root; resolving first would otherwise
+	// launder an outside-pointing link into an accepted real path.
+	info, err := os.Lstat(logsDir)
+	if err != nil {
+		return fmt.Errorf("%w: inspect logs directory: %w", blerrors.ErrWriteNotApplied, err)
+	}
+	if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		return fmt.Errorf("%w: logs directory %s is a symlink or reparse point", blerrors.ErrWriteNotApplied, logsDir)
+	}
+	realLogsDir, err := filepath.EvalSymlinks(logsDir)
+	if err != nil {
+		return fmt.Errorf("%w: resolve logs directory: %w", blerrors.ErrWriteNotApplied, err)
+	}
+	realRoot, err := filepath.EvalSymlinks(WorkspaceStorageRoot(ws.RootPath))
+	if err != nil {
+		return fmt.Errorf("%w: resolve storage root: %w", blerrors.ErrWriteNotApplied, err)
+	}
+	if !pathContained(realRoot, realLogsDir) {
+		return fmt.Errorf("%w: logs directory %s resolves outside the storage root", blerrors.ErrWriteNotApplied, logsDir)
+	}
+
+	result, err := seams.appendHandleRelative(realLogsDir, itemID+".jsonl", eventBytes)
 	if err != nil {
 		return err
 	}

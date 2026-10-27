@@ -1,0 +1,96 @@
+//go:build windows
+
+package core
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"golang.org/x/sys/windows"
+
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+)
+
+// readShipmentReconcileMemberFile opens a manifest member file once, verifies
+// on that same handle that its final path lies inside storageRoot (via
+// GetFinalPathNameByHandle, so a reparse point at ANY path component is
+// caught, not only the leaf), and returns the bytes read from that handle.
+func readShipmentReconcileMemberFile(storageRoot, path string) (content []byte, retErr error) {
+	rootAbs, err := filepath.Abs(storageRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve storage root %s: %w", storageRoot, err)
+	}
+	realRoot, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve storage root real path %s: %w", rootAbs, err)
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve member path %s: %w", path, err)
+	}
+	name, err := windows.UTF16PtrFromString(pathAbs)
+	if err != nil {
+		return nil, fmt.Errorf("encode member path %s: %w", pathAbs, err)
+	}
+	handle, err := windows.CreateFile(
+		name,
+		windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT,
+		0,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("open member file %s: %w", pathAbs, err)
+	}
+	file := os.NewFile(uintptr(handle), pathAbs)
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close member file %s: %w", pathAbs, closeErr))
+		}
+	}()
+
+	var info windows.ByHandleFileInformation
+	if infoErr := windows.GetFileInformationByHandle(handle, &info); infoErr != nil {
+		return nil, fmt.Errorf("stat member file %s: %w", pathAbs, infoErr)
+	}
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return nil, fmt.Errorf("%w: member file %s is a reparse point", blerrors.ErrValidation, pathAbs)
+	}
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
+		return nil, fmt.Errorf("%w: member file %s is a directory", blerrors.ErrValidation, pathAbs)
+	}
+	if fileType, typeErr := windows.GetFileType(handle); typeErr != nil || fileType != windows.FILE_TYPE_DISK {
+		return nil, fmt.Errorf("%w: member file %s is not a regular disk file", blerrors.ErrValidation, pathAbs)
+	}
+	finalPath, err := shipmentReconcileWindowsFinalPath(handle)
+	if err != nil {
+		return nil, fmt.Errorf("resolve final path for member file %s: %w", pathAbs, err)
+	}
+	expected, err := shipmentReconcileExpectedMemberPath(rootAbs, realRoot, pathAbs)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(finalPath, expected) {
+		return nil, fmt.Errorf("%w: member file %s resolves to %s instead of the expected path %s", blerrors.ErrValidation, pathAbs, finalPath, expected)
+	}
+	return readAllShipmentReconcileBounded(file, "member file "+pathAbs)
+}
+
+// shipmentReconcileExpectedMemberPath returns the canonical path the handle
+// must resolve to: the resolved storage root joined with the requested path's
+// components relative to the (resolved or unresolved) root.
+func shipmentReconcileExpectedMemberPath(rootAbs, realRoot, pathAbs string) (string, error) {
+	for _, base := range []string{realRoot, rootAbs} {
+		rel, err := filepath.Rel(base, pathAbs)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+			continue
+		}
+		return filepath.Join(realRoot, rel), nil
+	}
+	return "", fmt.Errorf("%w: member file %s is outside storage root %s", blerrors.ErrValidation, pathAbs, realRoot)
+}

@@ -226,95 +226,10 @@ func decodeShipmentReconciledShippedDelta(delta map[string]any) (ShipmentReconci
 	return typed, nil
 }
 
-// reconcileJSONEntry is one ordered (key, raw value) pair decoded from a
-// single JSON object level via an ordered token stream.
-type reconcileJSONEntry struct {
-	key   string
-	value json.RawMessage
-}
-
-// decodeJSONObjectEntries decodes a single JSON object level using an
-// ordered token stream (never a map decode, which would apply Go's
-// last-key-wins semantics and silently hide a duplicate before any scan
-// sees it). Mirrors the established decodeTopLevelEntries pattern in
-// internal/events/checkpoint_strict.go.
-func decodeJSONObjectEntries(data []byte) ([]reconcileJSONEntry, error) {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	tok, err := dec.Token()
-	if err != nil {
-		return nil, err
-	}
-	delim, ok := tok.(json.Delim)
-	if !ok || delim.String() != "{" {
-		return nil, fmt.Errorf("expected a JSON object, got %v", tok)
-	}
-	var entries []reconcileJSONEntry
-	for dec.More() {
-		keyTok, keyErr := dec.Token()
-		if keyErr != nil {
-			return nil, keyErr
-		}
-		key, ok := keyTok.(string)
-		if !ok {
-			return nil, fmt.Errorf("expected a string key, got %v", keyTok)
-		}
-		var v json.RawMessage
-		if decodeErr := dec.Decode(&v); decodeErr != nil {
-			return nil, decodeErr
-		}
-		entries = append(entries, reconcileJSONEntry{key: key, value: v})
-	}
-	return entries, nil
-}
-
-// detectDuplicateJSONMembers recursively scans data — and every nested JSON
-// object within it, including objects nested inside arrays — for duplicate
-// object members (exact byte-equal key repeats), returning an error naming
-// the first duplicate found (in document order) at any nesting depth. It
-// operates on the raw ordered token stream, never a map decode: a map
-// decode silently keeps the LAST duplicate value, which would let two
-// conflicting members (e.g. two "item_id" entries) pass a
-// map-canonicalized comparison undetected (167.002-T).
+// detectDuplicateJSONMembers rejects duplicate object members at any depth
+// (key equivalence matches encoding/json binding), malformed JSON, and
+// trailing data, delegating to the shared single-pass walker. A map decode
+// would silently keep the LAST duplicate value (167.002-T).
 func detectDuplicateJSONMembers(data []byte) error {
-	return detectDuplicateJSONMembersAt(data, "$")
-}
-
-func detectDuplicateJSONMembersAt(data []byte, path string) error {
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return nil
-	}
-	switch trimmed[0] {
-	case '[':
-		var elements []json.RawMessage
-		if err := json.Unmarshal(trimmed, &elements); err != nil {
-			// Shape errors are the real decoder's responsibility; this scan
-			// only reports duplicates it can positively identify.
-			return nil
-		}
-		for i, el := range elements {
-			if err := detectDuplicateJSONMembersAt(el, fmt.Sprintf("%s[%d]", path, i)); err != nil {
-				return err
-			}
-		}
-		return nil
-	case '{':
-		entries, err := decodeJSONObjectEntries(trimmed)
-		if err != nil {
-			return nil
-		}
-		seen := make(map[string]struct{}, len(entries))
-		for _, e := range entries {
-			if _, dup := seen[e.key]; dup {
-				return fmt.Errorf("%w: duplicate object member %q at %s", blerrors.ErrValidation, e.key, path)
-			}
-			seen[e.key] = struct{}{}
-			if err := detectDuplicateJSONMembersAt(e.value, path+"."+e.key); err != nil {
-				return err
-			}
-		}
-		return nil
-	default:
-		return nil
-	}
+	return rejectDuplicateJSONMembers(data)
 }

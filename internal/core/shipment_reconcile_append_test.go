@@ -214,3 +214,31 @@ func TestAppendShipmentReconcileEventImplWithSeams_ValidatesPrimitivesOwnReadBac
 	assert.Equal(t, EventShipmentReconciledShipped, eventType)
 	assert.Contains(t, deltaJSON, "governed repair", "the indexed delta must reflect the original (readBack) event content, not the swapped on-disk bytes")
 }
+
+// requireAppendRefusesOutsideLogsLink points the workspace logs directory at
+// an outside directory via link and proves the append is refused unwritten.
+func requireAppendRefusesOutsideLogsLink(t *testing.T, link func(logsDir, outside string)) {
+	t.Helper()
+	ws := setupShipmentWorkspace(t)
+	itemID := "201-U1-outside-link"
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	require.NoError(t, os.RemoveAll(logsDir))
+	outside := t.TempDir()
+	link(logsDir, outside)
+
+	raw := marshalReconciledShippedEvent(t, validReconciledShippedDelta(), itemID)
+	err := appendShipmentReconcileEvent(context.Background(), ws, itemID, raw)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, blerrors.ErrWriteNotApplied)
+
+	_, statErr := os.Stat(events.LogPathForItem(outside, itemID))
+	assert.True(t, os.IsNotExist(statErr), "nothing may be written through an outside-pointing logs link")
+}
+
+func TestAppendShipmentReconcileEvent_RefusesOutsidePointingLogsSymlink(t *testing.T) {
+	requireAppendRefusesOutsideLogsLink(t, func(logsDir, outside string) {
+		if err := os.Symlink(outside, logsDir); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+	})
+}
