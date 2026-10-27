@@ -72,7 +72,7 @@ func readShipmentBlockedSnapshot(
 	if shipmentSnapshotReadSeam != nil {
 		shipmentSnapshotReadSeam(snapshotPath)
 	}
-	data, err := os.ReadFile(snapshotPath)
+	data, err := readShipmentReconcileMemberFile(WorkspaceStorageRoot(ws.RootPath), snapshotPath)
 	if err != nil {
 		return snapshot, fmt.Errorf("read shipment %s snapshot: %w", shipmentID, err)
 	}
