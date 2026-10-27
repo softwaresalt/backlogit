@@ -530,7 +530,7 @@ func TestHeavyStepsAreFailSafeGated(t *testing.T) {
 
 	docsLint := wf.Jobs["docs-lint"]
 	assert.Equal(t, "needs.changes.outputs.docline_required == 'false'", findStep(t, docsLint, "Skip docline lint for code-only changes").If)
-	for _, stepName := range []string{"Checkout", "Setup Go for docline lint", "Lint documentation frontmatter", "Enforce docline soft keys on tracked corpus"} {
+	for _, stepName := range []string{"Checkout", "Setup Go for docline lint", "Lint documentation frontmatter", "Enforce docline soft keys on tracked corpus", "Enforce governed full-suite budget contracts"} {
 		step := findStep(t, docsLint, stepName)
 		assert.Equal(t, "needs.changes.outputs.docline_required != 'false'", step.If, "%s should run on docs, frontmatter, unknown, or detector failure", stepName)
 	}
@@ -540,6 +540,18 @@ func TestHeavyStepsAreFailSafeGated(t *testing.T) {
 	softKeyGuard := findStep(t, docsLint, "Enforce docline soft keys on tracked corpus")
 	assert.Contains(t, softKeyGuard.Run, "TestDoclineSoftKeys_LiveTrackedCorpus",
 		"docs-lint must enforce the live docline soft-key corpus guard on docs-only PRs")
+	// The governed full-suite budget prefix selector closes the Markdown-only
+	// CI gap (073-DL): a Markdown-only reversion of any governed surface must
+	// fail on its own PR. The step must be non-vacuous.
+	budgetGuard := findStep(t, docsLint, "Enforce governed full-suite budget contracts")
+	assert.Contains(t, budgetGuard.Run, "'^TestGovernedFullSuiteBudget_'",
+		"docs-lint must run the governed full-suite budget prefix selector")
+	assert.Contains(t, budgetGuard.Run, "./tests/integration/",
+		"governed budget selector must target the integration package")
+	assert.Contains(t, budgetGuard.Run, "--- PASS:",
+		"governed budget selector must guard against vacuous passes by counting top-level PASS lines")
+	assert.Contains(t, budgetGuard.Run, "no tests to run",
+		"governed budget selector must fail on a no-tests-to-run result")
 
 	drift := wf.Jobs["cli-reference-drift"]
 	assert.Equal(t,

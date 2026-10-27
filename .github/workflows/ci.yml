@@ -118,7 +118,7 @@ jobs:
         run: go vet ./...
       - name: Test
         if: needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false'
-        run: go test -race -coverprofile=coverage.out ./...
+        run: go test -race -timeout=30m -coverprofile=coverage.out ./...
       - name: Coverage report
         if: needs.changes.outputs.code != 'false' || needs.changes.outputs.plugin_bundle != 'false'
         run: go tool cover -func=coverage.out
@@ -189,6 +189,20 @@ jobs:
       - name: Enforce docline soft keys on tracked corpus
         if: needs.changes.outputs.docline_required != 'false'
         run: go test ./tests/integration/ -run '^TestDoclineSoftKeys_LiveTrackedCorpus$' -count=1
+      - name: Enforce governed full-suite budget contracts
+        if: needs.changes.outputs.docline_required != 'false'
+        run: |
+          out="$(go test ./tests/integration/ -run '^TestGovernedFullSuiteBudget_' -count=1 -v 2>&1)" || { echo "$out"; exit 1; }
+          echo "$out"
+          if echo "$out" | grep -q 'no tests to run'; then
+            echo "governed budget selector matched no tests (no tests to run)"
+            exit 1
+          fi
+          passes="$(echo "$out" | grep -c '^--- PASS:' || true)"
+          if [ "$passes" -lt 1 ]; then
+            echo "governed budget selector produced no top-level --- PASS: lines"
+            exit 1
+          fi
 
   cli-reference-drift:
     name: CLI Reference Drift
