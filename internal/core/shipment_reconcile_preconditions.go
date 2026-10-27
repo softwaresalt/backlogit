@@ -287,6 +287,9 @@ func loadShipmentReconcileManifestMember(ctx context.Context, ws *Workspace, mem
 	if err != nil {
 		return nil, fmt.Errorf("build shipment member %s artifact: %w", memberID, err)
 	}
+	if member.ID != memberID {
+		return nil, fmt.Errorf("shipment member %s file reloaded as artifact %s: %w", memberID, member.ID, blerrors.ErrValidation)
+	}
 	return member, nil
 }
 

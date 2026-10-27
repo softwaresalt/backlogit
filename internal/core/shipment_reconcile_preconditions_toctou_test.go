@@ -71,3 +71,30 @@ func TestValidateShipmentReconcileManifestMembers_SwapAfterContainmentCheckIsNot
 	assert.NotErrorIs(t, err, blerrors.ErrUnsupportedLegacyDescope, "the substituted outside file must never be read")
 	assert.ErrorIs(t, err, blerrors.ErrValidation)
 }
+
+// TestValidateShipmentReconcileManifestMembers_ReplacedByDifferentArtifactIsRefused
+// replaces the member file, after path selection, with another in-root artifact
+// of a different ID in a terminal status. The reloaded ID must be checked.
+func TestValidateShipmentReconcileManifestMembers_ReplacedByDifferentArtifactIsRefused(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	memberID := createShipmentReconcileMemberWithStatus(t, ws, models.StatusQueued)
+	otherID := createShipmentReconcileMemberWithStatus(t, ws, models.StatusDone)
+	require.NotEqual(t, memberID, otherID)
+
+	memberPath, err := FindArtifactPath(ctx, ws, memberID)
+	require.NoError(t, err)
+	otherPath, err := FindArtifactPath(ctx, ws, otherID)
+	require.NoError(t, err)
+	otherRaw, err := os.ReadFile(otherPath)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { shipmentReconcileMemberReadSeam = nil })
+	shipmentReconcileMemberReadSeam = func(string) {
+		require.NoError(t, os.WriteFile(memberPath, otherRaw, 0o644))
+	}
+
+	err = validateShipmentReconcileManifestMembers(ctx, ws, []string{memberID})
+	require.Error(t, err, "a replacement artifact with a different ID must not be accepted as evidence")
+	assert.ErrorIs(t, err, blerrors.ErrValidation)
+}
