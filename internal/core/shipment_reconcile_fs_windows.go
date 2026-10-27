@@ -37,50 +37,45 @@ var shipmentReconcileFSWindowsTOCTOUHook func()
 // classification logic deterministically without depending on real Windows
 // directory-fsync behavior.
 //
-// Copilot PR #440 review hardening: the pathname-based archiveDir/finalPath
-// reparse checks below only see the state of the filesystem at check time;
-// os.CreateTemp and os.Rename are themselves plain pathname operations that
-// re-walk archiveDir a second (and third) time afterward, leaving a window
-// in which an INTERMEDIATE directory inside archiveDir could be swapped for
-// a reparse point between the check and those calls, redirecting the
-// governed archive write outside the workspace. This is closed by (1)
-// snapshotting archiveDir's fully-resolved real path (filepath.EvalSymlinks,
-// which walks every path segment) immediately before use, and (2) after the
-// rename commits, re-opening finalPath and re-deriving the ACTUAL handle's
-// own resolved final path (the same handle-bound re-validation
-// shipment_reconcile_evidence_windows.go's closure-evidence read already
-// applies) — failing the call (as indeterminate, since the write already
-// committed and cannot be un-applied) unless that final path still lands
-// directly inside the snapshot.
+// Copilot PR #440 review hardening and 201.006-T: pathname-based re-walks of
+// archiveDir (os.CreateTemp, os.Rename) left a window in which a directory
+// could be swapped for a link. That is closed by binding every create and
+// rename to a pinned directory handle (pinShipmentReconcileDir) opened on the
+// caller's trusted, already-resolved archiveDir. archiveDir is NOT re-resolved
+// with EvalSymlinks inside this function: a directory symlink swapped in
+// between the reparse pre-check and a re-resolution would make the resolved
+// path (and therefore the pin and its verification) point outside the
+// workspace. Instead the pin's handle-derived final path must equal the
+// trusted path, so a swap of the directory or any ancestor is rejected with
+// nothing written. After the rename, the renamed file's own handle-derived
+// final path is re-checked as defense in depth (indeterminate on failure,
+// since the write already committed).
 //
-// Residual risk (201.006-T, replaces the pre-CY-C characterization that
-// payload bytes could leak to an outside location): the directory is
-// pinned by handle (pinShipmentReconcileDir) after the EvalSymlinks snapshot
-// and verified on that handle before anything is created; the temp file is
-// created with NtCreateFile relative to the pinned handle, and the rename uses
-// FileRenameInformation with the same RootDirectory handle, so no create,
-// write, or rename re-walks archiveDir by path. A swap before the pin is
-// rejected by the handle check with nothing written; a swap after the pin
-// cannot redirect the write, and the pin (no FILE_SHARE_DELETE) refuses
-// rename or deletion of the pinned directory itself while the handle is open
-// (Windows normally refuses renaming its ancestors too; this is not relied on).
-// The remaining exposure is the pre-existing leaf reparse-point pre-check and
-// the shared-directory semantics described in
+// Residual risk: the pin (no FILE_SHARE_DELETE) refuses rename or deletion of
+// the pinned directory while held, but a swap that completes before the pin
+// is only detected, not prevented; the pre-existing leaf reparse-point
+// pre-check and the shared-directory semantics are described in
 // docs/decisions/2026-10-08-cy-c-windows-relative-create-spike.md.
 func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string, content []byte, seams shipmentReconcileFSSeams) (err error) {
+	if nameErr := validateShipmentReconcileFileName(fileName); nameErr != nil {
+		return fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, nameErr)
+	}
 	if reparse, err := isReparsePointPath(archiveDir); err != nil {
 		return fmt.Errorf("%w: stat archive directory %s: %w", blerrors.ErrWriteNotApplied, archiveDir, err)
 	} else if reparse {
 		return fmt.Errorf("%w: archive directory %s is a reparse point", blerrors.ErrValidation, archiveDir)
 	}
-
-	realArchiveDir, err := filepath.EvalSymlinks(archiveDir)
-	if err != nil {
-		return fmt.Errorf("%w: resolve archive directory %s: %w", blerrors.ErrWriteNotApplied, archiveDir, err)
-	}
+	// archiveDir is the caller's already-resolved, containment-checked
+	// canonical destination. It is deliberately NOT re-resolved here: a
+	// symlink swapped in after the pre-check would be followed by
+	// EvalSymlinks and the pin would then bind (and verify) the OUTSIDE
+	// directory. The pin below is opened on the trusted path itself and its
+	// handle-derived final path must still equal it, so any swap of the
+	// directory or of an ancestor is rejected before anything is created.
 	if shipmentReconcileFSWindowsTOCTOUHook != nil {
 		shipmentReconcileFSWindowsTOCTOUHook()
 	}
+	realArchiveDir := filepath.Clean(archiveDir)
 
 	finalPath := filepath.Join(realArchiveDir, fileName)
 	if reparse, err := isReparsePointPath(finalPath); err != nil {
@@ -107,23 +102,25 @@ func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string
 	if err != nil {
 		return fmt.Errorf("%w: create temp archive file: %w", blerrors.ErrWriteNotApplied, err)
 	}
-	cleanupTmp := func() {
-		pin.deleteFile(tmpFile)
-		_ = tmpFile.Close()
+	cleanupTmp := func(cause error) error {
+		if delErr := pin.deleteFile(tmpFile); delErr != nil {
+			cause = errors.Join(cause, delErr)
+		}
+		if closeErr := tmpFile.Close(); closeErr != nil {
+			cause = errors.Join(cause, fmt.Errorf("close temp archive file: %w", closeErr))
+		}
+		return cause
 	}
 
 	if _, writeErr := tmpFile.Write(content); writeErr != nil {
-		cleanupTmp()
-		return fmt.Errorf("%w: write temp archive file: %w", blerrors.ErrWriteNotApplied, writeErr)
+		return cleanupTmp(fmt.Errorf("%w: write temp archive file: %w", blerrors.ErrWriteNotApplied, writeErr))
 	}
 	if syncErr := seams.syncFile(tmpFile); syncErr != nil {
-		cleanupTmp()
-		return fmt.Errorf("%w: fsync temp archive file: %w", blerrors.ErrWriteNotApplied, syncErr)
+		return cleanupTmp(fmt.Errorf("%w: fsync temp archive file: %w", blerrors.ErrWriteNotApplied, syncErr))
 	}
 
 	if renameErr := pin.renameFile(tmpFile, fileName); renameErr != nil {
-		cleanupTmp()
-		return fmt.Errorf("%w: rename archive file: %w", blerrors.ErrWriteNotApplied, renameErr)
+		return cleanupTmp(fmt.Errorf("%w: rename archive file: %w", blerrors.ErrWriteNotApplied, renameErr))
 	}
 
 	// The rename has committed and the new content is visible. A failure
@@ -132,9 +129,9 @@ func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string
 	// bound to the pinned directory handle, so the file cannot have landed
 	// elsewhere; re-derive the renamed file's own resolved final path from
 	// the still-open handle (not a fresh pathname open) as defense in depth.
-	if containErr := verifyShipmentReconcileRenamedFileContainment(tmpFile, finalPath, realArchiveDir); containErr != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("%w: post-write containment check failed for archive file %s: %w", blerrors.ErrWriteIndeterminate, finalPath, containErr)
+	if containErr := verifyShipmentReconcileRenamedFileContainment(tmpFile, realArchiveDir); containErr != nil {
+		closeErr := tmpFile.Close()
+		return errors.Join(fmt.Errorf("%w: post-write containment check failed for archive file %s: %w", blerrors.ErrWriteIndeterminate, finalPath, containErr), closeErr)
 	}
 	if closeErr := tmpFile.Close(); closeErr != nil {
 		return fmt.Errorf("%w: close archive file %s: %w", blerrors.ErrWriteIndeterminate, finalPath, closeErr)
@@ -164,11 +161,11 @@ func writeShipmentReconcileArchiveFileHandleRelative(archiveDir, fileName string
 
 // verifyShipmentReconcileRenamedFileContainment re-derives the ACTUAL open
 // handle's own resolved final path via GetFinalPathNameByHandle and requires
-// it to be exactly wantPath inside realDir.
-func verifyShipmentReconcileRenamedFileContainment(file *os.File, wantPath, realDir string) error {
+// it to be inside realDir.
+func verifyShipmentReconcileRenamedFileContainment(file *os.File, realDir string) error {
 	finalPath, err := shipmentReconcileWindowsFinalPath(windows.Handle(file.Fd()))
 	if err != nil {
-		return fmt.Errorf("resolve final path for archive file %s: %w", wantPath, err)
+		return fmt.Errorf("resolve final path for archive file: %w", err)
 	}
 	if finalPath != realDir && !pathContained(realDir, finalPath) {
 		return fmt.Errorf("%w: archive file %s resolves outside archive directory %s", blerrors.ErrValidation, finalPath, realDir)

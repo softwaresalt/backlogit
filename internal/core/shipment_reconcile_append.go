@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -97,7 +98,14 @@ func appendShipmentReconcileEventImplWithSeams(ctx context.Context, ws *Workspac
 	}
 	logPath := events.LogPathForItem(logsDir, itemID)
 
-	result, err := seams.appendHandleRelative(logsDir, itemID+".jsonl", eventBytes)
+	// Resolve the destination once, up front, so the platform writer can bind
+	// to this canonical path instead of re-resolving it inside the swap window.
+	realLogsDir, err := filepath.EvalSymlinks(logsDir)
+	if err != nil {
+		return fmt.Errorf("%w: resolve logs directory: %w", blerrors.ErrWriteNotApplied, err)
+	}
+
+	result, err := seams.appendHandleRelative(realLogsDir, itemID+".jsonl", eventBytes)
 	if err != nil {
 		return err
 	}

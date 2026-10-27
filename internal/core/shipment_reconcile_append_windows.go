@@ -31,34 +31,30 @@ var shipmentReconcileAppendWindowsTOCTOUHook func()
 // followed, and no empty file can be created at a swapped-in location.
 // eventBytes is then appended and fsynced.
 //
-// Copilot PR #440 review hardening: FILE_FLAG_OPEN_REPARSE_POINT alone only
-// protects the FINAL path component (logPath itself) from being
-// transparently followed; it does nothing to stop an INTERMEDIATE directory
-// inside logsDir from being replaced by a reparse point between the
-// isReparsePointPath(logsDir) pathname check above and the CreateFile call
-// below. This is closed by (1) snapshotting logsDir's fully-resolved real
-// path (filepath.EvalSymlinks, which walks every path segment, unlike
-// Lstat's final-component-only check) immediately before use, and (2) after
-// the open, re-deriving the ACTUAL handle's own resolved final path (the
-// same handle-bound re-validation shipment_reconcile_evidence_windows.go's
-// closure-evidence read already applies) and failing closed — before
-// writing anything — unless that final path still lands directly inside the
-// snapshot. Any swap occurring between the snapshot and the open is thereby
-// caught after the fact instead of trusted blindly.
+// Copilot PR #440 review hardening and 201.006-T: FILE_FLAG_OPEN_REPARSE_POINT
+// alone only protects the FINAL path component. The directory is therefore
+// pinned by handle on the caller's trusted, already-resolved logsDir, which is
+// deliberately NOT re-resolved with EvalSymlinks here (a directory symlink
+// swapped in before a re-resolution would make the pin bind the outside
+// directory); the pin's handle-derived final path must equal logsDir, so a swap
+// of the directory or an ancestor is rejected before anything is created. After
+// the open, the file handle's own final path is re-checked against logsDir
+// before anything is written.
 func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventBytes []byte) (_ shipmentReconcileAppendResult, err error) {
+	if nameErr := validateShipmentReconcileFileName(fileName); nameErr != nil {
+		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, nameErr)
+	}
 	if reparse, err := isReparsePointPath(logsDir); err != nil {
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: stat logs directory %s: %w", blerrors.ErrWriteNotApplied, logsDir, err)
 	} else if reparse {
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: logs directory %s is a reparse point", blerrors.ErrValidation, logsDir)
 	}
-
-	realLogsDir, err := filepath.EvalSymlinks(logsDir)
-	if err != nil {
-		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: resolve logs directory %s: %w", blerrors.ErrWriteNotApplied, logsDir, err)
-	}
+	// logsDir is the caller's trusted destination and is not re-resolved: see
+	// writeShipmentReconcileArchiveFileHandleRelative.
 	if shipmentReconcileAppendWindowsTOCTOUHook != nil {
 		shipmentReconcileAppendWindowsTOCTOUHook()
 	}
+	realLogsDir := filepath.Clean(logsDir)
 
 	logPath := filepath.Join(realLogsDir, fileName)
 	if reparse, err := isReparsePointPath(logPath); err != nil {

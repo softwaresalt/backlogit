@@ -90,15 +90,81 @@ func TestWriteShipmentReconcileArchiveFileHandleRelative_TOCTOUSwapLeaksRealPayl
 	}
 }
 
+// TestWriteShipmentReconcileArchiveFileHandleRelative_PreResolutionSwapIsRejected
+// proves the pin is bound to the trusted pre-resolution path. The hook runs
+// after the reparse-point pre-check and before any re-resolution: swapping the
+// archive directory (a symlink, which EvalSymlinks follows, or a junction)
+// or a parent directory (a junction that redirects the same path) for a link to
+// an outside directory must be rejected with nothing written outside.
+func TestWriteShipmentReconcileArchiveFileHandleRelative_PreResolutionSwapIsRejected(t *testing.T) {
+	swaps := map[string]func(t *testing.T, base, outside string){
+		"archive dir to symlink": func(t *testing.T, base, outside string) {
+			archiveDir := filepath.Join(base, "parent", "archive")
+			require.NoError(t, os.Remove(archiveDir))
+			if err := os.Symlink(outside, archiveDir); err != nil {
+				t.Skipf("symlink creation skipped: %v", err)
+			}
+		},
+		"archive dir to junction": func(t *testing.T, base, outside string) {
+			archiveDir := filepath.Join(base, "parent", "archive")
+			require.NoError(t, os.Remove(archiveDir))
+			if err := createReconcileTestJunction(t, archiveDir, outside); err != nil {
+				t.Skipf("junction creation skipped: %v", err)
+			}
+		},
+		"parent dir to junction": func(t *testing.T, base, outside string) {
+			require.NoError(t, os.Rename(filepath.Join(base, "parent"), filepath.Join(base, "parent.orig")))
+			require.NoError(t, os.MkdirAll(filepath.Join(outside, "archive"), 0o755))
+			if err := createReconcileTestJunction(t, filepath.Join(base, "parent"), outside); err != nil {
+				t.Skipf("junction creation skipped: %v", err)
+			}
+		},
+	}
+	for name, swap := range swaps {
+		t.Run(name, func(t *testing.T) {
+			base, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			archiveDir := filepath.Join(base, "parent", "archive")
+			require.NoError(t, os.MkdirAll(archiveDir, 0o755))
+			outside, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+
+			t.Cleanup(func() { shipmentReconcileFSWindowsTOCTOUHook = nil })
+			shipmentReconcileFSWindowsTOCTOUHook = func() { swap(t, base, outside) }
+
+			err = writeShipmentReconcileArchiveFileHandleRelative(archiveDir, "pre-resolution.md", []byte("payload"), defaultShipmentReconcileFSSeams())
+			require.Error(t, err)
+			assertReconcileOutsideDirUntouched(t, outside)
+		})
+	}
+}
+
+// assertReconcileOutsideDirUntouched requires that no file anywhere under dir
+// holds any bytes.
+func assertReconcileOutsideDirUntouched(t *testing.T, dir string) {
+	t.Helper()
+	require.NoError(t, filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
+		require.NoError(t, walkErr)
+		if entry.IsDir() {
+			return nil
+		}
+		info, infoErr := entry.Info()
+		require.NoError(t, infoErr)
+		assert.Zero(t, info.Size(), "payload reached %s", path)
+		return nil
+	}))
+}
+
 // TestWriteShipmentReconcileArchiveFileHandleRelative_SucceedsWithoutSwap is
 // the control case: with the TOCTOU hook left nil (production behavior), a
 // normal write against a stable archiveDir must still succeed, proving the
 // new snapshot/post-rename final-path re-validation does not itself break
 // the legitimate path.
 func TestWriteShipmentReconcileArchiveFileHandleRelative_SucceedsWithoutSwap(t *testing.T) {
-	archiveDir := t.TempDir()
+	archiveDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err, "callers pass the canonical resolved directory")
 	seams := defaultShipmentReconcileFSSeams()
-	err := writeShipmentReconcileArchiveFileHandleRelative(archiveDir, "control-shipment.md", []byte("content"), seams)
+	err = writeShipmentReconcileArchiveFileHandleRelative(archiveDir, "control-shipment.md", []byte("content"), seams)
 	require.NoError(t, err)
 
 	got, readErr := os.ReadFile(filepath.Join(archiveDir, "control-shipment.md"))

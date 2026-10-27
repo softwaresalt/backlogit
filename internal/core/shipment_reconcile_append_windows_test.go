@@ -79,13 +79,59 @@ func TestAppendShipmentReconcileEventHandleRelative_RejectsIntermediateJunctionT
 	}
 }
 
+// TestAppendShipmentReconcileEventHandleRelative_PreResolutionSwapIsRejected is
+// the append-writer counterpart of the archive pre-resolution swap test.
+func TestAppendShipmentReconcileEventHandleRelative_PreResolutionSwapIsRejected(t *testing.T) {
+	swaps := map[string]func(t *testing.T, base, outside string){
+		"logs dir to symlink": func(t *testing.T, base, outside string) {
+			logsDir := filepath.Join(base, "parent", "logs")
+			require.NoError(t, os.Remove(logsDir))
+			if err := os.Symlink(outside, logsDir); err != nil {
+				t.Skipf("symlink creation skipped: %v", err)
+			}
+		},
+		"parent dir to junction": func(t *testing.T, base, outside string) {
+			require.NoError(t, os.Rename(filepath.Join(base, "parent"), filepath.Join(base, "parent.orig")))
+			require.NoError(t, os.MkdirAll(filepath.Join(outside, "logs"), 0o755))
+			if err := createReconcileTestJunction(t, filepath.Join(base, "parent"), outside); err != nil {
+				t.Skipf("junction creation skipped: %v", err)
+			}
+		},
+	}
+	for name, swap := range swaps {
+		t.Run(name, func(t *testing.T) {
+			base, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			logsDir := filepath.Join(base, "parent", "logs")
+			require.NoError(t, os.MkdirAll(logsDir, 0o755))
+			outside, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+
+			t.Cleanup(func() { shipmentReconcileAppendWindowsTOCTOUHook = nil })
+			shipmentReconcileAppendWindowsTOCTOUHook = func() { swap(t, base, outside) }
+
+			_, err = appendShipmentReconcileEventHandleRelative(logsDir, "pre-resolution.jsonl", []byte(`{"x":1}`+"\n"))
+			require.Error(t, err)
+			assertReconcileOutsideDirUntouched(t, outside)
+		})
+	}
+}
+
+// TestShipmentReconcileWindowsHooksAreNilInProduction proves the test-only
+// hooks are never set outside tests.
+func TestShipmentReconcileWindowsHooksAreNilInProduction(t *testing.T) {
+	assert.Nil(t, shipmentReconcileFSWindowsTOCTOUHook)
+	assert.Nil(t, shipmentReconcileAppendWindowsTOCTOUHook)
+}
+
 // TestAppendShipmentReconcileEventHandleRelative_SucceedsWithoutSwap is the
 // control case: with the TOCTOU hook left nil (production behavior), a
 // normal append against a stable logsDir must still succeed, proving the
 // new snapshot/final-path re-validation does not itself break the
 // legitimate path.
 func TestAppendShipmentReconcileEventHandleRelative_SucceedsWithoutSwap(t *testing.T) {
-	logsDir := t.TempDir()
+	logsDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err, "callers pass the canonical resolved directory")
 	result, err := appendShipmentReconcileEventHandleRelative(logsDir, "control-item.jsonl", []byte(`{"x":1}`+"\n"))
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), result.preAppendSize)
