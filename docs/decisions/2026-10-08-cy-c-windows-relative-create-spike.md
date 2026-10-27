@@ -1,5 +1,10 @@
 ---
 title: "CY-C spike: Windows directory-relative create for reconcile writers"
+doc_type: decision
+source: docs/decisions/2026-10-08-cy-c-windows-relative-create-spike.md
+schema_version: "1.0"
+chunk_strategy: h1-h2-h3
+description: "Spike comparing NtCreateFile with a root directory handle against temp-file staging for Windows reconcile writers; chooses the pinned directory handle approach."
 date: 2026-10-27
 status: decided
 task: 201.004-T
