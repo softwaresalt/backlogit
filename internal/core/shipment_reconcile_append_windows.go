@@ -6,9 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
-	"syscall"
 
 	"golang.org/x/sys/windows"
 
@@ -26,14 +24,12 @@ import (
 var shipmentReconcileAppendWindowsTOCTOUHook func()
 
 // appendShipmentReconcileEventHandleRelative performs the append on
-// Windows. Windows has no POSIX openat-style directory-relative create
-// without NT-native APIs this codebase does not otherwise depend on (see
-// shipment_reconcile_lock_windows.go and shipment_reconcile_fs_windows.go
-// for the same documented asymmetry), so this path validates the logs
-// directory and the target file for reparse points, then opens the file
-// directly (by path) with FILE_FLAG_OPEN_REPARSE_POINT so an existing
-// reparse point at that path is opened as the reparse object itself rather
-// than followed, appends eventBytes, and fsyncs.
+// Windows. After the logs directory is validated for reparse points it is
+// pinned by handle (shipment_reconcile_dirpin_windows.go) and the item log is
+// opened with NtCreateFile relative to that handle, so an existing reparse
+// point at that name is opened as the reparse object itself rather than
+// followed, and no empty file can be created at a swapped-in location.
+// eventBytes is then appended and fsynced.
 //
 // Copilot PR #440 review hardening: FILE_FLAG_OPEN_REPARSE_POINT alone only
 // protects the FINAL path component (logPath itself) from being
@@ -71,23 +67,20 @@ func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventB
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: item log %s is a reparse point", blerrors.ErrValidation, logPath)
 	}
 
-	name, err := syscall.UTF16PtrFromString(logPath)
+	pin, err := pinShipmentReconcileDir(realLogsDir)
 	if err != nil {
-		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: resolve item log %s: %w", blerrors.ErrWriteNotApplied, logPath, err)
+		return shipmentReconcileAppendResult{}, err
 	}
-	handle, err := syscall.CreateFile(
-		name,
-		syscall.GENERIC_READ|syscall.GENERIC_WRITE,
-		syscall.FILE_SHARE_READ,
-		nil,
-		syscall.OPEN_ALWAYS,
-		syscall.FILE_ATTRIBUTE_NORMAL|syscall.FILE_FLAG_OPEN_REPARSE_POINT,
-		0,
-	)
+	defer func() {
+		if cerr := pin.close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("%w: close pinned logs directory: %w", blerrors.ErrWriteIndeterminate, cerr))
+		}
+	}()
+	file, err := pin.createFile(fileName, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE, windows.FILE_OPEN_IF)
 	if err != nil {
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: open item log %s: %w", blerrors.ErrWriteNotApplied, logPath, err)
 	}
-	file := os.NewFile(uintptr(handle), logPath)
+	handle := windows.Handle(file.Fd())
 	defer func() {
 		if cerr := file.Close(); cerr != nil {
 			err = errors.Join(err, fmt.Errorf("%w: close item log %s: %w", blerrors.ErrWriteIndeterminate, logPath, cerr))
@@ -95,19 +88,19 @@ func appendShipmentReconcileEventHandleRelative(logsDir, fileName string, eventB
 	}()
 
 	// Post-open containment re-validation: reject if the opened object is
-	// itself a reparse point (FILE_FLAG_OPEN_REPARSE_POINT opens it as the
-	// reparse object rather than following it, so this positively detects
-	// that case), and confirm the handle's OWN resolved final path still
-	// lands directly inside realLogsDir. Both checks run, and eventBytes is
-	// still unwritten, before either can be bypassed.
-	var byHandleInfo syscall.ByHandleFileInformation
-	if infoErr := syscall.GetFileInformationByHandle(handle, &byHandleInfo); infoErr != nil {
+	// itself a reparse point (the create opens it as the reparse object
+	// rather than following it, so this positively detects that case), and
+	// confirm the handle's OWN resolved final path still lands directly
+	// inside realLogsDir. Both checks run, and eventBytes is still
+	// unwritten, before either can be bypassed.
+	var byHandleInfo windows.ByHandleFileInformation
+	if infoErr := windows.GetFileInformationByHandle(handle, &byHandleInfo); infoErr != nil {
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: stat item log handle %s: %w", blerrors.ErrWriteNotApplied, logPath, infoErr)
 	}
-	if byHandleInfo.FileAttributes&syscall.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+	if byHandleInfo.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: item log %s is a reparse point", blerrors.ErrValidation, logPath)
 	}
-	finalPath, err := shipmentReconcileWindowsFinalPath(windows.Handle(handle))
+	finalPath, err := shipmentReconcileWindowsFinalPath(handle)
 	if err != nil {
 		return shipmentReconcileAppendResult{}, fmt.Errorf("%w: resolve final path for item log %s: %w", blerrors.ErrWriteNotApplied, logPath, err)
 	}
