@@ -51,6 +51,12 @@ disagrees with numeric order, the gate blocks the wrong shipment.
   suppressed.
 * The gate result was therefore inverted against the DAG. The authoritative
   root could not be claimed, and its dependent could not be claimed either.
+* Second occurrence, CI evidence (stash `95379DBA`): on PR #485 (153-S), the CI
+  pipeline-topology ambient job, pinned to `autoharness==1.5.0`, reported
+  `PREDECESSOR_NOT_SHIPPED` for 153-S naming 152-S, although 153-S's only
+  `item_deps` edge is 154-S (shipped). The locally installed 1.5.0 passed the
+  same run with `predecessor_source=explicit`. CI run 37728825570, job
+  113153060905. The CI pin bump (`F88FE051`) is related and out of scope here.
 * Live DAG today (backlogit index, 2026-09-30): `154-S` `blocks`-depends on
   `155-S` and `182-S`, and both are archived as shipped. Several queued
   shipments are not numerically adjacent to their real predecessors, for
