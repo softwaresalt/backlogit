@@ -275,9 +275,17 @@ func loadShipmentReconcileManifestMember(ctx context.Context, ws *Workspace, mem
 	if shipmentReconcileMemberReadSeam != nil {
 		shipmentReconcileMemberReadSeam(path)
 	}
-	member, _, err := parseFile(path)
+	raw, err := readShipmentReconcileMemberFile(workspaceStorageRoot(ws), path)
 	if err != nil {
 		return nil, fmt.Errorf("read shipment member %s: %w", memberID, err)
+	}
+	frontmatter, body, err := models.ParseFrontmatter(string(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse shipment member %s frontmatter: %w", memberID, err)
+	}
+	member, err := models.ArtifactFromFrontmatter(frontmatter, body)
+	if err != nil {
+		return nil, fmt.Errorf("build shipment member %s artifact: %w", memberID, err)
 	}
 	return member, nil
 }
