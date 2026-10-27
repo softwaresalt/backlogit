@@ -5,7 +5,6 @@ package core
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -64,6 +63,9 @@ func readShipmentReconcileMemberFile(storageRoot, path string) (content []byte, 
 	if info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
 		return nil, fmt.Errorf("%w: member file %s is a directory", blerrors.ErrValidation, pathAbs)
 	}
+	if fileType, typeErr := windows.GetFileType(handle); typeErr != nil || fileType != windows.FILE_TYPE_DISK {
+		return nil, fmt.Errorf("%w: member file %s is not a regular disk file", blerrors.ErrValidation, pathAbs)
+	}
 	finalPath, err := shipmentReconcileWindowsFinalPath(handle)
 	if err != nil {
 		return nil, fmt.Errorf("resolve final path for member file %s: %w", pathAbs, err)
@@ -71,9 +73,5 @@ func readShipmentReconcileMemberFile(storageRoot, path string) (content []byte, 
 	if finalPath != realRoot && !pathContained(realRoot, finalPath) {
 		return nil, fmt.Errorf("%w: member file %s resolves outside storage root %s", blerrors.ErrValidation, finalPath, realRoot)
 	}
-	content, err = io.ReadAll(file)
-	if err != nil {
-		return nil, fmt.Errorf("read member file %s: %w", pathAbs, err)
-	}
-	return content, nil
+	return readAllShipmentReconcileBounded(file, "member file "+pathAbs)
 }
