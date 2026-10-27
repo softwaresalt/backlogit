@@ -40,6 +40,11 @@ type ShipmentBlockedSnapshot struct {
 	Members             map[string]string `json:"members"`
 }
 
+// shipmentSnapshotReadSeam is a test-only seam (nil in production) invoked
+// after the snapshot path was resolved and containment-checked and before its
+// bytes are read.
+var shipmentSnapshotReadSeam func(path string)
+
 func readShipmentBlockedSnapshot(
 	ws *Workspace,
 	reference string,
@@ -63,6 +68,9 @@ func readShipmentBlockedSnapshot(
 	)
 	if err != nil {
 		return snapshot, fmt.Errorf("resolve shipment %s snapshot reference: %w", shipmentID, err)
+	}
+	if shipmentSnapshotReadSeam != nil {
+		shipmentSnapshotReadSeam(snapshotPath)
 	}
 	data, err := os.ReadFile(snapshotPath)
 	if err != nil {
