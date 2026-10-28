@@ -491,16 +491,16 @@ artifacts:
   - path: "scripts/pre-push-quality-gates.ps1"
     primitive: 6
     template: "templates/scripts/pre-push-quality-gates.ps1.tmpl"
-    checksum: "7dea315196283603e96fb3c282a3daf0a630d885cbeff0f41342482e4c465e4b"
+    checksum: "a394e3d9b098a6c57ba503a1d20eddff790db394896a3be315aa19d658a7ded8"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). Same defect and same remedy as the .sh variant: gofmt -l leaves $LASTEXITCODE at 0, so Invoke-Gate could never fail. Replaced with a dedicated Invoke-FormatGate that is line-ending insensitive. Do not auto-revert."
+    drift_reason: "Copilot review fix (PR #400). Same defect and same remedy as the .sh variant: gofmt -l leaves $LASTEXITCODE at 0, so Invoke-Gate could never fail. Replaced with a dedicated Invoke-FormatGate that is line-ending insensitive. 073-DL E2: pre-push Test gate runs the governed full-suite budget `go test -timeout=30m ./...`. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). P-019 local pre-push gates rendered with this workspace's Go commands (go test ./..., go vet ./..., golangci-lint run, gofmt -l ., go build ./cmd/backlogit). Opt-in."
   - path: "scripts/pre-push-quality-gates.sh"
     primitive: 6
     template: "templates/scripts/pre-push-quality-gates.sh.tmpl"
-    checksum: "0b9fcac0da7eaf85a25e89b659dc6e8bb1daa188edf7aea1d134e8e6f1585758"
+    checksum: "ad4c73875aae897e2ed8db4c09d6fb652fea81e812f1af6c82a1dc16c6b06415"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). Upstream renders the format gate as run_gate 'Format' 'gofmt' 'gofmt -l .', but gofmt -l always exits 0 so the gate could never fail and silently passed unformatted code. Replaced with a dedicated run_format_gate that inspects gofmt output and compares against CR-stripped source, making it line-ending insensitive so a CRLF working tree (core.autocrlf=true) does not produce 371 false positives. Do not auto-revert."
+    drift_reason: "Copilot review fix (PR #400). Upstream renders the format gate as run_gate 'Format' 'gofmt' 'gofmt -l .', but gofmt -l always exits 0 so the gate could never fail and silently passed unformatted code. Replaced with a dedicated run_format_gate that inspects gofmt output and compares against CR-stripped source, making it line-ending insensitive so a CRLF working tree (core.autocrlf=true) does not produce 371 false positives. 073-DL E2: pre-push Test gate runs the governed full-suite budget `go test -timeout=30m ./...`. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Opt-in; passes bash -n."
   - path: "scripts/ci-topology-check.sh"
     primitive: 6

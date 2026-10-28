@@ -126,7 +126,7 @@ echo "Running local pre-push quality gates..."
 run_gate "Lint" "golangci-lint" "golangci-lint run"
 run_format_gate
 run_gate "Typecheck" "go" "go vet ./..."
-run_gate "Test" "go" "go test ./..."
+run_gate "Test" "go" "go test -timeout=30m ./..."
 run_gate "Build" "go" "go test -run=^$ -count=1 ./..."
 
 # Pipeline-topology gate (P-001/P-016 ambient invariant check).
