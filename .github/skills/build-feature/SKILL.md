@@ -353,7 +353,7 @@ After the harness passes:
 3. **Test suite** — scope depends on `wave_scoped`:
    * **`wave_scoped: true`** (a P-002.6 wave dispatch): run the task's own scoped `harness_cmd`
      plus exactly the supplied `green_regression_cmds` array (default `[]`) **and nothing else**.
-     **Do not run `go test ./...` here**, infer commands from prose, or add a package by judgement.
+     **Do not run any repo-wide test-running `go test ... ./...` form here** (the compile-only `-run=^$` check stays allowed), infer commands from prose, or add a package by judgement.
      Step 4.0 of Ship leaves every non-exempt member of the wave red at once and then builds them
      one at a time, and earlier waves may have completed red deliverables that are still failing by
      design, so a repo-wide suite would fail no matter how correct this task is — an unsatisfiable
@@ -363,7 +363,7 @@ After the harness passes:
      skipped** — it runs at Ship Step 4.6 whenever the open-red set is empty, and at final closure.
      For a `red_deliverable` task this item inverts exactly as Step 0.5d specifies: `harness_cmd`
      must still be **RED**, and a green result fails the gate.
-   * **`wave_scoped: false` or absent**: `go test ./...`, unchanged.
+   * **`wave_scoped: false` or absent**: `go test -timeout=30m ./...`, unchanged.
 4. **Harness-exempt completion gate** (P-002.3 / P-002.4), for `harness-exempt` tasks only:
    * Screen `exempt_gate_cmd` for a Principle VII destructive pattern (P-002.5) before running it
      again. A match at this point is unexpected — Step 0 should already have rejected it — but

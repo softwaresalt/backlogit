@@ -11,7 +11,7 @@ Detect CI failures and code review comments on the current branch's PR, reproduc
 
 * Git repository with a remote tracked branch and an open PR
 * Access to CI pipeline status via `gh` CLI or equivalent tool
-* Local tools required by this skill must be available in PATH, including the configured quality gates `go test ./...`–`gofmt -l .`; if formatting fixes are applied during remediation, `gofmt -w .` must also be available
+* Local tools required by this skill must be available in PATH, including the configured quality gates `go test -timeout=30m ./...`–`gofmt -l .`; if formatting fixes are applied during remediation, `gofmt -w .` must also be available
 * Backlog tool configured when defect logging is enabled (circuit breaker halt path)
 
 ## Quick Start
@@ -70,7 +70,7 @@ detail extraction via check-run annotations (§2.5).
 
 1. Format check (`gofmt -l .`)
 2. Lint (`golangci-lint run`)
-3. Test (`go test ./...`)
+3. Test (`go test -timeout=30m ./...`)
 
 ### Step 2.5: Copilot Review Comment Detection
 
@@ -124,7 +124,7 @@ Run the failing CI steps locally in order:
 
 1. `gofmt -l .` → if fails, run `gofmt -w .`
 2. `golangci-lint run` → fix violations
-3. `go test ./...` → fix failing tests
+3. `go test -timeout=30m ./...` → fix failing tests
 
 ### Step 5: Fix
 
@@ -187,7 +187,7 @@ push any commit if any thread remains unreplied.**
 Run the full quality gate sequence:
 
 ```text
-go test ./...
+go test -timeout=30m ./...
 go vet ./...
 golangci-lint run
 gofmt -l .

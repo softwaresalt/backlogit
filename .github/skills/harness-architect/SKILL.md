@@ -262,7 +262,7 @@ Run each task's **own scoped selector** — `go test -count=1 -run '^TestU<unit>
 harness tests it scaffolds. ALL of that task's tests MUST fail with the expected failure marker
 (// TODO: implement).
 
-**Do not run `go test ./...` for the red-phase check.** When this skill scaffolds a whole P-002.6
+**Do not run any repo-wide test-running `go test ... ./...` form for the red-phase check** (the compile-only `-run=^$` check stays allowed). When this skill scaffolds a whole P-002.6
 wave in one pass, every non-exempt member of the wave is red simultaneously and by design, and a
 red deliverable from an earlier wave may still be failing by design too; a repo-wide run cannot
 tell one task's intended red from a sibling's or from an open-red deliverable. Evaluate each
@@ -329,7 +329,7 @@ reported alongside the exempt task it covers.
 * Do not scaffold a behaviour-carrying stub for a seam. Report the plan defect
   and let the declaration / behaviour-harness / implementation split be made.
 * Do not skip compilation verification.
-* Do not use a repo-wide `go test ./...` as the red-phase check; evaluate each
+* Do not use any repo-wide test-running `go test ... ./...` form as the red-phase check (the compile-only `-run=^$` check stays allowed); evaluate each
   task against its own scoped selector so a sibling's designed red is never
   mistaken for this task's.
 * Do not apply the harness-ready label until both compilation and red
