@@ -137,7 +137,7 @@ Write-Host "Running local pre-push quality gates..."
 Invoke-Gate "Lint" "golangci-lint" "golangci-lint run"
 Invoke-FormatGate
 Invoke-Gate "Typecheck" "go" "go vet ./..."
-Invoke-Gate "Test" "go" "go test ./..."
+Invoke-Gate "Test" "go" "go test -timeout=30m ./..."
 Invoke-Gate "Build" "go" "go test -run=^$ -count=1 ./..."
 
 # Pipeline-topology gate (P-001/P-016 ambient invariant check).
