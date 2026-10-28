@@ -254,6 +254,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(newDocsCommand(&cwd))
 	root.AddCommand(newSoundnessCommand(&cwd))
 	root.AddCommand(newPolicyCommand(&cwd))
+	root.AddCommand(newTrustAnchorCommand(&cwd))
 	root.AddCommand(newVersionCommandWithLookup(latestLookup))
 	root.AddCommand(newManifestCommand(&cwd))
 
