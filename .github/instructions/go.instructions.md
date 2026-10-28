@@ -32,8 +32,8 @@ maintainability.
 ## Commands
 
 ```bash
-go test ./...                          # Run all tests
-go test -coverprofile=coverage.out ./... # Run with coverage report
+go test -timeout=30m ./...             # Run all tests
+go test -timeout=30m -coverprofile=coverage.out ./... # Run with coverage report
 golangci-lint run                      # Lint (style, bugs, complexity)
 gofmt -l .                             # Check formatting
 goimports -l .                         # Check import ordering
