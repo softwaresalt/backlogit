@@ -25,6 +25,12 @@ var (
 	// ErrTrustAnchorAmbiguous reports a role selector matching more than one
 	// non-revoked anchor inside its validity window.
 	ErrTrustAnchorAmbiguous = errors.New("trust anchor role is ambiguous: multiple active matches")
+	// ErrTrustAnchorRoleMismatch reports an anchor whose role differs from the
+	// purpose the key was requested for (cross-protocol key reuse).
+	ErrTrustAnchorRoleMismatch = errors.New("trust anchor role does not match requested purpose")
+	// ErrTrustAnchorAlgoMismatch reports a payload-declared algorithm that
+	// differs from the anchor pinned algorithm (including "none").
+	ErrTrustAnchorAlgoMismatch = errors.New("declared algorithm does not match trust anchor pinned algorithm")
 )
 
 // TrustAnchorResolveError is the typed error returned by the resolver.
@@ -51,6 +57,21 @@ func (e *TrustAnchorResolveError) Unwrap() error { return e.Err }
 type KeySelector struct {
 	ID   string
 	Role string
+	// Purpose, when set, is the role the caller needs the key for (for
+	// example attestation-signer or token-issuer). The resolved anchor role
+	// must equal it.
+	Purpose string
+}
+
+// VerifyDeclaredAlgo enforces the pinned-algorithm binding. A payload- or
+// caller-declared algorithm must equal the anchor pinned algorithm; anything
+// else, including "none", is rejected. An empty declaration means the caller
+// takes the algorithm from the key.
+func (k ResolvedKey) VerifyDeclaredAlgo(declared string) error {
+	if declared == "" || declared == k.Algo {
+		return nil
+	}
+	return &TrustAnchorResolveError{ID: k.Anchor.ID, Role: k.Anchor.Role, Err: fmt.Errorf("%w: declared %q, pinned %q", ErrTrustAnchorAlgoMismatch, declared, k.Algo)}
 }
 
 // ResolvedKey is the result of resolving a trust anchor. Key material is
@@ -77,6 +98,9 @@ func ResolveVerificationKey(anchors []config.TrustAnchor, sel KeySelector, at ti
 			if anchors[i].ID != sel.ID {
 				continue
 			}
+			if sel.Purpose != "" && anchors[i].Role != sel.Purpose {
+				return fail(sel.ID, ErrTrustAnchorRoleMismatch)
+			}
 			if err := checkAnchorUsable(&anchors[i], at); err != nil {
 				return fail(sel.ID, err)
 			}
@@ -84,6 +108,9 @@ func ResolveVerificationKey(anchors []config.TrustAnchor, sel KeySelector, at ti
 		}
 		return fail(sel.ID, ErrTrustAnchorNotFound)
 	case sel.Role != "":
+		if sel.Purpose != "" && sel.Role != sel.Purpose {
+			return fail("", ErrTrustAnchorRoleMismatch)
+		}
 		var firstErr error
 		var match *config.TrustAnchor
 		matches := 0
