@@ -1,6 +1,12 @@
 package config
 
-import "time"
+import (
+	"encoding/pem"
+	"path"
+	"regexp"
+	"strings"
+	"time"
+)
 
 // TrustAnchorStatus is the lifecycle status of a trust anchor.
 type TrustAnchorStatus string
@@ -36,6 +42,44 @@ func ValidateTrustAnchors(anchors []TrustAnchor) error {
 		if a.Algo != TrustAnchorAlgoEd25519 && a.Algo != TrustAnchorAlgoECDSAP256 {
 			return &TrustAnchorValidationError{Index: i, ID: a.ID, Field: "algo", Err: ErrTrustAnchorDisallowedAlgo}
 		}
+		if err := validatePublicKeyRef(a.PublicKeyRef); err != nil {
+			return &TrustAnchorValidationError{Index: i, ID: a.ID, Field: "public_key_ref", Err: err}
+		}
+	}
+	return nil
+}
+
+var refSchemeRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.\-]*:`)
+
+// validatePublicKeyRef enforces the STRUCTURAL public_key_ref contract (168.018-T):
+// exactly an inline PEM "PUBLIC KEY" block or a workspace-contained relative
+// path. It performs no filesystem access; existence, readability, and pin/trust
+// policy belong to internal/core (168.003-T/168.005-T).
+func validatePublicKeyRef(ref string) error {
+	trimmed := strings.TrimSpace(ref)
+	if trimmed == "" {
+		return ErrTrustAnchorRefEmpty
+	}
+	if strings.HasPrefix(trimmed, "-----BEGIN") {
+		block, rest := pem.Decode([]byte(trimmed))
+		if block == nil || block.Type != "PUBLIC KEY" || len(block.Bytes) == 0 || strings.TrimSpace(string(rest)) != "" {
+			return ErrTrustAnchorRefMalformed
+		}
+		return nil
+	}
+	if strings.ContainsAny(trimmed, "\r\n\x00") {
+		return ErrTrustAnchorRefMalformed
+	}
+	if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, `\`) || refSchemeRe.MatchString(trimmed) {
+		return ErrTrustAnchorRefDisallowedScheme
+	}
+	for _, seg := range strings.FieldsFunc(trimmed, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if seg == ".." {
+			return ErrTrustAnchorRefDisallowedScheme
+		}
+	}
+	if strings.HasSuffix(trimmed, "/") || strings.HasSuffix(trimmed, `\`) || path.Clean(strings.ReplaceAll(trimmed, `\`, "/")) == "." {
+		return ErrTrustAnchorRefMalformed
 	}
 	return nil
 }

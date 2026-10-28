@@ -13,6 +13,14 @@ var (
 	ErrTrustAnchorDuplicateID = errors.New("duplicate trust anchor id")
 	// ErrTrustAnchorDisallowedAlgo reports an algo outside the allowlist.
 	ErrTrustAnchorDisallowedAlgo = errors.New("trust anchor algo not allowed")
+	// ErrTrustAnchorRefEmpty reports an empty public_key_ref.
+	ErrTrustAnchorRefEmpty = errors.New("trust anchor public_key_ref is empty")
+	// ErrTrustAnchorRefMalformed reports a public_key_ref that is neither a
+	// well-formed inline PEM public key nor a well-formed relative path.
+	ErrTrustAnchorRefMalformed = errors.New("trust anchor public_key_ref is malformed")
+	// ErrTrustAnchorRefDisallowedScheme reports a public_key_ref that is an
+	// absolute path, escapes the workspace via "..", or uses a URL scheme.
+	ErrTrustAnchorRefDisallowedScheme = errors.New("trust anchor public_key_ref scheme not allowed")
 )
 
 // TrustAnchorValidationError is the typed validation error returned for an
