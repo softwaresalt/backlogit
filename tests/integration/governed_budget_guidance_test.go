@@ -15,7 +15,7 @@ import (
 var (
 	// guidanceFullSuiteInvocation matches any `go test ... ./...` invocation,
 	// including the -coverprofile variant.
-	guidanceFullSuiteInvocation = regexp.MustCompile("go test\\b[^\\n]*\\./\\.\\.\\.")
+	guidanceFullSuiteInvocation = regexp.MustCompile(`go test\b[^\n]*\./\.\.\.`)
 	guidanceCompileOnly         = regexp.MustCompile(`-run=\^\$`)
 	guidanceZeroTimeout         = regexp.MustCompile(`-timeout[= ]0([smh])?([^0-9.]|$)`)
 	guidanceBudgetFlag          = regexp.MustCompile(`-timeout=` + governedFullSuiteBudget + `(\s|$|[^0-9a-zA-Z])`)
