@@ -307,7 +307,8 @@ artifacts:
   - path: ".github/instructions/github-pr-automation.instructions.md"
     primitive: 4
     template: "templates/instructions/github-pr-automation.instructions.md.tmpl"
-    checksum: "eda2be78d0afca2f2ac9afc02ad852c2791d0aa7bf36b09965a7b8d776a495c4"
+    checksum: "cb386eb7a307ebd89cbef631fb5863550864879cc96bfad7846ac06757357e1c"
+    note: "073-DL E3: fix loop 1.4 now names the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #577). §1.6.1 item 7 unconditionally required a fixing push before posting a threadless review-body disposition comment, which deadlocks reviews containing only deferred or declined body findings (no code change). Scoped the push prerequisite to code-fixed findings and permitted posting after P-021 C2 capture/rationale when all findings are deferred or declined. Do not auto-revert."
   - path: ".github/instructions/continuous-learning.instructions.md"
@@ -387,7 +388,8 @@ artifacts:
   - path: ".github/agents/subagents/go-engineer.agent.md"
     primitive: 6
     template: "templates/agents/language-engineer.agent.md.tmpl"
-    checksum: "9a37c5af9481f6c243f0950a8f55bcd79ffabb842d6d48b2aa3bfbd0d7106fff"
+    checksum: "7bd21ea575938bc9e6ba2090aeb583d2f0a94a660e6c5bb7b7399185b7b998f2"
+    note: "073-DL E3: the full-suite instruction now names the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so this subagent's tools line adds backlogit/* to the template's vscode, execute, read, edit, search. Do not auto-revert or narrow to an explicit backlogit operation allowlist."
   - path: ".github/agents/research/learnings-researcher.agent.md"
@@ -415,7 +417,8 @@ artifacts:
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"
-    checksum: "4d63f8c4cc8fb8aedc60d44423bb485c90ea07f2cf994906b90b7ba80624e6b1"
+    checksum: "4407de4170d867b0ff8fee227a4a7939f74ead3522fdcd40d92738bf14b6df40"
+    note: "073-DL E3: repo-wide test-run prohibitions reworded to forbid any test-running go test ... ./... form while keeping -run=^$ allowed (checksum rotated, LF-normalized)."
   - path: ".github/instructions/capability-pack-enforcement.instructions.md"
     primitive: 6
     template: "templates/instructions/capability-pack-enforcement.instructions.md.tmpl"
