@@ -50,7 +50,7 @@ defects:
 
 * Go formatting, linting, and vet mechanics (`gofmt -l .`, `golangci-lint run`, `go vet ./...`)
 * Workflow policies P-001 through P-021 and constitutional principle sequencing
-* Test-first red-green gate mechanics (P-002, P-004) and the `go test ./...` suite run
+* Test-first red-green gate mechanics (P-002, P-004) and the `go test -timeout=30m ./...` suite run
 * Merge-commit-only discipline (P-009, Principle XI) — squash and rebase are forbidden
 * Role-boundary enforcement (P-010) and single-worktree topology (P-016)
 * Backlog and shipment bookkeeping conventions (backlogit)

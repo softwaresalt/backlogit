@@ -427,8 +427,8 @@ artifacts:
   - path: ".github/instructions/copilot-code-review.instructions.md"
     primitive: 7
     template: "templates/instructions/copilot-code-review.instructions.md.tmpl"
-    checksum: "c019c75b256418bf64a43285a1f3cd0d25643ec78dfca1792e40feb69d0b474a"
-    note: "GitHub Copilot code-review focus instruction; installed 2026-08-30 (adversarial-verification pass) because this workspace is GitHub-hosted (origin -> github.com/softwaresalt/backlogit) and verify-harness requires the focus surface. Rendered byte-identically from the 1.5.0 template with PROJECT_NAME=backlogit and a Go/backlogit-specific HARNESS_ENFORCED_SUMMARY; applyTo '**' and excludeAgent 'cloud-agent' preserved. Complements — does not replace — the hand-authored .github/copilot-review-instructions.md. Base-branch activated: takes effect for code review only after merge. Checksum is EOL-normalized (LF), matching this manifest's convention."
+    checksum: "0171d541f30cf41f2424cdce24825428a58ed920c0def427406be96d44b5ea71"
+    note: "GitHub Copilot code-review focus instruction; installed 2026-08-30 (adversarial-verification pass) because this workspace is GitHub-hosted (origin -> github.com/softwaresalt/backlogit) and verify-harness requires the focus surface. Rendered byte-identically from the 1.5.0 template with PROJECT_NAME=backlogit and a Go/backlogit-specific HARNESS_ENFORCED_SUMMARY; applyTo '**' and excludeAgent 'cloud-agent' preserved. Complements — does not replace — the hand-authored .github/copilot-review-instructions.md. Base-branch activated: takes effect for code review only after merge. Checksum is EOL-normalized (LF), matching this manifest's convention. 073-DL E5: the HARNESS_ENFORCED_SUMMARY render input and this rendered consumer were migrated together to the governed `go test -timeout=30m ./...` budget."
   - path: ".github/instructions/coding-discipline.instructions.md"
     primitive: 5
     template: "templates/instructions/coding-discipline.instructions.md.tmpl"
@@ -589,7 +589,7 @@ variables_used:
   PRIMARY_LANGUAGE: "Go"
   LANGUAGE_VERSION: "1.24.0"
   BUILD_COMMAND: "go build ./cmd/backlogit"
-  TEST_COMMAND: "go test ./..."
+  TEST_COMMAND: "go test -timeout=30m ./..."
   LINT_COMMAND: "golangci-lint run"
   FORMAT_COMMAND: "gofmt -l ."
   CI_PLATFORM: "GitHub Actions"
@@ -627,7 +627,7 @@ variables_used:
   HARNESS_ENFORCED_SUMMARY: |
     * Go formatting, linting, and vet mechanics (`gofmt -l .`, `golangci-lint run`, `go vet ./...`)
     * Workflow policies P-001 through P-021 and constitutional principle sequencing
-    * Test-first red-green gate mechanics (P-002, P-004) and the `go test ./...` suite run
+    * Test-first red-green gate mechanics (P-002, P-004) and the `go test -timeout=30m ./...` suite run
     * Merge-commit-only discipline (P-009, Principle XI) — squash and rebase are forbidden
     * Role-boundary enforcement (P-010) and single-worktree topology (P-016)
     * Backlog and shipment bookkeeping conventions (backlogit)
@@ -664,7 +664,7 @@ variables_used:
     - Use parameterized SQL queries and existing indexes rather than full-table scans in `internal/db`.
     - Avoid `fmt.Sprintf` in tight loops when a cheaper string-building approach is available.
   TESTING_RULES: |
-    - Prefer `go test ./...` as the baseline validation command, with tests colocated as `*_test.go` alongside
+    - Prefer `go test -timeout=30m ./...` as the baseline validation command, with tests colocated as `*_test.go` alongside
       the package under test, plus scenario coverage under `tests/`.
     - Cover MCP tool schemas, outputs, and error behavior; rehydration/index rebuild behavior; and queue, stash,
       dependency, and migration logic when those areas change.
