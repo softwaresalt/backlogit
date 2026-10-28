@@ -77,6 +77,10 @@ func Load(_ context.Context, workspacePath string) (*WorkspaceConfig, error) {
 		}
 	}
 
+	if err := ValidateTrustAnchors(cfg.TrustAnchors); err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
+	}
+
 	logger.Info("config loaded", "workspace", workspacePath)
 	return &cfg, nil
 }
