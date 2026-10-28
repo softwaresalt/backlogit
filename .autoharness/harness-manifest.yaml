@@ -169,13 +169,15 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "52a10cc0f1e5fab6a843acb23425cacb4a783a6620ef79cc5d783ae452637b0f"
+    checksum: "e2713b69ad133b1bc4aadcff3bb8d24fe64eb666c0449346a615fcd3d6b72d6e"
+    note: "073-DL E4: Principle II, Technical Constraints and Quality Gates now name the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). The upstream continuous-learning overlay hardcodes docs/learnings/, conflicting with the configured continuous_learning.directory (.autoharness/continuous-learning) that the pack's own instruction file uses, which would let agents write observations to two different stores. Aligned to the configured directory. Do not auto-revert."
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
-    checksum: "9f9380ccf3027743846dab35b4f8490fcd15a65b152cd78f5b157c8be28d47b1"
+    checksum: "f798aab688486ebf075b1a64af572850626b14843eb1bb21ccc76a0665f2c4bc"
+    note: "073-DL E4: the Test row and Commands block now name the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Same continuous-learning storage-path conflict as AGENTS.md; aligned to the configured continuous_learning.directory. Do not auto-revert."
   - path: ".github/skills/plan-harden/SKILL.md"
@@ -215,7 +217,8 @@ artifacts:
   - path: ".github/instructions/constitution.instructions.md"
     primitive: 1
     template: "templates/foundation/constitution.instructions.md.tmpl"
-    checksum: "ec9ba258ef62f8f5eef064c4938963870cc9f2ca245592a5ab83f2097ee15157"
+    checksum: "7e7e61ed87c169be37ab2c8a7b5823573fdc33fe9a113df4ee84ee6153ec699e"
+    note: "073-DL E4: Principle II, Technical Constraints and Quality Gates now name the governed full-suite command go test -timeout=30m ./... (MINOR 1.1.0; checksum rotated, LF-normalized)."
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
@@ -261,7 +264,8 @@ artifacts:
   - path: ".github/instructions/go.instructions.md"
     primitive: 6
     template: "templates/instructions/technology-go.instructions.md.tmpl"
-    checksum: "9c47e77db43cf9d2d469ea698d52d9fcb323cbd7dfb5c7ff5840151bead67f6d"
+    checksum: "97cdd444c0844b86b84974a17575ba7a88b326267557515645ef544d02d94e8a"
+    note: "073-DL E4: the Commands block now names the governed full-suite command go test -timeout=30m ./... and its coverage variant (checksum rotated, LF-normalized)."
   - path: "scripts/acquire_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
