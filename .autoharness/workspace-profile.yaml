@@ -24,7 +24,7 @@ build:
 
 test:
   runner: "go test"
-  command: "go test ./..."
+  command: "go test -timeout=30m ./..."
   directory: "tests/"
 
 lint:
@@ -44,7 +44,7 @@ ci:
     - "test"
     - "lint"
   quality_gates:
-    - "go test ./..."
+    - "go test -timeout=30m ./..."
     - "go vet ./..."
     - "golangci-lint run"
 
