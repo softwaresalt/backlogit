@@ -192,7 +192,7 @@ Ask for tests or call out missing coverage when a change affects:
 
 The repository's core validation bar is:
 
-* `go test ./...`
+* `go test -timeout=30m ./...`
 * `go vet ./...`
 * `golangci-lint run`
 

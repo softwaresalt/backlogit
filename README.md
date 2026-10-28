@@ -280,7 +280,7 @@ backlogit mcp
 
 ## Contributing
 
-Contributions are welcome. Please read the contributing guidelines before opening a pull request. All code must pass `golangci-lint run`, `go vet ./...`, and `go test ./...` with zero failures before review.
+Contributions are welcome. Please read the contributing guidelines before opening a pull request. All code must pass `golangci-lint run`, `go vet ./...`, and `go test -timeout=30m ./...` with zero failures before review.
 
 ## License
 

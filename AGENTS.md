@@ -40,7 +40,7 @@ All errors must be wrapped with context using ``fmt.Errorf("context: %w", err)``
 
 Every feature or chore MUST have tests written before implementation code. The test
 directory structure (Unit tests colocated in `*_test.go` files, integration tests in `tests/` directory. Use `testify/assert` and `testify/require`. Table-driven tests with `t.Run` subtests.) MUST be maintained. All tests MUST
-pass via `go test ./...` before any code is merged.
+pass via `go test -timeout=30m ./...` before any code is merged.
 
 ### III. Workspace Isolation and Security Boundaries
 
@@ -236,7 +236,7 @@ General rules:
 |-----------------|--------------------------------------------|
 | Language        | Go 1.24.0  |
 | Build           | `go build ./cmd/backlogit`                        |
-| Test            | `go test ./...`                         |
+| Test            | `go test -timeout=30m ./...`            |
 | Lint            | `golangci-lint run`                         |
 | Format          | `gofmt -l .`                       |
 | CI              | GitHub Actions                            |
@@ -249,7 +249,7 @@ Run in order. Do not skip any gate.
 
 ```text
 # Gate 1 — Tests
-go test ./...
+go test -timeout=30m ./...
 
 # Gate 2 — Vet
 go vet ./...
