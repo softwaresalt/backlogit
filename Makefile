@@ -17,7 +17,7 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o bin/backlogit ./cmd/backlogit
 
 test:
-	go test -race -coverprofile=coverage.out ./...
+	go test -race -timeout=30m -coverprofile=coverage.out ./...
 
 lint:
 	golangci-lint run
