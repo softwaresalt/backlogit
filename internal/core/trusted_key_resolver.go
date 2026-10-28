@@ -20,6 +20,11 @@ var (
 	// ErrTrustAnchorExpired reports an anchor whose not_after is before the
 	// resolution time.
 	ErrTrustAnchorExpired = errors.New("trust anchor expired")
+	// ErrTrustAnchorRevoked reports an anchor whose status is revoked.
+	ErrTrustAnchorRevoked = errors.New("trust anchor revoked")
+	// ErrTrustAnchorAmbiguous reports a role selector matching more than one
+	// non-revoked anchor inside its validity window.
+	ErrTrustAnchorAmbiguous = errors.New("trust anchor role is ambiguous: multiple active matches")
 )
 
 // TrustAnchorResolveError is the typed error returned by the resolver.
@@ -72,7 +77,7 @@ func ResolveVerificationKey(anchors []config.TrustAnchor, sel KeySelector, at ti
 			if anchors[i].ID != sel.ID {
 				continue
 			}
-			if err := checkAnchorWindow(&anchors[i], at); err != nil {
+			if err := checkAnchorUsable(&anchors[i], at); err != nil {
 				return fail(sel.ID, err)
 			}
 			return newResolvedKey(&anchors[i]), nil
@@ -80,17 +85,29 @@ func ResolveVerificationKey(anchors []config.TrustAnchor, sel KeySelector, at ti
 		return fail(sel.ID, ErrTrustAnchorNotFound)
 	case sel.Role != "":
 		var firstErr error
+		var match *config.TrustAnchor
+		matches := 0
 		for i := range anchors {
 			if anchors[i].Role != sel.Role {
 				continue
 			}
-			err := checkAnchorWindow(&anchors[i], at)
+			err := checkAnchorUsable(&anchors[i], at)
 			if err == nil {
-				return newResolvedKey(&anchors[i]), nil
+				if match == nil {
+					match = &anchors[i]
+				}
+				matches++
+				continue
 			}
 			if firstErr == nil {
 				firstErr = err
 			}
+		}
+		if matches > 1 {
+			return fail("", ErrTrustAnchorAmbiguous)
+		}
+		if match != nil {
+			return newResolvedKey(match), nil
 		}
 		if firstErr == nil {
 			firstErr = ErrTrustAnchorNotFound
@@ -100,7 +117,6 @@ func ResolveVerificationKey(anchors []config.TrustAnchor, sel KeySelector, at ti
 		return fail("", ErrKeySelectorInvalid)
 	}
 }
-
 func newResolvedKey(a *config.TrustAnchor) ResolvedKey {
 	return ResolvedKey{Anchor: *a, Algo: a.Algo}
 }
@@ -114,4 +130,12 @@ func checkAnchorWindow(a *config.TrustAnchor, at time.Time) error {
 		return ErrTrustAnchorExpired
 	}
 	return nil
+}
+
+// checkAnchorUsable rejects revoked anchors, then applies the validity window.
+func checkAnchorUsable(a *config.TrustAnchor, at time.Time) error {
+	if a.Status == config.TrustAnchorStatusRevoked {
+		return ErrTrustAnchorRevoked
+	}
+	return checkAnchorWindow(a, at)
 }
