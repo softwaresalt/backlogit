@@ -18,12 +18,12 @@ import (
 // newTrustAnchorCommand returns the `backlogit trust-anchor` command group.
 // list and show are strictly read-only (168.004-T): they load config.yaml and
 // report the state computed by core.ResolveVerificationKey. They never open
-// the database or write any file. Mutating subcommands are added by later
-// tasks.
+// the database or write any file. Mutating subcommands (add, rotate, revoke)
+// live in trust_anchor_mutate.go and delegate to the core mutator.
 func newTrustAnchorCommand(cwd *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "trust-anchor",
-		Short: "Inspect verification-key trust anchors (read-only)",
+		Short: "Inspect and manage verification-key trust anchors",
 	}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
@@ -49,6 +49,7 @@ func newTrustAnchorCommand(cwd *string) *cobra.Command {
 			return writeTrustAnchorShow(cmd.OutOrStdout(), anchors, args[0], time.Now(), loadPins(cmd.Context()))
 		},
 	})
+	addTrustAnchorMutationCommands(cmd, cwd)
 	return cmd
 }
 
