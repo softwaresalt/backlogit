@@ -3,6 +3,7 @@ bin/
 logs/
 .vscode/
 .copilot/
+.claude/
 .github/copilot/settings.local.json
 .mcp.json
 .github/copilot/
