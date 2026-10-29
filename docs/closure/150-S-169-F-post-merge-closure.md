@@ -45,7 +45,7 @@ title: "150-S / 169-F Post-Merge Closure"
 
 * Runtime surface: CLI and doctor only. The shipped capability is an opt-in `reconcile-shipped --attestation` path plus doctor re-verification; there is no service, daemon, or deployed endpoint, so no runtime probe applies. Verification evidence is the CI run on PR #611 (full suite, Windows lock tests, docs and lint gates) and the end-to-end tests `TestReconcileAttestationFlagEndToEnd` and `TestAttestationReVerifyGuard_*`.
 * Releasability: `READY`. Unconfigured workspaces keep the #423 v1 behavior unchanged.
-* Owner: backlogit maintainers (softwaresalt). Validation window: the next two shipments that run `reconcile-shipped`; watch `backlogit doctor` output for `missing_shipped_event` findings on attested events and for `attestation_rejected` audit events.
+* Owner: backlogit maintainers (softwaresalt). Validation window: the next two shipments that run `reconcile-shipped`; run `backlogit doctor --check-shipped-event-completeness` with the external pin set configured (`BACKLOGIT_TRUST_PINS`) and watch for `missing_shipped_event` findings on attested events; inspect `attestation_rejected` audit events separately in the shipment item log, since doctor does not surface them as findings.
 * Rollback: revert merge commit `b549518c`. The `--attestation` flag is opt-in, so existing events and workflows are unaffected; events already written with an attestation envelope remain valid log lines.
 * Operator guide: `docs/design-docs/2026-09-16-866fdc8c-attestation-ci-verify.md`.
 
