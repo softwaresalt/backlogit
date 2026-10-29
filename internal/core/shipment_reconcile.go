@@ -68,6 +68,15 @@ type ShipmentShippedReconcileRequest struct {
 	// contending for it. It returns the rejection, joined with any audit
 	// failure. A dry run never invokes it.
 	AttestationRejectionAuditor func(ctx context.Context, rejection error) error
+	// AuthEnforcement selects the approval guard. Empty or
+	// AuthEnforcementConfirmation is the v1 confirmation guard;
+	// AuthEnforcementAuthenticated requires Authorization (170.004-T). Any
+	// other value is denied fail-closed. It is never part of the request
+	// identity digest.
+	AuthEnforcement AuthEnforcement
+	// Authorization carries the token verification material consumed inside
+	// the locked critical section when AuthEnforcement is authenticated.
+	Authorization *ReconcileAuthorization
 }
 
 // ShipmentShippedReconcileResult is the outcome of a governed shipment
@@ -77,6 +86,10 @@ type ShipmentShippedReconcileResult struct {
 	ShipmentID string
 	DryRun     bool
 	Message    string
+	// Authorization reports the authorization verification outcome
+	// (AuthorizationOutcome* constants); empty when the run ended before the
+	// gate was evaluated.
+	Authorization string
 }
 
 // classifyShipmentReconcileState is the shared, pure, read-only total state

@@ -256,7 +256,8 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 		return result, fmt.Errorf("reconcile shipment to shipped: read shipment %s persisted prepared event: %w", shipmentID, err)
 	}
 
-	if req.AttestationVerifier != nil {
+	authenticated := req.AuthEnforcement != "" && req.AuthEnforcement != AuthEnforcementConfirmation
+	if req.AttestationVerifier != nil || authenticated {
 		var prepared events.Event
 		if err := json.Unmarshal([]byte(preparedEventText), &prepared); err != nil {
 			result.Outcome = ShipmentReconcileOutcomeIndeterminate
@@ -267,14 +268,26 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 			result.Outcome = ShipmentReconcileOutcomeIndeterminate
 			return result, fmt.Errorf("reconcile shipment to shipped: decode shipment %s persisted prepared event: %w", shipmentID, err)
 		}
-		if err := req.verifyAttestation(ctx, AttestationExpectedEvidence{
-			ShipmentID:         shipmentID,
-			MergeSHA:           delta.Evidence.MergeSHA,
-			ManifestDigest:     delta.Evidence.ManifestDigest,
-			ClosureContentHash: delta.Evidence.ClosureContentHash,
-		}); err != nil {
-			return result, fmt.Errorf("reconcile shipment to shipped: verify shipment %s persisted attestation before resume: %w", shipmentID, err)
+		if req.AttestationVerifier != nil {
+			if err := req.verifyAttestation(ctx, AttestationExpectedEvidence{
+				ShipmentID:         shipmentID,
+				MergeSHA:           delta.Evidence.MergeSHA,
+				ManifestDigest:     delta.Evidence.ManifestDigest,
+				ClosureContentHash: delta.Evidence.ClosureContentHash,
+			}); err != nil {
+				return result, fmt.Errorf("reconcile shipment to shipped: verify shipment %s persisted attestation before resume: %w", shipmentID, err)
+			}
 		}
+		// Authenticated-approval gate for the resume-append branch: the
+		// prepared event must not be appended without valid authorization.
+		authOutcome, authErr := authorizeReconcileResume(ctx, req, shipmentID, &delta)
+		if authErr != nil {
+			if errors.Is(authErr, ErrNonceConsumeIndeterminate) {
+				result.Outcome = ShipmentReconcileOutcomeIndeterminate
+			}
+			return result, fmt.Errorf("reconcile shipment to shipped: shipment %s resume authorization: %w", shipmentID, authErr)
+		}
+		result.Authorization = authOutcome
 	}
 
 	if req.DryRun {
@@ -391,6 +404,18 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 			return result, fmt.Errorf("reconcile shipment to shipped: shipment %s re-classified as indeterminate under commit lock: %w", shipmentID, blerrors.ErrValidation)
 		}
 	}
+
+	// Authenticated-approval gate (170.004-T): inside the locked critical
+	// section, after the final re-classification and before any write. A dry
+	// run verifies but never consumes the nonce.
+	authOutcome, authErr := enforceReconcileAuthorization(ctxCB, req, shipmentID, requestIdentityDigest, dryRun)
+	if authErr != nil {
+		if errors.Is(authErr, ErrNonceConsumeIndeterminate) {
+			result.Outcome = ShipmentReconcileOutcomeIndeterminate
+		}
+		return result, fmt.Errorf("reconcile shipment to shipped: shipment %s authorization: %w", shipmentID, authErr)
+	}
+	result.Authorization = authOutcome
 
 	if dryRun {
 		// Every Phase C/D precondition above has now been fully evaluated
