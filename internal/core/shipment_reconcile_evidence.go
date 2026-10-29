@@ -229,6 +229,17 @@ func prepareShipmentReconcileEvidence(ctx context.Context, ws *Workspace, req Sh
 	if err != nil {
 		return zero, err
 	}
+	if req.AttestationVerifier != nil {
+		expected := AttestationExpectedEvidence{
+			ShipmentID:         normalizedReq.ShipmentID,
+			MergeSHA:           normalizedReq.MergeSHA,
+			ManifestDigest:     normalizedInput.ManifestDigest,
+			ClosureContentHash: closureContentHash,
+		}
+		if err := req.AttestationVerifier(expected); err != nil {
+			return zero, shipmentReconcileEvidenceWrap(err, "prepare shipment reconcile evidence: verify attestation")
+		}
+	}
 	evidenceDigest := shipmentReconcileEvidenceDigest(shipmentReconcileEvidenceDigestInput{
 		ShipmentID:         normalizedReq.ShipmentID,
 		MergeSHA:           normalizedReq.MergeSHA,

@@ -104,6 +104,7 @@ func TestReconcileAttestationFlagEndToEnd(t *testing.T) {
 		sign := attestationFlagSigner(t, fx)
 		path := sign(discoverExpectedEvidence(t, fx, nil))
 
+		logBefore, _ := snapshotFileOrAbsent(t, fx.itemLogPath())
 		args := append(fx.args(fx.deliverySHA, fx.closureRel, "idem-att-dry", "operator", "signed repair"), "--dry-run", "--attestation", path)
 		stdout, stderr, err := runReconcileShippedCLI(t, fx.root, args...)
 		require.NoError(t, err, stderr)
@@ -114,8 +115,8 @@ func TestReconcileAttestationFlagEndToEnd(t *testing.T) {
 		require.Equal(t, "verified", att["outcome"])
 		require.Equal(t, "ci-signer", att["key_id"])
 		require.Equal(t, "active", fx.readArchivedStatusFromMarkdown(t))
-		_, statErr := os.Stat(fx.itemLogPath())
-		require.True(t, os.IsNotExist(statErr), "dry-run must not write the item log")
+		logAfter, _ := snapshotFileOrAbsent(t, fx.itemLogPath())
+		require.Equal(t, logBefore, logAfter, "dry-run must not write the item log")
 	})
 
 	t.Run("evidence mismatch is rejected fail-closed", func(t *testing.T) {

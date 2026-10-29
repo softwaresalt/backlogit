@@ -36,7 +36,7 @@ import (
 // branches evaluate every precondition and report the planned outcome without
 // ever reaching a write.
 func newShipmentReconcileShippedCmd() *cobra.Command {
-	var reason, actor, idempotencyKey, mergeSHA, closureEvidence, secondApprover, confirm string
+	var reason, actor, idempotencyKey, mergeSHA, closureEvidence, secondApprover, confirm, attestationPath string
 	var evidenceRefs []string
 	var dryRun bool
 
@@ -99,6 +99,15 @@ left unchanged).`,
 				"dry_run", dryRun,
 			)
 
+			var attestation *reconcileAttestation
+			if attestationPath != "" {
+				loaded, err := loadReconcileAttestation(ctx, shipmentCWD(cmd), attestationPath)
+				if err != nil {
+					return fmt.Errorf("shipment reconcile-shipped: --attestation: %w", err)
+				}
+				attestation = loaded
+			}
+
 			ws, err := core.NewWorkspace(ctx, shipmentCWD(cmd))
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
@@ -120,6 +129,11 @@ left unchanged).`,
 				EvidenceRefs:    evidenceRefs,
 				DryRun:          dryRun,
 			}
+			if attestation != nil {
+				claim := attestation.claim
+				req.Attestation = &claim
+				req.AttestationVerifier = attestation.verifier(ctx, func() *core.Workspace { return ws }, dryRun)
+			}
 
 			result, err := core.ReconcileShipmentToShipped(ctx, ws, req)
 			if ee := shipmentReconcileExitError(result, err); ee != nil {
@@ -135,12 +149,16 @@ left unchanged).`,
 
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(map[string]any{
+			output := map[string]any{
 				"outcome":     string(result.Outcome),
 				"shipment_id": result.ShipmentID,
 				"dry_run":     result.DryRun,
 				"message":     result.Message,
-			})
+			}
+			if attestation != nil {
+				output["attestation"] = attestation.summary()
+			}
+			return enc.Encode(output)
 		},
 	}
 
@@ -152,6 +170,7 @@ left unchanged).`,
 	cmd.Flags().StringVar(&secondApprover, "second-approver", "", "optional second approver recorded for audit (must differ from --actor)")
 	cmd.Flags().StringArrayVar(&evidenceRefs, "evidence-ref", nil, "additional evidence reference; repeatable")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "evaluate every precondition and print the planned outcome without writing (needs no --confirm)")
+	cmd.Flags().StringVar(&attestationPath, "attestation", "", "opt-in path to a signed delivery-evidence attestation (DSSE envelope); verified against the configured trust anchors before any write, and the dry-run output reports the verification outcome")
 	cmd.Flags().StringVar(&confirm, "confirm", "", `confirmation phrase "reconcile-shipped <shipment-id>", required for a live (non-dry-run) mutation unless stdin is an interactive TTY`)
 	_ = cmd.MarkFlagRequired("reason")
 	_ = cmd.MarkFlagRequired("actor")
