@@ -1,7 +1,12 @@
 package core
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 )
 
 // Sentinel errors for the attestation envelope parser (169.010-T).
@@ -43,7 +48,109 @@ type ParsedAttestation struct {
 }
 
 // ParseAttestation parses an attestation envelope and its embedded statement.
-// Not yet implemented (169.010-T harness stub).
+// Duplicate member names are rejected at every object depth (envelope root,
+// statement, subject, predicate) before any decode, so a last-wins decode can
+// never accept an ambiguous document.
 func ParseAttestation(data []byte) (ParsedAttestation, error) {
-	return ParsedAttestation{}, errors.New("not implemented")
+	var parsed ParsedAttestation
+	if err := scanAttestationMembers(data, "envelope"); err != nil {
+		return parsed, err
+	}
+	if err := json.Unmarshal(data, &parsed.Envelope); err != nil {
+		return parsed, &AttestationParseError{Path: "envelope", Err: fmt.Errorf("%w: %w", ErrAttestationMalformed, err)}
+	}
+	payload, err := base64.StdEncoding.DecodeString(parsed.Envelope.Payload)
+	if err != nil {
+		return parsed, &AttestationParseError{Path: "envelope.payload", Err: fmt.Errorf("%w: %w", ErrAttestationMalformed, err)}
+	}
+	parsed.PayloadBytes = payload
+	if err := scanAttestationMembers(payload, "statement"); err != nil {
+		return parsed, err
+	}
+	if err := json.Unmarshal(payload, &parsed.Statement); err != nil {
+		return parsed, &AttestationParseError{Path: "statement", Err: fmt.Errorf("%w: %w", ErrAttestationMalformed, err)}
+	}
+	return parsed, nil
+}
+
+// attestationMemberKey maps a decoded member name to its collision key. The
+// exact-byte contract (169.010-T) compares decoded names verbatim.
+func attestationMemberKey(name string) string { return name }
+
+type attestationScanFrame struct {
+	label     string
+	object    bool
+	expectKey bool
+	lastKey   string
+	index     int
+	seen      map[string]struct{}
+}
+
+// scanAttestationMembers walks data token by token and fails with a typed
+// AttestationParseError when the document is malformed, has data after the
+// root value, or any object at any depth repeats a member name. Path labels
+// name the failing object relative to rootLabel.
+func scanAttestationMembers(data []byte, rootLabel string) error {
+	malformed := func(label string, err error) error {
+		return &AttestationParseError{Path: label, Err: fmt.Errorf("%w: %w", ErrAttestationMalformed, err)}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var stack []attestationScanFrame
+	finish := func() bool {
+		if len(stack) == 0 {
+			return true
+		}
+		top := &stack[len(stack)-1]
+		if top.object {
+			top.expectKey = true
+		} else {
+			top.index++
+		}
+		return false
+	}
+	for done := false; !done; {
+		token, err := decoder.Token()
+		if err != nil {
+			return malformed(rootLabel, err)
+		}
+		if delim, ok := token.(json.Delim); ok {
+			switch delim {
+			case '{', '[':
+				label := rootLabel
+				if n := len(stack); n > 0 {
+					if top := stack[n-1]; top.object {
+						label = top.label + "." + top.lastKey
+					} else {
+						label = fmt.Sprintf("%s[%d]", top.label, top.index)
+					}
+				}
+				frame := attestationScanFrame{label: label}
+				if delim == '{' {
+					frame.object, frame.expectKey, frame.seen = true, true, make(map[string]struct{})
+				}
+				stack = append(stack, frame)
+			default:
+				stack = stack[:len(stack)-1]
+				done = finish()
+			}
+			continue
+		}
+		if n := len(stack); n > 0 && stack[n-1].object && stack[n-1].expectKey {
+			key, _ := token.(string)
+			top := &stack[n-1]
+			collision := attestationMemberKey(key)
+			if _, dup := top.seen[collision]; dup {
+				return &AttestationParseError{Path: top.label, Err: fmt.Errorf("%w: %q", ErrAttestationDuplicateMember, key)}
+			}
+			top.seen[collision] = struct{}{}
+			top.lastKey = key
+			top.expectKey = false
+			continue
+		}
+		done = finish()
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return malformed(rootLabel, errors.New("unexpected data after the root value"))
+	}
+	return nil
 }
