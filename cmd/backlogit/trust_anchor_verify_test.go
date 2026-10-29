@@ -11,7 +11,7 @@ import (
 func TestTrustAnchorVerifyKeyExitCode(t *testing.T) {
 	t.Run("trusted key exits zero and writes nothing", func(t *testing.T) {
 		root := trustAnchorWorkspace(t)
-		t.Setenv("BACKLOGIT_TRUST_PINS", "sha256:live0001")
+		t.Setenv("BACKLOGIT_TRUST_PINS", "sha256:live0001=attestation-signer")
 		before := snapshotTree(t, root)
 		out, err := runTrustAnchorCLI(t, root, "trust-anchor", "verify-key", "live-signer")
 		require.NoError(t, err, out)
@@ -21,7 +21,7 @@ func TestTrustAnchorVerifyKeyExitCode(t *testing.T) {
 
 	t.Run("untrusted or unknown keys exit non-zero and write nothing", func(t *testing.T) {
 		root := trustAnchorWorkspace(t)
-		t.Setenv("BACKLOGIT_TRUST_PINS", "sha256:live0001,sha256:old00001")
+		t.Setenv("BACKLOGIT_TRUST_PINS", "sha256:live0001=attestation-signer,sha256:old00001=legacy")
 		before := snapshotTree(t, root)
 
 		_, err := runTrustAnchorCLI(t, root, "trust-anchor", "verify-key", "future-signer") // not pinned and not yet valid
