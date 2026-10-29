@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -244,8 +244,8 @@ func verifyAttestationSignatureBytes(key *VerificationKey, message, sig []byte) 
 	case ed25519.PublicKey:
 		return len(pub) == ed25519.PublicKeySize && ed25519.Verify(pub, message, sig)
 	case *ecdsa.PublicKey:
-		digest := sha256.Sum256(message)
-		return ecdsa.VerifyASN1(pub, digest[:], sig)
+		digest, err := hex.DecodeString(canonical.HashBytes(message))
+		return err == nil && ecdsa.VerifyASN1(pub, digest, sig)
 	}
 	return false
 }
