@@ -5,9 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
-	"crypto/sha256"
 	"crypto/x509"
-	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -17,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/softwaresalt/backlogit/internal/canonical"
 	"github.com/softwaresalt/backlogit/internal/config"
 )
 
@@ -190,6 +189,5 @@ func parseVerificationKey(algo string, material []byte) (*VerificationKey, error
 	default:
 		return nil, ErrVerificationKeyAlgoMismatch
 	}
-	sum := sha256.Sum256(block.Bytes)
-	return &VerificationKey{Algo: algo, Public: pub, Fingerprint: "sha256:" + hex.EncodeToString(sum[:])}, nil
+	return &VerificationKey{Algo: algo, Public: pub, Fingerprint: "sha256:" + canonical.HashBytes(block.Bytes)}, nil
 }
