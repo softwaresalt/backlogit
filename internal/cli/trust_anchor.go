@@ -70,7 +70,7 @@ func newTrustAnchorCommand(cwd *string) *cobra.Command {
 	return cmd
 }
 
-// trustRevocationAuthority returns the external revocation authority for\n// resolution. The shipped CLI wires none, so it returns nil (no tombstone source).\nfunc trustRevocationAuthority() core.RevocationAuthority { return nil }\n\n// trustRevocationAuthority returns the external revocation authority for
+// trustRevocationAuthority returns the external revocation authority for
 // resolution. The shipped CLI wires none, so it returns nil (no tombstone source).
 func trustRevocationAuthority() core.RevocationAuthority { return nil }
 
