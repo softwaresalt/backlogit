@@ -97,6 +97,9 @@ type WriteOutcome struct {
 	ConfigWritten  bool
 	StatusWritten  bool
 	AuditPersisted bool
+	// MarkerOutstanding is true when the indeterminate marker was left in
+	// place (168.017-T).
+	MarkerOutstanding bool
 }
 
 // TrustAnchorStatusChange is one status mutation.
@@ -148,16 +151,22 @@ type TrustAnchorMutation struct {
 
 // TrustAnchorMutator applies trust-anchor mutations through one shared path.
 type TrustAnchorMutator struct {
-	State    TrustAnchorState
-	Pins     ExternalPinSetProvider
-	Audit    TrustAnchorAuditor
+	State TrustAnchorState
+	Pins  ExternalPinSetProvider
+	Audit TrustAnchorAuditor
+	// Marker persists the indeterminate marker around the write steps
+	// (168.017-T). NewFileTrustAnchorMutator always wires it; a nil Marker
+	// skips only the marker steps (write-outcome classification still applies).
+	Marker   TrustAnchorMarkerStore
 	Approver ApproverVerifier
 	Now      func() time.Time
 }
 
-// Apply runs: validate -> enforce external-pin policy -> mutate config ->
-// mutate status -> persist audit event. It is deterministic and ordered but
-// not cross-file atomic.
+// Apply runs: validate -> enforce external-pin policy -> write marker ->
+// mutate config -> mutate status -> persist audit event -> clear marker. It is
+// deterministic and ordered but not cross-file atomic; failures are classified
+// as ErrWriteNotApplied or ErrWriteIndeterminate (see 168.017-T), and a denied
+// mutation whose denial audit fails yields ErrAuditNotPersisted.
 func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation) (WriteOutcome, error) {
 	var out WriteOutcome
 	fail := func(id string, err error) (WriteOutcome, error) {
@@ -190,35 +199,93 @@ func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation)
 			mutErr := &TrustAnchorMutationError{Action: req.Action, AnchorID: plan.targetID, Err: pinErr}
 			ev := m.auditEvent(req, plan, TrustAnchorAuditDenied, pinErr.Error(), approver)
 			if auditErr := m.Audit.RecordAudit(ctx, ev); auditErr != nil {
-				return out, errors.Join(mutErr, fmt.Errorf("persist denial audit: %w", auditErr))
+				// The denial stands; the audit failure is surfaced, never ignored.
+				return out, errors.Join(mutErr, fmt.Errorf("%w: %w", ErrAuditNotPersisted, auditErr))
 			}
 			out.AuditPersisted = true
 			return out, mutErr
 		}
 	}
 
-	// 3. mutate config.
+	// Write protocol (168.017-T), each step durable:
+	// (1) marker, (2) config+status, (3) audit, (4) clear marker.
+	// Failures before step 2 are ErrWriteNotApplied; failures at or after
+	// step 2 are ErrWriteIndeterminate with the marker left in place.
+	if m.Marker != nil {
+		marker := TrustAnchorMarker{Action: req.Action, AnchorID: plan.targetID, At: m.Now()}
+		if plan.newAnchor != nil {
+			marker.Fingerprint = plan.newAnchor.Fingerprint
+			if req.Action == TrustAnchorActionRotate {
+				marker.NewAnchorID = plan.newAnchor.ID
+			}
+		}
+		if err := m.Marker.WriteMarker(ctx, marker); err != nil {
+			return fail(plan.targetID, fmt.Errorf("%w: write marker: %w", ErrWriteNotApplied, err))
+		}
+	}
+
+	if err := m.applyTrustAnchorState(ctx, plan, &out); err != nil {
+		if !out.ConfigWritten && !out.StatusWritten && !errors.Is(err, ErrWriteIndeterminate) {
+			// Nothing took effect: retract the marker so it is absent after.
+			return m.notApplied(ctx, &out, req, plan.targetID, err)
+		}
+		out.MarkerOutstanding = m.Marker != nil
+		return fail(plan.targetID, indeterminate(err))
+	}
+
+	if err := m.Audit.RecordAudit(ctx, m.auditEvent(req, plan, TrustAnchorAuditApplied, "", approver)); err != nil {
+		out.MarkerOutstanding = m.Marker != nil
+		return fail(plan.targetID, indeterminate(fmt.Errorf("persist audit: %w", err)))
+	}
+	out.AuditPersisted = true
+
+	if m.Marker != nil {
+		if err := m.Marker.ClearMarker(ctx); err != nil {
+			out.MarkerOutstanding = true
+			return fail(plan.targetID, indeterminate(fmt.Errorf("clear marker: %w", err)))
+		}
+	}
+	return out, nil
+}
+
+// applyTrustAnchorState performs step 2: the config write then the status
+// writes, recording which took effect in out.
+func (m *TrustAnchorMutator) applyTrustAnchorState(ctx context.Context, plan trustAnchorPlan, out *WriteOutcome) error {
 	if plan.config != nil {
 		if err := m.State.WriteConfig(ctx, plan.config); err != nil {
-			return fail(plan.targetID, fmt.Errorf("write config: %w", err))
+			return fmt.Errorf("write config: %w", err)
 		}
 		out.ConfigWritten = true
 	}
-
-	// 4. mutate status.
 	for _, change := range plan.status {
 		if err := m.State.WriteStatus(ctx, change); err != nil {
-			return fail(plan.targetID, fmt.Errorf("write status: %w", err))
+			return fmt.Errorf("write status: %w", err)
 		}
 		out.StatusWritten = true
 	}
+	return nil
+}
 
-	// 5. persist the audit event as the final step.
-	if err := m.Audit.RecordAudit(ctx, m.auditEvent(req, plan, TrustAnchorAuditApplied, "", approver)); err != nil {
-		return fail(plan.targetID, fmt.Errorf("persist audit: %w", err))
+// notApplied retracts the marker after a failure that left state unchanged and
+// classifies the outcome as ErrWriteNotApplied. If the marker cannot be
+// cleared it stays outstanding and is reported on the outcome and error.
+func (m *TrustAnchorMutator) notApplied(ctx context.Context, out *WriteOutcome, req TrustAnchorMutation, id string, cause error) (WriteOutcome, error) {
+	err := fmt.Errorf("%w: %w", ErrWriteNotApplied, cause)
+	if m.Marker != nil {
+		if clearErr := m.Marker.ClearMarker(ctx); clearErr != nil {
+			out.MarkerOutstanding = true
+			err = errors.Join(err, fmt.Errorf("clear marker: %w", clearErr))
+		}
 	}
-	out.AuditPersisted = true
-	return out, nil
+	return *out, &TrustAnchorMutationError{Action: req.Action, AnchorID: id, Err: err}
+}
+
+// indeterminate classifies err as ErrWriteIndeterminate.
+func indeterminate(err error) error {
+	if errors.Is(err, ErrWriteIndeterminate) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrWriteIndeterminate, err)
 }
 
 type trustAnchorPlan struct {
