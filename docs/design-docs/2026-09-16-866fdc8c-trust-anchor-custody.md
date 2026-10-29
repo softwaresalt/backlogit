@@ -92,9 +92,11 @@ recorded here as an accepted residual rather than claimed as closed.
 Rotation introduces a new anchor and retires the old one. `rotate` requires
 operator approval evidence and a new fingerprint that is already in the
 external pin set, so a workspace writer cannot introduce an unpinned key. The
-old anchor is marked revoked in the workspace as an advisory projection.
-Operators complete rotation by de-pinning the old fingerprint in the external
-pin set; until then the external authority still trusts it. Rotation never
+old anchor is retired authoritatively: rotate records the old fingerprint
+through the same `RevocationAuthority` as revoke and fails closed (denial
+audit, no workspace change) when none is injected, so the shipped CLI rotate
+currently fails closed with the required external operation. The workspace
+status flip is only an advisory projection. Rotation never
 widens a role: the new key resolves only under its externally bound role.
 
 ## Revocation
@@ -113,7 +115,9 @@ status back to active cannot restore trust.
   then fails, the outcome is indeterminate and the marker stays outstanding.
 - No external-path filesystem writes are authorized.
 
-The shipped CLI wires no concrete authority, so `backlogit trust-anchor
+Resolution uses `ResolveVerificationKeyAuthoritative`, which always applies
+the authority's tombstones (a nil authority means no tombstone source is
+configured). The shipped CLI wires no concrete authority, so `backlogit trust-anchor
 revoke` currently fails closed with the required external operation. Operators
 revoke by removing the fingerprint from the external pin set.
 
@@ -129,7 +133,10 @@ mutation path:
 - `--approval <file>` is a signed JSON token with `action`, `anchor_id`,
   `approver`, `expiry`, `nonce` and a base64 Ed25519 `signature`. The core
   verifies the signature, the action and anchor binding, the nonce and the
-  expiry against the operator approver key.
+  expiry against the operator approver key. The expiry may be at most 24 hours
+  ahead. For rotate the signed payload (v2) also covers the replacement
+  anchor's id, fingerprint, role, algo, not_before and not_after, taken from
+  the rotate flags; the token file format itself is unchanged.
 - `BACKLOGIT_TRUST_APPROVER_KEY` (base64 raw Ed25519 public key) or
   `BACKLOGIT_TRUST_APPROVER_KEY_FILE` provisions the approver key outside the
   workspace.

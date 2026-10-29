@@ -66,6 +66,11 @@ func TestTrustAnchorMutationCore(t *testing.T) {
 		ev.Signature = ed25519.Sign(key, ev.SigningPayload())
 		return &ev
 	}
+	rotateEvidence := func(id string, repl config.TrustAnchor, expiry time.Time, key ed25519.PrivateKey) *core.ApprovalEvidence {
+		ev := core.ApprovalEvidence{Action: core.TrustAnchorActionRotate, AnchorID: id, Approver: "operator-1", Expiry: expiry, Nonce: "n-1", Replacement: &repl}
+		ev.Signature = ed25519.Sign(key, ev.SigningPayload())
+		return &ev
+	}
 	oldAnchor := config.TrustAnchor{ID: "old", Role: "attestation-signer", Algo: "ed25519", PublicKeyRef: "keys/old.pem",
 		Fingerprint: "sha256:old", Status: config.TrustAnchorStatusActive}
 	newAnchor := config.TrustAnchor{ID: "new", Role: "attestation-signer", Algo: "ed25519", PublicKeyRef: "keys/new.pem",
@@ -90,11 +95,14 @@ func TestTrustAnchorMutationCore(t *testing.T) {
 		require.Len(t, f.anchors, 2)
 
 		f, m = setup("sha256:new")
+		rotAuth := &fakeRevocation{}
+		m.Revocation = rotAuth
 		rot := core.TrustAnchorMutation{Action: core.TrustAnchorActionRotate, AnchorID: "old", Anchor: newAnchor,
-			Approval: evidence(core.TrustAnchorActionRotate, "old", now.Add(time.Hour), priv)}
+			Approval: rotateEvidence("old", newAnchor, now.Add(time.Hour), priv)}
 		out, err = m.Apply(context.Background(), rot)
 		require.NoError(t, err)
-		require.True(t, out.ConfigWritten && out.StatusWritten && out.AuditPersisted)
+		require.True(t, out.ConfigWritten && out.StatusWritten && out.AuditPersisted && out.RevocationRecorded)
+		require.Equal(t, []string{"sha256:old"}, rotAuth.tombstones)
 		require.Equal(t, []string{"config", "status:old=revoked", "status:new=active", "audit:applied"}, f.log)
 		require.Equal(t, "operator-1", f.audits[0].Approver)
 		require.Equal(t, "old", f.audits[0].AnchorID)
@@ -170,6 +178,50 @@ func TestTrustAnchorMutationCore(t *testing.T) {
 		_, err := m.Apply(context.Background(), core.TrustAnchorMutation{Action: core.TrustAnchorActionRevoke, AnchorID: "old",
 			Approval: evidence(core.TrustAnchorActionRevoke, "old", now.Add(time.Hour), priv)})
 		require.ErrorIs(t, err, core.ErrApprovalInvalid)
+		require.Empty(t, f.log)
+	})
+
+	t.Run("rotate approval binds the replacement anchor", func(t *testing.T) {
+		other := newAnchor
+		other.Fingerprint = "sha256:evil"
+		f, m := setup("sha256:new", "sha256:evil")
+		m.Revocation = &fakeRevocation{}
+		_, err := m.Apply(context.Background(), core.TrustAnchorMutation{Action: core.TrustAnchorActionRotate, AnchorID: "old", Anchor: other,
+			Approval: rotateEvidence("old", newAnchor, now.Add(time.Hour), priv)})
+		require.ErrorIs(t, err, core.ErrApprovalInvalid)
+		require.Empty(t, f.log)
+		// evidence without a replacement is also refused
+		_, err = m.Apply(context.Background(), core.TrustAnchorMutation{Action: core.TrustAnchorActionRotate, AnchorID: "old", Anchor: newAnchor,
+			Approval: evidence(core.TrustAnchorActionRotate, "old", now.Add(time.Hour), priv)})
+		require.ErrorIs(t, err, core.ErrApprovalInvalid)
+		require.Empty(t, f.log)
+	})
+
+	t.Run("approval lifetime is bounded", func(t *testing.T) {
+		f, m := setup()
+		m.Revocation = &fakeRevocation{}
+		_, err := m.Apply(context.Background(), core.TrustAnchorMutation{Action: core.TrustAnchorActionRevoke, AnchorID: "old",
+			Approval: evidence(core.TrustAnchorActionRevoke, "old", now.Add(25*time.Hour), priv)})
+		require.ErrorIs(t, err, core.ErrApprovalInvalid)
+		require.Empty(t, f.log)
+	})
+
+	t.Run("rotate without revocation authority fails closed", func(t *testing.T) {
+		f, m := setup("sha256:new")
+		out, err := m.Apply(context.Background(), core.TrustAnchorMutation{Action: core.TrustAnchorActionRotate, AnchorID: "old", Anchor: newAnchor,
+			Approval: rotateEvidence("old", newAnchor, now.Add(time.Hour), priv)})
+		require.ErrorIs(t, err, core.ErrRevocationAuthorityRequired)
+		require.Contains(t, err.Error(), "sha256:old")
+		require.False(t, out.ConfigWritten || out.StatusWritten || out.RevocationRecorded)
+		require.Equal(t, []string{"audit:denied"}, f.log)
+		require.Equal(t, []config.TrustAnchor{oldAnchor}, f.anchors)
+
+		auth := &fakeRevocation{recordErr: errors.New("authority down")}
+		f, m = setup("sha256:new")
+		m.Revocation = auth
+		_, err = m.Apply(context.Background(), core.TrustAnchorMutation{Action: core.TrustAnchorActionRotate, AnchorID: "old", Anchor: newAnchor,
+			Approval: rotateEvidence("old", newAnchor, now.Add(time.Hour), priv)})
+		require.ErrorIs(t, err, core.ErrWriteNotApplied)
 		require.Empty(t, f.log)
 	})
 

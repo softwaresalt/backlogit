@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 // ErrRevocationAuthorityRequired reports a revoke that cannot be recorded
@@ -59,6 +61,20 @@ func (p *ExternalPinSet) Tombstoned(fingerprint string) bool {
 	}
 	_, ok := p.tombstones[fingerprint]
 	return ok
+}
+
+// ResolveVerificationKeyAuthoritative resolves like ResolveVerificationKey but
+// always applies the external tombstones held by authority first, so a
+// tombstoned key is untrusted even when workspace status says active. It fails
+// closed on an authority error. A nil authority is allowed only to mean that
+// no tombstone source is configured (the shipped CLI wires none); callers that
+// have an authority must pass it.
+func ResolveVerificationKeyAuthoritative(ctx context.Context, anchors []config.TrustAnchor, sel KeySelector, at time.Time, pins *ExternalPinSet, authority RevocationAuthority) (ResolvedKey, error) {
+	applied, err := ApplyRevocations(ctx, pins, authority)
+	if err != nil {
+		return ResolvedKey{}, &TrustAnchorResolveError{ID: sel.ID, Role: sel.Role, At: at, Err: err}
+	}
+	return ResolveVerificationKey(anchors, sel, at, applied)
 }
 
 // ApplyRevocations returns pins with every tombstone held by auth applied, so

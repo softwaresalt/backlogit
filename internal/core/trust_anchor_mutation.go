@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -56,12 +57,34 @@ type ApprovalEvidence struct {
 	Expiry    time.Time
 	Nonce     string
 	Signature []byte
+	// Replacement is the replacement anchor a rotate approval binds. It is
+	// required for rotate and covered by the signature.
+	Replacement *config.TrustAnchor
 }
 
-// SigningPayload returns the canonical bytes covered by Signature.
+// MaxApprovalLifetime bounds how far beyond Now an approval expiry may lie.
+const MaxApprovalLifetime = 24 * time.Hour
+
+// SigningPayload returns the canonical bytes covered by Signature. For rotate
+// it includes the replacement anchor (id, fingerprint, role, algo, not_before,
+// not_after) so the approval binds the key being introduced.
 func (e ApprovalEvidence) SigningPayload() []byte {
-	return []byte("backlogit-trust-anchor-approval-v1\n" + string(e.Action) + "\n" + e.AnchorID + "\n" +
-		e.Approver + "\n" + e.Expiry.UTC().Format(time.RFC3339Nano) + "\n" + e.Nonce)
+	repl := "-"
+	if e.Replacement != nil {
+		repl = replacementBinding(*e.Replacement)
+	}
+	return []byte("backlogit-trust-anchor-approval-v2\n" + string(e.Action) + "\n" + e.AnchorID + "\n" +
+		e.Approver + "\n" + e.Expiry.UTC().Format(time.RFC3339Nano) + "\n" + e.Nonce + "\n" + repl)
+}
+
+func replacementBinding(a config.TrustAnchor) string {
+	ts := func(t *time.Time) string {
+		if t == nil {
+			return "none"
+		}
+		return t.UTC().Format(time.RFC3339Nano)
+	}
+	return strings.Join([]string{a.ID, a.Fingerprint, a.Role, a.Algo, ts(a.NotBefore), ts(a.NotAfter)}, "|")
 }
 
 // ApproverVerifier verifies the signature of approval evidence against an
@@ -218,7 +241,7 @@ func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation)
 
 	// 2b. a revoke needs the external authority; workspace status is advisory
 	// and a status-only flip must never report success (168.009-T).
-	if req.Action == TrustAnchorActionRevoke && m.Revocation == nil {
+	if (req.Action == TrustAnchorActionRevoke || req.Action == TrustAnchorActionRotate) && m.Revocation == nil {
 		reason := fmt.Errorf("%w: fingerprint %s must be revoked externally (de-pin/tombstone it in the external trust authority) and the operation confirmed; no workspace state was changed",
 			ErrRevocationAuthorityRequired, plan.revokeFingerprint)
 		mutErr := &TrustAnchorMutationError{Action: req.Action, AnchorID: plan.targetID, Err: reason}
@@ -273,7 +296,7 @@ func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation)
 // applyTrustAnchorState performs step 2: the config write then the status
 // writes, recording which took effect in out.
 func (m *TrustAnchorMutator) applyTrustAnchorState(ctx context.Context, plan trustAnchorPlan, out *WriteOutcome) error {
-	if plan.action == TrustAnchorActionRevoke {
+	if plan.action == TrustAnchorActionRevoke || plan.action == TrustAnchorActionRotate {
 		// The authoritative revocation is recorded first; the workspace status
 		// write below is only a contained advisory projection of it.
 		rec := RevocationRecord{AnchorID: plan.targetID, Fingerprint: plan.revokeFingerprint, Approver: plan.approver, At: m.Now()}
@@ -418,6 +441,11 @@ func (m *TrustAnchorMutator) verifyApproval(req TrustAnchorMutation) (string, er
 		return "", fmt.Errorf("%w: evidence lacks nonce or approver", ErrApprovalInvalid)
 	case !ev.Expiry.After(m.Now()):
 		return "", fmt.Errorf("%w: evidence expired", ErrApprovalInvalid)
+	case ev.Expiry.After(m.Now().Add(MaxApprovalLifetime)):
+		return "", fmt.Errorf("%w: evidence expiry exceeds the %s maximum lifetime", ErrApprovalInvalid, MaxApprovalLifetime)
+	case req.Action == TrustAnchorActionRotate &&
+		(ev.Replacement == nil || replacementBinding(*ev.Replacement) != replacementBinding(req.Anchor)):
+		return "", fmt.Errorf("%w: rotate evidence is not bound to the replacement anchor", ErrApprovalInvalid)
 	}
 	if err := m.Approver.VerifyApproval(*ev); err != nil {
 		if errors.Is(err, ErrApprovalInvalid) {

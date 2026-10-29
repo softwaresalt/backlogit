@@ -143,6 +143,11 @@ func runTrustAnchorMutation(cmd *cobra.Command, cwd string, req core.TrustAnchor
 		if err != nil {
 			return fmt.Errorf("trust anchor %s %q: %w", req.Action, req.AnchorID, err)
 		}
+		if req.Action == core.TrustAnchorActionRotate {
+			// The signature covers the replacement anchor the operator is introducing.
+			repl := req.Anchor
+			ev.Replacement = &repl
+		}
 		req.Approval = &ev
 		approver = core.NewEd25519ApproverVerifier(key)
 	}

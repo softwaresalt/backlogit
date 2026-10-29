@@ -32,6 +32,31 @@ func (f *fakeRevocation) Tombstones(context.Context) ([]string, error) {
 	return append([]string(nil), f.tombstones...), nil
 }
 
+func TestTrustedResolveAuthoritativeAppliesTombstones(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	a := config.TrustAnchor{ID: "k", Role: "attestation-signer", Algo: "ed25519", PublicKeyRef: "keys/k.pem",
+		Fingerprint: "sha256:k", Status: config.TrustAnchorStatusActive}
+	pins := core.NewBoundExternalPinSet(core.PinBinding{Fingerprint: "sha256:k", Role: "attestation-signer"})
+	ctx := context.Background()
+	sel := core.KeySelector{ID: "k"}
+
+	_, err := core.ResolveVerificationKeyAuthoritative(ctx, []config.TrustAnchor{a}, sel, now, pins, &fakeRevocation{tombstones: []string{"sha256:k"}})
+	require.ErrorIs(t, err, core.ErrTrustAnchorRevoked)
+
+	_, err = core.ResolveVerificationKeyAuthoritative(ctx, []config.TrustAnchor{a}, sel, now, pins, nil)
+	require.NoError(t, err)
+
+	failing := &failingTombstones{}
+	_, err = core.ResolveVerificationKeyAuthoritative(ctx, []config.TrustAnchor{a}, sel, now, pins, failing)
+	require.Error(t, err)
+}
+
+type failingTombstones struct{ fakeRevocation }
+
+func (*failingTombstones) Tombstones(context.Context) ([]string, error) {
+	return nil, errors.New("authority unreachable")
+}
+
 // TestTrustAnchorAuthoritativeRevoke covers 168.009-T.
 func TestTrustAnchorAuthoritativeRevoke(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)

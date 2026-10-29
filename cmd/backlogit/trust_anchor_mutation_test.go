@@ -29,9 +29,12 @@ func mutationEnv(t *testing.T) (root string, priv ed25519.PrivateKey) {
 }
 
 // writeApproval signs an approval token and writes it as an operator file.
-func writeApproval(t *testing.T, priv ed25519.PrivateKey, action core.TrustAnchorAction, id string, expiry time.Time) string {
+func writeApproval(t *testing.T, priv ed25519.PrivateKey, action core.TrustAnchorAction, id string, expiry time.Time, repl ...config.TrustAnchor) string {
 	t.Helper()
 	ev := core.ApprovalEvidence{Action: action, AnchorID: id, Approver: "operator", Expiry: expiry, Nonce: "nonce-" + id}
+	if len(repl) > 0 {
+		ev.Replacement = &repl[0]
+	}
 	ev.Signature = ed25519.Sign(priv, ev.SigningPayload())
 	data, err := json.Marshal(map[string]string{
 		"action": string(ev.Action), "anchor_id": ev.AnchorID, "approver": ev.Approver,
@@ -116,16 +119,20 @@ func TestTrustAnchorMutationCLI(t *testing.T) {
 		require.Equal(t, config.TrustAnchorStatusActive, loadAnchors(t, root)["live-signer"].Status, "no advisory flip")
 	})
 
-	t.Run("rotate with verifiable approval revokes old and activates new", func(t *testing.T) {
+	// Rotate must retire the old key authoritatively; the CLI has no authority,
+	// so it fails closed with no workspace change.
+	t.Run("rotate with verifiable approval fails closed without an external authority", func(t *testing.T) {
 		root, priv := mutationEnv(t)
-		appr := writeApproval(t, priv, core.TrustAnchorActionRotate, "live-signer", soon)
+		repl := config.TrustAnchor{ID: "rot-signer", Role: "attestation-signer", Algo: "ed25519", PublicKeyRef: "keys/rot.pem", Fingerprint: "sha256:rot00001"}
+		appr := writeApproval(t, priv, core.TrustAnchorActionRotate, "live-signer", soon, repl)
 		args := []string{"trust-anchor", "rotate", "live-signer", "--approval", appr, "--id", "rot-signer", "--role", "attestation-signer",
 			"--algo", "ed25519", "--public-key-ref", "keys/rot.pem", "--fingerprint", "sha256:rot00001"}
-		out, err := runTrustAnchorCLI(t, root, args...)
-		require.NoError(t, err, out)
+		_, err := runTrustAnchorCLI(t, root, args...)
+		require.ErrorIs(t, err, core.ErrRevocationAuthorityRequired)
+		require.Contains(t, err.Error(), "sha256:live0001")
 		got := loadAnchors(t, root)
-		require.Equal(t, config.TrustAnchorStatusRevoked, got["live-signer"].Status)
-		require.Equal(t, config.TrustAnchorStatusActive, got["rot-signer"].Status)
+		require.Equal(t, config.TrustAnchorStatusActive, got["live-signer"].Status)
+		require.NotContains(t, got, "rot-signer")
 	})
 
 	t.Run("forged approval is rejected with no partial write", func(t *testing.T) {
