@@ -62,6 +62,12 @@ type ShipmentShippedReconcileRequest struct {
 	// verify the attestation fail-closed; a returned error aborts the
 	// reconciliation before any write.
 	AttestationVerifier func(expected AttestationExpectedEvidence) error
+	// AttestationRejectionAuditor, when non-nil, is invoked with the context
+	// that holds any active item-log lock whenever AttestationVerifier fails
+	// on a live run, so the rejection audit can reuse that lock instead of
+	// contending for it. It returns the rejection, joined with any audit
+	// failure. A dry run never invokes it.
+	AttestationRejectionAuditor func(ctx context.Context, rejection error) error
 }
 
 // ShipmentShippedReconcileResult is the outcome of a governed shipment

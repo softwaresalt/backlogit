@@ -237,7 +237,7 @@ func prepareShipmentReconcileEvidence(ctx context.Context, ws *Workspace, req Sh
 			ManifestDigest:     normalizedInput.ManifestDigest,
 			ClosureContentHash: closureContentHash,
 		}
-		if err := req.AttestationVerifier(expected); err != nil {
+		if err := req.verifyAttestation(ctx, expected); err != nil {
 			return zero, shipmentReconcileEvidenceWrap(err, "prepare shipment reconcile evidence: verify attestation")
 		}
 	}

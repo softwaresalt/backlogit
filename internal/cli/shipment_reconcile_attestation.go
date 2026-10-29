@@ -135,10 +135,9 @@ func readReconcileAttestationFile(path string) ([]byte, error) {
 }
 
 // verifier returns the core.ShipmentShippedReconcileRequest.AttestationVerifier
-// hook. A dry run verifies without persisting a rejection audit event; a live
-// run persists one through core.VerifyAttestationAudited. ws is resolved
-// lazily because the workspace opens after the attestation is loaded.
-func (a *reconcileAttestation) verifier(ctx context.Context, ws func() *core.Workspace, dryRun bool) func(core.AttestationExpectedEvidence) error {
+// hook. It only verifies: a live run's rejection audit is persisted by
+// rejectionAuditor, which core invokes with the lock-holding context.
+func (a *reconcileAttestation) verifier() func(core.AttestationExpectedEvidence) error {
 	return func(expected core.AttestationExpectedEvidence) error {
 		in := core.AttestationVerifyInput{
 			Parsed:    a.parsed,
@@ -147,15 +146,7 @@ func (a *reconcileAttestation) verifier(ctx context.Context, ws func() *core.Wor
 			Expected:  expected,
 			At:        time.Now().UTC(),
 		}
-		var (
-			verified core.AttestationVerification
-			err      error
-		)
-		if dryRun {
-			verified, err = core.VerifyAttestation(in)
-		} else {
-			verified, err = core.VerifyAttestationAudited(ctx, ws(), in)
-		}
+		verified, err := core.VerifyAttestation(in)
 		if err != nil {
 			return fmt.Errorf("attestation verification failed: %w", err)
 		}
@@ -176,5 +167,15 @@ func (a *reconcileAttestation) summary() map[string]any {
 		"signer_identity":  a.claim.SignerIdentity,
 		"sig_algo":         a.claim.SigAlgo,
 		"statement_digest": a.claim.StatementDigest,
+	}
+}
+
+// rejectionAuditor returns the core.ShipmentShippedReconcileRequest.AttestationRejectionAuditor
+// hook, persisting an attestation_rejected event through the context core
+// supplies. ws is resolved lazily because the workspace opens after the
+// attestation is loaded.
+func (a *reconcileAttestation) rejectionAuditor(ws func() *core.Workspace, shipmentID string) func(context.Context, error) error {
+	return func(ctx context.Context, rejection error) error {
+		return core.AuditAttestationRejection(ctx, ws(), shipmentID, a.claim.KeyID, rejection)
 	}
 }

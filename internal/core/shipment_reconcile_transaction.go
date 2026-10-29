@@ -250,11 +250,6 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 	}
 
 	// 2b resume.
-	if req.DryRun {
-		result.Message = fmt.Sprintf("dry run: shipment %s has a previously prepared reconciliation event that would be appended to resume", shipmentID)
-		return result, nil
-	}
-
 	preparedEventText, err := readRequiredRawStringField(persisted.preparedEvent, shipmentReconcilePreparedEventField)
 	if err != nil {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
@@ -272,7 +267,7 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 			result.Outcome = ShipmentReconcileOutcomeIndeterminate
 			return result, fmt.Errorf("reconcile shipment to shipped: decode shipment %s persisted prepared event: %w", shipmentID, err)
 		}
-		if err := req.AttestationVerifier(AttestationExpectedEvidence{
+		if err := req.verifyAttestation(ctx, AttestationExpectedEvidence{
 			ShipmentID:         shipmentID,
 			MergeSHA:           delta.Evidence.MergeSHA,
 			ManifestDigest:     delta.Evidence.ManifestDigest,
@@ -280,6 +275,11 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 		}); err != nil {
 			return result, fmt.Errorf("reconcile shipment to shipped: verify shipment %s persisted attestation before resume: %w", shipmentID, err)
 		}
+	}
+
+	if req.DryRun {
+		result.Message = fmt.Sprintf("dry run: shipment %s has a previously prepared reconciliation event that would be appended to resume", shipmentID)
+		return result, nil
 	}
 
 	if err := appendShipmentReconcileEvent(ctx, ws, shipmentID, []byte(preparedEventText)); err != nil {
@@ -712,4 +712,16 @@ func shipmentReconcileMemberSetsEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// verifyAttestation runs the request's attestation verifier. On a live run a
+// failure is handed to AttestationRejectionAuditor with ctx (which carries any
+// held item-log lock) so the rejection audit reuses that lock; the returned
+// error is always the original rejection, joined with any audit failure.
+func (req ShipmentShippedReconcileRequest) verifyAttestation(ctx context.Context, expected AttestationExpectedEvidence) error {
+	err := req.AttestationVerifier(expected)
+	if err == nil || req.DryRun || req.AttestationRejectionAuditor == nil {
+		return err
+	}
+	return req.AttestationRejectionAuditor(ctx, err)
 }

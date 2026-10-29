@@ -136,7 +136,8 @@ left unchanged).`,
 			if attestation != nil {
 				claim := attestation.claim
 				req.Attestation = &claim
-				req.AttestationVerifier = attestation.verifier(ctx, func() *core.Workspace { return ws }, dryRun)
+				req.AttestationVerifier = attestation.verifier()
+				req.AttestationRejectionAuditor = attestation.rejectionAuditor(func() *core.Workspace { return ws }, shipmentID)
 			}
 
 			result, err := core.ReconcileShipmentToShipped(ctx, ws, req)
