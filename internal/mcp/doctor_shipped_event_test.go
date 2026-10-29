@@ -149,3 +149,25 @@ level: 2
 `
 	require.NoError(t, os.WriteFile(filepath.Join(queue, "901.001-T.md"), []byte(member), 0o644))
 }
+
+type recordingPinProvider struct{ calls int }
+
+func (p *recordingPinProvider) ExternalPinSet(context.Context) (*core.ExternalPinSet, error) {
+	p.calls++
+	return core.NewExternalPinSet(), nil
+}
+
+func TestHandleDoctor_UsesInjectedAttestationPins(t *testing.T) {
+	s, _ := setupBugFixServer(t)
+	pins := &recordingPinProvider{}
+	s.AttestationPins = pins
+
+	result, err := s.handleDoctor(context.Background(), contractRequest(map[string]any{
+		"check_shipped_event_completeness": true,
+		"check_orphans":                    false,
+		"check_duplicates":                 false,
+	}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	assert.Positive(t, pins.calls, "doctor must re-verify attestations against the injected external pin provider")
+}

@@ -38,6 +38,11 @@ type Server struct {
 	// internal/mcp cannot import cli directly. When nil, the catalog omits CLI
 	// command data (e.g. for a server constructed without CLI wiring).
 	CLICommandProvider func() []core.CommandInfo
+	// AttestationPins supplies the external pin set backlogit_doctor uses to
+	// re-verify signed reconciliation attestations. The cli package injects the
+	// same BACKLOGIT_TRUST_PINS provider the CLI doctor uses; when nil, signed
+	// attestations fail closed.
+	AttestationPins core.ExternalPinSetProvider
 	// LatestVersionLookup, when set, overrides the latest-release lookup used by
 	// backlogit_get_version. Tests use this seam to keep version checks hermetic.
 	LatestVersionLookup func(context.Context) (string, error)
