@@ -48,6 +48,28 @@ func TestReconcileResumeAuditsRejectionUnderHeldLock(t *testing.T) {
 	assert.Equal(t, EventAttestationRejected, logged[0].EventType)
 }
 
+func TestReconcileResumeAuditsRejectionUnderProductionHeldLock(t *testing.T) {
+	ws, shipmentID, fm, req := resumeAuditFixture(t)
+	req.AttestationRejectionAuditor = func(ctx context.Context, rejection error) error {
+		return AuditAttestationRejection(ctx, ws, shipmentID, "k", rejection)
+	}
+
+	heldCtx, unlock, err := lockShipmentReconcileItemLog(context.Background(), ws, shipmentID)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, unlock()) }()
+
+	start := time.Now()
+	_, err = reconcileShipmentPhaseBNoOp(heldCtx, ws, req, shipmentID, fm, nil, ShipmentShippedReconcileResult{})
+	var ve *AttestationVerifyError
+	require.ErrorAs(t, err, &ve)
+	assert.Less(t, time.Since(start), time.Second, "audit must reuse the held lock, not self-contend")
+
+	logged, err := events.ReadAllEvents(context.Background(), WorkspaceLogsRoot(ws.RootPath), shipmentID)
+	require.NoError(t, err)
+	require.Len(t, logged, 1)
+	assert.Equal(t, EventAttestationRejected, logged[0].EventType)
+}
+
 func TestReconcileResumeDryRunVerifiesPersistedAttestation(t *testing.T) {
 	ws, shipmentID, fm, req := resumeAuditFixture(t)
 	req.DryRun = true
