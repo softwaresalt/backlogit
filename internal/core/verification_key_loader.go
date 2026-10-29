@@ -153,12 +153,7 @@ func parseVerificationKey(algo string, material []byte) (*VerificationKey, error
 	if strings.Contains(strings.ToUpper(block.Type), "PRIVATE") {
 		return nil, ErrVerificationKeyPrivate
 	}
-	for {
-		var next *pem.Block
-		next, rest = pem.Decode(rest)
-		if next == nil {
-			break
-		}
+	if next, _ := pem.Decode(rest); next != nil {
 		if strings.Contains(strings.ToUpper(next.Type), "PRIVATE") {
 			return nil, ErrVerificationKeyPrivate
 		}
