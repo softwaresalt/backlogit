@@ -208,6 +208,10 @@ func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventB
 		return fmt.Errorf("%w: delta.evidence.evidence_digest is required", blerrors.ErrValidation)
 	}
 
+	if err := validateShipmentReconciledShippedAttestation(delta.Attestation); err != nil {
+		return err
+	}
+
 	if len(preparedEventBytes) == 0 && expectedDigest == "" {
 		return nil
 	}
@@ -218,6 +222,25 @@ func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventB
 	}
 	if gotDigest := ShipmentReconciledShippedEventDigest(rawEventBytes); gotDigest != expectedDigest {
 		return fmt.Errorf("%w: event digest mismatch: got %s want %s", blerrors.ErrValidation, gotDigest, expectedDigest)
+	}
+	return nil
+}
+
+// validateShipmentReconciledShippedAttestation requires a present attestation
+// to be complete. A nil attestation is the valid unsigned (#423 v1) shape.
+func validateShipmentReconciledShippedAttestation(att *ShipmentReconciledShippedAttestation) error {
+	if att == nil {
+		return nil
+	}
+	for _, field := range []struct{ name, value string }{
+		{"key_id", att.KeyID},
+		{"signer_identity", att.SignerIdentity},
+		{"sig_algo", att.SigAlgo},
+		{"statement_digest", att.StatementDigest},
+	} {
+		if field.value == "" {
+			return fmt.Errorf("%w: delta.attestation.%s is required when attestation is present", blerrors.ErrValidation, field.name)
+		}
 	}
 	return nil
 }

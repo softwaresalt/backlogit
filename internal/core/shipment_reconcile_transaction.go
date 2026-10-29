@@ -168,7 +168,7 @@ func reconcileShipmentPhaseB(ctx context.Context, ws *Workspace, req ShipmentShi
 		return result, fmt.Errorf("reconcile shipment to shipped: read shipment %s item log: %w", shipmentID, err)
 	}
 
-	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipmentID)
+	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipmentID, req.Attestation)
 	if classifyErr != nil {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
 		result.Message = fmt.Sprintf("shipment %s reconciliation state could not be determined", shipmentID)
@@ -348,7 +348,7 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 	if err != nil {
 		return result, fmt.Errorf("reconcile shipment to shipped: re-read shipment %s item log: %w", shipmentID, err)
 	}
-	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipmentID)
+	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipmentID, req.Attestation)
 	if classifyErr != nil {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
 		result.Message = fmt.Sprintf("shipment %s reconciliation state could not be determined", shipmentID)

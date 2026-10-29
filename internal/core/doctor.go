@@ -858,6 +858,18 @@ func newDoctorErrorFinding(findingType DoctorFindingType, artifactID, message st
 // leaves this false, retaining the missing-shipped-event finding exactly as
 // before this task existed.
 func reconciledShippedEventPresence(logsDir, id string) (present bool, readable bool) {
+	kind, readable := classifyReconciledShippedEvent(logsDir, id)
+	return kind != reconciledShippedAbsent, readable
+}
+
+// classifyReconciledShippedEvent distinguishes a signed from an unsigned
+// governed reconcile (169.003-T doctor-LOCAL branch). It applies the same
+// fully-valid, item-bound recognition as reconciledShippedEventPresence and
+// then reports whether the recognized event carries an attestation member.
+// This is a presence-based check only: it does not verify any signature, so a
+// forged attestation member is indistinguishable here; durable signed-envelope
+// re-verification supersedes it (169.007-T).
+func classifyReconciledShippedEvent(logsDir, id string) (kind reconciledShippedEventKind, readable bool) {
 	logPath := events.LogPathForItem(logsDir, id)
 	realLogsDir, rootErr := filepath.EvalSymlinks(logsDir)
 	if rootErr != nil {
@@ -872,7 +884,7 @@ func reconciledShippedEventPresence(logsDir, id string) (present bool, readable 
 		}
 	}
 	if !pathContained(realLogsDir, realLogPath) {
-		return false, false
+		return reconciledShippedAbsent, false
 	}
 	data, err := os.ReadFile(realLogPath)
 	if err != nil {
@@ -881,20 +893,24 @@ func reconciledShippedEventPresence(logsDir, id string) (present bool, readable 
 			// in itself. shippedEventPresence's own !present/!readable
 			// combination already reports "missing" for this case; this
 			// function simply has no reconciled event to contribute.
-			return false, true
+			return reconciledShippedAbsent, true
 		}
-		return false, false
+		return reconciledShippedAbsent, false
 	}
 	for _, line := range bytes.Split(data, []byte("\n")) {
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
 		lineWithNewline := append(append([]byte{}, line...), '\n')
-		if ValidateShipmentReconciledShippedEvent(lineWithNewline, nil, "", id) == nil {
-			return true, true
+		if ValidateShipmentReconciledShippedEvent(lineWithNewline, nil, "", id) != nil {
+			continue
 		}
+		if reconciledShippedLineSigned(lineWithNewline) {
+			return reconciledShippedSigned, true
+		}
+		return reconciledShippedUnsigned, true
 	}
-	return false, true
+	return reconciledShippedAbsent, true
 }
 
 // reconciledShippedEventKind classifies the governed reconcile event found in
@@ -910,10 +926,15 @@ const (
 	reconciledShippedSigned
 )
 
-// classifyReconciledShippedEvent distinguishes a signed from an unsigned
-// governed reconcile. Not yet implemented (169.003-T harness stub).
-func classifyReconciledShippedEvent(logsDir, id string) (kind reconciledShippedEventKind, readable bool) {
-	return reconciledShippedAbsent, true
+// reconciledShippedLineSigned reports whether an already-validated reconcile
+// event line carries an attestation member.
+func reconciledShippedLineSigned(line []byte) bool {
+	var wrapper events.Event
+	if err := json.Unmarshal(bytes.TrimSuffix(line, []byte("\n")), &wrapper); err != nil {
+		return false
+	}
+	delta, err := decodeShipmentReconciledShippedDelta(wrapper.Delta)
+	return err == nil && delta.Attestation != nil
 }
 
 // shippedEventPresence reports whether the item JSONL for id carries a

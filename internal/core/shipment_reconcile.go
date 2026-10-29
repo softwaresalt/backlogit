@@ -74,7 +74,7 @@ type ShipmentShippedReconcileResult struct {
 // implementation landed by 167.010-T. shipmentID binds every event this
 // classifier accepts to the shipment actually being classified.
 func classifyShipmentReconcileState(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string, reqAttestation ...*ShipmentReconciledShippedAttestation) (ShipmentReconcileOutcome, error) {
-	return classifyShipmentReconcileStateImpl(log, frontmatter, reqIdempotencyKey, reqRequestIdentityDigest, shipmentID)
+	return classifyShipmentReconcileStateImpl(log, frontmatter, reqIdempotencyKey, reqRequestIdentityDigest, shipmentID, reqAttestation...)
 }
 
 // ReconcileShipmentToShipped is the governed two-phase reconciliation

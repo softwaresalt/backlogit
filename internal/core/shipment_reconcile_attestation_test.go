@@ -39,7 +39,7 @@ func TestReconcileAttestationDelta(t *testing.T) {
 		delta := validReconciledShippedDelta()
 		delta.Attestation = reconcileTestAttestation()
 		raw := marshalReconciledShippedEvent(t, delta, "001-S")
-		assert.Contains(t, string(raw), `"attestation":{"key_id":"att","signer_identity":"ci@example","sig_algo":"ed25519","statement_digest":`)
+		assert.Contains(t, string(raw), `"attestation":{"key_id":"att","sig_algo":"ed25519","signer_identity":"ci@example","statement_digest":`)
 		require.NoError(t, ValidateShipmentReconciledShippedEvent(raw, nil, "", "001-S"))
 
 		for _, field := range []string{"key_id", "signer_identity", "sig_algo", "statement_digest"} {
