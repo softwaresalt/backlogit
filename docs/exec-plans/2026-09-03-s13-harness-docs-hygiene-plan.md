@@ -41,16 +41,25 @@ Constitution Check: pass
 ## Implementation Units
 
 ### U1 — Reconcile commit-scope vocabulary (66834D9E)
-* Scope: update commit-message.instructions.md scope enumeration and body-length guidance to match actual repo practice (events, docline, memory, compound, cli-reference; longer multi-bullet bodies), OR document the tightened limit. Choose the reconcile-to-practice direction.
-* Acceptance: the documented scope vocabulary and body-length guidance match observed practice; docs-lint passes.
+* Scope: update `.github/instructions/commit-message.instructions.md` scope enumeration (`## Scopes`: add `events`, `docline`, `memory`, `compound`, `cli-reference`) and `## Body (Optional)` guidance (remove the superseded `MUST be LESS THAN 300 bytes` restriction and rigid `(0-5 items)` bullet cap, and document longer multi-bullet / structured bodies for complex changes) to match actual repository practice.
+* Acceptance: the documented scope vocabulary and `## Body (Optional)` guidance match observed practice (verified by `165.001-T`'s `exempt_verification_command`, which extracts the `## Scopes` section to run the five scope-token checks (`events`, `docline`, `memory`, `compound`, `cli-reference`) specifically against `## Scopes` and extracts the `## Body (Optional)` section to verify removal of `MUST be LESS THAN 300 bytes` / `0-5 items` and presence of multi-bullet/structured body guidance before emitting `EXEMPT_VERIFY_OK:165.001-T`); docs-lint passes.
 
 ### U2 — Upstream checkpoint-context continuity wording (360A183F)
 * Scope: upstream the checkpoint-context Continuity Protocol wording (schema_version 1: arbitrary keys nested under `context`; top level + progress closed; rejected-create means retry-nested; context is unredacted git-tracked durable state that must not carry secrets) into backlogit.instructions.md.tmpl. CROSS-REPO CAVEAT: the `.tmpl` may live in the upstream autoharness harness repo (read-only here); if so, this unit remains active or blocked until actual upstream delivery is proven.
 * Acceptance: completion requires actual upstream delivery evidence, such as an upstream PR or commit reference showing the template change. If that evidence is unavailable, the item stays active or blocked pending upstream work; it is not closeable merely by confirming an already-existing local MCP tool description. Docs-lint passes on any in-repo edit.
 
 ### U3 — Record plugin-bundle P-002 scope boundary (633818E1)
-* Scope: record, as an accepted scope boundary, that the P-002/P-002.1-P-002.5 harness-satisfied contract is intentionally NOT propagated to plugin/agents/ship.agent.md or plugin/skills/build-feature/SKILL.md (per 101-F plugin/.github non-synchronization). No code change.
-* Acceptance: the scope boundary is documented as accepted (no action) with reference to 101-F; no plugin content is modified.
+* Scope: record in `docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md` (`## Scope boundary: P-002 harness-satisfied contract`), as an accepted scope boundary, that the P-002/P-002.1-P-002.5 harness-satisfied contract is intentionally NOT propagated to `plugin/agents/ship.agent.md` or `plugin/skills/build-feature/SKILL.md` (per `101-F` `plugin/` vs `.github/` non-synchronization). No code change.
+* Acceptance: the scope boundary is documented as accepted (no action on `plugin/`) in `docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md` with reference to `101-F` and `633818E1`; no plugin content is modified.
+
+## P-002.1 Closed Exempt Set
+
+In-repo executable tasks in `147-S` (`165-F`) are documentation-only and form the closed P-002.1 `harness-exempt` (`docs-only`) set:
+
+* `165.001-T` (`docs-only` — `.github/instructions/commit-message.instructions.md`)
+* `165.003-T` (`docs-only` — `docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md`)
+
+Cross-repo unit U2 (`165.002-T`, stash `360A183F`) remains `blocked` outside `147-S` pending upstream harness repository template delivery.
 
 ## Dependency Graph
 
@@ -96,6 +105,7 @@ The prior PASS record is retained only as invalidated history. It omitted mandat
 
 dispatch_mode: multi-agent-dispatch
 decision: ADVISORY
+operator_authorization: approved
 
 personas:
 * Constitution Reviewer (`claude-opus-4.8`)
