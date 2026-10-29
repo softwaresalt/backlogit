@@ -12,6 +12,15 @@ import (
 
 func tptr(t time.Time) *time.Time { return &t }
 
+// allPinned returns an external pin set authorizing every anchor fingerprint.
+func allPinned(anchors []config.TrustAnchor) *core.ExternalPinSet {
+	fps := make([]string, 0, len(anchors))
+	for i := range anchors {
+		fps = append(fps, anchors[i].Fingerprint)
+	}
+	return core.NewExternalPinSet(fps...)
+}
+
 func TestTrustedKeyResolver(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	anchors := []config.TrustAnchor{
@@ -46,7 +55,7 @@ func TestTrustedKeyResolver(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := core.ResolveVerificationKey(anchors, tc.sel, now)
+			got, err := core.ResolveVerificationKey(anchors, tc.sel, now, allPinned(anchors))
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
 				var re *core.TrustAnchorResolveError
@@ -60,14 +69,14 @@ func TestTrustedKeyResolver(t *testing.T) {
 	}
 
 	t.Run("resolution is a pure function of its inputs", func(t *testing.T) {
-		a, errA := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "live"}, now)
-		b, errB := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "live"}, now)
+		a, errA := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "live"}, now, allPinned(anchors))
+		b, errB := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "live"}, now, allPinned(anchors))
 		require.NoError(t, errA)
 		require.NoError(t, errB)
 		require.Equal(t, a, b)
 		require.Equal(t, "live", a.Anchor.ID)
 		// Window moves with the supplied time, not the wall clock.
-		_, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "live"}, now.Add(2*time.Hour))
+		_, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "live"}, now.Add(2*time.Hour), allPinned(anchors))
 		require.ErrorIs(t, err, core.ErrTrustAnchorExpired)
 	})
 }

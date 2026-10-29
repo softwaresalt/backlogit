@@ -18,7 +18,7 @@ func TestTrustedKeyResolverRoleScopedAlgo(t *testing.T) {
 	}
 
 	t.Run("role mismatch is rejected", func(t *testing.T) {
-		got, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "tok", Purpose: "attestation-signer"}, now)
+		got, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "tok", Purpose: "attestation-signer"}, now, allPinned(anchors))
 		require.ErrorIs(t, err, core.ErrTrustAnchorRoleMismatch)
 		var re *core.TrustAnchorResolveError
 		require.ErrorAs(t, err, &re)
@@ -26,23 +26,23 @@ func TestTrustedKeyResolverRoleScopedAlgo(t *testing.T) {
 	})
 
 	t.Run("role match carries pinned algo", func(t *testing.T) {
-		got, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "att", Purpose: "attestation-signer"}, now)
+		got, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "att", Purpose: "attestation-signer"}, now, allPinned(anchors))
 		require.NoError(t, err)
 		require.Equal(t, "att", got.Anchor.ID)
 		require.Equal(t, "ed25519", got.Algo)
 
-		byRole, err := core.ResolveVerificationKey(anchors, core.KeySelector{Role: "token-issuer", Purpose: "token-issuer"}, now)
+		byRole, err := core.ResolveVerificationKey(anchors, core.KeySelector{Role: "token-issuer", Purpose: "token-issuer"}, now, allPinned(anchors))
 		require.NoError(t, err)
 		require.Equal(t, "ecdsa-p256", byRole.Algo)
 	})
 
 	t.Run("role selector with different purpose is rejected", func(t *testing.T) {
-		_, err := core.ResolveVerificationKey(anchors, core.KeySelector{Role: "token-issuer", Purpose: "attestation-signer"}, now)
+		_, err := core.ResolveVerificationKey(anchors, core.KeySelector{Role: "token-issuer", Purpose: "attestation-signer"}, now, allPinned(anchors))
 		require.ErrorIs(t, err, core.ErrTrustAnchorRoleMismatch)
 	})
 
 	t.Run("declared algo must equal pinned algo", func(t *testing.T) {
-		key, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "att", Purpose: "attestation-signer"}, now)
+		key, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: "att", Purpose: "attestation-signer"}, now, allPinned(anchors))
 		require.NoError(t, err)
 		require.NoError(t, key.VerifyDeclaredAlgo("ed25519"))
 		for _, declared := range []string{"none", "None", "NONE", "ecdsa-p256", "ED25519", "hs256"} {

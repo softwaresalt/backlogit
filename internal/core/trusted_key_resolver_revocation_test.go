@@ -38,7 +38,7 @@ func TestTrustedKeyResolverRevocationAmbiguity(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := core.ResolveVerificationKey(anchors, tc.sel, now)
+			got, err := core.ResolveVerificationKey(anchors, tc.sel, now, allPinned(anchors))
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
 				var re *core.TrustAnchorResolveError

@@ -57,7 +57,7 @@ func TestTrustAnchorResolveNegative_WorkspaceEditFlipsRevokedToActive(t *testing
 		Fingerprint: "sha256:revived", Status: config.TrustAnchorStatusActive}}
 	require.False(t, pins.Contains("sha256:revived"))
 
-	_, err := core.ResolveVerificationKey(flipped, core.KeySelector{ID: "revived", Purpose: "attestation-signer"}, now)
+	_, err := core.ResolveVerificationKey(flipped, core.KeySelector{ID: "revived", Purpose: "attestation-signer"}, now, pins)
 	require.Error(t, err, "a de-pinned key re-activated by a workspace-local edit must not resolve as trusted")
 }
 
@@ -73,7 +73,7 @@ func TestTrustAnchorResolveNegative_WorkspaceRoleWideningAndValidityExtension(t 
 	pins := core.NewExternalPinSet("sha256:signer")
 	require.True(t, pins.Contains("sha256:signer"))
 
-	_, err := core.ResolveVerificationKey(edited, core.KeySelector{ID: "signer", Purpose: "token-issuer"}, now)
+	_, err := core.ResolveVerificationKey(edited, core.KeySelector{ID: "signer", Purpose: "token-issuer"}, now, pins)
 	require.Error(t, err, "in-workspace role widening / validity extension must not resolve as trusted")
 }
 

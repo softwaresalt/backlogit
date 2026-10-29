@@ -84,13 +84,20 @@ type ResolvedKey struct {
 }
 
 // ResolveVerificationKey resolves the verification key anchor selected by sel
-// at time at. It performs no I/O. A selector id takes precedence over a role;
+// at time at against the injected external pin set pins (168.007-T). The pin
+// set is authoritative: a nil pin set fails closed with ErrTrustPinSetAbsent
+// and an unpinned fingerprint is never trusted. Workspace status is advisory
+// (it can revoke, never re-activate). It performs no I/O. A selector id takes precedence over a role;
 // a role-only selector returns the first anchor with that role whose
 // not_before/not_after window contains at (bounds inclusive). When no anchor
 // of the role is inside its window the first window error is returned.
-func ResolveVerificationKey(anchors []config.TrustAnchor, sel KeySelector, at time.Time) (ResolvedKey, error) {
+func ResolveVerificationKey(anchors []config.TrustAnchor, sel KeySelector, at time.Time, pins *ExternalPinSet) (ResolvedKey, error) {
 	fail := func(id string, err error) (ResolvedKey, error) {
 		return ResolvedKey{}, &TrustAnchorResolveError{ID: id, Role: sel.Role, At: at, Err: err}
+	}
+	if pins == nil {
+		// Fail closed: without an external pin set nothing can be trusted.
+		return fail(sel.ID, ErrTrustPinSetAbsent)
 	}
 	switch {
 	case sel.ID != "":
@@ -101,7 +108,7 @@ func ResolveVerificationKey(anchors []config.TrustAnchor, sel KeySelector, at ti
 			if sel.Purpose != "" && anchors[i].Role != sel.Purpose {
 				return fail(sel.ID, ErrTrustAnchorRoleMismatch)
 			}
-			if err := checkAnchorUsable(&anchors[i], at); err != nil {
+			if err := checkAnchorUsable(&anchors[i], at, pins); err != nil {
 				return fail(sel.ID, err)
 			}
 			return newResolvedKey(&anchors[i]), nil
@@ -118,7 +125,7 @@ func ResolveVerificationKey(anchors []config.TrustAnchor, sel KeySelector, at ti
 			if anchors[i].Role != sel.Role {
 				continue
 			}
-			err := checkAnchorUsable(&anchors[i], at)
+			err := checkAnchorUsable(&anchors[i], at, pins)
 			if err == nil {
 				if match == nil {
 					match = &anchors[i]
@@ -159,10 +166,17 @@ func checkAnchorWindow(a *config.TrustAnchor, at time.Time) error {
 	return nil
 }
 
-// checkAnchorUsable rejects revoked anchors, then applies the validity window.
-func checkAnchorUsable(a *config.TrustAnchor, at time.Time) error {
+// checkAnchorUsable applies the trust decision for one anchor. The external
+// pin set is authoritative: an anchor whose fingerprint is not pinned is never
+// trusted, whatever its in-workspace status says. The in-workspace status is
+// advisory and can only restrict (revoked is honored), never grant trust, so
+// revocation is monotonic. The validity window is applied last.
+func checkAnchorUsable(a *config.TrustAnchor, at time.Time, pins *ExternalPinSet) error {
 	if a.Status == config.TrustAnchorStatusRevoked {
 		return ErrTrustAnchorRevoked
+	}
+	if !pins.Contains(a.Fingerprint) {
+		return ErrTrustAnchorNotPinned
 	}
 	return checkAnchorWindow(a, at)
 }

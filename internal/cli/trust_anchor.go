@@ -34,7 +34,7 @@ func newTrustAnchorCommand(cwd *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writeTrustAnchorList(cmd.OutOrStdout(), anchors, time.Now())
+			return writeTrustAnchorList(cmd.OutOrStdout(), anchors, time.Now(), loadPins(cmd.Context()))
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -46,7 +46,7 @@ func newTrustAnchorCommand(cwd *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writeTrustAnchorShow(cmd.OutOrStdout(), anchors, args[0], time.Now())
+			return writeTrustAnchorShow(cmd.OutOrStdout(), anchors, args[0], time.Now(), loadPins(cmd.Context()))
 		},
 	})
 	return cmd
@@ -69,11 +69,13 @@ func loadTrustAnchors(ctx context.Context, cwd string) ([]config.TrustAnchor, er
 }
 
 // trustAnchorValidity maps the resolver outcome for one anchor to a label.
-func trustAnchorValidity(anchors []config.TrustAnchor, id string, at time.Time) string {
-	_, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: id}, at)
+func trustAnchorValidity(anchors []config.TrustAnchor, id string, at time.Time, pins *core.ExternalPinSet) string {
+	_, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: id}, at, pins)
 	switch {
 	case err == nil:
 		return "valid"
+	case errors.Is(err, core.ErrTrustPinSetAbsent), errors.Is(err, core.ErrTrustAnchorNotPinned):
+		return "untrusted"
 	case errors.Is(err, core.ErrTrustAnchorNotYetValid):
 		return "not-yet-valid"
 	case errors.Is(err, core.ErrTrustAnchorExpired):
@@ -83,7 +85,7 @@ func trustAnchorValidity(anchors []config.TrustAnchor, id string, at time.Time) 
 	}
 }
 
-func writeTrustAnchorList(w io.Writer, anchors []config.TrustAnchor, at time.Time) error {
+func writeTrustAnchorList(w io.Writer, anchors []config.TrustAnchor, at time.Time, pins *core.ExternalPinSet) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(tw, "ID\tROLE\tALGO\tSTATUS\tVALIDITY\tFINGERPRINT"); err != nil {
 		return fmt.Errorf("write trust anchor list: %w", err)
@@ -91,7 +93,7 @@ func writeTrustAnchorList(w io.Writer, anchors []config.TrustAnchor, at time.Tim
 	for i := range anchors {
 		a := &anchors[i]
 		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			a.ID, a.Role, a.Algo, a.Status, trustAnchorValidity(anchors, a.ID, at), a.Fingerprint); err != nil {
+			a.ID, a.Role, a.Algo, a.Status, trustAnchorValidity(anchors, a.ID, at, pins), a.Fingerprint); err != nil {
 			return fmt.Errorf("write trust anchor list: %w", err)
 		}
 	}
@@ -101,7 +103,7 @@ func writeTrustAnchorList(w io.Writer, anchors []config.TrustAnchor, at time.Tim
 	return nil
 }
 
-func writeTrustAnchorShow(w io.Writer, anchors []config.TrustAnchor, id string, at time.Time) error {
+func writeTrustAnchorShow(w io.Writer, anchors []config.TrustAnchor, id string, at time.Time, pins *core.ExternalPinSet) error {
 	var a *config.TrustAnchor
 	for i := range anchors {
 		if anchors[i].ID == id {
@@ -121,7 +123,7 @@ func writeTrustAnchorShow(w io.Writer, anchors []config.TrustAnchor, id string, 
 		"public_key_ref: " + refSummary(a.PublicKeyRef),
 		"not_before: " + timeOrNone(a.NotBefore),
 		"not_after: " + timeOrNone(a.NotAfter),
-		"validity: " + trustAnchorValidity(anchors, id, at),
+		"validity: " + trustAnchorValidity(anchors, id, at, pins),
 	}
 	for _, l := range lines {
 		if _, err := fmt.Fprintln(w, l); err != nil {

@@ -95,6 +95,8 @@ func snapshotTree(t *testing.T, root string) []string {
 
 func TestTrustAnchorInspectCLI(t *testing.T) {
 	root := trustAnchorWorkspace(t)
+	// 168.007-T: the resolver is fail-closed without an external pin set.
+	t.Setenv("BACKLOGIT_TRUST_PINS", "sha256:live0001,sha256:future01,sha256:old00001")
 	before := snapshotTree(t, root)
 
 	t.Run("list prints resolver output", func(t *testing.T) {
