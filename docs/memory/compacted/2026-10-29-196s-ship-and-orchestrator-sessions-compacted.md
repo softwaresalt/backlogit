@@ -8,7 +8,7 @@ schema_version: "1.0"
 
 ## Scope
 
-P-020 compaction of nine 196-S session notes (P-017 dark mode, scope `[196-S]`, branch `feat/196-s-195-s-follow-up-orchestrator-served-root-handoff-and-explicit-feature-reconcile-contract`). Originals are archived under `docs/archive/memory/`. The most recent checkpoint, `2026-10-06/ship-196-S-phase2-wave2-halt.md`, stays in place. Earlier compactions: `2026-10-06-196-S-compacted.md` and `2026-10-22-196s-stage-and-ship-sessions-compacted.md`.
+P-020 compaction of nine 196-S session notes (P-017 dark mode, scope `[196-S]`, branch `feat/196-s-195-s-follow-up-orchestrator-served-root-handoff-and-explicit-feature-reconcile-contract`). Uncited originals are archived under `docs/archive/memory/`. Notes still cited by backlog items, checkpoints, plans, or decisions were restored to their original paths and remain in place; only the uncited originals are archived. The most recent checkpoint, `2026-10-06/ship-196-S-phase2-wave2-halt.md`, stays in place. Earlier compactions: `2026-10-06-196-S-compacted.md` and `2026-10-22-196s-stage-and-ship-sessions-compacted.md`.
 
 ## Timeline
 

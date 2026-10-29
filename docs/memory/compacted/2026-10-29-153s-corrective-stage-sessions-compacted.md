@@ -8,7 +8,7 @@ schema_version: "1.0"
 
 ## Scope
 
-P-020 compaction of four notes: the 153-S dark-mode pre-claim halt and three Stage notes on the corrective shipments (197-F, tasks 197.001-T to 197.019-T). Originals are archived under `docs/archive/memory/`. The authoritative final record, `2026-10-08/stage-corrective-resume-completion-memory.md`, stays in place. See also `2026-10-22-153s-and-corrective-sessions-compacted.md`.
+P-020 compaction of four notes: the 153-S dark-mode pre-claim halt and three Stage notes on the corrective shipments (197-F, tasks 197.001-T to 197.019-T). Uncited originals are archived under `docs/archive/memory/`. Notes still cited by backlog items, checkpoints, plans, or decisions were restored to their original paths and remain in place; only the uncited originals are archived. The authoritative final record, `2026-10-08/stage-corrective-resume-completion-memory.md`, stays in place. See also `2026-10-22-153s-and-corrective-sessions-compacted.md`.
 
 ## Outcomes
 

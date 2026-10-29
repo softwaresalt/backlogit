@@ -8,7 +8,7 @@ schema_version: "1.0"
 
 ## Scope
 
-P-020 compaction of twelve 197-S notes (P-017 dark mode, scope `[197-S]`, branch `feat/cx-ship-closure-protocol-and-gate-correctness`, PR 491 merged at `f8d35936`). Originals are archived under `docs/archive/memory/`. The final closure record, `2026-10-11/ship-197s-closure-session-memory.md`, stays in place. Earlier summaries: `2026-10-11-197-S-compacted.md` and `2026-10-27-197s-orchestrator-dark-run-compacted.md`.
+P-020 compaction of twelve 197-S notes (P-017 dark mode, scope `[197-S]`, branch `feat/cx-ship-closure-protocol-and-gate-correctness`, PR 491 merged at `f8d35936`). Uncited originals are archived under `docs/archive/memory/`. Notes still cited by backlog items, checkpoints, plans, or decisions were restored to their original paths and remain in place; only the uncited originals are archived. The final closure record, `2026-10-11/ship-197s-closure-session-memory.md`, stays in place. Earlier summaries: `2026-10-11-197-S-compacted.md` and `2026-10-27-197s-orchestrator-dark-run-compacted.md`.
 
 ## Timeline
 

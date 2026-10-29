@@ -8,7 +8,7 @@ schema_version: "1.0"
 
 ## Scope
 
-P-020 compaction of seven Stage, Ship, and Orchestrator session notes written 2026-09-13 to 2026-10-01 for completed release units (154-S, 155-S, 149-S to 151-S correction, baseline-convergence decomposition). Originals are archived under `docs/archive/memory/`. Retained in place as the most recent checkpoints: `2026-09-21-ship-155s-wave7-early-green-blocker.md`, `2026-09-23-ship-155s-review-circuit-breaker.md`, `2026-09-30-ship-154s-post-merge-closure.md`.
+P-020 compaction of seven Stage, Ship, and Orchestrator session notes written 2026-09-13 to 2026-10-01 for completed release units (154-S, 155-S, 149-S to 151-S correction, baseline-convergence decomposition). Uncited originals are archived under `docs/archive/memory/`. Notes still cited by backlog items, checkpoints, plans, or decisions were restored to their original paths and remain in place; only the uncited originals are archived. Retained in place as the most recent checkpoints: `2026-09-21-ship-155s-wave7-early-green-blocker.md`, `2026-09-23-ship-155s-review-circuit-breaker.md`, `2026-09-30-ship-154s-post-merge-closure.md`.
 
 ## Decisions and outcomes
 
