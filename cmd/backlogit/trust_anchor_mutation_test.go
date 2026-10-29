@@ -105,12 +105,15 @@ func TestTrustAnchorMutationCLI(t *testing.T) {
 		require.Equal(t, before, snapshotTree(t, root))
 	})
 
-	t.Run("revoke with verifiable approval revokes the anchor", func(t *testing.T) {
+	// 168.009-T: the CLI wires no external revocation authority, so a revoke
+	// that could only flip advisory workspace status fails closed.
+	t.Run("revoke with verifiable approval fails closed without an external authority", func(t *testing.T) {
 		root, priv := mutationEnv(t)
 		appr := writeApproval(t, priv, core.TrustAnchorActionRevoke, "live-signer", soon)
-		out, err := runTrustAnchorCLI(t, root, "trust-anchor", "revoke", "live-signer", "--approval", appr)
-		require.NoError(t, err, out)
-		require.Equal(t, config.TrustAnchorStatusRevoked, loadAnchors(t, root)["live-signer"].Status)
+		_, err := runTrustAnchorCLI(t, root, "trust-anchor", "revoke", "live-signer", "--approval", appr)
+		require.ErrorIs(t, err, core.ErrRevocationAuthorityRequired)
+		require.Contains(t, err.Error(), "sha256:live0001", "the required external operation is surfaced")
+		require.Equal(t, config.TrustAnchorStatusActive, loadAnchors(t, root)["live-signer"].Status, "no advisory flip")
 	})
 
 	t.Run("rotate with verifiable approval revokes old and activates new", func(t *testing.T) {
