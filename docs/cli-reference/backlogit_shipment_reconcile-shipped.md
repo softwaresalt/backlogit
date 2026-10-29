@@ -52,6 +52,7 @@ backlogit shipment reconcile-shipped <shipment-id> [flags]
 
 ```text
       --actor string               actor performing the reconciliation, recorded for audit (required)
+      --attestation string         opt-in path to a signed delivery-evidence attestation (DSSE envelope); verified against the configured trust anchors before any write, and the dry-run output reports the verification outcome
       --closure-evidence string    workspace-relative path to closure evidence documenting the release (required)
       --confirm string             confirmation phrase "reconcile-shipped <shipment-id>", required for a live (non-dry-run) mutation unless stdin is an interactive TTY
       --dry-run                    evaluate every precondition and print the planned outcome without writing (needs no --confirm)
