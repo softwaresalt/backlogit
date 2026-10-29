@@ -47,5 +47,5 @@ title: "Stage memory: Option 1A queue hygiene, 204-S packaging, 147-S preparatio
 ### 4. Archived Completed Deliberations, Retired Task `164.002-T`, and Delivered Stash Entries
 
 * Archived 11 completed deliberations (`048-DL`, `063-DL`, `064-DL`, `065-DL`, `066-DL`, `067-DL`, `068-DL`, `069-DL`, `070-DL`, `072-DL`, `073-DL`) and retired task `164.002-T` via `backlogit_archive_item`.
-* Archived 7 already-delivered stash entries (`FF6D467A`, `FF1F3AC7`, `DB48A817`, `885263D2`, `8E3EDE49`, `4DB1DFF1`, `CFBD7C8C`) via `backlogit_stash_archive`.
+* Archived 6 fully delivered stash entries (`FF6D467A`, `FF1F3AC7`, `DB48A817`, `885263D2`, `8E3EDE49`, `4DB1DFF1`) via `backlogit_stash_archive`, while retaining `CFBD7C8C` as active in `.backlogit/stash.jsonl` for its unfinished `153-S`, `195-S`, and `196-S` closure-filename conformity repairs and `E2B351F3` (`close_path` backfill) fold-in reference (noting that only the `155-S` slice was delivered in `203-S`).
 * Created and resolved V1 Stage checkpoint `checkpoint-20261029-203625.json`.
