@@ -53,19 +53,17 @@ const (
 
 // resolveEnforcementForNegative decides enforcement for a workspace whose
 // auth policy file lives at policyPath while externalRequired reports the
-// externally asserted required-auth state. Pre-hardening there is no external
-// assertion: a missing or malformed in-workspace policy falls back to the
-// self-suppliable --confirm/TTY guard (internal/cli
-// shipment_reconcile_shipped.go). 170.009-T rewires this to the
-// externally authoritative resolver.
+// externally asserted required-auth state (170.009-T resolver).
 func resolveEnforcementForNegative(t *testing.T, externalRequired bool, policyPath string) enforcementOutcome {
 	t.Helper()
-	_ = externalRequired // pre-hardening code ignores the external assertion
-	raw, err := os.ReadFile(policyPath)
-	if err != nil || string(raw) != "required: true\n" {
-		return enforcementConfirmationOnly
+	got, err := core.ResolveAuthEnforcement(context.Background(), fakeRequiredAuth{enabled: externalRequired}, policyPath)
+	if err != nil {
+		return enforcementDenied
 	}
-	return enforcementAuthenticated
+	if got == core.AuthEnforcementAuthenticated {
+		return enforcementAuthenticated
+	}
+	return enforcementConfirmationOnly
 }
 
 func TestTokenNonceReplayNegative_LedgerDeletionDoesNotPermitReplay(t *testing.T) {
