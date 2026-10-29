@@ -50,10 +50,11 @@ func ParseAuthorizationToken(data []byte) (AuthorizationToken, error) {
 	return token, nil
 }
 
-// tokenMemberKey maps a decoded member name to its collision key. Names that
-// decode to identical strings collide; decoder-equivalent variants (case-fold)
-// are handled by 170.018-T.
-func tokenMemberKey(name string) string { return name }
+// tokenMemberKey maps a decoded member name to its collision key. It reuses
+// the shared encoding/json-equivalent fold so exact, case-fold and
+// Unicode-escape variants of one member name collide at every depth
+// (170.012-T exact bytes, 170.018-T decoder-equivalent).
+func tokenMemberKey(name string) string { return canonicalJSONMemberName(name) }
 
 type tokenScanFrame struct {
 	label     string
