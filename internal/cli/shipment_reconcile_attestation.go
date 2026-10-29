@@ -70,6 +70,7 @@ func loadReconcileAttestation(ctx context.Context, cwd, path string) (*reconcile
 			SignerIdentity:  parsed.Statement.Predicate.SignerIdentity,
 			SigAlgo:         key.Algo,
 			StatementDigest: canonical.HashBytes(parsed.PayloadBytes),
+			Envelope:        string(data),
 		},
 		parsed:  parsed,
 		key:     key,

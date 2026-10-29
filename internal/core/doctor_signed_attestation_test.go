@@ -81,7 +81,9 @@ func TestDoctorSignedAttestationReverify(t *testing.T) {
 		ws := setupShipmentWorkspace(t)
 		ws.Config.TrustAnchors = []config.TrustAnchor{signer.anchor}
 		seedReconcileEventShipment(t, ws, func(string, ShipmentReconciledShippedDelta) *ShipmentReconciledShippedAttestation {
-			return reconcileTestAttestation()
+			unsigned := *reconcileTestAttestation()
+			unsigned.Envelope = ""
+			return &unsigned
 		})
 		assert.Len(t, findingsOfType(doctorShippedAudit(t, ws, signer.pins), FindingMissingShippedEvent), 1)
 	})
@@ -104,7 +106,9 @@ func TestDoctorSignedAttestationReverify(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, signer.id, got.KeyID)
 
-		in.Attestation = reconcileTestAttestation()
+		unsigned := *reconcileTestAttestation()
+		unsigned.Envelope = ""
+		in.Attestation = &unsigned
 		_, err = rv.Reverify(context.Background(), in)
 		require.ErrorIs(t, err, ErrAttestationEnvelopeMissing)
 	})

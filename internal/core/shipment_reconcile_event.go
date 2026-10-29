@@ -241,6 +241,7 @@ func validateShipmentReconciledShippedAttestation(att *ShipmentReconciledShipped
 		{"signer_identity", att.SignerIdentity},
 		{"sig_algo", att.SigAlgo},
 		{"statement_digest", att.StatementDigest},
+		{"envelope", att.Envelope},
 	} {
 		if field.value == "" {
 			return fmt.Errorf("%w: delta.attestation.%s is required when attestation is present", blerrors.ErrValidation, field.name)

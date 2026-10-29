@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 
@@ -21,6 +20,7 @@ func reconcileTestAttestation() *ShipmentReconciledShippedAttestation {
 		SignerIdentity:  "ci@example",
 		SigAlgo:         "ed25519",
 		StatementDigest: strings.Repeat("a", 64),
+		Envelope:        `{"payloadType":"placeholder"}`,
 	}
 }
 
@@ -39,10 +39,11 @@ func TestReconcileAttestationDelta(t *testing.T) {
 		delta := validReconciledShippedDelta()
 		delta.Attestation = reconcileTestAttestation()
 		raw := marshalReconciledShippedEvent(t, delta, "001-S")
-		assert.Contains(t, string(raw), `"attestation":{"key_id":"att","sig_algo":"ed25519","signer_identity":"ci@example","statement_digest":`)
+		assert.Contains(t, string(raw), `"attestation":{"envelope":"`)
+		assert.Contains(t, string(raw), `"key_id":"att","sig_algo":"ed25519","signer_identity":"ci@example","statement_digest":`)
 		require.NoError(t, ValidateShipmentReconciledShippedEvent(raw, nil, "", "001-S"))
 
-		for _, field := range []string{"key_id", "signer_identity", "sig_algo", "statement_digest"} {
+		for _, field := range []string{"key_id", "signer_identity", "sig_algo", "statement_digest", "envelope"} {
 			t.Run("incomplete "+field, func(t *testing.T) {
 				incomplete := validReconciledShippedDelta()
 				att := *reconcileTestAttestation()
@@ -53,6 +54,8 @@ func TestReconcileAttestationDelta(t *testing.T) {
 					att.SignerIdentity = ""
 				case "sig_algo":
 					att.SigAlgo = ""
+				case "envelope":
+					att.Envelope = ""
 				default:
 					att.StatementDigest = ""
 				}
@@ -155,32 +158,5 @@ func TestReconcileAttestationDelta(t *testing.T) {
 				assert.Equal(t, tc.want, got)
 			})
 		}
-	})
-
-	t.Run("doctor distinguishes a signed from an unsigned reconcile", func(t *testing.T) {
-		ws := setupShipmentWorkspace(t)
-		logsDir := WorkspaceLogsRoot(ws.RootPath)
-		require.NoError(t, os.MkdirAll(logsDir, 0o755))
-
-		signedDelta := validReconciledShippedDelta()
-		signedDelta.Attestation = reconcileTestAttestation()
-		write := func(id string, raw []byte) {
-			require.NoError(t, os.WriteFile(events.LogPathForItem(logsDir, id), raw, 0o644))
-		}
-		write("signed-S", marshalReconciledShippedEvent(t, signedDelta, "signed-S"))
-		write("unsigned-S", marshalReconciledShippedEvent(t, validReconciledShippedDelta(), "unsigned-S"))
-
-		kind, readable := classifyReconciledShippedEvent(logsDir, "signed-S")
-		assert.True(t, readable)
-		assert.Equal(t, reconciledShippedSigned, kind)
-		kind, readable = classifyReconciledShippedEvent(logsDir, "unsigned-S")
-		assert.True(t, readable)
-		assert.Equal(t, reconciledShippedUnsigned, kind)
-		kind, readable = classifyReconciledShippedEvent(logsDir, "missing-S")
-		assert.True(t, readable)
-		assert.Equal(t, reconciledShippedAbsent, kind)
-
-		present, _ := reconciledShippedEventPresence(logsDir, "signed-S")
-		assert.True(t, present, "a signed reconcile still suppresses the missing-shipped-event finding")
 	})
 }

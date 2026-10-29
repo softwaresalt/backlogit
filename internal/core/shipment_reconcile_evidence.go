@@ -165,6 +165,7 @@ func shipmentReconcileEvidenceDigest(input shipmentReconcileEvidenceDigestInput)
 			shipmentReconcileScalarField("attestation_signer_identity", att.SignerIdentity),
 			shipmentReconcileScalarField("attestation_sig_algo", att.SigAlgo),
 			shipmentReconcileScalarField("attestation_statement_digest", att.StatementDigest),
+			shipmentReconcileScalarField("attestation_envelope_digest", canonical.HashBytes([]byte(att.Envelope))),
 		)
 	}
 	return shipmentReconcileDigestHex(shipmentReconcileEvidenceDigestDomain, fields...)

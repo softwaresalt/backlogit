@@ -218,7 +218,7 @@ func TestDetectMissingShippedEvents_SuppressedByFullyValidReconciledEvent(t *tes
 	refs := map[string][]artifactRef{
 		itemID: {{artifactType: "shipment", archivedStatus: string(ShipmentShipped)}},
 	}
-	findings := detectMissingShippedEvents(context.Background(), logsDir, refs, []string{itemID})
+	findings := detectMissingShippedEvents(context.Background(), logsDir, refs, []string{itemID}, nil)
 	assert.Empty(t, findings, "a fully-valid reconciled-shipped event must suppress the missing-shipped-event finding")
 }
 
@@ -236,7 +236,7 @@ func TestDetectMissingShippedEvents_NotSuppressedByMalformedReconciledEvent(t *t
 	refs := map[string][]artifactRef{
 		itemID: {{artifactType: "shipment", archivedStatus: string(ShipmentShipped)}},
 	}
-	findings := detectMissingShippedEvents(context.Background(), logsDir, refs, []string{itemID})
+	findings := detectMissingShippedEvents(context.Background(), logsDir, refs, []string{itemID}, nil)
 	require.Len(t, findings, 1, "a malformed reconciled-shipped event must NOT suppress the finding (144-F guard 2 unweakened)")
 	assert.Equal(t, FindingMissingShippedEvent, findings[0].Type)
 }
@@ -265,7 +265,7 @@ func TestDetectMissingShippedEvents_PlainShippedEventStillSuppresses(t *testing.
 	refs := map[string][]artifactRef{
 		itemID: {{artifactType: "shipment", archivedStatus: string(ShipmentShipped)}},
 	}
-	findings := detectMissingShippedEvents(context.Background(), logsDir, refs, []string{itemID})
+	findings := detectMissingShippedEvents(context.Background(), logsDir, refs, []string{itemID}, nil)
 	assert.Empty(t, findings, "the plain shipped-event recognition path must be unchanged")
 }
 
@@ -278,7 +278,7 @@ func TestDetectMissingShippedEvents_NoEventAtAllStillReportsMissing(t *testing.T
 	refs := map[string][]artifactRef{
 		itemID: {{artifactType: "shipment", archivedStatus: string(ShipmentShipped)}},
 	}
-	findings := detectMissingShippedEvents(context.Background(), logsDir, refs, []string{itemID})
+	findings := detectMissingShippedEvents(context.Background(), logsDir, refs, []string{itemID}, nil)
 	require.Len(t, findings, 1)
 }
 
@@ -298,7 +298,7 @@ func TestDetectMissingShippedEvents_UnreadableLogIsPresenceUnknownNotSuppressed(
 	refs := map[string][]artifactRef{
 		itemID: {{artifactType: "shipment", archivedStatus: string(ShipmentShipped)}},
 	}
-	findings := detectMissingShippedEvents(context.Background(), logsDir, refs, []string{itemID})
+	findings := detectMissingShippedEvents(context.Background(), logsDir, refs, []string{itemID}, nil)
 	require.Len(t, findings, 1, "an unreadable log must retain the finding (presence-unknown), never suppress")
 	assert.Contains(t, findings[0].Description, "unreadable")
 }

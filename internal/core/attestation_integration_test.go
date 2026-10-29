@@ -59,6 +59,7 @@ func TestAttestationIntegration(t *testing.T) {
 		t.Helper()
 		r := fixture.request("048-S", fixture.merge048)
 		r.Attestation = attestationTestClaim(t, envelope, signer.id)
+		r.Attestation.Envelope = string(envelope)
 		r.AttestationVerifier = attestationIntegrationVerifier(t, signer, envelope, at)
 		_, perr := prepareShipmentReconcileEvidence(context.Background(), fixture.ws, r, fixedShipmentReconcileEvidenceInput())
 		return perr

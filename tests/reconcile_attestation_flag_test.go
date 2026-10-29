@@ -154,7 +154,8 @@ func TestReconcileAttestationFlagEndToEnd(t *testing.T) {
 		require.Equal(t, "shipped", fx.readArchivedStatusFromMarkdown(t))
 		raw, err := os.ReadFile(fx.itemLogPath())
 		require.NoError(t, err)
-		require.Contains(t, string(raw), `"attestation":{"key_id":"ci-signer"`)
+		require.Contains(t, string(raw), `"attestation":{"envelope":"`)
+		require.Contains(t, string(raw), `"key_id":"ci-signer"`)
 
 		stdout, stderr, err = runReconcileShippedCLI(t, fx.root, append(live, "--attestation", path)...)
 		require.NoError(t, err, stderr)
