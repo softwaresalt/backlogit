@@ -49,8 +49,17 @@ Constitution Check: pass
 * Acceptance: completion requires actual upstream delivery evidence, such as an upstream PR or commit reference showing the template change. If that evidence is unavailable, the item stays active or blocked pending upstream work; it is not closeable merely by confirming an already-existing local MCP tool description. Docs-lint passes on any in-repo edit.
 
 ### U3 — Record plugin-bundle P-002 scope boundary (633818E1)
-* Scope: record, as an accepted scope boundary, that the P-002/P-002.1-P-002.5 harness-satisfied contract is intentionally NOT propagated to plugin/agents/ship.agent.md or plugin/skills/build-feature/SKILL.md (per 101-F plugin/.github non-synchronization). No code change.
-* Acceptance: the scope boundary is documented as accepted (no action) with reference to 101-F; no plugin content is modified.
+* Scope: record in `docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md` (`## Scope boundary: P-002 harness-satisfied contract`), as an accepted scope boundary, that the P-002/P-002.1-P-002.5 harness-satisfied contract is intentionally NOT propagated to `plugin/agents/ship.agent.md` or `plugin/skills/build-feature/SKILL.md` (per `101-F` `plugin/` vs `.github/` non-synchronization). No code change.
+* Acceptance: the scope boundary is documented as accepted (no action on `plugin/`) in `docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md` with reference to `101-F` and `633818E1`; no plugin content is modified.
+
+## P-002.1 Closed Exempt Set
+
+In-repo executable tasks in `147-S` (`165-F`) are documentation-only and form the closed P-002.1 `harness-exempt` (`docs-only`) set:
+
+* `165.001-T` (`docs-only` — `.github/instructions/commit-message.instructions.md`)
+* `165.003-T` (`docs-only` — `docs/decisions/2026-07-13-plugin-bundle-structural-verification-decision.md`)
+
+Cross-repo unit U2 (`165.002-T`, stash `360A183F`) remains `blocked` outside `147-S` pending upstream harness repository template delivery.
 
 ## Dependency Graph
 
@@ -96,6 +105,7 @@ The prior PASS record is retained only as invalidated history. It omitted mandat
 
 dispatch_mode: multi-agent-dispatch
 decision: ADVISORY
+operator_authorization: approved
 
 personas:
 * Constitution Reviewer (`claude-opus-4.8`)

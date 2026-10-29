@@ -841,8 +841,11 @@ removed (attempt 7 P2-B):
 ## Follow-ups (out of this shipment)
 
 * **Follow-on feature (created at harvest):** the option A lifecycle
-  regression net (U4, `173.004-T` adopted under it). No shipment now; a later
-  Stage session packages it after `154-S` ships, under the 074-DL rule.
+  regression net (U4, `173.004-T` adopted under `182-F` as `182.001-T`).
+  Packaged into shipment `204-S` (`queue_position: 100`, `depends_on: 154-S`)
+  on 2026-10-29 after `154-S` shipped and the 074-DL attestation was recorded.
+  Closed P-002.1 `harness-exempt` set for `182-F` (`204-S`): `["182.001-T"]`
+  (`verification-only`).
 * The autoharness P-002.6 wave scheduler should apply the three-part
   predicate and exclude claim-activated tasks from residual classification
   (cross-workspace).
