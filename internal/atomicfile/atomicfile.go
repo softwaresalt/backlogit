@@ -132,6 +132,25 @@ func writeFileAtomic(path string, data []byte, durable bool, seams durableSeams)
 	return nil
 }
 
+// SyncParentDir fsyncs the parent directory of path so a preceding create,
+// rename, or unlink is durable. Following the package policy, it is a no-op on
+// Windows, which has no directory-handle flush.
+func SyncParentDir(path string) error {
+	seams := defaultDurableSeams()
+	if !seams.dirSyncEnabled {
+		return nil
+	}
+	dh, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return fmt.Errorf("open parent dir: %w", err)
+	}
+	defer func() { _ = dh.Close() }()
+	if err := seams.syncDir(dh); err != nil {
+		return fmt.Errorf("fsync parent dir: %w", err)
+	}
+	return nil
+}
+
 // notApplied wraps a pre-rename failure with the ErrWriteNotApplied class: the
 // destination is untouched, so the failed atomic write is safe to retry.
 func notApplied(op string, err error) error {

@@ -45,6 +45,9 @@ type WorkspaceConfig struct {
 	// Nil is equivalent to the zero value; Normalize fills in the resolved
 	// repository default branch when TrustedRefs is unset.
 	Reconcile *ReconcileConfig `yaml:"reconcile,omitempty"`
+	// TrustAnchors declares verification-key trust anchors (168-F). Declaration
+	// only; see TrustAnchor.
+	TrustAnchors []TrustAnchor `yaml:"trust_anchors,omitempty"`
 }
 
 // ReconcileConfig configures governed shipment-reconciliation evidence trust
