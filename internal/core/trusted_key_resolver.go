@@ -178,5 +178,31 @@ func checkAnchorUsable(a *config.TrustAnchor, at time.Time, pins *ExternalPinSet
 	if !pins.Contains(a.Fingerprint) {
 		return ErrTrustAnchorNotPinned
 	}
+	if err := checkAnchorBinding(a, pins); err != nil {
+		return err
+	}
 	return checkAnchorWindow(a, at)
+}
+
+// checkAnchorBinding binds the in-workspace role and validity window to the
+// external pin (168.008-T). It fails closed: a pin without a binding cannot
+// verify them, a differing role is rejected, and a window that is wider than
+// the external window (later not_after, earlier not_before, or an absent
+// bound where the external authority sets one) is rejected. The workspace may
+// only narrow the window.
+func checkAnchorBinding(a *config.TrustAnchor, pins *ExternalPinSet) error {
+	b, ok := pins.Binding(a.Fingerprint)
+	if !ok {
+		return ErrTrustAnchorBindingUnverifiable
+	}
+	if a.Role != b.Role {
+		return fmt.Errorf("%w: role %q, external %q", ErrTrustAnchorBindingMismatch, a.Role, b.Role)
+	}
+	if b.NotAfter != nil && (a.NotAfter == nil || a.NotAfter.After(*b.NotAfter)) {
+		return fmt.Errorf("%w: not_after extends external window", ErrTrustAnchorBindingMismatch)
+	}
+	if b.NotBefore != nil && (a.NotBefore == nil || a.NotBefore.Before(*b.NotBefore)) {
+		return fmt.Errorf("%w: not_before widens external window", ErrTrustAnchorBindingMismatch)
+	}
+	return nil
 }

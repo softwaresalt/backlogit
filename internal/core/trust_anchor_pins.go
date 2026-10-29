@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
 )
@@ -16,12 +17,32 @@ var (
 	// ErrTrustAnchorNotPinned reports an anchor fingerprint missing from the
 	// external pin set.
 	ErrTrustAnchorNotPinned = errors.New("trust anchor fingerprint not in external pin set")
+	// ErrTrustAnchorBindingUnverifiable reports a pinned anchor whose role and
+	// validity window cannot be verified because the external pin carries no
+	// binding for it (deny by default; 168.008-T).
+	ErrTrustAnchorBindingUnverifiable = errors.New("trust anchor role/validity cannot be verified against the external pin set (fail closed)")
+	// ErrTrustAnchorBindingMismatch reports an in-workspace role that differs
+	// from the externally bound role, or a validity window that widens the
+	// externally bound window (168.008-T).
+	ErrTrustAnchorBindingMismatch = errors.New("trust anchor role/validity diverges from external binding (fail closed)")
 )
+
+// PinBinding is the externally authoritative role and validity window of one
+// pinned fingerprint. Role is required. A nil NotBefore/NotAfter means the
+// external authority sets no bound on that side; the workspace may only
+// narrow, never widen, the window.
+type PinBinding struct {
+	Fingerprint string
+	Role        string
+	NotBefore   *time.Time
+	NotAfter    *time.Time
+}
 
 // ExternalPinSet is an immutable set of trusted anchor fingerprints that is
 // provisioned from outside the workspace (never read from workspace config).
 type ExternalPinSet struct {
 	fingerprints map[string]struct{}
+	bindings     map[string]PinBinding
 }
 
 // NewExternalPinSet builds a pin set from the given fingerprints. Empty
@@ -33,7 +54,50 @@ func NewExternalPinSet(fingerprints ...string) *ExternalPinSet {
 			set[fp] = struct{}{}
 		}
 	}
-	return &ExternalPinSet{fingerprints: set}
+	return &ExternalPinSet{fingerprints: set, bindings: map[string]PinBinding{}}
+}
+
+// NewBoundExternalPinSet builds a pin set whose entries each carry the
+// externally authoritative role and validity window. Bindings with an empty
+// fingerprint or empty role are ignored so they can never be pinned.
+func NewBoundExternalPinSet(bindings ...PinBinding) *ExternalPinSet {
+	p := NewExternalPinSet()
+	for _, b := range bindings {
+		if b.Fingerprint == "" || b.Role == "" {
+			continue
+		}
+		p.fingerprints[b.Fingerprint] = struct{}{}
+		p.bindings[b.Fingerprint] = b
+	}
+	return p
+}
+
+// MergePinSets returns a new pin set containing the pins and bindings of both
+// inputs; on a fingerprint collision the binding from a wins.
+func MergePinSets(a, b *ExternalPinSet) *ExternalPinSet {
+	out := NewExternalPinSet()
+	for _, s := range []*ExternalPinSet{b, a} {
+		if s == nil {
+			continue
+		}
+		for fp := range s.fingerprints {
+			out.fingerprints[fp] = struct{}{}
+		}
+		for fp, bd := range s.bindings {
+			out.bindings[fp] = bd
+		}
+	}
+	return out
+}
+
+// Binding returns the external role/validity binding for fingerprint, if the
+// pin carries one.
+func (p *ExternalPinSet) Binding(fingerprint string) (PinBinding, bool) {
+	if p == nil {
+		return PinBinding{}, false
+	}
+	b, ok := p.bindings[fingerprint]
+	return b, ok
 }
 
 // Contains reports whether fingerprint is pinned. A nil set contains nothing.

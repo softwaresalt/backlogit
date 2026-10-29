@@ -12,13 +12,15 @@ import (
 
 func tptr(t time.Time) *time.Time { return &t }
 
-// allPinned returns an external pin set authorizing every anchor fingerprint.
+// allPinned returns an external pin set authorizing every anchor fingerprint
+// and binding each to the anchor role and validity window (168.008-T).
 func allPinned(anchors []config.TrustAnchor) *core.ExternalPinSet {
-	fps := make([]string, 0, len(anchors))
+	bs := make([]core.PinBinding, 0, len(anchors))
 	for i := range anchors {
-		fps = append(fps, anchors[i].Fingerprint)
+		bs = append(bs, core.PinBinding{Fingerprint: anchors[i].Fingerprint, Role: anchors[i].Role,
+			NotBefore: anchors[i].NotBefore, NotAfter: anchors[i].NotAfter})
 	}
-	return core.NewExternalPinSet(fps...)
+	return core.NewBoundExternalPinSet(bs...)
 }
 
 func TestTrustedKeyResolver(t *testing.T) {

@@ -21,7 +21,9 @@ func TestTrustedKeyResolverExternalPinAuthority(t *testing.T) {
 		{ID: "revoked-pinned", Role: "revoked-role", Algo: "ed25519", Fingerprint: "sha256:rp", Status: config.TrustAnchorStatusRevoked},
 		{ID: "revoked-depinned", Role: "rd-role", Algo: "ed25519", Fingerprint: "sha256:rd", Status: config.TrustAnchorStatusRevoked},
 	}
-	pins := core.NewExternalPinSet("sha256:p", "sha256:rp")
+	pins := core.NewBoundExternalPinSet(
+		core.PinBinding{Fingerprint: "sha256:p", Role: "attestation-signer"},
+		core.PinBinding{Fingerprint: "sha256:rp", Role: "revoked-role"})
 
 	t.Run("absent pin set fails closed for every selector", func(t *testing.T) {
 		for _, sel := range []core.KeySelector{{ID: "pinned"}, {Role: "attestation-signer"}, {ID: "nope"}, {}} {
@@ -60,14 +62,14 @@ func TestTrustedKeyResolverExternalPinAuthority(t *testing.T) {
 	})
 
 	t.Run("role with only de-pinned anchors is not trusted", func(t *testing.T) {
-		_, err := core.ResolveVerificationKey(anchors, core.KeySelector{Role: "rd-role"}, now, core.NewExternalPinSet("sha256:p"))
+		_, err := core.ResolveVerificationKey(anchors, core.KeySelector{Role: "rd-role"}, now, core.NewBoundExternalPinSet(core.PinBinding{Fingerprint: "sha256:p", Role: "attestation-signer"}))
 		require.Error(t, err)
 	})
 
 	t.Run("revocation via de-pin is monotonic", func(t *testing.T) {
 		// Removing a fingerprint from the pin set revokes it; flipping the
 		// workspace status back to active cannot restore trust.
-		shrunk := core.NewExternalPinSet("sha256:rp")
+		shrunk := core.NewBoundExternalPinSet(core.PinBinding{Fingerprint: "sha256:rp", Role: "revoked-role"})
 		flipped := append([]config.TrustAnchor(nil), anchors...)
 		flipped[0].Status = config.TrustAnchorStatusActive
 		_, err := core.ResolveVerificationKey(flipped, core.KeySelector{ID: "pinned"}, now, shrunk)
