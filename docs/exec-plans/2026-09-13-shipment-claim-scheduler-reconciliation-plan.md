@@ -498,9 +498,13 @@ string independently of the constant.
   * The attempt-6 U4 (2) claim-crash scenario is **dropped** (attempt 6
     P2-2): the claim terminal-evidence path is unreachable, and the rollback
     path is covered by U0c (fabricated) and U3 (2) (real double-fault).
-  * AC: both pass; no U0a/U0b/U0c/U3 scenario duplicated; the `-race` gate of
-    U3 is green. U4 stays tests-only: it does **not** edit the U5 doc, whose
-    row is worded so it never needs a later edit (see U5).
+  * AC: both scenarios (`TestU4_OptionALifecycleInvariant` and
+    `TestU4_TerminalAndGenericPathsKeepMarker`, selected by exact regex
+    `^(TestU4_OptionALifecycleInvariant|TestU4_TerminalAndGenericPathsKeepMarker)$`
+    with both `--- PASS:` lines verified explicitly) pass; no U0a/U0b/U0c/U3
+    scenario duplicated; the `-race` gate of U3 is green. U4 stays tests-only:
+    it does **not** edit the U5 doc, whose row is worded so it never needs a
+    later edit (see U5).
 * **U5: operator docs, the marker contract (task 173.005-T).**
   * Domain: docs. File: `docs/design-docs/scheduler-baseline-marker-contract.md`
     (new, hand-written). Generated `docs/cli-reference/*` is not edited.
@@ -845,7 +849,10 @@ removed (attempt 7 P2-B):
   Packaged into shipment `204-S` (`queue_position: 100`, `depends_on: 154-S`)
   on 2026-10-29 after `154-S` shipped and the 074-DL attestation was recorded.
   Closed P-002.1 `harness-exempt` set for `182-F` (`204-S`): `["182.001-T"]`
-  (`verification-only`).
+  (`verification-only`, verified via exact test selector
+  `^(TestU4_OptionALifecycleInvariant|TestU4_TerminalAndGenericPathsKeepMarker)$`
+  requiring both `--- PASS: TestU4_OptionALifecycleInvariant` and
+  `--- PASS: TestU4_TerminalAndGenericPathsKeepMarker`).
 * The autoharness P-002.6 wave scheduler should apply the three-part
   predicate and exclude claim-activated tasks from residual classification
   (cross-workspace).
