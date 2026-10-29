@@ -16,6 +16,15 @@ var (
 	// ErrAuthorizationRejected categorizes every fail-closed rejection of the
 	// supplied authorization token inside the locked critical section.
 	ErrAuthorizationRejected = errors.New("authorization token rejected (fail closed)")
+	// ErrApprovalWrongShipment is the distinct typed category for a token
+	// bound to another shipment (170.014-T).
+	ErrApprovalWrongShipment = errors.New("approval rejected: token bound to a different shipment")
+	// ErrApprovalWrongRequestIdentity is the distinct typed category for a
+	// token whose request-identity digest does not match (170.014-T).
+	ErrApprovalWrongRequestIdentity = errors.New("approval rejected: token bound to a different request identity")
+	// ErrApprovalReplay is the distinct typed category for a token whose
+	// nonce was already consumed (170.014-T).
+	ErrApprovalReplay = errors.New("approval rejected: token replayed")
 )
 
 // Authorization outcome values reported on ShipmentShippedReconcileResult.
@@ -85,10 +94,19 @@ func enforceReconcileAuthorization(ctx context.Context, req ShipmentShippedRecon
 	if auth == nil {
 		return "", ErrAuthorizationRequired
 	}
+	return AuthorizeApproval(ctx, *auth, shipmentID, requestIdentityDigest, dryRun)
+}
+
+// AuthorizeApproval verifies auth against shipmentID and the
+// reconcile-computed requestIdentityDigest and, unless dryRun, atomically
+// consumes the nonce. It returns AuthorizationOutcomeVerified (dry run) or
+// AuthorizationOutcomeConsumed, or a fail-closed error wrapping
+// ErrAuthorizationRejected.
+func AuthorizeApproval(ctx context.Context, auth ReconcileAuthorization, shipmentID, requestIdentityDigest string, dryRun bool) (string, error) {
 	if err := VerifyAuthorizationTokenAudited(TokenVerifyInput{
 		Token: auth.Token, Key: auth.Key, PublicKey: auth.PublicKey, ShipmentID: shipmentID, At: auth.At,
 	}, auth.Auditor); err != nil {
-		return "", fmt.Errorf("%w: %w", ErrAuthorizationRejected, err)
+		return "", rejectApproval(err)
 	}
 	if err := VerifyTokenRequestIdentity(auth.Token, requestIdentityDigest); err != nil {
 		if auth.Auditor != nil {
@@ -99,7 +117,7 @@ func enforceReconcileAuthorization(ctx context.Context, req ShipmentShippedRecon
 				err = fmt.Errorf("%w: %w: %w", ErrTokenRejectionAuditFailed, aerr, err)
 			}
 		}
-		return "", fmt.Errorf("%w: %w", ErrAuthorizationRejected, err)
+		return "", rejectApproval(err)
 	}
 	if dryRun {
 		return AuthorizationOutcomeVerified, nil
@@ -108,9 +126,47 @@ func enforceReconcileAuthorization(ctx context.Context, req ShipmentShippedRecon
 		return "", fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrNonceProviderUnavailable)
 	}
 	if err := auth.Nonces.Consume(ctx, auth.Token.Claims.Nonce, auth.Token.Claims.NotAfter); err != nil {
-		return "", fmt.Errorf("%w: consume nonce: %w", ErrAuthorizationRejected, err)
+		return "", rejectApproval(fmt.Errorf("consume nonce: %w", err))
 	}
 	return AuthorizationOutcomeConsumed, nil
+}
+
+// rejectApproval wraps err under ErrAuthorizationRejected, classifying the
+// binding/replay categories into a distinct typed ApprovalRejectionError.
+func rejectApproval(err error) error {
+	var category error
+	switch {
+	case errors.Is(err, ErrTokenWrongShipment):
+		category = ErrApprovalWrongShipment
+	case errors.Is(err, ErrTokenRequestIdentityMismatch):
+		category = ErrApprovalWrongRequestIdentity
+	case errors.Is(err, ErrNonceReplayed):
+		category = ErrApprovalReplay
+	default:
+		return fmt.Errorf("%w: %w", ErrAuthorizationRejected, err)
+	}
+	return fmt.Errorf("%w: %w", ErrAuthorizationRejected, &ApprovalRejectionError{Category: category, Err: err})
+}
+
+// ApprovalRejectionError is the typed fail-closed rejection returned by
+// AuthorizeApproval for the binding/replay categories (170.014-T).
+type ApprovalRejectionError struct {
+	// Category is one of ErrApprovalWrongShipment,
+	// ErrApprovalWrongRequestIdentity or ErrApprovalReplay.
+	Category error
+	// Err is the underlying verification or consume error.
+	Err error
+}
+
+// Error implements error.
+func (e *ApprovalRejectionError) Error() string {
+	return e.Category.Error() + ": " + e.Err.Error()
+}
+
+// Unwrap exposes the rejection category, the generic rejection sentinel and
+// the underlying cause.
+func (e *ApprovalRejectionError) Unwrap() []error {
+	return []error{e.Category, e.Err}
 }
 
 // ShipmentReconciledShippedApprover is the "approver" sub-object of an
