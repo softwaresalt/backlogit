@@ -57,6 +57,11 @@ type ShipmentShippedReconcileRequest struct {
 	// folded into the evidence and event digests, but never into the
 	// request identity digest.
 	Attestation *ShipmentReconciledShippedAttestation
+	// AttestationVerifier, when non-nil, is invoked during evidence
+	// preparation (169.004-T) with the reconcile-computed evidence and must
+	// verify the attestation fail-closed; a returned error aborts the
+	// reconciliation before any write.
+	AttestationVerifier func(expected AttestationExpectedEvidence) error
 }
 
 // ShipmentShippedReconcileResult is the outcome of a governed shipment
