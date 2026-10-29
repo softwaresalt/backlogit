@@ -115,6 +115,22 @@ func TestTokenVerify(t *testing.T) {
 		require.ErrorAs(t, err, &ve)
 	})
 
+	t.Run("issuer anchor expired between resolve and verify fails closed", func(t *testing.T) {
+		f := newTokenVerifyFixture(t)
+		in := f.input(t, f.sign(f.token()))
+		expired := tokenVerifyNow.Add(-time.Second)
+		in.Key.Anchor.NotAfter = &expired
+		err := core.VerifyAuthorizationToken(in)
+		require.ErrorIs(t, err, core.ErrTrustAnchorExpired)
+		var ve *core.TokenVerifyError
+		require.ErrorAs(t, err, &ve)
+
+		notYet := tokenVerifyNow.Add(time.Second)
+		in = f.input(t, f.sign(f.token()))
+		in.Key.Anchor.NotBefore = &notYet
+		require.ErrorIs(t, core.VerifyAuthorizationToken(in), core.ErrTrustAnchorNotYetValid)
+	})
+
 	t.Run("validity window", func(t *testing.T) {
 		f := newTokenVerifyFixture(t)
 		cases := []struct {

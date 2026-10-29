@@ -98,6 +98,11 @@ func VerifyAuthorizationToken(in TokenVerifyInput) error {
 	case at.After(claims.NotAfter):
 		return &TokenVerifyError{Field: "claims.not_after", Err: ErrTokenExpired}
 	}
+	// Re-check the issuer anchor window at the same verification instant: the
+	// anchor may have expired between key resolution and verification.
+	if err := checkAnchorWindow(&in.Key.Anchor, at); err != nil {
+		return &TokenVerifyError{Field: "anchor", Err: err}
+	}
 	return nil
 }
 

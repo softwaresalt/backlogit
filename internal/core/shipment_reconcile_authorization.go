@@ -103,21 +103,8 @@ func enforceReconcileAuthorization(ctx context.Context, req ShipmentShippedRecon
 // AuthorizationOutcomeConsumed, or a fail-closed error wrapping
 // ErrAuthorizationRejected.
 func AuthorizeApproval(ctx context.Context, auth ReconcileAuthorization, shipmentID, requestIdentityDigest string, dryRun bool) (string, error) {
-	if err := VerifyAuthorizationTokenAudited(TokenVerifyInput{
-		Token: auth.Token, Key: auth.Key, PublicKey: auth.PublicKey, ShipmentID: shipmentID, At: auth.At,
-	}, auth.Auditor); err != nil {
-		return "", rejectApproval(err)
-	}
-	if err := VerifyTokenRequestIdentity(auth.Token, requestIdentityDigest); err != nil {
-		if auth.Auditor != nil {
-			if aerr := auth.Auditor.RecordTokenRejection(TokenRejectionEvent{
-				ShipmentID: shipmentID, KeyID: auth.Token.Header.KeyID,
-				Field: "binding.request_identity_digest", Reason: err.Error(),
-			}); aerr != nil {
-				err = fmt.Errorf("%w: %w: %w", ErrTokenRejectionAuditFailed, aerr, err)
-			}
-		}
-		return "", rejectApproval(err)
+	if err := verifyApprovalToken(auth, shipmentID, requestIdentityDigest, dryRun); err != nil {
+		return "", err
 	}
 	if dryRun {
 		return AuthorizationOutcomeVerified, nil
@@ -126,6 +113,73 @@ func AuthorizeApproval(ctx context.Context, auth ReconcileAuthorization, shipmen
 		return "", fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrNonceProviderUnavailable)
 	}
 	if err := auth.Nonces.Consume(ctx, auth.Token.Claims.Nonce, auth.Token.Claims.NotAfter); err != nil {
+		return "", rejectApproval(fmt.Errorf("consume nonce: %w", err))
+	}
+	return AuthorizationOutcomeConsumed, nil
+}
+
+// verifyApprovalToken verifies the token and its request-identity binding
+// without consuming the nonce. Rejection audit records are written only on a
+// live run; a dry run verifies but never writes.
+func verifyApprovalToken(auth ReconcileAuthorization, shipmentID, requestIdentityDigest string, dryRun bool) error {
+	in := TokenVerifyInput{
+		Token: auth.Token, Key: auth.Key, PublicKey: auth.PublicKey, ShipmentID: shipmentID, At: auth.At,
+	}
+	var verr error
+	if dryRun {
+		verr = VerifyAuthorizationToken(in)
+	} else {
+		verr = VerifyAuthorizationTokenAudited(in, auth.Auditor)
+	}
+	if verr != nil {
+		return rejectApproval(verr)
+	}
+	if err := VerifyTokenRequestIdentity(auth.Token, requestIdentityDigest); err != nil {
+		if !dryRun && auth.Auditor != nil {
+			if aerr := auth.Auditor.RecordTokenRejection(TokenRejectionEvent{
+				ShipmentID: shipmentID, KeyID: auth.Token.Header.KeyID,
+				Field: "binding.request_identity_digest", Reason: err.Error(),
+			}); aerr != nil {
+				err = fmt.Errorf("%w: %w: %w", ErrTokenRejectionAuditFailed, aerr, err)
+			}
+		}
+		return rejectApproval(err)
+	}
+	return nil
+}
+
+// authorizeReconcileResume is the authenticated-approval gate for the
+// resume-append branch, where the prepared event is already persisted. Under
+// authenticated enforcement the token must verify, and the prepared event must
+// record the same approver (key id and nonce) as the token: the gate that
+// wrote the prepared event already consumed that nonce, so a replay of the
+// same nonce for the same prepared approver is not re-rejected. Any other
+// approver, or none, fails closed before any nonce is consumed.
+func authorizeReconcileResume(ctx context.Context, req ShipmentShippedReconcileRequest, shipmentID, requestIdentityDigest string, prepared *ShipmentReconciledShippedApprover) (string, error) {
+	switch req.AuthEnforcement {
+	case "", AuthEnforcementConfirmation:
+		return AuthorizationOutcomeNotRequired, nil
+	case AuthEnforcementAuthenticated:
+	default:
+		return "", fmt.Errorf("%w: unknown enforcement mode %q", ErrAuthPolicyDenied, string(req.AuthEnforcement))
+	}
+	auth := req.Authorization
+	if auth == nil {
+		return "", ErrAuthorizationRequired
+	}
+	if err := verifyApprovalToken(*auth, shipmentID, requestIdentityDigest, req.DryRun); err != nil {
+		return "", err
+	}
+	if prepared == nil || prepared.KeyID != auth.Token.Header.KeyID || prepared.Nonce != auth.Token.Claims.Nonce {
+		return "", fmt.Errorf("%w: prepared event approver does not match the supplied token", ErrAuthorizationRejected)
+	}
+	if req.DryRun {
+		return AuthorizationOutcomeVerified, nil
+	}
+	if auth.Nonces == nil {
+		return "", fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrNonceProviderUnavailable)
+	}
+	if err := auth.Nonces.Consume(ctx, auth.Token.Claims.Nonce, auth.Token.Claims.NotAfter); err != nil && !errors.Is(err, ErrNonceReplayed) {
 		return "", rejectApproval(fmt.Errorf("consume nonce: %w", err))
 	}
 	return AuthorizationOutcomeConsumed, nil

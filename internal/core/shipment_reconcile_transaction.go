@@ -256,7 +256,8 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 		return result, fmt.Errorf("reconcile shipment to shipped: read shipment %s persisted prepared event: %w", shipmentID, err)
 	}
 
-	if req.AttestationVerifier != nil {
+	authenticated := req.AuthEnforcement != "" && req.AuthEnforcement != AuthEnforcementConfirmation
+	if req.AttestationVerifier != nil || authenticated {
 		var prepared events.Event
 		if err := json.Unmarshal([]byte(preparedEventText), &prepared); err != nil {
 			result.Outcome = ShipmentReconcileOutcomeIndeterminate
@@ -267,14 +268,23 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 			result.Outcome = ShipmentReconcileOutcomeIndeterminate
 			return result, fmt.Errorf("reconcile shipment to shipped: decode shipment %s persisted prepared event: %w", shipmentID, err)
 		}
-		if err := req.verifyAttestation(ctx, AttestationExpectedEvidence{
-			ShipmentID:         shipmentID,
-			MergeSHA:           delta.Evidence.MergeSHA,
-			ManifestDigest:     delta.Evidence.ManifestDigest,
-			ClosureContentHash: delta.Evidence.ClosureContentHash,
-		}); err != nil {
-			return result, fmt.Errorf("reconcile shipment to shipped: verify shipment %s persisted attestation before resume: %w", shipmentID, err)
+		if req.AttestationVerifier != nil {
+			if err := req.verifyAttestation(ctx, AttestationExpectedEvidence{
+				ShipmentID:         shipmentID,
+				MergeSHA:           delta.Evidence.MergeSHA,
+				ManifestDigest:     delta.Evidence.ManifestDigest,
+				ClosureContentHash: delta.Evidence.ClosureContentHash,
+			}); err != nil {
+				return result, fmt.Errorf("reconcile shipment to shipped: verify shipment %s persisted attestation before resume: %w", shipmentID, err)
+			}
 		}
+		// Authenticated-approval gate for the resume-append branch: the
+		// prepared event must not be appended without valid authorization.
+		authOutcome, authErr := authorizeReconcileResume(ctx, req, shipmentID, persisted.requestIdentityDigest.value, delta.Approver)
+		if authErr != nil {
+			return result, fmt.Errorf("reconcile shipment to shipped: shipment %s resume authorization: %w", shipmentID, authErr)
+		}
+		result.Authorization = authOutcome
 	}
 
 	if req.DryRun {
