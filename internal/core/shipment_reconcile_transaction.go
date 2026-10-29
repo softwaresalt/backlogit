@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -257,6 +259,27 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 	if err != nil {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
 		return result, fmt.Errorf("reconcile shipment to shipped: read shipment %s persisted prepared event: %w", shipmentID, err)
+	}
+
+	if req.AttestationVerifier != nil {
+		var prepared events.Event
+		if err := json.Unmarshal([]byte(preparedEventText), &prepared); err != nil {
+			result.Outcome = ShipmentReconcileOutcomeIndeterminate
+			return result, fmt.Errorf("reconcile shipment to shipped: parse shipment %s persisted prepared event: %w", shipmentID, err)
+		}
+		delta, err := decodeShipmentReconciledShippedDelta(prepared.Delta)
+		if err != nil {
+			result.Outcome = ShipmentReconcileOutcomeIndeterminate
+			return result, fmt.Errorf("reconcile shipment to shipped: decode shipment %s persisted prepared event: %w", shipmentID, err)
+		}
+		if err := req.AttestationVerifier(AttestationExpectedEvidence{
+			ShipmentID:         shipmentID,
+			MergeSHA:           delta.Evidence.MergeSHA,
+			ManifestDigest:     delta.Evidence.ManifestDigest,
+			ClosureContentHash: delta.Evidence.ClosureContentHash,
+		}); err != nil {
+			return result, fmt.Errorf("reconcile shipment to shipped: verify shipment %s persisted attestation before resume: %w", shipmentID, err)
+		}
 	}
 
 	if err := appendShipmentReconcileEvent(ctx, ws, shipmentID, []byte(preparedEventText)); err != nil {

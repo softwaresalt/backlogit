@@ -19,6 +19,10 @@ import (
 // (167.002-T, U3).
 const EventShipmentReconciledShipped = "shipment_reconciled_shipped"
 
+// maxShipmentReconcileEventBytes bounds one serialized event line below the
+// 1 MiB line cap the event log readers enforce.
+const maxShipmentReconcileEventBytes = 1 << 20
+
 // ShipmentReconciledShippedBefore is the "before" sub-object of an
 // EventShipmentReconciledShipped event's delta (167.002-T).
 type ShipmentReconciledShippedBefore struct {
@@ -128,6 +132,9 @@ func ShipmentReconciledShippedEventDigest(eventBytes []byte) string {
 func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventBytes []byte, expectedDigest string, expectedShipmentID string) error {
 	if len(rawEventBytes) == 0 || len(bytes.TrimSpace(rawEventBytes)) == 0 {
 		return fmt.Errorf("%w: event bytes are empty", blerrors.ErrValidation)
+	}
+	if len(rawEventBytes) >= maxShipmentReconcileEventBytes {
+		return fmt.Errorf("%w: event is %d bytes, must be under %d so the item log stays readable", blerrors.ErrValidation, len(rawEventBytes), maxShipmentReconcileEventBytes)
 	}
 	if !bytes.HasSuffix(rawEventBytes, []byte("\n")) {
 		return fmt.Errorf("%w: event bytes are not newline-terminated", blerrors.ErrValidation)

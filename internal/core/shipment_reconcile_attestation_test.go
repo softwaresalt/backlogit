@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -159,4 +161,42 @@ func TestReconcileAttestationDelta(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestReconcileResumeVerifiesPersistedAttestation(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	const shipmentID = "169-S-resume"
+	require.NoError(t, os.MkdirAll(WorkspaceLogsRoot(ws.RootPath), 0o755))
+
+	raw := signedClassifierEvent(t, shipmentID, "idem-001", "abc123", reconcileTestAttestation())
+	fm := classifierFrontmatter("shipped", "idem-001", "abc123", raw, ShipmentReconciledShippedEventDigest(raw))
+	req := ShipmentShippedReconcileRequest{IdempotencyKey: "idem-001", Attestation: reconcileTestAttestation()}
+	errForged := errors.New("forged envelope")
+
+	var got AttestationExpectedEvidence
+	req.AttestationVerifier = func(e AttestationExpectedEvidence) error { got = e; return errForged }
+	_, err := reconcileShipmentPhaseBNoOp(ctx, ws, req, shipmentID, fm, nil, ShipmentShippedReconcileResult{})
+	require.ErrorIs(t, err, errForged)
+	assert.Equal(t, shipmentID, got.ShipmentID)
+	assert.Equal(t, "deadbeef", got.MergeSHA)
+	assert.Equal(t, "manifestdigest", got.ManifestDigest)
+	assert.Equal(t, "contenthash", got.ClosureContentHash)
+	_, statErr := os.Stat(events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), shipmentID))
+	assert.True(t, os.IsNotExist(statErr), "forged resume must not append the event")
+
+	req.AttestationVerifier = func(AttestationExpectedEvidence) error { return nil }
+	_, err = reconcileShipmentPhaseBNoOp(ctx, ws, req, shipmentID, fm, nil, ShipmentShippedReconcileResult{})
+	require.NoError(t, err)
+}
+
+func TestValidateShipmentReconciledShippedEvent_RejectsOversizedEvent(t *testing.T) {
+	delta := validReconciledShippedDelta()
+	att := reconcileTestAttestation()
+	att.Envelope = `{"payloadType":"x"}` + strings.Repeat("\n", 600000)
+	delta.Attestation = att
+	raw := marshalReconciledShippedEvent(t, delta, "001-S")
+	require.Greater(t, len(raw), 1<<20)
+	err := ValidateShipmentReconciledShippedEvent(raw, nil, "", "001-S")
+	require.ErrorIs(t, err, blerrors.ErrValidation)
 }
