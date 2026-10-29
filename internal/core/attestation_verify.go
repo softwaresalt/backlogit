@@ -32,6 +32,14 @@ var (
 	// ErrAttestationExpired reports an expired or not-yet-valid signing key
 	// or an expired (or expiry-less) statement.
 	ErrAttestationExpired = errors.New("attestation or signing key expired")
+	// ErrAttestationKeyExpired reports a signing key outside its validity
+	// window (expired or not yet valid), distinct from a revoked key.
+	ErrAttestationKeyExpired = errors.New("attestation signing key expired")
+	// ErrAttestationKeyRevoked reports a signing key that has been revoked.
+	ErrAttestationKeyRevoked = errors.New("attestation signing key revoked")
+	// ErrAttestationWrongShipment reports an attestation that names a
+	// different shipment than the one being verified.
+	ErrAttestationWrongShipment = errors.New("attestation names a different shipment")
 )
 
 // AttestationVerifyError is the typed fail-closed error returned by
