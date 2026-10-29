@@ -36,7 +36,7 @@ import (
 // branches evaluate every precondition and report the planned outcome without
 // ever reaching a write.
 func newShipmentReconcileShippedCmd() *cobra.Command {
-	var reason, actor, idempotencyKey, mergeSHA, closureEvidence, secondApprover, confirm, attestationPath string
+	var reason, actor, idempotencyKey, mergeSHA, closureEvidence, secondApprover, confirm, attestationPath, authTokenPath string
 	var evidenceRefs []string
 	var dryRun bool
 
@@ -60,7 +60,15 @@ A live (non-dry-run) mutation requires the shipment-specific confirmation
 phrase "reconcile-shipped <shipment-id>" via --confirm, or typing that same
 phrase at an interactive TTY prompt. --dry-run needs no confirmation and makes
 no reconciliation writes (the archive file, index row, and event log are all
-left unchanged).`,
+left unchanged).
+
+Opt-in --authorization-token <path> supplies a signed operator authorization
+token in place of --confirm. The token is verified inside the locked
+transaction (signature, pinned token-issuer anchor, shipment, validity window,
+request-identity digest) and its single-use nonce is consumed through an
+external atomic provider; --dry-run verifies without consuming and reports the
+authorization verification outcome. Without the flag the confirmation-only v1
+behavior is unchanged.`,
 		Example: `  backlogit shipment reconcile-shipped 048-S --reason "legacy repair" --actor operator \
     --idempotency-key idem-048-s-1 --merge-sha 0123456789abcdef0123456789abcdef01234567 \
     --closure-evidence docs/closure/048-S.md --confirm "reconcile-shipped 048-S"
@@ -81,7 +89,10 @@ left unchanged).`,
 				return err
 			}
 
-			if !dryRun {
+			// An authorization token replaces the self-suppliable
+			// --confirm/TTY guard (170.005-T); without the flag the v1
+			// confirmation guard is unchanged.
+			if !dryRun && authTokenPath == "" {
 				if err := shipmentReconcileConfirm(cmd, shipmentID, confirm); err != nil {
 					cmd.SilenceErrors = true
 					if _, werr := fmt.Fprintln(cmd.ErrOrStderr(), err.Error()); werr != nil {
@@ -112,6 +123,15 @@ left unchanged).`,
 				attestation = loaded
 			}
 
+			var authorization *core.ReconcileAuthorization
+			if authTokenPath != "" {
+				loaded, err := loadReconcileAuthorization(ctx, shipmentCWD(cmd), authTokenPath)
+				if err != nil {
+					return fmt.Errorf("shipment reconcile-shipped: --authorization-token: %w", err)
+				}
+				loaded.Nonces = reconcileNonceConsumer()
+				authorization = loaded
+			}
 			ws, err := core.NewWorkspace(ctx, shipmentCWD(cmd))
 			if err != nil {
 				return fmt.Errorf("open workspace: %w", err)
@@ -140,6 +160,11 @@ left unchanged).`,
 				req.AttestationRejectionAuditor = attestation.rejectionAuditor(func() *core.Workspace { return ws }, shipmentID)
 			}
 
+			if authorization != nil {
+				req.AuthEnforcement = core.AuthEnforcementAuthenticated
+				req.Authorization = authorization
+			}
+
 			result, err := core.ReconcileShipmentToShipped(ctx, ws, req)
 			if ee := shipmentReconcileExitError(result, err); ee != nil {
 				cmd.SilenceErrors = true
@@ -163,6 +188,13 @@ left unchanged).`,
 			if attestation != nil {
 				output["attestation"] = attestation.summary()
 			}
+			if authorization != nil {
+				output["authorization"] = map[string]any{
+					"outcome": result.Authorization,
+					"key_id":  authorization.Token.Header.KeyID,
+					"nonce":   authorization.Token.Claims.Nonce,
+				}
+			}
 			return enc.Encode(output)
 		},
 	}
@@ -176,6 +208,7 @@ left unchanged).`,
 	cmd.Flags().StringArrayVar(&evidenceRefs, "evidence-ref", nil, "additional evidence reference; repeatable")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "evaluate every precondition and print the planned outcome without writing (needs no --confirm)")
 	cmd.Flags().StringVar(&attestationPath, "attestation", "", "opt-in path to a signed delivery-evidence attestation (DSSE envelope); verified against the configured trust anchors before any write, and the dry-run output reports the verification outcome")
+	cmd.Flags().StringVar(&authTokenPath, "authorization-token", "", "opt-in path to a signed operator authorization token (JSON); verified inside the locked transaction against the pinned token-issuer anchor and bound to this shipment and request. It replaces --confirm; a live run also needs an external nonce provider and otherwise fails closed. The dry-run output reports the verification outcome")
 	cmd.Flags().StringVar(&confirm, "confirm", "", `confirmation phrase "reconcile-shipped <shipment-id>", required for a live (non-dry-run) mutation unless stdin is an interactive TTY`)
 	_ = cmd.MarkFlagRequired("reason")
 	_ = cmd.MarkFlagRequired("actor")

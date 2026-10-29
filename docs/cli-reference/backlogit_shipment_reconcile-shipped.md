@@ -33,6 +33,14 @@ phrase at an interactive TTY prompt. --dry-run needs no confirmation and makes
 no reconciliation writes (the archive file, index row, and event log are all
 left unchanged).
 
+Opt-in --authorization-token <path> supplies a signed operator authorization
+token in place of --confirm. The token is verified inside the locked
+transaction (signature, pinned token-issuer anchor, shipment, validity window,
+request-identity digest) and its single-use nonce is consumed through an
+external atomic provider; --dry-run verifies without consuming and reports the
+authorization verification outcome. Without the flag the confirmation-only v1
+behavior is unchanged.
+
 ```text
 backlogit shipment reconcile-shipped <shipment-id> [flags]
 ```
@@ -51,17 +59,18 @@ backlogit shipment reconcile-shipped <shipment-id> [flags]
 ### Options
 
 ```text
-      --actor string               actor performing the reconciliation, recorded for audit (required)
-      --attestation string         opt-in path to a signed delivery-evidence attestation (DSSE envelope); verified against the configured trust anchors before any write, and the dry-run output reports the verification outcome
-      --closure-evidence string    workspace-relative path to closure evidence documenting the release (required)
-      --confirm string             confirmation phrase "reconcile-shipped <shipment-id>", required for a live (non-dry-run) mutation unless stdin is an interactive TTY
-      --dry-run                    evaluate every precondition and print the planned outcome without writing (needs no --confirm)
-      --evidence-ref stringArray   additional evidence reference; repeatable
-  -h, --help                       help for reconcile-shipped
-      --idempotency-key string     idempotency key for this reconciliation request (required)
-      --merge-sha string           merge commit SHA that delivered the released scope (required)
-      --reason string              operator justification for the reconciliation (required)
-      --second-approver string     optional second approver recorded for audit (must differ from --actor)
+      --actor string                 actor performing the reconciliation, recorded for audit (required)
+      --attestation string           opt-in path to a signed delivery-evidence attestation (DSSE envelope); verified against the configured trust anchors before any write, and the dry-run output reports the verification outcome
+      --authorization-token string   opt-in path to a signed operator authorization token (JSON); verified inside the locked transaction against the pinned token-issuer anchor and bound to this shipment and request. It replaces --confirm; a live run also needs an external nonce provider and otherwise fails closed. The dry-run output reports the verification outcome
+      --closure-evidence string      workspace-relative path to closure evidence documenting the release (required)
+      --confirm string               confirmation phrase "reconcile-shipped <shipment-id>", required for a live (non-dry-run) mutation unless stdin is an interactive TTY
+      --dry-run                      evaluate every precondition and print the planned outcome without writing (needs no --confirm)
+      --evidence-ref stringArray     additional evidence reference; repeatable
+  -h, --help                         help for reconcile-shipped
+      --idempotency-key string       idempotency key for this reconciliation request (required)
+      --merge-sha string             merge commit SHA that delivered the released scope (required)
+      --reason string                operator justification for the reconciliation (required)
+      --second-approver string       optional second approver recorded for audit (must differ from --actor)
 ```
 
 ### Options inherited from parent commands
