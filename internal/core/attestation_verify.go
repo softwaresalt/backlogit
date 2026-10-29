@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/backlogit/internal/canonical"
 )
@@ -119,8 +120,8 @@ func AuditAttestationRejection(ctx context.Context, ws *Workspace, shipmentID, k
 		return errors.Join(rejection, errors.New("audit attestation rejection: workspace is required"))
 	}
 	delta := map[string]any{
-		"key_id": keyID,
-		"error":  rejection.Error(),
+		"key_id": truncateAttestationDiagnostic(keyID),
+		"error":  truncateAttestationDiagnostic(rejection.Error()),
 	}
 	var ve *AttestationVerifyError
 	if errors.As(rejection, &ve) {
@@ -130,6 +131,21 @@ func AuditAttestationRejection(ctx context.Context, ws *Workspace, shipmentID, k
 		return errors.Join(rejection, fmt.Errorf("audit attestation rejection: %w", auditErr))
 	}
 	return rejection
+}
+
+// maxAttestationDiagnosticBytes bounds each persisted rejection diagnostic so
+// the JSON-escaped audit event stays far below the event-log line limit.
+const maxAttestationDiagnosticBytes = 4096
+
+func truncateAttestationDiagnostic(s string) string {
+	if len(s) <= maxAttestationDiagnosticBytes {
+		return s
+	}
+	cut := maxAttestationDiagnosticBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "...(truncated)"
 }
 
 // VerifyAttestation verifies an attestation fail-closed: the envelope
