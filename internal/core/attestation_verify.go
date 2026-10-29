@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -83,6 +84,17 @@ type AttestationVerification struct {
 	SignerIdentity  string
 	SigAlgo         string
 	StatementDigest string
+}
+
+// EventAttestationRejected is the event type persisted when attestation
+// verification fails closed (169.013-T).
+const EventAttestationRejected = "attestation_rejected"
+
+// VerifyAttestationAudited runs VerifyAttestation and persists a rejection
+// audit event on the shipment's log when verification fails closed. Not yet
+// implemented (169.013-T harness stub): no audit is persisted.
+func VerifyAttestationAudited(ctx context.Context, ws *Workspace, in AttestationVerifyInput) (AttestationVerification, error) {
+	return VerifyAttestation(in)
 }
 
 // VerifyAttestation verifies an attestation fail-closed: the envelope
