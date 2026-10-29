@@ -101,12 +101,15 @@ func TestTrustAnchorMutationCore(t *testing.T) {
 		require.Equal(t, "new", f.audits[0].NewAnchorID)
 
 		f, m = setup()
+		auth := &fakeRevocation{}
+		m.Revocation = auth // 168.009-T: revoke succeeds only via the external authority
 		rev := core.TrustAnchorMutation{Action: core.TrustAnchorActionRevoke, AnchorID: "old",
 			Approval: evidence(core.TrustAnchorActionRevoke, "old", now.Add(time.Hour), priv)}
 		out, err = m.Apply(context.Background(), rev)
 		require.NoError(t, err)
-		require.True(t, out.StatusWritten && out.AuditPersisted)
+		require.True(t, out.StatusWritten && out.AuditPersisted && out.RevocationRecorded)
 		require.Equal(t, []string{"status:old=revoked", "audit:applied"}, f.log)
+		require.Equal(t, []string{"sha256:old"}, auth.tombstones)
 		require.Equal(t, config.TrustAnchorStatusRevoked, f.anchors[0].Status)
 	})
 

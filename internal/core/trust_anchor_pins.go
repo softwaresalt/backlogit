@@ -43,6 +43,7 @@ type PinBinding struct {
 type ExternalPinSet struct {
 	fingerprints map[string]struct{}
 	bindings     map[string]PinBinding
+	tombstones   map[string]struct{}
 }
 
 // NewExternalPinSet builds a pin set from the given fingerprints. Empty
@@ -85,6 +86,12 @@ func MergePinSets(a, b *ExternalPinSet) *ExternalPinSet {
 		}
 		for fp, bd := range s.bindings {
 			out.bindings[fp] = bd
+		}
+		if len(s.tombstones) > 0 && out.tombstones == nil {
+			out.tombstones = make(map[string]struct{}, len(s.tombstones))
+		}
+		for fp := range s.tombstones {
+			out.tombstones[fp] = struct{}{}
 		}
 	}
 	return out

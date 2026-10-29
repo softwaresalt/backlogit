@@ -172,7 +172,7 @@ func checkAnchorWindow(a *config.TrustAnchor, at time.Time) error {
 // advisory and can only restrict (revoked is honored), never grant trust, so
 // revocation is monotonic. The validity window is applied last.
 func checkAnchorUsable(a *config.TrustAnchor, at time.Time, pins *ExternalPinSet) error {
-	if a.Status == config.TrustAnchorStatusRevoked {
+	if a.Status == config.TrustAnchorStatusRevoked || pins.Tombstoned(a.Fingerprint) {
 		return ErrTrustAnchorRevoked
 	}
 	if !pins.Contains(a.Fingerprint) {

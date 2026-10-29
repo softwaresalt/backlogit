@@ -97,6 +97,9 @@ type WriteOutcome struct {
 	ConfigWritten  bool
 	StatusWritten  bool
 	AuditPersisted bool
+	// RevocationRecorded is true when the external revocation authority
+	// recorded the tombstone (168.009-T).
+	RevocationRecorded bool
 	// MarkerOutstanding is true when the indeterminate marker was left in
 	// place (168.017-T).
 	MarkerOutstanding bool
@@ -157,9 +160,13 @@ type TrustAnchorMutator struct {
 	// Marker persists the indeterminate marker around the write steps
 	// (168.017-T). NewFileTrustAnchorMutator always wires it; a nil Marker
 	// skips only the marker steps (write-outcome classification still applies).
-	Marker   TrustAnchorMarkerStore
-	Approver ApproverVerifier
-	Now      func() time.Time
+	Marker TrustAnchorMarkerStore
+	// Revocation is the injected non-filesystem external revocation authority
+	// (168.009-T). Revoke succeeds only when it records the tombstone; with a
+	// nil Revocation a revoke fails closed with ErrRevocationAuthorityRequired.
+	Revocation RevocationAuthority
+	Approver   ApproverVerifier
+	Now        func() time.Time
 }
 
 // Apply runs: validate -> enforce external-pin policy -> write marker ->
@@ -193,6 +200,8 @@ func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation)
 		}
 	}
 
+	plan.approver = approver
+
 	// 2. enforce external-pin policy; a denial is audited before returning.
 	if plan.newAnchor != nil {
 		if pinErr := VerifyTrustAnchorPins(ctx, []config.TrustAnchor{*plan.newAnchor}, m.Pins); pinErr != nil {
@@ -205,6 +214,19 @@ func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation)
 			out.AuditPersisted = true
 			return out, mutErr
 		}
+	}
+
+	// 2b. a revoke needs the external authority; workspace status is advisory
+	// and a status-only flip must never report success (168.009-T).
+	if req.Action == TrustAnchorActionRevoke && m.Revocation == nil {
+		reason := fmt.Errorf("%w: fingerprint %s must be revoked externally (de-pin/tombstone it in the external trust authority) and the operation confirmed; no workspace state was changed",
+			ErrRevocationAuthorityRequired, plan.revokeFingerprint)
+		mutErr := &TrustAnchorMutationError{Action: req.Action, AnchorID: plan.targetID, Err: reason}
+		if auditErr := m.Audit.RecordAudit(ctx, m.auditEvent(req, plan, TrustAnchorAuditDenied, reason.Error(), approver)); auditErr != nil {
+			return out, errors.Join(mutErr, fmt.Errorf("%w: %w", ErrAuditNotPersisted, auditErr))
+		}
+		out.AuditPersisted = true
+		return out, mutErr
 	}
 
 	// Write protocol (168.017-T), each step durable:
@@ -225,7 +247,7 @@ func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation)
 	}
 
 	if err := m.applyTrustAnchorState(ctx, plan, &out); err != nil {
-		if !out.ConfigWritten && !out.StatusWritten && !errors.Is(err, ErrWriteIndeterminate) {
+		if !out.ConfigWritten && !out.StatusWritten && !out.RevocationRecorded && !errors.Is(err, ErrWriteIndeterminate) {
 			// Nothing took effect: retract the marker so it is absent after.
 			return m.notApplied(ctx, &out, req, plan.targetID, err)
 		}
@@ -251,6 +273,15 @@ func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation)
 // applyTrustAnchorState performs step 2: the config write then the status
 // writes, recording which took effect in out.
 func (m *TrustAnchorMutator) applyTrustAnchorState(ctx context.Context, plan trustAnchorPlan, out *WriteOutcome) error {
+	if plan.action == TrustAnchorActionRevoke {
+		// The authoritative revocation is recorded first; the workspace status
+		// write below is only a contained advisory projection of it.
+		rec := RevocationRecord{AnchorID: plan.targetID, Fingerprint: plan.revokeFingerprint, Approver: plan.approver, At: m.Now()}
+		if err := m.Revocation.RecordRevocation(ctx, rec); err != nil {
+			return fmt.Errorf("record external revocation: %w", err)
+		}
+		out.RevocationRecorded = true
+	}
 	if plan.config != nil {
 		if err := m.State.WriteConfig(ctx, plan.config); err != nil {
 			return fmt.Errorf("write config: %w", err)
@@ -289,10 +320,13 @@ func indeterminate(err error) error {
 }
 
 type trustAnchorPlan struct {
-	targetID  string
-	newAnchor *config.TrustAnchor
-	config    []config.TrustAnchor
-	status    []TrustAnchorStatusChange
+	action            TrustAnchorAction
+	revokeFingerprint string
+	approver          string
+	targetID          string
+	newAnchor         *config.TrustAnchor
+	config            []config.TrustAnchor
+	status            []TrustAnchorStatusChange
 }
 
 func (m *TrustAnchorMutator) auditEvent(req TrustAnchorMutation, plan trustAnchorPlan, outcome, reason, approver string) TrustAnchorAuditEvent {
@@ -321,7 +355,7 @@ func planTrustAnchorMutation(current []config.TrustAnchor, req TrustAnchorMutati
 		}
 		return nil
 	}
-	plan := trustAnchorPlan{targetID: req.AnchorID}
+	plan := trustAnchorPlan{action: req.Action, targetID: req.AnchorID}
 	introduces := false
 	switch req.Action {
 	case TrustAnchorActionAdd:
@@ -338,6 +372,7 @@ func planTrustAnchorMutation(current []config.TrustAnchor, req TrustAnchorMutati
 		if target.Status == config.TrustAnchorStatusRevoked {
 			return plan, invalid("anchor %q is already revoked", req.AnchorID)
 		}
+		plan.revokeFingerprint = target.Fingerprint
 	default:
 		return plan, invalid("unknown action %q", req.Action)
 	}

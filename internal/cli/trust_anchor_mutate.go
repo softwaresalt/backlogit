@@ -111,7 +111,7 @@ func addTrustAnchorMutationCommands(parent *cobra.Command, cwd *string) {
 	var revF trustAnchorFlags
 	revoke := &cobra.Command{
 		Use:   "revoke <id>",
-		Short: "Revoke a trust anchor (requires operator approval)",
+		Short: "Revoke a trust anchor (requires operator approval and an external revocation authority; fails closed otherwise)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTrustAnchorMutation(cmd, *cwd,
