@@ -42,6 +42,9 @@ func ValidateTrustAnchors(anchors []TrustAnchor) error {
 		if a.Algo != TrustAnchorAlgoEd25519 && a.Algo != TrustAnchorAlgoECDSAP256 {
 			return &TrustAnchorValidationError{Index: i, ID: a.ID, Field: "algo", Err: ErrTrustAnchorDisallowedAlgo}
 		}
+		if a.Status != TrustAnchorStatusActive && a.Status != TrustAnchorStatusRevoked {
+			return &TrustAnchorValidationError{Index: i, ID: a.ID, Field: "status", Err: ErrTrustAnchorInvalidStatus}
+		}
 		if err := validatePublicKeyRef(a.PublicKeyRef); err != nil {
 			return &TrustAnchorValidationError{Index: i, ID: a.ID, Field: "public_key_ref", Err: err}
 		}

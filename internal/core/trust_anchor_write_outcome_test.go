@@ -3,7 +3,9 @@ package core_test
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -154,6 +156,81 @@ func TestTrustAnchorWriteOutcome(t *testing.T) {
 		require.Equal(t, []config.TrustAnchor{base}, f.anchors)
 		require.False(t, f.markerPresent)
 		require.Equal(t, []string{"audit:denied"}, f.log, "no marker or state step on the denied path")
+	})
+
+	t.Run("outstanding marker refuses the mutation before any state change and is never clobbered", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, core.TrustAnchorMarkerFile)
+		other := &core.FileTrustAnchorMarkerStore{Path: path}
+		require.NoError(t, other.WriteMarker(context.Background(), core.TrustAnchorMarker{Action: core.TrustAnchorActionRevoke, AnchorID: "other", At: now}))
+
+		f := &woFixture{anchors: []config.TrustAnchor{base}}
+		m := &core.TrustAnchorMutator{State: f, Audit: f, Marker: &core.FileTrustAnchorMarkerStore{Path: path},
+			Pins: pinProv{set: core.NewExternalPinSet("sha256:new")}, Now: func() time.Time { return now }}
+		_, err := m.Apply(context.Background(), add)
+		require.ErrorIs(t, err, core.ErrTrustAnchorMarkerOutstanding)
+		require.ErrorIs(t, err, core.ErrWriteIndeterminate)
+		require.Empty(t, f.log, "no state or audit step may run")
+		got, err := core.OutstandingTrustAnchorMarker(dir)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		require.Equal(t, "other", got.AnchorID, "the other request's marker is intact")
+	})
+
+	t.Run("ClearMarker only removes the marker this store wrote", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, core.TrustAnchorMarkerFile)
+		a := &core.FileTrustAnchorMarkerStore{Path: path}
+		b := &core.FileTrustAnchorMarkerStore{Path: path}
+		require.NoError(t, a.WriteMarker(context.Background(), core.TrustAnchorMarker{AnchorID: "a", At: now}))
+		require.Error(t, b.ClearMarker(context.Background()))
+		got, err := core.OutstandingTrustAnchorMarker(dir)
+		require.NoError(t, err)
+		require.NotNil(t, got, "foreign clear must not remove the marker")
+		require.NoError(t, a.ClearMarker(context.Background()))
+		got, err = core.OutstandingTrustAnchorMarker(dir)
+		require.NoError(t, err)
+		require.Nil(t, got)
+	})
+
+	t.Run("concurrent marker acquisition admits exactly one writer", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), core.TrustAnchorMarkerFile)
+		const n = 8
+		errs := make(chan error, n)
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				s := &core.FileTrustAnchorMarkerStore{Path: path}
+				errs <- s.WriteMarker(context.Background(), core.TrustAnchorMarker{AnchorID: "x", At: now})
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		won := 0
+		for err := range errs {
+			if err == nil {
+				won++
+			} else {
+				require.ErrorIs(t, err, core.ErrTrustAnchorMarkerOutstanding)
+			}
+		}
+		require.Equal(t, 1, won)
+	})
+
+	t.Run("marker unlink propagates parent-directory fsync failure", func(t *testing.T) {
+		dir := t.TempDir()
+		syncErr := errors.New("dir fsync failed")
+		mp := filepath.Join(dir, core.TrustAnchorMarkerFile)
+		s := &core.FileTrustAnchorMarkerStore{Path: mp, SyncDir: func(string) error {
+			if _, err := os.Stat(mp); err != nil { // only the post-unlink sync fails
+				return syncErr
+			}
+			return nil
+		}}
+		require.NoError(t, s.WriteMarker(context.Background(), core.TrustAnchorMarker{AnchorID: "a", At: now}))
+		require.ErrorIs(t, s.ClearMarker(context.Background()), syncErr)
 	})
 
 	t.Run("file marker store round-trips and is detectable", func(t *testing.T) {

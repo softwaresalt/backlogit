@@ -60,6 +60,22 @@ const trustAnchorsBadAlgo = `trust_anchors:
     status: active
 `
 
+func TestTrustAnchorStatusValidation(t *testing.T) {
+	mk := func(status config.TrustAnchorStatus) []config.TrustAnchor {
+		return []config.TrustAnchor{{ID: "a1", Algo: "ed25519", PublicKeyRef: "keys/a1.pub", Status: status}}
+	}
+	for _, ok := range []config.TrustAnchorStatus{"active", "revoked"} {
+		require.NoError(t, config.ValidateTrustAnchors(mk(ok)), string(ok))
+	}
+	for _, bad := range []config.TrustAnchorStatus{"", "Revoked", "ACTIVE", "revokd", " active"} {
+		err := config.ValidateTrustAnchors(mk(bad))
+		require.ErrorIs(t, err, config.ErrTrustAnchorInvalidStatus, "status %q", bad)
+		var ve *config.TrustAnchorValidationError
+		require.True(t, errors.As(err, &ve))
+		require.Equal(t, "status", ve.Field)
+	}
+}
+
 func TestTrustAnchorLoaderValidation(t *testing.T) {
 	t.Run("valid config loads into structs", func(t *testing.T) {
 		cfg, err := loadWithTrustAnchors(t, trustAnchorsValid)

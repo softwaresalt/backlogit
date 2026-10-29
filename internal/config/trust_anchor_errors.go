@@ -13,6 +13,9 @@ var (
 	ErrTrustAnchorDuplicateID = errors.New("duplicate trust anchor id")
 	// ErrTrustAnchorDisallowedAlgo reports an algo outside the allowlist.
 	ErrTrustAnchorDisallowedAlgo = errors.New("trust anchor algo not allowed")
+	// ErrTrustAnchorInvalidStatus reports a status that is not exactly
+	// "active" or "revoked" (case-sensitive; empty is invalid).
+	ErrTrustAnchorInvalidStatus = errors.New("trust anchor status must be active or revoked")
 	// ErrTrustAnchorRefEmpty reports an empty public_key_ref.
 	ErrTrustAnchorRefEmpty = errors.New("trust anchor public_key_ref is empty")
 	// ErrTrustAnchorRefMalformed reports a public_key_ref that is neither a

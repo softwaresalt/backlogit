@@ -147,7 +147,7 @@ func NewFileTrustAnchorMutator(storageRoot string, pins ExternalPinSetProvider, 
 	return &TrustAnchorMutator{
 		State:    FileTrustAnchorState{Dir: storageRoot},
 		Audit:    FileTrustAnchorAuditLog{Path: filepath.Join(storageRoot, TrustAnchorAuditFile)},
-		Marker:   FileTrustAnchorMarkerStore{Path: filepath.Join(storageRoot, TrustAnchorMarkerFile)},
+		Marker:   &FileTrustAnchorMarkerStore{Path: filepath.Join(storageRoot, TrustAnchorMarkerFile)},
 		Pins:     pins,
 		Approver: approver,
 		Now:      time.Now,

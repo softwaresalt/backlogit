@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -205,6 +206,10 @@ func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation)
 	if m == nil || m.State == nil || m.Audit == nil || m.Now == nil {
 		return fail(req.AnchorID, fmt.Errorf("%w: mutator is not fully configured", ErrTrustAnchorMutationInvalid))
 	}
+	// Serialize Apply calls on the same storage root; the O_EXCL marker file
+	// is the cross-process guard.
+	unlock := lockTrustAnchorStorage(m)
+	defer unlock()
 
 	// 1. validate (request shape, then verifiable approval).
 	current, err := m.State.LoadAnchors(ctx)
@@ -265,6 +270,10 @@ func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation)
 			}
 		}
 		if err := m.Marker.WriteMarker(ctx, marker); err != nil {
+			if errors.Is(err, ErrTrustAnchorMarkerOutstanding) {
+				// Refused before any state change; the other marker is untouched.
+				return fail(plan.targetID, err)
+			}
 			return fail(plan.targetID, fmt.Errorf("%w: write marker: %w", ErrWriteNotApplied, err))
 		}
 	}
@@ -291,6 +300,22 @@ func (m *TrustAnchorMutator) Apply(ctx context.Context, req TrustAnchorMutation)
 		}
 	}
 	return out, nil
+}
+
+// trustAnchorLocks holds one mutex per storage key (process-level serialization).
+var trustAnchorLocks sync.Map
+
+// lockTrustAnchorStorage locks the mutator's storage root (or the mutator
+// itself when the marker store exposes no key) and returns the unlock func.
+func lockTrustAnchorStorage(m *TrustAnchorMutator) func() {
+	key := fmt.Sprintf("%p", m)
+	if k, ok := m.Marker.(interface{ LockKey() string }); ok {
+		key = k.LockKey()
+	}
+	mu, _ := trustAnchorLocks.LoadOrStore(key, &sync.Mutex{})
+	l := mu.(*sync.Mutex) //nolint:forcetypeassert // only *sync.Mutex is ever stored
+	l.Lock()
+	return l.Unlock
 }
 
 // applyTrustAnchorState performs step 2: the config write then the status

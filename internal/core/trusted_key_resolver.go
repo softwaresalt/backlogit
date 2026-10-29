@@ -178,6 +178,10 @@ func checkAnchorUsable(a *config.TrustAnchor, at time.Time, pins *ExternalPinSet
 	if !pins.Contains(a.Fingerprint) {
 		return ErrTrustAnchorNotPinned
 	}
+	if a.Status != config.TrustAnchorStatusActive {
+		// Fail closed: an unknown or empty status is never usable.
+		return ErrTrustAnchorRevoked
+	}
 	if err := checkAnchorBinding(a, pins); err != nil {
 		return err
 	}
