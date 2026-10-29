@@ -50,6 +50,23 @@ func newTrustAnchorCommand(cwd *string) *cobra.Command {
 		},
 	})
 	addTrustAnchorMutationCommands(cmd, cwd)
+	cmd.AddCommand(&cobra.Command{
+		Use:   "verify-key <id>",
+		Short: "Exit 0 if the key resolves as trusted, non-zero otherwise (read-only)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			anchors, err := loadTrustAnchors(cmd.Context(), *cwd)
+			if err != nil {
+				return err
+			}
+			key, err := core.ResolveVerificationKey(anchors, core.KeySelector{ID: args[0]}, time.Now(), loadPins(cmd.Context()))
+			if err != nil {
+				return err
+			}
+			_, werr := fmt.Fprintf(cmd.OutOrStdout(), "trusted: %s (role %s, algo %s)\n", key.Anchor.ID, key.Anchor.Role, key.Algo)
+			return werr
+		},
+	})
 	return cmd
 }
 
