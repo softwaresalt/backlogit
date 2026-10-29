@@ -103,7 +103,11 @@ left unchanged).`,
 			if attestationPath != "" {
 				loaded, err := loadReconcileAttestation(ctx, shipmentCWD(cmd), attestationPath)
 				if err != nil {
-					return fmt.Errorf("shipment reconcile-shipped: --attestation: %w", err)
+					err = fmt.Errorf("shipment reconcile-shipped: --attestation: %w", err)
+					if dryRun {
+						return err
+					}
+					return auditReconcileAttestationLoadFailure(ctx, shipmentCWD(cmd), shipmentID, err)
 				}
 				attestation = loaded
 			}

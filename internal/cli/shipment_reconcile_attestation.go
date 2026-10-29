@@ -32,37 +32,55 @@ type reconcileAttestation struct {
 	outcome string
 }
 
+// reconcileAttestationLoadError reports an attestation that could not be
+// loaded or trusted. KeyID is the signing key the envelope named, empty when
+// the failure happened before a key was identified.
+type reconcileAttestationLoadError struct {
+	KeyID string
+	Err   error
+}
+
+func (e *reconcileAttestationLoadError) Error() string { return e.Err.Error() }
+
+func (e *reconcileAttestationLoadError) Unwrap() error { return e.Err }
+
 // loadReconcileAttestation reads and parses the attestation file, resolves the
 // signing key through the trust-anchor primitives and binds it to the external
-// pin set. It performs no workspace writes and fails closed at every step.
+// pin set. It performs no workspace writes and fails closed at every step with
+// a *reconcileAttestationLoadError.
 func loadReconcileAttestation(ctx context.Context, cwd, path string) (*reconcileAttestation, error) {
+	keyID := ""
+	fail := func(err error) (*reconcileAttestation, error) {
+		return nil, &reconcileAttestationLoadError{KeyID: keyID, Err: err}
+	}
 	data, err := readReconcileAttestationFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read attestation %q: %w", path, err)
+		return fail(fmt.Errorf("read attestation %q: %w", path, err))
 	}
 	parsed, err := core.ParseAttestation(data)
 	if err != nil {
-		return nil, fmt.Errorf("parse attestation %q: %w", path, err)
+		return fail(fmt.Errorf("parse attestation %q: %w", path, err))
 	}
 	if len(parsed.Envelope.Signatures) == 0 {
-		return nil, fmt.Errorf("attestation %q carries no signature: %w", path, core.ErrAttestationSignatureInvalid)
+		return fail(fmt.Errorf("attestation %q carries no signature: %w", path, core.ErrAttestationSignatureInvalid))
 	}
+	keyID = parsed.Envelope.Signatures[0].KeyID
 	anchors, err := loadTrustAnchors(ctx, cwd)
 	if err != nil {
-		return nil, fmt.Errorf("load trust anchors for attestation: %w", err)
+		return fail(fmt.Errorf("load trust anchors for attestation: %w", err))
 	}
 	pins := loadPins(ctx)
-	selector := core.KeySelector{ID: parsed.Envelope.Signatures[0].KeyID, Purpose: core.AttestationSignerRole}
+	selector := core.KeySelector{ID: keyID, Purpose: core.AttestationSignerRole}
 	key, err := core.ResolveVerificationKeyAuthoritative(ctx, anchors, selector, time.Now().UTC(), pins, trustRevocationAuthority())
 	if err != nil {
-		return nil, fmt.Errorf("resolve attestation signing key: %w", err)
+		return fail(fmt.Errorf("resolve attestation signing key: %w", err))
 	}
 	public, err := core.LoadVerificationKey(cwd, key.Anchor)
 	if err != nil {
-		return nil, fmt.Errorf("load attestation signing key: %w", err)
+		return fail(fmt.Errorf("load attestation signing key: %w", err))
 	}
 	if err := core.VerifyVerificationKeyPin(public, key.Anchor, pins); err != nil {
-		return nil, fmt.Errorf("bind attestation signing key to external pin: %w", err)
+		return fail(fmt.Errorf("bind attestation signing key to external pin: %w", err))
 	}
 	return &reconcileAttestation{
 		claim: core.ShipmentReconciledShippedAttestation{
@@ -77,6 +95,27 @@ func loadReconcileAttestation(ctx context.Context, cwd, path string) (*reconcile
 		public:  public,
 		outcome: reconcileAttestationNotEvaluated,
 	}, nil
+}
+
+// auditReconcileAttestationLoadFailure persists an attestation_rejected audit
+// event for a live run whose attestation failed to load, before any reconcile
+// work. The original load error is always returned; an audit failure is joined.
+func auditReconcileAttestationLoadFailure(ctx context.Context, cwd, shipmentID string, loadErr error) (retErr error) {
+	keyID := ""
+	var le *reconcileAttestationLoadError
+	if errors.As(loadErr, &le) {
+		keyID = le.KeyID
+	}
+	ws, err := core.NewWorkspace(ctx, cwd)
+	if err != nil {
+		return errors.Join(loadErr, fmt.Errorf("audit attestation rejection: open workspace: %w", err))
+	}
+	defer func() {
+		if cerr := ws.Close(); cerr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close workspace: %w", cerr))
+		}
+	}()
+	return core.AuditAttestationRejection(ctx, ws, shipmentID, keyID, loadErr)
 }
 
 func readReconcileAttestationFile(path string) ([]byte, error) {

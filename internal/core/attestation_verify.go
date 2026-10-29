@@ -107,21 +107,29 @@ func VerifyAttestationAudited(ctx context.Context, ws *Workspace, in Attestation
 	if err == nil {
 		return result, nil
 	}
+	return result, AuditAttestationRejection(ctx, ws, in.Expected.ShipmentID, in.Key.Anchor.ID, err)
+}
+
+// AuditAttestationRejection persists an EventAttestationRejected audit event
+// for a fail-closed attestation rejection and returns rejection, joined with
+// any audit failure so the rejection is never silently unaudited. keyID may be
+// empty when the rejection happened before a signing key was identified.
+func AuditAttestationRejection(ctx context.Context, ws *Workspace, shipmentID, keyID string, rejection error) error {
 	if ws == nil {
-		return result, errors.Join(err, errors.New("audit attestation rejection: workspace is required"))
+		return errors.Join(rejection, errors.New("audit attestation rejection: workspace is required"))
 	}
 	delta := map[string]any{
-		"key_id": in.Key.Anchor.ID,
-		"error":  err.Error(),
+		"key_id": keyID,
+		"error":  rejection.Error(),
 	}
 	var ve *AttestationVerifyError
-	if errors.As(err, &ve) {
+	if errors.As(rejection, &ve) {
 		delta["field"] = ve.Field
 	}
-	if auditErr := ws.appendShipmentEvent(ctx, in.Expected.ShipmentID, EventAttestationRejected, delta); auditErr != nil {
-		return result, errors.Join(err, fmt.Errorf("audit attestation rejection: %w", auditErr))
+	if auditErr := ws.appendShipmentEvent(ctx, shipmentID, EventAttestationRejected, delta); auditErr != nil {
+		return errors.Join(rejection, fmt.Errorf("audit attestation rejection: %w", auditErr))
 	}
-	return result, err
+	return rejection
 }
 
 // VerifyAttestation verifies an attestation fail-closed: the envelope
