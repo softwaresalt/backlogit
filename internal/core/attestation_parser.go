@@ -73,9 +73,10 @@ func ParseAttestation(data []byte) (ParsedAttestation, error) {
 	return parsed, nil
 }
 
-// attestationMemberKey maps a decoded member name to its collision key. The
-// exact-byte contract (169.010-T) compares decoded names verbatim.
-func attestationMemberKey(name string) string { return name }
+// attestationMemberKey maps a decoded member name to its collision key. It
+// reuses the shared encoding/json-equivalent fold so case-fold and
+// Unicode-escape variants of one member name collide (169.015-T).
+func attestationMemberKey(name string) string { return canonicalJSONMemberName(name) }
 
 type attestationScanFrame struct {
 	label     string
