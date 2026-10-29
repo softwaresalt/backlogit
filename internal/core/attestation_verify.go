@@ -173,14 +173,14 @@ func VerifyAttestation(in AttestationVerifyInput) (AttestationVerification, erro
 // shipment: the predicate shipment id and a subject name must both equal it.
 func attestationBindingError(st AttestationStatement, want AttestationExpectedEvidence) error {
 	if st.Predicate.ShipmentID != want.ShipmentID {
-		return fmt.Errorf("%w: predicate shipment_id %q, want %q", ErrAttestationBindingMismatch, st.Predicate.ShipmentID, want.ShipmentID)
+		return fmt.Errorf("%w: %w: predicate shipment_id %q, want %q", ErrAttestationBindingMismatch, ErrAttestationWrongShipment, st.Predicate.ShipmentID, want.ShipmentID)
 	}
 	for _, subject := range st.Subject {
 		if subject.Name == want.ShipmentID {
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: no subject names shipment %q", ErrAttestationBindingMismatch, want.ShipmentID)
+	return fmt.Errorf("%w: %w: no subject names shipment %q", ErrAttestationBindingMismatch, ErrAttestationWrongShipment, want.ShipmentID)
 }
 
 // attestationExpiryError rejects a signing key outside its validity window and
@@ -191,7 +191,7 @@ func attestationExpiryError(in AttestationVerifyInput, p AttestationPredicate) e
 		at = time.Now().UTC()
 	}
 	if err := checkAnchorWindow(&in.Key.Anchor, at); err != nil {
-		return fmt.Errorf("%w: signing key: %w", ErrAttestationExpired, err)
+		return fmt.Errorf("%w: %w: signing key: %w", ErrAttestationExpired, ErrAttestationKeyExpired, err)
 	}
 	expires, err := time.Parse(time.RFC3339, p.ExpiresAt)
 	if err != nil {

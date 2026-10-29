@@ -66,7 +66,7 @@ func (r *AttestationReverifier) Reverify(ctx context.Context, in AttestationReve
 	}
 	key, err := ResolveVerificationKeyAuthoritative(ctx, r.Anchors, KeySelector{ID: att.KeyID, Purpose: AttestationSignerRole}, in.At, r.Pins, r.Authority)
 	if err != nil {
-		return fail(err)
+		return fail(classifyAttestationKeyError(err))
 	}
 	public, err := LoadVerificationKey(r.WorkspaceRoot, key.Anchor)
 	if err != nil {
@@ -105,4 +105,17 @@ func newDoctorAttestationReverifier(ctx context.Context, ws *Workspace, opts *Do
 		}
 	}
 	return rv
+}
+
+// classifyAttestationKeyError adds the typed attestation category for a key
+// that is revoked or outside its validity window while keeping the resolver
+// error in the chain.
+func classifyAttestationKeyError(err error) error {
+	switch {
+	case errors.Is(err, ErrTrustAnchorRevoked):
+		return fmt.Errorf("%w: %w", ErrAttestationKeyRevoked, err)
+	case errors.Is(err, ErrTrustAnchorExpired), errors.Is(err, ErrTrustAnchorNotYetValid):
+		return fmt.Errorf("%w: %w", ErrAttestationKeyExpired, err)
+	}
+	return err
 }
