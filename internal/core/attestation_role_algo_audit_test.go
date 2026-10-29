@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,6 +10,13 @@ import (
 	"github.com/softwaresalt/backlogit/internal/core"
 	"github.com/softwaresalt/backlogit/internal/events"
 )
+
+func attAuditWorkspace(t *testing.T) *core.Workspace {
+	t.Helper()
+	ws := setupReconcileWorkspace(t)
+	require.NoError(t, os.MkdirAll(core.WorkspaceLogsRoot(ws.RootPath), 0o755))
+	return ws
+}
 
 func TestAttestationVerifyRoleAlgoAudit(t *testing.T) {
 	t.Run("cross-role anchor is rejected with a typed role-mismatch error", func(t *testing.T) {
@@ -35,7 +43,7 @@ func TestAttestationVerifyRoleAlgoAudit(t *testing.T) {
 	})
 
 	t.Run("fail-closed rejection persists an audit event", func(t *testing.T) {
-		ws := setupReconcileWorkspace(t)
+		ws := attAuditWorkspace(t)
 		f := newAttFixture(t)
 		st := f.statement()
 		st.Predicate.MergeSHA = "other"
@@ -54,7 +62,7 @@ func TestAttestationVerifyRoleAlgoAudit(t *testing.T) {
 	})
 
 	t.Run("successful verification persists no audit event", func(t *testing.T) {
-		ws := setupReconcileWorkspace(t)
+		ws := attAuditWorkspace(t)
 		f := newAttFixture(t)
 		_, err := core.VerifyAttestationAudited(context.Background(), ws, f.input(t, f.sign(t, f.priv, "att", "ed25519", f.statement())))
 		require.NoError(t, err)

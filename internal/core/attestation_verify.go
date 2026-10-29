@@ -90,11 +90,30 @@ type AttestationVerification struct {
 // verification fails closed (169.013-T).
 const EventAttestationRejected = "attestation_rejected"
 
-// VerifyAttestationAudited runs VerifyAttestation and persists a rejection
-// audit event on the shipment's log when verification fails closed. Not yet
-// implemented (169.013-T harness stub): no audit is persisted.
+// VerifyAttestationAudited runs VerifyAttestation and, when verification fails
+// closed, persists an EventAttestationRejected audit event on the shipment's
+// event log. The verification error is always returned; a failed audit append
+// is joined to it so the rejection is never silently unaudited.
 func VerifyAttestationAudited(ctx context.Context, ws *Workspace, in AttestationVerifyInput) (AttestationVerification, error) {
-	return VerifyAttestation(in)
+	result, err := VerifyAttestation(in)
+	if err == nil {
+		return result, nil
+	}
+	if ws == nil {
+		return result, errors.Join(err, errors.New("audit attestation rejection: workspace is required"))
+	}
+	delta := map[string]any{
+		"key_id": in.Key.Anchor.ID,
+		"error":  err.Error(),
+	}
+	var ve *AttestationVerifyError
+	if errors.As(err, &ve) {
+		delta["field"] = ve.Field
+	}
+	if auditErr := ws.appendShipmentEvent(ctx, in.Expected.ShipmentID, EventAttestationRejected, delta); auditErr != nil {
+		return result, errors.Join(err, fmt.Errorf("audit attestation rejection: %w", auditErr))
+	}
+	return result, err
 }
 
 // VerifyAttestation verifies an attestation fail-closed: the envelope
@@ -106,6 +125,17 @@ func VerifyAttestation(in AttestationVerifyInput) (AttestationVerification, erro
 	var zero AttestationVerification
 	fail := func(field string, err error) (AttestationVerification, error) {
 		return zero, &AttestationVerifyError{Field: field, Err: err}
+	}
+	if in.Key.Anchor.Role != AttestationSignerRole {
+		return fail("role", &TrustAnchorResolveError{ID: in.Key.Anchor.ID, Role: in.Key.Anchor.Role, Err: fmt.Errorf("%w: anchor role %q, want %q", ErrTrustAnchorRoleMismatch, in.Key.Anchor.Role, AttestationSignerRole)})
+	}
+	for _, sig := range in.Parsed.Envelope.Signatures {
+		if sig.KeyID != in.Key.Anchor.ID {
+			continue
+		}
+		if err := in.Key.VerifyDeclaredAlgo(sig.Algo); err != nil {
+			return fail("sig_algo", err)
+		}
 	}
 	if err := verifyAttestationSignature(in); err != nil {
 		return fail("signature", err)
