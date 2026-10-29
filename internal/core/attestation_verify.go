@@ -25,6 +25,12 @@ var (
 	// ErrAttestationEvidenceMismatch reports statement evidence fields that
 	// differ from the reconcile-computed evidence.
 	ErrAttestationEvidenceMismatch = errors.New("attestation evidence does not match reconcile evidence")
+	// ErrAttestationBindingMismatch reports a statement whose shipment
+	// binding does not match the reconcile request.
+	ErrAttestationBindingMismatch = errors.New("attestation binding does not match reconcile request")
+	// ErrAttestationExpired reports an expired or not-yet-valid signing key
+	// or an expired (or expiry-less) statement.
+	ErrAttestationExpired = errors.New("attestation or signing key expired")
 )
 
 // AttestationVerifyError is the typed fail-closed error returned by
