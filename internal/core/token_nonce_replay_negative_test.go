@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,14 +18,28 @@ import (
 // required-auth) implementations land. Only the two helpers below are rewired
 // by those tasks; the assertions are the stable contract.
 
-// newReplayNegativeLedger returns the nonce consumer under test. Pre-hardening
-// it is the in-workspace file ledger (170.003-T); 170.008-T rewires it to the
-// injected external compare-and-consume provider.
-func newReplayNegativeLedger(t *testing.T, workspaceLedgerPath string) *core.NonceLedger {
+// nonceRecorder is the consume surface the negative tests drive.
+type nonceRecorder interface {
+	Record(nonce string, notAfter time.Time) error
+}
+
+type consumerRecorder struct{ c *core.NonceConsumer }
+
+func (r consumerRecorder) Record(nonce string, notAfter time.Time) error {
+	return r.c.Consume(context.Background(), nonce, notAfter)
+}
+
+// newReplayNegativeLedger returns the nonce consumer under test, built over the
+// in-workspace projection at workspaceLedgerPath and the injected external
+// compare-and-consume provider (170.008-T). The provider outlives the
+// workspace files, so deleting or truncating them cannot re-enable replay.
+func newReplayNegativeLedger(t *testing.T, workspaceLedgerPath string, provider core.NonceConsumeProvider) nonceRecorder {
 	t.Helper()
-	ledger, err := core.OpenNonceLedger(workspaceLedgerPath)
+	projection, err := core.OpenNonceLedger(workspaceLedgerPath)
 	require.NoError(t, err)
-	return ledger
+	consumer, err := core.NewNonceConsumer(provider, projection, &memConsumeAuditor{})
+	require.NoError(t, err)
+	return consumerRecorder{c: consumer}
 }
 
 // enforcementOutcome is the decision for a live reconcile invocation.
@@ -57,14 +72,15 @@ func TestTokenNonceReplayNegative_LedgerDeletionDoesNotPermitReplay(t *testing.T
 	path := filepath.Join(t.TempDir(), "nonces.jsonl")
 	notAfter := time.Now().Add(5 * time.Minute)
 
-	ledger := newReplayNegativeLedger(t, path)
+	provider := newMemNonceProvider()
+	ledger := newReplayNegativeLedger(t, path, provider)
 	require.NoError(t, ledger.Record("00ff", notAfter))
 
 	// A workspace writer deletes the in-workspace ledger; the token is still
 	// inside its validity window.
 	require.NoError(t, os.Remove(path))
 
-	err := newReplayNegativeLedger(t, path).Record("00ff", notAfter)
+	err := newReplayNegativeLedger(t, path, provider).Record("00ff", notAfter)
 	require.ErrorIs(t, err, core.ErrNonceReplayed,
 		"deleting the in-workspace nonce ledger must not re-enable replay of a still-valid token")
 }
@@ -73,11 +89,12 @@ func TestTokenNonceReplayNegative_LedgerTruncationDoesNotPermitReplay(t *testing
 	path := filepath.Join(t.TempDir(), "nonces.jsonl")
 	notAfter := time.Now().Add(5 * time.Minute)
 
-	ledger := newReplayNegativeLedger(t, path)
+	provider := newMemNonceProvider()
+	ledger := newReplayNegativeLedger(t, path, provider)
 	require.NoError(t, ledger.Record("00ff", notAfter))
 	require.NoError(t, os.Truncate(path, 0))
 
-	err := newReplayNegativeLedger(t, path).Record("00ff", notAfter)
+	err := newReplayNegativeLedger(t, path, provider).Record("00ff", notAfter)
 	require.ErrorIs(t, err, core.ErrNonceReplayed,
 		"truncating the in-workspace nonce ledger must not re-enable replay of a still-valid token")
 }
