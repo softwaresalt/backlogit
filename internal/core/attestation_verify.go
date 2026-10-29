@@ -102,6 +102,12 @@ func VerifyAttestation(in AttestationVerifyInput) (AttestationVerification, erro
 	if err := json.Unmarshal(in.Parsed.PayloadBytes, &statement); err != nil {
 		return fail("statement", fmt.Errorf("%w: %w", ErrAttestationSignatureInvalid, err))
 	}
+	if err := attestationBindingError(statement, in.Expected); err != nil {
+		return fail("binding", err)
+	}
+	if err := attestationExpiryError(in, statement.Predicate); err != nil {
+		return fail("expiry", err)
+	}
 	if field := attestationEvidenceMismatch(statement.Predicate, in.Expected); field != "" {
 		return fail(field, ErrAttestationEvidenceMismatch)
 	}
@@ -111,6 +117,40 @@ func VerifyAttestation(in AttestationVerifyInput) (AttestationVerification, erro
 		SigAlgo:         in.Key.Algo,
 		StatementDigest: canonical.HashBytes(in.Parsed.PayloadBytes),
 	}, nil
+}
+
+// attestationBindingError checks that the statement is bound to the target
+// shipment: the predicate shipment id and a subject name must both equal it.
+func attestationBindingError(st AttestationStatement, want AttestationExpectedEvidence) error {
+	if st.Predicate.ShipmentID != want.ShipmentID {
+		return fmt.Errorf("%w: predicate shipment_id %q, want %q", ErrAttestationBindingMismatch, st.Predicate.ShipmentID, want.ShipmentID)
+	}
+	for _, subject := range st.Subject {
+		if subject.Name == want.ShipmentID {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: no subject names shipment %q", ErrAttestationBindingMismatch, want.ShipmentID)
+}
+
+// attestationExpiryError rejects a signing key outside its validity window and
+// a statement that is expired, or carries no parsable expiry (fail closed).
+func attestationExpiryError(in AttestationVerifyInput, p AttestationPredicate) error {
+	at := in.At
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	if err := checkAnchorWindow(&in.Key.Anchor, at); err != nil {
+		return fmt.Errorf("%w: signing key: %w", ErrAttestationExpired, err)
+	}
+	expires, err := time.Parse(time.RFC3339, p.ExpiresAt)
+	if err != nil {
+		return fmt.Errorf("%w: statement expires_at %q: %w", ErrAttestationExpired, p.ExpiresAt, err)
+	}
+	if at.After(expires) {
+		return fmt.Errorf("%w: statement expired at %s", ErrAttestationExpired, p.ExpiresAt)
+	}
+	return nil
 }
 
 // attestationEvidenceMismatch returns the first predicate field that differs
