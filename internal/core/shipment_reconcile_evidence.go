@@ -58,6 +58,7 @@ type shipmentReconcileEvidenceDigestInput struct {
 	ManifestDigest     string
 	ClosureContentHash string
 	EvidenceRefs       []string
+	Attestation        *ShipmentReconciledShippedAttestation
 }
 
 type shipmentReconcileDigestField struct {

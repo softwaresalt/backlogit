@@ -46,6 +46,17 @@ type ShipmentReconciledShippedEvidence struct {
 	EvidenceDigest     string   `json:"evidence_digest"`
 }
 
+// ShipmentReconciledShippedAttestation is the "attestation" sub-object of an
+// EventShipmentReconciledShipped event's delta (169.003-T). It records which
+// verified signed delivery-evidence attestation backed the repair. It is
+// omitted entirely from unsigned (#423 v1) events.
+type ShipmentReconciledShippedAttestation struct {
+	KeyID           string `json:"key_id"`
+	SignerIdentity  string `json:"signer_identity"`
+	SigAlgo         string `json:"sig_algo"`
+	StatementDigest string `json:"statement_digest"`
+}
+
 // ShipmentReconciledShippedDelta is the canonical delta payload of an
 // EventShipmentReconciledShipped event (167.002-T, U3). second_approver and
 // evidence.evidence_refs are always persisted (empty when unset) so their
@@ -55,16 +66,17 @@ type ShipmentReconciledShippedEvidence struct {
 // frontmatter-only edit of either cannot be made to agree with the durable
 // event undetected (PR #424 review, binding).
 type ShipmentReconciledShippedDelta struct {
-	Before                ShipmentReconciledShippedBefore   `json:"before"`
-	After                 ShipmentReconciledShippedAfter    `json:"after"`
-	Reason                string                            `json:"reason"`
-	Actor                 string                            `json:"actor"`
-	SecondApprover        string                            `json:"second_approver"`
-	IdempotencyKey        string                            `json:"idempotency_key"`
-	RequestIdentityDigest string                            `json:"request_identity_digest"`
-	TrustedRefName        string                            `json:"trusted_ref_name"`
-	TrustedRefTip         string                            `json:"trusted_ref_tip"`
-	Evidence              ShipmentReconciledShippedEvidence `json:"evidence"`
+	Before                ShipmentReconciledShippedBefore       `json:"before"`
+	After                 ShipmentReconciledShippedAfter        `json:"after"`
+	Reason                string                                `json:"reason"`
+	Actor                 string                                `json:"actor"`
+	SecondApprover        string                                `json:"second_approver"`
+	IdempotencyKey        string                                `json:"idempotency_key"`
+	RequestIdentityDigest string                                `json:"request_identity_digest"`
+	TrustedRefName        string                                `json:"trusted_ref_name"`
+	TrustedRefTip         string                                `json:"trusted_ref_tip"`
+	Evidence              ShipmentReconciledShippedEvidence     `json:"evidence"`
+	Attestation           *ShipmentReconciledShippedAttestation `json:"attestation,omitempty"`
 }
 
 // ShipmentReconciledShippedEventDigest returns the sha256 hex digest of the

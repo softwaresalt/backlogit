@@ -52,6 +52,11 @@ type ShipmentShippedReconcileRequest struct {
 	ClosureEvidence string
 	EvidenceRefs    []string
 	DryRun          bool
+	// Attestation, when non-nil, carries the verified delivery-evidence
+	// attestation binding (169.003-T). It is recorded in the audit event and
+	// folded into the evidence and event digests, but never into the
+	// request identity digest.
+	Attestation *ShipmentReconciledShippedAttestation
 }
 
 // ShipmentShippedReconcileResult is the outcome of a governed shipment
@@ -68,7 +73,7 @@ type ShipmentShippedReconcileResult struct {
 // U1 transaction (167.008-T). See shipment_reconcile_classifier.go for the
 // implementation landed by 167.010-T. shipmentID binds every event this
 // classifier accepts to the shipment actually being classified.
-func classifyShipmentReconcileState(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string) (ShipmentReconcileOutcome, error) {
+func classifyShipmentReconcileState(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string, reqAttestation ...*ShipmentReconciledShippedAttestation) (ShipmentReconcileOutcome, error) {
 	return classifyShipmentReconcileStateImpl(log, frontmatter, reqIdempotencyKey, reqRequestIdentityDigest, shipmentID)
 }
 

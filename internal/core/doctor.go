@@ -897,6 +897,25 @@ func reconciledShippedEventPresence(logsDir, id string) (present bool, readable 
 	return false, true
 }
 
+// reconciledShippedEventKind classifies the governed reconcile event found in
+// an item log (169.003-T doctor-LOCAL branch).
+type reconciledShippedEventKind int
+
+const (
+	// reconciledShippedAbsent means no fully-valid reconcile event names the item.
+	reconciledShippedAbsent reconciledShippedEventKind = iota
+	// reconciledShippedUnsigned is a valid #423 v1 reconcile event without attestation.
+	reconciledShippedUnsigned
+	// reconciledShippedSigned is a valid reconcile event carrying an attestation.
+	reconciledShippedSigned
+)
+
+// classifyReconciledShippedEvent distinguishes a signed from an unsigned
+// governed reconcile. Not yet implemented (169.003-T harness stub).
+func classifyReconciledShippedEvent(logsDir, id string) (kind reconciledShippedEventKind, readable bool) {
+	return reconciledShippedAbsent, true
+}
+
 // shippedEventPresence reports whether the item JSONL for id carries a
 // shipment_status_changed event with status == "shipped", and whether the log
 // could be read at all.
