@@ -40,6 +40,9 @@ func (e *NonceLedgerError) Unwrap() error { return e.Err }
 type nonceLedgerRecord struct {
 	Nonce    string    `json:"nonce"`
 	NotAfter time.Time `json:"not_after"`
+	// RequestIdentityDigest is the request-identity digest the nonce was
+	// consumed against; empty for an unbound consume.
+	RequestIdentityDigest string `json:"request_identity_digest,omitempty"`
 }
 
 // NonceLedger is the durable append-then-fsync record of consumed nonces.
@@ -63,6 +66,12 @@ func OpenNonceLedger(path string) (*NonceLedger, error) {
 // Record appends nonce to the ledger and fsyncs it. A nonce that is already
 // recorded fails closed with ErrNonceReplayed.
 func (l *NonceLedger) Record(nonce string, notAfter time.Time) error {
+	return l.RecordBound(nonce, notAfter, "")
+}
+
+// RecordBound is Record that also persists the request-identity digest the
+// nonce was consumed against.
+func (l *NonceLedger) RecordBound(nonce string, notAfter time.Time, requestIdentityDigest string) error {
 	if nonce == "" {
 		return &NonceLedgerError{Err: ErrNonceInvalid}
 	}
@@ -77,7 +86,7 @@ func (l *NonceLedger) Record(nonce string, notAfter time.Time) error {
 			return &NonceLedgerError{Nonce: nonce, Err: ErrNonceReplayed}
 		}
 	}
-	line, err := json.Marshal(nonceLedgerRecord{Nonce: nonce, NotAfter: notAfter.UTC()})
+	line, err := json.Marshal(nonceLedgerRecord{Nonce: nonce, NotAfter: notAfter.UTC(), RequestIdentityDigest: requestIdentityDigest})
 	if err != nil {
 		return fmt.Errorf("encode nonce record: %w", err)
 	}
@@ -113,6 +122,23 @@ func (l *NonceLedger) Contains(nonce string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// BoundDigest returns the request-identity digest nonce was consumed against
+// and whether nonce is recorded at all. An unbound record yields "".
+func (l *NonceLedger) BoundDigest(nonce string) (digest string, found bool, err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	records, err := l.load()
+	if err != nil {
+		return "", false, err
+	}
+	for _, r := range records {
+		if r.Nonce == nonce {
+			return r.RequestIdentityDigest, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 // Prune removes records whose not_after is before now and returns how many

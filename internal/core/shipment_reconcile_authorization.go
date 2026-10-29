@@ -112,7 +112,7 @@ func AuthorizeApproval(ctx context.Context, auth ReconcileAuthorization, shipmen
 	if auth.Nonces == nil {
 		return "", fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrNonceProviderUnavailable)
 	}
-	if err := auth.Nonces.Consume(ctx, auth.Token.Claims.Nonce, auth.Token.Claims.NotAfter); err != nil {
+	if err := auth.Nonces.ConsumeBound(ctx, auth.Token.Claims.Nonce, auth.Token.Claims.NotAfter, requestIdentityDigest); err != nil {
 		return "", rejectApproval(fmt.Errorf("consume nonce: %w", err))
 	}
 	return AuthorizationOutcomeConsumed, nil
@@ -151,11 +151,14 @@ func verifyApprovalToken(auth ReconcileAuthorization, shipmentID, requestIdentit
 // authorizeReconcileResume is the authenticated-approval gate for the
 // resume-append branch, where the prepared event is already persisted. Under
 // authenticated enforcement the token must verify, and the prepared event must
-// record the same approver (key id and nonce) as the token: the gate that
-// wrote the prepared event already consumed that nonce, so a replay of the
-// same nonce for the same prepared approver is not re-rejected. Any other
-// approver, or none, fails closed before any nonce is consumed.
-func authorizeReconcileResume(ctx context.Context, req ShipmentShippedReconcileRequest, shipmentID, requestIdentityDigest string, prepared *ShipmentReconciledShippedApprover) (string, error) {
+// record the same approver (key id and nonce) as the token. Because the
+// prepared event is workspace-controlled, its own request fields are re-derived
+// into a request-identity digest that must equal BOTH the token's binding
+// digest and the digest of the current request. The gate that wrote the
+// prepared event already consumed the nonce, so a replayed nonce is tolerated
+// only when the nonce projection proves it was consumed against that exact
+// digest. Anything else fails closed before any append.
+func authorizeReconcileResume(ctx context.Context, req ShipmentShippedReconcileRequest, shipmentID string, prepared *ShipmentReconciledShippedDelta) (string, error) {
 	switch req.AuthEnforcement {
 	case "", AuthEnforcementConfirmation:
 		return AuthorizationOutcomeNotRequired, nil
@@ -167,11 +170,29 @@ func authorizeReconcileResume(ctx context.Context, req ShipmentShippedReconcileR
 	if auth == nil {
 		return "", ErrAuthorizationRequired
 	}
+	requestIdentityDigest, err := shipmentReconcileRequestIdentityDigest(req)
+	if err != nil {
+		return "", fmt.Errorf("%w: derive request identity digest: %w", ErrAuthorizationRejected, err)
+	}
 	if err := verifyApprovalToken(*auth, shipmentID, requestIdentityDigest, req.DryRun); err != nil {
 		return "", err
 	}
-	if prepared == nil || prepared.KeyID != auth.Token.Header.KeyID || prepared.Nonce != auth.Token.Claims.Nonce {
+	if prepared == nil || prepared.Approver == nil ||
+		prepared.Approver.KeyID != auth.Token.Header.KeyID || prepared.Approver.Nonce != auth.Token.Claims.Nonce {
 		return "", fmt.Errorf("%w: prepared event approver does not match the supplied token", ErrAuthorizationRejected)
+	}
+	preparedDigest := shipmentReconcileRequestIdentityDigestForNormalized(shipmentReconcileNormalizedRequest{
+		ShipmentID:      shipmentID,
+		Reason:          prepared.Reason,
+		Actor:           prepared.Actor,
+		SecondApprover:  prepared.SecondApprover,
+		IdempotencyKey:  prepared.IdempotencyKey,
+		MergeSHA:        prepared.Evidence.MergeSHA,
+		ClosureEvidence: prepared.Evidence.ClosureEvidence,
+		EvidenceRefs:    prepared.Evidence.EvidenceRefs,
+	})
+	if preparedDigest != auth.Token.Binding.RequestIdentityDigest || preparedDigest != requestIdentityDigest {
+		return "", fmt.Errorf("%w: prepared event request fields do not match the signed request", ErrAuthorizationRejected)
 	}
 	if req.DryRun {
 		return AuthorizationOutcomeVerified, nil
@@ -179,7 +200,18 @@ func authorizeReconcileResume(ctx context.Context, req ShipmentShippedReconcileR
 	if auth.Nonces == nil {
 		return "", fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrNonceProviderUnavailable)
 	}
-	if err := auth.Nonces.Consume(ctx, auth.Token.Claims.Nonce, auth.Token.Claims.NotAfter); err != nil && !errors.Is(err, ErrNonceReplayed) {
+	err = auth.Nonces.ConsumeBound(ctx, auth.Token.Claims.Nonce, auth.Token.Claims.NotAfter, requestIdentityDigest)
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrNonceReplayed):
+		bound, berr := auth.Nonces.ConsumedBinding(auth.Token.Claims.Nonce)
+		if berr != nil {
+			return "", rejectApproval(fmt.Errorf("read consumed nonce binding: %w", berr))
+		}
+		if bound == "" || bound != preparedDigest {
+			return "", fmt.Errorf("%w: consumed nonce binding to the request identity is not provable", ErrAuthorizationRejected)
+		}
+	default:
 		return "", rejectApproval(fmt.Errorf("consume nonce: %w", err))
 	}
 	return AuthorizationOutcomeConsumed, nil

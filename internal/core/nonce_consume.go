@@ -36,6 +36,9 @@ type NonceConsumeEvent struct {
 	NotAfter time.Time
 	// ConsumedAt is the consume time.
 	ConsumedAt time.Time
+	// RequestIdentityDigest is the request-identity digest the nonce was
+	// consumed against; empty for an unbound consume.
+	RequestIdentityDigest string
 }
 
 // NonceConsumeAuditor persists consume audit events.
@@ -94,6 +97,26 @@ func NewNonceConsumer(provider NonceConsumeProvider, projection *NonceLedger, au
 // consume succeeded but the audit or projection write failed. A successful
 // consume is never rolled back.
 func (c *NonceConsumer) Consume(ctx context.Context, nonce string, notAfter time.Time) error {
+	return c.ConsumeBound(ctx, nonce, notAfter, "")
+}
+
+// ConsumedBinding returns the request-identity digest the projection records
+// for nonce. An absent record or an unbound consume yields an empty digest,
+// which callers must treat as unprovable (fail closed).
+func (c *NonceConsumer) ConsumedBinding(nonce string) (string, error) {
+	digest, found, err := c.projection.BoundDigest(nonce)
+	if err != nil {
+		return "", fmt.Errorf("read nonce binding: %w", err)
+	}
+	if !found {
+		return "", nil
+	}
+	return digest, nil
+}
+
+// ConsumeBound is Consume that records requestIdentityDigest, the digest the
+// nonce is consumed against, in the projection and the consume audit.
+func (c *NonceConsumer) ConsumeBound(ctx context.Context, nonce string, notAfter time.Time, requestIdentityDigest string) error {
 	if nonce == "" {
 		return &NonceLedgerError{Err: ErrNonceInvalid}
 	}
@@ -104,10 +127,10 @@ func (c *NonceConsumer) Consume(ctx context.Context, nonce string, notAfter time
 		return &NonceLedgerError{Nonce: nonce, Err: fmt.Errorf("%w: %w", ErrNonceProviderUnavailable, err)}
 	}
 	// From here the nonce is definitively consumed; failures never undo it.
-	if err := c.projection.Record(nonce, notAfter); err != nil && !errors.Is(err, ErrNonceReplayed) {
+	if err := c.projection.RecordBound(nonce, notAfter, requestIdentityDigest); err != nil && !errors.Is(err, ErrNonceReplayed) {
 		return &NonceConsumeIndeterminateError{Nonce: nonce, Cause: fmt.Errorf("projection: %w", err)}
 	}
-	ev := NonceConsumeEvent{Nonce: nonce, NotAfter: notAfter.UTC(), ConsumedAt: c.now().UTC()}
+	ev := NonceConsumeEvent{Nonce: nonce, NotAfter: notAfter.UTC(), ConsumedAt: c.now().UTC(), RequestIdentityDigest: requestIdentityDigest}
 	if err := c.auditor.RecordNonceConsume(ev); err != nil {
 		return &NonceConsumeIndeterminateError{Nonce: nonce, Cause: fmt.Errorf("audit: %w", err)}
 	}

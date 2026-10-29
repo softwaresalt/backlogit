@@ -280,8 +280,11 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 		}
 		// Authenticated-approval gate for the resume-append branch: the
 		// prepared event must not be appended without valid authorization.
-		authOutcome, authErr := authorizeReconcileResume(ctx, req, shipmentID, persisted.requestIdentityDigest.value, delta.Approver)
+		authOutcome, authErr := authorizeReconcileResume(ctx, req, shipmentID, &delta)
 		if authErr != nil {
+			if errors.Is(authErr, ErrNonceConsumeIndeterminate) {
+				result.Outcome = ShipmentReconcileOutcomeIndeterminate
+			}
 			return result, fmt.Errorf("reconcile shipment to shipped: shipment %s resume authorization: %w", shipmentID, authErr)
 		}
 		result.Authorization = authOutcome
@@ -407,6 +410,9 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 	// run verifies but never consumes the nonce.
 	authOutcome, authErr := enforceReconcileAuthorization(ctxCB, req, shipmentID, requestIdentityDigest, dryRun)
 	if authErr != nil {
+		if errors.Is(authErr, ErrNonceConsumeIndeterminate) {
+			result.Outcome = ShipmentReconcileOutcomeIndeterminate
+		}
 		return result, fmt.Errorf("reconcile shipment to shipped: shipment %s authorization: %w", shipmentID, authErr)
 	}
 	result.Authorization = authOutcome

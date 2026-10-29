@@ -2,7 +2,10 @@ package core
 
 import (
 	"context"
+	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,10 +21,106 @@ import (
 func resumeAuthFixture(t *testing.T, f authSeamFixture, approver *ShipmentReconciledShippedApprover) map[string]any {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(WorkspaceLogsRoot(f.ws.RootPath), 0o755))
+	return f.resumeFixtureMutated(t, approver, nil)
+}
+
+// resumeFixtureMutated is resumeAuthFixture whose prepared event request
+// fields mirror the fixture request, with mutate applied afterwards (a forged
+// prepared event).
+func (f authSeamFixture) resumeFixtureMutated(t *testing.T, approver *ShipmentReconciledShippedApprover, mutate func(*ShipmentReconciledShippedDelta)) map[string]any {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(WorkspaceLogsRoot(f.ws.RootPath), 0o755))
 	raw := classifierEvent(t, f.shipmentID, f.req.IdempotencyKey, f.digest, func(d *ShipmentReconciledShippedDelta) {
 		d.Approver = approver
+		d.Reason = f.req.Reason
+		d.Actor = f.req.Actor
+		d.SecondApprover = f.req.SecondApprover
+		d.Evidence.MergeSHA = strings.ToLower(f.req.MergeSHA)
+		d.Evidence.ClosureEvidence = f.req.ClosureEvidence
+		d.Evidence.EvidenceRefs = append([]string{}, f.req.EvidenceRefs...)
+		if mutate != nil {
+			mutate(d)
+		}
 	})
 	return classifierFrontmatter("shipped", f.req.IdempotencyKey, f.digest, raw, ShipmentReconciledShippedEventDigest(raw))
+}
+
+type failingConsumeAuditor struct{}
+
+func (failingConsumeAuditor) RecordNonceConsume(NonceConsumeEvent) error {
+	return errors.New("audit sink down")
+}
+
+// withFailingAudit returns req whose nonce consumer consumes at the provider
+// but fails the consume audit (indeterminate).
+func (f authSeamFixture) withFailingAudit(t *testing.T, req ShipmentShippedReconcileRequest) ShipmentShippedReconcileRequest {
+	t.Helper()
+	projection, err := OpenNonceLedger(filepath.Join(t.TempDir(), "nonces-fail.jsonl"))
+	require.NoError(t, err)
+	consumer, err := NewNonceConsumer(f.provider, projection, failingConsumeAuditor{})
+	require.NoError(t, err)
+	auth := *req.Authorization
+	auth.Nonces = consumer
+	req.Authorization = &auth
+	return req
+}
+
+func TestReconcileResumeForgedPreparedEvent(t *testing.T) {
+	ctx := context.Background()
+	approver := &ShipmentReconciledShippedApprover{KeyID: "op-1", Algo: "ed25519", Nonce: "0f01"}
+	forgeries := map[string]func(*ShipmentReconciledShippedDelta){
+		"reason":          func(d *ShipmentReconciledShippedDelta) { d.Reason = "forged reason" },
+		"actor":           func(d *ShipmentReconciledShippedDelta) { d.Actor = "mallory" },
+		"merge sha":       func(d *ShipmentReconciledShippedDelta) { d.Evidence.MergeSHA = strings.Repeat("a", 40) },
+		"closure path":    func(d *ShipmentReconciledShippedDelta) { d.Evidence.ClosureEvidence = "docs/other.md" },
+		"idempotency key": func(d *ShipmentReconciledShippedDelta) { d.IdempotencyKey = "forged-key" },
+	}
+	for name, mutate := range forgeries {
+		t.Run("consumed token with forged prepared "+name+" is rejected", func(t *testing.T) {
+			f := newAuthSeamFixture(t)
+			fm := f.resumeFixtureMutated(t, approver, mutate)
+			require.NoError(t, f.nonces.ConsumeBound(ctx, "0f01", time.Now().Add(time.Hour), f.digest))
+			req := f.authorized(f.token(f.shipmentID, f.digest, "0f01"))
+			_, err := reconcileShipmentPhaseBNoOp(ctx, f.ws, req, f.shipmentID, fm, nil, ShipmentShippedReconcileResult{})
+			require.ErrorIs(t, err, ErrAuthorizationRejected)
+			assert.Empty(t, f.resumeLogged(t))
+		})
+	}
+}
+
+func TestReconcileResumeConsumedNonceBinding(t *testing.T) {
+	ctx := context.Background()
+	approver := &ShipmentReconciledShippedApprover{KeyID: "op-1", Algo: "ed25519", Nonce: "0f21"}
+	for name, digest := range map[string]string{"unbound consume": "", "consumed against another digest": "deadbeef"} {
+		t.Run(name+" is rejected on resume", func(t *testing.T) {
+			f := newAuthSeamFixture(t)
+			fm := resumeAuthFixture(t, f, approver)
+			require.NoError(t, f.nonces.ConsumeBound(ctx, "0f21", time.Now().Add(time.Hour), digest))
+			req := f.authorized(f.token(f.shipmentID, f.digest, "0f21"))
+			_, err := reconcileShipmentPhaseBNoOp(ctx, f.ws, req, f.shipmentID, fm, nil, ShipmentShippedReconcileResult{})
+			require.ErrorIs(t, err, ErrAuthorizationRejected)
+			assert.Empty(t, f.resumeLogged(t))
+		})
+	}
+}
+
+func TestReconcileIndeterminateNonceConsumeOutcome(t *testing.T) {
+	ctx := context.Background()
+	t.Run("main gate reports the indeterminate outcome", func(t *testing.T) {
+		f := newAuthSeamFixture(t)
+		req := f.withFailingAudit(t, f.authorized(f.token(f.shipmentID, f.digest, "0f11")))
+		res, err := ReconcileShipmentToShipped(ctx, f.ws, req)
+		require.ErrorIs(t, err, ErrNonceConsumeIndeterminate)
+		assert.Equal(t, ShipmentReconcileOutcomeIndeterminate, res.Outcome)
+	})
+	t.Run("resume path reports the indeterminate outcome", func(t *testing.T) {
+		f := newAuthSeamFixture(t)
+		fm := resumeAuthFixture(t, f, &ShipmentReconciledShippedApprover{KeyID: "op-1", Algo: "ed25519", Nonce: "0f12"})
+		req := f.withFailingAudit(t, f.authorized(f.token(f.shipmentID, f.digest, "0f12")))
+		res, err := reconcileShipmentPhaseBNoOp(ctx, f.ws, req, f.shipmentID, fm, nil, ShipmentShippedReconcileResult{})
+		require.ErrorIs(t, err, ErrNonceConsumeIndeterminate)
+		assert.Equal(t, ShipmentReconcileOutcomeIndeterminate, res.Outcome)
+	})
 }
 
 func (f authSeamFixture) resumeLogged(t *testing.T) []events.Event {
@@ -96,7 +195,7 @@ func TestReconcileResumeAuthorization(t *testing.T) {
 	t.Run("live: nonce already consumed for the same prepared approver resumes", func(t *testing.T) {
 		f := newAuthSeamFixture(t)
 		fm := resumeAuthFixture(t, f, approverFor("00ff"))
-		require.NoError(t, f.provider.CompareAndConsumeNonce(ctx, "00ff", time.Now().Add(time.Hour)))
+		require.NoError(t, f.nonces.ConsumeBound(ctx, "00ff", time.Now().Add(time.Hour), f.digest))
 		req := f.authorized(f.token(f.shipmentID, f.digest, "00ff"))
 		res, err := reconcileShipmentPhaseBNoOp(ctx, f.ws, req, f.shipmentID, fm, nil, ShipmentShippedReconcileResult{})
 		require.NoError(t, err)
