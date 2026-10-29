@@ -58,6 +58,7 @@ type shipmentReconcileEvidenceDigestInput struct {
 	ManifestDigest     string
 	ClosureContentHash string
 	EvidenceRefs       []string
+	Attestation        *ShipmentReconciledShippedAttestation
 }
 
 type shipmentReconcileDigestField struct {
@@ -147,8 +148,7 @@ func shipmentReconcileRequestIdentityDigestForNormalized(req shipmentReconcileNo
 }
 
 func shipmentReconcileEvidenceDigest(input shipmentReconcileEvidenceDigestInput) string {
-	return shipmentReconcileDigestHex(
-		shipmentReconcileEvidenceDigestDomain,
+	fields := []shipmentReconcileDigestField{
 		shipmentReconcileScalarField("shipment_id", input.ShipmentID),
 		shipmentReconcileScalarField("merge_sha", input.MergeSHA),
 		shipmentReconcileScalarField("trusted_ref_name", input.TrustedRefName),
@@ -156,7 +156,19 @@ func shipmentReconcileEvidenceDigest(input shipmentReconcileEvidenceDigestInput)
 		shipmentReconcileScalarField("manifest_digest", input.ManifestDigest),
 		shipmentReconcileScalarField("closure_content_hash", input.ClosureContentHash),
 		shipmentReconcileListField("evidence_refs", input.EvidenceRefs),
-	)
+	}
+	// Attestation fields are appended only when present so unsigned (#423 v1)
+	// evidence digests are unchanged (169.003-T).
+	if att := input.Attestation; att != nil {
+		fields = append(fields,
+			shipmentReconcileScalarField("attestation_key_id", att.KeyID),
+			shipmentReconcileScalarField("attestation_signer_identity", att.SignerIdentity),
+			shipmentReconcileScalarField("attestation_sig_algo", att.SigAlgo),
+			shipmentReconcileScalarField("attestation_statement_digest", att.StatementDigest),
+			shipmentReconcileScalarField("attestation_envelope_digest", canonical.HashBytes([]byte(att.Envelope))),
+		)
+	}
+	return shipmentReconcileDigestHex(shipmentReconcileEvidenceDigestDomain, fields...)
 }
 
 // prepareShipmentReconcileEvidence performs 167.001-T's Phase-C evidence work
@@ -182,6 +194,14 @@ func prepareShipmentReconcileEvidence(ctx context.Context, ws *Workspace, req Sh
 	normalizedInput, err := normalizeShipmentReconcileEvidenceInput(input)
 	if err != nil {
 		return zero, err
+	}
+	if err := validateShipmentReconciledShippedAttestation(req.Attestation); err != nil {
+		return zero, err
+	}
+	var attestation *ShipmentReconciledShippedAttestation
+	if req.Attestation != nil {
+		copied := *req.Attestation
+		attestation = &copied
 	}
 	requestIdentityDigest := shipmentReconcileRequestIdentityDigestForNormalized(normalizedReq)
 
@@ -210,6 +230,17 @@ func prepareShipmentReconcileEvidence(ctx context.Context, ws *Workspace, req Sh
 	if err != nil {
 		return zero, err
 	}
+	if req.AttestationVerifier != nil {
+		expected := AttestationExpectedEvidence{
+			ShipmentID:         normalizedReq.ShipmentID,
+			MergeSHA:           normalizedReq.MergeSHA,
+			ManifestDigest:     normalizedInput.ManifestDigest,
+			ClosureContentHash: closureContentHash,
+		}
+		if err := req.verifyAttestation(ctx, expected); err != nil {
+			return zero, shipmentReconcileEvidenceWrap(err, "prepare shipment reconcile evidence: verify attestation")
+		}
+	}
 	evidenceDigest := shipmentReconcileEvidenceDigest(shipmentReconcileEvidenceDigestInput{
 		ShipmentID:         normalizedReq.ShipmentID,
 		MergeSHA:           normalizedReq.MergeSHA,
@@ -218,6 +249,7 @@ func prepareShipmentReconcileEvidence(ctx context.Context, ws *Workspace, req Sh
 		ManifestDigest:     normalizedInput.ManifestDigest,
 		ClosureContentHash: closureContentHash,
 		EvidenceRefs:       persistedEvidenceRefs,
+		Attestation:        attestation,
 	})
 
 	delta := ShipmentReconciledShippedDelta{
@@ -242,6 +274,7 @@ func prepareShipmentReconcileEvidence(ctx context.Context, ws *Workspace, req Sh
 			EvidenceRefs:       slices.Clone(persistedEvidenceRefs),
 			EvidenceDigest:     evidenceDigest,
 		},
+		Attestation: attestation,
 	}
 	deltaMap, err := marshalShipmentReconciledShippedDelta(delta)
 	if err != nil {

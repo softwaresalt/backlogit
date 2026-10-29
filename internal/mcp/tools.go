@@ -2406,6 +2406,7 @@ func (s *Server) handleDoctor(ctx context.Context, request mcplib.CallToolReques
 		CheckPartialMutations:         checkPartialMutations,
 		CheckWorkspaceRootConflict:    checkWorkspaceRootConflict,
 		CheckShippedEventCompleteness: checkShippedEventCompleteness,
+		AttestationPins:               s.AttestationPins,
 		FixOrphans:                    fixOrphans,
 	}
 	report, err := core.Doctor(ctx, ws, opts)

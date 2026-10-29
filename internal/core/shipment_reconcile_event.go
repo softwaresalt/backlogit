@@ -19,6 +19,10 @@ import (
 // (167.002-T, U3).
 const EventShipmentReconciledShipped = "shipment_reconciled_shipped"
 
+// maxShipmentReconcileEventBytes bounds one serialized event line below the
+// 1 MiB line cap the event log readers enforce.
+const maxShipmentReconcileEventBytes = 1 << 20
+
 // ShipmentReconciledShippedBefore is the "before" sub-object of an
 // EventShipmentReconciledShipped event's delta (167.002-T).
 type ShipmentReconciledShippedBefore struct {
@@ -46,6 +50,21 @@ type ShipmentReconciledShippedEvidence struct {
 	EvidenceDigest     string   `json:"evidence_digest"`
 }
 
+// ShipmentReconciledShippedAttestation is the "attestation" sub-object of an
+// EventShipmentReconciledShipped event's delta (169.003-T). It records which
+// verified signed delivery-evidence attestation backed the repair. It is
+// omitted entirely from unsigned (#423 v1) events.
+type ShipmentReconciledShippedAttestation struct {
+	KeyID           string `json:"key_id"`
+	SignerIdentity  string `json:"signer_identity"`
+	SigAlgo         string `json:"sig_algo"`
+	StatementDigest string `json:"statement_digest"`
+	// Envelope is the durable signed attestation envelope (raw JSON) that
+	// doctor and auditors re-verify offline against the external root of trust
+	// (169.007-T).
+	Envelope string `json:"envelope,omitempty"`
+}
+
 // ShipmentReconciledShippedDelta is the canonical delta payload of an
 // EventShipmentReconciledShipped event (167.002-T, U3). second_approver and
 // evidence.evidence_refs are always persisted (empty when unset) so their
@@ -55,16 +74,17 @@ type ShipmentReconciledShippedEvidence struct {
 // frontmatter-only edit of either cannot be made to agree with the durable
 // event undetected (PR #424 review, binding).
 type ShipmentReconciledShippedDelta struct {
-	Before                ShipmentReconciledShippedBefore   `json:"before"`
-	After                 ShipmentReconciledShippedAfter    `json:"after"`
-	Reason                string                            `json:"reason"`
-	Actor                 string                            `json:"actor"`
-	SecondApprover        string                            `json:"second_approver"`
-	IdempotencyKey        string                            `json:"idempotency_key"`
-	RequestIdentityDigest string                            `json:"request_identity_digest"`
-	TrustedRefName        string                            `json:"trusted_ref_name"`
-	TrustedRefTip         string                            `json:"trusted_ref_tip"`
-	Evidence              ShipmentReconciledShippedEvidence `json:"evidence"`
+	Before                ShipmentReconciledShippedBefore       `json:"before"`
+	After                 ShipmentReconciledShippedAfter        `json:"after"`
+	Reason                string                                `json:"reason"`
+	Actor                 string                                `json:"actor"`
+	SecondApprover        string                                `json:"second_approver"`
+	IdempotencyKey        string                                `json:"idempotency_key"`
+	RequestIdentityDigest string                                `json:"request_identity_digest"`
+	TrustedRefName        string                                `json:"trusted_ref_name"`
+	TrustedRefTip         string                                `json:"trusted_ref_tip"`
+	Evidence              ShipmentReconciledShippedEvidence     `json:"evidence"`
+	Attestation           *ShipmentReconciledShippedAttestation `json:"attestation,omitempty"`
 }
 
 // ShipmentReconciledShippedEventDigest returns the sha256 hex digest of the
@@ -112,6 +132,9 @@ func ShipmentReconciledShippedEventDigest(eventBytes []byte) string {
 func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventBytes []byte, expectedDigest string, expectedShipmentID string) error {
 	if len(rawEventBytes) == 0 || len(bytes.TrimSpace(rawEventBytes)) == 0 {
 		return fmt.Errorf("%w: event bytes are empty", blerrors.ErrValidation)
+	}
+	if len(rawEventBytes) >= maxShipmentReconcileEventBytes {
+		return fmt.Errorf("%w: event is %d bytes, must be under %d so the item log stays readable", blerrors.ErrValidation, len(rawEventBytes), maxShipmentReconcileEventBytes)
 	}
 	if !bytes.HasSuffix(rawEventBytes, []byte("\n")) {
 		return fmt.Errorf("%w: event bytes are not newline-terminated", blerrors.ErrValidation)
@@ -196,6 +219,10 @@ func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventB
 		return fmt.Errorf("%w: delta.evidence.evidence_digest is required", blerrors.ErrValidation)
 	}
 
+	if err := validateShipmentReconciledShippedAttestation(delta.Attestation); err != nil {
+		return err
+	}
+
 	if len(preparedEventBytes) == 0 && expectedDigest == "" {
 		return nil
 	}
@@ -206,6 +233,26 @@ func ValidateShipmentReconciledShippedEvent(rawEventBytes []byte, preparedEventB
 	}
 	if gotDigest := ShipmentReconciledShippedEventDigest(rawEventBytes); gotDigest != expectedDigest {
 		return fmt.Errorf("%w: event digest mismatch: got %s want %s", blerrors.ErrValidation, gotDigest, expectedDigest)
+	}
+	return nil
+}
+
+// validateShipmentReconciledShippedAttestation requires a present attestation
+// to be complete. A nil attestation is the valid unsigned (#423 v1) shape.
+func validateShipmentReconciledShippedAttestation(att *ShipmentReconciledShippedAttestation) error {
+	if att == nil {
+		return nil
+	}
+	for _, field := range []struct{ name, value string }{
+		{"key_id", att.KeyID},
+		{"signer_identity", att.SignerIdentity},
+		{"sig_algo", att.SigAlgo},
+		{"statement_digest", att.StatementDigest},
+		{"envelope", att.Envelope},
+	} {
+		if field.value == "" {
+			return fmt.Errorf("%w: delta.attestation.%s is required when attestation is present", blerrors.ErrValidation, field.name)
+		}
 	}
 	return nil
 }

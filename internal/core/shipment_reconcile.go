@@ -52,6 +52,22 @@ type ShipmentShippedReconcileRequest struct {
 	ClosureEvidence string
 	EvidenceRefs    []string
 	DryRun          bool
+	// Attestation, when non-nil, carries the verified delivery-evidence
+	// attestation binding (169.003-T). It is recorded in the audit event and
+	// folded into the evidence and event digests, but never into the
+	// request identity digest.
+	Attestation *ShipmentReconciledShippedAttestation
+	// AttestationVerifier, when non-nil, is invoked during evidence
+	// preparation (169.004-T) with the reconcile-computed evidence and must
+	// verify the attestation fail-closed; a returned error aborts the
+	// reconciliation before any write.
+	AttestationVerifier func(expected AttestationExpectedEvidence) error
+	// AttestationRejectionAuditor, when non-nil, is invoked with the context
+	// that holds any active item-log lock whenever AttestationVerifier fails
+	// on a live run, so the rejection audit can reuse that lock instead of
+	// contending for it. It returns the rejection, joined with any audit
+	// failure. A dry run never invokes it.
+	AttestationRejectionAuditor func(ctx context.Context, rejection error) error
 }
 
 // ShipmentShippedReconcileResult is the outcome of a governed shipment
@@ -68,8 +84,8 @@ type ShipmentShippedReconcileResult struct {
 // U1 transaction (167.008-T). See shipment_reconcile_classifier.go for the
 // implementation landed by 167.010-T. shipmentID binds every event this
 // classifier accepts to the shipment actually being classified.
-func classifyShipmentReconcileState(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string) (ShipmentReconcileOutcome, error) {
-	return classifyShipmentReconcileStateImpl(log, frontmatter, reqIdempotencyKey, reqRequestIdentityDigest, shipmentID)
+func classifyShipmentReconcileState(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string, reqAttestation ...*ShipmentReconciledShippedAttestation) (ShipmentReconcileOutcome, error) {
+	return classifyShipmentReconcileStateImpl(log, frontmatter, reqIdempotencyKey, reqRequestIdentityDigest, shipmentID, reqAttestation...)
 }
 
 // ReconcileShipmentToShipped is the governed two-phase reconciliation

@@ -49,7 +49,7 @@ type shipmentReconcileLoggedEvent struct {
 // prepared-event) to the shipment actually being classified (PR #440 review,
 // 167.010-T): without it, a misplaced/forged event naming a DIFFERENT
 // shipment could otherwise be classified as evidence for this one.
-func classifyShipmentReconcileStateImpl(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string) (ShipmentReconcileOutcome, error) {
+func classifyShipmentReconcileStateImpl(log []byte, frontmatter map[string]any, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string, reqAttestation ...*ShipmentReconciledShippedAttestation) (ShipmentReconcileOutcome, error) {
 	persisted, err := parseShipmentReconcilePersistedState(frontmatter)
 	if err != nil {
 		return ShipmentReconcileOutcomeIndeterminate, err
@@ -83,12 +83,12 @@ func classifyShipmentReconcileStateImpl(log []byte, frontmatter map[string]any, 
 		return ShipmentReconcileOutcomeConflict, nil
 	}
 	if len(loggedEvents) > 0 {
-		return classifyShipmentReconcileEventPresent(loggedEvents, persisted, reqIdempotencyKey, reqRequestIdentityDigest)
+		return classifyShipmentReconcileEventPresent(loggedEvents, persisted, reqIdempotencyKey, reqRequestIdentityDigest, reqAttestation)
 	}
-	return classifyShipmentReconcileEventAbsent(persisted, reqIdempotencyKey, reqRequestIdentityDigest, shipmentID)
+	return classifyShipmentReconcileEventAbsent(persisted, reqIdempotencyKey, reqRequestIdentityDigest, shipmentID, reqAttestation)
 }
 
-func classifyShipmentReconcileEventPresent(loggedEvents []shipmentReconcileLoggedEvent, persisted shipmentReconcilePersistedState, reqIdempotencyKey string, reqRequestIdentityDigest string) (ShipmentReconcileOutcome, error) {
+func classifyShipmentReconcileEventPresent(loggedEvents []shipmentReconcileLoggedEvent, persisted shipmentReconcilePersistedState, reqIdempotencyKey string, reqRequestIdentityDigest string, reqAttestation []*ShipmentReconciledShippedAttestation) (ShipmentReconcileOutcome, error) {
 	if len(loggedEvents) != 1 {
 		return ShipmentReconcileOutcomeConflict, nil
 	}
@@ -109,10 +109,29 @@ func classifyShipmentReconcileEventPresent(loggedEvents []shipmentReconcileLogge
 	if logged.IdempotencyKey != persisted.idempotencyKey.value || logged.RequestIdentityDigest != persisted.requestIdentityDigest.value {
 		return ShipmentReconcileOutcomeConflict, nil
 	}
+	if !shipmentReconcileAttestationMatches(logged.Attestation, reqAttestation) {
+		return ShipmentReconcileOutcomeConflict, nil
+	}
 	return ShipmentReconcileOutcomeNoOp, nil
 }
 
-func classifyShipmentReconcileEventAbsent(persisted shipmentReconcilePersistedState, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string) (ShipmentReconcileOutcome, error) {
+// shipmentReconcileAttestationMatches reports whether a recorded attestation
+// agrees with the request attestation (169.003-T). The attestation is not part
+// of the request identity digest, so this comparison is what makes a replay
+// that adds, removes or changes the attestation a conflict. An empty reqs
+// slice means the caller does not enforce attestation agreement.
+func shipmentReconcileAttestationMatches(recorded *ShipmentReconciledShippedAttestation, reqs []*ShipmentReconciledShippedAttestation) bool {
+	if len(reqs) == 0 {
+		return true
+	}
+	req := reqs[0]
+	if recorded == nil || req == nil {
+		return recorded == nil && req == nil
+	}
+	return *recorded == *req
+}
+
+func classifyShipmentReconcileEventAbsent(persisted shipmentReconcilePersistedState, reqIdempotencyKey string, reqRequestIdentityDigest string, shipmentID string, reqAttestation []*ShipmentReconciledShippedAttestation) (ShipmentReconcileOutcome, error) {
 	if persisted.archivedStatus != string(ShipmentShipped) {
 		if persisted.hasAnyResumeMarkers() {
 			return ShipmentReconcileOutcomeIndeterminate, fmt.Errorf("classify shipment reconcile state: resume markers present while archived_status=%q: %w", persisted.archivedStatus, blerrors.ErrValidation)
@@ -138,6 +157,9 @@ func classifyShipmentReconcileEventAbsent(persisted shipmentReconcilePersistedSt
 		return ShipmentReconcileOutcomeConflict, nil
 	}
 	if preparedDelta.IdempotencyKey != persisted.idempotencyKey.value || preparedDelta.RequestIdentityDigest != persisted.requestIdentityDigest.value {
+		return ShipmentReconcileOutcomeConflict, nil
+	}
+	if !shipmentReconcileAttestationMatches(preparedDelta.Attestation, reqAttestation) {
 		return ShipmentReconcileOutcomeConflict, nil
 	}
 	return ShipmentReconcileOutcomeNoOp, nil

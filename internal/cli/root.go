@@ -460,4 +460,5 @@ func wireMCPMetadataProvider(s *mcpinternal.Server, cwd string) {
 	s.CLICommandProvider = func() []core.CommandInfo {
 		return core.DescribeCLICommands(buildMetadataRootCommand(cwd))
 	}
+	s.AttestationPins = envPinProvider{}
 }

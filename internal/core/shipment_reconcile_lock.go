@@ -82,7 +82,7 @@ func lockShipmentReconcileItemLogImpl(ctx context.Context, ws *Workspace, itemID
 				})
 				return closeErr
 			}
-			return ctx, unlock, nil
+			return events.WithItemLogCrossProcessLockHeld(ctx, WorkspaceLogsRoot(ws.RootPath), itemID), unlock, nil
 		}
 		if !time.Now().Before(deadline) {
 			return ctx, nil, fmt.Errorf("%s: %w", lockPath, ErrShipmentReconcileLockBusy)

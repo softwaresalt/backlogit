@@ -185,6 +185,25 @@ func ItemLogCrossProcessLockHeld(ctx context.Context, logsDir, itemID string) bo
 	return itemLogLockHeld(ctx, key) && itemLogFileLockHeld(ctx, key)
 }
 
+// WithItemLogCrossProcessLockHeld returns ctx marked as already holding the
+// complete item-log lock (C) for itemID. It is for an acquirer that took the
+// same cross-process sidecar through its own hardened handle (the shipment
+// reconcile primitive) and must let nested event appends reuse that hold
+// instead of self-contending on the non-reentrant sidecar. The caller owns the
+// file lock for the lifetime of the returned context; no in-process mutex is
+// taken, so other in-process writers still serialize on the sidecar itself.
+func WithItemLogCrossProcessLockHeld(ctx context.Context, logsDir, itemID string) context.Context {
+	key := itemLogLockKey(logsDir, itemID)
+	set := make(itemLogLockSet)
+	if existing, ok := ctx.Value(itemLogLockContextKey{}).(itemLogLockSet); ok {
+		for heldKey := range existing {
+			set[heldKey] = struct{}{}
+		}
+	}
+	set[key] = struct{}{}
+	return withItemLogFileLock(context.WithValue(ctx, itemLogLockContextKey{}, set), key)
+}
+
 func withItemLogFileLock(ctx context.Context, key string) context.Context {
 	set := make(itemLogFileLockSet)
 	if existing, ok := ctx.Value(itemLogFileLockContextKey{}).(itemLogFileLockSet); ok {

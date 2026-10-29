@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
@@ -168,7 +170,7 @@ func reconcileShipmentPhaseB(ctx context.Context, ws *Workspace, req ShipmentShi
 		return result, fmt.Errorf("reconcile shipment to shipped: read shipment %s item log: %w", shipmentID, err)
 	}
 
-	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipmentID)
+	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipmentID, req.Attestation)
 	if classifyErr != nil {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
 		result.Message = fmt.Sprintf("shipment %s reconciliation state could not be determined", shipmentID)
@@ -248,15 +250,36 @@ func reconcileShipmentPhaseBNoOp(ctx context.Context, ws *Workspace, req Shipmen
 	}
 
 	// 2b resume.
-	if req.DryRun {
-		result.Message = fmt.Sprintf("dry run: shipment %s has a previously prepared reconciliation event that would be appended to resume", shipmentID)
-		return result, nil
-	}
-
 	preparedEventText, err := readRequiredRawStringField(persisted.preparedEvent, shipmentReconcilePreparedEventField)
 	if err != nil {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
 		return result, fmt.Errorf("reconcile shipment to shipped: read shipment %s persisted prepared event: %w", shipmentID, err)
+	}
+
+	if req.AttestationVerifier != nil {
+		var prepared events.Event
+		if err := json.Unmarshal([]byte(preparedEventText), &prepared); err != nil {
+			result.Outcome = ShipmentReconcileOutcomeIndeterminate
+			return result, fmt.Errorf("reconcile shipment to shipped: parse shipment %s persisted prepared event: %w", shipmentID, err)
+		}
+		delta, err := decodeShipmentReconciledShippedDelta(prepared.Delta)
+		if err != nil {
+			result.Outcome = ShipmentReconcileOutcomeIndeterminate
+			return result, fmt.Errorf("reconcile shipment to shipped: decode shipment %s persisted prepared event: %w", shipmentID, err)
+		}
+		if err := req.verifyAttestation(ctx, AttestationExpectedEvidence{
+			ShipmentID:         shipmentID,
+			MergeSHA:           delta.Evidence.MergeSHA,
+			ManifestDigest:     delta.Evidence.ManifestDigest,
+			ClosureContentHash: delta.Evidence.ClosureContentHash,
+		}); err != nil {
+			return result, fmt.Errorf("reconcile shipment to shipped: verify shipment %s persisted attestation before resume: %w", shipmentID, err)
+		}
+	}
+
+	if req.DryRun {
+		result.Message = fmt.Sprintf("dry run: shipment %s has a previously prepared reconciliation event that would be appended to resume", shipmentID)
+		return result, nil
 	}
 
 	if err := appendShipmentReconcileEvent(ctx, ws, shipmentID, []byte(preparedEventText)); err != nil {
@@ -348,7 +371,7 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 	if err != nil {
 		return result, fmt.Errorf("reconcile shipment to shipped: re-read shipment %s item log: %w", shipmentID, err)
 	}
-	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipmentID)
+	outcome, classifyErr := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipmentID, req.Attestation)
 	if classifyErr != nil {
 		result.Outcome = ShipmentReconcileOutcomeIndeterminate
 		result.Message = fmt.Sprintf("shipment %s reconciliation state could not be determined", shipmentID)
@@ -689,4 +712,16 @@ func shipmentReconcileMemberSetsEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// verifyAttestation runs the request's attestation verifier. On a live run a
+// failure is handed to AttestationRejectionAuditor with ctx (which carries any
+// held item-log lock) so the rejection audit reuses that lock; the returned
+// error is always the original rejection, joined with any audit failure.
+func (req ShipmentShippedReconcileRequest) verifyAttestation(ctx context.Context, expected AttestationExpectedEvidence) error {
+	err := req.AttestationVerifier(expected)
+	if err == nil || req.DryRun || req.AttestationRejectionAuditor == nil {
+		return err
+	}
+	return req.AttestationRejectionAuditor(ctx, err)
 }

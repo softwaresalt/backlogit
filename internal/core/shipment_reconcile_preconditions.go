@@ -235,7 +235,7 @@ func validateShipmentReconcileClassifierState(ws *Workspace, shipment *models.Ar
 		logBytes = nil
 	}
 
-	outcome, err := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipment.ID)
+	outcome, err := classifyShipmentReconcileState(logBytes, frontmatter, req.IdempotencyKey, requestIdentityDigest, shipment.ID, req.Attestation)
 	if err != nil {
 		return fmt.Errorf("validate shipment reconcile preconditions: classify shipment %s: %w", shipment.ID, err)
 	}

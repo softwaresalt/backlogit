@@ -267,6 +267,11 @@ type DoctorOptions struct {
 	// synthesizes, or rewrites JSONL, and its findings never change the doctor
 	// exit code. Off by default on both the CLI and MCP surfaces.
 	CheckShippedEventCompleteness bool
+	// AttestationPins supplies the external pin set doctor re-verifies
+	// persisted reconcile attestations against (169.007-T). When nil, a
+	// reconcile event carrying an attestation fails closed: it is not
+	// counted as shipped evidence.
+	AttestationPins ExternalPinSetProvider
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
@@ -688,7 +693,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		// 143.006-T / 143.007-T: read-only shipped-event reconciliation audit.
 		// Scans the canonical raw-Markdown refs (queue AND archive), never the
 		// SQLite projection, and never writes, synthesizes, or rewrites JSONL.
-		report.Findings = append(report.Findings, detectMissingShippedEvents(ctx, logsDir, refs, ids)...)
+		report.Findings = append(report.Findings, detectMissingShippedEvents(ctx, logsDir, refs, ids, newDoctorAttestationReverifier(ctx, ws, opts))...)
 		report.Findings = append(report.Findings, detectShippedUnarchivedResidue(ctx, ws, logsDir, refs, ids)...)
 	}
 
@@ -847,7 +852,8 @@ func newDoctorErrorFinding(findingType DoctorFindingType, artifactID, message st
 // 167.008-T) — so this only confirms shape, required-field completeness, and
 // shipment-identity binding, never full replay authenticity; a
 // fully-consistent forgery that also correctly names id is an accepted
-// residual (see the task's trust-model note). Requiring item_id == id
+// residual (see the task's trust-model note), except that an event carrying
+// an attestation must also re-verify offline (169.007-T). Requiring item_id == id
 // prevents a misplaced/forged event for a DIFFERENT shipment from
 // suppressing the missing-shipped-event finding for THIS shipment.
 //
@@ -857,7 +863,7 @@ func newDoctorErrorFinding(findingType DoctorFindingType, artifactID, message st
 // bare/malformed/stale/duplicate/key-mismatched/wrong-shipment event line
 // leaves this false, retaining the missing-shipped-event finding exactly as
 // before this task existed.
-func reconciledShippedEventPresence(logsDir, id string) (present bool, readable bool) {
+func reconciledShippedEventPresence(ctx context.Context, logsDir, id string, rv *AttestationReverifier) (present bool, readable bool) {
 	logPath := events.LogPathForItem(logsDir, id)
 	realLogsDir, rootErr := filepath.EvalSymlinks(logsDir)
 	if rootErr != nil {
@@ -890,11 +896,37 @@ func reconciledShippedEventPresence(logsDir, id string) (present bool, readable 
 			continue
 		}
 		lineWithNewline := append(append([]byte{}, line...), '\n')
-		if ValidateShipmentReconciledShippedEvent(lineWithNewline, nil, "", id) == nil {
+		if ValidateShipmentReconciledShippedEvent(lineWithNewline, nil, "", id) != nil {
+			continue
+		}
+		if reconciledShippedEventTrusted(ctx, lineWithNewline, id, rv) {
 			return true, true
 		}
 	}
 	return false, true
+}
+
+// reconciledShippedEventTrusted reports whether an already-validated reconcile
+// event line counts as shipped evidence. An event without an attestation is
+// the unsigned #423 v1 shape. An event carrying an attestation is trusted only
+// when its persisted signed envelope re-verifies offline against the external
+// root of trust (169.007-T); unsigned attestation metadata alone is rejected.
+func reconciledShippedEventTrusted(ctx context.Context, line []byte, id string, rv *AttestationReverifier) bool {
+	var wrapper events.Event
+	if err := json.Unmarshal(bytes.TrimSuffix(line, []byte("\n")), &wrapper); err != nil {
+		return false
+	}
+	delta, err := decodeShipmentReconciledShippedDelta(wrapper.Delta)
+	if err != nil {
+		return false
+	}
+	if delta.Attestation == nil {
+		return true
+	}
+	_, err = rv.Reverify(ctx, AttestationReverifyInput{
+		ShipmentID: id, At: wrapper.Timestamp, Attestation: delta.Attestation, Evidence: delta.Evidence,
+	})
+	return err == nil
 }
 
 // shippedEventPresence reports whether the item JSONL for id carries a
@@ -954,7 +986,7 @@ const shippedEventAuditCaveat = "advisory; exit code unaffected; verify the actu
 // presents as status "archived".
 //
 // The audit never writes, synthesizes, or rewrites JSONL.
-func detectMissingShippedEvents(ctx context.Context, logsDir string, refs map[string][]artifactRef, ids []string) []DoctorFinding {
+func detectMissingShippedEvents(ctx context.Context, logsDir string, refs map[string][]artifactRef, ids []string, rv *AttestationReverifier) []DoctorFinding {
 	findings := make([]DoctorFinding, 0)
 	for _, id := range ids {
 		group := refs[id]
@@ -977,7 +1009,7 @@ func detectMissingShippedEvents(ctx context.Context, logsDir string, refs map[st
 			// never a replacement for shippedEventPresence's own logic
 			// (144-F guard 2 stays exactly as strict as before) — and only
 			// when the plain check already found nothing.
-			reconciledPresent, reconciledReadable := reconciledShippedEventPresence(logsDir, id)
+			reconciledPresent, reconciledReadable := reconciledShippedEventPresence(ctx, logsDir, id, rv)
 			if reconciledPresent {
 				present = true
 			}
