@@ -55,6 +55,10 @@ type ShipmentReconciledShippedAttestation struct {
 	SignerIdentity  string `json:"signer_identity"`
 	SigAlgo         string `json:"sig_algo"`
 	StatementDigest string `json:"statement_digest"`
+	// Envelope is the durable signed attestation envelope (raw JSON) that
+	// doctor and auditors re-verify offline against the external root of trust
+	// (169.007-T).
+	Envelope string `json:"envelope,omitempty"`
 }
 
 // ShipmentReconciledShippedDelta is the canonical delta payload of an

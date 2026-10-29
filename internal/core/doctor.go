@@ -267,6 +267,11 @@ type DoctorOptions struct {
 	// synthesizes, or rewrites JSONL, and its findings never change the doctor
 	// exit code. Off by default on both the CLI and MCP surfaces.
 	CheckShippedEventCompleteness bool
+	// AttestationPins supplies the external pin set doctor re-verifies
+	// persisted reconcile attestations against (169.007-T). When nil, a
+	// reconcile event carrying an attestation fails closed: it is not
+	// counted as shipped evidence.
+	AttestationPins ExternalPinSetProvider
 }
 
 // Doctor scans the workspace for structural integrity issues and returns a
