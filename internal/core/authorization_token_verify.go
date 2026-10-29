@@ -76,6 +76,9 @@ func (t AuthorizationToken) SigningPayload() []byte {
 // inside the inclusive [not_before, not_after] window. The request-identity
 // digest binding is verified separately (170.013-T).
 func VerifyAuthorizationToken(in TokenVerifyInput) error {
+	if err := verifyTokenRoleAndAlgo(in); err != nil {
+		return err
+	}
 	if err := verifyTokenSignature(in); err != nil {
 		return &TokenVerifyError{Field: "signature", Err: err}
 	}
