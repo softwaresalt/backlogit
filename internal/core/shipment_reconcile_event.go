@@ -85,6 +85,7 @@ type ShipmentReconciledShippedDelta struct {
 	TrustedRefTip         string                                `json:"trusted_ref_tip"`
 	Evidence              ShipmentReconciledShippedEvidence     `json:"evidence"`
 	Attestation           *ShipmentReconciledShippedAttestation `json:"attestation,omitempty"`
+	Approver              *ShipmentReconciledShippedApprover    `json:"approver,omitempty"`
 }
 
 // ShipmentReconciledShippedEventDigest returns the sha256 hex digest of the

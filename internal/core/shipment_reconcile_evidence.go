@@ -275,6 +275,7 @@ func prepareShipmentReconcileEvidence(ctx context.Context, ws *Workspace, req Sh
 			EvidenceDigest:     evidenceDigest,
 		},
 		Attestation: attestation,
+		Approver:    reconcileApproverFor(req),
 	}
 	deltaMap, err := marshalShipmentReconciledShippedDelta(delta)
 	if err != nil {

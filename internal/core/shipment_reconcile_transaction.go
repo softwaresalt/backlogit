@@ -392,6 +392,15 @@ func reconcileShipmentPhaseCAndD(ctx context.Context, ws *Workspace, req Shipmen
 		}
 	}
 
+	// Authenticated-approval gate (170.004-T): inside the locked critical
+	// section, after the final re-classification and before any write. A dry
+	// run verifies but never consumes the nonce.
+	authOutcome, authErr := enforceReconcileAuthorization(ctxCB, req, shipmentID, requestIdentityDigest, dryRun)
+	if authErr != nil {
+		return result, fmt.Errorf("reconcile shipment to shipped: shipment %s authorization: %w", shipmentID, authErr)
+	}
+	result.Authorization = authOutcome
+
 	if dryRun {
 		// Every Phase C/D precondition above has now been fully evaluated
 		// (evidence verification, membership/terminality re-validation, and
