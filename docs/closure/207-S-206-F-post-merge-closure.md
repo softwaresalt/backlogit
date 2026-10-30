@@ -42,7 +42,7 @@ title: "207-S / 206-F Post-Merge Closure"
 | Copilot review (P-018) | `SATISFIED` for the merged HEAD; three threads resolved (two fixed, one deferred as `6B017269`) |
 | CI | All required checks passed, including the full `test` job |
 | Merge strategy (P-009) | Merge commit |
-| Governed closure | `backlogit_ship_shipment` returned a client timeout; completion was confirmed by waiting for quiescence and reading the `shipment_status_changed` (`shipped`), `commit_tracked` and `archived` events for `207-S`, plus archived `206-F`. Nothing was retried or synthesized. The three tasks were already archived at completion time |
+| Governed closure | `backlogit_ship_shipment` returned a client timeout; completion was confirmed by waiting for quiescence and reading the `shipment_status_changed` (`shipped`), `commit_tracked` and `archived` events for `207-S`, plus archived `206-F`. Nothing was retried or synthesized. The three tasks were already archived at completion time. Per `docs/compound/2026-10-06-ship-shipment-mcp-timeout-result-unknown.md`, post-timeout verification also recorded: the post-ship `ship_shipment` hook event (`seq` 4304, 2026-10-30T17:17:53Z) in the local `.backlogit/hooks_queue.jsonl`, whose working-copy change is carried forward and is not part of this PR; the reconstructed result envelope (`shipment_status: shipped`, archived IDs `207-S`, `206-F`, with `206.001-T` through `206.003-T` pre-archived, no returned IDs, no non-member mutation); and `backlogit doctor --check-shipped-event-completeness` reporting no finding for `207-S`, `206-F` or `206.001-T` through `206.003-T` |
 
 ## Runtime verification and releasability
 
