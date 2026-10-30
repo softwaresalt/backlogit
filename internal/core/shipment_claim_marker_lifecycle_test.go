@@ -188,13 +188,13 @@ func TestU4_TerminalAndGenericPathsKeepMarker(t *testing.T) {
 		assert.Equal(t, "low", updated.Priority, "the generic update must take effect")
 		u4RequireMarker(ctx, t, ws, target, shipment.ID)
 
-		moved, err := setArtifactStatus(ctx, ws, target, models.StatusBlocked, "u4 generic move")
+		moved, err := UpdateArtifact(ctx, ws, target, map[string]any{"status": string(models.StatusBlocked)})
 		require.NoError(t, err)
 		assert.Equal(t, models.StatusBlocked, moved.Status)
 		u4RequireMarker(ctx, t, ws, target, shipment.ID)
 		assert.False(t, u4IsClaimActivated(ctx, t, ws, target), "a blocked member is not claim-activated")
 
-		moved, err = setArtifactStatus(ctx, ws, target, models.StatusActive, "u4 generic move back")
+		moved, err = UpdateArtifact(ctx, ws, target, map[string]any{"status": string(models.StatusActive)})
 		require.NoError(t, err)
 		assert.Equal(t, models.StatusActive, moved.Status)
 		u4RequireMarker(ctx, t, ws, target, shipment.ID)
