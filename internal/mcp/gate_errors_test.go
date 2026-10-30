@@ -72,11 +72,14 @@ func TestGateErrorResult_ClassFamily(t *testing.T) {
 		wantErrType   string
 		wantRetryable bool
 		wantRetryKey  bool
+		wantRemedy    string
 	}{
-		{"setup", 0, "gate_setup", false, false},
-		{"config", 0, "gate_config", false, false},
-		{"timeout", 1500, "gate_timeout", true, true},
-		{"in_progress", 2000, "gate_in_progress", true, true},
+		{"setup", 0, "gate_setup", false, false, "Install or repair the autoharness binary (min 1.4.7), or disable the gate for this workspace."},
+		{"config", 0, "gate_config", false, false, "Fix the gate configuration or base/HEAD ref, then retry the completion."},
+		{"timeout", 1500, "gate_timeout", true, true, ""},
+		{"timeout", 0, "gate_timeout", true, false, ""},
+		{"in_progress", 2000, "gate_in_progress", true, true, ""},
+		{"in_progress", 0, "gate_in_progress", true, false, ""},
 	}
 	for _, tc := range cases {
 		ge := &corerrors.GateError{Class: tc.class, ItemID: "001.001-T", Message: "gate " + tc.class, RetryAfterMs: tc.retryAfterMs}
@@ -88,6 +91,15 @@ func TestGateErrorResult_ClassFamily(t *testing.T) {
 		require.Equal(t, tc.wantRetryable, body["retryable"], "class %q retryable", tc.class)
 		_, hasRetryAfter := body["retry_after_ms"]
 		require.Equal(t, tc.wantRetryKey, hasRetryAfter, "class %q retry_after_ms presence", tc.class)
+		if tc.wantRetryKey {
+			require.EqualValues(t, tc.retryAfterMs, body["retry_after_ms"], "class %q retry_after_ms value", tc.class)
+		}
+		remedy, hasRemedy := body["remediation"]
+		if tc.wantRemedy == "" {
+			require.False(t, hasRemedy, "class %q must omit remediation", tc.class)
+		} else {
+			require.Equal(t, tc.wantRemedy, remedy, "class %q remediation", tc.class)
+		}
 	}
 }
 

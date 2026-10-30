@@ -19,9 +19,13 @@ import (
 	"errors"
 	"testing"
 
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
+	"github.com/softwaresalt/backlogit/internal/cli"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/faultline"
+	"github.com/softwaresalt/backlogit/internal/mcp"
 	"github.com/softwaresalt/backlogit/internal/faultline/parity"
 )
 
@@ -422,4 +426,89 @@ func TestU2ComparatorNullBoolIsTypeMismatch(t *testing.T) {
 	d := findDimension(t, report, "retryability")
 	require.Equal(t, parity.StatusFail, d.Status)
 	require.Contains(t, d.DivergentFields, "retryable:type_mismatch")
+}
+
+// realGateErrorResults drives the REAL CLI renderer/exit mapper and the REAL MCP
+// gate-error mapper for one GateError and returns the {CLI, MCP, Internal}
+// surface results (internal intentionally empty: not a gate-error surface).
+func realGateErrorResults(t *testing.T, ge *corerrors.GateError) [3]parity.SurfaceResult {
+	t.Helper()
+	cliJSON, err := cli.RenderGateErrorJSON(ge.ItemID, ge)
+	require.NoError(t, err)
+	exitErr := cli.GateExitError(ge)
+	require.NotNil(t, exitErr)
+
+	res, handled := mcp.GateErrorResult(ge, "done")
+	require.True(t, handled)
+	require.NotEmpty(t, res.Content)
+	tc, ok := res.Content[0].(mcplib.TextContent)
+	require.True(t, ok, "expected TextContent, got %T", res.Content[0])
+
+	return [3]parity.SurfaceResult{
+		{ExitCode: cli.ExitCodeFor(exitErr), Body: []byte(cliJSON)},
+		{ExitCode: 1, Body: []byte(tc.Text)},
+		{},
+	}
+}
+
+// TestU2ComparatorRealGateErrorParityAllClasses verifies the real CLI and MCP
+// gate-error payloads agree across every applicable dimension for all GateError
+// classes, and that the comparator fails closed when a divergence is injected.
+func TestU2ComparatorRealGateErrorParityAllClasses(t *testing.T) {
+	cases := []struct {
+		name  string
+		class string
+		retry int
+	}{
+		{"setup", "setup", 0},
+		{"config", "config", 0},
+		{"timeout_retry_after", "timeout", 1500},
+		{"timeout_no_retry_after", "timeout", 0},
+		{"in_progress_retry_after", "in_progress", 2000},
+		{"in_progress_no_retry_after", "in_progress", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ge := &corerrors.GateError{Class: tc.class, ItemID: "001.001-T", Message: "gate " + tc.class, RetryAfterMs: tc.retry}
+
+			results := realGateErrorResults(t, ge)
+			report, err := parity.CompareResults(context.Background(), "real-gate-error-"+tc.name, results)
+			require.NoError(t, err)
+			for _, d := range report.Dimensions {
+				require.Containsf(t, []string{parity.StatusPass, parity.StatusNotApplicable}, d.Status,
+					"dimension %q must pass for class %q, got %q (%v)", d.Dimension, tc.name, d.Status, d.DivergentFields)
+			}
+			require.Equal(t, faultline.StatusPass, report.Evidence.Status)
+
+			t.Run("injected_remediation_mismatch_fails", func(t *testing.T) {
+				if tc.class != "setup" && tc.class != "config" {
+					t.Skip("remediation is only emitted for setup/config")
+				}
+				bad := realGateErrorResults(t, ge)
+				bad[0].Body = injectField(t, bad[0].Body, "remediation", "DIVERGENT remediation")
+				rep, err := parity.CompareResults(context.Background(), "inject-remediation-"+tc.name, bad)
+				require.NoError(t, err)
+				require.Equal(t, parity.StatusFail, findDimension(t, rep, "remediation").Status)
+			})
+
+			t.Run("injected_retry_after_mismatch_fails", func(t *testing.T) {
+				bad := realGateErrorResults(t, ge)
+				bad[0].Body = injectField(t, bad[0].Body, "retry_after_ms", 99999)
+				rep, err := parity.CompareResults(context.Background(), "inject-retry-"+tc.name, bad)
+				require.NoError(t, err)
+				require.Equal(t, parity.StatusFail, findDimension(t, rep, "retryability").Status)
+			})
+		})
+	}
+}
+
+// injectField sets key=value in a JSON object body and re-marshals it.
+func injectField(t *testing.T, raw []byte, key string, value any) []byte {
+	t.Helper()
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	m[key] = value
+	out, err := json.Marshal(m)
+	require.NoError(t, err)
+	return out
 }
