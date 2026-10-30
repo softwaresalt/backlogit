@@ -87,6 +87,16 @@ types:
           - medium
           - high
         optional: true
+      complexity_source:
+        type: enum
+        values:
+          - human
+          - agent
+          - derived
+        optional: true
+      complexity_ruleset_version:
+        type: string
+        optional: true
   review:
     prefix: R
     suffix: "-R"

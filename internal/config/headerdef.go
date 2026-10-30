@@ -71,26 +71,35 @@ func upgradeLegacyGeneratedHeaderDef(cfg *HeaderDefConfig) {
 	}
 
 	current := defaultHeaderDef()
-	priorVariants := []*HeaderDefConfig{
-		defaultHeaderDef(),
-		defaultHeaderDef(),
-		defaultHeaderDef(),
-	}
-	delete(priorVariants[0].Types["task"].Fields, "complexity")
-	removeHeaderDefValue(priorVariants[1].Types["shipment"].Fields["status"], "blocked")
-	delete(priorVariants[2].Types["task"].Fields, "complexity")
-	removeHeaderDefValue(priorVariants[2].Types["shipment"].Fields["status"], "blocked")
-
-	for _, prior := range priorVariants {
+	// Enumerate every prior generated variant: task complexity and/or its
+	// provenance fields absent, and/or the shipment "blocked" status absent.
+	// The all-current combination is skipped (nothing to upgrade).
+	for mask := 1; mask < 8; mask++ {
+		dropComplexity := mask&1 != 0
+		dropProvenance := mask&2 != 0
+		dropBlocked := mask&4 != 0
+		prior := defaultHeaderDef()
+		task := prior.Types["task"].Fields
+		if dropComplexity {
+			delete(task, "complexity")
+		}
+		if dropComplexity || dropProvenance {
+			delete(task, "complexity_source")
+			delete(task, "complexity_ruleset_version")
+		}
+		if dropBlocked {
+			removeHeaderDefValue(prior.Types["shipment"].Fields["status"], "blocked")
+		}
 		if !reflect.DeepEqual(cfg, prior) {
 			continue
 		}
-		cfg.Types["task"].Fields["complexity"] = current.Types["task"].Fields["complexity"]
+		for _, name := range []string{"complexity", "complexity_source", "complexity_ruleset_version"} {
+			cfg.Types["task"].Fields[name] = current.Types["task"].Fields[name]
+		}
 		cfg.Types["shipment"].Fields["status"] = current.Types["shipment"].Fields["status"]
 		return
 	}
 }
-
 func removeHeaderDefValue(field *FieldDef, value string) {
 	values := make([]string, 0, len(field.Values))
 	for _, candidate := range field.Values {

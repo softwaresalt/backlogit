@@ -103,6 +103,8 @@ func writeHeaderDefWithoutComplexity(t *testing.T, dir string, customize bool) {
 	var cfg config.HeaderDefConfig
 	require.NoError(t, yaml.Unmarshal(raw, &cfg))
 	delete(cfg.Types["task"].Fields, "complexity")
+	delete(cfg.Types["task"].Fields, "complexity_source")
+	delete(cfg.Types["task"].Fields, "complexity_ruleset_version")
 	if customize {
 		cfg.Types["task"].Fields["custom_operator_field"] = &config.FieldDef{Type: "string", Optional: true}
 	}

@@ -218,7 +218,7 @@ func SetArtifactSizeWithProvenance(ctx context.Context, ws *Workspace, id string
 // reservedSizingKeys are the size/provenance and complexity custom_fields keys
 // that only their typed seams may author. Generic create/update paths must not
 // write them off-seam.
-var reservedSizingKeys = []string{"size", "size_source", "size_ruleset_version", "complexity"}
+var reservedSizingKeys = []string{"size", "size_source", "size_ruleset_version", "complexity", "complexity_source", "complexity_ruleset_version"}
 
 // validateSizeMutation performs the targeted pre-write validation for the size
 // seam: the size value against the type's enum, size_source against the fixed
