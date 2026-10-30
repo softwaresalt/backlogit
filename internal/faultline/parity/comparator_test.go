@@ -25,8 +25,8 @@ import (
 	"github.com/softwaresalt/backlogit/internal/cli"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/faultline"
-	"github.com/softwaresalt/backlogit/internal/mcp"
 	"github.com/softwaresalt/backlogit/internal/faultline/parity"
+	"github.com/softwaresalt/backlogit/internal/mcp"
 )
 
 // surfaceBody is a convenience builder for a JSON surface body.

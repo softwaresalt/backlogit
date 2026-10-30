@@ -146,9 +146,10 @@ var knownDrifts = map[string]driftDecl{}
 // carries no machine category.
 var exitCodeClasses = map[int]map[string]struct{}{
 	0: {"": {}, "success": {}, "ok": {}},
-	6: {"blocked": {}, "block": {}, "dependency_blocked": {}, "block_family": {}},
-	7: {"config": {}, "setup": {}, "configuration": {}},
-	8: {"retryable": {}, "timeout": {}, "in_progress": {}},
+	6: {"blocked": {}, "block": {}, "dependency_blocked": {}, "block_family": {},
+		"gate_blocked": {}, "gate_requeued": {}, "gate_escalated": {}},
+	7: {"config": {}, "setup": {}, "configuration": {}, "gate_config": {}, "gate_setup": {}},
+	8: {"retryable": {}, "timeout": {}, "in_progress": {}, "gate_timeout": {}, "gate_in_progress": {}},
 	9: {"governance": {}, "policy": {}},
 }
 
