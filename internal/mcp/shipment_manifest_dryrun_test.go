@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -139,4 +140,31 @@ func TestU3_ManifestHandlers_DryRunPendingJournalSurvivesLazyServer(t *testing.T
 				"dry-run must leave artifacts and journals untouched")
 		})
 	}
+}
+
+func TestU3_ManifestWorkspace_DryRunConcurrentFirstUse(t *testing.T) {
+	ctx := context.Background()
+	_, ws := setupShipmentErrorServer(t)
+	lazy := NewServerForRoot(ws.RootPath)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			got, release, result := lazy.manifestWorkspace(ctx, true)
+			defer release()
+			assert.Nil(t, result)
+			assert.NotNil(t, got)
+		}()
+		go func() {
+			defer wg.Done()
+			got, err := lazy.ensureWorkspace(ctx)
+			assert.NoError(t, err)
+			assert.NotNil(t, got)
+		}()
+	}
+	wg.Wait()
+	require.NotNil(t, lazy.Workspace)
+	require.NoError(t, lazy.Workspace.Close())
 }

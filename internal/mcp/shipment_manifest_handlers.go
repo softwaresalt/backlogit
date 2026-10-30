@@ -33,11 +33,14 @@ func (s *Server) manifestWorkspace(ctx context.Context, dryRun bool) (*core.Work
 	}
 	s.workspaceMu.Lock()
 	cached := s.Workspace
+	// Capture the storage root while still holding workspaceMu so no
+	// unlocked read of s.Workspace races with ensureWorkspace.
+	storageRoot := s.backlogitDir()
 	s.workspaceMu.Unlock()
 	if cached != nil {
 		return cached, noop, nil
 	}
-	if !dirExists(s.backlogitDir()) {
+	if !dirExists(storageRoot) {
 		return nil, noop, WorkspaceNotInitialized()
 	}
 	ws, err := core.NewReadOnlyWorkspace(ctx, s.RootPath)
