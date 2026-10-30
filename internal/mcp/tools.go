@@ -68,7 +68,9 @@ func (s *Server) RegisterTools() {
 			mcplib.WithString("labels", mcplib.Description("Comma-separated labels")),
 			mcplib.WithString("commit", mcplib.Description("Commit SHA")),
 			mcplib.WithString("size", mcplib.Description("T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field updates")),
-			mcplib.WithString("complexity", mcplib.Description("Optional task-only implementation difficulty/uncertainty (trivial, low, medium, high); distinct from size and priority; no provenance/history fields; explicit empty string clears; body-preserving and mutually exclusive with other field updates; does not affect queue ordering")),
+			mcplib.WithString("complexity", mcplib.Description("Optional task-only implementation difficulty/uncertainty (trivial, low, medium, high); distinct from size and priority; a value-only update clears stale provenance; explicit empty string clears value and provenance; body-preserving and mutually exclusive with other field updates; does not affect queue ordering")),
+			mcplib.WithString("complexity_source", mcplib.Description("Complexity provenance source (agent, derived); explicit human is rejected over MCP; defaults to agent when complexity_ruleset_version is supplied; requires complexity")),
+			mcplib.WithString("complexity_ruleset_version", mcplib.Description("Complexity ruleset version; requires complexity and records provenance")),
 			mcplib.WithString("size_source", mcplib.Description("Size provenance source (human, agent, derived)")),
 			mcplib.WithString("size_ruleset_version", mcplib.Description("Size ruleset version")),
 			mcplib.WithString("sections", mcplib.Description("Section updates as JSON object {name: content}")),
@@ -956,11 +958,40 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		if len(updates) > 0 || sections != nil || hasSizeMutationArguments(request.Params.Arguments) || commitSHA != "" {
 			return ValidationFailed("complexity cannot be combined with other field updates, sections, or size/provenance updates"), nil
 		}
-		complexity, ok := request.Params.Arguments["complexity"].(string)
+		rawComplexity, hasComplexity := request.Params.Arguments["complexity"]
+		if !hasComplexity {
+			return ValidationFailed("complexity_source and complexity_ruleset_version require complexity"), nil
+		}
+		complexity, ok := rawComplexity.(string)
 		if !ok {
 			return ValidationFailed("complexity must be a string"), nil
 		}
-		artifact, err := core.SetArtifactComplexity(ctx, s.Workspace, id, complexity)
+		source, srcOK := optionalStringArg(request.Params.Arguments, "complexity_source")
+		rulesetVersion, rvOK := optionalStringArg(request.Params.Arguments, "complexity_ruleset_version")
+		if !srcOK || !rvOK {
+			return ValidationFailed("complexity_source and complexity_ruleset_version must be strings"), nil
+		}
+		_, srcPresent := request.Params.Arguments["complexity_source"]
+		_, rvPresent := request.Params.Arguments["complexity_ruleset_version"]
+		// Trust boundary: an agent transport must not claim human provenance.
+		if source == "human" {
+			return ValidationFailed("complexity_source: human cannot be set from the MCP (agent) transport"), nil
+		}
+		// Preserve argument presence: an explicitly supplied empty value is invalid
+		// input and is rejected by the core seam rather than treated as omitted.
+		mutation := core.ComplexityMutation{Complexity: &complexity, Actor: core.ActorContextAgent}
+		if srcPresent {
+			mutation.Source = &source
+		}
+		if rvPresent {
+			mutation.RulesetVersion = &rulesetVersion
+			// Default the source to agent only when its key is absent (not when clearing).
+			if !srcPresent && complexity != "" {
+				agent := string(core.ActorContextAgent)
+				mutation.Source = &agent
+			}
+		}
+		artifact, err := core.SetArtifactComplexityWithProvenance(ctx, s.Workspace, id, mutation)
 		if err != nil {
 			return domainError("set artifact complexity", err), nil
 		}
@@ -1079,8 +1110,23 @@ func hasSizeMutationArguments(args map[string]any) bool {
 }
 
 func hasComplexityMutationArguments(args map[string]any) bool {
-	_, ok := args["complexity"]
-	return ok
+	for _, key := range []string{"complexity", "complexity_source", "complexity_ruleset_version"} {
+		if _, ok := args[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// optionalStringArg returns the string value of args[key]. ok is false only when
+// the key is present with a non-string value; an absent key yields ("", true).
+func optionalStringArg(args map[string]any, key string) (string, bool) {
+	raw, exists := args[key]
+	if !exists {
+		return "", true
+	}
+	v, ok := raw.(string)
+	return v, ok
 }
 
 func (s *Server) handleQuerySQL(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

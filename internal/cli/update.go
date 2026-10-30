@@ -33,6 +33,8 @@ func newUpdateCommand(cwd *string) *cobra.Command {
 		commit        string
 		size          string
 		complexity    string
+		complexitySrc string
+		complexityRV  string
 		sizeSource    string
 		sizeRuleset   string
 		gateBase      string
@@ -147,13 +149,29 @@ when complexity is set or cleared.`,
 				return nil
 			}
 
-			if cmd.Flags().Changed("complexity") {
+			if complexityMutationFlagsChanged(cmd) {
 				if conflicts := conflictingComplexityFlags(cmd); len(conflicts) > 0 {
 					return fmt.Errorf(
 						"--complexity cannot be combined with %s: run the complexity mutation separately to preserve the body",
 						strings.Join(conflicts, ", "))
 				}
-				if _, complexityErr := core.SetArtifactComplexity(ctx, ws, id, complexity); complexityErr != nil {
+				if !cmd.Flags().Changed("complexity") {
+					return fmt.Errorf("--complexity-source and --complexity-ruleset-version require --complexity")
+				}
+				mutation := core.ComplexityMutation{Complexity: &complexity, Actor: core.ActorContextHuman}
+				if cmd.Flags().Changed("complexity-source") {
+					mutation.Source = &complexitySrc
+				}
+				if cmd.Flags().Changed("complexity-ruleset-version") {
+					mutation.RulesetVersion = &complexityRV
+					// The CLI is the trusted human transport: default the source to
+					// human when only a ruleset version is supplied (not when clearing).
+					if mutation.Source == nil && complexity != "" {
+						human := string(core.ActorContextHuman)
+						mutation.Source = &human
+					}
+				}
+				if _, complexityErr := core.SetArtifactComplexityWithProvenance(ctx, ws, id, mutation); complexityErr != nil {
 					if errors.Is(complexityErr, core.ErrTaskBusy) {
 						cmd.SilenceErrors = true
 						return &ExitError{Code: 4, Msg: fmt.Sprintf("task %s is busy: %v", id, complexityErr)}
@@ -362,6 +380,8 @@ when complexity is set or cleared.`,
 	cmd.Flags().StringVar(&commit, "commit", "", "commit SHA")
 	cmd.Flags().StringVar(&size, "size", "", "T-shirt size (XS, S, M, L, XL); body-preserving, mutually exclusive with other field flags")
 	cmd.Flags().StringVar(&complexity, "complexity", "", "implementation difficulty/uncertainty (trivial, low, medium, high); explicit empty string clears; body-preserving, mutually exclusive with other field flags")
+	cmd.Flags().StringVar(&complexitySrc, "complexity-source", "", "complexity provenance source (human, agent, derived); defaults to human when --complexity-ruleset-version is set")
+	cmd.Flags().StringVar(&complexityRV, "complexity-ruleset-version", "", "complexity ruleset version; requires --complexity")
 	cmd.Flags().StringVar(&sizeSource, "size-source", "", "size provenance source (human, agent, derived)")
 	cmd.Flags().StringVar(&sizeRuleset, "size-ruleset-version", "", "size ruleset version")
 	cmd.Flags().StringVar(&gateBase, "gate-base", "", "operator-only base ref override for the completion gate (audited)")
@@ -377,7 +397,7 @@ func artifactUpdateFlagsChanged(cmd *cobra.Command) []string {
 	candidates := []string{
 		"title", "status", "priority", "harness-status", "description",
 		"sprint", "assigned-to", "owner", "labels", "commit", "section",
-		"size", "complexity", "size-source", "size-ruleset-version", "gate-base", "force-gates", "force-reason", "json",
+		"size", "complexity", "complexity-source", "complexity-ruleset-version", "size-source", "size-ruleset-version", "gate-base", "force-gates", "force-reason", "json",
 	}
 	var changed []string
 	for _, name := range candidates {
@@ -386,6 +406,12 @@ func artifactUpdateFlagsChanged(cmd *cobra.Command) []string {
 		}
 	}
 	return changed
+}
+
+func complexityMutationFlagsChanged(cmd *cobra.Command) bool {
+	return cmd.Flags().Changed("complexity") ||
+		cmd.Flags().Changed("complexity-source") ||
+		cmd.Flags().Changed("complexity-ruleset-version")
 }
 
 func sizeMutationFlagsChanged(cmd *cobra.Command) bool {
@@ -401,7 +427,7 @@ func conflictingSizeFlags(cmd *cobra.Command) []string {
 	candidates := []string{
 		"title", "status", "priority", "harness-status", "description",
 		"sprint", "assigned-to", "owner", "labels", "commit", "section",
-		"complexity",
+		"complexity", "complexity-source", "complexity-ruleset-version",
 	}
 	var conflicts []string
 	for _, name := range candidates {

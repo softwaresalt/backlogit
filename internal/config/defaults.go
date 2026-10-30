@@ -43,6 +43,15 @@ func defaultHeaderDef() *HeaderDefConfig {
 		Values:   []string{"trivial", "low", "medium", "high"},
 		Optional: true,
 	}
+	complexitySourceField := &FieldDef{
+		Type:     "enum",
+		Values:   []string{"human", "agent", "derived"},
+		Optional: true,
+	}
+	complexityRulesetVersionField := &FieldDef{
+		Type:     "string",
+		Optional: true,
+	}
 	return &HeaderDefConfig{
 		Defaults: SystemDefaults{
 			ID:          FieldDef{Type: "string", Immutable: true},
@@ -88,10 +97,12 @@ func defaultHeaderDef() *HeaderDefConfig {
 						Values:  []string{"low", "medium", "high", "critical"},
 						Default: "medium",
 					},
-					"size":                 sizeField,
-					"size_source":          sizeSourceField,
-					"size_ruleset_version": sizeRulesetVersionField,
-					"complexity":           complexityField,
+					"size":                       sizeField,
+					"size_source":                sizeSourceField,
+					"size_ruleset_version":       sizeRulesetVersionField,
+					"complexity":                 complexityField,
+					"complexity_source":          complexitySourceField,
+					"complexity_ruleset_version": complexityRulesetVersionField,
 				},
 			},
 			"review": {

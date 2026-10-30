@@ -15,17 +15,19 @@ import (
 
 // QueryFilters holds optional filters for item queries.
 type QueryFilters struct {
-	Status          string
-	Type            string
-	ParentID        string
-	Sprint          string
-	AssignedTo      string
-	Owner           string
-	Priority        string
-	Complexity      string
-	IncludeArchived bool // when false (default), archived items are excluded from results
-	Limit           int  // max results to return (0 = no limit)
-	Offset          int  // number of results to skip for pagination
+	Status                   string
+	Type                     string
+	ParentID                 string
+	Sprint                   string
+	AssignedTo               string
+	Owner                    string
+	Priority                 string
+	Complexity               string
+	ComplexitySource         string
+	ComplexityRulesetVersion string
+	IncludeArchived          bool // when false (default), archived items are excluded from results
+	Limit                    int  // max results to return (0 = no limit)
+	Offset                   int  // number of results to skip for pagination
 }
 
 const selectCols = `id, title, status, artifact_type, parent_id, sprint, priority, description, custom_fields, created_at, updated_at, assigned_to, owner, labels, dependencies, "references", "commit", level, hierarchy_path`
@@ -461,6 +463,14 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) (artifact
 		args = append(args, "task")
 		conditions = append(conditions, "complexity = ?")
 		args = append(args, filters.Complexity)
+	}
+	if filters.ComplexitySource != "" {
+		conditions = append(conditions, "artifact_type = ?", "complexity_source = ?")
+		args = append(args, "task", filters.ComplexitySource)
+	}
+	if filters.ComplexityRulesetVersion != "" {
+		conditions = append(conditions, "artifact_type = ?", "complexity_ruleset_version = ?")
+		args = append(args, "task", filters.ComplexityRulesetVersion)
 	}
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
