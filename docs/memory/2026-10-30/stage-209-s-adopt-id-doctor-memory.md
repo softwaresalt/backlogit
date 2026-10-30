@@ -31,7 +31,7 @@ title: 'Stage memory: Phase 1A adopt rename propagation, history-safe ID allocat
 
 ### 1. Stash Triage and Deliberation (`7CE12EE6` + `40CC5C6B` Slice A)
 
-* Classified `7CE12EE6` and `40CC5C6B` (`medium` / `feature`) and grouped `7CE12EE6` with `40CC5C6B` items (2), (3), and (4) into Phase 1A (`208-F` / `209-S`), keeping `40CC5C6B` item (1) (`backlogit shipment reconstitute --plan`) active for Phase 1B (`209-F` / `210-S`).
+* Classified `7CE12EE6` and `40CC5C6B` (`medium` / `feature`) and grouped the local history-based ID non-recycling scope with `40CC5C6B` items (2), (3), and (4) into Phase 1A (`208-F` / `209-S`), keeping `40CC5C6B` item (1) (`backlogit shipment reconstitute --plan`) active for Phase 1B (`209-F` / `210-S`) and tracking the remaining cross-branch ID reservation ledger / explicit `--id` create flag / remote-aware allocator scope from `7CE12EE6` in follow-up stash entry `7BE3AF92`.
 * Authored `docs/decisions/2026-10-30-adopt-propagation-id-safety-doctor-manifest-deliberation.md` (`decision_status: decided`, `promoted_to: plan`).
 
 ### 2. Implementation Plan, Hardening, and Plan Review
@@ -40,7 +40,7 @@ title: 'Stage memory: Phase 1A adopt rename propagation, history-safe ID allocat
 
 ### 3. Harvest, Stash Update, and Shipment Assembly (`208-F`, `209-S`)
 
-* Harvested `7CE12EE6` into covering feature `208-F` (*Adopt rename propagation, history-safe ID allocation, stash correct CLI, and doctor manifest checks*, `priority: high`, `status: queued`), archiving `7CE12EE6` from `.backlogit/stash.jsonl` to `.backlogit/archive/stash.jsonl`.
+* Harvested `7CE12EE6` into covering feature `208-F` (*Adopt rename propagation, history-safe ID allocation, stash correct CLI, and doctor manifest checks*, `priority: high`, `status: queued`), archiving `7CE12EE6` from `.backlogit/stash.jsonl` to `.backlogit/archive/stash.jsonl`. U1 (`208.001-T`) addresses **local workspace history-based ID reuse** (`40CC5C6B` §5), while the cross-branch reservation/explicit-ID/remote-aware requirement from `7CE12EE6` is tracked in follow-up stash entry `7BE3AF92` (`medium` / `feature`).
 * Updated `40CC5C6B` via `backlogit_stash_edit` to record that items (2), (3), and (4) are harvested in `208-F` / `209-S` while item (1) (`backlogit shipment reconstitute --plan`) remains active for Phase 1B (`209-F` / `210-S`).
 * Created 3 atomic tasks under `208-F` (`priority: high`, `size_source: agent`, `size_ruleset_version: 1.0`, `complexity_source: agent`, `complexity_ruleset_version: 1.0`) with `blocks` dependencies `208.001-T -> 208.002-T -> 208.003-T`:
   * `208.001-T` (U1, `size: M`, `complexity: medium`): *Propagate AdoptItem ID rewrites to manifests and stash archive, add KeepID, and make ID allocation history-safe*
