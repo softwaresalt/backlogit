@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -504,6 +505,75 @@ func writeShipmentLifecycleJournalForWorkspace(
 		return "", err
 	}
 	return filepath.Join(opsRoot, name), nil
+}
+
+const (
+	shipmentOperationPhaseIntent    = "intent"
+	shipmentOperationPhaseCommitted = "committed"
+
+	shipmentOperationRemoveItem = "remove_item"
+	shipmentOperationMoveItem   = "move_item"
+
+	shipmentOperationRecoveryPolicyRollback = "rollback"
+)
+
+// ShipmentManifestOptions carries the governed-override and preview inputs
+// shared by the manifest replanning operations.
+type ShipmentManifestOptions struct {
+	Force  bool   // overrides the queued-only guard (never the blocked seal)
+	Reason string // REQUIRED non-empty whenever Force is set
+	DryRun bool   // read-only preview, zero writes
+}
+
+// RemoveFromShipmentResult reports a RemoveFromShipment outcome or preview.
+type RemoveFromShipmentResult struct {
+	ShipmentID    string   `json:"shipment_id"`
+	ItemID        string   `json:"item_id"`
+	Status        string   `json:"status"`
+	DryRun        bool     `json:"dry_run"`
+	Force         bool     `json:"force,omitempty"`
+	Reason        string   `json:"reason,omitempty"`
+	Requeued      bool     `json:"requeued,omitempty"`
+	CorrelationID string   `json:"correlation_id,omitempty"`
+	ItemsBefore   []string `json:"items_before"`
+	ItemsAfter    []string `json:"items_after"`
+}
+
+// MoveShipmentItemResult reports a MoveShipmentItem outcome or preview.
+type MoveShipmentItemResult struct {
+	ItemID         string   `json:"item_id"`
+	FromShipmentID string   `json:"from_shipment_id"`
+	ToShipmentID   string   `json:"to_shipment_id"`
+	Status         string   `json:"status"`
+	DryRun         bool     `json:"dry_run"`
+	Force          bool     `json:"force,omitempty"`
+	Reason         string   `json:"reason,omitempty"`
+	Requeued       bool     `json:"requeued,omitempty"`
+	CorrelationID  string   `json:"correlation_id,omitempty"`
+	FromBefore     []string `json:"from_before"`
+	FromAfter      []string `json:"from_after"`
+	ToBefore       []string `json:"to_before"`
+	ToAfter        []string `json:"to_after"`
+}
+
+// RemoveFromShipment removes itemID from a shipment manifest.
+func RemoveFromShipment(
+	ctx context.Context,
+	ws *Workspace,
+	shipmentID, itemID string,
+	opts ShipmentManifestOptions,
+) (*RemoveFromShipmentResult, error) {
+	return nil, blerrors.ErrNotImplemented
+}
+
+// MoveShipmentItem atomically moves itemID between two shipment manifests.
+func MoveShipmentItem(
+	ctx context.Context,
+	ws *Workspace,
+	itemID, fromShipmentID, toShipmentID string,
+	opts ShipmentManifestOptions,
+) (*MoveShipmentItemResult, error) {
+	return nil, blerrors.ErrNotImplemented
 }
 
 func shipmentLifecycleJournalName(correlationID string) string {
