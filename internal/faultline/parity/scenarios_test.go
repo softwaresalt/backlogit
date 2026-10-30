@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -67,20 +68,18 @@ func TestU3SeedCorpus_OmitemptyArrayLoss(t *testing.T) {
 func TestU3SeedCorpus_KnownGatePayloadDrift(t *testing.T) {
 	report := runScenario(t, parity.KnownGatePayloadDriftScenario())
 
-	// The tracked defect anchoring the report_only drift is the canonical
-	// backlog-ID 166-F (not a free-form string).
-	require.Equal(t, "166-F", parity.TrackedDefectGatePayload)
-
-	sawTracked := false
 	for _, d := range report.Dimensions {
-		if d.Status == parity.StatusReportOnly {
-			require.Equal(t, "166-F", d.TrackedDefect)
-			sawTracked = true
-		}
+		require.NotEqual(t, parity.StatusReportOnly, d.Status,
+			"dimension %q must not be report_only", d.Dimension)
 	}
-	require.True(t, sawTracked, "known drift scenario must produce a report_only dimension")
+	byName := map[string]string{}
+	for _, d := range report.Dimensions {
+		byName[d.Dimension] = d.Status
+	}
+	require.Equal(t, parity.StatusFail, byName["remediation"])
+	require.Equal(t, parity.StatusFail, byName["retryability"])
 	require.NotNil(t, report.Evidence)
-	require.Equal(t, "report_only", report.Evidence.Status)
+	require.Equal(t, "fail", report.Evidence.Status)
 }
 
 // TestU3SeedCorpus_CorpusRegistryComplete asserts SeedCorpus exposes every
@@ -108,14 +107,35 @@ func backlogitDirForResolution(t *testing.T) string {
 }
 
 func TestU3SeedCorpus_TrackedDefectResolution_Valid(t *testing.T) {
-	dir := backlogitDirForResolution(t)
-	// 166-F is a queued (non-terminal) standalone feature: it MUST resolve.
-	err := parity.ResolveTrackedDefect(dir, "166-F")
-	require.NoError(t, err, "166-F must resolve to a current, non-terminal backlog item")
+	// Hermetic fixture: independent of the live workspace lifecycle of 166-F.
+	dir := filepath.Join(t.TempDir(), ".backlogit")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "queue"), 0o750))
+	writeItem := func(id, status string) {
+		t.Helper()
+		content := "---\nid: " + id + "\nstatus: " + status + "\n---\n\nbody\n"
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "queue", id+".md"), []byte(content), 0o600))
+	}
+	writeItem("166-F", "queued")
+	writeItem("900-F", "done")
 
-	// The fixture pins the tracked defect to the canonical backlog-ID 166-F.
 	require.Equal(t, "166-F", parity.TrackedDefectGatePayload)
-	require.NoError(t, parity.ResolveTrackedDefect(dir, parity.TrackedDefectGatePayload))
+	require.NoError(t, parity.ResolveTrackedDefect(dir, parity.TrackedDefectGatePayload),
+		"non-terminal queued item must resolve")
+	err := parity.ResolveTrackedDefect(dir, "900-F")
+	require.ErrorIs(t, err, parity.ErrTrackedDefectTerminal)
+
+	// Any report_only dimension in the corpus must resolve against the live workspace.
+	live := backlogitDirForResolution(t)
+	for _, sc := range parity.SeedCorpus() {
+		results := sc.Run(t, nil)
+		report, cmpErr := parity.CompareResults(context.Background(), sc.Name, results)
+		require.NoError(t, cmpErr)
+		for _, d := range report.Dimensions {
+			if d.Status == parity.StatusReportOnly {
+				require.NoError(t, parity.ResolveTrackedDefect(live, d.TrackedDefect))
+			}
+		}
+	}
 }
 
 func TestU3SeedCorpus_TrackedDefectResolution_Nonexistent(t *testing.T) {

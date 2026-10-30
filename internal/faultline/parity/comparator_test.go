@@ -25,8 +25,6 @@ import (
 	"github.com/softwaresalt/backlogit/internal/faultline/parity"
 )
 
-const trackedGatePayload = "166-F"
-
 // surfaceBody is a convenience builder for a JSON surface body.
 type surfaceBody map[string]any
 
@@ -208,33 +206,28 @@ func TestU2ComparatorExpectedGateDrift(t *testing.T) {
 	report, err := parity.CompareResults(context.Background(), "gate-block-json", gateDriftResults(t))
 	require.NoError(t, err)
 
-	// Collect every report_only dimension and the union of its declared fields.
-	reportOnlyFields := map[string]struct{}{}
-	sawReportOnly := false
+	// Gate-payload drift now fails closed: no report_only dimensions remain.
+	failFields := map[string]struct{}{}
 	for _, d := range report.Dimensions {
-		switch d.Status {
-		case parity.StatusReportOnly:
-			sawReportOnly = true
-			require.True(t, d.ExpectedDivergence, "report_only dimension %q must flag expected divergence", d.Dimension)
-			require.Equal(t, trackedGatePayload, d.TrackedDefect,
-				"report_only dimension %q must pin the tracked defect", d.Dimension)
+		require.NotEqual(t, parity.StatusReportOnly, d.Status,
+			"dimension %q must not be report_only", d.Dimension)
+		if d.Status == parity.StatusFail {
+			require.False(t, d.ExpectedDivergence, "failed dimension %q must not flag expected divergence", d.Dimension)
+			require.Empty(t, d.TrackedDefect, "failed dimension %q must not pin a tracked defect", d.Dimension)
 			for _, f := range d.DivergentFields {
-				reportOnlyFields[f] = struct{}{}
+				failFields[f] = struct{}{}
 			}
-		case parity.StatusFail:
-			t.Fatalf("dimension %q failed closed unexpectedly in the known-drift scenario: %v",
-				d.Dimension, d.DivergentFields)
 		}
 	}
-	require.True(t, sawReportOnly, "expected at least one report_only dimension for the known gate drift")
+	require.Equal(t, parity.StatusFail, findDimension(t, report, "remediation").Status)
+	require.Equal(t, parity.StatusFail, findDimension(t, report, "retryability").Status)
 
-	// EXACT set equality on the declared field-path set.
-	require.Equal(t, map[string]struct{}{"remediation": {}, "retry_after_ms": {}}, reportOnlyFields)
+	// EXACT set equality on the divergent field-path union.
+	require.Equal(t, map[string]struct{}{"remediation": {}, "retry_after_ms": {}}, failFields)
 
-	// Evidence rolls up to report_only + tracked defect + exact field set.
 	require.NotNil(t, report.Evidence)
 	require.NoError(t, faultline.Validate(*report.Evidence))
-	require.Equal(t, faultline.StatusReportOnly, report.Evidence.Status)
+	require.Equal(t, faultline.StatusFail, report.Evidence.Status)
 }
 
 func TestU2ComparatorNewDivergenceFailsClosed(t *testing.T) {
