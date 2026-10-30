@@ -41,7 +41,7 @@ func TestU1_RenderGateErrorJSON_RemediationAndRetryAfterMs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := renderGateErrorJSON(tc.ge.ItemID, tc.ge)
+			out, err := RenderGateErrorJSON(tc.ge.ItemID, tc.ge)
 			if err != nil {
 				t.Fatalf("render: %v", err)
 			}
@@ -99,7 +99,7 @@ func TestU1_RenderGateErrorJSON_RemediationAndRetryAfterMs(t *testing.T) {
 func TestGateExitError_BlockedMapsTo6(t *testing.T) {
 	for _, outcome := range []string{"blocked", "requeued", "escalated"} {
 		be := &corerrors.GateBlockedError{ItemID: "001.001-T", Outcome: outcome, OldStatus: "active"}
-		ee := gateExitError(be)
+		ee := GateExitError(be)
 		if ee == nil {
 			t.Fatalf("outcome %q: expected *ExitError, got nil", outcome)
 		}
@@ -123,7 +123,7 @@ func TestGateExitError_ClassMapping(t *testing.T) {
 	}
 	for _, tc := range cases {
 		ge := &corerrors.GateError{Class: tc.class, ItemID: "001.001-T", Message: "x"}
-		ee := gateExitError(ge)
+		ee := GateExitError(ge)
 		if ee == nil {
 			t.Fatalf("class %q: expected *ExitError, got nil", tc.class)
 		}
@@ -136,10 +136,10 @@ func TestGateExitError_ClassMapping(t *testing.T) {
 // TestGateExitError_NonGatePassThrough verifies a non-gate error yields nil so
 // the caller returns it unchanged (generic exit 1).
 func TestGateExitError_NonGatePassThrough(t *testing.T) {
-	if ee := gateExitError(errors.New("boom")); ee != nil {
+	if ee := GateExitError(errors.New("boom")); ee != nil {
 		t.Fatalf("expected nil for non-gate error, got %+v", ee)
 	}
-	if ee := gateExitError(nil); ee != nil {
+	if ee := GateExitError(nil); ee != nil {
 		t.Fatalf("expected nil for nil error, got %+v", ee)
 	}
 }
@@ -241,9 +241,9 @@ func TestRenderGatePassJSON(t *testing.T) {
 // retryable key entirely (parsed value false).
 func TestRenderGateErrorJSON_ConfigOmitsRetryable(t *testing.T) {
 	ge := &corerrors.GateError{Class: "config", ItemID: "001.001-T", Message: "bad gate config", Err: corerrors.ErrGateConfig}
-	out, err := renderGateErrorJSON(ge.ItemID, ge)
+	out, err := RenderGateErrorJSON(ge.ItemID, ge)
 	if err != nil {
-		t.Fatalf("renderGateErrorJSON: %v", err)
+		t.Fatalf("RenderGateErrorJSON: %v", err)
 	}
 	var p gateJSONPayload
 	if err := json.Unmarshal([]byte(out), &p); err != nil {
@@ -273,9 +273,9 @@ func TestRenderGateErrorJSON_ConfigOmitsRetryable(t *testing.T) {
 // from exit-7 config errors.
 func TestRenderGateErrorJSON_TimeoutPresent(t *testing.T) {
 	ge := &corerrors.GateError{Class: "timeout", ItemID: "001.001-T", Message: "gate timed out", Err: corerrors.ErrGateTimeout}
-	out, err := renderGateErrorJSON(ge.ItemID, ge)
+	out, err := RenderGateErrorJSON(ge.ItemID, ge)
 	if err != nil {
-		t.Fatalf("renderGateErrorJSON: %v", err)
+		t.Fatalf("RenderGateErrorJSON: %v", err)
 	}
 	var p gateJSONPayload
 	if err := json.Unmarshal([]byte(out), &p); err != nil {
