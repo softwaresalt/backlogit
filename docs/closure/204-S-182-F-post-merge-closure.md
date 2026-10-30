@@ -43,7 +43,7 @@ title: "204-S / 182-F Post-Merge Closure"
 | Copilot review (P-018) | `SATISFIED`; one thread fixed and resolved |
 | CI | All required checks passed for the merged HEAD |
 | Merge strategy (P-009) | Merge commit |
-| Governed closure | `backlogit_ship_shipment` archived `204-S`, `182-F` and `182.001-T` with the merge SHA |
+| Governed closure | `backlogit_ship_shipment` archived `204-S`, `182-F` and `182.001-T` with the merge SHA; the client call timed out and completion was confirmed by the result-unknown procedure (quiescence, `shipped` and `archived` log events, `ship_shipment` hook seq 4246, clean shipped-event completeness check) |
 
 ## Runtime verification and releasability
 
