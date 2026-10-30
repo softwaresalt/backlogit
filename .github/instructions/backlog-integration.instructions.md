@@ -85,6 +85,7 @@ Use these operations for all backlog interactions. The operation names are abstr
 | `list_types` | `backlogit_list_types` | `backlogit metadata types` | list types |
 | `log_telemetry` | `backlogit_log_telemetry` | `` | log telemetry |
 | `merge_sync` | `backlogit_merge_sync` | `` | merge sync |
+| `move_shipment_item` | `backlogit_move_shipment_item` | `backlogit shipment move {{item_id}} --from {{from_shipment_id}} --to {{to_shipment_id}} --reason {{reason}}` | move shipment item |
 | `normalize_blocked_shipment` | `backlogit_normalize_blocked_shipment` | `` | normalize blocked shipment |
 | `poll_hook_events` | `backlogit_poll_hook_events` | `backlogit hooks poll --consumer-id {{consumer_id}}` | poll hook events |
 | `quarantine_checkpoint` | `backlogit_quarantine_checkpoint` | `backlogit checkpoint quarantine {{filename}} --reason {{reason}} --operator {{operator}}` | quarantine checkpoint |
@@ -93,7 +94,9 @@ Use these operations for all backlog interactions. The operation names are abstr
 | `reconcile_shipped` | `` | `backlogit shipment reconcile-shipped {{shipment_id}} --reason {{reason}} --actor {{actor}} --idempotency-key {{idempotency_key}} --merge-sha {{merge_sha}} --closure-evidence {{closure_evidence}} --confirm {{confirm}}` | reconcile legacy archived shipment to shipped (CLI-only; `confirm` is the phrase `reconcile-shipped <id>`; preview with `reconcile_shipped_preview`) |
 | `reconcile_shipped_preview` | `` | `backlogit shipment reconcile-shipped {{shipment_id}} --dry-run --reason {{reason}} --actor {{actor}} --idempotency-key {{idempotency_key}} --merge-sha {{merge_sha}} --closure-evidence {{closure_evidence}}` | dry-run preview of `reconcile_shipped` (CLI-only; writes nothing, needs no `--confirm`) |
 | `remove_dependency` | `backlogit_remove_dependency` | `backlogit dep remove {{task_id}} {{depends_on}}` | remove dependency |
+| `remove_from_shipment` | `backlogit_remove_from_shipment` | `backlogit shipment remove {{shipment_id}} {{item_id}} --reason {{reason}}` | remove from shipment |
 | `remove_link` | `backlogit_remove_link` | `backlogit link remove {{source_id}} {{target_id}} {{link_type}}` | remove link |
+| `reorder_shipment` | `backlogit_reorder_shipment` | `backlogit shipment reorder {{shipment_id}} --items {{items}}` | reorder shipment |
 | `repair_member_evidence` | `` | `backlogit shipment repair-evidence {{shipment_id}} --member {{member_id}} --reason {{reason}}` | repair member evidence |
 | `resolve_checkpoint` | `backlogit_resolve_checkpoint` | `backlogit checkpoint resolve {{filename}}` | resolve checkpoint |
 | `return_blocked` | `backlogit_return_blocked` | `backlogit shipment return-blocked --shipment {{shipment_id}} --item {{item_id}} --reason {{reason}}` | return blocked |

@@ -44,7 +44,10 @@ shipments in the workspace, claim queued shipments, and return blocked items.
 * [backlogit shipment dispose](backlogit_shipment_dispose.md)	 - Dispose a queued shipment (Stage-only; needs operator deliberation and approval)
 * [backlogit shipment get](backlogit_shipment_get.md)	 - Get a shipment by ID
 * [backlogit shipment list](backlogit_shipment_list.md)	 - List shipments
+* [backlogit shipment move](backlogit_shipment_move.md)	 - Move an item between shipment manifests
 * [backlogit shipment reconcile-shipped](backlogit_shipment_reconcile-shipped.md)	 - Governed repair: reconcile a legacy archived shipment to archived_status=shipped
+* [backlogit shipment remove](backlogit_shipment_remove.md)	 - Remove an item from a shipment manifest
+* [backlogit shipment reorder](backlogit_shipment_reorder.md)	 - Reorder a shipment manifest
 * [backlogit shipment repair-evidence](backlogit_shipment_repair-evidence.md)	 - Repair stale gate evidence for a shipment member
 * [backlogit shipment return-blocked](backlogit_shipment_return-blocked.md)	 - Return a blocked item from a shipment
 * [backlogit shipment ship](backlogit_shipment_ship.md)	 - Close a released shipment and archive the released scope

@@ -518,6 +518,41 @@ func (s *Server) RegisterTools() {
 		s.handleAddToShipment,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_remove_from_shipment",
+			mcplib.WithDescription("Remove an item from a queued shipment manifest (force + reason overrides the queued-only guard; blocked shipments are never modifiable)"),
+			mcplib.WithString("shipment_id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID to remove")),
+			mcplib.WithString("reason", mcplib.Description("Operator justification (required when force is true)")),
+			mcplib.WithBoolean("force", mcplib.Description("Override the queued-only guard (requires reason)")),
+			mcplib.WithBoolean("dry_run", mcplib.Description("Preview the change without writing")),
+		),
+		s.handleRemoveFromShipment,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_move_shipment_item",
+			mcplib.WithDescription("Atomically move an item between shipment manifests (force + reason overrides the queued-only guard; blocked shipments are never modifiable)"),
+			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID to move")),
+			mcplib.WithString("from_shipment_id", mcplib.Required(), mcplib.Description("Source shipment ID")),
+			mcplib.WithString("to_shipment_id", mcplib.Required(), mcplib.Description("Destination shipment ID")),
+			mcplib.WithString("reason", mcplib.Description("Operator justification (required when force is true)")),
+			mcplib.WithBoolean("force", mcplib.Description("Override the queued-only guard (requires reason)")),
+			mcplib.WithBoolean("dry_run", mcplib.Description("Preview the change without writing")),
+		),
+		s.handleMoveShipmentItem,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_reorder_shipment",
+			mcplib.WithDescription("Reorder a queued shipment manifest explicitly (items) or dependency-respecting (auto); exactly one of items or auto is required"),
+			mcplib.WithString("shipment_id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("items", mcplib.Description("Comma-separated explicit manifest order")),
+			mcplib.WithBoolean("auto", mcplib.Description("Compute a dependency-respecting order")),
+			mcplib.WithString("reason", mcplib.Description("Operator justification (required when force is true)")),
+			mcplib.WithBoolean("force", mcplib.Description("Override the queued-only guard (requires reason)")),
+			mcplib.WithBoolean("dry_run", mcplib.Description("Preview the change without writing")),
+		),
+		s.handleReorderShipment,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_adopt_item",
 			mcplib.WithDescription("Adopt an orphaned item under a new parent feature"),
 			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID to adopt")),
