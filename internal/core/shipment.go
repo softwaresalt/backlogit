@@ -2738,6 +2738,14 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 	for _, record := range records {
 		if record.kind == shipmentLifecycleJournalKind {
 			journal := record.lifecycle
+			if journal.Phase == shipmentOperationPhaseCommitted &&
+				isShipmentManifestOperation(journal.Operation) &&
+				(currentOperationID == "" || journal.CorrelationID != currentOperationID) {
+				// A completed remove_item / move_item whose cleanup was
+				// interrupted: finalize without touching preimages.
+				removeShipmentOperationJournal(ctx, ws, record.path)
+				continue
+			}
 			if journal.Phase != "intent" ||
 				(currentOperationID != "" && journal.CorrelationID == currentOperationID) {
 				continue

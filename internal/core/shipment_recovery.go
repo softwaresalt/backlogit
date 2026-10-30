@@ -129,6 +129,9 @@ func reconcileShipmentLifecycleIntent(
 	journalPath string,
 	journal shipmentLifecycleJournal,
 ) (*models.Artifact, error) {
+	if journal.Operation == shipmentOperationRemoveItem || journal.Operation == shipmentOperationMoveItem {
+		return reconcileShipmentManifestIntent(ctx, ws, journalPath, journal)
+	}
 	if journal.SchemaVersion != "shipment-operation/v1" ||
 		journal.Phase != "intent" ||
 		journal.CorrelationID == "" ||
@@ -468,6 +471,111 @@ func reconcileShipmentLifecycleIntent(
 type shipmentLifecycleRecoveryEvidence struct {
 	appliedPhase  string
 	terminalPhase string
+}
+
+func isShipmentManifestOperation(operation string) bool {
+	return operation == shipmentOperationRemoveItem || operation == shipmentOperationMoveItem
+}
+
+// shipmentManifestCommittedEvidence reports whether every shipment log the
+// remove_item / move_item journal covers already carries this operation's
+// correlated phase "committed" event.
+func shipmentManifestCommittedEvidence(
+	ctx context.Context,
+	ws *Workspace,
+	journal shipmentLifecycleJournal,
+) (bool, error) {
+	eventType := EventShipmentItemRemoved
+	shipmentIDs := []string{journal.ShipmentID}
+	if journal.Operation == shipmentOperationMoveItem {
+		eventType = EventShipmentItemMoved
+		shipmentIDs = append(shipmentIDs, journal.Target)
+	}
+	for _, shipmentID := range shipmentIDs {
+		logged, err := events.ReadAllEvents(ctx, WorkspaceLogsRoot(ws.RootPath), shipmentID)
+		if err != nil {
+			return false, fmt.Errorf("read shipment %s %s recovery evidence: %w", shipmentID, journal.Operation, err)
+		}
+		found := false
+		for _, event := range logged {
+			correlationID, _ := event.Delta["correlation_id"].(string)
+			phase, _ := event.Delta["phase"].(string)
+			if event.EventType == eventType && correlationID == journal.CorrelationID &&
+				phase == shipmentOperationPhaseCommitted {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// reconcileShipmentManifestIntent recovers a remove_item / move_item journal at
+// the lifecycle barrier. A journal already committed (by phase or by correlated
+// committed events) is finalized without rolling back; otherwise every
+// preimage (member, related shipment, shipment) is restored in Markdown and
+// SQLite and this operation's events are scrubbed.
+func reconcileShipmentManifestIntent(
+	ctx context.Context,
+	ws *Workspace,
+	journalPath string,
+	journal shipmentLifecycleJournal,
+) (*models.Artifact, error) {
+	if err := validateShipmentLifecycleJournalRecord(journal, journal.CorrelationID); err != nil {
+		return nil, fmt.Errorf("shipment lifecycle journal %s is incomplete: %w", journalPath, err)
+	}
+	committed := journal.Phase == shipmentOperationPhaseCommitted
+	if !committed {
+		var err error
+		if committed, err = shipmentManifestCommittedEvidence(ctx, ws, journal); err != nil {
+			return nil, err
+		}
+	}
+
+	operationCtx := withShipmentOperation(ctx, journal.CorrelationID)
+	if !committed {
+		governedCtx := context.WithValue(operationCtx, artifactWriteEnvelopeContextKey{}, artifactWriteEnvelope{
+			correlationID:                 journal.CorrelationID,
+			operation:                     journal.Operation + "_recovery",
+			allowGovernedShipmentMutation: true,
+		})
+		artifactIDs := []string{journal.ShipmentID}
+		for _, member := range journal.Preimage.Members {
+			if err := persistArtifact(operationCtx, ws, cloneArtifact(member), true); err != nil {
+				return nil, fmt.Errorf("restore shipment %s member %s preimage: %w",
+					journal.ShipmentID, member.ID, err)
+			}
+			artifactIDs = append(artifactIDs, member.ID)
+		}
+		for _, related := range journal.Preimage.Related {
+			if err := persistArtifact(governedCtx, ws, cloneArtifact(related), false); err != nil {
+				return nil, fmt.Errorf("restore shipment %s related shipment %s preimage: %w",
+					journal.ShipmentID, related.ID, err)
+			}
+			artifactIDs = append(artifactIDs, related.ID)
+		}
+		if err := persistArtifact(governedCtx, ws, cloneArtifact(journal.Preimage.Shipment), false); err != nil {
+			return nil, fmt.Errorf("restore shipment %s preimage: %w", journal.ShipmentID, err)
+		}
+		if err := removeShipmentOperationEvents(operationCtx, ws, artifactIDs, journal.CorrelationID); err != nil {
+			return nil, fmt.Errorf("restore shipment %s %s event logs: %w", journal.ShipmentID, journal.Operation, err)
+		}
+		journal.Phase = "compensated"
+	} else {
+		journal.Phase = shipmentOperationPhaseCommitted
+	}
+	if _, err := writeShipmentOperationJournal(ws, filepath.Base(journalPath), journal); err != nil {
+		return nil, fmt.Errorf("persist shipment %s %s recovery journal: %w", journal.ShipmentID, journal.Operation, err)
+	}
+	cleanupShipmentOperationJournal(ctx, ws, journalPath)
+	current, err := findArtifact(ctx, ws, journal.ShipmentID)
+	if err != nil {
+		return nil, fmt.Errorf("load shipment %s recovered state: %w", journal.ShipmentID, err)
+	}
+	return current, nil
 }
 
 func inspectShipmentLifecycleRecoveryEvidence(
