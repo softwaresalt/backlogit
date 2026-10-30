@@ -66,3 +66,17 @@ go test ./tests/integration/ -run 'TestPluginBundleStructurallyValid' -count=1
 
 This keeps the bundle list in one place and avoids reintroducing the false
 `.github/` byte-identity invariant.
+
+## Scope boundary: P-002 harness-satisfied contract
+
+Accepted scope boundary (stash `633818E1`, governed by `101-F`): the `P-002` /
+`P-002.1`–`P-002.5` harness-satisfied contract (harness-exempt classes, the
+must-fail-before-deliverable probe, and the related Ship/build-feature gates) is
+intentionally NOT propagated to `plugin/agents/ship.agent.md` or
+`plugin/skills/build-feature/SKILL.md`.
+
+Rationale: `plugin/` is the distributable product bundle and `.github/` is
+backlogit's self-hosting harness. Per the `101-F` non-synchronization
+decision above, the two trees are validated structurally rather than by byte
+identity, so a harness-contract change in `.github/` does not imply a matching
+`plugin/` change. No code change is made and no `plugin/` content is modified.
