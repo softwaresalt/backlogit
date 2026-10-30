@@ -403,6 +403,9 @@ force the disposable cache to match the file-backed source of truth.`,
 	}
 }
 
+// serveMCPStdio is a test seam for the stdio transport.
+var serveMCPStdio = mcpinternal.RunStdio
+
 func newMCPCommand(cwd *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
@@ -423,7 +426,7 @@ Code, or Cursor to expose backlogit workspace tools to agents.`,
 				return err
 			}
 			s.NoUpdateCheck = noUpdateCheck
-			return mcpinternal.RunStdio(s)
+			return serveMCPStdio(s)
 		},
 	}
 }

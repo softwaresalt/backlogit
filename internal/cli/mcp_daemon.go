@@ -53,15 +53,31 @@ type MCPDaemonStopResult struct {
 
 // mcpDaemonOptions holds test seams for the daemon lock implementation.
 type mcpDaemonOptions struct {
-	// runtimeDir is a pinned handle to the runtime directory so lock and
-	// sidecar operations are directory-relative.
-	runtimeDir any
-	// verifyProcess checks, via one retained process handle, that a PID still
-	// refers to the recorded process instance.
-	verifyProcess func(info MCPDaemonInfo) (bool, error)
-	// terminateProcess terminates the process through the same retained handle
-	// used for verification.
-	terminateProcess func(ctx context.Context, info MCPDaemonInfo) error
+	// PID returns the current process ID.
+	PID func() int
+	// StopTimeout bounds how long a stop waits for the lock to be released.
+	StopTimeout time.Duration
+	// OpenLock opens name relative to the runtime root and tries the lock.
+	OpenLock func(runtimeRoot *os.Root, name string) (*os.File, bool, error)
+	// TerminateVerifiedProcess verifies pid against the recorded identity and
+	// terminates it through one retained OS process handle. reverify runs while
+	// that handle is held.
+	TerminateVerifiedProcess func(pid int, startTime int64, exePath string, reverify func() error) error
+}
+
+func defaultMCPDaemonOptions() mcpDaemonOptions {
+	return mcpDaemonOptions{
+		PID:         os.Getpid,
+		StopTimeout: 5 * time.Second,
+		OpenLock: func(runtimeRoot *os.Root, _ string) (*os.File, bool, error) {
+			return openMCPDaemonLockFile(runtimeRoot)
+		},
+		TerminateVerifiedProcess: terminateVerifiedProcess,
+	}
+}
+
+func terminateVerifiedProcess(int, int64, string, func() error) error {
+	return corerrors.ErrNotImplemented
 }
 
 const (
@@ -318,6 +334,10 @@ func writeMCPDaemonSidecar(runtimeRoot *os.Root, info MCPDaemonInfo) error {
 // error wrapping ErrDaemonAlreadyRunning. Takeover (replace) is not yet
 // implemented.
 func AcquireMCPDaemonLock(ctx context.Context, rootPath string, replace bool) (func() error, error) {
+	return acquireMCPDaemonLockWithOptions(ctx, rootPath, replace, defaultMCPDaemonOptions())
+}
+
+func acquireMCPDaemonLockWithOptions(ctx context.Context, rootPath string, replace bool, _ mcpDaemonOptions) (func() error, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("acquire mcp daemon lock: %w", err)
 	}
@@ -439,5 +459,9 @@ func InspectMCPDaemonStatus(rootPath string) (MCPDaemonStatus, error) {
 // StopMCPDaemon stops the MCP daemon for the workspace at rootPath. It is not
 // yet implemented.
 func StopMCPDaemon(ctx context.Context, rootPath string) (MCPDaemonStopResult, error) {
+	return stopMCPDaemonWithOptions(ctx, rootPath, defaultMCPDaemonOptions())
+}
+
+func stopMCPDaemonWithOptions(context.Context, string, mcpDaemonOptions) (MCPDaemonStopResult, error) {
 	return MCPDaemonStopResult{}, corerrors.ErrNotImplemented
 }
