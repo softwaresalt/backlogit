@@ -17,6 +17,7 @@ import (
 
 func TestU2_RejectsNonRegularSidecar(t *testing.T) {
 	_, _, runtimeDir := u2Workspace(t)
+	require.NoError(t, os.MkdirAll(runtimeDir, 0o700))
 	require.NoError(t, syscall.Mkfifo(filepath.Join(runtimeDir, u2SidecarName), 0o600))
 
 	root, err := os.OpenRoot(runtimeDir)
