@@ -27,13 +27,17 @@ backlogit mcp [flags]
 
 ```text
   backlogit mcp
+  backlogit mcp --replace
+  backlogit mcp status --format json
+  backlogit mcp stop
   backlogit --cwd D:\Source\MyProject mcp
 ```
 
 ### Options
 
 ```text
-  -h, --help   help for mcp
+  -h, --help      help for mcp
+      --replace   stop any running workspace MCP daemon before starting
 ```
 
 ### Options inherited from parent commands
@@ -48,4 +52,6 @@ backlogit mcp [flags]
 ### SEE ALSO
 
 * [backlogit](backlogit.md)	 - Backlogit — AI-native agile workspace
+* [backlogit mcp status](backlogit_mcp_status.md)	 - Report whether a backlogit MCP daemon is running for the workspace
+* [backlogit mcp stop](backlogit_mcp_stop.md)	 - Stop the backlogit MCP daemon running for the workspace
 
