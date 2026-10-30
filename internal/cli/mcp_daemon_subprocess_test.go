@@ -47,8 +47,12 @@ func TestU4_CrossProcessMCPDaemonLockAndStop(t *testing.T) {
 	go func() { _ = cmd.Wait(); close(done) }()
 	t.Cleanup(func() {
 		_ = stdin.Close()
-		_ = cmd.Process.Kill()
-		<-done
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+			<-done
+		}
 	})
 
 	line, err := bufio.NewReader(stdout).ReadString('\n')
@@ -64,14 +68,26 @@ func TestU4_CrossProcessMCPDaemonLockAndStop(t *testing.T) {
 	_, err = AcquireMCPDaemonLock(t.Context(), root, false)
 	require.ErrorIs(t, err, corerrors.ErrDaemonAlreadyRunning)
 
-	res, err := StopMCPDaemon(t.Context(), root)
-	require.NoError(t, err)
-	assert.True(t, res.Stopped)
-	assert.Equal(t, pid, res.PID)
+	if !u3NativeTerminationSupported() {
+		_, err = StopMCPDaemon(t.Context(), root)
+		require.ErrorIs(t, err, corerrors.ErrValidation)
+		select {
+		case <-done:
+			t.Fatal("unsupported platform must not terminate the holder")
+		default:
+		}
+		// Release the holder cooperatively through stdin.
+		require.NoError(t, stdin.Close())
+	} else {
+		res, err := StopMCPDaemon(t.Context(), root)
+		require.NoError(t, err)
+		assert.True(t, res.Stopped)
+		assert.Equal(t, pid, res.PID)
+	}
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
-		t.Fatal("child did not exit after stop")
+		t.Fatal("child did not exit")
 	}
 
 	release, err := AcquireMCPDaemonLock(t.Context(), root, false)

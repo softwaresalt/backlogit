@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -39,9 +41,19 @@ func TestMain(m *testing.M) {
 }
 
 type u3Holder struct {
-	cmd  *exec.Cmd
-	done chan struct{}
+	cmd   *exec.Cmd
+	done  chan struct{}
+	stdin io.WriteCloser
 }
+
+// u3NativeTerminationSupported reports whether verified process termination
+// is implemented on this platform; elsewhere it must fail closed.
+func u3NativeTerminationSupported() bool {
+	return runtime.GOOS == "linux" || runtime.GOOS == "windows"
+}
+
+// release lets the helper exit cleanly by closing its stdin.
+func (h *u3Holder) release() { _ = h.stdin.Close() }
 
 func (h *u3Holder) alive() bool {
 	select {
@@ -70,12 +82,16 @@ func u3StartHolder(t *testing.T, root string) *u3Holder {
 	stdout, err := cmd.StdoutPipe()
 	require.NoError(t, err)
 	require.NoError(t, cmd.Start())
-	h := &u3Holder{cmd: cmd, done: make(chan struct{})}
+	h := &u3Holder{cmd: cmd, done: make(chan struct{}), stdin: stdin}
 	go func() { _ = cmd.Wait(); close(h.done) }()
 	t.Cleanup(func() {
-		_ = stdin.Close()
-		_ = cmd.Process.Kill()
-		<-h.done
+		h.release()
+		select {
+		case <-h.done:
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+			<-h.done
+		}
 	})
 	line, err := bufio.NewReader(stdout).ReadString('\n')
 	require.NoError(t, err)
@@ -131,6 +147,12 @@ func TestU3_StopMCPDaemon_TerminatesVerifiedHolder(t *testing.T) {
 	h := u3StartHolder(t, root)
 
 	res, err := StopMCPDaemon(t.Context(), root)
+	if !u3NativeTerminationSupported() {
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, corerrors.ErrValidation), "got %v", err)
+		assert.True(t, h.alive(), "unsupported platform must fail closed")
+		return
+	}
 	require.NoError(t, err)
 	assert.True(t, res.Stopped)
 	assert.False(t, res.Running)
@@ -158,6 +180,36 @@ func TestU3_StopMCPDaemon_RefusesProcessIdentityMismatch(t *testing.T) {
 			assert.True(t, h.alive(), "mismatched holder must not be killed")
 		})
 	}
+}
+
+func TestU3_StopMCPDaemon_RefusesForeignWorkspaceMetadata(t *testing.T) {
+	cases := map[string]func(*MCPDaemonInfo){
+		"workspace": func(i *MCPDaemonInfo) { i.WorkspaceRoot = filepath.Join(os.TempDir(), "other") },
+		"storage":   func(i *MCPDaemonInfo) { i.StorageRoot = filepath.Join(os.TempDir(), "other", ".backlog") },
+		"lock":      func(i *MCPDaemonInfo) { i.LockPath = filepath.Join(os.TempDir(), "other.lock") },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			root, _, runtimeDir := u2Workspace(t)
+			h := u3StartHolder(t, root)
+			u3TamperSidecar(t, runtimeDir, mutate)
+
+			_, err := StopMCPDaemon(t.Context(), root)
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, corerrors.ErrValidation), "got %v", err)
+			assert.True(t, h.alive(), "foreign metadata must not kill the holder")
+		})
+	}
+}
+
+func TestU3_MissingStorageOverrideDoesNotFallBack(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlogit")
+	_, err := StopMCPDaemon(t.Context(), root)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, os.ErrNotExist), "got %v", err)
+	_, statErr := os.Stat(filepath.Join(root, ".backlog"))
+	assert.True(t, errors.Is(statErr, os.ErrNotExist), "default dir must not be created")
 }
 
 func TestU3_StopMCPDaemon_RefusesMissingOrSelfMetadata(t *testing.T) {
@@ -208,6 +260,12 @@ func TestU3_AcquireMCPDaemonLock_ReplaceTakesOverVerifiedHolder(t *testing.T) {
 	h := u3StartHolder(t, root)
 
 	release, err := AcquireMCPDaemonLock(t.Context(), root, true)
+	if !u3NativeTerminationSupported() {
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, corerrors.ErrValidation), "got %v", err)
+		assert.True(t, h.alive(), "unsupported platform must fail closed")
+		return
+	}
 	require.NoError(t, err)
 	defer func() { _ = release() }()
 	h.waitExit(t)
@@ -242,6 +300,12 @@ func TestU3_MCPStopCommandIdempotent(t *testing.T) {
 	h := u3StartHolder(t, root)
 
 	out, err := u3RunCLI(t, root, "mcp", "stop", "--format", "json")
+	if !u3NativeTerminationSupported() {
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, corerrors.ErrValidation), "got %v", err)
+		assert.True(t, h.alive(), "unsupported platform must fail closed")
+		return
+	}
 	require.NoError(t, err)
 	var res MCPDaemonStopResult
 	require.NoError(t, json.Unmarshal([]byte(out), &res), out)

@@ -99,6 +99,14 @@ func rejectLink(info os.FileInfo, path string) error {
 	return nil
 }
 
+// hasStorageOverride reports whether an explicit storage-root override is set.
+// An absent override target must surface as an error rather than fall back to
+// the default directory, which could address a different daemon.
+func hasStorageOverride() bool {
+	_, ok := os.LookupEnv("BACKLOGIT_WORKSPACE_DIR")
+	return ok
+}
+
 // openMCPDaemonRuntimeRoot resolves the workspace storage root and returns a
 // pinned handle to its runtime directory. Every later lock and sidecar
 // operation is directory-relative to that handle.
@@ -119,7 +127,7 @@ func openMCPDaemonRuntimeRoot(rootPath string) (workspaceRoot, storageRoot, runt
 	switch {
 	case err == nil:
 		workspaceRoot = filepath.Dir(storageRoot)
-	case errors.Is(err, os.ErrNotExist):
+	case errors.Is(err, os.ErrNotExist) && !hasStorageOverride():
 		workspaceRoot = absRoot
 		storageRoot = filepath.Join(absRoot, core.WorkspaceRootCandidates()[0])
 	default:
@@ -266,6 +274,9 @@ func readMCPDaemonInfo(runtimeRoot *os.Root) (MCPDaemonInfo, error) {
 	}
 	if err := rejectLink(linked, path); err != nil {
 		return info, err
+	}
+	if !linked.Mode().IsRegular() {
+		return info, mcpDaemonValidationError("%s is not a regular file", path)
 	}
 	f, err := runtimeRoot.Open(mcpDaemonSidecarName)
 	if err != nil {
@@ -520,6 +531,9 @@ func stopMCPDaemonWithOptions(ctx context.Context, rootPath string, opts mcpDaem
 	}
 	if info.PID <= 0 || info.PID == opts.PID() || info.ProcessStartTime <= 0 || info.ExecutablePath == "" {
 		return MCPDaemonStopResult{}, mcpDaemonValidationError("refusing to stop daemon with invalid or incomplete metadata (pid %d)", info.PID)
+	}
+	if info.WorkspaceRoot != workspaceRoot || info.StorageRoot != storageRoot || info.LockPath != result.LockPath {
+		return MCPDaemonStopResult{}, mcpDaemonValidationError("refusing to stop pid %d: daemon metadata does not belong to this workspace", info.PID)
 	}
 
 	reverify := func() error {

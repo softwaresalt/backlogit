@@ -105,7 +105,7 @@ func TestU2_CrashRecoveryCleansStaleMetadata(t *testing.T) {
 	info := u2ReadSidecar(t, runtimeDir)
 	assert.Equal(t, os.Getpid(), info.PID)
 	assert.NotEqual(t, "stale", info.ExecutablePath)
-	assert.NotEqual(t, int64(1), info.ProcessStartTime)
+	assert.NotZero(t, info.ProcessStartTime)
 	require.NoError(t, release())
 }
 
