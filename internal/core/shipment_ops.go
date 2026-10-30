@@ -537,6 +537,8 @@ const (
 	shipmentOperationRemoveItem = "remove_item"
 	shipmentOperationMoveItem   = "move_item"
 
+	shipmentOperationReorderItems = "reorder_items"
+
 	shipmentOperationRecoveryPolicyRollback = "rollback"
 )
 
@@ -546,6 +548,12 @@ type ShipmentManifestOptions struct {
 	Force  bool   // overrides the queued-only guard (never the blocked seal)
 	Reason string // REQUIRED non-empty whenever Force is set
 	DryRun bool   // read-only preview, zero writes
+
+	// Items is the explicit requested manifest order for ReorderShipment.
+	Items []string
+	// Auto requests the dependency-respecting order for ReorderShipment. It is
+	// mutually exclusive with Items.
+	Auto bool
 }
 
 // RemoveFromShipmentResult reports a RemoveFromShipment outcome or preview.

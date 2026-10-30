@@ -812,3 +812,364 @@ func TestU1_MoveShipmentItem_AtomicTransferAndGuards(t *testing.T) {
 		require.Empty(t, u1Events(t, fx.ws, fx.shipB.ID, EventShipmentItemMoved))
 	})
 }
+
+// u2Create creates an artifact and wires hard blocks dependencies
+// (itemID depends_on each dependsOn entry).
+func u2Create(
+	t *testing.T,
+	ws *Workspace,
+	title, artifactType, parentID string,
+	dependsOn ...*models.Artifact,
+) *models.Artifact {
+	t.Helper()
+	ctx := context.Background()
+	var opts []Option
+	if parentID != "" {
+		opts = append(opts, WithParent(parentID))
+	}
+	artifact, err := CreateArtifact(ctx, ws, title, artifactType, opts...)
+	require.NoError(t, err)
+	for _, dep := range dependsOn {
+		require.NoError(t, AddDependency(ctx, ws, artifact.ID, dep.ID, "blocks"))
+	}
+	return artifact
+}
+
+func u2IDs(items ...*models.Artifact) []string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return ids
+}
+
+func u2Ship(t *testing.T, ws *Workspace, title string, items ...*models.Artifact) *models.Artifact {
+	t.Helper()
+	shipment, err := CreateShipment(context.Background(), ws, title, u2IDs(items...))
+	require.NoError(t, err)
+	require.Equal(t, u2IDs(items...), NormalizeShipmentItems(u1Disk(t, ws, shipment.ID)),
+		"fixture must keep the requested manifest order")
+	return shipment
+}
+
+func u2Snapshot(t *testing.T, ws *Workspace, shipment *models.Artifact, items ...*models.Artifact) urAggregateSnapshot {
+	t.Helper()
+	return snapshotURGovernedState(t, ws, append(u2IDs(items...), shipment.ID))
+}
+
+func TestU2_ReorderShipment_ExplicitAndAutoTopological(t *testing.T) {
+	ctx := context.Background()
+	type u2Scrambled struct {
+		ws                                      *Workspace
+		feat, task1, task2, task3, sub11, sub21 *models.Artifact
+		ship                                    *models.Artifact
+		scrambled, ordered                      []string
+		all                                     []*models.Artifact
+	}
+	newFixture := func(t *testing.T) *u2Scrambled {
+		t.Helper()
+		ws := setupShipmentWorkspace(t)
+		fx := &u2Scrambled{ws: ws}
+		fx.feat = u2Create(t, ws, "U2 feature", "feature", "")
+		fx.task1 = u2Create(t, ws, "U2 task 1", "task", fx.feat.ID)
+		fx.task2 = u2Create(t, ws, "U2 task 2", "task", fx.feat.ID, fx.task1)
+		fx.task3 = u2Create(t, ws, "U2 task 3", "task", fx.feat.ID, fx.task2)
+		fx.sub11 = u2Create(t, ws, "U2 subtask 1.1", "subtask", fx.task1.ID)
+		fx.sub21 = u2Create(t, ws, "U2 subtask 2.1", "subtask", fx.task2.ID)
+		fx.all = []*models.Artifact{fx.sub21, fx.task3, fx.task1, fx.feat, fx.task2, fx.sub11}
+		fx.ship = u2Ship(t, ws, "U2 ship", fx.all...)
+		fx.scrambled = u2IDs(fx.all...)
+		fx.ordered = u2IDs(fx.feat, fx.task1, fx.sub11, fx.task2, fx.sub21, fx.task3)
+		return fx
+	}
+
+	t.Run("auto_dry_run_is_zero_write", func(t *testing.T) {
+		fx := newFixture(t)
+		before := u2Snapshot(t, fx.ws, fx.ship, fx.all...)
+		files := u1StorageFiles(t, fx.ws)
+
+		result, err := ReorderShipment(ctx, fx.ws, fx.ship.ID, ShipmentManifestOptions{Auto: true, DryRun: true})
+		require.NoError(t, err)
+		require.Equal(t, "dry_run", result.Status)
+		require.Equal(t, "auto", result.Mode)
+		require.True(t, result.DryRun)
+		require.Equal(t, fx.scrambled, result.ItemsBefore)
+		require.Equal(t, fx.ordered, result.ItemsAfter)
+		requireURAggregateUnchanged(t, fx.ws, before)
+		require.Equal(t, files, u1StorageFiles(t, fx.ws))
+		require.Empty(t, u1Events(t, fx.ws, fx.ship.ID, EventShipmentReordered))
+	})
+
+	t.Run("dry_run_refuses_pending_journal_without_recovery", func(t *testing.T) {
+		fx := newFixture(t)
+		path, _ := u1WriteJournal(t, fx.ws, shipmentOperationRemoveItem, shipmentOperationPhaseIntent,
+			fx.ship, nil, fx.task1.ID)
+		before := u2Snapshot(t, fx.ws, fx.ship, fx.all...)
+
+		_, err := ReorderShipment(ctx, fx.ws, fx.ship.ID, ShipmentManifestOptions{Auto: true, DryRun: true})
+		require.ErrorIs(t, err, blerrors.ErrShipmentConflict)
+		requireURAggregateUnchanged(t, fx.ws, before)
+		require.FileExists(t, path)
+	})
+
+	t.Run("dry_run_sqlite_cache_miss_reads_markdown_without_writes", func(t *testing.T) {
+		fx := newFixture(t)
+		for _, id := range []string{fx.ship.ID, fx.task1.ID, fx.sub21.ID} {
+			_, err := fx.ws.DB.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, id)
+			require.NoError(t, err)
+		}
+		before := u2Snapshot(t, fx.ws, fx.ship, fx.all...)
+		files := u1StorageFiles(t, fx.ws)
+
+		result, err := ReorderShipment(ctx, fx.ws, fx.ship.ID, ShipmentManifestOptions{Auto: true, DryRun: true})
+		require.NoError(t, err)
+		require.Equal(t, fx.ordered, result.ItemsAfter)
+		requireURAggregateUnchanged(t, fx.ws, before)
+		require.Equal(t, files, u1StorageFiles(t, fx.ws))
+		_, dbErr := bldb.GetItem(ctx, fx.ws.DB, fx.ship.ID)
+		require.ErrorIs(t, dbErr, blerrors.ErrNotFound)
+	})
+
+	t.Run("live_auto_persists_and_audits", func(t *testing.T) {
+		fx := newFixture(t)
+		result, err := ReorderShipment(ctx, fx.ws, fx.ship.ID, ShipmentManifestOptions{Auto: true})
+		require.NoError(t, err)
+		require.Equal(t, "reordered", result.Status)
+		require.Equal(t, "auto", result.Mode)
+		require.False(t, result.DryRun)
+		require.Equal(t, fx.ordered, result.ItemsAfter)
+		u1RequireManifest(t, fx.ws, fx.ship.ID, fx.ordered)
+
+		reordered := u1Events(t, fx.ws, fx.ship.ID, EventShipmentReordered)
+		require.Len(t, reordered, 1)
+		require.Equal(t, "auto", reordered[0].Delta["mode"])
+		require.Equal(t, "committed", reordered[0].Delta["phase"])
+		require.NotEmpty(t, reordered[0].Delta["correlation_id"])
+		require.NotNil(t, reordered[0].Delta["items_before"])
+		require.NotNil(t, reordered[0].Delta["items_after"])
+		var indexed int
+		require.NoError(t, fx.ws.DB.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM item_log_entries WHERE item_id = ? AND event_type = ?`,
+			fx.ship.ID, EventShipmentReordered).Scan(&indexed))
+		require.Equal(t, 1, indexed)
+		require.Empty(t, u1Journals(t, fx.ws))
+
+		again, err := ReorderShipment(ctx, fx.ws, fx.ship.ID, ShipmentManifestOptions{Auto: true, DryRun: true})
+		require.NoError(t, err)
+		require.Equal(t, fx.ordered, again.ItemsAfter, "auto must be idempotent")
+	})
+
+	t.Run("explicit_permutation_and_rejections", func(t *testing.T) {
+		fx := newFixture(t)
+		bad := map[string][]string{
+			"omits_member":        u2IDs(fx.feat, fx.task1, fx.sub11, fx.task2, fx.sub21),
+			"foreign_id":          append(u2IDs(fx.feat, fx.task1, fx.sub11, fx.task2, fx.sub21), "999-T"),
+			"duplicate":           u2IDs(fx.feat, fx.task1, fx.task1, fx.task2, fx.sub21, fx.task3),
+			"non_root_before_it":  u2IDs(fx.task1, fx.feat, fx.sub11, fx.task2, fx.sub21, fx.task3),
+			"violates_blocks":     u2IDs(fx.feat, fx.task2, fx.task1, fx.sub11, fx.sub21, fx.task3),
+			"violates_parent":     u2IDs(fx.feat, fx.sub11, fx.task1, fx.task2, fx.sub21, fx.task3),
+			"violates_chain_tail": u2IDs(fx.feat, fx.task1, fx.sub11, fx.task3, fx.task2, fx.sub21),
+		}
+		before := u2Snapshot(t, fx.ws, fx.ship, fx.all...)
+		for name, items := range bad {
+			for _, dryRun := range []bool{true, false} {
+				_, err := ReorderShipment(ctx, fx.ws, fx.ship.ID, ShipmentManifestOptions{Items: items, DryRun: dryRun})
+				require.ErrorIs(t, err, blerrors.ErrValidation, "%s dry_run=%v", name, dryRun)
+			}
+		}
+		requireURAggregateUnchanged(t, fx.ws, before)
+
+		valid := u2IDs(fx.feat, fx.task1, fx.task2, fx.sub21, fx.sub11, fx.task3)
+		result, err := ReorderShipment(ctx, fx.ws, fx.ship.ID, ShipmentManifestOptions{Items: valid})
+		require.NoError(t, err)
+		require.Equal(t, "explicit", result.Mode)
+		require.Equal(t, "reordered", result.Status)
+		u1RequireManifest(t, fx.ws, fx.ship.ID, valid)
+		reordered := u1Events(t, fx.ws, fx.ship.ID, EventShipmentReordered)
+		require.Len(t, reordered, 1)
+		require.Equal(t, "explicit", reordered[0].Delta["mode"])
+	})
+
+	t.Run("mode_selection_is_mutually_exclusive", func(t *testing.T) {
+		fx := newFixture(t)
+		before := u2Snapshot(t, fx.ws, fx.ship, fx.all...)
+		_, err := ReorderShipment(ctx, fx.ws, fx.ship.ID, ShipmentManifestOptions{})
+		require.ErrorIs(t, err, blerrors.ErrValidation)
+		_, err = ReorderShipment(ctx, fx.ws, fx.ship.ID, ShipmentManifestOptions{Auto: true, Items: fx.ordered})
+		require.ErrorIs(t, err, blerrors.ErrValidation)
+		_, err = ReorderShipment(ctx, fx.ws, "", ShipmentManifestOptions{Auto: true})
+		require.ErrorIs(t, err, blerrors.ErrValidation)
+		requireURAggregateUnchanged(t, fx.ws, before)
+	})
+
+	t.Run("active_shipment_requires_force_and_reason", func(t *testing.T) {
+		fx := newU1Fixture(t)
+		fx.claimA(t)
+		want := []string{fx.feat.ID, fx.task2.ID, fx.task1.ID}
+		before := fx.snapshot(t)
+
+		_, err := ReorderShipment(fx.ctx, fx.ws, fx.shipA.ID, ShipmentManifestOptions{Items: want})
+		require.ErrorIs(t, err, blerrors.ErrShipmentConflict)
+		_, err = ReorderShipment(fx.ctx, fx.ws, fx.shipA.ID, ShipmentManifestOptions{Items: want, Force: true})
+		require.ErrorIs(t, err, blerrors.ErrValidation)
+		requireURAggregateUnchanged(t, fx.ws, before)
+
+		result, err := ReorderShipment(fx.ctx, fx.ws, fx.shipA.ID,
+			ShipmentManifestOptions{Items: want, Force: true, Reason: "fix manifest order"})
+		require.NoError(t, err)
+		require.True(t, result.Force)
+		u1RequireManifest(t, fx.ws, fx.shipA.ID, want)
+		reordered := u1Events(t, fx.ws, fx.shipA.ID, EventShipmentReordered)
+		require.Len(t, reordered, 1)
+		require.Equal(t, true, reordered[0].Delta["force"])
+		require.Equal(t, "fix manifest order", reordered[0].Delta["reason"])
+	})
+
+	t.Run("blocked_shipment_is_refused_even_with_force", func(t *testing.T) {
+		fx := newU1Fixture(t)
+		fx.blockA(t)
+		before := fx.snapshot(t)
+		for _, dryRun := range []bool{false, true} {
+			_, err := ReorderShipment(fx.ctx, fx.ws, fx.shipA.ID, ShipmentManifestOptions{
+				Auto: true, Force: true, Reason: "fix manifest order", DryRun: dryRun,
+			})
+			require.ErrorIs(t, err, blerrors.ErrShipmentConflict, "dry_run=%v", dryRun)
+		}
+		requireURAggregateUnchanged(t, fx.ws, before)
+	})
+
+	t.Run("crash_intent_journal_is_rolled_back_by_barrier", func(t *testing.T) {
+		fx := newU1Fixture(t)
+		_, journal := u1WriteJournal(t, fx.ws, shipmentOperationReorderItems, shipmentOperationPhaseIntent,
+			fx.shipA, nil, "reorder")
+		torn := u1Disk(t, fx.ws, fx.shipA.ID)
+		torn.CustomFields["items"] = []string{fx.feat.ID, fx.task2.ID, fx.task1.ID}
+		require.NoError(t, persistArtifact(fx.ctx, fx.ws, torn, false))
+		_ = journal
+
+		u1Barrier(t, fx)
+		u1RequireManifest(t, fx.ws, fx.shipA.ID, []string{fx.feat.ID, fx.task1.ID, fx.task2.ID})
+		require.Empty(t, u1Journals(t, fx.ws))
+	})
+}
+
+func TestU2_ReorderShipment_NestedFeatureAndFlatRegressions(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("nested_feature_precedes_its_task", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		root := u2Create(t, ws, "U2 root feature", "feature", "")
+		nested := u2Create(t, ws, "U2 nested feature", "feature", root.ID)
+		require.Contains(t, nested.ID, ".")
+		task := u2Create(t, ws, "U2 nested task", "task", nested.ID)
+		ship := u2Ship(t, ws, "U2 nested ship", root, task, nested)
+
+		result, err := ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Auto: true})
+		require.NoError(t, err)
+		require.Equal(t, u2IDs(root, nested, task), result.ItemsAfter)
+		u1RequireManifest(t, ws, ship.ID, u2IDs(root, nested, task))
+	})
+
+	t.Run("flat_manifest_honors_subtask_blocks_edge_with_absent_parent", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		parent := u2Create(t, ws, "U2 absent parent", "task", "")
+		sub := u2Create(t, ws, "U2 flat subtask", "subtask", parent.ID)
+		task := u2Create(t, ws, "U2 flat task", "task", "", sub)
+		ship := u2Ship(t, ws, "U2 flat ship", task, sub)
+
+		result, err := ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Auto: true})
+		require.NoError(t, err)
+		require.Equal(t, u2IDs(sub, task), result.ItemsAfter)
+	})
+
+	t.Run("hard_blocks_cycle_among_members_is_refused", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		a := u2Create(t, ws, "U2 cycle a", "task", "")
+		b := u2Create(t, ws, "U2 cycle b", "task", "", a)
+		// Inject the back edge directly in frontmatter; AddDependency would
+		// reject it.
+		onDisk := u1Disk(t, ws, a.ID)
+		onDisk.Dependencies = append(onDisk.Dependencies, models.DependencyEdge{ID: b.ID, Type: "blocks"})
+		require.NoError(t, persistArtifact(ctx, ws, onDisk, false))
+		ship := u2Ship(t, ws, "U2 cycle ship", a, b)
+
+		_, err := ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Auto: true})
+		require.ErrorIs(t, err, blerrors.ErrValidation)
+		_, err = ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Items: u2IDs(a, b), DryRun: true})
+		require.ErrorIs(t, err, blerrors.ErrValidation)
+	})
+}
+
+func TestU2_ReorderShipment_CrossParentCycleAvoidanceAndIdempotence(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	feat := u2Create(t, ws, "U2 cross F", "feature", "")
+	// Create b and a first so A and B can declare the hard dependencies.
+	parentA := u2Create(t, ws, "U2 cross A", "task", feat.ID)
+	parentB := u2Create(t, ws, "U2 cross B", "task", feat.ID)
+	childA := u2Create(t, ws, "U2 cross a", "subtask", parentA.ID)
+	childB := u2Create(t, ws, "U2 cross b", "subtask", parentB.ID)
+	require.NoError(t, AddDependency(ctx, ws, parentA.ID, childB.ID, "blocks"))
+	require.NoError(t, AddDependency(ctx, ws, parentB.ID, childA.ID, "blocks"))
+	ship := u2Ship(t, ws, "U2 cross ship", feat, parentA, parentB, childA, childB)
+	want := u2IDs(feat, childB, parentA, childA, parentB)
+
+	dry, err := ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Auto: true, DryRun: true})
+	require.NoError(t, err)
+	require.Equal(t, want, dry.ItemsAfter)
+
+	for run := 1; run <= 2; run++ {
+		result, err := ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Auto: true})
+		require.NoError(t, err, "auto run %d", run)
+		require.Equal(t, want, result.ItemsAfter, "auto run %d", run)
+		u1RequireManifest(t, ws, ship.ID, want)
+	}
+
+	// The persisted auto order is accepted verbatim as an explicit order.
+	explicit, err := ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Items: want})
+	require.NoError(t, err)
+	require.Equal(t, want, explicit.ItemsAfter)
+
+	// The skipped B -> b parent edge is not enforced, but A -> a is.
+	_, err = ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{
+		Items: u2IDs(feat, childB, childA, parentA, parentB), DryRun: true,
+	})
+	require.ErrorIs(t, err, blerrors.ErrValidation)
+}
+
+func TestU2_ReorderShipment_RootFeatureDependencies(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("root_depending_on_non_root_member_is_refused", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		task := u2Create(t, ws, "U2 prereq task", "task", "")
+		root := u2Create(t, ws, "U2 dependent root", "feature", "", task)
+		ship := u2Ship(t, ws, "U2 root dep ship", task, root)
+
+		_, err := ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Auto: true})
+		require.ErrorIs(t, err, blerrors.ErrValidation)
+		_, err = ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Items: u2IDs(root, task), DryRun: true})
+		require.ErrorIs(t, err, blerrors.ErrValidation)
+		u1RequireManifest(t, ws, ship.ID, u2IDs(task, root))
+	})
+
+	t.Run("roots_are_topologically_ordered_and_enforced", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		base := u2Create(t, ws, "U2 base root", "feature", "")
+		top := u2Create(t, ws, "U2 top root", "feature", "", base)
+		task := u2Create(t, ws, "U2 root task", "task", base.ID)
+		ship := u2Ship(t, ws, "U2 two roots ship", task, top, base)
+
+		result, err := ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Auto: true})
+		require.NoError(t, err)
+		require.Equal(t, u2IDs(base, top, task), result.ItemsAfter)
+
+		_, err = ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Items: u2IDs(top, base, task), DryRun: true})
+		require.ErrorIs(t, err, blerrors.ErrValidation)
+		_, err = ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Items: u2IDs(base, task, top), DryRun: true})
+		require.ErrorIs(t, err, blerrors.ErrValidation, "every root must lead the manifest")
+		ok, err := ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Items: u2IDs(base, top, task), DryRun: true})
+		require.NoError(t, err)
+		require.Equal(t, u2IDs(base, top, task), ok.ItemsAfter)
+	})
+}
