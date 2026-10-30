@@ -28,7 +28,7 @@ Types MUST be one of the following:
 
 Scopes MUST be one of the following:
 
-mcp, cli, db, core, models, telemetry, config, docs, tests, ci, harness
+mcp, cli, db, core, models, telemetry, config, docs, tests, ci, harness, events, docline, memory, compound, cli-reference
 
 ## Description
 
@@ -36,11 +36,11 @@ mcp, cli, db, core, models, telemetry, config, docs, tests, ci, harness
 
 ## Body (Optional)
 
-For larger changes only:
+For larger or complex changes only:
 
 * Body starts with a blank line
-* Contains a summarized bulleted list (0-5 items)
-* MUST be LESS THAN 300 bytes
+* Contains a summarized bulleted list; complex changes may use a multi-bullet or structured body (grouped bullets or short labeled sections) as long as each bullet stays concise
+* Keep every body line short and focused on what changed and why
 
 ## Footer
 
