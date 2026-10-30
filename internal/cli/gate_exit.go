@@ -43,11 +43,11 @@ const (
 	ExitConfirmationRequired = 12
 )
 
-// gateExitError maps a gate typed error to an *ExitError carrying the versioned
+// GateExitError maps a gate typed error to an *ExitError carrying the versioned
 // gate exit code, or nil when err is not a gate error. Callers set
 // cmd.SilenceErrors and return the mapped *ExitError so main resolves the code
 // via ExitCodeFor instead of collapsing to the generic 1.
-func gateExitError(err error) *ExitError {
+func GateExitError(err error) *ExitError {
 	var blocked *corerrors.GateBlockedError
 	if errors.As(err, &blocked) {
 		return &ExitError{Code: ExitGateBlocked, Msg: blocked.Error()}
@@ -91,6 +91,8 @@ type gateJSONPayload struct {
 	GateReport      json.RawMessage `json:"gate_report,omitempty"`
 	Error           string          `json:"error,omitempty"`
 	Retryable       bool            `json:"retryable,omitempty"`
+	Remediation     string          `json:"remediation,omitempty"`
+	RetryAfterMs    int             `json:"retry_after_ms,omitempty"`
 	AllowedNext     []string        `json:"allowed_next_actions,omitempty"`
 }
 
@@ -158,17 +160,28 @@ func renderGateBlockedJSON(id string, be *corerrors.GateBlockedError) (string, e
 	return string(data), nil
 }
 
-// renderGateErrorJSON marshals the machine payload for a setup/config/timeout
+// RenderGateErrorJSON marshals the machine payload for a setup/config/timeout
 // error refusal from the typed *GateError (083.004-T / F7). Mirrors
 // renderGateBlockedJSON but carries outcome:"error". Retryable is tagged
 // omitempty so a config/setup-class error (Retryable()==false) omits the key
-// entirely, matching the *GateBlockedError payload shape.
-func renderGateErrorJSON(id string, ge *corerrors.GateError) (string, error) {
+// entirely, matching the *GateBlockedError payload shape. Remediation and
+// retry_after_ms mirror the MCP gateClassResult contract (166.001-T).
+func RenderGateErrorJSON(id string, ge *corerrors.GateError) (string, error) {
 	p := gateJSONPayload{
 		ID:        id,
 		Outcome:   "error",
 		Error:     ge.Error(),
 		Retryable: ge.Retryable(),
+	}
+	switch ge.Class {
+	case "setup":
+		p.Remediation = "Install or repair the autoharness binary (min 1.4.7), or disable the gate for this workspace."
+	case "config":
+		p.Remediation = "Fix the gate configuration or base/HEAD ref, then retry the completion."
+	case "timeout", "in_progress":
+		if ge.RetryAfterMs > 0 {
+			p.RetryAfterMs = ge.RetryAfterMs
+		}
 	}
 	data, err := json.Marshal(p)
 	if err != nil {

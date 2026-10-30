@@ -529,7 +529,7 @@ func newShipmentShipCmd() *cobra.Command {
 // caller wraps it as a generic failure (exit 1). On a gate error it silences
 // cobra's default error print and emits the one-line reason to stderr.
 func shipmentShipGateError(cmd *cobra.Command, err error) *ExitError {
-	ee := gateExitError(err)
+	ee := GateExitError(err)
 	if ee == nil {
 		return nil
 	}

@@ -15,7 +15,7 @@ import (
 // retryable:false (106-F F1/U8).
 func TestGateErrorResult_FormalGateKeyAbsent(t *testing.T) {
 	err := fmt.Errorf("%w: %w", corerrors.ErrFormalGateRequired, corerrors.ErrGateKeyAbsent)
-	result, handled := gateErrorResult(err, "done")
+	result, handled := GateErrorResult(err, "done")
 	require.True(t, handled, "ErrFormalGateRequired must be handled")
 	require.True(t, result.IsError)
 	body := resultBody(t, result)
@@ -32,7 +32,7 @@ func TestGateErrorResult_FormalGateKeyAbsent(t *testing.T) {
 // minimum requirement.
 func TestGateErrorResult_FormalGateKeyInvalid(t *testing.T) {
 	err := fmt.Errorf("%w: %w", corerrors.ErrFormalGateRequired, corerrors.ErrGateKeyInvalid)
-	result, handled := gateErrorResult(err, "done")
+	result, handled := GateErrorResult(err, "done")
 	require.True(t, handled)
 	body := resultBody(t, result)
 	require.Equal(t, "formal_gate_key_invalid", body["error"])
@@ -46,7 +46,7 @@ func TestGateErrorResult_FormalGateKeyInvalid(t *testing.T) {
 // error_type with actionable remediation.
 func TestGateErrorResult_FormalReportInvalid(t *testing.T) {
 	err := fmt.Errorf("%w: formal report: %w", corerrors.ErrFormalGateRequired, corerrors.ErrFormalReportInvalid)
-	result, handled := gateErrorResult(err, "done")
+	result, handled := GateErrorResult(err, "done")
 	require.True(t, handled)
 	body := resultBody(t, result)
 	require.Equal(t, "formal_gate_report_invalid", body["error"])
@@ -58,7 +58,7 @@ func TestGateErrorResult_FormalReportInvalid(t *testing.T) {
 // error_type rather than falling through to a generic internal error.
 func TestGateErrorResult_FormalGateGeneric(t *testing.T) {
 	err := fmt.Errorf("%w: shipment gate broker unavailable", corerrors.ErrFormalGateRequired)
-	result, handled := gateErrorResult(err, "")
+	result, handled := GateErrorResult(err, "")
 	require.True(t, handled)
 	body := resultBody(t, result)
 	require.Equal(t, "formal_gate_required", body["error"])
@@ -69,7 +69,7 @@ func TestGateErrorResult_FormalGateGeneric(t *testing.T) {
 // verification failure maps to a distinct, non-retryable error_type.
 func TestGateErrorResult_ProofInvalid(t *testing.T) {
 	err := fmt.Errorf("manifest changed: %w", corerrors.ErrProofInvalid)
-	result, handled := gateErrorResult(err, "")
+	result, handled := GateErrorResult(err, "")
 	require.True(t, handled)
 	body := resultBody(t, result)
 	require.Equal(t, "formal_gate_proof_invalid", body["error"])
@@ -80,7 +80,7 @@ func TestGateErrorResult_ProofInvalid(t *testing.T) {
 // evaluated at all maps to its own distinct error_type from ProofInvalid.
 func TestGateErrorResult_ProofUnverifiable(t *testing.T) {
 	err := fmt.Errorf("no proof present: %w", corerrors.ErrProofUnverifiable)
-	result, handled := gateErrorResult(err, "")
+	result, handled := GateErrorResult(err, "")
 	require.True(t, handled)
 	body := resultBody(t, result)
 	require.Equal(t, "formal_gate_proof_unverifiable", body["error"])

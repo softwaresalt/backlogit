@@ -10,12 +10,96 @@ import (
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
+// TestU1_RenderGateErrorJSON_RemediationAndRetryAfterMs pins CLI/MCP parity
+// (166.001-T): setup/config carry remediation; timeout/in_progress carry
+// retry_after_ms only when > 0; pass/blocked payloads omit both keys.
+func TestU1_RenderGateErrorJSON_RemediationAndRetryAfterMs(t *testing.T) {
+	const setupRem = "Install or repair the autoharness binary (min 1.4.7), or disable the gate for this workspace."
+	const configRem = "Fix the gate configuration or base/HEAD ref, then retry the completion."
+
+	decode := func(t *testing.T, s string) map[string]any {
+		t.Helper()
+		var m map[string]any
+		if err := json.Unmarshal([]byte(s), &m); err != nil {
+			t.Fatalf("unmarshal %q: %v", s, err)
+		}
+		return m
+	}
+
+	cases := []struct {
+		name      string
+		ge        *corerrors.GateError
+		wantRem   string
+		wantRetry float64 // 0 means key must be absent
+	}{
+		{"setup", &corerrors.GateError{Class: "setup", ItemID: "1-T", Message: "m", Err: corerrors.ErrGateSetup}, setupRem, 0},
+		{"config", &corerrors.GateError{Class: "config", ItemID: "1-T", Message: "m", Err: corerrors.ErrGateConfig}, configRem, 0},
+		{"timeout with retry", &corerrors.GateError{Class: "timeout", ItemID: "1-T", Message: "m", Err: corerrors.ErrGateTimeout, RetryAfterMs: 1500}, "", 1500},
+		{"timeout zero", &corerrors.GateError{Class: "timeout", ItemID: "1-T", Message: "m", Err: corerrors.ErrGateTimeout, RetryAfterMs: 0}, "", 0},
+		{"timeout negative", &corerrors.GateError{Class: "timeout", ItemID: "1-T", Message: "m", Err: corerrors.ErrGateTimeout, RetryAfterMs: -50}, "", 0},
+		{"in_progress with retry", &corerrors.GateError{Class: "in_progress", ItemID: "1-T", Message: "m", RetryAfterMs: 2000}, "", 2000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := RenderGateErrorJSON(tc.ge.ItemID, tc.ge)
+			if err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			m := decode(t, out)
+			rem, hasRem := m["remediation"]
+			if tc.wantRem == "" {
+				if hasRem {
+					t.Errorf("remediation present = %v, want absent", rem)
+				}
+			} else if rem != tc.wantRem {
+				t.Errorf("remediation = %v, want %q", rem, tc.wantRem)
+			}
+			retry, hasRetry := m["retry_after_ms"]
+			if tc.wantRetry == 0 {
+				if hasRetry {
+					t.Errorf("retry_after_ms present = %v, want absent", retry)
+				}
+			} else if retry != tc.wantRetry {
+				t.Errorf("retry_after_ms = %v, want %v", retry, tc.wantRetry)
+			}
+		})
+	}
+
+	t.Run("pass omits both", func(t *testing.T) {
+		out, err := renderGatePassJSON("1-T", &core.GateOutcome{Outcome: "passed", OldStatus: "active", NewStatus: "done"})
+		if err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		m := decode(t, out)
+		if _, ok := m["remediation"]; ok {
+			t.Error("pass payload has remediation")
+		}
+		if _, ok := m["retry_after_ms"]; ok {
+			t.Error("pass payload has retry_after_ms")
+		}
+	})
+	t.Run("blocked omits both", func(t *testing.T) {
+		be := &corerrors.GateBlockedError{ItemID: "1-T", Outcome: "blocked", OldStatus: "active", NewStatus: "active", ExitCode: 1}
+		out, err := renderGateBlockedJSON("1-T", be)
+		if err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		m := decode(t, out)
+		if _, ok := m["remediation"]; ok {
+			t.Error("blocked payload has remediation")
+		}
+		if _, ok := m["retry_after_ms"]; ok {
+			t.Error("blocked payload has retry_after_ms")
+		}
+	})
+}
+
 // TestGateExitError_BlockedMapsTo6 verifies an exit-1 refusal maps to the
 // versioned blocked exit code regardless of the block-family outcome.
 func TestGateExitError_BlockedMapsTo6(t *testing.T) {
 	for _, outcome := range []string{"blocked", "requeued", "escalated"} {
 		be := &corerrors.GateBlockedError{ItemID: "001.001-T", Outcome: outcome, OldStatus: "active"}
-		ee := gateExitError(be)
+		ee := GateExitError(be)
 		if ee == nil {
 			t.Fatalf("outcome %q: expected *ExitError, got nil", outcome)
 		}
@@ -39,7 +123,7 @@ func TestGateExitError_ClassMapping(t *testing.T) {
 	}
 	for _, tc := range cases {
 		ge := &corerrors.GateError{Class: tc.class, ItemID: "001.001-T", Message: "x"}
-		ee := gateExitError(ge)
+		ee := GateExitError(ge)
 		if ee == nil {
 			t.Fatalf("class %q: expected *ExitError, got nil", tc.class)
 		}
@@ -52,10 +136,10 @@ func TestGateExitError_ClassMapping(t *testing.T) {
 // TestGateExitError_NonGatePassThrough verifies a non-gate error yields nil so
 // the caller returns it unchanged (generic exit 1).
 func TestGateExitError_NonGatePassThrough(t *testing.T) {
-	if ee := gateExitError(errors.New("boom")); ee != nil {
+	if ee := GateExitError(errors.New("boom")); ee != nil {
 		t.Fatalf("expected nil for non-gate error, got %+v", ee)
 	}
-	if ee := gateExitError(nil); ee != nil {
+	if ee := GateExitError(nil); ee != nil {
 		t.Fatalf("expected nil for nil error, got %+v", ee)
 	}
 }
@@ -157,9 +241,9 @@ func TestRenderGatePassJSON(t *testing.T) {
 // retryable key entirely (parsed value false).
 func TestRenderGateErrorJSON_ConfigOmitsRetryable(t *testing.T) {
 	ge := &corerrors.GateError{Class: "config", ItemID: "001.001-T", Message: "bad gate config", Err: corerrors.ErrGateConfig}
-	out, err := renderGateErrorJSON(ge.ItemID, ge)
+	out, err := RenderGateErrorJSON(ge.ItemID, ge)
 	if err != nil {
-		t.Fatalf("renderGateErrorJSON: %v", err)
+		t.Fatalf("RenderGateErrorJSON: %v", err)
 	}
 	var p gateJSONPayload
 	if err := json.Unmarshal([]byte(out), &p); err != nil {
@@ -189,9 +273,9 @@ func TestRenderGateErrorJSON_ConfigOmitsRetryable(t *testing.T) {
 // from exit-7 config errors.
 func TestRenderGateErrorJSON_TimeoutPresent(t *testing.T) {
 	ge := &corerrors.GateError{Class: "timeout", ItemID: "001.001-T", Message: "gate timed out", Err: corerrors.ErrGateTimeout}
-	out, err := renderGateErrorJSON(ge.ItemID, ge)
+	out, err := RenderGateErrorJSON(ge.ItemID, ge)
 	if err != nil {
-		t.Fatalf("renderGateErrorJSON: %v", err)
+		t.Fatalf("RenderGateErrorJSON: %v", err)
 	}
 	var p gateJSONPayload
 	if err := json.Unmarshal([]byte(out), &p); err != nil {

@@ -406,11 +406,10 @@ func OmitemptyArrayLossScenario() Scenario {
 	}
 }
 
-// KnownGatePayloadDriftScenario seeds the ONE known, tracked drift: the CLI
-// --json gate-error payload OMITS remediation and retry_after_ms that MCP
-// emits. It is classified report_only (NOT fail) under EXACT (dimension,
-// field-path) set equality = {remediation, retry_after_ms}, pinned to the
-// tracked defect 166-F. A NEW or ADDITIONAL diverging field fails closed.
+// KnownGatePayloadDriftScenario seeds the historical CLI --json gate-error
+// payload drift: the CLI omits remediation and retry_after_ms that MCP emits.
+// The drift now fails closed (StatusFail) on the remediation and retryability
+// dimensions, with divergent field union {remediation, retry_after_ms}.
 func KnownGatePayloadDriftScenario() Scenario {
 	return Scenario{
 		Name:        "known-gate-payload-drift",
@@ -449,36 +448,44 @@ func KnownGatePayloadDriftScenario() Scenario {
 		},
 		Validate: func(t *testing.T, report ComparisonReport) {
 			t.Helper()
-			reportOnlyFields := map[string]struct{}{}
-			sawReportOnly := false
+			failFields := map[string]struct{}{}
 			for _, d := range report.Dimensions {
 				switch d.Status {
 				case StatusReportOnly:
-					sawReportOnly = true
-					if !d.ExpectedDivergence {
-						t.Fatalf("parity: report_only dimension %q must flag expected divergence", d.Dimension)
+					t.Fatalf("parity: dimension %q must not be report_only; gate drift fails closed", d.Dimension)
+				case StatusFail:
+					if d.ExpectedDivergence {
+						t.Fatalf("parity: failed dimension %q must not flag expected divergence", d.Dimension)
 					}
-					if d.TrackedDefect != TrackedDefectGatePayload {
-						t.Fatalf("parity: report_only dimension %q tracked defect = %q, want %q",
-							d.Dimension, d.TrackedDefect, TrackedDefectGatePayload)
+					if d.TrackedDefect != "" {
+						t.Fatalf("parity: failed dimension %q tracked defect = %q, want empty",
+							d.Dimension, d.TrackedDefect)
 					}
 					for _, f := range d.DivergentFields {
-						reportOnlyFields[f] = struct{}{}
+						failFields[f] = struct{}{}
 					}
-				case StatusFail:
-					t.Fatalf("parity: dimension %q failed closed in the known-drift scenario: %v",
-						d.Dimension, d.DivergentFields)
 				}
 			}
-			if !sawReportOnly {
-				t.Fatalf("parity: expected at least one report_only dimension for the known gate drift")
+			for _, dim := range []string{dimRemediation, dimRetryability} {
+				found := false
+				for _, d := range report.Dimensions {
+					if d.Dimension == dim {
+						found = true
+						if d.Status != StatusFail {
+							t.Fatalf("parity: dimension %q status = %q, want %q", dim, d.Status, StatusFail)
+						}
+					}
+				}
+				if !found {
+					t.Fatalf("parity: dimension %q missing from report", dim)
+				}
 			}
-			// EXACT set equality on the declared field-path set.
+			// EXACT set equality on the divergent field-path union.
 			want := map[string]struct{}{"remediation": {}, "retry_after_ms": {}}
-			if !sameFieldSet(reportOnlyFields, want) {
-				t.Fatalf("parity: report_only field set = %v, want %v", keysOf(reportOnlyFields), keysOf(want))
+			if !sameFieldSet(failFields, want) {
+				t.Fatalf("parity: failed field set = %v, want %v", keysOf(failFields), keysOf(want))
 			}
-			requireEvidenceStatus(t, report, faultline.StatusReportOnly)
+			requireEvidenceStatus(t, report, faultline.StatusFail)
 		},
 	}
 }

@@ -121,7 +121,7 @@ func moveGateError(cmd *cobra.Command, id string, err error, jsonOut bool) error
 		}
 		return eeGov
 	}
-	ee := gateExitError(err)
+	ee := GateExitError(err)
 	if ee == nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func moveGateError(cmd *cobra.Command, id string, err error, jsonOut bool) error
 				}
 			}
 		case errors.As(err, &ge):
-			if payload, mErr := renderGateErrorJSON(id, ge); mErr == nil {
+			if payload, mErr := RenderGateErrorJSON(id, ge); mErr == nil {
 				if _, wErr := fmt.Fprintln(cmd.OutOrStdout(), payload); wErr != nil {
 					return errors.Join(ee, fmt.Errorf("write output: %w", wErr))
 				}
