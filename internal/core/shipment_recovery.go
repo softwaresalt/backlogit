@@ -129,7 +129,7 @@ func reconcileShipmentLifecycleIntent(
 	journalPath string,
 	journal shipmentLifecycleJournal,
 ) (*models.Artifact, error) {
-	if journal.Operation == shipmentOperationRemoveItem || journal.Operation == shipmentOperationMoveItem {
+	if isShipmentManifestOperation(journal.Operation) {
 		return reconcileShipmentManifestIntent(ctx, ws, journalPath, journal)
 	}
 	if journal.SchemaVersion != "shipment-operation/v1" ||
@@ -474,7 +474,8 @@ type shipmentLifecycleRecoveryEvidence struct {
 }
 
 func isShipmentManifestOperation(operation string) bool {
-	return operation == shipmentOperationRemoveItem || operation == shipmentOperationMoveItem
+	return operation == shipmentOperationRemoveItem || operation == shipmentOperationMoveItem ||
+		operation == shipmentOperationReorderItems
 }
 
 // shipmentManifestCommittedEvidence reports whether every shipment log the
@@ -487,6 +488,9 @@ func shipmentManifestCommittedEvidence(
 ) (bool, error) {
 	eventType := EventShipmentItemRemoved
 	shipmentIDs := []string{journal.ShipmentID}
+	if journal.Operation == shipmentOperationReorderItems {
+		eventType = EventShipmentReordered
+	}
 	if journal.Operation == shipmentOperationMoveItem {
 		eventType = EventShipmentItemMoved
 		shipmentIDs = append(shipmentIDs, journal.Target)

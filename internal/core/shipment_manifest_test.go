@@ -1072,9 +1072,10 @@ func TestU2_ReorderShipment_NestedFeatureAndFlatRegressions(t *testing.T) {
 
 	t.Run("flat_manifest_honors_subtask_blocks_edge_with_absent_parent", func(t *testing.T) {
 		ws := setupShipmentWorkspace(t)
-		parent := u2Create(t, ws, "U2 absent parent", "task", "")
+		holder := u2Create(t, ws, "U2 holder", "feature", "")
+		parent := u2Create(t, ws, "U2 absent parent", "task", holder.ID)
 		sub := u2Create(t, ws, "U2 flat subtask", "subtask", parent.ID)
-		task := u2Create(t, ws, "U2 flat task", "task", "", sub)
+		task := u2Create(t, ws, "U2 flat task", "task", holder.ID, sub)
 		ship := u2Ship(t, ws, "U2 flat ship", task, sub)
 
 		result, err := ReorderShipment(ctx, ws, ship.ID, ShipmentManifestOptions{Auto: true})
@@ -1084,8 +1085,9 @@ func TestU2_ReorderShipment_NestedFeatureAndFlatRegressions(t *testing.T) {
 
 	t.Run("hard_blocks_cycle_among_members_is_refused", func(t *testing.T) {
 		ws := setupShipmentWorkspace(t)
-		a := u2Create(t, ws, "U2 cycle a", "task", "")
-		b := u2Create(t, ws, "U2 cycle b", "task", "", a)
+		holder := u2Create(t, ws, "U2 holder", "feature", "")
+		a := u2Create(t, ws, "U2 cycle a", "task", holder.ID)
+		b := u2Create(t, ws, "U2 cycle b", "task", holder.ID, a)
 		// Inject the back edge directly in frontmatter; AddDependency would
 		// reject it.
 		onDisk := u1Disk(t, ws, a.ID)
@@ -1142,7 +1144,8 @@ func TestU2_ReorderShipment_RootFeatureDependencies(t *testing.T) {
 
 	t.Run("root_depending_on_non_root_member_is_refused", func(t *testing.T) {
 		ws := setupShipmentWorkspace(t)
-		task := u2Create(t, ws, "U2 prereq task", "task", "")
+		holder := u2Create(t, ws, "U2 holder", "feature", "")
+		task := u2Create(t, ws, "U2 prereq task", "task", holder.ID)
 		root := u2Create(t, ws, "U2 dependent root", "feature", "", task)
 		ship := u2Ship(t, ws, "U2 root dep ship", task, root)
 

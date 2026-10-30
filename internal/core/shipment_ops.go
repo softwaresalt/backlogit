@@ -340,7 +340,7 @@ func validateShipmentLifecycleJournalRecord(
 	}
 	switch journal.Operation {
 	case "block", "unblock", "normalize", "claim", "dispose",
-		shipmentOperationRemoveItem, shipmentOperationMoveItem:
+		shipmentOperationRemoveItem, shipmentOperationMoveItem, shipmentOperationReorderItems:
 	default:
 		return fmt.Errorf("unsupported lifecycle operation %q: %w", journal.Operation, blerrors.ErrValidation)
 	}
@@ -369,6 +369,13 @@ func validateShipmentLifecycleJournalRecord(
 			len(journal.Preimage.Related) != 0 ||
 			!containsString(NormalizeShipmentItems(journal.Preimage.Shipment), journal.Target) {
 			return fmt.Errorf("remove_item lifecycle tuple must be rollback with a manifest member target and no related preimages: %w",
+				blerrors.ErrValidation)
+		}
+	case shipmentOperationReorderItems:
+		if journal.RecoveryPolicy != shipmentOperationRecoveryPolicyRollback ||
+			journal.Target != shipmentReorderTarget ||
+			len(journal.Preimage.Related) != 0 {
+			return fmt.Errorf("reorder_items lifecycle tuple must be rollback/reorder with no related preimages: %w",
 				blerrors.ErrValidation)
 		}
 	case shipmentOperationMoveItem:
@@ -1272,6 +1279,9 @@ func (m *manifestMutation) artifactIDs() []string {
 	ids := make([]string, 0, len(m.shipments)+1)
 	for _, shipment := range m.shipments {
 		ids = append(ids, shipment.ID)
+	}
+	if m.memberPreimage == nil {
+		return ids
 	}
 	return append(ids, m.memberPreimage.ID)
 }
