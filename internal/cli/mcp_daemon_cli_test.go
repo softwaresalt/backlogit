@@ -202,6 +202,42 @@ func TestU3_StopMCPDaemon_RefusesForeignWorkspaceMetadata(t *testing.T) {
 	}
 }
 
+func TestU3_StopMCPDaemon_AcceptsSymlinkAliasedMetadata(t *testing.T) {
+	if !u3NativeTerminationSupported() {
+		t.Skip("native termination unsupported on this platform")
+	}
+	root, storageRoot, runtimeDir := u2Workspace(t)
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+	h := u3StartHolder(t, root)
+	rel := func(p string) string {
+		r, err := filepath.Rel(root, p)
+		require.NoError(t, err)
+		return filepath.Join(alias, r)
+	}
+	lockAlias := rel(filepath.Join(runtimeDir, u2LockName))
+	u3TamperSidecar(t, runtimeDir, func(i *MCPDaemonInfo) {
+		i.WorkspaceRoot = alias
+		i.StorageRoot = rel(storageRoot)
+		i.LockPath = lockAlias
+	})
+
+	res, err := StopMCPDaemon(t.Context(), root)
+	require.NoError(t, err)
+	assert.True(t, res.Stopped)
+	h.waitExit(t)
+}
+
+func TestSameDaemonPath_FailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	assert.True(t, sameDaemonPath(dir, dir))
+	assert.False(t, sameDaemonPath(dir, filepath.Join(dir, "missing")))
+	assert.False(t, sameDaemonPath(filepath.Join(dir, "missing"), dir))
+	assert.False(t, sameDaemonPath("", dir))
+}
+
 func TestU3_MissingStorageOverrideDoesNotFallBack(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlogit")

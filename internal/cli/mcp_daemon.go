@@ -502,6 +502,24 @@ func readHolderInfo(ctx context.Context, runtimeRoot *os.Root, timeout time.Dura
 	}
 }
 
+// sameDaemonPath reports whether recorded and current name the same filesystem
+// object, regardless of symlink aliasing or (on case-insensitive volumes)
+// spelling. It fails closed: an empty or unresolvable path never matches.
+func sameDaemonPath(recorded, current string) bool {
+	if recorded == "" || current == "" {
+		return false
+	}
+	recordedInfo, err := os.Stat(filepath.Clean(recorded))
+	if err != nil {
+		return false
+	}
+	currentInfo, err := os.Stat(filepath.Clean(current))
+	if err != nil {
+		return false
+	}
+	return os.SameFile(recordedInfo, currentInfo)
+}
+
 func stopMCPDaemonWithOptions(ctx context.Context, rootPath string, opts mcpDaemonOptions) (MCPDaemonStopResult, error) {
 	workspaceRoot, storageRoot, runtimeDir, runtimeRoot, err := openMCPDaemonRuntimeRoot(rootPath)
 	if err != nil {
@@ -532,7 +550,7 @@ func stopMCPDaemonWithOptions(ctx context.Context, rootPath string, opts mcpDaem
 	if info.PID <= 0 || info.PID == opts.PID() || info.ProcessStartTime <= 0 || info.ExecutablePath == "" {
 		return MCPDaemonStopResult{}, mcpDaemonValidationError("refusing to stop daemon with invalid or incomplete metadata (pid %d)", info.PID)
 	}
-	if info.WorkspaceRoot != workspaceRoot || info.StorageRoot != storageRoot || info.LockPath != result.LockPath {
+	if !sameDaemonPath(info.WorkspaceRoot, workspaceRoot) || !sameDaemonPath(info.StorageRoot, storageRoot) || !sameDaemonPath(info.LockPath, result.LockPath) {
 		return MCPDaemonStopResult{}, mcpDaemonValidationError("refusing to stop pid %d: daemon metadata does not belong to this workspace", info.PID)
 	}
 
