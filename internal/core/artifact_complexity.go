@@ -135,3 +135,16 @@ func writeComplexitySeamDurable(path string, data []byte, durable bool) error {
 	}
 	return err
 }
+
+// ComplexityMutation is the presence-aware command for complexity/provenance updates.
+type ComplexityMutation struct {
+	Complexity     *string
+	Source         *string
+	RulesetVersion *string
+	Actor          ActorContext
+}
+
+// SetArtifactComplexityWithProvenance is the typed complexity provenance seam (red-phase stub).
+func SetArtifactComplexityWithProvenance(_ context.Context, _ *Workspace, _ string, _ ComplexityMutation) (*models.Artifact, error) {
+	return nil, errors.New("TODO: implement 207.001-T complexity provenance seam")
+}
