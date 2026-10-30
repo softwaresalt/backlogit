@@ -34,12 +34,18 @@ func (f *shipmentManifestFlags) options() core.ShipmentManifestOptions {
 func runShipmentManifestOp(
 	cmd *cobra.Command,
 	operation string,
+	dryRun bool,
 	op func(ctx context.Context, ws *core.Workspace) (any, error),
 ) (retErr error) {
 	ctx := context.Background()
-	slog.Info("shipment command invoked", "operation", operation)
+	slog.Info("shipment command invoked", "operation", operation, "dry_run", dryRun)
 
-	ws, err := core.NewWorkspace(ctx, shipmentCWD(cmd))
+	// A dry-run must stay read-only: no recovery, no SQLite open.
+	open := core.NewWorkspace
+	if dryRun {
+		open = core.NewReadOnlyWorkspace
+	}
+	ws, err := open(ctx, shipmentCWD(cmd))
 	if err != nil {
 		return fmt.Errorf("open workspace: %w", err)
 	}
@@ -74,7 +80,7 @@ shipment is never modifiable. Use --dry-run to preview the resulting manifest.`,
   backlogit shipment remove 001-S 001.001-T --dry-run`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runShipmentManifestOp(cmd, "shipment-remove", func(ctx context.Context, ws *core.Workspace) (any, error) {
+			return runShipmentManifestOp(cmd, "shipment-remove", flags.dryRun, func(ctx context.Context, ws *core.Workspace) (any, error) {
 				return core.RemoveFromShipment(ctx, ws, args[0], args[1], flags.options())
 			})
 		},
@@ -99,7 +105,7 @@ never modifiable. Use --dry-run to preview both resulting manifests.`,
 		Example: `  backlogit shipment move 001.001-T --from 001-S --to 002-S --reason "split scope"`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runShipmentManifestOp(cmd, "shipment-move", func(ctx context.Context, ws *core.Workspace) (any, error) {
+			return runShipmentManifestOp(cmd, "shipment-move", flags.dryRun, func(ctx context.Context, ws *core.Workspace) (any, error) {
 				return core.MoveShipmentItem(ctx, ws, args[0], from, to, flags.options())
 			})
 		},
@@ -131,7 +137,7 @@ order). Use --dry-run to preview the resulting order.`,
   backlogit shipment reorder 001-S --items 001-F,001.001-T,001.002-T`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runShipmentManifestOp(cmd, "shipment-reorder", func(ctx context.Context, ws *core.Workspace) (any, error) {
+			return runShipmentManifestOp(cmd, "shipment-reorder", flags.dryRun, func(ctx context.Context, ws *core.Workspace) (any, error) {
 				opts := flags.options()
 				opts.Items = splitShipmentItems(items)
 				opts.Auto = auto
