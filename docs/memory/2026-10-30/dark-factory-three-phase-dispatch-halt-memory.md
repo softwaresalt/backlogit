@@ -20,7 +20,7 @@ branch `chore/stage-206-S` and completed the full staging pipeline for feature
 * **Harvested tasks under `166-F`**:
   * `166.001-T` (U1, `code`, `high`, size `S`, complexity `low`): *Add remediation and retry_after_ms to CLI JSON gate-error payload*
   * `166.002-T` (U2, `code`, `high`, size `S`, complexity `low`, blocked by `166.001-T`): *Flip S4 gate-payload drift to fail-closed and export MCP gate-error helper*
-  * `166.003-T` (U3, `tests`, `high`, size `S`, complexity `low`, blocked by `166.002-T`): *Add cross-surface CLI/MCP gate-error parity and TrackedDefect lifecycle tests*
+  * `166.003-T` (U3, `code`, `high`, size `S`, complexity `low`, blocked by `166.002-T`): *Add cross-surface CLI/MCP gate-error parity tests and expand exitCodeClasses*
 * **Assembled shipment**: `206-S` (*Remediate CLI/MCP gate-error payload parity drift (166-F)*, status `queued`, priority `high`, items `["166-F", "166.001-T", "166.002-T", "166.003-T"]`).
 * **Stash archival**: N/A for Phase 1 (`166-F` was a pre-existing queued feature).
 
@@ -79,19 +79,30 @@ degradation was disclosed. Local session/PR output is the visibility surface.
 
 ## Continuity and next action
 
-The same bounded state was saved through backlogit memory under key
-`dark-factory-2026-10-30-three-phases-dispatch-blocked`.
-
-`compact-context` was invoked before handoff. The memory inventory contained
-129 Markdown files totaling 473.4 KB. No files were archived; the preceding
-205-S closure had already preserved cited, compacted, and unrelated candidates.
-No new recovery checkpoint was created or resolved.
-
-The drafts and continuity changes remain uncommitted and unpushed. Preserve
-them and the original hook event; do not discard or claim them as reviewed.
-
-Restore the agent runtime's context/checkpoint support, recheck current
-workspace and recovery state, and resume Stage for `166-F` on its existing
-staging branch, inspecting the partial drafts before proceeding.
-Do not treat this note as authorization to restore an unrelated checkpoint.
-Phases 2 and 3 remain pending in the recorded order.
+* **Current authoritative handoff (`stage-2026-10-30-206s-166f-complete`)**:
+  Phase 1 Stage work for `166-F` / `206-S` is **complete** on branch
+  `chore/stage-206-S` and open for review in staging PR `#623`. The deliberation
+  (`docs/decisions/2026-10-30-gate-payload-parity-remediation-deliberation.md`),
+  hardened and reviewed implementation plan
+  (`docs/exec-plans/2026-10-30-gate-payload-parity-remediation-plan.md`,
+  `decision: PASS`), harvested tasks (`166.001-T`, `166.002-T`, `166.003-T`),
+  and queued shipment (`206-S`) are committed and pushed.
+* **Superseded historical halt (`dark-factory-2026-10-30-three-phases-dispatch-blocked`)**:
+  The earlier dispatch halt from failed child `00a86a85-d480-4a62-871f-ea8261dad719`
+  (recorded at `2026-10-30T06:09:37Z` when the deliberation and plan were still
+  uncommitted drafts) has been **superseded** by the completed Stage run above.
+  Do **not** re-run Stage for `166-F` or treat the committed artifacts on
+  `chore/stage-206-S` as unreviewed partial drafts.
+* **Preserved pre-existing state**:
+  `compact-context` was invoked before the initial handoff (129 Markdown files
+  totaling 473.4 KB; 0 archived). No active recovery checkpoint exists. The
+  pre-existing local append in `.backlogit/hooks_queue.jsonl` (sequence 4258,
+  `ship_shipment` for `205-S`) remains preserved outside the staging PR commit.
+* **Next action for recovery / Orchestrator**:
+  1. Complete Step 1.5 staging PR `#623` review and merge (`--merge` per P-009)
+     into `main`, then sync local `main` and delete `chore/stage-206-S`.
+  2. Dispatch **Ship** (`_Ship`) for queued shipment `206-S` (`166-F`:
+     `166.001-T -> 166.002-T -> 166.003-T`) and run post-merge closure.
+  3. Advance the Dark Factory cursor to Phase 2 (stash `DE3E7B67`) and then
+     Phase 3 (stash `A441A74C`) in the recorded order.
+  4. Do not treat this note as authorization to restore an unrelated checkpoint.

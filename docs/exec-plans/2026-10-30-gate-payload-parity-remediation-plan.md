@@ -47,12 +47,12 @@ When a gated task or subtask transition fails with a typed `*corerrors.GateError
 | ID | Requirement | Source | Implementation Unit |
 |---|---|---|---|
 | R1 | Add `Remediation string `json:"remediation,omitempty"`` and `RetryAfterMs int `json:"retry_after_ms,omitempty"`` to `gateJSONPayload` and populate them in `renderGateErrorJSON` (`internal/cli/gate_exit.go`) matching MCP `gateClassResult`, while preserving existing exit codes, messages, and `omitempty` behavior; expose `RenderGateErrorJSON` and `GateExitError` for cross-package parity testing | `166-F` & `2026-10-30-gate-payload-parity-remediation-deliberation.md` (Option A, item 1) | U1 (`166.001-T`) |
-| R2 | Flip the S4 expected-divergence comparator rule (`knownDrifts` in `internal/faultline/parity/comparator.go`) and corpus scenario (`KnownGatePayloadDriftScenario` in `internal/faultline/parity/scenarios.go`) from `StatusReportOnly` to fail-closed (`StatusFail`), include MCP's `gate_*` category tokens in `exitCodeClasses`, and expose `GateErrorResult` in `internal/mcp/gate_errors.go` | `166-F` & `2026-10-30-gate-payload-parity-remediation-deliberation.md` (Option A, item 2) | U2 (`166.002-T`) |
-| R3 | Add real cross-surface CLI/MCP field-parity regression tests driving `cli.RenderGateErrorJSON` and `mcp.GateErrorResult` through `parity.CompareResults` across all `GateError` classes, update comparator/corpus tests for fail-closed behavior, and make `TestU3SeedCorpus_TrackedDefectResolution_Valid` lifecycle-safe when `166-F` is completed and archived | `166-F` & `2026-10-30-gate-payload-parity-remediation-deliberation.md` (Option A, item 3) | U3 (`166.003-T`) |
+| R2 | Flip the S4 expected-divergence comparator rule (`knownDrifts` in `internal/faultline/parity/comparator.go`), corpus scenario (`KnownGatePayloadDriftScenario` in `internal/faultline/parity/scenarios.go`), and existing drift/resolution tests (`TestU2ComparatorExpectedGateDrift` in `internal/faultline/parity/comparator_test.go`, `TestU3SeedCorpus_KnownGatePayloadDrift` and `TestU3SeedCorpus_TrackedDefectResolution_Valid` in `internal/faultline/parity/scenarios_test.go`) from `StatusReportOnly` to fail-closed (`StatusFail`) and lifecycle-safe resolution, and expose `GateErrorResult` in `internal/mcp/gate_errors.go` | `166-F` & `2026-10-30-gate-payload-parity-remediation-deliberation.md` (Option A, item 2) | U2 (`166.002-T`) |
+| R3 | Add real cross-surface CLI/MCP field-parity regression tests driving `cli.RenderGateErrorJSON` and `mcp.GateErrorResult` through `parity.CompareResults` across all `GateError` classes (`TestU2ComparatorRealGateErrorParityAllClasses` in `internal/faultline/parity/comparator_test.go` and `TestGateErrorResult_ClassFamily` in `internal/mcp/gate_errors_test.go`), and expand `exitCodeClasses` in `internal/faultline/parity/comparator.go` with MCP's concrete `gate_*` category tokens | `166-F` & `2026-10-30-gate-payload-parity-remediation-deliberation.md` (Option A, item 3) | U3 (`166.003-T`) |
 
 ## Constraints
 
-* **2-Hour Rule and Width Isolation**: Each unit modifies at most 3 files, at most 4 functions, at most 3 test scenarios, and stays within a single skill domain (`code` or `tests`).
+* **2-Hour Rule and Width Isolation**: Each unit stays within a single skill domain (`code`), modifies at most 4 functions and at most 3 test scenarios, and keeps `go test` completely green at the end of every wave (U1 touches 3 files; U2 touches the 4 tightly-coupled `internal/faultline/parity/{comparator,scenarios}{,_test}.go` files plus the 3-line `internal/mcp/gate_errors.go` export so the parity suite turns green in the same wave as the `knownDrifts` flip; U3 touches 3 files).
 * **Preserve existing codes, types, messages, and optional-field (`omitempty`) behavior**:
   * Do not change CLI exit codes (`ExitGateBlocked = 6`, `ExitGateConfig = 7`, `ExitGateRetryable = 8`, `ExitShipmentGovernance = 9`).
   * `Remediation` and `RetryAfterMs` MUST carry `omitempty` on `gateJSONPayload` so `renderGatePassJSON`, `renderGateBlockedJSON`, and classes where those fields do not apply omit the keys completely.
@@ -93,59 +93,63 @@ When a gated task or subtask transition fails with a typed `*corerrors.GateError
 * **Domain**: `code`
 * **Depends on**: U1 (`166.001-T`)
 * **Changes**:
-  * **First (RED phase, scaffolded by `harness-architect`)**:
-    1. In `internal/faultline/parity/scenarios.go`, update `KnownGatePayloadDriftScenario()` so `Validate` asserts fail-closed behavior when CLI `--json` omits `remediation` and `retry_after_ms` that MCP emits:
+  * **First (RED phase, scaffolded by `harness-architect` in `*_test.go`)**:
+    1. In `internal/faultline/parity/comparator_test.go`, update `TestU2ComparatorExpectedGateDrift` to assert that `gateDriftResults(t)` (where CLI omits `remediation` and `retry_after_ms` emitted by MCP) fails closed: `findDimension(t, report, "remediation")` and `findDimension(t, report, "retryability")` both have `Status == parity.StatusFail`, `ExpectedDivergence == false`, `TrackedDefect == ""`, exact divergent field union `{"remediation", "retry_after_ms"}`, zero `StatusReportOnly` dimensions, and `report.Evidence.Status == faultline.StatusFail`. Remove the unused unexported `const trackedGatePayload` so `golangci-lint` (`unused`) stays clean.
+    2. In `internal/faultline/parity/scenarios_test.go`, update `TestU3SeedCorpus_KnownGatePayloadDrift` to assert that `runScenario(t, parity.KnownGatePayloadDriftScenario())` produces `StatusFail` on `remediation` and `retryability`, zero `StatusReportOnly` dimensions, and `report.Evidence.Status == "fail"`.
+    3. In `internal/faultline/parity/scenarios_test.go`, update `TestU3SeedCorpus_TrackedDefectResolution_Valid` so it does not fail when `166-F` transitions to `done`/`archived` on shipment closure:
+       * Create a hermetic `t.TempDir()` `.backlogit/queue/` and `.backlogit/archive/` fixture with a `queued` artifact (`001-F`) and a terminal (`done`) artifact (`002-F`), asserting `parity.ResolveTrackedDefect` returns `nil` for the non-terminal artifact and `parity.ErrTrackedDefectTerminal` for the terminal artifact.
+       * Against the live workspace (`backlogitDirForResolution(t)`), iterate over `parity.SeedCorpus()` and assert that any dimension with `Status == parity.StatusReportOnly` resolves its `TrackedDefect` via `parity.ResolveTrackedDefect` (while confirming zero dimensions in `SeedCorpus()` remain `StatusReportOnly`).
+    4. Observe RED (`go test -count=1 -run 'TestU2ComparatorExpectedGateDrift|TestU3SeedCorpus_KnownGatePayloadDrift|TestU3SeedCorpus_TrackedDefectResolution_Valid|TestU3SeedCorpus_CorpusRegistryComplete' ./internal/faultline/parity` compiles cleanly and fails because `knownDrifts` in `comparator.go` and `KnownGatePayloadDriftScenario` in `scenarios.go` still classify the drift as `StatusReportOnly`).
+  * **Second (GREEN phase, implemented by `build-feature`)**:
+    1. In `internal/faultline/parity/comparator.go`, empty `knownDrifts` (`var knownDrifts = map[string]driftDecl{}`) so divergences on `remediation` (`dimRemediation`) and `retry_after_ms` (`dimRetryability`) fail closed (`StatusFail`). Keep `const TrackedDefectGatePayload = "166-F"` exported for symbol compatibility with updated GoDoc noting `166-F` remediated the drift and `KnownGatePayloadDriftScenario` now fails closed.
+    2. In `internal/faultline/parity/scenarios.go`, update `KnownGatePayloadDriftScenario()` so `Validate` asserts fail-closed behavior when CLI `--json` omits `remediation` and `retry_after_ms` that MCP emits:
        * `requireDimensionStatus(t, report, dimRemediation, StatusFail)` and `requireDimensionStatus(t, report, dimRetryability, StatusFail)`.
        * Neither `dimRemediation` nor `dimRetryability` flags `ExpectedDivergence` (`d.ExpectedDivergence == false`) or sets `TrackedDefect` (`d.TrackedDefect == ""`), and no dimension in `report.Dimensions` has `StatusReportOnly`.
        * The union of `DivergentFields` across `StatusFail` dimensions equals `{"remediation", "retry_after_ms"}` via `sameFieldSet`.
        * `requireEvidenceStatus(t, report, faultline.StatusFail)`.
-    2. Observe RED (`go test -count=1 -run 'TestU3SeedCorpus_KnownGatePayloadDrift|TestU3SeedCorpus_CorpusRegistryComplete' ./internal/faultline/parity` fails because `knownDrifts` in `comparator.go` still classifies the drift as `StatusReportOnly`).
-  * **Second (GREEN phase, implemented by `build-feature`)**:
-    1. In `internal/faultline/parity/comparator.go`, empty `knownDrifts` (`var knownDrifts = map[string]driftDecl{}`) so divergences on `remediation` (`dimRemediation`) and `retry_after_ms` (`dimRetryability`) fail closed (`StatusFail`). Keep `const TrackedDefectGatePayload = "166-F"` exported for symbol compatibility with updated GoDoc noting `166-F` remediated the drift and `KnownGatePayloadDriftScenario` now fails closed.
-    2. In `internal/faultline/parity/comparator.go`, expand `exitCodeClasses` to include MCP's concrete gate error-type tokens alongside the coarse simulation tokens:
-       * Exit `6`: add `"gate_blocked": {}, "gate_requeued": {}, "gate_escalated": {}`
-       * Exit `7`: add `"gate_config": {}, "gate_setup": {}`
-       * Exit `8`: add `"gate_timeout": {}, "gate_in_progress": {}`
-    3. In `internal/mcp/gate_errors.go`, export `GateErrorResult(err error, requestedStatus string) (*mcplib.CallToolResult, bool)` (with `gateErrorResult` delegating to `GateErrorResult`) so cross-surface parity tests in `internal/faultline/parity` can call the real MCP gate-error renderer directly.
+    3. In `internal/mcp/gate_errors.go`, export `GateErrorResult(err error, requestedStatus string) (*mcplib.CallToolResult, bool)` (with `gateErrorResult` delegating to `GateErrorResult`) so cross-surface parity tests in `internal/faultline/parity` can call the real MCP gate-error renderer directly in U3.
+    4. Verify GREEN (`go test -count=1 ./internal/faultline/parity/... ./internal/mcp/...` passes with 0 failures).
 * **Affected files**:
   * `internal/faultline/parity/comparator.go`
   * `internal/faultline/parity/scenarios.go`
-  * `internal/mcp/gate_errors.go`
-* **Acceptance criteria**:
-  * RED phase is observed failing in `internal/faultline/parity` before `knownDrifts` in `comparator.go` is emptied.
-  * After `comparator.go` and `gate_errors.go` are updated, `KnownGatePayloadDriftScenario().Validate` enforces `StatusFail` on `dimRemediation` and `dimRetryability` and `faultline.StatusFail` on `report.Evidence`.
-* **Execution posture**: test-first.
-
-### U3: Add real cross-surface CLI/MCP gate-error parity regression tests and lifecycle-safe TrackedDefect resolution tests (`tests`) — `166.003-T`
-
-* **Domain**: `tests`
-* **Depends on**: U2 (`166.002-T`)
-* **Changes**:
-  * In `internal/faultline/parity/comparator_test.go`:
-    1. Update `TestU2ComparatorExpectedGateDrift` to assert that `gateDriftResults(t)` (where CLI omits `remediation` and `retry_after_ms` emitted by MCP) fails closed: `findDimension(t, report, "remediation")` and `findDimension(t, report, "retryability")` both have `Status == parity.StatusFail`, `ExpectedDivergence == false`, `TrackedDefect == ""`, exact divergent field union `{"remediation", "retry_after_ms"}`, and `report.Evidence.Status == faultline.StatusFail`. Remove the unused unexported `const trackedGatePayload` so `golangci-lint` (`unused`) stays clean.
-    2. Add `TestU2ComparatorRealGateErrorParityAllClasses` that invokes the real CLI renderer (`cli.RenderGateErrorJSON(ge.ItemID, ge)` and `cli.ExitCodeFor(cli.GateExitError(ge))`) and the real MCP renderer (`mcp.GateErrorResult(ge, "done")`) across all `*corerrors.GateError` classes (`setup`, `config`, `timeout` with `RetryAfterMs: 1500` and `0`, `in_progress` with `RetryAfterMs: 2000` and `0`), feeds their actual JSON bodies into `parity.CompareResults`, and asserts every applicable dimension (`exit_code`, `structured_error`, `retryability`, `remediation`, `force_lever`) passes (`parity.StatusPass`) and `report.Evidence.Status == faultline.StatusPass`. Also verify that injecting a mismatch on `remediation` or `retry_after_ms` into one surface's rendered body causes `parity.CompareResults` to fail closed (`StatusFail`).
-  * In `internal/faultline/parity/scenarios_test.go`:
-    1. Update `TestU3SeedCorpus_KnownGatePayloadDrift` to assert that `runScenario(t, parity.KnownGatePayloadDriftScenario())` produces `StatusFail` on `remediation` and `retryability`, zero `StatusReportOnly` dimensions, and `report.Evidence.Status == "fail"`.
-    2. Update `TestU3SeedCorpus_TrackedDefectResolution_Valid` so it does not fail when `166-F` transitions to `done`/`archived` on shipment closure:
-       * Create a hermetic `t.TempDir()` `.backlogit/queue/` and `.backlogit/archive/` fixture with a `queued` artifact (`166-F` or `001-F`) and a terminal (`done`) artifact (`002-F`), asserting `parity.ResolveTrackedDefect` returns `nil` for the non-terminal artifact and `parity.ErrTrackedDefectTerminal` for the terminal artifact.
-       * Against the live workspace (`backlogitDirForResolution(t)`), iterate over `parity.SeedCorpus()` and assert that any dimension with `Status == parity.StatusReportOnly` resolves its `TrackedDefect` via `parity.ResolveTrackedDefect` (while confirming zero dimensions in `SeedCorpus()` remain `StatusReportOnly`).
-  * In `internal/mcp/gate_errors_test.go`:
-    1. Extend `TestGateErrorResult_ClassFamily` to assert exact `remediation` strings for `setup` and `config`, absence of `remediation` for `timeout` and `in_progress`, exact numeric `retry_after_ms` when `RetryAfterMs > 0`, and absence of `retry_after_ms` when `RetryAfterMs == 0` on `timeout` and `in_progress`.
-* **Affected files**:
   * `internal/faultline/parity/comparator_test.go`
   * `internal/faultline/parity/scenarios_test.go`
+  * `internal/mcp/gate_errors.go`
+* **Acceptance criteria**:
+  * RED phase is observed failing in `go test -count=1 -run 'TestU2ComparatorExpectedGateDrift|TestU3SeedCorpus_KnownGatePayloadDrift|TestU3SeedCorpus_TrackedDefectResolution_Valid|TestU3SeedCorpus_CorpusRegistryComplete' ./internal/faultline/parity` before `knownDrifts` in `comparator.go` and `KnownGatePayloadDriftScenario` in `scenarios.go` are updated.
+  * After `comparator.go`, `scenarios.go`, and `gate_errors.go` are updated, `go test -count=1 ./internal/faultline/parity/... ./internal/mcp/...` passes completely GREEN, and `TestU3SeedCorpus_TrackedDefectResolution_Valid` remains green both while `166-F` is `queued`/`active` and after `166-F` is `done`/`archived`.
+* **Execution posture**: test-first.
+
+### U3: Add real cross-surface CLI/MCP gate-error parity regression tests and expand `exitCodeClasses` (`code`) — `166.003-T`
+
+* **Domain**: `code`
+* **Depends on**: U2 (`166.002-T`)
+* **Changes**:
+  * **First (RED phase, scaffolded by `harness-architect` in `*_test.go`)**:
+    1. In `internal/faultline/parity/comparator_test.go`, add `TestU2ComparatorRealGateErrorParityAllClasses` that invokes the real CLI renderer (`cli.RenderGateErrorJSON(ge.ItemID, ge)` and `cli.ExitCodeFor(cli.GateExitError(ge))`) and the real MCP renderer (`mcp.GateErrorResult(ge, "done")`) across all `*corerrors.GateError` classes (`setup`, `config`, `timeout` with `RetryAfterMs: 1500` and `0`, `in_progress` with `RetryAfterMs: 2000` and `0`), feeds their actual JSON bodies into `parity.CompareResults`, and asserts every applicable dimension (`exit_code`, `structured_error`, `retryability`, `remediation`, `force_lever`) passes (`parity.StatusPass`) and `report.Evidence.Status == faultline.StatusPass`. Also verify that injecting a mismatch on `remediation` or `retry_after_ms` into one surface's rendered body causes `parity.CompareResults` to fail closed (`StatusFail`).
+    2. In `internal/mcp/gate_errors_test.go`, extend `TestGateErrorResult_ClassFamily` to assert exact `remediation` strings for `setup` and `config`, absence of `remediation` for `timeout` and `in_progress`, exact numeric `retry_after_ms` when `RetryAfterMs > 0`, and absence of `retry_after_ms` when `RetryAfterMs == 0` on `timeout` and `in_progress`.
+    3. Observe RED (`go test -count=1 -run 'TestU2ComparatorRealGateErrorParityAllClasses' ./internal/faultline/parity` compiles cleanly and fails on the `exit_code` dimension because `exitCodeClasses` in `internal/faultline/parity/comparator.go` does not yet include MCP's concrete `"gate_setup"`, `"gate_config"`, `"gate_timeout"`, and `"gate_in_progress"` error-type tokens).
+  * **Second (GREEN phase, implemented by `build-feature`)**:
+    1. In `internal/faultline/parity/comparator.go`, expand `exitCodeClasses` to include MCP's concrete gate error-type tokens alongside the coarse simulation tokens:
+       * Exit `6`: add `"gate_blocked": {}, "gate_requeued": {}, "gate_escalated": {}`
+       * Exit `7`: add `"gate_config": {}, "gate_setup": {}`
+       * Exit `8`: add `"gate_timeout": {}, "gate_in_progress": {}`
+    2. Verify GREEN (`go test -count=1 -race ./internal/cli/... ./internal/mcp/... ./internal/faultline/...` passes with 0 failures).
+* **Affected files**:
+  * `internal/faultline/parity/comparator.go`
+  * `internal/faultline/parity/comparator_test.go`
   * `internal/mcp/gate_errors_test.go`
 * **Acceptance criteria**:
+  * RED phase is observed failing in `go test -count=1 -run 'TestU2ComparatorRealGateErrorParityAllClasses' ./internal/faultline/parity` on `exit_code` before `exitCodeClasses` in `comparator.go` is expanded.
   * `go test -count=1 -race ./internal/cli/... ./internal/mcp/... ./internal/faultline/...` passes with 0 failures.
   * `TestU2ComparatorRealGateErrorParityAllClasses` proves end-to-end field parity between `cli.RenderGateErrorJSON` and `mcp.GateErrorResult` across all four `GateError` classes.
-  * `TestU3SeedCorpus_TrackedDefectResolution_Valid` remains green both while `166-F` is `queued`/`active` and after `166-F` is `done`/`archived`.
 * **Execution posture**: test-first.
 
 ## Dependency Graph
 
 * **Wave 1**: `166.001-T` (U1 — CLI `gateJSONPayload` + `renderGateErrorJSON` parity fields and unit tests)
-* **Wave 2**: `166.002-T` (U2 — blocked by `166.001-T`; flip S4 comparator `knownDrifts` and `KnownGatePayloadDriftScenario` from `report_only` to fail-closed + export `mcp.GateErrorResult`)
-* **Wave 3**: `166.003-T` (U3 — blocked by `166.002-T`; real cross-surface CLI/MCP gate-error parity regression tests + lifecycle-safe `ResolveTrackedDefect` tests)
+* **Wave 2**: `166.002-T` (U2 — blocked by `166.001-T`; flip S4 comparator `knownDrifts`, `KnownGatePayloadDriftScenario`, and existing parity/resolution tests to fail-closed + export `mcp.GateErrorResult`)
+* **Wave 3**: `166.003-T` (U3 — blocked by `166.002-T`; real cross-surface CLI/MCP gate-error parity regression tests + expand `exitCodeClasses` with MCP `gate_*` tokens)
 
 No cycles exist in the DAG (`166.001-T -> 166.002-T -> 166.003-T`).
 
@@ -157,13 +161,13 @@ No cycles exist in the DAG (`166.001-T -> 166.002-T -> 166.003-T`).
 
 ## Risks and Caveats
 
-* **Unused unexported constant in `comparator_test.go`**: Removing `StatusReportOnly` assertions from `TestU2ComparatorExpectedGateDrift` leaves `const trackedGatePayload = "166-F"` in `comparator_test.go` unused unless removed; U3 explicitly removes that unexported constant so `golangci-lint` passes.
+* **Unused unexported constant in `comparator_test.go`**: Removing `StatusReportOnly` assertions from `TestU2ComparatorExpectedGateDrift` leaves `const trackedGatePayload = "166-F"` in `comparator_test.go` unused unless removed; U2 explicitly removes that unexported constant alongside updating `TestU2ComparatorExpectedGateDrift` so `golangci-lint` passes.
 * **Toolchain note on local `golangci-lint`**: Per `docs/closure/205-S-204-F-post-merge-closure.md`, the ambient local `golangci-lint` binary has a Go export-data toolchain mismatch; Ship should verify `gofmt -l`, `go vet ./...`, and targeted `go test -race` locally and rely on CI for `golangci-lint`.
 
 ## Constitution Check
 
 * **I. Safety-First Go**: `pass` — all changes are idiomatic Go 1.24 with explicit error handling, typed struct tags, and zero `unsafe` usage.
-* **II. Test-First Development (NON-NEGOTIABLE, P-002)**: `pass` — U1 and U2 specify explicit RED tests before production edits, and U3 completes the cross-surface regression suite. Closed `harness-exempt` set: `[]` (none).
+* **II. Test-First Development (NON-NEGOTIABLE, P-002)**: `pass` — U1, U2, and U3 each specify explicit compiling RED tests in `*_test.go` before production `.go` edits turn the package and full suite GREEN. Closed `harness-exempt` set: `[]` (none).
 * **III. Workspace Isolation and Security Boundaries**: `pass` — tests use `t.TempDir()` and in-memory buffers without mutating global state or paths outside the workspace.
 * **IV. CLI Workspace Containment**: `pass` — no files are read or written outside `C:\Source\GitHub\backlogit`.
 * **V. Structured Observability**: `pass` — CLI `--json` gate-error payloads now carry the same structured `remediation` and `retry_after_ms` fields as MCP.
@@ -242,6 +246,6 @@ Requires plan hardening: yes
 * constitution_check: `Constitution Check: pass` confirmed; all 11 constitutional principles mapped with zero violations.
 * findings:
   * P0: 0, P1: 0, P2: 0, P3: 2 (applied in place).
-  * P3-1 (`Agent-Native Parity Reviewer`, U2 `internal/faultline/parity/comparator.go`): Ensure `exitCodeClasses` in `comparator.go` includes MCP's concrete `gate_blocked`, `gate_requeued`, `gate_escalated`, `gate_config`, `gate_setup`, `gate_timeout`, and `gate_in_progress` tokens so `TestU2ComparatorRealGateErrorParityAllClasses` exercises `CompareResults` against unmodified `mcp.GateErrorResult` output. Applied in place in U2.
-  * P3-2 (`Learnings Researcher`, U3 `internal/faultline/parity/scenarios_test.go`): Transition `TestU3SeedCorpus_TrackedDefectResolution_Valid` to use a hermetic `t.TempDir()` `.backlogit` fixture for non-terminal/terminal resolution assertions so archiving `166-F` during `206-S` closure does not break `main`. Applied in place in U3.
+  * P3-1 (`Agent-Native Parity Reviewer`, U3 `internal/faultline/parity/comparator.go`): Ensure `exitCodeClasses` in `comparator.go` includes MCP's concrete `gate_blocked`, `gate_requeued`, `gate_escalated`, `gate_config`, `gate_setup`, `gate_timeout`, and `gate_in_progress` tokens so `TestU2ComparatorRealGateErrorParityAllClasses` exercises `CompareResults` against unmodified `mcp.GateErrorResult` output. Applied in place in U3.
+  * P3-2 (`Learnings Researcher`, U2 `internal/faultline/parity/scenarios_test.go`): Transition `TestU3SeedCorpus_TrackedDefectResolution_Valid` to use a hermetic `t.TempDir()` `.backlogit` fixture for non-terminal/terminal resolution assertions alongside the U2 fail-closed flip so archiving `166-F` during `206-S` closure does not break `main`. Applied in place in U2.
 * runtime_verification_and_closure: Targeted `-race` verification across `./internal/cli/...`, `./internal/mcp/...`, and `./internal/faultline/...` and post-merge closure artifact `docs/closure/206-S-166-F-post-merge-closure.md` with P-020 `compact-context` invocation are explicitly specified.
