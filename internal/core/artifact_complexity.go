@@ -232,5 +232,6 @@ func writeComplexitySeamDurable(path string, data []byte, durable bool) error {
 	return err
 }
 
-// IsTaskRouteEligible reports whether a task is eligible for model routing (red-phase stub).
-func IsTaskRouteEligible(_ *models.Artifact) bool { return false }
+// IsTaskRouteEligible reports whether a task carries complete, valid size and
+// complexity provenance and is therefore eligible for model routing.
+func IsTaskRouteEligible(item *models.Artifact) bool { return db.IsTaskRouteEligible(item) }

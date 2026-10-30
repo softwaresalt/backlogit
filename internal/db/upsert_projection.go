@@ -122,7 +122,7 @@ func projectedCustomFields(ctx context.Context, q itemColumnQuerier, artifact *m
 
 	projected := make([]projectedCustomField, 0, len(artifact.CustomFields))
 	for name, value := range artifact.CustomFields {
-		if name == "complexity" && artifact.ArtifactType != "task" {
+		if isTaskOnlyComplexityColumn(name) && artifact.ArtifactType != "task" {
 			continue
 		}
 		if _, base := baseItemColumnNames[name]; base {
@@ -196,4 +196,14 @@ func customFieldProjectionValue(value any) (any, error) {
 
 func quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+// isTaskOnlyComplexityColumn reports whether name is a complexity column that is
+// projected for task artifacts only.
+func isTaskOnlyComplexityColumn(name string) bool {
+	switch name {
+	case "complexity", "complexity_source", "complexity_ruleset_version":
+		return true
+	}
+	return false
 }

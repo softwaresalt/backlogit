@@ -464,6 +464,14 @@ func QueryItems(ctx context.Context, db *sql.DB, filters QueryFilters) (artifact
 		conditions = append(conditions, "complexity = ?")
 		args = append(args, filters.Complexity)
 	}
+	if filters.ComplexitySource != "" {
+		conditions = append(conditions, "artifact_type = ?", "complexity_source = ?")
+		args = append(args, "task", filters.ComplexitySource)
+	}
+	if filters.ComplexityRulesetVersion != "" {
+		conditions = append(conditions, "artifact_type = ?", "complexity_ruleset_version = ?")
+		args = append(args, "task", filters.ComplexityRulesetVersion)
+	}
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
