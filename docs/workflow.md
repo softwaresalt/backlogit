@@ -59,6 +59,9 @@ backlogit_claim_shipment
 backlogit_ship_shipment
 backlogit_return_blocked
 backlogit_add_to_shipment
+backlogit_remove_from_shipment
+backlogit_move_shipment_item
+backlogit_reorder_shipment
 ```
 
 ## Shipment Predecessor Readiness
@@ -495,6 +498,9 @@ backlogit_claim_shipment -- move a queued shipment to active
 backlogit_ship_shipment -- close a released shipment, archive released scope, and record merge commit traceability
 backlogit_return_blocked -- return a blocked item from a shipment to backlog
 backlogit_add_to_shipment -- attach backlog items to a shipment
+backlogit_remove_from_shipment -- remove an item from a queued shipment manifest (force + reason to override)
+backlogit_move_shipment_item -- atomically move an item between shipment manifests
+backlogit_reorder_shipment -- reorder a queued shipment manifest explicitly or dependency-respecting (auto)
 backlogit_fetch_stash  -- retrieve active stash entries from stash.jsonl, optionally filtered or grouped by priority, with linked deliberations when present
 backlogit_stash        -- add deferred work to the stash with kind and priority
 backlogit_deliberate   -- create a deliberation artifact linked to a stash entry

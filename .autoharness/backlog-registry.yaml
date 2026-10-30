@@ -373,6 +373,38 @@ operations:
       shipment_id: "shipment_id"
       item_id: "item_id"
 
+  remove_from_shipment:
+    mcp_tool: "backlogit_remove_from_shipment"
+    cli_command: "backlogit shipment remove {{shipment_id}} {{item_id}} --reason {{reason}}"
+    params:
+      shipment_id: "shipment_id"
+      item_id: "item_id"
+      reason: "reason"
+      force: "force"
+      dry_run: "dry_run"
+
+  move_shipment_item:
+    mcp_tool: "backlogit_move_shipment_item"
+    cli_command: "backlogit shipment move {{item_id}} --from {{from_shipment_id}} --to {{to_shipment_id}} --reason {{reason}}"
+    params:
+      item_id: "item_id"
+      from_shipment_id: "from_shipment_id"
+      to_shipment_id: "to_shipment_id"
+      reason: "reason"
+      force: "force"
+      dry_run: "dry_run"
+
+  reorder_shipment:
+    mcp_tool: "backlogit_reorder_shipment"
+    cli_command: "backlogit shipment reorder {{shipment_id}} --items {{items}}"
+    params:
+      shipment_id: "shipment_id"
+      items: "items"
+      auto: "auto"
+      reason: "reason"
+      force: "force"
+      dry_run: "dry_run"
+
   return_blocked:
     mcp_tool: "backlogit_return_blocked"
     cli_command: "backlogit shipment return-blocked --shipment {{shipment_id}} --item {{item_id}} --reason {{reason}}"

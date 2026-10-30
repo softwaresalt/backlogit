@@ -12,6 +12,15 @@ import (
 	"github.com/softwaresalt/backlogit/internal/events"
 )
 
+const (
+	// EventShipmentItemRemoved records an item leaving a shipment manifest.
+	EventShipmentItemRemoved = "shipment_item_removed"
+	// EventShipmentItemMoved records an item moving between shipment manifests.
+	EventShipmentItemMoved = "shipment_item_moved"
+	// EventShipmentReordered records a shipment manifest order rewrite.
+	EventShipmentReordered = "shipment_reordered"
+)
+
 // shipment_events.go (143.002-T / Unit 2) carries the shipment-scoped,
 // error-returning event appender used by the governed ShipShipment path. It
 // mirrors the internal/core/gate_evidence.go precedent rather than growing
