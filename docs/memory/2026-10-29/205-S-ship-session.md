@@ -27,3 +27,11 @@ Status: HALTED at Wave 5 (`204.005-T`) with `EXEMPT_COMMAND_MISMATCH` (contract 
 ## Next steps
 
 Stage amends `204.005-T` contract, then Ship resumes at Wave 5, runs review, PR, Copilot gate, merge, closure.
+
+## Resume (Wave 5, 2026-10-29 evening)
+
+* Served-root attestation passed (workspace root and storage root match, index file is backlogit.db under storage root).
+* WORK_STARTED: 205-S already present once on 204.005-T; not re-appended.
+* Red probe failed as required (missing generated docs); gen-docs run; EXEMPT_VERIFY_OK:204.005-T; commit e8f72a2c tracked; 204.005-T done.
+* Gates: build, vet, gofmt clean; cli, errors, tests/... pass serially. golangci-lint unusable here (export data mismatch), so TestU175_*_LintFix fail when run in parallel or at all (environmental). internal/core timed out at 30m on TestMigrateCustomFieldLinks_* (core untouched by this branch).
+* Local review at e8f72a2c: READY_WITH_FOLLOWUPS (P0 0, P1 0, P2 0, P3 1, stashed).
