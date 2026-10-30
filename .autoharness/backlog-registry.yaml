@@ -55,6 +55,9 @@ operations:
       assignee: "assigned_to"
       priority: "priority"
       size: "size"
+      complexity: "complexity"
+      complexity_source: "complexity_source"
+      complexity_ruleset_version: "complexity_ruleset_version"
       commit: "commit"
     # --force-gates and --gate-base are intentionally absent from the MCP surface.
     # Forcing a completion gate is a deliberate human-at-a-terminal action; the

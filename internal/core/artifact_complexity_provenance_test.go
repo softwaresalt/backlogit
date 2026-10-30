@@ -147,6 +147,8 @@ func TestU1_ComplexityProvenanceSeam(t *testing.T) {
 			"control char ruleset":     {Complexity: strPtr("low"), Source: strPtr("human"), RulesetVersion: strPtr("v1\n2")},
 			"provenance without value": {Source: strPtr("human"), RulesetVersion: strPtr("v1")},
 			"invalid complexity":       {Complexity: strPtr("extreme")},
+			"explicit empty ruleset":   {Complexity: strPtr("low"), RulesetVersion: strPtr("")},
+			"explicit empty source":    {Complexity: strPtr("low"), Source: strPtr("")},
 		}
 		for name, m := range cases {
 			m.Actor = core.ActorContextHuman

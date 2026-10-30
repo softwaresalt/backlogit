@@ -971,17 +971,22 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		if !srcOK || !rvOK {
 			return ValidationFailed("complexity_source and complexity_ruleset_version must be strings"), nil
 		}
+		_, srcPresent := request.Params.Arguments["complexity_source"]
+		_, rvPresent := request.Params.Arguments["complexity_ruleset_version"]
 		// Trust boundary: an agent transport must not claim human provenance.
 		if source == "human" {
 			return ValidationFailed("complexity_source: human cannot be set from the MCP (agent) transport"), nil
 		}
+		// Preserve argument presence: an explicitly supplied empty value is invalid
+		// input and is rejected by the core seam rather than treated as omitted.
 		mutation := core.ComplexityMutation{Complexity: &complexity, Actor: core.ActorContextAgent}
-		if source != "" {
+		if srcPresent {
 			mutation.Source = &source
 		}
-		if rulesetVersion != "" {
+		if rvPresent {
 			mutation.RulesetVersion = &rulesetVersion
-			if source == "" && complexity != "" {
+			// Default the source to agent only when its key is absent (not when clearing).
+			if !srcPresent && complexity != "" {
 				agent := string(core.ActorContextAgent)
 				mutation.Source = &agent
 			}

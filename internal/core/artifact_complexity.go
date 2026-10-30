@@ -96,7 +96,7 @@ func SetArtifactComplexityWithProvenance(ctx context.Context, ws *Workspace, id 
 		actor = ActorContextHuman
 	}
 	delta := map[string]any{"actor": string(actor), "dimension": "complexity", complexityKey: complexity}
-	provenanceSupplied := complexityValueSupplied(m.Source) || complexityValueSupplied(m.RulesetVersion)
+	provenanceSupplied := m.Source != nil || m.RulesetVersion != nil
 	if provenanceSupplied {
 		delta[complexitySourceKey] = *m.Source
 		delta[complexityRulesetVersionKey] = *m.RulesetVersion
@@ -143,14 +143,14 @@ func SetArtifactComplexityWithProvenance(ctx context.Context, ws *Workspace, id 
 	return artifact, nil
 }
 
-func complexityValueSupplied(v *string) bool { return v != nil && *v != "" }
-
 // validateComplexityProvenance enforces provenance completeness: source and
 // ruleset must be supplied together, the source must be a known actor context,
 // the ruleset must be non-blank without control characters, and provenance is
 // rejected when the mutation clears complexity.
 func validateComplexityProvenance(complexity string, m ComplexityMutation) error {
-	srcSet, rvSet := complexityValueSupplied(m.Source), complexityValueSupplied(m.RulesetVersion)
+	// Presence, not non-emptiness: an explicitly supplied empty value is invalid
+	// input and must never be treated as omitted.
+	srcSet, rvSet := m.Source != nil, m.RulesetVersion != nil
 	if !srcSet && !rvSet {
 		return nil
 	}

@@ -51,6 +51,8 @@ func TestU3_ComplexityProvenanceMCPAndCLIParity(t *testing.T) {
 			{"id": id, "complexity_source": "agent", "complexity_ruleset_version": "ah-v1"},
 			{"id": id, "complexity": "", "complexity_source": "agent", "complexity_ruleset_version": "ah-v1"},
 			{"id": id, "complexity": "high", "complexity_ruleset_version": "ah-v1", "size": "M"},
+			{"id": id, "complexity": "high", "complexity_ruleset_version": ""},
+			{"id": id, "complexity": "high", "complexity_source": "", "complexity_ruleset_version": "ah-v1"},
 		} {
 			result, err := s.handleUpdateItem(ctx, contractRequest(args))
 			require.NoError(t, err)
