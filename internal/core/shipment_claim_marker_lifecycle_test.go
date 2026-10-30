@@ -169,6 +169,9 @@ func TestU4_TerminalAndGenericPathsKeepMarker(t *testing.T) {
 
 		for _, id := range memberIDs {
 			u4RequireMarker(ctx, t, ws, id, shipment.ID)
+			member, loadErr := loadArtifact(ctx, ws, id)
+			require.NoError(t, loadErr)
+			assert.Equal(t, shipment.ID, member.CustomFields[schedulerBaselineClaimKey])
 			assert.False(t, u4IsClaimActivated(ctx, t, ws, id),
 				"after abandonment no active shipment exists, so %s is not claim-activated", id)
 		}
@@ -180,16 +183,29 @@ func TestU4_TerminalAndGenericPathsKeepMarker(t *testing.T) {
 		shipment, memberIDs := u4NewClaimedShipment(ctx, t, ws, "U4 generic")
 		target := memberIDs[0]
 
-		_, err := UpdateArtifact(ctx, ws, target, map[string]any{"priority": "low"})
+		updated, err := UpdateArtifact(ctx, ws, target, map[string]any{"priority": "low"})
 		require.NoError(t, err)
+		assert.Equal(t, "low", updated.Priority, "the generic update must take effect")
 		u4RequireMarker(ctx, t, ws, target, shipment.ID)
 
-		_, err = setArtifactStatus(ctx, ws, target, models.StatusBlocked, "u4 generic move")
+		moved, err := setArtifactStatus(ctx, ws, target, models.StatusBlocked, "u4 generic move")
 		require.NoError(t, err)
+		assert.Equal(t, models.StatusBlocked, moved.Status)
 		u4RequireMarker(ctx, t, ws, target, shipment.ID)
+		assert.False(t, u4IsClaimActivated(ctx, t, ws, target), "a blocked member is not claim-activated")
 
-		_, err = setArtifactStatus(ctx, ws, target, models.StatusActive, "u4 generic move back")
+		moved, err = setArtifactStatus(ctx, ws, target, models.StatusActive, "u4 generic move back")
 		require.NoError(t, err)
+		assert.Equal(t, models.StatusActive, moved.Status)
 		u4RequireMarker(ctx, t, ws, target, shipment.ID)
+		assert.True(t, u4IsClaimActivated(ctx, t, ws, target), "the restored marked member is claim-activated")
+
+		// Marker leg of the predicate: a stale marker must not classify as claim-activated.
+		other, err := loadArtifact(ctx, ws, memberIDs[1])
+		require.NoError(t, err)
+		other.CustomFields[schedulerBaselineClaimKey] = "OLD-S"
+		require.NoError(t, persistArtifact(ctx, ws, other, false))
+		assert.False(t, u4IsClaimActivated(ctx, t, ws, other.ID),
+			"an active in-manifest member with a stale marker is not claim-activated")
 	})
 }
