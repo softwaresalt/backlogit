@@ -42,7 +42,7 @@ title: "206-S / 166-F Post-Merge Closure"
 | Copilot review (P-018) | `SATISFIED` for the merged HEAD, no threads |
 | CI | All required checks passed, including the full `test` job |
 | Merge strategy (P-009) | Merge commit |
-| Governed closure | `backlogit_ship_shipment` returned a client timeout; completion was confirmed by waiting for quiescence and reading the `shipment_status_changed` (`shipped`), `commit_tracked` and `archived` events for `206-S` and `166-F` |
+| Governed closure | `backlogit_ship_shipment` returned a client timeout; completion was confirmed by waiting for quiescence and reading the `shipment_status_changed` (`shipped`), `commit_tracked` and `archived` events for `206-S`, `166-F` and the three tasks. The post-ship `ship_shipment` hook event (`seq` 4279, `active` to `shipped`) was emitted at 2026-10-30T08:44:28Z in the local `.backlogit/hooks_queue.jsonl`, whose working-copy change is carried forward and not part of this PR. `backlogit doctor --check-shipped-event-completeness` reports no finding for `206-S`, `166-F` or `166.001-T` through `166.003-T` (the 41 findings it reports are older shipments). Nothing was retried or synthesized |
 
 ## Runtime verification and releasability
 
