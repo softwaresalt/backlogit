@@ -129,7 +129,7 @@ func TestShipmentGate_MemberEvidenceUnsigned_FormalEnforcementRefuses(t *testing
 	_, err = ShipShipment(ctx, ws, shipmentID, nil)
 	require.Error(t, err, "ship must refuse a member whose evidence carries no formal proof once enforcement is required")
 	// The refusal wraps the TYPED FormalAdmit cause (ErrProofInvalid or
-	// ErrProofUnverifiable), not *GateBlockedError, so gateErrorResult's MCP
+	// ErrProofUnverifiable), not *GateBlockedError, so GateErrorResult's MCP
 	// dispatch reaches the specific formal_gate_proof_* error code instead
 	// of collapsing to the generic gate_blocked class (106-F F1 review
 	// finding). Unsigned evidence is missing its proof fields entirely, so

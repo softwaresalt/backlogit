@@ -693,7 +693,7 @@ func (s *Server) handleMoveItem(ctx context.Context, request mcplib.CallToolRequ
 
 	artifact, outcome, err := core.UpdateArtifactWithGate(ctx, s.Workspace, id, map[string]any{"status": status}, core.TransitionOptions{})
 	if err != nil {
-		if result, handled := gateErrorResult(err, status); handled {
+		if result, handled := GateErrorResult(err, status); handled {
 			return result, nil
 		}
 		return domainError("move item", err), nil
@@ -988,7 +988,7 @@ func (s *Server) handleUpdateItem(ctx context.Context, request mcplib.CallToolRe
 		var updErr error
 		artifact, outcome, updErr = core.UpdateArtifactWithGate(ctx, s.Workspace, id, updates, core.TransitionOptions{})
 		if updErr != nil {
-			if result, handled := gateErrorResult(updErr, requested); handled {
+			if result, handled := GateErrorResult(updErr, requested); handled {
 				return result, nil
 			}
 			return domainError("update artifact", updErr), nil
@@ -2168,7 +2168,7 @@ func (s *Server) handleShipShipment(ctx context.Context, request mcplib.CallTool
 		// formal-gate-evidence refusal) deserves the same structured,
 		// machine-readable treatment task-level completions already get,
 		// rather than falling straight to the generic domainError.
-		if result, handled := gateErrorResult(err, ""); handled {
+		if result, handled := GateErrorResult(err, ""); handled {
 			return result, nil
 		}
 		return domainError("ship shipment", err), nil

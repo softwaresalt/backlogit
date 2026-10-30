@@ -11,7 +11,7 @@ import (
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
-// gateErrorResult maps a gate typed error (GateBlockedError or GateError) to a
+// GateErrorResult maps a gate typed error (GateBlockedError or GateError) to a
 // structured MCP error result and reports whether it handled the error. It
 // returns (nil, false) for non-gate errors so callers fall back to domainError.
 //
@@ -19,7 +19,7 @@ import (
 // a retryable flag so an agent can decide synchronously whether to repair, move
 // the item off the terminal target, or back off and retry — never collapsing to
 // a generic "internal"/"conflict".
-func gateErrorResult(err error, requestedStatus string) (*mcplib.CallToolResult, bool) {
+func GateErrorResult(err error, requestedStatus string) (*mcplib.CallToolResult, bool) {
 	var blocked *corerrors.GateBlockedError
 	if errors.As(err, &blocked) {
 		return gateBlockedResult(blocked, requestedStatus), true

@@ -40,11 +40,10 @@ const (
 	StatusNotApplicable = "not_applicable"
 )
 
-// TrackedDefectGatePayload is the canonical tracked-defect ID owning the known
-// CLI --json gate-payload omission drift (remediation + retry_after_ms).
-// This is 166-F: a standalone queued feature OUTSIDE the shipment hierarchy
-// that serves as the report-only durable owner (156.007-T was the original
-// planned owner but is now archived; 166-F is the current non-terminal owner).
+// TrackedDefectGatePayload is the canonical tracked-defect ID (166-F) for the
+// historical CLI --json gate-payload omission drift (remediation +
+// retry_after_ms). That drift now fails closed and is no longer registered in
+// knownDrifts; the constant remains exported for symbol compatibility.
 const TrackedDefectGatePayload = "166-F"
 
 // producingCommit identifies the commit that produced comparator evidence. It
@@ -135,23 +134,11 @@ type driftDecl struct {
 	detail  string
 }
 
-// knownDrifts is the registry of tracked, expected divergences. The CLI --json
-// gate payload omits remediation (owned by the remediation dimension) and
-// retry_after_ms (owned by the retryability dimension); both are pinned to
-// 166-F (TrackedDefectGatePayload); 156.007-T was the original planned owner
-// but is now archived.
-var knownDrifts = map[string]driftDecl{
-	dimRemediation: {
-		fields:  []string{"remediation"},
-		tracked: TrackedDefectGatePayload,
-		detail:  "CLI --json gate payload omits remediation emitted by MCP (tracked drift)",
-	},
-	dimRetryability: {
-		fields:  []string{"retry_after_ms"},
-		tracked: TrackedDefectGatePayload,
-		detail:  "CLI --json gate payload omits retry_after_ms emitted by MCP (tracked drift)",
-	},
-}
+// knownDrifts is the registry of tracked, expected divergences. It is empty:
+// the CLI --json gate payload now carries remediation and retry_after_ms, so
+// any divergence on remediation or retry_after_ms fails closed (StatusFail).
+// The mechanism is retained so a future tracked drift can be declared.
+var knownDrifts = map[string]driftDecl{}
 
 // exitCodeClasses maps a CLI exit code to its COARSE equivalence class of MCP
 // machine categories. The comparator asserts the MCP category is IN the class

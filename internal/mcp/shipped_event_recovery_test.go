@@ -108,7 +108,7 @@ func TestMutationPartialRecovery_OtherProducersKeepClassOnlyGuidance(t *testing.
 	assert.NotContains(t, resp.Recovery, "check_shipped_event_completeness")
 }
 
-// gateErrorResult runs before domainError in handleShipShipment but matches only
+// GateErrorResult runs before domainError in handleShipShipment but matches only
 // gate types, so it cannot consume a *MutationPartialError. This regression
 // guards that dispatch ordering rather than restructuring it.
 func TestShipShipment_MutationPartialIsNotConsumedByGateErrorResult(t *testing.T) {
@@ -118,7 +118,7 @@ func TestShipShipment_MutationPartialIsNotConsumedByGateErrorResult(t *testing.T
 		Class:             "indeterminate",
 		Cause:             errors.New("injected"),
 	}
-	result, matched := gateErrorResult(err, "shipped")
-	assert.False(t, matched, "gateErrorResult must not intercept a mutation-partial result")
+	result, matched := GateErrorResult(err, "shipped")
+	assert.False(t, matched, "GateErrorResult must not intercept a mutation-partial result")
 	assert.Nil(t, result)
 }

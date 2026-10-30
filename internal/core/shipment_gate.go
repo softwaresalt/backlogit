@@ -292,7 +292,7 @@ func formalGateShipmentRefusal(shipmentID, reason string) error {
 // TYPED cause (ErrProofInvalid or ErrProofUnverifiable) FormalAdmit
 // classified the refusal as — rather than the *GateBlockedError struct
 // shipmentMemberEvidenceError uses for every OTHER member-scan refusal
-// reason (missing evidence, stale lineage, malformed head). gateErrorResult
+// reason (missing evidence, stale lineage, malformed head). GateErrorResult
 // dispatches GateBlockedError BEFORE the formal-gate sentinels, so wrapping
 // THIS specific refusal in GateBlockedError would collapse it to the
 // generic gate_blocked MCP error_type, discarding whether the cause was a

@@ -47,7 +47,7 @@ func TestGateErrorResult_BlockedFamily(t *testing.T) {
 			ReportJSON:   []byte(`{"passed":false}`),
 			Repeated:     &corerrors.GateRepeatedFailure{Count: 3, Threshold: 3, Reached: true, Action: "block"},
 		}
-		result, handled := gateErrorResult(be, "done")
+		result, handled := GateErrorResult(be, "done")
 		require.True(t, handled, "outcome %q must be handled", tc.outcome)
 		require.True(t, result.IsError, "outcome %q must be an error result", tc.outcome)
 		body := resultBody(t, result)
@@ -80,7 +80,7 @@ func TestGateErrorResult_ClassFamily(t *testing.T) {
 	}
 	for _, tc := range cases {
 		ge := &corerrors.GateError{Class: tc.class, ItemID: "001.001-T", Message: "gate " + tc.class, RetryAfterMs: tc.retryAfterMs}
-		result, handled := gateErrorResult(ge, "done")
+		result, handled := GateErrorResult(ge, "done")
 		require.True(t, handled, "class %q must be handled", tc.class)
 		require.True(t, result.IsError)
 		body := resultBody(t, result)
@@ -94,9 +94,9 @@ func TestGateErrorResult_ClassFamily(t *testing.T) {
 // TestGateErrorResult_NonGate verifies non-gate errors are not handled so the
 // caller falls back to domainError.
 func TestGateErrorResult_NonGate(t *testing.T) {
-	_, handled := gateErrorResult(errors.New("boom"), "done")
+	_, handled := GateErrorResult(errors.New("boom"), "done")
 	require.False(t, handled)
-	_, handled = gateErrorResult(corerrors.ErrValidation, "done")
+	_, handled = GateErrorResult(corerrors.ErrValidation, "done")
 	require.False(t, handled)
 }
 
