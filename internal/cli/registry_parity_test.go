@@ -1200,3 +1200,230 @@ func TestRegistryParity_ShippedEventAuditCLIAndMCPAgree(t *testing.T) {
 	assert.Equal(t, cliFindings, mcpFindings,
 		"CLI and MCP must produce identical shipped-event findings for a shared fixture")
 }
+
+// u3Fixture is a workspace with two queued shipments:
+//
+//	shipA = [featA, taskA2, taskA1] (taskA2 depends on taskA1)
+//	shipB = [featB]
+type u3Fixture struct {
+	root           string
+	ws             *core.Workspace
+	featA, featB   string
+	taskA1, taskA2 string
+	shipA, shipB   string
+}
+
+func newU3Fixture(t *testing.T) *u3Fixture {
+	t.Helper()
+	ctx := context.Background()
+	root, ws := setupGovernedWorkspace(t)
+	featA, err := core.CreateArtifact(ctx, ws, "U3 feature A", "feature")
+	require.NoError(t, err)
+	featB, err := core.CreateArtifact(ctx, ws, "U3 feature B", "feature")
+	require.NoError(t, err)
+	a1, err := core.CreateArtifact(ctx, ws, "U3 task A1", "task", core.WithParent(featA.ID))
+	require.NoError(t, err)
+	a2, err := core.CreateArtifact(ctx, ws, "U3 task A2", "task", core.WithParent(featA.ID))
+	require.NoError(t, err)
+	require.NoError(t, core.AddDependency(ctx, ws, a2.ID, a1.ID, "blocks"))
+	shipA, err := core.CreateShipment(ctx, ws, "U3 ship A", []string{featA.ID, a2.ID, a1.ID})
+	require.NoError(t, err)
+	shipB, err := core.CreateShipment(ctx, ws, "U3 ship B", []string{featB.ID})
+	require.NoError(t, err)
+	return &u3Fixture{
+		root: root, ws: ws, featA: featA.ID, featB: featB.ID,
+		taskA1: a1.ID, taskA2: a2.ID, shipA: shipA.ID, shipB: shipB.ID,
+	}
+}
+
+func (fx *u3Fixture) manifest(t *testing.T, shipmentID string) []string {
+	t.Helper()
+	shipment, err := core.GetShipment(context.Background(), fx.ws, shipmentID)
+	require.NoError(t, err)
+	return core.NormalizeShipmentItems(shipment)
+}
+
+// u3CLI runs the CLI and returns the decoded JSON object, or the error.
+func u3CLI(t *testing.T, root string, args ...string) (map[string]any, error) {
+	t.Helper()
+	cmd := NewRootCommand()
+	out := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	cmd.SetOut(out)
+	cmd.SetErr(errBuf)
+	cmd.SetArgs(append([]string{"--cwd", root}, args...))
+	if err := cmd.Execute(); err != nil {
+		return nil, err
+	}
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(out.Bytes(), &body), "cli %v output: %s", args, out.String())
+	return body, nil
+}
+
+func u3MCP(t *testing.T, server *mcpinternal.Server, name string, args map[string]any) (map[string]any, bool) {
+	t.Helper()
+	request := mcplib.CallToolRequest{}
+	request.Params.Name = name
+	request.Params.Arguments = args
+	result, err := server.InvokeTool(context.Background(), name, request)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	text, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	if result.IsError {
+		return nil, false
+	}
+	var body map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text.Text), &body), "mcp %s output: %s", name, text.Text)
+	return body, true
+}
+
+func u3Keys(body map[string]any) []string {
+	keys := make([]string, 0, len(body))
+	for key := range body {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func TestU3_ShipmentManifestCLIAndMCP_Parity(t *testing.T) {
+	ops := loadRegistryOperations(t)
+	for name, tool := range map[string]string{
+		"remove_from_shipment": "backlogit_remove_from_shipment",
+		"move_shipment_item":   "backlogit_move_shipment_item",
+		"reorder_shipment":     "backlogit_reorder_shipment",
+	} {
+		op, ok := ops[name]
+		require.Truef(t, ok, "registry must define %s", name)
+		assert.Equal(t, tool, op.MCPTool)
+		assert.NotEmpty(t, op.CLICommand)
+		assert.NotEmpty(t, op.Params)
+	}
+
+	cli := newU3Fixture(t)
+	mcp := newU3Fixture(t)
+	server := mcpinternal.NewServer(mcp.ws)
+
+	// both asserts the CLI and MCP bodies are key-isomorphic and returns the CLI body.
+	type step struct {
+		cliArgs []string
+		tool    string
+		args    map[string]any
+		keys    []string
+	}
+	run := func(t *testing.T, s step) map[string]any {
+		t.Helper()
+		cliBody, err := u3CLI(t, cli.root, s.cliArgs...)
+		require.NoError(t, err, "cli %v", s.cliArgs)
+		mcpBody, ok := u3MCP(t, server, s.tool, s.args)
+		require.True(t, ok, "mcp %s failed", s.tool)
+		assert.Equal(t, u3Keys(cliBody), u3Keys(mcpBody), "CLI/MCP key parity for %s", s.tool)
+		for _, key := range s.keys {
+			assert.Contains(t, cliBody, key)
+			assert.Contains(t, mcpBody, key)
+		}
+		return cliBody
+	}
+
+	reorderKeys := []string{"shipment_id", "mode", "status", "dry_run", "items_before", "items_after"}
+	moveKeys := []string{
+		"item_id", "from_shipment_id", "to_shipment_id", "status",
+		"from_before", "from_after", "to_before", "to_after",
+	}
+	removeKeys := []string{"shipment_id", "item_id", "status", "items_before", "items_after"}
+
+	t.Run("reorder dry-run", func(t *testing.T) {
+		before := cli.manifest(t, cli.shipA)
+		body := run(t, step{
+			cliArgs: []string{"shipment", "reorder", cli.shipA, "--auto", "--dry-run"},
+			tool:    "backlogit_reorder_shipment",
+			args:    map[string]any{"shipment_id": mcp.shipA, "auto": true, "dry_run": true},
+			keys:    reorderKeys,
+		})
+		assert.Equal(t, true, body["dry_run"])
+		assert.Equal(t, before, cli.manifest(t, cli.shipA))
+		assert.Equal(t, before, mcp.manifest(t, mcp.shipA))
+	})
+
+	t.Run("reorder live", func(t *testing.T) {
+		run(t, step{
+			cliArgs: []string{"shipment", "reorder", cli.shipA, "--auto"},
+			tool:    "backlogit_reorder_shipment",
+			args:    map[string]any{"shipment_id": mcp.shipA, "auto": true},
+			keys:    reorderKeys,
+		})
+		want := []string{cli.featA, cli.taskA1, cli.taskA2}
+		assert.Equal(t, want, cli.manifest(t, cli.shipA))
+		assert.Equal(t, []string{mcp.featA, mcp.taskA1, mcp.taskA2}, mcp.manifest(t, mcp.shipA))
+	})
+
+	t.Run("reorder explicit", func(t *testing.T) {
+		run(t, step{
+			cliArgs: []string{"shipment", "reorder", cli.shipA, "--items",
+				strings.Join([]string{cli.featA, cli.taskA1, cli.taskA2}, ",")},
+			tool: "backlogit_reorder_shipment",
+			args: map[string]any{"shipment_id": mcp.shipA,
+				"items": strings.Join([]string{mcp.featA, mcp.taskA1, mcp.taskA2}, ",")},
+			keys: reorderKeys,
+		})
+	})
+
+	t.Run("move dry-run then live", func(t *testing.T) {
+		run(t, step{
+			cliArgs: []string{"shipment", "move", cli.taskA2, "--from", cli.shipA, "--to", cli.shipB,
+				"--reason", "split scope", "--dry-run"},
+			tool: "backlogit_move_shipment_item",
+			args: map[string]any{"item_id": mcp.taskA2, "from_shipment_id": mcp.shipA,
+				"to_shipment_id": mcp.shipB, "reason": "split scope", "dry_run": true},
+			keys: moveKeys,
+		})
+		assert.NotContains(t, cli.manifest(t, cli.shipB), cli.taskA2)
+		run(t, step{
+			cliArgs: []string{"shipment", "move", cli.taskA2, "--from", cli.shipA, "--to", cli.shipB,
+				"--reason", "split scope"},
+			tool: "backlogit_move_shipment_item",
+			args: map[string]any{"item_id": mcp.taskA2, "from_shipment_id": mcp.shipA,
+				"to_shipment_id": mcp.shipB, "reason": "split scope"},
+			keys: moveKeys,
+		})
+		assert.Contains(t, cli.manifest(t, cli.shipB), cli.taskA2)
+		assert.NotContains(t, cli.manifest(t, cli.shipA), cli.taskA2)
+		assert.Contains(t, mcp.manifest(t, mcp.shipB), mcp.taskA2)
+	})
+
+	t.Run("remove live", func(t *testing.T) {
+		run(t, step{
+			cliArgs: []string{"shipment", "remove", cli.shipB, cli.taskA2, "--reason", "descope"},
+			tool:    "backlogit_remove_from_shipment",
+			args: map[string]any{"shipment_id": mcp.shipB, "item_id": mcp.taskA2,
+				"reason": "descope"},
+			keys: removeKeys,
+		})
+		assert.NotContains(t, cli.manifest(t, cli.shipB), cli.taskA2)
+		assert.NotContains(t, mcp.manifest(t, mcp.shipB), mcp.taskA2)
+	})
+
+	t.Run("non-queued shipment refused without force and reason", func(t *testing.T) {
+		_, err := core.ClaimShipment(context.Background(), cli.ws, cli.shipA)
+		require.NoError(t, err)
+		_, err = core.ClaimShipment(context.Background(), mcp.ws, mcp.shipA)
+		require.NoError(t, err)
+
+		_, err = u3CLI(t, cli.root, "shipment", "remove", cli.shipA, cli.taskA1)
+		require.Error(t, err)
+		_, ok := u3MCP(t, server, "backlogit_remove_from_shipment",
+			map[string]any{"shipment_id": mcp.shipA, "item_id": mcp.taskA1})
+		assert.False(t, ok)
+
+		// --force without a reason is still refused.
+		_, err = u3CLI(t, cli.root, "shipment", "remove", cli.shipA, cli.taskA1, "--force")
+		require.Error(t, err)
+		_, ok = u3MCP(t, server, "backlogit_remove_from_shipment",
+			map[string]any{"shipment_id": mcp.shipA, "item_id": mcp.taskA1, "force": true})
+		assert.False(t, ok)
+
+		assert.Contains(t, cli.manifest(t, cli.shipA), cli.taskA1)
+		assert.Contains(t, mcp.manifest(t, mcp.shipA), mcp.taskA1)
+	})
+}
