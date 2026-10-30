@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -403,8 +404,12 @@ force the disposable cache to match the file-backed source of truth.`,
 	}
 }
 
+// serveMCPStdio is a test seam for the stdio transport.
+var serveMCPStdio = mcpinternal.RunStdio
+
 func newMCPCommand(cwd *string) *cobra.Command {
-	return &cobra.Command{
+	var replace bool
+	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Start the backlogit MCP stdio server",
 		Long: `Start the backlogit Model Context Protocol server over stdio.
@@ -412,20 +417,102 @@ func newMCPCommand(cwd *string) *cobra.Command {
 Use this command from MCP-capable clients such as GitHub Copilot CLI, Claude
 Code, or Cursor to expose backlogit workspace tools to agents.`,
 		Example: `  backlogit mcp
+  backlogit mcp --replace
+  backlogit mcp status --format json
+  backlogit mcp stop
   backlogit --cwd D:\Source\MyProject mcp`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			noUpdateCheck, err := noUpdateCheckFlagValue(cmd)
 			if err != nil {
 				return err
 			}
+			release, err := AcquireMCPDaemonLock(cmd.Context(), *cwd, replace)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = release() }()
 			s, err := openMCPServer(context.Background(), *cwd)
 			if err != nil {
 				return err
 			}
 			s.NoUpdateCheck = noUpdateCheck
-			return mcpinternal.RunStdio(s)
+			return serveMCPStdio(s)
 		},
 	}
+	cmd.Flags().BoolVar(&replace, "replace", false, "stop any running workspace MCP daemon before starting")
+	cmd.AddCommand(newMCPStatusCommand(cwd), newMCPStopCommand(cwd))
+	return cmd
+}
+
+func newMCPStatusCommand(cwd *string) *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:     "status",
+		Short:   "Report whether a backlogit MCP daemon is running for the workspace",
+		Example: "  backlogit mcp status --format json",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			status, err := InspectMCPDaemonStatus(*cwd)
+			if err != nil {
+				return err
+			}
+			if format == "json" {
+				return writeMCPDaemonJSON(cmd, status)
+			}
+			if !status.Running {
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "MCP daemon not running (lock: %s)\n", status.LockPath)
+				return wrapOutputErr(err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "MCP daemon running: pid %d, started %s, version %s (lock: %s)\n",
+				status.PID, status.StartedAt.Format(time.RFC3339), status.Version, status.LockPath)
+			return wrapOutputErr(err)
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
+	return cmd
+}
+
+func newMCPStopCommand(cwd *string) *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:     "stop",
+		Short:   "Stop the backlogit MCP daemon running for the workspace",
+		Example: "  backlogit mcp stop --format json",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			res, err := StopMCPDaemon(cmd.Context(), *cwd)
+			if err != nil {
+				return err
+			}
+			if format == "json" {
+				return writeMCPDaemonJSON(cmd, res)
+			}
+			if !res.Stopped {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "MCP daemon not running")
+				return wrapOutputErr(err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Stopped MCP daemon pid %d\n", res.PID)
+			return wrapOutputErr(err)
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
+	return cmd
+}
+
+func wrapOutputErr(err error) error {
+	if err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
+	return nil
+}
+
+func writeMCPDaemonJSON(cmd *cobra.Command, v any) error {
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
+	return nil
 }
 
 func openMCPServer(ctx context.Context, rootPath string) (*mcpinternal.Server, error) {

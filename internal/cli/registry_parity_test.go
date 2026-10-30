@@ -76,6 +76,8 @@ type registryFile struct {
 var cliOnlyIntentional = []string{
 	"backlogit init",
 	"backlogit mcp",
+	"backlogit mcp status",
+	"backlogit mcp stop",
 	"backlogit manifest",
 	"backlogit migrate",
 	"backlogit status",

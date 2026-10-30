@@ -33,6 +33,10 @@ var (
 	// machine-authenticated operator authorization.
 	ErrConfirmationRequired = errors.New("backlogit: explicit confirmation required for this operation")
 
+	// ErrDaemonAlreadyRunning is returned when another MCP daemon already holds
+	// the single-daemon lock for the workspace (204-F).
+	ErrDaemonAlreadyRunning = errors.New("backlogit: mcp daemon already running for workspace")
+
 	// Cascade sentinel errors (F018 / T004).
 	ErrChildrenNotTerminal = errors.New("backlogit: parent cannot transition while non-terminal children exist")
 
