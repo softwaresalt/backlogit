@@ -150,3 +150,40 @@ order). Use --dry-run to preview the resulting order.`,
 	flags.bind(cmd)
 	return cmd
 }
+
+// newShipmentReconstituteCmd returns the `backlogit shipment reconstitute`
+// subcommand, the CLI fallback for the backlogit_reconstitute_shipment MCP tool.
+func newShipmentReconstituteCmd() *cobra.Command {
+	var flags shipmentManifestFlags
+	var plan string
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "reconstitute --plan <plan-file>",
+		Short: "Reconstitute shipments from a declarative plan",
+		Long: `Declaratively split or regroup queued shipments from a YAML plan.
+
+This mirrors the backlogit_reconstitute_shipment MCP tool. The plan is validated
+and applied atomically; only queued shipments may be changed unless --force is
+supplied together with --reason. Use --dry-run to preview the result without
+writing. Output is always JSON; --json is accepted for symmetry with other commands.`,
+		Example: `  backlogit shipment reconstitute --plan plans/split.yaml --dry-run
+  backlogit shipment reconstitute --plan plans/split.yaml --json`,
+		Args: cobra.NoArgs,
+		// Dry-run ID prediction reads the index, so the full workspace is always opened.
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runShipmentManifestOp(cmd, "shipment-reconstitute", false, func(ctx context.Context, ws *core.Workspace) (any, error) {
+				return core.ReconstituteShipments(ctx, ws, core.ReconstituteOptions{
+					PlanPath: plan,
+					DryRun:   flags.dryRun,
+					Force:    flags.force,
+					Reason:   flags.reason,
+				})
+			})
+		},
+	}
+	cmd.Flags().StringVar(&plan, "plan", "", "path to the reconstitution plan YAML file")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON output (default)")
+	_ = cmd.MarkFlagRequired("plan")
+	flags.bind(cmd)
+	return cmd
+}

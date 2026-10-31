@@ -95,6 +95,9 @@ func ReconstituteShipments(ctx context.Context, ws *Workspace, opts Reconstitute
 		return nil, reconstituteValidationError("workspace is nil")
 	}
 	if opts.DryRun {
+		if ws.DB == nil {
+			return nil, reconstituteValidationError("dry-run preview requires an index database")
+		}
 		if err := ensureNoPendingShipmentRecoveryReadOnly(ws); err != nil {
 			return nil, err
 		}

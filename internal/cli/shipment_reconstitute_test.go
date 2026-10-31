@@ -61,6 +61,8 @@ func buildReconstituteSplitScenario(t *testing.T) *reconstituteSplitScenario {
 	}
 	predecessor, err := core.CreateShipment(ctx, ws, "190-S predecessor", []string{neighbor("190-S task")})
 	require.NoError(t, err)
+	_, err = core.UpdateArtifact(ctx, ws, predecessor.ID, map[string]any{"labels": []string{"dag-root"}})
+	require.NoError(t, err)
 	source, err := core.CreateShipment(ctx, ws, "201-S source", ids)
 	require.NoError(t, err)
 	downstream, err := core.CreateShipment(ctx, ws, "198-S downstream", []string{neighbor("198-S task")})
@@ -234,15 +236,17 @@ func TestU3_ShipmentReconstituteCLIMCPParityAnd201SScenario(t *testing.T) {
 		assert.NotEqual(t, "dry_run", applied.Status)
 		assert.Len(t, applied.CreatedFeatures, 5)
 		assert.Len(t, applied.CreatedShipments, 5)
-		assert.Equal(t, []string{sc.tasks[9], sc.tasks[10]}, applied.AfterManifests[sc.source],
-			"201-S keeps its identity with the two unmoved tasks")
+		assert.Equal(t, []string{sc.feature, sc.tasks[9], sc.tasks[10]}, applied.AfterManifests[sc.source],
+			"201-S keeps its identity with its covering feature and the two unmoved tasks")
 
 		ws, wsErr := core.NewWorkspace(ctx, sc.root)
 		require.NoError(t, wsErr)
 		defer func() { _ = ws.Close() }()
 		reparented := 0
 		for _, taskID := range sc.tasks[:9] {
-			task, getErr := bldb.GetItem(ctx, ws.DB, taskID)
+			newID, adopted := applied.AdoptedIDMap[taskID]
+			require.True(t, adopted, "task %s must be adopted under a new feature", taskID)
+			task, getErr := bldb.GetItem(ctx, ws.DB, newID)
 			require.NoError(t, getErr)
 			if task.ParentID != sc.feature {
 				reparented++

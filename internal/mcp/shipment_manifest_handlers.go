@@ -136,3 +136,31 @@ func (s *Server) handleReorderShipment(ctx context.Context, request mcplib.CallT
 	}
 	return toolResultJSON(result)
 }
+
+func (s *Server) handleReconstituteShipment(ctx context.Context, request mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	shipmentOpts := shipmentManifestOptions(request)
+	planPath, _ := request.Params.Arguments["plan_path"].(string)
+	planYAML, _ := request.Params.Arguments["plan_yaml"].(string)
+	if (planPath == "") == (planYAML == "") {
+		return ValidationFailed("exactly one of plan_path or plan_yaml is required"), nil
+	}
+	ws, release, wsResult := s.manifestWorkspace(ctx, shipmentOpts.DryRun)
+	if wsResult != nil {
+		return wsResult, nil
+	}
+	defer release()
+	logger.Info("shipment tool invoked", "tool", "backlogit_reconstitute_shipment",
+		"dry_run", shipmentOpts.DryRun)
+
+	result, err := core.ReconstituteShipments(ctx, ws, core.ReconstituteOptions{
+		PlanPath: planPath,
+		PlanYAML: planYAML,
+		DryRun:   shipmentOpts.DryRun,
+		Force:    shipmentOpts.Force,
+		Reason:   shipmentOpts.Reason,
+	})
+	if err != nil {
+		return domainError("reconstitute shipment", err), nil
+	}
+	return toolResultJSON(result)
+}

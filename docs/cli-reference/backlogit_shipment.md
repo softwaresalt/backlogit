@@ -46,6 +46,7 @@ shipments in the workspace, claim queued shipments, and return blocked items.
 * [backlogit shipment list](backlogit_shipment_list.md)	 - List shipments
 * [backlogit shipment move](backlogit_shipment_move.md)	 - Move an item between shipment manifests
 * [backlogit shipment reconcile-shipped](backlogit_shipment_reconcile-shipped.md)	 - Governed repair: reconcile a legacy archived shipment to archived_status=shipped
+* [backlogit shipment reconstitute](backlogit_shipment_reconstitute.md)	 - Reconstitute shipments from a declarative plan
 * [backlogit shipment remove](backlogit_shipment_remove.md)	 - Remove an item from a shipment manifest
 * [backlogit shipment reorder](backlogit_shipment_reorder.md)	 - Reorder a shipment manifest
 * [backlogit shipment repair-evidence](backlogit_shipment_repair-evidence.md)	 - Repair stale gate evidence for a shipment member
