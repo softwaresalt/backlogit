@@ -1227,6 +1227,16 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 }
 
 func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, opts AdoptItemOptions) (*AdoptItemResult, error) {
+	// Canonical order: the active stash lock is outermost (matching
+	// HarvestStashEntry: stash -> lifecycle-global -> item-log -> artifact
+	// mutation). Only the rename path rewrites the stash archive.
+	if !opts.KeepID && ws.DB != nil {
+		unlockStash, stashErr := lockActiveStash(ws)
+		if stashErr != nil {
+			return nil, fmt.Errorf("adopt item %s: acquire stash lock: %w", itemID, stashErr)
+		}
+		defer func() { _ = unlockStash() }()
+	}
 	lockedCtx, releaseArtifactLocks, lockErr := lockArtifactMutations(ctx, ws, []string{itemID, newParentID})
 	if lockErr != nil {
 		return nil, fmt.Errorf("adopt item %s: acquire mutation lock: %w", itemID, lockErr)
@@ -1340,7 +1350,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		// archive/provenance_corrections.jsonl. The stash lock is the last in the
 		// canonical order (artifact mutation -> item log -> stash). Every failure
 		// below restores the archive files; success clears the handle.
-		archiveTxn, archiveErr := propagateAdoptToStashArchive(ws, oldID, newID)
+		archiveTxn, archiveErr := propagateAdoptToStashArchiveLocked(ws, oldID, newID, nil)
 		if archiveErr != nil {
 			return nil, fmt.Errorf("adopt item %s: propagate stash archive: %w", oldID, archiveErr)
 		}

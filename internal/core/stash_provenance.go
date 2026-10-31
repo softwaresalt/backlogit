@@ -131,10 +131,20 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 		}
 	}
 
-	// Canonical lock order: lifecycle global, then C (item log), then B
-	// (artifact mutation), then the stash file lock. C is taken before B so the
-	// stash_provenance_corrected event stays causally ordered with the mutation
-	// it records and no B-then-C edge exists (artifact-mutation-lock-order.md).
+	// Canonical lock order: the active stash lock is outermost (matching
+	// HarvestStashEntry, which holds it while CreateArtifact takes the other
+	// locks), then lifecycle global, then C (item log), then B (artifact
+	// mutation). C is taken before B so the stash_provenance_corrected event
+	// stays causally ordered with the mutation it records and no B-then-C edge
+	// exists (artifact-mutation-lock-order.md).
+	// The canonical lock is the active stash's, shared with HarvestStashEntry and
+	// ArchiveStashEntry (which append to this archive while holding it).
+	unlock, err := lockActiveStash(ws)
+	if err != nil {
+		return nil, fmt.Errorf("acquire stash lock: %w", err)
+	}
+	defer func() { _ = unlock() }()
+
 	lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
 	if err != nil {
 		return nil, fmt.Errorf("lock shipment lifecycle for stash provenance correction: %w", err)
@@ -157,15 +167,8 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 	defer func() { _ = unlockArtifacts() }()
 	ctx = artifactCtx
 
-	// 7: Lock the stash archive file.
+	// 7: Locate the stash archive (stash lock already held, see above).
 	stashArchivePath := filepath.Join(realArchiveDir, "stash.jsonl")
-	// The canonical lock is the active stash's, shared with HarvestStashEntry and
-	// ArchiveStashEntry (which append to this archive while holding it).
-	unlock, err := lockActiveStash(ws)
-	if err != nil {
-		return nil, fmt.Errorf("acquire stash lock: %w", err)
-	}
-	defer func() { _ = unlock() }()
 
 	// ---- Read-only preflight (no writes below this line until the audit step) ----
 

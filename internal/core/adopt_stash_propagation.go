@@ -101,9 +101,31 @@ func refuseSymlink(path string) error {
 // and call Rollback if the adopt later fails. A nil handle means there was
 // nothing to propagate.
 func propagateAdoptToStashArchive(ws *Workspace, oldID, newID string) (txn *adoptArchiveTxn, err error) {
+	unlock, lockErr := lockActiveStash(ws)
+	if lockErr != nil {
+		return nil, fmt.Errorf("acquire stash lock: %w", lockErr)
+	}
+	return propagateAdoptToStashArchiveLocked(ws, oldID, newID, unlock)
+}
+
+// propagateAdoptToStashArchiveLocked is propagateAdoptToStashArchive for
+// callers that already hold the active stash lock (taken first, as the
+// outermost lock). The returned handle owns unlock when non-nil; callers that
+// pass a nil unlock keep ownership of the lock and must release it themselves.
+func propagateAdoptToStashArchiveLocked(ws *Workspace, oldID, newID string, unlock func() error) (txn *adoptArchiveTxn, err error) {
+	local := &adoptArchiveTxn{unlock: unlock}
+	txn = local
+	defer func() {
+		if err != nil {
+			local.Rollback()
+			local.Close()
+			txn = nil
+		}
+	}()
 	archiveDir := filepath.Join(workspaceStorageRoot(ws), "archive")
 	if info, statErr := os.Lstat(archiveDir); statErr != nil {
 		if os.IsNotExist(statErr) {
+			local.Close() // nothing to propagate; release an owned lock
 			return nil, nil
 		}
 		return nil, fmt.Errorf("lstat archive dir: %w", statErr)
@@ -117,22 +139,6 @@ func propagateAdoptToStashArchive(ws *Workspace, oldID, newID string) (txn *adop
 			return nil, err
 		}
 	}
-
-	unlock, lockErr := lockActiveStash(ws)
-	if lockErr != nil {
-		return nil, fmt.Errorf("acquire stash lock: %w", lockErr)
-	}
-	// Use a local: the named result is cleared by `return nil, err`, which
-	// would make the deferred cleanup a no-op.
-	local := &adoptArchiveTxn{unlock: unlock}
-	txn = local
-	defer func() {
-		if err != nil {
-			local.Rollback()
-			local.Close()
-			txn = nil
-		}
-	}()
 
 	for _, p := range []string{stashPath, correctionsPath} {
 		raw, readErr := os.ReadFile(p)
