@@ -174,9 +174,9 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	artifactID := ""
 	if ws.Config.QueueLayout != nil {
 		if _, levelErr := LevelForType(ws.Config.QueueLayout, artifactType); levelErr == nil {
-			nextTypedID, idErr := NextTypedHierarchicalID(
+			nextTypedID, idErr := allocateTypedHierarchicalID(
 				ctx,
-				ws.DB,
+				ws,
 				o.ParentID,
 				artifactType,
 				typeConfig,
@@ -192,6 +192,13 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		nextID, err := NextID(ctx, ws.DB, artifactType, typeConfig)
 		if err != nil {
 			return nil, fmt.Errorf("get next id: %w", err)
+		}
+		diskMax, diskErr := MaxDiskArtifactSequence(ws, typeConfig)
+		if diskErr != nil {
+			return nil, fmt.Errorf("get next id: scan disk history: %w", diskErr)
+		}
+		if diskMax >= nextID {
+			nextID = diskMax + 1
 		}
 		artifactID = ResolveName(typeConfig, title, nextID, ws.Config.MaxSlugLength)
 	}

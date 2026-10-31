@@ -581,6 +581,7 @@ operations:
     params:
       item_id: "item_id"
       new_parent_id: "new_parent_id"
+      keep_id: "keep_id"
 
   # --- Discovery & metadata ---
 
@@ -693,12 +694,13 @@ operations:
 
   correct_stash_provenance:
     mcp_tool: "backlogit_correct_stash_provenance"
-    mcp_only: true
+    cli_command: "backlogit stash correct --stash-id {{stash_id}} --canonical-delivery {{canonical_delivery_artifact_id}} --reason {{reason}} --actor {{actor}}"
     params:
       stash_id: "stash_id"
       canonical_delivery_artifact_id: "canonical_delivery_artifact_id"
       reason: "reason"
       actor: "actor"
+      force: "force"
 
 field_mapping:
   task_id: "id"

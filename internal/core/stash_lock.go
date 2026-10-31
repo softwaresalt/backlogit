@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -47,6 +48,20 @@ func lockStashFile(path string) (unlock func() error, err error) {
 		defer stashMu.Unlock()
 		return unlockStashFile(path)
 	}, nil
+}
+
+// lockActiveStash acquires the canonical cross-process stash lock: the sidecar
+// of the ACTIVE stash file (StashFilePath). HarvestStashEntry,
+// ArchiveStashEntry and every other stash mutator serialize on this lock, and
+// they append to archive/stash.jsonl while holding it, so any code that
+// rewrites the archive must hold the same lock. The lock is not re-entrant:
+// callers that already hold it must not call this helper.
+func lockActiveStash(ws *Workspace) (unlock func() error, err error) {
+	path := StashFilePath(ws.RootPath)
+	if mkErr := os.MkdirAll(filepath.Dir(path), 0o755); mkErr != nil {
+		return nil, fmt.Errorf("ensure stash directory: %w", mkErr)
+	}
+	return lockStashFile(path)
 }
 
 // unlockStashFile removes the advisory lock sidecar created by lockStashFile.

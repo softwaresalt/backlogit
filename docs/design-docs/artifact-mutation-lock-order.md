@@ -29,6 +29,24 @@ acquires locks in sorted item-ID order. 200.002-T fixes this order as the single
 rule that ShipShipment (200.005-T) and standalone and cascade `ArchiveItem`
 (200.007-T) follow.
 
+The **active stash lock** (`lockActiveStash`, the sidecar of the active stash
+file) is outermost for every writer that takes it together with the domains
+above: **stash, then lifecycle global, then A, then C, then B**. The lock is
+not re-entrant. `HarvestStashEntry` holds it while `CreateArtifact` takes
+lifecycle global, C and B, so any writer that takes the stash lock after one of
+those domains forms a stash-versus-global inversion that can deadlock across
+processes. Two writers therefore acquire it first:
+
+* `CorrectStashProvenance` takes the stash lock before lifecycle global, C and B
+* `AdoptItem` on the rename path (`KeepID` false) takes the stash lock before B
+  and the event-log locks. `propagateAdoptToStashArchiveLocked` rewrites the
+  archive under that already-held lock and never locks again. The adopt defers
+  release the stash lock last, after the archive rollback and all inner locks.
+
+`TestLockOrder_HarvestConcurrentWithAdoptRenameDoesNotDeadlock` and
+`TestLockOrder_HarvestConcurrentWithCorrectStashProvenanceDoesNotDeadlock`
+guard the order with a watchdog.
+
 A writer must not acquire C while it is already holding B, unless the call tree
 already holds that C in its context. A writer that records an event for a
 mutation appends it under the C it took before B, so the item-log event stays

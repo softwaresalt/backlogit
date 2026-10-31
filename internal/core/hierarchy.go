@@ -92,9 +92,27 @@ func NextHierarchicalID(db *sql.DB, parentID string, layout *config.QueueLayoutC
 
 // NextTypedHierarchicalID computes the next available typed hierarchical ID for
 // the given artifact type and parent.
+//
+// The ordinal skips past every sibling ordinal recorded in SQLite, including
+// history tables (item logs, log entries with delta old_id, stash links), so a
+// retired ID is never reused.
 func NextTypedHierarchicalID(
 	ctx context.Context,
 	db *sql.DB,
+	parentID string,
+	artifactType string,
+	typeCfg *config.ArtifactTypeConfig,
+	layout *config.QueueLayoutConfig,
+) (string, error) {
+	return nextTypedHierarchicalID(ctx, db, nil, parentID, artifactType, typeCfg, layout)
+}
+
+// nextTypedHierarchicalID implements NextTypedHierarchicalID with additional
+// historical IDs (typically gathered from workspace disk) to reserve.
+func nextTypedHierarchicalID(
+	ctx context.Context,
+	db *sql.DB,
+	extraIDs []string,
 	parentID string,
 	artifactType string,
 	typeCfg *config.ArtifactTypeConfig,
@@ -148,13 +166,28 @@ func NextTypedHierarchicalID(
 		return "", fmt.Errorf("iterate hierarchical ids: %w", err)
 	}
 
+	parentPath := ""
+	if parentID != "" {
+		parentPath, err = numericParentPath(parentID, layout)
+		if err != nil {
+			return "", fmt.Errorf("parent numeric path: %w", err)
+		}
+	}
+
+	dbHistory, histErr := historicalIDsFromDB(ctx, db)
+	if histErr != nil {
+		return "", fmt.Errorf("load id history: %w", histErr)
+	}
+	if m := maxTypedOrdinalAmong(dbHistory, parentPath, typeCfg.Prefix, typeCfg.Suffix); m > maxOrdinal {
+		maxOrdinal = m
+	}
+	if m := maxTypedOrdinalAmong(extraIDs, parentPath, typeCfg.Prefix, typeCfg.Suffix); m > maxOrdinal {
+		maxOrdinal = m
+	}
+
 	segment := formatTypedSegment(typeCfg.Prefix, typeCfg.Suffix, maxOrdinal+1)
 	if parentID == "" {
 		return segment, nil
-	}
-	parentPath, err := numericParentPath(parentID, layout)
-	if err != nil {
-		return "", fmt.Errorf("parent numeric path: %w", err)
 	}
 	return parentPath + "." + segment, nil
 }
