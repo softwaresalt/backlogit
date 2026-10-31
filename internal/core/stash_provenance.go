@@ -159,7 +159,9 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 
 	// 7: Lock the stash archive file.
 	stashArchivePath := filepath.Join(realArchiveDir, "stash.jsonl")
-	unlock, err := lockStashFile(stashArchivePath)
+	// The canonical lock is the active stash's, shared with HarvestStashEntry and
+	// ArchiveStashEntry (which append to this archive while holding it).
+	unlock, err := lockActiveStash(ws)
 	if err != nil {
 		return nil, fmt.Errorf("acquire stash lock: %w", err)
 	}

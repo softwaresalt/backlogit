@@ -1443,11 +1443,14 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			}
 			return nil, fmt.Errorf("adopt item %s: apply cross-artifact rewrites: %w", oldID, applyErr)
 		}
+		// The helper succeeded: from here every failure must also restore the
+		// rewritten cross-reference files (shipment manifests, parents, deps).
+		restoreCrossRefs := func() { restoreCrossRefSnapshots(crossRefs) }
 
 		// Rename log file if it exists.
 		if _, statErr := os.Stat(oldLogPath); statErr == nil {
-			if renameErr := os.Rename(oldLogPath, newLogPath); renameErr != nil {
-				// Rollback MD rename
+			if renameErr := adoptRenameLogFn(oldLogPath, newLogPath); renameErr != nil {
+				restoreCrossRefs()
 				if renamedMD {
 					rollbackMDFile(newMDPath, oldMDPath, oldMDRaw)
 				}
@@ -1472,17 +1475,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			if renamedMD {
 				rollbackMDFile(newMDPath, oldMDPath, oldMDRaw)
 			}
-			for _, u := range crossRefs {
-				tmp := u.filePath + ".rollback-tmp"
-				if writeErr := os.WriteFile(tmp, u.snapshotRaw, 0o644); writeErr != nil {
-					slog.Warn("adopt item: rollback cross-ref write failed", "path", u.filePath, "error", writeErr)
-					continue
-				}
-				if renameErr := os.Rename(tmp, u.filePath); renameErr != nil {
-					slog.Warn("adopt item: rollback cross-ref rename failed", "path", u.filePath, "error", renameErr)
-					_ = os.Remove(tmp)
-				}
-			}
+			restoreCrossRefs()
 			return nil, fmt.Errorf("adopt item %s: commit tx: %w", oldID, commitErr)
 		}
 		archiveCommitted = true
@@ -1699,4 +1692,29 @@ func commitSHA(commit *CommitMetadata) string {
 		return ""
 	}
 	return strings.TrimSpace(commit.SHA)
+}
+
+// adoptRenameLogFn is the item-log rename seam used by adoptItem. Tests
+// override it to inject a rename failure after cross-reference rewrites
+// succeeded. Must not run with t.Parallel.
+var adoptRenameLogFn = os.Rename
+
+// restoreCrossRefSnapshots rewrites every cross-reference file from the
+// snapshot captured by applyCrossArtifactRewrites, undoing the adopt's
+// reference rewrites on disk. Entries without a snapshot are skipped.
+func restoreCrossRefSnapshots(updates []crossRefUpdate) {
+	for _, u := range updates {
+		if u.snapshotRaw == nil {
+			continue
+		}
+		tmp := u.filePath + ".rollback-tmp"
+		if writeErr := os.WriteFile(tmp, u.snapshotRaw, 0o644); writeErr != nil {
+			slog.Warn("adopt item: rollback cross-ref write failed", "path", u.filePath, "error", writeErr)
+			continue
+		}
+		if renameErr := os.Rename(tmp, u.filePath); renameErr != nil {
+			slog.Warn("adopt item: rollback cross-ref rename failed", "path", u.filePath, "error", renameErr)
+			_ = os.Remove(tmp)
+		}
+	}
 }

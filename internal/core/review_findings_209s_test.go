@@ -68,7 +68,7 @@ func TestU1_AdoptPropagationErrorRollsBackAndReleasesLock(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		unlock, lockErr := lockStashFile(stashPath)
+		unlock, lockErr := lockActiveStash(ws)
 		if lockErr == nil {
 			lockErr = unlock()
 		}

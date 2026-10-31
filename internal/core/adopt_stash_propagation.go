@@ -118,7 +118,7 @@ func propagateAdoptToStashArchive(ws *Workspace, oldID, newID string) (txn *adop
 		}
 	}
 
-	unlock, lockErr := lockStashFile(stashPath)
+	unlock, lockErr := lockActiveStash(ws)
 	if lockErr != nil {
 		return nil, fmt.Errorf("acquire stash lock: %w", lockErr)
 	}
