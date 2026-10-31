@@ -3,8 +3,6 @@ package core
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +15,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/softwaresalt/backlogit/internal/canonical"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -230,8 +229,7 @@ func loadAndValidateReconstitutePlan(ws *Workspace, opts ReconstituteOptions) (*
 	if len(plan.Shipments) == 0 {
 		return nil, "", reconstituteValidationError("shipments must not be empty")
 	}
-	digest := sha256.Sum256(data)
-	return &plan, hex.EncodeToString(digest[:]), nil
+	return &plan, canonical.HashBytes(data), nil
 }
 
 type reconstituteTarget struct {
