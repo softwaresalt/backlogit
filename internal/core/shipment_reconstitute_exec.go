@@ -21,8 +21,8 @@ import (
 // carries so rollback can restore the workspace after a failure or crash.
 type reconstituteJournalState struct {
 	Images        []reconstituteFileImage  `json:"images"`
-	KnownMarkdown []string                 `json:"known_markdown"`
 	KnownLogs     []string                 `json:"known_logs"`
+	CreatedIDs    []string                 `json:"created_ids,omitempty"`
 	CommitLinks   []reconstituteCommitLink `json:"commit_links"`
 	CommitItemIDs []string                 `json:"commit_item_ids"`
 	EventIDs      []string                 `json:"event_ids"`
@@ -181,7 +181,13 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 	}
 
 	opCtx := hooks.WithBufferedPostHooks(withShipmentOperation(ctx, correlationID))
-	result, applyErr := applyReconstitution(opCtx, ws, st, correlationID, baseline)
+	result, applyErr := applyReconstitution(opCtx, ws, st, correlationID, baseline, func(id string) error {
+		state.CreatedIDs = append(state.CreatedIDs, id)
+		if _, err := writeShipmentOperationJournal(ws, journalName, journal); err != nil {
+			return fmt.Errorf("reconstitute: journal created artifact %s: %w", id, errors.Join(err, blerrors.ErrWriteIndeterminate))
+		}
+		return nil
+	})
 	if applyErr != nil {
 		hooks.DiscardBufferedPostHooks(opCtx)
 		if blerrors.IsWriteIndeterminate(applyErr) {
@@ -237,7 +243,7 @@ func captureReconstituteState(ctx context.Context, ws *Workspace, st *reconstitu
 	storageRoot := workspaceStorageRoot(ws)
 	affected := st.affectedIDs()
 	state := &reconstituteJournalState{
-		Images: []reconstituteFileImage{}, KnownMarkdown: []string{}, KnownLogs: []string{},
+		Images: []reconstituteFileImage{}, KnownLogs: []string{},
 		CommitLinks: []reconstituteCommitLink{}, CommitItemIDs: []string{},
 		EventIDs: affected, LockIDs: affected,
 	}
@@ -264,7 +270,6 @@ func captureReconstituteState(ctx context.Context, ws *Workspace, st *reconstitu
 			if entry.IsDir() || filepath.Ext(path) != ".md" || strings.EqualFold(filepath.Base(path), ".stash.md") {
 				return nil
 			}
-			state.KnownMarkdown = append(state.KnownMarkdown, rel(path))
 			data, readErr := os.ReadFile(path)
 			if readErr != nil {
 				return readErr
@@ -334,6 +339,7 @@ func applyReconstitution(
 	st *reconstitutePlanState,
 	correlationID string,
 	baseline map[string]struct{},
+	recordCreated func(id string) error,
 ) (*ReconstituteShipmentResult, error) {
 	result := newReconstituteResult(st)
 	result.Status, result.CorrelationID = "reconstituted", correlationID
@@ -368,6 +374,9 @@ func applyReconstitution(
 			return nil, fmt.Errorf("create covering feature %q: %w", create.Title, err)
 		}
 		featureIDs[target.featureKey] = feature.ID
+		if err := recordCreated(feature.ID); err != nil {
+			return nil, err
+		}
 		result.CreatedFeatures = append(result.CreatedFeatures, ReconstituteCreatedArtifact{
 			ID: feature.ID, Label: target.spec.Label, Title: create.Title,
 		})
@@ -446,6 +455,9 @@ func applyReconstitution(
 			return nil, fmt.Errorf("create shipment %q: %w", target.title, err)
 		}
 		shipmentIDs[target.key] = shipment.ID
+		if err := recordCreated(shipment.ID); err != nil {
+			return nil, err
+		}
 		result.CreatedShipments = append(result.CreatedShipments, ReconstituteCreatedArtifact{
 			ID: shipment.ID, Label: target.spec.Label, Title: target.title,
 		})
@@ -671,7 +683,7 @@ func rollbackReconstitute(ctx context.Context, ws *Workspace, journal shipmentLi
 	for _, rel := range state.KnownLogs {
 		knownLogs[rel] = struct{}{}
 	}
-	pairs, unknownLogs, err := discoverReconstituteAdoptions(ctx, ws, journal.CorrelationID, logsRoot, knownLogs)
+	pairs, err := discoverReconstituteAdoptions(ctx, ws, journal.CorrelationID, logsRoot, knownLogs)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -688,49 +700,16 @@ func rollbackReconstitute(ctx context.Context, ws *Workspace, journal shipmentLi
 	if err := removeShipmentOperationEvents(ctx, ws, state.EventIDs, journal.CorrelationID); err != nil {
 		errs = append(errs, fmt.Errorf("scrub reconstitute events: %w", err))
 	}
-	for _, rel := range unknownLogs {
-		path, err := abs(rel)
-		if err != nil {
+	// Remove only what this operation provably created: the journaled created
+	// artifacts and the new-ID artifacts/logs of tagged adoptions. Anything else
+	// (e.g. a concurrent unrelated create) is left untouched.
+	ours := append([]string{}, state.CreatedIDs...)
+	for _, oldID := range oldIDs {
+		ours = append(ours, pairs[oldID])
+	}
+	for _, id := range ours {
+		if err := removeReconstituteCreated(ctx, ws, logsRoot, id); err != nil {
 			errs = append(errs, err)
-			continue
-		}
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			errs = append(errs, fmt.Errorf("remove created log %s: %w", rel, err))
-		}
-	}
-
-	known := map[string]struct{}{}
-	for _, rel := range state.KnownMarkdown {
-		known[rel] = struct{}{}
-	}
-	if dirs, dirErr := artifactSearchDirs(ws); dirErr != nil {
-		errs = append(errs, dirErr)
-	} else {
-		for _, dir := range dirs {
-			if _, statErr := os.Lstat(dir); os.IsNotExist(statErr) {
-				continue
-			}
-			walkErr := filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
-				if walkErr != nil {
-					return walkErr
-				}
-				if entry.IsDir() || filepath.Ext(path) != ".md" || strings.EqualFold(filepath.Base(path), ".stash.md") {
-					return nil
-				}
-				rel, relErr := filepath.Rel(storageRoot, path)
-				if relErr != nil {
-					return relErr
-				}
-				if _, ok := known[filepath.ToSlash(rel)]; !ok {
-					if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
-						return fmt.Errorf("remove created artifact %s: %w", rel, rmErr)
-					}
-				}
-				return nil
-			})
-			if walkErr != nil {
-				errs = append(errs, walkErr)
-			}
 		}
 	}
 	for _, image := range state.Images {
@@ -779,23 +758,22 @@ func restoreReconstituteCommitLinks(
 }
 
 // discoverReconstituteAdoptions finds the old->new ID pairs this operation
-// created from its tagged adopted events, scanning only logs that did not
-// exist before the operation. It also returns those unknown log paths.
+// created from its tagged adopted events, reading only logs that did not
+// exist before the operation. It never deletes anything.
 func discoverReconstituteAdoptions(
 	ctx context.Context,
 	ws *Workspace,
 	correlationID, logsRoot string,
 	knownLogs map[string]struct{},
-) (map[string]string, []string, error) {
+) (map[string]string, error) {
 	pairs := map[string]string{}
 	entries, err := os.ReadDir(logsRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return pairs, nil, nil
+			return pairs, nil
 		}
-		return nil, nil, fmt.Errorf("list logs: %w", err)
+		return nil, fmt.Errorf("list logs: %w", err)
 	}
-	var unknown []string
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".jsonl" {
 			continue
@@ -804,11 +782,10 @@ func discoverReconstituteAdoptions(
 		if _, ok := knownLogs[rel]; ok {
 			continue
 		}
-		unknown = append(unknown, rel)
 		itemID := strings.TrimSuffix(entry.Name(), ".jsonl")
 		logged, readErr := events.ReadAllEvents(ctx, logsRoot, itemID)
 		if readErr != nil {
-			return nil, nil, fmt.Errorf("read log %s: %w", itemID, readErr)
+			return nil, fmt.Errorf("read log %s: %w", itemID, readErr)
 		}
 		for _, event := range logged {
 			if event.EventType != "adopted" || !isShipmentOperationEvent(event, correlationID) {
@@ -821,7 +798,26 @@ func discoverReconstituteAdoptions(
 			}
 		}
 	}
-	return pairs, unknown, nil
+	return pairs, nil
+}
+
+// removeReconstituteCreated deletes the artifact file and item log of an ID this
+// operation created or adopted into. A missing file is not an error.
+func removeReconstituteCreated(ctx context.Context, ws *Workspace, logsRoot, id string) error {
+	var errs []error
+	path, err := FindArtifactPath(ctx, ws, id)
+	switch {
+	case err == nil:
+		if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
+			errs = append(errs, fmt.Errorf("remove created artifact %s: %w", id, rmErr))
+		}
+	case !errors.Is(err, blerrors.ErrNotFound):
+		errs = append(errs, fmt.Errorf("locate created artifact %s: %w", id, err))
+	}
+	if rmErr := os.Remove(events.LogPathForItem(logsRoot, id)); rmErr != nil && !os.IsNotExist(rmErr) {
+		errs = append(errs, fmt.Errorf("remove created log %s: %w", id, rmErr))
+	}
+	return errors.Join(errs...)
 }
 
 // restoreReconstitutedItemLogs moves an adopted item's log back to its old ID
