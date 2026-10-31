@@ -132,6 +132,9 @@ func reconcileShipmentLifecycleIntent(
 	if isShipmentManifestOperation(journal.Operation) {
 		return reconcileShipmentManifestIntent(ctx, ws, journalPath, journal)
 	}
+	if journal.Operation == shipmentOperationReconstitute {
+		return reconcileReconstituteIntent(ctx, ws, journalPath, journal)
+	}
 	if journal.SchemaVersion != "shipment-operation/v1" ||
 		journal.Phase != "intent" ||
 		journal.CorrelationID == "" ||

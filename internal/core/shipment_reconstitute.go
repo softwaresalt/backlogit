@@ -1,10 +1,6 @@
 package core
 
-import (
-	"context"
-
-	blerrors "github.com/softwaresalt/backlogit/internal/errors"
-)
+import "context"
 
 // ReconstitutePlan describes a declarative redistribution of shipment members.
 type ReconstitutePlan struct {
@@ -89,7 +85,27 @@ type ReconstituteShipmentResult struct {
 	DependencyChanges []ReconstituteDependencyChange `json:"dependency_changes" yaml:"dependency_changes"`
 }
 
-// ReconstituteShipments is a declaration-only stub for shipment reconstitution.
+// ReconstituteShipments redistributes the members of source shipments across
+// target shipments according to a declarative plan. A dry run validates the
+// plan and previews the result without writing. A live run is all-or-nothing:
+// it journals its preimage, applies every mutation, verifies manifest
+// integrity, and rolls back completely on any failure.
 func ReconstituteShipments(ctx context.Context, ws *Workspace, opts ReconstituteOptions) (*ReconstituteShipmentResult, error) {
-	return nil, blerrors.ErrNotImplemented
+	if ws == nil {
+		return nil, reconstituteValidationError("workspace is nil")
+	}
+	if opts.DryRun {
+		if err := ensureNoPendingShipmentRecoveryReadOnly(ws); err != nil {
+			return nil, err
+		}
+		st, err := planReconstitution(ctx, ws, opts)
+		if err != nil {
+			return nil, err
+		}
+		return projectReconstitution(ctx, ws, st)
+	}
+	if ws.DB == nil {
+		return nil, reconstituteValidationError("live reconstitution requires an index database")
+	}
+	return executeReconstitution(ctx, ws, opts)
 }

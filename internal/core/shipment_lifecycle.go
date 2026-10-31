@@ -1230,7 +1230,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 	// Canonical order: the active stash lock is outermost (matching
 	// HarvestStashEntry: stash -> lifecycle-global -> item-log -> artifact
 	// mutation). Only the rename path rewrites the stash archive.
-	if !opts.KeepID && ws.DB != nil {
+	if !opts.KeepID && ws.DB != nil && !stashLockHeld(ctx) {
 		unlockStash, stashErr := lockActiveStash(ws)
 		if stashErr != nil {
 			return nil, fmt.Errorf("adopt item %s: acquire stash lock: %w", itemID, stashErr)

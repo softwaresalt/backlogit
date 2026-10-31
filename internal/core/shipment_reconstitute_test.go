@@ -413,7 +413,7 @@ shipments:
 
 		t.Run("intent_rolls_back", func(t *testing.T) {
 			fx := newReconstituteFixture(t)
-			path, shipmentPath := newJournal(t, fx, "intent", "reconstitute-crash-intent")
+			path, shipmentPath := newJournal(t, fx, "intent", "0000000000000000000000000000a001")
 			original, err := os.ReadFile(shipmentPath)
 			require.NoError(t, err)
 			require.NoError(t, os.WriteFile(shipmentPath,
@@ -431,7 +431,7 @@ shipments:
 
 		t.Run("committed_finalizes_without_rollback", func(t *testing.T) {
 			fx := newReconstituteFixture(t)
-			path, shipmentPath := newJournal(t, fx, "committed", "reconstitute-crash-committed")
+			path, shipmentPath := newJournal(t, fx, "committed", "0000000000000000000000000000a002")
 			original, err := os.ReadFile(shipmentPath)
 			require.NoError(t, err)
 			mutated := strings.Replace(string(original), "Reconstitute source shipment", "Committed title", 1)
@@ -449,7 +449,7 @@ shipments:
 
 		t.Run("failed_rollback_retains_journal", func(t *testing.T) {
 			fx := newReconstituteFixture(t)
-			path, shipmentPath := newJournal(t, fx, "intent", "reconstitute-crash-retained")
+			path, shipmentPath := newJournal(t, fx, "intent", "0000000000000000000000000000a003")
 			require.NoError(t, os.Remove(shipmentPath))
 			require.NoError(t, os.MkdirAll(shipmentPath, 0o755))
 			t.Cleanup(func() { _ = os.RemoveAll(shipmentPath) })
@@ -516,7 +516,7 @@ shipments:
 		assert.Equal(t, len(res.CreatedFeatures)+len(res.CreatedShipments), afterRecon,
 			"buffered post-hooks flush after commit, once per created artifact")
 
-		independent, err := CreateArtifact(ctx, ws, "Independent artifact", "task")
+		independent, err := CreateArtifact(ctx, ws, "Independent artifact", "feature")
 		require.NoError(t, err)
 		postMu.Lock()
 		assert.Equal(t, 1, posts[independent.ID], "independent CreateArtifact fires post-hooks immediately")

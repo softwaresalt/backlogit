@@ -74,6 +74,7 @@ type shipmentLifecycleJournal struct {
 	BlockedBy      string                    `json:"blocked_by,omitempty"`
 	SnapshotRef    string                    `json:"snapshot_ref,omitempty"`
 	Preimage       shipmentLifecyclePreimage `json:"preimage"`
+	Reconstitute   *reconstituteJournalState `json:"reconstitute,omitempty"`
 }
 
 const shipmentLifecycleGlobalLockID = "shipment-lifecycle-global"
@@ -2739,7 +2740,7 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 		if record.kind == shipmentLifecycleJournalKind {
 			journal := record.lifecycle
 			if journal.Phase == shipmentOperationPhaseCommitted &&
-				isShipmentManifestOperation(journal.Operation) &&
+				(isShipmentManifestOperation(journal.Operation) || journal.Operation == shipmentOperationReconstitute) &&
 				(currentOperationID == "" || journal.CorrelationID != currentOperationID) {
 				// A completed remove_item / move_item whose cleanup was
 				// interrupted: finalize without touching preimages.
@@ -2767,6 +2768,9 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 				if related != nil {
 					lockIDs = append(lockIDs, related.ID)
 				}
+			}
+			if journal.Reconstitute != nil {
+				lockIDs = append(lockIDs, journal.Reconstitute.LockIDs...)
 			}
 			lockedCtx, artifactUnlock, lockErr := lockArtifactMutations(ctx, ws, lockIDs)
 			if lockErr == nil {

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -62,6 +63,46 @@ func lockActiveStash(ws *Workspace) (unlock func() error, err error) {
 		return nil, fmt.Errorf("ensure stash directory: %w", mkErr)
 	}
 	return lockStashFile(path)
+}
+
+// stashLockHeldContextKey marks a context whose call tree already holds the
+// active stash lock, so nested helpers must not re-acquire the non-reentrant
+// mutex.
+type stashLockHeldContextKey struct{}
+
+// withStashLockHeld marks ctx as running under the active stash lock.
+func withStashLockHeld(ctx context.Context) context.Context {
+	return context.WithValue(ctx, stashLockHeldContextKey{}, struct{}{})
+}
+
+// stashLockHeld reports whether ctx runs under the active stash lock.
+func stashLockHeld(ctx context.Context) bool {
+	_, held := ctx.Value(stashLockHeldContextKey{}).(struct{})
+	return held
+}
+
+// tryLockActiveStash is a non-blocking lockActiveStash. Recovery runs under the
+// lifecycle-global lock, which sits after the stash lock in the canonical
+// order, so it must never wait for the stash lock; a busy lock is reported as
+// an error and the recovery journal is retained for the next barrier.
+func tryLockActiveStash(ws *Workspace) (unlock func() error, err error) {
+	path := StashFilePath(ws.RootPath)
+	if mkErr := os.MkdirAll(filepath.Dir(path), 0o755); mkErr != nil {
+		return nil, fmt.Errorf("ensure stash directory: %w", mkErr)
+	}
+	if !stashMu.TryLock() {
+		return nil, fmt.Errorf("stash lock is busy: %w", os.ErrExist)
+	}
+	f, createErr := os.OpenFile(path+".lock", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if createErr != nil {
+		stashMu.Unlock()
+		return nil, fmt.Errorf("stash locked by another process: %w", createErr)
+	}
+	_ = f.Close()
+	return func() error {
+		defer stashMu.Unlock()
+		return unlockStashFile(path)
+	}, nil
 }
 
 // unlockStashFile removes the advisory lock sidecar created by lockStashFile.
