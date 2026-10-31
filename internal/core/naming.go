@@ -78,6 +78,16 @@ func NextID(ctx context.Context, db *sql.DB, artifactType string, typeCfg *confi
 	if err := rows.Err(); err != nil {
 		return 0, fmt.Errorf("iterate next id rows: %w", err)
 	}
+	if err := rows.Close(); err != nil {
+		return 0, fmt.Errorf("close next id rows: %w", err)
+	}
+	history, histErr := historicalIDsFromDB(ctx, db)
+	if histErr != nil {
+		return 0, fmt.Errorf("load id history: %w", histErr)
+	}
+	if m := maxStandaloneOrdinalAmong(history, typeCfg); m > maxOrdinal {
+		maxOrdinal = m
+	}
 	return maxOrdinal + 1, nil
 }
 

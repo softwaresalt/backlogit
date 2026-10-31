@@ -97,13 +97,27 @@ func findCrossArtifactReferences(
 				}
 			}
 
-			if !refersParent && !refersAnyDep && !refersAnyLink {
+			refersItems := false
+			if a.ArtifactType == "shipment" {
+				for _, item := range NormalizeShipmentItems(a) {
+					if item == oldID {
+						refersItems = true
+						break
+					}
+				}
+			}
+
+			if !refersParent && !refersAnyDep && !refersAnyLink && !refersItems {
 				return nil
 			}
 
 			// Deep-copy and rewrite.
 			updated := *a
 			updated.UpdatedAt = models.NowUTC()
+
+			if refersItems {
+				rewriteShipmentManifest(&updated, oldID, newID)
+			}
 
 			if refersParent {
 				updated.ParentID = newID
@@ -148,6 +162,32 @@ func findCrossArtifactReferences(
 	}
 
 	return updates, nil
+}
+
+// rewriteShipmentManifest replaces oldID with newID in the artifact's
+// custom_fields["items"] manifest, preserving order, dropping any duplicate of
+// newID, and always storing a non-nil []string. The custom_fields map is
+// cloned so the source artifact is not mutated.
+func rewriteShipmentManifest(a *models.Artifact, oldID, newID string) {
+	items := NormalizeShipmentItems(a)
+	rewritten := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if item == oldID {
+			item = newID
+		}
+		if _, dup := seen[item]; dup {
+			continue
+		}
+		seen[item] = struct{}{}
+		rewritten = append(rewritten, item)
+	}
+	fields := make(map[string]any, len(a.CustomFields)+1)
+	for k, v := range a.CustomFields {
+		fields[k] = v
+	}
+	fields["items"] = rewritten
+	a.CustomFields = fields
 }
 
 // applyCrossRefWriteFn is the artifact-write seam used by
@@ -225,6 +265,9 @@ func applyCrossArtifactRewrites(
 			if updated.Links[j].TargetID == u.oldID {
 				updated.Links[j].TargetID = u.newID
 			}
+		}
+		if updated.ArtifactType == "shipment" {
+			rewriteShipmentManifest(&updated, u.oldID, u.newID)
 		}
 		u.artifact = &updated
 		u.snapshotRaw = raw

@@ -1203,12 +1203,30 @@ func lockAdoptionEventLogs(ctx context.Context, ws *Workspace, oldID, newID stri
 	}, nil
 }
 
+// AdoptItemOptions tunes AdoptItemWithOptions.
+type AdoptItemOptions struct {
+	// KeepID keeps the existing artifact ID instead of allocating a new one
+	// under the new parent.
+	KeepID bool
+}
+
+// AdoptItemWithOptions is AdoptItem with explicit options. With KeepID the
+// item keeps its ID (no file rename) while parent_id and origin_feature are
+// updated and an adopted event is appended.
+func AdoptItemWithOptions(ctx context.Context, ws *Workspace, itemID, newParentID string, opts AdoptItemOptions) (*AdoptItemResult, error) {
+	return adoptItem(ctx, ws, itemID, newParentID, opts)
+}
+
 // AdoptItem sets an orphaned or unparented item's parent_id to a new feature,
 // atomically rewriting its hierarchical ID, renaming files, updating dependency
 // and link edges, and syncing the index. The return value includes the new ID
 // so callers can update their own references. Adoption rewrites internal
 // backlogit references only; external references are the caller's responsibility.
 func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (*AdoptItemResult, error) {
+	return adoptItem(ctx, ws, itemID, newParentID, AdoptItemOptions{})
+}
+
+func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, opts AdoptItemOptions) (*AdoptItemResult, error) {
 	lockedCtx, releaseArtifactLocks, lockErr := lockArtifactMutations(ctx, ws, []string{itemID, newParentID})
 	if lockErr != nil {
 		return nil, fmt.Errorf("adopt item %s: acquire mutation lock: %w", itemID, lockErr)
@@ -1266,13 +1284,16 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 	// Step 1: Generate the new hierarchical ID under the new parent.
 	oldID := artifact.ID
 	newID := oldID // fallback: keep old ID if we can't generate a new one
-	if ws.Config != nil && ws.Config.QueueLayout != nil {
+	if !opts.KeepID && ws.Config != nil && ws.Config.QueueLayout != nil {
 		typeCfg, typeOK := ws.Config.ArtifactTypes[artifact.ArtifactType]
 		if typeOK && typeCfg != nil {
-			generatedID, idErr := NextTypedHierarchicalID(
-				ctx, ws.DB, newParentID, artifact.ArtifactType,
+			generatedID, idErr := allocateTypedHierarchicalID(
+				ctx, ws, newParentID, artifact.ArtifactType,
 				typeCfg, ws.Config.QueueLayout,
 			)
+			if errors.Is(idErr, errIDHistoryScan) {
+				return nil, fmt.Errorf("adopt item %s: %w", itemID, idErr)
+			}
 			if idErr == nil {
 				newID = generatedID
 			}
@@ -1315,6 +1336,21 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 		}
 		defer tx.Rollback() //nolint:errcheck
 
+		// Propagate the rename into archive/stash.jsonl and
+		// archive/provenance_corrections.jsonl. The stash lock is the last in the
+		// canonical order (artifact mutation -> item log -> stash). Every failure
+		// below restores the archive files; success clears the handle.
+		archiveTxn, archiveErr := propagateAdoptToStashArchive(ws, oldID, newID)
+		if archiveErr != nil {
+			return nil, fmt.Errorf("adopt item %s: propagate stash archive: %w", oldID, archiveErr)
+		}
+		defer archiveTxn.Close()
+		archiveCommitted := false
+		defer func() {
+			if !archiveCommitted {
+				archiveTxn.Rollback()
+			}
+		}()
 		// Compute log paths: absolute paths for filesystem ops, relative
 		// (to .backlogit/) paths for the DB to match IndexEvent's convention.
 		logsDir := WorkspaceLogsRoot(ws.RootPath)
@@ -1449,6 +1485,7 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 			}
 			return nil, fmt.Errorf("adopt item %s: commit tx: %w", oldID, commitErr)
 		}
+		archiveCommitted = true
 	} else {
 		// No ID change or no DB — just persist the artifact with updated parent.
 		if err := persistArtifact(ctx, ws, artifact, false); err != nil {

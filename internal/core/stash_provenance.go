@@ -34,6 +34,7 @@ type ProvenanceCorrection struct {
 	Actor                       string `json:"actor"`
 	CorrectedAt                 string `json:"corrected_at"`
 	EventType                   string `json:"event_type"`
+	Forced                      bool   `json:"forced,omitempty"`
 }
 
 // StashProvenanceCorrectionRequest is the input to CorrectStashProvenance.

@@ -6,7 +6,6 @@ package core_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/core"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
-	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 func TestCreateArtifact_RefusesCanonicalIDCollision(t *testing.T) {
@@ -29,15 +27,17 @@ func TestCreateArtifact_RefusesCanonicalIDCollision(t *testing.T) {
 	_, err = core.ArchiveItem(ctx, ws.DB, ws, feature.ID)
 	require.NoError(t, err)
 
-	// Simulate a stale index (the 066-F window): the allocator no longer sees the
-	// archived ordinal, so it re-mints the same ID — which still exists on disk.
+	// Simulate a stale index (the 066-F window): the SQLite index no longer sees
+	// the archived ordinal. U1 (208.001-T) makes the allocator disk-history-aware,
+	// so it must skip past the archived ID instead of re-minting it. The
+	// canonical-uniqueness guard remains the backstop for races the allocator
+	// cannot see.
 	_, err = ws.DB.ExecContext(ctx, "DELETE FROM items WHERE id = ?", feature.ID)
 	require.NoError(t, err)
 
-	_, err = core.CreateArtifact(ctx, ws, "Colliding feature", "feature")
-	require.Error(t, err, "create must not silently reuse an ID that exists on the canonical filesystem")
-	assert.True(t, errors.Is(err, blerrors.ErrIDCollision),
-		"create must fail loud with ErrIDCollision; got: %v", err)
+	next, err := core.CreateArtifact(ctx, ws, "Colliding feature", "feature")
+	require.NoError(t, err, "allocator must skip the archived ordinal rather than collide")
+	assert.NotEqual(t, feature.ID, next.ID, "create must not reuse an ID that exists in archive history")
 }
 
 func TestCreateArtifact_NoCollisionPathUnchanged(t *testing.T) {
