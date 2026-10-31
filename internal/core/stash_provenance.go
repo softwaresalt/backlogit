@@ -11,8 +11,11 @@ import (
 	"strings"
 	"time"
 
+	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
+	"github.com/softwaresalt/backlogit/internal/stash"
 )
 
 // StashProvenanceCorrectionOutcome describes the outcome of a stash provenance correction.
@@ -47,6 +50,10 @@ type StashProvenanceCorrectionRequest struct {
 	Reason string
 	// Actor is the operator or agent performing the correction. Required.
 	Actor string
+	// Force repoints provenance onto a canonical delivery artifact that does not
+	// yet carry source_stash_id, stamping the full source_stash_* snapshot from the
+	// archived stash entry and superseding any prior conflicting correction.
+	Force bool
 }
 
 // StashProvenanceCorrectionResult is the outcome of CorrectStashProvenance.
@@ -59,6 +66,8 @@ type StashProvenanceCorrectionResult struct {
 	HistoricalArtifactID string `json:"historical_artifact_id"`
 	// CanonicalDeliveryArtifactID is the confirmed actual delivery artifact ID.
 	CanonicalDeliveryArtifactID string `json:"canonical_delivery_artifact_id"`
+	// Forced reports whether the correction was applied with Force.
+	Forced bool `json:"forced,omitempty"`
 	// Message is a human-readable summary.
 	Message string `json:"message"`
 }
@@ -122,6 +131,32 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 		}
 	}
 
+	// Canonical lock order: lifecycle global, then C (item log), then B
+	// (artifact mutation), then the stash file lock. C is taken before B so the
+	// stash_provenance_corrected event stays causally ordered with the mutation
+	// it records and no B-then-C edge exists (artifact-mutation-lock-order.md).
+	lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+	if err != nil {
+		return nil, fmt.Errorf("lock shipment lifecycle for stash provenance correction: %w", err)
+	}
+	defer func() { _ = globalUnlock() }()
+	ctx = lockedCtx
+
+	itemLogCtx, unlockItemLog, err := events.LockItemLogCrossProcess(ctx,
+		WorkspaceLocksRoot(ws.RootPath), WorkspaceLogsRoot(ws.RootPath), req.CanonicalDeliveryArtifactID)
+	if err != nil {
+		return nil, fmt.Errorf("lock item log %s: %w", req.CanonicalDeliveryArtifactID, err)
+	}
+	defer unlockItemLog()
+	ctx = itemLogCtx
+
+	artifactCtx, unlockArtifacts, err := lockArtifactMutations(ctx, ws, []string{req.CanonicalDeliveryArtifactID})
+	if err != nil {
+		return nil, fmt.Errorf("lock artifact %s: %w", req.CanonicalDeliveryArtifactID, err)
+	}
+	defer func() { _ = unlockArtifacts() }()
+	ctx = artifactCtx
+
 	// 7: Lock the stash archive file.
 	stashArchivePath := filepath.Join(realArchiveDir, "stash.jsonl")
 	unlock, err := lockStashFile(stashArchivePath)
@@ -129,6 +164,8 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 		return nil, fmt.Errorf("acquire stash lock: %w", err)
 	}
 	defer func() { _ = unlock() }()
+
+	// ---- Read-only preflight (no writes below this line until the audit step) ----
 
 	// 8: Read the stash archive and find the entry.
 	entry, err := readStashArchiveEntry(stashArchivePath, req.StashID)
@@ -139,8 +176,8 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 	// Reject corrections for stash entries that have no harvested_artifact_id.
 	// A manually archived stash entry with no harvest link cannot establish the
 	// historical artifact baseline that this correction operation is designed to
-	// override. Without a historical artifact, the "correction" concept is undefined.
-	if historicalArtifactID == "" {
+	// override. A forced operator repoint may target an unharvested entry.
+	if historicalArtifactID == "" && !req.Force {
 		return nil, fmt.Errorf("stash entry %s has no harvested_artifact_id; provenance correction requires a prior harvest: %w",
 			req.StashID, blerrors.ErrValidation)
 	}
@@ -153,66 +190,89 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 		}
 		return nil, fmt.Errorf("find canonical delivery artifact: %w", err)
 	}
-
-	// 10: Parse the artifact frontmatter and verify source_stash_id.
-	rawContent, err := os.ReadFile(artifactPath)
-	if err != nil {
-		return nil, fmt.Errorf("read artifact %s: %w", req.CanonicalDeliveryArtifactID, err)
+	if err := verifyProvenanceTargetContained(storageRoot, artifactPath); err != nil {
+		return nil, err
 	}
-	fm, _, parseErr := models.ParseFrontmatter(string(rawContent))
+
+	// 10: Parse the artifact and verify source_stash_id (non-forced only).
+	target, _, parseErr := parseFile(artifactPath)
 	if parseErr != nil {
 		return nil, fmt.Errorf("parse artifact %s frontmatter: %w", req.CanonicalDeliveryArtifactID, parseErr)
 	}
-	sourceStashID := extractSourceStashID(fm)
-	if sourceStashID != req.StashID {
+	sourceStashID, _ := target.CustomFields["source_stash_id"].(string)
+	if !req.Force && sourceStashID != req.StashID {
 		return nil, fmt.Errorf("artifact %s source_stash_id does not match stash ID %s: %w", req.CanonicalDeliveryArtifactID, req.StashID, blerrors.ErrValidation)
 	}
+	if req.Force {
+		if ws.DB == nil {
+			return nil, fmt.Errorf("forced stash provenance correction requires the SQLite index: %w", blerrors.ErrValidation)
+		}
+		if sourceStashID != "" && sourceStashID != req.StashID {
+			var otherCarriers int
+			if qErr := ws.DB.QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM items WHERE json_extract(custom_fields, '$.source_stash_id') = ? AND id != ?`,
+				sourceStashID, req.CanonicalDeliveryArtifactID).Scan(&otherCarriers); qErr != nil {
+				return nil, fmt.Errorf("check provenance carriers for stash %s: %w", sourceStashID, qErr)
+			}
+			if otherCarriers == 0 {
+				return nil, fmt.Errorf("artifact %s is the sole provenance carrier for stash %s; refusing to overwrite with stash %s: %w",
+					req.CanonicalDeliveryArtifactID, sourceStashID, req.StashID, blerrors.ErrValidation)
+			}
+		}
+	}
 
-	// 11: Check for an existing correction for this stash ID.
+	// 11: Check for an existing correction for this stash ID (latest wins).
 	correctionsPath := filepath.Join(realArchiveDir, "provenance_corrections.jsonl")
-	existingCanonical, err := readProvenanceCorrections(correctionsPath, req.StashID)
+	existing, found, err := readLatestProvenanceCorrection(correctionsPath, req.StashID)
 	if err != nil {
 		return nil, fmt.Errorf("read provenance corrections: %w", err)
 	}
-	if existingCanonical != "" {
-		if existingCanonical == req.CanonicalDeliveryArtifactID {
+	if found && existing.CanonicalDeliveryArtifactID != "" {
+		if existing.CanonicalDeliveryArtifactID == req.CanonicalDeliveryArtifactID && (!req.Force || existing.Forced) {
 			// Idempotent — same correction already recorded.
 			return &StashProvenanceCorrectionResult{
 				Outcome:                     StashProvenanceNoOp,
 				StashID:                     req.StashID,
 				HistoricalArtifactID:        historicalArtifactID,
 				CanonicalDeliveryArtifactID: req.CanonicalDeliveryArtifactID,
+				Forced:                      existing.Forced,
 				Message:                     "stash provenance correction already recorded",
 			}, nil
 		}
-		return nil, fmt.Errorf("conflicting provenance correction already exists for stash %s (existing canonical: %s, requested: %s): %w",
-			req.StashID, existingCanonical, req.CanonicalDeliveryArtifactID, blerrors.ErrValidation)
+		if !req.Force && existing.CanonicalDeliveryArtifactID != req.CanonicalDeliveryArtifactID {
+			return nil, fmt.Errorf("conflicting provenance correction already exists for stash %s (existing canonical: %s, requested: %s): %w",
+				req.StashID, existing.CanonicalDeliveryArtifactID, req.CanonicalDeliveryArtifactID, blerrors.ErrValidation)
+		}
 	}
 
-	// C1 ordering: append the durable item-log event BEFORE writing to
-	// provenance_corrections.jsonl. If the event append fails, the correction
-	// record is not yet persisted, so the operation is safe to retry — the retry
-	// will re-check readProvenanceCorrections, find no existing correction, and
-	// re-attempt both the event and the persistence. If the persistence write
-	// fails after the event succeeds, the next retry will find no correction and
-	// re-emit a duplicate event (benign for audit logs) before persisting.
-	// This ordering prevents the irrecoverable case: correction persisted + event
-	// lost, which would cause retries to short-circuit as NoOp without the event.
+	// ---- Audit-before-mutation ----
+	correctionsSnap, err := snapshotFile(correctionsPath)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot provenance corrections: %w", err)
+	}
+	artifactSnap, err := snapshotFile(artifactPath)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot canonical artifact: %w", err)
+	}
+	original := cloneArtifact(target)
 
-	// 13 (reordered): Append a durable event to the canonical artifact's item log.
-	if eventErr := appendItemEventErr(ctx, ws, req.CanonicalDeliveryArtifactID, "stash_provenance_corrected", map[string]any{
+	// C1 ordering: append the durable item-log event BEFORE writing to
+	// provenance_corrections.jsonl so an event failure leaves no ledger entry.
+	eventDelta := map[string]any{
 		"stash_id":                       req.StashID,
 		"historical_artifact_id":         historicalArtifactID,
 		"canonical_delivery_artifact_id": req.CanonicalDeliveryArtifactID,
 		"reason":                         req.Reason,
 		"actor":                          req.Actor,
-	}); eventErr != nil {
+	}
+	if req.Force {
+		eventDelta["forced"] = true
+	}
+	if eventErr := appendItemEventErr(ctx, ws, req.CanonicalDeliveryArtifactID, "stash_provenance_corrected", eventDelta); eventErr != nil {
 		return nil, fmt.Errorf("append stash provenance event: %w", eventErr)
 	}
 
-	// 12 (reordered): Append the correction record to provenance_corrections.jsonl.
-	// C5: Use durable append (fsync file + ensure archive dir exists) so the record
-	// survives crash-after-write within the OS page-cache flush window.
+	// C5: durable append of the correction record.
 	correction := ProvenanceCorrection{
 		StashID:                     req.StashID,
 		HistoricalArtifactID:        historicalArtifactID,
@@ -221,21 +281,86 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 		Actor:                       req.Actor,
 		CorrectedAt:                 time.Now().UTC().Format(time.RFC3339),
 		EventType:                   "stash_provenance_corrected",
+		Forced:                      req.Force,
 	}
 	if appendErr := appendToProvenanceCorrections(correctionsPath, correction); appendErr != nil {
 		return nil, fmt.Errorf("append provenance correction record: %w", appendErr)
 	}
 
-	// 14: Unlock is handled by defer.
+	// ---- Mutation (forced only), with byte-snapshot rollback ----
+	if req.Force {
+		if mutErr := stampForcedProvenance(ctx, ws, target, entry, req); mutErr != nil {
+			rollbackErrs := []error{restoreSnapshot(correctionsSnap), restoreSnapshot(artifactSnap)}
+			if upErr := bldb.UpsertItem(ctx, ws.DB, original); upErr != nil {
+				rollbackErrs = append(rollbackErrs, fmt.Errorf("restore item index: %w", upErr))
+			}
+			if rbErr := errors.Join(rollbackErrs...); rbErr != nil {
+				return nil, fmt.Errorf("apply forced provenance: %w; rollback: %v", mutErr, rbErr)
+			}
+			return nil, fmt.Errorf("apply forced provenance: %w", mutErr)
+		}
+	}
 
-	// 15: Return the successful result.
 	return &StashProvenanceCorrectionResult{
 		Outcome:                     StashProvenanceCorrected,
 		StashID:                     req.StashID,
 		HistoricalArtifactID:        historicalArtifactID,
 		CanonicalDeliveryArtifactID: req.CanonicalDeliveryArtifactID,
+		Forced:                      req.Force,
 		Message:                     "stash provenance correction recorded",
 	}, nil
+}
+
+// verifyProvenanceTargetContained rejects a canonical artifact path that is a
+// symlink or resolves outside the workspace storage root.
+func verifyProvenanceTargetContained(storageRoot, artifactPath string) error {
+	if info, err := os.Lstat(artifactPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("canonical delivery artifact %q is a symlink; refusing to write through it: %w", artifactPath, blerrors.ErrValidation)
+	}
+	realRoot, err := filepath.EvalSymlinks(storageRoot)
+	if err != nil {
+		return fmt.Errorf("resolve workspace storage root: %w", err)
+	}
+	realArtifact, err := filepath.EvalSymlinks(artifactPath)
+	if err != nil {
+		return fmt.Errorf("resolve canonical delivery artifact path: %w", err)
+	}
+	if rel, relErr := filepath.Rel(realRoot, realArtifact); relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("canonical delivery artifact %q resolves outside workspace storage root: %w", artifactPath, blerrors.ErrValidation)
+	}
+	return nil
+}
+
+// stampForcedProvenance writes the complete source_stash_* snapshot from the
+// archived stash entry onto target and refreshes the SQLite items,
+// stash_entries, and stash_links rows.
+func stampForcedProvenance(ctx context.Context, ws *Workspace, target *models.Artifact, entry ArchivedStashEntry, req StashProvenanceCorrectionRequest) error {
+	if target.CustomFields == nil {
+		target.CustomFields = map[string]any{}
+	}
+	priority := entry.Priority
+	if priority == "" {
+		priority = stash.DefaultPriority
+	}
+	target.CustomFields["source_stash_id"] = req.StashID
+	target.CustomFields["source_stash_priority"] = priority
+	target.CustomFields["source_stash_kind"] = entry.Kind
+	target.CustomFields["source_stash_text"] = entry.Text
+	target.CustomFields["source_stash_path"] = stash.JSONLFileName
+	if entry.DeliberationID != "" {
+		target.CustomFields["source_deliberation_id"] = entry.DeliberationID
+	} else {
+		delete(target.CustomFields, "source_deliberation_id")
+	}
+	if err := persistArtifact(ctx, ws, target, false); err != nil {
+		return fmt.Errorf("persist canonical artifact: %w", err)
+	}
+	now := time.Now().UTC()
+	if err := bldb.UpsertStashEntry(ctx, ws.DB, req.StashID, priority, entry.Kind, entry.Text,
+		entry.DeliberationID, "harvested", stash.JSONLFileName, now); err != nil {
+		return err
+	}
+	return bldb.LinkStashEntry(ctx, ws.DB, req.StashID, req.CanonicalDeliveryArtifactID, now)
 }
 
 // isProvenanceIDPathSafe reports whether id contains no path-traversal characters.
@@ -359,24 +484,32 @@ func appendToProvenanceCorrections(correctionsPath string, correction Provenance
 	return nil
 }
 
-// readProvenanceCorrections reads correctionsPath (provenance_corrections.jsonl)
-// and returns the canonical_delivery_artifact_id recorded for stashID, or ""
-// when no correction exists. A missing file is not an error.
-// readProvenanceCorrections rejects symlinks at the file leaf to prevent
-// path traversal through a planted provenance_corrections.jsonl symlink.
+// readProvenanceCorrections returns the canonical_delivery_artifact_id of the
+// latest correction recorded for stashID, or "" when none exists.
 func readProvenanceCorrections(correctionsPath, stashID string) (string, error) {
+	c, _, err := readLatestProvenanceCorrection(correctionsPath, stashID)
+	return c.CanonicalDeliveryArtifactID, err
+}
+
+// readLatestProvenanceCorrection reads correctionsPath (provenance_corrections.jsonl)
+// and returns the LATEST correction recorded for stashID (a forced correction
+// supersedes earlier ones). A missing file is not an error. It rejects symlinks
+// at the file leaf and fails closed on unparseable lines.
+func readLatestProvenanceCorrection(correctionsPath, stashID string) (ProvenanceCorrection, bool, error) {
+	var latest ProvenanceCorrection
 	if linfo, lstatErr := os.Lstat(correctionsPath); lstatErr == nil && linfo.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("provenance corrections file %q is a symlink; refusing to read through it", correctionsPath)
+		return latest, false, fmt.Errorf("provenance corrections file %q is a symlink; refusing to read through it", correctionsPath)
 	}
 	f, err := os.Open(correctionsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", nil
+			return latest, false, nil
 		}
-		return "", fmt.Errorf("open provenance corrections: %w", err)
+		return latest, false, fmt.Errorf("open provenance corrections: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
+	found := false
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		raw := scanner.Bytes()
@@ -385,18 +518,17 @@ func readProvenanceCorrections(correctionsPath, stashID string) (string, error) 
 		}
 		var c ProvenanceCorrection
 		if jsonErr := json.Unmarshal(raw, &c); jsonErr != nil {
-			// C4: Fail closed on unparseable lines. A torn/corrupt line that is
-			// silently skipped would bypass conflict detection and allow a conflicting
-			// canonical delivery to be appended. Return the line number with context
-			// so the operator can inspect and repair the corrections file.
-			return "", fmt.Errorf("parse provenance corrections line %q: %w", string(raw), jsonErr)
+			// C4: fail closed on unparseable lines so a torn line cannot bypass
+			// conflict detection.
+			return ProvenanceCorrection{}, false, fmt.Errorf("parse provenance corrections line %q: %w", string(raw), jsonErr)
 		}
 		if c.StashID == stashID {
-			return c.CanonicalDeliveryArtifactID, nil
+			latest = c
+			found = true
 		}
 	}
 	if scanErr := scanner.Err(); scanErr != nil {
-		return "", fmt.Errorf("scan provenance corrections: %w", scanErr)
+		return ProvenanceCorrection{}, false, fmt.Errorf("scan provenance corrections: %w", scanErr)
 	}
-	return "", nil
+	return latest, found, nil
 }

@@ -663,6 +663,7 @@ type provenanceCorrection struct {
 	Actor                       string `json:"actor"`
 	CorrectedAt                 string `json:"corrected_at"`
 	EventType                   string `json:"event_type"`
+	Forced                      bool   `json:"forced,omitempty"`
 }
 
 // applyProvenanceCorrections reads provenance_corrections.jsonl and updates
@@ -754,7 +755,48 @@ func applyProvenanceCorrections(ctx context.Context, database *sql.DB, correctio
 			); execErr != nil {
 				return fmt.Errorf("apply provenance correction %s: %w", c.StashID, execErr)
 			}
+			if refreshErr := refreshStashEntryFromCanonical(ctx, tx, c); refreshErr != nil {
+				return refreshErr
+			}
 		}
 		return tx.Commit()
 	})
+}
+
+// refreshStashEntryFromCanonical makes the final canonical delivery artifact's
+// source_stash_* snapshot authoritative for the stash_entries row. It runs when
+// the winning correction is forced or when the artifact carries a populated
+// snapshot (kind, text, or priority); an absent source_deliberation_id clears
+// deliberation_id. Legacy corrections whose target carries only source_stash_id
+// leave the harvested row untouched.
+func refreshStashEntryFromCanonical(ctx context.Context, tx *sql.Tx, c provenanceCorrection) error {
+	const selectSQL = `SELECT
+		COALESCE(json_extract(custom_fields, '$.source_stash_priority'), ''),
+		COALESCE(json_extract(custom_fields, '$.source_stash_kind'), ''),
+		COALESCE(json_extract(custom_fields, '$.source_stash_text'), ''),
+		COALESCE(json_extract(custom_fields, '$.source_stash_path'), ''),
+		COALESCE(json_extract(custom_fields, '$.source_deliberation_id'), '')
+		FROM items WHERE id = ?`
+	var priority, kind, text, sourcePath, deliberationID string
+	if err := tx.QueryRowContext(ctx, selectSQL, c.CanonicalDeliveryArtifactID).
+		Scan(&priority, &kind, &text, &sourcePath, &deliberationID); err != nil {
+		return fmt.Errorf("read canonical provenance snapshot %s: %w", c.CanonicalDeliveryArtifactID, err)
+	}
+	if !c.Forced && priority == "" && kind == "" && text == "" {
+		return nil
+	}
+	if priority == "" {
+		priority = stash.DefaultPriority
+	}
+	if strings.TrimSpace(sourcePath) == "" {
+		sourcePath = stash.JSONLFileName
+	}
+	sourcePath = filepath.ToSlash(strings.TrimSpace(sourcePath))
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE stash_entries SET priority = ?, kind = ?, text = ?, source_path = ?, deliberation_id = ? WHERE stash_id = ?`,
+		priority, kind, text, sourcePath, deliberationID, c.StashID,
+	); err != nil {
+		return fmt.Errorf("refresh stash entry %s from canonical artifact: %w", c.StashID, err)
+	}
+	return nil
 }

@@ -152,6 +152,27 @@ const (
 	// FindingConflictingShipmentLifecycleEvidence indicates correlated lifecycle
 	// or status evidence cannot prove one consistent terminal outcome.
 	FindingConflictingShipmentLifecycleEvidence DoctorFindingType = "conflicting_shipment_lifecycle_evidence"
+
+	// FindingDanglingShipmentMember indicates a non-terminal shipment manifest
+	// names an item ID that exists in neither queue/ nor archive/.
+	FindingDanglingShipmentMember DoctorFindingType = "dangling_shipment_member"
+
+	// FindingDuplicateShipmentMembership indicates one item ID appears in the
+	// manifests of more than one non-terminal shipment.
+	FindingDuplicateShipmentMembership DoctorFindingType = "duplicate_shipment_membership"
+
+	// FindingSplitFeatureAcrossShipments indicates members owned by the same
+	// feature are distributed across more than one non-terminal shipment.
+	FindingSplitFeatureAcrossShipments DoctorFindingType = "split_feature_across_shipments"
+
+	// FindingForwardShipmentDependency indicates an item in shipment S1 depends
+	// on an item in shipment S2 while S2 depends (transitively) on S1.
+	FindingForwardShipmentDependency DoctorFindingType = "forward_shipment_dependency"
+
+	// FindingUnsequencedQueuedShipment is an advisory finding for a queued
+	// shipment with neither a blocks dependency on another shipment nor the
+	// dag-root label while more than one queued shipment exists.
+	FindingUnsequencedQueuedShipment DoctorFindingType = "unsequenced_queued_shipment"
 )
 
 // DoctorFindingSeverity classifies whether a doctor finding affects process
@@ -406,6 +427,12 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 		return nil, fmt.Errorf("doctor: detect shipment lifecycle integrity: %w", shipmentErr)
 	}
 	report.Findings = append(report.Findings, shipmentFindings...)
+
+	manifestFindings, manifestErr := detectShipmentManifestFindings(refs, ids)
+	if manifestErr != nil {
+		return nil, fmt.Errorf("doctor: detect shipment manifest integrity: %w", manifestErr)
+	}
+	report.Findings = append(report.Findings, manifestFindings...)
 
 	if opts.CheckOrphans && ws.Config != nil {
 		for _, info := range artifacts {
