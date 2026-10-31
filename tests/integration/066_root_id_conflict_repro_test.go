@@ -79,11 +79,12 @@ func TestRootIDConflict_EndToEndIntegrity(t *testing.T) {
 	_, err = ws.DB.ExecContext(ctx, "DELETE FROM items WHERE id = ?", rootID)
 	require.NoError(t, err)
 
-	// (b) Creation must refuse to reuse the colliding ID.
-	_, err = core.CreateArtifact(ctx, ws, "Re-minted feature", "feature")
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, blerrors.ErrIDCollision),
-		"create must fail loud with ErrIDCollision; got: %v", err)
+	// (b) Creation must never reuse the colliding ID. History-safe allocation
+	// (208.001-T) skips IDs retained on disk, so a fresh ID is minted; the
+	// CreateArtifact collision guard remains the backstop.
+	reminted, err := core.CreateArtifact(ctx, ws, "Re-minted feature", "feature")
+	require.NoError(t, err)
+	assert.NotEqual(t, rootID, reminted.ID, "create must not re-mint the archived root ID")
 
 	// (c) Archiving feature B must refuse to overwrite archived feature A.
 	_, err = core.ArchiveItem(ctx, ws.DB, ws, rootID)
