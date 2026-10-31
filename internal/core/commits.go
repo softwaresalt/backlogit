@@ -103,6 +103,22 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 		}
 	}
 
+	// Canonical order: lifecycle-global -> item-log -> artifact mutation. The
+	// persist step below takes lifecycle-global for shipment members, so it is
+	// acquired first; taking it after the item-log lock would invert against
+	// reconstitution and adoption, which hold lifecycle-global while waiting
+	// for the item-log lock.
+	lifecycleCtx, globalUnlock, globalErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if globalErr != nil {
+		return fmt.Errorf("associate commit: lock shipment lifecycle: %w", globalErr)
+	}
+	defer func() {
+		if unlockErr := globalUnlock(); unlockErr != nil {
+			slog.Warn("associate commit: release shipment lifecycle lock", "item_id", itemID, "error", unlockErr)
+		}
+	}()
+	ctx = lifecycleCtx
+
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
 	if lockErr != nil {

@@ -26,6 +26,18 @@ func shipmentManifestOptions(request mcplib.CallToolRequest) core.ShipmentManife
 // a preview cannot run recovery or write SQLite. The returned release func must
 // be called when the handler is done.
 func (s *Server) manifestWorkspace(ctx context.Context, dryRun bool) (*core.Workspace, func(), *mcplib.CallToolResult) {
+	return s.manifestWorkspaceWith(ctx, dryRun, core.NewReadOnlyWorkspace)
+}
+
+// manifestWorkspaceWith is manifestWorkspace with an explicit opener for the
+// transient dry-run workspace. Previews that predict IDs pass
+// core.NewReadOnlyIndexWorkspace so the index is readable without recovery or
+// writes.
+func (s *Server) manifestWorkspaceWith(
+	ctx context.Context,
+	dryRun bool,
+	openReadOnly func(ctx context.Context, rootPath string) (*core.Workspace, error),
+) (*core.Workspace, func(), *mcplib.CallToolResult) {
 	noop := func() {}
 	if !dryRun {
 		ws, result := s.requireWorkspace(ctx)
@@ -43,7 +55,7 @@ func (s *Server) manifestWorkspace(ctx context.Context, dryRun bool) (*core.Work
 	if !dirExists(storageRoot) {
 		return nil, noop, WorkspaceNotInitialized()
 	}
-	ws, err := core.NewReadOnlyWorkspace(ctx, s.RootPath)
+	ws, err := openReadOnly(ctx, s.RootPath)
 	if err != nil {
 		var ambiguous *corerrors.AmbiguousWorkspaceRootError
 		if errors.As(err, &ambiguous) {
@@ -144,7 +156,7 @@ func (s *Server) handleReconstituteShipment(ctx context.Context, request mcplib.
 	if (planPath == "") == (planYAML == "") {
 		return ValidationFailed("exactly one of plan_path or plan_yaml is required"), nil
 	}
-	ws, release, wsResult := s.manifestWorkspace(ctx, shipmentOpts.DryRun)
+	ws, release, wsResult := s.manifestWorkspaceWith(ctx, shipmentOpts.DryRun, core.NewReadOnlyIndexWorkspace)
 	if wsResult != nil {
 		return wsResult, nil
 	}

@@ -399,7 +399,8 @@ func validateShipmentLifecycleJournalRecord(
 		}
 		// A reconstitute journal spans many shipments and members, so it
 		// carries its own preimage images instead of per-manifest coverage.
-		return nil
+		// Its recovery state replays deletes and writes, so it is validated here.
+		return validateReconstituteJournalState(journal.Reconstitute)
 	case "dispose":
 		if journal.RecoveryPolicy != "rollback" || journal.Target != "abandoned" {
 			return fmt.Errorf("dispose lifecycle tuple must be rollback/abandoned: %w", blerrors.ErrValidation)

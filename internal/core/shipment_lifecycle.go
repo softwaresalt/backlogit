@@ -1208,6 +1208,10 @@ type AdoptItemOptions struct {
 	// KeepID keeps the existing artifact ID instead of allocating a new one
 	// under the new parent.
 	KeepID bool
+	// BeforeRename, when set, is called after the new ID is allocated and the
+	// item-log locks are held but before any mutation, so a caller can durably
+	// record the old->new pair. A returned error aborts the adoption untouched.
+	BeforeRename func(ctx context.Context, oldID, newID string) error
 }
 
 // AdoptItemWithOptions is AdoptItem with explicit options. With KeepID the
@@ -1236,6 +1240,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			return nil, fmt.Errorf("adopt item %s: acquire stash lock: %w", itemID, stashErr)
 		}
 		defer func() { _ = unlockStash() }()
+		ctx = withStashLockHeld(ctx)
 	}
 	lockedCtx, releaseArtifactLocks, lockErr := lockArtifactMutations(ctx, ws, []string{itemID, newParentID})
 	if lockErr != nil {
@@ -1318,6 +1323,11 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		}
 		defer releaseEventLocks()
 		ctx = lockedCtx
+		if opts.BeforeRename != nil {
+			if err := opts.BeforeRename(ctx, oldID, newID); err != nil {
+				return nil, fmt.Errorf("adopt item %s: record rename %s->%s: %w", itemID, oldID, newID, err)
+			}
+		}
 	}
 
 	// Update the artifact with new parent and ID.

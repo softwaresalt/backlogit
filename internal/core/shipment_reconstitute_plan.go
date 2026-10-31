@@ -1017,6 +1017,33 @@ func predictIDs(ctx context.Context, ws *Workspace, artifactType, parentID strin
 	return ids, nil
 }
 
+// applyReconstituteRewiresToGraph overlays the plan's item rewires onto the
+// artifacts used to order a manifest, so ordering reflects the dependencies the
+// plan will commit rather than the ones on disk. Rewired artifacts are cloned;
+// the caller's originals are never mutated. mapID translates plan IDs to final
+// (post-adoption) IDs.
+func applyReconstituteRewiresToGraph(arts map[string]*models.Artifact, rewires []reconstituteItemRewire, mapID func(string) string) {
+	for _, rewire := range rewires {
+		subject := mapID(rewire.item)
+		art, ok := arts[subject]
+		if !ok {
+			continue
+		}
+		updated := cloneArtifact(art)
+		kept := make([]models.DependencyEdge, 0, len(updated.Dependencies)+len(rewire.blocksOn))
+		for _, dep := range updated.Dependencies {
+			if !isBlocksDependency(dep) {
+				kept = append(kept, dep)
+			}
+		}
+		for _, dep := range rewire.blocksOn {
+			kept = append(kept, models.DependencyEdge{ID: mapID(dep), Type: "blocks"})
+		}
+		updated.Dependencies = kept
+		arts[subject] = updated
+	}
+}
+
 // orderReconstituteManifest orders a target manifest: the covering feature
 // leads, followed by the items in dependency order (auto) or as listed.
 func orderReconstituteManifest(featureID string, itemIDs []string, arts map[string]*models.Artifact, auto bool) ([]string, error) {
@@ -1181,6 +1208,9 @@ func projectReconstitution(ctx context.Context, ws *Workspace, st *reconstituteP
 			arts[art.ID] = art
 			itemIDs = append(itemIDs, art.ID)
 		}
+		applyReconstituteRewiresToGraph(arts, st.rewireItems, func(id string) string {
+			return reconstituteMapIDs([]string{id}, result.AdoptedIDMap)[0]
+		})
 		order, err := orderReconstituteManifest(featureID, itemIDs, arts, target.autoOrder())
 		if err != nil {
 			return nil, err
