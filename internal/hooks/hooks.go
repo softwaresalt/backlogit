@@ -83,6 +83,15 @@ type HookRunner struct {
 	hooks map[hookKey][]HookRegistration
 }
 
+// WithBufferedPostHooks is a declaration-only stub that returns ctx unchanged.
+// Operation-local buffering is deferred to the behavioral implementation.
+func WithBufferedPostHooks(ctx context.Context) context.Context {
+	return ctx
+}
+
+// FlushBufferedPostHooks is a declaration-only stub and currently does nothing.
+func FlushBufferedPostHooks(ctx context.Context, runner *HookRunner) {}
+
 // NewHookRunner creates an empty hook runner.
 func NewHookRunner() *HookRunner {
 	return &HookRunner{
