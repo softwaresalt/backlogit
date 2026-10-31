@@ -58,6 +58,9 @@ func (s *Server) registerReconcileTools() {
 				mcplib.Required(),
 				mcplib.Description("Agent or operator performing the correction"),
 			),
+			mcplib.WithBoolean("force",
+				mcplib.Description("Stamp source_stash_id on the target artifact and override conflicting provenance when operator reason is supplied"),
+			),
 		),
 		s.handleCorrectStashProvenance,
 	)
@@ -112,12 +115,14 @@ func (s *Server) handleCorrectStashProvenance(ctx context.Context, req mcplib.Ca
 	canonicalID, _ := req.Params.Arguments["canonical_delivery_artifact_id"].(string)
 	reason, _ := req.Params.Arguments["reason"].(string)
 	actor, _ := req.Params.Arguments["actor"].(string)
+	force, _ := req.Params.Arguments["force"].(bool)
 
 	corrReq := core.StashProvenanceCorrectionRequest{
 		StashID:                     stashID,
 		CanonicalDeliveryArtifactID: canonicalID,
 		Reason:                      reason,
 		Actor:                       actor,
+		Force:                       force,
 	}
 
 	result, err := core.CorrectStashProvenance(ctx, ws, corrReq)

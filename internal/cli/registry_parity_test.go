@@ -1427,3 +1427,85 @@ func TestU3_ShipmentManifestCLIAndMCP_Parity(t *testing.T) {
 		assert.Contains(t, mcp.manifest(t, mcp.shipA), mcp.taskA1)
 	})
 }
+
+// TestU3_AdoptKeepIDAndStashCorrectCLIAndMCPParity (208.003-T) pins the CLI,
+// MCP, and registry surfaces for adopt --keep-id and stash correct --force.
+func TestU3_AdoptKeepIDAndStashCorrectCLIAndMCPParity(t *testing.T) {
+	ops := loadRegistryOperations(t)
+
+	adoptOp, ok := ops["adopt_item"]
+	require.True(t, ok, "registry must define adopt_item")
+	assert.Equal(t, "keep_id", adoptOp.Params["keep_id"], "adopt_item.params must map keep_id")
+
+	correctOp, ok := ops["correct_stash_provenance"]
+	require.True(t, ok, "registry must define correct_stash_provenance")
+	assert.False(t, correctOp.MCPOnly, "correct_stash_provenance must no longer be mcp_only")
+	assert.Equal(t,
+		"backlogit stash correct --stash-id {{stash_id}} --canonical-delivery {{canonical_delivery_artifact_id}} --reason {{reason}} --actor {{actor}}",
+		correctOp.CLICommand)
+	assert.Equal(t, "force", correctOp.Params["force"], "correct_stash_provenance.params must map force")
+
+	root := NewRootCommand()
+	adoptCmd := findCommandByPath(root, "backlogit adopt")
+	require.NotNil(t, adoptCmd)
+	keepFlag := lookupFlag(adoptCmd, "keep-id")
+	require.NotNil(t, keepFlag, "adopt must expose --keep-id")
+	assert.Equal(t, "bool", keepFlag.Value.Type())
+
+	correctCmd := findCommandByPath(root, "backlogit stash correct")
+	require.NotNil(t, correctCmd)
+	forceFlag := lookupFlag(correctCmd, "force")
+	require.NotNil(t, forceFlag, "stash correct must expose --force")
+	assert.Equal(t, "bool", forceFlag.Value.Type())
+	artifactFlag := lookupFlag(correctCmd, "artifact")
+	require.NotNil(t, artifactFlag, "stash correct must expose --artifact")
+	assert.Equal(t, "string", artifactFlag.Value.Type())
+	require.NotNil(t, correctCmd.Args)
+	assert.NoError(t, correctCmd.Args(correctCmd, []string{"11FFF601"}), "optional positional stash-id")
+	assert.NoError(t, correctCmd.Args(correctCmd, nil))
+	assert.Error(t, correctCmd.Args(correctCmd, []string{"a", "b"}))
+
+	ctx := context.Background()
+	hasProp := func(server *mcpinternal.Server, tool, prop string) bool {
+		for _, def := range server.ToolDefs() {
+			if def.Name == tool {
+				_, found := def.InputSchema.Properties[prop]
+				return found
+			}
+		}
+		return false
+	}
+
+	cliRoot, cliWS := setupGovernedWorkspace(t)
+	mcpRoot, mcpWS := setupGovernedWorkspace(t)
+	_ = mcpRoot
+	server := mcpinternal.NewServer(mcpWS)
+	assert.True(t, hasProp(server, "backlogit_adopt_item", "keep_id"), "MCP adopt must advertise keep_id")
+	assert.True(t, hasProp(server, "backlogit_correct_stash_provenance", "force"), "MCP stash correct must advertise force")
+
+	mk := func(ws *core.Workspace) (string, string) {
+		feat, err := core.CreateArtifact(ctx, ws, "U3 adopt feature", "feature")
+		require.NoError(t, err)
+		old, err := core.CreateArtifact(ctx, ws, "U3 old feature", "feature")
+		require.NoError(t, err)
+		task, err := core.CreateArtifact(ctx, ws, "U3 adopt task", "task", core.WithParent(old.ID))
+		require.NoError(t, err)
+		return feat.ID, task.ID
+	}
+	cliFeat, cliTask := mk(cliWS)
+	mcpFeat, mcpTask := mk(mcpWS)
+
+	cliBody, err := u3CLI(t, cliRoot, "adopt", cliTask, "--parent", cliFeat, "--keep-id")
+	require.NoError(t, err)
+	mcpBody, okMCP := u3MCP(t, server, "backlogit_adopt_item",
+		map[string]any{"item_id": mcpTask, "new_parent_id": mcpFeat, "keep_id": true})
+	require.True(t, okMCP)
+
+	assert.Equal(t, cliTask, cliBody["item_id"])
+	assert.Equal(t, mcpTask, mcpBody["item_id"])
+	for _, body := range []map[string]any{cliBody, mcpBody} {
+		newID, _ := body["new_id"].(string)
+		assert.Contains(t, []string{"", body["item_id"].(string)}, newID, "keep-id must preserve the artifact ID")
+	}
+	assert.Equal(t, u3Keys(cliBody), u3Keys(mcpBody))
+}

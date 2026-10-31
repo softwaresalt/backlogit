@@ -559,6 +559,7 @@ func (s *Server) RegisterTools() {
 			mcplib.WithDescription("Adopt an orphaned item under a new parent feature"),
 			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID to adopt")),
 			mcplib.WithString("new_parent_id", mcplib.Required(), mcplib.Description("New parent feature ID")),
+			mcplib.WithBoolean("keep_id", mcplib.Description("Re-parent without renumbering the artifact ID or renaming files")),
 		),
 		s.handleAdoptItem,
 	)
@@ -2356,7 +2357,8 @@ func (s *Server) handleAdoptItem(ctx context.Context, request mcplib.CallToolReq
 
 	logger.Info("adopt tool invoked", "tool", "backlogit_adopt_item", "item_id", itemID, "new_parent_id", newParentID)
 
-	result, err := core.AdoptItem(ctx, s.Workspace, itemID, newParentID)
+	keepID, _ := request.Params.Arguments["keep_id"].(bool)
+	result, err := core.AdoptItemWithOptions(ctx, s.Workspace, itemID, newParentID, core.AdoptItemOptions{KeepID: keepID})
 	if err != nil {
 		return domainError("adopt item", err), nil
 	}

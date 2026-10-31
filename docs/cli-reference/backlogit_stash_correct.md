@@ -19,7 +19,7 @@ historically auto-harvested artifact. Preserves the original harvested_artifact_
 appends an append-only correction record to provenance_corrections.jsonl.
 
 ```text
-backlogit stash correct [flags]
+backlogit stash correct [stash-id] [flags]
 ```
 
 ### Examples
@@ -33,10 +33,12 @@ backlogit stash correct [flags]
 
 ```text
       --actor string                Actor performing the correction (required)
-      --canonical-delivery string   Canonical delivery artifact ID (required)
+      --artifact string             Alias for --canonical-delivery
+      --canonical-delivery string   Canonical delivery artifact ID (required unless --artifact is used)
+      --force                       Stamp source_stash_id on the target artifact and override conflicting provenance
   -h, --help                        help for correct
       --reason string               Reason for the correction (required)
-      --stash-id string             Stash entry ID to correct (required)
+      --stash-id string             Stash entry ID to correct (or pass as positional argument)
 ```
 
 ### Options inherited from parent commands

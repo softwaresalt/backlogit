@@ -20,12 +20,14 @@ backlogit adopt <item-id> [flags]
 
 ```text
   backlogit adopt 015.009-T --parent 016-F
+  backlogit adopt 015.009-T --parent 016-F --keep-id
 ```
 
 ### Options
 
 ```text
   -h, --help            help for adopt
+      --keep-id         Re-parent without renumbering the artifact ID or renaming files
       --parent string   New parent feature ID (required)
 ```
 
