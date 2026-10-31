@@ -53,9 +53,23 @@ func (t *adoptArchiveTxn) Rollback() {
 }
 
 func writeFileAtomicBytes(path string, raw []byte) error {
-	tmp := path + ".adopt-tmp"
-	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".adopt-tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp for %s: %w", path, err)
+	}
+	tmp := f.Name()
+	if _, err := f.Write(raw); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close %s: %w", tmp, err)
+	}
+	if err := os.Chmod(tmp, 0o644); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("chmod %s: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
@@ -108,11 +122,14 @@ func propagateAdoptToStashArchive(ws *Workspace, oldID, newID string) (txn *adop
 	if lockErr != nil {
 		return nil, fmt.Errorf("acquire stash lock: %w", lockErr)
 	}
-	txn = &adoptArchiveTxn{unlock: unlock}
+	// Use a local: the named result is cleared by `return nil, err`, which
+	// would make the deferred cleanup a no-op.
+	local := &adoptArchiveTxn{unlock: unlock}
+	txn = local
 	defer func() {
 		if err != nil {
-			txn.Rollback()
-			txn.Close()
+			local.Rollback()
+			local.Close()
 			txn = nil
 		}
 	}()

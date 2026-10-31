@@ -23,15 +23,16 @@ func isBlocksDependency(edge models.DependencyEdge) bool {
 	return edge.Type == "" || edge.Type == "blocks"
 }
 
-func pathUnderArchive(path string) bool {
-	parts := strings.Split(filepath.ToSlash(path), "/")
-	// The final element is the file name; any directory named archive marks it.
-	for _, p := range parts[:len(parts)-1] {
-		if p == "archive" {
-			return true
-		}
+// pathUnderArchive reports whether path lives under <storageRoot>/archive.
+// Membership is decided relative to the backlog storage root so a checkout
+// located beneath an unrelated directory named "archive" is not misclassified.
+func pathUnderArchive(storageRoot, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(storageRoot), filepath.Clean(path))
+	if err != nil {
+		return false
 	}
-	return false
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	return len(parts) > 1 && parts[0] == "archive"
 }
 
 // detectShipmentManifestFindings inspects non-terminal shipments (queued,
@@ -39,7 +40,7 @@ func pathUnderArchive(path string) bool {
 // dangling members, duplicate membership, features split across shipments,
 // forward shipment dependencies, and (advisory) unsequenced queued shipments.
 // It is read-only.
-func detectShipmentManifestFindings(refs map[string][]artifactRef, ids []string) ([]DoctorFinding, error) {
+func detectShipmentManifestFindings(storageRoot string, refs map[string][]artifactRef, ids []string) ([]DoctorFinding, error) {
 	shipments := make(map[string]*manifestShipment)
 	shipmentOrder := make([]string, 0)
 	for _, id := range ids {
@@ -48,7 +49,7 @@ func detectShipmentManifestFindings(refs map[string][]artifactRef, ids []string)
 			continue
 		}
 		ref := group[0]
-		if ref.artifactType != "shipment" || pathUnderArchive(ref.path) {
+		if ref.artifactType != "shipment" || pathUnderArchive(storageRoot, ref.path) {
 			continue
 		}
 		switch ref.status {

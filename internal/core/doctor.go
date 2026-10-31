@@ -428,7 +428,7 @@ func Doctor(ctx context.Context, ws *Workspace, opts *DoctorOptions) (*DoctorRep
 	}
 	report.Findings = append(report.Findings, shipmentFindings...)
 
-	manifestFindings, manifestErr := detectShipmentManifestFindings(refs, ids)
+	manifestFindings, manifestErr := detectShipmentManifestFindings(workspaceStorageRoot(ws), refs, ids)
 	if manifestErr != nil {
 		return nil, fmt.Errorf("doctor: detect shipment manifest integrity: %w", manifestErr)
 	}

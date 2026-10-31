@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -287,11 +288,51 @@ func maxStandaloneOrdinalAmong(ids []string, typeCfg *config.ArtifactTypeConfig)
 	}
 	maxOrdinal := 0
 	for _, id := range ids {
-		if ordinal, ok := typedSegmentOrdinal(lastIDSegment(id), typeCfg.Prefix, typeCfg.Suffix); ok && ordinal > maxOrdinal {
+		if ordinal, ok := historicalStandaloneOrdinal(lastIDSegment(id), typeCfg.Prefix, typeCfg.Suffix); ok && ordinal > maxOrdinal {
 			maxOrdinal = ordinal
 		}
 	}
 	return maxOrdinal
+}
+
+// historicalStandaloneOrdinal parses a standalone ID segment the way NextID's
+// naming format produces it: the strict typed form ("001-T" / "T001") or the
+// slugged form ("001-T-implement-jwt" / "T001-implement-jwt"). The type
+// affix must match exactly and be followed by the end of the segment or a
+// "-" slug separator, so IDs of other types are never attributed to this type.
+func historicalStandaloneOrdinal(segment, prefix, suffix string) (int, bool) {
+	if ordinal, ok := typedSegmentOrdinal(segment, prefix, suffix); ok {
+		return ordinal, true
+	}
+	var digitsAndRest string
+	var rest string
+	if suffix != "" {
+		digitsAndRest = segment
+		digits := leadingDigits(digitsAndRest)
+		if digits == "" {
+			return 0, false
+		}
+		rest = strings.TrimPrefix(digitsAndRest, digits)
+		if !strings.HasPrefix(rest, suffix) {
+			return 0, false
+		}
+		rest = strings.TrimPrefix(rest, suffix)
+		if !strings.HasPrefix(rest, "-") {
+			return 0, false
+		}
+		n, err := strconv.Atoi(digits)
+		return n, err == nil
+	}
+	if !strings.HasPrefix(segment, prefix) {
+		return 0, false
+	}
+	digitsAndRest = strings.TrimPrefix(segment, prefix)
+	digits := leadingDigits(digitsAndRest)
+	if digits == "" || !strings.HasPrefix(strings.TrimPrefix(digitsAndRest, digits), "-") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(digits)
+	return n, err == nil
 }
 
 // MaxDiskArtifactSequence returns the highest ordinal recorded for the

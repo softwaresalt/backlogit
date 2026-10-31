@@ -227,22 +227,55 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 	if err != nil {
 		return nil, fmt.Errorf("read provenance corrections: %w", err)
 	}
+	resumeForced := false
 	if found && existing.CanonicalDeliveryArtifactID != "" {
 		if existing.CanonicalDeliveryArtifactID == req.CanonicalDeliveryArtifactID && (!req.Force || existing.Forced) {
-			// Idempotent — same correction already recorded.
-			return &StashProvenanceCorrectionResult{
-				Outcome:                     StashProvenanceNoOp,
-				StashID:                     req.StashID,
-				HistoricalArtifactID:        historicalArtifactID,
-				CanonicalDeliveryArtifactID: req.CanonicalDeliveryArtifactID,
-				Forced:                      existing.Forced,
-				Message:                     "stash provenance correction already recorded",
-			}, nil
+			if existing.Forced && ws.DB != nil && !forcedSnapshotApplied(ctx, ws, target, entry, req) {
+				// The ledger entry exists but the forced mutation never completed
+				// (crash between ledger append and stamp): resume it below.
+				resumeForced = true
+			} else {
+				// Idempotent — same correction already recorded.
+				return &StashProvenanceCorrectionResult{
+					Outcome:                     StashProvenanceNoOp,
+					StashID:                     req.StashID,
+					HistoricalArtifactID:        historicalArtifactID,
+					CanonicalDeliveryArtifactID: req.CanonicalDeliveryArtifactID,
+					Forced:                      existing.Forced,
+					Message:                     "stash provenance correction already recorded",
+				}, nil
+			}
 		}
-		if !req.Force && existing.CanonicalDeliveryArtifactID != req.CanonicalDeliveryArtifactID {
+		if !req.Force && !resumeForced && existing.CanonicalDeliveryArtifactID != req.CanonicalDeliveryArtifactID {
 			return nil, fmt.Errorf("conflicting provenance correction already exists for stash %s (existing canonical: %s, requested: %s): %w",
 				req.StashID, existing.CanonicalDeliveryArtifactID, req.CanonicalDeliveryArtifactID, blerrors.ErrValidation)
 		}
+	}
+
+	if resumeForced {
+		original := cloneArtifact(target)
+		artifactSnap, snapErr := snapshotFile(artifactPath)
+		if snapErr != nil {
+			return nil, fmt.Errorf("snapshot canonical artifact: %w", snapErr)
+		}
+		if mutErr := stampForcedProvenance(ctx, ws, target, entry, req); mutErr != nil {
+			rollbackErrs := []error{restoreSnapshot(artifactSnap)}
+			if upErr := bldb.UpsertItem(ctx, ws.DB, original); upErr != nil {
+				rollbackErrs = append(rollbackErrs, fmt.Errorf("restore item index: %w", upErr))
+			}
+			if rbErr := errors.Join(rollbackErrs...); rbErr != nil {
+				return nil, fmt.Errorf("resume forced provenance: %w; rollback: %v", mutErr, rbErr)
+			}
+			return nil, fmt.Errorf("resume forced provenance: %w", mutErr)
+		}
+		return &StashProvenanceCorrectionResult{
+			Outcome:                     StashProvenanceCorrected,
+			StashID:                     req.StashID,
+			HistoricalArtifactID:        historicalArtifactID,
+			CanonicalDeliveryArtifactID: req.CanonicalDeliveryArtifactID,
+			Forced:                      true,
+			Message:                     "incomplete forced stash provenance correction resumed",
+		}, nil
 	}
 
 	// ---- Audit-before-mutation ----
@@ -331,6 +364,31 @@ func verifyProvenanceTargetContained(storageRoot, artifactPath string) error {
 	return nil
 }
 
+// forcedSnapshotApplied reports whether target and the SQLite index already
+// carry the forced source_stash_* snapshot for req.
+func forcedSnapshotApplied(ctx context.Context, ws *Workspace, target *models.Artifact, entry ArchivedStashEntry, req StashProvenanceCorrectionRequest) bool {
+	priority := entry.Priority
+	if priority == "" {
+		priority = stash.DefaultPriority
+	}
+	cf := target.CustomFields
+	if s, _ := cf["source_stash_id"].(string); s != req.StashID {
+		return false
+	}
+	if s, _ := cf["source_stash_priority"].(string); s != priority {
+		return false
+	}
+	if s, _ := cf["source_stash_kind"].(string); s != entry.Kind {
+		return false
+	}
+	if s, _ := cf["source_stash_text"].(string); s != entry.Text {
+		return false
+	}
+	var itemID string
+	err := ws.DB.QueryRowContext(ctx, `SELECT item_id FROM stash_links WHERE stash_id = ?`, req.StashID).Scan(&itemID)
+	return err == nil && itemID == req.CanonicalDeliveryArtifactID
+}
+
 // stampForcedProvenance writes the complete source_stash_* snapshot from the
 // archived stash entry onto target and refreshes the SQLite items,
 // stash_entries, and stash_links rows.
@@ -356,11 +414,8 @@ func stampForcedProvenance(ctx context.Context, ws *Workspace, target *models.Ar
 		return fmt.Errorf("persist canonical artifact: %w", err)
 	}
 	now := time.Now().UTC()
-	if err := bldb.UpsertStashEntry(ctx, ws.DB, req.StashID, priority, entry.Kind, entry.Text,
-		entry.DeliberationID, "harvested", stash.JSONLFileName, now); err != nil {
-		return err
-	}
-	return bldb.LinkStashEntry(ctx, ws.DB, req.StashID, req.CanonicalDeliveryArtifactID, now)
+	return bldb.UpsertAndLinkStashEntry(ctx, ws.DB, req.StashID, req.CanonicalDeliveryArtifactID, priority, entry.Kind, entry.Text,
+		entry.DeliberationID, "harvested", stash.JSONLFileName, now)
 }
 
 // isProvenanceIDPathSafe reports whether id contains no path-traversal characters.
@@ -368,24 +423,6 @@ func isProvenanceIDPathSafe(id string) bool {
 	return !strings.Contains(id, "..") &&
 		!strings.Contains(id, "/") &&
 		!strings.Contains(id, `\`)
-}
-
-// extractSourceStashID safely reads custom_fields.source_stash_id from parsed
-// frontmatter, returning "" when the field is absent or not a string.
-func extractSourceStashID(fm map[string]any) string {
-	if fm == nil {
-		return ""
-	}
-	cfRaw, ok := fm["custom_fields"]
-	if !ok {
-		return ""
-	}
-	cf, ok := cfRaw.(map[string]any)
-	if !ok {
-		return ""
-	}
-	v, _ := cf["source_stash_id"].(string)
-	return v
 }
 
 // readStashArchiveEntry opens the stash JSONL archive at archivePath and returns
@@ -482,13 +519,6 @@ func appendToProvenanceCorrections(correctionsPath string, correction Provenance
 		_ = dirFile.Close()
 	}
 	return nil
-}
-
-// readProvenanceCorrections returns the canonical_delivery_artifact_id of the
-// latest correction recorded for stashID, or "" when none exists.
-func readProvenanceCorrections(correctionsPath, stashID string) (string, error) {
-	c, _, err := readLatestProvenanceCorrection(correctionsPath, stashID)
-	return c.CanonicalDeliveryArtifactID, err
 }
 
 // readLatestProvenanceCorrection reads correctionsPath (provenance_corrections.jsonl)

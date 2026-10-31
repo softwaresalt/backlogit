@@ -80,6 +80,46 @@ func LinkStashEntry(ctx context.Context, database *sql.DB, stashID, itemID strin
 	return nil
 }
 
+// UpsertAndLinkStashEntry writes the stash entry and its harvest link in a
+// single transaction so a failure in either leaves both tables unchanged.
+func UpsertAndLinkStashEntry(ctx context.Context, database *sql.DB, stashID, itemID, priority, kind, text, deliberationID, state, sourcePath string, at time.Time) error {
+	return RetryWrite(ctx, func() error {
+		tx, err := database.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin stash upsert+link tx: %w", err)
+		}
+		defer tx.Rollback() //nolint:errcheck
+
+		ts := at.Format(time.RFC3339Nano)
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO stash_entries (stash_id, priority, kind, text, deliberation_id, state, source_path, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(stash_id) DO UPDATE SET
+			   priority = excluded.priority,
+			   kind = excluded.kind,
+			   text = excluded.text,
+			   deliberation_id = excluded.deliberation_id,
+			   state = excluded.state,
+			   source_path = excluded.source_path,
+			   updated_at = excluded.updated_at`,
+			stashID, priority, kind, text, deliberationID, state, sourcePath, ts,
+		); err != nil {
+			return fmt.Errorf("upsert stash entry %s: %w", stashID, err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO stash_links (stash_id, item_id, linked_at)
+			 VALUES (?, ?, ?)
+			 ON CONFLICT(stash_id) DO UPDATE SET
+			   item_id = excluded.item_id,
+			   linked_at = excluded.linked_at`,
+			stashID, itemID, ts,
+		); err != nil {
+			return fmt.Errorf("link stash entry %s: %w", stashID, err)
+		}
+		return tx.Commit()
+	})
+}
+
 // ListStashEntries returns indexed stash entries with any harvested item links.
 func ListStashEntries(ctx context.Context, database *sql.DB, includeHarvested bool) (result []StashRecord, err error) {
 	query := `SELECT se.stash_id, se.priority, se.kind, se.text, se.deliberation_id, se.state, se.source_path, se.updated_at, sl.item_id, sl.linked_at
