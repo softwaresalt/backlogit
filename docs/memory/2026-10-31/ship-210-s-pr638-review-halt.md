@@ -280,3 +280,22 @@ remaining salt-tail P2 received a further RED-to-GREEN correction and passing
 database-package tests. Final lint, vet, build, and formatting passed again.
 The source remediation may be preserved as a local conventional commit;
 it remains unshipped until the full test and remote gates are satisfied.
+
+## Absolute-path resumption probe
+
+The operator explicitly selected `checkpoint-20261101-023919.json` for
+resumption. Independent served-root attestation and lifecycle topology passed;
+the checkpoint was conforming and Ship-owned, and engram was reachable.
+
+The approved old session caches under `logs/` were removed without traversing
+reparse points. A focused Go 1.24 probe used literal absolute, separate
+workspace-contained temporary and build-cache directories. The command
+`go test ./internal/cli -run 'TestU2_|TestU3_' -count=1 -v` exited 1.
+`TestU3_StopMCPDaemon_NotRunning` still reported the missing-path inspection
+error. The prior parent commands had also used absolute `Join-Path $PWD`
+paths, so relative TEMP is not an established cause of these observed runs.
+
+No default-OS-temp comparison or passing full-suite result was observed in
+this resumption. The existing deferred entry `C2CFE06E` remains unchanged;
+no second capture was created. The checkpoint remains active, and no push,
+fixing-SHA reply, thread resolution, merge, or post-merge closure occurred.
