@@ -299,3 +299,40 @@ No default-OS-temp comparison or passing full-suite result was observed in
 this resumption. The existing deferred entry `C2CFE06E` remains unchanged;
 no second capture was created. The checkpoint remains active, and no push,
 fixing-SHA reply, thread resolution, merge, or post-merge closure occurred.
+
+## Go 1.26.5 resumption
+
+The operator identified the Go 1.24.0 Windows `os.Root.Name` defect and the
+Go 1.27 compiler export-data incompatibility with the installed linter.
+Using the cached Go 1.26.5 toolchain independently confirmed that both
+`TestU175_044_LintFix` and the focused `TestU2_` / `TestU3_` daemon tests pass.
+The complete CLI package passed in 173.116s. Repository vet and full CLI
+build also passed under Go 1.26.5. Repository lint passed with the CI five-minute
+budget; all 13 remediation Go files remained gofmt-clean and LF-only, and
+authoring docline lint passed for this handoff.
+
+The unfiltered `go test -timeout=30m ./...` run with serialized packages
+did not pass. Core failed archive/Git strategy and ancestry tests, two
+Windows journal replacement checks with `Access is denied`, and a shipment
+gate fixture. Core timed out after 30 minutes while running
+`TestReconcileResumeConsumedNonceBinding`. The already-failed full run was
+stopped; the remaining packages were not all verified.
+
+The contained fixture roots discover this checkout's parent Git repository:
+`TestHeadSHABounded` returned the actual branch HEAD for a no-repository
+fixture. A runtime-only `GIT_CEILING_DIRECTORIES` isolation probe made the
+shipment evidence fixture pass but did not make the archive strategy,
+Git-worktree, or HEAD probes pass. No source or assertion was changed.
+
+The current-HEAD reviewer found no new P0/P1 in the inspected remediation
+boundaries and retained P2 residual `D3C8D13B`. Its missing Git-tool coverage
+was checked by the parent: the complete committed delta contains 16 files
+and the inspected on-disk source matches HEAD exactly. Delivery remains
+blocked by the full test gate regardless of that source review.
+
+The daemon-investigation capture `C2CFE06E` was not edited or removed; Stage
+owns any disposition in light of the confirmed toolchain diagnosis.
+`checkpoint-20261101-023919.json` remains active. No push, review reply,
+thread resolution, remote readiness update, merge, or closure occurred.
+The Go 1.26.5 session scratch directories were cleaned after all its processes
+were stopped, without following reparse points.
