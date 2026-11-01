@@ -228,6 +228,125 @@ file and this memory document were preserved. A pre-existing modification to
 The operator's entry `17214531` and all prior working-tree changes were
 preserved; no stash write was performed.
 
+## Windows 8.3 short-path remediation
+
+This later bounded delegation ran on HEAD `3cbe1e1a` for PR 638, shipment
+`210-S`, feature `209-F`. It supersedes earlier execution-environment notes,
+not the historical test evidence above. The parent attested the served
+workspace `C:\Source\GitHub\backlogit`, storage `.backlogit`, MCP catalog and
+database pragma agreement, index sync, and passing lifecycle topology.
+Engram was reachable but its changed-code graph was stale/incomplete; current
+file confirmation used the documented fallback.
+
+The regression uses `GetShortPathNameW` on a real workspace-contained directory
+with parent name `stash-shortpath-long-parent-suffix`. The host returned
+`STASH-~1`, including short spellings of earlier ancestry components. Alias
+support is a required assertion, not a skipped or simulated pass. All four
+cases were observed RED before production edits: new and abandoned ownership
+were rejected by the directory pin's short/long pathname comparison; fresh
+ownership was correctly rejected but subsequent aged recovery failed; live-aged
+ownership returned validation failure instead of `os.ErrExist`.
+
+The requested seven-line `EvalSymlinks` insertion was not applied.
+Check-before/resolve/check-after could accept a directory link installed after
+the first check: resolution would bless its target as the destination for the
+later pin. Instead, Windows `openStashLockHandle` expands only the parent
+pathname's 8.3 spelling with `GetLongPathNameW` before using the unchanged
+directory pin. This API preserves link pathname components rather than
+canonicalizing their targets. The two-call sized buffer supports long paths
+without a fixed `MAX_PATH` limit; empty or outgrown results fail closed.
+The common acquisition precheck, pinned NT-relative no-follow creation,
+reparse/link-count checks, final-handle pathname verification, retained
+exclusive ownership, and handle-owned deletion remain unchanged.
+
+A direct-opener regression bypasses the initial pathname precheck to model
+a junction ancestor installed in that window. Its leaf directory is regular,
+so rejection exercises the opened final-path comparison rather than only the
+leaf reparse check. The target bytes, timestamp and directory entries remain
+unchanged. This is boundary coverage, not an exhaustive concurrent-replacement
+proof or a deterministic race scheduler.
+
+Every command below used this absolute, separated workspace-only environment:
+
+```powershell
+$env:GOTOOLCHAIN='go1.26.5'
+$env:TEMP='C:\Source\GitHub\backlogit\logs\.pr638-shortpath\tmp'
+$env:TMP=$env:TEMP
+$env:GOCACHE='C:\Source\GitHub\backlogit\logs\.pr638-shortpath\go-build'
+```
+
+Exact scoped verification commands and observed output excerpts:
+
+```text
+go version
+go version go1.26.5 windows/amd64
+
+go test -run=^$ -count=1 ./internal/core
+ok github.com/softwaresalt/backlogit/internal/core 0.840s [no tests to run]
+
+go test ./internal/core -run '^TestReviewStashWindowsShortPath$' -count=1 -timeout=2m -v
+actual 8.3 parent alias: STASH-~1
+--- FAIL: TestReviewStashWindowsShortPath (0.04s)
+    --- FAIL: TestReviewStashWindowsShortPath/new (0.00s)
+    --- FAIL: TestReviewStashWindowsShortPath/abandoned (0.00s)
+    --- FAIL: TestReviewStashWindowsShortPath/fresh (0.02s)
+    --- FAIL: TestReviewStashWindowsShortPath/live-aged (0.00s)
+FAIL	github.com/softwaresalt/backlogit/internal/core	2.622s
+exit 1
+
+go test ./internal/core -run '^TestReviewStash' -count=1 -timeout=2m -v
+actual 8.3 parent alias: STASH-~1
+--- PASS: TestReviewStashWindowsShortPath (0.03s)
+    --- PASS: TestReviewStashWindowsShortPath/new (0.01s)
+    --- PASS: TestReviewStashWindowsShortPath/abandoned (0.00s)
+    --- PASS: TestReviewStashWindowsShortPath/fresh (0.01s)
+    --- PASS: TestReviewStashWindowsShortPath/live-aged (0.01s)
+--- PASS: TestReviewStashRejectsJunctionAncestorAfterPrecheck (0.10s)
+--- PASS: TestReviewStashRejectsJunctionComponent (0.10s)
+--- PASS: TestReviewStashRejectsLinkedSidecars (0.05s)
+--- PASS: TestReviewStashSidecarOwnership (0.04s)
+--- PASS: TestReviewStashBlockingLockDoesNotStealLiveAgedHandle (0.01s)
+--- PASS: TestReviewStashBlockingLockRecoversAbandonedSidecar (0.01s)
+PASS
+ok  	github.com/softwaresalt/backlogit/internal/core	2.939s
+exit 0
+```
+
+The GREEN alias cases acquire/release new or abandoned locks, preserve fresh
+and live-aged sidecars, recover them once eligible, exclude a long-name
+contender while the alias owner is live, and leave no sidecars under either
+spelling. One implementation attempt was needed.
+
+Scoped quality checks also passed:
+
+* `go vet ./internal/core`: exit 0, no diagnostics
+* `golangci-lint run ./internal/core/...`: exit 0, no diagnostics;
+  `GOLANGCI_LINT_CACHE` was
+  `C:\Source\GitHub\backlogit\logs\.pr638-shortpath\golangci`
+* `gofmt -l internal/core/task_lock_windows.go internal/core/stash_sidecar_review_windows_test.go`:
+  no output; both changed Go files were checked LF-only
+* `git diff --check`: no errors; Git warned that it would convert the memory
+  document's LF to CRLF when next touched
+* Scoped MCP docline authoring lint: `valid: true`, zero violations/findings
+
+Changed paths are `internal/core/task_lock_windows.go`,
+`internal/core/stash_sidecar_review_windows_test.go`, and this memory document.
+No edits to `internal/core/stash_lock.go`, Unix production code, daemon/Git/
+archive tests, backlog, stash, branches, commits, or pushes were made.
+The pre-existing untracked checkpoint
+`.backlogit/checkpoints/checkpoint-20261101-023919.json` was left untouched.
+Test artifacts were created only under `logs/.pr638-shortpath`.
+
+Status remains `blocked_full_test_gate`. No full suite or repository lint was
+launched by this executor. The parent's contained-temp full gate did not pass:
+temporary roots inherit the outer `.git`, `TestHeadSHABounded` returned actual
+HEAD, core archive Git probes failed, journal replacement reported access
+denied, and core exhausted the 30-minute timeout. Git-ceiling isolation did
+not make all Git probes pass. No external OS-temp full-suite pass is claimed;
+the earlier daemon diagnosis is obsolete after Go 1.26 diagnosis, and Stage
+owns deferred stash disposition. Parent-owned full CLI regressions, gates,
+review and shipment authority remain outstanding.
+
 ## Parent validation and delivery halt
 
 The parent independently passed served-root attestation and the lifecycle
@@ -336,3 +455,101 @@ owns any disposition in light of the confirmed toolchain diagnosis.
 thread resolution, remote readiness update, merge, or closure occurred.
 The Go 1.26.5 session scratch directories were cleaned after all its processes
 were stopped, without following reparse points.
+
+## Latest Windows short-path test portability verification
+
+This test-only follow-up on supplied HEAD `3cbe1e1a` supersedes earlier
+short-path test prerequisite and verification notes, not their historical
+RED-to-GREEN evidence. Only
+`internal/core/stash_sidecar_review_windows_test.go` and this appended section
+were edited.
+
+The regression no longer derives the repository root with `filepath.Abs`,
+compares `t.TempDir` using `filepath.Rel`, or requires `filepath.IsLocal`.
+Repository-contained TEMP is an agent execution constraint, not stash behavior.
+The created directory is expanded to its LONG spelling with the sized
+`GetLongPathNameW` calls before `GetShortPathNameW`. The prerequisite still
+requires a real case-insensitive pathname difference and now requires `~`
+anywhere in the full short path. An existing user/runner ancestor alias can
+therefore satisfy it even when new 8.3 name creation is disabled. Diagnostics
+report alias presence without printing external paths. No skips, simulated
+aliases, or weakened feature assertions were introduced.
+
+All commands used these absolute, separated workspace-contained settings:
+
+```powershell
+$env:GOTOOLCHAIN='go1.26.5'
+$env:TEMP='C:\Source\GitHub\backlogit\logs\.pr638-shortpath\tmp'
+$env:TMP=$env:TEMP
+$env:GOTMPDIR=$env:TEMP
+$env:GOCACHE='C:\Source\GitHub\backlogit\logs\.pr638-shortpath\go-build'
+$env:GOLANGCI_LINT_CACHE='C:\Source\GitHub\backlogit\logs\.pr638-shortpath\golangci'
+```
+
+Exact verification commands:
+
+```text
+go version
+go test -run=^$ -count=1 ./...
+go test ./internal/core -run '^TestReviewStash' -count=1 -timeout=2m -v
+go vet ./internal/core
+golangci-lint run ./internal/core/...
+gofmt -l internal/core/task_lock_windows.go internal/core/stash_sidecar_review_windows_test.go
+```
+
+* `go version`: `go1.26.5 windows/amd64`
+* Repository compile-only baseline: PASS, exit 0; no tests executed
+* Focused stash regressions: PASS, exit 0, core 2.882s; all four
+  new/abandoned/fresh/live-aged short-path cases and both junction tests passed
+* Real-alias diagnostic:
+  `actual 8.3 alias verified; created directory has alias: true`
+* Core vet and lint: PASS, exit 0, no diagnostics
+* Scoped gofmt: PASS, no output
+* Python byte verification: PASS; both Go files are LF-only, containment
+  assertions are absent, LONG expansion precedes SHORT lookup, and the
+  full-path real-alias prerequisite is present
+
+Before/after SHA-256 checks confirm the production fix is byte-identical:
+`f4006d5cfb9e92f9c63674935aa474b7619a0239363caeba96f87b9c2b2f65b8`.
+The test suffix beginning at the four-case loop, including the original
+prevalidation-bypass junction-ancestor test, is also byte-identical:
+`5f3fd922516a91843c5e5fb190c10e2d1dfb6df792fd063ed49f24132c8e9279`.
+This preserves acquisition/recovery, kernel-busy ownership, unchanged contents,
+long-name contention exclusion, and no-leak assertions.
+
+Default hosted Windows OS TEMP validation was NOT executed: this agent cannot
+write outside the workspace. This contained run exercised a newly created
+directory alias, not an ancestor-only alias with new-name creation disabled.
+The latter is supported by the verified prerequisite code but is not claimed
+runtime-tested here.
+
+Status remains `blocked_full_test_gate`. The inherited repository Git discovery,
+Windows rename/access-denied failures, and 30-minute core timeout remain
+NOT PASS. No full test gate was restarted or waived. Final repository and
+hosted-platform gates remain parent-owned. No production, backlog, stash,
+checkpoint, commit, push, branch, or other Git operation was performed.
+
+## Parent short-path verification
+
+The parent reviewed the complete short-path code and test delta against
+`3cbe1e1a`. The Windows spelling expansion retains the existing pinned,
+no-follow acquisition and handle-owned release. The portable regression
+retains all four ownership cases and junction rejection. This narrow
+report-only review found no new P0/P1/P2/P3 issue; existing follow-up
+`D3C8D13B` remains unchanged.
+
+Independent Go 1.26.5 verification:
+
+* Requested CLI stash/deliberation/reconstitution selector: PASS
+* Complete CLI package, `-count=1 -timeout=10m`: PASS, 214.338s
+* Core `TestReview|TestStash`, `-count=1 -timeout=5m`: PASS, 10.233s
+* Repository lint with five-minute budget, vet, and full CLI build: PASS
+* Both changed Go files: canonical gofmt and LF-only bytes
+
+These results do not replace the unfiltered full-suite gate. Its earlier
+Git-fixture, replacement-access, and timeout failures remain unresolved in
+this execution environment. Default-OS-temp validation was not run, and
+`TestHeadSHABounded` was not represented as passing. The selected checkpoint
+remains active. No push, review reply, thread resolution, merge, or closure
+was performed.
+The short-path execution scratch was cleaned without following reparse points.

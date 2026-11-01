@@ -23,6 +23,29 @@ func openTaskLockHandle(lockPath string) (*os.File, bool, error) {
 }
 
 func openStashLockHandle(lockPath string) (*os.File, bool, error) {
+	// Expand 8.3 components without resolving link targets. EvalSymlinks here
+	// would bless an ancestor redirected between validation and pinning.
+	// The pin must still compare the opened final path with this pathname.
+	dir, err := windows.UTF16PtrFromString(filepath.Dir(lockPath))
+	if err != nil {
+		return nil, false, fmt.Errorf("encode stash sidecar directory: %w", err)
+	}
+	size, err := windows.GetLongPathName(dir, nil, 0)
+	if err != nil {
+		return nil, false, fmt.Errorf("size long stash sidecar directory: %w", err)
+	}
+	if size == 0 {
+		return nil, false, fmt.Errorf("empty long stash sidecar directory: %w", os.ErrPermission)
+	}
+	buffer := make([]uint16, size)
+	length, err := windows.GetLongPathName(dir, &buffer[0], size)
+	if err != nil {
+		return nil, false, fmt.Errorf("expand stash sidecar directory: %w", err)
+	}
+	if length == 0 || length >= size {
+		return nil, false, fmt.Errorf("stash sidecar directory changed during expansion: %w", os.ErrPermission)
+	}
+	lockPath = filepath.Join(windows.UTF16ToString(buffer), filepath.Base(lockPath))
 	pin, err := pinShipmentReconcileDir(filepath.Dir(lockPath))
 	if err != nil {
 		return nil, false, fmt.Errorf("pin stash sidecar directory: %w", err)
