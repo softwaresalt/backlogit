@@ -8,10 +8,39 @@ chunk_strategy: h1-h2-h3
 docline:
   shipment_id: 210-S
   feature_id: 209-F
-  status: blocked_full_test_gate
+  status: done
 ---
 
-## Served-root handoff
+  ## Current delivery evidence
+
+  The local remediation handoff is complete. Shipment `210-S` remains active;
+  PR `638` still requires current-HEAD hosted checks, Copilot review, and
+  merge/closure confirmation. Historical failed attempts below are retained as
+  execution evidence, not the current local gate verdict.
+
+  The Orchestrator executed `go test -timeout=30m ./...` with
+  `GOTOOLCHAIN=go1.26.5` and standard OS TEMP on exact source commit
+  `f336bb21f75fef7fbf53d040e2a9ea2c8476065b`. All listed packages passed.
+  Ship independently read session `305`, confirming completed exit code 0,
+  and verified that current source and dependencies match that commit exactly.
+  The supplied package output is Orchestrator evidence, not a newly repeated
+  Ship test run.
+
+  * Unfiltered full suite: PASS; core 1543.785s, CLI 213.523s, DB 197.945s
+  * Repository vet, lint, gofmt/LF, and full CLI build: PASS
+  * Fix commits: `fcd5e4ef` and `f336bb21`
+  * Operator stash `17214531`: preserved in `555a83ea`
+  * Selected Ship checkpoint `checkpoint-20261101-023919.json`: resolved through
+    MCP after confirmed successful resumption and passing gate evidence
+  * Existing residual `D3C8D13B`: retained under the prior contract
+  * Superseded investigation `C2CFE06E`: unchanged; Stage owns disposition
+
+  The readiness review carries zero unresolved P0/P1 findings. The final
+  handoff/checkpoint commit changes metadata only; no source change invalidates
+  the tested commit or its source review. PR readiness must cite the actual
+  pushed HEAD rather than the earlier source or historical PR HEAD.
+
+  ## Served-root handoff
 
 * Shipment: `210-S`, already active; no claim was attempted
 * Served workspace root: `.`
@@ -27,7 +56,7 @@ docline:
   MCP metadata catalog and the main database pragma; the bounded implementation
   executor relied on that attestation
 
-## Current state
+## Initial execution state
 
 * Branch: `feat/210-s-declarative-multi-shipment-manifest-reconstitution-209-f`
 * PR: [#638](https://github.com/softwaresalt/backlogit/pull/638), open
@@ -347,7 +376,7 @@ the earlier daemon diagnosis is obsolete after Go 1.26 diagnosis, and Stage
 owns deferred stash disposition. Parent-owned full CLI regressions, gates,
 review and shipment authority remain outstanding.
 
-## Parent validation and delivery halt
+## Historical parent validation and delivery halt
 
 The parent independently passed served-root attestation and the lifecycle
 topology gate. The startup checkpoint scan had no active Ship cursor or
