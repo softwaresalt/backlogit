@@ -22,7 +22,7 @@ func openTaskLockHandle(lockPath string) (*os.File, bool, error) {
 	return openExclusiveLockHandle(lockPath, syscall.GENERIC_READ|syscall.GENERIC_WRITE)
 }
 
-func openStashLockHandle(lockPath string) (*os.File, bool, error) {
+func openStashLockHandle(lockPath string) (*stashLockFile, bool, error) {
 	// Expand 8.3 components without resolving link targets. EvalSymlinks here
 	// would bless an ancestor redirected between validation and pinning.
 	// The pin must still compare the opened final path with this pathname.
@@ -60,8 +60,9 @@ func openStashLockHandle(lockPath string) (*os.File, bool, error) {
 		}
 		return nil, false, fmt.Errorf("open pinned stash sidecar: %w", errors.Join(err, closeErr))
 	}
-	fail := func(err error) (*os.File, bool, error) {
-		return nil, false, errors.Join(err, file.Close())
+	owned := &stashLockFile{File: file, basename: filepath.Base(lockPath)}
+	fail := func(err error) (*stashLockFile, bool, error) {
+		return nil, false, errors.Join(err, owned.Close())
 	}
 	if closeErr != nil {
 		return fail(fmt.Errorf("close stash directory pin: %w", closeErr))
@@ -81,7 +82,7 @@ func openStashLockHandle(lockPath string) (*os.File, bool, error) {
 	if !strings.EqualFold(finalPath, filepath.Clean(lockPath)) {
 		return fail(fmt.Errorf("stash sidecar handle escaped destination: %w", os.ErrPermission))
 	}
-	return file, false, nil
+	return owned, false, nil
 }
 
 func openExclusiveLockHandle(lockPath string, access uint32) (*os.File, bool, error) {
@@ -109,7 +110,7 @@ func openExclusiveLockHandle(lockPath string, access uint32) (*os.File, bool, er
 }
 
 // releaseStashSidecarFile deletes the owned file on close, not a successor.
-func releaseStashSidecarFile(file *os.File) error {
+func releaseStashSidecarFile(file *stashLockFile) error {
 	deleteFile := byte(1)
 	err := windows.SetFileInformationByHandle(windows.Handle(file.Fd()),
 		windows.FileDispositionInfo, &deleteFile, 1)

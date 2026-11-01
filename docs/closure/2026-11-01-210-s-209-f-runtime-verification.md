@@ -8,10 +8,15 @@ chunk_strategy: h1-h2-h3
 shipment_id: 210-S
 feature_id: 209-F
 mode: pre-merge
-verification_verdict: PASS_WITH_FOLLOW_UP
+verification_verdict: BLOCKED
 ---
 
 ## Contract and environment
+
+Supplemental review found a Unix release-path safety gap after this evidence
+was captured. A local retained-directory repair now changes source beyond
+the validated artifact below. Fresh full validation and native Unix
+successful-rename evidence are pending; earlier probes are historical.
 
 The workspace validator manifest declares no surfaces and marks runtime
 validation optional. The inferred CLI surface therefore uses the manual
@@ -27,7 +32,7 @@ tested commit `f336bb21`. Build and runtime scratch were workspace-contained.
 
 ```yaml
 validator_evidence:
-  verdict: PASS_WITH_FOLLOW_UP
+  verdict: BLOCKED
   surfaces:
     - surface: cli
       adapter: manual
@@ -50,12 +55,15 @@ validator_evidence:
     - id: targeted-handler-and-storage-contracts
       observed: CLI parity and core review/stash regressions passed
       scope: recorded test evidence, not a new live MCP probe
-  blocked_prerequisites: []
+  blocked_prerequisites:
+    - fresh full-gate evidence for the retained-directory repair
+    - native Unix successful-rename release validation
   unperformed_automation:
     - live reconstitution against an upgraded MCP daemon
     - deployment or executable installation
   follow_up_refs:
     - D3C8D13B
+    - F2BC9C37
 ```
 
 ## Invariants and risk

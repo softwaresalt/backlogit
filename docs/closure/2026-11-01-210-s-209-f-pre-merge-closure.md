@@ -8,11 +8,16 @@ chunk_strategy: h1-h2-h3
 shipment_id: 210-S
 feature_id: 209-F
 mode: pre-merge
-closure_status: READY
+closure_status: BLOCKED
 compaction_status: pending
 ---
 
 ## Readiness boundary
+
+The supplemental Unix release finding is repaired locally but its new source
+has not received fresh full-gate and native Unix successful-rename validation.
+Releasability is therefore blocked. CI success on the earlier pushed source
+does not validate this candidate.
 
 This record supplies runtime releasability evidence, not permission to
 bypass PR gates or a claim that post-merge closure is complete. The profile
@@ -22,11 +27,11 @@ independently immediately before merge.
 
 ## Validator evidence
 
-Runtime verdict: `PASS_WITH_FOLLOW_UP`.
+Runtime verdict: `BLOCKED` for the new candidate.
 Evidence: [runtime verification](2026-11-01-210-s-209-f-runtime-verification.md).
 The fresh CLI command and invalid-input probes behaved as expected.
 The Orchestrator supplied passing unfiltered source-bound test evidence.
-No blocked runtime prerequisite was declared by the optional validator contract.
+Fresh full validation and native Unix release proof remain blocked prerequisites.
 No live daemon upgrade or deployment verification is claimed.
 
 ## Invariants and pre-deploy audit
@@ -90,10 +95,10 @@ also remains unchanged for Stage disposition.
 
 ## Releasability and follow-ups
 
-Releasability: `READY` within the recorded merge-only boundary.
-No required runtime evidence is missing under the configured profile.
+Releasability: `BLOCKED` pending the new repair's validation and review.
 Existing risk `D3C8D13B` remains tracked under the prior contract.
-No new expansion was introduced or silently deferred.
+Supplemental root-alias compatibility was captured as `F2BC9C37` for Stage;
+the current physical-root/no-follow contract was not silently expanded.
 
 Compaction is `pending` because mandatory P-020 compaction belongs to
 confirmed post-merge closure. This pre-merge record never satisfies the

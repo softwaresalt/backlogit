@@ -40,7 +40,7 @@ func lockStashFile(path string) (unlock func() error, err error) {
 
 // acquireStashSidecarFile retains OS ownership until release. Age alone never
 // authorizes stealing a live lock, including one whose owner has been suspended.
-func acquireStashSidecarFile(lockPath string) (*os.File, error) {
+func acquireStashSidecarFile(lockPath string) (*stashLockFile, error) {
 	lockPath, err := filepath.Abs(lockPath)
 	if err != nil {
 		return nil, fmt.Errorf("resolve stash sidecar: %w", err)
@@ -62,7 +62,7 @@ func acquireStashSidecarFile(lockPath string) (*os.File, error) {
 	if busy {
 		return nil, fmt.Errorf("live stash sidecar owner: %w", os.ErrExist)
 	}
-	fail := func(err error) (*os.File, error) {
+	fail := func(err error) (*stashLockFile, error) {
 		return nil, errors.Join(err, f.Close())
 	}
 	owned, err := f.Stat()

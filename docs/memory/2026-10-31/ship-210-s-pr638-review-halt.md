@@ -8,39 +8,62 @@ chunk_strategy: h1-h2-h3
 docline:
   shipment_id: 210-S
   feature_id: 209-F
-  status: done
+  status: blocked_validation
 ---
 
-  ## Current delivery evidence
+## Current delivery evidence
 
-  The local remediation handoff is complete. Shipment `210-S` remains active;
-  PR `638` still requires current-HEAD hosted checks, Copilot review, and
-  merge/closure confirmation. Historical failed attempts below are retained as
-  execution evidence, not the current local gate verdict.
+Shipment `210-S` remains active. The supplemental Unix release P1 fix below
+changes production source beyond local HEAD `14faa257` and pushed
+`f43d967f`. Status is `blocked_validation`; new validation is pending.
+PR `638` requires fresh full-gate evidence, source review, hosted checks,
+Copilot review, and merge/closure confirmation. Earlier results below are
+historical evidence, not current-source gate verdicts.
 
-  The Orchestrator executed `go test -timeout=30m ./...` with
-  `GOTOOLCHAIN=go1.26.5` and standard OS TEMP on exact source commit
-  `f336bb21f75fef7fbf53d040e2a9ea2c8476065b`. All listed packages passed.
-  Ship independently read session `305`, confirming completed exit code 0,
-  and verified that current source and dependencies match that commit exactly.
-  The supplied package output is Orchestrator evidence, not a newly repeated
-  Ship test run.
+The Orchestrator executed `go test -timeout=30m ./...` with
+`GOTOOLCHAIN=go1.26.5` and standard OS TEMP on exact source commit
+`f336bb21f75fef7fbf53d040e2a9ea2c8476065b`. All listed packages passed.
+Ship independently read session `305`, confirming completed exit code 0.
+Source and dependencies matched that commit at that earlier capture.
+The supplemental production fix invalidates that immutable-source-head
+proof. The supplied package output is Orchestrator evidence, not a fresh
+full test run covering this fix.
 
-  * Unfiltered full suite: PASS; core 1543.785s, CLI 213.523s, DB 197.945s
-  * Repository vet, lint, gofmt/LF, and full CLI build: PASS
-  * Fix commits: `fcd5e4ef` and `f336bb21`
-  * Operator stash `17214531`: preserved in `555a83ea`
-  * Selected Ship checkpoint `checkpoint-20261101-023919.json`: resolved through
-    MCP after confirmed successful resumption and passing gate evidence
-  * Existing residual `D3C8D13B`: retained under the prior contract
-  * Superseded investigation `C2CFE06E`: unchanged; Stage owns disposition
+* Historical unfiltered suite: PASS on exact `f336bb21`; not the new source
+* Historical repository vet, lint, gofmt/LF, and full CLI build: PASS
+* Fix commits: `fcd5e4ef` and `f336bb21`
+* Operator stash `17214531`: preserved in `555a83ea`
+* Selected Ship checkpoint `checkpoint-20261101-023919.json`: resolved through
+  MCP after confirmed successful resumption and passing gate evidence
+* Existing residual `D3C8D13B`: retained under the prior contract
+* Superseded investigation `C2CFE06E`: unchanged; Stage owns disposition
 
-  The readiness review carries zero unresolved P0/P1 findings. The final
-  handoff/checkpoint commit changes metadata only; no source change invalidates
-  the tested commit or its source review. PR readiness must cite the actual
-  pushed HEAD rather than the earlier source or historical PR HEAD.
+The earlier readiness review preceded supplemental adversarial finding F2.
+Its bounded P1 implementation is now local and awaits fresh validation and
+review. PR readiness must cite the eventual pushed source and current HEAD,
+not the earlier tested source or historical PR HEAD.
 
-  ## Served-root handoff
+The new staged source repair received a report-only review against tree
+`5421057965f616feecb04672ce4d8dce5b7b75f1`: source `READY`, zero new
+P0/P1/P2/P3 findings within the declared advisory-lock protocol. Fresh
+full/native validation remains a separate blocked delivery gate.
+
+The complete current CLI package passed in 223.556s; repository-wide
+Windows lint, vet, and full CLI build passed. WSL validated replacement,
+cleanup, and stronger rename-denial behavior. Native successful rename
+and symlink-redirection execution remains pending.
+
+Advisory root-alias expansion F1 was captured once as `F2BC9C37`, with
+task `209.002-T`, feature `209-F`, shipment `210-S`, and PR `638` refs.
+This ID is the task/run/closure risk reference. No symlink-root trust
+normalization was introduced. F2 is an in-scope repair, not a deferred entry.
+
+All eight observed hosted checks passed on older source `f43d967f`.
+Current source changes invalidate reuse of `f336bb21` full-suite evidence.
+PR readiness is blocked pending the candidate's fresh gates; no merge or
+post-merge closure was performed.
+
+## Served-root handoff
 
 * Shipment: `210-S`, already active; no claim was attempted
 * Served workspace root: `.`
@@ -600,3 +623,297 @@ daemon, successful deployment, or completed post-merge closure.
 Hosted checks and the current-HEAD Copilot request were still running at
 capture. The final PR readiness block must use the eventual pushed metadata
 HEAD; source remains identical to tested `f336bb21`.
+
+## Supplemental P1 Unix sidecar release remediation
+
+Status: `blocked_review_gate`; new validation pending. This bounded execution
+started from exact local HEAD
+`14faa2575ed48c1b247801c7892baff443a5787c`, with pushed parent `f43d967f`.
+The worktree was initially clean. No commit, push, branch, merge, backlog,
+stash, checkpoint, daemon, or index mutation was performed. No subagents were
+used. No new plan, review artifact, or backlog item was created.
+
+ProposedAction: remediate supplemental F2 within the authorized P-021 C1
+stash-sidecar ownership contract. ActionRisk: high, explicitly approved by
+the operator for this bounded local change. ActionResult: applied locally;
+native Unix validation and fresh parent full/review gates remain pending.
+
+### Implementation and scope
+
+* Unix retains the final no-follow parent descriptor through release.
+  `Fstat` checks the owned inode; no-follow `Fstatat` checks the captured
+  basename's device, inode, regular type, and single-link count. Only matching
+  ownership permits directory-relative `Unlinkat` while flock is held.
+  Release never resolves an ancestor pathname.
+* A private wrapper embeds `*os.File` and owns its Unix parent. `sync.Once`
+  makes direct `Close` release both resources exactly once, even on a leaf
+  close error. Acquisition failures and busy handles use the same cleanup.
+  Direct close does not authorize sidecar removal.
+* Observed replacement or identity drift fails closed and leaves the
+  replacement untouched. Normal release still removes its sidecar; permanent
+  lockfiles are not substituted for ownership-safe removal.
+* Windows retains real short-path expansion, no-follow acquisition, and
+  owned-handle deletion. Only the internal wrapper/signatures and close error
+  context change. Unsupported platforms remain fail closed.
+* All-component no-follow checks remain. F1 symlinked-root compatibility,
+  including macOS `/tmp` aliases, is not normalized or trusted here.
+  Existing accepted orphan-window residual `D3C8D13B` is not refactored.
+  AssociateCommit, WAL helpers, source metadata, and unrelated APIs are untouched.
+
+Changed paths:
+
+```text
+internal/core/stash_lock.go
+internal/core/stash_lock_file.go
+internal/core/task_lock_unix.go
+internal/core/task_lock_windows.go
+internal/core/task_lock_other.go
+internal/core/stash_sidecar_release_shape_test.go
+internal/core/stash_sidecar_release_unix_test.go
+docs/memory/2026-10-31/ship-210-s-pr638-review-halt.md
+```
+
+### RED and focused verification
+
+All execution scratch and caches are absolute, separated, and contained:
+
+```powershell
+$base='C:\Source\GitHub\backlogit\logs\.pr638-unix-release'
+$env:TEMP="$base\tmp"
+$env:TMP="$base\tmp"
+$env:GOTMPDIR="$base\tmp"
+$env:GOCACHE="$base\go-build"
+$env:GOLANGCI_LINT_CACHE="$base\lint"
+$env:GOTOOLCHAIN='go1.26.5'
+$env:GOPROXY='off'
+```
+
+The first compile-only baseline used installed default Go 1.27.0 and passed.
+Subsequent RED, focused GREEN, cross-compilation, and lint used cached
+Go 1.26.5. The final Go 1.26.5 repository compile-only check also passed.
+No unfiltered full suite was executed.
+
+Exact Go commands, with `GOOS` unset for Windows execution:
+
+```text
+go test -run=^$ -count=1 ./...
+go test ./internal/core -run '^TestReviewStash(ReleaseUnixSourceContract|DirectCloseIsDeterministic)$' -count=1 -timeout=2m -v
+go test ./internal/core -run '^TestReviewStash' -count=1 -timeout=2m -v
+go test ./internal/core -run '^TestReviewStash|^TestStash|^TestTaskLock' -count=1 -timeout=5m
+go vet ./internal/core
+golangci-lint run --timeout=5m ./internal/core/...
+```
+
+Before production edits, the Go/parser source-shape harness compiled and
+failed assertions for early parent close and missing relative owned-inode
+unlink. Direct repeated `Close` also failed as expected. Before implementation,
+the Unix behavioral regressions compiled for Linux and Darwin without
+referencing an undeclared implementation type.
+
+The first GREEN attempt exposed a Windows test portability issue: `Stat`
+after close returns an invalid-handle error, not `os.ErrClosed`. The test now
+checks `WriteString` after close with `errors.Is` through `require.ErrorIs`;
+the exact-once close assertion is unchanged. No production workaround was
+added. The focused Windows selector then passed in 4.939s and, after adding
+basename close-error context for platform lint, passed again in 2.097s.
+Existing fresh, abandoned, live-aged, linked/junction, and real 8.3 short-path
+regressions passed. These are focused results, not full-gate evidence.
+
+Windows lint initially identified a Unix-only basename field as unused.
+The basename now provides close-error context on both platforms. Scoped lint
+then passed, exit 0, for `GOOS=windows`, `linux`, and `darwin`.
+Windows and Darwin final-source core vet passed. Linux core vet passed before
+the close-error-context-only adjustment.
+
+Scoped `gofmt -l` returned no paths; all seven changed Go files were LF-only.
+`git diff --check` passed. The existing handoff's authoring docline check
+passed with zero findings, including the MDP008 namespace contract:
+
+```text
+go run ./cmd/backlogit docs lint --profile authoring --path docs/memory/2026-10-31/ship-210-s-pr638-review-halt.md --format json
+```
+
+Cross-compilation used `GOARCH=amd64`, separately setting `GOOS=linux` and
+`GOOS=darwin`, with these output paths:
+
+```text
+go test -c -o C:\Source\GitHub\backlogit\logs\.pr638-unix-release\tmp\core-linux-red.test ./internal/core
+go test -c -o C:\Source\GitHub\backlogit\logs\.pr638-unix-release\tmp\core-darwin-red.test ./internal/core
+go test -c -o C:\Source\GitHub\backlogit\logs\.pr638-unix-release\tmp\core-linux-green.test ./internal/core
+go test -c -o C:\Source\GitHub\backlogit\logs\.pr638-unix-release\tmp\core-darwin-green.test ./internal/core
+```
+
+All four cross-compilations passed. Darwin behavioral execution was not
+available or claimed.
+
+### Linux WSL execution boundary
+
+Read-only probes found WSL Ubuntu and a functioning Linux runtime, but no
+Unix Go or lint executable. The cross-compiled Go 1.26.5 Linux test binary was
+therefore executed directly. Its working directory was
+`/mnt/c/Source/GitHub/backlogit/internal/core`; `TMPDIR`, `TEMP`, `TMP`, and
+`GOTMPDIR` were all set to the absolute workspace-contained
+`/mnt/c/Source/GitHub/backlogit/logs/.pr638-unix-release/tmp`.
+The Go and lint cache paths used the corresponding contained `go-build` and
+`lint` directories.
+
+The first WSL invocation failed test-flag argument transport, exit 2, before
+running tests. The second used `/bin/sh -c` to pass the following exact binary
+selector, with the contained environment described above:
+
+```text
+/mnt/c/Source/GitHub/backlogit/logs/.pr638-unix-release/tmp/core-linux-green.test -test.run=^TestReviewStash -test.count=1 -test.timeout=2m -test.v
+```
+
+The second invocation executed tests and exited 1. DrvFS blocked the
+ancestor-rename prerequisite with permission denied while the parent pin was
+held. The missing-basename fixture returned `ENOENT` from owned-handle
+`Fstat`, unlike expected native Unix renamed-inode semantics. This is a concrete
+contained-filesystem proof boundary, not a passing Linux selector.
+
+The same execution passed replacement-sidecar successor, symlink, hardlink,
+and directory cases; normal cooperating successor safety; direct close
+parent-descriptor cleanup and leaf-close-error/no-double-close cases; the
+source contract; and existing fresh/abandoned/live-aged and linked-sidecar
+cases. No assertion was weakened or skipped, and no native Linux or Darwin
+behavioral pass is claimed. Execution stopped at this boundary without a
+third WSL attempt.
+
+### Remaining review and validation risks
+
+`Fstatat` followed by `Unlinkat` is not an atomic compare-and-delete.
+Cooperating holders do not mutate a flock-owned inode: deletion completes
+before a new path owner can return, and orphaned openers fail acquisition
+identity checks. The regressions demonstrate an old owner cannot delete a
+held replacement successor or a normal post-release successor.
+Noncooperating writers with directory mutation authority can still exchange
+the basename between the identity check and unlink. Observed drift fails
+closed, and the retained parent prevents ancestor-symlink redirection, but
+the advisory-lock contract does not eliminate that concurrent hostile-writer
+window.
+
+The production changes invalidate the former exact-source `f336bb21` full
+pass and the immutable-source-head proof associated with `14faa257`.
+Parent-owned follow-up must obtain fresh full gates, native Unix behavioral
+evidence, source review, and current pushed-HEAD hosted CI/Copilot readiness.
+Existing resolved remote threads are historical; no new reply or resolution,
+Live MCP upgrade, merge, or closure was attempted.
+
+## Latest authoritative Unix portability proof
+
+Status: `blocked_review_gate`; fresh full-gate and review validation pending.
+This section supersedes the earlier failed DrvFS selector verdict, not the
+historical RED evidence or the outstanding native-platform proof requirement.
+Local HEAD remains `14faa2575ed48c1b247801c7892baff443a5787c`.
+One bounded corrective implementation attempt changed only
+`internal/core/task_lock_unix.go`,
+`internal/core/stash_sidecar_release_unix_test.go`, and this handoff.
+
+The ancestor test accepts only `EACCES`, `EPERM`, or `EBUSY` when the retained
+parent pin prevents rename. Before returning, that branch asserts successful
+release, removal of the original sidecar, unchanged external victim bytes,
+name and identity, no moved directory or parent symlink, closed leaf and
+parent descriptors, and idempotent close without closing reused descriptors.
+It is an assertion-bearing safety branch, not a skip or silent fallback.
+When rename succeeds, the original rename-plus-external-symlink deletion
+regression still executes unchanged.
+
+Unknown owned-handle `Fstat` identity now refuses release with
+`errors.Join(os.ErrPermission, err)`, preserving the underlying errno and
+matching the existing `Fstatat` refusal category. The missing-basename test
+retains its strong `ErrorIs(os.ErrPermission)` and unchanged victim assertions.
+No replacement, cooperating-successor, or direct-close assertion was weakened.
+
+### Exact commands and environment
+
+Every Windows Go command used the existing cached Go 1.26.5 toolchain and
+these absolute workspace-contained scratch/cache settings:
+
+```powershell
+$env:GOTOOLCHAIN='go1.26.5'
+$env:TEMP='C:\Source\GitHub\backlogit\logs\.pr638-unix-release\tmp'
+$env:TMP=$env:TEMP
+$env:GOTMPDIR=$env:TEMP
+$env:GOCACHE='C:\Source\GitHub\backlogit\logs\.pr638-unix-release\go-build'
+$env:GOLANGCI_LINT_CACHE='C:\Source\GitHub\backlogit\logs\.pr638-unix-release\lint'
+$env:GOPROXY='off'
+```
+
+```text
+go version
+go test -run=^$ -count=1 ./...
+go test ./internal/core -run '^TestReviewStash' -count=1 -timeout=2m -v
+go vet ./internal/core
+golangci-lint run ./internal/core/...
+gofmt -l internal/core/task_lock_unix.go internal/core/stash_sidecar_release_unix_test.go
+git --no-pager diff --check
+```
+
+* `go version`: `go1.26.5 windows/amd64`
+* Before-edit repository compile-only baseline: PASS, exit 0, no tests run
+* Corrected-source Windows selector: PASS, exit 0, core 1.667s; retained-parent
+  and relative-unlink source contracts, deterministic close, real short-path
+  new/abandoned/fresh/live-aged cases, both junction tests, linked-sidecar
+  rejection, and existing ownership/recovery cases executed
+* Windows core vet and focused core lint: PASS, exit 0, no diagnostics
+* Scoped gofmt and diff whitespace checks: PASS, no findings; Git emitted
+  existing LF-to-CRLF conversion warnings for stash and handoff
+* Both edited Go files: LF-only bytes, exactly one final newline
+
+An initial toolchain probe additionally set `GOSUMDB=off` and refused cached
+toolchain verification before compilation. Removing that setting produced
+the baseline PASS above; no Go/package installation was performed.
+
+Linux cross-compilation and Unix-source vet used the same contained settings:
+
+```powershell
+$env:GOOS='linux'
+$env:GOARCH='amd64'
+go test -c -o C:\Source\GitHub\backlogit\logs\.pr638-unix-release\tmp\core-linux-portability.test ./internal/core
+go vet ./internal/core
+```
+
+Both commands passed, exit 0. The binary contains the corrected local source.
+The existing selector was executed directly on the available WSL runtime:
+
+```powershell
+wsl.exe --list --quiet
+wsl.exe -d Ubuntu-26.04 -- /bin/sh -c 'cd /mnt/c/Source/GitHub/backlogit/internal/core && export TMPDIR=/mnt/c/Source/GitHub/backlogit/logs/.pr638-unix-release/tmp TEMP=/mnt/c/Source/GitHub/backlogit/logs/.pr638-unix-release/tmp TMP=/mnt/c/Source/GitHub/backlogit/logs/.pr638-unix-release/tmp GOTMPDIR=/mnt/c/Source/GitHub/backlogit/logs/.pr638-unix-release/tmp GOCACHE=/mnt/c/Source/GitHub/backlogit/logs/.pr638-unix-release/go-build GOLANGCI_LINT_CACHE=/mnt/c/Source/GitHub/backlogit/logs/.pr638-unix-release/lint && /mnt/c/Source/GitHub/backlogit/logs/.pr638-unix-release/tmp/core-linux-portability.test -test.run=^TestReviewStash -test.count=1 -test.timeout=2m -test.v'
+```
+
+An initial invocation with `-d Ubuntu` returned
+`WSL_E_DISTRO_NOT_FOUND` before tests. The read-only distribution listing
+identified the registered name `Ubuntu-26.04`; only the invocation name was
+corrected. No runtime installation or system configuration change occurred.
+
+### Executed branches and preserved limits
+
+The corrected WSL selector passed, exit 0, with no skips:
+
+* Ancestor redirection: DrvFS retained-pin rename denial branch executed,
+  logged `permission denied`, and passed every safety/resource assertion
+* Native Unix successful-rename-plus-symlink branch: NOT executed; no native
+  ext4 or Darwin behavior proof is claimed
+* Replacement: successor, symlink, hardlink, directory, and missing basename
+  all passed; missing basename now preserves permission-refusal semantics
+* Normal cooperating successor and released-owner exclusion: passed
+* Direct close: normal and forced leaf-close-error cases passed, including
+  parent cleanup and no-double-close behavior
+* Source contracts, deterministic close, fresh/abandoned/live-aged ownership,
+  blocking recovery, and all linked-sidecar rejection variants: passed
+
+The previous old-source source-shape RED remains the RED evidence. No new
+behavior RED was manufactured where DrvFS prevents the attack itself.
+The retained parent eliminates outside-ancestor redirection; basename
+exchange between `Fstatat` and `Unlinkat` remains a documented
+noncooperating-writer residual, not atomic compare-and-delete.
+No F1 root-alias normalization was added. Future alias trust-anchor follow-up
+`F2BC9C37` and accepted P2 residual `D3C8D13B` remain unchanged.
+
+SHA-256 checks preserve all other pre-existing modified/untracked local
+source files and `.backlogit/stash.jsonl`. No subagents, commits, pushes,
+backlog, stash, checkpoint, branch, mount, or system-configuration operations
+were performed. All test/build scratch stayed under `logs/.pr638-unix-release`.
+Bounded proof is PASS; no fresh unfiltered full-suite or repository-wide gate
+PASS is claimed. Fresh full gates, native successful-rename evidence, source
+review, and current pushed-HEAD hosted readiness remain parent-owned.

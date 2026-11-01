@@ -5,7 +5,6 @@ package core
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +31,7 @@ func openTaskLockHandle(lockPath string) (*os.File, bool, error) {
 	return file, false, nil
 }
 
-func openStashLockHandle(lockPath string) (*os.File, bool, error) {
+func openStashLockHandle(lockPath string) (*stashLockFile, bool, error) {
 	// Walk from the filesystem root using no-follow directory-relative opens.
 	// Replacing a component cannot redirect the next open outside the pinned
 	// ancestry, including between the common Lstat checks and this walk.
@@ -54,18 +53,19 @@ func openStashLockHandle(lockPath string) (*os.File, bool, error) {
 		}
 		dirFD = next
 	}
+	parent := os.NewFile(uintptr(dirFD), filepath.Dir(lockPath))
 	fd, openErr := unix.Openat(dirFD, filepath.Base(lockPath),
 		unix.O_CREAT|unix.O_RDWR|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0o644)
-	closeErr := unix.Close(dirFD)
 	if openErr != nil {
-		return nil, false, fmt.Errorf("open pinned stash sidecar: %w", errors.Join(openErr, closeErr))
+		return nil, false, fmt.Errorf("open pinned stash sidecar: %w", errors.Join(openErr, parent.Close()))
 	}
-	file := os.NewFile(uintptr(fd), lockPath)
-	fail := func(err error) (*os.File, bool, error) {
+	file := &stashLockFile{
+		File:     os.NewFile(uintptr(fd), lockPath),
+		parent:   parent,
+		basename: filepath.Base(lockPath),
+	}
+	fail := func(err error) (*stashLockFile, bool, error) {
 		return nil, false, errors.Join(err, file.Close())
-	}
-	if closeErr != nil {
-		return fail(fmt.Errorf("close stash directory pin: %w", closeErr))
 	}
 	var info unix.Stat_t
 	if err := unix.Fstat(fd, &info); err != nil {
@@ -84,24 +84,42 @@ func openStashLockHandle(lockPath string) (*os.File, bool, error) {
 	return file, false, nil
 }
 
-func releaseStashSidecarFile(file *os.File) error {
-	// Unlink while locked. Contenders opening the old inode fail SameFile
-	// validation; contenders opening the new path cannot be removed by us.
-	removeErr := unlockStashFile(strings.TrimSuffix(file.Name(), ".lock"))
+func releaseStashSidecarFile(file *stashLockFile) error {
+	// Never resolve ancestors again. Cooperating contenders cannot replace a
+	// flock-owned inode; after unlink, acquisition rejects an orphaned opener
+	// and our deletion is already complete before a successor can be returned.
+	//
+	// Fstatat plus Unlinkat is NOT an atomic compare-and-delete. A
+	// noncooperating writer able to mutate the pinned directory can still swap
+	// the basename between these syscalls. Observed drift fails closed, but
+	// hostile concurrent directory writers remain outside the advisory-lock
+	// contract. The retained pin prevents ancestor redirection in either case.
+	removeErr := func() error {
+		if file.parent == nil {
+			return fmt.Errorf("missing stash sidecar parent ownership: %w", os.ErrPermission)
+		}
+		var owned, current unix.Stat_t
+		if err := unix.Fstat(int(file.Fd()), &owned); err != nil {
+			return fmt.Errorf("stat releasing stash sidecar handle: %w", errors.Join(os.ErrPermission, err))
+		}
+		if owned.Mode&unix.S_IFMT != unix.S_IFREG || owned.Nlink != 1 {
+			return fmt.Errorf("linked or nonregular releasing stash sidecar: %w", os.ErrPermission)
+		}
+		if err := unix.Fstatat(int(file.parent.Fd()), file.basename, &current, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return fmt.Errorf("stat releasing stash sidecar basename: %w", errors.Join(os.ErrPermission, err))
+		}
+		if current.Dev != owned.Dev || current.Ino != owned.Ino ||
+			current.Mode&unix.S_IFMT != unix.S_IFREG || current.Nlink != 1 {
+			return fmt.Errorf("stash sidecar identity changed before release: %w", os.ErrPermission)
+		}
+		if err := unix.Unlinkat(int(file.parent.Fd()), file.basename, 0); err != nil {
+			return fmt.Errorf("unlink owned stash sidecar: %w", err)
+		}
+		return nil
+	}()
 	closeErr := file.Close()
 	if removeErr != nil || closeErr != nil {
 		return fmt.Errorf("release stash sidecar: %w", errors.Join(removeErr, closeErr))
-	}
-	return nil
-}
-
-// unlockStashFile removes the advisory lock sidecar created by lockStashFile.
-// Callers must retain ownership while removing the sidecar.
-func unlockStashFile(path string) error {
-	lockPath := path + ".lock"
-	if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
-		slog.Warn("failed to remove stash lock file", "path", lockPath, "error", err)
-		return fmt.Errorf("remove stash sidecar: %w", err)
 	}
 	return nil
 }
