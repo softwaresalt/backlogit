@@ -582,3 +582,21 @@ this execution environment. Default-OS-temp validation was not run, and
 remains active. No push, review reply, thread resolution, merge, or closure
 was performed.
 The short-path execution scratch was cleaned without following reparse points.
+
+## Hosted delivery progress
+
+Validated source and completed handoff were pushed in `f43d967f`.
+All three Copilot findings received substantive file-backed replies citing
+`fcd5e4ef` and `f336bb21`, followed by confirmed GraphQL resolution:
+
+* `4433027865`: reply `4434717133`, thread `PRRT_kwDORzozKM6yT9bm`
+* `4433027878`: reply `4434717129`, thread `PRRT_kwDORzozKM6yT9bp`
+* `4433027884`: reply `4434717131`, thread `PRRT_kwDORzozKM6yT9bt`
+
+Each mutation returned `isResolved: true`. Temporary reply files were removed.
+Pre-merge runtime and releasability reports are in `docs/closure/`.
+They preserve the manual-adapter boundary and do not assert an upgraded
+daemon, successful deployment, or completed post-merge closure.
+Hosted checks and the current-HEAD Copilot request were still running at
+capture. The final PR readiness block must use the eventual pushed metadata
+HEAD; source remains identical to tested `f336bb21`.
