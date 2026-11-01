@@ -2781,6 +2781,31 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 			}
 			if journal.Reconstitute != nil {
 				lockIDs = append(lockIDs, journal.Reconstitute.LockIDs...)
+				lockIDs = append(lockIDs, journal.Reconstitute.CreatedIDs...)
+				for oldID, newID := range journal.Reconstitute.Adoptions {
+					lockIDs = append(lockIDs, oldID, newID)
+				}
+				knownLogs := make(map[string]struct{}, len(journal.Reconstitute.KnownLogs))
+				for _, path := range journal.Reconstitute.KnownLogs {
+					knownLogs[path] = struct{}{}
+				}
+				discovered, discoverErr := discoverReconstituteAdoptions(
+					ctx, ws, journal.CorrelationID, WorkspaceLogsRoot(ws.RootPath), knownLogs)
+				if discoverErr != nil {
+					recoveryErrs = append(recoveryErrs, errors.Join(discoverErr, membershipUnlock()))
+					continue
+				}
+				for oldID, newID := range discovered {
+					if validReconstituteID(oldID) && validReconstituteID(newID) {
+						lockIDs = append(lockIDs, oldID, newID)
+					}
+				}
+				imageOwners, ownerErr := reconstituteImageOwners(journal.Reconstitute)
+				if ownerErr != nil {
+					recoveryErrs = append(recoveryErrs, errors.Join(ownerErr, membershipUnlock()))
+					continue
+				}
+				lockIDs = append(lockIDs, imageOwners...)
 			}
 			lockedCtx, artifactUnlock, lockErr := lockArtifactMutations(ctx, ws, lockIDs)
 			if lockErr == nil {

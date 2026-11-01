@@ -12,12 +12,28 @@ closure_status: BLOCKED
 compaction_status: pending
 ---
 
+## Resumed evidence and Stage decisions
+
+The Orchestrator reports full Go suite shell `468` exited 0 with
+`GOTOOLCHAIN=go1.26.5` and `GOFLAGS=-count=1 -p=1`; native WSL focused
+shells `406` and `407` passed; and static gates passed, including shell `479`.
+These results were supplied in the handoff, not independently observed in this
+documentation update. They do not prove current-HEAD review readiness.
+
+The previous verdict was `BLOCKED` and remains recorded pending independent
+review and applicable PR gates. Stage P-021 C6 decisions `078-DL` and
+`080-DL` defer three crash-window candidates to `7E14915F` and `D3C8D13B`;
+`079-DL` defers the format-cache remedy to `DF533572`. Other follow-ups are
+`C2CFE06E` and `F2BC9C37`. The decisions are not a current-HEAD review pass.
+
 ## Readiness boundary
 
-The supplemental Unix release finding is repaired locally but its new source
-has not received fresh full-gate and native Unix successful-rename validation.
-Releasability is therefore blocked. CI success on the earlier pushed source
-does not validate this candidate.
+At the previous halt, the supplemental Unix release finding was repaired
+locally but its new source had not received fresh full-gate and native Unix
+successful-rename validation. The newer reports are recorded above, without
+independent verification here. Releasability remains blocked pending the
+applicable review and PR gates. CI success on the earlier pushed source does
+not validate this candidate.
 
 This record supplies runtime releasability evidence, not permission to
 bypass PR gates or a claim that post-merge closure is complete. The profile
@@ -31,7 +47,8 @@ Runtime verdict: `BLOCKED` for the new candidate.
 Evidence: [runtime verification](2026-11-01-210-s-209-f-runtime-verification.md).
 The fresh CLI command and invalid-input probes behaved as expected.
 The Orchestrator supplied passing unfiltered source-bound test evidence.
-Fresh full validation and native Unix release proof remain blocked prerequisites.
+Reported fresh full validation and native Unix focused proof require assessment
+alongside the current-HEAD review and PR gates.
 No live daemon upgrade or deployment verification is claimed.
 
 ## Invariants and pre-deploy audit
@@ -95,7 +112,8 @@ also remains unchanged for Stage disposition.
 
 ## Releasability and follow-ups
 
-Releasability: `BLOCKED` pending the new repair's validation and review.
+Releasability: `BLOCKED` pending assessment of the reported validation and
+current-HEAD review and PR gates.
 Existing risk `D3C8D13B` remains tracked under the prior contract.
 Supplemental root-alias compatibility was captured as `F2BC9C37` for Stage;
 the current physical-root/no-follow contract was not silently expanded.

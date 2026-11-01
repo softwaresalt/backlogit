@@ -21,7 +21,7 @@ func NewReadOnlyIndexWorkspace(ctx context.Context, rootPath string) (*Workspace
 		return nil, err
 	}
 	dbPath := filepath.Join(ws.StorageRoot, "backlogit.db")
-	if _, statErr := os.Stat(dbPath); statErr != nil {
+	if _, statErr := os.Lstat(dbPath); statErr != nil {
 		if os.IsNotExist(statErr) {
 			return ws, nil
 		}

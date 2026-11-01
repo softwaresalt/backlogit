@@ -1211,7 +1211,8 @@ type AdoptItemOptions struct {
 	// BeforeRename, when set, is called after the new ID is allocated and the
 	// item-log locks are held but before any mutation, so a caller can durably
 	// record the old->new pair. A returned error aborts the adoption untouched.
-	BeforeRename func(ctx context.Context, oldID, newID string) error
+	BeforeRename       func(ctx context.Context, oldID, newID string) error
+	allowedCrossRefIDs map[string]struct{}
 }
 
 // AdoptItemWithOptions is AdoptItem with explicit options. With KeepID the
@@ -1341,6 +1342,14 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 	crossRefs, crossRefErr := findCrossArtifactReferences(ctx, ws, oldID, newID)
 	if crossRefErr != nil {
 		return nil, fmt.Errorf("adopt item %s: scan cross-references: %w", oldID, crossRefErr)
+	}
+	if opts.allowedCrossRefIDs != nil {
+		for _, ref := range crossRefs {
+			if _, ok := opts.allowedCrossRefIDs[ref.artifact.ID]; !ok {
+				return nil, fmt.Errorf("adopt item %s: cross-reference owner %s was not snapshotted: %w",
+					itemID, ref.artifact.ID, blerrors.ErrShipmentConflict)
+			}
+		}
 	}
 
 	// Step 2: Begin DB transaction for edge rewrites and index sync.

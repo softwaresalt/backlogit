@@ -11,12 +11,28 @@ mode: pre-merge
 verification_verdict: BLOCKED
 ---
 
+## Resumed evidence handoff
+
+The Orchestrator reports that the full Go suite completed in shell `468` with
+exit 0, `GOTOOLCHAIN=go1.26.5`, and `GOFLAGS=-count=1 -p=1`. The
+Orchestrator also reports native WSL focused runs in shells `406` and `407`
+as PASS, and static gates as passed, including shell `479`. These are supplied
+reports, not observations independently repeated for this documentation update.
+They do not establish independent current-HEAD review readiness.
+
+The previous `BLOCKED` verdict remains recorded. Stage P-021 C6 decisions
+`078-DL` and `080-DL` defer three crash-window candidates to `7E14915F` and
+`D3C8D13B`; `079-DL` defers the format-cache remedy to `DF533572`. Other
+follow-ups are `C2CFE06E` and `F2BC9C37`. These decisions do not themselves
+establish that current-HEAD review or PR gates have passed.
+
 ## Contract and environment
 
 Supplemental review found a Unix release-path safety gap after this evidence
 was captured. A local retained-directory repair now changes source beyond
-the validated artifact below. Fresh full validation and native Unix
-successful-rename evidence are pending; earlier probes are historical.
+the validated artifact below. At the previous halt, fresh full validation and
+native Unix successful-rename evidence were pending; the newer reported runs
+above have not been independently observed here. Earlier probes are historical.
 
 The workspace validator manifest declares no surfaces and marks runtime
 validation optional. The inferred CLI surface therefore uses the manual
@@ -56,8 +72,9 @@ validator_evidence:
       observed: CLI parity and core review/stash regressions passed
       scope: recorded test evidence, not a new live MCP probe
   blocked_prerequisites:
-    - fresh full-gate evidence for the retained-directory repair
-    - native Unix successful-rename release validation
+    - independent assessment of the reported fresh full-gate evidence
+    - independent assessment of the reported native Unix focused runs
+    - current-HEAD review and applicable PR gates
   unperformed_automation:
     - live reconstitution against an upgraded MCP daemon
     - deployment or executable installation
@@ -80,8 +97,9 @@ created-artifact journal-window risk remains tracked in `D3C8D13B`.
 
 Proposed action: validate and merge the reviewed runtime source.
 Action risk: high because manifest recovery and locks protect persisted data.
-Action result: locally verified; actual merge remains subject to independent
-current-HEAD CI, review, and operator-authorization gates.
+Action result: earlier local verification and newer reported runs are recorded
+above; actual merge remains subject to independent current-HEAD CI, review,
+and operator-authorization gates.
 
 ## Releasability handoff
 

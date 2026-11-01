@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -22,9 +24,10 @@ import (
 // reconstituteJournalState is the durable preimage a reconstitute journal
 // carries so rollback can restore the workspace after a failure or crash.
 type reconstituteJournalState struct {
-	Images     []reconstituteFileImage `json:"images"`
-	KnownLogs  []string                `json:"known_logs"`
-	CreatedIDs []string                `json:"created_ids,omitempty"`
+	Images       []reconstituteFileImage `json:"images"`
+	KnownLogs    []string                `json:"known_logs"`
+	CreatedIDs   []string                `json:"created_ids,omitempty"`
+	ScopedImages bool                    `json:"scoped_images,omitempty"`
 	// Adoptions maps each adopted item's old ID to its allocated new ID. It is
 	// journaled before the rename so every rollback attempt can find the pair.
 	Adoptions     map[string]string        `json:"adoptions,omitempty"`
@@ -49,6 +52,157 @@ type reconstituteCommitLink struct {
 	Author    string `json:"author"`
 }
 
+func reconstituteImageOwners(state *reconstituteJournalState) ([]string, error) {
+	var ids []string
+	for _, image := range state.Images {
+		if !strings.HasSuffix(strings.ToLower(image.Path), ".md") {
+			continue
+		}
+		if id := reconstituteImageOwner(image); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return uniqueNonEmptyStrings(ids), nil
+}
+
+func reconstituteImageOwner(image reconstituteFileImage) string {
+	if !image.Exists {
+		return ""
+	}
+	fm, body, err := models.ParseFrontmatter(string(image.Content))
+	if err != nil {
+		return ""
+	}
+	art, err := models.ArtifactFromFrontmatter(fm, body)
+	if err != nil || !validReconstituteID(art.ID) {
+		return ""
+	}
+	return art.ID
+}
+
+// reconstituteScopedImageChangedOutsideOp checks fields the operation cannot
+// change and, for reference-only owners, verifies the entire rewound artifact.
+func reconstituteScopedImageChangedOutsideOp(
+	preimage, current []byte, owner string, eventIDs []string, pairs map[string]string,
+) (bool, error) {
+	preFM, preBody, err := models.ParseFrontmatter(string(preimage))
+	if err != nil {
+		return true, nil
+	}
+	preArt, err := models.ArtifactFromFrontmatter(preFM, preBody)
+	if err != nil || preArt == nil || !validReconstituteID(preArt.ID) {
+		return true, nil
+	}
+	curFM, curBody, err := models.ParseFrontmatter(string(current))
+	if err != nil {
+		return true, nil
+	}
+	curArt, err := models.ArtifactFromFrontmatter(curFM, curBody)
+	if err != nil || curArt == nil || curArt.ID != preArt.ID {
+		return true, nil
+	}
+	if preArt.Title != curArt.Title || preArt.ArtifactType != curArt.ArtifactType ||
+		preArt.Description != curArt.Description || preArt.Sprint != curArt.Sprint ||
+		preArt.Priority != curArt.Priority || preArt.AssignedTo != curArt.AssignedTo ||
+		preArt.Owner != curArt.Owner || preArt.Commit != curArt.Commit ||
+		!preArt.CreatedAt.Equal(curArt.CreatedAt) || !slices.Equal(preArt.References, curArt.References) {
+		return true, nil
+	}
+	mutableField := func(key string) bool {
+		switch key {
+		case "items", "origin_feature", "blocked_reason", "claim_marker":
+			return true
+		default:
+			return false
+		}
+	}
+	for key, value := range preArt.CustomFields {
+		if !mutableField(key) {
+			other, ok := curArt.CustomFields[key]
+			if !ok || !reflect.DeepEqual(value, other) {
+				return true, nil
+			}
+		}
+	}
+	for key, value := range curArt.CustomFields {
+		if !mutableField(key) {
+			other, ok := preArt.CustomFields[key]
+			if !ok || !reflect.DeepEqual(value, other) {
+				return true, nil
+			}
+		}
+	}
+	reverse := make(map[string]string, len(pairs))
+	for oldID, newID := range pairs {
+		reverse[newID] = oldID
+	}
+	rewind := func(id string) string {
+		if oldID, ok := reverse[id]; ok {
+			return oldID
+		}
+		return id
+	}
+	links := slices.Clone(curArt.Links)
+	for i := range links {
+		links[i].TargetID = rewind(links[i].TargetID)
+	}
+	if !slices.Equal(preArt.Links, links) {
+		return true, nil
+	}
+	if len(eventIDs) > 0 && !containsString(eventIDs, owner) {
+		rewound := cloneArtifact(curArt)
+		rewound.ParentID = rewind(rewound.ParentID)
+		for i := range rewound.Dependencies {
+			rewound.Dependencies[i].ID = rewind(rewound.Dependencies[i].ID)
+		}
+		rewound.Links = links
+		if rewound.ArtifactType == "shipment" {
+			if _, ok := rewound.CustomFields["items"]; ok {
+				items := NormalizeShipmentItems(rewound)
+				for i := range items {
+					items[i] = rewind(items[i])
+				}
+				rewound.CustomFields["items"] = items
+			}
+		}
+		rewound.UpdatedAt = preArt.UpdatedAt
+		matches, matchErr := recoveryArtifactMatchesAny(rewound, []recoveryArtifactCandidate{{artifact: preArt}})
+		if matchErr != nil {
+			return false, fmt.Errorf("compare rewound artifact: %w", matchErr)
+		}
+		if !matches {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// lockReconstituteOwners never waits for B while member log locks C are held.
+func lockReconstituteOwners(ctx context.Context, ws *Workspace, ids []string) (context.Context, func() error, error) {
+	ids = uniqueNonEmptyStrings(ids)
+	sort.Strings(ids)
+	var unlocks []func() error
+	release := func() error {
+		var errs []error
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			errs = append(errs, unlocks[i]())
+		}
+		return errors.Join(errs...)
+	}
+	var heldIDs []string
+	for _, id := range ids {
+		unlock, err := lockArtifactMutation(ctx, ws, id)
+		if err != nil {
+			return ctx, nil, errors.Join(fmt.Errorf("lock artifact %s: %w", id, err), release())
+		}
+		unlocks = append(unlocks, unlock)
+		heldIDs = append(heldIDs, artifactMutationLockID(id))
+	}
+	ctx = withArtifactMutationLocks(ctx, ids)
+	ctx = withShipmentLifecycleHeldLocks(ctx, ws, heldIDs...)
+	return ctx, release, nil
+}
+
 func (st *reconstitutePlanState) affectedIDs() []string {
 	ids := map[string]struct{}{}
 	add := func(id string) {
@@ -58,6 +212,11 @@ func (st *reconstitutePlanState) affectedIDs() []string {
 	}
 	for id := range st.sources {
 		add(id)
+	}
+	for _, manifest := range st.manifests {
+		for _, id := range manifest {
+			add(id)
+		}
 	}
 	for _, target := range st.targets {
 		add(target.key)
@@ -89,6 +248,54 @@ func (st *reconstitutePlanState) affectedIDs() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// reconstituteSnapshotOwners includes only direct mutation targets and
+// structured references that adoption can rewrite.
+func reconstituteSnapshotOwners(ctx context.Context, ws *Workspace, st *reconstitutePlanState) ([]string, error) {
+	var owners []string
+	for id := range st.sources {
+		owners = append(owners, id)
+	}
+	for id := range st.moves {
+		owners = append(owners, id)
+	}
+	for id := range st.edgeAdds {
+		owners = append(owners, id)
+	}
+	for id := range st.edgeRemoves {
+		owners = append(owners, id)
+	}
+	for _, rewire := range st.rewireItems {
+		owners = append(owners, rewire.item)
+	}
+	for _, target := range st.targets {
+		if target.existing != nil {
+			owners = append(owners, target.key)
+		}
+		owners = append(owners, target.adopt...)
+		if target.spec.KeepID {
+			continue
+		}
+		for _, id := range target.adopt {
+			refs, err := findCrossArtifactReferences(ctx, ws, id, "\x00")
+			if err != nil {
+				return nil, fmt.Errorf("reconstitute: discover references to %s: %w", id, err)
+			}
+			for _, ref := range refs {
+				owners = append(owners, ref.artifact.ID)
+			}
+		}
+	}
+	filtered := owners[:0]
+	for _, id := range owners {
+		if !strings.Contains(id, ":") {
+			filtered = append(filtered, id)
+		}
+	}
+	owners = uniqueNonEmptyStrings(filtered)
+	sort.Strings(owners)
+	return owners, nil
 }
 
 func executeReconstitution(ctx context.Context, ws *Workspace, opts ReconstituteOptions) (_ *ReconstituteShipmentResult, err error) {
@@ -136,7 +343,30 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 			}
 		}(id)
 	}
-	lockedCtx, artifactUnlock, err := lockArtifactMutations(ctx, ws, peek.affectedIDs())
+	// Membership locks stabilize the source manifests before acquiring their
+	// log locks. C must precede B and survive the final eligibility check.
+	var memberIDs []string
+	for _, id := range sourceIDs {
+		shipment, readErr := readShipmentFromDiskReadOnly(ws, id)
+		if readErr != nil {
+			return nil, readErr
+		}
+		memberIDs = append(memberIDs, NormalizeShipmentItems(shipment)...)
+	}
+	lockedCtx, logUnlock, err := lockItemLogsSorted(ctx, ws, memberIDs)
+	if err != nil {
+		return nil, fmt.Errorf("reconstitute: lock member logs: %w", err)
+	}
+	defer logUnlock()
+	ctx = lockedCtx
+
+	owners, err := reconstituteSnapshotOwners(ctx, ws, peek)
+	if err != nil {
+		return nil, err
+	}
+	owners = uniqueNonEmptyStrings(append(owners, peek.affectedIDs()...))
+	sort.Strings(owners)
+	lockedCtx, artifactUnlock, err := lockReconstituteOwners(ctx, ws, owners)
 	if err != nil {
 		return nil, fmt.Errorf("reconstitute: lock affected artifacts: %w", err)
 	}
@@ -163,6 +393,23 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 	if err != nil {
 		return nil, err
 	}
+	lockedOwners := make(map[string]struct{}, len(owners))
+	for _, id := range owners {
+		lockedOwners[id] = struct{}{}
+	}
+	for _, id := range state.LockIDs {
+		if _, ok := lockedOwners[id]; !ok {
+			return nil, reconstituteValidationError("snapshot owner %s changed during lock acquisition", id)
+		}
+	}
+	imageOwners, err := reconstituteImageOwners(state)
+	if err != nil {
+		return nil, err
+	}
+	snapshotOwners := make(map[string]struct{}, len(imageOwners))
+	for _, id := range imageOwners {
+		snapshotOwners[id] = struct{}{}
+	}
 	firstSource := sourceIDs[0]
 	journal := shipmentLifecycleJournal{
 		SchemaVersion:  "shipment-operation/v1",
@@ -186,13 +433,38 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 	}
 
 	opCtx := hooks.WithBufferedPostHooks(withShipmentOperation(ctx, correlationID))
-	result, applyErr := applyReconstitution(opCtx, ws, st, correlationID, baseline, func(id string) error {
+	var renamedUnlocks []func() error
+	defer func() {
+		for i := len(renamedUnlocks) - 1; i >= 0; i-- {
+			if unlockErr := renamedUnlocks[i](); unlockErr != nil {
+				slog.WarnContext(ctx, "release renamed artifact lock", "error", unlockErr)
+			}
+		}
+	}()
+	result, applyErr := applyReconstitution(opCtx, ws, st, correlationID, baseline, snapshotOwners, func(id string, feature bool) error {
 		state.CreatedIDs = append(state.CreatedIDs, id)
 		if _, err := writeShipmentOperationJournal(ws, journalName, journal); err != nil {
 			return fmt.Errorf("reconstitute: journal created artifact %s: %w", id, errors.Join(err, blerrors.ErrWriteIndeterminate))
 		}
+		if feature {
+			unlock, lockErr := lockArtifactMutation(opCtx, ws, id)
+			if lockErr != nil {
+				return fmt.Errorf("reconstitute: lock created feature %s: %w", id,
+					errors.Join(lockErr, blerrors.ErrWriteIndeterminate))
+			}
+			renamedUnlocks = append(renamedUnlocks, unlock)
+			lockedOwners[id] = struct{}{}
+			snapshotOwners[id] = struct{}{}
+			opCtx = withArtifactMutationLocks(opCtx, []string{id})
+			opCtx = withShipmentLifecycleHeldLocks(opCtx, ws, artifactMutationLockID(id))
+		}
 		return nil
-	}, func(_ context.Context, oldID, newID string) error {
+	}, func(adoptCtx context.Context, oldID, newID string) error {
+		unlock, lockErr := lockArtifactMutation(adoptCtx, ws, newID)
+		if lockErr != nil {
+			return fmt.Errorf("reconstitute: lock renamed artifact %s: %w", newID, lockErr)
+		}
+		renamedUnlocks = append(renamedUnlocks, unlock)
 		if state.Adoptions == nil {
 			state.Adoptions = map[string]string{}
 		}
@@ -256,11 +528,21 @@ func reconstituteErrorFindings(ws *Workspace) (map[string]struct{}, error) {
 func captureReconstituteState(ctx context.Context, ws *Workspace, st *reconstitutePlanState) (*reconstituteJournalState, error) {
 	storageRoot := workspaceStorageRoot(ws)
 	affected := st.affectedIDs()
+	owners, err := reconstituteSnapshotOwners(ctx, ws, st)
+	if err != nil {
+		return nil, err
+	}
+	ownerSet := make(map[string]struct{}, len(owners))
+	for _, id := range owners {
+		ownerSet[id] = struct{}{}
+	}
 	state := &reconstituteJournalState{
 		Images: []reconstituteFileImage{}, KnownLogs: []string{},
-		CommitLinks: []reconstituteCommitLink{}, CommitItemIDs: []string{},
-		EventIDs: affected, LockIDs: affected,
+		ScopedImages: true,
+		CommitLinks:  []reconstituteCommitLink{}, CommitItemIDs: []string{},
+		EventIDs: affected, LockIDs: uniqueNonEmptyStrings(append(append([]string{}, affected...), owners...)),
 	}
+	sort.Strings(state.LockIDs)
 	rel := func(path string) string {
 		relative, err := filepath.Rel(storageRoot, path)
 		if err != nil {
@@ -288,11 +570,14 @@ func captureReconstituteState(ctx context.Context, ws *Workspace, st *reconstitu
 			if readErr != nil {
 				return readErr
 			}
-			content := string(data)
-			for _, id := range affected {
-				if strings.Contains(content, id) {
+			fm, body, parseErr := models.ParseFrontmatter(string(data))
+			if parseErr != nil {
+				return nil
+			}
+			art, parseErr := models.ArtifactFromFrontmatter(fm, body)
+			if parseErr == nil {
+				if _, ok := ownerSet[art.ID]; ok {
 					state.Images = append(state.Images, reconstituteFileImage{Path: rel(path), Exists: true, Content: data})
-					break
 				}
 			}
 			return nil
@@ -353,7 +638,8 @@ func applyReconstitution(
 	st *reconstitutePlanState,
 	correlationID string,
 	baseline map[string]struct{},
-	recordCreated func(id string) error,
+	lockedOwners map[string]struct{},
+	recordCreated func(id string, feature bool) error,
 	recordAdoption func(ctx context.Context, oldID, newID string) error,
 ) (*ReconstituteShipmentResult, error) {
 	result := newReconstituteResult(st)
@@ -389,9 +675,11 @@ func applyReconstitution(
 			return nil, fmt.Errorf("create covering feature %q: %w", create.Title, err)
 		}
 		featureIDs[target.featureKey] = feature.ID
-		if err := recordCreated(feature.ID); err != nil {
+		if err := recordCreated(feature.ID, true); err != nil {
 			return nil, err
 		}
+		ctx = withArtifactMutationLocks(ctx, []string{feature.ID})
+		ctx = withShipmentLifecycleHeldLocks(ctx, ws, artifactMutationLockID(feature.ID))
 		result.CreatedFeatures = append(result.CreatedFeatures, ReconstituteCreatedArtifact{
 			ID: feature.ID, Label: target.spec.Label, Title: create.Title,
 		})
@@ -415,12 +703,17 @@ func applyReconstitution(
 		}
 		for _, item := range target.adopt {
 			adopted, err := AdoptItemWithOptions(ctx, ws, item, featureIDs[target.featureKey],
-				AdoptItemOptions{KeepID: target.spec.KeepID, BeforeRename: recordAdoption})
+				AdoptItemOptions{KeepID: target.spec.KeepID, BeforeRename: recordAdoption, allowedCrossRefIDs: lockedOwners})
 			if err != nil {
 				return nil, fmt.Errorf("adopt item %s under %s: %w", item, featureIDs[target.featureKey], err)
 			}
 			if adopted.NewID != "" && adopted.NewID != item {
 				result.AdoptedIDMap[item] = adopted.NewID
+				if _, ok := lockedOwners[item]; ok {
+					lockedOwners[adopted.NewID] = struct{}{}
+					ctx = withArtifactMutationLocks(ctx, []string{adopted.NewID})
+					ctx = withShipmentLifecycleHeldLocks(ctx, ws, artifactMutationLockID(adopted.NewID))
+				}
 			}
 		}
 	}
@@ -470,7 +763,7 @@ func applyReconstitution(
 			return nil, fmt.Errorf("create shipment %q: %w", target.title, err)
 		}
 		shipmentIDs[target.key] = shipment.ID
-		if err := recordCreated(shipment.ID); err != nil {
+		if err := recordCreated(shipment.ID, false); err != nil {
 			return nil, err
 		}
 		result.CreatedShipments = append(result.CreatedShipments, ReconstituteCreatedArtifact{
@@ -691,14 +984,6 @@ func rollbackReconstitute(ctx context.Context, ws *Workspace, journal shipmentLi
 	var errs []error
 	storageRoot := workspaceStorageRoot(ws)
 	logsRoot := WorkspaceLogsRoot(ws.RootPath)
-	abs := func(rel string) (string, error) {
-		path := filepath.Join(storageRoot, filepath.FromSlash(rel))
-		if err := checkRecoveryPath(storageRoot, path); err != nil {
-			return "", fmt.Errorf("journal path %q: %w", rel, err)
-		}
-		return path, nil
-	}
-
 	knownLogs := map[string]struct{}{}
 	for _, rel := range state.KnownLogs {
 		knownLogs[rel] = struct{}{}
@@ -718,6 +1003,63 @@ func rollbackReconstitute(ctx context.Context, ws *Workspace, journal shipmentLi
 	for oldID, newID := range state.Adoptions {
 		pairs[oldID] = newID
 	}
+	// Legacy snapshots included unrelated Markdown, so changed images cannot
+	// safely be distinguished from edits made after the operation.
+	for _, image := range state.Images {
+		if !strings.HasSuffix(strings.ToLower(image.Path), ".md") {
+			continue
+		}
+		path := filepath.Join(storageRoot, filepath.FromSlash(image.Path))
+		if err := checkRecoveryPath(storageRoot, path); err != nil {
+			return fmt.Errorf("journal path %q: %w", image.Path, err)
+		}
+		current, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			owner := reconstituteImageOwner(image)
+			if owner == "" && image.Exists {
+				return reconstituteValidationError("unidentifiable snapshot %s changed", image.Path)
+			}
+			if !state.ScopedImages && !containsString(state.LockIDs, owner) && image.Exists {
+				return reconstituteValidationError("legacy snapshot %s changed", image.Path)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read snapshot destination %s: %w", image.Path, err)
+		}
+		owner := reconstituteImageOwner(image)
+		if owner == "" {
+			if !image.Exists || !bytes.Equal(current, image.Content) {
+				return reconstituteValidationError("unidentifiable snapshot %s changed", image.Path)
+			}
+			continue
+		}
+		if !state.ScopedImages && !containsString(state.LockIDs, owner) && (!image.Exists || !bytes.Equal(current, image.Content)) {
+			return reconstituteValidationError("legacy snapshot %s changed", image.Path)
+		}
+		if !bytes.Equal(current, image.Content) {
+			if reconstituteImageOwner(reconstituteFileImage{Exists: true, Content: current}) != owner {
+				return reconstituteValidationError("snapshot destination %s has a different owner", image.Path)
+			}
+			if image.Exists {
+				changedOutside, cmpErr := reconstituteScopedImageChangedOutsideOp(image.Content, current, owner, state.EventIDs, pairs)
+				if cmpErr != nil {
+					return fmt.Errorf("compare snapshot destination %s: %w", image.Path, cmpErr)
+				}
+				if changedOutside {
+					return reconstituteValidationError("snapshot %s changed outside reconstitution", image.Path)
+				}
+			}
+		}
+	}
+	abs := func(rel string) (string, error) {
+		path := filepath.Join(storageRoot, filepath.FromSlash(rel))
+		if err := checkRecoveryPath(storageRoot, path); err != nil {
+			return "", fmt.Errorf("journal path %q: %w", rel, err)
+		}
+		return path, nil
+	}
+
 	oldIDs := make([]string, 0, len(pairs))
 	for oldID := range pairs {
 		oldIDs = append(oldIDs, oldID)
@@ -748,6 +1090,9 @@ func rollbackReconstitute(ctx context.Context, ws *Workspace, journal shipmentLi
 		}
 	}
 	for _, image := range state.Images {
+		if strings.HasSuffix(strings.ToLower(image.Path), ".md") && reconstituteImageOwner(image) == "" {
+			continue
+		}
 		path, err := abs(image.Path)
 		if err != nil {
 			errs = append(errs, err)

@@ -8,60 +8,117 @@ chunk_strategy: h1-h2-h3
 docline:
   shipment_id: 210-S
   feature_id: 209-F
-  status: blocked_validation
+  status: blocked_circuit
 ---
+
+## Resumed operator evidence handoff
+
+The Orchestrator reports that the full Go suite in shell `468` exited 0 with
+`GOTOOLCHAIN=go1.26.5` and `GOFLAGS=-count=1 -p=1`. Native WSL focused
+shells `406` and `407` are reported PASS, and static gates are reported
+passed, including shell `479`. This documentation update did not
+independently observe those runs or establish current-HEAD review readiness.
+The `BLOCKED` verdict below is historical and remains the recorded verdict;
+the reports do not by themselves clear review or PR gates.
+
+Stage P-021 C6 decisions `078-DL` and `080-DL` defer three crash-window
+candidates to `7E14915F` and `D3C8D13B`. Decision `079-DL` defers the
+format-cache remedy to `DF533572`. Other follow-ups are `C2CFE06E` and
+`F2BC9C37`.
+
+The Orchestrator supplied this workspace-relative handoff: workspace `.`,
+storage `.backlogit`, index `.backlogit/backlogit.db`, and manifest
+`.backlogit/queue/210-S.md`. Shipment `210-S` is reported `active`, with
+`updated_at` `2026-10-31T06:59:28.7708084Z` and ordered items `209-F`,
+`209.001-T`, `209.002-T`, `209.003-T`. Its scoped P-012 declaration reports
+Windows `CreateFileW` with `OPEN_REPARSE_POINT` and
+`GetFinalPathNameByHandleW` verification. This documentation update did not
+independently repeat the handle verification or query shipment state.
 
 ## Current delivery evidence
 
-Shipment `210-S` remains active. The supplemental Unix release P1 fix below
-changes production source beyond local HEAD `14faa257` and pushed
-`f43d967f`. Status is `blocked_validation`; new validation is pending.
-PR `638` requires fresh full-gate evidence, source review, hosted checks,
-Copilot review, and merge/closure confirmation. Earlier results below are
-historical evidence, not current-source gate verdicts.
+The following section records the earlier halt, not a new verification run.
 
-The Orchestrator executed `go test -timeout=30m ./...` with
-`GOTOOLCHAIN=go1.26.5` and standard OS TEMP on exact source commit
-`f336bb21f75fef7fbf53d040e2a9ea2c8476065b`. All listed packages passed.
-Ship independently read session `305`, confirming completed exit code 0.
-Source and dependencies matched that commit at that earlier capture.
-The supplemental production fix invalidates that immutable-source-head
-proof. The supplied package output is Orchestrator evidence, not a fresh
-full test run covering this fix.
+Shipment `210-S` remains active; delivery is `blocked_circuit`.
+The bounded round-three leaf stopped at its three-failed-corrective-execution
+limit. Local HEAD remains
+`8ff9f2f3b1a38cb85a2709da2492fedf95908204`, remote `f43d967f`.
+The working tree contains an unverified partial DB fix and failing core
+remediation harnesses. It is not ready for commit, push, or merge.
+Fresh full-suite, native Unix, hosted checks, and source review remain
+parent-owned and pending. Historical results elsewhere do not cover this tree.
 
-* Historical unfiltered suite: PASS on exact `f336bb21`; not the new source
-* Historical repository vet, lint, gofmt/LF, and full CLI build: PASS
-* Fix commits: `fcd5e4ef` and `f336bb21`
-* Operator stash `17214531`: preserved in `555a83ea`
-* Selected Ship checkpoint `checkpoint-20261101-023919.json`: resolved through
-  MCP after confirmed successful resumption and passing gate evidence
-* Existing residual `D3C8D13B`: retained under the prior contract
-* Superseded investigation `C2CFE06E`: unchanged; Stage owns disposition
+The three new threads received progress-only replies, not fixing claims:
+`4434730479` -> `4434984360`, `4434730488` -> `4434984359`, and
+`4434730495` -> `4434984358`. They remain unresolved. PR readiness was
+updated to `BLOCKED` for exact pushed HEAD `f43d967f`; reply files were
+removed after confirmed API success.
 
-The earlier readiness review preceded supplemental adversarial finding F2.
-Its bounded P1 implementation is now local and awaits fresh validation and
-review. PR readiness must cite the eventual pushed source and current HEAD,
-not the earlier tested source or historical PR HEAD.
+The bounded failed-corrective-execution circuit is open. No further test or
+implementation attempt is authorized by this handoff. Resume requires
+operator guidance on the remaining core fixture/locking work and the DB
+draft, not reuse of the older successful test gate. The in-scope findings
+remain open; no backlog task or deferred expansion was created for them.
 
-The new staged source repair received a report-only review against tree
-`5421057965f616feecb04672ce4d8dce5b7b75f1`: source `READY`, zero new
-P0/P1/P2/P3 findings within the declared advisory-lock protocol. Fresh
-full/native validation remains a separate blocked delivery gate.
+The original comments `4433027865`, `4433027878`, and `4433027884` are
+distinct from these new P-021 C1 findings:
 
-The complete current CLI package passed in 223.556s; repository-wide
-Windows lint, vet, and full CLI build passed. WSL validated replacement,
-cleanup, and stronger rename-denial behavior. Native successful rename
-and symlink-redirection execution remains pending.
+* `4434730479`, thread `PRRT_kwDORzozKM6yYGvU`: unresolved. Core production
+  capture/lock/recovery logic was not changed. RED assertions exposed the
+  prose-only snapshot and omitted structured owner lock. The coordinated
+  sizing fixture is not yet valid: its latest version selects a task as the
+  new task's parent. No sizing serialization verdict is claimed.
+* `4434730488`, thread `PRRT_kwDORzozKM6yYGvZ`: partially implemented,
+  unverified. The DB reader pins its caller-bound directory, opens relative
+  leaves without following redirects, checks regularity/link count and
+  opened identity, and rejects unsafe leaves before allocating snapshot
+  cache. Windows expands 8.3 spelling without `EvalSymlinks`; Unix uses
+  no-follow directory-relative opens. Core uses `Lstat` for the missing-index
+  check. Existing WAL checksum/materialization logic is retained.
+* `4434730495`, thread `PRRT_kwDORzozKM6yYGvd`: unresolved. A valid forced
+  plan with UNASSIGNED tasks reproduced successful concurrent
+  `AppendComment(WORK_STARTED)` during the mutation hook. No production C
+  locking or eligibility change was made.
 
-Advisory root-alias expansion F1 was captured once as `F2BC9C37`, with
-task `209.002-T`, feature `209-F`, shipment `210-S`, and PR `638` refs.
-This ID is the task/run/closure risk reference. No symlink-root trust
-normalization was introduced. F2 is an in-scope repair, not a deferred entry.
+All execution used `GOTOOLCHAIN=go1.26.5` and absolute, separate contained
+directories below `logs/.pr638-review-round3`: `TEMP`/`TMP` in `tmp`,
+`GOTMPDIR` in `gotmp`, and `GOCACHE` in `cache`.
+No full repository tests were executed; the baseline was compile-only.
 
-All eight observed hosted checks passed on older source `f43d967f`.
-Current source changes invalidate reuse of `f336bb21` full-suite evidence.
-PR readiness is blocked pending the candidate's fresh gates; no merge or
-post-merge closure was performed.
+```text
+go test -run=^$ -count=1 ./...
+go test ./internal/db -run '^TestRound3SnapshotRejectsRedirectedSource$' -count=1 -timeout=2m
+go test ./internal/core -run '^TestRound3(ReconstituteSnapshotOwners|ForceReconstituteHoldsUnassignedMemberLog)$' -count=1 -timeout=2m
+```
+
+* Baseline command: PASS, session `408`
+* DB RED: all four cases failed the rejection assertion, session `409`;
+  DB symlink, WAL symlink, dangling WAL symlink, and hardlinked DB
+* DB attempted GREEN: source rejection assertions passed, but the test
+  compared `DirEntry` access-time metadata rather than directory names and
+  failed in the hardlink case, session `410`. Its new test-only assertion
+  was corrected to compare names, not rerun. The same command's `gofmt`
+  wildcard was not expanded on Windows and produced an error.
+* Core initial execution: build failure for nonexistent `Artifact.Size`,
+  session `411`; not accepted as RED. The harness now reads `custom_fields`.
+* Core execution `412`: owner/prose assertions were RED, but the feature
+  sizing fixture lacked a size field. The unassigned case did not reach its
+  hook, so that apparent pass was rejected as vacuous.
+* Core execution `413`: sizing fixture failed early on invalid task parent;
+  the corrected unassigned plan passed preview, reached its mutation hook,
+  and failed the concurrency assertion as expected. No core GREEN exists.
+* Failed corrective executions: `410`, `411`, and `413`; bounded stop
+* Vet, lint, broader regressions, replacement-seam/cache-leak tests, and
+  final compile after all edits: pending; no passing verdict is claimed
+
+The retained Unix parent wrapper, Windows `GetLongPathNameW` repair, and their
+existing tests are unchanged. Stashes `F2BC9C37` and `17214531`, residual
+`D3C8D13B`, all backlog/checkpoint state, and planning fields were not edited.
+No subagents, commits, pushes, branches, or new planning/review artifacts
+were created. Existing assertions outside the new harness were not changed.
+No WSL execution occurred in this cycle. Earlier DrvFS rename-denial evidence
+is not native Linux successful-rename proof. Noncooperating basename
+check/unlink is not atomic CAS; root-alias expansion remains outside scope.
 
 ## Served-root handoff
 

@@ -97,6 +97,9 @@ func Open(dbPath string) (*sql.DB, error) {
 // OpenReadOnly returns a query-only in-memory snapshot of dbPath, including
 // committed WAL data. It never SQLite-opens the source or creates source
 // sidecars. Snapshot acquisition retries changing/invalid images for up to 30s.
+// The caller must bind dbPath's directory to its validated storage root. All
+// source ancestors and leaves must be real, unlinked files/directories; this
+// function does not bless arbitrary symlink targets as trusted roots.
 func OpenReadOnly(dbPath string) (*sql.DB, error) {
 	absPath, err := abs(dbPath)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"time"
 )
@@ -18,8 +19,17 @@ var snapshotSequence atomic.Uint64
 var errSnapshotChanged = errors.New("database snapshot changed or is invalid")
 
 func openReadOnlySnapshot(path string) (result *sql.DB, resultErr error) {
-	if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("stat read-only database: %w", err)
+	source, err := openSnapshotSource(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, source.close()) }()
+	// Reject unsafe leaves before allocating any snapshot cache.
+	if _, _, err := source.read(source.name); err != nil {
+		return nil, err
+	}
+	if _, err := source.readWAL(); err != nil {
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -38,8 +48,12 @@ func openReadOnlySnapshot(path string) (result *sql.DB, resultErr error) {
 	}()
 	copyPath := filepath.Join(dir, "snapshot.db")
 	var lastErr error
+	fastRetries := 0
 	for ctx.Err() == nil {
-		base, wal, err := readSnapshotBracket(path)
+		base, wal, err := source.bracket()
+		if err != nil && !errors.Is(err, errSnapshotChanged) {
+			return nil, err
+		}
 		if err == nil {
 			wal, err = committedSnapshotWAL(base, wal)
 		}
@@ -50,7 +64,12 @@ func openReadOnlySnapshot(path string) (result *sql.DB, resultErr error) {
 			}
 		}
 		lastErr = err
-		timer := time.NewTimer(5 * time.Millisecond)
+		if errors.Is(err, errSnapshotChanged) && fastRetries < 64 {
+			fastRetries++
+			runtime.Gosched()
+			continue
+		}
+		timer := time.NewTimer(time.Millisecond)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -60,8 +79,8 @@ func openReadOnlySnapshot(path string) (result *sql.DB, resultErr error) {
 	return nil, fmt.Errorf("acquire read-only database snapshot: %w", errors.Join(ctx.Err(), lastErr))
 }
 
-func readSnapshotWAL(path string) ([]byte, error) {
-	wal, err := os.ReadFile(path + "-wal")
+func (s *snapshotSource) readWAL() ([]byte, error) {
+	wal, _, err := s.read(s.name + "-wal")
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -77,37 +96,76 @@ func readSnapshotWAL(path string) ([]byte, error) {
 // for a stable image under cooperating SQLite writers, not an unconditional
 // proof against ABA replacement or arbitrary external filesystem mutation.
 func readSnapshotBracket(path string) ([]byte, []byte, error) {
-	wal0, err := readSnapshotWAL(path)
+	source, err := openSnapshotSource(path)
 	if err != nil {
 		return nil, nil, err
 	}
-	base1, err := os.ReadFile(path)
+	defer source.close() //nolint:errcheck
+	return source.bracket()
+}
+
+func (s *snapshotSource) bracket() (base, wal []byte, resultErr error) {
+	dbFile, err := s.openChecked(s.name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open snapshot database: %w", err)
+	}
+	defer func() { resultErr = errors.Join(resultErr, dbFile.Close()) }()
+	walName := s.name + "-wal"
+	walFile, err := s.openChecked(walName)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, nil, fmt.Errorf("open snapshot WAL: %w", err)
+	}
+	if walFile != nil {
+		defer func() { resultErr = errors.Join(resultErr, walFile.Close()) }()
+	}
+	readWAL := func() ([]byte, error) {
+		if walFile == nil {
+			probe, err := s.open(walName)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return nil, nil
+				}
+				return nil, fmt.Errorf("probe snapshot WAL: %w", err)
+			}
+			return nil, errors.Join(fmt.Errorf("snapshot WAL appeared: %w", errSnapshotChanged), probe.Close())
+		}
+		data, _, err := readCheckedSnapshotFile(walFile)
+		if err != nil {
+			return nil, fmt.Errorf("read snapshot WAL: %w", err)
+		}
+		return data, nil
+	}
+	wal0, err := readWAL()
+	if err != nil {
+		return nil, nil, err
+	}
+	base1, stat1, err := readCheckedSnapshotFile(dbFile)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read snapshot database: %w", err)
 	}
-	stat1, err := os.Stat(path)
-	if err != nil {
-		return nil, nil, fmt.Errorf("stat snapshot database: %w", err)
-	}
-	wal1, err := readSnapshotWAL(path)
+	wal1, err := readWAL()
 	if err != nil {
 		return nil, nil, err
 	}
-	base2, err := os.ReadFile(path)
+	base2, stat2, err := readCheckedSnapshotFile(dbFile)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reread snapshot database: %w", err)
 	}
-	stat2, err := os.Stat(path)
-	if err != nil {
-		return nil, nil, fmt.Errorf("restat snapshot database: %w", err)
-	}
-	wal2, err := readSnapshotWAL(path)
+	wal2, err := readWAL()
 	if err != nil {
 		return nil, nil, err
 	}
 	if !os.SameFile(stat1, stat2) || !stat1.ModTime().Equal(stat2.ModTime()) ||
 		!bytes.Equal(base1, base2) || !bytes.Equal(wal0, wal1) || !bytes.Equal(wal1, wal2) {
 		return nil, nil, fmt.Errorf("read snapshot bracket: %w", errSnapshotChanged)
+	}
+	if err := s.check(dbFile, s.name); err != nil {
+		return nil, nil, fmt.Errorf("check snapshot database: %w", errors.Join(errSnapshotChanged, err))
+	}
+	if walFile != nil {
+		if err := s.check(walFile, walName); err != nil {
+			return nil, nil, fmt.Errorf("check snapshot WAL: %w", errors.Join(errSnapshotChanged, err))
+		}
 	}
 	return base2, wal2, nil
 }
