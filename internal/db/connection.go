@@ -94,35 +94,13 @@ func Open(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-// OpenReadOnly returns a *sql.DB that can only read the existing SQLite file at
-// dbPath. It never creates the file, never changes the journal mode, and
-// rejects every write at the connection level (mode=ro plus query_only), so it
-// is safe for zero-write previews.
+// OpenReadOnly returns a query-only in-memory snapshot of dbPath, including
+// committed WAL data. It never SQLite-opens the source or creates source
+// sidecars. Snapshot acquisition retries changing/invalid images for up to 30s.
 func OpenReadOnly(dbPath string) (*sql.DB, error) {
 	absPath, err := abs(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	slashPath := filepath.ToSlash(absPath)
-	if !strings.HasPrefix(slashPath, "/") {
-		slashPath = "/" + slashPath
-	}
-	q := url.Values{}
-	q.Set("mode", "ro")
-	q.Add("_pragma", "busy_timeout(30000)")
-	q.Add("_pragma", "query_only(1)")
-	dsn := (&url.URL{Scheme: "file", Path: slashPath, RawQuery: q.Encode()}).String()
-
-	handle, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("open read-only database: %w", err)
-	}
-	handle.SetMaxOpenConns(2)
-	if err := handle.Ping(); err != nil {
-		if closeErr := handle.Close(); closeErr != nil {
-			return nil, fmt.Errorf("ping read-only database: %w", errors.Join(err, fmt.Errorf("close database after ping failure: %w", closeErr)))
-		}
-		return nil, fmt.Errorf("ping read-only database: %w", err)
-	}
-	return handle, nil
+	return openReadOnlySnapshot(absPath)
 }

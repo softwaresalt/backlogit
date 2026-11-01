@@ -59,7 +59,7 @@ because it leaves a gap for a concurrent C-then-B writer.
 | Writer | Current order | Notes and bound |
 |---|---|---|
 | `ArchiveItem` | Lifecycle global, A, C, then B | 200.007-T. `lockArchiveGovernance` takes C for the archive set (the item and, for a cascade, its descendants) in sorted item-ID order between the membership locks and `lockArtifactMutations`. The archive event is appended under that C after the mutation, and the locks are released B first, then C. A C request while B is held and not context-held fails closed. This supersedes 172.002-T, which released B before it acquired C and left a gap for a concurrent C-then-B writer. |
-| `AssociateCommit` | C, then B | The function acquires C before the compensating frontmatter persist. The later persist uses B while C is already held, matching the canonical order. |
+| `AssociateCommit` | Lifecycle global before snapshots, then C, then B | Normal callers run pending recovery under global before artifact and prior-link snapshots. A preheld-C shipment/member caller must already carry verified, workspace-bound global ownership; otherwise it fails closed before snapshots or persistence. A standalone nonmember may reuse C without global. Persist also rejects C-to-global acquisition if membership changes after classification. |
 | `RemoveArtifactLink` | B only | The writer loads from Markdown before B and persists through the artifact write path. It does not append an item-log event. 172.005-T guards the persist with `guardArchivedStatusUnchangedSince`. |
 | `BulkUpdateStatus` | Lifecycle global, then B per item | The writer takes the shipment lifecycle global lock, loads each artifact before B, and persists with B. It does not acquire C. 172.006-T guards each persist with `guardArchivedStatusUnchangedSince` and reports stale items through the typed `BulkUpdateResult` conflict details declared by 172.011-T. |
 | Governed reconcile-to-shipped transaction | C, then B | The reconcile path is the governed majority path for shipment repair. It owns the durable item-log event before mutating artifact state. |
@@ -133,6 +133,14 @@ C-then-B writer.
 ## Load-bearing invariants
 
 ### Context reentrancy
+
+`AssociateCommit` reuses a preheld C only after validating lifecycle context
+ownership. For shipment/member calls, the existing ordered global token must
+belong to this workspace and begin with lifecycle global. A marker alone is not
+ownership evidence for this entry point, and C never authorizes manufacturing
+global ownership. C-only standalone nonmembers retain the C-then-B path; if the
+persist membership check later requires lifecycle participation, it fails closed
+instead of requesting global under C.
 
 `lockArtifactMutations` records held artifact locks in context. Inner archive,
 unarchive, and persist calls on the same item skip reacquiring a B lock already

@@ -2016,6 +2016,16 @@ func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, a
 		}
 	}
 	if requiresLifecycleBarrier {
+		if events.ItemLogCrossProcessLockHeld(ctx, WorkspaceLogsRoot(ws.RootPath), artifact.ID) {
+			held, err := validateShipmentLifecycleGlobalReentry(ctx, ws, "persistArtifactWithLinkPolicyAndGuard")
+			if err != nil {
+				return fmt.Errorf("verify lifecycle ownership before persist: %w", err)
+			}
+			if !held {
+				return fmt.Errorf("persist artifact %s: %w", artifact.ID, shipmentLifecycleLockOrderError(ctx,
+					"persistArtifactWithLinkPolicyAndGuard", "cannot acquire lifecycle global while item-log C is held"))
+			}
+		}
 		lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobalRaw(
 			ctx,
 			ws,

@@ -2,8 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,7 +11,7 @@ import (
 )
 
 // staleLockTTL is the age threshold after which an unremoved .lock sidecar is
-// treated as stale (left by a crashed process) and automatically cleaned up.
+// eligible for recovery only after OS-exclusive ownership is acquired.
 const staleLockTTL = 60 * time.Second
 
 // stashMu serializes concurrent same-process stash mutations. Combined with the
@@ -22,33 +22,101 @@ var stashMu sync.Mutex
 // lockStashFile creates an advisory lock sidecar (.lock) next to path.
 // It first acquires the in-process mutex to serialize goroutines in the same
 // process, then creates the sidecar file to guard against other processes.
-// If the sidecar already exists but is older than staleLockTTL, it is treated
-// as stale (left by a crashed process) and removed before retrying.
+// Old sidecars are recovered only if their OS lock is not owned by a live process.
 // Returns an unlock function that removes the sidecar and releases the mutex.
 func lockStashFile(path string) (unlock func() error, err error) {
 	stashMu.Lock()
 	lockPath := path + ".lock"
-	f, createErr := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	f, createErr := acquireStashSidecarFile(lockPath)
 	if createErr != nil {
-		// Check whether the existing lock file is stale before giving up.
-		if info, statErr := os.Stat(lockPath); statErr == nil {
-			age := time.Since(info.ModTime())
-			if age > staleLockTTL {
-				slog.Warn("removing stale stash lock file", "path", lockPath, "age", age)
-				_ = os.Remove(lockPath)
-				f, createErr = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-			}
-		}
-		if createErr != nil {
-			stashMu.Unlock()
-			return nil, fmt.Errorf("stash locked by another process: %w", createErr)
-		}
+		stashMu.Unlock()
+		return nil, fmt.Errorf("stash locked by another process: %w", createErr)
 	}
-	_ = f.Close()
 	return func() error {
 		defer stashMu.Unlock()
-		return unlockStashFile(path)
+		return releaseStashSidecarFile(f)
 	}, nil
+}
+
+// acquireStashSidecarFile retains OS ownership until release. Age alone never
+// authorizes stealing a live lock, including one whose owner has been suspended.
+func acquireStashSidecarFile(lockPath string) (*os.File, error) {
+	lockPath, err := filepath.Abs(lockPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve stash sidecar: %w", err)
+	}
+	if err := validateStashSidecarComponents(lockPath); err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(lockPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("stat stash sidecar: %w", err)
+	}
+	if err == nil && time.Since(info.ModTime()) <= staleLockTTL {
+		return nil, fmt.Errorf("fresh stash sidecar: %w", os.ErrExist)
+	}
+	f, busy, err := openStashLockHandle(lockPath)
+	if err != nil {
+		return nil, fmt.Errorf("open stash sidecar ownership: %w", err)
+	}
+	if busy {
+		return nil, fmt.Errorf("live stash sidecar owner: %w", os.ErrExist)
+	}
+	fail := func(err error) (*os.File, error) {
+		return nil, errors.Join(err, f.Close())
+	}
+	owned, err := f.Stat()
+	if err != nil {
+		return fail(fmt.Errorf("stat owned stash sidecar: %w", err))
+	}
+	if !owned.Mode().IsRegular() {
+		return fail(fmt.Errorf("nonregular stash sidecar: %w", os.ErrPermission))
+	}
+	current, err := os.Lstat(lockPath)
+	if err != nil {
+		return fail(fmt.Errorf("stat current stash sidecar: %w", err))
+	}
+	// An opener racing an unlink must not own an orphaned inode. An opener
+	// that observed an old lock must not take its fresh replacement either.
+	if !os.SameFile(owned, current) || (info != nil &&
+		(!os.SameFile(info, current) || !info.ModTime().Equal(current.ModTime()))) {
+		return fail(fmt.Errorf("stash sidecar changed during acquisition: %w", os.ErrExist))
+	}
+	// Truncate/write via the retained handle refreshes mtime on Windows too,
+	// where path-based Chtimes cannot open our exclusively held sidecar.
+	if err := f.Truncate(0); err != nil {
+		return fail(fmt.Errorf("truncate owned stash sidecar: %w", err))
+	}
+	if _, err := f.WriteString(time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return fail(fmt.Errorf("refresh owned stash sidecar: %w", err))
+	}
+	return f, nil
+}
+
+// validateStashSidecarComponents rejects links before any creation or refresh.
+// Platform openers additionally bind acquisition to a checked directory and
+// reject linked handles; pathname checks alone are not a TOCTOU defense.
+func validateStashSidecarComponents(path string) error {
+	for current := path; ; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) && current == path {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("lstat stash sidecar component: %w", err)
+		}
+		linked, err := isSymlinkOrReparse(info, current)
+		if err != nil {
+			return fmt.Errorf("check stash sidecar component: %w", err)
+		}
+		if linked || (current == path && !info.Mode().IsRegular()) ||
+			(current != path && !info.IsDir()) {
+			return fmt.Errorf("linked or nonregular stash sidecar component: %w", os.ErrPermission)
+		}
+		if filepath.Dir(current) == current {
+			return nil
+		}
+	}
 }
 
 // lockActiveStash acquires the canonical cross-process stash lock: the sidecar
@@ -93,25 +161,13 @@ func tryLockActiveStash(ws *Workspace) (unlock func() error, err error) {
 	if !stashMu.TryLock() {
 		return nil, fmt.Errorf("stash lock is busy: %w", os.ErrExist)
 	}
-	f, createErr := os.OpenFile(path+".lock", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	f, createErr := acquireStashSidecarFile(path + ".lock")
 	if createErr != nil {
 		stashMu.Unlock()
 		return nil, fmt.Errorf("stash locked by another process: %w", createErr)
 	}
-	_ = f.Close()
 	return func() error {
 		defer stashMu.Unlock()
-		return unlockStashFile(path)
+		return releaseStashSidecarFile(f)
 	}, nil
-}
-
-// unlockStashFile removes the advisory lock sidecar created by lockStashFile.
-// On Windows, os.Remove may fail if the handle is still open; failures are logged
-// as warnings and the caller proceeds without error.
-func unlockStashFile(path string) error {
-	lockPath := path + ".lock"
-	if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
-		slog.Warn("failed to remove stash lock file", "path", lockPath, "error", err)
-	}
-	return nil
 }
