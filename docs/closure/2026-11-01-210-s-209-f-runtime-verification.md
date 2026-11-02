@@ -8,7 +8,7 @@ chunk_strategy: h1-h2-h3
 shipment_id: 210-S
 feature_id: 209-F
 mode: pre-merge
-verification_verdict: BLOCKED
+verification_verdict: PASS_WITH_FOLLOW_UP
 ---
 
 ## Resumed evidence handoff
@@ -20,11 +20,26 @@ as PASS, and static gates as passed, including shell `479`. These are supplied
 reports, not observations independently repeated for this documentation update.
 They do not establish independent current-HEAD review readiness.
 
-The previous `BLOCKED` verdict remains recorded. Stage P-021 C6 decisions
-`078-DL` and `080-DL` defer three crash-window candidates to `7E14915F` and
-`D3C8D13B`; `079-DL` defers the format-cache remedy to `DF533572`. Other
-follow-ups are `C2CFE06E` and `F2BC9C37`. These decisions do not themselves
-establish that current-HEAD review or PR gates have passed.
+The prior `BLOCKED` verdict is superseded by `PASS_WITH_FOLLOW_UP` after the
+round-3 source fixes were applied: `schedulerBaselineClaimKey` in the
+mutable-field set, and `reconstituteDirectOwners` in the captured event IDs.
+Stage P-021 C6 decisions `078-DL` and `080-DL` defer three crash-window
+candidates to `7E14915F` and `D3C8D13B`; `079-DL` defers the format-cache
+remedy to `DF533572`. Other follow-ups are `C2CFE06E` and `F2BC9C37`.
+These decisions do not themselves establish that current-HEAD review or PR
+gates have passed.
+
+## Registry finding disposition
+
+The prior review flagged the `reconstitute_shipment` CLI fallback in
+`.autoharness/backlog-registry.yaml` as omitting `--dry-run`. The finding is
+dismissed as a false positive. The operation maps `dry_run: "dry_run"` in its
+`params` block, the same pattern `reorder_shipment` uses. The test
+`TestU3_ShipmentReconstituteCLIMCPParityAnd201SScenario` in
+`internal/cli/shipment_reconstitute_test.go` pins both the CLI command and that
+param mapping. How the external consumer applies `params` at fallback time is
+outside this repository. The dismissal relies on the pinned mapping and is
+recorded as a residual in the review record.
 
 ## Contract and environment
 
@@ -48,7 +63,7 @@ tested commit `f336bb21`. Build and runtime scratch were workspace-contained.
 
 ```yaml
 validator_evidence:
-  verdict: BLOCKED
+  verdict: PASS_WITH_FOLLOW_UP
   surfaces:
     - surface: cli
       adapter: manual

@@ -16,7 +16,110 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/hooks"
+	"github.com/softwaresalt/backlogit/internal/models"
 )
+
+func TestRound3ReviewClaimMarkerRollback(t *testing.T) {
+	fx := newReconstituteFixture(t)
+	ctx := context.Background()
+	_, err := ClaimShipment(ctx, fx.ws, fx.source.ID)
+	require.NoError(t, err)
+	before, err := findArtifact(ctx, fx.ws, fx.tasks[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, fx.source.ID, before.CustomFields[schedulerBaselineClaimKey])
+	plan := strings.ReplaceAll(fx.splitPlanYAML(), "    title: Ship ", "    keep_id: true\n    title: Ship ")
+	veto := errors.New("source manifest veto")
+	called := false
+	fx.ws.HookRunner = hooks.NewHookRunner()
+	fx.ws.HookRunner.Register(hooks.HookUpdateArtifact, hooks.PhasePre, hooks.HookRegistration{
+		Name: "veto-source-after-detach",
+		Fn: func(hookCtx context.Context, hc hooks.HookContext) error {
+			if hc.ItemID != fx.source.ID {
+				return nil
+			}
+			member, findErr := findArtifact(hookCtx, fx.ws, fx.tasks[0].ID)
+			require.NoError(t, findErr)
+			require.NotContains(t, member.CustomFields, schedulerBaselineClaimKey, "detach must precede veto")
+			called = true
+			return veto
+		},
+	})
+	_, err = ReconstituteShipments(ctx, fx.ws, ReconstituteOptions{
+		PlanYAML: plan, Force: true, Reason: "review rollback regression",
+	})
+	require.True(t, called, "source veto must be reached after detach")
+	assert.ErrorIs(t, err, veto, "rollback must return the veto without a false outside-op change")
+	after, findErr := findArtifact(ctx, fx.ws, fx.tasks[0].ID)
+	require.NoError(t, findErr)
+	assert.Equal(t, before.Status, after.Status, "rollback must restore member status")
+	assert.Equal(t, fx.source.ID, after.CustomFields[schedulerBaselineClaimKey], "rollback must restore scheduler baseline claim")
+}
+
+func TestRound3ReviewRelatedOwnerIndependentChanges(t *testing.T) {
+	for _, field := range []string{"status", "dependencies"} {
+		t.Run(field, func(t *testing.T) {
+			fx := newReconstituteFixture(t)
+			ctx := context.Background()
+			require.NoError(t, AddArtifactLink(ctx, fx.ws, fx.feature.ID, fx.tasks[0].ID, "related_to"))
+			st, err := planReconstitution(ctx, fx.ws, ReconstituteOptions{PlanYAML: fx.splitPlanYAML()})
+			require.NoError(t, err)
+			state, err := captureReconstituteState(ctx, fx.ws, st)
+			require.NoError(t, err)
+			assert.NotContains(t, state.EventIDs, fx.feature.ID, "RelatedTo is not a direct mutation owner")
+			require.Contains(t, state.LockIDs, fx.feature.ID, "reference owner remains locked")
+			snapshotted := false
+			for _, image := range state.Images {
+				snapshotted = snapshotted || reconstituteImageOwner(image) == fx.feature.ID
+			}
+			require.True(t, snapshotted, "structured reference owner must have a preimage")
+			owner, err := findArtifact(ctx, fx.ws, fx.feature.ID)
+			require.NoError(t, err)
+			switch field {
+			case "status":
+				owner.Status = models.StatusActive
+			case "dependencies":
+				owner.Dependencies = append(owner.Dependencies, models.DependencyEdge{ID: fx.downstream.ID, Type: "blocks"})
+			}
+			require.NoError(t, persistArtifact(ctx, fx.ws, owner, false))
+			path, err := FindArtifactPath(ctx, fx.ws, owner.ID)
+			require.NoError(t, err)
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+			journal := reconstituteRollbackJournal(fx, "0000000000000000000000000000c010")
+			journal.Reconstitute = state
+			err = rollbackReconstitute(ctx, fx.ws, journal)
+			assert.Error(t, err, "rollback must reject an independent RelatedTo owner change")
+			after, readErr := os.ReadFile(path)
+			require.NoError(t, readErr)
+			assert.Equal(t, before, after, "rollback must not overwrite the independent "+field)
+		})
+	}
+}
+
+func TestRound3ReviewEventIDsDirectOwnersOnly(t *testing.T) {
+	fx := newReconstituteFixture(t)
+	st := &reconstitutePlanState{
+		sources:     map[string]*models.Artifact{"source": nil, "synthetic:source": nil},
+		moves:       map[string]*reconstituteMemberMove{"move": nil, "source": nil, "synthetic:move": nil},
+		edgeAdds:    map[string][]string{"add": {"dependency"}, "synthetic:add": nil},
+		edgeRemoves: map[string][]string{"remove": {"dependency"}},
+		rewireItems: []reconstituteItemRewire{{item: "rewire", blocksOn: []string{"dependency"}}, {item: "synthetic:rewire"}},
+		manifests:   map[string][]string{"source": {"manifest-only"}},
+		targets: []*reconstituteTarget{
+			{key: "existing", existing: &models.Artifact{}, existingFeature: &models.Artifact{}, featureKey: "feature-only",
+				items: []string{"item-only"}, adopt: []string{"adopt", "source", "synthetic:adopt"},
+				spec: ReconstituteShipmentSpec{KeepID: true}},
+			{key: "new-only"},
+		},
+	}
+	state, err := captureReconstituteState(context.Background(), fx.ws, st)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"add", "adopt", "existing", "move", "remove", "rewire", "source"}, state.EventIDs,
+		"event IDs must be sorted, unique direct owners only")
+	for _, id := range []string{"manifest-only", "feature-only", "item-only", "dependency", "new-only", "adopt"} {
+		assert.Contains(t, state.LockIDs, id, "lock IDs retain affected IDs and snapshot owners")
+	}
+}
 
 func TestRound3RecoveryPreservesIndependentSize(t *testing.T) {
 	for _, scoped := range []bool{false, true} {

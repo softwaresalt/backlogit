@@ -110,7 +110,7 @@ func reconstituteScopedImageChangedOutsideOp(
 	}
 	mutableField := func(key string) bool {
 		switch key {
-		case "items", "origin_feature", "blocked_reason", "claim_marker":
+		case "items", "origin_feature", "blocked_reason", "claim_marker", schedulerBaselineClaimKey:
 			return true
 		default:
 			return false
@@ -250,9 +250,9 @@ func (st *reconstitutePlanState) affectedIDs() []string {
 	return out
 }
 
-// reconstituteSnapshotOwners includes only direct mutation targets and
-// structured references that adoption can rewrite.
-func reconstituteSnapshotOwners(ctx context.Context, ws *Workspace, st *reconstitutePlanState) ([]string, error) {
+// reconstituteDirectOwners identifies existing artifacts directly mutated by
+// the operation, excluding synthetic plan keys and reference-only owners.
+func reconstituteDirectOwners(st *reconstitutePlanState) []string {
 	var owners []string
 	for id := range st.sources {
 		owners = append(owners, id)
@@ -274,6 +274,23 @@ func reconstituteSnapshotOwners(ctx context.Context, ws *Workspace, st *reconsti
 			owners = append(owners, target.key)
 		}
 		owners = append(owners, target.adopt...)
+	}
+	filtered := owners[:0]
+	for _, id := range owners {
+		if !strings.Contains(id, ":") {
+			filtered = append(filtered, id)
+		}
+	}
+	owners = uniqueNonEmptyStrings(filtered)
+	sort.Strings(owners)
+	return owners
+}
+
+// reconstituteSnapshotOwners includes only direct mutation targets and
+// structured references that adoption can rewrite.
+func reconstituteSnapshotOwners(ctx context.Context, ws *Workspace, st *reconstitutePlanState) ([]string, error) {
+	owners := reconstituteDirectOwners(st)
+	for _, target := range st.targets {
 		if target.spec.KeepID {
 			continue
 		}
@@ -540,7 +557,7 @@ func captureReconstituteState(ctx context.Context, ws *Workspace, st *reconstitu
 		Images: []reconstituteFileImage{}, KnownLogs: []string{},
 		ScopedImages: true,
 		CommitLinks:  []reconstituteCommitLink{}, CommitItemIDs: []string{},
-		EventIDs: affected, LockIDs: uniqueNonEmptyStrings(append(append([]string{}, affected...), owners...)),
+		EventIDs: reconstituteDirectOwners(st), LockIDs: uniqueNonEmptyStrings(append(append([]string{}, affected...), owners...)),
 	}
 	sort.Strings(state.LockIDs)
 	rel := func(path string) string {

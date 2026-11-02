@@ -8,7 +8,7 @@ chunk_strategy: h1-h2-h3
 shipment_id: 210-S
 feature_id: 209-F
 mode: pre-merge
-closure_status: BLOCKED
+closure_status: READY
 compaction_status: pending
 ---
 
@@ -20,20 +20,27 @@ shells `406` and `407` passed; and static gates passed, including shell `479`.
 These results were supplied in the handoff, not independently observed in this
 documentation update. They do not prove current-HEAD review readiness.
 
-The previous verdict was `BLOCKED` and remains recorded pending independent
-review and applicable PR gates. Stage P-021 C6 decisions `078-DL` and
-`080-DL` defer three crash-window candidates to `7E14915F` and `D3C8D13B`;
-`079-DL` defers the format-cache remedy to `DF533572`. Other follow-ups are
-`C2CFE06E` and `F2BC9C37`. The decisions are not a current-HEAD review pass.
+The prior `BLOCKED` verdict is superseded by `READY`, conditional on the
+current-HEAD gates listed under Readiness boundary. Stage P-021 C6 decisions
+`078-DL` and `080-DL` defer three crash-window candidates to `7E14915F` and
+`D3C8D13B`; `079-DL` defers the format-cache remedy to `DF533572`. Other
+follow-ups are `C2CFE06E` and `F2BC9C37`. The decisions are not a
+current-HEAD review pass. The local review of the round-3 source reports
+`READY_WITH_FOLLOWUPS` with P0=0 and P1=0, after the registry `--dry-run`
+finding was dismissed as a false positive. That verdict must be confirmed
+against the pushed HEAD before merge.
 
 ## Readiness boundary
 
 At the previous halt, the supplemental Unix release finding was repaired
 locally but its new source had not received fresh full-gate and native Unix
 successful-rename validation. The newer reports are recorded above, without
-independent verification here. Releasability remains blocked pending the
-applicable review and PR gates. CI success on the earlier pushed source does
-not validate this candidate.
+independent verification here. Releasability is `READY`, conditional on three checks at the
+pushed HEAD, each run immediately before merge: required CI checks green,
+the P-018 Copilot-review gate `SATISFIED`, and the P-014 section 1.9
+readiness check passing. CI success on the earlier pushed source
+(`f546e0f1`) does not validate the round-3 candidate, so the new HEAD's CI
+must pass.
 
 This record supplies runtime releasability evidence, not permission to
 bypass PR gates or a claim that post-merge closure is complete. The profile
@@ -43,7 +50,7 @@ independently immediately before merge.
 
 ## Validator evidence
 
-Runtime verdict: `BLOCKED` for the new candidate.
+Runtime verdict: `PASS_WITH_FOLLOW_UP` for the new candidate.
 Evidence: [runtime verification](2026-11-01-210-s-209-f-runtime-verification.md).
 The fresh CLI command and invalid-input probes behaved as expected.
 The Orchestrator supplied passing unfiltered source-bound test evidence.
@@ -112,8 +119,8 @@ also remains unchanged for Stage disposition.
 
 ## Releasability and follow-ups
 
-Releasability: `BLOCKED` pending assessment of the reported validation and
-current-HEAD review and PR gates.
+Releasability: `READY`, conditional on the current-HEAD CI, Copilot-review,
+and section 1.9 gates listed under Readiness boundary.
 Existing risk `D3C8D13B` remains tracked under the prior contract.
 Supplemental root-alias compatibility was captured as `F2BC9C37` for Stage;
 the current physical-root/no-follow contract was not silently expanded.
