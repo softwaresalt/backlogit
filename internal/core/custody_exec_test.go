@@ -242,7 +242,15 @@ func TestU4_CustodyPreviewOfferAcceptVerifyAndRecovery(t *testing.T) {
 
 		// Crash after the commit point: recovery must never roll the applied write back.
 		committed := custExecJournal(repo.shipmentID, custExecCorrelationB, "committed", "custody_offer", "offered", pre)
-		custExecWriteCustody(t, repo.ws, custExecEnvelope(t, custExecShipment(t, repo.ws, repo.shipmentID)))
+		custExecWriteCustody(t, repo.ws, WorkflowCustodyEnvelope{
+			SchemaVersion:   WorkflowCustodySchemaVersion,
+			WorkflowID:      "u4-committed-workflow",
+			ShipmentID:      repo.shipmentID,
+			ScopeBranch:     custExecFeatureBranch,
+			BaseCommitSHA:   repo.base,
+			CustodyRevision: 1,
+			Receipts:        []CustodyReceipt{custExecStageReceipt(preview.CandidateSetDigest)},
+		})
 		_, err = writeShipmentLifecycleJournalForWorkspace(repo.ws, "shipment-operation-"+custExecCorrelationB+".json", committed)
 		require.NoError(t, err)
 		repo.reopen(t)
@@ -263,10 +271,16 @@ func TestU4_CustodyPreviewOfferAcceptVerifyAndRecovery(t *testing.T) {
 
 		file := parseCustodySource(t, "custody_exec.go")
 		require.NotNil(t, file)
-		order := custExecFirstCallPositions(file)
+		chain := custExecFuncCalling(file, "lockShipmentLifecycleGlobal")
+		require.NotNil(t, chain, "custody_exec.go must acquire the custody lock chain in one function")
+		for _, entry := range []string{"OfferCustodyHandoff", "AcceptCustodyHandoff"} {
+			require.True(t, custExecFuncCalls(custExecFuncNamed(file, entry), chain.Name.Name),
+				"%s must acquire the custody lock chain through %s", entry, chain.Name.Name)
+		}
+		order := custExecFirstCallPositions(chain.Body)
 		names := []string{"lockShipmentLifecycleGlobal", "lockShipmentMembership", "LockItemLogCrossProcess", "lockArtifactMutations"}
 		for _, name := range names {
-			require.Contains(t, order, name, "custody_exec.go must call %s", name)
+			require.Contains(t, order, name, "%s must call %s", chain.Name.Name, name)
 		}
 		for i := 1; i < len(names); i++ {
 			assert.Less(t, order[names[i-1]], order[names[i]], "%s must precede %s", names[i-1], names[i])
@@ -512,26 +526,64 @@ func custExecJournal(shipmentID, correlationID, phase, operation, target string,
 	}
 }
 
-// custExecFirstCallPositions maps each called identifier in file to the source
+// custExecFirstCallPositions maps each called identifier under node to the source
 // offset of its first call, so lock acquisition order can be compared.
-func custExecFirstCallPositions(file *ast.File) map[string]int {
+func custExecFirstCallPositions(node ast.Node) map[string]int {
 	positions := map[string]int{}
-	ast.Inspect(file, func(n ast.Node) bool {
+	ast.Inspect(node, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		name := ""
-		switch fn := call.Fun.(type) {
-		case *ast.Ident:
-			name = fn.Name
-		case *ast.SelectorExpr:
-			name = fn.Sel.Name
-		}
-		if _, seen := positions[name]; !seen && name != "" {
-			positions[name] = int(call.Pos())
+		if name := custExecCalleeName(call.Fun); name != "" {
+			if _, seen := positions[name]; !seen {
+				positions[name] = int(call.Pos())
+			}
 		}
 		return true
 	})
 	return positions
+}
+
+func custExecCalleeName(fun ast.Expr) string {
+	switch fn := fun.(type) {
+	case *ast.Ident:
+		return fn.Name
+	case *ast.SelectorExpr:
+		return fn.Sel.Name
+	}
+	return ""
+}
+
+func custExecFuncNamed(file *ast.File, name string) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == name {
+			return fn
+		}
+	}
+	return nil
+}
+
+// custExecFuncCalling returns the first function in file whose body calls callee.
+func custExecFuncCalling(file *ast.File, callee string) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && custExecFuncCalls(fn, callee) {
+			return fn
+		}
+	}
+	return nil
+}
+
+func custExecFuncCalls(fn *ast.FuncDecl, callee string) bool {
+	if fn == nil || fn.Body == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && custExecCalleeName(call.Fun) == callee {
+			found = true
+		}
+		return !found
+	})
+	return found
 }

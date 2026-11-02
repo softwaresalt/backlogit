@@ -557,6 +557,10 @@ func updateArtifactUngated(ctx context.Context, ws *Workspace, id string, update
 	previousStatus := artifact.Status
 	previousTitle := artifact.Title
 
+	if err := guardWorkflowCustodyUpdate(artifact, updates); err != nil {
+		return nil, fmt.Errorf("update artifact %s: %w", id, err)
+	}
+
 	// 144-F guard 1 (locked path, U11): authoritative post-lock revalidation.
 	// The unlocked-peek check in UpdateArtifactWithGate is the fast-path refusal;
 	// this check closes the peek-to-write TOCTOU gap on the locked write path.
@@ -921,7 +925,10 @@ type artifactWriteEnvelope struct {
 	operation                     string
 	changes                       map[string]any
 	allowGovernedShipmentMutation bool
-	audit                         bool
+	// allowCustodyMutation marks a governed custody write, the only write that
+	// may change custom_fields.workflow_custody.
+	allowCustodyMutation bool
+	audit                bool
 }
 
 // WriteArtifactFileWithOptions atomically writes an artifact to filePath through
@@ -971,6 +978,9 @@ func writeArtifactFileGoverned(
 		previous, _, err := parseFile(currentPath)
 		switch {
 		case err == nil:
+			if err := guardWorkflowCustodyMutation(previous, artifact, envelope.allowCustodyMutation); err != nil {
+				return err
+			}
 			if !envelope.allowGovernedShipmentMutation {
 				if err := guardBlockedShipmentArtifactTypeFlip(previous, artifact); err != nil {
 					return err
