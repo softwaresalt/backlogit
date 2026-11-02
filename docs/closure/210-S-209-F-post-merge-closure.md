@@ -8,7 +8,7 @@ chunk_strategy: h1-h2-h3
 shipment_id: 210-S
 feature_id: 209-F
 mode: post-merge
-closure_status: READY
+closure_status: BLOCKED
 compaction_status: degraded
 close_path: safe_close
 ---
@@ -81,14 +81,13 @@ Post-repair pre-mode reconciliation returned `PROCEED`. The report is
   and 500 KB thresholds. This pass assessed the corpus but did not execute the
   consolidation, so no originals were moved. Per P-020, the compaction run is
   recorded as degraded and a follow-up is stashed.
-* **Closure-evidence gate: FAILED.** `autoharness gate closure-evidence`
-  reports `failed_check: close_evidence` with `close_evidence must be a
-  non-empty string`. The gate requires a `close_evidence` record from the
-  cascade-close path. This closure used governed `safe_close` through MCP, so
-  no cascade evidence file exists. Per the closure-evidence contract, closure
-  is not declared complete until the operator decides how to satisfy this
-  requirement. This record is kept as a truthful record and was not edited to
-  pass the gate.
+* **Closure status is `BLOCKED`.** The closure-evidence gate fails with
+  `failed_check: close_evidence`. This closure used governed `safe_close`
+  through MCP, so no cascade-close evidence exists. Per the closure-evidence
+  contract, closure is not declared complete until the operator decides how to
+  satisfy this requirement. The status is recorded as `BLOCKED` so that a
+  successor `pre_claim` predicate does not accept an incomplete closure as
+  `READY`. The record was not edited to pass the gate.
 
 ## Follow-ups
 
