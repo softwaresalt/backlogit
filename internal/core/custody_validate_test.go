@@ -1,6 +1,12 @@
 package core
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"go/ast"
 	"go/token"
@@ -11,6 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/softwaresalt/backlogit/internal/config"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,15 +98,92 @@ func TestU3_CustodyValidationAndApprovalTokenVerification(t *testing.T) {
 
 		t.Run("handle_pinned_no_follow_read_declared", func(t *testing.T) {
 			file := u3ValidateFile(t)
-			if !u3Mentions(file, "O_NOFOLLOW") && !u3Mentions(file, "FILE_FLAG_OPEN_REPARSE_POINT") {
-				t.Errorf("%s declares no handle-pinned no-follow open (O_NOFOLLOW or FILE_FLAG_OPEN_REPARSE_POINT)", u3ValidateSource)
+			u3ExpectIdent(t, file, u3ValidateSource, "readCustodyWorktreeFileNoFollow")
+			u3ExpectIdent(t, u3FuncDecl(t, file, u3ValidateSource, "readCustodyWorktreeFileNoFollow"), "readCustodyWorktreeFileNoFollow", "openCustodyNoFollow")
+			for _, platform := range []struct{ name, mechanism string }{
+				{"custody_nofollow_unix.go", "O_NOFOLLOW"},
+				{"custody_nofollow_windows.go", "FILE_FLAG_OPEN_REPARSE_POINT"},
+			} {
+				src := parseCustodySource(t, platform.name)
+				if src == nil {
+					t.FailNow()
+				}
+				u3ExpectIdent(t, src, platform.name, platform.mechanism)
 			}
+		})
+
+		t.Run("handle_pinned_read_returns_regular_file_and_refuses_links", func(t *testing.T) {
+			ws := u3Workspace(t)
+			data, err := readCustodyWorktreeFileNoFollow(ws, "docs/plans/2026-11-02-plan.md")
+			require.NoError(t, err)
+			assert.Equal(t, "placeholder\n", string(data))
+
+			u3Symlink(t, "2026-11-02-plan.md", filepath.Join(ws.RootPath, "docs", "plans", "leaf.md"))
+			data, err = readCustodyWorktreeFileNoFollow(ws, "docs/plans/leaf.md")
+			require.ErrorIs(t, err, ErrCustodyPathRejected)
+			assert.Nil(t, data)
 		})
 	})
 
 	t.Run("atomic_rename_case_only_rename_and_unsupported_kind_guards", func(t *testing.T) {
 		t.Run("rejects_zero_value_envelope", func(t *testing.T) {
 			u3RequireRejected(t, ValidateCustodyEnvelope(WorkflowCustodyEnvelope{}))
+		})
+
+		t.Run("accepts_valid_envelope", func(t *testing.T) {
+			require.NoError(t, ValidateCustodyEnvelope(u3Envelope()))
+		})
+
+		t.Run("rename_requires_complete_old_path_and_digest_pair", func(t *testing.T) {
+			cases := []struct {
+				name    string
+				entry   CustodyEntry
+				wantErr error
+			}{
+				{"complete_rename", u3Rename("docs/new.md", "docs/old.md", "6666", false), nil},
+				{"missing_old_path", u3Rename("docs/new.md", "", "6666", false), ErrPartialRenameAdoptionRejected},
+				{"missing_old_base_blob", u3Rename("docs/new.md", "docs/old.md", "", false), ErrPartialRenameAdoptionRejected},
+				{"case_only_rename_flagged", u3Rename("track-a.md", "Track-A.md", "6666", true), nil},
+				{"case_only_flag_missing", u3Rename("track-a.md", "Track-A.md", "6666", false), blerrors.ErrValidation},
+				{"identical_old_path_and_path", u3Rename("a.md", "a.md", "6666", false), blerrors.ErrValidation},
+			}
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					err := ValidateCustodyEnvelope(u3EnvelopeWithEntries(c.entry))
+					if c.wantErr == nil {
+						require.NoError(t, err)
+						return
+					}
+					require.ErrorIs(t, err, c.wantErr)
+				})
+			}
+		})
+
+		t.Run("partial_rename_pair_rejected", func(t *testing.T) {
+			added := u3Entry("docs/new.md")
+			added.ChangeKind = "added"
+			added.RenameGroupID = "group-1"
+			err := ValidateCustodyEnvelope(u3EnvelopeWithEntries(added))
+			require.ErrorIs(t, err, ErrPartialRenameAdoptionRejected)
+
+			deleted := u3Entry("docs/old.md")
+			deleted.ChangeKind = "deleted"
+			deleted.RenameGroupID = "group-1"
+			require.NoError(t, ValidateCustodyEnvelope(u3EnvelopeWithEntries(added, deleted)))
+		})
+
+		t.Run("unsupported_change_kinds_fail_closed", func(t *testing.T) {
+			for _, kind := range []string{"unmerged", "copied"} {
+				entry := u3Entry("docs/plans/plan.md")
+				entry.ChangeKind = kind
+				require.ErrorIs(t, ValidateCustodyEnvelope(u3EnvelopeWithEntries(entry)), ErrUnsupportedCustodyChangeKind, kind)
+			}
+		})
+
+		t.Run("rejects_case_folded_duplicate_entry_paths", func(t *testing.T) {
+			first := u3Entry("Docs/A.md")
+			second := u3Entry("docs/a.md")
+			require.ErrorIs(t, ValidateCustodyEnvelope(u3EnvelopeWithEntries(first, second)), blerrors.ErrValidation)
 		})
 
 		t.Run("rename_requires_old_path_digest_or_rename_group", func(t *testing.T) {
@@ -141,6 +227,78 @@ func TestU3_CustodyValidationAndApprovalTokenVerification(t *testing.T) {
 			file := u3ValidateFile(t)
 			u3ExpectIdent(t, file, u3ValidateSource, "SimpleFold")
 			u3ExpectLiteral(t, file, u3ValidateSource, "duplicate")
+		})
+
+		t.Run("divergence_rejected_by_default", func(t *testing.T) {
+			entry := u3Entry("docs/plans/plan.md")
+			entry.IndexSHA256, entry.WorktreeSHA256 = "bbbb", "cccc"
+			require.ErrorIs(t, ValidateCustodyEnvelope(u3EnvelopeWithEntries(entry)), ErrMixedIndexWorktreeDivergence)
+		})
+
+		t.Run("divergence_accepted_only_under_operator_verified_mixed_reconciled", func(t *testing.T) {
+			cases := []struct {
+				name        string
+				profile     string
+				kind        string
+				stagedState string
+				contributor string
+				wantErr     error
+			}{
+				{"operator_verified_mixed_reconciled", "operator_verified", "preexisting_adoption", "staged_diverges_accepted", "mixed_reconciled", nil},
+				{"agent_profile_rejected", "agent_workflow_handoff", "stage_to_ship_handoff", "staged_diverges_accepted", "mixed_reconciled", ErrMixedIndexWorktreeDivergence},
+				{"unreconciled_staged_state", "operator_verified", "preexisting_adoption", "unstaged_only", "mixed_reconciled", ErrMixedIndexWorktreeDivergence},
+				{"non_mixed_contributor", "operator_verified", "preexisting_adoption", "staged_diverges_accepted", "operator", ErrMixedIndexWorktreeDivergence},
+			}
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					entry := u3Entry("docs/plans/plan.md")
+					entry.IndexSHA256, entry.WorktreeSHA256 = "bbbb", "cccc"
+					entry.StagedState = c.stagedState
+					entry.Contributor = c.contributor
+					env := u3EnvelopeWithEntries(entry)
+					env.Receipts[0].AuthorityProfile = c.profile
+					env.Receipts[0].Kind = c.kind
+					err := ValidateCustodyEnvelope(env)
+					if c.wantErr == nil {
+						require.NoError(t, err)
+						return
+					}
+					require.ErrorIs(t, err, c.wantErr)
+				})
+			}
+		})
+
+		t.Run("duplicate_json_members_rejected", func(t *testing.T) {
+			cases := []struct{ name, raw string }{
+				{"exact_duplicate", `{"schema_version":"workflow-custody/v1","schema_version":"workflow-custody/v1"}`},
+				{"case_folded_duplicate", `{"workflow_id":"a","Workflow_ID":"b"}`},
+			}
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					_, err := DecodeCustodyEnvelopeJSON([]byte(c.raw))
+					require.ErrorIs(t, err, blerrors.ErrValidation)
+				})
+			}
+		})
+
+		t.Run("duplicate_yaml_keys_rejected", func(t *testing.T) {
+			_, err := DecodeCustodyEnvelopeYAML([]byte("schema_version: workflow-custody/v1\nschema_version: workflow-custody/v1\n"))
+			require.ErrorIs(t, err, blerrors.ErrValidation)
+		})
+
+		t.Run("json_and_yaml_payloads_round_trip", func(t *testing.T) {
+			env := u3Envelope()
+			raw, err := json.Marshal(env)
+			require.NoError(t, err)
+			decoded, err := DecodeCustodyEnvelopeJSON(raw)
+			require.NoError(t, err)
+			require.NoError(t, ValidateCustodyEnvelope(decoded))
+
+			doc, err := yaml.Marshal(env)
+			require.NoError(t, err)
+			decodedYAML, err := DecodeCustodyEnvelopeYAML(doc)
+			require.NoError(t, err)
+			require.NoError(t, ValidateCustodyEnvelope(decodedYAML))
 		})
 	})
 
@@ -221,6 +379,109 @@ func TestU3_CustodyValidationAndApprovalTokenVerification(t *testing.T) {
 				}
 			}
 		})
+		t.Run("default_receipt_expiry_is_168_hours_after_acceptance", func(t *testing.T) {
+			accepted := u3Clock()
+			assert.Equal(t, DefaultCustodyReceiptExpiry, DefaultCustodyReceiptExpiresAt(accepted).Sub(accepted))
+		})
+
+		t.Run("request_identity_digest_binds_shipment", func(t *testing.T) {
+			base := u3Envelope()
+			other := u3Envelope()
+			other.ShipmentID = "234-S"
+			d1, err := CustodyRequestIdentityDigest(base)
+			require.NoError(t, err)
+			d2, err := CustodyRequestIdentityDigest(other)
+			require.NoError(t, err)
+			assert.NotEqual(t, d1, d2)
+		})
+
+		t.Run("mint_without_operator_signer_fails_closed", func(t *testing.T) {
+			proof := u3ApprovalProof(t, u3Envelope())
+			_, err := MintCustodyApprovalToken(proof)
+			require.ErrorIs(t, err, ErrApprovalChannelUnavailable)
+		})
+
+		t.Run("mint_rejects_window_over_15_minutes", func(t *testing.T) {
+			key, _ := u3OperatorFixture(t)
+			proof := u3ApprovalProof(t, u3Envelope())
+			proof.NotAfterUTC = proof.NotBeforeUTC.Add(MaxCustodyApprovalTokenWindow + time.Minute)
+			_, err := MintCustodyApprovalTokenWithSigner(proof, key)
+			require.ErrorIs(t, err, blerrors.ErrValidation)
+		})
+
+		t.Run("ed25519_mint_and_verify_round_trip", func(t *testing.T) {
+			key, anchor := u3OperatorFixture(t)
+			env := u3Envelope()
+			token, err := MintCustodyApprovalTokenWithSigner(u3ApprovalProof(t, env), key)
+			require.NoError(t, err)
+			got, err := VerifyCustodyApprovalToken(token, env, u3Clock(), anchor)
+			require.NoError(t, err)
+			assert.Equal(t, "op-1", got.KeyID)
+			assert.NotEmpty(t, got.Signature)
+		})
+
+		t.Run("verify_rejects_invalid_approvals_fail_closed", func(t *testing.T) {
+			key, anchor := u3OperatorFixture(t)
+			env := u3Envelope()
+			mint := func(t *testing.T, proof CustodyApprovalProof) string {
+				t.Helper()
+				token, err := MintCustodyApprovalTokenWithSigner(proof, key)
+				require.NoError(t, err)
+				return token
+			}
+			cases := []struct {
+				name    string
+				proof   func(t *testing.T) CustodyApprovalProof
+				now     time.Time
+				mutate  func(*WorkflowCustodyEnvelope)
+				anchors []config.TrustAnchor
+				wantErr error
+			}{
+				{"wrong_role", func(t *testing.T) CustodyApprovalProof {
+					p := u3ApprovalProof(t, env)
+					p.AuthorizedRole = "stage"
+					return p
+				}, u3Clock(), nil, []config.TrustAnchor{anchor}, ErrOperatorApprovalRequired},
+				{"expired_window", func(t *testing.T) CustodyApprovalProof { return u3ApprovalProof(t, env) }, u3Clock().Add(time.Hour), nil, []config.TrustAnchor{anchor}, ErrAuthorizationRejected},
+				{"not_yet_valid", func(t *testing.T) CustodyApprovalProof { return u3ApprovalProof(t, env) }, u3Clock().Add(-time.Hour), nil, []config.TrustAnchor{anchor}, ErrAuthorizationRejected},
+				{"wrong_workflow", func(t *testing.T) CustodyApprovalProof { return u3ApprovalProof(t, env) }, u3Clock(), func(e *WorkflowCustodyEnvelope) { e.WorkflowID = "wf-other" }, []config.TrustAnchor{anchor}, ErrAuthorizationRejected},
+				{"wrong_shipment", func(t *testing.T) CustodyApprovalProof { return u3ApprovalProof(t, env) }, u3Clock(), func(e *WorkflowCustodyEnvelope) { e.ShipmentID = "234-S" }, []config.TrustAnchor{anchor}, ErrApprovalWrongShipment},
+				{"wrong_scope_branch", func(t *testing.T) CustodyApprovalProof { return u3ApprovalProof(t, env) }, u3Clock(), func(e *WorkflowCustodyEnvelope) { e.ScopeBranch = "chore/other" }, []config.TrustAnchor{anchor}, ErrCustodyWrongBranch},
+				{"stale_candidate_set", func(t *testing.T) CustodyApprovalProof { return u3ApprovalProof(t, env) }, u3Clock(), func(e *WorkflowCustodyEnvelope) { e.Receipts[0].CandidateSetDigest = "cand-other" }, []config.TrustAnchor{anchor}, ErrCustodyStaleDigest},
+				{"changed_request_content", func(t *testing.T) CustodyApprovalProof { return u3ApprovalProof(t, env) }, u3Clock(), func(e *WorkflowCustodyEnvelope) { e.Receipts[0].Entries[0].Path = "docs/plans/other.md" }, []config.TrustAnchor{anchor}, ErrApprovalWrongRequestIdentity},
+				{"revoked_anchor", func(t *testing.T) CustodyApprovalProof { return u3ApprovalProof(t, env) }, u3Clock(), nil, []config.TrustAnchor{revokedAnchor(anchor)}, ErrTrustAnchorRevoked},
+				{"no_matching_anchor", func(t *testing.T) CustodyApprovalProof { return u3ApprovalProof(t, env) }, u3Clock(), nil, nil, ErrApprovalChannelUnavailable},
+			}
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					token := mint(t, c.proof(t))
+					verifyEnv := u3Envelope()
+					if c.mutate != nil {
+						c.mutate(&verifyEnv)
+					}
+					_, err := VerifyCustodyApprovalToken(token, verifyEnv, c.now, c.anchors...)
+					require.ErrorIs(t, err, c.wantErr)
+				})
+			}
+		})
+
+		t.Run("verify_rejects_tampered_payload_without_resigning", func(t *testing.T) {
+			key, anchor := u3OperatorFixture(t)
+			env := u3Envelope()
+			token, err := MintCustodyApprovalTokenWithSigner(u3ApprovalProof(t, env), key)
+			require.NoError(t, err)
+			parts := strings.Split(token, ".")
+			raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+			require.NoError(t, err)
+			var fields map[string]any
+			require.NoError(t, json.Unmarshal(raw, &fields))
+			fields["request_identity_digest"] = strings.Repeat("0", 64)
+			payload, err := json.Marshal(fields)
+			require.NoError(t, err)
+			tampered := parts[0] + "." + base64.RawURLEncoding.EncodeToString(payload) + "." + parts[2]
+			_, err = VerifyCustodyApprovalToken(tampered, env, u3Clock(), anchor)
+			require.ErrorIs(t, err, ErrAuthorizationRejected)
+		})
 	})
 
 	t.Run("verify_token_takes_trust_anchor", func(t *testing.T) {
@@ -231,6 +492,54 @@ func TestU3_CustodyValidationAndApprovalTokenVerification(t *testing.T) {
 			}
 		}
 		t.Errorf("VerifyCustodyApprovalToken in %s takes no TrustAnchor parameter (invariant I2)", u3ValidateSource)
+	})
+}
+
+// TestU3_CaseOnlyRenameDirectoryEntryCasing checks that case_only_rename entries are
+// bound to the on-disk directory-entry casing of their path (plan invariant I3).
+// Only one file is created, because "plan.md" and "Plan.md" name the same file on
+// case-insensitive filesystems.
+func TestU3_CaseOnlyRenameDirectoryEntryCasing(t *testing.T) {
+	newRoot := func(t *testing.T) *Workspace {
+		t.Helper()
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(root, "Plan.md"), []byte("placeholder\n"), 0o600))
+		return &Workspace{RootPath: root}
+	}
+
+	t.Run("accepts_on_disk_casing_match", func(t *testing.T) {
+		env := u3EnvelopeWithEntries(u3Rename("Plan.md", "plan.md", "6666", true))
+		require.NoError(t, ValidateCustodyEnvelope(env))
+		require.NoError(t, ValidateCustodyRenameCasing(newRoot(t), env))
+	})
+
+	t.Run("refuses_casing_mismatch_with_on_disk_entry", func(t *testing.T) {
+		env := u3EnvelopeWithEntries(u3Rename("PLAN.md", "plan.md", "6666", true))
+		err := ValidateCustodyRenameCasing(newRoot(t), env)
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrPartialRenameAdoptionRejected)
+	})
+
+	t.Run("refuses_missing_entry", func(t *testing.T) {
+		env := u3EnvelopeWithEntries(u3Rename("MISSING.md", "missing.md", "6666", true))
+		require.ErrorIs(t, ValidateCustodyRenameCasing(newRoot(t), env), ErrPartialRenameAdoptionRejected)
+	})
+
+	t.Run("refuses_missing_parent_directory", func(t *testing.T) {
+		env := u3EnvelopeWithEntries(u3Rename("docs/Plan.md", "docs/plan.md", "6666", true))
+		require.ErrorIs(t, ValidateCustodyRenameCasing(newRoot(t), env), ErrPartialRenameAdoptionRejected)
+	})
+
+	t.Run("refuses_parent_reached_through_link", func(t *testing.T) {
+		ws := newRoot(t)
+		u3Symlink(t, ws.RootPath, filepath.Join(ws.RootPath, "linkdir"))
+		env := u3EnvelopeWithEntries(u3Rename("linkdir/Plan.md", "linkdir/plan.md", "6666", true))
+		require.ErrorIs(t, ValidateCustodyRenameCasing(ws, env), ErrCustodyPathRejected)
+	})
+
+	t.Run("ignores_renames_that_are_not_case_only", func(t *testing.T) {
+		env := u3EnvelopeWithEntries(u3Rename("docs/new.md", "docs/old.md", "6666", false))
+		require.NoError(t, ValidateCustodyRenameCasing(newRoot(t), env))
 	})
 }
 
@@ -348,4 +657,90 @@ func u3ExpectLiteral(t *testing.T, node ast.Node, where, substr string) {
 	if !u3HasLiteral(node, substr) {
 		t.Errorf("%s has no string literal containing %q", where, substr)
 	}
+}
+
+// u3Clock is the fixed instant that every behavioral custody subtest uses.
+func u3Clock() time.Time {
+	return time.Date(2026, time.November, 2, 12, 0, 0, 0, time.UTC)
+}
+
+// u3Entry returns a valid modified entry whose base, index, and worktree digests agree.
+func u3Entry(path string) CustodyEntry {
+	return CustodyEntry{
+		Path: path, ChangeKind: "modified", StagedState: "unstaged_only",
+		BaseBlobSHA256: "aaaa", IndexSHA256: "aaaa", WorktreeSHA256: "aaaa",
+		PatchDigestSHA256: "pppp", Contributor: "stage", SourceKind: "stage_artifact",
+	}
+}
+
+// u3Rename returns a renamed entry whose destination index and worktree digests agree.
+func u3Rename(path, oldPath, oldBlobSHA string, caseOnly bool) CustodyEntry {
+	return CustodyEntry{
+		Path: path, OldPath: oldPath, ChangeKind: "renamed", CaseOnlyRename: caseOnly,
+		StagedState: "staged_matches_worktree", OldBaseBlobSHA256: oldBlobSHA,
+		IndexSHA256: "1111", WorktreeSHA256: "1111", PatchDigestSHA256: "pppp",
+		Contributor: "operator", SourceKind: "operator_code_or_doc",
+	}
+}
+
+// u3Envelope returns a valid offered workflow-custody/v1 envelope with one receipt.
+func u3Envelope() WorkflowCustodyEnvelope {
+	return WorkflowCustodyEnvelope{
+		SchemaVersion: WorkflowCustodySchemaVersion,
+		WorkflowID:    "wf-1",
+		ShipmentID:    "233-S",
+		ScopeBranch:   "chore/stage-233-S",
+		BaseCommitSHA: "0123456789abcdef0123456789abcdef01234567",
+		Receipts: []CustodyReceipt{{
+			ReceiptID: "rcpt-0001", Revision: 1, Kind: "stage_to_ship_handoff",
+			AuthorityProfile: "agent_workflow_handoff", Status: "offered",
+			ProducerRole: "stage", AcceptingRole: "ship", AllowedAction: "stage_artifact_commit",
+			CandidateSetDigest: "cand-1", OfferedAtUTC: u3Clock(),
+			Entries: []CustodyEntry{u3Entry("docs/plans/2026-11-02-plan.md")},
+		}},
+	}
+}
+
+// u3EnvelopeWithEntries returns u3Envelope with its receipt's entries replaced.
+func u3EnvelopeWithEntries(entries ...CustodyEntry) WorkflowCustodyEnvelope {
+	env := u3Envelope()
+	env.Receipts[0].Entries = entries
+	return env
+}
+
+// u3OperatorFixture generates a fresh Ed25519 operator key and an inline-PEM trust anchor.
+func u3OperatorFixture(t *testing.T) (ed25519.PrivateKey, config.TrustAnchor) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	require.NoError(t, err)
+	pemText := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+	return priv, config.TrustAnchor{
+		ID: "op-1", Role: "operator", Algo: config.TrustAnchorAlgoEd25519,
+		PublicKeyRef: string(pemText), Status: config.TrustAnchorStatusActive,
+	}
+}
+
+// u3ApprovalProof returns an operator proof bound to env, valid for five minutes around u3Clock.
+func u3ApprovalProof(t *testing.T, env WorkflowCustodyEnvelope) CustodyApprovalProof {
+	t.Helper()
+	digest, err := CustodyRequestIdentityDigest(env)
+	require.NoError(t, err)
+	receipt := env.Receipts[0]
+	now := u3Clock()
+	return CustodyApprovalProof{
+		KeyID: "op-1", Algorithm: "ed25519", Principal: "operator:local", AuthorizedRole: "operator",
+		WorkflowID: env.WorkflowID, ShipmentID: env.ShipmentID, ScopeBranch: env.ScopeBranch,
+		BaseCommitSHA: env.BaseCommitSHA, CandidateSetDigest: receipt.CandidateSetDigest,
+		AllowedAction: receipt.AllowedAction, TargetRevision: 1,
+		NotBeforeUTC: now.Add(-time.Minute), NotAfterUTC: now.Add(5 * time.Minute),
+		Nonce: "nonce-0001", RequestIdentityDigest: digest,
+	}
+}
+
+// revokedAnchor returns a copy of anchor with revoked status.
+func revokedAnchor(anchor config.TrustAnchor) config.TrustAnchor {
+	anchor.Status = config.TrustAnchorStatusRevoked
+	return anchor
 }

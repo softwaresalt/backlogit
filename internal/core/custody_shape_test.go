@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -89,14 +90,27 @@ func indexCustodyDecls(file *ast.File) custodyDecls {
 // function declared in fileName.
 func assertCustodyFuncs(t *testing.T, fileName string, names []string) {
 	t.Helper()
-	file := parseCustodySource(t, fileName)
-	if file == nil {
-		return
+	assertCustodyFuncsInFiles(t, []string{fileName}, names)
+}
+
+// assertCustodyFuncsInFiles reports each named function that is not a package-level
+// function declared in at least one of fileNames. Each name must still exist in
+// one of the files; the union only lets the declaration live in either file.
+func assertCustodyFuncsInFiles(t *testing.T, fileNames []string, names []string) {
+	t.Helper()
+	declared := make(map[string]struct{})
+	for _, fileName := range fileNames {
+		file := parseCustodySource(t, fileName)
+		if file == nil {
+			return
+		}
+		for name := range indexCustodyDecls(file).funcs {
+			declared[name] = struct{}{}
+		}
 	}
-	d := indexCustodyDecls(file)
 	for _, name := range names {
-		if _, ok := d.funcs[name]; !ok {
-			t.Errorf("%s is not declared in %s", name, fileName)
+		if _, ok := declared[name]; !ok {
+			t.Errorf("%s is not declared in %s", name, strings.Join(fileNames, " or "))
 		}
 	}
 }
@@ -193,7 +207,7 @@ func TestU2_WorkflowCustodyDeclarationsSourceShape(t *testing.T) {
 	})
 
 	t.Run("custody_validator_and_token_signatures_declared", func(t *testing.T) {
-		assertCustodyFuncs(t, "custody_types.go", []string{
+		assertCustodyFuncsInFiles(t, []string{"custody_types.go", "custody_validate.go"}, []string{
 			"ValidateCustodyEnvelope",
 			"ValidateCustodyEntryPath",
 			"CustodyRequestIdentityDigest",
