@@ -3,7 +3,7 @@ title: "210-S compaction report (post-merge closure)"
 doc_type: closure
 schema_version: "1.0"
 source: docs/closure/2026-11-02-210-s-compaction-report.md
-description: "P-020 compact-context assessment for the 210-S post-merge closure, recording thresholds, actions taken, and why the status is degraded."
+description: "P-020 compact-context run for the 210-S post-merge closure, recording thresholds, actions taken, and the resulting compaction status."
 chunk_strategy: h1-h2-h3
 shipment_id: 210-S
 feature_id: 209-F
