@@ -255,8 +255,8 @@ func reconcileCustodyIntent(ctx context.Context, ws *Workspace, journalPath stri
 	}
 }
 
-// isCustodyShipmentOperation reports whether operation is a custody journal operation.
-func isCustodyShipmentOperation(operation string) bool {
+// isCustodyOperation reports whether operation is a custody journal operation.
+func isCustodyOperation(operation string) bool {
 	return operation == shipmentOperationCustodyOffer || operation == shipmentOperationCustodyAccept
 }
 

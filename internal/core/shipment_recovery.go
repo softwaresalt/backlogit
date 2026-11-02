@@ -129,7 +129,7 @@ func reconcileShipmentLifecycleIntent(
 	journalPath string,
 	journal shipmentLifecycleJournal,
 ) (*models.Artifact, error) {
-	if isCustodyShipmentOperation(journal.Operation) {
+	if isCustodyOperation(journal.Operation) {
 		return reconcileCustodyIntent(ctx, ws, journalPath, journal)
 	}
 	if isShipmentManifestOperation(journal.Operation) {

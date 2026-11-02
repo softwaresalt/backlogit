@@ -438,7 +438,7 @@ func validateShipmentLifecycleJournalRecord(
 		}
 	}
 
-	if isCustodyShipmentOperation(journal.Operation) {
+	if isCustodyOperation(journal.Operation) {
 		// Custody journals roll back only the shipment and its JSONL events and
 		// never touch member artifacts, so member preimage coverage does not apply.
 		return nil
