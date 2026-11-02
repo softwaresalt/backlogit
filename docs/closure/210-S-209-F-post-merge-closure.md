@@ -77,8 +77,8 @@ Post-repair pre-mode reconciliation returned `PROCEED`. The report is
 
 * **Compaction status is `done`.** `compact-context` consolidated the 210-S
   session notes into `docs/memory/compacted/2026-11-02-210-s-209-f-compacted.md`.
-  Eight uncited notes moved to `docs/archive/memory/`. Nine notes stay in place
-  because checkpoints or the Ship stash cite them by exact path. Details are in
+  Seven uncited notes moved to `docs/archive/memory/`. Ten notes stay in place
+  because checkpoints, the Ship stash, or a retained note reference them. Details are in
   `docs/closure/2026-11-02-210-s-compaction-report.md`.
 * **Closure status is `READY` by operator decision.** The
   `autoharness gate closure-evidence` check fails at `close_path` (absent) and

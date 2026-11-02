@@ -30,13 +30,15 @@ post-merge step. The corpus exceeds the manual trigger thresholds.
   `docs/memory/2026-10-31/`, `docs/memory/2026-11-01/`, and
   `docs/memory/2026-10-31-210-s-wave1-format-gate-halt.md` into
   `docs/memory/compacted/2026-11-02-210-s-209-f-compacted.md`.
-* Moved the eight uncited notes to `docs/archive/memory/` with their original
+* Moved the seven uncited notes to `docs/archive/memory/` with their original
   relative paths, using `git mv`. Nothing was deleted.
-* Kept the nine cited notes in place. Checkpoints (`checkpoint-20261031-071210`,
-  `-073833`, `-080307`, `-081849`, `checkpoint-20261101-023919`, `-090109`,
-  `-170817`, `-211045`, `-234526`, and `checkpoint-20261102-012505`, `-013307`)
-  and the Ship stash cite them by exact path, so moving them would break those
-  citations.
+* Kept ten notes in place. Nine are cited by exact path from checkpoints
+  (`checkpoint-20261031-071210`, `-073833`, `-080307`, `-081849`,
+  `checkpoint-20261101-023919`, `-090109`, `-170817`, `-211045`, `-234526`,
+  `checkpoint-20261102-012505`, `-013307`) or the Ship stash. The tenth,
+  `2026-11-01/ship-210-s-served-root-handoff.md`, is linked by the retained
+  `2026-11-01/ship-210-s-pr638-copilot-wait.md`. A first pass moved it and
+  broke that link; it was restored to its original path.
 * Did not touch `docs/memory/` files from other shipments.
 * No closure, exec-plan, or closure-record content was rewritten, other than
   the 210-S closure record's status fields and its deviations section.
