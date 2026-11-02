@@ -58,7 +58,11 @@ Post-repair pre-mode reconciliation returned `PROCEED`. The report is
   the item log shows the governed transaction completed: `shipment_status_changed`
   to `shipped`, `commit_tracked`, and `archived`.
 * The retry returned `shipment status conflict`, which confirms the first call
-  had already applied. Nothing was double-applied.
+  had already applied. Nothing was double-applied. The retry itself deviated
+  from the 2026-10-06 learning
+  (`docs/compound/2026-10-06-ship-shipment-mcp-timeout-result-unknown.md`), which
+  says a timed-out governed close must never be retried. The deviation is
+  recorded here and in the compound-refresh report for Stage.
 * `.backlogit/archive/210-S.md` carries `status: archived` and
   `archived_status: shipped`. The queue record is removed.
 * Post-close doctor check: no findings for `210-S`. The historical advisory
@@ -75,6 +79,15 @@ Post-repair pre-mode reconciliation returned `PROCEED`. The report is
 
 ## Deviations and residual risk
 
+* **Open post-mode HALT (operator disposition required before merge).** The
+  post-mode reconciliation report
+  `.backlogit/reconcile/210-S-post-20261102-060800.md` halts at its non-member
+  change-set check. Deferred entry `7E14915F` (stash, Stage-owned) carries an
+  uncommitted-at-closure Stage edit that was committed in `69d3c6bf`. Two
+  governed side-effect files (`hooks_queue.jsonl`, a Ship checkpoint) were also
+  committed without allowlist evidence. The safe-close result envelope cannot be
+  reconstructed. The `READY` status above is the operator's decision. Merge of
+  this PR must wait for the operator to disposition these items.
 * **Compaction status is `done`.** `compact-context` consolidated the 210-S
   session notes into `docs/memory/compacted/2026-11-02-210-s-209-f-compacted.md`.
   Seven uncited notes moved to `docs/archive/memory/`. Ten notes stay in place
