@@ -366,6 +366,7 @@ To respect the 2-hour rule (`<= 3 files`, `<= 5 functions`, `<= 4 test scenarios
   * `internal/core/custody_exec.go`
   * `internal/core/shipment_ops.go`
   * `internal/core/shipment_recovery.go`
+  * `internal/core/shipment.go`
   * `internal/core/artifacts.go`
 * **Acceptance criteria**:
   * RED phase touches ONLY `internal/core/custody_exec_test.go` (zero production files modified), compiles cleanly (`go test -timeout=30m -run=^$ -count=1 ./...` exits 0), and fails on `TestU4_CustodyPreviewOfferAcceptVerifyAndRecovery`.
