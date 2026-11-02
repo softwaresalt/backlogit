@@ -83,6 +83,66 @@ type HookRunner struct {
 	hooks map[hookKey][]HookRegistration
 }
 
+// postBufferKey carries an operation-local post-hook buffer on a context.
+type postBufferKey struct{}
+
+type bufferedPost struct {
+	point HookPoint
+	hc    HookContext
+}
+
+type postBuffer struct {
+	mu    sync.Mutex
+	posts []bufferedPost
+}
+
+func (b *postBuffer) add(point HookPoint, hc HookContext) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.posts = append(b.posts, bufferedPost{point: point, hc: hc})
+}
+
+func (b *postBuffer) drain() []bufferedPost {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	posts := b.posts
+	b.posts = nil
+	return posts
+}
+
+func postBufferFrom(ctx context.Context) *postBuffer {
+	buffer, _ := ctx.Value(postBufferKey{}).(*postBuffer)
+	return buffer
+}
+
+// WithBufferedPostHooks returns a context whose FirePost calls are held in an
+// operation-local buffer instead of running. Buffering is scoped to the
+// returned context chain; no HookRunner is mutated, and FirePre is unaffected.
+func WithBufferedPostHooks(ctx context.Context) context.Context {
+	return context.WithValue(ctx, postBufferKey{}, &postBuffer{})
+}
+
+// FlushBufferedPostHooks fires every post-hook buffered on ctx in the order it
+// was recorded, then empties the buffer. It is a no-op when ctx carries no
+// buffer or runner is nil.
+func FlushBufferedPostHooks(ctx context.Context, runner *HookRunner) {
+	buffer := postBufferFrom(ctx)
+	if buffer == nil || runner == nil {
+		return
+	}
+	flushCtx := context.WithValue(ctx, postBufferKey{}, (*postBuffer)(nil))
+	for _, post := range buffer.drain() {
+		runner.FirePost(flushCtx, post.point, post.hc)
+	}
+}
+
+// DiscardBufferedPostHooks drops every post-hook buffered on ctx without firing it.
+func DiscardBufferedPostHooks(ctx context.Context) {
+	if buffer := postBufferFrom(ctx); buffer != nil {
+		buffer.drain()
+	}
+}
+
 // NewHookRunner creates an empty hook runner.
 func NewHookRunner() *HookRunner {
 	return &HookRunner{
@@ -119,6 +179,10 @@ func (r *HookRunner) FirePre(ctx context.Context, point HookPoint, hc HookContex
 // then fires hooks in ascending priority order. Errors are logged via slog.Warn
 // and never returned; post-hooks must not block the operation's completion.
 func (r *HookRunner) FirePost(ctx context.Context, point HookPoint, hc HookContext) {
+	if buffer := postBufferFrom(ctx); buffer != nil {
+		buffer.add(point, hc)
+		return
+	}
 	snapshot := r.snapshot(point, PhasePost)
 	sort.Slice(snapshot, func(i, j int) bool {
 		return snapshot[i].Priority < snapshot[j].Priority

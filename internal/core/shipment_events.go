@@ -19,6 +19,8 @@ const (
 	EventShipmentItemMoved = "shipment_item_moved"
 	// EventShipmentReordered records a shipment manifest order rewrite.
 	EventShipmentReordered = "shipment_reordered"
+	// EventShipmentReconstituted records declarative shipment reconstitution.
+	EventShipmentReconstituted = "shipment_reconstituted"
 )
 
 // shipment_events.go (143.002-T / Unit 2) carries the shipment-scoped,

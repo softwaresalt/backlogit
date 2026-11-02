@@ -340,7 +340,8 @@ func validateShipmentLifecycleJournalRecord(
 	}
 	switch journal.Operation {
 	case "block", "unblock", "normalize", "claim", "dispose",
-		shipmentOperationRemoveItem, shipmentOperationMoveItem, shipmentOperationReorderItems:
+		shipmentOperationRemoveItem, shipmentOperationMoveItem, shipmentOperationReorderItems,
+		shipmentOperationReconstitute:
 	default:
 		return fmt.Errorf("unsupported lifecycle operation %q: %w", journal.Operation, blerrors.ErrValidation)
 	}
@@ -392,6 +393,14 @@ func validateShipmentLifecycleJournalRecord(
 		if journal.RecoveryPolicy != "rollback" || journal.Target != "active" {
 			return fmt.Errorf("claim lifecycle tuple must be rollback/active: %w", blerrors.ErrValidation)
 		}
+	case shipmentOperationReconstitute:
+		if journal.RecoveryPolicy != shipmentOperationRecoveryPolicyRollback {
+			return fmt.Errorf("reconstitute lifecycle tuple must be rollback: %w", blerrors.ErrValidation)
+		}
+		// A reconstitute journal spans many shipments and members, so it
+		// carries its own preimage images instead of per-manifest coverage.
+		// Its recovery state replays deletes and writes, so it is validated here.
+		return validateReconstituteJournalState(journal.Reconstitute)
 	case "dispose":
 		if journal.RecoveryPolicy != "rollback" || journal.Target != "abandoned" {
 			return fmt.Errorf("dispose lifecycle tuple must be rollback/abandoned: %w", blerrors.ErrValidation)
@@ -545,6 +554,7 @@ const (
 	shipmentOperationMoveItem   = "move_item"
 
 	shipmentOperationReorderItems = "reorder_items"
+	shipmentOperationReconstitute = "reconstitute"
 
 	shipmentOperationRecoveryPolicyRollback = "rollback"
 )

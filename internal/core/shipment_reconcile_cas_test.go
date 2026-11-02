@@ -57,6 +57,19 @@ func archiveArtifact(t *testing.T, ws *Workspace, id, archivedStatus string) {
 	require.NoError(t, persistArtifact(context.Background(), ws, current, false))
 }
 
+func archiveArtifactWithoutLocks(t *testing.T, ws *Workspace, id, archivedStatus string) {
+	t.Helper()
+	ctx := context.Background()
+	current, err := findArtifact(ctx, ws, id)
+	require.NoError(t, err)
+	path, err := FindArtifactPath(ctx, ws, id)
+	require.NoError(t, err)
+	current.ArchivedFrom = string(current.Status)
+	current.Status = models.StatusArchived
+	current.ArchivedStatus = archivedStatus
+	require.NoError(t, WriteArtifactFileWithOptions(current, path, WorkspaceDurableWrites(ws)))
+}
+
 // TestGuardArchivedStatusUnchangedSince_UnitBehavior exercises the shared
 // guard directly for both the reject and pass-through paths.
 func TestGuardArchivedStatusUnchangedSince_UnitBehavior(t *testing.T) {
@@ -111,8 +124,11 @@ func TestAssociateCommit_DoesNotClobberConcurrentArchivedStatusChange(t *testing
 	require.NoError(t, err)
 	ew := NewWorkspaceEventWriter(ws, WorkspaceLogsRoot(ws.RootPath))
 
+	// AssociateCommit now holds lifecycle-global for its whole critical section
+	// (canonical lock order), so the simulated competing writer must bypass the
+	// in-process locks, as an out-of-band writer would.
 	fnErr := withConcurrentArchivedStatusMutation(t, shipment.ID, func() {
-		archiveArtifact(t, ws, shipment.ID, "shipped")
+		archiveArtifactWithoutLocks(t, ws, shipment.ID, "shipped")
 	}, func() error {
 		return AssociateCommit(ctx, ws, ew, shipment.ID, "deadbeef", "msg", "author")
 	})

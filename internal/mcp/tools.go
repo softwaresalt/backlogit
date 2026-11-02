@@ -555,6 +555,17 @@ func (s *Server) RegisterTools() {
 		s.handleReorderShipment,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_reconstitute_shipment",
+			mcplib.WithDescription("Declaratively split or regroup queued shipments from a YAML plan; exactly one of plan_path or plan_yaml is required (force + reason overrides the queued-only guard)"),
+			mcplib.WithString("plan_path", mcplib.Description("Workspace-relative path to the plan YAML file")),
+			mcplib.WithString("plan_yaml", mcplib.Description("Inline plan YAML")),
+			mcplib.WithString("reason", mcplib.Description("Operator justification (required when force is true)")),
+			mcplib.WithBoolean("force", mcplib.Description("Override the queued-only guard (requires reason)")),
+			mcplib.WithBoolean("dry_run", mcplib.Description("Preview the change without writing")),
+		),
+		s.handleReconstituteShipment,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_adopt_item",
 			mcplib.WithDescription("Adopt an orphaned item under a new parent feature"),
 			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID to adopt")),

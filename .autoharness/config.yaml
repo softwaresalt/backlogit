@@ -64,25 +64,30 @@ model_routing:
     model_family: "claude-sonnet-5.5"
     context_tier: "default"
   orchestrator:
-    model_family: "claude-sonnet-5.5"             # Orchestrator model override
-    model_provider: "anthropic"
-    reasoning_effort: "medium"
+    model_family: "gemini-4-argon"
+    model_provider: "google"
+    reasoning_effort: "high"
     context_tier: "long_context"
   stage:
     model_family: "gemini-4-argon"             # Stage role route (falls back to tier3 when empty)
     model_provider: "google"
     reasoning_effort: "high"
     context_tier: "long_context"
+    escalation:
+      model_family: "gpt-6.1-sol"
+      model_provider: "openai"
+      reasoning_effort: "high"
+      context_tier: "long_context"
   ship:
-    model_family: "claude-sonnet-5.5"
-    model_provider: "anthropic"
+    model_family: "gpt-6.1-terra"
+    model_provider: "openai"
     reasoning_effort: "medium"
     context_tier: "long_context" 
     escalation:
-      model_family: "claude-sonnet-5.5"
-      model_provider: "anthropic"
-      reasoning_effort: "high"
-      context_tier: "long_context" 
+      model_family: "gpt-6.1-sol"
+      model_provider: "openai"
+      reasoning_effort: "medium"
+      context_tier: "long_context"
   anchor_review:
     model_provider: "openai"
     model_family: "gpt-6.1-sol"

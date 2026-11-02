@@ -144,6 +144,7 @@ func CorrectStashProvenance(ctx context.Context, ws *Workspace, req StashProvena
 		return nil, fmt.Errorf("acquire stash lock: %w", err)
 	}
 	defer func() { _ = unlock() }()
+	ctx = withStashLockHeld(ctx)
 
 	lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
 	if err != nil {

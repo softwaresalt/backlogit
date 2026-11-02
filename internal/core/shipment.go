@@ -74,6 +74,7 @@ type shipmentLifecycleJournal struct {
 	BlockedBy      string                    `json:"blocked_by,omitempty"`
 	SnapshotRef    string                    `json:"snapshot_ref,omitempty"`
 	Preimage       shipmentLifecyclePreimage `json:"preimage"`
+	Reconstitute   *reconstituteJournalState `json:"reconstitute,omitempty"`
 }
 
 const shipmentLifecycleGlobalLockID = "shipment-lifecycle-global"
@@ -2015,6 +2016,16 @@ func persistArtifactWithLinkPolicyAndGuard(ctx context.Context, ws *Workspace, a
 		}
 	}
 	if requiresLifecycleBarrier {
+		if events.ItemLogCrossProcessLockHeld(ctx, WorkspaceLogsRoot(ws.RootPath), artifact.ID) {
+			held, err := validateShipmentLifecycleGlobalReentry(ctx, ws, "persistArtifactWithLinkPolicyAndGuard")
+			if err != nil {
+				return fmt.Errorf("verify lifecycle ownership before persist: %w", err)
+			}
+			if !held {
+				return fmt.Errorf("persist artifact %s: %w", artifact.ID, shipmentLifecycleLockOrderError(ctx,
+					"persistArtifactWithLinkPolicyAndGuard", "cannot acquire lifecycle global while item-log C is held"))
+			}
+		}
 		lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobalRaw(
 			ctx,
 			ws,
@@ -2739,7 +2750,7 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 		if record.kind == shipmentLifecycleJournalKind {
 			journal := record.lifecycle
 			if journal.Phase == shipmentOperationPhaseCommitted &&
-				isShipmentManifestOperation(journal.Operation) &&
+				(isShipmentManifestOperation(journal.Operation) || journal.Operation == shipmentOperationReconstitute) &&
 				(currentOperationID == "" || journal.CorrelationID != currentOperationID) {
 				// A completed remove_item / move_item whose cleanup was
 				// interrupted: finalize without touching preimages.
@@ -2767,6 +2778,34 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 				if related != nil {
 					lockIDs = append(lockIDs, related.ID)
 				}
+			}
+			if journal.Reconstitute != nil {
+				lockIDs = append(lockIDs, journal.Reconstitute.LockIDs...)
+				lockIDs = append(lockIDs, journal.Reconstitute.CreatedIDs...)
+				for oldID, newID := range journal.Reconstitute.Adoptions {
+					lockIDs = append(lockIDs, oldID, newID)
+				}
+				knownLogs := make(map[string]struct{}, len(journal.Reconstitute.KnownLogs))
+				for _, path := range journal.Reconstitute.KnownLogs {
+					knownLogs[path] = struct{}{}
+				}
+				discovered, discoverErr := discoverReconstituteAdoptions(
+					ctx, ws, journal.CorrelationID, WorkspaceLogsRoot(ws.RootPath), knownLogs)
+				if discoverErr != nil {
+					recoveryErrs = append(recoveryErrs, errors.Join(discoverErr, membershipUnlock()))
+					continue
+				}
+				for oldID, newID := range discovered {
+					if validReconstituteID(oldID) && validReconstituteID(newID) {
+						lockIDs = append(lockIDs, oldID, newID)
+					}
+				}
+				imageOwners, ownerErr := reconstituteImageOwners(journal.Reconstitute)
+				if ownerErr != nil {
+					recoveryErrs = append(recoveryErrs, errors.Join(ownerErr, membershipUnlock()))
+					continue
+				}
+				lockIDs = append(lockIDs, imageOwners...)
 			}
 			lockedCtx, artifactUnlock, lockErr := lockArtifactMutations(ctx, ws, lockIDs)
 			if lockErr == nil {

@@ -408,6 +408,16 @@ operations:
       force: "force"
       dry_run: "dry_run"
 
+  reconstitute_shipment:
+    mcp_tool: "backlogit_reconstitute_shipment"
+    cli_command: "backlogit shipment reconstitute --plan {{plan_path}}"
+    params:
+      plan_path: "plan_path"
+      plan_yaml: "plan_yaml"
+      dry_run: "dry_run"
+      force: "force"
+      reason: "reason"
+
   return_blocked:
     mcp_tool: "backlogit_return_blocked"
     cli_command: "backlogit shipment return-blocked --shipment {{shipment_id}} --item {{item_id}} --reason {{reason}}"

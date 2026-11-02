@@ -36,14 +36,26 @@ func runShipmentManifestOp(
 	operation string,
 	dryRun bool,
 	op func(ctx context.Context, ws *core.Workspace) (any, error),
+) error {
+	return runShipmentManifestOpWith(cmd, operation, dryRun, core.NewReadOnlyWorkspace, op)
+}
+
+// runShipmentManifestOpWith is runShipmentManifestOp with an explicit opener for
+// the dry-run workspace, for previews that need a read-only index.
+func runShipmentManifestOpWith(
+	cmd *cobra.Command,
+	operation string,
+	dryRun bool,
+	openDryRun func(ctx context.Context, rootPath string) (*core.Workspace, error),
+	op func(ctx context.Context, ws *core.Workspace) (any, error),
 ) (retErr error) {
 	ctx := context.Background()
 	slog.Info("shipment command invoked", "operation", operation, "dry_run", dryRun)
 
-	// A dry-run must stay read-only: no recovery, no SQLite open.
+	// A dry-run must stay zero-write: no recovery and no writable SQLite open.
 	open := core.NewWorkspace
 	if dryRun {
-		open = core.NewReadOnlyWorkspace
+		open = openDryRun
 	}
 	ws, err := open(ctx, shipmentCWD(cmd))
 	if err != nil {
@@ -147,6 +159,43 @@ order). Use --dry-run to preview the resulting order.`,
 	}
 	cmd.Flags().StringVar(&items, "items", "", "explicit comma-separated manifest order")
 	cmd.Flags().BoolVar(&auto, "auto", false, "compute a dependency-respecting order")
+	flags.bind(cmd)
+	return cmd
+}
+
+// newShipmentReconstituteCmd returns the `backlogit shipment reconstitute`
+// subcommand, the CLI fallback for the backlogit_reconstitute_shipment MCP tool.
+func newShipmentReconstituteCmd() *cobra.Command {
+	var flags shipmentManifestFlags
+	var plan string
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "reconstitute --plan <plan-file>",
+		Short: "Reconstitute shipments from a declarative plan",
+		Long: `Declaratively split or regroup queued shipments from a YAML plan.
+
+This mirrors the backlogit_reconstitute_shipment MCP tool. The plan is validated
+and applied atomically; only queued shipments may be changed unless --force is
+supplied together with --reason. Use --dry-run to preview the result without
+writing. Output is always JSON; --json is accepted for symmetry with other commands.`,
+		Example: `  backlogit shipment reconstitute --plan plans/split.yaml --dry-run
+  backlogit shipment reconstitute --plan plans/split.yaml --json`,
+		Args: cobra.NoArgs,
+		// Dry-run ID prediction reads the index, so the dry-run opens it read-only.
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runShipmentManifestOpWith(cmd, "shipment-reconstitute", flags.dryRun, core.NewReadOnlyIndexWorkspace, func(ctx context.Context, ws *core.Workspace) (any, error) {
+				return core.ReconstituteShipments(ctx, ws, core.ReconstituteOptions{
+					PlanPath: plan,
+					DryRun:   flags.dryRun,
+					Force:    flags.force,
+					Reason:   flags.reason,
+				})
+			})
+		},
+	}
+	cmd.Flags().StringVar(&plan, "plan", "", "path to the reconstitution plan YAML file")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON output (default)")
+	_ = cmd.MarkFlagRequired("plan")
 	flags.bind(cmd)
 	return cmd
 }

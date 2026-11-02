@@ -1208,6 +1208,11 @@ type AdoptItemOptions struct {
 	// KeepID keeps the existing artifact ID instead of allocating a new one
 	// under the new parent.
 	KeepID bool
+	// BeforeRename, when set, is called after the new ID is allocated and the
+	// item-log locks are held but before any mutation, so a caller can durably
+	// record the old->new pair. A returned error aborts the adoption untouched.
+	BeforeRename       func(ctx context.Context, oldID, newID string) error
+	allowedCrossRefIDs map[string]struct{}
 }
 
 // AdoptItemWithOptions is AdoptItem with explicit options. With KeepID the
@@ -1230,12 +1235,13 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 	// Canonical order: the active stash lock is outermost (matching
 	// HarvestStashEntry: stash -> lifecycle-global -> item-log -> artifact
 	// mutation). Only the rename path rewrites the stash archive.
-	if !opts.KeepID && ws.DB != nil {
+	if !opts.KeepID && ws.DB != nil && !stashLockHeld(ctx) {
 		unlockStash, stashErr := lockActiveStash(ws)
 		if stashErr != nil {
 			return nil, fmt.Errorf("adopt item %s: acquire stash lock: %w", itemID, stashErr)
 		}
 		defer func() { _ = unlockStash() }()
+		ctx = withStashLockHeld(ctx)
 	}
 	lockedCtx, releaseArtifactLocks, lockErr := lockArtifactMutations(ctx, ws, []string{itemID, newParentID})
 	if lockErr != nil {
@@ -1318,6 +1324,11 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		}
 		defer releaseEventLocks()
 		ctx = lockedCtx
+		if opts.BeforeRename != nil {
+			if err := opts.BeforeRename(ctx, oldID, newID); err != nil {
+				return nil, fmt.Errorf("adopt item %s: record rename %s->%s: %w", itemID, oldID, newID, err)
+			}
+		}
 	}
 
 	// Update the artifact with new parent and ID.
@@ -1331,6 +1342,14 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 	crossRefs, crossRefErr := findCrossArtifactReferences(ctx, ws, oldID, newID)
 	if crossRefErr != nil {
 		return nil, fmt.Errorf("adopt item %s: scan cross-references: %w", oldID, crossRefErr)
+	}
+	if opts.allowedCrossRefIDs != nil {
+		for _, ref := range crossRefs {
+			if _, ok := opts.allowedCrossRefIDs[ref.artifact.ID]; !ok {
+				return nil, fmt.Errorf("adopt item %s: cross-reference owner %s was not snapshotted: %w",
+					itemID, ref.artifact.ID, blerrors.ErrShipmentConflict)
+			}
+		}
 	}
 
 	// Step 2: Begin DB transaction for edge rewrites and index sync.

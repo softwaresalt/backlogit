@@ -505,13 +505,18 @@ frozen **here** and nowhere else.
 8. If `M` is empty, halt and report — there is nothing to build.
 9. **Replay the scheduler before relying on it.** Run the tracked, read-only contract simulation
    (`pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue`) and require
-   `WAVE_SIM_OK`. It reads the real shipment manifest, workspace status catalog, and registry
-   status mapping/features; filters task IDs into `M`; exact-compares `M` with the explicit
-   non-shipment fallback set; reports excluded non-task IDs; verifies every red-deliverable key;
-   and runs status-source and archived-sibling mutation controls. It also enforces the
-   green-regression JSON object/array shape. A drifted fixture or regressed halt path is therefore
-   caught here rather than mid-release. A failing or drifted simulation blocks the schedule from
-   being used (P-002.6).
+   `WAVE_SIM_OK`. Note: this script is a static algorithm-level regression simulation pinned to the
+   historical `130-S` contract fixture (`tests/simulation/wave-scheduler-contract.json`, 43 task
+   members, 26 scenarios, 200 assertions) — it does **not** take or replay the current session's
+   shipment ID (such as `210-S` or any later shipment), whose own wave partition was already
+   computed in items 5–7 above. For the `130-S` fixture, it reads the shipment manifest, workspace
+   status catalog, and registry status mapping/features; filters task IDs into `M`; exact-compares
+   `M` with the explicit non-shipment fallback set; reports excluded non-task IDs; verifies every
+   red-deliverable key; and runs status-source and archived-sibling mutation controls. It also
+   enforces the green-regression JSON object/array shape. A drifted fixture or regressed halt path
+   is therefore caught here rather than mid-release. Observing `WAVE_SIM_OK` on the `130-S`
+   contract fixture satisfies this step for **every** shipment; a failing (`WAVE_SIM_FAIL` /
+   non-zero exit) simulation blocks the schedule from being used (P-002.6).
 
 Queue membership is admission to the *schedule*, not to the *build*: every task still passes its
 wave's Step 2/2a harness gate, and every exempt task still passes Step 4.1a, before it is claimed.

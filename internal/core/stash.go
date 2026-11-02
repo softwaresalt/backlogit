@@ -325,6 +325,7 @@ func HarvestStashEntry(ctx context.Context, ws *Workspace, harvestOpts HarvestSt
 		return nil, fmt.Errorf("acquire stash lock: %w", err)
 	}
 	defer func() { _ = unlock() }()
+	ctx = withStashLockHeld(ctx)
 
 	return harvestStashEntryLocked(ctx, ws, harvestOpts, path, nil)
 }
@@ -465,6 +466,7 @@ func HarvestStashByPriority(ctx context.Context, ws *Workspace, opts HarvestStas
 		return nil, fmt.Errorf("acquire stash lock for batch harvest: %w", err)
 	}
 	defer func() { _ = unlock() }()
+	ctx = withStashLockHeld(ctx)
 
 	fetched, err := FetchStash(ctx, ws, FetchStashOptions{Priority: priority})
 	if err != nil {

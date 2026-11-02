@@ -57,11 +57,58 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	if ew == nil {
 		return fmt.Errorf("associate commit: EventWriter must not be nil")
 	}
+	// Recover before taking artifact and compensation snapshots. A caller
+	// already holding C must not invert C -> lifecycle-global.
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	if events.ItemLogCrossProcessLockHeld(ctx, logsDir, itemID) {
+		held, err := validateShipmentLifecycleGlobalReentry(ctx, ws, "AssociateCommit")
+		if err != nil {
+			return fmt.Errorf("associate commit: verify preheld lifecycle ownership: %w", err)
+		}
+		// C cannot authorize a later global acquisition. Require the actual
+		// workspace-bound ordered token, not a newly manufactured marker.
+		_, hasToken := ctx.Value(shipmentLifecycleHeldLocksContextKey{}).(*shipmentLifecycleHeldLocks)
+		if held && !hasToken {
+			return fmt.Errorf("associate commit: %w", shipmentLifecycleLockOrderError(ctx,
+				"AssociateCommit", "preheld C requires verified lifecycle ownership"))
+		}
+		if !held {
+			refs, err := scanCanonicalArtifacts(ws)
+			if err != nil {
+				return fmt.Errorf("associate commit: classify lifecycle participation: %w", err)
+			}
+			requiresGlobal := false
+			for _, ref := range refs[itemID] {
+				requiresGlobal = requiresGlobal || ref.artifactType == "shipment"
+			}
+			if !requiresGlobal {
+				requiresGlobal, err = artifactIsShipmentLifecycleMember(ws, itemID)
+				if err != nil {
+					return fmt.Errorf("associate commit: classify lifecycle membership: %w", err)
+				}
+			}
+			if requiresGlobal {
+				return fmt.Errorf("associate commit: %w", shipmentLifecycleLockOrderError(ctx,
+					"AssociateCommit", "C-only lifecycle participant cannot acquire global after C"))
+			}
+		}
+	} else {
+		lifecycleCtx, globalUnlock, globalErr := lockShipmentLifecycleGlobal(ctx, ws)
+		if globalErr != nil {
+			return fmt.Errorf("associate commit: lock shipment lifecycle: %w", globalErr)
+		}
+		defer func() {
+			if unlockErr := globalUnlock(); unlockErr != nil {
+				slog.Warn("associate commit: release shipment lifecycle lock", "item_id", itemID, "error", unlockErr)
+			}
+		}()
+		ctx = lifecycleCtx
+	}
 	artifact, err := findArtifact(ctx, ws, itemID)
 	if err != nil {
 		return fmt.Errorf("associate commit: load artifact %s: %w", itemID, err)
 	}
-	// Captured BEFORE any lock is acquired (findArtifact takes none). Used by
+	// Captured BEFORE the item-log/artifact locks (findArtifact takes none). Used by
 	// the guard below to detect a concurrent writer (e.g. a governed shipment
 	// reconciliation) that commits a different archived_status under lock B
 	// between this read and this function's own persist step (167.019-T).
@@ -103,7 +150,6 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 		}
 	}
 
-	logsDir := WorkspaceLogsRoot(ws.RootPath)
 	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
 	if lockErr != nil {
 		return fmt.Errorf("associate commit: lock item log: %w", lockErr)
