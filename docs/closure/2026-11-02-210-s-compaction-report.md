@@ -8,7 +8,7 @@ chunk_strategy: h1-h2-h3
 shipment_id: 210-S
 feature_id: 209-F
 mode: post-merge
-compaction_status: degraded
+compaction_status: done
 ---
 
 # 210-S compaction report
@@ -26,13 +26,23 @@ post-merge step. The corpus exceeds the manual trigger thresholds.
 
 ## Actions
 
-* Assessment only. No file was moved to `docs/archive/` and no file was
-  rewritten.
-* The 210-S closure record, this report, the compound-refresh report, and
-  the session memory were written as new artifacts.
+* Consolidated the 17 210-S session notes from `docs/memory/2026-10-30/`,
+  `docs/memory/2026-10-31/`, `docs/memory/2026-11-01/`, and
+  `docs/memory/2026-10-31-210-s-wave1-format-gate-halt.md` into
+  `docs/memory/compacted/2026-11-02-210-s-209-f-compacted.md`.
+* Moved the eight uncited notes to `docs/archive/memory/` with their original
+  relative paths, using `git mv`. Nothing was deleted.
+* Kept the nine cited notes in place. Checkpoints (`checkpoint-20261031-071210`,
+  `-073833`, `-080307`, `-081849`, `checkpoint-20261101-023919`, `-090109`,
+  `-170817`, `-211045`, `-234526`, and `checkpoint-20261102-012505`, `-013307`)
+  and the Ship stash cite them by exact path, so moving them would break those
+  citations.
+* Did not touch `docs/memory/` files from other shipments.
+* No closure, exec-plan, or closure-record content was rewritten, other than
+  the 210-S closure record's status fields and its deviations section.
 
 ## Status
 
-`compaction_status: degraded`. The consolidation pass was not executed in
-this closure. The corpus remains above threshold. A follow-up compaction run
-should be scheduled through Stage.
+`compaction_status: done`. The 210-S corpus is consolidated and indexed. The
+other memory corpus remains above threshold and is outside this run. A
+broader compaction pass for other shipments should be scheduled through Stage.

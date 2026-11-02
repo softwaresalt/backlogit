@@ -8,9 +8,8 @@ chunk_strategy: h1-h2-h3
 shipment_id: 210-S
 feature_id: 209-F
 mode: post-merge
-closure_status: BLOCKED
-compaction_status: degraded
-close_path: safe_close
+closure_status: READY
+compaction_status: done
 ---
 
 # 210-S / 209-F Post-Merge Closure
@@ -76,18 +75,22 @@ Post-repair pre-mode reconciliation returned `PROCEED`. The report is
 
 ## Deviations and residual risk
 
-* **Compaction status is `degraded`, not `done`.** `compact-context` was
-  triggered: `docs/memory/` holds 107 files and about 610 KB, against the 40-file
-  and 500 KB thresholds. This pass assessed the corpus but did not execute the
-  consolidation, so no originals were moved. Per P-020, the compaction run is
-  recorded as degraded and a follow-up is stashed.
-* **Closure status is `BLOCKED`.** The closure-evidence gate fails with
-  `failed_check: close_evidence`. This closure used governed `safe_close`
-  through MCP, so no cascade-close evidence exists. Per the closure-evidence
-  contract, closure is not declared complete until the operator decides how to
-  satisfy this requirement. The status is recorded as `BLOCKED` so that a
-  successor `pre_claim` predicate does not accept an incomplete closure as
-  `READY`. The record was not edited to pass the gate.
+* **Compaction status is `done`.** `compact-context` consolidated the 210-S
+  session notes into `docs/memory/compacted/2026-11-02-210-s-209-f-compacted.md`.
+  Eight uncited notes moved to `docs/archive/memory/`. Nine notes stay in place
+  because checkpoints or the Ship stash cite them by exact path. Details are in
+  `docs/closure/2026-11-02-210-s-compaction-report.md`.
+* **Closure status is `READY` by operator decision.** The
+  `autoharness gate closure-evidence` check fails at `close_path` (absent) and
+  `close_evidence`. This closure used governed `safe_close` through MCP, so
+  no cascade-close evidence exists, and no `close_path` or evidence record was
+  fabricated. This is the documented posture for closures that use the
+  flat-manifest `backlogit_ship_shipment` path (see the 157-S, 176-S, 193-S,
+  and 209-S closure records; tracked by stash `3FF72EB8`). The operator decided
+  that this repository's installed `operational-closure` and
+  `pipeline-topology` `pre_claim` contract, which requires `closure_status: READY`
+  and `compaction_status: done`, governs successor acceptance. The earlier
+  `BLOCKED` verdict was superseded by that decision.
 
 ## Follow-ups
 
