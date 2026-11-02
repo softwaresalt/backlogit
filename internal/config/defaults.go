@@ -152,6 +152,10 @@ func defaultHeaderDef() *HeaderDefConfig {
 						Type:     "string",
 						Optional: true,
 					},
+					"workflow_id": {
+						Type:     "string",
+						Optional: true,
+					},
 					"items": {
 						Type:     "list",
 						Optional: true,

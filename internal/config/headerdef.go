@@ -72,12 +72,14 @@ func upgradeLegacyGeneratedHeaderDef(cfg *HeaderDefConfig) {
 
 	current := defaultHeaderDef()
 	// Enumerate every prior generated variant: task complexity and/or its
-	// provenance fields absent, and/or the shipment "blocked" status absent.
-	// The all-current combination is skipped (nothing to upgrade).
-	for mask := 1; mask < 8; mask++ {
+	// provenance fields absent, the shipment "blocked" status absent, and/or
+	// shipment.workflow_id absent. The all-current combination is skipped
+	// (nothing to upgrade).
+	for mask := 1; mask < 16; mask++ {
 		dropComplexity := mask&1 != 0
 		dropProvenance := mask&2 != 0
 		dropBlocked := mask&4 != 0
+		dropWorkflowID := mask&8 != 0
 		prior := defaultHeaderDef()
 		task := prior.Types["task"].Fields
 		if dropComplexity {
@@ -90,6 +92,9 @@ func upgradeLegacyGeneratedHeaderDef(cfg *HeaderDefConfig) {
 		if dropBlocked {
 			removeHeaderDefValue(prior.Types["shipment"].Fields["status"], "blocked")
 		}
+		if dropWorkflowID {
+			delete(prior.Types["shipment"].Fields, "workflow_id")
+		}
 		if !reflect.DeepEqual(cfg, prior) {
 			continue
 		}
@@ -97,6 +102,7 @@ func upgradeLegacyGeneratedHeaderDef(cfg *HeaderDefConfig) {
 			cfg.Types["task"].Fields[name] = current.Types["task"].Fields[name]
 		}
 		cfg.Types["shipment"].Fields["status"] = current.Types["shipment"].Fields["status"]
+		cfg.Types["shipment"].Fields["workflow_id"] = current.Types["shipment"].Fields["workflow_id"]
 		return
 	}
 }
