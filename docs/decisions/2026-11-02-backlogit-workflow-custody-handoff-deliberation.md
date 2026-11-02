@@ -8,7 +8,7 @@ docline:
   depth: deep
   linked_artifacts:
     - docs/plans/2026-11-02-backlogit-workflow-custody-handoff-plan.md
-    - .backlogit/queue/081-DL.md
+    - .backlogit/archive/081-DL.md
   promoted_to: both
   source_stash_id: 6DA6A627
   tags:
@@ -131,6 +131,6 @@ None blocking `backlogit` implementation (`210-F` / `211-S`). Downstream GSD gat
 ## Risks and Mitigations
 
 * **Lock-Order Inversion Risk**: Mitigated by strictly acquiring `shipment-lifecycle-global -> lockShipmentMembership(A) -> events.LockItemLogCrossProcess(C) -> lockArtifactMutations(B)` and never acquiring `stashMu` or secondary locks inside the held span (`2026-10-19-lock-held-side-effect-ordering.md`).
-* **Symlink / Reparse-Point / Case-Only Rename Escape on Windows**: Mitigated by component-by-component `Lstat` + `IsSymlinkOrReparsePoint` validation and directory-entry case verification (`os.ReadDir`) for `case_only_rename` entries (`2026-10-27-pin-the-handle-not-the-path.md`).
+* **Symlink / Reparse-Point / Case-Only Rename Escape on Windows**: Mitigated by component-by-component `Lstat` + `IsSymlinkOrReparsePoint` validation followed by handle-pinned, no-follow file opens (`O_NOFOLLOW` / Windows `FILE_FLAG_OPEN_REPARSE_POINT` with opened-path/file-ID identity verification against the `Lstat` pre-check before hashing worktree bytes, plus a deterministic post-validation symlink/junction swap regression test in `U3`/`U4`) and directory-entry case verification (`os.ReadDir`) for `case_only_rename` entries (`2026-10-27-pin-the-handle-not-the-path.md`).
 * **Post-Commit Durability Indeterminacy**: Mitigated by enforcing `ErrWriteNotApplied` before the journal/rename commit point and commit-then-surface `ErrWriteIndeterminate` with `MutationEnvelope` after the commit point (`2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`).
 * **Registry & CLI/MCP Parity Drift**: Mitigated by registering `preview_custody`, `offer_custody`, `accept_custody`, and `verify_custody` in `.autoharness/backlog-registry.yaml` and verifying via `TestRegistryParity_*` (`2026-07-03-cli-mcp-honest-fallback-map-and-registry-drift-test.md`).
