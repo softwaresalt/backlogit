@@ -142,6 +142,20 @@ func TestU4_CustodyPreviewOfferAcceptVerifyAndRecovery(t *testing.T) {
 		stale, err := VerifyCustodyState(ctx, repo.ws, CustodyVerifyOptions{ShipmentID: repo.shipmentID, Branch: custExecFeatureBranch})
 		require.NoError(t, err)
 		assert.Equal(t, "STALE_DIGEST", custExecVerdict(stale, custExecCovered))
+
+		// A case-only rename must match the on-disk directory entry casing exactly.
+		// Comparing the directory listing rather than os.Stat keeps this check
+		// correct on case-insensitive filesystems such as Windows NTFS.
+		caseOnlyEnv := func(path string) WorkflowCustodyEnvelope {
+			return WorkflowCustodyEnvelope{Receipts: []CustodyReceipt{{ReceiptID: "rcpt-case-only", Entries: []CustodyEntry{{
+				Path: path, OldPath: "docs/plans/PLAN.md", ChangeKind: "renamed", CaseOnlyRename: true,
+			}}}}}
+		}
+		require.NoError(t, ValidateCustodyRenameCasing(repo.ws, caseOnlyEnv(custExecCovered)),
+			"case-only rename whose path matches the on-disk casing must pass")
+		err = ValidateCustodyRenameCasing(repo.ws, caseOnlyEnv("docs/plans/Plan.md"))
+		assert.ErrorIs(t, err, ErrPartialRenameAdoptionRejected,
+			"case-only rename whose casing differs from the on-disk entry must fail closed")
 	})
 
 	t.Run("profile_a_operator_adoption_nonce_replay_and_unverified_rejection", func(t *testing.T) {
