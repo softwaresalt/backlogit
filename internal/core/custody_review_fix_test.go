@@ -293,6 +293,18 @@ func TestReview_ProfileEligibility(t *testing.T) {
 		assert.ErrorIs(t, err, ErrOperatorApprovalRequired)
 	})
 
+	t.Run("preexisting_adoption_action_requires_profile_a", func(t *testing.T) {
+		repo := custExecNewRepo(t)
+		custExecWrite(t, repo.root, "docs/review/x.md", "content\n")
+		preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo,
+			custodyReviewUntrackedCandidate("docs/review/x.md", "stage", "stage_artifact")))
+		require.NoError(t, err)
+		receipt := custExecReceipt("rcpt-adopt-b-1", "stage_to_ship_handoff", "agent_workflow_handoff", "stage", "ship",
+			"preexisting_adoption_commit", preview.CandidateSetDigest, custodyReviewUntrackedEntry("docs/review/x.md", "content\n", "stage", "stage_artifact"))
+		_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{ShipmentID: repo.shipmentID, Spec: receipt})
+		assert.ErrorIs(t, err, ErrOperatorApprovalRequired)
+	})
+
 	t.Run("accept_refuses_profile_b_outside_scope", func(t *testing.T) {
 		repo := custExecNewRepo(t)
 		path := "internal/core/x.go"
