@@ -874,7 +874,8 @@ func custodyRollback(ctx context.Context, ws *Workspace, journal shipmentLifecyc
 
 // custodyFinishJournal removes a finished custody journal. When removal fails, the journal
 // is rewritten to the terminal compensated phase, so a later recovery barrier cannot
-// replay the stale intent. If that rewrite also fails, the error is returned.
+// replay the stale intent. The removal failure is returned in either case, so recovery
+// fails loudly rather than reporting a clean rollback.
 func custodyFinishJournal(ws *Workspace, journal shipmentLifecycleJournal, journalPath string) error {
 	removeErr := custodyRemoveJournal(ws, journalPath)
 	if removeErr == nil {
@@ -885,7 +886,7 @@ func custodyFinishJournal(ws *Workspace, journal shipmentLifecycleJournal, journ
 		return errors.Join(fmt.Errorf("remove custody journal %s: %w", journalPath, removeErr),
 			fmt.Errorf("record compensated custody journal: %w", err))
 	}
-	return nil
+	return fmt.Errorf("remove custody journal %s after compensation: %w", journalPath, removeErr)
 }
 
 // custodyRemoveJournal removes the journal through the workspace seam when one is set.
