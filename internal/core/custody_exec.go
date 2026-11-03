@@ -850,7 +850,7 @@ func custodyCommitTransaction(ctx context.Context, ws *Workspace, plan custodyCo
 }
 
 func custodyApply(ctx context.Context, ws *Workspace, plan custodyCommitPlan) error {
-	if err := custodyWriteArtifact(ctx, ws, plan.next); err != nil {
+	if err := custodyWriteArtifact(ctx, ws, plan.next, true); err != nil {
 		return err
 	}
 	for _, ev := range plan.events {
@@ -866,7 +866,7 @@ func custodyApply(ctx context.Context, ws *Workspace, plan custodyCommitPlan) er
 // place, so the next recovery barrier retries the rollback.
 func custodyRollback(ctx context.Context, ws *Workspace, journal shipmentLifecycleJournal, journalPath string) error {
 	pre := journal.Preimage.Shipment
-	if err := custodyWriteArtifact(ctx, ws, pre); err != nil {
+	if err := custodyWriteArtifact(ctx, ws, pre, false); err != nil {
 		return fmt.Errorf("restore custody preimage %s: %w", pre.ID, err)
 	}
 	if err := custodyDropOperationEvents(ws, pre.ID, journal.CorrelationID); err != nil {
@@ -953,12 +953,14 @@ func custodyDropOperationEvents(ws *Workspace, shipmentID, correlationID string)
 
 // custodyWriteArtifact rewrites the shipment through the governed writer, which is the
 // only path permitted to change custom_fields.workflow_custody, and mirrors it to SQLite.
-func custodyWriteArtifact(ctx context.Context, ws *Workspace, art *models.Artifact) error {
+// mergeLinks carries SQLite-only links into the Markdown first. A rollback passes false, so
+// the restored file matches the journaled preimage byte for byte.
+func custodyWriteArtifact(ctx context.Context, ws *Workspace, art *models.Artifact, mergeLinks bool) error {
 	path, err := FindArtifactPath(ctx, ws, art.ID)
 	if err != nil {
 		return fmt.Errorf("locate custody shipment %s: %w", art.ID, err)
 	}
-	if ws.DB != nil {
+	if mergeLinks && ws.DB != nil {
 		if err := mergeDBOnlyLinksIntoArtifact(ctx, ws, art); err != nil {
 			return fmt.Errorf("preserve database-only links on custody shipment %s: %w", art.ID, err)
 		}
