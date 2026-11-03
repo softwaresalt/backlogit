@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/softwaresalt/backlogit/internal/config"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -146,4 +147,37 @@ func TestRubberDuck_F3_RollbackRestoresPreimageWithoutDBOnlyLinks(t *testing.T) 
 	after, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.NotContains(t, string(after), target.ID, "rollback must not add a link that was absent from the journaled preimage")
+}
+
+func TestRubberDuck_F6_RevokedWorkspaceAnchorReportsRevoked(t *testing.T) {
+	adoption := custodyReviewOfferAdoption(t)
+	token := adoption.token(t, "duck-f6-nonce-1")
+	adoption.anchor.Status = config.TrustAnchorStatusRevoked
+	adoption.repo.ws.Config.TrustAnchors = []config.TrustAnchor{adoption.anchor}
+
+	_, err := AcceptCustodyHandoff(context.Background(), adoption.repo.ws, adoption.acceptOpts(token))
+	assert.ErrorIs(t, err, ErrTrustAnchorRevoked, "a revoked workspace anchor must report revocation, not an unavailable channel")
+}
+
+func TestRubberDuck_F6_WorkspaceAnchorWindowIsInclusive(t *testing.T) {
+	_, anchor := u3OperatorFixture(t)
+	now := time.Now().UTC()
+
+	t.Run("not_after_equal_to_now_is_in_window", func(t *testing.T) {
+		atBoundary := anchor
+		atBoundary.NotAfter = &now
+		anchors := custodyWorkspaceOperatorAnchors([]config.TrustAnchor{atBoundary}, now)
+		require.Len(t, anchors, 1, "a workspace anchor at not_after == now must be kept")
+		_, err := resolveCustodyOperatorAnchor(atBoundary.ID, now, anchors)
+		require.NoError(t, err)
+	})
+
+	t.Run("expired_workspace_anchor_reports_expired", func(t *testing.T) {
+		past := now.Add(-time.Minute)
+		expired := anchor
+		expired.NotAfter = &past
+		anchors := custodyWorkspaceOperatorAnchors([]config.TrustAnchor{expired}, now)
+		_, err := resolveCustodyOperatorAnchor(expired.ID, now, anchors)
+		assert.ErrorIs(t, err, ErrTrustAnchorExpired)
+	})
 }
