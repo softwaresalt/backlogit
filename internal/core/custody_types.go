@@ -3,6 +3,8 @@ package core
 import (
 	"errors"
 	"time"
+
+	"github.com/softwaresalt/backlogit/internal/config"
 )
 
 // WorkflowCustodySchemaVersion identifies the workflow-custody payload schema.
@@ -13,6 +15,10 @@ const CustodyRequestIdentityDomain = "backlogit/workflow-custody/request-identit
 
 // DefaultCustodyReceiptExpiry is the default lifetime of an accepted custody receipt.
 const DefaultCustodyReceiptExpiry = 168 * time.Hour
+
+// DefaultCustodyOfferExpiry is the default lifetime of an offered custody receipt
+// that has not yet been accepted.
+const DefaultCustodyOfferExpiry = 168 * time.Hour
 
 // MaxCustodyApprovalTokenWindow bounds the validity window of a custody approval token.
 const MaxCustodyApprovalTokenWindow = 15 * time.Minute
@@ -37,6 +43,8 @@ var (
 	ErrMixedIndexWorktreeDivergence  = errors.New("custody: index and worktree diverge")
 	ErrCustodyStaleDigest            = errors.New("custody: stale digest")
 	ErrCustodyWrongBranch            = errors.New("custody: wrong branch")
+	ErrCustodyReceiptExpired         = errors.New("custody: receipt expired or has no expiry")
+	ErrCustodyIdempotencyConflict    = errors.New("custody: idempotency key reused with a different request")
 )
 
 // WorkflowCustodyEnvelope is the workflow-custody/v1 payload stored on a shipment
@@ -90,6 +98,8 @@ type CustodyReceipt struct {
 	ApprovalProof *CustodyApprovalProof `json:"approval_proof,omitempty" yaml:"approval_proof,omitempty"`
 	// IdempotencyKey deduplicates retried offer and accept requests.
 	IdempotencyKey string `json:"idempotency_key,omitempty" yaml:"idempotency_key,omitempty"`
+	// IdempotencyRequestDigest pins the accept request that recorded IdempotencyKey, so a retry is replayed only for an identical request.
+	IdempotencyRequestDigest string `json:"idempotency_request_digest,omitempty" yaml:"idempotency_request_digest,omitempty"`
 	// OfferedAtUTC is the UTC instant the receipt was offered.
 	OfferedAtUTC time.Time `json:"offered_at_utc" yaml:"offered_at_utc"`
 	// AcceptedAtUTC is the UTC instant the receipt was accepted.
@@ -162,6 +172,10 @@ type CustodyApprovalProof struct {
 	Nonce string `json:"nonce" yaml:"nonce"`
 	// RequestIdentityDigest is the domain-separated digest of the approved request.
 	RequestIdentityDigest string `json:"request_identity_digest" yaml:"request_identity_digest"`
+	// ReceiptID binds the proof to one receipt. Empty leaves the proof unbound to a receipt.
+	ReceiptID string `json:"receipt_id,omitempty" yaml:"receipt_id,omitempty"`
+	// AcceptingRole binds the proof to the accepting role. Empty leaves the role unbound.
+	AcceptingRole string `json:"accepting_role,omitempty" yaml:"accepting_role,omitempty"`
 	// Channel names the operator approval channel that issued the proof.
 	Channel string `json:"channel,omitempty" yaml:"channel,omitempty"`
 	// Signature is the base64url Ed25519 signature over the canonical proof bytes.
@@ -236,6 +250,10 @@ type CustodyAcceptOptions struct {
 	IdempotencyKey string `json:"idempotency_key,omitempty" yaml:"idempotency_key,omitempty"`
 	// AuthToken is the encoded CustodyApprovalToken required for operator_verified receipts.
 	AuthToken string `json:"auth_token,omitempty" yaml:"auth_token,omitempty"`
+	// TrustAnchors, when non-empty, is the caller-injected operator trust set. It is authoritative and replaces workspace config anchors. It is never read from JSON or YAML input.
+	TrustAnchors []config.TrustAnchor `json:"-" yaml:"-"`
+	// ExternalPins, when non-nil, is the externally provisioned pin set that TrustAnchors must satisfy.
+	ExternalPins *ExternalPinSet `json:"-" yaml:"-"`
 	// DryRun verifies the acceptance without consuming a nonce or writing state.
 	DryRun bool `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
 }
@@ -268,6 +286,10 @@ type CustodyVerifyOptions struct {
 	Branch string `json:"branch,omitempty" yaml:"branch,omitempty"`
 	// Cwd is the working directory used to resolve a relative workspace root.
 	Cwd string `json:"cwd,omitempty" yaml:"cwd,omitempty"`
+	// TrustAnchors, when non-empty, is the caller-injected operator trust set. It is authoritative and replaces workspace config anchors. It is never read from JSON or YAML input.
+	TrustAnchors []config.TrustAnchor `json:"-" yaml:"-"`
+	// ExternalPins, when non-nil, is the externally provisioned pin set that TrustAnchors must satisfy.
+	ExternalPins *ExternalPinSet `json:"-" yaml:"-"`
 }
 
 // CustodyPathVerdict reports the verification outcome for one custody path.

@@ -26,6 +26,13 @@ import (
 // repository-contained path.
 var ErrCustodyPathRejected = errors.New("custody: entry path rejected")
 
+// ErrCustodyOutputTooLarge reports a worktree file or git output above custodyMaxReadBytes.
+var ErrCustodyOutputTooLarge = errors.New("custody: read exceeds the size cap")
+
+// custodyMaxReadBytes caps each worktree file read and each git output stream, so a
+// hostile or corrupt input cannot exhaust memory.
+const custodyMaxReadBytes = 64 << 20
+
 const (
 	custodyApprovalTokenVersion = "v1"
 	custodyApprovalTokenDomain  = "backlogit/workflow-custody/approval-token/v1"
@@ -408,9 +415,22 @@ func readCustodyWorktreeFileNoFollow(ws *Workspace, entryPath string) ([]byte, e
 	if !os.SameFile(pre, post) || !post.Mode().IsRegular() {
 		return nil, fmt.Errorf("%w: %s changed between validation and open", ErrCustodyPathRejected, entryPath)
 	}
-	data, err := io.ReadAll(file)
+	data, err := custodyReadBounded(file, custodyMaxReadBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", entryPath, err)
+	}
+	return data, nil
+}
+
+// custodyReadBounded reads r to EOF and fails closed with ErrCustodyOutputTooLarge
+// when more than limit bytes are available.
+func custodyReadBounded(r io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("%w: more than %d bytes", ErrCustodyOutputTooLarge, limit)
 	}
 	return data, nil
 }
@@ -646,15 +666,47 @@ func resolveCustodyOperatorAnchor(keyID string, now time.Time, anchors []config.
 	if match.NotAfter != nil && now.After(*match.NotAfter) {
 		return nil, fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrTrustAnchorExpired)
 	}
-	key, err := LoadVerificationKey("", *match)
+	return custodyAnchorPublicKey(*match)
+}
+
+// custodyAnchorPublicKey loads the verified Ed25519 public key of an operator trust anchor.
+func custodyAnchorPublicKey(anchor config.TrustAnchor) (ed25519.PublicKey, error) {
+	key, err := LoadVerificationKey("", anchor)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrApprovalChannelUnavailable, err)
 	}
 	pub, ok := key.Public.(ed25519.PublicKey)
 	if !ok || len(pub) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("%w: trust anchor %q is not an Ed25519 key", ErrApprovalChannelUnavailable, keyID)
+		return nil, fmt.Errorf("%w: trust anchor %q is not an Ed25519 key", ErrApprovalChannelUnavailable, anchor.ID)
 	}
 	return pub, nil
+}
+
+// custodyWorkspaceOperatorAnchors returns the workspace-config anchors allowed to verify
+// operator approvals at now. Each must be active, carry role operator and the ed25519
+// algorithm, and sit inside its window with not_before <= now < not_after. An absent bound
+// is unbounded on that side. A key_id that appears more than once is dropped entirely.
+func custodyWorkspaceOperatorAnchors(anchors []config.TrustAnchor, now time.Time) []config.TrustAnchor {
+	counts := make(map[string]int, len(anchors))
+	for i := range anchors {
+		counts[anchors[i].ID]++
+	}
+	usable := make([]config.TrustAnchor, 0, len(anchors))
+	for i := range anchors {
+		a := anchors[i]
+		if counts[a.ID] != 1 || a.Status != config.TrustAnchorStatusActive ||
+			a.Role != "operator" || a.Algo != config.TrustAnchorAlgoEd25519 {
+			continue
+		}
+		if a.NotBefore != nil && now.Before(*a.NotBefore) {
+			continue
+		}
+		if a.NotAfter != nil && !now.Before(*a.NotAfter) {
+			continue
+		}
+		usable = append(usable, a)
+	}
+	return usable
 }
 
 func verifyCustodyApprovalBinding(proof CustodyApprovalProof, env WorkflowCustodyEnvelope) error {

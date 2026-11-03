@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -90,14 +91,12 @@ func PreviewCustodyCandidates(ctx context.Context, ws *Workspace, opts CustodyPr
 	if ws == nil {
 		return CustodyPreviewResult{}, fmt.Errorf("preview custody: workspace is required: %w", blerrors.ErrValidation)
 	}
-	branch, err := custodyBranch(ctx, ws, opts.Branch)
+	branch, err := custodyPreviewBranch(ctx, ws, opts.Branch)
 	if err != nil {
 		return CustodyPreviewResult{}, err
 	}
-	if err := custodyRefuseDefaultBranch(ws.RootPath, branch); err != nil {
-		return CustodyPreviewResult{}, err
-	}
-	if _, err := custodyShipment(ctx, ws, opts.ShipmentID); err != nil {
+	art, err := custodyShipment(ctx, ws, opts.ShipmentID)
+	if err != nil {
 		return CustodyPreviewResult{}, err
 	}
 	if len(opts.Candidates) == 0 {
@@ -116,7 +115,12 @@ func PreviewCustodyCandidates(ctx context.Context, ws *Workspace, opts CustodyPr
 		entries = append(entries, entry)
 	}
 	specs := custodyCandidatesOf(entries)
-	profile := custodyRequiredProfile(specs)
+	env, _, err := custodyEnvelopeOf(art)
+	if err != nil {
+		return CustodyPreviewResult{}, err
+	}
+	adopted := custodyAdoptedFunc(ws, env, custodyTrustFor(ws, nil, nil, time.Now().UTC()))
+	profile := custodyRequiredProfile("", "", "", "", entries, adopted)
 	for i := range entries {
 		if err := validateCustodyEntry(&entries[i], profile); err != nil {
 			return CustodyPreviewResult{}, fmt.Errorf("preview custody candidate %q: %w", entries[i].Path, err)
@@ -165,7 +169,7 @@ func OfferCustodyHandoff(ctx context.Context, ws *Workspace, opts CustodyOfferOp
 }
 
 // AcceptCustodyHandoff records acceptance of a previously offered custody handoff.
-// Profile B (agent_workflow_handoff) needs only the accepting role. Profile A
+// Profile B (agent_workflow_handoff) needs the accepting role and eligible paths. Profile A
 // (operator_verified) needs a CustodyApprovalToken from a configured operator trust
 // anchor, and a live accept consumes its nonce through the injected NonceConsumer.
 func AcceptCustodyHandoff(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions) (CustodyMutationResult, error) {
@@ -196,10 +200,11 @@ func VerifyCustodyState(ctx context.Context, ws *Workspace, opts CustodyVerifyOp
 	if ws == nil {
 		return CustodyVerifyResult{}, fmt.Errorf("verify custody: workspace is required: %w", blerrors.ErrValidation)
 	}
-	branch, err := custodyBranch(ctx, ws, opts.Branch)
+	branch, err := custodyCurrentBranch(ctx, ws.RootPath)
 	if err != nil {
 		return CustodyVerifyResult{}, err
 	}
+	wrongBranch := opts.Branch != "" && opts.Branch != branch
 	art, err := custodyShipment(ctx, ws, opts.ShipmentID)
 	if err != nil {
 		return CustodyVerifyResult{}, err
@@ -213,25 +218,41 @@ func VerifyCustodyState(ctx context.Context, ws *Workspace, opts CustodyVerifyOp
 		result.Warnings = append(result.Warnings, "no workflow custody envelope is recorded")
 		return result, nil
 	}
+	if env.ShipmentID != opts.ShipmentID {
+		return CustodyVerifyResult{}, fmt.Errorf("verify custody %s: envelope names shipment %s: %w", opts.ShipmentID, env.ShipmentID, blerrors.ErrValidation)
+	}
 	result.ActiveReceiptID = env.ActiveReceiptID
-	anchors := custodyAnchors(ws)
 	now := time.Now().UTC()
+	trust := custodyTrustFor(ws, opts.TrustAnchors, opts.ExternalPins, now)
+	adopted := custodyAdoptedFunc(ws, env, trust)
 	for i := range env.Receipts {
 		receipt := env.Receipts[i]
 		if receipt.Status != custodyReceiptOffered && receipt.Status != custodyReceiptAccepted {
 			continue
 		}
+		eligible := receipt.AuthorityProfile != custodyProfileAgent ||
+			custodyRequiredProfile(receipt.Kind, receipt.ProducerRole, receipt.AcceptingRole, receipt.AllowedAction, receipt.Entries, adopted) != custodyProfileOperator
 		for _, entry := range receipt.Entries {
-			result.Verdicts = append(result.Verdicts, custodyVerdict(ctx, ws, env, receipt, entry, branch, anchors, now))
+			if wrongBranch {
+				result.Verdicts = append(result.Verdicts, CustodyPathVerdict{
+					Path: entry.Path, OldPath: entry.OldPath, ReceiptID: receipt.ReceiptID, Verdict: "WRONG_BRANCH",
+					Reason: fmt.Sprintf("requested branch %q is not the checked-out branch %q", opts.Branch, branch),
+				})
+				continue
+			}
+			result.Verdicts = append(result.Verdicts, custodyVerdict(ctx, ws, env, receipt, entry, branch, trust, eligible, now))
 		}
 	}
 	return result, nil
 }
 
 // reconcileCustodyIntent recovers one pending custody journal. The recovery barrier
-// already holds the lifecycle, membership, and artifact locks, so this acquires only
-// the item-log lock C. An intent journal rolls back to its preimage. A committed
-// journal is never rolled back: recovery only removes the journal.
+// already holds the shipment lifecycle lock (global), membership (A), and artifact (B)
+// locks, so this acquires only the item-log lock (C). That makes recovery order B before C,
+// the reverse of custodyWithLocks (C before B). This is safe because every custody writer
+// takes the global lock first, so the global lock serialises recovery against them. An
+// intent journal rolls back to its preimage. A committed journal is never rolled back:
+// recovery only removes the journal.
 func reconcileCustodyIntent(ctx context.Context, ws *Workspace, journalPath string, journal shipmentLifecycleJournal) (*models.Artifact, error) {
 	if ws == nil || journal.Preimage.Shipment == nil {
 		return nil, fmt.Errorf("custody journal %s is incomplete: %w", journalPath, blerrors.ErrValidation)
@@ -249,7 +270,7 @@ func reconcileCustodyIntent(ctx context.Context, ws *Workspace, journalPath stri
 		removeShipmentOperationJournal(itemCtx, ws, journalPath)
 		return nil, nil
 	case "intent":
-		return nil, custodyRollback(itemCtx, ws, journal.CorrelationID, journalPath, journal.Preimage.Shipment)
+		return nil, custodyRollback(itemCtx, ws, journal, journalPath)
 	default:
 		return nil, fmt.Errorf("custody journal %s has unsupported phase %q: %w", journalPath, journal.Phase, blerrors.ErrValidation)
 	}
@@ -310,13 +331,15 @@ func custodyOffer(ctx context.Context, ws *Workspace, opts CustodyOfferOptions) 
 		return CustodyMutationResult{}, err
 	}
 	spec := opts.Spec
-	if err := custodyValidateOfferSpec(env, spec); err != nil {
+	adopted := custodyAdoptedFunc(ws, env, custodyTrustFor(ws, nil, nil, time.Now().UTC()))
+	if err := custodyValidateOfferSpec(env, spec, adopted); err != nil {
 		return CustodyMutationResult{}, err
 	}
 	if err := custodyVerifyEntriesLive(ctx, ws, env.BaseCommitSHA, spec.Entries, spec.AuthorityProfile); err != nil {
 		return CustodyMutationResult{}, err
 	}
 	spec.OfferedAtUTC = time.Now().UTC()
+	spec.ExpiresAtUTC = custodyOfferExpiresAt(spec.OfferedAtUTC)
 	env.Receipts = append(env.Receipts, spec)
 	if err := ValidateCustodyEnvelope(env); err != nil {
 		return CustodyMutationResult{}, fmt.Errorf("offer custody receipt %s: %w", spec.ReceiptID, err)
@@ -370,6 +393,9 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 	if !present {
 		return CustodyMutationResult{}, fmt.Errorf("accept custody %s: no custody offer is recorded: %w", opts.ShipmentID, blerrors.ErrValidation)
 	}
+	if env.ShipmentID != opts.ShipmentID {
+		return CustodyMutationResult{}, fmt.Errorf("accept custody %s: envelope names shipment %s: %w", opts.ShipmentID, env.ShipmentID, blerrors.ErrValidation)
+	}
 	if env.ScopeBranch != branch {
 		return CustodyMutationResult{}, fmt.Errorf("%w: envelope scope %q, checked out %q", ErrCustodyWrongBranch, env.ScopeBranch, branch)
 	}
@@ -378,26 +404,42 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 		return CustodyMutationResult{}, fmt.Errorf("accept custody %s: receipt %q not found: %w", opts.ShipmentID, opts.ReceiptID, blerrors.ErrValidation)
 	}
 	receipt := env.Receipts[idx]
+	requestDigest, err := custodyAcceptRequestDigest(opts)
+	if err != nil {
+		return CustodyMutationResult{}, err
+	}
+	if receipt.Status == custodyReceiptAccepted && opts.IdempotencyKey != "" && receipt.IdempotencyKey == opts.IdempotencyKey {
+		if receipt.IdempotencyRequestDigest != requestDigest {
+			return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: %w", receipt.ReceiptID, ErrCustodyIdempotencyConflict)
+		}
+		return custodyResult(opts.ShipmentID, receipt, custodyReceiptAccepted, env.CustodyRevision, opts.DryRun), nil
+	}
 	if receipt.Status != custodyReceiptOffered {
 		return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: status is %q, not offered: %w", receipt.ReceiptID, receipt.Status, blerrors.ErrValidation)
 	}
 	if opts.By != receipt.AcceptingRole {
 		return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: principal %q is not accepting role %q: %w", receipt.ReceiptID, opts.By, receipt.AcceptingRole, blerrors.ErrValidation)
 	}
+	now := time.Now().UTC()
+	if custodyReceiptExpired(receipt, now) {
+		return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: offer expired or has no expiry: %w", receipt.ReceiptID, ErrCustodyReceiptExpired)
+	}
 	if err := custodyVerifyEntriesLive(ctx, ws, env.BaseCommitSHA, receipt.Entries, receipt.AuthorityProfile); err != nil {
 		return CustodyMutationResult{}, err
 	}
+	trust := custodyTrustFor(ws, opts.TrustAnchors, opts.ExternalPins, now)
+	adopted := custodyAdoptedFunc(ws, env, trust)
 	var proof *CustodyApprovalProof
 	switch receipt.AuthorityProfile {
 	case custodyProfileAgent:
-		if custodyRequiredProfile(custodyCandidatesOf(receipt.Entries)) == custodyProfileOperator {
-			return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: %w: entries include operator-contributed paths", receipt.ReceiptID, ErrOperatorApprovalRequired)
+		if custodyRequiredProfile(receipt.Kind, receipt.ProducerRole, receipt.AcceptingRole, receipt.AllowedAction, receipt.Entries, adopted) == custodyProfileOperator {
+			return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: %w: entries require operator_verified", receipt.ReceiptID, ErrOperatorApprovalRequired)
 		}
 		if receipt.ProducerRole == receipt.AcceptingRole {
 			return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: producer and accepting role must differ: %w", receipt.ReceiptID, blerrors.ErrValidation)
 		}
 	case custodyProfileOperator:
-		proof, err = custodyAuthorizeOperator(ctx, ws, env, receipt, opts)
+		proof, err = custodyCheckOperatorApproval(ctx, env, receipt, opts, trust)
 		if err != nil {
 			return CustodyMutationResult{}, err
 		}
@@ -405,11 +447,13 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 		return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: unknown authority profile %q: %w", receipt.ReceiptID, receipt.AuthorityProfile, blerrors.ErrValidation)
 	}
 
-	now := time.Now().UTC()
 	receipt.Status = custodyReceiptAccepted
 	receipt.AcceptedAtUTC = now
 	receipt.ExpiresAtUTC = DefaultCustodyReceiptExpiresAt(now)
 	receipt.IdempotencyKey = opts.IdempotencyKey
+	if opts.IdempotencyKey != "" {
+		receipt.IdempotencyRequestDigest = requestDigest
+	}
 	receipt.ApprovalProof = proof
 	if prev := custodyReceiptIndex(env.Receipts, env.ActiveReceiptID); prev >= 0 && env.Receipts[prev].Status == custodyReceiptAccepted {
 		env.Receipts[prev].Status = custodyReceiptSuperseded
@@ -436,17 +480,36 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 	if err := custodySetEnvelope(next, env, branch); err != nil {
 		return CustodyMutationResult{}, err
 	}
-	acceptEvents := []custodyEvent{{eventType: EventCustodyHandoffAccepted, delta: map[string]any{
+	acceptDelta := map[string]any{
 		"receipt_id":        receipt.ReceiptID,
+		"revision":          receipt.Revision,
 		"authority_profile": receipt.AuthorityProfile,
+		"accepting_role":    receipt.AcceptingRole,
 		"accepted_by":       opts.By,
+		"accepted_at_utc":   now,
 		"custody_revision":  receipt.Revision,
-	}}}
+	}
+	acceptEvents := []custodyEvent{{eventType: EventCustodyHandoffAccepted, delta: acceptDelta}}
 	if proof != nil {
+		acceptDelta["key_id"] = proof.KeyID
+		acceptDelta["nonce"] = proof.Nonce
+		acceptDelta["request_identity_digest"] = proof.RequestIdentityDigest
 		acceptEvents = append(acceptEvents, custodyEvent{eventType: EventCustodyAdoptionRecorded, delta: map[string]any{
-			"receipt_id": receipt.ReceiptID,
-			"nonce":      proof.Nonce,
+			"receipt_id":              receipt.ReceiptID,
+			"nonce":                   proof.Nonce,
+			"request_identity_digest": proof.RequestIdentityDigest,
 		}})
+	}
+	// Every check that can fail has run. The nonce is consumed last, so only the commit
+	// transaction can fail after consumption.
+	if proof != nil {
+		consumer := custodyNonceConsumerFrom(ctx)
+		if consumer == nil {
+			return CustodyMutationResult{}, fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrNonceProviderUnavailable)
+		}
+		if err := consumer.ConsumeBound(ctx, proof.Nonce, proof.NotAfterUTC, proof.RequestIdentityDigest); err != nil {
+			return CustodyMutationResult{}, rejectApproval(fmt.Errorf("consume nonce: %w", err))
+		}
 	}
 	if err := custodyCommitTransaction(ctx, ws, custodyCommitPlan{
 		shipmentID: opts.ShipmentID,
@@ -456,49 +519,63 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 		next:       next,
 		events:     acceptEvents,
 	}); err != nil {
+		if proof != nil {
+			return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: operator approval nonce %q was consumed; the approval token must be re-minted: %w", receipt.ReceiptID, proof.Nonce, err)
+		}
 		return CustodyMutationResult{}, err
 	}
 	return result, nil
 }
 
-// custodyAuthorizeOperator verifies a Profile A approval token against the configured
-// operator trust anchors and binds it to the receipt. A live accept consumes the token
-// nonce through the injected NonceConsumer. A dry run verifies without consuming.
-func custodyAuthorizeOperator(ctx context.Context, ws *Workspace, env WorkflowCustodyEnvelope, receipt CustodyReceipt, opts CustodyAcceptOptions) (*CustodyApprovalProof, error) {
+// custodyCheckOperatorApproval verifies a Profile A approval token against the trust root
+// and binds it to the receipt. It consumes nothing: a live accept consumes the nonce only
+// after every other check has passed.
+func custodyCheckOperatorApproval(ctx context.Context, env WorkflowCustodyEnvelope, receipt CustodyReceipt, opts CustodyAcceptOptions, trust custodyTrust) (*CustodyApprovalProof, error) {
 	if opts.AuthToken == "" {
 		return nil, fmt.Errorf("%w: operator_verified receipt %s requires a custody approval token", ErrAuthorizationRequired, receipt.ReceiptID)
 	}
-	anchors := custodyAnchors(ws)
-	if len(anchors) == 0 {
+	if trust.pins == nil && len(trust.anchors) == 0 {
 		return nil, fmt.Errorf("%w: no operator trust anchor is configured", ErrApprovalChannelUnavailable)
 	}
-	proof, err := VerifyCustodyApprovalToken(opts.AuthToken, env, time.Now().UTC(), anchors...)
+	proof, err := trust.verifyToken(opts.AuthToken, env)
 	if err != nil {
 		return nil, err
 	}
 	if proof.CandidateSetDigest != receipt.CandidateSetDigest || proof.AllowedAction != receipt.AllowedAction || proof.TargetRevision != receipt.Revision {
 		return nil, fmt.Errorf("%w: approval token does not bind receipt %s", ErrAuthorizationRejected, receipt.ReceiptID)
 	}
-	if opts.DryRun {
-		return &proof, nil
+	if proof.ShipmentID != opts.ShipmentID {
+		return nil, fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrApprovalWrongShipment)
 	}
-	consumer := custodyNonceConsumerFrom(ctx)
-	if consumer == nil {
+	if proof.ReceiptID != "" && proof.ReceiptID != receipt.ReceiptID {
+		return nil, fmt.Errorf("%w: approval token names receipt %s, not %s", ErrAuthorizationRejected, proof.ReceiptID, receipt.ReceiptID)
+	}
+	if proof.AcceptingRole != "" && proof.AcceptingRole != receipt.AcceptingRole {
+		return nil, fmt.Errorf("%w: approval token names accepting role %q, not %q", ErrAuthorizationRejected, proof.AcceptingRole, receipt.AcceptingRole)
+	}
+	if !opts.DryRun && custodyNonceConsumerFrom(ctx) == nil {
 		return nil, fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrNonceProviderUnavailable)
-	}
-	if err := consumer.ConsumeBound(ctx, proof.Nonce, proof.NotAfterUTC, proof.RequestIdentityDigest); err != nil {
-		return nil, rejectApproval(fmt.Errorf("consume nonce: %w", err))
 	}
 	return &proof, nil
 }
 
-// custodyVerifyOperatorProvenance re-verifies a stored operator approval proof
-// against the configured trust anchors, so a proof written out of band is not trusted.
-func custodyVerifyOperatorProvenance(env WorkflowCustodyEnvelope, receipt CustodyReceipt, anchors []config.TrustAnchor, now time.Time) error {
+// custodyVerifyOperatorAdoption verifies an accepted operator receipt. Its approval proof
+// must bind this shipment, receipt, and accepting role, authenticate against the trust
+// root, match the current request identity, and have a matching redemption.
+func custodyVerifyOperatorAdoption(ws *Workspace, env WorkflowCustodyEnvelope, receipt CustodyReceipt, trust custodyTrust) error {
 	if receipt.ApprovalProof == nil {
 		return fmt.Errorf("%w: accepted operator receipt has no approval proof", ErrOperatorApprovalRequired)
 	}
 	proof := *receipt.ApprovalProof
+	if proof.ShipmentID != env.ShipmentID {
+		return fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrApprovalWrongShipment)
+	}
+	if proof.ReceiptID != "" && proof.ReceiptID != receipt.ReceiptID {
+		return fmt.Errorf("%w: proof names receipt %s, not %s", ErrAuthorizationRejected, proof.ReceiptID, receipt.ReceiptID)
+	}
+	if proof.AcceptingRole != "" && proof.AcceptingRole != receipt.AcceptingRole {
+		return fmt.Errorf("%w: proof names accepting role %q, not %q", ErrAuthorizationRejected, proof.AcceptingRole, receipt.AcceptingRole)
+	}
 	digest, err := CustodyRequestIdentityDigest(env)
 	if err != nil {
 		return err
@@ -510,7 +587,7 @@ func custodyVerifyOperatorProvenance(env WorkflowCustodyEnvelope, receipt Custod
 	if err != nil || len(signature) != ed25519.SignatureSize {
 		return fmt.Errorf("%w: proof signature is malformed", ErrAuthorizationRejected)
 	}
-	pub, err := resolveCustodyOperatorAnchor(proof.KeyID, now, anchors)
+	pub, err := trust.keyResolver()(proof.KeyID)
 	if err != nil {
 		return err
 	}
@@ -522,11 +599,85 @@ func custodyVerifyOperatorProvenance(env WorkflowCustodyEnvelope, receipt Custod
 	if !ed25519.Verify(pub, custodyTokenSigningInput(payload), signature) {
 		return fmt.Errorf("%w: proof signature does not verify", ErrAuthorizationRejected)
 	}
+	if !custodyRedeemed(ws, env.ShipmentID, receipt.ReceiptID, proof) {
+		return fmt.Errorf("%w: no redemption of nonce for request identity in the NonceLedger or shipment item log", ErrAuthorizationRejected)
+	}
 	return nil
 }
 
-// custodyVerdict classifies one covered path of an offered or accepted receipt.
-func custodyVerdict(ctx context.Context, ws *Workspace, env WorkflowCustodyEnvelope, receipt CustodyReceipt, entry CustodyEntry, branch string, anchors []config.TrustAnchor, now time.Time) CustodyPathVerdict {
+// custodyRedeemed reports whether proof's nonce was consumed against its request identity.
+// The NonceLedger projection is checked first, then the shipment item log. A missing or
+// unreadable source counts as no redemption.
+func custodyRedeemed(ws *Workspace, shipmentID, receiptID string, proof CustodyApprovalProof) bool {
+	if ledger, err := OpenNonceLedger(custodyNonceLedgerPath(ws.RootPath)); err == nil {
+		digest, found, err := ledger.BoundDigest(proof.Nonce)
+		if err == nil && found && digest == proof.RequestIdentityDigest {
+			return true
+		}
+	}
+	return custodyLogRedeemed(ws.RootPath, shipmentID, receiptID, proof)
+}
+
+// custodyLogRedeemed reports whether the shipment item log holds an accept or adoption
+// event for receiptID with proof's nonce and request identity digest.
+func custodyLogRedeemed(root, shipmentID, receiptID string, proof CustodyApprovalProof) bool {
+	f, err := os.Open(events.LogPathForItem(WorkspaceLogsRoot(root), shipmentID))
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	data, err := custodyReadBounded(f, custodyMaxReadBytes)
+	if err != nil {
+		return false
+	}
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		var ev events.Event
+		if json.Unmarshal(line, &ev) != nil {
+			continue
+		}
+		if ev.EventType != EventCustodyHandoffAccepted && ev.EventType != EventCustodyAdoptionRecorded {
+			continue
+		}
+		if ev.Delta["receipt_id"] == receiptID && ev.Delta["nonce"] == proof.Nonce &&
+			ev.Delta["request_identity_digest"] == proof.RequestIdentityDigest {
+			return true
+		}
+	}
+	return false
+}
+
+func custodyNonceLedgerPath(root string) string {
+	return filepath.Join(WorkspaceStorageRoot(root), "nonce-ledger.json")
+}
+
+// custodyAcceptRequestDigest pins an accept request, so an idempotent retry replays the
+// original result only for an identical request. The token is digested, never stored.
+func custodyAcceptRequestDigest(opts CustodyAcceptOptions) (string, error) {
+	payload, err := json.Marshal(struct {
+		ShipmentID  string `json:"shipment_id"`
+		ReceiptID   string `json:"receipt_id"`
+		By          string `json:"by"`
+		TokenDigest string `json:"auth_token_digest"`
+	}{opts.ShipmentID, opts.ReceiptID, opts.By, canonical.HashBytes([]byte(opts.AuthToken))})
+	if err != nil {
+		return "", fmt.Errorf("encode accept request: %w", err)
+	}
+	return canonical.HashBytes(payload), nil
+}
+
+// custodyReceiptExpired reports whether receipt is past its expiry at now. A receipt with
+// no expiry is treated as expired, so it fails closed.
+func custodyReceiptExpired(receipt CustodyReceipt, now time.Time) bool {
+	return receipt.ExpiresAtUTC.IsZero() || !now.Before(receipt.ExpiresAtUTC)
+}
+
+func custodyOfferExpiresAt(offeredAt time.Time) time.Time {
+	return offeredAt.Add(DefaultCustodyOfferExpiry)
+}
+
+// custodyVerdict classifies one covered path of an offered or accepted receipt. eligible
+// reports whether an agent receipt's entries satisfy the deterministic profile rules.
+func custodyVerdict(ctx context.Context, ws *Workspace, env WorkflowCustodyEnvelope, receipt CustodyReceipt, entry CustodyEntry, branch string, trust custodyTrust, eligible bool, now time.Time) CustodyPathVerdict {
 	verdict := CustodyPathVerdict{Path: entry.Path, OldPath: entry.OldPath, ReceiptID: receipt.ReceiptID}
 	switch {
 	case env.ScopeBranch != branch:
@@ -536,12 +687,12 @@ func custodyVerdict(ctx context.Context, ws *Workspace, env WorkflowCustodyEnvel
 		verdict.Verdict = "UNCOVERED"
 		verdict.Reason = "offered receipt is not accepted"
 	default:
-		verdict = custodyAcceptedVerdict(ctx, ws, env, receipt, entry, anchors, now, verdict)
+		verdict = custodyAcceptedVerdict(ctx, ws, env, receipt, entry, trust, eligible, now, verdict)
 	}
 	return verdict
 }
 
-func custodyAcceptedVerdict(ctx context.Context, ws *Workspace, env WorkflowCustodyEnvelope, receipt CustodyReceipt, entry CustodyEntry, anchors []config.TrustAnchor, now time.Time, verdict CustodyPathVerdict) CustodyPathVerdict {
+func custodyAcceptedVerdict(ctx context.Context, ws *Workspace, env WorkflowCustodyEnvelope, receipt CustodyReceipt, entry CustodyEntry, trust custodyTrust, eligible bool, now time.Time, verdict CustodyPathVerdict) CustodyPathVerdict {
 	live, err := custodyLiveDigests(ctx, ws, env.BaseCommitSHA, entry.Path)
 	if err != nil {
 		verdict.Verdict = "UNCOVERED"
@@ -562,11 +713,22 @@ func custodyAcceptedVerdict(ctx context.Context, ws *Workspace, env WorkflowCust
 		return verdict
 	}
 	if receipt.AuthorityProfile == custodyProfileOperator {
-		if err := custodyVerifyOperatorProvenance(env, receipt, anchors, now); err != nil {
+		if err := custodyVerifyOperatorAdoption(ws, env, receipt, trust); err != nil {
 			verdict.Verdict = "UNVERIFIED_OPERATOR_PROVENANCE"
 			verdict.Reason = err.Error()
 			return verdict
 		}
+	} else if !eligible {
+		verdict.Verdict = "PROFILE_INELIGIBLE"
+		verdict.Reason = "entries require operator_verified; " + ErrOperatorApprovalRequired.Error()
+		return verdict
+	}
+	if custodyReceiptExpired(receipt, now) {
+		verdict.Verdict = "RECEIPT_EXPIRED"
+		verdict.Reason = "accepted receipt is past expires_at_utc or has no expiry"
+		return verdict
+	}
+	if receipt.AuthorityProfile == custodyProfileOperator {
 		verdict.Verdict = "ADOPTED_OPERATOR_VERIFIED"
 		return verdict
 	}
@@ -576,28 +738,29 @@ func custodyAcceptedVerdict(ctx context.Context, ws *Workspace, env WorkflowCust
 
 // custodyWithLocks runs fn under the canonical lock order global -> A -> C -> B,
 // where A is shipment membership, C is the shipment item log, and B is the artifact.
-func custodyWithLocks(ctx context.Context, ws *Workspace, shipmentID string, fn func(context.Context) error) error {
+// Each lock is released by defer, so a panicking fn still releases every lock.
+func custodyWithLocks(ctx context.Context, ws *Workspace, shipmentID string, fn func(context.Context) error) (err error) {
 	lockedCtx, unlockGlobal, err := lockShipmentLifecycleGlobal(ctx, ws)
 	if err != nil {
 		return fmt.Errorf("lock shipment lifecycle for custody: %w", err)
 	}
+	defer func() { err = errors.Join(err, unlockGlobal()) }()
 	unlockMembership, err := lockShipmentMembership(lockedCtx, ws, shipmentID)
 	if err != nil {
-		return errors.Join(fmt.Errorf("lock shipment membership for custody: %w", err), unlockGlobal())
+		return fmt.Errorf("lock shipment membership for custody: %w", err)
 	}
+	defer func() { err = errors.Join(err, unlockMembership()) }()
 	itemCtx, unlockItemLog, err := events.LockItemLogCrossProcess(lockedCtx, WorkspaceLocksRoot(ws.RootPath), WorkspaceLogsRoot(ws.RootPath), shipmentID)
 	if err != nil {
-		return errors.Join(fmt.Errorf("lock shipment item log for custody: %w", err), unlockMembership(), unlockGlobal())
+		return fmt.Errorf("lock shipment item log for custody: %w", err)
 	}
+	defer unlockItemLog()
 	artifactCtx, unlockArtifacts, err := lockArtifactMutations(itemCtx, ws, []string{shipmentID})
 	if err != nil {
-		unlockItemLog()
-		return errors.Join(fmt.Errorf("lock shipment artifact for custody: %w", err), unlockMembership(), unlockGlobal())
+		return fmt.Errorf("lock shipment artifact for custody: %w", err)
 	}
-	fnErr := fn(artifactCtx)
-	artifactErr := unlockArtifacts()
-	unlockItemLog()
-	return errors.Join(fnErr, artifactErr, unlockMembership(), unlockGlobal())
+	defer func() { err = errors.Join(err, unlockArtifacts()) }()
+	return fn(artifactCtx)
 }
 
 // custodyCommitTransaction writes the intent journal, rewrites the shipment, appends the
@@ -625,7 +788,7 @@ func custodyCommitTransaction(ctx context.Context, ws *Workspace, plan custodyCo
 	}
 	opCtx := withShipmentOperation(ctx, correlationID)
 	if err := custodyApply(opCtx, ws, plan); err != nil {
-		return errors.Join(err, custodyRollback(opCtx, ws, correlationID, journalPath, plan.pre))
+		return errors.Join(err, custodyRollback(opCtx, ws, journal, journalPath))
 	}
 	journal.Phase = shipmentOperationPhaseCommitted
 	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, name, journal); err != nil {
@@ -633,7 +796,8 @@ func custodyCommitTransaction(ctx context.Context, ws *Workspace, plan custodyCo
 		if errors.Is(err, blerrors.ErrWriteIndeterminate) {
 			return commitErr
 		}
-		return errors.Join(commitErr, custodyRollback(opCtx, ws, correlationID, journalPath, plan.pre))
+		journal.Phase = shipmentOperationPhaseIntent
+		return errors.Join(commitErr, custodyRollback(opCtx, ws, journal, journalPath))
 	}
 	removeShipmentOperationJournal(ctx, ws, journalPath)
 	return nil
@@ -652,16 +816,44 @@ func custodyApply(ctx context.Context, ws *Workspace, plan custodyCommitPlan) er
 }
 
 // custodyRollback restores the shipment preimage, removes this operation's events from
-// the item log, and removes the journal. The journal remains if any restore step fails,
-// so the next recovery barrier retries the rollback.
-func custodyRollback(ctx context.Context, ws *Workspace, correlationID, journalPath string, pre *models.Artifact) error {
+// the item log, and finishes the journal. A failed restore leaves the intent journal in
+// place, so the next recovery barrier retries the rollback.
+func custodyRollback(ctx context.Context, ws *Workspace, journal shipmentLifecycleJournal, journalPath string) error {
+	pre := journal.Preimage.Shipment
 	if err := custodyWriteArtifact(ctx, ws, pre); err != nil {
 		return fmt.Errorf("restore custody preimage %s: %w", pre.ID, err)
 	}
-	if err := custodyDropOperationEvents(ws, pre.ID, correlationID); err != nil {
+	if err := custodyDropOperationEvents(ws, pre.ID, journal.CorrelationID); err != nil {
 		return fmt.Errorf("restore custody event log %s: %w", pre.ID, err)
 	}
-	removeShipmentOperationJournal(ctx, ws, journalPath)
+	return custodyFinishJournal(ws, journal, journalPath)
+}
+
+// custodyFinishJournal removes a finished custody journal. When removal fails, the journal
+// is rewritten to the terminal compensated phase, so a later recovery barrier cannot
+// replay the stale intent. If that rewrite also fails, the error is returned.
+func custodyFinishJournal(ws *Workspace, journal shipmentLifecycleJournal, journalPath string) error {
+	removeErr := custodyRemoveJournal(ws, journalPath)
+	if removeErr == nil {
+		return nil
+	}
+	journal.Phase = "compensated"
+	if _, err := writeShipmentLifecycleJournalForWorkspace(ws, filepath.Base(journalPath), journal); err != nil {
+		return errors.Join(fmt.Errorf("remove custody journal %s: %w", journalPath, removeErr),
+			fmt.Errorf("record compensated custody journal: %w", err))
+	}
+	return nil
+}
+
+// custodyRemoveJournal removes the journal through the workspace seam when one is set.
+func custodyRemoveJournal(ws *Workspace, journalPath string) error {
+	remove := os.Remove
+	if ws.removeShipmentOperationJournal != nil {
+		remove = ws.removeShipmentOperationJournal
+	}
+	if err := remove(journalPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	return nil
 }
 
@@ -720,11 +912,26 @@ func custodyWriteArtifact(ctx context.Context, ws *Workspace, art *models.Artifa
 	return nil
 }
 
-func custodyBranch(ctx context.Context, ws *Workspace, requested string) (string, error) {
-	if requested != "" {
-		return requested, nil
+// custodyPreviewBranch returns the checked-out branch. A requested branch is refused when it
+// is the default branch, and it must equal the checked-out branch, so a preview never reads
+// a branch other than the one it is evaluated against.
+func custodyPreviewBranch(ctx context.Context, ws *Workspace, requested string) (string, error) {
+	checked, err := custodyCurrentBranch(ctx, ws.RootPath)
+	if err != nil {
+		return "", err
 	}
-	return custodyCurrentBranch(ctx, ws.RootPath)
+	if requested != "" {
+		if err := custodyRefuseDefaultBranch(ctx, ws.RootPath, requested); err != nil {
+			return "", err
+		}
+		if requested != checked {
+			return "", fmt.Errorf("WRONG_BRANCH: requested branch %q is not the checked-out branch %q: %w", requested, checked, ErrCustodyWrongBranch)
+		}
+	}
+	if err := custodyRefuseDefaultBranch(ctx, ws.RootPath, checked); err != nil {
+		return "", err
+	}
+	return checked, nil
 }
 
 // custodyMutationContext returns the checked-out branch and HEAD for a mutation and
@@ -737,7 +944,7 @@ func custodyMutationContext(ctx context.Context, ws *Workspace) (string, string,
 	if err != nil {
 		return "", "", err
 	}
-	if err := custodyRefuseDefaultBranch(ws.RootPath, branch); err != nil {
+	if err := custodyRefuseDefaultBranch(ctx, ws.RootPath, branch); err != nil {
 		return "", "", err
 	}
 	commit, err := custodyHeadCommit(ctx, ws.RootPath)
@@ -747,15 +954,27 @@ func custodyMutationContext(ctx context.Context, ws *Workspace) (string, string,
 	return branch, commit, nil
 }
 
-func custodyRefuseDefaultBranch(root, branch string) error {
-	defaultBranch, err := config.ResolveDefaultBranch(root)
-	if err != nil {
-		return fmt.Errorf("resolve default branch: %w", err)
-	}
+// custodyRefuseDefaultBranch refuses the default branch and the literal main and master.
+// The default branch is origin/HEAD with its origin/ prefix removed, so origin/develop
+// refuses develop. When origin/HEAD does not resolve, the default is main.
+func custodyRefuseDefaultBranch(ctx context.Context, root, branch string) error {
+	defaultBranch := custodyDefaultBranch(ctx, root)
 	if strings.EqualFold(branch, defaultBranch) || strings.EqualFold(branch, "main") || strings.EqualFold(branch, "master") {
 		return fmt.Errorf("%w: %q", ErrCustodyDefaultBranchForbidden, branch)
 	}
 	return nil
+}
+
+func custodyDefaultBranch(ctx context.Context, root string) string {
+	out, err := custodyGit(ctx, root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+	if err != nil {
+		return "main"
+	}
+	name := strings.TrimPrefix(strings.TrimSpace(string(out)), "origin/")
+	if name == "" {
+		return "main"
+	}
+	return name
 }
 
 func custodyCurrentBranch(ctx context.Context, root string) (string, error) {
@@ -776,12 +995,12 @@ func custodyHeadCommit(ctx context.Context, root string) (string, error) {
 
 // custodyGit runs git against root with --no-replace-objects, so replacement refs
 // cannot change what custody inspects, and --no-optional-locks, so inspection never
-// refreshes the index.
+// refreshes the index. Stdout and stderr are each capped at custodyMaxReadBytes.
 func custodyGit(ctx context.Context, root string, args ...string) ([]byte, error) {
 	full := append([]string{"-C", root, "--no-replace-objects", "--no-optional-locks"}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Env = config.ChildProcessEnv()
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr custodyCappedBuffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -789,6 +1008,23 @@ func custodyGit(ctx context.Context, root string, args ...string) ([]byte, error
 	}
 	return stdout.Bytes(), nil
 }
+
+// custodyCappedBuffer collects process output up to custodyMaxReadBytes and fails any
+// write that would exceed it, so an oversized git stream cannot exhaust memory.
+type custodyCappedBuffer struct {
+	buf bytes.Buffer
+}
+
+func (b *custodyCappedBuffer) Write(p []byte) (int, error) {
+	if b.buf.Len()+len(p) > custodyMaxReadBytes {
+		return 0, fmt.Errorf("%w: git output exceeds %d bytes", ErrCustodyOutputTooLarge, custodyMaxReadBytes)
+	}
+	return b.buf.Write(p)
+}
+
+func (b *custodyCappedBuffer) Bytes() []byte { return b.buf.Bytes() }
+
+func (b *custodyCappedBuffer) String() string { return b.buf.String() }
 
 // custodyDigest is the pinned content digest: SHA-256 hex over LF-normalized bytes.
 func custodyDigest(data []byte) string {
@@ -973,16 +1209,72 @@ func custodyCandidateSetDigest(specs []CustodyCandidateSpec) (string, error) {
 	return canonical.HashBytes(append([]byte(custodyCandidateSetDomain+"\n"), payload...)), nil
 }
 
-// custodyRequiredProfile returns Profile A when any candidate is operator-contributed
-// and Profile B otherwise.
-func custodyRequiredProfile(specs []CustodyCandidateSpec) string {
-	for _, s := range specs {
-		if s.Contributor == custodyOperatorContributor || s.Contributor == custodyContributorMixed ||
-			s.SourceKind == custodySourceOperatorConfig || s.SourceKind == custodySourceOperatorCodeDoc {
+// custodyRequiredProfile returns the authority profile the covered entries require.
+// Profile A is mandatory for the operator triggers. Profile B is permitted only when every
+// entry path, and any old path, is inside .backlogit/ or docs/, or was adopted at its exact
+// baseline digest by an earlier valid Profile A receipt. The caller-declared contributor and
+// source labels alone never grant Profile B.
+func custodyRequiredProfile(kind, producerRole, acceptingRole, allowedAction string, entries []CustodyEntry, adopted func(*CustodyEntry) bool) string {
+	if (kind == "preexisting_adoption" && allowedAction == "preexisting_adoption_commit") ||
+		(producerRole == "operator" && acceptingRole == "operator") {
+		return custodyProfileOperator
+	}
+	for i := range entries {
+		e := &entries[i]
+		if e.Contributor == custodyOperatorContributor || e.Contributor == custodyContributorMixed ||
+			e.SourceKind == custodySourceOperatorConfig || e.SourceKind == custodySourceOperatorCodeDoc ||
+			e.StagedState == custodyStagedDivergesOK {
+			return custodyProfileOperator
+		}
+	}
+	for i := range entries {
+		e := &entries[i]
+		if e.OldPath != "" && !custodyPathInHandoffScope(e.OldPath) {
+			return custodyProfileOperator
+		}
+		if custodyPathInHandoffScope(e.Path) {
+			continue
+		}
+		if adopted == nil || !adopted(e) {
 			return custodyProfileOperator
 		}
 	}
 	return custodyProfileAgent
+}
+
+// custodyPathInHandoffScope reports whether p is a valid repository-relative path inside
+// .backlogit/ or docs/. Matching is case-sensitive.
+func custodyPathInHandoffScope(p string) bool {
+	if _, err := validateCustodyRelPath(p); err != nil {
+		return false
+	}
+	return strings.HasPrefix(p, ".backlogit/") || strings.HasPrefix(p, "docs/")
+}
+
+// custodyAdoptedFunc reports whether an entry was adopted at its exact baseline digest by an
+// earlier, fully verified Profile A receipt in env. A path with no baseline blob is never
+// treated as adopted, because it has no baseline digest to match.
+func custodyAdoptedFunc(ws *Workspace, env WorkflowCustodyEnvelope, trust custodyTrust) func(*CustodyEntry) bool {
+	return func(entry *CustodyEntry) bool {
+		if entry.BaseBlobSHA256 == "" {
+			return false
+		}
+		for i := range env.Receipts {
+			prior := env.Receipts[i]
+			if prior.AuthorityProfile != custodyProfileOperator || prior.Status != custodyReceiptAccepted {
+				continue
+			}
+			if custodyVerifyOperatorAdoption(ws, env, prior, trust) != nil {
+				continue
+			}
+			for j := range prior.Entries {
+				if prior.Entries[j].Path == entry.Path && prior.Entries[j].BaseBlobSHA256 == entry.BaseBlobSHA256 {
+					return true
+				}
+			}
+		}
+		return false
+	}
 }
 
 func custodyShipment(ctx context.Context, ws *Workspace, id string) (*models.Artifact, error) {
@@ -1049,7 +1341,7 @@ func custodyEnvelopeForOffer(art *models.Artifact, shipmentID, branch, commit st
 
 // custodyValidateOfferSpec checks the offered receipt against the envelope and the
 // authority rules before any digest is compared against the live repository.
-func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt) error {
+func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt, adopted func(*CustodyEntry) bool) error {
 	if spec.ReceiptID == "" || spec.Status != custodyReceiptOffered {
 		return fmt.Errorf("offer custody: receipt_id is required and status must be offered: %w", blerrors.ErrValidation)
 	}
@@ -1060,8 +1352,9 @@ func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt) 
 		return fmt.Errorf("offer custody receipt %s: receipt already exists: %w", spec.ReceiptID, blerrors.ErrValidation)
 	}
 	specs := custodyCandidatesOf(spec.Entries)
-	if spec.AuthorityProfile == custodyProfileAgent && custodyRequiredProfile(specs) == custodyProfileOperator {
-		return fmt.Errorf("offer custody receipt %s: %w: entries include operator-contributed paths", spec.ReceiptID, ErrOperatorApprovalRequired)
+	if spec.AuthorityProfile == custodyProfileAgent &&
+		custodyRequiredProfile(spec.Kind, spec.ProducerRole, spec.AcceptingRole, spec.AllowedAction, spec.Entries, adopted) == custodyProfileOperator {
+		return fmt.Errorf("offer custody receipt %s: %w: entries require operator_verified", spec.ReceiptID, ErrOperatorApprovalRequired)
 	}
 	digest, err := custodyCandidateSetDigest(specs)
 	if err != nil {
@@ -1126,6 +1419,64 @@ func custodyAnchors(ws *Workspace) []config.TrustAnchor {
 		return nil
 	}
 	return ws.Config.TrustAnchors
+}
+
+// custodyTrust is the operator trust root for one custody call. Caller-supplied anchors
+// and external pins are authoritative and replace workspace config. Otherwise only the
+// workspace anchors that pass custodyWorkspaceOperatorAnchors are trusted.
+type custodyTrust struct {
+	anchors []config.TrustAnchor
+	pins    *ExternalPinSet
+	now     time.Time
+}
+
+func custodyTrustFor(ws *Workspace, anchors []config.TrustAnchor, pins *ExternalPinSet, now time.Time) custodyTrust {
+	if len(anchors) > 0 || pins != nil {
+		return custodyTrust{anchors: anchors, pins: pins, now: now}
+	}
+	return custodyTrust{anchors: custodyWorkspaceOperatorAnchors(custodyAnchors(ws), now), now: now}
+}
+
+// keyResolver returns the operator key resolver for this trust root. When external pins are
+// set, the anchor must be pinned, bound, and in window, as ResolveVerificationKey enforces.
+func (t custodyTrust) keyResolver() func(keyID string) (ed25519.PublicKey, error) {
+	if t.pins != nil {
+		return func(keyID string) (ed25519.PublicKey, error) {
+			resolved, err := ResolveVerificationKey(t.anchors, KeySelector{ID: keyID, Purpose: "operator"}, t.now, t.pins)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %w", ErrAuthorizationRejected, err)
+			}
+			if resolved.Algo != config.TrustAnchorAlgoEd25519 {
+				return nil, fmt.Errorf("%w: trust anchor %q algo is not ed25519", ErrAuthorizationRejected, keyID)
+			}
+			return custodyAnchorPublicKey(resolved.Anchor)
+		}
+	}
+	return func(keyID string) (ed25519.PublicKey, error) {
+		return resolveCustodyOperatorAnchor(keyID, t.now, t.anchors)
+	}
+}
+
+// verifyToken authenticates and claim-checks an approval token under this trust root. With
+// external pins, the anchor named by the token key_id is resolved through the pin set first,
+// and only that resolved anchor is passed to VerifyCustodyApprovalToken.
+func (t custodyTrust) verifyToken(token string, env WorkflowCustodyEnvelope) (CustodyApprovalProof, error) {
+	if t.pins == nil {
+		return VerifyCustodyApprovalToken(token, env, t.now, t.anchors...)
+	}
+	payload, _, err := splitCustodyApprovalToken(token)
+	if err != nil {
+		return CustodyApprovalProof{}, err
+	}
+	claimed, err := decodeCustodyApprovalPayload(payload)
+	if err != nil {
+		return CustodyApprovalProof{}, err
+	}
+	resolved, err := ResolveVerificationKey(t.anchors, KeySelector{ID: claimed.KeyID, Purpose: "operator"}, t.now, t.pins)
+	if err != nil {
+		return CustodyApprovalProof{}, fmt.Errorf("%w: %w", ErrAuthorizationRejected, err)
+	}
+	return VerifyCustodyApprovalToken(token, env, t.now, resolved.Anchor)
 }
 
 func custodyRandomID() (string, error) {
