@@ -1260,13 +1260,11 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 	}
 
 	// The canonical Markdown is the rewrite preimage: the SQLite row is only a
-	// projection and may hold a stale workflow_custody envelope.
+	// projection and may hold a stale workflow_custody envelope, so a missing
+	// Markdown file fails closed rather than falling back to the projection.
 	artifact, err := readArtifactFromDiskReadOnly(ws, itemID)
-	if errors.Is(err, blerrors.ErrNotFound) {
-		artifact, err = loadArtifact(ctx, ws, itemID)
-	}
 	if err != nil {
-		return nil, fmt.Errorf("adopt item %s: %w", itemID, err)
+		return nil, fmt.Errorf("adopt item %s: read canonical Markdown preimage: %w", itemID, err)
 	}
 
 	if artifact.Status == models.StatusArchived {
