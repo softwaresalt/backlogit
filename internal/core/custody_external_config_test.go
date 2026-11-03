@@ -375,3 +375,17 @@ func TestExternal_LiveAcceptAndVerifyUseExternalStore(t *testing.T) {
 	_, err = AcceptCustodyHandoff(ctx, other.repo.ws, replay)
 	assert.ErrorIs(t, err, ErrNonceReplayed, "the external store refuses a nonce already consumed in another workspace")
 }
+
+func TestExternal_VerifyRefusesInsidePathBeforeShipmentLookup(t *testing.T) {
+	ctx := context.Background()
+	repo := custExecNewRepo(t)
+	inside := extWriteFile(t, repo.root, "pins.yaml", "pins: []\n")
+
+	_, err := VerifyCustodyState(ctx, repo.ws, CustodyVerifyOptions{ShipmentID: "no-such-shipment", OperatorPinsPath: inside})
+	assert.ErrorIs(t, err, ErrCustodyExternalPathInWorkspace, "a bad pins path must be refused before the shipment is looked up")
+
+	_, err = VerifyCustodyState(ctx, repo.ws, CustodyVerifyOptions{
+		ShipmentID: "no-such-shipment", NonceStorePath: filepath.Join(repo.root, "nonces.jsonl"),
+	})
+	assert.ErrorIs(t, err, ErrCustodyExternalPathInWorkspace, "a bad nonce store path must be refused before the shipment is looked up")
+}
