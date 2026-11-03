@@ -45,6 +45,7 @@ var (
 	ErrCustodyWrongBranch            = errors.New("custody: wrong branch")
 	ErrCustodyReceiptExpired         = errors.New("custody: receipt expired or has no expiry")
 	ErrCustodyIdempotencyConflict    = errors.New("custody: idempotency key reused with a different request")
+	ErrCustodyStaleRevision          = errors.New("custody: receipt revision is not the next custody revision")
 )
 
 // WorkflowCustodyEnvelope is the workflow-custody/v1 payload stored on a shipment

@@ -117,6 +117,27 @@ func ValidateCustodyEnvelope(env WorkflowCustodyEnvelope) error {
 			return fmt.Errorf("receipt %q: %w", env.Receipts[i].ReceiptID, err)
 		}
 	}
+	return validateCustodyAcceptedRevisions(env)
+}
+
+// validateCustodyAcceptedRevisions refuses two accepted receipts at one revision, and an
+// accepted receipt at or below CustodyRevision that is not the active receipt. Either
+// shape means an older offer has been accepted over a newer one.
+func validateCustodyAcceptedRevisions(env WorkflowCustodyEnvelope) error {
+	seen := make(map[int]string, len(env.Receipts))
+	for i := range env.Receipts {
+		r := env.Receipts[i]
+		if r.Status != custodyReceiptAccepted {
+			continue
+		}
+		if other, dup := seen[r.Revision]; dup {
+			return fmt.Errorf("%w: %w: accepted receipts %q and %q share revision %d", blerrors.ErrValidation, ErrCustodyStaleRevision, other, r.ReceiptID, r.Revision)
+		}
+		seen[r.Revision] = r.ReceiptID
+		if r.ReceiptID != env.ActiveReceiptID && r.Revision <= env.CustodyRevision {
+			return fmt.Errorf("%w: %w: accepted receipt %q at revision %d is not active and does not exceed custody revision %d", blerrors.ErrValidation, ErrCustodyStaleRevision, r.ReceiptID, r.Revision, env.CustodyRevision)
+		}
+	}
 	return nil
 }
 

@@ -421,6 +421,9 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 	if receipt.Status != custodyReceiptOffered {
 		return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: status is %q, not offered: %w", receipt.ReceiptID, receipt.Status, blerrors.ErrValidation)
 	}
+	if receipt.Revision != env.CustodyRevision+1 {
+		return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: revision %d is not the next custody revision %d: %w", receipt.ReceiptID, receipt.Revision, env.CustodyRevision+1, ErrCustodyStaleRevision)
+	}
 	if opts.By != receipt.AcceptingRole {
 		return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: principal %q is not accepting role %q: %w", receipt.ReceiptID, opts.By, receipt.AcceptingRole, blerrors.ErrValidation)
 	}
@@ -1448,6 +1451,12 @@ func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt, 
 	if spec.AuthorityProfile == custodyProfileAgent &&
 		custodyRequiredProfileFor(storageRoot, spec.Kind, spec.ProducerRole, spec.AcceptingRole, spec.AllowedAction, spec.Entries, adopted) == custodyProfileOperator {
 		return fmt.Errorf("offer custody receipt %s: %w: entries require operator_verified", spec.ReceiptID, ErrOperatorApprovalRequired)
+	}
+	for i := range env.Receipts {
+		if spec.Revision <= env.Receipts[i].Revision {
+			return fmt.Errorf("offer custody receipt %s: revision %d is not greater than receipt %s at revision %d: %w",
+				spec.ReceiptID, spec.Revision, env.Receipts[i].ReceiptID, env.Receipts[i].Revision, ErrCustodyStaleRevision)
+		}
 	}
 	digest, err := custodyCandidateSetDigest(specs)
 	if err != nil {
