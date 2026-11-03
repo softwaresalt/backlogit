@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/softwaresalt/backlogit/internal/config"
+	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -783,4 +785,135 @@ func TestReview_BoundedReads(t *testing.T) {
 		_, err := custodyBlobDigest(context.Background(), repo.root, oid)
 		require.Error(t, err)
 	})
+}
+
+// reviewFixWorkspace opens a workspace with default config and no git repository.
+func reviewFixWorkspace(t *testing.T) *Workspace {
+	t.Helper()
+	root := t.TempDir()
+	backlogitDir := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
+	require.NoError(t, config.WriteDefaults(backlogitDir))
+	ws, err := NewWorkspace(context.Background(), root)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ws.Close() })
+	return ws
+}
+
+// reviewFixSetCustody rewrites the canonical Markdown of id with value as its workflow_custody field.
+func reviewFixSetCustody(t *testing.T, ws *Workspace, id string, value map[string]any) {
+	t.Helper()
+	ctx := context.Background()
+	art, err := findArtifact(ctx, ws, id)
+	require.NoError(t, err)
+	if art.CustomFields == nil {
+		art.CustomFields = map[string]any{}
+	}
+	art.CustomFields["workflow_custody"] = value
+	path, err := FindArtifactPath(ctx, ws, id)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte(models.SerializeFrontmatter(art.ToFrontmatterMap(), art.Description)), 0o644))
+}
+
+// reviewFixCustodyMarker returns the marker stored in the workflow_custody value of art.
+func reviewFixCustodyMarker(t *testing.T, art *models.Artifact) string {
+	t.Helper()
+	envelope, ok := art.CustomFields["workflow_custody"].(map[string]any)
+	require.True(t, ok, "workflow_custody must be a map")
+	marker, _ := envelope["marker"].(string)
+	return marker
+}
+
+// reviewFixMarkdownCount counts the Markdown artifact files under the workspace storage root.
+func reviewFixMarkdownCount(t *testing.T, ws *Workspace) int {
+	t.Helper()
+	count := 0
+	require.NoError(t, filepath.WalkDir(WorkspaceStorageRoot(ws.RootPath), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) == ".md" {
+			count++
+		}
+		return nil
+	}))
+	return count
+}
+
+// TestReview_AdoptReadsCanonicalEnvelope covers R3-1: adopt must rewrite the canonical
+// Markdown envelope and never a stale SQLite projection of it.
+func TestReview_AdoptReadsCanonicalEnvelope(t *testing.T) {
+	ctx := context.Background()
+	ws := reviewFixWorkspace(t)
+	origin, err := CreateArtifact(ctx, ws, "Origin feature", "feature")
+	require.NoError(t, err)
+	destination, err := CreateArtifact(ctx, ws, "Destination feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Task to adopt", "task", WithParent(origin.ID))
+	require.NoError(t, err)
+	reviewFixSetCustody(t, ws, task.ID, map[string]any{"marker": "canonical"})
+
+	row, err := bldb.GetItem(ctx, ws.DB, task.ID)
+	require.NoError(t, err)
+	if row.CustomFields == nil {
+		row.CustomFields = map[string]any{}
+	}
+	row.CustomFields["workflow_custody"] = map[string]any{"marker": "db-stale"}
+	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, row))
+
+	result, err := AdoptItem(ctx, ws, task.ID, destination.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, result.NewID, "adopt must assign a new hierarchical ID")
+
+	adopted, err := findArtifact(ctx, ws, result.NewID)
+	require.NoError(t, err)
+	assert.Equal(t, "canonical", reviewFixCustodyMarker(t, adopted),
+		"adopt must keep the Markdown envelope rather than write the DB projection")
+}
+
+// TestReview_CreateRefusesWorkflowCustody covers R3-5: a create must not carry a
+// workflow_custody key, so no caller can mint a pre-accepted agent receipt.
+func TestReview_CreateRefusesWorkflowCustody(t *testing.T) {
+	ctx := context.Background()
+	ws := reviewFixWorkspace(t)
+	before := reviewFixMarkdownCount(t, ws)
+
+	cases := map[string]any{
+		"populated": map[string]any{"marker": "forged"},
+		"nil":       nil,
+	}
+	for name, value := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := CreateArtifact(ctx, ws, "Forged receipt", "feature",
+				WithFields(map[string]any{"workflow_custody": value}))
+			assert.ErrorIs(t, err, ErrCustodyUngovernedMutation)
+		})
+	}
+	assert.Equal(t, before, reviewFixMarkdownCount(t, ws), "a refused create must write no file")
+}
+
+// TestReview_CustodyWritePreservesDBOnlyLinks covers F-14: a custody rewrite must not drop
+// a link that exists only in the SQLite index.
+func TestReview_CustodyWritePreservesDBOnlyLinks(t *testing.T) {
+	ctx := context.Background()
+	repo := custExecNewRepo(t)
+	target, err := CreateArtifact(ctx, repo.ws, "Link target", "feature")
+	require.NoError(t, err)
+	link := models.ArtifactLink{TargetID: target.ID, LinkType: "related_to"}
+	require.NoError(t, bldb.AddLink(ctx, repo.ws.DB, repo.shipmentID, target.ID, link.LinkType))
+
+	before := custExecShipment(t, repo.ws, repo.shipmentID)
+	require.NotContains(t, before.Links, link, "precondition: the link must exist only in SQLite")
+
+	custExecWrite(t, repo.root, custExecCovered, custExecRevised)
+	preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, custExecStageCandidate()))
+	require.NoError(t, err)
+	_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{
+		ShipmentID: repo.shipmentID,
+		Spec:       custExecStageReceipt(preview.CandidateSetDigest),
+	})
+	require.NoError(t, err)
+
+	after := custExecShipment(t, repo.ws, repo.shipmentID)
+	assert.Contains(t, after.Links, link, "custody offer must keep DB-only links in the Markdown")
 }
