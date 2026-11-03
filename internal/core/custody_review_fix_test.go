@@ -661,7 +661,7 @@ func TestReview_CompensatedJournalIsTerminal(t *testing.T) {
 	require.NoError(t, err)
 
 	repo.ws.removeShipmentOperationJournal = func(string) error { return errors.New("injected journal removal failure") }
-	require.NoError(t, recoverPendingShipmentOperations(ctx, repo.ws))
+	require.Error(t, recoverPendingShipmentOperations(ctx, repo.ws), "a failed journal removal must fail recovery loudly")
 
 	raw, err := os.ReadFile(journalPath)
 	require.NoError(t, err)
