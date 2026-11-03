@@ -117,15 +117,24 @@ func (c *NonceConsumer) ConsumedBinding(nonce string) (string, error) {
 	return digest, nil
 }
 
+// boundNonceConsumeProvider is implemented by providers that persist the request-identity
+// digest with the consume, so a redemption source can match the digest later.
+type boundNonceConsumeProvider interface {
+	CompareAndConsumeNonceBound(ctx context.Context, nonce string, notAfter time.Time, requestIdentityDigest string) error
+}
+
 // ConsumeBound is Consume that records requestIdentityDigest, the digest the
 // nonce is consumed against, in the projection and the consume audit.
 func (c *NonceConsumer) ConsumeBound(ctx context.Context, nonce string, notAfter time.Time, requestIdentityDigest string) error {
 	if nonce == "" {
 		return &NonceLedgerError{Err: ErrNonceInvalid}
 	}
-	if err := c.provider.CompareAndConsumeNonce(ctx, nonce, notAfter); err != nil {
-		if errors.Is(err, ErrNonceReplayed) {
+	if err := c.compareAndConsume(ctx, nonce, notAfter, requestIdentityDigest); err != nil {
+		switch {
+		case errors.Is(err, ErrNonceReplayed):
 			return &NonceLedgerError{Nonce: nonce, Err: ErrNonceReplayed}
+		case errors.Is(err, ErrNonceExpired):
+			return &NonceLedgerError{Nonce: nonce, Err: ErrNonceExpired}
 		}
 		return &NonceLedgerError{Nonce: nonce, Err: fmt.Errorf("%w: %w", ErrNonceProviderUnavailable, err)}
 	}
@@ -138,4 +147,13 @@ func (c *NonceConsumer) ConsumeBound(ctx context.Context, nonce string, notAfter
 		return &NonceConsumeIndeterminateError{Nonce: nonce, Cause: fmt.Errorf("audit: %w", err)}
 	}
 	return nil
+}
+
+// compareAndConsume calls the provider's atomic consume, passing the digest to providers
+// that persist it.
+func (c *NonceConsumer) compareAndConsume(ctx context.Context, nonce string, notAfter time.Time, requestIdentityDigest string) error {
+	if bound, ok := c.provider.(boundNonceConsumeProvider); ok {
+		return bound.CompareAndConsumeNonceBound(ctx, nonce, notAfter, requestIdentityDigest)
+	}
+	return c.provider.CompareAndConsumeNonce(ctx, nonce, notAfter)
 }

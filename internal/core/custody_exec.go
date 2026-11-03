@@ -168,10 +168,30 @@ func OfferCustodyHandoff(ctx context.Context, ws *Workspace, opts CustodyOfferOp
 // AcceptCustodyHandoff records acceptance of a previously offered custody handoff.
 // Profile B (agent_workflow_handoff) needs the accepting role and eligible paths. Profile A
 // (operator_verified) needs a CustodyApprovalToken from a configured operator trust
-// anchor, and a live accept consumes its nonce through the injected NonceConsumer.
+// anchor, and a live accept consumes its nonce through the injected NonceConsumer. OperatorPinsPath
+// and NonceStorePath name external files outside the workspace root. When unset, the workspace
+// trust and consume behaviour is unchanged.
 func AcceptCustodyHandoff(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions) (CustodyMutationResult, error) {
 	if ws == nil {
 		return CustodyMutationResult{}, fmt.Errorf("accept custody: workspace is required: %w", blerrors.ErrValidation)
+	}
+	anchors, pins, err := custodyTrustInputs(ws.RootPath, opts.OperatorPinsPath, opts.TrustAnchors, opts.ExternalPins)
+	if err != nil {
+		return CustodyMutationResult{}, fmt.Errorf("accept custody %s: %w", opts.ShipmentID, err)
+	}
+	opts.TrustAnchors, opts.ExternalPins = anchors, pins
+	if opts.NonceStorePath != "" {
+		storePath, err := resolveCustodyNonceStorePath(ws.RootPath, opts.NonceStorePath)
+		if err != nil {
+			return CustodyMutationResult{}, fmt.Errorf("accept custody %s: %w", opts.ShipmentID, err)
+		}
+		if !opts.DryRun && custodyNonceConsumerFrom(ctx) == nil {
+			consumer, err := newCustodyNonceStoreConsumer(ws, storePath)
+			if err != nil {
+				return CustodyMutationResult{}, fmt.Errorf("accept custody %s: %w", opts.ShipmentID, err)
+			}
+			ctx = WithCustodyNonceConsumer(ctx, consumer)
+		}
 	}
 	var result CustodyMutationResult
 	mutate := func(lockedCtx context.Context) error {
@@ -226,7 +246,18 @@ func VerifyCustodyState(ctx context.Context, ws *Workspace, opts CustodyVerifyOp
 	}
 
 	now := time.Now().UTC()
-	trust := custodyTrustFor(ws, opts.TrustAnchors, opts.ExternalPins, now)
+	anchors, pins, err := custodyTrustInputs(ws.RootPath, opts.OperatorPinsPath, opts.TrustAnchors, opts.ExternalPins)
+	if err != nil {
+		return CustodyVerifyResult{}, fmt.Errorf("verify custody %s: %w", opts.ShipmentID, err)
+	}
+	trust := custodyTrustFor(ws, anchors, pins, now)
+	if opts.NonceStorePath != "" {
+		storePath, err := resolveCustodyNonceStorePath(ws.RootPath, opts.NonceStorePath)
+		if err != nil {
+			return CustodyVerifyResult{}, fmt.Errorf("verify custody %s: %w", opts.ShipmentID, err)
+		}
+		trust.nonceStore = storePath
+	}
 	for i := range env.Receipts {
 		receipt := env.Receipts[i]
 		if receipt.Status != custodyReceiptOffered && receipt.Status != custodyReceiptAccepted {
@@ -610,8 +641,12 @@ func custodyVerifyOperatorAdoption(ws *Workspace, env WorkflowCustodyEnvelope, r
 	if !ed25519.Verify(pub, custodyTokenSigningInput(payload), signature) {
 		return fmt.Errorf("%w: proof signature does not verify", ErrAuthorizationRejected)
 	}
-	if !custodyRedeemed(ws, env.ShipmentID, receipt.ReceiptID, proof) {
-		return fmt.Errorf("%w: no redemption of nonce for request identity within the approval token window in the NonceLedger or shipment item log", ErrAuthorizationRejected)
+	redeemed, err := custodyRedeemedWithStore(ws, env.ShipmentID, receipt.ReceiptID, proof, trust.nonceStore)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrAuthorizationRejected, err)
+	}
+	if !redeemed {
+		return fmt.Errorf("%w: no redemption of nonce for request identity within the approval token window in the NonceLedger, the external nonce store, or shipment item log", ErrAuthorizationRejected)
 	}
 	return nil
 }
@@ -1550,6 +1585,8 @@ type custodyTrust struct {
 	anchors []config.TrustAnchor
 	pins    *ExternalPinSet
 	now     time.Time
+	// nonceStore is the canonical external nonce store path, or empty when none is configured.
+	nonceStore string
 }
 
 func custodyTrustFor(ws *Workspace, anchors []config.TrustAnchor, pins *ExternalPinSet, now time.Time) custodyTrust {
