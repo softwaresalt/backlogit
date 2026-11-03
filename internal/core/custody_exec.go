@@ -221,7 +221,10 @@ func VerifyCustodyState(ctx context.Context, ws *Workspace, opts CustodyVerifyOp
 	if env.ShipmentID != opts.ShipmentID {
 		return CustodyVerifyResult{}, fmt.Errorf("verify custody %s: envelope names shipment %s: %w", opts.ShipmentID, env.ShipmentID, blerrors.ErrValidation)
 	}
-	result.ActiveReceiptID = env.ActiveReceiptID
+	if err := custodyCheckBranchField(art, env); err != nil {
+		return CustodyVerifyResult{}, err
+	}
+
 	now := time.Now().UTC()
 	trust := custodyTrustFor(ws, opts.TrustAnchors, opts.ExternalPins, now)
 	adopted := custodyAdoptedFunc(ws, env, trust)
@@ -351,7 +354,7 @@ func custodyOffer(ctx context.Context, ws *Workspace, opts CustodyOfferOptions) 
 	if opts.DryRun {
 		return result, nil
 	}
-	if err := custodySetEnvelope(next, env, branch); err != nil {
+	if err := custodySetEnvelope(next, env); err != nil {
 		return CustodyMutationResult{}, err
 	}
 	err = custodyCommitTransaction(ctx, ws, custodyCommitPlan{
@@ -477,7 +480,7 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 	if opts.DryRun {
 		return result, nil
 	}
-	if err := custodySetEnvelope(next, env, branch); err != nil {
+	if err := custodySetEnvelope(next, env); err != nil {
 		return CustodyMutationResult{}, err
 	}
 	acceptDelta := map[string]any{
@@ -489,16 +492,18 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 		"accepted_at_utc":   now,
 		"custody_revision":  receipt.Revision,
 	}
+	var adoptionDelta map[string]any
 	acceptEvents := []custodyEvent{{eventType: EventCustodyHandoffAccepted, delta: acceptDelta}}
 	if proof != nil {
 		acceptDelta["key_id"] = proof.KeyID
 		acceptDelta["nonce"] = proof.Nonce
 		acceptDelta["request_identity_digest"] = proof.RequestIdentityDigest
-		acceptEvents = append(acceptEvents, custodyEvent{eventType: EventCustodyAdoptionRecorded, delta: map[string]any{
+		adoptionDelta = map[string]any{
 			"receipt_id":              receipt.ReceiptID,
 			"nonce":                   proof.Nonce,
 			"request_identity_digest": proof.RequestIdentityDigest,
-		}})
+		}
+		acceptEvents = append(acceptEvents, custodyEvent{eventType: EventCustodyAdoptionRecorded, delta: adoptionDelta})
 	}
 	// Every check that can fail has run. The nonce is consumed last, so only the commit
 	// transaction can fail after consumption.
@@ -510,6 +515,11 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 		if err := consumer.ConsumeBound(ctx, proof.Nonce, proof.NotAfterUTC, proof.RequestIdentityDigest); err != nil {
 			return CustodyMutationResult{}, rejectApproval(fmt.Errorf("consume nonce: %w", err))
 		}
+		consumedAt, err := custodyConsumedAt(ws, proof.Nonce)
+		if err != nil {
+			return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: operator approval nonce %q was consumed; the approval token must be re-minted: %w", receipt.ReceiptID, proof.Nonce, err)
+		}
+		adoptionDelta["consumed_at"] = consumedAt
 	}
 	if err := custodyCommitTransaction(ctx, ws, custodyCommitPlan{
 		shipmentID: opts.ShipmentID,
@@ -606,16 +616,34 @@ func custodyVerifyOperatorAdoption(ws *Workspace, env WorkflowCustodyEnvelope, r
 }
 
 // custodyRedeemed reports whether proof's nonce was consumed against its request identity.
-// The NonceLedger projection is checked first, then the shipment item log. A missing or
-// unreadable source counts as no redemption.
+// The NonceLedger projection is checked first, then the shipment item log. A ledger record
+// without consumed_at does not prove redemption. A missing or unreadable source counts as
+// no redemption.
 func custodyRedeemed(ws *Workspace, shipmentID, receiptID string, proof CustodyApprovalProof) bool {
 	if ledger, err := OpenNonceLedger(custodyNonceLedgerPath(ws.RootPath)); err == nil {
-		digest, found, err := ledger.BoundDigest(proof.Nonce)
-		if err == nil && found && digest == proof.RequestIdentityDigest {
+		digest, consumedAt, found, err := ledger.BoundConsumption(proof.Nonce)
+		if err == nil && found && digest == proof.RequestIdentityDigest && !consumedAt.IsZero() {
 			return true
 		}
 	}
 	return custodyLogRedeemed(ws.RootPath, shipmentID, receiptID, proof)
+}
+
+// custodyConsumedAt returns the consume time the NonceLedger recorded for nonce, which the
+// accept path carries into its adoption event. It fails closed when that time is missing.
+func custodyConsumedAt(ws *Workspace, nonce string) (time.Time, error) {
+	ledger, err := OpenNonceLedger(custodyNonceLedgerPath(ws.RootPath))
+	if err != nil {
+		return time.Time{}, err
+	}
+	_, consumedAt, found, err := ledger.BoundConsumption(nonce)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if !found || consumedAt.IsZero() {
+		return time.Time{}, fmt.Errorf("nonce ledger has no consumed_at for the consumed nonce: %w", ErrNonceLedgerCorrupt)
+	}
+	return consumedAt, nil
 }
 
 // custodyLogRedeemed reports whether the shipment item log holds an accept or adoption
@@ -1366,7 +1394,7 @@ func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt, 
 	return nil
 }
 
-func custodySetEnvelope(art *models.Artifact, env WorkflowCustodyEnvelope, branch string) error {
+func custodySetEnvelope(art *models.Artifact, env WorkflowCustodyEnvelope) error {
 	raw, err := json.Marshal(env)
 	if err != nil {
 		return fmt.Errorf("encode custody envelope: %w", err)
@@ -1380,8 +1408,19 @@ func custodySetEnvelope(art *models.Artifact, env WorkflowCustodyEnvelope, branc
 	}
 	art.CustomFields[custodyArtifactKey] = value
 	art.CustomFields["workflow_id"] = env.WorkflowID
-	art.CustomFields["branch"] = branch
+	art.CustomFields["branch"] = env.ScopeBranch
 	return nil
+}
+
+// custodyCheckBranchField fails closed when the shipment's top-level branch field disagrees
+// with the envelope's scope_branch, which is authoritative. A missing field is not a
+// disagreement. A blocked-envelope recovery can overwrite the field, so verify reports it.
+func custodyCheckBranchField(art *models.Artifact, env WorkflowCustodyEnvelope) error {
+	raw, present := art.CustomFields["branch"]
+	if !present || raw == env.ScopeBranch {
+		return nil
+	}
+	return fmt.Errorf("verify custody %s: branch field %v disagrees with scope_branch %q: %w", env.ShipmentID, raw, env.ScopeBranch, ErrCustodyWrongBranch)
 }
 
 func custodyResult(shipmentID string, receipt CustodyReceipt, status string, revision int, dryRun bool) CustodyMutationResult {
