@@ -1021,9 +1021,18 @@ func writeArtifactFileGoverned(
 					blerrors.ErrShipmentBlockedRequiresEnvelope,
 				)
 			}
-		case !errors.Is(err, os.ErrNotExist):
+		case errors.Is(err, os.ErrNotExist):
+			// No preimage exists, so the custody guard still applies against an
+			// empty previous artifact: a new file may not introduce workflow_custody
+			// except through a governed custody write (PR 641 review).
+			if err := guardWorkflowCustodyMutation(&models.Artifact{}, artifact, envelope.allowCustodyMutation); err != nil {
+				return err
+			}
+		default:
 			return fmt.Errorf("read current artifact %s before governed write: %w", artifact.ID, err)
 		}
+	} else if err := guardWorkflowCustodyMutation(&models.Artifact{}, artifact, envelope.allowCustodyMutation); err != nil {
+		return err
 	}
 
 	if writeFn != nil {
