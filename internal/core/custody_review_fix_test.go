@@ -175,6 +175,66 @@ func custodyReviewEventDeltas(t *testing.T, root, shipmentID, eventType string) 
 	return deltas
 }
 
+// custodyReviewLedgerRecord returns the NonceLedger record for nonce as stored on disk.
+func custodyReviewLedgerRecord(t *testing.T, root, nonce string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(custodyReviewLedgerPath(root))
+	require.NoError(t, err)
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var record map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		if record["nonce"] == nonce {
+			return record
+		}
+	}
+	require.Failf(t, "nonce is not in the ledger", "%s", nonce)
+	return nil
+}
+
+// custodyReviewSetBranchField rewrites the shipment's top-level branch custom field,
+// simulating a blocked-envelope recovery that overwrote it.
+func custodyReviewSetBranchField(t *testing.T, ws *Workspace, shipmentID, branch string) {
+	t.Helper()
+	art := custExecShipment(t, ws, shipmentID)
+	art.CustomFields["branch"] = branch
+	path, err := FindArtifactPath(context.Background(), ws, shipmentID)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte(models.SerializeFrontmatter(art.ToFrontmatterMap(), art.Description)), 0o644))
+}
+
+// TestReview_WindowsPathAliases covers lexical rejection of Windows path aliases, so the
+// result is the same on every OS: trailing dot or space, 8.3 short names, alternate data
+// streams, reserved device names, and pathspec magic.
+func TestReview_WindowsPathAliases(t *testing.T) {
+	ws := &Workspace{RootPath: t.TempDir()}
+	for _, path := range []string{
+		".git./config", "GIT~1/HEAD", "a.md:stream", ".git ", "docs/a.md.", "docs/a.md ",
+		"docs/NUL.md", "CON/x.md", ":(glob)docs/a.md",
+	} {
+		t.Run(strings.ReplaceAll(path, "/", "_"), func(t *testing.T) {
+			assert.ErrorIs(t, ValidateCustodyEntryPath(ws, path), ErrCustodyPathRejected)
+		})
+	}
+}
+
+// TestReview_AncestorNoFollow covers a symlink at a non-final ancestor component.
+func TestReview_AncestorNoFollow(t *testing.T) {
+	ws := u3Workspace(t)
+	u3Symlink(t, t.TempDir(), filepath.Join(ws.RootPath, "docs", "linked"))
+	assert.ErrorIs(t, ValidateCustodyEntryPath(ws, "docs/linked/deep/x.md"), ErrCustodyPathRejected)
+}
+
+// TestReview_BranchFieldFollowsScopeBranch covers R3-4: the top-level branch field must
+// agree with the envelope's scope_branch, which is authoritative.
+func TestReview_BranchFieldFollowsScopeBranch(t *testing.T) {
+	ctx := context.Background()
+	repo := custodyReviewStageAccepted(t)
+	custodyReviewSetBranchField(t, repo.ws, repo.shipmentID, "feat/overwritten-by-recover")
+
+	_, err := VerifyCustodyState(ctx, repo.ws, CustodyVerifyOptions{ShipmentID: repo.shipmentID, Branch: custExecFeatureBranch})
+	assert.ErrorIs(t, err, ErrCustodyWrongBranch, "verify must fail closed when branch disagrees with scope_branch")
+}
+
 // TestReview_TrustAnchorProvenance covers D1: caller-injected trust anchors and external
 // pins are authoritative, and workspace-config anchors must satisfy the strict rule.
 func TestReview_TrustAnchorProvenance(t *testing.T) {
@@ -393,6 +453,44 @@ func TestReview_RedemptionBinding(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "UNVERIFIED_OPERATOR_PROVENANCE", custExecVerdict(verify, custExecCovered),
 			"a missing ledger and log must count as no redemption, so the receipt fails closed")
+	})
+
+	t.Run("live_accept_records_consumed_at_in_ledger_and_adoption_event", func(t *testing.T) {
+		fx := custodyReviewOfferAdoption(t)
+		fx.repo.ws.Config.TrustAnchors = []config.TrustAnchor{fx.anchor}
+		live := WithCustodyNonceConsumer(ctx, custodyReviewConsumer(t, fx.repo.root, &custodyReviewProvider{}))
+		_, err := AcceptCustodyHandoff(live, fx.repo.ws, fx.acceptOpts(fx.token(t, "review-consumed-nonce")))
+		require.NoError(t, err)
+
+		record := custodyReviewLedgerRecord(t, fx.repo.root, "review-consumed-nonce")
+		assert.NotEmpty(t, record["consumed_at"], "a consumed nonce must record consumed_at in the NonceLedger")
+
+		deltas := custodyReviewEventDeltas(t, fx.repo.root, fx.repo.shipmentID, EventCustodyAdoptionRecorded)
+		require.Len(t, deltas, 1)
+		assert.NotEmpty(t, deltas[0]["consumed_at"], "the adoption event must carry consumed_at")
+	})
+
+	t.Run("legacy_ledger_entry_without_consumed_at_is_unverified", func(t *testing.T) {
+		fx := custodyReviewOfferAdoption(t)
+		fx.repo.ws.Config.TrustAnchors = []config.TrustAnchor{fx.anchor}
+		env := custExecEnvelope(t, custExecShipment(t, fx.repo.ws, fx.repo.shipmentID))
+		proof, err := VerifyCustodyApprovalToken(fx.token(t, "review-legacy-nonce"), env, time.Now().UTC(), fx.anchor)
+		require.NoError(t, err)
+		env.ActiveReceiptID = "rcpt-adopt-1"
+		env.Receipts[0].Status = "accepted"
+		env.Receipts[0].AcceptedAtUTC = time.Now().UTC()
+		env.Receipts[0].ExpiresAtUTC = time.Now().UTC().Add(time.Hour)
+		env.Receipts[0].ApprovalProof = &proof
+		custExecWriteCustody(t, fx.repo.ws, env)
+
+		legacy, err := json.Marshal(map[string]any{"nonce": proof.Nonce, "not_after": proof.NotAfterUTC, "request_identity_digest": proof.RequestIdentityDigest})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(custodyReviewLedgerPath(fx.repo.root), append(legacy, '\n'), 0o600))
+
+		verify, err := VerifyCustodyState(ctx, fx.repo.ws, CustodyVerifyOptions{ShipmentID: fx.repo.shipmentID, Branch: custExecFeatureBranch})
+		require.NoError(t, err)
+		assert.Equal(t, "UNVERIFIED_OPERATOR_PROVENANCE", custExecVerdict(verify, custExecCovered),
+			"a ledger entry without consumed_at must not prove redemption when no item-log redemption exists")
 	})
 
 	t.Run("log_redemption_survives_ledger_loss", func(t *testing.T) {
