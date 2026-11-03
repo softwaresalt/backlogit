@@ -121,20 +121,21 @@ func ValidateCustodyEnvelope(env WorkflowCustodyEnvelope) error {
 	return validateCustodyAcceptedRevisions(env)
 }
 
-// validateCustodyAcceptedRevisions refuses two accepted receipts at one revision, and an
-// accepted receipt at or below CustodyRevision that is not the active receipt. Either
-// shape means an older offer has been accepted over a newer one.
+// validateCustodyAcceptedRevisions refuses more than one accepted receipt in an envelope
+// (211-S round 2 Option A, R2), and an accepted receipt at or below CustodyRevision that is
+// not the active receipt. Either shape means an older offer has been accepted over a newer
+// one, or a superseded receipt is still live.
 func validateCustodyAcceptedRevisions(env WorkflowCustodyEnvelope) error {
-	seen := make(map[int]string, len(env.Receipts))
+	accepted := ""
 	for i := range env.Receipts {
 		r := env.Receipts[i]
 		if r.Status != custodyReceiptAccepted {
 			continue
 		}
-		if other, dup := seen[r.Revision]; dup {
-			return fmt.Errorf("%w: %w: accepted receipts %q and %q share revision %d", blerrors.ErrValidation, ErrCustodyStaleRevision, other, r.ReceiptID, r.Revision)
+		if accepted != "" {
+			return fmt.Errorf("%w: %w: receipts %q and %q are both accepted; only one receipt may be accepted at a time", blerrors.ErrValidation, ErrCustodyStaleRevision, accepted, r.ReceiptID)
 		}
-		seen[r.Revision] = r.ReceiptID
+		accepted = r.ReceiptID
 		if r.ReceiptID != env.ActiveReceiptID && r.Revision <= env.CustodyRevision {
 			return fmt.Errorf("%w: %w: accepted receipt %q at revision %d is not active and does not exceed custody revision %d", blerrors.ErrValidation, ErrCustodyStaleRevision, r.ReceiptID, r.Revision, env.CustodyRevision)
 		}
