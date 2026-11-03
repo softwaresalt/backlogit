@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -195,8 +196,13 @@ func validateCustodyEntries(entries []CustodyEntry, profile string) error {
 			groups[e.RenameGroupID] = append(groups[e.RenameGroupID], e.ChangeKind)
 		}
 	}
-	for id, kinds := range groups {
-		if !isPairedRename(kinds) {
+	ids := make([]string, 0, len(groups))
+	for id := range groups {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if !isPairedRename(groups[id]) {
 			return fmt.Errorf("%w: rename_group_id %q must link exactly one deleted and one added entry", ErrPartialRenameAdoptionRejected, id)
 		}
 	}
