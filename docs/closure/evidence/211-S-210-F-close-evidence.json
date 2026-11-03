@@ -1,0 +1,33 @@
+{
+  "shipment_id": "211-S",
+  "feature_id": "210-F",
+  "close_path": "safe_close",
+  "merge_commit_sha": "19af71b06c321f6274264f3a6585e8377a70c746",
+  "pr_number": 641,
+  "reconcile_reports": [
+    ".backlogit/reconcile/211-S-pre-20261103T163248Z.md",
+    ".backlogit/reconcile/211-S-safe-close-20261103T163248Z.md",
+    ".backlogit/reconcile/211-S-post-20261103T163248Z.md"
+  ],
+  "governed_call": {
+    "tool": "backlogit_ship_shipment",
+    "sha": "19af71b06c321f6274264f3a6585e8377a70c746",
+    "transport_result": "timeout",
+    "retried": false,
+    "verified_from": ["canonical_files", "item_log"]
+  },
+  "item_log_events": [
+    {"event_type": "shipment_status_changed", "status": "shipped", "timestamp": "2026-11-03T08:35:22-08:00"},
+    {"event_type": "commit_tracked", "commit_sha": "19af71b06c321f6274264f3a6585e8377a70c746", "timestamp": "2026-11-03T08:35:35-08:00"},
+    {"event_type": "archived", "timestamp": "2026-11-03T08:37:04-08:00"}
+  ],
+  "archive_verification": {
+    "control_record": ".backlogit/archive/211-S.md",
+    "archived_status": "shipped",
+    "members": ["210-F", "210.001-T", "210.002-T", "210.003-T", "210.004-T", "210.005-T", "210.006-T", "210.007-T"],
+    "members_archived_status": "done",
+    "non_member_changes": [],
+    "deleted_archive_entries": 0
+  },
+  "ops_intent_journals_for_shipment": 0
+}
