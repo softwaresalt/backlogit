@@ -47,10 +47,10 @@ overrides: {}
 model_routing:
   tier1:
     model: claude-haiku-5.5              # Fast/cheap: memory, docs, compaction (e.g., gpt-5.4-mini)
-    reasoning_effort: "xhigh"  # Leave empty to use model default
-    model_provider: "anthropic"       # e.g., openai, anthropic — leave empty for default
     model_family: "claude-haiku-5.5"           # Resolved into Tier 1 agent frontmatter
-    context_tier: "default"        # context-capacity class (default | long_context)
+    model_provider: "anthropic"       # e.g., openai, anthropic — leave empty for default
+    reasoning_effort: "high"  # Leave empty to use model default
+    context_tier: "long_context"        # context-capacity class (default | long_context)
   tier2:
     model: claude-sonnet-5.5              # Standard: orchestration, code, review (e.g., claude-sonnet-5)
     reasoning_effort: "high"
@@ -79,9 +79,9 @@ model_routing:
       reasoning_effort: "high"
       context_tier: "long_context"
   ship:
-    model_family: "gpt-6.1-terra"
-    model_provider: "openai"
-    reasoning_effort: "medium"
+    model_family: "claude-haiku-5.5" 
+    model_provider: "anthropic"
+    reasoning_effort: "high"
     context_tier: "long_context" 
     escalation:
       model_family: "gpt-6.1-sol"

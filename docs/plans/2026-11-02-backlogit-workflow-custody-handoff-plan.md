@@ -332,9 +332,12 @@ To respect the 2-hour rule (`<= 3 files`, `<= 5 functions`, `<= 4 test scenarios
        * `profile_a_custody_approval_token_mint_verify_and_expiry_bounds` (`AC-02`, `AC-06`, `OD-2`, `OD-3`): verifies `CustodyRequestIdentityDigest` (domain-separated by `backlogit/workflow-custody/request-identity/v1`), `MintCustodyApprovalToken` (CLI/host-supervisor Ed25519 signer), and `VerifyCustodyApprovalToken` against `TrustAnchors`, enforcing `authorized_role == "operator"`, `not_after_utc - not_before_utc <= 15m` (`MaxCustodyApprovalTokenWindow`), default receipt `expires_at_utc = accepted_at_utc + 168h` (`DefaultCustodyReceiptExpiry`), and failing closed on tampered signature, wrong `shipment_id`/`workflow_id`/`scope_branch`/`candidate_set_digest`, or expired window.
     2. Observe RED: `go test -timeout=30m -run=^$ -count=1 ./...` exits 0 (zero production files modified) and `go test -timeout=30m -count=1 -run '^TestU3_CustodyValidationAndApprovalTokenVerification$' ./internal/core` fails with `ErrNotImplemented`.
   * **Second (GREEN phase, implemented by `build-feature`)**:
-    1. Create `internal/core/custody_validate.go` implementing `ValidateCustodyEnvelope`, `ValidateCustodyEntryPath`, `CustodyRequestIdentityDigest`, `MintCustodyApprovalToken`, and `VerifyCustodyApprovalToken` (removing their `ErrNotImplemented` stubs from `internal/core/custody_types.go`).
+    1. Populate the full struct fields on `WorkflowCustodyEnvelope`, `CustodyReceipt`, `CustodyEntry`, `CustodyApprovalProof`, `CustodyCandidateSpec`, `CustodyPreviewOptions`, `CustodyPreviewResult`, `CustodyOfferOptions`, `CustodyAcceptOptions`, `CustodyMutationResult`, `CustodyVerifyOptions`, `CustodyPathVerdict`, and `CustodyVerifyResult` in `internal/core/custody_types.go`.
+    2. Create `internal/core/custody_validate.go` implementing `ValidateCustodyEnvelope`, `ValidateCustodyEntryPath` (including handle-pinned no-follow file read helper with opened-path/file-ID verification against `Lstat` pre-check), `CustodyRequestIdentityDigest`, `MintCustodyApprovalToken`, and `VerifyCustodyApprovalToken` (taking variadic `anchors ...config.TrustAnchor` so 3-arg and explicit-anchor calls both work), removing their `ErrNotImplemented` stubs from `internal/core/custody_types.go`.
+    3. Update `assertCustodyFuncs` in `internal/core/custody_shape_test.go` (Option 2 contract alignment) to accept functions declared in either `custody_types.go` or `custody_validate.go`, and strengthen `internal/core/custody_validate_test.go` with behavioral test assertions alongside the AST checks.
 * **Affected files**:
   * `internal/core/custody_validate_test.go`
+  * `internal/core/custody_shape_test.go`
   * `internal/core/custody_validate.go`
   * `internal/core/custody_types.go`
 * **Acceptance criteria**:
@@ -363,6 +366,7 @@ To respect the 2-hour rule (`<= 3 files`, `<= 5 functions`, `<= 4 test scenarios
   * `internal/core/custody_exec.go`
   * `internal/core/shipment_ops.go`
   * `internal/core/shipment_recovery.go`
+  * `internal/core/shipment.go`
   * `internal/core/artifacts.go`
 * **Acceptance criteria**:
   * RED phase touches ONLY `internal/core/custody_exec_test.go` (zero production files modified), compiles cleanly (`go test -timeout=30m -run=^$ -count=1 ./...` exits 0), and fails on `TestU4_CustodyPreviewOfferAcceptVerifyAndRecovery`.

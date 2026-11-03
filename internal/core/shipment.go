@@ -2750,10 +2750,11 @@ func recoverPendingShipmentOperations(ctx context.Context, ws *Workspace) error 
 		if record.kind == shipmentLifecycleJournalKind {
 			journal := record.lifecycle
 			if journal.Phase == shipmentOperationPhaseCommitted &&
-				(isShipmentManifestOperation(journal.Operation) || journal.Operation == shipmentOperationReconstitute) &&
+				(isShipmentManifestOperation(journal.Operation) || journal.Operation == shipmentOperationReconstitute || isCustodyOperation(journal.Operation)) &&
 				(currentOperationID == "" || journal.CorrelationID != currentOperationID) {
-				// A completed remove_item / move_item whose cleanup was
-				// interrupted: finalize without touching preimages.
+				// A completed remove_item / move_item / custody operation whose
+				// cleanup was interrupted: finalize without touching preimages.
+				// A committed custody journal is never rolled back.
 				removeShipmentOperationJournal(ctx, ws, record.path)
 				continue
 			}

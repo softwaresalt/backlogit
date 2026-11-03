@@ -1259,9 +1259,12 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		return nil, fmt.Errorf("adopt item %s: load new parent %s: %w", itemID, newParentID, err)
 	}
 
-	artifact, err := loadArtifact(ctx, ws, itemID)
+	// The canonical Markdown is the rewrite preimage: the SQLite row is only a
+	// projection and may hold a stale workflow_custody envelope, so a missing
+	// Markdown file fails closed rather than falling back to the projection.
+	artifact, err := readArtifactFromDiskReadOnly(ws, itemID)
 	if err != nil {
-		return nil, fmt.Errorf("adopt item %s: %w", itemID, err)
+		return nil, fmt.Errorf("adopt item %s: read canonical Markdown preimage: %w", itemID, err)
 	}
 
 	if artifact.Status == models.StatusArchived {
@@ -1314,6 +1317,10 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 				newID = generatedID
 			}
 		}
+	}
+
+	if newID != oldID && custodyEnvelopeNames(artifact, oldID) {
+		return nil, fmt.Errorf("adopt item %s: %w: a workflow custody envelope names %s, so adoption cannot change its ID", itemID, blerrors.ErrValidation, oldID)
 	}
 
 	var releaseEventLocks func()
@@ -1443,7 +1450,8 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			newMDPath = filepath.Join(dir, newFileName+".md")
 
 			// Write updated artifact content (with new ID in frontmatter) to new path.
-			if writeErr := WriteArtifactFileWithOptions(artifact, newMDPath, WorkspaceDurableWrites(ws)); writeErr != nil {
+			// Guard against the canonical preimage at oldMDPath: newMDPath does not exist yet.
+			if writeErr := writeArtifactFileGoverned(artifact, newMDPath, oldMDPath, WorkspaceDurableWrites(ws), artifactWriteEnvelope{}, nil); writeErr != nil {
 				return nil, fmt.Errorf("adopt item %s: write new md: %w", oldID, writeErr)
 			}
 			if newMDPath != oldMDPath {

@@ -43,6 +43,9 @@ type nonceLedgerRecord struct {
 	// RequestIdentityDigest is the request-identity digest the nonce was
 	// consumed against; empty for an unbound consume.
 	RequestIdentityDigest string `json:"request_identity_digest,omitempty"`
+	// ConsumedAt is the UTC instant the nonce was consumed. It is nil for records
+	// written before the field existed.
+	ConsumedAt *time.Time `json:"consumed_at,omitempty"`
 }
 
 // NonceLedger is the durable append-then-fsync record of consumed nonces.
@@ -86,9 +89,21 @@ func (l *NonceLedger) RecordBound(nonce string, notAfter time.Time, requestIdent
 			return &NonceLedgerError{Nonce: nonce, Err: ErrNonceReplayed}
 		}
 	}
-	line, err := json.Marshal(nonceLedgerRecord{Nonce: nonce, NotAfter: notAfter.UTC(), RequestIdentityDigest: requestIdentityDigest})
+	consumedAt := time.Now().UTC()
+	line, err := json.Marshal(nonceLedgerRecord{
+		Nonce: nonce, NotAfter: notAfter.UTC(), RequestIdentityDigest: requestIdentityDigest, ConsumedAt: &consumedAt,
+	})
 	if err != nil {
 		return fmt.Errorf("encode nonce record: %w", err)
+	}
+	if info, statErr := os.Lstat(l.path); statErr == nil {
+		linked, linkErr := IsSymlinkOrReparsePoint(info, l.path)
+		if linkErr != nil {
+			return fmt.Errorf("check nonce ledger: %w", linkErr)
+		}
+		if linked {
+			return fmt.Errorf("nonce ledger %s is a symlink or reparse point: %w", l.path, ErrNonceLedgerCorrupt)
+		}
 	}
 	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -141,6 +156,29 @@ func (l *NonceLedger) BoundDigest(nonce string) (digest string, found bool, err 
 	return "", false, nil
 }
 
+// BoundConsumption returns the request-identity digest nonce was consumed against, the
+// UTC instant it was consumed, and whether nonce is recorded at all. A record without
+// consumed_at yields a zero time, which callers must treat as unprovable.
+func (l *NonceLedger) BoundConsumption(nonce string) (digest string, consumedAt time.Time, found bool, err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	records, err := l.load()
+	if err != nil {
+		return "", time.Time{}, false, err
+	}
+	for _, r := range records {
+		if r.Nonce != nonce {
+			continue
+		}
+		var at time.Time
+		if r.ConsumedAt != nil {
+			at = *r.ConsumedAt
+		}
+		return r.RequestIdentityDigest, at, true, nil
+	}
+	return "", time.Time{}, false, nil
+}
+
 // Prune removes records whose not_after is before now and returns how many
 // were removed. A pruned nonce belongs to a token that already fails expiry.
 func (l *NonceLedger) Prune(now time.Time) (int, error) {
@@ -190,7 +228,7 @@ func (l *NonceLedger) Prune(now time.Time) (int, error) {
 }
 
 func (l *NonceLedger) load() ([]nonceLedgerRecord, error) {
-	f, err := os.Open(l.path)
+	f, err := openCustodyNoFollow(l.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}

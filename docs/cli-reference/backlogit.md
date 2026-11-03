@@ -54,6 +54,7 @@ stash follow-up work for later planning.
 * [backlogit archive](backlogit_archive.md)	 - Archive a completed artifact
 * [backlogit checkpoint](backlogit_checkpoint.md)	 - Manage session state checkpoints
 * [backlogit comment](backlogit_comment.md)	 - Append comments to an artifact's history
+* [backlogit custody](backlogit_custody.md)	 - Preview, offer, accept, and verify workflow custody handoffs
 * [backlogit delete](backlogit_delete.md)	 - Delete an artifact
 * [backlogit deliberate](backlogit_deliberate.md)	 - Create a deliberation artifact linked to a stash entry
 * [backlogit dep](backlogit_dep.md)	 - Manage artifact dependencies

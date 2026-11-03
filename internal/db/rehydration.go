@@ -173,6 +173,9 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB, opts ...Re
 		if _, err := tx.ExecContext(ctx, `DELETE FROM item_links`); err != nil {
 			return fmt.Errorf("clear item_links: %w", err)
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM custody_receipts`); err != nil {
+			return fmt.Errorf("clear custody_receipts: %w", err)
+		}
 		return tx.Commit()
 	}); clearErr != nil {
 		return 0, clearErr

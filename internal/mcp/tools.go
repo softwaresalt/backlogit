@@ -566,6 +566,44 @@ func (s *Server) RegisterTools() {
 		s.handleReconstituteShipment,
 	)
 	s.addTool(
+		mcplib.NewTool("backlogit_custody_preview",
+			mcplib.WithDescription("Classify workflow custody candidates for a shipment without writing any state (read-only; works without the SQLite cache)"),
+			mcplib.WithString("shipment_id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("candidates", mcplib.Required(), mcplib.Description("JSON array of candidate specs: path, change_kind, staged_state, contributor, source_kind")),
+			mcplib.WithString("branch", mcplib.Description("Work branch to evaluate against (defaults to the checked-out branch)")),
+		),
+		s.handleCustodyPreview,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_custody_offer",
+			mcplib.WithDescription("Offer a workflow custody handoff for a shipment. spec is a JSON receipt; dry_run validates without writing. Live offers degrade to canonical storage (db: unavailable) when the SQLite cache is unusable."),
+			mcplib.WithString("shipment_id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("spec", mcplib.Required(), mcplib.Description("JSON custody receipt with entries, candidate_set_digest, authority_profile, and accepting_role")),
+			mcplib.WithBoolean("dry_run", mcplib.Description("Validate the offer without writing")),
+		),
+		s.handleCustodyOffer,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_custody_accept",
+			mcplib.WithDescription("Accept an offered workflow custody receipt. operator_verified receipts require a signed auth_token and fail closed without a configured nonce provider; confirm flags never authorize."),
+			mcplib.WithString("shipment_id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("receipt_id", mcplib.Required(), mcplib.Description("Offered receipt ID to accept")),
+			mcplib.WithString("by", mcplib.Required(), mcplib.Description("Accepting role or principal")),
+			mcplib.WithString("idempotency_key", mcplib.Description("Key that deduplicates retried accepts")),
+			mcplib.WithString("auth_token", mcplib.Description("Encoded operator approval token (required for operator_verified receipts)")),
+			mcplib.WithBoolean("dry_run", mcplib.Description("Verify the acceptance without consuming a nonce or writing")),
+		),
+		s.handleCustodyAccept,
+	)
+	s.addTool(
+		mcplib.NewTool("backlogit_custody_verify",
+			mcplib.WithDescription("Verify recorded workflow custody receipts against the current Git state (read-only)"),
+			mcplib.WithString("shipment_id", mcplib.Required(), mcplib.Description("Shipment ID")),
+			mcplib.WithString("branch", mcplib.Description("Work branch to evaluate against (defaults to the checked-out branch)")),
+		),
+		s.handleCustodyVerify,
+	)
+	s.addTool(
 		mcplib.NewTool("backlogit_adopt_item",
 			mcplib.WithDescription("Adopt an orphaned item under a new parent feature"),
 			mcplib.WithString("item_id", mcplib.Required(), mcplib.Description("Item ID to adopt")),

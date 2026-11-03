@@ -341,7 +341,7 @@ func validateShipmentLifecycleJournalRecord(
 	switch journal.Operation {
 	case "block", "unblock", "normalize", "claim", "dispose",
 		shipmentOperationRemoveItem, shipmentOperationMoveItem, shipmentOperationReorderItems,
-		shipmentOperationReconstitute:
+		shipmentOperationReconstitute, shipmentOperationCustodyOffer, shipmentOperationCustodyAccept:
 	default:
 		return fmt.Errorf("unsupported lifecycle operation %q: %w", journal.Operation, blerrors.ErrValidation)
 	}
@@ -365,6 +365,14 @@ func validateShipmentLifecycleJournalRecord(
 			blerrors.ErrValidation)
 	}
 	switch journal.Operation {
+	case shipmentOperationCustodyOffer:
+		if journal.RecoveryPolicy != shipmentOperationRecoveryPolicyRollback || journal.Target != custodyReceiptOffered {
+			return fmt.Errorf("custody_offer lifecycle tuple must be rollback/offered: %w", blerrors.ErrValidation)
+		}
+	case shipmentOperationCustodyAccept:
+		if journal.RecoveryPolicy != shipmentOperationRecoveryPolicyRollback || journal.Target != custodyReceiptAccepted {
+			return fmt.Errorf("custody_accept lifecycle tuple must be rollback/accepted: %w", blerrors.ErrValidation)
+		}
 	case shipmentOperationRemoveItem:
 		if journal.RecoveryPolicy != shipmentOperationRecoveryPolicyRollback ||
 			len(journal.Preimage.Related) != 0 ||
@@ -430,6 +438,11 @@ func validateShipmentLifecycleJournalRecord(
 		}
 	}
 
+	if isCustodyOperation(journal.Operation) {
+		// Custody journals roll back only the shipment and its JSONL events and
+		// never touch member artifacts, so member preimage coverage does not apply.
+		return nil
+	}
 	memberIDs := NormalizeShipmentItems(journal.Preimage.Shipment)
 	members := make(map[string]struct{}, len(journal.Preimage.Members))
 	for _, member := range journal.Preimage.Members {
@@ -552,6 +565,9 @@ const (
 
 	shipmentOperationRemoveItem = "remove_item"
 	shipmentOperationMoveItem   = "move_item"
+
+	shipmentOperationCustodyOffer  = "custody_offer"
+	shipmentOperationCustodyAccept = "custody_accept"
 
 	shipmentOperationReorderItems = "reorder_items"
 	shipmentOperationReconstitute = "reconstitute"
