@@ -436,7 +436,7 @@ operations:
 
   accept_custody:
     mcp_tool: "backlogit_custody_accept"
-    cli_command: "backlogit custody accept {{shipment_id}} --receipt-id {{receipt_id}} --by {{by}}"
+    cli_command: "backlogit custody accept {{shipment_id}} --receipt-id {{receipt_id}} --by {{by}} --idempotency-key {{idempotency_key}} --auth-token {{auth_token}}"
     params:
       shipment_id: "shipment_id"
       receipt_id: "receipt_id"
