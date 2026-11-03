@@ -468,6 +468,11 @@ func TestU6_MCPCustodyToolsCanonicalDirectAndColdServer(t *testing.T) {
 		custodyTestWrite(t, repo.root, custodyTestStageFile, custodyTestRevised)
 
 		srv := NewServerForRoot(repo.root)
+		t.Cleanup(func() {
+			if srv.Workspace != nil {
+				_ = srv.Workspace.Close()
+			}
+		})
 
 		refused := custodyTestInvoke(t, ctx, srv, "backlogit_custody_preview", map[string]any{
 			"shipment_id": repo.stageShip,
