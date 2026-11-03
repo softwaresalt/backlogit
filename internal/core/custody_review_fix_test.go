@@ -332,13 +332,13 @@ func TestReview_ProfileEligibility(t *testing.T) {
 
 	t.Run("docs_handoff_stays_profile_b", func(t *testing.T) {
 		repo := custExecNewRepo(t)
-		custExecWrite(t, repo.root, "docs/review/x.md", "content\n")
+		custExecWrite(t, repo.root, "docs/reviews/x.md", "content\n")
 		preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo,
-			custodyReviewUntrackedCandidate("docs/review/x.md", "stage", "stage_artifact")))
+			custodyReviewUntrackedCandidate("docs/reviews/x.md", "stage", "stage_artifact")))
 		require.NoError(t, err)
 		assert.Equal(t, "agent_workflow_handoff", preview.RequiredAuthorityProfile)
 		receipt := custExecReceipt("rcpt-docs-1", "stage_to_ship_handoff", "agent_workflow_handoff", "stage", "ship",
-			"stage_artifact_commit", preview.CandidateSetDigest, custodyReviewUntrackedEntry("docs/review/x.md", "content\n", "stage", "stage_artifact"))
+			"stage_artifact_commit", preview.CandidateSetDigest, custodyReviewUntrackedEntry("docs/reviews/x.md", "content\n", "stage", "stage_artifact"))
 		_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{ShipmentID: repo.shipmentID, Spec: receipt})
 		require.NoError(t, err)
 	})
