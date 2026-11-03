@@ -1,0 +1,118 @@
+package core
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// duckReceiptStatus returns the status of the receipt named id in env, or "" when absent.
+func duckReceiptStatus(env WorkflowCustodyEnvelope, id string) string {
+	if idx := custodyReceiptIndex(env.Receipts, id); idx >= 0 {
+		return env.Receipts[idx].Status
+	}
+	return ""
+}
+
+// duckStageOffer returns a stage-to-ship receipt at revision rev named id with a live expiry.
+func duckStageOffer(id string, rev int, digest string) CustodyReceipt {
+	receipt := custExecReceipt(id, "stage_to_ship_handoff", "agent_workflow_handoff", "stage", "ship",
+		"stage_artifact_commit", digest, custExecStageEntry())
+	receipt.Revision = rev
+	receipt.OfferedAtUTC = time.Now().UTC()
+	receipt.ExpiresAtUTC = time.Now().UTC().Add(time.Hour)
+	return receipt
+}
+
+// duckAcceptedReceipt returns an accepted stage-to-ship receipt for ValidateCustodyEnvelope cases.
+func duckAcceptedReceipt(id string, rev int, status string) CustodyReceipt {
+	receipt := duckStageOffer(id, rev, "digest-duck")
+	receipt.Status = status
+	receipt.AcceptedAtUTC = time.Now().UTC()
+	return receipt
+}
+
+func TestRubberDuck_F1_OfferRefusesDuplicateRevision(t *testing.T) {
+	ctx := context.Background()
+	repo := custExecNewRepo(t)
+	custExecWrite(t, repo.root, custExecCovered, custExecRevised)
+	preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, custExecStageCandidate()))
+	require.NoError(t, err)
+
+	_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{
+		ShipmentID: repo.shipmentID,
+		Spec:       duckStageOffer("rcpt-stage-ship-1", 1, preview.CandidateSetDigest),
+	})
+	require.NoError(t, err)
+
+	_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{
+		ShipmentID: repo.shipmentID,
+		Spec:       duckStageOffer("rcpt-stage-ship-2", 1, preview.CandidateSetDigest),
+	})
+	require.Error(t, err, "a second offer must not reuse the pending offer's revision")
+	assert.Contains(t, err.Error(), "revision")
+	env := custExecEnvelope(t, custExecShipment(t, repo.ws, repo.shipmentID))
+	assert.Len(t, env.Receipts, 1, "a refused offer must not be recorded")
+}
+
+func TestRubberDuck_F1_AcceptRefusesRevisionRegression(t *testing.T) {
+	ctx := context.Background()
+	repo := custExecNewRepo(t)
+	custExecWrite(t, repo.root, custExecCovered, custExecRevised)
+	preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, custExecStageCandidate()))
+	require.NoError(t, err)
+
+	for rev := 1; rev <= 2; rev++ {
+		id := fmt.Sprintf("rcpt-stage-ship-%d", rev)
+		_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{
+			ShipmentID: repo.shipmentID,
+			Spec:       duckStageOffer(id, rev, preview.CandidateSetDigest),
+		})
+		require.NoError(t, err)
+		_, err = AcceptCustodyHandoff(ctx, repo.ws, CustodyAcceptOptions{ShipmentID: repo.shipmentID, ReceiptID: id, By: "ship"})
+		require.NoError(t, err)
+	}
+
+	// An older offer at revision 1 is injected after revision 2 is accepted and active.
+	env := custExecEnvelope(t, custExecShipment(t, repo.ws, repo.shipmentID))
+	require.Equal(t, 2, env.CustodyRevision)
+	env.Receipts = append(env.Receipts, duckStageOffer("rcpt-stale-0", 1, preview.CandidateSetDigest))
+	custodyReviewWriteEnvelope(t, repo.ws, repo.shipmentID, env)
+
+	_, err = AcceptCustodyHandoff(ctx, repo.ws, CustodyAcceptOptions{ShipmentID: repo.shipmentID, ReceiptID: "rcpt-stale-0", By: "ship"})
+	require.Error(t, err, "an older offer must not supersede a newer accepted receipt")
+
+	after := custExecEnvelope(t, custExecShipment(t, repo.ws, repo.shipmentID))
+	assert.Equal(t, 2, after.CustodyRevision, "custody revision must not regress")
+	assert.Equal(t, "rcpt-stage-ship-2", after.ActiveReceiptID)
+	assert.Equal(t, custodyReceiptAccepted, duckReceiptStatus(after, "rcpt-stage-ship-2"))
+	assert.Equal(t, custodyReceiptOffered, duckReceiptStatus(after, "rcpt-stale-0"))
+}
+
+func TestRubberDuck_F1_ValidateCustodyEnvelopeRevisionRules(t *testing.T) {
+	base := func(receipts ...CustodyReceipt) WorkflowCustodyEnvelope {
+		return WorkflowCustodyEnvelope{
+			SchemaVersion: WorkflowCustodySchemaVersion, WorkflowID: "wf-duck", ShipmentID: "001-S",
+			ScopeBranch: "feat/duck", BaseCommitSHA: "0123456789abcdef", CustodyRevision: 2,
+			ActiveReceiptID: "rcpt-active", Receipts: receipts,
+		}
+	}
+	active := duckAcceptedReceipt("rcpt-active", 2, custodyReceiptAccepted)
+	superseded := duckAcceptedReceipt("rcpt-old", 1, custodyReceiptSuperseded)
+
+	t.Run("control_superseded_lower_revision_and_active_current", func(t *testing.T) {
+		require.NoError(t, ValidateCustodyEnvelope(base(superseded, active)))
+	})
+	t.Run("duplicate_accepted_revision_is_refused", func(t *testing.T) {
+		dup := duckAcceptedReceipt("rcpt-dup", 2, custodyReceiptAccepted)
+		assert.Error(t, ValidateCustodyEnvelope(base(active, dup)))
+	})
+	t.Run("accepted_revision_at_or_below_custody_revision_that_is_not_current_is_refused", func(t *testing.T) {
+		stale := duckAcceptedReceipt("rcpt-stale", 1, custodyReceiptAccepted)
+		assert.Error(t, ValidateCustodyEnvelope(base(active, stale)))
+	})
+}
