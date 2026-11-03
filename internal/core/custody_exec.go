@@ -122,10 +122,8 @@ func PreviewCustodyCandidates(ctx context.Context, ws *Workspace, opts CustodyPr
 	}
 	adopted := custodyAdoptedFunc(ws, env, custodyTrustFor(ws, nil, nil, time.Now().UTC()))
 	profile := custodyRequiredProfileFor(custodyStorageRootName(ws), "", "", "", "", entries, adopted)
-	for i := range entries {
-		if err := validateCustodyEntry(&entries[i], profile); err != nil {
-			return CustodyPreviewResult{}, fmt.Errorf("preview custody candidate %q: %w", entries[i].Path, err)
-		}
+	if err := validateCustodyEntries(entries, profile); err != nil {
+		return CustodyPreviewResult{}, fmt.Errorf("preview custody %s: %w", opts.ShipmentID, err)
 	}
 	if err := ValidateCustodyRenameCasing(ws, WorkflowCustodyEnvelope{Receipts: []CustodyReceipt{{Entries: entries}}}); err != nil {
 		return CustodyPreviewResult{}, err
@@ -1261,15 +1259,26 @@ func custodyCandidatesOf(entries []CustodyEntry) []CustodyCandidateSpec {
 }
 
 // custodyCandidateSetDigest is the domain-separated digest over the candidate specs,
-// independent of their order.
+// independent of their order. Candidates are ordered by their full canonical encoding, so
+// specs that tie on path still hash in one fixed order.
 func custodyCandidateSetDigest(specs []CustodyCandidateSpec) (string, error) {
-	sorted := append([]CustodyCandidateSpec(nil), specs...)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		if sorted[i].Path != sorted[j].Path {
-			return sorted[i].Path < sorted[j].Path
+	type keyedSpec struct {
+		key  []byte
+		spec CustodyCandidateSpec
+	}
+	keyed := make([]keyedSpec, 0, len(specs))
+	for _, spec := range specs {
+		key, err := json.Marshal(spec)
+		if err != nil {
+			return "", fmt.Errorf("encode candidate set: %w", err)
 		}
-		return sorted[i].OldPath < sorted[j].OldPath
-	})
+		keyed = append(keyed, keyedSpec{key: key, spec: spec})
+	}
+	sort.Slice(keyed, func(i, j int) bool { return bytes.Compare(keyed[i].key, keyed[j].key) < 0 })
+	sorted := make([]CustodyCandidateSpec, 0, len(keyed))
+	for _, k := range keyed {
+		sorted = append(sorted, k.spec)
+	}
 	payload, err := json.Marshal(sorted)
 	if err != nil {
 		return "", fmt.Errorf("encode candidate set: %w", err)
