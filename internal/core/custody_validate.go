@@ -471,60 +471,83 @@ func custodyReadBounded(r io.Reader, limit int64) ([]byte, error) {
 	return data, nil
 }
 
-// custodyRequestIdentity is the canonical request-identity projection. It omits
-// lifecycle fields such as status, timestamps, and approval proofs so a token
-// minted before acceptance still binds the request after acceptance.
+// custodyRequestIdentity is the canonical request-identity projection of one receipt. It omits
+// lifecycle fields such as status, timestamps, and approval proofs so a token minted before
+// acceptance still binds the request after acceptance. It deliberately carries only the receipt
+// fields the approval covers, so a later receipt in the same envelope does not change it.
 type custodyRequestIdentity struct {
-	SchemaVersion string                          `json:"schema_version"`
-	WorkflowID    string                          `json:"workflow_id"`
-	ShipmentID    string                          `json:"shipment_id"`
-	ScopeBranch   string                          `json:"scope_branch"`
-	BaseCommitSHA string                          `json:"base_commit_sha"`
-	Receipts      []custodyRequestIdentityReceipt `json:"receipts"`
+	WorkflowID    string                        `json:"workflow_id"`
+	ShipmentID    string                        `json:"shipment_id"`
+	ScopeBranch   string                        `json:"scope_branch"`
+	BaseCommitSHA string                        `json:"base_commit_sha"`
+	Receipt       custodyRequestIdentityReceipt `json:"receipt"`
 }
 
 type custodyRequestIdentityReceipt struct {
 	ReceiptID          string         `json:"receipt_id"`
-	Revision           int            `json:"revision"`
-	Kind               string         `json:"kind"`
-	AuthorityProfile   string         `json:"authority_profile"`
-	ProducerRole       string         `json:"producer_role"`
-	AcceptingRole      string         `json:"accepting_role"`
-	AllowedAction      string         `json:"allowed_action"`
 	CandidateSetDigest string         `json:"candidate_set_digest"`
+	AllowedAction      string         `json:"allowed_action"`
+	Revision           int            `json:"revision"`
+	AcceptingRole      string         `json:"accepting_role"`
 	Entries            []CustodyEntry `json:"entries"`
 }
 
-// CustodyRequestIdentityDigest returns the SHA-256 digest of the canonical request
-// identity of env, domain-separated by CustodyRequestIdentityDomain.
+// CustodyRequestIdentityDigest returns the domain-separated request identity digest of the
+// latest receipt of env: the receipt with the highest revision, ties broken by the lowest
+// receipt_id. For a single-receipt envelope that is the digest of its only receipt, so proofs
+// minted over a single-receipt envelope still verify. Profile A proofs for a specific receipt
+// are checked against custodyReceiptIdentityDigest instead.
 func CustodyRequestIdentityDigest(env WorkflowCustodyEnvelope) (string, error) {
+	return custodyReceiptIdentityDigest(CustodyRequestIdentityDomain, env, latestCustodyReceipt(env))
+}
+
+// custodyReceiptIdentityDigest returns the digest of the request identity of receipt within
+// env, domain-separated by domain. Changes to other receipts of env do not change it.
+func custodyReceiptIdentityDigest(domain string, env WorkflowCustodyEnvelope, receipt CustodyReceipt) (string, error) {
 	identity := custodyRequestIdentity{
-		SchemaVersion: env.SchemaVersion,
 		WorkflowID:    env.WorkflowID,
 		ShipmentID:    env.ShipmentID,
 		ScopeBranch:   env.ScopeBranch,
 		BaseCommitSHA: env.BaseCommitSHA,
-		Receipts:      make([]custodyRequestIdentityReceipt, 0, len(env.Receipts)),
-	}
-	for i := range env.Receipts {
-		r := &env.Receipts[i]
-		identity.Receipts = append(identity.Receipts, custodyRequestIdentityReceipt{
-			ReceiptID:          r.ReceiptID,
-			Revision:           r.Revision,
-			Kind:               r.Kind,
-			AuthorityProfile:   r.AuthorityProfile,
-			ProducerRole:       r.ProducerRole,
-			AcceptingRole:      r.AcceptingRole,
-			AllowedAction:      r.AllowedAction,
-			CandidateSetDigest: r.CandidateSetDigest,
-			Entries:            r.Entries,
-		})
+		Receipt: custodyRequestIdentityReceipt{
+			ReceiptID:          receipt.ReceiptID,
+			CandidateSetDigest: receipt.CandidateSetDigest,
+			AllowedAction:      receipt.AllowedAction,
+			Revision:           receipt.Revision,
+			AcceptingRole:      receipt.AcceptingRole,
+			Entries:            receipt.Entries,
+		},
 	}
 	payload, err := json.Marshal(identity)
 	if err != nil {
 		return "", fmt.Errorf("encode custody request identity: %w", err)
 	}
-	return canonical.HashBytes(append([]byte(CustodyRequestIdentityDomain+"\n"), payload...)), nil
+	return canonical.HashBytes(append([]byte(domain+"\n"), payload...)), nil
+}
+
+// latestCustodyReceipt returns the receipt with the highest revision, ties broken by the lowest
+// receipt_id. An envelope with no receipts yields the zero receipt.
+func latestCustodyReceipt(env WorkflowCustodyEnvelope) CustodyReceipt {
+	var latest CustodyReceipt
+	found := false
+	for _, r := range env.Receipts {
+		if !found || r.Revision > latest.Revision || (r.Revision == latest.Revision && r.ReceiptID < latest.ReceiptID) {
+			latest, found = r, true
+		}
+	}
+	return latest
+}
+
+// custodyApprovalReceipt returns the receipt an approval proof names. A proof that names no
+// receipt is bound to the latest receipt, and a named receipt must exist in env.
+func custodyApprovalReceipt(env WorkflowCustodyEnvelope, receiptID string) (CustodyReceipt, bool) {
+	if receiptID == "" {
+		return latestCustodyReceipt(env), len(env.Receipts) > 0
+	}
+	if idx := custodyReceiptIndex(env.Receipts, receiptID); idx >= 0 {
+		return env.Receipts[idx], true
+	}
+	return CustodyReceipt{}, false
 }
 
 // MintCustodyApprovalToken always fails closed with ErrApprovalChannelUnavailable
@@ -761,7 +784,11 @@ func verifyCustodyApprovalBinding(proof CustodyApprovalProof, env WorkflowCustod
 	if !custodyHasCandidateSet(env.Receipts, proof.CandidateSetDigest) {
 		return fmt.Errorf("%w: approval candidate_set_digest matches no receipt", ErrCustodyStaleDigest)
 	}
-	digest, err := CustodyRequestIdentityDigest(env)
+	receipt, ok := custodyApprovalReceipt(env, proof.ReceiptID)
+	if !ok {
+		return fmt.Errorf("%w: approval receipt %q is not in the envelope", ErrAuthorizationRejected, proof.ReceiptID)
+	}
+	digest, err := custodyReceiptIdentityDigest(CustodyRequestIdentityDomain, env, receipt)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrAuthorizationRejected, err)
 	}

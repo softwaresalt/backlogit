@@ -121,7 +121,7 @@ func PreviewCustodyCandidates(ctx context.Context, ws *Workspace, opts CustodyPr
 		return CustodyPreviewResult{}, err
 	}
 	adopted := custodyAdoptedFunc(ws, env, custodyTrustFor(ws, nil, nil, time.Now().UTC()))
-	profile := custodyRequiredProfile("", "", "", "", entries, adopted)
+	profile := custodyRequiredProfileFor(custodyStorageRootName(ws), "", "", "", "", entries, adopted)
 	for i := range entries {
 		if err := validateCustodyEntry(&entries[i], profile); err != nil {
 			return CustodyPreviewResult{}, fmt.Errorf("preview custody candidate %q: %w", entries[i].Path, err)
@@ -235,7 +235,7 @@ func VerifyCustodyState(ctx context.Context, ws *Workspace, opts CustodyVerifyOp
 			continue
 		}
 		eligible := receipt.AuthorityProfile != custodyProfileAgent ||
-			custodyRequiredProfile(receipt.Kind, receipt.ProducerRole, receipt.AcceptingRole, receipt.AllowedAction, receipt.Entries, adopted) != custodyProfileOperator
+			custodyRequiredProfileFor(custodyStorageRootName(ws), receipt.Kind, receipt.ProducerRole, receipt.AcceptingRole, receipt.AllowedAction, receipt.Entries, adopted) != custodyProfileOperator
 		for _, entry := range receipt.Entries {
 			if wrongBranch {
 				result.Verdicts = append(result.Verdicts, CustodyPathVerdict{
@@ -336,7 +336,7 @@ func custodyOffer(ctx context.Context, ws *Workspace, opts CustodyOfferOptions) 
 	}
 	spec := opts.Spec
 	adopted := custodyAdoptedFunc(ws, env, custodyTrustFor(ws, nil, nil, time.Now().UTC()))
-	if err := custodyValidateOfferSpec(env, spec, adopted); err != nil {
+	if err := custodyValidateOfferSpec(env, spec, custodyStorageRootName(ws), adopted); err != nil {
 		return CustodyMutationResult{}, err
 	}
 	if err := custodyVerifyEntriesLive(ctx, ws, env.BaseCommitSHA, spec.Entries, spec.AuthorityProfile); err != nil {
@@ -436,7 +436,7 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 	var proof *CustodyApprovalProof
 	switch receipt.AuthorityProfile {
 	case custodyProfileAgent:
-		if custodyRequiredProfile(receipt.Kind, receipt.ProducerRole, receipt.AcceptingRole, receipt.AllowedAction, receipt.Entries, adopted) == custodyProfileOperator {
+		if custodyRequiredProfileFor(custodyStorageRootName(ws), receipt.Kind, receipt.ProducerRole, receipt.AcceptingRole, receipt.AllowedAction, receipt.Entries, adopted) == custodyProfileOperator {
 			return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: %w: entries require operator_verified", receipt.ReceiptID, ErrOperatorApprovalRequired)
 		}
 		if receipt.ProducerRole == receipt.AcceptingRole {
@@ -587,7 +587,7 @@ func custodyVerifyOperatorAdoption(ws *Workspace, env WorkflowCustodyEnvelope, r
 	if proof.AcceptingRole != "" && proof.AcceptingRole != receipt.AcceptingRole {
 		return fmt.Errorf("%w: proof names accepting role %q, not %q", ErrAuthorizationRejected, proof.AcceptingRole, receipt.AcceptingRole)
 	}
-	digest, err := CustodyRequestIdentityDigest(env)
+	digest, err := custodyReceiptIdentityDigest(CustodyRequestIdentityDomain, env, receipt)
 	if err != nil {
 		return err
 	}
@@ -1272,14 +1272,21 @@ func custodyCandidateSetDigest(specs []CustodyCandidateSpec) (string, error) {
 	return canonical.HashBytes(append([]byte(custodyCandidateSetDomain+"\n"), payload...)), nil
 }
 
-// custodyRequiredProfile returns the authority profile the covered entries require.
+// custodyRequiredProfile is custodyRequiredProfileFor with no workspace storage root, so
+// <storage_root>/queue and <storage_root>/archive paths are never Profile B.
+func custodyRequiredProfile(kind, producerRole, acceptingRole, allowedAction string, entries []CustodyEntry, adopted func(*CustodyEntry) bool) string {
+	return custodyRequiredProfileFor("", kind, producerRole, acceptingRole, allowedAction, entries, adopted)
+}
+
+// custodyRequiredProfileFor returns the authority profile the covered entries require.
 // Profile A is mandatory for the operator triggers and for every kind except
 // stage_to_ship_handoff. Profile B is permitted only for stage_to_ship_handoff, and only when
-// every entry path, and any old path, is inside .backlogit/ or docs/, or was adopted at its
-// exact baseline digest by an earlier valid Profile A receipt. The caller-declared contributor
-// and source labels alone never grant Profile B. An empty kind is a preview with no receipt
-// yet, so only the entry rules apply.
-func custodyRequiredProfile(kind, producerRole, acceptingRole, allowedAction string, entries []CustodyEntry, adopted func(*CustodyEntry) bool) string {
+// every entry path, and any old path, is on the handoff allow-list for storageRoot, the base
+// name of the workspace storage root. The caller-declared contributor and source labels alone
+// never grant Profile B. An empty kind is a preview with no receipt yet, so only the entry rules
+// apply. Baseline corroboration of modified docs/ files is not checked here (211-S Decision 4b
+// is pending), so the adopted callback is not consulted.
+func custodyRequiredProfileFor(storageRoot, kind, producerRole, acceptingRole, allowedAction string, entries []CustodyEntry, _ func(*CustodyEntry) bool) string {
 	if kind == "preexisting_adoption" || allowedAction == "preexisting_adoption_commit" ||
 		(producerRole == "operator" && acceptingRole == "operator") {
 		return custodyProfileOperator
@@ -1297,26 +1304,42 @@ func custodyRequiredProfile(kind, producerRole, acceptingRole, allowedAction str
 	}
 	for i := range entries {
 		e := &entries[i]
-		if e.OldPath != "" && !custodyPathInHandoffScope(e.OldPath) {
+		if !custodyPathInHandoffScope(storageRoot, e.Path) {
 			return custodyProfileOperator
 		}
-		if custodyPathInHandoffScope(e.Path) {
-			continue
-		}
-		if adopted == nil || !adopted(e) {
+		if e.OldPath != "" && !custodyPathInHandoffScope(storageRoot, e.OldPath) {
 			return custodyProfileOperator
 		}
 	}
 	return custodyProfileAgent
 }
 
-// custodyPathInHandoffScope reports whether p is a valid repository-relative path inside
-// .backlogit/ or docs/. Matching is case-sensitive.
-func custodyPathInHandoffScope(p string) bool {
+// custodyHandoffDocDirs are the docs/ directories a Stage-to-Ship handoff may cover.
+var custodyHandoffDocDirs = []string{"docs/decisions/", "docs/plans/", "docs/exec-plans/", "docs/reviews/", "docs/memory/"}
+
+// custodyPathInHandoffScope reports whether p is a valid repository-relative path on the
+// Profile B allow-list: <storageRoot>/queue/** and <storageRoot>/archive/**, or the docs/
+// directories in custodyHandoffDocDirs. An empty storageRoot admits no storage paths. Matching
+// is case-sensitive.
+func custodyPathInHandoffScope(storageRoot, p string) bool {
 	if _, err := validateCustodyRelPath(p); err != nil {
 		return false
 	}
-	return strings.HasPrefix(p, ".backlogit/") || strings.HasPrefix(p, "docs/")
+	if storageRoot != "" && (strings.HasPrefix(p, storageRoot+"/queue/") || strings.HasPrefix(p, storageRoot+"/archive/")) {
+		return true
+	}
+	for _, dir := range custodyHandoffDocDirs {
+		if strings.HasPrefix(p, dir) {
+			return true
+		}
+	}
+	return false
+}
+
+// custodyStorageRootName returns the base name of the workspace storage root, which scopes the
+// Profile B queue and archive paths.
+func custodyStorageRootName(ws *Workspace) string {
+	return filepath.Base(workspaceStorageRoot(ws))
 }
 
 // custodyAdoptedFunc reports whether an entry was adopted at its exact baseline digest by an
@@ -1411,7 +1434,7 @@ func custodyEnvelopeForOffer(art *models.Artifact, shipmentID, branch, commit st
 
 // custodyValidateOfferSpec checks the offered receipt against the envelope and the
 // authority rules before any digest is compared against the live repository.
-func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt, adopted func(*CustodyEntry) bool) error {
+func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt, storageRoot string, adopted func(*CustodyEntry) bool) error {
 	if spec.ReceiptID == "" || spec.Status != custodyReceiptOffered {
 		return fmt.Errorf("offer custody: receipt_id is required and status must be offered: %w", blerrors.ErrValidation)
 	}
@@ -1423,7 +1446,7 @@ func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt, 
 	}
 	specs := custodyCandidatesOf(spec.Entries)
 	if spec.AuthorityProfile == custodyProfileAgent &&
-		custodyRequiredProfile(spec.Kind, spec.ProducerRole, spec.AcceptingRole, spec.AllowedAction, spec.Entries, adopted) == custodyProfileOperator {
+		custodyRequiredProfileFor(storageRoot, spec.Kind, spec.ProducerRole, spec.AcceptingRole, spec.AllowedAction, spec.Entries, adopted) == custodyProfileOperator {
 		return fmt.Errorf("offer custody receipt %s: %w: entries require operator_verified", spec.ReceiptID, ErrOperatorApprovalRequired)
 	}
 	digest, err := custodyCandidateSetDigest(specs)
