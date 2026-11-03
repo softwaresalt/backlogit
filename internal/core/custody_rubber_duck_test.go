@@ -181,3 +181,27 @@ func TestRubberDuck_F6_WorkspaceAnchorWindowIsInclusive(t *testing.T) {
 		assert.ErrorIs(t, err, ErrTrustAnchorExpired)
 	})
 }
+
+func TestRubberDuck_F8_TildeRejectsOnlyShortNameSegments(t *testing.T) {
+	cases := []struct {
+		path    string
+		allowed bool
+	}{
+		{"docs/plans/plan~draft.md", true},
+		{"docs/plans/plan~1draft.md", true},
+		{"GIT~1/HEAD", false},
+		{".git~1", false},
+		{"docs/PROGRA~1/readme.md", false},
+		{"docs/PROGRA~1.TXT", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			_, err := validateCustodyRelPath(tc.path)
+			if tc.allowed {
+				require.NoError(t, err)
+				return
+			}
+			assert.ErrorIs(t, err, ErrCustodyPathRejected)
+		})
+	}
+}
