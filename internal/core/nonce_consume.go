@@ -15,6 +15,9 @@ var (
 	// ErrNonceConsumeIndeterminate reports a consume that definitively
 	// succeeded at the provider but whose audit or projection write failed.
 	ErrNonceConsumeIndeterminate = errors.New("nonce consumed but audit missing (indeterminate)")
+	// ErrNonceExpired reports a nonce whose token not_after has passed. The consume is
+	// refused and nothing is recorded.
+	ErrNonceExpired = errors.New("nonce expired: token not_after has passed (fail closed)")
 )
 
 // NonceConsumeProvider is the injected external, rollback-resistant

@@ -299,6 +299,10 @@ type CustodyAcceptOptions struct {
 	TrustAnchors []config.TrustAnchor `json:"-" yaml:"-"`
 	// ExternalPins, when non-nil, is the externally provisioned pin set that TrustAnchors must satisfy.
 	ExternalPins *ExternalPinSet `json:"-" yaml:"-"`
+	// OperatorPinsPath, when set, names an operator pins file outside the workspace root. Its trust anchors and pins replace TrustAnchors, ExternalPins, and workspace config anchors. It is never read from JSON or YAML input.
+	OperatorPinsPath string `json:"-" yaml:"-"`
+	// NonceStorePath, when set, names an external file-backed nonce store outside the workspace root. A live accept consumes its nonce through it unless a NonceConsumer is already on the context. It is never read from JSON or YAML input.
+	NonceStorePath string `json:"-" yaml:"-"`
 	// DryRun verifies the acceptance without consuming a nonce or writing state.
 	DryRun bool `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
 }
@@ -335,6 +339,10 @@ type CustodyVerifyOptions struct {
 	TrustAnchors []config.TrustAnchor `json:"-" yaml:"-"`
 	// ExternalPins, when non-nil, is the externally provisioned pin set that TrustAnchors must satisfy.
 	ExternalPins *ExternalPinSet `json:"-" yaml:"-"`
+	// OperatorPinsPath, when set, names an operator pins file outside the workspace root. Its trust anchors and pins replace TrustAnchors, ExternalPins, and workspace config anchors. It is never read from JSON or YAML input.
+	OperatorPinsPath string `json:"-" yaml:"-"`
+	// NonceStorePath, when set, names an external nonce store outside the workspace root. Its records count as redemption sources. It is never read from JSON or YAML input.
+	NonceStorePath string `json:"-" yaml:"-"`
 }
 
 // CustodyPathVerdict reports the verification outcome for one custody path.
