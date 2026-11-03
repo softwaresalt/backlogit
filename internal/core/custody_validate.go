@@ -360,7 +360,6 @@ func ValidateCustodyEntryPath(ws *Workspace, entryPath string) error {
 	return nil
 }
 
-
 // ValidateCustodyRenameCasing verifies every case_only_rename entry in env against
 // the worktree under ws. A case-only rename is a renamed entry whose old_path and
 // path are equal under strings.EqualFold but not byte-equal. For each one, the
