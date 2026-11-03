@@ -255,6 +255,7 @@ func VerifyCustodyState(ctx context.Context, ws *Workspace, opts CustodyVerifyOp
 	if err := ValidateCustodyEnvelope(env); err != nil {
 		return CustodyVerifyResult{}, fmt.Errorf("verify custody %s: %w", opts.ShipmentID, err)
 	}
+	result.ActiveReceiptID = env.ActiveReceiptID
 
 	now := time.Now().UTC()
 	trust := custodyTrustFor(ws, anchors, pins, now)
