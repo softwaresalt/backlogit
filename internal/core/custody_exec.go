@@ -333,6 +333,12 @@ func custodyOffer(ctx context.Context, ws *Workspace, opts CustodyOfferOptions) 
 		return CustodyMutationResult{}, err
 	}
 	spec := opts.Spec
+	// Accept owns these fields, so an offer never stores caller-supplied values for them.
+	spec.AcceptedAtUTC = time.Time{}
+	spec.SupersedesReceiptID = ""
+	spec.IdempotencyKey = ""
+	spec.IdempotencyRequestDigest = ""
+	spec.ApprovalProof = nil
 	adopted := custodyAdoptedFunc(ws, env, custodyTrustFor(ws, nil, nil, time.Now().UTC()))
 	if err := custodyValidateOfferSpec(env, spec, custodyStorageRootName(ws), adopted); err != nil {
 		return CustodyMutationResult{}, err
