@@ -96,6 +96,15 @@ func (l *NonceLedger) RecordBound(nonce string, notAfter time.Time, requestIdent
 	if err != nil {
 		return fmt.Errorf("encode nonce record: %w", err)
 	}
+	if info, statErr := os.Lstat(l.path); statErr == nil {
+		linked, linkErr := IsSymlinkOrReparsePoint(info, l.path)
+		if linkErr != nil {
+			return fmt.Errorf("check nonce ledger: %w", linkErr)
+		}
+		if linked {
+			return fmt.Errorf("nonce ledger %s is a symlink or reparse point: %w", l.path, ErrNonceLedgerCorrupt)
+		}
+	}
 	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("open nonce ledger: %w", err)
@@ -219,7 +228,7 @@ func (l *NonceLedger) Prune(now time.Time) (int, error) {
 }
 
 func (l *NonceLedger) load() ([]nonceLedgerRecord, error) {
-	f, err := os.Open(l.path)
+	f, err := openCustodyNoFollow(l.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}

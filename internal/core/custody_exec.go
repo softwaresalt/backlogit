@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -649,7 +650,7 @@ func custodyConsumedAt(ws *Workspace, nonce string) (time.Time, error) {
 // custodyLogRedeemed reports whether the shipment item log holds an accept or adoption
 // event for receiptID with proof's nonce and request identity digest.
 func custodyLogRedeemed(root, shipmentID, receiptID string, proof CustodyApprovalProof) bool {
-	f, err := os.Open(events.LogPathForItem(WorkspaceLogsRoot(root), shipmentID))
+	f, err := openCustodyNoFollow(events.LogPathForItem(WorkspaceLogsRoot(root), shipmentID))
 	if err != nil {
 		return false
 	}
@@ -885,11 +886,22 @@ func custodyRemoveJournal(ws *Workspace, journalPath string) error {
 	return nil
 }
 
+// custodyReadFileNoFollow reads path without following a symlink or reparse point at its final
+// component. A missing file reports fs.ErrNotExist.
+func custodyReadFileNoFollow(path string) ([]byte, error) {
+	f, err := openCustodyNoFollow(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(f)
+}
+
 // custodyDropOperationEvents removes the item-log lines tagged with correlationID and
 // rewrites the log atomically. A log with no tagged lines is left untouched.
 func custodyDropOperationEvents(ws *Workspace, shipmentID, correlationID string) error {
 	logPath := events.LogPathForItem(WorkspaceLogsRoot(ws.RootPath), shipmentID)
-	data, err := os.ReadFile(logPath)
+	data, err := custodyReadFileNoFollow(logPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
