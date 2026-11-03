@@ -303,38 +303,12 @@ func custodyMutationResultJSON(result core.CustodyMutationResult, degraded bool)
 	return toolResultJSON(resp)
 }
 
-// custodyError maps core custody refusals to structured MCP error codes. Each
-// refusal stays fail-closed; unknown failures use the shared domain mapping.
+// custodyError maps a custody failure to its structured MCP error code. The code comes from
+// core.CustodyErrorCode, which the CLI also uses. Failures outside the custody and shared
+// domain codes fall back to the domain mapping.
 func custodyError(op string, err error) *mcplib.CallToolResult {
-	code := ""
-	switch {
-	case errors.Is(err, core.ErrCustodyDefaultBranchForbidden):
-		code = "custody_default_branch_forbidden"
-	case errors.Is(err, core.ErrNonceProviderUnavailable):
-		code = "nonce_provider_unavailable"
-	case errors.Is(err, core.ErrNonceReplayed):
-		code = "nonce_replayed"
-	case errors.Is(err, core.ErrAuthorizationRequired):
-		code = "authorization_required"
-	case errors.Is(err, core.ErrApprovalChannelUnavailable):
-		code = "approval_channel_unavailable"
-	case errors.Is(err, core.ErrAuthorizationRejected):
-		code = "authorization_rejected"
-	case errors.Is(err, core.ErrApprovalWrongShipment):
-		code = "approval_wrong_shipment"
-	case errors.Is(err, core.ErrApprovalWrongRequestIdentity):
-		code = "approval_wrong_request_identity"
-	case errors.Is(err, core.ErrTrustAnchorRevoked):
-		code = "trust_anchor_revoked"
-	case errors.Is(err, core.ErrOperatorApprovalRequired):
-		code = "operator_approval_required"
-	case errors.Is(err, core.ErrCustodyStaleDigest):
-		code = "custody_stale_digest"
-	case errors.Is(err, core.ErrCustodyWrongBranch):
-		code = "custody_wrong_branch"
-	case errors.Is(err, core.ErrMixedIndexWorktreeDivergence):
-		code = "custody_index_worktree_divergence"
-	default:
+	code := core.CustodyErrorCode(err)
+	if code == "" {
 		return domainError(op, err)
 	}
 	return makeErrorResult(code, fmt.Sprintf("%s: %v", op, err))

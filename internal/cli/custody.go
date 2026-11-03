@@ -14,7 +14,6 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
-	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // custodyDBUnavailable is the degraded marker on a live custody result served
@@ -38,26 +37,6 @@ func (e *custodyCLIError) Error() string {
 type custodyMutationOutput struct {
 	core.CustodyMutationResult
 	DB string `json:"db,omitempty"`
-}
-
-// custodyRefusalCodes maps core custody refusals to the MCP error codes.
-var custodyRefusalCodes = []struct {
-	err  error
-	code string
-}{
-	{core.ErrCustodyDefaultBranchForbidden, "custody_default_branch_forbidden"},
-	{core.ErrNonceProviderUnavailable, "nonce_provider_unavailable"},
-	{core.ErrNonceReplayed, "nonce_replayed"},
-	{core.ErrAuthorizationRequired, "authorization_required"},
-	{core.ErrApprovalChannelUnavailable, "approval_channel_unavailable"},
-	{core.ErrAuthorizationRejected, "authorization_rejected"},
-	{core.ErrApprovalWrongShipment, "approval_wrong_shipment"},
-	{core.ErrApprovalWrongRequestIdentity, "approval_wrong_request_identity"},
-	{core.ErrTrustAnchorRevoked, "trust_anchor_revoked"},
-	{core.ErrOperatorApprovalRequired, "operator_approval_required"},
-	{core.ErrCustodyStaleDigest, "custody_stale_digest"},
-	{core.ErrCustodyWrongBranch, "custody_wrong_branch"},
-	{core.ErrMixedIndexWorktreeDivergence, "custody_index_worktree_divergence"},
 }
 
 // NewCustodyCmd returns the custody command group. It is the CLI surface of the
@@ -368,17 +347,14 @@ func custodyOperation(op string) bool {
 	return op == "custody_offer" || op == "custody_accept"
 }
 
-// custodyOpError maps a custody failure to the structured code the MCP tool returns.
+// custodyOpError maps a custody failure to the structured code the MCP tool returns, using the
+// shared core mapping, so both surfaces report the same code for the same failure.
 func custodyOpError(op string, err error) error {
-	for _, refusal := range custodyRefusalCodes {
-		if errors.Is(err, refusal.err) {
-			return &custodyCLIError{Code: refusal.code, Message: fmt.Sprintf("%s: %v", op, err)}
-		}
+	code := core.CustodyErrorCode(err)
+	if code == "" {
+		code = "internal"
 	}
-	if errors.Is(err, corerrors.ErrValidation) {
-		return &custodyCLIError{Code: "validation_failed", Message: err.Error()}
-	}
-	return &custodyCLIError{Code: "internal", Message: fmt.Sprintf("%s: %v", op, err)}
+	return &custodyCLIError{Code: code, Message: fmt.Sprintf("%s: %v", op, err)}
 }
 
 // custodyRequired refuses an empty required value with the MCP validation code.

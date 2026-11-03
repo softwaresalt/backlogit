@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // WorkflowCustodySchemaVersion identifies the workflow-custody payload schema.
@@ -47,6 +48,51 @@ var (
 	ErrCustodyIdempotencyConflict    = errors.New("custody: idempotency key reused with a different request")
 	ErrCustodyStaleRevision          = errors.New("custody: receipt revision is not the next custody revision")
 )
+
+// custodyRefusalCodes maps custody refusals to their structured codes. Order matters: a
+// wrapped error can match several sentinels, so the more specific one comes first. A
+// revoked anchor, for example, also matches ErrAuthorizationRejected.
+var custodyRefusalCodes = []struct {
+	err  error
+	code string
+}{
+	{ErrCustodyDefaultBranchForbidden, "custody_default_branch_forbidden"},
+	{ErrNonceProviderUnavailable, "nonce_provider_unavailable"},
+	{ErrNonceReplayed, "nonce_replayed"},
+	{ErrAuthorizationRequired, "authorization_required"},
+	{ErrApprovalChannelUnavailable, "approval_channel_unavailable"},
+	{ErrTrustAnchorRevoked, "trust_anchor_revoked"},
+	{ErrAuthorizationRejected, "authorization_rejected"},
+	{ErrApprovalWrongShipment, "approval_wrong_shipment"},
+	{ErrApprovalWrongRequestIdentity, "approval_wrong_request_identity"},
+	{ErrOperatorApprovalRequired, "operator_approval_required"},
+	{ErrCustodyStaleDigest, "custody_stale_digest"},
+	{ErrCustodyStaleRevision, "custody_stale_revision"},
+	{ErrCustodyWrongBranch, "custody_wrong_branch"},
+	{ErrMixedIndexWorktreeDivergence, "custody_index_worktree_divergence"},
+}
+
+// CustodyErrorCode returns the structured refusal code for a custody failure. The CLI and MCP
+// surfaces both use it, so one failure reports one code. Failures outside the custody refusals
+// map to the shared domain codes, and any other failure returns "".
+func CustodyErrorCode(err error) string {
+	for _, refusal := range custodyRefusalCodes {
+		if errors.Is(err, refusal.err) {
+			return refusal.code
+		}
+	}
+	switch {
+	case errors.Is(err, blerrors.ErrNotFound), errors.Is(err, blerrors.ErrShipmentNotFound):
+		return "not_found"
+	case errors.Is(err, blerrors.ErrWriteIndeterminate):
+		return "write_indeterminate"
+	case errors.Is(err, blerrors.ErrShipmentConflict):
+		return "conflict"
+	case errors.Is(err, blerrors.ErrValidation):
+		return "validation_failed"
+	}
+	return ""
+}
 
 // WorkflowCustodyEnvelope is the workflow-custody/v1 payload stored on a shipment
 // under custom_fields.workflow_custody.
