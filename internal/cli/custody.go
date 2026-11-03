@@ -159,7 +159,7 @@ This mirrors the backlogit_custody_offer MCP tool.`,
 }
 
 func newCustodyAcceptCmd(cwd *string) *cobra.Command {
-	var receiptID, by, idempotencyKey, authToken string
+	var receiptID, by, idempotencyKey, authToken, operatorPinsFile, nonceStorePath string
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "accept <shipment-id>",
@@ -193,12 +193,14 @@ This mirrors the backlogit_custody_accept MCP tool.`,
 				"receipt_id", receiptID, "dry_run", dryRun, "db_unavailable", degraded)
 
 			accepted, err := core.AcceptCustodyHandoff(ctx, ws, core.CustodyAcceptOptions{
-				ShipmentID:     args[0],
-				ReceiptID:      receiptID,
-				By:             by,
-				IdempotencyKey: idempotencyKey,
-				AuthToken:      authToken,
-				DryRun:         dryRun,
+				ShipmentID:       args[0],
+				ReceiptID:        receiptID,
+				By:               by,
+				IdempotencyKey:   idempotencyKey,
+				AuthToken:        authToken,
+				OperatorPinsPath: core.CustodyPathFromFlagOrEnv(operatorPinsFile, core.CustodyOperatorPinsEnv),
+				NonceStorePath:   core.CustodyPathFromFlagOrEnv(nonceStorePath, core.CustodyNonceStoreEnv),
+				DryRun:           dryRun,
 			})
 			if err != nil {
 				return custodyOpError("custody accept", err)
@@ -211,6 +213,8 @@ This mirrors the backlogit_custody_accept MCP tool.`,
 	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "key that deduplicates retried accepts")
 	cmd.Flags().StringVar(&authToken, "auth-token", "", "encoded operator approval token (required for operator_verified receipts)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "verify the acceptance without consuming a nonce or writing")
+	cmd.Flags().StringVar(&operatorPinsFile, "operator-pins-file", "", "operator pins file outside the workspace root (default $"+core.CustodyOperatorPinsEnv+")")
+	cmd.Flags().StringVar(&nonceStorePath, "nonce-store-path", "", "external nonce store outside the workspace root (default $"+core.CustodyNonceStoreEnv+")")
 	_ = cmd.MarkFlagRequired("receipt-id")
 	_ = cmd.MarkFlagRequired("by")
 	cmd.Flags().Bool("json", false, "emit JSON output (default)")
@@ -218,7 +222,7 @@ This mirrors the backlogit_custody_accept MCP tool.`,
 }
 
 func newCustodyVerifyCmd(cwd *string) *cobra.Command {
-	var branch string
+	var branch, operatorPinsFile, nonceStorePath string
 	cmd := &cobra.Command{
 		Use:   "verify <shipment-id>",
 		Short: "Verify recorded custody receipts against Git state",
@@ -241,8 +245,10 @@ This mirrors the backlogit_custody_verify MCP tool.`,
 			slog.Info("custody command invoked", "command", "verify", "shipment_id", args[0])
 
 			verified, err := core.VerifyCustodyState(ctx, ws, core.CustodyVerifyOptions{
-				ShipmentID: args[0],
-				Branch:     branch,
+				ShipmentID:       args[0],
+				Branch:           branch,
+				OperatorPinsPath: core.CustodyPathFromFlagOrEnv(operatorPinsFile, core.CustodyOperatorPinsEnv),
+				NonceStorePath:   core.CustodyPathFromFlagOrEnv(nonceStorePath, core.CustodyNonceStoreEnv),
 			})
 			if err != nil {
 				return custodyOpError("custody verify", err)
@@ -253,6 +259,8 @@ This mirrors the backlogit_custody_verify MCP tool.`,
 		},
 	}
 	cmd.Flags().StringVar(&branch, "branch", "", "work branch to evaluate against (defaults to the checked-out branch)")
+	cmd.Flags().StringVar(&operatorPinsFile, "operator-pins-file", "", "operator pins file outside the workspace root (default $"+core.CustodyOperatorPinsEnv+")")
+	cmd.Flags().StringVar(&nonceStorePath, "nonce-store-path", "", "external nonce store outside the workspace root, read as a redemption source (default $"+core.CustodyNonceStoreEnv+")")
 	cmd.Flags().Bool("json", false, "emit JSON output (default)")
 	return cmd
 }
