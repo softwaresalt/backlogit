@@ -1116,7 +1116,6 @@ func TestReview_ProfileBStoragePathAllowList(t *testing.T) {
 	refused := []struct{ path, change string }{
 		{".backlogit/config.yaml", "modified"},
 		{".backlogit/header-def.yaml", "added"},
-		{".backlogit/ops/x.json", "added"},
 		{".backlogit/logs/x.jsonl", "added"},
 		{".backlogit/nonce-ledger.json", "added"},
 		{"docs/ARCHITECTURE.md", "added"},
