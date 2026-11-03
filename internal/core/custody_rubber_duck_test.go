@@ -10,6 +10,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -204,4 +205,25 @@ func TestRubberDuck_F8_TildeRejectsOnlyShortNameSegments(t *testing.T) {
 			assert.ErrorIs(t, err, ErrCustodyPathRejected)
 		})
 	}
+}
+
+func TestRubberDuck_F9_CandidateSetDigestIsOrderIndependent(t *testing.T) {
+	modified := CustodyCandidateSpec{Path: "docs/plans/plan.md", ChangeKind: "modified", StagedState: "unstaged_only", Contributor: "stage", SourceKind: "stage_artifact"}
+	deleted := modified
+	deleted.ChangeKind = "deleted"
+
+	forward, err := custodyCandidateSetDigest([]CustodyCandidateSpec{modified, deleted})
+	require.NoError(t, err)
+	reverse, err := custodyCandidateSetDigest([]CustodyCandidateSpec{deleted, modified})
+	require.NoError(t, err)
+	assert.Equal(t, forward, reverse, "the same candidates in another order must produce the same digest")
+}
+
+func TestRubberDuck_F9_PreviewRefusesDuplicatePaths(t *testing.T) {
+	ctx := context.Background()
+	repo := custExecNewRepo(t)
+	custExecWrite(t, repo.root, custExecCovered, custExecRevised)
+
+	_, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, custExecStageCandidate(), custExecStageCandidate()))
+	assert.ErrorIs(t, err, blerrors.ErrValidation, "preview must refuse the duplicate path that offer refuses")
 }
