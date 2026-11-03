@@ -100,6 +100,11 @@ func Execute() error {
 			if errors.As(err, &policyBlocked) {
 				return format.WrapErrorData(cmdPath, format.ErrCodeServerError, policyBlocked.Error(), policyBlocked.Decision)
 			}
+			var custodyErr *custodyCLIError
+			if errors.As(err, &custodyErr) {
+				return format.WrapErrorData(cmdPath, format.ErrCodeServerError, custodyErr.Error(),
+					map[string]any{"error": custodyErr.Code, "message": custodyErr.Message})
+			}
 			return format.WrapError(cmdPath, format.ErrCodeServerError, err.Error())
 		}()
 		if wrapErr != nil {
@@ -239,6 +244,7 @@ stash follow-up work for later planning.`,
 	root.AddCommand(newQueueCmd(&cwd))
 	root.AddCommand(NewStashCmd(&cwd))
 	root.AddCommand(NewShipmentCmd())
+	root.AddCommand(NewCustodyCmd(&cwd))
 	root.AddCommand(newDeliberateCommand(&cwd))
 	root.AddCommand(NewMetadataCmd(&cwd))
 	root.AddCommand(newArchiveCommand(&cwd))

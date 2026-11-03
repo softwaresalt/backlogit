@@ -420,7 +420,7 @@ operations:
 
   preview_custody:
     mcp_tool: "backlogit_custody_preview"
-    mcp_only: true
+    cli_command: "backlogit custody preview {{shipment_id}} --candidates {{candidates}}"
     params:
       shipment_id: "shipment_id"
       candidates: "candidates"
@@ -428,7 +428,7 @@ operations:
 
   offer_custody:
     mcp_tool: "backlogit_custody_offer"
-    mcp_only: true
+    cli_command: "backlogit custody offer {{shipment_id}} --spec {{spec}}"
     params:
       shipment_id: "shipment_id"
       spec: "spec"
@@ -436,7 +436,7 @@ operations:
 
   accept_custody:
     mcp_tool: "backlogit_custody_accept"
-    mcp_only: true
+    cli_command: "backlogit custody accept {{shipment_id}} --receipt-id {{receipt_id}} --by {{by}}"
     params:
       shipment_id: "shipment_id"
       receipt_id: "receipt_id"
@@ -447,7 +447,7 @@ operations:
 
   verify_custody:
     mcp_tool: "backlogit_custody_verify"
-    mcp_only: true
+    cli_command: "backlogit custody verify {{shipment_id}}"
     params:
       shipment_id: "shipment_id"
       branch: "branch"
