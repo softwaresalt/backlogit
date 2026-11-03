@@ -147,6 +147,10 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if err := rejectReservedSizingKeysOnCreate(o.Fields); err != nil {
 		return nil, err
 	}
+	if _, present := o.Fields[custodyArtifactKey]; present {
+		return nil, fmt.Errorf("create artifact %q carrying %s must route through governed custody operations: %w",
+			title, custodyArtifactKey, ErrCustodyUngovernedMutation)
+	}
 	if err := validateArtifactParent(ctx, ws, artifactType, o.ParentID); err != nil {
 		return nil, err
 	}

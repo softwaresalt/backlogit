@@ -928,6 +928,11 @@ func custodyWriteArtifact(ctx context.Context, ws *Workspace, art *models.Artifa
 	if err != nil {
 		return fmt.Errorf("locate custody shipment %s: %w", art.ID, err)
 	}
+	if ws.DB != nil {
+		if err := mergeDBOnlyLinksIntoArtifact(ctx, ws, art); err != nil {
+			return fmt.Errorf("preserve database-only links on custody shipment %s: %w", art.ID, err)
+		}
+	}
 	envelope := artifactWriteEnvelope{operation: "custody", allowCustodyMutation: true}
 	if err := writeArtifactFileGoverned(art, path, path, true, envelope, nil); err != nil {
 		return fmt.Errorf("write custody shipment %s: %w", art.ID, err)
