@@ -917,3 +917,174 @@ func TestReview_CustodyWritePreservesDBOnlyLinks(t *testing.T) {
 	after := custExecShipment(t, repo.ws, repo.shipmentID)
 	assert.Contains(t, after.Links, link, "custody offer must keep DB-only links in the Markdown")
 }
+
+// TestReview_ProfileBOnlyForStageHandoff covers 211-S F12: Profile B is permitted only for
+// stage_to_ship_handoff, so a ship_task_custody offer over a docs path requires Profile A.
+func TestReview_ProfileBOnlyForStageHandoff(t *testing.T) {
+	ctx := context.Background()
+	repo := custExecNewRepo(t)
+	custExecWrite(t, repo.root, "docs/review/x.md", "content\n")
+	preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo,
+		custodyReviewUntrackedCandidate("docs/review/x.md", "stage", "stage_artifact")))
+	require.NoError(t, err)
+	receipt := custExecReceipt("rcpt-ship-task-1", "ship_task_custody", "agent_workflow_handoff", "stage", "ship",
+		"ship_task_commit", preview.CandidateSetDigest, custodyReviewUntrackedEntry("docs/review/x.md", "content\n", "stage", "stage_artifact"))
+	_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{ShipmentID: repo.shipmentID, Spec: receipt})
+	assert.ErrorIs(t, err, ErrOperatorApprovalRequired, "ship_task_custody must resolve to Profile A even inside docs/")
+}
+
+// TestReview_ExpiredAdoptionIsNotCarriedOver covers 211-S F13: an accepted Profile A receipt
+// whose ExpiresAtUTC has passed does not count as adoption for a later Profile B handoff.
+func TestReview_ExpiredAdoptionIsNotCarriedOver(t *testing.T) {
+	ctx := context.Background()
+	fx := custodyReviewOfferAdoption(t)
+	fx.repo.ws.Config.TrustAnchors = []config.TrustAnchor{fx.anchor}
+	live := WithCustodyNonceConsumer(ctx, custodyReviewConsumer(t, fx.repo.root, &custodyReviewProvider{}))
+	_, err := AcceptCustodyHandoff(live, fx.repo.ws, fx.acceptOpts(fx.token(t, "carryover-nonce-1")))
+	require.NoError(t, err)
+
+	env := custExecEnvelope(t, custExecShipment(t, fx.repo.ws, fx.repo.shipmentID))
+	idx := custodyReceiptIndex(env.Receipts, "rcpt-adopt-1")
+	require.GreaterOrEqual(t, idx, 0)
+	entry := env.Receipts[idx].Entries[0]
+	trust := custodyTrustFor(fx.repo.ws, nil, nil, time.Now().UTC())
+	require.True(t, custodyAdoptedFunc(fx.repo.ws, env, trust)(&entry), "control: an unexpired accepted adoption carries over")
+
+	env.Receipts[idx].ExpiresAtUTC = time.Now().UTC().Add(-time.Minute)
+	assert.False(t, custodyAdoptedFunc(fx.repo.ws, env, trust)(&entry), "an expired adoption must not carry over")
+}
+
+// TestReview_UnknownOriginOutOfScopeIsProfileA covers 211-S F13: a path outside .backlogit/
+// and docs/ with no carried-over adoption resolves to Profile A, never Profile B.
+func TestReview_UnknownOriginOutOfScopeIsProfileA(t *testing.T) {
+	entries := []CustodyEntry{custodyReviewUntrackedEntry("internal/core/x.go", "content\n", "stage", "stage_artifact")}
+	none := func(*CustodyEntry) bool { return false }
+	assert.Equal(t, custodyProfileOperator,
+		custodyRequiredProfile("stage_to_ship_handoff", "stage", "ship", "stage_artifact_commit", entries, none))
+	assert.Equal(t, custodyProfileOperator,
+		custodyRequiredProfile("stage_to_ship_handoff", "stage", "ship", "stage_artifact_commit", entries, nil))
+}
+
+// TestReview_DefaultBranchLiteralsRefused covers 211-S F17: develop and trunk are refused as
+// custody scopes even when origin/HEAD does not name them.
+func TestReview_DefaultBranchLiteralsRefused(t *testing.T) {
+	ctx := context.Background()
+	preview := func(repo *custExecRepo, branch string) error {
+		_, err := PreviewCustodyCandidates(ctx, repo.ws, CustodyPreviewOptions{
+			ShipmentID: repo.shipmentID, Branch: branch, Candidates: []CustodyCandidateSpec{custExecStageCandidate()},
+		})
+		return err
+	}
+
+	t.Run("develop_refused_without_origin_head", func(t *testing.T) {
+		repo := custExecNewRepo(t)
+		custExecWrite(t, repo.root, custExecCovered, custExecRevised)
+		runGit(t, repo.root, "checkout", "-b", "develop")
+		assert.ErrorIs(t, preview(repo, "develop"), ErrCustodyDefaultBranchForbidden)
+	})
+
+	t.Run("trunk_refused_when_origin_head_is_trunk", func(t *testing.T) {
+		repo := custExecNewRepo(t)
+		custExecWrite(t, repo.root, custExecCovered, custExecRevised)
+		runGit(t, repo.root, "update-ref", "refs/remotes/origin/trunk", "HEAD")
+		runGit(t, repo.root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+		runGit(t, repo.root, "checkout", "-b", "trunk")
+		assert.ErrorIs(t, preview(repo, "trunk"), ErrCustodyDefaultBranchForbidden)
+	})
+}
+
+// TestReview_AdoptFailsClosedWithoutCanonicalMarkdown covers 211-S F18: adopt reads the
+// canonical Markdown preimage only and never falls back to the SQLite projection.
+func TestReview_AdoptFailsClosedWithoutCanonicalMarkdown(t *testing.T) {
+	ctx := context.Background()
+	ws := setupShipmentWorkspace(t)
+	feat1, err := CreateArtifact(ctx, ws, "Adopt origin feature", "feature")
+	require.NoError(t, err)
+	feat2, err := CreateArtifact(ctx, ws, "Adopt destination feature", "feature")
+	require.NoError(t, err)
+	task, err := CreateArtifact(ctx, ws, "Adopt task", "task", WithParent(feat1.ID))
+	require.NoError(t, err)
+	path, err := FindArtifactPath(ctx, ws, task.ID)
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(path))
+	_, err = bldb.GetItem(ctx, ws.DB, task.ID)
+	require.NoError(t, err, "precondition: the SQLite projection still holds the item")
+
+	_, err = AdoptItem(ctx, ws, task.ID, feat2.ID)
+	assert.ErrorIs(t, err, blerrors.ErrNotFound, "adopt must fail when the canonical Markdown is missing")
+	_, statErr := os.Stat(path)
+	assert.True(t, os.IsNotExist(statErr), "a failed adopt must not recreate the canonical file")
+}
+
+// TestReview_NonceLedgerAndItemLogRefuseLinks covers 211-S F6: redemption reads never follow
+// a symlink or reparse point at the nonce ledger or the shipment item log.
+func TestReview_NonceLedgerAndItemLogRefuseLinks(t *testing.T) {
+	now := time.Now().UTC()
+	proof := CustodyApprovalProof{
+		Nonce: "link-nonce-1", RequestIdentityDigest: "digest-link-1",
+		NotBeforeUTC: now.Add(-time.Minute), NotAfterUTC: now.Add(5 * time.Minute),
+	}
+
+	t.Run("symlinked_nonce_ledger_fails_closed", func(t *testing.T) {
+		repo := custExecNewRepo(t)
+		line, err := json.Marshal(nonceLedgerRecord{
+			Nonce: proof.Nonce, NotAfter: proof.NotAfterUTC, RequestIdentityDigest: proof.RequestIdentityDigest, ConsumedAt: &now,
+		})
+		require.NoError(t, err)
+		target := filepath.Join(t.TempDir(), "nonce-ledger.json")
+		require.NoError(t, os.WriteFile(target, append(line, '\n'), 0o600))
+		if err := os.Symlink(target, custodyNonceLedgerPath(repo.root)); err != nil {
+			t.Skipf("symlink creation is not permitted on this host: %v", err)
+		}
+		assert.False(t, custodyRedeemed(repo.ws, repo.shipmentID, "rcpt-link-1", proof),
+			"a symlinked nonce ledger must not be followed")
+	})
+
+	t.Run("symlinked_item_log_fails_closed", func(t *testing.T) {
+		repo := custExecNewRepo(t)
+		line, err := json.Marshal(events.Event{EventType: EventCustodyHandoffAccepted, Delta: map[string]any{
+			"receipt_id": "rcpt-link-1", "nonce": proof.Nonce,
+			"request_identity_digest": proof.RequestIdentityDigest, "consumed_at": now,
+		}})
+		require.NoError(t, err)
+		target := filepath.Join(t.TempDir(), "item.jsonl")
+		require.NoError(t, os.WriteFile(target, append(line, '\n'), 0o600))
+		logPath := events.LogPathForItem(WorkspaceLogsRoot(repo.root), repo.shipmentID)
+		require.NoError(t, os.Remove(logPath), "replace the shipment item log created by CreateShipment")
+		if err := os.Symlink(target, logPath); err != nil {
+			t.Skipf("symlink creation is not permitted on this host: %v", err)
+		}
+		assert.False(t, custodyRedeemed(repo.ws, repo.shipmentID, "rcpt-link-1", proof),
+			"a symlinked shipment item log must not be followed")
+	})
+}
+
+// TestReview_RedemptionMustFallWithinTokenWindow covers 211-S F2: a redemption whose
+// consumed_at falls outside the stored proof's [not_before, not_after] window fails closed.
+func TestReview_RedemptionMustFallWithinTokenWindow(t *testing.T) {
+	ctx := context.Background()
+	fx := custodyReviewOfferAdoption(t)
+	fx.repo.ws.Config.TrustAnchors = []config.TrustAnchor{fx.anchor}
+	live := WithCustodyNonceConsumer(ctx, custodyReviewConsumer(t, fx.repo.root, &custodyReviewProvider{}))
+	_, err := AcceptCustodyHandoff(live, fx.repo.ws, fx.acceptOpts(fx.token(t, "window-nonce-1")))
+	require.NoError(t, err)
+
+	env := custExecEnvelope(t, custExecShipment(t, fx.repo.ws, fx.repo.shipmentID))
+	idx := custodyReceiptIndex(env.Receipts, "rcpt-adopt-1")
+	require.GreaterOrEqual(t, idx, 0)
+	receipt := env.Receipts[idx]
+	require.NotNil(t, receipt.ApprovalProof)
+	trust := custodyTrustFor(fx.repo.ws, nil, nil, time.Now().UTC())
+	require.NoError(t, custodyVerifyOperatorAdoption(fx.repo.ws, env, receipt, trust),
+		"control: a redemption inside the window verifies")
+
+	late := receipt.ApprovalProof.NotAfterUTC.Add(time.Hour)
+	line, err := json.Marshal(nonceLedgerRecord{
+		Nonce: "window-nonce-1", NotAfter: late,
+		RequestIdentityDigest: receipt.ApprovalProof.RequestIdentityDigest, ConsumedAt: &late,
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(custodyReviewLedgerPath(fx.repo.root), append(line, '\n'), 0o600))
+	err = custodyVerifyOperatorAdoption(fx.repo.ws, env, receipt, trust)
+	assert.ErrorIs(t, err, ErrAuthorizationRejected, "a redemption consumed after not_after must fail closed")
+}
