@@ -833,12 +833,37 @@ func verifyCustodyApprovalBinding(proof CustodyApprovalProof, env WorkflowCustod
 	if !ok {
 		return fmt.Errorf("%w: approval receipt %q is not in the envelope", ErrAuthorizationRejected, proof.ReceiptID)
 	}
+	if err := verifyCustodyApprovalClaims(proof, receipt); err != nil {
+		return err
+	}
 	digest, err := custodyReceiptIdentityDigest(CustodyRequestIdentityDomain, env, receipt)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrAuthorizationRejected, err)
 	}
 	if digest != proof.RequestIdentityDigest {
 		return fmt.Errorf("%w: %w", ErrAuthorizationRejected, ErrApprovalWrongRequestIdentity)
+	}
+	return nil
+}
+
+// verifyCustodyApprovalClaims checks the receipt-scoped claims of proof against the receipt it
+// selects. A claim is compared only when both sides set it, so an unset optional claim never
+// refuses a proof.
+func verifyCustodyApprovalClaims(proof CustodyApprovalProof, receipt CustodyReceipt) error {
+	if receipt.CandidateSetDigest != "" && receipt.CandidateSetDigest != proof.CandidateSetDigest {
+		return fmt.Errorf("%w: approval candidate_set_digest does not match receipt %q", ErrAuthorizationRejected, receipt.ReceiptID)
+	}
+	if proof.AllowedAction != "" && receipt.AllowedAction != "" && proof.AllowedAction != receipt.AllowedAction {
+		return fmt.Errorf("%w: approval allowed_action %q does not match receipt %q", ErrAuthorizationRejected, proof.AllowedAction, receipt.ReceiptID)
+	}
+	if proof.TargetRevision > 0 && receipt.Revision > 0 && proof.TargetRevision != receipt.Revision {
+		return fmt.Errorf("%w: approval target_revision %d does not match receipt %q revision %d", ErrAuthorizationRejected, proof.TargetRevision, receipt.ReceiptID, receipt.Revision)
+	}
+	if proof.ReceiptID != "" && receipt.ReceiptID != "" && proof.ReceiptID != receipt.ReceiptID {
+		return fmt.Errorf("%w: approval names receipt %q, not %q", ErrAuthorizationRejected, proof.ReceiptID, receipt.ReceiptID)
+	}
+	if proof.AcceptingRole != "" && receipt.AcceptingRole != "" && proof.AcceptingRole != receipt.AcceptingRole {
+		return fmt.Errorf("%w: approval names accepting role %q, not %q", ErrAuthorizationRejected, proof.AcceptingRole, receipt.AcceptingRole)
 	}
 	return nil
 }
