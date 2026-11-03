@@ -762,10 +762,11 @@ func custodyAnchorPublicKey(anchor config.TrustAnchor) (ed25519.PublicKey, error
 	return pub, nil
 }
 
-// custodyWorkspaceOperatorAnchors returns the workspace-config anchors allowed to verify
-// operator approvals at now. Each must be active, carry role operator and the ed25519
-// algorithm, and sit inside its window with not_before <= now < not_after. An absent bound
-// is unbounded on that side. A key_id that appears more than once is dropped entirely.
+// custodyWorkspaceOperatorAnchors returns the workspace-config anchors considered when
+// verifying operator approvals at now. Revoked and expired anchors stay in the set, so
+// resolution reports their typed refusal rather than an unavailable channel. Each anchor must
+// carry role operator and the ed25519 algorithm, and must not start before not_before. A
+// key_id that appears more than once is dropped entirely.
 func custodyWorkspaceOperatorAnchors(anchors []config.TrustAnchor, now time.Time) []config.TrustAnchor {
 	counts := make(map[string]int, len(anchors))
 	for i := range anchors {
@@ -774,14 +775,13 @@ func custodyWorkspaceOperatorAnchors(anchors []config.TrustAnchor, now time.Time
 	usable := make([]config.TrustAnchor, 0, len(anchors))
 	for i := range anchors {
 		a := anchors[i]
-		if counts[a.ID] != 1 || a.Status != config.TrustAnchorStatusActive ||
-			a.Role != "operator" || a.Algo != config.TrustAnchorAlgoEd25519 {
+		if counts[a.ID] != 1 || a.Role != "operator" || a.Algo != config.TrustAnchorAlgoEd25519 {
+			continue
+		}
+		if a.Status != config.TrustAnchorStatusActive && a.Status != config.TrustAnchorStatusRevoked {
 			continue
 		}
 		if a.NotBefore != nil && now.Before(*a.NotBefore) {
-			continue
-		}
-		if a.NotAfter != nil && !now.Before(*a.NotAfter) {
 			continue
 		}
 		usable = append(usable, a)
