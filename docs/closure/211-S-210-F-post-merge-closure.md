@@ -111,7 +111,7 @@ Reconciliation records: `.backlogit/reconcile/211-S-pre-20261103T163248Z.md`,
 ## Compaction and compound refresh
 
 * `compact-context` (target `all`) under P-020. Status: `done`, recorded in the closure frontmatter.
-  * Pass 1 (earlier, same session): 8 closure records moved to `docs/archive/closure/` with `git mv`. One wave summary written: `docs/closure/2026-11-03-175-f-wave-closure-summary.md`. No deletions.
+  * Pass 1 (earlier, same session): the compaction run moved 8 closure records into `docs/archive/closure/`, which removed the predecessor-gate discovery paths. Review on PR 642 identified this. The records were restored to `docs/closure/` from `origin/main`, the archive copies were removed, and the aggregate summary was removed. No predecessor closure record is moved by this shipment.
   * Pass 2 (211-S consolidation): compacted summary `docs/memory/compacted/2026-11-03-211-s-210-f-compacted.md` indexes the 211-S session notes. Four notes are cited by checkpoints, the closure record, or a retained note, and stay in place. Three uncited notes moved with `git mv` to `docs/archive/memory/`: `ship-211-s-wave3-halt-checkpoint.md`, `ship-211-s-wave4-halt-checkpoint.md`, and `stage-211-s-workflow-custody-handoff-memory.md`. Their substance is summarized in the compacted record.
   * Plans: no plan consolidation was required for this shipment.
   * Remaining closure records that are older and zero-reference stay in place. They are candidates for a later pass, not part of this shipment.
