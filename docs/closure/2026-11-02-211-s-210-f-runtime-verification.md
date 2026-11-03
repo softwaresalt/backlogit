@@ -21,8 +21,10 @@ envelope, the `preview`, `offer`, `accept`, and `verify` operations, the
 derived `custody_receipts` SQLite projection, the `backlogit_custody_*` MCP
 tools, and the `backlogit custody` CLI subcommands.
 
-Code HEAD for the gates below is `ebdbb8d9`. Documentation commits made after
-that point do not change code.
+Code HEAD for the gates below is `ebdbb8d9`, the head at which these gates were
+run. A later code commit, `47ba2952`, fixes a Copilot review finding on new-file
+custody writes. Its build, vet, race, and CI results are recorded in the
+pre-merge closure record. Documentation commits do not change code.
 
 ## Gate results at code HEAD
 

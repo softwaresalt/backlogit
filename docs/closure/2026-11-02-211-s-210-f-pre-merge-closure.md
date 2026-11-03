@@ -22,7 +22,10 @@ confirmation.
 
 ## Local Review Readiness
 
-* Reviewed HEAD (code): `ebdbb8d9`. Documentation commits after this point do not change code. The PR head is the final documentation commit.
+* Reviewed HEAD (code): `47ba2952`. The code head moved from `ebdbb8d9` after the Copilot review. The fix is a new custody guard on new-file writes (`47ba2952`, RED test `57102663`). That change was not covered by the earlier independent reviews. It was checked by the build, vet, race, and CI test gates. Documentation commits after the code head do not change code.
+* CI at `47ba2952`: `test`, `CLI Reference Drift`, `Docline frontmatter gate`, `Line endings guard`, `Markdown lint (P-008)`, `Windows handle/lock tests`, and `pipeline-topology` all pass.
+* Copilot review gate at `47ba2952`: `SATISFIED: PASS`. The single Copilot thread (new-file custody writes) is fixed and resolved.
+* Intermittent test failure, open risk: `TestU4_CustodyPreviewOfferAcceptVerifyAndRecovery/profile_b_stage_to_ship_handoff_and_stale_digest_invalidation` failed once in three concurrent race runs of several packages. The failure message was not captured. It did not reproduce in the isolated run, in five repeated race runs, or in two further concurrent runs. CI passed at `47ba2952`. The root cause is unexplained and is not classified as a flake.
 * Outcome: `READY_WITH_FOLLOWUPS`.
 * Blocking findings: P0 = 0 unwaived (D1 waived explicitly). P1 = 1 open, pending confirmation (D3). P1 waived explicitly: F14.
 * P2 captured as follow-ups, not fixed: F16, F17, F19, F20, F21.
