@@ -1164,24 +1164,25 @@ func TestReview_ProfileBStoragePathAllowList(t *testing.T) {
 	}
 }
 
-// TestReview_ProfileBDocsCorroboratedAgainstBase covers 211-S Decision 4b: a docs file that
-// existed at base_commit_sha and was modified requires Profile A, unless its exact baseline
-// digest was already adopted by an earlier valid Profile A receipt in the same workflow.
-func TestReview_ProfileBDocsCorroboratedAgainstBase(t *testing.T) {
+// TestReview_ProfileBModifiedDocsAllowedOptionB covers the operator-approved Option B behaviour
+// (211-S, superseding Decision 4b): a docs file that existed at base_commit_sha and was modified
+// remains a Profile B handoff when it is on the allow-list. A baseline digest adopted by an
+// earlier valid Profile A receipt keeps the handoff Profile B eligible.
+func TestReview_ProfileBModifiedDocsAllowedOptionB(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("modified_docs_file_existing_at_base_requires_profile_a", func(t *testing.T) {
+	t.Run("modified_docs_file_existing_at_base_is_profile_b", func(t *testing.T) {
 		repo := custExecNewRepo(t)
 		custExecWrite(t, repo.root, custExecCovered, custExecRevised)
 		preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, custExecStageCandidate()))
 		require.NoError(t, err)
-		assert.Equal(t, "operator_verified", preview.RequiredAuthorityProfile,
-			"a docs file committed at base and modified must not be a Profile B handoff")
+		assert.Equal(t, "agent_workflow_handoff", preview.RequiredAuthorityProfile,
+			"a modified docs file on the handoff allow-list must stay a Profile B handoff under Option B")
 		_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{
 			ShipmentID: repo.shipmentID,
 			Spec:       custExecStageReceipt(preview.CandidateSetDigest),
 		})
-		assert.ErrorIs(t, err, ErrOperatorApprovalRequired)
+		require.NoError(t, err)
 	})
 
 	t.Run("baseline_digest_adopted_by_profile_a_keeps_profile_b", func(t *testing.T) {
