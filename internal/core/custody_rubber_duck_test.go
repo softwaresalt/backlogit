@@ -263,3 +263,24 @@ func TestRubberDuck_F12_VerifyRejectsInvalidEnvelope(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnsupportedCustodyChangeKind, "verify must validate the envelope before it emits verdicts")
 	assert.Empty(t, result.Verdicts)
 }
+
+func TestRubberDuck_F16_UnpairedRenameGroupIsReportedDeterministically(t *testing.T) {
+	entry := func(path, group string) CustodyEntry {
+		return CustodyEntry{
+			Path: path, ChangeKind: "added", StagedState: "unstaged_only",
+			Contributor: "stage", SourceKind: "stage_artifact", RenameGroupID: group,
+		}
+	}
+	entries := []CustodyEntry{
+		entry("docs/c.md", "group-b"), entry("docs/d.md", "group-b"),
+		entry("docs/a.md", "group-a"), entry("docs/b.md", "group-a"),
+	}
+
+	first := validateCustodyEntries(entries, custodyProfileAgent)
+	require.Error(t, first)
+	require.Contains(t, first.Error(), `"group-a"`, "the lowest unpaired group must be reported")
+	for i := 0; i < 50; i++ {
+		again := validateCustodyEntries(entries, custodyProfileAgent)
+		require.EqualError(t, again, first.Error())
+	}
+}
