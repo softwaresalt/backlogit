@@ -1137,6 +1137,17 @@ func TestReview_ProfileBStoragePathAllowList(t *testing.T) {
 		})
 	}
 
+	t.Run("refused_ops_journal_path_without_fixture", func(t *testing.T) {
+		repo := custExecNewRepo(t)
+		entry := custodyReviewUntrackedEntry(".backlogit/ops/x.json", "content\n", "stage", "stage_artifact")
+		digest, err := custodyCandidateSetDigest(custodyCandidatesOf([]CustodyEntry{entry}))
+		require.NoError(t, err)
+		receipt := custExecReceipt("rcpt-allowlist-ops-1", "stage_to_ship_handoff", "agent_workflow_handoff", "stage", "ship",
+			"stage_artifact_commit", digest, entry)
+		_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{ShipmentID: repo.shipmentID, Spec: receipt})
+		assert.ErrorIs(t, err, ErrOperatorApprovalRequired, "profile B must not cover an ops journal path")
+	})
+
 	for _, path := range []string{".backlogit/queue/x.md", ".backlogit/archive/x.md", "docs/decisions/x.md", "docs/exec-plans/x.md"} {
 		t.Run("allowed_"+strings.ReplaceAll(path, "/", "_"), func(t *testing.T) {
 			repo := custExecNewRepo(t)
