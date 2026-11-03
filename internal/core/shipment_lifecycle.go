@@ -1319,6 +1319,10 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		}
 	}
 
+	if newID != oldID && custodyEnvelopeNames(artifact, oldID) {
+		return nil, fmt.Errorf("adopt item %s: %w: a workflow custody envelope names %s, so adoption cannot change its ID", itemID, blerrors.ErrValidation, oldID)
+	}
+
 	var releaseEventLocks func()
 	if newID != oldID {
 		lockedCtx, releaseEventLocks, lockErr = lockAdoptionEventLogs(ctx, ws, oldID, newID)

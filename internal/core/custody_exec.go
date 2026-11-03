@@ -1393,6 +1393,13 @@ func custodyAdoptedFunc(ws *Workspace, env WorkflowCustodyEnvelope, trust custod
 	}
 }
 
+// custodyEnvelopeNames reports whether art carries a workflow-custody envelope bound to
+// shipmentID. An envelope that does not decode is not a custody record, so it does not match.
+func custodyEnvelopeNames(art *models.Artifact, shipmentID string) bool {
+	env, present, err := custodyEnvelopeOf(art)
+	return err == nil && present && env.ShipmentID == shipmentID
+}
+
 func custodyShipment(ctx context.Context, ws *Workspace, id string) (*models.Artifact, error) {
 	if id == "" {
 		return nil, fmt.Errorf("custody shipment id is required: %w", blerrors.ErrValidation)
