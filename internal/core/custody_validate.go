@@ -277,16 +277,45 @@ func validateCustodyRelPath(p string) (string, error) {
 			return "", fmt.Errorf("%w: %q has a %q segment", ErrCustodyPathRejected, p, segment)
 		case strings.EqualFold(segment, ".git"):
 			return "", fmt.Errorf("%w: %q is inside .git", ErrCustodyPathRejected, p)
+		case strings.HasSuffix(segment, ".") || strings.HasSuffix(segment, " "):
+			return "", fmt.Errorf("%w: %q has a segment with a trailing dot or space", ErrCustodyPathRejected, p)
+		case strings.ContainsRune(segment, ':'):
+			return "", fmt.Errorf("%w: %q has an alternate data stream or pathspec marker", ErrCustodyPathRejected, p)
+		case strings.ContainsRune(segment, '~'):
+			// Rejected in every segment: a lexical check cannot tell an 8.3 alias of .git from an ordinary name.
+			return "", fmt.Errorf("%w: %q has an 8.3 short-name segment", ErrCustodyPathRejected, p)
+		case custodyReservedDeviceName(segment):
+			return "", fmt.Errorf("%w: %q has a reserved device name", ErrCustodyPathRejected, p)
 		}
 	}
 	return p, nil
 }
 
+// custodyReservedDeviceName reports whether segment, ignoring any extension, is a DOS device
+// name that Windows reserves in every directory.
+func custodyReservedDeviceName(segment string) bool {
+	stem := segment
+	if i := strings.IndexByte(stem, '.'); i >= 0 {
+		stem = stem[:i]
+	}
+	stem = strings.ToUpper(stem)
+	switch stem {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	return len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9'
+}
+
 // ValidateCustodyEntryPath validates that entryPath is a safe, repository-relative
 // POSIX path under ws. It normalizes the workspace root, rejects lexically unsafe
 // paths, and walks each existing component with Lstat, rejecting any symlink or
-// reparse point. A component that does not exist ends the walk, because nothing
-// below it can be a link.
+// reparse point. Each component must also resolve to its own lexical path. A component
+// that does not exist ends the walk, because nothing below it can be a link.
+//
+// This is a point-in-time check. A local writer that replaces a component with a link
+// after its check and before the open is not detected here. The final-component
+// no-follow read in readCustodyWorktreeFileNoFollow narrows that window, but does not
+// close it, for the final component only.
 func ValidateCustodyEntryPath(ws *Workspace, entryPath string) error {
 	rel, err := validateCustodyRelPath(entryPath)
 	if err != nil {
@@ -320,9 +349,17 @@ func ValidateCustodyEntryPath(ws *Workspace, entryPath string) error {
 		if linked {
 			return fmt.Errorf("%w: %s traverses a symlink or reparse point", ErrCustodyPathRejected, rel)
 		}
+		resolved, err := filepath.EvalSymlinks(current)
+		if err != nil {
+			return fmt.Errorf("%w: resolve %s: %w", ErrCustodyPathRejected, rel, err)
+		}
+		if !strings.EqualFold(filepath.Clean(resolved), filepath.Clean(current)) {
+			return fmt.Errorf("%w: %s resolves outside its lexical path", ErrCustodyPathRejected, rel)
+		}
 	}
 	return nil
 }
+
 
 // ValidateCustodyRenameCasing verifies every case_only_rename entry in env against
 // the worktree under ws. A case-only rename is a renamed entry whose old_path and
