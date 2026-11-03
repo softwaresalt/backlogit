@@ -1088,3 +1088,130 @@ func TestReview_RedemptionMustFallWithinTokenWindow(t *testing.T) {
 	err = custodyVerifyOperatorAdoption(fx.repo.ws, env, receipt, trust)
 	assert.ErrorIs(t, err, ErrAuthorizationRejected, "a redemption consumed after not_after must fail closed")
 }
+
+// custodyReviewLiveEntry builds the covered entry for spec from the live repository state,
+// the same way offer does, so a test offers a receipt that the live verifier accepts.
+func custodyReviewLiveEntry(t *testing.T, repo *custExecRepo, spec CustodyCandidateSpec) CustodyEntry {
+	t.Helper()
+	entry, err := custodyEntryFromCandidate(context.Background(), repo.ws, repo.base, spec)
+	require.NoError(t, err)
+	return entry
+}
+
+// custodyReviewReceiptVerdict returns the verdict of the first covered path of receiptID.
+func custodyReviewReceiptVerdict(res CustodyVerifyResult, receiptID string) string {
+	for _, v := range res.Verdicts {
+		if v.ReceiptID == receiptID {
+			return v.Verdict
+		}
+	}
+	return ""
+}
+
+// TestReview_ProfileBStoragePathAllowList covers 211-S Decision 4 (F15, F16): Profile B covers
+// only the Stage handoff allow-list under the workspace storage root and docs/. Storage-root
+// control files, operator-owned trees, and docs outside the allow-list require Profile A.
+func TestReview_ProfileBStoragePathAllowList(t *testing.T) {
+	ctx := context.Background()
+	refused := []struct{ path, change string }{
+		{".backlogit/config.yaml", "modified"},
+		{".backlogit/header-def.yaml", "added"},
+		{".backlogit/ops/x.json", "added"},
+		{".backlogit/logs/x.jsonl", "added"},
+		{".backlogit/nonce-ledger.json", "added"},
+		{"docs/ARCHITECTURE.md", "added"},
+		{"cmd/backlogit/main.go", "added"},
+	}
+	for _, c := range refused {
+		t.Run("refused_"+strings.ReplaceAll(c.path, "/", "_"), func(t *testing.T) {
+			repo := custExecNewRepo(t)
+			custExecWrite(t, repo.root, c.path, "content\n")
+			spec := custodyReviewUntrackedCandidate(c.path, "stage", "stage_artifact")
+			spec.ChangeKind = c.change
+			preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, spec))
+			require.NoError(t, err)
+			assert.Equal(t, "operator_verified", preview.RequiredAuthorityProfile)
+			receipt := custExecReceipt("rcpt-allowlist-1", "stage_to_ship_handoff", "agent_workflow_handoff", "stage", "ship",
+				"stage_artifact_commit", preview.CandidateSetDigest, custodyReviewLiveEntry(t, repo, spec))
+			_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{ShipmentID: repo.shipmentID, Spec: receipt})
+			assert.ErrorIs(t, err, ErrOperatorApprovalRequired, "profile B must not cover %s", c.path)
+		})
+	}
+
+	for _, path := range []string{".backlogit/queue/x.md", ".backlogit/archive/x.md", "docs/decisions/x.md", "docs/exec-plans/x.md"} {
+		t.Run("allowed_"+strings.ReplaceAll(path, "/", "_"), func(t *testing.T) {
+			repo := custExecNewRepo(t)
+			custExecWrite(t, repo.root, path, "content\n")
+			spec := custodyReviewUntrackedCandidate(path, "stage", "stage_artifact")
+			preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, spec))
+			require.NoError(t, err)
+			assert.Equal(t, "agent_workflow_handoff", preview.RequiredAuthorityProfile)
+			receipt := custExecReceipt("rcpt-allowlist-ok-1", "stage_to_ship_handoff", "agent_workflow_handoff", "stage", "ship",
+				"stage_artifact_commit", preview.CandidateSetDigest, custodyReviewLiveEntry(t, repo, spec))
+			_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{ShipmentID: repo.shipmentID, Spec: receipt})
+			require.NoError(t, err, "profile B must cover the allow-listed %s", path)
+		})
+	}
+}
+
+// TestReview_ProfileBDocsCorroboratedAgainstBase covers 211-S Decision 4b: a docs file that
+// existed at base_commit_sha and was modified requires Profile A, unless its exact baseline
+// digest was already adopted by an earlier valid Profile A receipt in the same workflow.
+func TestReview_ProfileBDocsCorroboratedAgainstBase(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("modified_docs_file_existing_at_base_requires_profile_a", func(t *testing.T) {
+		repo := custExecNewRepo(t)
+		custExecWrite(t, repo.root, custExecCovered, custExecRevised)
+		preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, custExecStageCandidate()))
+		require.NoError(t, err)
+		assert.Equal(t, "operator_verified", preview.RequiredAuthorityProfile,
+			"a docs file committed at base and modified must not be a Profile B handoff")
+		_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{
+			ShipmentID: repo.shipmentID,
+			Spec:       custExecStageReceipt(preview.CandidateSetDigest),
+		})
+		assert.ErrorIs(t, err, ErrOperatorApprovalRequired)
+	})
+
+	t.Run("baseline_digest_adopted_by_profile_a_keeps_profile_b", func(t *testing.T) {
+		fx := custodyReviewOfferAdoption(t)
+		fx.repo.ws.Config.TrustAnchors = []config.TrustAnchor{fx.anchor}
+		live := WithCustodyNonceConsumer(ctx, custodyReviewConsumer(t, fx.repo.root, &custodyReviewProvider{}))
+		_, err := AcceptCustodyHandoff(live, fx.repo.ws, fx.acceptOpts(fx.token(t, "decision4-adopt-nonce")))
+		require.NoError(t, err)
+
+		preview, err := PreviewCustodyCandidates(ctx, fx.repo.ws, custExecPreviewOpts(fx.repo, custExecStageCandidate()))
+		require.NoError(t, err)
+		assert.Equal(t, "agent_workflow_handoff", preview.RequiredAuthorityProfile,
+			"the exact baseline digest adopted by an earlier Profile A receipt stays Profile B eligible")
+	})
+}
+
+// TestReview_LaterOfferKeepsEarlierAdoptionVerified covers 211-S Decision 8: a later offer of a
+// different receipt must not invalidate an earlier accepted Profile A receipt, because the
+// request identity digest binds the receipt it approves rather than every receipt in the envelope.
+func TestReview_LaterOfferKeepsEarlierAdoptionVerified(t *testing.T) {
+	ctx := context.Background()
+	fx := custodyReviewOfferAdoption(t)
+	fx.repo.ws.Config.TrustAnchors = []config.TrustAnchor{fx.anchor}
+	live := WithCustodyNonceConsumer(ctx, custodyReviewConsumer(t, fx.repo.root, &custodyReviewProvider{}))
+	_, err := AcceptCustodyHandoff(live, fx.repo.ws, fx.acceptOpts(fx.token(t, "decision8-nonce-1")))
+	require.NoError(t, err)
+
+	const later = "docs/memory/decision8.md"
+	custExecWrite(t, fx.repo.root, later, "content\n")
+	spec := custodyReviewUntrackedCandidate(later, "stage", "stage_artifact")
+	preview, err := PreviewCustodyCandidates(ctx, fx.repo.ws, custExecPreviewOpts(fx.repo, spec))
+	require.NoError(t, err)
+	receipt := custExecReceipt("rcpt-later-2", "stage_to_ship_handoff", "agent_workflow_handoff", "stage", "ship",
+		"stage_artifact_commit", preview.CandidateSetDigest, custodyReviewLiveEntry(t, fx.repo, spec))
+	receipt.Revision = 2
+	_, err = OfferCustodyHandoff(ctx, fx.repo.ws, CustodyOfferOptions{ShipmentID: fx.repo.shipmentID, Spec: receipt})
+	require.NoError(t, err)
+
+	verify, err := VerifyCustodyState(ctx, fx.repo.ws, CustodyVerifyOptions{ShipmentID: fx.repo.shipmentID, Branch: custExecFeatureBranch})
+	require.NoError(t, err)
+	assert.Equal(t, "ADOPTED_OPERATOR_VERIFIED", custodyReviewReceiptVerdict(verify, "rcpt-adopt-1"),
+		"a later offer of a different receipt must leave the earlier Profile A receipt verifying")
+}
