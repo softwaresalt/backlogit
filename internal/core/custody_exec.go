@@ -136,6 +136,7 @@ func PreviewCustodyCandidates(ctx context.Context, ws *Workspace, opts CustodyPr
 		CandidateSetDigest:       digest,
 		RequiredAuthorityProfile: profile,
 		Candidates:               specs,
+		ResolvedEntries:          entries,
 		Warnings:                 []string{},
 	}, nil
 }

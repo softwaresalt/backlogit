@@ -269,6 +269,9 @@ type CustodyPreviewResult struct {
 	RequiredAuthorityProfile string `json:"required_authority_profile" yaml:"required_authority_profile"`
 	// Candidates lists the classified candidates.
 	Candidates []CustodyCandidateSpec `json:"candidates" yaml:"candidates"`
+	// ResolvedEntries lists one covered entry per candidate, in candidate order, with the digests
+	// an offer stores for it. Its entries can be passed as a receipt's entries directly.
+	ResolvedEntries []CustodyEntry `json:"resolved_entries" yaml:"resolved_entries"`
 	// Warnings lists non-fatal findings.
 	Warnings []string `json:"warnings" yaml:"warnings"`
 }
