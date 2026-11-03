@@ -217,6 +217,16 @@ func VerifyCustodyState(ctx context.Context, ws *Workspace, opts CustodyVerifyOp
 	if ws == nil {
 		return CustodyVerifyResult{}, fmt.Errorf("verify custody: workspace is required: %w", blerrors.ErrValidation)
 	}
+	anchors, pins, err := custodyTrustInputs(ws.RootPath, opts.OperatorPinsPath, opts.TrustAnchors, opts.ExternalPins)
+	if err != nil {
+		return CustodyVerifyResult{}, fmt.Errorf("verify custody %s: %w", opts.ShipmentID, err)
+	}
+	nonceStore := ""
+	if opts.NonceStorePath != "" {
+		if nonceStore, err = resolveCustodyNonceStorePath(ws.RootPath, opts.NonceStorePath); err != nil {
+			return CustodyVerifyResult{}, fmt.Errorf("verify custody %s: %w", opts.ShipmentID, err)
+		}
+	}
 	branch, err := custodyCurrentBranch(ctx, ws.RootPath)
 	if err != nil {
 		return CustodyVerifyResult{}, err
@@ -246,18 +256,8 @@ func VerifyCustodyState(ctx context.Context, ws *Workspace, opts CustodyVerifyOp
 	}
 
 	now := time.Now().UTC()
-	anchors, pins, err := custodyTrustInputs(ws.RootPath, opts.OperatorPinsPath, opts.TrustAnchors, opts.ExternalPins)
-	if err != nil {
-		return CustodyVerifyResult{}, fmt.Errorf("verify custody %s: %w", opts.ShipmentID, err)
-	}
 	trust := custodyTrustFor(ws, anchors, pins, now)
-	if opts.NonceStorePath != "" {
-		storePath, err := resolveCustodyNonceStorePath(ws.RootPath, opts.NonceStorePath)
-		if err != nil {
-			return CustodyVerifyResult{}, fmt.Errorf("verify custody %s: %w", opts.ShipmentID, err)
-		}
-		trust.nonceStore = storePath
-	}
+	trust.nonceStore = nonceStore
 	for i := range env.Receipts {
 		receipt := env.Receipts[i]
 		if receipt.Status != custodyReceiptOffered && receipt.Status != custodyReceiptAccepted {
