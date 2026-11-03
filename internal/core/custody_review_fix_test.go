@@ -316,7 +316,7 @@ func TestReview_ProfileEligibility(t *testing.T) {
 		assert.Equal(t, "operator_verified", preview.RequiredAuthorityProfile)
 	})
 
-	for _, path := range []string{"internal/core/x.go", ".autoharness/x.yaml", ".gsd/carry.yaml"} {
+	for _, path := range []string{"internal/core/x.go", ".autoharness/x.yaml", ".gsd/carry.yaml", "docs/review/x.md"} {
 		t.Run("stage_handoff_refused_for_"+strings.ReplaceAll(path, "/", "_"), func(t *testing.T) {
 			repo := custExecNewRepo(t)
 			custExecWrite(t, repo.root, path, "content\n")
@@ -1224,4 +1224,37 @@ func TestReview_LaterOfferKeepsEarlierAdoptionVerified(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ADOPTED_OPERATOR_VERIFIED", custodyReviewReceiptVerdict(verify, "rcpt-adopt-1"),
 		"a later offer of a different receipt must leave the earlier Profile A receipt verifying")
+}
+
+// TestReview_ChangedLaterReceiptKeepsEarlierAdoptionVerified covers 211-S Decision 8: changing a
+// later receipt in the same envelope must not change the request identity that an earlier
+// Profile A adoption was approved against.
+func TestReview_ChangedLaterReceiptKeepsEarlierAdoptionVerified(t *testing.T) {
+	ctx := context.Background()
+	fx := custodyReviewOfferAdoption(t)
+	fx.repo.ws.Config.TrustAnchors = []config.TrustAnchor{fx.anchor}
+	live := WithCustodyNonceConsumer(ctx, custodyReviewConsumer(t, fx.repo.root, &custodyReviewProvider{}))
+	_, err := AcceptCustodyHandoff(live, fx.repo.ws, fx.acceptOpts(fx.token(t, "decision8-change-nonce-1")))
+	require.NoError(t, err)
+
+	const later = "docs/memory/decision8-change.md"
+	custExecWrite(t, fx.repo.root, later, "content\n")
+	spec := custodyReviewUntrackedCandidate(later, "stage", "stage_artifact")
+	preview, err := PreviewCustodyCandidates(ctx, fx.repo.ws, custExecPreviewOpts(fx.repo, spec))
+	require.NoError(t, err)
+	receipt := custExecReceipt("rcpt-later-change-2", "stage_to_ship_handoff", "agent_workflow_handoff", "stage", "ship",
+		"stage_artifact_commit", preview.CandidateSetDigest, custodyReviewLiveEntry(t, fx.repo, spec))
+	receipt.Revision = 2
+	_, err = OfferCustodyHandoff(ctx, fx.repo.ws, CustodyOfferOptions{ShipmentID: fx.repo.shipmentID, Spec: receipt})
+	require.NoError(t, err)
+
+	env := custExecEnvelope(t, custExecShipment(t, fx.repo.ws, fx.repo.shipmentID))
+	require.Len(t, env.Receipts, 2)
+	env.Receipts[1].CandidateSetDigest = custExecDigest("changed later receipt")
+	custodyReviewWriteEnvelope(t, fx.repo.ws, fx.repo.shipmentID, env)
+
+	verify, err := VerifyCustodyState(ctx, fx.repo.ws, CustodyVerifyOptions{ShipmentID: fx.repo.shipmentID, Branch: custExecFeatureBranch})
+	require.NoError(t, err)
+	assert.Equal(t, "ADOPTED_OPERATOR_VERIFIED", custodyReviewReceiptVerdict(verify, "rcpt-adopt-1"),
+		"changing a later receipt must not change the identity an earlier Profile A adoption binds")
 }
