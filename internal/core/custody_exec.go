@@ -987,13 +987,16 @@ func custodyMutationContext(ctx context.Context, ws *Workspace) (string, string,
 	return branch, commit, nil
 }
 
-// custodyRefuseDefaultBranch refuses the default branch and the literal main and master.
-// The default branch is origin/HEAD with its origin/ prefix removed, so origin/develop
-// refuses develop. When origin/HEAD does not resolve, the default is main.
+// custodyRefuseDefaultBranch refuses the default branch and the literal main, master, develop,
+// and trunk, whatever origin/HEAD names. The default branch is origin/HEAD with its origin/
+// prefix removed, so origin/develop refuses develop. When origin/HEAD does not resolve, the
+// default is main.
 func custodyRefuseDefaultBranch(ctx context.Context, root, branch string) error {
 	defaultBranch := custodyDefaultBranch(ctx, root)
-	if strings.EqualFold(branch, defaultBranch) || strings.EqualFold(branch, "main") || strings.EqualFold(branch, "master") {
-		return fmt.Errorf("%w: %q", ErrCustodyDefaultBranchForbidden, branch)
+	for _, forbidden := range []string{defaultBranch, "main", "master", "develop", "trunk"} {
+		if strings.EqualFold(branch, forbidden) {
+			return fmt.Errorf("%w: %q", ErrCustodyDefaultBranchForbidden, branch)
+		}
 	}
 	return nil
 }
