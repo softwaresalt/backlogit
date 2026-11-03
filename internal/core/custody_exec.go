@@ -223,6 +223,9 @@ func VerifyCustodyState(ctx context.Context, ws *Workspace, opts CustodyVerifyOp
 	if err := custodyCheckBranchField(art, env); err != nil {
 		return CustodyVerifyResult{}, err
 	}
+	if err := ValidateCustodyEnvelope(env); err != nil {
+		return CustodyVerifyResult{}, fmt.Errorf("verify custody %s: %w", opts.ShipmentID, err)
+	}
 
 	now := time.Now().UTC()
 	trust := custodyTrustFor(ws, opts.TrustAnchors, opts.ExternalPins, now)
