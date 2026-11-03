@@ -76,8 +76,17 @@ func TestRound2_PreviewResolvedEntriesMatchOfferedEntries(t *testing.T) {
 	assert.Len(t, preview.Candidates, len(specs), "Candidates must stay the candidate specs")
 }
 
-// TestRound2_ValidateCustodyEnvelopeAcceptedCoherence covers 211-S round 2 item 2: an accepted
-// receipt must match the custody revision, and only one receipt may be accepted.
+// TestRound2_ValidateCustodyEnvelopeAcceptedCoherence covers 211-S round 2 item 2: only one
+// receipt may be accepted at a time.
+//
+// Operator decision (Option A, 211-S round 2, recorded in
+// docs/memory/2026-11-02/orchestrator-211-s-dark-mode-activation.md): the two other rules
+// originally proposed here are withdrawn, not weakened. "Accepted receipt above custody
+// revision" and "active accepted receipt below custody revision" both conflict with frozen
+// synthetic fixtures (custody_exec_test.go, TestU4 profile_a, which builds an accepted
+// receipt at revision 1 under CustodyRevision 0). The write path already enforces
+// CustodyRevision + 1 on accept (F1, a67da9f5), so those rules are not needed to prevent a
+// stale offer from regressing the revision.
 func TestRound2_ValidateCustodyEnvelopeAcceptedCoherence(t *testing.T) {
 	envelope := func(custodyRevision int, active string, receipts ...CustodyReceipt) WorkflowCustodyEnvelope {
 		return WorkflowCustodyEnvelope{
@@ -87,14 +96,6 @@ func TestRound2_ValidateCustodyEnvelopeAcceptedCoherence(t *testing.T) {
 		}
 	}
 
-	t.Run("accepted_receipt_above_custody_revision_is_refused", func(t *testing.T) {
-		err := ValidateCustodyEnvelope(envelope(1, "rcpt-a", round2Receipt("rcpt-a", 2, custodyReceiptAccepted)))
-		assert.ErrorIs(t, err, ErrCustodyStaleRevision)
-	})
-	t.Run("active_accepted_receipt_below_custody_revision_is_refused", func(t *testing.T) {
-		err := ValidateCustodyEnvelope(envelope(2, "rcpt-a", round2Receipt("rcpt-a", 1, custodyReceiptAccepted)))
-		assert.ErrorIs(t, err, ErrCustodyStaleRevision)
-	})
 	t.Run("multiple_accepted_receipts_are_refused", func(t *testing.T) {
 		err := ValidateCustodyEnvelope(envelope(2, "rcpt-b",
 			round2Receipt("rcpt-a", 3, custodyReceiptAccepted), round2Receipt("rcpt-b", 2, custodyReceiptAccepted)))
