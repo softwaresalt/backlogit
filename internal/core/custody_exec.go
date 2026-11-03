@@ -116,12 +116,10 @@ func PreviewCustodyCandidates(ctx context.Context, ws *Workspace, opts CustodyPr
 		entries = append(entries, entry)
 	}
 	specs := custodyCandidatesOf(entries)
-	env, _, err := custodyEnvelopeOf(art)
-	if err != nil {
+	if _, _, err := custodyEnvelopeOf(art); err != nil {
 		return CustodyPreviewResult{}, err
 	}
-	adopted := custodyAdoptedFunc(ws, env, custodyTrustFor(ws, nil, nil, time.Now().UTC()))
-	profile := custodyRequiredProfileFor(custodyStorageRootName(ws), "", "", "", "", entries, adopted)
+	profile := custodyRequiredProfileFor(custodyStorageRootName(ws), "", "", "", "", entries)
 	if err := validateCustodyEntries(entries, profile); err != nil {
 		return CustodyPreviewResult{}, fmt.Errorf("preview custody %s: %w", opts.ShipmentID, err)
 	}
@@ -229,14 +227,13 @@ func VerifyCustodyState(ctx context.Context, ws *Workspace, opts CustodyVerifyOp
 
 	now := time.Now().UTC()
 	trust := custodyTrustFor(ws, opts.TrustAnchors, opts.ExternalPins, now)
-	adopted := custodyAdoptedFunc(ws, env, trust)
 	for i := range env.Receipts {
 		receipt := env.Receipts[i]
 		if receipt.Status != custodyReceiptOffered && receipt.Status != custodyReceiptAccepted {
 			continue
 		}
 		eligible := receipt.AuthorityProfile != custodyProfileAgent ||
-			custodyRequiredProfileFor(custodyStorageRootName(ws), receipt.Kind, receipt.ProducerRole, receipt.AcceptingRole, receipt.AllowedAction, receipt.Entries, adopted) != custodyProfileOperator
+			custodyRequiredProfileFor(custodyStorageRootName(ws), receipt.Kind, receipt.ProducerRole, receipt.AcceptingRole, receipt.AllowedAction, receipt.Entries) != custodyProfileOperator
 		for _, entry := range receipt.Entries {
 			if wrongBranch {
 				result.Verdicts = append(result.Verdicts, CustodyPathVerdict{
@@ -342,8 +339,7 @@ func custodyOffer(ctx context.Context, ws *Workspace, opts CustodyOfferOptions) 
 	spec.IdempotencyKey = ""
 	spec.IdempotencyRequestDigest = ""
 	spec.ApprovalProof = nil
-	adopted := custodyAdoptedFunc(ws, env, custodyTrustFor(ws, nil, nil, time.Now().UTC()))
-	if err := custodyValidateOfferSpec(env, spec, custodyStorageRootName(ws), adopted); err != nil {
+	if err := custodyValidateOfferSpec(env, spec, custodyStorageRootName(ws)); err != nil {
 		return CustodyMutationResult{}, err
 	}
 	if err := custodyVerifyEntriesLive(ctx, ws, env.BaseCommitSHA, spec.Entries, spec.AuthorityProfile); err != nil {
@@ -442,11 +438,10 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 		return CustodyMutationResult{}, err
 	}
 	trust := custodyTrustFor(ws, opts.TrustAnchors, opts.ExternalPins, now)
-	adopted := custodyAdoptedFunc(ws, env, trust)
 	var proof *CustodyApprovalProof
 	switch receipt.AuthorityProfile {
 	case custodyProfileAgent:
-		if custodyRequiredProfileFor(custodyStorageRootName(ws), receipt.Kind, receipt.ProducerRole, receipt.AcceptingRole, receipt.AllowedAction, receipt.Entries, adopted) == custodyProfileOperator {
+		if custodyRequiredProfileFor(custodyStorageRootName(ws), receipt.Kind, receipt.ProducerRole, receipt.AcceptingRole, receipt.AllowedAction, receipt.Entries) == custodyProfileOperator {
 			return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: %w: entries require operator_verified", receipt.ReceiptID, ErrOperatorApprovalRequired)
 		}
 		if receipt.ProducerRole == receipt.AcceptingRole {
@@ -475,11 +470,6 @@ func custodyAccept(ctx context.Context, ws *Workspace, opts CustodyAcceptOptions
 	}
 	env.Receipts[idx] = receipt
 	env.ActiveReceiptID = receipt.ReceiptID
-	receiptDigest, err := custodyReceiptDigest(receipt)
-	if err != nil {
-		return CustodyMutationResult{}, err
-	}
-	env.ActiveReceiptDigest = receiptDigest
 	env.CustodyRevision = receipt.Revision
 	if err := ValidateCustodyEnvelope(env); err != nil {
 		return CustodyMutationResult{}, fmt.Errorf("accept custody receipt %s: %w", receipt.ReceiptID, err)
@@ -1298,7 +1288,7 @@ func custodyCandidateSetDigest(specs []CustodyCandidateSpec) (string, error) {
 // custodyRequiredProfile is custodyRequiredProfileFor with no workspace storage root, so
 // <storage_root>/queue and <storage_root>/archive paths are never Profile B.
 func custodyRequiredProfile(kind, producerRole, acceptingRole, allowedAction string, entries []CustodyEntry, adopted func(*CustodyEntry) bool) string {
-	return custodyRequiredProfileFor("", kind, producerRole, acceptingRole, allowedAction, entries, adopted)
+	return custodyRequiredProfileFor("", kind, producerRole, acceptingRole, allowedAction, entries)
 }
 
 // custodyRequiredProfileFor returns the authority profile the covered entries require.
@@ -1309,7 +1299,7 @@ func custodyRequiredProfile(kind, producerRole, acceptingRole, allowedAction str
 // never grant Profile B. An empty kind is a preview with no receipt yet, so only the entry rules
 // apply. Baseline corroboration of modified docs/ files is not checked here (211-S Decision 4b
 // is pending), so the adopted callback is not consulted.
-func custodyRequiredProfileFor(storageRoot, kind, producerRole, acceptingRole, allowedAction string, entries []CustodyEntry, _ func(*CustodyEntry) bool) string {
+func custodyRequiredProfileFor(storageRoot, kind, producerRole, acceptingRole, allowedAction string, entries []CustodyEntry) string {
 	if kind == "preexisting_adoption" || allowedAction == "preexisting_adoption_commit" ||
 		(producerRole == "operator" && acceptingRole == "operator") {
 		return custodyProfileOperator
@@ -1464,7 +1454,7 @@ func custodyEnvelopeForOffer(art *models.Artifact, shipmentID, branch, commit st
 
 // custodyValidateOfferSpec checks the offered receipt against the envelope and the
 // authority rules before any digest is compared against the live repository.
-func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt, storageRoot string, adopted func(*CustodyEntry) bool) error {
+func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt, storageRoot string) error {
 	if spec.ReceiptID == "" || spec.Status != custodyReceiptOffered {
 		return fmt.Errorf("offer custody: receipt_id is required and status must be offered: %w", blerrors.ErrValidation)
 	}
@@ -1476,7 +1466,7 @@ func custodyValidateOfferSpec(env WorkflowCustodyEnvelope, spec CustodyReceipt, 
 	}
 	specs := custodyCandidatesOf(spec.Entries)
 	if spec.AuthorityProfile == custodyProfileAgent &&
-		custodyRequiredProfileFor(storageRoot, spec.Kind, spec.ProducerRole, spec.AcceptingRole, spec.AllowedAction, spec.Entries, adopted) == custodyProfileOperator {
+		custodyRequiredProfileFor(storageRoot, spec.Kind, spec.ProducerRole, spec.AcceptingRole, spec.AllowedAction, spec.Entries) == custodyProfileOperator {
 		return fmt.Errorf("offer custody receipt %s: %w: entries require operator_verified", spec.ReceiptID, ErrOperatorApprovalRequired)
 	}
 	for i := range env.Receipts {
@@ -1544,14 +1534,6 @@ func custodyReceiptIndex(receipts []CustodyReceipt, id string) int {
 		}
 	}
 	return -1
-}
-
-func custodyReceiptDigest(receipt CustodyReceipt) (string, error) {
-	raw, err := json.Marshal(receipt)
-	if err != nil {
-		return "", fmt.Errorf("encode custody receipt: %w", err)
-	}
-	return canonical.HashBytes(raw), nil
 }
 
 func custodyAnchors(ws *Workspace) []config.TrustAnchor {

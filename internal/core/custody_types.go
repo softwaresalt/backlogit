@@ -111,8 +111,6 @@ type WorkflowCustodyEnvelope struct {
 	CustodyRevision int `json:"custody_revision" yaml:"custody_revision"`
 	// ActiveReceiptID names the receipt currently in force, when one exists.
 	ActiveReceiptID string `json:"active_receipt_id,omitempty" yaml:"active_receipt_id,omitempty"`
-	// ActiveReceiptDigest is the digest of the active receipt.
-	ActiveReceiptDigest string `json:"active_receipt_digest,omitempty" yaml:"active_receipt_digest,omitempty"`
 	// Receipts lists the custody receipts recorded for the shipment.
 	Receipts []CustodyReceipt `json:"receipts" yaml:"receipts"`
 }
