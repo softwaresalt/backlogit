@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/softwaresalt/backlogit/internal/models"
@@ -22,13 +23,30 @@ func UpsertItemsTx(ctx context.Context, tx *sql.Tx, artifacts ...*models.Artifac
 }
 
 // upsertItemTx executes a single artifact INSERT OR REPLACE inside tx using
-// the same field mapping as UpsertItem. The custody_receipts projection is
-// written first, so a malformed workflow_custody envelope fails before any row
-// is written for the artifact.
+// the same field mapping as UpsertItem. The custody_receipts projection and the
+// items row share one SAVEPOINT, so a failure after the projection is written
+// rolls back both and leaves no receipt rows behind.
 func upsertItemTx(ctx context.Context, tx *sql.Tx, artifact *models.Artifact) error {
 	if artifact == nil {
 		return fmt.Errorf("upsert item in tx: nil artifact")
 	}
+	if _, err := tx.ExecContext(ctx, `SAVEPOINT upsert_item`); err != nil {
+		return fmt.Errorf("begin upsert savepoint for %s: %w", artifact.ID, err)
+	}
+	if err := upsertItemRowsTx(ctx, tx, artifact); err != nil {
+		_, rollbackErr := tx.ExecContext(ctx, `ROLLBACK TO upsert_item`)
+		_, releaseErr := tx.ExecContext(ctx, `RELEASE upsert_item`)
+		return errors.Join(err, rollbackErr, releaseErr)
+	}
+	if _, err := tx.ExecContext(ctx, `RELEASE upsert_item`); err != nil {
+		return fmt.Errorf("release upsert savepoint for %s: %w", artifact.ID, err)
+	}
+	return nil
+}
+
+// upsertItemRowsTx writes the custody projection and then the items row for artifact.
+// Callers go through upsertItemTx, which holds the savepoint around both writes.
+func upsertItemRowsTx(ctx context.Context, tx *sql.Tx, artifact *models.Artifact) error {
 	if err := upsertCustodyReceiptsFromArtifactTx(ctx, tx, artifact); err != nil {
 		return err
 	}

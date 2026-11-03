@@ -207,10 +207,6 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB, opts ...Re
 					logger.Warn("failed to upsert artifact", "id", artifact.ID, "error", upsertErr)
 					continue
 				}
-				if custodyErr := upsertCustodyReceiptsFromArtifactTx(ctx, tx, artifact); custodyErr != nil {
-					logger.Warn("failed to upsert custody receipts", "id", artifact.ID, "error", custodyErr)
-					continue
-				}
 
 				if artifact.Level == 0 && isHierarchicalID(artifact.ID) {
 					level := strings.Count(artifact.ID, ".") + 1
