@@ -251,3 +251,15 @@ func TestRubberDuck_F11_OfferClearsAcceptOwnedFields(t *testing.T) {
 	assert.Empty(t, stored.IdempotencyRequestDigest, "idempotency_request_digest is set only on accept")
 	assert.Nil(t, stored.ApprovalProof, "approval_proof is set only on accept")
 }
+
+func TestRubberDuck_F12_VerifyRejectsInvalidEnvelope(t *testing.T) {
+	ctx := context.Background()
+	repo := custodyReviewStageAccepted(t)
+	env := custExecEnvelope(t, custExecShipment(t, repo.ws, repo.shipmentID))
+	env.Receipts[0].Entries[0].ChangeKind = "bogus_change_kind"
+	custodyReviewWriteEnvelope(t, repo.ws, repo.shipmentID, env)
+
+	result, err := VerifyCustodyState(ctx, repo.ws, CustodyVerifyOptions{ShipmentID: repo.shipmentID, Branch: custExecFeatureBranch})
+	require.ErrorIs(t, err, ErrUnsupportedCustodyChangeKind, "verify must validate the envelope before it emits verdicts")
+	assert.Empty(t, result.Verdicts)
+}
