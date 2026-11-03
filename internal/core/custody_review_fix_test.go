@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/softwaresalt/backlogit/internal/config"
-	"github.com/softwaresalt/backlogit/internal/events"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
