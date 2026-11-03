@@ -35,13 +35,15 @@ backlogit custody accept <shipment-id> [flags]
 ### Options
 
 ```text
-      --auth-token string        encoded operator approval token (required for operator_verified receipts)
-      --by string                accepting role or principal
-      --dry-run                  verify the acceptance without consuming a nonce or writing
-  -h, --help                     help for accept
-      --idempotency-key string   key that deduplicates retried accepts
-      --json                     emit JSON output (default)
-      --receipt-id string        offered receipt ID to accept
+      --auth-token string           encoded operator approval token (required for operator_verified receipts)
+      --by string                   accepting role or principal
+      --dry-run                     verify the acceptance without consuming a nonce or writing
+  -h, --help                        help for accept
+      --idempotency-key string      key that deduplicates retried accepts
+      --json                        emit JSON output (default)
+      --nonce-store-path string     external nonce store outside the workspace root (default $BACKLOGIT_CUSTODY_NONCE_STORE_PATH)
+      --operator-pins-file string   operator pins file outside the workspace root (default $BACKLOGIT_CUSTODY_OPERATOR_PINS_FILE)
+      --receipt-id string           offered receipt ID to accept
 ```
 
 ### Options inherited from parent commands

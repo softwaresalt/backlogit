@@ -32,9 +32,11 @@ backlogit custody verify <shipment-id> [flags]
 ### Options
 
 ```text
-      --branch string   work branch to evaluate against (defaults to the checked-out branch)
-  -h, --help            help for verify
-      --json            emit JSON output (default)
+      --branch string               work branch to evaluate against (defaults to the checked-out branch)
+  -h, --help                        help for verify
+      --json                        emit JSON output (default)
+      --nonce-store-path string     external nonce store outside the workspace root, read as a redemption source (default $BACKLOGIT_CUSTODY_NONCE_STORE_PATH)
+      --operator-pins-file string   operator pins file outside the workspace root (default $BACKLOGIT_CUSTODY_OPERATOR_PINS_FILE)
 ```
 
 ### Options inherited from parent commands
