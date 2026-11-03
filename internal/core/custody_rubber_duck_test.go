@@ -227,3 +227,27 @@ func TestRubberDuck_F9_PreviewRefusesDuplicatePaths(t *testing.T) {
 	_, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, custExecStageCandidate(), custExecStageCandidate()))
 	assert.ErrorIs(t, err, blerrors.ErrValidation, "preview must refuse the duplicate path that offer refuses")
 }
+
+func TestRubberDuck_F11_OfferClearsAcceptOwnedFields(t *testing.T) {
+	ctx := context.Background()
+	repo := custExecNewRepo(t)
+	custExecWrite(t, repo.root, custExecCovered, custExecRevised)
+	preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, custExecStageCandidate()))
+	require.NoError(t, err)
+
+	spec := duckStageOffer("rcpt-stage-ship-1", 1, preview.CandidateSetDigest)
+	spec.AcceptedAtUTC = time.Now().UTC()
+	spec.SupersedesReceiptID = "rcpt-forged"
+	spec.IdempotencyKey = "forged-key"
+	spec.IdempotencyRequestDigest = "forged-request-digest"
+	spec.ApprovalProof = &CustodyApprovalProof{KeyID: "forged-key-id"}
+	_, err = OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{ShipmentID: repo.shipmentID, Spec: spec})
+	require.NoError(t, err)
+
+	stored := custExecEnvelope(t, custExecShipment(t, repo.ws, repo.shipmentID)).Receipts[0]
+	assert.True(t, stored.AcceptedAtUTC.IsZero(), "accepted_at_utc is set only on accept")
+	assert.Empty(t, stored.SupersedesReceiptID, "supersedes_receipt_id is set only on accept")
+	assert.Empty(t, stored.IdempotencyKey, "idempotency_key is set only on accept")
+	assert.Empty(t, stored.IdempotencyRequestDigest, "idempotency_request_digest is set only on accept")
+	assert.Nil(t, stored.ApprovalProof, "approval_proof is set only on accept")
+}
