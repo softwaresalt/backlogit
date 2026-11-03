@@ -1215,7 +1215,7 @@ func custodyCandidateSetDigest(specs []CustodyCandidateSpec) (string, error) {
 // baseline digest by an earlier valid Profile A receipt. The caller-declared contributor and
 // source labels alone never grant Profile B.
 func custodyRequiredProfile(kind, producerRole, acceptingRole, allowedAction string, entries []CustodyEntry, adopted func(*CustodyEntry) bool) string {
-	if (kind == "preexisting_adoption" && allowedAction == "preexisting_adoption_commit") ||
+	if kind == "preexisting_adoption" || allowedAction == "preexisting_adoption_commit" ||
 		(producerRole == "operator" && acceptingRole == "operator") {
 		return custodyProfileOperator
 	}
