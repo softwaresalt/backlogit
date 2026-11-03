@@ -302,14 +302,32 @@ func validateCustodyRelPath(p string) (string, error) {
 			return "", fmt.Errorf("%w: %q has a segment with a trailing dot or space", ErrCustodyPathRejected, p)
 		case strings.ContainsRune(segment, ':'):
 			return "", fmt.Errorf("%w: %q has an alternate data stream or pathspec marker", ErrCustodyPathRejected, p)
-		case strings.ContainsRune(segment, '~'):
-			// Rejected in every segment: a lexical check cannot tell an 8.3 alias of .git from an ordinary name.
+		case custodyShortNameSegment(segment):
+			// An 8.3 alias such as GIT~1 can name .git, so it is refused; an ordinary tilde is not.
 			return "", fmt.Errorf("%w: %q has an 8.3 short-name segment", ErrCustodyPathRejected, p)
 		case custodyReservedDeviceName(segment):
 			return "", fmt.Errorf("%w: %q has a reserved device name", ErrCustodyPathRejected, p)
 		}
 	}
 	return p, nil
+}
+
+// custodyShortNameSegment reports whether segment ends its stem in an 8.3 alias marker: a
+// tilde followed by digits, then the end of the segment or an extension dot (GIT~1, PROGRA~1.TXT).
+func custodyShortNameSegment(segment string) bool {
+	for i := 0; i < len(segment); i++ {
+		if segment[i] != '~' {
+			continue
+		}
+		j := i + 1
+		for j < len(segment) && segment[j] >= '0' && segment[j] <= '9' {
+			j++
+		}
+		if j > i+1 && (j == len(segment) || segment[j] == '.') {
+			return true
+		}
+	}
+	return false
 }
 
 // custodyReservedDeviceName reports whether segment, ignoring any extension, is a DOS device
