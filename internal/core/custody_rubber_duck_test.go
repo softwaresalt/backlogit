@@ -3,9 +3,12 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
+	bldb "github.com/softwaresalt/backlogit/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -115,4 +118,32 @@ func TestRubberDuck_F1_ValidateCustodyEnvelopeRevisionRules(t *testing.T) {
 		stale := duckAcceptedReceipt("rcpt-stale", 1, custodyReceiptAccepted)
 		assert.Error(t, ValidateCustodyEnvelope(base(active, stale)))
 	})
+}
+
+func TestRubberDuck_F3_RollbackRestoresPreimageWithoutDBOnlyLinks(t *testing.T) {
+	ctx := context.Background()
+	repo := custExecNewRepo(t)
+	target, err := CreateArtifact(ctx, repo.ws, "Duck link target", "feature")
+	require.NoError(t, err)
+	require.NoError(t, bldb.AddLink(ctx, repo.ws.DB, repo.shipmentID, target.ID, "related_to"))
+
+	pre := custExecShipment(t, repo.ws, repo.shipmentID)
+	path, err := FindArtifactPath(ctx, repo.ws, repo.shipmentID)
+	require.NoError(t, err)
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.False(t, strings.Contains(string(before), target.ID), "precondition: the link exists only in SQLite")
+
+	correlationID, err := custodyRandomID()
+	require.NoError(t, err)
+	journal := custExecJournal(repo.shipmentID, correlationID, shipmentOperationPhaseIntent, shipmentOperationCustodyOffer, custodyReceiptOffered, pre)
+	journalPath, err := writeShipmentLifecycleJournalForWorkspace(repo.ws, "shipment-operation-"+correlationID+".json", journal)
+	require.NoError(t, err)
+	require.NoError(t, custodyWithLocks(ctx, repo.ws, repo.shipmentID, func(lockedCtx context.Context) error {
+		return custodyRollback(lockedCtx, repo.ws, journal, journalPath)
+	}))
+
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.NotContains(t, string(after), target.ID, "rollback must not add a link that was absent from the journaled preimage")
 }
