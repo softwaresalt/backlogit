@@ -420,7 +420,7 @@ operations:
 
   preview_custody:
     mcp_tool: "backlogit_custody_preview"
-    cli_command: "backlogit custody preview {{shipment_id}} --candidates {{candidates}}"
+    cli_command: "backlogit custody preview {{shipment_id}} --candidates {{candidates}} --branch {{branch}}"
     params:
       shipment_id: "shipment_id"
       candidates: "candidates"
@@ -447,7 +447,7 @@ operations:
 
   verify_custody:
     mcp_tool: "backlogit_custody_verify"
-    cli_command: "backlogit custody verify {{shipment_id}}"
+    cli_command: "backlogit custody verify {{shipment_id}} --branch {{branch}}"
     params:
       shipment_id: "shipment_id"
       branch: "branch"
