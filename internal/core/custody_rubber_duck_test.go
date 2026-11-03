@@ -264,6 +264,20 @@ func TestRubberDuck_F12_VerifyRejectsInvalidEnvelope(t *testing.T) {
 	assert.Empty(t, result.Verdicts)
 }
 
+func TestRubberDuck_F2_AdoptRefusesRenamingCustodyShipment(t *testing.T) {
+	ctx := context.Background()
+	repo := custodyReviewStageAccepted(t)
+	destination, err := CreateArtifact(ctx, repo.ws, "Duck destination feature", "feature")
+	require.NoError(t, err)
+
+	_, err = AdoptItem(ctx, repo.ws, repo.shipmentID, destination.ID)
+	require.Error(t, err, "adopt must not rename a shipment whose custody envelope names its current ID")
+	assert.ErrorIs(t, err, blerrors.ErrValidation)
+
+	env := custExecEnvelope(t, custExecShipment(t, repo.ws, repo.shipmentID))
+	assert.Equal(t, repo.shipmentID, env.ShipmentID, "the envelope must keep naming the shipment that still exists")
+}
+
 func TestRubberDuck_F16_UnpairedRenameGroupIsReportedDeterministically(t *testing.T) {
 	entry := func(path, group string) CustodyEntry {
 		return CustodyEntry{
