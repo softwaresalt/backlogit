@@ -611,23 +611,30 @@ func custodyVerifyOperatorAdoption(ws *Workspace, env WorkflowCustodyEnvelope, r
 		return fmt.Errorf("%w: proof signature does not verify", ErrAuthorizationRejected)
 	}
 	if !custodyRedeemed(ws, env.ShipmentID, receipt.ReceiptID, proof) {
-		return fmt.Errorf("%w: no redemption of nonce for request identity in the NonceLedger or shipment item log", ErrAuthorizationRejected)
+		return fmt.Errorf("%w: no redemption of nonce for request identity within the approval token window in the NonceLedger or shipment item log", ErrAuthorizationRejected)
 	}
 	return nil
 }
 
-// custodyRedeemed reports whether proof's nonce was consumed against its request identity.
-// The NonceLedger projection is checked first, then the shipment item log. A ledger record
-// without consumed_at does not prove redemption. A missing or unreadable source counts as
-// no redemption.
+// custodyRedeemed reports whether proof's nonce was consumed against its request identity at an
+// instant inside proof's [not_before, not_after] window. The NonceLedger projection is checked
+// first, then the shipment item log. A ledger record without consumed_at does not prove
+// redemption, and a ledger record consumed outside the window fails closed without consulting
+// the log. A missing or unreadable source counts as no redemption.
 func custodyRedeemed(ws *Workspace, shipmentID, receiptID string, proof CustodyApprovalProof) bool {
 	if ledger, err := OpenNonceLedger(custodyNonceLedgerPath(ws.RootPath)); err == nil {
 		digest, consumedAt, found, err := ledger.BoundConsumption(proof.Nonce)
 		if err == nil && found && digest == proof.RequestIdentityDigest && !consumedAt.IsZero() {
-			return true
+			return custodyWithinTokenWindow(consumedAt, proof)
 		}
 	}
-	return custodyLogRedeemed(ws.RootPath, shipmentID, receiptID, proof)
+	consumedAt, ok := custodyLogRedemption(ws.RootPath, shipmentID, receiptID, proof)
+	return ok && custodyWithinTokenWindow(consumedAt, proof)
+}
+
+// custodyWithinTokenWindow reports whether consumedAt lies inside proof's validity window.
+func custodyWithinTokenWindow(consumedAt time.Time, proof CustodyApprovalProof) bool {
+	return !consumedAt.Before(proof.NotBeforeUTC) && !consumedAt.After(proof.NotAfterUTC)
 }
 
 // custodyConsumedAt returns the consume time the NonceLedger recorded for nonce, which the
@@ -647,17 +654,18 @@ func custodyConsumedAt(ws *Workspace, nonce string) (time.Time, error) {
 	return consumedAt, nil
 }
 
-// custodyLogRedeemed reports whether the shipment item log holds an accept or adoption
-// event for receiptID with proof's nonce and request identity digest.
-func custodyLogRedeemed(root, shipmentID, receiptID string, proof CustodyApprovalProof) bool {
+// custodyLogRedemption returns the consume time recorded on the shipment item log's accept or
+// adoption event for receiptID with proof's nonce and request identity digest. Only an event that
+// carries a parseable consumed_at proves redemption.
+func custodyLogRedemption(root, shipmentID, receiptID string, proof CustodyApprovalProof) (time.Time, bool) {
 	f, err := openCustodyNoFollow(events.LogPathForItem(WorkspaceLogsRoot(root), shipmentID))
 	if err != nil {
-		return false
+		return time.Time{}, false
 	}
 	defer func() { _ = f.Close() }()
 	data, err := custodyReadBounded(f, custodyMaxReadBytes)
 	if err != nil {
-		return false
+		return time.Time{}, false
 	}
 	for _, line := range bytes.Split(data, []byte("\n")) {
 		var ev events.Event
@@ -667,12 +675,18 @@ func custodyLogRedeemed(root, shipmentID, receiptID string, proof CustodyApprova
 		if ev.EventType != EventCustodyHandoffAccepted && ev.EventType != EventCustodyAdoptionRecorded {
 			continue
 		}
-		if ev.Delta["receipt_id"] == receiptID && ev.Delta["nonce"] == proof.Nonce &&
-			ev.Delta["request_identity_digest"] == proof.RequestIdentityDigest {
-			return true
+		if ev.Delta["receipt_id"] != receiptID || ev.Delta["nonce"] != proof.Nonce ||
+			ev.Delta["request_identity_digest"] != proof.RequestIdentityDigest {
+			continue
 		}
+		raw, _ := ev.Delta["consumed_at"].(string)
+		consumedAt, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			continue
+		}
+		return consumedAt, true
 	}
-	return false
+	return time.Time{}, false
 }
 
 func custodyNonceLedgerPath(root string) string {
