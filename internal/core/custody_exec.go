@@ -1243,13 +1243,18 @@ func custodyCandidateSetDigest(specs []CustodyCandidateSpec) (string, error) {
 }
 
 // custodyRequiredProfile returns the authority profile the covered entries require.
-// Profile A is mandatory for the operator triggers. Profile B is permitted only when every
-// entry path, and any old path, is inside .backlogit/ or docs/, or was adopted at its exact
-// baseline digest by an earlier valid Profile A receipt. The caller-declared contributor and
-// source labels alone never grant Profile B.
+// Profile A is mandatory for the operator triggers and for every kind except
+// stage_to_ship_handoff. Profile B is permitted only for stage_to_ship_handoff, and only when
+// every entry path, and any old path, is inside .backlogit/ or docs/, or was adopted at its
+// exact baseline digest by an earlier valid Profile A receipt. The caller-declared contributor
+// and source labels alone never grant Profile B. An empty kind is a preview with no receipt
+// yet, so only the entry rules apply.
 func custodyRequiredProfile(kind, producerRole, acceptingRole, allowedAction string, entries []CustodyEntry, adopted func(*CustodyEntry) bool) string {
 	if kind == "preexisting_adoption" || allowedAction == "preexisting_adoption_commit" ||
 		(producerRole == "operator" && acceptingRole == "operator") {
+		return custodyProfileOperator
+	}
+	if kind != "" && kind != "stage_to_ship_handoff" {
 		return custodyProfileOperator
 	}
 	for i := range entries {
@@ -1285,16 +1290,18 @@ func custodyPathInHandoffScope(p string) bool {
 }
 
 // custodyAdoptedFunc reports whether an entry was adopted at its exact baseline digest by an
-// earlier, fully verified Profile A receipt in env. A path with no baseline blob is never
-// treated as adopted, because it has no baseline digest to match.
+// earlier, fully verified, unexpired Profile A receipt in env. A path with no baseline blob is
+// never treated as adopted, because it has no baseline digest to match.
 func custodyAdoptedFunc(ws *Workspace, env WorkflowCustodyEnvelope, trust custodyTrust) func(*CustodyEntry) bool {
 	return func(entry *CustodyEntry) bool {
 		if entry.BaseBlobSHA256 == "" {
 			return false
 		}
+		now := time.Now().UTC()
 		for i := range env.Receipts {
 			prior := env.Receipts[i]
-			if prior.AuthorityProfile != custodyProfileOperator || prior.Status != custodyReceiptAccepted {
+			if prior.AuthorityProfile != custodyProfileOperator || prior.Status != custodyReceiptAccepted ||
+				custodyReceiptExpired(prior, now) {
 				continue
 			}
 			if custodyVerifyOperatorAdoption(ws, env, prior, trust) != nil {
