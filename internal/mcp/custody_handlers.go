@@ -211,8 +211,10 @@ func (s *Server) handleCustodyVerify(ctx context.Context, request mcplib.CallToo
 	logger.Info("custody tool invoked", "tool", "backlogit_custody_verify", "shipment_id", shipmentID)
 
 	verified, err := core.VerifyCustodyState(ctx, ws, core.CustodyVerifyOptions{
-		ShipmentID: shipmentID,
-		Branch:     branch,
+		ShipmentID:       shipmentID,
+		Branch:           branch,
+		OperatorPinsPath: core.CustodyPathFromFlagOrEnv("", core.CustodyOperatorPinsEnv),
+		NonceStorePath:   core.CustodyPathFromFlagOrEnv("", core.CustodyNonceStoreEnv),
 	})
 	if err != nil {
 		return custodyError("custody verify", err), nil
@@ -278,12 +280,14 @@ func (s *Server) handleCustodyAccept(ctx context.Context, request mcplib.CallToo
 		"shipment_id", shipmentID, "receipt_id", receiptID, "dry_run", dryRun, "db_unavailable", degraded)
 
 	accepted, err := core.AcceptCustodyHandoff(ctx, ws, core.CustodyAcceptOptions{
-		ShipmentID:     shipmentID,
-		ReceiptID:      receiptID,
-		By:             by,
-		IdempotencyKey: idempotencyKey,
-		AuthToken:      authToken,
-		DryRun:         dryRun,
+		ShipmentID:       shipmentID,
+		ReceiptID:        receiptID,
+		By:               by,
+		IdempotencyKey:   idempotencyKey,
+		AuthToken:        authToken,
+		OperatorPinsPath: core.CustodyPathFromFlagOrEnv("", core.CustodyOperatorPinsEnv),
+		NonceStorePath:   core.CustodyPathFromFlagOrEnv("", core.CustodyNonceStoreEnv),
+		DryRun:           dryRun,
 	})
 	if err != nil {
 		return custodyError("custody accept", err), nil
