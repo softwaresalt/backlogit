@@ -418,6 +418,40 @@ operations:
       force: "force"
       reason: "reason"
 
+  preview_custody:
+    mcp_tool: "backlogit_custody_preview"
+    mcp_only: true
+    params:
+      shipment_id: "shipment_id"
+      candidates: "candidates"
+      branch: "branch"
+
+  offer_custody:
+    mcp_tool: "backlogit_custody_offer"
+    mcp_only: true
+    params:
+      shipment_id: "shipment_id"
+      spec: "spec"
+      dry_run: "dry_run"
+
+  accept_custody:
+    mcp_tool: "backlogit_custody_accept"
+    mcp_only: true
+    params:
+      shipment_id: "shipment_id"
+      receipt_id: "receipt_id"
+      by: "by"
+      idempotency_key: "idempotency_key"
+      auth_token: "auth_token"
+      dry_run: "dry_run"
+
+  verify_custody:
+    mcp_tool: "backlogit_custody_verify"
+    mcp_only: true
+    params:
+      shipment_id: "shipment_id"
+      branch: "branch"
+
   return_blocked:
     mcp_tool: "backlogit_return_blocked"
     cli_command: "backlogit shipment return-blocked --shipment {{shipment_id}} --item {{item_id}} --reason {{reason}}"
@@ -751,3 +785,4 @@ features:
   deliberation: true
   discovery: true
   lifecycle_hygiene: true
+  workflow_custody: true
