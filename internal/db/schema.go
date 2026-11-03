@@ -392,6 +392,32 @@ func EnsureSchema(db *sql.DB) error {
 			head_sha     TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_gate_evidence_status ON gate_evidence(gate_status)`,
+		// custody_receipts is a derived projection of the receipts in a shipment's
+		// custom_fields.workflow_custody envelope (210.005-T). The Markdown shipment
+		// remains the source of truth; rows are replaced per shipment on every item
+		// upsert and fully rebuilt on Rehydrate.
+		`CREATE TABLE IF NOT EXISTS custody_receipts (
+			shipment_id          TEXT NOT NULL,
+			receipt_id           TEXT NOT NULL,
+			workflow_id          TEXT,
+			scope_branch         TEXT,
+			base_commit_sha      TEXT,
+			revision             INTEGER,
+			kind                 TEXT,
+			authority_profile    TEXT,
+			status               TEXT,
+			producer_role        TEXT,
+			accepting_role       TEXT,
+			allowed_action       TEXT,
+			candidate_set_digest TEXT,
+			offered_at_utc       TEXT,
+			accepted_at_utc      TEXT,
+			expires_at_utc       TEXT,
+			entries_json         TEXT,
+			PRIMARY KEY (shipment_id, receipt_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_custody_receipts_shipment ON custody_receipts(shipment_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_custody_receipts_workflow ON custody_receipts(workflow_id)`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS item_log_entries_fts USING fts5(
 			item_id UNINDEXED,
 			actor,

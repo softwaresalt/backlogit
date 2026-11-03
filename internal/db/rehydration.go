@@ -173,6 +173,9 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB, opts ...Re
 		if _, err := tx.ExecContext(ctx, `DELETE FROM item_links`); err != nil {
 			return fmt.Errorf("clear item_links: %w", err)
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM custody_receipts`); err != nil {
+			return fmt.Errorf("clear custody_receipts: %w", err)
+		}
 		return tx.Commit()
 	}); clearErr != nil {
 		return 0, clearErr
@@ -202,6 +205,10 @@ func Rehydrate(ctx context.Context, workspacePath string, db *sql.DB, opts ...Re
 				artifact := ca.artifact
 				if upsertErr := upsertItemTx(ctx, tx, artifact); upsertErr != nil {
 					logger.Warn("failed to upsert artifact", "id", artifact.ID, "error", upsertErr)
+					continue
+				}
+				if custodyErr := upsertCustodyReceiptsFromArtifactTx(ctx, tx, artifact); custodyErr != nil {
+					logger.Warn("failed to upsert custody receipts", "id", artifact.ID, "error", custodyErr)
 					continue
 				}
 

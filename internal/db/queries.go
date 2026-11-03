@@ -128,50 +128,22 @@ func scanArtifactRow(row rowScanner) (*models.Artifact, error) {
 	return &a, nil
 }
 
-// UpsertItem inserts or replaces an artifact in the index.
+// UpsertItem inserts or replaces an artifact in the index. The items row and its
+// custody_receipts projection are written in one transaction and commit or roll
+// back together.
 func UpsertItem(ctx context.Context, db *sql.DB, artifact *models.Artifact) error {
-	cf, err := json.Marshal(artifact.CustomFields)
-	if err != nil {
-		return fmt.Errorf("marshal custom fields: %w", err)
-	}
-
-	labelsJSON, err := json.Marshal(artifact.Labels)
-	if err != nil {
-		return fmt.Errorf("marshal labels: %w", err)
-	}
-	depsJSON, err := json.Marshal(artifact.Dependencies)
-	if err != nil {
-		return fmt.Errorf("marshal dependencies: %w", err)
-	}
-	refsJSON, err := json.Marshal(artifact.References)
-	if err != nil {
-		return fmt.Errorf("marshal references: %w", err)
-	}
-
-	// Store JSON slice fields as NULL when empty to keep rows tidy.
-	labelsVal := nullString(string(labelsJSON))
-	if string(labelsJSON) == "null" {
-		labelsVal = sql.NullString{}
-	}
-	depsVal := nullString(string(depsJSON))
-	if string(depsJSON) == "null" {
-		depsVal = sql.NullString{}
-	}
-	refsVal := nullString(string(refsJSON))
-	if string(refsJSON) == "null" {
-		refsVal = sql.NullString{}
-	}
-
 	return RetryWrite(ctx, func() error {
-		stmt, args, stmtErr := buildUpsertItemStatement(ctx, db, artifact, string(cf), labelsVal, depsVal, refsVal)
-		if stmtErr != nil {
-			return fmt.Errorf("build upsert item %s: %w", artifact.ID, stmtErr)
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin upsert item transaction: %w", err)
 		}
-		// Use a distinct variable (execErr) rather than reassigning the outer err
-		// so the closure does not shadow the earlier marshalling errors.
-		_, execErr := db.ExecContext(ctx, stmt, args...)
-		if execErr != nil {
-			return fmt.Errorf("upsert item %s: %w", artifact.ID, execErr)
+		defer tx.Rollback() //nolint:errcheck
+
+		if err := upsertItemTx(ctx, tx, artifact); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit upsert item: %w", err)
 		}
 		return nil
 	})
@@ -381,6 +353,7 @@ var cascadeSteps = []deleteStep{
 	{table: "item_deps", col: "depends_on"},
 	{table: "stash_links", col: "item_id"},
 	{table: "commit_links", col: "item_id"},
+	{table: "custody_receipts", col: "shipment_id"},
 }
 
 // DeleteItemCascade removes an artifact and all its related rows (deps, links,
@@ -631,8 +604,12 @@ func RewriteAncillaryReferences(ctx context.Context, tx *sql.Tx, oldID, newID, n
 }
 
 // DeleteItemTx removes an item from the items table within an existing
-// transaction. Returns ErrNotFound when no row matched the ID.
+// transaction, along with its custody_receipts projection. Returns ErrNotFound
+// when no row matched the ID.
 func DeleteItemTx(ctx context.Context, tx *sql.Tx, id string) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM custody_receipts WHERE shipment_id = ?`, id); err != nil {
+		return fmt.Errorf("delete custody receipts for %s: %w", id, err)
+	}
 	result, err := tx.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete item %s: %w", id, err)
@@ -645,49 +622,8 @@ func DeleteItemTx(ctx context.Context, tx *sql.Tx, id string) error {
 }
 
 // UpsertItemTx inserts or replaces an artifact in the items table within an
-// existing transaction. Mirrors UpsertItem's column set and value formatting
-// (including hierarchy_path and RFC3339Nano timestamps) to ensure scan
-// compatibility via scanArtifactRow.
+// existing transaction, including its custody_receipts projection. It shares
+// upsertItemTx's field mapping, so scanArtifactRow reads the rows back unchanged.
 func UpsertItemTx(ctx context.Context, tx *sql.Tx, artifact *models.Artifact) error {
-	cf, err := json.Marshal(artifact.CustomFields)
-	if err != nil {
-		return fmt.Errorf("marshal custom fields: %w", err)
-	}
-
-	labelsJSON, err := json.Marshal(artifact.Labels)
-	if err != nil {
-		return fmt.Errorf("marshal labels: %w", err)
-	}
-	depsJSON, err := json.Marshal(artifact.Dependencies)
-	if err != nil {
-		return fmt.Errorf("marshal dependencies: %w", err)
-	}
-	refsJSON, err := json.Marshal(artifact.References)
-	if err != nil {
-		return fmt.Errorf("marshal references: %w", err)
-	}
-
-	// Store JSON slice fields as NULL when empty to keep rows tidy.
-	labelsVal := nullString(string(labelsJSON))
-	if string(labelsJSON) == "null" {
-		labelsVal = sql.NullString{}
-	}
-	depsVal := nullString(string(depsJSON))
-	if string(depsJSON) == "null" {
-		depsVal = sql.NullString{}
-	}
-	refsVal := nullString(string(refsJSON))
-	if string(refsJSON) == "null" {
-		refsVal = sql.NullString{}
-	}
-
-	stmt, args, err := buildUpsertItemStatement(ctx, tx, artifact, string(cf), labelsVal, depsVal, refsVal)
-	if err != nil {
-		return fmt.Errorf("build upsert item %s: %w", artifact.ID, err)
-	}
-	_, err = tx.ExecContext(ctx, stmt, args...)
-	if err != nil {
-		return fmt.Errorf("upsert item %s: %w", artifact.ID, err)
-	}
-	return nil
+	return upsertItemTx(ctx, tx, artifact)
 }
