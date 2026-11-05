@@ -105,17 +105,22 @@ backlog artifacts already landed on `origin/main` via commits
 
 Following validation of the resumed phase, Stage resolved only its own selected
 checkpoint via `backlogit_resolve_checkpoint(filename: "checkpoint-20261105-075234.json")`
-at `2026-11-05T23:30:19.2525963Z`. Active checkpoint enumeration now returns
+at `2026-11-05T23:30:19Z` (official resolution response time, rounded to
+seconds). Active checkpoint enumeration at Stage completion returned
 `total: 0`, `needs_quarantine: 0`, and `quarantined: 0`.
 
-Multi-persona review (Constitution, Scope Boundary, Correctness,
+Stage's preliminary single-agent lens review (Constitution, Scope Boundary, Correctness,
 Maintainability, Architecture, and Agent-Native Parity lenses) and adversarial
 decision/diff review (`mode: report-only`,
 `dispatch_mode: single-agent-declared-degradation` for direct-read bounded
-evidence) completed with zero P0/P1/P2 findings and verdict `READY`.
+evidence) reported zero P0/P1/P2 findings and a preliminary verdict `READY`.
+That preliminary verdict did not satisfy the operator's independent
+multi-persona and multi-model pre-PR review requirement. The Orchestrator
+must complete that gate separately before submitting the staging PR.
 
-Current-session compaction (`compact-context`) was evaluated as a safe no-op:
+At Stage completion, current-session compaction (`compact-context`) was
+evaluated as a safe no-op:
 all `212-S` through `215-S` release units remain queued, and the parent's
-uncommitted `docs/memory/2026-11-05/dark-212-215-startup-recovery-halt-memory.md`
-is preserved untouched for the Orchestrator's Step 1.5 Continuity Carry-Forward
+then-uncommitted `docs/memory/2026-11-05/dark-212-215-startup-recovery-halt-memory.md`
+was preserved untouched for the Orchestrator's Step 1.5 Continuity Carry-Forward
 Carve-Out on staging branch `chore/stage-215-S`.

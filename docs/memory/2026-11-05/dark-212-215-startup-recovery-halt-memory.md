@@ -4,6 +4,7 @@ date: "2026-11-05"
 created_at: "2026-11-05T22:40:11Z"
 agent: "orchestrator"
 status: "superseded"
+superseded_by: "docs/memory/2026-11-05/stage-215-s-checkpoint-recovery-memory.md"
 scope: ["212-S", "213-S", "214-S", "215-S"]
 ---
 
@@ -16,11 +17,15 @@ review, replies after fixing commits are pushed, and programmatic thread
 resolution before merge.
 
 Admin bypass and additional destructive operations are not pre-authorized.
+Normal merge commits require green required checks, completed current-HEAD
+Copilot review, disposition of every finding, and safe local main
+fast-forward synchronization. Post-merge closure must finish before the
+next shipment.
 The last completed shipment is none; the requested next shipment is 212-S.
 The DAG and eligibility gates have not run because startup recovery halted
 before state assessment. No shipment or task was claimed.
 
-## Evidence and halt
+## Historical startup evidence and halt
 
 Initial main was clean at commit
 `0e296aa2b13ddd5c6b42e71433d0c89df099a8cc`, with one worktree.
@@ -48,16 +53,16 @@ The full enumeration also contains resolved checkpoint
 summary omission as a missing required field; the correction below records
 the official inspection result.
 
-`DARK_MODE_HALTED`: operator handoff is required. The Orchestrator cannot
+At startup, `DARK_MODE_HALTED` required operator handoff. The Orchestrator could not
 select, restore, resolve, quarantine, prune, or bypass recovery records.
 An AFK operator and shipment merge authorization do not authorize those
-actions. No checkpoint state dump was read.
+actions. No checkpoint state dump had been read at that point.
 
 ## Safety and continuity
 
-Freeze-scope remains 212-S through 215-S. Pipeline execution has
-`ActionRisk: high`, `ActionResult: blocked`; containment is no claim, no
-implementation, no PR, and no merge. Checkpoint records remain unchanged.
+At the initial halt, freeze-scope was 212-S through 215-S and pipeline execution
+had `ActionRisk: high`, `ActionResult: blocked`; containment was no claim, no
+implementation, no PR, and no merge. Checkpoint records were unchanged.
 
 The first engram probe used unsupported `status` and exited 2. CLI help
 identified `workspace-status`, which succeeded; no search fallback occurred.
@@ -69,6 +74,10 @@ At the initial halt this continuity record was uncommitted. The authorized
 Stage recovery subsequently enabled Step 1.5 staging carry-forward.
 
 ## Authorized recovery and correction
+
+This section supersedes the historical startup halt above; the linked Stage
+recovery memory records the owner execution evidence. Recovery is resolved,
+but downstream staging and Ship gates remain required.
 
 The operator explicitly authorized Stage recovery of
 `checkpoint-20261105-075234.json` and disposition of the missing-hint
