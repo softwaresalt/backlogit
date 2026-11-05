@@ -1,7 +1,7 @@
 ---
 name: harvest
-description: "Decomposes a reviewed implementation plan into backlog feature/task/subtask hierarchy"
-argument-hint: "plan=docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md"
+description: "Decomposes a reviewed implementation plan into a configured backlog hierarchy"
+argument-hint: "plan=docs/plans/{YYYY-MM-DD}-{slug}-plan.md"
 input:
   properties:
     plan:
@@ -17,7 +17,7 @@ input:
 # Harvest Skill
 
 The `harvest` skill turns a reviewed implementation plan into backlog
-feature, task, and subtask items. It is the reusable decomposition step
+feature or chore, task, and optional subtask items. It is the reusable decomposition step
 invoked by the stage agent.
 
 This skill does not perform planning or review. It assumes the incoming
@@ -113,11 +113,11 @@ not commit; the commit is the enclosing Stage step, which this gate precedes.
 
 Extract the planning data needed for decomposition:
 
-1. Root feature title from frontmatter and top-level headings.
+1. Covering feature or chore title from frontmatter and top-level headings.
 2. Problem frame, requirements trace, decisions, and standards check
-   for the root feature description.
+   for the covering parent description.
 3. Task candidates from each implementation unit.
-4. Subtask candidates from file lists, acceptance criteria, verification
+4. Optional subtask candidates from file lists, acceptance criteria, verification
    steps, and test surfaces inside each implementation unit.
 5. Dependency edges from the plan's dependency graph.
 
@@ -128,10 +128,13 @@ the plan mentions existing code locations that need confirmation.
 
 Map the plan into the backlog hierarchy:
 
-* one feature representing the whole reviewed plan
-* one task per implementation unit
-* one or more subtasks per file group, verification slice, or explicit
-  execution step inside the unit
+* one covering feature or chore representing the whole reviewed plan
+* one or more atomic tasks per implementation unit directly under that parent
+* optional subtasks under tasks only when configured metadata permits them and
+  granularity requires them
+
+Plan headings are conceptual groups, not required work items. Do not invent
+an epic or sub-epic type.
 
 Before creating anything, apply backlog shaping rules:
 
@@ -143,15 +146,15 @@ Before creating anything, apply backlog shaping rules:
    back to the plan.
 
 **Parent-first ordering (NON-NEGOTIABLE):** Tasks require a `parent_id`
-referencing an existing feature. The root feature MUST be created before any
-tasks are created. If the harvest context does not include an existing parent
-feature for task-kind work items, create or identify one before proceeding.
+referencing an existing covering feature or chore whose configured allowed
+children include task. Create or identify that parent before creating tasks.
+Validate optional subtask parent edges against the configured types as well.
 Omitting `parent_id` for task-kind artifacts violates the required
 parent-child hierarchy (P-003 decomposition integrity) and may be blocked by
 the configured backlog registry or policy gates.
 
 When the `backlogit` capability pack is installed and the registry advertises
-`features.shipments: true`, the parent feature MUST be added to the shipment
+`features.shipments: true`, the covering parent MUST be added to the shipment
 before its child tasks during shipment assembly. This ordering is enforced
 downstream by the Ship agent — flag it explicitly in the harvest report so
 Ship can assemble the shipment correctly.
@@ -160,22 +163,21 @@ Ship can assemble the shipment correctly.
 
 If `${input:dry_run}` is `true`:
 
-1. Produce the proposed feature, task, subtask, and dependency structure.
+1. Produce the proposed parent, task, optional subtask, and dependency structure.
 2. Broadcast the dry-run counts.
 3. Do not call backlog mutation tools.
 
 If `${input:dry_run}` is `false`:
 
-1. Query the backlog first to avoid duplicate root features.
+1. Query the backlog first to avoid duplicate covering parents.
    Use `backlogit_list_items` or `backlogit_search_items` to check for existing
    items with matching titles.
-2. Create the root feature via `backlogit_create_item` or
-   `backlogit add`.
-3. Create one task per implementation unit under that feature.
-4. Create granular subtasks under each task.
+2. Create or identify the covering feature or chore via the backlog tool.
+3. Create atomic tasks directly under that parent for each implementation unit.
+4. Create subtasks only when allowed and needed for granularity.
 5. Wire dependencies when the backlog tool supports dependency operations
    (check the backlog registry for availability).
-6. Broadcast each created feature, task, and dependency edge as it is
+6. Broadcast each created parent, task, and dependency edge as it is
    written.
 
 ### Phase 5: Verify and report

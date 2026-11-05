@@ -1,7 +1,7 @@
 ---
 name: harvest
-description: "Decomposes a reviewed implementation plan into backlogit feature/task/subtask hierarchy"
-argument-hint: "plan=docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md"
+description: "Decomposes a reviewed implementation plan into a configured backlogit hierarchy"
+argument-hint: "plan=docs/plans/{YYYY-MM-DD}-{slug}-plan.md"
 input:
   properties:
     plan:
@@ -17,7 +17,7 @@ input:
 # Harvest Skill
 
 The `harvest` skill turns a reviewed implementation plan into backlogit
-feature, task, and subtask items. It is the reusable decomposition step for the
+feature or chore, task, and optional subtask items. It is the reusable decomposition step for the
 Stage workflow and replaces the embedded harvest phase inside the legacy
 `backlog-harvester` agent.
 
@@ -64,11 +64,11 @@ continue locally.
 
 Extract the planning data needed for decomposition:
 
-1. Root feature title from frontmatter and top-level headings.
+1. Covering feature or chore title from frontmatter and top-level headings.
 2. Problem frame, requirements trace, decisions, and standards check for the
-   root feature description.
+   covering parent description.
 3. Task candidates from each implementation unit.
-4. Subtask candidates from file lists, acceptance criteria, verification steps,
+4. Optional subtask candidates from file lists, acceptance criteria, verification steps,
    and test surfaces inside each implementation unit.
 5. Dependency edges from the plan's dependency graph.
 
@@ -79,10 +79,13 @@ mentions existing code locations that need confirmation.
 
 Map the plan into the backlogit hierarchy:
 
-* one feature representing the whole reviewed plan
-* one task per implementation unit
-* one or more subtasks per file group, verification slice, or explicit
-  execution step inside the unit
+* one covering feature or chore representing the whole reviewed plan
+* one or more atomic tasks per implementation unit directly under that parent
+* optional subtasks under tasks only when configured metadata permits them and
+  granularity requires them
+
+Plan headings are conceptual groups, not required work items. Do not invent
+an epic or sub-epic type.
 
 Before creating anything, apply the same backlog shaping rules that governed the
 legacy decomposition path:
@@ -94,29 +97,28 @@ legacy decomposition path:
    to the plan.
 
 **Parent-first ordering (NON-NEGOTIABLE):** Tasks require a `parent_id`
-referencing an existing feature. The root feature MUST be created before any
-tasks are created. Within each feature group, the parent feature MUST be added
-to a shipment before its child tasks. If the harvest context does not include an
-existing parent feature for task-kind work items, create or identify one before
-proceeding. Omitting `parent_id` for task-kind artifacts will be rejected by the
-hierarchy enforcement layer.
+referencing an existing covering feature or chore whose configured allowed
+children include task. Create or identify that parent before creating tasks.
+Validate optional subtask parent edges against the configured types as well.
+Add the covering parent to a shipment before its child tasks. Omitting
+`parent_id` for task-kind artifacts violates the required hierarchy.
 
 ### Phase 4: Execute or preview
 
 If `${input:dry_run}` is `true`:
 
-1. Produce the proposed feature, task, subtask, and dependency structure.
+1. Produce the proposed parent, task, optional subtask, and dependency structure.
 2. Broadcast the dry-run counts.
 3. Do not call backlogit mutation tools.
 
 If `${input:dry_run}` is `false`:
 
-1. Query backlogit first to avoid duplicate root features.
-2. Create the root feature.
-3. Create one task per implementation unit under that feature.
-4. Create granular subtasks under each task.
+1. Query backlogit first to avoid duplicate covering parents.
+2. Create or identify the covering feature or chore.
+3. Create atomic tasks directly under that parent for each implementation unit.
+4. Create subtasks only when allowed and needed for granularity.
 5. Wire dependencies with backlogit dependency operations.
-6. Broadcast each created feature, task, and dependency edge as it is written.
+6. Broadcast each created parent, task, and dependency edge as it is written.
 
 ### Phase 5: Verify and report
 

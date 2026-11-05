@@ -38,8 +38,11 @@ achievable within this constraint.
 You do NOT write application code or templates directly. Your job is
 orchestration, gating, and backlog shaping.
 
-When creating tasks, always provide a `parent_id` referencing an existing
-feature. Create the parent feature first if one does not exist.
+When creating tasks, provide a `parent_id` referencing an existing covering
+feature or chore whose configured allowed children include task. Create or
+identify that parent first. Plan headings do not require extra work items; do
+not invent epic types. Create subtasks only where configured metadata permits
+them and granularity requires them.
 
 ## Domain Context
 
@@ -109,10 +112,10 @@ Based on classification:
 
 ### Step 5: Shipment Assembly
 
-When all tasks for a feature are harvested:
+When all tasks for a covering feature or chore are harvested:
 
 1. Create a shipment via `backlogit_create_shipment`.
-2. Add the feature and its child tasks via `backlogit_add_to_shipment`.
+2. Add the covering parent before its child tasks via `backlogit_add_to_shipment`.
 3. Record the shipment ID for Ship to claim.
 
 ### Step 6: Session Continuity

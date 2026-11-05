@@ -77,10 +77,11 @@ implementation, template/source/config mutation, shipment claim, PR preparation,
 or Ship execution. Stage MUST record the spike context and clean up the
 worktree or hand off findings before Ship begins execution.
 
-When creating tasks, always provide a `parent_id` referencing an existing
-feature. Create the parent feature first if one does not exist. Stash entries
-that are bare tasks or subtasks without a covering feature must be grouped under
-a synthesized covering feature before planning, harvest, or shipment assembly.
+When creating tasks, provide a `parent_id` referencing an existing covering
+feature or chore whose configured allowed children include task. Create or
+identify the parent first. Stash entries that are bare tasks or subtasks without
+a covering feature or chore must be grouped under a synthesized covering
+feature before planning, harvest, or shipment assembly.
 
 ## Environment Agnostic
 
@@ -492,7 +493,7 @@ Unless `skip_plan: true`:
 Acceptable source locations:
 
 * `docs/decisions/{file}.md` (deliberation outcomes and spike findings)
-* `docs/exec-plans/{file}.md` (when `skip_plan: true`)
+* `docs/plans/{file}.md` (when `skip_plan: true`)
 
 #### Step 3.2: Plan Hardening Gate (P-006)
 
@@ -590,8 +591,9 @@ Before creating any backlog entries, validate the decomposition chain:
 
 1. Source document exists at declared path
 2. Plan references source document
-3. Sub-epic candidates reference plan and the top-level feature or chore work item
-4. Task candidates reference parent sub-epic
+3. Task candidates reference the plan and the planned or existing covering feature or chore
+4. Each proposed task and optional subtask parent edge is permitted by the
+   configured parent/child types; verify the parent exists before creating its child
 5. Every task includes at least one acceptance criterion
 
 If any check fails, halt with a P-003 violation broadcast.
@@ -607,17 +609,15 @@ Create the top-level parent work item using the backlog tool's create operation 
 * Reference to the source document and plan
 * When the backlog tool supports explicit work-item kinds, use `artifact_type: "feature"` or `artifact_type: "chore"` accordingly
 
-#### Step 5.2: Create Sub-Epics
+#### Step 5.2: Create Tasks
 
-For each major implementation unit in the plan, create a sub-epic with:
+Decompose each major implementation unit into one or more atomic tasks directly
+under its covering feature or chore. Verify the configured parent/child types
+before creation. Plan headings are conceptual groupings and do not require
+extra work items; do not invent an epic or sub-epic type. Create subtasks under
+a task only when configured metadata permits them and granularity requires them.
 
-* Title matching the plan section
-* Parent reference to the top-level feature or chore via `parent_id`
-* Scope boundary description
-
-#### Step 5.3: Create Tasks
-
-For each sub-epic, create atomic tasks following these constraints:
+Apply these constraints:
 
 * **2-Hour Rule**: Fewer than 3 files, fewer than 5 functions, fewer than 4 test scenarios
 * **Width Isolation**: Single skill domain per task (code OR docs OR tests OR config)
@@ -628,7 +628,7 @@ Each task includes:
 
 * Title (action-oriented, 5-10 words)
 * Description with scope and approach
-* Parent sub-epic reference
+* Existing covering feature or chore reference via `parent_id`
 * Acceptance criteria
 * Suggested execution posture (test-first, characterization-first, migration-first, spike)
 
@@ -649,14 +649,14 @@ of Stage — the shipment ID is the handoff token to Ship. Skipping this step an
 directing the operator to Ship without a shipment ID is a **P-005 policy violation**.
 
 1. **Check for an existing shipment in `queued` status** that already covers the
-   harvested feature scope using `backlogit_list_shipments`. If one already exists for this
-   feature, add the newly harvested tasks to it rather than creating a duplicate.
+   harvested covering scope using `backlogit_list_shipments`. If one already exists for this
+   feature or chore, add the newly harvested tasks to it rather than creating a duplicate.
 
 2. **Create the shipment** (when none exists):
-   * Use `backlogit_create_shipment` with a title derived from the covering feature title
-     **and** an initial `items` list containing the covering feature ID as the first item
-     (e.g., `[feature_id]`). If the installed registry explicitly supports empty shipment
-     creation, an empty `items` list is acceptable; otherwise prefer `[feature_id]` so the
+   * Use `backlogit_create_shipment` with a title derived from the covering parent title
+     **and** an initial `items` list containing the covering feature or chore ID as the first item
+     (e.g., `[parent_id]`). If the installed registry explicitly supports empty shipment
+     creation, an empty `items` list is acceptable; otherwise prefer `[parent_id]` so the
      create call is fully specified and parent-first ordering is satisfied at creation time.
    * Record the resulting `shipment_id` as the session output token.
    * Broadcast `[STAGE] Created shipment: {shipment_id} — "{title}"`.
@@ -669,11 +669,11 @@ directing the operator to Ship without a shipment ID is a **P-005 policy violati
    queue for unassigned items — use only the ID list the harvest step returned.
 
 4. **Add remaining items in parent-first, dependency order** using `backlogit_add_to_shipment`:
-   a. Ensure the covering feature is already present in the shipment before adding children;
-      when the shipment was just created, this is satisfied by including the feature in the
+   a. Ensure the covering parent is already present in the shipment before adding children;
+      when the shipment was just created, this is satisfied by including the parent in the
       initial `items` list instead of re-adding it.
    b. Add each task in dependency order (tasks with no unfinished upstream dependencies first).
-   c. Add each subtask immediately after its parent task.
+   c. Add each created subtask immediately after its parent task.
    d. If an item cannot be added (duplicate, already assigned to another shipment, or
       blocked), skip it and record the reason. Do not abort assembly over a single skipped item.
 
@@ -788,8 +788,8 @@ entry point differs.
 
 ### Invariants regardless of pattern
 
-* Every task in the shipment must have a covering feature as its parent.
-* The covering feature must be added to the shipment before any of its child tasks.
+* Every task in the shipment must have a configured allowed covering feature or chore as its parent.
+* The covering parent must be added to the shipment before any of its child tasks.
 * Stage does not hand off a bare list of tasks to Ship — it hands off a `shipment_id`.
 * The shipment ID must point to a valid, queryable shipment artifact with explicit item
   membership before Stage ends the session.
@@ -951,7 +951,7 @@ from the recorded next step rather than restarting the pipeline.
 * Never promote to plan without the operator's explicit confirmation of the deliberation outcome
 * Never synthesize a covering feature title without deliberation — the deliberate skill must validate the group's scope first
 * Never assemble a shipment from a harvest that produced no items or has unresolved P-003 violations
-* Never add a child task to a shipment before its covering feature has been added
+* Never add a child task to a shipment before its covering parent has been added
 * Never skip shipment assembly (Step 5.5) when `backlogit` is installed and `features.shipments: true` — the shipment ID is the mandatory handoff token to Ship
 * Never direct the operator to Ship with a feature ID instead of a shipment ID — Ship expects `shipment_id`, not `feature_id`
 * Never present the session summary (Step 6) before all applicable prior steps are confirmed complete
