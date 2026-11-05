@@ -10,7 +10,7 @@ docline:
     - 212-F
     - 213-F
   handoff_status: staged_and_queued
-  plan_path: docs/exec-plans/2026-11-04-multi-session-mcp-runtime-plan.md
+  plan_path: docs/plans/2026-11-04-multi-session-mcp-runtime-plan.md
   shipments:
     - 212-S
     - 213-S
@@ -106,3 +106,23 @@ title: 'Stage Memory — Completed Intake, Planning, Review, Harvest, and Shipme
 ## Next Step
 
 * Merge the Stage planning/backlog branch to `main` via an approved PR and run Ship's pre-claim gate before claiming `212-S` (followed by `213-S` and then `214-S`). Note: the shipment-specific closure-evidence exception on `211-S` does NOT transfer to `212-S`, `213-S`, or `214-S`.
+
+## Documentation Namespace Relocation
+
+* The active plan path is `docs/plans/2026-11-04-multi-session-mcp-runtime-plan.md`
+* The earlier `docs/exec-plans/` paths above record the original planning session
+* The relocation does not change the approved plan, backlog scope, or shipment membership
+* Source, configuration, and harness reference updates remain for the serial Ship follow-up
+* Targeted authoring lint passed; the optional reference check reported five unchanged SDK source anchors
+* The five SDK anchor warnings are pre-existing optional findings, not authoring-gate failures
+* Canonical self-source fields were corrected for 136 existing plans; `002-SP` retains its original captured stash text
+* Validation and source, configuration, and harness edits are pending serial Ship ownership; no commit or push was made
+
+## Separate Namespace Maintenance Intake
+
+* Decision: `docs/decisions/2026-11-04-docs-plan-namespace-compatibility-deliberation.md`
+* Draft plan: `docs/plans/2026-11-04-docs-plan-namespace-compatibility-plan.md`
+* Ship supplied passing source-entrypoint authoring evidence; hardening completed
+* Plan review attempt 1 failed: Stage requires sub-epics under the covering feature, but the live WIT has no epic type and permits only task and review children under features
+* Next: resolve the hierarchy contract, re-review the revised plan, and obtain the harvest-time source-entrypoint authoring result before creating items
+* No maintenance feature, task, or shipment has been created; the original MCP shipments remain unchanged

@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for the Pre-Task-Completion Gate Broker: backlogit synchronously invokes autoharness gate check before task/subtask -> done and shipment -> shipped transitions, with argv-array exec, exit-code trichotomy, three-valued enablement, autoharness-driven requeue/escalate, operator-only force, and logs-only gate evidence.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-06-pre-task-completion-gate-broker-plan.md
+source: docs/plans/2026-07-06-pre-task-completion-gate-broker-plan.md
 title: 'Pre-Task-Completion Gate Broker implementation plan'
 ---
 

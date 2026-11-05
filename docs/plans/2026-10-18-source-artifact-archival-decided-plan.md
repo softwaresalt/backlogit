@@ -4,7 +4,7 @@ doc_type: plan
 title: "Decided plan: Workflow Hygiene: Source Artifact Archival Pattern"
 description: "Decided-plan consolidation of 2026-04-20-source-artifact-archival-plan.md: final decisions, implementation units, risks, and review verdict."
 chunk_strategy: h1-h2-h3
-source: docs/exec-plans/2026-10-18-source-artifact-archival-decided-plan.md
+source: docs/plans/2026-10-18-source-artifact-archival-decided-plan.md
 ---
 
 # Decided plan: Workflow Hygiene: Source Artifact Archival Pattern

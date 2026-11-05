@@ -8,7 +8,7 @@ docline:
     status: draft
 ingested_at: "2026-06-26T02:33:21Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-04-19-035-s-cli-ux-polish-plan.md
+source: docs/plans/2026-04-19-035-s-cli-ux-polish-plan.md
 title: 'Shipment 035-S: CLI UX Review Follow-ups'
 ---
 

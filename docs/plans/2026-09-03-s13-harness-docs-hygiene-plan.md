@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Execution plan for S13: harness and documentation hygiene"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-03-s13-harness-docs-hygiene-plan.md
+source: docs/plans/2026-09-03-s13-harness-docs-hygiene-plan.md
 title: "S13 Execution Plan — Harness & Documentation Hygiene"
 ---
 

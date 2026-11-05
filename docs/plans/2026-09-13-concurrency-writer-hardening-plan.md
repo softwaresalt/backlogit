@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Implementation plan for concurrency-safety hardening of backlogit artifact-mutation writers: canonical lock order (FE440C62) and shared stale-write CAS guard generalization (1E0C2251) as two independent same-surface units (no ordering between them)"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-13-concurrency-writer-hardening-plan.md
+source: docs/plans/2026-09-13-concurrency-writer-hardening-plan.md
 title: "Implementation Plan: Concurrency-safety hardening for artifact-mutation writers"
 docline:
     stash_id: FE440C62,1E0C2251

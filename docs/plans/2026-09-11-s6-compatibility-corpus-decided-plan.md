@@ -6,7 +6,7 @@ decided_from:
   - docs/archive/plans/2026-09-10-s6-140s-harness-contract-supplement.md
 doc_type: learning
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-11-s6-compatibility-corpus-decided-plan.md
+source: docs/plans/2026-09-11-s6-compatibility-corpus-decided-plan.md
 source_shipment: 140-S
 title: "Decided Plan: S6 Compatibility Corpus, Fuzzing, and Static Analysis"
 ---

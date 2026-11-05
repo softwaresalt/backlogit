@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for stash FDEDE39A: exact-target administrative checkpoint disposition commands (abandon and quarantine) on both CLI and MCP, atomic and fail-closed audited, byte-preserving for malformed checkpoints, with listing made read-only, consuming the F6 governed-operation contract and the F5 mutation envelope.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-08-07-checkpoint-administrative-disposition-plan.md
+source: docs/plans/2026-08-07-checkpoint-administrative-disposition-plan.md
 title: 'Administrative checkpoint disposition — abandon and quarantine'
 ---
 

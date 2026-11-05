@@ -4,7 +4,7 @@ description: 'Implementation plan for doctor --target nil-HeaderDef hardening: V
 doc_type: plan
 ingested_at: "2026-07-01T10:30:00Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-01-doctor-target-nil-headerdef-hardening-plan.md
+source: docs/plans/2026-07-01-doctor-target-nil-headerdef-hardening-plan.md
 title: 'doctor --target: fail closed on nil header-def (stop silent pass)'
 ---
 
@@ -298,4 +298,3 @@ Runtime verification and operational closure are present and adequate for a zero
 defensive edge fix. Plan is cleared for harvest.
 
 <!-- plan-review-attempt: 1 -->
-

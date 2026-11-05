@@ -4,7 +4,7 @@ decided_from: docs/exec-plans/2026-09-03-s5-seq2-mutation-framework-plan.md
 decided_at: 2026-09-09T05:55:00Z
 doc_type: learning
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-09-s5-seq2-mutation-framework-decided-plan.md
+source: docs/plans/2026-09-09-s5-seq2-mutation-framework-decided-plan.md
 source_shipment: 139-S
 title: "Decided Plan: S5 Mutation Postcondition Framework (139-S)"
 ---

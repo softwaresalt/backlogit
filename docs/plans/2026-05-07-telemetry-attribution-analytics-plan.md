@@ -8,7 +8,7 @@ docline:
     status: reviewed
 ingested_at: "2026-06-26T02:33:21Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-05-07-telemetry-attribution-analytics-plan.md
+source: docs/plans/2026-05-07-telemetry-attribution-analytics-plan.md
 title: Telemetry Attribution & Analytics Enhancement
 ---
 

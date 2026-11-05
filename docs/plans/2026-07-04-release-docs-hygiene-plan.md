@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for the release-and-docs hygiene feature: guard the npm-publish job on NPM_TOKEN presence so no red X appears when the token is intentionally absent, validate scripts/package-npm.sh emits publishable package.json for the 5 platform packages plus the wrapper, and correct misleading make docs-lint --path wording in two ride-along docs.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-04-release-docs-hygiene-plan.md
+source: docs/plans/2026-07-04-release-docs-hygiene-plan.md
 title: 'Release pipeline and documentation hygiene'
 ---
 

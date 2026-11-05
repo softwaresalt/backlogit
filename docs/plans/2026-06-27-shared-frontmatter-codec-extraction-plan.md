@@ -4,7 +4,7 @@ description: Implementation plan to extract the body-preserving frontmatter code
 doc_type: plan
 ingested_at: "2026-06-28T05:45:29Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-06-27-shared-frontmatter-codec-extraction-plan.md
+source: docs/plans/2026-06-27-shared-frontmatter-codec-extraction-plan.md
 title: 'Shared frontmatter codec extraction: internal/mdfront + internal/atomicfile leaf packages'
 ---
 

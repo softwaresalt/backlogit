@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Execution plan for S1: checkpoint disposition security hardening, evidence-integrity, and schema hygiene"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-03-s1-checkpoint-disposition-hardening-plan.md
+source: docs/plans/2026-09-03-s1-checkpoint-disposition-hardening-plan.md
 title: "S1 Execution Plan — Checkpoint Disposition Hardening & Hygiene"
 ---
 

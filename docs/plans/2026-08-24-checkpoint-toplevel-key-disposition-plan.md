@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Refuse to rewrite a non-conforming checkpoint on the abandon and resolve paths, close the ResolveCheckpoint validity gap, and widen quarantine classification so every checkpoint stays dispositionable by exactly one verb.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-08-24-checkpoint-toplevel-key-disposition-plan.md
+source: docs/plans/2026-08-24-checkpoint-toplevel-key-disposition-plan.md
 title: 'Checkpoint disposition rewrites: refuse on unmodeled top-level keys'
 ---
 

@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for formal-gate unit F1: an HMAC-authenticated gate-evidence proof over a domain-separated canonical envelope, with an externally anchored enforcement requirement, rollback detection, a dedicated formal-admission predicate, and fail-closed manifest binding verified at ship time.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-08-07-f1-evidence-authenticity-manifest-binding-plan.md
+source: docs/plans/2026-08-07-f1-evidence-authenticity-manifest-binding-plan.md
 title: 'F1 — evidence authenticity primitive and manifest binding'
 ---
 

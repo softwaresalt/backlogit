@@ -4,7 +4,7 @@ description: 'Implementation plan for hardening the create/update write paths ag
 doc_type: plan
 ingested_at: "2026-07-02T11:20:00Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-02-artifacts-write-nil-headerdef-hardening-plan.md
+source: docs/plans/2026-07-02-artifacts-write-nil-headerdef-hardening-plan.md
 title: 'create/update write paths: fail closed on nil header-def (stop silent skip)'
 ---
 

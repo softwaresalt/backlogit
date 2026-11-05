@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Implementation plan for CC0EBB59 — persist the scheduler_baseline_claim marker on every claim-activated manifest member (option A lifecycle: kept through block/unblock/return, three-part consumer predicate) and make claim crash recovery accept marked members, so claim-activated tasks are distinguishable from organic active residuals"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md
+source: docs/plans/2026-09-13-shipment-claim-scheduler-reconciliation-plan.md
 title: "Implementation Plan: Shipment-claim activation reconciliation (universal scheduler-baseline marker)"
 docline:
     stash_id: CC0EBB59

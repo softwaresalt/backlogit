@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan to consolidate the duplicated shipment-items read-edge normalization into a single exported core.NormalizeShipmentItems, delete the internal/mcp normalizeShipmentItems copy, and relocate the never-null invariant into the core function contract while keeping both named guard tests green.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-03-consolidate-shipment-items-normalization-plan.md
+source: docs/plans/2026-07-03-consolidate-shipment-items-normalization-plan.md
 title: 'Consolidate shipment-items normalization into a single core source of truth'
 ---
 

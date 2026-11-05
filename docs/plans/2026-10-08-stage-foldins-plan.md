@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for the 2026-10-08 Stage fold-ins: null-aware legacy-import checks under 171-F (97AB4978), claim crash recovery for cascaded non-queued member-parents under 189-F (E52607F5), and the CI evidence fold-in for the upstream pipeline-topology hand-off under 183-F (95379DBA).'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-08-stage-foldins-plan.md
+source: docs/plans/2026-10-08-stage-foldins-plan.md
 title: 'Implementation Plan: 2026-10-08 Stage fold-ins into 152-S, 189-S, and 183-S'
 ---
 

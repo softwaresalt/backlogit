@@ -2,7 +2,7 @@
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"
 title: 'Bounded docline soft-key regression guard implementation plan'
-source: docs/exec-plans/2026-07-14-docline-soft-key-regression-guard-plan.md
+source: docs/plans/2026-07-14-docline-soft-key-regression-guard-plan.md
 doc_type: plan
 description: 'Test-first plan separating live tracked corpus, hermetic value semantics, and a production docline normalization pass-through change (preserve unknown top-level extension keys in place) before metadata backfill.'
 docline:

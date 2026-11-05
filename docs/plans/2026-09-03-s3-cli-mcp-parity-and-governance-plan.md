@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Execution plan for S3: CLI/MCP structured-error parity, docs classify tool, and create_checkpoint governance"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-03-s3-cli-mcp-parity-and-governance-plan.md
+source: docs/plans/2026-09-03-s3-cli-mcp-parity-and-governance-plan.md
 title: "S3 Execution Plan — CLI/MCP Parity & Governance"
 ---
 

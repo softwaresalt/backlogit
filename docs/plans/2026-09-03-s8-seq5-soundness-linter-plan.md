@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Execution plan for S8: Sequence 5/7 plan and work-item soundness linter"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-03-s8-seq5-soundness-linter-plan.md
+source: docs/plans/2026-09-03-s8-seq5-soundness-linter-plan.md
 title: "S8 Execution Plan — Sequence 5/7 Plan & Work-Item Soundness Linter"
 ---
 

@@ -8,7 +8,7 @@ docline:
   source_decision: docs/decisions/2026-10-29-single-daemon-per-workspace-deliberation.md
   stash_id: 760670A3
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-29-single-daemon-per-workspace-plan.md
+source: docs/plans/2026-10-29-single-daemon-per-workspace-plan.md
 title: 'Implementation Plan: Single backlogit MCP daemon per workspace (760670A3)'
 ---
 
@@ -275,4 +275,3 @@ Requires plan hardening: yes
   * P3-1 (`Go Reviewer`, U3 `internal/cli/root.go`): Explicitly specify that `defer func() { _ = release() }()` is registered immediately after `AcquireMCPDaemonLock` succeeds and before `openMCPServer` runs so an `openMCPServer` error still releases `mcp-daemon.lock` and removes `mcp-daemon.json`. Applied in place in U3.
   * P3-2 (`Security Lens Reviewer`, U2/U3 `internal/cli/mcp_daemon.go`): Execute all `<storageRoot>/runtime` leaf operations through a pinned, validated `*os.Root` runtime directory handle (`openMCPDaemonRuntimeRoot`), open `"mcp-daemon.json"` no-follow on `runtimeRoot` and decode directly from the validated `*os.File` handle in `readMCPDaemonInfo`, and perform process-identity verification and termination through the same retained OS process handle in `StopMCPDaemon`. Applied in place in U2 and U3.
 * runtime_verification_and_closure: Runtime verification against an isolated temp `--cwd` (preserving the live workspace MCP server), `go run ./cmd/gen-docs docs/cli-reference` drift check, and post-merge closure artifact `docs/closure/205-S-204-F-post-merge-closure.md` with P-020 `compact-context` invocation are explicitly specified.
-

@@ -8,7 +8,7 @@ docline:
     status: draft
 ingested_at: "2026-06-26T02:33:21Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-04-19-cli-ux-output-formatting-plan.md
+source: docs/plans/2026-04-19-cli-ux-output-formatting-plan.md
 title: 'Shipment B: CLI UX & Output Formatting'
 ---
 

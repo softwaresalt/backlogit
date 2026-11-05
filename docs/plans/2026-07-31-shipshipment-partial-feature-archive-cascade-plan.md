@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for the durable fix to core.ShipShipment over-archiving covering features on partial-feature shipments: gate all THREE covering-feature mutation seams (the feature status->done transition at :191, the archival collector plus its linked-deliberation append at :292, and the transitive parent-status rollup where completeReleaseScope marks shipped children done and cascadePersistedParentStatuses rolls the covering feature to done and relocates it) on explicit shipment manifest membership — gating the two direct seams and neutralizing the rollup for non-member covering features via a narrow pre-ship status/location snapshot+restore (or cascade suppression); add a check-only doctor audit for the invariant, update the three existing children-only-manifest ship tests to the membership contract and land the 114-S partial-feature regression test, and correct the .ship.agent.md Step 6.1.b drift.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-31-shipshipment-partial-feature-archive-cascade-plan.md
+source: docs/plans/2026-07-31-shipshipment-partial-feature-archive-cascade-plan.md
 title: 'ShipShipment: stop over-archiving covering features on partial-feature shipments'
 ---
 

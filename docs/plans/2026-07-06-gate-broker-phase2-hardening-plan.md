@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for the pre-task-completion gate-broker phase-2 hardening covering feature: four mutually-independent single-file test-first remediations (F1 advisory dual-base warning in baseref.go; F4 shipment member-evidence composed ran==true predicate in shipment_gate.go; F5 shipment DecisionError class fidelity in shipment_gate.go; F7 move --json GateError payload in gate_exit.go/move.go) plus one larger DB read-model task (Q3 derived indexed gate-evidence projection) decomposed into four ordered test-first subtasks (Q3.0 shared leaf predicate, Q3.1 gate_evidence table, Q3.2 sync-population, Q3.3 doctor indexed-query with log-scan fallback). Incorporates plan-review adjudications (single-source predicate across the one-way core->db boundary, dedicated projection table, forced_no_run visibility, advisory-derived-only marker). Includes a plan-hardening section for the Q3 read-model (rebuild/idempotency/backward-compat/rollback).'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-06-gate-broker-phase2-hardening-plan.md
+source: docs/plans/2026-07-06-gate-broker-phase2-hardening-plan.md
 title: 'Pre-task-completion gate broker — phase-2 hardening implementation plan'
 ---
 

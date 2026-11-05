@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Execution plan for 152-F: governed lifecycle reconciliation and stash provenance correction (final revision)"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-08-29-152-lifecycle-reconciliation-plan.md
+source: docs/plans/2026-08-29-152-lifecycle-reconciliation-plan.md
 title: "152-F Execution Plan — Governed Lifecycle Reconciliation and Stash Provenance Correction"
 ---
 

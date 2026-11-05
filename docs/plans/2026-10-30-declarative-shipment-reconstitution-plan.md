@@ -8,7 +8,7 @@ docline:
   source_decision: docs/decisions/2026-10-30-declarative-shipment-reconstitution-deliberation.md
   stash_id: 40CC5C6B
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-30-declarative-shipment-reconstitution-plan.md
+source: docs/plans/2026-10-30-declarative-shipment-reconstitution-plan.md
 title: 'Implementation Plan: Declarative multi-shipment manifest reconstitution (209-F / 210-S)'
 ---
 

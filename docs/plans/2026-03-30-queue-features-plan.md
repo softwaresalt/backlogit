@@ -9,7 +9,7 @@ docline:
     status: revision-3
 ingested_at: "2026-06-26T02:33:21Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-03-30-queue-features-plan.md
+source: docs/plans/2026-03-30-queue-features-plan.md
 title: 'Queue Features: CLI Commands, Header Definitions, Templates, and Section-Aware Tools'
 ---
 

@@ -19,7 +19,7 @@ docline:
         - invertibility
 ingested_at: "2026-06-26T20:15:36Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-06-26-archive-archived-from-integrity-plan.md
+source: docs/plans/2026-06-26-archive-archived-from-integrity-plan.md
 title: 'ArchiveItem archived_from Integrity: invertible unarchive + legacy record repair'
 ---
 

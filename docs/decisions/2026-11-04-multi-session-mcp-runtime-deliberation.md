@@ -8,7 +8,7 @@ docline:
   depth: deep
   linked_artifacts:
     - docs/product-specs/2026-11-04-multi-session-mcp-runtime-requirements.md
-    - docs/exec-plans/2026-11-04-multi-session-mcp-runtime-plan.md
+    - docs/plans/2026-11-04-multi-session-mcp-runtime-plan.md
     - .backlogit/archive/082-DL.md
     - .backlogit/queue/211-F.md
     - .backlogit/queue/212-F.md

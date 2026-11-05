@@ -9,7 +9,7 @@ docline:
     status: draft
 ingested_at: "2026-06-26T02:33:21Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-03-31-queue-features-v2-plan.md
+source: docs/plans/2026-03-31-queue-features-v2-plan.md
 title: 'Queue Features V2: WIT Metadata, Archive Lifecycle, Dependency Queue, and Hierarchical File Organization'
 ---
 

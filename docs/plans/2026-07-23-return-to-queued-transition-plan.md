@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Add blocked->queued and active->queued to the validated status-transition map (both definition sites) so operators can manually requeue a blocked or active item into the ready pool, matching the gate-broker requeue and the backlogit doctor documented resume. TDD, additive, low-risk. Resolves stash BD8DBB85 via Option A.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-23-return-to-queued-transition-plan.md
+source: docs/plans/2026-07-23-return-to-queued-transition-plan.md
 title: 'Return-to-queued transition: validated-map alignment (Option A)'
 stash_id: BD8DBB85
 tags:

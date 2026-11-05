@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for formal-gate unit F5: a snapshot/compensate envelope for governed multi-store mutations, gated on the two-class durable-write error contract, with machine-readable partial-mutation results and doctor detection, and no write-ahead journal or exactly-once machinery.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-08-07-f5-idempotent-multi-mutation-envelope-plan.md
+source: docs/plans/2026-08-07-f5-idempotent-multi-mutation-envelope-plan.md
 title: 'F5 — idempotent multi-store mutation envelope'
 ---
 

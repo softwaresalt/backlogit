@@ -8,7 +8,7 @@ docline:
   source_decision: docs/decisions/2026-10-30-shipment-manifest-reshuffle-deliberation.md
   stash_id: DE3E7B67
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-30-shipment-manifest-reshuffle-plan.md
+source: docs/plans/2026-10-30-shipment-manifest-reshuffle-plan.md
 title: 'Implementation Plan: Queued-shipment manifest replanning operations (206-F / 207-S)'
 ---
 

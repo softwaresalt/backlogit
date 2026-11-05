@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for stashes B85DAEE8 + 1AEA2B0E: close the two remaining empty-head fail-open holes in internal/core/shipment_gate.go. Under enforcement in a real git worktree, an empty shipment head (1AEA2B0E) OR an empty member head_sha (B85DAEE8) must fail closed; the no-repo / non-enforcement / non-autoharness skip is preserved via a bounded, fail-closed repo-presence probe. One feature, one test-first task, three ordered subtasks (repo-presence helper + fixtures; empty-shipment-head wiring; empty-member-head wiring). Mirrors the 084-F ancestor-aware bounded/fail-closed discipline. F3844849 (malformed-JSONL) is out of scope.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-07-shipment-gate-empty-head-fail-closed-plan.md
+source: docs/plans/2026-07-07-shipment-gate-empty-head-fail-closed-plan.md
 title: 'Shipment-gate empty-head fail-closed hardening'
 ---
 

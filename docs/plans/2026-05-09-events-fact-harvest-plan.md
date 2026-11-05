@@ -13,7 +13,7 @@ docline:
     status: approved
 ingested_at: "2026-06-26T02:33:21Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-05-09-events-fact-harvest-plan.md
+source: docs/plans/2026-05-09-events-fact-harvest-plan.md
 title: events.jsonl Fact Table Harvest — Implementation Plan
 ---
 

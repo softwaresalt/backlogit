@@ -8,7 +8,7 @@ docline:
   source_decision: docs/decisions/2026-10-30-adopt-propagation-id-safety-doctor-manifest-deliberation.md
   stash_id: 7CE12EE6
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-30-adopt-propagation-id-safety-doctor-manifest-plan.md
+source: docs/plans/2026-10-30-adopt-propagation-id-safety-doctor-manifest-plan.md
 title: 'Implementation Plan: Adopt rename propagation, history-safe ID allocation, and doctor manifest checks (208-F / 209-S)'
 ---
 

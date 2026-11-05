@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Implementation plan for the operator-authorized 2A355F83 bootstrap repair: Ship wave admission recognizes claim-assigned members (active, scheduler_baseline_claim equal to the session shipment, listed in the live manifest, no start record in the current claim epoch), Ship Step 4.1b records an idempotent WORK_STARTED comment instead of a redundant move, and the P-002.6 simulation and a real-binary fixture proof cover the new classification"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-01-2a355f83-claimed-vs-started-bootstrap-plan.md
+source: docs/plans/2026-10-01-2a355f83-claimed-vs-started-bootstrap-plan.md
 title: "Implementation Plan: Claimed-versus-started bootstrap repair for Ship wave admission (2A355F83)"
 docline:
     bootstrap_id: 2A355F83

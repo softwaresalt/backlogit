@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for an opt-in repo-wide durable_writes fsync protocol across the two shared write primitives (atomicfile.WriteFileAtomic and events.EventWriter.AppendEvent): temp+parent-dir fsync on POSIX, an unconditional Windows atomic-replace that fixes the pre-existing remove-before-rename canonical data-loss window, a two-class outcome-based error contract (not-applied vs indeterminate), and platform-asymmetric durability docs plus regression harnesses.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-27-durable-writes-fsync-protocol-plan.md
+source: docs/plans/2026-07-27-durable-writes-fsync-protocol-plan.md
 title: 'Repo-wide durable_writes fsync protocol (atomicfile + events)'
 ---
 

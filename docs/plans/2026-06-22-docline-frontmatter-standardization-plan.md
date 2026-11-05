@@ -10,7 +10,7 @@ docline:
     status: planned
 ingested_at: "2026-06-26T02:33:21Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-06-22-docline-frontmatter-standardization-plan.md
+source: docs/plans/2026-06-22-docline-frontmatter-standardization-plan.md
 title: Standardize documentation frontmatter on the docline base schema
 ---
 

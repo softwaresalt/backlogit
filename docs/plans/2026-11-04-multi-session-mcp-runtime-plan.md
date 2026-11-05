@@ -20,7 +20,7 @@ docline:
   stash_id: ECF33C79
   status: approved
 schema_version: "1.0"
-source: docs/exec-plans/2026-11-04-multi-session-mcp-runtime-plan.md
+source: docs/plans/2026-11-04-multi-session-mcp-runtime-plan.md
 title: 'Implementation Plan — Multi-Session Singleton MCP Runtime and Workspace-Pinned All-Tools Environment (ECF33C79 / 082-DL)'
 ---
 
@@ -664,4 +664,3 @@ Requires plan hardening: yes
   * **Check 2 (`R16` / Constitution Principle IV POSIX IPC Workspace Containment — `D2`, `U4` `211.004-T`, `## Constitution Check`, `Invariant I6`)**: Removed the outside-workspace `<tempOrXdgRuntimeDir>/backlogit-<uid>/mcp-<hexHash16>.sock` fallback. `DeriveMCPDaemonEndpoint` and `ListenMCPDaemonIPC` on POSIX now keep all Unix Domain Sockets strictly inside `<storage_root>/runtime/` pinned by `runtimeRoot` (`*os.Root`): primary `<storage_root>/runtime/mcp.sock` (`<=100` bytes), workspace-contained short leaf `<storage_root>/runtime/s` when `len(mcp.sock) > 100 && len(s) <= 100`, and deterministic `corerrors.ErrValidation` refusal with actionable remediation guidance and zero `/tmp`, `$TMPDIR`, `$XDG_RUNTIME_DIR`, or `$HOME` writes when `len(s) > 100`.
   * **Check 3 (`U5`/`U6`/`U12` Test-First / Atomic Parity and Registry Parity Ordering — `D6`, `U5` `211.005-T`, `U6` `211.006-T`, `U12` `213.002-T`)**: Restructured `U5` (`211.005-T`) and `U6` (`211.006-T`) so both are `code` units with genuine compiling-but-failing RED phases and zero breakage of `TestRegistryParity_*`: `U5` (`2` files: `internal/cli/mcp_daemon.go`, `internal/cli/mcp_daemon_multisession_test.go`) implements `RunMCPDaemon`, `VerifyMCPDaemonAttachment`, non-exclusive `InspectMCPDaemonStatus`, and graceful-drain `StopMCPDaemon` without touching `internal/cli/root.go`; `U6` (`3` files: `internal/cli/mcp_daemon.go`, `internal/cli/root.go`, `internal/cli/mcp_session_shim_test.go`) implements `PrewarmMCPDaemon` and `RunMCPSessionShim` in `mcp_daemon.go` and wires `backlogit mcp`, `backlogit mcp daemon`, and `backlogit mcp prewarm` in `root.go` with unit + cross-process subprocess + CLI-only parity tests in `mcp_session_shim_test.go`.
 * runtime_verification_and_closure: Verified per-shipment runtime verification protocols (`--cwd <tempDir>` isolation preserving the live workspace MCP server), the operator-owned verified workspace toolchain setup/provisioning procedure, monitoring signals, rollback procedures, and post-merge closure expectations (`212-S`, `213-S`, `214-S` with P-020 `compact-context`).
-

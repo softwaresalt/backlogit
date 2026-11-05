@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Plan git-aware archive and restore moves so tracked backlog artifacts preserve file history while untracked or non-git workspaces keep the current filesystem move path.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-09-git-aware-archival-plan.md
+source: docs/plans/2026-07-09-git-aware-archival-plan.md
 title: 'Git-aware archival for tracked backlog artifacts'
 ---
 

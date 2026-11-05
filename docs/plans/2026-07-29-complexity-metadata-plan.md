@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for adding optional task-level complexity metadata alongside size and priority, with body-preserving writes, WIT discovery, SQLite projection, CLI/MCP update and filter surfaces, and explicit operator-facing semantics.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-29-complexity-metadata-plan.md
+source: docs/plans/2026-07-29-complexity-metadata-plan.md
 title: 'Add optional task complexity metadata'
 ---
 

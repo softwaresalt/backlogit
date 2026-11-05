@@ -4,7 +4,7 @@ description: 'Harden the Stage harvest pipeline so generated exec-plans are born
 doc_type: plan
 ingested_at: "2026-07-02T20:45:44-07:00"
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-02-stage-harvest-docline-frontmatter-hardening-plan.md
+source: docs/plans/2026-07-02-stage-harvest-docline-frontmatter-hardening-plan.md
 title: 'Harden Stage harvest: born-compliant plan frontmatter + pre-harvest docline lint gate'
 ---
 

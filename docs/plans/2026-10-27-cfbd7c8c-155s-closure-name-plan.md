@@ -8,7 +8,7 @@ docline:
   source_decision: docs/decisions/2026-10-27-cfbd7c8c-155s-closure-name-deliberation.md
   stash_id: CFBD7C8C
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-27-cfbd7c8c-155s-closure-name-plan.md
+source: docs/plans/2026-10-27-cfbd7c8c-155s-closure-name-plan.md
 title: 'Implementation Plan: Conform 155-S closure record name for 177-S, 178-S, and 179-S pre_claim gate'
 ---
 
@@ -169,4 +169,3 @@ Requires plan hardening: no
   * P0: 0, P1: 0, P2: 0, P3: 1 (applied).
   * P3-1 (`Architecture Strategist`, `docs/exec-plans/2026-10-27-cfbd7c8c-155s-closure-name-plan.md` / `docs/decisions/2026-10-27-cfbd7c8c-155s-closure-name-deliberation.md`): `docline.linked_artifacts` in the deliberation referenced the pre-rename closure path, and U2's acceptance criteria carried a parenthetical frontmatter exemption. Applied in place: `docline.linked_artifacts` updated to `docs/closure/155-S-174-F-post-merge-closure.md` and U2's acceptance criteria tightened so zero `source:` or `linked_artifacts:` frontmatter entries in `docs/**` or `.backlogit/queue/**` point to the old filename after U1/U2.
 * runtime_verification_and_closure: Docs-only chore (`runtime-verification` non-applicable); post-merge obligation U3 (`autoharness gate pipeline-topology --mode agent --shipment 177-S --phase pre_claim --json` on synchronized clean `main`) and P-020 `compact-context` invocation are explicitly specified.
-

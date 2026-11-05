@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for formal-gate unit F4: promote dependency edge type into markdown frontmatter as typed DependencyEdge objects so dep_type survives rehydration, with a fixed serialization contract and CLI/MCP read parity.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-08-07-f4-durable-dependency-type-plan.md
+source: docs/plans/2026-08-07-f4-durable-dependency-type-plan.md
 title: 'F4 — durable dependency type persistence'
 ---
 

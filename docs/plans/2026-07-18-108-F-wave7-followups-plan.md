@@ -1,7 +1,7 @@
 ---
 chunk_strategy: h1-h2-h3
 title: "108-F wave-7 staging review follow-ups — implementation plan"
-source: docs/exec-plans/2026-07-18-108-F-wave7-followups-plan.md
+source: docs/plans/2026-07-18-108-F-wave7-followups-plan.md
 doc_type: plan
 description: "Implementation plan for three verified follow-up findings (F5/F6/F7) from the 099-S/108-F wave-7 staging review on PR #259."
 docline:
