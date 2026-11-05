@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for eliminating success-shaped evidence loss in checkpoint creation and docs lint.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-08-21-success-shaped-evidence-loss-plan.md
+source: docs/plans/2026-08-21-success-shaped-evidence-loss-plan.md
 title: 'Eliminate success-shaped evidence loss on governed diagnostic paths'
 ---
 

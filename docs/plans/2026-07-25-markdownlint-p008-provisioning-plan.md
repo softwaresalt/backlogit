@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan to provision the markdownlint tooling P-008 assumes: .markdownlint.json enabling exactly MD001/MD025/MD041 (default:false, MD025 front_matter_title retargeted to a _title key) + .markdownlint-cli2.jsonc {gitignore:true}, paired scripts/md-lint.{sh,ps1} via a version-pinned markdownlint-cli2, a standalone repo-wide BLOCKING SHA-pinned md-lint CI job, characterization tests, and a P-008 reconciliation — repo-wide doctor-to-compliance (config dissolves 229/250 violations with zero edits; ~21 structural fixes bring the repo to 0).'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-25-markdownlint-p008-provisioning-plan.md
+source: docs/plans/2026-07-25-markdownlint-p008-provisioning-plan.md
 title: 'Provision markdownlint tooling to make P-008 reproducible and CI-enforced'
 ---
 

@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Execution plan for S2: docline report-contract array fix and decode-policy convergence"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-03-s2-docline-contract-decode-convergence-plan.md
+source: docs/plans/2026-09-03-s2-docline-contract-decode-convergence-plan.md
 title: "S2 Execution Plan — docline Contract & Decode Convergence"
 ---
 

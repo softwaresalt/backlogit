@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan to bring backlogit user-facing docs into v1.7.0 consistency and restructure the README top as a product brochure.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-24-docs-consistency-readme-brochure-plan.md
+source: docs/plans/2026-07-24-docs-consistency-readme-brochure-plan.md
 title: 'Documentation consistency and README brochure rework for v1.7.0'
 ---
 

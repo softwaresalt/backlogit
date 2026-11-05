@@ -4,7 +4,7 @@ decided_from: docs/archive/plans/2026-09-06/2026-09-06-866fdc8c-trust-boundary-s
 decided_at: 2026-09-13T20:55:00Z
 doc_type: learning
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-13-866fdc8c-trust-boundary-split-decided-plan.md
+source: docs/plans/2026-09-13-866fdc8c-trust-boundary-split-decided-plan.md
 title: "Decided Plan: 866FDC8C trust-boundary split"
 ---
 

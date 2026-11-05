@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for stash 9370A18C: change the default workspace storage directory to .backlog while keeping every existing .backlogit workspace resolvable, with a closed override set, symlink-safe realpath containment, an immutable resolved root, a complete safety-path inventory, and a previewable idempotent migration.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-08-07-workspace-default-dir-rename-plan.md
+source: docs/plans/2026-08-07-workspace-default-dir-rename-plan.md
 title: 'Default workspace directory rename to .backlog with dual-root compatibility'
 ---
 

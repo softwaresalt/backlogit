@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Close the two non-ShipShipment paths that can produce archived_status shipped without a durable shipped event.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-08-18-shipment-shipped-prevention-hardening-plan.md
+source: docs/plans/2026-08-18-shipment-shipped-prevention-hardening-plan.md
 title: 'Prevention hardening for non-ShipShipment shipped transitions and archive stamping'
 ---
 

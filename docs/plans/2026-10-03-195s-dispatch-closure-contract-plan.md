@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for the 195-S follow-up repairs: every Orchestrator invocation of Ship first resolves, validates, binds, and passes both served roots (227A2930), and shipment-reconcile accepts an explicit feature member that governed ShipShipment completes inside its own transaction (B83081F5).'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-03-195s-dispatch-closure-contract-plan.md
+source: docs/plans/2026-10-03-195s-dispatch-closure-contract-plan.md
 title: 'Implementation Plan: 195-S follow-up Orchestrator served-root handoff and explicit-feature reconcile contract'
 ---
 

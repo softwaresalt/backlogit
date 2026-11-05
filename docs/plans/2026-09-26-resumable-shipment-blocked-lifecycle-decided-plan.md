@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Decisions and verified outcomes for the 155-S resumable blocked-shipment lifecycle release."
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-26-resumable-shipment-blocked-lifecycle-decided-plan.md
+source: docs/plans/2026-09-26-resumable-shipment-blocked-lifecycle-decided-plan.md
 title: "Decided Plan: Resumable shipment blocked lifecycle status (155-S)"
 docline:
   date: 2026-09-26T20:40:00Z

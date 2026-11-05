@@ -13,7 +13,7 @@ docline:
     status: reviewed
 ingested_at: "2026-06-26T02:33:21Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-06-23-root-id-conflict-integrity-plan.md
+source: docs/plans/2026-06-23-root-id-conflict-integrity-plan.md
 title: 'Root-ID Conflict Integrity: Detection, Allocation, and Archive Safety'
 ---
 

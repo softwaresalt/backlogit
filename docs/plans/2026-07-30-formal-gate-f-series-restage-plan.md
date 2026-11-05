@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Restage formal-gate implementation through the bounded F2/F3 foundation shipment: canonical serialization plus authoritative status taxonomy.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-30-formal-gate-f-series-restage-plan.md
+source: docs/plans/2026-07-30-formal-gate-f-series-restage-plan.md
 title: 'Formal-gate F-series restage: F2/F3 foundations'
 ---
 

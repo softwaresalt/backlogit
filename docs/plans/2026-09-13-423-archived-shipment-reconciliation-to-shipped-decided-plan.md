@@ -4,7 +4,7 @@ decided_from: docs/archive/plans/2026-09-05/2026-09-05-423-archived-shipment-rec
 decided_at: 2026-09-13T20:55:00Z
 doc_type: learning
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-13-423-archived-shipment-reconciliation-to-shipped-decided-plan.md
+source: docs/plans/2026-09-13-423-archived-shipment-reconciliation-to-shipped-decided-plan.md
 title: "Decided Plan: Governed archived-shipment reconciliation to shipped (#423)"
 ---
 

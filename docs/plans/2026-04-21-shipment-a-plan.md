@@ -6,7 +6,7 @@ docline:
     ms.date: 2026-04-21T00:00:00Z
 ingested_at: "2026-06-26T02:33:21Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-04-21-shipment-a-plan.md
+source: docs/plans/2026-04-21-shipment-a-plan.md
 title: Shipment A Scope Refinement
 ---
 

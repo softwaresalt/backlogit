@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Implementation plan for BDA56ED8 — make the UR3 crash-child readiness handoff tolerate a partially written JSON marker (test-harness only), with a reproduce-first RED"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-28-ur3-crash-ready-handoff-flake-plan.md
+source: docs/plans/2026-09-28-ur3-crash-ready-handoff-flake-plan.md
 title: "Implementation Plan: UR3 crash-child readiness handoff flake fix"
 docline:
     stash_id: BDA56ED8

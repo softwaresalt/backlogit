@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Restore repository-wide test/lint/format green by converging the complete unbounded golangci-lint v2.13.2 supported-platform baseline (497 unique findings across the windows and linux surfaces) through a bounded finding-remediation DAG, unblocking shipment 149-S.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-17-baseline-convergence-plan.md
+source: docs/plans/2026-09-17-baseline-convergence-plan.md
 title: 'Repository Baseline Convergence Release Unit'
 ---
 

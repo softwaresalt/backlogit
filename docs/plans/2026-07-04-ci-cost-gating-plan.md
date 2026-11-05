@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan to gate the heavy CI Go build/test/lint jobs and CLI-reference-drift regeneration to code-relevant changes only, using a dorny/paths-filter change-detection job plus step-level if-gating on always-running jobs, so all four branch-protection required checks keep reporting success on every PR type including the pipeline own docs-only closure PRs.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-04-ci-cost-gating-plan.md
+source: docs/plans/2026-07-04-ci-cost-gating-plan.md
 title: 'CI cost-gating for docs/chore-only PRs (required-check-safe)'
 ---
 

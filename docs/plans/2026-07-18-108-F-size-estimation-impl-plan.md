@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for extending optional size estimation to feature and shipment artifacts: canonical custom_fields.size at all levels (the spike-selected carrier; no codec bridge), a round-trip regression guard, event-before-write best-effort-audit provenance (durable size is source of truth; orphan events ignored on read), computed-on-read composition rollups, CLI/MCP mutation and read parity, and two-layer containment hardening of the size seam.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-18-108-F-size-estimation-impl-plan.md
+source: docs/plans/2026-07-18-108-F-size-estimation-impl-plan.md
 title: '108-F: Size estimation for feature and shipment (custom_fields.size + provenance + composition)'
 ---
 

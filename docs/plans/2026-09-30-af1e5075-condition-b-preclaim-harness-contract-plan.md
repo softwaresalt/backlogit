@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Implementation plan for stash AF1E5075 with the 074-DL layer L1 contract folded in: Orchestrator Step 2 and Ship pre-claim refuse the hard hold labels, treat the conditional-approval label as provenance, document the machine go-signal, and enforce the (P)+(C) condition (b) check with a CONDITION_B_UNSATISFIED halt"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-30-af1e5075-condition-b-preclaim-harness-contract-plan.md
+source: docs/plans/2026-09-30-af1e5075-condition-b-preclaim-harness-contract-plan.md
 title: "Implementation Plan: Pre-claim hold-label refusal and condition (b) (P)+(C) harness contract (AF1E5075)"
 docline:
     stash_id: AF1E5075

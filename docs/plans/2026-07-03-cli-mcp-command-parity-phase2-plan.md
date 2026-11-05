@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for CLI/MCP command parity phase-2 (6C6ACE00): build the deferred CLI fallbacks worth building — link (add/remove/list), hooks (poll/ack), memory save, comment add, and metadata discovery (types/wit/templates) — each over its existing shared core path (extracting core.GetLinks and core.AppendComment where the logic is currently inline), flip the ten registry rows from mcp_only to resolvable cli_command guarded by the U2 drift test, and update the parity matrix + fallback guide; merge_sync and the export-command-map pairing enhancement are deferred with documented rationale, log_telemetry stays permanent MCP-only.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-03-cli-mcp-command-parity-phase2-plan.md
+source: docs/plans/2026-07-03-cli-mcp-command-parity-phase2-plan.md
 title: 'CLI/MCP command parity phase-2: build the deferred CLI fallbacks worth building'
 ---
 

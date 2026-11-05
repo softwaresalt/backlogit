@@ -8,7 +8,7 @@ docline:
   source_decision: docs/decisions/2026-10-30-complexity-attribution-provenance-deliberation.md
   stash_id: A441A74C
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-30-complexity-attribution-provenance-plan.md
+source: docs/plans/2026-10-30-complexity-attribution-provenance-plan.md
 title: 'Implementation Plan: Complexity attribution and provenance for work-attribute model routing (207-F / 208-S)'
 ---
 

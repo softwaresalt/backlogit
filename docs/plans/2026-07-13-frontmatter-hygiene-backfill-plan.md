@@ -7,7 +7,7 @@ docline:
     conclusion: proceed
     confidence: high
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-13-frontmatter-hygiene-backfill-plan.md
+source: docs/plans/2026-07-13-frontmatter-hygiene-backfill-plan.md
 title: Frontmatter hygiene — spike SKILL name key + 091-S docline metadata backfill
 ---
 

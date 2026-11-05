@@ -2,7 +2,7 @@
 chunk_strategy: h1-h2-h3
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-16-866fdc8c-decomposition-correction-plan.md
+source: docs/plans/2026-09-16-866fdc8c-decomposition-correction-plan.md
 title: "Correction Plan: 866FDC8C trust-chain decomposition (149-S/150-S/151-S)"
 ---
 

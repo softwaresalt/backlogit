@@ -7,7 +7,7 @@ docline:
     conclusion: proceed
     confidence: high
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-13-item-writer-utc-timestamp-normalization-plan.md
+source: docs/plans/2026-07-13-item-writer-utc-timestamp-normalization-plan.md
 title: Normalize item-writer created_at/updated_at emission to UTC
 ---
 

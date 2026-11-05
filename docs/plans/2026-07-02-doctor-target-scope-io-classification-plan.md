@@ -4,7 +4,7 @@ description: 'Implementation plan for doctor --target scope-vs-io classification
 doc_type: plan
 ingested_at: "2026-07-02T13:10:00Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-02-doctor-target-scope-io-classification-plan.md
+source: docs/plans/2026-07-02-doctor-target-scope-io-classification-plan.md
 title: 'doctor --target: classify path-resolution faults as io (preserve diagnostic text), keep containment violations as scope'
 ---
 

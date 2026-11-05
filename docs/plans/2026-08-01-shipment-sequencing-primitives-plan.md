@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for settable shipment priority and a first-class shipment-to-shipment blocking-order affordance that make dark-factory multi-shipment queue ordering clean (spike 001-SP Option B, stash 0B5FA82B).'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-08-01-shipment-sequencing-primitives-plan.md
+source: docs/plans/2026-08-01-shipment-sequencing-primitives-plan.md
 title: 'Shipment sequencing primitives for dark-factory queue ordering'
 ---
 

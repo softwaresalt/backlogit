@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Complete ErrWriteIndeterminate caller reconciliation and durable mkdir/append retry idempotency across five durable_writes sites before durable mode is promoted toward default/GA.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-28-durable-writes-second-layer-hardening-plan.md
+source: docs/plans/2026-07-28-durable-writes-second-layer-hardening-plan.md
 title: 'durable_writes second-layer hardening: caller reconciliation and retry idempotency'
 ---
 

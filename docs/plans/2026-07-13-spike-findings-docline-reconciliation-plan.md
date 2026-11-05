@@ -8,7 +8,7 @@ docline:
     confidence: high
 ingested_at: "2026-07-13T19:52:00Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-13-spike-findings-docline-reconciliation-plan.md
+source: docs/plans/2026-07-13-spike-findings-docline-reconciliation-plan.md
 title: Reconcile spike skill findings-artifact example with docline frontmatter contract
 ---
 

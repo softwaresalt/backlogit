@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Plan for stash A592FC1C: a local-only upstream hand-off for the autoharness pipeline-topology numeric-adjacency predecessor defect, with bounded documentation tasks that record the partial supersession of the 6D53A33F disposition, review the hand-off before delivery, and record the operator delivery state; no external implementation"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-30-a592fc1c-pipeline-topology-upstream-handoff-plan.md
+source: docs/plans/2026-09-30-a592fc1c-pipeline-topology-upstream-handoff-plan.md
 title: "Implementation Plan: Upstream hand-off for the pipeline-topology DAG predecessor defect (A592FC1C)"
 docline:
     stash_id: A592FC1C

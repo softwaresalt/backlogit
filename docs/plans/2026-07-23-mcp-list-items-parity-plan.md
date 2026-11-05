@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Add priority and owner filter parameters to the MCP tool backlogit_list_items to reach CLI/MCP request-contract parity (053-DL, v1.7.0).'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-23-mcp-list-items-parity-plan.md
+source: docs/plans/2026-07-23-mcp-list-items-parity-plan.md
 title: 'MCP list_items priority/owner filter parity'
 ---
 
@@ -274,4 +274,3 @@ confirm CI drift + docline gates green; rollback = revert). No gaps.
 Reviewed personas: Constitution Reviewer, Go Reviewer, Scope Boundary Auditor,
 Learnings Researcher, Architecture Strategist, Agent-Native Parity Reviewer,
 Security Lens Reviewer (7/7 covered).
-

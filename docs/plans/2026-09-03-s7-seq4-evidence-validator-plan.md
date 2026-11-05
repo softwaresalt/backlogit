@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Execution plan for S7: Sequence 4/7 API-backed evidence and documentation validator"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-03-s7-seq4-evidence-validator-plan.md
+source: docs/plans/2026-09-03-s7-seq4-evidence-validator-plan.md
 title: "S7 Execution Plan — Sequence 4/7 API-Backed Evidence & Documentation Validator"
 ---
 

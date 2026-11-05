@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Make checkpoint create reject schema-less/non-V1 dumps by default across core, CLI, and MCP; gate legacy import behind an explicit migration-only opt-in with strict pre-write validation.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-06-checkpoint-create-schema-reject-plan.md
+source: docs/plans/2026-09-06-checkpoint-create-schema-reject-plan.md
 title: 'Checkpoint Create Rejects Schema-less Dumps by Default; Legacy Import Requires Explicit Opt-in'
 ---
 

@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan to extract the duplicated durable mkdir-all and directory-fsync mechanics from internal/core/durable_fs.go and internal/events/stream.go into a new internal/fsutil stdlib leaf package, migrate both call sites, and cover the leaf with table-driven unit tests while every pre-existing durable test passes unchanged. Refactor that is behavior-preserving for core and additive-hardening for events: the shared primitive adopts core''s superset semantics (U4 existing-dir retry re-fsync + Finding-2 nested-partial-create ancestor re-confirm), so events GAINS the Finding-2 re-confirm as a strict additive fsync (D2); a documented parameter-gate escape hatch preserves exact events behavior if strict preservation is required. Error classification is applied at the call sites onto blerrors.ErrWriteNotApplied.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-29-fsutil-durable-mkdir-extraction-plan.md
+source: docs/plans/2026-07-29-fsutil-durable-mkdir-extraction-plan.md
 title: 'Extract shared durable-mkdir/fsync primitive into internal/fsutil leaf'
 ---
 
@@ -379,4 +379,3 @@ ones are addressed below.
 | 5 | P3 | Go | FsyncDir Sync()/Close()-error branches lack direct coverage. | **Accepted** — optional fault-injection; the success + open-error pair is the agreed minimum. |
 
 No finding blocks decomposition. Revised structure stands.
-

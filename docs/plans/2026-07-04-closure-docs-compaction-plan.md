@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan to compact docs/closure (87 files / ~582 KB, over the compact-context 500 KB and 40-file thresholds) by consolidating completed and stale (>14d) per-release-unit closure records into born-docline-compliant summaries that remain in docs/closure, and moving the verbose originals archive-only to docs/archive/closure, keeping the Docline frontmatter gate green.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-04-closure-docs-compaction-plan.md
+source: docs/plans/2026-07-04-closure-docs-compaction-plan.md
 title: 'Compact docs/closure archive (housekeeping)'
 ---
 

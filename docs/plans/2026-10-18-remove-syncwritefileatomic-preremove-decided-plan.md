@@ -4,7 +4,7 @@ doc_type: plan
 title: "Decided plan: Remove syncWriteFileAtomic Windows Pre-Remove — Implementation Plan"
 description: "Decided-plan consolidation of 2026-08-29-remove-syncwritefileatomic-preremove-plan.md: final decisions, implementation units, risks, and review verdict."
 chunk_strategy: h1-h2-h3
-source: docs/exec-plans/2026-10-18-remove-syncwritefileatomic-preremove-decided-plan.md
+source: docs/plans/2026-10-18-remove-syncwritefileatomic-preremove-decided-plan.md
 ---
 
 # Decided plan: Remove syncWriteFileAtomic Windows Pre-Remove — Implementation Plan

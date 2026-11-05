@@ -4,7 +4,7 @@ doc_type: plan
 title: "Decided plan: Azure DevOps work item synchronization (v1, push-only)"
 description: "Decided-plan consolidation of 2026-08-20-azure-devops-sync-plan.md: final decisions, implementation units, risks, and review verdict."
 chunk_strategy: h1-h2-h3
-source: docs/exec-plans/2026-10-18-azure-devops-sync-decided-plan.md
+source: docs/plans/2026-10-18-azure-devops-sync-decided-plan.md
 ---
 
 # Decided plan: Azure DevOps work item synchronization (v1, push-only)

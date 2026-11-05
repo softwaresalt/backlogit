@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Implementation plan for stash 6434A4D7 (074-DL layer L2): shipped-only shipment predecessor readiness at the queue and claim boundaries, a direct ClaimShipment dependency guard, and a governed Stage-reachable disposition for superseded queued shipments that never activates members"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-30-6434a4d7-shipment-predecessor-readiness-guard-plan.md
+source: docs/plans/2026-09-30-6434a4d7-shipment-predecessor-readiness-guard-plan.md
 title: "Implementation Plan: Shipment predecessor shipped-only readiness, claim guard, and governed queued-shipment disposition (6434A4D7)"
 docline:
     stash_id: 6434A4D7

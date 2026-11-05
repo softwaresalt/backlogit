@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Execution plan for S9: Sequence 6/7 red-test honesty gate"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-03-s9-seq6-red-test-honesty-plan.md
+source: docs/plans/2026-09-03-s9-seq6-red-test-honesty-plan.md
 title: "S9 Execution Plan — Sequence 6/7 Red-Test Honesty Gate"
 ---
 

@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Execution plan for S10: Sequence 7/7 shipment-level fault-line evidence DAG framework"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-03-s10-seq7-evidence-dag-plan.md
+source: docs/plans/2026-09-03-s10-seq7-evidence-dag-plan.md
 title: "S10 Execution Plan — Sequence 7/7 Shipment-Level Fault-Line Evidence DAG"
 ---
 

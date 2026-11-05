@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for two archive/shipment re-persist data-loss bugs (D04D63D0 + 7A965F8A). The SQLite index is a rebuildable cache that carries neither item_links (stored in the separate item_links table) nor archive provenance (not indexed), so the shipment lifecycle re-persist path (loadArtifact fast-path -> persistArtifact) drops them. Fix at the core re-persist seam by reloading from Markdown (source of truth) per the MoveInQueue precedent, plus a self-contained guard skipping already-archived linked deliberations in the shipment archive flow.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-28-archive-repersist-projection-drop-plan.md
+source: docs/plans/2026-07-28-archive-repersist-projection-drop-plan.md
 title: 'Archive/shipment re-persist field-drop fix (links + provenance)'
 ---
 

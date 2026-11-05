@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for stash 885A7F65: make the shipment member-evidence staleness check in internal/core/shipment_gate.go ancestor-aware. Replaces strict head_sha equality with git merge-base --is-ancestor lineage inclusion so post-merge multi-commit shipment closure stops falsely rejecting valid evidence, while still rejecting genuinely divergent heads and failing closed on git errors. One feature, one test-first task, two ordered subtasks (git-lineage helper + SHA-shape guard; then wiring + reworked staleness tests). Empty-head bypass (B85DAEE8) and malformed-JSONL (F3844849) are out of scope.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-06-shipment-gate-ancestor-aware-staleness-plan.md
+source: docs/plans/2026-07-06-shipment-gate-ancestor-aware-staleness-plan.md
 title: 'Ancestor-aware shipment member-evidence staleness check'
 ---
 

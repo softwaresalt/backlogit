@@ -7,7 +7,7 @@ docline:
   shipment_id: 206-S
   source_decision: docs/decisions/2026-10-30-gate-payload-parity-remediation-deliberation.md
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-30-gate-payload-parity-remediation-plan.md
+source: docs/plans/2026-10-30-gate-payload-parity-remediation-plan.md
 title: 'Implementation Plan: Cross-surface gate-payload parity remediation (166-F)'
 ---
 

@@ -4,7 +4,7 @@ description: 'Implementation plan for grouped docline+doctor hardening: doctor -
 doc_type: plan
 ingested_at: "2026-06-28T15:24:21Z"
 schema_version: "1.0"
-source: docs/exec-plans/2026-06-28-docline-doctor-hardening-plan.md
+source: docs/plans/2026-06-28-docline-doctor-hardening-plan.md
 title: 'docline + doctor hardening: fix-malformed archived_from, apply-time TOCTOU re-read, JSON-schema validation'
 ---
 

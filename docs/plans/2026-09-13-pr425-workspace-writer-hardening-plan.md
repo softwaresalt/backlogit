@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: "Hardening-addendum implementation plan amending 168-F/169-F/170-F so the PR #425 workspace-writer threat-model findings (3B661FCE, BFF76433, BF18DA1D, 4E210DB4) are genuinely resolved before 149-S/150-S/151-S are completed/shipped (the shipments are claimed first so their hardening members can be built; claim-time is not the gate)"
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-09-13-pr425-workspace-writer-hardening-plan.md
+source: docs/plans/2026-09-13-pr425-workspace-writer-hardening-plan.md
 title: "Hardening Addendum Plan: 168-F/169-F/170-F workspace-writer resistance"
 docline:
     stash_id: 3B661FCE,BFF76433,BF18DA1D,4E210DB4

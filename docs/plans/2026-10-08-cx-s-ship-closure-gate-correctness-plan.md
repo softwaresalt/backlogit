@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for the corrective CX release unit: Ship Step 6 closure protocol (allowlisted staging, pre/safe-close/post ordering, registry capability predicate), Ship gate scope and argv-safe snapshot fallback, gate-aware Orchestrator eligibility and configured served roots, harness lock-sidecar rename, ship-time validation performance, docs-migrate protection for closure gate keys, and the 140-S closure gate registration that unblocks 141-S.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-08-cx-s-ship-closure-gate-correctness-plan.md
+source: docs/plans/2026-10-08-cx-s-ship-closure-gate-correctness-plan.md
 title: 'Implementation Plan: CX Ship closure protocol and gate correctness'
 ---
 

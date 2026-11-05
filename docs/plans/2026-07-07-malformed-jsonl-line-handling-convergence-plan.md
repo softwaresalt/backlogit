@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Converge parseItemLogFile (rehydration) and events.ReadAllEvents (doctor fallback) on a single skip-with-warning policy for malformed JSONL event-log lines by extracting a shared events.ParseEventLine helper, with observability (slog.Warn on skip) and test-first verification of convergence.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-07-malformed-jsonl-line-handling-convergence-plan.md
+source: docs/plans/2026-07-07-malformed-jsonl-line-handling-convergence-plan.md
 title: 'Unify malformed-JSONL-line handling via a shared events.ParseEventLine helper'
 ---
 

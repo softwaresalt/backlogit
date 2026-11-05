@@ -2,7 +2,7 @@
 chunk_strategy: h1-h2-h3
 schema_version: "1.0"
 title: 'Size Extension Contract Architecture Spike Charter — Feature and Shipment Sizing (SPIKE; conclusion pending)'
-source: docs/exec-plans/2026-07-14-size-estimation-feature-shipment-plan.md
+source: docs/plans/2026-07-14-size-estimation-feature-shipment-plan.md
 doc_type: plan
 description: 'Architecture spike charter (PR #241 refocus; PR #242 split of the oversized parity/synthesis task) of seven sequenced <=2h research/decision tasks for optional backlogit-owned size extensions on the docline base contract: base/extension ownership, mutation/provenance/JSONL history durability and the unresolved size-write containment boundary, structured-composition membership/dedup/ruleset, CLI/MCP read-surface parity, CLI/MCP mutation parity, inheritance-bridge and canonical size-location evidence, and an explicit proceed/pivot/defer synthesis exit decision — no implementation and no root-containment claim.'
 docline:

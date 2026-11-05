@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for CT test-suite health: stabilize the gate-evidence counter concurrency test, fix the slog/log capture leak, stabilize the release client timeout test, spike the internal/core runtime budget, and verify the full suite green.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-10-08-ct-test-suite-health-plan.md
+source: docs/plans/2026-10-08-ct-test-suite-health-plan.md
 title: 'Implementation Plan: CT test-suite health'
 ---
 

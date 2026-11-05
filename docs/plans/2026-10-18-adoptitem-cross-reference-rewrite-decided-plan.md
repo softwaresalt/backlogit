@@ -4,7 +4,7 @@ doc_type: plan
 title: "Decided plan: AdoptItem Cross-Reference Rewrite"
 description: "Decided-plan consolidation of 2026-04-20-adoptitem-cross-reference-rewrite-plan.md: final decisions, implementation units, risks, and review verdict."
 chunk_strategy: h1-h2-h3
-source: docs/exec-plans/2026-10-18-adoptitem-cross-reference-rewrite-decided-plan.md
+source: docs/plans/2026-10-18-adoptitem-cross-reference-rewrite-decided-plan.md
 ---
 
 # Decided plan: AdoptItem Cross-Reference Rewrite

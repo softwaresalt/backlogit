@@ -3,7 +3,7 @@ chunk_strategy: h1-h2-h3
 description: 'Implementation plan for CLI/MCP command parity (E16F4664): publish a grounded parity audit matrix, make the backlog-registry fallback map honest and guard it with a drift-detection test, add the shipment add CLI (add_to_shipment fallback), fold in the 7ECBAC7E shipment-list null-vs-[] fix, and ship discoverability + a CLI-fallback guide.'
 doc_type: plan
 schema_version: "1.0"
-source: docs/exec-plans/2026-07-03-cli-mcp-command-parity-plan.md
+source: docs/plans/2026-07-03-cli-mcp-command-parity-plan.md
 title: 'CLI/MCP command parity: honest fallback map + highest-value gap fills'
 ---
 
@@ -180,5 +180,4 @@ No justified violations required; no principle is subordinated except the enviro
 No P0 or P1 findings remain open. The plan proceeds to harvest.
 
 <!-- plan-review-attempt: 2 -->
-
 
