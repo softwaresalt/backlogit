@@ -23,5 +23,5 @@ $ErrorActionPreference = 'Stop'
 Get-Command npx -CommandType Application -ErrorAction Stop | Out-Null
 
 # Native command: markdownlint exits non-zero on violations; propagate that code.
-& npx --yes markdownlint-cli2@0.23.1 "**/*.md"
+& npx --yes markdownlint-cli2@0.23.1 "**/*.md" "!.git/**"
 exit $LASTEXITCODE

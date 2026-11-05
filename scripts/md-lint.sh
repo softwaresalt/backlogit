@@ -14,4 +14,4 @@
 
 set -euo pipefail
 
-npx --yes markdownlint-cli2@0.23.1 "**/*.md"
+npx --yes markdownlint-cli2@0.23.1 "**/*.md" "!.git/**"
