@@ -1,0 +1,11 @@
+{
+  "name": "gsd-workspace-mcp-runtime",
+  "private": true,
+  "dependencies": {
+    "@upstash/context7-mcp": "4.4.4",
+    "tavily-mcp": "0.2.22"
+  },
+  "overrides": {
+    "@opentelemetry/api": "1.9.1"
+  }
+}
