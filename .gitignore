@@ -9,6 +9,7 @@ logs/
 .github/copilot/
 tools/mcp/node_modules/
 tools/mcp/*.lock
+!tools/mcp/bun.lock
 
 # Local environment files (secrets) — never commit. Only .env.example may be tracked.
 .env
