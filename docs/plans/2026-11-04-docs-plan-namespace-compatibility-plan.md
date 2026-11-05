@@ -21,16 +21,34 @@ replan or reharvest the multi-session MCP work.
 
 * Canonical classification and legacy compatibility: U1
 * Canonical workspace setting: U2
-* Current operator and harness entry points: U3 through U10
+* Current operator and harness entry points: U3 through U11
+* Installed harness manifest coherence: U12
 * Historical evidence, event logs, checkpoint records, and original captured
   stash text remain unchanged
 
 ## Implementation Units
 
-All units require an existing covering feature, at most two implementation
-files per task, a verifiable acceptance criterion, and Ship-owned harness or
-document-only exemption evidence before execution. The proposed selector names
-below are not claims that a harness already exists.
+All units require an existing covering feature or chore with a configured
+task-child edge, at most two implementation files per task, a verifiable
+acceptance criterion, and Ship-owned harness or document-only exemption
+evidence before execution. Ship must not label a task harness-satisfied without
+the evidence required by P-002. The proposed selectors below are not claims
+that a harness already exists.
+
+### Covering release-unit red gate
+
+Before **any** implementation under the covering feature or chore, Ship and
+harness-architect must create a compiling assertion harness and observe a
+genuine assertion failure. Use the existing `docline.Classify` API: assert
+that `docline.Classify("docs/plans/x.md") == docline.DocTypePlan`; the current
+classifier returns `guide`. A proposed root selector is
+`go test ./internal/docline -run '^TestU1_' -count=1`.
+Record the exact test, compilation success, assertion-failure output, and
+revision before proceeding. A compile error, missing test, `t.Skip`, source
+shape check, constant-only assertion, or tool failure is not red evidence.
+This same real regression may be U1's task harness; turn it green with U1.
+This release-unit precondition does not replace each task's own P-002/P-004
+or P-002.1 gate, pre-work check, and green evidence.
 
 ### U1: Classify canonical and legacy plan paths
 
@@ -41,7 +59,7 @@ below are not claims that a harness already exists.
   `docs/exec-plans/x.md` classify as `plan`; a nonmatching
   `docs/plans-extra/x.md` remains `guide`
 * Proposed red and green selector after harness creation:
-  `go test ./internal/docline -run '^TestDoclinePlanNamespace$' -count=1`
+  `go test ./internal/docline -run '^TestU1_' -count=1`
 * Harness evidence must show a compiling assertion failure before production
   implementation; no harness-satisfied status is implied by this plan
 
@@ -58,12 +76,13 @@ below are not claims that a harness already exists.
   `.github/copilot-instructions.md`
 * Acceptance: current plan-directory guidance points to `docs/plans/`
 
-### U4: Update Stage and backlog guidance
+### U4: Update backlog guidance
 
-* Domain: harness documentation; files: `.github/agents/_stage.agent.md`,
+* Domain: harness documentation; file:
   `.github/instructions/backlogit.instructions.md`
 * Acceptance: current plan-path guidance and examples use `docs/plans/`
-  without altering workflow gates
+  without altering workflow gates. Do not edit the already-corrected Stage
+  contract
 
 ### U5: Update architecture and compaction guidance
 
@@ -73,19 +92,21 @@ below are not claims that a harness already exists.
 * Acceptance: current plan-directory guidance uses `docs/plans/` without
   changing historical records or unrelated behavior
 
-### U6: Update installed harvest and planning guidance
+### U6: Update installed planning guidance
 
-* Domain: harness documentation; files: `.github/skills/harvest/SKILL.md`,
-  `.github/skills/impl-plan/SKILL.md`
+* Domain: harness documentation; file: `.github/skills/impl-plan/SKILL.md`
 * Acceptance: active plan paths use `docs/plans/`; existing validation and
-  review gates remain intact
+  review gates remain intact. The green-reference pointer in impl-plan resolves
+  to the relocated plan. Describe migration previews accurately as metadata,
+  not a frontmatter diff; do not claim a diff capability the CLI or MCP lacks.
+  Do not edit the already-corrected harvest contract
 
 ### U7: Update installed hardening and review guidance
 
 * Domain: harness documentation; files: `.github/skills/plan-harden/SKILL.md`,
   `.github/skills/plan-review/SKILL.md`
-* Acceptance: active plan inputs use `docs/plans/`; review requirements remain
-  unchanged
+* Acceptance: canonical inputs default to `docs/plans/`, while explicit legacy
+  `docs/exec-plans/` inputs remain accepted; review requirements are unchanged
 
 ### U8: Update installed and plugin spike guidance
 
@@ -93,28 +114,62 @@ below are not claims that a harness already exists.
   `plugin/skills/spike/SKILL.md`
 * Acceptance: active plan path references use `docs/plans/`
 
-### U9: Update plugin harvest and planning guidance
+### U9: Update plugin planning guidance
 
-* Domain: harness documentation; files: `plugin/skills/harvest/SKILL.md`,
-  `plugin/skills/impl-plan/SKILL.md`
-* Acceptance: active plan paths use `docs/plans/`; gate semantics are unchanged
+* Domain: harness documentation; file: `plugin/skills/impl-plan/SKILL.md`
+* Acceptance: active plan paths use `docs/plans/`; gate semantics are unchanged.
+  Do not edit the already-corrected plugin harvest contract
 
 ### U10: Update plugin hardening and review guidance
 
 * Domain: harness documentation; files: `plugin/skills/plan-harden/SKILL.md`,
   `plugin/skills/plan-review/SKILL.md`
-* Acceptance: active plan inputs use `docs/plans/`; review requirements remain
-  unchanged
+* Acceptance: canonical inputs default to `docs/plans/`, while explicit legacy
+  `docs/exec-plans/` inputs remain accepted; review requirements are unchanged
 
-For U3 through U10, Ship must obtain the applicable harness-satisfaction or
-document-only exemption evidence before execution, and validate the changed
-paths with the repository's applicable documentation checks.
+### U11: Correct the docline authoring guide
+
+* Domain: documentation; file: `docs/docline-frontmatter-authoring-guide.md`
+* Acceptance: the active taxonomy identifies canonical and legacy plan
+  namespaces, and the standardization-plan pointer resolves under
+  `docs/plans/`. Historical narrative is not rewritten
+
+### U12: Reconcile harness manifest namespace records
+
+* Domain: configuration; file: `.autoharness/harness-manifest.yaml`
+* Acceptance: the active `DOCS_PLANS_DIR` is `plans`, checksums for artifacts
+  changed by this maintenance match their final contents, the `config_hash`
+  matches the final LF-normalized config, and unrelated manifest records and
+  historical notes are preserved. Reject duplicate YAML keys
+* Posture: Ship applies the harness workflow and records evidence without
+  overwriting the independently completed hierarchy correction
+
+For U2 through U12, Ship and harness-architect establish task-scoped,
+compiling, assertion-red harnesses before their respective implementations.
+If Ship instead elects a docs-only or other exemption, it must satisfy every
+condition of P-002.1, including the closed exempt set, exact non-vacuous
+must-fail-before-deliverable command, static and claim-time checks. No
+exemption is presumed by this plan. Ship validates changed guidance and actual
+links with the repository's applicable documentation checks.
+
+Before wave scheduling, record each task's exact executable task-scoped
+selector and any required regression commands in the canonical task-body
+`green-regression-contract` JSON block. Ship freezes those blocks at Step 3
+under P-002.6; an absent block means exactly `[]`, never an inferred command.
+The harness architect subsequently implements the scheduled assertions.
+Selectors must use the task's `^TestU<unit>_` prefix, bypass caches, and
+fail closed when no intended assertions execute. Stage does not claim that
+the proposed commands or harnesses already exist.
 
 ## Dependency Graph
 
-U1 and U2 are independent. U3 through U10 have no implementation dependency on
-one another. Validate the integrated namespace after U1 and U2 are complete.
-Do not invent dependency edges for a preferred execution order.
+The release-unit red gate precedes all implementation; it is a gate, not a
+synthetic task. U1 through U11 are otherwise independent implementation units.
+U12 depends on U2 through U8: those units change the configuration or installed
+artifacts represented in the manifest. Plugin-only U9/U10 and the authoring
+guide U11 are not manifest inputs. Validate the integrated namespace after U1
+and U2 are complete. Suspend canonical migration writes until U1 is green.
+Do not invent dependency edges for a preferred order.
 
 ## Decisions and Rationale
 
@@ -123,9 +178,9 @@ already includes both namespaces; the doctor occurrence is a historical comment.
 Neither requires a production edit solely for this relocation. Preserve
 dated narratives, original stash text, and immutable lifecycle evidence.
 
-The registry exposes `feature` as hierarchy level 1 and `chore` as level 0.
-Use a feature as the covering parent for task hierarchy if the tool cannot
-parent tasks to a chore; label and describe it as maintenance.
+The active work-item configuration allows tasks directly beneath a covering
+feature or chore. Select a supported parent after refreshing the live type and
+template metadata; plan headings are not backlog items.
 
 ## Risks and Caveats
 
@@ -144,9 +199,13 @@ are pre-existing optional reference-check findings, not authoring-gate passes.
   existing workspace and validation caches must be workspace-contained
 * Structured observability and single responsibility: pass; each unit has a
   bounded outcome and traceable evidence
-* Destructive approval and safety modes: pass; the operator approved the
-  relocation, and no unrelated destructive operation is proposed
-* Merge history: N/A; Stage will not merge
+* Destructive approval and safety modes: Ship enters freeze-scope mode for
+  classifier, configuration, and current authoring references; destructive
+  operations still require the applicable approval
+* Git-friendly persistence and context efficiency: pass; use versioned
+  artifacts, bounded work items, and targeted queries
+* Merge history: Ship must verify and use a merge commit if the release later
+  reaches merge; Stage does not merge
 
 Constitution Check: pass
 
@@ -164,10 +223,26 @@ Requires plan hardening: yes
 
 Ship validates canonical and legacy classifier behavior, nonmatching prefix
 behavior, source-entrypoint plan authoring, current configuration, and relevant
-guidance references with workspace-contained caches. The Go harness must be
-observed red before U1 implementation and green afterward. Record evidence in
-the shipment execution record; if compatibility or path containment regresses,
-stop and revert the affected change through the approved Ship workflow.
+guidance references with workspace-contained caches and Go 1.24. Test POSIX
+and backslash forms, absolute, escaping and dot-segment rejection through
+`ValidateClassifyPath`, and both CLI and MCP classify surfaces for canonical,
+legacy, near-prefix and invalid inputs. Check CLI and MCP migration planning
+on canonical and legacy fixtures, compare report metadata and verify no writes.
+Because those reports do not show before/after content, separately assert the
+shared `docline.PlanMigration` fixture's planned `After` has `doc_type: plan`,
+the correct self-source, and unchanged body bytes. Preserve pre-existing
+behavior and do not weaken assertions. The release-unit harness must be observed red before any
+implementation and green after U1. Record command, exit and assertion evidence.
+
+Before execution Ship must freeze the explicit shipment task IDs and evaluate
+P-001, P-011, P-002/P-004, P-002.6, and applicable topology and served-root
+gates. The current branch is `stage/212-S-multi-session-mcp-runtime` with
+uncommitted work; neither branch suitability nor a clean-worktree gate has
+been established. P-011 requires a matching shipment branch and otherwise
+halts with `BRANCH_MISMATCH`; do not infer an exception for the existing PR
+or claim that an origin-main/clean-branch gate passed. No new worktree or
+branch is authorized by this plan. Resolve any real gate conflict through the
+owning workflow before implementation.
 
 ## Plan Hardening
 
@@ -182,17 +257,23 @@ stop and revert the affected change through the approved Ship workflow.
   returned `valid: true` and `violation_count: 0`. This was the authoring
   profile on the draft before this body-only hardening record; no frontmatter
   fields changed afterward
-* **Pre-implementation**: Ship must establish the actual compiling red harness
-  for U1 and any required harness or exemption evidence for U2 through U10.
-  Proposed selector names are not evidence of harness satisfaction
+* **Pre-implementation**: before any implementation Ship establishes the
+  actual compiling release-unit red harness, then task-scoped harness or valid
+  exemption evidence for U1 through U12. Proposed selectors are not evidence
+  of harness satisfaction
 * **Verification**: exercise canonical, legacy, and near-prefix paths and
   confirm CLI/MCP-visible scope parity through the shared policy. Validate the
   workspace setting and touched guidance without widening to historical records
 * **Rollout**: retain the legacy classifier rule throughout the transition;
   verify the integrated configuration and guidance after both U1 and U2
 * **Rollback**: if classification, compatibility, or containment regresses,
-  Ship stops execution and reverts the affected change through its approved
-  workflow; Stage does not run code or alter shipment lifecycle
+  Ship stops. Retain minimal canonical `docs/plans/` and intentional legacy
+  recognition while files, live configuration, or active references use the
+  canonical directory. Never blindly revert compatibility support while those
+  consumers remain. Full namespace rollback requires fresh approval and a
+  coordinated file, configuration, and reference migration; verify document
+  types in both namespaces before removing canonical support. Do not relocate
+  the pre-existing plans without that approval. Stage does not execute rollback
 * **ProposedAction**: add a canonical classifier rule and update active
   namespace settings and guidance. `ActionRisk: moderate`; operator approved
   the namespace relocation. `ActionResult: planned`
@@ -238,3 +319,127 @@ stop and revert the affected change through the approved Ship workflow.
   plan before any backlog item is created
 
 <!-- plan-review-attempt: 1 -->
+
+## Plan Review
+
+* `dispatch_mode: single-agent-declared-degradation`
+* `decision: FAIL`
+* `TOOL_DEGRADED: reviewer-subagent-dispatch` — six leaf personas were
+  dispatched, but the learnings researcher could not assess the plan because
+  its role is restricted to the compound library. A complete sequential
+  persona-adapter pass was therefore performed; the partial dispatch was not
+  treated as a complete multi-agent gate
+* **Constitution, P1**: the plan allows document-only exemption evidence for
+  U3 through U10 and makes those units independent of U1, but does not require
+  the covering feature or chore's compiling, observed-failing test harness
+  before implementation begins. Principle II and the development workflow
+  require that release-unit precondition. State the precondition explicitly
+  and preserve P-002.1 task-level exemption conditions where applicable
+* **Go, P2**: the proposed classifier examples do not independently establish
+  the stated normalization, containment, and CLI/MCP parity invariants. Require
+  focused existing or new checks for both interfaces and invalid paths
+* **Scope**: no independent P0 or P1 finding; direct tasks under the configured
+  feature or chore are supported and the earlier hierarchy blocker is resolved
+* **Learnings**: no P0 or P1 contradiction found. Prior art on source-path
+  correctness, lexical validation, containment, and CLI/MCP parity is relevant
+* **Architecture, P2**: the active docline authoring guide still lists only the
+  legacy plan namespace. Rollback must coordinate classifier, configuration,
+  and guidance rather than leaving canonical authoring misclassified
+* **Agent-native parity, P2**: the guide, the relocated green-reference link,
+  and affected harness manifest values/checksums need explicit bounded
+  reconciliation. Verify both classify entry points and non-writing
+  migration planning, not scope output alone
+* **Constitution, P2/P3**: record the applicable explicit safety posture,
+  Git-friendly persistence, context efficiency, and Ship's merge-commit rule
+* **Security lens**: not triggered; the work does not introduce authentication,
+  secrets, an external integration, or a new trust boundary
+* **Hardening**: required and present, but the release-unit red precondition
+  and coordinated rollback require clarification before the next gate
+* **Remaining gate**: after a later review passes, Ship must validate the
+  final reviewed plan through the source-entrypoint authoring check before
+  harvest. No backlog items may be created from this failed review
+
+<!-- plan-review-attempt: 2 -->
+
+## Plan Review
+
+* `dispatch_mode: multi-agent-dispatch`
+* `decision: FAIL`
+* **Architecture, P1**: the rollback permits removing canonical classification
+  while canonical documents still exist under `docs/plans/`. Reverting the
+  authoring guidance does not protect those documents: they would classify as
+  guides and migration could rewrite their type. Keep canonical classification
+  while such documents exist, or require an explicitly authorized relocation or
+  equivalent compatibility mechanism before removal
+* **Constitution, P2**: the proposed U1 selector does not use the P-002.6
+  task-unit prefix. Task selectors and canonical task-body
+  `green-regression-contract` blocks must be fixed before wave scheduling,
+  rather than deferred until after harness generation
+* **Go and architecture, P2**: specify fixture-based migration-plan assertions
+  for derived `doc_type`, `source`, and unchanged body bytes; compare
+  non-writing CLI/MCP reports on canonical and legacy fixtures. Prevent
+  canonical migration writes until U1 is green
+* **Scope and architecture, P2**: include the LF-normalized manifest
+  `config_hash`, limit U12 dependencies to actual manifest inputs, and remove
+  currently corrected guidance files from edit scope unless a specific stale
+  reference remains
+* **Agent-native parity, P2**: retain explicit legacy input support in review
+  and hardening; correct any misleading diff-first migration guidance without
+  inventing a tool capability
+* **Learnings**: relevant prior art covers non-vacuous assertions, source-path
+  correctness, relative-root parity, body preservation, and duplicate YAML
+  keys. No independent P0/P1 contradiction was established
+* **Hardening**: required and present, but rollback remains unsafe for existing
+  canonical documents. The release-unit compiling assertion-red gate is now
+  explicit and does not rely on a build or tool failure
+* **Decision consequence**: attempt 3 exhausts this plan's review budget.
+  Halt and escalate; do not start a fourth review or harvest a partial hierarchy
+
+<!-- plan-review-attempt: 3 -->
+
+## Operator-Authorized Review Extension
+
+At `2026-11-05T05:07:18Z`, the operator answered **"Yes"** to one additional
+remediation and review cycle for this namespace compatibility maintenance
+plan only. The maximum is review attempt 4 and remediation cycle 3. Attempts
+1, 2, and 3 remain `FAIL`; their findings and history are not reset.
+
+The approved remediation must retain canonical classification while files
+remain in `docs/plans/`, or coordinate an explicitly authorized file and
+configuration rollback before removing canonical support. This is not
+acceptance of residual risk. No further attempt beyond 4 is authorized
+without a new operator decision.
+
+## Plan Review
+
+* `dispatch_mode: multi-agent-dispatch`
+* `decision: FAIL`
+* **Constitution, P1**: the plan incorrectly places each task's own selector
+  inside the `green-regression-contract` and requires test-prefixed selectors
+  even for potentially exempt tasks. P-002.6 treats a task's own harness or
+  exemption command separately from the optional block of additional
+  regression commands. An exempt task may have no harness test function, so
+  this conflation can make its wave gate vacuous or unsatisfiable
+* **Go and constitution, P2**: the proposed U1 command alone can pass without
+  selecting tests and lacks verbose named-test evidence. Its eventual executable
+  verification must fail closed on a vacuous pass
+* **Constitution, P2**: review the stated risk level and explicit approval
+  fields against strict-safety's migration classification; the extension is
+  not authority for additional writes
+* **Scope and architecture, P2**: the manifest's impl-plan references are
+  historical rather than active checksum records; U12's dependency on U6 is
+  not justified by a current manifest input
+* **Agent-native parity, P2**: the installed harvest skill still describes
+  migration as diff-first even though the public reports expose metadata,
+  not before/after content. Correct that bounded guidance without weakening
+  the harvest frontmatter gate
+* **Learnings**: relevant prior art covers honest non-vacuous red evidence,
+  source/body preservation, path containment, and manifest integrity
+* **Hardening**: required and present. The attempt 3 rollback P1 is resolved:
+  the revised contract retains canonical support while canonical consumers
+  remain and requires approval before a full namespace rollback
+* **Decision consequence**: the sole operator-authorized extra cycle is
+  exhausted. Halt and escalate; do not conduct a fifth review or harvest a
+  partial hierarchy
+
+<!-- plan-review-attempt: 4 -->
