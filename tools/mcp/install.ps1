@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 $workspaceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
-$binDirectory = Join-Path $workspaceRoot ".bin"
+$binDirectory = Join-Path $workspaceRoot "bin"
 $bunExe = Join-Path $binDirectory "bun.exe"
 if (-not (Test-Path -LiteralPath $bunExe -PathType Leaf)) {
     throw "Workspace-local Bun executable is missing: $bunExe"
