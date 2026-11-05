@@ -513,7 +513,23 @@ residual-risk acceptance is authorized.
 * **Hardening**: required and present. The attempt 4 command-contract P1 is
   resolved: task harness or exemption commands are separate from optional
   additional regression commands
-* **Gate**: operator confirmation is required before an advisory can satisfy
-  the review contract. No such confirmation is recorded in this section
+* `operator_authorization: approved`
+* **Operator decision**: at `2026-11-05T07:13:15Z`, the operator stated
+  **"Yes, proceed"** with all four controls below. This authorizes proceeding
+  with the advisory; it does not waive P-002.3 or any other gate
+* **Applied control — U3 through U11**: before creating any exempt task,
+  require its exact P-002.3 command to check the required deliverable content
+  and then run the documentation lint gate. Preserve the pre-work failure,
+  post-deliverable success, evidence marker, and other exemption checks
+* **Applied control — migration verification**: independently verify
+  canonical and legacy fixtures for expected type, self-source, preserved body
+  bytes, and absence of findings
+* **Applied control — U5 relocation**: preserve affected references and
+  obtain applicable approval before relocating existing canonical plans
+* **Applied control — U5 discovery**: retain legacy plan discovery alongside
+  the primary canonical scan
+* **Current-baseline guard**: do not create exempt tasks for changes already
+  delivered by 6bb4e451, 756df591, or 9c028c85; their pre-work checks would
+  start green
 
 <!-- plan-review-attempt: 5 -->
