@@ -5,6 +5,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -185,20 +186,43 @@ func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
 	cmd.Stderr = &stderr
 
 	runErr := cmd.Run()
+	// A timeout OR cancellation MUST be detected before interpreting any exit:
+	// context-killed git reports platform-dependent codes. Fail closed even if
+	// the process exited successfully while its context expired.
+	if ctxErr := runCtx.Err(); ctxErr != nil {
+		return false, fmt.Errorf("repo-presence probe aborted: %w", ctxErr)
+	}
 	if runErr == nil {
 		// exit 0: `true` means a real work tree; anything else (bare repo /
 		// inside `.git`) is a not-a-worktree skip, not a real ship scenario.
 		if bytes.Equal(bytes.TrimSpace(stdout.Bytes()), []byte("true")) {
+			var tlStdout, tlStderr bytes.Buffer
+			tlCmd := exec.CommandContext(runCtx, "git", "rev-parse", "--show-toplevel")
+			tlCmd.Dir = ws.RootPath
+			tlCmd.Env = withCLocale(gate.MinimalEnv())
+			tlCmd.Stdout = &tlStdout
+			tlCmd.Stderr = &tlStderr
+			tlErr := tlCmd.Run()
+			if ctxErr := runCtx.Err(); ctxErr != nil {
+				return false, fmt.Errorf("repo-presence probe aborted: %w", ctxErr)
+			}
+			if tlErr != nil {
+				return false, fmt.Errorf("git rev-parse --show-toplevel: %s: %w",
+					bytes.TrimSpace(tlStderr.Bytes()), tlErr)
+			}
+			rawTopLevel := bytes.TrimSpace(tlStdout.Bytes())
+			if len(rawTopLevel) == 0 {
+				return false, fmt.Errorf("git rev-parse --show-toplevel returned empty worktree: %w",
+					blerrors.ErrValidation)
+			}
+			topLevel := filepath.Clean(filepath.FromSlash(string(rawTopLevel)))
+			if bErr := gitEntryPresentBelowWorkTree(ws.RootPath, topLevel); bErr != nil {
+				return false, fmt.Errorf("git rev-parse --show-toplevel boundary check for %s: %w",
+					ws.RootPath, bErr)
+			}
 			return true, nil
 		}
 		return false, nil
-	}
-
-	// A timeout OR cancellation MUST be detected before any exit code is read: a
-	// context-killed git reports a platform-dependent exit code (e.g. 1 on
-	// Windows) that must never be misread as a clean signal. Fail closed.
-	if ctxErr := runCtx.Err(); ctxErr != nil {
-		return false, fmt.Errorf("repo-presence probe aborted: %w", ctxErr)
 	}
 
 	var ee *exec.ExitError
@@ -212,13 +236,19 @@ func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
 		// NO `.git` entry here (an ancestor repo would have made git return "true"
 		// at exit 0, never reaching this branch). ONLY a definitive os.IsNotExist
 		// (the `.git` entry is genuinely absent) may proceed to the no-repo marker
-		// check; a successful stat (present) OR any other stat error (permission /
+		// check; a successful lstat (present) OR any other lstat error (permission /
 		// IO — presence indeterminate) fails closed, because for an ENFORCEMENT
 		// discriminator "cannot rule out a present-but-broken repo" is fail-closed.
-		if _, statErr := os.Stat(filepath.Join(ws.RootPath, ".git")); !os.IsNotExist(statErr) {
+		_, statErr := os.Lstat(filepath.Join(ws.RootPath, ".git"))
+		if statErr == nil {
 			return false, fmt.Errorf(
-				"git rev-parse --is-inside-work-tree exit %d; .git at %s present-but-unresolved or presence indeterminate (stat: %v): %s: %w",
-				ee.ExitCode(), ws.RootPath, statErr, bytes.TrimSpace(stderr.Bytes()), runErr)
+				"git rev-parse --is-inside-work-tree exit %d; .git at %s present-but-unresolved: %s: %w: %w",
+				ee.ExitCode(), ws.RootPath, bytes.TrimSpace(stderr.Bytes()), blerrors.ErrValidation, runErr)
+		}
+		if !stderrors.Is(statErr, fs.ErrNotExist) {
+			return false, fmt.Errorf(
+				"git rev-parse --is-inside-work-tree exit %d; inspect .git at %s: %w: %w: %w",
+				ee.ExitCode(), ws.RootPath, blerrors.ErrValidation, statErr, runErr)
 		}
 		// `.git` is definitively ABSENT at RootPath: ONLY git's stable "outside any
 		// repository" marker — the parenthetical "(or any of the parent
