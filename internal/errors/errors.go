@@ -37,6 +37,21 @@ var (
 	// the single-daemon lock for the workspace (204-F).
 	ErrDaemonAlreadyRunning = errors.New("backlogit: mcp daemon already running for workspace")
 
+	// ErrMCPMutationQueueFull indicates that the pending MCP mutation queue is full.
+	ErrMCPMutationQueueFull = errors.New("backlogit: mcp mutation queue full")
+
+	// ErrMCPAdmissionTimeout indicates that an MCP operation timed out awaiting admission.
+	ErrMCPAdmissionTimeout = errors.New("backlogit: mcp admission timeout")
+
+	// ErrDaemonWorkspaceMismatch indicates that a daemon belongs to a different workspace or storage root.
+	ErrDaemonWorkspaceMismatch = errors.New("backlogit: mcp daemon workspace mismatch")
+
+	// ErrDaemonVersionMismatch indicates that a daemon's binary or version differs from the expected identity.
+	ErrDaemonVersionMismatch = errors.New("backlogit: mcp daemon binary or version mismatch")
+
+	// ErrDaemonBinaryMissing indicates that the workspace-local daemon binary is missing.
+	ErrDaemonBinaryMissing = errors.New("backlogit: mcp daemon binary missing")
+
 	// Cascade sentinel errors (F018 / T004).
 	ErrChildrenNotTerminal = errors.New("backlogit: parent cannot transition while non-terminal children exist")
 
