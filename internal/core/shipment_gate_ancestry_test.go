@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // initGitRepoWithCommits initializes a real git repo in dir (which must be the
@@ -111,10 +114,20 @@ func TestInGitWorktreeBounded(t *testing.T) {
 	assert.True(t, inRepo, "a real work tree must report inside-work-tree=true")
 
 	// (b) no-repo temp dir -> (false, nil): legacy skip preserved.
-	wsNoRepo := newGateTestWorkspace(t)
-	inRepo, err = wsNoRepo.inGitWorktreeBounded(ctx)
-	require.NoError(t, err, "a genuine no-repo dir must be a silent skip, not an error")
-	assert.False(t, inRepo, "a no-repo dir must report inside-work-tree=false")
+	t.Run("no_repo_legacy_skip_with_isolated_git", func(t *testing.T) {
+		wsNoRepo := newGateTestWorkspace(t)
+		fakeDir := writeFakeGit(t, fakeGitScripts{
+			windows: "@echo off\r\necho fatal: not a git repository ^(or any of the parent directories^): .git 1>&2\r\nexit /b 128\r\n",
+			unix:    "#!/bin/sh\necho 'fatal: not a git repository (or any of the parent directories): .git' >&2\nexit 128\n",
+		})
+		t.Setenv("PATH", fakeDir)
+		resolved, lookErr := exec.LookPath("git")
+		require.NoError(t, lookErr)
+		require.Equal(t, filepath.Clean(fakeDir), filepath.Clean(filepath.Dir(resolved)))
+		inRepo, err := wsNoRepo.inGitWorktreeBounded(ctx)
+		require.NoError(t, err, "a genuine no-repo dir must be a silent skip, not an error")
+		assert.False(t, inRepo, "a no-repo dir must report inside-work-tree=false")
+	})
 
 	// (c) already-expired bounded context -> fail closed with a non-nil ctx error.
 	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
@@ -139,6 +152,42 @@ func TestInGitWorktreeBounded(t *testing.T) {
 		require.Error(t, err, "a present-but-broken .git pointer must fail closed, not be misread as a no-repo skip")
 		assert.False(t, inRepo, "a broken-repo probe must not report inside-work-tree=true")
 	}
+
+	t.Run("nested_and_intermediate_empty_git_dir_inside_outer_repo_fails_closed", func(t *testing.T) {
+		outer := t.TempDir()
+		initGitRepoWithCommits(t, outer)
+		cleanRoot := filepath.Join(outer, "clean-nested")
+		require.NoError(t, os.MkdirAll(cleanRoot, 0o755))
+		cleanWS := &Workspace{RootPath: cleanRoot}
+		inRepo, err := cleanWS.inGitWorktreeBounded(ctx)
+		require.NoError(t, err, "a clean nested workspace must resolve its outer worktree")
+		assert.True(t, inRepo, "a clean nested workspace must remain a valid worktree")
+
+		for _, tc := range []struct {
+			name    string
+			root    string
+			gitRoot string
+		}{
+			{"direct", filepath.Join(outer, "nested"), filepath.Join(outer, "nested")},
+			{"intermediate", filepath.Join(outer, "mid", "ws"), filepath.Join(outer, "mid")},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				require.NoError(t, os.MkdirAll(tc.root, 0o755))
+				require.NoError(t, os.MkdirAll(filepath.Join(tc.gitRoot, ".git"), 0o755))
+				src := filepath.Join(tc.root, "source.md")
+				dst := filepath.Join(tc.root, "dest.md")
+				require.NoError(t, os.WriteFile(src, []byte("artifact\n"), 0o644))
+				ws := &Workspace{RootPath: tc.root}
+				inRepo, probeErr := ws.inGitWorktreeBounded(ctx)
+				assert.Error(t, probeErr, "present-but-unresolved .git below outer worktree must fail closed")
+				assert.True(t, errors.Is(probeErr, blerrors.ErrValidation), "repo probe must retain ErrValidation")
+				assert.False(t, inRepo, "an unresolved nested boundary must not report inside-work-tree=true")
+				_, moveErr := planArtifactMove(ctx, tc.root, src, dst)
+				assert.Error(t, moveErr, "artifact move must reject present-but-unresolved .git below outer worktree")
+				assert.True(t, errors.Is(moveErr, blerrors.ErrValidation), "artifact move must retain ErrValidation")
+			})
+		}
+	})
 
 	// (e) present-but-EMPTY `.git` directory: git emits the genuine-no-repo marker
 	// `not a git repository (or any of the parent directories)` (message collides
