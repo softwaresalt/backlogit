@@ -57,8 +57,8 @@ type mcpDaemonOptions struct {
 	PID func() int
 	// StopTimeout bounds how long a stop waits for the lock to be released.
 	StopTimeout time.Duration
-	// OpenLock opens name relative to the runtime root and tries the lock.
-	OpenLock func(runtimeRoot *os.Root, name string) (*os.File, bool, error)
+	// OpenLock opens the lock relative to runtimeRoot, using runtimeDir for validation.
+	OpenLock func(runtimeRoot *os.Root, runtimeDir string) (*os.File, bool, error)
 	// TerminateVerifiedProcess verifies pid against the recorded identity and
 	// terminates it through one retained OS process handle. reverify runs while
 	// that handle is held.
@@ -67,11 +67,9 @@ type mcpDaemonOptions struct {
 
 func defaultMCPDaemonOptions() mcpDaemonOptions {
 	return mcpDaemonOptions{
-		PID:         os.Getpid,
-		StopTimeout: 5 * time.Second,
-		OpenLock: func(runtimeRoot *os.Root, _ string) (*os.File, bool, error) {
-			return openMCPDaemonLockFile(runtimeRoot)
-		},
+		PID:                      os.Getpid,
+		StopTimeout:              5 * time.Second,
+		OpenLock:                 openMCPDaemonLockFile,
 		TerminateVerifiedProcess: terminateVerifiedProcess,
 	}
 }
@@ -215,11 +213,33 @@ func verifyPinnedDir(path string, parent *os.Root, name string) error {
 	return nil
 }
 
+// resolveMCPDaemonLeafPath uses the absolute directory verified when the root
+// was pinned, not the potentially relative name of a nested os.Root.
+func resolveMCPDaemonLeafPath(runtimeRoot *os.Root, runtimeDir, leaf string) (string, error) {
+	if runtimeRoot == nil || runtimeDir == "" || !filepath.IsAbs(runtimeDir) {
+		return "", mcpDaemonValidationError("runtime root requires an absolute runtime directory")
+	}
+	if leaf == "" || leaf == "." || leaf == ".." || filepath.Base(leaf) != leaf {
+		return "", mcpDaemonValidationError("invalid runtime leaf %q", leaf)
+	}
+	info, err := runtimeRoot.Stat(".")
+	if err != nil {
+		return "", fmt.Errorf("stat pinned runtime directory: %w", err)
+	}
+	if !info.IsDir() {
+		return "", mcpDaemonValidationError("pinned runtime root is not a directory")
+	}
+	return filepath.Join(runtimeDir, leaf), nil
+}
+
 // openMCPDaemonLockFile opens the lock leaf relative to runtimeRoot without
 // following links and attempts the exclusive non-blocking lock. On a failed
 // acquisition the file is closed and acquired is false.
-func openMCPDaemonLockFile(runtimeRoot *os.Root) (file *os.File, acquired bool, err error) {
-	lockPath := filepath.Join(runtimeRoot.Name(), mcpDaemonLockName)
+func openMCPDaemonLockFile(runtimeRoot *os.Root, runtimeDir string) (file *os.File, acquired bool, err error) {
+	lockPath, err := resolveMCPDaemonLeafPath(runtimeRoot, runtimeDir, mcpDaemonLockName)
+	if err != nil {
+		return nil, false, err
+	}
 	if info, err := runtimeRoot.Lstat(mcpDaemonLockName); err == nil {
 		if err := rejectLink(info, lockPath); err != nil {
 			return nil, false, err
@@ -263,11 +283,24 @@ func openMCPDaemonLockFile(runtimeRoot *os.Root) (file *os.File, acquired bool, 
 	return f, true, nil
 }
 
-// readMCPDaemonInfo decodes the sidecar directly from a validated no-follow
-// handle relative to runtimeRoot. A missing sidecar yields os.ErrNotExist.
+// readMCPDaemonInfo supports callers that opened a top-level absolute root.
+//
+//nolint:unused // Compatibility entrypoint for the existing !windows FIFO regression test.
 func readMCPDaemonInfo(runtimeRoot *os.Root) (MCPDaemonInfo, error) {
+	if runtimeRoot == nil || !filepath.IsAbs(runtimeRoot.Name()) {
+		return MCPDaemonInfo{}, mcpDaemonValidationError("runtime root requires an absolute name")
+	}
+	return readMCPDaemonInfoAt(runtimeRoot, runtimeRoot.Name())
+}
+
+// readMCPDaemonInfoAt decodes the sidecar directly from a validated no-follow
+// handle relative to runtimeRoot. A missing sidecar yields os.ErrNotExist.
+func readMCPDaemonInfoAt(runtimeRoot *os.Root, runtimeDir string) (MCPDaemonInfo, error) {
 	var info MCPDaemonInfo
-	path := filepath.Join(runtimeRoot.Name(), mcpDaemonSidecarName)
+	path, err := resolveMCPDaemonLeafPath(runtimeRoot, runtimeDir, mcpDaemonSidecarName)
+	if err != nil {
+		return info, err
+	}
 	linked, err := runtimeRoot.Lstat(mcpDaemonSidecarName)
 	if err != nil {
 		return info, fmt.Errorf("lstat %s: %w", path, err)
@@ -305,15 +338,21 @@ func removeMCPDaemonSidecar(runtimeRoot *os.Root) error {
 }
 
 // writeMCPDaemonSidecar writes info relative to runtimeRoot.
-func writeMCPDaemonSidecar(runtimeRoot *os.Root, info MCPDaemonInfo) error {
+func writeMCPDaemonSidecar(runtimeRoot *os.Root, runtimeDir string, info MCPDaemonInfo) error {
+	path, err := resolveMCPDaemonLeafPath(runtimeRoot, runtimeDir, mcpDaemonSidecarName)
+	if err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode daemon info: %w", err)
 	}
 	if linked, err := runtimeRoot.Lstat(mcpDaemonSidecarName); err == nil {
-		if err := rejectLink(linked, filepath.Join(runtimeRoot.Name(), mcpDaemonSidecarName)); err != nil {
+		if err := rejectLink(linked, path); err != nil {
 			return err
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("lstat %s: %w", path, err)
 	}
 	// os.Root has no Rename before Go 1.25, so the sidecar is created
 	// exclusively in place. The caller holds the OS lock and has removed any
@@ -352,7 +391,7 @@ func acquireMCPDaemonLockWithOptions(ctx context.Context, rootPath string, repla
 	if err != nil {
 		return nil, err
 	}
-	lockFile, acquired, err := opts.OpenLock(runtimeRoot, mcpDaemonLockName)
+	lockFile, acquired, err := opts.OpenLock(runtimeRoot, runtimeDir)
 	if err != nil {
 		_ = runtimeRoot.Close()
 		return nil, err
@@ -367,7 +406,7 @@ func acquireMCPDaemonLockWithOptions(ctx context.Context, rootPath string, repla
 			}
 			return acquireMCPDaemonLockWithOptions(ctx, rootPath, false, opts)
 		}
-		holder, readErr := readMCPDaemonInfo(runtimeRoot)
+		holder, readErr := readMCPDaemonInfoAt(runtimeRoot, runtimeDir)
 		if errors.Is(readErr, corerrors.ErrValidation) {
 			return nil, readErr
 		}
@@ -407,7 +446,7 @@ func acquireMCPDaemonLockWithOptions(ctx context.Context, rootPath string, repla
 		Version:          version.Resolve(),
 		LockPath:         filepath.Join(runtimeDir, mcpDaemonLockName),
 	}
-	if err := writeMCPDaemonSidecar(runtimeRoot, info); err != nil {
+	if err := writeMCPDaemonSidecar(runtimeRoot, runtimeDir, info); err != nil {
 		return fail(err)
 	}
 
@@ -441,7 +480,7 @@ func InspectMCPDaemonStatus(rootPath string) (MCPDaemonStatus, error) {
 		StorageRoot:   storageRoot,
 		LockPath:      filepath.Join(runtimeDir, mcpDaemonLockName),
 	}
-	probe, acquired, err := openMCPDaemonLockFile(runtimeRoot)
+	probe, acquired, err := openMCPDaemonLockFile(runtimeRoot, runtimeDir)
 	if err != nil {
 		return MCPDaemonStatus{}, err
 	}
@@ -455,7 +494,7 @@ func InspectMCPDaemonStatus(rootPath string) (MCPDaemonStatus, error) {
 		return status, nil
 	}
 
-	info, err := readMCPDaemonInfo(runtimeRoot)
+	info, err := readMCPDaemonInfoAt(runtimeRoot, runtimeDir)
 	if errors.Is(err, corerrors.ErrValidation) {
 		return MCPDaemonStatus{}, err
 	}
@@ -484,10 +523,10 @@ func closeLockProbe(runtimeRoot *os.Root, probe *os.File) error {
 
 // readHolderInfo reads the sidecar, tolerating a new daemon that is still
 // replacing stale metadata.
-func readHolderInfo(ctx context.Context, runtimeRoot *os.Root, timeout time.Duration) (MCPDaemonInfo, error) {
+func readHolderInfo(ctx context.Context, runtimeRoot *os.Root, runtimeDir string, timeout time.Duration) (MCPDaemonInfo, error) {
 	deadline := time.Now().Add(timeout)
 	for {
-		info, err := readMCPDaemonInfo(runtimeRoot)
+		info, err := readMCPDaemonInfoAt(runtimeRoot, runtimeDir)
 		if err == nil {
 			return info, nil
 		}
@@ -532,7 +571,7 @@ func stopMCPDaemonWithOptions(ctx context.Context, rootPath string, opts mcpDaem
 		LockPath:      filepath.Join(runtimeDir, mcpDaemonLockName),
 	}
 
-	probe, acquired, err := opts.OpenLock(runtimeRoot, mcpDaemonLockName)
+	probe, acquired, err := opts.OpenLock(runtimeRoot, runtimeDir)
 	if err != nil {
 		return MCPDaemonStopResult{}, err
 	}
@@ -543,7 +582,7 @@ func stopMCPDaemonWithOptions(ctx context.Context, rootPath string, opts mcpDaem
 		return result, nil
 	}
 
-	info, err := readHolderInfo(ctx, runtimeRoot, time.Second)
+	info, err := readHolderInfo(ctx, runtimeRoot, runtimeDir, time.Second)
 	if err != nil {
 		return MCPDaemonStopResult{}, err
 	}
@@ -555,14 +594,14 @@ func stopMCPDaemonWithOptions(ctx context.Context, rootPath string, opts mcpDaem
 	}
 
 	reverify := func() error {
-		cur, err := readMCPDaemonInfo(runtimeRoot)
+		cur, err := readMCPDaemonInfoAt(runtimeRoot, runtimeDir)
 		if err != nil {
 			return mcpDaemonValidationError("re-read daemon metadata: %v", err)
 		}
 		if cur.PID != info.PID || cur.ProcessStartTime != info.ProcessStartTime {
 			return mcpDaemonValidationError("daemon metadata changed before termination")
 		}
-		p, got, err := opts.OpenLock(runtimeRoot, mcpDaemonLockName)
+		p, got, err := opts.OpenLock(runtimeRoot, runtimeDir)
 		if err != nil {
 			return err
 		}
@@ -580,7 +619,7 @@ func stopMCPDaemonWithOptions(ctx context.Context, rootPath string, opts mcpDaem
 	timer := time.NewTimer(opts.StopTimeout)
 	defer timer.Stop()
 	for {
-		probe, acquired, err := opts.OpenLock(runtimeRoot, mcpDaemonLockName)
+		probe, acquired, err := opts.OpenLock(runtimeRoot, runtimeDir)
 		if err != nil {
 			return MCPDaemonStopResult{}, err
 		}
