@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,6 +106,16 @@ func initGitRepoNoCommits(t *testing.T, dir string) {
 // empty-head hole).
 func TestInGitWorktreeBounded(t *testing.T) {
 	ctx := context.Background()
+
+	t.Run("canonicalization_errors_keep_underlying_chain", func(t *testing.T) {
+		root := t.TempDir()
+		missingWorkspace := filepath.Join(root, "nonexistent-workspace")
+		missingWorkTree := filepath.Join(root, "nonexistent-worktree")
+		err := gitEntryPresentBelowWorkTree(missingWorkspace, missingWorkTree)
+		require.Error(t, err, "nonexistent paths must fail canonicalization")
+		assert.True(t, errors.Is(err, blerrors.ErrValidation), "canonicalization error must retain ErrValidation")
+		assert.True(t, errors.Is(err, fs.ErrNotExist), "canonicalization error must retain underlying fs.ErrNotExist")
+	})
 
 	// (a) real work tree -> (true, nil).
 	wsRepo := newGateTestWorkspace(t)
