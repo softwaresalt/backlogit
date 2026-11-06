@@ -11,8 +11,13 @@ docline:
     - docs/plans/2026-11-04-multi-session-mcp-runtime-plan.md
     - .backlogit/archive/082-DL.md
     - .backlogit/archive/085-DL.md
+    - .backlogit/archive/086-DL.md
+    - .backlogit/archive/087-DL.md
     - .backlogit/queue/211-F.md
-    - .backlogit/queue/211.008-T.md
+    - .backlogit/archive/211.008-T.md
+    - .backlogit/queue/211.009-T.md
+    - .backlogit/queue/211.010-T.md
+    - .backlogit/queue/211.011-T.md
     - .backlogit/queue/212-F.md
     - .backlogit/queue/213-F.md
     - .backlogit/queue/212-S.md
@@ -20,8 +25,12 @@ docline:
     - .backlogit/queue/214-S.md
     - docs/decisions/2026-10-29-single-daemon-per-workspace-deliberation.md
     - docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md
+    - docs/memory/2026-11-06/212-S-U1b-green-unrelated-convergence-blockers.md
     - docs/compound/build-errors/match-ci-go-and-linter-before-source-repair-2026-11-06.md
     - docs/compound/runtime-errors/nested-os-root-name-is-not-an-absolute-path-2026-11-06.md
+    - docs/compound/2026-07-07-empty-head-fail-closed-repo-presence-probe.md
+    - docs/compound/best-practices/git-aware-backlog-artifact-archival-preserves-follow-history-2026-07-10.md
+    - docs/compound/2026-07-06-autoharness-gate-broker-integration-contract.md
   promoted_to: both
   source_stash_id: ECF33C79
   tags:
@@ -35,6 +44,11 @@ docline:
     - 082-DL
     - C2CFE06E
     - 085-DL
+    - 60D799D9
+    - 19D55778
+    - 96F1DFFD
+    - 086-DL
+    - 087-DL
   topic: 'Support multiple agents through one singleton MCP runtime with session isolation and channel-gated mutations (ECF33C79)'
 schema_version: "1.0"
 source: docs/decisions/2026-11-04-multi-session-mcp-runtime-deliberation.md
@@ -319,4 +333,60 @@ Verified root cause (`docs/compound/runtime-errors/nested-os-root-name-is-not-an
    * `TestU1b_NestedRuntimeRootUsesCanonicalAbsolutePathForReparseValidation` in `internal/cli/mcp_daemon_lock_test.go` is sequential (no `t.Parallel()`), compiles cleanly against existing `internal/cli/mcp_daemon.go`, uses `t.Chdir` to an unrelated directory with no `runtime/` subdirectory, exercises existing production entrypoints (`AcquireMCPDaemonLock`, `InspectMCPDaemonStatus`, `StopMCPDaemon`) with default options to produce a genuine assertion RED on Windows (and cross-platform regression guard on POSIX), and executes both malicious lock-leaf and malicious sidecar-leaf (with live lock holder) reparse/symlink refusal assertions (`errors.Is(err, corerrors.ErrValidation)`) without `t.Skipf` (failing explicitly if fixture creation is unavailable).
    * `internal/cli/mcp_daemon.go` propagates the verified absolute `runtimeDir` across all production default options (`defaultMCPDaemonOptions().OpenLock` taking `(runtimeRoot *os.Root, runtimeDir string)`) and internal lock/sidecar/holder-read/reverification seams (`resolveMCPDaemonLeafPath`, `openMCPDaemonLockFile`, `readMCPDaemonInfoAt`, `writeMCPDaemonSidecar`) while validating `filepath.IsAbs(runtimeRoot.Name())` and `os.SameFile` on the test-only single-argument `readMCPDaemonInfo(runtimeRoot)` compatibility wrapper.
    * After `U1b` turns GREEN, Ship runs the unfiltered `go test -timeout=30m ./...` to genuine GREEN before admitting `U2` (`211.002-T`). Any later unrelated full-suite failure discovered after `U1b` routes through P-021 C1/C2 Stage intake rather than widening `U1b`.
+
+## P-021 C6 Second Forward Deliberation Addendum — Folding `60D799D9` (`086-DL`, `U1c`/`U1d`) and `19D55778` (`087-DL`, `U1e`) into `211-F` / `212-S` and Dispositioning `96F1DFFD` (2026-11-06)
+
+### Problem Frame and Lawful Separate Stage C6 Cycle While Dark Execution Is Paused
+
+After `U1b` (`211.008-T`, commit `834972ab9108321c79c155022c5daaa9a9857d7f`) repaired Windows Go 1.24 nested `os.Root` runtime path validation and cleared all `./internal/cli` tests (`324.828s` unfiltered PASS), the mandatory Wave 1 Step 4.6 unfiltered full-suite gate (`go test -timeout=30m ./...`, captured in `bin/tmp/1793937249660-copilot-tool-output-7128-71ef1bbe-f07c-4954-a037-f7d919acbe22.txt` and diagnosed in `docs/memory/2026-11-06/212-S-U1b-green-unrelated-convergence-blockers.md`) under workspace-contained `TEMP` (`C:\Source\GitHub\backlogit\bin\_authoringtmp`) surfaced 9 top-level test failures across three independent surfaces, which Ship captured once under P-021 C2/C5 (`DISCOVERY-STATUS: LOOKUP-UNAVAILABLE` fail-safe) and halted without triaging or modifying:
+
+1. **`60D799D9` (`086-DL`, Git Discovery & Sanitized Runner Boundary Contracts)**:
+   * **Family 1A (Narrow Production Local-`.git`-Directory Boundary Bug)**: `TestPlanArtifactMove_StrategyDetection/empty_git_directory_fails_closed` (`internal/core/archive_git_test.go:127`) and `TestInGitWorktreeBounded` subcase `(e)` (`internal/core/shipment_gate_ancestry_test.go:152`) create an empty `.git` directory at the workspace root (`os.Mkdir(filepath.Join(root, ".git"), 0o755)`) and assert fail-closed error return. Both `planArtifactMove` (`internal/core/archive.go:843-855`) and `(*Workspace).inGitWorktreeBounded` (`internal/core/shipment_gate.go:180-214`) check for a present-but-broken `.git` directory **only on the `err != nil` (exit 128) branch**. Because Git's `is_git_directory` ignores an empty `.git` directory (missing `HEAD`/`refs`/`objects`) and continues walking parent directories, whenever an ancestor Git repository exists above `workspaceRoot` (nested workspaces in production or contained `TEMP` in tests), `git rev-parse` exits `0` with the ancestor's worktree root, bypassing the `err != nil` guard and failing open.
+   * **Family 1B (Non-Hermetic "No-Usable-Repository" Test Fixtures)**: `TestInGitWorktreeBounded` subcase `(b)` (`shipment_gate_ancestry_test.go:117`), `TestHeadSHABounded` (`shipment_gate_headdrift_test.go:76`), `TestRepairShipmentMemberEvidence_NoRepoHead_Errors` (`shipment_repair_test.go:248`), and `TestU163_002_ExecGitRequiresARepositoryDirectory` (`internal/policyengine/u163_002_record_test.go:215`) use plain `t.TempDir()` directories with no local `.git` boundary, so ordinary Git discovers the outer repository (`HEAD` `834972a`) while production runners (`gate.MinimalEnv`, `isGitOverrideEnv`, `policyengine.gitEnv`) rightly strip ambient `GIT_CEILING_DIRECTORIES`.
+2. **`19D55778` (`087-DL`, Shipment Lifecycle / Doctor Fixture Member-Completion Sequencing)**:
+   * `TestDoctor_IgnoresIntentionalOrphans` (`internal/core/025_doctor_harness_test.go:98`) and `TestShipmentWorkflow_ShipmentReleaseCleanup` (`tests/integration/shipment_workflow_test.go:199`) create `releasedTask` (`001.001-T`), call `ClaimShipment` (activating `001.001-T`), and call `ShipShipment` without completing `001.001-T`. Under contained `TEMP`, the default `ws.GateBroker` (`enabled: auto`) resolves the outer checkout's `HEAD`/`origin/HEAD` and enforces `validateMemberGateEvidence` (`internal/core/shipment_gate.go:750-754`), refusing the active member.
+3. **`96F1DFFD` (`086-DL`, Intermittent Windows File-Replacement `Access is denied` & `internal/core` 30m Alarm — Pending Post-Fix Unfiltered Verification)**:
+   * `TestNormalizeBlockedShipmentForRecovery_UnrelatedPoisonRemainsDiagnosable` and `TestUCYA1_ShipmentLifecycleStepErrorsKeepSentinelChain/U20C5_commit_journal` encountered transient Windows `Access is denied` during the parallel full run, but both passed `1/1` in Ship's isolated Windows probe (`3.668s` and `2.661s`). The `internal/core` 30m0s alarm fired `1s` into `TestCheckChildrenTerminal_AllDone_NoError` after steady progress across `1,184` top-level tests under parallel multi-package load (not an infinite gate-subprocess recursion).
+
+**Why Separate Stage C6 Cycle Is Lawful Under P-017 and P-021 C4/C5/C6**:
+* Ship did not auto-triage or implement `60D799D9`, `19D55778`, or `96F1DFFD` inside `U1b` or treat `DARK_MODE_ACTIVE` as a P-021 waiver. Execution is paused at the Wave 1 Step 4.6 convergence halt (`checkpoint-20261106-040526.json`), and Stage is invoked in a separate C6 cycle under the operator's explicit proactive-remediation mandate (`P-021 C4`).
+* Amending `212-S` in-place (`M8 -> M11` per `P-002.6` and `P-016`) preserves the `212-S -> 213-S -> 214-S -> 215-S` cursor without claiming a new shipment or opening a parallel branch/worktree.
+
+### P-021 C5/C6 Four-Case Triage and Reconciliation Audit Record for `60D799D9`, `19D55778`, and `96F1DFFD`
+
+1. **Why Ship Recorded `DISCOVERY-STATUS: LOOKUP-UNAVAILABLE` at Capture vs. Stage's Direct Active + Archived JSONL Scan**:
+   * At capture time during Wave 1 convergence, Ship used only the SQLite-backed `backlogit` MCP search/stash tools (which index active `.backlogit/stash.jsonl` and harvested items, not `.backlogit/archive/stash.jsonl`), so Ship lawfully applied the P-021 fail-safe token `DISCOVERY-STATUS: LOOKUP-UNAVAILABLE`.
+   * During this separate Stage C6 cycle, Stage directly scanned both `.backlogit/stash.jsonl` (`290` lines) and `.backlogit/archive/stash.jsonl` (`185` lines) and evaluated all near-surface archived candidates:
+     * `885263D2` (archived): Windows `FindFirstFile`/`EvalSymlinks` stall tied to recovery-enabled `core.NewWorkspace` -> distinct surface from `60D799D9` (Git worktree discovery) and `96F1DFFD` (`NtSetInformationFile`/`MoveFileEx` journal replacement `AccessDenied`).
+     * `D8EF5443` (archived): Full-suite log-capture buffer truncation (~9m of diagnostics lost) -> distinct harness-output surface, cited as an observability constraint on `96F1DFFD`.
+     * `8F41D60D` (archived): Historical `197-S` full-suite load flake -> distinct surface.
+     * `CCAEF17B` (archived): Historical Doctor orphan false-positive rule -> distinct from `19D55778` fixture member-completion sequencing.
+2. **Standalone Four-Case Record for `60D799D9` (`086-DL`, `.backlogit/archive/086-DL.md`)**:
+   * **Source refs carried forward**: `task ID: 211.008-T`, `feature ID: 211-F`, `shipment ID: 212-S`, `PR number: N/A (genuinely pre-PR)`, `review-thread ID: N/A (threadless local full-suite finding)`.
+   * **C1 -> C6 Reconciliation**: Inside `U1b` (`211.008-T`), changing `archive.go`, `shipment_gate.go`, or `policyengine` tests failed P-021 C1 because `U1b` authorized only `internal/cli/mcp_daemon.go` and `internal/cli/mcp_daemon_lock_test.go`. Under P-021 C4/C6, `086-DL` forward-authorizes separate work units `U1c` (`211.009-T`) and `U1d` (`211.010-T`) under `211-F` / `212-S`.
+   * **(A) Unconditional Duplicate Scan**: `CLEAN DUPLICATE SCAN` (`0` duplicates across `.backlogit/stash.jsonl` and `.backlogit/archive/stash.jsonl`; near-surface candidates `885263D2`, `D8EF5443`, `8F41D60D` adjudicated as distinct).
+   * **(B) Late-Identifier Reconciliation**: `No late identifier found — terminal PR: N/A, review-thread ID: N/A stand`. Ship-owned residual-risk records searched by join key `60D799D9` / `211.008-T`: `docs/memory/2026-11-06/212-S-U1b-green-unrelated-convergence-blockers.md`, `docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md`, `docs/memory/2026-11-06/212-S-M8-amended-cursor.md`, `docs/memory/2026-11-06/212-S-confirmed-resume.md`, `.backlogit/reconcile/212-S-pre-20261106T000529Z.md`, and `docs/closure/211-S-210-F-post-merge-closure.md`.
+3. **Standalone Four-Case Record for `19D55778` (`087-DL`, `.backlogit/archive/087-DL.md`)**:
+   * **Source refs carried forward**: `task ID: 211.008-T`, `feature ID: 211-F`, `shipment ID: 212-S`, `PR number: N/A (genuinely pre-PR)`, `review-thread ID: N/A (threadless local full-suite finding)`.
+   * **C1 -> C6 Reconciliation**: Inside `U1b` (`211.008-T`), editing `internal/core/025_doctor_harness_test.go` or `tests/integration/shipment_workflow_test.go` failed P-021 C1. Under P-021 C4/C6, `087-DL` forward-authorizes separate work unit `U1e` (`211.011-T`) under `211-F` / `212-S`.
+   * **(A) Unconditional Duplicate Scan**: `CLEAN DUPLICATE SCAN` (`0` duplicates across `.backlogit/stash.jsonl` and `.backlogit/archive/stash.jsonl`; near-surface candidate `CCAEF17B` adjudicated as distinct).
+   * **(B) Late-Identifier Reconciliation**: `No late identifier found — terminal PR: N/A, review-thread ID: N/A stand` across all Ship-owned residual-risk records listed above.
+4. **Standalone Four-Case Record for `96F1DFFD` (`086-DL`, retained active in `.backlogit/stash.jsonl`)**:
+   * **Source refs carried forward**: `task ID: 211.008-T`, `feature ID: 211-F`, `shipment ID: 212-S`, `PR number: N/A (genuinely pre-PR)`, `review-thread ID: N/A (threadless local full-suite finding)`.
+   * **(A) Unconditional Duplicate Scan**: `CLEAN DUPLICATE SCAN` (`0` duplicates across `.backlogit/stash.jsonl` and `.backlogit/archive/stash.jsonl`; near-surface candidates `885263D2`, `D8EF5443`, `8F41D60D` adjudicated as distinct).
+   * **(B) Late-Identifier Reconciliation**: `No late identifier found — terminal PR: N/A, review-thread ID: N/A stand` across all Ship-owned residual-risk records listed above.
+   * **Disposition**: Pending post-fix unfiltered full-suite verification (no-code diagnostic disposition).
+
+### Chosen Direction (`086-DL` & `087-DL`: `U1c` / `211.009-T`, `U1d` / `211.010-T`, `U1e` / `211.011-T`, and `M8 -> M11`)
+
+1. **`U1c` (`211.009-T`, `code`, 3 files, 4 functions total [3 production + 1 test]: `internal/core/archive.go`, `internal/core/shipment_gate.go`, `internal/core/shipment_gate_ancestry_test.go`)**:
+   * Fail closed on present-but-unresolved `.git` entries in the half-open interval `[workspaceRoot, workTreeRoot)` across `planArtifactMove` (`internal/core/archive.go:848`) and `(*Workspace).inGitWorktreeBounded` (`internal/core/shipment_gate.go:171`) via `gitEntryPresentBelowWorkTree(workspaceRoot, workTreeRoot)`, while keeping `headSHABounded` (`shipment_gate.go:126`), production sanitization (`gate.MinimalEnv`, `isGitOverrideEnv`, `policyengine.gitEnv`), and valid nested/unborn/bare repository semantics unchanged.
+   * Isolate `TestInGitWorktreeBounded` subcase `(b)` (`no-repo skip -> (false, nil)`) via the existing cross-platform `writeFakeGit(t, fakeGitScripts{...})` helper (`internal/core/archive_git_test.go:486`, Windows `.bat` executed via `kernel32!CreateProcessInternalW` + POSIX `#!/bin/sh`) scoped inside a subtest via `t.Setenv("PATH", fakeDir)`, and add hermetic nested-parent RED/GREEN tests (direct `wsNestedEmpty/.git` and intermediate `outer/mid/.git` above `outer/mid/ws`).
+2. **`U1d` (`211.010-T`, `tests`, 3 files: `internal/core/shipment_gate_headdrift_test.go`, `internal/core/shipment_repair_test.go`, `internal/policyengine/u163_002_record_test.go`)**:
+   * Write owned invalid `.git` file boundaries (`gitdir: <dir>/nonexistent-gitdir`) in `TestHeadSHABounded` and `TestU163_002_ExecGitRequiresARepositoryDirectory`, and call existing `initGitRepoNoCommits(t, ws.RootPath)` (`shipment_gate_ancestry_test.go:86`) in `TestRepairShipmentMemberEvidence_NoRepoHead_Errors` (`"(no commit yet)"`, asserting `"workspace HEAD is unresolvable"`).
+3. **`U1e` (`211.011-T`, `tests`, 2 files: `internal/core/025_doctor_harness_test.go`, `tests/integration/shipment_workflow_test.go`)**:
+   * In `TestDoctor_IgnoresIntentionalOrphans` and `TestShipmentWorkflow_ShipmentReleaseCleanup` (the exact 2 fixtures in `19D55778`, leaving `blocking_cascade_test.go` untouched), first set `ws.GateBroker = nil; require.Nil(t, ws.GateBroker)` (disabling the unconfigured external `autoharness` subprocess broker on these non-gate fixtures, matching `025_archive_harness_test.go:118`) and second complete activated `releasedTask` to `done` via governed `core.UpdateArtifact` after `ClaimShipment` and before `ShipShipment`.
+4. **`M8 -> M11` Manifest Amendment and `96F1DFFD` Disposition**:
+   * Wire `211.002-T` (`U2`) to depend on `211.009-T`, `211.010-T`, and `211.011-T` (`dep_type: "blocks"`), append `211.009-T`..`211.011-T` to `212-S` (`S12` / `M11`) without `force` reorder, keep `checkpoint-20261106-040526.json` (`M8`) byte-identical on disk as **SUPERSEDED** by `M11`, and verify `96F1DFFD` in the fresh post-repair uncached unfiltered Go 1.24 full suite under quiet-host conditions with `-json`/`-v` named-failure capture (`docs/compound/2026-10-11-unfiltered-suite-evidence-under-load.md`, `docs/compound/best-practices/windows-safe-atomic-rename-goos-gate-2026-04-23.md`, `docs/compound/2026-08-29-windows-preremove-rename-pattern.md`, permitting `-p=1` package-serial scheduling if needed without filtering tests or changing the 30m per-binary timeout).
+
 

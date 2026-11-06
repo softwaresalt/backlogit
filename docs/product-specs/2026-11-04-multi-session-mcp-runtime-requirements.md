@@ -42,9 +42,14 @@ docline:
     - docs/compound/best-practices/timeout-goroutine-lock-ownership-go-2026-07-01.md
     - docs/compound/build-errors/match-ci-go-and-linter-before-source-repair-2026-11-06.md
     - docs/compound/runtime-errors/nested-os-root-name-is-not-an-absolute-path-2026-11-06.md
+    - docs/compound/2026-07-07-empty-head-fail-closed-repo-presence-probe.md
+    - docs/compound/best-practices/git-aware-backlog-artifact-archival-preserves-follow-history-2026-07-10.md
+    - docs/compound/2026-07-06-autoharness-gate-broker-integration-contract.md
   source_stash_ids:
     - ECF33C79
     - C2CFE06E
+    - 60D799D9
+    - 19D55778
   status: approved
 schema_version: "1.0"
 source: docs/product-specs/2026-11-04-multi-session-mcp-runtime-requirements.md
@@ -278,7 +283,12 @@ This third clarification closes all blocking product-scope intake questions and 
 * Specifying conservative synchronous `tools/call` + MCP progress/notification callbacks during long-running operations (`R10`, `A3`, `D8`).
 * Extending `backlogit mcp status`, `stop`, and `--replace` for multi-session visibility and lifecycle control (`R11`).
 * Preserving `bin/backlogit.exe` in `.mcp.json` and `start.ps1` as the workspace-local `backlogit` executable (`R12`).
-* **Wave-1 prerequisite repair for `C2CFE06E` (`085-DL`, folded in `2026-11-06` per P-021 C4/C6)**: Propagating verified absolute `runtimeDir` across `internal/cli/mcp_daemon.go` lock and sidecar symlink/reparse validation seams (`U1b` / `211.008-T`, strictly bounded to `internal/cli/mcp_daemon.go` and `internal/cli/mcp_daemon_lock_test.go`) while preserving `*os.Root` handle-relative operations and `os.SameFile(opened, linked)` handle-to-handle-relative-`Lstat` identity binding (`R3`, `SC5`, `SC9`). Any later unrelated full-suite failure discovered after `U1b` is out of scope of `U1b` and MUST route through P-021 C1/C2 intake rather than widening `U1b`.
+* **Wave-1 prerequisite repair for `C2CFE06E` (`085-DL`, folded in `2026-11-06` per P-021 C4/C6)**: Propagating verified absolute `runtimeDir` across `internal/cli/mcp_daemon.go` lock and sidecar symlink/reparse validation seams (`U1b` / `211.008-T`, strictly bounded to `internal/cli/mcp_daemon.go` and `internal/cli/mcp_daemon_lock_test.go`) while preserving `*os.Root` handle-relative operations and `os.SameFile(opened, linked)` handle-to-handle-relative-`Lstat` identity binding (`R3`, `SC5`, `SC9`).
+* **Wave-1 convergence prerequisite repairs for `60D799D9` (`086-DL`, `U1c` / `211.009-T` and `U1d` / `211.010-T`) and `19D55778` (`087-DL`, `U1e` / `211.011-T`, folded in `2026-11-06` per P-021 C4/C6 while dark execution is paused at Wave 1 Step 4.6)**:
+  1. Closing the exit-0 ancestor-fallback gap on present-but-unresolved local `.git` directories in `planArtifactMove` (`internal/core/archive.go`) and `(*Workspace).inGitWorktreeBounded` (`internal/core/shipment_gate.go`), while preserving production environment sanitization (`gate.MinimalEnv`, `isGitOverrideEnv`, `policyengine.gitEnv`) and valid nested-workspace/unborn/bare repository semantics, and isolating `TestInGitWorktreeBounded` subcase `(b)` via the existing cross-platform `writeFakeGit` helper (`U1c` / `211.009-T`).
+  2. Isolating no-usable-repository test fixtures in `TestHeadSHABounded` (`internal/core/shipment_gate_headdrift_test.go`), `TestRepairShipmentMemberEvidence_NoRepoHead_Errors` (`internal/core/shipment_repair_test.go`), and `TestU163_002_ExecGitRequiresARepositoryDirectory` (`internal/policyengine/u163_002_record_test.go`) using owned invalid `.git` file boundaries and `initGitRepoNoCommits` (`U1d` / `211.010-T`).
+3. **Completing activated `releasedTask` members via governed `core.UpdateArtifact` before `core.ShipShipment` and disabling unconfigured external `autoharness` subprocess gate brokers in non-gate Doctor and integration release fixtures (`internal/core/025_doctor_harness_test.go` and `tests/integration/shipment_workflow_test.go`, `U1e` / `211.011-T`)**.
+  4. **Pending-verification no-code diagnostic disposition for `96F1DFFD` (`086-DL`)**: retaining `96F1DFFD` active in `.backlogit/stash.jsonl` without speculative Windows replacement retries or durability changes, and verifying in the fresh uncached unfiltered Go 1.24 full suite after `U1c`–`U1e`.
 
 ### Out of Scope
 
@@ -304,6 +314,7 @@ This third clarification closes all blocking product-scope intake questions and 
 7. **Reader/Writer Split in the `backlogit` Go Channel Coordinator (`R7`, `R8`, `R12`)**: `backlogit` runtime-managed mutations are serialized sequentially through a bounded Go channel queue (`R7`) while read-only tools execute concurrently (`R8`) and one-shot CLI / external writer coexistence continues to use cross-process file locks and SQLite WAL/`busy_timeout` (`R12`) rather than pretending the Go channel schedules unmanaged external processes.
 8. **Preserve `bin/backlogit.exe` in `.mcp.json` and `start.ps1` Without Preempting `17214531`**: Both `.mcp.json` and `start.ps1` continue to point to `bin/backlogit.exe` in this workspace; portable `.backlogit/` binary installation (`17214531`) remains a separate backlog outcome.
 9. **Fold `C2CFE06E` into `211-F` / `212-S` as Bounded Wave-1 Prerequisite `U1b` (`211.008-T`, `085-DL`, `2026-11-06`)**: Originally excluded unless explicitly folded in by the operator during planning (`082-DL`). Following the Wave 1 unfiltered full-suite blocker on `212-S` (`docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md`) and the operator's proactive resolution directive (`P-021 C4 & C6`), Stage deliberated on `C2CFE06E` in `085-DL` and folded the bounded 2-file prerequisite repair (`U1b` / `211.008-T`) into `211-F` / `212-S` (`R3`), while keeping earlier host-toolchain lint captures (`C6E224B8`, `46BD6AEE`, `259A4F71`) and any later unrelated full-suite failures out of scope.
+10. **Fold `60D799D9` (`086-DL`, `U1c` / `211.009-T` & `U1d` / `211.010-T`) and `19D55778` (`087-DL`, `U1e` / `211.011-T`) into `211-F` / `212-S` as Bounded Wave-1 Convergence Prerequisites, and Record No-Code Diagnostic Disposition for `96F1DFFD` (`2026-11-06`)**: After `U1b` (`211.008-T`, commit `834972a`) cleared all `./internal/cli` tests, the post-`U1b` Wave 1 Step 4.6 unfiltered full suite under workspace-contained `TEMP` surfaced `60D799D9`, `19D55778`, and `96F1DFFD` (`docs/memory/2026-11-06/212-S-U1b-green-unrelated-convergence-blockers.md`). With dark execution paused at Wave 1 convergence, Stage deliberated in `086-DL` and `087-DL` under the operator's proactive-remediation mandate (`P-021 C4 & C6`), authorizing three separate Wave-1 prerequisite units (`U1c` / `211.009-T`, `U1d` / `211.010-T`, `U1e` / `211.011-T`, amending `212-S` from `M8` to `M11` without touching completed `U1`/`U1b`) and recording `96F1DFFD` as a verified no-code diagnostic disposition (both intermittent Windows replacement tests passed `1/1` in Ship's isolated probe and will be re-verified in the fresh uncached unfiltered full suite).
 
 ## Assumptions
 
