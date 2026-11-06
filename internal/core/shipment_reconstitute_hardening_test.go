@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +18,234 @@ import (
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 )
+
+func TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks(t *testing.T) {
+	ctx := context.Background()
+	// Allocate through the parent test to keep Windows fixture paths short.
+	parent := t
+	fixture := func() *reconstituteFixture {
+		fx := newReconstituteFixture(parent)
+		for _, item := range []string{fx.source.ID, fx.feature.ID,
+			fx.tasks[0].ID, fx.tasks[1].ID, fx.tasks[2].ID, fx.tasks[3].ID, fx.tasks[4].ID, fx.tasks[5].ID} {
+			path, err := FindArtifactPath(ctx, fx.ws, item)
+			require.NoError(parent, err)
+			artifact, _, err := parseFile(path)
+			require.NoError(parent, err)
+			require.Equal(parent, item, artifact.ID)
+			if item == fx.source.ID {
+				require.Equal(parent, "shipment", artifact.ArtifactType)
+			} else if item == fx.feature.ID {
+				require.Equal(parent, "feature", artifact.ArtifactType)
+			} else {
+				require.Equal(parent, "task", artifact.ArtifactType)
+				require.Equal(parent, fx.feature.ID, artifact.ParentID)
+			}
+		}
+		return fx
+	}
+	type outcome struct {
+		res *ReconstituteShipmentResult
+		err error
+	}
+
+	t.Run("preliminary_plan_reads_wait_for_stash_global_and_membership_locks", func(t *testing.T) {
+		fx := fixture()
+		task5Path, err := FindArtifactPath(ctx, fx.ws, fx.tasks[5].ID)
+		require.NoError(t, err)
+		task5Bytes, err := os.ReadFile(task5Path)
+		require.NoError(t, err)
+		unlockMembership, err := lockShipmentMembership(ctx, fx.ws, fx.source.ID)
+		require.NoError(t, err)
+		reconCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		var globalAcquired atomic.Bool
+		membershipContended := make(chan struct{}, 1)
+		reconCtx = context.WithValue(reconCtx, shipmentLifecycleGlobalLockHookContextKey{}, func(stage string) {
+			if stage == "acquired" {
+				globalAcquired.Store(true)
+			}
+			if stage == "contended" {
+				select {
+				case membershipContended <- struct{}{}:
+				default:
+				}
+			}
+		})
+		reconDone := make(chan outcome, 1)
+		started, joined := false, false
+		t.Cleanup(func() {
+			cancel()
+			assert.NoError(t, unlockMembership())
+			if started && !joined {
+				<-reconDone
+			}
+			if _, statErr := os.Stat(task5Path); os.IsNotExist(statErr) {
+				assert.NoError(t, os.WriteFile(task5Path, task5Bytes, 0o644))
+			} else {
+				assert.NoError(t, statErr)
+			}
+			t.Log("U1f subtest1 cleanup completed")
+		})
+		require.NoError(t, os.Remove(task5Path))
+		started = true
+		go func() {
+			res, reconErr := ReconstituteShipments(reconCtx, fx.ws, ReconstituteOptions{PlanYAML: fx.splitPlanYAML()})
+			reconDone <- outcome{res, reconErr}
+		}()
+		select {
+		case <-membershipContended:
+			require.True(t, globalAcquired.Load())
+		case got := <-reconDone:
+			joined = true
+			require.ErrorIs(t, got.err, blerrors.ErrValidation)
+			require.False(t, globalAcquired.Load())
+			t.Fatalf("U1f preliminary-read ordering assertion: returned before canonical locks: %v", got.err)
+		case <-reconCtx.Done():
+			t.Fatal("reconstitution did not reach membership contention")
+		}
+		if unlock, stashErr := tryLockActiveStash(fx.ws); stashErr == nil {
+			require.NoError(t, unlock())
+			t.Fatal("active stash lock must be held before preliminary plan reads")
+		} else {
+			require.ErrorIs(t, stashErr, os.ErrExist)
+		}
+		_, err = os.Lstat(StashFilePath(fx.ws.RootPath) + ".lock")
+		assert.NoError(t, err)
+		require.NoError(t, os.WriteFile(task5Path, task5Bytes, 0o644))
+		require.NoError(t, unlockMembership())
+		got := <-reconDone
+		joined = true
+		require.NoError(t, got.err)
+		require.NotNil(t, got.res)
+	})
+
+	t.Run("concurrent_associate_commit_durable_replace_serializes_before_preliminary_plan_reads", func(t *testing.T) {
+		fx := fixture()
+		fx.ws.Config.DurableWrites = true
+		ew := events.NewEventWriter(WorkspaceLogsRoot(fx.ws.RootPath))
+		commitAtReplaceBarrier := make(chan struct{})
+		releaseCommitReplace := make(chan struct{})
+		var interceptOnce, releaseOnce sync.Once
+		release := func() { releaseOnce.Do(func() { close(releaseCommitReplace) }) }
+		prevHook := artifactMutationLockBarrierHook
+		artifactMutationLockBarrierHook = func(id string) {
+			if id == fx.tasks[5].ID {
+				interceptOnce.Do(func() {
+					close(commitAtReplaceBarrier)
+					<-releaseCommitReplace
+				})
+			}
+		}
+		commitCtx, cancelCommit := context.WithTimeout(ctx, 10*time.Second)
+		reconCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		commitDone := make(chan error, 1)
+		reconDone := make(chan outcome, 1)
+		commitJoined, reconStarted, reconJoined := false, false, false
+		t.Cleanup(func() {
+			// Release before cancellation, joins, and restoring the package hook.
+			release()
+			cancel()
+			cancelCommit()
+			if !commitJoined {
+				<-commitDone
+			}
+			if reconStarted && !reconJoined {
+				<-reconDone
+			}
+			artifactMutationLockBarrierHook = prevHook
+			t.Log("U1f subtest2 cleanup completed")
+		})
+		go func() {
+			commitDone <- AssociateCommit(commitCtx, fx.ws, ew, fx.tasks[5].ID, "feedface", "concurrent", "tester")
+		}()
+		select {
+		case <-commitAtReplaceBarrier:
+		case <-commitCtx.Done():
+			t.Fatal("AssociateCommit did not reach replacement barrier")
+		}
+		var globalAttempted atomic.Bool
+		reconContendedOnGlobal := make(chan struct{}, 1)
+		reconCtx = context.WithValue(reconCtx, shipmentLifecycleGlobalLockHookContextKey{}, func(stage string) {
+			if stage == "attempt" {
+				globalAttempted.Store(true)
+			}
+			if stage == "contended" {
+				release()
+				select {
+				case reconContendedOnGlobal <- struct{}{}:
+				default:
+				}
+			}
+		})
+		reconStarted = true
+		go func() {
+			defer release()
+			res, reconErr := ReconstituteShipments(reconCtx, fx.ws, ReconstituteOptions{PlanYAML: fx.splitPlanYAML()})
+			reconDone <- outcome{res, reconErr}
+		}()
+		commitErr := <-commitDone
+		commitJoined = true
+		got := <-reconDone
+		reconJoined = true
+		artifactMutationLockBarrierHook = prevHook
+		assert.True(t, globalAttempted.Load())
+		select {
+		case <-reconContendedOnGlobal:
+		default:
+			t.Error("reconstitution must contend on AssociateCommit's lifecycle-global lock")
+		}
+		require.NoError(t, commitErr)
+		require.NoError(t, got.err)
+		require.NotNil(t, got.res)
+		path, err := FindArtifactPath(ctx, fx.ws, fx.tasks[5].ID)
+		require.NoError(t, err)
+		artifact, _, err := parseFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, "feedface", artifact.Commit)
+		var count int
+		require.NoError(t, fx.ws.DB.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM commit_links WHERE item_id = ? AND commit_sha = ?`,
+			fx.tasks[5].ID, "feedface").Scan(&count))
+		assert.Equal(t, 1, count)
+		history, err := events.ReadAllEvents(ctx, WorkspaceLogsRoot(fx.ws.RootPath), fx.tasks[5].ID)
+		require.NoError(t, err)
+		tracked := false
+		for _, event := range history {
+			tracked = tracked || event.EventType == "commit_tracked"
+		}
+		assert.True(t, tracked)
+	})
+
+	t.Run("pure_input_and_plan_validation_fails_fast_before_locks", func(t *testing.T) {
+		fx := fixture()
+		_, releaseGlobal, err := lockShipmentLifecycleGlobal(ctx, fx.ws)
+		require.NoError(t, err)
+		defer func() { assert.NoError(t, releaseGlobal()) }()
+		var globalAttempted atomic.Bool
+		failFastCtx := context.WithValue(ctx, shipmentLifecycleGlobalLockHookContextKey{}, func(stage string) {
+			if stage == "attempt" {
+				globalAttempted.Store(true)
+			}
+		})
+		plan := fx.splitPlanYAML()
+		tests := []ReconstituteOptions{
+			{PlanYAML: plan, Force: true},
+			{PlanYAML: plan + "\nbogus: 1\n"},
+			{PlanYAML: strings.Replace(plan, "source_shipments: ["+fx.source.ID+"]", `source_shipments: [""]`, 1)},
+			{PlanYAML: strings.Replace(plan, "source_shipments: ["+fx.source.ID+"]", `source_shipments: ["../escape"]`, 1)},
+			{PlanYAML: strings.Replace(plan, "source_shipments: ["+fx.source.ID+"]", `source_shipments: ["shipment-lifecycle-global"]`, 1)},
+			{PlanYAML: strings.Replace(plan, "source_shipments: ["+fx.source.ID+"]",
+				fmt.Sprintf("source_shipments: [%q, %q]", " "+fx.source.ID+" ", strings.ToLower(fx.source.ID)), 1)},
+		}
+		for i, opts := range tests {
+			globalAttempted.Store(false)
+			_, err := ReconstituteShipments(failFastCtx, fx.ws, opts)
+			assert.ErrorIs(t, err, blerrors.ErrValidation, "input case %d", i)
+			assert.False(t, globalAttempted.Load(), "input case %d must fail before lifecycle-global", i)
+			_, statErr := os.Lstat(StashFilePath(fx.ws.RootPath) + ".lock")
+			assert.True(t, os.IsNotExist(statErr), "input case %d must not create stash sidecar: %v", i, statErr)
+		}
+	})
+}
 
 func reconstituteRollbackUnderStash(t *testing.T, fx *reconstituteFixture, journal shipmentLifecycleJournal) error {
 	t.Helper()
