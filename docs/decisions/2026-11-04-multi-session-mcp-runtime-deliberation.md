@@ -10,13 +10,18 @@ docline:
     - docs/product-specs/2026-11-04-multi-session-mcp-runtime-requirements.md
     - docs/plans/2026-11-04-multi-session-mcp-runtime-plan.md
     - .backlogit/archive/082-DL.md
+    - .backlogit/archive/085-DL.md
     - .backlogit/queue/211-F.md
+    - .backlogit/queue/211.008-T.md
     - .backlogit/queue/212-F.md
     - .backlogit/queue/213-F.md
     - .backlogit/queue/212-S.md
     - .backlogit/queue/213-S.md
     - .backlogit/queue/214-S.md
     - docs/decisions/2026-10-29-single-daemon-per-workspace-deliberation.md
+    - docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md
+    - docs/compound/build-errors/match-ci-go-and-linter-before-source-repair-2026-11-06.md
+    - docs/compound/runtime-errors/nested-os-root-name-is-not-an-absolute-path-2026-11-06.md
   promoted_to: both
   source_stash_id: ECF33C79
   tags:
@@ -28,6 +33,8 @@ docline:
     - stdio-shim
     - ECF33C79
     - 082-DL
+    - C2CFE06E
+    - 085-DL
   topic: 'Support multiple agents through one singleton MCP runtime with session isolation and channel-gated mutations (ECF33C79)'
 schema_version: "1.0"
 source: docs/decisions/2026-11-04-multi-session-mcp-runtime-deliberation.md
@@ -261,3 +268,55 @@ In response to the final product-scope question (`Q3`) asking whether containmen
   * **Mitigation**: Option A decouples the background workspace daemon process from any single stdio shim's process group / job object, and uses reference counting + an idle grace timer for clean shutdown.
 * **Risk**: Concurrent `backlogit mcp` startups race to spawn the daemon when no daemon is running.
   * **Mitigation**: Reuse `204-F`'s atomic `AcquireMCPDaemonLock` on `<storage_root>/runtime/mcp-daemon.lock`: only the winner becomes/spawns the daemon and writes `mcp-daemon.json`; losing racers detect `ErrDaemonAlreadyRunning`, poll `readHolderInfo` with bounded backoff until the IPC endpoint is ready, and connect as client shims instead of failing.
+
+## P-021 C6 Forward Deliberation Addendum — Folding `C2CFE06E` into `211-F` / `212-S` as Wave-1 Prerequisite `U1b` (`085-DL`, 2026-11-06)
+
+### Problem Frame and Operator Forward-Planning Authorization
+
+During Wave 1 convergence of active Shipment `212-S` (`211-F`) on branch `feat/212-s-backlogit-multi-session-singleton-mcp-runtime-stdio-session-shim-and-channel-operation-coordinator` at `HEAD` `bcc2809027077752449d8bf38792e2f9f93504a6`—after `U1` (`211.001-T`) completed its 3-file declaration-only contract (`e8fbefb71fa277d387348d45f12377cd7fda2f8d` harness, `bcc2809027077752449d8bf38792e2f9f93504a6` implementation) and was officially archived as `done`—the required unfiltered Go 1.24.0 test gate (`go test -timeout=30m ./...`) failed 16 existing daemon-related tests in `./internal/cli` (`TestU3_StopMCPDaemon_NotRunning`, `TestU2_AcquireLockAndContention`, `TestU3_StopMCPDaemon_TerminatesVerifiedHolder`, `TestU4_CrossProcessMCPDaemonLockAndStop`, and related subtests; see `docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md`).
+
+Verified root cause (`docs/compound/runtime-errors/nested-os-root-name-is-not-an-absolute-path-2026-11-06.md`):
+
+* At `internal/cli/mcp_daemon.go:177`, `storageHandle.OpenRoot("runtime")` opens a nested pinned `*os.Root`. In Go 1.24 on Windows, `runtimeRoot.Name()` returns the relative string `"runtime"`, not the canonical absolute `runtimeDir` (`filepath.Join(storageRoot, "runtime")`) already verified at line 138.
+* `openMCPDaemonLockFile` (lines 220, 222, 243), `readMCPDaemonInfo` (lines 270, 275), and `writeMCPDaemonSidecar` (line 314) construct `filepath.Join(runtimeRoot.Name(), ...)` (`"runtime\mcp-daemon.lock"` and `"runtime\mcp-daemon.json"`) and pass that relative path to `rejectLink` -> `core.IsSymlinkOrReparsePoint` -> `windows.GetFileAttributes` (`internal/core/workspace_reparse_windows.go:19`), which resolves against process CWD instead of `runtimeDir` and fails with `ERROR_PATH_NOT_FOUND` whenever process CWD lacks a `runtime\` directory.
+* Existing deferred-scope-expansion stash entry `C2CFE06E` (`priority: medium`, `kind: bug`) tracks this exact defect surface.
+* Under **P-021 C4 & C6**, the operator's explicit acceptance of the named Ship recovery plan followed by the directive (`"when I ask pipeline ... proactively identify issues and resolve/fix without stopping every time ... compoundlearn"`) activates the conditional inclusion clause already recorded in `docs/product-specs/2026-11-04-multi-session-mcp-runtime-requirements.md` (`## Scope Boundaries` -> `### Out of Scope`: *"unless explicitly folded in by the operator during planning"*). Stage therefore deliberated on `C2CFE06E` via `backlogit_deliberate` (`085-DL`, `status: done`, `.backlogit/archive/085-DL.md`) before amending the plan.
+
+### P-021 C5/C6 Triage and Reconciliation Audit Record for `C2CFE06E`
+
+1. **Originating Source References Carried Forward**:
+   * `stash_id`: `C2CFE06E`
+   * `deliberation_id`: `085-DL` (`.backlogit/archive/085-DL.md`, linked `informs -> 211-F`, `informs -> 212-S`, `related_to -> 082-DL`)
+   * Originating capture context: `PR #638`, `shipment ID: 210-S`, `feature ID: 209-F`, `task ID: 209.003-T`, `review-thread ID: N/A (threadless local full-test finding)` (`docs/memory/2026-10-31/ship-210-s-pr638-review-halt.md`, `docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md`).
+2. **(A) Unconditional Duplicate Scan Outcome (`CLEAN DUPLICATE SCAN`)**:
+   * Full inspection of active `.backlogit/stash.jsonl` and `.backlogit/archive/` confirmed `C2CFE06E` (`created_at: 2026-11-01T02:27:08.1478359Z`) is the sole stash entry for the Windows Go 1.24 `runtime\mcp-daemon.lock` missing-path and helper-process EOF defect. Zero duplicate entries exist to merge or archive.
+   * Earlier host-toolchain lint captures `C6E224B8`, `46BD6AEE`, and `259A4F71` remain untouched and are not current blockers under the supported CI-equivalent Go 1.24.0 + `golangci-lint` v1.64.8 toolchain (`docs/compound/build-errors/match-ci-go-and-linter-before-source-repair-2026-11-06.md`).
+3. **(B) Late-Identifier Reconciliation Outcome (`No late identifier found — terminal review-thread ID: N/A stands`)**:
+   * Inspection of all `210-S` and `212-S` residual-risk, runtime-verification, pre-merge, post-merge closure, and session memory records confirmed that the finding originated from a local unfiltered `go test` run and never acquired a GitHub review thread. `review-thread ID: N/A` stands as a truthful terminal record.
+
+### Options Evaluated in `085-DL`
+
+* **Route A (Chosen — Bounded Wave-1 Prerequisite Task `U1b` / `211.008-T` + Stage Manifest Amendment `M7 -> M8`)**:
+  * Create a bounded 2-file Wave-1 prerequisite task `U1b` (`211.008-T`, `status: queued`, `priority: high`, `size: S`, `complexity: medium`, `dependencies: []`) under `211-F` owning `internal/cli/mcp_daemon.go` and `internal/cli/mcp_daemon_lock_test.go`.
+  * Bind `U2` (`211.002-T`) `depends_on` `U1b` (`211.008-T`) and `U5` (`211.005-T`) `depends_on` `U1b` (`211.008-T`) (`dep_type: "blocks"`), preserving all existing chain edges (`U1 -> U2 -> U3 -> U4 -> U5 -> U6 -> U7`) and keeping whole `U5` after `U3`/`U4`.
+  * Append `211.008-T` to `212-S` via `backlogit_add_to_shipment` without force reorder (preserving all 8 existing members -> 9 total items `S` and 8 tasks `M8`, parent-first preserved, deterministic `ready_1 = {211.008-T}`).
+  * Correct `U4` (`211.004-T`) POSIX `ListenMCPDaemonIPC` socket verification from `filepath.Dir(endpoint) == runtimeRoot.Name()` to canonical absolute containment and `os.SameFile` identity between `runtimeRoot.Stat/Lstat` and `os.Stat/Lstat`.
+* **Route B (Rejected — In-Place Rescoping of `U4` and `U5` Within Fixed 7-Task `M`)**:
+  * Rejected because removing `U3 -> U4` to move `U4` into Wave 1 and splitting Windows vs POSIX IPC across `U4` and `U5` fractures `U4`'s cross-platform IPC cohesion.
+* **Option C (Rejected — Unwritten/Read-Only Clarification, Retroactive `U1` Expansion, or Expected-Red Waiver)**:
+  * Rejected because editing `internal/cli/mcp_daemon.go` without an admitted task violates P-002/P-004, reopening `U1` (`211.001-T`) violates its 3-file ceiling and single `WORK_STARTED` epoch rule, and reclassifying pre-existing failures as expected RED violates P-002.6 Step 4.6.
+
+### Chosen Direction and Governance Safeguards (`M1`, `M2`, `M3`)
+
+1. **`M1` — Serialized Stage -> Ship Branch Custody and Recorded Residual Interpretive Risk**:
+   * Stage authors the planning and backlog amendment (`085-DL`, `211.008-T`, updated `211-F`, `211.002-T`, `211.004-T`, `211.005-T`, `212-S`, deliberation/spec/plan docs, and Stage memory note) directly on the single active `212-S` feature branch worktree while Ship (`c5793081-4c91-4fa8-b9df-6693ec537a3c`) is IDLE with zero concurrent writers.
+   * Stage does **not** exercise its default/admin branch `git commit` permission on the feature branch (`NOFEATURECOMMIT`), does not create or switch branches/worktrees, and does not push or create a PR. After Stage yields custody, Ship validates and commits the **unchanged Stage-authored bytes** with explicit provenance.
+   * **Residual Interpretive Risk (Recorded, Not a Waiver)**: Supplemental independent Anchor review (`gpt-6.1-sol` `high`) inspected the exact Stage/Ship role Git/Planning boundaries, Ship Step 3, Orchestrator Concurrency/Step 1.5, and `.github/instructions/concurrency.instructions.md` and attested `READY_WITH_FOLLOWUPS`. `_orchestrator` Concurrency Control's statement that *"Stage and Ship operate on separate branches"* sits adjacent to the ban on simultaneous mutation and pipelined execution and is purpose-scoped to concurrent/pipelined work; for an in-flight wave-convergence blocker on an already-claimed shipment, **P-016** (single implementation branch/worktree per active shipment) and **P-002.6** (*"Only a Stage manifest amendment may change `M`"*) govern this serialized amendment path. Orchestrator Step 1.5's initial remote-`main` manifest gate was already satisfied prior to `212-S` claim.
+2. **`M2` — Explicit Step 3 Freeze Replay (`M7 -> M8`) and Superseded Checkpoint Handling**:
+   * `checkpoint-20261106-011453.json` (`M7`) is preserved unchanged on disk during Stage's turn (`frozen_task_ids` and failure history byte-preserved; never hand-edited in place). Its `M7` schedule cursor is designated **SUPERSEDED** in the amended plan (`D10` `M2`) and Stage memory note.
+   * Ship replays full Step 3 freeze validation, scheduler fixtures/simulation, and fresh Step 4.0 wave census on `M8` (`8` tasks): `terminal_success = {211.001-T}` (`done`/archived, never re-run), `ready_1 = {211.008-T}` (`queued`, `0` starts), and `claim-assigned = {211.002-T .. 211.007-T}` (`6` active tasks with `scheduler_baseline_claim: "212-S"`, `0` starts, and `211.002-T` blocked by non-terminal `211.008-T`). After confirmed resume and writing a new official `backlogit_create_checkpoint` carrying `M8` (referencing `checkpoint-20261106-011453.json` as superseded predecessor), Ship calls `backlogit_resolve_checkpoint` on `checkpoint-20261106-011453.json` (the sole permitted governed lifecycle transition).
+3. **`M3` — Technical Hardening of `U1b` (`211.008-T`) and `U4` (`211.004-T`)**:
+   * `TestU1b_NestedRuntimeRootUsesCanonicalAbsolutePathForReparseValidation` in `internal/cli/mcp_daemon_lock_test.go` is sequential (no `t.Parallel()`), compiles cleanly against existing `internal/cli/mcp_daemon.go`, uses `t.Chdir` to an unrelated directory with no `runtime/` subdirectory, exercises existing production entrypoints (`AcquireMCPDaemonLock`, `InspectMCPDaemonStatus`, `StopMCPDaemon`) with default options to produce a genuine assertion RED on Windows (and cross-platform regression guard on POSIX), and executes both malicious lock-leaf and malicious sidecar-leaf (with live lock holder) reparse/symlink refusal assertions (`errors.Is(err, corerrors.ErrValidation)`) without `t.Skipf` (failing explicitly if fixture creation is unavailable).
+   * `internal/cli/mcp_daemon.go` propagates the verified absolute `runtimeDir` across all production default options (`defaultMCPDaemonOptions().OpenLock` taking `(runtimeRoot *os.Root, runtimeDir string)`) and internal lock/sidecar/holder-read/reverification seams (`resolveMCPDaemonLeafPath`, `openMCPDaemonLockFile`, `readMCPDaemonInfoAt`, `writeMCPDaemonSidecar`) while validating `filepath.IsAbs(runtimeRoot.Name())` and `os.SameFile` on the test-only single-argument `readMCPDaemonInfo(runtimeRoot)` compatibility wrapper.
+   * After `U1b` turns GREEN, Ship runs the unfiltered `go test -timeout=30m ./...` to genuine GREEN before admitting `U2` (`211.002-T`). Any later unrelated full-suite failure discovered after `U1b` routes through P-021 C1/C2 Stage intake rather than widening `U1b`.
+

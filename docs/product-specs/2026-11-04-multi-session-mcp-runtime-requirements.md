@@ -40,8 +40,11 @@ docline:
     - docs/compound/2026-10-06-ship-shipment-mcp-timeout-result-unknown.md
     - docs/compound/2026-10-27-pin-the-handle-not-the-path.md
     - docs/compound/best-practices/timeout-goroutine-lock-ownership-go-2026-07-01.md
+    - docs/compound/build-errors/match-ci-go-and-linter-before-source-repair-2026-11-06.md
+    - docs/compound/runtime-errors/nested-os-root-name-is-not-an-absolute-path-2026-11-06.md
   source_stash_ids:
     - ECF33C79
+    - C2CFE06E
   status: approved
 schema_version: "1.0"
 source: docs/product-specs/2026-11-04-multi-session-mcp-runtime-requirements.md
@@ -128,7 +131,7 @@ This third clarification closes all blocking product-scope intake questions and 
 
 * **R1 (Concurrent Multi-Agent Session Hosting)**: At least two independent agents (such as Orchestrator, Stage, Ship, or concurrent IDE sessions) MUST be able to establish and maintain simultaneous, active MCP sessions against a single workspace-owned `backlogit` runtime instance without receiving `corerrors.ErrDaemonAlreadyRunning` or terminating peer sessions.
 * **R2 (Drop-In Stdio Client Compatibility via Session Adapter)**: Because standard MCP hosts spawn per-session child processes configured with `"type": "stdio"`, `backlogit mcp` MUST support concurrent stdio callers by bridging each caller's `stdin`/`stdout` stream as an isolated session over a workspace-local IPC transport (Windows Named Pipe / Unix Domain Socket) to the singleton workspace runtime, rather than assuming all clients can configure an HTTP/SSE network transport.
-* **R3 (Handle-Pinned Runtime Lock, Sidecar Schema Evolution, and Non-Disruptive Probing)**: The singleton runtime MUST retain the `<storage_root>/runtime` `*os.Root` handle-pinned lock (`mcp-daemon.lock`) and sidecar (`mcp-daemon.json`) security invariants from `204-F` (`docs/compound/2026-10-27-pin-the-handle-not-the-path.md`). The sidecar schema MUST be extended backward-compatibly to advertise the local session IPC endpoint and active session metadata, and status/handshake probing (`backlogit mcp status` and new session connects) MUST NOT take an exclusive lock probe that causes concurrent startups to fail spuriously with `ErrDaemonAlreadyRunning` (addressing constraint `A045DBA4`).
+* **R3 (Handle-Pinned Runtime Lock, Verified Absolute Leaf Reparse Validation, Sidecar Schema Evolution, and Non-Disruptive Probing)**: The singleton runtime MUST retain the `<storage_root>/runtime` `*os.Root` handle-pinned lock (`mcp-daemon.lock`) and sidecar (`mcp-daemon.json`) security invariants from `204-F` (`docs/compound/2026-10-27-pin-the-handle-not-the-path.md`). Per `085-DL` (`C2CFE06E`, `docs/compound/runtime-errors/nested-os-root-name-is-not-an-absolute-path-2026-11-06.md`), while all file opens, reads, writes, and removals execute relative to the pinned `runtimeRoot` (`*os.Root`) and `os.SameFile(opened, linked)` verifies opened-handle to handle-relative-`Lstat` object identity, path-based symlink/reparse validation (`rejectLink` -> `core.IsSymlinkOrReparsePoint`) across `AcquireMCPDaemonLock`, `InspectMCPDaemonStatus`, `StopMCPDaemon`, and holder metadata read/reverification seams MUST resolve leaf paths against the verified absolute `runtimeDir` (never against a relative `runtimeRoot.Name()` string from `storageHandle.OpenRoot("runtime")` that resolves against process CWD on Windows Go 1.24; scoped to Wave-1 prerequisite unit `U1b` / `211.008-T`). Separately, in `U4` and `U5`, the sidecar schema MUST be extended backward-compatibly to advertise the local session IPC endpoint and active session metadata, and status/handshake probing (`backlogit mcp status` and new session connects) MUST NOT take an exclusive lock probe that causes concurrent startups to fail spuriously with `ErrDaemonAlreadyRunning` (addressing constraint `A045DBA4`).
 
 ### Per-Session Isolation
 
@@ -275,6 +278,7 @@ This third clarification closes all blocking product-scope intake questions and 
 * Specifying conservative synchronous `tools/call` + MCP progress/notification callbacks during long-running operations (`R10`, `A3`, `D8`).
 * Extending `backlogit mcp status`, `stop`, and `--replace` for multi-session visibility and lifecycle control (`R11`).
 * Preserving `bin/backlogit.exe` in `.mcp.json` and `start.ps1` as the workspace-local `backlogit` executable (`R12`).
+* **Wave-1 prerequisite repair for `C2CFE06E` (`085-DL`, folded in `2026-11-06` per P-021 C4/C6)**: Propagating verified absolute `runtimeDir` across `internal/cli/mcp_daemon.go` lock and sidecar symlink/reparse validation seams (`U1b` / `211.008-T`, strictly bounded to `internal/cli/mcp_daemon.go` and `internal/cli/mcp_daemon_lock_test.go`) while preserving `*os.Root` handle-relative operations and `os.SameFile(opened, linked)` handle-to-handle-relative-`Lstat` identity binding (`R3`, `SC5`, `SC9`). Any later unrelated full-suite failure discovered after `U1b` is out of scope of `U1b` and MUST route through P-021 C1/C2 intake rather than widening `U1b`.
 
 ### Out of Scope
 
@@ -287,7 +291,7 @@ This third clarification closes all blocking product-scope intake questions and 
 * **Hostile-agent security boundary over workspace-writable config without external policy authority**: Protecting against a hostile local process that already has OS user permissions to rewrite workspace files or `.mcp.json` requires an external policy authority or OS isolation boundary (`R18`, `A7`, `D7`), which is deferred out of this initial release.
 * **Cloud sync or remote/unauthenticated network MCP hosting for `backlogit`**: Exposing the workspace `backlogit` MCP server over non-loopback TCP/HTTP is out of scope.
 * **Portable binary installation inside `.backlogit/` (Stash `17214531`)**: Changing `backlogit install` to copy `backlogit.exe` into `.backlogit/` and mutate `.gitignore` or `.git/info/exclude` remains a separate feature track (`17214531`). This specification preserves `bin/backlogit.exe` for `.mcp.json` and `start.ps1` and requires only that daemon sidecar/IPC identity checks do not hardcode a single install directory.
-* **Standalone bug remediation for `C2CFE06E`**: Existing Windows Go 1.24 `TestU3_StopMCPDaemon_NotRunning` / `TestU3_StopMCPDaemon_TerminatesVerifiedHolder` EOF investigation remains tracked under deferred-expansion stash `C2CFE06E` unless explicitly folded in by the operator during planning.
+* **Unrelated host-toolchain lint captures (`C6E224B8`, `46BD6AEE`, `259A4F71`) and any later unrelated full-suite failures**: Host Go 1.27 / `golangci-lint` v2 diagnostic captures (`C6E224B8`, `46BD6AEE`, `259A4F71`) are not blockers under the supported Go 1.24.0 + `golangci-lint` v1.64.8 CI toolchain and remain out of scope. Any later unrelated full-suite failure after `U1b` (`211.008-T`) must follow P-021 C1/C2 Stage intake rather than widening `U1b`.
 
 ## Key Decisions
 
@@ -299,6 +303,7 @@ This third clarification closes all blocking product-scope intake questions and 
 6. **Use `mcp-go` Per-Connection `ClientSession` Dispatch Rather Than Single-Session `StdioServer.Listen` (Proposed SDK Mechanism)**: Because `mcpserver.StdioServer.Listen` in `mcp-go v0.27.0` hardcodes a single static `&stdioSessionInstance`, the multi-session `backlogit` runtime will register a dedicated `ClientSession` per client stream (`RegisterSession` / `UnregisterSession` / `WithContext`) and dispatch framed JSON-RPC messages per session.
 7. **Reader/Writer Split in the `backlogit` Go Channel Coordinator (`R7`, `R8`, `R12`)**: `backlogit` runtime-managed mutations are serialized sequentially through a bounded Go channel queue (`R7`) while read-only tools execute concurrently (`R8`) and one-shot CLI / external writer coexistence continues to use cross-process file locks and SQLite WAL/`busy_timeout` (`R12`) rather than pretending the Go channel schedules unmanaged external processes.
 8. **Preserve `bin/backlogit.exe` in `.mcp.json` and `start.ps1` Without Preempting `17214531`**: Both `.mcp.json` and `start.ps1` continue to point to `bin/backlogit.exe` in this workspace; portable `.backlogit/` binary installation (`17214531`) remains a separate backlog outcome.
+9. **Fold `C2CFE06E` into `211-F` / `212-S` as Bounded Wave-1 Prerequisite `U1b` (`211.008-T`, `085-DL`, `2026-11-06`)**: Originally excluded unless explicitly folded in by the operator during planning (`082-DL`). Following the Wave 1 unfiltered full-suite blocker on `212-S` (`docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md`) and the operator's proactive resolution directive (`P-021 C4 & C6`), Stage deliberated on `C2CFE06E` in `085-DL` and folded the bounded 2-file prerequisite repair (`U1b` / `211.008-T`) into `211-F` / `212-S` (`R3`), while keeping earlier host-toolchain lint captures (`C6E224B8`, `46BD6AEE`, `259A4F71`) and any later unrelated full-suite failures out of scope.
 
 ## Assumptions
 
