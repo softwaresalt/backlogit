@@ -316,12 +316,20 @@ func reconstituteSnapshotOwners(ctx context.Context, ws *Workspace, st *reconsti
 }
 
 func executeReconstitution(ctx context.Context, ws *Workspace, opts ReconstituteOptions) (_ *ReconstituteShipmentResult, err error) {
-	// Fail fast on an invalid plan before taking any lock; the plan is
-	// re-validated under the locks below.
-	peek, err := planReconstitution(ctx, ws, opts)
-	if err != nil {
-		return nil, err
+	// Fail fast on pure option, YAML, and source-ID validation before taking
+	// any lock. Workspace artifact reads wait for the canonical locks below.
+	if err := validateShipmentManifestOptions(ShipmentManifestOptions{Force: opts.Force, Reason: opts.Reason}); err != nil {
+		return nil, fmt.Errorf("reconstitute: validate options: %w", err)
 	}
+	plan, digest, err := loadAndValidateReconstitutePlan(ws, opts)
+	if err != nil {
+		return nil, fmt.Errorf("reconstitute: validate plan: %w", err)
+	}
+	sourceIDs := make([]string, 0, len(plan.SourceShipments))
+	for _, raw := range plan.SourceShipments {
+		sourceIDs = append(sourceIDs, strings.TrimSpace(raw))
+	}
+	sort.Strings(sourceIDs)
 	unlockStash, err := lockActiveStash(ws)
 	if err != nil {
 		return nil, fmt.Errorf("reconstitute: acquire stash lock: %w", err)
@@ -344,11 +352,6 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 	}()
 	ctx = lockedCtx
 
-	sourceIDs := make([]string, 0, len(peek.sources))
-	for id := range peek.sources {
-		sourceIDs = append(sourceIDs, id)
-	}
-	sort.Strings(sourceIDs)
 	for _, id := range sourceIDs {
 		unlock, lockErr := lockShipmentMembership(ctx, ws, id)
 		if lockErr != nil {
@@ -359,6 +362,13 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 				slog.WarnContext(ctx, "release shipment membership lock", "shipment_id", id, "error", unlockErr)
 			}
 		}(id)
+	}
+	peek, err := planReconstitution(ctx, ws, opts)
+	if err != nil {
+		return nil, fmt.Errorf("reconstitute: validate preliminary plan under locks: %w", err)
+	}
+	if peek.digest != digest {
+		return nil, reconstituteValidationError("reconstitute plan changed during lock acquisition")
 	}
 	// Membership locks stabilize the source manifests before acquiring their
 	// log locks. C must precede B and survive the final eligibility check.
@@ -397,6 +407,9 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 	st, err := planReconstitution(ctx, ws, opts)
 	if err != nil {
 		return nil, err
+	}
+	if st.digest != digest {
+		return nil, reconstituteValidationError("reconstitute plan changed during lock acquisition")
 	}
 	baseline, err := reconstituteErrorFindings(ws)
 	if err != nil {
