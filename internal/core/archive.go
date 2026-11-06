@@ -894,12 +894,25 @@ func planArtifactMove(ctx context.Context, workspaceRoot, sourcePath, destPath s
 // gitEntryPresentBelowWorkTree rejects unresolved .git entries in the half-open
 // interval [workspaceRoot, workTreeRoot), stopping at the worktree's identity.
 func gitEntryPresentBelowWorkTree(workspaceRoot, workTreeRoot string) error {
-	absWorkspace, wsOK := canonicalExistingPath(workspaceRoot)
-	absWorkTree, wtOK := canonicalExistingPath(workTreeRoot)
-	if !wsOK || !wtOK {
-		return fmt.Errorf("canonicalize workspace %s and worktree %s: %w",
-			workspaceRoot, workTreeRoot, blerrors.ErrValidation)
+	canonicalPaths := [2]string{workspaceRoot, workTreeRoot}
+	for i, targetPath := range canonicalPaths {
+		absPath, err := filepath.Abs(targetPath)
+		if err != nil {
+			return fmt.Errorf("canonicalize path %s: %w: %w",
+				targetPath, blerrors.ErrValidation, err)
+		}
+		evalPath, evalErr := filepath.EvalSymlinks(absPath)
+		if evalErr == nil {
+			canonicalPaths[i] = filepath.Clean(evalPath)
+			continue
+		}
+		if _, statErr := os.Stat(absPath); statErr != nil {
+			return fmt.Errorf("canonicalize path %s: %w: %w",
+				targetPath, blerrors.ErrValidation, statErr)
+		}
+		canonicalPaths[i] = filepath.Clean(absPath)
 	}
+	absWorkspace, absWorkTree := canonicalPaths[0], canonicalPaths[1]
 	wsInfo, wsErr := os.Stat(absWorkspace)
 	if wsErr != nil {
 		return fmt.Errorf("stat workspace %s: %w: %w", absWorkspace, blerrors.ErrValidation, wsErr)
