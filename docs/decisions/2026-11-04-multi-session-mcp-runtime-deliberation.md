@@ -13,11 +13,13 @@ docline:
     - .backlogit/archive/085-DL.md
     - .backlogit/archive/086-DL.md
     - .backlogit/archive/087-DL.md
+    - .backlogit/archive/088-DL.md
     - .backlogit/queue/211-F.md
     - .backlogit/archive/211.008-T.md
-    - .backlogit/queue/211.009-T.md
-    - .backlogit/queue/211.010-T.md
-    - .backlogit/queue/211.011-T.md
+    - .backlogit/archive/211.009-T.md
+    - .backlogit/archive/211.010-T.md
+    - .backlogit/archive/211.011-T.md
+    - .backlogit/queue/211.012-T.md
     - .backlogit/queue/212-F.md
     - .backlogit/queue/213-F.md
     - .backlogit/queue/212-S.md
@@ -26,11 +28,17 @@ docline:
     - docs/decisions/2026-10-29-single-daemon-per-workspace-deliberation.md
     - docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md
     - docs/memory/2026-11-06/212-S-U1b-green-unrelated-convergence-blockers.md
+    - docs/memory/2026-11-06/212-S-M11-fullsuite-circuit-handoff.md
+    - docs/memory/2026-11-06/212-S-wave-convergence-circuit-checkpoint.md
+    - docs/memory/2026-11-06/212-S-fourth-cycle-authorization-and-diagnosis.md
     - docs/compound/build-errors/match-ci-go-and-linter-before-source-repair-2026-11-06.md
     - docs/compound/runtime-errors/nested-os-root-name-is-not-an-absolute-path-2026-11-06.md
     - docs/compound/2026-07-07-empty-head-fail-closed-repo-presence-probe.md
     - docs/compound/best-practices/git-aware-backlog-artifact-archival-preserves-follow-history-2026-07-10.md
     - docs/compound/2026-07-06-autoharness-gate-broker-integration-contract.md
+    - docs/compound/2026-10-19-lock-held-side-effect-ordering.md
+    - docs/compound/2026-08-29-windows-preremove-rename-pattern.md
+    - docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md
   promoted_to: both
   source_stash_id: ECF33C79
   tags:
@@ -49,6 +57,7 @@ docline:
     - 96F1DFFD
     - 086-DL
     - 087-DL
+    - 088-DL
   topic: 'Support multiple agents through one singleton MCP runtime with session isolation and channel-gated mutations (ECF33C79)'
 schema_version: "1.0"
 source: docs/decisions/2026-11-04-multi-session-mcp-runtime-deliberation.md
@@ -387,6 +396,67 @@ After `U1b` (`211.008-T`, commit `834972ab9108321c79c155022c5daaa9a9857d7f`) rep
 3. **`U1e` (`211.011-T`, `tests`, 2 files: `internal/core/025_doctor_harness_test.go`, `tests/integration/shipment_workflow_test.go`)**:
    * In `TestDoctor_IgnoresIntentionalOrphans` and `TestShipmentWorkflow_ShipmentReleaseCleanup` (the exact 2 fixtures in `19D55778`, leaving `blocking_cascade_test.go` untouched), first set `ws.GateBroker = nil; require.Nil(t, ws.GateBroker)` (disabling the unconfigured external `autoharness` subprocess broker on these non-gate fixtures, matching `025_archive_harness_test.go:118`) and second complete activated `releasedTask` to `done` via governed `core.UpdateArtifact` after `ClaimShipment` and before `ShipShipment`.
 4. **`M8 -> M11` Manifest Amendment and `96F1DFFD` Disposition**:
-   * Wire `211.002-T` (`U2`) to depend on `211.009-T`, `211.010-T`, and `211.011-T` (`dep_type: "blocks"`), append `211.009-T`..`211.011-T` to `212-S` (`S12` / `M11`) without `force` reorder, keep `checkpoint-20261106-040526.json` (`M8`) byte-identical on disk as **SUPERSEDED** by `M11`, and verify `96F1DFFD` in the fresh post-repair uncached unfiltered Go 1.24 full suite under quiet-host conditions with `-json`/`-v` named-failure capture (`docs/compound/2026-10-11-unfiltered-suite-evidence-under-load.md`, `docs/compound/best-practices/windows-safe-atomic-rename-goos-gate-2026-04-23.md`, `docs/compound/2026-08-29-windows-preremove-rename-pattern.md`, permitting `-p=1` package-serial scheduling if needed without filtering tests or changing the 30m per-binary timeout).
+   * Wire `211.002-T` (`U2`) to depend on `211.009-T`, `211.010-T`, and `211.011-T` (`dep_type: "blocks"`), append `211.009-T`..`211.011-T` to `212-S` (`S12` / `M11`) without `force` reorder, keep `checkpoint-20261106-040526.json` (`M8`) byte-identical on disk as **SUPERSEDED** by `M11`, and verify `96F1DFFD` in the fresh post-repair uncached unfiltered Go 1.24 full suite under quiet-host conditions with `-json`/`-v` named-failure capture (`docs/compound/2026-10-11-unfiltered-suite-evidence-under-load.md`, `docs/compound/best-practices/windows-safe-atomic-rename-goos-gate-2026-04-23.md`, `docs/compound/2026-08-29-windows-preremove-rename-pattern.md`, permitting `-p=1` package-serial scheduling if needed without filtering tests or changing the 30m per-binary timeout). `[PROVISIONAL NO-CODE DISPOSITION SUPERSEDED BY 088-DL BELOW FOR RECONSTITUTE/ASSOCIATECOMMIT PRELIMINARY-PLAN READER LIFETIME COORDINATION]`.
+
+## P-021 C6 Third Forward Deliberation Addendum — Adjudicating `96F1DFFD` Windows `ReconstituteShipments` Preliminary-Plan Reader Lifetime Overlap With `AssociateCommit` as Wave-1 Prerequisite `U1f` (`088-DL`, 2026-11-06)
+
+### Problem Frame, Controlled Core Proof, and Official Windows Documentation
+
+After `U1c` (`211.009-T`), `U1d` (`211.010-T`), and `U1e` (`211.011-T`) completed at `HEAD` `2c87ae6fdf64480ab6767e9015cae51f24abc2e6`, the third Wave-1 unfiltered full-suite convergence invocation (`212-M11-wave1-full`: `go test -count=1 -p=1 -timeout=30m -json ./...`, captured in `bin/tmp/1793952023849-copilot-tool-output-7128-9c0c1662-babc-4f5a-8b00-a8285271ca6d.txt`) accounted for all `50` packages (`3,871` top-level passes, `9` top-level failures, `0` timeouts). Seven of eight selected failures were caused by an overly long private `TEMP` directory path (`bin/_authoringtmp/212-M11-wave1-full-20261105T231529817`) triggering Git ref-lock `Filename too long` errors and passed `1/1` once Ship shortened its owned private `TEMP` to `bin/_qf4781986` (`41` characters). However, `TestU2_ReconstituteShipmentsAtomicExecutionAndRollback/concurrent_associate_commit_and_post_hook_isolation` (`internal/core/shipment_reconstitute_test.go:499`) failed in both the full run and the short-`TEMP` comparison with:
+
+```text
+associate commit: mutation partial (not-applied):
+failed at frontmatter-scalar with no prior steps applied:
+associate commit step 1 (frontmatter scalar):
+move temp over destination:
+backlogit: durable write not applied: Access is denied.
+```
+
+Under the operator's verbatim authorization (`"Fourth iteration approved."` at `2026-11-06T16:57:46.238Z`, authorizing one additional current-wave convergence cycle without resetting the `3` prior failures or granting a blanket fifth attempt), Ship executed one bounded, representative public-API Core mechanism proof (`bin/_c4e7a91b2/summary.json`, `bin/_c4e7a91b2/evidence2.json`, `PID 61948`, native exit `0`; recorded in `docs/memory/2026-11-06/212-S-fourth-cycle-authorization-and-diagnosis.md`) over API-created tasks `001.001-T`, `001.002-T`, and `001.003-T` (`config.WriteDefaults`, `core.NewWorkspace`, `core.CreateArtifact` with `core.WithParent`, `core.FindArtifactPath`, `core.AssociateCommit`) with `DurableWrites = true` (move flags `9`: `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`):
+
+1. **Ordinary `os.Open` reader held open on `001.001-T.md` (nominal share mode `3`: `FILE_SHARE_READ | FILE_SHARE_WRITE`)**: `AssociateCommit` failed at `frontmatter-scalar` with wrapped `syscall.Errno(5)` (`Access is denied.`) and `errors.Is(err, blerrors.ErrWriteNotApplied) == true` (zero prior steps applied; file bytes, old reader snapshot, and DB commit unchanged).
+2. **Explicit `CreateFileW` reader held open on `001.002-T.md` with full share mode `7` (`FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`, exact no-follow target verified)**: `AssociateCommit` **failed with the exact same wrapped `syscall.Errno(5)` and `ErrWriteNotApplied == true`**.
+3. **Reader handle closed on `001.003-T.md` before `AssociateCommit`**: `AssociateCommit` **succeeded** (`err == nil`, frontmatter and DB commit updated to `abc123def`, `1` `commit_links` row).
+
+Official public Microsoft Windows documentation explains both held-reader denials:
+
+* [FILE_RENAME_INFORMATION](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information): Legacy Windows rename (without `FILE_RENAME_POSIX_SEMANTICS` `0x2` combined with `FILE_RENAME_REPLACE_IF_EXISTS` `0x1`) fails if the existing target file has open handles (unless only held by a breakable batch oplock). `MoveFileExW` flags `9` (`MOVEFILE_REPLACE_EXISTING` `0x1` | `MOVEFILE_WRITE_THROUGH` `0x8`) belong to a different flag domain (`0x2` on `MoveFileExW` is `MOVEFILE_COPY_ALLOWED`, not `FILE_RENAME_POSIX_SEMANTICS`).
+* [MoveFileExW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw): `MOVEFILE_WRITE_THROUGH` defines the disk-flush durability contract; blindly swapping `MoveFileExW` without proving durability parity, OS compatibility, handle pinning, and old-handle snapshot semantics would risk weakening persistence guarantees.
+
+Source trace of `internal/core/shipment_reconstitute_exec.go:319-345` proves a direct in-process overlap between `ReconstituteShipments` (`executeReconstitution`) and `AssociateCommit` (`internal/core/commits.go:95`):
+
+* `AssociateCommit` acquires `lockShipmentLifecycleGlobal(ctx, ws)` (`commits.go:95`) before calling `findArtifact`, acquiring item-log lock `C` (`commits.go:142`), and calling `persistArtifactWithGuard` -> `atomicfile.WriteFileAtomicWithOptions` -> `MoveFileExW` (`commits.go:169`).
+* However, `executeReconstitution` (`shipment_reconstitute_exec.go:321`) calls `peek, err := planReconstitution(ctx, ws, opts)` **before** acquiring `lockActiveStash(ws)`, `lockShipmentLifecycleGlobal(ctx, ws)`, and `lockShipmentMembership(ctx, ws, id)`. During that unlocked preliminary `planReconstitution` peek, `loadSources`, `buildTargets`, and `loadWorld` (`shipment_reconstitute_plan.go:293-305, 475-476`, `canonical_scan.go:93`, `artifacts.go:1156-1157`) walk `.backlogit/queue/` and `.backlogit/archive/` via `parseFile` -> `os.ReadFile`, opening `001.006-T.md` concurrently while `AssociateCommit` holds `lockShipmentLifecycleGlobal` and calls `MoveFileExW` on `001.006-T.md`.
+
+### P-021 C5/C6 Four-Case Triage and Reconciliation Audit Record for `96F1DFFD` (`088-DL`)
+
+1. **Source References and Reconciled Evidence Carried Forward**:
+   * `stash_id`: `96F1DFFD` (identity reused; captured once by Ship under P-021 C2/C5; formally linked to `088-DL` at `.backlogit/archive/088-DL.md` via `backlogit_deliberate` with `"deliberation_id": "088-DL"`, superseding `086-DL`'s provisional no-code pending-verification disposition for this overlap surface).
+   * Originating capture refs: `task ID: 211.008-T`, `feature ID: 211-F`, `shipment ID: 212-S`, `PR number: N/A (genuinely pre-PR)`, `review-thread ID: N/A (threadless full-suite finding)`.
+   * Reconciled Ship residual-risk and diagnostic evidence records joined by `96F1DFFD` / `212-S`:
+     * `bin/tmp/1793937249660-copilot-tool-output-7128-71ef1bbe-f07c-4954-a037-f7d919acbe22.txt` and `docs/memory/2026-11-06/212-S-U1b-green-unrelated-convergence-blockers.md`.
+     * `bin/tmp/1793952023849-copilot-tool-output-7128-9c0c1662-babc-4f5a-8b00-a8285271ca6d.txt`, `docs/memory/2026-11-06/212-S-M11-fullsuite-circuit-handoff.md`, `docs/memory/2026-11-06/212-S-wave-convergence-circuit-checkpoint.md`, and `docs/memory/2026-11-06/212-S-wave-convergence-escalation-payload.json`.
+     * `bin/_c4e7a91b2/summary.json`, `bin/_c4e7a91b2/evidence2.json` (gitignored private diagnostic artifacts under `bin/`), and tracked custody record `docs/memory/2026-11-06/212-S-fourth-cycle-authorization-and-diagnosis.md` (`"Fourth iteration approved."` at `2026-11-06T16:57:46.238Z`; disclosing both the initial preflight-only `probe2.exe` `PID 5704` exit `2` with `0` reader opens and `0` `AssociateCommit` calls caused by assuming public default `durable_writes=true`, and the corrected `probe3.exe` `PID 61948` exit `0` matrix with in-memory `ws.Config.DurableWrites=true`).
+2. **(A) Unconditional Duplicate Scan Outcome (`CLEAN DUPLICATE SCAN`)**:
+   * Stage directly scanned all `290` lines of active `.backlogit/stash.jsonl` and all `317` non-empty lines of archived `.backlogit/archive/stash.jsonl` (retiring the capture-time `DISCOVERY-STATUS: LOOKUP-UNAVAILABLE` token in `088-DL` while preserving `96F1DFFD`'s raw captured text unedited per Ship's single-write capture invariant):
+     * Active `.backlogit/stash.jsonl` near-surface entries adjudicated as distinct: `703835DC` (`200-S` commit-writer `C -> global` lock order, resolved in `commits.go:95`), `DF533572` (`079-DL` `gofmt` cache traversal), `D3C8D13B` (`080-DL` crash-window created-ID journal ordering), `C2CFE06E` (`085-DL` `mcp_daemon.go` nested `os.Root.Name`), `7E14915F` (`078-DL` post-crash cross-writer attribution), `60D799D9` (`086-DL` Git worktree boundary), and `19D55778` (`087-DL` Doctor/integration fixture completion).
+     * Archived `.backlogit/archive/stash.jsonl` near-surface entries adjudicated as distinct: `763A1152` (PR #424 `C -> B` lock order), `1E0C2251` (`archived_status` guard), `FE440C62` (`ArchiveItem` lock order), `62C6A469` (`072-DL`), `8F41D60D` (`197-S` `TestAppendEvent` flake), `D8EF5443` (`072-DL` test log truncation), `8CCB29CF` / `2F7FCA8B` (docline frontmatter), `FF1F3AC7` (`068-DL` checkpoint isolation), `885263D2` (`070-DL` `NewWorkspace` recovery scan), and `CCAEF17B` (Doctor orphan rule).
+   * Zero duplicate entries exist; zero stash entries were archived or merged.
+3. **(B) Mandatory Late-Identifier Reconciliation Outcome (`No late identifier found — terminal PR: N/A and review-thread ID: N/A stand`)**:
+   * Stage searched all Ship-owned residual-risk and continuity records listed above by join key `96F1DFFD` / `212-S`. Because `212-S` remains pre-PR on local branch `feat/212-s-backlogit-multi-session-singleton-mcp-runtime-stdio-session-shim-and-channel-operation-coordinator` at `HEAD` `2c87ae6fdf64480ab6767e9015cae51f24abc2e6`, no PR number or GitHub review-thread ID has surfaced; `PR number: N/A` and `review-thread ID: N/A` stand as truthful terminal records.
+4. **Honest Mechanism-vs-Attribution and Non-Global Writer Boundary**:
+   * While `bin/_c4e7a91b2/evidence2.json` (and `docs/memory/2026-11-06/212-S-fourth-cycle-authorization-and-diagnosis.md`) proves the exact Windows legacy-rename mechanism and `shipment_reconstitute_exec.go:318-345` (`peek` at line `321`) proves the unlocked preliminary-plan read overlap with `AssociateCommit`, the exact failure-time denying handle in the historical test runs (`212-M11-wave1-full` and `212-M11-short-temp-once`) was not kernel-captured at failure time. We do not claim historical kernel-handle attribution or global serialization of all read-only queries; `U1f` (`211.012-T`) closes the source-proved `executeReconstitution` preliminary-plan reader lifetime overlap with `lifecycle-global` and source `shipment-membership` writers, while documenting that uncoordinated external readers, lock-free `DryRun: true` previews, and non-global in-process writers (such as `AssociateCommit` with `C` pre-held on a non-member artifact at `commits.go:57-95` or single-lock `B` writers like `SetArtifactSizeWithProvenance` at `artifact_size.go:110` acquiring `lockArtifactMutation` at `shipment.go:1423-1438`) remain outside `lifecycle-global` serialization.
+
+### Options Evaluated in `088-DL` and Chosen Direction (`Route A`: `U1f` / `211.012-T` & `M11 -> M12`)
+
+* **Route A (Chosen — Narrow Preliminary-Plan Reader Lifetime Coordination Under Existing Canonical Locks in `U1f` / `211.012-T` + Stage Manifest Amendment `M11 -> M12`)**:
+  1. Keep `MoveFileExW` (`MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`), `parseFile`, and lock-free `DryRun: true` preview semantics intact; do not reopen or modify completed `U1` (`211.001-T`), `U1b` (`211.008-T`), `U1c` (`211.009-T`), `U1d` (`211.010-T`), or `U1e` (`211.011-T`).
+  2. Create **`U1f` (`211.012-T`, `code`, `status: queued`, `priority: high`, `size: S`, `complexity: medium`, `dependencies: []`, `3` files, `3` functions total [2 production + 1 test]: `internal/core/shipment_reconstitute_plan.go`, `internal/core/shipment_reconstitute_exec.go`, `internal/core/shipment_reconstitute_hardening_test.go`)** executed under **`careful` + `investigate-first` + `freeze-scope`** safety modes:
+     * In `internal/core/shipment_reconstitute_plan.go` (`loadAndValidateReconstitutePlan`, lines 191–233; leaving `planReconstitution` at lines 310–359 and `loadSources` at lines 361–382 untouched so only 1 function in `shipment_reconstitute_plan.go` is modified): validate at the end of `loadAndValidateReconstitutePlan` that each entry in `plan.SourceShipments` is non-empty (`"source_shipments contains an empty ID"`), matches `validReconstituteID(id) && !strings.EqualFold(id, shipmentLifecycleGlobalLockID)` (`"source shipment ID %q is invalid"`, rejecting the reserved global lock key so it cannot self-contend in `lockShipmentMembership`), and is not duplicated under case-folding `seenSources[strings.ToLower(id)]` (`"source shipment %s is listed more than once"`, preventing Windows case-insensitive self-contention), with zero canonical `.md` artifact reads.
+     * In `internal/core/shipment_reconstitute_exec.go` (`executeReconstitution`, lines 318–519): call `validateShipmentManifestOptions(ShipmentManifestOptions{Force: opts.Force, Reason: opts.Reason})` and `plan, digest, err := loadAndValidateReconstitutePlan(ws, opts)` first so invalid options, malformed/escaping plan YAML, or empty/invalid/reserved/duplicate `source_shipments` IDs fail fast before acquiring locks (accepting that `planReconstitution` re-runs option/plan validation during `peek` and `st` so `planReconstitution` and `loadSources` remain untouched within the 2-production-function budget); extract sorted `sourceIDs` from `plan.SourceShipments`; acquire `lockActiveStash(ws)` -> `lockShipmentLifecycleGlobal(ctx, ws)` -> `lockShipmentMembership(ctx, ws, id)` for each sorted `sourceID` **before** calling `peek, err := planReconstitution(ctx, ws, opts)`; check `peek.digest == digest` immediately after `peek` (before `C` and `B`); and check `st.digest == digest` after `st, err := planReconstitution(ctx, ws, opts)` under `C` and `B`.
+     * In `internal/core/shipment_reconstitute_hardening_test.go`: add sequential `TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks` (inline closures only, no `t.Parallel()`) with 3 deterministic, zero-sleep subtests (`preliminary_plan_reads_wait_for_stash_global_and_membership_locks`, `concurrent_associate_commit_durable_replace_serializes_before_preliminary_plan_reads`, and `pure_input_and_plan_validation_fails_fast_before_locks`).
+  3. Amend Shipment `212-S` from `M11` to `M12` (`S12 -> S13`): wire `211.002-T` (`U2`) `depends_on` `211.012-T` (`U1f`, `dep_type: "blocks"`), append `211.012-T` to `212-S` via `backlogit_add_to_shipment` without `force`, preserve `checkpoint-20261106-081656.json` byte-identical on disk as **SUPERSEDED** by `M12` upon Ship's confirmed re-freeze, and retain the `3` prior convergence failures with the `1` operator-approved fourth current-wave convergence cycle (`"Fourth iteration approved."` at `2026-11-06T16:57:46.238Z`) reserved for post-`U1f` verification.
+* **Route B (Rejected — Change Global `parseFile` Share Flags to Share Mode `7`)**: Rejected because `bin/_c4e7a91b2/evidence2.json` (`001.002-T`) and Microsoft's `FILE_RENAME_INFORMATION` documentation prove that legacy `MoveFileExW` still fails with `syscall.Errno(5)` when a target handle is held open with share mode `7`, and existing `NoFollow` helpers also change containment, reparse, bounds, and error contracts.
+* **Route C (Rejected for `212-S` Prerequisite Scope — Replace `MoveFileExW` Globally in `internal/atomicfile` With `FILE_RENAME_POSIX_SEMANTICS` or Serialize All Readers Under `lifecycle-global`)**: Rejected because replacing the repository-wide `atomicfile` primitive requires a dedicated cross-version Windows durability/filesystem/old-handle-snapshot proof beyond a bounded 2-hour prerequisite unit, and locking all read-only queries under `lifecycle-global` would destroy intended read concurrency.
 
 
