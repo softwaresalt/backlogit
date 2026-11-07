@@ -3,9 +3,13 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"sync"
@@ -17,6 +21,9 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core"
 )
 
 // TestU2_CoordinatorFIFOMutationOrderAndConcurrentReads gates SC3 and R7/R8.
@@ -62,7 +69,9 @@ func TestU2_CoordinatorFIFOMutationOrderAndConcurrentReads(t *testing.T) {
 		{"backlogit_sync_index", nil, OpExclusiveBarrier},
 		{"unknown_tool", nil, OpMutating},
 	} {
-		assert.Equal(t, tc.want, ClassifyToolOperation(tc.name, tc.args), "U2 classification: %s %v", tc.name, tc.args)
+		t.Run(fmt.Sprintf("%s/%v", tc.name, tc.args), func(t *testing.T) {
+			assert.Equal(t, tc.want, ClassifyToolOperation(tc.name, tc.args), "U2 classification: %s %v", tc.name, tc.args)
+		})
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -214,6 +223,202 @@ func TestU2_CoordinatorFIFOMutationOrderAndConcurrentReads(t *testing.T) {
 	default:
 		t.Fatal("U2: sync_index handler did not run after drain")
 	}
+
+	u2ReviewfixWorkspaceAcquisition(t)
+}
+
+// u2ReviewfixWorkspaceAcquisition exercises public dispatch, not direct handlers.
+// The existing private fixtures operate only inside the command's short TEMP.
+func u2ReviewfixWorkspaceAcquisition(t *testing.T) {
+	closeServer := func(t *testing.T, s *Server) {
+		t.Helper()
+		t.Cleanup(func() {
+			require.NoError(t, s.coordinator.Close())
+			if s.Workspace != nil {
+				require.NoError(t, s.Workspace.Close())
+			}
+		})
+	}
+	t.Run("C1_poisoned_journal_diagnostic_acquisition", func(t *testing.T) {
+		root, shipmentID, snapshotRef := newPoisonedNormalizationWorkspace(t)
+		s := NewServerForRoot(root)
+		closeServer(t, s)
+		t.Run("doctor", func(t *testing.T) {
+			result := custodyTestInvoke(t, t.Context(), s, "backlogit_doctor", map[string]any{
+				"check_orphans": false, "check_duplicates": false,
+			})
+			assert.False(t, result.IsError, "C1: diagnostic doctor must bypass poisoned ordinary initialization: %s", custodyTestText(t, result))
+			assert.Contains(t, custodyTestText(t, result), "invalid_shipment_lifecycle_journal")
+		})
+		t.Run("normalize_blocked_shipment", func(t *testing.T) {
+			result := custodyTestInvoke(t, t.Context(), s, "backlogit_normalize_blocked_shipment", map[string]any{
+				"id": shipmentID, "snapshot_ref": snapshotRef, "by": "u2-c1",
+			})
+			assert.False(t, result.IsError, "C1: normalizer must use diagnostic acquisition: %s", custodyTestText(t, result))
+			ordinary, err := core.NewWorkspace(t.Context(), root)
+			assert.Error(t, err, "C1: unrelated poison must still reject ordinary acquisition")
+			if ordinary != nil {
+				require.NoError(t, ordinary.Close())
+			}
+			assert.Nil(t, ordinary)
+		})
+	})
+	for _, tool := range []string{"backlogit_custody_preview", "backlogit_custody_verify"} {
+		t.Run("C1_cold_zero_write/"+tool, func(t *testing.T) {
+			repo := custodyTestNewRepo(t)
+			custodyTestRemoveDB(t, repo.root)
+			custodyTestWrite(t, repo.root, custodyTestStageFile, custodyTestRevised)
+			s := NewServerForRoot(repo.root)
+			closeServer(t, s)
+			require.Nil(t, s.Workspace)
+			before := custodyTestSnapshot(t, repo.root)
+			// A refused read must also be zero-write. Assert this prerequisite
+			// before the valid call: current unconditional initialization both
+			// writes SQLite and exposes a separate reentrant manifest mutex bug.
+			// No skip or success fallback: GREEN must reach the valid call below.
+			refused := custodyTestInvoke(t, t.Context(), s, tool, nil)
+			assert.True(t, refused.IsError, "C1: missing shipment_id must be rejected")
+			assert.Equal(t, before, custodyTestSnapshot(t, repo.root), "C1: even a refused cold custody read must be zero-write")
+			require.True(t, s.Workspace == nil, "C1: refused cold custody read must not initialize SQLite before handler validation")
+			args := map[string]any{"shipment_id": repo.stageShip, "branch": custodyTestBranch}
+			if tool == "backlogit_custody_preview" {
+				args["candidates"] = custodyTestJSON(t, []core.CustodyCandidateSpec{{
+					Path: custodyTestStageFile, ChangeKind: "modified", StagedState: "unstaged_only",
+					Contributor: "stage", SourceKind: "stage_artifact",
+				}})
+			}
+			result := custodyTestInvoke(t, t.Context(), s, tool, args)
+			assert.False(t, result.IsError, "C1: cold custody read succeeds: %s", custodyTestText(t, result))
+			assert.True(t, s.Workspace == nil, "C1: custody read must retain handler-specific read-only acquisition")
+			assert.Equal(t, before, custodyTestSnapshot(t, repo.root), "C1: cold custody read is zero-write")
+			_, err := os.Stat(filepath.Join(repo.root, ".backlogit", "backlogit.db"))
+			assert.True(t, os.IsNotExist(err), "C1: cold custody read must not create SQLite")
+		})
+	}
+	t.Run("C1_corrupt_sqlite_canonical_custody_fallback", func(t *testing.T) {
+		repo := custodyTestNewRepo(t)
+		custodyTestWrite(t, repo.root, custodyTestStageFile, custodyTestRevised)
+		// Derive valid receipt pins before corrupting the cache, so the fallback
+		// regression cannot be hidden behind a failing preview prerequisite.
+		pinsWS, err := core.NewReadOnlyWorkspace(t.Context(), repo.root)
+		require.NoError(t, err)
+		preview, err := core.PreviewCustodyCandidates(t.Context(), pinsWS, core.CustodyPreviewOptions{
+			ShipmentID: repo.stageShip, Branch: custodyTestBranch,
+			Candidates: []core.CustodyCandidateSpec{{
+				Path: custodyTestStageFile, ChangeKind: "modified", StagedState: "unstaged_only",
+				Contributor: "stage", SourceKind: "stage_artifact",
+			}},
+		})
+		require.NoError(t, err)
+		require.NoError(t, pinsWS.Close())
+		custodyTestCorruptDB(t, repo.root)
+		s := NewServerForRoot(repo.root)
+		closeServer(t, s)
+		spec := custodyTestJSON(t, core.CustodyReceipt{
+			ReceiptID: "rcpt-u2-c1", Revision: 1, Kind: "stage_to_ship_handoff",
+			AuthorityProfile: "agent_workflow_handoff", Status: "offered",
+			ProducerRole: "stage", AcceptingRole: "ship", AllowedAction: "stage_artifact_commit",
+			CandidateSetDigest: preview.CandidateSetDigest,
+			Entries:            []core.CustodyEntry{custodyTestEntry(custodyTestStageFile, "stage", "stage_artifact")},
+		})
+		t.Run("offer", func(t *testing.T) {
+			result := custodyTestInvoke(t, t.Context(), s, "backlogit_custody_offer", map[string]any{
+				"shipment_id": repo.stageShip, "spec": spec,
+			})
+			assert.False(t, result.IsError, "C1: corrupt-cache offer must use canonical fallback: %s", custodyTestText(t, result))
+			if !result.IsError {
+				resp := custodyTestMutation(t, result)
+				assert.Equal(t, "offered", resp.Status)
+				assert.Equal(t, "unavailable", resp.DB)
+			}
+		})
+		// Seed a valid canonical offer through the DB-optional public core API,
+		// independently of the MCP offer outcome; accept must get its own RED.
+		ws, err := core.NewReadOnlyWorkspace(t.Context(), repo.root)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, ws.Close()) }()
+		ws.HeaderDef, err = config.LoadHeaderDef(ws.StorageRoot)
+		require.NoError(t, err)
+		var receipt core.CustodyReceipt
+		require.NoError(t, json.Unmarshal([]byte(spec), &receipt))
+		if len(custodyTestEnvelope(t, repo.root, repo.stageShip).Receipts) == 0 {
+			_, err = core.OfferCustodyHandoff(t.Context(), ws, core.CustodyOfferOptions{
+				ShipmentID: repo.stageShip, Spec: receipt,
+			})
+			require.NoError(t, err)
+		}
+		t.Run("accept", func(t *testing.T) {
+			result := custodyTestInvoke(t, t.Context(), s, "backlogit_custody_accept", map[string]any{
+				"shipment_id": repo.stageShip, "receipt_id": "rcpt-u2-c1", "by": "ship",
+			})
+			assert.False(t, result.IsError, "C1: corrupt-cache accept must use canonical fallback: %s", custodyTestText(t, result))
+			if !result.IsError {
+				resp := custodyTestMutation(t, result)
+				assert.Equal(t, "accepted", resp.Status)
+				assert.Equal(t, "unavailable", resp.DB)
+			}
+		})
+	})
+	t.Run("C1_exclusive_cold_dispatch_barrier", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".backlogit"), 0o755))
+		require.NoError(t, config.WriteDefaults(filepath.Join(root, ".backlogit")))
+		s := NewServerForRoot(root)
+		closeServer(t, s)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		var workers sync.WaitGroup
+		t.Cleanup(func() { cancel(); workers.Wait() })
+		first := make(chan struct{})
+		release := make(chan struct{})
+		second := make(chan struct{})
+		outcomes := make(chan error, 2)
+		// Register read-only probes under existing read classifications. They
+		// observe dispatch exclusion without acquiring or mutating a workspace.
+		s.addTool(mcplib.NewTool("backlogit_custody_verify"), func(ctx context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+			close(first)
+			select {
+			case <-release:
+				return mcplib.NewToolResultText("first"), nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		})
+		s.addTool(mcplib.NewTool("backlogit_custody_preview"), func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+			close(second)
+			return mcplib.NewToolResultText("second"), nil
+		})
+		invoke := func(tool string) {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				_, err := s.InvokeTool(ctx, tool, mcplib.CallToolRequest{})
+				outcomes <- err
+			}()
+		}
+		invoke("backlogit_custody_verify")
+		select {
+		case <-first:
+		case <-ctx.Done():
+			t.Fatal("C1: first cold dispatch did not start")
+		}
+		invoke("backlogit_custody_preview")
+		for len(s.coordinator.readTokens) != 2 {
+			select {
+			case <-ctx.Done():
+				t.Fatal("C1: second reader did not acquire coordinator admission")
+			default:
+				runtime.Gosched()
+			}
+		}
+		select {
+		case <-second:
+			t.Error("C1: second cold handler bypassed exclusive dispatch barrier")
+		case <-time.After(25 * time.Millisecond):
+		}
+		close(release)
+		require.NoError(t, <-outcomes)
+		require.NoError(t, <-outcomes)
+	})
 }
 
 // TestU2_CoordinatorQueueFullAndCallerCancellationSafety gates SC4 and R9.
@@ -464,4 +669,22 @@ func TestU2_CoordinatorProgressNotificationsIsolatedToCallerSession(t *testing.T
 	require.NotNil(t, res)
 	assert.Empty(t, caller.notifications)
 	assert.Empty(t, peer.notifications)
+
+	t.Run("C1_handler_error_context_and_sentinel_chain", func(t *testing.T) {
+		sentinel := errors.New("u2-c1-handler-sentinel")
+		for _, tool := range []string{"backlogit_get_item", "backlogit_create_item", "backlogit_sync_index"} {
+			t.Run(tool, func(t *testing.T) {
+				expected := mcplib.NewToolResultText("partial-result")
+				result, callErr := c.Execute(ctx, nil, tool, mcplib.CallToolRequest{},
+					func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+						return expected, sentinel
+					})
+				require.Error(t, callErr)
+				assert.ErrorIs(t, callErr, sentinel, "C1: wrapping must preserve handler sentinel")
+				assert.NotSame(t, sentinel, callErr, "C1: handler errors require a contextual wrapper")
+				assert.Contains(t, callErr.Error(), tool, "C1: execution error must identify the dispatched tool")
+				assert.Same(t, expected, result, "C1: wrapping must preserve synchronous handler result")
+			})
+		}
+	})
 }
