@@ -1,0 +1,34 @@
+{
+  "recorded_at_utc": "2026-11-07T08:36:15.3604031Z",
+  "task_id": "211.002-T",
+  "harness_commit": "a88043a6aa840f93bc3212ba3ebbfeb4b1e17156",
+  "harness_sha256": "f5147c8d102221684fef86f7ba9dc33a737fb76a16b57525bbcadcd04a732efe",
+  "manifest": "docs/memory/2026-11-07/212-S-U2-harness.json",
+  "governed_mutation": {
+    "tool": "configured backlogit_update_item",
+    "id": "211.002-T",
+    "fields_requested": ["labels", "sections.implementation-notes"],
+    "after_proof_and_commit": true,
+    "label_added": "harness-ready",
+    "other_labels_preserved": ["code", "track-b", "mcp", "coordinator", "channels", "u2"],
+    "status_requested": false,
+    "commit_field_requested": false,
+    "claim_start_move_done_requested": false
+  },
+  "configured_readback": {
+    "notes_tool": "backlogit_get_item(id=211.002-T, section=implementation-notes)",
+    "notes_manifest_and_command_match": true,
+    "label_query": "SELECT id, status, labels, updated_at FROM items WHERE id = '211.002-T'",
+    "id": "211.002-T",
+    "status": "active",
+    "labels": ["code", "track-b", "mcp", "coordinator", "channels", "u2", "harness-ready"],
+    "updated_at": "2026-11-07T08:36:15.3604031Z"
+  },
+  "stop": "Compiling assertion RED. Root owns subsequent claim/start/build/review.",
+  "production_delta": [],
+  "additional_full_suite_runs": 0,
+  "prior_failed_cycles_retained": 5,
+  "checkpoint_210317_unchanged": true,
+  "six_lf_receipts_unchanged": true,
+  "unrelated_dirty_files_staged": false
+}
