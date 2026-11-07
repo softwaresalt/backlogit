@@ -1,0 +1,48 @@
+{
+  "timestamp_utc": "2026-11-07T23:12:54Z",
+  "task": "211.014-T",
+  "phase": "Green",
+  "native_exit": 0,
+  "observer_exit": 0,
+  "guard": "PASS",
+  "baseline_sha256": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250",
+  "runner_sha256_before": "c334594ff3f120353e0a0e05bc1fb97bccb70109f100bbd95295cec299539bfc",
+  "runner_sha256_after": "c334594ff3f120353e0a0e05bc1fb97bccb70109f100bbd95295cec299539bfc",
+  "harness_sha256": "d0aa0e249f1b3bf61da73fa998290e679b8feb41cdbde11428b38d0ad6641fab",
+  "proof_directory": "bin\\tmp\\u1h-219cb12157ac4cb694c85d4a8c14ec99",
+  "source_snapshots": {
+    "driver-before.py": "c334594ff3f120353e0a0e05bc1fb97bccb70109f100bbd95295cec299539bfc",
+    "harness-before.py": "d0aa0e249f1b3bf61da73fa998290e679b8feb41cdbde11428b38d0ad6641fab",
+    "driver-after.py": "c334594ff3f120353e0a0e05bc1fb97bccb70109f100bbd95295cec299539bfc",
+    "harness-after.py": "d0aa0e249f1b3bf61da73fa998290e679b8feb41cdbde11428b38d0ad6641fab"
+  },
+  "unit_result": {
+    "names": [
+      "test_supervise_holds_and_clears_thread_execution_state_and_records_poll_gaps_without_subtracting_budget",
+      "test_validate_authorization_accepts_matching_dynamic_ordinal_and_failed_count_and_rejects_mismatch",
+      "test_preflight_eol_gate_blocks_test_child_on_crlf_and_preserves_exclusive_attempt_evidence"
+    ],
+    "tests_run": 3,
+    "skips": 0,
+    "errors": 0,
+    "failures": 0,
+    "events": [
+      {
+        "name": "test_supervise_holds_and_clears_thread_execution_state_and_records_poll_gaps_without_subtracting_budget",
+        "outcome": "PASS"
+      },
+      {
+        "name": "test_validate_authorization_accepts_matching_dynamic_ordinal_and_failed_count_and_rejects_mismatch",
+        "outcome": "PASS"
+      },
+      {
+        "name": "test_preflight_eol_gate_blocks_test_child_on_crlf_and_preserves_exclusive_attempt_evidence",
+        "outcome": "PASS"
+      }
+    ],
+    "runner_sha256": "c334594ff3f120353e0a0e05bc1fb97bccb70109f100bbd95295cec299539bfc",
+    "harness_sha256": "d0aa0e249f1b3bf61da73fa998290e679b8feb41cdbde11428b38d0ad6641fab",
+    "go_children_mocked": true,
+    "native_python_child_proof": "bin\\tmp\\hn011054"
+  }
+}

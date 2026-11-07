@@ -1,0 +1,114 @@
+--- driver-baseline
++++ driver-current
+@@ -21,0 +22 @@
++import threading
+@@ -198 +199,2 @@
+-        "test_child_launched", "suite_native_exit")}
++        "test_child_launched", "suite_native_exit", "preflight_eol",
++        "prelaunch_only", "test_cycle_consumed")}
+@@ -214,0 +217,12 @@
++    supervision_keys = (
++        "native_exit", "timed_out", "drain_truncated", "bytes_total",
++        "bytes_retained", "bytes_omitted", "line_characters_omitted",
++        "lines_total", "lines_retained", "lines_omitted",
++        "supervisor_error", "recorder_error", "cleanup_errors", "pid",
++        "execution_state_held", "execution_state_cleared",
++        "execution_state_thread_id", "execution_state_clear_thread_id",
++        "execution_state_hold_result", "execution_state_clear_result",
++        "max_poll_gap_seconds", "poll_gap_over_5s_count", "deadline_seconds")
++    supervision = summary.get("supervision", {})
++    if isinstance(supervision, dict):
++        essential["supervision"] = {key: supervision.get(key) for key in supervision_keys}
+@@ -238,5 +252 @@
+-            key: scalar(supervision.get(key)) for key in (
+-                "native_exit", "timed_out", "drain_truncated", "bytes_total",
+-                "bytes_retained", "bytes_omitted", "line_characters_omitted",
+-                "lines_total", "lines_retained", "lines_omitted",
+-                "supervisor_error", "recorder_error")}
++            key: scalar(supervision.get(key)) for key in supervision_keys}
+@@ -338 +348 @@
+-    process = job = raw = stderr_raw = None
++    process = job = raw = stderr_raw = execution_state = None
+@@ -347 +357,5 @@
+-            "stage": "job-setup", "raw_stderr_path": str(stderr_path) if stderr_path else None}
++            "stage": "job-setup", "raw_stderr_path": str(stderr_path) if stderr_path else None,
++            "execution_state_held": False, "execution_state_cleared": False,
++            "execution_state_thread_id": None, "execution_state_clear_thread_id": None,
++            "execution_state_hold_result": None, "execution_state_clear_result": None,
++            "max_poll_gap_seconds": 0.0, "poll_gap_over_5s_count": 0}
+@@ -423,0 +438,12 @@
++        # This thread-scoped request inhibits automatic idle sleep only.
++        # Manual sleep, hibernation and power loss remain outside our control.
++        info["stage"] = "idle-sleep-hold"
++        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
++        execution_state = kernel.SetThreadExecutionState
++        execution_state.argtypes, execution_state.restype = [ctypes.c_ulong], ctypes.c_ulong
++        info["execution_state_thread_id"] = threading.get_ident()
++        info["execution_state_hold_result"] = execution_state(0x80000001)
++        if not info["execution_state_hold_result"]:
++            raise ctypes.WinError(ctypes.get_last_error())
++        info["execution_state_held"] = True
++        info["stage"] = "job-setup"
+@@ -440,0 +467 @@
++        last_poll = start
+@@ -446,0 +474,4 @@
++            gap = now - last_poll
++            last_poll = now
++            info["max_poll_gap_seconds"] = max(info["max_poll_gap_seconds"], gap)
++            info["poll_gap_over_5s_count"] += int(gap > 5.0)
+@@ -475 +506 @@
+-    except Exception as error:
++    except (Exception, KeyboardInterrupt) as error:
+@@ -510,0 +542,11 @@
++        if info["execution_state_held"]:
++            try:
++                info["execution_state_clear_thread_id"] = threading.get_ident()
++                if info["execution_state_clear_thread_id"] != info["execution_state_thread_id"]:
++                    raise RuntimeError("idle-sleep hold must be cleared on its owning thread")
++                info["execution_state_clear_result"] = execution_state(0x80000000)
++                if not info["execution_state_clear_result"]:
++                    raise ctypes.WinError(ctypes.get_last_error())
++                info["execution_state_cleared"] = True
++            except Exception as error:
++                info["cleanup_errors"].append("idle-sleep clear: " + str(error)[:512])
+@@ -535 +577 @@
+-                "ordinal": 5, "failed_count": 4, "token_sha256": digest,
++                "token_sha256": digest,
+@@ -540,0 +583,4 @@
++    ordinal, failed = receipt.get("ordinal"), receipt.get("failed_count")
++    if type(ordinal) is not int or ordinal < 1 or type(failed) is not int or not 0 <= failed < ordinal:
++        raise ValueError("invalid external ordinal/failed_count")
++    required.update(ordinal=ordinal, failed_count=failed)
+@@ -546,0 +593,2 @@
++    if counter.get("issuer_role") != receipt["issuer_role"]:
++        raise ValueError("counter and execution issuer roles differ")
+@@ -600,0 +649 @@
++    preflight_eol = None
+@@ -610 +659 @@
+-        with (directory / "go-list-result.json").open("x", encoding="utf-8") as stream:
++        with (directory / "go-list-result.json").open("x", encoding="utf-8", newline="\n") as stream:
+@@ -618,0 +668,11 @@
++        preflight_eol = _supervise(
++            [go, "test", "-count=1", "-timeout=2m", "-json", "-run",
++             "^TestU175_001_BaselineEol$", "./tests"], lambda _: None, timeout=120,
++            raw_path=directory / "preflight-eol.raw",
++            stderr_path=directory / "preflight-eol.stderr.raw")
++        with (directory / "preflight-eol-result.json").open("x", encoding="utf-8", newline="\n") as stream:
++            stream.write(json.dumps(preflight_eol) + "\n")
++        if (preflight_eol["native_exit"] != 0 or preflight_eol["supervisor_error"]
++                or preflight_eol["timed_out"] or preflight_eol.get("cleanup_errors")
++                or preflight_eol.get("drain_truncated") or preflight_eol.get("line_characters_omitted")):
++            raise ValueError("LF preflight failed; test child not launched")
+@@ -639,0 +700,3 @@
++    summary["preflight_eol"] = preflight_eol
++    summary["prelaunch_only"] = not test_child_launched
++    summary["test_cycle_consumed"] = bool(test_child_launched)
+@@ -651 +714 @@
+-        with (directory / "result.json").open("x", encoding="utf-8") as stream:
++        with (directory / "result.json").open("x", encoding="utf-8", newline="\n") as stream:
+@@ -662,0 +726,2 @@
++              "preflight_eol": preflight_eol, "prelaunch_only": not test_child_launched,
++              "test_cycle_consumed": bool(test_child_launched),
+@@ -673 +738 @@
+-        with (directory / "recorder-result.json").open("x", encoding="utf-8") as stream:
++        with (directory / "recorder-result.json").open("x", encoding="utf-8", newline="\n") as stream:

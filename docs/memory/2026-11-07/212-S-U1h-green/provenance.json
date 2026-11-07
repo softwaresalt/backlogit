@@ -1,0 +1,86 @@
+{
+  "timestamp_utc": "2026-11-07T23:15:48Z",
+  "task": "211.014-T",
+  "source_head": "5f91f25f15bb94531fcd97cf28f0c14b53446c39",
+  "baseline_immutable_private_directory": "bin\\tmp\\h76dda9",
+  "baseline_readonly": true,
+  "baseline_sha256": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250",
+  "source_sha256": {
+    "driver_baseline": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250",
+    "driver_current": "c334594ff3f120353e0a0e05bc1fb97bccb70109f100bbd95295cec299539bfc",
+    "harness_baseline": "d3624f020514225f556eac9d22d4159c420a165e46305cd48c424a12bf8dccfd",
+    "harness_current": "18a08cafab14b45c45af95d5d369f38dd380c593fa175187b0e9cc32f3b8c1b7",
+    "observer_baseline": "6e8457a05f3366b89538de2f69f4a179d501202b899c5a505a9a43f5fa4efd77",
+    "observer_current": "00f512d9212975f2a144893dedaceda700c83c6d0f523ddd5439ff5676617e23"
+  },
+  "changed_driver_functions": [
+    "_bounded_summary",
+    "_supervise",
+    "_validate_authorization",
+    "_main"
+  ],
+  "proof_files": {
+    "attempt-0.json": "3566c35f2063b652c7022513fc92144aa5ebb4084d68487cc3a12e00b422500c",
+    "attempt-1.json": "acbe24752b2caaa9ab1c5c18f15656b854779639be791971bd9e8261fc599802",
+    "attempt-2.json": "e7740cb411c4b4bcf3a9f88d00017437f510345f56d2dbf462523a7e03fe5ddd",
+    "attempt-3.json": "e246d6a3450928adb171da9efa6a67528e94ed8b53b66226d5d53ad8b1859e77",
+    "driver.diff": "ba7222e1ab079f91528fa31650db956a24624269fd6954a2b08c52575ba74f51",
+    "harness.diff": "4fbd86257ac15d5096348f2f0633467db03c8801f018fbd8bd0fdc5b0cf849ba",
+    "lf-result.json": "63a5b5aa7881897323fa737600a3980cb3663140bc01855a20defa04d92d2d37",
+    "lf.raw": "49c43aa7e87468fb66306c13e3676f6925708a934598df8fc8387cbf583cd5a1",
+    "native-python-result.json": "456fff7ff26321b00115e768f14b058372f7bb6afd82d220d4b04b5917defe3e",
+    "native-python.raw": "4202e2e121b7f55c92870caa1f966452562776844af595b6fc2c24f0990c3f91",
+    "source-snapshots.json": "1d081d6c34160a3ef13ee2a97233936e5349f8fa310f5a2ca36434fdea474be5"
+  },
+  "attempts": [
+    {
+      "private_path": "bin\\tmp\\u1h-df64ff87ac944a419fed694ff0cc3547\\observer-result.json",
+      "sha256": "3566c35f2063b652c7022513fc92144aa5ebb4084d68487cc3a12e00b422500c",
+      "phase": "Red",
+      "native_exit": 1,
+      "observer_exit": 0
+    },
+    {
+      "private_path": "bin\\tmp\\u1h-4f7f4a563e4446f4874d38136c46c82e\\observer-result.json",
+      "sha256": "acbe24752b2caaa9ab1c5c18f15656b854779639be791971bd9e8261fc599802",
+      "phase": "Green",
+      "native_exit": 1,
+      "observer_exit": 2
+    },
+    {
+      "private_path": "bin\\tmp\\u1h-219cb12157ac4cb694c85d4a8c14ec99\\observer-result.json",
+      "sha256": "e7740cb411c4b4bcf3a9f88d00017437f510345f56d2dbf462523a7e03fe5ddd",
+      "phase": "Green",
+      "native_exit": 0,
+      "observer_exit": 0
+    },
+    {
+      "private_path": "bin\\tmp\\u1h-5c85fd360dfd45b89d4f5956b5a61abe\\observer-result.json",
+      "sha256": "e246d6a3450928adb171da9efa6a67528e94ed8b53b66226d5d53ad8b1859e77",
+      "phase": "Green",
+      "native_exit": 0,
+      "observer_exit": 0
+    }
+  ],
+  "green_loop_attempts": 3,
+  "green_native_failure_count": 1,
+  "red_assertion_groups": 3,
+  "final_green_groups": 3,
+  "skips": 0,
+  "go_discovery_or_full_suite_launched": false,
+  "lf_target_attempts": 1,
+  "external_execution_receipts_issued": false,
+  "wave_scoped": true,
+  "green_regression_cmds": [],
+  "sibling_red_selectors": [],
+  "open_red_selectors": [],
+  "red_deliverable": false,
+  "full_gate_owner": "Root; deferred authority unchanged, not waived",
+  "protected_current_bytes": {
+    ".backlogit/queue/211.014-T.md": "84a0f28b861c4adf4af69a4c8928fb3fc614685c68bbea33bc890244871e8026",
+    ".backlogit/archive/089-DL.md": "8646fca0bf87421d6498d49178912c0e495a632a6cb1a5082ac9d7f0200bb746",
+    "docs/plans/2026-11-04-multi-session-mcp-runtime-plan.md": "7f3d57d80a7b0b3cf22db63c740c92f90636ebd99b9b1619bca6ae35aec9b0bc",
+    ".backlogit/checkpoints/checkpoint-20261106-210317.json": "235844507a4975f27c5a88f4fe3e499fb538110c86e6a264637db1b69837ca70"
+  },
+  "review_status": "Not reviewed; committed GREEN for Root standard/adversarial review only"
+}

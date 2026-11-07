@@ -1,0 +1,46 @@
+{
+  "supervision": {
+    "native_exit": 0,
+    "timed_out": false,
+    "drain_truncated": false,
+    "bytes_total": 13,
+    "bytes_retained": 13,
+    "bytes_omitted": 0,
+    "lines_total": 1,
+    "lines_retained": 1,
+    "lines_omitted": 0,
+    "line_characters_omitted": 0,
+    "supervisor_error": null,
+    "cleanup_errors": [],
+    "pid": 37692,
+    "started_at": "2026-11-07T23:15:12Z",
+    "finished_at": "2026-11-07T23:15:12Z",
+    "resumed_at": "2026-11-07T23:15:12Z",
+    "deadline_seconds": 10,
+    "job_assigned": true,
+    "child_resumed": true,
+    "stage": "pipe-poll",
+    "raw_stderr_path": null,
+    "execution_state_held": true,
+    "execution_state_cleared": true,
+    "execution_state_thread_id": 24192,
+    "execution_state_clear_thread_id": 24192,
+    "execution_state_hold_result": 2147483648,
+    "execution_state_clear_result": 2147483649,
+    "max_poll_gap_seconds": 0.01042299997061491,
+    "poll_gap_over_5s_count": 0,
+    "elapsed_seconds": 0.05652360012754798
+  },
+  "calls": [
+    [
+      2147483649,
+      24192,
+      2147483648
+    ],
+    [
+      2147483648,
+      24192,
+      2147483649
+    ]
+  ]
+}

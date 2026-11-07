@@ -1,0 +1,78 @@
+--- harness-baseline
++++ harness-current
+@@ -1 +1 @@
+-"""U1h tests only: every child and authority seam is synthetic; no Go suite runs."""
++"""U1h tests: mocked Go/authority seams plus one real owned Windows Python child."""
+@@ -37 +37 @@
+-        def simulate(hold=1, clear=1, launch_error=False):
++        def simulate(hold=1, clear=1, launch_error=False, cancel=False):
+@@ -62,0 +63,2 @@
++                if cancel:
++                    raise KeyboardInterrupt("synthetic cancellation")
+@@ -109,0 +112,56 @@
++        cancelled, trace = simulate(cancel=True)
++        self.assertIn("KeyboardInterrupt", cancelled["supervisor_error"])
++        self.assertEqual(cancelled["native_exit"], 124)
++        self.assertTrue(cancelled["execution_state_cleared"])
++        self.assertEqual(trace[-1], ("power", 0x80000000, owner))
++
++        native_directory = RUNNER._ROOT / "bin" / "tmp" / ("hn" + uuid.uuid4().hex[:6])
++        native_directory.mkdir(exist_ok=False)
++        native_trace = []
++        real_windll = ctypes.WinDLL
++
++        class KernelProxy:
++            def __init__(self, kernel):
++                self.kernel = kernel
++
++            def __getattr__(self, name):
++                return getattr(self.kernel, name)
++
++            @property
++            def SetThreadExecutionState(self):
++                function = self.kernel.SetThreadExecutionState
++                function.argtypes, function.restype = [ctypes.c_ulong], ctypes.c_ulong
++
++                def call(flags):
++                    result = function(flags)
++                    native_trace.append((flags, threading.get_ident(), result))
++                    return result
++
++                return call
++
++        def windll(name, **kwargs):
++            kernel = real_windll(name, **kwargs)
++            return KernelProxy(kernel) if name == "kernel32" else kernel
++
++        output = []
++        with mock.patch.object(RUNNER.ctypes, "WinDLL", side_effect=windll):
++            native = RUNNER._supervise(
++                [sys.executable, "-B", "-c", "import sys; sys.stdout.buffer.write(b'u1h-owned-ok\\n')"],
++                output.append, timeout=10,
++                raw_path=native_directory / "child.raw")
++        self.assertEqual(native["native_exit"], 0, native)
++        self.assertIsNone(native["supervisor_error"], native)
++        self.assertEqual(native["cleanup_errors"], [])
++        self.assertTrue(native["job_assigned"] and native["child_resumed"])
++        self.assertEqual([row[:2] for row in native_trace],
++                         [(0x80000001, owner), (0x80000000, owner)])
++        self.assertTrue(all(row[2] != 0 for row in native_trace))
++        self.assertEqual(native["execution_state_thread_id"], owner)
++        self.assertEqual(native["execution_state_clear_thread_id"], owner)
++        self.assertEqual(native["execution_state_hold_result"], native_trace[0][2])
++        self.assertEqual(native["execution_state_clear_result"], native_trace[1][2])
++        self.assertTrue(native["execution_state_held"] and native["execution_state_cleared"])
++        self.assertEqual(output, ["u1h-owned-ok\n"])
++        with (native_directory / "native-result.json").open("x", encoding="utf-8", newline="\n") as stream:
++            stream.write(json.dumps({"supervision": native, "calls": native_trace}) + "\n")
++        self.__class__.native_proof = str(native_directory.relative_to(RUNNER._ROOT))
+@@ -138 +196,2 @@
+-                ("budget_seconds", 2701), ("budget_seconds", True)):
++                ("budget_seconds", 2701), ("budget_seconds", True),
++                ("issuer_role", "ship"), ("issuer_role", "operator")):
+@@ -144 +203 @@
+-                if field not in ("ordinal", "failed_count", "receipt_id"):
++                if field not in ("ordinal", "failed_count", "receipt_id", "issuer_role"):
+@@ -278 +337 @@
+-             "synthetic_only": True}
++             "go_children_mocked": True, "native_python_child_proof": getattr(U1hHarness, "native_proof", None)}

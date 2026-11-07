@@ -1,0 +1,43 @@
+{
+  "timestamp_utc": "2026-11-07T23:11:48Z",
+  "task": "211.014-T",
+  "phase": "Green",
+  "native_exit": 1,
+  "observer_exit": 2,
+  "guard": "FAIL",
+  "baseline_sha256": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250",
+  "runner_sha256_before": "2a28c17f575132d3b6349320ac25a691d10ce367f2b77f73c82b65d6236bec91",
+  "runner_sha256_after": "2a28c17f575132d3b6349320ac25a691d10ce367f2b77f73c82b65d6236bec91",
+  "harness_sha256": "72a33b297b95631ce77e6277126e783fca8dd53d870c2e16e7aaf7ef1b3c7a56",
+  "unit_result": {
+    "names": [
+      "test_supervise_holds_and_clears_thread_execution_state_and_records_poll_gaps_without_subtracting_budget",
+      "test_validate_authorization_accepts_matching_dynamic_ordinal_and_failed_count_and_rejects_mismatch",
+      "test_preflight_eol_gate_blocks_test_child_on_crlf_and_preserves_exclusive_attempt_evidence"
+    ],
+    "tests_run": 3,
+    "skips": 0,
+    "errors": 0,
+    "failures": 1,
+    "events": [
+      {
+        "name": "test_supervise_holds_and_clears_thread_execution_state_and_records_poll_gaps_without_subtracting_budget",
+        "outcome": "FAIL",
+        "type": "AssertionError",
+        "message": "Lists differ: ['u1h-owned-ok\\r\\n'] != ['u1h-owned-ok\\n']\n\nFirst differing element 0:\n'u1h-owned-ok\\r\\n'\n'u1h-owned-ok\\n'\n\n- ['u1h-owned-ok\\r\\n']\n?                --\n\n+ ['u1h-owned-ok\\n']"
+      },
+      {
+        "name": "test_validate_authorization_accepts_matching_dynamic_ordinal_and_failed_count_and_rejects_mismatch",
+        "outcome": "PASS"
+      },
+      {
+        "name": "test_preflight_eol_gate_blocks_test_child_on_crlf_and_preserves_exclusive_attempt_evidence",
+        "outcome": "PASS"
+      }
+    ],
+    "runner_sha256": "2a28c17f575132d3b6349320ac25a691d10ce367f2b77f73c82b65d6236bec91",
+    "harness_sha256": "72a33b297b95631ce77e6277126e783fca8dd53d870c2e16e7aaf7ef1b3c7a56",
+    "go_children_mocked": true,
+    "native_python_child_proof": null
+  }
+}
