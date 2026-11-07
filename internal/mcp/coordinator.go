@@ -287,6 +287,9 @@ func (c *OperationCoordinator) Execute(
 	coordinatorProgress(ctx, srv, req, "started", 1)
 	result, err := next(ctx, req)
 	coordinatorProgress(ctx, srv, req, "completed", 2)
+	if err != nil {
+		return result, fmt.Errorf("execute MCP tool %q: %w", toolName, err)
+	}
 	return result, err
 }
 

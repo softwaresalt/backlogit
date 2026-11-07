@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -54,9 +55,12 @@ type Server struct {
 	toolDefs      []mcplib.Tool
 	toolHandlers  map[string]mcpserver.ToolHandlerFunc
 	workspaceMu   sync.Mutex
+	// storageRoot publishes the resolved directory independently of workspaceMu.
+	// Directory readers may already hold workspaceMu (manifest previews).
+	storageRoot atomic.Pointer[string]
 	// workspaceDispatchMu excludes every handler during lazy initialization.
 	// Once initialized, handlers share its read lock; workspaceMu still guards
-	// pointer publication and backlogitDir. Admission precedes these locks.
+	// workspace publication. Admission precedes these locks.
 	workspaceDispatchMu sync.RWMutex
 	// manifest is an in-memory snapshot of workspace file metadata used by
 	// backlogit_merge_sync to compute incremental diffs without a full rehydrate.
@@ -102,6 +106,8 @@ func newServer(rootPath string, ws *core.Workspace) *Server {
 	s.RegisterResources()
 
 	s.workspaceMu.Lock()
+	storageRoot := s.backlogitDirLocked()
+	s.storageRoot.Store(&storageRoot)
 	s.refreshTemplateService(context.Background())
 	s.workspaceMu.Unlock()
 	return s
@@ -144,17 +150,9 @@ func (s *Server) executeTool(ctx context.Context, name string, req mcplib.CallTo
 				s.workspaceDispatchMu.RUnlock()
 				s.workspaceDispatchMu.Lock()
 				defer s.workspaceDispatchMu.Unlock()
-				// Re-check under the exclusive dispatch lock. All uninitialized
-				// calls remain exclusive through next, including handlers that
-				// discover a newly created storage directory themselves.
-				s.workspaceMu.Lock()
-				needsInit := s.Workspace == nil && dirExists(s.backlogitDirLocked())
-				s.workspaceMu.Unlock()
-				if needsInit {
-					if _, result := s.requireWorkspace(ctx); result != nil {
-						return result, nil
-					}
-				}
+				// Keep cold dispatch exclusive through the handler, but let it
+				// choose ordinary, diagnostic, read-only or DB-optional acquisition.
+				// Never hold workspaceMu across handler workspace acquisition.
 			}
 			if ctx.Err() != nil {
 				return coordinatorBusy("request_cancelled")
@@ -178,9 +176,10 @@ func RunStdio(s *Server) error {
 }
 
 func (s *Server) backlogitDir() string {
-	s.workspaceMu.Lock()
-	defer s.workspaceMu.Unlock()
-	return s.backlogitDirLocked()
+	if storageRoot := s.storageRoot.Load(); storageRoot != nil {
+		return *storageRoot
+	}
+	return core.WorkspaceStorageRoot(s.RootPath)
 }
 
 // backlogitDirLocked requires workspaceMu, including while rebinding writers.
@@ -226,6 +225,8 @@ func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
 		return nil, err
 	}
 	s.Workspace = ws
+	resolvedStorageRoot := s.backlogitDirLocked()
+	s.storageRoot.Store(&resolvedStorageRoot)
 	s.refreshTemplateService(ctx)
 
 	// Rebuild the shared event writer now that the workspace (and its
