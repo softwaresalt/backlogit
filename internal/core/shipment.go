@@ -3010,7 +3010,24 @@ func recoverLegacyReturnBlockedJournal(
 	if err := persistArtifact(recoveryCtx, ws, journal.Shipment, false); err != nil {
 		return fmt.Errorf("restore shipment %s from legacy journal: %w", journal.Shipment.ID, err)
 	}
-	if err := persistArtifact(recoveryCtx, ws, journal.Item, true); err != nil {
+	itemPreimageMatches, err := recoveryArtifactMatchesAny(currentItem, []recoveryArtifactCandidate{{artifact: journal.Item}})
+	if err != nil {
+		return fmt.Errorf("compare item %s legacy return recovery preimage: %w", journal.Item.ID, err)
+	}
+	currentItemPath, targetItemPath, pathErr := resolveArtifactPersistPaths(recoveryCtx, ws, journal.Item, true)
+	if pathErr != nil {
+		return fmt.Errorf("restore item %s from legacy journal: %w", journal.Item.ID, pathErr)
+	}
+	if itemPreimageMatches && currentItemPath == targetItemPath {
+		// Reconcile the index without replacing an already-restored canonical file.
+		indexedItem := cloneArtifact(currentItem)
+		if err := mergeDBOnlyLinksIntoArtifact(recoveryCtx, ws, indexedItem); err != nil {
+			return fmt.Errorf("restore item %s from legacy journal: preserve database-only links: %w", journal.Item.ID, err)
+		}
+		if err := bldb.UpsertItem(recoveryCtx, ws.DB, indexedItem); err != nil {
+			return fmt.Errorf("restore item %s from legacy journal: upsert item: %w", journal.Item.ID, err)
+		}
+	} else if err := persistArtifact(recoveryCtx, ws, journal.Item, true); err != nil {
 		return fmt.Errorf("restore item %s from legacy journal: %w", journal.Item.ID, err)
 	}
 	removeReturnBlockedJournal(recoveryCtx, ws, journal.Shipment.ID, journal.Item.ID)
