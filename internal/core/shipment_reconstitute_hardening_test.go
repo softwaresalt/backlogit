@@ -49,6 +49,69 @@ func TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks(t *tes
 	}
 
 	t.Run("preliminary_plan_reads_wait_for_stash_global_and_membership_locks", func(t *testing.T) {
+		for _, preCanceled := range []bool{true, false} {
+			cancelFX := fixture()
+			before := workspaceFileSnapshot(t, cancelFX.ws)
+			unlockStash, lockErr := tryLockActiveStash(cancelFX.ws)
+			require.NoError(t, lockErr)
+			callCtx, cancelCall := context.WithCancel(ctx)
+			var attempts atomic.Int32
+			callCtx = context.WithValue(callCtx, shipmentLifecycleGlobalLockHookContextKey{}, func(stage string) {
+				if stage == "attempt" {
+					attempts.Add(1)
+				}
+			})
+			ack := make(chan struct{})
+			done := make(chan outcome, 1)
+			var releaseOnce sync.Once
+			releaseStash := func() {
+				releaseOnce.Do(func() { assert.NoError(t, unlockStash()) })
+			}
+			joined := false
+			t.Cleanup(func() {
+				cancelCall()
+				// The blocking baseline must be unblocked BEFORE every join.
+				releaseStash()
+				if !joined {
+					<-done
+				}
+				t.Logf("U1f F1 cleanup completed preCanceled=%t", preCanceled)
+			})
+			if preCanceled {
+				cancelCall()
+			}
+			plan := cancelFX.splitPlanYAML()
+			go func() {
+				close(ack)
+				res, callErr := ReconstituteShipments(callCtx, cancelFX.ws, ReconstituteOptions{PlanYAML: plan})
+				done <- outcome{res, callErr}
+			}()
+			<-ack
+			if !preCanceled {
+				cancelCall()
+			}
+			// Ack proves launch, NOT exact entry into stashMu.Lock. This
+			// bounded select observes only return while the holder is live.
+			observation := time.NewTimer(2 * time.Second)
+			select {
+			case got := <-done:
+				joined = true
+				assert.ErrorIs(t, got.err, context.Canceled, "U1f F1 cancellation error preCanceled=%t", preCanceled)
+				assert.Nil(t, got.res, "U1f F1 canceled result preCanceled=%t", preCanceled)
+			case <-observation.C:
+				t.Errorf("U1f F1 return-before-stash-release assertion preCanceled=%t: canceled call remained blocked", preCanceled)
+			}
+			observation.Stop()
+			releaseStash()
+			if !joined {
+				got := <-done
+				joined = true
+				assert.ErrorIs(t, got.err, context.Canceled, "U1f F1 error after cleanup release preCanceled=%t", preCanceled)
+			}
+			assert.Zero(t, attempts.Load(), "U1f F6 pre-canceled acquisition must not attempt global preCanceled=%t", preCanceled)
+			assert.Equal(t, before, workspaceFileSnapshot(t, cancelFX.ws),
+				"U1f F6 canceled call final persisted artifacts/events (not proof of no transient writes)")
+		}
 		fx := fixture()
 		task5Path, err := FindArtifactPath(ctx, fx.ws, fx.tasks[5].ID)
 		require.NoError(t, err)
@@ -119,6 +182,40 @@ func TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks(t *tes
 	})
 
 	t.Run("concurrent_associate_commit_durable_replace_serializes_before_preliminary_plan_reads", func(t *testing.T) {
+		digestFX := fixture()
+		before := workspaceFileSnapshot(t, digestFX.ws)
+		planPath := filepath.Join(digestFX.ws.RootPath, "u1f-plan.yaml")
+		originalYAML := digestFX.splitPlanYAML()
+		changedYAML := originalYAML + "\n# changed at lifecycle-global acquisition\n"
+		require.NoError(t, os.WriteFile(planPath, []byte(originalYAML), 0o644))
+		_, originalDigest, err := loadAndValidateReconstitutePlan(digestFX.ws, ReconstituteOptions{PlanYAML: originalYAML})
+		require.NoError(t, err)
+		_, changedDigest, err := loadAndValidateReconstitutePlan(digestFX.ws, ReconstituteOptions{PlanYAML: changedYAML})
+		require.NoError(t, err)
+		assert.NotEqual(t, originalDigest, changedDigest, "U1f F7 YAML byte digest discriminator")
+		digestCtx, cancelDigest := context.WithTimeout(ctx, 10*time.Second)
+		defer cancelDigest()
+		changed := false
+		var rewriteErr error
+		digestCtx = context.WithValue(digestCtx, shipmentLifecycleGlobalLockHookContextKey{}, func(stage string) {
+			if stage == "acquired" {
+				changed = true
+				rewriteErr = os.WriteFile(planPath, []byte(changedYAML), 0o644)
+			}
+		})
+		digestResult, digestErr := ReconstituteShipments(digestCtx, digestFX.ws, ReconstituteOptions{PlanPath: planPath})
+		require.NoError(t, rewriteErr)
+		assert.True(t, changed, "U1f F7 existing global hook changed plan YAML")
+		assert.ErrorIs(t, digestErr, blerrors.ErrValidation, "U1f F7 digest change rejects")
+		assert.Nil(t, digestResult, "U1f F7 digest change has no result")
+		assert.Equal(t, before, workspaceFileSnapshot(t, digestFX.ws), "U1f F7 digest rejection preserves artifacts/events")
+		planBytes, err := os.ReadFile(planPath)
+		require.NoError(t, err)
+		assert.Equal(t, changedYAML, string(planBytes), "U1f F7 plan writer's bytes remain")
+		pending, err := loadShipmentOperationJournals(digestFX.ws)
+		require.NoError(t, err)
+		assert.Empty(t, pending, "U1f F7 digest rejection leaves no pending journal")
+
 		fx := fixture()
 		fx.ws.Config.DurableWrites = true
 		ew := events.NewEventWriter(WorkspaceLogsRoot(fx.ws.RootPath))
@@ -244,6 +341,136 @@ func TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks(t *tes
 			_, statErr := os.Lstat(StashFilePath(fx.ws.RootPath) + ".lock")
 			assert.True(t, os.IsNotExist(statErr), "input case %d must not create stash sidecar: %v", i, statErr)
 		}
+		require.NoError(t, releaseGlobal())
+		for _, cancelStage := range []string{"attempt", "acquired"} {
+			cancelFX := fixture()
+			taskPath, pathErr := FindArtifactPath(ctx, cancelFX.ws, cancelFX.tasks[5].ID)
+			require.NoError(t, pathErr)
+			taskBytes, readErr := os.ReadFile(taskPath)
+			require.NoError(t, readErr)
+			// A missing artifact discriminates cancellation from proceeding
+			// into preliminary validation. It does not instrument each scan.
+			require.NoError(t, os.Remove(taskPath))
+			t.Cleanup(func() { assert.NoError(t, os.WriteFile(taskPath, taskBytes, 0o644)) })
+			before := workspaceFileSnapshot(t, cancelFX.ws)
+			cancelCtx, cancelCall := context.WithCancel(ctx)
+			var stages []string
+			cancelCtx = context.WithValue(cancelCtx, shipmentLifecycleGlobalLockHookContextKey{}, func(stage string) {
+				stages = append(stages, stage)
+				if stage == cancelStage {
+					cancelCall()
+				}
+			})
+			result, callErr := ReconstituteShipments(cancelCtx, cancelFX.ws, ReconstituteOptions{PlanYAML: cancelFX.splitPlanYAML()})
+			cancelCall()
+			assert.Contains(t, stages, cancelStage, "U1f F6 cancellation barrier reached")
+			assert.ErrorIs(t, callErr, context.Canceled, "U1f F6 cancellation before acquisitions/scans stage=%s", cancelStage)
+			assert.Nil(t, result, "U1f F6 canceled result stage=%s", cancelStage)
+			if cancelStage == "attempt" {
+				assert.NotContains(t, stages, "acquired", "U1f F6 canceled global attempt must not acquire")
+			}
+			assert.Equal(t, before, workspaceFileSnapshot(t, cancelFX.ws),
+				"U1f F6 final persisted state stage=%s (not proof of no transient post-cancel writes)", cancelStage)
+			pending, pendingErr := loadShipmentOperationJournals(cancelFX.ws)
+			require.NoError(t, pendingErr)
+			assert.Empty(t, pending, "U1f F6 no pending journal stage=%s", cancelStage)
+		}
+
+		sortedFX := fixture()
+		downPath, err := FindArtifactPath(ctx, sortedFX.ws, sortedFX.downstream.ID)
+		require.NoError(t, err)
+		downstream, _, err := parseFile(downPath)
+		require.NoError(t, err)
+		require.Equal(t, sortedFX.downstream.ID, downstream.ID)
+		require.Equal(t, "shipment", downstream.ArtifactType)
+		downItems := NormalizeShipmentItems(downstream)
+		require.Len(t, downItems, 1)
+		downTaskPath, err := FindArtifactPath(ctx, sortedFX.ws, downItems[0])
+		require.NoError(t, err)
+		downTask, _, err := parseFile(downTaskPath)
+		require.NoError(t, err)
+		require.Equal(t, downItems[0], downTask.ID)
+		require.Equal(t, "task", downTask.ArtifactType)
+		downFeaturePath, err := FindArtifactPath(ctx, sortedFX.ws, downTask.ParentID)
+		require.NoError(t, err)
+		downFeature, _, err := parseFile(downFeaturePath)
+		require.NoError(t, err)
+		require.Equal(t, downTask.ParentID, downFeature.ID)
+		require.Equal(t, "feature", downFeature.ArtifactType)
+		require.Less(t, sortedFX.source.ID, downstream.ID, "U1f F7 fixture IDs ordered")
+		unsortedPlan := strings.Replace(sortedFX.splitPlanYAML(),
+			"source_shipments: ["+sortedFX.source.ID+"]",
+			fmt.Sprintf("source_shipments: [%s, %s]", downstream.ID, sortedFX.source.ID), 1)
+		unsortedPlan += fmt.Sprintf("  - id: %s\n    feature: {id: %s}\n    items: [%s]\n",
+			downstream.ID, downFeature.ID, downTask.ID)
+		before := workspaceFileSnapshot(t, sortedFX.ws)
+		unlockLow, err := lockShipmentMembership(ctx, sortedFX.ws, sortedFX.source.ID)
+		require.NoError(t, err)
+		sortedCtx, cancelSorted := context.WithTimeout(ctx, 10*time.Second)
+		contended := make(chan struct{}, 1)
+		var acquired atomic.Bool
+		sortedCtx = context.WithValue(sortedCtx, shipmentLifecycleGlobalLockHookContextKey{}, func(stage string) {
+			if stage == "acquired" {
+				acquired.Store(true)
+			}
+			if stage == "contended" {
+				select {
+				case contended <- struct{}{}:
+				default:
+				}
+			}
+		})
+		done := make(chan outcome, 1)
+		joined := false
+		t.Cleanup(func() {
+			cancelSorted()
+			assert.NoError(t, unlockLow())
+			if !joined {
+				<-done
+			}
+			t.Log("U1f F7 sorted membership cleanup completed")
+		})
+		go func() {
+			result, callErr := ReconstituteShipments(sortedCtx, sortedFX.ws, ReconstituteOptions{PlanYAML: unsortedPlan})
+			done <- outcome{result, callErr}
+		}()
+		select {
+		case <-contended:
+			assert.True(t, acquired.Load(), "U1f F7 global precedes source membership")
+		case got := <-done:
+			joined = true
+			t.Fatalf("U1f F7 returned before held membership: %v", got.err)
+		case <-sortedCtx.Done():
+			t.Fatal("U1f F7 did not reach held membership")
+		}
+		// With the lower ID held, an unsorted acquisition would already
+		// own the higher ID when it contends. Probe using the existing lock.
+		highKey := filepath.Join(WorkspaceStorageRoot(sortedFX.ws.RootPath), shipmentMembershipLocksDirName, downstream.ID)
+		probeUnlock, probeErr := lockTaskFile(highKey)
+		assert.NoError(t, probeErr, "U1f F7 unsorted sources must acquire memberships sorted")
+		if probeErr == nil {
+			assert.NoError(t, probeUnlock())
+		}
+		cancelSorted()
+		observation := time.NewTimer(2 * time.Second)
+		select {
+		case got := <-done:
+			joined = true
+			assert.ErrorIs(t, got.err, context.Canceled, "U1f F6 membership cancellation before scans")
+			assert.Nil(t, got.res, "U1f F6 canceled membership result")
+		case <-observation.C:
+			t.Error("U1f F6 cancellation must return before membership holder release")
+		}
+		observation.Stop()
+		require.NoError(t, unlockLow())
+		if !joined {
+			<-done
+			joined = true
+		}
+		assert.Equal(t, before, workspaceFileSnapshot(t, sortedFX.ws), "U1f F6 canceled membership final artifacts/events")
+		pending, err := loadShipmentOperationJournals(sortedFX.ws)
+		require.NoError(t, err)
+		assert.Empty(t, pending, "U1f F6 canceled membership leaves no pending journal")
 	})
 }
 
