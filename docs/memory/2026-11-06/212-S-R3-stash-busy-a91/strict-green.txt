@@ -1,0 +1,5 @@
+[31;1mPush-Location: [0m
+[31;1m[36;1mLine |[0m
+[31;1m[36;1m[36;1m   8 | [0m [36;1mPush-Location $root[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m ~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mCannot find path 'C:\Source\GitHubacklogit' because it does not exist.[0m

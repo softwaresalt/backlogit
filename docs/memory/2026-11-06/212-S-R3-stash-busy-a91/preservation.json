@@ -1,0 +1,17 @@
+{
+  "recorded_at_utc": "2026-11-07T05:07:51.015817Z",
+  "baseline_head": "25ae363ae11d5b9992031de8f8e219eb7878b1ce",
+  "original_harness_commit": "644e5ca2bee78325e071c61a3d2cd844926f3e84",
+  "original_assertion_nodes": 45,
+  "accepted_assertion_nodes": 106,
+  "current_assertion_nodes": 108,
+  "missing_original_nodes": 0,
+  "missing_accepted_nodes": 0,
+  "comparison": "Go lexical-token call preservation: assert/require plus testing Fatal/Fatalf/Error/Errorf; ignores only whitespace/comments",
+  "checkpoint_sha256": "235844507a4975f27c5a88f4fe3e499fb538110c86e6a264637db1b69837ca70",
+  "source_sha256": {
+    "internal/core/shipment_reconstitute_exec.go": "61d4d8fcfc8f9a24b593dabad992f07bacc158e1d6b56f7635216d818be26155",
+    "internal/core/shipment_reconstitute_hardening_test.go": "1672aa134a53340c6c59585d08306d49173c7676de55cfc58b3dfa1d4252dd36"
+  },
+  "go_diff_stat": " internal/core/shipment_reconstitute_exec.go        |  3 ++\n .../core/shipment_reconstitute_hardening_test.go   | 44 ++++++++++++++++------\n 2 files changed, 35 insertions(+), 12 deletions(-)\n"
+}

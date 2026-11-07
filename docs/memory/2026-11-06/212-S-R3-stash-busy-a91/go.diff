@@ -1,0 +1,88 @@
+diff --git a/internal/core/shipment_reconstitute_exec.go b/internal/core/shipment_reconstitute_exec.go
+index 9a348dfb..48d10b73 100644
+--- a/internal/core/shipment_reconstitute_exec.go
++++ b/internal/core/shipment_reconstitute_exec.go
+@@ -364,6 +364,9 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
+ 		if !errors.Is(err, os.ErrExist) {
+ 			return nil, fmt.Errorf("reconstitute: acquire stash lock: %w", err)
+ 		}
++		if hook, ok := ctx.Value(shipmentLifecycleGlobalLockHookContextKey{}).(func(string)); ok {
++			hook("contended")
++		}
+ 		select {
+ 		case <-ctx.Done():
+ 			return nil, ctx.Err()
+diff --git a/internal/core/shipment_reconstitute_hardening_test.go b/internal/core/shipment_reconstitute_hardening_test.go
+index 3662ce1d..c3210b2f 100644
+--- a/internal/core/shipment_reconstitute_hardening_test.go
++++ b/internal/core/shipment_reconstitute_hardening_test.go
+@@ -56,12 +56,18 @@ func TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks(t *tes
+ 			require.NoError(t, lockErr)
+ 			callCtx, cancelCall := context.WithCancel(ctx)
+ 			var attempts atomic.Int32
++			stashContended := make(chan struct{}, 1)
+ 			callCtx = context.WithValue(callCtx, shipmentLifecycleGlobalLockHookContextKey{}, func(stage string) {
+ 				if stage == "attempt" {
+ 					attempts.Add(1)
+ 				}
++				if stage == "contended" {
++					select {
++					case stashContended <- struct{}{}:
++					default:
++					}
++				}
+ 			})
+-			ack := make(chan struct{})
+ 			done := make(chan outcome, 1)
+ 			var releaseOnce sync.Once
+ 			releaseStash := func() {
+@@ -82,24 +88,38 @@ func TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks(t *tes
+ 			}
+ 			plan := cancelFX.splitPlanYAML()
+ 			go func() {
+-				close(ack)
+ 				res, callErr := ReconstituteShipments(callCtx, cancelFX.ws, ReconstituteOptions{PlanYAML: plan})
+ 				done <- outcome{res, callErr}
+ 			}()
+-			<-ack
+ 			if !preCanceled {
++				// Stash is still held and global acquisition cannot start.
++				// The existing observer must witness actual stash contention,
++				// not merely goroutine launch, before cancellation.
++				witness := time.NewTimer(2 * time.Second)
++				select {
++				case <-stashContended:
++					t.Log("U1f R3 actual stash-busy witnessed before cancellation and holder release")
++				case got := <-done:
++					joined = true
++					t.Errorf("U1f R3 actual stash-busy witness assertion: returned before contention: %v", got.err)
++				case <-witness.C:
++					t.Error("U1f R3 actual stash-busy witness assertion: no contention observed while holder remained live")
++				}
++				witness.Stop()
+ 				cancelCall()
+ 			}
+-			// Ack proves launch, NOT exact entry into stashMu.Lock. This
+-			// bounded select observes only return while the holder is live.
++			// This bounded select observes return while the holder is live.
+ 			observation := time.NewTimer(2 * time.Second)
+-			select {
+-			case got := <-done:
+-				joined = true
+-				assert.ErrorIs(t, got.err, context.Canceled, "U1f F1 cancellation error preCanceled=%t", preCanceled)
+-				assert.Nil(t, got.res, "U1f F1 canceled result preCanceled=%t", preCanceled)
+-			case <-observation.C:
+-				t.Errorf("U1f F1 return-before-stash-release assertion preCanceled=%t: canceled call remained blocked", preCanceled)
++			if !joined {
++				select {
++				case got := <-done:
++					joined = true
++					assert.ErrorIs(t, got.err, context.Canceled, "U1f F1 cancellation error preCanceled=%t", preCanceled)
++					assert.Nil(t, got.res, "U1f F1 canceled result preCanceled=%t", preCanceled)
++					t.Logf("U1f R3 cancellation returned before stash holder release preCanceled=%t", preCanceled)
++				case <-observation.C:
++					t.Errorf("U1f F1 return-before-stash-release assertion preCanceled=%t: canceled call remained blocked", preCanceled)
++				}
+ 			}
+ 			observation.Stop()
+ 			releaseStash()

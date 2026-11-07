@@ -1,0 +1,51 @@
+[
+  {
+    "start_utc": "2026-11-07T05:03:06.572101Z",
+    "end_utc": "2026-11-07T05:05:36.193239Z",
+    "command": [
+      "go",
+      "test",
+      "-run=^$",
+      "-count=1",
+      "./..."
+    ],
+    "native_exit": 0,
+    "raw_sha256": "127e412aee09954974bfb2a5bfa5bbcc4862902da04bf50c8741b5de73586b6f"
+  },
+  {
+    "start_utc": "2026-11-07T05:05:36.194771Z",
+    "end_utc": "2026-11-07T05:05:43.345555Z",
+    "command": [
+      "go",
+      "vet",
+      "./internal/core"
+    ],
+    "native_exit": 0,
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "start_utc": "2026-11-07T05:05:43.346636Z",
+    "end_utc": "2026-11-07T05:05:50.396335Z",
+    "command": [
+      "C:\\Source\\GitHub\\backlogit\\bin\\golangci-lint.exe",
+      "run",
+      "./internal/core",
+      "--timeout=5m",
+      "--out-format=json"
+    ],
+    "native_exit": 0,
+    "raw_sha256": "239526555fb8c5d690736b334e4a86fe1e3605c54b13e744dd5adf7cc78c8edd"
+  },
+  {
+    "start_utc": "2026-11-07T05:05:50.397699Z",
+    "end_utc": "2026-11-07T05:05:50.446712Z",
+    "command": [
+      "gofmt",
+      "-l",
+      "internal/core/shipment_reconstitute_exec.go",
+      "internal/core/shipment_reconstitute_hardening_test.go"
+    ],
+    "native_exit": 0,
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

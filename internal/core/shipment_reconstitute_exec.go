@@ -364,6 +364,9 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 		if !errors.Is(err, os.ErrExist) {
 			return nil, fmt.Errorf("reconstitute: acquire stash lock: %w", err)
 		}
+		if hook, ok := ctx.Value(shipmentLifecycleGlobalLockHookContextKey{}).(func(string)); ok {
+			hook("contended")
+		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
