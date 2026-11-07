@@ -1,0 +1,17 @@
+{
+  "task": "211.013-T",
+  "gate": "Format",
+  "started_at": "2026-11-07T22:17:00Z",
+  "finished_at": "2026-11-07T22:17:00Z",
+  "executable": "C:\\Source\\GitHub\\backlogit\\bin\\_authoring_gomodcache\\golang.org\\toolchain@v0.0.1-go1.24.0.windows-amd64\\bin\\gofmt.exe",
+  "arguments": [
+    "-l",
+    "internal/core/shipment_p1_lifecycle_remediation_test.go"
+  ],
+  "native_exit": 0,
+  "go_version": "go1.24.0",
+  "offline": true,
+  "workspace_temp": "C:\\Source\\GitHub\\backlogit\\bin\\m14t",
+  "test_events": [],
+  "output": ""
+}

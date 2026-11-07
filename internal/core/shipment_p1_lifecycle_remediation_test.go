@@ -4,17 +4,119 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
+
+func TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence(t *testing.T) {
+	tests := []struct {
+		name       string
+		changeTask bool
+		denyTask   bool
+		wantErr    error
+	}{
+		{
+			name:     "unchanged_task_skips_physical_write_and_reconciles_sqlite_and_journal",
+			denyTask: true,
+		},
+		{
+			name:    "admitted_changed_shipment_write_denial_fails_closed_and_retains_journal",
+			wantErr: blerrors.ErrWriteNotApplied,
+		},
+		{
+			name:       "non_admissible_changed_task_fails_preimage_guard_with_zero_writer_calls_and_retains_journal",
+			changeTask: true,
+			wantErr:    blerrors.ErrShipmentConflict,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			ws := setupShipmentWorkspace(t)
+			feature, err := CreateArtifact(ctx, ws, "U1g recovery feature", "feature")
+			require.NoError(t, err)
+			item, err := CreateArtifact(ctx, ws, "U1g recovery task", "task", WithParent(feature.ID))
+			require.NoError(t, err)
+			shipment, err := CreateShipment(ctx, ws, "U1g recovery shipment", []string{item.ID})
+			require.NoError(t, err)
+			originalShipment := cloneArtifact(loadURCanonicalArtifact(t, ws, shipment.ID))
+			originalItem := cloneArtifact(loadURCanonicalArtifact(t, ws, item.ID))
+			require.NoError(t, writeReturnBlockedJournal(ws, originalShipment, originalItem))
+			if tt.changeTask {
+				tornItem := cloneArtifact(originalItem)
+				tornItem.Status = models.StatusBlocked
+				require.NoError(t, persistArtifact(ctx, ws, tornItem, false))
+			} else {
+				tornShipment := cloneArtifact(originalShipment)
+				tornShipment.CustomFields["items"] = removeString(NormalizeShipmentItems(tornShipment), item.ID)
+				tornShipment.UpdatedAt = models.NowUTC()
+				require.NoError(t, persistArtifact(ctx, ws, tornShipment, false))
+			}
+			if tt.denyTask {
+				staleItem := cloneArtifact(originalItem)
+				staleItem.Title = "stale-index-title"
+				require.NoError(t, bldb.UpsertItem(ctx, ws.DB, staleItem))
+			}
+			root := ws.RootPath
+			require.NoError(t, ws.Close())
+			origWriteFn := persistArtifactWriteFn
+			t.Cleanup(func() { persistArtifactWriteFn = origWriteFn })
+			itemWriteCalls, totalWriteCalls := 0, 0
+			persistArtifactWriteFn = func(artifact *models.Artifact, filePath string, durable bool) error {
+				totalWriteCalls++
+				if tt.changeTask {
+					return origWriteFn(artifact, filePath, durable)
+				}
+				if tt.denyTask && artifact.ID == item.ID {
+					itemWriteCalls++
+					return fmt.Errorf("injected task restore write denial: %w", blerrors.ErrWriteNotApplied)
+				}
+				if !tt.denyTask && artifact.ID == shipment.ID {
+					return fmt.Errorf("injected shipment restore write denial: %w", blerrors.ErrWriteNotApplied)
+				}
+				return origWriteFn(artifact, filePath, durable)
+			}
+			reopened, err := NewWorkspace(ctx, root)
+			if reopened != nil {
+				t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+			}
+			journalPath := returnBlockedJournalPath(root, shipment.ID, item.ID)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				require.Nil(t, reopened)
+				if tt.changeTask {
+					assert.Zero(t, totalWriteCalls, "divergent task must fail before any restore writer")
+				}
+				_, statErr := os.Lstat(journalPath)
+				require.NoError(t, statErr, "failed recovery must retain its journal")
+				return
+			}
+			assert.Zero(t, itemWriteCalls, "unchanged task must skip its physical restore writer")
+			require.NoError(t, err)
+			assertURArtifactEqual(t, originalShipment, loadURCanonicalArtifact(t, reopened, shipment.ID))
+			assertURArtifactEqual(t, originalItem, loadURCanonicalArtifact(t, reopened, item.ID))
+			indexedShipment, err := bldb.GetItem(ctx, reopened.DB, shipment.ID)
+			require.NoError(t, err)
+			require.Equal(t, NormalizeShipmentItems(originalShipment), NormalizeShipmentItems(indexedShipment))
+			indexedItem, err := bldb.GetItem(ctx, reopened.DB, item.ID)
+			require.NoError(t, err)
+			require.Equal(t, originalItem.Title, indexedItem.Title)
+			_, err = os.Lstat(journalPath)
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
 
 func TestShipmentOperationJournalTempName(t *testing.T) {
 	tests := []struct {
