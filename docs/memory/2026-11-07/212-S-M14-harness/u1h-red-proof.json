@@ -1,0 +1,46 @@
+{
+  "timestamp_utc": "2026-11-07T22:21:47Z",
+  "task": "211.014-T",
+  "phase": "Red",
+  "native_exit": 1,
+  "observer_exit": 0,
+  "guard": "PASS",
+  "baseline_sha256": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250",
+  "runner_sha256_before": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250",
+  "runner_sha256_after": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250",
+  "harness_sha256": "d3624f020514225f556eac9d22d4159c420a165e46305cd48c424a12bf8dccfd",
+  "unit_result": {
+    "names": [
+      "test_supervise_holds_and_clears_thread_execution_state_and_records_poll_gaps_without_subtracting_budget",
+      "test_validate_authorization_accepts_matching_dynamic_ordinal_and_failed_count_and_rejects_mismatch",
+      "test_preflight_eol_gate_blocks_test_child_on_crlf_and_preserves_exclusive_attempt_evidence"
+    ],
+    "tests_run": 3,
+    "skips": 0,
+    "errors": 0,
+    "failures": 3,
+    "events": [
+      {
+        "name": "test_supervise_holds_and_clears_thread_execution_state_and_records_poll_gaps_without_subtracting_budget",
+        "outcome": "FAIL",
+        "type": "AssertionError",
+        "message": "None is not True : U1h missing thread execution-state hold"
+      },
+      {
+        "name": "test_validate_authorization_accepts_matching_dynamic_ordinal_and_failed_count_and_rejects_mismatch",
+        "outcome": "FAIL",
+        "type": "AssertionError",
+        "message": "'external authorization mismatch: ordinal' is not None : U1h matching dynamic counters rejected: external authorization mismatch: ordinal"
+      },
+      {
+        "name": "test_preflight_eol_gate_blocks_test_child_on_crlf_and_preserves_exclusive_attempt_evidence",
+        "outcome": "FAIL",
+        "type": "AssertionError",
+        "message": "'^TestU175_001_BaselineEol$' not found in ['C:\\\\Source\\\\GitHub\\\\backlogit\\\\bin\\\\synthetic-go\\\\bin\\\\go.exe', 'test', '-count=1', '-p=1', '-timeout=30m', '-json', './...'] : U1h missing LF preflight between discovery and full test"
+      }
+    ],
+    "runner_sha256": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250",
+    "harness_sha256": "d3624f020514225f556eac9d22d4159c420a165e46305cd48c424a12bf8dccfd",
+    "synthetic_only": true
+  }
+}
