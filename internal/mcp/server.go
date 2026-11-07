@@ -49,10 +49,15 @@ type Server struct {
 	// NoUpdateCheck disables outbound latest-release checks for version output.
 	NoUpdateCheck bool
 	mcp           *mcpserver.MCPServer
+	coordinator   *OperationCoordinator
 	toolNames     []string
 	toolDefs      []mcplib.Tool
 	toolHandlers  map[string]mcpserver.ToolHandlerFunc
 	workspaceMu   sync.Mutex
+	// workspaceDispatchMu excludes every handler during lazy initialization.
+	// Once initialized, handlers share its read lock; workspaceMu still guards
+	// pointer publication and backlogitDir. Admission precedes these locks.
+	workspaceDispatchMu sync.RWMutex
 	// manifest is an in-memory snapshot of workspace file metadata used by
 	// backlogit_merge_sync to compute incremental diffs without a full rehydrate.
 	// Protected by manifestMu; lock ordering: workspaceMu must be held before
@@ -84,6 +89,7 @@ func newServer(rootPath string, ws *core.Workspace) *Server {
 		Telemetry:    events.NewTelemetryWriter(telemetryPath),
 		HookEvents:   events.NewHookEventWriter(backlogitDir),
 		toolHandlers: make(map[string]mcpserver.ToolHandlerFunc),
+		coordinator:  NewOperationCoordinator(CoordinatorConfig{}),
 	}
 	s.mcp = mcpserver.NewMCPServer(
 		"backlogit",
@@ -95,13 +101,17 @@ func newServer(rootPath string, ws *core.Workspace) *Server {
 	s.RegisterTools()
 	s.RegisterResources()
 
+	s.workspaceMu.Lock()
 	s.refreshTemplateService(context.Background())
+	s.workspaceMu.Unlock()
 	return s
 }
 
 // addTool registers a tool with the mcp server and records its name for ListTools.
 func (s *Server) addTool(tool mcplib.Tool, handler mcpserver.ToolHandlerFunc) {
-	s.mcp.AddTool(tool, handler)
+	s.mcp.AddTool(tool, func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+		return s.executeTool(ctx, tool.Name, req, handler)
+	})
 	s.toolNames = append(s.toolNames, tool.Name)
 	s.toolDefs = append(s.toolDefs, tool)
 	s.toolHandlers[tool.Name] = handler
@@ -118,7 +128,39 @@ func (s *Server) InvokeTool(ctx context.Context, name string, request mcplib.Cal
 	if request.Params.Name == "" {
 		request.Params.Name = name
 	}
-	return handler(ctx, request)
+	return s.executeTool(ctx, name, request, handler)
+}
+
+func (s *Server) executeTool(ctx context.Context, name string, req mcplib.CallToolRequest, handler mcpserver.ToolHandlerFunc) (*mcplib.CallToolResult, error) {
+	return s.coordinator.Execute(ctx, s.mcp, name, req,
+		func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+			s.workspaceDispatchMu.RLock()
+			s.workspaceMu.Lock()
+			initialized := s.Workspace != nil
+			s.workspaceMu.Unlock()
+			if initialized {
+				defer s.workspaceDispatchMu.RUnlock()
+			} else {
+				s.workspaceDispatchMu.RUnlock()
+				s.workspaceDispatchMu.Lock()
+				defer s.workspaceDispatchMu.Unlock()
+				// Re-check under the exclusive dispatch lock. All uninitialized
+				// calls remain exclusive through next, including handlers that
+				// discover a newly created storage directory themselves.
+				s.workspaceMu.Lock()
+				needsInit := s.Workspace == nil && dirExists(s.backlogitDirLocked())
+				s.workspaceMu.Unlock()
+				if needsInit {
+					if _, result := s.requireWorkspace(ctx); result != nil {
+						return result, nil
+					}
+				}
+			}
+			if ctx.Err() != nil {
+				return coordinatorBusy("request_cancelled")
+			}
+			return handler(ctx, req)
+		})
 }
 
 // ToolDefs returns a copy of the registered tool definitions. The returned
@@ -136,6 +178,13 @@ func RunStdio(s *Server) error {
 }
 
 func (s *Server) backlogitDir() string {
+	s.workspaceMu.Lock()
+	defer s.workspaceMu.Unlock()
+	return s.backlogitDirLocked()
+}
+
+// backlogitDirLocked requires workspaceMu, including while rebinding writers.
+func (s *Server) backlogitDirLocked() string {
 	if s.Workspace != nil && s.Workspace.StorageRoot != "" {
 		return s.Workspace.StorageRoot
 	}
@@ -148,7 +197,7 @@ func (s *Server) refreshTemplateService(ctx context.Context) {
 		return
 	}
 
-	templatesDir := filepath.Join(s.backlogitDir(), "templates")
+	templatesDir := filepath.Join(s.backlogitDirLocked(), "templates")
 	svc, err := templates.NewService(ctx, templatesDir)
 	if err != nil {
 		logger.Warn("template service unavailable", "error", err)
@@ -167,7 +216,7 @@ func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
 
 	// dirExists is checked inside the lock so a concurrent creation of the
 	// workspace storage root is visible and a failed init can be retried.
-	if !dirExists(s.backlogitDir()) {
+	if !dirExists(s.backlogitDirLocked()) {
 		return nil, os.ErrNotExist
 	}
 
@@ -185,7 +234,7 @@ func (s *Server) ensureWorkspace(ctx context.Context) (*core.Workspace, error) {
 	// production append paths (move_item, append_comment) read s.Events only
 	// after funneling through requireWorkspace→ensureWorkspace under
 	// workspaceMu, so this single rebuild happens-before every reader.
-	logsDir := filepath.Join(s.backlogitDir(), "logs")
+	logsDir := filepath.Join(s.backlogitDirLocked(), "logs")
 	s.Events = core.NewWorkspaceEventWriter(ws, logsDir)
 	// Rebind path-dependent writers to the resolved storage root so that
 	// telemetry logging and hook polling use ws.StorageRoot, not the
