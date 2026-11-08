@@ -23,7 +23,7 @@ Invoked by the ship agent when a task is harness-satisfied — it carries the `h
   discover a package by judgement, or reinterpret an omitted input as permission to choose.
 * `sibling_red_selectors`: (Optional; meaningful only when `wave_scoped` is `true`) The closed, explicit list of `-run` selectors belonging to the other non-exempt members of the current wave that have not been built yet.
 * `open_red_selectors`: (Optional; meaningful only when `wave_scoped` is `true`) The closed, explicit list of `-run` selectors in `open_red_deliverables_k` — red harnesses that were the *declared deliverable* of a task completed in an **earlier** wave and whose declared green-makers have not all closed. Together with `sibling_red_selectors` this is the **entire** tolerated-red set. Both are supplied by Ship, neither may be widened, inferred, or extended by this skill, and any failure outside their union is a real failure that fails the gate.
-* `red_deliverable`: (Optional, default `false`) `true` when this task's declared deliverable **is** a red harness. Ship sets it from the task's canonical `red-deliverable-contract` and passes `harness_cmd` as the declared `red_selector_command`. It selects **Step 0.5**, the fail-closed red-deliverable execution branch, which **replaces** the generic harness loop rather than modifying it: the harness was already scaffolded with the wave by `harness-architect`, so Step 0.5 consumes and validates it — repo-wide compile check, assertion RED on the anchored selector, an empty changed-file set — reports the red evidence Ship needs for open-red accounting, and enters the inverted quality gates with no fix iteration. Do not iterate toward green, and never report success on a `harness_cmd` that passes — a red deliverable that passes at dispatch was never red.
+* `red_deliverable`: (Optional, default `false`) `true` when this task's declared deliverable **is** a red harness. Ship sets it from the task's canonical `red-deliverable-contract` and passes `harness_cmd` as the declared `red_selector_command`. It selects **Step 0.5**, not the generic harness loop: consume the scaffolded harness, report provisional compile/assertion RED and read-only quality evidence, then return without self-acceptance. Only Ship's independent immediate pre/post comparison may accept it. Do not iterate toward green.
 * `red_baseline_sha`: (Required for `red_deliverable` tasks) The historical commit SHA Ship captured at Step 4.1a item 5, after scaffolding and **before claim**. Preserve it unchanged for commit-history accounting, including paused resumption; never re-derive it from current `HEAD`.
 * `red_predispatch_snapshot`: (Required for `red_deliverable` tasks) Ship's independent immediate pre-dispatch snapshot, captured **after** caller claim/status/hook/documentation writes. Ship retains its immutable bytes and SHA-256 in owned, already-ignored storage outside the measured surface, and independently captures the post-leaf snapshot immediately on return. The leaf cannot replace either observation.
 * `exempt_gate_cmd`: (Required for `harness-exempt` tasks) The task's `exempt_verification_command`. This is the completion gate that must pass and match declared evidence after the deliverable lands. For every class except `covered-by` it is the same command as `harness_cmd`.
@@ -119,13 +119,19 @@ is checked, not assumed.
 3. Require the original `red_baseline_sha` and independent `red_predispatch_snapshot`.
    Validate schema `red-deliverable-predispatch-snapshot/v1`, canonical `workspace_root`,
    `task_id`, current dispatch `head_sha`, and original `red_baseline_sha` against caller
-   bindings. Validate unique nested relative paths, booleans, status, raw-byte SHA-256
+   bindings and externally retained digest witness. Validate ordinal case-sensitive
+   Git paths; reject duplicates and OS aliases rather than collapsing them.
+   Validate booleans, status (no conflicted `U` or tracked `??`), raw-byte SHA-256
    (64 lowercase hex for existing files), worktree modes, index modes and blob OIDs.
    Reject missing/tampered snapshots, malformed metadata, absolute/drive/UNC paths,
    traversal or reparse escapes with `WAVE_RED_MAPPING_UNRESOLVED`. Valid nested
    paths are allowed; do not mistake `/` separators for leading-root escapes.
    Close all other repository-mutating writers before capture and during the leaf;
    an inconsistent capture or unknown concurrent change is indeterminate and halts.
+   Bind and verify effective exclusion/config inputs before and after capture and
+   comparison. Refuse policy mutation, including `.git/info/exclude` hiding new Go;
+   never change exclusions/config, measure ignored cache/scratch bytes, or forbid
+   authorized writes to existing ignored observer/tool-cache storage.
 
 #### Step 0.5a: Consume and validate the scaffolded harness
 
@@ -143,7 +149,7 @@ independently rather than trusting the handoff.
 
 | Observed | Meaning | Action |
 |---|---|---|
-| Non-zero exit with `--- FAIL:` lines matching the anchored selector | The deliverable, confirmed | **Success** — record the evidence and go to Step 0.5b |
+| Non-zero exit with `--- FAIL:` lines matching the anchored selector | Provisional assertion RED | Record evidence and go to Step 0.5b; never self-accept |
 | Exit 0 in any form | The selector is green before any declared green-maker has closed | Halt with `WAVE_RED_DELIVERABLE_EARLY_GREEN` |
 | A no-tests-to-run signal at any exit code | No test matches the declared selector, so the harness was never scaffolded under it and the red is vacuous | Halt with `WAVE_RED_DELIVERABLE_VACUOUS` |
 | Any other non-zero exit with no matching `--- FAIL:` line — panic, timeout, package abort, harness runtime error | The harness ran but never asserted, so its red is not assertion RED | Halt with `RED_DELIVERABLE_NOT_ASSERTION_RED` and return the harness for repair |
@@ -158,12 +164,24 @@ Ship compares the independent `pre_dispatch_state -> post_leaf_state` snapshots 
 `Get-RedDeliverablePreDispatchSnapshot` and `Compare-RedDeliverablePreDispatchSnapshot`
 in `scripts/wave-scheduler-sim.ps1`; the leaf reports provisional RED, not a self-certified
 comparison. Keep `red_baseline_sha` for historical accounting, not as the leaf-write boundary.
+Ship uses the supported `-SnapshotAction Capture` / `-SnapshotAction Compare`
+entrypoint, not AST extraction or dot-sourcing main. Supply independent
+`-WorkspaceRoot`, `-TaskID`, `-RedBaselineSHA`, `-HeadSHA`, ignored exclusive
+`-OutputPath`, and externally retained `-PreSnapshotSHA256` /
+`-PostSnapshotSHA256` witnesses with `-PreSnapshotPath` / `-PostSnapshotPath`.
+Capture writes only its new no-clobber observer JSON; compare writes nothing.
+Neither invocation loads or runs the simulation fixture. Inputs never default
+identity or digest witnesses from untrusted snapshot records.
 
 Measure **all** tracked paths, including clean paths, staged/unstaged paths and baseline
 deletions, plus untracked paths excluding existing ignored storage. Capture raw-byte
 `worktree_sha256`, existence, `worktree_mode`, `unstaged_state`, `staged_state`,
 `index_mode`, `index_blob_oid` from `git ls-files --stage -z`, and `untracked`.
 Use NUL-delimited Git output; never parse paths by lines or a caller-path allowlist.
+Compare actual raw non-test Go bytes/modes and batched baseline/index metadata
+against the original baseline blobs independently of status, including
+assume-unchanged/skip-worktree paths. Keep source `HEAD` unchanged through the leaf.
+Classify production/delta refusals before overlapping compile/selector failures.
 
 Unchanged caller task/hook/doc writes are accepted. Any leaf byte change, staging,
 index/worktree-mode change, addition or deletion, even on an already caller-modified
@@ -178,7 +196,8 @@ Report to Ship, verbatim:
 
 * the exact `harness_cmd` executed, which is the declared `red_selector_command`
 * the observed `--- FAIL:` function names and the exit code
-* confirmation that `go test -run=^$ -count=1 ./...` passed and that the zero-delta gate was empty
+* provisional confirmation that `go test -run=^$ -count=1 ./...` passed;
+  no self-certified zero-delta or final acceptance claim
 * original `red_baseline_sha`, dispatch `head_sha`, task/root bindings, and immutable
   `red_predispatch_snapshot` bytes/SHA-256 reference; Ship adds its independent post-leaf
   reference and comparison result before accepting the report
@@ -190,11 +209,12 @@ report every item or halt with `RED_DELIVERABLE_EVIDENCE_INCOMPLETE`.
 
 #### Step 0.5d: Inverted quality gates, no fix iteration
 
-Run the Post-Loop Quality Gates below with these substitutions, and do not iterate on a failure:
+Run only these read-only gates; do not enter generic quality/format/fix/commit paths:
 
 1. **Lint**: `golangci-lint run` — unchanged.
-2. **Format**: `gofmt -l .` — unchanged.
-3. **Test suite**: item 3 **inverts**. `harness_cmd` must still be observed **RED**, and a green
+2. **Format**: `gofmt -l .`, read-only. Findings halt; never `gofmt -w`, fix, stage or commit.
+3. **Test suite**: use the single Step 0.5a observation, not an implicit retry.
+   `harness_cmd` must be observed **RED**, and a green
    result fails the gate with `WAVE_RED_DELIVERABLE_EARLY_GREEN`. The supplied
    `green_regression_cmds` array still runs unchanged and each command must still pass — it pins
    green behaviour this task does not touch. The tolerated-red set is exactly
@@ -203,8 +223,10 @@ Run the Post-Loop Quality Gates below with these substitutions, and do not itera
    the union is a real failure.
 4. **Harness-exempt completion gate**: does not apply — precondition 1 excluded it.
 
-Then skip `### Commit`: the zero-delta gate has just proved there is nothing to commit. Report
-success to Ship, which completes the task at its Step 4.5 and records the open-red entry there.
+Then skip `### Commit` and return the provisional report immediately.
+The leaf cannot capture its own post-state or self-accept. Ship independently
+captures and compares immediately on return, before caller writes, then accepts
+only a valid zero leaf delta at Step 4.5 and registers the open-red entry.
 
 #### Step 0.5 executable coverage
 
@@ -444,7 +466,11 @@ without leaving a non-compliant commit behind.
 * Never run a `red_deliverable` task through the generic harness loop. Step 0.5 is the only branch that may execute it, and the loop's success condition is the inverse of its contract
 * Never accept a `red_deliverable` result that is red only because the selector matched nothing. A no-tests-to-run signal at any exit code is `WAVE_RED_DELIVERABLE_VACUOUS`, never the deliverable
 * Never scaffold, land, edit, or repair a red deliverable's harness inside this skill. `harness-architect` owns it and already scaffolded it with the wave; an uncompilable or non-asserting harness returns to that skill as `RED_DELIVERABLE_HARNESS_UNCOMPILABLE` or `RED_DELIVERABLE_NOT_ASSERTION_RED`
-* Never write any file on a `red_deliverable` dispatch. The changed-file set against `red_baseline_sha` must be empty; a non-test `*.go` file is `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED` and anything else is `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`
+* Never write the measured repository surface on a `red_deliverable` dispatch.
+  Ship requires zero immediate pre-dispatch -> independent post-leaf delta.
+  Preserve original historical `red_baseline_sha`; any non-test Go delta from its
+  blobs is production refusal, other leaf deltas are out-of-surface refusal.
+  Existing ignored scratch/cache/observer storage remains excepted under verified policy.
 * Never re-derive `red_baseline_sha` from `HEAD` or diff against `..HEAD` on this branch. Ship captures the baseline after the wave's scaffolding commit precisely so a sibling's harness cannot appear in this task's delta
 * Never complete a `red_deliverable` task without returning the Step 0.5c red-evidence report; Ship builds the `open_red_deliverables` entry from it, and an unaccounted entry cannot be re-confirmed at Step 4.6
 * Never accept a `harness_cmd` that fails the P-002.6 task-scoped requirements — a bare `./...`, a missing `-count=1`, an unanchored or sibling-matching selector, a `-short`/build-tag/`t.Skip`/`|| true` weakening, or a command that passes vacuously. Halt and report the contract defect rather than substituting a weaker command
@@ -470,8 +496,9 @@ without leaving a non-compliant commit behind.
   class delta surface
 * For a `red_deliverable` task: Step 0.5 ran instead of the generic loop, the repo-wide compile
   check passes, `harness_cmd` fails on named assertions rather than on a build error, a
-  no-tests-to-run signal, or a panic, the changed-file set against `red_baseline_sha` is empty, and
-  the Step 0.5c evidence report was returned in full
+  no-tests-to-run signal, or a panic. The full provisional Step 0.5c report returns
+  without self-acceptance; Ship validates the immediate independent pre/post
+  zero-delta and original historical baseline, then accepts
 
 ## Model Routing
 

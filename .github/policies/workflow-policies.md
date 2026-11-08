@@ -739,11 +739,25 @@ with `TASK_START_NOT_RECORDED`. Never follow a link or modify an item log.
 
 A member is **claim-assigned** only when it is `active`, its marker equals `S`, it is explicitly
 listed in `S`'s live `custom_fields.items`, and its current start epoch has no valid start record.
-`active_ids` contains only active residuals, never claim-assigned or indeterminate members. Every
+`active_ids` contains only active residuals, never claim-assigned, indeterminate, or the exact
+authorized paused RED cursor below; report that paused cursor separately in the full census. Every
 other `active` member is an active residual (`WAVE_NO_PROGRESS`, detail: `active residual`); this
-includes a valid start record in the current epoch, a missing or non-`S` marker, or a member absent
+includes a valid start record in the current epoch except for that bounded cursor, a missing or non-`S` marker, or a member absent
 from the live manifest. In non-shipment mode (`frozen_task_ids`, no session shipment), skip this
 classification; every `active` member is an active residual.
+
+**Exact M16 paused RED cursor.** Only Stage amendment `089-DL/M16` for shipment `212-S`,
+already-started `211.015-T` and prerequisite `211.016-T` authorizes this exception.
+Both tasks must be in frozen `M` and the freshly read live manifest with their explicit
+dependency edge, matching shipment/claim provenance, and exactly one independently counted
+start matching the recorded count. Preserve original baseline
+`30908ecb8438c0b3e7fe8bd514fa3680e35d90e5`. Indeterminate classification takes precedence;
+unsupported, blocked, or any other active residual still halts. The cursor waits while
+016 is queued; it becomes eligible only after 016 is committed and `done`, fresh proof
+revalidates these bindings, and changed agent/skill sources are reloaded. It is not
+claim-assigned: never reclaim, restart, re-scaffold, clear history, or relabel generic active
+work. Its red-only acceptance still requires the zero-delta paragraph under
+*Executing a red deliverable is a distinct branch* below.
 
 **Per-wave procedure** (Ship Step 4.0 → Step 2/2a → Step 4.1a…4.5 → Step 4.6):
 
@@ -759,11 +773,14 @@ classification; every `active` member is an active residual.
    * If any active member is indeterminate → **halt** with
      `WAVE_CLAIM_STATE_INDETERMINATE`, naming each member and its reason.
    * If any active residual remains after classification → **halt** with `WAVE_NO_PROGRESS` (detail:
-     `active residual`). Claim-assigned members are not active residuals.
+     `active residual`). Claim-assigned members and the exact M16 paused RED cursor are not
+     active residuals; keep their census counts separate.
    * If `terminal_success = M` → the release unit is complete; exit the loop. This is the **only**
      completion condition.
 2. **Admit the wave.** Compute
-   `ready_k = { t ∈ queued or claim-assigned : deps(t) ⊆ terminal_success }`. A claim-assigned member
+   `ready_k = { t ∈ queued or claim-assigned : deps(t) ⊆ terminal_success }`, plus only the
+   exact authorized M16 paused RED cursor after its committed/done prerequisite and fresh
+   proof satisfy the exception above. A claim-assigned member
    with unfinished dependencies waits and is neither progress nor a residual. If `ready_k` is empty
    while any member is non-terminal → **halt** with `WAVE_NO_PROGRESS` (P-002.2), reporting the
    blocked set and, for each blocked task, the specific unfinished dependencies. If the residual set
@@ -792,7 +809,15 @@ classification; every `active` member is an active residual.
    gate**: always the repo-wide compile check, the repo-wide static gates, and the wave's closed
    list of declared scoped commands; plus the **unfiltered full repository suite** whenever
    `open_red_deliverables_k` is empty. See *Convergence scope and persistent red deliverables*
-   below. If it fails, **halt and remediate inside the current wave**; do not advance. The
+   below. If it fails, **halt and remediate inside the current wave**; do not advance.
+   For only the exact M16 transition, completion of queued 016 retains Wave 3's gate as
+   **PENDING**, including its closed declared command set. Reload and resume the same-started
+   015 cursor, verify actual assertion RED and register it at Step 4.5, then discharge
+   both the retained Wave 3 and Wave 4 compile/static/scoped-command and RED/closed-selector
+   obligations before admitting U3 or any next task. This bounded execution-cursor transition
+   is neither Wave 3 FULL PASS nor full-suite deferral without registered open RED; a failed
+   obligation remains pending and halts. It never authorizes advancement over another failed gate.
+   The
    convergence check scopes `WAVE_NO_PROGRESS` to the current `ready_k`; report
    `count(claim-assigned)` separately from active residuals in any census.
 8. **Requery and repeat.** Return to step 1 for wave *k+1* with a fresh snapshot. Stop only on the
@@ -906,19 +931,39 @@ would fail on the deliverables the plan asked for, and the loop could never adva
   prioritizing any non-test Go delta in either history/snapshot with
   `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`, and failing closed on missing/tampered/invalid
   snapshots or indeterminate concurrent changes with `WAVE_RED_MAPPING_UNRESOLVED`.
+  Use the supported `scripts/wave-scheduler-sim.ps1 -SnapshotAction Capture` /
+  `-SnapshotAction Compare` entrypoint, not helper AST extraction or dot-sourcing
+  main. Supply root/task/dispatch HEAD/original baseline independently and
+  mandatory external `PreSnapshotSHA256` / `PostSnapshotSHA256` witnesses.
+  Capture's sole write is an exclusive new JSON in already-ignored observer
+  storage; compare is side-effect-free. Never default bindings from input records
+  or self-sign tampered bodies. Bind/verify effective exclusion/config inputs
+  before/after; mutation or unknown policy refuses, including `.git/info/exclude`
+  hiding new production Go. Existing ignored scratch/cache/observer writes remain
+  excepted; never change exclusions/config or broaden measurement to ignored caches.
+  Ordinal Git path maps preserve case-distinct paths and reject duplicates/OS
+  aliases, conflicted `U` and tracked `??`. Raw Go bytes/modes/index state are
+  compared to original baseline blobs independent of status, including
+  assume-unchanged/skip-worktree. Production/delta classification precedes
+  overlapping compile/selector/report failures; source HEAD must remain unchanged.
   The branch then enters the inverted quality gates
-  with no fix iteration: lint and format unchanged, the declared `green_regression_cmds` still
+  with no fix iteration: lint and read-only `gofmt -l` (never `gofmt -w`, fix,
+  staging or commit), the declared `green_regression_cmds` still
   required green, and `red_selector_command` still required RED. Its tolerated-red set is
   `sibling_red_selectors ∪ open_red_selectors ∪ {the task's own declared selector}`; that single
   addition is the declared deliverable and widens neither supplied set. The branch returns the
-  executed selector, the observed failing function names and exit code, the passing compile check and
-  empty delta, and the declared green-makers and closing wave — the report Ship Step 4.5 uses to
+  executed selector, observed failing function names/exit and provisional compile
+  evidence, never self-acceptance or a self-certified empty delta. Ship captures
+  and compares immediately on leaf return before caller writes, then accepts the
+  independent result with declared green-makers and closing wave at Step 4.5 to
   build the `open_red_deliverables` entry that convergence items 4 and 5 later re-confirm. Without
   that report the entry is unaccounted for and must not be recorded as complete. Because the branch
   is a contract executed by agents rather than compiled code, it MUST carry executable coverage: the
   tracked simulation fixture declares a `red_deliverable_branch_controls` block and its runner
   classifies each control in this same order, including a load-bearing routing control that feeds
-  the exact observation the generic loop reads as success and requires the branch to halt on it. A
+  the   exact observation the generic loop reads as success and requires the branch to halt on it.
+  Require positive emission and a closed expected control census; removal of all
+  control invocations must fail, not silently satisfy absence-of-FAIL assertions. A
   branch rule with no control is a rule the simulation would still pass without.
 * **The open-red set.** For wave *k*, after that wave's members have completed:
 

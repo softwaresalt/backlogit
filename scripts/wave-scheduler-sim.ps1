@@ -9,11 +9,15 @@
     `tests/simulation/wave-scheduler-contract.json`, and checks every scenario
     expectation the fixture declares.
 
-    The simulation is PURE: it reads the fixture (and, with -VerifyAgainstQueue,
+    Simulation mode is PURE: it reads the fixture (and, with -VerifyAgainstQueue,
     the backlog Markdown plus workspace/registry YAML configuration), computes
     in memory, and writes nothing. It runs no `go` command, starts no process,
     and touches no repository state. It is therefore safe to run at any gate
     point, including under the P-002.5 read-only command screen.
+
+    SnapshotAction Capture is a separate observation mode: it starts owned,
+    read-only Git processes and writes only exclusive witnesses in existing
+    ignored storage. SnapshotAction Compare is side-effect-free.
 
     Assertion coverage (cycle-34):
       * real shipment-manifest parsing, task-type filtering, and excluded-ID report
@@ -76,7 +80,17 @@ param(
     [switch]$VerifyAgainstQueue,
     [string]$QueueDir = '',
     [string]$Scenario = '',
-    [switch]$Quiet
+    [switch]$Quiet,
+    [ValidateSet('', 'Capture', 'Compare')][string]$SnapshotAction = '',
+    [string]$WorkspaceRoot = '',
+    [string]$TaskID = '',
+    [string]$RedBaselineSHA = '',
+    [string]$HeadSHA = '',
+    [string]$OutputPath = '',
+    [string]$PreSnapshotPath = '',
+    [string]$PostSnapshotPath = '',
+    [string]$PreSnapshotSHA256 = '',
+    [string]$PostSnapshotSHA256 = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -121,8 +135,10 @@ function Test-Equal {
 }
 
 # --- fixture load --------------------------------------------------------------
-if (-not (Test-Path $Fixture)) { throw "fixture not found: $Fixture" }
-$fx = Get-Content $Fixture -Raw | ConvertFrom-Json
+if ($SnapshotAction -eq '') {
+    if (-not (Test-Path $Fixture)) { throw "fixture not found: $Fixture" }
+    $fx = Get-Content $Fixture -Raw | ConvertFrom-Json
+}
 
 function ConvertTo-List {
     param($Value)
@@ -478,6 +494,148 @@ function Test-TaskScopedCommandShape {
     return , @($errors)
 }
 
+function Invoke-RedSnapshotGit {
+    # Drain both raw streams concurrently. Bound memory/time, and kill only the
+    # process tree represented by this owned handle on failure.
+    param([string]$Root, [string[]]$Arguments, [string]$InputText = '',
+        [switch]$Raw, [int[]]$AllowedExitCodes = @(0))
+    $info = [Diagnostics.ProcessStartInfo]::new('git')
+    $info.WorkingDirectory = $Root
+    $info.UseShellExecute = $false
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $info.RedirectStandardInput = $true
+    foreach ($arg in (@('--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false') + $Arguments)) {
+        $info.ArgumentList.Add($arg)
+    }
+    $process = [Diagnostics.Process]::Start($info)
+    $streams = @($process.StandardOutput.BaseStream, $process.StandardError.BaseStream)
+    $buffers = @([byte[]]::new(65536), [byte[]]::new(65536))
+    $outputs = @([IO.MemoryStream]::new(), [IO.MemoryStream]::new())
+    $reads = @($streams[0].ReadAsync($buffers[0], 0, 65536), $streams[1].ReadAsync($buffers[1], 0, 65536))
+    $done = @($false, $false)
+    $inputBytes = [Text.UTF8Encoding]::new($false, $true).GetBytes($InputText)
+    $write = $process.StandardInput.BaseStream.WriteAsync($inputBytes, 0, $inputBytes.Length)
+    $inputClosed = $false
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        while (-not ($done[0] -and $done[1] -and $process.HasExited)) {
+            if ($clock.Elapsed.TotalSeconds -ge 300) { throw 'WAVE_RED_MAPPING_UNRESOLVED: Git command deadline' }
+            if (-not $inputClosed -and $write.IsCompleted) {
+                $null = $write.GetAwaiter().GetResult()
+                $process.StandardInput.Close()
+                $inputClosed = $true
+            }
+            for ($i = 0; $i -lt 2; $i++) {
+                if ($done[$i] -or -not $reads[$i].IsCompleted) { continue }
+                $count = $reads[$i].GetAwaiter().GetResult()
+                if ($count -eq 0) { $done[$i] = $true; continue }
+                if ($outputs[0].Length + $outputs[1].Length + $count -gt 33554432) {
+                    throw 'WAVE_RED_MAPPING_UNRESOLVED: Git output cap'
+                }
+                $outputs[$i].Write($buffers[$i], 0, $count)
+                $reads[$i] = $streams[$i].ReadAsync($buffers[$i], 0, 65536)
+            }
+            [Threading.Thread]::Sleep(1)
+        }
+        if ($AllowedExitCodes -notcontains $process.ExitCode) {
+            throw "WAVE_RED_MAPPING_UNRESOLVED: Git command native exit $($process.ExitCode)"
+        }
+        $utf8 = [Text.UTF8Encoding]::new($false, $true)
+        $null = $utf8.GetString($outputs[1].ToArray())
+        return [pscustomobject]@{
+            Bytes = $outputs[0].ToArray(); ExitCode = $process.ExitCode
+            Text = $(if ($Raw) { '' } else { $utf8.GetString($outputs[0].ToArray()) })
+        }
+    } finally {
+        if (-not $process.HasExited) { $process.Kill($true); $null = $process.WaitForExit(5000) }
+        foreach ($output in $outputs) { $output.Dispose() }
+        $process.Dispose()
+    }
+}
+
+function Get-RedSnapshotSafePath {
+    param([string]$Root, [string]$Path)
+    if ($Path -eq '' -or $Path -match '(^[/\\]|[:\\])') { throw 'WAVE_RED_MAPPING_UNRESOLVED: unsafe relative path' }
+    $full = $Root
+    foreach ($segment in ($Path -split '/')) {
+        if ($segment -in @('', '.', '..') -or
+            ($IsWindows -and ($segment -match '[. ]$|^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:[.]|$)'))) {
+            throw 'WAVE_RED_MAPPING_UNRESOLVED: unsafe path alias'
+        }
+        $full = Join-Path $full $segment
+        if (Test-Path -LiteralPath $full) {
+            if (((Get-Item -LiteralPath $full -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'WAVE_RED_MAPPING_UNRESOLVED: reparse path'
+            }
+        }
+    }
+    return $full
+}
+
+function Get-RedSnapshotPolicySHA256 {
+    param([string]$Root)
+    # Git config values/origins plus raw effective exclusion inputs. This does
+    # not measure ignored cache/scratch bytes or modify any Git policy.
+    foreach ($name in @('GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE',
+        'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES')) {
+        if (-not [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($name))) {
+            throw 'WAVE_RED_MAPPING_UNRESOLVED: unknown Git policy override'
+        }
+    }
+    $config = (Invoke-RedSnapshotGit -Root $Root -Arguments @('config', '--null', '--list', '--show-origin', '--show-scope')).Text
+    $paths = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $exclude = (Invoke-RedSnapshotGit -Root $Root -Arguments @('rev-parse', '--path-format=absolute', '--git-path', 'info/exclude')).Text.Trim()
+    $null = $paths.Add($exclude)
+    $configured = Invoke-RedSnapshotGit -Root $Root -Arguments @('config', '--path', '--get', 'core.excludesFile') -AllowedExitCodes @(0, 1)
+    if ($configured.ExitCode -eq 0) {
+        $candidate = $configured.Text.Trim()
+        if ($candidate -eq '') { throw 'WAVE_RED_MAPPING_UNRESOLVED: indeterminate excludesFile' }
+        if (-not [IO.Path]::IsPathFullyQualified($candidate)) { $candidate = Join-Path $Root $candidate }
+        $null = $paths.Add([IO.Path]::GetFullPath($candidate))
+    } else {
+        $homePath = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+        $xdg = [Environment]::GetEnvironmentVariable('XDG_CONFIG_HOME')
+        if ([string]::IsNullOrEmpty($xdg)) { $xdg = Join-Path $homePath '.config' }
+        $null = $paths.Add((Join-Path $xdg 'git/ignore'))
+    }
+    $ignoreFiles = (Invoke-RedSnapshotGit -Root $Root -Arguments @('ls-files', '--cached', '--others', '--ignored', '--exclude-standard', '-z', '--', '*.gitignore')).Text
+    # Include non-ignored .gitignore too; --ignored selects the complementary
+    # untracked set, not all policy files.
+    $ignoreFiles += (Invoke-RedSnapshotGit -Root $Root -Arguments @('ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', '*.gitignore')).Text
+    foreach ($path in ($ignoreFiles -split "`0")) {
+        if ($path -ne '') { $null = $paths.Add((Get-RedSnapshotSafePath -Root $Root -Path $path)) }
+    }
+    $builder = [Text.StringBuilder]::new()
+    $null = $builder.Append($config)
+    # Explicit command-scope config is an effective input, not an unknown Git
+    # repository/index override. Bind it without exposing or persisting values.
+    $countText = [Environment]::GetEnvironmentVariable('GIT_CONFIG_COUNT')
+    $null = $builder.Append("`0$countText`0")
+    if (-not [string]::IsNullOrEmpty($countText)) {
+        if ($countText -cnotmatch '^[0-9]+$' -or [long]$countText -gt 4096) {
+            throw 'WAVE_RED_MAPPING_UNRESOLVED: indeterminate command-scope config'
+        }
+        for ($i = 0; $i -lt [int]$countText; $i++) {
+            foreach ($prefix in @('GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_')) {
+                $value = [Environment]::GetEnvironmentVariable("$prefix$i")
+                if ($null -eq $value) { throw 'WAVE_RED_MAPPING_UNRESOLVED: missing command-scope config input' }
+                $null = $builder.Append("$value`0")
+            }
+        }
+    }
+    $null = $builder.Append([Environment]::GetEnvironmentVariable('GIT_CONFIG_PARAMETERS'))
+    foreach ($path in ($paths | Sort-Object -CaseSensitive)) {
+        $null = $builder.Append("`0$path`0")
+        if (Test-Path -LiteralPath $path) {
+            if (((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                -not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'WAVE_RED_MAPPING_UNRESOLVED: unknown exclusion policy' }
+            $null = $builder.Append([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([IO.File]::ReadAllBytes($path))))
+        } else { $null = $builder.Append('<absent>') }
+    }
+    return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($builder.ToString()))).ToLowerInvariant()
+}
+
 function Get-RedDeliverablePreDispatchSnapshot {
     # Caller-only capture. Close other repository-mutating writers before capture
     # and throughout the leaf. Two identical reads detect inconsistent observations;
@@ -493,40 +651,67 @@ function Get-RedDeliverablePreDispatchSnapshot {
     }
     $git = {
         param([string[]]$Arguments)
-        $info = [Diagnostics.ProcessStartInfo]::new('git')
-        $info.WorkingDirectory = $root
-        $info.UseShellExecute = $false
-        $info.RedirectStandardOutput = $true
-        $info.RedirectStandardError = $true
-        $info.StandardOutputEncoding = [Text.UTF8Encoding]::new($false, $true)
-        foreach ($arg in (@('--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false') + $Arguments)) {
-            $info.ArgumentList.Add($arg)
-        }
-        $process = [Diagnostics.Process]::Start($info)
-        try {
-            $text = $process.StandardOutput.ReadToEnd()
-            $errorText = $process.StandardError.ReadToEnd()
-            $process.WaitForExit()
-            if ($process.ExitCode -ne 0) { throw "WAVE_RED_MAPPING_UNRESOLVED: git capture: $errorText" }
-            return $text
-        } finally { $process.Dispose() }
+        return (Invoke-RedSnapshotGit -Root $root -Arguments $Arguments).Text
     }
     if ((& $git @('rev-parse', '--show-toplevel')).Trim().Replace('/', '\') -cne $root.Replace('/', '\')) {
         throw 'WAVE_RED_MAPPING_UNRESOLVED: workspace root is not repository root'
     }
     $null = & $git @('cat-file', '-e', "$RedBaselineSHA^{commit}")
+    $baseline = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+    foreach ($entry in ((& $git @('ls-tree', '-r', '-z', $RedBaselineSHA)) -split "`0")) {
+        if ($entry -eq '') { continue }
+        if ($entry -cnotmatch '^([0-9]{6}) blob ([0-9a-f]{40})\t(.+)$') { throw 'WAVE_RED_MAPPING_UNRESOLVED: baseline metadata' }
+        $path = $Matches[3]
+        if ($path.EndsWith('.go', [StringComparison]::Ordinal) -and -not $path.EndsWith('_test.go', [StringComparison]::Ordinal)) {
+            $baseline.Add($path, [pscustomobject]@{ Mode = $Matches[1]; OID = $Matches[2]; Hash = '' })
+        }
+    }
+    if ($baseline.Count -gt 0) {
+        $ordered = @($baseline.Keys | Sort-Object -CaseSensitive)
+        $batchInput = (($ordered | ForEach-Object { $baseline[$_].OID }) -join "`n") + "`n"
+        $bytes = (Invoke-RedSnapshotGit -Root $root -Arguments @('cat-file', '--batch') -InputText $batchInput -Raw).Bytes
+        $offset = 0
+        foreach ($path in $ordered) {
+            $end = $offset
+            while ($end -lt $bytes.Length -and $bytes[$end] -ne 10) { $end++ }
+            $header = [Text.Encoding]::ASCII.GetString($bytes, $offset, $end - $offset)
+            if ($header -cnotmatch '^([0-9a-f]{40}) blob ([0-9]+)$' -or $Matches[1] -cne $baseline[$path].OID) {
+                throw 'WAVE_RED_MAPPING_UNRESOLVED: baseline blob batch'
+            }
+            $length = [int]$Matches[2]; $offset = $end + 1
+            if ($length -lt 0 -or $offset + $length -ge $bytes.Length -or $bytes[$offset + $length] -ne 10) {
+                throw 'WAVE_RED_MAPPING_UNRESOLVED: baseline blob size'
+            }
+            $blob = [byte[]]::new($length)
+            [Array]::Copy($bytes, $offset, $blob, 0, $length)
+            $baseline[$path].Hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($blob)).ToLowerInvariant()
+            $offset += $length + 1
+        }
+        if ($offset -ne $bytes.Length) { throw 'WAVE_RED_MAPPING_UNRESOLVED: extra baseline bytes' }
+    }
     $read = {
+        $policy = Get-RedSnapshotPolicySHA256 -Root $root
         $head = (& $git @('rev-parse', 'HEAD')).Trim()
-        $index = @{}
+        $index = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+        $flags = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+        foreach ($entry in ((& $git @('ls-files', '-v', '-z')) -split "`0")) {
+            if ($entry -eq '') { continue }
+            if ($entry -cnotmatch '^([HSMRCK?hs]) (.+)$') { throw 'WAVE_RED_MAPPING_UNRESOLVED: invalid index flags' }
+            $flags.Add($Matches[2], $Matches[1])
+        }
         foreach ($entry in ((& $git @('ls-files', '--stage', '-z')) -split "`0")) {
             if ($entry -eq '') { continue }
             if ($entry -cnotmatch '^([0-9]{6}) ([0-9a-f]{40}) 0\t(.+)$') {
                 throw 'WAVE_RED_MAPPING_UNRESOLVED: unresolved index stage'
             }
-            $index[$Matches[3]] = @($Matches[1], $Matches[2])
+            $index.Add($Matches[3], @($Matches[1], $Matches[2]))
         }
-        $unstaged = @{}; $staged = @{}; $paths = @{}; $untracked = @{}
+        $unstaged = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+        $staged = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+        $paths = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+        $untracked = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
         foreach ($path in $index.Keys) { $paths[$path] = $true }
+        foreach ($path in $baseline.Keys) { $paths[$path] = $true }
         # Baseline-relative staged state also accounts for commit history without
         # changing the original pre-claim baseline. Deleted paths remain measured.
         foreach ($pair in @(
@@ -542,24 +727,14 @@ function Get-RedDeliverablePreDispatchSnapshot {
         foreach ($path in ((& $git @('ls-files', '--others', '--exclude-standard', '-z')) -split "`0")) {
             if ($path -ne '') { $paths[$path] = $true; $untracked[$path] = $true }
         }
+        $productionDelta = $false
+        $aliases = [Collections.Generic.HashSet[string]]::new($(if ($IsWindows) { [StringComparer]::OrdinalIgnoreCase } else { [StringComparer]::Ordinal }))
         $records = @(
             foreach ($path in ($paths.Keys | Sort-Object -CaseSensitive)) {
                 # Validate containment before reading bytes, including every
                 # existing ancestor (junctions, symlinks and other reparse points).
-                foreach ($segment in ($path -split '/')) {
-                    if ($segment -in @('', '.', '..') -or $segment.Contains('\') -or $segment.Contains(':')) {
-                        throw 'WAVE_RED_MAPPING_UNRESOLVED: unsafe Git path'
-                    }
-                }
-                $full = $root
-                foreach ($segment in ($path -split '/')) {
-                    $full = Join-Path $full $segment
-                    if (Test-Path -LiteralPath $full) {
-                        if (((Get-Item -LiteralPath $full -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                            throw 'WAVE_RED_MAPPING_UNRESOLVED: reparse path'
-                        }
-                    }
-                }
+                if (-not $aliases.Add($path)) { throw 'WAVE_RED_MAPPING_UNRESOLVED: OS path alias' }
+                $full = Get-RedSnapshotSafePath -Root $root -Path $path
                 $exists = Test-Path -LiteralPath $full -PathType Leaf
                 $hash = ''; $mode = ''
                 if ($exists) {
@@ -567,22 +742,32 @@ function Get-RedDeliverablePreDispatchSnapshot {
                     $mode = '100644'
                     if (-not $IsWindows -and (([IO.File]::GetUnixFileMode($full) -band 73) -ne 0)) { $mode = '100755' }
                 }
-                if ((& $git @('rev-parse', 'HEAD')).Trim() -cne $head) {
-                    throw 'WAVE_RED_MAPPING_UNRESOLVED: HEAD changed during capture'
+                if ($path.EndsWith('.go', [StringComparison]::Ordinal) -and -not $path.EndsWith('_test.go', [StringComparison]::Ordinal)) {
+                    if (-not $baseline.ContainsKey($path) -or -not $index.ContainsKey($path) -or -not $exists -or
+                        $hash -cne $baseline[$path].Hash -or $mode -cne $baseline[$path].Mode -or
+                        $index[$path][0] -cne $baseline[$path].Mode -or $index[$path][1] -cne $baseline[$path].OID) {
+                        $productionDelta = $true
+                    }
                 }
                 [pscustomobject][ordered]@{
                     path = $path; worktree_exists = [bool]$exists; worktree_sha256 = $hash; worktree_mode = $mode
                     index_mode = $(if ($index.ContainsKey($path)) { $index[$path][0] } else { '' })
                     index_blob_oid = $(if ($index.ContainsKey($path)) { $index[$path][1] } else { '' })
+                    index_flags = $(if ($flags.ContainsKey($path)) { $flags[$path] } else { '' })
                     unstaged_state = $(if ($untracked.ContainsKey($path)) { '??' } elseif ($unstaged.ContainsKey($path)) { $unstaged[$path] } else { '' })
                     staged_state = $(if ($staged.ContainsKey($path)) { $staged[$path] } else { '' })
                     untracked = $untracked.ContainsKey($path)
                 }
             }
         )
+        if ((& $git @('rev-parse', 'HEAD')).Trim() -cne $head -or
+            (Get-RedSnapshotPolicySHA256 -Root $root) -cne $policy) {
+            throw 'WAVE_RED_MAPPING_UNRESOLVED: HEAD or effective exclusion policy changed during capture'
+        }
         [pscustomobject][ordered]@{
             schema = 'red-deliverable-predispatch-snapshot/v1'; workspace_root = $root
-            task_id = $TaskID; red_baseline_sha = $RedBaselineSHA; head_sha = $head; paths = @($records)
+            task_id = $TaskID; red_baseline_sha = $RedBaselineSHA; head_sha = $head
+            effective_policy_sha256 = $policy; production_baseline_delta = [bool]$productionDelta; paths = @($records)
         }
     }
     $first = & $read
@@ -599,10 +784,6 @@ function Compare-RedDeliverablePreDispatchSnapshot {
     $out = { param($Outcome) [pscustomobject]@{ Outcome = $Outcome; EntersGenericLoop = $false } }
     try {
         if ($null -eq $PreDispatchSnapshot -or $null -eq $PostLeafSnapshot) { throw 'missing snapshot' }
-        if ($WorkspaceRoot -eq '') { $WorkspaceRoot = $PreDispatchSnapshot.workspace_root }
-        if ($TaskID -eq '') { $TaskID = $PreDispatchSnapshot.task_id }
-        if ($RedBaselineSHA -eq '') { $RedBaselineSHA = $PreDispatchSnapshot.red_baseline_sha }
-        if ($HeadSHA -eq '') { $HeadSHA = $PreDispatchSnapshot.head_sha }
         if (-not [IO.Path]::IsPathFullyQualified($WorkspaceRoot) -or
             [IO.Path]::GetFullPath($WorkspaceRoot).TrimEnd('\', '/') -cne $WorkspaceRoot -or
             $TaskID -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or
@@ -618,22 +799,16 @@ function Compare-RedDeliverablePreDispatchSnapshot {
                     $snapshot.workspace_root -cne $WorkspaceRoot -or $snapshot.task_id -cne $TaskID -or
                     $snapshot.red_baseline_sha -cne $RedBaselineSHA -or $snapshot.head_sha -cne $HeadSHA -or
                     $null -eq $snapshot.paths -or $snapshot.paths -isnot [Array]) { throw 'snapshot binding mismatch' }
-                $map = @{}
+                $map = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+                $aliases = [Collections.Generic.HashSet[string]]::new($(if ($IsWindows) { [StringComparer]::OrdinalIgnoreCase } else { [StringComparer]::Ordinal }))
                 foreach ($p in $snapshot.paths) {
                     if ($p.path -isnot [string] -or $p.path -eq '' -or
-                        $p.path -match '(^[/\\]|[:\\])' -or $map.ContainsKey($p.path)) { throw 'invalid path' }
-                    $full = $WorkspaceRoot
-                    foreach ($segment in ($p.path -split '/')) {
-                        if ($segment -in @('', '.', '..')) { throw 'path escape' }
-                        $full = Join-Path $full $segment
-                        if (Test-Path -LiteralPath $full) {
-                            if (((Get-Item -LiteralPath $full -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                                throw 'reparse path'
-                            }
-                        }
-                    }
+                        $p.path -match '(^[/\\]|[:\\])' -or $map.ContainsKey($p.path) -or -not $aliases.Add($p.path)) { throw 'invalid path' }
+                    $null = Get-RedSnapshotSafePath -Root $WorkspaceRoot -Path $p.path
                     if ($p.worktree_exists -isnot [bool] -or $p.untracked -isnot [bool] -or
-                        $p.unstaged_state -cnotmatch '^(|[AMDTU]|[?][?])$' -or $p.staged_state -cnotmatch '^(|[AMDTU])$') { throw 'invalid path state' }
+                        $p.unstaged_state -cnotmatch '^(|[AMDT]|[?][?])$' -or $p.staged_state -cnotmatch '^(|[AMDT])$' -or
+                        (-not $p.untracked -and $p.unstaged_state -ceq '??') -or
+                        ($p.untracked -and ($p.staged_state -cne '' -or $p.unstaged_state -cne '??'))) { throw 'invalid path state' }
                     foreach ($field in @('worktree_sha256', 'worktree_mode', 'index_mode', 'index_blob_oid', 'unstaged_state', 'staged_state')) {
                         if ($p.$field -isnot [string]) { throw 'invalid field type' }
                     }
@@ -645,19 +820,36 @@ function Compare-RedDeliverablePreDispatchSnapshot {
                         ($p.index_mode -eq '' -and $p.index_blob_oid -cne '') -or
                         ($p.index_mode -ne '' -and $p.index_blob_oid -cnotmatch '^[0-9a-f]{40}$') -or
                         ($p.untracked -and ($p.index_mode -ne '' -or -not $p.worktree_exists))) { throw 'invalid index' }
+                    if ((Test-HasProperty $p 'index_flags') -and $p.index_flags -cnotmatch '^(|[HSMRCK?hs])$') { throw 'invalid index flags' }
                     $map[$p.path] = $p
                 }
                 , $map
             }
         )
+        if ((Test-HasProperty $PreDispatchSnapshot 'effective_policy_sha256') -or
+            (Test-HasProperty $PostLeafSnapshot 'effective_policy_sha256')) {
+            if ($PreDispatchSnapshot.effective_policy_sha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                $PreDispatchSnapshot.effective_policy_sha256 -cne $PostLeafSnapshot.effective_policy_sha256) { throw 'effective exclusion policy changed' }
+        }
         $changed = $false; $production = $false
-        foreach ($path in (@($maps[0].Keys) + @($maps[1].Keys) | Sort-Object -Unique)) {
+        foreach ($snapshot in @($PreDispatchSnapshot, $PostLeafSnapshot)) {
+            if (Test-HasProperty $snapshot 'production_baseline_delta') {
+                if ($snapshot.production_baseline_delta -isnot [bool]) { throw 'invalid baseline state' }
+                if ($snapshot.production_baseline_delta) { $production = $true }
+            }
+        }
+        $union = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($path in (@($maps[0].Keys) + @($maps[1].Keys))) { $null = $union.Add($path) }
+        foreach ($path in $union) {
             $a = $maps[0][$path]; $b = $maps[1][$path]
             $different = $null -eq $a -or $null -eq $b
             if (-not $different) {
                 foreach ($field in @('worktree_exists', 'worktree_sha256', 'worktree_mode', 'index_mode',
                     'index_blob_oid', 'unstaged_state', 'staged_state', 'untracked')) {
                     if ($a.$field -cne $b.$field) { $different = $true }
+                }
+                if ((Test-HasProperty $a 'index_flags') -or (Test-HasProperty $b 'index_flags')) {
+                    if ($a.index_flags -cne $b.index_flags) { $different = $true }
                 }
             }
             if ($different) { $changed = $true }
@@ -722,7 +914,7 @@ function Get-RedDeliverableBranchOutcome {
     $comparison = Compare-RedDeliverablePreDispatchSnapshot -PreDispatchSnapshot $Control.predispatch_snapshot `
         -PostLeafSnapshot $Control.post_leaf_state -WorkspaceRoot $Control.workspace_root `
         -TaskID $Control.task_id -RedBaselineSHA $baseline -HeadSHA $Control.head_sha
-    if ($comparison.Outcome -eq 'WAVE_RED_MAPPING_UNRESOLVED') { return $comparison }
+    if ($comparison.Outcome -ne 'RED_DELIVERABLE_ACCEPTED') { return $comparison }
 
     # Step 0.5a - consume and validate the harness harness-architect already scaffolded.
     if (-not [bool]$Control.compile_ok) {
@@ -763,6 +955,9 @@ function Invoke-RedDeliverableBranchControls {
             -Expected "$($control.expect_outcome)" -Actual $r.Outcome
         Test-Equal -Scenario "red_branch/$($control.id)" -Name 'enters generic loop' `
             -Expected ([bool]$control.expect_enters_generic_loop) -Actual $r.EntersGenericLoop
+        foreach ($assertion in @($script:Assertions | Where-Object { $_.Scenario -ceq "red_branch/$($control.id)" -and $_.Ok })) {
+            Write-Output "PASS $($assertion.Scenario) :: $($assertion.Name)"
+        }
     }
 }
 
@@ -1205,6 +1400,7 @@ function Apply-ClaimOverrides {
         markers          = @{}
         claim_events     = @{}
         started          = @{}
+        start_counts     = @{}
         live_manifest    = @{}
     }
     foreach ($id in $Members.Keys) { $state.live_manifest[$id] = $true }
@@ -1225,7 +1421,11 @@ function Apply-ClaimOverrides {
         }
     }
     if (Test-HasProperty $overrides 'started') {
-        foreach ($id in (ConvertTo-List $overrides.started)) { $state.started[$id] = $true }
+        foreach ($id in (ConvertTo-List $overrides.started)) {
+            $state.started[$id] = $true
+            if (-not $state.start_counts.ContainsKey($id)) { $state.start_counts[$id] = 0 }
+            $state.start_counts[$id]++
+        }
     }
     if (Test-HasProperty $overrides 'marker') {
         foreach ($id in (Get-PropertyNames $overrides.marker)) {
@@ -1296,6 +1496,11 @@ function Invoke-WaveScheduler {
         early_green              = @()
         green_maker_unverified   = @()
         full_suite_waves         = @()
+        paused_convergence_waves = @()
+        pending_convergence_waves = @()
+        gate_closed_commands     = @{}
+        gate_discharged_at       = @{}
+        resume_steps             = @()
         deferred_waves           = @()
         compile_gate_waves       = @()
         final_open_red           = @()
@@ -1500,6 +1705,9 @@ function Invoke-WaveScheduler {
     $waveIndex = 0
     $budget = $M.Count
     $waveOf = @{}
+    # Closed command identities are their declaring members in this pure replay.
+    # Keep a paused gate's exact set, not a reconstructed later frontier.
+    $pendingGates = @{}
     # Previously completed prerequisites precede this bounded replay; they must
     # never be rescheduled just to obtain a compile-order timestamp.
     foreach ($k in $M.Keys) { if ($terminalSuccess -contains $M[$k].status) { $waveOf[$k] = 0 } }
@@ -1586,14 +1794,24 @@ function Invoke-WaveScheduler {
         $indeterminate = @()
         foreach ($id in $active) {
             $class = Get-ClaimStateClass -ShipmentID $claimState.shipment_id -MemberID $id -ClaimState $claimState
+            if ($class -ceq 'indeterminate') {
+                $indeterminate += $id
+                continue
+            }
             # Only an explicit Stage-reviewed amendment may preserve a started
             # red deliverable. Never waive generic active-residual admission.
-            if ($class -eq 'active residual' -and (Test-HasProperty $Fx.source 'paused_red_amendment')) {
+            if ((Test-HasProperty $Fx.source 'paused_red_amendment') -and $Fx.source.paused_red_amendment.task -ceq $id) {
                 $amendment = $Fx.source.paused_red_amendment
                 $prerequisite = "$($amendment.prerequisite)"
+                $actualStarts = if ($claimState.start_counts.ContainsKey($id)) { $claimState.start_counts[$id] } else { 0 }
                 if ($amendment.stage_reviewed -eq $true -and $amendment.shipment -ceq $claimState.shipment_id -and
-                    $amendment.task -ceq $id -and $amendment.start_count -eq 1 -and
+                    $amendment.shipment -ceq '212-S' -and $amendment.task -ceq '211.015-T' -and
+                    $prerequisite -ceq '211.016-T' -and $amendment.amendment_id -ceq '089-DL/M16' -and
+                    $amendment.prerequisite_task -ceq $prerequisite -and $amendment.prerequisite_committed -eq $true -and
+                    $amendment.task -ceq $id -and $actualStarts -eq 1 -and
+                    $amendment.start_count -eq $actualStarts -and
                     $amendment.red_baseline_sha -cmatch '^[0-9a-f]{40}$' -and
+                    $amendment.red_baseline_sha -ceq '30908ecb8438c0b3e7fe8bd514fa3680e35d90e5' -and
                     $claimState.started.ContainsKey($id) -and $claimState.markers.ContainsKey($id) -and
                     $claimState.markers[$id] -ceq $claimState.shipment_id -and
                     $claimState.claim_events.ContainsKey($id) -and $claimState.claim_events[$id] -eq $true -and
@@ -1606,6 +1824,8 @@ function Invoke-WaveScheduler {
                     $pausedRed += $id
                     continue
                 }
+                $activeResidual += $id
+                continue
             }
             switch ($class) {
                 'claim-assigned' { $claimAssigned += $id }
@@ -1626,6 +1846,11 @@ function Invoke-WaveScheduler {
             break
         }
         if ($terminal.Count -eq $scope.Count) {
+            if ($pendingGates.Count -gt 0) {
+                $result.outcome = 'WAVE_NO_PROGRESS'; $result.halt_wave = $waveIndex
+                $result.halt_detail = 'undischarged convergence obligations'
+                break
+            }
             $result.completion_claimed = $true
             $result.outcome = 'COMPLETE'
             $result.waves = $waveIndex - 1
@@ -1645,6 +1870,13 @@ function Invoke-WaveScheduler {
             $result.outcome = 'WAVE_NO_PROGRESS'; $result.halt_wave = $waveIndex
             $result.stalls = $result.stalls + 1
             $result.halt_detail = "empty frontier with $($scope.Count - $terminal.Count) non-terminal member(s)"
+            break
+        }
+        if ($pendingGates.Count -gt 0 -and
+            ($waveIndex -ne 4 -or $ready.Count -ne 1 -or
+             $ready[0] -cne '211.015-T' -or $pausedRed -notcontains '211.015-T')) {
+            $result.outcome = 'WAVE_NO_PROGRESS'; $result.halt_wave = $waveIndex
+            $result.halt_detail = 'pending Wave 3 gate permits only the authorized same-started resume'
             break
         }
 
@@ -1675,8 +1907,21 @@ function Invoke-WaveScheduler {
             if ($claimAssigned -contains $t) {
                 $result.claim_assigned_at_admission = $result.claim_assigned_at_admission + 1
             }
+            if ($pausedRed -contains $t) {
+                # Supported same-started transition, not a fresh claim/start.
+                if ($M[$Fx.source.paused_red_amendment.prerequisite].status -cne 'done' -or
+                    $claimState.start_counts[$t] -ne 1) { throw 'WAVE_RED_MAPPING_UNRESOLVED: stale resume context' }
+                $result.resume_steps = @('prerequisite-done', 'source-reload', 'fresh-capture', 'same-started-red')
+                if ($earlyGreenAtWave.ContainsKey($t) -and $earlyGreenAtWave[$t] -le $waveIndex) {
+                    $result.outcome = 'WAVE_RED_DELIVERABLE_EARLY_GREEN'; $result.halt_wave = $waveIndex
+                    $result.early_green = @($t)
+                    $result.halt_detail = 'paused selector must be assertion RED before registration'
+                    break
+                }
+            }
             $M[$t].status = 'done'; $waveOf[$t] = $waveIndex
         }
+        if ($null -ne $result.outcome) { break }
 
         # completion-time status injections (e.g. descope of a green-maker)
         if (Test-HasProperty $mut 'set_status_at_wave') {
@@ -1701,9 +1946,38 @@ function Invoke-WaveScheduler {
         $result.wave_members = @($result.wave_members + (, @($ready)))
         $result.scheduled = $result.scheduled + $ready.Count
 
+        # M16 retains, rather than passes or defers, Wave 3's gate. The next
+        # iteration may only resume 015, then discharge both gates before U3.
+        $awaitingResume = @($pausedRed | Where-Object {
+            $M[$_].status -ceq 'active' -and $ready -contains $Fx.source.paused_red_amendment.prerequisite
+        })
+        if ($awaitingResume.Count -gt 0) {
+            if ($waveIndex -ne 3 -or $ready.Count -ne 1 -or $ready[0] -cne '211.016-T' -or
+                $awaitingResume.Count -ne 1 -or $awaitingResume[0] -cne '211.015-T') {
+                $result.outcome = 'WAVE_NO_PROGRESS'; $result.halt_wave = $waveIndex
+                $result.halt_detail = 'bounded paused amendment transition mismatch'
+                break
+            }
+            if ($M['211.016-T'].status -cne 'done') {
+                $result.outcome = 'WAVE_NO_PROGRESS'; $result.halt_wave = $waveIndex
+                $result.halt_detail = 'paused prerequisite must remain done before source reload'
+                break
+            }
+            $pendingGates["$waveIndex"] = @($ready)
+            $result.gate_closed_commands["$waveIndex"] = @($ready)
+            $result.paused_convergence_waves += $waveIndex
+            continue
+        }
+
         # ---- Step 4.6 convergence gate ----
+        $pendingGates["$waveIndex"] = @($ready)
+        $result.gate_closed_commands["$waveIndex"] = @($ready)
+        $gateWaves = @($pendingGates.Keys | ForEach-Object { [int]$_ } | Sort-Object)
         # open-red set: completed red deliverables whose green-makers are not all closed
         foreach ($t in $ready) { if ($redMap.ContainsKey($t)) { $redMap[$t].open = $true } }
+        if (@($ready | Where-Object { $pausedRed -contains $_ }).Count -gt 0) {
+            $result.resume_steps += 'register-open-red'
+        }
         $newlyClosed = @()
         foreach ($k in $redMap.Keys) {
             if (-not $redMap[$k].open) { continue }
@@ -1723,7 +1997,7 @@ function Invoke-WaveScheduler {
         $result.open_red_after_wave["$waveIndex"] = $openNow
 
         # the compile / vet / scoped-green part of the gate always runs
-        $result.compile_gate_waves = @($result.compile_gate_waves + $waveIndex)
+        $result.compile_gate_waves = @($result.compile_gate_waves + $gateWaves)
 
         # P-002.6 always-run items 4 and 5. The pre-recomputation open set partitions exactly into
         # entries still open (selector re-run, must stay RED) and entries newly closed at this
@@ -1767,11 +2041,33 @@ function Invoke-WaveScheduler {
             break
         }
 
+        $failedGates = @()
+        foreach ($gateWave in $gateWaves) {
+            foreach ($commandMember in $pendingGates["$gateWave"]) {
+                if (-not $M.Contains($commandMember) -or
+                    $terminalSuccess -notcontains $M[$commandMember].status) {
+                    $failedGates += $gateWave
+                }
+            }
+        }
+        if (Test-HasProperty $mut 'convergence_failure_at_wave') {
+            $failedGates += @($gateWaves | Where-Object { (ConvertTo-List $mut.convergence_failure_at_wave) -contains $_ })
+        }
+        if ($failedGates.Count -gt 0) {
+            $result.outcome = 'WAVE_NO_PROGRESS'; $result.halt_wave = $waveIndex
+            $result.halt_detail = "convergence gate failed: $($failedGates -join ',')"
+            break
+        }
+        foreach ($gateWave in $gateWaves) {
+            $result.gate_discharged_at["$gateWave"] = $waveIndex
+            $pendingGates.Remove("$gateWave")
+        }
         if ($openNow.Count -eq 0) { $result.full_suite_waves = @($result.full_suite_waves + $waveIndex) }
         else { $result.deferred_waves = @($result.deferred_waves + $waveIndex) }
     }
 
     # every frozen member must still be visible to the scheduler at halt or exit
+    $result.pending_convergence_waves = @($pendingGates.Keys | ForEach-Object { [int]$_ } | Sort-Object)
     $visible = @($M.Keys | Where-Object { $frozen -or $liveItems.ContainsKey($_) }).Count
     $result.member_retained_in_m = ($result.member_retained_in_m -and ($visible -eq $M.Count))
 
@@ -1803,6 +2099,15 @@ function Invoke-WaveScheduler {
 # --- expectation checking -------------------------------------------------------
 function Test-Scenario {
     param($Fx, $Sc)
+    if ((Test-HasProperty $Sc 'u2j_paused_amendment_replay') -and $Sc.u2j_paused_amendment_replay) {
+        # One explicit tracked M16 transition; never a general fixture override
+        # or blanket policy permitting active task admission.
+        $copy = $Fx | ConvertTo-Json -Depth 40 -Compress | ConvertFrom-Json
+        $copy.source = $Fx.u2j_paused_amendment_fixture.source
+        $copy.manifest = $Fx.u2j_paused_amendment_fixture.manifest
+        $copy.red_deliverables = $Fx.u2j_paused_amendment_fixture.red_deliverables
+        $Fx = $copy
+    }
     $r = Invoke-WaveScheduler -Fx $Fx -Sc $Sc
     $id = $Sc.id
     foreach ($key in (Get-PropertyNames $Sc.expect)) {
@@ -1830,6 +2135,21 @@ function Test-Scenario {
             'full_suite_at_final_closure' { Test-Equal $id $key $want $r.full_suite_at_final_closure }
             'hidden_unexpected_failures' { Test-Equal $id $key $want $r.hidden_unexpected_failures }
             'full_suite_waves' { Test-Equal $id $key (ConvertTo-List $want) $r.full_suite_waves }
+            'paused_convergence_waves' { Test-Equal $id $key (ConvertTo-List $want) $r.paused_convergence_waves }
+            'pending_convergence_waves' { Test-Equal $id $key (ConvertTo-List $want) $r.pending_convergence_waves }
+            'gate_closed_commands' {
+                foreach ($p in (Get-PropertyNames $want)) {
+                    $actual = if ($r.gate_closed_commands.ContainsKey($p)) { $r.gate_closed_commands[$p] } else { @() }
+                    Test-Equal $id "$key[$p]" (ConvertTo-List $want.$p) (ConvertTo-List $actual)
+                }
+            }
+            'gate_discharged_at' {
+                foreach ($p in (Get-PropertyNames $want)) {
+                    $actual = if ($r.gate_discharged_at.ContainsKey($p)) { $r.gate_discharged_at[$p] } else { -1 }
+                    Test-Equal $id "$key[$p]" $want.$p $actual
+                }
+            }
+            'resume_steps' { Test-Equal $id $key (ConvertTo-List $want) $r.resume_steps }
             'deferred_waves' { Test-Equal $id $key (ConvertTo-List $want) $r.deferred_waves }
             'compile_gate_waves' { Test-Equal $id $key (ConvertTo-List $want) $r.compile_gate_waves }
             'final_open_red' { Test-Equal $id $key (ConvertTo-List $want) $r.final_open_red }
@@ -1900,6 +2220,81 @@ function Test-Scenario {
 }
 
 # --- run ------------------------------------------------------------------------
+if ($SnapshotAction -ne '') {
+    $refusal = { [pscustomobject]@{ Outcome = 'WAVE_RED_MAPPING_UNRESOLVED'; EntersGenericLoop = $false } | ConvertTo-Json -Compress }
+    try {
+        if (-not [IO.Path]::IsPathFullyQualified($WorkspaceRoot) -or
+            [IO.Path]::GetFullPath($WorkspaceRoot).TrimEnd('\', '/') -cne $WorkspaceRoot -or
+            $TaskID -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or
+            $RedBaselineSHA -cnotmatch '^[0-9a-f]{40}$' -or $HeadSHA -cnotmatch '^[0-9a-f]{40}$' -or
+            $PSBoundParameters.ContainsKey('Fixture') -or $VerifyAgainstQueue -or $Scenario -ne '') {
+            throw 'WAVE_RED_MAPPING_UNRESOLVED: mandatory independent capture bindings'
+        }
+        if (((Get-Item -LiteralPath $WorkspaceRoot -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            (Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('rev-parse', '--show-toplevel')).Text.Trim().Replace('/', '\') -cne $WorkspaceRoot.Replace('/', '\') -or
+            (Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('rev-parse', 'HEAD')).Text.Trim() -cne $HeadSHA) {
+            throw 'WAVE_RED_MAPPING_UNRESOLVED: independent repository/HEAD binding'
+        }
+        $null = Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('cat-file', '-e', "$RedBaselineSHA^{commit}")
+        $validateStorage = {
+            param([string]$Path, [bool]$New)
+            if (-not [IO.Path]::IsPathFullyQualified($Path) -or [IO.Path]::GetFullPath($Path) -cne $Path -or
+                -not $Path.EndsWith('.json', [StringComparison]::Ordinal)) { throw 'WAVE_RED_MAPPING_UNRESOLVED: invalid observation path' }
+            $relative = [IO.Path]::GetRelativePath($WorkspaceRoot, $Path).Replace('\', '/')
+            $safe = Get-RedSnapshotSafePath -Root $WorkspaceRoot -Path $relative
+            if ($safe -cne $Path -or -not (Test-Path -LiteralPath (Split-Path -Parent $Path) -PathType Container) -or
+                ($New -and (Test-Path -LiteralPath $Path))) { throw 'WAVE_RED_MAPPING_UNRESOLVED: observation path must be exclusive/no-clobber' }
+            $ignored = Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('check-ignore', '--no-index', '--', $relative) -AllowedExitCodes @(0, 1)
+            $tracked = Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('ls-files', '--error-unmatch', '--', $relative) -AllowedExitCodes @(0, 1)
+            if ($ignored.ExitCode -ne 0 -or $tracked.ExitCode -eq 0) { throw 'WAVE_RED_MAPPING_UNRESOLVED: observer storage must already be ignored and untracked' }
+            return $safe
+        }
+        if ($SnapshotAction -ceq 'Capture') {
+            $path = & $validateStorage $OutputPath $true
+            $snapshot = Get-RedDeliverablePreDispatchSnapshot -WorkspaceRoot $WorkspaceRoot -TaskID $TaskID -RedBaselineSHA $RedBaselineSHA
+            if ($snapshot.head_sha -cne $HeadSHA) { throw 'WAVE_RED_MAPPING_UNRESOLVED: capture HEAD changed' }
+            $json = $snapshot | ConvertTo-Json -Depth 30 -Compress
+            $bytes = [Text.UTF8Encoding]::new($false, $true).GetBytes($json + "`n")
+            $stream = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+            Write-Output $json
+        } else {
+            if ($OutputPath -ne '' -or $PreSnapshotSHA256 -cnotmatch '^[0-9a-f]{64}$' -or
+                $PostSnapshotSHA256 -cnotmatch '^[0-9a-f]{64}$' -or $PreSnapshotPath -ceq $PostSnapshotPath) {
+                throw 'WAVE_RED_MAPPING_UNRESOLVED: mandatory external digest witnesses'
+            }
+            $policyBefore = Get-RedSnapshotPolicySHA256 -Root $WorkspaceRoot
+            $records = @(
+                foreach ($binding in @(@{ Path = $PreSnapshotPath; Hash = $PreSnapshotSHA256 }, @{ Path = $PostSnapshotPath; Hash = $PostSnapshotSHA256 })) {
+                    $path = & $validateStorage $binding.Path $false
+                    if ((Get-Item -LiteralPath $path).Length -gt 33554432) { throw 'WAVE_RED_MAPPING_UNRESOLVED: snapshot size cap' }
+                    $bytes = [IO.File]::ReadAllBytes($path)
+                    $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+                    if ($hash -cne $binding.Hash) { throw 'WAVE_RED_MAPPING_UNRESOLVED: snapshot digest witness mismatch' }
+                    $record = [Text.UTF8Encoding]::new($false, $true).GetString($bytes) | ConvertFrom-Json
+                    if ($record.effective_policy_sha256 -cne $policyBefore -or $record.production_baseline_delta -isnot [bool]) {
+                        throw 'WAVE_RED_MAPPING_UNRESOLVED: unverified policy/baseline state'
+                    }
+                    $record
+                }
+            )
+            $comparison = Compare-RedDeliverablePreDispatchSnapshot -PreDispatchSnapshot $records[0] -PostLeafSnapshot $records[1] `
+                -WorkspaceRoot $WorkspaceRoot -TaskID $TaskID -RedBaselineSHA $RedBaselineSHA -HeadSHA $HeadSHA
+            if ((Get-RedSnapshotPolicySHA256 -Root $WorkspaceRoot) -cne $policyBefore -or
+                (Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('rev-parse', 'HEAD')).Text.Trim() -cne $HeadSHA) {
+                throw 'WAVE_RED_MAPPING_UNRESOLVED: concurrent policy/HEAD mutation'
+            }
+            $comparison | ConvertTo-Json -Depth 30 -Compress
+        }
+    } catch {
+        if ($SnapshotAction -ceq 'Capture') {
+            throw "WAVE_RED_MAPPING_UNRESOLVED: capture refused: $($_.Exception.Message)"
+        }
+        & $refusal
+    }
+    return
+}
+
 if (-not $Quiet) {
     Write-Host "P-002.6 wave-scheduler contract simulation" -ForegroundColor Cyan
     Write-Host "fixture : $Fixture"
@@ -1921,6 +2316,20 @@ foreach ($sc in $fx.scenarios) {
         Write-Host $line
     }
 }
+
+$expectedControls = @($fx.red_deliverable_expected_control_ids)
+$expectedNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+$closedCensus = $expectedControls.Count -ge 18
+foreach ($id in $expectedControls) {
+    foreach ($name in @('branch outcome', 'enters generic loop')) {
+        if (-not $expectedNames.Add("red_branch/$id :: $name")) { $closedCensus = $false }
+    }
+}
+foreach ($assertion in @($script:Assertions | Where-Object { $_.Scenario.StartsWith('red_branch/', [StringComparison]::Ordinal) })) {
+    if (-not $expectedNames.Remove("$($assertion.Scenario) :: $($assertion.Name)")) { $closedCensus = $false }
+}
+Test-Equal -Scenario 'red_census' -Name 'closed positive control census' -Expected $true `
+    -Actual ([bool]($closedCensus -and $expectedNames.Count -eq 0))
 
 $fail = @($script:Assertions | Where-Object { -not $_.Ok })
 if (-not $Quiet -or $fail.Count -gt 0) { Write-Host "" }

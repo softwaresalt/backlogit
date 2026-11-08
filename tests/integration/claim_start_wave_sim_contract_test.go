@@ -1,15 +1,18 @@
 package integration_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -164,6 +167,7 @@ func TestU2j_RedDeliverablePreDispatchSnapshotZeroDeltaContract(t *testing.T) {
 			} else if origin == "leaf-untracked" {
 				c.UntrackedFiles = []string{p.Path}
 				c.PostLeaf.Paths[len(c.PostLeaf.Paths)-1].Untracked = true
+				c.PostLeaf.Paths[len(c.PostLeaf.Paths)-1].UnstagedState = "??"
 				c.PostLeaf.Paths[len(c.PostLeaf.Paths)-1].IndexMode = ""
 				c.PostLeaf.Paths[len(c.PostLeaf.Paths)-1].IndexBlobOID = ""
 			} else {
@@ -242,6 +246,99 @@ func TestU2j_RedDeliverablePreDispatchSnapshotZeroDeltaContract(t *testing.T) {
 		}
 		u2jReplay(t, root, controls)
 	})
+
+	t.Run("C1_conflict_tracked_question_and_delta_precedence", func(t *testing.T) {
+		controls := make([]u2jBranchControl, 0, 6)
+		for _, state := range []string{"U", "??"} {
+			c := base("c1-identical-invalid-"+state, unresolved)
+			c.PreDispatch.Paths[0].UnstagedState = state
+			c.PostLeaf.Paths[0].UnstagedState = state
+			controls = append(controls, c)
+		}
+		for _, signal := range []string{"pass", "panic", "assertion_fail"} {
+			c := base("c1-production-before-"+signal, production)
+			c.CompileOK = false
+			c.SelectorSignal = signal
+			c.PostLeaf.Paths = append(c.PostLeaf.Paths, u2jPath("internal/production.go", "package production\n"))
+			controls = append(controls, c)
+		}
+		aliasOutcome := accepted
+		if os.PathSeparator == '\\' {
+			aliasOutcome = unresolved
+		}
+		c := base("c1-case-distinct-paths", aliasOutcome)
+		for _, path := range []string{"docs/Case.md", "docs/case.md"} {
+			p := u2jPath(path, "caller\n")
+			c.PreDispatch.Paths = append(c.PreDispatch.Paths, p)
+			c.PostLeaf.Paths = append(c.PostLeaf.Paths, p)
+		}
+		controls = append(controls, c)
+		u2jReplay(t, root, controls)
+	})
+
+	t.Run("C1_coupled_provisional_and_supported_capture_contract", func(t *testing.T) {
+		for _, path := range []string{".github/skills/build-feature/SKILL.md", ".github/agents/_ship.agent.md", ".github/policies/workflow-policies.md"} {
+			raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+			require.NoError(t, err)
+			for _, term := range []string{"SnapshotAction", "PreSnapshotSHA256", "PostSnapshotSHA256", "effective exclusion", "provisional"} {
+				assert.Contains(t, string(raw), term, "%s must bind the executable caller boundary", path)
+			}
+		}
+		raw, err := os.ReadFile(filepath.Join(root, ".github", "skills", "build-feature", "SKILL.md"))
+		require.NoError(t, err)
+		assert.NotContains(t, string(raw), "changed-file set against `red_baseline_sha`")
+	})
+
+	t.Run("C1_positive_closed_control_census", func(t *testing.T) {
+		fixture := u2jFixture(t, root)
+		output, code := u2jPowerShell(t, root, "-NoProfile", "-File",
+			filepath.Join(root, "scripts", "wave-scheduler-sim.ps1"))
+		require.Equal(t, 0, code)
+		assert.NoError(t, u2jControlCensus(fixture, output))
+		// A successful simulation with all branch calls removed is not proof.
+		replayed := regexp.MustCompile(`(?m)^.*(?:PASS|FAIL) red_branch/.*\n?`).ReplaceAllString(output, "")
+		assert.Error(t, u2jControlCensus(fixture, replayed))
+		fixture["red_deliverable_branch_controls"] = json.RawMessage(`[]`)
+		raw, err := json.Marshal(fixture)
+		require.NoError(t, err)
+		path := filepath.Join(t.TempDir(), "removed-controls.json")
+		require.NoError(t, os.WriteFile(path, raw, 0o600))
+		output, code = u2jPowerShell(t, root, "-NoProfile", "-File",
+			filepath.Join(root, "scripts", "wave-scheduler-sim.ps1"), "-Fixture", path)
+		assert.Equal(t, 1, code, "removing all control invocations must be functional RED")
+		assert.Contains(t, output, "FAIL red_census :: closed positive control census")
+	})
+}
+
+func u2jControlCensus(fixture map[string]json.RawMessage, output string) error {
+	var controls []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(fixture["red_deliverable_branch_controls"], &controls); err != nil {
+		return fmt.Errorf("decode control census: %w", err)
+	}
+	expected := make(map[string]struct{}, 2*len(controls))
+	for _, c := range controls {
+		for _, name := range []string{"branch outcome", "enters generic loop"} {
+			key := c.ID + " :: " + name
+			if _, exists := expected[key]; exists {
+				return fmt.Errorf("duplicate control census: %s", key)
+			}
+			expected[key] = struct{}{}
+		}
+	}
+	lines := regexp.MustCompile(`(?m)^\s*(?:PASS|FAIL) red_branch/([^\n]+)$`).FindAllStringSubmatch(output, -1)
+	for _, line := range lines {
+		key := strings.TrimSpace(line[1])
+		if _, exists := expected[key]; !exists {
+			return fmt.Errorf("unknown or repeated control emission: %s", key)
+		}
+		delete(expected, key)
+	}
+	if len(expected) != 0 || len(controls) < 18 {
+		return fmt.Errorf("incomplete positive control census: %d missing, %d controls", len(expected), len(controls))
+	}
+	return nil
 }
 
 type u2jSnapshotPath struct {
@@ -257,12 +354,14 @@ type u2jSnapshotPath struct {
 }
 
 type u2jSnapshotRecord struct {
-	Schema        string            `json:"schema"`
-	WorkspaceRoot string            `json:"workspace_root"`
-	TaskID        string            `json:"task_id"`
-	Baseline      string            `json:"red_baseline_sha"`
-	Head          string            `json:"head_sha"`
-	Paths         []u2jSnapshotPath `json:"paths"`
+	Schema          string            `json:"schema"`
+	WorkspaceRoot   string            `json:"workspace_root"`
+	TaskID          string            `json:"task_id"`
+	Baseline        string            `json:"red_baseline_sha"`
+	Head            string            `json:"head_sha"`
+	PolicySHA256    string            `json:"effective_policy_sha256"`
+	ProductionDelta bool              `json:"production_baseline_delta"`
+	Paths           []u2jSnapshotPath `json:"paths"`
 }
 
 type u2jBranchControl struct {
@@ -300,7 +399,8 @@ func u2jSnapshot(root string, paths []u2jSnapshotPath) u2jSnapshotRecord {
 	return u2jSnapshotRecord{
 		Schema:        "red-deliverable-predispatch-snapshot/v1",
 		WorkspaceRoot: root, TaskID: "211.015-T", Baseline: u2jBaseline(), Head: u2jBaseline(),
-		Paths: append([]u2jSnapshotPath{}, paths...),
+		PolicySHA256: strings.Repeat("a", 64),
+		Paths:        append([]u2jSnapshotPath{}, paths...),
 	}
 }
 
@@ -320,14 +420,20 @@ func u2jReplay(t *testing.T, root string, controls []u2jBranchControl) {
 	var existing []json.RawMessage
 	require.NoError(t, json.Unmarshal(fixture["red_deliverable_branch_controls"], &existing))
 	assert.GreaterOrEqual(t, len(existing), 18, "all original branch controls must remain")
+	var census []string
+	require.NoError(t, json.Unmarshal(fixture["red_deliverable_expected_control_ids"], &census))
 	for _, c := range controls {
 		raw, err := json.Marshal(c)
 		require.NoError(t, err)
 		existing = append(existing, raw)
+		census = append(census, c.ID)
 	}
 	raw, err := json.Marshal(existing)
 	require.NoError(t, err)
 	fixture["red_deliverable_branch_controls"] = raw
+	raw, err = json.Marshal(census)
+	require.NoError(t, err)
+	fixture["red_deliverable_expected_control_ids"] = raw
 	var scenarios []json.RawMessage
 	require.NoError(t, json.Unmarshal(fixture["scenarios"], &scenarios))
 	assert.GreaterOrEqual(t, len(scenarios), 26, "all original scenarios must remain")
@@ -342,6 +448,7 @@ func u2jRunFixture(t *testing.T, root string, fixture map[string]json.RawMessage
 	require.NoError(t, os.WriteFile(path, append(raw, '\n'), 0o600))
 	output, code := u2jPowerShell(t, root, "-NoProfile", "-File",
 		filepath.Join(root, "scripts", "wave-scheduler-sim.ps1"), "-Fixture", path)
+	assert.NoError(t, u2jControlCensus(fixture, output), "every expected control must execute exactly once")
 	for _, c := range controls {
 		assert.False(t, strings.Contains(output, "FAIL red_branch/"+c.ID+" :: branch outcome"),
 			"red_branch/%s must produce %s", c.ID, c.ExpectOutcome)
@@ -362,7 +469,7 @@ func u2jPowerShell(t *testing.T, root string, args ...string) (string, int) {
 	cmd := exec.CommandContext(ctx, pwsh, args...)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "NO_COLOR=1", "TERM=dumb")
-	raw, err := cmd.CombinedOutput()
+	raw, err := u2jCombinedOutput(t, cmd)
 	require.NoError(t, ctx.Err(), "PowerShell timeout:\n%s", raw)
 	code := 0
 	if err != nil {
@@ -384,7 +491,8 @@ func u2jPausedResume(t *testing.T, root string) {
 	fixture["source"] = json.RawMessage(`{"shipment":"212-S","paused_red_amendment":{
 		"stage_reviewed":true,"shipment":"212-S","task":"211.015-T","prerequisite":"211.016-T",
 		"start_count":1,"red_baseline_sha":"30908ecb8438c0b3e7fe8bd514fa3680e35d90e5",
-		"source_reload_required":true
+		"source_reload_required":true,"amendment_id":"089-DL/M16",
+		"prerequisite_committed":true,"prerequisite_task":"211.016-T"
 	}}`)
 	fixture["manifest"] = json.RawMessage(`{
 		"members":[
@@ -436,7 +544,9 @@ func u2jPausedResume(t *testing.T, root string) {
 			"open_red_after_wave_4":["211.015-T"],
 			"open_red_reconfirmed_waves":[4,5,6,7,8],
 			"open_red_closed_at_wave":{"211.015-T":9},
-			"deferred_waves":[4,5,6,7,8],"full_suite_waves":[1,2,3,9],
+			"deferred_waves":[4,5,6,7,8],"full_suite_waves":[1,2,9],
+			"paused_convergence_waves":[3],
+			"resume_steps":["prerequisite-done","source-reload","fresh-capture","same-started-red","register-open-red"],
 			"final_open_red":[],"completion_claimed":true
 		}
 	}]`)
@@ -444,7 +554,7 @@ func u2jPausedResume(t *testing.T, root string) {
 	// An amendment is explicit evidence, not a blanket started-active waiver.
 	validSource := append(json.RawMessage{}, fixture["source"]...)
 	validScenario := string(fixture["scenarios"])
-	for _, defect := range []string{"missing-amendment", "not-reviewed", "wrong-prerequisite", "restart", "no-reload", "wrong-baseline"} {
+	for _, defect := range []string{"missing-amendment", "not-reviewed", "wrong-prerequisite", "restart", "no-reload", "wrong-baseline", "duplicate-start", "missing-start", "wrong-M16", "not-committed"} {
 		t.Run(defect, func(t *testing.T) {
 			source := string(validSource)
 			switch defect {
@@ -460,6 +570,10 @@ func u2jPausedResume(t *testing.T, root string) {
 				source = strings.Replace(source, `"source_reload_required":true`, `"source_reload_required":false`, 1)
 			case "wrong-baseline":
 				source = strings.Replace(source, u2jBaseline(), strings.Repeat("a", 40), 1)
+			case "wrong-M16":
+				source = strings.Replace(source, "089-DL/M16", "stale-amendment", 1)
+			case "not-committed":
+				source = strings.Replace(source, `"prerequisite_committed":true`, `"prerequisite_committed":false`, 1)
 			}
 			fixture["source"] = json.RawMessage(source)
 			// Keep admission unchanged; only the negative expectation differs.
@@ -470,6 +584,17 @@ func u2jPausedResume(t *testing.T, root string) {
 			}
 			require.NoError(t, json.Unmarshal([]byte(validScenario), &scenarios))
 			scenarios[0].ID += "-" + defect
+			if defect == "duplicate-start" {
+				scenarios[0].Mutations = json.RawMessage(strings.Replace(string(scenarios[0].Mutations),
+					`"started":["211.015-T"]`, `"started":["211.015-T","211.015-T"]`, 1))
+			}
+			if defect == "missing-start" {
+				scenarios[0].Mutations = json.RawMessage(strings.Replace(string(scenarios[0].Mutations),
+					`"started":["211.015-T"]`, `"started":[]`, 1))
+				// Missing actual starts must not become ordinary claim-assigned.
+				source = strings.Replace(source, `"start_count":1`, `"start_count":0`, 1)
+				fixture["source"] = json.RawMessage(source)
+			}
 			scenarios[0].Expect = json.RawMessage(`{"outcome":"WAVE_NO_PROGRESS","halt_wave":1,"halt_detail":"active residual","active_ids":["211.015-T"]}`)
 			raw, err := json.Marshal(scenarios)
 			require.NoError(t, err)
@@ -479,6 +604,190 @@ func u2jPausedResume(t *testing.T, root string) {
 	}
 }
 
+type u2jProcessLease interface {
+	start(*exec.Cmd) error
+	waitParent() error
+	cancel() error
+	close() (string, error)
+}
+
+// u2jCombinedOutput owns both the descendant tree and the inherited output pipe.
+// The OS lease reserves the parent identity until cleanup, before Cmd.Wait reaps it.
+func u2jCombinedOutput(t *testing.T, cmd *exec.Cmd) ([]byte, error) {
+	t.Helper()
+	if cmd.Stdout != nil || cmd.Stderr != nil {
+		return nil, errors.New("u2j combined output: stdout or stderr already set")
+	}
+	lease, err := u2jNewProcessLease(cmd)
+	if err != nil {
+		return nil, err
+	}
+	leaseClosed := false
+	defer func() {
+		if !leaseClosed {
+			proof, cleanupErr := lease.close()
+			t.Logf("u2j native final cleanup: %s; error=%v", proof, cleanupErr)
+			if cleanupErr != nil {
+				t.Errorf("u2j native final cleanup failed: %v", cleanupErr)
+			}
+		}
+	}()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		proof, cleanupErr := lease.close()
+		leaseClosed = true
+		t.Logf("u2j native cleanup: %s; error=%v", proof, cleanupErr)
+		return nil, errors.Join(fmt.Errorf("u2j output pipe: %w", err), cleanupErr)
+	}
+	cmd.Stdout, cmd.Stderr = writer, writer
+	cmd.WaitDelay = time.Second
+	cmd.Cancel = lease.cancel
+	startErr := lease.start(cmd)
+	writerErr := writer.Close()
+	if startErr != nil {
+		proof, cleanupErr := lease.close()
+		leaseClosed = true
+		readerErr := reader.Close()
+		var waitErr error
+		if cmd.Process != nil {
+			waitErr = cmd.Wait()
+		}
+		t.Logf("u2j native cleanup: %s; parent_reaped=%t; error=%v",
+			proof, cmd.ProcessState != nil, cleanupErr)
+		return nil, errors.Join(startErr, writerErr, readerErr, cleanupErr, waitErr)
+	}
+	var output bytes.Buffer
+	drained := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(&output, reader)
+		drained <- copyErr
+	}()
+	parentErr := lease.waitParent()
+	var drainErr error
+	incomplete := false
+	if parentErr == nil {
+		timer := time.NewTimer(cmd.WaitDelay)
+		select {
+		case drainErr = <-drained:
+		case <-timer.C:
+			select {
+			case drainErr = <-drained:
+			default:
+				incomplete = true
+			}
+		}
+		timer.Stop()
+	}
+	proof, cleanupErr := lease.close()
+	leaseClosed = true
+	readerErr := reader.Close()
+	if incomplete || parentErr != nil {
+		drainErr = <-drained
+		if errors.Is(drainErr, os.ErrClosed) {
+			drainErr = nil // Closing our pipe intentionally interrupts the owned copier.
+		}
+	}
+	waitErr := cmd.Wait()
+	if incomplete {
+		if waitErr == nil {
+			waitErr = exec.ErrWaitDelay
+		} else {
+			waitErr = errors.Join(waitErr, exec.ErrWaitDelay)
+		}
+	}
+	// Preserve the original native error (including exact ErrWaitDelay) on clean
+	// cleanup; joined cleanup errors must not masquerade as successful disposal.
+	extraErr := errors.Join(writerErr, parentErr, cleanupErr, readerErr, drainErr)
+	exitCode := -1
+	if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
+	t.Logf("u2j native cleanup: pid=%d; native_exit=%d; %s; parent_reaped=%t; drain_incomplete=%t; error=%v",
+		cmd.Process.Pid, exitCode, proof, cmd.ProcessState != nil, incomplete, extraErr)
+	if extraErr != nil {
+		t.Errorf("u2j owned-command cleanup failed: %v", extraErr)
+		waitErr = errors.Join(waitErr, fmt.Errorf("u2j native cleanup: %w", extraErr))
+	}
+	return output.Bytes(), waitErr
+}
+
+func u2jInheritedPipeCleanup(t *testing.T, root string) {
+	t.Helper()
+	pwsh, err := exec.LookPath("pwsh")
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	// The per-command owned Job/process group supervises both processes. The ready file ensures
+	// the descendant has written to inherited stdout before the parent exits.
+	const fixture = `
+$ErrorActionPreference = 'Stop'
+$childScript = @'
+$ErrorActionPreference = 'Stop'
+[Console]::WriteLine('U2J_PIPE_CHILD_START')
+[Console]::Out.Flush()
+[System.IO.File]::WriteAllText($env:U2J_PIPE_READY_FILE, 'ready')
+Start-Sleep -Seconds 6
+[Console]::WriteLine('U2J_PIPE_CHILD_END')
+[Console]::Out.Flush()
+exit 0
+'@
+$info = [System.Diagnostics.ProcessStartInfo]::new()
+$info.FileName = $env:U2J_PIPE_PWSH
+$info.UseShellExecute = $false
+$info.RedirectStandardOutput = $false
+$info.RedirectStandardError = $false
+$info.ArgumentList.Add('-NoProfile')
+$info.ArgumentList.Add('-EncodedCommand')
+$info.ArgumentList.Add([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childScript)))
+$child = [System.Diagnostics.Process]::Start($info)
+$readyWait = [System.Diagnostics.Stopwatch]::StartNew()
+while (-not [System.IO.File]::Exists($env:U2J_PIPE_READY_FILE)) {
+    $remainingMS = 5000 - $readyWait.ElapsedMilliseconds
+    if ($remainingMS -le 0) { exit 73 }
+    Start-Sleep -Milliseconds ([Math]::Min(20, $remainingMS))
+}
+[Console]::WriteLine('{"fixture":"inherited-pipe","parent_exit":0}')
+[Console]::WriteLine('U2J_PIPE_PARENT_EXIT_MS=' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+[Console]::Out.Flush()
+$child.Dispose()
+exit 0
+`
+	cmd := exec.CommandContext(ctx, pwsh, "-NoProfile", "-NonInteractive", "-Command", fixture)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "NO_COLOR=1", "U2J_PIPE_PWSH="+pwsh,
+		"U2J_PIPE_READY_FILE="+filepath.Join(t.TempDir(), "child-ready"))
+	raw, runErr := u2jCombinedOutput(t, cmd)
+	returnedAt := time.Now()
+	output := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	require.NoError(t, ctx.Err(), "fixture timeout is not intended assertion-RED:\n%s", output)
+	require.NotNil(t, cmd.ProcessState, "fixture parent must have exited")
+	require.Equal(t, 0, cmd.ProcessState.ExitCode(), "fixture parent must exit successfully:\n%s", output)
+	require.Contains(t, output, "U2J_PIPE_CHILD_START\n", "missing inherited stdout witness is not intended assertion-RED")
+	require.Contains(t, output, `{"fixture":"inherited-pipe","parent_exit":0}`, "retain valid parent output")
+	const exitPrefix = "U2J_PIPE_PARENT_EXIT_MS="
+	var exitStamp string
+	for _, line := range strings.Split(output, "\n") {
+		if strings.HasPrefix(line, exitPrefix) {
+			exitStamp = strings.TrimPrefix(line, exitPrefix)
+			break
+		}
+	}
+	require.NotEmpty(t, exitStamp, "missing parent exit witness is not intended assertion-RED")
+	exitMS, err := strconv.ParseInt(exitStamp, 10, 64)
+	require.NoError(t, err, "parent exit witness must be valid")
+	drainElapsed := returnedAt.Sub(time.UnixMilli(exitMS))
+	require.GreaterOrEqual(t, drainElapsed, time.Duration(0), "parent exit witness must precede helper return")
+	if drainElapsed > 3*time.Second {
+		require.NoError(t, runErr, "old behavior must complete the finite fixture, not fail to launch")
+		require.Contains(t, output, "U2J_PIPE_CHILD_END\n", "missing descendant end witness is not intended assertion-RED")
+	}
+	require.LessOrEqual(t, drainElapsed, 3*time.Second,
+		"U2J_INHERITED_PIPE_DRAIN_BOUND: helper must return within 3s of successful parent exit; retained output:\n%s", output)
+	require.ErrorIs(t, runErr, exec.ErrWaitDelay, "bounded incomplete pipe drain must report explicit cleanup failure")
+	require.Equal(t, exec.ErrWaitDelay, runErr, "owned-tree disposal and parent reaping must succeed without joined cleanup errors")
+	require.NotContains(t, output, "U2J_PIPE_CHILD_END", "bounded drain must not wait for the descendant lifetime")
+}
+
 func u2jGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -486,35 +795,24 @@ func u2jGit(t *testing.T, dir string, args ...string) string {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-pager", "-c", "core.autocrlf=false"}, args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
-	out, err := cmd.CombinedOutput()
+	out, err := u2jCombinedOutput(t, cmd)
 	require.NoError(t, err, "fixture git %s: %s", strings.Join(args, " "), out)
 	return strings.TrimSpace(string(out))
 }
 
 func u2jRealGit(t *testing.T, root string) {
 	t.Helper()
-	// Load only top-level function ASTs, not the script body (which exits).
-	// Missing helpers produce a named assertion, not a missing Go symbol or
-	// a PowerShell command-not-found error. Once declared, these same tests
-	// execute the real implementation against independent Git/byte oracles.
+	// Exercise the supported public entrypoint, never AST extraction or
+	// dot-sourcing a main script that exits. All bindings and digest witnesses
+	// are supplied independently by this caller.
 	const load = `
 $ErrorActionPreference = 'Stop'
-$tokens = $null; $parseErrors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile($env:U2J_SCRIPT, [ref]$tokens, [ref]$parseErrors)
-if ($parseErrors.Count -ne 0) { throw 'wave simulator must parse' }
-foreach ($s in $ast.EndBlock.Statements) {
-    if ($s -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
-        Invoke-Expression $s.Extent.Text
-    }
-}
-if (-not (Get-Command Get-RedDeliverablePreDispatchSnapshot -ErrorAction SilentlyContinue) -or
-    -not (Get-Command Compare-RedDeliverablePreDispatchSnapshot -ErrorAction SilentlyContinue)) {
-    Write-Output 'U2J_SNAPSHOT_HELPERS_NOT_DECLARED'
-    exit 0
-}
 `
-	for _, mutation := range []string{"zero", "task-byte", "hook-byte", "task-stage", "index-mode", "hook-delete", "untracked-delete", "new-test", "new-config", "new-docs", "production-leaf", "production-predispatch", "clean-tracked-byte", "ignored-scratch", "head-change", "raw-binary-byte", "reparse-escape"} {
+	for _, mutation := range []string{"zero", "task-byte", "hook-byte", "task-stage", "index-mode", "hook-delete", "untracked-delete", "new-test", "new-config", "new-docs", "production-leaf", "production-predispatch", "clean-tracked-byte", "ignored-scratch", "head-change", "raw-binary-byte", "reparse-escape", "policy-hidden-production", "policy-only", "assume-unchanged", "skip-worktree", "post-baseline-zero", "post-baseline-hook", "post-baseline-task", "post-baseline-doc", "pre-tamper", "post-tamper", "missing-bindings", "no-clobber", "nonignored-output", "config-policy-change", "unknown-exclusion", "utf8-path"} {
 		t.Run(mutation, func(t *testing.T) {
+			if mutation == "new-config" {
+				u2jInheritedPipeCleanup(t, root)
+			}
 			dir := t.TempDir()
 			taskPath := filepath.Join(dir, ".backlogit", "queue", "211.015-T.md")
 			hookPath := filepath.Join(dir, ".backlogit", "hooks_queue.jsonl")
@@ -525,19 +823,37 @@ if (-not (Get-Command Get-RedDeliverablePreDispatchSnapshot -ErrorAction Silentl
 				require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
 			}
 			u2jGit(t, dir, "init", "--quiet")
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "scratch"), 0o700))
 			write(taskPath, "queued\n")
 			write(hookPath, "claim\n")
 			write(filepath.Join(dir, "docs", "clean.md"), "clean\n")
 			write(filepath.Join(dir, ".gitignore"), "scratch/\n")
+			write(filepath.Join(dir, "production.go"), "package production\n")
 			u2jGit(t, dir, "add", ".")
 			u2jGit(t, dir, "-c", "user.name=U2j Fixture", "-c", "user.email=u2j@example.invalid",
 				"-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture baseline")
 			baseline := u2jGit(t, dir, "rev-parse", "HEAD")
+			head := baseline
+			if strings.HasPrefix(mutation, "post-baseline-") {
+				write(taskPath, "committed active\n")
+				write(hookPath, "committed start\n")
+				write(filepath.Join(dir, "docs", "clean.md"), "committed docs\n")
+				u2jGit(t, dir, "add", ".")
+				u2jGit(t, dir, "-c", "user.name=U2j Fixture", "-c", "user.email=u2j@example.invalid",
+					"-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "legitimate caller advance")
+				head = u2jGit(t, dir, "rev-parse", "HEAD")
+				require.NotEqual(t, baseline, head)
+			}
 			write(taskPath, "active\n")
 			write(hookPath, "start\n")
 			write(docsPath, "caller\n")
 			if mutation == "production-predispatch" {
 				write(filepath.Join(dir, "leaf.go"), "package leaf\n")
+			}
+			if mutation == "assume-unchanged" || mutation == "skip-worktree" {
+				u2jGit(t, dir, "update-index", "--"+mutation, "--", "production.go")
+				write(filepath.Join(dir, "production.go"), "package Production\n")
+				assert.NotContains(t, u2jGit(t, dir, "status", "--porcelain"), "production.go")
 			}
 			indexOID := u2jGit(t, dir, "rev-parse", ":.backlogit/queue/211.015-T.md")
 			modeLine := u2jGit(t, dir, "ls-files", "--stage", "--", ".backlogit/queue/211.015-T.md")
@@ -553,27 +869,22 @@ if (-not (Get-Command Get-RedDeliverablePreDispatchSnapshot -ErrorAction Silentl
 				cmd.Dir = dir
 				cmd.Env = append(os.Environ(),
 					"NO_COLOR=1", "U2J_SCRIPT="+filepath.Join(root, "scripts", "wave-scheduler-sim.ps1"),
-					"U2J_ROOT="+dir, "U2J_BASELINE="+baseline)
-				raw, err := cmd.CombinedOutput()
+					"U2J_ROOT="+dir, "U2J_BASELINE="+baseline, "U2J_HEAD="+head)
+				raw, err := u2jCombinedOutput(t, cmd)
 				require.NoError(t, err, "snapshot helper invocation:\n%s", raw)
 				return strings.TrimSpace(string(raw))
 			}
 			const capture = `
-$snapshot = Get-RedDeliverablePreDispatchSnapshot -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE
-$snapshot | ConvertTo-Json -Depth 30 -Compress
+& $env:U2J_SCRIPT -SnapshotAction Capture -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -OutputPath (Join-Path $env:U2J_ROOT ('scratch/observer-' + [guid]::NewGuid().ToString('N') + '.json'))
 `
 			rawPre := run(capture)
-			if strings.Contains(rawPre, "U2J_SNAPSHOT_HELPERS_NOT_DECLARED") {
-				assert.Fail(t, "Get-RedDeliverablePreDispatchSnapshot / Compare-RedDeliverablePreDispatchSnapshot are not declared in scripts/wave-scheduler-sim.ps1")
-				return
-			}
 			var pre u2jSnapshotRecord
 			require.NoError(t, json.Unmarshal([]byte(rawPre), &pre), "capture must return the snapshot schema")
 			assert.Equal(t, "red-deliverable-predispatch-snapshot/v1", pre.Schema)
 			assert.Equal(t, dir, pre.WorkspaceRoot)
 			assert.Equal(t, "211.015-T", pre.TaskID)
 			assert.Equal(t, baseline, pre.Baseline)
-			assert.Equal(t, baseline, pre.Head)
+			assert.Equal(t, head, pre.Head)
 			find := func(path string) u2jSnapshotPath {
 				t.Helper()
 				for _, p := range pre.Paths {
@@ -590,7 +901,11 @@ $snapshot | ConvertTo-Json -Depth 30 -Compress
 			assert.Equal(t, "100644", task.IndexMode)
 			assert.Equal(t, "100644", task.WorktreeMode)
 			assert.Equal(t, "M", task.UnstagedState)
-			assert.Empty(t, task.StagedState)
+			if head == baseline {
+				assert.Empty(t, task.StagedState)
+			} else {
+				assert.Equal(t, "M", task.StagedState, "committed post-baseline caller history is not leaf delta")
+			}
 			assert.True(t, task.WorktreeExists)
 			assert.False(t, task.Untracked)
 			assert.Equal(t, fmt.Sprintf("%x", sha256.Sum256([]byte("start\n"))),
@@ -625,6 +940,44 @@ $snapshot | ConvertTo-Json -Depth 30 -Compress
 				want = "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED"
 			case "production-predispatch":
 				want = "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED"
+			case "assume-unchanged", "skip-worktree":
+				want = "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED"
+			case "post-baseline-zero":
+				want = "RED_DELIVERABLE_ACCEPTED"
+			case "post-baseline-hook":
+				write(hookPath, "Start\n")
+			case "post-baseline-task":
+				write(taskPath, "Active\n")
+			case "post-baseline-doc":
+				write(filepath.Join(dir, "docs", "clean.md"), "Committed docs\n")
+			case "policy-hidden-production", "policy-only":
+				write(filepath.Join(dir, ".git", "info", "exclude"), "hidden.go\n")
+				if mutation == "policy-hidden-production" {
+					write(filepath.Join(dir, "hidden.go"), "package hidden\n")
+					assert.NotContains(t, u2jGit(t, dir, "ls-files", "--others", "--exclude-standard"), "hidden.go")
+				}
+				want = "WAVE_RED_MAPPING_UNRESOLVED"
+			case "config-policy-change":
+				write(filepath.Join(dir, ".git", "new-exclude"), "hidden.go\n")
+				u2jGit(t, dir, "config", "core.excludesFile", ".git/new-exclude")
+				want = "WAVE_RED_MAPPING_UNRESOLVED"
+			case "unknown-exclusion":
+				u2jGit(t, dir, "config", "core.excludesFile", "scratch")
+				result := run(`
+try {
+    & $env:U2J_SCRIPT -SnapshotAction Capture -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -OutputPath (Join-Path $env:U2J_ROOT 'scratch/unknown.json')
+    throw 'unknown exclusion accepted'
+} catch {
+    if ($_.Exception.Message -notlike 'WAVE_RED_MAPPING_UNRESOLVED:*') { throw }
+    'WAVE_RED_MAPPING_UNRESOLVED'
+}
+`)
+				assert.Equal(t, "WAVE_RED_MAPPING_UNRESOLVED", result)
+				return
+			case "utf8-path":
+				write(filepath.Join(dir, "docs", "utf8-λ.md"), "raw UTF-8\n")
+			case "pre-tamper", "post-tamper", "missing-bindings", "no-clobber", "nonignored-output":
+				want = "WAVE_RED_MAPPING_UNRESOLVED"
 			case "clean-tracked-byte":
 				write(filepath.Join(dir, "docs", "clean.md"), "Clean\n")
 			case "ignored-scratch":
@@ -644,7 +997,7 @@ $null = New-Item -ItemType Directory -Path $target
 [IO.File]::WriteAllText((Join-Path $target 'leaf.md'), 'leaf')
 $null = New-Item -ItemType Junction -Path (Join-Path $env:U2J_ROOT 'escape') -Target $target
 try {
-    $null = Get-RedDeliverablePreDispatchSnapshot -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE
+    & $env:U2J_SCRIPT -SnapshotAction Capture -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -OutputPath (Join-Path $env:U2J_ROOT 'scratch/reparse.json')
     throw 'capture accepted a junction escape'
 } catch {
     if ($_.Exception.Message -notlike 'WAVE_RED_MAPPING_UNRESOLVED:*') { throw }
@@ -656,7 +1009,7 @@ try {
 					require.NoError(t, os.Symlink(filepath.Join(dir, ".git"), filepath.Join(dir, "escape")))
 					out := run(`
 try {
-    $null = Get-RedDeliverablePreDispatchSnapshot -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE
+    & $env:U2J_SCRIPT -SnapshotAction Capture -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -OutputPath (Join-Path $env:U2J_ROOT 'scratch/reparse.json')
     throw 'capture accepted a symlink escape'
 } catch {
     if ($_.Exception.Message -notlike 'WAVE_RED_MAPPING_UNRESOLVED:*') { throw }
@@ -667,23 +1020,49 @@ try {
 				}
 				return
 			}
-			rawPost := run(capture)
-			preFile, postFile := filepath.Join(dir, ".git", "u2j-pre.json"), filepath.Join(dir, ".git", "u2j-post.json")
-			// Snapshot evidence lives inside .git, not in the measured surface.
-			write(preFile, rawPre)
-			write(postFile, rawPost)
-			result := run(`
-$pre = Get-Content (Join-Path $env:U2J_ROOT '.git/u2j-pre.json') -Raw | ConvertFrom-Json
-$post = Get-Content (Join-Path $env:U2J_ROOT '.git/u2j-post.json') -Raw | ConvertFrom-Json
-Compare-RedDeliverablePreDispatchSnapshot -PreDispatchSnapshot $pre -PostLeafSnapshot $post |
-    ConvertTo-Json -Depth 30 -Compress
-`)
+			rawPost := rawPre
+			if mutation != "head-change" {
+				rawPost = run(capture)
+			}
+			preFile, postFile := filepath.Join(dir, "scratch", "u2j-pre.json"), filepath.Join(dir, "scratch", "u2j-post.json")
+			preBytes, postBytes := rawPre+"\n", rawPost+"\n"
+			preDigest, postDigest := sha256.Sum256([]byte(preBytes)), sha256.Sum256([]byte(postBytes))
+			write(preFile, preBytes)
+			write(postFile, postBytes)
+			if mutation == "pre-tamper" {
+				write(preFile, strings.Replace(preBytes, task.WorktreeSHA256, strings.Repeat("b", 64), 1))
+			}
+			if mutation == "post-tamper" {
+				write(postFile, strings.Replace(postBytes, task.WorktreeSHA256, strings.Repeat("b", 64), 1))
+			}
+			command := fmt.Sprintf(`
+& $env:U2J_SCRIPT -SnapshotAction Compare -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -PreSnapshotPath (Join-Path $env:U2J_ROOT 'scratch/u2j-pre.json') -PostSnapshotPath (Join-Path $env:U2J_ROOT 'scratch/u2j-post.json') -PreSnapshotSHA256 '%x' -PostSnapshotSHA256 '%x'
+`, preDigest, postDigest)
+			if mutation == "missing-bindings" {
+				command = strings.Replace(command, "-TaskID '211.015-T'", "", 1)
+			}
+			if mutation == "no-clobber" || mutation == "nonignored-output" {
+				outputPath := "scratch/u2j-pre.json"
+				if mutation == "nonignored-output" {
+					outputPath = "observer.json"
+				}
+				command = fmt.Sprintf(`
+try {
+    & $env:U2J_SCRIPT -SnapshotAction Capture -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -OutputPath (Join-Path $env:U2J_ROOT '%s')
+    throw 'capture accepted invalid output'
+} catch {
+    if ($_.Exception.Message -notlike 'WAVE_RED_MAPPING_UNRESOLVED:*') { throw }
+    '{"Outcome":"WAVE_RED_MAPPING_UNRESOLVED"}'
+}
+`, outputPath)
+			}
+			result := run(command)
 			var outcome struct {
 				Outcome string `json:"Outcome"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(result), &outcome))
 			assert.Equal(t, want, outcome.Outcome, "real Git %s must compare independent pre/post captures", mutation)
-			expectedHead := baseline
+			expectedHead := head
 			if mutation == "head-change" {
 				expectedHead = pre.Head
 				assert.NotEqual(t, expectedHead, u2jGit(t, dir, "rev-parse", "HEAD"), "oracle HEAD mutation executed")
@@ -808,7 +1187,7 @@ func TestUCS3_WaveSimClaimStart(t *testing.T) {
 		cmd := exec.CommandContext(ctx, pwshPath, "-NoProfile", "-File", "scripts/wave-scheduler-sim.ps1")
 		cmd.Dir = repoRoot
 		cmd.Env = append(os.Environ(), "NO_COLOR=1")
-		rawOutput, runErr := cmd.CombinedOutput()
+		rawOutput, runErr := u2jCombinedOutput(t, cmd)
 
 		ansiEscapePattern := regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)|[@-_])`)
 		output := ansiEscapePattern.ReplaceAllString(string(rawOutput), "")

@@ -740,7 +740,69 @@
       "error_contains": "must be a JSON array"
     }
   ],
+  "red_deliverable_expected_control_ids": [
+    "u2j-caller-write-zero-leaf-write",
+    "u2j-missing-predispatch-snapshot-clean-tree",
+    "accepted-assertion-red",
+    "not-red-deliverable-uses-generic-loop",
+    "red-deliverable-never-enters-generic-loop",
+    "early-green-at-dispatch",
+    "harness-not-scaffolded-under-selector",
+    "uncompilable-scaffolded-harness",
+    "panic-is-not-assertion-red",
+    "timeout-is-not-assertion-red",
+    "production-delta-refused",
+    "extra-test-file-refused",
+    "extra-non-go-file-refused",
+    "missing-baseline-sha-refused",
+    "exempt-pairing-refused",
+    "selector-mismatch-refused",
+    "weakened-selector-refused",
+    "incomplete-evidence-report-refused",
+    "untracked-test-file-refused",
+    "untracked-production-file-refused",
+    "c1-original-baseline-production-precedes-compile",
+    "c1-effective-policy-change-refused"
+  ],
   "red_deliverable_branch_controls": [
+    {
+      "id": "c1-original-baseline-production-precedes-compile",
+      "red_deliverable": true,
+      "workspace_root": "${workspace_root}",
+      "task_id": "211.015-T",
+      "head_sha": "ffb9203ab52014772cf76b4fc5df752e38a01b5c",
+      "red_baseline_sha": "30908ecb8438c0b3e7fe8bd514fa3680e35d90e5",
+      "harness_cmd": "go test -count=1 -run '^TestU2i_' ./internal/cli",
+      "red_selector_command": "go test -count=1 -run '^TestU2i_' ./internal/cli",
+      "compile_ok": false,
+      "selector_signal": "pass",
+      "changed_files": [],
+      "untracked_files": [],
+      "predispatch_snapshot": {"schema":"red-deliverable-predispatch-snapshot/v1","workspace_root":"${workspace_root}","task_id":"211.015-T","red_baseline_sha":"30908ecb8438c0b3e7fe8bd514fa3680e35d90e5","head_sha":"ffb9203ab52014772cf76b4fc5df752e38a01b5c","effective_policy_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","production_baseline_delta":true,"paths":[]},
+      "post_leaf_state": {"schema":"red-deliverable-predispatch-snapshot/v1","workspace_root":"${workspace_root}","task_id":"211.015-T","red_baseline_sha":"30908ecb8438c0b3e7fe8bd514fa3680e35d90e5","head_sha":"ffb9203ab52014772cf76b4fc5df752e38a01b5c","effective_policy_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","production_baseline_delta":true,"paths":[]},
+      "evidence_report_complete": false,
+      "expect_outcome": "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED",
+      "expect_enters_generic_loop": false
+    },
+    {
+      "id": "c1-effective-policy-change-refused",
+      "red_deliverable": true,
+      "workspace_root": "${workspace_root}",
+      "task_id": "211.015-T",
+      "head_sha": "ffb9203ab52014772cf76b4fc5df752e38a01b5c",
+      "red_baseline_sha": "30908ecb8438c0b3e7fe8bd514fa3680e35d90e5",
+      "harness_cmd": "go test -count=1 -run '^TestU2i_' ./internal/cli",
+      "red_selector_command": "go test -count=1 -run '^TestU2i_' ./internal/cli",
+      "compile_ok": true,
+      "selector_signal": "assertion_fail",
+      "changed_files": [],
+      "untracked_files": [],
+      "predispatch_snapshot": {"schema":"red-deliverable-predispatch-snapshot/v1","workspace_root":"${workspace_root}","task_id":"211.015-T","red_baseline_sha":"30908ecb8438c0b3e7fe8bd514fa3680e35d90e5","head_sha":"ffb9203ab52014772cf76b4fc5df752e38a01b5c","effective_policy_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","production_baseline_delta":false,"paths":[]},
+      "post_leaf_state": {"schema":"red-deliverable-predispatch-snapshot/v1","workspace_root":"${workspace_root}","task_id":"211.015-T","red_baseline_sha":"30908ecb8438c0b3e7fe8bd514fa3680e35d90e5","head_sha":"ffb9203ab52014772cf76b4fc5df752e38a01b5c","effective_policy_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","production_baseline_delta":false,"paths":[]},
+      "evidence_report_complete": true,
+      "expect_outcome": "WAVE_RED_MAPPING_UNRESOLVED",
+      "expect_enters_generic_loop": false
+    },
     {
       "id": "u2j-caller-write-zero-leaf-write",
       "note": "Immediate post-caller snapshots agree; historical caller task writes are not leaf delta.",
@@ -1253,7 +1315,163 @@
       "expect_code": "FROZEN_FALLBACK_IDS"
     }
   ],
+  "u2j_paused_amendment_fixture": {
+    "source": {"shipment":"212-S","paused_red_amendment":{"stage_reviewed":true,"amendment_id":"089-DL/M16","shipment":"212-S","task":"211.015-T","prerequisite":"211.016-T","prerequisite_task":"211.016-T","prerequisite_committed":true,"start_count":1,"red_baseline_sha":"30908ecb8438c0b3e7fe8bd514fa3680e35d90e5","source_reload_required":true}},
+    "manifest": {
+      "members": [
+        {"id":"211.001-T","unit":"U1","status":"done","harness_exempt":false,"red_deliverable":false,"deps":[]},
+        {"id":"211.002-T","unit":"U2","status":"done","harness_exempt":false,"red_deliverable":false,"deps":[]},
+        {"id":"211.008-T","unit":"U1b","status":"done","harness_exempt":false,"red_deliverable":false,"deps":[]},
+        {"id":"211.009-T","unit":"U1c","status":"done","harness_exempt":false,"red_deliverable":false,"deps":[]},
+        {"id":"211.010-T","unit":"U1d","status":"done","harness_exempt":false,"red_deliverable":false,"deps":[]},
+        {"id":"211.011-T","unit":"U1e","status":"done","harness_exempt":false,"red_deliverable":false,"deps":[]},
+        {"id":"211.012-T","unit":"U1f","status":"done","harness_exempt":false,"red_deliverable":false,"deps":[]},
+        {"id":"211.013-T","unit":"U1g","status":"done","harness_exempt":false,"red_deliverable":false,"deps":[]},
+        {"id":"211.014-T","unit":"U1h","status":"done","harness_exempt":false,"red_deliverable":false,"deps":[]},
+        {"id":"prefix.1-T","unit":"prefix1","status":"queued","harness_exempt":false,"red_deliverable":false,"deps":[]},
+        {"id":"prefix.2-T","unit":"prefix2","status":"queued","harness_exempt":false,"red_deliverable":false,"deps":["prefix.1-T"]},
+        {"id":"211.016-T","unit":"U2j","status":"queued","harness_exempt":false,"red_deliverable":false,"deps":["prefix.2-T","211.001-T","211.002-T","211.013-T","211.014-T"]},
+        {"id":"211.015-T","unit":"U2i","status":"active","harness_exempt":false,"red_deliverable":true,"deps":["211.016-T"]},
+        {"id":"211.003-T","unit":"U3","status":"queued","harness_exempt":false,"red_deliverable":false,"deps":["211.015-T"]},
+        {"id":"211.004-T","unit":"U4","status":"queued","harness_exempt":false,"red_deliverable":false,"deps":["211.003-T"]},
+        {"id":"211.005-T","unit":"U5","status":"queued","harness_exempt":false,"red_deliverable":false,"deps":["211.004-T"]},
+        {"id":"211.006-T","unit":"U6","status":"queued","harness_exempt":false,"red_deliverable":false,"deps":["211.005-T"]},
+        {"id":"211.007-T","unit":"U7","status":"queued","harness_exempt":false,"red_deliverable":false,"deps":["211.006-T"]}
+      ]
+    },
+    "red_deliverables": [{"task":"211.015-T","unit":"U2i","red_deliverable":true,"red_deliverable_reason":"Same already-started M16 RED resumes after committed U2j","red_selector_command":"go test -count=1 -run '^TestU2i_' ./internal/cli","red_baseline_sha":"30908ecb8438c0b3e7fe8bd514fa3680e35d90e5","green_maker_tasks":["211.003-T","211.004-T","211.005-T","211.006-T","211.007-T"],"green_maker_closes_wave":9}]
+  },
   "scenarios": [
+    {
+      "id": "u2j-paused-foreign-active-shipment",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {
+        "claim_overrides":{"claim_all":"212-S","started":["211.015-T"],"active_shipments":["999-S"]},
+        "set_status_at_wave":[
+          {"wave":1,"id":"prefix.1-T","status":"queued"},{"wave":1,"id":"prefix.2-T","status":"queued"},
+          {"wave":1,"id":"211.016-T","status":"queued"},{"wave":1,"id":"211.003-T","status":"queued"},
+          {"wave":1,"id":"211.004-T","status":"queued"},{"wave":1,"id":"211.005-T","status":"queued"},
+          {"wave":1,"id":"211.006-T","status":"queued"},{"wave":1,"id":"211.007-T","status":"queued"}
+        ]
+      },
+      "expect": {"outcome":"WAVE_CLAIM_STATE_INDETERMINATE","halt_wave":1,"scheduled":0,"completion_claimed":false}
+    },
+    {
+      "id": "u2j-paused-multiple-active-shipments",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {
+        "claim_overrides":{"claim_all":"212-S","started":["211.015-T"],"active_shipments":["212-S","999-S"]},
+        "set_status_at_wave":[
+          {"wave":1,"id":"prefix.1-T","status":"queued"},{"wave":1,"id":"prefix.2-T","status":"queued"},
+          {"wave":1,"id":"211.016-T","status":"queued"},{"wave":1,"id":"211.003-T","status":"queued"},
+          {"wave":1,"id":"211.004-T","status":"queued"},{"wave":1,"id":"211.005-T","status":"queued"},
+          {"wave":1,"id":"211.006-T","status":"queued"},{"wave":1,"id":"211.007-T","status":"queued"}
+        ]
+      },
+      "expect": {"outcome":"WAVE_CLAIM_STATE_INDETERMINATE","halt_wave":1,"scheduled":0,"completion_claimed":false}
+    },
+    {
+      "id": "u2j-paused-indeterminate-marker-claim",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {"claim_overrides":{"marker":{"211.015-T":"212-S"},"started":["211.015-T"]}},
+      "expect": {"outcome":"WAVE_CLAIM_STATE_INDETERMINATE","halt_wave":1,"scheduled":0,"completion_claimed":false}
+    },
+    {
+      "id": "u2j-paused-pending-gates-discharged",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {
+        "claim_overrides":{"marker":{"211.015-T":"212-S"},"started":["211.015-T"],"claim_all":"212-S"},
+        "set_status_at_wave":[{"wave":1,"id":"211.016-T","status":"queued"}]
+      },
+      "expect": {
+        "outcome":"COMPLETE","scheduled":9,"completion_claimed":true,
+        "compile_gate_waves":[1,2,3,4,5,6,7,8,9],
+        "pending_convergence_waves":[],
+        "gate_closed_commands":{"3":["211.016-T"],"4":["211.015-T"]},
+        "gate_discharged_at":{"3":4,"4":4}
+      }
+    },
+    {
+      "id": "u2j-paused-pending-gate-failure",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {
+        "claim_overrides":{"claim_all":"212-S","started":["211.015-T"]},
+        "set_status_at_wave":[{"wave":1,"id":"211.016-T","status":"queued"}],
+        "convergence_failure_at_wave":[3]
+      },
+      "expect": {"outcome":"WAVE_NO_PROGRESS","halt_wave":4,"scheduled":4,"completion_claimed":false,"pending_convergence_waves":[3,4],"gate_discharged_at":{"3":-1,"4":-1}}
+    },
+    {
+      "id": "u2j-paused-red-registration-not-green",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {
+        "claim_overrides":{"claim_all":"212-S","started":["211.015-T"]},
+        "set_status_at_wave":[{"wave":1,"id":"211.016-T","status":"queued"}],
+        "open_red_early_green":[{"id":"211.015-T","wave":4}]
+      },
+      "expect": {"outcome":"WAVE_RED_DELIVERABLE_EARLY_GREEN","halt_wave":4,"scheduled":3,"completion_claimed":false,"pending_convergence_waves":[3]}
+    },
+    {
+      "id": "u2j-paused-archived-prerequisite-refused",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {"set_status":{"211.016-T":"archived"},"claim_overrides":{"claim_all":"212-S","started":["211.015-T"]}},
+      "expect": {"outcome":"WAVE_NO_PROGRESS","halt_wave":1,"scheduled":0,"completion_claimed":false}
+    },
+    {
+      "id": "u2j-paused-other-active-residual-refused",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {
+        "claim_overrides":{"claim_all":"212-S","started":["211.015-T","211.003-T"]},
+        "set_status_at_wave":[{"wave":1,"id":"211.016-T","status":"queued"}]
+      },
+      "expect": {"outcome":"WAVE_NO_PROGRESS","halt_wave":1,"active_ids":["211.003-T"],"scheduled":0,"completion_claimed":false}
+    },
+    {
+      "id": "u2j-paused-blocked-member-refused",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {"set_status":{"211.003-T":"blocked"},"claim_overrides":{"marker":{"211.015-T":"212-S"},"started":["211.015-T"]}},
+      "expect": {"outcome":"WAVE_MEMBER_BLOCKED","halt_wave":1,"scheduled":0,"completion_claimed":false}
+    },
+    {
+      "id": "u2j-paused-unsupported-member-refused",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {"set_status":{"211.003-T":"review"},"claim_overrides":{"marker":{"211.015-T":"212-S"},"started":["211.015-T"]}},
+      "expect": {"outcome":"WAVE_STATUS_UNSUPPORTED","halt_wave":1,"scheduled":0,"completion_claimed":false}
+    },
+    {
+      "id": "u2j-paused-duplicate-start-refused",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {"claim_overrides":{"claim_all":"212-S","started":["211.015-T","211.015-T"]}},
+      "expect": {"outcome":"WAVE_NO_PROGRESS","halt_wave":1,"active_ids":["211.015-T"],"scheduled":0,"completion_claimed":false}
+    },
+    {
+      "id": "u2j-paused-red-deliverable-amendment-resume",
+      "u2j_paused_amendment_replay": true,
+      "mutations": {
+        "claim_overrides": {"claim_all":"212-S","started":["211.015-T"]},
+        "set_status_at_wave": [
+          {"wave":1,"id":"prefix.1-T","status":"queued"},
+          {"wave":1,"id":"prefix.2-T","status":"queued"},
+          {"wave":1,"id":"211.016-T","status":"queued"},
+          {"wave":1,"id":"211.003-T","status":"queued"},
+          {"wave":1,"id":"211.004-T","status":"queued"},
+          {"wave":1,"id":"211.005-T","status":"queued"},
+          {"wave":1,"id":"211.006-T","status":"queued"},
+          {"wave":1,"id":"211.007-T","status":"queued"}
+        ]
+      },
+      "expect": {
+        "outcome":"COMPLETE","waves":9,"scheduled":9,"stalls":0,
+        "wave_sizes":[1,1,1,1,1,1,1,1,1],"compile_order_violations":0,
+        "open_red_after_wave_4":["211.015-T"],
+        "open_red_reconfirmed_waves":[4,5,6,7,8],
+        "open_red_closed_at_wave":{"211.015-T":9},
+        "deferred_waves":[4,5,6,7,8],"full_suite_waves":[1,2,9],
+        "paused_convergence_waves":[3],
+        "resume_steps":["prerequisite-done","source-reload","fresh-capture","same-started-red","register-open-red"],
+        "final_open_red":[],"completion_claimed":true
+      }
+    },
     {
       "id": "baseline",
       "description": "Unmutated manifest replays the documented 18-wave schedule with no stall and no compile-order violation. snapshot_calls is 19 = one per build wave plus the final admission snapshot that observes terminal_success = M.",
