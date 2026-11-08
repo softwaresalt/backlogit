@@ -806,7 +806,7 @@ func u2jGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-pager", "-c", "core.autocrlf=false"}, args...)...)
+	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-pager", "-c", "core.autocrlf=false", "-c", "core.longpaths=true"}, args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
 	out, err := u2jCombinedOutput(t, cmd)
