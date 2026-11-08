@@ -90,7 +90,8 @@ param(
     [string]$PreSnapshotPath = '',
     [string]$PostSnapshotPath = '',
     [string]$PreSnapshotSHA256 = '',
-    [string]$PostSnapshotSHA256 = ''
+    [string]$PostSnapshotSHA256 = '',
+    [switch]$SnapshotDiagnostics
 )
 
 $ErrorActionPreference = 'Stop'
@@ -106,6 +107,21 @@ if ([string]::IsNullOrWhiteSpace($QueueDir)) {
 }
 
 $script:Assertions = [System.Collections.Generic.List[object]]::new()
+$script:SnapshotWatch = $null
+$script:SnapshotPreviousMS = 0
+if ($SnapshotDiagnostics) { $script:SnapshotWatch = [Diagnostics.Stopwatch]::StartNew() }
+
+function Write-RedSnapshotPhase {
+    param([string]$Phase, [int]$Count = 0)
+    if (-not $SnapshotDiagnostics) { return }
+    $elapsed = $script:SnapshotWatch.ElapsedMilliseconds
+    [Console]::Error.WriteLine(([ordered]@{
+        utc = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        phase = $Phase; elapsed_ms = $elapsed
+        phase_ms = $elapsed - $script:SnapshotPreviousMS; count = $Count
+    } | ConvertTo-Json -Compress))
+    $script:SnapshotPreviousMS = $elapsed
+}
 
 function Add-Assertion {
     param([string]$Scenario, [string]$Name, [bool]$Ok, [string]$Expected, [string]$Actual)
@@ -555,26 +571,46 @@ function Invoke-RedSnapshotGit {
 }
 
 function Get-RedSnapshotSafePath {
-    param([string]$Root, [string]$Path)
+    param([string]$Root, [string]$Path,
+        [Collections.Generic.HashSet[string]]$VerifiedDirectories = $null,
+        $LeafAttributes = $null)
     if ($Path -eq '' -or $Path -match '(^[/\\]|[:\\])') { throw 'WAVE_RED_MAPPING_UNRESOLVED: unsafe relative path' }
     $full = $Root
-    foreach ($segment in ($Path -split '/')) {
+    $segments = $Path.Split('/')
+    for ($i = 0; $i -lt $segments.Length; $i++) {
+        $segment = $segments[$i]
         if ($segment -in @('', '.', '..') -or
-            ($IsWindows -and ($segment -match '[. ]$|^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:[.]|$)'))) {
+            ($IsWindows -and ($segment -match '[. ]$|~[0-9]+(?:[.]|$)|^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:[.]|$)'))) {
             throw 'WAVE_RED_MAPPING_UNRESOLVED: unsafe path alias'
         }
-        $full = Join-Path $full $segment
-        if (Test-Path -LiteralPath $full) {
-            if (((Get-Item -LiteralPath $full -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        $full = [IO.Path]::Combine($full, $segment)
+        $ancestor = $i -lt $segments.Length - 1
+        if ($ancestor -and $null -ne $VerifiedDirectories -and $VerifiedDirectories.Contains($full)) { continue }
+        $attributes = $null
+        try { $attributes = [IO.File]::GetAttributes($full) }
+        catch [IO.FileNotFoundException] { }
+        catch [IO.DirectoryNotFoundException] { }
+        if ($null -ne $attributes) {
+            if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
                 throw 'WAVE_RED_MAPPING_UNRESOLVED: reparse path'
             }
+            if ($ancestor) {
+                if (($attributes -band [IO.FileAttributes]::Directory) -eq 0) {
+                    throw 'WAVE_RED_MAPPING_UNRESOLVED: non-directory ancestor'
+                }
+                if ($null -ne $VerifiedDirectories) { $null = $VerifiedDirectories.Add($full) }
+            }
         }
+        if (-not $ancestor -and $null -ne $LeafAttributes) { $LeafAttributes.Value = $attributes }
     }
     return $full
 }
 
 function Get-RedSnapshotPolicySHA256 {
     param([string]$Root)
+    # Never reuse this memo across fingerprint checks: policy ancestors are
+    # independently verified before and after each worktree observation.
+    $verifiedDirectories = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     # Git config values/origins plus raw effective exclusion inputs. This does
     # not measure ignored cache/scratch bytes or modify any Git policy.
     foreach ($name in @('GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE',
@@ -591,20 +627,32 @@ function Get-RedSnapshotPolicySHA256 {
     if ($configured.ExitCode -eq 0) {
         $candidate = $configured.Text.Trim()
         if ($candidate -eq '') { throw 'WAVE_RED_MAPPING_UNRESOLVED: indeterminate excludesFile' }
-        if (-not [IO.Path]::IsPathFullyQualified($candidate)) { $candidate = Join-Path $Root $candidate }
+        if (-not [IO.Path]::IsPathFullyQualified($candidate)) { $candidate = [IO.Path]::Combine($Root, $candidate) }
         $null = $paths.Add([IO.Path]::GetFullPath($candidate))
     } else {
         $homePath = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
         $xdg = [Environment]::GetEnvironmentVariable('XDG_CONFIG_HOME')
-        if ([string]::IsNullOrEmpty($xdg)) { $xdg = Join-Path $homePath '.config' }
-        $null = $paths.Add((Join-Path $xdg 'git/ignore'))
+        if ([string]::IsNullOrEmpty($xdg)) { $xdg = [IO.Path]::Combine($homePath, '.config') }
+        $null = $paths.Add([IO.Path]::Combine($xdg, 'git', 'ignore'))
     }
     $ignoreFiles = (Invoke-RedSnapshotGit -Root $Root -Arguments @('ls-files', '--cached', '--others', '--ignored', '--exclude-standard', '-z', '--', '*.gitignore')).Text
     # Include non-ignored .gitignore too; --ignored selects the complementary
     # untracked set, not all policy files.
     $ignoreFiles += (Invoke-RedSnapshotGit -Root $Root -Arguments @('ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', '*.gitignore')).Text
     foreach ($path in ($ignoreFiles -split "`0")) {
-        if ($path -ne '') { $null = $paths.Add((Get-RedSnapshotSafePath -Root $Root -Path $path)) }
+        if ($path -eq '') { continue }
+        if ($path.EndsWith('/', [StringComparison]::Ordinal)) {
+            # Native Git DIRSUMMARY records describe opaque ignored repositories,
+            # not effective policy files. Consume exactly one protocol terminator.
+            $attributes = $null
+            $null = Get-RedSnapshotSafePath -Root $Root -Path $path.Substring(0, $path.Length - 1) `
+                -VerifiedDirectories $verifiedDirectories -LeafAttributes ([ref]$attributes)
+            if ($null -eq $attributes -or ($attributes -band [IO.FileAttributes]::Directory) -eq 0) {
+                throw 'WAVE_RED_MAPPING_UNRESOLVED: invalid Git directory summary'
+            }
+            continue
+        }
+        $null = $paths.Add((Get-RedSnapshotSafePath -Root $Root -Path $path -VerifiedDirectories $verifiedDirectories))
     }
     $builder = [Text.StringBuilder]::new()
     $null = $builder.Append($config)
@@ -627,9 +675,14 @@ function Get-RedSnapshotPolicySHA256 {
     $null = $builder.Append([Environment]::GetEnvironmentVariable('GIT_CONFIG_PARAMETERS'))
     foreach ($path in ($paths | Sort-Object -CaseSensitive)) {
         $null = $builder.Append("`0$path`0")
-        if (Test-Path -LiteralPath $path) {
-            if (((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
-                -not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'WAVE_RED_MAPPING_UNRESOLVED: unknown exclusion policy' }
+        $attributes = $null
+        try { $attributes = [IO.File]::GetAttributes($path) }
+        catch [IO.FileNotFoundException] { }
+        catch [IO.DirectoryNotFoundException] { }
+        if ($null -ne $attributes) {
+            if (($attributes -band ([IO.FileAttributes]::ReparsePoint -bor [IO.FileAttributes]::Directory)) -ne 0) {
+                throw 'WAVE_RED_MAPPING_UNRESOLVED: unknown exclusion policy'
+            }
             $null = $builder.Append([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([IO.File]::ReadAllBytes($path))))
         } else { $null = $builder.Append('<absent>') }
     }
@@ -646,7 +699,7 @@ function Get-RedDeliverablePreDispatchSnapshot {
     if ($TaskID -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or $RedBaselineSHA -cnotmatch '^[0-9a-f]{40}$') {
         throw 'WAVE_RED_MAPPING_UNRESOLVED: invalid capture binding'
     }
-    if (((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+    if (([IO.File]::GetAttributes($root) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
         throw 'WAVE_RED_MAPPING_UNRESOLVED: reparse root'
     }
     $git = {
@@ -666,6 +719,7 @@ function Get-RedDeliverablePreDispatchSnapshot {
             $baseline.Add($path, [pscustomobject]@{ Mode = $Matches[1]; OID = $Matches[2]; Hash = '' })
         }
     }
+    Write-RedSnapshotPhase 'baseline-metadata' $baseline.Count
     if ($baseline.Count -gt 0) {
         $ordered = @($baseline.Keys | Sort-Object -CaseSensitive)
         $batchInput = (($ordered | ForEach-Object { $baseline[$_].OID }) -join "`n") + "`n"
@@ -689,8 +743,19 @@ function Get-RedDeliverablePreDispatchSnapshot {
         }
         if ($offset -ne $bytes.Length) { throw 'WAVE_RED_MAPPING_UNRESOLVED: extra baseline bytes' }
     }
+    Write-RedSnapshotPhase 'baseline-blobs' $baseline.Count
     $read = {
+        param([string]$Observation)
+        # This memo belongs to exactly one observation; Observation2 must
+        # reverify every ancestor rather than trust Observation1's filesystem.
+        $verifiedDirectories = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $rootAttributes = [IO.File]::GetAttributes($root)
+        if (($rootAttributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            ($rootAttributes -band [IO.FileAttributes]::Directory) -eq 0) {
+            throw 'WAVE_RED_MAPPING_UNRESOLVED: invalid observation root'
+        }
         $policy = Get-RedSnapshotPolicySHA256 -Root $root
+        Write-RedSnapshotPhase "$Observation-policy-before"
         $head = (& $git @('rev-parse', 'HEAD')).Trim()
         $index = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
         $flags = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
@@ -727,6 +792,7 @@ function Get-RedDeliverablePreDispatchSnapshot {
         foreach ($path in ((& $git @('ls-files', '--others', '--exclude-standard', '-z')) -split "`0")) {
             if ($path -ne '') { $paths[$path] = $true; $untracked[$path] = $true }
         }
+        Write-RedSnapshotPhase "$Observation-git-metadata" $paths.Count
         $productionDelta = $false
         $aliases = [Collections.Generic.HashSet[string]]::new($(if ($IsWindows) { [StringComparer]::OrdinalIgnoreCase } else { [StringComparer]::Ordinal }))
         $records = @(
@@ -734,8 +800,10 @@ function Get-RedDeliverablePreDispatchSnapshot {
                 # Validate containment before reading bytes, including every
                 # existing ancestor (junctions, symlinks and other reparse points).
                 if (-not $aliases.Add($path)) { throw 'WAVE_RED_MAPPING_UNRESOLVED: OS path alias' }
-                $full = Get-RedSnapshotSafePath -Root $root -Path $path
-                $exists = Test-Path -LiteralPath $full -PathType Leaf
+                $attributes = $null
+                $full = Get-RedSnapshotSafePath -Root $root -Path $path `
+                    -VerifiedDirectories $verifiedDirectories -LeafAttributes ([ref]$attributes)
+                $exists = $null -ne $attributes -and ($attributes -band [IO.FileAttributes]::Directory) -eq 0
                 $hash = ''; $mode = ''
                 if ($exists) {
                     $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([IO.File]::ReadAllBytes($full))).ToLowerInvariant()
@@ -760,21 +828,24 @@ function Get-RedDeliverablePreDispatchSnapshot {
                 }
             }
         )
+        Write-RedSnapshotPhase "$Observation-worktree-hashes" $verifiedDirectories.Count
         if ((& $git @('rev-parse', 'HEAD')).Trim() -cne $head -or
             (Get-RedSnapshotPolicySHA256 -Root $root) -cne $policy) {
             throw 'WAVE_RED_MAPPING_UNRESOLVED: HEAD or effective exclusion policy changed during capture'
         }
+        Write-RedSnapshotPhase "$Observation-policy-after"
         [pscustomobject][ordered]@{
             schema = 'red-deliverable-predispatch-snapshot/v1'; workspace_root = $root
             task_id = $TaskID; red_baseline_sha = $RedBaselineSHA; head_sha = $head
             effective_policy_sha256 = $policy; production_baseline_delta = [bool]$productionDelta; paths = @($records)
         }
     }
-    $first = & $read
-    $second = & $read
+    $first = & $read 'Observation1'
+    $second = & $read 'Observation2'
     if (($first | ConvertTo-Json -Depth 10 -Compress) -cne ($second | ConvertTo-Json -Depth 10 -Compress)) {
         throw 'WAVE_RED_MAPPING_UNRESOLVED: indeterminate concurrent capture'
     }
+    Write-RedSnapshotPhase 'quiescence-verified' $second.paths.Count
     return $second
 }
 
@@ -866,6 +937,9 @@ function Compare-RedDeliverablePreDispatchSnapshot {
         return & $out 'RED_DELIVERABLE_ACCEPTED'
     } catch {
         # Validation errors are a refusal, never a success-shaped fallback.
+        if ($SnapshotDiagnostics) {
+            [Console]::Error.WriteLine("snapshot-validation-refused: $($_.Exception.Message)")
+        }
         return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
     }
 }
@@ -2230,20 +2304,22 @@ if ($SnapshotAction -ne '') {
             $PSBoundParameters.ContainsKey('Fixture') -or $VerifyAgainstQueue -or $Scenario -ne '') {
             throw 'WAVE_RED_MAPPING_UNRESOLVED: mandatory independent capture bindings'
         }
-        if (((Get-Item -LiteralPath $WorkspaceRoot -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        if (([IO.File]::GetAttributes($WorkspaceRoot) -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
             (Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('rev-parse', '--show-toplevel')).Text.Trim().Replace('/', '\') -cne $WorkspaceRoot.Replace('/', '\') -or
             (Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('rev-parse', 'HEAD')).Text.Trim() -cne $HeadSHA) {
             throw 'WAVE_RED_MAPPING_UNRESOLVED: independent repository/HEAD binding'
         }
         $null = Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('cat-file', '-e', "$RedBaselineSHA^{commit}")
+        Write-RedSnapshotPhase 'public-bindings'
         $validateStorage = {
             param([string]$Path, [bool]$New)
             if (-not [IO.Path]::IsPathFullyQualified($Path) -or [IO.Path]::GetFullPath($Path) -cne $Path -or
                 -not $Path.EndsWith('.json', [StringComparison]::Ordinal)) { throw 'WAVE_RED_MAPPING_UNRESOLVED: invalid observation path' }
             $relative = [IO.Path]::GetRelativePath($WorkspaceRoot, $Path).Replace('\', '/')
-            $safe = Get-RedSnapshotSafePath -Root $WorkspaceRoot -Path $relative
-            if ($safe -cne $Path -or -not (Test-Path -LiteralPath (Split-Path -Parent $Path) -PathType Container) -or
-                ($New -and (Test-Path -LiteralPath $Path))) { throw 'WAVE_RED_MAPPING_UNRESOLVED: observation path must be exclusive/no-clobber' }
+            $attributes = $null
+            $safe = Get-RedSnapshotSafePath -Root $WorkspaceRoot -Path $relative -LeafAttributes ([ref]$attributes)
+            if ($safe -cne $Path -or -not [IO.DirectoryInfo]::new([IO.Path]::GetDirectoryName($Path)).Exists -or
+                ($New -and $null -ne $attributes)) { throw 'WAVE_RED_MAPPING_UNRESOLVED: observation path must be exclusive/no-clobber' }
             $ignored = Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('check-ignore', '--no-index', '--', $relative) -AllowedExitCodes @(0, 1)
             $tracked = Invoke-RedSnapshotGit -Root $WorkspaceRoot -Arguments @('ls-files', '--error-unmatch', '--', $relative) -AllowedExitCodes @(0, 1)
             if ($ignored.ExitCode -ne 0 -or $tracked.ExitCode -eq 0) { throw 'WAVE_RED_MAPPING_UNRESOLVED: observer storage must already be ignored and untracked' }
@@ -2251,12 +2327,14 @@ if ($SnapshotAction -ne '') {
         }
         if ($SnapshotAction -ceq 'Capture') {
             $path = & $validateStorage $OutputPath $true
+            Write-RedSnapshotPhase 'observer-storage'
             $snapshot = Get-RedDeliverablePreDispatchSnapshot -WorkspaceRoot $WorkspaceRoot -TaskID $TaskID -RedBaselineSHA $RedBaselineSHA
             if ($snapshot.head_sha -cne $HeadSHA) { throw 'WAVE_RED_MAPPING_UNRESOLVED: capture HEAD changed' }
             $json = $snapshot | ConvertTo-Json -Depth 30 -Compress
             $bytes = [Text.UTF8Encoding]::new($false, $true).GetBytes($json + "`n")
             $stream = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
             try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+            Write-RedSnapshotPhase 'snapshot-written' $snapshot.paths.Count
             Write-Output $json
         } else {
             if ($OutputPath -ne '' -or $PreSnapshotSHA256 -cnotmatch '^[0-9a-f]{64}$' -or
@@ -2267,7 +2345,7 @@ if ($SnapshotAction -ne '') {
             $records = @(
                 foreach ($binding in @(@{ Path = $PreSnapshotPath; Hash = $PreSnapshotSHA256 }, @{ Path = $PostSnapshotPath; Hash = $PostSnapshotSHA256 })) {
                     $path = & $validateStorage $binding.Path $false
-                    if ((Get-Item -LiteralPath $path).Length -gt 33554432) { throw 'WAVE_RED_MAPPING_UNRESOLVED: snapshot size cap' }
+                    if ([IO.FileInfo]::new($path).Length -gt 33554432) { throw 'WAVE_RED_MAPPING_UNRESOLVED: snapshot size cap' }
                     $bytes = [IO.File]::ReadAllBytes($path)
                     $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
                     if ($hash -cne $binding.Hash) { throw 'WAVE_RED_MAPPING_UNRESOLVED: snapshot digest witness mismatch' }

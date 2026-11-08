@@ -182,12 +182,13 @@ func TestU2j_RedDeliverablePreDispatchSnapshotZeroDeltaContract(t *testing.T) {
 	})
 
 	t.Run("missing_or_mismatched_predispatch_snapshot_refused", func(t *testing.T) {
-		controls := make([]u2jBranchControl, 0, 22)
+		controls := make([]u2jBranchControl, 0, 24)
 		for _, defect := range []string{
 			"missing-clean", "missing-dirty", "schema", "workspace_root", "task_id",
 			"red_baseline_sha", "head_sha", "sha-short", "sha-nonhex", "index-mode",
 			"index-oid", "escape-dotdot", "escape-slash", "escape-backslash", "duplicate-path",
 			"post-missing", "post-task", "post-head", "post-sha", "drive-path", "unc-path", "leading-traversal",
+			"file-trailing-slash", "file-trailing-backslash",
 		} {
 			c := base(defect, unresolved)
 			// Metadata refusals must be load-bearing even on an otherwise clean
@@ -241,8 +242,21 @@ func TestU2j_RedDeliverablePreDispatchSnapshotZeroDeltaContract(t *testing.T) {
 				c.PreDispatch.Paths[0].Path = `\\server\share`
 			case "leading-traversal":
 				c.PreDispatch.Paths[0].Path = "../../outside"
+			case "file-trailing-slash":
+				c.PreDispatch.Paths[0].Path += "/"
+			case "file-trailing-backslash":
+				c.PreDispatch.Paths[0].Path += `\`
 			}
 			controls = append(controls, c)
+		}
+		if os.PathSeparator == '\\' {
+			for _, path := range []string{"docs/NUL.md", "DOCUME~1/caller.md", "docs/CALLER~1.MD"} {
+				c := base("windows-alias-"+path, unresolved)
+				c.ChangedFiles = []string{}
+				c.PreDispatch.Paths[0].Path = path
+				c.PostLeaf.Paths[0].Path = path
+				controls = append(controls, c)
+			}
 		}
 		u2jReplay(t, root, controls)
 	})
@@ -808,7 +822,7 @@ func u2jRealGit(t *testing.T, root string) {
 	const load = `
 $ErrorActionPreference = 'Stop'
 `
-	for _, mutation := range []string{"zero", "task-byte", "hook-byte", "task-stage", "index-mode", "hook-delete", "untracked-delete", "new-test", "new-config", "new-docs", "production-leaf", "production-predispatch", "clean-tracked-byte", "ignored-scratch", "head-change", "raw-binary-byte", "reparse-escape", "policy-hidden-production", "policy-only", "assume-unchanged", "skip-worktree", "post-baseline-zero", "post-baseline-hook", "post-baseline-task", "post-baseline-doc", "pre-tamper", "post-tamper", "missing-bindings", "no-clobber", "nonignored-output", "config-policy-change", "unknown-exclusion", "utf8-path"} {
+	for _, mutation := range []string{"ignored-nested-repository", "zero", "task-byte", "hook-byte", "task-stage", "index-mode", "hook-delete", "untracked-delete", "new-test", "new-config", "new-docs", "production-leaf", "production-predispatch", "clean-tracked-byte", "ignored-scratch", "head-change", "raw-binary-byte", "reparse-escape", "policy-hidden-production", "policy-only", "assume-unchanged", "skip-worktree", "post-baseline-zero", "post-baseline-hook", "post-baseline-task", "post-baseline-doc", "pre-tamper", "post-tamper", "missing-bindings", "no-clobber", "nonignored-output", "config-policy-change", "unknown-exclusion", "utf8-path"} {
 		t.Run(mutation, func(t *testing.T) {
 			if mutation == "new-config" {
 				u2jInheritedPipeCleanup(t, root)
@@ -855,6 +869,15 @@ $ErrorActionPreference = 'Stop'
 				write(filepath.Join(dir, "production.go"), "package Production\n")
 				assert.NotContains(t, u2jGit(t, dir, "status", "--porcelain"), "production.go")
 			}
+			if mutation == "ignored-nested-repository" {
+				nested := filepath.Join(dir, "scratch", "nested")
+				write(filepath.Join(nested, ".gitignore"), "nested-cache/\n")
+				u2jGit(t, nested, "init", "--quiet")
+				policyRecords := u2jGit(t, dir, "ls-files", "--cached", "--others", "--ignored",
+					"--exclude-standard", "-z", "--", "*.gitignore")
+				require.Contains(t, strings.Split(policyRecords, "\x00"), "scratch/nested/",
+					"U2J_NATIVE_DIRECTORY_SUMMARY_FIXTURE: actual Git policy protocol must contain the ignored nested repository directory summary before Capture")
+			}
 			indexOID := u2jGit(t, dir, "rev-parse", ":.backlogit/queue/211.015-T.md")
 			modeLine := u2jGit(t, dir, "ls-files", "--stage", "--", ".backlogit/queue/211.015-T.md")
 			require.Contains(t, modeLine, "100644 "+indexOID)
@@ -871,6 +894,10 @@ $ErrorActionPreference = 'Stop'
 					"NO_COLOR=1", "U2J_SCRIPT="+filepath.Join(root, "scripts", "wave-scheduler-sim.ps1"),
 					"U2J_ROOT="+dir, "U2J_BASELINE="+baseline, "U2J_HEAD="+head)
 				raw, err := u2jCombinedOutput(t, cmd)
+				if mutation == "ignored-nested-repository" {
+					require.NoError(t, err,
+						"U2J_NATIVE_DIRECTORY_SUMMARY_CAPTURE_ACCEPTED: native Git directory summaries are not FILE path aliases; capture/compare must succeed:\n%s", raw)
+				}
 				require.NoError(t, err, "snapshot helper invocation:\n%s", raw)
 				return strings.TrimSpace(string(raw))
 			}
@@ -885,6 +912,10 @@ $ErrorActionPreference = 'Stop'
 			assert.Equal(t, "211.015-T", pre.TaskID)
 			assert.Equal(t, baseline, pre.Baseline)
 			assert.Equal(t, head, pre.Head)
+			if mutation == "ignored-nested-repository" {
+				require.Regexp(t, "^[0-9a-f]{64}$", pre.PolicySHA256,
+					"native directory summary capture must retain real policy metadata")
+			}
 			find := func(path string) u2jSnapshotPath {
 				t.Helper()
 				for _, p := range pre.Paths {
@@ -914,7 +945,7 @@ $ErrorActionPreference = 'Stop'
 
 			want := "RED_DELIVERABLE_DELTA_OUT_OF_SURFACE"
 			switch mutation {
-			case "zero":
+			case "ignored-nested-repository", "zero":
 				want = "RED_DELIVERABLE_ACCEPTED"
 			case "task-byte":
 				write(taskPath, "Active\n")
