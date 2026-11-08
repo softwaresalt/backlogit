@@ -894,11 +894,19 @@ would fail on the deliverables the plan asked for, and the loop could never adva
   (`RED_DELIVERABLE_HARNESS_UNCOMPILABLE`, returned to `harness-architect`); the selector must fail
   on named assertions, so a passing run is `WAVE_RED_DELIVERABLE_EARLY_GREEN`, a no-tests-to-run
   signal at any exit code is `WAVE_RED_DELIVERABLE_VACUOUS`, and a panic, timeout, or package abort
-  is `RED_DELIVERABLE_NOT_ASSERTION_RED`; and the changed-file set against `red_baseline_sha` must be
-  **empty**, measured as the union of `git diff`, `git diff --cached`, and `git ls-files --others
-  --exclude-standard` so that a newly created file cannot pass an untracked-blind check, with a
-  non-test `*.go` file halting `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED` and any other
-  file halting `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`. The branch then enters the inverted quality gates
+  is `RED_DELIVERABLE_NOT_ASSERTION_RED`; and, retaining original pre-claim `red_baseline_sha`
+  for history, Ship MUST independently capture mandatory `red_predispatch_snapshot` after
+  caller writes and an immediate post-leaf snapshot in owned existing ignored storage,
+  validate immutable bytes/SHA-256, schema/root/task/current unchanged HEAD/original baseline
+  and safe nested relative paths (reject absolute/drive/UNC/traversal/reparse escapes),
+  then require zero delta across `pre_dispatch_state -> post_leaf_state` for all tracked
+  staged/unstaged and untracked paths excluding existing ignored files, including raw-byte
+  64-hex hashes, modes, index blobs, statuses, additions and deletions, accepting unchanged
+  caller writes but refusing any leaf mutation with `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE`,
+  prioritizing any non-test Go delta in either history/snapshot with
+  `RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED`, and failing closed on missing/tampered/invalid
+  snapshots or indeterminate concurrent changes with `WAVE_RED_MAPPING_UNRESOLVED`.
+  The branch then enters the inverted quality gates
   with no fix iteration: lint and format unchanged, the declared `green_regression_cmds` still
   required green, and `red_selector_command` still required RED. Its tolerated-red set is
   `sibling_red_selectors ∪ open_red_selectors ∪ {the task's own declared selector}`; that single

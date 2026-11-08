@@ -478,6 +478,206 @@ function Test-TaskScopedCommandShape {
     return , @($errors)
 }
 
+function Get-RedDeliverablePreDispatchSnapshot {
+    # Caller-only capture. Close other repository-mutating writers before capture
+    # and throughout the leaf. Two identical reads detect inconsistent observations;
+    # they do not authorize running concurrently with an unknown writer.
+    param([string]$WorkspaceRoot, [string]$TaskID, [string]$RedBaselineSHA)
+
+    $root = [IO.Path]::GetFullPath($WorkspaceRoot).TrimEnd('\', '/')
+    if ($TaskID -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or $RedBaselineSHA -cnotmatch '^[0-9a-f]{40}$') {
+        throw 'WAVE_RED_MAPPING_UNRESOLVED: invalid capture binding'
+    }
+    if (((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'WAVE_RED_MAPPING_UNRESOLVED: reparse root'
+    }
+    $git = {
+        param([string[]]$Arguments)
+        $info = [Diagnostics.ProcessStartInfo]::new('git')
+        $info.WorkingDirectory = $root
+        $info.UseShellExecute = $false
+        $info.RedirectStandardOutput = $true
+        $info.RedirectStandardError = $true
+        $info.StandardOutputEncoding = [Text.UTF8Encoding]::new($false, $true)
+        foreach ($arg in (@('--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false') + $Arguments)) {
+            $info.ArgumentList.Add($arg)
+        }
+        $process = [Diagnostics.Process]::Start($info)
+        try {
+            $text = $process.StandardOutput.ReadToEnd()
+            $errorText = $process.StandardError.ReadToEnd()
+            $process.WaitForExit()
+            if ($process.ExitCode -ne 0) { throw "WAVE_RED_MAPPING_UNRESOLVED: git capture: $errorText" }
+            return $text
+        } finally { $process.Dispose() }
+    }
+    if ((& $git @('rev-parse', '--show-toplevel')).Trim().Replace('/', '\') -cne $root.Replace('/', '\')) {
+        throw 'WAVE_RED_MAPPING_UNRESOLVED: workspace root is not repository root'
+    }
+    $null = & $git @('cat-file', '-e', "$RedBaselineSHA^{commit}")
+    $read = {
+        $head = (& $git @('rev-parse', 'HEAD')).Trim()
+        $index = @{}
+        foreach ($entry in ((& $git @('ls-files', '--stage', '-z')) -split "`0")) {
+            if ($entry -eq '') { continue }
+            if ($entry -cnotmatch '^([0-9]{6}) ([0-9a-f]{40}) 0\t(.+)$') {
+                throw 'WAVE_RED_MAPPING_UNRESOLVED: unresolved index stage'
+            }
+            $index[$Matches[3]] = @($Matches[1], $Matches[2])
+        }
+        $unstaged = @{}; $staged = @{}; $paths = @{}; $untracked = @{}
+        foreach ($path in $index.Keys) { $paths[$path] = $true }
+        # Baseline-relative staged state also accounts for commit history without
+        # changing the original pre-claim baseline. Deleted paths remain measured.
+        foreach ($pair in @(
+            @{ Map = $unstaged; Args = @('diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--name-status', '-z') },
+            @{ Map = $staged; Args = @('diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--cached', '--name-status', '-z', $RedBaselineSHA) }
+        )) {
+            $parts = (& $git $pair.Args) -split "`0"
+            for ($i = 0; $i -lt $parts.Count - 1; $i += 2) {
+                $pair.Map[$parts[$i + 1]] = $parts[$i]
+                $paths[$parts[$i + 1]] = $true
+            }
+        }
+        foreach ($path in ((& $git @('ls-files', '--others', '--exclude-standard', '-z')) -split "`0")) {
+            if ($path -ne '') { $paths[$path] = $true; $untracked[$path] = $true }
+        }
+        $records = @(
+            foreach ($path in ($paths.Keys | Sort-Object -CaseSensitive)) {
+                # Validate containment before reading bytes, including every
+                # existing ancestor (junctions, symlinks and other reparse points).
+                foreach ($segment in ($path -split '/')) {
+                    if ($segment -in @('', '.', '..') -or $segment.Contains('\') -or $segment.Contains(':')) {
+                        throw 'WAVE_RED_MAPPING_UNRESOLVED: unsafe Git path'
+                    }
+                }
+                $full = $root
+                foreach ($segment in ($path -split '/')) {
+                    $full = Join-Path $full $segment
+                    if (Test-Path -LiteralPath $full) {
+                        if (((Get-Item -LiteralPath $full -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                            throw 'WAVE_RED_MAPPING_UNRESOLVED: reparse path'
+                        }
+                    }
+                }
+                $exists = Test-Path -LiteralPath $full -PathType Leaf
+                $hash = ''; $mode = ''
+                if ($exists) {
+                    $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([IO.File]::ReadAllBytes($full))).ToLowerInvariant()
+                    $mode = '100644'
+                    if (-not $IsWindows -and (([IO.File]::GetUnixFileMode($full) -band 73) -ne 0)) { $mode = '100755' }
+                }
+                if ((& $git @('rev-parse', 'HEAD')).Trim() -cne $head) {
+                    throw 'WAVE_RED_MAPPING_UNRESOLVED: HEAD changed during capture'
+                }
+                [pscustomobject][ordered]@{
+                    path = $path; worktree_exists = [bool]$exists; worktree_sha256 = $hash; worktree_mode = $mode
+                    index_mode = $(if ($index.ContainsKey($path)) { $index[$path][0] } else { '' })
+                    index_blob_oid = $(if ($index.ContainsKey($path)) { $index[$path][1] } else { '' })
+                    unstaged_state = $(if ($untracked.ContainsKey($path)) { '??' } elseif ($unstaged.ContainsKey($path)) { $unstaged[$path] } else { '' })
+                    staged_state = $(if ($staged.ContainsKey($path)) { $staged[$path] } else { '' })
+                    untracked = $untracked.ContainsKey($path)
+                }
+            }
+        )
+        [pscustomobject][ordered]@{
+            schema = 'red-deliverable-predispatch-snapshot/v1'; workspace_root = $root
+            task_id = $TaskID; red_baseline_sha = $RedBaselineSHA; head_sha = $head; paths = @($records)
+        }
+    }
+    $first = & $read
+    $second = & $read
+    if (($first | ConvertTo-Json -Depth 10 -Compress) -cne ($second | ConvertTo-Json -Depth 10 -Compress)) {
+        throw 'WAVE_RED_MAPPING_UNRESOLVED: indeterminate concurrent capture'
+    }
+    return $second
+}
+
+function Compare-RedDeliverablePreDispatchSnapshot {
+    param($PreDispatchSnapshot, $PostLeafSnapshot,
+        [string]$WorkspaceRoot = '', [string]$TaskID = '', [string]$RedBaselineSHA = '', [string]$HeadSHA = '')
+    $out = { param($Outcome) [pscustomobject]@{ Outcome = $Outcome; EntersGenericLoop = $false } }
+    try {
+        if ($null -eq $PreDispatchSnapshot -or $null -eq $PostLeafSnapshot) { throw 'missing snapshot' }
+        if ($WorkspaceRoot -eq '') { $WorkspaceRoot = $PreDispatchSnapshot.workspace_root }
+        if ($TaskID -eq '') { $TaskID = $PreDispatchSnapshot.task_id }
+        if ($RedBaselineSHA -eq '') { $RedBaselineSHA = $PreDispatchSnapshot.red_baseline_sha }
+        if ($HeadSHA -eq '') { $HeadSHA = $PreDispatchSnapshot.head_sha }
+        if (-not [IO.Path]::IsPathFullyQualified($WorkspaceRoot) -or
+            [IO.Path]::GetFullPath($WorkspaceRoot).TrimEnd('\', '/') -cne $WorkspaceRoot -or
+            $TaskID -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or
+            $RedBaselineSHA -cnotmatch '^[0-9a-f]{40}$' -or $HeadSHA -cnotmatch '^[0-9a-f]{40}$') { throw 'invalid binding' }
+        if (Test-Path -LiteralPath $WorkspaceRoot) {
+            if (((Get-Item -LiteralPath $WorkspaceRoot -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'reparse root'
+            }
+        }
+        $maps = @(
+            foreach ($snapshot in @($PreDispatchSnapshot, $PostLeafSnapshot)) {
+                if ($snapshot.schema -cne 'red-deliverable-predispatch-snapshot/v1' -or
+                    $snapshot.workspace_root -cne $WorkspaceRoot -or $snapshot.task_id -cne $TaskID -or
+                    $snapshot.red_baseline_sha -cne $RedBaselineSHA -or $snapshot.head_sha -cne $HeadSHA -or
+                    $null -eq $snapshot.paths -or $snapshot.paths -isnot [Array]) { throw 'snapshot binding mismatch' }
+                $map = @{}
+                foreach ($p in $snapshot.paths) {
+                    if ($p.path -isnot [string] -or $p.path -eq '' -or
+                        $p.path -match '(^[/\\]|[:\\])' -or $map.ContainsKey($p.path)) { throw 'invalid path' }
+                    $full = $WorkspaceRoot
+                    foreach ($segment in ($p.path -split '/')) {
+                        if ($segment -in @('', '.', '..')) { throw 'path escape' }
+                        $full = Join-Path $full $segment
+                        if (Test-Path -LiteralPath $full) {
+                            if (((Get-Item -LiteralPath $full -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                                throw 'reparse path'
+                            }
+                        }
+                    }
+                    if ($p.worktree_exists -isnot [bool] -or $p.untracked -isnot [bool] -or
+                        $p.unstaged_state -cnotmatch '^(|[AMDTU]|[?][?])$' -or $p.staged_state -cnotmatch '^(|[AMDTU])$') { throw 'invalid path state' }
+                    foreach ($field in @('worktree_sha256', 'worktree_mode', 'index_mode', 'index_blob_oid', 'unstaged_state', 'staged_state')) {
+                        if ($p.$field -isnot [string]) { throw 'invalid field type' }
+                    }
+                    if ($p.worktree_exists) {
+                        if ($p.worktree_sha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                            $p.worktree_mode -cnotmatch '^100(644|755)$') { throw 'invalid raw bytes hash or mode' }
+                    } elseif ($p.worktree_sha256 -cne '' -or $p.worktree_mode -cne '') { throw 'invalid deleted path' }
+                    if ($p.index_mode -cnotmatch '^(|100644|100755)$' -or
+                        ($p.index_mode -eq '' -and $p.index_blob_oid -cne '') -or
+                        ($p.index_mode -ne '' -and $p.index_blob_oid -cnotmatch '^[0-9a-f]{40}$') -or
+                        ($p.untracked -and ($p.index_mode -ne '' -or -not $p.worktree_exists))) { throw 'invalid index' }
+                    $map[$p.path] = $p
+                }
+                , $map
+            }
+        )
+        $changed = $false; $production = $false
+        foreach ($path in (@($maps[0].Keys) + @($maps[1].Keys) | Sort-Object -Unique)) {
+            $a = $maps[0][$path]; $b = $maps[1][$path]
+            $different = $null -eq $a -or $null -eq $b
+            if (-not $different) {
+                foreach ($field in @('worktree_exists', 'worktree_sha256', 'worktree_mode', 'index_mode',
+                    'index_blob_oid', 'unstaged_state', 'staged_state', 'untracked')) {
+                    if ($a.$field -cne $b.$field) { $different = $true }
+                }
+            }
+            if ($different) { $changed = $true }
+            if ($path -like '*.go' -and $path -notlike '*_test.go') {
+                foreach ($p in @($a, $b)) {
+                    if ($different -or ($null -ne $p -and ($p.untracked -or $p.unstaged_state -ne '' -or $p.staged_state -ne ''))) {
+                        $production = $true
+                    }
+                }
+            }
+        }
+        if ($production) { return & $out 'RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED' }
+        if ($changed) { return & $out 'RED_DELIVERABLE_DELTA_OUT_OF_SURFACE' }
+        return & $out 'RED_DELIVERABLE_ACCEPTED'
+    } catch {
+        # Validation errors are a refusal, never a success-shaped fallback.
+        return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
+    }
+}
+
 function Get-RedDeliverableBranchOutcome {
     <#
         Classifies one build-feature Step 0.5 dispatch exactly as
@@ -509,11 +709,20 @@ function Get-RedDeliverableBranchOutcome {
         return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
     }
 
-    # Dispatch precondition 3 - Ship must supply the post-scaffolding baseline SHA.
+    # Dispatch precondition 3 - independently supplied caller snapshots and bindings.
     $baseline = if (Test-HasProperty $Control 'red_baseline_sha') { "$($Control.red_baseline_sha)" } else { '' }
-    if ([string]::IsNullOrWhiteSpace($baseline)) {
+    if ([string]::IsNullOrWhiteSpace($baseline) -or
+        -not (Test-HasProperty $Control 'predispatch_snapshot') -or
+        -not (Test-HasProperty $Control 'post_leaf_state') -or
+        -not (Test-HasProperty $Control 'workspace_root') -or
+        -not (Test-HasProperty $Control 'task_id') -or
+        -not (Test-HasProperty $Control 'head_sha')) {
         return & $out 'WAVE_RED_MAPPING_UNRESOLVED'
     }
+    $comparison = Compare-RedDeliverablePreDispatchSnapshot -PreDispatchSnapshot $Control.predispatch_snapshot `
+        -PostLeafSnapshot $Control.post_leaf_state -WorkspaceRoot $Control.workspace_root `
+        -TaskID $Control.task_id -RedBaselineSHA $baseline -HeadSHA $Control.head_sha
+    if ($comparison.Outcome -eq 'WAVE_RED_MAPPING_UNRESOLVED') { return $comparison }
 
     # Step 0.5a - consume and validate the harness harness-architect already scaffolded.
     if (-not [bool]$Control.compile_ok) {
@@ -526,20 +735,8 @@ function Get-RedDeliverableBranchOutcome {
         default { return & $out 'RED_DELIVERABLE_NOT_ASSERTION_RED' }
     }
 
-    # Step 0.5b - zero-delta gate against the Ship-supplied baseline.
-    # The set is the union of three passes: tracked-unstaged, tracked-staged, and UNTRACKED.
-    # git diff reports only files Git already tracks, so a newly created file would otherwise
-    # satisfy an "empty changed-file set" claim - the most likely way this branch could violate
-    # its own contract.
-    $changed = @((ConvertTo-List $Control.changed_files)) + @((ConvertTo-List $Control.untracked_files))
-    $changed = @($changed | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") })
-    $production = @($changed | Where-Object { $_ -like '*.go' -and $_ -notlike '*_test.go' })
-    if ($production.Count -gt 0) {
-        return & $out 'RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED'
-    }
-    if ($changed.Count -gt 0) {
-        return & $out 'RED_DELIVERABLE_DELTA_OUT_OF_SURFACE'
-    }
+    # Step 0.5b - caller changes are not leaf changes. No legacy path allowlist.
+    if ($comparison.Outcome -ne 'RED_DELIVERABLE_ACCEPTED') { return $comparison }
 
     # Step 0.5c - the evidence report Ship turns into the open_red_deliverables entry.
     if (-not [bool]$Control.evidence_report_complete) {
@@ -551,6 +748,16 @@ function Get-RedDeliverableBranchOutcome {
 
 function Invoke-RedDeliverableBranchControls {
     foreach ($control in (ConvertTo-List $fx.red_deliverable_branch_controls)) {
+        # Portable fixture binding only; never synthesize a missing observation.
+        if ((Test-HasProperty $control 'workspace_root') -and $control.workspace_root -ceq '${workspace_root}') {
+            $control.workspace_root = $repoRoot
+            foreach ($name in @('predispatch_snapshot', 'post_leaf_state')) {
+                if ((Test-HasProperty $control $name) -and $null -ne $control.$name -and
+                    $control.$name.workspace_root -ceq '${workspace_root}') {
+                    $control.$name.workspace_root = $repoRoot
+                }
+            }
+        }
         $r = Get-RedDeliverableBranchOutcome -Control $control
         Test-Equal -Scenario "red_branch/$($control.id)" -Name 'branch outcome' `
             -Expected "$($control.expect_outcome)" -Actual $r.Outcome
@@ -1293,6 +1500,9 @@ function Invoke-WaveScheduler {
     $waveIndex = 0
     $budget = $M.Count
     $waveOf = @{}
+    # Previously completed prerequisites precede this bounded replay; they must
+    # never be rescheduled just to obtain a compile-order timestamp.
+    foreach ($k in $M.Keys) { if ($terminalSuccess -contains $M[$k].status) { $waveOf[$k] = 0 } }
     $gateCompareWave = $null
     if (Test-HasProperty $mut 'gate_compare_wave') { $gateCompareWave = [int]$mut.gate_compare_wave }
 
@@ -1371,10 +1581,32 @@ function Invoke-WaveScheduler {
             break
         }
         $claimAssigned = @()
+        $pausedRed = @()
         $activeResidual = @()
         $indeterminate = @()
         foreach ($id in $active) {
             $class = Get-ClaimStateClass -ShipmentID $claimState.shipment_id -MemberID $id -ClaimState $claimState
+            # Only an explicit Stage-reviewed amendment may preserve a started
+            # red deliverable. Never waive generic active-residual admission.
+            if ($class -eq 'active residual' -and (Test-HasProperty $Fx.source 'paused_red_amendment')) {
+                $amendment = $Fx.source.paused_red_amendment
+                $prerequisite = "$($amendment.prerequisite)"
+                if ($amendment.stage_reviewed -eq $true -and $amendment.shipment -ceq $claimState.shipment_id -and
+                    $amendment.task -ceq $id -and $amendment.start_count -eq 1 -and
+                    $amendment.red_baseline_sha -cmatch '^[0-9a-f]{40}$' -and
+                    $claimState.started.ContainsKey($id) -and $claimState.markers.ContainsKey($id) -and
+                    $claimState.markers[$id] -ceq $claimState.shipment_id -and
+                    $claimState.claim_events.ContainsKey($id) -and $claimState.claim_events[$id] -eq $true -and
+                    $claimState.live_manifest.ContainsKey($id) -and
+                    $M.Contains($prerequisite) -and $claimState.live_manifest.ContainsKey($prerequisite) -and
+                    $deps[$id] -contains $prerequisite -and $M[$id].red_deliverable -and
+                    $redMap.ContainsKey($id) -and $amendment.source_reload_required -eq $true -and
+                    $amendment.red_baseline_sha -ceq $Fx.red_deliverables.Where({ $_.task -ceq $id })[0].red_baseline_sha -and
+                    $M[$prerequisite].status -in @('queued', 'done')) {
+                    $pausedRed += $id
+                    continue
+                }
+            }
             switch ($class) {
                 'claim-assigned' { $claimAssigned += $id }
                 'indeterminate' { $indeterminate += $id }
@@ -1401,7 +1633,7 @@ function Invoke-WaveScheduler {
         }
 
         $ready = @()
-        foreach ($k in @(($queued + $claimAssigned) | Sort-Object -Unique)) {
+        foreach ($k in @(($queued + $claimAssigned + $pausedRed) | Sort-Object -Unique)) {
             $ok = $true
             foreach ($d in $deps[$k]) {
                 if (-not $M.Contains($d)) { continue }
@@ -1422,6 +1654,9 @@ function Invoke-WaveScheduler {
             $openBefore = @($redMap.Keys | Where-Object { $redMap[$_].open } | Sort-Object)
             $oldProgressed = 0
             foreach ($t in $ready) {
+                if ($pausedRed -contains $t -and $M[$Fx.source.paused_red_amendment.prerequisite].status -ne 'done') {
+                    throw 'WAVE_RED_MAPPING_UNRESOLVED: paused prerequisite must be done before source reload and redispatch'
+                }
                 $siblingsRed = @($nonExempt | Where-Object { $_ -ne $t }).Count
                 if ($siblingsRed -eq 0 -and $openBefore.Count -eq 0) { $oldProgressed++ }
             }
@@ -1556,7 +1791,7 @@ function Invoke-WaveScheduler {
             foreach ($d in $deps[$k]) {
                 if (-not $M.Contains($d)) { continue }
                 if (-not $waveOf.ContainsKey($d)) { $viol++; continue }
-                if ($waveOf[$d] -ge $waveOf[$k]) { $viol++ }
+                if ($waveOf[$k] -gt 0 -and $waveOf[$d] -ge $waveOf[$k]) { $viol++ }
             }
         }
         $result.compile_order_violations = $viol

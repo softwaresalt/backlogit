@@ -183,7 +183,7 @@ func TestU2j_RedDeliverablePreDispatchSnapshotZeroDeltaContract(t *testing.T) {
 			"missing-clean", "missing-dirty", "schema", "workspace_root", "task_id",
 			"red_baseline_sha", "head_sha", "sha-short", "sha-nonhex", "index-mode",
 			"index-oid", "escape-dotdot", "escape-slash", "escape-backslash", "duplicate-path",
-			"post-missing", "post-task", "post-head", "post-sha",
+			"post-missing", "post-task", "post-head", "post-sha", "drive-path", "unc-path", "leading-traversal",
 		} {
 			c := base(defect, unresolved)
 			// Metadata refusals must be load-bearing even on an otherwise clean
@@ -231,6 +231,12 @@ func TestU2j_RedDeliverablePreDispatchSnapshotZeroDeltaContract(t *testing.T) {
 				c.PostLeaf.Head = strings.Repeat("b", 40)
 			case "post-sha":
 				c.PostLeaf.Paths[0].WorktreeSHA256 = "bad"
+			case "drive-path":
+				c.PreDispatch.Paths[0].Path = "C:/outside"
+			case "unc-path":
+				c.PreDispatch.Paths[0].Path = `\\server\share`
+			case "leading-traversal":
+				c.PreDispatch.Paths[0].Path = "../../outside"
 			}
 			controls = append(controls, c)
 		}
@@ -375,7 +381,11 @@ func u2jPausedResume(t *testing.T, root string) {
 	// Two serial prefix members put this bounded transition at Waves 3/4.
 	// Nine already-done members must not be re-scheduled. The started flag is
 	// carried across the amendment, not removed to make admission succeed.
-	fixture["source"] = json.RawMessage(`{"shipment":"212-S"}`)
+	fixture["source"] = json.RawMessage(`{"shipment":"212-S","paused_red_amendment":{
+		"stage_reviewed":true,"shipment":"212-S","task":"211.015-T","prerequisite":"211.016-T",
+		"start_count":1,"red_baseline_sha":"30908ecb8438c0b3e7fe8bd514fa3680e35d90e5",
+		"source_reload_required":true
+	}}`)
 	fixture["manifest"] = json.RawMessage(`{
 		"members":[
 			{"id":"211.001-T","unit":"U1","status":"done","harness_exempt":false,"red_deliverable":false,"deps":[]},
@@ -431,6 +441,42 @@ func u2jPausedResume(t *testing.T, root string) {
 		}
 	}]`)
 	u2jRunFixture(t, root, fixture, nil)
+	// An amendment is explicit evidence, not a blanket started-active waiver.
+	validSource := append(json.RawMessage{}, fixture["source"]...)
+	validScenario := string(fixture["scenarios"])
+	for _, defect := range []string{"missing-amendment", "not-reviewed", "wrong-prerequisite", "restart", "no-reload", "wrong-baseline"} {
+		t.Run(defect, func(t *testing.T) {
+			source := string(validSource)
+			switch defect {
+			case "missing-amendment":
+				source = `{"shipment":"212-S"}`
+			case "not-reviewed":
+				source = strings.Replace(source, `"stage_reviewed":true`, `"stage_reviewed":false`, 1)
+			case "wrong-prerequisite":
+				source = strings.Replace(source, `"prerequisite":"211.016-T"`, `"prerequisite":"outside-T"`, 1)
+			case "restart":
+				source = strings.Replace(source, `"start_count":1`, `"start_count":2`, 1)
+			case "no-reload":
+				source = strings.Replace(source, `"source_reload_required":true`, `"source_reload_required":false`, 1)
+			case "wrong-baseline":
+				source = strings.Replace(source, u2jBaseline(), strings.Repeat("a", 40), 1)
+			}
+			fixture["source"] = json.RawMessage(source)
+			// Keep admission unchanged; only the negative expectation differs.
+			var scenarios []struct {
+				ID        string          `json:"id"`
+				Mutations json.RawMessage `json:"mutations"`
+				Expect    json.RawMessage `json:"expect"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(validScenario), &scenarios))
+			scenarios[0].ID += "-" + defect
+			scenarios[0].Expect = json.RawMessage(`{"outcome":"WAVE_NO_PROGRESS","halt_wave":1,"halt_detail":"active residual","active_ids":["211.015-T"]}`)
+			raw, err := json.Marshal(scenarios)
+			require.NoError(t, err)
+			fixture["scenarios"] = raw
+			u2jRunFixture(t, root, fixture, nil)
+		})
+	}
 }
 
 func u2jGit(t *testing.T, dir string, args ...string) string {
@@ -467,7 +513,7 @@ if (-not (Get-Command Get-RedDeliverablePreDispatchSnapshot -ErrorAction Silentl
     exit 0
 }
 `
-	for _, mutation := range []string{"zero", "task-byte", "hook-byte", "task-stage", "index-mode", "hook-delete", "untracked-delete", "new-test", "new-config", "new-docs", "production-leaf", "production-predispatch"} {
+	for _, mutation := range []string{"zero", "task-byte", "hook-byte", "task-stage", "index-mode", "hook-delete", "untracked-delete", "new-test", "new-config", "new-docs", "production-leaf", "production-predispatch", "clean-tracked-byte", "ignored-scratch", "head-change", "raw-binary-byte", "reparse-escape"} {
 		t.Run(mutation, func(t *testing.T) {
 			dir := t.TempDir()
 			taskPath := filepath.Join(dir, ".backlogit", "queue", "211.015-T.md")
@@ -481,6 +527,8 @@ if (-not (Get-Command Get-RedDeliverablePreDispatchSnapshot -ErrorAction Silentl
 			u2jGit(t, dir, "init", "--quiet")
 			write(taskPath, "queued\n")
 			write(hookPath, "claim\n")
+			write(filepath.Join(dir, "docs", "clean.md"), "clean\n")
+			write(filepath.Join(dir, ".gitignore"), "scratch/\n")
 			u2jGit(t, dir, "add", ".")
 			u2jGit(t, dir, "-c", "user.name=U2j Fixture", "-c", "user.email=u2j@example.invalid",
 				"-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture baseline")
@@ -577,6 +625,47 @@ $snapshot | ConvertTo-Json -Depth 30 -Compress
 				want = "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED"
 			case "production-predispatch":
 				want = "RED_DELIVERABLE_PRODUCTION_DELTA_REFUSED"
+			case "clean-tracked-byte":
+				write(filepath.Join(dir, "docs", "clean.md"), "Clean\n")
+			case "ignored-scratch":
+				write(filepath.Join(dir, "scratch", "leaf.md"), "ignored\n")
+				want = "RED_DELIVERABLE_ACCEPTED"
+			case "head-change":
+				u2jGit(t, dir, "-c", "user.name=U2j Fixture", "-c", "user.email=u2j@example.invalid",
+					"-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "leaf HEAD mutation")
+				want = "WAVE_RED_MAPPING_UNRESOLVED"
+			case "raw-binary-byte":
+				write(taskPath, "active\x00\n")
+			case "reparse-escape":
+				if os.PathSeparator == '\\' {
+					out := run(`
+$target = Join-Path $env:U2J_ROOT '.git/owned-target'
+$null = New-Item -ItemType Directory -Path $target
+[IO.File]::WriteAllText((Join-Path $target 'leaf.md'), 'leaf')
+$null = New-Item -ItemType Junction -Path (Join-Path $env:U2J_ROOT 'escape') -Target $target
+try {
+    $null = Get-RedDeliverablePreDispatchSnapshot -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE
+    throw 'capture accepted a junction escape'
+} catch {
+    if ($_.Exception.Message -notlike 'WAVE_RED_MAPPING_UNRESOLVED:*') { throw }
+    Write-Output 'WAVE_RED_MAPPING_UNRESOLVED'
+}
+`)
+					assert.Equal(t, "WAVE_RED_MAPPING_UNRESOLVED", out)
+				} else {
+					require.NoError(t, os.Symlink(filepath.Join(dir, ".git"), filepath.Join(dir, "escape")))
+					out := run(`
+try {
+    $null = Get-RedDeliverablePreDispatchSnapshot -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE
+    throw 'capture accepted a symlink escape'
+} catch {
+    if ($_.Exception.Message -notlike 'WAVE_RED_MAPPING_UNRESOLVED:*') { throw }
+    Write-Output 'WAVE_RED_MAPPING_UNRESOLVED'
+}
+`)
+					assert.Equal(t, "WAVE_RED_MAPPING_UNRESOLVED", out)
+				}
+				return
 			}
 			rawPost := run(capture)
 			preFile, postFile := filepath.Join(dir, ".git", "u2j-pre.json"), filepath.Join(dir, ".git", "u2j-post.json")
@@ -594,7 +683,13 @@ Compare-RedDeliverablePreDispatchSnapshot -PreDispatchSnapshot $pre -PostLeafSna
 			}
 			require.NoError(t, json.Unmarshal([]byte(result), &outcome))
 			assert.Equal(t, want, outcome.Outcome, "real Git %s must compare independent pre/post captures", mutation)
-			assert.Equal(t, baseline, u2jGit(t, dir, "rev-parse", "HEAD"), "fixture comparison must not commit")
+			expectedHead := baseline
+			if mutation == "head-change" {
+				expectedHead = pre.Head
+				assert.NotEqual(t, expectedHead, u2jGit(t, dir, "rev-parse", "HEAD"), "oracle HEAD mutation executed")
+			} else {
+				assert.Equal(t, expectedHead, u2jGit(t, dir, "rev-parse", "HEAD"), "fixture comparison must not commit")
+			}
 		})
 	}
 }
