@@ -1,0 +1,66 @@
+{
+  "recorded_at_utc": "2026-11-08T01:00:18.7952418Z",
+  "task_id": "211.014-T",
+  "feature_id": "211-F",
+  "shipment_id": "212-S",
+  "reviewed_head": "b40a2a9fb9decbc9b808aaeaf5443ee2277ef475",
+  "readiness": "READY_WITH_FOLLOWUPS for U1h only",
+  "P0": 0,
+  "P1": 0,
+  "P2_current_defects": 0,
+  "source_binding": {
+    "bin/tmp/212-full-suite.py": "9aead967085d5a9f45a2705ba4d2035e15b4cf71e160f8dacd4ecf1b500b957e",
+    "bin/tmp/test_212_full_suite.py": "40bdfc49bf24c1bc57036d8af52f15ed3c527557c2726872efe79f1bbf697ded",
+    "scripts/verify-u1h-harness.ps1": "7ae96720740ee04bcbeb30f551ad47b0c9bfca841ee3c449c8c3c5be1e537a21"
+  },
+  "standard": {
+    "mode": "report-only",
+    "outstanding_source_findings": 0,
+    "actual_coverage": "Generic correctness, Constitution, Concurrency and Parity inspected all three current sources and validated their fingerprints; Learnings supplied knowledge guidance. Go-only scope is N/A for this private Python/PowerShell unit.",
+    "resolved_C1": [
+      "Oversized summary retains job ownership/resume fields",
+      "LF preflight requires exact named RUN/PASS and rejects skips/no-tests",
+      "Observer refuses existing reparse ancestors before proof-directory creation or filesystem writes"
+    ]
+  },
+  "adversarial": {
+    "mode": "report-only",
+    "models": ["gpt-6.1-sol","claude-haiku-5.5","claude-sonnet-5.5"],
+    "coverage": "Final Tier1 and Tier3 acknowledged EOF on current sources; missing Anchor ACK completed with one direct read-only Anchor slot, not a third review pool. Anchor independently verified current HEAD and all three source SHA256 before/after.",
+    "leaf_depth": "No helpers in final completed slots; earlier invalid Tier1 helper evidence not used",
+    "consensus_or_majority_source_defects": 0,
+    "current_observer": "Tracked7ae967 source reviewed, not an older private snapshot",
+    "source_verdict": "READY for U1h only"
+  },
+  "verification": {
+    "root_final_command": "& ./scripts/verify-u1h-harness.ps1 -Phase Green",
+    "root_green": "Three named groups PASS, native0, observer0, zero skips/errors/failures",
+    "root_green_proof": "bin/tmp/u1h-5daca299697b44d1b2db615abdbcf58c/observer-result.json",
+    "source_unchanged_before_after": true,
+    "assertions": "68 predecessor assertions preserved plus1 junction-refusal case",
+    "real_windows_power": "Hold/clear nonzero on same native polling thread; explicit failure handling retained",
+    "LF_command": "go test -count=1 -timeout=2m -json -run '^TestU175_001_BaselineEol$' ./tests",
+    "LF_native_exit": 0,
+    "LF_named_run_pass": 1,
+    "LF_skip_fail": 0,
+    "LF_report": "checked1690, index-not-lf0, work-not-lf0, mixed0",
+    "before_implementation_baseline": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250 retained immutably",
+    "all_cycle_and_raw_proofs_preserved": true
+  },
+  "residual_risk_notes": [
+    "Power request mitigates automatic idle sleep only, not manual hibernation, power loss or arbitrary runtime suspension.",
+    "Post-check concurrent filesystem replacement remains outside the tested static-ancestor refusal scenario; no current escape was found.",
+    "Emergency bounded-summary timing enrichment is optional; mandatory native/identity/hold/clear/poll/ownership fields retained.",
+    "Private harness uses Python3.12+ junction API; current interpreter supports it, no older-runtime guarantee is made.",
+    "External coordinator owns actual execution receipts and counter truth; this unit creates none."
+  ],
+  "history": {
+    "full_failed_cycles": 6,
+    "counter_reset": false,
+    "review_fix_cycles": 2,
+    "verification_phase_counts": "InitialGREENloop3, firstC1fix2 retained; observerfix3 checks with1 harness invocation; no source-success verification erased.",
+    "official_checkpoint": "checkpoint-20261106-210317.json",
+    "official_checkpoint_untouched": true,
+    "next": "Governed U1h completion; full/convergence/PR/runtime gates remain independent, not inferred PASS"
+  }
+}

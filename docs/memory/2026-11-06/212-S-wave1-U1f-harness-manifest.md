@@ -139,7 +139,7 @@ gofmt -l internal/core/shipment_reconstitute_plan.go internal/core/shipment_reco
   lint invocation or infrastructure retry resulted
 
 The final evidence was emitted during this run at
-`2026-11-06T11:21:51-08:00` through `11:22:01-08:00`; final compile, vet,
+`2026-11-06T19:21:51Z` through `2026-11-06T19:22:01Z`; final compile, vet,
 lint, and formatting gates subsequently passed.
 
 ## Handoff restrictions

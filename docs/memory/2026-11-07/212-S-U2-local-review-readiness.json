@@ -1,0 +1,77 @@
+{
+  "recorded_at_utc": "2026-11-07T09:56:37.4156171Z",
+  "task_id": "211.002-T",
+  "feature_id": "211-F",
+  "shipment_id": "212-S",
+  "reviewed_head": "183ec2d52287a6465e4ef2e2952685f0ba0d7eb0",
+  "scope": "U2 source/harness only; not final whole-branch PR readiness",
+  "readiness": "READY_WITH_FOLLOWUPS",
+  "counts": {"P0":0,"P1":0,"P2":0,"P3":4},
+  "count_interpretation": "Four nonblocking conditional/advisory follow-up captures, not four confirmed production defects",
+  "source_binding": {
+    "internal/mcp/coordinator.go": "56b5973440a2ec504c397bef279637c64aa97d6bde4c7a1dd9c4ad2500b481a6",
+    "internal/mcp/server.go": "af38d4872b1e5754fe7e0e1332b8e040db1578465980ac90788347e6b51206a1",
+    "internal/mcp/coordinator_test.go": "9d273050cd6a6e36cb170d735b0ef796ff66cf0ef334d179c613cafe08ce87ba"
+  },
+  "standard_review": {
+    "mode": "report-only",
+    "actual_personas": ["Go Reviewer","Constitution Reviewer","Learnings Researcher","Concurrency Reviewer","Agent-Native Parity Reviewer","Security Reviewer"],
+    "coverage": "Initial nested coordinator did not certify coverage; direct persona read acknowledgments recovered evidence. Post-fix Go/Constitution/Concurrency/Parity inspected current source, prior Security had no issue, Learnings supplied synchronous-ownership guidance. Root bound unchanged source hashes to current HEAD.",
+    "resolved_C1": [
+      "P1 ordinary workspace initialization/recursive workspaceMu regression: preserve handler-specific diagnostic/read-only/DB-optional acquisition under exclusive cold dispatch",
+      "P2 handler error forwarded without contextual %w wrapping",
+      "P3 current classification table lacks t.Run; corrected without assertion weakening"
+    ],
+    "outstanding_current_P0_P1": 0,
+    "review_fix_cycles": 1
+  },
+  "adversarial_review": {
+    "mode": "report-only",
+    "reviewers": 3,
+    "actual_dispatched_models": ["gpt-6.1-sol","claude-haiku-5.5","claude-sonnet-5.5"],
+    "configured_providers": ["openai","anthropic","anthropic"],
+    "effort": "high",
+    "coverage": "All three acknowledged full current source/harness reads; Root verified actual bounds 302/295/690 lines and current file hashes.",
+    "limitations": "Tool receipts expose actual dispatched model IDs, not cryptographic backend/provider identity; reviewers could not independently compute SHA. Root supplies revision binding.",
+    "consensus_P0_P1": 0,
+    "majority_P0_P1": 0,
+    "reported_verdict": "READY for current U2 static gate, subject to Root binding",
+    "post_remediation_self_cycles": 0
+  },
+  "followup_handling": {
+    "A47CD72B": "Conditional closed-read shutdown busy-code/retry contract clarification; no new wire semantics invented",
+    "264ACCED": "Conditional pre-existing resource initialization concurrency investigation; LOW unique observation, not accepted current-U2 blocker",
+    "A467B030": "Optional post-admission cold mutex cancellation timing guarantee; bounded source/contract adjudication found no established R9 violation and created no false-RED test",
+    "F0973A97": "Verify optional progressTotal/total coupling against SDK and governing D8; D8 explicitly names progressTotal, no unverified plan/source rewrite",
+    "residual_citations": "These same capture IDs belong to task/run and future PR/closure residual records; no current review thread exists.",
+    "abandoned_waiters": "Refuted as a current defect: plan-sanctioned bounded queue entries remain until the scheduler observes abandonment",
+    "F13_prior_capture": "77493741 unchanged"
+  },
+  "verification": {
+    "harness_command_source": "docs/memory/2026-11-07/212-S-U2-harness.json:harness_cmd",
+    "root_quality_capture": "bin/tmp/1794045316269-copilot-tool-output-7128-c1407e09-d583-459f-98fe-f448cc6edca8.txt",
+    "scoped_race_native_exit": 0,
+    "named_run": 3,
+    "named_pass": 3,
+    "named_fail": 0,
+    "skip": 0,
+    "no_vacuity": "PASS",
+    "pinned_lint_issues": [],
+    "format": "PASS",
+    "producer_red": "docs/memory/2026-11-07/212-S-U2-C1-reviewfix-red.json",
+    "build_green": "docs/memory/2026-11-07/212-S-U2-C1-reviewfix-green.json",
+    "source_attempts": 3,
+    "source_attempt_limit": 5,
+    "full_current_U2_branch_suite": "Not yet executed; mandatory wave convergence remains",
+    "runtime_verification_required": true
+  },
+  "continuity": {
+    "prior_full_failed_cycles": 5,
+    "sixth_full_cycle": "Genuine PASS at D6 before U2 implementation; does not replace current U2 wave convergence",
+    "no_counter_reset": true,
+    "next_failed_full_cycle_authorized": false,
+    "official_checkpoint": "checkpoint-20261106-210317.json",
+    "official_checkpoint_sha256": "235844507a4975f27c5a88f4fe3e499fb538110c86e6a264637db1b69837ca70",
+    "next": "Complete U2 through governed task operations, then obtain parent-issued normal-wave full-verification authority/receipt before wave advancement. Never reuse sixth token or self-issue permission."
+  }
+}

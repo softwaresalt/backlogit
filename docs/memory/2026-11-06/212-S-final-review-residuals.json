@@ -1,0 +1,86 @@
+{
+  "recorded_at_utc": "2026-11-07T05:11:01.7377712Z",
+  "task_id": "211.012-T",
+  "feature_id": "211-F",
+  "shipment_id": "212-S",
+  "scope": "C1 corrections from same-pool re-review 1/2 within the approved additional review/remediation cycle",
+  "authorization_quote": "Additional review cycle approved",
+  "authorization_at_utc": "2026-11-07T03:16:59.656Z",
+  "next_action": "Parent-owned final same-pool re-review 2/2; not delivery resumption",
+  "source_before_head": "25ae363ae11d5b9992031de8f8e219eb7878b1ce",
+  "source_after_head": "d6b23ed3efd6e021486fb4b857defaa1e9914299",
+  "go_diff": {
+    "path": "docs/memory/2026-11-06/212-S-R3-stash-busy-a91/go.diff",
+    "sha256": "ea42b59d2361769c6b9d3d71ae156e11a8c8cbcad590cf0d09d4b4def1be6f06",
+    "insertions": 35,
+    "deletions": 12,
+    "production_insertions": 3
+  },
+  "go_sources": {
+    "internal/core/shipment_reconstitute_exec.go": "61d4d8fcfc8f9a24b593dabad992f07bacc158e1d6b56f7635216d818be26155",
+    "internal/core/shipment_reconstitute_hardening_test.go": "1672aa134a53340c6c59585d08306d49173c7676de55cfc58b3dfa1d4252dd36"
+  },
+  "recorder": {
+    "path": "bin/tmp/212-full-suite.py",
+    "before_snapshot": "bin/_c1d4e9a7/driver-red2.py",
+    "before_sha256": "35918e98b39247e1afb28f12ba2739516fc9ac08cd06000d801ba7ddec330bbe",
+    "after_snapshot": "bin/_c1d4e9a7/driver-green.py",
+    "after_sha256": "9d39f4e25dbd53f582c75023e69c7a91d60503d3ab8153996c61183299bae75d",
+    "diff_path": "bin/_c1d4e9a7/driver.diff",
+    "diff_sha256": "e3de86fb649b7461b37021172b58f58dbbf394f701d7a9f62c43fa2e7920e8b8",
+    "evidence": "bin/_c1d4e9a7/evidence.json"
+  },
+  "dispositions": {
+    "R1": "C1 fixed: raw retention stops at 10000 lines OR 1048576 bytes, whichever first; draining/event processing continues with total/retained/omitted counts.",
+    "R2": "C1 fixed: closed-pipe live-child poll sleeps briefly while retaining deadline and exit checks; synthetic clock/deadline proof.",
+    "R3": "C1 fixed: actual wrapped os.ErrExist stash contention invokes the existing context observer before cancellation; assertion requires cancellation return before holder release. No new seam/API/helper/global state or lock semantics.",
+    "R4": "C1 fixed: both supervised Go launches explicitly use cwd=_ROOT. Nested-working-directory fixture mocks launches and never invokes real Go.",
+    "R5": "UNRESOLVED execution-policy requirement: current 45-minute outer default cannot promise completion of a future run comparable to the prior approximately 61-minute run. Separate explicit operator-approved outer budget and full-run disposition are required. Neither this review nor a locally created token supplies them. Outer 45 minutes and per-binary 30 minutes remain unchanged.",
+    "R6": "C1 fixed: trailing CR is carried across chunks; next-chunk LF preserves one CRLF rather than creating an artificial empty line.",
+    "F13": "Existing conditional Stage capture 77493741 unchanged; no validator expansion or historical-cause attribution."
+  },
+  "verification": {
+    "new_recorder_red_command": "python -B bin/_c1d4e9a7/test_residual.py red2",
+    "new_recorder_red_native_exit": 1,
+    "new_recorder_green_command": "python -B bin/_c1d4e9a7/test_residual.py green",
+    "new_recorder_green_native_exit": 0,
+    "new_recorder_tests": 4,
+    "new_recorder_green_report": "bin/_c1d4e9a7/green-report.json",
+    "existing_recorder_owner_command": "python -B bin/_rr8b31a6d2/test_recorder.py final-owner-b7c8fe82",
+    "existing_recorder_owner_native_exit": 0,
+    "existing_recorder_owner_tests": 7,
+    "existing_recorder_owner_report": "bin/_rr8b31a6d2/final-owner-b7c8fe82.txt",
+    "go_targeted_command": "go test -count=1 -timeout=30m -race -json -run '^TestU1f_' ./internal/core",
+    "go_red_native_exit": 1,
+    "go_green_native_exit": 0,
+    "go_run_events": 4,
+    "go_green_skips": 0,
+    "go_proof_directory": "docs/memory/2026-11-06/212-S-R3-stash-busy-a91",
+    "strict_guard_native_exit": 0,
+    "static": "Compile-only check executed no tests; scoped vet, pinned Go1.24/v1 lint Issues=[] and format passed.",
+    "line_cap_proof": "10007 lines processed; 10000 retained, 7 lines/136 bytes omitted; late failure and terminal event processed.",
+    "byte_cap_proof": "1048576 bytes retained; 151550 bytes omitted; late failure and terminal event processed.",
+    "preservation": "45 original and 106 prior accepted assertion nodes preserved; three canonical subtests, public APIs and three-function scope unchanged."
+  },
+  "continuity": {
+    "failed_convergence_count": 4,
+    "frozen_task_count": 12,
+    "completed_task_count": 6,
+    "unstarted_claim_assigned": ["211.002-T", "211.003-T", "211.004-T", "211.005-T", "211.006-T", "211.007-T"],
+    "checkpoint": "checkpoint-20261106-210317.json",
+    "checkpoint_sha256": "235844507a4975f27c5a88f4fe3e499fb538110c86e6a264637db1b69837ca70",
+    "branch": "feat/212-s-backlogit-multi-session-singleton-mcp-runtime-stdio-session-shim-and-channel-operation-coordinator",
+    "source_state": "Local/unpushed; staging empty; unrelated existing dirty tracking and queue/archive pairs preserved.",
+    "fifth_run_authorized": false,
+    "full_test_suite_executed_this_cycle": false,
+    "lifecycle_mutations": false,
+    "readiness": "Not branch READY, not convergence PASS, not historical core-cause proof."
+  },
+  "retained_setup_limitations": [
+    "Initial read-only Go seam discovery was constrained by the parent's incorrect ErrTaskBusy wording. Actual stash busy is os.ErrExist; correcting that wording completed the existing authorization, not a new override.",
+    "Recorder initial RED native-exit mock affected cleanup; corrected RED is red2, with earlier capture preserved.",
+    "One Go strict-guard launch failed due to Windows-path quoting and did not execute Go. Separate corrected strict-green2 receipt passed.",
+    "Native raw Go JSONL timestamps remain byte-for-byte as emitted; new authored JSON receipt timestamps use UTC Z.",
+    "No current lost panic replay or inferred culprit/cause; earlier failure evidence remains historically distinct."
+  ]
+}
