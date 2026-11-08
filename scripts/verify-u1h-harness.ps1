@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $PSScriptRoot -Parent
+$root = [IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent))
 $baseline = '8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250'
 $runner = Join-Path $root 'bin\tmp\212-full-suite.py'
 $harness = Join-Path $root 'bin\tmp\test_212_full_suite.py'
@@ -20,8 +20,27 @@ $directory = [IO.Path]::GetFullPath($ProofDirectory)
 if (!$directory.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Proof directory must stay inside the workspace'
 }
+function Assert-ProofPathAncestors {
+    $current = $root
+    $components = @('') + $directory.Substring($root.Length + 1).Split('\')
+    foreach ($component in $components) {
+        if ($component) { $current = Join-Path $current $component }
+        try {
+            $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+        } catch [System.Management.Automation.ItemNotFoundException] {
+            if ($current -eq $root) { throw }
+            return
+        }
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw 'Proof directory reparse ancestor refused'
+        }
+        if (!$item.PSIsContainer) { throw 'Proof directory ancestor must be a directory' }
+    }
+}
+Assert-ProofPathAncestors
 if (Test-Path $directory) { throw 'Proof directory must be new; no overwrite' }
 [IO.Directory]::CreateDirectory($directory) | Out-Null
+Assert-ProofPathAncestors
 $utf8 = [Text.UTF8Encoding]::new($false)
 $snapshots = [ordered]@{}
 foreach ($entry in @(@('driver-before.py', $runner), @('harness-before.py', $harness))) {
