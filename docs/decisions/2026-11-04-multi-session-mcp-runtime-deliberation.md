@@ -14,18 +14,27 @@ docline:
     - .backlogit/archive/086-DL.md
     - .backlogit/archive/087-DL.md
     - .backlogit/archive/088-DL.md
+    - .backlogit/archive/089-DL.md
     - .backlogit/queue/211-F.md
     - .backlogit/archive/211.008-T.md
     - .backlogit/archive/211.009-T.md
     - .backlogit/archive/211.010-T.md
     - .backlogit/archive/211.011-T.md
-    - .backlogit/queue/211.012-T.md
+    - .backlogit/archive/211.012-T.md
+    - .backlogit/archive/211.013-T.md
+    - .backlogit/archive/211.014-T.md
+    - .backlogit/archive/211.015-T.md
+    - .backlogit/archive/211.016-T.md
+    - .backlogit/queue/211.017-T.md
+    - .backlogit/queue/211.018-T.md
+    - .backlogit/queue/211.019-T.md
     - .backlogit/queue/212-F.md
     - .backlogit/queue/213-F.md
     - .backlogit/queue/212-S.md
     - .backlogit/queue/213-S.md
     - .backlogit/queue/214-S.md
     - docs/decisions/2026-10-29-single-daemon-per-workspace-deliberation.md
+    - docs/memory/2026-11-08/212-S-longpaths-wave34-convergence.md
     - docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md
     - docs/memory/2026-11-06/212-S-U1b-green-unrelated-convergence-blockers.md
     - docs/memory/2026-11-06/212-S-M11-fullsuite-circuit-handoff.md
@@ -487,7 +496,30 @@ After `U1f` (`211.012-T`, `779f1200` / `d6b23ed3`) passed the sixth unfiltered 5
   3. **`M12 -> M16` Manifest Amendment, P-002.6 Red-Deliverable Step 0.5 Pre-Dispatch Snapshot Boundary Repair `U2j` (`211.016-T`), and Approved `212-S`-Only Option 1 Gate-Cadence Exception via `U2i` (`211.015-T`)**:
      * Under the operator's verbatim R5 implementation directive (`"If you were planning, stop planning and start implementing...make good decisions and keep working...Keep working autonomously until task truly finished."` at `2026-11-08T02:47:24Z`), add **`U2j` (`211.016-T`, `tests/harness`, `status: queued`, `priority: high`, `size: S`, `complexity: medium`, `dependencies: [211.001-T, 211.002-T, 211.013-T, 211.014-T]`)** to partition the P-002.6 `red_deliverable` Step 0.5 zero-delta gate between pre-claim `red_baseline_sha` (`30908ecb`) and an immediate pre-dispatch working-tree/index state snapshot (`red_predispatch_snapshot`) across `tests/integration/claim_start_wave_sim_contract_test.go`, `scripts/wave-scheduler-sim.ps1`, `tests/simulation/wave-scheduler-contract.json`, `.github/skills/build-feature/SKILL.md`, `.github/agents/_ship.agent.md`, and `.github/policies/workflow-policies.md` (strictly scoped to `red_deliverable` Step 0.5; zero `harness-exempt` / P-002.4 changes).
      * Wire `211.015-T` (`U2i`, preserving its `status: active`, scaffold commit `6eee17f9`, `harness-ready` label, and single `WORK_STARTED` record without reclaiming/rewinding/restarting) `depends_on` `211.016-T` (`U2j`, `dep_type: "blocks"`), update `green_maker_closes_wave: 9` on `211.015-T`, and append `211.016-T` to `212-S` (`S16 -> S17`, `M15 -> M16`).
-     * Once `211.016-T` (`U2j`) is committed and `done` in Wave 3, Ship reloads the updated `.github/agents/_ship.agent.md` and `.github/skills/build-feature/SKILL.md` sources, captures a fresh post-caller `red_predispatch_snapshot`, and re-dispatches `211.015-T` (`U2i`) in Wave 4 with original `red_baseline_sha = 30908ecb8438c0b3e7fe8bd514fa3680e35d90e5` + `red_predispatch_snapshot` -> `RED_DELIVERABLE_ACCEPTED` -> `done` -> registers `^TestU2i_` in `open_red_deliverables_k` across Waves 4–8 (`FULL_SUITE_DEFERRED: wave 4..8`), then closes `^TestU2i_` GREEN at Wave 9 (after `U7` `211.007-T` completes) and executes **ONE** unfiltered 50-package full-suite convergence run (`go test -count=1 -p=1 -timeout=30m -json ./...`, `2,700s` outer / `1,800s` package budgets unchanged) before PR creation. Successor shipments `213-S`–`215-S` do not inherit this `212-S`-only exception.
+     * Once `211.016-T` (`U2j`) is committed and `done` in Wave 3, Ship reloads the updated `.github/agents/_ship.agent.md` and `.github/skills/build-feature/SKILL.md` sources, captures a fresh post-caller `red_predispatch_snapshot`, and re-dispatches `211.015-T` (`U2i`) in Wave 4 with original `red_baseline_sha = 30908ecb8438c0b3e7fe8bd514fa3680e35d90e5` + `red_predispatch_snapshot` -> `RED_DELIVERABLE_ACCEPTED` -> `done` -> registers `^TestU2i_` in `open_red_deliverables_k` across Waves 4–8 (`FULL_SUITE_DEFERRED: wave 4..8`), then closes `^TestU2i_` GREEN at Wave 9 (after `U7` `211.007-T` completes) and executes **ONE** unfiltered 50-package full-suite convergence run (`go test -count=1 -p=1 -timeout=30m -json ./...`, `2,700s` outer / `1,800s` package budgets unchanged) before PR creation. Successor shipments `213-S`–`215-S` do not inherit this `212-S`-only exception. `[WAVE SCHEDULE UPDATED BY FIFTH FORWARD DELIBERATION ADDENDUM BELOW: M16 -> M19 / S17 -> S20; U3a-U5a AT WAVE 5, U3-U7 AT WAVES 6-10, green_maker_closes_wave: 10]`.
 
+## P-021 C6 / P-002.1 Fifth Forward Deliberation Addendum — Wave 5 Declaration-vs-Behavior Split (`089-DL` / Option 5: `U3a` `211.017-T`, `U4a` `211.018-T`, `U5a` `211.019-T`, and `M16 -> M19` Refreeze, 2026-11-08)
 
+### Problem Frame and Wave 5 `harness-architect` Structural Halt
 
+After Ship completed `211.016-T` (`U2j`, commit `fd038b8feba15e43d7f02ed2742a0e91479b16b3`), accepted `211.015-T` (`U2i`) RED (`RED_DELIVERABLE_ACCEPTED`), and discharged both pending Wave 3 and Wave 4 convergence gates (`FULL_SUITE_DEFERRED`, recorded in `docs/memory/2026-11-08/212-S-longpaths-wave34-convergence.md` at `HEAD` `905d0a43`), `harness-architect` halted at Wave 5 (`ready_5 = {211.003-T}`) before any mutation with a structural plan defect:
+
+* Under **P-002.1 cycle-31** (`.github/policies/workflow-policies.md:123-143`) and `.github/skills/harness-architect/SKILL.md` Step 1 item 7 and Step 4 items 3, 5, 6, any task whose delta introduces new exported symbols/declarations whose bodies will absorb real behavior MUST be split into:
+  1. a **declaration task** gated by a `go/ast` source-shape harness (`harness first, declaration second`, with **no production stub** written by `harness-architect` during scaffolding and no temporary stub body frozen in the shape test per `docs/compound/best-practices/source-shape-harnesses-must-allow-lifecycle-successors-2026-09-11.md`), followed by
+  2. a **behavior task** in a strictly later wave whose behavioral harness (`TestU3_*`, `TestU4_*`, `TestU5_*`, `TestU6_*`) compiles cleanly against the already-landed declarations on `HEAD` (with zero production stub edits by `harness-architect`), exactly as `U1` (`211.001-T`) declared the coordinator symbols and `U2` (`211.002-T`) implemented their behavior.
+* In the `M16` plan, `U3` (`211.003-T`), `U4` (`211.004-T`), `U5` (`211.005-T`), and `U6` (`211.006-T`) combined introducing new declarations (`MultiSessionConn`, `ServeSessionStream`, `ActiveSessionCount`, `CloseAllSessions`, `DeriveMCPDaemonEndpoint`, `ListenMCPDaemonIPC`, `DialMCPDaemonIPC`, `isVerifiedProcessAlive`, `MCPDaemonInfo`/`MCPDaemonStatus` fields, `VerifyMCPDaemonAttachment`, `RunMCPDaemon`, `PrewarmMCPDaemon`, `RunMCPSessionShim`) with behavioral implementation in the same task.
+
+### Chosen Direction under Operator Option 5 Authorization (`M16 -> M19`, `S17 -> S20`)
+
+1. **Create Three Wave 5 Declaration Prerequisite Tasks (`U3a` / `211.017-T`, `U4a` / `211.018-T`, `U5a` / `211.019-T`) Under `211-F` / `212-S`**:
+   * All three tasks depend on `[211.002-T, 211.013-T, 211.014-T, 211.015-T, 211.016-T]` (all `done`), have 100% disjoint file scopes, and enter Wave 5 together (`ready_5 = {211.017-T, 211.018-T, 211.019-T}`):
+     * **`U3a` (`211.017-T`, `code`, `size: XS`, `complexity: low`, `2` files: `internal/mcp/multi_session_shape_test.go`, `internal/mcp/session_mux.go`)**: `TestU3a_MultiSessionStreamDispatcherSourceShape` `go/ast` shape assertions (`harness-architect` writes NO production stub) + `MultiSessionConn` (implementing `mcpserver.ClientSession`) and `(*Server).ServeSessionStream`, `(*Server).ActiveSessionCount`, `(*Server).CloseAllSessions` minimal stub declarations in `internal/mcp/session_mux.go`. Scoped verification: `go test -timeout=30m -count=1 -run '^TestU3a_' ./internal/mcp`.
+     * **`U4a` (`211.018-T`, `code`, `size: XS`, `complexity: low`, `3` files: `internal/cli/mcp_ipc_shape_test.go`, `internal/cli/mcp_ipc_windows.go`, `internal/cli/mcp_ipc_unix.go`)**: `TestU4a_PlatformIPCSignaturesSourceShape` `go/ast` shape assertions (`harness-architect` writes NO production stub) + `DeriveMCPDaemonEndpoint`, `ListenMCPDaemonIPC`, `DialMCPDaemonIPC`, and `isVerifiedProcessAlive` minimal stub declarations across `internal/cli/mcp_ipc_windows.go` and `internal/cli/mcp_ipc_unix.go`. Scoped verification: `go test -timeout=30m -count=1 -run '^TestU4a_' ./internal/cli`.
+     * **`U5a` (`211.019-T`, `code`, `size: XS`, `complexity: low`, `2` files: `internal/cli/mcp_daemon_shape_test.go`, `internal/cli/mcp_daemon.go`)**: `TestU5a_DaemonAndShimDeclarationsSourceShape` `go/ast` shape assertions (`harness-architect` writes NO production stub) + `MCPDaemonInfo` and `MCPDaemonStatus` struct field extensions (`IPCTransport`, `Endpoint`, `ActiveSessions`, `ProtocolVersion`) and `VerifyMCPDaemonAttachment`, `RunMCPDaemon`, `PrewarmMCPDaemon`, `RunMCPSessionShim` minimal stub declarations in `internal/cli/mcp_daemon.go` (**without** touching `internal/cli/root.go`, so `TestRegistryParity_*` stays green and `^TestU2i_` stays RED through Wave 9 until `U7` completes in Wave 10). Scoped verification: `go test -timeout=30m -count=1 -run '^TestU5a_' ./internal/cli`.
+2. **Wire Downstream Behavioral Waves (`Waves 6–10`) and Update `green_maker_closes_wave: 10` on `211.015-T` (`U2i`)**:
+   * `211.003-T` (`U3`, Wave 6) `depends_on` `211.017-T` (`U3a`); `harness-architect` scaffolds only `internal/mcp/session_mux_test.go` with zero production stub edits.
+   * `211.004-T` (`U4`, Wave 7) `depends_on` `211.003-T` (`U3`) and `211.018-T` (`U4a`); `harness-architect` scaffolds only `internal/cli/mcp_ipc_test.go` with zero production stub edits.
+   * `211.005-T` (`U5`, Wave 8) `depends_on` `211.004-T` (`U4`), `211.008-T` (`U1b`), and `211.019-T` (`U5a`); `harness-architect` scaffolds only `internal/cli/mcp_daemon_multisession_test.go` with zero production stub edits.
+   * `211.006-T` (`U6`, Wave 9) `depends_on` `211.005-T` (`U5`) and `211.019-T` (`U5a`); `harness-architect` scaffolds only `internal/cli/mcp_session_shim_test.go` with zero production stub edits.
+   * `211.007-T` (`U7`, Wave 10, `harness-exempt: docs-only`) `depends_on` `211.006-T` (`U6`), closing `211.015-T` (`U2i`, `green_maker_closes_wave: 10`) GREEN at Wave 10 and discharging the single unfiltered 50-package convergence suite before PR creation.
+   * Preserve `211.003-T`..`211.007-T` `status: active`, `custom_fields.scheduler_baseline_claim: 212-S`, and `0` `WORK_STARTED` log state, and leave `checkpoint-20261108-230851.json` and `checkpoint-20261106-210317.json` completely untouched on disk (`NOFEATURECOMMIT`).
