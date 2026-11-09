@@ -3,6 +3,7 @@
 package atomicfile
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -42,8 +43,18 @@ var moveFileEx = func(from, to string, flags uint32) error {
 	return windows.MoveFileEx(fromPtr, toPtr, flags)
 }
 
-// atomicReplaceSleep is reserved for deterministic retry tests.
+const (
+	atomicReplaceMaxRetries     = 7
+	atomicReplaceInitialBackoff = 5 * time.Millisecond
+)
+
+// atomicReplaceSleep makes retry backoff deterministic in tests.
 var atomicReplaceSleep = time.Sleep
+
+func isTransientWindowsReplaceError(err error) bool {
+	return errors.Is(err, windows.ERROR_ACCESS_DENIED) ||
+		errors.Is(err, windows.ERROR_SHARING_VIOLATION)
+}
 
 // atomicReplace renames tmpName over path using MoveFileEx so the destination
 // is replaced atomically and is NEVER removed before the replacement is in
@@ -52,9 +63,20 @@ var atomicReplaceSleep = time.Sleep
 // failure the destination is untouched, so the error is classified
 // ErrWriteNotApplied.
 func atomicReplace(tmpName, path string, durable bool) error {
-	if err := moveFileEx(tmpName, path, moveFileExFlags(durable)); err != nil {
-		return fmt.Errorf("move temp over destination: %w",
-			fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
+	flags := moveFileExFlags(durable)
+	delay := atomicReplaceInitialBackoff
+	var err error
+	for attempt := 0; attempt <= atomicReplaceMaxRetries; attempt++ {
+		err = moveFileEx(tmpName, path, flags)
+		if err == nil {
+			return nil
+		}
+		if !isTransientWindowsReplaceError(err) || attempt == atomicReplaceMaxRetries {
+			break
+		}
+		atomicReplaceSleep(delay)
+		delay *= 2
 	}
-	return nil
+	return fmt.Errorf("move temp over destination: %w",
+		fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
 }
