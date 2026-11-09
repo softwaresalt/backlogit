@@ -2,7 +2,7 @@
 title: "212-S Wave 11 execution and pre-Ordinal-9 handoff"
 shipment_id: "212-S"
 feature_id: "211-F"
-phase: "wave11-tasks-done-pre-convergence"
+phase: "wave11-clean-pre-ordinal9-full-suite"
 ---
 
 ## Custody and recovery
@@ -186,11 +186,80 @@ is degraded; no substitute skill or fabricated observation was created.
 
 Historical full-suite failed count remains 7. Ordinal 9 is NOT CONSUMED.
 Wave 10 and unfiltered convergence remain unresolved; Wave 11 is not yet
-converged. No full repository suite, PR, push, merge, or closure is authorized
-by this checkpoint. The requested stopping boundary precedes Ordinal 9.
+converged. No full repository suite, PR, push, merge, or closure ran in this
+session. The requested stopping boundary precedes Ordinal 9.
 
 Next: prepare the clean pre-full-suite checkpoint. Current census: 21 done,
 0 queued, all other task states zero. Both new tasks have exactly one start.
 Existing residuals `0D073C21`, `D2FCA0FB`,
 native POSIX verification, incomplete symbol graph coverage, and incomplete
 prior adversarial coverage remain unchanged.
+
+## Clean pre-Ordinal-9 handoff
+
+The final active checkpoint from this session is
+`.backlogit/checkpoints/checkpoint-20261109-195117.json`.
+It was created through MCP and re-read as valid and conforming.
+An initial create attempt used numeric progress counters instead of task-ID
+arrays and was rejected before writing a file; the corrected create retained
+the same state and counters. No malformed stored checkpoint was repaired.
+The intermediate session checkpoints `191628` and `192415` are resolved.
+The protected historical `210317` pointer is still active and untouched.
+
+Both archive moves, including queue-side deletions, are committed.
+The clean-tree evidence HEAD before the final checkpoint-only commit is
+`a3df054f`. All commands below passed on that clean tree; no source changes
+followed. The final checkpoint and this handoff are committed together, and
+the compile/static/EOL gates are rechecked on the resulting clean HEAD.
+
+```powershell
+& ./bin/tmp/212-go-env.ps1 go test -run=^$ -count=1 ./...
+& ./bin/tmp/212-go-env.ps1 go vet ./...
+& ./bin/tmp/212-go-env.ps1 ./bin/golangci-lint.exe run --timeout=10m
+& ./bin/tmp/212-go-env.ps1 gofmt -l cmd internal tests scripts
+& ./bin/tmp/212-go-env.ps1 go test -count=1 -timeout=2m -run '^TestU175_001_BaselineEol$' ./tests
+& ./bin/tmp/212-go-env.ps1 go test -timeout=30m -count=1 -race -run '^(TestU1i_|TestAtomicReplace_|TestWriteFileAtomic_|TestMoveFileExFlags_)' ./internal/atomicfile
+& ./bin/tmp/212-go-env.ps1 go test -timeout=30m -count=1 -race -run '^(TestU1j_|TestUR1B_|TestP021ClaimSerialization_|TestShipmentOpsJournal|TestWriteShipmentLifecycleJournal_|TestNewWorkspace_Rejects)' ./internal/core
+```
+
+Each command ran in its own terminal call. Compile covered all 46 first-party
+packages without executing tests. Vet, pinned lint, and format had no findings.
+Baseline EOL and both closed scoped commands passed. The last scoped checks
+are independent quality verification, not additional U1j implementation-loop
+attempts. No sixth implementation attempt or retry budget reset occurred.
+
+M21 census is exactly 21 done, with every other task-state count zero.
+Open red remains empty. Shipment 212-S and feature 211-F remain active;
+all 21 done tasks do not by themselves establish full-suite convergence.
+Hooks through concrete sequence 4658 were processed and acknowledged.
+The backlog index was resynchronized after both task archives.
+
+### Next session
+
+Resume this exact single-release-unit cursor with explicit checkpoint
+selection and confirmation. Reattest the supplied served roots; do not replay
+initial shipment intake or any task claim/start/completion.
+
+The next substantive operation is the single M21-authorized Ordinal 9:
+
+* Operation: `unfiltered-convergence`, scope `212-S`
+* Ordinal: 9; historical failed count: 7
+* Budget: 2,700 seconds; per-package timeout: 1,800 seconds
+* Package census: 46 first-party packages, unfiltered
+* Command: `go test -count=1 -p=1 -timeout=30m -json ./...`
+* Recorder: `bin/tmp/212-full-suite.py`
+* Verified recorder SHA-256:
+  `9aead967085d5a9f45a2705ba4d2035e15b4cf71e160f8dacd4ecf1b500b957e`
+
+Use fresh coordinator-issued authorization and counter receipts bound to the
+final clean HEAD, with a new ignored output directory. Never reuse consumed
+Ordinal 8 receipts. Run through `bin/tmp/212-go-env.ps1` and retain the recorder's
+package-terminal and deadline evidence. No receipt was issued or consumed here.
+The ignored recorder/evidence files are local and are not guaranteed by Git.
+
+Stop after one consumed outcome; preserve cumulative counters and failure
+evidence. Only valid unfiltered success can discharge the pending Wave 11
+Step 4.6 obligation. Full local build, current-HEAD whole-branch standard and
+the previously required three-model Anchor review, PR checks, runtime
+verification, approval, merge, and closure remain pending. No merge approval
+or successor-shipment authority is inferred from this handoff.
