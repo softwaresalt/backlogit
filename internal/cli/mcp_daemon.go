@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/core"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
+	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
 	"github.com/softwaresalt/backlogit/internal/version"
 )
 
@@ -49,14 +53,261 @@ type MCPDaemonStatus struct {
 	ProtocolVersion string    `json:"protocol_version,omitempty"`
 }
 
-// VerifyMCPDaemonAttachment is not yet implemented.
+// VerifyMCPDaemonAttachment checks identity and compatibility without changing
+// the running daemon or interrupting its peer sessions.
 func VerifyMCPDaemonAttachment(info MCPDaemonInfo, workspaceRoot, storageRoot, expectedVersion, expectedProtocolVersion string) error {
-	return corerrors.ErrNotImplemented
+	if !sameDaemonPath(info.WorkspaceRoot, workspaceRoot) || !sameDaemonPath(info.StorageRoot, storageRoot) {
+		return fmt.Errorf("daemon pid %d belongs to workspace %s (storage %s): %w",
+			info.PID, info.WorkspaceRoot, info.StorageRoot, corerrors.ErrDaemonWorkspaceMismatch)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve attachment executable: %w", err)
+	}
+	if !sameDaemonPath(info.ExecutablePath, exe) || info.Version != expectedVersion ||
+		info.ProtocolVersion != expectedProtocolVersion {
+		return fmt.Errorf("daemon pid %d has version %s, protocol %s, binary %s; expected %s, %s, %s; active_sessions=%d; run `backlogit mcp stop` or `backlogit mcp --replace`: %w",
+			info.PID, info.Version, info.ProtocolVersion, info.ExecutablePath, expectedVersion,
+			expectedProtocolVersion, exe, info.ActiveSessions, corerrors.ErrDaemonVersionMismatch)
+	}
+	return nil
 }
 
-// RunMCPDaemon is not yet implemented.
-func RunMCPDaemon(ctx context.Context, rootPath string, readOnly bool, idleTimeout time.Duration) error {
-	return corerrors.ErrNotImplemented
+// RunMCPDaemon hosts independent MCP streams until stop, idle expiry, or
+// cancellation, then joins sessions and closes their workspace before unlocking.
+func RunMCPDaemon(ctx context.Context, rootPath string, replace bool, idleTimeout time.Duration) (result error) {
+	if ctx == nil || rootPath == "" || idleTimeout < 0 {
+		return mcpDaemonValidationError("daemon requires a context, workspace, and nonnegative idle timeout")
+	}
+	if idleTimeout == 0 {
+		idleTimeout = 15 * time.Minute
+	}
+	release, err := AcquireMCPDaemonLock(ctx, rootPath, replace)
+	if err != nil {
+		return fmt.Errorf("acquire daemon ownership: %w", err)
+	}
+	defer func() { result = errors.Join(result, release()) }()
+	_, _, runtimeDir, runtimeRoot, err := openMCPDaemonRuntimeRoot(rootPath)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, runtimeRoot.Close()) }()
+	info, err := readMCPDaemonInfoAt(runtimeRoot, runtimeDir)
+	if err != nil {
+		return err
+	}
+	s, err := openMCPServer(ctx, info.WorkspaceRoot)
+	if err != nil {
+		return fmt.Errorf("open daemon server: %w", err)
+	}
+	defer func() {
+		result = errors.Join(result, s.CloseAllSessions())
+		if s.Workspace != nil {
+			result = errors.Join(result, s.Workspace.Close())
+		}
+	}()
+	info.IPCTransport, info.Endpoint, err = DeriveMCPDaemonEndpoint(info.WorkspaceRoot, info.StorageRoot, runtimeDir)
+	if err != nil {
+		return err
+	}
+	info.ProtocolVersion = mcpDaemonProtocolVersion
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	listener, err := ListenMCPDaemonIPC(runCtx, runtimeRoot, runtimeDir, info.IPCTransport, info.Endpoint)
+	if err != nil {
+		return fmt.Errorf("listen for daemon sessions: %w", err)
+	}
+	defer func() { result = errors.Join(result, listener.Close()) }()
+	if err := removeMCPDaemonSidecar(runtimeRoot); err != nil {
+		return err
+	}
+	if err := writeMCPDaemonSidecar(runtimeRoot, runtimeDir, info); err != nil {
+		return err
+	}
+	runtime := &mcpDaemonRuntime{server: s, info: info, stop: make(chan struct{}), idleSince: time.Now()}
+	accepted := make(chan error, 1)
+	var workers sync.WaitGroup
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				accepted <- err
+				return
+			}
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				runtime.serve(runCtx, conn)
+			}()
+		}
+	}()
+	tick := time.NewTicker(min(idleTimeout, 100*time.Millisecond))
+	defer tick.Stop()
+	acceptFinished := false
+wait:
+	for {
+		select {
+		case <-ctx.Done():
+			result = fmt.Errorf("run MCP daemon: %w", ctx.Err())
+			break wait
+		case <-runtime.stop:
+			break wait
+		case err := <-accepted:
+			acceptFinished = true
+			result = fmt.Errorf("accept daemon connection: %w", err)
+			break wait
+		case <-tick.C:
+			runtime.mu.Lock()
+			idle := runtime.sessions == 0 && time.Since(runtime.idleSince) >= idleTimeout
+			runtime.mu.Unlock()
+			if idle {
+				break wait
+			}
+		}
+	}
+	cancel()
+	result = errors.Join(result, listener.Close())
+	if !acceptFinished {
+		<-accepted // Accept owns all worker admissions; join it before Wait.
+	}
+	result = errors.Join(result, s.CloseAllSessions())
+	workers.Wait()
+	return result
+}
+
+const mcpDaemonProtocolVersion = "backlogit-mcp-ipc/v1"
+
+type mcpDaemonHeader struct {
+	ProtocolVersion string `json:"protocol_version"`
+	Command         string `json:"command"`
+	WorkspaceRoot   string `json:"workspace_root"`
+	StorageRoot     string `json:"storage_root"`
+	Version         string `json:"version"`
+}
+
+type mcpDaemonRuntime struct {
+	server    *mcpinternal.Server
+	info      MCPDaemonInfo
+	stop      chan struct{}
+	stopOnce  sync.Once
+	mu        sync.Mutex
+	sessions  int
+	nextID    uint64
+	idleSince time.Time
+}
+
+func (d *mcpDaemonRuntime) serve(ctx context.Context, conn net.Conn) {
+	// Closing the connection interrupts both an incomplete handshake and the
+	// buffered session reader. Join the callback before returning ownership.
+	closed := make(chan struct{})
+	stopClose := context.AfterFunc(ctx, func() {
+		_ = conn.Close() // The handler also closes its owned connection below.
+		close(closed)
+	})
+	defer func() {
+		if !stopClose() {
+			<-closed
+		}
+		if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			slog.Debug("close daemon connection", "error", err)
+		}
+	}()
+	if err := conn.SetDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+		slog.Warn("set daemon handshake deadline", "error", err)
+		return
+	}
+	reader := bufio.NewReaderSize(conn, maxMCPDaemonInfoBytes)
+	line, err := reader.ReadSlice('\n')
+	if err != nil {
+		slog.Debug("read daemon handshake", "error", err)
+		return
+	}
+	var header mcpDaemonHeader
+	if err := json.Unmarshal(line, &header); err != nil {
+		slog.Debug("decode daemon handshake", "error", err)
+		return
+	}
+	attachment := d.info
+	attachment.WorkspaceRoot, attachment.StorageRoot = header.WorkspaceRoot, header.StorageRoot
+	attachment.Version, attachment.ProtocolVersion = header.Version, header.ProtocolVersion
+	if err := VerifyMCPDaemonAttachment(attachment, d.info.WorkspaceRoot, d.info.StorageRoot,
+		d.info.Version, d.info.ProtocolVersion); err != nil {
+		slog.Warn("refuse daemon attachment", "error", err)
+		return
+	}
+	switch header.Command {
+	case "status", "stop":
+		status := mcpDaemonStatusFromInfo(d.info)
+		status.ActiveSessions = d.server.ActiveSessionCount()
+		if err := json.NewEncoder(conn).Encode(status); err != nil {
+			slog.Debug("write daemon control response", "error", err)
+		}
+		if header.Command == "stop" {
+			d.stopOnce.Do(func() { close(d.stop) })
+		}
+	case "session":
+		if err := conn.SetDeadline(time.Time{}); err != nil {
+			slog.Warn("clear daemon session deadline", "error", err)
+			return
+		}
+		d.mu.Lock()
+		d.sessions++
+		d.nextID++
+		id := fmt.Sprintf("ipc-%d", d.nextID)
+		d.mu.Unlock()
+		if err := d.server.ServeSessionStream(ctx, id, reader, conn); err != nil {
+			slog.Debug("serve daemon session", "session", id, "error", err)
+		}
+		d.mu.Lock()
+		d.sessions--
+		if d.sessions == 0 {
+			d.idleSince = time.Now()
+		}
+		d.mu.Unlock()
+	default:
+		slog.Debug("refuse unknown daemon command", "command", header.Command)
+	}
+}
+
+func mcpDaemonStatusFromInfo(info MCPDaemonInfo) MCPDaemonStatus {
+	return MCPDaemonStatus{
+		Running: true, PID: info.PID, StartedAt: info.StartedAt,
+		WorkspaceRoot: info.WorkspaceRoot, StorageRoot: info.StorageRoot,
+		Version: info.Version, LockPath: info.LockPath, IPCTransport: info.IPCTransport,
+		Endpoint: info.Endpoint, ActiveSessions: info.ActiveSessions, ProtocolVersion: info.ProtocolVersion,
+	}
+}
+
+func mcpDaemonControl(ctx context.Context, info MCPDaemonInfo, command string) (status MCPDaemonStatus, result error) {
+	transport, endpoint, err := DeriveMCPDaemonEndpoint(info.WorkspaceRoot, info.StorageRoot, filepath.Dir(info.LockPath))
+	if err != nil {
+		return status, err
+	}
+	if transport != info.IPCTransport || endpoint != info.Endpoint || info.ProtocolVersion != mcpDaemonProtocolVersion {
+		return status, mcpDaemonValidationError("daemon control endpoint or protocol does not match workspace")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	conn, err := DialMCPDaemonIPC(ctx, transport, endpoint, 500*time.Millisecond)
+	if err != nil {
+		return status, fmt.Errorf("connect daemon control: %w", err)
+	}
+	defer func() { result = errors.Join(result, conn.Close()) }()
+	deadline, _ := ctx.Deadline() // WithTimeout always supplies a deadline.
+	if err := conn.SetDeadline(deadline); err != nil {
+		return status, fmt.Errorf("set daemon control deadline: %w", err)
+	}
+	header := mcpDaemonHeader{info.ProtocolVersion, command, info.WorkspaceRoot, info.StorageRoot, info.Version}
+	if err := json.NewEncoder(conn).Encode(header); err != nil {
+		return status, fmt.Errorf("write daemon control: %w", err)
+	}
+	if err := json.NewDecoder(io.LimitReader(conn, maxMCPDaemonInfoBytes)).Decode(&status); err != nil {
+		return status, fmt.Errorf("read daemon control: %w", err)
+	}
+	if status.PID != info.PID || status.Endpoint != info.Endpoint || status.ProtocolVersion != info.ProtocolVersion {
+		return MCPDaemonStatus{}, mcpDaemonValidationError("daemon control response identity changed")
+	}
+	return status, nil
 }
 
 // PrewarmMCPDaemon is not yet implemented.
@@ -493,9 +744,8 @@ func acquireMCPDaemonLockWithOptions(ctx context.Context, rootPath string, repla
 	}, nil
 }
 
-// InspectMCPDaemonStatus reports the MCP daemon status for the workspace at
-// rootPath by probing the OS lock. A sidecar left by a crashed daemon is
-// removed and reported as not running.
+// InspectMCPDaemonStatus probes metadata, process identity, and IPC without
+// locking a live daemon. Only crashed-holder cleanup takes the OS lock.
 func InspectMCPDaemonStatus(rootPath string) (MCPDaemonStatus, error) {
 	workspaceRoot, storageRoot, runtimeDir, runtimeRoot, err := openMCPDaemonRuntimeRoot(rootPath)
 	if err != nil {
@@ -508,31 +758,69 @@ func InspectMCPDaemonStatus(rootPath string) (MCPDaemonStatus, error) {
 		StorageRoot:   storageRoot,
 		LockPath:      filepath.Join(runtimeDir, mcpDaemonLockName),
 	}
-	probe, acquired, err := openMCPDaemonLockFile(runtimeRoot, runtimeDir)
+	info, err := probeMCPDaemonInfo(runtimeRoot, runtimeDir, defaultMCPDaemonOptions())
+	if errors.Is(err, os.ErrNotExist) {
+		return status, nil
+	}
 	if err != nil {
 		return MCPDaemonStatus{}, err
 	}
-	if acquired {
-		rmErr := removeMCPDaemonSidecar(runtimeRoot)
-		unlockErr := unlockFile(probe)
-		closeErr := probe.Close()
-		if err := errors.Join(rmErr, unlockErr, closeErr); err != nil {
-			return MCPDaemonStatus{}, err
-		}
-		return status, nil
+	if !isVerifiedProcessAlive(info.PID, info.ProcessStartTime, info.ExecutablePath) {
+		return MCPDaemonStatus{}, mcpDaemonValidationError("held daemon lock has unverifiable process metadata")
 	}
+	if info.Endpoint == "" {
+		return mcpDaemonStatusFromInfo(info), nil // Legacy lock-only holder.
+	}
+	if !sameDaemonPath(info.WorkspaceRoot, workspaceRoot) || !sameDaemonPath(info.StorageRoot, storageRoot) ||
+		!sameDaemonPath(info.LockPath, status.LockPath) {
+		return MCPDaemonStatus{}, mcpDaemonValidationError("daemon metadata does not belong to this workspace")
+	}
+	return mcpDaemonControl(context.Background(), info, "status")
+}
 
+// probeMCPDaemonInfo preserves no-follow leaf validation without opening the
+// lock on absent metadata or a verified live holder.
+func probeMCPDaemonInfo(runtimeRoot *os.Root, runtimeDir string, opts mcpDaemonOptions) (MCPDaemonInfo, error) {
+	lockPath, err := resolveMCPDaemonLeafPath(runtimeRoot, runtimeDir, mcpDaemonLockName)
+	if err != nil {
+		return MCPDaemonInfo{}, err
+	}
+	if linked, err := runtimeRoot.Lstat(mcpDaemonLockName); err == nil {
+		if err := rejectLink(linked, lockPath); err != nil {
+			return MCPDaemonInfo{}, err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return MCPDaemonInfo{}, fmt.Errorf("inspect daemon lock leaf: %w", err)
+	}
 	info, err := readMCPDaemonInfoAt(runtimeRoot, runtimeDir)
-	if errors.Is(err, corerrors.ErrValidation) {
-		return MCPDaemonStatus{}, err
+	if err != nil {
+		return MCPDaemonInfo{}, err
 	}
-	status.Running = true
-	if err == nil {
-		status.PID = info.PID
-		status.StartedAt = info.StartedAt
-		status.Version = info.Version
+	if isVerifiedProcessAlive(info.PID, info.ProcessStartTime, info.ExecutablePath) {
+		return info, nil
 	}
-	return status, nil
+	probe, acquired, err := opts.OpenLock(runtimeRoot, runtimeDir)
+	if err != nil {
+		return MCPDaemonInfo{}, err
+	}
+	if !acquired {
+		// A mismatched identity while the lock is held must never be treated
+		// as an unowned stale sidecar (or permit termination without reverify).
+		return info, nil
+	}
+	// Re-read under the cleanup lock: a new owner may have published metadata
+	// between the first read and acquisition.
+	current, readErr := readMCPDaemonInfoAt(runtimeRoot, runtimeDir)
+	if readErr == nil && isVerifiedProcessAlive(current.PID, current.ProcessStartTime, current.ExecutablePath) {
+		return current, errors.Join(unlockFile(probe), probe.Close())
+	}
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return MCPDaemonInfo{}, errors.Join(readErr, unlockFile(probe), probe.Close())
+	}
+	if err := closeLockProbe(runtimeRoot, probe); err != nil {
+		return MCPDaemonInfo{}, err
+	}
+	return MCPDaemonInfo{}, fmt.Errorf("daemon holder is not running: %w", os.ErrNotExist)
 }
 
 // StopMCPDaemon stops the MCP daemon for the workspace at rootPath. It is
@@ -547,26 +835,6 @@ func StopMCPDaemon(ctx context.Context, rootPath string) (MCPDaemonStopResult, e
 // then releases the probe.
 func closeLockProbe(runtimeRoot *os.Root, probe *os.File) error {
 	return errors.Join(removeMCPDaemonSidecar(runtimeRoot), unlockFile(probe), probe.Close())
-}
-
-// readHolderInfo reads the sidecar, tolerating a new daemon that is still
-// replacing stale metadata.
-func readHolderInfo(ctx context.Context, runtimeRoot *os.Root, runtimeDir string, timeout time.Duration) (MCPDaemonInfo, error) {
-	deadline := time.Now().Add(timeout)
-	for {
-		info, err := readMCPDaemonInfoAt(runtimeRoot, runtimeDir)
-		if err == nil {
-			return info, nil
-		}
-		if errors.Is(err, corerrors.ErrValidation) || !time.Now().Before(deadline) {
-			return MCPDaemonInfo{}, mcpDaemonValidationError("daemon metadata unavailable: %v", err)
-		}
-		select {
-		case <-ctx.Done():
-			return MCPDaemonInfo{}, fmt.Errorf("read daemon metadata: %w", ctx.Err())
-		case <-time.After(25 * time.Millisecond):
-		}
-	}
 }
 
 // sameDaemonPath reports whether recorded and current name the same filesystem
@@ -599,26 +867,36 @@ func stopMCPDaemonWithOptions(ctx context.Context, rootPath string, opts mcpDaem
 		LockPath:      filepath.Join(runtimeDir, mcpDaemonLockName),
 	}
 
-	probe, acquired, err := opts.OpenLock(runtimeRoot, runtimeDir)
-	if err != nil {
-		return MCPDaemonStopResult{}, err
+	if err := ctx.Err(); err != nil {
+		return MCPDaemonStopResult{}, fmt.Errorf("stop MCP daemon: %w", err)
 	}
-	if acquired {
-		if err := closeLockProbe(runtimeRoot, probe); err != nil {
-			return MCPDaemonStopResult{}, err
-		}
+	info, err := probeMCPDaemonInfo(runtimeRoot, runtimeDir, opts)
+	if errors.Is(err, os.ErrNotExist) {
 		return result, nil
 	}
-
-	info, err := readHolderInfo(ctx, runtimeRoot, runtimeDir, time.Second)
 	if err != nil {
 		return MCPDaemonStopResult{}, err
 	}
-	if info.PID <= 0 || info.PID == opts.PID() || info.ProcessStartTime <= 0 || info.ExecutablePath == "" {
+	if info.PID <= 0 || info.ProcessStartTime <= 0 || info.ExecutablePath == "" {
 		return MCPDaemonStopResult{}, mcpDaemonValidationError("refusing to stop daemon with invalid or incomplete metadata (pid %d)", info.PID)
 	}
 	if !sameDaemonPath(info.WorkspaceRoot, workspaceRoot) || !sameDaemonPath(info.StorageRoot, storageRoot) || !sameDaemonPath(info.LockPath, result.LockPath) {
 		return MCPDaemonStopResult{}, mcpDaemonValidationError("refusing to stop pid %d: daemon metadata does not belong to this workspace", info.PID)
+	}
+	if info.Endpoint != "" && isVerifiedProcessAlive(info.PID, info.ProcessStartTime, info.ExecutablePath) {
+		if _, controlErr := mcpDaemonControl(ctx, info, "stop"); controlErr == nil {
+			if waitErr := waitMCPDaemonDrain(ctx, runtimeRoot, runtimeDir, info, opts.StopTimeout); waitErr == nil {
+				result.Stopped, result.PID = true, info.PID
+				return result, nil
+			} else if ctx.Err() != nil || info.PID == opts.PID() {
+				return MCPDaemonStopResult{}, waitErr
+			}
+		} else if ctx.Err() != nil {
+			return MCPDaemonStopResult{}, controlErr
+		}
+	}
+	if info.PID == opts.PID() {
+		return MCPDaemonStopResult{}, mcpDaemonValidationError("refusing to terminate daemon host process (pid %d)", info.PID)
 	}
 
 	reverify := func() error {
@@ -626,6 +904,7 @@ func stopMCPDaemonWithOptions(ctx context.Context, rootPath string, opts mcpDaem
 		if err != nil {
 			return mcpDaemonValidationError("re-read daemon metadata: %v", err)
 		}
+
 		if cur.PID != info.PID || cur.ProcessStartTime != info.ProcessStartTime {
 			return mcpDaemonValidationError("daemon metadata changed before termination")
 		}
@@ -665,6 +944,30 @@ func stopMCPDaemonWithOptions(ctx context.Context, rootPath string, opts mcpDaem
 		case <-timer.C:
 			return MCPDaemonStopResult{}, fmt.Errorf("mcp daemon pid %d did not release %s within %s", info.PID, result.LockPath, opts.StopTimeout)
 		case <-time.After(25 * time.Millisecond):
+		}
+	}
+}
+
+func waitMCPDaemonDrain(ctx context.Context, runtimeRoot *os.Root, runtimeDir string, info MCPDaemonInfo, timeout time.Duration) error {
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		current, err := readMCPDaemonInfoAt(runtimeRoot, runtimeDir)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("observe daemon drain: %w", err)
+		}
+		if current.PID != info.PID || current.ProcessStartTime != info.ProcessStartTime {
+			return mcpDaemonValidationError("daemon holder changed during drain")
+		}
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("wait for daemon drain: %w", waitCtx.Err())
+		case <-tick.C:
 		}
 	}
 }

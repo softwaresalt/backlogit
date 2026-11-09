@@ -274,7 +274,7 @@ func (s *Server) dispatchSessionFrame(ctx context.Context, sess *MultiSessionCon
 			}
 		}
 	}
-	reqCtx, cancel := context.WithCancel(ctx)
+	reqCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	sess.inFlightMu.Lock()
 	if _, exists := sess.inFlight[key]; exists {
 		sess.inFlightMu.Unlock()
@@ -285,17 +285,24 @@ func (s *Server) dispatchSessionFrame(ctx context.Context, sess *MultiSessionCon
 		sess.queueMessage(ctx, response)
 		return nil
 	}
+	stopSessionCancel := context.AfterFunc(ctx, cancel)
+	if ctx.Err() != nil {
+		cancel()
+	}
 	sess.inFlight[key] = cancel
 	sess.inFlightMu.Unlock()
 	sess.workers.Add(1)
 	go func() {
 		defer sess.workers.Done()
-		defer cancel()
+		// Unregister when the worker exits so the session cannot retain completed
+		// requests, without canceling a successfully completed handler's context.
+		defer stopSessionCancel()
 		response := s.mcp.HandleMessage(s.mcp.WithContext(reqCtx, sess), frame)
 		sess.inFlightMu.Lock()
 		delete(sess.inFlight, key)
 		sess.inFlightMu.Unlock()
 		if err := sess.writeMessage(ctx, sessionWireResponse(response, envelope.ID)); err != nil {
+			cancel()
 			sess.recordError(err)
 			sess.cancel()
 		}
@@ -541,8 +548,8 @@ func (s *Server) ActiveSessionCount() int {
 }
 
 // CloseAllSessions stops admission, cancels every session, and joins their drains.
-// The terminal shutdown is safe to call concurrently or repeatedly. It does not
-// close the operation coordinator, which also serves direct InvokeTool callers.
+// The terminal shutdown also closes the operation coordinator after sessions
+// drain, and is safe to call concurrently or repeatedly.
 func (s *Server) CloseAllSessions() error {
 	s.sessionsMu.Lock()
 	if done := s.sessionDrainDone; done != nil {
@@ -566,6 +573,9 @@ func (s *Server) CloseAllSessions() error {
 		if sess.result != nil {
 			result = errors.Join(result, fmt.Errorf("drain MCP session %q: %w", sess.sessionID, sess.result))
 		}
+	}
+	if s.coordinator != nil {
+		result = errors.Join(result, s.coordinator.Close())
 	}
 	s.sessionsMu.Lock()
 	s.sessionDrainErr = result
