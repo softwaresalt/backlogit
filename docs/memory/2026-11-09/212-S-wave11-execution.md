@@ -2,7 +2,7 @@
 title: "212-S Wave 11 execution and pre-Ordinal-9 handoff"
 shipment_id: "212-S"
 feature_id: "211-F"
-phase: "wave11-u1i-done-u1j-next"
+phase: "wave11-tasks-done-pre-convergence"
 ---
 
 ## Custody and recovery
@@ -118,13 +118,79 @@ The change preserves durability flags, final error identity and
 No new follow-up was identified. Runtime/full-suite verification remains
 pending; this is task readiness, not branch-wide PR readiness.
 
+### U1j first build and review
+
+U1j is active with exactly one verified start; telemetry is disabled.
+Its first implementation remains uncommitted. Three of five build-loop
+observations have been consumed: pre-work RED, post-implementation failure,
+and verbose diagnosis. No full-suite allowance was consumed.
+
+The report-only task review is BLOCKED at this intermediate diff:
+P0=0, P1=1, P2=1, P3=0.
+
+* P1: retry-helper normalization moves NTSTATUS-to-errno conversion beneath
+  the open wrapper. Existing `shipmentOpsWindowsIsNotExist` depends on extracting
+  NTSTATUS before `os.IsNotExist`; wrapped errno no longer satisfies that path.
+  Existing journal lifecycle regressions consequently fail on absent journals.
+* P2: the new backoff observer uses `os.ReadFile` against the retained
+  DELETE-capable temp handle. Its missing DELETE share creates its own sharing
+  violation before the retry assertions can execute.
+
+Both pass P-021 C1: they complete the exact authorized retry contract and
+its preservation harness, within the two already-authorized U1j files.
+No deferred scope expansion or new stash capture is required.
+Remediation must preserve raw syscall errors until the existing normalization
+boundary and use a DELETE-sharing test reader, retaining every byte assertion.
+No handle close/reopen workaround, broader transient classification, or
+assertion weakening is permitted.
+
+The fix-ci skill was inspected but its open-PR prerequisite is absent.
+Remediation therefore continues through the current build-feature task loop,
+not a push/CI loop. Two build observations remain; no counters are reset.
+
+### U1j completion
+
+Observation 4 corrected raw-error preservation and the observer read, but
+exposed an impossible in-flight parent-directory swap on this Windows host.
+Observation 5 corrected only that new fixture: the canonical directory is
+actually replaced after validating its directory handle and before opening
+the source child. Original and decoy bytes are checked at every retry sleep;
+source-handle and buffer identities remain pinned. An additional in-flight
+rename probe records the host restriction without imposing it on filesystems
+that permit the rename. No assertion was removed or skipped.
+
+The final scoped race suite passed, including all 63 direct original U1j
+subtests, nested reparse validation, the new raw-error preservation function,
+and every selected existing lifecycle regression. Compile, vet, pinned lint,
+and format passed. U1j consumed 5/5 build observations, with no sixth repair
+attempt authorized. This was one task with intermediate failures, not three
+consecutive failed tasks.
+
+Final report-only review: READY, unresolved P0=0, P1=0, P2=0, P3=0,
+covering the two-file delta in
+`8025a9e0..e5b26dd7f5b92ae1695188272888570dc5ee57a8`.
+The original P1 and P2 findings are resolved. No new follow-up was identified.
+Review is task-scoped; whole-branch review and runtime validation remain pending.
+
+Implementation `e5b26dd7f5b92ae1695188272888570dc5ee57a8` was associated
+with U1j through commit tracking. Governed completion marked it done and
+automatically archived it. Both queue removal and archive addition must be
+committed together.
+
+The compound skill captured the hard-won error-boundary and handle-aware
+observer lessons in
+[the learning](../../compound/test-failures/windows-retry-error-boundaries-and-handle-aware-observers-2026-11-09.md).
+The configured continuous-learning `observe` skill was invoked by named-file
+loading, but `.github/skills/observe/SKILL.md` is absent. Observation capture
+is degraded; no substitute skill or fabricated observation was created.
+
 Historical full-suite failed count remains 7. Ordinal 9 is NOT CONSUMED.
 Wave 10 and unfiltered convergence remain unresolved; Wave 11 is not yet
 converged. No full repository suite, PR, push, merge, or closure is authorized
 by this checkpoint. The requested stopping boundary precedes Ordinal 9.
 
-Next: execute U1j with exactly one start, then prepare the clean pre-full-suite
-checkpoint. Current census: 20 done, 1 queued, all other task states zero.
+Next: prepare the clean pre-full-suite checkpoint. Current census: 21 done,
+0 queued, all other task states zero. Both new tasks have exactly one start.
 Existing residuals `0D073C21`, `D2FCA0FB`,
 native POSIX verification, incomplete symbol graph coverage, and incomplete
 prior adversarial coverage remain unchanged.

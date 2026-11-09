@@ -71,9 +71,10 @@ Only new top-level test:
 * Exhaustion preserves the journal preimage and writer-owned temp payload
 * Mutation retries retain the validated source handle; rename retries retain
   the directory-relative buffer pointer, class, length, and replace flag
-* Directory-object binding during backoff: 2 assertion-RED subtests, one per
-  mutation, swap the canonical directory on the first sleep and require only
-  the originally validated directory object to change; decoys remain intact
+* Directory-object binding after path swap across backoff: 2 subtests, one per
+  mutation, swap the canonical directory after directory validation and before
+  opening the source child; only the originally validated directory object may
+  change, and both decoys remain intact throughout every sleep and after success
 * Existing journal and temp opens, each eventual-success and exhaustion:
   4 assertion-RED subtests use a real GENERIC_READ handle denying DELETE
   sharing; an independent kernel probe verifies the fixture; the seventh
@@ -210,9 +211,9 @@ they cannot directly count NtCreateFile invocations or inject access-denied and
 delete-pending statuses at that call. Those raw/wrapped statuses and exact
 8-attempt counts are covered at both authorized mutation seams.
 
-The new path-swap-on-backoff success assertions intentionally await GREEN before
-their success branch can execute. Existing directory-binding security tests
-already pass against the single-shot code.
+At scaffold acceptance, the path-swap success assertions awaited GREEN.
+The corrected fixture and subsequent GREEN evidence are recorded below.
+Existing directory-binding security tests already passed against single-shot code.
 
 Only harness-ready labels and evidence comments are authorized backlog changes;
 no planning fields or task status changes are part of this manifest.
@@ -223,3 +224,66 @@ Protected checkpoint `.backlogit/checkpoints/checkpoint-20261106-210317.json`
 remains unstaged and untouched, with SHA-256
 `235844507a4975f27c5a88f4fe3e499fb538110c86e6a264637db1b69837ca70`.
 All changes remain uncommitted for parent scaffold review.
+
+## U1j same-contract fixture correction and observation 5
+
+This section supersedes the earlier scaffold-only state for U1j verification.
+U1j remains active with exactly one start; no reclaim or task mutation occurred.
+Four build observations were inherited as consumed. The final fifth observation
+passed after this bounded P-021 C1 harness correction.
+
+The existing DELETE-sharing observer uses `CreateFile` with read, write, and
+DELETE sharing, then reads and closes the handle with checked errors. This
+preserves the original byte assertions without conflicting with the retained
+DELETE-capable mutation source handle. It was not changed in this correction.
+
+The canonical directory is now actually replaced before `mutate` opens its
+source child, but after the validated directory handle is opened. Both rename
+and remove run against that bound original object for all eight attempts.
+Every sleep checks the original target and temp bytes plus both canonical
+decoy payloads. Post-success checks require the original temp to be absent,
+the original target to have the operation-specific payload, and both decoys
+to remain unchanged. Source-handle and rename-buffer identity assertions,
+seven exact sleeps totaling 635ms, and all prior security assertions remain.
+Neither production nor the old swap helper or old assertions was edited.
+
+The first sleep also attempts to rename the pinned original directory.
+Both scenarios on this host logged AccessDenied. Filesystems that permit this
+rename must restore the original directory before byte checks continue;
+OS rejection is not a portable contract. The canonical decoy directory stays
+replaced throughout all retry sleeps in either case. No skip or early return
+was added.
+
+One exact scoped observation ran, exit 0, with no race finding or skip:
+
+```powershell
+& ./bin/tmp/212-go-env.ps1 go test -v -race -count=1 -timeout=30m -run '^(TestU1j_|TestUR1B_|TestP021ClaimSerialization_|TestShipmentOpsJournal|TestWriteShipmentLifecycleJournal_|TestNewWorkspace_Rejects)' ./internal/core
+```
+
+Package receipt: `internal/core`, PASS, 59.832s. Named passing receipts under
+`TestU1j_ShipmentOpsJournalWindowsTransientContentionRetryAndSecurityPreservation`:
+
+* `rename/directory_object_binding_after_path_swap_across_backoff`
+* `remove/directory_object_binding_after_path_swap_across_backoff`
+* All other 61 direct subtests, plus nested `reparse_temp`
+
+`TestU1j_RawErrorPreservation` and its three subtests passed, including
+`missing_child_retains_status_through_open_wrapper`. All selected existing
+regressions passed. Terminal-captured evidence:
+`bin/tmp/1794253232798-copilot-tool-output-12284-a4eb29ae-4c01-48c4-90bb-39cbbefd8503.txt`.
+
+The compile-only baseline passed before editing. After observation 5, each
+required gate ran separately through the wrapper and exited 0; vet, lint,
+and formatting emitted no findings:
+
+```powershell
+& ./bin/tmp/212-go-env.ps1 go test -run=^$ -count=1 ./...
+& ./bin/tmp/212-go-env.ps1 go vet ./...
+& ./bin/tmp/212-go-env.ps1 ./bin/golangci-lint.exe run --timeout=10m
+& ./bin/tmp/212-go-env.ps1 gofmt -l cmd internal tests scripts
+```
+
+No full suite ran. Historical full-suite failed count remains 7, and Ordinal 9
+is NOT CONSUMED. No staging, commit, checkpoint, PR, push, merge, or subagent
+operation occurred. Inherited backlog, hook, checkpoint, memory, U1i, and
+production changes were preserved.
