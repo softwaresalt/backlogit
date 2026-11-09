@@ -159,3 +159,84 @@ not an unbounded retry. POSIX process-group signal behavior remains part
 of the existing native POSIX runtime follow-up, not a verified PASS.
 Neither observation was represented as a proven code defect or fixed
 outside the authorized contract. Runtime verification remains required.
+
+## Wave 9 convergence
+
+U6 implementation e6c2c62d7f9b4999ab81af1004925af90a681ed6 was linked
+to the task. Its done transition and both sides of the archive move
+were committed at 804471b1.
+
+Ship independently ran compile-only, vet, pinned lint, first-party
+formatting and the U6 race selector: all PASS. The U6 selector had
+five named top-level passes. Its four-caller cold-start and two-process
+disconnect-survival witnesses passed again. The U2i selector exited 1
+only on U7_GeneratedReferenceDocsAndLinks assertions, without a build
+failure, panic or timeout. U6 wiring is no longer RED.
+
+FULL_SUITE_DEFERRED: wave 9
+
+The sole open selector is `^TestU2i_`, owned by 211.015-T, command
+`go test -count=1 -run '^TestU2i_' ./internal/cli`.
+Its only remaining green-maker is 211.007-T, scheduled at closing wave 10.
+Compile, vet, lint, format and the declared scoped command passed;
+the open selector was re-confirmed assertion RED. A full run would
+classify expected failures rather than verify a green repository.
+The single post-U7 unfiltered full-suite allowance remains unconsumed.
+
+## Wave 10 pre-start halt
+
+U7 static intake passed: docs-only class, complete ordered contract,
+literal must-fail-before-deliverable precondition, executable read-only
+verification command and closed shipment exempt membership.
+No production deliverable or predecessor harness owner is involved.
+The exact exemption command was screened and run once through the
+pinned environment. It exited 1 with no success marker because the
+generated daemon/prewarm documentation does not exist.
+
+Step 4.1a then refused the baseline because `git status --porcelain`
+was nonempty. No exempt_baseline_sha was captured. No U7 start was
+appended, no docs were generated and U7 remains claim-assigned with
+zero starts. It was not moved again or changed to blocked.
+
+The remaining state is pre-existing bookkeeping plus this session's
+checkpoints, not uncommitted implementation. It includes:
+
+* Modified checkpoint-20261109-062504.json, hooks_queue.jsonl and memories.json
+* Untracked checkpoint-20261108-194645.json, 223614.json and 230851.json
+* Untracked checkpoint-20261109-023739.json, 025504.json and 030102.json
+* Untracked checkpoint-20261109-032440.json, 040035.json and 045511.json
+* Untracked checkpoint-20261109-065945.json and 071508.json
+* This session's checkpoint-20261109-074624.json
+* Untracked docs/memory/2026-11-08/212-S-final-session-handoff.md
+
+Checkpoint basenames in abbreviated bullets retain the same date prefix.
+These records were not committed merely to make the exemption gate pass.
+No stash, discard, reset, cleanup, checkpoint sweep or protected-checkpoint
+mutation was performed. The halt was recorded through P-005 telemetry.
+
+The final exact-ID census is M19: 18 done, one claim-assigned active
+(U7, zero starts), zero queued, blocked, unsupported or active residuals.
+The feature and shipment remain active. No completion or closure claim
+is made around the unfinished member.
+
+Next action requires operator disposition of the dirty bookkeeping state.
+After a genuinely clean tree is established, re-read U7's contract,
+repeat its pre-work probe and capture its baseline before appending
+the single start. Generate only the authorized CLI references, verify
+the marker and U2i GREEN, then run Wave 10's still-unused unfiltered
+convergence suite. Do not retry U5, reset counters or repeat intake.
+
+## Session continuity
+
+Compound capture records the request-context retention fix and the
+library-host versus pinned-image version distinction. Compact-context
+was invoked with target all as a bounded assessment. The release remains
+active; its recovery chain, original baseline, counters and gate verdicts
+are protected. No safe archival candidate was established. Repository-wide
+candidate assessment is degraded; zero files archived, zero recovered
+space and no plan graduation are claimed.
+
+The intermediate checkpoint from this session is resolved only after
+successful continuation through U6. One final active checkpoint will
+carry the pre-U7 halt. The older protected checkpoint stays untouched.
+No push, PR, merge, post-merge closure or successor claim occurred.
