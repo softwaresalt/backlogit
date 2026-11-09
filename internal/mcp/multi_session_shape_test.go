@@ -265,7 +265,7 @@ func TestU3a_MultiSessionStreamDispatcherSourceShape(t *testing.T) {
 	}
 	signatures := []struct{ name, receiver, params, results string }{
 		{"SessionID", "*MultiSessionConn", "", "string"},
-		{"NotificationChannel", "*MultiSessionConn", "", "chan mcplib.JSONRPCNotification"},
+		{"NotificationChannel", "*MultiSessionConn", "", "chan<- mcplib.JSONRPCNotification"},
 		{"Initialize", "*MultiSessionConn", "", ""},
 		{"Initialized", "*MultiSessionConn", "", "bool"},
 		{"ServeSessionStream", "*Server", "context.Context,string,io.Reader,io.Writer", "error"},
@@ -312,6 +312,9 @@ func u3aShapeExpr(file *ast.File, expr ast.Expr) string {
 	case *ast.StarExpr:
 		return "*" + u3aShapeExpr(file, node.X)
 	case *ast.ChanType:
+		if node.Dir == ast.SEND {
+			return "chan<- " + u3aShapeExpr(file, node.Value)
+		}
 		if node.Dir == ast.SEND|ast.RECV {
 			return "chan " + u3aShapeExpr(file, node.Value)
 		}
