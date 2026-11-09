@@ -4650,3 +4650,5 @@
 {"seq":4652,"timestamp":"2026-11-09T18:45:54.6241632Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["priority"],"item_id":"211.021-T","schema_version":1}}
 {"seq":4653,"timestamp":"2026-11-09T19:10:30.1119772Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"211.020-T","schema_version":1}}
 {"seq":4654,"timestamp":"2026-11-09T19:11:05.6373931Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"211.021-T","schema_version":1}}
+{"seq":4655,"timestamp":"2026-11-09T19:17:51.5324685Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"211.020-T","schema_version":1,"status_delta":{"from":"queued","to":"active"}}}
+{"seq":4656,"timestamp":"2026-11-09T19:23:28.7208865Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"211.020-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}

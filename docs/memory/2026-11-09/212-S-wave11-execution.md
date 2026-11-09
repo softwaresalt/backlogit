@@ -2,7 +2,7 @@
 title: "212-S Wave 11 execution and pre-Ordinal-9 handoff"
 shipment_id: "212-S"
 feature_id: "211-F"
-phase: "wave11-harness-ready"
+phase: "wave11-u1i-done-u1j-next"
 ---
 
 ## Custody and recovery
@@ -90,13 +90,41 @@ for an additional production seam.
 
 ## Counters and next step
 
+### U1i completion
+
+`211.020-T` is done and automatically archived by the governed completion
+operation. Implementation: `2e08bf9462f97e6f72f30d27a87c7d1e03e5e551`,
+associated through commit tracking. The queue-side removal and archive-side
+addition are committed together with this checkpoint.
+
+Exactly one `WORK_STARTED: 212-S` was confirmed before dispatch. The
+P-012 scoped raw-log declaration names only the two new task logs.
+Read-only Windows handles rejected reparse components, prevented directory
+replacement during the read, and verified every opened final path.
+MCP database binding was rechecked before the first task-log read.
+Telemetry begin returned disabled, so no context or close was carried.
+
+Build-feature used one implementation patch, RED then GREEN (two loop
+observations), with additional verbose GREEN confirmation. The parent
+independently ran the exact Stage scoped race selector with verbose evidence:
+the named U1i function and all 18 subtests passed. Three existing
+POSIX-permission skips remain platform-specific; the new harness did not skip.
+Compile, vet, pinned lint, and format passed.
+
+Report-only task review: READY, P0=0, P1=0, P2=0, P3=0, covering
+`69ef3acd..2e08bf9462f97e6f72f30d27a87c7d1e03e5e551`.
+The change preserves durability flags, final error identity and
+`ErrWriteNotApplied`, with eight attempts and exactly seven bounded sleeps.
+No new follow-up was identified. Runtime/full-suite verification remains
+pending; this is task readiness, not branch-wide PR readiness.
+
 Historical full-suite failed count remains 7. Ordinal 9 is NOT CONSUMED.
 Wave 10 and unfiltered convergence remain unresolved; Wave 11 is not yet
 converged. No full repository suite, PR, push, merge, or closure is authorized
 by this checkpoint. The requested stopping boundary precedes Ordinal 9.
 
-Next: commit scaffolds, record exactly one start per new task, dispatch
-build-feature sequentially, review and complete each, then prepare a clean
-pre-full-suite checkpoint. Existing residuals `0D073C21`, `D2FCA0FB`,
+Next: execute U1j with exactly one start, then prepare the clean pre-full-suite
+checkpoint. Current census: 20 done, 1 queued, all other task states zero.
+Existing residuals `0D073C21`, `D2FCA0FB`,
 native POSIX verification, incomplete symbol graph coverage, and incomplete
 prior adversarial coverage remain unchanged.
