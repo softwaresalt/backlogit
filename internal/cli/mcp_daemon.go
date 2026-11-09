@@ -10,7 +10,9 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -63,6 +65,14 @@ func VerifyMCPDaemonAttachment(info MCPDaemonInfo, workspaceRoot, storageRoot, e
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve attachment executable: %w", err)
+	}
+	// In-process hosts use their own image; library callers may instead attach
+	// to the workspace-pinned CLI image, never an arbitrary PATH executable.
+	if !sameDaemonPath(info.ExecutablePath, exe) {
+		pinned, pinnedErr := pinnedMCPDaemonBinary(workspaceRoot)
+		if pinnedErr == nil {
+			exe = pinned
+		}
 	}
 	if !sameDaemonPath(info.ExecutablePath, exe) || info.Version != expectedVersion ||
 		info.ProtocolVersion != expectedProtocolVersion {
@@ -310,14 +320,226 @@ func mcpDaemonControl(ctx context.Context, info MCPDaemonInfo, command string) (
 	return status, nil
 }
 
-// PrewarmMCPDaemon is not yet implemented.
-func PrewarmMCPDaemon(ctx context.Context, rootPath string, readOnly bool, idleTimeout time.Duration) (MCPDaemonStatus, error) {
-	return MCPDaemonStatus{}, corerrors.ErrNotImplemented
+// PrewarmMCPDaemon starts or attaches to the workspace-pinned background daemon.
+// Startup contenders share the daemon's OS lock and poll readiness without
+// acquiring it. The daemon's lifetime is independent of the caller's context.
+func PrewarmMCPDaemon(ctx context.Context, rootPath string, replace bool, idleTimeout time.Duration) (status MCPDaemonStatus, result error) {
+	if ctx == nil || rootPath == "" || idleTimeout < 0 {
+		return status, mcpDaemonValidationError("prewarm requires a context, workspace, and nonnegative idle timeout")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	workspace, storage, dir, handle, err := openMCPDaemonRuntimeRoot(rootPath)
+	if err != nil {
+		return status, err
+	}
+	defer func() { result = errors.Join(result, handle.Close()) }()
+	binary, err := pinnedMCPDaemonBinary(workspace)
+	if err != nil {
+		return status, err
+	}
+	expectedVersion, err := pinnedMCPDaemonVersion(ctx, binary, workspace)
+	if err != nil {
+		return status, err
+	}
+	if replace {
+		if _, err := StopMCPDaemon(ctx, workspace); err != nil {
+			return status, fmt.Errorf("replace MCP daemon: %w", err)
+		}
+	}
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	var childDone <-chan error
+	var lastErr error
+	for {
+		if err := ctx.Err(); err != nil {
+			return MCPDaemonStatus{}, fmt.Errorf("wait for MCP daemon readiness: %w", errors.Join(err, lastErr))
+		}
+		// Read without a lock probe: a stale record is replaced only by the
+		// child after it wins singleton ownership. Partial publication retries.
+		info, readErr := readMCPDaemonInfoAt(handle, dir)
+		if readErr != nil && errors.Is(readErr, corerrors.ErrValidation) {
+			return MCPDaemonStatus{}, readErr
+		}
+		if readErr == nil && isVerifiedProcessAlive(info.PID, info.ProcessStartTime, info.ExecutablePath) {
+			if !sameDaemonPath(info.ExecutablePath, binary) {
+				return MCPDaemonStatus{}, fmt.Errorf("daemon binary %s differs from pinned %s: %w",
+					info.ExecutablePath, binary, corerrors.ErrDaemonVersionMismatch)
+			}
+			// AcquireMCPDaemonLock initially publishes a lock-only record.
+			// Do not mistake that startup interval for incompatible protocol.
+			if info.Endpoint != "" || info.ProtocolVersion != "" {
+				if err := VerifyMCPDaemonAttachment(info, workspace, storage, expectedVersion, mcpDaemonProtocolVersion); err != nil {
+					return MCPDaemonStatus{}, err
+				}
+				status, err = mcpDaemonControl(ctx, info, "status")
+				if err == nil {
+					return status, nil
+				}
+				lastErr = err
+			}
+		} else if childDone == nil {
+			command := exec.Command(binary, "--cwd", workspace, "--no-update-check",
+				"mcp", "daemon", "--idle-timeout", idleTimeout.String())
+			command.Dir = workspace
+			// Nil streams use the null device, not the launching shim's pipes.
+			// CommandContext would incorrectly kill the shared daemon on detach.
+			if err := command.Start(); err != nil {
+				return MCPDaemonStatus{}, fmt.Errorf("start pinned MCP daemon: %w", err)
+			}
+			done := make(chan error, 1)
+			childDone = done
+			// This reaper belongs to the independent child lifetime. It owns
+			// no client streams and exits when the daemon stops (or loses admission).
+			go func() { done <- command.Wait() }()
+		}
+		select {
+		case <-ctx.Done():
+		case err := <-childDone:
+			lastErr = err
+			childDone = nil // A losing contender may retry after stale publication.
+		case <-tick.C:
+		}
+	}
 }
 
-// RunMCPSessionShim is not yet implemented.
-func RunMCPSessionShim(ctx context.Context, rootPath string, readOnly bool, input io.Reader, output io.Writer) error {
-	return corerrors.ErrNotImplemented
+func pinnedMCPDaemonVersion(ctx context.Context, binary, workspace string) (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("resolve prewarm executable: %w", err)
+	}
+	if sameDaemonPath(binary, exe) {
+		return version.Resolve(), nil
+	}
+	// Library hosts (including go test) do not necessarily share the pinned
+	// image's module/build version. Ask that image, not the daemon's sidecar.
+	command := exec.CommandContext(ctx, binary, "--cwd", workspace, "version", "--no-update-check", "--format", "json")
+	command.Dir = workspace
+	data, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("read pinned daemon version: %w", err)
+	}
+	var info versionInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return "", fmt.Errorf("decode pinned daemon version: %w", err)
+	}
+	if info.Version == "" {
+		return "", mcpDaemonValidationError("pinned daemon reported an empty version")
+	}
+	return info.Version, nil
+}
+
+// pinnedMCPDaemonBinary resolves only a regular, no-follow workspace bin image.
+func pinnedMCPDaemonBinary(workspace string) (binary string, result error) {
+	root, err := os.OpenRoot(workspace)
+	if err != nil {
+		return "", fmt.Errorf("open pinned binary workspace: %w", err)
+	}
+	defer func() { result = errors.Join(result, root.Close()) }()
+	name := "backlogit"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	binary = filepath.Join(workspace, "bin", name)
+	for _, leaf := range []string{"bin", filepath.Join("bin", name)} {
+		info, err := root.Lstat(leaf)
+		if err != nil {
+			return "", fmt.Errorf("required pinned daemon binary %s: %w", binary, errors.Join(corerrors.ErrDaemonBinaryMissing, err))
+		}
+		if err := rejectLink(info, filepath.Join(workspace, leaf)); err != nil {
+			return "", err
+		}
+	}
+	file, err := root.Open(filepath.Join("bin", name))
+	if err != nil {
+		return "", fmt.Errorf("open pinned daemon binary %s: %w", binary, errors.Join(corerrors.ErrDaemonBinaryMissing, err))
+	}
+	defer func() { result = errors.Join(result, file.Close()) }()
+	opened, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("stat pinned daemon binary: %w", err)
+	}
+	linked, err := root.Lstat(filepath.Join("bin", name))
+	if err != nil {
+		return "", fmt.Errorf("verify pinned daemon binary: %w", err)
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(opened, linked) {
+		return "", mcpDaemonValidationError("pinned daemon binary changed or is not regular")
+	}
+	return binary, nil
+}
+
+// RunMCPSessionShim proxies one stdio session to the verified workspace daemon.
+// Blocking streams must implement io.Closer; ownership transfers for the session
+// so cancellation or peer EOF can interrupt and join both copy workers.
+func RunMCPSessionShim(ctx context.Context, rootPath string, replace bool, input io.Reader, output io.Writer) (result error) {
+	if ctx == nil || input == nil || output == nil {
+		return mcpDaemonValidationError("session shim requires a context and streams")
+	}
+	status, err := PrewarmMCPDaemon(ctx, rootPath, replace, 0)
+	if err != nil {
+		return err
+	}
+	conn, err := DialMCPDaemonIPC(ctx, status.IPCTransport, status.Endpoint, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("connect MCP session: %w", err)
+	}
+	defer func() {
+		if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			result = errors.Join(result, err)
+		}
+	}()
+	header := mcpDaemonHeader{status.ProtocolVersion, "session", status.WorkspaceRoot, status.StorageRoot, status.Version}
+	if err := conn.SetWriteDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+		return fmt.Errorf("set MCP session handshake deadline: %w", err)
+	}
+	if err := json.NewEncoder(conn).Encode(header); err != nil {
+		return fmt.Errorf("write MCP session handshake: %w", err)
+	}
+	if err := conn.SetWriteDeadline(time.Time{}); err != nil {
+		return fmt.Errorf("clear MCP session handshake deadline: %w", err)
+	}
+	return proxyMCPSession(ctx, conn, input, output)
+}
+
+func proxyMCPSession(ctx context.Context, conn net.Conn, input io.Reader, output io.Writer) error {
+	done := make(chan error, 2)
+	go func() {
+		_, err := io.Copy(conn, input)
+		done <- err
+	}()
+	go func() {
+		_, err := io.Copy(output, conn)
+		done <- err
+	}()
+	var result error
+	remaining := 2
+	select {
+	case <-ctx.Done():
+		result = ctx.Err()
+	case result = <-done:
+		remaining--
+	}
+	// EOF is a session detach, not an instruction to stop the daemon. Close
+	// the entire IPC stream (named pipes do not provide a write half-close).
+	result = errors.Join(result, conn.Close())
+	if closer, ok := input.(io.Closer); ok {
+		if err := closer.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			result = errors.Join(result, err)
+		}
+	}
+	if closer, ok := output.(io.Closer); ok {
+		if err := closer.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			result = errors.Join(result, err)
+		}
+	}
+	for range remaining {
+		<-done // Errors here are consequences of closing the owned streams.
+	}
+	if result != nil {
+		return fmt.Errorf("proxy MCP session: %w", result)
+	}
+	return nil
 }
 
 // MCPDaemonStopResult reports the outcome of a request to stop a workspace MCP daemon.

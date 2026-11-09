@@ -411,7 +411,7 @@ force the disposable cache to match the file-backed source of truth.`,
 }
 
 // serveMCPStdio is a test seam for the stdio transport.
-var serveMCPStdio = mcpinternal.RunStdio
+var serveMCPStdio func(*mcpinternal.Server) error
 
 func newMCPCommand(cwd *string) *cobra.Command {
 	var replace bool
@@ -432,6 +432,9 @@ Code, or Cursor to expose backlogit workspace tools to agents.`,
 			if err != nil {
 				return err
 			}
+			if serveMCPStdio == nil {
+				return RunMCPSessionShim(cmd.Context(), *cwd, replace, cmd.InOrStdin(), cmd.OutOrStdout())
+			}
 			release, err := AcquireMCPDaemonLock(cmd.Context(), *cwd, replace)
 			if err != nil {
 				return err
@@ -446,7 +449,51 @@ Code, or Cursor to expose backlogit workspace tools to agents.`,
 		},
 	}
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop any running workspace MCP daemon before starting")
-	cmd.AddCommand(newMCPStatusCommand(cwd), newMCPStopCommand(cwd))
+	cmd.AddCommand(newMCPStatusCommand(cwd), newMCPStopCommand(cwd),
+		newMCPDaemonCommand(cwd), newMCPPrewarmCommand(cwd))
+	return cmd
+}
+
+func newMCPDaemonCommand(cwd *string) *cobra.Command {
+	var replace bool
+	var idleTimeout time.Duration
+	cmd := &cobra.Command{
+		Use:   "daemon",
+		Short: "Host the workspace background MCP daemon",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return RunMCPDaemon(cmd.Context(), *cwd, replace, idleTimeout)
+		},
+	}
+	cmd.Flags().BoolVar(&replace, "replace", false, "stop any running workspace MCP daemon before starting")
+	cmd.Flags().DurationVar(&idleTimeout, "idle-timeout", 15*time.Minute, "stop after this duration with no active sessions")
+	return cmd
+}
+
+func newMCPPrewarmCommand(cwd *string) *cobra.Command {
+	var replace bool
+	var idleTimeout time.Duration
+	var format string
+	cmd := &cobra.Command{
+		Use:   "prewarm",
+		Short: "Start or attach to the workspace background MCP daemon",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			status, err := PrewarmMCPDaemon(cmd.Context(), *cwd, replace, idleTimeout)
+			if err != nil {
+				return err
+			}
+			if format == "json" {
+				return writeMCPDaemonJSON(cmd, status)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "MCP daemon ready: pid %d, active_sessions %d, endpoint %s\n",
+				status.PID, status.ActiveSessions, status.Endpoint)
+			return wrapOutputErr(err)
+		},
+	}
+	cmd.Flags().BoolVar(&replace, "replace", false, "stop any running workspace MCP daemon before starting")
+	cmd.Flags().DurationVar(&idleTimeout, "idle-timeout", 15*time.Minute, "stop after this duration with no active sessions")
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
 	return cmd
 }
 
@@ -469,8 +516,8 @@ func newMCPStatusCommand(cwd *string) *cobra.Command {
 				_, err = fmt.Fprintf(cmd.OutOrStdout(), "MCP daemon not running (lock: %s)\n", status.LockPath)
 				return wrapOutputErr(err)
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "MCP daemon running: pid %d, started %s, version %s (lock: %s)\n",
-				status.PID, status.StartedAt.Format(time.RFC3339), status.Version, status.LockPath)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "MCP daemon running: pid %d, started %s, version %s, active_sessions %d, endpoint %s (lock: %s)\n",
+				status.PID, status.StartedAt.Format(time.RFC3339), status.Version, status.ActiveSessions, status.Endpoint, status.LockPath)
 			return wrapOutputErr(err)
 		},
 	}

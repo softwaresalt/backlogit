@@ -127,3 +127,35 @@ The task now carries harness-ready. Its scoped command is
 Its frozen green-regression array is empty; sibling red is empty;
 the sole open red remains U2i. Real subprocess fixtures own their
 workspace-contained binary and child PIDs; the live daemon is untouched.
+
+## Wave 9 implementation and review
+
+Ship verified exactly one U6 start through a safe read after append.
+Telemetry begin returned disabled; no context was carried or closed.
+Lifecycle topology passed before build-feature dispatch.
+
+The executor changed only mcp_daemon.go and root.go. It implemented
+workspace-pinned startup, bounded readiness convergence, version and
+attachment checks, independent child lifetime, session proxy cleanup,
+and executable daemon/prewarm Cobra commands. No harness was changed.
+Four of five U6 build observations were used, with no reset.
+U6 race tests passed (five top-level tests, including existing U6
+tests); the authorized CLI race regression passed in 104.219 seconds.
+Compile, vet, pinned lint and first-party formatting passed.
+
+Direct standard report-only review: READY, P0=0/P1=0/P2=0/P3=0, for
+the diff against b0ae5593b96a37e9c7dea48f7b3797ebd974f993:
+
+* mcp_daemon.go: 892982c1125f3f55707a255634ac04735b58cad3aaf6a86f89f74003b5e7d0de
+* root.go: 6ea811ef8da98a0329f3e29dd9f6cbba205fcd7307f888acfc078e3295cc1f85
+
+Engram CLI impact/map queries again lacked the new symbols and were
+marked degraded. Exact source and diff were reviewed.
+The adversarial supplement dispatched three reviewers but one lacked
+terminal tools; complete three-reviewer consensus is not claimed.
+No confirmed HIGH-confidence actionable finding was established.
+Repeated losing-child admission is bounded by the readiness deadline,
+not an unbounded retry. POSIX process-group signal behavior remains part
+of the existing native POSIX runtime follow-up, not a verified PASS.
+Neither observation was represented as a proven code defect or fixed
+outside the authorized contract. Runtime verification remains required.
