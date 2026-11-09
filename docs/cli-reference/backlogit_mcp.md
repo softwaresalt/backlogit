@@ -52,6 +52,8 @@ backlogit mcp [flags]
 ### SEE ALSO
 
 * [backlogit](backlogit.md)	 - Backlogit — AI-native agile workspace
+* [backlogit mcp daemon](backlogit_mcp_daemon.md)	 - Host the workspace background MCP daemon
+* [backlogit mcp prewarm](backlogit_mcp_prewarm.md)	 - Start or attach to the workspace background MCP daemon
 * [backlogit mcp status](backlogit_mcp_status.md)	 - Report whether a backlogit MCP daemon is running for the workspace
 * [backlogit mcp stop](backlogit_mcp_stop.md)	 - Stop the backlogit MCP daemon running for the workspace
 
