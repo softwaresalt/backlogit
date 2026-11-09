@@ -28,6 +28,7 @@ docline:
     - .backlogit/queue/211.017-T.md
     - .backlogit/queue/211.018-T.md
     - .backlogit/queue/211.019-T.md
+    - .backlogit/queue/211.005-T.md
     - .backlogit/queue/212-F.md
     - .backlogit/queue/213-F.md
     - .backlogit/queue/212-S.md
@@ -35,6 +36,7 @@ docline:
     - .backlogit/queue/214-S.md
     - docs/decisions/2026-10-29-single-daemon-per-workspace-deliberation.md
     - docs/memory/2026-11-08/212-S-longpaths-wave34-convergence.md
+    - docs/memory/2026-11-08/212-S-M19-wave8-u5-execution.md
     - docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md
     - docs/memory/2026-11-06/212-S-U1b-green-unrelated-convergence-blockers.md
     - docs/memory/2026-11-06/212-S-M11-fullsuite-circuit-handoff.md
@@ -67,6 +69,8 @@ docline:
     - 086-DL
     - 087-DL
     - 088-DL
+    - 089-DL
+    - 0D073C21
   topic: 'Support multiple agents through one singleton MCP runtime with session isolation and channel-gated mutations (ECF33C79)'
 schema_version: "1.0"
 source: docs/decisions/2026-11-04-multi-session-mcp-runtime-deliberation.md
@@ -527,7 +531,16 @@ After Ship completed `211.016-T` (`U2j`, commit `fd038b8feba15e43d7f02ed2742a0e9
          1. In `ListenMCPDaemonIPC` (`mcp_ipc_unix.go`), require `filepath.Clean(endpoint) == endpoint` and `filepath.Dir(endpoint) == filepath.Clean(runtimeDir)` before bind (rejecting unclean `x/..` segments before `net.Listen`), and use identity-checked `runtimeRoot.Remove(leafName)` cleanup if post-bind verification fails.
          2. In `(*mcpPipeConn).Read` (`mcp_ipc_windows.go`), return `0, io.EOF` directly when `errors.Is(err, io.EOF)` so callers receive unwrapped `io.EOF` on peer disconnect.
          3. In `(*mcpPipeConn).await` (`mcp_ipc_windows.go`), when `operationErr != nil` and `cancelErr == nil && drainErr == nil`, return `operationErr` directly (and unwrap single-error `os.ErrDeadlineExceeded` in `Read`/`Write` or preserve `net.Error` `Timeout() == true` compliance).
-   * `211.005-T` (`U5`, Wave 8) `depends_on` `211.004-T` (`U4`), `211.008-T` (`U1b`), and `211.019-T` (`U5a`); `harness-architect` scaffolds only `internal/cli/mcp_daemon_multisession_test.go` with zero production stub edits.
+   * `211.005-T` (`U5`, Wave 8, `Affected files (3): internal/mcp/session_mux.go, internal/cli/mcp_daemon.go, internal/cli/mcp_daemon_multisession_test.go`) `depends_on` `211.004-T` (`U4`), `211.008-T` (`U1b`), and `211.019-T` (`U5a`); `harness-architect` scaffolds only `internal/cli/mcp_daemon_multisession_test.go` with zero production stub edits.
+     * **Wave 8 `U5` (`211.005-T`) & Stash `0D073C21` Surgical Coordinator-Drain Contract Amendment (`089-DL` / Option 5, 2026-11-09, resolving `docs/memory/2026-11-08/212-S-M19-wave8-u5-execution.md`)**:
+       * **P-021 C5/C6 Four-Case Triage, Duplicate Scan, and Late-Identifier Reconciliation Audit Record for `0D073C21`**:
+         1. **Source refs carried forward**: `stash_id: 0D073C21` (retained active and unedited in `.backlogit/stash.jsonl` per Ship's single-write capture invariant); `task_id: 211.005-T`; `feature_id: 211-F`; `shipment_id: 212-S`; `PR: N/A (genuinely pre-PR)`; `review_thread_id: N/A (threadless build prerequisite)`; evidence in `docs/memory/2026-11-08/212-S-M19-wave8-u5-execution.md` and `.backlogit/logs/211.005-T.jsonl` (`U5` RED harness commit `15ac1682d0a658039f1ac87c065bfc5eb1aa0bd4`).
+         2. **(A) Unconditional Duplicate Scan Outcome (`CLEAN DUPLICATE SCAN`)**: Direct scan of all `302` active lines of `.backlogit/stash.jsonl` and all `317` archived lines of `.backlogit/archive/stash.jsonl` confirmed zero duplicate entries; zero stash entries were archived or removed.
+         3. **(B) Mandatory Late-Identifier Reconciliation Outcome (`No late identifier found — terminal PR: N/A and review-thread ID: N/A stand`)**: Searched Ship-owned residual-risk and execution records (`docs/memory/2026-11-08/212-S-M19-wave8-u5-execution.md`, `.backlogit/logs/211.005-T.jsonl`). No PR or review thread exists yet; `PR=N/A` and `review_thread_id=N/A` stand as truthful terminal records.
+       * **Zero-New-Symbol Coordinator Drain Resolution in `(*Server).CloseAllSessions()` (`internal/mcp/session_mux.go`) and `RunMCPDaemon` (`internal/cli/mcp_daemon.go`)**:
+         1. Because `s.coordinator` is unexported in `package mcp` while `RunMCPDaemon` lives in `package cli` (`internal/cli/mcp_daemon.go`), and because `(*OperationCoordinator).Close()` (`internal/mcp/coordinator.go:288-292`) is idempotent (`c.closeOnce.Do(func() { close(c.closed) }); <-c.loopDone`) and no test in `internal/mcp/session_mux_test.go` calls `InvokeTool` after `CloseAllSessions()`, `(*Server).CloseAllSessions()` in `internal/mcp/session_mux.go` (lines 543–574) calls `if s.coordinator != nil { result = errors.Join(result, s.coordinator.Close()) }` after waiting for all sessions to drain (`<-sess.done`) and before publishing `s.sessionDrainErr` and closing `s.sessionDrainDone`.
+         2. Include `internal/mcp/session_mux.go` in `211.005-T` (`U5`)'s affected files (`Affected files (3): internal/mcp/session_mux.go, internal/cli/mcp_daemon.go, internal/cli/mcp_daemon_multisession_test.go`), so `RunMCPDaemon` in `internal/cli/mcp_daemon.go` drains both active sessions and the `OperationCoordinator` via a single `s.CloseAllSessions()` call (and closes `s.Workspace` when non-nil) on graceful IPC `"stop"`, idle auto-shutdown, or context exit without adding any new exported method to `*mcp.Server`.
+         3. Preserve `211.005-T` `status: active`, `labels: code,track-b,cli,daemon,shim,u5,harness-ready`, `custom_fields.scheduler_baseline_claim: 212-S`, `.backlogit/logs/211.005-T.jsonl` (`1` `WORK_STARTED: 212-S` event), `1/5` observations, and leave `checkpoint-20261109-062504.json` and `checkpoint-20261106-210317.json` untouched on disk (`NOFEATURECOMMIT`).
    * `211.006-T` (`U6`, Wave 9) `depends_on` `211.005-T` (`U5`) and `211.019-T` (`U5a`); `harness-architect` scaffolds only `internal/cli/mcp_session_shim_test.go` with zero production stub edits.
    * `211.007-T` (`U7`, Wave 10, `harness-exempt: docs-only`) `depends_on` `211.006-T` (`U6`), closing `211.015-T` (`U2i`, `green_maker_closes_wave: 10`) GREEN at Wave 10 and discharging the single unfiltered 50-package convergence suite before PR creation.
-   * Preserve `211.003-T`..`211.007-T` `status: active`, `custom_fields.scheduler_baseline_claim: 212-S`, and `0` `WORK_STARTED` log state, and leave `checkpoint-20261108-230851.json` and `checkpoint-20261106-210317.json` completely untouched on disk (`NOFEATURECOMMIT`).
+   * Preserve `211.005-T`..`211.007-T` `status: active` and `custom_fields.scheduler_baseline_claim: 212-S` (`211.005-T` with its preserved `1` `WORK_STARTED: 212-S` event and `211.006-T`..`211.007-T` with `0` `WORK_STARTED` events), and leave `checkpoint-20261109-062504.json` and `checkpoint-20261106-210317.json` completely untouched on disk (`NOFEATURECOMMIT`).
