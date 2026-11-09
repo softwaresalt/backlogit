@@ -25,16 +25,20 @@ docline:
     - .backlogit/archive/211.014-T.md
     - .backlogit/archive/211.015-T.md
     - .backlogit/archive/211.016-T.md
-    - .backlogit/queue/211.017-T.md
-    - .backlogit/queue/211.018-T.md
-    - .backlogit/queue/211.019-T.md
-    - .backlogit/queue/211.005-T.md
+    - .backlogit/archive/211.017-T.md
+    - .backlogit/archive/211.018-T.md
+    - .backlogit/archive/211.019-T.md
+    - .backlogit/archive/211.005-T.md
+    - .backlogit/archive/211.007-T.md
+    - .backlogit/queue/211.020-T.md
+    - .backlogit/queue/211.021-T.md
     - .backlogit/queue/212-F.md
     - .backlogit/queue/213-F.md
     - .backlogit/queue/212-S.md
     - .backlogit/queue/213-S.md
     - .backlogit/queue/214-S.md
     - docs/decisions/2026-10-29-single-daemon-per-workspace-deliberation.md
+    - docs/memory/2026-11-09/212-S-wave10-ordinal8-convergence-blocked.md
     - docs/memory/2026-11-08/212-S-longpaths-wave34-convergence.md
     - docs/memory/2026-11-08/212-S-M19-wave8-u5-execution.md
     - docs/memory/2026-11-06/212-S-wave1-convergence-blocked.md
@@ -544,3 +548,55 @@ After Ship completed `211.016-T` (`U2j`, commit `fd038b8feba15e43d7f02ed2742a0e9
    * `211.006-T` (`U6`, Wave 9) `depends_on` `211.005-T` (`U5`) and `211.019-T` (`U5a`); `harness-architect` scaffolds only `internal/cli/mcp_session_shim_test.go` with zero production stub edits.
    * `211.007-T` (`U7`, Wave 10, `harness-exempt: docs-only`) `depends_on` `211.006-T` (`U6`), closing `211.015-T` (`U2i`, `green_maker_closes_wave: 10`) GREEN at Wave 10 and discharging the single unfiltered 50-package convergence suite before PR creation.
    * Preserve `211.005-T`..`211.007-T` `status: active` and `custom_fields.scheduler_baseline_claim: 212-S` (`211.005-T` with its preserved `1` `WORK_STARTED: 212-S` event and `211.006-T`..`211.007-T` with `0` `WORK_STARTED` events), and leave `checkpoint-20261109-062504.json` and `checkpoint-20261106-210317.json` completely untouched on disk (`NOFEATURECOMMIT`).
+
+## P-021 C6 Sixth Forward Deliberation Addendum — Wave 11 Transient Windows File-Contention Bounded Exponential Backoff Retry (`089-DL`: `U1i` `211.020-T`, `U1j` `211.021-T`, `M19 -> M21` Refreeze, and Ordinal 9 Convergence Authorization, 2026-11-09)
+
+### Problem Frame and Wave 10 Ordinal 8 Unfiltered Full-Suite Convergence Blockers
+
+After all `19` tasks in `M19` (`211.001-T` through `211.019-T`) completed and archived as `done` (with `211.007-T` `U7` completing at commit `e96211234be6dbbf55f0db48dfe72e205f48ed4d` and `checkpoint-20261109-083105.json` resolved at `ddc57037d321185246652c3f1f93075622bd488f`), the Wave 10 Ordinal 8 unfiltered full-suite convergence run (`bin/_rrc7e4b298/wave10-ordinal8/result.json`, SHA-256 `cc19c50e076ff8d36ca954078e0a695c7d4fd7f27f42961632c3a9efc6d68130`, recorded in `docs/memory/2026-11-09/212-S-wave10-ordinal8-convergence-blocked.md`) failed in `internal/core` on two transient Windows file-replacement collisions:
+
+1. **Journal Replacement Contention (`internal/core/shipment_ops_windows.go`)**:
+   * `TestUR1B_UnblockIsTargetAwareAndPreservesResumptionEvidence/active_restores_exact_snapshot` failed while replacing the `"intent"` shipment-operation journal with the `"committed"` journal (`writeShipmentOperationJournalFile` -> `renameShipmentOpsWindowsChild` at `internal/core/shipment_ops_windows.go:130-132, 182-215`): `Access is denied` (`windows.STATUS_ACCESS_DENIED` / `windows.ERROR_ACCESS_DENIED`), which `UnblockShipment` classified as `ErrWriteIndeterminate` because member status restorations had already been applied.
+   * In `internal/core/shipment_ops_windows.go`, `renameShipmentOpsWindowsChild` (`windows.NtSetInformationFile` with `windows.FileRenameInformation` and `ReplaceIfExists = 1`), `removeShipmentOperationJournalTempFile` (`windows.SetFileInformationByHandle` with `windows.FileDispositionInfo`), and `openShipmentOpsWindowsChild` (`windows.NtCreateFile`) perform a single attempt with **zero retry** on transient Windows `STATUS_ACCESS_DENIED` / `ERROR_ACCESS_DENIED`, `STATUS_SHARING_VIOLATION` / `ERROR_SHARING_VIOLATION`, or `STATUS_DELETE_PENDING`.
+2. **Artifact Atomic Replacement Contention (`internal/atomicfile/atomicfile_windows.go`)**:
+   * `TestP021ClaimSerialization_RepeatedMembershipAndGenericWritersContend/iteration_01` failed in a generic writer (`UpdateArtifact`) replacing `001-S.md` immediately after concurrent contention with `AddItemToShipment`: `Access is denied`, with durable write not applied (`blerrors.ErrWriteNotApplied`).
+   * In `internal/atomicfile/atomicfile_windows.go:50-56`, `atomicReplace(tmpName, path string, durable bool) error` invokes `moveFileEx(tmpName, path, moveFileExFlags(durable))` (`windows.MoveFileEx` with `MOVEFILE_REPLACE_EXISTING` and optional `MOVEFILE_WRITE_THROUGH`) a single time with **zero retry** when a transient Windows `ERROR_ACCESS_DENIED` or `ERROR_SHARING_VIOLATION` occurs as a peer reader/writer or OS filter handle closes.
+
+### P-021 C5/C6 Four-Case Triage, Duplicate Scan, and Late-Identifier Reconciliation Audit Record (`96F1DFFD` Continuation, 2026-11-09)
+
+1. **Originating Capture and Reconciled Residual-Risk Records**:
+   * `stash_id`: `96F1DFFD` (continuing `088-DL` and `089-DL`; raw stash text preserved unedited per Ship's single-write capture invariant).
+   * Originating refs: `task_ids: 211.001-T..211.019-T` (all `19` `done`); `feature_id: 211-F`; `shipment_id: 212-S`; `PR: N/A (genuinely pre-PR)`; `review_thread_id: N/A (threadless Wave 10 Ordinal 8 full-suite findings)`.
+   * Reconciled records: `docs/memory/2026-11-09/212-S-wave10-ordinal8-convergence-blocked.md`, `bin/_rrc7e4b298/wave10-ordinal8/result.json` (SHA-256 `cc19c50e076ff8d36ca954078e0a695c7d4fd7f27f42961632c3a9efc6d68130`), and `checkpoint-20261109-155217.json`.
+2. **(A) Unconditional Duplicate Scan Outcome (`CLEAN DUPLICATE SCAN`)**:
+   * Direct scan of `.backlogit/stash.jsonl` and `.backlogit/archive/stash.jsonl` confirmed zero duplicate entries; zero stash entries were archived or removed.
+3. **(B) Mandatory Late-Identifier Reconciliation Outcome (`No late identifier found — terminal PR: N/A and review-thread ID: N/A stand`)**:
+   * Searched Ship-owned residual-risk and convergence records (`docs/memory/2026-11-09/212-S-wave10-ordinal8-convergence-blocked.md` and `checkpoint-20261109-155217.json`). No PR or review thread exists yet; `PR: N/A` and `review-thread ID: N/A` stand as truthful terminal records.
+4. **Two-Class Durability Contract Preservation (`docs/compound/2026-07-28-durable-writes-two-class-contract-commit-then-surface.md`)**:
+   * On Windows, `MoveFileExW` (`atomicReplace`) and `NtSetInformationFile` (`FileRenameInformation` in `renameShipmentOpsWindowsChild`) failing with `ERROR_ACCESS_DENIED` / `STATUS_ACCESS_DENIED` or `ERROR_SHARING_VIOLATION` / `STATUS_SHARING_VIOLATION` (or `STATUS_DELETE_PENDING`) is a **pre-commit kernel refusal**: the temporary file still holds the complete, synced replacement payload and the destination file has not yet been replaced. Bounded exponential backoff retry at the pre-commit syscall seam resolves transient handle/filter release windows in milliseconds without ever retrying a post-commit flush failure or rolling back an `ErrWriteIndeterminate` state.
+
+### Verbatim Operator Directive and Chosen Direction (`M19 -> M21`, `S20 -> S22`, and Ordinal 9 Convergence Authorization)
+
+* **Verbatim Operator Directive (2026-11-09)**:
+  > "ok, this means that we need to implement a bounded, exponential backoff retry mechanism for all of these file operations where file I/O contention in concurrent operations could easily create operational collisions."
+* **Chosen Direction (`089-DL` Route A Extended — `U1i` / `211.020-T` and `U1j` / `211.021-T` in Wave 11, `M19 -> M21`, `S20 -> S22`)**:
+  1. **Why No Separate AST Source-Shape Tasks Are Required in Wave 11**:
+     * Both `211.020-T` (`U1i`) and `211.021-T` (`U1j`) modify **existing unexported functions** (`atomicReplace` in `internal/atomicfile/atomicfile_windows.go`, and `renameShipmentOpsWindowsChild` / `removeShipmentOperationJournalTempFile` / `openShipmentOpsWindowsChild` in `internal/core/shipment_ops_windows.go`) and introduce **zero new exported symbols** (only unexported package-level function/sleep seams for deterministic microsecond test injection within the same package). Therefore, `harness-architect` scaffolds behavioral RED tests (`TestU1i_*` and `TestU1j_*`) directly in Wave 11 without needing separate `go/ast` source-shape declaration tasks.
+  2. **Create Two Width-Isolated Wave 11 Tasks (`ready_11 = {211.020-T, 211.021-T}`) Under `211-F` / `212-S`**:
+     * Both tasks depend on `211.007-T` (`U7`, which is `done` at `e96211234be6dbbf55f0db48dfe72e205f48ed4d`) with `dep_type: "blocks"`, so both enter Wave 11 together (`ready_11 = {211.020-T, 211.021-T}`) with 100% disjoint file scopes:
+       * **`U1i` (`211.020-T`, `code`, `status: queued`, `priority: high`, `size: XS`, `complexity: low`, `labels: code,track-b,windows,atomicfile,96f1dffd,u1i`, `dependencies: [211.007-T]`, `2` files: `internal/atomicfile/atomicfile_windows.go`, `internal/atomicfile/atomicfile_windows_test.go`)**:
+         * In `internal/atomicfile/atomicfile_windows.go`, add unexported package-level sleep seam `var atomicReplaceSleep = time.Sleep` and helper `isTransientWindowsReplaceError(err error) bool` (`errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_SHARING_VIOLATION)`).
+         * In `atomicReplace(tmpName, path string, durable bool) error`, retry `moveFileEx(tmpName, path, moveFileExFlags(durable))` up to `7` times (`8` total attempts) with initial delay `5 * time.Millisecond`, doubling each retry (`5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms` = `635ms` max total backoff) **only** when `isTransientWindowsReplaceError(err)` is true.
+         * Non-transient errors (including generic `errors.New(...)` used by `TestAtomicReplace_FailureReturnsNotApplied` and `TestWriteFileAtomic_ReplaceFailureLeavesOriginalIntact`) fail immediately on attempt `1` with `0` retries and `0` sleeps.
+         * If transient errors persist past all `8` attempts, return the wrapped `blerrors.ErrWriteNotApplied` error and leave the destination file intact.
+         * Scoped verification: `go test -timeout=30m -count=1 -race -run '^(TestU1i_|TestAtomicReplace_|TestWriteFileAtomic_|TestMoveFileExFlags_)' ./internal/atomicfile`.
+       * **`U1j` (`211.021-T`, `code`, `status: queued`, `priority: high`, `size: XS`, `complexity: low`, `labels: code,track-b,core,windows,96f1dffd,u1j`, `dependencies: [211.007-T]`, `2` files: `internal/core/shipment_ops_windows.go`, `internal/core/shipment_ops_security_windows_test.go`)**:
+         * In `internal/core/shipment_ops_windows.go`, add unexported package-level seams `var shipmentOpsNtRenameFn = windows.NtSetInformationFile`, `var shipmentOpsSetDispositionFn = windows.SetFileInformationByHandle`, and `var shipmentOpsRetrySleep = time.Sleep` so tests can inject transient `STATUS_ACCESS_DENIED` / `ERROR_ACCESS_DENIED`, `STATUS_SHARING_VIOLATION` / `ERROR_SHARING_VIOLATION`, and `STATUS_DELETE_PENDING` and assert exact retry counts and backoff delays in microseconds.
+         * In `renameShipmentOpsWindowsChild` and `removeShipmentOperationJournalTempFile` (and `openShipmentOpsWindowsChild` when opening an existing journal or temp file hits transient `STATUS_SHARING_VIOLATION` / `STATUS_DELETE_PENDING` / `STATUS_ACCESS_DENIED` on a regular file), retry up to `7` times (`8` total attempts) with exponential backoff `5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms` (`635ms` max total wait) when the normalized Windows error (`shipmentOpsWindowsError(err)`) is `windows.ERROR_ACCESS_DENIED`, `windows.ERROR_SHARING_VIOLATION`, or `windows.STATUS_DELETE_PENDING`.
+         * Preserve all existing symlink/reparse-point and directory-handle binding security checks (`validateShipmentOpsWindowsFileHandle` returning `blerrors.ErrValidation` is never retried).
+         * Scoped verification: `go test -timeout=30m -count=1 -race -run '^(TestU1j_|TestUR1B_|TestP021ClaimSerialization_|TestShipmentOpsJournal|TestWriteShipmentLifecycleJournal_|TestNewWorkspace_Rejects)' ./internal/core`.
+  3. **`M19 -> M21` (`S20 -> S22`) Manifest Refreeze and Post-Wave-11 Ordinal 9 Convergence Authorization**:
+     * Append `211.020-T` and `211.021-T` to Shipment `212-S` (`S20 -> S22`, `M19 -> M21`), keeping all `19` prior task members (`211.001-T`..`211.019-T`) in `terminal_success` (`done`/archived, `1` `WORK_STARTED` record each, never re-started or re-completed) and `open_red_deliverables = ∅` (`211.015-T` `^TestU2i_` already closed GREEN at Wave 10).
+     * After `211.020-T` (`U1i`) and `211.021-T` (`U1j`) complete in Wave 11, Ship executes **Ordinal 9** (`ordinal: 9`, `failed_count: 7`, `budget_seconds: 2700`, `46` first-party packages — the reconciled complete unfiltered first-party repository census) of `go test -count=1 -p=1 -timeout=30m -json ./...` at Wave 11 Step 4.6 before local build, branch-wide review, and PR creation.
+     * Preserve `checkpoint-20261109-155217.json` and `checkpoint-20261106-210317.json` completely untouched on disk during Stage's turn (`NOFEATURECOMMIT`).
+
