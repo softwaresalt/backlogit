@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,7 +63,7 @@ func TestU1j_ShipmentOpsJournalWindowsTransientContentionRetryAndSecurityPreserv
 				})
 			}
 		}
-		t.Run(operation+"/directory_object_binding_during_backoff", func(t *testing.T) {
+		t.Run(operation+"/directory_object_binding_after_path_swap_across_backoff", func(t *testing.T) {
 			runU1jMutation(t, operation, windows.STATUS_SHARING_VIOLATION, false, true)
 		})
 	}
@@ -74,6 +75,52 @@ func TestU1j_ShipmentOpsJournalWindowsTransientContentionRetryAndSecurityPreserv
 		}
 	}
 	t.Run("validation_and_reparse_never_retried", runU1jValidation)
+}
+
+func TestU1j_RawErrorPreservation(t *testing.T) {
+	for _, exhaust := range []bool{false, true} {
+		t.Run(fmt.Sprintf("retry/exhaust_%t", exhaust), func(t *testing.T) {
+			original := fmt.Errorf("original syscall: %w", windows.STATUS_FILE_IS_A_DIRECTORY)
+			if exhaust {
+				original = fmt.Errorf("original syscall: %w", windows.STATUS_SHARING_VIOLATION)
+			}
+			sleepFn := shipmentOpsRetrySleep
+			t.Cleanup(func() { shipmentOpsRetrySleep = sleepFn })
+			sleeps := 0
+			shipmentOpsRetrySleep = func(time.Duration) { sleeps++ }
+			attempts := 0
+			err := retryShipmentOpsWindowsOperation(func() error {
+				attempts++
+				if attempts == 1 {
+					return original
+				}
+				return windows.STATUS_ACCESS_DENIED
+			})
+			assert.True(t, err == original, "retry must return the original raw error, including its wrapper")
+			var status windows.NTStatus
+			assert.ErrorAs(t, err, &status)
+			if exhaust {
+				assert.Equal(t, windows.STATUS_SHARING_VIOLATION, status)
+				assert.Equal(t, 8, attempts)
+				assert.Equal(t, 7, sleeps)
+			} else {
+				assert.Equal(t, windows.STATUS_FILE_IS_A_DIRECTORY, status)
+				assert.Equal(t, 1, attempts)
+				assert.Zero(t, sleeps)
+			}
+		})
+	}
+	t.Run("missing_child_retains_status_through_open_wrapper", func(t *testing.T) {
+		f := newU1jFixture(t)
+		handle, err := openShipmentOpsWindowsChild(f.dir, "missing.json", windows.GENERIC_READ, windows.FILE_OPEN)
+		if err == nil {
+			require.NoError(t, windows.CloseHandle(handle))
+		}
+		require.Error(t, err)
+		var status windows.NTStatus
+		assert.ErrorAs(t, err, &status)
+		assert.True(t, shipmentOpsWindowsIsNotExist(err), "absent journal must remain recognizable through the open wrapper")
+	})
 }
 
 type u1jFixture struct {
@@ -158,6 +205,23 @@ func installU1jMutation(t *testing.T, dir *os.File, operation string, failure er
 	return attempts
 }
 
+func readU1jSharedFile(t *testing.T, path string) []byte {
+	t.Helper()
+	name, err := windows.UTF16PtrFromString(path)
+	require.NoError(t, err)
+	handle, err := windows.CreateFile(name, windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	require.NoError(t, err)
+	file := os.NewFile(uintptr(handle), path)
+	require.NotNil(t, file)
+	data, readErr := io.ReadAll(file)
+	closeErr := file.Close()
+	require.NoError(t, readErr)
+	require.NoError(t, closeErr)
+	return data
+}
+
 func runU1jMutation(t *testing.T, operation string, failure error, exhaust, swap bool) {
 	t.Helper()
 	f := newU1jFixture(t)
@@ -168,16 +232,37 @@ func runU1jMutation(t *testing.T, operation string, failure error, exhaust, swap
 	attempts := installU1jMutation(t, f.dir, operation, failure, succeedAt)
 	sleeps := make([]time.Duration, 0, 7)
 	actualRoot := f.opsRoot
+	if swap {
+		// Swap after directory validation but before mutate pins its source
+		// child. Windows may reject a parent rename while that child is open.
+		swapShipmentOpsDirectoryObject(t, f.opsRoot)
+		actualRoot = f.opsRoot + "-original"
+		require.NoError(t, os.WriteFile(filepath.Join(f.opsRoot, f.tempName), []byte("decoy-temp"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(f.opsRoot, testShipmentOperationJournalName), []byte("decoy-target"), 0o600))
+	}
 	shipmentOpsRetrySleep = func(delay time.Duration) {
 		sleeps = append(sleeps, delay)
 		assert.Equal(t, len(sleeps), *attempts, "sleep must follow each failed attempt")
-		assert.Equal(t, "original", string(requireReadFile(t, filepath.Join(actualRoot, testShipmentOperationJournalName))))
-		assert.Equal(t, "replacement", string(requireReadFile(t, filepath.Join(actualRoot, f.tempName))))
 		if swap && len(sleeps) == 1 {
-			swapShipmentOpsDirectoryObject(t, f.opsRoot)
-			actualRoot = f.opsRoot + "-original"
-			require.NoError(t, os.WriteFile(filepath.Join(f.opsRoot, f.tempName), []byte("decoy-temp"), 0o600))
-			require.NoError(t, os.WriteFile(filepath.Join(f.opsRoot, testShipmentOperationJournalName), []byte("decoy-target"), 0o600))
+			// Observe the in-flight restriction without making OS rejection
+			// a contract on filesystems that permit this parent rename.
+			probeRoot := actualRoot + "-in-flight"
+			swapErr := os.Rename(actualRoot, probeRoot)
+			if swapErr == nil {
+				require.NoError(t, os.Rename(probeRoot, actualRoot))
+				t.Log("filesystem permits in-flight parent rename; original directory restored")
+			} else {
+				require.True(t, errors.Is(swapErr, windows.ERROR_ACCESS_DENIED) ||
+					errors.Is(swapErr, windows.ERROR_SHARING_VIOLATION),
+					"in-flight parent rename must fail only for access/sharing contention: %v", swapErr)
+				t.Logf("in-flight parent rename rejected while source handle is pinned: %v", swapErr)
+			}
+		}
+		assert.Equal(t, "original", string(readU1jSharedFile(t, filepath.Join(actualRoot, testShipmentOperationJournalName))))
+		assert.Equal(t, "replacement", string(readU1jSharedFile(t, filepath.Join(actualRoot, f.tempName))))
+		if swap {
+			assert.Equal(t, "decoy-temp", string(readU1jSharedFile(t, filepath.Join(f.opsRoot, f.tempName))))
+			assert.Equal(t, "decoy-target", string(readU1jSharedFile(t, filepath.Join(f.opsRoot, testShipmentOperationJournalName))))
 		}
 	}
 	err := f.mutate(operation)
@@ -196,7 +281,7 @@ func runU1jMutation(t *testing.T, operation string, failure error, exhaust, swap
 		want = "replacement"
 	}
 	assert.Equal(t, want, string(requireReadFile(t, filepath.Join(actualRoot, testShipmentOperationJournalName))))
-	if swap && len(sleeps) > 0 {
+	if swap {
 		assert.Equal(t, "decoy-temp", string(requireReadFile(t, filepath.Join(f.opsRoot, f.tempName))))
 		assert.Equal(t, "decoy-target", string(requireReadFile(t, filepath.Join(f.opsRoot, testShipmentOperationJournalName))))
 	}

@@ -19,7 +19,7 @@ import (
 
 const shipmentOpsWindowsPointerSize = bits.UintSize / 8
 
-// Syscall and sleep seams preserve the existing single-shot behavior.
+// Syscall and sleep seams allow deterministic contention retry testing.
 var (
 	shipmentOpsNtRenameFn       = windows.NtSetInformationFile
 	shipmentOpsSetDispositionFn = windows.SetFileInformationByHandle
@@ -187,12 +187,14 @@ func removeShipmentOperationJournalTempFile(dir *os.File, _ string, name string)
 		return err
 	}
 	deleteFile := byte(1)
-	if err := shipmentOpsSetDispositionFn(
-		handle,
-		windows.FileDispositionInfo,
-		&deleteFile,
-		1,
-	); err != nil {
+	if err := retryShipmentOpsWindowsOperation(func() error {
+		return shipmentOpsSetDispositionFn(
+			handle,
+			windows.FileDispositionInfo,
+			&deleteFile,
+			1,
+		)
+	}); err != nil {
 		return fmt.Errorf("remove shipment operation temp file %s: %w", name, err)
 	}
 	if err := windows.CloseHandle(handle); err != nil {
@@ -226,13 +228,15 @@ func renameShipmentOpsWindowsChild(dir *os.File, oldName, newName string) error 
 		return err
 	}
 	var iosb windows.IO_STATUS_BLOCK
-	if err := shipmentOpsNtRenameFn(
-		handle,
-		&iosb,
-		&renameInfo[0],
-		uint32(len(renameInfo)),
-		windows.FileRenameInformation,
-	); err != nil {
+	if err := retryShipmentOpsWindowsOperation(func() error {
+		return shipmentOpsNtRenameFn(
+			handle,
+			&iosb,
+			&renameInfo[0],
+			uint32(len(renameInfo)),
+			windows.FileRenameInformation,
+		)
+	}); err != nil {
 		err = shipmentOpsWindowsError(err)
 		return fmt.Errorf("rename shipment operation temp file %s to %s: %w", oldName, newName, err)
 	}
@@ -295,24 +299,70 @@ func openShipmentOpsWindowsChild(
 		handle windows.Handle
 		status windows.IO_STATUS_BLOCK
 	)
-	if err := windows.NtCreateFile(
-		&handle,
-		access|windows.SYNCHRONIZE,
-		&attributes,
-		&status,
-		nil,
-		windows.FILE_ATTRIBUTE_NORMAL,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
-		disposition,
-		windows.FILE_NON_DIRECTORY_FILE|
-			windows.FILE_SYNCHRONOUS_IO_NONALERT|
-			windows.FILE_OPEN_REPARSE_POINT,
-		0,
-		0,
-	); err != nil {
+	open := func() error {
+		return windows.NtCreateFile(
+			&handle,
+			access|windows.SYNCHRONIZE,
+			&attributes,
+			&status,
+			nil,
+			windows.FILE_ATTRIBUTE_NORMAL,
+			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+			disposition,
+			windows.FILE_NON_DIRECTORY_FILE|
+				windows.FILE_SYNCHRONOUS_IO_NONALERT|
+				windows.FILE_OPEN_REPARSE_POINT,
+			0,
+			0,
+		)
+	}
+	if disposition == windows.FILE_OPEN {
+		err = retryShipmentOpsWindowsOperation(open)
+	} else {
+		err = open()
+	}
+	if err != nil {
 		return 0, fmt.Errorf("open shipment operation child %s relative to directory handle: %w", name, err)
 	}
 	return handle, nil
+}
+
+// retryShipmentOpsWindowsOperation retries only syscalls, never validation.
+// Callers retain their directory, source handle, and syscall buffers throughout.
+func retryShipmentOpsWindowsOperation(operation func() error) error {
+	var original error
+	for attempt := 0; ; attempt++ {
+		err := operation()
+		if err == nil {
+			return nil
+		}
+		if !isTransientShipmentOpsWindowsError(err) {
+			return err
+		}
+		if attempt == 0 {
+			original = err
+		}
+		if attempt == 7 {
+			return original
+		}
+		shipmentOpsRetrySleep(5 * time.Millisecond << attempt)
+	}
+}
+
+func isTransientShipmentOpsWindowsError(err error) bool {
+	if errors.Is(err, blerrors.ErrValidation) {
+		return false
+	}
+	// Classify NTSTATUS before Errno: STATUS_FILE_IS_A_DIRECTORY also maps
+	// to ERROR_ACCESS_DENIED, but must fail immediately rather than retry.
+	var status windows.NTStatus
+	if errors.As(err, &status) {
+		return status == windows.STATUS_ACCESS_DENIED ||
+			status == windows.STATUS_SHARING_VIOLATION ||
+			status == windows.STATUS_DELETE_PENDING
+	}
+	return errors.Is(err, windows.ERROR_ACCESS_DENIED) ||
+		errors.Is(err, windows.ERROR_SHARING_VIOLATION)
 }
 
 func validateShipmentOpsWindowsChildName(name string) error {
