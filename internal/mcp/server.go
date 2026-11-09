@@ -69,6 +69,12 @@ type Server struct {
 	manifest        map[string]db.FileEntry
 	manifestMu      sync.RWMutex
 	manifestVersion uint64
+	// sessionsMu serializes session admission against the terminal daemon drain.
+	// Entries remain registered until their stream and all workers have joined.
+	sessionsMu       sync.Mutex
+	sessions         map[string]*MultiSessionConn
+	sessionDrainDone chan struct{}
+	sessionDrainErr  error
 }
 
 // NewServer creates an MCP server from a workspace.
