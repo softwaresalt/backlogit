@@ -10,6 +10,7 @@ import (
 	"math/bits"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/sys/windows"
 
@@ -17,6 +18,13 @@ import (
 )
 
 const shipmentOpsWindowsPointerSize = bits.UintSize / 8
+
+// Syscall and sleep seams preserve the existing single-shot behavior.
+var (
+	shipmentOpsNtRenameFn       = windows.NtSetInformationFile
+	shipmentOpsSetDispositionFn = windows.SetFileInformationByHandle
+	shipmentOpsRetrySleep       = time.Sleep
+)
 
 func openShipmentOpsDirectory(realStorageRoot, opsRoot string) (*os.File, error) {
 	handle, err := openShipmentOpsWindowsHandle(
@@ -179,7 +187,7 @@ func removeShipmentOperationJournalTempFile(dir *os.File, _ string, name string)
 		return err
 	}
 	deleteFile := byte(1)
-	if err := windows.SetFileInformationByHandle(
+	if err := shipmentOpsSetDispositionFn(
 		handle,
 		windows.FileDispositionInfo,
 		&deleteFile,
@@ -218,7 +226,7 @@ func renameShipmentOpsWindowsChild(dir *os.File, oldName, newName string) error 
 		return err
 	}
 	var iosb windows.IO_STATUS_BLOCK
-	if err := windows.NtSetInformationFile(
+	if err := shipmentOpsNtRenameFn(
 		handle,
 		&iosb,
 		&renameInfo[0],

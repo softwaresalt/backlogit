@@ -4,6 +4,7 @@ package atomicfile
 
 import (
 	"fmt"
+	"time"
 
 	"golang.org/x/sys/windows"
 
@@ -40,6 +41,9 @@ var moveFileEx = func(from, to string, flags uint32) error {
 	}
 	return windows.MoveFileEx(fromPtr, toPtr, flags)
 }
+
+// atomicReplaceSleep is reserved for deterministic retry tests.
+var atomicReplaceSleep = time.Sleep
 
 // atomicReplace renames tmpName over path using MoveFileEx so the destination
 // is replaced atomically and is NEVER removed before the replacement is in
