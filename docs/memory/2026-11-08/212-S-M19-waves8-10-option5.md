@@ -84,5 +84,46 @@ shutdown ownership. Native POSIX runtime verification remains required.
 Existing residual references 0D073C21 and D2FCA0FB are retained unchanged.
 Ignored tool-output captures are observational scratch, not source edits.
 
-Wave 8 convergence, U6/U7 admission and final full-suite discharge remain
-pending until separately recorded below.
+## Wave 8 convergence
+
+Implementation commit c773fd68241268a778284d264a6a179d8482eda4 was linked
+to U5. The done transition succeeded; both queue removal and archive
+addition were committed at e51cfa57.
+
+Ship independently ran compile-only, vet, pinned lint, first-party format
+and the U5 race selector at convergence: all PASS. The U5 selector had
+three named top-level passes with active-session and graceful-drain
+witnesses. The U2i selector exited 1 on assertions in U6 CLI wiring and
+U7 generated documentation, with no build failure, panic or timeout.
+
+FULL_SUITE_DEFERRED: wave 8
+
+The sole open selector is `^TestU2i_`, owned by 211.015-T, command
+`go test -count=1 -run '^TestU2i_' ./internal/cli`.
+Its remaining green-makers are 211.006-T (wave 9) and 211.007-T (wave 10).
+Compile, vet, lint, format and the declared scoped command passed;
+the declared open RED was re-confirmed on assertions. A full run would
+classify expected failures rather than verify a green repository.
+The single post-U7 unfiltered full-suite allowance remains unconsumed.
+
+## Wave 9 harness
+
+The exact-ID snapshot contains 19 tasks: 17 done, two claim-assigned,
+zero queued, blocked or unsupported. U6 dependencies U5 and U5a are done.
+The live manifest remains S20/M19. Served-root attestation passed again.
+
+Harness-architect scaffolded only mcp_session_shim_test.go, with zero
+production edits. Compile-only passed; U6 failed on named assertions for
+unimplemented prewarm/shim APIs and missing lifecycle commands.
+Registry parity and U5a remained green. Scaffold review corrected
+Windows-only build/binary naming before commit, preserving all witnesses.
+The corrected scaffold again compiled and remained assertion RED.
+
+Scaffold review: READY, P0=0/P1=0/P2=0/P3=0, for test-file SHA-256
+bf5f809f332bdced276c88eb6e812506c1899ec756fc4dd9074a6683554af3dc.
+Compilation: PASS. Red Phase: CONFIRMED.
+The task now carries harness-ready. Its scoped command is
+`go test -timeout=30m -count=1 -race -v -run '^TestU6_' ./internal/cli`.
+Its frozen green-regression array is empty; sibling red is empty;
+the sole open red remains U2i. Real subprocess fixtures own their
+workspace-contained binary and child PIDs; the live daemon is untouched.
