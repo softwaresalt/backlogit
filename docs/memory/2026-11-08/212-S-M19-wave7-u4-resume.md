@@ -138,3 +138,9 @@ Active cursor, frozen manifest, gate verdicts, counters and the unresolved
 pointer remain unpruned. Repository-wide candidate assessment is degraded;
 no global consolidation or archive is claimed. The installed observe
 skill path is absent, so observation capture is explicitly degraded.
+
+Final recovery pointer: `checkpoint-20261109-052455.json`.
+This session's superseded `checkpoint-20261109-045511.json` was resolved.
+The protected older active checkpoint was not resolved, edited or staged.
+Operator selection and confirmation are required before restoring the
+final pointer; age is not recovery authorization.
