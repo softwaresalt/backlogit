@@ -194,7 +194,7 @@ func removeShipmentOperationJournalTempFile(dir *os.File, _ string, name string)
 			&deleteFile,
 			1,
 		)
-	}); err != nil {
+	}, func() bool { return shipmentOpsWindowsChildPermanentDenial(dir, name) }); err != nil {
 		return fmt.Errorf("remove shipment operation temp file %s: %w", name, err)
 	}
 	if err := windows.CloseHandle(handle); err != nil {
@@ -236,7 +236,7 @@ func renameShipmentOpsWindowsChild(dir *os.File, oldName, newName string) error 
 			uint32(len(renameInfo)),
 			windows.FileRenameInformation,
 		)
-	}); err != nil {
+	}, func() bool { return shipmentOpsWindowsChildPermanentDenial(dir, newName) }); err != nil {
 		err = shipmentOpsWindowsError(err)
 		return fmt.Errorf("rename shipment operation temp file %s to %s: %w", oldName, newName, err)
 	}
@@ -317,7 +317,9 @@ func openShipmentOpsWindowsChild(
 		)
 	}
 	if disposition == windows.FILE_OPEN {
-		err = retryShipmentOpsWindowsOperation(open)
+		err = retryShipmentOpsWindowsOperation(open, func() bool {
+			return shipmentOpsWindowsChildPermanentDenial(dir, name)
+		})
 	} else {
 		err = open()
 	}
@@ -329,7 +331,8 @@ func openShipmentOpsWindowsChild(
 
 // retryShipmentOpsWindowsOperation retries only syscalls, never validation.
 // Callers retain their directory, source handle, and syscall buffers throughout.
-func retryShipmentOpsWindowsOperation(operation func() error) error {
+// permanentDenial, when non-nil, inspects the bound child without retrying.
+func retryShipmentOpsWindowsOperation(operation func() error, permanentDenial func() bool) error {
 	var original error
 	for attempt := 0; ; attempt++ {
 		err := operation()
@@ -342,11 +345,61 @@ func retryShipmentOpsWindowsOperation(operation func() error) error {
 		if attempt == 0 {
 			original = err
 		}
-		if attempt == 7 {
+		if attempt == 6 {
 			return original
 		}
-		shipmentOpsRetrySleep(5 * time.Millisecond << attempt)
+		if permanentDenial != nil &&
+			(errors.Is(err, windows.STATUS_ACCESS_DENIED) || errors.Is(err, windows.ERROR_ACCESS_DENIED)) &&
+			permanentDenial() {
+			return original
+		}
+		shipmentOpsRetrySleep(time.Millisecond << attempt)
 	}
+}
+
+// shipmentOpsWindowsChildPermanentDenial probes only the named child of the
+// already-bound directory. Unlike the regular-file open, it permits directories
+// so their attributes can be inspected, but never follows a reparse point.
+func shipmentOpsWindowsChildPermanentDenial(dir *os.File, name string) bool {
+	if dir == nil || validateShipmentOpsWindowsChildName(name) != nil {
+		return false
+	}
+	objectName, err := windows.NewNTUnicodeString(name)
+	if err != nil {
+		return false
+	}
+	attributes := windows.OBJECT_ATTRIBUTES{
+		Length:        uint32(6 * shipmentOpsWindowsPointerSize),
+		RootDirectory: windows.Handle(dir.Fd()),
+		ObjectName:    objectName,
+		Attributes:    windows.OBJ_CASE_INSENSITIVE,
+	}
+	var (
+		handle windows.Handle
+		status windows.IO_STATUS_BLOCK
+	)
+	if err := windows.NtCreateFile(
+		&handle,
+		windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE,
+		&attributes,
+		&status,
+		nil,
+		windows.FILE_ATTRIBUTE_NORMAL,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		windows.FILE_OPEN,
+		windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_REPARSE_POINT,
+		0,
+		0,
+	); err != nil {
+		return false
+	}
+	var info windows.ByHandleFileInformation
+	infoErr := windows.GetFileInformationByHandle(handle, &info)
+	closeErr := windows.CloseHandle(handle)
+	// A failed probe is inconclusive: preserve the operation's original error
+	// and bounded retry behavior rather than substituting a diagnostic error.
+	return infoErr == nil && closeErr == nil &&
+		info.FileAttributes&(windows.FILE_ATTRIBUTE_READONLY|windows.FILE_ATTRIBUTE_DIRECTORY) != 0
 }
 
 func isTransientShipmentOpsWindowsError(err error) bool {

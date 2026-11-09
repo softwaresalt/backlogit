@@ -40,7 +40,7 @@ func TestU1i_AtomicReplaceRetriesTransientWindowsErrorsWithExponentialBackoff(t 
 					originalMove, originalSleep := moveFileEx, atomicReplaceSleep
 					t.Cleanup(func() { moveFileEx, atomicReplaceSleep = originalMove, originalSleep })
 					attempts := 0
-					sleeps := make([]time.Duration, 0, 7)
+					sleeps := make([]time.Duration, 0, 6)
 					atomicReplaceSleep = func(delay time.Duration) {
 						sleeps = append(sleeps, delay)
 						assert.Equal(t, len(sleeps), attempts, "sleep must follow each failed attempt")
@@ -52,13 +52,13 @@ func TestU1i_AtomicReplaceRetriesTransientWindowsErrorsWithExponentialBackoff(t 
 						assert.Equal(t, source, from)
 						assert.Equal(t, target, to)
 						assert.Equal(t, moveFileExFlags(durable), flags)
-						if exhaust || attempts < 8 {
+						if exhaust || attempts < 7 {
 							return transient.err
 						}
 						return originalMove(from, to, flags)
 					}
 					err := atomicReplace(source, target, durable)
-					assert.Equal(t, 8, attempts, "U1i: bounded retry requires eight total attempts")
+					assert.Equal(t, 7, attempts, "U1i: bounded retry requires seven total attempts")
 					assertU1iBackoff(t, sleeps)
 					if exhaust {
 						assert.ErrorIs(t, err, blerrors.ErrWriteNotApplied)
@@ -66,7 +66,7 @@ func TestU1i_AtomicReplaceRetriesTransientWindowsErrorsWithExponentialBackoff(t 
 						assert.Equal(t, "original", string(readU1iFile(t, target)))
 						assert.Equal(t, "replacement", string(readU1iFile(t, source)))
 					} else {
-						assert.NoError(t, err, "U1i: seventh retry must commit replacement")
+						assert.NoError(t, err, "U1i: sixth retry must commit replacement")
 						assert.Equal(t, "replacement", string(readU1iFile(t, target)))
 					}
 				})
@@ -89,6 +89,54 @@ func TestU1i_AtomicReplaceRetriesTransientWindowsErrorsWithExponentialBackoff(t 
 	}
 }
 
+func TestU1i_AtomicReplacePermanentDenialFastFail(t *testing.T) {
+	for _, directory := range []bool{false, true} {
+		for _, durable := range []bool{false, true} {
+			t.Run(fmt.Sprintf("directory_%t/durable_%t", directory, durable), func(t *testing.T) {
+				dir := t.TempDir()
+				source, target := filepath.Join(dir, "source.tmp"), filepath.Join(dir, "target.md")
+				require.NoError(t, os.WriteFile(source, []byte("replacement"), 0o600))
+				if directory {
+					require.NoError(t, os.Mkdir(target, 0o700))
+					require.NoError(t, os.WriteFile(filepath.Join(target, "preimage"), []byte("original"), 0o600))
+				} else {
+					require.NoError(t, os.WriteFile(target, []byte("original"), 0o600))
+					require.NoError(t, os.Chmod(target, 0o400))
+					t.Cleanup(func() { require.NoError(t, os.Chmod(target, 0o600)) })
+				}
+				targetPtr, err := windows.UTF16PtrFromString(target)
+				require.NoError(t, err)
+				attributes, err := windows.GetFileAttributes(targetPtr)
+				require.NoError(t, err)
+				if directory {
+					require.NotZero(t, attributes&windows.FILE_ATTRIBUTE_DIRECTORY)
+				} else {
+					require.NotZero(t, attributes&windows.FILE_ATTRIBUTE_READONLY)
+				}
+				originalMove, originalSleep := moveFileEx, atomicReplaceSleep
+				t.Cleanup(func() { moveFileEx, atomicReplaceSleep = originalMove, originalSleep })
+				attempts, sleeps := 0, 0
+				moveFileEx = func(from, to string, flags uint32) error {
+					attempts++
+					return originalMove(from, to, flags)
+				}
+				atomicReplaceSleep = func(time.Duration) { sleeps++ }
+				err = atomicReplace(source, target, durable)
+				assert.ErrorIs(t, err, windows.ERROR_ACCESS_DENIED)
+				assert.ErrorIs(t, err, blerrors.ErrWriteNotApplied)
+				assert.Equal(t, 1, attempts, "permanent destination denial must fail on the first attempt")
+				assert.Zero(t, sleeps, "permanent destination denial must never back off")
+				assert.Equal(t, "replacement", string(readU1iFile(t, source)))
+				preimage := target
+				if directory {
+					preimage = filepath.Join(target, "preimage")
+				}
+				assert.Equal(t, "original", string(readU1iFile(t, preimage)))
+			})
+		}
+	}
+}
+
 func readU1iFile(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -98,14 +146,14 @@ func readU1iFile(t *testing.T, path string) []byte {
 
 func assertU1iBackoff(t *testing.T, sleeps []time.Duration) {
 	t.Helper()
-	want := []time.Duration{5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond,
-		40 * time.Millisecond, 80 * time.Millisecond, 160 * time.Millisecond, 320 * time.Millisecond}
-	assert.Equal(t, want, sleeps, "U1i: exactly seven exponential sleeps, no sleep after final attempt")
+	want := []time.Duration{time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond,
+		8 * time.Millisecond, 16 * time.Millisecond, 32 * time.Millisecond}
+	assert.Equal(t, want, sleeps, "U1i: exactly six exponential sleeps, no sleep after final attempt")
 	var total time.Duration
 	for _, delay := range sleeps {
 		total += delay
 	}
-	assert.Equal(t, 635*time.Millisecond, total)
+	assert.Equal(t, 63*time.Millisecond, total)
 }
 
 // TestMoveFileExFlags_Gating asserts the safety/durability flag split: the

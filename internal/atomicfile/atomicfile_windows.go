@@ -44,8 +44,8 @@ var moveFileEx = func(from, to string, flags uint32) error {
 }
 
 const (
-	atomicReplaceMaxRetries     = 7
-	atomicReplaceInitialBackoff = 5 * time.Millisecond
+	atomicReplaceMaxRetries     = 6
+	atomicReplaceInitialBackoff = 1 * time.Millisecond
 )
 
 // atomicReplaceSleep makes retry backoff deterministic in tests.
@@ -74,9 +74,23 @@ func atomicReplace(tmpName, path string, durable bool) error {
 		if !isTransientWindowsReplaceError(err) || attempt == atomicReplaceMaxRetries {
 			break
 		}
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) && atomicReplaceDestinationPermanentDenial(path) {
+			break
+		}
 		atomicReplaceSleep(delay)
 		delay *= 2
 	}
 	return fmt.Errorf("move temp over destination: %w",
 		fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
+}
+
+func atomicReplaceDestinationPermanentDenial(path string) bool {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return false
+	}
+	attributes, err := windows.GetFileAttributes(name)
+	// An unavailable attribute query must not replace the original move error
+	// or turn an unconfirmed denial into a permanent one.
+	return err == nil && attributes&(windows.FILE_ATTRIBUTE_READONLY|windows.FILE_ATTRIBUTE_DIRECTORY) != 0
 }

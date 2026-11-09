@@ -95,14 +95,14 @@ func TestU1j_RawErrorPreservation(t *testing.T) {
 					return original
 				}
 				return windows.STATUS_ACCESS_DENIED
-			})
+			}, nil)
 			assert.True(t, err == original, "retry must return the original raw error, including its wrapper")
 			var status windows.NTStatus
 			assert.ErrorAs(t, err, &status)
 			if exhaust {
 				assert.Equal(t, windows.STATUS_SHARING_VIOLATION, status)
-				assert.Equal(t, 8, attempts)
-				assert.Equal(t, 7, sleeps)
+				assert.Equal(t, 7, attempts)
+				assert.Equal(t, 6, sleeps)
 			} else {
 				assert.Equal(t, windows.STATUS_FILE_IS_A_DIRECTORY, status)
 				assert.Equal(t, 1, attempts)
@@ -121,6 +121,88 @@ func TestU1j_RawErrorPreservation(t *testing.T) {
 		assert.ErrorAs(t, err, &status)
 		assert.True(t, shipmentOpsWindowsIsNotExist(err), "absent journal must remain recognizable through the open wrapper")
 	})
+}
+
+func TestU1j_PermanentTargetDenialFastFail(t *testing.T) {
+	for _, directory := range []bool{false, true} {
+		for _, failure := range []error{nil, windows.STATUS_ACCESS_DENIED, windows.ERROR_ACCESS_DENIED} {
+			for _, wrapped := range []bool{false, true} {
+				t.Run(fmt.Sprintf("directory_%t/error_%v/wrapped_%t", directory, failure, wrapped), func(t *testing.T) {
+					f := newU1jFixture(t)
+					target := filepath.Join(f.opsRoot, testShipmentOperationJournalName)
+					if directory {
+						require.NoError(t, os.Remove(target))
+						require.NoError(t, os.Mkdir(target, 0o700))
+						require.NoError(t, os.WriteFile(filepath.Join(target, "preimage"), []byte("original"), 0o600))
+					} else {
+						require.NoError(t, os.Chmod(target, 0o400))
+						t.Cleanup(func() { require.NoError(t, os.Chmod(target, 0o600)) })
+					}
+					renameFn := shipmentOpsNtRenameFn
+					attempts, sleeps := 0, 0
+					shipmentOpsNtRenameFn = func(handle windows.Handle, iosb *windows.IO_STATUS_BLOCK, info *byte, length, class uint32) error {
+						attempts++
+						err := renameFn(handle, iosb, info, length, class)
+						require.Error(t, err, "real replacement of a permanent-denial target must fail")
+						if failure != nil {
+							err = failure
+						}
+						if wrapped {
+							err = fmt.Errorf("injected wrapper: %w", err)
+						}
+						return err
+					}
+					shipmentOpsRetrySleep = func(time.Duration) { sleeps++ }
+					err := f.mutate("rename")
+					require.Error(t, err)
+					if failure != nil {
+						assert.ErrorIs(t, shipmentOpsWindowsError(err), shipmentOpsWindowsError(failure))
+					}
+					assert.Equal(t, 1, attempts, "permanent target denial must fail on the first attempt")
+					assert.Zero(t, sleeps, "permanent target denial must never back off")
+					preimage := target
+					if directory {
+						preimage = filepath.Join(target, "preimage")
+					}
+					assert.Equal(t, "original", string(requireReadFile(t, preimage)))
+					assert.Equal(t, "replacement", string(requireReadFile(t, filepath.Join(f.opsRoot, f.tempName))))
+				})
+			}
+		}
+	}
+}
+
+func TestU1j_PermanentDenialProbeUsesBoundDirectory(t *testing.T) {
+	for _, boundReadOnly := range []bool{false, true} {
+		t.Run(fmt.Sprintf("bound_readonly_%t", boundReadOnly), func(t *testing.T) {
+			f := newU1jFixture(t)
+			swapShipmentOpsDirectoryObject(t, f.opsRoot)
+			boundTarget := filepath.Join(f.opsRoot+"-original", testShipmentOperationJournalName)
+			decoyTarget := filepath.Join(f.opsRoot, testShipmentOperationJournalName)
+			require.NoError(t, os.WriteFile(decoyTarget, []byte("decoy"), 0o600))
+			readOnly := decoyTarget
+			if boundReadOnly {
+				readOnly = boundTarget
+			}
+			require.NoError(t, os.Chmod(readOnly, 0o400))
+			t.Cleanup(func() { require.NoError(t, os.Chmod(readOnly, 0o600)) })
+			attempts := installU1jMutation(t, f.dir, "rename", windows.STATUS_ACCESS_DENIED, 0)
+			sleeps := make([]time.Duration, 0, 6)
+			shipmentOpsRetrySleep = func(delay time.Duration) { sleeps = append(sleeps, delay) }
+			err := f.mutate("rename")
+			assert.ErrorIs(t, shipmentOpsWindowsError(err), windows.ERROR_ACCESS_DENIED)
+			if boundReadOnly {
+				assert.Equal(t, 1, *attempts)
+				assert.Empty(t, sleeps, "the bound read-only target must fast-fail despite a writable decoy")
+			} else {
+				assert.Equal(t, 7, *attempts)
+				assertU1jBackoff(t, sleeps)
+			}
+			assert.Equal(t, "original", string(requireReadFile(t, boundTarget)))
+			assert.Equal(t, "decoy", string(requireReadFile(t, decoyTarget)))
+			assert.Equal(t, "replacement", string(requireReadFile(t, filepath.Join(f.opsRoot+"-original", f.tempName))))
+		})
+	}
 }
 
 type u1jFixture struct {
@@ -225,12 +307,12 @@ func readU1jSharedFile(t *testing.T, path string) []byte {
 func runU1jMutation(t *testing.T, operation string, failure error, exhaust, swap bool) {
 	t.Helper()
 	f := newU1jFixture(t)
-	succeedAt := 8
+	succeedAt := 7
 	if exhaust {
 		succeedAt = 0
 	}
 	attempts := installU1jMutation(t, f.dir, operation, failure, succeedAt)
-	sleeps := make([]time.Duration, 0, 7)
+	sleeps := make([]time.Duration, 0, 6)
 	actualRoot := f.opsRoot
 	if swap {
 		// Swap after directory validation but before mutate pins its source
@@ -266,13 +348,13 @@ func runU1jMutation(t *testing.T, operation string, failure error, exhaust, swap
 		}
 	}
 	err := f.mutate(operation)
-	assert.Equal(t, 8, *attempts, "U1j: bounded retry requires eight total attempts")
+	assert.Equal(t, 7, *attempts, "U1j: bounded retry requires seven total attempts")
 	assertU1jBackoff(t, sleeps)
 	if exhaust {
 		assert.ErrorIs(t, shipmentOpsWindowsError(err), shipmentOpsWindowsError(failure))
 		assert.Equal(t, "replacement", string(requireReadFile(t, filepath.Join(actualRoot, f.tempName))))
 	} else {
-		assert.NoError(t, err, "U1j: seventh retry must apply the operation")
+		assert.NoError(t, err, "U1j: sixth retry must apply the operation")
 		_, statErr := os.Stat(filepath.Join(actualRoot, f.tempName))
 		assert.ErrorIs(t, statErr, os.ErrNotExist)
 	}
@@ -310,7 +392,7 @@ func runU1jOpenContention(t *testing.T, temp, exhaust bool) {
 	}
 	path, err := windows.UTF16PtrFromString(filepath.Join(f.opsRoot, name))
 	require.NoError(t, err)
-	// Deny DELETE sharing until the seventh injected sleep; no goroutines,
+	// Deny DELETE sharing until the sixth injected sleep; no goroutines,
 	// timing races, or wall-clock sleeps are involved.
 	blocker, err := windows.CreateFile(path, windows.GENERIC_READ,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
@@ -328,10 +410,10 @@ func runU1jOpenContention(t *testing.T, temp, exhaust bool) {
 		require.NoError(t, windows.CloseHandle(probe))
 	}
 	require.ErrorIs(t, probeErr, windows.ERROR_SHARING_VIOLATION, "fixture must actually deny DELETE sharing")
-	sleeps := make([]time.Duration, 0, 7)
+	sleeps := make([]time.Duration, 0, 6)
 	shipmentOpsRetrySleep = func(delay time.Duration) {
 		sleeps = append(sleeps, delay)
-		if !exhaust && len(sleeps) == 7 {
+		if !exhaust && len(sleeps) == 6 {
 			require.NoError(t, windows.CloseHandle(blocker))
 			blocker = windows.InvalidHandle
 		}
@@ -353,14 +435,14 @@ func runU1jOpenContention(t *testing.T, temp, exhaust bool) {
 
 func assertU1jBackoff(t *testing.T, sleeps []time.Duration) {
 	t.Helper()
-	want := []time.Duration{5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond,
-		40 * time.Millisecond, 80 * time.Millisecond, 160 * time.Millisecond, 320 * time.Millisecond}
-	assert.Equal(t, want, sleeps, "U1j: exactly seven exponential sleeps, no sleep after final attempt")
+	want := []time.Duration{time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond,
+		8 * time.Millisecond, 16 * time.Millisecond, 32 * time.Millisecond}
+	assert.Equal(t, want, sleeps, "U1j: exactly six exponential sleeps, no sleep after final attempt")
 	var total time.Duration
 	for _, delay := range sleeps {
 		total += delay
 	}
-	assert.Equal(t, 635*time.Millisecond, total)
+	assert.Equal(t, 63*time.Millisecond, total)
 }
 
 func runU1jValidation(t *testing.T) {
