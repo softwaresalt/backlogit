@@ -28,17 +28,45 @@ type MCPDaemonInfo struct {
 	StorageRoot      string    `json:"storage_root"`
 	Version          string    `json:"version"`
 	LockPath         string    `json:"lock_path"`
+	IPCTransport     string    `json:"ipc_transport,omitempty"`
+	Endpoint         string    `json:"endpoint,omitempty"`
+	ActiveSessions   int       `json:"active_sessions"`
+	ProtocolVersion  string    `json:"protocol_version,omitempty"`
 }
 
 // MCPDaemonStatus reports whether an MCP daemon is running for a workspace.
 type MCPDaemonStatus struct {
-	Running       bool      `json:"running"`
-	PID           int       `json:"pid"`
-	StartedAt     time.Time `json:"started_at"`
-	WorkspaceRoot string    `json:"workspace_root"`
-	StorageRoot   string    `json:"storage_root"`
-	Version       string    `json:"version"`
-	LockPath      string    `json:"lock_path"`
+	Running         bool      `json:"running"`
+	PID             int       `json:"pid"`
+	StartedAt       time.Time `json:"started_at"`
+	WorkspaceRoot   string    `json:"workspace_root"`
+	StorageRoot     string    `json:"storage_root"`
+	Version         string    `json:"version"`
+	LockPath        string    `json:"lock_path"`
+	IPCTransport    string    `json:"ipc_transport,omitempty"`
+	Endpoint        string    `json:"endpoint,omitempty"`
+	ActiveSessions  int       `json:"active_sessions"`
+	ProtocolVersion string    `json:"protocol_version,omitempty"`
+}
+
+// VerifyMCPDaemonAttachment is not yet implemented.
+func VerifyMCPDaemonAttachment(info MCPDaemonInfo, workspaceRoot, storageRoot, expectedVersion, expectedProtocolVersion string) error {
+	return corerrors.ErrNotImplemented
+}
+
+// RunMCPDaemon is not yet implemented.
+func RunMCPDaemon(ctx context.Context, rootPath string, readOnly bool, idleTimeout time.Duration) error {
+	return corerrors.ErrNotImplemented
+}
+
+// PrewarmMCPDaemon is not yet implemented.
+func PrewarmMCPDaemon(ctx context.Context, rootPath string, readOnly bool, idleTimeout time.Duration) (MCPDaemonStatus, error) {
+	return MCPDaemonStatus{}, corerrors.ErrNotImplemented
+}
+
+// RunMCPSessionShim is not yet implemented.
+func RunMCPSessionShim(ctx context.Context, rootPath string, readOnly bool, input io.Reader, output io.Writer) error {
+	return corerrors.ErrNotImplemented
 }
 
 // MCPDaemonStopResult reports the outcome of a request to stop a workspace MCP daemon.
