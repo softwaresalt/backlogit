@@ -29,15 +29,18 @@ docline:
     - .backlogit/archive/211.018-T.md
     - .backlogit/archive/211.019-T.md
     - .backlogit/archive/211.005-T.md
+    - .backlogit/archive/211.006-T.md
     - .backlogit/archive/211.007-T.md
     - .backlogit/archive/211.020-T.md
     - .backlogit/archive/211.021-T.md
+    - .backlogit/queue/211.022-T.md
     - .backlogit/queue/212-F.md
     - .backlogit/queue/213-F.md
     - .backlogit/queue/212-S.md
     - .backlogit/queue/213-S.md
     - .backlogit/queue/214-S.md
     - docs/decisions/2026-10-29-single-daemon-per-workspace-deliberation.md
+    - docs/memory/2026-11-09/212-S-wave11-ordinal10-convergence-blocked.md
     - docs/memory/2026-11-09/212-S-wave11-ordinal9-convergence-blocked.md
     - docs/memory/2026-11-09/212-S-wave10-ordinal8-convergence-blocked.md
     - docs/memory/2026-11-08/212-S-longpaths-wave34-convergence.md
@@ -604,4 +607,50 @@ After all `19` tasks in `M19` (`211.001-T` through `211.019-T`) completed and ar
      * Keep all `21` task members (`211.001-T`..`211.021-T`) in `terminal_success` (`done`/archived, `1` `WORK_STARTED` record each, never re-started or re-completed) and `open_red_deliverables = ∅` (`211.015-T` `^TestU2i_` already closed GREEN at Wave 10).
      * Under the operator's explicit `"Authorized."` (`2026-11-09T21:13:12Z`) directive, after the `U1i` (`211.020-T`) / `U1j` (`211.021-T`) permanent-denial fast-fail and `63ms` backoff tuning commit lands on `212-S`, Ship executes **Ordinal 10** (`ordinal: 10`, `failed_count: 8`, `budget_seconds: 2700`, `46` first-party packages — preserving all `8` prior failed full-suite outcomes without counter reset) of `go test -count=1 -p=1 -timeout=30m -json ./...` at Wave 11 Step 4.6 before local build, branch-wide review, and PR creation.
      * Preserve `checkpoint-20261109-204413.json` and `checkpoint-20261106-210317.json` completely untouched on disk during Stage's turn (`NOFEATURECOMMIT`).
+
+## P-021 C6 Seventh Forward Deliberation Addendum — Wave 11 Ordinal 10 Resolution: Same-Contract `U6` (`211.006-T`) Sidecar Replacement Retry, Wave 12 Gate Subprocess Isolation & Version Probe Caching (`U1k` `211.022-T`), `M21 -> M22` Refreeze, and Ordinal 11 Convergence Authorization (`089-DL`, 2026-11-09)
+
+### Problem Frame and Wave 11 Ordinal 10 Unfiltered Full-Suite Convergence Blockers
+
+After the `U1i` (`211.020-T`) and `U1j` (`211.021-T`) permanent-denial fast-fail and `63ms` backoff tuning commit (`9b07a7f5de55879054f423db541cc418c0084376`) and traceability commit (`b6fdacfd2a017d49c058de6f0d5fcc30e388d1a1`) landed on `212-S`, the Wave 11 **Ordinal 10** unfiltered full-suite convergence run (`bin/_rr9501da8a/wave11-ordinal10/result.json`, SHA-256 `4f0915989d1a4a56b549264917ad47d5f9954b4e89e9729d2c3450b6a4c77c70`, `recorder-result.json` SHA-256 `848d37ae1a8e9b96eb2110df73ff53237f28e4876fda02c00b6c4de2c228b46a`, recorded in `docs/memory/2026-11-09/212-S-wave11-ordinal10-convergence-blocked.md`) recorded `2,849` top-level test passes and `0` Windows `Access is denied` / `Sharing violation` failures, but failed on two remaining blockers:
+
+1. **Daemon Sidecar-Replacement Race in `TestU6_PrewarmAndLazyAutoStartColdRaceConvergence` (`internal/cli/mcp_daemon.go`)**:
+   * `TestU6_PrewarmAndLazyAutoStartColdRaceConvergence` subtests `lazy_first_client_eof_preserves_daemon_and_later_attach` and `four_mixed_cold_starts_recover_stale_sidecar_to_one_pid` failed in `internal/cli` with `backlogit: validation failed: ...\runtime\mcp-daemon.json changed while opening`.
+   * During daemon startup (`RunMCPDaemon` in `internal/cli/mcp_daemon.go:88-140`), `AcquireMCPDaemonLock` first writes a lock-only `mcp-daemon.json` sidecar; after `ListenMCPDaemonIPC` binds the endpoint, `RunMCPDaemon` calls `removeMCPDaemonSidecar(runtimeRoot)` + `writeMCPDaemonSidecar(runtimeRoot, runtimeDir, info)` (`O_CREATE|O_EXCL`) to publish `IPCTransport`, `Endpoint`, and `ProtocolVersion`.
+   * When a concurrent `PrewarmMCPDaemon` / `RunMCPSessionShim` readiness poll calls `readMCPDaemonInfoAt(runtimeRoot, runtimeDir)` (`internal/cli/mcp_daemon.go:678-709`) at the exact instant `RunMCPDaemon` replaces the lock-only (or stale) `mcp-daemon.json` with the endpoint-ready regular file, `runtimeRoot.Lstat(mcpDaemonSidecarName)` (`linked`) observes the pre-replacement regular file while `runtimeRoot.Open(mcpDaemonSidecarName)` (`opened`) opens the post-replacement regular file. Because `!os.SameFile(opened, linked)` returned a fatal `corerrors.ErrValidation` (`"%s changed while opening"`) on attempt `1` without retry and `PrewarmMCPDaemon` immediately aborted its readiness loop on `errors.Is(readErr, corerrors.ErrValidation)`, legitimate concurrent regular-file sidecar replacement caused a false-positive validation abort.
+2. **25-Minute Unintended `autoharness` Subprocess Overhead in `internal/core/gate` Under Workspace-Contained `TEMP` (`internal/core/gate/baseref.go` and `internal/core/gate/probe.go`)**:
+   * `internal/core` timed out at `1,802.332s` (`30m0s`), exhausting the `2,700s` outer supervisor budget (`native_exit: 124`).
+   * Under workspace-contained `TEMP` (`C:\Source\GitHub\backlogit\bin\_t1`), every non-git `t.TempDir()` workspace created across the ~`1,195` tests in `internal/core` initializes default `ws.GateBroker` (`enabled: auto`). Whenever a test completes a task (`MoveItem` / `UpdateArtifact` to `done`), `Broker.Evaluate` calls:
+     1. `Probe(ctx, b.Version, mode)` -> `ExecVersionRunner.Version` (`internal/core/gate/probe.go:108`), which spawns a Python `autoharness version` subprocess (~`1s` on Windows) on every call without caching.
+     2. `ResolveBaseRef(ctx, b.Git, ...)` -> `ExecGitRunner.Verify` (`internal/core/gate/baseref.go:118`), which runs `git rev-parse --verify --quiet <ref>^{commit}` with `cmd.Env = resolveChildEnv(g.Env)` (which strips ambient `GIT_CEILING_DIRECTORIES`). Because `t.TempDir()` is inside `C:\Source\GitHub\backlogit\bin\_t1\...` and has no `.git` directory of its own, `git rev-parse` walks up out of `os.TempDir()` (`bin/_t1`) into the outer repository checkout (`C:\Source\GitHub\backlogit\.git`), resolves `HEAD` and `origin/HEAD` against the outer repository, and then launches a full `autoharness gate check` Python subprocess (~`1.2–1.5s` per call) on every task completion across hundreds of non-git `t.TempDir()` tests (~`25 minutes` of unintended `autoharness` subprocess overhead).
+
+### P-021 C5/C6 Four-Case Triage, Duplicate Scan, and Late-Identifier Reconciliation Audit Record (`089-DL` Continuation, 2026-11-09)
+
+1. **Originating Capture and Reconciled Residual-Risk Records**:
+   * `stash_id`: `96F1DFFD` / `F2509AE3` (continuing `089-DL`; raw stash texts preserved unedited per Ship's single-write capture invariant).
+   * Originating refs: `task_ids: 211.001-T..211.021-T` (all `21` `done`) + `211.022-T` (`U1k`, Wave 12); `feature_id: 211-F`; `shipment_id: 212-S`; `PR: N/A (genuinely pre-PR)`; `review_thread_id: N/A (threadless Wave 11 Ordinal 10 full-suite findings)`.
+   * Reconciled records: `docs/memory/2026-11-09/212-S-wave11-ordinal10-convergence-blocked.md`, `bin/_rr9501da8a/wave11-ordinal10/result.json` (SHA-256 `4f0915989d1a4a56b549264917ad47d5f9954b4e89e9729d2c3450b6a4c77c70`), `bin/_rr9501da8a/wave11-ordinal10/recorder-result.json` (SHA-256 `848d37ae1a8e9b96eb2110df73ff53237f28e4876fda02c00b6c4de2c228b46a`), and `checkpoint-20261109-224251.json`.
+2. **(A) Unconditional Duplicate Scan Outcome (`CLEAN DUPLICATE SCAN`)**:
+   * Direct scan of `.backlogit/stash.jsonl` and `.backlogit/archive/stash.jsonl` confirmed zero duplicate entries; zero stash entries were archived or removed.
+3. **(B) Mandatory Late-Identifier Reconciliation Outcome (`No late identifier found — terminal PR: N/A and review-thread ID: N/A stand`)**:
+   * Searched Ship-owned residual-risk and convergence records (`docs/memory/2026-11-09/212-S-wave11-ordinal10-convergence-blocked.md` and `checkpoint-20261109-224251.json`). No PR or review thread exists yet; `PR: N/A` and `review-thread ID: N/A` stand as truthful terminal records.
+
+### Verbatim Operator Directive and Chosen Direction (`M21 -> M22`, `S22 -> S23`, Same-Contract `U6` Sidecar Replacement Retry, Wave 12 `U1k` / `211.022-T`, and Ordinal 11 Convergence Authorization)
+
+* **Verbatim Operator Directive (`2026-11-09T23:24:15Z`)**:
+  > "Proceed."
+* **Chosen Direction (`089-DL` Route A Extended — Same-Contract `U6` `211.006-T` Follow-Up, Wave 12 `U1k` `211.022-T`, `M21 -> M22`, `S22 -> S23`, and Ordinal 11 Convergence Authorization)**:
+  1. **Same-Contract `U6` (`211.006-T`, Preserving `status: done`) Follow-Up in `internal/cli/mcp_daemon.go` and `internal/cli/mcp_session_shim_test.go`**:
+     * In `readMCPDaemonInfoAt(runtimeRoot *os.Root, runtimeDir string)` (`internal/cli/mcp_daemon.go`): retry `Lstat -> rejectLink -> IsRegular -> Open -> Stat -> os.SameFile` up to `4` attempts (with `2ms` sleep between attempts) when `!os.SameFile(opened, linked)` while `opened.Mode().IsRegular()` is true (closing `f` before sleeping/retrying), and in `PrewarmMCPDaemon` treat a concurrent regular-file `"changed while opening"` as a retryable readiness-poll condition rather than a fatal `ErrValidation`, while still failing closed immediately with `corerrors.ErrValidation` on any symlink, reparse point, or non-regular file (`!linked.Mode().IsRegular()` or `!opened.Mode().IsRegular()`).
+     * Scoped verification: `go test -timeout=30m -count=1 -race -run '^(TestU6_|TestU5a_|TestU4_CrossProcess|TestRegistryParity_)' ./internal/cli`.
+  2. **Wave 12 Prerequisite Task `211.022-T` (`U1k`, `ready_12 = {211.022-T}`) Under `211-F` / `212-S`**:
+     * Because `211.022-T` (`U1k`) modifies existing methods `ExecGitRunner.Verify` and `ExecVersionRunner.Version` and introduces **zero new exported symbols**, `harness-architect` scaffolds behavioral RED tests `TestU1k_*` in `internal/core/gate/probe_test.go` directly in Wave 12 without needing a separate `go/ast` source-shape declaration task.
+     * **`U1k` (`211.022-T`, `code`, `status: queued`, `priority: high`, `size: XS`, `complexity: low`, `labels: code,track-b,core,gate,windows,u1k`, `dependencies: [211.020-T, 211.021-T]`, `3` files: `internal/core/gate/baseref.go`, `internal/core/gate/probe.go`, `internal/core/gate/probe_test.go`)**:
+       1. In `internal/core/gate/baseref.go` (`ExecGitRunner.Verify`): when `g.Dir != ""`, if `g.Dir` is strictly inside `os.TempDir()` (`tempDir := filepath.Clean(os.TempDir())`) and no `GIT_CEILING_DIRECTORIES` entry is already present in `cmd.Env`, append `"GIT_CEILING_DIRECTORIES=" + tempDir` to `cmd.Env` so `git rev-parse --verify --quiet <ref>^{commit}` stops at `os.TempDir()` (`bin/_t1`) and never walks up into the outer repository checkout (`C:\Source\GitHub\backlogit\.git`) for non-git `t.TempDir()` workspaces (while still resolving normally for any test that runs `git init` inside its `t.TempDir()`).
+       2. In `internal/core/gate/probe.go` (`ExecVersionRunner.Version`): cache successful version strings in an unexported package-level `sync.Map` (`var execVersionCache sync.Map`) keyed by `(resolvedBinaryPath, info.ModTime().UnixNano(), info.Size(), strings.Join(cmd.Env, "\x00"))` (resolved via `exec.LookPath(r.Binary)` + `os.Stat`), so repeated `Broker.Evaluate` calls across `1,195` tests in `internal/core` do not spawn a 1-second Python `autoharness version` subprocess on every task completion, while automatically invalidating if the binary path, modification time, size, or environment changes.
+       3. Scoped verification: `go test -timeout=30m -count=1 -race -run '^(TestU1k_|TestProbe|TestVersionAtLeast|TestExecVersionRunner_|TestResolveBaseRef|TestExecRunner_|TestResolveChildEnv_)' ./internal/core/gate`.
+  3. **`M21 -> M22` (`S22 -> S23`) Manifest Refreeze and Post-Wave-12 Ordinal 11 Convergence Authorization (`NOFEATURECOMMIT`)**:
+     * Keep all `21` prior task members (`211.001-T`..`211.021-T`) in `terminal_success` (`done`/archived, `1` `WORK_STARTED` record each, never re-started or re-completed), add `211.022-T` (`U1k`) as `queued` in Wave 12 (`ready_12 = {211.022-T}`), and keep `open_red_deliverables = ∅` (`211.015-T` `^TestU2i_` closed GREEN at Wave 10).
+     * Under the operator's explicit `"Proceed."` (`2026-11-09T23:24:15Z`) directive, after the same-contract `U6` (`211.006-T`) follow-up and Wave 12 `211.022-T` (`U1k`) complete on `212-S`, Ship executes **Ordinal 11** (`ordinal: 11`, `failed_count: 9`, `budget_seconds: 2700`, `46` first-party packages — preserving all `9` prior failed full-suite outcomes without counter reset) of `go test -count=1 -p=1 -timeout=30m -json ./...` at Wave 12 Step 4.6 before local build, branch-wide review, and PR creation.
+     * Preserve `checkpoint-20261109-224251.json` and `checkpoint-20261106-210317.json` completely untouched on disk during Stage's turn (`NOFEATURECOMMIT`).
 
