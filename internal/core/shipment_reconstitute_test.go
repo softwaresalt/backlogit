@@ -28,41 +28,98 @@ type reconstituteFixture struct {
 	downstream *models.Artifact
 }
 
+var reconstituteFixtureSeed struct {
+	once     sync.Once
+	root     string
+	template *reconstituteFixture
+	err      error
+}
+
 func newReconstituteFixture(t *testing.T) *reconstituteFixture {
 	t.Helper()
 	ctx := context.Background()
-	ws := setupShipmentWorkspace(t)
+	reconstituteFixtureSeed.once.Do(func() {
+		reconstituteFixtureSeed.root, reconstituteFixtureSeed.err = buildShipmentWorkspaceSeed(
+			ctx, "backlogit-reconstitute-seed-*", func(ctx context.Context, ws *Workspace) error {
+				var err error
+				reconstituteFixtureSeed.template, err = seedReconstituteFixture(ctx, ws)
+				return err
+			})
+	})
+	require.NoError(t, reconstituteFixtureSeed.err, "initialize reconstitute fixture seed")
+	ws := cloneShipmentWorkspaceSeed(t, reconstituteFixtureSeed.root)
+	template := reconstituteFixtureSeed.template
+	load := func(id string) *models.Artifact {
+		artifact, err := findArtifact(ctx, ws, id)
+		require.NoError(t, err)
+		return artifact
+	}
+	fx := &reconstituteFixture{
+		ws: ws, feature: load(template.feature.ID),
+		source: load(template.source.ID), downstream: load(template.downstream.ID),
+		tasks: make([]*models.Artifact, 0, len(template.tasks)),
+	}
+	for _, task := range template.tasks {
+		fx.tasks = append(fx.tasks, load(task.ID))
+	}
+	return fx
+}
+
+func seedReconstituteFixture(ctx context.Context, ws *Workspace) (*reconstituteFixture, error) {
 	fx := &reconstituteFixture{ws: ws}
 
 	feature, err := CreateArtifact(ctx, ws, "Reconstitute covering feature", "feature")
-	require.NoError(t, err)
-	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, feature))
+	if err != nil {
+		return nil, fmt.Errorf("create reconstitute feature: %w", err)
+	}
+	if err := bldb.UpsertItem(ctx, ws.DB, feature); err != nil {
+		return nil, fmt.Errorf("index reconstitute feature: %w", err)
+	}
 	fx.feature = feature
 
 	ids := make([]string, 0, 6)
+	fx.tasks = make([]*models.Artifact, 0, 6)
 	for i := 1; i <= 6; i++ {
 		task, taskErr := CreateArtifact(ctx, ws, fmt.Sprintf("Reconstitute task %d", i), "task", WithParent(feature.ID))
-		require.NoError(t, taskErr)
-		require.NoError(t, bldb.UpsertItem(ctx, ws.DB, task))
+		if taskErr != nil {
+			return nil, fmt.Errorf("create reconstitute task %d: %w", i, taskErr)
+		}
+		if err := bldb.UpsertItem(ctx, ws.DB, task); err != nil {
+			return nil, fmt.Errorf("index reconstitute task %d: %w", i, err)
+		}
 		fx.tasks = append(fx.tasks, task)
 		ids = append(ids, task.ID)
 	}
 
 	source, err := CreateShipment(ctx, ws, "Reconstitute source shipment", ids)
-	require.NoError(t, err)
+	if err != nil {
+		return nil, fmt.Errorf("create reconstitute source shipment: %w", err)
+	}
 	fx.source = source
 
 	otherFeature, err := CreateArtifact(ctx, ws, "Downstream feature", "feature")
-	require.NoError(t, err)
-	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, otherFeature))
+	if err != nil {
+		return nil, fmt.Errorf("create downstream feature: %w", err)
+	}
+	if err := bldb.UpsertItem(ctx, ws.DB, otherFeature); err != nil {
+		return nil, fmt.Errorf("index downstream feature: %w", err)
+	}
 	downTask, err := CreateArtifact(ctx, ws, "Downstream task", "task", WithParent(otherFeature.ID))
-	require.NoError(t, err)
-	require.NoError(t, bldb.UpsertItem(ctx, ws.DB, downTask))
+	if err != nil {
+		return nil, fmt.Errorf("create downstream task: %w", err)
+	}
+	if err := bldb.UpsertItem(ctx, ws.DB, downTask); err != nil {
+		return nil, fmt.Errorf("index downstream task: %w", err)
+	}
 	downstream, err := CreateShipment(ctx, ws, "Reconstitute downstream shipment", []string{downTask.ID})
-	require.NoError(t, err)
-	require.NoError(t, AddDependency(ctx, ws, downstream.ID, source.ID, "blocks"))
+	if err != nil {
+		return nil, fmt.Errorf("create downstream shipment: %w", err)
+	}
+	if err := AddDependency(ctx, ws, downstream.ID, source.ID, "blocks"); err != nil {
+		return nil, fmt.Errorf("add downstream shipment dependency: %w", err)
+	}
 	fx.downstream = downstream
-	return fx
+	return fx, nil
 }
 
 func (fx *reconstituteFixture) splitPlanYAML() string {

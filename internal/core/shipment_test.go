@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,21 +23,76 @@ import (
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
-// setupShipmentWorkspace creates a temp workspace directory with minimal config for
-// shipment testing. Returns the Workspace pointer.
-func setupShipmentWorkspace(t *testing.T) *Workspace {
+var shipmentWorkspaceSeed struct {
+	once sync.Once
+	root string
+	err  error
+}
+
+// buildShipmentWorkspaceSeed publishes only a closed, checkpointed workspace.
+// It returns errors rather than calling FailNow inside a shared sync.Once.
+func buildShipmentWorkspaceSeed(ctx context.Context, pattern string, populate func(context.Context, *Workspace) error) (root string, err error) {
+	root, err = os.MkdirTemp(os.TempDir(), pattern)
+	if err != nil {
+		return "", fmt.Errorf("create shipment workspace seed: %w", err)
+	}
+	storage := filepath.Join(root, ".backlogit")
+	if err := os.MkdirAll(storage, 0o755); err != nil {
+		return "", fmt.Errorf("create shipment seed storage: %w", err)
+	}
+	if err := config.WriteDefaults(storage); err != nil {
+		return "", fmt.Errorf("write shipment seed defaults: %w", err)
+	}
+	ws, err := NewWorkspace(ctx, root)
+	if err != nil {
+		return "", fmt.Errorf("open shipment workspace seed: %w", err)
+	}
+	defer func() {
+		if closeErr := ws.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close shipment workspace seed: %w", closeErr))
+		}
+	}()
+	// Match disableExecGateForTest without retaining a testing.T in the seed.
+	ws.GateBroker = nil
+	if populate != nil {
+		if err := populate(ctx, ws); err != nil {
+			return "", fmt.Errorf("populate shipment workspace seed: %w", err)
+		}
+	}
+	if _, err := ws.DB.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return "", fmt.Errorf("checkpoint shipment workspace seed: %w", err)
+	}
+	return root, nil
+}
+
+// cloneShipmentWorkspaceSeed gives each test independent files and DB handles.
+func cloneShipmentWorkspaceSeed(t *testing.T, seedRoot string) *Workspace {
 	t.Helper()
 	root := t.TempDir()
-	ws := filepath.Join(root, ".backlogit")
-	require.NoError(t, os.MkdirAll(ws, 0o755))
-	require.NoError(t, config.WriteDefaults(ws))
-
+	storage := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(storage, 0o755))
+	require.NoError(t, copyFixtureGitSeed(filepath.Join(seedRoot, ".backlogit"), storage))
 	ctx := context.Background()
-	workspace, err := NewWorkspace(ctx, root)
+	workspace, err := NewDiagnosticWorkspace(ctx, root)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, workspace.Close()) })
 	disableExecGateForTest(t, workspace)
+	for range 4 {
+		// Best-effort speedup for disposable test databases only.
+		_, _ = workspace.DB.ExecContext(ctx, "PRAGMA synchronous = OFF")
+	}
 	return workspace
+}
+
+// setupShipmentWorkspace clones a schema-initialized default workspace.
+func setupShipmentWorkspace(t *testing.T) *Workspace {
+	t.Helper()
+	shipmentWorkspaceSeed.once.Do(func() {
+		shipmentWorkspaceSeed.root, shipmentWorkspaceSeed.err = buildShipmentWorkspaceSeed(
+			context.Background(), "backlogit-shipment-workspace-seed-*", nil)
+	})
+	require.NoError(t, shipmentWorkspaceSeed.err, "initialize shipment workspace seed")
+	return cloneShipmentWorkspaceSeed(t, shipmentWorkspaceSeed.root)
 }
 
 func TestRestoreShipArtifactsReadFailureLeavesEventLogUntouched(t *testing.T) {

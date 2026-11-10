@@ -1,6 +1,8 @@
 package core
 
 import (
+	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,10 +14,15 @@ type lf175095Group struct {
 	residual int
 }
 
+var (
+	lf175LinuxOnce   sync.Once
+	lf175LinuxCounts map[string]int
+)
+
 // TestU175_095_LintFix fails while errcheck findings remain in the groups owned
 // by task 175.095-T (line-stable group multiset; line and column are ignored).
-// The shared core findings include a GOOS=linux scan for the owned Linux-only
-// files; the harness itself runs on any host OS.
+// A separate cached GOOS=linux scan covers the owned Linux-only files when the
+// harness runs on another host OS.
 func TestU175_095_LintFix(t *testing.T) {
 	groups := []lf175095Group{
 		{"internal/core/shipment_reconcile_append_unix.go", "Error return value of `dirFile.Close` is not checked", 0},
@@ -31,5 +38,16 @@ func TestU175_095_LintFix(t *testing.T) {
 
 func lf175095Findings(t *testing.T, pkg string) map[string]int {
 	t.Helper()
-	return lf175062Findings(t, pkg)
+	if runtime.GOOS == "linux" {
+		return lf175062Findings(t, pkg)
+	}
+	lint := lf175062Linter(t)
+	if pkg == "./internal/core" {
+		lf175LinuxOnce.Do(func() {
+			lf175LinuxCounts = lf175062Scan(t, lint, pkg, "linux")
+		})
+		require.NotNil(t, lf175LinuxCounts, "shared Linux core lint scan must have completed")
+		return lf175LinuxCounts
+	}
+	return lf175062Scan(t, lint, pkg, "linux")
 }

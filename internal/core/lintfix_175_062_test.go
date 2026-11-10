@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -47,17 +46,7 @@ func lf175062Findings(t *testing.T, pkg string) map[string]int {
 	lint := lf175062Linter(t)
 	if pkg == "./internal/core" {
 		lf175CoreOnce.Do(func() {
-			counts := lf175062Scan(t, lint, pkg, "")
-			// Task 095 owns Linux-only files even on Windows. Preserve that
-			// coverage while sharing both observations across the core tests.
-			if runtime.GOOS != "linux" {
-				for key, count := range lf175062Scan(t, lint, pkg, "linux") {
-					if count > counts[key] {
-						counts[key] = count
-					}
-				}
-			}
-			lf175CoreCounts = counts
+			lf175CoreCounts = lf175062Scan(t, lint, pkg, "")
 		})
 		require.NotNil(t, lf175CoreCounts, "shared core lint scan must have completed")
 		return lf175CoreCounts

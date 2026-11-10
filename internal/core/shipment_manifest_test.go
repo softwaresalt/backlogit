@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -32,31 +33,37 @@ type u1Fixture struct {
 	originalPersistFn func(*models.Artifact, string, bool) error
 }
 
+var u1FixtureSeed struct {
+	once     sync.Once
+	root     string
+	template *u1Fixture
+	err      error
+}
+
 func newU1Fixture(t *testing.T) *u1Fixture {
 	t.Helper()
 	ctx := context.Background()
-	ws := setupShipmentWorkspace(t)
-
-	feat, err := CreateArtifact(ctx, ws, "U1 feature", "feature")
-	require.NoError(t, err)
-	task1, err := CreateArtifact(ctx, ws, "U1 task 1", "task", WithParent(feat.ID))
-	require.NoError(t, err)
-	task2, err := CreateArtifact(ctx, ws, "U1 task 2", "task", WithParent(feat.ID))
-	require.NoError(t, err)
-	feat2, err := CreateArtifact(ctx, ws, "U1 other feature", "feature")
-	require.NoError(t, err)
-	task3, err := CreateArtifact(ctx, ws, "U1 task 3", "task", WithParent(feat2.ID))
-	require.NoError(t, err)
-
-	shipA, err := CreateShipment(ctx, ws, "U1 ship A", []string{feat.ID, task1.ID, task2.ID})
-	require.NoError(t, err)
-	shipB, err := CreateShipment(ctx, ws, "U1 ship B", []string{feat2.ID, task3.ID})
-	require.NoError(t, err)
-
+	u1FixtureSeed.once.Do(func() {
+		u1FixtureSeed.root, u1FixtureSeed.err = buildShipmentWorkspaceSeed(
+			ctx, "backlogit-u1-manifest-seed-*", func(ctx context.Context, ws *Workspace) error {
+				var err error
+				u1FixtureSeed.template, err = seedU1Fixture(ctx, ws)
+				return err
+			})
+	})
+	require.NoError(t, u1FixtureSeed.err, "initialize U1 fixture seed")
+	ws := cloneShipmentWorkspaceSeed(t, u1FixtureSeed.root)
+	template := u1FixtureSeed.template
+	load := func(id string) *models.Artifact {
+		artifact, err := findArtifact(ctx, ws, id)
+		require.NoError(t, err)
+		return artifact
+	}
 	fx := &u1Fixture{
 		ws: ws, ctx: ctx,
-		feat: feat, feat2: feat2, task1: task1, task2: task2, task3: task3,
-		shipA: shipA, shipB: shipB,
+		feat: load(template.feat.ID), feat2: load(template.feat2.ID),
+		task1: load(template.task1.ID), task2: load(template.task2.ID), task3: load(template.task3.ID),
+		shipA: load(template.shipA.ID), shipB: load(template.shipB.ID),
 		originalPersistFn: persistArtifactWriteFn,
 	}
 	t.Cleanup(func() {
@@ -65,6 +72,44 @@ func newU1Fixture(t *testing.T) *u1Fixture {
 		ws.removeShipmentOperationJournal = nil
 	})
 	return fx
+}
+
+func seedU1Fixture(ctx context.Context, ws *Workspace) (*u1Fixture, error) {
+	feat, err := CreateArtifact(ctx, ws, "U1 feature", "feature")
+	if err != nil {
+		return nil, fmt.Errorf("create U1 feature: %w", err)
+	}
+	task1, err := CreateArtifact(ctx, ws, "U1 task 1", "task", WithParent(feat.ID))
+	if err != nil {
+		return nil, fmt.Errorf("create U1 task 1: %w", err)
+	}
+	task2, err := CreateArtifact(ctx, ws, "U1 task 2", "task", WithParent(feat.ID))
+	if err != nil {
+		return nil, fmt.Errorf("create U1 task 2: %w", err)
+	}
+	feat2, err := CreateArtifact(ctx, ws, "U1 other feature", "feature")
+	if err != nil {
+		return nil, fmt.Errorf("create U1 other feature: %w", err)
+	}
+	task3, err := CreateArtifact(ctx, ws, "U1 task 3", "task", WithParent(feat2.ID))
+	if err != nil {
+		return nil, fmt.Errorf("create U1 task 3: %w", err)
+	}
+
+	shipA, err := CreateShipment(ctx, ws, "U1 ship A", []string{feat.ID, task1.ID, task2.ID})
+	if err != nil {
+		return nil, fmt.Errorf("create U1 ship A: %w", err)
+	}
+	shipB, err := CreateShipment(ctx, ws, "U1 ship B", []string{feat2.ID, task3.ID})
+	if err != nil {
+		return nil, fmt.Errorf("create U1 ship B: %w", err)
+	}
+
+	return &u1Fixture{
+		ws: ws, ctx: ctx,
+		feat: feat, feat2: feat2, task1: task1, task2: task2, task3: task3,
+		shipA: shipA, shipB: shipB,
+	}, nil
 }
 
 func (fx *u1Fixture) claimA(t *testing.T) {
