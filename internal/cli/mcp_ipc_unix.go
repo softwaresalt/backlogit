@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -15,8 +16,72 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
+
+func prepareMCPSessionInput(ctx context.Context, input io.Reader) (io.Reader, error) {
+	file, ok := input.(*os.File)
+	if !ok {
+		return input, nil
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat session input: %w", err)
+	}
+	if info.Mode()&(os.ModeNamedPipe|os.ModeSocket) == 0 {
+		return input, nil
+	}
+	raw, err := file.SyscallConn()
+	if err != nil {
+		return nil, fmt.Errorf("access session input descriptor: %w", err)
+	}
+	reader := &mcpSessionPipeReader{ctx: ctx, file: file}
+	if err := raw.Control(func(fd uintptr) { reader.fd = int32(fd) }); err != nil {
+		return nil, fmt.Errorf("inspect session input descriptor: %w", err)
+	}
+	return reader, nil
+}
+
+// Inherited stdin is not Go-pollable: Close can wait for its blocking Read.
+// Poll before each read without changing shared descriptor flags. Session
+// ownership guarantees that no competing reader can consume the ready bytes.
+// Do not embed File: its WriterTo fast path would bypass the cancellable Read.
+type mcpSessionPipeReader struct {
+	ctx  context.Context
+	file *os.File
+	fd   int32
+}
+
+func (r *mcpSessionPipeReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	fds := []unix.PollFd{{Fd: r.fd, Events: unix.POLLIN}}
+	for {
+		if err := r.ctx.Err(); err != nil {
+			return 0, err
+		}
+		_, err := unix.Poll(fds, 50)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil {
+			return 0, fmt.Errorf("poll session input: %w", err)
+		}
+		if err := r.ctx.Err(); err != nil {
+			return 0, err
+		}
+		if fds[0].Revents != 0 {
+			return r.file.Read(p)
+		}
+	}
+}
+
+func (r *mcpSessionPipeReader) Close() error {
+	return r.file.Close()
+}
 
 // DeriveMCPDaemonEndpoint derives a socket strictly inside the workspace runtime.
 func DeriveMCPDaemonEndpoint(workspaceRoot, storageRoot, runtimeDir string) (string, string, error) {

@@ -472,8 +472,9 @@ func pinnedMCPDaemonBinary(workspace string) (binary string, result error) {
 }
 
 // RunMCPSessionShim proxies one stdio session to the verified workspace daemon.
-// Blocking streams must implement io.Closer; ownership transfers for the session
-// so cancellation or peer EOF can interrupt and join both copy workers.
+// Stream ownership transfers for the session. Unix pipe inputs are polled for
+// cancellation; other blocking streams must support an interruptible Close so
+// cancellation or peer EOF can join both copy workers.
 func RunMCPSessionShim(ctx context.Context, rootPath string, replace bool, input io.Reader, output io.Writer) (result error) {
 	if ctx == nil || input == nil || output == nil {
 		return mcpDaemonValidationError("session shim requires a context and streams")
@@ -505,6 +506,12 @@ func RunMCPSessionShim(ctx context.Context, rootPath string, replace bool, input
 }
 
 func proxyMCPSession(ctx context.Context, conn net.Conn, input io.Reader, output io.Writer) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	input, err := prepareMCPSessionInput(ctx, input)
+	if err != nil {
+		return fmt.Errorf("prepare MCP session input: %w", err)
+	}
 	done := make(chan error, 2)
 	go func() {
 		_, err := io.Copy(conn, input)
@@ -524,6 +531,7 @@ func proxyMCPSession(ctx context.Context, conn net.Conn, input io.Reader, output
 	}
 	// EOF is a session detach, not an instruction to stop the daemon. Close
 	// the entire IPC stream (named pipes do not provide a write half-close).
+	cancel()
 	result = errors.Join(result, conn.Close())
 	if closer, ok := input.(io.Closer); ok {
 		if err := closer.Close(); err != nil && !errors.Is(err, os.ErrClosed) {

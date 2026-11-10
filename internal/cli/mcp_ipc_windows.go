@@ -23,6 +23,10 @@ import (
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
+func prepareMCPSessionInput(_ context.Context, input io.Reader) (io.Reader, error) {
+	return input, nil
+}
+
 // DeriveMCPDaemonEndpoint derives a pipe name from canonical storage identity.
 func DeriveMCPDaemonEndpoint(workspaceRoot, storageRoot, runtimeDir string) (string, string, error) {
 	if err := validateMCPIPCDirectories(workspaceRoot, storageRoot, runtimeDir); err != nil {
