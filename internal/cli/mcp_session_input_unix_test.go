@@ -100,6 +100,11 @@ func TestU6_InheritedStdinHelper(t *testing.T) {
 		require.NoError(t, err)
 		require.NotZero(t, info.Mode()&os.ModeSocket, "child stdin must be an inherited kernel socket")
 	}
+	// The shim owns its output; the test runtime still needs stdout for coverage.
+	fd, err := unix.FcntlInt(os.Stdout.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+	require.NoError(t, err)
+	output := os.NewFile(uintptr(fd), "shim-stdout")
+	defer func() { _ = output.Close() }()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	conn, peer := net.Pipe()
@@ -126,7 +131,7 @@ func TestU6_InheritedStdinHelper(t *testing.T) {
 			_, _ = peer.Read(first[:])
 		}
 	}()
-	err := proxyMCPSession(ctx, conn, os.Stdin, os.Stdout)
+	err = proxyMCPSession(ctx, conn, os.Stdin, output)
 	<-peerDone
 	if mode == "cancel" {
 		require.ErrorIs(t, err, context.Canceled)

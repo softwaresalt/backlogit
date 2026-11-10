@@ -203,3 +203,176 @@ Final scoped `git diff --check` exited 0; `git diff --stat` confirmed
 exactly the three authorized unstaged files. Compact-context was invoked
 with this latest recovery evidence preserved: zero files compacted or
 archived, no extra artifacts, and no broader mutation permitted.
+
+## Cycle 3 coverage ownership diagnosis and blocked race prerequisite
+
+Recorded at 2026-11-10T22:33:49Z against clean HEAD
+`c574669b0a016040a5ffb0582e2482a6b505289d`. This is repair iteration
+3 of 5; the initial f6 baseline is excluded from that count. Two prior
+repair iterations failed hosted `test`. No third repaired tree was
+submitted, so the next hosted failure must still trigger the three-failed-
+repair-iterations halt. No iteration counter was reset.
+
+### Hosted evidence and C1
+
+Read-only `gh run view 42913035454 --job 130168437175 --log-failed`
+confirmed the complete failure inventory: only
+`TestU6_InheritedStdinShutdown` and its six cases `peer_eof`, `cancel`,
+`stdin_eof`, `socket_peer_eof`, `socket_cancel`, and `socket_stdin_eof`.
+Each child returned exit status 2 at the unchanged line 85 assertion:
+`error generating coverage report: write /dev/stdout: file already closed`.
+The original cross-process stdio/disconnect test was not in that inventory.
+The read-only log command exited 0.
+
+The exact workflow path `.github/workflows/ci.yml` and hosted command
+agree: `go test -race -timeout=30m -coverprofile=coverage.out ./...`.
+No explicit `-covermode` is configured; `-race` selects atomic coverage.
+Focused reproduction retains instrumentation and narrows only the package
+and test selector; generated profiles remain under the existing ignored
+workspace-contained underscore-prefixed Linux home directory.
+
+C1 passes for a private stdout duplicate in the new Unix test helper:
+the helper currently transfers the Go test runtime's global `os.Stdout`
+to `proxyMCPSession`, which correctly closes its owned output. After
+the helper returns, test coverage reporting still needs that same
+`os.File`. This is fixture ownership, not a newly established production
+defect. A private duplicate would transfer only its new descriptor to
+the shim, leaving fd 1 and global `os.Stdout` live for the test runtime.
+It must retain actual output closure, all six assertions and deadlines,
+and must not change descriptor flags on the original or add workers.
+
+### Native Linux attempts and missing prerequisite
+
+All commands used the existing WSL Go toolchain and caches described
+above, with offline module/toolchain settings. `HOME`, `TMPDIR`, and
+`GOCACHE` remained workspace-contained; no downloads or installs occurred.
+
+* Actual CI instrumentation attempt 1: focused
+  `go test -race -timeout=30m -coverprofile=bin/tmp/_ci645-linux-home/_cycle3-red.cover
+  ./internal/cli -run '^TestU6_InheritedStdinShutdown$' -count=1 -v`,
+  `CGO_ENABLED=1`, native exit 1. In addition to missing `gcc`, PowerShell
+  argument parsing split the unquoted profile suffix into `.cover`,
+  producing a secondary offline module-lookup error. No tests ran.
+* Corrected actual CI instrumentation attempt 2: focused
+  `go test -race -timeout=30m -coverprofile
+  'bin/tmp/_ci645-linux-home/_cycle3-race-red.cover' ./internal/cli
+  -run '^TestU6_InheritedStdinShutdown$' -count=1 -v`,
+  `CGO_ENABLED=1`, native exit 1. The sole failure was
+  `runtime/cgo: C compiler "gcc" not found`; no tests ran. This confirms
+  the missing native compiler independently of the earlier argument
+  transport defect. No third attempt was made.
+* Diagnostic coverage-only command: focused
+  `go test -timeout=30m -coverprofile
+  'bin/tmp/_ci645-linux-home/_cycle3-red.cover' -covermode atomic
+  ./internal/cli -run '^TestU6_InheritedStdinShutdown$' -count=1 -v`,
+  `CGO_ENABLED=0`, native exit 1, package duration 3.970s. All six cases
+  reproduced exactly the hosted exit-2 coverage/stdout error; none
+  timed out. Reported package coverage was 0.0%. This is real Linux
+  instrumented RED, but is explicitly NOT actual race-enabled proof.
+
+Read-only environment inspection found only WSL `Ubuntu-26.04`, no
+native `gcc`, `cc`, or `clang` on its PATH, no cached compiler package,
+and no existing compiler binary in the workspace tool directories.
+The Windows MinGW `gcc.exe` is not a native Linux C compiler. Installing
+or downloading a compiler would exceed the explicit scope.
+
+### Blocked handoff and preserved state
+
+The required actual Linux race/coverage RED-before-fix prerequisite
+cannot be met with the existing offline toolchain. Therefore no fixture
+patch was applied, and no GREEN, repetition, vet, lint, formatting, or
+Windows result is claimed for a repaired tree. The coverage-only
+diagnostic is not silently substituted for the required race gate.
+The only tracked write is this append; existing frontmatter and prior
+chronology remain intact. No production code, test assertions, task
+state, checkpoints, stash entry `1CED4AD6`, PR, or Git index changed.
+No commit, push, full suite, or subagents occurred.
+
+Parent handoff: provide an already available native Linux C compiler or
+explicitly revise the validation prerequisite, then reproduce with the
+quoted profile argument before applying the private-owned-stdout
+fixture correction. Fresh Ordinal 21, review, hosted CI, and current-HEAD
+Copilot handling remain parent-owned. Ordinal 20 is evidence only for
+the unchanged C574 tree, not a future repair.
+
+Compact-context was invoked at handoff. The current recovery evidence
+is preserved in place; zero files compacted or archived, zero additional
+artifacts, and no protected checkpoint changes under the bounded scope.
+
+## Cycle 3 authorized fixture ownership correction
+
+Recorded at 2026-11-10T22:38:55Z against unchanged HEAD `c574669b`.
+This continues the CURRENT fix-CI cycle 3, not a new iteration; counters
+and the next-hosted-failure halt rule above remain unchanged.
+
+The parent clarified that the retained coverage-only atomic RED faithfully
+reproduces the exact hosted stderr and authorizes this C1 fixture repair.
+The existing `_cycle3-red.cover` profile was confirmed present; the
+six-case native RED receipt recorded above was reused, not rerun.
+Local race compilation is unavailable because native Linux `gcc` is
+missing. No compiler download, install, or further race attempt occurred.
+The unchanged race-enabled hosted CI job remains required after push,
+not waived or replaced by coverage-only validation.
+
+### Exact test-only correction and ownership
+
+`internal/cli/mcp_session_input_unix_test.go` now duplicates stdout with
+`unix.FcntlInt(os.Stdout.Fd(), unix.F_DUPFD_CLOEXEC, 0)`, checks the error,
+wraps only that private descriptor in `os.NewFile`, and passes this file
+instead of global `os.Stdout` to `proxyMCPSession`. A deferred file close
+also covers early helper returns. The existing shim still actually closes
+its owned output; no no-op closer or production contract change exists.
+
+The atomic duplication adds close-on-exec only to the new descriptor and
+does not change fd 1, its flags, or the global stdout file's closed state.
+The shim closes the private file during teardown; deferred `File.Close`
+on the same Go file object is harmless after closure and cannot close a
+reused descriptor. No duplicate is allocated on duplication failure.
+No workers or subprocesses were added. Existing command-context timeout,
+exact owned-child cancellation/reaping, six actual inherited pipe/socket
+cases, EOF/cancellation assertions, deadlines, and exit-0 guards remain
+unchanged. C1 passes: this completes the existing regression fixture's
+test-runtime ownership boundary, not a production defect or scope expansion.
+
+### Focused GREEN receipts
+
+All commands below returned native exit 0. Linux used the existing
+`wsl --exec env` adapter, workspace-contained `_ci645-linux-go`,
+`_ci645-linux-cache`, `_ci645-linux-home`, `_authoring_gopath`, and
+`_authoring_gomodcache`, with `CGO_ENABLED=0`, `GOTOOLCHAIN=local`,
+`GOPROXY=off`, `GOSUMDB=off`, and `GOFLAGS=-mod=readonly`.
+
+* Linux `go test -timeout=90s -coverprofile
+  'bin/tmp/_ci645-linux-home/_cycle3-green.cover' -covermode atomic
+  ./internal/cli -run '^TestU6_InheritedStdinShutdown$' -count=10`:
+  PASS, 14.564s; all six cases ten times, coverage instrumentation enabled
+* Linux `go test -timeout=90s ./internal/cli -run
+  '^TestU6_InheritedStdinShutdown$' -count=10`: PASS, 6.995s
+* Linux `go vet ./internal/cli`: PASS
+* Windows-hosted Linux-target analysis:
+  `$env:GOOS='linux'; & bin\tmp\212-go-env.ps1
+  .\bin\golangci-lint.exe run ./internal/cli`: PASS
+* `& bin\tmp\212-go-env.ps1 gofmt -l
+  internal\cli\mcp_session_input_unix_test.go`: PASS, no output
+* Windows `& bin\tmp\212-go-env.ps1 go test -timeout=5m ./internal/cli
+  -run '^(TestU4_|TestU4a_|TestU5_|TestU5a_|TestU6_)' -count=1`:
+  PASS, 36.748s
+
+The coverage percentage is 0.0% because the instrumented shim executes
+in helper children rather than the measured parent. This receipt proves
+the previously exit-2 helpers now satisfy the unchanged exit-0 guard
+with coverage enabled; it is not a coverage-percentage improvement or
+race PASS claim.
+
+Only the fixture and this chronology were edited with `apply_patch`;
+frontmatter and all previous chronology remain unchanged. No production,
+other helper, backlog, PR, index, commit, push, full repository suite,
+global tooling, download, install, or subagent action occurred.
+Parent owns fresh whole-tree receipts, review, commit/push, hosted
+race-enabled CI, and current-HEAD Copilot gates. This handoff is local
+focused GREEN only; hosted race verification is explicitly PENDING.
+
+Compact-context was invoked within the two-file write boundary. The
+latest recovery record is preserved in place: zero files compacted,
+zero archives, and no additional artifacts. Final scoped
+`git diff --check` returned exit 0.
