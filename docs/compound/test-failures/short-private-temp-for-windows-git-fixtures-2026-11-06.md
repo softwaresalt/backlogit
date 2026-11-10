@@ -1,6 +1,10 @@
 ---
+chunk_strategy: h1-h2-h3
 title: Keep private Windows Git fixture roots short
 description: Long private TEMP prefixes can create Git ref and object paths beyond Windows limits even when the workspace itself is contained
+doc_type: learning
+schema_version: "1.0"
+source: docs/compound/test-failures/short-private-temp-for-windows-git-fixtures-2026-11-06.md
 problem_type: test_failure
 category: test-failures
 component: windows-test-runner

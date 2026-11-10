@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -822,12 +823,138 @@ func u2jRealGit(t *testing.T, root string) {
 	const load = `
 $ErrorActionPreference = 'Stop'
 `
+	const capture = `
+& $env:U2J_SCRIPT -SnapshotAction Capture -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -OutputPath (Join-Path $env:U2J_ROOT ('scratch/observer-' + [guid]::NewGuid().ToString('N') + '.json'))
+`
+	invokeSnapshot := func(t *testing.T, ctx context.Context, dir, baseline, head, body string) (string, error) {
+		t.Helper()
+		pwsh, err := exec.LookPath("pwsh")
+		if err != nil {
+			return "", fmt.Errorf("find snapshot PowerShell: %w", err)
+		}
+		cmd := exec.CommandContext(ctx, pwsh, "-NoProfile", "-Command", load+body)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"NO_COLOR=1", "U2J_SCRIPT="+filepath.Join(root, "scripts", "wave-scheduler-sim.ps1"),
+			"U2J_ROOT="+dir, "U2J_BASELINE="+baseline, "U2J_HEAD="+head)
+		raw, err := u2jCombinedOutput(t, cmd)
+		if err != nil {
+			return "", fmt.Errorf("snapshot helper invocation: %w\n%s", err, raw)
+		}
+		return strings.TrimSpace(string(raw)), nil
+	}
+	runSnapshot := func(t *testing.T, ctx context.Context, dir, baseline, head, mutation, body string) string {
+		t.Helper()
+		raw, err := invokeSnapshot(t, ctx, dir, baseline, head, body)
+		if mutation == "ignored-nested-repository" {
+			require.NoError(t, err,
+				"U2J_NATIVE_DIRECTORY_SUMMARY_CAPTURE_ACCEPTED: native Git directory summaries are not FILE path aliases; capture/compare must succeed:\n%s", raw)
+		}
+		require.NoError(t, err, "snapshot helper invocation:\n%s", raw)
+		return raw
+	}
+	writeSeed := func(path, contents string) {
+		t.Helper()
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+	}
+	// Copy only these owned, link-free seeds, before any adversarial mutation.
+	// Each copy owns its Git metadata; no mutation can change another fixture.
+	const numSlots = 4
+	masterBaseSeed, masterPostSeed := t.TempDir(), t.TempDir()
+	u2jGit(t, masterBaseSeed, "init", "--quiet")
+	require.NoError(t, os.MkdirAll(filepath.Join(masterBaseSeed, "scratch"), 0o700))
+	writeSeed(filepath.Join(masterBaseSeed, ".backlogit", "queue", "211.015-T.md"), "queued\n")
+	writeSeed(filepath.Join(masterBaseSeed, ".backlogit", "hooks_queue.jsonl"), "claim\n")
+	writeSeed(filepath.Join(masterBaseSeed, "docs", "clean.md"), "clean\n")
+	writeSeed(filepath.Join(masterBaseSeed, ".gitignore"), "scratch/\n")
+	writeSeed(filepath.Join(masterBaseSeed, "production.go"), "package production\n")
+	u2jGit(t, masterBaseSeed, "add", ".")
+	u2jGit(t, masterBaseSeed, "-c", "user.name=U2j Fixture", "-c", "user.email=u2j@example.invalid",
+		"-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture baseline")
+	baseline := u2jGit(t, masterBaseSeed, "rev-parse", "HEAD")
+	baseIndexOID := u2jGit(t, masterBaseSeed, "rev-parse", ":.backlogit/queue/211.015-T.md")
+	baseModeLine := u2jGit(t, masterBaseSeed, "ls-files", "--stage", "--", ".backlogit/queue/211.015-T.md")
+	require.NoError(t, os.CopyFS(masterPostSeed, os.DirFS(masterBaseSeed)))
+	writeSeed(filepath.Join(masterPostSeed, ".backlogit", "queue", "211.015-T.md"), "committed active\n")
+	writeSeed(filepath.Join(masterPostSeed, ".backlogit", "hooks_queue.jsonl"), "committed start\n")
+	writeSeed(filepath.Join(masterPostSeed, "docs", "clean.md"), "committed docs\n")
+	u2jGit(t, masterPostSeed, "add", ".")
+	u2jGit(t, masterPostSeed, "-c", "user.name=U2j Fixture", "-c", "user.email=u2j@example.invalid",
+		"-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "legitimate caller advance")
+	postBaselineHead := u2jGit(t, masterPostSeed, "rev-parse", "HEAD")
+	postIndexOID := u2jGit(t, masterPostSeed, "rev-parse", ":.backlogit/queue/211.015-T.md")
+	postModeLine := u2jGit(t, masterPostSeed, "ls-files", "--stage", "--", ".backlogit/queue/211.015-T.md")
+	require.NotEqual(t, baseline, postBaselineHead)
+	for _, seed := range []string{masterBaseSeed, masterPostSeed} {
+		writeSeed(filepath.Join(seed, ".backlogit", "queue", "211.015-T.md"), "active\n")
+		writeSeed(filepath.Join(seed, ".backlogit", "hooks_queue.jsonl"), "start\n")
+		writeSeed(filepath.Join(seed, "docs", "caller.md"), "caller\n")
+	}
+	var slots [numSlots]struct {
+		baseWorkDir, postWorkDir, baseRawPre, postRawPre string
+	}
+	var ready sync.WaitGroup
+	initErrors := make(chan error, numSlots)
+	for i := range slots {
+		slots[i].baseWorkDir, slots[i].postWorkDir = t.TempDir(), t.TempDir()
+		ready.Add(1)
+		go func() {
+			defer ready.Done()
+			slot := &slots[i]
+			if err := os.CopyFS(slot.baseWorkDir, os.DirFS(masterBaseSeed)); err != nil {
+				initErrors <- fmt.Errorf("copy slot %d base seed: %w", i, err)
+				return
+			}
+			if err := os.CopyFS(slot.postWorkDir, os.DirFS(masterPostSeed)); err != nil {
+				initErrors <- fmt.Errorf("copy slot %d post seed: %w", i, err)
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			// Effective policy hashes include absolute paths. Capture each
+			// variant at the exact path reused by this slot, without rebinding.
+			var err error
+			slot.baseRawPre, err = invokeSnapshot(t, ctx, slot.baseWorkDir, baseline, baseline, capture)
+			if err != nil {
+				initErrors <- fmt.Errorf("capture slot %d base pre-snapshot: %w", i, err)
+				return
+			}
+			slot.postRawPre, err = invokeSnapshot(t, ctx, slot.postWorkDir, baseline, postBaselineHead, capture)
+			if err != nil {
+				initErrors <- fmt.Errorf("capture slot %d post pre-snapshot: %w", i, err)
+			}
+		}()
+	}
+	ready.Wait()
+	close(initErrors)
+	for err := range initErrors {
+		require.NoError(t, err)
+	}
+	require.False(t, t.Failed(), "all slot pre-snapshots must initialize successfully")
+	available := make(chan int, numSlots)
+	for i := range slots {
+		available <- i
+	}
 	for _, mutation := range []string{"ignored-nested-repository", "zero", "task-byte", "hook-byte", "task-stage", "index-mode", "hook-delete", "untracked-delete", "new-test", "new-config", "new-docs", "production-leaf", "production-predispatch", "clean-tracked-byte", "ignored-scratch", "head-change", "raw-binary-byte", "reparse-escape", "policy-hidden-production", "policy-only", "assume-unchanged", "skip-worktree", "post-baseline-zero", "post-baseline-hook", "post-baseline-task", "post-baseline-doc", "pre-tamper", "post-tamper", "missing-bindings", "no-clobber", "nonignored-output", "config-policy-change", "unknown-exclusion", "utf8-path"} {
 		t.Run(mutation, func(t *testing.T) {
+			t.Parallel()
+			slotIndex := <-available
+			defer func() { available <- slotIndex }()
+			slot := slots[slotIndex]
 			if mutation == "new-config" {
 				u2jInheritedPipeCleanup(t, root)
 			}
-			dir := t.TempDir()
+			dir, seedDir, head := slot.baseWorkDir, masterBaseSeed, baseline
+			rawPre, indexOID, modeLine := slot.baseRawPre, baseIndexOID, baseModeLine
+			if strings.HasPrefix(mutation, "post-baseline-") {
+				dir, seedDir, head = slot.postWorkDir, masterPostSeed, postBaselineHead
+				rawPre, indexOID, modeLine = slot.postRawPre, postIndexOID, postModeLine
+			}
+			// This exclusive slot owns the fixture-only reset at the same path
+			// used for its cached pre-snapshot. Never remove a master seed.
+			require.NoError(t, os.RemoveAll(dir))
+			require.NoError(t, os.CopyFS(dir, os.DirFS(seedDir)))
 			taskPath := filepath.Join(dir, ".backlogit", "queue", "211.015-T.md")
 			hookPath := filepath.Join(dir, ".backlogit", "hooks_queue.jsonl")
 			docsPath := filepath.Join(dir, "docs", "caller.md")
@@ -836,31 +963,6 @@ $ErrorActionPreference = 'Stop'
 				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
 				require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
 			}
-			u2jGit(t, dir, "init", "--quiet")
-			require.NoError(t, os.MkdirAll(filepath.Join(dir, "scratch"), 0o700))
-			write(taskPath, "queued\n")
-			write(hookPath, "claim\n")
-			write(filepath.Join(dir, "docs", "clean.md"), "clean\n")
-			write(filepath.Join(dir, ".gitignore"), "scratch/\n")
-			write(filepath.Join(dir, "production.go"), "package production\n")
-			u2jGit(t, dir, "add", ".")
-			u2jGit(t, dir, "-c", "user.name=U2j Fixture", "-c", "user.email=u2j@example.invalid",
-				"-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture baseline")
-			baseline := u2jGit(t, dir, "rev-parse", "HEAD")
-			head := baseline
-			if strings.HasPrefix(mutation, "post-baseline-") {
-				write(taskPath, "committed active\n")
-				write(hookPath, "committed start\n")
-				write(filepath.Join(dir, "docs", "clean.md"), "committed docs\n")
-				u2jGit(t, dir, "add", ".")
-				u2jGit(t, dir, "-c", "user.name=U2j Fixture", "-c", "user.email=u2j@example.invalid",
-					"-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "legitimate caller advance")
-				head = u2jGit(t, dir, "rev-parse", "HEAD")
-				require.NotEqual(t, baseline, head)
-			}
-			write(taskPath, "active\n")
-			write(hookPath, "start\n")
-			write(docsPath, "caller\n")
 			if mutation == "production-predispatch" {
 				write(filepath.Join(dir, "leaf.go"), "package leaf\n")
 			}
@@ -878,33 +980,19 @@ $ErrorActionPreference = 'Stop'
 				require.Contains(t, strings.Split(policyRecords, "\x00"), "scratch/nested/",
 					"U2J_NATIVE_DIRECTORY_SUMMARY_FIXTURE: actual Git policy protocol must contain the ignored nested repository directory summary before Capture")
 			}
-			indexOID := u2jGit(t, dir, "rev-parse", ":.backlogit/queue/211.015-T.md")
-			modeLine := u2jGit(t, dir, "ls-files", "--stage", "--", ".backlogit/queue/211.015-T.md")
 			require.Contains(t, modeLine, "100644 "+indexOID)
 			// Keep all fixture paths and tool I/O under the owned TEMP root.
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
 			run := func(body string) string {
 				t.Helper()
-				pwsh, err := exec.LookPath("pwsh")
-				require.NoError(t, err)
-				cmd := exec.CommandContext(ctx, pwsh, "-NoProfile", "-Command", load+body)
-				cmd.Dir = dir
-				cmd.Env = append(os.Environ(),
-					"NO_COLOR=1", "U2J_SCRIPT="+filepath.Join(root, "scripts", "wave-scheduler-sim.ps1"),
-					"U2J_ROOT="+dir, "U2J_BASELINE="+baseline, "U2J_HEAD="+head)
-				raw, err := u2jCombinedOutput(t, cmd)
-				if mutation == "ignored-nested-repository" {
-					require.NoError(t, err,
-						"U2J_NATIVE_DIRECTORY_SUMMARY_CAPTURE_ACCEPTED: native Git directory summaries are not FILE path aliases; capture/compare must succeed:\n%s", raw)
-				}
-				require.NoError(t, err, "snapshot helper invocation:\n%s", raw)
-				return strings.TrimSpace(string(raw))
+				return runSnapshot(t, ctx, dir, baseline, head, mutation, body)
 			}
-			const capture = `
-& $env:U2J_SCRIPT -SnapshotAction Capture -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -OutputPath (Join-Path $env:U2J_ROOT ('scratch/observer-' + [guid]::NewGuid().ToString('N') + '.json'))
-`
-			rawPre := run(capture)
+			switch mutation {
+			case "ignored-nested-repository", "zero", "post-baseline-zero", "production-predispatch",
+				"assume-unchanged", "skip-worktree", "unknown-exclusion", "reparse-escape":
+				rawPre = run(capture)
+			}
 			var pre u2jSnapshotRecord
 			require.NoError(t, json.Unmarshal([]byte(rawPre), &pre), "capture must return the snapshot schema")
 			assert.Equal(t, "red-deliverable-predispatch-snapshot/v1", pre.Schema)
@@ -1051,33 +1139,39 @@ try {
 				}
 				return
 			}
-			rawPost := rawPre
-			if mutation != "head-change" {
-				rawPost = run(capture)
-			}
 			preFile, postFile := filepath.Join(dir, "scratch", "u2j-pre.json"), filepath.Join(dir, "scratch", "u2j-post.json")
-			preBytes, postBytes := rawPre+"\n", rawPost+"\n"
-			preDigest, postDigest := sha256.Sum256([]byte(preBytes)), sha256.Sum256([]byte(postBytes))
+			preBytes := rawPre + "\n"
+			preDigest := sha256.Sum256([]byte(preBytes))
 			write(preFile, preBytes)
-			write(postFile, postBytes)
-			if mutation == "pre-tamper" {
-				write(preFile, strings.Replace(preBytes, task.WorktreeSHA256, strings.Repeat("b", 64), 1))
-			}
-			if mutation == "post-tamper" {
-				write(postFile, strings.Replace(postBytes, task.WorktreeSHA256, strings.Repeat("b", 64), 1))
-			}
-			command := fmt.Sprintf(`
-& $env:U2J_SCRIPT -SnapshotAction Compare -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -PreSnapshotPath (Join-Path $env:U2J_ROOT 'scratch/u2j-pre.json') -PostSnapshotPath (Join-Path $env:U2J_ROOT 'scratch/u2j-post.json') -PreSnapshotSHA256 '%x' -PostSnapshotSHA256 '%x'
-`, preDigest, postDigest)
-			if mutation == "missing-bindings" {
-				command = strings.Replace(command, "-TaskID '211.015-T'", "", 1)
-			}
-			if mutation == "no-clobber" || mutation == "nonignored-output" {
-				outputPath := "scratch/u2j-pre.json"
-				if mutation == "nonignored-output" {
-					outputPath = "observer.json"
+			var command string
+			switch mutation {
+			case "pre-tamper", "post-tamper", "missing-bindings", "no-clobber", "nonignored-output",
+				"head-change", "ignored-nested-repository", "zero", "post-baseline-zero":
+				rawPost := rawPre
+				if mutation != "head-change" {
+					rawPost = run(capture)
+				}
+				postBytes := rawPost + "\n"
+				postDigest := sha256.Sum256([]byte(postBytes))
+				write(postFile, postBytes)
+				if mutation == "pre-tamper" {
+					write(preFile, strings.Replace(preBytes, task.WorktreeSHA256, strings.Repeat("b", 64), 1))
+				}
+				if mutation == "post-tamper" {
+					write(postFile, strings.Replace(postBytes, task.WorktreeSHA256, strings.Repeat("b", 64), 1))
 				}
 				command = fmt.Sprintf(`
+& $env:U2J_SCRIPT -SnapshotAction Compare -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -PreSnapshotPath (Join-Path $env:U2J_ROOT 'scratch/u2j-pre.json') -PostSnapshotPath (Join-Path $env:U2J_ROOT 'scratch/u2j-post.json') -PreSnapshotSHA256 '%x' -PostSnapshotSHA256 '%x'
+`, preDigest, postDigest)
+				if mutation == "missing-bindings" {
+					command = strings.Replace(command, "-TaskID '211.015-T'", "", 1)
+				}
+				if mutation == "no-clobber" || mutation == "nonignored-output" {
+					outputPath := "scratch/u2j-pre.json"
+					if mutation == "nonignored-output" {
+						outputPath = "observer.json"
+					}
+					command = fmt.Sprintf(`
 try {
     & $env:U2J_SCRIPT -SnapshotAction Capture -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -OutputPath (Join-Path $env:U2J_ROOT '%s')
     throw 'capture accepted invalid output'
@@ -1086,6 +1180,17 @@ try {
     '{"Outcome":"WAVE_RED_MAPPING_UNRESOLVED"}'
 }
 `, outputPath)
+				}
+			default:
+				// Capture and compare share one owned PowerShell process, not
+				// an observation. Hash the post file's actual bytes independently
+				// of its JSON fields; the pre witness remains caller-retained.
+				command = fmt.Sprintf(`
+$postPath = Join-Path $env:U2J_ROOT 'scratch/u2j-post.json'
+$null = & $env:U2J_SCRIPT -SnapshotAction Capture -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -OutputPath $postPath
+$postDigest = (Get-FileHash -LiteralPath $postPath -Algorithm SHA256).Hash.ToLowerInvariant()
+& $env:U2J_SCRIPT -SnapshotAction Compare -WorkspaceRoot $env:U2J_ROOT -TaskID '211.015-T' -RedBaselineSHA $env:U2J_BASELINE -HeadSHA $env:U2J_HEAD -PreSnapshotPath (Join-Path $env:U2J_ROOT 'scratch/u2j-pre.json') -PostSnapshotPath $postPath -PreSnapshotSHA256 '%x' -PostSnapshotSHA256 $postDigest
+`, preDigest)
 			}
 			result := run(command)
 			var outcome struct {

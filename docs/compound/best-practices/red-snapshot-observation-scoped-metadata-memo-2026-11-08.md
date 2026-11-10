@@ -1,6 +1,10 @@
 ---
+chunk_strategy: h1-h2-h3
 title: "Red snapshot collection with observation-scoped metadata memos"
 description: "Remove redundant ancestor metadata probes without sharing filesystem trust between observations."
+doc_type: learning
+schema_version: "1.0"
+source: docs/compound/best-practices/red-snapshot-observation-scoped-metadata-memo-2026-11-08.md
 problem_type: "collector_performance"
 category: "best-practices"
 component: "red snapshot collector"

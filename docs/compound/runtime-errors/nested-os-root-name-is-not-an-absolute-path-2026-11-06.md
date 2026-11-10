@@ -1,6 +1,10 @@
 ---
+chunk_strategy: h1-h2-h3
 title: A nested os.Root Name is not an absolute validation path
 description: Windows daemon validation queried process-CWD runtime paths after a successful handle-relative file open
+doc_type: learning
+schema_version: "1.0"
+source: docs/compound/runtime-errors/nested-os-root-name-is-not-an-absolute-path-2026-11-06.md
 problem_type: runtime_error
 category: runtime-errors
 component: mcp-daemon-runtime-path-validation

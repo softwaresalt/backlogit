@@ -1,6 +1,10 @@
 ---
+chunk_strategy: h1-h2-h3
 title: Match CI Go and linter versions before repairing source findings
 description: Reproduce the pinned Go 1.24 and golangci-lint v1 combination before classifying a host-toolchain lint failure
+doc_type: learning
+schema_version: "1.0"
+source: docs/compound/build-errors/match-ci-go-and-linter-before-source-repair-2026-11-06.md
 problem_type: build_error
 category: build-errors
 component: local-quality-gates

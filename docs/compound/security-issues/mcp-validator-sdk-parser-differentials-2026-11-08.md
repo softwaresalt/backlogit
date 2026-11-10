@@ -1,6 +1,10 @@
 ---
+chunk_strategy: h1-h2-h3
 title: "Match MCP validation to the SDK argument parser"
 description: "Avoid case-folded and duplicate-key shadowing between containment guards and MCP dispatch."
+doc_type: learning
+schema_version: "1.0"
+source: docs/compound/security-issues/mcp-validator-sdk-parser-differentials-2026-11-08.md
 problem_type: "parser-differential"
 category: "security-issues"
 component: "internal/mcp/session_mux.go"

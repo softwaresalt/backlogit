@@ -613,8 +613,8 @@ Run this step at the head of every wave, before anything in that wave is scaffol
    discharge both Wave 3 and Wave 4 obligations before U3 admission. A failure retains
    the pending obligations and halts, never synthesizing a Wave 3 FULL PASS.
    This is not a generic active-residual waiver or self-authorized wave advance.
-   `active_ids` contains only active residuals, never claim-assigned, paused or indeterminate
-   members. Every other `active` member is an active residual (`WAVE_NO_PROGRESS`, detail:
+   `active_ids` contains only active residuals, never claim-assigned or indeterminate members. Authorized paused-red-deliverable members are also excluded from `active_ids`.
+   Every other `active` member is an active residual (`WAVE_NO_PROGRESS`, detail:
    `active residual`); this includes a valid start record in the current epoch, a missing or
    non-`S` marker, or a member absent from the live manifest. In non-shipment mode
    (`frozen_task_ids`, no session shipment), skip this classification; every `active` member is an
@@ -622,9 +622,8 @@ Run this step at the head of every wave, before anything in that wave is scaffol
 5. **Check for completion.** If `terminal_success = M` — every member of the frozen manifest is
    `done` or `archived` — the release unit is complete; exit the wave loop. This is the **only**
    completion condition. An empty `ready_k` is never one.
-6. **Compute the frontier.** Include queued, claim-assigned and authorized paused-red-deliverable
-   members only when every dependency is `terminal_success` (the amendment prerequisite
-   specifically must be committed and `done`). A claim-assigned member with unfinished dependencies waits and is neither
+6. **Compute the frontier.** Compute ready_k = { t in queued or claim-assigned : every dependency of t is terminal_success }, and also include an authorized paused-red-deliverable member only when every dependency is terminal_success (the amendment prerequisite specifically must be committed and done).
+   A claim-assigned member with unfinished dependencies waits and is neither
    progress nor a residual. A queued member is claimed at Step 4.1b; entering `ready_k` does not
    itself claim or start a task. If `ready_k` is empty while any member of `M` is non-terminal →
    halt with `WAVE_NO_PROGRESS`. If the residual set contains a cycle → halt with

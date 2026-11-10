@@ -1,6 +1,10 @@
 ---
+chunk_strategy: h1-h2-h3
 title: "Retain Go buffers through overlapped pipe completion"
 description: "Keep pending Windows I/O buffers live until completion and cancellation drain finish"
+doc_type: learning
+schema_version: "1.0"
+source: docs/compound/concurrency-issues/overlapped-pipe-buffer-lifetime-2026-11-08.md
 problem_type: "asynchronous-buffer-lifetime"
 category: "concurrency-issues"
 component: "cli-mcp-ipc"

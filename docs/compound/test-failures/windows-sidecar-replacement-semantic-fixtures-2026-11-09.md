@@ -1,6 +1,10 @@
 ---
+chunk_strategy: h1-h2-h3
 title: "Keep Windows sidecar replacement tests semantic, not throughput-bound"
 description: "Separate a real atomic replacement witness from deterministic retry-contract assertions"
+doc_type: learning
+schema_version: "1.0"
+source: docs/compound/test-failures/windows-sidecar-replacement-semantic-fixtures-2026-11-09.md
 problem_type: "flaky-test"
 category: "test-failures"
 component: "internal/cli"

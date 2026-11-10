@@ -1,6 +1,10 @@
 ---
+chunk_strategy: h1-h2-h3
 title: "Preserve Windows retry error boundaries and handle-aware test observers"
 description: "Avoid premature NTSTATUS normalization and observer-induced sharing failures."
+doc_type: learning
+schema_version: "1.0"
+source: docs/compound/test-failures/windows-retry-error-boundaries-and-handle-aware-observers-2026-11-09.md
 problem_type: test-failure
 category: test-failures
 component: shipment-operation-journal

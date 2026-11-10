@@ -1,7 +1,9 @@
 ---
+chunk_strategy: h1-h2-h3
 title: "Unregister completed request cancellation bridges"
 description: "Avoid retaining completed request contexts under a long-lived MCP session"
 doc_type: reference
+schema_version: "1.0"
 source: docs/compound/concurrency-issues/unregister-completed-request-session-cancellation-2026-11-09.md
 problem_type: memory_retention
 category: concurrency-issues

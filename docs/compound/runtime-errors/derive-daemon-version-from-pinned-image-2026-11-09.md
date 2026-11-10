@@ -1,7 +1,9 @@
 ---
+chunk_strategy: h1-h2-h3
 title: "Derive daemon compatibility from the pinned image"
 description: "Library hosts and the pinned daemon executable can have different build versions"
 doc_type: reference
+schema_version: "1.0"
 source: docs/compound/runtime-errors/derive-daemon-version-from-pinned-image-2026-11-09.md
 problem_type: compatibility_mismatch
 category: runtime-errors

@@ -1,6 +1,10 @@
 ---
+chunk_strategy: h1-h2-h3
 title: "Protect reconstitution's preliminary execution reads with canonical writer locks"
 description: "A preliminary plan peek can hold Windows target readers before a globally serialized writer unless execution acquires its canonical locks first."
+doc_type: learning
+schema_version: "1.0"
+source: docs/compound/concurrency-issues/reconstitution-preliminary-reads-under-canonical-execution-locks-2026-11-06.md
 problem_type: "concurrency"
 category: "concurrency-issues"
 component: "reconstitution-execution"

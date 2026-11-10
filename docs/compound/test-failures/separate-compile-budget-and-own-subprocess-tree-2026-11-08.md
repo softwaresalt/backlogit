@@ -1,6 +1,10 @@
 ---
+chunk_strategy: h1-h2-h3
 title: Separate compilation from short assertion budgets and own subprocess trees
 description: R5 cleanup verification required precompiled race binaries, bounded pipe draining, and owned descendant cleanup.
+doc_type: learning
+schema_version: "1.0"
+source: docs/compound/test-failures/separate-compile-budget-and-own-subprocess-tree-2026-11-08.md
 problem_type: test_infrastructure
 category: test-failures
 component: integration subprocess helpers
