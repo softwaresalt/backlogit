@@ -5,7 +5,10 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -124,6 +127,9 @@ func (g ExecGitRunner) Verify(ctx context.Context, ref string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "--quiet", ref+"^{commit}")
 	cmd.Dir = g.Dir
 	cmd.Env = resolveChildEnv(g.Env)
+	if g.Dir != "" {
+		cmd.Env = withTempGitCeiling(cmd.Env, g.Dir)
+	}
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	err := cmd.Run()
@@ -136,4 +142,38 @@ func (g ExecGitRunner) Verify(ctx context.Context, ref string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("git rev-parse %q: %w", ref, err)
+}
+
+// withTempGitCeiling prevents temporary non-repositories from discovering an
+// ancestor checkout without interfering with caller-supplied ceilings.
+func withTempGitCeiling(env []string, dir string) []string {
+	for _, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && (key == "GIT_CEILING_DIRECTORIES" ||
+			(runtime.GOOS == "windows" && strings.EqualFold(key, "GIT_CEILING_DIRECTORIES"))) {
+			return env
+		}
+	}
+
+	tempDir := filepath.Clean(os.TempDir())
+	evalTemp := tempDir
+	// Symlink resolution is best-effort; retain cleaned paths on failure and let
+	// git report any execution errors rather than hiding them.
+	if resolved, err := filepath.EvalSymlinks(tempDir); err == nil {
+		evalTemp = resolved
+	}
+	dir = filepath.Clean(dir)
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	rel, err := filepath.Rel(evalTemp, dir)
+	if err != nil || rel == "." || rel == ".." ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return env
+	}
+	ceiling := tempDir
+	if evalTemp != tempDir {
+		ceiling += string(os.PathListSeparator) + evalTemp
+	}
+	return append(env, "GIT_CEILING_DIRECTORIES="+ceiling)
 }
