@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go/ast"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,6 +42,13 @@ type custExecRepo struct {
 	base       string
 	shipmentID string
 	ws         *Workspace
+}
+
+var custExecSeed struct {
+	once    sync.Once
+	root    string
+	baseSHA string
+	err     error
 }
 
 // TestU4_CustodyPreviewOfferAcceptVerifyAndRecovery is the RED harness for the
@@ -308,16 +318,13 @@ func custExecNewRepo(t *testing.T) *custExecRepo {
 	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
-	initGitRepo(t, root)
-	runGit(t, root, "symbolic-ref", "HEAD", "refs/heads/"+custExecDefaultBranch)
-	backlogitDir := filepath.Join(root, ".backlogit")
-	require.NoError(t, os.MkdirAll(backlogitDir, 0o755))
-	require.NoError(t, config.WriteDefaults(backlogitDir))
-	custExecWrite(t, root, custExecCovered, custExecBase)
-	runGit(t, root, "add", "-A")
-	runGit(t, root, "commit", "-m", "chore: seed custody fixture")
-	repo := &custExecRepo{root: root, base: strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))}
-	runGit(t, root, "checkout", "-b", custExecFeatureBranch)
+	requireGit(t)
+	custExecSeed.once.Do(func() {
+		custExecSeed.root, custExecSeed.baseSHA, custExecSeed.err = buildCustExecSeed()
+	})
+	require.NoError(t, custExecSeed.err, "initialize custody git seed")
+	require.NoError(t, copyFixtureGitSeed(custExecSeed.root, root))
+	repo := &custExecRepo{root: root, base: custExecSeed.baseSHA}
 
 	ws, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
@@ -332,6 +339,142 @@ func custExecNewRepo(t *testing.T) *custExecRepo {
 	require.NoError(t, err)
 	repo.shipmentID = shipment.ID
 	return repo
+}
+
+func buildCustExecSeed() (string, string, error) {
+	seed := newFixtureGitSeed("backlogit-custody-git-seed-*")
+	// Match initGitRepo without calling testing.T.FailNow inside sync.Once.
+	seed.git("init")
+	seed.git("config", "user.email", "backlogit-tests@example.invalid")
+	seed.git("config", "user.name", "Backlogit Tests")
+	seed.git("symbolic-ref", "HEAD", "refs/heads/"+custExecDefaultBranch)
+	if seed.err == nil {
+		backlogitDir := filepath.Join(seed.root, ".backlogit")
+		if err := os.MkdirAll(backlogitDir, 0o755); err != nil {
+			seed.err = fmt.Errorf("create custody seed config directory: %w", err)
+		} else if err := config.WriteDefaults(backlogitDir); err != nil {
+			seed.err = fmt.Errorf("write custody seed defaults: %w", err)
+		}
+	}
+	seed.write(custExecCovered, custExecBase)
+	seed.git("add", "-A")
+	seed.git("commit", "-m", "chore: seed custody fixture")
+	baseSHA := seed.git("rev-parse", "HEAD")
+	seed.git("checkout", "-b", custExecFeatureBranch)
+	return seed.root, baseSHA, seed.err
+}
+
+// fixtureGitSeed latches the first initialization error and stops all further
+// I/O. Callers must check err before publishing or copying the immutable seed.
+// No testing.T is retained: every consumer can report an initialization failure.
+type fixtureGitSeed struct {
+	root string
+	err  error
+}
+
+func newFixtureGitSeed(pattern string) *fixtureGitSeed {
+	root, err := os.MkdirTemp(os.TempDir(), pattern)
+	if err != nil {
+		return &fixtureGitSeed{err: fmt.Errorf("create git seed %s: %w", pattern, err)}
+	}
+	return &fixtureGitSeed{root: root}
+}
+
+func (s *fixtureGitSeed) git(args ...string) string {
+	if s.err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", s.root}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		s.err = fmt.Errorf("git seed %s: %w: %s", strings.Join(args, " "), err, out)
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func (s *fixtureGitSeed) write(rel, content string) {
+	if s.err != nil {
+		return
+	}
+	path := filepath.Join(s.root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		s.err = fmt.Errorf("create git seed parent for %s: %w", rel, err)
+		return
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		s.err = fmt.Errorf("write git seed %s: %w", rel, err)
+	}
+}
+
+// copyFixtureGitSeed copies bytes rather than linking files, including .git, so
+// worktree, index, config and ref mutations cannot affect another test or seed.
+func copyFixtureGitSeed(source, target string) error {
+	err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("walk git seed: %w", walkErr)
+		}
+		rel, err := filepath.Rel(source, path)
+		if err != nil {
+			return fmt.Errorf("relativize git seed path: %w", err)
+		}
+		if rel == "." {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("stat git seed %s: %w", rel, err)
+		}
+		dest := filepath.Join(target, rel)
+		if entry.IsDir() {
+			if err := os.MkdirAll(dest, info.Mode().Perm()); err != nil {
+				return fmt.Errorf("create git seed copy directory %s: %w", rel, err)
+			}
+			if err := os.Chmod(dest, info.Mode().Perm()); err != nil {
+				return fmt.Errorf("preserve git seed copy directory mode %s: %w", rel, err)
+			}
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("copy git seed %s: %w", rel, fs.ErrInvalid)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read git seed %s: %w", rel, err)
+		}
+		if err := os.WriteFile(dest, data, info.Mode().Perm()); err != nil {
+			return fmt.Errorf("write git seed copy %s: %w", rel, err)
+		}
+		if err := os.Chmod(dest, info.Mode().Perm()); err != nil {
+			return fmt.Errorf("preserve git seed copy mode %s: %w", rel, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("copy git fixture seed: %w", err)
+	}
+	return nil
+}
+
+func TestCustodyExecRepoSeedIsolation(t *testing.T) {
+	first := custExecNewRepo(t)
+	custExecWrite(t, first.root, custExecCovered, "private mutation\n")
+	runGit(t, first.root, "config", "user.name", "Private Fixture")
+	runGit(t, first.root, "add", custExecCovered)
+	runGit(t, first.root, "commit", "-m", "private fixture mutation")
+	require.NotEqual(t, first.base, strings.TrimSpace(runGit(t, first.root, "rev-parse", "HEAD")))
+
+	second := custExecNewRepo(t)
+	assert.Equal(t, first.base, second.base)
+	assert.Equal(t, second.base, strings.TrimSpace(runGit(t, second.root, "rev-parse", "HEAD")))
+	assert.Equal(t, custExecFeatureBranch, strings.TrimSpace(runGit(t, second.root, "branch", "--show-current")))
+	assert.Equal(t, "Backlogit Tests", strings.TrimSpace(runGit(t, second.root, "config", "user.name")))
+	data, err := os.ReadFile(filepath.Join(second.root, filepath.FromSlash(custExecCovered)))
+	require.NoError(t, err)
+	assert.Equal(t, custExecBase, string(data))
+	assert.NotSame(t, first.ws, second.ws)
 }
 
 // reopen closes the current workspace handle and opens a fresh one, which runs

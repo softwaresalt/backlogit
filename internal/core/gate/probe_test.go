@@ -249,6 +249,11 @@ func TestU1k_ExecVersionRunnerCachesProbesByBinaryIdentity(t *testing.T) {
 	checkVersion(runner, "1.6.0")
 	checkCount(1)
 
+	otherWorkspace := runner
+	otherWorkspace.Dir = t.TempDir()
+	checkVersion(otherWorkspace, "1.6.0")
+	checkCount(1)
+
 	before, err := os.Stat(binary)
 	require.NoError(t, err)
 	u1kWriteVersionFixture(t, binary, "1.7.0")

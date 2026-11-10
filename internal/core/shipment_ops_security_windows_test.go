@@ -652,7 +652,12 @@ func TestShipmentOpsJournalWrite_BindsCreateAndRenameToValidatedDirectoryObjectA
 func swapShipmentOpsDirectoryObject(t *testing.T, opsRoot string) {
 	t.Helper()
 
-	require.NoError(t, os.Rename(opsRoot, opsRoot+"-original"),
+	err := os.Rename(opsRoot, opsRoot+"-original")
+	for retry := 0; retry < 6 && isTransientShipmentOpsWindowsError(err); retry++ {
+		time.Sleep(time.Millisecond << retry)
+		err = os.Rename(opsRoot, opsRoot+"-original")
+	}
+	require.NoError(t, err,
 		"the validated directory handle must permit a canonical-path object swap")
 	require.NoError(t, os.Mkdir(opsRoot, 0o755))
 }

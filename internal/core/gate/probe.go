@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -110,7 +111,8 @@ type ExecVersionRunner struct {
 }
 
 // execVersionCache is the Stage-authorized process-wide cache of successful
-// version probes, invalidated by binary identity, working directory or child env.
+// version probes, invalidated by binary identity, relative-path working directory
+// or child env.
 var execVersionCache sync.Map
 
 type execVersionCacheKey struct {
@@ -160,11 +162,15 @@ func versionCacheKey(binary, dir string, childEnv []string) (execVersionCacheKey
 	if err != nil || info.IsDir() {
 		return execVersionCacheKey{}, false
 	}
+	cacheDir := dir
+	if filepath.IsAbs(path) {
+		cacheDir = ""
+	}
 	return execVersionCacheKey{
 		path:     path,
 		modTime:  info.ModTime().UnixNano(),
 		size:     info.Size(),
-		dir:      dir,
+		dir:      cacheDir,
 		childEnv: strings.Join(childEnv, "\x00"),
 	}, true
 }
