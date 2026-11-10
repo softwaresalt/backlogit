@@ -1,6 +1,9 @@
 ---
 title: "212-S Ordinal 18 recovery and served-root handoff"
 doc_type: reference
+source: docs/memory/2026-11-10/212-S-ordinal18-served-root-handoff.md
+schema_version: "1.0"
+chunk_strategy: h1-h2-h3
 shipment_id: "212-S"
 feature_id: "211-F"
 phase: "wave12-ordinal18-authorized"
