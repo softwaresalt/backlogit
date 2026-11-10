@@ -115,11 +115,17 @@ required gate.
 
 ## Next steps
 
-Commit the verified functional changes and Stage custody files, associate
-the implementation commit with 211.016-T, 211.022-T, and 211-F through MCP,
-then commit those traceability updates and the final recovery checkpoint.
-Verify the protected checkpoint and runner again and leave the worktree
-clean on the shipment branch.
+Implementation and Stage custody were committed as
+38f220a3e9f0f9d7c6519bfcb5af75d5b8d5b06d. MCP associated that commit
+with 211.016-T, 211.022-T, and 211-F. Their traceability updates and final
+recovery checkpoint checkpoint-20261110-070156.json are committed
+separately with this final note. The historical protected checkpoint is
+not part of either commit.
+
+The final checkpoint preserves the timing hold, unchanged attempt accounting,
+functional results, and remaining gates. It is the only new active checkpoint
+from this session; the protected historical checkpoint remains active and
+untouched. No fresh task or shipment was started.
 
 Only after explicit timing disposition and clean-HEAD prerequisites:
 issue fresh HEAD-bound Ordinal 15 coordinator receipts and execute the
