@@ -226,14 +226,25 @@ func u4RuntimeRoot(t *testing.T) (*os.Root, string) {
 	storage := u4TempDir(t)
 	runtimeDir := filepath.Join(storage, "runtime")
 	require.NoError(t, os.Mkdir(runtimeDir, 0o700))
-	storageRoot, err := os.OpenRoot(storage)
-	require.NoError(t, err)
+	storageRoot := u4OpenRelativeRoot(t, storage)
 	t.Cleanup(func() { assert.NoError(t, storageRoot.Close()) })
 	root, err := storageRoot.OpenRoot("runtime")
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, root.Close()) })
 	require.False(t, filepath.IsAbs(root.Name()), "fixture must exercise the nested os.Root.Name regression")
 	return root, runtimeDir
+}
+
+func u4OpenRelativeRoot(t *testing.T, dir string) *os.Root {
+	t.Helper()
+	// POSIX retains the parent's path when naming nested roots.
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	relative, err := filepath.Rel(cwd, dir)
+	require.NoError(t, err)
+	root, err := os.OpenRoot(relative)
+	require.NoError(t, err)
+	return root
 }
 
 func u4TempDir(t *testing.T) string {
@@ -450,8 +461,7 @@ func u4POSIXBoundaries(t *testing.T) {
 			storage := filepath.Join(base, pad)
 			runtimeDir := filepath.Join(storage, "runtime")
 			require.NoError(t, os.MkdirAll(runtimeDir, 0o700))
-			storageRoot, err := os.OpenRoot(storage)
-			require.NoError(t, err)
+			storageRoot := u4OpenRelativeRoot(t, storage)
 			defer func() { assert.NoError(t, storageRoot.Close()) }()
 			root, err := storageRoot.OpenRoot("runtime")
 			require.NoError(t, err)

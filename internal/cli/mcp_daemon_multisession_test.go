@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -264,6 +265,9 @@ func TestU5_NonExclusiveStatusProbeAndIdleAutoShutdown(t *testing.T) {
 func u5Workspace(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+	if runtime.GOOS != "windows" {
+		root = u4TempDir(t)
+	}
 	storage := filepath.Join(root, ".backlogit")
 	t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlogit")
 	require.NoError(t, os.Mkdir(storage, 0o700))
