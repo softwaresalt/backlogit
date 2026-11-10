@@ -328,10 +328,6 @@ func custExecNewRepo(t *testing.T) *custExecRepo {
 
 	ws, err := NewWorkspace(ctx, root)
 	require.NoError(t, err)
-	for range 4 {
-		// Best-effort speedup for disposable test databases only.
-		_, _ = ws.DB.ExecContext(ctx, "PRAGMA synchronous = OFF")
-	}
 	repo.ws = ws
 	disableExecGateForTest(t, ws)
 	t.Cleanup(func() {
