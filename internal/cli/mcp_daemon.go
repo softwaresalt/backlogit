@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -359,9 +360,10 @@ func PrewarmMCPDaemon(ctx context.Context, rootPath string, replace bool, idleTi
 		// child after it wins singleton ownership. Partial publication retries.
 		info, readErr := readMCPDaemonInfoAt(handle, dir)
 		if readErr != nil && errors.Is(readErr, corerrors.ErrValidation) {
-			return MCPDaemonStatus{}, readErr
-		}
-		if readErr == nil && isVerifiedProcessAlive(info.PID, info.ProcessStartTime, info.ExecutablePath) {
+			if !strings.HasSuffix(readErr.Error(), "changed while opening") {
+				return MCPDaemonStatus{}, readErr
+			}
+		} else if readErr == nil && isVerifiedProcessAlive(info.PID, info.ProcessStartTime, info.ExecutablePath) {
 			if !sameDaemonPath(info.ExecutablePath, binary) {
 				return MCPDaemonStatus{}, fmt.Errorf("daemon binary %s differs from pinned %s: %w",
 					info.ExecutablePath, binary, corerrors.ErrDaemonVersionMismatch)
@@ -802,28 +804,42 @@ func readMCPDaemonInfoAt(runtimeRoot *os.Root, runtimeDir string) (MCPDaemonInfo
 	if err != nil {
 		return info, err
 	}
-	linked, err := runtimeRoot.Lstat(mcpDaemonSidecarName)
-	if err != nil {
-		return info, fmt.Errorf("lstat %s: %w", path, err)
-	}
-	if err := rejectLink(linked, path); err != nil {
-		return info, err
-	}
-	if !linked.Mode().IsRegular() {
-		return info, mcpDaemonValidationError("%s is not a regular file", path)
-	}
-	f, err := runtimeRoot.Open(mcpDaemonSidecarName)
-	if err != nil {
-		return info, fmt.Errorf("open %s: %w", path, err)
+	var f *os.File
+	for attempt := 0; attempt < 4; attempt++ {
+		linked, err := runtimeRoot.Lstat(mcpDaemonSidecarName)
+		if err != nil {
+			return info, fmt.Errorf("lstat %s: %w", path, err)
+		}
+		if err := rejectLink(linked, path); err != nil {
+			return info, err
+		}
+		if !linked.Mode().IsRegular() {
+			return info, mcpDaemonValidationError("%s is not a regular file", path)
+		}
+		f, err = runtimeRoot.Open(mcpDaemonSidecarName)
+		if err != nil {
+			return info, fmt.Errorf("open %s: %w", path, err)
+		}
+		opened, err := f.Stat()
+		if err != nil {
+			_ = f.Close() // Preserve the stat failure while releasing this attempt.
+			return info, fmt.Errorf("stat %s: %w", path, err)
+		}
+		if !opened.Mode().IsRegular() {
+			_ = f.Close() // Invalid objects never retain a handle or enter retry.
+			return info, mcpDaemonValidationError("%s is not a regular file", path)
+		}
+		if !os.SameFile(opened, linked) {
+			_ = f.Close() // Release the replaced regular file before sleeping.
+			if attempt < 3 {
+				time.Sleep(2 * time.Millisecond)
+				continue
+			}
+			return info, mcpDaemonValidationError("%s changed while opening", path)
+		}
+		break
 	}
 	defer func() { _ = f.Close() }()
-	opened, err := f.Stat()
-	if err != nil {
-		return info, fmt.Errorf("stat %s: %w", path, err)
-	}
-	if !os.SameFile(opened, linked) || !opened.Mode().IsRegular() {
-		return info, mcpDaemonValidationError("%s changed while opening", path)
-	}
 	if err := json.NewDecoder(io.LimitReader(f, maxMCPDaemonInfoBytes)).Decode(&info); err != nil {
 		return MCPDaemonInfo{}, fmt.Errorf("decode %s: %w", path, err)
 	}

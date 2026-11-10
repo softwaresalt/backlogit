@@ -2,8 +2,14 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -17,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/core"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
@@ -68,6 +75,146 @@ type u6Stream struct {
 	err        error // Published by closing done.
 	stderr     *u6Log
 	process    *os.Process
+}
+
+func TestU6_ConcurrentRegularSidecarReplacement(t *testing.T) {
+	dir := t.TempDir()
+	handle, err := os.OpenRoot(dir)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, handle.Close()) }()
+	path := filepath.Join(dir, mcpDaemonSidecarName)
+	want := MCPDaemonInfo{PID: 42, WorkspaceRoot: dir, ActiveSessions: 2}
+	data, err := json.Marshal(want)
+	require.NoError(t, err)
+	require.NoError(t, atomicfile.WriteFileAtomic(path, data))
+	before, err := handle.Lstat(mcpDaemonSidecarName)
+	require.NoError(t, err)
+	require.True(t, before.Mode().IsRegular())
+	got, err := readMCPDaemonInfoAt(handle, dir)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+	done := make(chan struct{})
+	var writerErr error // Published by closing done.
+	var replacements int
+	var contention int
+	go func() {
+		defer close(done)
+		// One real identity replacement is the contract, not 256 publications
+		// within a wall-clock budget. Retry only unpublished Windows writes.
+		for replacements < 1 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+			publishErr := atomicfile.WriteFileAtomic(path, data)
+			if errors.Is(publishErr, corerrors.ErrWriteNotApplied) {
+				// Windows may deny replacement while a reader owns the old
+				// handle. No publication occurred; retry within ctx's budget.
+				contention++
+				continue
+			}
+			if publishErr != nil {
+				writerErr = publishErr
+				return
+			}
+			replacements++
+		}
+	}()
+	defer func() { cancel(); <-done }()
+
+	reads := 1
+reading:
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("U6_REGULAR_REPLACEMENT_DEADLINE: concurrent reader and writer must finish")
+		case <-done:
+			break reading
+		default:
+		}
+		got, readErr := readMCPDaemonInfoAt(handle, dir)
+		require.NoError(t, readErr,
+			"U6_REGULAR_REPLACEMENT_RETRY: a concurrent regular atomic replacement must not fail validation")
+		require.Equal(t, want, got, "U6_REGULAR_REPLACEMENT_RECORD: decode one complete published record")
+		reads++
+		// Release the reader handle and give Windows publication an opportunity.
+		// The source-shape supplement below pins the narrow Lstat/Open race
+		// deterministically; this test must not depend on winning that race.
+		select {
+		case <-ctx.Done():
+			t.Fatal("U6_REGULAR_REPLACEMENT_DEADLINE: concurrent reader and writer must finish")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	require.NoError(t, writerErr, "U6_REGULAR_REPLACEMENT_WRITER: genuine atomic publication must succeed")
+	require.Equal(t, 1, replacements)
+	got, err = readMCPDaemonInfoAt(handle, dir)
+	require.NoError(t, err, "U6_REGULAR_REPLACEMENT_RETRY: replaced regular sidecar remains readable")
+	require.Equal(t, want, got)
+	after, err := handle.Lstat(mcpDaemonSidecarName)
+	require.NoError(t, err)
+	require.True(t, after.Mode().IsRegular())
+	require.False(t, os.SameFile(before, after), "U6_REGULAR_REPLACEMENT_WITNESS: sidecar identity must actually change")
+	t.Logf("U6_REGULAR_REPLACEMENT_WITNESS replacements=%d successful_reads=%d writer_contention=%d",
+		replacements, reads, contention)
+}
+
+func TestU6_RegularReplacementRetrySourceContract(t *testing.T) {
+	// No production hook can force replacement between Lstat and Open. Pair
+	// genuine concurrent I/O above with a deterministic retry/unsafe-type
+	// contract, rather than relying on filesystem timing to produce RED.
+	reader := u6DaemonFunctionSource(t, "readMCPDaemonInfoAt")
+	require.Contains(t, reader, "for attempt := 0; attempt < 4; attempt++ {",
+		"U6_REGULAR_REPLACEMENT_RETRY: regular identity mismatch needs four bounded attempts")
+	for _, guard := range []string{
+		`if err := rejectLink(linked, path); err != nil { return info, err }`,
+		`if !linked.Mode().IsRegular() { return info, mcpDaemonValidationError("%s is not a regular file", path) }`,
+		`if !opened.Mode().IsRegular() { _ = f.Close() return info, mcpDaemonValidationError("%s is not a regular file", path) }`,
+	} {
+		require.Contains(t, reader, guard, "U6_UNSAFE_TYPE_IMMEDIATE: unsafe types return without retry")
+		require.Less(t, strings.Index(reader, guard), strings.Index(reader, "if !os.SameFile(opened, linked)"),
+			"U6_UNSAFE_TYPE_IMMEDIATE: reject unsafe types before identity retry")
+	}
+	require.Contains(t, reader, `if !os.SameFile(opened, linked) { _ = f.Close() if attempt < 3 { time.Sleep(2 * time.Millisecond) continue } return info, mcpDaemonValidationError("%s changed while opening", path) }`,
+		"U6_REGULAR_REPLACEMENT_RETRY: close before retry, sleep only on regular mismatch, fail after exhaustion")
+	require.Equal(t, 1, strings.Count(reader, "time.Sleep("),
+		"U6_UNSAFE_TYPE_IMMEDIATE: no other reader sleep")
+	prewarm := u6DaemonFunctionSource(t, "PrewarmMCPDaemon")
+	require.Contains(t, prewarm, `if readErr != nil && errors.Is(readErr, corerrors.ErrValidation) { if !strings.HasSuffix(readErr.Error(), "changed while opening") { return MCPDaemonStatus{}, readErr } }`,
+		"U6_PREWARM_REPLACEMENT_RETRY: only exhausted identity mismatch returns to polling")
+	t.Log("U6_REGULAR_REPLACEMENT_RETRY: bounded regular-only retry and immediate unsafe refusal witnessed")
+}
+
+func TestU6_NonregularSidecarRefusal(t *testing.T) {
+	dir := t.TempDir()
+	handle, err := os.OpenRoot(dir)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, handle.Close()) }()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, mcpDaemonSidecarName), 0o700))
+	_, err = readMCPDaemonInfoAt(handle, dir)
+	require.ErrorIs(t, err, corerrors.ErrValidation,
+		"U6_UNSAFE_TYPE_IMMEDIATE: a directory must be refused, not decoded or retried")
+}
+
+func u6DaemonFunctionSource(t *testing.T, name string) string {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "mcp_daemon.go", nil, 0)
+	require.NoError(t, err)
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != name {
+			continue
+		}
+		var source bytes.Buffer
+		require.NoError(t, format.Node(&source, fset, fn.Body))
+		return strings.Join(strings.Fields(source.String()), " ")
+	}
+	t.Fatalf("U6_SOURCE_CONTRACT: function %s not found", name)
+	return ""
 }
 
 func TestU6_PrewarmAndLazyAutoStartColdRaceConvergence(t *testing.T) {
