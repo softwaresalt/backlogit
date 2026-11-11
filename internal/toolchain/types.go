@@ -3,9 +3,6 @@ package toolchain
 
 import (
 	"context"
-	"fmt"
-
-	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 // ToolContainmentClass describes how a tool relates to the workspace boundary.
@@ -84,30 +81,22 @@ type ToolchainVerificationReport struct {
 	Violations                 int                       `json:"violations" yaml:"violations"`
 }
 
-// LoadToolchainManifest is not yet implemented.
+// LoadToolchainManifest loads the workspace inventory or synthesizes one.
 func LoadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
-	return nil, fmt.Errorf("load workspace toolchain manifest: %w", corerrors.ErrNotImplemented)
+	return loadToolchainManifest(rootPath)
 }
 
-// DefaultWorkspaceToolchainManifest returns an empty, unverified declaration.
-// Inventory synthesis is not yet implemented.
+// DefaultWorkspaceToolchainManifest returns an unverified default inventory.
 func DefaultWorkspaceToolchainManifest(rootPath string) *ToolchainManifest {
-	return &ToolchainManifest{
-		SchemaVersion:              "1.0",
-		ContainmentLevel:           Level1WorkspaceLocalPinned,
-		OSContainerSandboxDeferred: true,
-		WorkspaceRoot:              rootPath,
-		Tools:                      []ToolEntry{},
-		HostPrerequisites:          []HostPrerequisiteEntry{},
-	}
+	return defaultWorkspaceToolchainManifest(rootPath)
 }
 
-// VerifyWorkspaceToolchain is not yet implemented.
+// VerifyWorkspaceToolchain reports the declared inventory's containment.
 func VerifyWorkspaceToolchain(ctx context.Context, rootPath string, manifest *ToolchainManifest) (*ToolchainVerificationReport, error) {
-	return nil, fmt.Errorf("verify workspace toolchain: %w", corerrors.ErrNotImplemented)
+	return verifyWorkspaceToolchain(ctx, rootPath, manifest)
 }
 
-// ValidateMCPConfigPinning is not yet implemented.
+// ValidateMCPConfigPinning validates the workspace's MCP configuration.
 func ValidateMCPConfigPinning(rootPath string, mcpJSONPath string, manifest *ToolchainManifest) ([]ToolVerificationFinding, error) {
-	return nil, fmt.Errorf("validate MCP config pinning: %w", corerrors.ErrNotImplemented)
+	return validateMCPConfigPinning(rootPath, mcpJSONPath, manifest)
 }
