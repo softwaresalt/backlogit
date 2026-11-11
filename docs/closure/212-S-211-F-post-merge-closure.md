@@ -278,9 +278,12 @@ Authority review at 2026-11-11T03:30:41Z distinguishes two contracts:
 * `.github/agents/_ship.agent.md`, Step 6 items 1, 2 and 8 require manual
   reconciliation, structured releasability and P-020 compaction. Its topology
   lifecycle/pre-claim checks remain required where specified.
-* Literal searches of `.github` and `.autoharness` find no invocation or
-  consumption of `gate closure-evidence` or `close_evidence`; unrelated
+* Active installed declarations under `.github` and `.autoharness` do not
+  invoke or consume `gate closure-evidence` or `close_evidence`; unrelated
   `reconcile-shipped --closure-evidence` arguments are not this protocol.
+  This excludes `.autoharness/staging/`: its prospective operational-closure
+  and Ship counterparts do invoke the additional validator. Those migration
+  surfaces are covered by existing **73B7C429**, not installed here.
   `scripts/ci-topology-check.sh` invokes only `gate pipeline-topology`.
   The available CLI's help explicitly separates the reused topology
   `_closure_artifact_complete` predicate from its additional close-path,

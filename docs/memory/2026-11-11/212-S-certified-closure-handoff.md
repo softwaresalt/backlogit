@@ -82,8 +82,11 @@ set substituted, and no retry/classify/recover command ran.
 The installed operational-closure Step 3 requires READY/done metadata,
 with satisfied condition mappings only for READY_WITH_CONDITIONS.
 Shipment-reconcile and Ship Step 6 require the manual reports and checks.
-Neither they nor `.github`/`.autoharness` declarations invoke or consume
-the additional closure-evidence validator; the CI topology wrapper invokes
+Neither they nor active installed `.github`/`.autoharness` declarations invoke
+or consume the additional closure-evidence validator. This excludes prospective
+`.autoharness/staging/` Ship and operational-closure counterparts that do
+invoke it; their migration remains covered by **73B7C429**.
+The CI topology wrapper invokes
 only pipeline-topology. CLI help separates its shared topology predicate
 from the additional V1 pre-mutation contract.
 
