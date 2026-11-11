@@ -6,9 +6,12 @@ import (
 	stderrors "errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
@@ -107,11 +110,31 @@ type ExecVersionRunner struct {
 	Env    []string
 }
 
+// execVersionCache is the Stage-authorized process-wide cache of successful
+// version probes, invalidated by binary identity, relative-path working directory
+// or child env.
+var execVersionCache sync.Map
+
+type execVersionCacheKey struct {
+	path     string
+	modTime  int64
+	size     int64
+	dir      string
+	childEnv string
+}
+
 // Version runs `<binary> version` and returns the first non-empty output line.
 func (r ExecVersionRunner) Version(ctx context.Context) (string, error) {
+	childEnv := resolveChildEnv(r.Env)
+	key, cacheable := versionCacheKey(r.Binary, r.Dir, childEnv)
+	if cacheable {
+		if cached, ok := execVersionCache.Load(key); ok {
+			return cached.(string), nil
+		}
+	}
 	cmd := exec.CommandContext(ctx, r.Binary, "version")
 	cmd.Dir = r.Dir
-	cmd.Env = resolveChildEnv(r.Env)
+	cmd.Env = childEnv
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	if err := cmd.Run(); err != nil {
@@ -120,7 +143,36 @@ func (r ExecVersionRunner) Version(ctx context.Context) (string, error) {
 		}
 		return "", fmt.Errorf("run autoharness version: %w", err)
 	}
-	return firstVersionToken(stdout.String()), nil
+	version := firstVersionToken(stdout.String())
+	if cacheable {
+		if _, err := parseVersion(version); err == nil {
+			execVersionCache.Store(key, version)
+		}
+	}
+	return version, nil
+}
+
+func versionCacheKey(binary, dir string, childEnv []string) (execVersionCacheKey, bool) {
+	path, err := exec.LookPath(binary)
+	if err != nil {
+		// Cache discovery is optional; cmd.Run retains the existing error behavior.
+		return execVersionCacheKey{}, false
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return execVersionCacheKey{}, false
+	}
+	cacheDir := dir
+	if filepath.IsAbs(path) {
+		cacheDir = ""
+	}
+	return execVersionCacheKey{
+		path:     path,
+		modTime:  info.ModTime().UnixNano(),
+		size:     info.Size(),
+		dir:      cacheDir,
+		childEnv: strings.Join(childEnv, "\x00"),
+	}, true
 }
 
 // firstVersionToken extracts a version-looking token from `autoharness version`

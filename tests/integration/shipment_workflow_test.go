@@ -151,6 +151,8 @@ func TestShipmentWorkflow_RehydrationConsistency(t *testing.T) {
 func TestShipmentWorkflow_ShipmentReleaseCleanup(t *testing.T) {
 	// Arrange
 	_, ws := setupShipmentIntegrationWorkspace(t)
+	ws.GateBroker = nil
+	require.Nil(t, ws.GateBroker)
 	ctx := context.Background()
 
 	deliberation, err := core.CreateArtifact(ctx, ws, "Integration deliberation", "deliberation")
@@ -186,6 +188,8 @@ func TestShipmentWorkflow_ShipmentReleaseCleanup(t *testing.T) {
 	shipment, err := core.CreateShipment(ctx, ws, "Integration release shipment", []string{releasedTask.ID})
 	require.NoError(t, err)
 	_, err = core.ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	_, err = core.UpdateArtifact(ctx, ws, releasedTask.ID, map[string]any{"status": "done"})
 	require.NoError(t, err)
 
 	// Act

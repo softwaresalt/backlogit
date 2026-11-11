@@ -1,0 +1,51 @@
+{
+  "recorded_at_utc": "2026-11-07T22:58:53.7469276Z",
+  "task_id": "211.013-T",
+  "feature_id": "211-F",
+  "shipment_id": "212-S",
+  "reviewed_head": "5f91f25f15bb94531fcd97cf28f0c14b53446c39",
+  "readiness": "READY_WITH_FOLLOWUPS for U1g only",
+  "P0": 0,
+  "P1": 0,
+  "source_defects": 0,
+  "source_sha256": "46f0cf955686e042f82933d36e921be8b882198496df18573079aedcff8b922c",
+  "harness_sha256": "a4fbab085d6872e2e1f8adc943fd29d70f3a0e13437949fc928f509c3ec17c92",
+  "standard_review": "Actual Go/Constitution/Learnings/Concurrency coverage of current function/test/plan; no source defects. Earlier pending-runtime advisory discharged by exact acceptance regression command.",
+  "adversarial": {
+    "mode": "report-only",
+    "models": ["gpt-6.1-sol","claude-haiku-5.5","claude-sonnet-5.5"],
+    "actual_dispatches": ["7cc855e0-684f-4a98-8f1f-f70bf2d32196","17bc0ff7-72a1-4b85-9162-891f6676228e","91753158-f14e-4f44-9dc6-7e64fbc15647"],
+    "reported_verdict": "READY task scope",
+    "consensus_P0_P1": 0,
+    "majority_P0_P1": 0,
+    "limitations": "Reviewers did not all recompute SHA or independently execute tests; Root bound current source and native receipts."
+  },
+  "verification": {
+    "task_guard": "Compiling assertion RED to strict named parent/three-subtest GREEN; zero skip/race",
+    "runtime_command": "go test -timeout=30m -count=1 -race -json -run '^(TestU1g_|TestNewWorkspace_RemovesWriterTempResidueAndRecoversValidJournal|TestNewWorkspace_RejectsUnsafeWriterTempResidue|TestShipmentOperationJournalTempName|TestReturnBlocked)' ./internal/core",
+    "runtime_native_exit": 0,
+    "actual_named_runs": 30,
+    "actual_named_passes": 30,
+    "actual_fail_or_skip": 0,
+    "count_correction": "Earlier reviewer prose mentioned53 regressions without execution; actual retained JSON proves30 named runs/passes.",
+    "runtime_capture": "bin/tmp/1794091864178-copilot-tool-output-7128-bb5e1b49-3870-421a-a310-c7120d4fde39.txt",
+    "compile_only": "PASS all50 packages, no test execution",
+    "vet_lint_format": "PASS pinnedGo1.24/v1.64.8"
+  },
+  "advisory_handling": {
+    "extra_fallback_tests": "Optional additional direct blocked-reason/relocation coverage; unchanged fallback control flow plus required scoped regressions reviewed. No current defect proved; exact approved three-case harness retained.",
+    "DB_only_links_test": "Optional explicit DB-only-link assertion; implementation directly calls existing merge routine on clone before upsert. No missing behavior found.",
+    "upsert_failure_test": "Optional injected-upsert failure coverage; source returns before journal deletion on error. No source defect found.",
+    "preexisting_nil_map": "Conditional out-of-scope validation investigation captured as7FBE7FFA; not a confirmed introduced defect.",
+    "residual_notes_required": true,
+    "runtime_final_validation_required": true
+  },
+  "history": {
+    "full_failed_cycles": 6,
+    "counter_reset": false,
+    "actor_attribution": "Unproved and not awaited",
+    "official_checkpoint": "checkpoint-20261106-210317.json",
+    "official_checkpoint_untouched": true,
+    "next": "Governed U1g completion then queuedU1h implementation; no whole-branch READY or full convergence PASS inferred"
+  }
+}

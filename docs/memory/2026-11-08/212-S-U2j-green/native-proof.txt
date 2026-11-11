@@ -1,0 +1,39 @@
+Selected native output, not a reconstructed full log.
+
+Final task-owned JSON proof:
+{"Time":"2026-11-07T19:50:37.2604242-08:00","Action":"run","Package":"github.com/softwaresalt/backlogit/tests/integration","Test":"TestU2j_RedDeliverablePreDispatchSnapshotZeroDeltaContract"}
+{"Time":"2026-11-07T19:53:01.0050181-08:00","Action":"pass","Package":"github.com/softwaresalt/backlogit/tests/integration","Test":"TestU2j_RedDeliverablePreDispatchSnapshotZeroDeltaContract","Elapsed":143.74}
+ATTEMPT=5 native_exit=0 U2J_RUN=31 U2J_PASS=31 SKIP=0 FAIL=0 raw_normalized_sha256=70c8a1bebddc0a94056c11e8cc18ef9a65555a814a260cdd42f1d04304cf09df TEMP=C:\Source\GitHub\backlogit\bin\_j5-d4e77b
+
+Exact AC companion:
+ok   github.com/softwaresalt/backlogit/tests/integration 148.792s
+AC_COMPANION_NATIVE_EXIT=0 TEMP=C:\Source\GitHub\backlogit\bin\_j4-cb708f
+
+Final compile:
+FINAL_COMPILE_NATIVE_EXIT=0 TEMP=C:\Source\GitHub\backlogit\bin\_jc-1b0339
+
+Final quality and tracked simulation:
+VET_NATIVE_EXIT=0 LINT_NATIVE_EXIT=0 GOFMT_NATIVE_EXIT=0 GOFMT_FINDINGS=0 TRACKED_NEW_GO_FILES=1390
+PS_PARSER_ERRORS=0
+WAVE_SIM_OK: 182/182 assertions PASS across 26 scenario(s)
+FINAL_SIMULATION_NATIVE_EXIT=0 TEMP=C:\Source\GitHub\backlogit\bin\_jf-da2c5f
+
+Preservation:
+PRESERVATION_OK original26/original18 unchanged, 2 additive controls
+UTF8_CANONICAL_LF_FRONTMATTER_OK (repository core.autocrlf worktree CRLF retained)
+FIXTURE_JSON_OK
+PROTECTED_UNCHANGED .backlogit/queue/211.015-T.md
+PROTECTED_UNCHANGED .backlogit/logs/211.015-T.jsonl
+PROTECTED_UNCHANGED docs/memory/2026-11-08/212-S-U2j-harness/manifest.md
+DIFF_CHECK_NATIVE_EXIT=0
+
+Post-format verification:
+POST_LF_PARSER_ERRORS=0 POST_LF_SIMULATION_NATIVE_EXIT=0
+WAVE_SIM_OK: 182/182 assertions PASS across 26 scenario(s)
+All six source fingerprints remained equal to the manifest's LF SHA-256 values.
+
+Earlier actual paused diagnostic:
+FAIL u2j-paused-red-deliverable-amendment-resume :: compile_order_violations
+     expected: 0
+     actual  : 4
+WAVE_SIM_FAIL: 51/52 assertions PASS, 1 FAIL

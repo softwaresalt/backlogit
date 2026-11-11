@@ -10,6 +10,7 @@ import (
 	"math/bits"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/sys/windows"
 
@@ -17,6 +18,13 @@ import (
 )
 
 const shipmentOpsWindowsPointerSize = bits.UintSize / 8
+
+// Syscall and sleep seams allow deterministic contention retry testing.
+var (
+	shipmentOpsNtRenameFn       = windows.NtSetInformationFile
+	shipmentOpsSetDispositionFn = windows.SetFileInformationByHandle
+	shipmentOpsRetrySleep       = time.Sleep
+)
 
 func openShipmentOpsDirectory(realStorageRoot, opsRoot string) (*os.File, error) {
 	handle, err := openShipmentOpsWindowsHandle(
@@ -179,12 +187,14 @@ func removeShipmentOperationJournalTempFile(dir *os.File, _ string, name string)
 		return err
 	}
 	deleteFile := byte(1)
-	if err := windows.SetFileInformationByHandle(
-		handle,
-		windows.FileDispositionInfo,
-		&deleteFile,
-		1,
-	); err != nil {
+	if err := retryShipmentOpsWindowsOperation(func() error {
+		return shipmentOpsSetDispositionFn(
+			handle,
+			windows.FileDispositionInfo,
+			&deleteFile,
+			1,
+		)
+	}, func() bool { return shipmentOpsWindowsChildPermanentDenial(dir, name) }); err != nil {
 		return fmt.Errorf("remove shipment operation temp file %s: %w", name, err)
 	}
 	if err := windows.CloseHandle(handle); err != nil {
@@ -218,13 +228,15 @@ func renameShipmentOpsWindowsChild(dir *os.File, oldName, newName string) error 
 		return err
 	}
 	var iosb windows.IO_STATUS_BLOCK
-	if err := windows.NtSetInformationFile(
-		handle,
-		&iosb,
-		&renameInfo[0],
-		uint32(len(renameInfo)),
-		windows.FileRenameInformation,
-	); err != nil {
+	if err := retryShipmentOpsWindowsOperation(func() error {
+		return shipmentOpsNtRenameFn(
+			handle,
+			&iosb,
+			&renameInfo[0],
+			uint32(len(renameInfo)),
+			windows.FileRenameInformation,
+		)
+	}, func() bool { return shipmentOpsWindowsChildPermanentDenial(dir, newName) }); err != nil {
 		err = shipmentOpsWindowsError(err)
 		return fmt.Errorf("rename shipment operation temp file %s to %s: %w", oldName, newName, err)
 	}
@@ -287,24 +299,123 @@ func openShipmentOpsWindowsChild(
 		handle windows.Handle
 		status windows.IO_STATUS_BLOCK
 	)
+	open := func() error {
+		return windows.NtCreateFile(
+			&handle,
+			access|windows.SYNCHRONIZE,
+			&attributes,
+			&status,
+			nil,
+			windows.FILE_ATTRIBUTE_NORMAL,
+			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+			disposition,
+			windows.FILE_NON_DIRECTORY_FILE|
+				windows.FILE_SYNCHRONOUS_IO_NONALERT|
+				windows.FILE_OPEN_REPARSE_POINT,
+			0,
+			0,
+		)
+	}
+	if disposition == windows.FILE_OPEN {
+		err = retryShipmentOpsWindowsOperation(open, func() bool {
+			return shipmentOpsWindowsChildPermanentDenial(dir, name)
+		})
+	} else {
+		err = open()
+	}
+	if err != nil {
+		return 0, fmt.Errorf("open shipment operation child %s relative to directory handle: %w", name, err)
+	}
+	return handle, nil
+}
+
+// retryShipmentOpsWindowsOperation retries only syscalls, never validation.
+// Callers retain their directory, source handle, and syscall buffers throughout.
+// permanentDenial, when non-nil, inspects the bound child without retrying.
+func retryShipmentOpsWindowsOperation(operation func() error, permanentDenial func() bool) error {
+	var original error
+	for attempt := 0; ; attempt++ {
+		err := operation()
+		if err == nil {
+			return nil
+		}
+		if !isTransientShipmentOpsWindowsError(err) {
+			return err
+		}
+		if attempt == 0 {
+			original = err
+		}
+		if attempt == 6 {
+			return original
+		}
+		if permanentDenial != nil &&
+			(errors.Is(err, windows.STATUS_ACCESS_DENIED) || errors.Is(err, windows.ERROR_ACCESS_DENIED)) &&
+			permanentDenial() {
+			return original
+		}
+		shipmentOpsRetrySleep(time.Millisecond << attempt)
+	}
+}
+
+// shipmentOpsWindowsChildPermanentDenial probes only the named child of the
+// already-bound directory. Unlike the regular-file open, it permits directories
+// so their attributes can be inspected, but never follows a reparse point.
+func shipmentOpsWindowsChildPermanentDenial(dir *os.File, name string) bool {
+	if dir == nil || validateShipmentOpsWindowsChildName(name) != nil {
+		return false
+	}
+	objectName, err := windows.NewNTUnicodeString(name)
+	if err != nil {
+		return false
+	}
+	attributes := windows.OBJECT_ATTRIBUTES{
+		Length:        uint32(6 * shipmentOpsWindowsPointerSize),
+		RootDirectory: windows.Handle(dir.Fd()),
+		ObjectName:    objectName,
+		Attributes:    windows.OBJ_CASE_INSENSITIVE,
+	}
+	var (
+		handle windows.Handle
+		status windows.IO_STATUS_BLOCK
+	)
 	if err := windows.NtCreateFile(
 		&handle,
-		access|windows.SYNCHRONIZE,
+		windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE,
 		&attributes,
 		&status,
 		nil,
 		windows.FILE_ATTRIBUTE_NORMAL,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
-		disposition,
-		windows.FILE_NON_DIRECTORY_FILE|
-			windows.FILE_SYNCHRONOUS_IO_NONALERT|
-			windows.FILE_OPEN_REPARSE_POINT,
+		windows.FILE_OPEN,
+		windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_REPARSE_POINT,
 		0,
 		0,
 	); err != nil {
-		return 0, fmt.Errorf("open shipment operation child %s relative to directory handle: %w", name, err)
+		return false
 	}
-	return handle, nil
+	var info windows.ByHandleFileInformation
+	infoErr := windows.GetFileInformationByHandle(handle, &info)
+	closeErr := windows.CloseHandle(handle)
+	// A failed probe is inconclusive: preserve the operation's original error
+	// and bounded retry behavior rather than substituting a diagnostic error.
+	return infoErr == nil && closeErr == nil &&
+		info.FileAttributes&(windows.FILE_ATTRIBUTE_READONLY|windows.FILE_ATTRIBUTE_DIRECTORY) != 0
+}
+
+func isTransientShipmentOpsWindowsError(err error) bool {
+	if errors.Is(err, blerrors.ErrValidation) {
+		return false
+	}
+	// Classify NTSTATUS before Errno: STATUS_FILE_IS_A_DIRECTORY also maps
+	// to ERROR_ACCESS_DENIED, but must fail immediately rather than retry.
+	var status windows.NTStatus
+	if errors.As(err, &status) {
+		return status == windows.STATUS_ACCESS_DENIED ||
+			status == windows.STATUS_SHARING_VIOLATION ||
+			status == windows.STATUS_DELETE_PENDING
+	}
+	return errors.Is(err, windows.ERROR_ACCESS_DENIED) ||
+		errors.Is(err, windows.ERROR_SHARING_VIOLATION)
 }
 
 func validateShipmentOpsWindowsChildName(name string) error {

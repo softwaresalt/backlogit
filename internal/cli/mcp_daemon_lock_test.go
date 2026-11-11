@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -43,6 +45,135 @@ func u2WriteStaleSidecar(t *testing.T, runtimeDir string) {
 	stale, err := json.Marshal(MCPDaemonInfo{PID: 999999, ProcessStartTime: 1, ExecutablePath: "stale"})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(runtimeDir, u2SidecarName), stale, 0o600))
+}
+
+func TestU1b_NestedRuntimeRootUsesCanonicalAbsolutePathForReparseValidation(t *testing.T) {
+	root, _, runtimeDir := u2Workspace(t)
+	lockRoot, _, lockRuntimeDir := u2Workspace(t)
+	root2, _, runtimeDir2 := u2Workspace(t)
+	unrelatedCWD := t.TempDir()
+	lockTarget := t.TempDir()
+	sidecarTarget := t.TempDir()
+	t.Chdir(unrelatedCWD)
+
+	decoyDir := filepath.Join(unrelatedCWD, "runtime")
+	decoyLock := filepath.Join(decoyDir, u2LockName)
+	decoySidecar := filepath.Join(decoyDir, u2SidecarName)
+	decoyContent := []byte("unrelated CWD sentinel\n")
+	t.Run("cwd_without_runtime_and_decoy_isolation", func(t *testing.T) {
+		for _, phase := range []string{"without_runtime", "with_benign_decoy"} {
+			if phase == "with_benign_decoy" {
+				require.NoError(t, os.MkdirAll(decoyDir, 0o755))
+				require.NoError(t, os.WriteFile(decoyLock, decoyContent, 0o600))
+				require.NoError(t, os.WriteFile(decoySidecar, decoyContent, 0o600))
+			} else {
+				_, err := os.Lstat(decoyDir)
+				require.ErrorIs(t, err, os.ErrNotExist)
+			}
+			t.Run(phase, func(t *testing.T) {
+				release, err := AcquireMCPDaemonLock(t.Context(), root, false)
+				require.NoError(t, err, "U1b: acquire must validate the canonical absolute runtime path")
+				require.NotNil(t, release)
+				t.Cleanup(func() { assert.NoError(t, release()) })
+				status, err := InspectMCPDaemonStatus(root)
+				require.NoError(t, err, "U1b: inspect must ignore unrelated CWD")
+				assert.True(t, status.Running)
+				assert.Equal(t, os.Getpid(), status.PID)
+				require.NoError(t, release())
+				u2WriteStaleSidecar(t, runtimeDir)
+				stopped, err := StopMCPDaemon(t.Context(), root)
+				require.NoError(t, err, "U1b: stop must validate the canonical absolute runtime path")
+				assert.False(t, stopped.Running)
+				assert.False(t, stopped.Stopped)
+				_, err = os.Lstat(filepath.Join(runtimeDir, u2SidecarName))
+				assert.ErrorIs(t, err, os.ErrNotExist)
+			})
+		}
+	})
+
+	t.Run("malicious_lock_and_sidecar_leaf_refusal_no_skip", func(t *testing.T) {
+		executedRefusals, skippedFixtures := 0, 0
+		makeFixture := func(t *testing.T, leafPath, target string) {
+			t.Helper()
+			if runtime.GOOS == "windows" {
+				output, err := exec.CommandContext(t.Context(), "cmd", "/c", "mklink", "/J", leafPath, target).CombinedOutput()
+				require.NoError(t, err, "required junction fixture unavailable: %s", output)
+			} else {
+				require.NoError(t, os.Symlink(target, leafPath), "required symlink fixture unavailable")
+			}
+			info, err := os.Lstat(leafPath)
+			require.NoError(t, err)
+			if runtime.GOOS == "windows" {
+				require.Zero(t, info.Mode()&os.ModeSymlink, "junction must exercise the path-based reparse check")
+			}
+			isLink, err := core.IsSymlinkOrReparsePoint(info, leafPath)
+			require.NoError(t, err)
+			require.True(t, isLink, "required fixture must be a real reparse point or symlink")
+		}
+		checkRefusal := func(t *testing.T, err error) {
+			t.Helper()
+			executedRefusals++
+			assert.ErrorIs(t, err, corerrors.ErrValidation, "U1b: malicious leaf must be refused")
+			assert.NotErrorIs(t, err, corerrors.ErrDaemonAlreadyRunning)
+		}
+		checkTarget := func(t *testing.T, target string) {
+			t.Helper()
+			entries, err := os.ReadDir(target)
+			require.NoError(t, err)
+			require.Len(t, entries, 1, "external target directory must remain untouched")
+			assert.Equal(t, "sentinel", entries[0].Name())
+			data, err := os.ReadFile(filepath.Join(target, "sentinel"))
+			require.NoError(t, err)
+			assert.Equal(t, decoyContent, data, "external sentinel must remain untouched")
+		}
+		for _, target := range []string{lockTarget, sidecarTarget} {
+			require.NoError(t, os.WriteFile(filepath.Join(target, "sentinel"), decoyContent, 0o600))
+		}
+		t.Run("lock_leaf", func(t *testing.T) {
+			require.NoError(t, os.MkdirAll(lockRuntimeDir, 0o755))
+			leafPath := filepath.Join(lockRuntimeDir, u2LockName)
+			makeFixture(t, leafPath, lockTarget)
+			t.Cleanup(func() { assert.NoError(t, os.Remove(leafPath)) })
+			release, err := AcquireMCPDaemonLock(t.Context(), lockRoot, false)
+			if release != nil {
+				t.Cleanup(func() { assert.NoError(t, release()) })
+			}
+			checkRefusal(t, err)
+			_, err = InspectMCPDaemonStatus(lockRoot)
+			checkRefusal(t, err)
+			checkTarget(t, lockTarget)
+		})
+		t.Run("sidecar_leaf_while_held", func(t *testing.T) {
+			release, err := AcquireMCPDaemonLock(t.Context(), root2, false)
+			require.NoError(t, err)
+			require.NotNil(t, release)
+			leafPath := filepath.Join(runtimeDir2, u2SidecarName)
+			t.Cleanup(func() {
+				if rmErr := os.Remove(leafPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+					t.Errorf("cleanup sidecar fixture: %v", rmErr)
+				}
+				assert.NoError(t, release())
+			})
+			require.NoError(t, os.Remove(leafPath))
+			makeFixture(t, leafPath, sidecarTarget)
+			_, err = InspectMCPDaemonStatus(root2)
+			checkRefusal(t, err)
+			unexpectedRelease, err := AcquireMCPDaemonLock(t.Context(), root2, false)
+			if unexpectedRelease != nil {
+				t.Cleanup(func() { assert.NoError(t, unexpectedRelease()) })
+			}
+			checkRefusal(t, err)
+			checkTarget(t, sidecarTarget)
+		})
+		assert.Equal(t, 4, executedRefusals)
+		assert.Zero(t, skippedFixtures)
+		t.Logf("U1b security coverage: executedRefusals=%d skippedFixtures=%d", executedRefusals, skippedFixtures)
+	})
+	for _, decoy := range []string{decoyLock, decoySidecar} {
+		data, err := os.ReadFile(decoy)
+		require.NoError(t, err)
+		assert.Equal(t, decoyContent, data, "unrelated CWD decoy must remain untouched")
+	}
 }
 
 func TestU2_AcquireLockAndContention(t *testing.T) {

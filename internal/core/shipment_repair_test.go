@@ -229,7 +229,8 @@ func TestRepairShipmentMemberEvidence_MemberNotTerminal_Errors(t *testing.T) {
 // a git repository with a resolvable HEAD (no commit yet).
 func TestRepairShipmentMemberEvidence_NoRepoHead_Errors(t *testing.T) {
 	ws := newGateTestWorkspace(t)
-	// No git repo initialised -> headSHABounded returns "".
+	// An owned unborn repository stops ancestor discovery but has no HEAD yet.
+	initGitRepoNoCommits(t, ws.RootPath)
 	ctx := context.Background()
 
 	feat, err := CreateArtifact(ctx, ws, "repair feature", "feature")
@@ -246,4 +247,5 @@ func TestRepairShipmentMemberEvidence_NoRepoHead_Errors(t *testing.T) {
 	err = RepairShipmentMemberEvidence(ctx, ws, shipment.ID, task.ID, "some reason")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HEAD")
+	assert.Contains(t, err.Error(), "workspace HEAD is unresolvable")
 }

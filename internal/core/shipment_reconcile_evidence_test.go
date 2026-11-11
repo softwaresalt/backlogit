@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,6 +35,13 @@ type shipmentReconcileEvidenceFixture struct {
 	closureRel     string
 	evidenceRefRel string
 	outsidePath    string
+}
+
+var shipmentReconcileEvidenceSeed struct {
+	once    sync.Once
+	root    string
+	fixture shipmentReconcileEvidenceFixture
+	err     error
 }
 
 func TestShipmentReconcileDigestHex_DomainSeparatedFieldsPreventBoundaryShiftCollisions(t *testing.T) {
@@ -345,71 +353,19 @@ func setupShipmentReconcileEvidenceFixture(t *testing.T) shipmentReconcileEviden
 	t.Helper()
 
 	ws := setupShipmentWorkspace(t)
-	initEvidenceGitRepo(t, ws.RootPath)
+	requireGit(t)
+	shipmentReconcileEvidenceSeed.once.Do(func() {
+		shipmentReconcileEvidenceSeed.root, shipmentReconcileEvidenceSeed.fixture,
+			shipmentReconcileEvidenceSeed.err = buildShipmentReconcileEvidenceSeed()
+	})
+	require.NoError(t, shipmentReconcileEvidenceSeed.err, "initialize reconcile git seed")
+	require.NoError(t, copyFixtureGitSeed(shipmentReconcileEvidenceSeed.root, ws.RootPath))
 
-	writeCommit := func(rel, content, msg string) string {
-		t.Helper()
-		abs := filepath.Join(ws.RootPath, filepath.FromSlash(rel))
-		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o755))
-		require.NoError(t, os.WriteFile(abs, []byte(content), 0o644))
-		runGit(t, ws.RootPath, "add", filepath.ToSlash(rel))
-		runGit(t, ws.RootPath, "commit", "-m", msg)
-		return strings.TrimSpace(runGit(t, ws.RootPath, "rev-parse", "HEAD"))
-	}
-	mergeBranch := func(branch, msg string) string {
-		t.Helper()
-		runGit(t, ws.RootPath, "merge", "--no-ff", branch, "-m", msg)
-		return strings.TrimSpace(runGit(t, ws.RootPath, "rev-parse", "HEAD"))
-	}
-
-	base := writeCommit("README.md", "base\n", "base")
-
-	runGit(t, ws.RootPath, "checkout", "-b", "feature-047")
-	_ = writeCommit("shipments/047.txt", "feature 047\n", "feature 047 work")
-	runGit(t, ws.RootPath, "checkout", "main")
-	merge047 := mergeBranch("feature-047", "merge 047 feature")
-	runGit(t, ws.RootPath, "branch", "stale-tip", merge047)
-
-	runGit(t, ws.RootPath, "checkout", "-b", "closure-047")
-	_ = writeCommit("closures/047.txt", "closure 047\n", "closure 047 work")
-	runGit(t, ws.RootPath, "checkout", "main")
-	closure047 := mergeBranch("closure-047", "merge 047 closure")
-
-	runGit(t, ws.RootPath, "checkout", "-b", "feature-048")
-	_ = writeCommit("shipments/048.txt", "feature 048\n", "feature 048 work")
-	runGit(t, ws.RootPath, "checkout", "main")
-	merge048 := mergeBranch("feature-048", "merge 048 feature")
-
-	runGit(t, ws.RootPath, "checkout", "-b", "closure-048")
-	_ = writeCommit("closures/048.txt", "closure 048\n", "closure 048 work")
-	runGit(t, ws.RootPath, "checkout", "main")
-	closure048 := mergeBranch("closure-048", "merge 048 closure")
-
-	nonMergeHead := writeCommit("post.txt", "post merge plain commit\n", "post merge plain commit")
-	runGit(t, ws.RootPath, "branch", "release/trusted", nonMergeHead)
-
-	runGit(t, ws.RootPath, "checkout", "-b", "hidden-main", base)
-	_ = writeCommit("hidden/main.txt", "hidden main\n", "hidden main commit")
-	runGit(t, ws.RootPath, "checkout", "-b", "hidden-feature")
-	_ = writeCommit("hidden/feature.txt", "hidden feature\n", "hidden feature commit")
-	runGit(t, ws.RootPath, "checkout", "hidden-main")
-	hiddenMerge := mergeBranch("hidden-feature", "merge hidden feature")
-	runGit(t, ws.RootPath, "checkout", "main")
-
-	fixture := shipmentReconcileEvidenceFixture{
-		ws:             ws,
-		merge047:       merge047,
-		closure047:     closure047,
-		merge048:       merge048,
-		closure048:     closure048,
-		nonMergeHead:   nonMergeHead,
-		hiddenMerge:    hiddenMerge,
-		staleTip:       merge047,
-		trustedAlias:   nonMergeHead,
-		closureRel:     filepath.Join("docs", "closure", "2026-09-01-047-s-048-s-closure-summary.md"),
-		evidenceRefRel: filepath.Join("docs", "evidence", "approval.txt"),
-		outsidePath:    filepath.Join(filepath.Dir(ws.RootPath), "outside-evidence.txt"),
-	}
+	fixture := shipmentReconcileEvidenceSeed.fixture
+	fixture.ws = ws
+	fixture.closureRel = filepath.Join("docs", "closure", "2026-09-01-047-s-048-s-closure-summary.md")
+	fixture.evidenceRefRel = filepath.Join("docs", "evidence", "approval.txt")
+	fixture.outsidePath = filepath.Join(filepath.Dir(ws.RootPath), "outside-evidence.txt")
 
 	fixture.writeClosureFile(t, fixture.closureRel, fixture.syntheticClosureContent(fixture.merge048, fixture.closure048))
 	evidenceAbs := filepath.Join(ws.RootPath, filepath.FromSlash(filepath.ToSlash(fixture.evidenceRefRel)))
@@ -420,12 +376,118 @@ func setupShipmentReconcileEvidenceFixture(t *testing.T) shipmentReconcileEviden
 	return fixture
 }
 
-func initEvidenceGitRepo(t *testing.T, root string) {
-	t.Helper()
-	requireGit(t)
-	runGit(t, root, "-c", "init.defaultBranch=main", "init")
-	runGit(t, root, "config", "user.email", "backlogit-tests@example.invalid")
-	runGit(t, root, "config", "user.name", "Backlogit Tests")
+func buildShipmentReconcileEvidenceSeed() (string, shipmentReconcileEvidenceFixture, error) {
+	seed := newFixtureGitSeed("backlogit-reconcile-git-seed-*")
+	// Match initEvidenceGitRepo without allowing FailNow to poison sync.Once.
+	seed.git("-c", "init.defaultBranch=main", "init")
+	seed.git("config", "user.email", "backlogit-tests@example.invalid")
+	seed.git("config", "user.name", "Backlogit Tests")
+	writeCommit := func(rel, content, msg string) string {
+		seed.write(rel, content)
+		seed.git("add", filepath.ToSlash(rel))
+		seed.git("commit", "-m", msg)
+		return seed.git("rev-parse", "HEAD")
+	}
+	mergeBranch := func(branch, msg string) string {
+		seed.git("merge", "--no-ff", branch, "-m", msg)
+		return seed.git("rev-parse", "HEAD")
+	}
+
+	base := writeCommit("README.md", "base\n", "base")
+
+	seed.git("checkout", "-b", "feature-047")
+	_ = writeCommit("shipments/047.txt", "feature 047\n", "feature 047 work")
+	seed.git("checkout", "main")
+	merge047 := mergeBranch("feature-047", "merge 047 feature")
+	seed.git("branch", "stale-tip", merge047)
+
+	seed.git("checkout", "-b", "closure-047")
+	_ = writeCommit("closures/047.txt", "closure 047\n", "closure 047 work")
+	seed.git("checkout", "main")
+	closure047 := mergeBranch("closure-047", "merge 047 closure")
+
+	seed.git("checkout", "-b", "feature-048")
+	_ = writeCommit("shipments/048.txt", "feature 048\n", "feature 048 work")
+	seed.git("checkout", "main")
+	merge048 := mergeBranch("feature-048", "merge 048 feature")
+
+	seed.git("checkout", "-b", "closure-048")
+	_ = writeCommit("closures/048.txt", "closure 048\n", "closure 048 work")
+	seed.git("checkout", "main")
+	closure048 := mergeBranch("closure-048", "merge 048 closure")
+
+	nonMergeHead := writeCommit("post.txt", "post merge plain commit\n", "post merge plain commit")
+	seed.git("branch", "release/trusted", nonMergeHead)
+
+	seed.git("checkout", "-b", "hidden-main", base)
+	_ = writeCommit("hidden/main.txt", "hidden main\n", "hidden main commit")
+	seed.git("checkout", "-b", "hidden-feature")
+	_ = writeCommit("hidden/feature.txt", "hidden feature\n", "hidden feature commit")
+	seed.git("checkout", "hidden-main")
+	hiddenMerge := mergeBranch("hidden-feature", "merge hidden feature")
+	seed.git("checkout", "main")
+
+	fixture := shipmentReconcileEvidenceFixture{
+		merge047:     merge047,
+		closure047:   closure047,
+		merge048:     merge048,
+		closure048:   closure048,
+		nonMergeHead: nonMergeHead,
+		hiddenMerge:  hiddenMerge,
+		staleTip:     merge047,
+		trustedAlias: nonMergeHead,
+	}
+	return seed.root, fixture, seed.err
+}
+
+func TestShipmentReconcileEvidenceSeedIsolation(t *testing.T) {
+	first := setupShipmentReconcileEvidenceFixture(t)
+	originalReadme, err := os.ReadFile(filepath.Join(first.ws.RootPath, "README.md"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(first.ws.RootPath, "README.md"), []byte("private mutation\n"), 0o644))
+	runGit(t, first.ws.RootPath, "branch", "-f", "stale-tip", first.nonMergeHead)
+	runGit(t, first.ws.RootPath, "config", "user.name", "Private Fixture")
+
+	second := setupShipmentReconcileEvidenceFixture(t)
+	assert.Equal(t, first.merge047, second.merge047)
+	assert.Equal(t, first.closure047, second.closure047)
+	assert.Equal(t, first.merge048, second.merge048)
+	assert.Equal(t, first.closure048, second.closure048)
+	assert.Equal(t, first.nonMergeHead, second.nonMergeHead)
+	assert.Equal(t, first.hiddenMerge, second.hiddenMerge)
+	assert.Equal(t, first.staleTip, second.staleTip)
+	assert.Equal(t, second.staleTip, strings.TrimSpace(runGit(t, second.ws.RootPath, "rev-parse", "stale-tip")))
+	assert.Equal(t, second.nonMergeHead, strings.TrimSpace(runGit(t, second.ws.RootPath, "rev-parse", "HEAD")))
+	assert.Equal(t, "main", strings.TrimSpace(runGit(t, second.ws.RootPath, "branch", "--show-current")))
+	assert.Equal(t, "Backlogit Tests", strings.TrimSpace(runGit(t, second.ws.RootPath, "config", "user.name")))
+	for _, rel := range []string{
+		"README.md",
+		"shipments/047.txt",
+		"shipments/048.txt",
+		"closures/047.txt",
+		"closures/048.txt",
+		"post.txt",
+	} {
+		// Checkout may apply ambient core.autocrlf. The copy must preserve the
+		// exact checked-out seed bytes and modes, not assume LF on Windows.
+		seedPath := filepath.Join(shipmentReconcileEvidenceSeed.root, filepath.FromSlash(rel))
+		copyPath := filepath.Join(second.ws.RootPath, filepath.FromSlash(rel))
+		want, err := os.ReadFile(seedPath)
+		require.NoError(t, err)
+		data, err := os.ReadFile(copyPath)
+		require.NoError(t, err)
+		assert.Equal(t, want, data, rel)
+		seedInfo, err := os.Stat(seedPath)
+		require.NoError(t, err)
+		copyInfo, err := os.Stat(copyPath)
+		require.NoError(t, err)
+		assert.Equal(t, seedInfo.Mode(), copyInfo.Mode(), rel)
+		if rel == "README.md" {
+			assert.Equal(t, originalReadme, data, "worktree mutation must not affect the seed")
+		}
+	}
+	_, err = os.Stat(filepath.Join(second.ws.RootPath, "hidden"))
+	assert.ErrorIs(t, err, os.ErrNotExist, "main must not contain hidden branch worktree files")
 }
 
 func fixedShipmentReconcileEvidenceInput() shipmentReconcileEvidenceInput {

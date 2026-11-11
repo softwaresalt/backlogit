@@ -1,0 +1,157 @@
+{
+  "recorded_at_utc": "2026-11-07T08:51:25.3501260Z",
+  "task_id": "211.002-T",
+  "shipment_id": "212-S",
+  "baseline_sha": "84b6bbb4dc79ec3d66c46ddeeb8f0137b5d1bd10",
+  "review_range": "84b6bbb4dc79ec3d66c46ddeeb8f0137b5d1bd10..HEAD",
+  "state": "committed GREEN requested; Root review and completion pending",
+  "skill_read_fully": ".github/skills/build-feature/SKILL.md",
+  "nested_agents": 0,
+  "safety_modes": ["careful", "freeze-scope"],
+  "proposed_action": "Implement U2 admission and Server wiring in the two authorized production files",
+  "action_risk": "high",
+  "authorization": "Explicit U2 execution dispatch; 082-DL",
+  "action_result": "GREEN production delta ready for Root review",
+  "indexed_source_binding": "degraded; supplied literal-path fallback; no rebind or repeated status probe",
+  "actual_implementation_attempt_count": 2,
+  "attempt_limit": 5,
+  "attempts": [
+    {
+      "attempt": 1,
+      "tool_session": "672",
+      "native_go_exit": 1,
+      "command_exit": 2,
+      "guard": "U2_NO_VACUITY=REJECTED",
+      "outcome": "SDK compile error: CallToolRequest.GetArguments is unavailable in v0.27.0",
+      "repair": "Use the pinned SDK req.Params.Arguments; no harness change"
+    },
+    {
+      "attempt": 2,
+      "tool_session": "674",
+      "native_go_exit": 0,
+      "command_exit": 0,
+      "guard": "U2_NO_VACUITY=PASS NAMED_RUN=3 NAMED_PASS=3 NAMED_FAIL=0 GO_NATIVE_EXIT=0",
+      "package_elapsed_seconds": 4.661,
+      "outcome": "GREEN"
+    }
+  ],
+  "harness_command_source": {
+    "path": "docs/memory/2026-11-07/212-S-U2-harness.json",
+    "property": "harness_cmd",
+    "invocation": "& ([scriptblock]::Create((Get-Content -Raw 'docs/memory/2026-11-07/212-S-U2-harness.json' | ConvertFrom-Json).harness_cmd))",
+    "executed_unchanged": true
+  },
+  "named_tests": [
+    "TestU2_CoordinatorFIFOMutationOrderAndConcurrentReads",
+    "TestU2_CoordinatorQueueFullAndCallerCancellationSafety",
+    "TestU2_CoordinatorProgressNotificationsIsolatedToCallerSession"
+  ],
+  "post_loop": {
+    "tool_session": "678",
+    "native_go_exit": 0,
+    "command_exit": 0,
+    "guard": "U2_NO_VACUITY=PASS NAMED_RUN=3 NAMED_PASS=3 NAMED_FAIL=0 GO_NATIVE_EXIT=0",
+    "package_elapsed_seconds": 1.471,
+    "skips": 0,
+    "panic_or_timeout": 0,
+    "race_warnings": 0,
+    "build_errors": 0,
+    "additional_implementation_attempt": false
+  },
+  "wave_scoped": true,
+  "green_regression_cmds": [],
+  "sibling_red_selectors": [],
+  "open_red_selectors": [],
+  "red_deliverable": false,
+  "exempt": false,
+  "static": {
+    "compile_command": "go test -run=^$ -count=1 ./...",
+    "compile_session": "673",
+    "compile_native_exit": 0,
+    "compile_test_execution_count": 0,
+    "vet_command": "go vet ./internal/mcp",
+    "vet_native_exit": 0,
+    "lint_command": "& ./bin/golangci-lint.exe run --timeout=5m --out-format=json ./internal/mcp",
+    "lint_version": "v1.64.8",
+    "lint_native_exit": 0,
+    "lint_issues": [],
+    "gofmt_command": "gofmt -l internal/mcp/coordinator.go internal/mcp/server.go",
+    "gofmt_findings": 0,
+    "static_session": "675",
+    "diff_check_native_exit": 0,
+    "versions_and_diff_check_session": "679",
+    "go_version": "go1.24.0 windows/amd64",
+    "environment_script": "bin/tmp/212-go-env.ps1",
+    "offline": true,
+    "module_mode": "readonly",
+    "fresh_short_workspace_temp": true
+  },
+  "source_sha256": {
+    "internal/mcp/coordinator.go": "b7c3692aa7b2cca1bb03dc75003a2ccf59f9b14e29e6d4a4c6b60c2114e4cbd8",
+    "internal/mcp/server.go": "2c904b69ce6809f970d307767c78f5318d500b7c8d32e4628c0821101793f40f"
+  },
+  "preservation": {
+    "verification_session": "677",
+    "harness_path": "internal/mcp/coordinator_test.go",
+    "harness_sha256": "f5147c8d102221684fef86f7ba9dc33a737fb76a16b57525bbcadcd04a732efe",
+    "harness_diff_empty": true,
+    "checkpoint_path": ".backlogit/checkpoints/checkpoint-20261106-210317.json",
+    "checkpoint_sha256": "235844507a4975f27c5a88f4fe3e499fb538110c86e6a264637db1b69837ca70",
+    "canonical_receipts_count": 6,
+    "canonical_receipts_match_supplied_hashes": true,
+    "canonical_receipts_cr_bytes": 0,
+    "raw_backup_root": "bin/_e7d7bed1/raw",
+    "raw_backup_count": 6,
+    "raw_backups_match_provenance_original_sha256": true,
+    "raw_backup_verification_session": "680",
+    "unrelated_dirty_queue_archive_stash_memory": "untouched",
+    "staged_files_before_implementation_commit": []
+  },
+  "implementation": {
+    "mutation_queue_capacity": 32,
+    "mutation_admission_timeout_seconds": 30,
+    "read_tokens_capacity": 4,
+    "read_admission_timeout_seconds": 15,
+    "closed_busy_codes": [
+      "mutation_queue_full",
+      "mutation_admission_timeout",
+      "read_admission_timeout",
+      "request_cancelled"
+    ],
+    "busy_error": "server_busy",
+    "busy_retryable": true,
+    "handler_execution": "synchronous caller frame with deferred turn and token release",
+    "waiter_grant": "unbuffered chan chan struct{} with abandoned cleanup",
+    "shutdown": "idempotent closed signal and scheduler join; queue never closed",
+    "exclusive_barrier": "FIFO mutation turn followed by complete read-token drain; partial acquisition deferred cleanup",
+    "classification": "explicit known reads and typed boolean flags; unknown or malformed flags mutating",
+    "workspace_initialization": "dispatch RW barrier excludes handlers while workspaceMu publishes lazy dependencies; initialized handlers share dispatch read lock",
+    "progress": "queued, started, completed; token and initialized caller-session gating; advisory failures logged"
+  },
+  "lifecycle": {
+    "task_status": "active; Root owns completion",
+    "work_started": "Root already appended once at 2026-11-07T08:42:09.7236214Z",
+    "duplicate_start_or_claim": false,
+    "backlog_mutations": 0,
+    "commit_association": false,
+    "telemetry": "disabled by Root dispatch",
+    "push_pr_merge_branch_change": false
+  },
+  "convergence": {
+    "new_unfiltered_test_suite_executed": false,
+    "root_sixth_convergence_evidence": "docs/memory/2026-11-07/212-S-sixth-convergence-pass.md",
+    "root_sixth_native_exit": 0,
+    "root_sixth_packages": 50,
+    "root_sixth_package_passes": 46,
+    "root_sixth_empty_packages": 4,
+    "root_sixth_critical_passes": 5,
+    "prior_failed_cycles_retained": 5,
+    "new_convergence_authority_minted": false
+  },
+  "commit_paths_only": [
+    "internal/mcp/coordinator.go",
+    "internal/mcp/server.go",
+    "docs/memory/2026-11-07/212-S-U2-implementation-green.json"
+  ],
+  "next_owner": "Root: review the production commit, then governed task completion; no U3-U7 implementation in this dispatch"
+}

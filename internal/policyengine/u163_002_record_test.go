@@ -3,8 +3,10 @@ package policyengine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -211,8 +213,13 @@ func TestU163_002_ExecGitIgnoresAmbientGitEnvironment(t *testing.T) {
 func TestU163_002_ExecGitRequiresARepositoryDirectory(t *testing.T) {
 	_, err := ExecGit{}.ResolveCommit(context.Background(), "refs/remotes/origin/main")
 	assert.Error(t, err)
-	_, err = ExecGit{Dir: t.TempDir()}.ResolveCommit(context.Background(), "refs/remotes/origin/main")
+	noRepoDir := t.TempDir()
+	// Own the Git boundary so discovery cannot climb to an outer repository.
+	require.NoError(t, os.WriteFile(filepath.Join(noRepoDir, ".git"),
+		[]byte("gitdir: "+filepath.Join(noRepoDir, "nonexistent-gitdir")+"\n"), 0o644))
+	_, err = ExecGit{Dir: noRepoDir}.ResolveCommit(context.Background(), "refs/remotes/origin/main")
 	assert.Error(t, err)
+	assert.False(t, errors.Is(err, ErrRefNotFound))
 }
 
 func TestU163_002_EngineEndToEndOnARealRepository(t *testing.T) {

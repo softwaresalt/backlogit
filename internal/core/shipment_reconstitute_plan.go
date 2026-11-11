@@ -197,7 +197,7 @@ func loadAndValidateReconstitutePlan(ws *Workspace, opts ReconstituteOptions) (*
 	if hasPath {
 		var err error
 		if data, err = readReconstitutePlanFile(ws, opts.PlanPath); err != nil {
-			return nil, "", err
+			return nil, "", fmt.Errorf("reconstitute: load plan: %w", err)
 		}
 	} else {
 		if len(opts.PlanYAML) > reconstituteMaxPlanBytes {
@@ -209,25 +209,43 @@ func loadAndValidateReconstitutePlan(ws *Workspace, opts ReconstituteOptions) (*
 	var doc yaml.Node
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	if err := decoder.Decode(&doc); err != nil {
-		return nil, "", reconstituteValidationError("parse plan: %v", err)
+		return nil, "", fmt.Errorf("reconstitute: parse plan: %w: %w", blerrors.ErrValidation, err)
 	}
 	if err := decoder.Decode(&yaml.Node{}); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, "", fmt.Errorf("reconstitute: plan must contain exactly one YAML document: %w: %w", blerrors.ErrValidation, err)
+		}
 		return nil, "", reconstituteValidationError("plan must contain exactly one YAML document")
 	}
 	if err := rejectDuplicateYAMLKeys(&doc); err != nil {
-		return nil, "", reconstituteValidationError("parse plan: %v", err)
+		return nil, "", fmt.Errorf("reconstitute: parse plan: %w: %w", blerrors.ErrValidation, err)
 	}
 	var plan ReconstitutePlan
 	strict := yaml.NewDecoder(bytes.NewReader(data))
 	strict.KnownFields(true)
 	if err := strict.Decode(&plan); err != nil {
-		return nil, "", reconstituteValidationError("parse plan: %v", err)
+		return nil, "", fmt.Errorf("reconstitute: parse plan: %w: %w", blerrors.ErrValidation, err)
 	}
 	if len(plan.SourceShipments) == 0 {
 		return nil, "", reconstituteValidationError("source_shipments must not be empty")
 	}
 	if len(plan.Shipments) == 0 {
 		return nil, "", reconstituteValidationError("shipments must not be empty")
+	}
+	seenSources := make(map[string]struct{}, len(plan.SourceShipments))
+	for _, raw := range plan.SourceShipments {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			return nil, "", reconstituteValidationError("source_shipments contains an empty ID")
+		}
+		if !validReconstituteID(id) || strings.EqualFold(id, shipmentLifecycleGlobalLockID) {
+			return nil, "", reconstituteValidationError("source shipment ID %q is invalid", id)
+		}
+		foldKey := strings.ToLower(id)
+		if _, duplicate := seenSources[foldKey]; duplicate {
+			return nil, "", reconstituteValidationError("source shipment %s is listed more than once", id)
+		}
+		seenSources[foldKey] = struct{}{}
 	}
 	return &plan, canonical.HashBytes(data), nil
 }

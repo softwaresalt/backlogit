@@ -1,0 +1,249 @@
+{
+  "schema_version": "1.0",
+  "agent": "ship",
+  "shipment_id": "212-S",
+  "feature_id": "211-F",
+  "threshold_kind": "wave_convergence_gate_failures",
+  "threshold_count": 3,
+  "threshold_limit": 3,
+  "failure_summary": "Wave 1 failed three convergence invocations across this release unit. Attempt 1 was stopped after confirmed CLI failure, with no observed normal overall Go exit. Attempts 2 and 3 exited normally with code 1. M11 prerequisites are complete, but repeated Windows replacement denial remains unresolved; a source-proved reader-sharing contract gap does not yet establish the denying actor.",
+  "last_n_action_refs": [
+    "PowerShell session 212-wave1-full: go test -timeout=30m ./... at bcc2809027077752449d8bf38792e2f9f93504a6; subsequently stopped by agent",
+    "PowerShell session 212-wave1-u1b-full: go test -timeout=30m ./... at 834972ab9108321c79c155022c5daaa9a9857d7f",
+    "PowerShell session 212-M11-wave1-full: go test -count=1 -p=1 -timeout=30m -json ./... at 2c87ae6fdf64480ab6767e9015cae51f24abc2e6",
+    "PowerShell session 212-M11-short-temp-once: one count-1 selected-eight comparison using a 41-character private TEMP root",
+    "Orchestrator-dispatched/provided configured-route independent review at 2026-11-06T08:29:43.720Z: completed read-only Concurrency Reviewer analysis",
+    "PowerShell sessions 333 and 334: fresh escalation and Ship route resolution, each exit 0"
+  ],
+  "last_n_observation_refs": [
+    "bin/tmp/1793926978890-copilot-tool-output-7128-22f620ff-2014-470e-a9ab-0d2c65b9cd29.txt: confirmed CLI FAIL, 311.753s; overall command terminated, native exit unknown",
+    "bin/tmp/1793937249660-copilot-tool-output-7128-71ef1bbe-f07c-4954-a037-f7d919acbe22.txt: normal overall Go exit 1, core 30-minute alarm and additional package failures",
+    "bin/tmp/1793952023849-copilot-tool-output-7128-9c0c1662-babc-4f5a-8b00-a8285271ca6d.txt: FULL_SUITE_RESULT native_exit=1; all 50 packages accounted for, no panic",
+    "PowerShell session 212-M11-short-temp-once: native exit 1, seven selected top-level passes and one repeated reconstitution failure, zero selected skips; disposition case untargeted",
+    "docs/memory/2026-11-06/212-S-M11-fullsuite-circuit-handoff.md: bounded read-only causal trace and complete failure inventory",
+    "Orchestrator-dispatched/provided configured-route independent Concurrency Reviewer findings: source gap P2/manual; failure attribution confidence 50-60 percent; no audit of the other eight names"
+  ],
+  "artifact_refs": [
+    "212-S",
+    "211-F",
+    "96F1DFFD",
+    "086-DL",
+    "087-DL",
+    "internal/core/shipment_reconstitute_exec.go",
+    "internal/core/shipment_reconstitute_plan.go",
+    "internal/core/canonical_scan.go",
+    "internal/core/artifacts.go",
+    "internal/core/commits.go",
+    "internal/atomicfile/atomicfile.go",
+    "internal/atomicfile/atomicfile_windows.go",
+    "internal/core/shipment_reconstitute_test.go",
+    "bin/_authoring_gomodcache/golang.org/toolchain@v0.0.1-go1.24.0.windows-amd64/src/syscall/syscall_windows.go",
+    "docs/memory/2026-11-06/212-S-wave-convergence-circuit-checkpoint.md",
+    "docs/memory/2026-11-06/212-S-M11-fullsuite-circuit-handoff.md"
+  ],
+  "evidence_path": "",
+  "telemetry_evidence_note": "Task telemetry begin returned disabled. Test captures are artifact evidence, not a claimed independent runtime telemetry store or automated threshold engine.",
+  "resumption_checkpoint_ref": ".backlogit/checkpoints/checkpoint-20261106-081656.json",
+  "resumption_checkpoint_sha256": "41817eb561efe3103ab8abd2be9f6a510080e8ee8616e01a414e2d3d5ed73532",
+  "resolved_escalation_route": {
+    "model_family": "claude-sonnet-5.5",
+    "model_provider": "anthropic",
+    "reasoning_effort": "high"
+  },
+  "resolved_escalation_context_tier": "long_context",
+  "routing_status": "resolved_distinct",
+  "resolution_source": "Fresh nested model_routing.ship.escalation resolution; CLI exit 0, no routing degradation",
+  "resolved_ship_route": {
+    "model_family": "gpt-6.1-sol",
+    "model_provider": "openai",
+    "reasoning_effort": "medium"
+  },
+  "same_route_guard": {
+    "compared_fields": [
+      "model_family",
+      "model_provider",
+      "reasoning_effort"
+    ],
+    "same_route": false,
+    "context_tier_excluded": true
+  },
+  "convergence_attempts": [
+    {
+      "ordinal": 1,
+      "action_ref": "212-wave1-full",
+      "head_sha": "bcc2809027077752449d8bf38792e2f9f93504a6",
+      "command": "go test -timeout=30m ./...",
+      "capture_ref": "bin/tmp/1793926978890-copilot-tool-output-7128-22f620ff-2014-470e-a9ab-0d2c65b9cd29.txt",
+      "normal_overall_exit_observed": false,
+      "overall_native_exit": null,
+      "terminal_disposition": "Agent terminated the still-running command after confirmed CLI package failure",
+      "observed_package_result": "internal/cli FAIL, 311.753 seconds",
+      "counts_as_convergence_failure": true
+    },
+    {
+      "ordinal": 2,
+      "action_ref": "212-wave1-u1b-full",
+      "head_sha": "834972ab9108321c79c155022c5daaa9a9857d7f",
+      "command": "go test -timeout=30m ./...",
+      "capture_ref": "bin/tmp/1793937249660-copilot-tool-output-7128-71ef1bbe-f07c-4954-a037-f7d919acbe22.txt",
+      "normal_overall_exit_observed": true,
+      "overall_native_exit": 1,
+      "terminal_disposition": "Normal Go completion with package failures and core timeout",
+      "counts_as_convergence_failure": true
+    },
+    {
+      "ordinal": 3,
+      "action_ref": "212-M11-wave1-full",
+      "head_sha": "2c87ae6fdf64480ab6767e9015cae51f24abc2e6",
+      "command": "go test -count=1 -p=1 -timeout=30m -json ./...",
+      "capture_ref": "bin/tmp/1793952023849-copilot-tool-output-7128-9c0c1662-babc-4f5a-8b00-a8285271ca6d.txt",
+      "normal_overall_exit_observed": true,
+      "overall_native_exit": 1,
+      "packages_accounted": 50,
+      "package_pass": 42,
+      "package_fail": 4,
+      "no_test_file_packages": 4,
+      "top_level_pass": 3871,
+      "top_level_fail": 9,
+      "failure_events_including_subtests": 21,
+      "existing_test_skip_events": 78,
+      "panic_or_timeout": false,
+      "core_elapsed_seconds": 1575.7,
+      "failure_inventory_truncated": false,
+      "counts_as_convergence_failure": true
+    }
+  ],
+  "current_state": {
+    "head_sha": "2c87ae6fdf64480ab6767e9015cae51f24abc2e6",
+    "branch": "feat/212-s-backlogit-multi-session-singleton-mcp-runtime-stdio-session-shim-and-channel-operation-coordinator",
+    "source_state": "Local/unpushed; no push, PR or merge performed in this execution",
+    "staged_paths": [],
+    "manifest_member_count": 12,
+    "frozen_task_count": 11,
+    "wave_index": 1,
+    "wave_budget": 11,
+    "completed_task_ids": [
+      "211.001-T",
+      "211.008-T",
+      "211.009-T",
+      "211.010-T",
+      "211.011-T"
+    ],
+    "claim_assigned_unstarted_task_ids": [
+      "211.002-T",
+      "211.003-T",
+      "211.004-T",
+      "211.005-T",
+      "211.006-T",
+      "211.007-T"
+    ],
+    "task_attempt_count": 5,
+    "task_attempt_limit": 20,
+    "consecutive_task_failures": 0,
+    "wave_convergence_gate_failures": 3,
+    "wave_convergence_gate_failure_limit": 3,
+    "counter_reset": false,
+    "u1c_review_fix_cycles": 1,
+    "review_fix_cycle_limit": 3,
+    "fix_ci_cycles": 0,
+    "fix_ci_cycle_limit": 5,
+    "preserve_archive_queue_pairs": [
+      "211.001-T",
+      "211.008-T",
+      "211.009-T",
+      "211.010-T",
+      "211.011-T"
+    ],
+    "active_pointer_modified_this_turn": false,
+    "task_admission_or_claim_this_turn": false,
+    "fourth_full_suite_performed": false
+  },
+  "independent_reasoning": {
+    "status": "Completed read-only before this bookkeeping turn",
+    "persona": "Concurrency Reviewer",
+    "source_ref": "Orchestrator-dispatched/provided configured-route independent review at 2026-11-06T08:29:43.720Z; no separate reviewer artifact path supplied",
+    "verified_source_facts": [
+      "Go 1.24 syscall.Open uses FILE_SHARE_READ | FILE_SHARE_WRITE without FILE_SHARE_DELETE",
+      "planReconstitution preliminary reads reach parseFile/os.ReadFile before lifecycle-global acquisition",
+      "AssociateCommit replaces using MoveFileEx while holding lifecycle-global",
+      "Writer temporary file is closed; no writer-own-handle bug was proved"
+    ],
+    "contract_gap": {
+      "severity": "P2",
+      "action_class": "manual",
+      "status": "Source-proved reader-sharing contract gap; not proof of failure-time actor"
+    },
+    "access_denied_causality_confidence": {
+      "minimum": 0.5,
+      "maximum": 0.6
+    },
+    "uncaptured_failure_time_evidence": [
+      "Specific denying handle and its share mask",
+      "Numeric Windows error",
+      "Destination and temporary-file attributes/ACLs",
+      "Exact read-open, replace and close interleaving"
+    ],
+    "prohibited_shortcuts": [
+      "Blind global reuse of delete-sharing helpers that also change containment, reparse, bounds and error semantics",
+      "Hoisting all reads under lifecycle-global to remove intended concurrency",
+      "Speculative durability retry, catch/ignore, AV change or unknown-process kill"
+    ],
+    "parse_error_skip_observation": {
+      "severity": "P3",
+      "status": "Unresolved analysis; not an established defect or confirmed bug",
+      "qualification": "Bulk scanning may intentionally tolerate malformed files"
+    },
+    "other_eight_full_run_names_audited": false
+  },
+  "bounded_short_probe": {
+    "full_suite": false,
+    "native_exit": 1,
+    "selected_top_level_tests": 8,
+    "passed_top_level_tests": 7,
+    "failed_top_level_tests": 1,
+    "selected_skips": 0,
+    "untargeted_full_run_name": "TestGovernedShipmentDispositionEdge",
+    "all_nine_failures_proved_fixed": false,
+    "interpretation": "Short TEMP corrected selected Git path-length failures; repeated AssociateCommit replacement denial remains unresolved"
+  },
+  "terminal_handoff": {
+    "status": "ESCALATION_DEGRADED",
+    "reason": "No supported targeted payload-write operation was exposed by installed Engram MCP/CLI. Terminal Engram ingestion/receipt is unconfirmed; routing itself resolved successfully.",
+    "file_fallback_status": "Prepared for operator/asynchronous review",
+    "file_fallback_payload_ref": "docs/memory/2026-11-06/212-S-wave-convergence-escalation-payload.json",
+    "file_fallback_record_ref": "docs/memory/2026-11-06/212-S-wave-convergence-circuit-checkpoint.md",
+    "engram_receipt_confirmed": false,
+    "local_document_conformance": {
+      "command": "engram verify docs/memory/2026-11-06/212-S-wave-convergence-circuit-checkpoint.md --json",
+      "exit_code": 0,
+      "conformant": true,
+      "findings": [],
+      "is_ingestion_acknowledgement": false
+    },
+    "bulk_graph_sync_or_index_used": false,
+    "flush_or_read_query_misrepresented_as_write": false
+  },
+  "compaction": {
+    "skill": "compact-context",
+    "target": "memory",
+    "release_scope": "212-S/211-F",
+    "status": "safe_no_op",
+    "assessed_release_file_count": 19,
+    "assessed_release_bytes": 122845,
+    "eligible_candidates": 0,
+    "files_compacted": 0,
+    "files_archived": 0,
+    "space_recovered_bytes": 0,
+    "reason": "Unresolved/live references, active cursor, gate verdicts, Stage provenance and latest task memories are preserved",
+    "archived_live_feature_material": false,
+    "other_work_mutated": false
+  },
+  "authority_preservation": {
+    "reasoning_only": true,
+    "authorizes_retry": false,
+    "authorizes_source_or_planning_mutation": false,
+    "authorizes_task_or_shipment_claim": false,
+    "authorizes_push_pr_or_merge": false,
+    "resets_or_rearms_counters": false
+  }
+}

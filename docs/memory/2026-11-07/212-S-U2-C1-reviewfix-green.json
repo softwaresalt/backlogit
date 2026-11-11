@@ -1,0 +1,138 @@
+{
+  "recorded_at_utc": "2026-11-07T09:34:42Z",
+  "task_id": "211.002-T",
+  "shipment_id": "212-S",
+  "source_head": "568ded42ce251dddc810c371f32d4905878faed5",
+  "skill": ".github/skills/build-feature/SKILL.md",
+  "depth": 0,
+  "reviewfix_cycle": 1,
+  "reviewfix_cycle_limit": 3,
+  "source_attempts": {
+    "limit": 5,
+    "previously_consumed": 2,
+    "previous_failure": "SDK compilation fixes; counters retained from caller",
+    "this_execution": 1,
+    "cumulative_consumed": 3,
+    "remaining": 2,
+    "outcome": "GREEN",
+    "counters_reset": false
+  },
+  "producer_red": {
+    "harness_source_head": "568ded42ce251dddc810c371f32d4905878faed5",
+    "named_run": 3,
+    "named_fail": 2,
+    "named_pass": 1,
+    "go_native_exit": 1,
+    "strict_guard_exit": 2,
+    "classification": "partial GREEN rejected by strict guard; guard exit 2 is not native Go exit 2",
+    "evidence_origin": "caller handoff; not rerun or recounted as a source attempt"
+  },
+  "action": {
+    "proposed_action": "Preserve handler-specific acquisition under exclusive cold dispatch; remove recursive directory mutex acquisition; wrap forwarded handler errors",
+    "targets": ["internal/mcp/server.go", "internal/mcp/coordinator.go"],
+    "change_kind": "local production fix",
+    "action_risk": "moderate",
+    "authorization": "explicit bounded C1 caller instruction",
+    "rollback": "scoped revert of this fix commit, only if separately authorized",
+    "action_result": "applied"
+  },
+  "implementation": {
+    "cold_dispatch": "Exclusive workspaceDispatchMu spans cold handler execution without unconditional ordinary workspace initialization",
+    "acquisition": "Handlers retain diagnostic, read-only, ordinary and SQLite-optional selection",
+    "recursive_mutex": "Atomic resolved storage-root snapshot allows backlogitDir readers that already hold workspaceMu without recursively locking it or racing workspace publication",
+    "handler_errors": "execute MCP tool %q: %w preserves synchronous result and errors.Is/errors.As chains",
+    "accepted_channels": "FIFO32/read4 admission, synchronous defers, barrier partial cleanup and Close unchanged",
+    "busy_envelopes": "server_busy with mutation_queue_full/mutation_admission_timeout/read_admission_timeout/request_cancelled unchanged",
+    "timers_capabilities_progress": "unchanged"
+  },
+  "wave_scoped": true,
+  "green_regression_cmds": [],
+  "sibling_red_selectors": [],
+  "open_red_selectors": [],
+  "red_deliverable": false,
+  "harness": {
+    "manifest": "docs/memory/2026-11-07/212-S-U2-harness.json",
+    "property": "harness_cmd",
+    "execution": "manifest harness_cmd executed verbatim via ScriptBlock.Create, twice",
+    "manifest_sha256": "b18f0935ae22a58fd69de24f3dec26544f9eedf00962ffeb21987cb163533efa",
+    "path": "internal/mcp/coordinator_test.go",
+    "current_sha256": "9d273050cd6a6e36cb170d735b0ef796ff66cf0ef334d179c613cafe08ce87ba",
+    "git_blob_worktree_and_source_head": "39b2147b7299b08026ca3ee53c264ee7a11984b2",
+    "harness_guard_criteria_modified": false,
+    "original_assertions": "all 62 retained by unchanged producer harness bytes",
+    "guard": "U2_NO_VACUITY=PASS NAMED_RUN=3 NAMED_PASS=3 NAMED_FAIL=0 GO_NATIVE_EXIT=0",
+    "strict_exit": 0,
+    "go_native_exit": 0,
+    "named_run": 3,
+    "named_pass": 3,
+    "all_fail_events": 0,
+    "all_skip_events": 0,
+    "race_warnings": 0,
+    "named_passes": [
+      "TestU2_CoordinatorFIFOMutationOrderAndConcurrentReads",
+      "TestU2_CoordinatorQueueFullAndCallerCancellationSafety",
+      "TestU2_CoordinatorProgressNotificationsIsolatedToCallerSession"
+    ],
+    "first_green": {
+      "tool_session": "719",
+      "raw": "bin/tmp/1794044030141-copilot-tool-output-7128-ea95f41b-ab14-4f49-91e4-1e3ab3749370.txt",
+      "raw_sha256": "6171872370a590b660681f5b980baff13269344320506f110944816afc0aa6ac"
+    },
+    "post_loop_green": {
+      "tool_session": "720",
+      "raw": "bin/tmp/1794044063406-copilot-tool-output-7128-f7ebcb6d-d1c4-4669-87db-2d202f886158.txt",
+      "raw_sha256": "609db0ee06710dc6d00e2a657f9b7be32d793f52219246cc3fc16351b2f34090"
+    },
+    "c1_subtests_pass": [
+      "C1_poisoned_journal_diagnostic_acquisition/doctor",
+      "C1_poisoned_journal_diagnostic_acquisition/normalize_blocked_shipment",
+      "C1_cold_zero_write/backlogit_custody_preview",
+      "C1_cold_zero_write/backlogit_custody_verify",
+      "C1_corrupt_sqlite_canonical_custody_fallback/offer",
+      "C1_corrupt_sqlite_canonical_custody_fallback/accept",
+      "C1_exclusive_cold_dispatch_barrier",
+      "C1_handler_error_context_and_sentinel_chain/backlogit_get_item",
+      "C1_handler_error_context_and_sentinel_chain/backlogit_create_item",
+      "C1_handler_error_context_and_sentinel_chain/backlogit_sync_index"
+    ]
+  },
+  "static_checks": {
+    "compile_only_cmd": "go test -run=^$ -count=1 ./...",
+    "compile_only_native_exit": 0,
+    "compile_only_tool_session": "717",
+    "executed_tests": "Only ^TestU2_ in explicit ./internal/mcp with -count=1 -race -timeout=30m; compile-only executes zero tests",
+    "vet_cmd": "go vet ./...",
+    "vet_native_exit": 0,
+    "lint_cmd": "& ./bin/golangci-lint.exe run --timeout=5m --out-format=json",
+    "lint_version": "v1.64.8",
+    "lint_native_exit": 0,
+    "lint_issues": [],
+    "gofmt_cmd": "gofmt -l internal/mcp/server.go internal/mcp/coordinator.go internal/mcp/coordinator_test.go",
+    "gofmt_issue_count": 0,
+    "static_tool_session": "718",
+    "diff_check": "git diff --check passed",
+    "environment_script": "bin/tmp/212-go-env.ps1",
+    "go_version": "go1.24.0 windows/amd64",
+    "offline": true,
+    "module_mode": "readonly",
+    "fresh_short_workspace_temp": true,
+    "full_package_core_repository_test_suites": "not executed"
+  },
+  "production_sha256": {
+    "internal/mcp/server.go": "af38d4872b1e5754fe7e0e1332b8e040db1578465980ac90788347e6b51206a1",
+    "internal/mcp/coordinator.go": "56b5973440a2ec504c397bef279637c64aa97d6bde4c7a1dd9c4ad2500b481a6"
+  },
+  "preservation": {
+    "checkpoint_path": ".backlogit/checkpoints/checkpoint-20261106-210317.json",
+    "checkpoint_sha256_before_and_after": "235844507a4975f27c5a88f4fe3e499fb538110c86e6a264637db1b69837ca70",
+    "six_lf_receipts": "All six matched original manifest SHA256 values and contained no CR bytes before commit",
+    "verification_tool_session": "723",
+    "raw_backups_historical_five_convergence_failures": "untouched",
+    "unrelated_dirty_queue_archive": "preserved; not staged",
+    "lifecycle_topology": "no changes; existing canonical WORK_STARTED and six done/M12/rest unstarted retained",
+    "telemetry": "no telemetry operations invoked",
+    "backlog_task_planning_config_commit_association_writes": "none",
+    "push_pr_merge_branch_switch": "none"
+  },
+  "stop_boundary": "Commit production files and this UTCZ LF proof only after GREEN; return before Root re-review or completion"
+}

@@ -1,0 +1,142 @@
+{
+  "timestamp_utc": "2026-11-07T22:43:12Z",
+  "task": "211.013-T",
+  "shipment": "212-S",
+  "baseline_head": "fb1be1f51985d0378c7f447eb4cc597873ef97fb",
+  "production_function": "recoverLegacyReturnBlockedJournal",
+  "production_path": "internal/core/shipment.go",
+  "source_sha256_before": "75915e7cb2c02cd04f73d19466e8f43df275850ffef0f88f6f115266579c2658",
+  "source_sha256_after": "46f0cf955686e042f82933d36e921be8b882198496df18573079aedcff8b922c",
+  "source_git_blob": "7c1cf505662250829f66f5dc880a0dfa277d145d",
+  "harness_path": "internal/core/shipment_p1_lifecycle_remediation_test.go",
+  "harness_sha256_before_and_after": "a4fbab085d6872e2e1f8adc943fd29d70f3a0e13437949fc928f509c3ec17c92",
+  "launcher": "pwsh -NoProfile -NonInteractive -Command ((Get-Content docs/memory/2026-11-07/212-S-M14-harness/u1g-command-guard-overlay.json -Raw|ConvertFrom-Json).harness_cmd)",
+  "wave_scoped": true,
+  "green_regression_cmds": [],
+  "sibling_red_selectors": [],
+  "open_red_selectors": [],
+  "red_deliverable": false,
+  "baseline_attempts_inherited": 0,
+  "loop_attempts": 2,
+  "production_fix_iterations": 1,
+  "harness_executions": 3,
+  "red_attempt": {
+    "attempt": 1,
+    "started_at_utc": "2026-11-07T22:40:39Z",
+    "finished_at_utc": "2026-11-07T22:41:06Z",
+    "native_exit": 1,
+    "process_exit": 1,
+    "guard_validation": "PASS",
+    "classification": "ASSERTION_RED_NO_FALSE_GREEN",
+    "failed_names": 2,
+    "passed_names": 2,
+    "sole_failed_case": "unchanged_task_skips_physical_write_and_reconciles_sqlite_and_journal",
+    "assertion_source_lines": [105, 106],
+    "assertion_details": "Task writer called once; unexpected wrapped ErrWriteNotApplied from injected task restore write denial."
+  },
+  "green_attempt": {
+    "attempt": 2,
+    "started_at_utc": "2026-11-07T22:42:04Z",
+    "finished_at_utc": "2026-11-07T22:42:43Z",
+    "native_exit": 0,
+    "process_exit": 0,
+    "guard_validation": "PASS",
+    "classification": "GREEN_NO_VACUITY"
+  },
+  "post_loop_harness_gate": {
+    "started_at_utc": "2026-11-07T22:43:03Z",
+    "finished_at_utc": "2026-11-07T22:43:12Z",
+    "native_exit": 0,
+    "process_exit": 0,
+    "guard_validation": "PASS",
+    "classification": "GREEN_NO_VACUITY"
+  },
+  "named_events_each_green_execution": [
+    {
+      "test": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence",
+      "run": 1,
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "test": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/unchanged_task_skips_physical_write_and_reconciles_sqlite_and_journal",
+      "run": 1,
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "test": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/admitted_changed_shipment_write_denial_fails_closed_and_retains_journal",
+      "run": 1,
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "test": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/non_admissible_changed_task_fails_preimage_guard_with_zero_writer_calls_and_retains_journal",
+      "run": 1,
+      "pass": 1,
+      "fail": 0
+    }
+  ],
+  "race_enabled": true,
+  "skips": 0,
+  "no_test_build_panic_race_signals": 0,
+  "go_version": "go version go1.24.0 windows/amd64",
+  "environment": {
+    "helper": "bin/tmp/212-go-env.ps1",
+    "helper_sha256_unchanged": "59a087cf9938f9fe374fefc94458cedec826ccbbafa7c09bc8d34874aac62ff7",
+    "temporary_directory_override": "C:\\Source\\GitHub\\backlogit\\bin\\m14t",
+    "GOTOOLCHAIN": "local",
+    "GOFLAGS": "-mod=readonly",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "cache_policy": "Existing workspace-contained build/module/GOPATH/lint caches; no downloads or configuration edits."
+  },
+  "quality_gates": {
+    "baseline_compile_command": "go test -run=^$ -count=1 ./...",
+    "baseline_compile_exit": 0,
+    "post_edit_compile_command": "go test -run=^$ -count=1 ./...",
+    "post_edit_compile_exit": 0,
+    "compile_packages": 50,
+    "vet_command": "go vet ./internal/core/...",
+    "vet_exit": 0,
+    "lint_command": "& ./bin/golangci-lint.exe run --timeout=5m --out-format=json ./internal/core/...",
+    "lint_version": "v1.64.8",
+    "lint_binary_build_go": "go1.26.5",
+    "lint_exit": 0,
+    "lint_issues": [],
+    "format_command": "gofmt -l internal/core/shipment.go internal/core/shipment_p1_lifecycle_remediation_test.go",
+    "format_exit": 0,
+    "format_findings": []
+  },
+  "recovery_checks": {
+    "preimage_guard": "Existing admission guards preserved before all restore writers; new desired-preimage comparison does not ignore UpdatedAt.",
+    "path_guard": "Physical task persistence skipped only when desired preimage matches and resolved current path equals target path.",
+    "cache": "Unchanged task stale SQLite title reconciled; shipment restored on disk and in SQLite; on-disk task equals originalItem.",
+    "journal": "Removed after successful reconciliation; retained on admitted shipment ErrWriteNotApplied and non-admissible task ErrShipmentConflict.",
+    "writer_counts": "Unchanged task: zero task writers. Non-admissible changed task: zero restore writers.",
+    "cas_scope": "Held recovery locks and preimage/path checks preserved; no live workspace CAS, task-field or association mutation performed.",
+    "residual": "Historical denying actor remains unproven; genuinely changed tasks and relocations retain existing physical writer path."
+  },
+  "preservation": {
+    "protected_files": 1480,
+    "protected_sha256_before_and_after": "53e565c29f796a47c6540a3774f95decaa29d3dd0c11b121ac54be60920c35cd",
+    "method": "SHA256 of sorted relative-path:SHA256(raw bytes) lines ending LF. Union of preexisting porcelain paths, tracked Go/M14/U1h paths, private receipt files under bin, baseline runner, private U1h harness, environment helper and checkpoint 210317; shipment.go excluded. Compared before edit and after both GREEN executions, before adding this proof.",
+    "baseline_runner_sha256_unchanged": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250",
+    "u1h_private_harness_sha256_unchanged": "d3624f020514225f556eac9d22d4159c420a165e46305cd48c424a12bf8dccfd",
+    "stage_and_planning_edits": 0
+  },
+  "producer_runtime_obligations_not_run": [
+    "AC3: TestNewWorkspace_RemovesWriterTempResidueAndRecoversValidJournal",
+    "AC3: TestNewWorkspace_RejectsUnsafeWriterTempResidue",
+    "AC3: TestShipmentOperationJournalTempName",
+    "AC4: combined existing-regression race selector including TestReturnBlocked"
+  ],
+  "handoff": "Return to Root before review completion. Existing-regression race fixture verification handled separately; no invented green regression array.",
+  "historical_full_failures_retained": 6,
+  "full_suite_launches": 0,
+  "counter_updates": 0,
+  "power_changes": 0,
+  "task_starts_moves_done_associations": 0,
+  "push_pr_merge_archive_operations": 0,
+  "tool_degradation": "Backlogit resource search returned no get_item tool; known-path read-only fallback used. No Engram rebind/status attempt."
+}

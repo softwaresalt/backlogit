@@ -74,6 +74,8 @@ func TestDoctor_DetectsOrphanedTask(t *testing.T) {
 // distinguishes intentional from accidental orphans.
 func TestDoctor_IgnoresIntentionalOrphans(t *testing.T) {
 	ws := setupTestWorkspace(t)
+	ws.GateBroker = nil
+	require.Nil(t, ws.GateBroker)
 	ctx := context.Background()
 
 	// Create feature and two tasks: only one will be in the release scope.
@@ -93,6 +95,8 @@ func TestDoctor_IgnoresIntentionalOrphans(t *testing.T) {
 	shipment, err := core.CreateShipment(ctx, ws, "Partial release", []string{releasedTask.ID})
 	require.NoError(t, err)
 	_, err = core.ClaimShipment(ctx, ws, shipment.ID)
+	require.NoError(t, err)
+	_, err = core.UpdateArtifact(ctx, ws, releasedTask.ID, map[string]any{"status": "done"})
 	require.NoError(t, err)
 	_, err = core.ShipShipment(ctx, ws, shipment.ID, nil)
 	require.NoError(t, err)

@@ -1,0 +1,127 @@
+{
+  "feature": "211-F",
+  "task": "211.015-T",
+  "wave": 3,
+  "skill": "harness-architect",
+  "head": "b40a2a9fb9decbc9b808aaeaf5443ee2277ef475",
+  "source": "internal/cli/mcp_feature211_acceptance_red_test.go",
+  "source_sha256": "84b6b8f1fd29bbef7fbc2bbb7f83d97d5b85c2f087f562917ff9ff79d70af7df",
+  "encoding": "UTF8LF",
+  "test": "TestU2i_Feature211MultiSessionDaemonShimAndDocsAcceptance",
+  "Compilation": "PASS",
+  "Red Phase": "CONFIRMED",
+  "red_deliverable": true,
+  "red_selector_command": "go test -count=1 -run '^TestU2i_' ./internal/cli",
+  "green_maker_tasks": [
+    "211.003-T",
+    "211.004-T",
+    "211.005-T",
+    "211.006-T",
+    "211.007-T"
+  ],
+  "green_maker_closes_wave": 8,
+  "regression": [],
+  "environment": {
+    "setup_command": ". ./bin/tmp/212-go-env.ps1",
+    "version_command": "go version",
+    "version_native_output": "go version go1.24.0 windows/amd64",
+    "GOROOT": "C:\\Source\\GitHub\\backlogit\\bin\\_authoring_gomodcache\\golang.org\\toolchain@v0.0.1-go1.24.0.windows-amd64",
+    "GOTOOLCHAIN": "local",
+    "GOFLAGS": "-mod=readonly",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "cache_policy": "Retained GOCACHE, GOMODCACHE and GOPATH from pinned setup; no installs or downloads",
+    "private_temp_command": "$private = Join-Path (Get-Location) ('bin/u2i' + [guid]::NewGuid().ToString('N').Substring(0,6)); New-Item -ItemType Directory -Path $private | Out-Null; $env:TEMP = $private; $env:TMP = $private",
+    "baseline_TEMP_TMP": "C:\\Source\\GitHub\\backlogit\\bin\\u2i05308a",
+    "initial_harness_TEMP_TMP": "C:\\Source\\GitHub\\backlogit\\bin\\u2id46181",
+    "final_TEMP_TMP": "C:\\Source\\GitHub\\backlogit\\bin\\u2iffb844"
+  },
+  "commands": [
+    {
+      "command": "go test -run=^$ -count=1 ./...",
+      "phase": "before authoring",
+      "native_exit_code": 0,
+      "result": "PASS; package output reported no tests to run"
+    },
+    {
+      "command": "gofmt -w internal/cli/mcp_feature211_acceptance_red_test.go",
+      "phase": "normalize patch-tool CRLF to LF",
+      "native_exit_code": 0
+    },
+    {
+      "command": "gofmt -l internal/cli/mcp_feature211_acceptance_red_test.go",
+      "phase": "final source",
+      "native_exit_code": 0,
+      "native_output": ""
+    },
+    {
+      "command": "go test -run=^$ -count=1 ./...",
+      "phase": "final source",
+      "native_exit_code": 0,
+      "native_output_excerpt": "ok github.com/softwaresalt/backlogit/internal/cli 1.153s [no tests to run]",
+      "result": "PASS repo-wide including tests"
+    },
+    {
+      "command": "go test -count=1 -run '^TestU2i_' ./internal/cli",
+      "phase": "final source",
+      "native_exit_code": 1,
+      "native_output_excerpt": [
+        "--- FAIL: TestU2i_Feature211MultiSessionDaemonShimAndDocsAcceptance (0.01s)",
+        "--- FAIL: TestU2i_Feature211MultiSessionDaemonShimAndDocsAcceptance/U3_MultiSessionDeclarations (0.00s)",
+        "--- FAIL: TestU2i_Feature211MultiSessionDaemonShimAndDocsAcceptance/U4_PlatformIPCDeclarations (0.00s)",
+        "--- FAIL: TestU2i_Feature211MultiSessionDaemonShimAndDocsAcceptance/U5_DaemonAttachmentAndMetadata (0.00s)",
+        "--- FAIL: TestU2i_Feature211MultiSessionDaemonShimAndDocsAcceptance/U6_ShimPrewarmAndCommands (0.00s)",
+        "--- FAIL: TestU2i_Feature211MultiSessionDaemonShimAndDocsAcceptance/U7_GeneratedReferenceDocsAndLinks (0.00s)",
+        "FAIL",
+        "FAIL github.com/softwaresalt/backlogit/internal/cli 1.785s",
+        "FAIL"
+      ],
+      "result": "Genuine testing assertion FAIL; no compilation error or artificial failure"
+    }
+  ],
+  "named_assertions": [
+    {
+      "name": "U3_MultiSessionDeclarations",
+      "green_maker": "211.003-T",
+      "asserts": "session_mux.go exists and declares MultiSessionConn, ServeSessionStream, ActiveSessionCount, CloseAllSessions",
+      "observed": "FAIL at line 26: session_mux.go missing; existing parseSourceFile reports t.Errorf"
+    },
+    {
+      "name": "U4_PlatformIPCDeclarations",
+      "green_maker": "211.004-T",
+      "asserts": "Both mcp_ipc_windows.go and mcp_ipc_unix.go declare DeriveMCPDaemonEndpoint, ListenMCPDaemonIPC, DialMCPDaemonIPC, isVerifiedProcessAlive",
+      "observed": "Both filename subtests FAIL at line 52: required source files missing"
+    },
+    {
+      "name": "U5_DaemonAttachmentAndMetadata",
+      "green_maker": "211.005-T",
+      "asserts": "mcp_daemon.go declares VerifyMCPDaemonAttachment and RunMCPDaemon; MCPDaemonInfo and MCPDaemonStatus each declare IPCTransport, Endpoint, ActiveSessions, ProtocolVersion",
+      "observed": "FAIL at line 72 for both functions; both struct subtests FAIL at line 97 for all four fields"
+    },
+    {
+      "name": "U6_ShimPrewarmAndCommands",
+      "green_maker": "211.006-T",
+      "asserts": "mcp_daemon.go declares PrewarmMCPDaemon and RunMCPSessionShim; NewRootCommand.Find resolves backlogit mcp daemon and backlogit mcp prewarm completely",
+      "observed": "FAIL at line 107 for both functions; daemon and prewarm subtests FAIL at lines 115-116: actual path backlogit mcp and unresolved child argument"
+    },
+    {
+      "name": "U7_GeneratedReferenceDocsAndLinks",
+      "green_maker": "211.007-T",
+      "asserts": "backlogit_mcp_daemon.md and backlogit_mcp_prewarm.md exist with exact command heading lines and Markdown links from backlogit_mcp.md",
+      "observed": "daemon and prewarm subtests FAIL at line 129 for missing docs and line 133 for missing parent links",
+      "persistent_red": "Independent final U7 subtest is always reached; missing real docs keep RED after U3-U6 land, until U7 at Wave 8"
+    }
+  ],
+  "scope": {
+    "acceptance_files_created": 1,
+    "production_files_modified": 0,
+    "existing_helpers_reused": ["parseSourceFile", "findFunc"],
+    "parallel_or_skip": false,
+    "full_suite_run": false,
+    "supplementary_verbose_run": false,
+    "planning_artifacts_modified": false,
+    "existing_dirty_files_edited": false,
+    "git_or_backlog_mutations": false,
+    "commit_labels_and_red_baseline_sha": "Deferred to parent validation and exact-path staging; no harness commit made here"
+  }
+}

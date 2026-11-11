@@ -1,0 +1,17 @@
+{
+  "task": "211.013-T",
+  "gate": "Vet",
+  "started_at": "2026-11-07T22:17:23Z",
+  "finished_at": "2026-11-07T22:17:27Z",
+  "executable": "C:\\Source\\GitHub\\backlogit\\bin\\_authoring_gomodcache\\golang.org\\toolchain@v0.0.1-go1.24.0.windows-amd64\\bin\\go.exe",
+  "arguments": [
+    "vet",
+    "./internal/core/..."
+  ],
+  "native_exit": 0,
+  "go_version": "go1.24.0",
+  "offline": true,
+  "workspace_temp": "C:\\Source\\GitHub\\backlogit\\bin\\m14t",
+  "test_events": [],
+  "output": ""
+}

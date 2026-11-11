@@ -3,7 +3,9 @@
 package atomicfile
 
 import (
+	"errors"
 	"fmt"
+	"time"
 
 	"golang.org/x/sys/windows"
 
@@ -41,6 +43,19 @@ var moveFileEx = func(from, to string, flags uint32) error {
 	return windows.MoveFileEx(fromPtr, toPtr, flags)
 }
 
+const (
+	atomicReplaceMaxRetries     = 6
+	atomicReplaceInitialBackoff = 1 * time.Millisecond
+)
+
+// atomicReplaceSleep makes retry backoff deterministic in tests.
+var atomicReplaceSleep = time.Sleep
+
+func isTransientWindowsReplaceError(err error) bool {
+	return errors.Is(err, windows.ERROR_ACCESS_DENIED) ||
+		errors.Is(err, windows.ERROR_SHARING_VIOLATION)
+}
+
 // atomicReplace renames tmpName over path using MoveFileEx so the destination
 // is replaced atomically and is NEVER removed before the replacement is in
 // place. ReplaceFileW is deliberately rejected (its write-through story is
@@ -48,9 +63,34 @@ var moveFileEx = func(from, to string, flags uint32) error {
 // failure the destination is untouched, so the error is classified
 // ErrWriteNotApplied.
 func atomicReplace(tmpName, path string, durable bool) error {
-	if err := moveFileEx(tmpName, path, moveFileExFlags(durable)); err != nil {
-		return fmt.Errorf("move temp over destination: %w",
-			fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
+	flags := moveFileExFlags(durable)
+	delay := atomicReplaceInitialBackoff
+	var err error
+	for attempt := 0; attempt <= atomicReplaceMaxRetries; attempt++ {
+		err = moveFileEx(tmpName, path, flags)
+		if err == nil {
+			return nil
+		}
+		if !isTransientWindowsReplaceError(err) || attempt == atomicReplaceMaxRetries {
+			break
+		}
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) && atomicReplaceDestinationPermanentDenial(path) {
+			break
+		}
+		atomicReplaceSleep(delay)
+		delay *= 2
 	}
-	return nil
+	return fmt.Errorf("move temp over destination: %w",
+		fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
+}
+
+func atomicReplaceDestinationPermanentDenial(path string) bool {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return false
+	}
+	attributes, err := windows.GetFileAttributes(name)
+	// An unavailable attribute query must not replace the original move error
+	// or turn an unconfirmed denial into a permanent one.
+	return err == nil && attributes&(windows.FILE_ATTRIBUTE_READONLY|windows.FILE_ATTRIBUTE_DIRECTORY) != 0
 }

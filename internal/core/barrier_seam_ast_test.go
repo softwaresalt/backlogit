@@ -46,7 +46,8 @@ func TestU172_ItemLogBarrierSetterUnreachableFromProduction(t *testing.T) {
 		}
 		if entry.IsDir() {
 			name := entry.Name()
-			if path != moduleRoot && (strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" || name == "node_modules") {
+			if path != moduleRoot && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") ||
+				name == "bin" || name == "vendor" || name == "testdata" || name == "node_modules") {
 				return filepath.SkipDir
 			}
 			return nil

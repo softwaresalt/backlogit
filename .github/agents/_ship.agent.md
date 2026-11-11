@@ -596,8 +596,25 @@ Run this step at the head of every wave, before anything in that wave is scaffol
 
    A member is **claim-assigned** only when it is `active`, its marker equals `S`, it is explicitly
    listed in `S`'s live `custom_fields.items`, and its current start epoch has no valid start
-   record. `active_ids` contains only active residuals, never claim-assigned or indeterminate
-   members. Every other `active` member is an active residual (`WAVE_NO_PROGRESS`, detail:
+   record. A **paused-red-deliverable** is a separate, bounded Stage-reviewed amendment
+   transition: an explicitly named red task and prerequisite must both belong to frozen `M`
+   and the live shipment, with their explicit dependency edge, matching shipment/claim
+   provenance, exactly one preserved start and original pre-claim `red_baseline_sha`.
+   This is only the explicit Stage `089-DL/M16`, shipment `212-S`,
+   `211.015-T` -> prerequisite `211.016-T` transition. Count actual starts
+   independently (0/1/2) and require both recorded and actual count exactly 1;
+   reject duplicate, stale or missing context.
+   It waits while the amendment prerequisite is queued; resumption requires that prerequisite
+   to be committed and `done` (not merely archived). Reload the changed agent/skill sources
+   before fresh snapshot capture and Step 4.2 re-dispatch. Do not reclaim, restart, clear the
+   start record, re-scaffold or re-run Step 4.1a for the paused task. After acceptance,
+   register its RED at Step 4.5 before any Wave 3/4 convergence.
+   Retain Wave 3 as PENDING with its closed declared command set; after registration,
+   discharge both Wave 3 and Wave 4 obligations before U3 admission. A failure retains
+   the pending obligations and halts, never synthesizing a Wave 3 FULL PASS.
+   This is not a generic active-residual waiver or self-authorized wave advance.
+   `active_ids` contains only active residuals, never claim-assigned or indeterminate members. Authorized paused-red-deliverable members are also excluded from `active_ids`.
+   Every other `active` member is an active residual (`WAVE_NO_PROGRESS`, detail:
    `active residual`); this includes a valid start record in the current epoch, a missing or
    non-`S` marker, or a member absent from the live manifest. In non-shipment mode
    (`frozen_task_ids`, no session shipment), skip this classification; every `active` member is an
@@ -605,8 +622,8 @@ Run this step at the head of every wave, before anything in that wave is scaffol
 5. **Check for completion.** If `terminal_success = M` — every member of the frozen manifest is
    `done` or `archived` — the release unit is complete; exit the wave loop. This is the **only**
    completion condition. An empty `ready_k` is never one.
-6. **Compute the frontier.** `ready_k = { t in queued or claim-assigned : every dependency of t is
-   terminal_success }`. A claim-assigned member with unfinished dependencies waits and is neither
+6. **Compute the frontier.** Compute ready_k = { t in queued or claim-assigned : every dependency of t is terminal_success }, and also include an authorized paused-red-deliverable member only when every dependency is terminal_success (the amendment prerequisite specifically must be committed and done).
+   A claim-assigned member with unfinished dependencies waits and is neither
    progress nor a residual. A queued member is claimed at Step 4.1b; entering `ready_k` does not
    itself claim or start a task. If `ready_k` is empty while any member of `M` is non-terminal →
    halt with `WAVE_NO_PROGRESS`. If the residual set contains a cycle → halt with
@@ -639,7 +656,9 @@ Run this step at the head of every wave, before anything in that wave is scaffol
     and Step 4.3).
 12. **Converge the wave.** When every member of `ready_k` is individually complete, run **Step 4.6**
     (wave convergence gate). Only after it passes may the wave index be incremented and control
-    return to item 1.
+    return to item 1. The exact P-002.6 M16 paused RED exception alone permits the
+    same-started 015 execution cursor while Wave 3 stays PENDING; both Wave 3 and Wave 4
+    gates must discharge before any next admission. It does not advance over a failed gate.
 
 **Scheduler replay validation.** Before this scheduler is relied on for a release unit, replay its
 wave loop against the tracked read-only simulation
@@ -892,9 +911,29 @@ Invoke the **build-feature** skill with:
   verbatim and no `exempt_*` input may accompany it.
 * `red_baseline_sha`: For a `red_deliverable` task only, the SHA captured at Step 4.1a item 5 —
   after Step 4.0 item 10 scaffolded and committed the wave's harnesses, and before this task was
-  claimed. The skill uses it as the left side of its Step 0.5b zero-delta check. Capture it exactly
-  as `exempt_baseline_sha` is captured; the ordering is what keeps a sibling's scaffolded harness
-  out of this task's delta.
+  claimed. Preserve it for historical accounting, including amendment resumption; do not
+  replace it with current `HEAD` or a new pre-claim capture.
+* `red_predispatch_snapshot`: For red-only dispatch, close all other repository-mutating
+  writers, finish caller claim/status/hook/documentation writes, then immediately capture
+  using the supported public entrypoint in `scripts/wave-scheduler-sim.ps1`:
+  `-SnapshotAction Capture -WorkspaceRoot <root> -TaskID <task>
+  -RedBaselineSHA <original-history-sha> -HeadSHA <dispatch-head>
+  -OutputPath <exclusive-already-ignored-json-path>`.
+  Bind schema/root/task/current `HEAD`/original `red_baseline_sha`. Retain immutable bytes
+  and their SHA-256 in owned already-ignored storage outside the measured surface. Pass
+  this independent observation to the leaf, never let the leaf derive or replace it.
+  For paused amendment resumption, first reload `.github/agents/_ship.agent.md` and
+  `.github/skills/build-feature/SKILL.md` from source, verify explicit amendment membership,
+  dependency and committed/done prerequisite, and preserve the original single start.
+  For this transition, require explicit Stage `089-DL/M16` amendment binding
+  shipment `212-S`, already-started `211.015-T`, prerequisite `211.016-T`,
+  and original baseline `30908ecb8438c0b3e7fe8bd514fa3680e35d90e5`.
+  Independently count actual start records (0/1/2); require actual count and
+  recorded count both exactly 1. Missing, stale or duplicate context refuses.
+  Commit016/done -> reload both sources -> fresh capture -> same-started015 RED
+  -> register open RED precedes any Wave 3/4 convergence. Do not reclaim/start.
+  Preserve Wave 3's pending gate and closed commands across that transition; run and
+  discharge them together with Wave 4's obligations before U3 admission, or halt.
 * `exempt_gate_cmd`: For a `harness-exempt` task only, the task's `exempt_verification_command`. This is the completion gate that must pass and match declared evidence after the deliverable lands. For every class except `covered-by` it is the same command as `harness_cmd`.
 * `exempt_class`: For a `harness-exempt` task only, the value of `harness_exemption_class`, so the skill can apply the P-002.4 class delta surface.
 * `exempt_baseline_sha`: For a `harness-exempt` task only, the SHA captured at Step 4.1a item 5. The skill MUST use this exact value — not its own `HEAD` reading — as the left side of every P-002.4 diff, so Ship's completion gate and the skill's own gate measure an identical range.
@@ -902,6 +941,28 @@ Invoke the **build-feature** skill with:
 The skill runs a 5-attempt harness loop: execute tests, capture errors, fix, repeat. A
 `red_deliverable` dispatch is the one exception: it runs Step 0.5 instead and never enters that
 loop.
+
+For red-only dispatch, immediately on leaf return and **before Step 4.3**, independently
+capture the post-leaf snapshot while other repository-mutating writers remain closed.
+Retain its immutable bytes/SHA-256 with the pre-dispatch observation; validate and
+compare **immediately**, before caller quality/review/evidence/status/doc writes:
+`-SnapshotAction Compare -WorkspaceRoot <root> -TaskID <task>
+-RedBaselineSHA <original-history-sha> -HeadSHA <dispatch-head>
+-PreSnapshotPath <pre-json> -PostSnapshotPath <post-json>
+-PreSnapshotSHA256 <independent-pre-digest> -PostSnapshotSHA256 <independent-post-digest>`.
+Never extract helper ASTs or dot-source main. Supply every binding independently;
+never infer identity or digest witnesses from input records. Capture's only write
+is an exclusive new JSON in existing ignored observer storage; compare is read-only.
+Bind/verify effective exclusion/config inputs before/after; mutable
+`.git/info/exclude` cannot waive hidden production. Unknown or concurrent policy
+change refuses; do not modify repository/config/exclusions. Existing ignored
+scratch/cache/observer writes remain excepted.
+Compare raw Go bytes/modes/index state against original baseline blobs despite
+assume-unchanged/skip-worktree; ordinal path maps preserve distinct Git paths and
+reject OS aliases/conflicted `U`/tracked `??`. Check unchanged source `HEAD`.
+Classify production/delta before compile/selector/report where overlapping.
+Only then accept the provisional leaf report and retain that independent result
+for Step 4.5. Never consume a stale report or a later post-caller snapshot.
 
 **Sibling red is expected inside a wave, and open red persists across waves.** Step 4.0 item 10
 leaves every non-exempt member of the wave red at once, and the members are then built one at a
@@ -914,7 +975,8 @@ is relocated to Step 4.6 — not skipped, and not weakened. The tolerated union 
 **A red-deliverable task inverts this step.** When the task carries a `red-deliverable-contract`,
 `build-feature` is not driving a red command to green. Dispatch it with `red_deliverable: true`,
 `harness_cmd` set to the declared `red_selector_command` verbatim, and `red_baseline_sha` set to the
-Step 4.1a item 5 capture. That input routes the skill to its **Step 0.5** branch, which replaces the
+Step 4.1a item 5 capture, plus the immediate post-caller `red_predispatch_snapshot`.
+Those inputs route the skill to its **Step 0.5** branch, which replaces the
 generic loop rather than modifying it. Step 4.0 item 10 already scaffolded this task's harness with
 the rest of the wave, so the branch **consumes and validates** it — repo-wide compile check, named
 assertion RED on the anchored selector, and an empty changed-file set measured across tracked,
@@ -924,7 +986,8 @@ do not accept a green result — a red deliverable that passes at dispatch was n
 Never dispatch a `red_deliverable` task with `exempt_class` or `exempt_gate_cmd`; the two contracts
 are mutually exclusive and the skill halts with `WAVE_RED_MAPPING_UNRESOLVED`. The branch is fail
 closed at its own boundaries and returns, rather than repairs, these conditions:
-`WAVE_RED_MAPPING_UNRESOLVED` for a dispatch defect including an absent `red_baseline_sha`,
+`WAVE_RED_MAPPING_UNRESOLVED` for a dispatch defect including an absent `red_baseline_sha`
+or missing/invalid/tampered pre-dispatch or post-leaf snapshot,
 `WAVE_RED_DELIVERABLE_EARLY_GREEN` for a selector that passes at dispatch,
 `WAVE_RED_DELIVERABLE_VACUOUS` for a selector that matches no test,
 `RED_DELIVERABLE_HARNESS_UNCOMPILABLE` and `RED_DELIVERABLE_NOT_ASSERTION_RED` for a scaffolded
@@ -933,8 +996,9 @@ harness that does not compile or never asserts — both of which return the task
 `RED_DELIVERABLE_DELTA_OUT_OF_SURFACE` for a non-empty delta. Each P-002.2 halt is not a fix
 iteration: record it through P-005 telemetry and return the task for a contract amendment.
 
-Step 0.5c returns the red-evidence report — the executed selector, the observed failing function
-names and exit code, the passing compile check and empty delta, and the declared `green_maker_tasks`
+Step 0.5c returns a provisional red-evidence report — the executed selector,
+observed failing function names/exit and passing compile check, never self-acceptance
+or a self-certified empty delta, plus the declared `green_maker_tasks`
 and `green_maker_closes_wave`. Step 4.5 builds the `open_red_deliverables` entry from that report,
 and Step 4.6 items 4 and 5 re-confirm the entry at every later gate, so an absent or partial report
 is a halt rather than a completion. The branch produces no commit, so Step 4.5 completes the task
@@ -988,8 +1052,13 @@ After the build-feature skill reports success:
    * If `exempt_baseline_sha` is missing, unrecorded, or disagrees with the value `build-feature`
      used, halt with `EXEMPT_DELTA_EXCEEDS_CLASS` rather than inferring a range.
 
-If any gate fails, return to the build-feature skill for a fix iteration. A P-002.2 halt is not a
-fix iteration — record it through P-005 telemetry and return the task for a contract amendment.
+If any gate fails on an ordinary non-red task, return to build-feature for a fix
+iteration. A red-deliverable failure never enters generic repair/format/write/
+commit paths; format is `gofmt -l` only, never `gofmt -w`. A P-002.2 halt is not a
+fix iteration. Only an explicit legitimate amended RERED dispatch may re-enter
+Step 4.2: reload supported sources, capture a NEW independent pre/post pair,
+and consume its new comparison, never the old leaf report. No implicit retry or
+new full-suite authority is granted.
 
 When the `agent-engram` capability pack is installed, prefer `list_symbols`, `map_code`, or
 `impact_analysis` before broad file scans when diagnosing repeated failures or validating the blast
@@ -1076,7 +1145,21 @@ Both paths preserve identically: the mandatory capture-first ordering, the full 
 
 #### Step 4.5: Complete Task
 
-1. Commit changes with a conventional commit message
+For a red-deliverable leaf, consume the independent post-leaf snapshot captured
+**immediately on return** at Step 4.2, before caller evidence/status/doc writes. Verify the
+retained `red_predispatch_snapshot` bytes/SHA-256, original baseline, task/root and unchanged
+dispatch `HEAD`; consume the immediate supported `-SnapshotAction Compare` result,
+not a new later observation. Measure all
+tracked staged/unstaged and untracked paths excluding existing ignored storage, including
+byte, mode, blob, status, additions and deletions. Reject any leaf mutation, including on
+caller-modified paths; non-test Go deltas in either snapshot/history refuse production even
+with mixed paths. Unknown concurrent changes or inconsistent capture are indeterminate:
+halt, never attribute them away. Only a validated zero leaf delta may complete RED and
+register the selector in `open_red_deliverables` before Step 4.6.
+
+1. For ordinary non-red tasks only, commit changes with a conventional message.
+   For `red_deliverable: true`, skip commit/staging/format repair and all red
+   surface writes; consume only Step 4.2's immediate independent comparison.
 2. If Step 4.1c returned `status` `created` or `idempotent_begin` with an enabled
    `context_ref`, create a close-time epoch payload from the task roll-up metrics and
    record it before marking the task done:

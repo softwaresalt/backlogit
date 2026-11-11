@@ -1,0 +1,35 @@
+{
+  "timestamp_utc": "2026-11-07T22:21:54Z",
+  "task": "211.013-T",
+  "harness_sha256": "a4fbab085d6872e2e1f8adc943fd29d70f3a0e13437949fc928f509c3ec17c92",
+  "Compilation": "PASS",
+  "Red Phase": "CONFIRMED",
+  "harness_cmd": "go test -count=1 -timeout=30m -json -run '^TestU1g_' ./internal/core",
+  "race_cmd": "go test -count=1 -race -timeout=30m -json -run '^TestU1g_' ./internal/core",
+  "green_regression_cmds": [],
+  "named_parent": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence",
+  "named_subtests": [
+    "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/unchanged_task_skips_physical_write_and_reconciles_sqlite_and_journal",
+    "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/admitted_changed_shipment_write_denial_fails_closed_and_retains_journal",
+    "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/non_admissible_changed_task_fails_preimage_guard_with_zero_writer_calls_and_retains_journal"
+  ],
+  "red_native_exit": 1,
+  "race_red_native_exit": 1,
+  "red_observer_guard": "PASS",
+  "compile_packages": 50,
+  "proofs": [
+    "compile-proof.json",
+    "red-proof.json",
+    "race-proof.json",
+    "vet-proof.json",
+    "lint-proof.json",
+    "format-proof.json"
+  ],
+  "producer_runtime_regressions_later_not_green_array": [
+    "TestNewWorkspace_RemovesWriterTempResidueAndRecoversValidJournal",
+    "TestNewWorkspace_RejectsUnsafeWriterTempResidue",
+    "TestShipmentOperationJournalTempName",
+    "TestReturnBlocked"
+  ],
+  "next": "Root attestation may add harness-ready only; no starts/implementation authorized here"
+}

@@ -316,15 +316,67 @@ func reconstituteSnapshotOwners(ctx context.Context, ws *Workspace, st *reconsti
 }
 
 func executeReconstitution(ctx context.Context, ws *Workspace, opts ReconstituteOptions) (_ *ReconstituteShipmentResult, err error) {
-	// Fail fast on an invalid plan before taking any lock; the plan is
-	// re-validated under the locks below.
-	peek, err := planReconstitution(ctx, ws, opts)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	unlockStash, err := lockActiveStash(ws)
+	// Fail fast on pure option, YAML, and source-ID validation before taking
+	// any lock. Workspace artifact reads wait for the canonical locks below.
+	if err := validateShipmentManifestOptions(ShipmentManifestOptions{Force: opts.Force, Reason: opts.Reason}); err != nil {
+		return nil, fmt.Errorf("reconstitute: validate options: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	plan, digest, err := loadAndValidateReconstitutePlan(ws, opts)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
 	if err != nil {
-		return nil, fmt.Errorf("reconstitute: acquire stash lock: %w", err)
+		return nil, fmt.Errorf("reconstitute: validate plan: %w", err)
+	}
+	sourceIDs := make([]string, 0, len(plan.SourceShipments))
+	for _, raw := range plan.SourceShipments {
+		sourceIDs = append(sourceIDs, strings.TrimSpace(raw))
+	}
+	sort.Strings(sourceIDs)
+	// Retry only contention, within the existing bounded lock-wait budget.
+	// Never wait on stashMu.Lock: cancellation must not need holder release.
+	stashDeadline := time.Now().Add(defaultGateLockBoundedWait)
+	stashWait := time.NewTimer(defaultGateLockBoundedWait)
+	defer stashWait.Stop()
+	stashRetry := time.NewTicker(20 * time.Millisecond)
+	defer stashRetry.Stop()
+	var unlockStash func() error
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err != nil && !time.Now().Before(stashDeadline) {
+			return nil, fmt.Errorf("reconstitute: acquire stash lock: %w", err)
+		}
+		unlockStash, err = tryLockActiveStash(ws)
+		if err == nil {
+			break
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("reconstitute: acquire stash lock: %w", err)
+		}
+		if hook, ok := ctx.Value(shipmentLifecycleGlobalLockHookContextKey{}).(func(string)); ok {
+			hook("contended")
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-stashWait.C:
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			return nil, fmt.Errorf("reconstitute: acquire stash lock: %w", err)
+		case <-stashRetry.C:
+		}
 	}
 	defer func() {
 		if unlockErr := unlockStash(); unlockErr != nil {
@@ -333,8 +385,30 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 	}()
 	ctx = withStashLockHeld(ctx)
 
-	lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(ctx, ws)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	globalCtx := ctx
+	globalHook, _ := ctx.Value(shipmentLifecycleGlobalLockHookContextKey{}).(func(string))
+	if globalHook != nil {
+		// Announce the attempt here so cancellation at that boundary is
+		// checked before the helper can acquire. Forward all other stages
+		// unchanged, without announcing the same attempt twice.
+		globalHook("attempt")
+		globalCtx = context.WithValue(ctx, shipmentLifecycleGlobalLockHookContextKey{}, func(stage string) {
+			if stage != "attempt" {
+				globalHook(stage)
+			}
+		})
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	lockedCtx, globalUnlock, err := lockShipmentLifecycleGlobal(globalCtx, ws)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, fmt.Errorf("reconstitute: lock shipment lifecycle: %w", err)
 	}
 	defer func() {
@@ -343,15 +417,19 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 		}
 	}()
 	ctx = lockedCtx
-
-	sourceIDs := make([]string, 0, len(peek.sources))
-	for id := range peek.sources {
-		sourceIDs = append(sourceIDs, id)
+	if globalHook != nil {
+		ctx = context.WithValue(ctx, shipmentLifecycleGlobalLockHookContextKey{}, globalHook)
 	}
-	sort.Strings(sourceIDs)
+
 	for _, id := range sourceIDs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		unlock, lockErr := lockShipmentMembership(ctx, ws, id)
 		if lockErr != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			return nil, fmt.Errorf("reconstitute: lock shipment %s membership: %w", id, lockErr)
 		}
 		defer func(id string) {
@@ -360,31 +438,68 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 			}
 		}(id)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	peek, err := planReconstitution(ctx, ws, opts)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reconstitute: validate preliminary plan under locks: %w", err)
+	}
+	if peek.digest != digest {
+		return nil, reconstituteValidationError("reconstitute plan changed during lock acquisition")
+	}
 	// Membership locks stabilize the source manifests before acquiring their
 	// log locks. C must precede B and survive the final eligibility check.
 	var memberIDs []string
 	for _, id := range sourceIDs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		shipment, readErr := readShipmentFromDiskReadOnly(ws, id)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if readErr != nil {
 			return nil, readErr
 		}
 		memberIDs = append(memberIDs, NormalizeShipmentItems(shipment)...)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	lockedCtx, logUnlock, err := lockItemLogsSorted(ctx, ws, memberIDs)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, fmt.Errorf("reconstitute: lock member logs: %w", err)
 	}
 	defer logUnlock()
 	ctx = lockedCtx
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	owners, err := reconstituteSnapshotOwners(ctx, ws, peek)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
 	if err != nil {
 		return nil, err
 	}
 	owners = uniqueNonEmptyStrings(append(owners, peek.affectedIDs()...))
 	sort.Strings(owners)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	lockedCtx, artifactUnlock, err := lockReconstituteOwners(ctx, ws, owners)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, fmt.Errorf("reconstitute: lock affected artifacts: %w", err)
 	}
 	defer func() {
@@ -394,11 +509,26 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 	}()
 	ctx = lockedCtx
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	st, err := planReconstitution(ctx, ws, opts)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
 	if err != nil {
 		return nil, err
 	}
+	if st.digest != digest {
+		return nil, reconstituteValidationError("reconstitute plan changed during lock acquisition")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	baseline, err := reconstituteErrorFindings(ws)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -406,7 +536,13 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 	if err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	state, err := captureReconstituteState(ctx, ws, st)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -418,6 +554,9 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 		if _, ok := lockedOwners[id]; !ok {
 			return nil, reconstituteValidationError("snapshot owner %s changed during lock acquisition", id)
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	imageOwners, err := reconstituteImageOwners(state)
 	if err != nil {
@@ -444,6 +583,9 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 		Reconstitute: state,
 	}
 	journalName := shipmentLifecycleJournalName(correlationID)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	journalPath, err := writeShipmentOperationJournal(ws, journalName, journal)
 	if err != nil {
 		return nil, fmt.Errorf("reconstitute: persist intent: %w", err)

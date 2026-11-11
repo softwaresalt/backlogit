@@ -1,0 +1,14 @@
+{
+  "start_utc": "2026-11-07T05:05:44.890308Z",
+  "end_utc": "2026-11-07T05:06:56.353719Z",
+  "command": [
+    "pwsh",
+    "-NoProfile",
+    "-Command",
+    "$guard = Get-Content -Raw scripts/verify-u1f-harness.ps1; $guard = $guard.Replace('$root = Split-Path $PSScriptRoot -Parent', '$root = ''C:\\Source\\GitHub\\backlogit''').Replace('bin/_h8a2f10c4/t', 'bin/_r3a91'); & ([scriptblock]::Create($guard)) -Phase Green"
+  ],
+  "native_exit": 0,
+  "raw_sha256": "81b1b8e08770b3e6915f667995d08f4c0fd944a58b771adf470adf9ff48cf2eb",
+  "guard_source_sha256": "8bff0a9e59d889f2148f2eb4e39e562a3d41da19fbc7b32e236c0efe33eef368",
+  "environment_only_adaptation": "In-memory root literal and fresh ignored TEMP; all guard assertions unchanged"
+}

@@ -1,0 +1,28 @@
+{
+  "start_utc": "2026-11-07T05:03:06.571414Z",
+  "end_utc": "2026-11-07T05:04:22.740826Z",
+  "command": [
+    "go",
+    "test",
+    "-count=1",
+    "-timeout=30m",
+    "-race",
+    "-json",
+    "-run",
+    "^TestU1f_",
+    "./internal/core"
+  ],
+  "native_exit": 0,
+  "runs": [
+    "TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks",
+    "TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks/preliminary_plan_reads_wait_for_stash_global_and_membership_locks",
+    "TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks/concurrent_associate_commit_durable_replace_serializes_before_preliminary_plan_reads",
+    "TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks/pure_input_and_plan_validation_fails_fast_before_locks"
+  ],
+  "failures": [],
+  "raw_sha256": "97e77414937b2a11238926c489dd46f47eb83583a40a33b97cc223cfcc40273b",
+  "source_sha256": {
+    "internal/core/shipment_reconstitute_exec.go": "61d4d8fcfc8f9a24b593dabad992f07bacc158e1d6b56f7635216d818be26155",
+    "internal/core/shipment_reconstitute_hardening_test.go": "1672aa134a53340c6c59585d08306d49173c7676de55cfc58b3dfa1d4252dd36"
+  }
+}

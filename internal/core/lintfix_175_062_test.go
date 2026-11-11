@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,11 @@ type lf175062Group struct {
 	message  string
 	residual int
 }
+
+var (
+	lf175CoreOnce   sync.Once
+	lf175CoreCounts map[string]int
+)
 
 // TestU175_062_LintFix fails while errcheck findings remain in the groups owned
 // by task 175.062-T (line-stable group multiset; line and column are ignored).
@@ -35,12 +41,29 @@ func TestU175_062_LintFix(t *testing.T) {
 
 func lf175062Findings(t *testing.T, pkg string) map[string]int {
 	t.Helper()
-	root := lf175062Root(t)
+	// Resolve availability before Once so an existing missing-v2 skip cannot
+	// mark an uninitialized cache complete for the remaining callers.
 	lint := lf175062Linter(t)
+	if pkg == "./internal/core" {
+		lf175CoreOnce.Do(func() {
+			lf175CoreCounts = lf175062Scan(t, lint, pkg, "")
+		})
+		require.NotNil(t, lf175CoreCounts, "shared core lint scan must have completed")
+		return lf175CoreCounts
+	}
+	return lf175062Scan(t, lint, pkg, "")
+}
+
+func lf175062Scan(t *testing.T, lint, pkg, goos string) map[string]int {
+	t.Helper()
+	root := lf175062Root(t)
 	cmd := exec.Command(lint, "run", "--default=none", "--enable=errcheck",
 		"--output.json.path=stdout", "--output.text.path=", "--issues-exit-code=0",
 		"--max-issues-per-linter=0", "--max-same-issues=0", "--uniq-by-line=false", pkg)
 	cmd.Dir = root
+	if goos != "" {
+		cmd.Env = append(os.Environ(), "GOOS="+goos)
+	}
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	require.NoError(t, cmd.Run(), "golangci-lint run failed")

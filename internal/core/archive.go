@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -861,9 +862,13 @@ func planArtifactMove(ctx context.Context, workspaceRoot, sourcePath, destPath s
 		}
 		return plan, fmt.Errorf("detect git worktree: %w", err)
 	}
-	workTreeRoot := filepath.Clean(filepath.FromSlash(strings.TrimSpace(string(topLevel))))
-	if workTreeRoot == "" {
+	rawTopLevel := strings.TrimSpace(string(topLevel))
+	if rawTopLevel == "" {
 		return plan, nil
+	}
+	workTreeRoot := filepath.Clean(filepath.FromSlash(rawTopLevel))
+	if err := gitEntryPresentBelowWorkTree(workspaceRoot, workTreeRoot); err != nil {
+		return plan, fmt.Errorf("detect git worktree: %w", err)
 	}
 	sourceRel, ok := gitRelativePath(workTreeRoot, sourcePath)
 	if !ok {
@@ -884,6 +889,81 @@ func planArtifactMove(ctx context.Context, workspaceRoot, sourcePath, destPath s
 	plan.sourceRel = sourceRel
 	plan.destRel = destRel
 	return plan, nil
+}
+
+// gitEntryPresentBelowWorkTree rejects unresolved .git entries in the half-open
+// interval [workspaceRoot, workTreeRoot), stopping at the worktree's identity.
+func gitEntryPresentBelowWorkTree(workspaceRoot, workTreeRoot string) error {
+	canonicalPaths := [2]string{workspaceRoot, workTreeRoot}
+	for i, targetPath := range canonicalPaths {
+		absPath, err := filepath.Abs(targetPath)
+		if err != nil {
+			return fmt.Errorf("canonicalize path %s: %w: %w",
+				targetPath, blerrors.ErrValidation, err)
+		}
+		evalPath, evalErr := filepath.EvalSymlinks(absPath)
+		if evalErr == nil {
+			canonicalPaths[i] = filepath.Clean(evalPath)
+			continue
+		}
+		if _, statErr := os.Stat(absPath); statErr != nil {
+			return fmt.Errorf("canonicalize path %s: %w: %w",
+				targetPath, blerrors.ErrValidation, statErr)
+		}
+		canonicalPaths[i] = filepath.Clean(absPath)
+	}
+	absWorkspace, absWorkTree := canonicalPaths[0], canonicalPaths[1]
+	wsInfo, wsErr := os.Stat(absWorkspace)
+	if wsErr != nil {
+		return fmt.Errorf("stat workspace %s: %w: %w", absWorkspace, blerrors.ErrValidation, wsErr)
+	}
+	wtInfo, wtErr := os.Stat(absWorkTree)
+	if wtErr != nil {
+		return fmt.Errorf("stat worktree %s: %w: %w", absWorkTree, blerrors.ErrValidation, wtErr)
+	}
+	if !wsInfo.IsDir() || !wtInfo.IsDir() {
+		return fmt.Errorf("workspace %s and worktree %s must be directories: %w",
+			absWorkspace, absWorkTree, blerrors.ErrValidation)
+	}
+	rel, relErr := filepath.Rel(absWorkTree, absWorkspace)
+	if relErr != nil {
+		return fmt.Errorf("resolve workspace %s relative to worktree %s: %w: %w",
+			absWorkspace, absWorkTree, blerrors.ErrValidation, relErr)
+	}
+	relSlash := filepath.ToSlash(filepath.Clean(rel))
+	if relSlash == ".." || strings.HasPrefix(relSlash, "../") {
+		return fmt.Errorf("workspace %s is not contained within worktree %s: %w",
+			absWorkspace, absWorkTree, blerrors.ErrValidation)
+	}
+	const maxDepth = 64
+	dir := absWorkspace
+	for depth := 0; depth < maxDepth; depth++ {
+		dirInfo, dirErr := os.Stat(dir)
+		if dirErr != nil {
+			return fmt.Errorf("stat directory %s during worktree boundary walk: %w: %w",
+				dir, blerrors.ErrValidation, dirErr)
+		}
+		if os.SameFile(dirInfo, wtInfo) {
+			return nil
+		}
+		gitEntry := filepath.Join(dir, ".git")
+		_, statErr := os.Lstat(gitEntry)
+		if statErr == nil {
+			return fmt.Errorf(".git at %s present-but-unresolved (resolved ancestor worktree %s): %w",
+				gitEntry, absWorkTree, blerrors.ErrValidation)
+		}
+		if !errors.Is(statErr, fs.ErrNotExist) {
+			return fmt.Errorf("inspect .git at %s (resolved ancestor worktree %s): %w: %w",
+				gitEntry, absWorkTree, blerrors.ErrValidation, statErr)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return fmt.Errorf("walk from %s to worktree %s did not reach worktree root: %w",
+		absWorkspace, absWorkTree, blerrors.ErrValidation)
 }
 
 func performArtifactMove(ctx context.Context, plan artifactMovePlan, operation string) error {

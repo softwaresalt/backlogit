@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	stderrors "errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -57,10 +59,14 @@ func TestShipmentHeadUnresolvedInRepoError(t *testing.T) {
 // path fail-closed while preserving the legacy non-context empty skip:
 //   - an already-expired parent context -> ("", ctxErr): a bounded-read failure
 //     the caller MUST fail closed on.
-//   - a live context in a non-repo dir -> ("", nil): the legacy resolution-failure
-//     skip is preserved so existing no-repo shipment tests do not regress.
+//   - a live context with a non-context git rev-parse HEAD resolution failure
+//     -> ("", nil): the legacy empty-SHA mapping is preserved, even for broken
+//     .git files, while inGitWorktreeBounded fails closed on broken .git.
 func TestHeadSHABounded(t *testing.T) {
-	ws := newGateTestWorkspace(t) // temp dir, NOT a git repo
+	ws := newGateTestWorkspace(t)
+	// Own the Git boundary so discovery cannot climb to an outer repository.
+	require.NoError(t, os.WriteFile(filepath.Join(ws.RootPath, ".git"),
+		[]byte("gitdir: "+filepath.Join(ws.RootPath, "nonexistent-gitdir")+"\n"), 0o644))
 
 	// Expired parent context -> fail closed with a non-nil ctx error.
 	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
@@ -70,7 +76,7 @@ func TestHeadSHABounded(t *testing.T) {
 	assert.Empty(t, h)
 	assert.True(t, stderrors.Is(err, context.DeadlineExceeded), "want DeadlineExceeded, got %v", err)
 
-	// Live context, non-repo dir -> legacy skip preserved: ("", nil).
+	// Live context, unresolved HEAD -> legacy empty-SHA mapping: ("", nil).
 	h, err = ws.headSHABounded(context.Background())
 	require.NoError(t, err, "a legacy non-context resolution failure must stay a silent skip")
 	assert.Empty(t, h)

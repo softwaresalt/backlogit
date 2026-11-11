@@ -1,0 +1,137 @@
+{
+  "timestamp_utc": "2026-11-07T22:33:07Z",
+  "task": "211.013-T",
+  "current_wave": "212-S M14 U1g/U1h",
+  "source_head": "7143eb42ce60faa0f7abde9b17801cce2079efbb",
+  "scope": "Producer command metadata correction only; override U1g harness_cmd, not planning fields or acceptance criteria",
+  "supersedes_command_only": [
+    ".copilot/session-state/4a60e334-a29e-4db4-9f3a-be1e5f382920/files/m14-harness-handoff.json tasks[task=211.013-T].harness_cmd",
+    "docs/memory/2026-11-07/212-S-M14-harness/u1g-manifest.json harness_cmd"
+  ],
+  "command_shell": "PowerShell 7; execute the exact harness_cmd string in a fresh pwsh -NoProfile -NonInteractive -Command process",
+  "harness_cmd": "& {\n$ErrorActionPreference = 'Stop'\n$PSNativeCommandUseErrorActionPreference = $false\nSet-Location 'C:\\Source\\GitHub\\backlogit'\n$root = (Get-Location).Path\n$env:GOROOT = Join-Path $root 'bin/_authoring_gomodcache/golang.org/toolchain@v0.0.1-go1.24.0.windows-amd64'\n$go = Join-Path $env:GOROOT 'bin/go.exe'\n$env:GOTOOLCHAIN = 'local'\n$env:GOFLAGS = '-mod=readonly'\n$env:GOPROXY = 'off'\n$env:GOSUMDB = 'off'\n$env:GOCACHE = Join-Path $root 'bin/_authoring_gocache'\n$env:GOMODCACHE = Join-Path $root 'bin/_authoring_gomodcache'\n$env:GOPATH = Join-Path $root 'bin/_authoring_gopath'\n$env:TEMP = Join-Path $root 'bin/m14t'\n$env:TMP = $env:TEMP\nif (!(Test-Path -LiteralPath $env:TEMP -PathType Container)) { throw 'Required short workspace TEMP is absent' }\n$version = & $go version\nif ($LASTEXITCODE -ne 0 -or $version -cne 'go version go1.24.0 windows/amd64') { throw 'Pinned Go 1.24.0 required' }\n$parent = 'TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence'\n$cases = @($parent + '/unchanged_task_skips_physical_write_and_reconciles_sqlite_and_journal'; $parent + '/admitted_changed_shipment_write_denial_fails_closed_and_retains_journal'; $parent + '/non_admissible_changed_task_fails_preimage_guard_with_zero_writer_calls_and_retains_journal')\n$expected = @($parent) + $cases\n$package = 'github.com/softwaresalt/backlogit/internal/core'\n$started = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')\n$raw = @(& $go test -count=1 -race -timeout=30m -json -run '^TestU1g_' ./internal/core 2>&1)\n$native = $LASTEXITCODE\n$finished = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')\nif ($native -notin @(0, 1)) { throw \"Unexpected native exit: $native\" }\n$events = @($raw | ForEach-Object { $_.ToString() | ConvertFrom-Json -ErrorAction Stop })\nif ($events.Count -eq 0) { throw 'Vacuous empty test stream' }\nif (@($events | Where-Object { $_.Package -cne $package }).Count -ne 0) { throw 'Unexpected package or malformed event' }\nif (@($events | Where-Object { $_.Action -eq 'skip' -or $_.Action -match '^build' }).Count -ne 0) { throw 'Skip or build signal' }\n$text = ($events | Where-Object Action -eq 'output' | ForEach-Object Output) -join ''\nif ($text -match '(?im)no tests to run|\\[no test files\\]|build failed|build failure|^panic:|^fatal error:|WARNING: DATA RACE|race detected during execution of test|^--- SKIP:') { throw 'No-test, build, panic, skip, or race signal' }\n$named = @($events | Where-Object { $_.Test -and $_.Action -in @('run', 'pass', 'fail') })\nif (@($named | Where-Object { $_.Test -cnotin $expected }).Count -ne 0) { throw 'Unexpected named test' }\n$summary = @()\nforeach ($name in $expected) {\n  $runs = @($named | Where-Object { $_.Test -ceq $name -and $_.Action -eq 'run' }).Count\n  $passes = @($named | Where-Object { $_.Test -ceq $name -and $_.Action -eq 'pass' }).Count\n  $fails = @($named | Where-Object { $_.Test -ceq $name -and $_.Action -eq 'fail' }).Count\n  if ($runs -ne 1 -or ($passes + $fails) -ne 1) { throw \"Missing or duplicate RUN/terminal event: $name\" }\n  if ($native -eq 0 -and ($passes -ne 1 -or $fails -ne 0)) { throw \"GREEN requires exactly one named PASS: $name\" }\n  $summary += [ordered]@{ test = $name; run = $runs; pass = $passes; fail = $fails }\n}\n$packageTerminal = @($events | Where-Object { !$_.Test -and $_.Action -in @('pass', 'fail') })\nif ($packageTerminal.Count -ne 1) { throw 'Missing or duplicate package terminal event' }\n$assertions = @()\nif ($native -eq 0) {\n  if ($packageTerminal[0].Action -ne 'pass' -or @($events | Where-Object Action -eq 'fail').Count -ne 0) { throw 'Native zero with failure event' }\n  $classification = 'GREEN_NO_VACUITY'\n} else {\n  $failedCases = @($summary | Where-Object { $_.test -cin $cases -and $_.fail -eq 1 })\n  if ($packageTerminal[0].Action -ne 'fail' -or $summary[0].fail -ne 1 -or $failedCases.Count -lt 1) { throw 'RED requires parent FAIL and named subtest FAIL' }\n  foreach ($case in $failedCases) {\n    $caseText = ($events | Where-Object { $_.Test -ceq $case.test -and $_.Action -eq 'output' } | ForEach-Object Output) -join ''\n    if ($caseText -notmatch 'shipment_p1_lifecycle_remediation_test\\.go:\\d+' -or $caseText -notmatch 'Error Trace:' -or $caseText -notmatch 'Error:') { throw 'Named RED lacks genuine source assertion evidence' }\n    $assertions += [ordered]@{ test = $case.test; output = $caseText }\n  }\n  $classification = 'ASSERTION_RED_NO_FALSE_GREEN'\n}\n$receipt = [ordered]@{ started_at_utc = $started; finished_at_utc = $finished; go_version = $version; native_exit = $native; guard_validation = 'PASS'; classification = $classification; race_enabled = $true; skips = 0; no_test_build_panic_race_signals = 0; named_events = $summary; assertions = $assertions }\n$receipt | ConvertTo-Json -Depth 8 -Compress\nexit $native\n}",
+  "go_arguments": [
+    "test",
+    "-count=1",
+    "-race",
+    "-timeout=30m",
+    "-json",
+    "-run",
+    "^TestU1g_",
+    "./internal/core"
+  ],
+  "green_contract": "Native 0 only with exact parent RUN/PASS=1 and each of the three exact case RUN/PASS=1; no failures, skips, no-test/build/panic/race signals",
+  "red_contract": "Native 1 remains exit 1, never GREEN; all four exact names RUN=1 and terminal=1; parent FAIL=1, at least one exact case FAIL=1 with source assertion evidence; partial case PASS allowed",
+  "harness_source": "internal/core/shipment_p1_lifecycle_remediation_test.go",
+  "harness_sha256_before": "a4fbab085d6872e2e1f8adc943fd29d70f3a0e13437949fc928f509c3ec17c92",
+  "harness_sha256_after": "a4fbab085d6872e2e1f8adc943fd29d70f3a0e13437949fc928f509c3ec17c92",
+  "existing_proofs_immutable": [
+    "docs/memory/2026-11-07/212-S-M14-harness/compile-proof.json",
+    "docs/memory/2026-11-07/212-S-M14-harness/red-proof.json",
+    "docs/memory/2026-11-07/212-S-M14-harness/race-proof.json",
+    "docs/memory/2026-11-07/212-S-M14-harness/u1g-manifest.json",
+    "docs/memory/2026-11-07/212-S-M14-harness/u1h-manifest.json",
+    "docs/memory/2026-11-07/212-S-M14-harness/u1h-red-proof.json",
+    "docs/memory/2026-11-07/212-S-M14-harness/u1h-green-negative-proof.json"
+  ],
+  "whole_wave_harness_readiness": {
+    "handoff_attestation": "MCP_final_counts: done=7, active_old_unstarted=5, queued_harness_ready=2",
+    "ready_queued": ["211.013-T", "211.014-T"],
+    "this_correction": "Completes U1g executable no-vacuity producer obligation only; U1h observer and readiness unchanged; no implementation or task-start authorization"
+  },
+  "preservation_before": {
+    "go_sources": {
+      "files": 1389,
+      "sha256": "1b58e322aab341738288c7e186f5898ec3b83b26570af3219432c4985be0a486"
+    },
+    "historical_m14_and_u1h": {
+      "files": 14,
+      "sha256": "ccee2c70c728f7c81612aa5d38fa2c07da0b580b1fe79df90179f12ff8fbee8e"
+    },
+    "unrelated_dirty_private_receipts_baseline_handoff": {
+      "files": 80,
+      "sha256": "fb55f856cb8725fdb971520b794d113d7173b73b7f8af8012f9a52c0166d6b38"
+    }
+  },
+  "preservation_after": {
+    "go_sources": {
+      "files": 1389,
+      "sha256": "1b58e322aab341738288c7e186f5898ec3b83b26570af3219432c4985be0a486"
+    },
+    "historical_m14_and_u1h": {
+      "files": 14,
+      "sha256": "ccee2c70c728f7c81612aa5d38fa2c07da0b580b1fe79df90179f12ff8fbee8e"
+    },
+    "unrelated_dirty_private_receipts_baseline_handoff": {
+      "files": 80,
+      "sha256": "fb55f856cb8725fdb971520b794d113d7173b73b7f8af8012f9a52c0166d6b38"
+    }
+  },
+  "preservation_hash_method": "Each group SHA256 is over UTF-8 sorted unique relative-path:SHA256(raw file bytes) lines plus final LF, omitting absent files. Go group is all tracked .go files. Historical group is existing tracked M14 directory files plus tracked paths containing u1h. Protected group is preexisting git status --porcelain=v1 -uall paths, private *receipt.json files, baseline runner, Go environment helper, and original handoff. Own overlay excluded.",
+  "baseline_runner_sha256": "8058bd5e1958adc502669dd509811b986fabd4010e3768f429bd2e84b00dc250",
+  "checkpoint_210317_sha256": "235844507a4975f27c5a88f4fe3e499fb538110c86e6a264637db1b69837ca70",
+  "historical_full_failures": 6,
+  "full_suite_launches": 0,
+  "counter_updates": 0,
+  "task_starts_moves_done": 0,
+  "source_or_test_edits": 0,
+  "guard_executions": 1,
+  "preimplementation_guard_proof": {
+    "started_at_utc": "2026-11-07T22:32:59Z",
+    "finished_at_utc": "2026-11-07T22:33:07Z",
+    "go_version": "go version go1.24.0 windows/amd64",
+    "native_exit": 1,
+    "guard_process_exit": 1,
+    "guard_validation": "PASS",
+    "classification": "ASSERTION_RED_NO_FALSE_GREEN",
+    "compilation": "PASS: scoped race test binary executed all four named tests; existing whole 50-package compile proof retained",
+    "race_enabled": true,
+    "skips": 0,
+    "no_test_build_panic_race_signals": 0,
+    "named_events": [
+      {
+        "test": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence",
+        "run": 1,
+        "pass": 0,
+        "fail": 1
+      },
+      {
+        "test": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/unchanged_task_skips_physical_write_and_reconciles_sqlite_and_journal",
+        "run": 1,
+        "pass": 0,
+        "fail": 1
+      },
+      {
+        "test": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/admitted_changed_shipment_write_denial_fails_closed_and_retains_journal",
+        "run": 1,
+        "pass": 1,
+        "fail": 0
+      },
+      {
+        "test": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/non_admissible_changed_task_fails_preimage_guard_with_zero_writer_calls_and_retains_journal",
+        "run": 1,
+        "pass": 1,
+        "fail": 0
+      }
+    ],
+    "assertion_evidence": [
+      {
+        "test": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/unchanged_task_skips_physical_write_and_reconciles_sqlite_and_journal",
+        "source": "internal/core/shipment_p1_lifecycle_remediation_test.go:105",
+        "error_trace": "C:/Source/GitHub/backlogit/internal/core/shipment_p1_lifecycle_remediation_test.go:105",
+        "error": "Should be zero, but was 1",
+        "message": "unchanged task must skip its physical restore writer"
+      },
+      {
+        "test": "TestU1g_LegacyReturnBlockedRecoverySkipsUnchangedTaskRewriteAndFailsClosedOnShipmentOrTaskDivergence/unchanged_task_skips_physical_write_and_reconciles_sqlite_and_journal",
+        "source": "internal/core/shipment_p1_lifecycle_remediation_test.go:106",
+        "error_trace": "C:/Source/GitHub/backlogit/internal/core/shipment_p1_lifecycle_remediation_test.go:106",
+        "error": "Received unexpected error",
+        "detail": "recover shipment operations: recover shipment 001-S return-blocked journal: restore item 001.001-T from legacy journal: write artifact file: write artifact file: injected task restore write denial: backlogit: durable write not applied"
+      }
+    ],
+    "no_vacuity": "Executable GREEN branch requires the exact four RUN/PASS pairs and package PASS, rejects any fail/skip/no-test/build/panic/race signal. This one real preimplementation run exercised RED only, retaining native and process exit 1 despite two passing cases; no GREEN execution or synthetic test rerun claimed."
+  },
+  "planning_fields_and_acceptance_criteria_edits": 0,
+  "push_pr_merge_branch_operations": 0
+}
