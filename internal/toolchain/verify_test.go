@@ -199,6 +199,69 @@ func TestU9_VerifyWorkspaceToolchainRejectsGlobalPATHShadowToolsAndCrossWorkspac
 	}
 }
 
+func TestU9_ValidateMCPConfigPinningRejectsCrossWorkspaceLauncherScripts(t *testing.T) {
+	for _, scenario := range []struct {
+		name     string
+		absolute bool
+		flag     bool
+	}{
+		{name: "relative-positional"},
+		{name: "absolute-positional", absolute: true},
+		{name: "relative-script-flag", flag: true},
+		{name: "absolute-script-flag", absolute: true, flag: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			root, other := u9Workspace(t)
+			manifest := u9PinnedWorkspace(t, root)
+			manifest.Tools[0].ID = "launcher"
+			manifest.Tools[0].EntrypointPath = "./scripts/server.js"
+			u9Write(t, root, "scripts/server.js", "local launcher script")
+			u9Write(t, other, "scripts/server.js", "other workspace launcher script")
+
+			writeConfig := func(script string) {
+				t.Helper()
+				if scenario.flag {
+					script = "--script=" + script
+				}
+				type server struct {
+					Command string   `json:"command"`
+					Args    []string `json:"args"`
+				}
+				config := struct {
+					Servers map[string]server `json:"mcpServers"`
+				}{
+					Servers: map[string]server{
+						"launcher": {Command: "./bin/backlogit.exe", Args: []string{script}},
+					},
+				}
+				data, err := json.Marshal(config)
+				require.NoError(t, err)
+				u9Write(t, root, ".mcp.json", string(data))
+			}
+
+			writeConfig("./scripts/server.js")
+			findings, err := ValidateMCPConfigPinning(root, ".mcp.json", manifest)
+			require.NoError(t, err)
+			require.Len(t, findings, 1)
+			require.Equal(t, WorkspaceLocalPinned, findings[0].ContainmentClass)
+
+			script := "../b/scripts/server.js"
+			if scenario.absolute {
+				script = filepath.Join(other, "scripts", "server.js")
+			}
+			writeConfig(script)
+			findings, err = ValidateMCPConfigPinning(root, ".mcp.json", manifest)
+			u9RequireNotStub(t, err)
+			if err != nil {
+				return
+			}
+			require.Len(t, findings, 1)
+			require.Equal(t, NonConformant, findings[0].ContainmentClass,
+				"cross-workspace launcher script must be rejected")
+		})
+	}
+}
+
 func TestU9_VerifyWorkspaceToolchainRejectsSymlinkAndReparseEscapes(t *testing.T) {
 	// Junctions exercise Windows reparse points without requiring symlink privilege.
 	kind := "symlink"
