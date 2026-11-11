@@ -1,0 +1,85 @@
+{
+  "record_format": "manual-state-certificate",
+  "record_format_version": 1,
+  "certificate_id": "212-S-211-F-certified-from-state-20261111T031609Z",
+  "phase": "post_close_certification",
+  "governed_operation": "backlogit_ship_shipment",
+  "created_at": "2026-11-11T03:17:38Z",
+  "validation_status": "CERTIFIED_FROM_STATE_UNDER_MANUAL_PROTOCOL",
+  "v1_pre_close_conformance": false,
+  "diagnostic_history": {
+    "command": "autoharness gate closure-evidence",
+    "attempts": 1,
+    "native_exit": 1,
+    "failed_check": "close_evidence",
+    "scope": "Prior attempted V1 representation, before relabeling as a manual state certificate",
+    "disposition": "NONBLOCKING_COMPATIBILITY_DEBT",
+    "authority": "docs/closure/212-S-211-F-post-merge-closure.md#evidence-contract-determination",
+    "required_gate_waived": false,
+    "rerun_performed": false
+  },
+  "shipment_id": "212-S",
+  "feature_id": "211-F",
+  "close_path": "safe_close",
+  "selected_close_path": "safe_close",
+  "merge_commit_sha": "d2c7372aeb6e7f26bf70f79358220ee2f44bc0d1",
+  "pr_number": 645,
+  "immutable_pre_close_report": {
+    "captured_at": "2026-11-11T01:13:32Z",
+    "source": ".backlogit/reconcile/212-S-pre-20261111T011332Z.md",
+    "source_sha256": "88feafb3c80fee7bf4f755f43a18f2b15c06cfae6a1bff4839f52bab44ddae7f",
+    "manifest": ["211-F", "211.001-T", "211.002-T", "211.003-T", "211.004-T", "211.005-T", "211.006-T", "211.007-T", "211.008-T", "211.010-T", "211.009-T", "211.011-T", "211.012-T", "211.013-T", "211.014-T", "211.015-T", "211.016-T", "211.017-T", "211.018-T", "211.019-T", "211.020-T", "211.021-T", "211.022-T"],
+    "manual_close_path_assessment": "safe_close",
+    "reason": "22 completed task records were pre-archived; active explicit feature pending governed completion; GI PASS",
+    "records_source": ".backlogit/reconcile/212-S-pre-20261111T011332Z.md"
+  },
+  "governed_call": {
+    "tool": "backlogit_ship_shipment",
+    "started_at": "2026-11-11T01:14:06Z",
+    "finished_at": null,
+    "native_exit": null,
+    "sha": "d2c7372aeb6e7f26bf70f79358220ee2f44bc0d1",
+    "transport_result": {"code": -32001, "message": "Request timed out"},
+    "result_envelope": null,
+    "retried": false,
+    "native_rpc_reply_received": false
+  },
+  "certification": {
+    "kind": "CERTIFIED_FROM_STATE",
+    "authority": "docs/compound/2026-10-06-ship-shipment-mcp-timeout-result-unknown.md",
+    "quiescence_started_at": "2026-11-11T02:52:17.620749Z",
+    "quiescence_finished_at": "2026-11-11T02:52:50.018487Z",
+    "doctor_completed_at": "2026-11-11T02:53:31.0320191Z",
+    "doctor_shipment_findings": 0,
+    "shipment_status": "shipped",
+    "returned_ids": [],
+    "archived_ids": ["211-F", "211.001-T", "211.002-T", "211.003-T", "211.004-T", "211.005-T", "211.006-T", "211.007-T", "211.008-T", "211.010-T", "211.009-T", "211.011-T", "211.012-T", "211.013-T", "211.014-T", "211.015-T", "211.016-T", "211.017-T", "211.018-T", "211.019-T", "211.020-T", "211.021-T", "211.022-T", "212-S"],
+    "gi": "PASS",
+    "gr": "PASS",
+    "p007": "PASS",
+    "native_rpc_reply_received": false
+  },
+  "item_log_events": [
+    {"event_type": "shipment_status_changed", "status": "shipped", "timestamp": "2026-11-11T01:20:36.4570879Z"},
+    {"event_type": "commit_tracked", "commit_sha": "d2c7372aeb6e7f26bf70f79358220ee2f44bc0d1", "timestamp": "2026-11-11T01:20:49.0645945Z"},
+    {"event_type": "archived", "timestamp": "2026-11-11T01:41:38.4619104Z"}
+  ],
+  "post_ship_hook": {"seq": 4665, "event_type": "ship_shipment", "timestamp": "2026-11-11T01:41:38.8765545Z"},
+  "archive_verification": {
+    "control_record": ".backlogit/archive/212-S.md",
+    "archived_status": "shipped",
+    "members_archived_status": "done",
+    "parentage_preserved": true,
+    "non_member_changes": [],
+    "deleted_archive_entries": 0
+  },
+  "reconcile_reports": [
+    ".backlogit/reconcile/212-S-pre-20261111T011332Z.md",
+    ".backlogit/reconcile/212-S-safe-close-20261111T011720Z.md",
+    ".backlogit/reconcile/212-S-post-20261111T011720Z.md",
+    ".backlogit/reconcile/212-S-post-20261111T020701Z.md"
+  ],
+  "process_deviation": "Original advisory lock released early; fresh existing archive-control lock held through certification and then released; no competing caller mutation observed",
+  "evidence_origin": "Historical immutable pre report plus later certified state; this document is created after certification, not a received RPC envelope or a backdated pre-close tool record",
+  "representation_note": "The original attempted schema_version 1 / phase pre_close representation failed the optional diagnostic. This manual format does not claim that V1 classifier, engine-semantics or observation-set capture occurred before closure."
+}
