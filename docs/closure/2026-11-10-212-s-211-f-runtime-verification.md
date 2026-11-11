@@ -256,3 +256,24 @@ P-018 Copilot and P-014 current-HEAD readiness/explicit merge approval,
 and acknowledge monitoring/rollback ownership. Stage's authoritative
 review disposition and captured residual risks are carried in closure;
 no finding was repaired or recategorized here.
+
+## Git restoration and bounded recovery handoff
+
+Stage's
+[bounded verification authority](../memory/2026-11-10/stage-212-s-089-dl-ordinal21-bounded-verification-authority.md)
+adjudicates Ordinals 19/20 PASS, the preserved Ordinal 21 failure and
+the fixture-only correction at `74c09bae`. Git is restored.
+The selected recovery checkpoint was restored and resolved; protected
+historical checkpoint bytes were preserved.
+
+The authorized two-package tests, Linux CLI test compilation, full CLI
+build, repo vet/lint, documentation lint and named EOL guard all passed.
+The paired evidence is Ordinal 20's 46/46 Windows PASS plus the prior
+Linux pipe/socket coverage-mode six-case, ten-repetition PASS. No
+Ordinal 22 Windows full suite was launched; failed count remains 15.
+
+See [the approval-boundary record](../memory/2026-11-10/212-S-pr645-bounded-verification-approval-boundary.md)
+for exact commands and limits. Linux cross-compilation is not runtime
+proof. MC-04 still requires the fresh hosted Linux result on the final
+PR HEAD. Final CI, Copilot and local-review outcomes are recorded in
+PR 645 rather than invented in this pre-commit note.
