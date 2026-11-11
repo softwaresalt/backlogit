@@ -890,24 +890,26 @@ exempt_precondition: must-fail-before-deliverable
 * **Domain**: `code` (declaration + `go/ast` source-shape harness per P-002.1 cycle-31: harness FIRST, declarations SECOND).
 * **Depends on**: None (Wave 1 of `213-S`).
 * **Changes**:
-  * **First (RED phase, scaffolded by `harness-architect` with zero production files modified)**: Create `internal/toolchain/toolchain_shape_test.go` declaring `package toolchain` (so `go test -run=^$ -count=1 ./...` compiles cleanly in the RED phase before `internal/toolchain/types.go` exists) with `TestU8_ToolchainDeclarationsSourceShape` using `go/ast`, `go/parser`, and `go/token`. Assert:
-    1. `schemas/workspace-toolchain.schema.json` exists, parses as valid JSON Schema Draft 2020-12, and defines closed enum values for `containment_class` (`workspace-local-pinned`, `host-prerequisite`, `remote-declared`, `built-in-host`, `unsupported`, `non-conformant`) and `containment_level` (`level-1-workspace-local-pinned`).
-    2. `internal/toolchain/types.go` declares structs with exact JSON/YAML tags:
-       * `ToolchainManifest` (`schema_version`, `containment_level`, `os_container_sandbox_deferred`, `workspace_root`, `tools`, `host_prerequisites`),
-       * `ToolEntry` (`id`, `kind`, `containment_class`, `executable_path`, `entrypoint_path`, `pinned_version`, `sha256`, `lockfile_path`, `workspace_binding_args`, `remote_policy`, `reason`),
-       * `HostPrerequisiteEntry` (`id`, `command`, `purpose`, `required`, `reason`),
-       * `ToolVerificationFinding` (`tool_id`, `containment_class`, `status`, `code`, `message`, `remediation`),
-       * `ToolchainVerificationReport` (`valid`, `containment_level`, `os_container_sandbox_deferred`, `workspace_root`, `tools`, `host_prerequisites`, `violations`).
+  * **First (RED phase, scaffolded by `harness-architect` with zero production files modified)**: Create `internal/toolchain/toolchain_shape_test.go` declaring `package toolchain` (so `go test -run=^$ -count=1 ./...` compiles cleanly in the RED phase before `internal/toolchain/types.go` exists) with `TestU8_ToolchainDeclarationsSourceShape` importing **ONLY** `"go/ast"`, `"go/parser"`, `"go/token"`, `"strings"`, and `"testing"` (100% literal compliance with `.github/skills/harness-architect/SKILL.md` line 169 — never importing `os`, `encoding/json`, or any other package). Assert:
+    1. **Schema file presence & non-empty token-file probe (`../../schemas/workspace-toolchain.schema.json`)**: Call `f, _ := parser.ParseFile(fset, "../../schemas/workspace-toolchain.schema.json", nil, 0)` and inspect `fset` via `fset.Iterate` (ignoring the expected Go syntax error returned on JSON content). When `../../schemas/workspace-toolchain.schema.json` is absent in RED, `f == nil` (failing on assertion). Once created in GREEN, `f != nil` and the registered `*token.File` in `fset` has `strings.HasSuffix(tf.Name(), "workspace-toolchain.schema.json")`, `tf.Size() > 500`, and `tf.LineCount() > 20` (full JSON Schema Draft 2020-12 `$schema` and closed enum array unmarshaling is asserted in U9's behavioral test `TestU9_VerifyWorkspaceToolchainAcceptsPinnedLocalToolsAndReportsPrereqsAndRemote` in `internal/toolchain/verify_test.go`).
+    2. **Go AST declarations probe (`types.go`)**: Call `parser.ParseFile(fset, "types.go", nil, 0)` and use `go/ast` to assert that `internal/toolchain/types.go` declares:
+       * `ToolContainmentClass` string type and constant declarations carrying the closed `containment_class` string literals (`"workspace-local-pinned"`, `"host-prerequisite"`, `"remote-declared"`, `"built-in-host"`, `"unsupported"`, `"non-conformant"`) and `"level-1-workspace-local-pinned"`,
+       * The 5 structs with exact `json` and `yaml` struct tags:
+         * `ToolchainManifest` (`schema_version`, `containment_level`, `os_container_sandbox_deferred`, `workspace_root`, `tools`, `host_prerequisites`),
+         * `ToolEntry` (`id`, `kind`, `containment_class`, `executable_path`, `entrypoint_path`, `pinned_version`, `sha256`, `lockfile_path`, `workspace_binding_args`, `remote_policy`, `reason`),
+         * `HostPrerequisiteEntry` (`id`, `command`, `purpose`, `required`, `reason`),
+         * `ToolVerificationFinding` (`tool_id`, `containment_class`, `status`, `code`, `message`, `remediation`),
+         * `ToolchainVerificationReport` (`valid`, `containment_level`, `os_container_sandbox_deferred`, `workspace_root`, `tools`, `host_prerequisites`, `violations`).
     3. `internal/toolchain/types.go` declares exported functions with exact signatures `LoadToolchainManifest(rootPath string) (*ToolchainManifest, error)`, `DefaultWorkspaceToolchainManifest(rootPath string) *ToolchainManifest`, `VerifyWorkspaceToolchain(ctx context.Context, rootPath string, manifest *ToolchainManifest) (*ToolchainVerificationReport, error)`, and `ValidateMCPConfigPinning(rootPath string, mcpJSONPath string, manifest *ToolchainManifest) ([]ToolVerificationFinding, error)` without freezing stub bodies.
   * **Second (GREEN phase, implemented by `build-feature`)**:
-    1. Create `schemas/workspace-toolchain.schema.json`.
-    2. Create `internal/toolchain/types.go` declaring the `ToolContainmentClass` constants, the 5 structs (initializing slice fields as non-nil `[]` in constructors/builders so JSON output never emits `null`), and the 4 exported functions returning `corerrors.ErrNotImplemented` / initial defaults.
+    1. Create `schemas/workspace-toolchain.schema.json` (valid JSON Schema Draft 2020-12 defining closed enum values for `containment_class` [`workspace-local-pinned`, `host-prerequisite`, `remote-declared`, `built-in-host`, `unsupported`, `non-conformant`] and `containment_level` [`level-1-workspace-local-pinned`]).
+    2. Create `internal/toolchain/types.go` declaring the `ToolContainmentClass` type and constants (including the `"level-1-workspace-local-pinned"` containment-level constant), the 5 structs (initializing slice fields as non-nil `[]` in constructors/builders so JSON output never emits `null`), and the 4 exported functions returning `corerrors.ErrNotImplemented` / initial defaults.
 * **Affected files (`3` files)**:
   * `internal/toolchain/toolchain_shape_test.go` (new)
   * `schemas/workspace-toolchain.schema.json` (new)
   * `internal/toolchain/types.go` (new)
 * **Acceptance criteria**:
-  * `TestU8_ToolchainDeclarationsSourceShape` compiles and is observed RED before `schemas/workspace-toolchain.schema.json` and `internal/toolchain/types.go` exist, then turns GREEN once they are created.
+  * `TestU8_ToolchainDeclarationsSourceShape` (importing only `"go/ast"`, `"go/parser"`, `"go/token"`, `"strings"`, and `"testing"`) compiles and is observed RED before `schemas/workspace-toolchain.schema.json` and `internal/toolchain/types.go` exist, then turns GREEN once they are created.
   * `go test -timeout=30m -count=1 -run '^TestU8_' ./internal/toolchain` passes.
 * **Execution posture**: `test-first` (P-002.1 `go/ast` source-shape harness).
 
@@ -929,7 +931,7 @@ exempt_precondition: must-fail-before-deliverable
   * `internal/toolchain/verify.go` (new)
   * `internal/toolchain/verify_test.go` (new)
 * **Acceptance criteria**:
-  * Scenario 1 (`TestU9_VerifyWorkspaceToolchainAcceptsPinnedLocalToolsAndReportsPrereqsAndRemote`): verifies a conformant Level 1 workspace passes with `Violations == 0` while explicitly reporting `host-prerequisite`, `remote-declared`, and `built-in-host` entries (`R19`–`R21`, `R23`, `SC11`, `SC13`).
+  * Scenario 1 (`TestU9_VerifyWorkspaceToolchainAcceptsPinnedLocalToolsAndReportsPrereqsAndRemote`): verifies a conformant Level 1 workspace passes with `Violations == 0` while explicitly reporting `host-prerequisite`, `remote-declared`, and `built-in-host` entries (`R19`–`R21`, `R23`, `SC11`, `SC13`), and also unmarshals `../../schemas/workspace-toolchain.schema.json` via `os.ReadFile` + `encoding/json` to verify JSON Schema Draft 2020-12 `$schema` and the closed enum arrays for `containment_class` (`workspace-local-pinned`, `host-prerequisite`, `remote-declared`, `built-in-host`, `unsupported`, `non-conformant`) and `containment_level` (`level-1-workspace-local-pinned`).
   * Scenario 2 (`TestU9_VerifyWorkspaceToolchainRejectsGlobalPATHShadowToolsAndCrossWorkspacePaths`): verifies missing `./bin/backlogit.exe`, bare global `PATH` commands, cross-workspace binary/config references (`Workspace A` -> `Workspace B`), and uninventoried `.mcp.json` shadow tools fail closed (`SC8`, `SC10`, `SC12`, `SC14`).
   * Scenario 3 (`TestU9_VerifyWorkspaceToolchainRejectsSymlinkAndReparseEscapes`): verifies symlinks and Windows junctions inside `bin/` or `tools/` targeting outside the workspace are deterministically refused (`R17`, `SC9`, `SC14`).
   * `go test -timeout=30m -count=1 -race -run '^TestU9_' ./internal/toolchain` passes.
