@@ -1,10 +1,13 @@
 ---
 title: "213-S PR scope halt"
 doc_type: reference
+source: docs/memory/2026-11-11-213-s-pr-scope-halt.md
+schema_version: "1.0"
 date: "2026-11-11"
+status: resolved
+chunk_strategy: h1-h2-h3
 shipment_id: 213-S
 feature_id: 212-F
-status: blocked
 ---
 
 ## Halt
