@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,7 +60,7 @@ func u9Manifest(root string) *ToolchainManifest {
 func u9PinnedWorkspace(t *testing.T, root string) *ToolchainManifest {
 	t.Helper()
 	u9Write(t, root, "bin/backlogit.exe", "pinned binary")
-	u9Write(t, root, ".mcp.json", `{"mcpServers":{"backlogit":{"type":"stdio","command":"./bin/backlogit.exe","args":["mcp"]}}}`)
+	u9Write(t, root, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, root))
 	return u9Manifest(root)
 }
 
@@ -231,7 +232,7 @@ func TestU9_ValidateMCPConfigPinningRejectsCrossWorkspaceLauncherScripts(t *test
 					Servers map[string]server `json:"mcpServers"`
 				}{
 					Servers: map[string]server{
-						"launcher": {Command: "./bin/backlogit.exe", Args: []string{script}},
+						"launcher": {Command: "./bin/backlogit.exe", Args: []string{script, "--cwd", root}},
 					},
 				}
 				data, err := json.Marshal(config)
@@ -374,4 +375,158 @@ func TestU9_DefaultWorkspaceToolchainManifestInventoriesTools(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, loaded)
 	require.NotEmpty(t, loaded.Tools, "absent manifest must synthesize default inventory")
+}
+
+func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		env      map[string]string
+		bindings []string
+		valid    bool
+	}{
+		{name: "entrypoint-present", args: []string{"./scripts/server.js"}, valid: true},
+		{name: "entrypoint-absent", args: []string{"serve"}},
+		{name: "wrong-entrypoint", args: []string{"./scripts/other.js"}},
+		{name: "embedded-escape", args: []string{"./scripts/server.js", "--config=../outside"}},
+		{name: "traversal-flag", args: []string{"./scripts/server.js", "--config=../a/config"}},
+		{name: "required-binding-missing", args: []string{"./scripts/server.js"}, bindings: []string{"--cwd", "."}},
+		{name: "unknown-binding", args: []string{"./scripts/server.js"}, bindings: []string{"--unknown", "."}},
+		{name: "dangling-binding", args: []string{"./scripts/server.js"}, bindings: []string{"--cwd"}},
+		{name: "escaping-binding", args: []string{"./scripts/server.js"}, bindings: []string{"--cwd", "../outside"}},
+		{name: "matching-binding", args: []string{"./scripts/server.js", "--cwd", "."}, bindings: []string{"--cwd", "."}, valid: true},
+		{name: "casefold-env-escape", args: []string{"./scripts/server.js"}, env: map[string]string{"engram_data_dir": "../outside"}},
+		{name: "casefold-env-binding", args: []string{"./scripts/server.js"}, env: map[string]string{"engram_data_dir": "."}, bindings: []string{"ENGRAM_DATA_DIR=."}, valid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, _ := u9Workspace(t)
+			m := u9PinnedWorkspace(t, root)
+			m.Tools[0].ID = "launcher"
+			m.Tools[0].EntrypointPath = "./scripts/server.js"
+			m.Tools[0].WorkspaceBindingArgs = tc.bindings
+			u9Write(t, root, "scripts/server.js", "script")
+			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"launcher": map[string]any{"command": "./bin/backlogit.exe", "args": tc.args, "env": tc.env}}})
+			require.NoError(t, err)
+			u9Write(t, root, ".mcp.json", string(data))
+			findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+			if err != nil {
+				require.False(t, tc.valid, "%v", err)
+				return
+			}
+			require.Len(t, findings, 1)
+			require.Equal(t, tc.valid, findings[0].Status != "violation", "%+v", findings[0])
+		})
+	}
+}
+
+func TestU9_ReviewFixManifestStorageAndYAML(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "case-fold-top", body: "schema_version: '1.0'\nSchema_Version: '1.0'\n"},
+		{name: "case-fold-nested", body: "tools:\n  - id: one\n    ID: two\n"},
+		{name: "case-fold-nested-map", body: "tools:\n  - workspace_binding_args: [{foo: x, FOO: y}]\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, _ := u9Workspace(t)
+			u9Write(t, root, ".backlogit/toolchain.yaml", tc.body)
+			_, err := LoadToolchainManifest(root)
+			require.Error(t, err)
+		})
+	}
+	t.Run("conflicting-roots", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		require.NoError(t, os.Mkdir(filepath.Join(root, ".backlog"), 0o755))
+		require.NoError(t, os.Mkdir(filepath.Join(root, ".backlogit"), 0o755))
+		_, err := LoadToolchainManifest(root)
+		require.Error(t, err)
+	})
+	t.Run("legacy-root-is-selected", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		quotedRoot, err := json.Marshal(root)
+		require.NoError(t, err)
+		u9Write(t, root, ".backlogit/toolchain.yaml", "schema_version: '1.0'\ncontainment_level: level-1-workspace-local-pinned\nos_container_sandbox_deferred: true\nworkspace_root: "+string(quotedRoot)+"\ntools: []\nhost_prerequisites: []\n")
+		loaded, err := LoadToolchainManifest(root)
+		require.NoError(t, err)
+		require.Equal(t, "1.0", loaded.SchemaVersion)
+	})
+	t.Run("missing-prerequisite-required", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		quotedRoot, err := json.Marshal(root)
+		require.NoError(t, err)
+		u9Write(t, root, ".backlogit/toolchain.yaml", "schema_version: '1.0'\ncontainment_level: level-1-workspace-local-pinned\nos_container_sandbox_deferred: true\nworkspace_root: "+string(quotedRoot)+"\ntools: []\nhost_prerequisites:\n  - id: git\n    command: git\n    purpose: bootstrap\n    reason: host tool\n")
+		_, err = LoadToolchainManifest(root)
+		require.Error(t, err)
+	})
+}
+
+func TestU9_ReviewFixRequiredFieldsAndLockfile(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*ToolchainManifest)
+	}{
+		{name: "whitespace-id", mutate: func(m *ToolchainManifest) { m.Tools[0].ID = " " }},
+		{name: "whitespace-kind", mutate: func(m *ToolchainManifest) { m.Tools[0].Kind = " " }},
+		{name: "whitespace-remote-policy", mutate: func(m *ToolchainManifest) { m.Tools[1].RemotePolicy = " " }},
+		{name: "whitespace-host-reason", mutate: func(m *ToolchainManifest) { m.Tools[2].Reason = " " }},
+		{name: "whitespace-prerequisite", mutate: func(m *ToolchainManifest) { m.HostPrerequisites[0].Purpose = " " }},
+		{name: "empty-lockfile", mutate: func(m *ToolchainManifest) { m.Tools[0].PinnedVersion = ""; m.Tools[0].LockfilePath = "tool.lock" }},
+		{name: "unrelated-lockfile", mutate: func(m *ToolchainManifest) { m.Tools[0].LockfilePath = "tool.lock" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, _ := u9Workspace(t)
+			m := u9PinnedWorkspace(t, root)
+			lockfile := " \n"
+			if tc.name == "unrelated-lockfile" {
+				lockfile = "unrelated package and version\n"
+			}
+			u9Write(t, root, "tool.lock", lockfile)
+			tc.mutate(m)
+			report, err := VerifyWorkspaceToolchain(context.Background(), root, m)
+			u9RequireRejected(t, report, err)
+		})
+	}
+}
+
+func TestU9_LockfilePinProvenance(t *testing.T) {
+	for _, tc := range []struct {
+		name, version, lockPath, content string
+		sameExecutable                   bool
+		valid                            bool
+	}{
+		{name: "missing-pin", version: "  "},
+		{name: "version-only", version: "1.0.0", valid: true},
+		{name: "lockfile-only", lockPath: "tool.lock", content: "backlogit\n", valid: true},
+		{name: "trimmed-pins", version: " 1.0.0 ", lockPath: "tool.lock", content: "backlogit 1.0.0\n", valid: true},
+		{name: "empty-lockfile", lockPath: "tool.lock", content: " \n"},
+		{name: "missing-id", version: "1.0.0", lockPath: "tool.lock", content: "other 1.0.0"},
+		{name: "missing-version", version: "1.0.0", lockPath: "tool.lock", content: "backlogit 2.0.0"},
+		{name: "executable-is-lockfile", version: "1.0.0", lockPath: "./bin/backlogit.exe", content: "backlogit 1.0.0", sameExecutable: true, valid: true},
+		{name: "executable-lockfile-missing-id", version: "1.0.0", lockPath: "./bin/backlogit.exe", content: "other 1.0.0", sameExecutable: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rootPath, _ := u9Workspace(t)
+			m := u9PinnedWorkspace(t, rootPath)
+			tool := m.Tools[0]
+			tool.PinnedVersion = tc.version
+			tool.LockfilePath = tc.lockPath
+			if tc.lockPath != "" {
+				u9Write(t, rootPath, tc.lockPath, tc.content)
+			}
+			if tc.sameExecutable {
+				sum := sha256.Sum256([]byte(tc.content))
+				tool.SHA256 = hex.EncodeToString(sum[:])
+			}
+			root, err := os.OpenRoot(rootPath)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, root.Close()) })
+			err = verifyLocalTool(root, rootPath, tool)
+			if tc.valid {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, corerrors.ErrValidation)
+			}
+		})
+	}
 }

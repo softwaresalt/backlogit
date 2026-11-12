@@ -159,12 +159,19 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 		return nil, fmt.Errorf("load toolchain: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-	// Respect the storage directory precedence without following redirects.
-	storage := ".backlogit"
-	if _, err := root.Lstat(".backlog"); err == nil {
-		storage = ".backlog"
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("inspect storage: %w", err)
+	storage := ""
+	for _, candidate := range []string{".backlog", ".backlogit"} {
+		if _, err := root.Lstat(candidate); err == nil {
+			if storage != "" {
+				return nil, fmt.Errorf("ambiguous workspace storage: %w", blerrors.ErrValidation)
+			}
+			storage = candidate
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("inspect storage: %w", err)
+		}
+	}
+	if storage == "" {
+		return defaultWorkspaceToolchainManifest(rootPath), nil
 	}
 	file, err := openLocal(root, abs, filepath.Join(storage, "toolchain.yaml"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -174,7 +181,21 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 		return nil, fmt.Errorf("open toolchain manifest: %w", err)
 	}
 	defer func() { _ = file.Close() }()
-	decoder := yaml.NewDecoder(file)
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("read toolchain manifest: %w", err)
+	}
+	var node yaml.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return nil, fmt.Errorf("parse toolchain manifest: %w", err)
+	}
+	if err := validateYAMLKeys(&node); err != nil {
+		return nil, fmt.Errorf("validate toolchain manifest: %w", err)
+	}
+	if err := validateManifestFields(&node); err != nil {
+		return nil, fmt.Errorf("validate toolchain manifest: %w", err)
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	var m ToolchainManifest
 	if err := decoder.Decode(&m); err != nil {
@@ -183,6 +204,12 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 	var extra yaml.Node
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("additional YAML document: %w", blerrors.ErrValidation)
+	}
+	declared, err := filepath.Abs(m.WorkspaceRoot)
+	if m.SchemaVersion != "1.0" || m.ContainmentLevel != Level1WorkspaceLocalPinned ||
+		!m.OSContainerSandboxDeferred || strings.TrimSpace(m.WorkspaceRoot) == "" ||
+		err != nil || !samePath(abs, declared) || m.Tools == nil || m.HostPrerequisites == nil {
+		return nil, fmt.Errorf("invalid manifest required fields: %w", blerrors.ErrValidation)
 	}
 	if m.Tools == nil {
 		m.Tools = []ToolEntry{}
@@ -196,6 +223,71 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 		}
 	}
 	return &m, nil
+}
+
+func validateYAMLKeys(node *yaml.Node) error {
+	if node.Kind == yaml.MappingNode {
+		seen := make(map[string]bool)
+		for i := 0; i < len(node.Content); i += 2 {
+			key := foldJSONKey(node.Content[i].Value)
+			if seen[key] {
+				return fmt.Errorf("duplicate YAML key: %w", blerrors.ErrValidation)
+			}
+			seen[key] = true
+		}
+	}
+	for _, child := range node.Content {
+		if err := validateYAMLKeys(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateManifestFields(document *yaml.Node) error {
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("expected manifest mapping: %w", blerrors.ErrValidation)
+	}
+	fields := func(node *yaml.Node, required ...string) error {
+		if node.Kind != yaml.MappingNode {
+			return fmt.Errorf("expected mapping: %w", blerrors.ErrValidation)
+		}
+		found := make(map[string]bool)
+		for i := 0; i < len(node.Content); i += 2 {
+			found[node.Content[i].Value] = true
+		}
+		for _, key := range required {
+			if !found[key] {
+				return fmt.Errorf("missing required field %s: %w", key, blerrors.ErrValidation)
+			}
+		}
+		return nil
+	}
+	mapping := document.Content[0]
+	if err := fields(mapping, "schema_version", "containment_level", "os_container_sandbox_deferred", "workspace_root", "tools", "host_prerequisites"); err != nil {
+		return err
+	}
+	for i := 0; i < len(mapping.Content); i += 2 {
+		name, value := mapping.Content[i].Value, mapping.Content[i+1]
+		if name != "tools" && name != "host_prerequisites" {
+			continue
+		}
+		if value.Kind != yaml.SequenceNode {
+			return fmt.Errorf("expected %s sequence: %w", name, blerrors.ErrValidation)
+		}
+		for _, item := range value.Content {
+			var err error
+			if name == "tools" {
+				err = fields(item, "id", "kind", "containment_class")
+			} else {
+				err = fields(item, "id", "command", "purpose", "required", "reason")
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func finding(id string, class ToolContainmentClass, status, code, message string) ToolVerificationFinding {
@@ -236,7 +328,7 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 			return nil, fmt.Errorf("verify toolchain: %w", err)
 		}
 		f := finding(tool.ID, tool.ContainmentClass, "declared", "declared", tool.Reason)
-		if tool.ID == "" || tool.Kind == "" || seen[tool.ID] {
+		if strings.TrimSpace(tool.ID) == "" || strings.TrimSpace(tool.Kind) == "" || seen[tool.ID] {
 			f = finding(tool.ID, NonConformant, "violation", "invalid_inventory", "Missing or duplicate tool identity.")
 		} else {
 			switch tool.ContainmentClass {
@@ -247,11 +339,11 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 					f = finding(tool.ID, WorkspaceLocalPinned, "verified", "local_tool_verified", "Workspace-local file and pin verified.")
 				}
 			case HostPrerequisite, BuiltInHost:
-				if tool.Reason == "" {
+				if strings.TrimSpace(tool.Reason) == "" {
 					f = finding(tool.ID, NonConformant, "violation", "missing_reason", "Host exception requires a reason.")
 				}
 			case RemoteDeclared:
-				if tool.RemotePolicy == "" {
+				if strings.TrimSpace(tool.RemotePolicy) == "" {
 					f = finding(tool.ID, NonConformant, "violation", "missing_remote_policy", "Remote tool requires a policy.")
 				}
 			case Unsupported, NonConformant:
@@ -268,7 +360,7 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 	}
 	for _, p := range m.HostPrerequisites {
 		f := finding(p.ID, HostPrerequisite, "declared", "host_prerequisite", p.Reason)
-		if p.ID == "" || p.Command == "" || p.Purpose == "" || p.Reason == "" || seen[p.ID] {
+		if strings.TrimSpace(p.ID) == "" || strings.TrimSpace(p.Command) == "" || strings.TrimSpace(p.Purpose) == "" || strings.TrimSpace(p.Reason) == "" || seen[p.ID] {
 			f = finding(p.ID, NonConformant, "violation", "invalid_prerequisite", "Invalid host prerequisite declaration.")
 			report.Violations++
 		}
@@ -280,7 +372,7 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 }
 
 func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
-	if tool.PinnedVersion == "" && tool.LockfilePath == "" {
+	if strings.TrimSpace(tool.PinnedVersion) == "" && strings.TrimSpace(tool.LockfilePath) == "" {
 		return fmt.Errorf("missing version or lockfile pin: %w", blerrors.ErrValidation)
 	}
 	for _, path := range []string{tool.ExecutablePath, tool.EntrypointPath, tool.LockfilePath} {
@@ -294,6 +386,26 @@ func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
 		file, err := openLocal(root, abs, rel)
 		if err != nil {
 			return err
+		}
+		if path == tool.LockfilePath && strings.TrimSpace(tool.LockfilePath) != "" {
+			data, readErr := io.ReadAll(file)
+			if readErr != nil {
+				_ = file.Close()
+				return fmt.Errorf("read lockfile: %w", readErr)
+			}
+			version := strings.TrimSpace(tool.PinnedVersion)
+			if len(bytes.TrimSpace(data)) == 0 ||
+				!strings.Contains(string(data), strings.TrimSpace(tool.ID)) ||
+				(version != "" && !strings.Contains(string(data), version)) {
+				_ = file.Close()
+				return fmt.Errorf("invalid lockfile provenance: %w", blerrors.ErrValidation)
+			}
+			if path == tool.ExecutablePath && tool.SHA256 != "" {
+				if _, err := file.Seek(0, io.SeekStart); err != nil {
+					_ = file.Close()
+					return fmt.Errorf("rewind executable: %w", err)
+				}
+			}
 		}
 		if path == tool.ExecutablePath && tool.SHA256 != "" {
 			hash := sha256.New()
@@ -309,26 +421,47 @@ func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
 			if err != nil || !bytes.Equal(expected, hash.Sum(nil)) {
 				return fmt.Errorf("executable SHA-256 mismatch: %w", blerrors.ErrValidation)
 			}
-		} else if err := file.Close(); err != nil {
-			return fmt.Errorf("close local file: %w", err)
+		} else {
+			if err := file.Close(); err != nil {
+				return fmt.Errorf("close local file: %w", err)
+			}
 		}
 	}
 	if tool.ExecutablePath == "" {
 		return fmt.Errorf("missing executable: %w", blerrors.ErrValidation)
 	}
-	for i, arg := range tool.WorkspaceBindingArgs {
-		if arg == "--cwd" || arg == "COPILOT_HOME" || arg == "ENGRAM_DATA_DIR" {
-			if i+1 >= len(tool.WorkspaceBindingArgs) || !bindingWithin(root, abs, tool.WorkspaceBindingArgs[i+1]) {
-				return fmt.Errorf("invalid workspace binding: %w", blerrors.ErrValidation)
-			}
-		} else if strings.HasPrefix(arg, "--cwd=") || strings.HasPrefix(arg, "COPILOT_HOME=") || strings.HasPrefix(arg, "ENGRAM_DATA_DIR=") {
-			_, value, _ := strings.Cut(arg, "=")
-			if !bindingWithin(root, abs, value) {
-				return fmt.Errorf("invalid workspace binding: %w", blerrors.ErrValidation)
-			}
-		}
+	if _, err := parseBindings(root, abs, tool.WorkspaceBindingArgs); err != nil {
+		return err
 	}
 	return nil
+}
+
+func parseBindings(root *os.Root, abs string, args []string) (map[string]string, error) {
+	bindings := make(map[string]string)
+	for i := 0; i < len(args); i++ {
+		key, value, hasValue := strings.Cut(args[i], "=")
+		if key != "--cwd" {
+			key = strings.ToUpper(key)
+		}
+		if key != "--cwd" && key != "COPILOT_HOME" && key != "ENGRAM_DATA_DIR" {
+			return nil, fmt.Errorf("unknown workspace binding: %w", blerrors.ErrValidation)
+		}
+		if !hasValue {
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("missing workspace binding: %w", blerrors.ErrValidation)
+			}
+			value = args[i]
+		}
+		if _, exists := bindings[key]; exists || !bindingWithin(root, abs, value) {
+			return nil, fmt.Errorf("invalid workspace binding: %w", blerrors.ErrValidation)
+		}
+		if !filepath.IsAbs(value) {
+			value = filepath.Join(abs, value)
+		}
+		bindings[key] = filepath.Clean(value)
+	}
+	return bindings, nil
 }
 
 func bindingWithin(handle *os.Root, root, path string) bool {
@@ -336,6 +469,9 @@ func bindingWithin(handle *os.Root, root, path string) bool {
 		return false
 	}
 	if filepath.IsAbs(path) && samePath(path, root) {
+		return true
+	}
+	if path == "." {
 		return true
 	}
 	rel, err := relativePath(root, path, false)
@@ -463,31 +599,64 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 			continue
 		}
 		bad := false
-		for _, key := range []string{"COPILOT_HOME", "ENGRAM_DATA_DIR"} {
-			if value, ok := server.Env[key]; ok && !bindingWithin(root, abs, value) {
-				bad = true
+		expectedBindings, _ := parseBindings(root, abs, tool.WorkspaceBindingArgs)
+		actualBindings := make(map[string]string)
+		for key, value := range server.Env {
+			key = strings.ToUpper(key)
+			if key == "COPILOT_HOME" || key == "ENGRAM_DATA_DIR" {
+				if _, exists := actualBindings[key]; exists || !bindingWithin(root, abs, value) {
+					bad = true
+				}
+				if !filepath.IsAbs(value) {
+					value = filepath.Join(abs, value)
+				}
+				actualBindings[key] = filepath.Clean(value)
 			}
 		}
+		entryFound := false
 		for i, arg := range server.Args {
-			if arg == "--cwd" && (i+1 >= len(server.Args) || !bindingWithin(root, abs, server.Args[i+1])) {
-				bad = true
-			}
-			if strings.HasPrefix(arg, "--cwd=") && !bindingWithin(root, abs, strings.TrimPrefix(arg, "--cwd=")) {
-				bad = true
-			}
 			if i > 0 && server.Args[i-1] == "--cwd" {
 				continue
 			}
-			script, scriptFlag := strings.CutPrefix(arg, "--script=")
-			if scriptFlag || (!strings.HasPrefix(arg, "-") && strings.ContainsAny(arg, `/\`)) {
-				if !scriptFlag {
-					script = arg
+			if arg == "--cwd" || strings.HasPrefix(arg, "--cwd=") {
+				value := strings.TrimPrefix(arg, "--cwd=")
+				if arg == "--cwd" {
+					if i+1 >= len(server.Args) {
+						bad = true
+						continue
+					}
+					value = server.Args[i+1]
 				}
-				entry, entryErr := relativePath(abs, tool.EntrypointPath, false)
-				actual, actualErr := relativePath(abs, script, false)
-				if entryErr != nil || actualErr != nil || !samePath(entry, actual) {
+				if _, exists := actualBindings["--cwd"]; exists || !bindingWithin(root, abs, value) {
 					bad = true
 				}
+				if !filepath.IsAbs(value) {
+					value = filepath.Join(abs, value)
+				}
+				actualBindings["--cwd"] = filepath.Clean(value)
+				continue
+			}
+			value := arg
+			if _, after, ok := strings.Cut(arg, "="); ok && strings.HasPrefix(arg, "-") {
+				value = after
+			}
+			if strings.ContainsAny(value, `/\`) || filepath.IsAbs(value) {
+				entry, entryErr := relativePath(abs, tool.EntrypointPath, false)
+				actual, actualErr := relativePath(abs, value, false)
+				if entryErr != nil || actualErr != nil || !samePath(entry, actual) {
+					bad = true
+				} else {
+					entryFound = true
+				}
+			}
+		}
+		if tool.EntrypointPath != "" && !entryFound {
+			bad = true
+		}
+		for key, expected := range expectedBindings {
+			actual, exists := actualBindings[key]
+			if !exists || !samePath(actual, expected) {
+				bad = true
 			}
 		}
 		if bad {
