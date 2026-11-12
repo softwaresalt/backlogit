@@ -30,6 +30,7 @@ internal/cli/            ← CLI commands (cobra subcommands per feature domain)
 internal/core/           ← Domain logic: metadata catalog, queue, config, types
 internal/db/             ← SQLite database layer: schema, migrations, queries
 internal/mcp/            ← MCP server: tool registrations, handlers
+internal/toolchain/      ← Workspace tool inventory and read-only pinning verification
 internal/release/        ← Latest release lookup and SemVer comparison (stdlib-only HTTP/JSON leaf)
 internal/version/        ← Canonical build version and ldflags/module-build-info resolution leaf
 internal/docline/        ← Documentation frontmatter contract: classifier, normalizer, lint/migrate service (codec via internal/mdfront alias)
@@ -58,6 +59,7 @@ cmd → cli → core, db, mcp, models, telemetry
              docline   → mdfront, atomicfile
              mcp  → core, db, models, telemetry, release, version
              cli  → core, db, models, telemetry, release, version
+             toolchain → core, errors
              db        → models, events, stash, config, errors, modernc.org/sqlite
              telemetry → db, errors, modernc.org/sqlite
              models    → validator/v10
@@ -95,6 +97,11 @@ Cross-cutting rules:
   `internal/mcp` stays free of any `internal/cli` import. The CLI ≡ MCP catalog
   contract is locked by `TestMetadataCatalog_CLIAndMCPParity` (shipped 061-S / 062-F).
 * `telemetry` imports `db` and `errors`; it is not fully self-contained.
+* `toolchain` depends on `core` and `errors` for workspace containment and
+  validation. The planned CLI toolchain integration may depend on `toolchain`;
+  `core`, `mcp`, `db`, `models`, and `errors` must not import `toolchain`.
+  The manifest-writing and configuration-rendering integration is planned,
+  not yet a current CLI surface.
 * `mdfront` and `atomicfile` are **stdlib-only leaf packages** (no internal
   imports): `mdfront` owns the single body-preserving frontmatter codec and
   `atomicfile` the `WriteFileAtomic` primitive. Both `docline` and `core` depend
@@ -124,8 +131,11 @@ Cross-cutting rules:
 
 ### MCP Tools (`internal/mcp/`)
 
-MCP tools are registered in `internal/mcp/` and exposed via stdio transport. Key
-discovery tools include:
+MCP tools are registered in `internal/mcp/`. A per-workspace daemon serves
+multiple clients through stdio shims and local IPC, with coordinated mutations.
+See the [runtime and toolchain design](design-docs/2026-11-04-multi-session-mcp-runtime-and-workspace-toolchain.md)
+for platform boundaries and planned toolchain integration. Key discovery tools
+include:
 
 | Tool | Description |
 |---|---|
