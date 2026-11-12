@@ -589,8 +589,8 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		}
 		switch tool.ContainmentClass {
 		case RemoteDeclared:
-			if strings.TrimSpace(tool.RemotePolicy) == "" || strings.TrimSpace(server.Command) != "" {
-				findings = append(findings, finding(name, NonConformant, "violation", "invalid_remote_server", "Remote server requires a policy and no local command."))
+			if strings.TrimSpace(tool.RemotePolicy) == "" || strings.TrimSpace(server.Command) != "" || len(server.Args) != 0 || len(server.Env) != 0 {
+				findings = append(findings, finding(name, NonConformant, "violation", "invalid_remote_server", "Remote server requires a policy and no local execution configuration."))
 			} else {
 				findings = append(findings, finding(name, RemoteDeclared, "declared", "remote_declared", tool.RemotePolicy))
 			}
@@ -598,6 +598,8 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		case HostPrerequisite, BuiltInHost:
 			if strings.TrimSpace(tool.Reason) == "" {
 				findings = append(findings, finding(name, NonConformant, "violation", "missing_reason", "Host-provided server requires a reason."))
+			} else if strings.TrimSpace(server.Command) != "" || len(server.Args) != 0 || len(server.Env) != 0 {
+				findings = append(findings, finding(name, NonConformant, "violation", "invalid_host_server", "Host-provided server cannot specify local execution configuration."))
 			} else {
 				findings = append(findings, finding(name, tool.ContainmentClass, "declared", string(tool.ContainmentClass), tool.Reason))
 			}
@@ -634,6 +636,16 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		hasEntry := strings.TrimSpace(tool.EntrypointPath) != ""
 		for i, arg := range server.Args {
 			if i > 0 && server.Args[i-1] == "--cwd" {
+				continue
+			}
+			flag, _, hasValue := strings.Cut(arg, "=")
+			switch strings.ToLower(flag) {
+			case "-e", "-c", "-p", "-r", "--eval", "--print", "--import", "--require", "--loader", "-command", "-encodedcommand", "-file":
+				bad = true
+				continue
+			}
+			if hasValue && strings.HasPrefix(flag, "-") && !(hasEntry && (flag == "--cwd" || flag == "--script")) {
+				bad = true
 				continue
 			}
 			if arg == "--cwd" || strings.HasPrefix(arg, "--cwd=") {
