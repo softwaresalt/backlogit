@@ -321,15 +321,12 @@ func isRunner(path string) bool {
 	case ".exe", ".cmd", ".bat", ".ps1", ".sh", ".com":
 		name = strings.TrimSuffix(name, filepath.Ext(name))
 	}
-	if name == "rundll32" {
-		return true
-	}
 	name = strings.TrimRight(name, "0123456789._-")
 	switch name {
-	case "node", "nodejs", "python", "py", "pypy", "bun", "bunx", "deno",
+	case "node", "nodejs", "python", "pythonw", "py", "pyw", "pypy", "bun", "bunx", "deno",
 		"npx", "npm", "pnpm", "pnpx", "yarn", "tsx", "ts-node", "uv", "uvx", "pipx",
 		"pwsh", "powershell", "bash", "sh", "zsh", "dash", "ksh", "csh", "tcsh",
-		"fish", "busybox", "cmd", "cscript", "wscript", "mshta", "ruby", "irb",
+		"fish", "busybox", "cmd", "cscript", "wscript", "mshta", "rundll", "regsvr", "ruby", "irb",
 		"perl", "php", "lua", "luajit", "tclsh", "wish", "rscript", "julia",
 		"java", "javaw", "groovy", "kotlin", "scala", "dotnet", "go", "cargo",
 		"env", "xargs", "awk", "gawk", "sed", "expect":
@@ -713,7 +710,10 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 			continue
 		}
 		bad := false
-		expectedBindings, _ := parseBindings(root, abs, tool.WorkspaceBindingArgs)
+		expectedBindings, bindErr := parseBindings(root, abs, tool.WorkspaceBindingArgs)
+		if bindErr != nil {
+			bad = true
+		}
 		actualBindings := make(map[string]string)
 		for key, value := range server.Env {
 			key = strings.ToUpper(strings.TrimSpace(key))
@@ -740,7 +740,11 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		entryCount := 0
 		hasEntry := strings.TrimSpace(tool.EntrypointPath) != ""
 		for i := 0; i < len(server.Args); i++ {
-			arg := strings.TrimSpace(server.Args[i])
+			arg := server.Args[i]
+			if arg == "" || arg != strings.TrimSpace(arg) {
+				bad = true
+				continue
+			}
 			if arg == "--cwd" || strings.HasPrefix(arg, "--cwd=") {
 				value := strings.TrimPrefix(arg, "--cwd=")
 				if arg == "--cwd" {
@@ -751,8 +755,7 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 					}
 					value = server.Args[i]
 				}
-				trimmed := strings.TrimSpace(value)
-				if _, exists := actualBindings["--cwd"]; exists || trimmed == "" || strings.HasPrefix(trimmed, "-") || !bindingWithin(root, abs, value) {
+				if _, exists := actualBindings["--cwd"]; exists || value == "" || value != strings.TrimSpace(value) || strings.HasPrefix(value, "-") || !bindingWithin(root, abs, value) {
 					bad = true
 				}
 				if !filepath.IsAbs(value) {
@@ -769,10 +772,11 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 				}
 				value = strings.TrimPrefix(arg, "--script=")
 			}
+			if value == "" || value != strings.TrimSpace(value) {
+				bad = true
+				continue
+			}
 			if !hasEntry {
-				if value == "" {
-					bad = true
-				}
 				for _, c := range value {
 					if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
 						bad = true

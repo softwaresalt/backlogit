@@ -395,6 +395,9 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 		{name: "duplicate-entrypoint", args: []string{"./scripts/server.js", "./scripts/server.js"}},
 		{name: "extra-script-after-entrypoint", args: []string{"./scripts/server.js", "other.js"}},
 		{name: "script-flag-matches", args: []string{"--script=./scripts/server.js"}, valid: true},
+		{name: "whitespace-padded-entrypoint", args: []string{" ./scripts/server.js "}, valid: false},
+		{name: "whitespace-padded-script-flag", args: []string{"--script= ./scripts/server.js"}, valid: false},
+		{name: "whitespace-padded-cwd-flag", args: []string{"./scripts/server.js", " --cwd ", "."}, bindings: []string{"--cwd", "."}, valid: false},
 		{name: "no-entry-subcommands", args: []string{"mcp", "serve"}, noEntry: true, valid: true},
 		{name: "no-entry-bare-script", args: []string{"evil.js"}, noEntry: true},
 		{name: "no-entry-script-flag", args: []string{"--script=evil.py"}, noEntry: true},
@@ -525,7 +528,7 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 			})
 		})
 	}
-	for _, name := range []string{"node", "nodejs", "python", "python3", "py", "bun", "bunx", "deno", "npx", "npm", "pnpm", "yarn", "pwsh", "powershell", "bash", "sh", "zsh", "cmd", "ruby", "perl", "php", "lua", "python3.12", "node20", "uvx", "tsx"} {
+	for _, name := range []string{"node", "nodejs", "python", "python3", "py", "bun", "bunx", "deno", "npx", "npm", "pnpm", "yarn", "pwsh", "powershell", "bash", "sh", "zsh", "cmd", "ruby", "perl", "php", "lua", "python3.12", "node20", "uvx", "tsx", "pythonw", "pyw", "rundll32-1.0"} {
 		t.Run("runner-without-entrypoint-"+name, func(t *testing.T) {
 			root, _ := u9Workspace(t)
 			m := u9PinnedWorkspace(t, root)
