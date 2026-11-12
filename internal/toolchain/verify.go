@@ -304,6 +304,31 @@ func samePath(a, b string) bool {
 	return a == b
 }
 
+func validBacklogitTool(abs string, tool ToolEntry) bool {
+	if tool.ID != "backlogit" {
+		return true
+	}
+	path, err := relativePath(abs, tool.ExecutablePath, true)
+	return tool.ContainmentClass == WorkspaceLocalPinned && err == nil &&
+		samePath(path, filepath.Join("bin", "backlogit.exe"))
+}
+
+func isRunner(path string) bool {
+	name := strings.ToLower(filepath.Base(path))
+	switch filepath.Ext(name) {
+	case ".exe", ".cmd", ".bat":
+		name = strings.TrimSuffix(name, filepath.Ext(name))
+	}
+	switch name {
+	case "node", "nodejs", "python", "python3", "py", "bun", "bunx", "deno",
+		"npx", "npm", "pnpm", "yarn", "pwsh", "powershell", "bash", "sh",
+		"zsh", "cmd", "ruby", "perl", "php", "lua":
+		return true
+	default:
+		return false
+	}
+}
+
 func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *ToolchainManifest) (*ToolchainVerificationReport, error) {
 	if ctx == nil || m == nil {
 		return nil, fmt.Errorf("verify toolchain: %w", blerrors.ErrValidation)
@@ -331,6 +356,8 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 		f := finding(tool.ID, tool.ContainmentClass, "declared", "declared", tool.Reason)
 		if strings.TrimSpace(tool.ID) == "" || strings.TrimSpace(tool.Kind) == "" || seen[tool.ID] {
 			f = finding(tool.ID, NonConformant, "violation", "invalid_inventory", "Missing or duplicate tool identity.")
+		} else if !validBacklogitTool(abs, tool) {
+			f = finding(tool.ID, NonConformant, "violation", "local_tool_invalid", "Backlogit must use the workspace-local pinned binary.")
 		} else {
 			switch tool.ContainmentClass {
 			case WorkspaceLocalPinned:
@@ -373,6 +400,9 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 }
 
 func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
+	if isRunner(tool.ExecutablePath) && strings.TrimSpace(tool.EntrypointPath) == "" {
+		return fmt.Errorf("runner requires an entrypoint: %w", blerrors.ErrValidation)
+	}
 	if strings.TrimSpace(tool.PinnedVersion) == "" && strings.TrimSpace(tool.LockfilePath) == "" {
 		return fmt.Errorf("missing version, binary digest, or lockfile pin: %w", blerrors.ErrValidation)
 	}
@@ -413,9 +443,13 @@ func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
 				return fmt.Errorf("read lockfile: %w", readErr)
 			}
 			version := strings.TrimSpace(tool.PinnedVersion)
+			entrypoint := strings.TrimSpace(tool.EntrypointPath)
 			if len(bytes.TrimSpace(data)) == 0 ||
 				!strings.Contains(string(data), strings.TrimSpace(tool.ID)) ||
-				(version != "" && !strings.Contains(string(data), version)) {
+				(version != "" && !strings.Contains(string(data), version)) ||
+				(entrypoint != "" && !strings.Contains(string(data), entrypoint) &&
+					!strings.Contains(string(data), filepath.ToSlash(entrypoint)) &&
+					!strings.Contains(string(data), filepath.Base(entrypoint))) {
 				_ = file.Close()
 				return fmt.Errorf("invalid lockfile provenance: %w", blerrors.ErrValidation)
 			}
@@ -607,6 +641,10 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		tool, exists := inventory[name]
 		if !exists {
 			findings = append(findings, finding(name, Unsupported, "violation", "uninventoried_shadow_tool", "MCP server is not inventoried."))
+			continue
+		}
+		if !validBacklogitTool(abs, tool) {
+			findings = append(findings, finding(name, NonConformant, "violation", "mcp_command_invalid", "Backlogit must use the workspace-local pinned binary."))
 			continue
 		}
 		switch tool.ContainmentClass {

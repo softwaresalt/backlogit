@@ -419,9 +419,11 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 			m.Tools[0].WorkspaceBindingArgs = tc.bindings
 			u9Write(t, root, "scripts/server.js", "script")
 			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"launcher": map[string]any{"command": "./bin/backlogit.exe", "args": tc.args, "env": tc.env}}})
+			u9RequireNotStub(t, err)
 			require.NoError(t, err)
 			u9Write(t, root, ".mcp.json", string(data))
 			findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+			u9RequireNotStub(t, err)
 			if err != nil {
 				require.False(t, tc.valid, "%v", err)
 				return
@@ -447,14 +449,86 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 			m := u9PinnedWorkspace(t, root)
 			m.Tools = []ToolEntry{{ID: "server", Kind: "mcp", ContainmentClass: tc.class, RemotePolicy: tc.policy, Reason: tc.reason}}
 			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"server": map[string]any{"command": tc.command}}})
+			u9RequireNotStub(t, err)
 			require.NoError(t, err)
 			u9Write(t, root, ".mcp.json", string(data))
 			findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+			u9RequireNotStub(t, err)
 			require.NoError(t, err)
 			require.Len(t, findings, 1)
 			require.Equal(t, tc.wantClass, findings[0].ContainmentClass)
 			require.Equal(t, tc.status, findings[0].Status)
 			require.Equal(t, tc.code, findings[0].Code)
+		})
+	}
+	for _, tc := range []struct {
+		name  string
+		class ToolContainmentClass
+		path  string
+	}{
+		{name: "backlogit-remote", class: RemoteDeclared},
+		{name: "backlogit-host", class: HostPrerequisite},
+		{name: "backlogit-builtin", class: BuiltInHost},
+		{name: "backlogit-wrong-executable", class: WorkspaceLocalPinned, path: "./bin/other.exe"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, _ := u9Workspace(t)
+			m := u9PinnedWorkspace(t, root)
+			m.Tools[0].ContainmentClass = tc.class
+			m.Tools[0].Reason = "host supplied"
+			m.Tools[0].RemotePolicy = "approved"
+			command := ""
+			if tc.path != "" {
+				m.Tools[0].ExecutablePath = tc.path
+				u9Write(t, root, tc.path, "pinned binary")
+				command = tc.path
+			}
+			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"backlogit": map[string]any{"command": command}}})
+			u9RequireNotStub(t, err)
+			require.NoError(t, err)
+			u9Write(t, root, ".mcp.json", string(data))
+			t.Run("workspace", func(t *testing.T) {
+				report, err := VerifyWorkspaceToolchain(context.Background(), root, m)
+				u9RequireNotStub(t, err)
+				require.NoError(t, err)
+				require.Equal(t, "violation", report.Tools[0].Status)
+			})
+			t.Run("mcp", func(t *testing.T) {
+				findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+				u9RequireNotStub(t, err)
+				require.NoError(t, err)
+				require.Len(t, findings, 1)
+				require.Equal(t, "violation", findings[0].Status)
+			})
+		})
+	}
+	for _, name := range []string{"node", "nodejs", "python", "python3", "py", "bun", "bunx", "deno", "npx", "npm", "pnpm", "yarn", "pwsh", "powershell", "bash", "sh", "zsh", "cmd", "ruby", "perl", "php", "lua"} {
+		t.Run("runner-without-entrypoint-"+name, func(t *testing.T) {
+			root, _ := u9Workspace(t)
+			m := u9PinnedWorkspace(t, root)
+			tool := &m.Tools[0]
+			tool.ID = "launcher"
+			tool.ExecutablePath = "./bin/" + name
+			tool.EntrypointPath = ""
+			tool.WorkspaceBindingArgs = nil
+			u9Write(t, root, tool.ExecutablePath, "pinned binary")
+			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"launcher": map[string]any{"command": tool.ExecutablePath}}})
+			u9RequireNotStub(t, err)
+			require.NoError(t, err)
+			u9Write(t, root, ".mcp.json", string(data))
+			t.Run("workspace", func(t *testing.T) {
+				report, err := VerifyWorkspaceToolchain(context.Background(), root, m)
+				u9RequireNotStub(t, err)
+				require.NoError(t, err)
+				require.Equal(t, "violation", report.Tools[0].Status)
+			})
+			t.Run("mcp", func(t *testing.T) {
+				findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+				u9RequireNotStub(t, err)
+				require.NoError(t, err)
+				require.Len(t, findings, 1)
+				require.Equal(t, "violation", findings[0].Status)
+			})
 		})
 	}
 }
@@ -472,6 +546,7 @@ func TestU9_ReviewFixManifestStorageAndYAML(t *testing.T) {
 			root, _ := u9Workspace(t)
 			u9Write(t, root, ".backlogit/toolchain.yaml", tc.body)
 			_, err := LoadToolchainManifest(root)
+			u9RequireNotStub(t, err)
 			require.Error(t, err)
 		})
 	}
@@ -480,23 +555,28 @@ func TestU9_ReviewFixManifestStorageAndYAML(t *testing.T) {
 		require.NoError(t, os.Mkdir(filepath.Join(root, ".backlog"), 0o755))
 		require.NoError(t, os.Mkdir(filepath.Join(root, ".backlogit"), 0o755))
 		_, err := LoadToolchainManifest(root)
+		u9RequireNotStub(t, err)
 		require.Error(t, err)
 	})
 	t.Run("legacy-root-is-selected", func(t *testing.T) {
 		root, _ := u9Workspace(t)
 		quotedRoot, err := json.Marshal(root)
+		u9RequireNotStub(t, err)
 		require.NoError(t, err)
 		u9Write(t, root, ".backlogit/toolchain.yaml", "schema_version: '1.0'\ncontainment_level: level-1-workspace-local-pinned\nos_container_sandbox_deferred: true\nworkspace_root: "+string(quotedRoot)+"\ntools: []\nhost_prerequisites: []\n")
 		loaded, err := LoadToolchainManifest(root)
+		u9RequireNotStub(t, err)
 		require.NoError(t, err)
 		require.Equal(t, "1.0", loaded.SchemaVersion)
 	})
 	t.Run("missing-prerequisite-required", func(t *testing.T) {
 		root, _ := u9Workspace(t)
 		quotedRoot, err := json.Marshal(root)
+		u9RequireNotStub(t, err)
 		require.NoError(t, err)
 		u9Write(t, root, ".backlogit/toolchain.yaml", "schema_version: '1.0'\ncontainment_level: level-1-workspace-local-pinned\nos_container_sandbox_deferred: true\nworkspace_root: "+string(quotedRoot)+"\ntools: []\nhost_prerequisites:\n  - id: git\n    command: git\n    purpose: bootstrap\n    reason: host tool\n")
 		_, err = LoadToolchainManifest(root)
+		u9RequireNotStub(t, err)
 		require.Error(t, err)
 	})
 }
@@ -525,6 +605,35 @@ func TestU9_ReviewFixRequiredFieldsAndLockfile(t *testing.T) {
 			tc.mutate(m)
 			report, err := VerifyWorkspaceToolchain(context.Background(), root, m)
 			u9RequireRejected(t, report, err)
+		})
+	}
+	for _, tc := range []struct {
+		name, reference string
+		valid           bool
+	}{
+		{name: "entrypoint-not-referenced"},
+		{name: "entrypoint-referenced", reference: "./scripts/server.js", valid: true},
+		{name: "entrypoint-basename-referenced", reference: "server.js", valid: true},
+	} {
+		t.Run("lockfile-"+tc.name, func(t *testing.T) {
+			rootPath, _ := u9Workspace(t)
+			m := u9PinnedWorkspace(t, rootPath)
+			tool := m.Tools[0]
+			tool.ID = "launcher"
+			tool.EntrypointPath = "./scripts/server.js"
+			tool.LockfilePath = "tool.lock"
+			u9Write(t, rootPath, tool.EntrypointPath, "script")
+			u9Write(t, rootPath, tool.LockfilePath, "launcher 1.0.0 "+tc.reference)
+			root, err := os.OpenRoot(rootPath)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, root.Close()) })
+			err = verifyLocalTool(root, rootPath, tool)
+			u9RequireNotStub(t, err)
+			if tc.valid {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, corerrors.ErrValidation)
+			}
 		})
 	}
 }
