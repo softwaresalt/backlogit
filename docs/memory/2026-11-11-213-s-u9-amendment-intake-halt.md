@@ -1,6 +1,11 @@
 ---
 title: "213-S U9 amendment intake halt"
-date: 2026-11-11
+doc_type: reference
+source: docs/memory/2026-11-11-213-s-u9-amendment-intake-halt.md
+schema_version: "1.0"
+chunk_strategy: h1-h2-h3
+date: "2026-11-11"
+status: resolved
 ---
 
 ## Current state
