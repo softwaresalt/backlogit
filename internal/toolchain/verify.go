@@ -318,14 +318,21 @@ func validBacklogitTool(abs string, tool ToolEntry) bool {
 func isRunner(path string) bool {
 	name := strings.ToLower(filepath.Base(path))
 	switch filepath.Ext(name) {
-	case ".exe", ".cmd", ".bat":
+	case ".exe", ".cmd", ".bat", ".ps1", ".sh", ".com":
 		name = strings.TrimSuffix(name, filepath.Ext(name))
+	}
+	if name == "rundll32" {
+		return true
 	}
 	name = strings.TrimRight(name, "0123456789._-")
 	switch name {
-	case "node", "nodejs", "python", "python3", "py", "bun", "bunx", "deno",
-		"npx", "npm", "pnpm", "yarn", "pwsh", "powershell", "bash", "sh",
-		"zsh", "cmd", "ruby", "perl", "php", "lua":
+	case "node", "nodejs", "python", "py", "pypy", "bun", "bunx", "deno",
+		"npx", "npm", "pnpm", "pnpx", "yarn", "tsx", "ts-node", "uv", "uvx", "pipx",
+		"pwsh", "powershell", "bash", "sh", "zsh", "dash", "ksh", "csh", "tcsh",
+		"fish", "busybox", "cmd", "cscript", "wscript", "mshta", "ruby", "irb",
+		"perl", "php", "lua", "luajit", "tclsh", "wish", "rscript", "julia",
+		"java", "javaw", "groovy", "kotlin", "scala", "dotnet", "go", "cargo",
+		"env", "xargs", "awk", "gawk", "sed", "expect":
 		return true
 	default:
 		return false
@@ -525,7 +532,8 @@ func parseBindings(root *os.Root, abs string, args []string) (map[string]string,
 			}
 			value = args[i]
 		}
-		if _, exists := bindings[key]; exists || !bindingWithin(root, abs, value) {
+		trimmed := strings.TrimSpace(value)
+		if _, exists := bindings[key]; exists || (key == "--cwd" && (trimmed == "" || strings.HasPrefix(trimmed, "-"))) || !bindingWithin(root, abs, value) {
 			return nil, fmt.Errorf("invalid workspace binding: %w", blerrors.ErrValidation)
 		}
 		if !filepath.IsAbs(value) {
@@ -729,41 +737,22 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 				bad = true
 			}
 		}
-		entryFound := false
 		entryCount := 0
 		hasEntry := strings.TrimSpace(tool.EntrypointPath) != ""
-		for i, arg := range server.Args {
-			if i > 0 && server.Args[i-1] == "--cwd" {
-				continue
-			}
-			flag, _, hasValue := strings.Cut(arg, "=")
-			lowerFlag := strings.ToLower(flag)
-			if strings.HasPrefix(lowerFlag, "-") && !strings.HasPrefix(lowerFlag, "--") &&
-				(strings.HasPrefix(lowerFlag, "-e") || strings.HasPrefix(lowerFlag, "-c") ||
-					strings.HasPrefix(lowerFlag, "-m") || strings.HasPrefix(lowerFlag, "-p") || strings.HasPrefix(lowerFlag, "-r") ||
-					strings.HasPrefix(lowerFlag, "-s")) {
-				bad = true
-				continue
-			}
-			switch lowerFlag {
-			case "-e", "-c", "-m", "-p", "-r", "-s", "--stdin", "--eval", "--print", "--import", "--require", "--loader", "-command", "-encodedcommand", "-file":
-				bad = true
-				continue
-			}
-			if hasValue && strings.HasPrefix(flag, "-") && flag != "--cwd" && !(hasEntry && flag == "--script") {
-				bad = true
-				continue
-			}
+		for i := 0; i < len(server.Args); i++ {
+			arg := strings.TrimSpace(server.Args[i])
 			if arg == "--cwd" || strings.HasPrefix(arg, "--cwd=") {
 				value := strings.TrimPrefix(arg, "--cwd=")
 				if arg == "--cwd" {
-					if i+1 >= len(server.Args) {
+					i++
+					if i >= len(server.Args) {
 						bad = true
 						continue
 					}
-					value = server.Args[i+1]
+					value = server.Args[i]
 				}
-				if _, exists := actualBindings["--cwd"]; exists || !bindingWithin(root, abs, value) {
+				trimmed := strings.TrimSpace(value)
+				if _, exists := actualBindings["--cwd"]; exists || trimmed == "" || strings.HasPrefix(trimmed, "-") || !bindingWithin(root, abs, value) {
 					bad = true
 				}
 				if !filepath.IsAbs(value) {
@@ -773,35 +762,32 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 				continue
 			}
 			value := arg
-			positional := !strings.HasPrefix(arg, "-")
-			scriptFlag := strings.HasPrefix(arg, "--script=")
-			if _, after, ok := strings.Cut(arg, "="); ok && strings.HasPrefix(arg, "-") {
-				value = after
+			if strings.HasPrefix(arg, "-") {
+				if !hasEntry || !strings.HasPrefix(arg, "--script=") {
+					bad = true
+					continue
+				}
+				value = strings.TrimPrefix(arg, "--script=")
 			}
-			pathLike := strings.ContainsAny(value, `/\`) || filepath.IsAbs(value)
 			if !hasEntry {
-				ext := strings.ToLower(filepath.Ext(value))
-				switch ext {
-				case ".js", ".cjs", ".mjs", ".ts", ".py", ".ps1", ".sh", ".exe", ".cmd", ".bat":
+				if value == "" {
 					bad = true
 				}
-				if pathLike || strings.Contains(value, "..") {
-					bad = true
+				for _, c := range value {
+					if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+						bad = true
+					}
 				}
-			} else if positional || scriptFlag || pathLike {
+			} else {
 				entry, entryErr := relativePath(abs, tool.EntrypointPath, false)
 				actual, actualErr := relativePath(abs, value, false)
 				if entryErr != nil || actualErr != nil || !samePath(entry, actual) {
 					bad = true
-				} else if positional || scriptFlag {
-					entryFound = true
 				}
-				if positional || scriptFlag {
-					entryCount++
-				}
+				entryCount++
 			}
 		}
-		if hasEntry && (!entryFound || entryCount != 1) {
+		if hasEntry && entryCount != 1 {
 			bad = true
 		}
 		for key, expected := range expectedBindings {

@@ -406,6 +406,10 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 		{name: "dangling-binding", args: []string{"./scripts/server.js"}, bindings: []string{"--cwd"}},
 		{name: "escaping-binding", args: []string{"./scripts/server.js"}, bindings: []string{"--cwd", "../outside"}},
 		{name: "matching-binding", args: []string{"./scripts/server.js", "--cwd", "."}, bindings: []string{"--cwd", "."}, valid: true},
+		{name: "cwd-double-flag-bypass", args: []string{"--cwd", "--cwd", "./scripts/other.js"}, bindings: []string{"--cwd", "."}, valid: false},
+		{name: "cwd-double-flag-skip-extra-path", args: []string{"./scripts/server.js", "--cwd", "--cwd", "./scripts/other.js"}, bindings: []string{"--cwd", "--cwd"}, valid: false},
+		{name: "unlisted-flag-i-rejected", args: []string{"./scripts/server.js", "-i"}, valid: false},
+		{name: "unlisted-flag-inspect-rejected", args: []string{"./scripts/server.js", "--inspect"}, valid: false},
 		{name: "casefold-env-escape", args: []string{"./scripts/server.js"}, env: map[string]string{"engram_data_dir": "../outside"}},
 		{name: "casefold-env-binding", args: []string{"./scripts/server.js"}, env: map[string]string{"engram_data_dir": "."}, bindings: []string{"ENGRAM_DATA_DIR=."}, valid: true},
 		{name: "bash-s-flag", command: "./bin/bash", args: []string{"./scripts/server.js", "-s"}},
@@ -521,7 +525,7 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 			})
 		})
 	}
-	for _, name := range []string{"node", "nodejs", "python", "python3", "py", "bun", "bunx", "deno", "npx", "npm", "pnpm", "yarn", "pwsh", "powershell", "bash", "sh", "zsh", "cmd", "ruby", "perl", "php", "lua", "python3.12", "node20"} {
+	for _, name := range []string{"node", "nodejs", "python", "python3", "py", "bun", "bunx", "deno", "npx", "npm", "pnpm", "yarn", "pwsh", "powershell", "bash", "sh", "zsh", "cmd", "ruby", "perl", "php", "lua", "python3.12", "node20", "uvx", "tsx"} {
 		t.Run("runner-without-entrypoint-"+name, func(t *testing.T) {
 			root, _ := u9Workspace(t)
 			m := u9PinnedWorkspace(t, root)
