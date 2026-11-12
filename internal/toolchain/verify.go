@@ -374,7 +374,10 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 
 func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
 	if strings.TrimSpace(tool.PinnedVersion) == "" && strings.TrimSpace(tool.LockfilePath) == "" {
-		return fmt.Errorf("missing version or lockfile pin: %w", blerrors.ErrValidation)
+		return fmt.Errorf("missing version, binary digest, or lockfile pin: %w", blerrors.ErrValidation)
+	}
+	if strings.TrimSpace(tool.SHA256) == "" && strings.TrimSpace(tool.LockfilePath) == "" {
+		return fmt.Errorf("missing binary digest or lockfile provenance: %w", blerrors.ErrValidation)
 	}
 	for _, path := range []string{tool.ExecutablePath, tool.EntrypointPath, tool.LockfilePath} {
 		if path == "" {
@@ -387,6 +390,21 @@ func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
 		file, err := openLocal(root, abs, rel)
 		if err != nil {
 			return err
+		}
+		if path == tool.EntrypointPath && strings.TrimSpace(tool.EntrypointPath) != "" {
+			data, readErr := io.ReadAll(file)
+			if readErr != nil {
+				_ = file.Close()
+				return fmt.Errorf("read entrypoint: %w", readErr)
+			}
+			if len(bytes.TrimSpace(data)) == 0 {
+				_ = file.Close()
+				return fmt.Errorf("empty entrypoint: %w", blerrors.ErrValidation)
+			}
+			if _, err := file.Seek(0, io.SeekStart); err != nil {
+				_ = file.Close()
+				return fmt.Errorf("rewind entrypoint: %w", err)
+			}
 		}
 		if path == tool.LockfilePath && strings.TrimSpace(tool.LockfilePath) != "" {
 			data, readErr := io.ReadAll(file)
@@ -441,8 +459,9 @@ func parseBindings(root *os.Root, abs string, args []string) (map[string]string,
 	bindings := make(map[string]string)
 	for i := 0; i < len(args); i++ {
 		key, value, hasValue := strings.Cut(args[i], "=")
+		key = strings.TrimSpace(key)
 		if key != "--cwd" {
-			key = strings.ToUpper(key)
+			key = strings.ToUpper(strings.TrimSpace(key))
 		}
 		if key != "--cwd" && key != "COPILOT_HOME" && key != "ENGRAM_DATA_DIR" {
 			return nil, fmt.Errorf("unknown workspace binding: %w", blerrors.ErrValidation)
@@ -592,9 +611,10 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		}
 		switch tool.ContainmentClass {
 		case RemoteDeclared:
-			remoteURL, urlErr := url.Parse(server.URL)
-			if strings.TrimSpace(tool.RemotePolicy) == "" || server.Command != "" || len(server.Args) != 0 || len(server.Env) != 0 ||
-				strings.EqualFold(server.Type, "stdio") || (server.URL != "" &&
+			remoteAddress := strings.TrimSpace(server.URL)
+			remoteURL, urlErr := url.Parse(remoteAddress)
+			if strings.TrimSpace(tool.RemotePolicy) == "" || strings.TrimSpace(server.Command) != "" || len(server.Args) != 0 || len(server.Env) != 0 ||
+				strings.EqualFold(strings.TrimSpace(server.Type), "stdio") || (remoteAddress != "" &&
 				(urlErr != nil || remoteURL.Host == "" || (!strings.EqualFold(remoteURL.Scheme, "http") && !strings.EqualFold(remoteURL.Scheme, "https")))) {
 				findings = append(findings, finding(name, NonConformant, "violation", "invalid_remote_server", "Remote server requires a policy and no local execution configuration."))
 			} else {
@@ -604,7 +624,7 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		case HostPrerequisite, BuiltInHost:
 			if strings.TrimSpace(tool.Reason) == "" {
 				findings = append(findings, finding(name, NonConformant, "violation", "missing_reason", "Host-provided server requires a reason."))
-			} else if server.Command != "" || server.URL != "" || server.Type != "" || len(server.Args) != 0 || len(server.Env) != 0 {
+			} else if strings.TrimSpace(server.Command) != "" || strings.TrimSpace(server.URL) != "" || strings.TrimSpace(server.Type) != "" || len(server.Args) != 0 || len(server.Env) != 0 {
 				findings = append(findings, finding(name, NonConformant, "violation", "invalid_host_server", "Host-provided server cannot specify local execution configuration."))
 			} else {
 				findings = append(findings, finding(name, tool.ContainmentClass, "declared", string(tool.ContainmentClass), tool.Reason))
@@ -613,7 +633,8 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		}
 		command, pathErr := relativePath(abs, server.Command, true)
 		expected, expectedErr := relativePath(abs, tool.ExecutablePath, true)
-		if tool.ContainmentClass != WorkspaceLocalPinned || server.URL != "" || (server.Type != "" && server.Type != "stdio") || pathErr != nil || expectedErr != nil ||
+		serverType := strings.TrimSpace(server.Type)
+		if tool.ContainmentClass != WorkspaceLocalPinned || strings.TrimSpace(server.URL) != "" || (serverType != "" && !strings.EqualFold(serverType, "stdio")) || pathErr != nil || expectedErr != nil ||
 			!samePath(command, expected) || (name == "backlogit" && !samePath(command, filepath.Join("bin", "backlogit.exe"))) {
 			findings = append(findings, finding(name, NonConformant, "violation", "mcp_command_invalid", "MCP command does not match a local pinned executable."))
 			continue
@@ -626,15 +647,23 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		expectedBindings, _ := parseBindings(root, abs, tool.WorkspaceBindingArgs)
 		actualBindings := make(map[string]string)
 		for key, value := range server.Env {
-			key = strings.ToUpper(key)
-			if key == "COPILOT_HOME" || key == "ENGRAM_DATA_DIR" {
-				if _, exists := actualBindings[key]; exists || !bindingWithin(root, abs, value) {
+			key = strings.ToUpper(strings.TrimSpace(key))
+			canonical := ""
+			switch {
+			case strings.EqualFold(key, "COPILOT_HOME"):
+				canonical = "COPILOT_HOME"
+			case strings.EqualFold(key, "ENGRAM_DATA_DIR"):
+				canonical = "ENGRAM_DATA_DIR"
+			}
+			if canonical != "" {
+				within := bindingWithin(root, abs, value)
+				if _, exists := actualBindings[canonical]; exists || !within {
 					bad = true
 				}
 				if !filepath.IsAbs(value) {
 					value = filepath.Join(abs, value)
 				}
-				actualBindings[key] = filepath.Clean(value)
+				actualBindings[canonical] = filepath.Clean(value)
 			} else {
 				bad = true
 			}
@@ -650,12 +679,12 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 			lowerFlag := strings.ToLower(flag)
 			if strings.HasPrefix(lowerFlag, "-") && !strings.HasPrefix(lowerFlag, "--") &&
 				(strings.HasPrefix(lowerFlag, "-e") || strings.HasPrefix(lowerFlag, "-c") ||
-					strings.HasPrefix(lowerFlag, "-p") || strings.HasPrefix(lowerFlag, "-r")) {
+					strings.HasPrefix(lowerFlag, "-m") || strings.HasPrefix(lowerFlag, "-p") || strings.HasPrefix(lowerFlag, "-r")) {
 				bad = true
 				continue
 			}
 			switch lowerFlag {
-			case "-e", "-c", "-p", "-r", "--eval", "--print", "--import", "--require", "--loader", "-command", "-encodedcommand", "-file":
+			case "-e", "-c", "-m", "-p", "-r", "--eval", "--print", "--import", "--require", "--loader", "-command", "-encodedcommand", "-file":
 				bad = true
 				continue
 			}
