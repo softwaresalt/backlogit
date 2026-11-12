@@ -366,9 +366,9 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 		}
 		f := finding(tool.ID, tool.ContainmentClass, "declared", "declared", tool.Reason)
 		id := strings.ToLower(strings.TrimSpace(tool.ID))
-		if id == "" || strings.TrimSpace(tool.Kind) == "" || seen[id] {
+		if id == "" || tool.ID != strings.TrimSpace(tool.ID) || strings.TrimSpace(tool.Kind) == "" || seen[id] {
 			f = finding(tool.ID, NonConformant, "violation", "invalid_inventory", "Missing or duplicate tool identity.")
-		} else if !validBacklogitTool(abs, tool) {
+		} else if strings.EqualFold(id, "backlogit") && tool.ContainmentClass != WorkspaceLocalPinned {
 			f = finding(tool.ID, NonConformant, "violation", "local_tool_invalid", "Backlogit must use the workspace-local pinned binary.")
 		} else {
 			switch tool.ContainmentClass {
@@ -401,7 +401,9 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 	for _, p := range m.HostPrerequisites {
 		f := finding(p.ID, HostPrerequisite, "declared", "host_prerequisite", p.Reason)
 		id := strings.ToLower(strings.TrimSpace(p.ID))
-		if id == "" || strings.TrimSpace(p.Command) == "" || strings.TrimSpace(p.Purpose) == "" || strings.TrimSpace(p.Reason) == "" || seen[id] {
+		if id == "" || p.ID != strings.TrimSpace(p.ID) || strings.EqualFold(id, "backlogit") ||
+			strings.HasPrefix(strings.ToLower(filepath.Base(strings.TrimSpace(p.Command))), "backlogit") ||
+			strings.TrimSpace(p.Command) == "" || strings.TrimSpace(p.Purpose) == "" || strings.TrimSpace(p.Reason) == "" || seen[id] {
 			f = finding(p.ID, NonConformant, "violation", "invalid_prerequisite", "Invalid host prerequisite declaration.")
 			report.Violations++
 		}
@@ -498,6 +500,9 @@ func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
 	if tool.ExecutablePath == "" {
 		return fmt.Errorf("missing executable: %w", blerrors.ErrValidation)
 	}
+	if !validBacklogitTool(abs, tool) {
+		return fmt.Errorf("backlogit must use the workspace-local pinned binary: %w", blerrors.ErrValidation)
+	}
 	bindings, err := parseBindings(root, abs, tool.WorkspaceBindingArgs)
 	if err != nil {
 		return err
@@ -536,7 +541,11 @@ func parseBindings(root *os.Root, abs string, args []string) (map[string]string,
 		if !filepath.IsAbs(value) {
 			value = filepath.Join(abs, value)
 		}
-		bindings[key] = filepath.Clean(value)
+		cleaned := filepath.Clean(value)
+		if key == "--cwd" && !samePath(cleaned, abs) {
+			return nil, fmt.Errorf("invalid workspace binding: %w", blerrors.ErrValidation)
+		}
+		bindings[key] = cleaned
 	}
 	return bindings, nil
 }
@@ -659,19 +668,26 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		inventory[id] = tool
 	}
 	names := make([]string, 0, len(config.Servers))
+	nameCounts := make(map[string]int, len(config.Servers))
 	for name := range config.Servers {
 		names = append(names, name)
+		nameCounts[strings.ToLower(strings.TrimSpace(name))]++
 	}
 	sort.Strings(names)
 	findings := make([]ToolVerificationFinding, 0, len(names))
 	for _, name := range names {
 		server := config.Servers[name]
-		tool, exists := inventory[strings.ToLower(strings.TrimSpace(name))]
+		id := strings.ToLower(strings.TrimSpace(name))
+		if id == "" || name != strings.TrimSpace(name) || nameCounts[id] > 1 {
+			findings = append(findings, finding(name, NonConformant, "violation", "mcp_command_invalid", "Invalid or duplicate MCP server name."))
+			continue
+		}
+		tool, exists := inventory[id]
 		if !exists {
 			findings = append(findings, finding(name, Unsupported, "violation", "uninventoried_shadow_tool", "MCP server is not inventoried."))
 			continue
 		}
-		if !validBacklogitTool(abs, tool) {
+		if tool.ID != strings.TrimSpace(tool.ID) || !validBacklogitTool(abs, tool) {
 			findings = append(findings, finding(name, NonConformant, "violation", "mcp_command_invalid", "Backlogit must use the workspace-local pinned binary."))
 			continue
 		}
@@ -761,7 +777,11 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 				if !filepath.IsAbs(value) {
 					value = filepath.Join(abs, value)
 				}
-				actualBindings["--cwd"] = filepath.Clean(value)
+				cleaned := filepath.Clean(value)
+				if !samePath(cleaned, abs) {
+					bad = true
+				}
+				actualBindings["--cwd"] = cleaned
 				continue
 			}
 			value := arg

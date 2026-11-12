@@ -297,6 +297,9 @@ func TestU9_VerifyWorkspaceToolchainRejectsSymlinkAndReparseEscapes(t *testing.T
 			manifest.Tools[0].ExecutablePath = "./" + location + "/backlogit.exe"
 			report, err := VerifyWorkspaceToolchain(context.Background(), root, manifest)
 			u9RequireRejected(t, report, err)
+			if report != nil && len(report.Tools) > 0 {
+				require.Contains(t, report.Tools[0].Message, "redirected path")
+			}
 		})
 	}
 }
@@ -409,6 +412,7 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 		{name: "dangling-binding", args: []string{"./scripts/server.js"}, bindings: []string{"--cwd"}},
 		{name: "escaping-binding", args: []string{"./scripts/server.js"}, bindings: []string{"--cwd", "../outside"}},
 		{name: "matching-binding", args: []string{"./scripts/server.js", "--cwd", "."}, bindings: []string{"--cwd", "."}, valid: true},
+		{name: "nested-subdir-cwd-binding", args: []string{"./scripts/server.js", "--cwd", "./scripts"}, bindings: []string{"--cwd", "./scripts"}, valid: false},
 		{name: "cwd-double-flag-bypass", args: []string{"--cwd", "--cwd", "./scripts/other.js"}, bindings: []string{"--cwd", "."}, valid: false},
 		{name: "cwd-double-flag-skip-extra-path", args: []string{"./scripts/server.js", "--cwd", "--cwd", "./scripts/other.js"}, bindings: []string{"--cwd", "--cwd"}, valid: false},
 		{name: "unlisted-flag-i-rejected", args: []string{"./scripts/server.js", "-i"}, valid: false},
@@ -447,6 +451,19 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 			require.Equal(t, tc.valid, findings[0].Status != "violation", "%+v", findings[0])
 		})
 	}
+	t.Run("duplicate-trimmed-server-names", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		m := u9Manifest(root)
+		m.Tools = []ToolEntry{{ID: "remote", Kind: "mcp", ContainmentClass: RemoteDeclared, RemotePolicy: "approved"}}
+		u9Write(t, root, ".mcp.json", `{"mcpServers":{"remote":{"url":"https://a.example.com"}," remote ":{"url":"https://b.example.com"}}}`)
+		findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+		u9RequireNotStub(t, err)
+		require.NoError(t, err)
+		require.Len(t, findings, 2)
+		for _, finding := range findings {
+			require.Equal(t, "violation", finding.Status)
+		}
+	})
 	for _, tc := range []struct {
 		name, command, policy, reason, status, code string
 		class, wantClass                            ToolContainmentClass
@@ -617,6 +634,8 @@ func TestU9_ReviewFixRequiredFieldsAndLockfile(t *testing.T) {
 		{name: "whitespace-remote-policy", mutate: func(m *ToolchainManifest) { m.Tools[1].RemotePolicy = " " }},
 		{name: "whitespace-host-reason", mutate: func(m *ToolchainManifest) { m.Tools[2].Reason = " " }},
 		{name: "whitespace-prerequisite", mutate: func(m *ToolchainManifest) { m.HostPrerequisites[0].Purpose = " " }},
+		{name: "prerequisite-id-backlogit", mutate: func(m *ToolchainManifest) { m.Tools[0].ID = "launcher"; m.HostPrerequisites[0].ID = "backlogit" }},
+		{name: "prerequisite-command-backlogit", mutate: func(m *ToolchainManifest) { m.HostPrerequisites[0].Command = "backlogit.exe" }},
 		{name: "empty-lockfile", mutate: func(m *ToolchainManifest) { m.Tools[0].PinnedVersion = ""; m.Tools[0].LockfilePath = "tool.lock" }},
 		{name: "unrelated-lockfile", mutate: func(m *ToolchainManifest) { m.Tools[0].LockfilePath = "tool.lock" }},
 	} {
