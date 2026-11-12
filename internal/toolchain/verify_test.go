@@ -383,6 +383,7 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 		args     []string
 		env      map[string]string
 		bindings []string
+		command  string
 		noEntry  bool
 		valid    bool
 	}{
@@ -407,6 +408,7 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 		{name: "matching-binding", args: []string{"./scripts/server.js", "--cwd", "."}, bindings: []string{"--cwd", "."}, valid: true},
 		{name: "casefold-env-escape", args: []string{"./scripts/server.js"}, env: map[string]string{"engram_data_dir": "../outside"}},
 		{name: "casefold-env-binding", args: []string{"./scripts/server.js"}, env: map[string]string{"engram_data_dir": "."}, bindings: []string{"ENGRAM_DATA_DIR=."}, valid: true},
+		{name: "bash-s-flag", command: "./bin/bash", args: []string{"./scripts/server.js", "-s"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, _ := u9Workspace(t)
@@ -417,8 +419,14 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 				m.Tools[0].EntrypointPath = ""
 			}
 			m.Tools[0].WorkspaceBindingArgs = tc.bindings
+			command := "./bin/backlogit.exe"
+			if tc.command != "" {
+				command = tc.command
+				m.Tools[0].ExecutablePath = command
+				u9Write(t, root, command, "pinned binary")
+			}
 			u9Write(t, root, "scripts/server.js", "script")
-			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"launcher": map[string]any{"command": "./bin/backlogit.exe", "args": tc.args, "env": tc.env}}})
+			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"launcher": map[string]any{"command": command, "args": tc.args, "env": tc.env}}})
 			u9RequireNotStub(t, err)
 			require.NoError(t, err)
 			u9Write(t, root, ".mcp.json", string(data))
@@ -462,18 +470,28 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 		})
 	}
 	for _, tc := range []struct {
-		name  string
-		class ToolContainmentClass
-		path  string
+		name          string
+		id            string
+		class         ToolContainmentClass
+		path          string
+		clearBindings bool
 	}{
 		{name: "backlogit-remote", class: RemoteDeclared},
 		{name: "backlogit-host", class: HostPrerequisite},
 		{name: "backlogit-builtin", class: BuiltInHost},
 		{name: "backlogit-wrong-executable", class: WorkspaceLocalPinned, path: "./bin/other.exe"},
+		{name: "backlogit-case-whitespace-remote", id: " BackLogIt ", class: RemoteDeclared},
+		{name: "backlogit-missing-cwd-binding", id: "backlogit", class: WorkspaceLocalPinned, path: "./bin/backlogit.exe", clearBindings: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, _ := u9Workspace(t)
 			m := u9PinnedWorkspace(t, root)
+			if tc.id != "" {
+				m.Tools[0].ID = tc.id
+			}
+			if tc.clearBindings {
+				m.Tools[0].WorkspaceBindingArgs = nil
+			}
 			m.Tools[0].ContainmentClass = tc.class
 			m.Tools[0].Reason = "host supplied"
 			m.Tools[0].RemotePolicy = "approved"
@@ -483,7 +501,8 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 				u9Write(t, root, tc.path, "pinned binary")
 				command = tc.path
 			}
-			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"backlogit": map[string]any{"command": command}}})
+			serverName := m.Tools[0].ID
+			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{serverName: map[string]any{"command": command}}})
 			u9RequireNotStub(t, err)
 			require.NoError(t, err)
 			u9Write(t, root, ".mcp.json", string(data))
@@ -502,7 +521,7 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 			})
 		})
 	}
-	for _, name := range []string{"node", "nodejs", "python", "python3", "py", "bun", "bunx", "deno", "npx", "npm", "pnpm", "yarn", "pwsh", "powershell", "bash", "sh", "zsh", "cmd", "ruby", "perl", "php", "lua"} {
+	for _, name := range []string{"node", "nodejs", "python", "python3", "py", "bun", "bunx", "deno", "npx", "npm", "pnpm", "yarn", "pwsh", "powershell", "bash", "sh", "zsh", "cmd", "ruby", "perl", "php", "lua", "python3.12", "node20"} {
 		t.Run("runner-without-entrypoint-"+name, func(t *testing.T) {
 			root, _ := u9Workspace(t)
 			m := u9PinnedWorkspace(t, root)

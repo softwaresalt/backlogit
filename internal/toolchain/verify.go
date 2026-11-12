@@ -305,7 +305,7 @@ func samePath(a, b string) bool {
 }
 
 func validBacklogitTool(abs string, tool ToolEntry) bool {
-	if tool.ID != "backlogit" {
+	if !strings.EqualFold(strings.TrimSpace(tool.ID), "backlogit") {
 		return true
 	}
 	path, err := relativePath(abs, tool.ExecutablePath, true)
@@ -313,12 +313,15 @@ func validBacklogitTool(abs string, tool ToolEntry) bool {
 		samePath(path, filepath.Join("bin", "backlogit.exe"))
 }
 
+// isRunner recognizes versioned interpreter names whose U9 contract requires
+// a pinned entrypoint; it does not resolve OS shebang targets (P-021 58AA0592).
 func isRunner(path string) bool {
 	name := strings.ToLower(filepath.Base(path))
 	switch filepath.Ext(name) {
 	case ".exe", ".cmd", ".bat":
 		name = strings.TrimSuffix(name, filepath.Ext(name))
 	}
+	name = strings.TrimRight(name, "0123456789._-")
 	switch name {
 	case "node", "nodejs", "python", "python3", "py", "bun", "bunx", "deno",
 		"npx", "npm", "pnpm", "yarn", "pwsh", "powershell", "bash", "sh",
@@ -329,6 +332,10 @@ func isRunner(path string) bool {
 	}
 }
 
+// verifyWorkspaceToolchain implements VerifyWorkspaceToolchain's U8/U9 Level 1
+// static workspace-root inventory check, not an OS sandbox (082-DL). Runtime
+// launcher cwd enforcement belongs to Track B and U11-U13; shebang resolution
+// and sandboxing are deferred (P-021 58AA0592, 082-DL).
 func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *ToolchainManifest) (*ToolchainVerificationReport, error) {
 	if ctx == nil || m == nil {
 		return nil, fmt.Errorf("verify toolchain: %w", blerrors.ErrValidation)
@@ -354,7 +361,8 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 			return nil, fmt.Errorf("verify toolchain: %w", err)
 		}
 		f := finding(tool.ID, tool.ContainmentClass, "declared", "declared", tool.Reason)
-		if strings.TrimSpace(tool.ID) == "" || strings.TrimSpace(tool.Kind) == "" || seen[tool.ID] {
+		id := strings.ToLower(strings.TrimSpace(tool.ID))
+		if id == "" || strings.TrimSpace(tool.Kind) == "" || seen[id] {
 			f = finding(tool.ID, NonConformant, "violation", "invalid_inventory", "Missing or duplicate tool identity.")
 		} else if !validBacklogitTool(abs, tool) {
 			f = finding(tool.ID, NonConformant, "violation", "local_tool_invalid", "Backlogit must use the workspace-local pinned binary.")
@@ -380,7 +388,7 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 				f = finding(tool.ID, NonConformant, "violation", "invalid_class", "Unknown containment class.")
 			}
 		}
-		seen[tool.ID] = true
+		seen[id] = true
 		report.Tools = append(report.Tools, f)
 		if f.Status == "violation" {
 			report.Violations++
@@ -388,17 +396,20 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 	}
 	for _, p := range m.HostPrerequisites {
 		f := finding(p.ID, HostPrerequisite, "declared", "host_prerequisite", p.Reason)
-		if strings.TrimSpace(p.ID) == "" || strings.TrimSpace(p.Command) == "" || strings.TrimSpace(p.Purpose) == "" || strings.TrimSpace(p.Reason) == "" || seen[p.ID] {
+		id := strings.ToLower(strings.TrimSpace(p.ID))
+		if id == "" || strings.TrimSpace(p.Command) == "" || strings.TrimSpace(p.Purpose) == "" || strings.TrimSpace(p.Reason) == "" || seen[id] {
 			f = finding(p.ID, NonConformant, "violation", "invalid_prerequisite", "Invalid host prerequisite declaration.")
 			report.Violations++
 		}
-		seen[p.ID] = true
+		seen[id] = true
 		report.HostPrerequisites = append(report.HostPrerequisites, f)
 	}
 	report.Valid = report.Violations == 0
 	return report, nil
 }
 
+// verifyLocalTool checks U9 static local pin provenance, not runtime execution
+// or an independent entrypoint digest (deferred under P-021 1406FAE2).
 func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
 	if isRunner(tool.ExecutablePath) && strings.TrimSpace(tool.EntrypointPath) == "" {
 		return fmt.Errorf("runner requires an entrypoint: %w", blerrors.ErrValidation)
@@ -483,12 +494,19 @@ func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
 	if tool.ExecutablePath == "" {
 		return fmt.Errorf("missing executable: %w", blerrors.ErrValidation)
 	}
-	if _, err := parseBindings(root, abs, tool.WorkspaceBindingArgs); err != nil {
+	bindings, err := parseBindings(root, abs, tool.WorkspaceBindingArgs)
+	if err != nil {
 		return err
+	}
+	if strings.EqualFold(strings.TrimSpace(tool.ID), "backlogit") && bindings["--cwd"] == "" {
+		return fmt.Errorf("backlogit requires cwd binding: %w", blerrors.ErrValidation)
 	}
 	return nil
 }
 
+// parseBindings evaluates U9 bindings statically relative to the workspace root;
+// host process cwd enforcement and POSIX case-sensitive env keys are deferred
+// under P-021 58AA0592 and 8841FD73 respectively.
 func parseBindings(root *os.Root, abs string, args []string) (map[string]string, error) {
 	bindings := make(map[string]string)
 	for i := 0; i < len(args); i++ {
@@ -582,6 +600,10 @@ type mcpServer struct {
 	URL     string            `json:"url"`
 }
 
+// validateMCPConfigPinning implements ValidateMCPConfigPinning's locked TestU9
+// static Level 1 contract. Relative paths bind to rootPath for inspection, not
+// to an enforced host-process cwd; runtime and shebang risks are deferred
+// under P-021 58AA0592.
 func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest) ([]ToolVerificationFinding, error) {
 	if m == nil {
 		return nil, fmt.Errorf("validate MCP config: %w", blerrors.ErrValidation)
@@ -622,13 +644,14 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 	}
 	inventory := make(map[string]ToolEntry, len(m.Tools))
 	for _, tool := range m.Tools {
-		if tool.ID == "" {
+		id := strings.ToLower(strings.TrimSpace(tool.ID))
+		if id == "" {
 			return nil, fmt.Errorf("empty inventory ID: %w", blerrors.ErrValidation)
 		}
-		if _, exists := inventory[tool.ID]; exists {
+		if _, exists := inventory[id]; exists {
 			return nil, fmt.Errorf("duplicate inventory ID: %w", blerrors.ErrValidation)
 		}
-		inventory[tool.ID] = tool
+		inventory[id] = tool
 	}
 	names := make([]string, 0, len(config.Servers))
 	for name := range config.Servers {
@@ -638,7 +661,7 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 	findings := make([]ToolVerificationFinding, 0, len(names))
 	for _, name := range names {
 		server := config.Servers[name]
-		tool, exists := inventory[name]
+		tool, exists := inventory[strings.ToLower(strings.TrimSpace(name))]
 		if !exists {
 			findings = append(findings, finding(name, Unsupported, "violation", "uninventoried_shadow_tool", "MCP server is not inventoried."))
 			continue
@@ -673,7 +696,7 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		expected, expectedErr := relativePath(abs, tool.ExecutablePath, true)
 		serverType := strings.TrimSpace(server.Type)
 		if tool.ContainmentClass != WorkspaceLocalPinned || strings.TrimSpace(server.URL) != "" || (serverType != "" && !strings.EqualFold(serverType, "stdio")) || pathErr != nil || expectedErr != nil ||
-			!samePath(command, expected) || (name == "backlogit" && !samePath(command, filepath.Join("bin", "backlogit.exe"))) {
+			!samePath(command, expected) || (strings.EqualFold(strings.TrimSpace(name), "backlogit") && !samePath(command, filepath.Join("bin", "backlogit.exe"))) {
 			findings = append(findings, finding(name, NonConformant, "violation", "mcp_command_invalid", "MCP command does not match a local pinned executable."))
 			continue
 		}
@@ -717,12 +740,13 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 			lowerFlag := strings.ToLower(flag)
 			if strings.HasPrefix(lowerFlag, "-") && !strings.HasPrefix(lowerFlag, "--") &&
 				(strings.HasPrefix(lowerFlag, "-e") || strings.HasPrefix(lowerFlag, "-c") ||
-					strings.HasPrefix(lowerFlag, "-m") || strings.HasPrefix(lowerFlag, "-p") || strings.HasPrefix(lowerFlag, "-r")) {
+					strings.HasPrefix(lowerFlag, "-m") || strings.HasPrefix(lowerFlag, "-p") || strings.HasPrefix(lowerFlag, "-r") ||
+					strings.HasPrefix(lowerFlag, "-s")) {
 				bad = true
 				continue
 			}
 			switch lowerFlag {
-			case "-e", "-c", "-m", "-p", "-r", "--eval", "--print", "--import", "--require", "--loader", "-command", "-encodedcommand", "-file":
+			case "-e", "-c", "-m", "-p", "-r", "-s", "--stdin", "--eval", "--print", "--import", "--require", "--loader", "-command", "-encodedcommand", "-file":
 				bad = true
 				continue
 			}
