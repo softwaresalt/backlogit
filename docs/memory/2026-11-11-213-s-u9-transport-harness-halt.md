@@ -1,5 +1,11 @@
 ---
 title: "Ship checkpoint: 213-S U9 transport harness halt"
+doc_type: reference
+source: docs/memory/2026-11-11-213-s-u9-transport-harness-halt.md
+schema_version: "1.0"
+chunk_strategy: h1-h2-h3
+date: "2026-11-12"
+status: resolved
 ---
 
 ## Current state
