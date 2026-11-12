@@ -1,6 +1,11 @@
 ---
 title: "213-S wave 2 re-harness delegate halt"
-date: 2026-11-11
+doc_type: reference
+source: docs/memory/2026-11-11-213-s-wave2-reharness-delegate-halt.md
+schema_version: "1.0"
+chunk_strategy: h1-h2-h3
+date: "2026-11-11"
+status: resolved
 ---
 
 ## State and admission
