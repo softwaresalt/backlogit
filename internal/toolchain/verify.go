@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -524,6 +525,8 @@ type mcpServer struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env"`
+	Type    string            `json:"type"`
+	URL     string            `json:"url"`
 }
 
 func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest) ([]ToolVerificationFinding, error) {
@@ -589,7 +592,10 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		}
 		switch tool.ContainmentClass {
 		case RemoteDeclared:
-			if strings.TrimSpace(tool.RemotePolicy) == "" || strings.TrimSpace(server.Command) != "" || len(server.Args) != 0 || len(server.Env) != 0 {
+			remoteURL, urlErr := url.Parse(server.URL)
+			if strings.TrimSpace(tool.RemotePolicy) == "" || server.Command != "" || len(server.Args) != 0 || len(server.Env) != 0 ||
+				strings.EqualFold(server.Type, "stdio") || (server.URL != "" &&
+				(urlErr != nil || remoteURL.Host == "" || (!strings.EqualFold(remoteURL.Scheme, "http") && !strings.EqualFold(remoteURL.Scheme, "https")))) {
 				findings = append(findings, finding(name, NonConformant, "violation", "invalid_remote_server", "Remote server requires a policy and no local execution configuration."))
 			} else {
 				findings = append(findings, finding(name, RemoteDeclared, "declared", "remote_declared", tool.RemotePolicy))
@@ -598,7 +604,7 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		case HostPrerequisite, BuiltInHost:
 			if strings.TrimSpace(tool.Reason) == "" {
 				findings = append(findings, finding(name, NonConformant, "violation", "missing_reason", "Host-provided server requires a reason."))
-			} else if strings.TrimSpace(server.Command) != "" || len(server.Args) != 0 || len(server.Env) != 0 {
+			} else if server.Command != "" || server.URL != "" || server.Type != "" || len(server.Args) != 0 || len(server.Env) != 0 {
 				findings = append(findings, finding(name, NonConformant, "violation", "invalid_host_server", "Host-provided server cannot specify local execution configuration."))
 			} else {
 				findings = append(findings, finding(name, tool.ContainmentClass, "declared", string(tool.ContainmentClass), tool.Reason))
@@ -607,7 +613,7 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		}
 		command, pathErr := relativePath(abs, server.Command, true)
 		expected, expectedErr := relativePath(abs, tool.ExecutablePath, true)
-		if tool.ContainmentClass != WorkspaceLocalPinned || pathErr != nil || expectedErr != nil ||
+		if tool.ContainmentClass != WorkspaceLocalPinned || server.URL != "" || (server.Type != "" && server.Type != "stdio") || pathErr != nil || expectedErr != nil ||
 			!samePath(command, expected) || (name == "backlogit" && !samePath(command, filepath.Join("bin", "backlogit.exe"))) {
 			findings = append(findings, finding(name, NonConformant, "violation", "mcp_command_invalid", "MCP command does not match a local pinned executable."))
 			continue
@@ -629,6 +635,8 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 					value = filepath.Join(abs, value)
 				}
 				actualBindings[key] = filepath.Clean(value)
+			} else {
+				bad = true
 			}
 		}
 		entryFound := false
@@ -639,12 +647,19 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 				continue
 			}
 			flag, _, hasValue := strings.Cut(arg, "=")
-			switch strings.ToLower(flag) {
+			lowerFlag := strings.ToLower(flag)
+			if strings.HasPrefix(lowerFlag, "-") && !strings.HasPrefix(lowerFlag, "--") &&
+				(strings.HasPrefix(lowerFlag, "-e") || strings.HasPrefix(lowerFlag, "-c") ||
+					strings.HasPrefix(lowerFlag, "-p") || strings.HasPrefix(lowerFlag, "-r")) {
+				bad = true
+				continue
+			}
+			switch lowerFlag {
 			case "-e", "-c", "-p", "-r", "--eval", "--print", "--import", "--require", "--loader", "-command", "-encodedcommand", "-file":
 				bad = true
 				continue
 			}
-			if hasValue && strings.HasPrefix(flag, "-") && !(hasEntry && (flag == "--cwd" || flag == "--script")) {
+			if hasValue && strings.HasPrefix(flag, "-") && flag != "--cwd" && !(hasEntry && flag == "--script") {
 				bad = true
 				continue
 			}
