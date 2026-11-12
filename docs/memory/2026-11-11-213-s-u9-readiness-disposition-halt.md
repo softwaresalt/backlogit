@@ -4,15 +4,16 @@ source: docs/memory/2026-11-11-213-s-u9-readiness-disposition-halt.md
 doc_type: reference
 schema_version: "1.0"
 chunk_strategy: h1-h2-h3
+date: "2026-11-11"
+status: resolved
 description: "Handoff for the unresolved U9 review readiness conflict."
 ---
 
 ## State
 
-* `DARK_MODE_HALTED`; shipment `213-S` and task `212.002-T` remain active
+* `RESOLVED`; Stage authorized `verify.go`-only production remediation for all 4 P1 findings on task `212.002-T` (Unit U9) and archived superseded stash entries `036B0CB9`, `48F1E692`, and `9FC3A6A6`
 * Branch: `feat/213-s-workspace-tool-environment-inventory-level-1-version-pinning-schema-and-threat-model-contract`
-* The task retains its existing start; this attempt made no task status or raw-log changes
-* No code changes, PR, or merge occurred in this attempt
+* Task `212.002-T` and `docs/plans/2026-11-04-multi-session-mcp-runtime-plan.md` updated to authorize Step 4.4 review-fix remediation in `internal/toolchain/verify.go` with zero edits to `internal/toolchain/verify_test.go`
 
 ## Readiness conflict
 
@@ -29,11 +30,13 @@ entrypoint. Ship Step 4.4 and review readiness require zero unresolved P0/P1
 findings, not only zero in-scope findings. Deferral or risk acceptance does
 not remediate those risks.
 
-The existing local review does not cover the new HEAD. The operator requested
-no review reinvocation, and no review was reinvoked.
+## Resolution
 
-## Handoff
-
-Return to Stage and the operator to resolve the readiness conflict through
-separate work units. Do not expand the current scope or proceed to task
-completion, PR, or merge while the gate is blocked.
+Stage archived superseded stash entries `036B0CB9`, `48F1E692`, and `9FC3A6A6`
+and updated `.backlogit/queue/212.002-T.md` and
+`docs/plans/2026-11-04-multi-session-mcp-runtime-plan.md` (Unit U9) to authorize
+remediating all 4 P1 findings directly inside `internal/toolchain/verify.go`
+with zero modifications to `internal/toolchain/verify_test.go` (preserving
+existing TDD red-to-green provenance `ca7d0e21` -> `c6ee3d13` / `eadd70ba` /
+`a4ec6ead` and keeping `00FD5168` active for `go.mod`/`go.sum` structured
+grammar parsing).
