@@ -25,4 +25,4 @@ Stage aligned Item 4 of Unit U9 in `.backlogit/queue/212.002-T.md` and `docs/pla
 
 ## Recovery
 
-Ship checkpoint: `checkpoint-20261112-041410.json`. Select and confirm it explicitly before recovery. Preserve the existing start record and uncommitted changes; do not re-claim or restart the task.
+Structured checkpoint `checkpoint-20261112-041410.json` was resolved and cleaned up as part of the Stage `462458af` contract alignment. There are zero active structured Ship checkpoints (`ZERO-CANDIDATE NORMAL STARTUP` — do not call `backlogit_get_checkpoint`). Resume `212.002-T` directly in-place via `docs/memory/` session-start context restoration, preserving its existing single `WORK_STARTED: 213-S` start record and the uncommitted `internal/toolchain/verify.go` remediation without re-claiming or restarting the task.
