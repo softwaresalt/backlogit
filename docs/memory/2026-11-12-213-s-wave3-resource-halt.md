@@ -31,7 +31,8 @@ was created and no merge was performed.
 
 ## Resume
 
-After the operator addresses host commit-memory pressure, restore the selected
-Ship checkpoint and rerun the entire wave 3 convergence gate with the
-operator-specified Go environment. Do not advance to PR work without a full
-pass. Preserve the completed task state and original exemption baseline.
+Structured checkpoints `checkpoint-20261112-205339.json` and `checkpoint-20261112-220807.json` were resolved and cleaned up (`ZERO-CANDIDATE NORMAL STARTUP` — `0` active structured checkpoints; do not call `backlogit_get_checkpoint`). All three task members (`212.001-T`, `212.002-T`, `212.003-T`) are `done` in `.backlogit/archive/` (`0` active tasks in `M`).
+
+Wave 3 convergence attempt 2 passed compile, vet, lint, format, and `212.003-T` exempt verification, and failed only on `TestU2_ReconstituteShipmentsAtomicExecutionAndRollback/concurrent_associate_commit_and_post_hook_isolation` because `GOMEMLIMIT=512MiB` + `GOGC=50` caused GC thrashing inside `core.test.exe` while holding `shipment-lifecycle-global`. Removing `GOMEMLIMIT` and `GOGC` while keeping `Remove-Item Env:GOMAXPROCS, Env:GOGC, Env:GOMEMLIMIT -ErrorAction SilentlyContinue; $env:GOFLAGS = "-count=1 -p=1 -parallel=4"` eliminates GC thrashing while serializing package compilation (`TestU2_ReconstituteShipmentsAtomicExecutionAndRollback` verified passing in 48.1s).
+
+Resume via `ZERO-CANDIDATE NORMAL STARTUP` and run the complete Wave 3 Step 4.6 convergence gate (attempt 3 of 3) with `Remove-Item Env:GOMAXPROCS, Env:GOGC, Env:GOMEMLIMIT -ErrorAction SilentlyContinue; $env:GOFLAGS = "-count=1 -p=1 -parallel=4"`, then proceed to Step 5 (PR lifecycle & merge) and Step 6 (post-merge closure).
