@@ -587,6 +587,22 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 			findings = append(findings, finding(name, Unsupported, "violation", "uninventoried_shadow_tool", "MCP server is not inventoried."))
 			continue
 		}
+		switch tool.ContainmentClass {
+		case RemoteDeclared:
+			if strings.TrimSpace(tool.RemotePolicy) == "" || strings.TrimSpace(server.Command) != "" {
+				findings = append(findings, finding(name, NonConformant, "violation", "invalid_remote_server", "Remote server requires a policy and no local command."))
+			} else {
+				findings = append(findings, finding(name, RemoteDeclared, "declared", "remote_declared", tool.RemotePolicy))
+			}
+			continue
+		case HostPrerequisite, BuiltInHost:
+			if strings.TrimSpace(tool.Reason) == "" {
+				findings = append(findings, finding(name, NonConformant, "violation", "missing_reason", "Host-provided server requires a reason."))
+			} else {
+				findings = append(findings, finding(name, tool.ContainmentClass, "declared", string(tool.ContainmentClass), tool.Reason))
+			}
+			continue
+		}
 		command, pathErr := relativePath(abs, server.Command, true)
 		expected, expectedErr := relativePath(abs, tool.ExecutablePath, true)
 		if tool.ContainmentClass != WorkspaceLocalPinned || pathErr != nil || expectedErr != nil ||
@@ -614,6 +630,8 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 			}
 		}
 		entryFound := false
+		entryCount := 0
+		hasEntry := strings.TrimSpace(tool.EntrypointPath) != ""
 		for i, arg := range server.Args {
 			if i > 0 && server.Args[i-1] == "--cwd" {
 				continue
@@ -637,20 +655,35 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 				continue
 			}
 			value := arg
+			positional := !strings.HasPrefix(arg, "-")
+			scriptFlag := strings.HasPrefix(arg, "--script=")
 			if _, after, ok := strings.Cut(arg, "="); ok && strings.HasPrefix(arg, "-") {
 				value = after
 			}
-			if strings.ContainsAny(value, `/\`) || filepath.IsAbs(value) {
+			pathLike := strings.ContainsAny(value, `/\`) || filepath.IsAbs(value)
+			if !hasEntry {
+				ext := strings.ToLower(filepath.Ext(value))
+				switch ext {
+				case ".js", ".cjs", ".mjs", ".ts", ".py", ".ps1", ".sh", ".exe", ".cmd", ".bat":
+					bad = true
+				}
+				if pathLike || strings.Contains(value, "..") {
+					bad = true
+				}
+			} else if positional || scriptFlag || pathLike {
 				entry, entryErr := relativePath(abs, tool.EntrypointPath, false)
 				actual, actualErr := relativePath(abs, value, false)
 				if entryErr != nil || actualErr != nil || !samePath(entry, actual) {
 					bad = true
-				} else {
+				} else if positional || scriptFlag {
 					entryFound = true
+				}
+				if positional || scriptFlag {
+					entryCount++
 				}
 			}
 		}
-		if tool.EntrypointPath != "" && !entryFound {
+		if hasEntry && (!entryFound || entryCount != 1) {
 			bad = true
 		}
 		for key, expected := range expectedBindings {

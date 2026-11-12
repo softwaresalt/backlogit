@@ -383,11 +383,21 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 		args     []string
 		env      map[string]string
 		bindings []string
+		noEntry  bool
 		valid    bool
 	}{
 		{name: "entrypoint-present", args: []string{"./scripts/server.js"}, valid: true},
 		{name: "entrypoint-absent", args: []string{"serve"}},
 		{name: "wrong-entrypoint", args: []string{"./scripts/other.js"}},
+		{name: "bare-script-before-entrypoint", args: []string{"evil.js", "./scripts/server.js"}},
+		{name: "script-flag-before-entrypoint", args: []string{"--script=evil.js", "./scripts/server.js"}},
+		{name: "duplicate-entrypoint", args: []string{"./scripts/server.js", "./scripts/server.js"}},
+		{name: "extra-script-after-entrypoint", args: []string{"./scripts/server.js", "other.js"}},
+		{name: "script-flag-matches", args: []string{"--script=./scripts/server.js"}, valid: true},
+		{name: "no-entry-subcommands", args: []string{"mcp", "serve"}, noEntry: true, valid: true},
+		{name: "no-entry-bare-script", args: []string{"evil.js"}, noEntry: true},
+		{name: "no-entry-script-flag", args: []string{"--script=evil.py"}, noEntry: true},
+		{name: "no-entry-traversal", args: []string{"--config=.."}, noEntry: true},
 		{name: "embedded-escape", args: []string{"./scripts/server.js", "--config=../outside"}},
 		{name: "traversal-flag", args: []string{"./scripts/server.js", "--config=../a/config"}},
 		{name: "required-binding-missing", args: []string{"./scripts/server.js"}, bindings: []string{"--cwd", "."}},
@@ -403,6 +413,9 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 			m := u9PinnedWorkspace(t, root)
 			m.Tools[0].ID = "launcher"
 			m.Tools[0].EntrypointPath = "./scripts/server.js"
+			if tc.noEntry {
+				m.Tools[0].EntrypointPath = ""
+			}
 			m.Tools[0].WorkspaceBindingArgs = tc.bindings
 			u9Write(t, root, "scripts/server.js", "script")
 			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"launcher": map[string]any{"command": "./bin/backlogit.exe", "args": tc.args, "env": tc.env}}})
@@ -415,6 +428,33 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 			}
 			require.Len(t, findings, 1)
 			require.Equal(t, tc.valid, findings[0].Status != "violation", "%+v", findings[0])
+		})
+	}
+	for _, tc := range []struct {
+		name, command, policy, reason, status, code string
+		class, wantClass                            ToolContainmentClass
+	}{
+		{name: "remote-declared", class: RemoteDeclared, policy: "approved", wantClass: RemoteDeclared, status: "declared", code: "remote_declared"},
+		{name: "remote-missing-policy", class: RemoteDeclared, policy: " ", wantClass: NonConformant, status: "violation", code: "invalid_remote_server"},
+		{name: "remote-local-command", class: RemoteDeclared, policy: "approved", command: "./bin/backlogit.exe", wantClass: NonConformant, status: "violation", code: "invalid_remote_server"},
+		{name: "host-prerequisite-declared", class: HostPrerequisite, reason: "host supplied", wantClass: HostPrerequisite, status: "declared", code: string(HostPrerequisite)},
+		{name: "built-in-declared", class: BuiltInHost, reason: "host supplied", wantClass: BuiltInHost, status: "declared", code: string(BuiltInHost)},
+		{name: "host-missing-reason", class: HostPrerequisite, reason: " ", wantClass: NonConformant, status: "violation", code: "missing_reason"},
+		{name: "built-in-missing-reason", class: BuiltInHost, wantClass: NonConformant, status: "violation", code: "missing_reason"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, _ := u9Workspace(t)
+			m := u9PinnedWorkspace(t, root)
+			m.Tools = []ToolEntry{{ID: "server", Kind: "mcp", ContainmentClass: tc.class, RemotePolicy: tc.policy, Reason: tc.reason}}
+			data, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"server": map[string]any{"command": tc.command}}})
+			require.NoError(t, err)
+			u9Write(t, root, ".mcp.json", string(data))
+			findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+			require.NoError(t, err)
+			require.Len(t, findings, 1)
+			require.Equal(t, tc.wantClass, findings[0].ContainmentClass)
+			require.Equal(t, tc.status, findings[0].Status)
+			require.Equal(t, tc.code, findings[0].Code)
 		})
 	}
 }
