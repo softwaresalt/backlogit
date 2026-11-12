@@ -7,7 +7,7 @@ chunk_strategy: h1-h2-h3
 date: "2026-11-11"
 shipment_id: 213-S
 feature_id: 212-F
-status: blocked
+status: resolved
 ---
 
 ## State
