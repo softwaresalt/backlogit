@@ -74,3 +74,45 @@ failed on the absent launcher source as an assertion, not a panic or build
 failure. Harness-ready and the exact fail-closed scoped command are recorded
 on `213.004-T`. Vet and lint passed. Next: commit RED, claim and record the
 single start, then delegate only declaration implementation.
+
+## Task-start verification halt
+
+`DARK_MODE_HALTED` / `TASK_START_NOT_RECORDED`: no build-feature dispatch.
+The U11a harness is committed at `04c8c1b8`, following the Stage amendment
+at `8ca93cd0`. `213.004-T` was moved from queued to active.
+The `WORK_STARTED: 214-S` append returned success, but the supplied
+no-follow helper still reported zero starts.
+
+Bounded read-only helper inspection found its line 62 hardcodes
+`WORK_STARTED: 213-S`. Its whole-log fallback for tasks without a shipment
+claim event is correct; its shipment-specific comparison is not applicable
+here. No helper modification or direct raw-log read occurred.
+No duplicate append was attempted. The authoritative matching start count
+is unverified, not proven zero.
+This also invalidates reliance on that helper's zero-start classification
+for the other `214-S` members. Those classifications must be revalidated,
+not inferred from a verifier for the prior shipment.
+
+H1 ordering diagnostic: the disabled telemetry-begin call and a read-only
+lifecycle topology check ran before the failed post-append confirmation was
+noticed. Telemetry returned disabled and created no context or artifacts.
+No implementation delegation followed. P-005 records the ordering diagnostic
+and halted disposition; passing topology does not cure missing start proof.
+
+The current task cursor is `213.004-T`, after append and before verified
+start confirmation or build dispatch. Preserve the existing start comment.
+The original U11-U13 tasks must not be reclaimed or restarted.
+Wave 1 remains pending. No review or convergence gate ran.
+No PR, CI, merge, or post-merge closure was attempted.
+
+Required recovery: explicitly select and confirm the final Ship checkpoint,
+provide a shipment-aware verifier satisfying the same safe-read contract,
+then verify the existing epoch has exactly one matching start before any
+further task action. Do not re-scaffold, re-append, or relabel on assumption.
+No source or production repair is authorized by this operational halt.
+The release remains open; `215-S` cannot start.
+Final census: M=4, terminal-success=0, queued=0, active=4, blocked=0,
+unsupported=0; claim-assigned classification is unverified.
+The single active Ship recovery cursor is
+`.backlogit/checkpoints/checkpoint-20261113-094836.json`.
+The intermediate harness checkpoint was resolved, not deleted.
