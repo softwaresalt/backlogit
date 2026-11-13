@@ -1,0 +1,197 @@
+{
+  "feature_id": "212-F",
+  "invocation": {
+    "argv_redacted": [
+      "C:\\Tools\\backlogit.EXE",
+      "--no-update-check",
+      "--jsonrpc",
+      "--cwd",
+      "C:\\Source\\GitHub\\backlogit",
+      "shipment",
+      "ship",
+      "213-S",
+      "--sha",
+      "b470866d02819c978216eb14c90e6a97dd805f11",
+      "--message",
+      "Close explicitly authorized 213-S after merged PR 647; flat manifest 212-F,212.001-T,212.002-T,212.003-T",
+      "--author",
+      "ship"
+    ],
+    "exit_code": 0,
+    "finished_at": "2026-11-13T07:01:26.870981Z",
+    "mutation_state": "completed",
+    "started_at": "2026-11-13T06:51:20.230966Z",
+    "stderr": {
+      "capture_truncated": false,
+      "excerpt": "",
+      "redaction_applied": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "total_bytes": 0,
+      "total_lines": 0
+    },
+    "stdout": {
+      "capture_truncated": false,
+      "excerpt": "validating member 1/4: 212-F (skipped: not a task or subtask member)\nvalidating member 2/4: 212.001-T\nvalidating member 3/4: 212.002-T\nvalidating member 4/4: 212.003-T\nvalidating member 1/4: 212-F (skipped: not a task or subtask member)\nvalidating member 2/4: 212.001-T\nvalidating member 3/4: 212.002-T\nvalidating member 4/4: 212.003-T\n{\"jsonrpc\":\"2.0\",\"id\":\"backlogit shipment ship\",\"result\":{\"archived_ids\":[\"212.001-T\",\"212.002-T\",\"212.003-T\",\"212-F\",\"213-S\"],\"commit_sha\":\"b470866d02819c978216eb14c90e6a97dd805f11\",\"returned_ids\":[],\"shipment_id\":\"213-S\",\"shipment_status\":\"shipped\"}}\n",
+      "redaction_applied": false,
+      "sha256": "5f90fa9cae1ad14575e43602a39067a61d625010aef08909bef51899550e123b",
+      "total_bytes": 589,
+      "total_lines": 9
+    },
+    "timed_out": false
+  },
+  "merge_commit_sha": "b470866d02819c978216eb14c90e6a97dd805f11",
+  "phase": "post_close",
+  "post_close": {
+    "allowed_ids": [
+      "212-F",
+      "212.001-T",
+      "212.002-T",
+      "212.003-T",
+      "213-S"
+    ],
+    "baseline_invariant": true,
+    "disposition_byte_identical": true,
+    "failures": [],
+    "linked_deliberation_drift": [],
+    "missing_required": [],
+    "parent_id_preserved": true,
+    "parse_error": null,
+    "parsed_result": {
+      "archived_ids": [
+        "212-F",
+        "212.001-T",
+        "212.002-T",
+        "212.003-T",
+        "213-S"
+      ],
+      "commit_sha": "b470866d02819c978216eb14c90e6a97dd805f11",
+      "returned_ids": [],
+      "shipment_id": "213-S",
+      "shipment_status": "shipped"
+    },
+    "postcondition_verdict": "pass",
+    "required_ids": [
+      "212-F",
+      "212.001-T",
+      "212.002-T",
+      "212.003-T",
+      "213-S"
+    ],
+    "shipment_archived_shipped": true,
+    "shipment_record_archived_status": "shipped",
+    "shipment_record_status": "archived",
+    "unexpected_archived": []
+  },
+  "pre_close": {
+    "captured_at": "2026-11-13T06:51:10Z",
+    "classifier_reason": "every feature member is a root whose out-of-manifest descendants are engine-inert; cascade close is permitted",
+    "classifier_verdict": "CASCADE",
+    "close_path_selection": {
+      "reason": "every feature member is a root whose out-of-manifest descendants are engine-inert; cascade close is permitted; backlogit 1.12.0 (cli) is on verified engine minor line 1.12",
+      "selected_close_path": "cascade"
+    },
+    "engine_semantics": {
+      "invocation_surface": "cli",
+      "minor_line": [
+        1,
+        12
+      ],
+      "probe_surface": "cli",
+      "probed_commit": "718e710",
+      "probed_version": "1.12.0",
+      "reason": "backlogit 1.12.0 (cli) is on verified engine minor line 1.12",
+      "verdict": "VERIFIED"
+    },
+    "linked_deliberation_disposition": {
+      "dispositions": [
+        {
+          "declared_status": "done",
+          "deliberation_id": "082-DL",
+          "link_kinds": [
+            "description",
+            "references"
+          ],
+          "linking_member_ids": [
+            "212-F",
+            "212.002-T"
+          ],
+          "outcome": "retained_shared_reference",
+          "path": null,
+          "reason_code": "retained_shared_reference",
+          "records": [
+            {
+              "declared_status": "done",
+              "path": ".backlogit/archive/082-DL.md",
+              "sha256": "9e5fa1f799deead6c733c74970ac58f5164f44a868f7343175c2ddb0f32dcc3d"
+            }
+          ],
+          "referrer_ids": [
+            "213-F",
+            "214-S",
+            "368E21A2",
+            "396A018C",
+            "4B30E19C",
+            "58AA0592",
+            "9ECF5511",
+            "C9331068",
+            "EC589C00"
+          ]
+        }
+      ],
+      "planning_error": null,
+      "read_failures": [],
+      "unresolved_references": []
+    },
+    "manifest_members": [
+      {
+        "artifact_type": "feature",
+        "declared_status": "active",
+        "id": "212-F",
+        "location": "queue",
+        "parent_id": null,
+        "sha256": "1aaee9674c43bb772814516507d137ceb8b7abea2f8b5a249e6b9f0e468a5844"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "212.001-T",
+        "location": "archive",
+        "parent_id": "212-F",
+        "sha256": "e7452eaac4246ee0ef2d846bb64caa545fe321b134b867d9030a1ba4cf2959d6"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "212.002-T",
+        "location": "archive",
+        "parent_id": "212-F",
+        "sha256": "beb6ec6a5c02cf4268d25c749715f4891369b443360979b02f40ed19ed2f78c6"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "212.003-T",
+        "location": "archive",
+        "parent_id": "212-F",
+        "sha256": "7462d6d29f855817dc2e18415a0f92171c8a8e6abd56fe2105eb7ac8653e5a2a"
+      }
+    ],
+    "out_of_manifest_descendants": [],
+    "qualifying_feature_ids": [
+      "212-F"
+    ],
+    "shipment_record": {
+      "declared_status": "active",
+      "location": "queue",
+      "sha256": "091a53b8e06c48008bcd1f4ae3935d0dc2ef6aff5c278bbf65346bcccb21e321"
+    }
+  },
+  "run_id": "e1bc0fd36d044b47a3a6edc913505511",
+  "schema_version": 1,
+  "shipment_id": "213-S",
+  "tool": {
+    "binary_path": "C:\\Tools\\backlogit.EXE",
+    "binary_sha256": "7564066ef3415f6bd85f66f8aa9ab123b6ad52d2fd08e627d92288cf5d58f462",
+    "version_excerpt": "{\n  \"version\": \"1.12.0\",\n  \"current\": \"1.12.0\",\n  \"latest\": \"\",\n  \"update_available\": false,\n  \"update_check\": \"skipped\",\n  \"commit\": \"718e710\",\n  \"build_date\": \"2026-10-27T23:02:53Z\",\n  \"go_version\": \"go1.24.13\"\n}\n"
+  }
+}

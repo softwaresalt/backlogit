@@ -19,7 +19,10 @@ docline:
 
 The affected surface is the standalone `internal/toolchain` Level 1 API
 library. Live CLI/MCP launch and doctor consumption belong to future
-`214-S` / U12, not this verification.
+`214-S`, not this verification. Risk review must precede U11 (`213.001-T`),
+the first CLI consumer: `VerifyLauncherScripts` / `AuditRepositoryToolchain`
+and `mcp status --toolchain` / `--strict`. U12 (`213.002-T`) separately
+provisions `WriteToolchainManifest` / `RenderPinnedMCPConfig` and E2E isolation.
 
 Loaded `.autoharness/workspace-profile.yaml`, lines 597-615:
 

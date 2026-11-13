@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Protocol for archiving source stash entries and deliberations during ship post-merge closure to prevent stale-scope accumulation.
+description: Historical source-artifact archival guidance superseded by explicit shipment membership and provenance-only closure.
 doc_type: learning
 docline:
     category: workflow_issue
@@ -24,10 +24,67 @@ docline:
 ingested_at: "2026-06-26T02:32:58Z"
 schema_version: "1.0"
 source: docs/compound/workflow-issues/source-artifact-archival-pattern-2026-04-20.md
-title: Post-Merge Closure Must Archive Source Stash Entries and Deliberations
+title: Historical Source Archival Guidance Superseded by Explicit Membership
+status: stale
+superseded_by: .github/skills/operational-closure/SKILL.md
+reviewed_at: "2026-11-13T07:16:50Z"
 ---
 
-## Post-Merge Closure Must Archive Source Stash Entries and Deliberations
+## Current boundary
+
+> [!WARNING]
+> The archival instructions below are historical, not executable guidance.
+> Source provenance does not authorize Ship to archive or remove an artifact.
+
+The current [Ship role boundary](../../../.github/agents/_ship.agent.md)
+permits archival of explicit shipment members only. The
+[operational-closure contract](../../../.github/skills/operational-closure/SKILL.md)
+requires recording `source_stash_id` and `source_deliberation_id`, or `none`,
+without mutating referenced sources outside that manifest. Stage owns later
+source triage; idempotency is not authorization.
+
+> [!WARNING]
+> This is an authorization rule, NOT an engine-enforced containment guarantee.
+> Future close operations must preflight linked sources of ALL explicit
+> members AND shipment control S, the complete transactional set M plus S,
+> and HOLD if ANY linked source would be archived outside the authorized set.
+
+Read-only confirmation of
+[`ShipShipment`](../../../internal/core/shipment_lifecycle.go#L512-L518)
+shows nested archival queues linked-stash side effects. In
+[`ArchiveLinkedStashEntries`](../../../internal/core/stash.go#L789-L804),
+the engine reads item-to-stash links and calls `ArchiveStashEntry`. Thus an
+explicit member or the shipment control can cause archival of an active
+linked stash source outside M plus S even when the caller never invokes
+source cleanup directly. Inspect links for every explicit member AND the
+shipment control, not only top-level provenance fields. If that side
+effect would exceed the authorized set, HOLD before invoking close and return it for
+governed disposition. Do not assume the documented policy supplies a
+production guard; no engine or caller guard was added by this docs correction.
+
+The active Ship/reconcile execution steps do not yet integrate this documented
+check. That missing workflow enforcement is explicitly deferred to `E2BD8582`
+from PR 648 / review 5888024151 under P-021 C1. Treat this as a warning and HOLD
+requirement, not evidence that the present procedure performs the check.
+
+The verified `213-S` closure supplies concrete evidence:
+[public close evidence](../../closure/evidence/213-S-212-F-close-evidence.json)
+binds the four explicit members and control record, with `082-DL` retained as
+a shared reference. `212-F` declares neither source field. Narrative
+references to `082-DL` and `ECF33C79` remain untouched and are not members.
+See the [canonical closure](../../closure/213-S-212-F-post-merge-closure.md).
+Its `disposition_byte_identical: true`, empty `linked_deliberation_drift` and
+empty `unexpected_archived` support only the recorded deliberation-disposition
+and artifact-archive checks. Those fields contain no stash-file before/after
+comparison or stash-link inventory, so they do not prove that linked-stash
+cleanup made no changes. No separate historical stash-state proof, general
+engine guarantee or retroactive linked-source preflight is claimed.
+
+The original observations, examples and citations below remain preserved for
+historical traceability. Their source-removal recommendations are superseded
+by the current boundary above.
+
+## Historical archival proposal
 
 ## Problem
 
@@ -75,7 +132,8 @@ Additionally, a `backlogit_query_sql` audit of `stash_entries WHERE state =
 
 * **Relying on `ShipShipment` to clean up source artifacts.** The Go function
   archives the feature/task/shipment hierarchy but has no visibility into stash
-  or deliberation provenance.
+  or deliberation provenance. **Historical claim, not current engine behavior:**
+  current nested archival queues linked-stash cleanup as described above.
 * **Assuming stash entries auto-expire.** Harvested entries are not automatically
   removed — they require an explicit `backlogit_stash_remove` call to transition
   to `removed` state (which archives them to `.backlogit/archive/stash.jsonl`).

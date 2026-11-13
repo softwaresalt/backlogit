@@ -61,7 +61,7 @@ future commit containing these documents.
 | --- | --- | --- |
 | Run existing bounded U9 API probes and write three docs | Low, local non-destructive authoring | Explicit task authorization; applied |
 | Merge PR 647 for 213-S | Moderate, release handoff | Conditional operator DARK_MODE_ACTIVE preauthorization; not executed here |
-| Connect library to live CLI/MCP/doctor | Outside current scope | Deferred to 214-S/U12; not executed |
+| Connect library to live CLI/MCP/doctor | Outside current scope | First CLI consumer in 214-S/U11; U12 provisioning separate; not executed |
 
 Parent owns merge and safe local-main synchronization. Conditional
 preauthorization applies only to `213-S` with fresh readiness, green required
@@ -83,8 +83,19 @@ Validation window: the first 30 minutes after the parent confirms merge,
 including merged-tip CI and the same bounded API smoke check. If checks have
 not completed, the owner records an open observation rather than declaring
 silence healthy. Outcome is pending because merge has not occurred here.
-Before `214-S`/U12 consumption, repeat boundary/risk assessment in that work
-unit; this pre-merge record does not authorize it.
+Repeat boundary/risk assessment BEFORE `214-S` U11 (`213.001-T`), which
+implements `VerifyLauncherScripts` / `AuditRepositoryToolchain` and
+`mcp status --toolchain` / `--strict`, the first CLI consumer.
+U12 (`213.002-T`) separately provisions `WriteToolchainManifest` /
+`RenderPinnedMCPConfig` and E2E isolation. This pre-merge record authorizes
+neither work unit.
+
+Post-merge disposition is recorded in the
+[canonical closure](213-S-212-F-post-merge-closure.md): `O-213-01` is recorded
+retrospectively as OPEN effective `2026-11-13T07:05:19Z` for the missed smoke
+deadline, not as a contemporaneously recorded event, then CLOSED through
+explicit Ship-owner acceptance at `2026-11-13T07:41:51Z`. This does not
+retroactively meet or restart the planned window, or imply operator acceptance.
 
 Healthy signals are explicit static findings, passing selected assertions and
 unchanged scope. Failure signals are assertion/CI failures, vacuous probes,
