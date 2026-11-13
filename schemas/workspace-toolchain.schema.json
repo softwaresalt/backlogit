@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://backlogit.dev/schemas/workspace-toolchain.schema.json",
+  "title": "Workspace Toolchain Inventory",
+  "description": "Level 1 workspace-local pinning does not provide an OS or container sandbox.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "containment_level",
+    "os_container_sandbox_deferred",
+    "workspace_root",
+    "tools",
+    "host_prerequisites"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "containment_level": {
+      "type": "string",
+      "enum": ["level-1-workspace-local-pinned"]
+    },
+    "os_container_sandbox_deferred": {
+      "type": "boolean",
+      "const": true
+    },
+    "workspace_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tools": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/tool" }
+    },
+    "host_prerequisites": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/hostPrerequisite" }
+    }
+  },
+  "$defs": {
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "containment_class"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "containment_class": {
+          "type": "string",
+          "enum": [
+            "workspace-local-pinned",
+            "host-prerequisite",
+            "remote-declared",
+            "built-in-host",
+            "unsupported",
+            "non-conformant"
+          ]
+        },
+        "executable_path": { "type": "string" },
+        "entrypoint_path": { "type": "string" },
+        "pinned_version": { "type": "string" },
+        "sha256": { "type": "string" },
+        "lockfile_path": { "type": "string" },
+        "workspace_binding_args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "remote_policy": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
+    "hostPrerequisite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "command", "purpose", "required", "reason"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "command": { "type": "string" },
+        "purpose": { "type": "string" },
+        "required": { "type": "boolean" },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}
