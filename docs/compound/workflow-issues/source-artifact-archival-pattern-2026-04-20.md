@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: Protocol for archiving source stash entries and deliberations during ship post-merge closure to prevent stale-scope accumulation.
+description: Historical source-artifact archival guidance superseded by explicit shipment membership and provenance-only closure.
 doc_type: learning
 docline:
     category: workflow_issue
@@ -24,10 +24,37 @@ docline:
 ingested_at: "2026-06-26T02:32:58Z"
 schema_version: "1.0"
 source: docs/compound/workflow-issues/source-artifact-archival-pattern-2026-04-20.md
-title: Post-Merge Closure Must Archive Source Stash Entries and Deliberations
+title: Historical Source Archival Guidance Superseded by Explicit Membership
+status: stale
+superseded_by: .github/skills/operational-closure/SKILL.md
+reviewed_at: "2026-11-13T07:16:50Z"
 ---
 
-## Post-Merge Closure Must Archive Source Stash Entries and Deliberations
+## Current boundary
+
+> [!WARNING]
+> The archival instructions below are historical, not executable guidance.
+> Source provenance does not authorize Ship to archive or remove an artifact.
+
+The current [Ship role boundary](../../../.github/agents/_ship.agent.md)
+permits archival of explicit shipment members only. The
+[operational-closure contract](../../../.github/skills/operational-closure/SKILL.md)
+requires recording `source_stash_id` and `source_deliberation_id`, or `none`,
+without mutating referenced sources outside that manifest. Stage owns later
+source triage; idempotency is not authorization.
+
+The verified `213-S` closure supplies concrete evidence:
+[public close evidence](../../closure/evidence/213-S-212-F-close-evidence.json)
+binds the four explicit members and control record, with `082-DL` retained as
+a shared reference. `212-F` declares neither source field. Narrative
+references to `082-DL` and `ECF33C79` remain untouched and are not members.
+See the [canonical closure](../../closure/213-S-212-F-post-merge-closure.md).
+
+The original observations, examples and citations below remain preserved for
+historical traceability. Their source-removal recommendations are superseded
+by the current boundary above.
+
+## Historical archival proposal
 
 ## Problem
 
