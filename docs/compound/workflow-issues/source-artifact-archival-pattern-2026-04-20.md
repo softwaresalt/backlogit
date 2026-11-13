@@ -43,12 +43,33 @@ requires recording `source_stash_id` and `source_deliberation_id`, or `none`,
 without mutating referenced sources outside that manifest. Stage owns later
 source triage; idempotency is not authorization.
 
+> [!WARNING]
+> This is an authorization rule, NOT an engine-enforced containment guarantee.
+> Future close operations must preflight ALL explicit members' linked sources
+> and HOLD if ANY linked source would be archived outside manifest M.
+
+Read-only confirmation of
+[`ShipShipment`](../../../internal/core/shipment_lifecycle.go#L512-L518)
+shows nested archival queues linked-stash side effects. In
+[`ArchiveLinkedStashEntries`](../../../internal/core/stash.go#L789-L804),
+the engine reads item-to-stash links and calls `ArchiveStashEntry`. Thus an
+explicit member can cause archival of an active linked stash source outside
+M even when the caller never invokes source cleanup directly. Inspect links
+for every explicit member, not only top-level provenance fields. If that
+side effect would exceed M, HOLD before invoking close and return it for
+governed disposition. Do not assume the documented policy supplies a
+production guard; no engine or caller guard was added by this docs correction.
+
 The verified `213-S` closure supplies concrete evidence:
 [public close evidence](../../closure/evidence/213-S-212-F-close-evidence.json)
 binds the four explicit members and control record, with `082-DL` retained as
 a shared reference. `212-F` declares neither source field. Narrative
 references to `082-DL` and `ECF33C79` remain untouched and are not members.
 See the [canonical closure](../../closure/213-S-212-F-post-merge-closure.md).
+Its `disposition_byte_identical: true`, empty `linked_deliberation_drift` and
+empty `unexpected_archived` support the recorded no-mutation outcome, not a
+general engine guarantee. No retroactive linked-source preflight is claimed
+for that close.
 
 The original observations, examples and citations below remain preserved for
 historical traceability. Their source-removal recommendations are superseded
@@ -102,7 +123,8 @@ Additionally, a `backlogit_query_sql` audit of `stash_entries WHERE state =
 
 * **Relying on `ShipShipment` to clean up source artifacts.** The Go function
   archives the feature/task/shipment hierarchy but has no visibility into stash
-  or deliberation provenance.
+  or deliberation provenance. **Historical claim, not current engine behavior:**
+  current nested archival queues linked-stash cleanup as described above.
 * **Assuming stash entries auto-expire.** Harvested entries are not automatically
   removed — they require an explicit `backlogit_stash_remove` call to transition
   to `removed` state (which archives them to `.backlogit/archive/stash.jsonl`).

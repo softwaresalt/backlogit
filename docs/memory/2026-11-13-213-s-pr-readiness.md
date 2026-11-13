@@ -61,5 +61,14 @@ Parent owns any commit/push, refreshed current-HEAD gates, conditional
 No admin bypass of checks/P-018; no successor routing based on these docs.
 Compaction is pending pre-merge context only, not completed P-020.
 Monitoring owner is parent Ship/operator; validation window is the first
-30 minutes after confirmed merge. Live integration remains future 214-S/U12.
+30 minutes after confirmed merge. Risk review must precede `214-S` U11
+(`213.001-T`), the first CLI consumer implementing `VerifyLauncherScripts` /
+`AuditRepositoryToolchain` and `mcp status --toolchain` / `--strict`.
+U12 (`213.002-T`) separately provisions `WriteToolchainManifest` /
+`RenderPinnedMCPConfig` and E2E isolation.
 No backlog, PR, source, schema, test, plan, spike or review artifacts changed.
+
+The later [canonical closure](../closure/213-S-212-F-post-merge-closure.md)
+records `O-213-01` OPEN at `2026-11-13T07:05:19Z` for missed in-window smoke,
+CLOSED by explicit Ship-owner acceptance at `2026-11-13T07:41:51Z`.
+This is not operator acceptance or a claim that the window was met/restarted.

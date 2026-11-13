@@ -8,7 +8,7 @@ chunk_strategy: h1-h2-h3
 shipment_id: 213-S
 feature_id: 212-F
 closure_status: READY
-compaction_status: done
+compaction_status: degraded
 close_path: cascade
 close_evidence: docs/closure/evidence/213-S-212-F-close-evidence.json
 merge_commit: b470866d02819c978216eb14c90e6a97dd805f11
@@ -48,7 +48,12 @@ Its SHA-256 before this pass was
 ## Invariants and validator evidence
 
 The released surface is only the pure `internal/toolchain` Level 1 library.
-No live CLI/MCP launch or doctor wiring exists until `214-S` / U12.
+No live CLI/MCP launch or doctor wiring is included in this release.
+The first CLI consumer is `214-S` U11 (`213.001-T`):
+`VerifyLauncherScripts` / `AuditRepositoryToolchain` and
+`mcp status --toolchain` / `--strict`. Reassess boundary and residual risks
+BEFORE U11, not after its first consumer lands. U12 (`213.002-T`) separately
+provisions `WriteToolchainManifest` / `RenderPinnedMCPConfig` and E2E isolation.
 Preserve static classification, explicit violations, tested pin/path rejection,
 duplicate-key refusal and `OSContainerSandboxDeferred=true`. Do not infer
 authentication, OS confinement or arbitrary path-equivalence guarantees.
@@ -94,14 +99,25 @@ for this library release.
 | --- | --- | --- |
 | Exact U9 selector in runtime report | 14 pass events, exit 0, no skips | Any failure/skip, vacuity or count mismatch |
 | PR CI and merged-tip check query | 8 successful PR checks; main LineEndings success | Failed applicable check or non-equivalent CI source |
-| Contract/inventory review before U12 | Level 1 only; 21 retained follow-ups | Unsupported isolation claim or lost residual-risk qualification |
+| Contract/inventory review before U11 | Level 1 only; 21 retained follow-ups | Unsupported isolation claim or lost residual-risk qualification |
 
 Actual validation window: `2026-11-13T06:35:19Z` through
 `2026-11-13T07:05:19Z` (30 minutes). LineEndings passed inside that window.
 This pass began after it; the smoke completed at `07:15:01.1071778Z`.
-Outcome is retrospectively healthy on sampled evidence, with explicitly late
-smoke, not a claim of continuous monitoring or a restarted observation window.
-No rollback trigger was observed in the sampled checks.
+`O-213-01` is recorded retrospectively as OPEN effective
+`2026-11-13T07:05:19Z`, owned by Ship, because the required in-window smoke
+was missed. No contemporaneous opening event is claimed. The deadline was not met.
+
+At `2026-11-13T07:41:51Z`, parent Ship explicitly CLOSED `O-213-01` through
+**Ship-owner acceptance**, accepting the late 14-pass smoke
+(`07:14:17.6328332Z` to `07:15:01.1071778Z`), within-window main LineEndings
+(`06:35:43Z`), and source-equivalent successful PR CI. Rationale: this is an
+optional pure-library validator with no live rollout; the sampled evidence
+supports release-scope readiness despite the missed deadline. This is not
+operator acceptance, a met/restarted window, or continuous monitoring.
+The observation contract assigns disposition to its owner; operator authority
+remains required for rollback, not this owner acceptance. No rollback trigger
+was observed in the sampled checks.
 
 Rollback trigger: any selected assertion failure, applicable CI failure or
 newly observed incorrect static acceptance. Halt downstream adoption, preserve
@@ -117,6 +133,20 @@ are not members. They remain untouched; source provenance is not archival
 authority. The public evidence retains `082-DL` as a shared reference.
 Stage owns any later source triage.
 
+This authorization boundary is policy, not an engine containment guarantee.
+Read-only confirmation at `internal/core/shipment_lifecycle.go:512-518`
+shows `ShipShipment` queues linked-stash archival; at
+`internal/core/stash.go:789-804`, `ArchiveLinkedStashEntries` looks up stash
+links and calls `ArchiveStashEntry`. An explicit member's active linked source
+can therefore be archived even when the source is outside manifest M.
+For every future close, preflight ALL explicit members' linked sources and
+HOLD if ANY source would be archived outside M. Do not execute close or
+infer permission from provenance. No such preflight is retroactively claimed
+for `213-S`: its immutable `disposition_byte_identical: true`, empty
+`linked_deliberation_drift` and empty `unexpected_archived` demonstrate the
+recorded no-mutation outcome, not a general engine guard. No engine fix or
+caller production guard was applied.
+
 ## Residual risk and unchanged inventory
 
 The controlling [adjudication](../memory/2026-11-13-213-s-cycle-limit-residual-risk-record.md)
@@ -131,7 +161,7 @@ Retain the exact pre-merge discovery qualifications:
 * `6FADB54A`: `DISCOVERY-STATUS: AMBIGUOUS 58AA0592 5F7A81D7`
 * `EC589C00`: `DISCOVERY-STATUS: AMBIGUOUS D1455316 9FC3A6A6`
 
-All 21 follow-ups remain unchanged; no new capture:
+All 21 feature follow-ups remain unchanged; no new capture:
 
 ```text
 00FD5168, 8841FD73, 1406FAE2, CF190A0C, 58AA0592, 5F7A81D7, 2C71DFA2,
@@ -144,22 +174,26 @@ D1455316, 3083FC1A, 01D3F26B, CBD2D21C, B7E3A649, 8AD5625B, 5688AB99,
 Invoked `compound-refresh`, scope `recent` tied to `213-S`, mode `apply`.
 The [refresh report](213-S-compound-refresh.md) records one keep and one
 evidence-backed stale/update classification. U10 architecture and design
-documentation accurately distinguish current library APIs from planned U12
-integration; no further graduation or cosmetic rewrite is needed.
+documentation distinguish the released library from future integration.
+The corrected consumer handoff above places risk review before U11 and
+separates U12 provisioning; no Stage plan or archived planning field changed.
 
-P-020 was actually invoked via `compact-context`, target `all`, defaults
-`threshold_days=14`, `max_files=40`, `max_size_kb=500`. It completed its
-assessment and preservation pass successfully; status transitioned from
-`pending` to `done`. This is a safe zero-move outcome, not skipped invocation.
+P-020 was invoked via `compact-context`, target `all`, defaults
+`threshold_days=14`, `max_files=40`, `max_size_kb=500`. The earlier claim of a
+completed global pass was incorrect: only 46 release memory records were
+assessed for preservation. Baseline global totals alone did not establish
+global candidate eligibility. Corrected final status is `degraded`, not
+`done` or a claim that zero global candidates exist. This corrects the
+inaccurate recorded outcome; it does not assert a successful earlier pass.
 
 | Category at assessment baseline | Counts and disposition |
 | --- | --- |
 | Memory | 356 files, 2,253,099 bytes; count and size thresholds exceeded |
 | Scoped memory | 46 release files, dated November 11-13; all protected |
 | Plans | 0 files; plans/reviews/spikes protected by Ship Role Boundary regardless |
-| Closure | 156 files, 1,011,858 bytes; 3 scoped artifacts including immutable evidence |
+| Closure | 156 files, 1,011,858 bytes at the earlier baseline, not a global eligibility assessment |
 
-Assessed all three categories; mutations were restricted to `213-S` / `212-F`.
+That assessment's per-artifact resolution was restricted to `213-S` / `212-F`.
 No scoped artifact is older than 14 days. Completion/supersession criteria
 were considered independently of age: 42 of the 46 memory files have incoming
 Markdown citations and must retain their paths. Overlapping protection
@@ -169,12 +203,52 @@ checkpoints. Preserve each task's most recent checkpoint, current cursor and
 active context. None of the 46 can safely lose these protections merely
 because the feature completed.
 
-Final counts: 0 eligible unprotected candidates, 0 files compacted, 0 archive
-moves, 0 bytes recovered, 0 decided plans and 0 closure records compacted.
-No compacted summary is needed when no original can be archived; this record
-and [session memory](../memory/2026-11-13-213-s-post-merge-closure.md) retain
-the assessment. All other release units and fresh canonical closure/evidence
-were preserved. New handoff documents are current context, not candidates.
+Reinvoked `compact-context` target `all` with the same defaults for a bounded,
+READ-ONLY global candidate assessment at `2026-11-13T07:41:51Z`. Configuration
+resolves memory/plans/closure to `docs/memory`, `docs/exec-plans`,
+`docs/closure`. Inventory before these corrections:
+
+| Category | All files / bytes | Markdown | Provisional older-date screen | Undated Markdown |
+| --- | --- | --- | --- | --- |
+| Memory | 357 / 2,258,718 | 297 | 55 | 189 |
+| Configured plans | 0 / 0 | 0 | 0 | 0 |
+| Closure | 159 / 1,031,842 | 156 | 71 | 69 |
+
+Age screening used a filename date, else frontmatter `ingested_at`, before
+`2026-10-30T00:00:00Z`; these are possible candidates, NOT resolved eligibility
+counts. Undated files, newer completed/superseded memories, non-Markdown
+evidence, active-task references and latest-checkpoint protections still need
+resolution. Both nonempty categories exceed count and size thresholds.
+
+The reviewer example
+`docs/closure/2026-09-03-pr-402-remote-head-reconciliation-closure.md`
+records PR 402 merged on September 3 with release status READY: a completed
+release older than 14 days, hence a closure candidate. An exact filename
+scan found zero incoming references in `docs/**/*.md`; the MCP query found
+zero queued/active/blocked item references in indexed description/reference
+fields. This does not certify every alias or the unresolved observation of
+that older release. Disposition: retain untouched for broader owner review,
+not exclude as ineligible merely because it belongs to another release.
+
+Resolved examples: 1 closure candidate retained; global eligibility resolution
+remains incomplete. No other release-unit artifact or protected plan was
+mutated. Actual totals: 0 files compacted, 0 archive moves, 0 bytes recovered,
+0 decided plans, 0 closure records compacted. Parent follow-up: finish global
+completion, reference and latest-checkpoint resolution, then seek governed
+cross-release summary/archive scope, including the PR 402 candidate.
+
+The broader maintenance action reuses active Stage-triaged survivor
+`A17EE897`: "Complete the deferred target-all context compaction review after
+verifying candidate release-unit completion and references." This is a
+positively confirmed match to the same global compaction work, not a new
+feature deferral. It was re-read through the stash tool; its text, priority
+and triage remain untouched. PR 648 and thread
+`PRRT_kwDORzozKM62_vov` are recorded here as new residual-risk references,
+not back-filled into that entry.
+No new capture was made here. P-020 invocation/partial-pass failure is
+non-blocking with explicit `degraded`; it does not authorize next work.
+This record and [session memory](../memory/2026-11-13-213-s-post-merge-closure.md)
+retain the partial assessment and preservation boundary.
 
 ## Structured releasability and remaining handoff
 

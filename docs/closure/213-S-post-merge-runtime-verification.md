@@ -24,7 +24,11 @@ The inferred surface is a pure internal Level 1 API library. No registered
 validator exists; the skill's optional-contract fallback selects the manual
 adapter with command-backed existing test evidence. This is not an HTTP,
 browser, live CLI/MCP launcher, or doctor validation. Those consumers remain
-future `214-S` / U12 work.
+future `214-S` work. Its first CLI consumer is U11 (`213.001-T`):
+`VerifyLauncherScripts` / `AuditRepositoryToolchain` and
+`mcp status --toolchain` / `--strict`. Boundary/risk review must precede U11.
+U12 (`213.002-T`) separately provisions `WriteToolchainManifest` /
+`RenderPinnedMCPConfig` and E2E isolation.
 
 ## Environment prechecks
 
@@ -87,9 +91,15 @@ The pre-merge plan's actual 30-minute window was
 `2026-11-13T06:35:19Z` through `2026-11-13T07:05:19Z`; it was not restarted.
 LineEndings completed within it. This agent began after the deadline and
 performed the smoke test afterwards, so no continuous observation or
-within-window smoke is claimed. Retrospective outcome: sampled checks healthy,
-late smoke PASS, no observed rollback trigger. There is no live-service
-telemetry for this library-only release.
+within-window smoke is claimed. `O-213-01` is recorded retrospectively as OPEN
+effective `2026-11-13T07:05:19Z`, owned by Ship, for the missed in-window smoke;
+no contemporaneous opening event is claimed.
+At `2026-11-13T07:41:51Z`, parent Ship explicitly CLOSED the observation by
+Ship-owner acceptance of the late 14-pass smoke, within-window LineEndings,
+and source-equivalent CI. This optional pure-library validation has no live
+rollout; the owner accepts the sampled evidence with the deadline miss
+retained. This is not operator acceptance or a met/restarted window.
+No observed rollback trigger or live-service telemetry is claimed.
 
 ## Verdict and handoff
 
