@@ -64,3 +64,13 @@ P-016 and closure gates. Local session output supplies visibility.
 Safety mode remains freeze-scope to U11a-U13. No launcher-script changes,
 global configuration edits, or new planning work are authorized.
 The prior contract halt is resolved by Stage's split, not by a policy waiver.
+
+## Wave 1 harness milestone
+
+U11a source-shape harness is scaffolded in
+`internal/toolchain/launcher_shape_test.go`, with no production stub.
+Repository compile passed; `TestU11a_LauncherDeclarationsSourceShape`
+failed on the absent launcher source as an assertion, not a panic or build
+failure. Harness-ready and the exact fail-closed scoped command are recorded
+on `213.004-T`. Vet and lint passed. Next: commit RED, claim and record the
+single start, then delegate only declaration implementation.
