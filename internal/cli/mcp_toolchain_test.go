@@ -361,6 +361,183 @@ func TestU11_MCPStatusToolchainStrictExitsNonZeroOnViolations(t *testing.T) {
 					assert.Contains(t, output, "engram")
 				}
 			}
+
+		})
+	}
+}
+
+// TestU11_LauncherInspectionRejectsUnprovenScripts extends the static audit
+// contract without executing a shell or accepting comments as evidence.
+func TestU11_LauncherInspectionRejectsUnprovenScripts(t *testing.T) {
+	for _, scenario := range []string{
+		"comment-only", "ps1-reassignment", "sh-reassignment", "ps1-traversal",
+		"sh-external", "ps1-nonterminating-check", "sh-nonterminating-check",
+		"ps1-unbound-cwd", "sh-unbound-cwd", "ps1-late-state",
+		"sh-late-check", "missing-script", "missing-config", "unparsed-script",
+		"companion-path-lookup", "state-is-file",
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			root, _ := u11Fixture(t, false)
+			name := "start.ps1"
+			if strings.HasPrefix(scenario, "sh-") {
+				name = "start.sh"
+			}
+			data, err := os.ReadFile(filepath.Join(root, name))
+			require.NoError(t, err)
+			script := string(data)
+			switch scenario {
+			case "comment-only":
+				script = "# " + strings.ReplaceAll(script, "\n", "\n# ")
+			case "ps1-reassignment":
+				script = strings.ReplaceAll(script, "& $backlogitPath", "$backlogitPath = \"backlogit\"\n& $backlogitPath")
+			case "sh-reassignment":
+				script = strings.ReplaceAll(script, "\"$backlogit_path\" --cwd", "backlogit_path=\"backlogit\"\n\"$backlogit_path\" --cwd")
+			case "ps1-traversal":
+				script = strings.ReplaceAll(script, `"bin"`, `"../bin"`)
+			case "sh-external":
+				script = strings.ReplaceAll(script, `"$workspace_root/bin"`, `"/external/bin"`)
+			case "ps1-nonterminating-check":
+				script = strings.ReplaceAll(script, `throw "Missing`, `Write-Warning "Missing`)
+			case "sh-nonterminating-check":
+				script = strings.ReplaceAll(script, "; exit 1", "")
+			case "ps1-unbound-cwd":
+				script = strings.ReplaceAll(script, "--cwd $workspaceRoot ", "")
+			case "sh-unbound-cwd":
+				script = strings.ReplaceAll(script, `--cwd "$workspace_root" `, "")
+			case "ps1-late-state":
+				lines := strings.Split(script, "\n")
+				var state []string
+				var rest []string
+				for _, line := range lines {
+					if strings.Contains(line, "$env:") {
+						state = append(state, line)
+					} else {
+						rest = append(rest, line)
+					}
+				}
+				script = strings.Join(append(rest, state...), "\n")
+			case "sh-late-check":
+				name = "start.sh"
+				data, err = os.ReadFile(filepath.Join(root, name))
+				require.NoError(t, err)
+				lines := strings.Split(string(data), "\n")
+				var check string
+				var rest []string
+				for _, line := range lines {
+					if strings.HasPrefix(line, "if [") {
+						check = line
+					} else {
+						rest = append(rest, line)
+					}
+				}
+				script = strings.Join(rest, "\n") + "\n" + check + "\n"
+			case "missing-script":
+				require.NoError(t, os.Remove(filepath.Join(root, name)))
+			case "missing-config":
+				require.NoError(t, os.Remove(filepath.Join(root, ".mcp.json")))
+			case "unparsed-script":
+				script += "\nInvoke-Expression $operatorInput\n"
+			case "companion-path-lookup":
+				script += "\n& engram sync\n"
+			case "state-is-file":
+				u11Write(t, root, ".copilot", "not a directory\n")
+			}
+			if scenario != "missing-script" {
+				u11Write(t, root, name, script)
+			}
+			before := u11Snapshot(t, root)
+			report, err := toolchain.AuditRepositoryToolchain(context.Background(), root)
+			require.NoError(t, err)
+			require.NotNil(t, report)
+			assert.False(t, report.Valid)
+			assert.Positive(t, report.Violations)
+			assert.Equal(t, before, u11Snapshot(t, root))
+			for _, f := range report.Tools {
+				if f.Status == "violation" {
+					assert.NotEmpty(t, f.Code)
+					assert.NotEmpty(t, f.Message)
+					assert.NotEmpty(t, f.Remediation)
+				}
+			}
+		})
+	}
+}
+
+func TestU11_AuditRejectsRedirectionsAndHonorsCancellation(t *testing.T) {
+	t.Run("cancelled", func(t *testing.T) {
+		root, _ := u11Fixture(t, false)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := toolchain.AuditRepositoryToolchain(ctx, root)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+	t.Run("nil-context", func(t *testing.T) {
+		root, _ := u11Fixture(t, false)
+		_, err := toolchain.AuditRepositoryToolchain(nil, root) //nolint:staticcheck // Deliberately test rejection of invalid public API input.
+		require.ErrorIs(t, err, corerrors.ErrValidation)
+	})
+	for _, name := range []string{"start.ps1", "start.sh", ".mcp.json", "bin", ".copilot"} {
+		t.Run("redirect-"+name, func(t *testing.T) {
+			root, _ := u11Fixture(t, false)
+			// Both ends stay in the fixture; even internal redirections must not
+			// earn a workspace-local pin. Windows junctions use the same primitive.
+			target := filepath.Join(root, "redirect-target")
+			if name == "bin" || name == ".copilot" {
+				require.NoError(t, os.Mkdir(target, 0o755))
+			} else {
+				data, err := os.ReadFile(filepath.Join(root, name))
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(target, data, 0o600))
+			}
+
+			path := filepath.Join(root, name)
+			if name == "bin" {
+				require.NoError(t, os.Rename(path, path+"-original"))
+			} else if name != ".copilot" {
+				require.NoError(t, os.Remove(path))
+			}
+			require.NoError(t, os.Symlink(target, path), "symlink capability is required for this containment gate")
+			report, err := toolchain.AuditRepositoryToolchain(context.Background(), root)
+			require.NoError(t, err)
+			assert.False(t, report.Valid)
+			assert.Positive(t, report.Violations)
+		})
+	}
+}
+
+func TestU11_LauncherProfileRefusesAmbiguousSyntaxAndNamesCompanionFallback(t *testing.T) {
+	for _, scenario := range []struct {
+		name string
+		file string
+		old  string
+		new  string
+	}{
+		{"unquoted-shell-command", "start.sh", `"$backlogit_path" --cwd`, `$backlogit_path --cwd`},
+		{"unbalanced-shell-quote", "start.sh", `"$backlogit_path" --cwd`, `"$backlogit_path"" --cwd`},
+		{"wrong-assignment-dialect", "start.ps1", `$workspaceRoot =`, `workspaceRoot =`},
+		{"mismatched-powershell-quote", "start.ps1", `Join-Path $workspaceRoot "bin"`, `Join-Path $workspaceRoot "bin'`},
+		{"spaced-shell-assignment", "start.sh", `workspace_bin_directory=`, `workspace_bin_directory = `},
+		{"companion-lookup", "start.ps1", `& $backlogitPath`, "$companion = (Get-Command \"engram\")\n& $backlogitPath"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			root, _ := u11Fixture(t, false)
+			data, err := os.ReadFile(filepath.Join(root, scenario.file))
+			require.NoError(t, err)
+			u11Write(t, root, scenario.file, strings.ReplaceAll(string(data), scenario.old, scenario.new))
+			report, err := toolchain.AuditRepositoryToolchain(context.Background(), root)
+			require.NoError(t, err)
+			assert.False(t, report.Valid)
+			assert.Positive(t, report.Violations)
+			if scenario.name == "companion-lookup" {
+				found := false
+				for _, f := range report.Tools {
+					if f.ToolID == "engram" && f.Status == "violation" {
+						found = true
+						assert.Contains(t, f.Remediation, "./bin/engram.exe")
+					}
+				}
+				assert.True(t, found, "the unresolved companion must be named, not hidden behind a generic launcher diagnostic")
+			}
 		})
 	}
 }

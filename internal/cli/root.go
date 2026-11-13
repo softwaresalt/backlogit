@@ -22,6 +22,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/db"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 	mcpinternal "github.com/softwaresalt/backlogit/internal/mcp"
+	"github.com/softwaresalt/backlogit/internal/toolchain"
 	"github.com/softwaresalt/backlogit/internal/version"
 )
 
@@ -497,8 +498,14 @@ func newMCPPrewarmCommand(cwd *string) *cobra.Command {
 	return cmd
 }
 
+type mcpStatusToolchainOutput struct {
+	MCPDaemonStatus
+	Toolchain *toolchain.ToolchainVerificationReport `json:"toolchain,omitempty"`
+}
+
 func newMCPStatusCommand(cwd *string) *cobra.Command {
 	var format string
+	var includeToolchain, strict bool
 	cmd := &cobra.Command{
 		Use:     "status",
 		Short:   "Report whether a backlogit MCP daemon is running for the workspace",
@@ -508,6 +515,20 @@ func newMCPStatusCommand(cwd *string) *cobra.Command {
 			status, err := InspectMCPDaemonStatus(*cwd)
 			if err != nil {
 				return err
+			}
+			if includeToolchain || strict {
+				report, err := toolchain.AuditRepositoryToolchain(cmd.Context(), *cwd)
+				if err != nil {
+					return fmt.Errorf("inspect MCP status toolchain: %w", err)
+				}
+				output := mcpStatusToolchainOutput{MCPDaemonStatus: status, Toolchain: report}
+				if err := writeMCPStatusToolchain(cmd, format, output); err != nil {
+					return err
+				}
+				if strict && report.Violations > 0 {
+					return fmt.Errorf("MCP toolchain audit found %d violations: %w", report.Violations, corerrors.ErrValidation)
+				}
+				return nil
 			}
 			if format == "json" {
 				return writeMCPDaemonJSON(cmd, status)
@@ -522,7 +543,35 @@ func newMCPStatusCommand(cwd *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
+	cmd.Flags().BoolVar(&includeToolchain, "toolchain", false, "include workspace all-tools Level 1 pinning and containment audit")
+	cmd.Flags().BoolVar(&strict, "strict", false, "return non-zero exit status when toolchain violations or non-conformant local tools are present")
 	return cmd
+}
+
+func writeMCPStatusToolchain(cmd *cobra.Command, format string, output mcpStatusToolchainOutput) error {
+	if format == "json" {
+		return writeMCPDaemonJSON(cmd, output)
+	}
+	var text strings.Builder
+	if output.Running {
+		fmt.Fprintf(&text, "MCP daemon running: pid %d, started %s, version %s, active_sessions %d, endpoint %s (lock: %s)\n",
+			output.PID, output.StartedAt.Format(time.RFC3339), output.Version, output.ActiveSessions, output.Endpoint, output.LockPath)
+	} else {
+		fmt.Fprintf(&text, "MCP daemon not running (lock: %s)\n", output.LockPath)
+	}
+	report := output.Toolchain
+	fmt.Fprintf(&text, "Toolchain: valid %t, violations %d, containment %s (OS/container sandbox deferred: %t)\n",
+		report.Valid, report.Violations, report.ContainmentLevel, report.OSContainerSandboxDeferred)
+	for _, findings := range [][]toolchain.ToolVerificationFinding{report.Tools, report.HostPrerequisites} {
+		for _, f := range findings {
+			fmt.Fprintf(&text, "  %s: %s [%s, %s] %s\n", f.ToolID, f.ContainmentClass, f.Status, f.Code, f.Message)
+			if f.Status == "violation" {
+				fmt.Fprintf(&text, "    Remediation: %s\n", f.Remediation)
+			}
+		}
+	}
+	_, err := io.WriteString(cmd.OutOrStdout(), text.String())
+	return wrapOutputErr(err)
 }
 
 func newMCPStopCommand(cwd *string) *cobra.Command {
