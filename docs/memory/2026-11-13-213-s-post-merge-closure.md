@@ -134,6 +134,20 @@ fix is claimed.
 
 ## Degradation, failed approach and next steps
 
+Closure review 5888024151 / PR 648 exposed one threadless workflow-integration
+finding. Captured `E2BD8582` before disposition: executable linked-stash
+authorization preflight/HOLD is absent from the active Ship/reconcile steps,
+despite the documentation warning. This is a separate P-021 C1 contract surface;
+no workflow/engine change was made.
+
+Captured independent gate observation `80E0731C`: P-018 returned SATISFIED
+for the rendered singular "1 previously missed issue" before its disposition.
+Manual review-body inspection caught it; no unsafe merge, parser edit or force
+override occurred. Both capture-only entries were persisted and re-read, retain
+full source refs and `DISCOVERY-STATUS: LOOKUP-UNAVAILABLE`, and require Stage
+deliberation. No captured field was edited. Original 21 entries remain unchanged;
+existing `A17EE897` separately tracks global compaction.
+
 Engram PID 49128 intentionally remains stopped. Parent's post-suite
 `set_workspace` retry failed IPC; bounded known-file fallback was used, not a
 restart. Graphtor is unavailable; no index writes.

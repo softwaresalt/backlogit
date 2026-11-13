@@ -62,6 +62,11 @@ effect would exceed the authorized set, HOLD before invoking close and return it
 governed disposition. Do not assume the documented policy supplies a
 production guard; no engine or caller guard was added by this docs correction.
 
+The active Ship/reconcile execution steps do not yet integrate this documented
+check. That missing workflow enforcement is explicitly deferred to `E2BD8582`
+from PR 648 / review 5888024151 under P-021 C1. Treat this as a warning and HOLD
+requirement, not evidence that the present procedure performs the check.
+
 The verified `213-S` closure supplies concrete evidence:
 [public close evidence](../../closure/evidence/213-S-212-F-close-evidence.json)
 binds the four explicit members and control record, with `082-DL` retained as

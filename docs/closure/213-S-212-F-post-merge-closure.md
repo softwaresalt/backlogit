@@ -176,6 +176,27 @@ D1455316, 3083FC1A, 01D3F26B, CBD2D21C, B7E3A649, 8AD5625B, 5688AB99,
 
 ## Knowledge refresh and P-020 compaction
 
+### Additional closure-review follow-ups
+
+Review 5888024151 on PR 648 contains a threadless previously-missed finding:
+the active Ship/reconcile workflow has not integrated the documented
+member-plus-control linked-stash guard. This separate execution-contract
+surface fails P-021 C1 for the current closure-documentation unit.
+It was captured first as `E2BD8582`; no workflow or engine fix was made.
+The warning is not an implemented safeguard.
+
+Independent observation `80E0731C` captures the installed P-018 gate returning
+SATISFIED while that rendered "1 previously missed issue" remained
+undispositioned. Manual body inspection prevented reliance on that false green;
+the parser was not modified and no unsafe merge or forced override occurred.
+
+Both entries were created once with full task/feature/shipment/PR references,
+`requires_deliberation=true`, provisional priority only, and
+`DISCOVERY-STATUS: LOOKUP-UNAVAILABLE` because complete archived-stash discovery
+was unavailable through configured surfaces. Both were re-read successfully.
+They supplement, rather than edit, the 21 original feature deferrals.
+Task and session residual records cite the same IDs; Stage owns triage.
+
 Invoked `compound-refresh`, scope `recent` tied to `213-S`, mode `apply`.
 The [refresh report](213-S-compound-refresh.md) records one keep and one
 evidence-backed stale/update classification. U10 architecture and design
