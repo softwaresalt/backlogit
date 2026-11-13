@@ -268,3 +268,26 @@ The former full-suite obligation is discharged without custody code changes.
 Captured entry `9CFC88E5` remains untouched for Stage's reconciliation.
 The failure counter remains historically one; it is not reset by advancing.
 Next: fresh whole-M snapshot and served-root attestation for Wave 2.
+
+## Wave 2 admission and harness milestone
+
+Fresh attestation again bound workspace `.`, storage `.backlogit`, and its
+direct-child main index. Whole-M snapshot returned exactly four task IDs.
+The unchanged live manifest and sole active shipment are `214-S`.
+Census: M=4, terminal-success=1, queued=0, active=3, claim-assigned=3,
+active-residual=0, blocked=0, unsupported=0.
+Corrected no-follow reads found one claim and zero starts on each U11-U13
+task. P-012 scoped raw-log fallback remains explicit for those three paths.
+Only U11 is ready, because U11a is done; U12 and U13 still wait.
+
+Harness-architect wrote only `internal/cli/mcp_toolchain_test.go`.
+Repository compile passed. All three required U11 top-level functions failed
+on assertions against the existing ErrNotImplemented declarations or missing
+CLI flags, without panics or build failures. Production files and U11a's
+shape harness remain untouched. Vet, lint and format passed.
+The harness-ready label, named test evidence and exact fail-closed scoped
+command are recorded on `213.001-T`; the command requires all three named
+PASS lines and the Go exit status, not U11a or an empty selector.
+Every green-regression array and tolerated-red selector set remains empty.
+Next: commit this RED harness, confirm the single task start, then delegate
+auditor/CLI behavior only.

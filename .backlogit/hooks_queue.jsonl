@@ -4693,3 +4693,4 @@
 {"seq":4695,"timestamp":"2026-11-13T09:44:15.8721964Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"213.004-T","schema_version":1}}
 {"seq":4696,"timestamp":"2026-11-13T09:46:24.5413599Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"213.004-T","schema_version":1,"status_delta":{"from":"queued","to":"active"}}}
 {"seq":4697,"timestamp":"2026-11-13T10:07:10.9901318Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"213.004-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
+{"seq":4698,"timestamp":"2026-11-13T17:10:05.6066477Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"213.001-T","schema_version":1}}
