@@ -116,3 +116,111 @@ unsupported=0; claim-assigned classification is unverified.
 The single active Ship recovery cursor is
 `.backlogit/checkpoints/checkpoint-20261113-094836.json`.
 The intermediate harness checkpoint was resolved, not deleted.
+
+## Confirmed reader recovery and U11a completion
+
+The operator explicitly selected and confirmed checkpoint
+`checkpoint-20261113-094836.json` and supplied the corrected shipment-aware
+reader. Full enumeration found 201 valid checkpoints, no anomalies, and
+one active Ship checkpoint. Engram was reachable and bound during bounded
+read-select-summarize. Cursor, checkpoint identity, prior gate verdicts and
+four-task schedule were retained; superseded tool-history detail was dropped.
+After served-root attestation, the corrected safe reader independently
+confirmed one U11a start and zero starts on each U11-U13 member.
+Ship resolved and removed the selected checkpoint under operator approval.
+No duplicate start, reclaim or re-scaffold occurred.
+
+Build-feature implemented only the four minimal wrapped ErrNotImplemented
+declarations at `d351002d7330f0464cc1ab939e27069c2d8abed1`, in one attempt.
+The prior RED harness `04c8c1b8` is unchanged. Scoped U11a verification passed
+one named top-level test and four signature subtests. Compile, vet and format
+passed. The independent lint recheck timed out during package loading;
+Ship stopped authorized workspace Engram daemon PID 43400, then lint passed
+with a ten-minute timeout and no source repair. Engram stays stopped for
+unfiltered repository test runs.
+
+Standard report-only local review at `d351002d` returned READY:
+P0=0, P1=0, P2=0, P3=0, runtime follow-up false.
+Constitution, Go and learnings personas found no issues.
+New-symbol graph coverage was degraded; exact-file fallback was explicit.
+Task `213.004-T` is done and linked to its implementation commit.
+Telemetry was disabled, so no task telemetry close was attempted.
+Wave 1 convergence is the next pending gate; no full-suite pass is claimed.
+
+## Wave 1 convergence failure and final halt
+
+`DARK_MODE_HALTED`, wave 1, reviewed source HEAD
+`d351002d7330f0464cc1ab939e27069c2d8abed1`.
+The original bounded dark-mode merge authorization is unchanged but unusable:
+the mandatory unfiltered convergence gate did not pass.
+No Wave 2 harness, start or implementation was admitted.
+
+The always-on convergence gates passed: repository compile, vet, lint with
+ten-minute timeout, format, and the exact non-vacuous U11a scoped command.
+Open-red mapping is empty, so the unfiltered `go test -timeout=30m ./...`
+was mandatory and was attempted without skips, tags or tolerated failures.
+GOFLAGS was `-count=1 -p=1 -parallel=2`; GC controls were cleared.
+Workspace Engram daemon PID 43400 had been stopped and remained stopped.
+
+The full suite failed in existing
+`TestExternal_LiveAcceptAndVerifyUseExternalStore` under `internal/core`.
+The panic says `test timed out after 30m0s`; its printed running-test duration
+is `5h24m56s` and package duration is `19925.450s`.
+These are observed durations, not a diagnosed timing explanation.
+The stack waits in `os/exec.Cmd.Wait` through `custodyGit`,
+`custodyBlobDigest` and custody offer/adoption setup.
+No launcher declaration call appears in that failing stack.
+Root cause remains unconfirmed; neither a baseline defect nor an
+environment-only explanation has been proven.
+Ship stopped the remaining suite after the observed failure.
+This is a failed, incomplete full run, never a full-suite success.
+The stopped Go process was independently confirmed absent.
+
+Failure-output evidence is retained in already-ignored tool storage:
+`bin/tmp/1794584938334-copilot-tool-output-10696-cc58b189-c0ef-478e-bdfe-4a14233efd64.txt`,
+SHA-256
+`4f2b3db6957328dfe91fc15c39cdf7d4222e51fd5cfe7a6816e767aad8abcfa5`.
+No raw failure log is added to the repository.
+
+P-021 deferred investigation entry `9CFC88E5` records the out-of-contract
+custody/Git timeout surface. P-021 C1 permits only completion of U11a's exact
+declaration surface here, not a custody implementation expansion.
+No custody fix, test weakening, timeout removal, or skip was applied.
+`DISCOVERY-STATUS: LOOKUP-UNAVAILABLE` records that active source-ref lookup
+found no match, while the configured index provides no archived-stash read
+surface. Stage owns deliberation and duplicate reconciliation.
+The entry was created once with full task/feature/shipment refs, pre-PR
+and threadless N/A markers, and re-read to verify persistence.
+Task-, run-, and future closure-level residual risk is entry `9CFC88E5`.
+It remains open and does not discharge the convergence gate.
+
+A separate safety incident also requires the dark-mode halt:
+a broad environment-name diagnostic inadvertently displayed a
+credential-bearing value in local tool output.
+The value is not repeated here, stored in a repository artifact, or sent
+to GitHub. The operator was notified to treat that session credential as
+exposed and revoke or rotate it as appropriate.
+P-005 records the sanitized incident and halted disposition.
+No further implementation, GitHub operation, or test rerun followed it.
+
+Final census: M=4, terminal-success=1 (`213.004-T`, completed),
+queued=0, active=3, claim-assigned=3 at last validated read,
+active-residual=0, blocked=0, unsupported=0.
+Completion produced the explicit member's archive-side file and removed
+its queue-side file; archive integrity shows no archive deletions.
+The live index reports the task done; the queue/archive change is preserved.
+The shipment and feature remain active. Frozen M is unchanged.
+Build attempts=1; consecutive task failures=0; review-fix cycles=0;
+CI-fix cycles=0; wave-convergence failures=1.
+
+Resume only after explicit checkpoint selection/confirmation and
+operator reconciliation of the safety incident and failed convergence.
+Engram must be reachable for prune-on-restore, then stopped again before
+an unfiltered suite. Resume the pending Wave 1 gate, not U11a implementation.
+Do not silently expand into custody code; use Stage's separately authorized
+work unit if code remediation is required.
+No PR, CI check, Copilot gate, merge or closure has occurred.
+Shipment `215-S` remains ineligible while this release is open.
+The single active Ship recovery cursor is
+`.backlogit/checkpoints/checkpoint-20261113-155328.json`.
+The intermediate Wave 1 convergence checkpoint was resolved and retained.
