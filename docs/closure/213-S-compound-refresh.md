@@ -35,14 +35,18 @@ Read-only source confirmation at
 linked-stash archival; `internal/core/stash.go:789-804` shows
 `ArchiveLinkedStashEntries` follows item links and calls `ArchiveStashEntry`.
 This can archive an active linked stash source outside explicit manifest M.
-Future mandatory preflight must inspect ALL explicit members' linked sources
-and HOLD if ANY would be archived outside M. No production guard was added.
+Future mandatory preflight must inspect linked sources of ALL explicit
+members AND the shipment control S, the complete transactional set M plus S,
+and HOLD if ANY would be archived outside the authorized set.
+No production guard was added.
 The `213-S` public evidence retains
 shared `082-DL`; `212-F` has neither source field. Narrative `ECF33C79` does
 not authorize cleanup. `disposition_byte_identical: true` and empty
-`linked_deliberation_drift` / `unexpected_archived` support this recorded
-no-mutation outcome; they do not prove a preflight ran or a general engine
-guard exists. No retroactive preflight is claimed.
+`linked_deliberation_drift` / `unexpected_archived` support only their recorded
+deliberation-disposition and artifact-archive observations. They contain no
+stash-file comparison or stash-link inventory and do not prove that linked-stash
+cleanup made no changes. No separate historical stash-state proof,
+retroactive preflight or general engine guard is claimed.
 All historical citations were preserved.
 
 Reviewed: 2; kept: 1; updated/marked stale: 1; consolidated: 0; replaced: 0;

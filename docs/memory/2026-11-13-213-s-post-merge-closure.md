@@ -124,10 +124,13 @@ excluded; parent decides later staging.
 Policy is not an engine guarantee: read-only
 `shipment_lifecycle.go:512-518` / `stash.go:789-804` confirm queued linked-stash
 archival can touch active sources outside M. Future closes must preflight
-ALL explicit members' linked sources and HOLD on ANY out-of-M archival.
-For `213-S`, `disposition_byte_identical` and empty shared-reference drift
-prove the recorded no-mutation outcome only; no retroactive preflight or
-production fix is claimed.
+linked sources of ALL explicit members AND shipment control S, the complete
+transactional set M plus S; HOLD on ANY archival outside the authorized set.
+For `213-S`, `disposition_byte_identical` and empty shared-reference/artifact
+drift support only those recorded checks, not stash-file immutability.
+The JSON contains no stash-file comparison or stash-link inventory, so no
+separate historical stash-state proof, retroactive preflight or production
+fix is claimed.
 
 ## Degradation, failed approach and next steps
 

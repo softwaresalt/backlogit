@@ -139,13 +139,18 @@ shows `ShipShipment` queues linked-stash archival; at
 `internal/core/stash.go:789-804`, `ArchiveLinkedStashEntries` looks up stash
 links and calls `ArchiveStashEntry`. An explicit member's active linked source
 can therefore be archived even when the source is outside manifest M.
-For every future close, preflight ALL explicit members' linked sources and
-HOLD if ANY source would be archived outside M. Do not execute close or
-infer permission from provenance. No such preflight is retroactively claimed
-for `213-S`: its immutable `disposition_byte_identical: true`, empty
-`linked_deliberation_drift` and empty `unexpected_archived` demonstrate the
-recorded no-mutation outcome, not a general engine guard. No engine fix or
-caller production guard was applied.
+For every future close, preflight linked sources of ALL explicit members
+AND the shipment control S: the complete transactional set M plus S.
+HOLD if ANY linked source would be archived outside the authorized set.
+Do not execute close or infer permission from provenance.
+No such preflight is retroactively claimed for `213-S`.
+Its immutable `disposition_byte_identical: true`, empty
+`linked_deliberation_drift` and empty `unexpected_archived` establish only
+the recorded deliberation-disposition and artifact-archive checks.
+They contain no stash-file before/after comparison or stash-link inventory,
+so they do not prove that linked-stash cleanup made no changes.
+No separate historical stash-state proof or general engine guard is claimed.
+No engine fix or caller production guard was applied.
 
 ## Residual risk and unchanged inventory
 
