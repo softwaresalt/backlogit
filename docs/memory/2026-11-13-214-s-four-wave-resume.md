@@ -224,3 +224,47 @@ Shipment `215-S` remains ineligible while this release is open.
 The single active Ship recovery cursor is
 `.backlogit/checkpoints/checkpoint-20261113-155328.json`.
 The intermediate Wave 1 convergence checkpoint was resolved and retained.
+
+## Operator-reconciled awake-host convergence resumption
+
+The operator explicitly selected and confirmed
+`checkpoint-20261113-155328.json`. Full enumeration found 202 valid
+checkpoints, no anomalies, and this one active Ship checkpoint.
+Engram was reachable and bound for bounded read-select-summarize.
+Ship preserved the release cursor, four-task M, gate verdicts and counters,
+discarded only superseded tool-history detail, and resolved the checkpoint.
+No checkpoint deletion was requested for this recovery.
+
+The operator attributes the prior custody timeout and reported five-hour
+duration to Windows Modern Standby/sleep and the resulting wall-clock jump,
+citing `089-DL` / `F2509AE3`. The operator reports the named custody test
+passed awake in 7.51 seconds, exit 0.
+This attribution is recorded as operator reconciliation, not as an
+independently proven code defect or a substitute for full-suite convergence.
+Entry `9CFC88E5` remains unchanged; no custody change is authorized.
+
+The operator also acknowledged the local-only diagnostic notice, confirmed
+no credential values persisted in repository artifacts, and explicitly
+authorized resumption. Future environment inspection is limited to
+allowlisted names; no broad environment-value listing is permitted.
+All dark-mode merge, CI, review and closure gates remain in force.
+
+Immediately after resolution, Ship verified and stopped only workspace
+Engram daemon PID 7472. The pending Wave 1 convergence gate is resumed
+without restarting U11a. Its implementation remains complete and reviewed
+at `d351002d`. The original failure count of one is preserved.
+
+## Wave 1 convergence passed
+
+The awake-host gate completed with exit 0 and
+`WAVE1_CONVERGENCE_PASS` in shell `214-wave1-awake`.
+Compile, vet, lint (`--concurrency=1 --timeout=15m`), format and the exact
+non-vacuous U11a scoped command passed. The unfiltered
+`go test -timeout=30m ./...` passed every repository package, including
+`internal/core` (1030.270s), `tests` (445.903s), and integration (295.382s).
+No selector, short mode, build tag, skip, or tolerated failure narrowed
+the full run. Workspace Engram remained stopped.
+The former full-suite obligation is discharged without custody code changes.
+Captured entry `9CFC88E5` remains untouched for Stage's reconciliation.
+The failure counter remains historically one; it is not reset by advancing.
+Next: fresh whole-M snapshot and served-root attestation for Wave 2.
