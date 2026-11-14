@@ -67,7 +67,7 @@ Feature `213-F` declares `source_stash_id: none` and `source_deliberation_id: no
 
 ## Residual risks and deferred follow-ups
 
-Seven out-of-scope P-021 C2 `DEFERRED SCOPE EXPANSION` stash entries were captured during `214-S` (active in `.backlogit/stash.jsonl`, awaiting Stage triage):
+Eleven out-of-scope P-021 C2 `DEFERRED SCOPE EXPANSION` stash entries were captured during `214-S` (active in `.backlogit/stash.jsonl`, awaiting Stage triage):
 
 * `9CFC88E5`: Investigate existing custody Git-subprocess timeout (`TestExternal_LiveAcceptAndVerifyUseExternalStore`)
 * `0CD5F543`: Enforce non-root and directory-or-nonexistent checks for `COPILOT_HOME` / `ENGRAM_DATA_DIR` in `internal/toolchain/verify.go`
@@ -76,6 +76,10 @@ Seven out-of-scope P-021 C2 `DEFERRED SCOPE EXPANSION` stash entries were captur
 * `040826D4`: Investigate 10-second `reconCtx` timeout in `TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks`
 * `3466D3CB`: Update `docs/ARCHITECTURE.md` dependency diagram (`cli -> toolchain`) and current implementation status
 * `08A5E6F7`: Update `docs/design-docs/2026-11-04-multi-session-mcp-runtime-and-workspace-toolchain.md` shipped-status notes
+* `C5189EAF`: Harden `WriteToolchainManifest` replacement (`internal/toolchain/launcher.go`) to reuse `internal/atomicfile` Windows retry semantics and root-relative rename
+* `65129EBA`: Extend `inspectLauncher` (`internal/toolchain/launcher.go`) and docs for standard launcher prologues and `host_prerequisites` launches (`copilot`)
+* `FBF280DB`: Reconcile `ValidateMCPConfigPinning` (`internal/toolchain/verify.go`) and `RenderPinnedMCPConfig` (`internal/toolchain/launcher.go`) for `graphtor-docs` `serve --read-only` / `graphtor-mcp-shim`
+* `44EE1E84`: Align `resolveProvisioningStorageDir` `.backlog` default, update `docs/configuration.md` Workspace Defaults intro, hoist `inspectLauncher` regexes, preserve multi-finding scripts, add nil guard in `writeMCPStatusToolchain`, and clean up `TODO` test assertion strings in `mcp_toolchain_test.go`
 
 ## Structured releasability and compaction
 
