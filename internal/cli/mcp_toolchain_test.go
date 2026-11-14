@@ -626,7 +626,7 @@ func TestU11_LauncherRunnerRequiresDeclaredEntrypoint(t *testing.T) {
 		})
 	}
 
-	t.Run("rejects-unquoted-posix-entrypoint", func(t *testing.T) {
+	t.Run("accepts-posix-shared-executable-declared-entrypoint", func(t *testing.T) {
 		root := setupRunnerFixture(t, "& $bunPath $bunEntry")
 		data, err := os.ReadFile(filepath.Join(root, "start.sh"))
 		require.NoError(t, err)
@@ -634,53 +634,72 @@ func TestU11_LauncherRunnerRequiresDeclaredEntrypoint(t *testing.T) {
 			`bun_path="$workspace_bin_directory/bun.exe"`,
 			`bun_entry="$workspace_root/tools/mcp/context7.js"`,
 			`if [ ! -f "$bun_path" ]; then echo "Missing ./bin/bun.exe" >&2; exit 1; fi`,
-			`"$bun_path" $bun_entry`,
+			`"$bun_path" "$bun_entry"`,
 		}, "\n")
-		updated := strings.Replace(string(data), `"$backlogit_path"`, prefix+"\n"+`"$backlogit_path"`, 1)
-		u11Write(t, root, "start.sh", updated)
+		u11Write(t, root, "start.sh", strings.Replace(string(data), `"$backlogit_path" --cwd`, prefix+"\n"+`"$backlogit_path" --cwd`, 1))
 
 		report, err := toolchain.AuditRepositoryToolchain(t.Context(), root)
 		require.NoError(t, err)
-		assert.False(t, report.Valid)
-		assert.Positive(t, report.Violations)
+		assert.True(t, report.Valid, "declared POSIX runner entrypoint should pass audit: %+v", report.Tools)
+		assert.Zero(t, report.Violations)
 	})
 
 	for _, shBad := range []struct {
 		name string
 		old  string
 		new  string
+		code string
 	}{
+		{
+			name: "rejects-unquoted-posix-entrypoint",
+			old:  `"$backlogit_path" --cwd`,
+			new:  "bun_path=\"$workspace_bin_directory/bun.exe\"\nbun_entry=\"$workspace_root/tools/mcp/context7.js\"\nif [ ! -f \"$bun_path\" ]; then echo \"Missing ./bin/bun.exe\" >&2; exit 1; fi\n\"$bun_path\" $bun_entry\n\"$backlogit_path\" --cwd",
+			code: "launcher_entrypoint_unverified",
+		},
 		{
 			name: "rejects-posix-backslash-suffix",
 			old:  `workspace_bin_directory="$workspace_root/bin"`,
 			new:  `workspace_bin_directory="$workspace_root\bin"`,
+			code: "launcher_path_invalid",
 		},
 		{
 			name: "rejects-posix-backslash-entrypoint",
-			old:  `"$backlogit_path"`,
-			new:  "bun_path=\"$workspace_bin_directory/bun.exe\"\nif [ ! -f \"$bun_path\" ]; then echo \"Missing ./bin/bun.exe\" >&2; exit 1; fi\n\"$bun_path\" \"tools\\mcp\\context7.js\"\n\"$backlogit_path\"",
+			old:  `"$backlogit_path" --cwd`,
+			new:  "bun_path=\"$workspace_bin_directory/bun.exe\"\nif [ ! -f \"$bun_path\" ]; then echo \"Missing ./bin/bun.exe\" >&2; exit 1; fi\n\"$bun_path\" \"tools\\mcp\\context7.js\"\n\"$backlogit_path\" --cwd",
+			code: "launcher_entrypoint_unverified",
 		},
 		{
 			name: "rejects-shell-operator-entrypoint",
-			old:  `"$backlogit_path"`,
-			new:  "bun_path=\"$workspace_bin_directory/bun.exe\"\nif [ ! -f \"$bun_path\" ]; then echo \"Missing ./bin/bun.exe\" >&2; exit 1; fi\n\"$bun_path\" tools/mcp/context7.js;evil\n\"$backlogit_path\"",
+			old:  `"$backlogit_path" --cwd`,
+			new:  "bun_path=\"$workspace_bin_directory/bun.exe\"\nif [ ! -f \"$bun_path\" ]; then echo \"Missing ./bin/bun.exe\" >&2; exit 1; fi\n\"$bun_path\" tools/mcp/context7.js;evil\n\"$backlogit_path\" --cwd",
+			code: "launcher_entrypoint_unverified",
 		},
 		{
 			name: "rejects-glob-entrypoint",
-			old:  `"$backlogit_path"`,
-			new:  "bun_path=\"$workspace_bin_directory/bun.exe\"\nif [ ! -f \"$bun_path\" ]; then echo \"Missing ./bin/bun.exe\" >&2; exit 1; fi\n\"$bun_path\" tools/mcp/context[7].js\n\"$backlogit_path\"",
+			old:  `"$backlogit_path" --cwd`,
+			new:  "bun_path=\"$workspace_bin_directory/bun.exe\"\nif [ ! -f \"$bun_path\" ]; then echo \"Missing ./bin/bun.exe\" >&2; exit 1; fi\n\"$bun_path\" tools/mcp/context[7].js\n\"$backlogit_path\" --cwd",
+			code: "launcher_entrypoint_unverified",
 		},
 	} {
 		t.Run(shBad.name, func(t *testing.T) {
 			root := setupRunnerFixture(t, "& $bunPath $bunEntry")
 			data, err := os.ReadFile(filepath.Join(root, "start.sh"))
 			require.NoError(t, err)
-			u11Write(t, root, "start.sh", strings.Replace(string(data), shBad.old, shBad.new, 1))
+			updated := strings.Replace(string(data), shBad.old, shBad.new, 1)
+			require.NotEqual(t, string(data), updated, "fixture mutation must apply")
+			u11Write(t, root, "start.sh", updated)
 
 			report, err := toolchain.AuditRepositoryToolchain(t.Context(), root)
 			require.NoError(t, err)
 			assert.False(t, report.Valid)
 			assert.Positive(t, report.Violations)
+			foundCode := false
+			for _, f := range report.Tools {
+				if f.Status == "violation" && f.Code == shBad.code {
+					foundCode = true
+				}
+			}
+			assert.True(t, foundCode, "expected violation code %q in %+v", shBad.code, report.Tools)
 		})
 	}
 }
