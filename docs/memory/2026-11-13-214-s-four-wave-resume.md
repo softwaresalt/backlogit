@@ -415,4 +415,50 @@ retry:
 * Next: commit resolved checkpoint and Wave 3 convergence PASS record, then
   admit Wave 4 (`213.003-T` / U13, `harness-exempt: docs-only`).
 
+## Wave 4 admission and Step 4.1a exempt command halt
+
+Wave 4 admission passed served-root attestation (`workspace.root_path`,
+`workspace.storage_root`, and `pragma_database_list` main index) and whole-`M`
+snapshot (`M=4`, `terminal_success=3` [`213.004-T`, `213.001-T`, `213.002-T`],
+`queued=0`, `active=1` [`213.003-T` `claim-assigned` with
+`scheduler_baseline_claim: 214-S`, `claim_events: 1`, `start_count: 0`
+verified via `bin/tmp/213-safe-log-read.py`], `active_residual=0`, `blocked=0`,
+`unsupported=0`, `ready_4={213.003-T}`, `open_red_deliverables_4={}`).
+
+At Step 4.1a (before Step 4.1b, leaving `213.003-T` `claim-assigned` with
+`start_count: 0` and zero `WORK_STARTED` events or deliverable writes), the
+P-002.3 pre-work probe executed `213.003-T`'s declared
+`exempt_verification_command` verbatim in PowerShell and failed with a
+syntax/parameter-binding error rather than a missing-deliverable failure:
+
+```text
+Select-String: A positional parameter cannot be found that accepts argument '-Quiet'.
+```
+
+In both PowerShell 7 (`pwsh`) and Windows PowerShell 5.1 (`powershell.exe`),
+the `--` end-of-options token in `Select-String -Path ... -SimpleMatch -- '--toolchain' -Quiet`
+and `Select-String -Path ... -SimpleMatch -- '--strict' -Quiet` stops named
+parameter binding for `-Quiet`, causing `ParameterBindingException` (`exit 1`)
+unconditionally even when the searched text is present (verified against existing
+`'--format'` in `docs/cli-reference/backlogit_mcp_status.md`, whereas placing
+`-Quiet` before `--` or using `-Pattern '--toolchain' -Quiet` binds properly
+and returns `True`, `exit 0`).
+
+* **P-002 GAP / P-005 Telemetry**: `EXEMPT_COMMAND_MISSING` on `213.003-T` —
+  `exempt_verification_command` is non-executable/unpassable as written due to
+  PowerShell `--` preceding `-Quiet`.
+* **Disposition**: `DARK_MODE_HALTED` at Step 4.1a before Step 4.1b. Per P-010
+  (Ship Role Boundary) and P-002.2, Ship does not edit `213.003-T`'s exempt
+  contract or substitute a modified verification command.
+* **Workspace state**: `HEAD` `f97df325b9c7a41bb737d7c6764a3ed13f3669a7` has
+  Wave 3 convergence PASS committed; zero edits were made to
+  `docs/cli-reference/backlogit_mcp_status.md` or `docs/configuration.md`;
+  workspace Engram daemon remains stopped (`PID 38652` stopped earlier).
+* **Required next action**: Stage or operator amends `213.003-T`'s
+  `exempt_verification_command` (and plan § U13) to place `-Quiet` before `--`
+  (or use `-Pattern '--toolchain' -Quiet` and `-Pattern '--strict' -Quiet`),
+  then resumes Ship from the new Wave 4 halt checkpoint to run Step 4.1a..4.6,
+  whole-shipment review, runtime verification, and PR lifecycle.
+
+
 
