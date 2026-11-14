@@ -334,3 +334,55 @@ locally) with `GOFLAGS="-count=1 -p=1 -parallel=2"`, the unfiltered
 
 Next: Wave 3 admission (`213.002-T` / U12).
 
+## Wave 3 completion and convergence circuit breaker halt
+
+Wave 3 admission passed served-root attestation, whole-M snapshot (`M=4`,
+`terminal_success=2`, `queued=0`, `active=2`, `claim-assigned=2`,
+`active_residual=0`, `blocked=0`, `unsupported=0`), and no-follow safe log read
+(`start_count=0` on `213.002-T` and `213.003-T`). `harness-architect` scaffolded
+ONLY `tests/integration/multi_session_workspace_containment_test.go`, confirmed
+compilation (`go test -run=^$ -count=1 ./...` exit 0) and genuine RED
+(`TestU12_*` failing on absent `.backlogit/toolchain.yaml` and
+`ErrNotImplemented`), and committed RED at `a10edad6`.
+
+Single `WORK_STARTED: 214-S` was appended to `213.002-T` and verified
+(`start_count=1`) before implementation. `build-feature` (`Go Engineer`)
+implemented `WriteToolchainManifest` and `RenderPinnedMCPConfig` in
+`internal/toolchain/launcher.go` and created `.backlogit/toolchain.yaml`.
+Five-persona report-only review surfaced two P1 findings and one P2 finding in
+`launcher.go` (missing `backlogit`/pin validation, `--cwd`/URL-ID checks, and
+non-atomic pre-remove write) plus an out-of-scope P2 finding on `verify.go`
+relative `workspace_root: "."` resolution (captured via P-021 C2 stash
+`D8EE8389`). After fixing all in-scope findings (atomic temp-file +
+`os.Rename`, pin/URL/flag-injection validation, clean test cleanup/deadlines),
+3-persona re-review returned `READY_WITH_FOLLOWUPS` (`P0=0`, `P1=0`), with a P2
+intra-process unique temp-file suffix fixed and re-verified (`U12_HARNESS_PASS`,
+`TestU11_`, `TestU11a_`, `go vet`, `gofmt`, `golangci-lint` all exit 0).
+`213.002-T` was committed at `84e830e1eeed96173f53273072083ffcdd0367dd`,
+linked, moved to `done`, and annotated.
+
+Before Wave 3 convergence, workspace Engram daemon PID 60864 was verified and
+stopped. Compile (`go test -run=^$ -count=1 ./...`), `go vet ./...`,
+`gofmt -l .`, and `golangci-lint run --concurrency=1 --timeout=15m`
+(`GOTOOLCHAIN=go1.26.5`) passed. Unfiltered `go test -timeout=30m ./...`
+(`GOTOOLCHAIN=go1.27.0`, `GOFLAGS="-count=1 -p=1 -parallel=2"`) passed 49 of
+50 packages (`tests` 537.279s, `tests/contract` 145.872s, `tests/integration`
+432.243s including all `TestU12_`), failing only on one pre-existing test:
+`TestU1f_ExecuteReconstitutionPreliminaryPlanReadsUnderCanonicalLocks/preliminary_plan_reads_wait_for_stash_global_and_membership_locks`
+in `internal/core` (`14.17s`; 10s `reconCtx` timeout hit `context deadline exceeded`
+in `query database links: get links for 003-S`).
+
+This brought cumulative `wave_gate_failures` across `214-S` to `3` (limit `3`),
+tripping the P-002.6 Wave convergence gate circuit breaker:
+
+* `DARK_MODE_HALTED` emitted; Wave 4 (`213.003-T` / U13) is NOT admitted.
+* P-021 C2 deferred entry `040826D4` captured for the out-of-scope
+  `internal/core/shipment_reconstitute_hardening_test.go:142` timeout.
+* Census at halt: `M=4`, `terminal_success=3` (`213.004-T`, `213.001-T`,
+  `213.002-T`), `queued=0`, `active=1` (`213.003-T`, `claim-assigned`,
+  `start_count=0`), `active_residual=0`, `blocked=0`, `unsupported=0`.
+* Pending next step after operator review/reset: re-run Wave 3 convergence
+  gate (`go test -timeout=30m ./...` with `GOTOOLCHAIN=go1.27.0` and Engram
+  stopped), then proceed to Wave 4 (`213.003-T` / U13) and PR lifecycle.
+
+
