@@ -291,3 +291,46 @@ PASS lines and the Go exit status, not U11a or an empty selector.
 Every green-regression array and tolerated-red selector set remains empty.
 Next: commit this RED harness, confirm the single task start, then delegate
 auditor/CLI behavior only.
+
+## Served-root handoff and Wave 2 completion
+
+* `handoff_status: PASS`, `shipment_id: 214-S`, `served_workspace_root_rel: .`,
+  `served_storage_root_rel: .backlogit`, `manifest_path_rel: .backlogit/queue/214-S.md`,
+  `index_db_rel: .backlogit/backlogit.db`,
+  `ordered_items: ["213-F", "213.004-T", "213.001-T", "213.002-T", "213.003-T"]`
+
+Following the host memory-commit remediation, the operator selected and
+confirmed `checkpoint-20261113-171033.json`. Full checkpoint enumeration found
+203 records with zero anomalies and that single active Ship checkpoint.
+Engram (`daemon-status`) was reachable and bound during bounded
+read-select-summarize; Ship reconciled the pre-commit cursor with landed
+commits `bf268094` (RED U11 harness) and `1333ecae` (U11 implementation),
+verified the single `WORK_STARTED: 214-S` entry on `213.001-T` via
+`bin/tmp/213-safe-log-read.py`, and resolved `checkpoint-20261113-171033.json`.
+
+U11 verification passed at `1333ecae`: fail-closed `U11_HARNESS_PASS`
+(all 3 required named `TestU11_` tests plus 3 additional suites under `-race`),
+`TestU11a_LauncherDeclarationsSourceShape`, `go vet`, `gofmt`, and
+`golangci-lint` (v1.64.8 with cached `go1.26.5`). Five-persona report-only
+review (`Constitution Reviewer`, `Go Reviewer`, `Learnings Researcher`,
+`Security Reviewer`, `Scope Boundary Auditor`) returned `READY_WITH_FOLLOWUPS`
+(`P0=0`, `P1=0`). Two out-of-scope P2 findings were captured once via P-021 C2:
+`0CD5F543` (`verify.go` `COPILOT_HOME`/`ENGRAM_DATA_DIR` directory check) and
+`E231EA13` (`Execute()` `--jsonrpc --strict` `error.data` forwarding).
+`213.001-T` was linked to `1333ecae`, moved to `done`, and annotated.
+
+## Wave 2 convergence passed
+
+Workspace Engram daemon PID 57032 was verified and stopped before Wave 2
+convergence. Compile (`go test -run=^$ -count=1 ./...`), `go vet ./...`,
+`gofmt -l .`, and `golangci-lint run --concurrency=1 --timeout=15m`
+(`GOTOOLCHAIN=go1.26.5`) passed. An initial unfiltered `go test -timeout=30m ./...`
+run failed solely on 40 `TestU175_*_LintFix` tests (`exit status 7`) because
+host `go1.27.4` emits export data v5 while installed `golangci-lint` v2.13.2
+was built with `go1.27.0` (max export data v4); `wave_gate_failures`
+incremented from `1` to `2` (limit `3`). Pinning `GOTOOLCHAIN=go1.27.0` (cached
+locally) with `GOFLAGS="-count=1 -p=1 -parallel=2"`, the unfiltered
+`go test -timeout=30m ./...` passed every repository package with exit 0.
+
+Next: Wave 3 admission (`213.002-T` / U12).
+
