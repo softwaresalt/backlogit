@@ -385,4 +385,34 @@ tripping the P-002.6 Wave convergence gate circuit breaker:
   gate (`go test -timeout=30m ./...` with `GOTOOLCHAIN=go1.27.0` and Engram
   stopped), then proceed to Wave 4 (`213.003-T` / U13) and PR lifecycle.
 
+## Wave 3 convergence retry passed
+
+Following operator confirmation (`Confirmed.`) selecting
+`checkpoint-20261114-054608.json` and authorizing the Wave 3 convergence gate
+retry:
+
+* Crash-resumption recovery enumerated 205 checkpoints with zero quarantine or
+  validation anomalies and sole active Ship checkpoint
+  `checkpoint-20261114-054608.json`.
+* Engram (`.\bin\engram.exe --workspace C:\Source\GitHub\backlogit daemon-status`)
+  was verified live and bound (PID 38652); bounded read-select-summarize
+  preserved `M`, Wave 1 & Wave 2 `FULL_PASS`, completed tasks (`213.004-T`,
+  `213.001-T`, `213.002-T`), and deferred entries
+  `["9CFC88E5", "0CD5F543", "E231EA13", "D8EE8389", "040826D4"]`.
+* `checkpoint-20261114-054608.json` was resolved via
+  `backlogit_resolve_checkpoint`, and workspace Engram daemon PID 38652 was
+  stopped before running Wave 3 Step 4.6 convergence.
+* Always-on and scoped gates passed: `go test -run=^$ -count=1 ./...`
+  (`GOTOOLCHAIN=go1.27.0`), `go vet ./...`, `golangci-lint run --concurrency=1 --timeout=15m`
+  (`GOTOOLCHAIN=go1.26.5`), `gofmt -l cmd internal tests` (clean), and
+  cumulative scoped tests `TestU11a_` (0.731s), `TestU11_|TestU11a_` (`-race`,
+  8.610s / 1.649s), and `TestU12_` (`-race`, 9.867s).
+* Unfiltered `go test -timeout=30m ./...` (`GOTOOLCHAIN=go1.27.0`,
+  `GOFLAGS="-count=1 -p=1 -parallel=2"`, `GOMAXPROCS`/`GOGC`/`GOMEMLIMIT`
+  cleared) passed all 50 repository packages with exit 0 (including
+  `internal/core` 1543.007s, `tests` 472.248s, `tests/contract` 140.726s,
+  `tests/integration` 286.718s).
+* Next: commit resolved checkpoint and Wave 3 convergence PASS record, then
+  admit Wave 4 (`213.003-T` / U13, `harness-exempt: docs-only`).
+
 
