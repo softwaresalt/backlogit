@@ -10,7 +10,7 @@ docline:
   mode: pre-merge
   shipment_id: 214-S
   feature_id: 213-F
-  evidence_head: c408ff88450e1db0002b718465b756ae08aefc7b
+  evidence_head: d4756d739c37cf2fbad956c34da778b1b7814e21
   verification_verdict: PASS
 ---
 
@@ -69,9 +69,10 @@ releasability:
 ### Automated Go verification at evidence HEAD
 
 * `go test -timeout=30m -count=1 -run '^TestU11a_' ./internal/toolchain` — `PASS` (`0.906s`)
-* `go test -timeout=30m -count=1 -race -run '^(TestU11_|TestU11a_)' ./internal/cli ./internal/toolchain` — `PASS` (`15.188s` / `1.925s`)
+* `go test -timeout=30m -count=1 -race -run '^(TestU11_|TestU11a_)' ./internal/cli ./internal/toolchain` — `PASS` at `d4756d73` (`13.747s` / `1.469s`)
+* `go test -timeout=30m ./internal/cli ./internal/toolchain` — `PASS` at `d4756d73` (`274.284s` / `4.740s`)
 * `go test -timeout=30m -count=1 -race -run '^TestU12_' ./tests/integration` — `PASS` (`7.491s`)
-* Unfiltered `go test -timeout=30m ./...` (`GOTOOLCHAIN=go1.27.0`, `GOFLAGS="-count=1 -p=1 -parallel=2"`) — `PASS` across all 50 packages at `c408ff88` (`exit 0`, including `internal/core` `1271.105s`, `tests` `521.558s`, `tests/contract` `46.848s`, `tests/integration` `342.503s`).
+* Unfiltered `go test -timeout=30m ./...` (`GOTOOLCHAIN=go1.27.0`, `GOFLAGS="-count=1 -p=1 -parallel=2"`) — `PASS` across all 50 packages at `c408ff88` (`exit 0`, production code unchanged in test-only commit `d4756d73`).
 
 ## Invariants and manual checkpoints
 
