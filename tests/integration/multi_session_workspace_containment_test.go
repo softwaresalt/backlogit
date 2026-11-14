@@ -416,11 +416,25 @@ func TestU12_WriteToolchainManifestAndRenderPinnedMCPConfigProducesZeroViolation
 	assert.True(t, report.OSContainerSandboxDeferred)
 }
 
+func u12ShortTempDir(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return t.TempDir()
+	}
+	// t.TempDir() on POSIX embeds the full test/subtest name, which can exceed the 100-byte sun_path limit.
+	dir, err := os.MkdirTemp("", "u12-")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, os.RemoveAll(dir))
+	})
+	return dir
+}
+
 // TestU12_MultiWorkspaceAllToolsIsolationAndCrossAttachRefusal verifies SC7, SC10, and SC14.
 func TestU12_MultiWorkspaceAllToolsIsolationAndCrossAttachRefusal(t *testing.T) {
 	t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlogit")
-	wsA := t.TempDir()
-	wsB := t.TempDir()
+	wsA := u12ShortTempDir(t)
+	wsB := u12ShortTempDir(t)
 
 	u12InitBacklogitWorkspace(t, wsA)
 	u12InitBacklogitWorkspace(t, wsB)
@@ -579,7 +593,7 @@ func TestU12_NegativePinningGlobalPATHRefusalAndPathTraversalContainment(t *test
 	})
 
 	t.Run("mcp_tool_rejects_path_traversal_and_external_reference", func(t *testing.T) {
-		root := t.TempDir()
+		root := u12ShortTempDir(t)
 		outside := t.TempDir()
 		t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlogit")
 		u12InitBacklogitWorkspace(t, root)
