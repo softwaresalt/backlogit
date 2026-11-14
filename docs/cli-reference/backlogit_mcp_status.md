@@ -27,6 +27,8 @@ backlogit mcp status [flags]
 ```text
       --format string   output format: text or json (default "text")
   -h, --help            help for status
+      --strict          return non-zero exit status when toolchain violations or non-conformant local tools are present
+      --toolchain       include workspace all-tools Level 1 pinning and containment audit
 ```
 
 ### Options inherited from parent commands

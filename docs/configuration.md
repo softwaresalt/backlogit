@@ -12,6 +12,7 @@ docline:
         - migration.yaml
         - registry.yaml
         - templates
+        - toolchain.yaml
     ms.date: 2026-04-03T00:00:00Z
     ms.topic: reference
 ingested_at: "2026-06-26T02:34:29Z"
@@ -32,6 +33,7 @@ backlogit stores workspace configuration inside `.backlogit/`. The current imple
 | `.backlogit/migration.yaml` | Remaps already-detected import classes to backlogit artifact types during source migration | Yes |
 | `.backlogit/templates/*.md` | Defines template sections and markdown body scaffolds per artifact type | Yes |
 | `.backlogit/hooks.yaml` | Configures the agent hook event system and built-in lifecycle hooks, including the pre-task-completion gate broker (`lifecycle.pre_task_completion_gate`) | Yes |
+| `.backlogit/toolchain.yaml` | Declares the workspace Level 1 pinned tool inventory, companion MCP server pins, and host prerequisites | Yes |
 
 > [!IMPORTANT]
 > `backlogit init` writes a default `hooks.yaml` with a
@@ -766,6 +768,83 @@ The response from `backlogit_merge_sync` includes `upserted`, `deleted`,
 `failed_paths`, and `fallback_triggered` fields so callers can detect and respond
 to incremental sync anomalies.
 
+## Level 1 Workspace Toolchain Configuration
+
+backlogit uses `.backlogit/toolchain.yaml` (validated against `schemas/workspace-toolchain.schema.json`) to declare the workspace's Level 1 pinned toolchain inventory, companion MCP server entrypoints, workspace-state bindings, and host prerequisites.
+
+> [!IMPORTANT]
+> Level 1 workspace-local pinning (`containment_level: "level-1-workspace-local-pinned"`) establishes static executable, lockfile, checksum, and `--cwd` / state-directory pinning within the workspace. It does **not** provide an OS or container sandbox (`os_container_sandbox_deferred: true`).
+
+### toolchain.yaml Schema and Containment Classes
+
+`.backlogit/toolchain.yaml` requires these top-level fields:
+
+* `schema_version`: must be `"1.0"`
+* `containment_level`: must be `"level-1-workspace-local-pinned"`
+* `os_container_sandbox_deferred`: must be `true`
+* `workspace_root`: canonical or repo-relative workspace root (for example `"."`)
+* `tools`: array of declared MCP servers, local tools, and built-in host tools
+* `host_prerequisites`: array of explicit host runtime commands (`id`, `command`, `purpose`, `required`, `reason`)
+
+Every entry in `tools` carries an explicit `containment_class` from the closed Level 1 vocabulary:
+
+| Class | Meaning | Required pinning or metadata |
+|------|---------|------------------------------|
+| `workspace-local-pinned` | Executable and entrypoint live inside the workspace tree | `executable_path`, `pinned_version` and `sha256` (or `lockfile_path`), `entrypoint_path` (required for runner executables such as `bun`/`bunx`; disallowed on `backlogit`), and `workspace_binding_args` (`--cwd` required on `backlogit`; optional `COPILOT_HOME`, `ENGRAM_DATA_DIR`) |
+| `host-prerequisite` | Required or optional external runtime on the host | Non-empty `reason` explaining why the host runtime is required |
+| `remote-declared` | Remote HTTP/MCP service without a workspace-local binary | DNS-label-safe `id` and non-empty `remote_policy` |
+| `built-in-host` | Capability supplied directly by the agent host | Non-empty `reason` |
+| `unsupported` | Tool or shell construct outside the supported static verification profile | Rejected by provisioning helpers; reported as a verification violation with remediation guidance |
+| `non-conformant` | Declared or discovered tool that violates workspace-local pinning | Rejected by provisioning helpers; reported as a verification violation with remediation guidance |
+
+### Provisioning Helpers and CLI Surface
+
+Package `internal/toolchain` (`internal/toolchain/launcher.go`) exposes Go library APIs (not CLI subcommands) for Level 1 auditing and provisioning:
+
+* `WriteToolchainManifest(rootPath string, manifest *ToolchainManifest) error`: Go API that validates all `tools` and `host_prerequisites` containment rules, rejects `unsupported` or `non-conformant` classes and path-traversal or symlink escapes, and atomically writes `.backlogit/toolchain.yaml` (or `.backlog/toolchain.yaml`)
+* `RenderPinnedMCPConfig(rootPath string, manifest *ToolchainManifest) ([]byte, error)`: Go API that validates the manifest and renders deterministic `.mcp.json` JSON binding local stdio servers to `./bin/...` executables and workspace-scoped arguments/environment variables
+* `VerifyLauncherScripts(rootPath string) ([]ToolVerificationFinding, error)`: statically inspects `.mcp.json`, `start.ps1`, and `start.sh` for workspace-local pinning, terminating missing-file checks, workspace-scoped `COPILOT_HOME`/`ENGRAM_DATA_DIR`, and absence of ambient `PATH` lookups (`Get-Command`, `command -v`)
+* `AuditRepositoryToolchain(ctx context.Context, rootPath string) (*ToolchainVerificationReport, error)`: combines inventory, MCP config, and launcher verification into a single report
+
+Use these CLI commands to prewarm the multi-session daemon and audit workspace pinning:
+
+```text
+backlogit mcp prewarm --format json
+backlogit mcp status --toolchain --format json
+backlogit mcp status --toolchain --strict --format json
+```
+
+* `backlogit mcp prewarm` starts or attaches to the workspace background MCP daemon before client sessions connect.
+* `backlogit mcp status --toolchain` reports daemon status together with the nested `"toolchain"` `ToolchainVerificationReport` object (`valid`, `violations`, `containment_level`, `os_container_sandbox_deferred`, `workspace_root`, `tools`, and `host_prerequisites`).
+* `backlogit mcp status --toolchain --strict` (or `--strict` alone, which implies `--toolchain`) writes the full report and exits non-zero (wrapped validation error) when `violations > 0`.
+
+### Operator-Owned Verified Workspace Toolchain Setup, Provisioning, and Custody Alignment Procedure
+
+Follow this four-step procedure to provision and verify a workspace-local Level 1 toolchain:
+
+1. **Confirm Ownership and Gitignore / Custody Boundary**:
+   * Tracked repository artifacts (`schemas/workspace-toolchain.schema.json`, `internal/toolchain/*.go`, `.backlogit/toolchain.yaml`, and documentation under `docs/`) are committed in the repository.
+   * Tracked/unignored launcher and dependency inputs remain under operator custody (`start.ps1`, `start.sh`, `.gitignore`, `tools/mcp/package.json`, `tools/mcp/bun.lock`, and `tools/mcp/install.ps1`), while local runtime artifacts remain gitignored (`./bin/*.exe`, `.copilot/graphtor-mcp-shim.cjs`, `tools/mcp/node_modules/`, and `.mcp.json`).
+2. **Verify Per-Tool Source, Checksums, Lockfile Provenance, and Workspace Binding**:
+   * `backlogit` (`workspace-local-pinned`): build from repository source (`go build -o ./bin/backlogit.exe ./cmd/backlogit`), record its executable SHA-256 in `.backlogit/toolchain.yaml`, invoke as `./bin/backlogit.exe mcp --cwd <workspace>` in `.mcp.json`, and ensure both `start.ps1` and `start.sh` use workspace-anchored paths, terminating missing-file checks, workspace-scoped `COPILOT_HOME` and `ENGRAM_DATA_DIR`, and straight-line syntax without ambient `PATH` lookups.
+   * `engram` (`workspace-local-pinned`): provision `./bin/engram.exe`, pin its version and executable SHA-256 in `.backlogit/toolchain.yaml`, bind `ENGRAM_DATA_DIR=.engram`, and invoke `./bin/engram.exe shim` in `.mcp.json`.
+   * `bun` and `bunx` (`workspace-local-pinned`): provision `./bin/bun.exe` and `./bin/bunx.exe`, pin their versions, executable SHA-256 checksums, and `entrypoint_path: "./tools/mcp/install.ps1"` in `.backlogit/toolchain.yaml`, and isolate caches via `BUN_INSTALL=<workspace>/bin/bun`, `BUN_INSTALL_CACHE_DIR=<workspace>/bin/bun-cache`, and `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0`.
+   * `context7` and `tavily` (`workspace-local-pinned`): pin versions in `tools/mcp/package.json` and `tools/mcp/bun.lock`, ensure `tools/mcp/install.ps1` resolves `$binDirectory = Join-Path $workspaceRoot "bin"` (not `.bin`), and run `pwsh -NoProfile -File tools/mcp/install.ps1` (`./bin/bun.exe install --cwd tools/mcp --frozen-lockfile --ignore-scripts --backend copyfile --no-progress`).
+   * `github` (`workspace-local-pinned`): provision `./bin/github-mcp-server.exe`, pin its version and executable SHA-256 in `.backlogit/toolchain.yaml`, and invoke `["stdio"]` in `.mcp.json`.
+   * `graphtor-docs` (`workspace-local-pinned`): provision `./bin/kbdb.exe`, pin its version and executable SHA-256 in `.backlogit/toolchain.yaml`, and invoke `"./bin/kbdb.exe"` with `["serve"]` in `.mcp.json` (extra hyphen-prefixed flags beyond `--cwd` or `--script=` are rejected by `ValidateMCPConfigPinning`).
+   * `graphtor-mcp-shim` (`workspace-local-pinned`, `kind: "tool"`): provision `.copilot/graphtor-mcp-shim.cjs` paired with `executable_path: "./bin/bun.exe"`, its pinned version, and the `bun.exe` SHA-256 in `.backlogit/toolchain.yaml`.
+   * `built-in-host` (`agent-host` inside `tools`) and `host_prerequisites` (`pwsh`, `bash`, `git`, `gh`, `go`, `copilot` in the top-level `host_prerequisites` array): declare each entry explicitly in `.backlogit/toolchain.yaml`.
+3. **Align `.mcp.json` with `RenderPinnedMCPConfig`**:
+   * Use the `RenderPinnedMCPConfig` Go helper in `internal/toolchain` (or mirror its exact schema in `.mcp.json`) so every local MCP server `"command"` targets `./bin/...` with workspace-contained arguments (`["mcp", "--cwd", "<workspace>"]` for `backlogit`) and environment variables without ambient `PATH` resolution.
+4. **Run the Runtime Acceptance Check**:
+   * Execute the strict audit against the provisioned workspace and confirm zero violations:
+
+```powershell
+./bin/backlogit.exe mcp status --toolchain --strict --format json
+```
+
+The command must exit `0` and emit a JSON object whose nested `"toolchain"` report contains `"valid": true`, `"violations": 0`, `"containment_level": "level-1-workspace-local-pinned"`, `"os_container_sandbox_deferred": true`, and the resolved `"workspace_root"`.
+
 ## Accuracy notes
 
 The current implementation supports:
@@ -777,6 +856,7 @@ The current implementation supports:
 * class-to-type migration remapping
 * stash-based deferred planning
 * incremental cache refresh (`backlogit_merge_sync` MCP tool)
+* Level 1 workspace-local toolchain pinning and strict audit (`backlogit mcp status --toolchain --strict`)
 
 The current implementation does not yet support:
 
