@@ -372,18 +372,47 @@ func (p *launcherProfile) invoke(line string) {
 		p.findings = append(p.findings, toolRemediation(f, p.manifest))
 		return
 	}
-	var tool *ToolEntry
+	var candidates []*ToolEntry
 	for i := range p.manifest.Tools {
 		entry := &p.manifest.Tools[i]
 		rel, err := relativePath(p.abs, entry.ExecutablePath, true)
 		if err == nil && samePath(filepath.Join(p.abs, rel), path) {
-			tool = entry
-			break
+			candidates = append(candidates, entry)
 		}
 	}
-	if tool == nil {
+	if len(candidates) == 0 {
 		p.unsupported()
 		return
+	}
+	argStart := 1
+	var tool *ToolEntry
+	if isRunner(path) {
+		if len(args) < 2 {
+			p.fail("launcher_entrypoint_unverified", p.name+": runner invocation requires a declared workspace-local entrypoint.")
+			return
+		}
+		entryArg := p.entrypointArg(args[1])
+		if entryArg == "" {
+			p.fail("launcher_entrypoint_unverified", p.name+": runner invocation does not match a declared workspace-local entrypoint.")
+			return
+		}
+		for _, candidate := range candidates {
+			if strings.TrimSpace(candidate.EntrypointPath) == "" {
+				continue
+			}
+			relEntry, err := relativePath(p.abs, candidate.EntrypointPath, false)
+			if err == nil && samePath(filepath.Join(p.abs, relEntry), entryArg) {
+				tool = candidate
+				break
+			}
+		}
+		if tool == nil {
+			p.fail("launcher_entrypoint_unverified", p.name+": runner invocation does not match any declared workspace-local entrypoint.")
+			return
+		}
+		argStart = 2
+	} else {
+		tool = candidates[0]
 	}
 	if tool.ContainmentClass != WorkspaceLocalPinned {
 		p.findings = append(p.findings, toolRemediation(launcherFinding(tool.ID, "launcher_class_invalid",
@@ -400,7 +429,7 @@ func (p *launcherProfile) invoke(line string) {
 		return
 	}
 	cwd := ""
-	for i := 1; i < len(args); i++ {
+	for i := argStart; i < len(args); i++ {
 		if args[i] == "--cwd" && i+1 < len(args) && cwd == "" {
 			i++
 			if !p.ps && !strings.HasPrefix(args[i], `"`) {
@@ -439,6 +468,34 @@ func (p *launcherProfile) invoke(line string) {
 		}
 		p.backlogit = true
 	}
+}
+
+func (p launcherProfile) entrypointArg(token string) string {
+	if resolved := p.path(token); resolved != "" {
+		return resolved
+	}
+	trimmed := strings.TrimSpace(token)
+	if len(trimmed) >= 2 && ((strings.HasPrefix(trimmed, `"`) && strings.HasSuffix(trimmed, `"`)) ||
+		(strings.HasPrefix(trimmed, `'`) && strings.HasSuffix(trimmed, `'`))) {
+		inner := trimmed[1 : len(trimmed)-1]
+		if !strings.ContainsAny(inner, `"'`) {
+			trimmed = inner
+		}
+	} else if !p.ps && strings.ContainsAny(trimmed, `"'`) {
+		return ""
+	}
+	if trimmed == "" || strings.HasPrefix(trimmed, "-") || strings.ContainsAny(trimmed, "$`") {
+		return ""
+	}
+	rel, err := relativePath(p.abs, filepath.FromSlash(trimmed), false)
+	if err != nil {
+		return ""
+	}
+	candidate := filepath.Join(p.abs, rel)
+	if !bindingWithin(p.root, p.abs, candidate) {
+		return ""
+	}
+	return candidate
 }
 
 func (p *launcherProfile) unsupported() {

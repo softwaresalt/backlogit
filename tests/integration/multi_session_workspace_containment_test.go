@@ -302,6 +302,18 @@ func u12ReadResponse(t *testing.T, conn net.Conn, reader *bufio.Reader, id int) 
 	}
 }
 
+func u12RequireToolSuccess(t *testing.T, label string, resp u12IPCResponse) string {
+	t.Helper()
+	require.Empty(t, resp.Error, "%s JSON-RPC error: %s", label, string(resp.Error))
+	var toolRes struct {
+		IsError bool            `json:"isError"`
+		Content json.RawMessage `json:"content"`
+	}
+	require.NoError(t, json.Unmarshal(resp.Result, &toolRes), "%s result must decode: %s", label, string(resp.Result))
+	require.False(t, toolRes.IsError, "%s returned MCP isError=true: %s", label, string(resp.Result))
+	return string(resp.Result)
+}
+
 func u12CallTool(t *testing.T, conn net.Conn, reader *bufio.Reader, id int, name string, args map[string]any) u12IPCResponse {
 	t.Helper()
 	req := map[string]any{
@@ -440,14 +452,18 @@ func TestU12_MultiWorkspaceAllToolsIsolationAndCrossAttachRefusal(t *testing.T) 
 	connB, readerB := u12ConnectSession(t, dB)
 
 	createResp := u12CallTool(t, connA, readerA, 2, "backlogit_create_item", map[string]any{
-		"title":         "Workspace A Isolated Task",
-		"artifact_type": "task",
+		"title":         "Workspace A Isolated Feature",
+		"artifact_type": "feature",
 	})
-	require.Empty(t, createResp.Error, "create in Workspace A must succeed: %s", string(createResp.Error))
+	u12RequireToolSuccess(t, "create in Workspace A", createResp)
+
+	listA := u12CallTool(t, connA, readerA, 3, "backlogit_list_items", map[string]any{})
+	listAResult := u12RequireToolSuccess(t, "list in Workspace A", listA)
+	require.Contains(t, listAResult, "Workspace A Isolated Feature", "Workspace A must contain its newly created item")
 
 	listB := u12CallTool(t, connB, readerB, 2, "backlogit_list_items", map[string]any{})
-	require.Empty(t, listB.Error, "list in Workspace B must succeed: %s", string(listB.Error))
-	assert.NotContains(t, string(listB.Result), "Workspace A Isolated Task", "Workspace B must never observe Workspace A backlog state")
+	listBResult := u12RequireToolSuccess(t, "list in Workspace B", listB)
+	assert.NotContains(t, listBResult, "Workspace A Isolated Feature", "Workspace B must never observe Workspace A backlog state")
 
 	// Cross-workspace daemon attachment refusal.
 	rawInfoA, err := os.ReadFile(filepath.Join(wsA, ".backlogit", "runtime", "mcp-daemon.json"))

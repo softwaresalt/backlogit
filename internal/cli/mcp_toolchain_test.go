@@ -541,3 +541,79 @@ func TestU11_LauncherProfileRefusesAmbiguousSyntaxAndNamesCompanionFallback(t *t
 		})
 	}
 }
+
+func TestU11_LauncherRunnerRequiresDeclaredEntrypoint(t *testing.T) {
+	setupRunnerFixture := func(t *testing.T, psInvocation string) string {
+		t.Helper()
+		root, _ := u11Fixture(t, false)
+		manifest, err := toolchain.LoadToolchainManifest(root)
+		require.NoError(t, err)
+		bunBytes := []byte("inert bun binary\n")
+		u11Write(t, root, "bin/bun.exe", string(bunBytes))
+		u11Write(t, root, "tools/mcp/install.ps1", "# pinned install script\n")
+		u11Write(t, root, "tools/mcp/context7.js", "// pinned context7 entrypoint\n")
+		sum := sha256.Sum256(bunBytes)
+		sha := hex.EncodeToString(sum[:])
+		manifest.Tools = append(manifest.Tools,
+			toolchain.ToolEntry{
+				ID:               "bun",
+				Kind:             "tool",
+				ContainmentClass: toolchain.WorkspaceLocalPinned,
+				ExecutablePath:   "./bin/bun.exe",
+				EntrypointPath:   "tools/mcp/install.ps1",
+				PinnedVersion:    "1.4.0",
+				SHA256:           sha,
+			},
+			toolchain.ToolEntry{
+				ID:               "context7",
+				Kind:             "mcp",
+				ContainmentClass: toolchain.WorkspaceLocalPinned,
+				ExecutablePath:   "./bin/bun.exe",
+				EntrypointPath:   "tools/mcp/context7.js",
+				PinnedVersion:    "4.4.4",
+				SHA256:           sha,
+			},
+		)
+		require.NoError(t, toolchain.WriteToolchainManifest(root, manifest))
+		cfgBytes, err := toolchain.RenderPinnedMCPConfig(root, manifest)
+		require.NoError(t, err)
+		u11Write(t, root, ".mcp.json", string(cfgBytes))
+
+		data, err := os.ReadFile(filepath.Join(root, "start.ps1"))
+		require.NoError(t, err)
+		prefix := strings.Join([]string{
+			`$bunPath = Join-Path $workspaceBinDirectory "bun.exe"`,
+			`$bunEntry = Join-Path $workspaceRoot "tools\mcp\context7.js"`,
+			`if (-not (Test-Path -LiteralPath $bunPath -PathType Leaf)) { throw "Missing ./bin/bun.exe" }`,
+		}, "\n")
+		updated := strings.Replace(string(data), "& $backlogitPath", prefix+"\n"+psInvocation+"\n& $backlogitPath", 1)
+		u11Write(t, root, "start.ps1", updated)
+		return root
+	}
+
+	t.Run("accepts-shared-executable-declared-entrypoint", func(t *testing.T) {
+		root := setupRunnerFixture(t, "& $bunPath $bunEntry")
+		report, err := toolchain.AuditRepositoryToolchain(t.Context(), root)
+		require.NoError(t, err)
+		assert.True(t, report.Valid, "declared runner entrypoint should pass audit: %+v", report.Tools)
+		assert.Zero(t, report.Violations)
+	})
+
+	for _, bad := range []struct {
+		name string
+		line string
+	}{
+		{"rejects-subcommand-bypass", "& $bunPath run evil"},
+		{"rejects-eval-flag", "& $bunPath --eval 123"},
+		{"rejects-bare-runner", "& $bunPath"},
+		{"rejects-undeclared-script", "& $bunPath tools/mcp/other.js"},
+	} {
+		t.Run(bad.name, func(t *testing.T) {
+			root := setupRunnerFixture(t, bad.line)
+			report, err := toolchain.AuditRepositoryToolchain(t.Context(), root)
+			require.NoError(t, err)
+			assert.False(t, report.Valid)
+			assert.Positive(t, report.Violations)
+		})
+	}
+}
