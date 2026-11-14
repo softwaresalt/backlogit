@@ -602,11 +602,13 @@ func TestU11_LauncherRunnerRequiresDeclaredEntrypoint(t *testing.T) {
 	for _, bad := range []struct {
 		name string
 		line string
+		code string
 	}{
-		{"rejects-subcommand-bypass", "& $bunPath run evil"},
-		{"rejects-eval-flag", "& $bunPath --eval 123"},
-		{"rejects-bare-runner", "& $bunPath"},
-		{"rejects-undeclared-script", "& $bunPath tools/mcp/other.js"},
+		{"rejects-subcommand-bypass", "& $bunPath run evil", "launcher_entrypoint_unverified"},
+		{"rejects-eval-flag", "& $bunPath --eval 123", "launcher_entrypoint_unverified"},
+		{"rejects-trailing-eval-flag", "& $bunPath $bunEntry --eval 123", "launcher_static_unsupported"},
+		{"rejects-bare-runner", "& $bunPath", "launcher_entrypoint_unverified"},
+		{"rejects-undeclared-script", "& $bunPath tools/mcp/other.js", "launcher_entrypoint_unverified"},
 	} {
 		t.Run(bad.name, func(t *testing.T) {
 			root := setupRunnerFixture(t, bad.line)
@@ -614,6 +616,32 @@ func TestU11_LauncherRunnerRequiresDeclaredEntrypoint(t *testing.T) {
 			require.NoError(t, err)
 			assert.False(t, report.Valid)
 			assert.Positive(t, report.Violations)
+			foundCode := false
+			for _, f := range report.Tools {
+				if f.Status == "violation" && f.Code == bad.code {
+					foundCode = true
+				}
+			}
+			assert.True(t, foundCode, "expected violation code %q in %+v", bad.code, report.Tools)
 		})
 	}
+
+	t.Run("rejects-unquoted-posix-entrypoint", func(t *testing.T) {
+		root := setupRunnerFixture(t, "& $bunPath $bunEntry")
+		data, err := os.ReadFile(filepath.Join(root, "start.sh"))
+		require.NoError(t, err)
+		prefix := strings.Join([]string{
+			`bun_path="$workspace_bin_directory/bun.exe"`,
+			`bun_entry="$workspace_root/tools/mcp/context7.js"`,
+			`if [ ! -f "$bun_path" ]; then echo "Missing ./bin/bun.exe" >&2; exit 1; fi`,
+			`"$bun_path" $bun_entry`,
+		}, "\n")
+		updated := strings.Replace(string(data), `"$backlogit_path"`, prefix+"\n"+`"$backlogit_path"`, 1)
+		u11Write(t, root, "start.sh", updated)
+
+		report, err := toolchain.AuditRepositoryToolchain(t.Context(), root)
+		require.NoError(t, err)
+		assert.False(t, report.Valid)
+		assert.Positive(t, report.Violations)
+	})
 }

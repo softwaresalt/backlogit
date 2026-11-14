@@ -129,7 +129,10 @@ func verifyLaunchers(rootPath string, m *ToolchainManifest) ([]ToolVerificationF
 	if err != nil {
 		return nil, fmt.Errorf("verify launcher scripts: %w", err)
 	}
-	defer func() { _ = root.Close() }()
+	defer func() {
+		// Read-only launcher root cleanup.
+		_ = root.Close()
+	}()
 	findings, err := ValidateMCPConfigPinning(abs, ".mcp.json", m)
 	if err != nil {
 		findings = []ToolVerificationFinding{launcherFinding(".mcp.json", "mcp_config_invalid",
@@ -288,8 +291,9 @@ func (p launcherProfile) path(expression string) string {
 				return ""
 			}
 			base := p.vars[p.key(parts[1])]
-			child, err := relativePath(p.abs, filepath.FromSlash(parts[3]), false)
-			if base != "" && err == nil && !filepath.IsAbs(parts[3]) {
+			slashChild := strings.ReplaceAll(parts[3], "\\", "/")
+			child, err := relativePath(p.abs, filepath.FromSlash(slashChild), false)
+			if base != "" && err == nil && !filepath.IsAbs(parts[3]) && !strings.HasPrefix(slashChild, "/") {
 				value := filepath.Join(base, child)
 				if bindingWithin(p.root, p.abs, value) {
 					return value
@@ -429,6 +433,7 @@ func (p *launcherProfile) invoke(line string) {
 		return
 	}
 	cwd := ""
+	runnerMode := isRunner(path)
 	for i := argStart; i < len(args); i++ {
 		if args[i] == "--cwd" && i+1 < len(args) && cwd == "" {
 			i++
@@ -441,7 +446,7 @@ func (p *launcherProfile) invoke(line string) {
 				p.fail("launcher_cwd_invalid", "Invocation --cwd is not the anchored workspace.")
 				return
 			}
-		} else if !regexp.MustCompile(`^[A-Za-z0-9_-]+$`).MatchString(args[i]) || args[i] == "--cwd" {
+		} else if (runnerMode && strings.HasPrefix(args[i], "-")) || !regexp.MustCompile(`^[A-Za-z0-9_-]+$`).MatchString(args[i]) || args[i] == "--cwd" {
 			p.unsupported()
 			return
 		}
@@ -471,6 +476,9 @@ func (p *launcherProfile) invoke(line string) {
 }
 
 func (p launcherProfile) entrypointArg(token string) string {
+	if !p.ps && strings.HasPrefix(strings.TrimSpace(token), "$") {
+		return ""
+	}
 	if resolved := p.path(token); resolved != "" {
 		return resolved
 	}
@@ -487,7 +495,11 @@ func (p launcherProfile) entrypointArg(token string) string {
 	if trimmed == "" || strings.HasPrefix(trimmed, "-") || strings.ContainsAny(trimmed, "$`") {
 		return ""
 	}
-	rel, err := relativePath(p.abs, filepath.FromSlash(trimmed), false)
+	slashTrimmed := strings.ReplaceAll(trimmed, "\\", "/")
+	if strings.HasPrefix(slashTrimmed, "/") {
+		return ""
+	}
+	rel, err := relativePath(p.abs, filepath.FromSlash(slashTrimmed), false)
 	if err != nil {
 		return ""
 	}

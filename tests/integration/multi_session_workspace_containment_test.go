@@ -311,6 +311,7 @@ func u12RequireToolSuccess(t *testing.T, label string, resp u12IPCResponse) stri
 	}
 	require.NoError(t, json.Unmarshal(resp.Result, &toolRes), "%s result must decode: %s", label, string(resp.Result))
 	require.False(t, toolRes.IsError, "%s returned MCP isError=true: %s", label, string(resp.Result))
+	require.NotEmpty(t, toolRes.Content, "%s returned empty MCP content: %s", label, string(resp.Result))
 	return string(resp.Result)
 }
 
