@@ -10,7 +10,7 @@ docline:
   mode: pre-merge
   shipment_id: 214-S
   feature_id: 213-F
-  evidence_head: d6a737d6a00a76930c17966bd7041608f4e9a530
+  evidence_head: c408ff88450e1db0002b718465b756ae08aefc7b
   verification_verdict: PASS
 ---
 
@@ -51,7 +51,7 @@ releasability:
 
 ## Environment prechecks
 
-* Built `backlogit.exe` at Go evidence HEAD `d6a737d6a00a76930c17966bd7041608f4e9a530` via `go build ./cmd/backlogit` (`exit 0`).
+* Built `backlogit.exe` at Go evidence HEAD `c408ff88450e1db0002b718465b756ae08aefc7b` via `go build ./cmd/backlogit` (`exit 0`).
 * Verified workspace Engram daemon stopped (`Get-CimInstance Win32_Process`) with zero `daemon --workspace C:\Source\GitHub\backlogit` process running.
 * Strictly observed Plan Invariant `I8`: never invoked `backlogit mcp stop` or `backlogit mcp --replace` against `C:\Source\GitHub\backlogit`; all CLI runtime probes targeted isolated temporary directories under `bin/tmp/` that were removed immediately after verification.
 
@@ -69,9 +69,9 @@ releasability:
 ### Automated Go verification at evidence HEAD
 
 * `go test -timeout=30m -count=1 -run '^TestU11a_' ./internal/toolchain` — `PASS` (`0.906s`)
-* `go test -timeout=30m -count=1 -race -run '^(TestU11_|TestU11a_)' ./internal/cli ./internal/toolchain` — `PASS` (`8.175s` / `1.410s`)
+* `go test -timeout=30m -count=1 -race -run '^(TestU11_|TestU11a_)' ./internal/cli ./internal/toolchain` — `PASS` (`15.188s` / `1.925s`)
 * `go test -timeout=30m -count=1 -race -run '^TestU12_' ./tests/integration` — `PASS` (`7.491s`)
-* Unfiltered `go test -timeout=30m ./...` (`GOTOOLCHAIN=go1.27.0`, `GOFLAGS="-count=1 -p=1 -parallel=2"`) — `PASS` across all 50 packages at `d6a737d6` (`exit 0`, including `internal/core` `1357.954s`, `tests` `512.658s`, `tests/contract` `43.339s`, `tests/integration` `325.403s`).
+* Unfiltered `go test -timeout=30m ./...` (`GOTOOLCHAIN=go1.27.0`, `GOFLAGS="-count=1 -p=1 -parallel=2"`) — `PASS` across all 50 packages at `c408ff88` (`exit 0`, including `internal/core` `1271.105s`, `tests` `521.558s`, `tests/contract` `46.848s`, `tests/integration` `342.503s`).
 
 ## Invariants and manual checkpoints
 
@@ -81,4 +81,4 @@ releasability:
 
 ## Verdict and releasability handoff
 
-`PASS`: all isolated CLI runtime probes (`--toolchain`, `--strict`, pinned positive, unpinned negative) and all 50 unfiltered Go test packages passed at `d6a737d6a00a76930c17966bd7041608f4e9a530` with zero blocked prerequisites.
+`PASS`: all isolated CLI runtime probes (`--toolchain`, `--strict`, pinned positive, unpinned negative) and all 50 unfiltered Go test packages passed at `c408ff88450e1db0002b718465b756ae08aefc7b` with zero blocked prerequisites.
