@@ -325,6 +325,9 @@ func (p launcherProfile) path(expression string) string {
 	if p.ps {
 		return ""
 	}
+	if strings.Contains(parts[3], "\\") || !strings.HasPrefix(parts[3], "/") {
+		return ""
+	}
 	child, err := relativePath(p.abs, filepath.FromSlash(parts[3][1:]), false)
 	if err != nil {
 		return ""
@@ -475,6 +478,8 @@ func (p *launcherProfile) invoke(line string) {
 	}
 }
 
+var literalEntrypointPattern = regexp.MustCompile(`^[A-Za-z0-9_./\\@-]+$`)
+
 func (p launcherProfile) entrypointArg(token string) string {
 	if !p.ps && strings.HasPrefix(strings.TrimSpace(token), "$") {
 		return ""
@@ -486,16 +491,23 @@ func (p launcherProfile) entrypointArg(token string) string {
 	if len(trimmed) >= 2 && ((strings.HasPrefix(trimmed, `"`) && strings.HasSuffix(trimmed, `"`)) ||
 		(strings.HasPrefix(trimmed, `'`) && strings.HasSuffix(trimmed, `'`))) {
 		inner := trimmed[1 : len(trimmed)-1]
-		if !strings.ContainsAny(inner, `"'`) {
-			trimmed = inner
+		if strings.ContainsAny(inner, `"'`) {
+			return ""
 		}
-	} else if !p.ps && strings.ContainsAny(trimmed, `"'`) {
+		trimmed = inner
+	} else if strings.ContainsAny(trimmed, `"'`) {
 		return ""
 	}
-	if trimmed == "" || strings.HasPrefix(trimmed, "-") || strings.ContainsAny(trimmed, "$`") {
+	if trimmed == "" || strings.HasPrefix(trimmed, "-") || !literalEntrypointPattern.MatchString(trimmed) {
 		return ""
 	}
-	slashTrimmed := strings.ReplaceAll(trimmed, "\\", "/")
+	if !p.ps && strings.Contains(trimmed, "\\") {
+		return ""
+	}
+	slashTrimmed := trimmed
+	if p.ps {
+		slashTrimmed = strings.ReplaceAll(trimmed, "\\", "/")
+	}
 	if strings.HasPrefix(slashTrimmed, "/") {
 		return ""
 	}

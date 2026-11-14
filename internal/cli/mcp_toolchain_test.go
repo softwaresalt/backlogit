@@ -644,4 +644,43 @@ func TestU11_LauncherRunnerRequiresDeclaredEntrypoint(t *testing.T) {
 		assert.False(t, report.Valid)
 		assert.Positive(t, report.Violations)
 	})
+
+	for _, shBad := range []struct {
+		name string
+		old  string
+		new  string
+	}{
+		{
+			name: "rejects-posix-backslash-suffix",
+			old:  `workspace_bin_directory="$workspace_root/bin"`,
+			new:  `workspace_bin_directory="$workspace_root\bin"`,
+		},
+		{
+			name: "rejects-posix-backslash-entrypoint",
+			old:  `"$backlogit_path"`,
+			new:  "bun_path=\"$workspace_bin_directory/bun.exe\"\nif [ ! -f \"$bun_path\" ]; then echo \"Missing ./bin/bun.exe\" >&2; exit 1; fi\n\"$bun_path\" \"tools\\mcp\\context7.js\"\n\"$backlogit_path\"",
+		},
+		{
+			name: "rejects-shell-operator-entrypoint",
+			old:  `"$backlogit_path"`,
+			new:  "bun_path=\"$workspace_bin_directory/bun.exe\"\nif [ ! -f \"$bun_path\" ]; then echo \"Missing ./bin/bun.exe\" >&2; exit 1; fi\n\"$bun_path\" tools/mcp/context7.js;evil\n\"$backlogit_path\"",
+		},
+		{
+			name: "rejects-glob-entrypoint",
+			old:  `"$backlogit_path"`,
+			new:  "bun_path=\"$workspace_bin_directory/bun.exe\"\nif [ ! -f \"$bun_path\" ]; then echo \"Missing ./bin/bun.exe\" >&2; exit 1; fi\n\"$bun_path\" tools/mcp/context[7].js\n\"$backlogit_path\"",
+		},
+	} {
+		t.Run(shBad.name, func(t *testing.T) {
+			root := setupRunnerFixture(t, "& $bunPath $bunEntry")
+			data, err := os.ReadFile(filepath.Join(root, "start.sh"))
+			require.NoError(t, err)
+			u11Write(t, root, "start.sh", strings.Replace(string(data), shBad.old, shBad.new, 1))
+
+			report, err := toolchain.AuditRepositoryToolchain(t.Context(), root)
+			require.NoError(t, err)
+			assert.False(t, report.Valid)
+			assert.Positive(t, report.Violations)
+		})
+	}
 }
