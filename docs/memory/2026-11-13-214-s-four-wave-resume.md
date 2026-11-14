@@ -460,5 +460,63 @@ and returns `True`, `exit 0`).
   then resumes Ship from the new Wave 4 halt checkpoint to run Step 4.1a..4.6,
   whole-shipment review, runtime verification, and PR lifecycle.
 
+## Wave 4 completion and convergence PASS
+
+Following operator confirmation (`Confirmed.`) selecting
+`checkpoint-20261114-070926.json` and Stage's P-002.2/P-002.3 amendment
+moving `-Quiet` before `--` in `213.003-T` (`U13`) and plan § U13:
+
+* Crash-resumption recovery enumerated 206 checkpoints with zero quarantine or
+  validation anomalies and sole active Ship checkpoint
+  `checkpoint-20261114-070926.json`.
+* Engram (`.\bin\engram.exe --workspace C:\Source\GitHub\backlogit daemon-status`)
+  was verified reachable and bound (PID 33640); bounded read-select-summarize
+  preserved `M`, Wave 1–3 `FULL_PASS`, completed tasks (`213.004-T`, `213.001-T`,
+  `213.002-T`), and deferred entries
+  `["9CFC88E5", "0CD5F543", "E231EA13", "D8EE8389", "040826D4"]`.
+* Concrete hook sequences `4698`–`4702` were polled and acknowledged (`seq=4702`),
+  `checkpoint-20261114-070926.json` was resolved via `backlogit_resolve_checkpoint`,
+  and workspace Engram daemon PID 33640 was verified and stopped.
+* Under Plan Invariant I9 (`M1`), the Stage amendment, resolved checkpoint, and
+  hook queue were committed at `b25bc25a0664ed670bc04b187e543053f1ce9189`
+  before Step 4.1a captured `exempt_baseline_sha`.
+* Wave 4 admission passed served-root attestation, whole-`M` snapshot (`M=4`,
+  `terminal_success=3`, `active=1` [`213.003-T` `claim-assigned`, `start_count=0`
+  verified via `bin/tmp/213-safe-log-read.py`]), and Step 2a static intake.
+* Step 4.1a pre-work probe exited `1` cleanly with zero `ParameterBindingException`
+  and captured `exempt_baseline_sha = b25bc25a0664ed670bc04b187e543053f1ce9189`.
+* Step 4.1b repeated `pragma_database_list`, appended single `WORK_STARTED: 214-S`
+  to `213.003-T`, and confirmed `start_count: 1` before dispatch.
+* `213.003-T` (`U13`, `harness-exempt: docs-only`) regenerated
+  `docs/cli-reference/backlogit_mcp_status.md` via `go run ./cmd/gen-docs docs/cli-reference`
+  (idempotent second pass clean under `git diff --exit-code docs/cli-reference/`)
+  and updated `docs/configuration.md`, committed across
+  `c874f9c5`, `c8583a19`, and `f72525f4c6f6715652b966c97353bdb48735b7d4`.
+* Step 4.3 passed `EXEMPT_VERIFY_OK:213.003-T` (`backlogit docs lint` 0 violations
+  on both files), `scripts/md-lint.ps1` (4162 files, 0 issues), and P-002.4
+  `b25bc25a..HEAD` path/content audit (strictly `docs/cli-reference/backlogit_mcp_status.md`
+  and `docs/configuration.md`, zero `*.go` hunks).
+* Report-only review on `213.003-T` (`Constitution Reviewer`, `Go Reviewer`,
+  `Learnings Researcher`, `Schema-CLI-Docs Coupling Reviewer` with re-checks)
+  returned `READY_WITH_FOLLOWUPS` (`P0=0`, `P1=0`; two out-of-scope doc-gardening
+  findings captured once via P-021 C2 as `3466D3CB` and `08A5E6F7`).
+* `213.003-T` was linked to `f72525f4c6f6715652b966c97353bdb48735b7d4`, moved to
+  `done` (`gate.outcome: passed`), and annotated.
+* Wave 4 Step 4.6 convergence gate passed at `f72525f4` with workspace Engram
+  stopped: compile (`go test -run=^$ -count=1 ./...`), `go vet ./...`,
+  `golangci-lint run --concurrency=1 --timeout=15m` (`GOTOOLCHAIN=go1.26.5`),
+  `gofmt -l .`, cumulative scoped suites (`TestU11a_`, `TestU11_|TestU11a_` `-race`,
+  `TestU12_` `-race`, `213.003-T` `EXEMPT_VERIFY_OK:213.003-T`), and unfiltered
+  `go test -timeout=30m ./...` (`GOTOOLCHAIN=go1.27.0`,
+  `GOFLAGS="-count=1 -p=1 -parallel=2"`, `GOMAXPROCS`/`GOGC`/`GOMEMLIMIT` cleared)
+  passing all 50 repository packages with exit `0` (`internal/core` 939.284s,
+  `tests` 426.433s, `tests/contract` 40.892s, `tests/integration` 412.132s).
+* Census: `M=4`, `terminal_success=4` (`213.004-T`, `213.001-T`, `213.002-T`,
+  `213.003-T`), `queued=0`, `active=0`, `blocked=0`, `unsupported=0`.
+* Step 5.3 full local build (`go build ./cmd/backlogit`) and isolated `--cwd <tempDir>`
+  runtime verification (`mcp status --toolchain [--strict] --format json` across
+  pinned and unpinned temp workspaces) passed.
+
+
 
 
