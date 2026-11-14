@@ -10,7 +10,7 @@ docline:
   mode: pre-merge
   shipment_id: 214-S
   feature_id: 213-F
-  evidence_head: d4756d739c37cf2fbad956c34da778b1b7814e21
+  evidence_head: 91422ce3bd6761ca0f5b1869267b7be0576e8aad
   closure_status: READY
   compaction_status: pending
 ---
@@ -35,7 +35,7 @@ See [214-S pre-merge runtime verification](2026-11-14-214-s-pre-merge-runtime-ve
 * Verdict: `PASS` (`cli` command adapter in isolated `--cwd <tempDir>` workspaces plus Go race/integration suites).
 * Pinned temp workspace (`mcp status --toolchain --strict --format json`): exit `0`, `valid: true`, `violations: 0`.
 * Unpinned temp workspace (`mcp status --toolchain --strict --format json`): exit `1`, `valid: false`, `violations: 12`, wrapped `ErrValidation`.
-* Full local build (`go build ./cmd/backlogit`), `go vet ./...`, `golangci-lint run --concurrency=1 --timeout=15m`, `gofmt -l .`, `scripts/md-lint.ps1` (`0` issues across 4164 files), `backlogit docs lint` (`0` violations), unfiltered `go test -timeout=30m ./...` (50/50 packages PASS at `c408ff88450e1db0002b718465b756ae08aefc7b`, zero production Go changes afterward), and full `./internal/cli` + `./internal/toolchain` (`-race` and package suites) at test-only `d4756d739c37cf2fbad956c34da778b1b7814e21` all passed.
+* Full local build (`go build ./cmd/backlogit`), `go vet ./...`, `golangci-lint run --concurrency=1 --timeout=15m`, `gofmt -l .`, `scripts/md-lint.ps1` (`0` issues across 4164 files), `backlogit docs lint` (`0` violations), unfiltered `go test -timeout=30m ./...` (50/50 packages PASS at `c408ff88450e1db0002b718465b756ae08aefc7b`, zero production Go changes afterward), full `./internal/cli` + `./internal/toolchain` at `d4756d73`, and full `./tests/integration` (`-race`, full package, and `GOOS=linux` cross-compile) at `91422ce3bd6761ca0f5b1869267b7be0576e8aad` all passed.
 
 ## Risky action record
 

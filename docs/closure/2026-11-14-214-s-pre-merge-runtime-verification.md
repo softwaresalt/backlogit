@@ -10,7 +10,7 @@ docline:
   mode: pre-merge
   shipment_id: 214-S
   feature_id: 213-F
-  evidence_head: d4756d739c37cf2fbad956c34da778b1b7814e21
+  evidence_head: 91422ce3bd6761ca0f5b1869267b7be0576e8aad
   verification_verdict: PASS
 ---
 
@@ -71,8 +71,8 @@ releasability:
 * `go test -timeout=30m -count=1 -run '^TestU11a_' ./internal/toolchain` — `PASS` (`0.906s`)
 * `go test -timeout=30m -count=1 -race -run '^(TestU11_|TestU11a_)' ./internal/cli ./internal/toolchain` — `PASS` at `d4756d73` (`13.747s` / `1.469s`)
 * `go test -timeout=30m ./internal/cli ./internal/toolchain` — `PASS` at `d4756d73` (`274.284s` / `4.740s`)
-* `go test -timeout=30m -count=1 -race -run '^TestU12_' ./tests/integration` — `PASS` (`7.491s`)
-* Unfiltered `go test -timeout=30m ./...` (`GOTOOLCHAIN=go1.27.0`, `GOFLAGS="-count=1 -p=1 -parallel=2"`) — `PASS` across all 50 packages at `c408ff88` (`exit 0`, production code unchanged in test-only commit `d4756d73`).
+* `go test -timeout=30m -count=1 -race -run '^TestU12_' ./tests/integration` and full `go test -timeout=30m ./tests/integration` — `PASS` at `91422ce3` (`7.608s` / `344.720s`; `GOOS=linux` cross-compile `PASS`)
+* Unfiltered `go test -timeout=30m ./...` (`GOTOOLCHAIN=go1.27.0`, `GOFLAGS="-count=1 -p=1 -parallel=2"`) — `PASS` across all 50 packages at `c408ff88` (`exit 0`, production code unchanged across test-only commits `d4756d73` and `91422ce3`).
 
 ## Invariants and manual checkpoints
 
@@ -82,4 +82,4 @@ releasability:
 
 ## Verdict and releasability handoff
 
-`PASS`: all isolated CLI runtime probes (`--toolchain`, `--strict`, pinned positive, unpinned negative) and all 50 unfiltered Go test packages passed at `c408ff88450e1db0002b718465b756ae08aefc7b` with zero blocked prerequisites.
+`PASS`: all isolated CLI runtime probes (`--toolchain`, `--strict`, pinned positive, unpinned negative) passed, unfiltered Go tests passed 50/50 at `c408ff88`, and test-only updates passed at `91422ce3bd6761ca0f5b1869267b7be0576e8aad` with zero blocked prerequisites.
