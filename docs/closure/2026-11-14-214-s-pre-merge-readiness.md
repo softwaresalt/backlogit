@@ -10,7 +10,7 @@ docline:
   mode: pre-merge
   shipment_id: 214-S
   feature_id: 213-F
-  evidence_head: f72525f4c6f6715652b966c97353bdb48735b7d4
+  evidence_head: d6a737d6a00a76930c17966bd7041608f4e9a530
   closure_status: READY
   compaction_status: pending
 ---
@@ -35,7 +35,7 @@ See [214-S pre-merge runtime verification](2026-11-14-214-s-pre-merge-runtime-ve
 * Verdict: `PASS` (`cli` command adapter in isolated `--cwd <tempDir>` workspaces plus Go race/integration suites).
 * Pinned temp workspace (`mcp status --toolchain --strict --format json`): exit `0`, `valid: true`, `violations: 0`.
 * Unpinned temp workspace (`mcp status --toolchain --strict --format json`): exit `1`, `valid: false`, `violations: 12`, wrapped `ErrValidation`.
-* Full local build (`go build ./cmd/backlogit`), `go vet ./...`, `golangci-lint run --concurrency=1 --timeout=15m`, `gofmt -l .`, `scripts/md-lint.ps1` (`0` issues across 4162 files), `backlogit docs lint` (`0` violations), and unfiltered `go test -timeout=30m ./...` (50/50 packages) all passed.
+* Full local build (`go build ./cmd/backlogit`), `go vet ./...`, `golangci-lint run --concurrency=1 --timeout=15m`, `gofmt -l .`, `scripts/md-lint.ps1` (`0` issues across 4164 files), `backlogit docs lint` (`0` violations), unfiltered `go test -timeout=30m ./...` (50/50 packages at `c163bc50` pre-commit), and full affected-package + `-race` verification at `d6a737d6a00a76930c17966bd7041608f4e9a530` all passed.
 
 ## Risky action record
 
@@ -53,8 +53,8 @@ See [214-S pre-merge runtime verification](2026-11-14-214-s-pre-merge-runtime-ve
   * `backlogit mcp status --format json` reports healthy `running`, `pid`, `active_sessions`, and `endpoint`.
   * `backlogit doctor` reports `0` errors and CI `CLI Reference Drift Check` / `Docline` / `P-008` checks stay green.
 * **Failure signals**:
-  * Unexpected `violations > 0` on a properly provisioned workspace or `ErrDaemonWorkspaceMismatch` false positives.
-  * Failing `CLI Reference Drift Check`, `docs lint`, or multi-workspace containment tests on `main`.
+  * Unexpected `violations > 0` on a properly provisioned workspace or `ErrDaemonWorkspaceMismatch` false positives
+  * Failing `CLI Reference Drift Check`, `docs lint`, or multi-workspace containment tests on `main`
 
 ## Rollback trigger and procedure
 
