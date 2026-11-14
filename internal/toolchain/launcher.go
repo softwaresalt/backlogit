@@ -2,6 +2,7 @@ package toolchain
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,7 +10,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/softwaresalt/backlogit/internal/core"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
@@ -468,12 +473,443 @@ func (p *launcherProfile) inspectLookups(line string) {
 	}
 }
 
-// WriteToolchainManifest writes the workspace toolchain manifest.
+var (
+	remoteToolIDPattern      = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$`)
+	toolchainManifestTempSeq atomic.Uint64
+)
+
+func wrapProvisioningValidation(msg string, err error) error {
+	if errors.Is(err, corerrors.ErrValidation) {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return fmt.Errorf("%s: %w (%w)", msg, corerrors.ErrValidation, err)
+}
+
+func validateManifestForProvisioning(root *os.Root, abs string, manifest *ToolchainManifest) error {
+	if root == nil || manifest == nil {
+		return fmt.Errorf("validate toolchain manifest: %w", corerrors.ErrValidation)
+	}
+	if manifest.SchemaVersion != "1.0" ||
+		manifest.ContainmentLevel != Level1WorkspaceLocalPinned ||
+		!manifest.OSContainerSandboxDeferred ||
+		len(manifest.Tools) == 0 ||
+		len(manifest.HostPrerequisites) == 0 {
+		return fmt.Errorf("invalid manifest required fields: %w", corerrors.ErrValidation)
+	}
+	if strings.TrimSpace(manifest.WorkspaceRoot) == "" {
+		return fmt.Errorf("empty manifest workspace root: %w", corerrors.ErrValidation)
+	}
+	declared, err := filepath.Abs(manifest.WorkspaceRoot)
+	if err != nil || !samePath(abs, declared) {
+		return fmt.Errorf("manifest workspace mismatch: %w", corerrors.ErrValidation)
+	}
+
+	hasBacklogitMCP := false
+	seen := make(map[string]bool, len(manifest.Tools)+len(manifest.HostPrerequisites))
+	for _, tool := range manifest.Tools {
+		trimmedID := strings.TrimSpace(tool.ID)
+		id := strings.ToLower(trimmedID)
+		if id == "" || tool.ID != trimmedID || strings.TrimSpace(tool.Kind) == "" || seen[id] {
+			return fmt.Errorf("invalid or duplicate tool identity %q: %w", tool.ID, corerrors.ErrValidation)
+		}
+		seen[id] = true
+
+		if !validBacklogitTool(abs, tool) {
+			return fmt.Errorf("backlogit must use the workspace-local pinned binary: %w", corerrors.ErrValidation)
+		}
+		if id == "backlogit" && strings.EqualFold(strings.TrimSpace(tool.Kind), "mcp") {
+			hasBacklogitMCP = true
+		}
+
+		switch tool.ContainmentClass {
+		case WorkspaceLocalPinned:
+			if strings.TrimSpace(tool.ExecutablePath) == "" {
+				return fmt.Errorf("tool %q missing executable path: %w", tool.ID, corerrors.ErrValidation)
+			}
+			if _, err := relativePath(abs, tool.ExecutablePath, true); err != nil {
+				return wrapProvisioningValidation(fmt.Sprintf("tool %q invalid executable path", tool.ID), err)
+			}
+			if !bindingWithin(root, abs, tool.ExecutablePath) {
+				return fmt.Errorf("tool %q executable path redirected or outside workspace: %w", tool.ID, corerrors.ErrValidation)
+			}
+			if strings.TrimSpace(tool.PinnedVersion) == "" && strings.TrimSpace(tool.LockfilePath) == "" {
+				return fmt.Errorf("tool %q missing pinned_version or lockfile_path: %w", tool.ID, corerrors.ErrValidation)
+			}
+			if strings.TrimSpace(tool.SHA256) == "" && strings.TrimSpace(tool.LockfilePath) == "" {
+				return fmt.Errorf("tool %q missing sha256 or lockfile_path: %w", tool.ID, corerrors.ErrValidation)
+			}
+			if isRunner(tool.ExecutablePath) && strings.TrimSpace(tool.EntrypointPath) == "" {
+				return fmt.Errorf("runner tool %q requires entrypoint path: %w", tool.ID, corerrors.ErrValidation)
+			}
+			if id == "backlogit" && strings.TrimSpace(tool.EntrypointPath) != "" {
+				return fmt.Errorf("backlogit tool must not specify entrypoint_path: %w", corerrors.ErrValidation)
+			}
+			if tool.EntrypointPath != "" {
+				if strings.TrimSpace(tool.EntrypointPath) == "" || tool.EntrypointPath != strings.TrimSpace(tool.EntrypointPath) {
+					return fmt.Errorf("tool %q invalid whitespace in entrypoint path: %w", tool.ID, corerrors.ErrValidation)
+				}
+				relEntry, err := relativePath(abs, tool.EntrypointPath, false)
+				if err != nil {
+					return wrapProvisioningValidation(fmt.Sprintf("tool %q invalid entrypoint path", tool.ID), err)
+				}
+				if strings.HasPrefix(filepath.ToSlash(relEntry), "-") || strings.HasPrefix(filepath.Base(relEntry), "-") {
+					return fmt.Errorf("tool %q entrypoint path must not start with '-': %w", tool.ID, corerrors.ErrValidation)
+				}
+				if !bindingWithin(root, abs, tool.EntrypointPath) {
+					return fmt.Errorf("tool %q entrypoint path redirected or outside workspace: %w", tool.ID, corerrors.ErrValidation)
+				}
+			}
+			if tool.LockfilePath != "" {
+				if strings.TrimSpace(tool.LockfilePath) == "" {
+					return fmt.Errorf("tool %q blank lockfile path: %w", tool.ID, corerrors.ErrValidation)
+				}
+				if _, err := relativePath(abs, tool.LockfilePath, false); err != nil {
+					return wrapProvisioningValidation(fmt.Sprintf("tool %q invalid lockfile path", tool.ID), err)
+				}
+				if !bindingWithin(root, abs, tool.LockfilePath) {
+					return fmt.Errorf("tool %q lockfile path redirected or outside workspace: %w", tool.ID, corerrors.ErrValidation)
+				}
+			}
+			bindings, err := parseBindings(root, abs, tool.WorkspaceBindingArgs)
+			if err != nil {
+				return wrapProvisioningValidation(fmt.Sprintf("tool %q invalid workspace bindings", tool.ID), err)
+			}
+			for _, envKey := range []string{"COPILOT_HOME", "ENGRAM_DATA_DIR"} {
+				if boundPath, ok := bindings[envKey]; ok {
+					if samePath(boundPath, abs) {
+						return fmt.Errorf("tool %q %s binding must not equal workspace root: %w", tool.ID, envKey, corerrors.ErrValidation)
+					}
+					if relBound, relErr := relativePath(abs, boundPath, false); relErr == nil {
+						if info, statErr := root.Lstat(relBound); statErr == nil && !info.IsDir() {
+							return fmt.Errorf("tool %q %s binding must not target a non-directory: %w", tool.ID, envKey, corerrors.ErrValidation)
+						}
+					}
+				}
+			}
+			if id == "backlogit" && bindings["--cwd"] == "" {
+				return fmt.Errorf("backlogit requires --cwd workspace binding: %w", corerrors.ErrValidation)
+			}
+		case RemoteDeclared:
+			if !remoteToolIDPattern.MatchString(tool.ID) {
+				return fmt.Errorf("remote tool %q must use DNS-label safe characters: %w", tool.ID, corerrors.ErrValidation)
+			}
+			if strings.TrimSpace(tool.RemotePolicy) == "" {
+				return fmt.Errorf("remote tool %q requires remote_policy: %w", tool.ID, corerrors.ErrValidation)
+			}
+		case HostPrerequisite, BuiltInHost:
+			if strings.TrimSpace(tool.Reason) == "" {
+				return fmt.Errorf("host tool %q requires reason: %w", tool.ID, corerrors.ErrValidation)
+			}
+		case Unsupported, NonConformant:
+			return fmt.Errorf("tool %q has disallowed containment class %q: %w", tool.ID, tool.ContainmentClass, corerrors.ErrValidation)
+		default:
+			return fmt.Errorf("tool %q has unknown containment class %q: %w", tool.ID, tool.ContainmentClass, corerrors.ErrValidation)
+		}
+	}
+
+	if !hasBacklogitMCP {
+		return fmt.Errorf("manifest must declare a workspace-local-pinned backlogit MCP entry: %w", corerrors.ErrValidation)
+	}
+
+	for _, prereq := range manifest.HostPrerequisites {
+		trimmedID := strings.TrimSpace(prereq.ID)
+		id := strings.ToLower(trimmedID)
+		if id == "" ||
+			prereq.ID != trimmedID ||
+			strings.TrimSpace(prereq.Command) == "" ||
+			strings.TrimSpace(prereq.Purpose) == "" ||
+			strings.TrimSpace(prereq.Reason) == "" ||
+			strings.EqualFold(id, "backlogit") ||
+			strings.HasPrefix(strings.ToLower(filepath.Base(strings.TrimSpace(prereq.Command))), "backlogit") ||
+			seen[id] {
+			return fmt.Errorf("invalid host prerequisite %q: %w", prereq.ID, corerrors.ErrValidation)
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
+func resolveProvisioningStorageDir(root *os.Root) (string, error) {
+	_, backlogErr := root.Lstat(".backlog")
+	if backlogErr != nil && !errors.Is(backlogErr, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect .backlog directory: %w", backlogErr)
+	}
+	_, backlogitErr := root.Lstat(".backlogit")
+	if backlogitErr != nil && !errors.Is(backlogitErr, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect .backlogit directory: %w", backlogitErr)
+	}
+	hasBacklog := backlogErr == nil
+	hasBacklogit := backlogitErr == nil
+	if hasBacklog && hasBacklogit {
+		return "", fmt.Errorf("ambiguous workspace storage: %w", corerrors.ErrValidation)
+	}
+
+	override := strings.TrimSpace(os.Getenv("BACKLOGIT_WORKSPACE_DIR"))
+	if override != "" {
+		switch override {
+		case ".backlog":
+			if hasBacklogit {
+				return "", fmt.Errorf("BACKLOGIT_WORKSPACE_DIR=.backlog conflicts with .backlogit: %w", corerrors.ErrValidation)
+			}
+			if !hasBacklog {
+				if err := root.Mkdir(".backlog", 0o755); err != nil {
+					return "", fmt.Errorf("create .backlog directory: %w", err)
+				}
+			}
+			return ".backlog", nil
+		case ".backlogit":
+			if hasBacklog {
+				return "", fmt.Errorf("BACKLOGIT_WORKSPACE_DIR=.backlogit conflicts with .backlog: %w", corerrors.ErrValidation)
+			}
+			if !hasBacklogit {
+				if err := root.Mkdir(".backlogit", 0o755); err != nil {
+					return "", fmt.Errorf("create .backlogit directory: %w", err)
+				}
+			}
+			return ".backlogit", nil
+		default:
+			return "", fmt.Errorf("invalid BACKLOGIT_WORKSPACE_DIR %q: %w", override, corerrors.ErrValidation)
+		}
+	}
+
+	if hasBacklog {
+		return ".backlog", nil
+	}
+	if hasBacklogit {
+		return ".backlogit", nil
+	}
+	if err := root.Mkdir(".backlogit", 0o755); err != nil {
+		return "", fmt.Errorf("create .backlogit directory: %w", err)
+	}
+	return ".backlogit", nil
+}
+
+// WriteToolchainManifest validates and writes the workspace toolchain manifest.
 func WriteToolchainManifest(rootPath string, manifest *ToolchainManifest) error {
-	return fmt.Errorf("write toolchain manifest: %w", corerrors.ErrNotImplemented)
+	abs, root, err := workspace(rootPath)
+	if err != nil {
+		return fmt.Errorf("write toolchain manifest: %w", err)
+	}
+	rootClosed := false
+	defer func() {
+		if !rootClosed {
+			// Cleanup on early error return.
+			_ = root.Close()
+		}
+	}()
+
+	if err := validateManifestForProvisioning(root, abs, manifest); err != nil {
+		return err
+	}
+
+	storageDir, err := resolveProvisioningStorageDir(root)
+	if err != nil {
+		return err
+	}
+
+	storageInfo, err := root.Lstat(storageDir)
+	if err != nil {
+		return fmt.Errorf("inspect storage directory %s: %w", storageDir, err)
+	}
+	link, err := core.IsSymlinkOrReparsePoint(storageInfo, filepath.Join(abs, storageDir))
+	if err != nil || link || !storageInfo.IsDir() {
+		return fmt.Errorf("invalid storage directory %s: %w", storageDir, corerrors.ErrValidation)
+	}
+
+	storageHandle, err := root.OpenRoot(storageDir)
+	if err != nil {
+		return fmt.Errorf("open storage directory %s: %w", storageDir, err)
+	}
+	storageClosed := false
+	defer func() {
+		if !storageClosed {
+			// Cleanup on early error return.
+			_ = storageHandle.Close()
+		}
+	}()
+
+	openedStorage, err := storageHandle.Stat(".")
+	if err != nil || !os.SameFile(storageInfo, openedStorage) {
+		return fmt.Errorf("storage directory changed %s: %w", storageDir, corerrors.ErrValidation)
+	}
+
+	data, err := yaml.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("marshal toolchain manifest: %w", err)
+	}
+
+	existingInfo, err := storageHandle.Lstat("toolchain.yaml")
+	if err == nil {
+		existingLink, linkErr := core.IsSymlinkOrReparsePoint(existingInfo, filepath.Join(abs, storageDir, "toolchain.yaml"))
+		if linkErr != nil || existingLink || !existingInfo.Mode().IsRegular() {
+			return fmt.Errorf("existing toolchain.yaml is redirected or not a regular file: %w", corerrors.ErrValidation)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect toolchain.yaml: %w", err)
+	}
+
+	tmpName := fmt.Sprintf("toolchain.yaml.tmp.%d.%d", os.Getpid(), toolchainManifestTempSeq.Add(1))
+	file, err := storageHandle.OpenFile(tmpName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("create temp toolchain.yaml: %w", err)
+	}
+	fileClosed := false
+	tmpRemoved := false
+	defer func() {
+		if !fileClosed {
+			// Cleanup on early error return.
+			_ = file.Close()
+		}
+		if !tmpRemoved {
+			// Remove orphaned temp file on early error return.
+			_ = storageHandle.Remove(tmpName)
+		}
+	}()
+
+	openedStat, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("stat opened temp toolchain.yaml: %w", err)
+	}
+	lstatAfterOpen, err := storageHandle.Lstat(tmpName)
+	if err != nil {
+		return fmt.Errorf("lstat temp toolchain.yaml after open: %w", err)
+	}
+	if !os.SameFile(openedStat, lstatAfterOpen) {
+		return fmt.Errorf("temp toolchain.yaml identity changed after open: %w", corerrors.ErrValidation)
+	}
+
+	written := 0
+	for written < len(data) {
+		n, writeErr := file.Write(data[written:])
+		if writeErr != nil {
+			return fmt.Errorf("write temp toolchain.yaml: %w", writeErr)
+		}
+		if n == 0 {
+			return fmt.Errorf("short write to temp toolchain.yaml: %w", io.ErrShortWrite)
+		}
+		written += n
+	}
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("sync temp toolchain.yaml: %w", err)
+	}
+	fileClosed = true
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close temp toolchain.yaml: %w", err)
+	}
+
+	tmpAbs := filepath.Join(abs, storageDir, tmpName)
+	dstAbs := filepath.Join(abs, storageDir, "toolchain.yaml")
+	if err := os.Rename(tmpAbs, dstAbs); err != nil {
+		return fmt.Errorf("replace toolchain.yaml: %w", err)
+	}
+	tmpRemoved = true
+
+	storageClosed = true
+	if err := storageHandle.Close(); err != nil {
+		return fmt.Errorf("close storage directory %s: %w", storageDir, err)
+	}
+	rootClosed = true
+	if err := root.Close(); err != nil {
+		return fmt.Errorf("close workspace root: %w", err)
+	}
+	return nil
+}
+
+type pinnedMCPServer struct {
+	Type    string            `json:"type,omitempty"`
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`
+}
+
+type pinnedMCPConfig struct {
+	MCPServers map[string]pinnedMCPServer `json:"mcpServers"`
 }
 
 // RenderPinnedMCPConfig renders the workspace's pinned MCP configuration.
 func RenderPinnedMCPConfig(rootPath string, manifest *ToolchainManifest) ([]byte, error) {
-	return nil, fmt.Errorf("render pinned MCP config: %w", corerrors.ErrNotImplemented)
+	abs, root, err := workspace(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("render pinned MCP config: %w", err)
+	}
+	rootClosed := false
+	defer func() {
+		if !rootClosed {
+			// Cleanup on early error return.
+			_ = root.Close()
+		}
+	}()
+
+	if err := validateManifestForProvisioning(root, abs, manifest); err != nil {
+		return nil, err
+	}
+
+	servers := make(map[string]pinnedMCPServer)
+	for _, tool := range manifest.Tools {
+		if !strings.EqualFold(strings.TrimSpace(tool.Kind), "mcp") {
+			continue
+		}
+		switch tool.ContainmentClass {
+		case RemoteDeclared:
+			servers[tool.ID] = pinnedMCPServer{
+				Type: "http",
+				URL:  "https://" + strings.ToLower(tool.ID) + ".invalid/mcp",
+			}
+		case HostPrerequisite, BuiltInHost:
+			continue
+		case WorkspaceLocalPinned:
+			relExec, err := relativePath(abs, tool.ExecutablePath, true)
+			if err != nil {
+				return nil, wrapProvisioningValidation(fmt.Sprintf("tool %q invalid executable path", tool.ID), err)
+			}
+			srv := pinnedMCPServer{
+				Type:    "stdio",
+				Command: "./" + filepath.ToSlash(relExec),
+			}
+			switch {
+			case strings.EqualFold(tool.ID, "backlogit"):
+				srv.Args = []string{"mcp", "--cwd", abs}
+			case strings.TrimSpace(tool.EntrypointPath) != "":
+				relEntry, err := relativePath(abs, tool.EntrypointPath, false)
+				if err != nil {
+					return nil, wrapProvisioningValidation(fmt.Sprintf("tool %q invalid entrypoint path", tool.ID), err)
+				}
+				srv.Args = []string{filepath.ToSlash(relEntry)}
+			case strings.EqualFold(tool.ID, "engram"):
+				srv.Args = []string{"shim"}
+			case strings.EqualFold(tool.ID, "graphtor-docs") || strings.EqualFold(tool.ID, "kbdb"):
+				srv.Args = []string{"serve"}
+			case strings.EqualFold(tool.ID, "github") || strings.EqualFold(tool.ID, "github-mcp-server"):
+				srv.Args = []string{"stdio"}
+			}
+			bindings, err := parseBindings(root, abs, tool.WorkspaceBindingArgs)
+			if err != nil {
+				return nil, wrapProvisioningValidation(fmt.Sprintf("tool %q invalid workspace bindings", tool.ID), err)
+			}
+			if cwdVal, hasCWD := bindings["--cwd"]; hasCWD && !strings.EqualFold(tool.ID, "backlogit") {
+				srv.Args = append(srv.Args, "--cwd", cwdVal)
+			}
+			env := make(map[string]string)
+			for _, key := range []string{"COPILOT_HOME", "ENGRAM_DATA_DIR"} {
+				if val, ok := bindings[key]; ok && val != "" {
+					env[key] = val
+				}
+			}
+			if len(env) > 0 {
+				srv.Env = env
+			}
+			servers[tool.ID] = srv
+		}
+	}
+
+	rendered, err := json.MarshalIndent(pinnedMCPConfig{MCPServers: servers}, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal pinned MCP config: %w", err)
+	}
+	rootClosed = true
+	if err := root.Close(); err != nil {
+		return nil, fmt.Errorf("close workspace root: %w", err)
+	}
+	return append(rendered, '\n'), nil
 }

@@ -55,7 +55,9 @@ func u12FullManifest(t *testing.T, root string) *toolchain.ToolchainManifest {
 		bunLock      = "context7 4.4.4 dist/index.js\ntavily 0.2.22 build/index.js\n"
 	)
 
-	u12Write(t, root, ".backlogit/config.yaml", "{}\n")
+	if _, statErr := os.Stat(filepath.Join(root, ".backlogit", "config.yaml")); errors.Is(statErr, os.ErrNotExist) {
+		u12Write(t, root, ".backlogit/config.yaml", "{}\n")
+	}
 	u12Write(t, root, "bin/backlogit.exe", backlogitBin)
 	u12Write(t, root, "bin/engram.exe", engramBin)
 	u12Write(t, root, "bin/kbdb.exe", kbdbBin)
@@ -221,6 +223,7 @@ func u12StartDaemon(t *testing.T, root string) *u12DaemonHandle {
 	t.Cleanup(func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stopCancel()
+		// Best-effort shutdown in cleanup; assertion below verifies daemon exit.
 		_, _ = cli.StopMCPDaemon(stopCtx, root)
 		cancel()
 		select {
@@ -256,7 +259,10 @@ func u12ConnectSession(t *testing.T, d *u12DaemonHandle) (net.Conn, *bufio.Reade
 	t.Helper()
 	conn, err := cli.DialMCPDaemonIPC(t.Context(), d.status.IPCTransport, d.status.Endpoint, 5*time.Second)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() {
+		// Best-effort connection close on test teardown.
+		_ = conn.Close()
+	})
 
 	header := fmt.Sprintf("{\"protocol_version\":%q,\"command\":\"session\",\"workspace_root\":%q,\"storage_root\":%q,\"version\":%q}\n",
 		u12Protocol, d.status.WorkspaceRoot, d.status.StorageRoot, d.status.Version)
@@ -268,7 +274,7 @@ func u12ConnectSession(t *testing.T, d *u12DaemonHandle) (net.Conn, *bufio.Reade
 	_, err = io.WriteString(conn, initReq)
 	require.NoError(t, err)
 
-	resp := u12ReadResponse(t, reader, 1)
+	resp := u12ReadResponse(t, conn, reader, 1)
 	require.Empty(t, resp.Error, "initialize must succeed: %s", string(resp.Error))
 
 	_, err = io.WriteString(conn, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
@@ -276,8 +282,13 @@ func u12ConnectSession(t *testing.T, d *u12DaemonHandle) (net.Conn, *bufio.Reade
 	return conn, reader
 }
 
-func u12ReadResponse(t *testing.T, reader *bufio.Reader, id int) u12IPCResponse {
+func u12ReadResponse(t *testing.T, conn net.Conn, reader *bufio.Reader, id int) u12IPCResponse {
 	t.Helper()
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(10*time.Second)))
+	defer func() {
+		// Clear read deadline after reading the target response.
+		_ = conn.SetReadDeadline(time.Time{})
+	}()
 	for {
 		line, err := reader.ReadBytes('\n')
 		require.NoError(t, err)
@@ -306,7 +317,7 @@ func u12CallTool(t *testing.T, conn net.Conn, reader *bufio.Reader, id int, name
 	require.NoError(t, err)
 	_, err = conn.Write(append(payload, '\n'))
 	require.NoError(t, err)
-	return u12ReadResponse(t, reader, id)
+	return u12ReadResponse(t, conn, reader, id)
 }
 
 // TestU12_WriteToolchainManifestAndRenderPinnedMCPConfigProducesZeroViolations verifies R19-R23 and SC11-SC13.
@@ -314,7 +325,7 @@ func TestU12_WriteToolchainManifestAndRenderPinnedMCPConfigProducesZeroViolation
 	repoRoot := testRepoRoot(t)
 	committedPath := filepath.Join(repoRoot, ".backlogit", "toolchain.yaml")
 	_, statErr := os.Stat(committedPath)
-	require.NoError(t, statErr, "TODO: provision canonical tracked .backlogit/toolchain.yaml")
+	require.NoError(t, statErr, "canonical tracked .backlogit/toolchain.yaml must exist")
 
 	t.Chdir(repoRoot)
 	committed, err := toolchain.LoadToolchainManifest(repoRoot)
@@ -355,14 +366,14 @@ func TestU12_WriteToolchainManifestAndRenderPinnedMCPConfigProducesZeroViolation
 	})
 
 	err = toolchain.WriteToolchainManifest(fixtureRoot, manifest)
-	require.NoError(t, err, "TODO: implement WriteToolchainManifest")
+	require.NoError(t, err, "WriteToolchainManifest must succeed for valid manifest")
 
 	loaded, err := toolchain.LoadToolchainManifest(fixtureRoot)
 	require.NoError(t, err)
 	assert.Equal(t, len(manifest.Tools), len(loaded.Tools))
 
 	rendered, err := toolchain.RenderPinnedMCPConfig(fixtureRoot, manifest)
-	require.NoError(t, err, "TODO: implement RenderPinnedMCPConfig")
+	require.NoError(t, err, "RenderPinnedMCPConfig must succeed for valid manifest")
 	var mcpCfg struct {
 		Servers map[string]struct {
 			Type    string            `json:"type"`
@@ -403,13 +414,13 @@ func TestU12_MultiWorkspaceAllToolsIsolationAndCrossAttachRefusal(t *testing.T) 
 
 	manifestA := u12FullManifest(t, wsA)
 	manifestB := u12FullManifest(t, wsB)
-	require.NoError(t, toolchain.WriteToolchainManifest(wsA, manifestA), "TODO: implement WriteToolchainManifest")
-	require.NoError(t, toolchain.WriteToolchainManifest(wsB, manifestB), "TODO: implement WriteToolchainManifest")
+	require.NoError(t, toolchain.WriteToolchainManifest(wsA, manifestA), "WriteToolchainManifest must succeed for Workspace A")
+	require.NoError(t, toolchain.WriteToolchainManifest(wsB, manifestB), "WriteToolchainManifest must succeed for Workspace B")
 
 	cfgA, err := toolchain.RenderPinnedMCPConfig(wsA, manifestA)
-	require.NoError(t, err, "TODO: implement RenderPinnedMCPConfig")
+	require.NoError(t, err, "RenderPinnedMCPConfig must succeed for Workspace A")
 	cfgB, err := toolchain.RenderPinnedMCPConfig(wsB, manifestB)
-	require.NoError(t, err, "TODO: implement RenderPinnedMCPConfig")
+	require.NoError(t, err, "RenderPinnedMCPConfig must succeed for Workspace B")
 	u12Write(t, wsA, ".mcp.json", string(cfgA))
 	u12Write(t, wsB, ".mcp.json", string(cfgB))
 
@@ -482,7 +493,7 @@ func TestU12_NegativePinningGlobalPATHRefusalAndPathTraversalContainment(t *test
 		t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlogit")
 
 		manifest := u12FullManifest(t, root)
-		require.NoError(t, toolchain.WriteToolchainManifest(root, manifest), "TODO: implement WriteToolchainManifest")
+		require.NoError(t, toolchain.WriteToolchainManifest(root, manifest), "WriteToolchainManifest must succeed for valid workspace")
 
 		for _, badCase := range []struct {
 			name   string
@@ -507,6 +518,23 @@ func TestU12_NegativePinningGlobalPATHRefusalAndPathTraversalContainment(t *test
 				},
 			},
 			{
+				name: "hyphen-entrypoint-flag-injection",
+				mutate: func(m *toolchain.ToolchainManifest) {
+					m.Tools[3].EntrypointPath = "-e"
+				},
+			},
+			{
+				name: "remote-id-url-injection",
+				mutate: func(m *toolchain.ToolchainManifest) {
+					m.Tools = append(m.Tools, toolchain.ToolEntry{
+						ID:               "169.254.169.254/latest/#",
+						Kind:             "mcp",
+						ContainmentClass: toolchain.RemoteDeclared,
+						RemotePolicy:     "injected",
+					})
+				},
+			},
+			{
 				name: "workspace-root-mismatch",
 				mutate: func(m *toolchain.ToolchainManifest) {
 					m.WorkspaceRoot = outside
@@ -526,7 +554,7 @@ func TestU12_NegativePinningGlobalPATHRefusalAndPathTraversalContainment(t *test
 		target := filepath.Join(outside, "escaped-toolchain.yaml")
 		require.NoError(t, os.WriteFile(target, []byte("escaped\n"), 0o600))
 		yamlPath := filepath.Join(root, ".backlogit", "toolchain.yaml")
-		_ = os.Remove(yamlPath)
+		require.NoError(t, os.Remove(yamlPath))
 		require.NoError(t, os.Symlink(target, yamlPath), "symlink capability is required for containment test")
 
 		err := toolchain.WriteToolchainManifest(root, manifest)
