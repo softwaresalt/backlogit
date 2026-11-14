@@ -4697,3 +4697,4 @@
 {"seq":4699,"timestamp":"2026-11-14T01:51:11.5388075Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"213.001-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
 {"seq":4700,"timestamp":"2026-11-14T04:06:11.8810259Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"213.002-T","schema_version":1}}
 {"seq":4701,"timestamp":"2026-11-14T04:34:20.4278675Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status"],"item_id":"213.002-T","schema_version":1,"status_delta":{"from":"active","to":"done"}}}
+{"seq":4702,"timestamp":"2026-11-14T07:16:18.6785378Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["description"],"item_id":"213.003-T","schema_version":1}}
