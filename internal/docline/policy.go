@@ -209,6 +209,7 @@ var pathRules = []pathRule{
 	{"docs/cli-reference/", DocTypeReference},
 	{"docs/decisions/", DocTypeDecision},
 	{"docs/exec-plans/", DocTypePlan},
+	{"docs/plans/", DocTypePlan},
 	{"docs/closure/", DocTypeClosure},
 	{"docs/research/", DocTypeResearch},
 	{"docs/reviews/", DocTypeReview},

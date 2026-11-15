@@ -106,7 +106,7 @@ tokens proportional to file size.
 | Path | Purpose |
 |---|---|
 | `docs/compound/` | Reusable learnings and hard-won fixes |
-| `docs/exec-plans/` | Implementation plans |
+| `docs/plans/` | Implementation plans |
 | `docs/decisions/` | Durable decisions and investigation outputs |
 | `docs/memory/` | Session memory and checkpoints |
 | `docs/closure/` | Review, runtime verification, and closure artifacts |

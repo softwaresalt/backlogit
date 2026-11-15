@@ -75,7 +75,7 @@ Plans record whether `plan-harden` is required before review — this field is m
 
 #### 0.1 Resume Existing Plan Work
 
-If the user references an existing plan file or there is an obvious recent matching plan in `docs/exec-plans/`:
+If the user references an existing plan file or there is an obvious recent matching plan in `docs/plans/` (or legacy `docs/exec-plans/`):
 
 - Read it
 - Confirm whether to update in place or create new
@@ -125,7 +125,7 @@ If the origin doc has "Resolve Before Planning" questions:
 
 ### Phase 2: Structure the Plan
 
-Write to `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`
+Write to `docs/plans/{YYYY-MM-DD}-{slug}-plan.md`
 
 ```markdown
 ---
@@ -237,7 +237,7 @@ verification, or rollback expectations from scratch.
 
 ### Phase 3: Complete
 
-1. Confirm the plan file was written to `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`.
+1. Confirm the plan file was written to `docs/plans/{YYYY-MM-DD}-{slug}-plan.md`.
 2. Return the plan file path to the caller.
 
 When invoked standalone (not as a subagent of Stage), present next steps:

@@ -174,6 +174,15 @@ Ship must screen it under P-002.5, validate static and claim-time conditions,
 and verify the P-002.4 delta. Do not scaffold a Go or assertion-failing harness
 for an eligible docs-only task.
 
+Per `.github/policies/workflow-policies.md` P-002.3, P-002.4 (forbidding any
+`*.go` file under `harness_exemption_class: docs-only`), and P-002.6 (member
+task scoped check uses the P-002.3 command for an exempt task), together with
+`.github/skills/build-feature/SKILL.md` and shipped `211.007-T` / `212.003-T`
+(`aad05d77`), no `-run '^TestU<k>_'` Go test selector applies to
+`harness_exemption_class: docs-only` tasks (`214.003-T` through `214.011-T`).
+Instead, `build-feature` (`harness_cmd` and `exempt_gate_cmd`), Step 4.3, and
+Step 4.6 bind directly to each task's `exempt_verification_command` verbatim.
+
 For non-exempt units, the task's own `harness_cmd` is separate from all
 regression declarations. Ship and harness-architect record an executable
 task-scoped command and prove compilation and named assertion RED before its
@@ -197,13 +206,26 @@ it without fabricating a failure. Verify changed guidance and actual links.
 ## Dependency Graph
 
 The release-unit red gate precedes all implementation; it is a gate, not a
-synthetic task. U1 through U11 are otherwise independent implementation units.
-U12 depends on U2, U3, U4, U5, U7, and U8: those units change the configuration
-or active installed-artifact checksums represented in the manifest. U6 and
-plugin-only U9/U10, as well as guide U11, are not active manifest inputs.
-Validate the integrated namespace after U1 and U2 are complete. Suspend
-canonical migration writes until U1 is green. Do not invent dependency edges
-for a preferred order.
+synthetic task. U1, U2, and U4 through U11 execute in Wave 1 (`ready_1`).
+Because `TestU180006_ManifestChecksumsCurrent` in
+`tests/integration/governed_budget_guidance_test.go` asserts on every
+unfiltered `go test -timeout=30m ./...` run (including Wave 1 Step 4.6) that
+the live LF-normalized SHA-256 of `AGENTS.md` and
+`.github/copilot-instructions.md` equals their `checksum` in
+`.autoharness/harness-manifest.yaml`, running `214.003-T` (`U3`,
+`harness-exempt: docs-only`) in Wave 1 before `214.012-T` (`U12`) in Wave 2
+would fail Wave 1 Step 4.6. Therefore `214.003-T` (`U3`) depends on `214.002-T`
+(`U2`, `blocks`) and `214.012-T` (`U12`) depends on `214.002-T`, `214.004-T`,
+`214.005-T`, `214.007-T`, and `214.008-T` (`U2, U4, U5, U7, U8`, `blocks`),
+co-scheduling `214.003-T` (`U3`) and `214.012-T` (`U12`) in Wave 2 (`ready_2`).
+Inside Wave 2, `214.003-T` (`U3`) executes before `214.012-T` (`U12`) in
+shipment manifest order so `214.012-T` reconciles `.autoharness/harness-manifest.yaml`
+for `DOCS_PLANS_DIR: "plans"`, `config_hash`, and all six modified manifest
+inputs (`U3, U4, U5, U7, U8`), keeping `TestU180006_ManifestChecksumsCurrent`
+green at both Wave 1 Step 4.6 and Wave 2 Step 4.6. U6 and plugin-only U9/U10,
+as well as guide U11, are not active manifest inputs. Validate the integrated
+namespace after U1 and U2 are complete. Suspend canonical migration writes
+until U1 is green.
 
 ## Decisions and Rationale
 

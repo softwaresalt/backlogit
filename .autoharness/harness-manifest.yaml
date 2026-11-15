@@ -4,7 +4,7 @@ tuned_at: "2026-10-24T18:50:00Z"
 autoharness_version: "1.6.0"
 autoharness_home: "C:\\Python\\Python315\\Lib\\site-packages\\autoharness\\data"
 profile_hash: "a46ff663059cbb4606f7ba8f6d2621133b3db27360cd1b6141cebae81295d584"
-config_hash: "f37e5b412dd024201601e1ba5d8451c1356cd8e88f22116645835bb47407e9c7"
+config_hash: "18d1f5b0e7c077bc5cff5e8cbf8c02c8ea60a3686c7aa1bdcf2c9889723b0c59"
 install_preset: full
 capability_packs:
   - backlogit
@@ -115,13 +115,13 @@ artifacts:
   - path: ".github/instructions/backlogit.instructions.md"
     primitive: 6
     template: "templates/instructions/backlogit.instructions.md.tmpl"
-    checksum: "22fd08ec8a21dec45067ad703e60fa2a64f4de4c38ac20db574531e05ce751dc"
+    checksum: "705516527ad5cefa74414bed507c6980036a39ca2866a1e192f7ed4f55e95dc0"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review (TUNE-011): adopted only the Checkpoint Payload Contract subsection; staged render rejected because it drops the Checkpoint Disposition Protocol and carries stale no-blocked-shipment-status text. 6434A4D7 shipped-only shipment predecessor rule and shipment_predecessor_not_shipped refusal; upstream template sync pending"
   - path: ".github/instructions/architecture-doc.instructions.md"
     primitive: 9
     template: "templates/instructions/architecture-doc.instructions.md.tmpl"
-    checksum: "2894f4fac16ad83b703927991e751e0df28b7d8ec58373f6ecf76019fd9c82ca"
+    checksum: "743e6560af474507b795a30d2810f175de04a3be6827a8ad70cc6ab410a86fba"
   - path: ".github/instructions/backlog-integration.instructions.md"
     primitive: 6
     template: "templates/instructions/backlog-integration.instructions.md.tmpl"
@@ -137,7 +137,7 @@ artifacts:
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
-    checksum: "2a6adbf66ebf5a791552bf6de5093712f97162f66bcd482abf6fe51159d05ae4"
+    checksum: "c638a1e20315a00faf6366ed4d90762db996d35f8db82ef5dedd6ca54949d935"
   - path: ".github/skills/runtime-verification/SKILL.md"
     primitive: 10
     template: "templates/skills/runtime-verification/SKILL.md.tmpl"
@@ -169,21 +169,21 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "e2713b69ad133b1bc4aadcff3bb8d24fe64eb666c0449346a615fcd3d6b72d6e"
+    checksum: "fc78381175c94e98ee6d8806427d49ae486eb660fbacacdbaecb077e6221a094"
     note: "073-DL E4: Principle II, Technical Constraints and Quality Gates now name the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). The upstream continuous-learning overlay hardcodes docs/learnings/, conflicting with the configured continuous_learning.directory (.autoharness/continuous-learning) that the pack's own instruction file uses, which would let agents write observations to two different stores. Aligned to the configured directory. Do not auto-revert."
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
-    checksum: "f798aab688486ebf075b1a64af572850626b14843eb1bb21ccc76a0665f2c4bc"
+    checksum: "1e7ea488f72aa50088bbd9d40002f4c42a1e2301bc601e33cc01b54781d93767"
     note: "073-DL E4: the Test row and Commands block now name the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Same continuous-learning storage-path conflict as AGENTS.md; aligned to the configured continuous_learning.directory. Do not auto-revert."
   - path: ".github/skills/plan-harden/SKILL.md"
     primitive: 4
     template: "templates/skills/plan-harden/SKILL.md.tmpl"
-    checksum: "2d6d6e0496356ba718a61b6365c65753b449ce2330647a3902154eec9db285ff"
+    checksum: "944dd9189134a04f2cfe288913a9db38035922865dd521521cc3813e7edef0c5"
   - path: ".github/skills/compound-refresh/SKILL.md"
     primitive: 1
     template: "templates/skills/compound-refresh/SKILL.md.tmpl"
@@ -584,7 +584,7 @@ variables_used:
   PREFIX_SUBTASK: "ST"
   DOCS_ROOT: "docs"
   DOCS_COMPOUND_DIR: "compound"
-  DOCS_PLANS_DIR: "exec-plans"
+  DOCS_PLANS_DIR: "plans"
   DOCS_DECISIONS_DIR: "decisions"
   DOCS_MEMORY_DIR: "memory"
   DOCS_CLOSURE_DIR: "closure"

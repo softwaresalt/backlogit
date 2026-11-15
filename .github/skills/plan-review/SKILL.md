@@ -1,7 +1,7 @@
 ---
 name: plan-review
 description: "Multi-persona review gate for implementation plans. Validates architectural soundness, scope boundaries, and coding standards compliance before the harvest skill decomposes a plan into work items."
-argument-hint: "[path to plan file in docs/exec-plans/]"
+argument-hint: "[path to plan file in docs/plans/]"
 ---
 
 # Plan Review Gate
@@ -39,9 +39,9 @@ When the `agent-intercom` capability pack is installed, call `ping` at session s
 
 ## Inputs
 
-* `plan_path`: (Required) Path to the plan file (`docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`).
+* `plan_path`: (Required) Path to the plan file (`docs/plans/{YYYY-MM-DD}-{slug}-plan.md`). Accept legacy plans from docs/exec-plans/.
 
-If no path is provided, search `docs/exec-plans/` for the most recent `*-plan.md` file and confirm with the operator.
+If no path is provided, search `docs/plans/` (then `docs/exec-plans/` for legacy plans) for the most recent `*-plan.md` file and confirm with the operator.
 
 ## Output
 
@@ -180,7 +180,7 @@ Rules:
 
 ### Step 1: Load and Parse Plan
 
-1. Read the plan file from `docs/exec-plans/`.
+1. Read the plan file from `docs/plans/` (or legacy `docs/exec-plans/`).
 2. Extract implementation units, dependency graph, decisions, risks, hardening signals, and whether a `## Plan Hardening` section is present.
 3. Extract the `## Constitution Check` section and its concluding verdict. A conforming plan ends the section with exactly `Constitution Check: pass` or `Constitution Check: documented-deviations`. Treat a missing section or a missing/unrecognized verdict as a governance gap (see the Step 4 gate row): the absence is fail-safe, mirroring how P-006 treats a missing `Requires plan hardening` field as `yes`.
 4. When `strict-safety` is enabled and the plan contains a `## Plan Hardening` section, also extract any `ProposedAction` / `ActionRisk` entries.
