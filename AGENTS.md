@@ -349,7 +349,7 @@ This file is a map, not a manual. For deeper context, consult these sources:
 
 Active work items (features, chores, tasks, spikes, deliberations, bugs) are tracked as
 work items in the backlog queue (`.backlog/queue/` by default, `.backlogit/queue/` in this repository's legacy workspace). Durable knowledge
-lives in `docs/`: compound learnings in `docs/compound/`, plans in `docs/exec-plans/`,
+lives in `docs/`: compound learnings in `docs/compound/`, plans in `docs/plans/`,
 decisions and spike findings in `docs/decisions/`, session memory in `docs/memory/`,
 and closure records in `docs/closure/`. When completed work produces durable design
 decisions or architectural rationale, the ship agent graduates that knowledge
