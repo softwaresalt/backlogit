@@ -178,7 +178,7 @@ A backlogit structured checkpoint payload MUST:
   "context": {
     "feature_id": "130-F",
     "shipment_id": "139-S",
-    "artifacts": { "plan": "docs/exec-plans/example-plan.md" }
+    "artifacts": { "plan": "docs/plans/example-plan.md" }
   }
 }
 ```
