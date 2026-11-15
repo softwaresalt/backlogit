@@ -80,7 +80,7 @@ title: 'Concise plan title'
 
 **YAML pitfall (single-quote to avoid silent corruption):** single-quote any scalar containing `#`, `:`, or a leading special character. An unquoted `#` (common in PR references like `#164`) is parsed as an inline comment, so the value is silently truncated from `#` onward with no error raised; embedded `:` and leading special characters are related parse hazards. The docline gate will **not** always catch the loss — a truncated value can still be schema-valid (non-empty) and pass the required-field check — so quote defensively at authoring time (see `docs/compound/2026-06-26-docline-frontmatter-contract.md`).
 
-**Optional deterministic derivation:** instead of hand-authoring `source`/`doc_type`, derive them with `backlogit docs migrate`. Migration previews report metadata, not content diffs. Run the dry-run plan first to inspect the reported action metadata (or inspect and correct the frontmatter manually without applying migration), then run `backlogit docs migrate --apply --yes --path docs/plans/<file>` to write (`--apply --yes` is an in-place overwrite, git-tracked so revertible; Principle VII).
+**Optional deterministic derivation:** instead of hand-authoring `source`/`doc_type`, derive them with `backlogit docs migrate`. Migration previews report metadata, not content diffs. Run the dry-run plan first to inspect the reported action metadata, inspect the target frontmatter manually and confirm the planned changes with the operator (Principle VII), then run `backlogit docs migrate --apply --yes --path docs/plans/<file>` to write (`--apply --yes` is an in-place overwrite, git-tracked so revertible). Alternatively, inspect and correct the frontmatter manually without applying migration.
 
 #### Problem Frame
 
@@ -191,9 +191,9 @@ After writing the plan, verify its frontmatter against the docline contract
    `go run ./cmd/backlogit docs lint --path docs/plans/<file>`.
 2. Confirm the result is `valid` with `0 violations`.
 3. Treat **any** violation as a blocker: fix the frontmatter in place (or preview
-   metadata with `backlogit docs migrate --path docs/plans/<file>`, inspect
-   manually if needed, then run `--apply --yes --path`) and re-run
-   the linter until it reports 0 violations.
+   metadata with `backlogit docs migrate --path docs/plans/<file>`, inspect the
+   target frontmatter manually and confirm with the operator, then run
+   `--apply --yes --path`) and re-run the linter until it reports 0 violations.
 
 Invoke the **source** entrypoint (`go run ./cmd/backlogit ...` / `make docs-lint`),
 not a possibly-stale installed `backlogit` binary. The source entrypoint

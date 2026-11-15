@@ -3,6 +3,7 @@ package integration_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,7 +12,8 @@ import (
 )
 
 func lfSHA256Hex(content string) string {
-	sum := sha256.Sum256([]byte(content))
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	sum := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -55,7 +57,10 @@ func TestU12_HarnessManifestNamespaceReconciliation(t *testing.T) {
 	for _, entry := range artifactsRaw {
 		m, ok := entry.(map[string]any)
 		require.True(t, ok, "artifact entry must be a map")
-		p, _ := m["path"].(string)
+		p, ok := m["path"].(string)
+		require.True(t, ok, "artifact entry path must be a string")
+		_, dup := byPath[p]
+		require.False(t, dup, "manifest must not contain duplicate artifact path %s", p)
 		byPath[p] = m
 	}
 
@@ -72,13 +77,13 @@ func TestU12_HarnessManifestNamespaceReconciliation(t *testing.T) {
 	}
 
 	for _, item := range modifiedArtifacts {
-		item := item
 		t.Run(item.path, func(t *testing.T) {
 			entry, exists := byPath[item.path]
 			require.True(t, exists, "manifest entry must exist for %s", item.path)
 			diskContent := readGovernedSurface(t, repoRoot, item.path)
 			wantChecksum := lfSHA256Hex(diskContent)
-			gotChecksum, _ := entry["checksum"].(string)
+			gotChecksum, ok := entry["checksum"].(string)
+			require.True(t, ok, "manifest checksum must be a string for %s", item.path)
 			assert.Equal(t, wantChecksum, gotChecksum, "manifest checksum must match LF-normalized %s", item.path)
 			assert.NotEqual(t, item.pre215S, gotChecksum, "manifest checksum must differ from pre-215-S checksum for %s", item.path)
 		})

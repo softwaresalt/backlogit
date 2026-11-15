@@ -28,7 +28,6 @@ func TestU1_ClassifyPlanNamespaces(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, tc.want, docline.Classify(tc.relPath))
@@ -53,7 +52,6 @@ func TestU1_ValidateClassifyPathContainment(t *testing.T) {
 	}
 
 	for _, tc := range invalid {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			require.Error(t, docline.ValidateClassifyPath(root, tc.path))
@@ -66,7 +64,6 @@ func TestU1_ValidateClassifyPathContainment(t *testing.T) {
 		`docs\plans\x.md`,
 	}
 	for _, p := range valid {
-		p := p
 		t.Run("valid_"+p, func(t *testing.T) {
 			t.Parallel()
 			require.NoError(t, docline.ValidateClassifyPath(root, p))
@@ -137,4 +134,56 @@ func TestU1_PlanMigrationCanonicalAndLegacyFixtures(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, beforeBytes[fx.relPath], string(onDisk), "PlanMigration must not write %s", fx.relPath)
 	}
+}
+
+func TestU1_ApplyMigrationCanonicalAndLegacyIdempotent(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	now := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+
+	fixtures := []struct {
+		relPath string
+		title   string
+		body    string
+	}{
+		{
+			relPath: "docs/plans/x.md",
+			title:   "Canonical Plan",
+			body:    "# Canonical Plan\n\nPreserved canonical body.\n",
+		},
+		{
+			relPath: "docs/exec-plans/x.md",
+			title:   "Legacy Plan",
+			body:    "# Legacy Plan\n\nPreserved legacy body.\n",
+		},
+	}
+
+	for _, fx := range fixtures {
+		raw := "---\ntitle: " + fx.title + "\n---\n" + fx.body
+		abs := filepath.Join(root, filepath.FromSlash(fx.relPath))
+		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o755))
+		require.NoError(t, os.WriteFile(abs, []byte(raw), 0o644))
+	}
+
+	plan, err := docline.PlanMigration(docline.Options{Root: root, Now: now})
+	require.NoError(t, err)
+	require.Empty(t, plan.Findings)
+
+	res, err := docline.ApplyMigration(plan, docline.Options{Root: root, Now: now})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"docs/plans/x.md", "docs/exec-plans/x.md"}, res.Applied)
+
+	// Re-planning after ApplyMigration must be a complete noop.
+	plan2, err := docline.PlanMigration(docline.Options{Root: root, Now: now})
+	require.NoError(t, err)
+	require.Empty(t, plan2.Findings)
+	for _, c := range plan2.Changes {
+		assert.Equal(t, docline.ActionNoop, c.Action, "second migration pass must be noop for %s", c.File)
+		assert.False(t, c.BodyBytesChanged, "body bytes must stay unchanged for %s", c.File)
+	}
+
+	// Both applied documents must pass authoring lint with zero findings.
+	findings, err := docline.LintTree(docline.Options{Root: root, Profile: docline.ProfileAuthoring})
+	require.NoError(t, err)
+	assert.Empty(t, findings)
 }

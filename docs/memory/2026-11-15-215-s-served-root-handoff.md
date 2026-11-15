@@ -34,17 +34,14 @@ call completed asynchronously). No task execution has started yet.
 
 ## Authority and safety
 
-`DARK_MODE_ACTIVE` governs `215-S` (`214-F`, tasks `214.001-T`..`214.012-T`)
-with `merge_approval_pre_authorized: true` and
-`admin_fallback_pre_authorized: true` subject to current-HEAD multi-persona,
-adversarial, and rubber-duck local reviews, green CI, P-018 Copilot review
-`SATISFIED`, P-009 merge-commit-only, and P-016 single-worktree rules.
+`DARK_MODE_ACTIVE` governs `215-S` (`214-F`, tasks `214.001-T`..`214.012-T`),
+subject to current-HEAD multi-persona, adversarial, and rubber-duck local
+reviews, green CI, P-018 Copilot review `SATISFIED`, P-009 merge-commit-only,
+and P-016 single-worktree gates. Safety mode is freeze-scope to U1–U12.
 
-## Startup checks
+## Startup verification
 
-* `backlogit_sync_index`: `2311` items indexed.
-* `backlogit_list_checkpoints(consumer_id="ship")`: `208` valid checkpoints
-  (`206` resolved, `2` abandoned), `0` anomalies, `0` active candidates.
-* `backlogit_poll_hook_events(consumer_id="ship")`: empty.
 * Predecessor `214-S` is archived with `archived_status: shipped`.
+* Startup checkpoint recovery scan and hook polling returned zero active
+  candidates, zero quarantine anomalies, and zero pending hook events.
 * Intake reconciliation (`mode: pre`, `expected_status: active`): `PROCEED`.

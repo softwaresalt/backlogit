@@ -100,10 +100,11 @@ PR #164, failing the gate with 3 violations and blocking the PR.
 3. On **any** violation, **HALT** decomposition. Do not parse the plan, create
    any backlog item, or allow the enclosing Stage harvest commit. Report the
    violations and direct the author to fix the plan frontmatter manually in
-   place (or preview `backlogit docs migrate --path ${input:plan}` —
-   Migration previews report metadata, not content diffs. — then run
-   `--apply --yes --path ${input:plan}`) and re-run this gate. Cite the 075-S
-   root cause so the reason is legible.
+   place (or preview `backlogit docs migrate --path ${input:plan}`, inspect
+   the frontmatter and confirm with the operator, then run
+   `--apply --yes --path ${input:plan}`) and re-run this gate.
+   Migration previews report metadata, not content diffs. Cite the 075-S root
+   cause so the reason is legible.
 
 Both docline gates sit upstream of every path by which a plan reaches a commit:
 the impl-plan skill's mandatory self-lint runs at authoring time, and this
