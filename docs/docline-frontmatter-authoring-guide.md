@@ -65,7 +65,8 @@ for you. The full mapping lives in the
 |---|---|
 | `docs/cli-reference/**` | `reference` |
 | `docs/decisions/**` | `decision` |
-| `docs/exec-plans/**` | `plan` |
+| `docs/plans/**` | `plan` |
+| `docs/exec-plans/**` (legacy) | `plan` |
 | `docs/closure/**` | `closure` |
 | `docs/research/**` | `research` |
 | `docs/reviews/**` | `review` |
@@ -231,7 +232,7 @@ root knowledge files `README.md` and `AGENTS.md`. Out of scope: `.github/**` and
 ## See also
 
 * Taxonomy and field-mapping decision: `docs/decisions/2026-06-22-docline-taxonomy-and-field-mapping.md`
-* Standardization plan: `docs/exec-plans/2026-06-22-docline-frontmatter-standardization-plan.md`
+* Standardization plan: `docs/plans/2026-06-22-docline-frontmatter-standardization-plan.md`
 * Contract schema: `schemas/docline/base-frontmatter-v1.schema.json`
 * Owner-profile decision (Model A): `docs/decisions/2026-07-16-docline-backlogit-owner-profile-model-a-decision.md`
 * backlogit owner-profile ext schema: `schemas/docline/ext/backlogit-v1.schema.json`
