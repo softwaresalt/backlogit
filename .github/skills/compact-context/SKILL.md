@@ -5,7 +5,7 @@ description: "Compact and consolidate memory, plan, and tracking artifacts into 
 
 # Compact Context
 
-Scan `docs/memory/`, `docs/exec-plans/`, and `docs/closure/` for stale or oversized artifacts, produce compacted summaries, and archive verbose originals. For plans with appended reviews, consolidate into a decided-plan that replaces the original plan + review verbosity.
+Scan `docs/memory/`, `docs/plans/` (primary), legacy `docs/exec-plans/`, and `docs/closure/` for stale or oversized artifacts, produce compacted summaries, and archive verbose originals. For plans with appended reviews, consolidate into a decided-plan that replaces the original plan + review verbosity.
 
 This skill is a **mandatory workflow step** invoked explicitly by the stage or ship agent (when checkpoint threshold is exceeded or at batch completion). It is NOT advisory — built-in AI assistant memory features do not write to `docs/`, so compaction is the only mechanism that ensures session knowledge is consolidated into durable, version-controlled artifacts.
 
@@ -27,7 +27,7 @@ Invoke as part of the standard workflow:
 ## Output
 
 * Compacted summary files in `docs/memory/` (for memory/checkpoints)
-* Decided-plan files in `docs/exec-plans/` (for plans with appended reviews)
+* Decided-plan files in `docs/plans/` (for plans with appended reviews; legacy `docs/exec-plans/` plans are still discovered)
 * Compacted closure summaries in `docs/closure/` (for verification and closure records)
 * Verbose originals moved to `docs/archive/`
 * Summary report of what was compacted
@@ -46,7 +46,7 @@ Scan the target directories:
 * Identify files older than `threshold_days`
 * Cross-reference against active backlog work items (do not compact active task checkpoints)
 
-**Plans** (`docs/exec-plans/`):
+**Plans** (`docs/plans/` primary, plus legacy `docs/exec-plans/` discovery):
 
 * Identify plans with appended review sections (plan-review skill appends findings)
 * Identify plans whose associated feature or chore is complete (all tasks Done)
@@ -80,8 +80,8 @@ Mark artifacts as compaction candidates if:
 
 1. Read the plan file including all appended review sections
 2. Extract: final decisions, implementation units that survived review, key constraints, rejected alternatives
-3. Write a decided-plan to `docs/exec-plans/{YYYY-MM-DD}-{slug}-decided-plan.md` — a concise document containing only the actionable decisions and rationale, not the full deliberation history
-4. Move the verbose original plan to `docs/archive/plans/`
+3. Write a decided-plan to `docs/plans/{YYYY-MM-DD}-{slug}-decided-plan.md` — a concise document containing only the actionable decisions and rationale, not the full deliberation history
+4. Move the verbose original plan to `docs/archive/plans/` (obtain applicable approval before relocating existing canonical plans, and preserve or update references when plans move)
 
 **Closure compaction** (per-release-unit):
 
@@ -108,6 +108,8 @@ Summarize:
 * Never compact checkpoints for active (Active status) work items
 * Preserve the most recent checkpoint for each completed task
 * All archive operations maintain a traceable path from the compacted summary back to the original verbose artifacts
+* Obtain applicable approval before relocating existing canonical plans.
+* Preserve or update references when plans move.
 * Decided-plans must preserve all final decisions and their rationale — compaction removes verbosity, not substance
 
 ## Intercom Events

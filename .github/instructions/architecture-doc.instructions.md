@@ -37,7 +37,7 @@ The `docs/` directory and the backlog directory serve different lifecycles:
 
 * **`docs/`** holds **durable knowledge**: architecture, design decisions, product specs,
   quality grades, compound learnings (`docs/compound/`), implementation plans
-  (`docs/exec-plans/`), spike and deliberation findings (`docs/decisions/`), session memory
+  (`docs/plans/`), spike and deliberation findings (`docs/decisions/`), session memory
   (`docs/memory/`), and closure records (`docs/closure/`). These persist and evolve
   with the codebase. They have no "done" state.
 
