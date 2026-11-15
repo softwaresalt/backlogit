@@ -78,7 +78,7 @@ for full probe output (`verdict: PASS`).
 * **Validation window**: Immediate post-merge checks (passed) plus 7-day observation window (`2026-11-15` through `2026-11-22`).
 * **Healthy signals**: `backlogit docs lint` returns `0` violations; `backlogit docs classify docs/plans/x.md` and `docs/exec-plans/x.md` return `plan`; `TestU180006_ManifestChecksumsCurrent` and `make md-lint` stay green on `main`.
 * **Failure signals / rollback trigger**: Any misclassification of `docs/plans/**` or `docs/exec-plans/**`, containment regression, or manifest drift on `main`.
-* **Rollback procedure**: Retain canonical `docs/plans/` classification while any files remain in `docs/plans/`; do not revert `internal/docline/policy.go` alone. Coordinated full rollback requires explicit operator approval and `git revert -m 1 cc65c531a5739b8a215d3aa521317a3bb51010df`.
+* **Rollback procedure**: Retain canonical `docs/plans/` classification in `internal/docline/policy.go` and preserve archive/event history while any files or active references remain under `docs/plans/`; do not run a blanket merge revert (`git revert -m 1 cc65c531...`), which would drop canonical classification and misclassify existing `docs/plans/` documents as `guide`. Apply an operator-approved scoped mitigation PR (for example, adjusting config/guidance pointers or path rules without removing `{"docs/plans/", DocTypePlan}` or rewriting archive/event records). Removing canonical `docs/plans/` support requires explicit operator approval and a coordinated migration of existing `docs/plans/` files, workspace configuration, and active references first.
 
 ## Source artifact provenance
 
