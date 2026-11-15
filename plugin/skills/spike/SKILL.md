@@ -212,7 +212,7 @@ When `promote_to` includes `plan` (or `ask` resolved to `plan`):
    * Pass the findings artifact path as the plan source
    * Set the implementation scope to the recommendation from Step 3.2
    * Include the spike's success criteria and constraints as planning constraints
-2. The impl-plan skill writes a plan document to `docs/exec-plans/{YYYY-MM-DD}-{slug}-plan.md`
+2. The impl-plan skill writes a plan document to `docs/plans/{YYYY-MM-DD}-{slug}-plan.md`
 3. Update the spike findings artifact's `promoted_to` frontmatter field to include `plan`
    and add a `plan_artifact` field pointing to the generated plan path
 4. If `linked_parent_work_item` was provided, the impl-plan output should reference that feature or chore
