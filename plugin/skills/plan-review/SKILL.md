@@ -1,7 +1,7 @@
 ---
 name: plan-review
 description: "Multi-model, multi-persona review gate for implementation plans. Validates architectural soundness, scope boundaries, and coding standards compliance before the harvest skill decomposes a plan into backlogit work items."
-argument-hint: "[path to plan file in docs/exec-plans/]"
+argument-hint: "[path to plan file in docs/plans/]"
 ---
 
 # Plan Review Gate
@@ -28,9 +28,9 @@ This skill spawns reviewer subagents. Those subagents are leaf executors and MUS
 
 ## Inputs
 
-The user provides the path to a plan file in `docs/exec-plans/` when invoking this skill.
+The user provides the path to a plan file in `docs/plans/` when invoking this skill. Accept legacy plans from docs/exec-plans/.
 
-If no path is provided, search `docs/exec-plans/` for the most recent `*-plan.md` file and confirm with the user.
+If no path is provided, search `docs/plans/` (then `docs/exec-plans/` for legacy plans) for the most recent `*-plan.md` file and confirm with the user.
 
 ## Reviewer Personas
 
@@ -59,7 +59,7 @@ If cross-model invocation is not available, run all personas with the caller's m
 
 ### Step 1: Load Plan and Context
 
-1. Read the plan file from `docs/exec-plans/`
+1. Read the plan file from `docs/plans/` (or legacy `docs/exec-plans/`)
 2. Extract implementation units, dependency graph, decisions, risks, hardening signals, and whether a `## Plan Hardening` section is present.
 3. When `strict-safety` is enabled and the plan contains a `## Plan Hardening` section, also extract any `ProposedAction` / `ActionRisk` entries.
 4. If the plan references an origin document in `.backlogit/queue/` or `docs/research/`, read that too

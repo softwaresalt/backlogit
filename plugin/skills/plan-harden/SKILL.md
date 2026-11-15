@@ -21,7 +21,7 @@ Invoke after `impl-plan` when the plan shows one or more hardening signals:
 
 ## Inputs
 
-* `plan_path`: (Required) Path to the plan file in `docs/exec-plans/`.
+* `plan_path`: (Required) Path to the plan file in `docs/plans/`. Accept legacy plans from docs/exec-plans/.
 
 ## Output
 
