@@ -9,12 +9,14 @@ title: Multi-Session MCP Runtime and Workspace Toolchain
 
 ## Status and scope
 
-The Option A multi-session runtime is implemented. The Level 1 schema and
-read-only inventory verifier are present; launcher auditing, manifest writing,
-configuration rendering, strict status integration, and the repository's pinned
-manifest are planned for the subsequent integration shipment. The operator
-procedure below is a target contract, not evidence that this workspace is already
-provisioned or verified.
+The Option A multi-session runtime (`212-S`), the Level 1 schema and read-only
+inventory verifier (`213-S`), and the Track C launcher/companion MCP auditor,
+manifest writer, configuration renderer, strict status integration
+(`backlogit mcp status --toolchain [--strict]`), and repository manifest
+(`.backlogit/toolchain.yaml`) (`214-S`) are implemented. Operator-owned local
+binaries (`./bin/*`) and gitignored `.mcp.json` remain under operator custody;
+the operator procedure below describes how operators provision and verify local
+runtime files against the shipped contract.
 
 See the [requirements](../product-specs/2026-11-04-multi-session-mcp-runtime-requirements.md)
 and [decision](../decisions/2026-11-04-multi-session-mcp-runtime-deliberation.md)
@@ -64,28 +66,28 @@ Classes distinguish `workspace-local-pinned`, `host-prerequisite`,
 `remote-declared`, `built-in-host`, `unsupported`, and `non-conformant`.
 These declarations must not disguise unsupported or unverified tools as pinned.
 
-`internal/toolchain` currently provides `LoadToolchainManifest`,
+`internal/toolchain` provides `LoadToolchainManifest`,
 `DefaultWorkspaceToolchainManifest`, `VerifyWorkspaceToolchain`, and
-`ValidateMCPConfigPinning`. Loading checks the selected `.backlog` or legacy
-`.backlogit` storage root; a missing manifest yields an unverified default
-inventory, not a successful pinning claim. Verification is read-only and
+`ValidateMCPConfigPinning` (`213-S`), plus `VerifyLauncherScripts`,
+`AuditRepositoryToolchain`, `WriteToolchainManifest`, and
+`RenderPinnedMCPConfig` (`214-S`). Loading checks the selected `.backlog` or
+legacy `.backlogit` storage root; a missing manifest yields an unverified
+default inventory, not a successful pinning claim. Verification is read-only and
 reports findings and violations. It uses workspace-rooted file access and
-checks paths, identity, declared pins and MCP configuration; it does not
-provision tools.
+checks paths, identity, declared pins, launcher scripts (`start.ps1`,
+`start.sh`), and MCP configuration; it does not overwrite operator-owned tools.
 
-The planned `WriteToolchainManifest` and `RenderPinnedMCPConfig` APIs belong to
-the later integration work. They are intended to write the selected workspace
-manifest and render workspace-pinned MCP configuration respectively. The
-planned repository manifest is `.backlogit/toolchain.yaml`; the intended
-`mcp status --toolchain --strict` integration is not yet a current verification
-surface.
+`WriteToolchainManifest` writes the selected workspace manifest (such as the
+committed `.backlogit/toolchain.yaml`), `RenderPinnedMCPConfig` renders
+workspace-pinned MCP configuration, and `backlogit mcp status --toolchain [--strict]`
+surfaces live daemon status alongside the Level 1 repository toolchain audit.
 
 ## Operator-owned verified provisioning
 
-The D9 procedure is the target state after the integration surfaces exist.
-Operator-owned local binaries, ignored configuration, and pre-existing
-worktree changes remain under operator custody; do not overwrite them as a
-side effect of verification.
+The D9 procedure governs operator-owned local runtime provisioning against the
+shipped Level 1 contract. Operator-owned local binaries, ignored configuration,
+and pre-existing worktree changes remain under operator custody; do not
+overwrite them as a side effect of verification.
 
 1. Establish trusted sources, versions and SHA-256 digests for workspace-local
    `backlogit`, `engram`, `bun`, `bunx`, GitHub MCP, and `kbdb`. Build
@@ -103,16 +105,15 @@ side effect of verification.
    as host prerequisites, and host-native tools as `built-in-host`. Declare
    remote services and their policies rather than representing them as local
    isolation.
-5. Once implemented, use `WriteToolchainManifest` and
-   `RenderPinnedMCPConfig` to align the workspace manifest and `.mcp.json`,
-   then align `start.ps1` and `start.sh` with those same local paths. Review
-   custody and local changes before applying any generated configuration.
-6. Once implemented, run
-   `backlogit mcp status --toolchain --strict --format json` for the workspace.
-   Acceptance requires exit zero, `valid: true`,
+5. Use `WriteToolchainManifest` and `RenderPinnedMCPConfig` to align the
+   workspace manifest and `.mcp.json`, then align `start.ps1` and `start.sh`
+   with those same local paths. Review custody and local changes before applying
+   any generated configuration.
+6. Run `backlogit mcp status --toolchain --strict --format json` for the
+   workspace. Acceptance requires exit zero, `valid: true`,
    `violations: 0`, `containment_level: level-1-workspace-local-pinned`, and
    `os_container_sandbox_deferred: true`. Investigate each finding instead of
-   treating a default inventory or absent command as verification.
+   treating a default inventory or an error exit as verification.
 
 ## Threat-model boundary
 
