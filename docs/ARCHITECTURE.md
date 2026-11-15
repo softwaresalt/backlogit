@@ -54,7 +54,7 @@ internal/faultline/mutation/ ← Declarative representation-set model and postco
 ## Dependency Direction
 
 ```text
-cmd → cli → core, db, mcp, models, telemetry
+cmd → cli → core, db, mcp, models, telemetry, release, version, toolchain
              core → models, db, mdfront, atomicfile
              docline   → mdfront, atomicfile
              mcp  → core, db, models, telemetry, release, version

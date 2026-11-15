@@ -5,14 +5,15 @@ source: docs/closure/2026-11-15-214-s-compaction-report.md
 ingested_at: "2026-11-15T00:50:00Z"
 schema_version: "1.0"
 chunk_strategy: h1-h2-h3
-date: "2026-11-15"
-shipment_id: 214-S
-feature_id: 213-F
-target: all
-compaction_status: done
-threshold_days: 14
-max_files: 40
-max_size_kb: 500
+docline:
+  date: "2026-11-15"
+  shipment_id: 214-S
+  feature_id: 213-F
+  target: all
+  compaction_status: done
+  threshold_days: 14
+  max_files: 40
+  max_size_kb: 500
 ---
 
 ## Trigger and corpus assessment

@@ -5,8 +5,9 @@ source: docs/memory/2026-11-15-214-s-post-merge-closure.md
 ingested_at: "2026-11-15T00:50:00Z"
 schema_version: "1.0"
 chunk_strategy: h1-h2-h3
-shipment_id: 214-S
-feature_id: 213-F
+docline:
+  shipment_id: 214-S
+  feature_id: 213-F
 ---
 
 ## Completed actions and state
