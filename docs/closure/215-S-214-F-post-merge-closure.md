@@ -5,14 +5,14 @@ source: docs/closure/215-S-214-F-post-merge-closure.md
 ingested_at: "2026-11-15T08:30:00Z"
 schema_version: "1.0"
 chunk_strategy: h1-h2-h3
-merge_commit: cc65c531a5739b8a215d3aa521317a3bb51010df
-close_path: cascade
-close_evidence: docs/closure/evidence/215-S-214-F-close-evidence.json
 closure_status: READY
 compaction_status: done
 docline:
   shipment_id: 215-S
   feature_id: 214-F
+  merge_commit: cc65c531a5739b8a215d3aa521317a3bb51010df
+  close_path: cascade
+  close_evidence: docs/closure/evidence/215-S-214-F-close-evidence.json
 ---
 
 ## Release and governed scope
