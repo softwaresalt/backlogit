@@ -177,6 +177,7 @@ func TestU1_ApplyMigrationCanonicalAndLegacyIdempotent(t *testing.T) {
 	plan2, err := docline.PlanMigration(docline.Options{Root: root, Now: now})
 	require.NoError(t, err)
 	require.Empty(t, plan2.Findings)
+	require.Len(t, plan2.Changes, len(fixtures))
 	for _, c := range plan2.Changes {
 		assert.Equal(t, docline.ActionNoop, c.Action, "second migration pass must be noop for %s", c.File)
 		assert.False(t, c.BodyBytesChanged, "body bytes must stay unchanged for %s", c.File)

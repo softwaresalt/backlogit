@@ -68,7 +68,7 @@ See [215-S pre-merge runtime verification](2026-11-15-215-s-pre-merge-runtime-ve
 
 ## Source artifact provenance
 
-Feature `214-F` declares `source_stash_id: none` and `source_deliberation_id: none`. Source decision `docs/decisions/2026-11-04-docs-plan-namespace-compatibility-deliberation.md` is referenced as provenance only and remains untouched.
+Feature `214-F` declares `source_stash_id: none` and `source_deliberation_id: none`. Source decision `docs/decisions/2026-11-04-docs-plan-namespace-compatibility-deliberation.md` is referenced as provenance only and remains untouched. Pre-claim branch carry-forward commit `9c54e947` also carried `.backlogit/checkpoints/checkpoint-20261115-010850.json` (`214-S` resolved closure checkpoint) and `model_routing` updates; per P-010/P-021 C1 that pre-claim state is preserved untouched and the routing alignment is deferred to `A991B4AC`.
 
 ## Residual risks and deferred follow-ups
 

@@ -22,26 +22,16 @@ docline:
 
 ## Binding and branch
 
-Ship independently verified the metadata workspace root as `.`, storage root as
-`.backlogit`, and main SQLite index as `.backlogit/backlogit.db`. Absolute host
-paths are intentionally omitted from repository memory.
+Ship verified the metadata workspace root as `.`, storage root as `.backlogit`,
+and main SQLite index as `.backlogit/backlogit.db`. Absolute host paths are
+intentionally omitted from repository memory.
 
-Branch `feat/215-s-canonical-plan-namespace-compatibility-maintenance` was
-already active. Stage's sequencing dependency (`215-S` blocked by `214-S`) was
-committed first (`73ce1ed2`), both `pre_claim` topology checks exited `0`, and
-`215-S` was claimed (`CLAIM_VERIFY_OK` on `post_claim` after the MCP claim
-call completed asynchronously). No task execution has started yet.
+Branch `feat/215-s-canonical-plan-namespace-compatibility-maintenance` holds
+the `215-S` execution sequence, beginning with Stage's `215-S -> 214-S`
+sequencing dependency and continuing with the served-root handoff record.
 
-## Authority and safety
+## Scope and lineage
 
-`DARK_MODE_ACTIVE` governs `215-S` (`214-F`, tasks `214.001-T`..`214.012-T`),
-subject to current-HEAD multi-persona, adversarial, and rubber-duck local
-reviews, green CI, P-018 Copilot review `SATISFIED`, P-009 merge-commit-only,
-and P-016 single-worktree gates. Safety mode is freeze-scope to U1–U12.
-
-## Startup verification
-
-* Predecessor `214-S` is archived with `archived_status: shipped`.
-* Startup checkpoint recovery scan and hook polling returned zero active
-  candidates, zero quarantine anomalies, and zero pending hook events.
-* Intake reconciliation (`mode: pre`, `expected_status: active`): `PROCEED`.
+Shipment `215-S` covers feature `214-F` and tasks `214.001-T`..`214.012-T`
+under freeze-scope `U1`–`U12`, after predecessor shipment `214-S` reached
+`archived_status: shipped`.
