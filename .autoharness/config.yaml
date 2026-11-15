@@ -25,7 +25,7 @@ docs:
   root: docs
   subdirectories:
     compound: compound
-    plans: exec-plans
+    plans: plans
     decisions: decisions
     memory: memory
     closure: closure
