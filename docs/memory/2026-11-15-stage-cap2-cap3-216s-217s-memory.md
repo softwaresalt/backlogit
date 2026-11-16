@@ -28,7 +28,7 @@ Executed `_Stage` in **Dark Factory Mode (`P-017`, `DARK_MODE_ACTIVE: true`)** o
   * Consumed stash entries: `17214531` (`090-DL`), `3083FC1A` (`091-DL`), `0D073C21` (`092-DL`), `D1455316` (`093-DL`), `C5189EAF` (`094-DL`), `1CED4AD6` (`095-DL`).
   * Decision document: `docs/decisions/2026-11-15-cap2-sandbox-multisession-runtime-hardening-deliberation.md`.
   * Implementation plan: `docs/plans/2026-11-15-cap2-sandbox-multisession-runtime-hardening-plan.md` (`dispatch_mode: multi-agent-dispatch`, `decision: PASS`).
-  * Harvested tasks: `215.001-T` (`U1`, `S`, `low`), `215.002-T` (`U2`, `M`, `medium`), `215.003-T` (`U3a`, `S`, `low`), `215.004-T` (`U3b`, `S`, `low`), `215.005-T` (`U4`, `S`, `low`), `215.006-T` (`U5`, `M`, `medium`), `215.007-T` (`U6`, `M`, `medium`).
+  * Harvested tasks: `215.001-T` (`U1`, `S`, `low`), `215.002-T` (`U2`, `M`, `medium`), `215.003-T` (`U3a`, `S`, `low`), `215.004-T` (`U3b`, `S`, `low`), `215.005-T` (`U4`, `S`, `low`), `215.006-T` (`U5a`, `M`, `medium`), `215.007-T` (`U6`, `M`, `medium`), `215.008-T` (`U5b`, `M`, `medium`).
 * **Shipment 2 — `217-S` (`216-F`: Zero-Flake Concurrency and Fast Ship-Closure Engine — CAP-3)**:
   * Consumed stash entries: `703835DC` (`096-DL`), `76553D8D` (`097-DL`), `F448AA52` (`098-DL`), `9CFC88E5` (`099-DL`), `B25BF131` (`100-DL`), `63909DAE` (`101-DL`).
   * Decision document: `docs/decisions/2026-11-15-cap3-zero-flake-concurrency-ship-closure-deliberation.md`.
