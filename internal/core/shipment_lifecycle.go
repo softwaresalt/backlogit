@@ -267,17 +267,13 @@ type shipArtifactSnapshot struct {
 func snapshotShipArtifacts(ctx context.Context, ws *Workspace, ids []string) (map[string]shipArtifactSnapshot, error) {
 	snapshots := make(map[string]shipArtifactSnapshot)
 	for _, id := range uniqueNonEmptyStrings(ids) {
-		artifact, err := findArtifact(ctx, ws, id)
+		artifact, path, err := findArtifactWithPath(ctx, ws, id)
 		if err != nil {
 			return nil, fmt.Errorf("snapshot artifact %s: %w", id, err)
 		}
 		dbItem, err := bldb.GetItem(ctx, ws.DB, id)
 		if err != nil {
 			return nil, fmt.Errorf("snapshot artifact %s index: %w", id, err)
-		}
-		path, err := FindArtifactPath(ctx, ws, id)
-		if err != nil {
-			return nil, fmt.Errorf("snapshot artifact %s path: %w", id, err)
 		}
 		file, err := snapshotFile(path)
 		if err != nil {
