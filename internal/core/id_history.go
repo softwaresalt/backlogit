@@ -10,12 +10,49 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/config"
+	"github.com/softwaresalt/backlogit/internal/core/gate"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
+
+const (
+	idSequenceLedgerFileName   = "id-sequences.json"
+	idAllocatorLockFileName    = "id_allocator.lock"
+	idAllocatorLockBoundedWait = 30 * time.Second
+)
+
+type idAllocatorLockContextKey struct{}
+
+// shipmentOperationBeforeCreateContextKey carries an optional callback
+// func(context.Context, string) error invoked inside CreateArtifact after
+// artifactID is allocated under id_allocator.lock and before MutationEnvelope
+// publishes the artifact file or id-sequences.json reservation.
+type shipmentOperationBeforeCreateContextKey struct{}
+
+var (
+	idSequenceTempSeq atomic.Uint64
+	branchIDScanCache sync.Map // key: realRoot+"\x00"+fingerprint -> []string
+)
+
+type idSequenceLedger struct {
+	SchemaVersion int                 `json:"schema_version"`
+	ReservedIDs   []string            `json:"reserved_ids"`
+	Reservations  map[string][]string `json:"reservations,omitempty"`
+}
+
+// writeIDSequenceReservationFn is an injectable seam for deterministic
+// ledger-write failure and parent-swap testing.
+var writeIDSequenceReservationFn = writeIDSequenceReservation
 
 // historicalIDQueries lists the SQLite sources whose IDs must be reserved so an
 // allocator never reuses an ID that was retired (deleted, archived, or
@@ -137,7 +174,751 @@ func historicalIDsFromDisk(ws *Workspace) ([]string, error) {
 		return nil, err
 	}
 	ids = append(ids, correctionIDs...)
+
+	reservedIDs, err := readReservedSequenceIDs(ws)
+	if err != nil {
+		return nil, err
+	}
+	ids = append(ids, reservedIDs...)
+
+	branchIDs, err := scanLocalBranchArtifactIDs(ws)
+	if err != nil {
+		return nil, err
+	}
+	ids = append(ids, branchIDs...)
+
 	return ids, nil
+}
+
+func resolveValidatedStorageRoot(ws *Workspace) (string, error) {
+	if ws == nil {
+		return "", fmt.Errorf("workspace is required: %w", blerrors.ErrValidation)
+	}
+	storageRoot := workspaceStorageRoot(ws)
+	if strings.TrimSpace(storageRoot) == "" {
+		return "", nil
+	}
+	absStorage, err := filepath.Abs(storageRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve storage root: %w", err)
+	}
+	absStorage = filepath.Clean(absStorage)
+	info, lstatErr := os.Lstat(absStorage)
+	if lstatErr != nil {
+		if os.IsNotExist(lstatErr) {
+			return absStorage, nil
+		}
+		return "", fmt.Errorf("lstat storage root: %w", lstatErr)
+	}
+	if link, linkErr := IsSymlinkOrReparsePoint(info, absStorage); linkErr != nil || link || !info.IsDir() {
+		return "", fmt.Errorf("storage root %q is redirected or not a directory: %w", absStorage, blerrors.ErrValidation)
+	}
+	realStorage, err := filepath.EvalSymlinks(absStorage)
+	if err != nil {
+		return "", fmt.Errorf("eval storage root symlinks: %w", err)
+	}
+	if strings.TrimSpace(ws.RootPath) != "" {
+		absWS, wsErr := filepath.Abs(ws.RootPath)
+		if wsErr != nil {
+			return "", fmt.Errorf("resolve workspace root: %w", wsErr)
+		}
+		realWS, wsEvalErr := filepath.EvalSymlinks(filepath.Clean(absWS))
+		if wsEvalErr != nil {
+			return "", fmt.Errorf("eval workspace root symlinks: %w", wsEvalErr)
+		}
+		if !pathContained(realWS, realStorage) && !strings.EqualFold(filepath.Clean(realWS), filepath.Clean(realStorage)) {
+			return "", fmt.Errorf("storage root %q resolves outside workspace %q: %w", realStorage, realWS, blerrors.ErrValidation)
+		}
+	}
+	return realStorage, nil
+}
+
+func verifyPinnedLocksRoot(locksRoot *os.Root, locksDirAbs string) error {
+	dirFile, err := locksRoot.Open(".")
+	if err != nil {
+		return fmt.Errorf("open pinned locks directory handle: %w", err)
+	}
+	defer func() {
+		// Verification handle; close immediately so it never pins directory deletion.
+		_ = dirFile.Close()
+	}()
+	dirStat, err := dirFile.Stat()
+	if err != nil {
+		return fmt.Errorf("stat pinned locks directory handle: %w", err)
+	}
+	rootStat, err := locksRoot.Stat(".")
+	if err != nil {
+		return fmt.Errorf("stat pinned locks root: %w", err)
+	}
+	if !os.SameFile(dirStat, rootStat) || !dirStat.IsDir() {
+		return fmt.Errorf("pinned locks directory identity mismatch: %w", blerrors.ErrValidation)
+	}
+	return verifyLocksDirHandle(dirFile, locksDirAbs)
+}
+
+func openLocksRootReadOnly(ws *Workspace) (*os.Root, *os.Root, string, error) {
+	realStorage, err := resolveValidatedStorageRoot(ws)
+	if err != nil || realStorage == "" {
+		return nil, nil, "", err
+	}
+	if _, statErr := os.Lstat(realStorage); os.IsNotExist(statErr) {
+		return nil, nil, "", nil
+	}
+	storageHandle, err := os.OpenRoot(realStorage)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("open storage root: %w", err)
+	}
+	locksDirAbs := filepath.Join(realStorage, shipmentMembershipLocksDirName)
+	locksInfo, lstatErr := storageHandle.Lstat(shipmentMembershipLocksDirName)
+	if lstatErr != nil {
+		_ = storageHandle.Close()
+		if os.IsNotExist(lstatErr) {
+			return nil, nil, "", nil
+		}
+		return nil, nil, "", fmt.Errorf("lstat .locks directory: %w", lstatErr)
+	}
+	if link, linkErr := IsSymlinkOrReparsePoint(locksInfo, locksDirAbs); linkErr != nil || link || !locksInfo.IsDir() {
+		_ = storageHandle.Close()
+		return nil, nil, "", fmt.Errorf(".locks directory is redirected or not a directory: %w", blerrors.ErrValidation)
+	}
+	locksRoot, err := storageHandle.OpenRoot(shipmentMembershipLocksDirName)
+	if err != nil {
+		_ = storageHandle.Close()
+		return nil, nil, "", fmt.Errorf("open .locks root: %w", err)
+	}
+	if verifyErr := verifyPinnedLocksRoot(locksRoot, locksDirAbs); verifyErr != nil {
+		_ = locksRoot.Close()
+		_ = storageHandle.Close()
+		return nil, nil, "", verifyErr
+	}
+	return storageHandle, locksRoot, locksDirAbs, nil
+}
+
+func openLocksRootForWrite(ws *Workspace) (*os.Root, *os.Root, string, error) {
+	realStorage, err := resolveValidatedStorageRoot(ws)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if realStorage == "" {
+		return nil, nil, "", fmt.Errorf("workspace storage root unavailable: %w", blerrors.ErrValidation)
+	}
+	storageHandle, err := os.OpenRoot(realStorage)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("open storage root: %w", err)
+	}
+	locksDirAbs := filepath.Join(realStorage, shipmentMembershipLocksDirName)
+	locksInfo, lstatErr := storageHandle.Lstat(shipmentMembershipLocksDirName)
+	if os.IsNotExist(lstatErr) {
+		if mkErr := storageHandle.Mkdir(shipmentMembershipLocksDirName, 0o755); mkErr != nil && !os.IsExist(mkErr) {
+			_ = storageHandle.Close()
+			return nil, nil, "", fmt.Errorf("create .locks directory: %w", mkErr)
+		}
+		locksInfo, lstatErr = storageHandle.Lstat(shipmentMembershipLocksDirName)
+	}
+	if lstatErr != nil {
+		_ = storageHandle.Close()
+		return nil, nil, "", fmt.Errorf("lstat .locks directory: %w", lstatErr)
+	}
+	if link, linkErr := IsSymlinkOrReparsePoint(locksInfo, locksDirAbs); linkErr != nil || link || !locksInfo.IsDir() {
+		_ = storageHandle.Close()
+		return nil, nil, "", fmt.Errorf(".locks directory is redirected or not a directory: %w", blerrors.ErrValidation)
+	}
+	locksRoot, err := storageHandle.OpenRoot(shipmentMembershipLocksDirName)
+	if err != nil {
+		_ = storageHandle.Close()
+		return nil, nil, "", fmt.Errorf("open .locks root: %w", err)
+	}
+	if verifyErr := verifyPinnedLocksRoot(locksRoot, locksDirAbs); verifyErr != nil {
+		_ = locksRoot.Close()
+		_ = storageHandle.Close()
+		return nil, nil, "", verifyErr
+	}
+	return storageHandle, locksRoot, locksDirAbs, nil
+}
+
+func acquireIDAllocatorLock(ctx context.Context, ws *Workspace) (context.Context, func() error, error) {
+	realStorage, err := resolveValidatedStorageRoot(ws)
+	if err != nil {
+		return ctx, nil, err
+	}
+	if realStorage == "" {
+		return ctx, func() error { return nil }, nil
+	}
+	locksDirAbs := filepath.Join(realStorage, shipmentMembershipLocksDirName)
+	if held, ok := ctx.Value(idAllocatorLockContextKey{}).(string); ok && strings.EqualFold(filepath.Clean(held), filepath.Clean(locksDirAbs)) {
+		return ctx, func() error { return nil }, nil
+	}
+
+	deadline := time.Now().Add(idAllocatorLockBoundedWait)
+	mu := taskMutexFor(filepath.Join(locksDirAbs, idAllocatorLockFileName))
+	backoff := 5 * time.Millisecond
+	for !mu.TryLock() {
+		if !time.Now().Before(deadline) {
+			return ctx, nil, fmt.Errorf("id allocator in-process lock %s: %w", locksDirAbs, blerrors.ErrGateInProgress)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx, nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 100*time.Millisecond {
+			backoff *= 2
+		}
+	}
+
+	unlockInProc := func() {
+		mu.Unlock()
+	}
+
+	storageHandle, locksRoot, canonLocksDirAbs, err := openLocksRootForWrite(ws)
+	if err != nil {
+		unlockInProc()
+		return ctx, nil, err
+	}
+
+	backoff = 10 * time.Millisecond
+	for {
+		info, lstatErr := locksRoot.Lstat(idAllocatorLockFileName)
+		if lstatErr == nil {
+			if link, linkErr := IsSymlinkOrReparsePoint(info, filepath.Join(canonLocksDirAbs, idAllocatorLockFileName)); linkErr != nil || link || !info.Mode().IsRegular() {
+				_ = locksRoot.Close()
+				_ = storageHandle.Close()
+				unlockInProc()
+				return ctx, nil, fmt.Errorf("id allocator lock %q is redirected or not a regular file: %w", idAllocatorLockFileName, blerrors.ErrValidation)
+			}
+		} else if !os.IsNotExist(lstatErr) {
+			_ = locksRoot.Close()
+			_ = storageHandle.Close()
+			unlockInProc()
+			return ctx, nil, fmt.Errorf("lstat id allocator lock: %w", lstatErr)
+		}
+
+		if verifyErr := verifyPinnedLocksRoot(locksRoot, canonLocksDirAbs); verifyErr != nil {
+			_ = locksRoot.Close()
+			_ = storageHandle.Close()
+			unlockInProc()
+			return ctx, nil, verifyErr
+		}
+
+		f, openErr := locksRoot.OpenFile(idAllocatorLockFileName, os.O_CREATE|os.O_RDWR, 0o600)
+		if openErr != nil {
+			_ = locksRoot.Close()
+			_ = storageHandle.Close()
+			unlockInProc()
+			return ctx, nil, fmt.Errorf("open id allocator lock: %w", openErr)
+		}
+
+		leafStat, statErr := f.Stat()
+		lstatNow, lstatNowErr := locksRoot.Lstat(idAllocatorLockFileName)
+		if statErr != nil || lstatNowErr != nil || !os.SameFile(leafStat, lstatNow) {
+			_ = f.Close()
+			_ = locksRoot.Close()
+			_ = storageHandle.Close()
+			unlockInProc()
+			return ctx, nil, fmt.Errorf("id allocator lock identity mismatch: %w", blerrors.ErrValidation)
+		}
+		if leafErr := verifyLocksLeafHandle(f); leafErr != nil {
+			_ = f.Close()
+			_ = locksRoot.Close()
+			_ = storageHandle.Close()
+			unlockInProc()
+			return ctx, nil, leafErr
+		}
+
+		busy, lockErr := tryLockAllocatorFileHandle(f)
+		if lockErr != nil {
+			_ = f.Close()
+			_ = locksRoot.Close()
+			_ = storageHandle.Close()
+			unlockInProc()
+			return ctx, nil, lockErr
+		}
+		if !busy {
+			var once sync.Once
+			var releaseErr error
+			lockedCtx := context.WithValue(ctx, idAllocatorLockContextKey{}, canonLocksDirAbs)
+			return lockedCtx, func() error {
+				once.Do(func() {
+					releaseErr = errors.Join(
+						unlockAllocatorFileHandle(f),
+						f.Close(),
+						locksRoot.Close(),
+						storageHandle.Close(),
+					)
+					unlockInProc()
+				})
+				return releaseErr
+			}, nil
+		}
+		_ = f.Close()
+		if !time.Now().Before(deadline) {
+			_ = locksRoot.Close()
+			_ = storageHandle.Close()
+			unlockInProc()
+			return ctx, nil, fmt.Errorf("id allocator lock %s: %w", canonLocksDirAbs, blerrors.ErrGateInProgress)
+		}
+		select {
+		case <-ctx.Done():
+			_ = locksRoot.Close()
+			_ = storageHandle.Close()
+			unlockInProc()
+			return ctx, nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 250*time.Millisecond {
+			backoff *= 2
+		}
+	}
+}
+
+func readIDSequenceLedger(locksRoot *os.Root, locksDirAbs string) (bool, []byte, idSequenceLedger, error) {
+	ledger := idSequenceLedger{SchemaVersion: 1}
+	if locksRoot == nil {
+		return false, nil, ledger, nil
+	}
+	if err := verifyPinnedLocksRoot(locksRoot, locksDirAbs); err != nil {
+		return false, nil, ledger, err
+	}
+	info, err := locksRoot.Lstat(idSequenceLedgerFileName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil, ledger, nil
+		}
+		return false, nil, ledger, fmt.Errorf("lstat %s: %w", idSequenceLedgerFileName, err)
+	}
+	if link, linkErr := IsSymlinkOrReparsePoint(info, filepath.Join(locksDirAbs, idSequenceLedgerFileName)); linkErr != nil || link || !info.Mode().IsRegular() {
+		return false, nil, ledger, fmt.Errorf("%s is redirected or not a regular file: %w", idSequenceLedgerFileName, blerrors.ErrValidation)
+	}
+	f, err := locksRoot.OpenFile(idSequenceLedgerFileName, os.O_RDONLY, 0)
+	if err != nil {
+		return false, nil, ledger, fmt.Errorf("open %s: %w", idSequenceLedgerFileName, err)
+	}
+	defer func() {
+		// Read-only ledger file close.
+		_ = f.Close()
+	}()
+	openedStat, err := f.Stat()
+	if err != nil || !os.SameFile(openedStat, info) {
+		return false, nil, ledger, fmt.Errorf("%s identity mismatch: %w", idSequenceLedgerFileName, blerrors.ErrValidation)
+	}
+	if err := verifyLocksLeafHandle(f); err != nil {
+		return false, nil, ledger, err
+	}
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		return false, nil, ledger, fmt.Errorf("read %s: %w", idSequenceLedgerFileName, err)
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := json.Unmarshal(raw, &ledger); err != nil {
+			return false, nil, ledger, fmt.Errorf("decode %s: %w", idSequenceLedgerFileName, err)
+		}
+	}
+	if ledger.SchemaVersion == 0 {
+		ledger.SchemaVersion = 1
+	}
+	return true, raw, ledger, nil
+}
+
+func marshalIDSequenceLedger(ledger idSequenceLedger) ([]byte, error) {
+	if ledger.SchemaVersion == 0 {
+		ledger.SchemaVersion = 1
+	}
+	seen := make(map[string]struct{}, len(ledger.ReservedIDs))
+	unique := make([]string, 0, len(ledger.ReservedIDs))
+	for _, id := range ledger.ReservedIDs {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	sort.Strings(unique)
+	ledger.ReservedIDs = unique
+	if len(ledger.Reservations) == 0 {
+		ledger.Reservations = nil
+	} else {
+		cleaned := make(map[string][]string, len(ledger.Reservations))
+		for corrID, corrIDs := range ledger.Reservations {
+			if corrID == "" || len(corrIDs) == 0 {
+				continue
+			}
+			cseen := make(map[string]struct{}, len(corrIDs))
+			cuniq := make([]string, 0, len(corrIDs))
+			for _, id := range corrIDs {
+				if id == "" {
+					continue
+				}
+				if _, ok := cseen[id]; ok {
+					continue
+				}
+				cseen[id] = struct{}{}
+				cuniq = append(cuniq, id)
+			}
+			sort.Strings(cuniq)
+			if len(cuniq) > 0 {
+				cleaned[corrID] = cuniq
+			}
+		}
+		if len(cleaned) == 0 {
+			ledger.Reservations = nil
+		} else {
+			ledger.Reservations = cleaned
+		}
+	}
+	data, err := json.MarshalIndent(ledger, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal %s: %w", idSequenceLedgerFileName, err)
+	}
+	return append(data, '\n'), nil
+}
+
+func writeIDSequenceReservation(ws *Workspace, locksRoot *os.Root, locksDirAbs string, raw []byte) error {
+	if locksRoot == nil {
+		return fmt.Errorf("locks root is required: %w", blerrors.ErrWriteNotApplied)
+	}
+	if err := verifyPinnedLocksRoot(locksRoot, locksDirAbs); err != nil {
+		return fmt.Errorf("write %s: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, err)
+	}
+	if info, err := locksRoot.Lstat(idSequenceLedgerFileName); err == nil {
+		if link, linkErr := IsSymlinkOrReparsePoint(info, filepath.Join(locksDirAbs, idSequenceLedgerFileName)); linkErr != nil || link || !info.Mode().IsRegular() {
+			return fmt.Errorf("%s is redirected or not regular: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect %s: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, err)
+	}
+
+	tmpName := fmt.Sprintf("%s.tmp.%d.%d", idSequenceLedgerFileName, os.Getpid(), idSequenceTempSeq.Add(1))
+	f, err := locksRoot.OpenFile(tmpName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("create temp %s: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, err)
+	}
+	fClosed := false
+	tmpRemoved := false
+	defer func() {
+		if !fClosed {
+			_ = f.Close()
+		}
+		if !tmpRemoved {
+			_ = locksRoot.Remove(tmpName)
+		}
+	}()
+
+	openedStat, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat temp %s: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, err)
+	}
+	lstatAfter, err := locksRoot.Lstat(tmpName)
+	if err != nil || !os.SameFile(openedStat, lstatAfter) {
+		return fmt.Errorf("temp %s identity mismatch: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+	if _, err := f.Write(raw); err != nil {
+		return fmt.Errorf("write temp %s: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, err)
+	}
+	if WorkspaceDurableWrites(ws) {
+		if err := f.Sync(); err != nil {
+			return fmt.Errorf("sync temp %s: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, err)
+		}
+	}
+	fClosed = true
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close temp %s: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, err)
+	}
+	if err := atomicfile.ReplaceTempFileInRoot(locksRoot, locksDirAbs, tmpName, idSequenceLedgerFileName, WorkspaceDurableWrites(ws)); err != nil {
+		return fmt.Errorf("replace %s: %w", idSequenceLedgerFileName, err)
+	}
+	tmpRemoved = true
+	return nil
+}
+
+func removeIDSequenceReservation(locksRoot *os.Root, locksDirAbs string) error {
+	if locksRoot == nil {
+		return nil
+	}
+	if err := verifyPinnedLocksRoot(locksRoot, locksDirAbs); err != nil {
+		return err
+	}
+	info, err := locksRoot.Lstat(idSequenceLedgerFileName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("lstat %s before remove: %w", idSequenceLedgerFileName, err)
+	}
+	if link, linkErr := IsSymlinkOrReparsePoint(info, filepath.Join(locksDirAbs, idSequenceLedgerFileName)); linkErr != nil || link || !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is redirected or not a regular file: %w", idSequenceLedgerFileName, blerrors.ErrValidation)
+	}
+	if err := locksRoot.Remove(idSequenceLedgerFileName); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove %s: %w", idSequenceLedgerFileName, err)
+	}
+	return nil
+}
+
+func readReservedSequenceIDs(ws *Workspace) ([]string, error) {
+	storageHandle, locksRoot, locksDirAbs, err := openLocksRootReadOnly(ws)
+	if err != nil {
+		return nil, err
+	}
+	if locksRoot == nil {
+		return nil, nil
+	}
+	defer func() {
+		_ = locksRoot.Close()
+		_ = storageHandle.Close()
+	}()
+	exists, _, ledger, err := readIDSequenceLedger(locksRoot, locksDirAbs)
+	if err != nil || !exists {
+		return nil, err
+	}
+	out := make([]string, 0, len(ledger.ReservedIDs))
+	out = append(out, ledger.ReservedIDs...)
+	for _, corrIDs := range ledger.Reservations {
+		out = append(out, corrIDs...)
+	}
+	return out, nil
+}
+
+type idSequencePreimage struct {
+	enabled     bool
+	hadPreimage bool
+	raw         []byte
+	ledger      idSequenceLedger
+}
+
+func captureIDSequencePreimage(ws *Workspace) (idSequencePreimage, error) {
+	realStorage, err := resolveValidatedStorageRoot(ws)
+	if err != nil {
+		return idSequencePreimage{}, err
+	}
+	if realStorage == "" {
+		return idSequencePreimage{}, nil
+	}
+	storageHandle, locksRoot, locksDirAbs, err := openLocksRootForWrite(ws)
+	if err != nil {
+		return idSequencePreimage{}, err
+	}
+	defer func() {
+		_ = locksRoot.Close()
+		_ = storageHandle.Close()
+	}()
+	had, raw, ledger, err := readIDSequenceLedger(locksRoot, locksDirAbs)
+	if err != nil {
+		return idSequencePreimage{}, err
+	}
+	return idSequencePreimage{
+		enabled:     true,
+		hadPreimage: had,
+		raw:         raw,
+		ledger:      ledger,
+	}, nil
+}
+
+func reserveIDSequenceWithPreimage(ctx context.Context, ws *Workspace, pre idSequencePreimage, artifactID string) error {
+	if !pre.enabled || artifactID == "" {
+		return nil
+	}
+	storageHandle, locksRoot, locksDirAbs, err := openLocksRootForWrite(ws)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = locksRoot.Close()
+		_ = storageHandle.Close()
+	}()
+	ledger := idSequenceLedger{
+		SchemaVersion: pre.ledger.SchemaVersion,
+		ReservedIDs:   append([]string(nil), pre.ledger.ReservedIDs...),
+	}
+	if len(pre.ledger.Reservations) > 0 {
+		ledger.Reservations = make(map[string][]string, len(pre.ledger.Reservations))
+		for k, v := range pre.ledger.Reservations {
+			ledger.Reservations[k] = append([]string(nil), v...)
+		}
+	}
+	ledger.ReservedIDs = append(ledger.ReservedIDs, artifactID)
+	if corrID := shipmentOperationID(ctx); corrID != "" {
+		if ledger.Reservations == nil {
+			ledger.Reservations = make(map[string][]string)
+		}
+		ledger.Reservations[corrID] = append(ledger.Reservations[corrID], artifactID)
+	}
+	raw, err := marshalIDSequenceLedger(ledger)
+	if err != nil {
+		return err
+	}
+	return writeIDSequenceReservationFn(ws, locksRoot, locksDirAbs, raw)
+}
+
+func restoreIDSequencePreimage(ws *Workspace, pre idSequencePreimage) error {
+	if !pre.enabled {
+		return nil
+	}
+	storageHandle, locksRoot, locksDirAbs, err := openLocksRootForWrite(ws)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = locksRoot.Close()
+		_ = storageHandle.Close()
+	}()
+	if !pre.hadPreimage {
+		return removeIDSequenceReservation(locksRoot, locksDirAbs)
+	}
+	return writeIDSequenceReservationFn(ws, locksRoot, locksDirAbs, pre.raw)
+}
+
+// unreserveIDSequences removes rolled-back IDs and/or correlation-tagged
+// reservations from id-sequences.json via the pinned .locks handle, removing
+// the ledger file when empty.
+func unreserveIDSequences(ws *Workspace, correlationID string, ids []string) error {
+	storageHandle, locksRoot, locksDirAbs, err := openLocksRootReadOnly(ws)
+	if err != nil {
+		return err
+	}
+	if locksRoot == nil {
+		return nil
+	}
+	defer func() {
+		_ = locksRoot.Close()
+		_ = storageHandle.Close()
+	}()
+	had, _, ledger, err := readIDSequenceLedger(locksRoot, locksDirAbs)
+	if err != nil || !had {
+		return err
+	}
+	dropSet := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			dropSet[id] = struct{}{}
+		}
+	}
+	if correlationID != "" && len(ledger.Reservations) > 0 {
+		for _, id := range ledger.Reservations[correlationID] {
+			if id != "" {
+				dropSet[id] = struct{}{}
+			}
+		}
+		delete(ledger.Reservations, correlationID)
+	}
+	if len(dropSet) > 0 {
+		kept := make([]string, 0, len(ledger.ReservedIDs))
+		for _, id := range ledger.ReservedIDs {
+			if _, drop := dropSet[id]; !drop {
+				kept = append(kept, id)
+			}
+		}
+		ledger.ReservedIDs = kept
+		for corr, corrIDs := range ledger.Reservations {
+			filtered := make([]string, 0, len(corrIDs))
+			for _, id := range corrIDs {
+				if _, drop := dropSet[id]; !drop {
+					filtered = append(filtered, id)
+				}
+			}
+			if len(filtered) == 0 {
+				delete(ledger.Reservations, corr)
+			} else {
+				ledger.Reservations[corr] = filtered
+			}
+		}
+	}
+	if len(ledger.ReservedIDs) == 0 && len(ledger.Reservations) == 0 {
+		return removeIDSequenceReservation(locksRoot, locksDirAbs)
+	}
+	raw, err := marshalIDSequenceLedger(ledger)
+	if err != nil {
+		return err
+	}
+	return writeIDSequenceReservationFn(ws, locksRoot, locksDirAbs, raw)
+}
+
+func scanLocalBranchArtifactIDs(ws *Workspace) ([]string, error) {
+	if ws == nil || strings.TrimSpace(ws.RootPath) == "" {
+		return nil, nil
+	}
+	absRoot, err := filepath.Abs(ws.RootPath)
+	if err != nil {
+		return nil, nil
+	}
+	absRoot = filepath.Clean(absRoot)
+	// Require .git directly at ws.RootPath so nested test workspaces inside an
+	// unrelated outer repo never scan the outer repository's branches.
+	if _, statErr := os.Lstat(filepath.Join(absRoot, ".git")); statErr != nil {
+		return nil, nil
+	}
+	realRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		realRoot = absRoot
+	}
+	timeout := ws.boundedHelperTimeout()
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	refsCmd := exec.CommandContext(ctx, "git", "--no-replace-objects", "--no-optional-locks",
+		"for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads")
+	refsCmd.Dir = realRoot
+	refsCmd.Env = gate.MinimalEnv()
+	refsOut, err := refsCmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+	lines := strings.Split(strings.TrimSpace(string(refsOut)), "\n")
+	var refs []string
+	var fpLines []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		refs = append(refs, fields[0])
+		fpLines = append(fpLines, fields[0]+"="+fields[1])
+	}
+	if len(refs) <= 1 {
+		return nil, nil
+	}
+	sort.Strings(fpLines)
+	cacheKey := realRoot + "\x00" + strings.Join(fpLines, ";")
+	if cached, ok := branchIDScanCache.Load(cacheKey); ok {
+		return append([]string(nil), cached.([]string)...), nil
+	}
+
+	seen := make(map[string]struct{})
+	var collected []string
+	for _, ref := range refs {
+		lsCmd := exec.CommandContext(ctx, "git", "--no-replace-objects", "--no-optional-locks",
+			"ls-tree", "-r", "--name-only", ref, "--", ".backlog", ".backlogit")
+		lsCmd.Dir = realRoot
+		lsCmd.Env = gate.MinimalEnv()
+		lsOut, lsErr := lsCmd.Output()
+		if lsErr != nil {
+			continue
+		}
+		for _, path := range strings.Split(string(lsOut), "\n") {
+			path = strings.TrimSpace(path)
+			if path == "" || filepath.Ext(path) != ".md" {
+				continue
+			}
+			stem := strings.TrimSuffix(filepath.Base(path), ".md")
+			if stem == "" {
+				continue
+			}
+			if _, ok := seen[stem]; !ok {
+				seen[stem] = struct{}{}
+				collected = append(collected, stem)
+			}
+		}
+	}
+	branchIDScanCache.Store(cacheKey, collected)
+	return append([]string(nil), collected...), nil
 }
 
 func markdownIDsInDir(dir string) ([]string, error) {
@@ -226,8 +1007,9 @@ func eventLogIDs(path string) ([]string, error) {
 	var ids []string
 	err := forEachJSONLine(path, func(line []byte) {
 		var rec struct {
-			ItemID string         `json:"item_id"`
-			Delta  map[string]any `json:"delta"`
+			ItemID    string         `json:"item_id"`
+			EventType string         `json:"event_type"`
+			Delta     map[string]any `json:"delta"`
 		}
 		if json.Unmarshal(line, &rec) != nil {
 			return
@@ -238,6 +1020,25 @@ func eventLogIDs(path string) ([]string, error) {
 		for _, key := range []string{"old_id", "new_id"} {
 			if v, ok := rec.Delta[key].(string); ok && v != "" {
 				ids = append(ids, v)
+			}
+		}
+		for _, listKey := range []string{"created_features", "created_shipments"} {
+			if rawList, ok := rec.Delta[listKey].([]any); ok {
+				for _, elem := range rawList {
+					if s, ok := elem.(string); ok && s != "" {
+						ids = append(ids, s)
+					}
+				}
+			}
+		}
+		if adoptedMap, ok := rec.Delta["adopted_id_map"].(map[string]any); ok {
+			for k, v := range adoptedMap {
+				if k != "" {
+					ids = append(ids, k)
+				}
+				if s, ok := v.(string); ok && s != "" {
+					ids = append(ids, s)
+				}
 			}
 		}
 	})

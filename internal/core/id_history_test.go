@@ -256,4 +256,79 @@ func TestU5_CrossBranchAndMultiSessionArtifactIDSequenceReservation(t *testing.T
 			})
 		}
 	})
+
+	t.Run("ledger-write-failure-compensates-file-and-db", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		ctx := context.Background()
+
+		f1, err := CreateArtifact(ctx, ws, "Baseline Before Ledger Failure", "feature")
+		require.NoError(t, err)
+		require.Equal(t, "001-F", f1.ID)
+
+		seqPath := filepath.Join(WorkspaceLocksRoot(ws.RootPath), idSequenceLedgerFileName)
+		preimage, err := os.ReadFile(seqPath)
+		require.NoError(t, err)
+
+		origWrite := writeIDSequenceReservationFn
+		t.Cleanup(func() { writeIDSequenceReservationFn = origWrite })
+		writeIDSequenceReservationFn = func(_ *Workspace, _ *os.Root, _ string, _ []byte) error {
+			return fmt.Errorf("injected ledger failure: %w", blerrors.ErrWriteNotApplied)
+		}
+
+		_, err = CreateArtifact(ctx, ws, "Ledger Fail Feature", "feature")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, blerrors.ErrWriteNotApplied)
+
+		_, statErr := os.Stat(filepath.Join(WorkspaceStorageRoot(ws.RootPath), "queue", "002-F.md"))
+		assert.True(t, os.IsNotExist(statErr), "ledger failure must compensate 002-F.md")
+		_, dbErr := bldb.GetItem(ctx, ws.DB, "002-F")
+		assert.ErrorIs(t, dbErr, blerrors.ErrNotFound, "ledger failure must compensate 002-F DB row")
+
+		afterFail, err := os.ReadFile(seqPath)
+		require.NoError(t, err)
+		assert.Equal(t, preimage, afterFail)
+
+		writeIDSequenceReservationFn = origWrite
+		f2, err := CreateArtifact(ctx, ws, "Recovered After Ledger Failure", "feature")
+		require.NoError(t, err)
+		assert.Equal(t, "002-F", f2.ID)
+	})
+
+	t.Run("locks-directory-swap-rejected-without-escape", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		ctx := context.Background()
+
+		_, err := CreateArtifact(ctx, ws, "Baseline Before Swap", "feature")
+		require.NoError(t, err)
+
+		locksDir := WorkspaceLocksRoot(ws.RootPath)
+		outsideDir := t.TempDir()
+		backupDir := locksDir + ".orig"
+
+		// Open a pinned locksRoot handle (with no open child file blocking directory rename on Windows),
+		// then swap .locks on disk with a junction/symlink to outsideDir before write and rollback removal.
+		storageHandle, locksRoot, locksDirAbs, err := openLocksRootForWrite(ws)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = locksRoot.Close()
+			_ = storageHandle.Close()
+		})
+
+		require.NoError(t, os.Rename(locksDir, backupDir))
+		if runtime.GOOS == "windows" {
+			out, linkErr := exec.Command("cmd", "/c", "mklink", "/J", locksDir, outsideDir).CombinedOutput()
+			require.NoError(t, linkErr, "mklink /J failed: %s", out)
+		} else {
+			require.NoError(t, os.Symlink(outsideDir, locksDir))
+		}
+
+		writeErr := writeIDSequenceReservation(ws, locksRoot, locksDirAbs, []byte(`{"schema_version":1,"reserved_ids":["999-F"]}`+"\n"))
+		removeErr := removeIDSequenceReservation(locksRoot, locksDirAbs)
+		if runtime.GOOS == "windows" {
+			require.Error(t, writeErr, "Windows .locks parent swap must fail closed on write")
+			require.Error(t, removeErr, "Windows .locks parent swap must fail closed on rollback removal")
+		}
+		_, outsideErr := os.Stat(filepath.Join(outsideDir, idSequenceLedgerFileName))
+		assert.True(t, os.IsNotExist(outsideErr), "parent .locks swap must never write id-sequences.json into outsideDir")
+	})
 }

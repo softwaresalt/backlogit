@@ -175,11 +175,27 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		}
 	}
 
+	lockedCtx, unlockAlloc, allocErr := acquireIDAllocatorLock(ctx, ws)
+	if allocErr != nil {
+		return nil, fmt.Errorf("acquire id allocator lock: %w", allocErr)
+	}
+	allocUnlocked := false
+	releaseAllocLock := func() {
+		if allocUnlocked {
+			return
+		}
+		allocUnlocked = true
+		if unlockErr := unlockAlloc(); unlockErr != nil {
+			slog.WarnContext(ctx, "release id allocator lock", "error", unlockErr)
+		}
+	}
+	defer releaseAllocLock()
+
 	artifactID := ""
 	if ws.Config.QueueLayout != nil {
 		if _, levelErr := LevelForType(ws.Config.QueueLayout, artifactType); levelErr == nil {
 			nextTypedID, idErr := allocateTypedHierarchicalID(
-				ctx,
+				lockedCtx,
 				ws,
 				o.ParentID,
 				artifactType,
@@ -193,7 +209,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		}
 	}
 	if artifactID == "" {
-		nextID, err := NextID(ctx, ws.DB, artifactType, typeConfig)
+		nextID, err := NextID(lockedCtx, ws.DB, artifactType, typeConfig)
 		if err != nil {
 			return nil, fmt.Errorf("get next id: %w", err)
 		}
@@ -239,6 +255,17 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	}
 	if existing := canonical[artifactID]; len(existing) > 0 {
 		return nil, fmt.Errorf("create artifact %q: %w", artifactID, blerrors.ErrIDCollision)
+	}
+
+	if beforeCreate, ok := lockedCtx.Value(shipmentOperationBeforeCreateContextKey{}).(func(context.Context, string) error); ok && beforeCreate != nil {
+		if err := beforeCreate(lockedCtx, artifactID); err != nil {
+			return nil, fmt.Errorf("record pre-create ownership for %q: %w", artifactID, err)
+		}
+	}
+
+	seqPreimage, preErr := captureIDSequencePreimage(ws)
+	if preErr != nil {
+		return nil, fmt.Errorf("capture id sequence preimage for %q: %w", artifactID, preErr)
 	}
 
 	status := o.Status
@@ -395,6 +422,25 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 				return nil
 			},
 		})
+	}
+	if seqPreimage.enabled {
+		steps = append(steps, MutationStep{
+			Name: "id-sequence-reservation",
+			Apply: func(stepCtx context.Context) error {
+				if err := reserveIDSequenceWithPreimage(stepCtx, ws, seqPreimage, artifact.ID); err != nil {
+					return fmt.Errorf("reserve artifact id %s: %w", artifact.ID, err)
+				}
+				return nil
+			},
+			Compensate: func(context.Context) error {
+				if err := restoreIDSequencePreimage(ws, seqPreimage); err != nil {
+					return fmt.Errorf("restore id sequence preimage for %s: %w", artifact.ID, err)
+				}
+				return nil
+			},
+		})
+	}
+	if ws.DB != nil {
 		for _, dep := range artifact.Dependencies {
 			dependency := dep
 			if dependency.Type == "" {
@@ -417,7 +463,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 			})
 		}
 	}
-	if err := MutationEnvelope(ctx, steps); err != nil {
+	if err := MutationEnvelope(lockedCtx, steps); err != nil {
 		return nil, fmt.Errorf("create artifact %s: %w", artifact.ID, err)
 	}
 
@@ -427,6 +473,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 	if o.canonicalCache != nil {
 		o.canonicalCache.record(artifactID, filePath)
 	}
+	releaseAllocLock()
 	// Fire post-create hooks.
 	if ws.HookRunner != nil {
 		hookCtx := hooks.HookContext{
