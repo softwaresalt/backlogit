@@ -10,14 +10,14 @@ docline:
   mode: pre-merge
   shipment_id: 216-S
   feature_id: 215-F
-  evidence_head: c3c1eb87
+  evidence_head: 9bb83293
   closure_status: READY
   compaction_status: pending
 ---
 
 ## Readiness summary
 
-Shipment `216-S` (`215-F`: Self-Contained Sandbox and Multi-Session Runtime Hardening (CAP-2)) completed all 8 tasks (`215.001-T`..`215.008-T`) across Waves 1–3, resolved all in-scope pre-PR review remediation items (`c3c1eb87`), passed all 50 Go packages, passed `gofmt`, `go vet`, `golangci-lint`, full local build (`go build ./cmd/backlogit`), and passed pre-merge runtime verification (`PASS`).
+Shipment `216-S` (`215-F`: Self-Contained Sandbox and Multi-Session Runtime Hardening (CAP-2)) completed all 8 tasks (`215.001-T`..`215.008-T`) across Waves 1–3, resolved all in-scope pre-PR review remediation items (`9bb83293`), passed all 50 Go packages, passed `gofmt`, `go vet`, `golangci-lint`, full local build (`go build ./cmd/backlogit`), and passed pre-merge runtime verification (`PASS`).
 
 Pre-merge readiness is `READY` (subject to final current-HEAD local review confirmation, CI checks, and P-018 Copilot review before merge execution).
 
@@ -27,14 +27,14 @@ Pre-merge readiness is `READY` (subject to final current-HEAD local review confi
 * **Toolchain alias validation (`U2`)**: Static toolchain manifest validation detects aliased `backlogit` executables and enforces explicit `--cwd` binding.
 * **MCP server shutdown (`U3a`, `U3b`)**: `CloseCoordinator` and `Shutdown` stop both session and coordinator admission before waiting on handler/session drain; `CloseAllSessions` preserves session-only behavior; `RunMCPDaemon` invokes `s.Shutdown()`.
 * **TEMP-rooted Git ceiling (`U4`)**: `withTempGitCeiling` resolves the deepest matching `TEMP`/`TMPDIR` candidate via absolute path and cloned environment.
-* **ID sequence reservation and rollback (`U5a`, `U5b`)**: `CreateArtifact`, `AdoptItem`, and `ReconstituteShipments` serialize on `id_allocator.lock` using pinned `.locks` `*os.Root` handles, inspect local Git branches with sanitized env and symlink rejection plus pending reconstitute intent journals, and roll back/unreserve on failure without acquiring `B`/`C` inside `id_allocator.lock`.
+* **ID sequence reservation and rollback (`U5a`, `U5b`)**: `CreateArtifact`, `AdoptItem`, and `ReconstituteShipments` serialize on `id_allocator.lock` using pinned `.locks` `*os.Root` handles, inspect local Git branches with sanitized env and symlink rejection plus pending reconstitute intent journals, and compensate/selectively unreserve via `unreserveIDSequences` under `id_allocator.lock` after `C` locks are released (preserving concurrent reservations without acquiring `B`/`C` inside `id_allocator.lock`).
 * **Runtime self-install (`U6`)**: `backlogit init` / `install` installs the runtime binary into the active workspace storage root and wires ignore entries via handle-relative `*os.Root` operations.
 
 ## Validator evidence
 
 See [216-S pre-merge runtime verification](2026-11-16-216-s-pre-merge-runtime-verification.md):
 
-* Verdict: `PASS` (`cli` command adapter + isolated multi-branch probe + all 50 Go packages at `c3c1eb87`).
+* Verdict: `PASS` (`cli` command adapter + isolated multi-branch probe + all 50 Go packages at `9bb83293`).
 * `.\backlogit.exe install --cwd <temp_repo>` installed `.backlogit/backlogit.exe` and `.gitignore` rules verified by `git check-ignore -v`.
 * Cross-branch `add` across `main`, `probe-branch-b`, and `probe-branch-c` produced `001-F`, `002-F`, `003-F` with `.locks/id-sequences.json` preserving all IDs.
 
