@@ -267,13 +267,32 @@ func introspectIndexColumns(ctx context.Context, tx *sql.Tx, indexName string) (
 }
 
 // EnsureSchema creates the items table, indexes, FTS5 virtual table, and
-// maintenance triggers idempotently, wrapped in a single transaction.
-func EnsureSchema(db *sql.DB) error {
-	tx, err := db.Begin()
+// maintenance triggers idempotently, wrapped in a single transaction, then
+// verifies schema readiness and WAL journal mode before returning.
+func EnsureSchema(db *sql.DB) (err error) {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire schema connection: %w", err)
+	}
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close schema connection: %w", closeErr))
+		}
+	}()
+
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin schema transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	committed := false
+	defer func() {
+		if !committed {
+			if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
+				err = errors.Join(err, fmt.Errorf("rollback schema transaction: %w", rbErr))
+			}
+		}
+	}()
 
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS item_deps (
@@ -468,18 +487,14 @@ func EnsureSchema(db *sql.DB) error {
 	}
 
 	for _, stmt := range statements {
-		if _, err := tx.Exec(stmt); err != nil {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("execute schema statement: %w", err)
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
 	// Migrate existing databases: add columns introduced in the queue features release.
 	// ALTER TABLE ADD COLUMN does not support IF NOT EXISTS in SQLite, so we attempt
-	// each migration and ignore "duplicate column name" errors.
+	// each migration inside the schema transaction and ignore "duplicate column name" errors.
 	migrations := []string{
 		`ALTER TABLE items ADD COLUMN level INTEGER`,
 		`ALTER TABLE items ADD COLUMN hierarchy_path TEXT`,
@@ -487,11 +502,45 @@ func EnsureSchema(db *sql.DB) error {
 		`ALTER TABLE stash_entries ADD COLUMN deliberation_id TEXT`,
 	}
 	for _, m := range migrations {
-		if _, err := db.Exec(m); err != nil {
+		if _, err := tx.ExecContext(ctx, m); err != nil {
 			if !isDuplicateColumnError(err) {
 				return fmt.Errorf("apply migration %q: %w", m, err)
 			}
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit schema transaction: %w", err)
+	}
+	committed = true
+
+	if err := verifySchemaReadinessConn(ctx, conn); err != nil {
+		return err
+	}
+	return nil
+}
+
+type schemaQueryRower interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func verifySchemaReadinessConn(ctx context.Context, q schemaQueryRower) error {
+	var tableName string
+	if err := q.QueryRowContext(ctx,
+		`SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'commit_links'`,
+	).Scan(&tableName); err != nil {
+		return fmt.Errorf("verify schema readiness (commit_links): %w", err)
+	}
+	if tableName != "commit_links" {
+		return fmt.Errorf("verify schema readiness: expected commit_links table, got %q", tableName)
+	}
+
+	var journalMode string
+	if err := q.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&journalMode); err != nil {
+		return fmt.Errorf("verify schema readiness (journal_mode): %w", err)
+	}
+	if !strings.EqualFold(journalMode, "wal") {
+		return fmt.Errorf("verify schema readiness: journal_mode is %q, want %q", journalMode, "wal")
 	}
 	return nil
 }
@@ -511,7 +560,12 @@ func EnsureSchemaWithExtensions(db *sql.DB, headerDef *config.HeaderDefConfig) e
 		return err
 	}
 	if headerDef != nil {
-		return ApplySchemaExtensions(db, headerDef)
+		if err := ApplySchemaExtensions(db, headerDef); err != nil {
+			return fmt.Errorf("apply schema extensions: %w", err)
+		}
+		if err := verifySchemaReadinessConn(context.Background(), db); err != nil {
+			return err
+		}
 	}
 	return nil
 }
