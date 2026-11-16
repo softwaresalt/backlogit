@@ -422,25 +422,6 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 				return nil
 			},
 		})
-	}
-	if seqPreimage.enabled {
-		steps = append(steps, MutationStep{
-			Name: "id-sequence-reservation",
-			Apply: func(stepCtx context.Context) error {
-				if err := reserveIDSequenceWithPreimage(stepCtx, ws, seqPreimage, artifact.ID); err != nil {
-					return fmt.Errorf("reserve artifact id %s: %w", artifact.ID, err)
-				}
-				return nil
-			},
-			Compensate: func(context.Context) error {
-				if err := restoreIDSequencePreimage(ws, seqPreimage); err != nil {
-					return fmt.Errorf("restore id sequence preimage for %s: %w", artifact.ID, err)
-				}
-				return nil
-			},
-		})
-	}
-	if ws.DB != nil {
 		for _, dep := range artifact.Dependencies {
 			dependency := dep
 			if dependency.Type == "" {
@@ -462,6 +443,23 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 				},
 			})
 		}
+	}
+	if seqPreimage.enabled {
+		steps = append(steps, MutationStep{
+			Name: "id-sequence-reservation",
+			Apply: func(stepCtx context.Context) error {
+				if err := reserveIDSequenceWithPreimage(stepCtx, ws, seqPreimage, artifact.ID); err != nil {
+					return fmt.Errorf("reserve artifact id %s: %w", artifact.ID, err)
+				}
+				return nil
+			},
+			Compensate: func(context.Context) error {
+				if err := restoreIDSequencePreimage(ws, seqPreimage); err != nil {
+					return fmt.Errorf("restore id sequence preimage for %s: %w", artifact.ID, err)
+				}
+				return nil
+			},
+		})
 	}
 	if err := MutationEnvelope(lockedCtx, steps); err != nil {
 		return nil, fmt.Errorf("create artifact %s: %w", artifact.ID, err)

@@ -893,9 +893,12 @@ func scanLocalBranchArtifactIDs(ws *Workspace) ([]string, error) {
 
 	seen := make(map[string]struct{})
 	var collected []string
+	lsTreeBaseArgs := append([]string{"--no-replace-objects", "--no-optional-locks", "ls-tree", "-r", "--name-only"}, "")
 	for _, ref := range refs {
-		lsCmd := exec.CommandContext(ctx, "git", "--no-replace-objects", "--no-optional-locks",
-			"ls-tree", "-r", "--name-only", ref, "--", ".backlog", ".backlogit")
+		lsTreeBaseArgs[len(lsTreeBaseArgs)-1] = ref
+		lsArgs := append(append([]string(nil), lsTreeBaseArgs...), "--")
+		lsArgs = append(lsArgs, workspaceRootCandidates[:]...)
+		lsCmd := exec.CommandContext(ctx, "git", lsArgs...)
 		lsCmd.Dir = realRoot
 		lsCmd.Env = gate.MinimalEnv()
 		lsOut, lsErr := lsCmd.Output()
