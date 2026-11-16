@@ -513,4 +513,62 @@ shipments:
 		assert.True(t, hasBeforeCreate, "shipment_reconstitute_exec.go must wire shipmentOperationBeforeCreateContextKey")
 		assert.True(t, hasUnreserve, "shipment_reconstitute_exec.go must call unreserveIDSequences on rollback")
 	})
+
+	t.Run("reconstitute-rollback-unreserves-created-and-adopted-ids", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		ctx := context.Background()
+
+		f1, err := CreateArtifact(ctx, ws, "Orig Feature", "feature")
+		require.NoError(t, err)
+		t1, err := CreateArtifact(ctx, ws, "Task One", "task", WithParent(f1.ID))
+		require.NoError(t, err)
+		t2, err := CreateArtifact(ctx, ws, "Task Two", "task", WithParent(f1.ID))
+		require.NoError(t, err)
+		s1, err := CreateShipment(ctx, ws, "Source Shipment", []string{f1.ID, t1.ID, t2.ID})
+		require.NoError(t, err)
+
+		seqPath := filepath.Join(WorkspaceLocksRoot(ws.RootPath), idSequenceLedgerFileName)
+		preimage, err := os.ReadFile(seqPath)
+		require.NoError(t, err)
+
+		// Fail on the 2nd reservation write inside ReconstituteShipments (after 002-F succeeded and
+		// reserved 002-F, when AdoptItem attempts to reserve 002.001-T).
+		origWrite := writeIDSequenceReservationFn
+		calls := 0
+		writeIDSequenceReservationFn = func(innerWS *Workspace, locksRoot *os.Root, locksDirAbs string, raw []byte) error {
+			calls++
+			if calls == 2 {
+				return fmt.Errorf("injected reconstitute mid-flight ledger failure: %w", blerrors.ErrWriteNotApplied)
+			}
+			return origWrite(innerWS, locksRoot, locksDirAbs, raw)
+		}
+		t.Cleanup(func() { writeIDSequenceReservationFn = origWrite })
+
+		planYAML := fmt.Sprintf(`source_shipments:
+  - %s
+shipments:
+  - id: %s
+    feature:
+      id: %s
+    items:
+      - %s
+  - label: split-a
+    title: Split A Shipment
+    blocks_on:
+      - %s
+    feature:
+      create:
+        title: Split A Feature
+    items:
+      - %s
+`, s1.ID, s1.ID, f1.ID, t1.ID, s1.ID, t2.ID)
+		_, err = ReconstituteShipments(ctx, ws, ReconstituteOptions{PlanYAML: planYAML})
+		writeIDSequenceReservationFn = origWrite
+		require.Error(t, err)
+
+		afterRollback, err := os.ReadFile(seqPath)
+		require.NoError(t, err)
+		assert.Equal(t, string(preimage), string(afterRollback),
+			"reconstitute rollback must unreserve 002-F and restore exact preimage")
+	})
 }

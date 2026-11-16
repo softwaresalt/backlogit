@@ -1300,6 +1300,26 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		artifact.CustomFields["origin_feature"] = originFeature
 	}
 
+	var releaseAllocLock func()
+	if !opts.KeepID && ws.Config != nil && ws.Config.QueueLayout != nil {
+		lockedAllocCtx, unlockAlloc, allocErr := acquireIDAllocatorLock(ctx, ws)
+		if allocErr != nil {
+			return nil, fmt.Errorf("adopt item %s: acquire id allocator lock: %w", itemID, allocErr)
+		}
+		ctx = lockedAllocCtx
+		allocUnlocked := false
+		releaseAllocLock = func() {
+			if allocUnlocked {
+				return
+			}
+			allocUnlocked = true
+			if unlockErr := unlockAlloc(); unlockErr != nil {
+				slog.WarnContext(ctx, "release id allocator lock", "item_id", itemID, "error", unlockErr)
+			}
+		}
+		defer releaseAllocLock()
+	}
+
 	// Step 1: Generate the new hierarchical ID under the new parent.
 	oldID := artifact.ID
 	newID := oldID // fallback: keep old ID if we can't generate a new one
@@ -1335,6 +1355,15 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			if err := opts.BeforeRename(ctx, oldID, newID); err != nil {
 				return nil, fmt.Errorf("adopt item %s: record rename %s->%s: %w", itemID, oldID, newID, err)
 			}
+		}
+	}
+
+	var seqPreimage idSequencePreimage
+	if newID != oldID {
+		var preErr error
+		seqPreimage, preErr = captureIDSequencePreimage(ws)
+		if preErr != nil {
+			return nil, fmt.Errorf("adopt item %s: capture id sequence preimage for %s: %w", itemID, newID, preErr)
 		}
 	}
 
@@ -1503,8 +1532,25 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			}
 		}
 
-		// Step 4: Commit the transaction now that all file ops succeeded.
+		// Step 4: Persist sequence reservation and commit the transaction now that all file ops succeeded.
+		if seqPreimage.enabled {
+			if resErr := reserveIDSequenceWithPreimage(ctx, ws, seqPreimage, newID); resErr != nil {
+				if renamedLog {
+					_ = os.Rename(newLogPath, oldLogPath)
+				}
+				if renamedMD {
+					rollbackMDFile(newMDPath, oldMDPath, oldMDRaw)
+				}
+				restoreCrossRefs()
+				return nil, fmt.Errorf("adopt item %s: reserve new id %s: %w", oldID, newID, resErr)
+			}
+		}
 		if commitErr := tx.Commit(); commitErr != nil {
+			if seqPreimage.enabled {
+				if resErr := restoreIDSequencePreimage(ws, seqPreimage); resErr != nil {
+					commitErr = errors.Join(commitErr, fmt.Errorf("restore id sequence preimage: %w", resErr))
+				}
+			}
 			// Rollback file operations
 			if renamedLog {
 				_ = os.Rename(newLogPath, oldLogPath)
@@ -1526,6 +1572,11 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 				return nil, fmt.Errorf("adopt item %s: index: %w", itemID, err)
 			}
 		}
+		if newID != oldID && seqPreimage.enabled {
+			if resErr := reserveIDSequenceWithPreimage(ctx, ws, seqPreimage, newID); resErr != nil {
+				return nil, fmt.Errorf("adopt item %s: reserve new id %s: %w", oldID, newID, resErr)
+			}
+		}
 	}
 
 	// Build list of rewritten artifact IDs for the event delta and result.
@@ -1542,6 +1593,10 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		"was_orphan":             wasOrphan,
 		"rewritten_artifact_ids": rewrittenIDs,
 	})
+
+	if releaseAllocLock != nil {
+		releaseAllocLock()
+	}
 
 	// Fire post-adopt hooks.
 	if ws.HookRunner != nil {

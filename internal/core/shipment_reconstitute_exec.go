@@ -592,6 +592,17 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 	}
 
 	opCtx := hooks.WithBufferedPostHooks(withShipmentOperation(ctx, correlationID))
+	recordedCreated := map[string]bool{}
+	opCtx = context.WithValue(opCtx, shipmentOperationBeforeCreateContextKey{}, func(_ context.Context, id string) error {
+		if !recordedCreated[id] {
+			state.CreatedIDs = append(state.CreatedIDs, id)
+			recordedCreated[id] = true
+		}
+		if _, err := writeShipmentOperationJournal(ws, journalName, journal); err != nil {
+			return fmt.Errorf("reconstitute: journal pre-create artifact %s: %w", id, errors.Join(err, blerrors.ErrWriteIndeterminate))
+		}
+		return nil
+	})
 	var renamedUnlocks []func() error
 	defer func() {
 		for i := len(renamedUnlocks) - 1; i >= 0; i-- {
@@ -601,9 +612,12 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 		}
 	}()
 	result, applyErr := applyReconstitution(opCtx, ws, st, correlationID, baseline, snapshotOwners, func(id string, feature bool) error {
-		state.CreatedIDs = append(state.CreatedIDs, id)
-		if _, err := writeShipmentOperationJournal(ws, journalName, journal); err != nil {
-			return fmt.Errorf("reconstitute: journal created artifact %s: %w", id, errors.Join(err, blerrors.ErrWriteIndeterminate))
+		if !recordedCreated[id] {
+			state.CreatedIDs = append(state.CreatedIDs, id)
+			recordedCreated[id] = true
+			if _, err := writeShipmentOperationJournal(ws, journalName, journal); err != nil {
+				return fmt.Errorf("reconstitute: journal created artifact %s: %w", id, errors.Join(err, blerrors.ErrWriteIndeterminate))
+			}
 		}
 		if feature {
 			unlock, lockErr := lockArtifactMutation(opCtx, ws, id)
@@ -1247,6 +1261,9 @@ func rollbackReconstitute(ctx context.Context, ws *Workspace, journal shipmentLi
 		if err := removeReconstituteCreated(ctx, ws, logsRoot, id); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if err := unreserveIDSequences(ws, journal.CorrelationID, ours); err != nil {
+		errs = append(errs, fmt.Errorf("unreserve id sequences: %w", err))
 	}
 	for _, image := range state.Images {
 		if strings.HasSuffix(strings.ToLower(image.Path), ".md") && reconstituteImageOwner(image) == "" {
