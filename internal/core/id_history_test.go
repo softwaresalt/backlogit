@@ -325,10 +325,8 @@ func TestU5_CrossBranchAndMultiSessionArtifactIDSequenceReservation(t *testing.T
 
 		writeErr := writeIDSequenceReservation(ws, locksRoot, locksDirAbs, []byte(`{"schema_version":1,"reserved_ids":["999-F"]}`+"\n"))
 		removeErr := removeIDSequenceReservation(locksRoot, locksDirAbs)
-		if runtime.GOOS == "windows" {
-			require.Error(t, writeErr, "Windows .locks parent swap must fail closed on write")
-			require.Error(t, removeErr, "Windows .locks parent swap must fail closed on rollback removal")
-		}
+		require.Error(t, writeErr, ".locks parent swap must fail closed on write")
+		require.Error(t, removeErr, ".locks parent swap must fail closed on rollback removal")
 		_, outsideErr := os.Stat(filepath.Join(outsideDir, idSequenceLedgerFileName))
 		assert.True(t, os.IsNotExist(outsideErr), "parent .locks swap must never write id-sequences.json into outsideDir")
 	})

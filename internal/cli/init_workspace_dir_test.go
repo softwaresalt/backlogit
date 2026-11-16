@@ -157,4 +157,34 @@ func TestU6_InitAndInstallSelfInstallRuntimeExecutableAndIgnoreEntries(t *testin
 		require.Error(t, err, "redirected .git/info must be rejected")
 		assert.NoFileExists(t, filepath.Join(outside, "exclude"))
 	})
+
+	t.Run("install-honors-storage-override-even-when-both-roots-exist", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".git", "info"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".backlog"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".backlogit"), 0o755))
+
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+		cmdConflict := cli.NewRootCommand()
+		cmdConflict.SetOut(new(bytes.Buffer))
+		cmdConflict.SetErr(new(bytes.Buffer))
+		cmdConflict.SetArgs([]string{"install", "--cwd", root})
+		require.Error(t, cmdConflict.Execute(), "dual roots without override must fail")
+
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlog")
+		cmdOverride := cli.NewRootCommand()
+		cmdOverride.SetOut(new(bytes.Buffer))
+		cmdOverride.SetErr(new(bytes.Buffer))
+		cmdOverride.SetArgs([]string{"install", "--cwd", root})
+		require.NoError(t, cmdOverride.Execute())
+		require.FileExists(t, filepath.Join(root, ".backlog", binName))
+		assert.NoFileExists(t, filepath.Join(root, ".backlogit", binName))
+
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "../escape")
+		cmdInvalid := cli.NewRootCommand()
+		cmdInvalid.SetOut(new(bytes.Buffer))
+		cmdInvalid.SetErr(new(bytes.Buffer))
+		cmdInvalid.SetArgs([]string{"install", "--cwd", root})
+		require.Error(t, cmdInvalid.Execute(), "invalid override must fail closed")
+	})
 }

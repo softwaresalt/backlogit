@@ -12,13 +12,29 @@ import (
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
-func verifyLocksDirHandle(dirFile *os.File, _ string) error {
+func verifyLocksDirHandle(dirFile *os.File, expectedDirAbs string) error {
 	var st unix.Stat_t
 	if err := unix.Fstat(int(dirFile.Fd()), &st); err != nil {
 		return fmt.Errorf("stat pinned locks directory handle: %w", err)
 	}
 	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
 		return fmt.Errorf("pinned locks handle is not a directory: %w", blerrors.ErrValidation)
+	}
+	if expectedDirAbs != "" {
+		lstatInfo, err := os.Lstat(expectedDirAbs)
+		if err != nil {
+			return fmt.Errorf("lstat expected locks directory %q: %w", expectedDirAbs, err)
+		}
+		if lstatInfo.Mode()&os.ModeSymlink != 0 || !lstatInfo.IsDir() {
+			return fmt.Errorf("expected locks directory %q is redirected or not a directory: %w", expectedDirAbs, blerrors.ErrValidation)
+		}
+		handleStat, err := dirFile.Stat()
+		if err != nil {
+			return fmt.Errorf("stat pinned locks directory handle: %w", err)
+		}
+		if !os.SameFile(lstatInfo, handleStat) {
+			return fmt.Errorf("pinned locks directory %q identity mismatch: %w", expectedDirAbs, blerrors.ErrValidation)
+		}
 	}
 	return nil
 }

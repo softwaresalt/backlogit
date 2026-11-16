@@ -25,6 +25,27 @@ var (
 
 func resolveInstallStorageDir(root string) (string, error) {
 	candidates := core.WorkspaceRootCandidates()
+	if override := strings.TrimSpace(os.Getenv("BACKLOGIT_WORKSPACE_DIR")); override != "" {
+		if !slices.Contains(candidates, override) {
+			return "", fmt.Errorf("invalid BACKLOGIT_WORKSPACE_DIR %q (expected one of %v): %w", override, candidates, corerrors.ErrValidation)
+		}
+		candPath := filepath.Join(root, override)
+		info, err := os.Lstat(candPath)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("inspect workspace dir %s: %w", candPath, err)
+		}
+		if err == nil {
+			isReparse, inspectErr := core.IsSymlinkOrReparsePoint(info, candPath)
+			if inspectErr != nil {
+				return "", fmt.Errorf("inspect workspace dir %s: %w", candPath, inspectErr)
+			}
+			if isReparse || !info.IsDir() {
+				return "", fmt.Errorf("workspace dir %s is redirected or not a directory: %w", candPath, corerrors.ErrValidation)
+			}
+		}
+		return override, nil
+	}
+
 	var present []string
 	for _, candidate := range candidates {
 		candPath := filepath.Join(root, candidate)
@@ -49,9 +70,6 @@ func resolveInstallStorageDir(root string) (string, error) {
 	}
 	if len(present) == 1 {
 		return present[0], nil
-	}
-	if override := strings.TrimSpace(os.Getenv("BACKLOGIT_WORKSPACE_DIR")); slices.Contains(candidates, override) {
-		return override, nil
 	}
 	return candidates[len(candidates)-1], nil
 }
