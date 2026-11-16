@@ -23,4 +23,4 @@ Shipment `216-S` (`215-F`: Self-Contained Sandbox and Multi-Session Runtime Hard
 
 * Verified Windows directory handle identity via `VolumeSerialNumber`/`FileIndex` and `finalPathByHandle` in `atomicfile_windows.go` and `id_history_windows.go` so `SUBST` and mapped drives pass while symlink/junction swaps fail closed.
 * Kept `lockArtifactMutation` outside `id_allocator.lock` (`BeforeRename` records journal adoptions only; `applyReconstitution` acquires the new-ID artifact lock after `AdoptItemWithOptions` returns) to preserve `stash -> lifecycle-global -> A -> C -> B -> id_allocator.lock`.
-* Captured out-of-scope review findings under P-021 C2 as `39F868B1`, `E0A6FDAF`, and `7C26BE01` in `.backlogit/stash.jsonl`.
+* Captured out-of-scope review findings under P-021 C2 as `39F868B1`, `E0A6FDAF`, `7C26BE01`, and `DE5D1EA5` in `.backlogit/stash.jsonl`.

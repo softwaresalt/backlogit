@@ -10,7 +10,7 @@ docline:
   mode: pre-merge
   shipment_id: 216-S
   feature_id: 215-F
-  evidence_head: 4f0186cf
+  evidence_head: c3c1eb87
   verification_verdict: PASS
 ---
 
@@ -52,7 +52,7 @@ releasability:
 
 ## Environment prechecks
 
-* Built `.\backlogit.exe` via `go build -o .\backlogit.exe ./cmd/backlogit` (`exit 0`, `GOTOOLCHAIN=go1.27.0`, version `1.12.1-0.20261116144151-4f0186cfcac2`).
+* Built `.\backlogit.exe` via `go build -o .\backlogit.exe ./cmd/backlogit` (`exit 0`, `GOTOOLCHAIN=go1.27.0`, code `HEAD: c3c1eb87`).
 * Verified `gofmt -l cmd internal scripts tests` (clean), `go vet ./...` (`exit 0`), `.\bin\golangci-lint.exe run --timeout=5m ./...` (`GOTOOLCHAIN=go1.26.5`, `exit 0`), and `.\backlogit.exe docs lint --format json` (`valid: true`, `violation_count: 0`).
 
 ## Structured validator evidence
@@ -66,10 +66,10 @@ releasability:
 | Installed binary `add --type feature` on `main`, `probe-branch-b`, `probe-branch-c` | Cross-branch ID reservation prevents reusing `002-F` on `probe-branch-c` | `0` | `001-F`, `002-F`, `003-F`; `.locks/id-sequences.json` records `["001-F","002-F","003-F"]` |
 | `.\backlogit.exe docs lint --format json` | Zero docline schema violations | `0` | `{"valid": true, "violation_count": 0, "findings": []}` |
 
-### Automated Go test verification (`HEAD: 4f0186cf`)
+### Automated Go test verification (`HEAD: c3c1eb87`)
 
-* `go test -count=1 -timeout=30m ./internal/core`: `PASS` (`1331.836s`, covering `TestU5_*`, `TestU5b_*`, `TestWorkspaceLiteralGuard_NoHardcodedLegacyStorageRoot`, and full `internal/core` suite).
-* Remaining 49 Go packages (`cmd/...`, `internal/atomicfile`, `internal/cli`, `internal/core/gate`, `internal/mcp`, `internal/toolchain`, `tests`, `tests/contract`, `tests/integration`, `scripts`, etc.) with `go test -p 1 -count=1 -timeout=30m`: `PASS` (`exit 0`, all 50/50 Go packages green at `4f0186cf`).
+* `go test -count=1 -timeout=30m ./internal/core`: `PASS` (covering `TestU5_*`, `TestU5b_*`, `TestWorkspaceLiteralGuard_NoHardcodedLegacyStorageRoot`, and full `internal/core` suite).
+* Remaining 49 Go packages (`cmd/...`, `internal/atomicfile`, `internal/cli`, `internal/core/gate`, `internal/mcp`, `internal/toolchain`, `tests`, `tests/contract`, `tests/integration`, `scripts`, etc.) with `go test -p 1 -count=1 -timeout=30m`: `PASS` (`exit 0`, all 50/50 Go packages green at `c3c1eb87`).
 
 ## Invariants and manual checkpoints
 

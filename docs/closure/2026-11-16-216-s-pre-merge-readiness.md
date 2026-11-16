@@ -10,14 +10,14 @@ docline:
   mode: pre-merge
   shipment_id: 216-S
   feature_id: 215-F
-  evidence_head: 4f0186cf
+  evidence_head: c3c1eb87
   closure_status: READY
   compaction_status: pending
 ---
 
 ## Readiness summary
 
-Shipment `216-S` (`215-F`: Self-Contained Sandbox and Multi-Session Runtime Hardening (CAP-2)) completed all 8 tasks (`215.001-T`..`215.008-T`) across Waves 1–3, resolved all in-scope pre-PR review remediation items (`4f0186cf`), passed all 50 Go packages, passed `gofmt`, `go vet`, `golangci-lint`, full local build (`go build ./cmd/backlogit`), and passed pre-merge runtime verification (`PASS`).
+Shipment `216-S` (`215-F`: Self-Contained Sandbox and Multi-Session Runtime Hardening (CAP-2)) completed all 8 tasks (`215.001-T`..`215.008-T`) across Waves 1–3, resolved all in-scope pre-PR review remediation items (`c3c1eb87`), passed all 50 Go packages, passed `gofmt`, `go vet`, `golangci-lint`, full local build (`go build ./cmd/backlogit`), and passed pre-merge runtime verification (`PASS`).
 
 Pre-merge readiness is `READY` (subject to final current-HEAD local review confirmation, CI checks, and P-018 Copilot review before merge execution).
 
@@ -34,7 +34,7 @@ Pre-merge readiness is `READY` (subject to final current-HEAD local review confi
 
 See [216-S pre-merge runtime verification](2026-11-16-216-s-pre-merge-runtime-verification.md):
 
-* Verdict: `PASS` (`cli` command adapter + isolated multi-branch probe + all 50 Go packages at `4f0186cf`).
+* Verdict: `PASS` (`cli` command adapter + isolated multi-branch probe + all 50 Go packages at `c3c1eb87`).
 * `.\backlogit.exe install --cwd <temp_repo>` installed `.backlogit/backlogit.exe` and `.gitignore` rules verified by `git check-ignore -v`.
 * Cross-branch `add` across `main`, `probe-branch-b`, and `probe-branch-c` produced `001-F`, `002-F`, `003-F` with `.locks/id-sequences.json` preserving all IDs.
 
@@ -67,11 +67,12 @@ Feature `215-F` declares `source_stash_id: none` and `source_deliberation_id: no
 
 ## Residual risks and deferred follow-ups
 
-Three out-of-scope P-021 C2 `DEFERRED SCOPE EXPANSION` stash entries were captured in `.backlogit/stash.jsonl` during `216-S` local review (awaiting Stage triage):
+Four out-of-scope P-021 C2 `DEFERRED SCOPE EXPANSION` stash entries were captured in `.backlogit/stash.jsonl` during `216-S` local review (awaiting Stage triage):
 
 * `39F868B1` (bug, high): Normalize `/` as well as `\` in `validateSessionPath` (`internal/mcp/session_mux.go:319`) on Windows.
 * `E0A6FDAF` (task, medium): Bounded backoff/retry cap in `PrewarmMCPDaemon` (`internal/cli/mcp_daemon.go:386`), `fmt.Fprintf` error checks in `writeMCPStatusToolchain` (`internal/cli/root.go:446`), unreachable nil normalization in `internal/toolchain/verify.go:175`, and `EntrypointPath` validation parity in `internal/toolchain/verify.go:407`.
 * `7C26BE01` (task, low): Evaluate Windows handle-relative `SetFileInformationByHandle` (`FileRenameInfo`) in `atomicfile_windows.go:183`, modularize `internal/core/id_history.go`, and refactor `CreateArtifact` pre-create callback into an explicit `Option`.
+* `DE5D1EA5` (task, medium): Require `SHA256` digest verification in `verifyLocalTool` (`internal/toolchain/verify.go:501`), replace pre-existing hardcoded `.backlogit`/`.backlog` literals in `internal/toolchain/{launcher,verify}.go` and expand `TestWorkspaceLiteralGuard_NoHardcodedLegacyStorageRoot`, return non-retryable shutdown error from `OperationCoordinator.Execute` on `<-c.closed` (`internal/mcp/coordinator.go`), reject duplicate active session IDs in `registerStream` (`internal/mcp/session_mux.go:148`), drain responses on EOF in `proxyMCPSession` (`internal/cli/mcp_daemon.go:508`), and distinguish git exit code 1 vs >=128 in `ExecGitRunner.Verify` (`internal/core/gate/baseref.go:143`).
 
 ## Structured releasability and compaction
 
