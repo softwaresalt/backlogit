@@ -40,7 +40,7 @@ func ReadAllEvents(_ context.Context, logsDir string, itemID string) (result []E
 	}()
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20)
+	scanner.Buffer(make([]byte, 64*1024), 1<<20)
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
