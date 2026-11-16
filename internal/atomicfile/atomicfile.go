@@ -1,11 +1,13 @@
 package atomicfile
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
@@ -172,4 +174,74 @@ func writeAll(w io.Writer, data []byte) error {
 		return fmt.Errorf("short write: wrote %d of %d bytes", n, len(data))
 	}
 	return nil
+}
+
+func validateRootRelativeLeafName(name string) error {
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf("invalid root-relative filename %q: %w: %w", name, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+	return nil
+}
+
+// ReplaceTempFileInRoot atomically replaces dstRel with tmpRel inside the
+// pinned *os.Root directory handle while verifying that the live directory
+// handle still matches the canonical EvalSymlinks(dirAbs) path on Windows and
+// using directory-fd-relative renameat on POSIX. Caller supplies the verified
+// absolute directory path dirAbs separately because nested *os.Root handles
+// carry a relative Name().
+func ReplaceTempFileInRoot(root *os.Root, dirAbs, tmpRel, dstRel string, durable bool) error {
+	if root == nil || !filepath.IsAbs(dirAbs) {
+		return fmt.Errorf("replace temp file in root: invalid root or directory: %w: %w", blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+	if err := validateRootRelativeLeafName(tmpRel); err != nil {
+		return err
+	}
+	if err := validateRootRelativeLeafName(dstRel); err != nil {
+		return err
+	}
+	if tmpRel == dstRel {
+		return fmt.Errorf("replace temp file in root: source and destination match: %w: %w", blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+
+	tmpInfo, err := root.Lstat(tmpRel)
+	if err != nil {
+		return notApplied("lstat temp in root", err)
+	}
+	if tmpInfo.Mode()&os.ModeSymlink != 0 || !tmpInfo.Mode().IsRegular() {
+		return fmt.Errorf("temp file %q is redirected or not regular: %w: %w", tmpRel, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+
+	var dstInfo os.FileInfo
+	dstStat, err := root.Lstat(dstRel)
+	if err == nil {
+		if dstStat.Mode()&os.ModeSymlink != 0 || !dstStat.Mode().IsRegular() {
+			return fmt.Errorf("destination %q is redirected or not regular: %w: %w", dstRel, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+		}
+		dstInfo = dstStat
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return notApplied("lstat destination in root", err)
+	}
+
+	dirFile, err := root.Open(".")
+	if err != nil {
+		return notApplied("open pinned root directory", err)
+	}
+	defer func() {
+		// Read-only directory handle closed on exit; replacement errors already captured.
+		_ = dirFile.Close()
+	}()
+
+	dirStat, err := dirFile.Stat()
+	if err != nil {
+		return notApplied("stat pinned root directory handle", err)
+	}
+	rootStat, err := root.Stat(".")
+	if err != nil {
+		return notApplied("stat pinned root directory", err)
+	}
+	if !os.SameFile(dirStat, rootStat) || !dirStat.IsDir() {
+		return fmt.Errorf("pinned root directory identity mismatch: %w: %w", blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+
+	return replaceTempFileInRootPlatform(root, dirFile, dirAbs, tmpRel, dstRel, tmpInfo, dstInfo, durable)
 }

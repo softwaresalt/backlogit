@@ -430,9 +430,12 @@ func TestU9_ReviewFixMCPArgumentsAndBindings(t *testing.T) {
 				m.Tools[0].EntrypointPath = ""
 			}
 			m.Tools[0].WorkspaceBindingArgs = tc.bindings
-			command := "./bin/backlogit.exe"
+			command := "./bin/launcher.exe"
 			if tc.command != "" {
 				command = tc.command
+				m.Tools[0].ExecutablePath = command
+				u9Write(t, root, command, "pinned binary")
+			} else {
 				m.Tools[0].ExecutablePath = command
 				u9Write(t, root, command, "pinned binary")
 			}
@@ -723,4 +726,89 @@ func TestU9_LockfilePinProvenance(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestU2_AliasedBacklogitExecutableRequiresWorkspaceLocalPinAndCwdBinding gates 215.002-T (U2).
+func TestU2_AliasedBacklogitExecutableRequiresWorkspaceLocalPinAndCwdBinding(t *testing.T) {
+	t.Run("aliased-manifest-omitting-cwd-rejected", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		m := u9PinnedWorkspace(t, root)
+		m.Tools[0].ID = "backlog-alias"
+		m.Tools[0].WorkspaceBindingArgs = nil
+
+		report, err := VerifyWorkspaceToolchain(context.Background(), root, m)
+		u9RequireNotStub(t, err)
+		require.NoError(t, err)
+		require.False(t, report.Valid)
+		require.Positive(t, report.Violations)
+		require.Equal(t, "violation", report.Tools[0].Status)
+		require.Equal(t, "local_tool_invalid", report.Tools[0].Code)
+
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".backlogit"), 0o755))
+		err = WriteToolchainManifest(root, m)
+		require.ErrorIs(t, err, corerrors.ErrValidation)
+	})
+
+	t.Run("aliased-mcp-server-omitting-cwd-rejected", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		m := u9PinnedWorkspace(t, root)
+		m.Tools[0].ID = "backlog-alias"
+		u9Write(t, root, ".mcp.json", `{"mcpServers":{"backlog-alias":{"type":"stdio","command":"./bin/backlogit.exe","args":["mcp"]}}}`)
+
+		findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+		u9RequireNotStub(t, err)
+		require.NoError(t, err)
+		require.Len(t, findings, 1)
+		require.Equal(t, "violation", findings[0].Status)
+	})
+
+	t.Run("aliased-backlogit-with-cwd-passes-and-renders-single-cwd", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		m := u9PinnedWorkspace(t, root)
+		m.Tools[0].ID = "backlog-alias"
+		u9Write(t, root, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlog-alias":{"type":"stdio","command":"./bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, root))
+
+		report, err := VerifyWorkspaceToolchain(context.Background(), root, m)
+		require.NoError(t, err)
+		require.True(t, report.Valid)
+		require.Zero(t, report.Violations)
+
+		findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+		require.NoError(t, err)
+		require.Len(t, findings, 1)
+		require.NotEqual(t, "violation", findings[0].Status, "%+v", findings[0])
+
+		rendered, err := RenderPinnedMCPConfig(root, m)
+		require.NoError(t, err)
+		var cfg struct {
+			MCPServers map[string]struct {
+				Args []string `json:"args"`
+			} `json:"mcpServers"`
+		}
+		require.NoError(t, json.Unmarshal(rendered, &cfg))
+		aliasSrv, ok := cfg.MCPServers["backlog-alias"]
+		require.True(t, ok)
+		require.Equal(t, []string{"mcp", "--cwd", root}, aliasSrv.Args)
+	})
+
+	t.Run("posix-pinned-backlogit-without-exe-passes", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		m := u9PinnedWorkspace(t, root)
+		m.Tools[0].ID = "backlog-alias"
+		binData := []byte("posix-backlogit")
+		sum := sha256.Sum256(binData)
+		u9Write(t, root, "bin/backlogit", string(binData))
+		m.Tools[0].ExecutablePath = "./bin/backlogit"
+		m.Tools[0].SHA256 = hex.EncodeToString(sum[:])
+		u9Write(t, root, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlog-alias":{"type":"stdio","command":"./bin/backlogit","args":["mcp","--cwd",%q]}}}`, root))
+
+		report, err := VerifyWorkspaceToolchain(context.Background(), root, m)
+		require.NoError(t, err)
+		require.True(t, report.Valid, "%+v", report.Tools)
+
+		findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+		require.NoError(t, err)
+		require.Len(t, findings, 1)
+		require.NotEqual(t, "violation", findings[0].Status, "%+v", findings[0])
+	})
 }

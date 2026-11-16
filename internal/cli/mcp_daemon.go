@@ -112,7 +112,7 @@ func RunMCPDaemon(ctx context.Context, rootPath string, replace bool, idleTimeou
 		return fmt.Errorf("open daemon server: %w", err)
 	}
 	defer func() {
-		result = errors.Join(result, s.CloseAllSessions())
+		result = errors.Join(result, s.Shutdown())
 		if s.Workspace != nil {
 			result = errors.Join(result, s.Workspace.Close())
 		}
@@ -181,7 +181,7 @@ wait:
 	if !acceptFinished {
 		<-accepted // Accept owns all worker admissions; join it before Wait.
 	}
-	result = errors.Join(result, s.CloseAllSessions())
+	result = errors.Join(result, s.Shutdown())
 	workers.Wait()
 	return result
 }

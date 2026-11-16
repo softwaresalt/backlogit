@@ -1231,7 +1231,7 @@ func AdoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string) (
 	return adoptItem(ctx, ws, itemID, newParentID, AdoptItemOptions{})
 }
 
-func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, opts AdoptItemOptions) (*AdoptItemResult, error) {
+func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, opts AdoptItemOptions) (adoptRes *AdoptItemResult, retErr error) {
 	// Canonical order: the active stash lock is outermost (matching
 	// HarvestStashEntry: stash -> lifecycle-global -> item-log -> artifact
 	// mutation). Only the rename path rewrites the stash archive.
@@ -1300,20 +1300,44 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		artifact.CustomFields["origin_feature"] = originFeature
 	}
 
+	origCtx := ctx
+	var releaseAllocLock func()
+	if !opts.KeepID && ws.DB != nil && ws.Config != nil && ws.Config.QueueLayout != nil {
+		lockedAllocCtx, unlockAlloc, allocErr := acquireIDAllocatorLock(ctx, ws)
+		if allocErr != nil {
+			return nil, fmt.Errorf("adopt item %s: acquire id allocator lock: %w", itemID, allocErr)
+		}
+		ctx = lockedAllocCtx
+		allocUnlocked := false
+		releaseAllocLock = func() {
+			if allocUnlocked {
+				return
+			}
+			allocUnlocked = true
+			if unlockErr := unlockAlloc(); unlockErr != nil {
+				slog.WarnContext(origCtx, "release id allocator lock", "item_id", itemID, "error", unlockErr)
+			}
+		}
+		defer releaseAllocLock()
+	}
+
 	// Step 1: Generate the new hierarchical ID under the new parent.
 	oldID := artifact.ID
 	newID := oldID // fallback: keep old ID if we can't generate a new one
-	if !opts.KeepID && ws.Config != nil && ws.Config.QueueLayout != nil {
+	if !opts.KeepID && ws.DB != nil && ws.Config != nil && ws.Config.QueueLayout != nil {
 		typeCfg, typeOK := ws.Config.ArtifactTypes[artifact.ArtifactType]
 		if typeOK && typeCfg != nil {
 			generatedID, idErr := allocateTypedHierarchicalID(
 				ctx, ws, newParentID, artifact.ArtifactType,
 				typeCfg, ws.Config.QueueLayout,
 			)
-			if errors.Is(idErr, errIDHistoryScan) {
-				return nil, fmt.Errorf("adopt item %s: %w", itemID, idErr)
-			}
-			if idErr == nil {
+			if idErr != nil {
+				if errors.Is(idErr, errIDHistoryScan) || errors.Is(idErr, blerrors.ErrGateInProgress) ||
+					errors.Is(idErr, context.Canceled) || errors.Is(idErr, context.DeadlineExceeded) ||
+					strings.Contains(idErr.Error(), "hierarchical id") {
+					return nil, fmt.Errorf("adopt item %s: %w", itemID, idErr)
+				}
+			} else {
 				newID = generatedID
 			}
 		}
@@ -1323,19 +1347,59 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		return nil, fmt.Errorf("adopt item %s: %w: a workflow custody envelope names %s, so adoption cannot change its ID", itemID, blerrors.ErrValidation, oldID)
 	}
 
-	var releaseEventLocks func()
+	// Reserve newID (and journal adoption pre-create state) while holding ONLY
+	// id_allocator.lock as the leaf lock, then release id_allocator.lock before
+	// acquiring event-log locks (C) or cross-reference artifact locks (B).
+	var seqPreimage idSequencePreimage
+	seqReserved := false
 	if newID != oldID {
-		lockedCtx, releaseEventLocks, lockErr = lockAdoptionEventLogs(ctx, ws, oldID, newID)
-		if lockErr != nil {
-			return nil, fmt.Errorf("adopt item %s: acquire event-log locks: %w", itemID, lockErr)
-		}
-		defer releaseEventLocks()
-		ctx = lockedCtx
 		if opts.BeforeRename != nil {
 			if err := opts.BeforeRename(ctx, oldID, newID); err != nil {
 				return nil, fmt.Errorf("adopt item %s: record rename %s->%s: %w", itemID, oldID, newID, err)
 			}
 		}
+		var preErr error
+		seqPreimage, preErr = captureIDSequencePreimage(ctx, ws)
+		if preErr != nil {
+			return nil, fmt.Errorf("adopt item %s: capture id sequence preimage for %s: %w", itemID, newID, preErr)
+		}
+		if seqPreimage.enabled {
+			if resErr := reserveIDSequenceWithPreimage(ctx, ws, seqPreimage, newID); resErr != nil {
+				if restoreErr := restoreIDSequencePreimage(ctx, ws, seqPreimage); restoreErr != nil {
+					resErr = errors.Join(resErr, fmt.Errorf("restore id sequence preimage: %w", restoreErr))
+				}
+				return nil, fmt.Errorf("adopt item %s: reserve new id %s: %w", oldID, newID, resErr)
+			}
+			seqReserved = true
+		}
+	}
+	if releaseAllocLock != nil {
+		releaseAllocLock()
+	}
+	ctx = origCtx
+
+	adoptCommitted := false
+	defer func() {
+		// Runs after releaseEventLocks (registered below) has released C, so
+		// re-acquiring id_allocator.lock via unreserveIDSequences obeys
+		// B -> id_allocator.lock and selectively removes only newID while
+		// preserving any concurrent reservations made after releaseAllocLock().
+		if !adoptCommitted && seqReserved && seqPreimage.enabled {
+			if resErr := unreserveIDSequences(context.WithoutCancel(origCtx), ws, shipmentOperationID(origCtx), []string{newID}); resErr != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("unreserve adopted id %s: %w", newID, resErr))
+			}
+		}
+	}()
+
+	var releaseEventLocks func()
+	if newID != oldID {
+		lockedCtx, releaseFn, lockErr := lockAdoptionEventLogs(ctx, ws, oldID, newID)
+		if lockErr != nil {
+			return nil, fmt.Errorf("adopt item %s: acquire event-log locks: %w", itemID, lockErr)
+		}
+		releaseEventLocks = releaseFn
+		defer releaseEventLocks()
+		ctx = lockedCtx
 	}
 
 	// Update the artifact with new parent and ID.
@@ -1503,9 +1567,8 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			}
 		}
 
-		// Step 4: Commit the transaction now that all file ops succeeded.
 		if commitErr := tx.Commit(); commitErr != nil {
-			// Rollback file operations
+			// Rollback file operations; outer defer restores seqPreimage after releasing C.
 			if renamedLog {
 				_ = os.Rename(newLogPath, oldLogPath)
 			}
@@ -1515,6 +1578,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			restoreCrossRefs()
 			return nil, fmt.Errorf("adopt item %s: commit tx: %w", oldID, commitErr)
 		}
+		adoptCommitted = true
 		archiveCommitted = true
 	} else {
 		// No ID change or no DB — just persist the artifact with updated parent.
@@ -1526,6 +1590,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 				return nil, fmt.Errorf("adopt item %s: index: %w", itemID, err)
 			}
 		}
+		adoptCommitted = true
 	}
 
 	// Build list of rewritten artifact IDs for the event delta and result.
@@ -1543,7 +1608,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		"rewritten_artifact_ids": rewrittenIDs,
 	})
 
-	// Fire post-adopt hooks.
+	// Fire post-adopt hooks using pre-lock context.
 	if ws.HookRunner != nil {
 		hookCtx := hooks.HookContext{
 			ItemID:       newID,
@@ -1554,7 +1619,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			Workspace:    ws.RootPath,
 			TopLevel:     true,
 		}
-		ws.HookRunner.FirePost(ctx, hooks.HookAdoptItem, hookCtx)
+		ws.HookRunner.FirePost(origCtx, hooks.HookAdoptItem, hookCtx)
 	}
 
 	return &AdoptItemResult{

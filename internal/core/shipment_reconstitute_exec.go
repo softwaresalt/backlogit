@@ -592,6 +592,17 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 	}
 
 	opCtx := hooks.WithBufferedPostHooks(withShipmentOperation(ctx, correlationID))
+	recordedCreated := map[string]bool{}
+	opCtx = context.WithValue(opCtx, shipmentOperationBeforeCreateContextKey{}, func(_ context.Context, id string) error {
+		if !recordedCreated[id] {
+			state.CreatedIDs = append(state.CreatedIDs, id)
+			recordedCreated[id] = true
+		}
+		if _, err := writeShipmentOperationJournal(ws, journalName, journal); err != nil {
+			return fmt.Errorf("reconstitute: journal pre-create artifact %s: %w", id, errors.Join(err, blerrors.ErrWriteIndeterminate))
+		}
+		return nil
+	})
 	var renamedUnlocks []func() error
 	defer func() {
 		for i := len(renamedUnlocks) - 1; i >= 0; i-- {
@@ -601,9 +612,12 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 		}
 	}()
 	result, applyErr := applyReconstitution(opCtx, ws, st, correlationID, baseline, snapshotOwners, func(id string, feature bool) error {
-		state.CreatedIDs = append(state.CreatedIDs, id)
-		if _, err := writeShipmentOperationJournal(ws, journalName, journal); err != nil {
-			return fmt.Errorf("reconstitute: journal created artifact %s: %w", id, errors.Join(err, blerrors.ErrWriteIndeterminate))
+		if !recordedCreated[id] {
+			state.CreatedIDs = append(state.CreatedIDs, id)
+			recordedCreated[id] = true
+			if _, err := writeShipmentOperationJournal(ws, journalName, journal); err != nil {
+				return fmt.Errorf("reconstitute: journal created artifact %s: %w", id, errors.Join(err, blerrors.ErrWriteIndeterminate))
+			}
 		}
 		if feature {
 			unlock, lockErr := lockArtifactMutation(opCtx, ws, id)
@@ -618,12 +632,7 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 			opCtx = withShipmentLifecycleHeldLocks(opCtx, ws, artifactMutationLockID(id))
 		}
 		return nil
-	}, func(adoptCtx context.Context, oldID, newID string) error {
-		unlock, lockErr := lockArtifactMutation(adoptCtx, ws, newID)
-		if lockErr != nil {
-			return fmt.Errorf("reconstitute: lock renamed artifact %s: %w", newID, lockErr)
-		}
-		renamedUnlocks = append(renamedUnlocks, unlock)
+	}, func(_ context.Context, oldID, newID string) error {
 		if state.Adoptions == nil {
 			state.Adoptions = map[string]string{}
 		}
@@ -631,6 +640,13 @@ func executeReconstitution(ctx context.Context, ws *Workspace, opts Reconstitute
 		if _, err := writeShipmentOperationJournal(ws, journalName, journal); err != nil {
 			return fmt.Errorf("reconstitute: journal adoption %s->%s: %w", oldID, newID, errors.Join(err, blerrors.ErrWriteIndeterminate))
 		}
+		return nil
+	}, func(lockCtx context.Context, id string) error {
+		unlock, lockErr := lockArtifactMutation(lockCtx, ws, id)
+		if lockErr != nil {
+			return fmt.Errorf("reconstitute: lock renamed artifact %s: %w", id, lockErr)
+		}
+		renamedUnlocks = append(renamedUnlocks, unlock)
 		return nil
 	})
 	if applyErr != nil {
@@ -800,6 +816,7 @@ func applyReconstitution(
 	lockedOwners map[string]struct{},
 	recordCreated func(id string, feature bool) error,
 	recordAdoption func(ctx context.Context, oldID, newID string) error,
+	lockAdopted func(ctx context.Context, id string) error,
 ) (*ReconstituteShipmentResult, error) {
 	result := newReconstituteResult(st)
 	result.Status, result.CorrelationID = "reconstituted", correlationID
@@ -867,6 +884,9 @@ func applyReconstitution(
 				return nil, fmt.Errorf("adopt item %s under %s: %w", item, featureIDs[target.featureKey], err)
 			}
 			if adopted.NewID != "" && adopted.NewID != item {
+				if err := lockAdopted(ctx, adopted.NewID); err != nil {
+					return nil, err
+				}
 				result.AdoptedIDMap[item] = adopted.NewID
 				if _, ok := lockedOwners[item]; ok {
 					lockedOwners[adopted.NewID] = struct{}{}
@@ -1247,6 +1267,9 @@ func rollbackReconstitute(ctx context.Context, ws *Workspace, journal shipmentLi
 		if err := removeReconstituteCreated(ctx, ws, logsRoot, id); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if err := unreserveIDSequences(ctx, ws, journal.CorrelationID, ours); err != nil {
+		errs = append(errs, fmt.Errorf("unreserve id sequences: %w", err))
 	}
 	for _, image := range state.Images {
 		if strings.HasSuffix(strings.ToLower(image.Path), ".md") && reconstituteImageOwner(image) == "" {

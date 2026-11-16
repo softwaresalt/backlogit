@@ -14,9 +14,14 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/core"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
+
+var replaceToolchainManifestFile = func(storageHandle *os.Root, storageDirAbs, tmpRel, dstRel string) error {
+	return atomicfile.ReplaceTempFileInRoot(storageHandle, storageDirAbs, tmpRel, dstRel, true)
+}
 
 // VerifyLauncherScripts statically inspects configuration and startup scripts.
 // It never executes a tool or repairs operator-owned files. Shell constructs
@@ -138,9 +143,20 @@ func verifyLaunchers(rootPath string, m *ToolchainManifest) ([]ToolVerificationF
 		findings = []ToolVerificationFinding{launcherFinding(".mcp.json", "mcp_config_invalid",
 			"MCP configuration is missing, redirected, unreadable or invalid; restore a workspace-pinned configuration.")}
 	}
+	backlogitIDs := make(map[string]bool)
+	if m != nil {
+		for _, tool := range m.Tools {
+			if isBacklogitTool(abs, tool) {
+				backlogitIDs[strings.ToLower(strings.TrimSpace(tool.ID))] = true
+			}
+		}
+	}
 	hasBacklogit := false
 	for i, f := range findings {
-		hasBacklogit = hasBacklogit || strings.EqualFold(f.ToolID, "backlogit")
+		id := strings.ToLower(strings.TrimSpace(f.ToolID))
+		if id == "backlogit" || backlogitIDs[id] {
+			hasBacklogit = true
+		}
 		findings[i] = toolRemediation(f, m)
 	}
 	if !hasBacklogit {
@@ -469,7 +485,7 @@ func (p *launcherProfile) invoke(line string) {
 			return
 		}
 	}
-	if strings.EqualFold(tool.ID, "backlogit") {
+	if isBacklogitTool(p.abs, *tool) {
 		if !samePath(cwd, p.abs) {
 			p.fail("launcher_cwd_invalid", "Backlogit must explicitly bind --cwd to the anchored workspace.")
 			return
@@ -598,7 +614,8 @@ func validateManifestForProvisioning(root *os.Root, abs string, manifest *Toolch
 		if !validBacklogitTool(abs, tool) {
 			return fmt.Errorf("backlogit must use the workspace-local pinned binary: %w", corerrors.ErrValidation)
 		}
-		if id == "backlogit" && strings.EqualFold(strings.TrimSpace(tool.Kind), "mcp") {
+		isBacklogit := isBacklogitTool(abs, tool)
+		if isBacklogit && strings.EqualFold(strings.TrimSpace(tool.Kind), "mcp") {
 			hasBacklogitMCP = true
 		}
 
@@ -622,7 +639,7 @@ func validateManifestForProvisioning(root *os.Root, abs string, manifest *Toolch
 			if isRunner(tool.ExecutablePath) && strings.TrimSpace(tool.EntrypointPath) == "" {
 				return fmt.Errorf("runner tool %q requires entrypoint path: %w", tool.ID, corerrors.ErrValidation)
 			}
-			if id == "backlogit" && strings.TrimSpace(tool.EntrypointPath) != "" {
+			if isBacklogit && strings.TrimSpace(tool.EntrypointPath) != "" {
 				return fmt.Errorf("backlogit tool must not specify entrypoint_path: %w", corerrors.ErrValidation)
 			}
 			if tool.EntrypointPath != "" {
@@ -667,7 +684,7 @@ func validateManifestForProvisioning(root *os.Root, abs string, manifest *Toolch
 					}
 				}
 			}
-			if id == "backlogit" && bindings["--cwd"] == "" {
+			if isBacklogit && bindings["--cwd"] == "" {
 				return fmt.Errorf("backlogit requires --cwd workspace binding: %w", corerrors.ErrValidation)
 			}
 		case RemoteDeclared:
@@ -878,12 +895,30 @@ func WriteToolchainManifest(rootPath string, manifest *ToolchainManifest) error 
 		return fmt.Errorf("close temp toolchain.yaml: %w", err)
 	}
 
-	tmpAbs := filepath.Join(abs, storageDir, tmpName)
-	dstAbs := filepath.Join(abs, storageDir, "toolchain.yaml")
-	if err := os.Rename(tmpAbs, dstAbs); err != nil {
+	preInfo, err := storageHandle.Lstat("toolchain.yaml")
+	if err == nil {
+		preLink, linkErr := core.IsSymlinkOrReparsePoint(preInfo, filepath.Join(abs, storageDir, "toolchain.yaml"))
+		if linkErr != nil || preLink || !preInfo.Mode().IsRegular() {
+			return fmt.Errorf("existing toolchain.yaml is redirected or not a regular file: %w", corerrors.ErrValidation)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("re-inspect toolchain.yaml before replacement: %w", err)
+	}
+
+	storageDirAbs := filepath.Join(abs, storageDir)
+	if err := replaceToolchainManifestFile(storageHandle, storageDirAbs, tmpName, "toolchain.yaml"); err != nil {
 		return fmt.Errorf("replace toolchain.yaml: %w", err)
 	}
 	tmpRemoved = true
+
+	postInfo, err := storageHandle.Lstat("toolchain.yaml")
+	if err != nil {
+		return fmt.Errorf("verify replaced toolchain.yaml: %w", err)
+	}
+	postLink, linkErr := core.IsSymlinkOrReparsePoint(postInfo, filepath.Join(abs, storageDir, "toolchain.yaml"))
+	if linkErr != nil || postLink || !postInfo.Mode().IsRegular() {
+		return fmt.Errorf("replaced toolchain.yaml is redirected or not a regular file: %w", corerrors.ErrValidation)
+	}
 
 	storageClosed = true
 	if err := storageHandle.Close(); err != nil {
@@ -949,7 +984,7 @@ func RenderPinnedMCPConfig(rootPath string, manifest *ToolchainManifest) ([]byte
 				Command: "./" + filepath.ToSlash(relExec),
 			}
 			switch {
-			case strings.EqualFold(tool.ID, "backlogit"):
+			case isBacklogitTool(abs, tool):
 				srv.Args = []string{"mcp", "--cwd", abs}
 			case strings.TrimSpace(tool.EntrypointPath) != "":
 				relEntry, err := relativePath(abs, tool.EntrypointPath, false)
@@ -968,7 +1003,7 @@ func RenderPinnedMCPConfig(rootPath string, manifest *ToolchainManifest) ([]byte
 			if err != nil {
 				return nil, wrapProvisioningValidation(fmt.Sprintf("tool %q invalid workspace bindings", tool.ID), err)
 			}
-			if cwdVal, hasCWD := bindings["--cwd"]; hasCWD && !strings.EqualFold(tool.ID, "backlogit") {
+			if cwdVal, hasCWD := bindings["--cwd"]; hasCWD && !isBacklogitTool(abs, tool) {
 				srv.Args = append(srv.Args, "--cwd", cwdVal)
 			}
 			env := make(map[string]string)
