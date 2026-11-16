@@ -315,8 +315,9 @@ func applyLogLevel(level string) {
 
 func newInitCommand(cwd *string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "init [path]",
-		Short: "Initialize a new backlogit workspace",
+		Use:     "init [path]",
+		Aliases: []string{"install"},
+		Short:   "Initialize a new backlogit workspace",
 		Long: `Initialize a backlogit workspace in the target directory.
 
 This creates the .backlog storage root, logs directory, canonical stash JSONL
@@ -328,14 +329,23 @@ file, default YAML configuration files, and default artifact templates.`,
 			if len(args) > 0 {
 				root = args[0]
 			}
-			legacyDir := filepath.Join(root, core.WorkspaceRootCandidates()[1])
-			if info, err := os.Stat(legacyDir); err == nil && info.IsDir() {
-				return fmt.Errorf("workspace already exists at .backlogit; use 'backlogit migrate --workspace-dir' to rename it to .backlog")
-			} else if err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("stat legacy workspace dir: %w", err)
+			storageDirName := core.WorkspaceRootCandidates()[0]
+			if cmd.CalledAs() == "install" {
+				resolvedDir, err := resolveInstallStorageDir(root)
+				if err != nil {
+					return err
+				}
+				storageDirName = resolvedDir
+			} else {
+				legacyDir := filepath.Join(root, core.WorkspaceRootCandidates()[1])
+				if info, err := os.Stat(legacyDir); err == nil && info.IsDir() {
+					return fmt.Errorf("workspace already exists at .backlogit; use 'backlogit migrate --workspace-dir' to rename it to .backlog")
+				} else if err != nil && !os.IsNotExist(err) {
+					return fmt.Errorf("stat legacy workspace dir: %w", err)
+				}
 			}
 
-			dir := filepath.Join(root, ".backlog")
+			dir := filepath.Join(root, storageDirName)
 			// Guard against writing through a symlink or Windows reparse point
 			// (junction) that may redirect workspace files outside the root.
 			if info, statErr := os.Lstat(dir); statErr == nil {
@@ -358,6 +368,13 @@ file, default YAML configuration files, and default artifact templates.`,
 			}
 			if err := config.WriteMigrationDefaults(dir); err != nil {
 				return fmt.Errorf("write migration defaults: %w", err)
+			}
+			binName, err := installWorkspaceRuntimeExecutable(root, storageDirName)
+			if err != nil {
+				return fmt.Errorf("install workspace runtime executable: %w", err)
+			}
+			if err := ensureWorkspaceRuntimeIgnored(root, storageDirName, binName); err != nil {
+				return fmt.Errorf("configure ignore rules for workspace runtime: %w", err)
 			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Initialized backlogit workspace at %s\n", dir); err != nil {
 				return fmt.Errorf("write output: %w", err)
