@@ -329,6 +329,17 @@ file, default YAML configuration files, and default artifact templates.`,
 			if len(args) > 0 {
 				root = args[0]
 			}
+			// Guard target root against symlink or reparse-point redirection
+			// before creating or modifying workspace storage directories.
+			if rootInfo, rootStatErr := os.Lstat(root); rootStatErr == nil {
+				isReparse, inspectErr := core.IsSymlinkOrReparsePoint(rootInfo, root)
+				if inspectErr != nil {
+					return fmt.Errorf("inspect workspace root: %w", inspectErr)
+				}
+				if isReparse || !rootInfo.IsDir() {
+					return fmt.Errorf("workspace root %s is redirected or not a directory", root)
+				}
+			}
 			storageDirName := core.WorkspaceRootCandidates()[0]
 			if cmd.CalledAs() == "install" {
 				resolvedDir, err := resolveInstallStorageDir(root)

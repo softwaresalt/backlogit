@@ -5,6 +5,7 @@ package atomicfile
 import (
 	"fmt"
 	"os"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 
@@ -26,17 +27,63 @@ func atomicReplace(tmpName, path string, durable bool) error {
 	return nil
 }
 
+func verifyUnixRootLeaf(dirFD int, rel string, expected os.FileInfo) error {
+	var st unix.Stat_t
+	if err := unix.Fstatat(dirFD, rel, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return fmt.Errorf("fstatat %q: %w", rel, err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG {
+		return fmt.Errorf("%q is not a regular file: %w", rel, blerrors.ErrValidation)
+	}
+	if sysStat, ok := expected.Sys().(*syscall.Stat_t); ok {
+		if uint64(st.Dev) != uint64(sysStat.Dev) || uint64(st.Ino) != uint64(sysStat.Ino) {
+			return fmt.Errorf("%q inode changed before renameat: %w", rel, blerrors.ErrValidation)
+		}
+	}
+	return nil
+}
+
 func replaceTempFileInRootPlatform(
 	_ *os.Root,
 	dirFile *os.File,
-	_ string,
+	dirAbs string,
 	tmpRel, dstRel string,
-	_, _ os.FileInfo,
+	tmpInfo, dstInfo os.FileInfo,
 	durable bool,
 ) error {
+	dirFileStat, err := dirFile.Stat()
+	if err != nil {
+		return notApplied("stat pinned parent dir handle", err)
+	}
+	preDirLstat, err := os.Lstat(dirAbs)
+	if err != nil {
+		return notApplied("lstat parent dir before renameat", err)
+	}
+	if preDirLstat.Mode()&os.ModeSymlink != 0 || !preDirLstat.IsDir() || !os.SameFile(preDirLstat, dirFileStat) {
+		return notApplied("parent dir changed or redirected before renameat", blerrors.ErrValidation)
+	}
+
 	dirFD := int(dirFile.Fd())
+	if err := verifyUnixRootLeaf(dirFD, tmpRel, tmpInfo); err != nil {
+		return notApplied("verify temp leaf before renameat", err)
+	}
+	if dstInfo != nil {
+		if err := verifyUnixRootLeaf(dirFD, dstRel, dstInfo); err != nil {
+			return notApplied("verify destination leaf before renameat", err)
+		}
+	}
+
 	if err := unix.Renameat(dirFD, tmpRel, dirFD, dstRel); err != nil {
 		return notApplied("renameat temp over destination", err)
+	}
+	postDirLstat, postErr := os.Lstat(dirAbs)
+	if postErr != nil {
+		return fmt.Errorf("lstat parent dir after renameat: %w",
+			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, postErr))
+	}
+	if postDirLstat.Mode()&os.ModeSymlink != 0 || !postDirLstat.IsDir() || !os.SameFile(postDirLstat, dirFileStat) {
+		return fmt.Errorf("parent dir changed during renameat: %w",
+			fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, blerrors.ErrValidation))
 	}
 	if durable {
 		if err := dirFile.Sync(); err != nil {

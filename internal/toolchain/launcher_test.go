@@ -161,10 +161,8 @@ func TestU1_WriteToolchainManifestUsesAtomicFileReplacementAndRetrySemantics(t *
 		updated := u9Manifest(root)
 		updated.Tools[0].PinnedVersion = "2.0.0"
 		err := WriteToolchainManifest(root, updated)
-		if runtime.GOOS == "windows" {
-			require.Error(t, err, "Windows parent directory swap must fail closed")
-			assert.ErrorIs(t, err, corerrors.ErrWriteNotApplied)
-		}
+		require.Error(t, err, "parent directory swap must fail closed")
+		assert.ErrorIs(t, err, corerrors.ErrWriteNotApplied)
 		_, outsideErr := os.Stat(filepath.Join(outsideDir, "toolchain.yaml"))
 		assert.True(t, os.IsNotExist(outsideErr), "parent directory swap must never write toolchain.yaml into outsideDir")
 	})

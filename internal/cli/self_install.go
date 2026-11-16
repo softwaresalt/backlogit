@@ -480,6 +480,10 @@ func ensureIgnoreEntriesInRoot(targetRoot *os.Root, targetDirAbs, fileName strin
 }
 
 func appendMissingIgnoreLines(existing string, required []string) (string, bool) {
+	eol := "\n"
+	if strings.Contains(existing, "\r\n") {
+		eol = "\r\n"
+	}
 	normalized := strings.ReplaceAll(existing, "\r\n", "\n")
 	lines := strings.Split(normalized, "\n")
 	present := make(map[string]struct{}, len(lines))
@@ -498,11 +502,11 @@ func appendMissingIgnoreLines(existing string, required []string) (string, bool)
 	var b strings.Builder
 	b.WriteString(existing)
 	if len(existing) > 0 && !strings.HasSuffix(existing, "\n") {
-		b.WriteByte('\n')
+		b.WriteString(eol)
 	}
 	for _, entry := range missing {
 		b.WriteString(entry)
-		b.WriteByte('\n')
+		b.WriteString(eol)
 	}
 	return b.String(), true
 }

@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,9 +45,14 @@ type idAllocatorLockState struct {
 // publishes the artifact file or id-sequences.json reservation.
 type shipmentOperationBeforeCreateContextKey struct{}
 
+type branchIDCacheEntry struct {
+	fingerprint string
+	ids         []string
+}
+
 var (
 	idSequenceTempSeq atomic.Uint64
-	branchIDScanCache sync.Map // key: realRoot+"\x00"+fingerprint -> []string
+	branchIDScanCache sync.Map // key: realRoot -> branchIDCacheEntry (bounded 1 entry per root)
 )
 
 type idSequenceLedger struct {
@@ -119,6 +126,10 @@ func collectNullableStrings(ctx context.Context, db *sql.DB, query string) (out 
 // names, event item_id and delta.old_id values, the stash archive, and the
 // provenance corrections file.
 func historicalIDsFromDisk(ws *Workspace) ([]string, error) {
+	return historicalIDsFromDiskContext(context.Background(), ws)
+}
+
+func historicalIDsFromDiskContext(ctx context.Context, ws *Workspace) ([]string, error) {
 	if ws == nil {
 		return nil, nil
 	}
@@ -127,7 +138,12 @@ func historicalIDsFromDisk(ws *Workspace) ([]string, error) {
 
 	dirSet := map[string]bool{}
 	var dirs []string
-	if searchDirs, err := artifactSearchDirs(ws); err == nil {
+	searchDirs, searchErr := artifactSearchDirs(ws)
+	if searchErr != nil {
+		if ws.Config != nil {
+			return nil, fmt.Errorf("resolve artifact search dirs: %w", searchErr)
+		}
+	} else {
 		for _, d := range searchDirs {
 			dirSet[filepath.Clean(d)] = true
 			dirs = append(dirs, d)
@@ -191,7 +207,7 @@ func historicalIDsFromDisk(ws *Workspace) ([]string, error) {
 	}
 	ids = append(ids, pendingIDs...)
 
-	branchIDs, err := scanLocalBranchArtifactIDs(ws)
+	branchIDs, err := scanLocalBranchArtifactIDsContext(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
@@ -279,9 +295,40 @@ func resolveValidatedStorageRoot(ws *Workspace) (string, error) {
 		return "", fmt.Errorf("resolve storage root: %w", err)
 	}
 	absStorage = filepath.Clean(absStorage)
+
+	var realWS string
+	if strings.TrimSpace(ws.RootPath) != "" {
+		absWS, wsErr := filepath.Abs(ws.RootPath)
+		if wsErr != nil {
+			return "", fmt.Errorf("resolve workspace root: %w", wsErr)
+		}
+		absWS = filepath.Clean(absWS)
+		wsInfo, wsLstatErr := os.Lstat(absWS)
+		if wsLstatErr != nil && !os.IsNotExist(wsLstatErr) {
+			return "", fmt.Errorf("lstat workspace root: %w", wsLstatErr)
+		}
+		if wsLstatErr == nil {
+			if link, linkErr := IsSymlinkOrReparsePoint(wsInfo, absWS); linkErr != nil || link || !wsInfo.IsDir() {
+				return "", fmt.Errorf("workspace root %q is redirected or not a directory: %w", absWS, blerrors.ErrValidation)
+			}
+		}
+		evalWS, wsEvalErr := filepath.EvalSymlinks(absWS)
+		if wsEvalErr != nil {
+			if !os.IsNotExist(wsEvalErr) {
+				return "", fmt.Errorf("eval workspace root symlinks: %w", wsEvalErr)
+			}
+			realWS = absWS
+		} else {
+			realWS = filepath.Clean(evalWS)
+		}
+	}
+
 	info, lstatErr := os.Lstat(absStorage)
 	if lstatErr != nil {
 		if os.IsNotExist(lstatErr) {
+			if realWS != "" && !pathContained(realWS, absStorage) && !sameLocksDirPath(realWS, absStorage) {
+				return "", fmt.Errorf("storage root %q is outside workspace %q: %w", absStorage, realWS, blerrors.ErrValidation)
+			}
 			return absStorage, nil
 		}
 		return "", fmt.Errorf("lstat storage root: %w", lstatErr)
@@ -293,20 +340,91 @@ func resolveValidatedStorageRoot(ws *Workspace) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("eval storage root symlinks: %w", err)
 	}
-	if strings.TrimSpace(ws.RootPath) != "" {
-		absWS, wsErr := filepath.Abs(ws.RootPath)
-		if wsErr != nil {
-			return "", fmt.Errorf("resolve workspace root: %w", wsErr)
-		}
-		realWS, wsEvalErr := filepath.EvalSymlinks(filepath.Clean(absWS))
-		if wsEvalErr != nil {
-			return "", fmt.Errorf("eval workspace root symlinks: %w", wsEvalErr)
-		}
-		if !pathContained(realWS, realStorage) && !strings.EqualFold(filepath.Clean(realWS), filepath.Clean(realStorage)) {
-			return "", fmt.Errorf("storage root %q resolves outside workspace %q: %w", realStorage, realWS, blerrors.ErrValidation)
-		}
+	realStorage = filepath.Clean(realStorage)
+	if realWS != "" && !pathContained(realWS, realStorage) && !sameLocksDirPath(realWS, realStorage) {
+		return "", fmt.Errorf("storage root %q resolves outside workspace %q: %w", realStorage, realWS, blerrors.ErrValidation)
 	}
 	return realStorage, nil
+}
+
+func sameLocksDirPath(a, b string) bool {
+	ca := filepath.Clean(a)
+	cb := filepath.Clean(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(ca, cb)
+	}
+	return ca == cb
+}
+
+func openStorageRootPinned(ws *Workspace, realStorage string) (*os.Root, error) {
+	if ws != nil && strings.TrimSpace(ws.RootPath) != "" {
+		absWS, err := filepath.Abs(ws.RootPath)
+		if err != nil {
+			return nil, fmt.Errorf("resolve workspace root: %w", err)
+		}
+		absWS = filepath.Clean(absWS)
+		wsInfo, err := os.Lstat(absWS)
+		if err != nil {
+			return nil, fmt.Errorf("inspect workspace root: %w", err)
+		}
+		if link, linkErr := IsSymlinkOrReparsePoint(wsInfo, absWS); linkErr != nil || link || !wsInfo.IsDir() {
+			return nil, fmt.Errorf("workspace root %q is redirected or not a directory: %w", absWS, blerrors.ErrValidation)
+		}
+		realWS, err := filepath.EvalSymlinks(absWS)
+		if err != nil {
+			return nil, fmt.Errorf("eval workspace root symlinks: %w", err)
+		}
+		relStorage, err := filepath.Rel(realWS, realStorage)
+		if err != nil || relStorage == ".." || strings.HasPrefix(relStorage, ".."+string(filepath.Separator)) || filepath.IsAbs(relStorage) {
+			return nil, fmt.Errorf("storage root %q escapes workspace %q: %w", realStorage, realWS, blerrors.ErrValidation)
+		}
+		wsRoot, err := os.OpenRoot(realWS)
+		if err != nil {
+			return nil, fmt.Errorf("open workspace root: %w", err)
+		}
+		defer func() {
+			// Workspace root only pins storageRoot opening; storageHandle keeps its own dirfd.
+			_ = wsRoot.Close()
+		}()
+		openedWS, err := wsRoot.Stat(".")
+		if err != nil || !os.SameFile(wsInfo, openedWS) {
+			return nil, fmt.Errorf("workspace root %q identity changed after open: %w", absWS, blerrors.ErrValidation)
+		}
+		storageInfo, err := wsRoot.Lstat(relStorage)
+		if err != nil {
+			return nil, fmt.Errorf("inspect storage root %q: %w", relStorage, err)
+		}
+		if link, linkErr := IsSymlinkOrReparsePoint(storageInfo, realStorage); linkErr != nil || link || !storageInfo.IsDir() {
+			return nil, fmt.Errorf("storage root %q is redirected or not a directory: %w", realStorage, blerrors.ErrValidation)
+		}
+		storageHandle, err := wsRoot.OpenRoot(relStorage)
+		if err != nil {
+			return nil, fmt.Errorf("open storage root: %w", err)
+		}
+		openedStorage, err := storageHandle.Stat(".")
+		if err != nil || !os.SameFile(storageInfo, openedStorage) {
+			_ = storageHandle.Close()
+			return nil, fmt.Errorf("storage root %q identity changed after open: %w", realStorage, blerrors.ErrValidation)
+		}
+		return storageHandle, nil
+	}
+	storageInfo, err := os.Lstat(realStorage)
+	if err != nil {
+		return nil, fmt.Errorf("inspect storage root %q: %w", realStorage, err)
+	}
+	if link, linkErr := IsSymlinkOrReparsePoint(storageInfo, realStorage); linkErr != nil || link || !storageInfo.IsDir() {
+		return nil, fmt.Errorf("storage root %q is redirected or not a directory: %w", realStorage, blerrors.ErrValidation)
+	}
+	storageHandle, err := os.OpenRoot(realStorage)
+	if err != nil {
+		return nil, fmt.Errorf("open storage root: %w", err)
+	}
+	openedStorage, err := storageHandle.Stat(".")
+	if err != nil || !os.SameFile(storageInfo, openedStorage) {
+		_ = storageHandle.Close()
+		return nil, fmt.Errorf("storage root %q identity changed after open: %w", realStorage, blerrors.ErrValidation)
+	}
+	return storageHandle, nil
 }
 
 func verifyPinnedLocksRoot(locksRoot *os.Root, locksDirAbs string) error {
@@ -340,9 +458,9 @@ func openLocksRootReadOnly(ws *Workspace) (*os.Root, *os.Root, string, error) {
 	if _, statErr := os.Lstat(realStorage); os.IsNotExist(statErr) {
 		return nil, nil, "", nil
 	}
-	storageHandle, err := os.OpenRoot(realStorage)
+	storageHandle, err := openStorageRootPinned(ws, realStorage)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("open storage root: %w", err)
+		return nil, nil, "", err
 	}
 	locksDirAbs := filepath.Join(realStorage, shipmentMembershipLocksDirName)
 	locksInfo, lstatErr := storageHandle.Lstat(shipmentMembershipLocksDirName)
@@ -378,9 +496,9 @@ func openLocksRootForWrite(ws *Workspace) (*os.Root, *os.Root, string, error) {
 	if realStorage == "" {
 		return nil, nil, "", fmt.Errorf("workspace storage root unavailable: %w", blerrors.ErrValidation)
 	}
-	storageHandle, err := os.OpenRoot(realStorage)
+	storageHandle, err := openStorageRootPinned(ws, realStorage)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("open storage root: %w", err)
+		return nil, nil, "", err
 	}
 	locksDirAbs := filepath.Join(realStorage, shipmentMembershipLocksDirName)
 	locksInfo, lstatErr := storageHandle.Lstat(shipmentMembershipLocksDirName)
@@ -422,7 +540,7 @@ func acquireIDAllocatorLock(ctx context.Context, ws *Workspace) (context.Context
 	}
 	locksDirAbs := filepath.Join(realStorage, shipmentMembershipLocksDirName)
 	if held, ok := ctx.Value(idAllocatorLockContextKey{}).(idAllocatorLockState); ok &&
-		strings.EqualFold(filepath.Clean(held.dirAbs), filepath.Clean(locksDirAbs)) {
+		sameLocksDirPath(held.dirAbs, locksDirAbs) {
 		return ctx, func() error { return nil }, nil
 	}
 
@@ -777,16 +895,27 @@ type idSequencePreimage struct {
 
 func resolveLocksRootForWrite(ctx context.Context, ws *Workspace) (*os.Root, string, func(), error) {
 	if held, ok := ctx.Value(idAllocatorLockContextKey{}).(idAllocatorLockState); ok && held.locksRoot != nil {
-		if err := verifyPinnedLocksRoot(held.locksRoot, held.dirAbs); err != nil {
+		realStorage, err := resolveValidatedStorageRoot(ws)
+		if err != nil {
 			return nil, "", nil, err
 		}
-		return held.locksRoot, held.dirAbs, func() {}, nil
+		if realStorage == "" {
+			return nil, "", nil, fmt.Errorf("workspace storage root unavailable: %w", blerrors.ErrValidation)
+		}
+		expectedLocksDirAbs := filepath.Join(realStorage, shipmentMembershipLocksDirName)
+		if sameLocksDirPath(held.dirAbs, expectedLocksDirAbs) {
+			if err := verifyPinnedLocksRoot(held.locksRoot, held.dirAbs); err != nil {
+				return nil, "", nil, err
+			}
+			return held.locksRoot, held.dirAbs, func() {}, nil
+		}
 	}
 	storageHandle, locksRoot, locksDirAbs, err := openLocksRootForWrite(ws)
 	if err != nil {
 		return nil, "", nil, err
 	}
 	return locksRoot, locksDirAbs, func() {
+		// Cleanup callback; caller errors are already returned by read/write ops.
 		_ = locksRoot.Close()
 		_ = storageHandle.Close()
 	}, nil
@@ -883,6 +1012,7 @@ func unreserveIDSequences(ctx context.Context, ws *Workspace, correlationID stri
 	if readLocksRoot == nil {
 		return nil
 	}
+	// Close read-only inspection handles before acquiring the exclusive write lock.
 	_ = readLocksRoot.Close()
 	_ = storageHandle.Close()
 
@@ -892,7 +1022,7 @@ func unreserveIDSequences(ctx context.Context, ws *Workspace, correlationID stri
 	}
 	defer func() {
 		if unlockErr := unlockAlloc(); unlockErr != nil {
-			_ = unlockErr
+			slog.WarnContext(ctx, "release id allocator lock after unreserve", "correlation_id", correlationID, "error", unlockErr)
 		}
 	}()
 
@@ -909,6 +1039,13 @@ func unreserveIDSequences(ctx context.Context, ws *Workspace, correlationID stri
 	for _, id := range ids {
 		if id != "" {
 			dropSet[id] = struct{}{}
+		}
+	}
+	if len(dropSet) == 0 && correlationID != "" {
+		for _, id := range ledger.Reservations[correlationID] {
+			if id != "" {
+				dropSet[id] = struct{}{}
+			}
 		}
 	}
 	if len(dropSet) > 0 {
@@ -932,9 +1069,6 @@ func unreserveIDSequences(ctx context.Context, ws *Workspace, correlationID stri
 				ledger.Reservations[corr] = filtered
 			}
 		}
-	}
-	if correlationID != "" && len(ledger.Reservations) > 0 && len(ledger.Reservations[correlationID]) == 0 {
-		delete(ledger.Reservations, correlationID)
 	}
 	if len(ledger.ReservedIDs) == 0 && len(ledger.Reservations) == 0 {
 		return removeIDSequenceReservation(locksRoot, locksDirAbs)
@@ -968,6 +1102,10 @@ func sanitizedGitBranchScanEnv() []string {
 }
 
 func scanLocalBranchArtifactIDs(ws *Workspace) ([]string, error) {
+	return scanLocalBranchArtifactIDsContext(context.Background(), ws)
+}
+
+func scanLocalBranchArtifactIDsContext(parentCtx context.Context, ws *Workspace) ([]string, error) {
 	if ws == nil || strings.TrimSpace(ws.RootPath) == "" {
 		return nil, nil
 	}
@@ -991,13 +1129,16 @@ func scanLocalBranchArtifactIDs(ws *Workspace) ([]string, error) {
 	}
 	realRoot, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
-		realRoot = absRoot
+		return nil, fmt.Errorf("eval workspace root symlinks for branch scan: %w", err)
 	}
 	timeout := ws.boundedHelperTimeout()
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
 	gitEnv := sanitizedGitBranchScanEnv()
@@ -1028,13 +1169,16 @@ func scanLocalBranchArtifactIDs(ws *Workspace) ([]string, error) {
 		refs = append(refs, branchRef{name: fields[0], oid: fields[1]})
 		fpLines = append(fpLines, fields[0]+"="+fields[1])
 	}
-	if len(refs) <= 1 {
+	if len(refs) == 0 {
 		return nil, nil
 	}
 	sort.Strings(fpLines)
-	cacheKey := realRoot + "\x00" + strings.Join(fpLines, ";")
-	if cached, ok := branchIDScanCache.Load(cacheKey); ok {
-		return append([]string(nil), cached.([]string)...), nil
+	fingerprint := strings.Join(fpLines, ";")
+	if cached, ok := branchIDScanCache.Load(realRoot); ok {
+		entry := cached.(branchIDCacheEntry)
+		if entry.fingerprint == fingerprint {
+			return append([]string(nil), entry.ids...), nil
+		}
 	}
 
 	seen := make(map[string]struct{})
@@ -1069,7 +1213,10 @@ func scanLocalBranchArtifactIDs(ws *Workspace) ([]string, error) {
 			}
 		}
 	}
-	branchIDScanCache.Store(cacheKey, collected)
+	branchIDScanCache.Store(realRoot, branchIDCacheEntry{
+		fingerprint: fingerprint,
+		ids:         collected,
+	})
 	return append([]string(nil), collected...), nil
 }
 
@@ -1215,6 +1362,7 @@ func jsonlStringFields(path string, fields ...string) ([]string, error) {
 
 // maxTypedOrdinalAmong returns the highest ordinal among ids that sit directly
 // under parentPath (empty for root level) and use the given type affixes.
+// Supports both canonical ("001.001-T") and slugged ("001.001-T-title") stems.
 func maxTypedOrdinalAmong(ids []string, parentPath, prefix, suffix string) int {
 	maxOrdinal := 0
 	for _, id := range ids {
@@ -1225,7 +1373,12 @@ func maxTypedOrdinalAmong(ids []string, parentPath, prefix, suffix string) int {
 		if idParent != parentPath {
 			continue
 		}
-		if ordinal, ok := typedSegmentOrdinal(lastIDSegment(id), prefix, suffix); ok && ordinal > maxOrdinal {
+		seg := lastIDSegment(id)
+		ordinal, ok := typedSegmentOrdinal(seg, prefix, suffix)
+		if !ok && (prefix != "" || suffix != "") {
+			ordinal, ok = historicalStandaloneOrdinal(seg, prefix, suffix)
+		}
+		if ok && ordinal > maxOrdinal {
 			maxOrdinal = ordinal
 		}
 	}
@@ -1312,7 +1465,7 @@ func allocateTypedHierarchicalID(
 	typeCfg *config.ArtifactTypeConfig,
 	layout *config.QueueLayoutConfig,
 ) (string, error) {
-	diskIDs, err := historicalIDsFromDisk(ws)
+	diskIDs, err := historicalIDsFromDiskContext(ctx, ws)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", errIDHistoryScan, err)
 	}

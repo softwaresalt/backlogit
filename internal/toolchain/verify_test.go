@@ -790,4 +790,25 @@ func TestU2_AliasedBacklogitExecutableRequiresWorkspaceLocalPinAndCwdBinding(t *
 		require.True(t, ok)
 		require.Equal(t, []string{"mcp", "--cwd", root}, aliasSrv.Args)
 	})
+
+	t.Run("posix-pinned-backlogit-without-exe-passes", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		m := u9PinnedWorkspace(t, root)
+		m.Tools[0].ID = "backlog-alias"
+		binData := []byte("posix-backlogit")
+		sum := sha256.Sum256(binData)
+		u9Write(t, root, "bin/backlogit", string(binData))
+		m.Tools[0].ExecutablePath = "./bin/backlogit"
+		m.Tools[0].SHA256 = hex.EncodeToString(sum[:])
+		u9Write(t, root, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlog-alias":{"type":"stdio","command":"./bin/backlogit","args":["mcp","--cwd",%q]}}}`, root))
+
+		report, err := VerifyWorkspaceToolchain(context.Background(), root, m)
+		require.NoError(t, err)
+		require.True(t, report.Valid, "%+v", report.Tools)
+
+		findings, err := ValidateMCPConfigPinning(root, ".mcp.json", m)
+		require.NoError(t, err)
+		require.Len(t, findings, 1)
+		require.NotEqual(t, "violation", findings[0].Status, "%+v", findings[0])
+	})
 }

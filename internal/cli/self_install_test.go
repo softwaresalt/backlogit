@@ -32,9 +32,7 @@ func TestU6_SelfInstallMidFlightParentAndLeafSwapRejected(t *testing.T) {
 		}
 
 		_, err := installWorkspaceRuntimeExecutable(root, ".backlog")
-		if runtime.GOOS == "windows" {
-			require.Error(t, err, "Windows mid-flight storage directory swap must fail closed")
-		}
+		require.Error(t, err, "mid-flight storage directory swap must fail closed")
 		binName := "backlogit"
 		if runtime.GOOS == "windows" {
 			binName = "backlogit.exe"

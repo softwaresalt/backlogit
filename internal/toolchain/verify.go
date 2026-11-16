@@ -325,13 +325,18 @@ func isBacklogitTool(abs string, tool ToolEntry) bool {
 	return strings.EqualFold(strings.TrimSpace(tool.ID), "backlogit") || isBacklogitExecutable(abs, tool.ExecutablePath)
 }
 
+func isPinnedBacklogitRelPath(rel string) bool {
+	return samePath(rel, filepath.Join("bin", "backlogit.exe")) ||
+		samePath(rel, filepath.Join("bin", "backlogit"))
+}
+
 func validBacklogitTool(abs string, tool ToolEntry) bool {
 	if !isBacklogitTool(abs, tool) {
 		return true
 	}
 	path, err := relativePath(abs, tool.ExecutablePath, true)
 	return tool.ContainmentClass == WorkspaceLocalPinned && err == nil &&
-		samePath(path, filepath.Join("bin", "backlogit.exe"))
+		isPinnedBacklogitRelPath(path)
 }
 
 // isRunner recognizes versioned interpreter names whose U9 contract requires
@@ -739,7 +744,7 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		serverType := strings.TrimSpace(server.Type)
 		isBacklogit := isBacklogitTool(abs, tool) || isBacklogitExecutable(abs, server.Command)
 		if tool.ContainmentClass != WorkspaceLocalPinned || strings.TrimSpace(server.URL) != "" || (serverType != "" && !strings.EqualFold(serverType, "stdio")) || pathErr != nil || expectedErr != nil ||
-			!samePath(command, expected) || (isBacklogit && !samePath(command, filepath.Join("bin", "backlogit.exe"))) {
+			!samePath(command, expected) || (isBacklogit && !isPinnedBacklogitRelPath(command)) {
 			findings = append(findings, finding(name, NonConformant, "violation", "mcp_command_invalid", "MCP command does not match a local pinned executable."))
 			continue
 		}

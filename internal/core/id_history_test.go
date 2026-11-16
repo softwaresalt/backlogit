@@ -650,6 +650,30 @@ shipments:
 		require.NoError(t, err)
 		assert.Contains(t, ids, "007-F", "branch scan must detect 007-F on feature-branch")
 
+		// Slugged hierarchical IDs from branch scans must contribute to maxTypedOrdinalAmong.
+		assert.Equal(t, 4, maxTypedOrdinalAmong([]string{"001.004-T-implement-slug"}, "001", "", "-T"))
+
+		// Single-branch deleted artifact committed on HEAD must still be detected by scanLocalBranchArtifactIDs.
+		singleRepo := t.TempDir()
+		runSingleGit := func(args ...string) {
+			cmd := exec.Command("git", append([]string{"-C", singleRepo}, args...)...)
+			cmd.Env = sanitizedGitBranchScanEnv()
+			out, gErr := cmd.CombinedOutput()
+			require.NoError(t, gErr, "git %v failed: %s", args, out)
+		}
+		runSingleGit("init", "-b", "main")
+		runSingleGit("config", "user.name", "Test")
+		runSingleGit("config", "user.email", "test@example.com")
+		singleStorage := filepath.Join(singleRepo, ".backlogit")
+		require.NoError(t, os.MkdirAll(filepath.Join(singleStorage, "queue"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(singleStorage, "queue", "009-F.md"), []byte("---\nid: 009-F\n---\n"), 0o644))
+		runSingleGit("add", ".")
+		runSingleGit("commit", "-m", "commit 009-F")
+		require.NoError(t, os.Remove(filepath.Join(singleStorage, "queue", "009-F.md")))
+		singleIDs, err := scanLocalBranchArtifactIDs(&Workspace{RootPath: singleRepo})
+		require.NoError(t, err)
+		assert.Contains(t, singleIDs, "009-F", "single-branch HEAD scan must detect deleted committed artifact 009-F")
+
 		// Symlinked .git must fail closed when symlinks are supported.
 		outsideGit := filepath.Join(t.TempDir(), "fake.git")
 		require.NoError(t, os.MkdirAll(outsideGit, 0o755))
