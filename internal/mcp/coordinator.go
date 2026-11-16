@@ -65,12 +65,14 @@ type mutationWaiter struct {
 // OperationCoordinator admits FIFO mutations and bounded concurrent readers.
 // Handlers and their admission resources belong to the synchronous caller.
 type OperationCoordinator struct {
-	mutationQueue chan *mutationWaiter
-	readTokens    chan struct{}
-	closed        chan struct{}
-	loopDone      chan struct{}
-	closeOnce     sync.Once
-	cfg           CoordinatorConfig
+	mutationQueue  chan *mutationWaiter
+	readTokens     chan struct{}
+	closed         chan struct{}
+	loopDone       chan struct{}
+	closeOnce      sync.Once
+	admitMu        sync.Mutex
+	activeHandlers sync.WaitGroup
+	cfg            CoordinatorConfig
 }
 
 // NewOperationCoordinator starts admission scheduling with defaults for unset limits.
@@ -279,11 +281,16 @@ func (c *OperationCoordinator) Execute(
 	if ctx.Err() != nil {
 		return coordinatorBusy("request_cancelled")
 	}
+	c.admitMu.Lock()
 	select {
 	case <-c.closed:
+		c.admitMu.Unlock()
 		return coordinatorBusy("mutation_queue_full")
 	default:
+		c.activeHandlers.Add(1)
 	}
+	c.admitMu.Unlock()
+	defer c.activeHandlers.Done()
 	coordinatorProgress(ctx, srv, req, "started", 1)
 	result, err := next(ctx, req)
 	coordinatorProgress(ctx, srv, req, "completed", 2)
@@ -293,10 +300,25 @@ func (c *OperationCoordinator) Execute(
 	return result, err
 }
 
-// Close idempotently stops admission and joins the scheduling goroutine.
-// Already executing handlers retain their resources until their frame returns.
+func (c *OperationCoordinator) stopAdmission() {
+	if c == nil {
+		return
+	}
+	c.closeOnce.Do(func() {
+		c.admitMu.Lock()
+		close(c.closed)
+		c.admitMu.Unlock()
+	})
+}
+
+// Close idempotently stops admission and joins the scheduling goroutine and
+// all admitted in-flight handlers before returning.
 func (c *OperationCoordinator) Close() error {
-	c.closeOnce.Do(func() { close(c.closed) })
+	if c == nil {
+		return nil
+	}
+	c.stopAdmission()
 	<-c.loopDone
+	c.activeHandlers.Wait()
 	return nil
 }

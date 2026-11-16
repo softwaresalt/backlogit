@@ -547,9 +547,9 @@ func (s *Server) ActiveSessionCount() int {
 	return len(s.sessions)
 }
 
-// CloseAllSessions stops admission, cancels every session, and joins their drains.
-// The terminal shutdown also closes the operation coordinator after sessions
-// drain, and is safe to call concurrently or repeatedly.
+// CloseAllSessions stops session admission, cancels every session, and joins
+// their drains without closing the server-owned operation coordinator. It is
+// safe to call concurrently or repeatedly.
 func (s *Server) CloseAllSessions() error {
 	s.sessionsMu.Lock()
 	if done := s.sessionDrainDone; done != nil {
@@ -574,12 +574,30 @@ func (s *Server) CloseAllSessions() error {
 			result = errors.Join(result, fmt.Errorf("drain MCP session %q: %w", sess.sessionID, sess.result))
 		}
 	}
-	if s.coordinator != nil {
-		result = errors.Join(result, s.coordinator.Close())
-	}
 	s.sessionsMu.Lock()
 	s.sessionDrainErr = result
 	close(s.sessionDrainDone)
 	s.sessionsMu.Unlock()
 	return result
+}
+
+// CloseCoordinator idempotently stops coordinator admission and drains all
+// admitted in-flight handlers before returning.
+func (s *Server) CloseCoordinator() error {
+	if s == nil || s.coordinator == nil {
+		return nil
+	}
+	return s.coordinator.Close()
+}
+
+// Shutdown stops both session and coordinator admission first, then drains all
+// active sessions and in-flight coordinator handlers.
+func (s *Server) Shutdown() error {
+	if s == nil {
+		return nil
+	}
+	if s.coordinator != nil {
+		s.coordinator.stopAdmission()
+	}
+	return errors.Join(s.CloseAllSessions(), s.CloseCoordinator())
 }
