@@ -155,25 +155,94 @@ func withTempGitCeiling(env []string, dir string) []string {
 		}
 	}
 
-	tempDir := filepath.Clean(os.TempDir())
-	evalTemp := tempDir
-	// Symlink resolution is best-effort; retain cleaned paths on failure and let
-	// git report any execution errors rather than hiding them.
-	if resolved, err := filepath.EvalSymlinks(tempDir); err == nil {
-		evalTemp = resolved
-	}
 	dir = filepath.Clean(dir)
 	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = resolved
 	}
-	rel, err := filepath.Rel(evalTemp, dir)
-	if err != nil || rel == "." || rel == ".." ||
-		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return env
+	candidates := tempDirCandidates(env)
+	for _, tempDir := range candidates {
+		evalTemp := tempDir
+		// Symlink resolution is best-effort; retain cleaned paths on failure and let
+		// git report any execution errors rather than hiding them.
+		if resolved, err := filepath.EvalSymlinks(tempDir); err == nil {
+			evalTemp = resolved
+		}
+		rel, err := filepath.Rel(evalTemp, dir)
+		if err != nil || rel == "." || rel == ".." ||
+			strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if hasGitRepoMarker(evalTemp) || (evalTemp != tempDir && hasGitRepoMarker(tempDir)) {
+			parentTemp := filepath.Dir(tempDir)
+			parentEval := filepath.Dir(evalTemp)
+			if parentTemp == tempDir || parentEval == evalTemp {
+				return env
+			}
+			tempDir = parentTemp
+			evalTemp = parentEval
+		}
+		ceiling := tempDir
+		if evalTemp != tempDir {
+			ceiling += string(os.PathListSeparator) + evalTemp
+		}
+		return append(env, "GIT_CEILING_DIRECTORIES="+ceiling)
 	}
-	ceiling := tempDir
-	if evalTemp != tempDir {
-		ceiling += string(os.PathListSeparator) + evalTemp
+	return env
+}
+
+func tempDirCandidates(env []string) []string {
+	osTemp := filepath.Clean(os.TempDir())
+	candidates := []string{osTemp}
+	if envTemp := resolveTempDirFromEnv(env); envTemp != "" && envTemp != osTemp {
+		candidates = append(candidates, envTemp)
 	}
-	return append(env, "GIT_CEILING_DIRECTORIES="+ceiling)
+	return candidates
+}
+
+func resolveTempDirFromEnv(env []string) string {
+	if runtime.GOOS == "windows" {
+		var tmp, temp, tmpdir string
+		for _, entry := range env {
+			key, val, ok := strings.Cut(entry, "=")
+			if !ok || strings.TrimSpace(val) == "" {
+				continue
+			}
+			switch {
+			case strings.EqualFold(key, "TMP"):
+				tmp = val
+			case strings.EqualFold(key, "TEMP"):
+				temp = val
+			case strings.EqualFold(key, "TMPDIR"):
+				tmpdir = val
+			}
+		}
+		for _, cand := range []string{tmp, temp, tmpdir} {
+			if cand != "" {
+				return filepath.Clean(cand)
+			}
+		}
+	} else {
+		for _, entry := range env {
+			if key, val, ok := strings.Cut(entry, "="); ok && key == "TMPDIR" && strings.TrimSpace(val) != "" {
+				return filepath.Clean(val)
+			}
+		}
+	}
+	return filepath.Clean(os.TempDir())
+}
+
+func hasGitRepoMarker(dir string) bool {
+	gitPath := filepath.Join(dir, ".git")
+	info, err := os.Lstat(gitPath)
+	if err != nil {
+		return false
+	}
+	if info.Mode().IsRegular() {
+		return true
+	}
+	if !info.IsDir() {
+		return false
+	}
+	headInfo, headErr := os.Lstat(filepath.Join(gitPath, "HEAD"))
+	return headErr == nil && headInfo.Mode().IsRegular()
 }
