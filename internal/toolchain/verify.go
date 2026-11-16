@@ -304,8 +304,29 @@ func samePath(a, b string) bool {
 	return a == b
 }
 
+func isBacklogitExecutable(abs, execPath string) bool {
+	trimmed := strings.TrimSpace(execPath)
+	if trimmed == "" {
+		return false
+	}
+	if rel, err := relativePath(abs, trimmed, true); err == nil {
+		if samePath(rel, filepath.Join("bin", "backlogit.exe")) || samePath(rel, filepath.Join("bin", "backlogit")) {
+			return true
+		}
+	}
+	base := strings.ToLower(filepath.Base(trimmed))
+	return base == "backlogit" || base == "backlogit.exe" ||
+		strings.HasPrefix(base, "backlogit.") ||
+		strings.HasPrefix(base, "backlogit-") ||
+		strings.HasPrefix(base, "backlogit_")
+}
+
+func isBacklogitTool(abs string, tool ToolEntry) bool {
+	return strings.EqualFold(strings.TrimSpace(tool.ID), "backlogit") || isBacklogitExecutable(abs, tool.ExecutablePath)
+}
+
 func validBacklogitTool(abs string, tool ToolEntry) bool {
-	if !strings.EqualFold(strings.TrimSpace(tool.ID), "backlogit") {
+	if !isBacklogitTool(abs, tool) {
 		return true
 	}
 	path, err := relativePath(abs, tool.ExecutablePath, true)
@@ -368,7 +389,7 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 		id := strings.ToLower(strings.TrimSpace(tool.ID))
 		if id == "" || tool.ID != strings.TrimSpace(tool.ID) || strings.TrimSpace(tool.Kind) == "" || seen[id] {
 			f = finding(tool.ID, NonConformant, "violation", "invalid_inventory", "Missing or duplicate tool identity.")
-		} else if strings.EqualFold(id, "backlogit") && tool.ContainmentClass != WorkspaceLocalPinned {
+		} else if isBacklogitTool(abs, tool) && tool.ContainmentClass != WorkspaceLocalPinned {
 			f = finding(tool.ID, NonConformant, "violation", "local_tool_invalid", "Backlogit must use the workspace-local pinned binary.")
 		} else {
 			switch tool.ContainmentClass {
@@ -507,7 +528,7 @@ func verifyLocalTool(root *os.Root, abs string, tool ToolEntry) error {
 	if err != nil {
 		return err
 	}
-	if strings.EqualFold(strings.TrimSpace(tool.ID), "backlogit") && bindings["--cwd"] == "" {
+	if isBacklogitTool(abs, tool) && bindings["--cwd"] == "" {
 		return fmt.Errorf("backlogit requires cwd binding: %w", blerrors.ErrValidation)
 	}
 	return nil
@@ -716,8 +737,9 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		command, pathErr := relativePath(abs, server.Command, true)
 		expected, expectedErr := relativePath(abs, tool.ExecutablePath, true)
 		serverType := strings.TrimSpace(server.Type)
+		isBacklogit := isBacklogitTool(abs, tool) || isBacklogitExecutable(abs, server.Command)
 		if tool.ContainmentClass != WorkspaceLocalPinned || strings.TrimSpace(server.URL) != "" || (serverType != "" && !strings.EqualFold(serverType, "stdio")) || pathErr != nil || expectedErr != nil ||
-			!samePath(command, expected) || (strings.EqualFold(strings.TrimSpace(name), "backlogit") && !samePath(command, filepath.Join("bin", "backlogit.exe"))) {
+			!samePath(command, expected) || (isBacklogit && !samePath(command, filepath.Join("bin", "backlogit.exe"))) {
 			findings = append(findings, finding(name, NonConformant, "violation", "mcp_command_invalid", "MCP command does not match a local pinned executable."))
 			continue
 		}
@@ -817,6 +839,11 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		for key, expected := range expectedBindings {
 			actual, exists := actualBindings[key]
 			if !exists || !samePath(actual, expected) {
+				bad = true
+			}
+		}
+		if isBacklogit {
+			if actualCWD := actualBindings["--cwd"]; actualCWD == "" || !samePath(actualCWD, abs) {
 				bad = true
 			}
 		}

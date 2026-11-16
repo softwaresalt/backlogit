@@ -474,7 +474,7 @@ func (p *launcherProfile) invoke(line string) {
 			return
 		}
 	}
-	if strings.EqualFold(tool.ID, "backlogit") {
+	if isBacklogitTool(p.abs, *tool) {
 		if !samePath(cwd, p.abs) {
 			p.fail("launcher_cwd_invalid", "Backlogit must explicitly bind --cwd to the anchored workspace.")
 			return
@@ -603,7 +603,8 @@ func validateManifestForProvisioning(root *os.Root, abs string, manifest *Toolch
 		if !validBacklogitTool(abs, tool) {
 			return fmt.Errorf("backlogit must use the workspace-local pinned binary: %w", corerrors.ErrValidation)
 		}
-		if id == "backlogit" && strings.EqualFold(strings.TrimSpace(tool.Kind), "mcp") {
+		isBacklogit := isBacklogitTool(abs, tool)
+		if isBacklogit && strings.EqualFold(strings.TrimSpace(tool.Kind), "mcp") {
 			hasBacklogitMCP = true
 		}
 
@@ -627,7 +628,7 @@ func validateManifestForProvisioning(root *os.Root, abs string, manifest *Toolch
 			if isRunner(tool.ExecutablePath) && strings.TrimSpace(tool.EntrypointPath) == "" {
 				return fmt.Errorf("runner tool %q requires entrypoint path: %w", tool.ID, corerrors.ErrValidation)
 			}
-			if id == "backlogit" && strings.TrimSpace(tool.EntrypointPath) != "" {
+			if isBacklogit && strings.TrimSpace(tool.EntrypointPath) != "" {
 				return fmt.Errorf("backlogit tool must not specify entrypoint_path: %w", corerrors.ErrValidation)
 			}
 			if tool.EntrypointPath != "" {
@@ -672,7 +673,7 @@ func validateManifestForProvisioning(root *os.Root, abs string, manifest *Toolch
 					}
 				}
 			}
-			if id == "backlogit" && bindings["--cwd"] == "" {
+			if isBacklogit && bindings["--cwd"] == "" {
 				return fmt.Errorf("backlogit requires --cwd workspace binding: %w", corerrors.ErrValidation)
 			}
 		case RemoteDeclared:
@@ -972,7 +973,7 @@ func RenderPinnedMCPConfig(rootPath string, manifest *ToolchainManifest) ([]byte
 				Command: "./" + filepath.ToSlash(relExec),
 			}
 			switch {
-			case strings.EqualFold(tool.ID, "backlogit"):
+			case isBacklogitTool(abs, tool):
 				srv.Args = []string{"mcp", "--cwd", abs}
 			case strings.TrimSpace(tool.EntrypointPath) != "":
 				relEntry, err := relativePath(abs, tool.EntrypointPath, false)
@@ -991,7 +992,7 @@ func RenderPinnedMCPConfig(rootPath string, manifest *ToolchainManifest) ([]byte
 			if err != nil {
 				return nil, wrapProvisioningValidation(fmt.Sprintf("tool %q invalid workspace bindings", tool.ID), err)
 			}
-			if cwdVal, hasCWD := bindings["--cwd"]; hasCWD && !strings.EqualFold(tool.ID, "backlogit") {
+			if cwdVal, hasCWD := bindings["--cwd"]; hasCWD && !isBacklogitTool(abs, tool) {
 				srv.Args = append(srv.Args, "--cwd", cwdVal)
 			}
 			env := make(map[string]string)
