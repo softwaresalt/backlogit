@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
@@ -128,5 +130,39 @@ func TestU1_WriteToolchainManifestUsesAtomicFileReplacementAndRetrySemantics(t *
 		data, err := os.ReadFile(filepath.Join(root, ".backlogit", "toolchain.yaml"))
 		require.NoError(t, err)
 		assert.Contains(t, string(data), "level-1-workspace-local-pinned")
+	})
+
+	t.Run("parent-storage-directory-swap-rejected", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		manifest := u9PinnedWorkspace(t, root)
+		storageDir := filepath.Join(root, ".backlogit")
+		require.NoError(t, os.MkdirAll(storageDir, 0o755))
+		require.NoError(t, WriteToolchainManifest(root, manifest))
+
+		outsideDir := t.TempDir()
+		swappedBackup := filepath.Join(root, ".backlogit.orig")
+
+		origHook := replaceToolchainManifestFile
+		t.Cleanup(func() { replaceToolchainManifestFile = origHook })
+		replaceToolchainManifestFile = func(storageHandle *os.Root, storageDirAbs, tmpRel, dstRel string) error {
+			require.NoError(t, os.Rename(storageDir, swappedBackup))
+			if runtime.GOOS == "windows" {
+				out, linkErr := exec.Command("cmd", "/c", "mklink", "/J", storageDir, outsideDir).CombinedOutput()
+				require.NoError(t, linkErr, "mklink /J failed: %s", out)
+			} else {
+				require.NoError(t, os.Symlink(outsideDir, storageDir))
+			}
+			return atomicfile.ReplaceTempFileInRoot(storageHandle, storageDirAbs, tmpRel, dstRel, true)
+		}
+
+		updated := u9Manifest(root)
+		updated.Tools[0].PinnedVersion = "2.0.0"
+		err := WriteToolchainManifest(root, updated)
+		if runtime.GOOS == "windows" {
+			require.Error(t, err, "Windows parent directory swap must fail closed")
+			assert.ErrorIs(t, err, corerrors.ErrWriteNotApplied)
+		}
+		_, outsideErr := os.Stat(filepath.Join(outsideDir, "toolchain.yaml"))
+		assert.True(t, os.IsNotExist(outsideErr), "parent directory swap must never write toolchain.yaml into outsideDir")
 	})
 }

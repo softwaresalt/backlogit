@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/sys/unix"
+
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
@@ -20,6 +22,27 @@ func atomicReplace(tmpName, path string, durable bool) error {
 	if err := os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("rename temp over destination: %w",
 			fmt.Errorf("%w: %w", blerrors.ErrWriteNotApplied, err))
+	}
+	return nil
+}
+
+func replaceTempFileInRootPlatform(
+	_ *os.Root,
+	dirFile *os.File,
+	_ string,
+	tmpRel, dstRel string,
+	_, _ os.FileInfo,
+	durable bool,
+) error {
+	dirFD := int(dirFile.Fd())
+	if err := unix.Renameat(dirFD, tmpRel, dirFD, dstRel); err != nil {
+		return notApplied("renameat temp over destination", err)
+	}
+	if durable {
+		if err := dirFile.Sync(); err != nil {
+			return fmt.Errorf("fsync pinned parent dir after renameat: %w",
+				fmt.Errorf("%w: %w", blerrors.ErrWriteIndeterminate, err))
+		}
 	}
 	return nil
 }

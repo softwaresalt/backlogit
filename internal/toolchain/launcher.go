@@ -14,9 +14,14 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/core"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
+
+var replaceToolchainManifestFile = func(storageHandle *os.Root, storageDirAbs, tmpRel, dstRel string) error {
+	return atomicfile.ReplaceTempFileInRoot(storageHandle, storageDirAbs, tmpRel, dstRel, true)
+}
 
 // VerifyLauncherScripts statically inspects configuration and startup scripts.
 // It never executes a tool or repairs operator-owned files. Shell constructs
@@ -878,12 +883,30 @@ func WriteToolchainManifest(rootPath string, manifest *ToolchainManifest) error 
 		return fmt.Errorf("close temp toolchain.yaml: %w", err)
 	}
 
-	tmpAbs := filepath.Join(abs, storageDir, tmpName)
-	dstAbs := filepath.Join(abs, storageDir, "toolchain.yaml")
-	if err := os.Rename(tmpAbs, dstAbs); err != nil {
+	preInfo, err := storageHandle.Lstat("toolchain.yaml")
+	if err == nil {
+		preLink, linkErr := core.IsSymlinkOrReparsePoint(preInfo, filepath.Join(abs, storageDir, "toolchain.yaml"))
+		if linkErr != nil || preLink || !preInfo.Mode().IsRegular() {
+			return fmt.Errorf("existing toolchain.yaml is redirected or not a regular file: %w", corerrors.ErrValidation)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("re-inspect toolchain.yaml before replacement: %w", err)
+	}
+
+	storageDirAbs := filepath.Join(abs, storageDir)
+	if err := replaceToolchainManifestFile(storageHandle, storageDirAbs, tmpName, "toolchain.yaml"); err != nil {
 		return fmt.Errorf("replace toolchain.yaml: %w", err)
 	}
 	tmpRemoved = true
+
+	postInfo, err := storageHandle.Lstat("toolchain.yaml")
+	if err != nil {
+		return fmt.Errorf("verify replaced toolchain.yaml: %w", err)
+	}
+	postLink, linkErr := core.IsSymlinkOrReparsePoint(postInfo, filepath.Join(abs, storageDir, "toolchain.yaml"))
+	if linkErr != nil || postLink || !postInfo.Mode().IsRegular() {
+		return fmt.Errorf("replaced toolchain.yaml is redirected or not a regular file: %w", corerrors.ErrValidation)
+	}
 
 	storageClosed = true
 	if err := storageHandle.Close(); err != nil {

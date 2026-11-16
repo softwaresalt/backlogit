@@ -5,6 +5,9 @@ package atomicfile
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -93,4 +96,89 @@ func atomicReplaceDestinationPermanentDenial(path string) bool {
 	// An unavailable attribute query must not replace the original move error
 	// or turn an unconfirmed denial into a permanent one.
 	return err == nil && attributes&(windows.FILE_ATTRIBUTE_READONLY|windows.FILE_ATTRIBUTE_DIRECTORY) != 0
+}
+
+func normalizeWindowsFinalPath(path string) string {
+	if len(path) >= len(`\\?\UNC\`) && strings.EqualFold(path[:len(`\\?\UNC\`)], `\\?\UNC\`) {
+		return `\\` + path[len(`\\?\UNC\`):]
+	}
+	return strings.TrimPrefix(path, `\\?\`)
+}
+
+func finalPathByHandle(handle windows.Handle) (string, error) {
+	buf := make([]uint16, 32768)
+	n, err := windows.GetFinalPathNameByHandle(handle, &buf[0], uint32(len(buf)), 0)
+	if err != nil {
+		return "", fmt.Errorf("get final path by handle: %w", err)
+	}
+	if n == 0 || n >= uint32(len(buf)) {
+		return "", fmt.Errorf("get final path by handle: buffer length %d: %w", n, blerrors.ErrValidation)
+	}
+	return normalizeWindowsFinalPath(windows.UTF16ToString(buf[:n])), nil
+}
+
+func verifyRootRegularLeafHandle(root *os.Root, rel string, expectedInfo os.FileInfo) error {
+	f, err := root.Open(rel)
+	if err != nil {
+		return notApplied("open leaf in root", err)
+	}
+	defer func() {
+		// Read-only verification handle; release before MoveFileExW so sharing does not contend.
+		_ = f.Close()
+	}()
+	openedInfo, err := f.Stat()
+	if err != nil {
+		return notApplied("stat opened leaf in root", err)
+	}
+	if !os.SameFile(openedInfo, expectedInfo) {
+		return fmt.Errorf("leaf %q identity changed: %w: %w", rel, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+	var fi windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(windows.Handle(f.Fd()), &fi); err != nil {
+		return notApplied("inspect leaf handle", err)
+	}
+	if fi.FileAttributes&(windows.FILE_ATTRIBUTE_REPARSE_POINT|windows.FILE_ATTRIBUTE_DIRECTORY) != 0 {
+		return fmt.Errorf("leaf %q is a reparse point or directory: %w: %w", rel, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+	return nil
+}
+
+func replaceTempFileInRootPlatform(
+	root *os.Root,
+	dirFile *os.File,
+	dirAbs, tmpRel, dstRel string,
+	tmpInfo, dstInfo os.FileInfo,
+	durable bool,
+) error {
+	var dirHandleInfo windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(windows.Handle(dirFile.Fd()), &dirHandleInfo); err != nil {
+		return notApplied("inspect pinned directory handle", err)
+	}
+	if dirHandleInfo.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 ||
+		dirHandleInfo.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return fmt.Errorf("pinned directory is not a regular directory: %w: %w", blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+
+	liveDirPath, err := finalPathByHandle(windows.Handle(dirFile.Fd()))
+	if err != nil {
+		return notApplied("resolve pinned directory kernel path", err)
+	}
+	canonDirAbs, err := filepath.EvalSymlinks(filepath.Clean(dirAbs))
+	if err != nil {
+		return fmt.Errorf("resolve canonical directory %q: %w: %w", dirAbs, blerrors.ErrWriteNotApplied, err)
+	}
+	if !strings.EqualFold(filepath.Clean(liveDirPath), filepath.Clean(canonDirAbs)) {
+		return fmt.Errorf("pinned directory %q redirected to %q: %w: %w", canonDirAbs, liveDirPath, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+
+	if err := verifyRootRegularLeafHandle(root, tmpRel, tmpInfo); err != nil {
+		return err
+	}
+	if dstInfo != nil {
+		if err := verifyRootRegularLeafHandle(root, dstRel, dstInfo); err != nil {
+			return err
+		}
+	}
+
+	return atomicReplace(filepath.Join(canonDirAbs, tmpRel), filepath.Join(canonDirAbs, dstRel), durable)
 }
