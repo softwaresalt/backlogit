@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"net"
 	"os"
@@ -436,4 +439,68 @@ func u5StoppedArtifacts(t *testing.T, root string) {
 	release, err := AcquireMCPDaemonLock(t.Context(), root, false)
 	require.NoError(t, err, fmt.Sprintf("U5_EXIT: daemon must release lock in %s", dir))
 	require.NoError(t, release())
+}
+
+// TestU3b_RunMCPDaemonShutdownDrainsCoordinatorAndSessions gates 215.004-T (U3b).
+func TestU3b_RunMCPDaemonShutdownDrainsCoordinatorAndSessions(t *testing.T) {
+	t.Run("ast-run-mcp-daemon-uses-shutdown", func(t *testing.T) {
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "mcp_daemon.go", nil, 0)
+		require.NoError(t, err)
+
+		var runFn *ast.FuncDecl
+		for _, decl := range file.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "RunMCPDaemon" {
+				runFn = fn
+				break
+			}
+		}
+		require.NotNil(t, runFn, "RunMCPDaemon must be declared in mcp_daemon.go")
+
+		var callsShutdown int
+		var callsCloseAllSessions int
+		ast.Inspect(runFn.Body, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			ident, ok := sel.X.(*ast.Ident)
+			if !ok || ident.Name != "s" {
+				return true
+			}
+			switch sel.Sel.Name {
+			case "Shutdown":
+				callsShutdown++
+			case "CloseAllSessions":
+				callsCloseAllSessions++
+			}
+			return true
+		})
+		assert.GreaterOrEqual(t, callsShutdown, 2, "RunMCPDaemon defer and graceful exit must invoke s.Shutdown()")
+		assert.Zero(t, callsCloseAllSessions, "RunMCPDaemon must not use session-only s.CloseAllSessions()")
+	})
+
+	t.Run("live-daemon-graceful-stop-drains-sessions-and-coordinator", func(t *testing.T) {
+		d := u5StartDaemon(t, time.Minute)
+		client := u5Connect(t, d)
+		_ = client.response(t, 1)
+		client.write(t, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
+		u5SessionCount(t, d, 1)
+
+		client.write(t, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"backlogit_get_version\",\"arguments\":{\"no_update_check\":true}}}\n")
+		_ = client.response(t, 2)
+
+		ctx, cancel := context.WithTimeout(t.Context(), u5Wait)
+		defer cancel()
+		stopped, err := StopMCPDaemon(ctx, d.root)
+		require.NoError(t, err)
+		assert.True(t, stopped.Stopped)
+		assert.False(t, stopped.Running)
+		u5Exited(t, d, u5Wait)
+
+		require.NoError(t, client.conn.SetReadDeadline(time.Now().Add(u5Wait)))
+		_, err = client.reader.ReadByte()
+		assert.ErrorIs(t, err, io.EOF)
+		u5StoppedArtifacts(t, d.root)
+	})
 }
