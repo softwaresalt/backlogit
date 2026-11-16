@@ -293,3 +293,45 @@ printf 'autoharness @VERSION@\n'
 	}
 	require.NoError(t, os.WriteFile(path, []byte(strings.ReplaceAll(body, "@VERSION@", version)), 0o755))
 }
+
+func TestU4_ExecGitRunnerVerifyAllowsRepoRootedAtTempDirAndIsolatesOuterCheckout(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	outer := t.TempDir()
+	u1kInitCommittedRepo(t, ctx, outer, os.Environ())
+
+	tempRepo := filepath.Join(outer, "temp-repo")
+	require.NoError(t, os.MkdirAll(tempRepo, 0o755))
+	u1kInitCommittedRepo(t, ctx, tempRepo, os.Environ())
+
+	subdir := filepath.Join(tempRepo, "subproject")
+	require.NoError(t, os.MkdirAll(subdir, 0o755))
+
+	t.Setenv("TEMP", tempRepo)
+	t.Setenv("TMP", tempRepo)
+	t.Setenv("TMPDIR", tempRepo)
+
+	t.Run("discovers-valid-repo-rooted-at-tempdir", func(t *testing.T) {
+		ok, err := (ExecGitRunner{Dir: subdir, Env: os.Environ()}).Verify(ctx, "HEAD")
+		require.NoError(t, err)
+		assert.True(t, ok, "nested workspace under valid repo rooted at TEMP/TMPDIR must resolve HEAD")
+	})
+
+	t.Run("explicit-ceiling-remains-authoritative", func(t *testing.T) {
+		envWithCeiling := append(append([]string(nil), os.Environ()...), "GIT_CEILING_DIRECTORIES="+tempRepo)
+		ok, err := (ExecGitRunner{Dir: subdir, Env: envWithCeiling}).Verify(ctx, "HEAD")
+		require.NoError(t, err)
+		assert.False(t, ok, "explicit caller GIT_CEILING_DIRECTORIES must remain authoritative")
+	})
+
+	t.Run("non-repo-tempdir-isolates-outer-checkout", func(t *testing.T) {
+		require.NoError(t, os.RemoveAll(filepath.Join(tempRepo, ".git")))
+		ok, err := (ExecGitRunner{Dir: subdir, Env: os.Environ()}).Verify(ctx, "HEAD")
+		require.NoError(t, err)
+		assert.False(t, ok, "non-repository temp directory must never leak outer checkout HEAD")
+	})
+}

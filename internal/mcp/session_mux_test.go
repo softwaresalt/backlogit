@@ -669,3 +669,150 @@ func TestU3_WorkspaceScopedToolAndResourceContainment(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, secret, string(data), "external target must remain unchanged")
 }
+
+// TestU3a_CloseAllSessionsPreservesCoordinatorAndCloseCoordinatorDrains gates 215.003-T (U3a).
+func TestU3a_CloseAllSessionsPreservesCoordinatorAndCloseCoordinatorDrains(t *testing.T) {
+	type serverLifecycle interface {
+		CloseCoordinator() error
+		Shutdown() error
+	}
+
+	t.Run("close-all-sessions-preserves-coordinator", func(t *testing.T) {
+		s := u3Server(t)
+		require.NoError(t, s.CloseAllSessions())
+
+		req := mcplib.CallToolRequest{}
+		req.Params.Arguments = map[string]any{"no_update_check": true}
+		res, err := s.InvokeTool(t.Context(), "backlogit_get_version", req)
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		assert.False(t, res.IsError, "CloseAllSessions must leave coordinator open for in-process InvokeTool: %+v", res)
+	})
+
+	t.Run("close-coordinator-and-shutdown-exposed-and-idempotent", func(t *testing.T) {
+		s := u3Server(t)
+		lc, ok := any(s).(serverLifecycle)
+		require.True(t, ok, "*mcp.Server must expose CloseCoordinator() error and Shutdown() error")
+
+		require.NoError(t, lc.CloseCoordinator())
+		require.NoError(t, lc.CloseCoordinator(), "CloseCoordinator must be idempotent")
+		require.NoError(t, lc.Shutdown(), "Shutdown must be idempotent")
+
+		req := mcplib.CallToolRequest{}
+		req.Params.Arguments = map[string]any{"no_update_check": true}
+		res, err := s.InvokeTool(t.Context(), "backlogit_get_version", req)
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		assert.True(t, res.IsError, "InvokeTool after CloseCoordinator must return server_busy")
+		if len(res.Content) > 0 {
+			if tc, ok := res.Content[0].(mcplib.TextContent); ok {
+				assert.Contains(t, tc.Text, "mutation_queue_full")
+			}
+		}
+	})
+
+	t.Run("blocked-inflight-handler-drains-before-shutdown-returns", func(t *testing.T) {
+		s := u3Server(t)
+		lc, ok := any(s).(serverLifecycle)
+		require.True(t, ok, "*mcp.Server must expose CloseCoordinator() error and Shutdown() error")
+
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		var releaseOnce sync.Once
+		t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+
+		s.addTool(mcplib.NewTool("u3a_blocked_inflight"), func(ctx context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return mcplib.NewToolResultError("cancelled"), nil
+			}
+			return mcplib.NewToolResultText("done"), nil
+		})
+
+		inflightDone := make(chan error, 1)
+		go func() {
+			res, err := s.InvokeTool(t.Context(), "u3a_blocked_inflight", mcplib.CallToolRequest{})
+			if err == nil && (res == nil || res.IsError) {
+				err = errors.New("in-flight handler returned error")
+			}
+			inflightDone <- err
+		}()
+		u3Await(t, entered, "in-flight InvokeTool handler entered")
+
+		shutdownDone := make(chan error, 1)
+		go func() { shutdownDone <- lc.Shutdown() }()
+
+		// New InvokeTool admission must fail immediately once Shutdown stops admission.
+		require.Eventually(t, func() bool {
+			req := mcplib.CallToolRequest{}
+			req.Params.Arguments = map[string]any{"no_update_check": true}
+			res, err := s.InvokeTool(t.Context(), "backlogit_get_version", req)
+			if err != nil || res == nil || !res.IsError || len(res.Content) == 0 {
+				return false
+			}
+			tc, ok := res.Content[0].(mcplib.TextContent)
+			return ok && strings.Contains(tc.Text, "mutation_queue_full")
+		}, u3Wait, 5*time.Millisecond, "Shutdown must reject new InvokeTool calls immediately")
+
+		select {
+		case err := <-shutdownDone:
+			t.Fatalf("Shutdown returned early (%v) while in-flight handler was still executing", err)
+		default:
+		}
+
+		releaseOnce.Do(func() { close(release) })
+		require.NoError(t, u3Receive(t, inflightDone, "in-flight handler result"))
+		require.NoError(t, u3Receive(t, shutdownDone, "Shutdown drain result"))
+	})
+
+	t.Run("blocked-session-stops-coordinator-admission-before-drain", func(t *testing.T) {
+		s := u3Server(t)
+		u3RequireDispatcher(t, s)
+		lc, ok := any(s).(serverLifecycle)
+		require.True(t, ok, "*mcp.Server must expose CloseCoordinator() error and Shutdown() error")
+
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		var releaseOnce sync.Once
+		t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+
+		s.addTool(mcplib.NewTool("backlogit_get_version"), func(ctx context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+			close(entered)
+			<-ctx.Done()
+			<-release
+			return mcplib.NewToolResultText("session-drained"), nil
+		})
+
+		c := u3Start(t, s, "u3a-blocked-session")
+		u3Initialize(t, c)
+		u3Call(t, c, "2", "backlogit_get_version", nil)
+		u3Await(t, entered, "session handler entered")
+
+		shutdownDone := make(chan error, 1)
+		go func() { shutdownDone <- lc.Shutdown() }()
+
+		// While Shutdown is waiting on the blocked session drain, coordinator admission must already be closed.
+		require.Eventually(t, func() bool {
+			req := mcplib.CallToolRequest{}
+			req.Params.Arguments = map[string]any{"no_update_check": true}
+			res, err := s.InvokeTool(t.Context(), "backlogit_get_version", req)
+			if err != nil || res == nil || !res.IsError || len(res.Content) == 0 {
+				return false
+			}
+			tc, ok := res.Content[0].(mcplib.TextContent)
+			return ok && strings.Contains(tc.Text, "mutation_queue_full")
+		}, u3Wait, 5*time.Millisecond, "Shutdown must stop coordinator admission before waiting on session drain")
+
+		select {
+		case err := <-shutdownDone:
+			t.Fatalf("Shutdown returned early (%v) while session drain was blocked", err)
+		default:
+		}
+
+		releaseOnce.Do(func() { close(release) })
+		u3Await(t, c.done, "blocked session detached")
+		require.NoError(t, u3Receive(t, shutdownDone, "Shutdown after session drain"))
+	})
+}
