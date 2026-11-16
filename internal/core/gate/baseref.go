@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	bkerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -155,12 +156,16 @@ func withTempGitCeiling(env []string, dir string) []string {
 		}
 	}
 
+	if absDir, err := filepath.Abs(dir); err == nil {
+		dir = absDir
+	}
 	dir = filepath.Clean(dir)
 	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = resolved
 	}
-	candidates := tempDirCandidates(env)
-	for _, tempDir := range candidates {
+	bestCeiling := ""
+	bestRelLen := -1
+	for _, tempDir := range tempDirCandidates(env) {
 		evalTemp := tempDir
 		// Symlink resolution is best-effort; retain cleaned paths on failure and let
 		// git report any execution errors rather than hiding them.
@@ -172,11 +177,16 @@ func withTempGitCeiling(env []string, dir string) []string {
 			strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
+		if bestRelLen >= 0 && len(rel) >= bestRelLen {
+			continue
+		}
 		if hasGitRepoMarker(evalTemp) || (evalTemp != tempDir && hasGitRepoMarker(tempDir)) {
 			parentTemp := filepath.Dir(tempDir)
 			parentEval := filepath.Dir(evalTemp)
 			if parentTemp == tempDir || parentEval == evalTemp {
-				return env
+				bestCeiling = ""
+				bestRelLen = len(rel)
+				continue
 			}
 			tempDir = parentTemp
 			evalTemp = parentEval
@@ -185,9 +195,13 @@ func withTempGitCeiling(env []string, dir string) []string {
 		if evalTemp != tempDir {
 			ceiling += string(os.PathListSeparator) + evalTemp
 		}
-		return append(env, "GIT_CEILING_DIRECTORIES="+ceiling)
+		bestCeiling = ceiling
+		bestRelLen = len(rel)
 	}
-	return env
+	if bestRelLen < 0 || bestCeiling == "" {
+		return env
+	}
+	return append(slices.Clone(env), "GIT_CEILING_DIRECTORIES="+bestCeiling)
 }
 
 func tempDirCandidates(env []string) []string {

@@ -1300,8 +1300,9 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		artifact.CustomFields["origin_feature"] = originFeature
 	}
 
+	origCtx := ctx
 	var releaseAllocLock func()
-	if !opts.KeepID && ws.Config != nil && ws.Config.QueueLayout != nil {
+	if !opts.KeepID && ws.DB != nil && ws.Config != nil && ws.Config.QueueLayout != nil {
 		lockedAllocCtx, unlockAlloc, allocErr := acquireIDAllocatorLock(ctx, ws)
 		if allocErr != nil {
 			return nil, fmt.Errorf("adopt item %s: acquire id allocator lock: %w", itemID, allocErr)
@@ -1314,7 +1315,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			}
 			allocUnlocked = true
 			if unlockErr := unlockAlloc(); unlockErr != nil {
-				slog.WarnContext(ctx, "release id allocator lock", "item_id", itemID, "error", unlockErr)
+				slog.WarnContext(origCtx, "release id allocator lock", "item_id", itemID, "error", unlockErr)
 			}
 		}
 		defer releaseAllocLock()
@@ -1323,7 +1324,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 	// Step 1: Generate the new hierarchical ID under the new parent.
 	oldID := artifact.ID
 	newID := oldID // fallback: keep old ID if we can't generate a new one
-	if !opts.KeepID && ws.Config != nil && ws.Config.QueueLayout != nil {
+	if !opts.KeepID && ws.DB != nil && ws.Config != nil && ws.Config.QueueLayout != nil {
 		typeCfg, typeOK := ws.Config.ArtifactTypes[artifact.ArtifactType]
 		if typeOK && typeCfg != nil {
 			generatedID, idErr := allocateTypedHierarchicalID(
@@ -1361,7 +1362,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 	var seqPreimage idSequencePreimage
 	if newID != oldID {
 		var preErr error
-		seqPreimage, preErr = captureIDSequencePreimage(ws)
+		seqPreimage, preErr = captureIDSequencePreimage(ctx, ws)
 		if preErr != nil {
 			return nil, fmt.Errorf("adopt item %s: capture id sequence preimage for %s: %w", itemID, newID, preErr)
 		}
@@ -1535,6 +1536,9 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		// Step 4: Persist sequence reservation and commit the transaction now that all file ops succeeded.
 		if seqPreimage.enabled {
 			if resErr := reserveIDSequenceWithPreimage(ctx, ws, seqPreimage, newID); resErr != nil {
+				if restoreErr := restoreIDSequencePreimage(ctx, ws, seqPreimage); restoreErr != nil {
+					resErr = errors.Join(resErr, fmt.Errorf("restore id sequence preimage: %w", restoreErr))
+				}
 				if renamedLog {
 					_ = os.Rename(newLogPath, oldLogPath)
 				}
@@ -1547,7 +1551,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		}
 		if commitErr := tx.Commit(); commitErr != nil {
 			if seqPreimage.enabled {
-				if resErr := restoreIDSequencePreimage(ws, seqPreimage); resErr != nil {
+				if resErr := restoreIDSequencePreimage(ctx, ws, seqPreimage); resErr != nil {
 					commitErr = errors.Join(commitErr, fmt.Errorf("restore id sequence preimage: %w", resErr))
 				}
 			}
@@ -1598,7 +1602,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 		releaseAllocLock()
 	}
 
-	// Fire post-adopt hooks.
+	// Fire post-adopt hooks using pre-allocator-lock context.
 	if ws.HookRunner != nil {
 		hookCtx := hooks.HookContext{
 			ItemID:       newID,
@@ -1609,7 +1613,7 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 			Workspace:    ws.RootPath,
 			TopLevel:     true,
 		}
-		ws.HookRunner.FirePost(ctx, hooks.HookAdoptItem, hookCtx)
+		ws.HookRunner.FirePost(origCtx, hooks.HookAdoptItem, hookCtx)
 	}
 
 	return &AdoptItemResult{

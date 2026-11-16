@@ -66,10 +66,9 @@ func TestU6_SelfInstallMidFlightParentAndLeafSwapRejected(t *testing.T) {
 		}
 
 		err := ensureWorkspaceRuntimeIgnored(root, ".backlog", "backlogit")
-		if err != nil {
-			got, readErr := os.ReadFile(outsideFile)
-			require.NoError(t, readErr)
-			assert.Equal(t, "untouched\n", string(got))
-		}
+		require.Error(t, err, "swapped symlinked exclude leaf must be rejected")
+		got, readErr := os.ReadFile(outsideFile)
+		require.NoError(t, readErr)
+		assert.Equal(t, "untouched\n", string(got))
 	})
 }

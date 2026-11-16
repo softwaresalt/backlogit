@@ -143,6 +143,50 @@ func verifyRootRegularLeafHandle(root *os.Root, rel string, expectedInfo os.File
 	return nil
 }
 
+func verifyExpectedDirMatchesHandle(dirAbs string, dirHandleInfo windows.ByHandleFileInformation, liveDirPath string) (string, error) {
+	cleanDir := filepath.Clean(dirAbs)
+	dirPtr, err := windows.UTF16PtrFromString(cleanDir)
+	if err != nil {
+		return "", notApplied("encode expected directory path", err)
+	}
+	expectedHandle, err := windows.CreateFile(
+		dirPtr,
+		windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT,
+		0,
+	)
+	if err != nil {
+		return "", notApplied("open expected directory path", err)
+	}
+	defer func() {
+		// Verification handle; close before replacement.
+		_ = windows.CloseHandle(expectedHandle)
+	}()
+
+	var expectedInfo windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(expectedHandle, &expectedInfo); err != nil {
+		return "", notApplied("inspect expected directory handle", err)
+	}
+	if expectedInfo.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 ||
+		expectedInfo.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return "", fmt.Errorf("expected directory %q is redirected or not a directory: %w: %w", cleanDir, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+	expectedFinalPath, err := finalPathByHandle(expectedHandle)
+	if err != nil {
+		return "", notApplied("resolve expected directory kernel path", err)
+	}
+	if expectedInfo.VolumeSerialNumber != dirHandleInfo.VolumeSerialNumber ||
+		expectedInfo.FileIndexHigh != dirHandleInfo.FileIndexHigh ||
+		expectedInfo.FileIndexLow != dirHandleInfo.FileIndexLow ||
+		!strings.EqualFold(filepath.Clean(liveDirPath), filepath.Clean(expectedFinalPath)) {
+		return "", fmt.Errorf("pinned directory %q redirected to %q: %w: %w", expectedFinalPath, liveDirPath, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+	}
+	return expectedFinalPath, nil
+}
+
 func replaceTempFileInRootPlatform(
 	root *os.Root,
 	dirFile *os.File,
@@ -163,12 +207,9 @@ func replaceTempFileInRootPlatform(
 	if err != nil {
 		return notApplied("resolve pinned directory kernel path", err)
 	}
-	canonDirAbs, err := filepath.EvalSymlinks(filepath.Clean(dirAbs))
+	canonDirAbs, err := verifyExpectedDirMatchesHandle(dirAbs, dirHandleInfo, liveDirPath)
 	if err != nil {
-		return fmt.Errorf("resolve canonical directory %q: %w: %w", dirAbs, blerrors.ErrWriteNotApplied, err)
-	}
-	if !strings.EqualFold(filepath.Clean(liveDirPath), filepath.Clean(canonDirAbs)) {
-		return fmt.Errorf("pinned directory %q redirected to %q: %w: %w", canonDirAbs, liveDirPath, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
+		return err
 	}
 
 	if err := verifyRootRegularLeafHandle(root, tmpRel, tmpInfo); err != nil {

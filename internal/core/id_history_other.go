@@ -5,6 +5,8 @@ package core
 import (
 	"fmt"
 	"os"
+
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 func verifyLocksDirHandle(dirFile *os.File, _ string) error {
@@ -13,7 +15,7 @@ func verifyLocksDirHandle(dirFile *os.File, _ string) error {
 		return fmt.Errorf("stat pinned locks directory handle: %w", err)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("pinned locks handle is not a directory")
+		return fmt.Errorf("pinned locks handle is not a directory: %w", blerrors.ErrValidation)
 	}
 	return nil
 }
@@ -24,7 +26,7 @@ func verifyLocksLeafHandle(f *os.File) error {
 		return fmt.Errorf("stat locks leaf handle: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return fmt.Errorf("locks leaf is not a regular file")
+		return fmt.Errorf("locks leaf is not a regular file: %w", blerrors.ErrValidation)
 	}
 	return nil
 }

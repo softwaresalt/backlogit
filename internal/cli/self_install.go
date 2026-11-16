@@ -56,8 +56,8 @@ func resolveInstallStorageDir(root string) (string, error) {
 	return candidates[len(candidates)-1], nil
 }
 
-func openValidatedWorkspaceAndStorageRoots(root, storageDir string) (absRoot string, wsRoot, storageHandle *os.Root, err error) {
-	absRoot, err = filepath.Abs(root)
+func openValidatedWorkspaceAndStorageRoots(root, storageDir string) (string, *os.Root, *os.Root, error) {
+	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("resolve workspace root: %w", err)
 	}
@@ -72,15 +72,22 @@ func openValidatedWorkspaceAndStorageRoots(root, storageDir string) (absRoot str
 		return "", nil, nil, fmt.Errorf("workspace root %s is redirected or not a directory: %w", absRoot, corerrors.ErrValidation)
 	}
 
-	wsRoot, err = os.OpenRoot(absRoot)
+	wsRoot, err := os.OpenRoot(absRoot)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("open workspace root: %w", err)
 	}
+	closeWSRoot := true
 	defer func() {
-		if err != nil && wsRoot != nil {
+		if closeWSRoot {
+			// Best-effort handle cleanup on early error return.
 			_ = wsRoot.Close()
 		}
 	}()
+
+	openedRootStat, err := wsRoot.Stat(".")
+	if err != nil || !os.SameFile(rootInfo, openedRootStat) {
+		return "", nil, nil, fmt.Errorf("workspace root %s identity changed after open: %w", absRoot, corerrors.ErrValidation)
+	}
 
 	storageInfo, err := wsRoot.Lstat(storageDir)
 	if err != nil {
@@ -91,12 +98,14 @@ func openValidatedWorkspaceAndStorageRoots(root, storageDir string) (absRoot str
 		return "", nil, nil, fmt.Errorf("storage directory %s is redirected or not a directory: %w", storageDir, corerrors.ErrValidation)
 	}
 
-	storageHandle, err = wsRoot.OpenRoot(storageDir)
+	storageHandle, err := wsRoot.OpenRoot(storageDir)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("open storage directory %s: %w", storageDir, err)
 	}
+	closeStorage := true
 	defer func() {
-		if err != nil && storageHandle != nil {
+		if closeStorage {
+			// Best-effort handle cleanup on early error return.
 			_ = storageHandle.Close()
 		}
 	}()
@@ -105,6 +114,8 @@ func openValidatedWorkspaceAndStorageRoots(root, storageDir string) (absRoot str
 	if err != nil || !os.SameFile(storageInfo, openedStorage) {
 		return "", nil, nil, fmt.Errorf("storage directory %s identity changed after open: %w", storageDir, corerrors.ErrValidation)
 	}
+	closeStorage = false
+	closeWSRoot = false
 	return absRoot, wsRoot, storageHandle, nil
 }
 
@@ -113,27 +124,32 @@ func installWorkspaceRuntimeExecutable(root, storageDir string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("resolve running executable: %w", err)
 	}
-	srcLstat, err := os.Lstat(srcPath)
+	resolvedSrcPath, err := filepath.EvalSymlinks(srcPath)
 	if err != nil {
-		return "", fmt.Errorf("inspect running executable %s: %w", srcPath, err)
+		return "", fmt.Errorf("resolve running executable symlinks %s: %w", srcPath, err)
 	}
-	srcLink, err := core.IsSymlinkOrReparsePoint(srcLstat, srcPath)
+	srcLstat, err := os.Lstat(resolvedSrcPath)
+	if err != nil {
+		return "", fmt.Errorf("inspect running executable %s: %w", resolvedSrcPath, err)
+	}
+	srcLink, err := core.IsSymlinkOrReparsePoint(srcLstat, resolvedSrcPath)
 	if err != nil || srcLink || !srcLstat.Mode().IsRegular() {
-		return "", fmt.Errorf("running executable %s is redirected or not a regular file: %w", srcPath, corerrors.ErrValidation)
+		return "", fmt.Errorf("running executable %s is redirected or not a regular file: %w", resolvedSrcPath, corerrors.ErrValidation)
 	}
-	srcFile, err := os.Open(srcPath)
+	srcFile, err := os.Open(resolvedSrcPath)
 	if err != nil {
-		return "", fmt.Errorf("open running executable %s: %w", srcPath, err)
+		return "", fmt.Errorf("open running executable %s: %w", resolvedSrcPath, err)
 	}
 	srcClosed := false
 	defer func() {
 		if !srcClosed {
+			// Best-effort cleanup on early return.
 			_ = srcFile.Close()
 		}
 	}()
 	srcStat, err := srcFile.Stat()
 	if err != nil || !os.SameFile(srcStat, srcLstat) {
-		return "", fmt.Errorf("running executable %s identity mismatch: %w", srcPath, corerrors.ErrValidation)
+		return "", fmt.Errorf("running executable %s identity mismatch: %w", resolvedSrcPath, corerrors.ErrValidation)
 	}
 
 	binName := "backlogit"
@@ -284,9 +300,14 @@ func ensureWorkspaceRuntimeIgnored(root, _ /* storageDir */, _ /* binName */ str
 	wsClosed := false
 	defer func() {
 		if !wsClosed {
+			// Best-effort cleanup on early return.
 			_ = wsRoot.Close()
 		}
 	}()
+	openedRootStat, err := wsRoot.Stat(".")
+	if err != nil || !os.SameFile(rootInfo, openedRootStat) {
+		return fmt.Errorf("workspace root %s identity changed after open: %w", absRoot, corerrors.ErrValidation)
+	}
 
 	entries := workspaceRuntimeIgnoreEntries()
 	if err := ensureIgnoreEntriesInRoot(wsRoot, absRoot, ".gitignore", entries, 0o644); err != nil {
@@ -422,8 +443,12 @@ func ensureIgnoreEntriesInRoot(targetRoot *os.Root, targetDirAbs, fileName strin
 	if err != nil || !os.SameFile(openedTmpStat, lstatTmpStat) {
 		return fmt.Errorf("temp %s identity changed after open: %w", fileName, corerrors.ErrValidation)
 	}
-	if _, err := io.WriteString(tf, updated); err != nil {
+	n, err := io.WriteString(tf, updated)
+	if err != nil {
 		return fmt.Errorf("write temp %s: %w", fileName, err)
+	}
+	if n != len(updated) {
+		return fmt.Errorf("short write to temp %s: wrote %d of %d bytes: %w", fileName, n, len(updated), io.ErrShortWrite)
 	}
 	if err := tf.Chmod(mode); err != nil {
 		return fmt.Errorf("chmod temp %s: %w", fileName, err)

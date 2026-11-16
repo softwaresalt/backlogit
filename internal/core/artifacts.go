@@ -263,7 +263,7 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 		}
 	}
 
-	seqPreimage, preErr := captureIDSequencePreimage(ws)
+	seqPreimage, preErr := captureIDSequencePreimage(lockedCtx, ws)
 	if preErr != nil {
 		return nil, fmt.Errorf("capture id sequence preimage for %q: %w", artifactID, preErr)
 	}
@@ -453,8 +453,8 @@ func CreateArtifact(ctx context.Context, ws *Workspace, title string, artifactTy
 				}
 				return nil
 			},
-			Compensate: func(context.Context) error {
-				if err := restoreIDSequencePreimage(ws, seqPreimage); err != nil {
+			Compensate: func(compCtx context.Context) error {
+				if err := restoreIDSequencePreimage(compCtx, ws, seqPreimage); err != nil {
 					return fmt.Errorf("restore id sequence preimage for %s: %w", artifact.ID, err)
 				}
 				return nil

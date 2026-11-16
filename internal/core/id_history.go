@@ -21,7 +21,6 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/config"
-	"github.com/softwaresalt/backlogit/internal/core/gate"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
@@ -32,6 +31,11 @@ const (
 )
 
 type idAllocatorLockContextKey struct{}
+
+type idAllocatorLockState struct {
+	dirAbs    string
+	locksRoot *os.Root
+}
 
 // shipmentOperationBeforeCreateContextKey carries an optional callback
 // func(context.Context, string) error invoked inside CreateArtifact after
@@ -181,12 +185,84 @@ func historicalIDsFromDisk(ws *Workspace) ([]string, error) {
 	}
 	ids = append(ids, reservedIDs...)
 
+	pendingIDs, err := pendingReconstituteIDs(ws)
+	if err != nil {
+		return nil, err
+	}
+	ids = append(ids, pendingIDs...)
+
 	branchIDs, err := scanLocalBranchArtifactIDs(ws)
 	if err != nil {
 		return nil, err
 	}
 	ids = append(ids, branchIDs...)
 
+	return ids, nil
+}
+
+func pendingReconstituteIDs(ws *Workspace) ([]string, error) {
+	realStorage, err := resolveValidatedStorageRoot(ws)
+	if err != nil {
+		return nil, err
+	}
+	if realStorage == "" {
+		return nil, nil
+	}
+	opsDir := filepath.Join(realStorage, "ops")
+	info, err := os.Lstat(opsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("inspect pending shipment journals: %w", err)
+	}
+	if link, linkErr := IsSymlinkOrReparsePoint(info, opsDir); linkErr != nil || link || !info.IsDir() {
+		return nil, fmt.Errorf("shipment ops directory %s is redirected or not a directory: %w", opsDir, blerrors.ErrValidation)
+	}
+	entries, err := os.ReadDir(opsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read pending shipment journals: %w", err)
+	}
+	var ids []string
+	for _, entry := range entries {
+		if entry.IsDir() || !shipmentLifecycleJournalNamePattern.MatchString(entry.Name()) {
+			continue
+		}
+		entryPath := filepath.Join(opsDir, entry.Name())
+		entryInfo, lstatErr := os.Lstat(entryPath)
+		if lstatErr != nil {
+			if os.IsNotExist(lstatErr) {
+				continue
+			}
+			return nil, fmt.Errorf("inspect pending journal %s: %w", entry.Name(), lstatErr)
+		}
+		if link, linkErr := IsSymlinkOrReparsePoint(entryInfo, entryPath); linkErr != nil || link || !entryInfo.Mode().IsRegular() {
+			return nil, fmt.Errorf("pending journal %s is redirected or not regular: %w", entry.Name(), blerrors.ErrValidation)
+		}
+		raw, readErr := os.ReadFile(entryPath)
+		if readErr != nil {
+			if os.IsNotExist(readErr) {
+				continue
+			}
+			return nil, fmt.Errorf("read pending journal %s: %w", entry.Name(), readErr)
+		}
+		var journal shipmentLifecycleJournal
+		if json.Unmarshal(raw, &journal) != nil {
+			continue
+		}
+		if journal.Phase != shipmentOperationPhaseIntent || journal.Reconstitute == nil {
+			continue
+		}
+		ids = append(ids, journal.Reconstitute.CreatedIDs...)
+		for _, newID := range journal.Reconstitute.Adoptions {
+			if newID != "" {
+				ids = append(ids, newID)
+			}
+		}
+	}
 	return ids, nil
 }
 
@@ -345,7 +421,8 @@ func acquireIDAllocatorLock(ctx context.Context, ws *Workspace) (context.Context
 		return ctx, func() error { return nil }, nil
 	}
 	locksDirAbs := filepath.Join(realStorage, shipmentMembershipLocksDirName)
-	if held, ok := ctx.Value(idAllocatorLockContextKey{}).(string); ok && strings.EqualFold(filepath.Clean(held), filepath.Clean(locksDirAbs)) {
+	if held, ok := ctx.Value(idAllocatorLockContextKey{}).(idAllocatorLockState); ok &&
+		strings.EqualFold(filepath.Clean(held.dirAbs), filepath.Clean(locksDirAbs)) {
 		return ctx, func() error { return nil }, nil
 	}
 
@@ -436,7 +513,10 @@ func acquireIDAllocatorLock(ctx context.Context, ws *Workspace) (context.Context
 		if !busy {
 			var once sync.Once
 			var releaseErr error
-			lockedCtx := context.WithValue(ctx, idAllocatorLockContextKey{}, canonLocksDirAbs)
+			lockedCtx := context.WithValue(ctx, idAllocatorLockContextKey{}, idAllocatorLockState{
+				dirAbs:    canonLocksDirAbs,
+				locksRoot: locksRoot,
+			})
 			return lockedCtx, func() error {
 				once.Do(func() {
 					releaseErr = errors.Join(
@@ -614,8 +694,16 @@ func writeIDSequenceReservation(ws *Workspace, locksRoot *os.Root, locksDirAbs s
 	if err != nil || !os.SameFile(openedStat, lstatAfter) {
 		return fmt.Errorf("temp %s identity mismatch: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, blerrors.ErrValidation)
 	}
-	if _, err := f.Write(raw); err != nil {
-		return fmt.Errorf("write temp %s: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, err)
+	written := 0
+	for written < len(raw) {
+		n, writeErr := f.Write(raw[written:])
+		if writeErr != nil {
+			return fmt.Errorf("write temp %s: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, writeErr)
+		}
+		if n == 0 {
+			return fmt.Errorf("short write temp %s: %w: %w", idSequenceLedgerFileName, blerrors.ErrWriteNotApplied, io.ErrShortWrite)
+		}
+		written += n
 	}
 	if WorkspaceDurableWrites(ws) {
 		if err := f.Sync(); err != nil {
@@ -687,7 +775,24 @@ type idSequencePreimage struct {
 	ledger      idSequenceLedger
 }
 
-func captureIDSequencePreimage(ws *Workspace) (idSequencePreimage, error) {
+func resolveLocksRootForWrite(ctx context.Context, ws *Workspace) (*os.Root, string, func(), error) {
+	if held, ok := ctx.Value(idAllocatorLockContextKey{}).(idAllocatorLockState); ok && held.locksRoot != nil {
+		if err := verifyPinnedLocksRoot(held.locksRoot, held.dirAbs); err != nil {
+			return nil, "", nil, err
+		}
+		return held.locksRoot, held.dirAbs, func() {}, nil
+	}
+	storageHandle, locksRoot, locksDirAbs, err := openLocksRootForWrite(ws)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return locksRoot, locksDirAbs, func() {
+		_ = locksRoot.Close()
+		_ = storageHandle.Close()
+	}, nil
+}
+
+func captureIDSequencePreimage(ctx context.Context, ws *Workspace) (idSequencePreimage, error) {
 	realStorage, err := resolveValidatedStorageRoot(ws)
 	if err != nil {
 		return idSequencePreimage{}, err
@@ -695,14 +800,11 @@ func captureIDSequencePreimage(ws *Workspace) (idSequencePreimage, error) {
 	if realStorage == "" {
 		return idSequencePreimage{}, nil
 	}
-	storageHandle, locksRoot, locksDirAbs, err := openLocksRootForWrite(ws)
+	locksRoot, locksDirAbs, cleanup, err := resolveLocksRootForWrite(ctx, ws)
 	if err != nil {
 		return idSequencePreimage{}, err
 	}
-	defer func() {
-		_ = locksRoot.Close()
-		_ = storageHandle.Close()
-	}()
+	defer cleanup()
 	had, raw, ledger, err := readIDSequenceLedger(locksRoot, locksDirAbs)
 	if err != nil {
 		return idSequencePreimage{}, err
@@ -719,14 +821,11 @@ func reserveIDSequenceWithPreimage(ctx context.Context, ws *Workspace, pre idSeq
 	if !pre.enabled || artifactID == "" {
 		return nil
 	}
-	storageHandle, locksRoot, locksDirAbs, err := openLocksRootForWrite(ws)
+	locksRoot, locksDirAbs, cleanup, err := resolveLocksRootForWrite(ctx, ws)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = locksRoot.Close()
-		_ = storageHandle.Close()
-	}()
+	defer cleanup()
 	ledger := idSequenceLedger{
 		SchemaVersion: pre.ledger.SchemaVersion,
 		ReservedIDs:   append([]string(nil), pre.ledger.ReservedIDs...),
@@ -751,18 +850,15 @@ func reserveIDSequenceWithPreimage(ctx context.Context, ws *Workspace, pre idSeq
 	return writeIDSequenceReservationFn(ws, locksRoot, locksDirAbs, raw)
 }
 
-func restoreIDSequencePreimage(ws *Workspace, pre idSequencePreimage) error {
+func restoreIDSequencePreimage(ctx context.Context, ws *Workspace, pre idSequencePreimage) error {
 	if !pre.enabled {
 		return nil
 	}
-	storageHandle, locksRoot, locksDirAbs, err := openLocksRootForWrite(ws)
+	locksRoot, locksDirAbs, cleanup, err := resolveLocksRootForWrite(ctx, ws)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = locksRoot.Close()
-		_ = storageHandle.Close()
-	}()
+	defer cleanup()
 	if !pre.hadPreimage {
 		return removeIDSequenceReservation(locksRoot, locksDirAbs)
 	}
@@ -770,20 +866,41 @@ func restoreIDSequencePreimage(ws *Workspace, pre idSequencePreimage) error {
 }
 
 // unreserveIDSequences removes rolled-back IDs and/or correlation-tagged
-// reservations from id-sequences.json via the pinned .locks handle, removing
-// the ledger file when empty.
-func unreserveIDSequences(ws *Workspace, correlationID string, ids []string) error {
-	storageHandle, locksRoot, locksDirAbs, err := openLocksRootReadOnly(ws)
+// reservations from id-sequences.json via the pinned .locks handle under
+// id_allocator.lock, removing the ledger file when empty.
+func unreserveIDSequences(ctx context.Context, ws *Workspace, correlationID string, ids []string) error {
+	realStorage, err := resolveValidatedStorageRoot(ws)
 	if err != nil {
 		return err
 	}
-	if locksRoot == nil {
+	if realStorage == "" {
 		return nil
 	}
+	storageHandle, readLocksRoot, _, readErr := openLocksRootReadOnly(ws)
+	if readErr != nil {
+		return readErr
+	}
+	if readLocksRoot == nil {
+		return nil
+	}
+	_ = readLocksRoot.Close()
+	_ = storageHandle.Close()
+
+	lockedCtx, unlockAlloc, lockErr := acquireIDAllocatorLock(ctx, ws)
+	if lockErr != nil {
+		return fmt.Errorf("acquire id allocator lock for unreserve: %w", lockErr)
+	}
 	defer func() {
-		_ = locksRoot.Close()
-		_ = storageHandle.Close()
+		if unlockErr := unlockAlloc(); unlockErr != nil {
+			_ = unlockErr
+		}
 	}()
+
+	locksRoot, locksDirAbs, cleanup, err := resolveLocksRootForWrite(lockedCtx, ws)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	had, _, ledger, err := readIDSequenceLedger(locksRoot, locksDirAbs)
 	if err != nil || !had {
 		return err
@@ -793,14 +910,6 @@ func unreserveIDSequences(ws *Workspace, correlationID string, ids []string) err
 		if id != "" {
 			dropSet[id] = struct{}{}
 		}
-	}
-	if correlationID != "" && len(ledger.Reservations) > 0 {
-		for _, id := range ledger.Reservations[correlationID] {
-			if id != "" {
-				dropSet[id] = struct{}{}
-			}
-		}
-		delete(ledger.Reservations, correlationID)
 	}
 	if len(dropSet) > 0 {
 		kept := make([]string, 0, len(ledger.ReservedIDs))
@@ -824,6 +933,9 @@ func unreserveIDSequences(ws *Workspace, correlationID string, ids []string) err
 			}
 		}
 	}
+	if correlationID != "" && len(ledger.Reservations) > 0 && len(ledger.Reservations[correlationID]) == 0 {
+		delete(ledger.Reservations, correlationID)
+	}
 	if len(ledger.ReservedIDs) == 0 && len(ledger.Reservations) == 0 {
 		return removeIDSequenceReservation(locksRoot, locksDirAbs)
 	}
@@ -834,19 +946,48 @@ func unreserveIDSequences(ws *Workspace, correlationID string, ids []string) err
 	return writeIDSequenceReservationFn(ws, locksRoot, locksDirAbs, raw)
 }
 
+func sanitizedGitBranchScanEnv() []string {
+	base := config.ChildProcessEnv()
+	env := make([]string, 0, len(base)+2)
+	for _, entry := range base {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		upper := strings.ToUpper(key)
+		switch upper {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_CONFIG_GLOBAL",
+			"GIT_CONFIG_NOSYSTEM":
+			continue
+		}
+		env = append(env, entry)
+	}
+	env = append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+	return env
+}
+
 func scanLocalBranchArtifactIDs(ws *Workspace) ([]string, error) {
 	if ws == nil || strings.TrimSpace(ws.RootPath) == "" {
 		return nil, nil
 	}
 	absRoot, err := filepath.Abs(ws.RootPath)
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("resolve workspace root for branch scan: %w", err)
 	}
 	absRoot = filepath.Clean(absRoot)
-	// Require .git directly at ws.RootPath so nested test workspaces inside an
-	// unrelated outer repo never scan the outer repository's branches.
-	if _, statErr := os.Lstat(filepath.Join(absRoot, ".git")); statErr != nil {
-		return nil, nil
+	// Require .git directly at ws.RootPath (and reject symlinks/reparse points) so
+	// nested test workspaces or redirected .git entries never scan an external repo.
+	dotGitPath := filepath.Join(absRoot, ".git")
+	dotGitInfo, statErr := os.Lstat(dotGitPath)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("inspect .git for branch scan: %w", statErr)
+	}
+	if link, linkErr := IsSymlinkOrReparsePoint(dotGitInfo, dotGitPath); linkErr != nil || link {
+		return nil, fmt.Errorf(".git entry is redirected: %w", blerrors.ErrValidation)
 	}
 	realRoot, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
@@ -859,16 +1000,21 @@ func scanLocalBranchArtifactIDs(ws *Workspace) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	gitEnv := sanitizedGitBranchScanEnv()
 	refsCmd := exec.CommandContext(ctx, "git", "--no-replace-objects", "--no-optional-locks",
 		"for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads")
 	refsCmd.Dir = realRoot
-	refsCmd.Env = gate.MinimalEnv()
+	refsCmd.Env = gitEnv
 	refsOut, err := refsCmd.Output()
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("list local git branches for id history: %w", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(refsOut)), "\n")
-	var refs []string
+	type branchRef struct {
+		name string
+		oid  string
+	}
+	var refs []branchRef
 	var fpLines []string
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -879,7 +1025,7 @@ func scanLocalBranchArtifactIDs(ws *Workspace) ([]string, error) {
 		if len(fields) < 2 {
 			continue
 		}
-		refs = append(refs, fields[0])
+		refs = append(refs, branchRef{name: fields[0], oid: fields[1]})
 		fpLines = append(fpLines, fields[0]+"="+fields[1])
 	}
 	if len(refs) <= 1 {
@@ -895,15 +1041,18 @@ func scanLocalBranchArtifactIDs(ws *Workspace) ([]string, error) {
 	var collected []string
 	lsTreeBaseArgs := append([]string{"--no-replace-objects", "--no-optional-locks", "ls-tree", "-r", "--name-only"}, "")
 	for _, ref := range refs {
-		lsTreeBaseArgs[len(lsTreeBaseArgs)-1] = ref
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("scan local git branch %s for id history: %w", ref.name, ctxErr)
+		}
+		lsTreeBaseArgs[len(lsTreeBaseArgs)-1] = ref.oid
 		lsArgs := append(append([]string(nil), lsTreeBaseArgs...), "--")
 		lsArgs = append(lsArgs, workspaceRootCandidates[:]...)
 		lsCmd := exec.CommandContext(ctx, "git", lsArgs...)
 		lsCmd.Dir = realRoot
-		lsCmd.Env = gate.MinimalEnv()
+		lsCmd.Env = gitEnv
 		lsOut, lsErr := lsCmd.Output()
 		if lsErr != nil {
-			continue
+			return nil, fmt.Errorf("scan git tree %s (%s) for id history: %w", ref.name, ref.oid, lsErr)
 		}
 		for _, path := range strings.Split(string(lsOut), "\n") {
 			path = strings.TrimSpace(path)

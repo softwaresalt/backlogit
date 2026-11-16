@@ -143,9 +143,20 @@ func verifyLaunchers(rootPath string, m *ToolchainManifest) ([]ToolVerificationF
 		findings = []ToolVerificationFinding{launcherFinding(".mcp.json", "mcp_config_invalid",
 			"MCP configuration is missing, redirected, unreadable or invalid; restore a workspace-pinned configuration.")}
 	}
+	backlogitIDs := make(map[string]bool)
+	if m != nil {
+		for _, tool := range m.Tools {
+			if isBacklogitTool(abs, tool) {
+				backlogitIDs[strings.ToLower(strings.TrimSpace(tool.ID))] = true
+			}
+		}
+	}
 	hasBacklogit := false
 	for i, f := range findings {
-		hasBacklogit = hasBacklogit || strings.EqualFold(f.ToolID, "backlogit")
+		id := strings.ToLower(strings.TrimSpace(f.ToolID))
+		if id == "backlogit" || backlogitIDs[id] {
+			hasBacklogit = true
+		}
 		findings[i] = toolRemediation(f, m)
 	}
 	if !hasBacklogit {

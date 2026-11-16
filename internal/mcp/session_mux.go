@@ -542,6 +542,9 @@ func (c *MultiSessionConn) closeStreams(r io.Reader, w io.Writer) {
 
 // ActiveSessionCount reports this server's sessions, including draining workers.
 func (s *Server) ActiveSessionCount() int {
+	if s == nil {
+		return 0
+	}
 	s.sessionsMu.Lock()
 	defer s.sessionsMu.Unlock()
 	return len(s.sessions)
@@ -551,6 +554,9 @@ func (s *Server) ActiveSessionCount() int {
 // their drains without closing the server-owned operation coordinator. It is
 // safe to call concurrently or repeatedly.
 func (s *Server) CloseAllSessions() error {
+	if s == nil {
+		return nil
+	}
 	s.sessionsMu.Lock()
 	if done := s.sessionDrainDone; done != nil {
 		s.sessionsMu.Unlock()

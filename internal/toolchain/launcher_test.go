@@ -1,6 +1,7 @@
 package toolchain
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -33,9 +34,11 @@ func TestU1_WriteToolchainManifestUsesAtomicFileReplacementAndRetrySemantics(t *
 			require.NoError(t, os.Chmod(dstPath, 0o400))
 			t.Cleanup(func() { _ = os.Chmod(dstPath, 0o600) })
 		} else {
-			storageDir := filepath.Join(root, ".backlogit")
-			require.NoError(t, os.Chmod(storageDir, 0o555))
-			t.Cleanup(func() { _ = os.Chmod(storageDir, 0o755) })
+			origHook := replaceToolchainManifestFile
+			t.Cleanup(func() { replaceToolchainManifestFile = origHook })
+			replaceToolchainManifestFile = func(_ *os.Root, _, _, _ string) error {
+				return fmt.Errorf("injected posix replace failure: %w", corerrors.ErrWriteNotApplied)
+			}
 		}
 
 		updated := u9Manifest(root)

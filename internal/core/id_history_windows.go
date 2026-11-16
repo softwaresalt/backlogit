@@ -27,12 +27,45 @@ func verifyLocksDirHandle(dirFile *os.File, expectedDirAbs string) error {
 	if err != nil {
 		return fmt.Errorf("resolve pinned locks directory path: %w", err)
 	}
-	canonExpected, err := filepath.EvalSymlinks(filepath.Clean(expectedDirAbs))
+	canonExpected := filepath.Clean(expectedDirAbs)
+	dirPtr, err := windows.UTF16PtrFromString(canonExpected)
 	if err != nil {
-		return fmt.Errorf("resolve expected locks directory %q: %w", expectedDirAbs, err)
+		return fmt.Errorf("encode expected locks directory %q: %w", canonExpected, err)
 	}
-	if !strings.EqualFold(filepath.Clean(finalPath), filepath.Clean(canonExpected)) {
-		return fmt.Errorf("locks directory %q redirected to %q: %w", canonExpected, finalPath, blerrors.ErrValidation)
+	expectedHandle, err := windows.CreateFile(
+		dirPtr,
+		windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT,
+		0,
+	)
+	if err != nil {
+		return fmt.Errorf("open expected locks directory %q: %w", canonExpected, err)
+	}
+	defer func() {
+		// Verification handle; close immediately.
+		_ = windows.CloseHandle(expectedHandle)
+	}()
+
+	var expectedInfo windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(expectedHandle, &expectedInfo); err != nil {
+		return fmt.Errorf("inspect expected locks directory %q: %w", canonExpected, err)
+	}
+	if expectedInfo.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 ||
+		expectedInfo.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return fmt.Errorf("locks directory %q is redirected or not a directory: %w", canonExpected, blerrors.ErrValidation)
+	}
+	expectedFinalPath, err := shipmentReconcileWindowsFinalPath(expectedHandle)
+	if err != nil {
+		return fmt.Errorf("resolve expected locks directory %q: %w", canonExpected, err)
+	}
+	if expectedInfo.VolumeSerialNumber != info.VolumeSerialNumber ||
+		expectedInfo.FileIndexHigh != info.FileIndexHigh ||
+		expectedInfo.FileIndexLow != info.FileIndexLow ||
+		!strings.EqualFold(filepath.Clean(finalPath), filepath.Clean(expectedFinalPath)) {
+		return fmt.Errorf("locks directory %q redirected to %q: %w", expectedFinalPath, finalPath, blerrors.ErrValidation)
 	}
 	return nil
 }

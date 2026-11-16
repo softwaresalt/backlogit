@@ -571,4 +571,99 @@ shipments:
 		assert.Equal(t, string(preimage), string(afterRollback),
 			"reconstitute rollback must unreserve 002-F and restore exact preimage")
 	})
+
+	t.Run("unreserve-selective-ids-preserves-retained-and-pending-journal-ids", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		ctx := context.Background()
+
+		for _, id := range []string{"001-F", "002-F", "003-F"} {
+			pre, preErr := captureIDSequencePreimage(ctx, ws)
+			require.NoError(t, preErr)
+			require.NoError(t, reserveIDSequenceWithPreimage(ctx, ws, pre, id))
+		}
+
+		// Unreserving only 002-F must keep 001-F and 003-F in id-sequences.json.
+		require.NoError(t, unreserveIDSequences(ctx, ws, "corr-1", []string{"002-F"}))
+		storageHandle, locksRoot, locksDirAbs, err := openLocksRootReadOnly(ws)
+		require.NoError(t, err)
+		defer func() {
+			_ = locksRoot.Close()
+			_ = storageHandle.Close()
+		}()
+		exists, _, ledger, err := readIDSequenceLedger(locksRoot, locksDirAbs)
+		require.NoError(t, err)
+		require.True(t, exists)
+		assert.Contains(t, ledger.ReservedIDs, "001-F")
+		assert.NotContains(t, ledger.ReservedIDs, "002-F")
+		assert.Contains(t, ledger.ReservedIDs, "003-F")
+
+		// An uncommitted intent reconstitute journal containing 004-F must reserve 004-F in historicalIDsFromDisk.
+		const corrID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		journal := shipmentLifecycleJournal{
+			SchemaVersion:  "shipment-operation/v1",
+			CorrelationID:  corrID,
+			Phase:          shipmentOperationPhaseIntent,
+			Operation:      shipmentOperationReconstitute,
+			RecoveryPolicy: shipmentOperationRecoveryPolicyRollback,
+			ShipmentID:     "001-S",
+			Target:         shipmentOperationReconstitute,
+			Reconstitute: &reconstituteJournalState{
+				CreatedIDs: []string{"004-F"},
+				Adoptions:  map[string]string{"001.001-T": "004.001-T"},
+			},
+		}
+		_, err = writeShipmentLifecycleJournalForWorkspace(ws, shipmentLifecycleJournalName(corrID), journal)
+		require.NoError(t, err)
+
+		hist, err := historicalIDsFromDisk(ws)
+		require.NoError(t, err)
+		assert.Contains(t, hist, "004-F", "pending intent reconstitute journal must reserve 004-F")
+		assert.Contains(t, hist, "004.001-T", "pending intent reconstitute journal must reserve adopted 004.001-T")
+	})
+
+	t.Run("scan-local-branch-artifact-ids-detects-other-branch-and-rejects-symlink-git", func(t *testing.T) {
+		repo := t.TempDir()
+		runGit := func(args ...string) {
+			cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+			cmd.Env = sanitizedGitBranchScanEnv()
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, "git %v failed: %s", args, out)
+		}
+		runGit("init", "-b", "main")
+		runGit("config", "user.name", "Test")
+		runGit("config", "user.email", "test@example.com")
+
+		storage := filepath.Join(repo, ".backlogit")
+		require.NoError(t, os.MkdirAll(filepath.Join(storage, "queue"), 0o755))
+		require.NoError(t, config.WriteDefaults(storage))
+		require.NoError(t, os.WriteFile(filepath.Join(storage, "queue", "001-F.md"), []byte("---\nid: 001-F\n---\n"), 0o644))
+		runGit("add", ".")
+		runGit("commit", "-m", "main baseline")
+
+		runGit("checkout", "-b", "feature-branch")
+		require.NoError(t, os.WriteFile(filepath.Join(storage, "queue", "007-F.md"), []byte("---\nid: 007-F\n---\n"), 0o644))
+		runGit("add", ".")
+		runGit("commit", "-m", "branch artifact")
+		runGit("checkout", "main")
+
+		ids, err := scanLocalBranchArtifactIDs(&Workspace{RootPath: repo})
+		require.NoError(t, err)
+		assert.Contains(t, ids, "007-F", "branch scan must detect 007-F on feature-branch")
+
+		// Symlinked .git must fail closed when symlinks are supported.
+		outsideGit := filepath.Join(t.TempDir(), "fake.git")
+		require.NoError(t, os.MkdirAll(outsideGit, 0o755))
+		symlinkedRepo := t.TempDir()
+		gitLink := filepath.Join(symlinkedRepo, ".git")
+		if runtime.GOOS == "windows" {
+			out, linkErr := exec.Command("cmd", "/c", "mklink", "/J", gitLink, outsideGit).CombinedOutput()
+			if linkErr != nil {
+				t.Skipf("junction failed: %v (%s)", linkErr, out)
+			}
+		} else {
+			require.NoError(t, os.Symlink(outsideGit, gitLink))
+		}
+		_, err = scanLocalBranchArtifactIDs(&Workspace{RootPath: symlinkedRepo})
+		require.Error(t, err, "symlinked .git must fail closed")
+	})
 }
