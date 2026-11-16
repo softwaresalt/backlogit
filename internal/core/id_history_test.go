@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/softwaresalt/backlogit/internal/config"
 	bldb "github.com/softwaresalt/backlogit/internal/db"
 	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/hooks"
@@ -330,5 +331,186 @@ func TestU5_CrossBranchAndMultiSessionArtifactIDSequenceReservation(t *testing.T
 		}
 		_, outsideErr := os.Stat(filepath.Join(outsideDir, idSequenceLedgerFileName))
 		assert.True(t, os.IsNotExist(outsideErr), "parent .locks swap must never write id-sequences.json into outsideDir")
+	})
+}
+
+func TestU5b_AdoptAndReconstituteSequenceReservationAndRollback(t *testing.T) {
+	t.Run("adopt-and-create-serialize-and-rollback-restores-ledger", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		ctx := context.Background()
+
+		f1, err := CreateArtifact(ctx, ws, "Target Parent", "feature")
+		require.NoError(t, err)
+		f2, err := CreateArtifact(ctx, ws, "Source Parent", "feature")
+		require.NoError(t, err)
+		orphan, err := CreateArtifact(ctx, ws, "Adoptable Task", "task", WithParent(f2.ID))
+		require.NoError(t, err)
+
+		adopted, err := AdoptItemWithOptions(ctx, ws, orphan.ID, f1.ID, AdoptItemOptions{})
+		require.NoError(t, err)
+		require.Equal(t, "001.001-T", adopted.NewID)
+
+		// Simulate branch switch removing 001.001-T.md and logs + DB rows.
+		adoptedPath, err := FindArtifactPath(ctx, ws, adopted.NewID)
+		require.NoError(t, err)
+		require.NoError(t, os.Remove(adoptedPath))
+		require.NoError(t, os.RemoveAll(WorkspaceLogsRoot(ws.RootPath)))
+		require.NoError(t, os.MkdirAll(WorkspaceLogsRoot(ws.RootPath), 0o755))
+		_, err = ws.DB.ExecContext(ctx, `DELETE FROM items WHERE id = ?; DELETE FROM item_logs; DELETE FROM item_log_entries;`, adopted.NewID)
+		require.NoError(t, err)
+
+		nextChild, err := CreateArtifact(ctx, ws, "Post-Adopt Child", "task", WithParent(f1.ID))
+		require.NoError(t, err)
+		assert.Equal(t, "001.002-T", nextChild.ID, "adopted ID 001.001-T must stay reserved across branch switches")
+
+		// Concurrent AdoptItem and CreateArtifact under f1 must serialize on id_allocator.lock.
+		t2, err := CreateArtifact(ctx, ws, "Concurrent Adopt Source", "task", WithParent(f2.ID))
+		require.NoError(t, err)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		var adoptRes *AdoptItemResult
+		var adoptErr, createErr error
+		var createdTaskID string
+		go func() {
+			defer wg.Done()
+			adoptRes, adoptErr = AdoptItemWithOptions(ctx, ws, t2.ID, f1.ID, AdoptItemOptions{})
+		}()
+		go func() {
+			defer wg.Done()
+			c, cErr := CreateArtifact(ctx, ws, "Concurrent Child", "task", WithParent(f1.ID))
+			createErr = cErr
+			if c != nil {
+				createdTaskID = c.ID
+			}
+		}()
+		wg.Wait()
+		require.NoError(t, adoptErr)
+		require.NoError(t, createErr)
+		assert.NotEqual(t, adoptRes.NewID, createdTaskID)
+		assert.ElementsMatch(t, []string{"001.003-T", "001.004-T"}, []string{adoptRes.NewID, createdTaskID})
+
+		// Ledger failure during AdoptItem must roll back both adoption and id-sequences.json.
+		t3, err := CreateArtifact(ctx, ws, "Fail Adopt Source", "task", WithParent(f2.ID))
+		require.NoError(t, err)
+		seqPath := filepath.Join(WorkspaceLocksRoot(ws.RootPath), idSequenceLedgerFileName)
+		preimage, err := os.ReadFile(seqPath)
+		require.NoError(t, err)
+
+		origWrite := writeIDSequenceReservationFn
+		writeIDSequenceReservationFn = func(_ *Workspace, _ *os.Root, _ string, _ []byte) error {
+			return fmt.Errorf("injected adopt ledger write failure: %w", blerrors.ErrWriteNotApplied)
+		}
+		_, err = AdoptItemWithOptions(ctx, ws, t3.ID, f1.ID, AdoptItemOptions{})
+		writeIDSequenceReservationFn = origWrite
+		require.Error(t, err)
+
+		afterFail, err := os.ReadFile(seqPath)
+		require.NoError(t, err)
+		assert.Equal(t, preimage, afterFail, "failed AdoptItem must restore id-sequences.json to exact preimage")
+	})
+
+	t.Run("nested-workspace-reconstitute-cross-branch-reservation", func(t *testing.T) {
+		outer := t.TempDir()
+		nested := filepath.Join(outer, "nested-ws")
+		storage := filepath.Join(nested, ".backlogit")
+		require.NoError(t, os.MkdirAll(storage, 0o755))
+		require.NoError(t, config.WriteDefaults(storage))
+		ctx := context.Background()
+		ws, err := NewWorkspace(ctx, nested)
+		require.NoError(t, err)
+		ws.GateBroker = nil
+		t.Cleanup(func() { require.NoError(t, ws.Close()) })
+
+		f1, err := CreateArtifact(ctx, ws, "Orig Feature", "feature")
+		require.NoError(t, err)
+		t1, err := CreateArtifact(ctx, ws, "Task One", "task", WithParent(f1.ID))
+		require.NoError(t, err)
+		t2, err := CreateArtifact(ctx, ws, "Task Two", "task", WithParent(f1.ID))
+		require.NoError(t, err)
+		s1, err := CreateShipment(ctx, ws, "Source Shipment", []string{f1.ID, t1.ID, t2.ID})
+		require.NoError(t, err)
+
+		planYAML := fmt.Sprintf(`source_shipments:
+  - %s
+shipments:
+  - id: %s
+    feature:
+      id: %s
+    items:
+      - %s
+  - label: split-a
+    title: Split A Shipment
+    blocks_on:
+      - %s
+    feature:
+      create:
+        title: Split A Feature
+    items:
+      - %s
+`, s1.ID, s1.ID, f1.ID, t1.ID, s1.ID, t2.ID)
+		res, err := ReconstituteShipments(ctx, ws, ReconstituteOptions{PlanYAML: planYAML})
+		require.NoError(t, err)
+		require.Len(t, res.CreatedFeatures, 1)
+		createdFeatID := res.CreatedFeatures[0].ID
+		adoptedTaskID := res.AdoptedIDMap[t2.ID]
+		require.Equal(t, "002-F", createdFeatID)
+		require.Equal(t, "002.001-T", adoptedTaskID)
+
+		// Verify id-sequences.json reserved both 002-F and 002.001-T.
+		seqBytes, err := os.ReadFile(filepath.Join(WorkspaceLocksRoot(ws.RootPath), idSequenceLedgerFileName))
+		require.NoError(t, err)
+		assert.Contains(t, string(seqBytes), createdFeatID)
+		assert.Contains(t, string(seqBytes), adoptedTaskID)
+
+		// Simulate switching to another branch (removing 002.001-T and logs + DB).
+		adoptedPath, findErr := FindArtifactPath(ctx, ws, adoptedTaskID)
+		require.NoError(t, findErr)
+		require.NoError(t, os.Remove(adoptedPath))
+		require.NoError(t, os.RemoveAll(WorkspaceLogsRoot(ws.RootPath)))
+		require.NoError(t, os.MkdirAll(WorkspaceLogsRoot(ws.RootPath), 0o755))
+		_, err = ws.DB.ExecContext(ctx, `DELETE FROM items WHERE id = ?; DELETE FROM item_logs; DELETE FROM item_log_entries;`, adoptedTaskID)
+		require.NoError(t, err)
+
+		nextChild, err := CreateArtifact(ctx, ws, "Other Branch Child", "task", WithParent(createdFeatID))
+		require.NoError(t, err)
+		assert.Equal(t, "002.002-T", nextChild.ID, "reconstituted adopted ID 002.001-T must remain reserved across branch switch")
+	})
+
+	t.Run("ast-checks-u5b-ownership-locking-and-rollback", func(t *testing.T) {
+		lifecycleFile, err := parser.ParseFile(token.NewFileSet(), "shipment_lifecycle.go", nil, 0)
+		require.NoError(t, err)
+		var adoptFn *ast.FuncDecl
+		for _, decl := range lifecycleFile.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "adoptItem" {
+				adoptFn = fn
+				break
+			}
+		}
+		require.NotNil(t, adoptFn)
+		var callsAllocLock bool
+		ast.Inspect(adoptFn.Body, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok && id.Name == "acquireIDAllocatorLock" {
+				callsAllocLock = true
+			}
+			return true
+		})
+		assert.True(t, callsAllocLock, "adoptItem must acquire acquireIDAllocatorLock")
+
+		execFile, err := parser.ParseFile(token.NewFileSet(), "shipment_reconstitute_exec.go", nil, 0)
+		require.NoError(t, err)
+		var hasBeforeCreate, hasUnreserve bool
+		ast.Inspect(execFile, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok {
+				if id.Name == "shipmentOperationBeforeCreateContextKey" {
+					hasBeforeCreate = true
+				}
+				if id.Name == "unreserveIDSequences" {
+					hasUnreserve = true
+				}
+			}
+			return true
+		})
+		assert.True(t, hasBeforeCreate, "shipment_reconstitute_exec.go must wire shipmentOperationBeforeCreateContextKey")
+		assert.True(t, hasUnreserve, "shipment_reconstitute_exec.go must call unreserveIDSequences on rollback")
 	})
 }
