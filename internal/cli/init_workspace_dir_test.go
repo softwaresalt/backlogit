@@ -63,8 +63,10 @@ func TestU6_InitAndInstallSelfInstallRuntimeExecutableAndIgnoreEntries(t *testin
 		for _, entry := range []string{
 			"/.backlog/backlogit",
 			"/.backlog/backlogit.exe",
+			"/.backlog/.locks/",
 			"/.backlogit/backlogit",
 			"/.backlogit/backlogit.exe",
+			"/.backlogit/.locks/",
 		} {
 			assert.Equalf(t, 1, strings.Count(content, entry+"\n"),
 				"ignore file must contain %q exactly once; got:\n%s", entry, content)

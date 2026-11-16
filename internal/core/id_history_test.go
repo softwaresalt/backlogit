@@ -690,4 +690,49 @@ shipments:
 		_, err = scanLocalBranchArtifactIDs(&Workspace{RootPath: symlinkedRepo})
 		require.Error(t, err, "symlinked .git must fail closed")
 	})
+
+	t.Run("adopt-failure-after-allocator-release-preserves-concurrent-reservations", func(t *testing.T) {
+		ws := setupShipmentWorkspace(t)
+		ctx := context.Background()
+
+		f1, err := CreateArtifact(ctx, ws, "Target Feature", "feature")
+		require.NoError(t, err)
+		f2, err := CreateArtifact(ctx, ws, "Source Feature", "feature")
+		require.NoError(t, err)
+		orphan, err := CreateArtifact(ctx, ws, "Orphan Task", "task", WithParent(f2.ID))
+		require.NoError(t, err)
+		_, err = CreateArtifact(ctx, ws, "Blocker Ref", "task", WithParent(f2.ID), WithDependencies([]string{orphan.ID}))
+		require.NoError(t, err)
+
+		// Concurrently create a feature while AdoptItem fails after releasing id_allocator.lock
+		// (allowedCrossRefIDs rejects the un-snapshotted cross-reference owner after allocation).
+		var wg sync.WaitGroup
+		wg.Add(2)
+		var adoptErr, createErr error
+		var concFeatID string
+		go func() {
+			defer wg.Done()
+			_, adoptErr = AdoptItemWithOptions(ctx, ws, orphan.ID, f1.ID, AdoptItemOptions{
+				allowedCrossRefIDs: map[string]struct{}{},
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			concFeat, cErr := CreateArtifact(ctx, ws, "Concurrent Feature", "feature")
+			createErr = cErr
+			if concFeat != nil {
+				concFeatID = concFeat.ID
+			}
+		}()
+		wg.Wait()
+
+		require.ErrorIs(t, adoptErr, blerrors.ErrShipmentConflict)
+		require.NoError(t, createErr)
+		require.NotEmpty(t, concFeatID)
+
+		reserved, err := readReservedSequenceIDs(ws)
+		require.NoError(t, err)
+		assert.Contains(t, reserved, concFeatID, "concurrent CreateArtifact reservation must survive AdoptItem rollback")
+		assert.NotContains(t, reserved, "001.001-T", "rolled-back AdoptItem ID must be unreserved")
+	})
 }

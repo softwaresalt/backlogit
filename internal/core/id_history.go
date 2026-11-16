@@ -266,8 +266,8 @@ func pendingReconstituteIDs(ws *Workspace) ([]string, error) {
 			return nil, fmt.Errorf("read pending journal %s: %w", entry.Name(), readErr)
 		}
 		var journal shipmentLifecycleJournal
-		if json.Unmarshal(raw, &journal) != nil {
-			continue
+		if unmarshalErr := json.Unmarshal(raw, &journal); unmarshalErr != nil {
+			return nil, fmt.Errorf("decode pending journal %s: %w: %w", entry.Name(), unmarshalErr, blerrors.ErrValidation)
 		}
 		if journal.Phase != shipmentOperationPhaseIntent || journal.Reconstitute == nil {
 			continue

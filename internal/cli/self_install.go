@@ -273,7 +273,11 @@ func installWorkspaceRuntimeExecutable(root, storageDir string) (string, error) 
 func workspaceRuntimeIgnoreEntries() []string {
 	var entries []string
 	for _, candidate := range core.WorkspaceRootCandidates() {
-		entries = append(entries, "/"+candidate+"/backlogit", "/"+candidate+"/backlogit.exe")
+		entries = append(entries,
+			"/"+candidate+"/backlogit",
+			"/"+candidate+"/backlogit.exe",
+			"/"+candidate+"/.locks/",
+		)
 	}
 	return entries
 }

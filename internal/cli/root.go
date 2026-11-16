@@ -329,17 +329,26 @@ file, default YAML configuration files, and default artifact templates.`,
 			if len(args) > 0 {
 				root = args[0]
 			}
-			// Guard target root against symlink or reparse-point redirection
-			// before creating or modifying workspace storage directories.
-			if rootInfo, rootStatErr := os.Lstat(root); rootStatErr == nil {
-				isReparse, inspectErr := core.IsSymlinkOrReparsePoint(rootInfo, root)
+			absRoot, err := filepath.Abs(root)
+			if err != nil {
+				return fmt.Errorf("resolve workspace root: %w", err)
+			}
+			cleanRoot := filepath.Clean(absRoot)
+			// Guard cleaned target root against symlink or reparse-point redirection
+			// (including trailing-slash symlink dereferencing on POSIX) before
+			// creating or modifying workspace storage directories.
+			if rootInfo, rootStatErr := os.Lstat(cleanRoot); rootStatErr == nil {
+				isReparse, inspectErr := core.IsSymlinkOrReparsePoint(rootInfo, cleanRoot)
 				if inspectErr != nil {
 					return fmt.Errorf("inspect workspace root: %w", inspectErr)
 				}
 				if isReparse || !rootInfo.IsDir() {
-					return fmt.Errorf("workspace root %s is redirected or not a directory", root)
+					return fmt.Errorf("workspace root %s is redirected or not a directory", cleanRoot)
 				}
+			} else if !os.IsNotExist(rootStatErr) {
+				return fmt.Errorf("inspect workspace root: %w", rootStatErr)
 			}
+			root = cleanRoot
 			storageDirName := core.WorkspaceRootCandidates()[0]
 			if cmd.CalledAs() == "install" {
 				resolvedDir, err := resolveInstallStorageDir(root)

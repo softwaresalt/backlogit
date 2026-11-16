@@ -1331,11 +1331,13 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 				ctx, ws, newParentID, artifact.ArtifactType,
 				typeCfg, ws.Config.QueueLayout,
 			)
-			if errors.Is(idErr, errIDHistoryScan) || errors.Is(idErr, blerrors.ErrGateInProgress) ||
-				errors.Is(idErr, context.Canceled) || errors.Is(idErr, context.DeadlineExceeded) {
-				return nil, fmt.Errorf("adopt item %s: %w", itemID, idErr)
-			}
-			if idErr == nil {
+			if idErr != nil {
+				if errors.Is(idErr, errIDHistoryScan) || errors.Is(idErr, blerrors.ErrGateInProgress) ||
+					errors.Is(idErr, context.Canceled) || errors.Is(idErr, context.DeadlineExceeded) ||
+					strings.Contains(idErr.Error(), "hierarchical id") {
+					return nil, fmt.Errorf("adopt item %s: %w", itemID, idErr)
+				}
+			} else {
 				newID = generatedID
 			}
 		}
@@ -1379,10 +1381,12 @@ func adoptItem(ctx context.Context, ws *Workspace, itemID, newParentID string, o
 	adoptCommitted := false
 	defer func() {
 		// Runs after releaseEventLocks (registered below) has released C, so
-		// re-acquiring id_allocator.lock for compensation obeys B -> id_allocator.lock.
+		// re-acquiring id_allocator.lock via unreserveIDSequences obeys
+		// B -> id_allocator.lock and selectively removes only newID while
+		// preserving any concurrent reservations made after releaseAllocLock().
 		if !adoptCommitted && seqReserved && seqPreimage.enabled {
-			if resErr := restoreIDSequencePreimage(origCtx, ws, seqPreimage); resErr != nil {
-				retErr = errors.Join(retErr, fmt.Errorf("restore id sequence preimage: %w", resErr))
+			if resErr := unreserveIDSequences(context.WithoutCancel(origCtx), ws, shipmentOperationID(origCtx), []string{newID}); resErr != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("unreserve adopted id %s: %w", newID, resErr))
 			}
 		}
 	}()
