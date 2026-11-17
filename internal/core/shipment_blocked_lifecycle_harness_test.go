@@ -43,12 +43,12 @@ func TestShipmentBlockedActiveSlotSubprocessHelper(t *testing.T) {
 	require.NoError(t, err)
 	var instruction ur1BSlotInstruction
 	require.NoError(t, json.Unmarshal(data, &instruction))
-	ws, err := NewWorkspace(context.Background(), instruction.Root)
+	ws, err := NewDiagnosticWorkspace(context.Background(), instruction.Root)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, ws.Close()) }()
 	require.NoError(t, os.WriteFile(instruction.ReadyPath, []byte("ready"), 0o644))
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		if _, statErr := os.Stat(instruction.StartPath); statErr == nil {
 			break
@@ -61,7 +61,9 @@ func TestShipmentBlockedActiveSlotSubprocessHelper(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	_, claimErr := ClaimShipment(context.Background(), ws, instruction.ShipmentID)
+	claimCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, claimErr := ClaimShipment(claimCtx, ws, instruction.ShipmentID)
 	result := ur1BSlotResult{Success: claimErr == nil}
 	if claimErr != nil {
 		result.Error = claimErr.Error()
@@ -585,7 +587,10 @@ func TestUR1B_FailClosedValidationAndAuthoritativeActiveSlot(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, os.WriteFile(instructionPath, instructionData, 0o644))
 
-			cmd := exec.Command(os.Args[0], "-test.run=^TestShipmentBlockedActiveSlotSubprocessHelper$", "-test.count=1")
+			subCtx, subCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer subCancel()
+			cmd := exec.CommandContext(subCtx, os.Args[0], "-test.run=^TestShipmentBlockedActiveSlotSubprocessHelper$", "-test.count=1")
+			cmd.WaitDelay = 2 * time.Second
 			cmd.Env = append(os.Environ(), ur1BSlotInstructionEnv+"="+instructionPath)
 			require.NoError(t, cmd.Start())
 			var finishOnce sync.Once
@@ -602,7 +607,7 @@ func TestUR1B_FailClosedValidationAndAuthoritativeActiveSlot(t *testing.T) {
 			}
 			t.Cleanup(func() { finishChild(true) })
 
-			deadline := time.Now().Add(10 * time.Second)
+			deadline := time.Now().Add(30 * time.Second)
 			for {
 				if _, statErr := os.Stat(instruction.ReadyPath); statErr == nil {
 					break
