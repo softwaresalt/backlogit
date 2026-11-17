@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -66,7 +67,7 @@ func (ws *Workspace) boundedHelperTimeout() time.Duration {
 }
 
 // isAncestor reports whether ancestor is an ancestor of (or equal to) descendant
-// by running `git --no-replace-objects merge-base --is-ancestor ancestor descendant`
+// by running `git --no-replace-objects merge-base --is-ancestor -- ancestor descendant`
 // under a mandatory self-derived deadline. It is a security guard on the shipment
 // ship path, so it FAILS CLOSED: any timeout, cancellation, exec failure, or
 // non-{0,1} exit code returns a non-nil error (never a silent pass). Exit-code
@@ -91,6 +92,9 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	if ws == nil {
 		return false, fmt.Errorf("ancestor check aborted: workspace is nil: %w", blerrors.ErrValidation)
 	}
+	if ancestor == "" || descendant == "" || strings.HasPrefix(ancestor, "-") || strings.HasPrefix(descendant, "-") {
+		return false, fmt.Errorf("ancestor check aborted: invalid commit reference: %w", blerrors.ErrValidation)
+	}
 
 	cacheable := isGitObjectName(ancestor) && isGitObjectName(descendant)
 	var cacheKey string
@@ -108,7 +112,7 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	defer cancel()
 
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(runCtx, "git", "--no-replace-objects", "merge-base", "--is-ancestor", ancestor, descendant)
+	cmd := exec.CommandContext(runCtx, "git", "--no-replace-objects", "merge-base", "--is-ancestor", "--", ancestor, descendant)
 	cmd.Dir = ws.RootPath
 	cmd.Env = gate.MinimalEnv()
 	cmd.WaitDelay = 2 * time.Second
@@ -233,8 +237,8 @@ func resolveAncestryGitDir(rootPath string) (string, bool) {
 		return clean, true
 	}
 
-	dir, err := filepath.Abs(filepath.Clean(rootPath))
-	if err != nil {
+	dir, ok := resolveAncestryRootPath(rootPath)
+	if !ok {
 		return "", false
 	}
 	for {
@@ -255,6 +259,69 @@ func resolveAncestryGitDir(rootPath string) (string, bool) {
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			return "", false
+		}
+		dir = parent
+	}
+}
+
+// resolveAncestryRootPath canonicalizes rootPath through symlinks and (on
+// Windows) directory junctions so walking parents for `.git` matches git's own
+// resolved repository discovery. If rootPath cannot be resolved (for example,
+// dangling or non-existent), it returns ("", false) so caching is disabled
+// cleanly while git still executes.
+func resolveAncestryRootPath(rootPath string) (string, bool) {
+	absRoot, err := filepath.Abs(filepath.Clean(rootPath))
+	if err != nil {
+		return "", false
+	}
+	cur := absRoot
+	const maxLinkHops = 32
+	for range maxLinkHops {
+		resolved, evalErr := filepath.EvalSymlinks(cur)
+		if evalErr != nil {
+			return "", false
+		}
+		if runtime.GOOS != "windows" {
+			return resolved, true
+		}
+		next, jumped, ok := resolveWindowsJunctionStep(resolved)
+		if !ok {
+			return "", false
+		}
+		if !jumped {
+			return resolved, true
+		}
+		cur = next
+	}
+	return "", false
+}
+
+func resolveWindowsJunctionStep(resolved string) (next string, jumped bool, ok bool) {
+	dir := resolved
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false, true
+		}
+		info, err := os.Lstat(dir)
+		if err != nil {
+			return "", false, false
+		}
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			target, readErr := os.Readlink(dir)
+			if readErr == nil && target != "" {
+				if !filepath.IsAbs(target) {
+					target = filepath.Join(parent, target)
+				}
+				rel, relErr := filepath.Rel(dir, resolved)
+				if relErr != nil {
+					return "", false, false
+				}
+				if rel == "." {
+					return filepath.Clean(target), true, true
+				}
+				return filepath.Join(target, rel), true, true
+			}
 		}
 		dir = parent
 	}

@@ -241,6 +241,25 @@ func TestIsAncestor(t *testing.T) {
 	absent := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 	_, err = ws.isAncestor(ctx, absent, head)
 	require.Error(t, err, "an absent object must fail closed, not be read as an ancestor")
+
+	// Empty or leading-dash commit references must fail closed with ErrValidation.
+	for _, tc := range []struct {
+		name       string
+		ancestor   string
+		descendant string
+	}{
+		{"empty_ancestor", "", head},
+		{"empty_descendant", base, ""},
+		{"leading_dash_ancestor", "--orphan", head},
+		{"leading_dash_descendant", base, "-n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, err := ws.isAncestor(ctx, tc.ancestor, tc.descendant)
+			require.Error(t, err)
+			assert.False(t, ok)
+			assert.ErrorIs(t, err, blerrors.ErrValidation)
+		})
+	}
 }
 
 // TestIsGitObjectName pins the SHA-shape guard: only full-length SHA-1 (40 hex)

@@ -106,6 +106,9 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	if ew == nil {
 		return fmt.Errorf("associate commit: EventWriter must not be nil")
 	}
+	if ws == nil || strings.TrimSpace(ws.RootPath) == "" || ws.DB == nil {
+		return fmt.Errorf("associate commit: workspace and DB must not be nil with non-empty RootPath")
+	}
 	// Recover before taking artifact and compensation snapshots. A caller
 	// already holding C must not invert C -> lifecycle-global.
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
@@ -396,6 +399,9 @@ func AppendComment(ctx context.Context, ws *Workspace, ew *events.EventWriter, i
 
 // GetCommitLinks retrieves all commit associations for a given artifact.
 func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) (links []CommitLinkInfo, err error) {
+	if db == nil {
+		return nil, fmt.Errorf("get commit links: db must not be nil")
+	}
 	rows, err := db.QueryContext(ctx,
 		`SELECT item_id, commit_sha, message, author FROM commit_links WHERE item_id = ?`,
 		itemID,

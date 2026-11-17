@@ -399,4 +399,55 @@ func TestU3b_ValidateMemberGateEvidenceMemoizesImmutableCommitAncestry(t *testin
 		assert.False(t, hit)
 		assert.False(t, eligible, "shallow repo must report preExecEligible=false and clear cache")
 	})
+
+	t.Run("symlinked_root_into_shallow_repo_does_not_read_outer_git_or_cache_stale", func(t *testing.T) {
+		ctx := context.Background()
+
+		// Outer complete repo that must NOT be resolved when ws.RootPath is a
+		// symlink/junction pointing into a different (shallow) repository.
+		outerRoot := t.TempDir()
+		initGitRepoWithCommits(t, outerRoot)
+
+		// Target repo whose subdirectory will be the symlink/junction target.
+		shallowRepo := t.TempDir()
+		c1, c2, _ := initGitRepoWithCommits(t, shallowRepo)
+		shallowSub := filepath.Join(shallowRepo, "sub")
+		require.NoError(t, os.MkdirAll(shallowSub, 0o755))
+
+		wsLink := filepath.Join(outerRoot, "ws-link")
+		if err := linkDirForMemberSwapTest(wsLink, shallowSub); err != nil {
+			t.Skipf("directory link/junction creation skipped: %v", err)
+		}
+
+		ws := &Workspace{RootPath: wsLink}
+
+		// Prime the cache while shallowRepo is complete.
+		ok, err := ws.isAncestor(ctx, c1, c2)
+		require.NoError(t, err)
+		assert.True(t, ok, "c1 must initially be an ancestor of c2 through symlinked root")
+
+		// Mark the target repo shallow. Walking unresolved parents of wsLink
+		// would step up into outerRoot/.git (complete) and serve stale cache!
+		shallowPath := filepath.Join(shallowRepo, ".git", "shallow")
+		require.NoError(t, os.WriteFile(shallowPath, []byte(c2+"\n"), 0o644))
+
+		ok, err = ws.isAncestor(ctx, c1, c2)
+		require.NoError(t, err)
+		assert.False(t, ok, "shallow target repo must bypass/invalidate cache and not read outer .git")
+
+		_, hit, eligible := ws.lookupAncestryCache(strings.ToLower(c1) + "|" + strings.ToLower(c2))
+		assert.False(t, hit)
+		assert.False(t, eligible, "symlinked root into shallow repo must report preExecEligible=false")
+
+		// Removing .git/shallow restores normal evaluation.
+		require.NoError(t, os.Remove(shallowPath))
+		ok, err = ws.isAncestor(ctx, c1, c2)
+		require.NoError(t, err)
+		assert.True(t, ok, "removing target .git/shallow must re-evaluate to true")
+
+		// Non-existent / dangling root disables caching cleanly without erroring in resolver.
+		gitDir, resolvedOK := resolveAncestryGitDir(filepath.Join(outerRoot, "nonexistent-root"))
+		assert.Empty(t, gitDir)
+		assert.False(t, resolvedOK)
+	})
 }

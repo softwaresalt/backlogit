@@ -26,15 +26,7 @@ docline:
 ## Binding and branch
 
 Ship verified the metadata workspace root as `.`, storage root as `.backlogit`,
-and main SQLite index as `.backlogit/backlogit.db`. Absolute host paths are
-intentionally omitted from repository memory.
-
-Branch `feat/217-s-zero-flake-concurrency-and-fast-ship-closure-engine`
-holds the `217-S` execution sequence.
-
-## Scope and lineage
-
-Shipment `217-S` covers feature `216-F` (**CAP-3: Zero-Flake Concurrency and
-Fast Ship-Closure Engine**) and tasks `216.001-T`..`216.008-T` (Units U1, U2,
-U3a, U3b, U4, U5, U6, U7), informed by archived deliberations `096-DL`..`101-DL`
-and governed by `docs/plans/2026-11-15-cap3-zero-flake-concurrency-ship-closure-plan.md`.
+and main SQLite index as `.backlogit/backlogit.db` on branch
+`feat/217-s-zero-flake-concurrency-and-fast-ship-closure-engine` (with
+absolute host paths omitted). See [217-S session summary](2026-11-17-217-s-session-summary.md)
+for durable implementation outcomes and tracked residual risks.
