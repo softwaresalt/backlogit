@@ -450,4 +450,42 @@ func TestU3b_ValidateMemberGateEvidenceMemoizesImmutableCommitAncestry(t *testin
 		assert.Empty(t, gitDir)
 		assert.False(t, resolvedOK)
 	})
+
+	t.Run("symlinked_root_with_relative_GIT_DIR_resolves_against_target", func(t *testing.T) {
+		outerRoot := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(outerRoot, ".git"), 0o755))
+
+		targetRepo := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(targetRepo, ".git"), 0o755))
+		targetSub := filepath.Join(targetRepo, "sub")
+		require.NoError(t, os.MkdirAll(targetSub, 0o755))
+
+		wsLink := filepath.Join(outerRoot, "ws-link")
+		if err := linkDirForMemberSwapTest(wsLink, targetSub); err != nil {
+			t.Skipf("directory link/junction creation skipped: %v", err)
+		}
+
+		t.Setenv("GIT_DIR", "../.git")
+
+		resolvedTarget, ok := resolveAncestryRootPath(targetRepo)
+		require.True(t, ok)
+		expectedGitDir := filepath.Join(resolvedTarget, ".git")
+
+		gitDir, resolvedOK := resolveAncestryGitDir(wsLink)
+		require.True(t, resolvedOK)
+		assert.Equal(t, expectedGitDir, gitDir, "relative GIT_DIR must resolve against symlink target, not lexical symlink parent")
+		assert.True(t, isCompleteUngraftedRepo(wsLink))
+
+		shallowPath := filepath.Join(targetRepo, ".git", "shallow")
+		require.NoError(t, os.WriteFile(shallowPath, []byte(strings.Repeat("a", 40)+"\n"), 0o644))
+
+		assert.False(t, isCompleteUngraftedRepo(wsLink), "must respect .git/shallow in symlink target repo")
+		ws := &Workspace{RootPath: wsLink}
+		_, hit, eligible := ws.lookupAncestryCache(strings.Repeat("a", 40) + "|" + strings.Repeat("b", 40))
+		assert.False(t, hit)
+		assert.False(t, eligible)
+
+		require.NoError(t, os.Remove(shallowPath))
+		assert.True(t, isCompleteUngraftedRepo(wsLink))
+	})
 }

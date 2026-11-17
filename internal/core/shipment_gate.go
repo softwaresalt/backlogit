@@ -228,9 +228,13 @@ func resolveAncestryGitDirs(rootPath string) (string, string, bool) {
 }
 
 func resolveAncestryGitDir(rootPath string) (string, bool) {
-	if envGitDir, ok := os.LookupEnv("GIT_DIR"); ok && envGitDir != "" {
+	if envGitDir := strings.TrimSpace(os.Getenv("GIT_DIR")); envGitDir != "" {
 		if !filepath.IsAbs(envGitDir) {
-			envGitDir = filepath.Join(rootPath, envGitDir)
+			resolvedRoot, ok := resolveAncestryRootPath(rootPath)
+			if !ok {
+				return "", false
+			}
+			envGitDir = filepath.Join(resolvedRoot, envGitDir)
 		}
 		clean := filepath.Clean(envGitDir)
 		info, err := os.Stat(clean)
@@ -456,6 +460,7 @@ func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
 	// last-wins across platforms, so the inherited value must be removed, not just
 	// shadowed). A localized "not a git repository" would otherwise be misread.
 	cmd.Env = withCLocale(gate.MinimalEnv())
+	cmd.WaitDelay = 2 * time.Second
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -474,6 +479,7 @@ func (ws *Workspace) inGitWorktreeBounded(ctx context.Context) (bool, error) {
 			tlCmd := exec.CommandContext(runCtx, "git", "rev-parse", "--show-toplevel")
 			tlCmd.Dir = ws.RootPath
 			tlCmd.Env = withCLocale(gate.MinimalEnv())
+			tlCmd.WaitDelay = 2 * time.Second
 			tlCmd.Stdout = &tlStdout
 			tlCmd.Stderr = &tlStderr
 			tlErr := tlCmd.Run()
