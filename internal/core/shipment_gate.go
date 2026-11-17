@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -31,6 +32,9 @@ import (
 // smaller configured gate timeout. Every helper that spawns git here derives its
 // OWN deadline — it never relies on the caller imposing one.
 const ancestryCheckTimeout = 5 * time.Second
+
+// maxAncestryCacheEntries bounds the per-Workspace commit ancestry cache.
+const maxAncestryCacheEntries = 4096
 
 // gitObjectNameRe matches exactly the full-length object names git rev-parse can
 // produce: a 40-hex SHA-1 or a 64-hex SHA-256. Abbreviations, refs, and any value
@@ -62,33 +66,48 @@ func (ws *Workspace) boundedHelperTimeout() time.Duration {
 }
 
 // isAncestor reports whether ancestor is an ancestor of (or equal to) descendant
-// by running `git merge-base --is-ancestor ancestor descendant` under a mandatory
-// self-derived deadline. It is a security guard on the shipment ship path, so it
-// FAILS CLOSED: any timeout, cancellation, exec failure, or non-{0,1} exit code
-// returns a non-nil error (never a silent pass). Exit-code semantics:
+// by running `git --no-replace-objects merge-base --is-ancestor ancestor descendant`
+// under a mandatory self-derived deadline. It is a security guard on the shipment
+// ship path, so it FAILS CLOSED: any timeout, cancellation, exec failure, or
+// non-{0,1} exit code returns a non-nil error (never a silent pass). Exit-code
+// semantics:
 //
 //	0 -> ancestor or equal          -> (true, nil)
 //	1 -> definitively not-ancestor  -> (false, nil)
 //	other / exec error / timeout    -> (false, error)  [fail closed]
 //
 // argv-array exec + gate.MinimalEnv() preserve the workspace exec trust boundary
-// (no shell, allowlisted env). Both operands are expected to already satisfy
-// isGitObjectName / trusted-provenance at the call site.
+// (no shell, allowlisted env). For full 40/64-hex commit SHAs in complete,
+// ungrafted repositories (no `.git/shallow` and no `.git/info/grafts`), definitive
+// {0,1} outcomes are memoized on the Workspace with a bounded cache; ctx.Err() is
+// always checked first before consulting the cache.
 func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, fmt.Errorf("ancestor check aborted: %w", err)
+	}
+	if ws == nil {
+		return false, fmt.Errorf("ancestor check aborted: workspace is nil: %w", blerrors.ErrValidation)
+	}
+
+	cacheable := isGitObjectName(ancestor) && isGitObjectName(descendant)
+	var cacheKey string
+	if cacheable {
+		cacheKey = strings.ToLower(ancestor) + "|" + strings.ToLower(descendant)
+		if cached, hit := ws.lookupAncestryCache(cacheKey); hit {
+			return cached, nil
+		}
+	}
+
 	runCtx, cancel := context.WithTimeout(ctx, ws.boundedHelperTimeout())
 	defer cancel()
 
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(runCtx, "git", "merge-base", "--is-ancestor", ancestor, descendant)
+	cmd := exec.CommandContext(runCtx, "git", "--no-replace-objects", "merge-base", "--is-ancestor", ancestor, descendant)
 	cmd.Dir = ws.RootPath
 	cmd.Env = gate.MinimalEnv()
 	cmd.Stderr = &stderr
 
 	runErr := cmd.Run()
-	if runErr == nil {
-		return true, nil // exit 0: ancestor or equal.
-	}
-
 	// A timeout OR cancellation MUST be detected before any exit code is read: a
 	// context-killed git reports a platform-dependent exit code (e.g. 1 on
 	// Windows, -1 on POSIX) that must never be misread as the exit-1
@@ -96,10 +115,19 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	if ctxErr := runCtx.Err(); ctxErr != nil {
 		return false, fmt.Errorf("ancestor check aborted: %w", ctxErr)
 	}
+	if runErr == nil {
+		if cacheable {
+			ws.storeAncestryCache(cacheKey, true)
+		}
+		return true, nil // exit 0: ancestor or equal.
+	}
 
 	var ee *exec.ExitError
 	if stderrors.As(runErr, &ee) {
 		if ee.ExitCode() == 1 {
+			if cacheable {
+				ws.storeAncestryCache(cacheKey, false)
+			}
 			return false, nil // definitively not an ancestor.
 		}
 		// Exit 128 (bad object / shallow boundary) and any other non-{0,1} code
@@ -109,6 +137,174 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	}
 	// git binary missing or any other non-ExitError failure -> fail closed.
 	return false, fmt.Errorf("run git merge-base --is-ancestor: %w", runErr)
+}
+
+func (ws *Workspace) lookupAncestryCache(key string) (bool, bool) {
+	ws.ancestryMu.Lock()
+	defer ws.ancestryMu.Unlock()
+
+	if !isCompleteUngraftedRepo(ws.RootPath) {
+		if ws.ancestryCache != nil {
+			clear(ws.ancestryCache)
+		}
+		return false, false
+	}
+	if ws.ancestryCache == nil {
+		return false, false
+	}
+	val, ok := ws.ancestryCache[key]
+	return val, ok
+}
+
+func (ws *Workspace) storeAncestryCache(key string, isAnc bool) {
+	ws.ancestryMu.Lock()
+	defer ws.ancestryMu.Unlock()
+
+	if !isCompleteUngraftedRepo(ws.RootPath) {
+		if ws.ancestryCache != nil {
+			clear(ws.ancestryCache)
+		}
+		return
+	}
+	if ws.ancestryCache == nil {
+		ws.ancestryCache = make(map[string]bool)
+	}
+	if _, exists := ws.ancestryCache[key]; !exists && len(ws.ancestryCache) >= maxAncestryCacheEntries {
+		clear(ws.ancestryCache)
+	}
+	ws.ancestryCache[key] = isAnc
+}
+
+func isCompleteUngraftedRepo(rootPath string) bool {
+	gitDir, commonDir, ok := resolveAncestryGitDirs(rootPath)
+	if !ok {
+		return false
+	}
+	if !isCompleteUngraftedGitDir(gitDir) {
+		return false
+	}
+	if commonDir != "" && commonDir != gitDir && !isCompleteUngraftedGitDir(commonDir) {
+		return false
+	}
+	return true
+}
+
+func resolveAncestryGitDirs(rootPath string) (string, string, bool) {
+	if rootPath == "" {
+		return "", "", false
+	}
+	gitDir, ok := resolveAncestryGitDir(rootPath)
+	if !ok {
+		return "", "", false
+	}
+
+	commonDirFile := filepath.Join(gitDir, "commondir")
+	_, err := os.Stat(commonDirFile)
+	if err == nil {
+		commonDir, parsed := resolveRelativeGitPathFile(commonDirFile, gitDir)
+		if !parsed {
+			return "", "", false
+		}
+		return gitDir, commonDir, true
+	}
+	if !stderrors.Is(err, fs.ErrNotExist) {
+		return "", "", false
+	}
+	return gitDir, "", true
+}
+
+func resolveAncestryGitDir(rootPath string) (string, bool) {
+	if envGitDir, ok := os.LookupEnv("GIT_DIR"); ok && envGitDir != "" {
+		if !filepath.IsAbs(envGitDir) {
+			envGitDir = filepath.Join(rootPath, envGitDir)
+		}
+		clean := filepath.Clean(envGitDir)
+		info, err := os.Stat(clean)
+		if err != nil || !info.IsDir() {
+			return "", false
+		}
+		return clean, true
+	}
+
+	dir, err := filepath.Abs(filepath.Clean(rootPath))
+	if err != nil {
+		return "", false
+	}
+	for {
+		dotGit := filepath.Join(dir, ".git")
+		info, statErr := os.Stat(dotGit)
+		if statErr == nil {
+			if info.IsDir() {
+				return dotGit, true
+			}
+			if info.Mode().IsRegular() {
+				return parseGitDirPointerFile(dotGit, dir)
+			}
+			return "", false
+		}
+		if !stderrors.Is(statErr, fs.ErrNotExist) {
+			return "", false
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
+func parseGitDirPointerFile(gitFilePath, baseDir string) (string, bool) {
+	raw, err := os.ReadFile(gitFilePath)
+	if err != nil {
+		return "", false
+	}
+	after, found := strings.CutPrefix(strings.TrimSpace(string(raw)), "gitdir:")
+	if !found {
+		return "", false
+	}
+	target := strings.TrimSpace(after)
+	if target == "" || strings.ContainsAny(target, "\r\n") {
+		return "", false
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(baseDir, filepath.FromSlash(target))
+	}
+	clean := filepath.Clean(target)
+	info, err := os.Stat(clean)
+	if err != nil || !info.IsDir() {
+		return "", false
+	}
+	return clean, true
+}
+
+func resolveRelativeGitPathFile(pathFile, baseDir string) (string, bool) {
+	raw, err := os.ReadFile(pathFile)
+	if err != nil {
+		return "", false
+	}
+	target := strings.TrimSpace(string(raw))
+	if target == "" || strings.ContainsAny(target, "\r\n") {
+		return "", false
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(baseDir, filepath.FromSlash(target))
+	}
+	clean := filepath.Clean(target)
+	info, err := os.Stat(clean)
+	if err != nil || !info.IsDir() {
+		return "", false
+	}
+	return clean, true
+}
+
+func isCompleteUngraftedGitDir(dir string) bool {
+	for _, rel := range []string{"shallow", filepath.Join("info", "grafts")} {
+		_, err := os.Lstat(filepath.Join(dir, rel))
+		if !stderrors.Is(err, fs.ErrNotExist) {
+			return false
+		}
+	}
+	return true
 }
 
 // headSHABounded resolves the current HEAD SHA under a mandatory self-derived

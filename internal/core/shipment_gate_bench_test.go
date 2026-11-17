@@ -8,7 +8,9 @@ import (
 	"go/token"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -262,5 +264,123 @@ func TestU3a_SnapshotShipArtifactsSinglePassContainedDirectLookup(t *testing.T) 
 
 		assert.True(t, callsFindArtifactWithPath, "snapshotShipArtifacts must call findArtifactWithPath for single-pass lookup")
 		assert.False(t, callsFindArtifact && callsFindArtifactPath, "snapshotShipArtifacts must not call both findArtifact and FindArtifactPath")
+	})
+}
+
+func runTestGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	identity := append(os.Environ(),
+		"GIT_AUTHOR_NAME=Ancestry Test", "GIT_AUTHOR_EMAIL=ancestry@example.com",
+		"GIT_COMMITTER_NAME=Ancestry Test", "GIT_COMMITTER_EMAIL=ancestry@example.com",
+	)
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = identity
+	out, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "git %s: %s", strings.Join(args, " "), out)
+	return strings.TrimSpace(string(out))
+}
+
+func seedDoneMemberWithHead(t *testing.T, ctx context.Context, ws *Workspace, headSHA string) string {
+	t.Helper()
+	id := newActiveTask(t, ws)
+	_, err := updateArtifactUngated(ctx, ws, id, map[string]any{"status": "done"})
+	require.NoError(t, err)
+	require.NoError(t, appendItemEventErr(ctx, ws, id, EventGatePassed, map[string]any{
+		"outcome":  "passed",
+		"ran":      true,
+		"head_sha": headSHA,
+	}))
+	return id
+}
+
+func TestU3b_ValidateMemberGateEvidenceMemoizesImmutableCommitAncestry(t *testing.T) {
+	t.Run("memoizes_across_gate_passes_and_respects_ctx_and_uncached_sha", func(t *testing.T) {
+		ctx := context.Background()
+		ws := newGateTestWorkspace(t)
+		memberHead, shipmentHead, uncachedHead := initGitRepoWithCommits(t, ws.RootPath)
+
+		memberID := seedDoneMemberWithHead(t, ctx, ws, memberHead)
+		uncachedMemberID := seedDoneMemberWithHead(t, ctx, ws, uncachedHead)
+		memberIDs := []string{memberID}
+
+		require.NoError(t, validateMemberGateEvidence(ctx, ws, memberIDs, shipmentHead))
+
+		objectsDir := filepath.Join(ws.RootPath, ".git", "objects")
+		objectsBakDir := filepath.Join(ws.RootPath, ".git", "objects.bak")
+		require.NoError(t, os.Rename(objectsDir, objectsBakDir))
+		t.Cleanup(func() {
+			if _, statErr := os.Stat(objectsBakDir); statErr == nil {
+				_ = os.Rename(objectsBakDir, objectsDir)
+			}
+		})
+
+		require.NoError(t, validateMemberGateEvidence(ctx, ws, memberIDs, shipmentHead),
+			"second pass must succeed from Workspace ancestry cache when .git/objects is unavailable")
+
+		uncachedErr := validateMemberGateEvidence(ctx, ws, []string{uncachedMemberID}, shipmentHead)
+		require.Error(t, uncachedErr, "uncached commit SHA must still fail closed when .git/objects is moved aside")
+
+		_, ancErr := ws.isAncestor(ctx, uncachedHead, shipmentHead)
+		require.Error(t, ancErr, "uncached pair must fail closed in isAncestor when .git/objects is moved aside")
+
+		canceledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		cancelErr := validateMemberGateEvidence(canceledCtx, ws, memberIDs, shipmentHead)
+		require.Error(t, cancelErr, "pre-canceled context must fail closed even for cached ancestry pair")
+
+		_, isAncCancelErr := ws.isAncestor(canceledCtx, memberHead, shipmentHead)
+		require.Error(t, isAncCancelErr, "pre-canceled context must fail closed in isAncestor even for cached pair")
+		assert.ErrorIs(t, isAncCancelErr, context.Canceled)
+	})
+
+	t.Run("enforces_no_replace_objects_against_refs_replace", func(t *testing.T) {
+		ctx := context.Background()
+		ws := newGateTestWorkspace(t)
+		memberHead, shipmentHead, _ := initGitRepoWithCommits(t, ws.RootPath)
+
+		runTestGit(t, ws.RootPath, "checkout", "--orphan", "unrelated")
+		require.NoError(t, os.WriteFile(filepath.Join(ws.RootPath, "unrelated.txt"), []byte("unrelated\n"), 0o644))
+		runTestGit(t, ws.RootPath, "add", "unrelated.txt")
+		runTestGit(t, ws.RootPath, "commit", "-m", "unrelated root")
+		unrelatedRoot := runTestGit(t, ws.RootPath, "rev-parse", "HEAD")
+		runTestGit(t, ws.RootPath, "checkout", "main")
+
+		runTestGit(t, ws.RootPath, "update-ref", "refs/replace/"+shipmentHead, unrelatedRoot)
+
+		ok, err := ws.isAncestor(ctx, memberHead, shipmentHead)
+		require.NoError(t, err)
+		assert.True(t, ok, "isAncestor must enforce --no-replace-objects and ignore refs/replace")
+	})
+
+	t.Run("bypasses_and_invalidates_cache_on_shallow_or_grafts", func(t *testing.T) {
+		ctx := context.Background()
+		ws := newGateTestWorkspace(t)
+		c1, c2, _ := initGitRepoWithCommits(t, ws.RootPath)
+
+		ok, err := ws.isAncestor(ctx, c1, c2)
+		require.NoError(t, err)
+		assert.True(t, ok, "c1 must initially be an ancestor of c2")
+
+		shallowPath := filepath.Join(ws.RootPath, ".git", "shallow")
+		require.NoError(t, os.WriteFile(shallowPath, []byte(c2+"\n"), 0o644))
+
+		ok, err = ws.isAncestor(ctx, c1, c2)
+		require.NoError(t, err)
+		assert.False(t, ok, "shallow boundary on c2 must bypass/invalidate cache and return false")
+
+		require.NoError(t, os.Remove(shallowPath))
+
+		ok, err = ws.isAncestor(ctx, c1, c2)
+		require.NoError(t, err)
+		assert.True(t, ok, "removing .git/shallow must invalidate prior shallow result and re-evaluate to true")
+
+		graftsPath := filepath.Join(ws.RootPath, ".git", "info", "grafts")
+		require.NoError(t, os.MkdirAll(filepath.Dir(graftsPath), 0o755))
+		require.NoError(t, os.WriteFile(graftsPath, []byte(c2+"\n"), 0o644))
+
+		ok, err = ws.isAncestor(ctx, c1, c2)
+		require.NoError(t, err)
+		assert.False(t, ok, "presence of .git/info/grafts must invalidate/bypass cache and return false")
 	})
 }
