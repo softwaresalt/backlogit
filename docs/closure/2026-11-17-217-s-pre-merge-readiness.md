@@ -11,7 +11,7 @@ docline:
   mode: pre-merge
   shipment_id: 217-S
   feature_id: 216-F
-  evidence_head: cc59f7b6
+  evidence_head: 62863c3d
   closure_status: READY
   compaction_status: pending
 ---
@@ -20,7 +20,7 @@ docline:
 
 Shipment `217-S` (`216-F`: Zero-Flake Concurrency and Fast Ship-Closure Engine,
 CAP-3) completed all 8 tasks (`216.001-T`..`216.008-T`) across Waves 1–6,
-resolved all in-scope review findings (`cc59f7b6`), passed all 50 Go packages,
+resolved all in-scope review findings (`62863c3d`), passed all 50 Go packages,
 passed `gofmt`, `go vet`, `golangci-lint`, full local build (`go build ./cmd/backlogit`),
 and passed pre-merge runtime verification (`PASS`).
 
@@ -29,20 +29,20 @@ and passed pre-merge runtime verification (`PASS`).
 * **Canonical lock order (`I1`)**: `AssociateCommit` and `LinkCommit` acquire `lifecycle-global -> C -> B` for shipments and shipment members and fail closed with `*ShipmentLifecycleLockOrderError` on preheld `C` without verified `lifecycle-global` ownership.
 * **Ship dual-gate & containment (`I2`)**: `findArtifactWithPath` runs `ensureArtifactLookupContained` before parsing direct `{id}.md` candidates; `ShipShipment` retains both `gateShipmentCompletion` passes and Markdown reloads.
 * **Memoization safety (`I3`)**: `isAncestor` enforces `--no-replace-objects`, `--`, symlink/junction root resolution (`resolveAncestryRootPath`), and `.git/shallow` / `.git/info/grafts` absence both before and after `cmd.Run()`; `custodyBlobDigest` validates `isGitObjectName(oid)` and canonicalizes `root`.
-* **SQLite WAL Page 1 & Ordinal 17 (`I4`)**: `db.Open` orders `_pragma=busy_timeout(30000)` first, initializes Page 1 WAL header `[2, 2]` with bounded concurrent retry, and `custExecNewRepo` retains `PRAGMA synchronous = FULL`.
+* **SQLite WAL Page 1 & Ordinal 17 (`I4`)**: `db.Open` orders `_pragma=busy_timeout(30000)` first, initializes Page 1 WAL header `[2, 2]` with bounded concurrent retry, and `custExecNewRepo` retains `db.Open`'s default synchronous mode without setting `PRAGMA synchronous = OFF`.
 
 ## Validator evidence
 
 See [217-S pre-merge runtime verification](2026-11-17-217-s-pre-merge-runtime-verification.md):
 
-* Verdict: `PASS` (`cli` adapter against `.\bin\backlogit.exe`, isolated `init`/`add`/`update --commit`/`sync` WAL Page 1 `[2, 2]` probe, `docs lint`, and 50/50 Go packages at `cc59f7b6`).
+* Verdict: `PASS` (`cli` adapter against `.\bin\backlogit.exe`, isolated `init`/`add`/`update --commit`/`sync` WAL Page 1 `[2, 2]` probe, `docs lint`, and 50/50 Go packages at `62863c3d`).
 
 ## Risky action record
 
 | ProposedAction | Risk | Approval and result |
 | --- | --- | --- |
 | Enforce lock ordering, WAL Page 1 init, bounded `custodyGit`, and lookup/ancestry caching in `internal/{core,db,events}` | Moderate (concurrency, SQLite pool, custody git) | Approved in `docs/plans/2026-11-15-cap3-zero-flake-concurrency-ship-closure-plan.md` (`096-DL`..`101-DL`); verified across all 50 Go packages |
-| Merge PR for shipment `217-S` | Moderate (release handoff) | Pending final current-HEAD local review, CI, P-018 Copilot review, and P-014 merge approval |
+| Merge PR for shipment `217-S` | Moderate (release handoff) | Approved under `DARK_MODE_ACTIVE` pre-authorization (`merge_approval_pre_authorized: true`), subject to current-HEAD local review confirmation, CI, and P-018 Copilot review |
 
 ## Monitoring plan, owner, and validation window
 
