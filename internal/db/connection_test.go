@@ -354,4 +354,48 @@ func TestU4_OpenPragmaOrderAndPooledSchemaInitialization(t *testing.T) {
 		require.NoError(t, database.QueryRowContext(ctx, `SELECT COUNT(*) FROM commit_links`).Scan(&total))
 		assert.Equal(t, 1+workers, total)
 	})
+
+	t.Run("concurrent_first_open_on_new_database", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "concurrent-first-open.db")
+		const workers = 8
+		handles := make([]*sql.DB, workers)
+		errs := make([]error, workers)
+		modes := make([]string, workers)
+
+		ready := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(workers)
+		for i := 0; i < workers; i++ {
+			go func(idx int) {
+				defer wg.Done()
+				<-ready
+				h, err := db.Open(dbPath)
+				if err != nil {
+					errs[idx] = fmt.Errorf("worker %d open: %w", idx, err)
+					return
+				}
+				handles[idx] = h
+
+				var mode string
+				if qErr := h.QueryRow(`PRAGMA journal_mode`).Scan(&mode); qErr != nil {
+					errs[idx] = fmt.Errorf("worker %d pragma journal_mode: %w", idx, qErr)
+					return
+				}
+				modes[idx] = mode
+			}(i)
+		}
+
+		close(ready)
+		wg.Wait()
+
+		for i := 0; i < workers; i++ {
+			if handles[i] != nil {
+				assert.NoError(t, handles[i].Close(), "worker %d close", i)
+			}
+		}
+		for i := 0; i < workers; i++ {
+			require.NoError(t, errs[i], "worker %d", i)
+			assert.Equal(t, "wal", modes[i], "worker %d journal_mode", i)
+		}
+	})
 }

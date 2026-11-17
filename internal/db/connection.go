@@ -10,8 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite" // SQLite driver registration
+)
+
+const (
+	walInitMaxAttempts = 30
+	walInitTimeout     = 10 * time.Second
+	walInitBaseBackoff = 10 * time.Millisecond
+	walInitMaxBackoff  = 100 * time.Millisecond
 )
 
 // abs resolves dbPath to an absolute path so that the file: URI always
@@ -93,7 +101,7 @@ func Open(dbPath string) (*sql.DB, error) {
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(4)
 
-	if err := db.Ping(); err != nil {
+	if err := pingDatabase(context.Background(), db); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			return nil, fmt.Errorf("ping database: %w", errors.Join(err, fmt.Errorf("close database after ping failure: %w", closeErr)))
 		}
@@ -109,10 +117,64 @@ func Open(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
+func retrySleep(ctx context.Context, attempt int, backoff time.Duration) (time.Duration, error) {
+	jitter := time.Duration((uint64(time.Now().UnixNano()) ^ (uint64(attempt) * 2654435761)) % uint64(walInitBaseBackoff))
+	wait := backoff + jitter
+	if wait > walInitMaxBackoff {
+		wait = walInitMaxBackoff
+	}
+	timer := time.NewTimer(wait)
+	select {
+	case <-ctx.Done():
+		timer.Stop()
+		return backoff, ctx.Err()
+	case <-timer.C:
+	}
+	next := backoff * 2
+	if next > walInitMaxBackoff {
+		next = walInitMaxBackoff
+	}
+	return next, nil
+}
+
+func pingDatabase(ctx context.Context, db *sql.DB) error {
+	retryCtx, cancel := context.WithTimeout(ctx, walInitTimeout)
+	defer cancel()
+
+	backoff := walInitBaseBackoff
+	var lastErr error
+	for attempt := range walInitMaxAttempts {
+		if ctxErr := retryCtx.Err(); ctxErr != nil {
+			if lastErr != nil {
+				return errors.Join(lastErr, ctxErr)
+			}
+			return ctxErr
+		}
+		err := db.PingContext(retryCtx)
+		if err == nil {
+			return nil
+		}
+		if !isSQLiteBusy(err) {
+			return err
+		}
+		lastErr = err
+		if attempt == walInitMaxAttempts-1 {
+			break
+		}
+		var sleepErr error
+		backoff, sleepErr = retrySleep(retryCtx, attempt, backoff)
+		if sleepErr != nil {
+			return errors.Join(lastErr, sleepErr)
+		}
+	}
+	return lastErr
+}
+
 // ensureWALHeaderPersisted verifies that the connection is operating in WAL
 // journal mode and materializes the 100-byte SQLite Page 1 WAL header
-// (bytes 18..19 == 2, 2) on disk when the database file is empty (0 bytes) so
-// subsequent pooled connections never open in delete mode against a 0-byte file.
+// (bytes 18..19 == 2, 2) on disk when the database file is empty (0 bytes) or
+// still transitioning (< 100 bytes) so subsequent pooled connections never open
+// in delete mode against a 0-byte file.
 func ensureWALHeaderPersisted(ctx context.Context, db *sql.DB, absPath string) (err error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
@@ -124,42 +186,93 @@ func ensureWALHeaderPersisted(ctx context.Context, db *sql.DB, absPath string) (
 		}
 	}()
 
+	retryCtx, cancel := context.WithTimeout(ctx, walInitTimeout)
+	defer cancel()
+
 	var journalMode string
-	if err := conn.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&journalMode); err != nil {
-		return fmt.Errorf("query journal_mode: %w", err)
+	modeBackoff := walInitBaseBackoff
+	for attempt := range walInitMaxAttempts {
+		qErr := conn.QueryRowContext(retryCtx, `PRAGMA journal_mode`).Scan(&journalMode)
+		if qErr == nil {
+			break
+		}
+		if !isSQLiteBusy(qErr) {
+			return fmt.Errorf("query journal_mode: %w", qErr)
+		}
+		if attempt == walInitMaxAttempts-1 {
+			return fmt.Errorf("query journal_mode: %w", qErr)
+		}
+		var sleepErr error
+		modeBackoff, sleepErr = retrySleep(retryCtx, attempt, modeBackoff)
+		if sleepErr != nil {
+			return fmt.Errorf("query journal_mode: %w", errors.Join(qErr, sleepErr))
+		}
 	}
 	if !strings.EqualFold(journalMode, "wal") {
 		return fmt.Errorf("verify WAL journal_mode: got %q, want %q", journalMode, "wal")
 	}
 
-	info, err := os.Stat(absPath)
-	if err != nil {
-		return fmt.Errorf("stat database file: %w", err)
-	}
-	if info.Size() == 0 {
-		if _, err := conn.ExecContext(ctx, `PRAGMA user_version = 0`); err != nil {
-			return fmt.Errorf("initialize WAL database header: %w", err)
+	backoff := walInitBaseBackoff
+	var lastErr error
+
+	for attempt := range walInitMaxAttempts {
+		if ctxErr := retryCtx.Err(); ctxErr != nil {
+			if lastErr != nil {
+				return fmt.Errorf("ensure WAL header persisted: %w", errors.Join(lastErr, ctxErr))
+			}
+			return fmt.Errorf("ensure WAL header persisted: %w", ctxErr)
 		}
-		var busy, logFrames, checkpointed int
-		if err := conn.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &logFrames, &checkpointed); err != nil {
-			return fmt.Errorf("checkpoint WAL database header: %w", err)
+
+		info, statErr := os.Stat(absPath)
+		if statErr != nil {
+			return fmt.Errorf("stat database file: %w", statErr)
 		}
-		if busy != 0 {
-			return fmt.Errorf("checkpoint WAL database header: checkpoint busy (%d)", busy)
+		if info.Size() >= 100 && verifyWALHeaderBytes(absPath) == nil {
+			return nil
 		}
-		info, err = os.Stat(absPath)
-		if err != nil {
-			return fmt.Errorf("stat database file after WAL initialization: %w", err)
+
+		if _, execErr := conn.ExecContext(retryCtx, `PRAGMA user_version = 0`); execErr != nil {
+			if !isSQLiteBusy(execErr) {
+				return fmt.Errorf("initialize WAL database header: %w", execErr)
+			}
+			lastErr = fmt.Errorf("initialize WAL database header: %w", execErr)
+		} else {
+			var busy, logFrames, checkpointed int
+			if cpErr := conn.QueryRowContext(retryCtx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &logFrames, &checkpointed); cpErr != nil {
+				if !isSQLiteBusy(cpErr) {
+					return fmt.Errorf("checkpoint WAL database header: %w", cpErr)
+				}
+				lastErr = fmt.Errorf("checkpoint WAL database header: %w", cpErr)
+			} else if busy != 0 {
+				lastErr = fmt.Errorf("checkpoint WAL database header: checkpoint busy (%d)", busy)
+			} else {
+				info, statErr = os.Stat(absPath)
+				if statErr != nil {
+					return fmt.Errorf("stat database file after WAL initialization: %w", statErr)
+				}
+				if info.Size() >= 100 {
+					hdrErr := verifyWALHeaderBytes(absPath)
+					if hdrErr == nil {
+						return nil
+					}
+					lastErr = hdrErr
+				} else {
+					lastErr = fmt.Errorf("verify WAL header size: got %d bytes, want >= 100", info.Size())
+				}
+			}
+		}
+
+		if attempt == walInitMaxAttempts-1 {
+			break
+		}
+		var sleepErr error
+		backoff, sleepErr = retrySleep(retryCtx, attempt, backoff)
+		if sleepErr != nil {
+			return fmt.Errorf("ensure WAL header persisted: %w", errors.Join(lastErr, sleepErr))
 		}
 	}
 
-	if info.Size() < 100 {
-		return fmt.Errorf("verify WAL header size: got %d bytes, want >= 100", info.Size())
-	}
-	if err := verifyWALHeaderBytes(absPath); err != nil {
-		return err
-	}
-	return nil
+	return fmt.Errorf("ensure WAL header persisted after %d attempts: %w", walInitMaxAttempts, lastErr)
 }
 
 func verifyWALHeaderBytes(absPath string) (err error) {

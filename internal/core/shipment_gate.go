@@ -210,8 +210,11 @@ func resolveAncestryGitDirs(rootPath string) (string, string, bool) {
 	}
 
 	commonDirFile := filepath.Join(gitDir, "commondir")
-	_, err := os.Stat(commonDirFile)
+	info, err := os.Lstat(commonDirFile)
 	if err == nil {
+		if !info.Mode().IsRegular() {
+			return "", "", false
+		}
 		commonDir, parsed := resolveRelativeGitPathFile(commonDirFile, gitDir)
 		if !parsed {
 			return "", "", false
@@ -309,19 +312,20 @@ func resolveWindowsJunctionStep(resolved string) (next string, jumped bool, ok b
 		}
 		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 			target, readErr := os.Readlink(dir)
-			if readErr == nil && target != "" {
-				if !filepath.IsAbs(target) {
-					target = filepath.Join(parent, target)
-				}
-				rel, relErr := filepath.Rel(dir, resolved)
-				if relErr != nil {
-					return "", false, false
-				}
-				if rel == "." {
-					return filepath.Clean(target), true, true
-				}
-				return filepath.Join(target, rel), true, true
+			if readErr != nil || target == "" {
+				return "", false, false
 			}
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(parent, target)
+			}
+			rel, relErr := filepath.Rel(dir, resolved)
+			if relErr != nil {
+				return "", false, false
+			}
+			if rel == "." {
+				return filepath.Clean(target), true, true
+			}
+			return filepath.Join(target, rel), true, true
 		}
 		dir = parent
 	}
