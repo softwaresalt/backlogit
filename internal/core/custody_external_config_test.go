@@ -341,39 +341,46 @@ func TestExternal_RedemptionFromExternalStore(t *testing.T) {
 }
 
 func TestExternal_LiveAcceptAndVerifyUseExternalStore(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 	storePath := filepath.Join(t.TempDir(), "nonces.jsonl")
 
+	stepStart := time.Now()
 	fx := custodyReviewOfferAdoption(t)
 	fx.repo.ws.Config.TrustAnchors = []config.TrustAnchor{fx.anchor}
 	opts := fx.acceptOpts(fx.token(t, "ext-live-1"))
 	opts.NonceStorePath = storePath
-	_, err := AcceptCustodyHandoff(ctx, fx.repo.ws, opts)
-	require.NoError(t, err, "a live operator accept consumes through the external nonce store")
-	assert.FileExists(t, storePath)
+	acceptRes, err := AcceptCustodyHandoff(ctx, fx.repo.ws, opts)
+	require.NoError(t, err, "a live operator accept consumes through the external nonce store (elapsed=%s)", time.Since(stepStart))
+	assert.FileExists(t, storePath, "external nonce store file created (elapsed=%s, verdicts=%+v)", time.Since(stepStart), acceptRes.Verdicts)
 
 	// Remove the workspace-writable redemption records. Only the external store still holds the nonce.
-	require.NoError(t, os.Remove(custodyNonceLedgerPath(fx.repo.root)))
-	require.NoError(t, os.Remove(events.LogPathForItem(WorkspaceLogsRoot(fx.repo.root), fx.repo.shipmentID)))
+	stepStart = time.Now()
+	require.NoError(t, os.Remove(custodyNonceLedgerPath(fx.repo.root)), "remove workspace nonce ledger (elapsed=%s)", time.Since(stepStart))
+	require.NoError(t, os.Remove(events.LogPathForItem(WorkspaceLogsRoot(fx.repo.root), fx.repo.shipmentID)), "remove shipment item log (elapsed=%s)", time.Since(stepStart))
 
+	stepStart = time.Now()
 	without, err := VerifyCustodyState(ctx, fx.repo.ws, CustodyVerifyOptions{ShipmentID: fx.repo.shipmentID, Branch: custExecFeatureBranch})
-	require.NoError(t, err)
+	require.NoError(t, err, "verify without external store (elapsed=%s)", time.Since(stepStart))
 	assert.Equal(t, "UNVERIFIED_OPERATOR_PROVENANCE", custExecVerdict(without, custExecCovered),
-		"without the external store, the removed workspace records leave no redemption")
+		"without the external store, the removed workspace records leave no redemption (elapsed=%s, verdicts=%+v)", time.Since(stepStart), without.Verdicts)
 
+	stepStart = time.Now()
 	with, err := VerifyCustodyState(ctx, fx.repo.ws, CustodyVerifyOptions{
 		ShipmentID: fx.repo.shipmentID, Branch: custExecFeatureBranch, NonceStorePath: storePath,
 	})
-	require.NoError(t, err)
+	require.NoError(t, err, "verify with external store (elapsed=%s)", time.Since(stepStart))
 	assert.Equal(t, "ADOPTED_OPERATOR_VERIFIED", custExecVerdict(with, custExecCovered),
-		"the external store alone must satisfy verify")
+		"the external store alone must satisfy verify (elapsed=%s, verdicts=%+v)", time.Since(stepStart), with.Verdicts)
 
+	stepStart = time.Now()
 	other := custodyReviewOfferAdoption(t)
 	other.repo.ws.Config.TrustAnchors = []config.TrustAnchor{other.anchor}
 	replay := other.acceptOpts(other.token(t, "ext-live-1"))
 	replay.NonceStorePath = storePath
-	_, err = AcceptCustodyHandoff(ctx, other.repo.ws, replay)
-	assert.ErrorIs(t, err, ErrNonceReplayed, "the external store refuses a nonce already consumed in another workspace")
+	replayRes, err := AcceptCustodyHandoff(ctx, other.repo.ws, replay)
+	assert.ErrorIs(t, err, ErrNonceReplayed,
+		"the external store refuses a nonce already consumed in another workspace (elapsed=%s, verdicts=%+v)", time.Since(stepStart), replayRes.Verdicts)
 }
 
 func TestExternal_VerifyRefusesInsidePathBeforeShipmentLookup(t *testing.T) {

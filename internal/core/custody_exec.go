@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
@@ -40,7 +41,17 @@ const (
 	custodyOperatorContributor   = "operator"
 	custodySourceOperatorConfig  = "operator_config"
 	custodySourceOperatorCodeDoc = "operator_code_or_doc"
+
+	defaultCustodyGitTimeout         = 15 * time.Second
+	maxCustodyBlobDigestCacheEntries = 4096
 )
+
+var custodyBlobDigestCache = struct {
+	mu      sync.RWMutex
+	entries map[string]string
+}{
+	entries: make(map[string]string),
+}
 
 // ErrCustodyUngovernedMutation reports a generic artifact write that would change
 // custom_fields.workflow_custody outside the governed custody operations.
@@ -1058,7 +1069,10 @@ func custodyMutationContext(ctx context.Context, ws *Workspace) (string, string,
 // prefix removed, so origin/develop refuses develop. When origin/HEAD does not resolve, the
 // default is main.
 func custodyRefuseDefaultBranch(ctx context.Context, root, branch string) error {
-	defaultBranch := custodyDefaultBranch(ctx, root)
+	defaultBranch, err := custodyDefaultBranch(ctx, root)
+	if err != nil {
+		return err
+	}
 	for _, forbidden := range []string{defaultBranch, "main", "master", "develop", "trunk"} {
 		if strings.EqualFold(branch, forbidden) {
 			return fmt.Errorf("%w: %q", ErrCustodyDefaultBranchForbidden, branch)
@@ -1067,21 +1081,27 @@ func custodyRefuseDefaultBranch(ctx context.Context, root, branch string) error 
 	return nil
 }
 
-func custodyDefaultBranch(ctx context.Context, root string) string {
+func custodyDefaultBranch(ctx context.Context, root string) (string, error) {
 	out, err := custodyGit(ctx, root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
 	if err != nil {
-		return "main"
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return "", fmt.Errorf("resolve custody default branch: %w", err)
+		}
+		return "main", nil
 	}
 	name := strings.TrimPrefix(strings.TrimSpace(string(out)), "origin/")
 	if name == "" {
-		return "main"
+		return "main", nil
 	}
-	return name
+	return name, nil
 }
 
 func custodyCurrentBranch(ctx context.Context, root string) (string, error) {
 	out, err := custodyGit(ctx, root, "symbolic-ref", "--quiet", "--short", "HEAD")
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return "", fmt.Errorf("resolve custody branch: %w", err)
+		}
 		return "", fmt.Errorf("resolve custody branch (detached HEAD is refused): %w: %w", blerrors.ErrValidation, err)
 	}
 	return strings.TrimSpace(string(out)), nil
@@ -1095,18 +1115,42 @@ func custodyHeadCommit(ctx context.Context, root string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// custodyGit runs git against root with --no-replace-objects, so replacement refs
-// cannot change what custody inspects, and --no-optional-locks, so inspection never
-// refreshes the index. Stdout and stderr are each capped at custodyMaxReadBytes.
+// custodyGit runs git against root with core.fsmonitor=false, gc.auto=0,
+// --no-replace-objects, and --no-optional-locks under a bounded timeout and
+// WaitDelay. Stdout and stderr are each capped at custodyMaxReadBytes.
 func custodyGit(ctx context.Context, root string, args ...string) ([]byte, error) {
-	full := append([]string{"-C", root, "--no-replace-objects", "--no-optional-locks"}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Env = config.ChildProcessEnv()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmdName := "git"
+	if len(args) > 0 {
+		cmdName = args[0]
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("git %s: %w", cmdName, err)
+	}
+	runCtx, cancel := context.WithTimeout(ctx, defaultCustodyGitTimeout)
+	defer cancel()
+
+	full := make([]string, 0, 7+len(args))
+	full = append(full, "-C", root, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "--no-replace-objects", "--no-optional-locks")
+	full = append(full, args...)
+
+	cmd := exec.CommandContext(runCtx, "git", full...)
+	cmd.Env = append(config.ChildProcessEnv(), "GIT_TERMINAL_PROMPT=0")
+	cmd.WaitDelay = 2 * time.Second
 	var stdout, stderr custodyCappedBuffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+	err := cmd.Run()
+	if ctxErr := runCtx.Err(); ctxErr != nil {
+		if err != nil {
+			return nil, fmt.Errorf("git %s: %w: %s", cmdName, errors.Join(ctxErr, err), strings.TrimSpace(stderr.String()))
+		}
+		return nil, fmt.Errorf("git %s: %w", cmdName, ctxErr)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", cmdName, err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
 }
@@ -1138,36 +1182,80 @@ func custodyPatchDigest(base, index, worktree string) string {
 	return canonical.HashBytes([]byte(custodyPatchDomain + "\n" + base + "\n" + index + "\n" + worktree))
 }
 
-func custodyCommittedDigest(ctx context.Context, root, commit, path string) (string, error) {
+func custodyCommittedOID(ctx context.Context, root, commit, path string) (string, bool, error) {
 	out, err := custodyGit(ctx, root, "ls-tree", "-z", commit, "--", path)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	oid, ok := custodyBlobOID(out, path, 2, false)
-	if !ok {
-		return "", nil
+	return oid, ok, nil
+}
+
+func custodyIndexOID(ctx context.Context, root, path string) (string, bool, error) {
+	out, err := custodyGit(ctx, root, "ls-files", "-s", "-z", "--", path)
+	if err != nil {
+		return "", false, err
+	}
+	oid, ok := custodyBlobOID(out, path, 1, true)
+	return oid, ok, nil
+}
+
+func custodyCommittedDigest(ctx context.Context, root, commit, path string) (string, error) {
+	oid, ok, err := custodyCommittedOID(ctx, root, commit, path)
+	if err != nil || !ok {
+		return "", err
 	}
 	return custodyBlobDigest(ctx, root, oid)
 }
 
-func custodyIndexDigest(ctx context.Context, root, path string) (string, error) {
-	out, err := custodyGit(ctx, root, "ls-files", "-s", "-z", "--", path)
-	if err != nil {
-		return "", err
+func custodyBlobDigestCacheKey(root, oid string) (string, bool) {
+	if !isGitObjectName(oid) {
+		return "", false
 	}
-	oid, ok := custodyBlobOID(out, path, 1, true)
-	if !ok {
-		return "", nil
+	return filepath.Clean(root) + "|" + strings.ToLower(oid), true
+}
+
+func lookupCustodyBlobDigest(key string) (string, bool) {
+	custodyBlobDigestCache.mu.RLock()
+	defer custodyBlobDigestCache.mu.RUnlock()
+	digest, ok := custodyBlobDigestCache.entries[key]
+	return digest, ok
+}
+
+func storeCustodyBlobDigest(key, digest string) {
+	if digest == "" {
+		return
 	}
-	return custodyBlobDigest(ctx, root, oid)
+	custodyBlobDigestCache.mu.Lock()
+	defer custodyBlobDigestCache.mu.Unlock()
+	if _, exists := custodyBlobDigestCache.entries[key]; !exists && len(custodyBlobDigestCache.entries) >= maxCustodyBlobDigestCacheEntries {
+		clear(custodyBlobDigestCache.entries)
+	}
+	custodyBlobDigestCache.entries[key] = digest
 }
 
 func custodyBlobDigest(ctx context.Context, root, oid string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", fmt.Errorf("read git blob digest: %w", err)
+	}
+	key, cacheable := custodyBlobDigestCacheKey(root, oid)
+	if cacheable {
+		if cached, ok := lookupCustodyBlobDigest(key); ok {
+			return cached, nil
+		}
+	}
 	data, err := custodyGit(ctx, root, "cat-file", "blob", oid)
 	if err != nil {
 		return "", err
 	}
-	return custodyDigest(data), nil
+	digest := custodyDigest(data)
+	if cacheable && digest != "" {
+		storeCustodyBlobDigest(key, digest)
+	}
+	return digest, nil
 }
 
 // custodyBlobOID returns the object id of the entry named path in a NUL-separated
@@ -1193,13 +1281,37 @@ func custodyBlobOID(listing []byte, path string, oidField int, stageZero bool) (
 // custodyLiveDigests reads the base, index, and worktree digests of path. The worktree
 // read goes through the handle-pinned no-follow reader.
 func custodyLiveDigests(ctx context.Context, ws *Workspace, commit, path string) (custodyEntryState, error) {
-	base, err := custodyCommittedDigest(ctx, ws.RootPath, commit, path)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return custodyEntryState{}, fmt.Errorf("read custody live digests: %w", err)
+	}
+	baseOID, baseOK, err := custodyCommittedOID(ctx, ws.RootPath, commit, path)
 	if err != nil {
 		return custodyEntryState{}, err
 	}
-	index, err := custodyIndexDigest(ctx, ws.RootPath, path)
+	var base string
+	if baseOK {
+		base, err = custodyBlobDigest(ctx, ws.RootPath, baseOID)
+		if err != nil {
+			return custodyEntryState{}, err
+		}
+	}
+	indexOID, indexOK, err := custodyIndexOID(ctx, ws.RootPath, path)
 	if err != nil {
 		return custodyEntryState{}, err
+	}
+	var index string
+	if indexOK {
+		if baseOK && indexOID == baseOID {
+			index = base
+		} else {
+			index, err = custodyBlobDigest(ctx, ws.RootPath, indexOID)
+			if err != nil {
+				return custodyEntryState{}, err
+			}
+		}
 	}
 	worktree, err := custodyWorktreeDigest(ws, path)
 	if err != nil {
