@@ -58,6 +58,15 @@ func TestLinkCommit_StoresAssociation(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestLinkCommit_RejectsNilDBOrInvalidWorkspace(t *testing.T) {
+	ws := setupCommitWorkspace(t)
+	ctx := context.Background()
+
+	require.Error(t, core.LinkCommit(ctx, nil, ws, "T001", "abc123def", "msg", "author"))
+	require.Error(t, core.LinkCommit(ctx, ws.DB, nil, "T001", "abc123def", "msg", "author"))
+	require.Error(t, core.LinkCommit(ctx, ws.DB, &core.Workspace{RootPath: "   "}, "T001", "abc123def", "msg", "author"))
+}
+
 func TestGetCommitLinks_ReturnsLinked(t *testing.T) {
 	// Arrange
 	ws := setupCommitWorkspace(t)

@@ -383,4 +383,20 @@ func TestU3b_ValidateMemberGateEvidenceMemoizesImmutableCommitAncestry(t *testin
 		require.NoError(t, err)
 		assert.False(t, ok, "presence of .git/info/grafts must invalidate/bypass cache and return false")
 	})
+
+	t.Run("nil_ctx_normalized_and_pre_exec_eligibility_reported", func(t *testing.T) {
+		ws := newGateTestWorkspace(t)
+		c1, c2, _ := initGitRepoWithCommits(t, ws.RootPath)
+
+		//nolint:staticcheck // intentional: verifies nil context normalization in isAncestor
+		ok, err := ws.isAncestor(nil, c1, c2)
+		require.NoError(t, err)
+		assert.True(t, ok)
+
+		shallowPath := filepath.Join(ws.RootPath, ".git", "shallow")
+		require.NoError(t, os.WriteFile(shallowPath, []byte(c2+"\n"), 0o644))
+		_, hit, eligible := ws.lookupAncestryCache(strings.ToLower(c1) + "|" + strings.ToLower(c2))
+		assert.False(t, hit)
+		assert.False(t, eligible, "shallow repo must report preExecEligible=false and clear cache")
+	})
 }

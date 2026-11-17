@@ -82,6 +82,9 @@ func (ws *Workspace) boundedHelperTimeout() time.Duration {
 // {0,1} outcomes are memoized on the Workspace with a bounded cache; ctx.Err() is
 // always checked first before consulting the cache.
 func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if err := ctx.Err(); err != nil {
 		return false, fmt.Errorf("ancestor check aborted: %w", err)
 	}
@@ -91,9 +94,12 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 
 	cacheable := isGitObjectName(ancestor) && isGitObjectName(descendant)
 	var cacheKey string
+	var preExecEligible bool
 	if cacheable {
 		cacheKey = strings.ToLower(ancestor) + "|" + strings.ToLower(descendant)
-		if cached, hit := ws.lookupAncestryCache(cacheKey); hit {
+		var cached, hit bool
+		cached, hit, preExecEligible = ws.lookupAncestryCache(cacheKey)
+		if hit {
 			return cached, nil
 		}
 	}
@@ -105,6 +111,7 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	cmd := exec.CommandContext(runCtx, "git", "--no-replace-objects", "merge-base", "--is-ancestor", ancestor, descendant)
 	cmd.Dir = ws.RootPath
 	cmd.Env = gate.MinimalEnv()
+	cmd.WaitDelay = 2 * time.Second
 	cmd.Stderr = &stderr
 
 	runErr := cmd.Run()
@@ -116,7 +123,7 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 		return false, fmt.Errorf("ancestor check aborted: %w", ctxErr)
 	}
 	if runErr == nil {
-		if cacheable {
+		if cacheable && preExecEligible {
 			ws.storeAncestryCache(cacheKey, true)
 		}
 		return true, nil // exit 0: ancestor or equal.
@@ -125,7 +132,7 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	var ee *exec.ExitError
 	if stderrors.As(runErr, &ee) {
 		if ee.ExitCode() == 1 {
-			if cacheable {
+			if cacheable && preExecEligible {
 				ws.storeAncestryCache(cacheKey, false)
 			}
 			return false, nil // definitively not an ancestor.
@@ -139,7 +146,7 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	return false, fmt.Errorf("run git merge-base --is-ancestor: %w", runErr)
 }
 
-func (ws *Workspace) lookupAncestryCache(key string) (bool, bool) {
+func (ws *Workspace) lookupAncestryCache(key string) (cached bool, hit bool, eligible bool) {
 	ws.ancestryMu.Lock()
 	defer ws.ancestryMu.Unlock()
 
@@ -147,13 +154,13 @@ func (ws *Workspace) lookupAncestryCache(key string) (bool, bool) {
 		if ws.ancestryCache != nil {
 			clear(ws.ancestryCache)
 		}
-		return false, false
+		return false, false, false
 	}
 	if ws.ancestryCache == nil {
-		return false, false
+		return false, false, true
 	}
 	val, ok := ws.ancestryCache[key]
-	return val, ok
+	return val, ok, true
 }
 
 func (ws *Workspace) storeAncestryCache(key string, isAnc bool) {

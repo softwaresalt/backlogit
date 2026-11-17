@@ -146,4 +146,14 @@ func TestU2_ReadAllEventsSmallInitialBufferGrowsToOneMiBMax(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorIs(t, err, bufio.ErrTooLong)
 	})
+
+	t.Run("canceled_context_fails_closed", func(t *testing.T) {
+		logsDir := t.TempDir()
+		canceledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		_, err := ReadAllEvents(canceledCtx, logsDir, itemID)
+		require.Error(t, err)
+		require.ErrorIs(t, err, context.Canceled)
+	})
 }

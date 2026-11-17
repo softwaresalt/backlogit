@@ -528,4 +528,55 @@ func TestU1_CommitWritersShipmentMemberLockOrderGlobalBeforeItemLog(t *testing.T
 			}, trace)
 		})
 	})
+
+	t.Run("d_link_commit_acquires_c_before_commit_links_upsert", func(t *testing.T) {
+		t.Run("commit_links_untouched_when_c_hook_fires", func(t *testing.T) {
+			ctx := context.Background()
+			fx := newReconstituteFixture(t)
+			memberID := fx.tasks[0].ID
+			sha := strings.Repeat("3", 40)
+
+			var rowsAtBarrier int
+			var hookCalled atomic.Bool
+			restoreItemLogHook := events.SetItemLogLockBarrierHookForTest(func(itemID string) {
+				if itemID == memberID && hookCalled.CompareAndSwap(false, true) {
+					require.NoError(t, fx.ws.DB.QueryRow(`SELECT COUNT(*) FROM commit_links WHERE item_id = ?`, memberID).Scan(&rowsAtBarrier))
+				}
+			})
+			t.Cleanup(restoreItemLogHook)
+
+			require.NoError(t, LinkCommit(ctx, fx.ws.DB, fx.ws, memberID, sha, "msg", "author"))
+			require.True(t, hookCalled.Load(), "LinkCommit must invoke item-log lock C")
+			require.Zero(t, rowsAtBarrier, "LinkCommit must acquire C before mutating commit_links")
+
+			links, err := GetCommitLinks(ctx, fx.ws.DB, memberID)
+			require.NoError(t, err)
+			require.Len(t, links, 1)
+			assert.Equal(t, sha, links[0].CommitSHA)
+		})
+
+		t.Run("commit_links_untouched_when_lock_c_fails", func(t *testing.T) {
+			fx := newReconstituteFixture(t)
+			memberID := fx.tasks[0].ID
+
+			// Hold the cross-process sidecar C with a distinct logsDir so the
+			// in-process mutex does not block before acquireItemLogFileLock
+			// observes the busy sidecar and honors timeoutCtx.
+			_, releaseC, err := events.LockItemLogCrossProcess(context.Background(),
+				WorkspaceLocksRoot(fx.ws.RootPath), t.TempDir(), memberID)
+			require.NoError(t, err)
+			defer releaseC()
+
+			timeoutCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+
+			err = LinkCommit(timeoutCtx, fx.ws.DB, fx.ws, memberID, strings.Repeat("4", 40), "msg", "author")
+			require.Error(t, err)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+
+			var count int
+			require.NoError(t, fx.ws.DB.QueryRow(`SELECT COUNT(*) FROM commit_links WHERE item_id = ?`, memberID).Scan(&count))
+			require.Zero(t, count, "LinkCommit must not mutate commit_links when LockItemLogCrossProcess fails")
+		})
+	})
 }

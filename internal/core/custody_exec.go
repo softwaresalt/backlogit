@@ -1132,12 +1132,12 @@ func custodyGit(ctx context.Context, root string, args ...string) ([]byte, error
 	runCtx, cancel := context.WithTimeout(ctx, defaultCustodyGitTimeout)
 	defer cancel()
 
-	full := make([]string, 0, 7+len(args))
+	full := make([]string, 0, 8+len(args))
 	full = append(full, "-C", root, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "--no-replace-objects", "--no-optional-locks")
 	full = append(full, args...)
 
 	cmd := exec.CommandContext(runCtx, "git", full...)
-	cmd.Env = append(config.ChildProcessEnv(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = custodyGitEnv()
 	cmd.WaitDelay = 2 * time.Second
 	var stdout, stderr custodyCappedBuffer
 	cmd.Stdout = &stdout
@@ -1182,7 +1182,24 @@ func custodyPatchDigest(base, index, worktree string) string {
 	return canonical.HashBytes([]byte(custodyPatchDomain + "\n" + base + "\n" + index + "\n" + worktree))
 }
 
+func custodyGitEnv() []string {
+	base := gitCommandEnv()
+	env := make([]string, 0, len(base)+1)
+	for _, entry := range base {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(key, "GIT_TERMINAL_PROMPT") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	env = append(env, "GIT_TERMINAL_PROMPT=0")
+	return env
+}
+
 func custodyCommittedOID(ctx context.Context, root, commit, path string) (string, bool, error) {
+	if commit == "" || strings.HasPrefix(commit, "-") || strings.ContainsAny(commit, "\x00\r\n") {
+		return "", false, fmt.Errorf("read committed oid: invalid commit %q: %w", commit, blerrors.ErrValidation)
+	}
 	out, err := custodyGit(ctx, root, "ls-tree", "-z", commit, "--", path)
 	if err != nil {
 		return "", false, err
@@ -1209,10 +1226,18 @@ func custodyCommittedDigest(ctx context.Context, root, commit, path string) (str
 }
 
 func custodyBlobDigestCacheKey(root, oid string) (string, bool) {
-	if !isGitObjectName(oid) {
+	if !isGitObjectName(oid) || strings.TrimSpace(root) == "" {
 		return "", false
 	}
-	return filepath.Clean(root) + "|" + strings.ToLower(oid), true
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", false
+	}
+	resolved, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return "", false
+	}
+	return filepath.Clean(resolved) + "|" + strings.ToLower(oid), true
 }
 
 func lookupCustodyBlobDigest(key string) (string, bool) {
@@ -1240,6 +1265,9 @@ func custodyBlobDigest(ctx context.Context, root, oid string) (string, error) {
 	}
 	if err := ctx.Err(); err != nil {
 		return "", fmt.Errorf("read git blob digest: %w", err)
+	}
+	if !isGitObjectName(oid) {
+		return "", fmt.Errorf("read git blob digest: invalid git object id %q: %w", oid, blerrors.ErrValidation)
 	}
 	key, cacheable := custodyBlobDigestCacheKey(root, oid)
 	if cacheable {

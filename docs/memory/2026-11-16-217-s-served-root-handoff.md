@@ -30,8 +30,7 @@ and main SQLite index as `.backlogit/backlogit.db`. Absolute host paths are
 intentionally omitted from repository memory.
 
 Branch `feat/217-s-zero-flake-concurrency-and-fast-ship-closure-engine`
-holds the `217-S` execution sequence in Dark Factory Mode (`P-017`,
-`DARK_MODE_ACTIVE: true`, `ROUTING_DEGRADED: context_tier`).
+holds the `217-S` execution sequence.
 
 ## Scope and lineage
 

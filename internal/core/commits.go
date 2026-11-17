@@ -284,24 +284,38 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 // that silently swallows JSONL append failures and does not update the frontmatter scalar.
 // It is retained for backward compatibility but must not be used for new code.
 func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSHA, message, author string) error {
-	var logsDir string
-	if ws != nil && ws.RootPath != "" {
-		logsDir = WorkspaceLogsRoot(ws.RootPath)
-		lifecycleCtx, globalUnlock, globalErr := acquireCommitWriterLifecycleGlobal(
-			ctx, ws, logsDir, itemID, "LinkCommit", "link commit",
-		)
-		if globalErr != nil {
-			return globalErr
-		}
-		if globalUnlock != nil {
-			defer func() {
-				if unlockErr := globalUnlock(); unlockErr != nil {
-					slog.Warn("link commit: release shipment lifecycle lock", "item_id", itemID, "error", unlockErr)
-				}
-			}()
-		}
-		ctx = lifecycleCtx
+	if db == nil {
+		return fmt.Errorf("link commit: db must not be nil")
 	}
+	if ws == nil || strings.TrimSpace(ws.RootPath) == "" {
+		return fmt.Errorf("link commit: workspace must not be nil with non-empty RootPath")
+	}
+
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	lifecycleCtx, globalUnlock, globalErr := acquireCommitWriterLifecycleGlobal(
+		ctx, ws, logsDir, itemID, "LinkCommit", "link commit",
+	)
+	if globalErr != nil {
+		return globalErr
+	}
+	if globalUnlock != nil {
+		defer func() {
+			if unlockErr := globalUnlock(); unlockErr != nil {
+				slog.Warn("link commit: release shipment lifecycle lock", "item_id", itemID, "error", unlockErr)
+			}
+		}()
+	}
+	ctx = lifecycleCtx
+
+	// Acquire item-log cross-process lock C BEFORE mutating commit_links so
+	// lifecycle-global -> C is held across both commit_links upsert and JSONL
+	// append + IndexEvent, and lock failure cannot leave a partial DB write.
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
+	if lockErr != nil {
+		return fmt.Errorf("link commit: lock item log: %w", lockErr)
+	}
+	defer unlockLog()
+	ctx = lockedCtx
 
 	_, err := db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)`,
@@ -312,15 +326,6 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 	}
 
 	// Append to the item's JSONL log so rehydration and search can rebuild state from log files.
-	if logsDir == "" {
-		logsDir = WorkspaceLogsRoot(ws.RootPath)
-	}
-	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
-	if lockErr != nil {
-		return fmt.Errorf("link commit: lock item log: %w", lockErr)
-	}
-	defer unlockLog()
-	ctx = lockedCtx
 	ew := NewWorkspaceEventWriter(ws, logsDir)
 	event := events.Event{
 		Timestamp: time.Now(),
@@ -412,7 +417,10 @@ func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) (links []Com
 		}
 		links = append(links, l)
 	}
-	return links, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate commit links: %w", err)
+	}
+	return links, nil
 }
 
 // artifactIDPattern matches typed hierarchical artifact IDs like F001 or F001.T001.ST001.

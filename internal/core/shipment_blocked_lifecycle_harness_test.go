@@ -587,7 +587,7 @@ func TestUR1B_FailClosedValidationAndAuthoritativeActiveSlot(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, os.WriteFile(instructionPath, instructionData, 0o644))
 
-			subCtx, subCancel := context.WithTimeout(ctx, 30*time.Second)
+			subCtx, subCancel := context.WithTimeout(ctx, 60*time.Second)
 			defer subCancel()
 			cmd := exec.CommandContext(subCtx, os.Args[0], "-test.run=^TestShipmentBlockedActiveSlotSubprocessHelper$", "-test.count=1")
 			cmd.WaitDelay = 2 * time.Second

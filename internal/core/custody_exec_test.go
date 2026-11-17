@@ -20,6 +20,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/canonical"
 	"github.com/softwaresalt/backlogit/internal/config"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -406,6 +407,57 @@ func TestU5_CustodyGitBoundedTimeoutAndBlobDigestDeduplication(t *testing.T) {
 			return !hasWaitDelay
 		})
 		assert.True(t, hasWaitDelay, "custodyGit must assign/set WaitDelay on *exec.Cmd")
+	})
+
+	t.Run("custodyGitEnv_strips_case_insensitive_prompt_and_overrides", func(t *testing.T) {
+		t.Setenv("git_terminal_prompt", "1")
+		t.Setenv("GIT_DIR", "/tmp/evil")
+		t.Setenv("GIT_CONFIG_PARAMETERS", "'core.autocrlf=false'")
+
+		env := custodyGitEnv()
+		promptCount := 0
+		for _, entry := range env {
+			key, val, _ := strings.Cut(entry, "=")
+			assert.False(t, strings.EqualFold(key, "GIT_DIR"))
+			assert.False(t, strings.EqualFold(key, "GIT_CONFIG_PARAMETERS"))
+			if strings.EqualFold(key, "GIT_TERMINAL_PROMPT") {
+				promptCount++
+				assert.Equal(t, "GIT_TERMINAL_PROMPT=0", entry, "unexpected prompt entry %q=%q", key, val)
+			}
+		}
+		assert.Equal(t, 1, promptCount)
+	})
+
+	t.Run("custodyBlobDigest_and_custodyCommittedOID_reject_invalid_inputs", func(t *testing.T) {
+		repo := custExecNewRepo(t)
+		ctx := context.Background()
+
+		for _, badOID := range []string{"", "-p", "HEAD", "deadbeef", strings.Repeat("z", 40)} {
+			_, err := custodyBlobDigest(ctx, repo.root, badOID)
+			require.ErrorIs(t, err, blerrors.ErrValidation, "oid=%q", badOID)
+		}
+
+		for _, badCommit := range []string{"", "-n1", "--help", "HEAD\x00evil", "HEAD\nevil", "HEAD\revil"} {
+			_, _, err := custodyCommittedOID(ctx, repo.root, badCommit, custExecCovered)
+			require.ErrorIs(t, err, blerrors.ErrValidation, "commit=%q", badCommit)
+		}
+	})
+
+	t.Run("custodyBlobDigestCacheKey_canonicalizes_root_and_skips_missing", func(t *testing.T) {
+		dir := t.TempDir()
+		oid := strings.Repeat("A", 40)
+
+		key1, ok1 := custodyBlobDigestCacheKey(dir, oid)
+		require.True(t, ok1)
+		key2, ok2 := custodyBlobDigestCacheKey(filepath.Join(dir, "."), strings.ToLower(oid))
+		require.True(t, ok2)
+		assert.Equal(t, key1, key2)
+
+		_, okEmpty := custodyBlobDigestCacheKey("", oid)
+		assert.False(t, okEmpty)
+
+		_, okMissing := custodyBlobDigestCacheKey(filepath.Join(dir, "does-not-exist"), oid)
+		assert.False(t, okMissing)
 	})
 }
 
