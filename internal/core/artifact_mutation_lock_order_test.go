@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -60,14 +61,15 @@ func TestU172_LockOrder_ArchiveItemDoesNotHoldArtifactLockWhileWaitingForItemLog
 	})
 	t.Cleanup(restoreItemLogHook)
 
-	// The lifecycle-global hook reports when ArchiveItem holds the global lock,
-	// the step that precedes its wait for C, so the writer below cannot run
-	// before ArchiveItem has started contending.
-	archiveHoldsGlobal := make(chan struct{})
-	var globalOnce sync.Once
+	// The lifecycle hook reports when ArchiveItem reaches the item-log lock
+	// step (after pending recovery and shipment discovery have completed), so
+	// the negative probe and writer below run while ArchiveItem is actively
+	// contending on C.
+	archiveAttemptingItemLog := make(chan struct{})
+	var itemLogAttemptOnce sync.Once
 	archiveCtx := context.WithValue(ctx, shipmentLifecycleGlobalLockHookContextKey{}, func(phase string) {
-		if phase == "acquired" {
-			globalOnce.Do(func() { close(archiveHoldsGlobal) })
+		if phase == "attempt_item_log" {
+			itemLogAttemptOnce.Do(func() { close(archiveAttemptingItemLog) })
 		}
 	})
 
@@ -96,19 +98,19 @@ func TestU172_LockOrder_ArchiveItemDoesNotHoldArtifactLockWhileWaitingForItemLog
 	})
 
 	select {
-	case <-archiveHoldsGlobal:
+	case <-archiveAttemptingItemLog:
 	case <-time.After(u172ObservationWait):
-		t.Fatal("ArchiveItem never acquired the lifecycle global lock")
+		t.Fatal("ArchiveItem never reached the item-log lock step")
 	}
 	select {
 	case <-archiveReachedArtifactLock:
 		t.Fatal("ArchiveItem acquired the artifact mutation lock B while another writer held C: it must take C before B")
-	case <-time.After(250 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond):
 	}
 
 	// The writer try-locks B, so a B held by ArchiveItem while it waits for C
 	// surfaces as ErrTaskBusy until the deadline instead of a timing guess.
-	writerErr := runU172CBeforeBWriter(cLockedCtx, ws, item.ID, defaultGateLockBoundedWait)
+	writerErr := runU172CBeforeBWriter(cLockedCtx, ws, item.ID, u172ObservationWait)
 	require.Zero(t, archiveCAttempts.Load(), "ArchiveItem acquired the item-log file lock while the test still held C")
 
 	unlockItemLog()
@@ -167,4 +169,52 @@ func readU172ItemLogEventTypes(t *testing.T, ws *Workspace, itemID string) []str
 		types = append(types, event.EventType)
 	}
 	return types
+}
+
+func TestU7_ArchiveGovernanceEmitsDeterministicMembershipAndItemLogAttemptStages(t *testing.T) {
+	ws := setupShipmentWorkspace(t)
+	ctx := context.Background()
+	feature, err := CreateArtifact(ctx, ws, "u7 archive governance feature", "feature")
+	require.NoError(t, err)
+	member, err := CreateArtifact(ctx, ws, "u7 archive governance member", "task", WithParent(feature.ID))
+	require.NoError(t, err)
+	_, err = UpdateArtifact(ctx, ws, member.ID, map[string]any{"status": string(models.StatusActive)})
+	require.NoError(t, err)
+	_, err = UpdateArtifact(ctx, ws, member.ID, map[string]any{"status": string(models.StatusDone)})
+	require.NoError(t, err)
+	_, err = CreateShipment(ctx, ws, "u7 archive governance shipment", []string{member.ID})
+	require.NoError(t, err)
+
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	var mu sync.Mutex
+	var stages []string
+	observedCtx := context.WithValue(ctx, shipmentLifecycleGlobalLockHookContextKey{}, func(stage string) {
+		mu.Lock()
+		stages = append(stages, stage)
+		mu.Unlock()
+		if stage == "attempt_item_log" {
+			require.False(t, events.ItemLogCrossProcessLockHeld(ctx, logsDir, member.ID),
+				"item-log lock C must not be held before attempt_item_log")
+			unlockB, lockErr := lockArtifactMutation(ctx, ws, member.ID)
+			require.NoError(t, lockErr, "artifact mutation lock B must not be held at attempt_item_log")
+			require.NoError(t, unlockB())
+		}
+	})
+
+	_, err = ArchiveItem(observedCtx, ws.DB, ws, member.ID)
+	require.NoError(t, err)
+
+	mu.Lock()
+	recorded := append([]string(nil), stages...)
+	mu.Unlock()
+
+	acquiredIdx := slices.Index(recorded, "acquired")
+	membershipIdx := slices.Index(recorded, "attempt_membership")
+	itemLogIdx := slices.Index(recorded, "attempt_item_log")
+
+	require.NotEqualf(t, -1, acquiredIdx, "expected 'acquired' stage in %v", recorded)
+	require.NotEqualf(t, -1, membershipIdx, "expected 'attempt_membership' stage in %v", recorded)
+	require.NotEqualf(t, -1, itemLogIdx, "expected 'attempt_item_log' stage in %v", recorded)
+	require.Lessf(t, acquiredIdx, membershipIdx, "expected 'acquired' before 'attempt_membership' in %v", recorded)
+	require.Lessf(t, membershipIdx, itemLogIdx, "expected 'attempt_membership' before 'attempt_item_log' in %v", recorded)
 }
