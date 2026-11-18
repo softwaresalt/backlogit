@@ -25,10 +25,10 @@ closure of shipment `217-S`.
 
 | Directory | Files before compaction | Bytes before compaction | Threshold status |
 | --- | --- | --- | --- |
-| `docs/memory/` | 67 | 198,321 | Exceeds `max_files` (`67 > 40`) |
-| `docs/plans/` | 148 | 5,661,009 | Preserved (no relocation approval requested) |
+| `docs/memory/` | 373 | 2,329,880 | Exceeds `max_files` (`373 > 40`) and `max_size_kb` (`2,275 KiB > 500 KiB`) |
+| `docs/plans/` | 148 | 5,661,009 | Preserved (no relocation approval requested; 149 files / 5,661,251 bytes including gitignored `.lock`) |
 | `docs/exec-plans/` | 0 | 0 | Within threshold |
-| `docs/closure/` | 176 | 1,119,104 | Assessed for completed scope |
+| `docs/closure/` | 182 | 1,166,174 | Assessed for completed scope |
 
 ## Scoped compaction actions (`217-S`)
 

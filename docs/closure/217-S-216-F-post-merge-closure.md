@@ -37,7 +37,7 @@ creating `post-merge/217-s-closure`. Lifecycle topology gate returned
 
 Flat explicit membership is `M = [216-F, 216.001-T..216.008-T]` plus shipment
 control `217-S`. Pre-close, safe-close, and post-close reconciliation passed
-under one held `.backlogit/queue/217-S.md` agent-lock, which was released at
+under one held `.backlogit/queue/.217-S.md.agent-lock`, which was released at
 post-mode completion. `217-S` is archived with `archived_status: shipped`;
 `216-F` and `216.001-T`..`216.008-T` are archived with `archived_status: done`
 and merge commit `75e27861fac309e79113c270bcaba1927dfdc767`. Zero non-member

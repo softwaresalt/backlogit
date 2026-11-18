@@ -42,9 +42,9 @@ validation_expectations:
 
 ### Post-merge Go unit and invariant probes (`main` @ `75e27861`)
 
-* `go test -count=1 -run "TestU2_" ./internal/events` — `PASS` (`5.275s`)
-* `go test -count=1 -run "TestU4_" ./internal/db` — `PASS` (`12.311s`)
-* `go test -count=1 -run "TestU1_|TestU3a_|TestU3b_|TestU5_|TestU6_|TestU7_|TestU172_LockOrder_|TestArchiveItemGovernance_" ./internal/core` — `PASS` (`76.592s`)
+* `go test -count=1 -run "TestU2_" ./internal/events` - `PASS` (`5.275s`)
+* `go test -count=1 -run "TestU4_" ./internal/db` - `PASS` (`12.311s`)
+* `go test -count=1 -run "TestU1_|TestU3a_|TestU3b_|TestU5_|TestU6_|TestU7_|TestU172_LockOrder_|TestArchiveItemGovernance_" ./internal/core` - `PASS` (`76.592s`)
 
 ### Post-merge CLI runtime probes (`.\bin\backlogit.exe`)
 
