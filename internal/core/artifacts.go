@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -839,42 +840,67 @@ func artifactSearchDirs(ws *Workspace) ([]string, error) {
 	return dirs, nil
 }
 
+// FindArtifactPath locates the Markdown file for an artifact by ID.
+// It searches all non-hidden subdirectories of the .backlogit workspace, including
+// status-based routing directories such as "archive" and "review".
 // Returns the absolute file path or an error if not found.
-func FindArtifactPath(_ context.Context, ws *Workspace, id string) (string, error) {
-	searchDirs, err := artifactSearchDirs(ws)
+func FindArtifactPath(ctx context.Context, ws *Workspace, id string) (string, error) {
+	_, path, err := findArtifactWithPath(ctx, ws, id)
 	if err != nil {
 		return "", err
 	}
-
-	for _, dirPath := range searchDirs {
-		found, findErr := findArtifactInSearchDir(ws, dirPath, id)
-		if findErr != nil {
-			return "", findErr
-		}
-		if found != "" {
-			return found, nil
-		}
-	}
-	return "", fmt.Errorf("artifact not found: %s: %w", id, blerrors.ErrNotFound)
+	return path, nil
 }
 
-// findArtifactInSearchDir searches a single registry-derived search directory
-// (recursively) for an artifact with the given id, returning its resolved
-// path, or "" if not found in dirPath (a missing dirPath is not an error). It
-// is the extracted, reusable single-directory search body of FindArtifactPath
-// so a caller that already knows which directory it wants to probe (e.g. to
-// check whether an id resolves anywhere OTHER than an already-found path,
-// without re-running the full multi-directory search) does not need a second,
-// weaker parse/walk implementation.
-func findArtifactInSearchDir(ws *Workspace, dirPath, id string) (string, error) {
-	if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
-		return "", nil
+// isDirectProbeID reports whether id is a single safe path segment suitable for
+// probing <dir>/<id>.md directly without directory traversal.
+func isDirectProbeID(id string) bool {
+	return id != "" &&
+		id != "." &&
+		id != ".." &&
+		filepath.Base(id) == id &&
+		filepath.VolumeName(id) == "" &&
+		!strings.ContainsAny(id, `/\`)
+}
+
+// probeArtifactInSearchDir checks <dirPath>/<id>.md directly via os.Lstat,
+// enforcing containment before reading and parsing the file.
+func probeArtifactInSearchDir(ws *Workspace, dirPath, id string) (*models.Artifact, string, error) {
+	candidate := filepath.Join(dirPath, id+".md")
+	info, lstatErr := os.Lstat(candidate)
+	if lstatErr != nil {
+		if os.IsNotExist(lstatErr) {
+			return nil, "", nil
+		}
+		return nil, "", fmt.Errorf("stat %s: %w", candidate, lstatErr)
 	}
-	var found string
+	if info.IsDir() {
+		return nil, "", nil
+	}
+	if guardErr := ensureArtifactLookupContained(ws, candidate); guardErr != nil {
+		return nil, "", guardErr
+	}
+	a, _, parseErr := parseFile(candidate)
+	if parseErr != nil || a.ID != id {
+		return nil, "", nil
+	}
+	return a, candidate, nil
+}
+
+// walkArtifactInSearchDir recursively walks dirPath looking for a Markdown
+// artifact whose frontmatter ID matches id.
+func walkArtifactInSearchDir(ws *Workspace, dirPath, id string) (*models.Artifact, string, error) {
+	if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
+		return nil, "", nil
+	}
+	var foundArtifact *models.Artifact
+	var foundPath string
 	walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
 			return err
 		}
+		// SE-7b second-layer containment: reject a symlinked leaf that resolves
+		// outside the storage root before reading it, mirroring FindArtifactPath.
 		if guardErr := ensureArtifactLookupContained(ws, path); guardErr != nil {
 			return guardErr
 		}
@@ -883,15 +909,76 @@ func findArtifactInSearchDir(ws *Workspace, dirPath, id string) (string, error) 
 			return nil
 		}
 		if a.ID == id {
-			found = path
+			foundArtifact = a
+			foundPath = path
 			return filepath.SkipAll
 		}
 		return nil
 	})
 	if walkErr != nil {
-		return "", fmt.Errorf("walk %s: %w", dirPath, walkErr)
+		return nil, "", fmt.Errorf("walk %s: %w", dirPath, walkErr)
 	}
-	return found, nil
+	return foundArtifact, foundPath, nil
+}
+
+// findArtifactWithPath locates and parses an artifact by ID along with its
+// resolved file path using a two-pass search across artifactSearchDirs(ws):
+// Pass 1 probes <dir>/<id>.md across all search directories with lookup-time
+// containment; Pass 2 falls back to WalkDir for slug-named or nested files.
+func findArtifactWithPath(_ context.Context, ws *Workspace, id string) (*models.Artifact, string, error) {
+	searchDirs, err := artifactSearchDirs(ws)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if isDirectProbeID(id) {
+		for _, dirPath := range searchDirs {
+			artifact, path, probeErr := probeArtifactInSearchDir(ws, dirPath, id)
+			if probeErr != nil {
+				return nil, "", probeErr
+			}
+			if artifact != nil {
+				return artifact, path, nil
+			}
+		}
+	}
+
+	for _, dirPath := range searchDirs {
+		artifact, path, walkErr := walkArtifactInSearchDir(ws, dirPath, id)
+		if walkErr != nil {
+			return nil, "", walkErr
+		}
+		if artifact != nil {
+			return artifact, path, nil
+		}
+	}
+
+	return nil, "", fmt.Errorf("artifact not found: %s: %w", id, blerrors.ErrNotFound)
+}
+
+// findArtifactInSearchDir searches a single registry-derived search directory
+// (first via direct probe, then recursively) for an artifact with the given id,
+// returning its resolved path, or "" if not found in dirPath (a missing dirPath
+// is not an error). It is the extracted, reusable single-directory search body
+// so a caller that already knows which directory it wants to probe (e.g. to
+// check whether an id resolves anywhere OTHER than an already-found path,
+// without re-running the full multi-directory search) does not need a second,
+// weaker parse/walk implementation.
+func findArtifactInSearchDir(ws *Workspace, dirPath, id string) (string, error) {
+	if isDirectProbeID(id) {
+		artifact, path, probeErr := probeArtifactInSearchDir(ws, dirPath, id)
+		if probeErr != nil {
+			return "", probeErr
+		}
+		if artifact != nil {
+			return path, nil
+		}
+	}
+	_, path, walkErr := walkArtifactInSearchDir(ws, dirPath, id)
+	if walkErr != nil {
+		return "", walkErr
+	}
+	return path, nil
 }
 
 func ensureArtifactLookupContained(ws *Workspace, path string) error {
@@ -1158,44 +1245,12 @@ func isProtectedShipmentStatusTransition(previous, next models.ArtifactStatus) b
 			(previous == models.StatusQueued && next == models.StatusAbandoned))
 }
 
-func findArtifact(_ context.Context, ws *Workspace, id string) (*models.Artifact, error) {
-	searchDirs, err := artifactSearchDirs(ws)
+func findArtifact(ctx context.Context, ws *Workspace, id string) (*models.Artifact, error) {
+	artifact, _, err := findArtifactWithPath(ctx, ws, id)
 	if err != nil {
 		return nil, err
 	}
-
-	for _, dirPath := range searchDirs {
-		if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
-			continue
-		}
-		var found *models.Artifact
-		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
-				return err
-			}
-			// SE-7b second-layer containment: reject a symlinked leaf that resolves
-			// outside the storage root before reading it, mirroring FindArtifactPath.
-			if guardErr := ensureArtifactLookupContained(ws, path); guardErr != nil {
-				return guardErr
-			}
-			a, _, parseErr := parseFile(path)
-			if parseErr != nil {
-				return nil
-			}
-			if a.ID == id {
-				found = a
-				return filepath.SkipAll
-			}
-			return nil
-		})
-		if walkErr != nil {
-			return nil, walkErr
-		}
-		if found != nil {
-			return found, nil
-		}
-	}
-	return nil, fmt.Errorf("artifact not found: %s: %w", id, blerrors.ErrNotFound)
+	return artifact, nil
 }
 
 func parseFile(path string) (*models.Artifact, string, error) {

@@ -20,6 +20,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/canonical"
 	"github.com/softwaresalt/backlogit/internal/config"
+	blerrors "github.com/softwaresalt/backlogit/internal/errors"
 	"github.com/softwaresalt/backlogit/internal/events"
 	"github.com/softwaresalt/backlogit/internal/models"
 )
@@ -107,65 +108,79 @@ func TestU4_CustodyPreviewOfferAcceptVerifyAndRecovery(t *testing.T) {
 	})
 
 	t.Run("profile_b_stage_to_ship_handoff_and_stale_digest_invalidation", func(t *testing.T) {
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		stepStart := time.Now()
 		repo := custExecNewRepo(t)
 		custExecWrite(t, repo.root, custExecCovered, custExecRevised)
+		t.Logf("step=setup elapsed=%s", time.Since(stepStart))
 
+		stepStart = time.Now()
 		preview, err := PreviewCustodyCandidates(ctx, repo.ws, custExecPreviewOpts(repo, custExecStageCandidate()))
-		require.NoError(t, err)
+		require.NoError(t, err, "preview custody candidates (elapsed=%s)", time.Since(stepStart))
 
+		stepStart = time.Now()
 		offer, err := OfferCustodyHandoff(ctx, repo.ws, CustodyOfferOptions{
 			ShipmentID: repo.shipmentID,
 			Spec:       custExecStageReceipt(preview.CandidateSetDigest),
 		})
-		require.NoError(t, err)
-		assert.Equal(t, "offered", offer.Status)
-		assert.Equal(t, "agent_workflow_handoff", offer.AuthorityProfile)
+		require.NoError(t, err, "offer custody handoff (elapsed=%s)", time.Since(stepStart))
+		assert.Equal(t, "offered", offer.Status, "offer status (elapsed=%s, verdicts=%+v)", time.Since(stepStart), offer.Verdicts)
+		assert.Equal(t, "agent_workflow_handoff", offer.AuthorityProfile, "offer authority profile (elapsed=%s, verdicts=%+v)", time.Since(stepStart), offer.Verdicts)
 
 		art := custExecShipment(t, repo.ws, repo.shipmentID)
-		assert.NotEmpty(t, art.CustomFields["workflow_id"])
-		assert.Equal(t, custExecFeatureBranch, art.CustomFields["branch"])
+		assert.NotEmpty(t, art.CustomFields["workflow_id"], "workflow_id after offer (elapsed=%s)", time.Since(stepStart))
+		assert.Equal(t, custExecFeatureBranch, art.CustomFields["branch"], "branch after offer (elapsed=%s)", time.Since(stepStart))
 		env := custExecEnvelope(t, art)
-		require.Len(t, env.Receipts, 1)
-		assert.Equal(t, "offered", env.Receipts[0].Status)
-		assert.Contains(t, custExecEventTypes(t, repo.root, repo.shipmentID), EventCustodyHandoffOffered)
+		require.Len(t, env.Receipts, 1, "receipt count after offer (elapsed=%s)", time.Since(stepStart))
+		assert.Equal(t, "offered", env.Receipts[0].Status, "receipt[0] status after offer (elapsed=%s)", time.Since(stepStart))
+		assert.Contains(t, custExecEventTypes(t, repo.root, repo.shipmentID), EventCustodyHandoffOffered,
+			"event log after offer (elapsed=%s)", time.Since(stepStart))
 
+		stepStart = time.Now()
 		accept, err := AcceptCustodyHandoff(ctx, repo.ws, CustodyAcceptOptions{
 			ShipmentID: repo.shipmentID,
 			ReceiptID:  "rcpt-stage-ship-1",
 			By:         "ship",
 		})
-		require.NoError(t, err)
-		assert.Equal(t, "accepted", accept.Status)
+		require.NoError(t, err, "accept custody handoff (elapsed=%s)", time.Since(stepStart))
+		assert.Equal(t, "accepted", accept.Status, "accept status (elapsed=%s, verdicts=%+v)", time.Since(stepStart), accept.Verdicts)
 
 		env = custExecEnvelope(t, custExecShipment(t, repo.ws, repo.shipmentID))
-		assert.Equal(t, "accepted", env.Receipts[0].Status)
-		assert.Equal(t, "rcpt-stage-ship-1", env.ActiveReceiptID)
-		assert.Equal(t, 1, env.CustodyRevision)
-		assert.Contains(t, custExecEventTypes(t, repo.root, repo.shipmentID), EventCustodyHandoffAccepted)
+		assert.Equal(t, "accepted", env.Receipts[0].Status, "receipt[0] status after accept (elapsed=%s)", time.Since(stepStart))
+		assert.Equal(t, "rcpt-stage-ship-1", env.ActiveReceiptID, "active receipt id after accept (elapsed=%s)", time.Since(stepStart))
+		assert.Equal(t, 1, env.CustodyRevision, "custody revision after accept (elapsed=%s)", time.Since(stepStart))
+		assert.Contains(t, custExecEventTypes(t, repo.root, repo.shipmentID), EventCustodyHandoffAccepted,
+			"event log after accept (elapsed=%s)", time.Since(stepStart))
 
+		stepStart = time.Now()
 		verify, err := VerifyCustodyState(ctx, repo.ws, CustodyVerifyOptions{ShipmentID: repo.shipmentID, Branch: custExecFeatureBranch})
-		require.NoError(t, err)
-		assert.Equal(t, "HANDOFF_AGENT_VERIFIED", custExecVerdict(verify, custExecCovered))
+		require.NoError(t, err, "verify accepted custody state (elapsed=%s)", time.Since(stepStart))
+		assert.Equal(t, "HANDOFF_AGENT_VERIFIED", custExecVerdict(verify, custExecCovered),
+			"expected HANDOFF_AGENT_VERIFIED (elapsed=%s, verdicts=%+v)", time.Since(stepStart), verify.Verdicts)
 
+		stepStart = time.Now()
 		custExecWrite(t, repo.root, custExecCovered, custExecRevised+"x")
 		stale, err := VerifyCustodyState(ctx, repo.ws, CustodyVerifyOptions{ShipmentID: repo.shipmentID, Branch: custExecFeatureBranch})
-		require.NoError(t, err)
-		assert.Equal(t, "STALE_DIGEST", custExecVerdict(stale, custExecCovered))
+		require.NoError(t, err, "verify stale custody state (elapsed=%s)", time.Since(stepStart))
+		assert.Equal(t, "STALE_DIGEST", custExecVerdict(stale, custExecCovered),
+			"expected STALE_DIGEST after worktree edit (elapsed=%s, verdicts=%+v)", time.Since(stepStart), stale.Verdicts)
 
 		// A case-only rename must match the on-disk directory entry casing exactly.
 		// Comparing the directory listing rather than os.Stat keeps this check
 		// correct on case-insensitive filesystems such as Windows NTFS.
+		stepStart = time.Now()
 		caseOnlyEnv := func(path string) WorkflowCustodyEnvelope {
 			return WorkflowCustodyEnvelope{Receipts: []CustodyReceipt{{ReceiptID: "rcpt-case-only", Entries: []CustodyEntry{{
 				Path: path, OldPath: "docs/plans/PLAN.md", ChangeKind: "renamed", CaseOnlyRename: true,
 			}}}}}
 		}
 		require.NoError(t, ValidateCustodyRenameCasing(repo.ws, caseOnlyEnv(custExecCovered)),
-			"case-only rename whose path matches the on-disk casing must pass")
+			"case-only rename whose path matches the on-disk casing must pass (elapsed=%s)", time.Since(stepStart))
 		err = ValidateCustodyRenameCasing(repo.ws, caseOnlyEnv("docs/plans/Plan.md"))
 		assert.ErrorIs(t, err, ErrPartialRenameAdoptionRejected,
-			"case-only rename whose casing differs from the on-disk entry must fail closed")
+			"case-only rename whose casing differs from the on-disk entry must fail closed (elapsed=%s)", time.Since(stepStart))
 	})
 
 	t.Run("profile_a_operator_adoption_nonce_replay_and_unverified_rejection", func(t *testing.T) {
@@ -312,6 +327,140 @@ func TestU4_CustodyPreviewOfferAcceptVerifyAndRecovery(t *testing.T) {
 	})
 }
 
+// TestU5_CustodyGitBoundedTimeoutAndBlobDigestDeduplication is the RED harness
+// for Unit U5 (216.006-T): bounded git timeouts/wait delays, seed repo git
+// tuning, and blob-digest memoization that respects context cancellation.
+func TestU5_CustodyGitBoundedTimeoutAndBlobDigestDeduplication(t *testing.T) {
+	t.Run("seed_configures_fsmonitor_false_and_gc_auto_zero", func(t *testing.T) {
+		repo := custExecNewRepo(t)
+		assert.Equal(t, "false", strings.TrimSpace(runGit(t, repo.root, "config", "--get", "core.fsmonitor")))
+		assert.Equal(t, "0", strings.TrimSpace(runGit(t, repo.root, "config", "--get", "gc.auto")))
+	})
+
+	t.Run("blob_digest_memoized_after_preview_and_respects_canceled_ctx", func(t *testing.T) {
+		ctx := context.Background()
+		repo := custExecNewRepo(t)
+		custExecWrite(t, repo.root, custExecCovered, custExecRevised)
+
+		baseOID := strings.TrimSpace(runGit(t, repo.root, "rev-parse", "HEAD:"+custExecCovered))
+		require.NotEmpty(t, baseOID)
+
+		preview, err := PreviewCustodyCandidates(ctx, repo.ws, CustodyPreviewOptions{
+			ShipmentID: repo.shipmentID,
+			Branch:     custExecFeatureBranch,
+			Candidates: []CustodyCandidateSpec{{
+				Path:        custExecCovered,
+				ChangeKind:  "modified",
+				StagedState: "unstaged_only",
+				Contributor: "stage",
+				SourceKind:  "stage_artifact",
+			}},
+		})
+		require.NoError(t, err)
+		require.Len(t, preview.ResolvedEntries, 1)
+
+		objectsDir := filepath.Join(repo.root, ".git", "objects")
+		backupDir := filepath.Join(repo.root, ".git", "objects.bak")
+		require.NoError(t, os.Rename(objectsDir, backupDir))
+		t.Cleanup(func() {
+			_ = os.Rename(backupDir, objectsDir)
+		})
+
+		gotDigest, err := custodyBlobDigest(ctx, repo.root, baseOID)
+		if assert.NoError(t, err, "custodyBlobDigest must serve the memoized digest without spawning git cat-file blob") {
+			assert.Equal(t, preview.ResolvedEntries[0].BaseBlobSHA256, gotDigest)
+			assert.Equal(t, custExecDigest(custExecBase), gotDigest)
+		}
+
+		canceledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		_, err = custodyBlobDigest(canceledCtx, repo.root, baseOID)
+		assert.ErrorIs(t, err, context.Canceled, "pre-canceled context must fail closed even when blob digest is memoized")
+	})
+
+	t.Run("custodyGit_sets_withTimeout_and_waitDelay_ast", func(t *testing.T) {
+		file := parseCustodySource(t, "custody_exec.go")
+		require.NotNil(t, file)
+		fn := custExecFuncNamed(file, "custodyGit")
+		require.NotNil(t, fn, "custodyGit must be declared in custody_exec.go")
+		require.NotNil(t, fn.Body)
+
+		assert.True(t, custExecFuncCalls(fn, "WithTimeout"),
+			"custodyGit must call context.WithTimeout (or WithTimeout) to bound git execution")
+
+		hasWaitDelay := false
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			switch node := n.(type) {
+			case *ast.AssignStmt:
+				for _, lhs := range node.Lhs {
+					if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == "WaitDelay" {
+						hasWaitDelay = true
+						return false
+					}
+				}
+			case *ast.KeyValueExpr:
+				if ident, ok := node.Key.(*ast.Ident); ok && ident.Name == "WaitDelay" {
+					hasWaitDelay = true
+					return false
+				}
+			}
+			return !hasWaitDelay
+		})
+		assert.True(t, hasWaitDelay, "custodyGit must assign/set WaitDelay on *exec.Cmd")
+	})
+
+	t.Run("custodyGitEnv_strips_case_insensitive_prompt_and_overrides", func(t *testing.T) {
+		t.Setenv("git_terminal_prompt", "1")
+		t.Setenv("GIT_DIR", "/tmp/evil")
+		t.Setenv("GIT_CONFIG_PARAMETERS", "'core.autocrlf=false'")
+
+		env := custodyGitEnv()
+		promptCount := 0
+		for _, entry := range env {
+			key, val, _ := strings.Cut(entry, "=")
+			assert.False(t, strings.EqualFold(key, "GIT_DIR"))
+			assert.False(t, strings.EqualFold(key, "GIT_CONFIG_PARAMETERS"))
+			if strings.EqualFold(key, "GIT_TERMINAL_PROMPT") {
+				promptCount++
+				assert.Equal(t, "GIT_TERMINAL_PROMPT=0", entry, "unexpected prompt entry %q=%q", key, val)
+			}
+		}
+		assert.Equal(t, 1, promptCount)
+	})
+
+	t.Run("custodyBlobDigest_and_custodyCommittedOID_reject_invalid_inputs", func(t *testing.T) {
+		repo := custExecNewRepo(t)
+		ctx := context.Background()
+
+		for _, badOID := range []string{"", "-p", "HEAD", "deadbeef", strings.Repeat("z", 40)} {
+			_, err := custodyBlobDigest(ctx, repo.root, badOID)
+			require.ErrorIs(t, err, blerrors.ErrValidation, "oid=%q", badOID)
+		}
+
+		for _, badCommit := range []string{"", "-n1", "--help", "HEAD\x00evil", "HEAD\nevil", "HEAD\revil"} {
+			_, _, err := custodyCommittedOID(ctx, repo.root, badCommit, custExecCovered)
+			require.ErrorIs(t, err, blerrors.ErrValidation, "commit=%q", badCommit)
+		}
+	})
+
+	t.Run("custodyBlobDigestCacheKey_canonicalizes_root_and_skips_missing", func(t *testing.T) {
+		dir := t.TempDir()
+		oid := strings.Repeat("A", 40)
+
+		key1, ok1 := custodyBlobDigestCacheKey(dir, oid)
+		require.True(t, ok1)
+		key2, ok2 := custodyBlobDigestCacheKey(filepath.Join(dir, "."), strings.ToLower(oid))
+		require.True(t, ok2)
+		assert.Equal(t, key1, key2)
+
+		_, okEmpty := custodyBlobDigestCacheKey("", oid)
+		assert.False(t, okEmpty)
+
+		_, okMissing := custodyBlobDigestCacheKey(filepath.Join(dir, "does-not-exist"), oid)
+		assert.False(t, okMissing)
+	})
+}
+
 // custExecNewRepo builds a repository with one committed covered file, a
 // feature branch checked out, and a shipment in a read-write workspace.
 func custExecNewRepo(t *testing.T) *custExecRepo {
@@ -345,6 +494,8 @@ func buildCustExecSeed() (string, string, error) {
 	seed := newFixtureGitSeed("backlogit-custody-git-seed-*")
 	// Match initGitRepo without calling testing.T.FailNow inside sync.Once.
 	seed.git("init")
+	seed.git("config", "core.fsmonitor", "false")
+	seed.git("config", "gc.auto", "0")
 	seed.git("config", "user.email", "backlogit-tests@example.invalid")
 	seed.git("config", "user.name", "Backlogit Tests")
 	seed.git("symbolic-ref", "HEAD", "refs/heads/"+custExecDefaultBranch)

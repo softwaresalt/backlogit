@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,34 +20,81 @@ func TestArchiveItemGovernance_WaitsForGlobalLifecycleLock(t *testing.T) {
 	unlock, err := lockShipmentMembership(ctx, ws, shipmentLifecycleGlobalLockID)
 	require.NoError(t, err)
 	locked := true
+	returned := false
+	result := make(chan error, 1)
 	t.Cleanup(func() {
 		if locked {
 			require.NoError(t, unlock())
 		}
+		if !returned {
+			select {
+			case <-result:
+			case <-time.After(u172ObservationWait):
+				t.Errorf("archive goroutine did not exit during cleanup")
+			}
+		}
 	})
-	result := make(chan error, 1)
-	observedCtx, attempted, acquired := p021ObserveGlobalLock(ctx)
+
+	attempted := make(chan struct{}, 1)
+	contended := make(chan struct{}, 1)
+	acquired := make(chan struct{}, 1)
+	var sawAttempt atomic.Bool
+	observedCtx := context.WithValue(ctx, shipmentLifecycleGlobalLockHookContextKey{}, func(phase string) {
+		switch phase {
+		case "attempt":
+			sawAttempt.Store(true)
+			select {
+			case attempted <- struct{}{}:
+			default:
+			}
+		case "contended":
+			if sawAttempt.Load() {
+				select {
+				case contended <- struct{}{}:
+				default:
+				}
+			}
+		case "acquired":
+			select {
+			case acquired <- struct{}{}:
+			default:
+			}
+		}
+	})
 	go func() {
 		_, archiveErr := ArchiveItem(observedCtx, ws.DB, ws, artifact.ID)
 		result <- archiveErr
 	}()
-	<-attempted
 
 	select {
+	case <-attempted:
+	case archiveErr := <-result:
+		returned = true
+		require.NoError(t, archiveErr)
+		t.Fatal("archive completed while the workspace-global lifecycle lock was held")
+	case <-time.After(u172ObservationWait):
+		t.Fatal("archive never attempted the workspace-global lifecycle lock")
+	}
+
+	select {
+	case <-contended:
 	case <-acquired:
 		t.Fatal("archive acquired the workspace-global lifecycle lock while its competitor held it")
 	case archiveErr := <-result:
+		returned = true
 		require.NoError(t, archiveErr)
 		t.Fatal("archive completed while the workspace-global lifecycle lock was held")
-	case <-time.After(150 * time.Millisecond):
+	case <-time.After(u172ObservationWait):
+		t.Fatal("archive never contended on the workspace-global lifecycle lock")
 	}
 
 	require.NoError(t, unlock())
 	locked = false
 	select {
 	case archiveErr := <-result:
+		returned = true
 		require.NoError(t, archiveErr)
-	case <-time.After(defaultGateLockBoundedWait + 2*time.Second):
+	case <-time.After(u172ObservationWait):
 		t.Fatal("archive did not finish after the global lifecycle lock was released")
 	}
 }
@@ -64,30 +112,73 @@ func TestArchiveItemGovernance_WaitsForShipmentMembershipLock(t *testing.T) {
 	unlock, err := lockShipmentMembership(ctx, ws, shipment.ID)
 	require.NoError(t, err)
 	locked := true
+	returned := false
+	result := make(chan error, 1)
 	t.Cleanup(func() {
 		if locked {
 			require.NoError(t, unlock())
 		}
+		if !returned {
+			select {
+			case <-result:
+			case <-time.After(u172ObservationWait):
+				t.Errorf("archive goroutine did not exit during cleanup")
+			}
+		}
 	})
-	result := make(chan error, 1)
+
+	attemptMembership := make(chan struct{}, 1)
+	contended := make(chan struct{}, 1)
+	var sawAttemptMembership atomic.Bool
+	observedCtx := context.WithValue(ctx, shipmentLifecycleGlobalLockHookContextKey{}, func(phase string) {
+		switch phase {
+		case "attempt_membership":
+			sawAttemptMembership.Store(true)
+			select {
+			case attemptMembership <- struct{}{}:
+			default:
+			}
+		case "contended":
+			if sawAttemptMembership.Load() {
+				select {
+				case contended <- struct{}{}:
+				default:
+				}
+			}
+		}
+	})
 	go func() {
-		_, archiveErr := ArchiveItem(ctx, ws.DB, ws, member.ID)
+		_, archiveErr := ArchiveItem(observedCtx, ws.DB, ws, member.ID)
 		result <- archiveErr
 	}()
 
 	select {
+	case <-attemptMembership:
 	case archiveErr := <-result:
+		returned = true
 		require.NoError(t, archiveErr)
 		t.Fatal("archive completed while the relevant shipment membership lock was held")
-	case <-time.After(150 * time.Millisecond):
+	case <-time.After(u172ObservationWait):
+		t.Fatal("archive never reached the shipment membership lock step")
+	}
+
+	select {
+	case <-contended:
+	case archiveErr := <-result:
+		returned = true
+		require.NoError(t, archiveErr)
+		t.Fatal("archive completed while the relevant shipment membership lock was held")
+	case <-time.After(u172ObservationWait):
+		t.Fatal("archive never contended on the shipment membership lock")
 	}
 
 	require.NoError(t, unlock())
 	locked = false
 	select {
 	case archiveErr := <-result:
+		returned = true
 		require.NoError(t, archiveErr)
-	case <-time.After(defaultGateLockBoundedWait + 2*time.Second):
+	case <-time.After(u172ObservationWait):
 		t.Fatal("archive did not finish after the shipment membership lock was released")
 	}
 }

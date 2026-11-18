@@ -24,6 +24,55 @@ type CommitLinkInfo struct {
 	Author    string `json:"author"`
 }
 
+func acquireCommitWriterLifecycleGlobal(
+	ctx context.Context,
+	ws *Workspace,
+	logsDir string,
+	itemID string,
+	caller string,
+	opPrefix string,
+) (context.Context, func() error, error) {
+	if events.ItemLogCrossProcessLockHeld(ctx, logsDir, itemID) {
+		held, err := validateShipmentLifecycleGlobalReentry(ctx, ws, caller)
+		if err != nil {
+			return ctx, nil, fmt.Errorf("%s: verify preheld lifecycle ownership: %w", opPrefix, err)
+		}
+		// C cannot authorize a later global acquisition. Require the actual
+		// workspace-bound ordered token, not a newly manufactured marker.
+		_, hasToken := ctx.Value(shipmentLifecycleHeldLocksContextKey{}).(*shipmentLifecycleHeldLocks)
+		if held && !hasToken {
+			return ctx, nil, fmt.Errorf("%s: %w", opPrefix, shipmentLifecycleLockOrderError(ctx,
+				caller, "preheld C requires verified lifecycle ownership"))
+		}
+		if !held {
+			refs, err := scanCanonicalArtifacts(ws)
+			if err != nil {
+				return ctx, nil, fmt.Errorf("%s: classify lifecycle participation: %w", opPrefix, err)
+			}
+			requiresGlobal := false
+			for _, ref := range refs[itemID] {
+				requiresGlobal = requiresGlobal || ref.artifactType == "shipment"
+			}
+			if !requiresGlobal {
+				requiresGlobal, err = artifactIsShipmentLifecycleMember(ws, itemID)
+				if err != nil {
+					return ctx, nil, fmt.Errorf("%s: classify lifecycle membership: %w", opPrefix, err)
+				}
+			}
+			if requiresGlobal {
+				return ctx, nil, fmt.Errorf("%s: %w", opPrefix, shipmentLifecycleLockOrderError(ctx,
+					caller, "C-only lifecycle participant cannot acquire global after C"))
+			}
+		}
+		return ctx, nil, nil
+	}
+	lifecycleCtx, globalUnlock, globalErr := lockShipmentLifecycleGlobal(ctx, ws)
+	if globalErr != nil {
+		return ctx, nil, fmt.Errorf("%s: lock shipment lifecycle: %w", opPrefix, globalErr)
+	}
+	return lifecycleCtx, globalUnlock, nil
+}
+
 // AssociateCommit performs commit association for an artifact through an ordered
 // list of discrete steps so that F5's compensating envelope can wrap each step
 // independently without rewriting this function:
@@ -57,53 +106,26 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 	if ew == nil {
 		return fmt.Errorf("associate commit: EventWriter must not be nil")
 	}
+	if ws == nil || strings.TrimSpace(ws.RootPath) == "" || ws.DB == nil {
+		return fmt.Errorf("associate commit: workspace and DB must not be nil with non-empty RootPath")
+	}
 	// Recover before taking artifact and compensation snapshots. A caller
 	// already holding C must not invert C -> lifecycle-global.
 	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	if events.ItemLogCrossProcessLockHeld(ctx, logsDir, itemID) {
-		held, err := validateShipmentLifecycleGlobalReentry(ctx, ws, "AssociateCommit")
-		if err != nil {
-			return fmt.Errorf("associate commit: verify preheld lifecycle ownership: %w", err)
-		}
-		// C cannot authorize a later global acquisition. Require the actual
-		// workspace-bound ordered token, not a newly manufactured marker.
-		_, hasToken := ctx.Value(shipmentLifecycleHeldLocksContextKey{}).(*shipmentLifecycleHeldLocks)
-		if held && !hasToken {
-			return fmt.Errorf("associate commit: %w", shipmentLifecycleLockOrderError(ctx,
-				"AssociateCommit", "preheld C requires verified lifecycle ownership"))
-		}
-		if !held {
-			refs, err := scanCanonicalArtifacts(ws)
-			if err != nil {
-				return fmt.Errorf("associate commit: classify lifecycle participation: %w", err)
-			}
-			requiresGlobal := false
-			for _, ref := range refs[itemID] {
-				requiresGlobal = requiresGlobal || ref.artifactType == "shipment"
-			}
-			if !requiresGlobal {
-				requiresGlobal, err = artifactIsShipmentLifecycleMember(ws, itemID)
-				if err != nil {
-					return fmt.Errorf("associate commit: classify lifecycle membership: %w", err)
-				}
-			}
-			if requiresGlobal {
-				return fmt.Errorf("associate commit: %w", shipmentLifecycleLockOrderError(ctx,
-					"AssociateCommit", "C-only lifecycle participant cannot acquire global after C"))
-			}
-		}
-	} else {
-		lifecycleCtx, globalUnlock, globalErr := lockShipmentLifecycleGlobal(ctx, ws)
-		if globalErr != nil {
-			return fmt.Errorf("associate commit: lock shipment lifecycle: %w", globalErr)
-		}
+	lifecycleCtx, globalUnlock, globalErr := acquireCommitWriterLifecycleGlobal(
+		ctx, ws, logsDir, itemID, "AssociateCommit", "associate commit",
+	)
+	if globalErr != nil {
+		return globalErr
+	}
+	if globalUnlock != nil {
 		defer func() {
 			if unlockErr := globalUnlock(); unlockErr != nil {
 				slog.Warn("associate commit: release shipment lifecycle lock", "item_id", itemID, "error", unlockErr)
 			}
 		}()
-		ctx = lifecycleCtx
 	}
+	ctx = lifecycleCtx
 	artifact, err := findArtifact(ctx, ws, itemID)
 	if err != nil {
 		return fmt.Errorf("associate commit: load artifact %s: %w", itemID, err)
@@ -265,6 +287,39 @@ func AssociateCommit(ctx context.Context, ws *Workspace, ew *events.EventWriter,
 // that silently swallows JSONL append failures and does not update the frontmatter scalar.
 // It is retained for backward compatibility but must not be used for new code.
 func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSHA, message, author string) error {
+	if db == nil {
+		return fmt.Errorf("link commit: db must not be nil")
+	}
+	if ws == nil || strings.TrimSpace(ws.RootPath) == "" {
+		return fmt.Errorf("link commit: workspace must not be nil with non-empty RootPath")
+	}
+
+	logsDir := WorkspaceLogsRoot(ws.RootPath)
+	lifecycleCtx, globalUnlock, globalErr := acquireCommitWriterLifecycleGlobal(
+		ctx, ws, logsDir, itemID, "LinkCommit", "link commit",
+	)
+	if globalErr != nil {
+		return globalErr
+	}
+	if globalUnlock != nil {
+		defer func() {
+			if unlockErr := globalUnlock(); unlockErr != nil {
+				slog.Warn("link commit: release shipment lifecycle lock", "item_id", itemID, "error", unlockErr)
+			}
+		}()
+	}
+	ctx = lifecycleCtx
+
+	// Acquire item-log cross-process lock C BEFORE mutating commit_links so
+	// lifecycle-global -> C is held across both commit_links upsert and JSONL
+	// append + IndexEvent, and lock failure cannot leave a partial DB write.
+	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
+	if lockErr != nil {
+		return fmt.Errorf("link commit: lock item log: %w", lockErr)
+	}
+	defer unlockLog()
+	ctx = lockedCtx
+
 	_, err := db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO commit_links (item_id, commit_sha, message, author) VALUES (?, ?, ?, ?)`,
 		itemID, commitSHA, message, author,
@@ -274,13 +329,6 @@ func LinkCommit(ctx context.Context, db *sql.DB, ws *Workspace, itemID, commitSH
 	}
 
 	// Append to the item's JSONL log so rehydration and search can rebuild state from log files.
-	logsDir := WorkspaceLogsRoot(ws.RootPath)
-	lockedCtx, unlockLog, lockErr := events.LockItemLogCrossProcess(ctx, WorkspaceLocksRoot(ws.RootPath), logsDir, itemID)
-	if lockErr != nil {
-		return fmt.Errorf("link commit: lock item log: %w", lockErr)
-	}
-	defer unlockLog()
-	ctx = lockedCtx
 	ew := NewWorkspaceEventWriter(ws, logsDir)
 	event := events.Event{
 		Timestamp: time.Now(),
@@ -351,6 +399,9 @@ func AppendComment(ctx context.Context, ws *Workspace, ew *events.EventWriter, i
 
 // GetCommitLinks retrieves all commit associations for a given artifact.
 func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) (links []CommitLinkInfo, err error) {
+	if db == nil {
+		return nil, fmt.Errorf("get commit links: db must not be nil")
+	}
 	rows, err := db.QueryContext(ctx,
 		`SELECT item_id, commit_sha, message, author FROM commit_links WHERE item_id = ?`,
 		itemID,
@@ -372,7 +423,10 @@ func GetCommitLinks(ctx context.Context, db *sql.DB, itemID string) (links []Com
 		}
 		links = append(links, l)
 	}
-	return links, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate commit links: %w", err)
+	}
+	return links, nil
 }
 
 // artifactIDPattern matches typed hierarchical artifact IDs like F001 or F001.T001.ST001.

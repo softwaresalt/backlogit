@@ -448,6 +448,9 @@ func lockArchiveGovernance(
 		return ctx, nil, err
 	}
 
+	if hook, ok := lockedCtx.Value(shipmentLifecycleGlobalLockHookContextKey{}).(func(string)); ok && hook != nil {
+		hook("attempt_membership")
+	}
 	lockedCtx, membershipUnlock, err := lockArchiveShipmentMemberships(lockedCtx, ws, shipmentIDs)
 	if err != nil {
 		return ctx, nil, err
@@ -469,6 +472,9 @@ func lockArchiveGovernance(
 	// snapshot B is sized from, so nested ArchiveItem calls reuse a context-held
 	// C and never acquire C themselves. When the caller already holds B and not C
 	// for an item in the set, this fails closed instead of acquiring C under B.
+	if hook, ok := lockedCtx.Value(shipmentLifecycleGlobalLockHookContextKey{}).(func(string)); ok && hook != nil {
+		hook("attempt_item_log")
+	}
 	lockedCtx, itemLogUnlock, err := lockItemLogsSorted(lockedCtx, ws, scopeIDs)
 	if err != nil {
 		if errors.Is(err, errItemLogLockUnderArtifactLocks) {

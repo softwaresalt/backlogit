@@ -241,6 +241,25 @@ func TestIsAncestor(t *testing.T) {
 	absent := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 	_, err = ws.isAncestor(ctx, absent, head)
 	require.Error(t, err, "an absent object must fail closed, not be read as an ancestor")
+
+	// Empty or leading-dash commit references must fail closed with ErrValidation.
+	for _, tc := range []struct {
+		name       string
+		ancestor   string
+		descendant string
+	}{
+		{"empty_ancestor", "", head},
+		{"empty_descendant", base, ""},
+		{"leading_dash_ancestor", "--orphan", head},
+		{"leading_dash_descendant", base, "-n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, err := ws.isAncestor(ctx, tc.ancestor, tc.descendant)
+			require.Error(t, err)
+			assert.False(t, ok)
+			assert.ErrorIs(t, err, blerrors.ErrValidation)
+		})
+	}
 }
 
 // TestIsGitObjectName pins the SHA-shape guard: only full-length SHA-1 (40 hex)
@@ -269,4 +288,53 @@ func TestIsGitObjectName(t *testing.T) {
 			assert.Equalf(t, tc.want, isGitObjectName(tc.in), "isGitObjectName(%q)", tc.in)
 		})
 	}
+}
+
+func TestResolveAncestryGitDirs_CommonDirValidation(t *testing.T) {
+	t.Run("rejects_directory_commondir", func(t *testing.T) {
+		root := t.TempDir()
+		initGitRepoWithCommits(t, root)
+
+		commonDirPath := filepath.Join(root, ".git", "commondir")
+		require.NoError(t, os.MkdirAll(commonDirPath, 0o755))
+
+		gitDir, commonDir, ok := resolveAncestryGitDirs(root)
+		assert.False(t, ok, "non-regular commondir directory must fail closed")
+		assert.Empty(t, gitDir)
+		assert.Empty(t, commonDir)
+		assert.False(t, isCompleteUngraftedRepo(root))
+	})
+
+	t.Run("rejects_symlink_commondir", func(t *testing.T) {
+		root := t.TempDir()
+		initGitRepoWithCommits(t, root)
+
+		targetFile := filepath.Join(t.TempDir(), "commondir-target")
+		require.NoError(t, os.WriteFile(targetFile, []byte(filepath.Join(root, ".git")+"\n"), 0o644))
+
+		commonDirPath := filepath.Join(root, ".git", "commondir")
+		if err := os.Symlink(targetFile, commonDirPath); err != nil {
+			t.Skipf("symlink creation skipped: %v", err)
+		}
+
+		gitDir, commonDir, ok := resolveAncestryGitDirs(root)
+		assert.False(t, ok, "symlink commondir must fail closed")
+		assert.Empty(t, gitDir)
+		assert.Empty(t, commonDir)
+		assert.False(t, isCompleteUngraftedRepo(root))
+	})
+
+	t.Run("accepts_regular_commondir_file", func(t *testing.T) {
+		root := t.TempDir()
+		initGitRepoWithCommits(t, root)
+
+		commonTarget := t.TempDir()
+		commonDirPath := filepath.Join(root, ".git", "commondir")
+		require.NoError(t, os.WriteFile(commonDirPath, []byte(commonTarget+"\n"), 0o644))
+
+		gitDir, commonDir, ok := resolveAncestryGitDirs(root)
+		assert.True(t, ok)
+		assert.NotEmpty(t, gitDir)
+		assert.Equal(t, filepath.Clean(commonTarget), filepath.Clean(commonDir))
+	})
 }

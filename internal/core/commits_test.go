@@ -58,6 +58,15 @@ func TestLinkCommit_StoresAssociation(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestLinkCommit_RejectsNilDBOrInvalidWorkspace(t *testing.T) {
+	ws := setupCommitWorkspace(t)
+	ctx := context.Background()
+
+	require.Error(t, core.LinkCommit(ctx, nil, ws, "T001", "abc123def", "msg", "author"))
+	require.Error(t, core.LinkCommit(ctx, ws.DB, nil, "T001", "abc123def", "msg", "author"))
+	require.Error(t, core.LinkCommit(ctx, ws.DB, &core.Workspace{RootPath: "   "}, "T001", "abc123def", "msg", "author"))
+}
+
 func TestGetCommitLinks_ReturnsLinked(t *testing.T) {
 	// Arrange
 	ws := setupCommitWorkspace(t)
@@ -71,6 +80,26 @@ func TestGetCommitLinks_ReturnsLinked(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, links, 1)
 	assert.Equal(t, "abc123def", links[0].CommitSHA)
+}
+
+func TestGetCommitLinks_RejectsNilDB(t *testing.T) {
+	ctx := context.Background()
+
+	links, err := core.GetCommitLinks(ctx, nil, "T001")
+	require.Error(t, err)
+	assert.Nil(t, links)
+	assert.Contains(t, err.Error(), "db must not be nil")
+}
+
+func TestAssociateCommit_RejectsNilOrInvalidInputs(t *testing.T) {
+	ws := setupCommitWorkspace(t)
+	ctx := context.Background()
+	writer := events.NewEventWriter(filepath.Join(t.TempDir(), "logs"))
+
+	require.Error(t, core.AssociateCommit(ctx, ws, nil, "T001", "abc123def", "msg", "author"))
+	require.Error(t, core.AssociateCommit(ctx, nil, writer, "T001", "abc123def", "msg", "author"))
+	require.Error(t, core.AssociateCommit(ctx, &core.Workspace{RootPath: "   ", DB: ws.DB}, writer, "T001", "abc123def", "msg", "author"))
+	require.Error(t, core.AssociateCommit(ctx, &core.Workspace{RootPath: ws.RootPath, DB: nil}, writer, "T001", "abc123def", "msg", "author"))
 }
 
 func TestAutoLinkCommits_FindsReferences(t *testing.T) {

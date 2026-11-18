@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -69,6 +70,10 @@ type Workspace struct {
 	// removeShipmentOperationJournal allows tests to inject a cleanup failure
 	// after a shipment operation has durably committed. Nil uses os.Remove.
 	removeShipmentOperationJournal func(path string) error
+	// ancestryMu guards ancestryCache, which memoizes immutable commit ancestry
+	// verdicts for complete, ungrafted repositories.
+	ancestryMu    sync.Mutex
+	ancestryCache map[string]bool
 	// webhookNotifier is stored for shutdown draining. Unexported.
 	webhookNotifier interface{ Shutdown(context.Context) error }
 }
