@@ -11,7 +11,7 @@ docline:
   mode: pre-merge
   shipment_id: 217-S
   feature_id: 216-F
-  evidence_head: 62863c3d
+  evidence_head: acec6b8c
   verification_verdict: PASS
 ---
 
@@ -32,7 +32,7 @@ Loaded `.autoharness/workspace-profile.yaml` (`runtime_validation`): `validator_
 
 ## Environment prechecks
 
-* Built `.\bin\backlogit.exe` via `go build -o bin\backlogit.exe ./cmd/backlogit` (`exit 0`, code `HEAD: 62863c3d`).
+* Built `.\bin\backlogit.exe` via `go build -o bin\backlogit.exe ./cmd/backlogit` (`exit 0`, code `HEAD: acec6b8c`; follow-on PR commit updates these closure docs only with zero Go code/test changes).
 * Verified `gofmt -l internal cmd tests` (clean), `go vet ./...` (`exit 0`), and `.\bin\golangci-lint.exe run --timeout=5m` (`exit 0`).
 
 ## Structured validator evidence
@@ -46,11 +46,11 @@ Loaded `.autoharness/workspace-profile.yaml` (`runtime_validation`): `validator_
 | `.\bin\backlogit.exe sync --cwd <temp_repo>` | Rehydrates SQLite cache cleanly in WAL mode | `0` | `Indexed 2 artifacts`, `CLI_RUNTIME_PROBE_OK` |
 | `.\bin\backlogit.exe docs lint --format json` | Zero docline schema violations | `0` | `{"valid": true, "violation_count": 0, "findings": []}` |
 
-### Automated Go test verification (`HEAD: 62863c3d`)
+### Automated Go test verification (`HEAD: acec6b8c`)
 
 * `go test -timeout=30m -p=1 ./...`: `PASS` across all 50/50 Go packages (`exit 0`).
 * Targeted `-race` suites (`internal/db`, `internal/events`, `internal/core`): `PASS` across `TestU1_`..`TestU7_`, `TestU172_LockOrder_`, `TestArchiveItemGovernance_`, `TestReconcile*`, `TestUR1B*`, `TestCustody*`, `TestExternal*`, `TestOpen*`, `TestEnsureSchema*`, and `TestU175_*_LintFix`.
 
 ## Verdict
 
-`PASS`: all CLI probes, WAL Page 1 header verification, linters, and all 50 Go packages passed on `HEAD` `62863c3d` with zero blocked prerequisites.
+`PASS`: all CLI probes, WAL Page 1 header verification, linters, and all 50 Go packages passed on `HEAD` `acec6b8c` (with only docs-only closure updates above `acec6b8c`) with zero blocked prerequisites.

@@ -11,7 +11,7 @@ docline:
   mode: pre-merge
   shipment_id: 217-S
   feature_id: 216-F
-  evidence_head: 62863c3d
+  evidence_head: acec6b8c
   closure_status: READY
   compaction_status: pending
 ---
@@ -20,7 +20,7 @@ docline:
 
 Shipment `217-S` (`216-F`: Zero-Flake Concurrency and Fast Ship-Closure Engine,
 CAP-3) completed all 8 tasks (`216.001-T`..`216.008-T`) across Waves 1–6,
-resolved all in-scope review findings (`62863c3d`), passed all 50 Go packages,
+resolved all in-scope review findings (`acec6b8c`; follow-on commit is docs-only), passed all 50 Go packages,
 passed `gofmt`, `go vet`, `golangci-lint`, full local build (`go build ./cmd/backlogit`),
 and passed pre-merge runtime verification (`PASS`).
 
@@ -35,7 +35,7 @@ and passed pre-merge runtime verification (`PASS`).
 
 See [217-S pre-merge runtime verification](2026-11-17-217-s-pre-merge-runtime-verification.md):
 
-* Verdict: `PASS` (`cli` adapter against `.\bin\backlogit.exe`, isolated `init`/`add`/`update --commit`/`sync` WAL Page 1 `[2, 2]` probe, `docs lint`, and 50/50 Go packages at `62863c3d`).
+* Verdict: `PASS` (`cli` adapter against `.\bin\backlogit.exe`, isolated `init`/`add`/`update --commit`/`sync` WAL Page 1 `[2, 2]` probe, `docs lint`, and 50/50 Go packages at `acec6b8c`).
 
 ## Risky action record
 
