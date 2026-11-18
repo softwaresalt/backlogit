@@ -92,6 +92,9 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	if ws == nil {
 		return false, fmt.Errorf("ancestor check aborted: workspace is nil: %w", blerrors.ErrValidation)
 	}
+	if strings.TrimSpace(ws.RootPath) == "" {
+		return false, fmt.Errorf("ancestor check aborted: workspace root path is empty: %w", blerrors.ErrValidation)
+	}
 	if ancestor == "" || descendant == "" || strings.HasPrefix(ancestor, "-") || strings.HasPrefix(descendant, "-") {
 		return false, fmt.Errorf("ancestor check aborted: invalid commit reference: %w", blerrors.ErrValidation)
 	}
@@ -111,9 +114,14 @@ func (ws *Workspace) isAncestor(ctx context.Context, ancestor, descendant string
 	runCtx, cancel := context.WithTimeout(ctx, ws.boundedHelperTimeout())
 	defer cancel()
 
+	cmdDir := ws.RootPath
+	if resolvedRoot, ok := resolveAncestryRootPath(ws.RootPath); ok {
+		cmdDir = resolvedRoot
+	}
+
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(runCtx, "git", "--no-replace-objects", "merge-base", "--is-ancestor", "--", ancestor, descendant)
-	cmd.Dir = ws.RootPath
+	cmd.Dir = cmdDir
 	cmd.Env = gate.MinimalEnv()
 	cmd.WaitDelay = 2 * time.Second
 	cmd.Stderr = &stderr

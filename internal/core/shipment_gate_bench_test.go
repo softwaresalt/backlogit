@@ -451,12 +451,27 @@ func TestU3b_ValidateMemberGateEvidenceMemoizesImmutableCommitAncestry(t *testin
 		assert.False(t, resolvedOK)
 	})
 
+	t.Run("empty_root_path_fails_closed", func(t *testing.T) {
+		ctx := context.Background()
+		sha1 := strings.Repeat("a", 40)
+		sha2 := strings.Repeat("b", 40)
+		for _, rootPath := range []string{"", "   ", "\t\n"} {
+			ws := &Workspace{RootPath: rootPath}
+			ok, err := ws.isAncestor(ctx, sha1, sha2)
+			require.Error(t, err)
+			assert.False(t, ok)
+			assert.ErrorIs(t, err, blerrors.ErrValidation)
+		}
+	})
+
 	t.Run("symlinked_root_with_relative_GIT_DIR_resolves_against_target", func(t *testing.T) {
+		ctx := context.Background()
+
 		outerRoot := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(outerRoot, ".git"), 0o755))
+		initGitRepoWithCommits(t, outerRoot)
 
 		targetRepo := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(targetRepo, ".git"), 0o755))
+		c1, c2, _ := initGitRepoWithCommits(t, targetRepo)
 		targetSub := filepath.Join(targetRepo, "sub")
 		require.NoError(t, os.MkdirAll(targetSub, 0o755))
 
@@ -476,16 +491,28 @@ func TestU3b_ValidateMemberGateEvidenceMemoizesImmutableCommitAncestry(t *testin
 		assert.Equal(t, expectedGitDir, gitDir, "relative GIT_DIR must resolve against symlink target, not lexical symlink parent")
 		assert.True(t, isCompleteUngraftedRepo(wsLink))
 
+		ws := &Workspace{RootPath: wsLink}
+		anc, err := ws.isAncestor(ctx, c1, c2)
+		require.NoError(t, err)
+		assert.True(t, anc, "c1 must initially be an ancestor of c2 through symlinked root with relative GIT_DIR")
+
 		shallowPath := filepath.Join(targetRepo, ".git", "shallow")
-		require.NoError(t, os.WriteFile(shallowPath, []byte(strings.Repeat("a", 40)+"\n"), 0o644))
+		require.NoError(t, os.WriteFile(shallowPath, []byte(c2+"\n"), 0o644))
 
 		assert.False(t, isCompleteUngraftedRepo(wsLink), "must respect .git/shallow in symlink target repo")
-		ws := &Workspace{RootPath: wsLink}
-		_, hit, eligible := ws.lookupAncestryCache(strings.Repeat("a", 40) + "|" + strings.Repeat("b", 40))
+		_, hit, eligible := ws.lookupAncestryCache(strings.ToLower(c1) + "|" + strings.ToLower(c2))
 		assert.False(t, hit)
 		assert.False(t, eligible)
 
+		anc, err = ws.isAncestor(ctx, c1, c2)
+		require.NoError(t, err)
+		assert.False(t, anc, "shallow target repo must invalidate cache and return false")
+
 		require.NoError(t, os.Remove(shallowPath))
 		assert.True(t, isCompleteUngraftedRepo(wsLink))
+
+		anc, err = ws.isAncestor(ctx, c1, c2)
+		require.NoError(t, err)
+		assert.True(t, anc, "removing target .git/shallow must re-evaluate to true")
 	})
 }
