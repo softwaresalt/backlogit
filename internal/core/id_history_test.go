@@ -11,8 +11,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -732,5 +734,138 @@ shipments:
 		require.NoError(t, err)
 		assert.Contains(t, reserved, concFeatID, "concurrent CreateArtifact reservation must survive AdoptItem rollback")
 		assert.NotContains(t, reserved, "001.001-T", "rolled-back AdoptItem ID must be unreserved")
+	})
+}
+
+// TestU4_ScanLocalBranchArtifactIDsBatchesTreesAndPreservesMergedRevertedReservations gates 217.004-T (U4).
+func TestU4_ScanLocalBranchArtifactIDsBatchesTreesAndPreservesMergedRevertedReservations(t *testing.T) {
+	t.Run("hundreds-of-branches-within-budget", func(t *testing.T) {
+		repo := t.TempDir()
+		runGit := func(args ...string) {
+			cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+			cmd.Env = sanitizedGitBranchScanEnv()
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, "git %v failed: %s", args, out)
+		}
+		runGit("init", "-b", "main")
+		runGit("config", "user.name", "Test")
+		runGit("config", "user.email", "test@example.com")
+
+		storage := filepath.Join(repo, ".backlogit")
+		require.NoError(t, os.MkdirAll(filepath.Join(storage, "queue"), 0o755))
+		require.NoError(t, config.WriteDefaults(storage))
+		require.NoError(t, os.WriteFile(filepath.Join(storage, "queue", "001-F.md"), []byte("---\nid: 001-F\ntitle: Seed\ntype: feature\nstatus: backlog\n---\n"), 0o644))
+		runGit("add", ".")
+		runGit("commit", "-m", "main baseline")
+
+		// Use git fast-import to rapidly build 120 distinct commits (and distinct tree OIDs)
+		// along main, with 120 merged refs/heads/hist-branch-NNN branches pointing at each commit.
+		const mergedCount = 120
+		var stream strings.Builder
+		for i := 1; i <= mergedCount; i++ {
+			mark := i
+			content := fmt.Sprintf("history branch %03d\n", i)
+			fmt.Fprintf(&stream, "commit refs/heads/main\n")
+			fmt.Fprintf(&stream, "mark :%d\n", mark)
+			fmt.Fprintf(&stream, "author Test <test@example.com> %d +0000\n", 1700000000+i)
+			fmt.Fprintf(&stream, "committer Test <test@example.com> %d +0000\n", 1700000000+i)
+			msg := fmt.Sprintf("commit %03d", i)
+			fmt.Fprintf(&stream, "data %d\n%s\n", len(msg), msg)
+			if i == 1 {
+				fmt.Fprintf(&stream, "from refs/heads/main^0\n")
+			} else {
+				fmt.Fprintf(&stream, "from :%d\n", mark-1)
+			}
+			fmt.Fprintf(&stream, "M 100644 inline history/file-%03d.txt\n", i)
+			fmt.Fprintf(&stream, "data %d\n%s\n", len(content), content)
+			fmt.Fprintf(&stream, "reset refs/heads/hist-branch-%03d\nfrom :%d\n\n", i, mark)
+		}
+		importCmd := exec.Command("git", "-C", repo, "fast-import", "--quiet")
+		importCmd.Env = sanitizedGitBranchScanEnv()
+		importCmd.Stdin = strings.NewReader(stream.String())
+		importOut, err := importCmd.CombinedOutput()
+		require.NoError(t, err, "git fast-import failed: %s", importOut)
+		runGit("reset", "--hard", "refs/heads/main")
+
+		// Create 2 unmerged branches off different commits containing branch-only .backlogit/queue/098-F.md.
+		runGit("checkout", "-b", "unmerged-alpha", "refs/heads/hist-branch-010")
+		require.NoError(t, os.WriteFile(filepath.Join(storage, "queue", "098-F.md"), []byte("---\nid: 098-F\ntitle: Branch Only\ntype: feature\nstatus: backlog\n---\n"), 0o644))
+		runGit("add", ".")
+		runGit("commit", "-m", "unmerged alpha 098-F")
+
+		runGit("checkout", "-b", "unmerged-beta", "refs/heads/hist-branch-050")
+		require.NoError(t, os.WriteFile(filepath.Join(storage, "queue", "098-F.md"), []byte("---\nid: 098-F\ntitle: Branch Only Beta\ntype: feature\nstatus: backlog\n---\n"), 0o644))
+		runGit("add", ".")
+		runGit("commit", "-m", "unmerged beta 098-F")
+
+		runGit("checkout", "main")
+
+		ctx := context.Background()
+		ws, err := NewWorkspace(ctx, repo)
+		require.NoError(t, err)
+		ws.GateBroker = nil
+		t.Cleanup(func() { require.NoError(t, ws.Close()) })
+
+		start := time.Now()
+		ids, err := scanLocalBranchArtifactIDsContext(ctx, ws)
+		require.NoError(t, err)
+		assert.Contains(t, ids, "098-F", "branch scan must detect branch-only 098-F")
+
+		created, err := CreateArtifact(ctx, ws, "Next Feature", "feature")
+		require.NoError(t, err)
+		assert.Equal(t, "099-F", created.ID)
+		elapsed := time.Since(start)
+		assert.Less(t, elapsed, 2*time.Second, "scanning 120+ branches and allocating ID must complete within 2s (took %v)", elapsed)
+	})
+
+	t.Run("merged-then-reverted-branch-preserves-reservation", func(t *testing.T) {
+		repo := t.TempDir()
+		runGit := func(args ...string) {
+			cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+			cmd.Env = sanitizedGitBranchScanEnv()
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, "git %v failed: %s", args, out)
+		}
+		runGit("init", "-b", "main")
+		runGit("config", "user.name", "Test")
+		runGit("config", "user.email", "test@example.com")
+
+		storage := filepath.Join(repo, ".backlogit")
+		require.NoError(t, os.MkdirAll(filepath.Join(storage, "queue"), 0o755))
+		require.NoError(t, config.WriteDefaults(storage))
+		require.NoError(t, os.WriteFile(filepath.Join(storage, "queue", "001-F.md"), []byte("---\nid: 001-F\ntitle: Seed\ntype: feature\nstatus: backlog\n---\n"), 0o644))
+		runGit("add", ".")
+		runGit("commit", "-m", "main baseline")
+
+		runGit("checkout", "-b", "feat-099")
+		require.NoError(t, os.WriteFile(filepath.Join(storage, "queue", "099-F.md"), []byte("---\nid: 099-F\n---\n"), 0o644))
+		runGit("add", ".")
+		runGit("commit", "-m", "add 099-F on feat-099")
+
+		runGit("checkout", "main")
+		runGit("merge", "--no-ff", "-m", "merge feat-099", "feat-099")
+
+		// Revert/delete 099-F.md on main while keeping refs/heads/feat-099 at its branch tip.
+		require.NoError(t, os.Remove(filepath.Join(storage, "queue", "099-F.md")))
+		runGit("add", "-A")
+		runGit("commit", "-m", "revert/delete 099-F on main")
+
+		seqPath := filepath.Join(WorkspaceLocksRoot(repo), idSequenceLedgerFileName)
+		_, statErr := os.Stat(seqPath)
+		require.True(t, os.IsNotExist(statErr), "id-sequences.json must not exist for this scenario")
+
+		ctx := context.Background()
+		ws, err := NewWorkspace(ctx, repo)
+		require.NoError(t, err)
+		ws.GateBroker = nil
+		t.Cleanup(func() { require.NoError(t, ws.Close()) })
+
+		ids, err := scanLocalBranchArtifactIDsContext(ctx, ws)
+		require.NoError(t, err)
+		assert.Contains(t, ids, "099-F", "merged-then-reverted branch feat-099 must preserve 099-F reservation")
+
+		created, err := CreateArtifact(ctx, ws, "After Revert", "feature")
+		require.NoError(t, err)
+		assert.Equal(t, "100-F", created.ID, "must allocate 100-F and never reuse reverted 099-F")
 	})
 }
