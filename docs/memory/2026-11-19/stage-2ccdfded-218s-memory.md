@@ -25,10 +25,10 @@ docline:
   * Implementation Plan (hardened & reviewed): `docs/plans/2026-11-19-mcp-daemon-configurable-tools-dir-plan.md` (`dispatch_mode: single-agent-declared-degradation`, `TOOL_DEGRADED: reviewer-subagent-dispatch`, `decision: PASS`, 0 findings across all 7 personas).
   * Harvested Feature: `217-F` ("Honor .mcp.json, configurable tools_dir, and .bin default in MCP daemon startup and toolchain verification").
   * Harvested Tasks (4):
-    * `217.001-T` (`S`, `low`, Wave 1): Support `.bin` default and configurable `tools_dir` in toolchain verification (`U1`)
-    * `217.004-T` (`S`, `low`, Wave 1): Bound `scanLocalBranchArtifactIDsContext` to unmerged and unique branch trees (`U4`)
+    * `217.001-T` (`S`, `low`, Wave 1): Support `.bin` default and configurable `tools_dir` in toolchain verification (`U1`, preserving `!isBacklogitTool` early return for mixed inventories)
+    * `217.004-T` (`S`, `low`, Wave 1): Batch and deduplicate branch-tree inspection in `scanLocalBranchArtifactIDsContext` across all `refs/heads` while preserving merged-then-reverted branch reservations (`U4`)
     * `217.002-T` (`S`, `low`, Wave 2, `blocks` on `217.001-T`): Support `.bin` default and configurable `tools_dir` in launcher audit and schema (`U2`)
-    * `217.003-T` (`M`, `medium`, Wave 3, `blocks` on `217.001-T` and `217.002-T`): Honor `.mcp.json`, configurable `tools_dir`, and `.bin` default in `pinnedMCPDaemonBinary` (`U3`)
+    * `217.003-T` (`M`, `medium`, Wave 3, `blocks` on `217.001-T` and `217.002-T`): Honor `.mcp.json`, configurable `tools_dir`, and `.bin` default in `pinnedMCPDaemonBinary` descending through pinned child `*os.Root` directory handles (`U3`)
   * Assembled Shipment: `218-S` (`status: queued`, `priority: high`, `items: ["217-F", "217.001-T", "217.004-T", "217.002-T", "217.003-T"]`).
   * Stash Archival: `2CCDFDED` harvested and archived to `.backlogit/archive/stash.jsonl` (`harvested_artifact_id: 217-F`).
 * **Deferred (`85442104`, `medium`, `task`, `DEFERRED SCOPE EXPANSION`)**:
