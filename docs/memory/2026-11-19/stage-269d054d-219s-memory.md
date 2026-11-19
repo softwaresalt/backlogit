@@ -42,7 +42,7 @@ docline:
 
 ## Changed Stage Files & Gate Evidence
 
-* **Changed Stage Files (24)**:
+* **Changed Git-Tracked Stage Files on `chore/stage-219-S` (18; `.backlogit/logs/*.jsonl` are git-ignored append-only logs)**:
   * `docs/decisions/2026-11-19-init-install-target-tools-dir-mcp-config-deliberation.md`
   * `docs/plans/2026-11-19-init-install-target-tools-dir-mcp-config-plan.md`
   * `docs/memory/2026-11-19/stage-269d054d-219s-memory.md`
@@ -50,7 +50,8 @@ docline:
   * `.backlogit/archive/stash.jsonl`
   * `.backlogit/checkpoints/checkpoint-20261119-191111.json` (status: `resolved`, initial checkpoint)
   * `.backlogit/checkpoints/checkpoint-20261119-194834.json` (status: `resolved`, cycle 1 checkpoint)
-  * `.backlogit/checkpoints/checkpoint-20261119-202619.json` (status: `resolved`, final cycle 2 checkpoint with `tasks_completed: ["103-DL"]`, `tasks_remaining: ["218.001-T", "218.002-T", "218.003-T", "218.004-T", "218.005-T"]`, `reviewed_head_sha: "7c38893358fc3ac96de6c82dd2763cedcd456851"`)
+  * `.backlogit/checkpoints/checkpoint-20261119-202619.json` (status: `resolved`, cycle 2 checkpoint)
+  * `.backlogit/checkpoints/checkpoint-20261119-203204.json` (status: `resolved`, final cycle 2 checkpoint bound to `c15c617f4b55f6565c1cff45077dbf78ba699a6d` with `tasks_completed: ["103-DL"]`, `tasks_remaining: ["218.001-T", "218.002-T", "218.003-T", "218.004-T", "218.005-T"]`, and exact git-tracked `files_modified`)
   * `.backlogit/hooks_queue.jsonl`
   * `.backlogit/memories.json`
   * `.backlogit/queue/218-F.md`
@@ -60,14 +61,7 @@ docline:
   * `.backlogit/queue/218.004-T.md`
   * `.backlogit/queue/218.005-T.md`
   * `.backlogit/queue/219-S.md`
-  * `.backlogit/logs/218-F.jsonl`
-  * `.backlogit/logs/218.001-T.jsonl`
-  * `.backlogit/logs/218.002-T.jsonl`
-  * `.backlogit/logs/218.003-T.jsonl`
-  * `.backlogit/logs/218.004-T.jsonl`
-  * `.backlogit/logs/218.005-T.jsonl`
-  * `.backlogit/logs/219-S.jsonl`
-* **Durable Verification & Gate Evidence**:
+* **Durable Verification & Gate Evidence (bound to commit `c15c617f4b55f6565c1cff45077dbf78ba699a6d`)**:
   * `backlogit_docs_lint` (`docs/decisions/2026-11-19-init-install-target-tools-dir-mcp-config-deliberation.md`, `docs/plans/2026-11-19-init-install-target-tools-dir-mcp-config-plan.md`, `docs/memory/2026-11-19/stage-269d054d-219s-memory.md`): `valid: true, violation_count: 0`.
   * `backlogit_doctor` (`target` checks on `.backlogit/archive/103-DL.md`, `.backlogit/queue/218-F.md`, `.backlogit/queue/218.001-T.md`..`218.005-T.md`, `.backlogit/queue/219-S.md`): `ok: true, kind: pass`.
   * `plan-review` Attempt 3 (`docs/plans/2026-11-19-init-install-target-tools-dir-mcp-config-plan.md` `## Plan Review`): `dispatch_mode: multi-agent-dispatch`, `TOOL_OK: reviewer-subagent-dispatch`, `decision: PASS` (`0 P0, 0 P1, 0 P2, 0 P3` findings across all 7 dispatched reviewer subagents).
