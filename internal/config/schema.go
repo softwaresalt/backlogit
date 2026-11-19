@@ -37,7 +37,7 @@ func validateWorkspaceToolsDir(toolsDir string) error {
 	if strings.ContainsRune(toolsDir, '\x00') {
 		return fmt.Errorf("tools_dir %q must not contain NUL bytes: %w", toolsDir, corerrors.ErrValidation)
 	}
-	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" {
+	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" || hasDriveOrUNCPrefix(toolsDir) {
 		return fmt.Errorf("tools_dir %q must be a workspace-relative subdirectory path: %w", toolsDir, corerrors.ErrValidation)
 	}
 	for _, part := range strings.FieldsFunc(toolsDir, func(r rune) bool { return r == '/' || r == '\\' }) {
@@ -55,6 +55,13 @@ func validateWorkspaceToolsDir(toolsDir string) error {
 		return fmt.Errorf("tools_dir %q cannot target reserved directory %q: %w", toolsDir, firstSeg, corerrors.ErrValidation)
 	}
 	return nil
+}
+
+func hasDriveOrUNCPrefix(s string) bool {
+	if strings.HasPrefix(s, `\\`) || strings.HasPrefix(s, "//") {
+		return true
+	}
+	return len(s) >= 2 && ((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) && s[1] == ':'
 }
 
 func toolsDirFirstSegment(toolsDir string) string {

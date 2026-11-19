@@ -403,3 +403,60 @@ func TestU3_MCPCommandReplaceFlag(t *testing.T) {
 	assert.True(t, served)
 	h.waitExit(t)
 }
+
+func TestU3_DaemonToolsDirAndCommandRejectDriveAndUNC(t *testing.T) {
+	t.Run("validateDaemonToolsDirRel", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			toolsDir string
+			wantErr  bool
+		}{
+			{name: "valid-dot-bin", toolsDir: ".bin"},
+			{name: "valid-nested", toolsDir: ".tools/bin"},
+			{name: "drive-relative-upper", toolsDir: "C:tools", wantErr: true},
+			{name: "drive-relative-lower", toolsDir: "c:tools", wantErr: true},
+			{name: "drive-rooted-backslash", toolsDir: `C:\tools`, wantErr: true},
+			{name: "drive-rooted-slash", toolsDir: "C:/tools", wantErr: true},
+			{name: "unc-backslash", toolsDir: `\\server\share`, wantErr: true},
+			{name: "unc-slash", toolsDir: "//server/share", wantErr: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := validateDaemonToolsDirRel(tc.toolsDir)
+				if tc.wantErr {
+					require.ErrorIs(t, err, corerrors.ErrValidation)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	})
+
+	t.Run("validateBacklogitCommandRel", func(t *testing.T) {
+		ws := t.TempDir()
+		inWorkspaceAbs := filepath.Join(ws, ".bin", "backlogit.exe")
+		for _, tc := range []struct {
+			name    string
+			command string
+			wantErr bool
+		}{
+			{name: "valid-relative", command: "./.bin/backlogit.exe"},
+			{name: "valid-in-workspace-abs", command: inWorkspaceAbs},
+			{name: "drive-relative-backslash", command: `C:tools\backlogit.exe`, wantErr: true},
+			{name: "drive-relative-slash", command: "C:tools/backlogit.exe", wantErr: true},
+			{name: "drive-relative-lower", command: "c:tools/backlogit.exe", wantErr: true},
+			{name: "drive-rooted-outside-backslash", command: `C:\outside\backlogit.exe`, wantErr: true},
+			{name: "drive-rooted-outside-slash", command: "C:/outside/backlogit.exe", wantErr: true},
+			{name: "unc-backslash", command: `\\server\share\backlogit.exe`, wantErr: true},
+			{name: "unc-slash", command: "//server/share/backlogit.exe", wantErr: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := validateBacklogitCommandRel(ws, tc.command)
+				if tc.wantErr {
+					require.ErrorIs(t, err, corerrors.ErrValidation)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	})
+}

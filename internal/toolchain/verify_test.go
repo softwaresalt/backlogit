@@ -988,7 +988,10 @@ host_prerequisites:
 			require.NoError(t, openErr)
 			t.Cleanup(func() { require.NoError(t, rootHandle.Close()) })
 
-			for _, candidate := range []string{absToolsDir, ".GIT", ".GIT/sub", ".Backlog", ".BackLogIt", "tools\x00bin"} {
+			for _, candidate := range []string{
+				absToolsDir, ".GIT", ".GIT/sub", ".Backlog", ".BackLogIt", "tools\x00bin",
+				"C:tools", "c:tools", `C:\tools`, "C:/tools", `\\server\share`, "//server/share",
+			} {
 				_, directErr := validManifestToolsDir(rootHandle, badRoot, candidate)
 				require.ErrorIs(t, directErr, corerrors.ErrValidation, "validManifestToolsDir must reject %q", candidate)
 

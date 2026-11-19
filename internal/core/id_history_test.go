@@ -887,10 +887,32 @@ func TestU4_GitCatFileAndTreeEntrySafety(t *testing.T) {
 				parsedTrees := map[string]struct{}{}
 				seenIDs := map[string]struct{}{}
 				var collected []string
-				_, err := readGitCatFileBatch(bufio.NewReader(strings.NewReader(tc.header)), 1, seenTrees, parsedTrees, seenIDs, &collected)
+				_, err := readGitCatFileBatch(bufio.NewReader(strings.NewReader(tc.header)), 1, false, seenTrees, parsedTrees, seenIDs, &collected)
 				require.ErrorIs(t, err, blerrors.ErrValidation)
 			})
 		}
+	})
+
+	t.Run("readGitCatFileBatch-missing-subtree-fail-closed", func(t *testing.T) {
+		const missingLine = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef missing\n"
+		t.Run("allowMissing-true-skips", func(t *testing.T) {
+			seenTrees := map[string]struct{}{}
+			parsedTrees := map[string]struct{}{}
+			seenIDs := map[string]struct{}{}
+			var collected []string
+			nextSpecs, err := readGitCatFileBatch(bufio.NewReader(strings.NewReader(missingLine)), 1, true, seenTrees, parsedTrees, seenIDs, &collected)
+			require.NoError(t, err)
+			assert.Empty(t, nextSpecs)
+			assert.Empty(t, collected)
+		})
+		t.Run("allowMissing-false-returns-validation-error", func(t *testing.T) {
+			seenTrees := map[string]struct{}{}
+			parsedTrees := map[string]struct{}{}
+			seenIDs := map[string]struct{}{}
+			var collected []string
+			_, err := readGitCatFileBatch(bufio.NewReader(strings.NewReader(missingLine)), 1, false, seenTrees, parsedTrees, seenIDs, &collected)
+			require.ErrorIs(t, err, blerrors.ErrValidation)
+		})
 	})
 
 	t.Run("parseGitTreePayload-collects-regular-md-and-ignores-symlinks-gitlinks", func(t *testing.T) {

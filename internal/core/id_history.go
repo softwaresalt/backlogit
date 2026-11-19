@@ -1198,15 +1198,17 @@ func scanLocalBranchArtifactIDsContext(parentCtx context.Context, ws *Workspace)
 	seenIDs := make(map[string]struct{})
 	var collected []string
 
+	allowMissing := true
 	for len(specs) > 0 {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("scan local git branch trees for id history: %w", ctxErr)
 		}
-		nextSpecs, batchErr := scanGitTreeBatch(ctx, realRoot, gitEnv, specs, seenTrees, parsedTrees, seenIDs, &collected)
+		nextSpecs, batchErr := scanGitTreeBatch(ctx, realRoot, gitEnv, specs, allowMissing, seenTrees, parsedTrees, seenIDs, &collected)
 		if batchErr != nil {
 			return nil, batchErr
 		}
 		specs = nextSpecs
+		allowMissing = false
 	}
 
 	branchIDScanCache.Store(realRoot, branchIDCacheEntry{
@@ -1221,6 +1223,7 @@ func scanGitTreeBatch(
 	repoRoot string,
 	gitEnv []string,
 	specs []string,
+	allowMissing bool,
 	seenTrees map[string]struct{},
 	parsedTrees map[string]struct{},
 	seenIDs map[string]struct{},
@@ -1250,7 +1253,7 @@ func scanGitTreeBatch(
 	}
 
 	reader := bufio.NewReaderSize(stdout, 64*1024)
-	nextSpecs, parseErr := readGitCatFileBatch(reader, len(specs), seenTrees, parsedTrees, seenIDs, collected)
+	nextSpecs, parseErr := readGitCatFileBatch(reader, len(specs), allowMissing, seenTrees, parsedTrees, seenIDs, collected)
 	if parseErr != nil {
 		cancel()
 	}
@@ -1270,6 +1273,7 @@ func scanGitTreeBatch(
 func readGitCatFileBatch(
 	reader *bufio.Reader,
 	expectedCount int,
+	allowMissing bool,
 	seenTrees map[string]struct{},
 	parsedTrees map[string]struct{},
 	seenIDs map[string]struct{},
@@ -1283,6 +1287,9 @@ func readGitCatFileBatch(
 		}
 		header = strings.TrimRight(header, "\r\n")
 		if strings.HasSuffix(header, " missing") {
+			if !allowMissing {
+				return nil, fmt.Errorf("missing referenced git subtree %q for id history: %w", strings.TrimSuffix(header, " missing"), blerrors.ErrValidation)
+			}
 			continue
 		}
 		fields := strings.Fields(header)

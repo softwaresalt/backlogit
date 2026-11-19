@@ -861,6 +861,13 @@ func isBacklogitDaemonCommand(command string) bool {
 		strings.HasPrefix(base, "backlogit_")
 }
 
+func hasDriveOrUNCPrefix(s string) bool {
+	if strings.HasPrefix(s, `\\`) || strings.HasPrefix(s, "//") {
+		return true
+	}
+	return len(s) >= 2 && ((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) && s[1] == ':'
+}
+
 func validateDaemonToolsDirRel(toolsDir string) (string, error) {
 	if toolsDir != strings.TrimSpace(toolsDir) || strings.TrimSpace(toolsDir) == "" {
 		return "", mcpDaemonValidationError("tools_dir %q must not be blank or whitespace-padded", toolsDir)
@@ -868,7 +875,7 @@ func validateDaemonToolsDirRel(toolsDir string) (string, error) {
 	if strings.ContainsRune(toolsDir, '\x00') {
 		return "", mcpDaemonValidationError("tools_dir %q must not contain NUL bytes", toolsDir)
 	}
-	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" {
+	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" || hasDriveOrUNCPrefix(toolsDir) {
 		return "", mcpDaemonValidationError("tools_dir %q must be a workspace-relative subdirectory path", toolsDir)
 	}
 	for _, part := range strings.FieldsFunc(toolsDir, func(r rune) bool { return r == '/' || r == '\\' }) {
@@ -900,6 +907,10 @@ func validateBacklogitCommandRel(absWorkspace, command string) (string, error) {
 		}
 	}
 
+	if strings.HasPrefix(command, `\\`) || strings.HasPrefix(command, "//") {
+		return "", mcpDaemonValidationError("backlogit command %q must not be a UNC path", command)
+	}
+
 	var rel string
 	if filepath.IsAbs(command) {
 		relPath, err := filepath.Rel(absWorkspace, filepath.Clean(command))
@@ -908,7 +919,7 @@ func validateBacklogitCommandRel(absWorkspace, command string) (string, error) {
 		}
 		rel = relPath
 	} else {
-		if filepath.VolumeName(command) != "" {
+		if filepath.VolumeName(command) != "" || hasDriveOrUNCPrefix(command) {
 			return "", mcpDaemonValidationError("backlogit command %q must not carry a volume prefix", command)
 		}
 		if !strings.ContainsAny(command, "/\\") {

@@ -76,6 +76,9 @@ func relativePath(root, path string, executable bool) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("empty path: %w", blerrors.ErrValidation)
 	}
+	if !filepath.IsAbs(path) && (filepath.VolumeName(path) != "" || hasDriveOrUNCPrefix(path)) {
+		return "", fmt.Errorf("path outside workspace: %w", blerrors.ErrValidation)
+	}
 	if executable && !filepath.IsAbs(path) && !strings.ContainsAny(path, `/\`) {
 		return "", fmt.Errorf("unqualified executable: %w", blerrors.ErrValidation)
 	}
@@ -358,6 +361,13 @@ func isPinnedBacklogitRelPath(rel string) bool {
 	return samePath(base, "backlogit") || samePath(base, "backlogit.exe")
 }
 
+func hasDriveOrUNCPrefix(s string) bool {
+	if strings.HasPrefix(s, `\\`) || strings.HasPrefix(s, "//") {
+		return true
+	}
+	return len(s) >= 2 && ((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) && s[1] == ':'
+}
+
 func validManifestToolsDir(root *os.Root, abs, toolsDir string) (string, error) {
 	if root == nil {
 		return "", fmt.Errorf("missing workspace root handle: %w", blerrors.ErrValidation)
@@ -368,7 +378,7 @@ func validManifestToolsDir(root *os.Root, abs, toolsDir string) (string, error) 
 	if strings.ContainsRune(toolsDir, '\x00') {
 		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
 	}
-	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" {
+	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" || hasDriveOrUNCPrefix(toolsDir) {
 		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
 	}
 	relDir, err := relativePath(abs, toolsDir, false)
