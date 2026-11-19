@@ -29,7 +29,7 @@ docline:
     * `218.001-T` (`M`, `medium`, Wave 1): Create target tool directory, install backlogit binary, and update ignore rules (`U1`)
     * `218.002-T` (`S`, `low`, Wave 2, `blocks` on `218.001-T`): Configure `.mcp.json` and `config.yaml` `tools_dir` after binary install (`U2`)
     * `218.003-T` (`M`, `medium`, Wave 3, `blocks` on `218.001-T` and `218.002-T`): Prompt for target tool directory on `init` and `install` and verify MCP daemon startup (`U3`)
-  * Assembled Shipment: `219-S` (`status: queued`, `priority: high`, `items: ["218-F", "218.001-T", "218.002-T", "218.003-T"]`).
+  * Assembled Shipment: `219-S` (`status: queued`, `priority: high`, `labels: ["init", "install", "mcp-json", "tools-dir", "self-install", "dag-root"]`, `items: ["218-F", "218.001-T", "218.002-T", "218.003-T"]`).
   * Stash Archival: `269D054D` harvested and archived to `.backlogit/archive/stash.jsonl` (`harvested_artifact_id: 218-F`).
 * **Unrelated Stash Entries**: Preserved untouched in `.backlogit/stash.jsonl` per operator scope boundary.
 
