@@ -31,7 +31,7 @@ func TestUSR6_HarnessManifestDriftRecords(t *testing.T) {
 		Artifacts []artifact `yaml:"artifacts"`
 	}
 
-	manifestPath := filepath.Join(testRepoRoot(t), ".autoharness", "harness-manifest.yaml")
+	manifestPath := filepath.Join(testRepoRoot(t), ".gsd", "harness-manifest.yaml")
 	data, err := os.ReadFile(manifestPath)
 	require.NoError(t, err)
 	require.NoError(t, yaml.Unmarshal(data, &manifest))

@@ -24,7 +24,7 @@ func TestU12_HarnessManifestNamespaceReconciliation(t *testing.T) {
 	require.Error(t, checkUniqueYAMLMappingKeys(&dupDoc), "duplicate YAML key must be rejected")
 
 	repoRoot := testRepoRoot(t)
-	rawManifest := readGovernedSurface(t, repoRoot, ".autoharness/harness-manifest.yaml")
+	rawManifest := readGovernedSurface(t, repoRoot, ".gsd/harness-manifest.yaml")
 
 	var doc yaml.Node
 	require.NoError(t, yaml.Unmarshal([]byte(rawManifest), &doc))
@@ -34,7 +34,7 @@ func TestU12_HarnessManifestNamespaceReconciliation(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal([]byte(rawManifest), &manifest))
 
 	assert.Equal(t, "1.1.0", manifest["schema_version"])
-	assert.Equal(t, "1.6.0", manifest["autoharness_version"])
+	assert.Equal(t, "1.6.0", manifest["gsd_version"])
 	assert.Equal(t, "full", manifest["install_preset"])
 
 	vars, ok := manifest["variables_used"].(map[string]any)
@@ -43,9 +43,9 @@ func TestU12_HarnessManifestNamespaceReconciliation(t *testing.T) {
 	assert.Equal(t, "docs", vars["DOCS_ROOT"])
 	assert.Equal(t, "compound", vars["DOCS_COMPOUND_DIR"])
 
-	rawConfig := readGovernedSurface(t, repoRoot, ".autoharness/config.yaml")
+	rawConfig := readGovernedSurface(t, repoRoot, ".gsd/config.yaml")
 	wantConfigHash := lfSHA256Hex(rawConfig)
-	assert.Equal(t, wantConfigHash, manifest["config_hash"], "config_hash must match LF-normalized .autoharness/config.yaml")
+	assert.Equal(t, wantConfigHash, manifest["config_hash"], "config_hash must match LF-normalized .gsd/config.yaml")
 	assert.NotEqual(t, "f37e5b412dd024201601e1ba5d8451c1356cd8e88f22116645835bb47407e9c7", manifest["config_hash"], "config_hash must differ from pre-215-S hash")
 
 	// Historical notes must be preserved unchanged.

@@ -18,7 +18,7 @@ pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1
 ```
 
 Add `-VerifyAgainstQueue` to parse `.backlogit/queue/130-S.md`,
-`.backlogit/config.yaml` status values, and `.autoharness/backlog-registry.yaml` status
+`.backlogit/config.yaml` status values, and `.gsd/backlog-registry.yaml` status
 mapping/features; resolve every listed artifact's type; filter task IDs into `M`; exact-compare
 manifest `M` with the explicit fallback set; report excluded non-task IDs; and fail on drift:
 

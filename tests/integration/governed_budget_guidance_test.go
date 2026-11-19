@@ -90,7 +90,7 @@ func TestGovernedFullSuiteBudget_Guidance(t *testing.T) {
 // by E4 carry LF-normalized SHA-256 checksums in the harness manifest.
 func TestU180006_ManifestChecksumsCurrent(t *testing.T) {
 	repoRoot := testRepoRoot(t)
-	manifest := readGovernedSurface(t, repoRoot, ".autoharness/harness-manifest.yaml")
+	manifest := readGovernedSurface(t, repoRoot, ".gsd/harness-manifest.yaml")
 	managed := []string{
 		".github/instructions/constitution.instructions.md",
 		".github/instructions/go.instructions.md",

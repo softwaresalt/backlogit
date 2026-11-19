@@ -7,7 +7,7 @@ package contract_test
 // docs/compound/2026-08-15-governed-parity-fixtures-must-dispatch-authoritative-registry.md
 //
 // The fixture:
-//  1. Loads the AUTHORITATIVE .autoharness/backlog-registry.yaml
+//  1. Loads the AUTHORITATIVE .gsd/backlog-registry.yaml
 //  2. Selects the create_checkpoint operation
 //  3. Asserts governed:true and governed_name:checkpoint_create
 //  4. Invokes the REGISTERED MCP tool (backlogit_create_checkpoint) — not
@@ -126,20 +126,20 @@ func TestU4_CreateCheckpointGoverned(t *testing.T) {
 }
 
 // findRegistry walks up from the test's working directory looking for
-// .autoharness/backlog-registry.yaml, returning its path.
+// .gsd/backlog-registry.yaml, returning its path.
 // Fails the test if the file cannot be located.
 func findRegistry(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
 	require.NoError(t, err)
 	for {
-		candidate := filepath.Join(dir, ".autoharness", "backlog-registry.yaml")
+		candidate := filepath.Join(dir, ".gsd", "backlog-registry.yaml")
 		if _, statErr := os.Stat(candidate); statErr == nil {
 			return candidate
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatal("could not find .autoharness/backlog-registry.yaml — walked to filesystem root")
+			t.Fatal("could not find .gsd/backlog-registry.yaml — walked to filesystem root")
 		}
 		dir = parent
 	}
