@@ -2,12 +2,12 @@
 name: _Ship
 description: "Manages the backlog-to-shipped pipeline: harness generation, build execution, review, CI remediation, and PR lifecycle"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, vscode/memory, backlogit/*, engram/*, graphtor-docs/search_local_docs, graphtor-docs/search_semantic, graphtor-docs/research_topic, graphtor-docs/traverse_doc_links, graphtor-docs/list_sources, graphtor-docs/get_chunk_by_id, graphtor-docs/get_document, graphtor-docs/get_status
+tools: vscode, execute, read, agent, edit, search, todo, vscode/memory, backlogit/*, engram/*, kbdb/search_local_docs, kbdb/search_semantic, kbdb/research_topic, kbdb/traverse_doc_links, kbdb/list_sources, kbdb/get_chunk_by_id, kbdb/get_document, kbdb/get_status
 model_tier: 2
 max_subagent_tier: 3
-reasoning_effort: "medium"
-model_provider: "anthropic"
-model_family: "claude-sonnet-5.5"
+reasoning_effort: "high"
+model_provider: "google"
+model_family: "gemini-4-hydrogen"
 context_tier: "long_context"
 subagent_depth: 2
 ---
@@ -105,7 +105,7 @@ If Primitive 6 is not installed, enumerate skills manually:
 
 Before any pipeline work begins, verify tool availability and declare degraded mode if tools are unavailable.
 
-1. Check for the backlog registry at `.autoharness/backlog-registry.yaml`.
+1. Check for the backlog registry at `.gsd/backlog-registry.yaml`.
    - If present: load it and identify MCP tools required for this session (shipment operations, task state, commit tracking).
    - If absent: proceed in manual/file-backed mode — this is the intentional operating mode, not a degradation.
 2. For each required MCP tool, probe with a read-only lightweight operation:
@@ -143,8 +143,8 @@ When the `agent-engram` capability pack is installed, also follow
 `.github/instructions/agent-engram.instructions.md` and verify the engram daemon / binding surface
 is available before depending on indexed analysis.
 
-When the `graphtor-docs` capability pack is installed, also follow
-`.github/instructions/graphtor-docs.instructions.md` and verify the graphtor-docs server is
+When the `kbdb` capability pack is installed, also follow
+`.github/instructions/kbdb.instructions.md` and verify the kbdb server is
 reachable before depending on indexed documentation retrieval. Use `search_local_docs`,
 `search_semantic`, or `research_topic` to resolve domain concepts and API references from indexed
 sources before falling back to web search or raw filesystem scan.
@@ -199,10 +199,10 @@ build work begins:
 3a. **Branch Creation Gate (P-011, NON-NEGOTIABLE)**: Before claiming (the first workspace mutation), ensure a feature branch is active:
     - **TOPOLOGY_GATE: pre_claim (before branch/worktree creation)** — if the `pipeline-topology` gate is installed
       for this workspace, before any branch creation or selection below, run
-      `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase pre_claim --json`. Exit 0:
+      `gsd gate pipeline-topology --mode agent --shipment {shipment_id} --phase pre_claim --json`. Exit 0:
       proceed to the branch checks below. Exit 1 (`blocked`) or exit 2 (`invalid`): halt immediately with the
       reported token/message — never inferred, never fail-open. (Bootstrap exemption: a workspace that has not yet
-      installed the `autoharness gate pipeline-topology` CLI cannot enforce this gate against itself; skip this
+      installed the `gsd gate pipeline-topology` CLI cannot enforce this gate against itself; skip this
       sub-step until the gate is installed, so self-referential bootstrapping shipments are not blocked by an
       as-yet-uninstalled gate.)
     - Check current branch:
@@ -228,7 +228,7 @@ build work begins:
       `BRANCH_CREATED`, never before, and commit it on the shipment branch with the
       shipment's memory notes.
     - **TOPOLOGY_GATE: pre_claim (immediately before claim)** — if the gate is installed, immediately before the
-      claim in step 4, re-run `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase
+      claim in step 4, re-run `gsd gate pipeline-topology --mode agent --shipment {shipment_id} --phase
       pre_claim --json` to narrow the TOCTOU window between branch setup and the claim. Same exit-code handling as
       above: exit 0 proceeds to the claim; exit 1/2 halts immediately.
 4. If the shipment is still in `queued` status, repeat the hold-label and condition (b) checks from item 3.1 immediately before the claim, then claim it using `backlogit_claim_shipment` before
@@ -236,7 +236,7 @@ build work begins:
 4a. **TOPOLOGY_GATE: post_claim (immediately after claim, GLOBAL verification)** — Post-claim shipment-status
     verification. Immediately after the claim and before any task moves to `active`:
     - If the `pipeline-topology` gate is installed for this workspace, run
-      `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase post_claim --json`. This is
+      `gsd gate pipeline-topology --mode agent --shipment {shipment_id} --phase post_claim --json`. This is
       the GLOBAL verification contract: it re-reads all shipment records (not just this one) and requires exactly
       one active shipment, the claimed target.
       - Exit 0: log `CLAIM_VERIFY_OK: shipment {shipment_id} reached active and is the sole active shipment` and proceed.
@@ -442,7 +442,7 @@ frozen **here** and nowhere else.
 
 1. **Read the configured status model.** Load the workspace status catalog
    (`.backlogit/config.yaml` → `fields.status.values`), the registry status mapping
-   (`.autoharness/backlog-registry.yaml` → `status_values`), the registry `features.sql_query` and
+   (`.gsd/backlog-registry.yaml` → `status_values`), the registry `features.sql_query` and
    `features.shipments` flags that select the snapshot/manifest sources, and confirm the archive
    lifecycle terminal (`archived`). Parse these live; do not rely on a copied status list or
    assumed feature value. Record three sets: **executable** (`queued`, `active`, `blocked`),
@@ -835,7 +835,7 @@ Immediately after claim and before pre-build knowledge retrieval, build-feature 
 implementation tool work, or review feedback, start a stable telemetry context:
 
 ```text
-autoharness telemetry begin --task-id {item_id} --backlog-item-id {item_id} \
+gsd telemetry begin --task-id {item_id} --backlog-item-id {item_id} \
   --feature-id {parent_id} --shipment-id {shipment_id} --capture-backlogit-sizing --json
 ```
 
@@ -857,7 +857,7 @@ When Step 4.1c carried a `context_ref` (`created`/`idempotent_begin`), tool use 
 Step 4.2's build-feature loop MAY optionally emit sanitized ToolTelemetryEvent records:
 
 ```text
-autoharness telemetry event --context-ref {context_ref} --from-json {event_payload_path} --json
+gsd telemetry event --context-ref {context_ref} --from-json {event_payload_path} --json
 ```
 
 * Only schema-shaped fields belong in the event payload
@@ -876,7 +876,7 @@ autoharness telemetry event --context-ref {context_ref} --from-json {event_paylo
 
 **TOPOLOGY_GATE: lifecycle (before build)** — if the `pipeline-topology` gate is installed for this workspace,
 before delegating to build-feature below, run
-`autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
+`gsd gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
 proceeds; exit 1/2 halts immediately with the reported token/message (never inferred, never fail-open).
 
 When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking build-feature for {item_id}` before delegating.
@@ -1163,7 +1163,7 @@ register the selector in `open_red_deliverables` before Step 4.6.
 2. If Step 4.1c returned `status` `created` or `idempotent_begin` with an enabled
    `context_ref`, create a close-time epoch payload from the task roll-up metrics and
    record it before marking the task done:
-   `autoharness telemetry record --context-ref {context_ref} --from-json {epoch_payload_path} [--compose-tool-events] --json`.
+   `gsd telemetry record --context-ref {context_ref} --from-json {epoch_payload_path} [--compose-tool-events] --json`.
    Add `--compose-tool-events` only when Step 4.1d observed at least one successful
    (`written: true`) `telemetry event` call during this task; otherwise omit the flag.
    Capture the close timestamp once and reuse that exact value on every retry of this
@@ -1301,7 +1301,7 @@ After all tasks in the queue are complete:
    counts, full-build evidence or its non-applicability rationale, and follow-up handling.
 5a. **TOPOLOGY_GATE: lifecycle (before PR creation)** — if the `pipeline-topology` gate is installed for this
     workspace, before invoking **pr-lifecycle** below, run
-    `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Same
+    `gsd gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Same
     exit-code handling as above. This 5a lifecycle pipeline-topology gate does not apply to Step 6.0 closure PRs; this exemption covers only the topology gate, and closure PRs remain subject to every other pre-merge gate (Step 6.0 item 4).
 6. Invoke the **pr-lifecycle** skill to create or update the pull request
 7. CI confirmation is required whether or not any check failed: before advancing past item 7, every required check must report success for the current `headRefOid`. If CI or optional shadow-review comments fail:
@@ -1339,8 +1339,8 @@ After all tasks in the queue are complete:
 7c. **P-018 Copilot-Review Completion Gate (NON-NEGOTIABLE, fail-closed)**: Before presenting the PR as merge-ready and before any `gh pr merge` — including `--admin` — verify that Copilot review has completed for the current `headRefOid` and that every Copilot-authored review thread is resolved. See policy **P-018** in `.github/policies/workflow-policies.md`.
 
     * **Deterministic gate (preferred)**: when the `copilot-review` gate is installed for this workspace, run
-      `autoharness gate copilot-review <pr> --repo softwaresalt/backlogit --enforcement <mode> [--max-wait <seconds>]`,
-      where `<mode>` comes from `copilot_review.enforcement` in `.autoharness/workspace-profile.yaml`
+      `gsd gate copilot-review <pr> --repo softwaresalt/backlogit --enforcement <mode> [--max-wait <seconds>]`,
+      where `<mode>` comes from `copilot_review.enforcement` in `.gsd/workspace-profile.yaml`
       (`auto` | `required` | `disabled`, default `auto`) and `<seconds>` comes from
       `copilot_review.max_wait_seconds` (integer ≥ 0, default `0`).
     * **Manual fallback (gate not installed)**: perform the equivalent verification by hand using
@@ -1349,11 +1349,11 @@ After all tasks in the queue are complete:
       terminal-state dispositions. The fallback is fail-closed in exactly the same way: an unverifiable
       state BLOCKS. Absence of the gate CLI is never a PASS.
     * `SATISFIED` / `NOT_APPLICABLE` (exit 0): Copilot review is complete for the current HEAD with no open Copilot threads, or Copilot is not in play. Proceed.
-    * Any BLOCK verdict — `WAITING_FOR_REVIEW`, `UNRESOLVED_THREADS`, `REVIEW_TIMEOUT`, `DETECTION_AMBIGUOUS`, `VERIFY_FAILED` (non-zero exit): halt, emit `COPILOT_REVIEW_BLOCK` (with PR number, verdict, and current HEAD), and record a P-018 event via P-005 telemetry. **`--admin` does NOT bypass this block.** Wait for review completion, resolve every Copilot-authored thread, then re-run. `REVIEW_TIMEOUT` still blocks; only an explicit, operator-authored, audited `autoharness gate copilot-review ... --force` (logged under `.autoharness/gates/`) may override.
+    * Any BLOCK verdict — `WAITING_FOR_REVIEW`, `UNRESOLVED_THREADS`, `REVIEW_TIMEOUT`, `DETECTION_AMBIGUOUS`, `VERIFY_FAILED` (non-zero exit): halt, emit `COPILOT_REVIEW_BLOCK` (with PR number, verdict, and current HEAD), and record a P-018 event via P-005 telemetry. **`--admin` does NOT bypass this block.** Wait for review completion, resolve every Copilot-authored thread, then re-run. `REVIEW_TIMEOUT` still blocks; only an explicit, operator-authored, audited `gsd gate copilot-review ... --force` (logged under `.gsd/gates/`) may override.
     * This gate re-runs whenever the branch HEAD advances (each push re-arms Copilot), exactly like the §1.9 readiness gate.
 
     When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Copilot-review gate: {PASS|BLOCK} — {verdict}` with the gate outcome. That pack is not installed in this workspace, so record the verdict in the local session output and in the PR readiness summary instead.
-8. If the changed work touches runtime surfaces, load `.autoharness/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces validator evidence for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites. Do not fake unsupported automation.
+8. If the changed work touches runtime surfaces, load `.gsd/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces validator evidence for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites. Do not fake unsupported automation.
 9. Invoke **operational-closure** with the validator evidence plus `runtime_validation.releasability` so closure produces explicit releasability evidence (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) covering monitoring, rollback, owner, validation-window, and follow-up requirements.
 10. **Stash follow-up items**: If the closure artifact, runtime-verification report, or local review readiness result identified follow-up tasks, stash every follow-up so it is visible to the Stage agent:
     * When `backlogit` is the installed backlog tool, create a stash entry per follow-up using `backlogit_create_item` with `artifact_type: "stash"`, `title` from the follow-up summary, `description` linking to the closure artifact, and `status: "queued"`. After creation, re-read each entry to confirm it persisted correctly.
@@ -1553,7 +1553,7 @@ branch-per-release-unit principle.
    Run item 1 only when the registry is readable and `features.shipments` is literal `true`. Skip item 1 and record why in the closure artifact only when the registry is readable and either `features.shipments` is literal `false` or the `features.shipments` key is absent from it. An ABSENT registry file is handled exactly as Step 0.0 item 1 says (manual/file-backed mode, the intentional operating mode, not a degradation): skip item 1 and record why in the closure artifact. Halt with `SHIPMENT_REGISTRY_UNREADABLE` and do not skip when the registry file exists but cannot be read or parsed, or when `features.shipments` holds any non-boolean value (for example a string, number, or null).
    a0. **TOPOLOGY_GATE: lifecycle (before closure/safe-close)** — if the `pipeline-topology` gate is installed for
        this workspace, before the pre-archive reconciliation gate below, run
-       `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
+       `gsd gate pipeline-topology --mode agent --shipment {shipment_id} --phase lifecycle --json`. Exit 0
        proceeds; exit 1/2 halts immediately with the reported token/message (never inferred, never fail-open).
    a0b. **Pre-closure baseline and pre-existing-change refusal (read-only, before any closure write)**: run `git diff --name-only`, `git diff --cached --name-only`, and `git ls-files --others --exclude-standard`, and keep all three outputs as the pre-closure baseline (unstaged, staged, and untracked). Build the predicted write set before pre-mode: the queue and archive paths for `{shipment_id}` and for every ID in `custom_fields.items`, any existing `.backlogit/reconcile/{shipment_id}-*` report, and any item-log path the backlog index reports for those IDs. If any path in the predicted write set has a staged, unstaged, or untracked change in the baseline, halt with `CLOSURE_PRE_EXISTING_CHANGES`: write nothing, stage nothing, and change no shipment state. This comparison runs here, before pre-mode step a; it never runs after pre-mode or safe-close has written reports or changed shipment state.
    a. **Pre-archive reconciliation gate (mandatory)**: Invoke the `shipment-reconcile`
@@ -1631,7 +1631,7 @@ branch-per-release-unit principle.
       and the added archive path). Both are allowlisted, so the check covers the queue side of
       every archived member. Commit in a separate
       command: `git commit -m "chore: archive {shipment_id} backlog artifacts"`
-2. **Runtime validation and releasability evidence**: If the shipped work touches runtime surfaces, load `.autoharness/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces **validator evidence** for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites (do not fake unsupported automation). Then invoke `operational-closure` in `mode=post-merge` with that validator evidence plus `runtime_validation.releasability` so closure produces explicit **releasability evidence** (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) covering monitoring, rollback, owner, validation-window, and follow-up requirements — alongside the release-readiness, monitoring, and rollback artifacts in `docs/closure/`. The closure artifact carries a **compaction status** field (initialized `pending`) that step 8 finalizes to `done`/`degraded`; the Orchestrator's closure-gated routing treats a `pending`/unset compaction status as an incomplete post-merge closure (P-020).
+2. **Runtime validation and releasability evidence**: If the shipped work touches runtime surfaces, load `.gsd/workspace-profile.yaml` and invoke **runtime-verification** with `runtime_validation.validator_manifest` plus `runtime_validation.validation_expectations` so the skill produces **validator evidence** for surface adapters, probe outcomes, manual checkpoint evidence, and blocked prerequisites (do not fake unsupported automation). Then invoke `operational-closure` in `mode=post-merge` with that validator evidence plus `runtime_validation.releasability` so closure produces explicit **releasability evidence** (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) covering monitoring, rollback, owner, validation-window, and follow-up requirements — alongside the release-readiness, monitoring, and rollback artifacts in `docs/closure/`. The closure artifact carries a **compaction status** field (initialized `pending`) that step 8 finalizes to `done`/`degraded`; the Orchestrator's closure-gated routing treats a `pending`/unset compaction status as an incomplete post-merge closure (P-020).
    In dark mode, the closure summary must list decisions, gates, reviewed HEADs,
    merge/fallback status, admin fallback result if any, **compaction status (P-020)**,
    closure status, and follow-up items before `DARK_MODE_COMPLETE` can be emitted.
@@ -1682,8 +1682,6 @@ A merged PR does not complete the top-level release unit by itself. For P-001 pu
 | Fix-CI cycles              | 5     | Halt, leave PR for manual intervention             |
 | Review comment fix cycles  | 3     | Present PR with remaining unresolved comments listed for operator |
 | Session stalls             | 3     | Halt, write checkpoint, prompt operator            |
-
-**P-021 C4 annotation — Review-fix cycles per task**: Reaching the 3-cycle limit does not authorize expanding into an out-of-scope finding, and neither does an operator instruction to continue. The halt-and-prompt at the cycle limit is exactly where a same-cycle "go ahead" is most likely to be solicited; remaining out-of-scope findings are accepted as captured P-021 deferred entries (Step 4.4a), never as silently expanded fixes. Operator authorization at the limit can only open a SEPARATE work unit through P-021 C2 capture plus C6 Stage deliberation — it never makes the expansion in-scope for the cycle already in flight (P-021 C4).
 | Waves per release unit (P-002.6) | `count(M)` — the frozen task-type wave-member count | Halt with `WAVE_BUDGET_EXCEEDED`, write checkpoint, report the wave index and the residual census |
 | Consecutive empty waves (P-002.6) | 1 | Halt with `WAVE_NO_PROGRESS`, emit the deterministic blocked report, prompt operator |
 | Blocked members at wave admission (P-002.6) | 0 | Halt with `WAVE_MEMBER_BLOCKED`, emit the dependency-impact report, invoke/record `return_blocked` where applicable, prompt operator |
@@ -1691,6 +1689,8 @@ A merged PR does not complete the top-level release unit by itself. For P-001 pu
 | Active residual at wave admission (P-002.6) | 0 | Halt with `WAVE_NO_PROGRESS` (detail: `active residual`), list the unfinished claims, prompt operator |
 | Open red past its declared closing wave (P-002.6, Step 4.6 / Step 5) | 0 | Halt with `WAVE_OPEN_RED_UNCLOSED`, name each open selector and its green-makers with their statuses; the deferred full suite must be dischargeable |
 | Wave convergence gate failures (P-002.6, Step 4.6) | 3 | Halt, remediate inside the current wave, write checkpoint; never advance the wave index on a failing gate |
+
+**P-021 C4 annotation — Review-fix cycles per task**: Reaching the 3-cycle limit does not authorize expanding into an out-of-scope finding, and neither does an operator instruction to continue. The halt-and-prompt at the cycle limit is exactly where a same-cycle "go ahead" is most likely to be solicited; remaining out-of-scope findings are accepted as captured P-021 deferred entries (Step 4.4a), never as silently expanded fixes. Operator authorization at the limit can only open a SEPARATE work unit through P-021 C2 capture plus C6 Stage deliberation — it never makes the expansion in-scope for the cycle already in flight (P-021 C4).
 
 **Every counter above spans the entire wave sequence of a release unit.** A new wave does not
 reset, re-arm, or excuse any of them, and the wave counters are additional to — never a substitute
@@ -1706,42 +1706,49 @@ before falling back to the operator-halt checkpoint:
    (threshold-kind + count = `consecutive_task_failures` / 3, failure
    summary, last-N action/observation refs, artifact refs, telemetry-
    evidence pointers, resumption checkpoint ref).
-2. **Resolve the escalation route**: `claude-sonnet-5.5` / `anthropic` /
-   `high`, resolving this workspace's currently-effective escalation route
-   per the nested per-role -> legacy flat (DEPRECATED) -> tier3 precedence
-   defined in `escalation-protocol.instructions.md` (F02FD596). This
-   resolution always reads the freshly session-start-reloaded config
-   (never a value cached earlier in a long session or a route resolved by
-   a prior session) — see the Orchestrator's Session-Start Dynamic Reload
-   (E8B5B3C5/H6/H7) section.
-   A stale escalation directive surviving a reload is a defect.
+2. **Resolve the escalation route**: run
+   `gsd routing resolve --workspace . --site ship --kind escalation --json`
+   and consume the returned route. The resolver selects whole blocks:
+   `ship.escalation.chain` first; otherwise, a present nested
+   `ship.escalation` block with per-field `model_routing.tier3` fallback;
+   otherwise, legacy flat `model_routing.escalation` (DEPRECATED) with
+   per-field `model_routing.tier3` fallback. A partial nested override never
+   inherits from the legacy flat block. A configuration rejected as
+   `AMBIGUOUS_ESCALATION_CONFIG` or
+   `ROUTING_ESCALATION_CHAIN_INVALID` is a hard error; halt to the operator
+   and never select a route manually. When the runtime cannot dispatch the
+   returned `model_family`, re-invoke
+   `gsd routing resolve --workspace . --site ship --kind escalation --unavailable <failed_family> --json`,
+   accumulating `--unavailable` values across dispatchability failures. Never
+   re-execute the failed task operation while advancing. Stop when a
+   dispatchable level is selected or `ESCALATION_DEGRADED` is returned,
+   including immediate `ESCALATION_DEGRADED: chain-exhausted` on a chain-free
+   route. This resolution always reads the freshly session-start-reloaded
+   config rather than a cached value — see the Orchestrator's Session-Start
+   Dynamic Reload (E8B5B3C5/H6/H7). This workspace's config is schema `1.3.0`
+   and is chain-free; `ship.escalation.chain` and unavailable route/family
+   lists require schema `1.4.0`, so a runtime-unavailable direct route ends in
+   `ESCALATION_DEGRADED: chain-exhausted`.
    **Session-Start Dynamic Reload (H6) — self-contained
    for direct invocation**: Ship supports being invoked directly without an
    installed Orchestrator (see the Fallback path above). When invoked this
    way, Ship independently applies the same fail-closed reload contract at
    its own session start rather than relying on an Orchestrator that may
-   not be present: re-read `.autoharness/config.yaml` fresh at the start of
+   not be present: re-read `.gsd/config.yaml` fresh at the start of
    the session, validate it against schema before resolving any route, and
    HALT to the operator on invalid, missing, or schema-failing config —
    Ship MUST NOT continue on a stale/baked route carried over from this
    file's frontmatter or a prior session's resolved value, and MUST NOT
-   invent a last-known-good fallback. Falls back per field to
-   `claude-sonnet-5.5` / `anthropic` / `xhigh` (this workspace's
-   `config.model_routing.tier3`) when no override for a field is declared
-   at any tier. This is the config-resolved successor to ad hoc "suggest a
-   frontier-tier model" prose — the route is now declared, not improvised.
-   Separately, the escalation `context_tier` resolves to `long_context`
-   (nested `ship.escalation.context_tier` -> legacy flat
-   `escalation.context_tier` only when the flat route is the selected
-   source -> `tier3.context_tier` -> `default`).
-   Record it in the compiled payload's separate
+   invent a last-known-good fallback.
+   Record the resolver's `context_tier` in the compiled payload's separate
    `resolved_escalation_context_tier` field — it is not part of the
    `resolved_escalation_route` tuple and is excluded from the same-route
    guard. When the runtime cannot honor a non-`default` escalation
    `context_tier`, record `ROUTING_DEGRADED: context_tier` and hand off at
    the default context; this never blocks the handoff.
-3. **Same-route guard**: if the resolved escalation tuple equals this
-   agent's own role route tuple (P-013.5), treat this as
+3. **Same-route guard**: the resolver evaluates every chain level against this
+   agent's own role route and earlier skipped levels. If no level remains, or
+   a chain-free route equals Ship's own route, treat this as
    `ESCALATION_DEGRADED` (same-route no-op) per the canonical definition in
    `escalation-protocol.instructions.md`.
 4. **Hand off and halt**: when the route is not degraded, record it in the
@@ -1934,4 +1941,4 @@ execution attempt — the single flow above is authoritative.
 
 Maximum 2 hops. This agent invokes skills (harness-architect, build-feature, review, fix-ci, pr-lifecycle, runtime-verification, operational-closure, compound, compound-refresh, compact-context, safety-modes) and those skills may spawn persona subagents but no deeper.
 
-Generated by autoharness | Template: ship.agent.md.tmpl
+Generated by gsd | Template: ship.agent.md.tmpl

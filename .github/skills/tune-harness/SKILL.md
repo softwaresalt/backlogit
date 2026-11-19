@@ -1,0 +1,1207 @@
+---
+name: tune-harness
+description: "Maintenance and tuning workflow that iteratively adapts an installed agent harness to match the current state of a codebase as it evolves"
+---
+
+# Tune Harness
+
+Analyze an installed agent harness against the current workspace state, detect drift, and propose targeted updates to keep the harness aligned with codebase evolution. Tuning is a non-destructive process: it proposes changes for review rather than silently overwriting artifacts.
+
+GSD tuning runs from the current workspace's local `.bin/` executable and
+bundle. Updated templates may also come from an explicitly selected trusted
+source checkout during GSD development, but normal tuning never requires or
+writes to a shared global/user-home installation.
+
+## When to Use
+
+Invoke this skill periodically or when significant codebase changes occur:
+
+* New languages, frameworks, or build tools added to the project
+* Major directory restructuring
+* CI/CD pipeline changes
+* New runtime surfaces (web UI, API, background jobs, deployment manifests)
+* agent-engram configured, removed, or partially woven into the workspace
+* backlogit detected or upgraded but the harness still only uses generic backlog CRUD guidance
+* After a large feature merge that introduces new patterns or conventions
+* When agent behavior becomes noticeably less effective
+* At regular intervals (recommended: monthly or after every major release)
+
+## Inputs
+
+* `gsd_home`: (Required) Preferred `{workspace_path}/.bin` or a versioned Zip
+  inside it. A trusted source checkout is valid for GSD development.
+  Explicit `GSD_HOME`, `gsd home`, `.gsd/`, and user-home resolution are
+  retained compatibility paths only.
+* `workspace_path`: (Required) Absolute path to the target workspace root.
+* `scope`: (Optional) Comma-separated list of tune targets: `instructions`, `agents`, `skills`, `policies`, `constitution`, `all`. Defaults to `all`.
+* `auto_apply`: (Optional, default false) When true, apply proposed changes without interactive review. `auto_apply` only covers file updates; it does not authorize committing or pushing those changes, especially not to the repository's default branch.
+
+## Output
+
+* Tuning report at `.gsd/tuning-reports/{YYYY-MM-DD}-tuning-report.md`
+* Updated harness artifacts (if changes accepted)
+* Updated harness manifest
+
+## Required Protocol
+
+### Phase 0: Validate gsd Home
+
+Verify the `gsd_home` bundle or directory contains the expected structure without unpacking `gsd-assets.zip`:
+
+* `templates/` — template files for artifact regeneration (read via `gsd bundle read templates/... --gsd-home {gsd_home}`)
+* `schemas/` — JSON schemas for validation (read via `gsd bundle read schemas/... --gsd-home {gsd_home}`)
+
+If any are missing, halt and report the issue. All template reads for regenerating artifacts read directly from `gsd-assets.zip` via `gsd bundle read` (or from `{gsd_home}/templates/` when operating against a source checkout).
+
+### Phase 0c: Enforce Branch Safety for Tune Output
+
+If `workspace_path` is a Git repository, determine the current branch and the
+repository's default branch before producing any follow-up guidance that
+mentions committing or pushing tuned artifacts.
+
+* Never commit or push gsd tune output directly to the default branch
+  (`main`, `master`, `trunk`, or the detected remote default branch).
+* If the current branch is the default branch, explicitly recommend creating or
+  switching to a feature branch first, for example
+  `chore/gsd-tune-<date>`.
+* Treat the intended Git workflow as: apply accepted tune changes on a feature
+  branch, review the diff, and open a pull request.
+* If the operator declines to create or switch branches, tuning may still
+  proceed as local uncommitted changes, but do NOT commit or push those changes
+  from this workflow.
+
+### Phase 0b: Load Operator Configuration
+
+Read `.gsd/config.yaml` from the target workspace (if present). The operator config represents the intended harness configuration. During tuning, it serves two purposes:
+
+1. **Intent comparison**: If the operator config specifies preferences that differ from what's currently installed, those are intentional tuning targets (not drift)
+2. **Override preservation**: When regenerating artifacts, operator config values take precedence over both auto-detected values and previously installed values
+
+If the config was modified since the last installation (compare against the manifest's recorded config hash), flag this as an intentional configuration change and prioritize it in the tuning report.
+
+#### Step 0b.1: Config Schema Validation
+
+Validate the loaded config against the schema version that matches the document's own `schema_version`, not against the root schema alone:
+
+* Read `schema_version` from the config. When `{gsd_home}/schemas/harness-config/<schema_version>.schema.json` exists, validate against that mirror (the selection `resolve_contract_schema_path` makes).
+* When `schema_version` is absent, unknown to the contract, or has no mirror file, validate against the current mirror and report the version as a contract finding (see Step 0b.2) instead of declaring the file invalid on the root alone.
+* The root `schemas/harness-config.schema.json` tracks only the current version, so it is not the validation target for an older-version config.
+
+For each discrepancy, classify as:
+
+| Discrepancy | Classification | Action |
+|---|---|---|
+| Unknown top-level key | Warning | Report in tuning output; may indicate a renamed key |
+| Unknown nested key that matches a renamed schema key | Migration | Generate a config-key migration proposal (P1 Degrading) |
+| Missing required key | Error | Halt tuning and report |
+| Value type mismatch | Warning | Report in tuning output |
+| Map object missing entries that have schema defaults | Backfill | Generate a config-backfill proposal (P1 Degrading) |
+
+**Config-key migration**: When a config key matches a known rename (e.g., `prefix_map` → `suffix_map`), generate a migration proposal that:
+
+1. Renames the key in `.gsd/config.yaml` while preserving all child values
+2. Backs up the original config to `.gsd/backups/{YYYY-MM-DD}/`
+3. Updates the manifest's config hash after migration
+4. Classifies as P1 Degrading because downstream template variable resolution may silently fall back to defaults when the old key name is present
+
+Known config-key renames (for workspaces upgrading from pre-v1.0.0 harnesses):
+
+| Old Key Path | Current Key Path | Renamed In |
+|---|---|---|
+| `backlog.prefix_map` | `backlog.suffix_map` | v1.0.0 |
+
+New installations since v1.0.0 use `suffix_map` from the start and will not trigger this migration.
+
+#### Step 0b.2: Schema-Contract Scan
+
+Treat every schema-bearing workspace artifact as a versioned contract, not just a file to parse once.
+
+Run deterministic verification before interpreting contract state:
+
+```text
+./.bin/gsd verify-workspace --workspace {workspace_path} --gsd-home ./.bin --json
+```
+
+Treat the verifier's JSON report as the authoritative structured input for this step. In particular, consume:
+
+* `schema_contracts{}` for observed version and contract status
+* `migration_proposals[]` for contract upgrade, backfill, and normalization work
+* `new_artifacts[]` for uninstalled `gsd_home` templates that have no installed workspace artifact (advisory net-new install candidates)
+* `learning_signals{}` for recurring compound, continuous-learning, and closure patterns already mined from workspace evidence
+* `warnings[]` for compatibility drift evidence
+
+Do not re-derive contract status, contract migration proposals, or verifier-mined learning baselines by manually re-parsing the same installed YAML once the verifier report is available. The tune flow may still inspect the raw files for operator review, but the verifier report is the system of record for contract-state classification and any precomputed `learning_signals{}`.
+
+Before categorizing drift, read the installed contract versions from the verifier report or, if the verifier report is unavailable, load them directly from:
+
+* `.gsd/config.yaml` -> `schema_version`
+* `.gsd/workspace-profile.yaml` -> `schema_version`
+* `.gsd/harness-manifest.yaml` -> `schema_version`
+
+Compare those versions against gsd's known contract set for each artifact type.
+
+Classify the result as:
+
+| Contract Status | Meaning | Tuning Action |
+|---|---|---|
+| `current` | Installed artifact matches the current contract version | Normal drift detection only |
+| `known-legacy` | Installed artifact matches an older but still recognized contract version | Generate an upgrade proposal tied to that contract delta |
+| `missing-version` | Artifact omits `schema_version` | Treat as degraded legacy state; propose backfill or regeneration |
+| `unknown-version` | Artifact claims a version gsd does not recognize | Halt auto-apply and require operator review |
+
+The known contract set should include both the current version and any older schema versions or compatibility rules the tuner can still interpret safely. For example, when gsd ships explicit 0.9.0 schema assets alongside 1.0.0, a workspace that declares `schema_version: 0.9.0` should be treated as `known-legacy`, not `unknown-version`. This contract catalog is part of gsd's upgrade intelligence: it tells the tuner which migrations are mechanical, which are advisory, and which require human judgment.
+
+When a legacy contract is recognized, emit a migration proposal that names:
+
+1. the observed contract version
+2. the current contract version
+3. the concrete fields or enums that drifted
+4. the target regeneration or rewrite action needed to bring the artifact forward
+
+Do not silently collapse unknown contracts into generic schema failures. Unknown versions are implementation-change signals and must be surfaced explicitly.
+
+When `verify-workspace` already emitted a matching entry in `migration_proposals[]`, promote that entry directly into the tuning proposal set instead of rewriting it from scratch. Preserve its `contract`, `from_version`, `to_version`, `status`, `severity`, `changed_fields`, `action`, and `evidence` fields so later tuning reports and closure mining can track contract migrations deterministically.
+
+**Route-variable staleness**: A `warnings[]` entry with `kind: route-variable-stale` (rule `ROUTE_VARIABLE_STALE:<VAR>`) means the manifest's recorded `variables_used` value for a route variable differs from the live config, which verify treats as authoritative. It is non-fatal: classify it as **Cosmetic** when installed artifacts already match the config, or **Degrading** when rendered agent frontmatter still carries the recorded value. Remediation: refresh `variables_used` by re-installing or applying a tune re-render.
+
+**Config-entry backfill**: When a map object in the config (e.g., `backlog.suffix_map`, `docs.subdirectories`) is present but missing entries that the schema defines with defaults, generate a backfill proposal that:
+
+1. Adds the missing entries using the schema default values
+2. Preserves all existing operator-specified values unchanged
+3. Backs up the original config to `.gsd/backups/{YYYY-MM-DD}/`
+4. Updates the manifest's config hash after backfill
+5. Classifies as P1 Degrading because templates referencing the missing entries (e.g., `{{SUFFIX_EPIC}}`, `{{SUFFIX_CHORE}}`) resolve to defaults during install but are invisible in the operator config, creating a silent divergence between what the config declares and what the harness uses
+
+For `backlog.suffix_map`, the canonical entry set is defined by the schema:
+
+| Entry | Default | Purpose |
+|---|---|---|
+| `feature` | `F` | Feature work items |
+| `chore` | `C` | Maintenance/housekeeping work items |
+| `task` | `T` | Individual task units |
+| `spike` | `SP` | Time-boxed investigation |
+| `deliberation` | `D` | Structured decision capture |
+| `bug` | `B` | Defect tracking |
+| `epic` | `E` | Multi-feature grouping |
+| `subtask` | `ST` | Task subdivision |
+| `shipment` | `S` | Lifecycle envelope grouping work items for release |
+
+Any entry present in the schema but absent from the config is a backfill candidate. The backfill proposal must list each missing entry and its default value so the operator can accept or override.
+
+### Phase 1: Drift Detection
+
+#### Step 1.1: Re-run Workspace Discovery
+
+Invoke the workspace-discovery skill with `existing_profile` set to the current `.gsd/workspace-profile.yaml`. This produces a fresh profile with a drift report comparing current state against the installed profile.
+
+#### Step 1.2: Categorize Drift
+
+Classify each detected change by impact and urgency:
+
+| Drift Category | Impact | Examples |
+|---|---|---|
+| **Breaking** | Harness references are invalid | Removed build tool, renamed source directory, deleted CI pipeline |
+| **Degrading** | Harness works but is suboptimal | New framework added without instructions, new test patterns without review persona, config key renamed but old key still present, suffix_map missing entries that schema defines |
+| **Cosmetic** | Function unaffected | Minor version bumps, additional config files |
+| **Growth** | New capabilities to harness | New languages in project, new documentation patterns, uninstalled `gsd_home` templates surfaced in `new_artifacts[]` |
+| **Folded core pack (`legacy-*-capability-pack`)** | A legacy config, manifest, or profile still lists one of the 5 folded pack names (`browser-verification`, `continuous-learning`, `strict-safety`, `release-observability`, `adversarial-review`) as a capability pack | Non-blocking compatibility drift (`legacy-browser-verification-capability-pack`, `legacy-continuous-learning-capability-pack`, `legacy-strict-safety-capability-pack`, `legacy-release-observability-capability-pack`, `legacy-adversarial-review-capability-pack`); print `FOLDED_CORE_PACK`, propose removing the redundant `capability_packs` list entry, and keep the 5 core instructions, `.github/agents/subagents/adversarial-review.agent.md`, and core skills installed |
+| **Retired capability pack** | A capability pack recorded in the installed profile, manifest, config or woven text has been removed from gsd; the recording is inert | Reported as its own category (see Step 1.6b); `verify-workspace` classifies the recording as P1 degrading compatibility drift, and tune offers a proposal-only cleanup and never re-weaves the pack |
+
+Include any config-key migration and config-entry backfill proposals from Step 0b.1 as **Degrading** drift entries. Config migrations and backfills are applied in Phase 4 alongside other accepted proposals.
+
+#### Step 1.3: Deterministic Artifact Drift Scan
+
+Use `.gsd/harness-manifest.yaml` as the source of truth for installed
+generated artifacts:
+
+* re-hash every manifest-listed artifact that still exists
+* classify at least:
+  * `missing`
+  * `user-modified`
+  * `unchanged`
+* support ignore patterns from `.gsd/drift-ignore`; classify matching
+  paths as `ignored` rather than surfacing them as drift
+* record per-artifact path, manifest checksum, current checksum, classification,
+  and reason
+
+Record the result under `drift_report.checksum_scan{}` so later proposals can
+distinguish broken installs from intentional local customization.
+
+**Intentional divergence: P-019 required-gate carve-out.** The generated
+`pre-push-quality-gates.{sh,ps1}` hooks intentionally differ from the general
+warn-and-skip default: the required markdownlint gate fails on a missing tool.
+Classification rule: a required-gate fail-on-missing branch present in generated
+output is **conformant, not drift**; a generated hook that has **reverted** a
+required gate to warn-and-skip **is drift** and must be reported (never
+"repaired" by regenerating the fail-open form). The carve-out is narrow to the
+required-gate branch only: do not suppress drift detection for the rest of these
+files.
+
+#### Step 1.3b: New Artifact Detection (Uninstalled Templates)
+
+The checksum scan in Step 1.3 only re-hashes artifacts already recorded in the
+manifest, so templates newly added by a harness upgrade (for example new prompt
+variants shipped in a later gsd release) are invisible to it — they have
+no manifest entry to re-hash. Consume the verifier's `new_artifacts[]` array to
+close this gap:
+
+* each entry names an `gsd_home` template with no installed workspace
+  artifact, matched against manifest artifact paths, manifest template sources,
+  community-template install paths, and file presence on disk
+* each entry carries `artifact_class`, `template`, `expected_path`, `severity`
+  (`advisory`), and — for prompts — an `install_rule` plus an `applicable`
+  annotation (`true`, `false`, or `null` when installed primitives are unknown or
+  when the template is gated on a workflow-policy opt-in). Policy-gated prompts
+  also carry `requires_opt_in` (for example `P-017` for the dark-mode trigger
+  shim `feature-flow-dark.prompt.md`), which forces `applicable: null`.
+
+Record these under `drift_report.new_artifacts[]` and categorize them as
+**Growth** drift (Step 1.2). Findings are advisory: the operator and Step 4.2
+make the final install decision. Prefer installing entries whose `applicable` is
+`true`; treat `false` as out-of-scope for the current primitive set and `null`
+as operator-decides. Never auto-install an entry that carries `requires_opt_in`
+unless the operator has explicitly opted into that policy — a workspace with the
+required primitive but no policy opt-in must not receive a policy-gated shim by
+default. New-artifact findings never fail verification.
+
+#### Step 1.4: Scan Harness Artifact Health
+
+For each installed artifact, check:
+
+* **Instruction files**: Do `applyTo` glob patterns match files that still exist?
+* **Agent files**: Do referenced skills, tools, and file paths resolve?
+* **Workflow agent routing for global self-installs**: When `workspace-profile.distribution.is_global_tool` is true and `distribution.local_agents_dir` is set, treat that local-only directory as the authoritative path for workflow agents such as `_stage.agent.md` and `_ship.agent.md`. In this mode, drift checks should target `distribution.local_agents_dir` (for example `.github/local-agents/`) rather than `.github/agents/`, which remains the global distribution surface.
+* **Skill files**: Do build/test/lint commands match current tooling?
+* **Compound library**: Are existing learnings stale, duplicated, contradicted by current code, or strong candidates for `compound-refresh`?
+* **Policies**: Do referenced agents and gate points still apply?
+* **Constitution**: Do technology-specific rules match the current stack?
+* **AGENTS.md**: Do quality gates and commands match current tooling?
+* **Backlog registry**: Does the registered backlog tool still match the installed tool? Has the tool been switched?
+* **Runtime verification and closure skills**: Do they match the current runtime surfaces, `runtime_validation.validator_manifest`, `runtime_validation.validation_expectations`, and `runtime_validation.releasability` rather than stale report-oriented runtime notes?
+* **Risky-plan hardening coherence**: Verify the plan-hardening pipeline is consistent:
+  1. impl-plan template still includes the `Plan Hardening Signals` section and concludes with `Requires plan hardening: yes|no`
+  2. stage agent Step 3 references the `Requires plan hardening` conclusion and invokes plan-harden when `yes`
+  3. plan-harden template references `{{DOCS_PLANS}}/` and appends a `## Plan Hardening` section
+  4. plan-review Step 1 extracts hardening signals and the gate decision table includes the hardening-required-but-missing FAIL condition
+  If any of these four checks fail, flag as P1 Degrading drift.
+* **Agent-engram weaving**: If engram markers exist, do AGENTS.md, copilot-instructions, relevant agents, and relevant skills consistently reference engram-first search, workspace binding, and freshness / fallback behavior?
+* **backlogit weaving**: If backlogit is the selected backlog tool, do instructions and backlog-aware agents consistently reference queue, query, dependency, memory, checkpoint, or traceability behaviors?
+* **Browser-verification weaving (core protocol)**: If browser tooling and web UI surfaces exist, do AGENTS.md, copilot-instructions, runtime verification, operational closure, and the browser-verification instruction file consistently reference server readiness, route selection, headed/headless choice, human checkpoints, validator evidence, and manual checkpoint evidence?
+* **Continuous-learning weaving (core protocol)**: Do AGENTS.md, copilot-instructions, the continuous-learning instruction file, and the `observe` / `learn` / `evolve` skills consistently reference observation capture, instinct formation, and promotion thresholds?
+* **Strict-safety weaving (core protocol)**: Do AGENTS.md, copilot-instructions, `strict-safety.instructions.md`, `safety-modes`, `plan-harden`, review, and closure workflows consistently reference `ProposedAction`, `ActionRisk`, `ActionResult`, and approval expectations?
+* **Release-observability weaving (core protocol)**: Do AGENTS.md, copilot-instructions, `release-observability.instructions.md`, operational-closure, and runtime-verification consistently reference monitoring plans, observation windows, rollback triggers, validator evidence, and releasability evidence?
+* **Agent-native parity reviewer**: If MCP or parity-sensitive agent tooling is now present, does the review layer install and route `agent-native-parity-reviewer.agent.md` where appropriate?
+* **Copilot code-review focus instruction**: When the workspace is hosted on GitHub, verify `copilot-code-review.instructions.md` is present in the instructions directory and still carries `applyTo: '**'`, `excludeAgent: 'cloud-agent'`, the FOCUS-on-high-value-concerns framing, the de-prioritize-harness-enforced section, and the weakened-enforcement review guidance. Flag as P1 Degrading drift if the file is missing, if `excludeAgent` was changed to `code-review` (which would wrongly silence the reviewer) or `coding-agent` (invalid — GitHub accepts only `code-review` or `cloud-agent`), or if the FOCUS framing degraded into a blanket-suppression instruction. Refresh via generate-when-absent / back-up-and-refresh-when-diverged, and preserve intentional operator edits (respect `.gsd/drift-ignore`) rather than clobbering them. **Base-branch activation caveat**: GitHub Copilot code review reads instruction files from the pull request's base branch, so a refreshed instruction only governs code review after the tuning pull request is merged to the base branch — the tuning pull request itself is validated structurally only, and the Settings → Copilot → Code review custom-instructions toggle is an advisory prerequisite, not a hard tuning gate.
+* **Script artifacts**: For each manifest-recorded script artifact (acquire_lock.ps1/.sh, release_lock.ps1/.sh, search.ps1/.sh):
+  1. Verify the file exists at `{workspace_path}/scripts/{script_name}`
+  2. Compare checksum to manifest value
+  3. Classify as `missing`, `user-modified`, or `unchanged`
+  4. Flag missing scripts as P0 Breaking drift — agents referencing these scripts will fail at runtime
+  5. If `concurrency.instructions.md` is installed but lock scripts are missing, flag as P0 Breaking
+  6. If `skill-search/SKILL.md` is installed but `search.ps1`/`search.sh` is missing, flag as P0 Breaking
+* **Markdownlint config drift** (when `.markdownlint.json` is manifest-tracked):
+  1. Verify `.markdownlint.json` exists at workspace root; flag as P1 Degrading if missing
+  2. Parse the config and verify `MD001`, `MD025`, and `MD041` are each enabled —
+     that is, set to `true` **or** to a JSON object configuring the rule (an object
+     enables the rule while tuning it). Flag as P1 Degrading if any rule is absent,
+     set to `false`, or set to a weaker configuration (e.g.,
+     `{"heading-increment": false}`). Do **not** flag
+     `"MD025": { "front_matter_title": "" }` — that is the canonical shipped value,
+     which enables MD025 while disabling its default heuristic of counting a
+     frontmatter `title:` as an H1.
+  3. Verify `scripts/pre-commit-markdownlint.sh` and `scripts/pre-commit-markdownlint.ps1`
+     exist; flag as P1 Degrading if either is missing
+  4. If all three checks pass, classify as `unchanged` or `user-modified` (checksum comparison)
+* **Pipeline-topology hook drift (pre-commit — universal, when the installed
+  `gsd` CLI provides `gate pipeline-topology`)**:
+  1. Verify `scripts/pre-commit-pipeline-topology.sh` and `.ps1` exist and
+     retain the same non-shipment-scoped `--phase ambient` contract; flag as
+     P1 Degrading if either file is missing or the contract regressed
+  2. Verify the pre-commit hook remains advisory-first by default (no
+     unconditional `exit 1`/blocking without the `GSD_TOPOLOGY_GATE_BLOCKING`
+     toggle) and contains no retry loop; flag as P1 Degrading if it was
+     hardened to hard-fail-by-default or grew a retry loop
+  3. If all checks pass, classify as `unchanged` or `user-modified` (checksum comparison)
+* **Pipeline-topology hook drift (pre-push — only when `local_gating.pre_push_enabled`
+  is `true` in the workspace profile; the pre-push scripts are generated only under
+  that setting, per Step 4.3's mapping, so their absence when the setting is `false`
+  is expected and must NOT be flagged as drift)**:
+  1. Verify `scripts/pre-push-quality-gates.sh`/`.ps1` still invoke
+     `gsd gate pipeline-topology --mode manual --phase ambient` with no
+     human-supplied `--shipment`; flag as P1 Degrading if the invocation was
+     removed or was changed to pass an explicit `--shipment`
+  2. Verify the pre-push hook remains advisory-first by default (no
+     unconditional `exit 1`/blocking without the `GSD_TOPOLOGY_GATE_BLOCKING`
+     toggle) and contains no retry loop; flag as P1 Degrading if it was
+     hardened to hard-fail-by-default or grew a retry loop
+  3. If all checks pass, classify as `unchanged` or `user-modified` (checksum comparison)
+* **Circuit breaker and concurrency instructions**: If these instruction files are installed:
+  1. Verify they are referenced from the constitution's Stop Conditions section
+  2. Verify the `.gitignore` contains an gsd dot-lock ignore pattern (for example `.*.lock` or `**/.*.lock`) when concurrency instructions are present; do not require a broad `*.lock` pattern because that would ignore legitimate repository lockfiles such as `Cargo.lock` or `poetry.lock`
+  3. Verify AGENTS.md contains the Foundational Protocols table referencing these instructions
+* **Deprecated agents**: If deprecated agent files are found in `.github/agents/` that match AGENTS.md's deprecation table, flag as P2 Degrading drift and propose removal with a note that the functionality has been absorbed into the active agent/skill set.
+
+* **Startup-script contract drift (`start.ps1` / `start.sh`)**: Treat installed target-workspace startup scripts as contract-versioned artifacts, not checksum-only files. Checksum drift alone is insufficient here: a script can still be byte-identical to its own old manifest checksum and therefore look `unchanged` in the generic checksum scan while still reflecting an obsolete contract relative to the current self-contained templates (bootstrap, sidecar sync, and launch native and in-script, with no delegation to any other process). Use `internal/startupscript/startupscript.go` (`ClassifyStartupScript`) to classify each manifest-tracked `start.ps1` / `start.sh` into exactly one of `missing`, `current`, `known-legacy`, `customized`, or `ambiguous`. A legacy file whose bytes still match its old manifest checksum MUST still produce `known-legacy` plus a migration proposal here — that is the explicit checksum-gap this scan closes. This rule applies only to installed target-workspace copies tracked by the manifest via a `path` entry; the canonical `templates/scripts/start.ps1.tmpl` / `start.sh.tmpl` are reference `template` sources, never classification targets themselves. This repository's own root `start.ps1` / `start.sh` are pre-existing, intentionally customized self-install artifacts (see their manifest `note` fields) and are never Tune migration targets -- but the classifier does not special-case them for reporting purposes: if their content does not cleanly resolve to `current` (for example, unattributed checksum drift with no recognized custom-section tail to explain it), the classifier correctly reports `ambiguous` rather than silently treating unrecognized divergence as clean. `ambiguous` always fails closed to operator review and is never auto-applied, so this can never cause Tune to modify them.
+
+* **Operator-owned carry-forward file (`.gsd/carry-forward.yaml`)**: This file is edited by the operator, never generated over. Tune MUST NOT overwrite, merge into, re-render, or propose replacing an existing file, and MUST NOT refresh its manifest checksum to quiet the scan: checksum drift on this artifact is an expected operator edit and is reported as `user-modified` informationally, never as a finding or migration proposal. Tune may create the file from `templates/foundation/carry-forward.yaml.tmpl` only when it is absent. `verify-workspace` validates a present file against `schemas/carry-forward/1.0.0.schema.json` and emits an advisory `carry-forward-schema-invalid` warning (never a block); an invalid committed copy makes the P-011 gate fail closed to its built-in set, and a missing file is not a finding.
+
+Record: `health_report{}` with per-artifact status and any `compound-refresh`
+recommendations for stale institutional knowledge.
+
+#### Step 1.5: Backlog Tool Migration Detection
+
+Compare the currently registered backlog tool (from `.gsd/backlog-registry.yaml`) against what workspace-discovery detected:
+
+| Scenario | Category | Action |
+|----------|----------|--------|
+| Same tool, no changes | Healthy | No action needed |
+| Same tool, config changed | Degrading | Update registry with new status values, features |
+| Tool switched (e.g., backlog-md → backlogit) | Breaking | Generate migration proposal |
+| Tool removed | Breaking | Propose fallback to manual backlog or new tool registration |
+| New tool added (was manual/none) | Growth | Propose tool registration |
+
+**Backlog storage-root follow-up (detect-and-report only):**
+
+* If the target workspace resolves to a **legacy-only** backlog root (`.backlogit/`
+  present, `.backlog/` absent), classify the drift as **Degrading** and surface an
+  operator proposal to review `backlogit migrate --workspace-dir --dry-run` as the
+  next step. Do **not** invoke migration, do **not** rename the directory, and do
+  **not** write to the target workspace's backlog storage root from Tune.
+* If the target workspace has **both** `.backlog/` and `.backlogit/` present at the
+  same time **and no valid `BACKLOGIT_WORKSPACE_DIR` override resolves the root**,
+  classify the drift as **Breaking**, fail closed to operator review, and report that
+  the ambiguity must be resolved manually before Tune or Ship proceeds. Do **not**
+  guess, merge, copy, delete, or rename either root from Tune. A "valid"
+  `BACKLOGIT_WORKSPACE_DIR` override is one that names exactly `.backlog` or
+  `.backlogit` (the only two literal names the resolver accepts -- not an
+  arbitrary path, and not a value that only differs by case) and whose named
+  directory actually exists; when that condition holds, the override resolves
+  the root per the documented resolver precedence and both-roots-present is
+  not itself an ambiguity in that case — do not report Breaking solely because both
+  directories exist.
+
+**Migration proposal** (tool switch) includes:
+
+1. Replace `.gsd/backlog-registry.yaml` with the new tool's registry
+2. Update `backlog-integration.instructions.md` with new operation names
+3. Update all agent files that reference backlog MCP tool names
+4. Update all skill files that reference backlog operations
+5. Update status values throughout (e.g., `queued` → `To Do`)
+6. Map the directory structure if different (e.g., `.backlogit/` → `backlog/`)
+7. Do NOT migrate task data — that is the backlog tool's responsibility
+
+#### Step 1.5b: Agent Identity Migration Detection
+
+Older harness installs used legacy pipeline-agent filenames and `name:` values.
+`verify-workspace` scans the agent directories (`.github/agents/` and, in
+self-install mode, `distribution.local_agents_dir`) and emits
+`contract: agent-identity` migration proposals when an installed pipeline agent
+does not match the canonical identity:
+
+| Canonical `id:` | Canonical filename | Canonical `name:` | Legacy filenames | Legacy `name:` |
+|---|---|---|---|---|
+| `gsd/pipeline/orchestrator` | `_orchestrator.agent.md` | `_Orchestrator` | `orchestrator.agent.md`, `dispatch.agent.md` | `Orchestrator`, `Dispatch` |
+| `gsd/pipeline/stage` | `_stage.agent.md` | `_Stage` | `stage.agent.md`, `.stage.agent.md` | `Stage`, `.Stage` |
+| `gsd/pipeline/ship` | `_ship.agent.md` | `_Ship` | `ship.agent.md`, `.ship.agent.md` | `Ship`, `.Ship` |
+
+Detection prefers the stable `id:` frontmatter field. Any agent file whose `id:`
+matches a canonical identity is standardized onto the canonical filename and
+`name:` **regardless of its current filename** — so an agent renamed to an
+arbitrary name (not just the known legacy aliases) is still detected. The
+proposal records `matched_by: id` and the matched `agent_id`, and uses
+`status: id-mismatch` when the drifted filename is not one of the known legacy
+aliases. Files without a matching `id:` (legacy agents authored before the field
+existed) fall back to the filename/`name:` alias registry above and record
+`matched_by: legacy-name`, `status: known-legacy`.
+
+Only these three pipeline agents are in scope. Elective agents
+(`auto-mergeinstall.agent.md`, `auto-tune.agent.md`) and review/research agents
+are never migrated by this scan.
+
+Promote each `agent-identity` proposal into the tuning proposal set as **Breaking**
+drift (agent name/filename references are load-bearing) and standardize onto the
+canonical version to be installed:
+
+1. Back up the existing agent file before any change.
+2. If the proposal's `changed_fields` includes `path`, rename the file from
+   `from_path` to `to_path` (the canonical filename). When
+   `canonical_exists: true`, the canonical file is already present — back up and
+   remove the drifted duplicate instead of overwriting the canonical file.
+3. Set the agent's `name:` frontmatter to `to_name` (the canonical name) and
+   ensure the canonical `id:` is present so future renames stay detectable.
+4. Update every cross-reference to the old name or filename: `AGENTS.md`,
+   `copilot-instructions`, other agents, skills, prompts, instructions, and
+   policies (workflow-policies references pipeline agents at gate points).
+5. Update the manifest artifact entry so `path` (and any `template`) point at the
+   canonical file, and refresh its checksum after the rewrite.
+6. Preserve the proposal's `from_path`, `to_path`, `from_name`, `to_name`,
+   `changed_fields`, `matched_by`, `agent_id`, and `evidence` in the tuning
+   report so the migration is auditable.
+
+#### Step 1.5c: Frontmatter Conformity Migration
+
+`verify-workspace` validates every installed agent and skill frontmatter block
+against the frontmatter contract (`internal/frontmatter/frontmatter.go`)
+through its `frontmatter_conformity` targeted check, and emits one
+`contract: frontmatter-conformity` migration proposal per blocking finding.
+Promote each of those proposals into the tuning proposal set directly — do not
+re-derive them by re-parsing the frontmatter.
+
+Preserve the **complete** proposal payload in the tuning report (AN-F1): the
+Step 0b.2 field set (`contract`, `from_version`, `to_version`, `status`,
+`severity`, `changed_fields`, `action`, and `evidence`) plus the
+conformity-specific fields `path`, `code`, `from_key`, `to_keys`, `value`,
+`manual_review`, and `summary`.
+
+Map severity as follows:
+
+| Verifier `severity` / `status` | Source class | Drift category (tune priority) |
+|---|---|---|
+| `P1` / `nonconformant-managed` | managed-rendered, managed-community, or managed-source | **Breaking** (P0) |
+| `P2` / `nonconformant-workspace` or `nonconformant-unknown` | workspace-authored or unknown provenance | **Degrading** (P1) |
+
+Each proposal carries exactly one `action`. Apply it with these semantics:
+
+| `action` | Execution |
+|---|---|
+| `rerender` | Use the normal managed re-render path for the installed artifact (Phase 4). |
+| `reinstall-community` | Use the existing community-template reinstall path, and refresh **both** the `installed_checksum` and the `source_checksum` of the `community_templates[]` entry, so the next verify reports neither a conformity finding nor community drift (AS-F7). |
+| `source-repair` | Report-only. Name the defective gsd template from `evidence.template_path`; the fix belongs in the gsd template, not in the workspace. |
+| `manual-fix` | Report-only (parse errors and path escapes). |
+| `migrate-key` | Single-key frontmatter edit that preserves the body: move `from_key` to the key in `to_keys`. |
+| `remove-key` | Single-key frontmatter edit that preserves the body: delete `from_key`. |
+| `add-key` | Single-key frontmatter edit that preserves the body: add the key in `to_keys` with `value`. |
+| `replace-value` | Single-key frontmatter edit that preserves the body: set the key in `to_keys` to `value`. |
+
+Apply these rules to every key-level action:
+
+1. Back up the file before any edit, and change only the one frontmatter key the
+   proposal names. Never rewrite the body or reorder other keys.
+2. A `null` `value` means the verifier cannot know the correct value. The
+   operator must supply one before the proposal is applied; never guess it.
+3. `migrate-key` and `remove-key` proposals are never applied without
+   per-proposal operator approval (INV-B1). The same per-proposal operator
+   approval applies to every `manual_review: true` proposal, and to every
+   proposal against a workspace-authored or user-modified file, whatever its
+   action. Workspace-authored agents (such as a project's own review persona)
+   are preserved and reported, never rewritten automatically.
+4. A bare `model:` → `model_family` migration never invents `model_provider`.
+   When the agent also needs a provider, the operator supplies it through a
+   separate `add-key` proposal with an operator-supplied `value`.
+5. A skill that carries routing keys or a bare `model:` receives a `remove-key`
+   proposal citing the P-013.5 leaf-executor rule: skills inherit the invoking
+   agent's route and declare no routing keys of their own.
+6. After an applied edit, keep the file's LF line endings and refresh the
+   artifact's manifest checksum as the SHA-256 of the file's raw working-tree
+   bytes: the `verify-workspace` checksum scan hashes those raw bytes with no
+   CRLF-to-LF normalization, so a CRLF working copy reports `user-modified`
+   (pin checksummed artifacts to LF, for example with a `.gitattributes`
+   `text eol=lf` rule, so the raw bytes equal the LF-normalized blob on every
+   checkout). Then re-run `verify-workspace`
+   to confirm the `frontmatter_conformity` check no longer reports the file.
+
+#### Step 1.5d: Ship Route Default Proposal
+
+The install-harness Step 1.2 fresh-install Ship seed gives new workspaces a
+generic Ship route. Tune may surface that route to an existing workspace as an
+informational, opt-in "new generic Ship default available" proposal. It does
+so **only** when `model_routing.ship` declares no non-empty `model_family` in
+the Phase 0b operator configuration: either the `ship` key is absent, or its
+`model_family` is unset or empty.
+
+* An explicitly declared Ship route is an operator override. When
+  `model_routing.ship.model_family` is a non-empty string, tune never proposes
+  replacing it.
+* The Step 3.4 config write-back of install-harness stores the resolved
+  `{{SHIP_FAMILY}}`. After any install, a Ship family inherited from `tier2` is
+  therefore indistinguishable from an operator choice. Tune treats every
+  non-empty value as an operator override and never tries to tell an inherited
+  family from a chosen one. Existing workspaces normally never see this
+  proposal. That is the intended no-silent-change posture.
+* The proposal is report-only: tune never auto-applies it, and `auto_apply`
+  does not change that. The proposal names the seed route defined in
+  install-harness Step 1.2 (it does not copy the seed values) and tells the
+  operator to edit `model_routing.ship` in `.gsd/config.yaml` to adopt
+  it. The operator re-runs install or tune after that edit.
+* This step reads only `model_routing.ship`. It never proposes changes to
+  `context_tier` or any other sub-field of an explicitly declared Ship route,
+  and it never touches the `stage`, `orchestrator`, `escalation`, or tier
+  routes.
+
+#### Step 1.5e: Model Routing Route Drift and Catalog Proposals
+
+Tune reads route values from the workspace config (`.gsd/config.yaml`) and from the verifier report at runtime; this step adds no install-time placeholder. Every proposal below is **proposal only**: tune never auto-applies it, and `auto_apply` does not change that.
+
+**(a) Config validation.** Step 0b.1 validates the loaded config against the schema version that matches its own `schema_version` before this step reads `model_routing`. A config that failed that validation is not interpreted here.
+
+**(b) Route-frontmatter drift.** Read the `subagent_route_drift` targeted check from the `verify-workspace` report (Step 0b.2): `drifted` lists the agents whose installed `model_family`, `model_provider`, `reasoning_effort`, or `context_tier` differ from the route the renderer writes, and `drift` carries each agent's `expected` and `installed` values. The report also carries one `contract: model-routing` entry with `action: refresh-route-frontmatter` in `migration_proposals[]` per drifted agent; promote each directly rather than re-deriving the expected route. Propose one `refresh-route-frontmatter` update per drifted agent, naming the agent path, the changed fields, and the expected versus installed values.
+
+* Workspace-authored agents are advisory: the proposal is reported for the operator and never rewritten automatically (037-DL). Managed agents are still never rewritten without an operator accepting the proposal.
+* A site that verify reports as `ROUTING_BINDING_UNRESOLVED_SITE` or `ROUTING_SITE_DEFAULT_UNRESOLVED` gets no `refresh-route-frontmatter` proposal, because nothing can render it. Tune reports the reason verify gives for that site and the operator's options: repair the template's tier placeholder so the default tier can be established, or (for a bound site) remove the binding.
+* An unrenderable site is never guessed, skipped silently, or demoted to workspace-authored.
+
+**(c) Catalog extraction.** When three or more route blocks are field-identical, propose extracting a catalog entry under `model_routing.routes`. The candidates are the entries of `model_routing.bindings`: bindings that name the same `route` and carry the same per-field overrides (`model_family`, `model_provider`, `reasoning_effort`, `context_tier`) are field-identical. The proposal names the affected `agent:<id>` sites and a suggested route name that is not `tier1`, `tier2`, `tier3`, or `default`, and shows the resulting tier-delta route entry (a `tier` plus only the overrides) with each binding reduced to a `route` reference. Catalog entries are tier deltas and carry no YAML anchors, aliases, or merge keys. Fewer than three identical blocks produce no proposal. The role routes (`orchestrator`, `stage`, `ship`), the escalation blocks, and the tier blocks are never extraction candidates, because bindings address agents only.
+
+**(d) Schema version bump.** When the loaded config declares `schema_version: "1.1.0"`, propose the `1.1.0` to `1.2.0` `schema_version` bump, preferably by promoting the `upgrade-config-contract-1.1.0-to-1.2.0` entry from `migration_proposals[]` (Step 0b.2). The bump is additive and requires an operator-approved config edit with a backup; it is most relevant once the operator adopts `model_routing.routes` or `model_routing.bindings`, and a config at `1.2.0` closes `model_routing` to its known keys. When the loaded config is at `1.3.0` and the operator adopts ordered escalation chains (`<role>.escalation.chain`) or static unavailability lists (`model_routing.unavailable_routes` / `model_routing.unavailable_families`), propose an opt-in `1.3.0` to `1.4.0` `schema_version` bump (validating against `schemas/harness-config/1.4.0.schema.json`) with a backup and ensuring `escalation.chain` never coexists with direct or legacy flat escalation fields.
+
+**Ship route preservation.** The Step 1.5d rule is unchanged. An explicitly declared Ship route (a non-empty `model_routing.ship.model_family`) is a pinned operator override: this step never edits `model_routing.ship` or any other pipeline route, never proposes a catalog entry from it, and a `refresh-route-frontmatter` proposal for an agent never alters the Ship route.
+
+**Catalog, bindings, and `1.4.0` escalation chain preservation.** Any config write tune makes (an accepted proposal or a re-render) keeps the operator-authored `model_routing.routes`, `model_routing.bindings`, and (in `1.4.0` configs) `<role>.escalation.chain`, `model_routing.unavailable_routes`, and `model_routing.unavailable_families` verbatim, never regenerating, emptying, or reordering them. When the retained `schema_version` is below `1.2.0`, a key the config does not declare stays absent: tune never adds the template's empty `routes: {}` / `bindings: {}` defaults to such a config, because `routing_inert_keys` flags key presence below `1.2.0`. The empty defaults belong only to a fresh install or a config written at `1.2.0` or later; configs below `1.4.0` similarly omit `1.4.0`-only `escalation.chain` and `unavailable_*` keys.
+
+#### Step 1.6: Preset, Stack-Pack, Layer, and Capability-Pack Drift
+
+Compare the installed preset, primary stack pack, additive stack packs, install
+layers, and capability packs in `.gsd/harness-manifest.yaml` against the
+current workspace profile recommendations:
+
+| Scenario | Category | Action |
+|----------|----------|--------|
+| Same preset, stack packs, layers, and packs still appropriate | Healthy | No action needed |
+| Primary stack pack shifted (for example `library` -> `web-app`) | Growth or Degrading | Propose recomposing install layers and any affected guidance |
+| Additive stack packs changed materially | Growth or Degrading | Propose updating the recorded composition model and any affected recommendations |
+| Installed layers no longer match recommended layers | Growth or Degrading | Propose expanding or reducing the affected artifact classes |
+| Same preset, missing recommended pack | Growth | Propose enabling the pack |
+| Installed pack no longer matches runtime surfaces | Cosmetic or Degrading | Propose disabling or retargeting the pack |
+| agent-engram markers detected but `agent-engram` pack missing | Growth or Degrading | Propose enabling the pack and weaving engram-first search guidance through the harness |
+| backlogit detected as the active backlog tool but `backlogit` pack missing | Growth or Degrading | Propose enabling the pack and weaving backlogit-native workflows through the harness |
+| Browser tooling and web UI detected but core browser-verification guidance missing or stale | Growth or Degrading | Propose re-rendering the core browser-verification instruction and runtime verification and closure weaving |
+| `runtime_validation.validator_manifest` or `runtime_validation.releasability` missing/stale for detected runtime surfaces | Degrading | Propose rerunning workspace-discovery and rewiring Ship/runtime/closure artifacts to the validator evidence / releasability evidence model |
+| Core continuous-learning instruction or `observe` / `learn` / `evolve` skills missing | Growth | Propose installing the core continuous-learning instruction and skills |
+| Elevated runtime, migration, or security risk detected but core strict-safety guidance missing or stale | Growth or Degrading | Propose re-rendering the core strict-safety instruction and weaving explicit action classification through risky workflows |
+| Risky-plan hardening guidance missing or stale | Degrading | Propose retuning stage, plan-harden, and plan-review together so risky plans are hardened before harvest |
+| Starter preset on a repo that now has complex runtime surfaces | Growth | Propose moving to `standard` or `full` |
+| `.kbdb/` directory or kbdb MCP tools detected but `kbdb` pack missing | Growth | Propose enabling the pack and weaving indexed local documentation retrieval guidance through research and knowledge-retrieval workflows |
+| Retained config, manifest, or profile still lists legacy `graphtor-docs` / `graphtor_docs` | Degrading | Tolerate as a non-blocking legacy alias for `kbdb`; propose the `normalize-legacy-*-capability-packs` migration |
+| Installed community template no longer in registry (removed or deprecated) | Degrading | Propose removing the installed artifact and its manifest entry |
+| Registry has new entries matching the workspace profile but not installed | Growth | Propose the new community templates to the operator for opt-in selection |
+| Installed community template's `prerequisite_packs` are no longer satisfied | Degrading | Propose removing the template or enabling the missing prerequisite pack |
+| Installed community template checksum differs from source `.tmpl` checksum recorded at install time (upstream update) | Growth | Propose reinstalling the template from the updated source |
+
+Use the profile's structured recommendation reasons when available so proposals
+can explain **why** the preset, layers, or packs changed rather than only
+listing the new target values.
+
+#### Step 1.6b: Retired Capability Pack Cleanup
+
+`agent-intercom` is a retired capability pack: gsd no longer ships it, so it is never an eligible, recommended or enabled pack. An installed workspace that still records it keeps working, because the recording is inert, but tune reports it as the **retired capability pack** drift category and offers cleanup. Tune is proposal-only here: nothing is changed without operator approval, and every approved change is backed up first to `.gsd/backups/{YYYY-MM-DD}/`.
+
+Consume the verifier's report rather than re-parsing the documents: `warnings[]` entries with `kind: removed-capability-pack` (fields `field`, `legacy_value`, `message`, `suggested_action`) and `migration_proposals[]` entries with `proposal_id: remove-retired-capability-pack`, emitted per contract (profile, manifest, config) independent of the document's pinned `schema_version`. The verifier groups repeated recordings in one document into a single `removed-capability-pack` warning that carries `fields[]` (every recording site), `legacy_values[]` and `occurrence_count` in place of the single `field` / `legacy_value`; expand each grouped warning into one cleanup item per site (each entry of `fields[]`, or the lone `field` when the warning is not grouped). Report each recording once, with its document and field, as drift in the retired-pack category and never as a missing-pack Growth proposal.
+
+Offer these cleanup items as separate, individually approvable proposals:
+
+1. **List entries**: remove the pack from `capability_packs` in `.gsd/config.yaml` and `.gsd/harness-manifest.yaml`, from `harness_recommendations.capability_packs` and the matching `recommendation_reasons` items in `.gsd/workspace-profile.yaml`, and drop a leftover `agent_intercom` profile block.
+2. **Overlay record**: remove its `capability_pack_overlays` record from the manifest.
+3. **Orphan instruction file**: propose deleting `.github/instructions/agent-intercom.instructions.md` together with its manifest `artifacts[]` entry ONLY when the file's checksum matches the checksum recorded for it in the manifest (compare the SHA-256 of the file content, accepting its LF-normalized form). A missing manifest record, a checksum mismatch or an unreadable file means the file was modified or cannot be proven unmodified: emit the proposal with `manual_review: true`, leave the file in place, and never auto-delete it. Deletion is destructive, so it also needs explicit operator approval after the backup.
+4. **Stale woven sections**: list the sections of `AGENTS.md`, `.github/copilot-instructions.md`, agents, skills and policies that still weave the pack (its `intercom` marker blocks and the pack subsection in `copilot-instructions.md`) and offer a reviewed diff that removes them. Keep operator-authored text that merely shares a section, and route anything ambiguous to manual review.
+
+Once the entries are removed, the document is brought to the current contract through the existing schema-contract upgrade proposal for its kind, so a legacy-pinned profile, manifest or config is not left on an old version. Tune must never re-weave the retired pack: do not propose enabling it, re-adding its overlay or instruction file, or restoring any removed section, even when its old markers or configuration are still present in the workspace, and skip it in the Step 1.7 overlay-coherence checks. An explicit request for the pack prints `RETIRED_PACK: agent-intercom ignored` and continues.
+
+#### Step 1.7: Overlay-Coherence Drift
+
+For every enabled capability pack, compare the manifest's declared overlay targets against the currently installed artifacts.
+
+Flag drift when:
+
+* the pack is enabled but one or more declared target artifacts are missing
+* only some of the targeted artifacts mention the pack's behavior delta
+* the workspace still contains woven overlay guidance after the pack was removed
+* the workspace now exposes new eligibility signals that should expand the overlay target set
+
+Treat partially woven overlays as a first-class drift category rather than a cosmetic doc mismatch.
+
+Separately, treat conditional reviewer drift as real harness drift when the
+workspace now requires parity-sensitive review but the review layer still lacks
+`agent-native-parity-reviewer.agent.md` or the routing logic to invoke it.
+
+Also treat local-first review drift as real harness drift when the review layer
+lacks `correctness-reviewer.agent.md`, `maintainability-reviewer.agent.md`,
+`template-integrity-reviewer.agent.md`, `schema-cli-docs-coupling-reviewer.agent.md`, or the
+local review readiness contract (`READY`, `READY_WITH_FOLLOWUPS`, `BLOCKED`)
+that Ship and pr-lifecycle depend on before PR presentation.
+
+**agent-engram overlay coherence checks**: When `agent-engram` is in the enabled
+pack list, verify:
+
+1. `agent-engram.instructions.md` is present in the workspace's instructions directory.
+2. The instruction asserts that structural code questions MUST route through
+   agent-engram code-graph tools before grep/ripgrep or raw file reads unless a
+   direct-tool exemption applies.
+3. The structural-routing assertion covers callers/callees, impact, symbols,
+   blast radius, inheritance, implementations, implementers, and where/how
+   implemented questions.
+4. `capability-pack-enforcement.instructions.md` keeps the same
+   structural-code route to agent-engram first before grep/raw file reads,
+   while preserving direct-tool exemptions and internal-first / no-public-web
+   safeguards.
+
+Flag missing or weakened items as `agent_engram_overlay_incomplete` drift.
+Treat missing inheritance, implementation, or implementer coverage as real
+agent-engram weaving drift, not a cosmetic wording difference.
+
+**backlogit overlay coherence checks**: When `backlogit` is in the enabled pack list, verify:
+
+1. `backlogit.instructions.md` is present in the workspace's instructions directory. If missing while the pack is enabled, (re)install it from `templates/instructions/backlogit.instructions.md.tmpl`, resolving all `{{VARIABLE}}` customization points, and register it under `harness-manifest.yaml` `artifacts[]` with a single `checksum` field (standard first-party contract — not the community-template `installed_checksum`/`source_checksum` pair). Re-tune is idempotent: refresh the existing artifact entry and checksum in place rather than duplicating it.
+2. The installed file's checksum matches the recorded `artifacts[].checksum` manifest entry; a mismatch is `user-modified` or an un-refreshed manifest, not silently accepted.
+3. The instruction contains the Checkpoint-Recovery / Prune-on-Restore Protocol section (applicability gated on the `agent-engram` pack being installed — a backlogit-only install is a supported no-prune no-op, never forced to halt; prune allowlist: active cursor, unresolved-checkpoint pointer, gate verdicts never pruned; `agent-engram` unreachable at restore → graceful `ENGRAM_DEGRADED` / `TOOL_DEGRADED: agent-engram` summarization over `backlogit` `state_dump` and `docs/memory/` with resume, reserving fail-closed operator handoff strictly for `backlogit` / `state_dump` unreachability or malformation) and the Lifecycle Hygiene Protocol's `cleanup_checkpoints` sequencing guard (never called against a checkpoint population until every active checkpoint has reached ACTUAL resolution via `resolve_checkpoint` after a confirmed resume, or a separate explicit named operator archival/abandonment decision — a fail-closed operator handoff alone is NEITHER and does NOT satisfy this gate, since handoff deliberately leaves the checkpoint active/unresolved).
+4. `_orchestrator.agent.md` contains its Crash-Resumption Protocol step (unfiltered enumeration with anomaly-first fail-closed check before any status/candidate filtering; zero-candidate no-op; explicit unique checkpoint selection; CheckpointV1 `agent`-ownership validation; owner-exclusive routing — never performs Stage/Ship-owned restore/resume/prune itself).
+5. `_stage.agent.md` and `_ship.agent.md` each contain their own Crash-Resumption / Startup Recovery Protocol section (unfiltered checkpoint enumeration with anomaly-first fail-closed check before status/owner filtering; zero-candidate normal startup; explicit operator filename selection; owner validation against the agent's own role; owner-scoped resolution only after a confirmed successful owner resume; fail closed with no fresh-start fallback on invalid/ambiguous checkpoint reads).
+
+Flag missing or incoherent items as `backlogit_overlay_incomplete` drift. Treat a missing checksum, a mismatched checksum, or a missing crash-resumption section in any of the three agent mirrors as real backlogit weaving drift, not a cosmetic wording difference.
+
+**kbdb overlay coherence checks**: When `kbdb` is in the enabled pack list, verify:
+
+1. `kbdb.instructions.md` is present in the workspace's instructions directory
+2. The instruction file references at least these 8 tool names: `search_local_docs`, `search_semantic`, `research_topic`, `traverse_doc_links`, `list_sources`, `get_chunk_by_id`, `get_document`, `get_status`
+3. The stage agent references the `kbdb` pack and the `kbdb.instructions.md` file
+4. The ship agent references the `kbdb` pack and the `kbdb.instructions.md` file
+
+Flag any missing items as `kbdb_overlay_incomplete` drift. Legacy `graphtor-docs` / `graphtor_docs` entries in retained profiles and configs are normalized as legacy aliases for `kbdb`.
+
+**Capability-pack usage-enforcement coordinator checks**: When at least one retrieval-enforced pack (`agent-engram`, `kbdb`) is in the enabled pack list, verify:
+
+1. `capability-pack-enforcement.instructions.md` is present in the instructions directory and recorded in `harness-manifest.yaml` `artifacts[]` with a checksum matching the installed file (checksum mismatch → `user-modified` or un-refreshed manifest).
+2. Its `<!-- route:{id} -->` rows equal exactly the enabled retrieval-enforced set — route drift when a pack was added or removed without re-rendering.
+3. Its `<!-- defer:{id} -->` deferral bullets (inside the `capability-pack-deferral` block) equal the same enabled set as the route rows — deferral drift when a pack was added or removed without re-rendering the deferral block; a stale bullet points at an uninstalled pack instruction file.
+4. All four safeguard markers (`pack-deferral`, `direct-search-exemptions`, `per-phase-health-reuse`, `internal-no-public-web`) are present and `applyTo: '**'` is unchanged.
+5. Each enabled retrieval-enforced pack's `capability_pack_overlays[]` lists the coordinator routing verification check.
+6. `retrievalEnforcedPacks` in `internal/verifyworkspace/verify.go` matches the `retrieval_enforced: true` set in `templates/packs/capability-pack-registry.yaml`.
+7. `VerifyWorkspaceMap` (`internal/verifyworkspace/verify.go`) checks `targeted_checks.model_routing_escalation` and `targeted_checks.escalation_chain_directive_parity` (including external `GSDHome` / `bundle.Bundle` escalation templates on ordinary consumer installs).
+
+When NO retrieval-enforced pack is enabled but the coordinator file or its manifest entry remains, flag `capability_pack_enforcement_orphaned` drift and propose removing both. Flag missing or mismatched items above as `capability_pack_enforcement_incomplete` drift.
+
+#### Step 1.8: Mine Learning Signals for Improvement Proposals
+
+After structural drift detection (Steps 1.1–1.7), analyze the accumulated
+learning data in the target workspace. This step consumes the **actual content**
+produced by compound, continuous-learning, and closure systems — not just their
+presence or weaving status. The output feeds directly into Phase 2 proposal
+generation as `learning_signals{}`.
+
+Each tuning cycle benefits from the data accumulated since the last run. Early
+runs may produce few learning-driven proposals; value compounds over the
+workspace lifecycle.
+
+##### Step 1.8.1: Compound Library Analysis
+
+Read all compound entries from the resolved `{workspace_path}/{DOCS_COMPOUND}`
+path. Resolve `DOCS_COMPOUND` from `.gsd/config.yaml` using the
+configured `docs.subdirectories` / `DOCS_COMPOUND_DIR` value, defaulting to
+`docs/compound/` only when no override is present. Parse YAML frontmatter from
+each entry.
+
+Analysis:
+
+* **Recurring root causes**: Group entries by `root_cause`. When the same root
+  cause appears in 3 or more entries, flag as a pattern that may warrant a
+  dedicated instruction file, reviewer persona, or architectural guard.
+* **Category concentration**: Group entries by `category`. A category with
+  disproportionate volume relative to others suggests a harness weakness in
+  that domain (e.g., many `build-errors` entries may indicate missing build
+  instructions or a stale build reviewer).
+* **Cross-cutting tags**: Identify `tags` values that span multiple categories.
+  Tags appearing across 3+ categories suggest a systemic concern that may
+  warrant a cross-cutting instruction file.
+* **Component hotspots**: Group entries by `component`. Components with 3+
+  entries are repeated trouble spots — check whether the harness has adequate
+  coverage for that component's technology and patterns.
+* **Severity trends**: Track the ratio of `critical`/`high` vs `medium`/`low`
+  entries. A rising proportion of high-severity entries since the last tuning
+  run signals degrading harness effectiveness.
+
+Record results as:
+
+```yaml
+learning_signals:
+  compound_patterns:
+    - pattern_type: "recurring_root_cause|category_concentration|cross_cutting_tags|component_hotspot|severity_trend"
+      key: "the root_cause, category, tag, or component value"
+      evidence_count: 5
+      evidence_refs: ["docs/compound/build-errors/stale-cache-2026-03-15.md", ...]
+      affected_artifacts: [".github/instructions/build.instructions.md"]
+      suggested_action: "Create dedicated instruction file for cache invalidation patterns"
+```
+
+Skip this sub-step if the compound library does not exist or contains fewer
+than 3 entries (insufficient data for pattern detection).
+
+##### Step 1.8.2: Observation and Instinct Analysis
+
+If the core continuous-learning protocol is installed and
+`{workspace_path}/.gsd/continuous-learning/` exists, read:
+
+* Observation files from `{workspace_path}/.gsd/continuous-learning/observations/`
+* Instinct files from `{workspace_path}/.gsd/continuous-learning/instincts/`
+* Learned-artifact metadata from `{workspace_path}/.gsd/continuous-learning/learned/`
+
+Analysis:
+
+* **Promotion-ready instincts**: Identify instincts with corroborating
+  observation count ≥ the promotion threshold (from
+  `.gsd/config.yaml` `continuous_learning.promotion_threshold`,
+  default 3) that have NOT yet been promoted to learned artifacts. These are
+  ripe for the `evolve` skill.
+* **Workflow-phase hotspots**: Group observations by `affected_workflow_phase`
+  (planning, build, review, verification, closure). Phases with
+  disproportionate observation volume suggest the harness is weakest in that
+  phase — the corresponding agent or skill may need strengthening.
+* **Stale instincts**: Instincts whose most recent corroborating observation
+  is older than 90 days with no promotion activity may be obsolete. Flag for
+  review rather than automatic removal.
+* **Promotion velocity**: Compare the rate of new observations vs promotions.
+  A growing backlog of unpromoted instincts suggests the evolve workflow is
+  not being invoked frequently enough — propose a tuning reminder.
+
+Record results as:
+
+```yaml
+learning_signals:
+  promotion_candidates:
+    - instinct_path: ".gsd/continuous-learning/instincts/cache-invalidation.md"
+      observation_count: 5
+      threshold: 3
+      suggested_target: "instruction"  # or "skill"
+      suggested_action: "Invoke evolve skill to promote to learned-cache-invalidation.instructions.md"
+  observation_patterns:
+    - phase: "build"
+      observation_count: 12
+      proportion: 0.45  # 45% of all observations
+      suggested_action: "Strengthen build-feature skill or add build-specific instructions"
+```
+
+Skip this sub-step if the core continuous-learning protocol is not installed
+or no observation files exist.
+
+##### Step 1.8.3: Closure Artifact Mining
+
+Read:
+
+* Tuning reports from `{workspace_path}/.gsd/tuning-reports/`
+* Closure artifacts from `{workspace_path}/{DOCS_CLOSURE}/` (if present)
+
+Analysis:
+
+* **Recurring tuning proposals**: Parse prior tuning reports and identify
+  proposals that appeared in 2 or more consecutive runs but were either
+  rejected or not fully resolved. Recurring drift in the same artifact or
+  category signals a systemic issue — the fix may need to be structural
+  (template update, new guard) rather than incremental (re-tune the same
+  artifact).
+* **Recurring closure findings**: Identify runtime verification issues or
+  rollback triggers that appear across multiple closure artifacts. Repeated
+  closure problems in the same domain suggest missing harness guidance
+  (e.g., repeated database migration rollbacks may warrant a migration
+  instructions file).
+* **Resolution effectiveness**: For proposals that were applied in prior
+  tuning runs, check whether the same drift category reappeared. If a
+  previously applied fix did not prevent recurrence, escalate the priority
+  of the new proposal and note the prior fix attempt.
+
+Record results as:
+
+```yaml
+learning_signals:
+  closure_patterns:
+    - pattern_type: "recurring_tuning_proposal|recurring_closure_finding|ineffective_prior_fix"
+      key: "description of the recurring pattern"
+      occurrences: 3
+      first_seen: "2026-01-15"
+      last_seen: "2026-04-01"
+      prior_fix_refs: ["TUNE-012 applied 2026-02-20"]
+      suggested_action: "Structural fix: add migration.instructions.md template"
+```
+
+Skip this sub-step if no tuning reports or closure artifacts exist.
+
+##### Step 1.8.4: Synthesize Learning-Driven Proposals
+
+Merge the results from Steps 1.8.1–1.8.3 into a unified `learning_signals{}`
+structure. Before generating proposals:
+
+* **Deduplicate against structural drift**: If Step 1.4 already flagged a
+  compound entry for refresh AND Step 1.8.1 identified a recurring pattern
+  in those same entries, merge into a single enriched proposal rather than
+  creating duplicates.
+* **Cross-reference patterns**: When a compound pattern (1.8.1) and an
+  observation hotspot (1.8.2) point at the same workflow phase or component,
+  strengthen the evidence by combining counts and citations.
+* **Priority assignment**: Default all learning-driven proposals to P2
+  (Growth). Escalate to P1 (Degrading) when:
+  * Evidence count ≥ 5 across any single pattern
+  * The pattern involves compound entries with `severity: critical` or `high`
+  * A prior tuning fix for the same pattern proved ineffective (Step 1.8.3)
+  * A promotion-ready instinct has been pending for 2+ tuning cycles
+
+Tag every learning-driven proposal with `source: learning-driven` so they
+are distinguishable from structural drift proposals in the tuning report and
+in future closure mining.
+
+##### Step 1.8.5: Policy-Gap Detection
+
+Review the compound patterns collected in Step 1.8.1 for recurring issues that
+suggest a missing or underdeveloped workspace-specific workflow policy. A
+policy-gap candidate arises when the data signals a systemic behavioral gap
+that a policy rule would address more reliably than an instruction file alone.
+
+Detect policy-gap candidates when:
+
+* 3 or more compound entries share the same `problem_type`, `root_cause`, or
+  `category` — and no existing policy in `.github/policies/workflow-policies.md`
+  addresses that pattern
+* A compound entry's `tags` appear in 3 or more distinct entries AND none of the
+  workspace's installed policies reference those tags
+* A recurring closure finding (from Step 1.8.3) maps to a workflow phase that has
+  no gate condition in the current policy registry
+
+For each candidate, record:
+
+```yaml
+learning_signals:
+  policy_gap_candidates:
+    - pattern_type: "recurring_problem_type|recurring_root_cause|missing_gate"
+      key: "the problem_type, root_cause, or workflow phase"
+      evidence_count: 4
+      evidence_refs:
+        - "docs/compound/build-errors/2026-03-15.md"
+        - "docs/compound/runtime-errors/2026-04-01.md"
+      suggested_policy_id: "P-DYN-001"
+      suggested_summary: "Require post-deploy smoke test before marking a feature shipped"
+```
+
+Skip this sub-step if `learning_signals.compound_patterns` is empty or fewer than
+3 compound entries were found in Step 1.8.1.
+
+### Phase 2: Change Proposal Generation
+
+#### Step 2.1: Priority Ranking
+
+Rank proposed changes by impact:
+
+1. **P0 — Breaking**: Artifacts that reference non-existent files, tools, or commands
+2. **P1 — Degrading**: Artifacts that work but produce suboptimal agent behavior
+3. **P2 — Growth**: Opportunities to extend the harness for new capabilities
+4. **P3 — Cosmetic**: Minor alignment improvements
+
+Learning-driven proposals (from Step 1.8) enter at P2 by default and are
+escalated to P1 per the rules in Step 1.8.4. Structural drift proposals and
+learning-driven proposals are ranked together in a single priority-ordered list.
+
+#### Step 2.2: Generate Change Proposals
+
+For each detected issue, generate a specific change proposal:
+
+```yaml
+- id: "TUNE-001"
+  priority: "P0"
+  category: "breaking"
+  source: "structural-drift"  # or "learning-driven"
+  artifact: ".github/instructions/rust.instructions.md"
+  issue: "References clippy lint 'clippy::unwrap_used' but project now uses Python"
+  proposal: "Replace with python.instructions.md using ruff/mypy conventions"
+  diff_preview: |
+    - applyTo: '**/*.rs'
+    + applyTo: '**/*.py'
+  evidence: {}  # optional: populated for learning-driven proposals
+```
+
+Checksum-based drift findings should cite whether the artifact is `missing`,
+`user-modified`, or `ignored` so the operator can tell whether the proposal is
+recovery, retuning, or intentional local divergence.
+
+For deterministic schema-contract work, map `verify-workspace` migration proposals directly into tune proposals rather than re-deriving them:
+
+* `severity: degrading` -> P1 / `category: degrading`
+* `severity: manual-review` or `status: unknown-version` -> P0 review gate with explicit operator approval required before auto-apply
+* `status: known-legacy` -> preserve the observed `from_version` and target `to_version` in the proposal body
+
+Mark these proposals with `source: schema-contract` so they remain distinct from both structural drift and learning-driven proposals.
+
+Map `verify-workspace` `contract: agent-identity` proposals the same way (per
+Step 1.5b): promote them directly rather than re-deriving, mark them with
+`source: agent-identity`, and preserve their `from_path`, `to_path`, `from_name`,
+`to_name`, and `changed_fields` so pipeline-agent renames stay auditable.
+
+Map `verify-workspace` `contract: frontmatter-conformity` proposals the same way
+(per Step 1.5c): promote them directly, mark them with
+`source: frontmatter-conformity`, map verifier `severity: P1` /
+`status: nonconformant-managed` to tune `priority: P0` / `category: breaking`
+and verifier `severity: P2` to tune `priority: P1` / `category: degrading`
+(the verifier's severity labels are not tune priorities), and preserve the
+complete payload listed in Step 1.5c. Proposals that need per-proposal operator
+approval (INV-B1) remain review-gated and are never auto-applied.
+
+Map a Step 1.5d Ship route default proposal to `priority: P2` /
+`category: growth`, and mark it with `source: ship-route-default`. It is
+informational and opt-in, and it is never auto-applied.
+
+Map `verify-workspace` `contract: model-routing` proposals with
+`action: refresh-route-frontmatter` (Step 1.5e) the same way: promote them
+directly, mark them with `source: route-drift`, map verifier `severity: P1`
+(managed agent) to tune `priority: P1` / `category: degrading` and verifier
+`severity: P2` or `manual_review: true` (workspace-authored agent) to
+`priority: P2` / `category: cosmetic` as advisory, and preserve `path`,
+`changed_fields`, and `evidence` (`expected` and `installed`). Map a Step 1.5e
+catalog extraction proposal to `priority: P2` / `category: growth` and mark it
+with `source: route-catalog`; map the `1.1.0` to `1.2.0` bump to the existing
+`source: schema-contract` mapping. None of these is auto-applied, and a site
+that verify reports as unrenderable receives no `route-drift` proposal.
+
+Map `verify-workspace` `proposal_id: remove-retired-capability-pack` proposals
+(Step 1.6b) the same way: promote them directly, mark them with
+`source: retired-pack`, map verifier `severity: degrading` to tune
+`priority: P1` / `category: degrading`, and preserve `contract`, `path`,
+`changed_fields`, `legacy_values`, `evidence` and `manual_review`. A proposal with
+`manual_review: true` withholds the orphan-file deletion for operator review, and
+none of these proposals is auto-applied.
+
+When discovery produced recommendation reasons, include the relevant preset,
+install-layer, or capability-pack rationale in the proposal body so operators can
+see the causal signals behind the retune.
+
+**Learning-driven proposals** (from `learning_signals{}` in Step 1.8) include
+additional evidence fields:
+
+```yaml
+- id: "TUNE-015"
+  priority: "P2"
+  category: "growth"
+  source: "learning-driven"
+  artifact: ".github/instructions/cache-invalidation.instructions.md"
+  issue: "Compound library contains 5 entries with root_cause 'stale-cache' across build-errors and runtime-errors categories"
+  proposal: "Create dedicated cache-invalidation.instructions.md covering invalidation patterns for the project's caching layers"
+  evidence:
+    pattern_type: "recurring_root_cause"
+    evidence_count: 5
+    evidence_refs:
+      - "docs/compound/build-errors/stale-cache-2026-03-15.md"
+      - "docs/compound/runtime-errors/redis-stale-2026-03-22.md"
+    prior_fix_refs: []
+```
+
+For promotion-ready instinct proposals, the proposal should recommend invoking
+the `evolve` skill with the specific instinct path and target type rather than
+directly generating the learned artifact during tuning.
+
+#### Step 2.3: Detect New Primitive Opportunities
+
+Scan for workspace patterns that suggest missing harness capabilities:
+
+* Database access code without a database reviewer persona
+* API endpoint code without an API review persona
+* Security-sensitive patterns (auth, crypto, input validation) without security review
+* Infrastructure-as-code files without IaC instructions
+* Containerization (Dockerfile, docker-compose) without container instructions
+* Web UI or API runtime surfaces without matching runtime verification or operational closure guidance
+* agent-engram markers or `.engram/` state without matching engram-first search guidance in the harness
+* backlogit-specific features available without matching backlogit-native guidance in the harness
+* Browser automation tooling without the core browser-verification protocol
+* MCP or agent-facing product surfaces without the agent-native parity reviewer
+* Repeated recurring-practice evidence without the core continuous-learning protocol
+* High-risk runtime or migration work without core strict-safety or plan-hardening guidance
+
+#### Step 2.4: Dynamic Policy Proposal Generation
+
+For each policy-gap candidate in `learning_signals.policy_gap_candidates` (from
+Step 1.8.5), generate a draft workspace-specific policy proposal and write it to
+`.gsd/policy-proposals/{suggested_policy_id}.md`. Use the
+`policy-proposal.md.tmpl` template from
+`{gsd_home}/templates/policies/` as the structural basis.
+
+Policy proposals are **operator-review artifacts**, not auto-installed policies.
+No change to `.github/policies/workflow-policies.md` occurs at this step.
+
+Each proposal must include all five policy fields:
+
+| Field | Description |
+|---|---|
+| `APPLIES_TO` | Which agents, skills, or workflow phases this policy governs |
+| `GATE_POINT` | Where in the pipeline the gate fires (e.g., before PR push, after review) |
+| `PRECONDITION` | What must be true before this gate passes |
+| `POSTCONDITION` | What the gate guarantees is true after passing |
+| `VIOLATION_ACTION` | What the agent should do when the gate condition is not met |
+
+After writing proposals, add a proposal entry to the tuning report under the
+P2 (Growth) bucket:
+
+```yaml
+- id: "TUNE-{n}"
+  priority: "P2"
+  category: "growth"
+  source: "learning-driven"
+  artifact: ".gsd/policy-proposals/P-DYN-001.md"
+  issue: "Compound library contains 4 entries with problem_type 'missing-smoke-test'"
+  proposal: "New workspace-specific policy proposal written to .gsd/policy-proposals/"
+  evidence:
+    pattern_type: "recurring_problem_type"
+    evidence_count: 4
+    evidence_refs:
+      - "docs/compound/build-errors/2026-03-15.md"
+```
+
+**Acceptance path**: When the operator accepts a dynamic policy proposal during
+Step 3.2 review:
+
+1. Copy the proposal to `.github/policies/{suggested_policy_id}.md` or append it as a new
+   section in `.github/policies/workflow-policies.md`
+2. Update any agents or skills that should enforce this policy gate
+3. Run `gsd verify-workspace` to confirm no dangling cross-references
+4. Record the accepted policy in the tuning report as `status: accepted`
+
+Skip this step if `learning_signals.policy_gap_candidates` is empty.
+
+### Phase 3: Proposal Review
+
+#### Step 3.1: Present Tuning Report
+
+Generate and display the tuning report:
+
+```markdown
+## Harness Tuning Report — {{DATE}}
+
+### Drift Summary
+- Breaking changes: {{count}}
+- Degrading changes: {{count}}
+- Growth opportunities: {{count}}
+- Cosmetic adjustments: {{count}}
+
+### Composition
+- Installed primary stack pack: {{INSTALLED_PRIMARY_STACK_PACK}}
+- Current primary stack pack: {{CURRENT_PRIMARY_STACK_PACK}}
+- Installed stack packs: {{INSTALLED_STACK_PACKS}}
+- Current stack packs: {{CURRENT_STACK_PACKS}}
+- Installed layers: {{INSTALLED_INSTALL_LAYERS}}
+- Recommended layers: {{RECOMMENDED_INSTALL_LAYERS}}
+
+### Checksum Scan
+- Missing installed artifacts: {{count}}
+- User-modified artifacts: {{count}}
+- Ignored artifacts: {{count}}
+
+### Learning Signals
+- Compound patterns detected: {{count}}
+- Promotion-ready instincts: {{count}}
+- Recurring closure findings: {{count}}
+- Policy-gap candidates detected: {{count}}
+- Learning-driven proposals generated: {{count}}
+
+### Proposed Changes (ordered by priority)
+
+#### P0 — Breaking
+1. [TUNE-001] Replace rust.instructions.md with python.instructions.md
+   ...
+
+#### P1 — Degrading
+...
+
+### Recommendation
+{{SUMMARY_RECOMMENDATION}}
+```
+
+#### Step 3.2: Interactive Review
+
+Unless `auto_apply` is true, present each P0 and P1 change for user approval:
+
+* Show the current artifact content and proposed change
+* Accept, reject, or modify each proposal
+* Batch-accept P2/P3 changes or review individually
+
+### Phase 4: Apply Changes
+
+#### Step 4.1: Apply Accepted Changes
+
+For each accepted proposal:
+
+1. Back up the existing artifact to `.gsd/backups/{YYYY-MM-DD}/`
+2. Apply the change
+3. Update the harness manifest with the new artifact checksum
+
+`auto_apply` does not bypass the branch-safety policy above. In a Git-backed
+workspace, applied tune changes should remain on a feature branch or as local
+uncommitted changes until the operator reviews them and opens a pull request.
+
+Accepted startup-script contract proposals follow this target-workspace-only path:
+
+* **Missing `start.ps1` / `start.sh`**: Generate the script from the current `templates/scripts/start.ps1.tmpl` / `templates/scripts/start.sh.tmpl` source resolved with the workspace's own template variables, write the installed file, then record the contract version and checksum in the manifest.
+* **`known-legacy` / `customized` startup scripts**: Back up the installed file to `.gsd/backups/{YYYY-MM-DD}/` BEFORE any refresh, refresh the core block from the current self-contained template, and update manifest checksum / contract-version metadata ONLY AFTER the file write is accepted. For `customized`, deterministically reattach the previously extracted supported custom tail (Claude Code, OpenAI Codex / Agents, or a recognized `── Custom ──` extension section) after refreshing the core block.
+* **`ambiguous` / unrecognized content**: Do not auto-apply. Present the script as an operator-review proposal and never silently overwrite it.
+* **Scope guardrails**: This migration path is for installed target workspaces only. It must never modify this repository's own root startup scripts regardless of their reported classification (including `ambiguous`), and it must not resurrect any out-of-scope Plan 3 remote-UI work.
+* **Idempotence**: Re-running Tune against an already-`current` startup script is a no-op and produces no migration proposal.
+
+#### Step 4.2: Generate New Artifacts
+
+If growth opportunities were accepted (new review personas, new instructions, new skills):
+
+1. Generate from templates using the current workspace profile
+2. Install to the appropriate directory
+3. Update cross-references in AGENTS.md and copilot-instructions.md
+4. Update manifest preset / stack-pack / install-layer / capability-pack metadata when installation shape changes
+5. Update manifest overlay-target metadata when the pack's woven surface changes
+6. If the workspace now requires the agent-native parity reviewer, install the
+   reviewer agent and update plan-review / review routing guidance together
+7. If risky-plan hardening or strict-safety expectations changed, update
+   `plan-harden`, safety-mode, review, and closure artifacts together rather
+   than patching only one surface
+8. For each accepted `drift_report.new_artifacts[]` entry (Step 1.3b), install
+   the template to its `expected_path`, resolving variables from the current
+   profile, and record the new artifact in the manifest with its checksum,
+   `primitive`, and `template` source. Install entries whose `applicable` is
+   `true` by default; install `null`/`false` entries only when the operator
+   accepts them. Never auto-install an entry that carries `requires_opt_in`
+   (for example the `P-017` dark-mode trigger shim `feature-flow-dark.prompt.md`)
+   unless the operator has explicitly opted into that policy. Prompts follow the
+   install-harness prompt install rules (universal vs. primitive-gated vs.
+   policy-gated).
+
+#### Step 4.3: Update Manifest
+
+Update `.gsd/harness-manifest.yaml`:
+
+* Bump the `tuned_at` timestamp
+* Record which proposals were applied
+* Update artifact checksums
+* Store the new workspace profile hash
+* Store the new primary stack pack, additive stack packs, install layers, preset, and capability-pack metadata when composition changed
+* When tuning against a side-by-side versioned archive in `<workspace>/.gsd/` (`gsd-assets-v<version>.zip`, selected via `.gsd/runtime-manifest.json`), update `gsd_home`, `gsd_version`, and the `variables_used` provenance keys (`GSD_BUNDLE_PATH`, `GSD_BUNDLE_VERSION`, `GSD_BUNDLE_SHA256`, `GSD_RELEASE_TAG`) to match the active versioned bundle archive
+
+### Phase 5: Verification
+
+Run `gsd verify-workspace --workspace {workspace_path}` first, then interpret the deterministic report using the same verification algorithm as install-harness Phase 4:
+
+* **Step 4.1 (Template Variable Sweep)** — scan for unresolved `{{...}}` outside code fences
+* **Step 4.2 (Cross-Reference Sweep)** — verify agent→skill, agent→tool, instruction→file, policy→agent, constitution→language, and layer→artifact consistency
+* **Step 4.3 (Overlay Coherence Sweep)** — verify each enabled pack's targets exist and reference the pack's behavior keywords
+* **Step 4.4 (Structural Validation)** — YAML frontmatter, code fence pairing, table column counts, file path resolution
+
+Treat any `strict_schema_blockers`, unresolved placeholders, or failing targeted checks from `verify-workspace` as deterministic verification failures that must be resolved before adversarial review.
+
+If the verification report still contains `migration_proposals[]` after applying accepted tune changes, treat them as unresolved deterministic drift. They may remain advisory when the operator intentionally deferred them, but they must be surfaced explicitly in the tuning report instead of disappearing into generic warnings.
+
+After deterministic checks pass, invoke the **verify-harness** skill for
+multi-model adversarial verification:
+
+* **Step 4.5 (Adversarial Verification)** — dispatch parallel reviewer
+  subagents using different models to audit template fidelity, overlay
+  coherence, and cross-reference integrity against the authoritative templates
+  and the workspace's current state. Findings are assembled into a
+  confidence-weighted consensus report. HIGH-confidence additive fixes are
+  applied automatically; remaining findings are presented alongside the tuning
+  report.
+
+Pass `scope: new-only` when the tuning session modified a small number of
+artifacts (fewer than 10 changed) so reviewers focus on the changed surface
+rather than re-auditing the entire harness. Use `scope: all` for broader tuning
+sessions or when overlay-coherence drift was detected.
+
+Report any failures alongside the tuning report so the operator can address
+both drift and verification issues in a single pass.
+
+## Quality Criteria
+
+* All breaking drift is addressed (either fixed or explicitly acknowledged)
+* No harness artifact references non-existent files after tuning
+* Checksum scan classifies every manifest-tracked artifact or intentional ignore outcome
+* Backup copies exist for every modified artifact
+* Startup-script contract classification (`start.ps1` / `start.sh`) covers `missing`, `current`, `known-legacy`, `customized`, and `ambiguous` with structured evidence, and a legacy-but-checksum-unchanged script still produces a migration proposal
+* Backup copies exist before any startup-script refresh, and supported custom sections survive migration
+* The tuning report is comprehensive and actionable
+* The harness manifest reflects the post-tuning state
+* When the workspace is Git-backed, tune output is left as feature-branch work or local uncommitted changes awaiting feature-branch handoff; direct default-branch commit/push is never recommended

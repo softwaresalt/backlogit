@@ -1,5 +1,6 @@
 # Directories
 bin/
+.bin/
 logs/
 .vscode/
 .copilot/
@@ -41,13 +42,15 @@ backlogit.db
 
 # Runtime state (per-consumer checkpoints, not committed)
 .backlogit/runtime/
-.autoharness/staging/
-.autoharness/backups/
-.autoharness/gates/pre-review/
+.gsd/staging/
+.gsd/backups/
+.gsd/gates/pre-review/
+.gsd/gates/bootstrap-grant-consumption/
+.gsd/gates/pipeline-topology-force-audit.log
 *.exe~
 prompt.md
 
-# Advisory file locks (autoharness concurrency protocol)
+# Advisory file locks (GSD concurrency protocol)
 .*.lock
 .backlogit/.locks/
 
@@ -63,6 +66,6 @@ prompt.md
 !.engram/config.toml
 !.engram/registry.yaml
 
-# graphtor-docs — managed by graphtor-docs install
+# kbdb — managed by kbdb install
 .graphtor/
 diff.txt

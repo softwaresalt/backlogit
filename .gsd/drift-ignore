@@ -18,7 +18,7 @@
 #
 # The following capability-gap files remain deliberately NOT ignored so the
 # operator can still decide whether to adopt new autoharness 1.4.11 capabilities:
-#   .autoharness/workspace-profile.yaml            (missing runtime_validation)
+#   .gsd/workspace-profile.yaml            (missing runtime_validation)
 #   .github/agents/_orchestrator.agent.md          (post-merge closure sequencing)
 #   .github/instructions/release-observability.instructions.md (validator/releasability evidence)
 #   .github/skills/operational-closure/SKILL.md    (source artifact cleanup)
@@ -544,7 +544,7 @@
 #       Version header and Amendment Log are 1.24.0.
 
 # --- Registry / backlog configuration ---
-.autoharness/backlog-registry.yaml
+.gsd/backlog-registry.yaml
 .backlogit/config.yaml
 .backlogit/header-def.yaml
 .backlogit/templates/deliberation.md

@@ -1,19 +1,15 @@
 schema_version: "1.1.0"
 installed_at: "2026-05-17T23:40:00Z"
-tuned_at: "2026-10-24T18:50:00Z"
-autoharness_version: "1.6.0"
-autoharness_home: "C:\\Python\\Python315\\Lib\\site-packages\\autoharness\\data"
-profile_hash: "a46ff663059cbb4606f7ba8f6d2621133b3db27360cd1b6141cebae81295d584"
-config_hash: "18d1f5b0e7c077bc5cff5e8cbf8c02c8ea60a3686c7aa1bdcf2c9889723b0c59"
+tuned_at: "2026-11-18T23:52:47Z"
+gsd_version: "1.6.0"
+gsd_home: "C:\\Source\\GitHub\\backlogit\\.bin"
+profile_hash: "afd99db4806ac1832083c62b84722bb85307e9e1dd349aca2697976640fe479d"
+config_hash: "2b114a784fdf277e9552280767f798d706695eb8d5e191573486409011096157"
 install_preset: full
 capability_packs:
   - backlogit
-  - strict-safety
   - agent-engram
-  - adversarial-review
-  - release-observability
-  - continuous-learning
-  - graphtor-docs
+  - kbdb
 capability_pack_overlays:
   - pack: backlogit
     overlay_targets:
@@ -34,21 +30,6 @@ capability_pack_overlays:
       - "Generic backlog integration instructions exist in .github/instructions/"
       - "Foundation guidance exists in AGENTS.md and .github/copilot-instructions.md"
       - "Spike, safety, runtime verification, and operational closure skills exist in .github/skills/"
-  - pack: strict-safety
-    overlay_targets:
-      - strict-safety instruction file
-      - plan-harden skill
-      - plan-review gate conditions
-      - stage agent P-006 enforcement
-      - workflow policies P-006
-      - safety-modes skill
-      - review and closure workflows
-    verification_checks:
-      - "strict-safety.instructions.md exists in .github/instructions/"
-      - "plan-harden skill exists in .github/skills/"
-      - "plan-review gate table includes hardening FAIL condition"
-      - "stage agent Step 3.2 references plan-harden"
-      - "workflow-policies.md includes P-006"
   - pack: agent-engram
     overlay_targets:
       - agent-engram instruction file
@@ -58,42 +39,18 @@ capability_pack_overlays:
     verification_checks:
       - "agent-engram.instructions.md exists in .github/instructions/"
       - "Stage and Ship agent tools lists include engram/*"
-  - pack: adversarial-review
+  - pack: kbdb
     overlay_targets:
-      - adversarial-review agent file
-      - adversarial-review instruction file
-      - review skill escalation path
-    verification_checks:
-      - "adversarial-review.agent.md exists in .github/agents/"
-      - "adversarial-review.instructions.md exists in .github/instructions/"
-      - "Review skill Step 4a references adversarial review escalation"
-  - pack: release-observability
-    overlay_targets:
-      - release-observability instruction file
-      - operational-closure integration
-    verification_checks:
-      - "release-observability.instructions.md exists in .github/instructions/"
-  - pack: continuous-learning
-    overlay_targets:
-      - continuous-learning instruction file
-      - foundation guidance docs
-      - continuous-learning state directory
-    verification_checks:
-      - "continuous-learning.instructions.md exists in .github/instructions/"
-      - "Instruction file documents observe, learn, and evolve operations"
-      - "State directories exist under .autoharness/continuous-learning/"
-  - pack: graphtor-docs
-    overlay_targets:
-      - graphtor-docs instruction file
+      - kbdb instruction file
       - capability-pack-enforcement routing and deferral blocks
       - foundation guidance docs
       - constitution capability overlay
       - pipeline agents (stage, ship)
     verification_checks:
-      - "graphtor-docs.instructions.md exists in .github/instructions/"
-      - "Instruction file documents all eight graphtor-docs MCP tools"
-      - "Stage and Ship agents reference graphtor-docs.instructions.md"
-      - "capability-pack-enforcement routes and deferral blocks include graphtor-docs"
+      - "kbdb.instructions.md exists in .github/instructions/"
+      - "Instruction file documents all eight kbdb MCP tools"
+      - "Stage and Ship agents reference kbdb.instructions.md"
+      - "capability-pack-enforcement routes and deferral blocks include kbdb"
 primitives_installed:
   - 1
   - 2
@@ -106,54 +63,54 @@ primitives_installed:
   - 9
   - 10
 artifacts:
-  - path: ".autoharness/backlog-registry.yaml"
+  - path: ".gsd/backlog-registry.yaml"
     primitive: 9
     template: "templates/backlog/registries/backlogit.registry.yaml"
-    checksum: "d0ec69cf1a2c5f5206a30e6a80cbed7b041c073a9b32add99c93af3c724733e7"
+    checksum: "66c396c7cc2819bea977a53851155f0626e8f80cc0bac2995845a5004a5a367f"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: added CLI-only reconcile_shipped operation (registry parity verified); staged render not adopted because it drops ~200 workspace-specific lines."
   - path: ".github/instructions/backlogit.instructions.md"
     primitive: 6
     template: "templates/instructions/backlogit.instructions.md.tmpl"
-    checksum: "705516527ad5cefa74414bed507c6980036a39ca2866a1e192f7ed4f55e95dc0"
+    checksum: "2e04c3b40daddbda1567374b901dc00825ba4be1c184397c89a23de514e786cb"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review (TUNE-011): adopted only the Checkpoint Payload Contract subsection; staged render rejected because it drops the Checkpoint Disposition Protocol and carries stale no-blocked-shipment-status text. 6434A4D7 shipped-only shipment predecessor rule and shipment_predecessor_not_shipped refusal; upstream template sync pending"
   - path: ".github/instructions/architecture-doc.instructions.md"
     primitive: 9
     template: "templates/instructions/architecture-doc.instructions.md.tmpl"
-    checksum: "743e6560af474507b795a30d2810f175de04a3be6827a8ad70cc6ab410a86fba"
+    checksum: "80fda6621cb12a4294cb38311f16b3b780f1815c089a90efdc47ca1b61a12073"
   - path: ".github/instructions/backlog-integration.instructions.md"
     primitive: 6
     template: "templates/instructions/backlog-integration.instructions.md.tmpl"
-    checksum: "1a3974846abe395b7a7b380c99e9cc7d140bf64bf215617f289a3ec39ce9b014"
+    checksum: "2aa1ba042346be3646f04cb86e7efe4490eb67caafe0cf4144e68c4717d1298a"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: added reconcile_shipped CLI-only row matching the registry."
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "6e8771c3fecc91056d959d59444d2974d57473d6ff4d54093c66cd179654f81d"
+    checksum: "80599d24e858240cd8e6bad0b2230f545654b2297172f49727332de50ecb0012"
     drift_allowed: true
     drift_reason: "Shipment 155-S final-review remediation. P-015 now matches the implemented flat explicit shipment scope: listed features do not imply descendant or linked-deliberation membership, and only explicit members plus the shipment control record participate in closure. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). 2026-09-27 tune review (TUNE-010): v1.31.0 P-013.1 resolved tier compliance and P-013.3 analyze-then-halt escalation."
   - path: ".github/skills/spike/SKILL.md"
     primitive: 4
     template: "templates/skills/spike/SKILL.md.tmpl"
-    checksum: "c638a1e20315a00faf6366ed4d90762db996d35f8db82ef5dedd6ca54949d935"
+    checksum: "3cf0b5d77257bbadec9c2fbec4b70eb89d06438e8a9e4eddce29cd6b969df84a"
   - path: ".github/skills/runtime-verification/SKILL.md"
     primitive: 10
     template: "templates/skills/runtime-verification/SKILL.md.tmpl"
-    checksum: "24a934a7820e3ad20f2251ec989a5551261843ab297f6569a72390282e0ab784"
+    checksum: "4fc603ed31fa6a8e856bc95ccce4512374a8beb64656e27f5a229906494ec318"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review (TUNE-009): adopted validator-contract render with H1 restored."
   - path: ".github/skills/operational-closure/SKILL.md"
     primitive: 10
     template: "templates/skills/operational-closure/SKILL.md.tmpl"
-    checksum: "d6559f2882fee4a96d445ed465d66fabbecfd6f850077520e391879f10911a2d"
+    checksum: "ce0b9bae79729058e9fbbbdbf959bf8ed6208b148562fdbed17c611bc072b043"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review (TUNE-009): adopted validator-contract render with H1 restored; replaced source-artifact cleanup with a provenance-only bullet per the Ship Step 7 source artifact boundary."
   - path: ".github/skills/safety-modes/SKILL.md"
     primitive: 5
     template: "templates/skills/safety-modes/SKILL.md.tmpl"
-    checksum: "d86bf43e17df39b7919048f58990ac1ba9f66915e7ba9b5cf0e48bb938d961de"
+    checksum: "0d8bee02c71bf22a239626696a4147330729966d080af245b3b8c5a70b736b3c"
   - path: ".backlogit/config.yaml"
     primitive: 2
     template: "workspace merge install"
@@ -161,7 +118,7 @@ artifacts:
   - path: ".backlogit/header-def.yaml"
     primitive: 2
     template: "workspace merge install"
-    checksum: "92532b37c242d0818c927fa93ce1cbafba6eec2cfd61c6c97d2755aea8826192"
+    checksum: "c96debf731aa56b3ab60c828f1a1ad04038a18ffa94ce1b34cf4d5eb9cd55cd1"
   - path: ".backlogit/templates/deliberation.md"
     primitive: 1
     template: "workspace deliberation template"
@@ -169,33 +126,33 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "fc78381175c94e98ee6d8806427d49ae486eb660fbacacdbaecb077e6221a094"
+    checksum: "4d4b8bbaced4a1fbaf98403f413e5db69c08a2dad89cfb679f3660c6e275afba"
     note: "073-DL E4: Principle II, Technical Constraints and Quality Gates now name the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). The upstream continuous-learning overlay hardcodes docs/learnings/, conflicting with the configured continuous_learning.directory (.autoharness/continuous-learning) that the pack's own instruction file uses, which would let agents write observations to two different stores. Aligned to the configured directory. Do not auto-revert."
+    drift_reason: "Copilot review fix (PR #400). The upstream continuous-learning overlay hardcodes docs/learnings/, conflicting with the configured continuous_learning.directory (.gsd/continuous-learning) that the pack's own instruction file uses, which would let agents write observations to two different stores. Aligned to the configured directory. Do not auto-revert."
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
-    checksum: "1e7ea488f72aa50088bbd9d40002f4c42a1e2301bc601e33cc01b54781d93767"
+    checksum: "ec325a208feece35bf1f219d88e50e27fda8a0a355b8f2b359eb92a4782fb511"
     note: "073-DL E4: the Test row and Commands block now name the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Same continuous-learning storage-path conflict as AGENTS.md; aligned to the configured continuous_learning.directory. Do not auto-revert."
   - path: ".github/skills/plan-harden/SKILL.md"
     primitive: 4
     template: "templates/skills/plan-harden/SKILL.md.tmpl"
-    checksum: "944dd9189134a04f2cfe288913a9db38035922865dd521521cc3813e7edef0c5"
+    checksum: "351f856bbb985495a5955114fb0c60fb2a375f1a4d75ca7a5bac91b0dcae1580"
   - path: ".github/skills/compound-refresh/SKILL.md"
     primitive: 1
     template: "templates/skills/compound-refresh/SKILL.md.tmpl"
-    checksum: "ae69b5e6fabfb130ed4a8c3fa9252bbec98cd4d3c23c9a6d6fcaa8ef0df5bc93"
+    checksum: "9608920a14bd597a6bf541303b961ea9e648a5f6b7a587498288a107f6d2d1f4"
   - path: ".github/agents/review/concurrency-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/concurrency-reviewer.agent.md.tmpl"
-    checksum: "36a46e4f45230579b36ca7df6007074bcef239052462bb79479ac0fec2627cb7"
+    checksum: "ef40f5c2c0e41b221507f9e897ec44094f7d8ea88d479ea775f6ec8f840aa47b"
   - path: ".github/agents/review/agent-native-parity-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/agent-native-parity-reviewer.agent.md.tmpl"
-    checksum: "ca5b42ee51237483a0a78fc7a653996cf2e0ff4c74cb975ce489d6ea231f1f40"
+    checksum: "430c0e59a80e00cbebecb27b969d410a3304ac6a6e8f16bbcc6d7dc6d87efc7e"
   - path: ".github/instructions/ci-security.instructions.md"
     primitive: 6
     template: "templates/instructions/ci-security.instructions.md.tmpl"
@@ -203,32 +160,32 @@ artifacts:
   - path: ".github/instructions/strict-safety.instructions.md"
     primitive: 5
     template: "templates/instructions/strict-safety.instructions.md.tmpl"
-    checksum: "9f70e1c9978d1071a3460dd91f5b057401e26892b97a93b2d5c94eaaf4c0f790"
+    checksum: "46b7b2bab043526a0547135f76e32ea6f272aa1ad134367c5391d14e7e20cc27"
   - path: ".github/instructions/agent-engram.instructions.md"
     primitive: 6
     template: "templates/instructions/agent-engram.instructions.md.tmpl"
-    checksum: "a3f0fd41709651834e56edf89b24335ca5f56b8cfa3d798df70babb1380c61f4"
-  - path: ".github/instructions/graphtor-docs.instructions.md"
+    checksum: "ffddc3052f4602ee31b161e9864d451184a6abc1f938a32f396cf69ccf304c50"
+  - path: ".github/instructions/kbdb.instructions.md"
     primitive: 6
-    template: "templates/instructions/graphtor-docs.instructions.md.tmpl"
-    checksum: "21d199523e8f98c6227b3b062048b95a752f46efebac496bf9e0b70ac48a2227"
+    template: "templates/instructions/kbdb.instructions.md.tmpl"
+    checksum: "4b63a538499ded79f687ad4c9ccb9aba1a816f234e168d8f2f364a751d13054f"
     drift_allowed: true
-    drift_reason: "Operator-mandated workspace customization: adds a NON-NEGOTIABLE Workspace Usage Rule pinning graphtor-docs to read-only and forbidding workspace indexing (no sync, no repository source registration, index sync is never part of harness install or tune). The upstream template's Source Configuration paragraph permits source management as a task; this workspace does not. Round-4 fix (PR #400): added a reproducible MCP registration snippet (serve --read-only) and documented that the eight read verbs are granted by name in the stage/ship/orchestrator allowlists, so an enabled pack is actually callable instead of silently degrading. Do not auto-revert."
+    drift_reason: "Operator-mandated workspace customization: adds a NON-NEGOTIABLE Workspace Usage Rule pinning kbdb to read-only and forbidding workspace indexing (no sync, no repository source registration, index sync is never part of harness install or tune). The upstream template's Source Configuration paragraph permits source management as a task; this workspace does not. Round-4 fix (PR #400): added a reproducible MCP registration snippet (serve --read-only) and documented that the eight read verbs are granted by name in the stage/ship/orchestrator allowlists, so an enabled pack is actually callable instead of silently degrading. Do not auto-revert."
   - path: ".github/instructions/constitution.instructions.md"
     primitive: 1
     template: "templates/foundation/constitution.instructions.md.tmpl"
-    checksum: "7e7e61ed87c169be37ab2c8a7b5823573fdc33fe9a113df4ee84ee6153ec699e"
+    checksum: "7890d9624e33c301297e1130d1c775c94597553362de7fc4f049c0321a3c4170"
     note: "073-DL E4: Principle II, Technical Constraints and Quality Gates now name the governed full-suite command go test -timeout=30m ./... (MINOR 1.1.0; checksum rotated, LF-normalized)."
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
-    checksum: "1be5c8320a7733242ad30eaf18ba4533a1f542bc429b4a86e81d1685443a41cd"
+    checksum: "745f583a84c9485698029c1f219ed772c681716cefaad03e70e6caf51fc66698"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Same empty-substitution defect as the companion instruction file, across 7 locations including the reviewer routing table. Replaced with symbolic config key paths. Do not auto-revert. Round-3 fix: added `model_tier: 3` and raised `max_subagent_tier` from 1 to 3; the agent's own routing is claude-opus-4.8 (tier3) and its dispatch tables require Tier 2 and Tier 3 reviewers, which a ceiling of 1 made a P-013.2 violation. Round-4 fix: the readiness verdict let an UNACKNOWLEDGED medium-confidence P0/P1 fall through to READY; added an explicit BLOCKED branch so only acknowledged-and-deferred medium findings reach READY_WITH_FOLLOWUPS. 2026-09-27 tune review: anchor reviewer prose corrected to GPT-6 Sol. 2026-10-04 operator directive: backlogit/* granted (full backlogit tool surface for every mutating agent in this dogfooding workspace)."
   - path: ".github/instructions/adversarial-review.instructions.md"
     primitive: 6
     template: "templates/instructions/adversarial-review.instructions.md.tmpl"
-    checksum: "a1d67b588f348e1a9e2d5761d5042e37b8acc5285465e3ef3db20b32c455115a"
+    checksum: "2e6fb7ffe362dd37ed47b3142122a4ada7edd08fd0b3373cf22b9004efba51ce"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). ALT_REVIEW_PROVIDER / ALT_REVIEW_FAMILY resolve to empty strings when no alternate route is configured, so the rendered text lost the setting names entirely and read 'When `` and `` are configured'. Replaced with the symbolic config key paths plus an explicit note that both are unset here. Do not auto-revert."
   - path: ".github/instructions/circuit-breaker.instructions.md"
@@ -244,7 +201,7 @@ artifacts:
   - path: ".github/instructions/release-observability.instructions.md"
     primitive: 6
     template: "templates/instructions/release-observability.instructions.md.tmpl"
-    checksum: "2f8c77791341b66821711b4303de283e8bc83b5a0c33bd4e156235a84dd360f7"
+    checksum: "6c9623e40c3aea2d7499d2935aebaf6ced0005c5b488cd73744fee687cc26045"
   - path: ".github/skills/file-lock/SKILL.md"
     primitive: 5
     template: "templates/skills/file-lock/SKILL.md.tmpl"
@@ -254,17 +211,17 @@ artifacts:
   - path: ".github/skills/skill-search/SKILL.md"
     primitive: 4
     template: "templates/skills/skill-search/SKILL.md.tmpl"
-    checksum: "32eda72005b6b7489efedbfaed2fe2b4c06e08ae3f2a4752ae9f247cf5496f4f"
+    checksum: "0f47c946f991f85f8ecf7d65b573e2420f28b40e8c8c837814abbc12d8d973fa"
   - path: ".github/skills/review/SKILL.md"
     primitive: 7
     template: "templates/skills/review/SKILL.md.tmpl"
-    checksum: "d48fc557618a75310cf076532fcc80c92101727ce9d116a677a1c964b3a235f3"
+    checksum: "2bc1022d0c552949e92ee727ea4a0961577c1b05da6b82255beaf9cc617a7c21"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: fixed multi-line-in-backticks security pattern substitution defect. Upstream template fix pending."
   - path: ".github/instructions/go.instructions.md"
     primitive: 6
     template: "templates/instructions/technology-go.instructions.md.tmpl"
-    checksum: "97cdd444c0844b86b84974a17575ba7a88b326267557515645ef544d02d94e8a"
+    checksum: "181f78303d4b2245274dd5befdf919a6c57bdac0ca1d75f067c9cb336e5e4b54"
     note: "073-DL E4: the Commands block now names the governed full-suite command go test -timeout=30m ./... and its coverage variant (checksum rotated, LF-normalized)."
   - path: "scripts/acquire_lock.ps1"
     primitive: 5
@@ -301,92 +258,92 @@ artifacts:
   - path: ".github/instructions/context-efficiency.instructions.md"
     primitive: 1
     template: "templates/instructions/context-efficiency.instructions.md.tmpl"
-    checksum: "e90a66ebab83ff0b4d6cace14752866be83c26bff88813ef11dbb018e29e9c53"
+    checksum: "1d6e8ea8208bfd574ea5aee6fb30ccba2c8c1bbbe0eb02c02045ea4fef4ea9d8"
   - path: ".github/instructions/role-enforcement.instructions.md"
     primitive: 5
     template: "templates/instructions/role-enforcement.instructions.md.tmpl"
-    checksum: "b017a7bc47c10a5bed1faf626676acd58048021a8e50a7c7e849b87a9db2f346"
+    checksum: "743f7bcc0ee6fe053466c9eddac309c97904e4590821d1523c6f22951322b4fe"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Upstream asserts skills 'do not spawn subagents', which contradicts the installed review and plan-review skills that both declare an explicit 1-hop persona-subagent contract. Narrowed the claim to model-route inheritance and explicitly permitted coordinator skills to spawn subagents when their own Subagent Depth Constraint says so. Do not auto-revert."
   - path: ".github/instructions/github-pr-automation.instructions.md"
     primitive: 4
     template: "templates/instructions/github-pr-automation.instructions.md.tmpl"
-    checksum: "cb386eb7a307ebd89cbef631fb5863550864879cc96bfad7846ac06757357e1c"
+    checksum: "789f848d18ca08119292f6aac072bb5ba45679b3a716e86463407b28aafb0dd6"
     note: "073-DL E3: fix loop 1.4 now names the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #577). §1.6.1 item 7 unconditionally required a fixing push before posting a threadless review-body disposition comment, which deadlocks reviews containing only deferred or declined body findings (no code change). Scoped the push prerequisite to code-fixed findings and permitted posting after P-021 C2 capture/rationale when all findings are deferred or declined. Do not auto-revert."
   - path: ".github/instructions/continuous-learning.instructions.md"
     primitive: 1
     template: "templates/instructions/continuous-learning.instructions.md.tmpl"
-    checksum: "eebc47441cd4b7a5ce6df8fc9cf376962e21ee768f5e11f5458dd7d5aeb50e6c"
+    checksum: "0494085667e622ad2da55ca0e23967b2e68ea791d068f6974d5b7fe63503df0c"
   - path: ".github/instructions/technology.instructions.md"
     primitive: 6
     template: "templates/instructions/technology.instructions.md.tmpl"
-    checksum: "9d2e6e1c87012bef8c4b8875e44ad654f2b5db355d4ef7dbcd5a21795d8a46a1"
+    checksum: "644bf868e59b2c5ac80a15b0ba7c27c6117a63f7bc0c4e1537fb0b0839e59676"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review (TUNE-012): additive merge of staged repo-specific bullets; staged render would replace workspace bullets and narrow applyTo."
   - path: ".github/agents/review/security-sentinel.agent.md"
     primitive: 5
     template: "templates/agents/security-sentinel.agent.md.tmpl"
-    checksum: "b251e4f8bf32f6b40919e85bf22019d4ec519c48b5b810543aa529ad08a881a8"
+    checksum: "35174f83ab0beca2c517373e10b607a97207ac2cec58996c76f1ae3cb4895920"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: fixed upstream template defect where a multi-line pattern list was substituted inside inline backticks. Upstream template fix pending. 2026-10-04 operator directive: backlogit/* granted (full backlogit tool surface for every mutating agent in this dogfooding workspace)."
   - path: ".github/agents/review/security-lens-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/security-lens-reviewer.agent.md.tmpl"
-    checksum: "c230fd1173f1a4150780efc86814499fc87a647364b435f28ca0078973328c8c"
+    checksum: "5683cad5fad549841a0e631c105d32bc513d81636d94645aea85bc0d83b050d2"
   - path: ".github/agents/review/security-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/security-reviewer.agent.md.tmpl"
-    checksum: "cccbf7a3658c02146c460765af4647111c5e981fa764be5af1fbbb6a46e5cfcc"
+    checksum: "943e7f95ce2e640dc80ba038c3bec6ff5dd3793e1ce449f6f101ce6019e6e38b"
   - path: ".github/agents/review/template-integrity-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/template-integrity-reviewer.agent.md.tmpl"
-    checksum: "fb42d98b8e38784cafee0e867873818a51b13004d5c27977012959adeab03b28"
+    checksum: "b8928c0b1cd4b41ed437278dc5c64a386f2076ba2606f45be1a4c30458f3a80e"
   - path: ".github/agents/review/schema-cli-docs-coupling-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/schema-cli-docs-coupling-reviewer.agent.md.tmpl"
-    checksum: "f8b76bd6e8510b96c43d793b18e8e5bb9fbbcba26212cb66a344e078d385a9bd"
+    checksum: "ae60e315fd888ab5e0881cb4c50003d3f133f4401031029ff021ce7d138def51"
   - path: ".github/skills/harness-doctor/SKILL.md"
     primitive: 9
     template: "templates/skills/harness-doctor/SKILL.md.tmpl"
-    checksum: "849f5059a9ed77fc405c73c6330fb06bebeb58dab5045482a89174c67dca4964"
+    checksum: "803a50ebb5e0d7bc271e3348c857865375bb8534d0390766cbc62070d329cb92"
   - path: ".github/skills/iterative-experiment/SKILL.md"
     primitive: 4
     template: "templates/skills/iterative-experiment/SKILL.md.tmpl"
-    checksum: "d16ee90bdc02c2425f3bdf27ee9d9cd65d71abb7225ef0ff6edff4c98cdc4c86"
+    checksum: "e4a25d9228b253c67e9855cf6dbb51bdecc9ac4103d53afdc2780dde9b4ca0c5"
   - path: ".github/skills/security-audit/SKILL.md"
     primitive: 5
     template: "templates/skills/security-audit/SKILL.md.tmpl"
-    checksum: "4d7c8ded1f01c239898acffd7e80a4664f2a5f77f46486d05963e3b1f0afbf73"
+    checksum: "bbed124061f96f7203781b4e4458bcab361542e6e6d9f8fad2d42b3250671596"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: fixed multi-line-in-backticks security pattern substitution defect in the variable table and inline references. Upstream template fix pending."
   - path: ".github/skills/shipment-reconcile/SKILL.md"
     primitive: 4
     template: "templates/skills/shipment-reconcile/SKILL.md.tmpl"
-    checksum: "01359822ce0cfbacf31672fcbcc3bba55a77df7892e03ff82b129d7949af5f5e"
+    checksum: "d4f61f1797a79934f85ae5f29e6064ab73972afef02b888b0d3ab645ab810c6c"
     drift_allowed: true
     drift_reason: "Shipment 155-S final-review remediation supersedes the earlier safe-close workaround. The implemented governed ShipShipment transaction now uses flat explicit membership, so reconciliation checks only manifest IDs plus the shipment control record, never inferred descendants or linked deliberations, while preserving the pre/post lock and P-007 integrity gates. Do not auto-revert. 196-F / shipment 196-S (stash B83081F5): an active explicit feature member whose explicit task members are all matched or pre-archived classifies at pre-close as feature-pending-governed-completion; Safe-Close step 2 accepts that state as close-ready (re-checked under lock), and the feature is completed only by governed ShipShipment. Do not auto-revert. CX U17 refresh (197-S, 2026-10-11): checksum refreshed to the LF-normalized SHA-256 after the 197-S safe-close state fix (commit 8f8ca3ab); the safe-close side-effect path gap is a named limitation (stash 2C8615A5)."
   - path: ".github/prompts/stage-grouping-analysis.prompt.md"
     primitive: 4
     template: "templates/prompts/stage-grouping-analysis.prompt.md.tmpl"
-    checksum: "d9cdc97d07fde6f09a0b3bfaac6252f46ca2c7ebca42503ceb4c0a99835be78e"
+    checksum: "807517cb632d8eed66bfa03e50949118c67ae651de24e8a8f29e229e8f9ee731"
   - path: ".github/prompts/feature-flow.prompt.md"
     primitive: 4
     template: "templates/prompts/feature-flow.prompt.md.tmpl"
-    checksum: "63495503b706477da14fc49555e25c04b1224859704771fc27d7e08bba597380"
+    checksum: "7811c60eccea2d55c880d3d321ac1437ecf99d20ace667873f6a8c52a241e444"
   - path: ".github/prompts/feature-flow-parallel.prompt.md"
     primitive: 4
     template: "templates/prompts/feature-flow-parallel.prompt.md.tmpl"
-    checksum: "a70969a86d95320d6dabe46fa4a40fac989997ce57b0eff8913c1f9a598cf193"
+    checksum: "4fcd9843fbd86a86f8159990aa7b185ad5680f156cf83d2f637aba357282c1cb"
   - path: ".github/prompts/feature-flow-dark.prompt.md"
     primitive: 4
     template: "templates/prompts/feature-flow-dark.prompt.md.tmpl"
-    checksum: "5dc67d3ad19127993568a5015b099fbd7fb94eb524fcdaf28afb5371248cf597"
+    checksum: "09c2707228297a1fbaeb0f10bc7201b23d27b4001819085343c8f19da749238e"
   - path: ".github/agents/subagents/prompt-builder.agent.md"
     primitive: 3
     template: "templates/agents/prompt-builder.agent.md.tmpl"
-    checksum: "913578fee7b2fdcbab61034b353fc0b1c98353ab8485aa85ee6dec8f7d4ece2f"
+    checksum: "5e428d8ab71ba92dd863eede6cbddfcccba615c1837fe7874a012178b60f6a02"
     drift_allowed: true
     drift_reason: "Operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so this subagent's tools line adds backlogit/* to the template's vscode, execute, read, edit, search. Do not auto-revert or narrow to an explicit backlogit operation allowlist."
   - path: ".github/agents/subagents/go-engineer.agent.md"
@@ -399,25 +356,25 @@ artifacts:
   - path: ".github/agents/research/learnings-researcher.agent.md"
     primitive: 1
     template: "templates/agents/research/learnings-researcher.agent.md.tmpl"
-    checksum: "f5acdeb0fc3f3dc952c7e115e6bebcc70494d0b155fd283710c1d9ffdf92baec"
+    checksum: "c6c2be05dccfa1952f37c740f452edb14e5e171ad70c21604dc232cda190c290"
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "48ed9b1b6585997119cb9f0e6257d4d16cf1d4683de3d3881a64422a2d7035f9"
+    checksum: "808b5fb9ee4d49b57a7d817c055e3c02008f902e043f1a50560788534c61e91c"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert. 2026-09-27 tune review (TUNE-010): Dark Factory DARK_MODE_ACTIVE subagent propagation and concrete-ID scope resolution. 196-F / shipment 196-S (stash 227A2930): Served-Root Handoff Procedure binding both absolute served roots and binding evidence into the Ship payload, with SERVED_ROOTS_UNRESOLVED fail-closed halts; the outcome record is carried to Ship and persisted on the shipment branch, never in the main worktree before Ship's branch gate, and a step e halt record is committed via the Step 1.5 carry-forward before any later Ship invocation (Copilot review and local review, PR #478). Do not auto-revert. CX U17 refresh (197-S): checksum refreshed to the LF-normalized SHA-256 for the ship closure protocol and gate correctness release; governing stash 75E02C17, 52D18E44, 497D20E3, 67F17B6B, FBD6E6F8,     8F1CF1E1, 6AB5E7FC, F05661B1. AF1E5075 hold-label refusal and condition (b) pre-claim contract; the 154-S clauses are a workspace-local overlay excluded from upstream template sync;     generic hold-label text is an upstream template sync candidate. 6434A4D7 governed queued-shipment disposition role contract; upstream template sync pending"
   - path: ".github/agents/_stage.agent.md"
     primitive: 1
     template: "templates/agents/_stage.agent.md.tmpl"
-    checksum: "369f4bfcbb2ca0300fb19c11ecbf35b95e32253c4a1ce180e895e7dc3a3e381f"
+    checksum: "97c9cefbd61d650d799be87000b27bca2917aa67a8f795646994f8aa7b28814d"
     drift_allowed: true
-    drift_reason: "Copilot review fix (PR #400). graphtor-docs is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert. 2026-09-27 tune review (TUNE-010): P-016 Stage spike/research worktree exception. 6434A4D7 governed queued-shipment disposition role contract; upstream template sync pending. 083-DL: configured native feature/chore-to-task hierarchy and optional subtasks replace the unsupported sub-epic chain; upstream template sync pending."
+    drift_reason: "Copilot review fix (PR #400). kbdb is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a kbdb/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert. 2026-09-27 tune review (TUNE-010): P-016 Stage spike/research worktree exception. 6434A4D7 governed queued-shipment disposition role contract; upstream template sync pending. 083-DL: configured native feature/chore-to-task hierarchy and optional subtasks replace the unsupported sub-epic chain; upstream template sync pending."
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "d08fd38bb98d6d011afa640cc26a4fa7f7e682d3b97176396ebd9889a8816c70"
+    checksum: "d439a7a98ae7580b1d7beb16f06202f81fdd55804242ce8c7841b0d4429161e6"
     drift_allowed: true
-    drift_reason: "Deliberate Ship drift: preserve the scalar tools string with vscode/memory, the full backlogit/* MCP tool surface (operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so do not narrow it back to an explicit backlogit operation allowlist), engram/*, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, graphtor-docs/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix. 196-F / shipment 196-S: Step 6 item a explicit-feature reconcile wording (stash B83081F5) and the Step 4.0 / Step 4.1b use-time Served-Root Attestation (stash 227A2930), plus the Step 0.5 item 3a write of the Orchestrator-supplied served-root handoff outcome after BRANCH_OK or BRANCH_CREATED (local review, PR #478). Do not auto-revert. CX U17 refresh (197-S): checksum refreshed to the LF-normalized SHA-256 for the ship closure protocol and gate correctness release; governing stash 75E02C17, 52D18E44, 497D20E3, 67F17B6B, FBD6E6F8,     8F1CF1E1, 6AB5E7FC, F05661B1. AF1E5075 hold-label refusal and condition (b) pre-claim contract; the 154-S clauses are a workspace-local overlay excluded from upstream template sync;     generic hold-label text is an upstream template sync candidate. 6434A4D7 governed queued-shipment disposition role contract; upstream template sync pending"
+    drift_reason: "Deliberate Ship drift: preserve the scalar tools string with vscode/memory, the full backlogit/* MCP tool surface (operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so do not narrow it back to an explicit backlogit operation allowlist), engram/*, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, kbdb/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix. 196-F / shipment 196-S: Step 6 item a explicit-feature reconcile wording (stash B83081F5) and the Step 4.0 / Step 4.1b use-time Served-Root Attestation (stash 227A2930), plus the Step 0.5 item 3a write of the Orchestrator-supplied served-root handoff outcome after BRANCH_OK or BRANCH_CREATED (local review, PR #478). Do not auto-revert. CX U17 refresh (197-S): checksum refreshed to the LF-normalized SHA-256 for the ship closure protocol and gate correctness release; governing stash 75E02C17, 52D18E44, 497D20E3, 67F17B6B, FBD6E6F8,     8F1CF1E1, 6AB5E7FC, F05661B1. AF1E5075 hold-label refusal and condition (b) pre-claim contract; the 154-S clauses are a workspace-local overlay excluded from upstream template sync;     generic hold-label text is an upstream template sync candidate. 6434A4D7 governed queued-shipment disposition role contract; upstream template sync pending"
   - path: ".github/skills/harness-architect/SKILL.md"
     primitive: 1
     template: "templates/skills/harness-architect/SKILL.md.tmpl"
@@ -426,53 +383,53 @@ artifacts:
   - path: ".github/instructions/capability-pack-enforcement.instructions.md"
     primitive: 6
     template: "templates/instructions/capability-pack-enforcement.instructions.md.tmpl"
-    checksum: "57ee627109e698d9fb3117606dcdab2b1c85b546599d8fd889aa8a2c7984ccdc"
+    checksum: "c90601df4145ee144cd2a945ac159793a0cd13d7a66656f6b718f63d8f1abe27"
   - path: ".github/instructions/escalation-protocol.instructions.md"
     primitive: 1
     template: "templates/instructions/escalation-protocol.instructions.md.tmpl"
-    checksum: "b2aebdbe89dd52cc9f069a449988726ad43bcb9a9160f66a708817162e518e98"
+    checksum: "b06cd0fa8176bbcbbf7497dbd82c0e273c1f3e83e0d88663b010e8385be95dd7"
   - path: ".github/instructions/copilot-code-review.instructions.md"
     primitive: 7
     template: "templates/instructions/copilot-code-review.instructions.md.tmpl"
-    checksum: "0171d541f30cf41f2424cdce24825428a58ed920c0def427406be96d44b5ea71"
+    checksum: "ac5e264cfe41c1ab72b2626a39e63416093743e2e9ffee0edc014e6906fac807"
     note: "GitHub Copilot code-review focus instruction; installed 2026-08-30 (adversarial-verification pass) because this workspace is GitHub-hosted (origin -> github.com/softwaresalt/backlogit) and verify-harness requires the focus surface. Rendered byte-identically from the 1.5.0 template with PROJECT_NAME=backlogit and a Go/backlogit-specific HARNESS_ENFORCED_SUMMARY; applyTo '**' and excludeAgent 'cloud-agent' preserved. Complements — does not replace — the hand-authored .github/copilot-review-instructions.md. Base-branch activated: takes effect for code review only after merge. Checksum is EOL-normalized (LF), matching this manifest's convention. 073-DL E5: the HARNESS_ENFORCED_SUMMARY render input and this rendered consumer were migrated together to the governed `go test -timeout=30m ./...` budget."
   - path: ".github/instructions/coding-discipline.instructions.md"
     primitive: 5
     template: "templates/instructions/coding-discipline.instructions.md.tmpl"
-    checksum: "067919a1656641d778789eb5fde6880ea0f10f566ab43eebe0ebe5cb0dff823d"
+    checksum: "84aa2e5a1735a91bcde536c98ed3d4a61c0035e8acb84e6bfd072a5b92141060"
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Variable-free template; rendered byte-identically."
   - path: ".github/instructions/output-timestamps.instructions.md"
     primitive: 5
     template: "templates/instructions/output-timestamps.instructions.md.tmpl"
-    checksum: "c5d03cbc77166995a9e0f036133fb34dc8833ddd5947f2068b3cfd27e6eb389d"
+    checksum: "e3d13425eab8ca25505b0db9bf8fc8c935b743fe493b4362c3aafe12c076b536"
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Variable-free template; rendered byte-identically."
   - path: ".github/agents/review/correctness-reviewer.agent.md"
     primitive: 8
     template: "templates/agents/review/correctness-reviewer.agent.md.tmpl"
-    checksum: "d54bf9c8e04eab88802867c12dd103b719fa9d662b64068ba7c287168fd81e95"
+    checksum: "2b4d1550664e9e78e4387f34bef85561256f58604a3499d2077aa9b43820e889"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Added the missing `model_tier: 1`. P-013.4 requires every agent definition to declare both integer tier fields; this persona declared only `max_subagent_tier`, matching neither the policy nor its sibling Tier-1 personas. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Tier-1 routing rendered from config.model_routing.tier1. Placed in .github/agents/review/ to match this workspace's established persona layout (the deterministic verifier passes against that layout)."
   - path: ".github/agents/review/maintainability-reviewer.agent.md"
     primitive: 8
     template: "templates/agents/review/maintainability-reviewer.agent.md.tmpl"
-    checksum: "950c608b1ee0200406a147fb9211faeaeb3e1771308de0b642a3830a9a30c8ac"
+    checksum: "03ca9a3b5055e2e7e11b10868339406253304ba58fd3f1a25104701bbed83fa5"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Added the missing `model_tier: 1`. P-013.4 requires every agent definition to declare both integer tier fields; this persona declared only `max_subagent_tier`, matching neither the policy nor its sibling Tier-1 personas. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Same tier-1 rendering and layout rationale as correctness-reviewer."
   - path: ".github/skills/brainstorm/SKILL.md"
     primitive: 2
     template: "templates/skills/brainstorm/SKILL.md.tmpl"
-    checksum: "4e0bc31fd5850ad8a5bad14d095ed8c46e624958347fcc11bdeacbd7b81edd66"
+    checksum: "3eb9c1deaf4de5a2fbfc2175abd8ff43dbe2540cd2fc16bf294939d741ad0a96"
     drift_allowed: true
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Backlog directory (.backlogit), docs subdirectories, and backlog field names rendered from config.yaml. DELIBERATE UPSTREAM DIVERGENCE (do not revert on a future auto-tune): the template's title heading is `## Brainstorm`, which violates this repo's P-008 markdownlint gate (MD041 first-line-h1) and is inconsistent with all 24 other installed skills, every one of which uses a single `#` title. Demoted-to-promoted to `# Brainstorm`; no other heading changed (the `# <Topic>` at the artifact-template section is inside a fenced block, so MD025 does not fire). Report upstream; drop this divergence once the template is fixed."
   - path: ".github/skills/doc-review/SKILL.md"
     primitive: 8
     template: "templates/skills/doc-review/SKILL.md.tmpl"
-    checksum: "3212a7c691d72f2446f3723384cc5c8195931d7f997c8bb0931186a41b222ca9"
+    checksum: "3f06da8da25f286f5893310771d0f3091c24cb89c808746beca7a46381acaa87"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). The skill unconditionally required a `ping` call at session start, but agent-intercom is not in capability_packs for this workspace, so doc-review would open with a nonexistent tool call and report an intentionally absent optional pack as degraded. Made communication conditional using the same wording the review skill already uses. Do not auto-revert. Round-3 fix: made skill `name` optional in Check 2 (14 of 25 installed skills omit it) and added a disabled-capability-pack exemption to Checks 4 and 5 so conditional references to the intentionally-absent agent-intercom instruction file are not reported as broken. Round-4 fix: the gated_auto action class named agent-intercom as its default owner, which is unavailable here and contradicted the skill's own Operator Communication section; retargeted to the local strict-safety decision gate with intercom as the installed-only route. Round-5 fix: the tier-annotation check asserted there is no `model_tier` frontmatter field and verified only `max_subagent_tier`, which is the opposite of P-013.4; it now requires both integer fields."
-    note: "Installed 2026-08-31 (1.5.0 merge-install gap pass); alternate doc-review route bound 2026-08-31. ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY resolve to google / gemini-3.8-flash from config.yaml model_routing.alt_doc_review (family refreshed 2026-09-28 per 075-DL). Google is deliberately a third provider (tiers are mostly Anthropic, escalation/anchor are OpenAI) so the documentation review pass is least likely to share blind spots with whichever model authored the docs. Clear either field in config.yaml AND in variables_used to fall back to Tier 2."
+    note: "Installed 2026-08-31 (1.5.0 merge-install gap pass); alternate doc-review route bound 2026-08-31. ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY resolve to google / gemini-4-hydrogen from config.yaml model_routing.alt_doc_review (family refreshed by the 2026-11-18 tune). Google is deliberately a third provider so the documentation review pass is less likely to share blind spots with whichever model authored the docs. Clear either field in config.yaml AND in variables_used to fall back to Tier 2."
   - path: "scripts/pre-commit-markdownlint.ps1"
     primitive: 6
     template: "templates/scripts/pre-commit-markdownlint.ps1.tmpl"
@@ -516,25 +473,85 @@ artifacts:
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Gate C ambient CI backstop entrypoint. Invoked by the additive topology-check job appended to the hand-written .github/workflows/ci.yml; that workflow is NOT a managed artifact and was edited additively (no needs:, not gated on the changes filter, continue-on-error driven by the PIPELINE_TOPOLOGY_GATE_REQUIRED repo variable so the gate is advisory until an operator opts in)."
   - path: "scripts/deploy-harness.ps1"
     primitive: 6
-    template: "templates/scripts/deploy-harness.ps1.tmpl"
-    checksum: "3b28dc6474c6c855dc0c397d2ef3284c86f2168f0702862d256fefc995c3f338"
+    template: "workspace-owned legacy deploy script"
+    checksum: "bebdc6ae1f6290040beb9496ae7c98ae3cd439d3389481bf8c5d1901cabb3fdb"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Bootstrap reused a pre-existing autoharness_home with no version check and installed unpinned, so a clean or default deployment could silently hand off to an installer older than the 1.5.0 gates and schema these artifacts require. Added AutoharnessMinVersion, Get-ResolvedVersion (via `autoharness version`), and a Test-HomeVersion gate applied to both the reuse path and the post-install path; pip bootstrap now installs autoharness>=<min>. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Rendered with preset=full, register target=copilot-cli, install method=pip."
   - path: "scripts/deploy-harness.sh"
     primitive: 6
-    template: "templates/scripts/deploy-harness.sh.tmpl"
-    checksum: "de7e303d01f1a9fe79933f8f2f86ac45c68ef066f56522d7114a18e8811c5a82"
+    template: "workspace-owned legacy deploy script"
+    checksum: "69c0d336b2af1fe240db3a45d032ded68c70fd9ddca9fe610dbee9d7572af3aa"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Bootstrap reused a pre-existing autoharness_home with no version check and installed unpinned, so a clean or default deployment could silently hand off to an installer older than the 1.5.0 gates and schema these artifacts require. Added AUTOHARNESS_MIN_VERSION, version_lt / resolved_version (via `autoharness version`), and a verify_home_version gate applied to both the reuse path and the post-install path; pip bootstrap now installs autoharness>=<min>. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Passes bash -n."
   - path: "start.sh"
     primitive: 6
     template: "templates/scripts/start.sh.tmpl"
-    checksum: "7567627c335f01d2a1639dee2e0bce744537c31ac0f5b746e07d70a75589f420"
-    drift_reason: "Two deliberate upstream divergences. (1) The template's final exec uses \"${copilot_arguments[@]:-}\", which under set -u expands an EMPTY array to one empty-string word and passes a spurious empty argument to copilot; rendered instead with ${copilot_arguments[@]+\"${copilot_arguments[@]}\"}. (2) Copilot review fix (PR #400): the template emits a graphtor-docs sync branch guarded by _sidecar_enabled. graphtor-docs is READ-ONLY inside a workspace and NEVER indexes one, so that branch was removed outright rather than left unreachable via enabled_sidecars, where re-enabling the sidecar would silently reactivate workspace ingestion. Do not auto-revert."
+    checksum: "f1d3de53c2d105e93d9899cd29291ce7c101a87ce060b1c102507a2bdb3c359f"
+    drift_reason: "Two deliberate upstream divergences. (1) The template's final exec uses \"${copilot_arguments[@]:-}\", which under set -u expands an EMPTY array to one empty-string word and passes a spurious empty argument to copilot; rendered instead with ${copilot_arguments[@]+\"${copilot_arguments[@]}\"}. (2) Copilot review fix (PR #400): the template emits a kbdb sync branch guarded by _sidecar_enabled. kbdb is READ-ONLY inside a workspace and NEVER indexes one, so that branch was removed outright rather than left unreachable via enabled_sidecars, where re-enabling the sidecar would silently reactivate workspace ingestion. Do not auto-revert."
     drift_allowed: true
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). LF line endings; sidecars rendered as (\"backlogit\" \"engram\"). DELIBERATE UPSTREAM DIVERGENCE (do not revert on a future auto-tune): the template's final exec line uses \"${copilot_arguments[@]:-}\", which under set -u expands an EMPTY array to one empty-string word and passes a spurious empty argument to copilot (empirically confirmed). Rendered instead with the set -u-safe idiom ${copilot_arguments[@]+\"${copilot_arguments[@]}\"}. Report upstream; drop this divergence once the template is fixed."
+  - path: ".github/skills/browser-automation/SKILL.md"
+    primitive: 10
+    template: "templates/skills/browser-automation/SKILL.md.tmpl"
+    checksum: "c92c6a5ff151ef8df039ea65aa61c6443bf11789dfe62f14ae952f7cf6a555bc"
+  - path: ".github/skills/evolve/SKILL.md"
+    primitive: 1
+    template: "templates/skills/evolve/SKILL.md.tmpl"
+    checksum: "2195adcca4deaa9d8cefb97ab878a19b78a85801441caef0a87be74df7d46c77"
+  - path: ".github/skills/grill-me/SKILL.md"
+    primitive: 4
+    template: "templates/skills/grill-me/SKILL.md.tmpl"
+    checksum: "871cc9e169048b6228a2c518ec4520cb1ee7deb4737f5f5014602ddc0189fbf4"
+  - path: ".github/skills/gsd-dark-mode/SKILL.md"
+    primitive: 4
+    template: "templates/skills/gsd-dark-mode/SKILL.md.tmpl"
+    checksum: "7180207f71037c7e8b90739ace9a08c0e8319a617607e4941f0ec6ee84f2c34c"
+  - path: ".github/skills/gsd-show-dag-queue/SKILL.md"
+    primitive: 4
+    template: "templates/skills/gsd-show-dag-queue/SKILL.md.tmpl"
+    checksum: "a9daf630a7837ad8a594844c856b43c65c882e8a95a466bbaea831567f7883b9"
+  - path: ".github/skills/learn/SKILL.md"
+    primitive: 1
+    template: "templates/skills/learn/SKILL.md.tmpl"
+    checksum: "390253090f45599d1f9c3eb5aea957902f651f2d204bbb40cf1be0785f640b18"
+  - path: ".github/skills/observe/SKILL.md"
+    primitive: 1
+    template: "templates/skills/observe/SKILL.md.tmpl"
+    checksum: "074bc1b48b21d6b8f884abe3df5ccd1ede04702f0f2e17b8fe79a78f878b9c91"
+  - path: ".github/prompts/gsd-dark-mode.prompt.md"
+    primitive: 4
+    template: "templates/prompts/gsd-dark-mode.prompt.md.tmpl"
+    checksum: "c5fa996a06d607383a477ccf63067fa8714714db7b747027455e3fc980cdac8a"
+  - path: ".github/prompts/gsd-show-dag-queue.prompt.md"
+    primitive: 4
+    template: "templates/prompts/gsd-show-dag-queue.prompt.md.tmpl"
+    checksum: "3e4646de993fa092de79cf5fe4e857950fa5aa389ec87c987173e5dc61730e27"
+  - path: ".github/skills/install-harness/SKILL.md"
+    primitive: 4
+    template: "workspace-owned trusted source checkout"
+    checksum: "36452b7547fb003506d870c9b2bf34a22a84eaba61367e1bb67ab2fc75945678"
+  - path: ".github/skills/tune-harness/SKILL.md"
+    primitive: 1
+    template: "workspace-owned trusted source checkout"
+    checksum: "a1e6b13c0304ce274917b3f176bba47c7bff334e4c05f5a58e00fe583376f33b"
+  - path: ".github/skills/verify-harness/SKILL.md"
+    primitive: 7
+    template: "workspace-owned trusted source checkout"
+    checksum: "817b8db39f1a479b9baa2f77426ede61e7053672319b4267fe9b93f249d80b9d"
+  - path: ".github/skills/workspace-discovery/SKILL.md"
+    primitive: 9
+    template: "workspace-owned trusted source checkout"
+    checksum: "5222c684f4a9715b0f269c8a4ab260b2c9ac7b4f5b5849e33655072b932933e6"
+  - path: ".github/prompts/install-harness.prompt.md"
+    primitive: 4
+    template: "workspace-owned trusted source checkout"
+    checksum: "0f6cbd2932f071507d1d691418e3b2461af6bb406254d760807e8191cc311792"
+  - path: ".github/prompts/tune-harness.prompt.md"
+    primitive: 1
+    template: "workspace-owned trusted source checkout"
+    checksum: "395f35903b54a40b6135b0128ec7fb4cea0c88237da1a85f5e5abf0fb069c3b6"
 variables_used:
   # --- Added 2026-08-31 (1.5.0 merge-install gap pass) ---
   # Bindings required by the newly installed doc-review skill, the P-019 pre-push
@@ -547,7 +564,7 @@ variables_used:
   # deliberate third provider for cross-model doc-review diversity. Clear either
   # field in config.yaml AND here to fall back to Tier 2.
   ALT_DOC_REVIEW_PROVIDER: "google"
-  ALT_DOC_REVIEW_FAMILY: "gemini-3.8-flash"
+  ALT_DOC_REVIEW_FAMILY: "gemini-4-hydrogen"
   LINT_TOOL: "golangci-lint"
   FORMAT_TOOL: "gofmt"
   # Go has no distinct typecheck binary; `go vet ./...` is Gate 2 in AGENTS.md and
@@ -559,21 +576,21 @@ variables_used:
   DEFAULT_PRESET: "full"
   DEFAULT_REGISTER_ENV: "copilot-cli"
   DEFAULT_INSTALL_METHOD: "pip"
-  AUTOHARNESS_HOME_DEFAULT: "$HOME/.autoharness"
+  AUTOHARNESS_HOME_DEFAULT: "$HOME/.gsd"
   PACK_REGISTRY_PATH: "templates/packs/capability-pack-registry.yaml"
   COPILOT_EXE_PATH: "copilot"
   INSTALL_PRESET: "full"
-  CAPABILITY_PACKS: "backlogit,strict-safety,agent-engram,adversarial-review,release-observability,continuous-learning,graphtor-docs"
-  # --- Added 2026-08-31 (continuous-learning + graphtor-docs pack enablement) ---
+  CAPABILITY_PACKS: "backlogit,agent-engram,kbdb"
+  # --- Added 2026-08-31 (continuous-learning + kbdb pack enablement) ---
   # CONTINUOUS_LEARNING_* resolve from config.yaml `continuous_learning`.
-  # GRAPHTOR_* resolve from workspace-profile.yaml `graphtor_docs`.
+  # GRAPHTOR_* resolve from workspace-profile.yaml `kbdb`.
   # Values match exactly what was rendered into the installed instruction files.
-  CONTINUOUS_LEARNING_DIR: ".autoharness/continuous-learning"
+  CONTINUOUS_LEARNING_DIR: ".gsd/continuous-learning"
   CONTINUOUS_LEARNING_CAPTURE_HOOKS: "false"
   CONTINUOUS_LEARNING_ENVIRONMENT_ADAPTER: "none"
   CONTINUOUS_LEARNING_PROMOTION_THRESHOLD: "5"
   GRAPHTOR_SOURCES_PATH: ".graphtor/config/sources.yaml"
-  GRAPHTOR_BINARY_PATH: ".graphtor/bin/graphtor-docs.exe"
+  GRAPHTOR_BINARY_PATH: ".bin/kbdb.exe"
   BACKLOG_TOOL_NAME: "backlogit"
   BACKLOG_DIRECTORY: ".backlogit"
   PREFIX_FEATURE: "F"
@@ -592,7 +609,7 @@ variables_used:
   DOCS_PRODUCT_SPECS_DIR: "product-specs"
   MODEL_ROUTING_TIER1: "claude-haiku-5.5"
   MODEL_ROUTING_TIER2: "claude-sonnet-5.5"
-  MODEL_ROUTING_TIER3: "claude-sonnet-5.5"
+  MODEL_ROUTING_TIER3: "gemini-4-argon"
   PRIMARY_LANGUAGE: "Go"
   LANGUAGE_VERSION: "1.24.0"
   BUILD_COMMAND: "go build ./cmd/backlogit"
@@ -614,7 +631,7 @@ variables_used:
   BACKLOG_MCP_REGISTERED: "true"
   BACKLOG_CLI_AVAILABLE: "true"
   BACKLOG_CONFIG_PATH: ".backlogit/config.yaml"
-  BACKLOG_REGISTRY_PATH: ".autoharness/backlog-registry.yaml"
+  BACKLOG_REGISTRY_PATH: ".gsd/backlog-registry.yaml"
   COMMIT_STYLE: "conventional commits"
   WORKSPACE_PATH: "C:\\Source\\GitHub\\backlogit"
   REPO_OWNER: "softwaresalt"
@@ -624,12 +641,20 @@ variables_used:
   ANCHOR_REVIEW_PROVIDER: "openai"
   ANCHOR_REVIEW_FAMILY: "gpt-6.1-sol"
   ANCHOR_REVIEW_REASONING_EFFORT: "high"
-  # P-013.6 auto-escalation route (role-neutral base: flat escalation -> tier3 fallback).
-  # Ship declares a nested ship.escalation override (claude-sonnet-5.5 / anthropic / high / long_context);
-  # Stage has no nested override and resolves to tier3 (claude-sonnet-5.5 / anthropic / xhigh / default).
-  ESCALATION_FAMILY: "claude-sonnet-5.5"
-  ESCALATION_PROVIDER: "anthropic"
-  ESCALATION_REASONING_EFFORT: "xhigh"
+  # P-013.6 render seed. No flat route is configured, so the role-neutral
+  # ESCALATION_* fallback resolves to tier3. Per-role resolver values are
+  # recorded separately below and remain authoritative when nested blocks exist.
+  ESCALATION_FAMILY: "gemini-4-argon"
+  ESCALATION_PROVIDER: "google"
+  ESCALATION_REASONING_EFFORT: "high"
+  STAGE_ESCALATION_FAMILY: "gpt-6.1-sol"
+  STAGE_ESCALATION_PROVIDER: "openai"
+  STAGE_ESCALATION_REASONING_EFFORT: "high"
+  STAGE_ESCALATION_CONTEXT_TIER: "long_context"
+  SHIP_ESCALATION_FAMILY: "gpt-6.1-sol"
+  SHIP_ESCALATION_PROVIDER: "openai"
+  SHIP_ESCALATION_REASONING_EFFORT: "medium"
+  SHIP_ESCALATION_CONTEXT_TIER: "long_context"
   PROJECT_NAME: "backlogit"
   HARNESS_ENFORCED_SUMMARY: |
     * Go formatting, linting, and vet mechanics (`gofmt -l .`, `golangci-lint run`, `go vet ./...`)
@@ -639,7 +664,7 @@ variables_used:
     * Role-boundary enforcement (P-010) and single-worktree topology (P-016)
     * Backlog and shipment bookkeeping conventions (backlogit)
     * Template variable-completeness and cross-reference integrity checks
-  HARNESS_MANIFEST_PATH: ".autoharness/harness-manifest.yaml"
+  HARNESS_MANIFEST_PATH: ".gsd/harness-manifest.yaml"
   AUTOHARNESS_VERSION: "1.6.0"
   VARIABLE: "template variable"
   LANGUAGE_FILE_GLOB: "**/*.go"
@@ -716,6 +741,20 @@ variables_used:
     - File globs: `internal/mcp/**`, `internal/db/**`, `internal/core/**`, `internal/events/**`, `**/auth*.go`,
       `**/middleware*.go`.
     - Keywords: `login`, `token`, `password`, `permission`, `role`, `secret`, `key`, `credential`.
+  BROWSER_CLI: "agent-browser"
+  BROWSER_HEADLESS_FLAG: "--headless"
+  BUILD_CHECK_COMMAND: "go test -run=^$ -count=1 ./..."
+  DEFAULT_BRANCH: "main"
+  DOCS_CLOSURE: "docs/closure"
+  DOCS_COMPOUND: "docs/compound"
+  DOCS_DECISIONS: "docs/decisions"
+  DOCS_MEMORY: "docs/memory"
+  DOCS_PLANS: "docs/plans"
+  DOCS_PRODUCT_SPECS: "docs/product-specs"
+  FEATURE_SHIPMENTS: "true"
+  MAX_WAIT: "600"
+  STATUS_ACTIVE: "active"
+  STATUS_QUEUED: "queued"
 tuning_history:
   - at: "2026-04-05T18:53:02.3114814Z"
     summary: "Adopted remaining worthwhile foundation drift by merging root guidance docs and generic backlog abstraction instructions into backlogit."
@@ -762,8 +801,8 @@ tuning_history:
   - at: "2026-04-13T01:50:00Z"
     summary: "Recovery tuning: registered 13 untracked artifacts and 4 new capability packs in manifest. Removed deleted deliberator.agent.md entry. Wove file-lock and skill-search into AGENTS.md and copilot-instructions.md skill tables. Added adversarial-review escalation to review skill Step 4a. Added circuit-breaker, concurrency, release-observability, and adversarial-review references to AGENTS.md Where to look next table. Updated deprecated agents section to reflect archived status. Refreshed all stale checksums."
     artifacts:
-      - ".autoharness/harness-manifest.yaml"
-      - ".autoharness/workspace-profile.yaml"
+      - ".gsd/harness-manifest.yaml"
+      - ".gsd/workspace-profile.yaml"
       - "AGENTS.md"
       - ".github/copilot-instructions.md"
       - ".github/skills/review/SKILL.md"
@@ -791,8 +830,8 @@ tuning_history:
       - ".github/instructions/backlogit.instructions.md"
       - ".github/instructions/architecture-doc.instructions.md"
       - ".github/skills/safety-modes/SKILL.md"
-      - ".autoharness/harness-manifest.yaml"
-      - ".autoharness/workspace-profile.yaml"
+      - ".gsd/harness-manifest.yaml"
+      - ".gsd/workspace-profile.yaml"
   - at: "2026-04-26T00:00:00Z"
     summary: "Targeted tuning for 3 check failures from verify-workspace. TUNE-001: stage.agent.md \u2014 added Step Sequence Contract, Step 5.5 Shipment Assembly (NON-NEGOTIABLE with backlogit_create_shipment/backlogit_add_to_shipment), Step 5.6 Archive Stash Entries, Pre-Summary Verification Gate, Behavioral Constraints section, updated Session Completion handoff to reference shipment ID. Replaced 'Do not create shipments from this agent' with shipment-mandatory contract. TUNE-002: ship.agent.md \u2014 added branch retention (NON-NEGOTIABLE, before merge gate), Step 6.0 Post-Merge Branch Protocol (post-merge/feature_slug branch for closure work), Branch Management Rules section. TUNE-003: pr-lifecycle/SKILL.md \u2014 added branch retention to Step 5, expanded Step 6 with post-merge branch guidance."
     artifacts:
@@ -800,13 +839,13 @@ tuning_history:
       - ".github/agents/ship.agent.md"
       - ".github/skills/pr-lifecycle/SKILL.md"
   - at: "2026-04-28T00:00:00Z"
-    summary: "Harness tuning after PR #79 merge (npm/Copilot CLI plugin distribution). Regression remediation for TUNE-001/002 (stage/ship agent guardrails had regressed due to prior fix not surviving branch lifecycle). New: TUNE-003 source artifact cleanup in ship.agent.md. Learning-driven P1 additions: TUNE-004 error-type selection table in go.instructions.md (incorrect_error_type x5 compound entries), TUNE-005 schema synchronization rules (schema_mismatch x5). All 19 targeted checks pass post-tune. Backups at .autoharness/backups/2026-04-28/."
+    summary: "Harness tuning after PR #79 merge (npm/Copilot CLI plugin distribution). Regression remediation for TUNE-001/002 (stage/ship agent guardrails had regressed due to prior fix not surviving branch lifecycle). New: TUNE-003 source artifact cleanup in ship.agent.md. Learning-driven P1 additions: TUNE-004 error-type selection table in go.instructions.md (incorrect_error_type x5 compound entries), TUNE-005 schema synchronization rules (schema_mismatch x5). All 19 targeted checks pass post-tune. Backups at .gsd/backups/2026-04-28/."
     artifacts:
       - ".github/agents/stage.agent.md"
       - ".github/agents/ship.agent.md"
       - ".github/instructions/go.instructions.md"
   - at: "2026-05-11T00:00:00Z"
-    summary: "Merge-install v1.4.0: 73 templates processed from D:\\Source\\GitHub\\autoharness\\templates. 14 new artifacts installed, 56 existing updated with backups at .autoharness/backups/2026-05-11/. New: context-efficiency, role-enforcement, github-pr-automation, continuous-learning instructions; technology.instructions.md (generic); security-sentinel agent; security-lens-reviewer, security-reviewer personas; harness-doctor, iterative-experiment, security-audit, shipment-reconcile skills; policy-proposal policy template; stage-grouping-analysis prompt. All variables resolved (166 entries). DOCS_PLANS corrected to docs/exec-plans per workspace config."
+    summary: "Merge-install v1.4.0: 73 templates processed from D:\\Source\\GitHub\\autoharness\\templates. 14 new artifacts installed, 56 existing updated with backups at .gsd/backups/2026-05-11/. New: context-efficiency, role-enforcement, github-pr-automation, continuous-learning instructions; technology.instructions.md (generic); security-sentinel agent; security-lens-reviewer, security-reviewer personas; harness-doctor, iterative-experiment, security-audit, shipment-reconcile skills; policy-proposal policy template; stage-grouping-analysis prompt. All variables resolved (166 entries). DOCS_PLANS corrected to docs/exec-plans per workspace config."
     artifacts:
       - "AGENTS.md"
       - ".github/copilot-instructions.md"
@@ -891,9 +930,9 @@ tuning_history:
       - ".github/agents/research/*"
       - ".github/agents/subagents/prompt-builder.agent.md"
       - "scripts/*"
-      - ".autoharness/backlog-registry.yaml"
+      - ".gsd/backlog-registry.yaml"
   - at: "2026-08-30T18:46:31-07:00"
-    summary: "Auto-Tune 1.5.0 merge-tune completing an in-progress update. Identity migration: .github/agents/.stage.agent.md -> _stage.agent.md (name _Stage) and .github/agents/.ship.agent.md -> _ship.agent.md (name _Ship), with all cross-references updated (harness-architect/SKILL.md, shipment-reconcile/SKILL.md). Merged current 1.5.0 Crash-Resumption / Startup Recovery Protocol into Stage, Ship, and the Orchestrator's Crash-Resumption Protocol (Step 0.0b), replacing the superseded auto-resume SESSION_START/RECOVERY_DECISION/RESUME_FROM_CHECKPOINT/FRESH_START state machine with the fail-closed, owner-exclusive, operator-confirmed protocol. Added Orchestrator P-013.5 invocation-time model-routing enforcement (Stage/Ship route resolution + ROUTING_DEGRADED), TOPOLOGY_GATE pre_claim markers (route-to-Ship eligibility and cursor-advance eligibility), Session-Start Dynamic Reload (E8B5B3C5/H6), and the H7 inherited-skill routing-propagation marker. Added the P-013.6 auto-escalation protocol: new .github/instructions/escalation-protocol.instructions.md, full Escalation Protocol sections in Stage (new) and Ship (expanded from the prior 3-step stub). Added .github/instructions/backlogit.instructions.md Checkpoint-Recovery / Prune-on-Restore Protocol section (Prune allowlist, agent-engram conditioning, operator handoff). Fixed Ship's Source artifact cleanup bullet to call the current backlogit_stash_archive tool instead of the deprecated backlogit_stash_remove. Added .github/instructions/capability-pack-enforcement.instructions.md (agent-engram-only route/deferral rows, matching the enabled capability_packs set; graphtor-docs not installed). Removed agent-intercom from capability_packs/config/profile detection (already completed in prior session) and deleted the two dedicated intercom-only artifacts: .github/instructions/agent-intercom.instructions.md and .github/prompts/ping-loop.prompt.md (standard 'when installed' conditional mentions of agent-intercom elsewhere in skills/instructions are canonical 1.5.0 template text for an optional, currently-disabled pack and were left in place). Resolved all staged template placeholders with Go/workspace-specific manifest bindings and excluded policy-proposal.md from active rendering because it is a proposal scaffold that requires concrete evidence values. Refreshed manifest artifact inventory, checksums, autoharness_version/source, variables_used, and tuned_at."
+    summary: "Auto-Tune 1.5.0 merge-tune completing an in-progress update. Identity migration: .github/agents/.stage.agent.md -> _stage.agent.md (name _Stage) and .github/agents/.ship.agent.md -> _ship.agent.md (name _Ship), with all cross-references updated (harness-architect/SKILL.md, shipment-reconcile/SKILL.md). Merged current 1.5.0 Crash-Resumption / Startup Recovery Protocol into Stage, Ship, and the Orchestrator's Crash-Resumption Protocol (Step 0.0b), replacing the superseded auto-resume SESSION_START/RECOVERY_DECISION/RESUME_FROM_CHECKPOINT/FRESH_START state machine with the fail-closed, owner-exclusive, operator-confirmed protocol. Added Orchestrator P-013.5 invocation-time model-routing enforcement (Stage/Ship route resolution + ROUTING_DEGRADED), TOPOLOGY_GATE pre_claim markers (route-to-Ship eligibility and cursor-advance eligibility), Session-Start Dynamic Reload (E8B5B3C5/H6), and the H7 inherited-skill routing-propagation marker. Added the P-013.6 auto-escalation protocol: new .github/instructions/escalation-protocol.instructions.md, full Escalation Protocol sections in Stage (new) and Ship (expanded from the prior 3-step stub). Added .github/instructions/backlogit.instructions.md Checkpoint-Recovery / Prune-on-Restore Protocol section (Prune allowlist, agent-engram conditioning, operator handoff). Fixed Ship's Source artifact cleanup bullet to call the current backlogit_stash_archive tool instead of the deprecated backlogit_stash_remove. Added .github/instructions/capability-pack-enforcement.instructions.md (agent-engram-only route/deferral rows, matching the enabled capability_packs set; kbdb not installed). Removed agent-intercom from capability_packs/config/profile detection (already completed in prior session) and deleted the two dedicated intercom-only artifacts: .github/instructions/agent-intercom.instructions.md and .github/prompts/ping-loop.prompt.md (standard 'when installed' conditional mentions of agent-intercom elsewhere in skills/instructions are canonical 1.5.0 template text for an optional, currently-disabled pack and were left in place). Resolved all staged template placeholders with Go/workspace-specific manifest bindings and excluded policy-proposal.md from active rendering because it is a proposal scaffold that requires concrete evidence values. Refreshed manifest artifact inventory, checksums, autoharness_version/source, variables_used, and tuned_at."
     artifacts:
       - ".github/agents/_stage.agent.md"
       - ".github/agents/_ship.agent.md"
@@ -903,10 +942,10 @@ tuning_history:
       - ".github/instructions/capability-pack-enforcement.instructions.md"
       - ".github/skills/harness-architect/SKILL.md"
       - ".github/skills/shipment-reconcile/SKILL.md"
-      - ".autoharness/harness-manifest.yaml"
-      - ".autoharness/workspace-profile.yaml"
+      - ".gsd/harness-manifest.yaml"
+      - ".gsd/workspace-profile.yaml"
   - at: "2026-08-30T19:55:00-07:00"
-    summary: "Adversarial-verification remediation pass on top of the same-day 1.5.0 merge-tune. Anchor reviewer route gpt-5.6-sol/openai/high. Merged current-1.5 content into agent-engram.instructions.md (capability-pack-enforcement coordinator paragraph + explicit structural-routing-before-grep mandate + trivial single-file direct-tool exemption; existing observability/diagnostics additions preserved). Added engram/* to the tools frontmatter of _stage and _ship; removed the disabled graphtor-docs tool from _orchestrator and added memory + engram/*. Made the review skill's session-start ping/broadcast conditional on agent-intercom (local session output + strict-safety local operator approval when absent) and rerouted gated_auto accordingly; replaced the unconditional grep/glob context directive with capability-pack-enforcement classification and engram-first structural routing that preserves direct-tool exemptions and fallback. Replaced Ship's dangling active P-017 authority reference to agent-intercom.instructions.md with a conditional broadcast plus local session/PR-summary fallback and fail-closed approval behavior, and corrected Step 4.4 so standard review runs first and adversarial review supplements it only on the configured escalation criteria. Added ANCHOR_REVIEW_PROVIDER/FAMILY/REASONING_EFFORT, PROJECT_NAME, and HARNESS_ENFORCED_SUMMARY manifest bindings and merged current 1.5 content into adversarial-review.instructions.md and adversarial-review.agent.md (empty ALT_REVIEW_* values are intentional). Corrected escalation-protocol.instructions.md legacy-flat-route prose (config now declares model_routing.escalation gpt-5.4/openai/high, applied when no nested role override exists) and reworked the degraded example so Stage's current flat escalation is shown as distinct from tier3 and NOT degraded, preserving the generic same-route rule. Added the full rendered 1.5 Shipment Sequencing Protocol to backlogit.instructions.md between Queue-and-Dependency and Hook Signal (workspace checkpoint-disposition content preserved). Adopted the current rendered shipment-reconcile/SKILL.md (188 -> 1082+ lines) including Shipment-Record-Status Classification, Mixed-Role Detection Classification, Safe-Close Mode, Cascade Close Sub-Procedure, Mixed-Role Detection Mode, and the Deterministic Safe-Close Scenario Matrix, re-applying the workspace-specific 143-F halted-archival third branch and correcting the self-hosting gate cross-reference. Added the validator-evidence -> closure releasability/final-readiness mapping bullet to release-observability.instructions.md and status: done to the backlog-integration Completing-a-Task example. Installed .github/instructions/copilot-code-review.instructions.md from the 1.5.0 template (GitHub-hosted focus surface; PROJECT_NAME=backlogit; Go/backlogit HARNESS_ENFORCED_SUMMARY; applyTo '**' + excludeAgent 'cloud-agent'), complementing rather than replacing .github/copilot-review-instructions.md. Refreshed LF-normalized SHA-256 checksums for every artifact changed this pass and normalized four legacy raw-byte checksum entries to the manifest's dominant convention. autoharness_version remains 1.5.0; no agent-intercom pack or artifact was reintroduced."
+    summary: "Adversarial-verification remediation pass on top of the same-day 1.5.0 merge-tune. Anchor reviewer route gpt-5.6-sol/openai/high. Merged current-1.5 content into agent-engram.instructions.md (capability-pack-enforcement coordinator paragraph + explicit structural-routing-before-grep mandate + trivial single-file direct-tool exemption; existing observability/diagnostics additions preserved). Added engram/* to the tools frontmatter of _stage and _ship; removed the disabled kbdb tool from _orchestrator and added memory + engram/*. Made the review skill's session-start ping/broadcast conditional on agent-intercom (local session output + strict-safety local operator approval when absent) and rerouted gated_auto accordingly; replaced the unconditional grep/glob context directive with capability-pack-enforcement classification and engram-first structural routing that preserves direct-tool exemptions and fallback. Replaced Ship's dangling active P-017 authority reference to agent-intercom.instructions.md with a conditional broadcast plus local session/PR-summary fallback and fail-closed approval behavior, and corrected Step 4.4 so standard review runs first and adversarial review supplements it only on the configured escalation criteria. Added ANCHOR_REVIEW_PROVIDER/FAMILY/REASONING_EFFORT, PROJECT_NAME, and HARNESS_ENFORCED_SUMMARY manifest bindings and merged current 1.5 content into adversarial-review.instructions.md and adversarial-review.agent.md (empty ALT_REVIEW_* values are intentional). Corrected escalation-protocol.instructions.md legacy-flat-route prose (config now declares model_routing.escalation gpt-5.4/openai/high, applied when no nested role override exists) and reworked the degraded example so Stage's current flat escalation is shown as distinct from tier3 and NOT degraded, preserving the generic same-route rule. Added the full rendered 1.5 Shipment Sequencing Protocol to backlogit.instructions.md between Queue-and-Dependency and Hook Signal (workspace checkpoint-disposition content preserved). Adopted the current rendered shipment-reconcile/SKILL.md (188 -> 1082+ lines) including Shipment-Record-Status Classification, Mixed-Role Detection Classification, Safe-Close Mode, Cascade Close Sub-Procedure, Mixed-Role Detection Mode, and the Deterministic Safe-Close Scenario Matrix, re-applying the workspace-specific 143-F halted-archival third branch and correcting the self-hosting gate cross-reference. Added the validator-evidence -> closure releasability/final-readiness mapping bullet to release-observability.instructions.md and status: done to the backlog-integration Completing-a-Task example. Installed .github/instructions/copilot-code-review.instructions.md from the 1.5.0 template (GitHub-hosted focus surface; PROJECT_NAME=backlogit; Go/backlogit HARNESS_ENFORCED_SUMMARY; applyTo '**' + excludeAgent 'cloud-agent'), complementing rather than replacing .github/copilot-review-instructions.md. Refreshed LF-normalized SHA-256 checksums for every artifact changed this pass and normalized four legacy raw-byte checksum entries to the manifest's dominant convention. autoharness_version remains 1.5.0; no agent-intercom pack or artifact was reintroduced."
     artifacts:
       - ".github/instructions/agent-engram.instructions.md"
       - ".github/instructions/adversarial-review.instructions.md"
@@ -921,10 +960,10 @@ tuning_history:
       - ".github/agents/review/adversarial-review.agent.md"
       - ".github/skills/review/SKILL.md"
       - ".github/skills/shipment-reconcile/SKILL.md"
-      - ".autoharness/harness-manifest.yaml"
-      - ".autoharness/workspace-profile.yaml"
+      - ".gsd/harness-manifest.yaml"
+      - ".gsd/workspace-profile.yaml"
   - at: "2026-08-30T20:45:00-07:00"
-    summary: "Final bounded remediation cycle (post-remediation cycle 1) on top of the same-day 1.5.0 merge-tune and adversarial-verification pass. No commits, pushes, branch changes, or application Go code edits; every target backed up under .autoharness/backups/2026-08-30/ with a .pre-final-review suffix. (1) backlog-integration.instructions.md: replaced the registry-driven Extended Operations table with the freshly rendered 1.5 table matching .autoharness/backlog-registry.yaml — adds abandon_checkpoint, docs_lint, docs_migrate, docs_scope, quarantine_checkpoint, and the CLI-only repair_member_evidence rows, populates 20 previously empty CLI commands, and corrects add_link/remove_link to the positional {{link_type}} syntax; workspace-specific prose outside the table (.backlog/ default + .backlogit/ legacy directory wording, the status: done completion example) preserved. (2) Escalation routing consistency: added ESCALATION_FAMILY gpt-5.4 / ESCALATION_PROVIDER openai / ESCALATION_REASONING_EFFORT high manifest bindings mirroring config.model_routing.escalation, and changed only the currently-effective escalation-route statement in _stage and _ship (step 2 of the P-013.6 directive) from claude-opus-4.8/anthropic/high to gpt-5.4/openai/high; the separate tier3 per-field fallback statements remain claude-opus-4.8/anthropic/high because they describe the final fallback when no flat or nested escalation route exists. (3) adversarial-review.agent.md: added a documented optional `mode` input (`autofix` default, `report-only`). report-only is a hard read-only contract — no file edits, no closure-artifact or memory writes, no backlog/stash/shipment mutation, no safe_auto remediation, and no Phase 7 post-remediation re-review — returning findings, remediation plan, inline P0/P1 work-item YAML, and a READY/READY_WITH_FOLLOWUPS/BLOCKED readiness verdict to the caller. Phase 1 gains mode resolution, Phase 6 a report-only short-circuit, Phase 7 an explicit mode guard, and Quality Criteria the zero-write enforcement bullets. 1.5 anchor-route and plurality-confidence behavior unchanged, making Ship's `mode: report-only` invocation real. (4) review/SKILL.md: new Step 2.5 Coordinator Structural Discovery makes engram structural discovery (binding check, list_symbols, map_code, impact_analysis, query_graph/query_graph_neighborhood) a required coordinator responsibility before personas are spawned, with the resulting structural context block passed in every persona payload; Step 3 now states that leaf personas answer structural questions from the supplied block, use only their granted tools, and must not silently fall back to grep merely because they lack engram/*. Capability-pack-enforcement classification, direct-tool exemptions, and the degraded-fallback path are preserved. (5) workflow-policies.md: merged the complete authoritative 1.5 P-018 (Copilot review completion & thread-resolution merge gate), P-019 (local pre-push quality-gate enforcement), P-020 (post-merge context compaction), and P-021 (bounded fix-cycle scope containment) sections before the Amendment Log; no {{DATE}} placeholders occurred in the inserted policy bodies. All P-001..P-017 workspace customizations and the full existing amendment history are preserved; four non-duplicating rows (1.25.0-1.28.0, dated 2026-08-30) were appended and the header version advanced 1.24.0 -> 1.28.0. (6) _ship.agent.md: merged the modern 1.5 review-readiness and PR-lifecycle contract into the customized Ship without disturbing its wave scheduler / P-002.6 sections. Step 4.4 now defines READY / READY_WITH_FOLLOWUPS / BLOCKED, dark-mode local readiness authority, and keeps the corrected standard-review-first / adversarial-escalation-only sequencing; Step 4.4a P-021 scope classification and defer-capture was added; the outdated Step 5 legacy automated-review blocking loop, its duplicate item 12, and the disjoint Step 5.5 were replaced by one integrated lifecycle (full local build evidence, current-HEAD local review confirmation, `## Local Review Readiness` PR block, topology gate 5a, pr-lifecycle, fix-ci with P-021 classification plus explicit CI confirmation, 7a optional shadow review, 7b P-014 local readiness gate, 7c P-018 Copilot-review gate with deterministic-gate-or-manual-§1.9.3 fail-closed fallback, runtime verification, operational closure, follow-up stash, push, branch retention, P-014 operator approval, last-mile re-check, P-009 merge-commit guard, and the P-017 dark-mode authorization / admin-fallback state machine), with no duplicate numbering or headings. The P-002.6 final unfiltered-suite requirement and the topology gates are preserved, the Step 5.5 workspace-specific agent-intercom-absent visibility and fail-closed approval notes were folded into Step 5, Step 6.0 now runs the P-014/P-018 gates on the post-merge closure PR, and Step 6 item 8 is tagged P-020. (7) copilot-code-review.instructions.md and the HARNESS_ENFORCED_SUMMARY binding: policy range restored to P-001 through P-021 now that those definitions are installed. (8) Read-only Go investigation of the reviewer's shipment claims: archived-predecessor dependency satisfaction is NOT clearly supported by code (internal/core/queue.go filterByResolvedDependencies reads items.status and internal/core/status_taxonomy.go states archived_status is ignored), so the backlogit.instructions.md shipment-eligibility prose was left unchanged and recorded as advisory; generic shipment move-to-shipped is confirmed rejected (internal/core/shipment.go guard + internal/errors ErrShipmentShippedRequiresEnvelope -> MCP shipment_shipped_requires_envelope), no safe existing governed non-cascading operation reaches shipped, so shipment-reconcile was NOT changed and the upstream template/runtime mismatch is recorded in the tuning report as design/work-item follow-up. (9) The reviewer's raw-checksum claim is a confirmed false positive (this manifest uses LF-normalized SHA-256 and the deterministic verifier accepts it); conditional agent-intercom / browser-verification / continuous-learning foundation sections are canonical optional-pack prose, not active enablement, and were kept. (10) Added a copilot_review block (enforcement auto, max_wait_seconds 0) to workspace-profile.yaml so the P-018 gate reference resolves. Refreshed LF-normalized SHA-256 checksums for all seven changed managed artifacts. Verification status: PENDING FINAL VERIFICATION by the parent verifier."
+    summary: "Final bounded remediation cycle (post-remediation cycle 1) on top of the same-day 1.5.0 merge-tune and adversarial-verification pass. No commits, pushes, branch changes, or application Go code edits; every target backed up under .gsd/backups/2026-08-30/ with a .pre-final-review suffix. (1) backlog-integration.instructions.md: replaced the registry-driven Extended Operations table with the freshly rendered 1.5 table matching .gsd/backlog-registry.yaml — adds abandon_checkpoint, docs_lint, docs_migrate, docs_scope, quarantine_checkpoint, and the CLI-only repair_member_evidence rows, populates 20 previously empty CLI commands, and corrects add_link/remove_link to the positional {{link_type}} syntax; workspace-specific prose outside the table (.backlog/ default + .backlogit/ legacy directory wording, the status: done completion example) preserved. (2) Escalation routing consistency: added ESCALATION_FAMILY gpt-5.4 / ESCALATION_PROVIDER openai / ESCALATION_REASONING_EFFORT high manifest bindings mirroring config.model_routing.escalation, and changed only the currently-effective escalation-route statement in _stage and _ship (step 2 of the P-013.6 directive) from claude-opus-4.8/anthropic/high to gpt-5.4/openai/high; the separate tier3 per-field fallback statements remain claude-opus-4.8/anthropic/high because they describe the final fallback when no flat or nested escalation route exists. (3) adversarial-review.agent.md: added a documented optional `mode` input (`autofix` default, `report-only`). report-only is a hard read-only contract — no file edits, no closure-artifact or memory writes, no backlog/stash/shipment mutation, no safe_auto remediation, and no Phase 7 post-remediation re-review — returning findings, remediation plan, inline P0/P1 work-item YAML, and a READY/READY_WITH_FOLLOWUPS/BLOCKED readiness verdict to the caller. Phase 1 gains mode resolution, Phase 6 a report-only short-circuit, Phase 7 an explicit mode guard, and Quality Criteria the zero-write enforcement bullets. 1.5 anchor-route and plurality-confidence behavior unchanged, making Ship's `mode: report-only` invocation real. (4) review/SKILL.md: new Step 2.5 Coordinator Structural Discovery makes engram structural discovery (binding check, list_symbols, map_code, impact_analysis, query_graph/query_graph_neighborhood) a required coordinator responsibility before personas are spawned, with the resulting structural context block passed in every persona payload; Step 3 now states that leaf personas answer structural questions from the supplied block, use only their granted tools, and must not silently fall back to grep merely because they lack engram/*. Capability-pack-enforcement classification, direct-tool exemptions, and the degraded-fallback path are preserved. (5) workflow-policies.md: merged the complete authoritative 1.5 P-018 (Copilot review completion & thread-resolution merge gate), P-019 (local pre-push quality-gate enforcement), P-020 (post-merge context compaction), and P-021 (bounded fix-cycle scope containment) sections before the Amendment Log; no {{DATE}} placeholders occurred in the inserted policy bodies. All P-001..P-017 workspace customizations and the full existing amendment history are preserved; four non-duplicating rows (1.25.0-1.28.0, dated 2026-08-30) were appended and the header version advanced 1.24.0 -> 1.28.0. (6) _ship.agent.md: merged the modern 1.5 review-readiness and PR-lifecycle contract into the customized Ship without disturbing its wave scheduler / P-002.6 sections. Step 4.4 now defines READY / READY_WITH_FOLLOWUPS / BLOCKED, dark-mode local readiness authority, and keeps the corrected standard-review-first / adversarial-escalation-only sequencing; Step 4.4a P-021 scope classification and defer-capture was added; the outdated Step 5 legacy automated-review blocking loop, its duplicate item 12, and the disjoint Step 5.5 were replaced by one integrated lifecycle (full local build evidence, current-HEAD local review confirmation, `## Local Review Readiness` PR block, topology gate 5a, pr-lifecycle, fix-ci with P-021 classification plus explicit CI confirmation, 7a optional shadow review, 7b P-014 local readiness gate, 7c P-018 Copilot-review gate with deterministic-gate-or-manual-§1.9.3 fail-closed fallback, runtime verification, operational closure, follow-up stash, push, branch retention, P-014 operator approval, last-mile re-check, P-009 merge-commit guard, and the P-017 dark-mode authorization / admin-fallback state machine), with no duplicate numbering or headings. The P-002.6 final unfiltered-suite requirement and the topology gates are preserved, the Step 5.5 workspace-specific agent-intercom-absent visibility and fail-closed approval notes were folded into Step 5, Step 6.0 now runs the P-014/P-018 gates on the post-merge closure PR, and Step 6 item 8 is tagged P-020. (7) copilot-code-review.instructions.md and the HARNESS_ENFORCED_SUMMARY binding: policy range restored to P-001 through P-021 now that those definitions are installed. (8) Read-only Go investigation of the reviewer's shipment claims: archived-predecessor dependency satisfaction is NOT clearly supported by code (internal/core/queue.go filterByResolvedDependencies reads items.status and internal/core/status_taxonomy.go states archived_status is ignored), so the backlogit.instructions.md shipment-eligibility prose was left unchanged and recorded as advisory; generic shipment move-to-shipped is confirmed rejected (internal/core/shipment.go guard + internal/errors ErrShipmentShippedRequiresEnvelope -> MCP shipment_shipped_requires_envelope), no safe existing governed non-cascading operation reaches shipped, so shipment-reconcile was NOT changed and the upstream template/runtime mismatch is recorded in the tuning report as design/work-item follow-up. (9) The reviewer's raw-checksum claim is a confirmed false positive (this manifest uses LF-normalized SHA-256 and the deterministic verifier accepts it); conditional agent-intercom / browser-verification / continuous-learning foundation sections are canonical optional-pack prose, not active enablement, and were kept. (10) Added a copilot_review block (enforcement auto, max_wait_seconds 0) to workspace-profile.yaml so the P-018 gate reference resolves. Refreshed LF-normalized SHA-256 checksums for all seven changed managed artifacts. Verification status: PENDING FINAL VERIFICATION by the parent verifier."
     artifacts:
       - ".github/instructions/backlog-integration.instructions.md"
       - ".github/instructions/copilot-code-review.instructions.md"
@@ -933,11 +972,11 @@ tuning_history:
       - ".github/agents/review/adversarial-review.agent.md"
       - ".github/skills/review/SKILL.md"
       - ".github/policies/workflow-policies.md"
-      - ".autoharness/harness-manifest.yaml"
-      - ".autoharness/workspace-profile.yaml"
-      - ".autoharness/tuning-reports/2026-08-30-tuning-report.md"
+      - ".gsd/harness-manifest.yaml"
+      - ".gsd/workspace-profile.yaml"
+      - ".gsd/tuning-reports/2026-08-30-tuning-report.md"
   - at: "2026-08-31T00:00:00-07:00"
-    summary: "1.5.0 MERGE-INSTALL gap pass (auto-mergeinstall agent). Purely additive: 16 genuinely-missing 1.5.0 artifacts installed, ZERO existing artifacts overwritten or modified. Performed on branch chore/autoharness-merge-install-2026-08-31 (never on main, per branch-safety Step 1a). Resolution: `autoharness home` -> C:\\Python\\Python314\\Lib\\site-packages\\autoharness\\data (pip, 1.5.0); a CRLF-normalized hash diff against the plugin home at .copilot/installed-plugins/autoharness/autoharness showed 0 content differences across 140 template files, so the pip home was adopted as authoritative and autoharness_home updated accordingly. Upstream HEAD confirmed via gh api as 2661c1c8 (v1.5.0 release preparation); PyPI's newest published is only 1.4.11, so the local git-sourced 1.5.0 IS the latest. METHODOLOGY NOTE (important for future passes): `autoharness verify-workspace` reported `New artifacts (uninstalled templates): 0` while 16 templates were in fact missing, because the deterministic verifier enumerates only a 64-artifact subset. An INDEPENDENT full 140-file template-inventory diff against the installed tree is mandatory for a merge-install; do not trust the verifier's new-artifact count. Installed: (1) instructions coding-discipline + output-timestamps (variable-free, byte-identical); (2) review personas correctness-reviewer + maintainability-reviewer into the workspace's established .github/agents/review/ layout rather than the 1.5.0 spec's .github/agents/subagents/, because the deterministic verifier passes against the existing layout and relocating the other personas would be gratuitous churn; (3) skills brainstorm + doc-review; (4) opt-in local gate scripts pre-commit-markdownlint, pre-commit-pipeline-topology, pre-push-quality-gates (.ps1 + .sh each) plus deploy-harness (.ps1 + .sh) and the POSIX start.sh launcher; (5) the Gate C entrypoint scripts/ci-topology-check.sh together with an ADDITIVE topology-check job appended to the hand-written .github/workflows/ci.yml. All 6 new .sh files pass `bash -n`; all 4 new .ps1 files pass a PowerShell AST parse; 0 unresolved template placeholders across all 16 artifacts. CI EDIT RATIONALE: .github/workflows/ci.yml is a hand-written Go CI (jobs changes/test/docs-lint/cli-reference-drift/md-lint) and is NOT the ci.yml.tmpl output, so overwriting it with the template would have been destructive. The topology-check job was therefore appended with no `needs:` and no `changes` path-filter gating (docs/backlog-only commits are exactly the ones that mutate .backlogit topology state), reusing the workflow's own actions/checkout v4.2.2 pin for intra-file consistency, and left ADVISORY via continue-on-error: ${{ vars.PIPELINE_TOPOLOGY_GATE_REQUIRED != 'true' }} — the gate becomes blocking only when an operator sets that repository variable. A local `autoharness gate pipeline-topology --mode manual --phase ambient` run confirms the entrypoint works and already surfaces a real pre-existing P-016 finding (MULTIPLE_IMPLEMENTATION_WORKTREES: 9 stale session-state worktrees under .copilot/session-state/); worktree pruning is a destructive operation and was deliberately NOT performed — it is left for explicit operator approval. HOOK SAFETY: per P-019 no hook was installed into .git/hooks and core.hooksPath was NOT set; the pre-commit/pre-push scripts are inert until an operator opts in, and the two pre-commit scripts must be chained from a single dispatcher if both are adopted. START.SH DIVERGENCE (deliberate, do not auto-revert): the upstream template's final exec uses \"${copilot_arguments[@]:-}\", which under set -u expands an EMPTY array to one empty-string word and passes a spurious empty argument to copilot; rendered instead with ${copilot_arguments[@]+\"${copilot_arguments[@]}\"} and flagged drift_allowed: true in the artifact entry. BRAINSTORM SKILL DIVERGENCE (deliberate, do not auto-revert): the upstream brainstorm template titles the document `## Brainstorm`, which fails this repo's P-008 markdownlint gate (MD041 first-line-h1) and is inconsistent with all 24 other installed skills; promoted to `# Brainstorm`. After that single-line fix all six new markdown artifacts pass markdownlint-cli2 (v0.23.1) with 0 issues. (Note: `make md-lint` cannot be run from this Windows shell because scripts/md-lint.sh is stored LF but checked out CRLF under core.autocrlf=true — a pre-existing local-environment condition affecting the repo's own script, unrelated to this pass; CI on Linux is unaffected.) KNOWN PRE-EXISTING VERIFIER NOISE, unchanged by this pass and NOT workspace gaps: (a) the single FAIL pipeline_topology_gate_ship_agent_wiring is an upstream verifier defect — _ship.agent.md carries all six TOPOLOGY_GATE markers in correct order, but backlogit_claim_shipment also appears in the YAML frontmatter tools: list (because {{BACKLOG_TOOLS}} expands to an explicit list, whereas the template retains the unexpanded variable), which spuriously trips the must_precede ordering constraint; collapsing the tools list to a wildcard was rejected as it risks silently removing runtime tool access; (b) both P1 portability warnings flag ~/.autoharness in _orchestrator.agent.md, text that is present verbatim in the upstream template as the documented home-resolution fallback order. Also refreshed workspace-profile.yaml (corrected workspace_path from the wrong drive d:\\ to C:\\, refreshed generated_at, added the local_gating section 1.5.0's install-harness expects). Capability packs UNCHANGED (backlogit, strict-safety, agent-engram, adversarial-review, release-observability); agent-intercom remains deliberately excluded per the 2026-08-30 tune, and browser-verification / continuous-learning / graphtor-docs remain disabled — enabling any of these is an operator decision and was not made unilaterally."
+    summary: "1.5.0 MERGE-INSTALL gap pass (auto-mergeinstall agent). Purely additive: 16 genuinely-missing 1.5.0 artifacts installed, ZERO existing artifacts overwritten or modified. Performed on branch chore/autoharness-merge-install-2026-08-31 (never on main, per branch-safety Step 1a). Resolution: `autoharness home` -> C:\\Python\\Python314\\Lib\\site-packages\\autoharness\\data (pip, 1.5.0); a CRLF-normalized hash diff against the plugin home at .copilot/installed-plugins/autoharness/autoharness showed 0 content differences across 140 template files, so the pip home was adopted as authoritative and autoharness_home updated accordingly. Upstream HEAD confirmed via gh api as 2661c1c8 (v1.5.0 release preparation); PyPI's newest published is only 1.4.11, so the local git-sourced 1.5.0 IS the latest. METHODOLOGY NOTE (important for future passes): `autoharness verify-workspace` reported `New artifacts (uninstalled templates): 0` while 16 templates were in fact missing, because the deterministic verifier enumerates only a 64-artifact subset. An INDEPENDENT full 140-file template-inventory diff against the installed tree is mandatory for a merge-install; do not trust the verifier's new-artifact count. Installed: (1) instructions coding-discipline + output-timestamps (variable-free, byte-identical); (2) review personas correctness-reviewer + maintainability-reviewer into the workspace's established .github/agents/review/ layout rather than the 1.5.0 spec's .github/agents/subagents/, because the deterministic verifier passes against the existing layout and relocating the other personas would be gratuitous churn; (3) skills brainstorm + doc-review; (4) opt-in local gate scripts pre-commit-markdownlint, pre-commit-pipeline-topology, pre-push-quality-gates (.ps1 + .sh each) plus deploy-harness (.ps1 + .sh) and the POSIX start.sh launcher; (5) the Gate C entrypoint scripts/ci-topology-check.sh together with an ADDITIVE topology-check job appended to the hand-written .github/workflows/ci.yml. All 6 new .sh files pass `bash -n`; all 4 new .ps1 files pass a PowerShell AST parse; 0 unresolved template placeholders across all 16 artifacts. CI EDIT RATIONALE: .github/workflows/ci.yml is a hand-written Go CI (jobs changes/test/docs-lint/cli-reference-drift/md-lint) and is NOT the ci.yml.tmpl output, so overwriting it with the template would have been destructive. The topology-check job was therefore appended with no `needs:` and no `changes` path-filter gating (docs/backlog-only commits are exactly the ones that mutate .backlogit topology state), reusing the workflow's own actions/checkout v4.2.2 pin for intra-file consistency, and left ADVISORY via continue-on-error: ${{ vars.PIPELINE_TOPOLOGY_GATE_REQUIRED != 'true' }} — the gate becomes blocking only when an operator sets that repository variable. A local `autoharness gate pipeline-topology --mode manual --phase ambient` run confirms the entrypoint works and already surfaces a real pre-existing P-016 finding (MULTIPLE_IMPLEMENTATION_WORKTREES: 9 stale session-state worktrees under .copilot/session-state/); worktree pruning is a destructive operation and was deliberately NOT performed — it is left for explicit operator approval. HOOK SAFETY: per P-019 no hook was installed into .git/hooks and core.hooksPath was NOT set; the pre-commit/pre-push scripts are inert until an operator opts in, and the two pre-commit scripts must be chained from a single dispatcher if both are adopted. START.SH DIVERGENCE (deliberate, do not auto-revert): the upstream template's final exec uses \"${copilot_arguments[@]:-}\", which under set -u expands an EMPTY array to one empty-string word and passes a spurious empty argument to copilot; rendered instead with ${copilot_arguments[@]+\"${copilot_arguments[@]}\"} and flagged drift_allowed: true in the artifact entry. BRAINSTORM SKILL DIVERGENCE (deliberate, do not auto-revert): the upstream brainstorm template titles the document `## Brainstorm`, which fails this repo's P-008 markdownlint gate (MD041 first-line-h1) and is inconsistent with all 24 other installed skills; promoted to `# Brainstorm`. After that single-line fix all six new markdown artifacts pass markdownlint-cli2 (v0.23.1) with 0 issues. (Note: `make md-lint` cannot be run from this Windows shell because scripts/md-lint.sh is stored LF but checked out CRLF under core.autocrlf=true — a pre-existing local-environment condition affecting the repo's own script, unrelated to this pass; CI on Linux is unaffected.) KNOWN PRE-EXISTING VERIFIER NOISE, unchanged by this pass and NOT workspace gaps: (a) the single FAIL pipeline_topology_gate_ship_agent_wiring is an upstream verifier defect — _ship.agent.md carries all six TOPOLOGY_GATE markers in correct order, but backlogit_claim_shipment also appears in the YAML frontmatter tools: list (because {{BACKLOG_TOOLS}} expands to an explicit list, whereas the template retains the unexpanded variable), which spuriously trips the must_precede ordering constraint; collapsing the tools list to a wildcard was rejected as it risks silently removing runtime tool access; (b) both P1 portability warnings flag ~/.gsd in _orchestrator.agent.md, text that is present verbatim in the upstream template as the documented home-resolution fallback order. Also refreshed workspace-profile.yaml (corrected workspace_path from the wrong drive d:\\ to C:\\, refreshed generated_at, added the local_gating section 1.5.0's install-harness expects). Capability packs UNCHANGED (backlogit, strict-safety, agent-engram, adversarial-review, release-observability); agent-intercom remains deliberately excluded per the 2026-08-30 tune, and browser-verification / continuous-learning / kbdb remain disabled — enabling any of these is an operator decision and was not made unilaterally."
     artifacts:
       - ".github/instructions/coding-discipline.instructions.md"
       - ".github/instructions/output-timestamps.instructions.md"
@@ -956,8 +995,8 @@ tuning_history:
       - "scripts/deploy-harness.sh"
       - "start.sh"
       - ".github/workflows/ci.yml"
-      - ".autoharness/harness-manifest.yaml"
-      - ".autoharness/workspace-profile.yaml"
+      - ".gsd/harness-manifest.yaml"
+      - ".gsd/workspace-profile.yaml"
   - at: "2026-08-31T12:00:00-07:00"
     summary: "Merge-install Phase 2 (stale-artifact remediation). Phase 1 diffed by file existence, which cannot detect artifacts that are present but stale. Re-ran the comparison on content: byte-compared all 42 variable-free templates (8 diverged, 3 replaced), and compared the variable-bearing pipeline agents on P-017 dark-mode and P-021 guardrail-marker coverage, splicing every shortfall in by hand to preserve workspace customizations. Added the P-021 non-bypass clause to the dark-mode prompt shim; the P-021 capture-only carve-out and P-013.5 skill-delegation model inheritance to role-enforcement; the P-016 branch/worktree boundary to concurrency; the complete P-021 deferred-scope-expansion triage machinery to stage (previously absent entirely); the P-021 C5 Role Boundary carve-out, C4 cycle-limit annotation, P-020 compaction-status initialization and dark-mode closure-summary requirement to ship; and the P-021 non-bypass paragraph, ordered DARK_MODE_SCOPE cursor requirement, dark-factory session-state fields and five Step 2 candidate-selection bullets to orchestrator. Fixed a functional break where Ship's Role Boundary forbade all stash operations while P-021 C2/C5 requires Ship to create capture-only deferred-expansion entries."
     artifacts:
@@ -967,7 +1006,7 @@ tuning_history:
       - ".github/agents/_stage.agent.md"
       - ".github/agents/_ship.agent.md"
       - ".github/agents/_orchestrator.agent.md"
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/harness-manifest.yaml"
   - at: "2026-08-31T13:30:00-07:00"
     summary: "Merge-install Phase 3 (full content sweep). Applied the corrected content-based methodology to all 80 manifest artifacts by diffing each against its fully-rendered staging copy, which covers variable-bearing templates. Closed 6 policy-reference gaps: replaced circuit-breaker (149->412 lines, gained cooldown-delay and same-operation-identity sections), github-pr-automation (570->802 lines, gained shell-safe comment construction, local readiness record and advisory bot identity; Copilot bot identity preserved through the upstream Shadow Review rename), context-efficiency and plan-harden; spliced P-020 compaction into AGENTS.md and the operational-closure skill. Inserted missing policies P-013.5 (Invocation-Time Model-Routing Enforcement) and P-013.6 (Telemetry-driven Auto-escalation Protocol), whose absence left every reference in escalation-protocol.instructions.md dangling. Expanded the review skill's dark-mode readiness bullets. Aligned operational-closure to backlogit_stash_archive over the deprecated backlogit_stash_remove. Post-sweep re-scan reports 0 artifacts missing policy references."
     artifacts:
@@ -979,20 +1018,20 @@ tuning_history:
       - ".github/instructions/context-efficiency.instructions.md"
       - ".github/instructions/circuit-breaker.instructions.md"
       - ".github/instructions/github-pr-automation.instructions.md"
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/harness-manifest.yaml"
   - at: "2026-08-31T11:10:00-07:00"
-    summary: "Operator-directed follow-ups. (1) P-016: removed 16 stale git worktrees (17 implementation worktrees against a limit of 1). 14 branches were already merged to origin/main; the 2 carrying unmerged commits (chore/134-s-closure daf1dd29, chore/cycle-24-remediation cd2ad50b) survive because worktree removal does not touch branch refs, and no branch was deleted. Uncommitted content from 6 worktrees (28 files) was preserved to the gitignored .autoharness/backups/worktree-preservation-2026-08-31/ with per-worktree STATUS.txt, git diff HEAD patch, verbatim untracked copies, and a restore README. git fsck clean; pipeline-topology gate now passes. (2) Bound model_routing.alt_doc_review to google / gemini-3.1-pro-preview - deliberately a third provider since tiers are Anthropic and escalation is OpenAI, maximizing cross-model diversity for the documentation review pass. Leaving it unset was not neutral: it rendered four broken fragments into doc-review/SKILL.md including the instruction step 'Read `` and ``'. Wiring required setting ALT_DOC_REVIEW_PROVIDER/ALT_DOC_REVIEW_FAMILY in variables_used as well as the config block, because _derive_template_variables seeds from the manifest rather than re-reading config; without it the staged render stays empty and the artifact shows perpetual false drift. Reinstalled the skill from the corrected render, re-applying the workspace's concrete 'backlogit add --type task --title <title>' over the template's unresolved {{artifact_type}}/{{title}}."
+    summary: "Operator-directed follow-ups. (1) P-016: removed 16 stale git worktrees (17 implementation worktrees against a limit of 1). 14 branches were already merged to origin/main; the 2 carrying unmerged commits (chore/134-s-closure daf1dd29, chore/cycle-24-remediation cd2ad50b) survive because worktree removal does not touch branch refs, and no branch was deleted. Uncommitted content from 6 worktrees (28 files) was preserved to the gitignored .gsd/backups/worktree-preservation-2026-08-31/ with per-worktree STATUS.txt, git diff HEAD patch, verbatim untracked copies, and a restore README. git fsck clean; pipeline-topology gate now passes. (2) Bound model_routing.alt_doc_review to google / gemini-3.1-pro-preview - deliberately a third provider since tiers are Anthropic and escalation is OpenAI, maximizing cross-model diversity for the documentation review pass. Leaving it unset was not neutral: it rendered four broken fragments into doc-review/SKILL.md including the instruction step 'Read `` and ``'. Wiring required setting ALT_DOC_REVIEW_PROVIDER/ALT_DOC_REVIEW_FAMILY in variables_used as well as the config block, because _derive_template_variables seeds from the manifest rather than re-reading config; without it the staged render stays empty and the artifact shows perpetual false drift. Reinstalled the skill from the corrected render, re-applying the workspace's concrete 'backlogit add --type task --title <title>' over the template's unresolved {{artifact_type}}/{{title}}."
     artifacts:
-      - ".autoharness/config.yaml"
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/config.yaml"
+      - ".gsd/harness-manifest.yaml"
       - ".github/skills/doc-review/SKILL.md"
   - at: "2026-08-31T21:15:00-07:00"
-    summary: "Operator-directed capability-pack enablement: continuous-learning and graphtor-docs (both previously excluded). Enabled both in config.yaml capability_packs and added the continuous_learning block (directory .autoharness/continuous-learning, capture_hooks false, environment_adapter none, promotion_threshold 5, matching the already-installed instruction) and the graphtor_docs block; both validate against the config JSON schema. Added matching graphtor_docs and continuous_learning blocks to workspace-profile.yaml because the two variable families resolve from different sources: CONTINUOUS_LEARNING_* from config.yaml but GRAPHTOR_SOURCES_PATH/GRAPHTOR_BINARY_PATH from the profile via _resolve_graphtor_*. Installed the new .github/instructions/graphtor-docs.instructions.md (all eight MCP tools present) and re-rendered continuous-learning.instructions.md to schema-accurate capture_hooks/environment_adapter values, splicing the previously-installed capture trigger list back in as an explicit manual-capture section rather than discarding it. Expanded BOTH the capability-pack-routes and capability-pack-deferral blocks in capability-pack-enforcement.instructions.md together and removed the now-false note claiming graphtor-docs is not installed. Added the graphtor-docs capability overlay to AGENTS.md (plus the agent-engram + graphtor-docs interaction-rules row), .github/copilot-instructions.md, and constitution.instructions.md (the constitution template carries a graphtor overlay that had been skipped while the pack was disabled). Stage/Ship graphtor weaving already satisfied the assertion. Registered graphtor-docs in .mcp.json (graphtor-docs serve --read-only) - its absence there, not the harness, is why the pack had no reachable tool surface. Registered the previously untracked constitution.instructions.md as a manifest artifact so future tunes can detect drift on it, refreshed LF-normalized SHA-256 checksums for every changed artifact, updated the stale CAPABILITY_PACKS variable (manifest seeds variable derivation ahead of config, so leaving it would have regressed future renders), and added CONTINUOUS_LEARNING_*/GRAPHTOR_* bindings."
+    summary: "Operator-directed capability-pack enablement: continuous-learning and kbdb (both previously excluded). Enabled both in config.yaml capability_packs and added the continuous_learning block (directory .gsd/continuous-learning, capture_hooks false, environment_adapter none, promotion_threshold 5, matching the already-installed instruction) and the kbdb block; both validate against the config JSON schema. Added matching kbdb and continuous_learning blocks to workspace-profile.yaml because the two variable families resolve from different sources: CONTINUOUS_LEARNING_* from config.yaml but GRAPHTOR_SOURCES_PATH/GRAPHTOR_BINARY_PATH from the profile via _resolve_graphtor_*. Installed the new .github/instructions/kbdb.instructions.md (all eight MCP tools present) and re-rendered continuous-learning.instructions.md to schema-accurate capture_hooks/environment_adapter values, splicing the previously-installed capture trigger list back in as an explicit manual-capture section rather than discarding it. Expanded BOTH the capability-pack-routes and capability-pack-deferral blocks in capability-pack-enforcement.instructions.md together and removed the now-false note claiming kbdb is not installed. Added the kbdb capability overlay to AGENTS.md (plus the agent-engram + kbdb interaction-rules row), .github/copilot-instructions.md, and constitution.instructions.md (the constitution template carries a graphtor overlay that had been skipped while the pack was disabled). Stage/Ship graphtor weaving already satisfied the assertion. Registered kbdb in .mcp.json (kbdb serve --read-only) - its absence there, not the harness, is why the pack had no reachable tool surface. Registered the previously untracked constitution.instructions.md as a manifest artifact so future tunes can detect drift on it, refreshed LF-normalized SHA-256 checksums for every changed artifact, updated the stale CAPABILITY_PACKS variable (manifest seeds variable derivation ahead of config, so leaving it would have regressed future renders), and added CONTINUOUS_LEARNING_*/GRAPHTOR_* bindings."
     artifacts:
-      - ".autoharness/config.yaml"
-      - ".autoharness/workspace-profile.yaml"
-      - ".autoharness/harness-manifest.yaml"
-      - ".github/instructions/graphtor-docs.instructions.md"
+      - ".gsd/config.yaml"
+      - ".gsd/workspace-profile.yaml"
+      - ".gsd/harness-manifest.yaml"
+      - ".github/instructions/kbdb.instructions.md"
       - ".github/instructions/continuous-learning.instructions.md"
       - ".github/instructions/capability-pack-enforcement.instructions.md"
       - ".github/instructions/constitution.instructions.md"
@@ -1000,19 +1039,19 @@ tuning_history:
       - ".github/copilot-instructions.md"
       - ".mcp.json"
   - at: "2026-08-31T22:30:00-07:00"
-    summary: "Operator correction: graphtor-docs never indexes a workspace. The preceding entry had registered the repository docs/ corpus as a graphtor local source and run graphtor-docs sync; both were wrong. Operator direction is that graphtor performs index sync only against content curated in advance for ingestion, never against a workspace, and that in-workspace usage is exclusively read-only. Reverted in full: .graphtor/config/sources.yaml restored to sources: [] and git rm --cached so it is untracked again; .gitignore restored to the single blanket .graphtor/ entry, dropping the negation pattern that had made sources.yaml shareable; .mcp.json changed to serve --read-only, which forces every database to ReadOnly posture regardless of resolved sources and has no force-read-write counterpart. The failed sync had still written a phantom backlogit-docs source row (zero chunks) into the derived .graphtor/graph.db, and the graphtor CLI exposes no source-removal verb; rather than run another sync to prune it - itself the forbidden operation - the database was backed up to .autoharness/backups/graphtor-db-revert-2026-08-31/ and removed so graphtor recreates it clean. graphtor-docs status now reports no sources configured, matching the pre-existing state. Leaving the row would have misrepresented the workspace as indexed, which is the exact inference the read-only rule prevents. The docline source_path contract-mismatch analysis recorded in the preceding entry is withdrawn as a finding: it described a real field difference but framed it as a blocker against a goal that was never valid, so no ~900-document migration is pending and no operator decision is outstanding. Retrieval degradation with no curated corpus bound is expected behavior, and agents take the documented fallback path in graphtor-docs.instructions.md. Pack enablement itself stands - instructions, overlays, routing and the read-only registration are unchanged. Added a NON-NEGOTIABLE Workspace Usage Rule to graphtor-docs.instructions.md (marked drift_allowed) because the upstream template's Source Configuration paragraph permits source management as a task and would otherwise leave the same mistake reachable; mirrored the read-only / never-index rule into the AGENTS.md, copilot-instructions.md, and constitution.instructions.md graphtor overlays, and refreshed their LF-normalized checksums."
+    summary: "Operator correction: kbdb never indexes a workspace. The preceding entry had registered the repository docs/ corpus as a graphtor local source and run kbdb sync; both were wrong. Operator direction is that graphtor performs index sync only against content curated in advance for ingestion, never against a workspace, and that in-workspace usage is exclusively read-only. Reverted in full: .graphtor/config/sources.yaml restored to sources: [] and git rm --cached so it is untracked again; .gitignore restored to the single blanket .graphtor/ entry, dropping the negation pattern that had made sources.yaml shareable; .mcp.json changed to serve --read-only, which forces every database to ReadOnly posture regardless of resolved sources and has no force-read-write counterpart. The failed sync had still written a phantom backlogit-docs source row (zero chunks) into the derived .graphtor/graph.db, and the graphtor CLI exposes no source-removal verb; rather than run another sync to prune it - itself the forbidden operation - the database was backed up to .gsd/backups/graphtor-db-revert-2026-08-31/ and removed so graphtor recreates it clean. kbdb status now reports no sources configured, matching the pre-existing state. Leaving the row would have misrepresented the workspace as indexed, which is the exact inference the read-only rule prevents. The docline source_path contract-mismatch analysis recorded in the preceding entry is withdrawn as a finding: it described a real field difference but framed it as a blocker against a goal that was never valid, so no ~900-document migration is pending and no operator decision is outstanding. Retrieval degradation with no curated corpus bound is expected behavior, and agents take the documented fallback path in kbdb.instructions.md. Pack enablement itself stands - instructions, overlays, routing and the read-only registration are unchanged. Added a NON-NEGOTIABLE Workspace Usage Rule to kbdb.instructions.md (marked drift_allowed) because the upstream template's Source Configuration paragraph permits source management as a task and would otherwise leave the same mistake reachable; mirrored the read-only / never-index rule into the AGENTS.md, copilot-instructions.md, and constitution.instructions.md graphtor overlays, and refreshed their LF-normalized checksums."
     artifacts:
-      - ".autoharness/harness-manifest.yaml"
-      - ".autoharness/workspace-profile.yaml"
-      - ".autoharness/tuning-reports/2026-08-31-merge-install-report.md"
-      - ".github/instructions/graphtor-docs.instructions.md"
+      - ".gsd/harness-manifest.yaml"
+      - ".gsd/workspace-profile.yaml"
+      - ".gsd/tuning-reports/2026-08-31-merge-install-report.md"
+      - ".github/instructions/kbdb.instructions.md"
       - ".github/instructions/constitution.instructions.md"
       - "AGENTS.md"
       - ".github/copilot-instructions.md"
       - ".mcp.json"
       - ".gitignore"
   - at: "2026-08-31T23:45:00-07:00"
-    summary: "Copilot review remediation for PR #400 (autoharness 1.5.0 merge-install). Eight review findings fixed and marked drift_allowed so a future tune cannot silently revert them. (1) start.sh: removed the graphtor-docs workspace-sync branch outright rather than leaving it gated, because graphtor-docs is read-only inside a workspace and never ingests one. (2,3) pre-push quality gates (.sh and .ps1): the format gate invoked gofmt -l, which always exits 0, so the gate could never fail; replaced with dedicated format-gate routines that inspect gofmt output and compare against CR-stripped source so a CRLF working tree does not yield false positives. (4) pre-commit-markdownlint.sh: replaced the GNU-only grep -zE filter, which silently linted zero files on BSD/macOS, with a git pathspec. (5) AGENTS.md and copilot-instructions.md: aligned the continuous-learning storage path to the configured continuous_learning.directory instead of a hardcoded docs/learnings. (6) role-enforcement.instructions.md: narrowed the incorrect claim that skills never spawn subagents to model-route inheritance only, since review and plan-review both declare a 1-hop persona contract. (7) adversarial-review instruction and agent files: restored symbolic alt-review config key paths where unset template variables had rendered empty code spans. (8) ci.yml: pinned the autoharness install to the latest published version so the release-gate job cannot drift onto an unvetted release. Also fixed a genuine pre-existing gofmt violation in internal/core/gate_evidence_formal_test.go that only surfaced once the format gate became enforcing."
+    summary: "Copilot review remediation for PR #400 (autoharness 1.5.0 merge-install). Eight review findings fixed and marked drift_allowed so a future tune cannot silently revert them. (1) start.sh: removed the kbdb workspace-sync branch outright rather than leaving it gated, because kbdb is read-only inside a workspace and never ingests one. (2,3) pre-push quality gates (.sh and .ps1): the format gate invoked gofmt -l, which always exits 0, so the gate could never fail; replaced with dedicated format-gate routines that inspect gofmt output and compare against CR-stripped source so a CRLF working tree does not yield false positives. (4) pre-commit-markdownlint.sh: replaced the GNU-only grep -zE filter, which silently linted zero files on BSD/macOS, with a git pathspec. (5) AGENTS.md and copilot-instructions.md: aligned the continuous-learning storage path to the configured continuous_learning.directory instead of a hardcoded docs/learnings. (6) role-enforcement.instructions.md: narrowed the incorrect claim that skills never spawn subagents to model-route inheritance only, since review and plan-review both declare a 1-hop persona contract. (7) adversarial-review instruction and agent files: restored symbolic alt-review config key paths where unset template variables had rendered empty code spans. (8) ci.yml: pinned the autoharness install to the latest published version so the release-gate job cannot drift onto an unvetted release. Also fixed a genuine pre-existing gofmt violation in internal/core/gate_evidence_formal_test.go that only surfaced once the format gate became enforcing."
     artifacts:
       - "start.sh"
       - "scripts/pre-push-quality-gates.sh"
@@ -1024,27 +1063,27 @@ tuning_history:
       - ".github/instructions/adversarial-review.instructions.md"
       - ".github/agents/review/adversarial-review.agent.md"
       - ".github/workflows/ci.yml"
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/harness-manifest.yaml"
   - at: "2026-08-31T00:00:00Z"
     summary: "Copilot review round 3 on PR #400. Raised the adversarial-review tier ceiling from 1 to 3 and added the missing model_tier, so its required Tier 2 and Tier 3 reviewer dispatch is no longer a P-013.2 violation. Made skill `name` optional in doc-review Check 2, since 14 of the 25 installed skills omit it and the previous rule flagged every one of them. Added a disabled-capability-pack exemption to doc-review Checks 4 and 5 so the conditional references to the intentionally-absent agent-intercom instruction file are no longer reported as broken links or stale content."
     artifacts:
       - ".github/agents/review/adversarial-review.agent.md"
       - ".github/skills/doc-review/SKILL.md"
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/harness-manifest.yaml"
   - at: "2026-09-01T00:00:00Z"
-    summary: "Copilot review round 4 on PR #400. graphtor-docs was an enabled pack whose tools were never callable: stage, ship, and orchestrator granted only engram/* while stage and ship mandate search_local_docs, search_semantic, and research_topic, so the pack always degraded. Granted the eight read-only graphtor verbs by name in all three allowlists — enumerated rather than a graphtor-docs/* wildcard so no ingestion or index-write verb is reachable from an agent — and documented a reproducible serve --read-only MCP registration path. Retargeted the doc-review gated_auto owner from the absent agent-intercom pack to the local strict-safety decision gate. Closed an adversarial-review readiness hole where an unacknowledged medium-confidence P0/P1 fell through to READY."
+    summary: "Copilot review round 4 on PR #400. kbdb was an enabled pack whose tools were never callable: stage, ship, and orchestrator granted only engram/* while stage and ship mandate search_local_docs, search_semantic, and research_topic, so the pack always degraded. Granted the eight read-only graphtor verbs by name in all three allowlists — enumerated rather than a kbdb/* wildcard so no ingestion or index-write verb is reachable from an agent — and documented a reproducible serve --read-only MCP registration path. Retargeted the doc-review gated_auto owner from the absent agent-intercom pack to the local strict-safety decision gate. Closed an adversarial-review readiness hole where an unacknowledged medium-confidence P0/P1 fell through to READY."
     artifacts:
       - ".github/agents/_stage.agent.md"
       - ".github/agents/_ship.agent.md"
       - ".github/agents/_orchestrator.agent.md"
-      - ".github/instructions/graphtor-docs.instructions.md"
+      - ".github/instructions/kbdb.instructions.md"
       - ".github/skills/doc-review/SKILL.md"
       - ".github/agents/review/adversarial-review.agent.md"
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/harness-manifest.yaml"
   - at: "2026-09-01T04:00:00Z"
-    summary: "Copilot review round 5 on PR #400. Repaired a duplicate drift_reason key introduced by the round-4 manifest pass on the graphtor-docs instruction entry, where the new rationale was appended alongside the pre-existing operator-mandated one instead of merged; PyYAML silently kept only the latter, so the round-4 rationale was being dropped. Merged both into a single key and added a duplicate-key scan to the validation loop. Added the missing model_tier: 1 to correctness-reviewer and maintainability-reviewer, which declared only max_subagent_tier. Corrected the doc-review tier-annotation check, which asserted there is no model_tier frontmatter field and verified only max_subagent_tier — the exact opposite of P-013.4."
+    summary: "Copilot review round 5 on PR #400. Repaired a duplicate drift_reason key introduced by the round-4 manifest pass on the kbdb instruction entry, where the new rationale was appended alongside the pre-existing operator-mandated one instead of merged; PyYAML silently kept only the latter, so the round-4 rationale was being dropped. Merged both into a single key and added a duplicate-key scan to the validation loop. Added the missing model_tier: 1 to correctness-reviewer and maintainability-reviewer, which declared only max_subagent_tier. Corrected the doc-review tier-annotation check, which asserted there is no model_tier frontmatter field and verified only max_subagent_tier — the exact opposite of P-013.4."
     artifacts:
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/harness-manifest.yaml"
       - ".github/agents/review/correctness-reviewer.agent.md"
       - ".github/agents/review/maintainability-reviewer.agent.md"
       - ".github/skills/doc-review/SKILL.md"
@@ -1053,22 +1092,22 @@ tuning_history:
     artifacts:
       - "scripts/deploy-harness.sh"
       - "scripts/deploy-harness.ps1"
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/harness-manifest.yaml"
   - at: "2026-09-25T22:30:00Z"
-    summary: "Shipment 155-S: server-qualified MCP tool references in the pipeline agents. VS Code and Copilot CLI resolve MCP tools only as <server>/<tool> or <server>/* and silently ignore bare names, so the bare backlogit_* and graphtor verb grants were never callable. Ship keeps its explicit no-wildcard allowlist as backlogit/<operation>; stage and orchestrator keep the operator-selected backlogit/*; all three grant the eight read-only verbs as graphtor-docs/<verb>; memory is vscode/memory."
+    summary: "Shipment 155-S: server-qualified MCP tool references in the pipeline agents. VS Code and Copilot CLI resolve MCP tools only as <server>/<tool> or <server>/* and silently ignore bare names, so the bare backlogit_* and graphtor verb grants were never callable. Ship keeps its explicit no-wildcard allowlist as backlogit/<operation>; stage and orchestrator keep the operator-selected backlogit/*; all three grant the eight read-only verbs as kbdb/<verb>; memory is vscode/memory."
     artifacts:
       - ".github/agents/_ship.agent.md"
       - ".github/agents/_stage.agent.md"
       - ".github/agents/_orchestrator.agent.md"
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/harness-manifest.yaml"
   - at: "2026-09-27T00:00:00Z"
-    summary: "Auto-Tune 1.5.0 drift pass on branch chore/autoharness-tune-2026-09-27. (1) Lock hardening: refreshed acquire/release lock scripts (.ps1/.sh) to the upstream capability-token + workspace-containment model, concurrency.instructions.md, file-lock/SKILL.md (H1 kept), and the Stage/Ship lock command lines; harness-doctor resolves version live. (2) Model routing: propagated config.model_routing tier routes into the frontmatter of 18 tiered agents (tier1 gpt-6-luna/openai/xhigh, tier2 claude-sonnet-5/anthropic/high, tier3 claude-opus-5.5/anthropic/high), anchor reviewer gpt-6-sol, escalation route claude-opus-5.5/anthropic/xhigh in _stage/_ship/escalation-protocol, and the _orchestrator routing table. (3) Fixed the verifier-failing ship_release_closure_sequence phrase in _ship. (4) Added 6 missing registry rows to backlog-integration; security-reviewer Scope Disposition section; constitution single-worktree + P-020 closure text; spike graphtor-docs preference and docline.* frontmatter guidance. Staged renders not adopted wholesale (drop model_tier, demote H1, unresolved QUALITY_GATE placeholders). See .autoharness/tuning-reports/2026-09-27-tuning-report.md."
+    summary: "Auto-Tune 1.5.0 drift pass on branch chore/autoharness-tune-2026-09-27. (1) Lock hardening: refreshed acquire/release lock scripts (.ps1/.sh) to the upstream capability-token + workspace-containment model, concurrency.instructions.md, file-lock/SKILL.md (H1 kept), and the Stage/Ship lock command lines; harness-doctor resolves version live. (2) Model routing: propagated config.model_routing tier routes into the frontmatter of 18 tiered agents (tier1 gpt-6-luna/openai/xhigh, tier2 claude-sonnet-5/anthropic/high, tier3 claude-opus-5.5/anthropic/high), anchor reviewer gpt-6-sol, escalation route claude-opus-5.5/anthropic/xhigh in _stage/_ship/escalation-protocol, and the _orchestrator routing table. (3) Fixed the verifier-failing ship_release_closure_sequence phrase in _ship. (4) Added 6 missing registry rows to backlog-integration; security-reviewer Scope Disposition section; constitution single-worktree + P-020 closure text; spike kbdb preference and docline.* frontmatter guidance. Staged renders not adopted wholesale (drop model_tier, demote H1, unresolved QUALITY_GATE placeholders). See .gsd/tuning-reports/2026-09-27-tuning-report.md."
     artifacts:
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/harness-manifest.yaml"
   - at: "2026-09-27T20:00:00Z"
     summary: "Auto-Tune review follow-up on chore/autoharness-tune-2026-09-27. TUNE-009 validator-contract runtime-verification/operational-closure merges; TUNE-010 P-013.1/P-013.3 (policies v1.31.0), Ship telemetry steps, Stage P-016 spike worktree exception, Orchestrator dark-factory scope; TUNE-011 Checkpoint Payload Contract only; TUNE-012 additive technology bullets, security-pattern substitution defect fixes, reconcile_shipped registry entry; release/acquire lock script P1-P3 fixes. TUNE-013 handled upstream, TUNE-014 operator-fixed, TUNE-015 accepted debt."
     artifacts:
-      - ".autoharness/backlog-registry.yaml"
+      - ".gsd/backlog-registry.yaml"
       - ".github/agents/_orchestrator.agent.md"
       - ".github/agents/_ship.agent.md"
       - ".github/agents/_stage.agent.md"
@@ -1090,7 +1129,7 @@ tuning_history:
   - at: "2026-09-28T05:00:00Z"
     summary: "Operator follow-up: escalation route moved to cross-family gpt-6-sol/openai/xhigh (config, _stage, _ship, escalation-protocol); restored lock-script stderr messages dropped by the P3 fix; documented upstream fix proposals (lock scripts, security-pattern substitution defect, release check-then-delete race) in docs/decisions/2026-09-27-autoharness-upstream-fix-proposals.md; withdrew the tier-1 xhigh cost advisory."
     artifacts:
-      - ".autoharness/config.yaml"
+      - ".gsd/config.yaml"
       - ".github/agents/_stage.agent.md"
       - ".github/agents/_ship.agent.md"
       - ".github/instructions/escalation-protocol.instructions.md"
@@ -1103,7 +1142,7 @@ tuning_history:
       - "scripts/release_lock.ps1"
       - "scripts/release_lock.sh"
       - "scripts/acquire_lock.sh"
-      - ".autoharness/backlog-registry.yaml"
+      - ".gsd/backlog-registry.yaml"
       - ".github/instructions/backlog-integration.instructions.md"
       - ".github/agents/_ship.agent.md"
       - ".github/skills/runtime-verification/SKILL.md"
@@ -1115,14 +1154,14 @@ tuning_history:
   - at: "2026-09-28T20:30:00-07:00"
     summary: "075-DL routing-drift tune (freeze-scope). Synced ESCALATION_FAMILY/PROVIDER/REASONING_EFFORT to config model_routing.escalation (gpt-6-sol / openai / xhigh) and corrected the adjacent tier3-fallback comment to claude-opus-5.5. Synced ALT_DOC_REVIEW_FAMILY to the restored config model_routing.alt_doc_review (google / gemini-3.8-flash), replaced the stale comment claiming the variables were intentionally empty, and re-rendered the four alternate-model references in doc-review/SKILL.md. ANCHOR_REVIEW_* already matched config (gpt-6-sol / openai / high). _stage, _ship, and escalation-protocol already rendered the current escalation route and were not changed. Historical tuning_history entries naming earlier models are left as records."
     artifacts:
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/harness-manifest.yaml"
       - ".github/skills/doc-review/SKILL.md"
   - at: "2026-10-24T18:50:00Z"
     summary: "Auto-Tune 1.6.0 drift pass on branch chore/autoharness-tune-2026-10-24. (1) Schema-contract upgrades: manifest 1.0.0 -> 1.1.0, config 1.1.0 -> 1.3.0, workspace-profile 1.0.0 -> 1.1.0 (removed retired agent_intercom block and synced harness_recommendations.capability_packs). (2) Frontmatter conformity (193-F): added top-level `name:` to 14 skill definitions (8 managed, 6 workspace-authored). (3) Model-routing & context_tier propagation (194-F/208-F): propagated config.model_routing into 18 tiered agents, _orchestrator/_stage/_ship (context_tier: long_context), adversarial-review anchor (gpt-6.1-sol), escalation-protocol and _stage/_ship Escalation Protocol sections, and manifest variables_used. (4) Targeted-check fixes: added 194-F context_tier and ROUTING_DEGRADED: context_tier directives to _orchestrator Stage/Ship invocation sites; added P-017 Dark Factory Visibility Protocol table and degraded-visibility guidance plus P-013.5/P-013.6/P-018 1.6.0 clauses to workflow-policies.md (v1.33.0); named backlogit_stash_archive and backlogit_archive_item as forbidden on non-member provenance references in _ship Step 6 item 7. (5) Additive 1.6.0 & learning-driven updates: threadless Copilot review-body findings in github-pr-automation.instructions.md, UTC rule in output-timestamps.instructions.md, P-012 surface-choice and dispose_shipment row in backlog-integration.instructions.md, and post-merge closure frontmatter conditions contract in operational-closure/SKILL.md."
     artifacts:
-      - ".autoharness/config.yaml"
-      - ".autoharness/workspace-profile.yaml"
-      - ".autoharness/harness-manifest.yaml"
+      - ".gsd/config.yaml"
+      - ".gsd/workspace-profile.yaml"
+      - ".gsd/harness-manifest.yaml"
       - ".github/policies/workflow-policies.md"
       - ".github/agents/_orchestrator.agent.md"
       - ".github/agents/_stage.agent.md"
@@ -1132,3 +1171,12 @@ tuning_history:
       - ".github/agents/subagents/*"
       - ".github/skills/*"
       - ".github/instructions/*"
+  - at: "2026-11-18T23:52:47Z"
+    summary: "Tune 1.6.0 follow-up. Replaced hand-derived escalation prose with gsd routing resolve chain-aware directives across Stage, Ship, P-013.6, and the canonical escalation instruction; aligned Ship frontmatter and manifest route seeds to config; refreshed the doc-review alternate family and corrected workspace-owned manifest provenance, stale checksums, and the split Ship breaker table. Deterministic blockers, strict schema blockers, and unresolved findings are cleared; the remaining dispose_shipment compatibility warning is verified as a stale GSD check because the live backlogit CLI exposes shipment dispose."
+    artifacts:
+      - ".gsd/harness-manifest.yaml"
+      - ".github/instructions/escalation-protocol.instructions.md"
+      - ".github/policies/workflow-policies.md"
+      - ".github/agents/_stage.agent.md"
+      - ".github/agents/_ship.agent.md"
+      - ".github/skills/doc-review/SKILL.md"

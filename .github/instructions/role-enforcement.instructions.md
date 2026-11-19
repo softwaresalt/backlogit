@@ -107,7 +107,7 @@ subagent inherits the invoking agent's resolved session route unless an
 explicit alternate route applies (for example the adversarial-review anchor and
 alternate reviewer slots, or the `alt_doc_review` route the configuration binds
 to the `doc-review` skill's review pass). Those alternate routes are resolved
-from `.autoharness/config.yaml`, not declared in skill frontmatter, so the
+from `.gsd/config.yaml`, not declared in skill frontmatter, so the
 "skills do not declare their own routing frontmatter" rule above is unaffected.
 
 Before invoking any skill, the invoking agent MUST confirm and propagate its

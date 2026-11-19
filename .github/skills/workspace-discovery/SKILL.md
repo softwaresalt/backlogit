@@ -1,0 +1,750 @@
+---
+name: workspace-discovery
+description: "Discover target workspace technology stack, conventions, build tools, test runners, CI/CD pipelines, and project structure to generate a workspace profile for harness composition"
+---
+
+# Workspace Discovery
+
+Scan a target workspace to produce a structured workspace profile that drives harness template composition. The profile captures everything the installer needs to customize agents, skills, instructions, and policies for the target environment.
+
+Invoke this skill from the target workspace's own GSD executable under the
+root `.bin/` directory. Discovery is read-only (aside from writing the profile)
+and all reads, writes, and tool discovery remain bounded to that workspace.
+
+Command names in this skill are semantic examples. Prefer explicit
+workspace-local executables under `.bin/`; PATH or user-home discovery is
+legacy compatibility evidence, never the recommended execution path.
+
+## When to Use
+
+Invoke this skill as the first phase of harness installation or tuning. The workspace profile is the single source of truth that downstream template composition uses to generate workspace-specific artifacts.
+
+## Inputs
+
+* `workspace_path`: (Required) Absolute path to the target workspace root.
+* `existing_profile`: (Optional) Path to a previously generated profile for delta comparison during tuning.
+
+## Output
+
+A YAML file at `.gsd/workspace-profile.yaml` in the target workspace containing the structured profile.
+
+## Required Protocol
+
+### Phase 0: Load Operator Configuration
+
+Check for an operator-authored configuration file at `{workspace_path}/.gsd/config.yaml`. If present:
+
+1. Validate the config against the schema version that matches the document's own `schema_version`, not against the root schema alone:
+   * Read `schema_version` from the document. When `{gsd_home}/schemas/harness-config/<schema_version>.schema.json` exists, validate against that mirror (the selection `resolve_contract_schema_path` makes).
+   * When `schema_version` is absent, unknown to the contract, or has no mirror file, validate against the current mirror and report the version as a contract finding instead of declaring the file invalid on the root alone.
+   * The root `schemas/harness-config.schema.json` tracks only the current version, so it is not the validation target for an older-version config.
+   * `gsd verify-workspace --workspace {workspace_path} --json` (its harness-config schema result) applies the same selection.
+2. Extract operator preferences: preset, primary stack pack, stack packs, install layers, capability packs, backlog tool/directory, prefix map, docs directory structure, model routing, template variable overrides
+3. These preferences take precedence over auto-detected values in subsequent phases — when the operator has explicitly specified a value, use it instead of detecting
+
+If the file does not exist, proceed with pure auto-detection. All fields are optional; the operator may specify only the settings they want to control.
+
+### Phase 1: File System Scan
+
+Scan the workspace root to build an inventory of project characteristics. When `.gsd/config.yaml` provides explicit values, record those directly and skip detection for the corresponding field.
+
+#### Step 1.1: Language Detection
+
+Identify primary and secondary languages by file extension distribution:
+
+| Signal | Detection Method |
+|--------|-----------------|
+| Rust | `Cargo.toml`, `*.rs` files, `rust-toolchain.toml` |
+| TypeScript/JavaScript | `package.json`, `tsconfig.json`, `*.ts`, `*.tsx`, `*.js` |
+| Python | `pyproject.toml`, `setup.py`, `requirements.txt`, `*.py`, `Pipfile` |
+| Go | `go.mod`, `go.sum`, `*.go` |
+| C# / .NET | `*.csproj`, `*.sln`, `global.json`, `*.cs` |
+| Java / Kotlin | `pom.xml`, `build.gradle`, `*.java`, `*.kt` |
+| Ruby | `Gemfile`, `*.rb`, `Rakefile` |
+| Swift | `Package.swift`, `*.swift` |
+| PHP | `composer.json`, `*.php` |
+| C/C++ | `CMakeLists.txt`, `Makefile`, `*.c`, `*.cpp`, `*.h` |
+
+Record: `primary_language`, `secondary_languages[]`, `file_counts{}`.
+
+#### Step 1.2: Framework Detection
+
+Identify frameworks from configuration files and dependency declarations:
+
+| Signal | Framework |
+|--------|-----------|
+| `next.config.js` / `next.config.mjs` | Next.js |
+| `angular.json` | Angular |
+| `vite.config.*` | Vite |
+| `django` in requirements | Django |
+| `flask` in requirements | Flask |
+| `fastapi` in requirements | FastAPI |
+| `spring` in pom.xml/gradle | Spring Boot |
+| `axum` / `actix` / `rocket` in Cargo.toml | Rust web framework |
+| `rails` in Gemfile | Ruby on Rails |
+| `laravel` in composer.json | Laravel |
+
+Record: `frameworks[]`.
+
+#### Step 1.3: Build & Test Tool Detection
+
+| Signal | Tool |
+|--------|------|
+| `Cargo.toml` | cargo (build, test, clippy, fmt) |
+| `package.json` scripts | npm/yarn/pnpm (build, test, lint) |
+| `Makefile` | make |
+| `CMakeLists.txt` | cmake |
+| `pyproject.toml` [tool.pytest] | pytest |
+| `jest.config.*` | jest |
+| `vitest.config.*` | vitest |
+| `.mocharc.*` | mocha |
+| `go test` convention | go test |
+| `*.csproj` | dotnet build/test |
+| `build.gradle` | gradle |
+| `pom.xml` | maven |
+
+Record: `build_tool`, `test_runner`, `linter`, `formatter`, `package_manager`.
+
+#### Step 1.4: CI/CD Detection
+
+| Signal | Platform |
+|--------|----------|
+| `.github/workflows/*.yml` | GitHub Actions |
+| `.gitlab-ci.yml` | GitLab CI |
+| `Jenkinsfile` | Jenkins |
+| `.circleci/config.yml` | CircleCI |
+| `azure-pipelines.yml` | Azure DevOps |
+| `.travis.yml` | Travis CI |
+| `bitbucket-pipelines.yml` | Bitbucket Pipelines |
+
+Record: `ci_platform`, `ci_pipeline_steps[]`, `ci_quality_gates[]`.
+
+**CI gating strategy detection** (drives the unified CI + local-gating primitive):
+
+* **Required check name** — inspect any existing branch ruleset / branch protection
+  for an already-required status-check name. If one exists (e.g. `build`), record it
+  as `ci.required_check_name` so the generated aggregation gate adopts that exact
+  name and no ruleset edit is needed. Otherwise default to `ci gate`.
+* **Path filter mode** — record `ci.path_filter_mode: fail_closed_changes_job`
+  (the only supported value): a lightweight always-running detection job using
+  `dorny/paths-filter` with `predicate-quantifier: every` over a denylist. Do not
+  emit `paths_ignore` — trigger-level `paths-ignore` skips the whole run
+  (including the aggregation gate), recreating the pending-required-check problem
+  this primitive solves, so it is not a valid profile value.
+* **Docs-only paths** — record `ci.docs_only_paths` as positively-identified
+  documentation/state **directories** (e.g. `['docs/**']` plus any backlog
+  directory such as `.backlogit/**` and harness metadata `.gsd/**`).
+  These become the fail-closed denylist negations. Do **not** emit an
+  extension-wide glob such as `**/*.md` when Markdown is executable product in the
+  workspace (e.g. agent/skill/instruction files under `.github/`): that would let
+  harness changes skip the expensive gate while the aggregation check still
+  reports success. Only add `**/*.md` when discovery confirms Markdown is purely
+  non-executable documentation everywhere.
+* **Linux-only** — record `ci.linux_only: true` (regular PR/push CI is
+  Linux-only; cross-OS verification is deferred to release-tag workflows). This
+  field is constrained to `true` in the profile schema; the template renders a
+  scalar `runs-on` and does not auto-generate a multi-OS matrix.
+
+**Local pre-push gating detection** (drives the pre-push quality-gate hook):
+
+* Determine which quality gates the workspace actually has by reusing the
+  build/test/lint/format/typecheck detection above. Record the ordered list in
+  `local_gating.pre_push_gates` (subset of `test`, `lint`, `format`, `typecheck`,
+  `build`) — include only gates with a real discovered command.
+* Record `local_gating.pre_push_enabled: true` by default. The generated hook is
+  always opt-in (activated by an explicit operator step), so this flag only controls
+  whether the artifact is composed.
+
+Record: `ci.required_check_name`, `ci.linux_only`, `ci.path_filter_mode`,
+`ci.docs_only_paths[]`, `local_gating.pre_push_enabled`,
+`local_gating.pre_push_gates[]`.
+
+
+#### Step 1.5: Project Structure Analysis
+
+Identify the project's organizational patterns:
+
+* Source directory layout (`src/`, `lib/`, `app/`, `pkg/`, monorepo with `packages/`)
+* Test directory layout (`tests/`, `__tests__/`, `test/`, `spec/`, inline tests)
+* Documentation directory (`docs/`, `doc/`, `wiki/`)
+* Configuration files present (`.editorconfig`, `prettier`, `eslint`, linter configs)
+* Existing agent harness artifacts (`.github/agents/`, `.github/skills/`, `.github/instructions/`)
+
+Record: `source_layout`, `test_layout`, `doc_layout`, `existing_harness_artifacts[]`.
+
+#### Step 1.5b: Runtime Surface Detection
+
+Detect whether the workspace has runtime surfaces that need post-build verification or operational closure:
+
+| Signal | Surface |
+|--------|---------|
+| CLI entrypoints, console scripts, `bin/`, `cmd/`, Click / Typer / Cobra / Clap / Commander | CLI |
+| Next.js / Vite / Angular / Rails views / templates / `public/` frontend assets | Web UI |
+| OpenAPI files, route declarations, controllers, `api/` or `routes/` directories | Public API |
+| Queue libraries, job workers, cron config, message consumers | Background jobs |
+| Dockerfile, Helm charts, Terraform, deployment workflows | Deployment manifests |
+
+Also detect browser-verification tooling from package dependencies or config files
+such as Playwright, Cypress, Puppeteer, Selenium, or equivalent browser runners.
+
+Record: `runtime_surfaces{}` with booleans for `cli`, `web_ui`, `public_api`,
+and `background_jobs`, `browser_tooling[]`, plus `deployment_manifests[]` for
+discovered paths.
+
+Also build the runtime validator contract that downstream Ship,
+runtime-verification, and operational-closure guidance consume. Detect probe
+hints from existing smoke commands, dev-server paths, API roots, background-job
+triggers, browser tooling, and operator-assisted checkpoints that the current
+environment cannot automate safely.
+
+Record: `runtime_validation{}` with the following structure:
+
+```yaml
+runtime_validation:
+  validator_manifest:
+    surfaces:
+      - surface: "cli"|"api"|"browser"|"background-job"
+        adapter_hint: "command"|"http"|"browser"|"job"|"manual"|"auto"
+        probe_hints: []
+        manual_checkpoints: []
+  validation_expectations:
+    required: true|false
+    surfaces_expected: []
+    minimum_verdict: "PASS"|"PASS_WITH_FOLLOW_UP"|"FAIL"|"BLOCKED"
+    preserve_invariants: []
+    release_blockers: []
+  releasability:
+    required: true|false
+    status_when_satisfied: "READY"|"READY_WITH_CONDITIONS"|"BLOCKED"
+    required_evidence: []
+```
+
+#### Step 1.5c: Retired Capability Pack Handling
+
+`agent-intercom` is a retired capability pack. Discovery never detects it, never records an `agent_intercom{}` block, and never recommends it: do not scan for `.intercom/settings.json` or for intercom markers, tool names or workflow references, and do not add the pack to `harness_recommendations.capability_packs` or any recommendation reason. When an existing profile (tuning mode) still carries an `agent_intercom{}` block or lists the pack, do not carry either forward into the new profile and do not treat them as signals; the legacy entries are reported and cleaned up by `tune-harness` (see its retired-pack cleanup step). If the operator asks for the pack by name, report `RETIRED_PACK: agent-intercom ignored` and continue discovery.
+
+#### Step 1.5c-2: Folded Core Pack Handling
+
+`browser-verification`, `continuous-learning`, `strict-safety`, `release-observability`, `adversarial-review` are no longer capability packs; they are part of the core harness and are always installed. Discovery never recommends them in `harness_recommendations.capability_packs`. When an existing profile lists one, or the operator requests one by name, report `FOLDED_CORE_PACK: <pack> is now part of the core harness (ignored as capability pack)`, omit it from the new profile's `capability_packs`, and continue discovery. Only the external-tool capability packs (`agent-engram`, `backlogit`, `kbdb`) are recommended.
+
+#### Step 1.5d: Agent-Engram Detection
+
+Detect whether the workspace is already configured for agent-engram or a closely related indexed-search workflow:
+
+| Signal | Meaning |
+|--------|---------|
+| `.engram/config.toml`, `.engram/registry.yaml`, or `.engram/code-graph/` exists | Workspace has engram installation or persisted state markers |
+| `.mcp.json` (workspace root, canonical shared config) or legacy editor settings reference `agent-engram`, `engram`, or known engram tool names (`unified_search`, `query_memory`, `map_code`, `list_symbols`, `impact_analysis`, `query_graph`) | MCP server likely configured for the workspace |
+| Existing `AGENTS.md` / `.github/copilot-instructions.md` references Engram-first search, `.engram/`, or workspace binding / status checks; or contains `<!-- engram:start -->` / `<!-- engram:end -->` markers | Harness may already be partially woven for engram |
+
+Record: `agent_engram{}` with the following structure:
+
+```yaml
+agent_engram:
+  detected: true|false
+  mcp_configured: true|false
+  config_paths: []          # paths where engram MCP config was found (normally .mcp.json)
+  instruction_markers: []   # matched markers from AGENTS.md / copilot-instructions.md (e.g. <!-- engram:start -->)
+  recommended: true|false
+```
+
+#### Step 1.5d2: KBDB Detection
+
+Detect whether the workspace is configured for kbdb (formerly `graphtor-docs`) or a closely related indexed local documentation workflow:
+
+| Signal | Meaning |
+|--------|---------|
+| `.kbdb/` directory exists at the workspace root | Workspace has a kbdb installation or persistent index state |
+| `.kbdb/config/sources.yaml` or `.kbdb/config/` directory exists | kbdb source index is configured |
+| `.mcp.json` (workspace root, canonical shared config) or legacy editor settings reference `kbdb` or known kbdb tool names (`search_local_docs`, `search_semantic`, `research_topic`, `traverse_doc_links`, `list_sources`, `get_chunk_by_id`, `get_document`, `get_status`) | MCP server likely configured for the workspace |
+| `kbdb` binary is present at `.bin/` (legacy: PATH or `.kbdb/bin/`) | Binary installation confirmed; `.bin/` is preferred |
+| Existing `AGENTS.md` / `.github/copilot-instructions.md` references kbdb, indexed local docs, or kbdb MCP tool names | Harness may already be partially woven for kbdb |
+
+Legacy `.graphtor/` state, `graphtor-docs` references, and a retained `graphtor_docs{}` profile block are tolerated as legacy aliases for `kbdb`: treat them as kbdb signals and record the result under `kbdb{}`.
+
+Record: `kbdb{}` with the following structure:
+
+```yaml
+kbdb:
+  detected: true|false
+  mcp_configured: true|false
+  config_paths: []          # paths to MCP and other non-sources config files found (normally .mcp.json)
+  sources_path: ""          # path to sources.yaml (the kbdb source-index config); empty string if not found
+  binary_path: ""           # path to kbdb binary; empty string if not found (e.g. .kbdb/bin/kbdb.exe or absolute PATH entry)
+  embed_model_dir: ""       # path to local embedding model dir (e.g. .kbdb/models/all-MiniLM-L6-v2); empty string if not found
+  instruction_markers: []   # matched phrases from AGENTS.md / copilot-instructions.md
+  recommended: true|false
+```
+
+Recommend `kbdb` when:
+* `.kbdb/` is present AND either `mcp_configured` is `true` OR `binary_path` is non-empty, OR
+* Any kbdb MCP tool name is referenced in MCP config files.
+
+#### Step 1.5e: Agent-Native Surface Detection
+
+Detect whether the workspace exposes agent-facing product surfaces that justify a
+parity-focused reviewer:
+
+| Signal | Meaning |
+|--------|---------|
+| `frameworks.mcp_sdk` or MCP transport dependencies are present | Workspace likely exposes MCP or agent-facing tool surfaces |
+| `mcp-server.instructions.md`, tool handler directories, or tool schemas are present | Explicit agent tooling surface exists |
+| Existing docs describe parity between UI actions and agent actions, or agent-only workflow concerns | Product likely requires user/agent parity review |
+| Tool manifests, capability schemas, or action handlers suggest users and agents must share the same business operation surface | Parity-sensitive design likely matters |
+
+Record: `agent_native{}` with the following structure:
+
+```yaml
+agent_native:
+  detected: true|false
+  mcp_sdk_present: true|false
+  mcp_transport: "stdio"|"sse"|"streamable-http"|null
+  agent_tooling_markers: []
+  user_agent_parity_required: true|false
+  recommended_reviewer: true|false
+```
+
+#### Step 1.5f: Stack-Pack Normalization
+
+Normalize discovered signals into additive stack packs so the installer and tuner
+can reason about composition more explicitly than a preset name alone.
+
+Suggested normalization:
+
+| Signal | Stack Pack |
+|--------|------------|
+| `runtime_surfaces.web_ui == true` | `web-app` |
+| `runtime_surfaces.public_api == true` | `api-service` |
+| `runtime_surfaces.background_jobs == true` | `background-worker` |
+| `runtime_surfaces.deployment_manifests[]` not empty | `deployable-service` |
+| `frameworks.mcp_sdk` present or `agent_native.detected == true` | `mcp-server` |
+| CLI frameworks / layouts detected (for example Cobra, Clap, Click, Typer, Commander, `cmd/`, `bin/`) | `cli-tool` |
+| No stronger runtime signal and the workspace looks package-like or reusable | `library` |
+
+Choose `primary_stack_pack` deterministically:
+
+1. Use the operator-configured `primary_stack_pack` when present.
+2. Otherwise prefer the strongest detected runtime-facing stack in this order:
+   `web-app` -> `api-service` -> `mcp-server` -> `background-worker` -> `cli-tool` -> `library`.
+3. If no normalized stack pack is justified, leave it `null` and explain why in
+   the recommendation summary.
+
+Record:
+
+```yaml
+primary_stack_pack: "web-app"|null
+stack_packs: []
+```
+
+#### Step 1.5g: Capability Pack Signal Detection
+
+Scan for signals that indicate specific capability packs should be recommended.
+This step records runtime, safety, observability, and learning signals as core
+primitive configuration signals. They tune core harness protocols
+(browser-verification, strict-safety, release-observability) and never produce
+capability-pack recommendations; agent-engram, backlogit, and kbdb are
+the only recommended capability packs and are detected through their tool markers.
+
+**strict-safety signals**:
+
+* public API surface present (`runtime_surfaces.public_api == true`)
+* migration or schema management files detected (Alembic, Flyway, Prisma, ActiveRecord migrations, etc.)
+* security-sensitive patterns present (auth modules, crypto usage, PII handling, payment integration)
+* deployment infrastructure suggests rollout-critical surfaces (Kubernetes manifests, Helm charts, Docker Compose with production profiles)
+
+Record: `strict_safety_signals: []` (list of detected signal descriptions)
+
+**release-observability signals**:
+
+* deployment manifests detected (Dockerfiles, Helm charts, Terraform, CloudFormation, Kubernetes YAML)
+* runtime surfaces exist (`runtime_surfaces.public_api`, `runtime_surfaces.web_ui`, `runtime_surfaces.background_jobs`)
+* monitoring or alerting configuration present (Prometheus rules, Grafana dashboards, Datadog config, PagerDuty integration)
+* CI/CD pipelines include deployment steps (deploy jobs, release workflows, canary configurations)
+
+Record: `release_observability_signals: []` (list of detected signal descriptions)
+
+#### Step 1.6: Backlog Tool Detection
+
+Detect installed backlog management tools by scanning for their workspace markers and configuration:
+
+| Signal | Tool | Directory |
+|--------|------|-----------|
+| `.backlogit/` directory with `config.yaml` | backlogit (legacy root) | `.backlogit/` |
+| `.backlog/` directory with `config.yaml` | backlogit (default root, backlogit 1.9.0+) | `.backlog/` |
+| Both `.backlog/config.yaml` and `.backlogit/config.yaml` present | backlogit -- ambiguous root (fail closed, do not guess) | report both; do not pick one |
+| `backlog/` directory with `config.yml` | backlog-md | `backlog/` |
+| `backlog/` directory with `config.yaml` | backlog-md (alt) | `backlog/` |
+| `backlog.config.yml` at root | backlog-md (project-root config) | `backlog/` |
+| `.backlog/` directory (no tool config) | Manual/custom backlog | `.backlog/` |
+
+For each detected tool, also check:
+
+* MCP server configuration in VS Code settings (`.vscode/settings.json` → `mcpServers`)
+* CLI binary availability (probe workspace-local `.bin/` first; PATH is only a
+  demoted compatibility signal, never the recommended source)
+* Package dependencies (`go.mod` for backlogit, `package.json` for backlog-md)
+* JavaScript MCP launcher runtime prerequisites: Bun and `bunx` must be on
+  `PATH`; if a package is launched with bare `bunx` rather than verified
+  `bunx --bun`, record Node as a retained conservative prerequisite because
+  package shebangs may delegate to Node.
+
+If no backlog tool is detected, check for manual backlog structures:
+
+* `.backlog/` with task markdown files
+* `TODO.md`, `BACKLOG.md`, or similar files at root
+
+Record: `backlog_tool{}` with the following structure:
+
+```yaml
+backlog_tool:
+  detected: true|false
+  tool_name: "backlogit"|"backlog-md"|"manual"|null
+  directory: ".backlogit"|"backlog"|".backlog"|null
+  tool_type: "mcp"|"cli"|"both"|null
+  mcp_registered: true|false
+  cli_available: true|false
+  config_path: "path/to/config"|null
+  status_values: ["queued", "active", "done"]  # from tool config
+  features:
+    sql_query: true|false
+    milestones: true|false
+    documents: true|false
+    telemetry: true|false
+    # ... other feature flags
+```
+
+When a known tool is detected (backlogit or backlog-md), load the matching pre-built registry from `templates/backlog/registries/` for use during harness composition. When an unknown or manual backlog structure is detected, generate a minimal registry that the user can customize.
+
+#### Step 1.7: AI Coding Environment Detection
+
+Detect which AI coding environments are present in the workspace so the installer can apply environment-specific configuration automatically.
+
+**VS Code detection signals** (any one is sufficient):
+
+| Signal | Meaning |
+|--------|---------|
+| `.vscode/` directory exists | VS Code workspace likely in use |
+| `*.code-workspace` file at the workspace root | Explicit VS Code multi-root workspace |
+| `.vscode/settings.json` exists | VS Code settings already configured |
+| `.vscode/extensions.json` exists | VS Code extension recommendations present |
+
+Workspace-local discovery is preferred. Do not inspect user-home settings as
+part of a normal sandbox-local install. Prefer `.vscode/settings.json` and
+installed `.github/` artifacts as current workspace evidence. Legacy installations may retain the
+following compatibility observations, but they must never be required to
+operate the workspace:
+
+When VS Code is detected:
+
+1. Determine the platform-appropriate **user settings path**:
+   - Windows: resolve `%APPDATA%` and append `\Code\User\settings.json`
+   - macOS: `$HOME/Library/Application Support/Code/User/settings.json`
+   - Linux: `$HOME/.config/Code/User/settings.json`
+2. Check whether that user settings file already contains `chat.agentFilesLocations`,
+   `chat.agentSkillsLocations`, or `chat.promptFilesLocations` entries pointing
+   to paths under the resolved `gsd home`
+3. Record the resolved user settings path and findings for the installer
+
+Record: `vscode{}` with the following structure:
+
+```yaml
+vscode:
+  detected: true|false
+  user_settings_path: "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\settings.json"  # resolved absolute path; null if OS unrecognised
+  has_agent_settings: true|false   # true when gsd agent entries already present in user settings
+```
+
+Also detect the operator's workspace-local AI CLI environment(s) under `.bin/`
+so `gsd install` can retain compatibility metadata. PATH discovery is a
+legacy fallback, and the recommended `register` default is `none`. Record the
+primary environment as the compatibility registration default,
+preferring an explicit operator
+choice, then the strongest detected CLI, then `vscode`, then `copilot-cli`:
+
+```yaml
+ai_environments:
+  detected: []                 # subset of ["vscode", "copilot-cli", "claude", "codex"]
+  register_default: "copilot-cli"   # gsd install --register default; one of vscode|copilot-cli|claude|codex|none
+```
+
+### Phase 2: Convention Extraction
+
+#### Step 2.1: Code Style Discovery
+
+Detect existing code style enforcement:
+
+* Linter configurations (`.eslintrc`, `clippy.toml`, `.pylintrc`, `rustfmt.toml`, `.prettierrc`)
+* Editor configurations (`.editorconfig`, `.vscode/settings.json`)
+* Pre-commit hooks (`.husky/`, `.pre-commit-config.yaml`)
+* Markdown linting: detect `markdownlint-cli` via `which markdownlint` (bash) or
+  `Get-Command markdownlint` (PowerShell), and check for existing `.markdownlint.json` or
+  `.markdownlint.yaml` config files. Record `tools.markdownlint: true|false` and
+  `tools.markdownlint_config: {path}|null` in the workspace profile.
+* Global distribution detection: check whether this workspace is a globally-distributed
+  tool that ships agent definitions in its package. Normalize path keys when comparing
+  `force-include` entries (treat `.github/local-agents` and `.github/local-agents/` as
+  equivalent, or explicitly check both forms). Detection signals:
+  1. `pyproject.toml` exists and its `[tool.hatch.build.targets.wheel.force-include]`
+     section maps `.github/agents` into the wheel (after normalization, or by checking
+     both `.github/agents` and `.github/agents/`; value contains `src/` or any package path)
+  2. `.github/local-agents` directory exists
+  3. The force-include section does NOT map `.github/local-agents` after normalization
+     (does not contain either `.github/local-agents` or `.github/local-agents/`)
+  When all three signals are present, record:
+  `distribution.is_global_tool: true`
+  `distribution.global_agents_dir: .github/agents`
+  `distribution.local_agents_dir: .github/local-agents`
+  Otherwise omit the `distribution` field from the profile.
+
+Record: `code_style{}` with detected rules.
+
+#### Step 2.2: Git Convention Discovery
+
+Detect Git workflow conventions:
+
+* Branch naming patterns (from recent `git branch` or `.github/workflows/` triggers)
+* Commit message patterns (conventional commits, other standards)
+* PR templates (`.github/PULL_REQUEST_TEMPLATE.md`)
+* Issue templates (`.github/ISSUE_TEMPLATE/`)
+* Protected branches, required reviewers (from branch protection rules if accessible)
+
+Record: `git_conventions{}`.
+
+#### Step 2.3: Documentation Convention Discovery
+
+Detect documentation patterns:
+
+* README structure and sections
+* API documentation tools (rustdoc, JSDoc, Sphinx, Javadoc, Swagger/OpenAPI)
+* Architecture Decision Records (ADRs)
+* Changelog conventions (`CHANGELOG.md`, conventional changelog)
+
+Record: `doc_conventions{}`.
+
+### Phase 3: Existing Harness Assessment
+
+If the workspace already has agent harness artifacts (from a previous gsd installation or manual setup):
+
+#### Step 3.1: Inventory Existing Artifacts
+
+Scan for and catalog:
+
+* `.github/agents/*.agent.md`
+* `.github/skills/*/SKILL.md`
+* `.github/instructions/*.instructions.md`
+* `.github/prompts/*.prompt.md`
+* `.github/policies/*.md`
+* `.github/copilot-instructions.md`
+* `AGENTS.md`
+* `.backlog/` directory structure
+* `.gsd/` marker files
+
+Record: `existing_harness{}` with file paths, descriptions, and modification dates.
+
+#### Step 3.2: Drift Detection (Tuning Mode Only)
+
+When `existing_profile` is provided, compare the current scan against the previous profile:
+
+* New languages or frameworks added
+* Build/test tools changed
+* CI pipeline modified
+* New source directories created
+* Primary stack or additive stack-pack composition changed
+* Existing harness artifacts that reference stale paths, removed tools, or outdated conventions
+* Manifest-tracked harness artifacts that are missing or checksum-divergent, excluding any paths matched by `.gsd/drift-ignore`
+
+Record: `drift_report{}` with categorized changes, optional checksum-scan
+results, and initial recommendations.
+
+### Phase 4: Profile Assembly
+
+#### Step 4.1: Compose the Profile
+
+Assemble all discovered data into the workspace profile YAML:
+
+```yaml
+# .gsd/workspace-profile.yaml
+schema_version: "1.1.0"
+generated_at: "{{ISO_8601_TIMESTAMP}}"
+workspace_path: "{{WORKSPACE_PATH}}"
+
+languages:
+  primary: "{{PRIMARY_LANGUAGE}}"
+  secondary: []
+
+frameworks:
+  list: []
+  mcp_sdk: null
+  mcp_transport: null
+
+primary_stack_pack: null
+stack_packs: []
+
+build:
+  tool: "{{BUILD_TOOL}}"
+  command: "{{BUILD_COMMAND}}"
+
+test:
+  runner: "{{TEST_RUNNER}}"
+  command: "{{TEST_COMMAND}}"
+  directory: "{{TEST_DIR}}"
+
+lint:
+  tool: "{{LINTER}}"
+  command: "{{LINT_COMMAND}}"
+
+format:
+  tool: "{{FORMATTER}}"
+  command: "{{FORMAT_COMMAND}}"
+
+ci:
+  platform: "{{CI_PLATFORM}}"
+  pipeline_steps: []
+  quality_gates: []
+  required_check_name: "{{CI_REQUIRED_CHECK_NAME}}"
+  linux_only: true
+  path_filter_mode: "{{CI_PATH_FILTER_MODE}}"
+  docs_only_paths: []
+
+local_gating:
+  pre_push_enabled: {{PRE_PUSH_ENABLED}}
+  pre_push_gates: []
+
+structure:
+  source_layout: "{{SOURCE_LAYOUT}}"
+  test_layout: "{{TEST_LAYOUT}}"
+  doc_layout: "{{DOC_LAYOUT}}"
+
+runtime_surfaces:
+  web_ui: false
+  public_api: false
+  background_jobs: false
+  browser_tooling: []
+  deployment_manifests: []
+
+conventions:
+  code_style: {}
+  git: {}
+  documentation: {}
+
+distribution:               # omit this section when is_global_tool is false
+  is_global_tool: true      # true when workspace ships agents in its distribution package
+  global_agents_dir: .github/agents        # agents included in the package
+  local_agents_dir: .github/local-agents/  # workflow agents excluded from the package
+
+tools:
+  markdownlint: false        # true when markdownlint-cli is installed
+  markdownlint_config: null  # path to existing config file, or null
+
+harness_recommendations:
+  preset: "{{RECOMMENDED_PRESET}}"
+  capability_packs: []
+  install_layers: []
+  recommendation_reasons:
+    preset: []
+    capability_packs: []
+    install_layers: []
+  # Example when Engram is detected and recommended:
+  # capability_packs: ["agent-engram"]
+
+agent_engram:
+  detected: false
+  mcp_configured: false
+  config_paths: []
+  instruction_markers: []
+  recommended: false
+  # Example when Engram is present:
+  # detected: true
+  # mcp_configured: true
+  # config_paths: [".mcp.json", ".engram/config.toml"]
+  # recommended: true
+
+kbdb:
+  detected: false
+  mcp_configured: false
+  config_paths: []
+  sources_path: ""
+  binary_path: ""
+  embed_model_dir: ""
+  instruction_markers: []
+  recommended: false
+  # Example when kbdb is present:
+  # detected: true
+  # mcp_configured: true
+  # config_paths: [".mcp.json"]
+  # sources_path: ".kbdb/config/sources.yaml"
+  # binary_path: ".kbdb/bin/kbdb.exe"
+  # embed_model_dir: ".kbdb/models/all-MiniLM-L6-v2"
+  # recommended: true
+
+agent_native:
+  detected: false
+  mcp_sdk_present: false
+  mcp_transport: null
+  agent_tooling_markers: []
+  user_agent_parity_required: false
+  recommended_reviewer: false
+
+existing_harness:
+  has_harness: false
+  artifacts: []
+
+backlog_tool:
+  detected: false
+  tool_name: null
+  directory: null
+  tool_type: null
+  mcp_registered: false
+  cli_available: false
+  config_path: null
+  registry_path: null
+  status_values: []
+  features: {}
+
+vscode:
+  detected: false
+  user_settings_path: null
+  has_agent_settings: false
+
+drift_report: null
+# Example in tuning mode:
+# drift_report:
+#   changes: []
+#   checksum_scan:
+#     manifest_present: true
+#     ignore_file: ".gsd/drift-ignore"
+#     checked_artifacts: 12
+#     missing_count: 0
+#     user_modified_count: 1
+#     ignored_count: 0
+#     artifacts: []
+#   recommendations: []
+```
+
+#### Step 4.2: Present for Review
+
+Display the profile summary to the user and wait for confirmation or corrections before the installer proceeds to template composition.
+
+The summary MUST include:
+
+* Primary stack pack and additive stack packs detected from the workspace
+* Recommended preset (`starter`, `standard`, or `full`)
+* Recommended install layers derived from preset, stack packs, runtime surfaces, and overlays
+* Recommended external-tool capability packs only (`agent-engram`, `backlogit`, `kbdb`); runtime-surface signals such as browser tooling configure core protocols instead
+* Runtime validator expectations — which surfaces are expected, which probe hints were detected, and whether releasability evidence is required before Ship treats runtime validation as complete
+* Whether the `agent-engram` pack is recommended because engram markers or indexed-search workflow signals were detected
+* Whether the `kbdb` pack is recommended because kbdb markers (or legacy graphtor markers) or indexed local-documentation workflow signals were detected
+* Whether the `backlogit` pack is recommended because backlogit was detected and its advanced workflow features are available
+* Whether security-sensitive, migration, or high-blast-radius signals were detected (emphasizing the core strict-safety protocol)
+* Whether deployment infrastructure and runtime surfaces were detected (emphasizing the core release-observability protocol)
+* Whether the conditional agent-native parity reviewer is recommended because MCP or parity-sensitive agent tooling surfaces were detected
+* Whether Primitive 10 should be emphasized because deployment or runtime surfaces were detected
+* Plain-language reasons for the recommended preset, packs, and install layers rather than only the final names
+
+## Quality Criteria
+
+* Every field in the profile schema is populated or explicitly set to null with a reason
+* Language detection is verified against at least 2 signals (file extensions alone are insufficient)
+* Build and test commands are verified to exist in configuration files, not assumed
+* The profile is valid YAML and conforms to `schemas/workspace-profile.schema.json`
+* When tuning mode is active and a manifest exists, checksum-scan results are captured or explicitly omitted with a reason

@@ -1,0 +1,330 @@
+---
+name: verify-harness
+description: "Multi-model adversarial verification of installed or tuned harness artifacts using parallel reviewers with consensus-based finding assembly and auto-remediation"
+---
+
+# Adversarial Harness Verification
+
+Dispatch multiple independent reviewer subagents — each using a different model —
+to audit installed harness artifacts against their authoritative templates, overlay
+coherence requirements, and cross-reference contracts. Assemble findings into a
+confidence-weighted consensus report and auto-remediate confirmed defects.
+
+This skill is the final guardrail after deterministic verification via
+`gsd verify-workspace --workspace {workspace_path}` (template
+variable sweep, cross-reference sweep, overlay coherence sweep, structural
+validation — defined in install-harness Phase 4, Steps 4.1–4.4). Deterministic checks catch mechanical defects; adversarial
+verification catches semantic defects that mechanical checks miss: dropped
+template content, stale references to deprecated agents, incomplete overlay
+weaving, missing skills from discovery tables, and workspace-profile drift.
+
+## When to Use
+
+Invoke as the final step of:
+
+* install-harness Phase 4 (after Step 4.4 structural validation)
+* tune-harness Phase 5 (after the deterministic verification pass)
+
+The skill is mandatory for `standard` and `full` presets. It may be skipped for
+`starter` preset or when `--skip-adversarial` is explicitly passed.
+
+## Inputs
+
+* `gsd_home`: (Required) Path to the gsd installation.
+* `workspace_path`: (Required) Path to the target workspace root.
+* `manifest_path`: (Required) Path to `.gsd/harness-manifest.yaml`.
+* `reviewers`: (Optional, default 3) Number of parallel reviewer instances. Minimum 2.
+* `auto_remediate`: (Optional, default true) Apply HIGH-confidence fixes automatically.
+* `scope`: (Optional, default `all`) One of `all`, `new-only` (only artifacts
+  created or modified in the current install/tune session), or a comma-separated
+  artifact path list.
+
+## Output
+
+* Verification findings appended to the install/tune report
+* Auto-remediated artifacts (when `auto_remediate` is true)
+* Remaining findings requiring operator review
+
+## Deterministic Checks Consumed
+
+### Deterministic Check: `frontmatter_conformity`
+
+`gsd verify-workspace` runs the `frontmatter_conformity` targeted check
+over every installed agent (`*.agent.md` in the agent scan directories) and every
+skill root (`.github/skills/*/SKILL.md`), validating each frontmatter block
+against the frontmatter contract in `internal/frontmatter_contract.py`.
+The result is reported at `targeted_checks.frontmatter_conformity` with `ok`,
+`errors[]`, `info[]`, and a per-file `files{}` map that records each file's
+`class`, `profile`, `checksum_status`, and `findings[]`.
+
+Each file is classified by provenance:
+
+| Class | Provenance | Effect of a blocking finding |
+|---|---|---|
+| `managed-rendered` | Manifest `artifacts[]` entry whose source template resolves to an existing file inside gsd `templates/` | Fails the check closed |
+| `managed-community` | Installed community template (`community_templates[]` entry matched by `installed_path`) | Fails the check closed |
+| `managed-source` | gsd's own source-controlled agent or skill definition (`global agent definition` / `global skill definition`) | Fails the check closed |
+| `workspace-authored` | Not tracked by the manifest (`artifacts[]` or `community_templates[]`) — the workspace's own agents and skills — or an `artifacts[]` entry labeled `workspace merge install` / `workspace deliberation template` | One advisory `warnings[]` entry of kind `frontmatter-conformity`; never changes `ok` |
+| `unknown-provenance` | `artifacts[]` entry with any other label whose source template does not resolve inside gsd `templates/` | Advisory, like `workspace-authored` |
+
+Managed files fail closed regardless of checksum status (H-B3): a
+`user-modified` or `ignored` checksum does not excuse a nonconformant managed
+file. Workspace-authored files are preserved and reported, never rewritten.
+
+Agents are checked against one of two profiles. `tier-routed` applies only
+when the manifest records `install_mode: "self-install"`, the workspace-root
+`.gsd/harness-manifest.yaml` is a regular, non-symlink file inside the workspace whose `name`
+is exactly `gsd`, and its `agents[]` lists the agent; every other agent
+is `tier-routed`. An untrustworthy `.gsd/harness-manifest.yaml` (symlink or reparse point,
+non-regular, outside the workspace, invalid JSON, or malformed `agents[]`)
+yields one `frontmatter-conformity-plugin-json` warning and an empty
+plugin-agent set, so listed agents fail safe to `tier-routed`:
+
+* `tier-routed` — installed agents; require `max_subagent_tier`,
+  `subagent_depth`, and the install-resolved `model_family`, `model_provider`,
+  and `reasoning_effort` route.
+* `tier-routed` — plugin-distributed agents; declare only the tier keys
+  (`max_subagent_tier`, `subagent_depth`) and must not carry any route-value
+  key. They run on the operator's session model.
+
+Skills are leaf executors (P-013.5) and must carry no routing key and no bare
+`model:`. No agent or skill may carry a bare `model:` key.
+
+`FM_UNKNOWN_KEY` is informational only: it appears in the per-file `findings[]`
+and in `info[]`, and never fails the check or emits a warning. Every blocking
+finding also yields a `contract: frontmatter-conformity` entry in
+`migration_proposals[]` (`from_version: null`, `to_version: fc-1`), which
+tune-harness promotes in its Step 1.5c. A managed file's `rerender` /
+`reinstall-community` proposal requires checksum status `unchanged` and a
+rendered source candidate that passes the check; a failing or unproducible
+candidate yields report-only `source-repair` instead.
+
+Adversarial reviewers treat this check's verdict as authoritative for
+frontmatter key conformity: report a failing `frontmatter_conformity` check as a
+deterministic defect rather than re-deriving key rules by hand.
+
+### Deterministic Check: `agent_skill_references`
+
+`gsd verify-workspace` runs the `agent_skill_references` targeted check on any
+workspace carrying an installed harness surface (`.github/agents` or
+`.github/skills`). It scans `.github/agents/**/*.agent.md` for structured skill
+invocation references only: the `invoke the <name> skill` form and explicit
+`skills/<name>/SKILL.md` paths. Each reference resolves to exactly one of:
+
+* `INSTALLED`: `.github/skills/<name>/SKILL.md` exists (pass).
+* `KNOWN_TEMPLATE`: absent from `.github/skills/` but a
+  `templates/skills/<name>/SKILL.md.tmpl` source exists (pass; the template path
+  is reported).
+* `DANGLING`: present in neither place (fail; the failure names the exact
+  referencing file and line).
+
+The check fails closed: an absent or empty `.github/skills/` or
+`.github/agents/` fails rather than passing vacuously. It is reported at
+`targeted_checks.agent_skill_references` with `ok`, `refs`, `failures[]`, and
+`details[]`. The check never installs a skill to satisfy itself, and it covers
+exactly one edge type (installed agent to named skill).
+
+## Required Protocol
+
+### Phase 1: Assemble Review Payload
+
+1. Read `.gsd/harness-manifest.yaml` to identify all installed artifacts,
+   their source templates, capability packs, and overlay targets.
+2. Read `.gsd/config.yaml` and `.gsd/workspace-profile.yaml` for
+   the workspace context (language, packs, docs paths, prefix map).
+3. Build the review payload — a structured map of:
+   * Every installed artifact path and its source template path
+   * Every enabled capability pack and its declared overlay targets
+   * The skills table from `AGENTS.md` and `copilot-instructions.md`
+   * The actual skill directories in `.github/skills/`
+   * The actual agent files in `.github/agents/` and `.github/agents/subagents/`
+   * The "Where to look next" or equivalent discovery table in `AGENTS.md`
+   * The workspace profile's capability pack detection flags
+   * The local review readiness surfaces: workflow policy text, review skill readiness contract, and GitHub PR automation readiness instructions
+   * When the workspace is hosted on GitHub, the `copilot-code-review.instructions.md` focus surface: confirm it exists, carries `applyTo: '**'` and `excludeAgent: 'cloud-agent'`, keeps the FOCUS-on-high-value-concerns framing (not blanket suppression), and preserves the weakened-enforcement review guidance
+   * The dark factory mode surfaces when P-017 is installed: Orchestrator trigger/state guidance, Ship/pr-lifecycle merge/admin fallback guidance, the P-017 Dark Factory Visibility Protocol event contract in `workflow-policies.md`, `feature-flow-dark` prompt, and foundation docs
+
+### Phase 2: Define Review Domains
+
+Split the review into three independent domains so each reviewer can be
+dispatched in parallel:
+
+| Domain | Focus | Key Checks |
+|---|---|---|
+| **Template Fidelity** | Compare every installed artifact against its source template | Dropped content, unresolved variables, missing sections, incorrect variable resolution, missing Model Routing sections |
+| **Overlay Coherence** | Verify each enabled pack is consistently woven | Pack instruction file exists, foundation docs reference the pack, pipeline agents declare pack tools, skills reference pack instruction file, overlay targets contain pack behavior keywords, agent-engram structural-routing-before-grep assertions are present |
+| **Cross-Reference Integrity** | Verify all discovery tables, policy references, and agent→skill→reviewer chains resolve | Skills table complete vs actual skills, reviewer table complete vs actual reviewers, policy agents are installed agents (not skills), profile detection flags match installed packs, deprecated agent references cleaned up, local review readiness references agree across policy / skill / instruction surfaces, P-017 dark factory references agree across policy / Orchestrator / Ship / pr-lifecycle / prompt surfaces |
+
+When `agent-engram` is enabled, overlay coherence MUST verify both
+`.github/instructions/agent-engram.instructions.md` and
+`.github/instructions/capability-pack-enforcement.instructions.md` assert that
+structural code questions route to agent-engram before grep/ripgrep or raw file
+reads unless a direct-tool exemption applies. The assertion must cover
+callers/callees, impact, symbols, blast radius, inheritance, implementations,
+implementers, and where/how-implemented questions. Missing or weakened coverage
+is a MAJOR overlay-coherence finding.
+
+### Phase 2.5: Resolve Anchor Review Route
+
+Before dispatch, read the target workspace config at
+`<workspace_path>/.gsd/config.yaml` and resolve
+`model_routing.anchor_review`:
+
+* `model_provider` — default `openai` when the route is absent
+* `model_family` — default `gpt-5.6-sol` when the route is absent
+* `reasoning_effort` — default `high`; empty means use the model default
+
+Resolve the effective anchor route first: use the operator override from
+`model_routing.anchor_review` when present, otherwise use the literal defaults above.
+Then probe or attempt dispatch for that resolved provider/family/effort. If the
+current environment can dispatch the resolved route, mark the Anchor Reviewer as
+enabled and record `TOOL_OK: anchor-review-model`. Record
+`TOOL_DEGRADED: anchor-review-model — declared fallback: tier-diverse reviewer pool`
+only when the resolved route cannot be dispatched; never treat an omitted
+`anchor_review` config key by itself as degradation. Keep the normal Tier 1/2/3
+reviewers only for that declared fallback, and continue only when at least two
+reviewer instances and the consensus minimums below remain satisfiable. Never write unresolved anchor-review template variables into this source-controlled
+skill; this file resolves runtime config from the target workspace instead.
+
+### Phase 3: Dispatch Parallel Reviewers
+
+Launch one reviewer subagent per domain. Each reviewer MUST use a **different
+model** to ensure genuine diversity of critique:
+
+| Reviewer | Domain | Suggested Model Route |
+|---|---|---|
+| Anchor Reviewer | Overlay Coherence (`overlay-coherence`) — anchor sanity pass | `model_routing.anchor_review` (default `openai` / `gpt-5.6-sol`, `high`) when dispatchable; otherwise declared fallback |
+| Reviewer A | Template Fidelity | Tier 3 (Frontier) |
+| Reviewer B | Overlay Coherence | Tier 2 (Standard, different vendor) |
+| Reviewer C | Cross-Reference Integrity | Tier 1 or Tier 2 (different from A and B) |
+
+Each reviewer receives:
+
+* The review payload from Phase 1
+* Read access to the workspace and gsd template directories
+* Instructions to return **structured JSON findings only**
+* For JSON output, the Anchor Reviewer MUST use the existing `overlay-coherence` domain value; its anchor perspective is identified by reviewer name, not by a new domain enum.
+
+Each reviewer produces a JSON array:
+
+```json
+[
+  {
+    "severity": "CRITICAL|MAJOR|MINOR",
+    "domain": "template-fidelity|overlay-coherence|cross-reference",
+    "file": "affected file path in workspace",
+    "template": "source template path (if applicable)",
+    "issue": "precise description of the defect",
+    "fix": "specific remediation action",
+    "auto_fixable": true|false
+  }
+]
+```
+
+Do not proceed to Phase 4 until all reviewers have returned results.
+
+### Phase 4: Consensus Assembly
+
+Collect all finding arrays. For each unique finding (keyed by `file` + `issue`
+semantic match):
+
+1. **Count agreement**: How many reviewers flagged this finding or a
+   semantically equivalent one?
+2. **Assign confidence tier**:
+   * **HIGH**: Flagged by 2+ reviewers, or flagged by 1 reviewer and
+     independently verifiable by reading the file (e.g., missing section,
+     wrong path)
+   * **MEDIUM**: Flagged by 1 reviewer with plausible evidence but not
+     mechanically verifiable without reading both template and installed file
+   * **LOW**: Flagged by 1 reviewer with weak or speculative evidence
+3. **Resolve severity conflicts**: Use the most conservative (highest) severity
+   when reviewers disagree.
+4. **Verify before classifying HIGH**: For every finding a reviewer marks as
+   CRITICAL or MAJOR, the assembler MUST read the actual file to confirm the
+   defect exists. Downgrade to MEDIUM if the file content does not match the
+   finding. This prevents hallucinated findings from triggering auto-remediation.
+
+### Phase 5: Auto-Remediation
+
+When `auto_remediate` is true, apply fixes for findings that meet ALL of these:
+
+* Confidence: HIGH
+* `auto_fixable`: true
+* The fix is additive (adding missing content) or corrective (fixing a reference)
+  — never destructive (deleting content the operator may have intentionally added)
+
+For each auto-fix:
+
+1. Back up the target file to `.gsd/backups/{YYYY-MM-DD}/`
+2. Apply the fix
+3. Re-verify the fix did not introduce new issues (re-run the specific
+   deterministic check that covers this artifact)
+4. Record the fix in the verification report
+
+Fixes that are destructive, ambiguous, or MEDIUM/LOW confidence are presented to
+the operator for manual review.
+
+### Phase 6: Produce Report
+
+Append to the install/tune report:
+
+```markdown
+## Adversarial Verification
+
+### Reviewer Dispatch
+- Anchor Reviewer (model_routing.anchor_review): {model_or_declared_fallback} — {finding_count} findings
+- Reviewer A (Template Fidelity): {model} — {finding_count} findings
+- Reviewer B (Overlay Coherence): {model} — {finding_count} findings
+- Reviewer C (Cross-Reference Integrity): {model} — {finding_count} findings
+
+### Consensus Findings (ordered by confidence × severity)
+
+#### HIGH Confidence
+| # | Severity | Domain | File | Issue | Status |
+|---|---|---|---|---|---|
+| 1 | CRITICAL | {domain} | {file} | {issue} | AUTO-FIXED / NEEDS REVIEW |
+
+#### MEDIUM Confidence
+...
+
+#### LOW Confidence
+...
+
+### Auto-Remediation Summary
+- Findings auto-fixed: {count}
+- Findings requiring manual review: {count}
+- False positives dismissed: {count}
+
+### Verification Result: {PASS|PASS WITH WARNINGS|FAIL}
+```
+
+**PASS**: Zero HIGH-confidence CRITICAL/MAJOR findings remaining after
+auto-remediation.
+
+**PASS WITH WARNINGS**: All HIGH-confidence findings resolved; MEDIUM findings
+remain for operator review.
+
+**FAIL**: HIGH-confidence CRITICAL or MAJOR findings remain that could not be
+auto-remediated.
+
+## Behavioral Constraints
+
+* Never auto-fix a finding that removes content — only add or correct
+* Never auto-fix based on a single reviewer's LOW-confidence finding
+* Always read the actual file content before classifying a finding as HIGH
+  confidence — do not trust reviewer claims without verification
+* Back up every file before modification
+* If the Anchor Reviewer cannot be dispatched, record the declared fallback separately
+  from Reviewer A/B/C so the report makes the anchor route outcome visible
+* If fewer than 2 reviewer instances return results, halt and report the failure
+  rather than proceeding with single-model findings
+
+## Model Routing
+
+This skill operates at **Tier 2 (Standard)** for consensus assembly. Individual
+reviewers operate at their assigned tiers (one per tier when 3 reviewers are used).
+
+## Subagent Depth
+
+Maximum 1 hop. This skill dispatches reviewer subagents that are leaf executors
+(no further subagent spawning).

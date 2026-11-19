@@ -74,12 +74,8 @@ harness_recommendations:
   preset: full
   capability_packs:
     - backlogit
-    - strict-safety
     - agent-engram
-    - adversarial-review
-    - release-observability
-    - continuous-learning
-    - graphtor-docs
+    - kbdb
 
 agent_engram:
   detected: true
@@ -350,7 +346,7 @@ backlog_tool:
   mcp_registered: true
   cli_available: true
   config_path: ".backlogit/config.yaml"
-  registry_path: ".autoharness/backlog-registry.yaml"
+  registry_path: ".gsd/backlog-registry.yaml"
   status_values:
     - "queued"
     - "active"
@@ -425,13 +421,13 @@ drift_report:
     - category: "degrading"
       description: "Resolved all staged template placeholders via manifest variables_used bindings and excluded the evidence-dependent policy-proposal scaffold from active rendering"
       affected_artifacts:
-        - ".autoharness/harness-manifest.yaml"
+        - ".gsd/harness-manifest.yaml"
     - category: "growth"
       description: "Adversarial-verification pass (2026-08-30, anchor route gpt-5.6-sol/openai/high): merged the current-1.5 capability-pack-enforcement coordinator paragraph and the explicit structural-routing-before-grep mandate (callers/callees, impact analysis, symbols, blast radius, inheritance, implementations, implementers, where/how implemented) plus the trivial single-file direct-tool exemption into agent-engram.instructions.md, preserving the workspace observability/diagnostics additions"
       affected_artifacts:
         - ".github/instructions/agent-engram.instructions.md"
     - category: "degrading"
-      description: "Corrected agent tools frontmatter for the enabled agent-engram pack: added engram/* to _stage and _ship; removed the disabled graphtor-docs tool from _orchestrator and added memory + engram/*"
+      description: "Corrected agent tools frontmatter for the enabled agent-engram pack: added engram/* to _stage and _ship; removed the disabled kbdb tool from _orchestrator and added memory + engram/*"
       affected_artifacts:
         - ".github/agents/_stage.agent.md"
         - ".github/agents/_ship.agent.md"
@@ -449,7 +445,7 @@ drift_report:
       affected_artifacts:
         - ".github/instructions/adversarial-review.instructions.md"
         - ".github/agents/review/adversarial-review.agent.md"
-        - ".autoharness/harness-manifest.yaml"
+        - ".gsd/harness-manifest.yaml"
     - category: "degrading"
       description: "Corrected escalation-protocol.instructions.md: the legacy flat route prose now states that config declares model_routing.escalation gpt-5.4/openai/high and that it applies when no nested per-role override exists; the degraded example now shows Stage's current flat escalation as distinct from claude-opus-4.8/anthropic/high and therefore NOT degraded, while preserving the generic same-route rule"
       affected_artifacts:
@@ -471,19 +467,19 @@ drift_report:
       description: "Installed .github/instructions/copilot-code-review.instructions.md from the 1.5.0 template (GitHub-hosted focus surface required by verify-harness). PROJECT_NAME=backlogit; Go/backlogit-specific HARNESS_ENFORCED_SUMMARY; applyTo '**' and excludeAgent 'cloud-agent' preserved. Complements — does not replace — the hand-authored .github/copilot-review-instructions.md."
       affected_artifacts:
         - ".github/instructions/copilot-code-review.instructions.md"
-        - ".autoharness/harness-manifest.yaml"
+        - ".gsd/harness-manifest.yaml"
     - category: "degrading"
       description: "Refreshed LF-normalized SHA-256 checksums for all 13 artifacts changed in the adversarial-verification pass and normalized 4 legacy raw-byte checksum entries (.github/copilot-instructions.md, github-pr-automation.instructions.md, technology.instructions.md, harness-architect/SKILL.md) to the manifest's dominant convention. 19 pre-existing stale entries were left untouched and recorded as a P2 recommendation so real drift is not masked."
       affected_artifacts:
-        - ".autoharness/harness-manifest.yaml"
+        - ".gsd/harness-manifest.yaml"
     - category: "degrading"
-      description: "Final remediation cycle (2026-08-30, post-remediation cycle 1): resynced the registry-driven Extended Operations table in backlog-integration.instructions.md with the freshly rendered 1.5 table and .autoharness/backlog-registry.yaml — added abandon_checkpoint, docs_lint, docs_migrate, docs_scope, quarantine_checkpoint, and CLI-only repair_member_evidence rows, populated 20 previously empty CLI commands, and corrected add_link/remove_link to positional {{link_type}} syntax. Workspace-specific prose outside the table preserved."
+      description: "Final remediation cycle (2026-08-30, post-remediation cycle 1): resynced the registry-driven Extended Operations table in backlog-integration.instructions.md with the freshly rendered 1.5 table and .gsd/backlog-registry.yaml — added abandon_checkpoint, docs_lint, docs_migrate, docs_scope, quarantine_checkpoint, and CLI-only repair_member_evidence rows, populated 20 previously empty CLI commands, and corrected add_link/remove_link to positional {{link_type}} syntax. Workspace-specific prose outside the table preserved."
       affected_artifacts:
         - ".github/instructions/backlog-integration.instructions.md"
     - category: "degrading"
       description: "Escalation routing consistency: added ESCALATION_FAMILY gpt-5.4 / ESCALATION_PROVIDER openai / ESCALATION_REASONING_EFFORT high manifest bindings mirroring config.model_routing.escalation, and retargeted only the currently-effective escalation-route statement in _stage and _ship from claude-opus-4.8/anthropic/high to gpt-5.4/openai/high. The separate tier3 per-field fallback statements remain claude-opus-4.8/anthropic/high by design."
       affected_artifacts:
-        - ".autoharness/harness-manifest.yaml"
+        - ".gsd/harness-manifest.yaml"
         - ".github/agents/_stage.agent.md"
         - ".github/agents/_ship.agent.md"
     - category: "growth"
@@ -506,44 +502,44 @@ drift_report:
       description: "Restored the enforced workflow-policy range to P-001 through P-021 in copilot-code-review.instructions.md and the manifest HARNESS_ENFORCED_SUMMARY binding now that P-018..P-021 are installed."
       affected_artifacts:
         - ".github/instructions/copilot-code-review.instructions.md"
-        - ".autoharness/harness-manifest.yaml"
+        - ".gsd/harness-manifest.yaml"
     - category: "growth"
       description: "Added a copilot_review configuration block (enforcement: auto, max_wait_seconds: 0) so the P-018 Copilot-review gate reference in Ship Step 5 item 7c resolves against this profile."
       affected_artifacts:
-        - ".autoharness/workspace-profile.yaml"
+        - ".gsd/workspace-profile.yaml"
     - category: "breaking"
       description: "Raised copilot_review.enforcement from `auto` to `required` and max_wait_seconds from 0 to 900. Upstream 1.5.0 made shadow review non-blocking by default (github-pr-automation.instructions.md 1.8) and made requesting Copilot review optional (1.1), so under `auto` the P-018 gate returned NOT_APPLICABLE on any PR where Copilot was never engaged, allowing unresolved review threads to reach merge. Verified against the real gate: classify(unresolved-threads, 'auto') -> NOT_APPLICABLE (merge allowed) vs classify(..., 'required') -> WAITING_FOR_REVIEW (merge held). Copilot reviewed 100% of sampled PRs (394-399), so forcing the gate on carries no wedge risk; max_wait_seconds 900 matches the documented 15-minute review budget so the gate polls instead of halting on a not-yet-landed review."
       affected_artifacts:
-        - ".autoharness/workspace-profile.yaml"
+        - ".gsd/workspace-profile.yaml"
     - category: "degrading"
       description: "Refreshed LF-normalized SHA-256 checksums for the seven managed artifacts changed in the final remediation cycle. Post-cycle audit: 64 tracked artifacts, 46 LF-normalized matches, 0 raw-byte matches, 18 pre-existing stale entries deliberately untouched (down from 19 because workflow-policies.md was refreshed with its P-018..P-021 merge)."
       affected_artifacts:
-        - ".autoharness/harness-manifest.yaml"
+        - ".gsd/harness-manifest.yaml"
     - category: "growth"
-      description: "Enabled the continuous-learning and graphtor-docs capability packs at operator direction. Added config.yaml continuous_learning and graphtor_docs blocks plus matching profile blocks, because CONTINUOUS_LEARNING_* resolve from config.yaml while GRAPHTOR_SOURCES_PATH/GRAPHTOR_BINARY_PATH resolve from this profile via _resolve_graphtor_*. Installed graphtor-docs.instructions.md (all eight MCP tools), re-rendered continuous-learning.instructions.md to schema-accurate values while preserving its capture-trigger list as an explicit manual-capture section, expanded both the routes and deferral blocks in capability-pack-enforcement.instructions.md together, and added the graphtor overlay to AGENTS.md, copilot-instructions.md, and constitution.instructions.md."
+      description: "Enabled the continuous-learning and kbdb capability packs at operator direction. Added config.yaml continuous_learning and kbdb blocks plus matching profile blocks, because CONTINUOUS_LEARNING_* resolve from config.yaml while GRAPHTOR_SOURCES_PATH/GRAPHTOR_BINARY_PATH resolve from this profile via _resolve_graphtor_*. Installed kbdb.instructions.md (all eight MCP tools), re-rendered continuous-learning.instructions.md to schema-accurate values while preserving its capture-trigger list as an explicit manual-capture section, expanded both the routes and deferral blocks in capability-pack-enforcement.instructions.md together, and added the graphtor overlay to AGENTS.md, copilot-instructions.md, and constitution.instructions.md."
       affected_artifacts:
-        - ".autoharness/config.yaml"
-        - ".autoharness/workspace-profile.yaml"
-        - ".github/instructions/graphtor-docs.instructions.md"
+        - ".gsd/config.yaml"
+        - ".gsd/workspace-profile.yaml"
+        - ".github/instructions/kbdb.instructions.md"
         - ".github/instructions/continuous-learning.instructions.md"
         - ".github/instructions/capability-pack-enforcement.instructions.md"
         - ".github/instructions/constitution.instructions.md"
         - "AGENTS.md"
         - ".github/copilot-instructions.md"
     - category: "growth"
-      description: "Registered graphtor-docs in .mcp.json with `serve --read-only`, because inside a workspace graphtor-docs is used exclusively in a read-only manner. Its absence from .mcp.json - not any harness gap - is why the pack had no reachable tool surface. .mcp.json is gitignored and machine-local, matching the five pre-existing server registrations. No source registry, index, or ingestion state is configured or committed from this workspace."
+      description: "Registered kbdb in .mcp.json with `serve --read-only`, because inside a workspace kbdb is used exclusively in a read-only manner. Its absence from .mcp.json - not any harness gap - is why the pack had no reachable tool surface. .mcp.json is gitignored and machine-local, matching the five pre-existing server registrations. No source registry, index, or ingestion state is configured or committed from this workspace."
       affected_artifacts:
         - ".mcp.json"
     - category: "growth"
-      description: "SCOPE NOTE - graphtor-docs never indexes a workspace. It serves a documentation corpus curated in advance for ingestion, and in-workspace usage is read-only retrieval against that corpus. Pack enablement therefore installs instructions, overlays, and the read-only MCP registration only; it configures no sources, performs no sync, and commits no .graphtor/ state. .graphtor/ remains entirely gitignored tool-managed state per its original .gitignore entry. A NON-NEGOTIABLE Workspace Usage Rule encoding this was added to graphtor-docs.instructions.md (drift_allowed) and mirrored into the AGENTS.md, copilot-instructions.md, and constitution graphtor overlays."
+      description: "SCOPE NOTE - kbdb never indexes a workspace. It serves a documentation corpus curated in advance for ingestion, and in-workspace usage is read-only retrieval against that corpus. Pack enablement therefore installs instructions, overlays, and the read-only MCP registration only; it configures no sources, performs no sync, and commits no .graphtor/ state. .graphtor/ remains entirely gitignored tool-managed state per its original .gitignore entry. A NON-NEGOTIABLE Workspace Usage Rule encoding this was added to kbdb.instructions.md (drift_allowed) and mirrored into the AGENTS.md, copilot-instructions.md, and constitution graphtor overlays."
       affected_artifacts:
-        - ".github/instructions/graphtor-docs.instructions.md"
+        - ".github/instructions/kbdb.instructions.md"
         - ".github/instructions/constitution.instructions.md"
         - "AGENTS.md"
         - ".github/copilot-instructions.md"
   checksum_scan:
     manifest_present: true
-    ignore_file: ".autoharness/drift-ignore"
+    ignore_file: ".gsd/drift-ignore"
     checked_artifacts: 64
     missing_count: 0
     user_modified_count: 18
@@ -564,7 +560,7 @@ drift_report:
     - priority: "P2"
       summary: "Refresh the 18 legacy manifest checksums that match neither the raw-byte nor the LF-normalized digest of their installed file. These are pre-existing workspace customizations carried from earlier tuning passes; they were deliberately NOT auto-refreshed in the 2026-08-30 adversarial-verification or final remediation passes so genuine drift is not masked. Audited 2026-08-30 after the final remediation cycle: 64 tracked artifacts, 46 LF-normalized matches, 0 raw-byte matches, 18 stale. .github/policies/workflow-policies.md left this list when its checksum was refreshed alongside the P-018..P-021 merge."
       related_artifacts:
-        - ".autoharness/harness-manifest.yaml"
+        - ".gsd/harness-manifest.yaml"
         - "AGENTS.md"
         - ".github/skills/spike/SKILL.md"
         - ".github/skills/runtime-verification/SKILL.md"
@@ -578,7 +574,7 @@ drift_report:
         - ".github/instructions/continuous-learning.instructions.md"
         - ".github/agents/subagents/prompt-builder.agent.md"
         - ".github/agents/subagents/go-engineer.agent.md"
-        - ".autoharness/backlog-registry.yaml"
+        - ".gsd/backlog-registry.yaml"
         - ".backlogit/config.yaml"
         - ".backlogit/header-def.yaml"
         - "scripts/release_lock.ps1"
@@ -634,23 +630,18 @@ copilot_review:
   # documented in github-pr-automation.instructions.md §1.2.
   max_wait_seconds: 900      # integer >= 0
 
-# Graphtor-docs capability pack (enabled 2026-08-31). `_resolve_graphtor_sources_path`
-# and `_resolve_graphtor_binary_path` in verify_workspace.py read these from the
-# PROFILE (not config.yaml), so they are declared here to pin the rendered
-# GRAPHTOR_SOURCES_PATH / GRAPHTOR_BINARY_PATH values rather than relying on the
-# on-disk candidate probe. The binary and sources registry are already provisioned
-# under the gitignored .graphtor/ tree; all 8 tools the instruction file promises were
-# verified present via `graphtor-docs manifest`.
-graphtor_docs:
+# KBDB capability pack. Preserve the existing local source registry while the
+# workspace-owned binary moves to the canonical .bin directory.
+kbdb:
   sources_path: .graphtor/config/sources.yaml
-  binary_path: .graphtor/bin/graphtor-docs.exe
+  binary_path: .bin/kbdb.exe
   embed_model_dir: null
 
 # Continuous-learning capability pack (enabled 2026-08-31). Mirrors the
 # `continuous_learning` block in config.yaml, which is where
 # `_derive_template_variables` reads CONTINUOUS_LEARNING_* from.
 continuous_learning:
-  directory: .autoharness/continuous-learning
+  directory: .gsd/continuous-learning
   capture_hooks: false
   environment_adapter: none
   promotion_threshold: 5

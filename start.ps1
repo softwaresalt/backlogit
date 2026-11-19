@@ -50,7 +50,7 @@ if (Test-Path -LiteralPath $envLocalPath -PathType Leaf) {
     }
 }
 
-$workspaceBinDirectory = Join-Path $PSScriptRoot "bin"
+$workspaceBinDirectory = Join-Path $PSScriptRoot ".bin"
 $inheritedPath = @($env:PATH -split [IO.Path]::PathSeparator | Where-Object { $_ -ne $workspaceBinDirectory })
 $env:PATH = (@($workspaceBinDirectory) + $inheritedPath) -join [IO.Path]::PathSeparator
 $env:BUN_INSTALL = Join-Path $workspaceBinDirectory "bun"
@@ -173,7 +173,7 @@ if ($enabledSidecars -contains "engram") {
     }
 }
 
-if (($enabledSidecars -contains "kbdb") -or ($enabledSidecars -contains "graphtor-docs")) {
+if (($enabledSidecars -contains "kbdb") -or ($enabledSidecars -contains "kbdb")) {
     # This explicit sync step is required even though .mcp.json now routes
     # kbdb through scripts/graphtor-mcp-shim.cjs with `--read-only`:
     # `serve --read-only` deliberately disables its own background sync path
