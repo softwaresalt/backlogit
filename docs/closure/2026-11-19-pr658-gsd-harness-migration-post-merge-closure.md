@@ -42,7 +42,7 @@ or backlog shipment ID.
 
 * **GSD 1.6.0 workspace integrity**: `.\.bin\gsd.exe verify-workspace --workspace . --json` reports `0` blockers, `0` strict schema blockers, `0` unresolved findings, and `97/97` manifest checksums `unchanged` on synchronized `main`.
 * **Wave scheduler contract**: `pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue` passes `WAVE_SIM_OK: 279/279 assertions PASS across 38 scenario(s)` against `.gsd/` and `.github/policies/workflow-policies.md` `1.32.0`.
-* **Go build and migrated test suites**: `go build ./cmd/backlogit` (`exit 0`), `TestU4_CreateCheckpointGoverned` (`tests/contract`), `TestMetadataCatalog_CLIAndMCPParity` / `TestU2_` (`internal/cli`), and `TestDoclineSoftKeys_LiveTrackedCorpus` / `TestGovernedFullSuiteBudget_` (`tests/integration`) pass on `main`.
+* **Go build and migrated test suites**: `go build ./cmd/backlogit` (`exit 0`), `TestU4_CreateCheckpointGoverned` (`tests/contract`), `TestMetadataCatalog_CLIAndMCPParity` / `TestU2_` (`internal/cli`), and `go test ./tests/integration/ -run "^(TestDoclineSoftKeys_LiveTrackedCorpus$|TestGovernedFullSuiteBudget_)" -count=1` (`TestDoclineSoftKeys_LiveTrackedCorpus` plus all 6 `TestGovernedFullSuiteBudget_*` suites) pass on `main`.
 * **Docs and formatting**: `go run ./cmd/backlogit docs lint` (`valid: true, violation_count: 0`), `gofmt -l cmd internal tests`, and `git diff --check` pass cleanly.
 * **Runtime surfaces**: `.gsd/workspace-profile.yaml` declares `web_ui: false`, `public_api: false`, `background_jobs: false`; zero Go production behavior changed in PR `#658`.
 

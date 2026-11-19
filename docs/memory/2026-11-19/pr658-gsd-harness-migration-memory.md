@@ -34,7 +34,7 @@ edits in `.backlogit/stash.jsonl`.
 * `go run ./cmd/backlogit docs lint` — PASS (`valid: true, violation_count: 0`)
 * `go test ./tests/contract/ -run TestU4_CreateCheckpointGoverned -count=1` — PASS
 * `go test ./internal/cli/ -run "TestMetadataCatalog_CLIAndMCPParity|TestU2_" -count=1` — PASS
-* `go test ./tests/integration/ -run "^(TestDoclineSoftKeys_LiveTrackedCorpus|TestGovernedFullSuiteBudget_)$" -count=1` — PASS
+* `go test ./tests/integration/ -run "^(TestDoclineSoftKeys_LiveTrackedCorpus$|TestGovernedFullSuiteBudget_)" -count=1` — PASS (`TestDoclineSoftKeys_LiveTrackedCorpus` plus all 6 `TestGovernedFullSuiteBudget_*` suites: `Guidance`, `LocalGates`, `Procedures`, `RenderInputs`, `Workflows`, `ShipFinalGate`)
 * `pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue` — PASS (`279/279` assertions across `38` scenarios)
 * `.\.bin\gsd.exe verify-workspace --workspace . --json` — `0` blockers, `0` strict schema blockers, `0` unresolved findings, `97/97` manifest checksums unchanged
 * `gofmt -l cmd internal tests` and `git diff --check` — PASS
