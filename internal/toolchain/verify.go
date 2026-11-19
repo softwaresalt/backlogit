@@ -212,6 +212,11 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 		err != nil || !samePath(abs, declared) || m.Tools == nil || m.HostPrerequisites == nil {
 		return nil, fmt.Errorf("invalid manifest required fields: %w", blerrors.ErrValidation)
 	}
+	if hasRawYAMLKey(&node, "tools_dir") || m.ToolsDir != "" {
+		if _, err := validManifestToolsDir(root, abs, m.ToolsDir); err != nil {
+			return nil, fmt.Errorf("invalid manifest tools_dir: %w", err)
+		}
+	}
 	if m.Tools == nil {
 		m.Tools = []ToolEntry{}
 	}
@@ -224,6 +229,19 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 		}
 	}
 	return &m, nil
+}
+
+func hasRawYAMLKey(document *yaml.Node, key string) bool {
+	if document == nil || len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return false
+	}
+	mapping := document.Content[0]
+	for i := 0; i < len(mapping.Content); i += 2 {
+		if foldJSONKey(mapping.Content[i].Value) == foldJSONKey(key) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateYAMLKeys(node *yaml.Node) error {
@@ -309,10 +327,8 @@ func isBacklogitExecutable(abs, execPath string) bool {
 	if trimmed == "" {
 		return false
 	}
-	if rel, err := relativePath(abs, trimmed, true); err == nil {
-		if samePath(rel, filepath.Join("bin", "backlogit.exe")) || samePath(rel, filepath.Join("bin", "backlogit")) {
-			return true
-		}
+	if rel, err := relativePath(abs, trimmed, true); err == nil && isPinnedBacklogitRelPath(rel) {
+		return true
 	}
 	base := strings.ToLower(filepath.Base(trimmed))
 	return base == "backlogit" || base == "backlogit.exe" ||
@@ -326,8 +342,41 @@ func isBacklogitTool(abs string, tool ToolEntry) bool {
 }
 
 func isPinnedBacklogitRelPath(rel string) bool {
-	return samePath(rel, filepath.Join("bin", "backlogit.exe")) ||
-		samePath(rel, filepath.Join("bin", "backlogit"))
+	rel = filepath.Clean(rel)
+	if !filepath.IsLocal(rel) {
+		return false
+	}
+	dir := filepath.Dir(rel)
+	if dir == "." || dir == ".." {
+		return false
+	}
+	firstSeg, _, _ := strings.Cut(filepath.ToSlash(rel), "/")
+	if samePath(firstSeg, ".git") || samePath(firstSeg, ".backlog") || samePath(firstSeg, ".backlogit") {
+		return false
+	}
+	base := filepath.Base(rel)
+	return samePath(base, "backlogit") || samePath(base, "backlogit.exe")
+}
+
+func validManifestToolsDir(root *os.Root, abs, toolsDir string) (string, error) {
+	if root == nil {
+		return "", fmt.Errorf("missing workspace root handle: %w", blerrors.ErrValidation)
+	}
+	if toolsDir != strings.TrimSpace(toolsDir) || strings.TrimSpace(toolsDir) == "" {
+		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
+	}
+	relDir, err := relativePath(abs, toolsDir, false)
+	if err != nil || relDir == "." {
+		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
+	}
+	firstSeg, _, _ := strings.Cut(filepath.ToSlash(relDir), "/")
+	if samePath(firstSeg, ".git") || samePath(firstSeg, ".backlog") || samePath(firstSeg, ".backlogit") {
+		return "", fmt.Errorf("reserved tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
+	}
+	if !bindingWithin(root, abs, toolsDir) {
+		return "", fmt.Errorf("tools_dir outside or redirected from workspace %q: %w", toolsDir, blerrors.ErrValidation)
+	}
+	return relDir, nil
 }
 
 func validBacklogitTool(abs string, tool ToolEntry) bool {
@@ -337,6 +386,21 @@ func validBacklogitTool(abs string, tool ToolEntry) bool {
 	path, err := relativePath(abs, tool.ExecutablePath, true)
 	return tool.ContainmentClass == WorkspaceLocalPinned && err == nil &&
 		isPinnedBacklogitRelPath(path)
+}
+
+func validBacklogitToolInManifest(abs string, m *ToolchainManifest, tool ToolEntry) bool {
+	if !isBacklogitTool(abs, tool) {
+		return true
+	}
+	if !validBacklogitTool(abs, tool) {
+		return false
+	}
+	if m != nil && strings.TrimSpace(m.ToolsDir) != "" {
+		relExec, err := relativePath(abs, tool.ExecutablePath, true)
+		relToolsDir, dirErr := relativePath(abs, m.ToolsDir, false)
+		return err == nil && dirErr == nil && samePath(filepath.Dir(relExec), relToolsDir)
+	}
+	return true
 }
 
 // isRunner recognizes versioned interpreter names whose U9 contract requires
@@ -385,6 +449,11 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 	if m.SchemaVersion != "1.0" || m.ContainmentLevel != Level1WorkspaceLocalPinned || !m.OSContainerSandboxDeferred {
 		return nil, fmt.Errorf("invalid manifest containment declaration: %w", blerrors.ErrValidation)
 	}
+	if m.ToolsDir != "" {
+		if _, err := validManifestToolsDir(root, abs, m.ToolsDir); err != nil {
+			return nil, fmt.Errorf("invalid manifest tools_dir: %w", err)
+		}
+	}
 	seen := make(map[string]bool)
 	for _, tool := range m.Tools {
 		if err := ctx.Err(); err != nil {
@@ -401,6 +470,8 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 			case WorkspaceLocalPinned:
 				if err := verifyLocalTool(root, abs, tool); err != nil {
 					f = finding(tool.ID, NonConformant, "violation", "local_tool_invalid", err.Error())
+				} else if !validBacklogitToolInManifest(abs, m, tool) {
+					f = finding(tool.ID, NonConformant, "violation", "local_tool_invalid", "Backlogit must use the workspace-local pinned binary in the declared tools_dir.")
 				} else {
 					f = finding(tool.ID, WorkspaceLocalPinned, "verified", "local_tool_verified", "Workspace-local file and pin verified.")
 				}
@@ -657,6 +728,11 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 	if m.WorkspaceRoot == "" || err != nil || !samePath(abs, declared) {
 		return nil, fmt.Errorf("manifest workspace mismatch: %w", blerrors.ErrValidation)
 	}
+	if m.ToolsDir != "" {
+		if _, err := validManifestToolsDir(root, abs, m.ToolsDir); err != nil {
+			return nil, fmt.Errorf("invalid manifest tools_dir: %w", err)
+		}
+	}
 	rel, err := relativePath(abs, configPath, false)
 	if err != nil {
 		return nil, fmt.Errorf("MCP config path: %w", err)
@@ -713,7 +789,7 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 			findings = append(findings, finding(name, Unsupported, "violation", "uninventoried_shadow_tool", "MCP server is not inventoried."))
 			continue
 		}
-		if tool.ID != strings.TrimSpace(tool.ID) || !validBacklogitTool(abs, tool) {
+		if tool.ID != strings.TrimSpace(tool.ID) || !validBacklogitToolInManifest(abs, m, tool) {
 			findings = append(findings, finding(name, NonConformant, "violation", "mcp_command_invalid", "Backlogit must use the workspace-local pinned binary."))
 			continue
 		}

@@ -32,6 +32,7 @@ type ToolchainManifest struct {
 	ContainmentLevel           string                  `json:"containment_level" yaml:"containment_level"`
 	OSContainerSandboxDeferred bool                    `json:"os_container_sandbox_deferred" yaml:"os_container_sandbox_deferred"`
 	WorkspaceRoot              string                  `json:"workspace_root" yaml:"workspace_root"`
+	ToolsDir                   string                  `json:"tools_dir,omitempty" yaml:"tools_dir,omitempty"`
 	Tools                      []ToolEntry             `json:"tools" yaml:"tools"`
 	HostPrerequisites          []HostPrerequisiteEntry `json:"host_prerequisites" yaml:"host_prerequisites"`
 }
