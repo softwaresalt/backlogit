@@ -1,6 +1,10 @@
 package toolchain
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -165,5 +169,315 @@ func TestU1_WriteToolchainManifestUsesAtomicFileReplacementAndRetrySemantics(t *
 		assert.ErrorIs(t, err, corerrors.ErrWriteNotApplied)
 		_, outsideErr := os.Stat(filepath.Join(outsideDir, "toolchain.yaml"))
 		assert.True(t, os.IsNotExist(outsideErr), "parent directory swap must never write toolchain.yaml into outsideDir")
+	})
+}
+
+// TestU2_LauncherAndProvisioningSupportDotBinAndConfigurableToolsDir gates 217.002-T (U2).
+func TestU2_LauncherAndProvisioningSupportDotBinAndConfigurableToolsDir(t *testing.T) {
+	const binaryBytes = "pinned binary"
+	sum := sha256.Sum256([]byte(binaryBytes))
+	sumHex := hex.EncodeToString(sum[:])
+
+	newManifest := func(root, manifestToolsDir, execDir string) *ToolchainManifest {
+		return &ToolchainManifest{
+			SchemaVersion:              "1.0",
+			ContainmentLevel:           Level1WorkspaceLocalPinned,
+			OSContainerSandboxDeferred: true,
+			WorkspaceRoot:              root,
+			ToolsDir:                   manifestToolsDir,
+			Tools: []ToolEntry{
+				{
+					ID:                   "backlogit",
+					Kind:                 "mcp",
+					ContainmentClass:     WorkspaceLocalPinned,
+					ExecutablePath:       "./" + execDir + "/backlogit.exe",
+					PinnedVersion:        "1.0.0",
+					SHA256:               sumHex,
+					WorkspaceBindingArgs: []string{"--cwd", root},
+				},
+				{
+					ID:               "remote",
+					Kind:             "mcp",
+					ContainmentClass: RemoteDeclared,
+					RemotePolicy:     "approved",
+				},
+				{
+					ID:               "host-built-in",
+					Kind:             "agent",
+					ContainmentClass: BuiltInHost,
+					Reason:           "provided by host",
+				},
+			},
+			HostPrerequisites: []HostPrerequisiteEntry{
+				{ID: "shell", Command: "shell", Purpose: "bootstrap", Reason: "host shell", Required: false},
+			},
+		}
+	}
+
+	writeLaunchers := func(t *testing.T, root, execDir string) {
+		t.Helper()
+		u9Write(t, root, "start.ps1", fmt.Sprintf(`$workspaceRoot = $PSScriptRoot
+$workspaceBinDirectory = Join-Path $workspaceRoot %q
+$backlogitPath = Join-Path $workspaceBinDirectory "backlogit.exe"
+if (-not (Test-Path -LiteralPath $backlogitPath -PathType Leaf)) { throw "Missing ./%s/backlogit.exe" }
+$env:COPILOT_HOME = Join-Path $workspaceRoot ".copilot"
+$env:ENGRAM_DATA_DIR = Join-Path $workspaceRoot ".engram"
+& $backlogitPath --cwd $workspaceRoot mcp status
+`, execDir, execDir))
+		u9Write(t, root, "start.sh", fmt.Sprintf(`#!/bin/sh
+workspace_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+workspace_bin_directory="$workspace_root/%s"
+backlogit_path="$workspace_bin_directory/backlogit.exe"
+if [ ! -f "$backlogit_path" ]; then echo "Missing ./%s/backlogit.exe" >&2; exit 1; fi
+export COPILOT_HOME="$workspace_root/.copilot"
+export ENGRAM_DATA_DIR="$workspace_root/.engram"
+"$backlogit_path" --cwd "$workspace_root" mcp status
+`, execDir, execDir))
+	}
+
+	t.Run("schema-declares-tools-dir", func(t *testing.T) {
+		data, err := os.ReadFile("../../schemas/workspace-toolchain.schema.json")
+		require.NoError(t, err)
+
+		var schema struct {
+			Properties map[string]struct {
+				Type      string `json:"type"`
+				MinLength int    `json:"minLength"`
+			} `json:"properties"`
+		}
+		require.NoError(t, json.Unmarshal(data, &schema))
+
+		toolsDirProp, ok := schema.Properties["tools_dir"]
+		require.True(t, ok, "schema properties must declare tools_dir")
+		assert.Equal(t, "string", toolsDirProp.Type)
+		assert.Equal(t, 1, toolsDirProp.MinLength)
+	})
+
+	t.Run("dot-bin-and-custom-tools-dir-audit-pass", func(t *testing.T) {
+		for _, tc := range []struct {
+			name             string
+			execDir          string
+			manifestToolsDir string
+		}{
+			{name: "dot-bin-explicit", execDir: ".bin", manifestToolsDir: ".bin"},
+			{name: "dot-bin-omitted", execDir: ".bin", manifestToolsDir: ""},
+			{name: "custom-bin", execDir: "custom-bin", manifestToolsDir: "custom-bin"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				root, _ := u9Workspace(t)
+				u9Write(t, root, tc.execDir+"/backlogit.exe", binaryBytes)
+				manifest := newManifest(root, tc.manifestToolsDir, tc.execDir)
+				writeLaunchers(t, root, tc.execDir)
+
+				require.NoError(t, WriteToolchainManifest(root, manifest))
+				rendered, err := RenderPinnedMCPConfig(root, manifest)
+				require.NoError(t, err)
+				assert.Contains(t, string(rendered), "./"+tc.execDir+"/backlogit.exe")
+				u9Write(t, root, ".mcp.json", string(rendered))
+
+				findings, err := VerifyLauncherScripts(root)
+				require.NoError(t, err)
+				require.NotEmpty(t, findings)
+				for _, f := range findings {
+					assert.NotEqual(t, "violation", f.Status, "%+v", f)
+					assert.NotEqual(t, NonConformant, f.ContainmentClass, "%+v", f)
+					assert.NotEqual(t, Unsupported, f.ContainmentClass, "%+v", f)
+				}
+
+				report, err := AuditRepositoryToolchain(context.Background(), root)
+				require.NoError(t, err)
+				require.NotNil(t, report)
+				assert.True(t, report.Valid, "%+v", report.Tools)
+				assert.Zero(t, report.Violations)
+			})
+		}
+	})
+
+	t.Run("remediation-strings-match-manifest-tools-dir", func(t *testing.T) {
+		for _, tc := range []struct {
+			name             string
+			manifestToolsDir string
+			execDir          string
+			wantPrefix       string
+			forbidPrefix     string
+			omitManifest     bool
+		}{
+			{
+				name:             "dot-bin-manifest",
+				manifestToolsDir: ".bin",
+				execDir:          ".bin",
+				wantPrefix:       "./.bin/",
+				forbidPrefix:     "./bin/",
+			},
+			{
+				name:         "default-empty-manifest",
+				execDir:      ".bin",
+				wantPrefix:   "./.bin/",
+				forbidPrefix: "./bin/",
+				omitManifest: true,
+			},
+			{
+				name:             "custom-tools-dir-manifest",
+				manifestToolsDir: "custom-bin",
+				execDir:          "custom-bin",
+				wantPrefix:       "./custom-bin/",
+				forbidPrefix:     "./bin/",
+			},
+			{
+				name:             "legacy-bin-manifest",
+				manifestToolsDir: "",
+				execDir:          "bin",
+				wantPrefix:       "./bin/",
+				forbidPrefix:     "./.bin/",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Run("missing-start-sh-and-path-lookup", func(t *testing.T) {
+					root, _ := u9Workspace(t)
+					if !tc.omitManifest {
+						u9Write(t, root, tc.execDir+"/backlogit.exe", binaryBytes)
+						manifest := newManifest(root, tc.manifestToolsDir, tc.execDir)
+						require.NoError(t, WriteToolchainManifest(root, manifest))
+						rendered, err := RenderPinnedMCPConfig(root, manifest)
+						require.NoError(t, err)
+						u9Write(t, root, ".mcp.json", string(rendered))
+					}
+					u9Write(t, root, "start.ps1", fmt.Sprintf(`$workspaceRoot = $PSScriptRoot
+$workspaceBinDirectory = Join-Path $workspaceRoot %q
+$backlogitPath = Join-Path $workspaceBinDirectory "backlogit.exe"
+if (-not (Test-Path -LiteralPath $backlogitPath -PathType Leaf)) { throw "Missing ./%s/backlogit.exe" }
+$env:COPILOT_HOME = Join-Path $workspaceRoot ".copilot"
+$env:ENGRAM_DATA_DIR = Join-Path $workspaceRoot ".engram"
+$companion = (Get-Command "engram")
+& $backlogitPath --cwd $workspaceRoot mcp status
+`, tc.execDir, tc.execDir))
+
+					report, err := AuditRepositoryToolchain(context.Background(), root)
+					require.NoError(t, err)
+					require.NotNil(t, report)
+					assert.False(t, report.Valid)
+					assert.Positive(t, report.Violations)
+
+					foundStartSH := false
+					foundEngram := false
+					for _, f := range report.Tools {
+						if f.Status != "violation" {
+							continue
+						}
+						norm := strings.ReplaceAll(f.Remediation, `\`, "/")
+						assert.NotContains(t, norm, tc.forbidPrefix, "finding %+v must not use %s", f, tc.forbidPrefix)
+						if f.ToolID == "start.sh" {
+							foundStartSH = true
+							assert.Contains(t, norm, tc.wantPrefix+"backlogit.exe", "start.sh finding %+v", f)
+						}
+						if f.ToolID == "engram" {
+							foundEngram = true
+							assert.Contains(t, norm, tc.wantPrefix+"engram.exe", "engram finding %+v", f)
+						}
+					}
+					assert.True(t, foundStartSH, "expected start.sh violation in %+v", report.Tools)
+					assert.True(t, foundEngram, "expected engram lookup violation in %+v", report.Tools)
+				})
+
+				if !tc.omitManifest {
+					t.Run("missing-engram-binary", func(t *testing.T) {
+						root, _ := u9Workspace(t)
+						u9Write(t, root, tc.execDir+"/backlogit.exe", binaryBytes)
+						manifest := newManifest(root, tc.manifestToolsDir, tc.execDir)
+						manifest.Tools = append(manifest.Tools, ToolEntry{
+							ID:               "engram",
+							Kind:             "mcp",
+							ContainmentClass: WorkspaceLocalPinned,
+							ExecutablePath:   "./" + tc.execDir + "/engram.exe",
+							PinnedVersion:    "1.0.0",
+							SHA256:           sumHex,
+						})
+						require.NoError(t, WriteToolchainManifest(root, manifest))
+						rendered, err := RenderPinnedMCPConfig(root, manifest)
+						require.NoError(t, err)
+						u9Write(t, root, ".mcp.json", string(rendered))
+						writeLaunchers(t, root, tc.execDir)
+
+						report, err := AuditRepositoryToolchain(context.Background(), root)
+						require.NoError(t, err)
+						require.NotNil(t, report)
+						assert.False(t, report.Valid)
+						assert.Positive(t, report.Violations)
+
+						foundEngram := false
+						for _, f := range report.Tools {
+							if f.Status != "violation" {
+								continue
+							}
+							norm := strings.ReplaceAll(f.Remediation, `\`, "/")
+							assert.NotContains(t, norm, tc.forbidPrefix, "finding %+v must not use %s", f, tc.forbidPrefix)
+							if f.ToolID == "engram" {
+								foundEngram = true
+								assert.Contains(t, norm, tc.wantPrefix+"engram.exe", "engram finding %+v", f)
+							}
+						}
+						assert.True(t, foundEngram, "expected engram violation in %+v", report.Tools)
+					})
+				}
+			})
+		}
+	})
+
+	t.Run("provisioning-rejects-invalid-tools-dir-and-mismatch", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			toolsDir string
+			execDir  string
+		}{
+			{name: "traversal", toolsDir: "../escape", execDir: ".bin"},
+			{name: "reserved-dot-backlogit", toolsDir: ".backlogit", execDir: ".bin"},
+			{name: "whitespace", toolsDir: "   ", execDir: ".bin"},
+			{name: "mismatched-exec-dir", toolsDir: "custom-bin", execDir: "bin"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				root, _ := u9Workspace(t)
+				u9Write(t, root, tc.execDir+"/backlogit.exe", binaryBytes)
+				manifest := newManifest(root, tc.toolsDir, tc.execDir)
+
+				err := WriteToolchainManifest(root, manifest)
+				require.Error(t, err)
+				assert.ErrorIs(t, err, corerrors.ErrValidation)
+
+				_, err = RenderPinnedMCPConfig(root, manifest)
+				require.Error(t, err)
+				assert.ErrorIs(t, err, corerrors.ErrValidation)
+			})
+		}
+	})
+
+	t.Run("effective-tools-dir-normalizes-relative-workspace-root-and-casefold-reserved", func(t *testing.T) {
+		absCwd, err := filepath.Abs(".")
+		require.NoError(t, err)
+		m := &ToolchainManifest{
+			WorkspaceRoot: ".",
+			Tools: []ToolEntry{
+				{
+					ID:               "backlogit",
+					ContainmentClass: WorkspaceLocalPinned,
+					ExecutablePath:   filepath.Join(absCwd, ".tools", "bin", "backlogit.exe"),
+				},
+			},
+		}
+		assert.Equal(t, ".tools/bin", effectiveManifestToolsDir(m))
+		f := toolRemediation(ToolVerificationFinding{ToolID: "backlogit", Status: "violation"}, m)
+		assert.Contains(t, f.Remediation, "./.tools/bin/backlogit.exe")
+
+		reserved := &ToolchainManifest{
+			WorkspaceRoot: ".",
+			ToolsDir:      ".GIT/bin",
+			Tools: []ToolEntry{
+				{
+					ID:               "backlogit",
+					ContainmentClass: WorkspaceLocalPinned,
+					ExecutablePath:   ".Backlog/backlogit.exe",
+				},
+			},
+		}
+		assert.Equal(t, ".bin", effectiveManifestToolsDir(reserved))
 	})
 }

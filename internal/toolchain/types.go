@@ -28,12 +28,14 @@ const (
 
 // ToolchainManifest describes the declared workspace tool inventory.
 type ToolchainManifest struct {
-	SchemaVersion              string                  `json:"schema_version" yaml:"schema_version"`
-	ContainmentLevel           string                  `json:"containment_level" yaml:"containment_level"`
-	OSContainerSandboxDeferred bool                    `json:"os_container_sandbox_deferred" yaml:"os_container_sandbox_deferred"`
-	WorkspaceRoot              string                  `json:"workspace_root" yaml:"workspace_root"`
-	Tools                      []ToolEntry             `json:"tools" yaml:"tools"`
-	HostPrerequisites          []HostPrerequisiteEntry `json:"host_prerequisites" yaml:"host_prerequisites"`
+	SchemaVersion              string `json:"schema_version" yaml:"schema_version"`
+	ContainmentLevel           string `json:"containment_level" yaml:"containment_level"`
+	OSContainerSandboxDeferred bool   `json:"os_container_sandbox_deferred" yaml:"os_container_sandbox_deferred"`
+	WorkspaceRoot              string `json:"workspace_root" yaml:"workspace_root"`
+	// ToolsDir declares the workspace-relative subdirectory for pinned tool executables.
+	ToolsDir          string                  `json:"tools_dir,omitempty" yaml:"tools_dir,omitempty"`
+	Tools             []ToolEntry             `json:"tools" yaml:"tools"`
+	HostPrerequisites []HostPrerequisiteEntry `json:"host_prerequisites" yaml:"host_prerequisites"`
 }
 
 // ToolEntry describes a tool and its declared containment.

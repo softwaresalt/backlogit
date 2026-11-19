@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync/atomic"
 
@@ -91,9 +92,72 @@ func AuditRepositoryToolchain(ctx context.Context, rootPath string) (*ToolchainV
 	return report, nil
 }
 
-func launcherFinding(id, code, message string) ToolVerificationFinding {
+func normalizedManifestWorkspaceRoot(m *ToolchainManifest) string {
+	if m == nil || strings.TrimSpace(m.WorkspaceRoot) == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(m.WorkspaceRoot); err == nil {
+		return abs
+	}
+	return m.WorkspaceRoot
+}
+
+func isReservedToolsDirSegment(seg string) bool {
+	return strings.EqualFold(seg, ".git") || strings.EqualFold(seg, ".backlog") || strings.EqualFold(seg, ".backlogit")
+}
+
+func effectiveManifestToolsDir(m *ToolchainManifest) string {
+	workspaceRoot := normalizedManifestWorkspaceRoot(m)
+	if m != nil && m.ToolsDir != "" && m.ToolsDir == strings.TrimSpace(m.ToolsDir) &&
+		!strings.ContainsRune(m.ToolsDir, '\x00') && !filepath.IsAbs(m.ToolsDir) && filepath.VolumeName(m.ToolsDir) == "" {
+		if relDir, err := relativePath(workspaceRoot, m.ToolsDir, false); err == nil && relDir != "." {
+			firstSeg, _, _ := strings.Cut(strings.ReplaceAll(filepath.ToSlash(relDir), "\\", "/"), "/")
+			if !isReservedToolsDirSegment(firstSeg) {
+				return filepath.ToSlash(relDir)
+			}
+		}
+	}
+	if m != nil {
+		toolDir := func(execPath string) (string, bool) {
+			rel, err := relativePath(workspaceRoot, execPath, true)
+			if err != nil {
+				return "", false
+			}
+			dir := filepath.Dir(rel)
+			if dir == "." || dir == ".." {
+				return "", false
+			}
+			firstSeg, _, _ := strings.Cut(strings.ReplaceAll(filepath.ToSlash(dir), "\\", "/"), "/")
+			if isReservedToolsDirSegment(firstSeg) {
+				return "", false
+			}
+			return filepath.ToSlash(dir), true
+		}
+		for _, tool := range m.Tools {
+			if isBacklogitTool(workspaceRoot, tool) {
+				if dir, ok := toolDir(tool.ExecutablePath); ok {
+					return dir
+				}
+			}
+		}
+		for _, tool := range m.Tools {
+			if tool.ContainmentClass == WorkspaceLocalPinned {
+				if dir, ok := toolDir(tool.ExecutablePath); ok {
+					return dir
+				}
+			}
+		}
+	}
+	return ".bin"
+}
+
+func backlogitRemediationPath(m *ToolchainManifest) string {
+	return "./" + effectiveManifestToolsDir(m) + "/backlogit.exe"
+}
+
+func launcherFinding(m *ToolchainManifest, id, code, message string) ToolVerificationFinding {
 	f := finding(id, NonConformant, "violation", code, message)
-	f.Remediation = "Use ./bin/backlogit.exe with --cwd bound to the workspace, a terminating missing-file check before invocation, and workspace-scoped COPILOT_HOME and ENGRAM_DATA_DIR."
+	f.Remediation = "Use " + backlogitRemediationPath(m) + " with --cwd bound to the workspace, a terminating missing-file check before invocation, and workspace-scoped COPILOT_HOME and ENGRAM_DATA_DIR."
 	return f
 }
 
@@ -101,26 +165,35 @@ func toolRemediation(f ToolVerificationFinding, m *ToolchainManifest) ToolVerifi
 	if f.Status != "violation" {
 		return f
 	}
+	toolsDir := effectiveManifestToolsDir(m)
+	prefix := "./" + toolsDir + "/"
 	path := ""
-	for _, tool := range m.Tools {
-		if strings.EqualFold(tool.ID, f.ToolID) {
-			rel, err := relativePath(m.WorkspaceRoot, tool.ExecutablePath, true)
-			if err == nil && strings.HasPrefix(filepath.ToSlash(rel), "bin/") {
-				path = "./" + filepath.ToSlash(rel)
+	if m != nil {
+		workspaceRoot := normalizedManifestWorkspaceRoot(m)
+		for _, tool := range m.Tools {
+			if strings.EqualFold(tool.ID, f.ToolID) {
+				rel, err := relativePath(workspaceRoot, tool.ExecutablePath, true)
+				if err == nil {
+					relSlash := filepath.ToSlash(rel)
+					if strings.HasPrefix(relSlash, toolsDir+"/") ||
+						(runtime.GOOS == "windows" && strings.HasPrefix(strings.ToLower(relSlash), strings.ToLower(toolsDir)+"/")) {
+						path = "./" + relSlash
+					}
+				}
+				break
 			}
-			break
 		}
 	}
 	if path == "" {
 		switch strings.ToLower(f.ToolID) {
 		case "backlogit", "engram", "bun", "bunx":
-			path = "./bin/" + strings.ToLower(f.ToolID) + ".exe"
+			path = prefix + strings.ToLower(f.ToolID) + ".exe"
 		case "github", "github-mcp-server":
-			path = "./bin/github-mcp-server.exe"
+			path = prefix + "github-mcp-server.exe"
 		case "graphtor-docs", "kbdb":
-			path = "./bin/kbdb.exe"
+			path = prefix + "kbdb.exe"
 		case "context7", "tavily":
-			path = "./bin/bun.exe with a pinned workspace-local MCP entrypoint and lockfile"
+			path = prefix + "bun.exe with a pinned workspace-local MCP entrypoint and lockfile"
 		}
 	}
 	if path != "" {
@@ -140,7 +213,7 @@ func verifyLaunchers(rootPath string, m *ToolchainManifest) ([]ToolVerificationF
 	}()
 	findings, err := ValidateMCPConfigPinning(abs, ".mcp.json", m)
 	if err != nil {
-		findings = []ToolVerificationFinding{launcherFinding(".mcp.json", "mcp_config_invalid",
+		findings = []ToolVerificationFinding{launcherFinding(m, ".mcp.json", "mcp_config_invalid",
 			"MCP configuration is missing, redirected, unreadable or invalid; restore a workspace-pinned configuration.")}
 	}
 	backlogitIDs := make(map[string]bool)
@@ -160,12 +233,12 @@ func verifyLaunchers(rootPath string, m *ToolchainManifest) ([]ToolVerificationF
 		findings[i] = toolRemediation(f, m)
 	}
 	if !hasBacklogit {
-		findings = append(findings, launcherFinding("backlogit", "mcp_backlogit_missing", ".mcp.json must declare the pinned backlogit server."))
+		findings = append(findings, launcherFinding(m, "backlogit", "mcp_backlogit_missing", ".mcp.json must declare the pinned backlogit server."))
 	}
 	for _, name := range []string{"start.ps1", "start.sh"} {
 		file, err := openLocal(root, abs, name)
 		if err != nil {
-			findings = append(findings, launcherFinding(name, "launcher_file_invalid", name+" is missing, redirected or not a readable regular file."))
+			findings = append(findings, launcherFinding(m, name, "launcher_file_invalid", name+" is missing, redirected or not a readable regular file."))
 			continue
 		}
 		data, readErr := io.ReadAll(file)
@@ -225,7 +298,7 @@ func inspectLauncher(root *os.Root, abs, name, data string, m *ToolchainManifest
 		p.invoke(line)
 	}
 	if !p.backlogit {
-		p.fail("launcher_backlogit_unverified", "No verified, guarded ./bin/backlogit.exe invocation with workspace --cwd binding.")
+		p.fail("launcher_backlogit_unverified", "No verified, guarded "+backlogitRemediationPath(m)+" invocation with workspace --cwd binding.")
 	}
 	if len(p.findings) == 0 {
 		return []ToolVerificationFinding{finding("backlogit", WorkspaceLocalPinned, "verified", "launcher_verified",
@@ -235,7 +308,7 @@ func inspectLauncher(root *os.Root, abs, name, data string, m *ToolchainManifest
 }
 
 func (p *launcherProfile) fail(code, message string) {
-	p.findings = append(p.findings, launcherFinding(p.name, code, p.name+": "+message))
+	p.findings = append(p.findings, launcherFinding(p.manifest, p.name, code, p.name+": "+message))
 }
 
 func (p launcherProfile) key(s string) string {
@@ -391,7 +464,7 @@ func (p *launcherProfile) invoke(line string) {
 	}
 	path := p.path(args[0])
 	if path == "" {
-		f := launcherFinding(strings.Trim(args[0], `"'`), "launcher_command_invalid", p.name+": command is not a statically resolved local executable.")
+		f := launcherFinding(p.manifest, strings.Trim(args[0], `"'`), "launcher_command_invalid", p.name+": command is not a statically resolved local executable.")
 		p.findings = append(p.findings, toolRemediation(f, p.manifest))
 		return
 	}
@@ -438,12 +511,12 @@ func (p *launcherProfile) invoke(line string) {
 		tool = candidates[0]
 	}
 	if tool.ContainmentClass != WorkspaceLocalPinned {
-		p.findings = append(p.findings, toolRemediation(launcherFinding(tool.ID, "launcher_class_invalid",
+		p.findings = append(p.findings, toolRemediation(launcherFinding(p.manifest, tool.ID, "launcher_class_invalid",
 			p.name+": local execution contradicts the declared containment class."), p.manifest))
 		return
 	}
 	if err := verifyLocalTool(p.root, p.abs, *tool); err != nil {
-		p.findings = append(p.findings, toolRemediation(launcherFinding(tool.ID, "launcher_tool_invalid",
+		p.findings = append(p.findings, toolRemediation(launcherFinding(p.manifest, tool.ID, "launcher_tool_invalid",
 			p.name+": local tool pin could not be verified."), p.manifest))
 		return
 	}
@@ -539,7 +612,7 @@ func (p launcherProfile) entrypointArg(token string) string {
 }
 
 func (p *launcherProfile) unsupported() {
-	f := launcherFinding(p.name, "launcher_static_unsupported",
+	f := launcherFinding(p.manifest, p.name, "launcher_static_unsupported",
 		p.name+": shell syntax/control flow is outside the static inspection profile; pinning is not proven.")
 	f.ContainmentClass = Unsupported
 	p.findings = append(p.findings, f)
@@ -564,7 +637,7 @@ func (p *launcherProfile) inspectLookups(line string) {
 			}
 		}
 		if id != "" {
-			p.findings = append(p.findings, toolRemediation(launcherFinding(id, "launcher_path_lookup",
+			p.findings = append(p.findings, toolRemediation(launcherFinding(p.manifest, id, "launcher_path_lookup",
 				p.name+": ambient PATH resolution cannot establish a workspace-local pin."), p.manifest))
 		}
 	}
@@ -600,6 +673,11 @@ func validateManifestForProvisioning(root *os.Root, abs string, manifest *Toolch
 	if err != nil || !samePath(abs, declared) {
 		return fmt.Errorf("manifest workspace mismatch: %w", corerrors.ErrValidation)
 	}
+	if manifest.ToolsDir != "" {
+		if _, err := validManifestToolsDir(root, abs, manifest.ToolsDir); err != nil {
+			return fmt.Errorf("invalid manifest tools_dir: %w", err)
+		}
+	}
 
 	hasBacklogitMCP := false
 	seen := make(map[string]bool, len(manifest.Tools)+len(manifest.HostPrerequisites))
@@ -611,7 +689,7 @@ func validateManifestForProvisioning(root *os.Root, abs string, manifest *Toolch
 		}
 		seen[id] = true
 
-		if !validBacklogitTool(abs, tool) {
+		if !validBacklogitToolInManifest(abs, manifest, tool) {
 			return fmt.Errorf("backlogit must use the workspace-local pinned binary: %w", corerrors.ErrValidation)
 		}
 		isBacklogit := isBacklogitTool(abs, tool)

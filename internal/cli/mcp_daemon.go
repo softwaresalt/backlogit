@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,9 +14,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/softwaresalt/backlogit/internal/core"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
@@ -431,44 +436,628 @@ func pinnedMCPDaemonVersion(ctx context.Context, binary, workspace string) (stri
 	return info.Version, nil
 }
 
-// pinnedMCPDaemonBinary resolves only a regular, no-follow workspace bin image.
+// pinnedMCPDaemonBinary resolves the workspace-pinned backlogit binary under
+// os.OpenRoot(absWorkspace) in strict priority order:
+//  1. .mcp.json backlogit server command
+//  2. <storage>/toolchain.yaml (backlogit executable_path / tools_dir)
+//  3. <storage>/config.yaml tools_dir
+//  4. .bin/<name> default, then bin/<name> fallback
 func pinnedMCPDaemonBinary(workspace string) (binary string, result error) {
-	root, err := os.OpenRoot(workspace)
+	if strings.TrimSpace(workspace) == "" {
+		return "", mcpDaemonValidationError("empty pinned binary workspace")
+	}
+	absWorkspace, err := filepath.Abs(filepath.Clean(workspace))
 	if err != nil {
-		return "", fmt.Errorf("open pinned binary workspace: %w", err)
+		return "", fmt.Errorf("resolve pinned binary workspace %s: %w", workspace, err)
+	}
+	wsInfo, err := os.Lstat(absWorkspace)
+	if err != nil {
+		return "", fmt.Errorf("inspect pinned binary workspace %s: %w", absWorkspace, err)
+	}
+	if err := rejectLink(wsInfo, absWorkspace); err != nil {
+		return "", err
+	}
+	if wsInfo.Mode()&os.ModeIrregular != 0 || !wsInfo.IsDir() {
+		return "", mcpDaemonValidationError("workspace root %s is not a regular directory", absWorkspace)
+	}
+	root, err := os.OpenRoot(absWorkspace)
+	if err != nil {
+		return "", fmt.Errorf("open pinned binary workspace %s: %w", absWorkspace, err)
 	}
 	defer func() { result = errors.Join(result, root.Close()) }()
-	name := "backlogit"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	binary = filepath.Join(workspace, "bin", name)
-	for _, leaf := range []string{"bin", filepath.Join("bin", name)} {
-		info, err := root.Lstat(leaf)
-		if err != nil {
-			return "", fmt.Errorf("required pinned daemon binary %s: %w", binary, errors.Join(corerrors.ErrDaemonBinaryMissing, err))
-		}
-		if err := rejectLink(info, filepath.Join(workspace, leaf)); err != nil {
-			return "", err
-		}
-	}
-	file, err := root.Open(filepath.Join("bin", name))
+	openedWS, err := root.Stat(".")
 	if err != nil {
-		return "", fmt.Errorf("open pinned daemon binary %s: %w", binary, errors.Join(corerrors.ErrDaemonBinaryMissing, err))
+		return "", fmt.Errorf("stat pinned binary workspace %s: %w", absWorkspace, err)
+	}
+	if !openedWS.IsDir() || !os.SameFile(wsInfo, openedWS) {
+		return "", mcpDaemonValidationError("workspace root %s changed while opening", absWorkspace)
+	}
+
+	rel, found, err := resolveConfiguredDaemonBinaryRel(root, absWorkspace)
+	if err != nil {
+		return "", err
+	}
+	if found {
+		return verifyPinnedDaemonBinaryRel(root, absWorkspace, rel)
+	}
+
+	name := pinnedDaemonBinaryName()
+	dotBinRel := filepath.Join(".bin", name)
+	binPath, err := verifyPinnedDaemonBinaryRel(root, absWorkspace, dotBinRel)
+	if err == nil {
+		return binPath, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+
+	return verifyPinnedDaemonBinaryRel(root, absWorkspace, filepath.Join("bin", name))
+}
+
+func pinnedDaemonBinaryName() string {
+	if runtime.GOOS == "windows" {
+		return "backlogit.exe"
+	}
+	return "backlogit"
+}
+
+type daemonMCPJSONServer struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+	URL     string `json:"url"`
+}
+
+type daemonMCPJSONConfig struct {
+	MCPServers map[string]daemonMCPJSONServer `json:"mcpServers"`
+	Servers    map[string]daemonMCPJSONServer `json:"servers"`
+}
+
+type daemonToolchainTool struct {
+	ID               string `yaml:"id"`
+	ContainmentClass string `yaml:"containment_class"`
+	ExecutablePath   string `yaml:"executable_path"`
+}
+
+type daemonToolchainManifest struct {
+	ToolsDir string                `yaml:"tools_dir"`
+	Tools    []daemonToolchainTool `yaml:"tools"`
+}
+
+type daemonWorkspaceConfig struct {
+	ToolsDir string `yaml:"tools_dir"`
+}
+
+func resolveConfiguredDaemonBinaryRel(root *os.Root, absWorkspace string) (string, bool, error) {
+	// Priority 1: .mcp.json
+	rel, found, err := resolveMCPJSONDaemonBinaryRel(root, absWorkspace)
+	if err != nil || found {
+		return rel, found, err
+	}
+
+	storageDir, hasStorage, err := resolveDaemonStorageDirName(root, absWorkspace)
+	if err != nil || !hasStorage {
+		return "", false, err
+	}
+
+	// Priority 2: <storage>/toolchain.yaml
+	rel, found, err = resolveToolchainDaemonBinaryRel(root, absWorkspace, storageDir)
+	if err != nil || found {
+		return rel, found, err
+	}
+
+	// Priority 3: <storage>/config.yaml tools_dir
+	return resolveConfigDaemonBinaryRel(root, absWorkspace, storageDir)
+}
+
+func resolveMCPJSONDaemonBinaryRel(root *os.Root, absWorkspace string) (string, bool, error) {
+	data, err := readLocalFileInRoot(root, absWorkspace, ".mcp.json", maxMCPDaemonInfoBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if err := scanDaemonJSON(data); err != nil {
+		return "", false, err
+	}
+	var cfg daemonMCPJSONConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return "", false, mcpDaemonValidationError("decode .mcp.json: %v", err)
+	}
+	servers := cfg.MCPServers
+	if len(servers) == 0 {
+		servers = cfg.Servers
+	}
+	if len(servers) == 0 {
+		return "", false, nil
+	}
+	names := make([]string, 0, len(servers))
+	for name := range servers {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	var matched []daemonMCPJSONServer
+	for _, name := range names {
+		srv := servers[name]
+		if strings.EqualFold(strings.TrimSpace(name), "backlogit") || isBacklogitDaemonCommand(srv.Command) {
+			matched = append(matched, srv)
+		}
+	}
+	if len(matched) == 0 {
+		return "", false, nil
+	}
+	if len(matched) > 1 {
+		return "", false, mcpDaemonValidationError("ambiguous multiple backlogit entries in .mcp.json")
+	}
+	rel, err := validateBacklogitCommandRel(absWorkspace, matched[0].Command)
+	if err != nil {
+		return "", false, err
+	}
+	return rel, true, nil
+}
+
+func resolveDaemonStorageDirName(root *os.Root, absWorkspace string) (string, bool, error) {
+	candidates := core.WorkspaceRootCandidates()
+	if override, ok := os.LookupEnv("BACKLOGIT_WORKSPACE_DIR"); ok {
+		valid := false
+		for _, c := range candidates {
+			if override == c {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return "", false, mcpDaemonValidationError("invalid BACKLOGIT_WORKSPACE_DIR %q", override)
+		}
+		info, err := root.Lstat(override)
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		if err != nil {
+			return "", false, fmt.Errorf("inspect storage root %s: %w", filepath.Join(absWorkspace, override), err)
+		}
+		path := filepath.Join(absWorkspace, override)
+		if err := rejectLink(info, path); err != nil {
+			return "", false, err
+		}
+		if info.Mode()&os.ModeIrregular != 0 || !info.IsDir() {
+			return "", false, mcpDaemonValidationError("%s is not a directory", path)
+		}
+		return override, true, nil
+	}
+
+	var found string
+	for _, candidate := range candidates {
+		info, err := root.Lstat(candidate)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", false, fmt.Errorf("inspect storage root %s: %w", filepath.Join(absWorkspace, candidate), err)
+		}
+		path := filepath.Join(absWorkspace, candidate)
+		if err := rejectLink(info, path); err != nil {
+			return "", false, err
+		}
+		if info.Mode()&os.ModeIrregular != 0 || !info.IsDir() {
+			return "", false, mcpDaemonValidationError("%s is not a directory", path)
+		}
+		if found != "" {
+			return "", false, mcpDaemonValidationError("ambiguous workspace storage roots %s and %s", found, candidate)
+		}
+		found = candidate
+	}
+	if found == "" {
+		return "", false, nil
+	}
+	return found, true, nil
+}
+
+func resolveToolchainDaemonBinaryRel(root *os.Root, absWorkspace, storageDir string) (string, bool, error) {
+	data, err := readLocalFileInRoot(root, absWorkspace, filepath.Join(storageDir, "toolchain.yaml"), maxMCPDaemonInfoBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return "", false, mcpDaemonValidationError("parse toolchain.yaml: %v", err)
+	}
+	if err := validateDaemonYAMLKeys(&doc); err != nil {
+		return "", false, err
+	}
+	var manifest daemonToolchainManifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		return "", false, mcpDaemonValidationError("decode toolchain.yaml: %v", err)
+	}
+
+	var toolsDirRel string
+	hasToolsDir := hasYAMLMappingKey(&doc, "tools_dir") || manifest.ToolsDir != ""
+	if hasToolsDir {
+		toolsDirRel, err = validateDaemonToolsDirRel(manifest.ToolsDir)
+		if err != nil {
+			return "", false, err
+		}
+	}
+
+	var backlogitTools []daemonToolchainTool
+	for _, tool := range manifest.Tools {
+		if strings.EqualFold(strings.TrimSpace(tool.ID), "backlogit") || isBacklogitDaemonCommand(tool.ExecutablePath) {
+			backlogitTools = append(backlogitTools, tool)
+		}
+	}
+	if len(backlogitTools) > 1 {
+		return "", false, mcpDaemonValidationError("ambiguous multiple backlogit entries in toolchain.yaml")
+	}
+	if len(backlogitTools) == 1 && strings.TrimSpace(backlogitTools[0].ContainmentClass) != "workspace-local-pinned" {
+		return "", false, mcpDaemonValidationError("toolchain.yaml backlogit entry must have containment_class workspace-local-pinned, got %q", backlogitTools[0].ContainmentClass)
+	}
+
+	var execRel string
+	hasExec := len(backlogitTools) == 1 && backlogitTools[0].ExecutablePath != ""
+	if hasExec {
+		execRel, err = validateBacklogitCommandRel(absWorkspace, backlogitTools[0].ExecutablePath)
+		if err != nil {
+			return "", false, err
+		}
+	}
+
+	if hasToolsDir && hasExec {
+		if !sameDaemonRelPath(filepath.Dir(execRel), toolsDirRel) {
+			return "", false, mcpDaemonValidationError("toolchain.yaml backlogit executable_path %q disagrees with tools_dir %q", execRel, toolsDirRel)
+		}
+		return execRel, true, nil
+	}
+	if hasExec {
+		return execRel, true, nil
+	}
+	if hasToolsDir {
+		return filepath.Join(toolsDirRel, pinnedDaemonBinaryName()), true, nil
+	}
+	return "", false, nil
+}
+
+func resolveConfigDaemonBinaryRel(root *os.Root, absWorkspace, storageDir string) (string, bool, error) {
+	data, err := readLocalFileInRoot(root, absWorkspace, filepath.Join(storageDir, "config.yaml"), maxMCPDaemonInfoBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return "", false, mcpDaemonValidationError("parse config.yaml: %v", err)
+	}
+	var cfg daemonWorkspaceConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return "", false, mcpDaemonValidationError("decode config.yaml: %v", err)
+	}
+	if !hasYAMLMappingKey(&doc, "tools_dir") && cfg.ToolsDir == "" {
+		return "", false, nil
+	}
+	toolsDirRel, err := validateDaemonToolsDirRel(cfg.ToolsDir)
+	if err != nil {
+		return "", false, err
+	}
+	return filepath.Join(toolsDirRel, pinnedDaemonBinaryName()), true, nil
+}
+
+func hasYAMLMappingKey(doc *yaml.Node, key string) bool {
+	if doc == nil || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
+		return false
+	}
+	mapping := doc.Content[0]
+	foldedTarget := foldDaemonKey(key)
+	for i := 0; i < len(mapping.Content); i += 2 {
+		if foldDaemonKey(mapping.Content[i].Value) == foldedTarget {
+			return true
+		}
+	}
+	return false
+}
+
+func foldDaemonKey(s string) string {
+	runes := []rune(s)
+	for i, r := range runes {
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			if f < runes[i] {
+				runes[i] = f
+			}
+		}
+	}
+	return string(runes)
+}
+
+func validateDaemonYAMLKeys(node *yaml.Node) error {
+	if node == nil {
+		return nil
+	}
+	if node.Kind == yaml.MappingNode {
+		seen := make(map[string]bool)
+		for i := 0; i < len(node.Content); i += 2 {
+			rawKey := node.Content[i].Value
+			key := foldDaemonKey(rawKey)
+			if seen[key] {
+				return mcpDaemonValidationError("duplicate YAML key %q in toolchain.yaml", rawKey)
+			}
+			seen[key] = true
+		}
+	}
+	for _, child := range node.Content {
+		if err := validateDaemonYAMLKeys(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func scanDaemonJSON(data []byte) error {
+	d := json.NewDecoder(bytes.NewReader(data))
+	var value func(int) error
+	value = func(depth int) error {
+		if depth > 10000 {
+			return mcpDaemonValidationError("JSON nesting too deep in .mcp.json")
+		}
+		token, err := d.Token()
+		if err != nil {
+			return mcpDaemonValidationError("scan .mcp.json: %v", err)
+		}
+		delim, ok := token.(json.Delim)
+		if !ok {
+			return nil
+		}
+		if delim != '{' && delim != '[' {
+			return mcpDaemonValidationError("unexpected JSON delimiter in .mcp.json")
+		}
+		seen := make(map[string]bool)
+		for d.More() {
+			if delim == '{' {
+				key, err := d.Token()
+				if err != nil {
+					return mcpDaemonValidationError("scan .mcp.json key: %v", err)
+				}
+				name, ok := key.(string)
+				if !ok {
+					return mcpDaemonValidationError("non-string JSON key in .mcp.json")
+				}
+				folded := foldDaemonKey(name)
+				if seen[folded] {
+					return mcpDaemonValidationError("duplicate JSON key %q in .mcp.json", name)
+				}
+				seen[folded] = true
+			}
+			if err := value(depth + 1); err != nil {
+				return err
+			}
+		}
+		if _, err := d.Token(); err != nil {
+			return mcpDaemonValidationError("scan .mcp.json end delimiter: %v", err)
+		}
+		return nil
+	}
+	if err := value(0); err != nil {
+		return err
+	}
+	if _, err := d.Token(); !errors.Is(err, io.EOF) {
+		return mcpDaemonValidationError("trailing JSON data in .mcp.json")
+	}
+	return nil
+}
+
+func isBacklogitDaemonCommand(command string) bool {
+	trimmed := strings.TrimSpace(command)
+	if trimmed == "" {
+		return false
+	}
+	norm := filepath.FromSlash(strings.ReplaceAll(trimmed, "\\", "/"))
+	base := strings.ToLower(filepath.Base(norm))
+	return base == "backlogit" || base == "backlogit.exe" ||
+		strings.HasPrefix(base, "backlogit.") ||
+		strings.HasPrefix(base, "backlogit-") ||
+		strings.HasPrefix(base, "backlogit_")
+}
+
+func hasDriveOrUNCPrefix(s string) bool {
+	if strings.HasPrefix(s, `\\`) || strings.HasPrefix(s, "//") {
+		return true
+	}
+	return len(s) >= 2 && ((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) && s[1] == ':'
+}
+
+func validateDaemonToolsDirRel(toolsDir string) (string, error) {
+	if toolsDir != strings.TrimSpace(toolsDir) || strings.TrimSpace(toolsDir) == "" {
+		return "", mcpDaemonValidationError("tools_dir %q must not be blank or whitespace-padded", toolsDir)
+	}
+	if strings.ContainsRune(toolsDir, '\x00') {
+		return "", mcpDaemonValidationError("tools_dir %q must not contain NUL bytes", toolsDir)
+	}
+	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" || hasDriveOrUNCPrefix(toolsDir) {
+		return "", mcpDaemonValidationError("tools_dir %q must be a workspace-relative subdirectory path", toolsDir)
+	}
+	for _, part := range strings.FieldsFunc(toolsDir, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if part == ".." {
+			return "", mcpDaemonValidationError("tools_dir %q must not contain '..' traversal", toolsDir)
+		}
+	}
+	clean := filepath.Clean(filepath.FromSlash(strings.ReplaceAll(toolsDir, "\\", "/")))
+	if !filepath.IsLocal(clean) || clean == "." {
+		return "", mcpDaemonValidationError("tools_dir %q must resolve to a local subdirectory within the workspace", toolsDir)
+	}
+	firstSeg, _, _ := strings.Cut(filepath.ToSlash(clean), "/")
+	if isReservedDaemonDirSegment(firstSeg) {
+		return "", mcpDaemonValidationError("tools_dir %q cannot target reserved directory %q", toolsDir, firstSeg)
+	}
+	return clean, nil
+}
+
+func validateBacklogitCommandRel(absWorkspace, command string) (string, error) {
+	if command != strings.TrimSpace(command) || strings.TrimSpace(command) == "" {
+		return "", mcpDaemonValidationError("backlogit command %q must not be empty or whitespace-padded", command)
+	}
+	if strings.ContainsRune(command, '\x00') {
+		return "", mcpDaemonValidationError("backlogit command %q must not contain NUL bytes", command)
+	}
+	for _, part := range strings.FieldsFunc(command, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if part == ".." {
+			return "", mcpDaemonValidationError("backlogit command %q must not contain '..' traversal", command)
+		}
+	}
+
+	if strings.HasPrefix(command, `\\`) || strings.HasPrefix(command, "//") {
+		return "", mcpDaemonValidationError("backlogit command %q must not be a UNC path", command)
+	}
+
+	var rel string
+	if filepath.IsAbs(command) {
+		relPath, err := filepath.Rel(absWorkspace, filepath.Clean(command))
+		if err != nil {
+			return "", mcpDaemonValidationError("backlogit command %q cannot be resolved within workspace: %v", command, err)
+		}
+		rel = relPath
+	} else {
+		if filepath.VolumeName(command) != "" || hasDriveOrUNCPrefix(command) {
+			return "", mcpDaemonValidationError("backlogit command %q must not carry a volume prefix", command)
+		}
+		if !strings.ContainsAny(command, "/\\") {
+			return "", mcpDaemonValidationError("backlogit command %q must be a workspace-relative subdirectory path, not a bare command", command)
+		}
+		rel = filepath.Clean(filepath.FromSlash(strings.ReplaceAll(command, "\\", "/")))
+	}
+
+	if !filepath.IsLocal(rel) || rel == "." {
+		return "", mcpDaemonValidationError("backlogit command %q resolves outside workspace", command)
+	}
+	if dir := filepath.Dir(rel); dir == "." || dir == ".." {
+		return "", mcpDaemonValidationError("backlogit command %q must reside in a workspace subdirectory", command)
+	}
+	firstSeg, _, _ := strings.Cut(filepath.ToSlash(rel), "/")
+	if isReservedDaemonDirSegment(firstSeg) {
+		return "", mcpDaemonValidationError("backlogit command %q cannot reside under reserved directory %q", command, firstSeg)
+	}
+	base := filepath.Base(rel)
+	if !sameDaemonRelPath(base, "backlogit") && !sameDaemonRelPath(base, "backlogit.exe") {
+		return "", mcpDaemonValidationError("backlogit command %q must target backlogit or backlogit.exe", command)
+	}
+	return rel, nil
+}
+
+func isReservedDaemonDirSegment(seg string) bool {
+	if strings.EqualFold(seg, ".git") {
+		return true
+	}
+	for _, candidate := range core.WorkspaceRootCandidates() {
+		if strings.EqualFold(seg, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameDaemonRelPath(a, b string) bool {
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+func readLocalFileInRoot(root *os.Root, absWorkspace, rel string, maxBytes int64) (data []byte, result error) {
+	file, path, err := openLocalFileInRoot(root, absWorkspace, rel)
+	if err != nil {
+		return nil, err
 	}
 	defer func() { result = errors.Join(result, file.Close()) }()
-	opened, err := file.Stat()
+	limited, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
-		return "", fmt.Errorf("stat pinned daemon binary: %w", err)
+		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	linked, err := root.Lstat(filepath.Join("bin", name))
+	if int64(len(limited)) > maxBytes {
+		return nil, mcpDaemonValidationError("%s exceeds maximum allowed size of %d bytes", path, maxBytes)
+	}
+	return limited, nil
+}
+
+func verifyPinnedDaemonBinaryRel(root *os.Root, absWorkspace, rel string) (string, error) {
+	file, path, err := openLocalFileInRoot(root, absWorkspace, rel)
 	if err != nil {
-		return "", fmt.Errorf("verify pinned daemon binary: %w", err)
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("required pinned daemon binary %s: %w", filepath.Join(absWorkspace, rel), errors.Join(corerrors.ErrDaemonBinaryMissing, err))
+		}
+		return "", err
 	}
-	if !opened.Mode().IsRegular() || !os.SameFile(opened, linked) {
-		return "", mcpDaemonValidationError("pinned daemon binary changed or is not regular")
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("close pinned daemon binary %s: %w", path, err)
 	}
-	return binary, nil
+	return path, nil
+}
+
+func openLocalFileInRoot(root *os.Root, absWorkspace, rel string) (*os.File, string, error) {
+	clean := filepath.Clean(rel)
+	if clean == "" || clean == "." || !filepath.IsLocal(clean) {
+		return nil, "", mcpDaemonValidationError("invalid workspace-local path %q", rel)
+	}
+	parts := strings.Split(clean, string(filepath.Separator))
+	current := root
+	path := absWorkspace
+	owned := make([]*os.Root, 0, len(parts))
+	defer func() {
+		for i := len(owned) - 1; i >= 0; i-- {
+			_ = owned[i].Close()
+		}
+	}()
+	for i, part := range parts {
+		path = filepath.Join(path, part)
+		info, err := current.Lstat(part)
+		if err != nil {
+			return nil, "", fmt.Errorf("inspect %s: %w", path, err)
+		}
+		if err := rejectLink(info, path); err != nil {
+			return nil, "", err
+		}
+		if info.Mode()&os.ModeIrregular != 0 {
+			return nil, "", mcpDaemonValidationError("%s has irregular file mode", path)
+		}
+		if i == len(parts)-1 {
+			if !info.Mode().IsRegular() {
+				return nil, "", mcpDaemonValidationError("%s is not a regular file", path)
+			}
+			file, err := current.Open(part)
+			if err != nil {
+				return nil, "", fmt.Errorf("open %s: %w", path, err)
+			}
+			opened, err := file.Stat()
+			if err != nil {
+				_ = file.Close()
+				return nil, "", fmt.Errorf("stat %s: %w", path, err)
+			}
+			if !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+				_ = file.Close()
+				return nil, "", mcpDaemonValidationError("%s changed while opening or is not regular", path)
+			}
+			return file, path, nil
+		}
+		if !info.IsDir() {
+			return nil, "", mcpDaemonValidationError("%s is not a directory", path)
+		}
+		next, err := current.OpenRoot(part)
+		if err != nil {
+			return nil, "", fmt.Errorf("open directory %s: %w", path, err)
+		}
+		owned = append(owned, next)
+		opened, err := next.Stat(".")
+		if err != nil {
+			return nil, "", fmt.Errorf("stat directory %s: %w", path, err)
+		}
+		if !opened.IsDir() || !os.SameFile(info, opened) {
+			return nil, "", mcpDaemonValidationError("directory %s changed while opening", path)
+		}
+		current = next
+	}
+	return nil, "", mcpDaemonValidationError("empty workspace-local path")
 }
 
 // RunMCPSessionShim proxies one stdio session to the verified workspace daemon.

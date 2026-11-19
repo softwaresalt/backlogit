@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/go-playground/validator/v10"
+
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 var validate = validator.New()
@@ -17,18 +19,69 @@ func init() {
 
 // Validate checks all struct tags and returns a descriptive error on failure.
 func (c *WorkspaceConfig) Validate() error {
-	return validate.Struct(c)
+	if err := validate.Struct(c); err != nil {
+		return err
+	}
+	if c.ToolsDir != "" {
+		if err := validateWorkspaceToolsDir(c.ToolsDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateWorkspaceToolsDir(toolsDir string) error {
+	if toolsDir != strings.TrimSpace(toolsDir) || strings.TrimSpace(toolsDir) == "" {
+		return fmt.Errorf("tools_dir %q must not be blank or have leading/trailing whitespace: %w", toolsDir, corerrors.ErrValidation)
+	}
+	if strings.ContainsRune(toolsDir, '\x00') {
+		return fmt.Errorf("tools_dir %q must not contain NUL bytes: %w", toolsDir, corerrors.ErrValidation)
+	}
+	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" || hasDriveOrUNCPrefix(toolsDir) {
+		return fmt.Errorf("tools_dir %q must be a workspace-relative subdirectory path: %w", toolsDir, corerrors.ErrValidation)
+	}
+	for _, part := range strings.FieldsFunc(toolsDir, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if part == ".." {
+			return fmt.Errorf("tools_dir %q must not contain '..' traversal: %w", toolsDir, corerrors.ErrValidation)
+		}
+	}
+	normalized := filepath.FromSlash(strings.ReplaceAll(toolsDir, "\\", "/"))
+	clean := filepath.Clean(normalized)
+	if !filepath.IsLocal(clean) || clean == "." {
+		return fmt.Errorf("tools_dir %q must resolve to a local subdirectory within the workspace: %w", toolsDir, corerrors.ErrValidation)
+	}
+	firstSeg, _, _ := strings.Cut(filepath.ToSlash(clean), "/")
+	if strings.EqualFold(firstSeg, ".git") || strings.EqualFold(firstSeg, ".backlog") {
+		return fmt.Errorf("tools_dir %q cannot target reserved directory %q: %w", toolsDir, firstSeg, corerrors.ErrValidation)
+	}
+	return nil
+}
+
+func hasDriveOrUNCPrefix(s string) bool {
+	if strings.HasPrefix(s, `\\`) || strings.HasPrefix(s, "//") {
+		return true
+	}
+	return len(s) >= 2 && ((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) && s[1] == ':'
+}
+
+func toolsDirFirstSegment(toolsDir string) string {
+	normalized := filepath.FromSlash(strings.ReplaceAll(toolsDir, "\\", "/"))
+	clean := filepath.Clean(normalized)
+	firstSeg, _, _ := strings.Cut(filepath.ToSlash(clean), "/")
+	return firstSeg
 }
 
 // WorkspaceConfig holds the parsed workspace configuration.
 type WorkspaceConfig struct {
-	ArtifactTypes       map[string]*ArtifactTypeConfig `yaml:"artifact_types" validate:"required,min=1"`
-	Fields              map[string]*FieldConfig        `yaml:"fields"`
-	BugLevel            int                            `yaml:"bug_level,omitempty" validate:"omitempty,oneof=2 3"`
-	MaxSlugLength       int                            `yaml:"max_slug_length" validate:"gte=10,lte=200"`
-	QueueLayout         *QueueLayoutConfig             `yaml:"queue_layout"`
-	CheckpointRetention CheckpointRetention            `yaml:"checkpoint_retention,omitempty"`
-	Telemetry           *TelemetryConfig               `yaml:"telemetry,omitempty"`
+	ArtifactTypes map[string]*ArtifactTypeConfig `yaml:"artifact_types" validate:"required,min=1"`
+	Fields        map[string]*FieldConfig        `yaml:"fields"`
+	BugLevel      int                            `yaml:"bug_level,omitempty" validate:"omitempty,oneof=2 3"`
+	MaxSlugLength int                            `yaml:"max_slug_length" validate:"gte=10,lte=200"`
+	// ToolsDir configures the workspace-relative subdirectory where pinned tool binaries reside.
+	ToolsDir            string              `yaml:"tools_dir,omitempty"`
+	QueueLayout         *QueueLayoutConfig  `yaml:"queue_layout"`
+	CheckpointRetention CheckpointRetention `yaml:"checkpoint_retention,omitempty"`
+	Telemetry           *TelemetryConfig    `yaml:"telemetry,omitempty"`
 	// DurableWrites opts the workspace into the durable_writes fsync protocol
 	// (123-F): when true, the shared write primitives fsync file content and
 	// (on POSIX) the parent directory so a crash/power-loss cannot lose a

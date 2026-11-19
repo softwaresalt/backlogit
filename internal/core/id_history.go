@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -1143,7 +1145,7 @@ func scanLocalBranchArtifactIDsContext(parentCtx context.Context, ws *Workspace)
 
 	gitEnv := sanitizedGitBranchScanEnv()
 	refsCmd := exec.CommandContext(ctx, "git", "--no-replace-objects", "--no-optional-locks",
-		"for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads")
+		"for-each-ref", "--format=%(refname:short) %(objectname) %(tree)", "refs/heads")
 	refsCmd.Dir = realRoot
 	refsCmd.Env = gitEnv
 	refsOut, err := refsCmd.Output()
@@ -1151,73 +1153,235 @@ func scanLocalBranchArtifactIDsContext(parentCtx context.Context, ws *Workspace)
 		return nil, fmt.Errorf("list local git branches for id history: %w", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(refsOut)), "\n")
-	type branchRef struct {
-		name string
-		oid  string
-	}
-	var refs []branchRef
 	var fpLines []string
+	seenRootTrees := make(map[string]struct{})
+	var uniqueRootTrees []string
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		if len(fields) < 3 {
 			continue
 		}
-		refs = append(refs, branchRef{name: fields[0], oid: fields[1]})
-		fpLines = append(fpLines, fields[0]+"="+fields[1])
+		refName, commitOID, treeOID := fields[0], fields[1], fields[2]
+		if !isGitObjectName(treeOID) {
+			return nil, fmt.Errorf("invalid tree object id %q for branch %s: %w", treeOID, refName, blerrors.ErrValidation)
+		}
+		fpLines = append(fpLines, refName+"="+commitOID)
+		if _, ok := seenRootTrees[treeOID]; !ok {
+			seenRootTrees[treeOID] = struct{}{}
+			uniqueRootTrees = append(uniqueRootTrees, treeOID)
+		}
 	}
-	if len(refs) == 0 {
+	if len(fpLines) == 0 {
 		return nil, nil
 	}
 	sort.Strings(fpLines)
 	fingerprint := strings.Join(fpLines, ";")
 	if cached, ok := branchIDScanCache.Load(realRoot); ok {
-		entry := cached.(branchIDCacheEntry)
-		if entry.fingerprint == fingerprint {
+		if entry, ok := cached.(branchIDCacheEntry); ok && entry.fingerprint == fingerprint {
 			return append([]string(nil), entry.ids...), nil
 		}
 	}
 
-	seen := make(map[string]struct{})
-	var collected []string
-	lsTreeBaseArgs := append([]string{"--no-replace-objects", "--no-optional-locks", "ls-tree", "-r", "--name-only"}, "")
-	for _, ref := range refs {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, fmt.Errorf("scan local git branch %s for id history: %w", ref.name, ctxErr)
-		}
-		lsTreeBaseArgs[len(lsTreeBaseArgs)-1] = ref.oid
-		lsArgs := append(append([]string(nil), lsTreeBaseArgs...), "--")
-		lsArgs = append(lsArgs, workspaceRootCandidates[:]...)
-		lsCmd := exec.CommandContext(ctx, "git", lsArgs...)
-		lsCmd.Dir = realRoot
-		lsCmd.Env = gitEnv
-		lsOut, lsErr := lsCmd.Output()
-		if lsErr != nil {
-			return nil, fmt.Errorf("scan git tree %s (%s) for id history: %w", ref.name, ref.oid, lsErr)
-		}
-		for _, path := range strings.Split(string(lsOut), "\n") {
-			path = strings.TrimSpace(path)
-			if path == "" || filepath.Ext(path) != ".md" {
-				continue
-			}
-			stem := strings.TrimSuffix(filepath.Base(path), ".md")
-			if stem == "" {
-				continue
-			}
-			if _, ok := seen[stem]; !ok {
-				seen[stem] = struct{}{}
-				collected = append(collected, stem)
-			}
+	specs := make([]string, 0, len(uniqueRootTrees)*len(workspaceRootCandidates))
+	for _, treeOID := range uniqueRootTrees {
+		for _, candidate := range workspaceRootCandidates {
+			specs = append(specs, treeOID+":"+candidate)
 		}
 	}
+
+	seenTrees := make(map[string]struct{})
+	parsedTrees := make(map[string]struct{})
+	seenIDs := make(map[string]struct{})
+	var collected []string
+
+	allowMissing := true
+	for len(specs) > 0 {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("scan local git branch trees for id history: %w", ctxErr)
+		}
+		nextSpecs, batchErr := scanGitTreeBatch(ctx, realRoot, gitEnv, specs, allowMissing, seenTrees, parsedTrees, seenIDs, &collected)
+		if batchErr != nil {
+			return nil, batchErr
+		}
+		specs = nextSpecs
+		allowMissing = false
+	}
+
 	branchIDScanCache.Store(realRoot, branchIDCacheEntry{
 		fingerprint: fingerprint,
 		ids:         collected,
 	})
 	return append([]string(nil), collected...), nil
+}
+
+func scanGitTreeBatch(
+	ctx context.Context,
+	repoRoot string,
+	gitEnv []string,
+	specs []string,
+	allowMissing bool,
+	seenTrees map[string]struct{},
+	parsedTrees map[string]struct{},
+	seenIDs map[string]struct{},
+	collected *[]string,
+) ([]string, error) {
+	var stdinBuf strings.Builder
+	for _, spec := range specs {
+		stdinBuf.WriteString(spec)
+		stdinBuf.WriteByte('\n')
+	}
+
+	batchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	cmd := exec.CommandContext(batchCtx, "git", "--no-replace-objects", "--no-optional-locks", "cat-file", "--batch")
+	cmd.Dir = repoRoot
+	cmd.Env = gitEnv
+	cmd.Stdin = strings.NewReader(stdinBuf.String())
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("create stdout pipe for git cat-file --batch: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start git cat-file --batch: %w", err)
+	}
+
+	reader := bufio.NewReaderSize(stdout, 64*1024)
+	nextSpecs, parseErr := readGitCatFileBatch(reader, len(specs), allowMissing, seenTrees, parsedTrees, seenIDs, collected)
+	if parseErr != nil {
+		cancel()
+	}
+	waitErr := cmd.Wait()
+	if parseErr != nil {
+		return nil, parseErr
+	}
+	if waitErr != nil {
+		if errMsg := strings.TrimSpace(stderr.String()); errMsg != "" {
+			return nil, fmt.Errorf("git cat-file --batch failed (%s): %w", errMsg, waitErr)
+		}
+		return nil, fmt.Errorf("git cat-file --batch failed: %w", waitErr)
+	}
+	return nextSpecs, nil
+}
+
+func readGitCatFileBatch(
+	reader *bufio.Reader,
+	expectedCount int,
+	allowMissing bool,
+	seenTrees map[string]struct{},
+	parsedTrees map[string]struct{},
+	seenIDs map[string]struct{},
+	collected *[]string,
+) ([]string, error) {
+	var nextSpecs []string
+	for i := range expectedCount {
+		header, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("read git cat-file --batch header %d/%d: %w", i+1, expectedCount, err)
+		}
+		header = strings.TrimRight(header, "\r\n")
+		if strings.HasSuffix(header, " missing") {
+			if !allowMissing {
+				return nil, fmt.Errorf("missing referenced git subtree %q for id history: %w", strings.TrimSuffix(header, " missing"), blerrors.ErrValidation)
+			}
+			continue
+		}
+		fields := strings.Fields(header)
+		if len(fields) != 3 {
+			return nil, fmt.Errorf("unexpected git cat-file --batch header %q", header)
+		}
+		const maxGitCatFileObjectBytes = 64 << 20
+		oid, objType, sizeStr := fields[0], fields[1], fields[2]
+		size, err := strconv.ParseInt(sizeStr, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid git cat-file --batch size in %q: %w", header, err)
+		}
+		if size < 0 || size > maxGitCatFileObjectBytes {
+			return nil, fmt.Errorf("git cat-file --batch size %d in %q out of range (max %d): %w", size, header, maxGitCatFileObjectBytes, blerrors.ErrValidation)
+		}
+
+		_, alreadyParsed := parsedTrees[oid]
+		if objType != "tree" || alreadyParsed {
+			if _, copyErr := io.CopyN(io.Discard, reader, size); copyErr != nil {
+				return nil, fmt.Errorf("drain git cat-file --batch payload for %s: %w", oid, copyErr)
+			}
+		} else {
+			payload := make([]byte, size)
+			if _, readErr := io.ReadFull(reader, payload); readErr != nil {
+				return nil, fmt.Errorf("read git cat-file --batch tree payload for %s: %w", oid, readErr)
+			}
+			parsedTrees[oid] = struct{}{}
+			seenTrees[oid] = struct{}{}
+			if treeErr := parseGitTreePayload(oid, payload, seenTrees, &nextSpecs, seenIDs, collected); treeErr != nil {
+				return nil, treeErr
+			}
+		}
+
+		nl, err := reader.ReadByte()
+		if err != nil {
+			return nil, fmt.Errorf("read git cat-file --batch trailer for %s: %w", oid, err)
+		}
+		if nl != '\n' {
+			return nil, fmt.Errorf("unexpected git cat-file --batch trailer byte %q for %s", nl, oid)
+		}
+	}
+	return nextSpecs, nil
+}
+
+func parseGitTreePayload(
+	oid string,
+	payload []byte,
+	seenTrees map[string]struct{},
+	nextSpecs *[]string,
+	seenIDs map[string]struct{},
+	collected *[]string,
+) error {
+	if len(oid) == 0 || len(oid)%2 != 0 {
+		return fmt.Errorf("invalid git tree oid %q", oid)
+	}
+	rawOIDLen := len(oid) / 2
+	pos := 0
+	for pos < len(payload) {
+		spaceIdx := bytes.IndexByte(payload[pos:], ' ')
+		if spaceIdx <= 0 {
+			return fmt.Errorf("malformed git tree entry mode in %s at offset %d", oid, pos)
+		}
+		mode := string(payload[pos : pos+spaceIdx])
+		nameStart := pos + spaceIdx + 1
+		nulRel := bytes.IndexByte(payload[nameStart:], 0)
+		if nulRel < 0 {
+			return fmt.Errorf("malformed git tree entry name in %s at offset %d", oid, pos)
+		}
+		name := string(payload[nameStart : nameStart+nulRel])
+		oidStart := nameStart + nulRel + 1
+		oidEnd := oidStart + rawOIDLen
+		if oidEnd > len(payload) {
+			return fmt.Errorf("truncated git tree entry oid in %s at offset %d", oid, pos)
+		}
+		if mode == "40000" || mode == "040000" {
+			subOID := hex.EncodeToString(payload[oidStart:oidEnd])
+			if _, ok := seenTrees[subOID]; !ok {
+				seenTrees[subOID] = struct{}{}
+				*nextSpecs = append(*nextSpecs, subOID)
+			}
+		} else if (mode == "100644" || mode == "100755") && path.Ext(name) == ".md" {
+			stem := strings.TrimSuffix(name, ".md")
+			if stem != "" {
+				if _, ok := seenIDs[stem]; !ok {
+					seenIDs[stem] = struct{}{}
+					*collected = append(*collected, stem)
+				}
+			}
+		}
+		pos = oidEnd
+	}
+	return nil
 }
 
 func markdownIDsInDir(dir string) ([]string, error) {

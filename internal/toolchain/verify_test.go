@@ -812,3 +812,311 @@ func TestU2_AliasedBacklogitExecutableRequiresWorkspaceLocalPinAndCwdBinding(t *
 		require.NotEqual(t, "violation", findings[0].Status, "%+v", findings[0])
 	})
 }
+
+// TestU1_ToolchainVerifyAcceptsDotBinAndConfigurableToolsDir gates 217.001-T (U1).
+func TestU1_ToolchainVerifyAcceptsDotBinAndConfigurableToolsDir(t *testing.T) {
+	t.Run("dot-bin-default", func(t *testing.T) {
+		root, _ := u9Workspace(t)
+		sum := sha256.Sum256([]byte("pinned binary"))
+		u9Write(t, root, ".bin/backlogit.exe", "pinned binary")
+		u9Write(t, root, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, root))
+
+		manifest := &ToolchainManifest{
+			SchemaVersion:              "1.0",
+			ContainmentLevel:           Level1WorkspaceLocalPinned,
+			OSContainerSandboxDeferred: true,
+			WorkspaceRoot:              root,
+			Tools: []ToolEntry{
+				{
+					ID:                   "backlogit",
+					Kind:                 "mcp",
+					ContainmentClass:     WorkspaceLocalPinned,
+					ExecutablePath:       "./.bin/backlogit.exe",
+					PinnedVersion:        "1.0.0",
+					SHA256:               hex.EncodeToString(sum[:]),
+					WorkspaceBindingArgs: []string{"--cwd", root},
+				},
+				{ID: "remote", Kind: "mcp", ContainmentClass: RemoteDeclared, RemotePolicy: "approved"},
+				{ID: "host-built-in", Kind: "agent", ContainmentClass: BuiltInHost, Reason: "provided by host"},
+			},
+			HostPrerequisites: []HostPrerequisiteEntry{
+				{ID: "shell", Command: "shell", Purpose: "bootstrap", Reason: "host shell", Required: false},
+			},
+		}
+
+		report, err := VerifyWorkspaceToolchain(context.Background(), root, manifest)
+		require.NoError(t, err)
+		require.NotNil(t, report)
+		require.True(t, report.Valid, "%+v", report.Tools)
+		require.Zero(t, report.Violations)
+
+		findings, err := ValidateMCPConfigPinning(root, ".mcp.json", manifest)
+		require.NoError(t, err)
+		require.NotEmpty(t, findings)
+		for _, finding := range findings {
+			require.NotEqual(t, NonConformant, finding.ContainmentClass, "%+v", finding)
+			require.NotEqual(t, Unsupported, finding.ContainmentClass, "%+v", finding)
+			require.NotEqual(t, "violation", finding.Status, "%+v", finding)
+		}
+	})
+
+	t.Run("configurable-tools-dir-mixed-inventory", func(t *testing.T) {
+		ctx := context.Background()
+		sum := sha256.Sum256([]byte("pinned binary"))
+		sumHex := hex.EncodeToString(sum[:])
+
+		buildManifestYAML := func(root, toolsDirLine, execPath string) string {
+			quotedRoot, err := json.Marshal(root)
+			require.NoError(t, err)
+			quotedExec, err := json.Marshal(execPath)
+			require.NoError(t, err)
+			return fmt.Sprintf(`schema_version: "1.0"
+containment_level: level-1-workspace-local-pinned
+os_container_sandbox_deferred: true
+workspace_root: %s
+%stools:
+  - id: backlogit
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: %s
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args:
+      - "--cwd"
+      - %s
+  - id: remote
+    kind: mcp
+    containment_class: remote-declared
+    executable_path: ""
+    remote_policy: approved
+  - id: host-built-in
+    kind: agent
+    containment_class: built-in-host
+    executable_path: ""
+    reason: provided by host
+host_prerequisites:
+  - id: shell
+    command: shell
+    purpose: bootstrap
+    required: false
+    reason: host shell
+`, string(quotedRoot), toolsDirLine, string(quotedExec), sumHex, string(quotedRoot))
+		}
+
+		root, _ := u9Workspace(t)
+		u9Write(t, root, ".tools/bin/backlogit.exe", "pinned binary")
+		u9Write(t, root, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.tools/bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, root))
+		u9Write(t, root, ".backlogit/toolchain.yaml", buildManifestYAML(root, "tools_dir: \".tools/bin\"\n", "./.tools/bin/backlogit.exe"))
+
+		loaded, err := LoadToolchainManifest(root)
+		require.NoError(t, err)
+		require.NotNil(t, loaded)
+
+		report, err := VerifyWorkspaceToolchain(ctx, root, loaded)
+		require.NoError(t, err)
+		require.NotNil(t, report)
+		require.True(t, report.Valid, "%+v", report.Tools)
+		require.Zero(t, report.Violations)
+
+		findings, err := ValidateMCPConfigPinning(root, ".mcp.json", loaded)
+		require.NoError(t, err)
+		require.NotEmpty(t, findings)
+		for _, finding := range findings {
+			require.NotEqual(t, NonConformant, finding.ContainmentClass, "%+v", finding)
+			require.NotEqual(t, Unsupported, finding.ContainmentClass, "%+v", finding)
+			require.NotEqual(t, "violation", finding.Status, "%+v", finding)
+		}
+
+		require.NoError(t, WriteToolchainManifest(root, loaded))
+
+		t.Run("mismatched-executable-outside-tools-dir-rejected", func(t *testing.T) {
+			mismatchRoot, _ := u9Workspace(t)
+			u9Write(t, mismatchRoot, ".tools/bin/backlogit.exe", "pinned binary")
+			u9Write(t, mismatchRoot, "bin/backlogit.exe", "pinned binary")
+			u9Write(t, mismatchRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, mismatchRoot))
+			u9Write(t, mismatchRoot, ".backlogit/toolchain.yaml", buildManifestYAML(mismatchRoot, "tools_dir: \".tools/bin\"\n", "./bin/backlogit.exe"))
+
+			loadedMismatch, loadErr := LoadToolchainManifest(mismatchRoot)
+			require.NoError(t, loadErr)
+			mismatchReport, verifyErr := VerifyWorkspaceToolchain(ctx, mismatchRoot, loadedMismatch)
+			u9RequireNotStub(t, verifyErr)
+			mcpFindings, mcpErr := ValidateMCPConfigPinning(mismatchRoot, ".mcp.json", loadedMismatch)
+			u9RequireNotStub(t, mcpErr)
+
+			hasVerifyViolation := verifyErr != nil || (mismatchReport != nil && (!mismatchReport.Valid || mismatchReport.Violations > 0))
+			hasMCPViolation := mcpErr != nil
+			for _, f := range mcpFindings {
+				if f.Status == "violation" || f.ContainmentClass == NonConformant || f.ContainmentClass == Unsupported {
+					hasMCPViolation = true
+				}
+			}
+			require.True(t, hasVerifyViolation || hasMCPViolation, "mismatched executable outside declared tools_dir must be rejected")
+		})
+
+		for _, tc := range []struct {
+			name     string
+			toolsDir string
+		}{
+			{name: "traversal", toolsDir: "../outside"},
+			{name: "dot-backlogit", toolsDir: ".backlogit"},
+			{name: "dot-git", toolsDir: ".git"},
+			{name: "dot-git-upper", toolsDir: ".GIT"},
+			{name: "dot-backlog-mixed", toolsDir: ".Backlog"},
+			{name: "dot", toolsDir: "."},
+			{name: "whitespace", toolsDir: "   "},
+			{name: "explicit-blank", toolsDir: ""},
+			{name: "nul-byte", toolsDir: "tools\x00bin"},
+		} {
+			t.Run("invalid-tools-dir/"+tc.name, func(t *testing.T) {
+				badRoot, _ := u9Workspace(t)
+				u9Write(t, badRoot, ".tools/bin/backlogit.exe", "pinned binary")
+				quotedDir, qErr := json.Marshal(tc.toolsDir)
+				require.NoError(t, qErr)
+				u9Write(t, badRoot, ".backlogit/toolchain.yaml", buildManifestYAML(badRoot, fmt.Sprintf("tools_dir: %s\n", string(quotedDir)), "./.tools/bin/backlogit.exe"))
+
+				_, loadErr := LoadToolchainManifest(badRoot)
+				require.ErrorIs(t, loadErr, corerrors.ErrValidation)
+			})
+		}
+
+		t.Run("invalid-tools-dir/abs-in-workspace-and-casefold-direct", func(t *testing.T) {
+			badRoot, _ := u9Workspace(t)
+			u9Write(t, badRoot, ".tools/bin/backlogit.exe", "pinned binary")
+			absToolsDir := filepath.Join(badRoot, ".tools", "bin")
+
+			rootHandle, openErr := os.OpenRoot(badRoot)
+			require.NoError(t, openErr)
+			t.Cleanup(func() { require.NoError(t, rootHandle.Close()) })
+
+			for _, candidate := range []string{
+				absToolsDir, ".GIT", ".GIT/sub", ".Backlog", ".BackLogIt", "tools\x00bin",
+				"C:tools", "c:tools", `C:\tools`, "C:/tools", `\\server\share`, "//server/share",
+			} {
+				_, directErr := validManifestToolsDir(rootHandle, badRoot, candidate)
+				require.ErrorIs(t, directErr, corerrors.ErrValidation, "validManifestToolsDir must reject %q", candidate)
+
+				m := u9PinnedWorkspace(t, badRoot)
+				m.ToolsDir = candidate
+				_, verifyErr := VerifyWorkspaceToolchain(ctx, badRoot, m)
+				require.ErrorIs(t, verifyErr, corerrors.ErrValidation, "VerifyWorkspaceToolchain must reject tools_dir %q", candidate)
+
+				quotedDir, qErr := json.Marshal(candidate)
+				require.NoError(t, qErr)
+				u9Write(t, badRoot, ".backlogit/toolchain.yaml", buildManifestYAML(badRoot, fmt.Sprintf("tools_dir: %s\n", string(quotedDir)), "./.tools/bin/backlogit.exe"))
+				_, loadErr := LoadToolchainManifest(badRoot)
+				require.ErrorIs(t, loadErr, corerrors.ErrValidation, "LoadToolchainManifest must reject tools_dir %q", candidate)
+			}
+		})
+	})
+
+	t.Run("unsafe-backlogit-paths-rejected", func(t *testing.T) {
+		sum := sha256.Sum256([]byte("pinned binary"))
+		sumHex := hex.EncodeToString(sum[:])
+
+		for _, tc := range []struct {
+			name string
+			path string
+		}{
+			{name: "dot-bin-other", path: "./.bin/other.exe"},
+			{name: "root-backlogit", path: "./backlogit.exe"},
+			{name: "dot-backlogit-backlogit", path: ".backlogit/backlogit.exe"},
+			{name: "dot-git-backlogit", path: ".git/backlogit.exe"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				root, _ := u9Workspace(t)
+				u9Write(t, root, tc.path, "pinned binary")
+				u9Write(t, root, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":%q,"args":["mcp","--cwd",%q]}}}`, tc.path, root))
+
+				manifest := &ToolchainManifest{
+					SchemaVersion:              "1.0",
+					ContainmentLevel:           Level1WorkspaceLocalPinned,
+					OSContainerSandboxDeferred: true,
+					WorkspaceRoot:              root,
+					Tools: []ToolEntry{
+						{
+							ID:                   "backlogit",
+							Kind:                 "mcp",
+							ContainmentClass:     WorkspaceLocalPinned,
+							ExecutablePath:       tc.path,
+							PinnedVersion:        "1.0.0",
+							SHA256:               sumHex,
+							WorkspaceBindingArgs: []string{"--cwd", root},
+						},
+					},
+					HostPrerequisites: []HostPrerequisiteEntry{
+						{ID: "shell", Command: "shell", Purpose: "bootstrap", Reason: "host shell", Required: false},
+					},
+				}
+
+				report, err := VerifyWorkspaceToolchain(context.Background(), root, manifest)
+				u9RequireRejected(t, report, err)
+
+				findings, mcpErr := ValidateMCPConfigPinning(root, ".mcp.json", manifest)
+				u9RequireNotStub(t, mcpErr)
+				if mcpErr == nil {
+					hasViolation := false
+					for _, f := range findings {
+						if f.Status == "violation" || f.ContainmentClass == NonConformant || f.ContainmentClass == Unsupported {
+							hasViolation = true
+						}
+					}
+					require.True(t, hasViolation, "unsafe MCP command %s must be rejected", tc.path)
+				}
+			})
+		}
+
+		kind := "symlink"
+		if runtime.GOOS == "windows" {
+			kind = "junction"
+		}
+		t.Run(kind+"/.bin", func(t *testing.T) {
+			root, other := u9Workspace(t)
+			u9Write(t, other, "backlogit.exe", "pinned binary")
+			link := filepath.Join(root, ".bin")
+			if kind == "junction" {
+				output, err := exec.Command("cmd.exe", "/c", "mklink", "/J", link, other).CombinedOutput()
+				require.NoError(t, err, "creating junction: %s", output)
+			} else {
+				require.NoError(t, os.Symlink(other, link), "creating symlink")
+			}
+			info, err := os.Lstat(link)
+			require.NoError(t, err)
+			if kind == "junction" {
+				require.NotZero(t, info.Mode()&(os.ModeIrregular|os.ModeSymlink), "junction must be a reparse point")
+			} else {
+				require.NotZero(t, info.Mode()&os.ModeSymlink, "fixture must be a symlink")
+			}
+			linkTarget, err := os.Stat(link)
+			require.NoError(t, err)
+			otherTarget, err := os.Stat(other)
+			require.NoError(t, err)
+			require.True(t, os.SameFile(linkTarget, otherTarget), "link must resolve outside the workspace")
+
+			manifest := &ToolchainManifest{
+				SchemaVersion:              "1.0",
+				ContainmentLevel:           Level1WorkspaceLocalPinned,
+				OSContainerSandboxDeferred: true,
+				WorkspaceRoot:              root,
+				Tools: []ToolEntry{
+					{
+						ID:                   "backlogit",
+						Kind:                 "mcp",
+						ContainmentClass:     WorkspaceLocalPinned,
+						ExecutablePath:       "./.bin/backlogit.exe",
+						PinnedVersion:        "1.0.0",
+						SHA256:               sumHex,
+						WorkspaceBindingArgs: []string{"--cwd", root},
+					},
+				},
+				HostPrerequisites: []HostPrerequisiteEntry{
+					{ID: "shell", Command: "shell", Purpose: "bootstrap", Reason: "host shell", Required: false},
+				},
+			}
+			report, err := VerifyWorkspaceToolchain(context.Background(), root, manifest)
+			u9RequireRejected(t, report, err)
+			if report != nil && len(report.Tools) > 0 {
+				require.Contains(t, report.Tools[0].Message, "redirected path")
+			}
+		})
+	})
+}
