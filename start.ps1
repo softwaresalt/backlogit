@@ -173,22 +173,9 @@ if ($enabledSidecars -contains "engram") {
     }
 }
 
-if (($enabledSidecars -contains "kbdb") -or ($enabledSidecars -contains "kbdb")) {
-    # This explicit sync step is required even though .mcp.json now routes
-    # kbdb through scripts/graphtor-mcp-shim.cjs with `--read-only`:
-    # `serve --read-only` deliberately disables its own background sync path
-    # (even against a resolvable local source), so without this step the
-    # index would never refresh and an unpopulated ingestion workspace would
-    # stay empty for the whole interactive session.
-    try {
-        & $sidecarExecutables.kbdb sync
-        if ($LASTEXITCODE -ne 0) {
-            throw "kbdb sync failed with exit code $LASTEXITCODE."
-        }
-    } catch {
-        Write-Warning "kbdb sync failed (non-fatal): $_"
-    }
-}
+# NOTE: kbdb deliberately has NO startup step here.
+# kbdb is used inside a workspace in a strictly READ-ONLY manner and NEVER
+# indexes a workspace (`kbdb sync` is forbidden per `.github/instructions/kbdb.instructions.md`).
 
 # ai_tools.copilot_cli.args from .gsd/config.yaml -- extra arguments
 # always passed before the operator's own argv (e.g. ["--remote"]).
