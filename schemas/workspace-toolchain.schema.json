@@ -30,6 +30,10 @@
       "type": "string",
       "minLength": 1
     },
+    "tools_dir": {
+      "type": "string",
+      "minLength": 1
+    },
     "tools": {
       "type": "array",
       "items": { "$ref": "#/$defs/tool" }
