@@ -180,7 +180,7 @@ static instruction files for schema knowledge:
 Documentation in the durable knowledge surface (`docs/**`, plus `README.md` and
 `AGENTS.md`) is standardized on the **docline base frontmatter v1** contract
 (`schemas/docline/base-frontmatter-v1.schema.json`) so it is ingestible by the
-`graphtor-docs` pipeline. The `internal/docline/` package is the single
+`kbdb` pipeline. The `internal/docline/` package is the single
 application service behind both the CLI and MCP surfaces:
 
 * **codec** — a body-preserving Markdown frontmatter reader/writer (CRLF and
