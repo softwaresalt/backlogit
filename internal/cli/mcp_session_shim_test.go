@@ -22,10 +22,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
+	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/toolchain"
 )
 
 // 211.006-T / Wave 9: behavior against U5a declarations; no production substitutes.
@@ -704,4 +707,356 @@ func u6Join(t *testing.T, stream *u6Stream, marker string) {
 	case <-time.After(u6Wait):
 		t.Fatalf("%s: bounded wait expired; stderr=%s", marker, stream.stderr.String())
 	}
+}
+
+// 217.003-T / Wave 3 (U3): pinned MCP daemon binary resolution across .bin default,
+// .mcp.json override, toolchain.yaml/config.yaml tools_dir, and fail-closed refusals.
+func TestU3_PinnedMCPDaemonBinaryHonorsMCPJsonToolsDirAndDotBinDefault(t *testing.T) {
+	source := u6BuildBinary(t)
+	binaryName := "backlogit"
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+
+	t.Run("dot-bin-default-and-precedence", func(t *testing.T) {
+		t.Run("dot-bin-only", func(t *testing.T) {
+			root := u3Workspace(t)
+			dotBinBinary := u3CopyBinaryTo(t, source, filepath.Join(root, ".bin"), binaryName)
+			_, binErr := os.Stat(filepath.Join(root, "bin", binaryName))
+			require.ErrorIs(t, binErr, os.ErrNotExist)
+
+			ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+			defer cancel()
+			status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+			require.NoError(t, err, "U3_DOT_BIN_DEFAULT: prewarm must discover .bin/%s when bin/ is absent", binaryName)
+			require.True(t, status.Running)
+			require.Positive(t, status.PID)
+
+			info := u5ReadInfo(t, root)
+			assert.True(t, sameDaemonPath(dotBinBinary, info.ExecutablePath),
+				"U3_DOT_BIN_DEFAULT: expected %s, got %s", dotBinBinary, info.ExecutablePath)
+
+			require.NoError(t, VerifyMCPDaemonAttachment(info, info.WorkspaceRoot, info.StorageRoot, info.Version, info.ProtocolVersion))
+			u3ShimRoundTrip(t, root)
+
+			stopped, err := StopMCPDaemon(ctx, root)
+			require.NoError(t, err)
+			assert.True(t, stopped.Stopped)
+		})
+
+		t.Run("dot-bin-preferred-over-bin", func(t *testing.T) {
+			root := u3Workspace(t)
+			dotBinBinary := u3CopyBinaryTo(t, source, filepath.Join(root, ".bin"), binaryName)
+			_ = u3CopyBinaryTo(t, source, filepath.Join(root, "bin"), binaryName)
+
+			ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+			defer cancel()
+			status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+			require.NoError(t, err)
+			require.True(t, status.Running)
+
+			info := u5ReadInfo(t, root)
+			assert.True(t, sameDaemonPath(dotBinBinary, info.ExecutablePath),
+				"U3_DOT_BIN_PRECEDENCE: expected .bin binary %s over legacy bin/, got %s", dotBinBinary, info.ExecutablePath)
+
+			stopped, err := StopMCPDaemon(ctx, root)
+			require.NoError(t, err)
+			assert.True(t, stopped.Stopped)
+		})
+	})
+
+	t.Run("configured-paths-and-fail-closed-refusal", func(t *testing.T) {
+		t.Run("mcp-json-overrides-dot-bin-and-bin", func(t *testing.T) {
+			root := u3Workspace(t)
+			_ = u3CopyBinaryTo(t, source, filepath.Join(root, ".bin"), binaryName)
+			_ = u3CopyBinaryTo(t, source, filepath.Join(root, "bin"), binaryName)
+			customBinary := u3CopyBinaryTo(t, source, filepath.Join(root, "custom-tools"), binaryName)
+			u3WriteMCPJSON(t, root, "./custom-tools/"+binaryName)
+
+			ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+			defer cancel()
+			status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+			require.NoError(t, err)
+			require.True(t, status.Running)
+
+			info := u5ReadInfo(t, root)
+			assert.True(t, sameDaemonPath(customBinary, info.ExecutablePath),
+				"U3_MCP_JSON_OVERRIDE: expected %s, got %s", customBinary, info.ExecutablePath)
+
+			stopped, err := StopMCPDaemon(ctx, root)
+			require.NoError(t, err)
+			assert.True(t, stopped.Stopped)
+		})
+
+		t.Run("toolchain-yaml-tools-dir", func(t *testing.T) {
+			root := u3Workspace(t)
+			_ = u3CopyBinaryTo(t, source, filepath.Join(root, "bin"), binaryName)
+			customBinary := u3CopyBinaryTo(t, source, filepath.Join(root, "custom-tools"), binaryName)
+
+			manifest := toolchain.ToolchainManifest{
+				SchemaVersion:              "1.0",
+				ContainmentLevel:           toolchain.Level1WorkspaceLocalPinned,
+				OSContainerSandboxDeferred: true,
+				WorkspaceRoot:              root,
+				ToolsDir:                   "custom-tools",
+				Tools:                      []toolchain.ToolEntry{},
+				HostPrerequisites:          []toolchain.HostPrerequisiteEntry{},
+			}
+			manifestBytes, err := yaml.Marshal(manifest)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, ".backlogit", "toolchain.yaml"), manifestBytes, 0o600))
+			_, err = toolchain.LoadToolchainManifest(root)
+			require.NoError(t, err, "fixture toolchain.yaml must be valid")
+
+			ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+			defer cancel()
+			status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+			require.NoError(t, err)
+			require.True(t, status.Running)
+
+			info := u5ReadInfo(t, root)
+			assert.True(t, sameDaemonPath(customBinary, info.ExecutablePath),
+				"U3_TOOLCHAIN_TOOLS_DIR: expected %s, got %s", customBinary, info.ExecutablePath)
+
+			stopped, err := StopMCPDaemon(ctx, root)
+			require.NoError(t, err)
+			assert.True(t, stopped.Stopped)
+		})
+
+		t.Run("config-yaml-tools-dir", func(t *testing.T) {
+			root := u3Workspace(t)
+			_ = u3CopyBinaryTo(t, source, filepath.Join(root, "bin"), binaryName)
+			customBinary := u3CopyBinaryTo(t, source, filepath.Join(root, "custom-tools"), binaryName)
+			u3SetConfigToolsDir(t, root, "custom-tools")
+
+			ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+			defer cancel()
+			status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+			require.NoError(t, err)
+			require.True(t, status.Running)
+
+			info := u5ReadInfo(t, root)
+			assert.True(t, sameDaemonPath(customBinary, info.ExecutablePath),
+				"U3_CONFIG_TOOLS_DIR: expected %s, got %s", customBinary, info.ExecutablePath)
+
+			stopped, err := StopMCPDaemon(ctx, root)
+			require.NoError(t, err)
+			assert.True(t, stopped.Stopped)
+		})
+
+		t.Run("fail-closed-refusals", func(t *testing.T) {
+			setupDecoys := func(t *testing.T, root string) {
+				t.Helper()
+				_ = u3CopyBinaryTo(t, source, filepath.Join(root, "bin"), binaryName)
+				_ = u3CopyBinaryTo(t, source, filepath.Join(root, ".bin"), binaryName)
+			}
+			assertNoDaemonRunning := func(t *testing.T, root string) {
+				t.Helper()
+				probe, err := InspectMCPDaemonStatus(root)
+				require.NoError(t, err)
+				assert.False(t, probe.Running, "U3_FAIL_CLOSED: decoy bin/ or .bin/ daemon must not start")
+			}
+
+			t.Run("mcp-json-missing-binary", func(t *testing.T) {
+				root := u3Workspace(t)
+				setupDecoys(t, root)
+				u3WriteMCPJSON(t, root, "./missing/"+binaryName)
+
+				ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+				defer cancel()
+				status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+				assert.ErrorIs(t, err, corerrors.ErrDaemonBinaryMissing)
+				assert.False(t, status.Running)
+				assertNoDaemonRunning(t, root)
+			})
+
+			t.Run("mcp-json-bare-command", func(t *testing.T) {
+				root := u3Workspace(t)
+				setupDecoys(t, root)
+				u3WriteMCPJSON(t, root, "backlogit")
+
+				ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+				defer cancel()
+				status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+				assert.ErrorIs(t, err, corerrors.ErrValidation)
+				assert.False(t, status.Running)
+				assertNoDaemonRunning(t, root)
+			})
+
+			t.Run("mcp-json-traversal-command", func(t *testing.T) {
+				root := u3Workspace(t)
+				setupDecoys(t, root)
+				u3WriteMCPJSON(t, root, "../outside/"+binaryName)
+
+				ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+				defer cancel()
+				status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+				assert.ErrorIs(t, err, corerrors.ErrValidation)
+				assert.False(t, status.Running)
+				assertNoDaemonRunning(t, root)
+			})
+
+			t.Run("mcp-json-redirected-directory", func(t *testing.T) {
+				root := u3Workspace(t)
+				setupDecoys(t, root)
+				outsideDir := t.TempDir()
+				_ = u3CopyBinaryTo(t, source, outsideDir, binaryName)
+				linkDir := filepath.Join(root, "redirected-tools")
+				u3LinkDir(t, linkDir, outsideDir)
+				u3WriteMCPJSON(t, root, "./redirected-tools/"+binaryName)
+
+				ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+				defer cancel()
+				status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+				assert.ErrorIs(t, err, corerrors.ErrValidation)
+				assert.False(t, status.Running)
+				assertNoDaemonRunning(t, root)
+			})
+
+			t.Run("mcp-json-in-workspace-intermediate-dir-link", func(t *testing.T) {
+				root := u3Workspace(t)
+				setupDecoys(t, root)
+				realSub := filepath.Join(root, "nested", "real")
+				_ = u3CopyBinaryTo(t, source, realSub, binaryName)
+				linkSub := filepath.Join(root, "nested", "sub")
+				u3LinkDir(t, linkSub, realSub)
+				u3WriteMCPJSON(t, root, "./nested/sub/"+binaryName)
+
+				ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+				defer cancel()
+				status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+				assert.ErrorIs(t, err, corerrors.ErrValidation,
+					"U3_INTERMEDIATE_DIR_LINK: in-workspace junction/symlink directory must be refused without falling back or following via os.Root")
+				assert.False(t, status.Running)
+				assertNoDaemonRunning(t, root)
+			})
+
+			for _, tc := range []struct {
+				name     string
+				toolsDir string
+			}{
+				{name: "config-tools-dir-traversal", toolsDir: "../outside"},
+				{name: "config-tools-dir-storage-root", toolsDir: ".backlogit"},
+				{name: "config-tools-dir-whitespace", toolsDir: "   "},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					root := u3Workspace(t)
+					setupDecoys(t, root)
+					u3SetConfigToolsDir(t, root, tc.toolsDir)
+
+					ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+					defer cancel()
+					_, cfgErr := config.Load(ctx, filepath.Join(root, ".backlogit"))
+					assert.ErrorIs(t, cfgErr, corerrors.ErrValidation,
+						"U3_CONFIG_LOAD_INVALID_TOOLS_DIR: config.Load must refuse invalid tools_dir %q", tc.toolsDir)
+
+					status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+					assert.ErrorIs(t, err, corerrors.ErrValidation,
+						"U3_PREWARM_INVALID_TOOLS_DIR: PrewarmMCPDaemon must fail closed on invalid tools_dir %q", tc.toolsDir)
+					assert.False(t, status.Running)
+					assertNoDaemonRunning(t, root)
+				})
+			}
+		})
+	})
+
+	t.Run("storage-root-self-install-refused", func(t *testing.T) {
+		root := u3Workspace(t)
+		_ = u3CopyBinaryTo(t, source, filepath.Join(root, ".backlogit"), binaryName)
+
+		ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+		defer cancel()
+		status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+		assert.ErrorIs(t, err, corerrors.ErrDaemonBinaryMissing)
+		assert.False(t, status.Running)
+
+		probe, probeErr := InspectMCPDaemonStatus(root)
+		require.NoError(t, probeErr)
+		assert.False(t, probe.Running)
+	})
+}
+
+func u3Workspace(t *testing.T) string {
+	t.Helper()
+	root := u5Workspace(t)
+	t.Cleanup(func() {
+		status, err := InspectMCPDaemonStatus(root)
+		if !assert.NoError(t, err, "U3_CLEANUP_STATUS: fixture daemon must remain inspectable") || !status.Running {
+			return
+		}
+		info := u5ReadInfo(t, root)
+		relative, err := filepath.Rel(root, info.ExecutablePath)
+		if !assert.NoError(t, err) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) ||
+			filepath.IsAbs(relative) || !sameDaemonPath(info.WorkspaceRoot, root) || info.PID == os.Getpid() {
+			t.Error("U3_CLEANUP_OWNERSHIP: refusing to stop a process outside this fixture")
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), u6Wait)
+		defer cancel()
+		_, err = StopMCPDaemon(ctx, root)
+		assert.NoError(t, err, "U3_CLEANUP_STOP: stop only the daemon belonging to this temp workspace")
+		assert.Eventually(t, func() bool {
+			return !isVerifiedProcessAlive(info.PID, info.ProcessStartTime, info.ExecutablePath)
+		}, u6Wait, 20*time.Millisecond, "U3_CLEANUP_EXIT: owned daemon must terminate before TempDir removal")
+	})
+	return root
+}
+
+func u3CopyBinaryTo(t *testing.T, source, dir, binaryName string) string {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	dst := filepath.Join(dir, binaryName)
+	u6CopyBinary(t, source, dst)
+	return dst
+}
+
+func u3WriteMCPJSON(t *testing.T, root, command string) {
+	t.Helper()
+	cfg := map[string]any{
+		"mcpServers": map[string]any{
+			"backlogit": map[string]any{
+				"type":    "stdio",
+				"command": command,
+				"args":    []string{"mcp", "--cwd", root},
+			},
+		},
+	}
+	data, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".mcp.json"), data, 0o600))
+}
+
+func u3SetConfigToolsDir(t *testing.T, root, toolsDir string) {
+	t.Helper()
+	cfgPath := filepath.Join(root, ".backlogit", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+	var raw map[string]any
+	require.NoError(t, yaml.Unmarshal(data, &raw))
+	raw["tools_dir"] = toolsDir
+	updated, err := yaml.Marshal(raw)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(cfgPath, updated, 0o600))
+}
+
+func u3LinkDir(t *testing.T, linkPath, targetDir string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		output, err := exec.CommandContext(t.Context(), "cmd", "/c", "mklink", "/J", linkPath, targetDir).CombinedOutput()
+		require.NoError(t, err, "mklink /J %s -> %s failed: %s", linkPath, targetDir, output)
+	} else {
+		require.NoError(t, os.Symlink(targetDir, linkPath))
+	}
+	t.Cleanup(func() { _ = os.Remove(linkPath) })
+}
+
+func u3ShimRoundTrip(t *testing.T, root string) {
+	t.Helper()
+	f := u6Fixture{root: root}
+	stream := u6DirectShim(t, f)
+	u6Initialize(t, []*u6Stream{stream})
+	stream.send(t, `{"jsonrpc":"2.0","id":1,"method":"ping"}`+"\n")
+	require.JSONEq(t, "{}", string(stream.response(t)))
+	require.NoError(t, stream.input.Close())
+	u6Join(t, stream, "U3_SHIM_EOF: shim must finish cleanly on client EOF")
 }
