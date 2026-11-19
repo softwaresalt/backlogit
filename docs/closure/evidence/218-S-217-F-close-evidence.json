@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "shipment_id": "218-S",
+  "feature_id": "217-F",
+  "merge_commit_sha": "37966bf4b2af72ca8c822bfd29f186180a27cb08",
+  "phase": "post_close",
+  "invocation": {
+    "surface": "mcp",
+    "tool": "backlogit_ship_shipment",
+    "arguments": {
+      "id": "218-S",
+      "sha": "37966bf4b2af72ca8c822bfd29f186180a27cb08",
+      "message": "Merge pull request #662 (218-S / 217-F)",
+      "author": "ship"
+    },
+    "mutation_state": "completed"
+  },
+  "pre_close": {
+    "reconcile_report": ".backlogit/reconcile/218-S-pre-20261119T162000Z.md",
+    "manifest_members": [
+      { "id": "217-F", "artifact_type": "feature", "location": "queue", "declared_status": "active", "classification": "feature-pending-governed-completion" },
+      { "id": "217.001-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "217-F", "classification": "pre-archived" },
+      { "id": "217.004-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "217-F", "classification": "pre-archived" },
+      { "id": "217.002-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "217-F", "classification": "pre-archived" },
+      { "id": "217.003-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "217-F", "classification": "pre-archived" }
+    ],
+    "recommendation": "PROCEED"
+  },
+  "post_close": {
+    "reconcile_reports": [
+      ".backlogit/reconcile/218-S-safe-close-20261119T162100Z.md",
+      ".backlogit/reconcile/218-S-post-20261119T162200Z.md"
+    ],
+    "shipment_status": "shipped",
+    "shipment_record_status": "archived",
+    "shipment_record_archived_status": "shipped",
+    "commit_sha": "37966bf4b2af72ca8c822bfd29f186180a27cb08",
+    "returned_ids": [],
+    "archived_ids": [
+      "217.001-T",
+      "217.002-T",
+      "217.003-T",
+      "217.004-T",
+      "217-F",
+      "218-S"
+    ],
+    "parent_id_preserved": true,
+    "p007_archive_integrity": "PASS",
+    "doctor_shipped_event_findings_for_218_S": 0,
+    "non_member_untouched": true,
+    "postcondition_verdict": "pass",
+    "failures": []
+  }
+}
