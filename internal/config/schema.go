@@ -51,10 +51,17 @@ func validateWorkspaceToolsDir(toolsDir string) error {
 		return fmt.Errorf("tools_dir %q must resolve to a local subdirectory within the workspace: %w", toolsDir, corerrors.ErrValidation)
 	}
 	firstSeg, _, _ := strings.Cut(filepath.ToSlash(clean), "/")
-	if strings.EqualFold(firstSeg, ".git") || strings.EqualFold(firstSeg, ".backlog") || strings.EqualFold(firstSeg, ".backlogit") {
+	if strings.EqualFold(firstSeg, ".git") || strings.EqualFold(firstSeg, ".backlog") {
 		return fmt.Errorf("tools_dir %q cannot target reserved directory %q: %w", toolsDir, firstSeg, corerrors.ErrValidation)
 	}
 	return nil
+}
+
+func toolsDirFirstSegment(toolsDir string) string {
+	normalized := filepath.FromSlash(strings.ReplaceAll(toolsDir, "\\", "/"))
+	clean := filepath.Clean(normalized)
+	firstSeg, _, _ := strings.Cut(filepath.ToSlash(clean), "/")
+	return firstSeg
 }
 
 // WorkspaceConfig holds the parsed workspace configuration.

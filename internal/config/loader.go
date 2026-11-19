@@ -13,6 +13,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"gopkg.in/yaml.v3"
+
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 var logger = slog.With("package", "config")
@@ -64,6 +66,14 @@ func Load(_ context.Context, workspacePath string) (*WorkspaceConfig, error) {
 			}
 		}
 		return nil, fmt.Errorf("validate config: %w", err)
+	}
+
+	if cfg.ToolsDir != "" {
+		firstSeg := toolsDirFirstSegment(cfg.ToolsDir)
+		storageDirName := filepath.Base(filepath.Clean(workspacePath))
+		if strings.EqualFold(firstSeg, storageDirName) {
+			return nil, fmt.Errorf("validate config: tools_dir %q cannot target reserved directory %q: %w", cfg.ToolsDir, firstSeg, corerrors.ErrValidation)
+		}
 	}
 
 	// Config-load containment (108-F SE-7a): reject an absolute path or a lexical

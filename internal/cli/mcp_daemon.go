@@ -835,7 +835,15 @@ func validateBacklogitCommandRel(absWorkspace, command string) (string, error) {
 }
 
 func isReservedDaemonDirSegment(seg string) bool {
-	return strings.EqualFold(seg, ".git") || strings.EqualFold(seg, ".backlog") || strings.EqualFold(seg, ".backlogit")
+	if strings.EqualFold(seg, ".git") {
+		return true
+	}
+	for _, candidate := range core.WorkspaceRootCandidates() {
+		if strings.EqualFold(seg, candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func sameDaemonRelPath(a, b string) bool {
